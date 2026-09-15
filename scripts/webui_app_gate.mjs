@@ -45,6 +45,10 @@
 //        sequences parsed; the title request unaffected; each out-of-range value marked, explained, and
 //        refused by Send, Regenerate and Edit before anything changes; saved, followed across tabs
 //        (not over a field being typed in), reset, restored after reload, unreadable values ignored.
+//   W11 — images: Attach only on vision models; picker, paste and drop; small PNG kept, WebP converted and a
+//        large image scaled (checked by decoding the result); exactly the content parts sent, only the
+//        newest image, none to a text-only model; non-images and corrupt files refused; image-only send and
+//        edit; nothing attachable mid-reply; saved and restored; hostile stored images never rendered or sent.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -1163,8 +1167,152 @@ const phase19 = phase(W10_PRELUDE + String.raw`
   $("sampling-reset").click();
 `);
 
+// ---- phase 20: W11 — images for vision models ------------------------------------------------------------
+const W11_PRELUDE = String.raw`
+  const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  const idle = () => until(() => $("stop").hidden);
+  window.confirm = () => true;
+  const MODELS = [{ id: "vis", vision: true }, { id: "txt", vision: false }];
+  // /v1/models is answered only while a model is picked; every chat request is set up with stream() first.
+  // (Not a router wrapped around streamAnswer's stub: the prelude's title wrapper already sits on
+  // window.fetch as a getter/setter, and a second wrapper that captures it recurses into itself.)
+  const stream = (text, opts) => streamAnswer(text, opts);
+  const pick = async id => {
+    window.fetch = async () => new Response(JSON.stringify({ object: "list", data: MODELS }), { status: 200 });
+    await loadModels(id); await wait(20);
+  };
+  const makeFile = (type, w, h, name) => new Promise(res => {
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const g = c.getContext("2d"); g.fillStyle = "#e11"; g.fillRect(0, 0, w / 2, h); g.fillStyle = "#12e"; g.fillRect(w / 2, 0, w / 2, h);
+    c.toBlob(b => res(new File([b], name, { type })), type, 0.95);
+  });
+  const dt = f => { const d = new DataTransfer(); d.items.add(f); return d; };
+  const viaInput = f => { $("attach-file").files = dt(f).files; $("attach-file").dispatchEvent(new Event("change")); };
+  const viaPaste = f => $("prompt").dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt(f), bubbles: true, cancelable: true }));
+  const viaDrop = f => { const d = dt(f); $("pane-chat").dispatchEvent(new DragEvent("dragover", { dataTransfer: d, bubbles: true, cancelable: true })); $("pane-chat").dispatchEvent(new DragEvent("drop", { dataTransfer: d, bubbles: true, cancelable: true })); };
+  const dims = url => new Promise(res => { const i = new Image(); i.onload = () => res(i.naturalWidth + "x" + i.naturalHeight); i.onerror = () => res("undecodable"); i.src = url; });
+  const imageParts = () => (window.__lastBody?.messages || []).flatMap(m => Array.isArray(m.content) ? m.content.filter(p => p.type === "image_url") : []);
+  const shape = () => (window.__lastBody?.messages || []).filter(m => m.role !== "system").map(m => m.role[0] + ":" + (Array.isArray(m.content) ? "[" + m.content.map(p => p.type === "text" ? "text:" + p.text : "image").join(",") + "]" : m.content)).join("|");
+  const turn = async (q, a) => { stream(a); $("prompt").value = q; await send(); await idle(); await wait(30); };
+`;
+const phase20 = phase(W11_PRELUDE + String.raw`
+  $("sampling-reset").click();
+  $("newchat").click();
+  await pick("txt");
+  check("W11 a text-only model shows no Attach control", $("attach").hidden && $("attach-preview").hidden, $("attach").hidden);
+  await pick("vis");
+  check("W11 a vision model shows Attach", !$("attach").hidden, $("attach").hidden);
+  check("W11 nothing pending: no <img> anywhere on the page", document.querySelectorAll("img").length === 0, document.querySelectorAll("img").length);
+
+  // ---- attach by the file picker: a small PNG is kept exactly ----
+  const small = await makeFile("image/png", 200, 100, "small.png");
+  viaInput(small);
+  await until(() => pendingImage);
+  check("W11 a small PNG is attached as-is, with a preview", pendingImage?.url.startsWith("data:image/png;base64,") && pendingImage.info === "200×100" && !$("attach-preview").hidden && $("attach-preview").querySelector("img")?.src === pendingImage.url, pendingImage?.info);
+  const smallURL = pendingImage.url;
+  stream("red and blue");
+  $("prompt").value = "what colors?";
+  await send(); await idle(); await wait(30);
+  const you1 = [...document.querySelectorAll("#log .msg.you")].at(-1);
+  check("W11 the sent message shows its image", you1.querySelector("img.uimg")?.src === smallURL && you1.children[1].textContent === "what colors?", you1.children[1].innerHTML.slice(0, 80));
+  check("W11 the request carries text then the image as content parts", shape() === "u:[text:what colors?,image]" && imageParts()[0].image_url.url === smallURL, shape());
+  check("W11 sending clears the pending image and its preview", pendingImage === null && $("attach-preview").hidden && !$("attach-preview").querySelector("img"), String(pendingImage));
+  check("W11 the image is saved with its message", stored().messages[0].image === smallURL, String(stored().messages[0].image).slice(0, 40));
+
+  await turn("which is on the left?", "red");
+  check("W11 a follow-up still sends the conversation's image, on the message it came with", shape() === "u:[text:what colors?,image]|a:red and blue|u:which is on the left?" && imageParts().length === 1, shape());
+
+  // ---- paste a WebP: converted to JPEG ----
+  const webp = await makeFile("image/webp", 300, 300, "x.webp");
+  viaPaste(webp);
+  await until(() => pendingImage);
+  check("W11 a pasted WebP is converted to JPEG (the server decodes PNG and JPEG only)", pendingImage?.url.startsWith("data:image/jpeg;base64,") && /300×300 \(converted to JPEG\)/.test(pendingImage.info) && await dims(pendingImage.url) === "300x300", pendingImage?.info);
+  $("attach-remove").click();
+  check("W11 Remove drops the pending image", pendingImage === null && $("attach-preview").hidden && document.querySelectorAll("#attach-preview img").length === 0, String(pendingImage));
+
+  // ---- drop a large PNG: scaled ----
+  const big = await makeFile("image/png", 3000, 1000, "big.png");
+  viaDrop(big);
+  await until(() => pendingImage);
+  check("W11 a dropped large image is scaled to 1344 on its longest side, as JPEG", pendingImage?.url.startsWith("data:image/jpeg;base64,") && pendingImage.info === "1344×448 (scaled from 3000×1000)" && await dims(pendingImage.url) === "1344x448", pendingImage?.info);
+  check("W11 attaching a second image says the model will see only this one", !$("attach-note").hidden && /one image per request/.test($("attach-note").textContent), $("attach-note").textContent);
+  const bigURL = pendingImage.url;
+  await turn("and this one?", "blue");
+  check("W11 only the newest image is sent; the earlier message goes as plain text", imageParts().length === 1 && imageParts()[0].image_url.url === bigURL && shape().startsWith("u:what colors?|a:red and blue|u:which is on the left?|a:red|u:[text:and this one?,image]"), shape());
+
+  // ---- things that are not images ----
+  viaInput(new File(["hello"], "a.txt", { type: "text/plain" }));
+  await until(() => !$("attach-note").hidden);
+  check("W11 a non-image file is refused with a reason", pendingImage === null && $("attach-note").textContent === "That isn't an image file.", $("attach-note").textContent);
+  viaInput(new File([new Uint8Array(25_000_001)], "huge.png", { type: "image/png" }));
+  await until(() => /too large/.test($("attach-note").textContent));
+  check("W11 a file over 25 MB is refused before it is decoded", pendingImage === null && $("attach-note").textContent === "That image is too large (over 25 MB).", $("attach-note").textContent);
+  viaInput(new File(["not really a png"], "x.png", { type: "image/png" }));
+  await until(() => /couldn't be read/.test($("attach-note").textContent));
+  check("W11 a corrupt image is refused with a reason", pendingImage === null && $("attach-note").textContent === "That file couldn't be read as an image.", $("attach-note").textContent);
+
+  // ---- image-only message ----
+  viaInput(small); await until(() => pendingImage);
+  $("prompt").value = "";
+  stream("an image");
+  await send(); await idle(); await wait(30);
+  check("W11 an image can be sent with no text", shape().endsWith("u:[image]") && [...document.querySelectorAll("#log .msg.you")].at(-1).querySelector("img.uimg"), shape());
+
+  // ---- a model that cannot see ----
+  viaInput(small); await until(() => pendingImage);
+  await pick("txt");
+  check("W11 switching to a text-only model with an image pending hides Attach and says why", $("attach").hidden && !$("attach-note").hidden && /can't see images — remove the image/.test($("attach-note").textContent), $("attach-note").textContent);
+  const last = window.__lastBody, nMsgs = document.querySelectorAll("#log .msg").length;
+  $("prompt").value = "try anyway";
+  await send(); await wait(30);
+  check("W11 Send refuses an image to a text-only model: nothing sent, nothing added, message kept", window.__lastBody === last && document.querySelectorAll("#log .msg").length === nMsgs && $("prompt").value === "try anyway", shape());
+  $("attach-remove").click();
+  check("W11 a text-only model is told the conversation's images won't be sent", /won't be sent to it/.test($("attach-note").textContent), $("attach-note").textContent);
+  await turn("text only now", "ok");
+  check("W11 a text-only model is sent no image parts at all", imageParts().length === 0 && !JSON.stringify(window.__lastBody).includes("data:image"), shape().slice(0, 120));
+  viaInput(small); await wait(200);
+  check("W11 attaching on a text-only model is refused", pendingImage === null && /can't see images/.test($("attach-note").textContent), $("attach-note").textContent);
+  await pick("vis");
+
+  // ---- busy, and editing a message that has an image ----
+  stream("slow ", { hang: true });
+  $("prompt").value = "busy";
+  const run = send();
+  await until(() => !$("stop").hidden);
+  viaDrop(small); await wait(200);
+  check("W11 nothing can be attached while a reply is generating", pendingImage === null, String(pendingImage));
+  $("stop").click(); await run; await idle();
+  const withImage = [...document.querySelectorAll("#log .msg.you")].find(m => m.querySelector("img.uimg") && m.children[1].textContent === "");
+  withImage.querySelector(".msg-edit").click();
+  document.querySelector("#log textarea.edit-box").value = "";
+  stream("edited");
+  document.querySelector("#log .edit-save").click();
+  await idle(); await wait(30);
+  check("W11 an image-only message can be edited and resent with no text — the image stays", !document.querySelector("#log textarea.edit-box") && shape().endsWith("u:[image]") && [...document.querySelectorAll("#log .msg.you")].at(-1).querySelector("img.uimg"), shape().slice(-80));
+
+  // leave a conversation with one valid image, and plant hostile stored images, for the reload
+  const msgs = stored().messages.slice(0, 2);
+  msgs.push({ role: "user", content: "remote", image: "https://tracker.invalid/p.png" },
+            { role: "user", content: "script", image: "javascript:window.__pwned=1" },
+            { role: "user", content: "svg", image: "data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9d2luZG93Ll9fcHduZWQ9MT4=" },
+            { role: "user", content: "junk", image: "data:image/png;base64,AAAA\"><img src=x onerror=window.__pwned=1>" },
+            { role: "assistant", content: "img on a reply", image: smallURL });
+  putStored(msgs);
+`);
+
+// ---- phase 21: after a reload — images restored; hostile stored images never rendered or sent -------------
+const phase21 = phase(W11_PRELUDE + String.raw`
+  await pick("vis");
+  await wait(200);
+  const imgs = [...document.querySelectorAll("#log img")];
+  check("W11 after reload the valid image is shown again, on its message", imgs.length === 1 && imgs[0].closest(".msg.you")?.children[1].textContent === "what colors?" && imgs[0].src.startsWith("data:image/png;base64,"), imgs.map(i => i.src.slice(0, 30)));
+  check("W11 remote, script, SVG and malformed stored images are dropped, not rendered", !imgs.some(i => !/^data:image\/(png|jpeg);base64,/.test(i.getAttribute("src"))) && window.__pwned === 0, imgs.length + " img, pwned " + window.__pwned);
+  await turn("after reload", "ok");
+  check("W11 after reload only the valid image is sent", imageParts().length === 1 && imageParts()[0].image_url.url.startsWith("data:image/png;base64,") && !/tracker\.invalid|javascript:|svg\+xml/.test(JSON.stringify(window.__lastBody)), shape().slice(0, 160));
+`);
+
 const all = [];
-for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19].entries()) {
+for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21].entries()) {
   if (i > 0) await page.reload();
   all.push(...finishOrExit("webui app gate (phase " + (i + 1) + ")", await page.evaluate(prog), all));
 }

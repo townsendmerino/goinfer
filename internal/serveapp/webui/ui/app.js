@@ -41,6 +41,7 @@ function showStats() {
   add("model", cur.id);
   if (cur.decode_path) add("path", cur.decode_path);
   showContext();
+  showAttach();
 }
 
 // --- context meter (W8) -------------------------------------------------------------
@@ -98,6 +99,111 @@ async function loadModels(pick) {
   }
 }
 $("model").addEventListener("change", showStats);
+
+// --- images (W11) -------------------------------------------------------------------------
+// Attach one image to the next message — Attach button, drop, or paste — on a model whose /v1/models
+// entry says vision: true; the control is hidden otherwise. The server decodes PNG and JPEG only, and a
+// photo straight off a phone would fill browser storage in a few messages, so anything that is not
+// already a small PNG/JPEG is drawn onto a canvas, scaled to IMAGE_MAX_SIDE on its longest side, and
+// re-encoded as JPEG (transparency flattened onto white). Vision towers resize to their own input
+// size anyway (SigLIP: 896 px), so this loses nothing the model would have used.
+const IMAGE_MAX_SIDE = 1344, IMAGE_KEEP_BYTES = 1_500_000, IMAGE_MAX_INPUT = 25_000_000;
+// A stored or pending image is rendered, so it must be exactly this: a PNG/JPEG base64 data URI. Never a
+// remote URL (a stored conversation must not be able to make the page fetch anything) or a script scheme.
+const IMAGE_OK = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/;
+const IMAGE_MAX_URI = 12_000_000;
+const imageOK = u => typeof u === "string" && u.length <= IMAGE_MAX_URI && IMAGE_OK.test(u);
+let pendingImage = null;   // {url, info}
+
+const visionOK = () => models.find(m => m.id === $("model").value)?.vision === true;
+
+function showAttach() {
+  const ok = visionOK();
+  $("attach").hidden = !ok;
+  // The thumbnail exists only while an image is pending: the page carries no <img> the user did not add.
+  const box = $("attach-preview");
+  box.hidden = !pendingImage;
+  box.querySelector("img")?.remove();
+  if (pendingImage) {
+    const img = document.createElement("img");
+    img.alt = "Image to send"; img.src = pendingImage.url;
+    box.prepend(img);
+    $("attach-info").textContent = pendingImage.info;
+  }
+  const note = $("attach-note");
+  let text = "";
+  if (pendingImage && !ok) text = "The selected model can't see images — remove the image, or choose a model that can.";
+  else if (!ok && transcript.some(m => m.image)) text = "This model can't see images, so the images in this conversation won't be sent to it.";
+  else if (ok && pendingImage && transcript.some(m => m.image)) text = "The model sees one image per request: this one replaces the earlier image in what is sent.";
+  note.textContent = text;
+  note.hidden = !text;
+}
+
+function imageNote(text) {
+  $("attach-note").textContent = text;
+  $("attach-note").hidden = !text;
+}
+
+// loadImage decodes a File in an <img> (the browser's own decoder, so anything it can show works), then
+// keeps it as-is or re-encodes it. Resolves to {url, info} or throws a message a user can act on.
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !/^image\//.test(file.type)) return reject(new Error("That isn't an image file."));
+    if (file.size > IMAGE_MAX_INPUT) return reject(new Error("That image is too large (over 25 MB)."));
+    const src = URL.createObjectURL(file);
+    const img = new Image();
+    img.onerror = () => { URL.revokeObjectURL(src); reject(new Error("That file couldn't be read as an image.")); };
+    img.onload = () => {
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const keep = (file.type === "image/png" || file.type === "image/jpeg") && Math.max(w, h) <= IMAGE_MAX_SIDE && file.size <= IMAGE_KEEP_BYTES;
+      if (keep) {
+        const fr = new FileReader();
+        fr.onload = () => { URL.revokeObjectURL(src); imageOK(fr.result) ? resolve({url: fr.result, info: w + "×" + h}) : reject(new Error("That image couldn't be prepared.")); };
+        fr.onerror = () => { URL.revokeObjectURL(src); reject(new Error("That file couldn't be read.")); };
+        fr.readAsDataURL(file);
+        return;
+      }
+      const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(w, h));
+      const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+      const c = document.createElement("canvas");
+      c.width = cw; c.height = ch;
+      const g = c.getContext("2d");
+      g.fillStyle = "#fff"; g.fillRect(0, 0, cw, ch);
+      g.drawImage(img, 0, 0, cw, ch);
+      URL.revokeObjectURL(src);
+      const url = c.toDataURL("image/jpeg", 0.9);
+      imageOK(url) ? resolve({url, info: cw + "×" + ch + (scale < 1 ? " (scaled from " + w + "×" + h + ")" : " (converted to JPEG)")}) : reject(new Error("That image couldn't be prepared."));
+    };
+    img.src = src;
+  });
+}
+
+async function attachFile(file) {
+  if (ac || editing) return;
+  if (!visionOK()) { imageNote("The selected model can't see images."); return; }
+  try {
+    pendingImage = await loadImage(file);
+    showAttach();
+  } catch (e) {
+    imageNote(String(e.message || e));
+  }
+}
+
+$("attach").onclick = () => $("attach-file").click();
+$("attach-file").addEventListener("change", () => { const f = $("attach-file").files[0]; $("attach-file").value = ""; if (f) attachFile(f); });
+$("attach-remove").onclick = () => { pendingImage = null; showAttach(); };
+$("prompt").addEventListener("paste", e => {
+  const f = [...(e.clipboardData?.files || [])].find(f => f.type.startsWith("image/"));
+  if (f) { e.preventDefault(); attachFile(f); }
+});
+// Drop anywhere on the chat pane. dragover must be cancelled for drop to fire at all.
+$("pane-chat").addEventListener("dragover", e => { if ([...(e.dataTransfer?.types || [])].includes("Files")) e.preventDefault(); });
+$("pane-chat").addEventListener("drop", e => {
+  const f = [...(e.dataTransfer?.files || [])].find(f => f.type.startsWith("image/"));
+  if (!f) return;
+  e.preventDefault();
+  attachFile(f);
+});
 loadModels();
 
 // --- chat -------------------------------------------------------------------
@@ -111,8 +217,18 @@ let generating = null;   // the in-progress assistant entry
 const apiMessages = () => {
   // A past reply goes back WITHOUT its thinking (W6) — what Qwen3's own template does with history, and
   // it keeps a long reasoning trace from eating the context window on every later turn.
-  const msgs = transcript.filter(m => m !== generating)
-    .map(m => ({role: m.role, content: m.role === "assistant" ? answerOf(m.content) : m.content}));
+  // W11: the server takes ONE image per request, so only the most recent image in the conversation is
+  // sent, as an image_url part on the message it came with — and none at all to a model that cannot see.
+  const list = transcript.filter(m => m !== generating);
+  const lastImage = visionOK() ? list.findLastIndex(m => m.role === "user" && m.image) : -1;
+  const msgs = list.map((m, i) => {
+    if (m.role === "assistant") return {role: "assistant", content: answerOf(m.content)};
+    if (i !== lastImage) return {role: "user", content: m.content};
+    const parts = [];
+    if (m.content) parts.push({type: "text", text: m.content});
+    parts.push({type: "image_url", image_url: {url: m.image}});
+    return {role: "user", content: parts};
+  });
   const sys = systemText();
   return sys ? [{role: "system", content: sys}, ...msgs] : msgs;   // W4
 };
@@ -331,6 +447,7 @@ function parseMessages(list) {
   for (const m of list) {
     if (!m || (m.role !== "user" && m.role !== "assistant") || typeof m.content !== "string") continue;
     const e = { role: m.role, content: m.content };
+    if (m.role === "user" && imageOK(m.image)) e.image = m.image;   // W11: anything else is dropped, not rendered
     if (typeof m.model === "string") e.model = m.model;
     if (typeof m.meta === "string") e.meta = m.meta;
     if (m.state === "stopped" || m.state === "interrupted") e.state = m.state;
@@ -511,6 +628,18 @@ function loadSystem() {
   showSystemState();
 }
 
+// fillUserBubble shows a message the user sent: its text as text, and its image (W11), if any.
+function fillUserBubble(b, e) {
+  b.textContent = e.content;
+  if (e.image) {
+    const img = document.createElement("img");
+    img.className = "uimg";
+    img.alt = "Attached image";
+    img.src = e.image;   // imageOK-validated: a PNG/JPEG data URI, never a URL that fetches
+    b.appendChild(img);
+  }
+}
+
 function metaText(e) {
   if (e.state === "interrupted") return (e.meta ? e.meta + " · " : "") + "interrupted — the page was reloaded while this was generating";
   if (e.state === "stopped") return "stopped" + (e.meta ? " · " + e.meta : "");
@@ -530,7 +659,7 @@ function addMeta(content, text) {
 function renderEntry(e) {
   if (e.role === "user") {
     const b = bubble("you", "you amb-surface");
-    b.textContent = e.content;
+    fillUserBubble(b, e);
     addActions(b, e.content, e);
     return;
   }
@@ -547,6 +676,7 @@ function showTranscript(list) {
   $("log").replaceChildren();
   for (const e of transcript) renderEntry(e);
   showContext();
+  showAttach();
 }
 
 // addActions records a finished message's source and adds its action row: Copy (W2), and W7's Edit on
@@ -664,7 +794,7 @@ function finishEdit(value) {
     return;
   }
   const text = value.trim();
-  if (!text) return;   // an empty message is not a message; keep the box open
+  if (!text && !entry.image) return;   // an empty message is not a message (unless it carries an image, W11)
   const i = transcript.indexOf(entry);
   const later = transcript.length - i - 1;
   if (!samplingOK()) return;   // W10: before anything is dropped
@@ -703,18 +833,22 @@ function bubble(who, cls) {
 
 async function send() {
   const text = $("prompt").value.trim();
-  if (!text || ac || editing) return;
+  if ((!text && !pendingImage) || ac || editing) return;
   if (!$("model").value) { $("chat-status").textContent = "no model loaded"; return; }
   if (!samplingOK()) return;   // W10: before the message is added, so a bad setting loses nothing
+  if (pendingImage && !visionOK()) { showAttach(); $("chat-status").textContent = "The selected model can't see images."; return; }   // W11
 
   // What you type is recessed (amb-surface-concave, decision 3); the echo of
   // it in the log is a quieter flat surface — neither is the "product".
   const mine = bubble("you", "you amb-surface");
-  mine.textContent = text;
   const u = {role: "user", content: text};
+  if (pendingImage) u.image = pendingImage.url;
+  fillUserBubble(mine, u);
   transcript.push(u);
   addActions(mine, text, u);
   $("prompt").value = "";
+  pendingImage = null;
+  showAttach();
   await generate();
 }
 
