@@ -103,7 +103,10 @@ export function report(title, results, exceptions = []) {
 // restored bubble dereferenced as undefined, say), which is a failure of the page. This matters
 // because go test turns exit 2 into a SKIP — found by mutation (W3): with restore-on-load deleted,
 // the gate threw, exited 2, and a broken restore would have reached CI as a skipped test.
-export function finishOrExit(title, out) {
+export function finishOrExit(title, out, earlier = []) {
+  // print what earlier phases established before exiting, so one bad phase does not erase the rest
+  const flush = () => { for (const x of earlier) console.log((x.ok ? "  ok    " : "  FAIL  ") + x.name + (x.ok ? "" : "\n          " + x.why)); };
+  if (out.hijacked || out.error || !Array.isArray(out.value)) flush();
   if (out.hijacked) {
     console.log(`  FAIL  the page navigated away during the gate — something took effect (${out.hijacked})`);
     console.log(`${title}: FAILED (page hijacked)`);

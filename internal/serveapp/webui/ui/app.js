@@ -66,7 +66,11 @@ loadModels();
 const transcript = [];
 let ac = null;
 let generating = null;   // the in-progress assistant entry
-const apiMessages = () => transcript.filter(m => m !== generating).map(m => ({role: m.role, content: m.content}));
+const apiMessages = () => {
+  const msgs = transcript.filter(m => m !== generating).map(m => ({role: m.role, content: m.content}));
+  const sys = systemText();
+  return sys ? [{role: "system", content: sys}, ...msgs] : msgs;   // W4
+};
 
 // --- copy (W2) ----------------------------------------------------------------
 // The raw text each message was rendered from. A message's Copy button copies THIS — the Markdown
@@ -120,15 +124,41 @@ $("log").addEventListener("click", async e => {
 // (the "storage" listener below). Separate conversations are W9.
 const STORE = "goinfer.chat.v1";
 
+function storeFailed() {
+  $("store-note").textContent = "This conversation can't be kept across a reload (browser storage is full or blocked) — " +
+    "it stays on screen until you close or reload the page.";
+  $("store-note").hidden = false;
+}
+
 function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify({ v: 1, messages: transcript }));
     $("store-note").hidden = true;
   } catch {
-    $("store-note").textContent = "This conversation can't be kept across a reload (browser storage is full or blocked) — " +
-      "it stays on screen until you close or reload the page.";
-    $("store-note").hidden = false;
+    storeFailed();
   }
+}
+
+// --- system prompt (W4) -----------------------------------------------------------
+// A SETTING, not part of a conversation: it has its own key, survives New chat and reloads, and is
+// prepended to every request (apiMessages) when non-blank, trimmed. The route accepts a system message
+// for every family — templates without a system role fold it into a user turn server-side. It is not
+// written into the transcript, because it is applied per request, not said once. W9 (separate
+// conversations) may make it per-conversation.
+const SYSTEM_STORE = "goinfer.system.v1";
+const systemText = () => $("system").value.trim();
+function showSystemState() { $("system-state").textContent = systemText() ? "· active" : ""; }
+function saveSystem() {
+  try {
+    if (systemText()) localStorage.setItem(SYSTEM_STORE, $("system").value);
+    else localStorage.removeItem(SYSTEM_STORE);
+  } catch {
+    storeFailed();
+  }
+}
+function loadSystem() {
+  try { $("system").value = localStorage.getItem(SYSTEM_STORE) || ""; } catch { /* blocked */ }
+  showSystemState();
 }
 
 function loadStored() {
@@ -323,11 +353,16 @@ $("newchat").onclick = () => {
 // A reload mid-stream: save what has arrived. pagehide fires where beforeunload is unreliable (mobile).
 addEventListener("pagehide", () => { if (generating) save(); });
 
-// Another tab changed the conversation: follow it, unless this tab is mid-reply (its own save wins then).
+// Another tab changed the conversation or the system prompt: follow it — unless this tab is mid-reply
+// (its own save wins then), or, for the system prompt, the user is typing in that box right now.
 addEventListener("storage", e => {
-  if ((e.key !== STORE && e.key !== null) || ac) return;
-  showTranscript(loadStored());
+  if ((e.key === SYSTEM_STORE || e.key === null) && document.activeElement !== $("system")) loadSystem();
+  if ((e.key === STORE || e.key === null) && !ac) showTranscript(loadStored());
 });
+
+$("system").addEventListener("input", () => { showSystemState(); saveSystem(); });
+
+loadSystem();
 
 // Restore the conversation this browser was having. A "generating" entry becomes "interrupted"; saving
 // right away writes that back, so the state is recorded rather than re-derived on every load.

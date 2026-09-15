@@ -25,6 +25,11 @@
         <input id="max" type="number" value="512" min="1" step="1"></div>
       <div class="fit" style="flex:0 0 auto;align-self:flex-end"><button class="ambient amb-surface amb-rounded" id="newchat" type="button">New chat</button></div>
     </div>
+    <details id="system-box" class="system">
+      <summary>System prompt <span id="system-state" class="note"></span></summary>
+      <textarea id="system" class="ambient amb-surface-concave amb-rounded" placeholder="Instructions the model follows for every reply — optional"></textarea>
+      <p class="note">Sent first with every request. Kept across reloads and new chats.</p>
+    </details>
   </div>
   <div id="log"></div>
   <p class="note" id="store-note" hidden></p>

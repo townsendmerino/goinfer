@@ -16,6 +16,9 @@
 //        "interrupted", unreadable storage set aside rather than destroyed, quota failure shown and
 //        survived, New chat (confirmed and cancelled), another tab's change followed, and hostile
 //        stored content rendered inert. Phases are separated by real page reloads.
+//   W4 — the system prompt: sent first only when non-blank and trimmed, never written into the saved
+//        transcript, kept across New chat and a reload, a hostile prompt inert, and another tab's change
+//        followed without clobbering a box the user is typing in.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { openPage, report, finishOrExit } from "./webui-gate/cdp.mjs";
@@ -43,7 +46,7 @@ const prelude = String.raw`
   // a real token stream). With hang=true it stops mid-answer and waits for the request to be aborted.
   const enc = new TextEncoder();
   function streamAnswer(text, { hang = false } = {}) {
-    window.fetch = async (url, opts) => new Response(new ReadableStream({ async start(c) {
+    window.fetch = async (url, opts) => { window.__lastBody = opts && opts.body ? JSON.parse(opts.body) : null; return new Response(new ReadableStream({ async start(c) {
       opts?.signal?.addEventListener("abort", () => { try { c.error(new DOMException("aborted", "AbortError")); } catch {} });
       for (let k = 0; k < text.length; k += 3) {
         c.enqueue(enc.encode("data: " + JSON.stringify({ choices: [{ delta: { content: text.slice(k, k + 3) } }] }) + "\n\n"));
@@ -52,7 +55,7 @@ const prelude = String.raw`
       if (hang) return;              // never closes: only Stop ends it
       c.enqueue(enc.encode("data: [DONE]\n\n"));
       c.close();
-    } }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    } }), { status: 200, headers: { "Content-Type": "text/event-stream" } }); };
   }
   const lastBot = () => { const b = document.querySelectorAll("#log .msg.bot"); return b[b.length - 1]; };
   const lastYou = () => { const b = document.querySelectorAll("#log .msg.you"); return b[b.length - 1]; };
@@ -256,10 +259,84 @@ const phase5 = phase(String.raw`
   check("W3 stored model name shown as text", document.querySelector("#log .msg.bot .who")?.textContent === "<b onmouseover=window.__pwned=1>m</b>", document.querySelector("#log .msg.bot .who")?.textContent);
 `);
 
+// ---- phase 6: W4 — the system prompt ---------------------------------------------------------------
+const phase6 = phase(String.raw`
+  const sys = $("system"), state = $("system-state");
+  const setSys = v => { sys.value = v; sys.dispatchEvent(new Event("input", { bubbles: true })); };
+  const roles = () => (window.__lastBody?.messages || []).map(m => m.role).join(",");
+  window.confirm = () => true;
+  $("newchat").click();
+  check("W4 system prompt box present, collapsed, inactive on a fresh profile", sys && !$("system-box").open && state.textContent === "" && sys.value === "", sys?.value + "|" + state?.textContent);
+
+  streamAnswer("one");
+  $("prompt").value = "no system prompt yet";
+  await send(); await wait(100);
+  check("W4 no system message sent when the box is empty", roles() === "user", roles());
+
+  setSys("Answer in French.");
+  check("W4 summary shows active once set", state.textContent === "· active", state.textContent);
+  check("W4 saved under its own key as typed", localStorage.getItem("goinfer.system.v1") === "Answer in French.", localStorage.getItem("goinfer.system.v1"));
+  streamAnswer("deux");
+  $("prompt").value = "second";
+  await send(); await wait(100);
+  const body = window.__lastBody;
+  check("W4 system message sent FIRST, then the history", roles() === "system,user,assistant,user" && body.messages[0].content === "Answer in French.", roles() + " / " + JSON.stringify(body?.messages?.[0]));
+  const st = stored();
+  check("W4 system prompt NOT written into the saved transcript", !st.messages.some(m => m.role === "system" || m.content === "Answer in French."), JSON.stringify(st.messages.map(m => m.role)));
+
+  setSys("   \n\t  ");
+  check("W4 whitespace-only counts as empty: inactive", state.textContent === "", state.textContent);
+  check("W4 whitespace-only removes the stored key", localStorage.getItem("goinfer.system.v1") === null, localStorage.getItem("goinfer.system.v1"));
+  streamAnswer("trois");
+  $("prompt").value = "third";
+  await send(); await wait(100);
+  check("W4 whitespace-only prompt is not sent", !roles().startsWith("system"), roles());
+
+  setSys("   Be brief.  ");
+  streamAnswer("quatre");
+  $("prompt").value = "fourth";
+  await send(); await wait(100);
+  check("W4 system prompt is sent trimmed", window.__lastBody.messages[0].role === "system" && window.__lastBody.messages[0].content === "Be brief.", JSON.stringify(window.__lastBody.messages[0]));
+
+  $("newchat").click();
+  check("W4 New chat clears the conversation but keeps the system prompt", document.querySelectorAll("#log .msg").length === 0 && sys.value === "   Be brief.  " && localStorage.getItem("goinfer.system.v1") === "   Be brief.  ", sys.value + " / " + localStorage.getItem("goinfer.system.v1"));
+
+  setSys("<img src=x onerror=\"window.__pwned=1\">");
+  await wait(200);
+  check("W4 hostile system prompt stays inert text", document.querySelectorAll("img").length === 0 && window.__pwned === 0, document.querySelectorAll("img").length + " img, pwned " + window.__pwned);
+
+  // another tab changes the system prompt
+  sys.blur();
+  localStorage.setItem("goinfer.system.v1", "From tab two.");
+  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.system.v1" }));
+  check("W4 idle box follows another tab's system prompt", sys.value === "From tab two." && state.textContent === "· active", sys.value);
+  // A user can only type in the box when its <details> is open — and a closed <details> hides its
+  // content from focus, so focus() would silently do nothing and this check would test an idle box.
+  $("system-box").open = true;
+  sys.focus();
+  check("W4 precondition: the system box really has focus", document.activeElement === sys, document.activeElement?.id);
+  sys.value = "typing here";
+  localStorage.setItem("goinfer.system.v1", "From tab three.");
+  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.system.v1" }));
+  check("W4 another tab's change does NOT clobber a box being typed in", sys.value === "typing here", sys.value);
+  sys.blur();
+  setSys("Be brief.");
+`);
+
+// ---- phase 7: after a reload — the system prompt persisted ------------------------------------------
+const phase7 = phase(String.raw`
+  check("W4 system prompt restored after reload", $("system").value === "Be brief.", $("system").value);
+  check("W4 restored prompt shows active", $("system-state").textContent === "· active", $("system-state").textContent);
+  streamAnswer("après");
+  $("prompt").value = "after reload";
+  await send(); await wait(100);
+  check("W4 restored prompt is sent", window.__lastBody?.messages?.[0]?.role === "system" && window.__lastBody.messages[0].content === "Be brief.", JSON.stringify(window.__lastBody?.messages?.[0]));
+`);
+
 const all = [];
-for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5].entries()) {
+for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7].entries()) {
   if (i > 0) await page.reload();
-  all.push(...finishOrExit("webui app gate", await page.evaluate(prog)));
+  all.push(...finishOrExit("webui app gate (phase " + (i + 1) + ")", await page.evaluate(prog), all));
 }
 page.close();
 report("webui app gate", all, page.exceptions);

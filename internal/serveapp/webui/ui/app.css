@@ -1551,3 +1551,10 @@ code{font-family:var(--mono);font-size:12.5px;padding:2px 6px;border-radius:6px}
 .md-copy,.actions button{font-family:var(--mono);font-size:11px;color:var(--gi-muted);padding:2px 8px;border-radius:6px}
 .md-copy:hover,.actions button:hover,.md-copy:focus-visible,.actions button:focus-visible{color:var(--gi-accent);background:color-mix(in srgb,var(--gi-ink) 7%,transparent)}
 .actions{display:flex;justify-content:flex-end;gap:4px;margin-top:4px}
+
+/* ---- system prompt (W4) ---- */
+details.system{margin-top:12px}
+details.system summary{cursor:pointer;font-size:13px;color:var(--gi-muted);width:max-content}
+details.system summary .note{margin-left:4px;color:var(--gi-accent)}
+details.system textarea{margin-top:8px;min-height:64px}
+details.system .note{margin:6px 0 0}
