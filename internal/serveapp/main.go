@@ -688,6 +688,11 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		// for minutes must not occupy one of those slots. handleWebPull is single-flighted on
 		// its own (pullState), which is the bound that actually fits it.
 		mux.HandleFunc("POST /web/models/pull", sameOrigin(auth(maxBytes(textCap, srv.handleWebPull))))
+		// W5 (task-web-ui-2026-09.md): load what the pull just downloaded. NOT the admin load —
+		// that takes any caller-named path and stays behind -allow-admin. This one is confined to
+		// regular .gguf files under the pull cache (webLoadPath), and gets the same stack as pull:
+		// it is at least as heavy an action. Not in inf() either, for the pull's reason.
+		mux.HandleFunc("POST /web/models/load", sameOrigin(auth(maxBytes(textCap, srv.handleWebLoad))))
 	}
 
 	// K5 (docs/tasks/task-halt-2026-09.md): the admin socket. closeAdminSock is a no-op when

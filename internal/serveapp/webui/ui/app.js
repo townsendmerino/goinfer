@@ -25,37 +25,45 @@ $("tab-models").onclick = () => tab("models");
 // --- models -----------------------------------------------------------------
 // Runtime stats as first-class chrome (decision 4): model, and whatever the
 // server's own decode_path names, in the header — not buried in a status line.
-async function loadModels() {
+// models is the last /v1/models list; the header stats follow whichever one is selected.
+let models = [];
+function showStats() {
+  const stats = $("stats");
+  stats.textContent = "";
+  const cur = models.find(m => m.id === $("model").value) || models[0];
+  if (!cur) { stats.textContent = "no model loaded"; return; }
+  const add = (label, val) => {
+    const s = document.createElement("span");
+    const b = document.createElement("b"); b.textContent = val;
+    s.appendChild(document.createTextNode(label + " ")); s.appendChild(b);
+    stats.appendChild(s);
+  };
+  add("model", cur.id);
+  if (cur.decode_path) add("path", cur.decode_path);
+}
+// loadModels refreshes the model list. The current choice survives a refresh; pick, when given and
+// listed, replaces it (W5 selects the model it just loaded).
+async function loadModels(pick) {
   try {
     const r = await fetch("/v1/models", {headers: headers()});
     if (!r.ok) throw new Error("HTTP " + r.status);
     const j = await r.json();
+    models = Array.isArray(j.data) ? j.data : [];
     const sel = $("model");
+    const keep = pick || sel.value;
     sel.textContent = "";
-    for (const m of (j.data || [])) {
+    for (const m of models) {
       const o = document.createElement("option");
       o.value = m.id; o.textContent = m.id;
       sel.appendChild(o);
     }
-    const n = (j.data || []).length;
-    const stats = $("stats");
-    stats.textContent = "";
-    if (!n) {
-      stats.textContent = "no model loaded";
-    } else {
-      const add = (label, val) => {
-        const s = document.createElement("span");
-        const b = document.createElement("b"); b.textContent = val;
-        s.appendChild(document.createTextNode(label + " ")); s.appendChild(b);
-        stats.appendChild(s);
-      };
-      add("model", j.data[0].id);
-      if (j.data[0].decode_path) add("path", j.data[0].decode_path);
-    }
+    if (models.some(m => m.id === keep)) sel.value = keep;
+    showStats();
   } catch (e) {
     $("stats").textContent = e.message;
   }
 }
+$("model").addEventListener("change", showStats);
 loadModels();
 
 // --- chat -------------------------------------------------------------------
@@ -463,13 +471,9 @@ async function pull(repo, file) {
           (j.verified ? "sha256 verified" : "no sha256 published — NOT verified") + " · " + j.elapsed + " · "));
         const code = document.createElement("code"); code.textContent = j.path;
         st.appendChild(code);
-        // The file is on disk, but this server has not loaded it — serving it is a separate,
-        // deliberately-gated action. Say so rather than letting the green tick imply the model
-        // is now live.
-        const hint = document.createElement("div");
-        hint.className = "note"; hint.style.marginTop = "6px";
-        hint.textContent = "Downloaded, not loaded — restart the server with --model <path> to serve it.";
-        st.appendChild(hint);
+        // The file is on disk, but the server has not loaded it. Say so rather than letting the
+        // green tick imply the model is live — and offer the load right here (W5).
+        offerLoad(st, j.path);
         loadModels();
       } else if (ev.event === "error") {
         throw new Error(j.message);
@@ -479,5 +483,70 @@ async function pull(repo, file) {
     st.className = "note err"; st.textContent = String(e.message || e);
   } finally {
     document.querySelectorAll("#files button").forEach(b => b.disabled = false);
+  }
+}
+
+// --- load (W5) --------------------------------------------------------------
+// The pull flow used to end on "restart the server with --model <path>". Now it ends on a button that
+// asks the server to load the file it just downloaded. The server confines that route to regular .gguf
+// files inside its own pull cache, so the page can load what it pulled and nothing else.
+function offerLoad(host, path) {
+  const row = document.createElement("div");
+  row.className = "load-row";
+  const msg = document.createElement("span");
+  msg.className = "note"; msg.id = "load-status";
+  msg.textContent = "Downloaded, not loaded yet.";
+  const btn = document.createElement("button");
+  btn.type = "button"; btn.id = "load-now";
+  btn.className = "ambient amb-surface-convex amb-elevation-1 amb-rounded go";
+  btn.textContent = "Load it now";
+  btn.onclick = () => loadPulled(path, btn, msg);
+  row.appendChild(btn); row.appendChild(msg);
+  host.appendChild(row);
+}
+
+// servedName is the name the server gives a loaded file: its base name without the extension.
+const servedName = path => path.split(/[\\/]/).pop().replace(/\.gguf$/i, "");
+
+async function loadPulled(path, btn, msg) {
+  btn.disabled = true;
+  msg.className = "note"; msg.textContent = "loading…";
+  const loaded = async (id, text) => {
+    await loadModels(id);
+    msg.className = "note ok"; msg.textContent = text;
+    btn.hidden = true;
+  };
+  try {
+    const r = await fetch("/web/models/load", {method: "POST", headers: headers(), body: JSON.stringify({path})});
+    if (!r.ok) {
+      let m = "HTTP " + r.status;
+      try { const j = await r.json(); if (j.error && j.error.message) m = j.error.message; } catch {}
+      // Already loaded is the outcome the user wanted, not a failure: select it and say so.
+      if (r.status === 409 && /already loaded/.test(m)) {
+        const id = servedName(path);
+        await loaded(id, "Already loaded as " + id + " — selected in Chat.");
+        return;
+      }
+      throw new Error(m);
+    }
+    let finished = false;
+    for await (const ev of sse(r)) {
+      const j = JSON.parse(ev.data);
+      if (ev.event === "start") {
+        msg.textContent = "loading " + j.name + "…";
+      } else if (ev.event === "progress") {
+        msg.textContent = "loading… " + j.elapsed;
+      } else if (ev.event === "done") {
+        finished = true;
+        await loaded(j.id, "Loaded " + j.id + " in " + j.elapsed + " — selected in Chat.");
+      } else if (ev.event === "error") {
+        throw new Error(j.message);
+      }
+    }
+    // A stream that ends without done or error was cut off (the server went away mid-load).
+    if (!finished) throw new Error("the load stream ended without a result — check the server, then refresh the model list");
+  } catch (e) {
+    msg.className = "note err"; msg.textContent = String(e.message || e);
+    btn.disabled = false;
   }
 }

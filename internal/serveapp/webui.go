@@ -4,11 +4,14 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -297,6 +300,158 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 		"verified": f.SHA256 != "",
 	})
 }
+
+type webLoadReq struct {
+	Path string `json:"path"`
+}
+
+// webLoadPath decides whether the page may load p, and returns the resolved file to load.
+//
+// THIS IS THE WHOLE POLICY OF THE LOAD ROUTE (docs/tasks/task-web-ui-2026-09.md W5). The admin load
+// takes any caller-named path and is gated behind -allow-admin for exactly that reason; the web UI
+// is not widened into it. Instead the page can load only what the pull flow can put on disk: a
+// regular .gguf file under pull.CacheRoot(). Both p and the root are symlink-resolved BEFORE the
+// containment check, so neither a "../" in the request nor a symlink planted inside the cache can
+// point the loader at a file outside it, and the resolved path — not the requested one — is what
+// gets loaded. The suffix is checked on the resolved name too, which also refuses an in-progress
+// download (Download writes "<name>.part" and renames only after the digest verifies).
+//
+// Not defended: someone who can already write into the user's cache directory can swap a file
+// between this check and the load. That is the user's own account, which could run anything anyway.
+func webLoadPath(p string) (string, error) {
+	if p == "" {
+		return "", errors.New("path is required")
+	}
+	if !filepath.IsAbs(p) {
+		return "", errors.New("path must be the absolute path a pull returned")
+	}
+	root, err := pull.CacheRoot()
+	if err != nil {
+		return "", err
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("the pull cache %s is not readable: %w", root, err)
+	}
+	resolved, err := filepath.EvalSymlinks(filepath.Clean(p))
+	if err != nil {
+		return "", fmt.Errorf("no such model file: %s", p)
+	}
+	rel, err := filepath.Rel(realRoot, resolved)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("the web UI loads only models pulled into %s; start the server with --model, or use -allow-admin, for anything else", root)
+	}
+	if !strings.EqualFold(filepath.Ext(resolved), ".gguf") {
+		return "", errors.New("only a pulled .gguf file can be loaded from the web UI")
+	}
+	fi, err := os.Stat(resolved)
+	if err != nil || !fi.Mode().IsRegular() {
+		return "", fmt.Errorf("not a regular file: %s", p)
+	}
+	return resolved, nil
+}
+
+// handleWebLoad loads a model the pull flow downloaded and makes it routable, streaming SSE:
+// start {name}, progress {elapsed} every couple of seconds, then done {id, elapsed} or error
+// {message, status}. It shares loadDecoder and publishLoaded with the admin load, so a model loaded
+// here is indistinguishable from one loaded any other way — including by unload.
+//
+// It uses the server's own settings (backend, quant, KV, sessions) with no per-request override:
+// the page offers "load what you pulled", not a second admin API.
+func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
+	if !s.webEnabled(w) {
+		return
+	}
+	var req webLoadReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	file, err := webLoadPath(req.Path)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+	s.regMu.RLock()
+	_, dup := s.models[name]
+	s.regMu.RUnlock()
+	if dup {
+		writeErr(w, http.StatusConflict, fmt.Sprintf("model %q already loaded", name))
+		return
+	}
+	// One load at a time, for the same reason as pulls: each one maps a multi-gigabyte file and may
+	// claim most of the device's memory, and a double click must not start two.
+	if !s.loads.acquire() {
+		writeErr(w, http.StatusConflict, "a model load is already running")
+		return
+	}
+	defer s.loads.release()
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, http.StatusInternalServerError, "streaming unsupported")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	send := func(event string, payload any) {
+		if r.Context().Err() != nil {
+			return // the tab went away; the load carries on regardless (below)
+		}
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return
+		}
+		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
+		flusher.Flush()
+	}
+	send("start", map[string]any{"name": name})
+
+	// DETACHED FROM THE REQUEST, unlike the pull. A cancelled pull leaves nothing behind (Download
+	// removes its .part), but a load cancelled part-way has already spent its minutes, and the user
+	// asked for the model — so closing the tab does not undo the request. The load finishes, is
+	// published, and the next /v1/models shows it. The handler still waits for it, so the
+	// single-flight above stays held for the whole load rather than just for the request.
+	type result struct {
+		lm  *loadedModel
+		err error
+	}
+	doneCh := make(chan result, 1)
+	ctx := context.WithoutCancel(r.Context())
+	go func() {
+		lm, err := webLoadDecoder(ctx, modelSpec{name: name, path: file}, s.cfg)
+		doneCh <- result{lm, err}
+	}()
+	start := time.Now()
+	tick := time.NewTicker(webLoadHeartbeat)
+	defer tick.Stop()
+	for {
+		select {
+		case <-tick.C:
+			send("progress", map[string]any{"elapsed": time.Since(start).Round(time.Second).String()})
+		case res := <-doneCh:
+			switch {
+			case res.err != nil:
+				send("error", map[string]any{"message": res.err.Error(), "status": http.StatusBadRequest})
+			case !s.publishLoaded(res.lm):
+				send("error", map[string]any{"message": fmt.Sprintf("model %q already loaded", name), "status": http.StatusConflict})
+			default:
+				send("done", map[string]any{"id": res.lm.name, "elapsed": time.Since(start).Round(time.Second).String()})
+			}
+			return
+		}
+	}
+}
+
+// webLoadDecoder is loadDecoder, as a seam: the tests need a load that blocks until told to finish,
+// to see the heartbeat, the single-flight and the tab-close behaviour while a load is in progress.
+var webLoadDecoder = loadDecoder
+
+// webLoadHeartbeat is how often a running load reports that it is still running. A load has no
+// byte count to report, so this is liveness only — it tells "still loading" from "hung".
+var webLoadHeartbeat = 2 * time.Second
 
 // webEnabled mirrors requireAdmin's TCP-listener gate: the routes exist only when -web was
 // passed, and say so in the same shape the rest of the API uses rather than 404-ing.

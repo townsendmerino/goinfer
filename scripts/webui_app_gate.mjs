@@ -19,6 +19,10 @@
 //   W4 — the system prompt: sent first only when non-blank and trimmed, never written into the saved
 //        transcript, kept across New chat and a reload, a hostile prompt inert, and another tab's change
 //        followed without clobbering a box the user is typing in.
+//   W5 — load from the page: a finished pull offers "Load it now", which posts exactly the pulled path,
+//        shows the heartbeat, then selects the loaded model (header stats following) so the next chat
+//        goes to it. Errors, a load already running, and a stream cut off mid-load are shown and leave
+//        the button usable; "already loaded" selects instead of failing; hostile paths and errors inert.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { openPage, report, finishOrExit } from "./webui-gate/cdp.mjs";
@@ -333,8 +337,104 @@ const phase7 = phase(String.raw`
   check("W4 restored prompt is sent", window.__lastBody?.messages?.[0]?.role === "system" && window.__lastBody.messages[0].content === "Be brief.", JSON.stringify(window.__lastBody?.messages?.[0]));
 `);
 
+// ---- phase 8: W5 — load what the pull downloaded ----------------------------------------------------
+// fetch is routed by URL: a pull that finishes, a load whose outcome each step picks, and a /v1/models
+// that lists the model only once a load has succeeded — so "selected" means the page really refreshed.
+const phase8 = phase(String.raw`
+  const until = async (cond, ms = 3000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  const PULLED = "/home/u/.cache/goinfer/models/o/r/tiny-Q4_K_M.gguf";
+  const sse = frames => new Response(new ReadableStream({ async start(c) {
+    for (let f of frames) {
+      if (f === "hold") { await new Promise(r => { window.__releaseLoad = r; }); continue; }
+      if (typeof f === "function") f = f();
+      c.enqueue(enc.encode("event: " + f[0] + "\ndata: " + JSON.stringify(f[1]) + "\n\n"));
+      await wait(5);
+    }
+    c.close();
+  } }), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+  const jsonErr = (status, message) => new Response(JSON.stringify({ error: { message } }), { status, headers: { "Content-Type": "application/json" } });
+  let listed = [{ id: "gate-model", decode_path: "cpu" }];
+  let loadMode = "ok", pulledPath = PULLED;
+  const loadCalls = [];
+  const routed = async (url, opts) => {
+    if (url === "/v1/models") return new Response(JSON.stringify({ object: "list", data: listed }), { status: 200 });
+    if (url === "/web/models/pull") return sse([["start", { human: "1 MB", sha256: "ab" }], ["done", { path: pulledPath, elapsed: "1s", verified: true }]]);
+    if (url === "/web/models/load") {
+      loadCalls.push({ method: opts?.method, body: opts?.body, ctype: opts?.headers?.["Content-Type"] });
+      switch (loadMode) {
+        case "ok":
+          return sse([["start", { name: "tiny-Q4_K_M" }], ["progress", { elapsed: "2s" }], "hold", () => { listed = listed.concat([{ id: "tiny-Q4_K_M", decode_path: "resident" }]); return ["done", { id: "tiny-Q4_K_M", elapsed: "4s" }]; }]);
+        case "error": return sse([["start", { name: "x" }], ["error", { message: "out of memory <img src=x onerror=\"window.__pwned=1\">", status: 400 }]]);
+        case "running": return jsonErr(409, "a model load is already running");
+        case "dup": return jsonErr(409, "model \"tiny-Q4_K_M\" already loaded");
+        case "cut": return sse([["start", { name: "x" }]]);
+      }
+    }
+    return jsonErr(404, "unrouted " + url);
+  };
+  window.fetch = routed;
+  const st = $("pull-status");
+
+  await pull("o/r", "tiny-Q4_K_M.gguf");
+  const btn = () => document.getElementById("load-now"), msg = () => document.getElementById("load-status");
+  check("W5 the pull no longer dead-ends on restart-the-server", !/restart the server/i.test(st.textContent), st.textContent);
+  check("W5 a finished pull offers Load it now", btn()?.textContent === "Load it now" && btn().type === "button" && !btn().disabled, btn()?.outerHTML);
+  check("W5 and says the model is not loaded yet", msg()?.textContent === "Downloaded, not loaded yet.", msg()?.textContent);
+
+  btn().click();
+  await until(() => window.__releaseLoad);
+  check("W5 load POSTs exactly the path the pull returned", loadCalls.length === 1 && loadCalls[0].method === "POST" && loadCalls[0].body === JSON.stringify({ path: PULLED }) && loadCalls[0].ctype === "application/json", JSON.stringify(loadCalls));
+  check("W5 button disabled while loading", btn().disabled === true, btn().disabled);
+  check("W5 heartbeat shown while loading", msg().textContent === "loading… 2s", msg().textContent);
+  window.__releaseLoad();
+  await until(() => btn().hidden);
+  check("W5 loaded model is selected in Chat", $("model").value === "tiny-Q4_K_M" && [...$("model").options].map(o => o.value).join("|") === "gate-model|tiny-Q4_K_M", $("model").value + " / " + [...$("model").options].map(o => o.value));
+  check("W5 header stats follow the selected model", /model tiny-Q4_K_M/.test($("stats").textContent) && /path resident/.test($("stats").textContent), $("stats").textContent);
+  check("W5 success reported and the button retired", msg().className === "note ok" && msg().textContent === "Loaded tiny-Q4_K_M in 4s — selected in Chat." && btn().hidden, msg().className + " / " + msg().textContent);
+  streamAnswer("hello from the loaded model");
+  $("prompt").value = "hi";
+  await send(); await wait(100);
+  check("W5 the next chat goes to the loaded model", window.__lastBody?.model === "tiny-Q4_K_M", window.__lastBody?.model);
+
+  $("model").value = "gate-model";
+  $("model").dispatchEvent(new Event("change"));
+  check("W5 changing the selection updates the header stats", /model gate-model/.test($("stats").textContent), $("stats").textContent);
+  window.fetch = routed;
+  // the second option, so a refresh that forgot the choice (and fell back to the first) shows
+  $("model").value = "tiny-Q4_K_M";
+  await loadModels();
+  check("W5 a refresh keeps the user's selection", $("model").value === "tiny-Q4_K_M", $("model").value);
+  $("model").value = "gate-model";
+
+  // failures: each keeps the button usable and changes nothing else
+  for (const [mode, want] of [["error", /^out of memory <img/], ["running", /^a model load is already running$/], ["cut", /ended without a result/]]) {
+    loadMode = mode;
+    await pull("o/r", "tiny-Q4_K_M.gguf");
+    btn().click();
+    await until(() => msg().className === "note err");
+    check("W5 load failure (" + mode + ") shown as an error", msg().className === "note err" && want.test(msg().textContent), msg().className + " / " + msg().textContent);
+    check("W5 load failure (" + mode + ") leaves the button usable", !btn().disabled && !btn().hidden, btn().disabled + "/" + btn().hidden);
+    check("W5 load failure (" + mode + ") leaves the selection alone", $("model").value === "gate-model", $("model").value);
+  }
+  await wait(200);
+  check("W5 hostile load error stays inert", document.querySelectorAll("img").length === 0 && window.__pwned === 0, document.querySelectorAll("img").length + " img, pwned " + window.__pwned);
+
+  // already loaded is what the user wanted: select it, say so
+  loadMode = "dup";
+  await pull("o/r", "tiny-Q4_K_M.gguf");
+  btn().click();
+  await until(() => btn().hidden || msg().className === "note err");
+  check("W5 already-loaded selects the model instead of failing", $("model").value === "tiny-Q4_K_M" && msg().className === "note ok" && msg().textContent === "Already loaded as tiny-Q4_K_M — selected in Chat.", $("model").value + " / " + msg().className + " / " + msg().textContent);
+
+  // a hostile path from the pull is shown as text, never markup
+  pulledPath = "/c/<img src=x onerror=\"window.__pwned=1\">.gguf";
+  await pull("o/r", "x.gguf");
+  await wait(200);
+  check("W5 hostile pulled path stays inert", st.querySelector("code")?.textContent === pulledPath && document.querySelectorAll("img").length === 0 && window.__pwned === 0, st.innerHTML);
+`);
+
 const all = [];
-for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7].entries()) {
+for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8].entries()) {
   if (i > 0) await page.reload();
   all.push(...finishOrExit("webui app gate (phase " + (i + 1) + ")", await page.evaluate(prog), all));
 }

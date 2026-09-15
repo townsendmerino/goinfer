@@ -25,6 +25,7 @@ func TestWebUI_disabledByDefault(t *testing.T) {
 	for name, h := range map[string]http.HandlerFunc{
 		"list": s.handleWebList,
 		"pull": s.handleWebPull,
+		"load": s.handleWebLoad,
 	} {
 		w := httptest.NewRecorder()
 		h(w, httptest.NewRequest(http.MethodPost, "/web/models/"+name, strings.NewReader(`{"repo":"a/b","quant":"q4_k_m"}`)))
@@ -364,8 +365,8 @@ func TestWebUI_rootRouteIsUnauthenticated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	var rootAuthed, listAuthed, pullAuthed, assetAuthed bool
-	var rootFound, listFound, pullFound, assetFound bool
+	var rootAuthed, listAuthed, pullAuthed, assetAuthed, loadAuthed bool
+	var rootFound, listFound, pullFound, assetFound, loadFound bool
 	ast.Inspect(af, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -410,12 +411,19 @@ func TestWebUI_rootRouteIsUnauthenticated(t *testing.T) {
 		case `"POST /web/models/pull"`:
 			pullFound = true
 			pullAuthed = wrapsInAuth(call.Args[1])
+		case `"POST /web/models/load"`:
+			loadFound = true
+			loadAuthed = wrapsInAuth(call.Args[1])
 		}
 		return true
 	})
-	if !rootFound || !listFound || !pullFound || !assetFound {
-		t.Fatalf("route(s) not found (root=%v list=%v pull=%v asset=%v) — this guard is watching nothing",
-			rootFound, listFound, pullFound, assetFound)
+	if !rootFound || !listFound || !pullFound || !assetFound || !loadFound {
+		t.Fatalf("route(s) not found (root=%v list=%v pull=%v asset=%v load=%v) — this guard is watching nothing",
+			rootFound, listFound, pullFound, assetFound, loadFound)
+	}
+	if !loadAuthed {
+		t.Error("POST /web/models/load lost its auth(...) wrapping — this route loads a model into " +
+			"the server's memory and must stay behind the API key")
 	}
 	if assetAuthed {
 		t.Error("GET /ui/{file} is wrapped in auth(...) — the page's CSS and JS are plain subresource " +
@@ -488,7 +496,7 @@ func TestWebUI_pageRoutesExistOnlyUnderWebFlag(t *testing.T) {
 		})
 		return true
 	})
-	for _, r := range []string{`"GET /{$}"`, `"GET /ui/{file}"`} {
+	for _, r := range []string{`"GET /{$}"`, `"GET /ui/{file}"`, `"POST /web/models/list"`, `"POST /web/models/pull"`, `"POST /web/models/load"`} {
 		if anywhere[r] == 0 {
 			t.Fatalf("route %s not registered anywhere — this guard is watching nothing", r)
 		}
@@ -546,7 +554,7 @@ func TestWebUI_listAndPullAreWrappedInSameOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	var listFound, pullFound, listSO, pullSO bool
+	var listFound, pullFound, loadFound, listSO, pullSO, loadSO bool
 	ast.Inspect(af, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -574,11 +582,18 @@ func TestWebUI_listAndPullAreWrappedInSameOrigin(t *testing.T) {
 		case `"POST /web/models/pull"`:
 			pullFound = true
 			pullSO = isSameOrigin
+		case `"POST /web/models/load"`:
+			loadFound = true
+			loadSO = isSameOrigin
 		}
 		return true
 	})
-	if !listFound || !pullFound {
-		t.Fatalf("route(s) not found (list=%v pull=%v) — this guard is watching nothing", listFound, pullFound)
+	if !listFound || !pullFound || !loadFound {
+		t.Fatalf("route(s) not found (list=%v pull=%v load=%v) — this guard is watching nothing", listFound, pullFound, loadFound)
+	}
+	if !loadSO {
+		t.Error("POST /web/models/load is not wrapped in sameOrigin(...) — a cross-origin POST could " +
+			"make the server load a pulled model into memory on the key-free loopback default (V-20)")
 	}
 	if !listSO {
 		t.Error("POST /web/models/list is not wrapped in sameOrigin(...) — a cross-origin POST " +

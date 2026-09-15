@@ -158,6 +158,17 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if !s.publishLoaded(lm) {
+		writeErr(w, http.StatusConflict, fmt.Sprintf("model %q already loaded", lm.name))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": lm.name, "object": "model", "status": "loaded"})
+}
+
+// publishLoaded makes a freshly loaded model routable, or — when another load of the same name
+// published first — closes it and reports false. Shared by the admin load and the web UI's load
+// (webui.go) so the M-24 close-on-race and the session restore live in one place.
+func (s *server) publishLoaded(lm *loadedModel) bool {
 	s.regMu.Lock()
 	if _, dup := s.models[lm.name]; dup { // raced another load of the same name
 		s.regMu.Unlock()
@@ -173,8 +184,7 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 		// has not run for it — it was never published.
 		lm.model.Close()
 		lm.closeEntryNatives()
-		writeErr(w, http.StatusConflict, fmt.Sprintf("model %q already loaded", lm.name))
-		return
+		return false
 	}
 	s.models[lm.name] = lm
 	s.retainLocked(lm.model) // one more registry entry backed by this *decoder.Model (liveness refs)
@@ -188,7 +198,7 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 		lm.sessions.load(sessionSubdir(s.cfg.sessionDir, lm.fp))
 		lm.mu.Unlock()
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": lm.name, "object": "model", "status": "loaded"})
+	return true
 }
 
 // handleAdminUnload drops a model from the registry and DRAINS before freeing its native memory.

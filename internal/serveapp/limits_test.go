@@ -334,38 +334,50 @@ func TestSessions_persistedStateIsOwnerOnly(t *testing.T) {
 // errors, nothing is slower, the memory is simply never returned. A test that loaded two real
 // models to watch RSS would be measuring Darwin's UBC rather than the defect (the audit's own
 // note about RSS-based guards inverting under pressure).
+//
+// Since W5 the post-check lives in publishLoaded (admin.go), shared by the admin load and the web
+// UI's load (webui.go). So this checks two things: the refusal branch in publishLoaded closes what
+// it refuses, and neither handler publishes into s.models on its own, around that branch.
 func TestAdminLoad_racedDuplicateIsClosed(t *testing.T) {
 	fset := token.NewFileSet()
 	af, err := parser.ParseFile(fset, "admin.go", nil, 0)
 	if err != nil {
 		t.Fatalf("parse admin.go: %v", err)
 	}
-	// The 409 branch that fires AFTER loadDecoder — identified by its body writing a
-	// StatusConflict error, in a block that also unlocks regMu (the pre-check does not).
+	var publish *ast.FuncDecl
+	for _, d := range af.Decls {
+		if fd, ok := d.(*ast.FuncDecl); ok && fd.Name.Name == "publishLoaded" {
+			publish = fd
+		}
+	}
+	if publish == nil {
+		t.Fatal("publishLoaded not found in admin.go — this guard is watching nothing")
+	}
+	// The refusal branch: a block that unlocks regMu and returns false, as DIRECT statements.
+	// Matching nested text would make the enclosing function body match as well, since it
+	// contains this block — a guard counting 2 where it meant 1.
 	var checked int
-	ast.Inspect(af, func(n ast.Node) bool {
+	ast.Inspect(publish.Body, func(n ast.Node) bool {
 		blk, ok := n.(*ast.BlockStmt)
 		if !ok {
 			return true
 		}
-		// DIRECT statements only. Matching nested text made the enclosing function body
-		// match as well, since it contains this block — a guard counting 2 where it meant 1.
-		var unlocks, conflict bool
+		var unlocks, refuses bool
 		for _, st := range blk.List {
-			es, ok := st.(*ast.ExprStmt)
-			if !ok {
-				continue
+			if es, ok := st.(*ast.ExprStmt); ok {
+				src := &strings.Builder{}
+				_ = printer.Fprint(src, fset, es)
+				if strings.Contains(src.String(), "regMu.Unlock()") {
+					unlocks = true
+				}
 			}
-			src := &strings.Builder{}
-			_ = printer.Fprint(src, fset, es)
-			if strings.Contains(src.String(), "regMu.Unlock()") {
-				unlocks = true
-			}
-			if strings.Contains(src.String(), "StatusConflict") {
-				conflict = true
+			if rs, ok := st.(*ast.ReturnStmt); ok && len(rs.Results) == 1 {
+				if id, ok := rs.Results[0].(*ast.Ident); ok && id.Name == "false" {
+					refuses = true
+				}
 			}
 		}
-		if !unlocks || !conflict {
+		if !unlocks || !refuses {
 			return true
 		}
 		checked++
@@ -373,7 +385,7 @@ func TestAdminLoad_racedDuplicateIsClosed(t *testing.T) {
 		_ = printer.Fprint(&body, fset, blk)
 		for _, want := range []string{"model.Close()", "closeEntryNatives()"} {
 			if !strings.Contains(body.String(), want) {
-				t.Errorf("the raced-duplicate 409 path does not call %s: the loser's fully "+
+				t.Errorf("publishLoaded's raced-duplicate branch does not call %s: the loser's fully "+
 					"loaded model is dropped without releasing device memory, the .giw mmap or "+
 					"the block drafter, and purego has no finalizers to collect them (M-24)", want)
 			}
@@ -381,8 +393,38 @@ func TestAdminLoad_racedDuplicateIsClosed(t *testing.T) {
 		return true
 	})
 	if checked != 1 {
-		t.Errorf("found %d post-load 409 branches, want 1 — the guard is watching the wrong "+
-			"code (the PRE-load duplicate check must not match: it has nothing to close)", checked)
+		t.Errorf("found %d refusal branches in publishLoaded, want 1 — the guard is watching the wrong code", checked)
+	}
+
+	// Only publishLoaded may write the registry, in both files a load can come from.
+	for _, file := range []string{"admin.go", "webui.go"} {
+		f, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		for _, d := range f.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok || fd.Body == nil || fd.Name.Name == "publishLoaded" {
+				continue
+			}
+			ast.Inspect(fd.Body, func(n ast.Node) bool {
+				as, ok := n.(*ast.AssignStmt)
+				if !ok {
+					return true
+				}
+				for _, lhs := range as.Lhs {
+					ix, ok := lhs.(*ast.IndexExpr)
+					if !ok {
+						continue
+					}
+					if sel, ok := ix.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "models" {
+						t.Errorf("%s: %s writes s.models directly — publish through publishLoaded, or a raced "+
+							"duplicate load leaks its model (M-24)", file, fd.Name.Name)
+					}
+				}
+				return true
+			})
+		}
 	}
 }
 

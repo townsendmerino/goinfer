@@ -474,13 +474,23 @@ func render(files []File) string {
 	return b.String()
 }
 
-// CacheDir is where pulled models land: <user cache>/goinfer/models/<owner>/<repo>.
-func CacheDir(repo string) (string, error) {
+// CacheRoot is the directory every pulled model lands under: <user cache>/goinfer/models. The serve
+// web UI confines its load route to it, so CacheDir must stay a subdirectory of this.
+func CacheRoot() (string, error) {
 	base, err := os.UserCacheDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "goinfer", "models", filepath.FromSlash(repo)), nil
+	return filepath.Join(base, "goinfer", "models"), nil
+}
+
+// CacheDir is where pulled models land: <user cache>/goinfer/models/<owner>/<repo>.
+func CacheDir(repo string) (string, error) {
+	root, err := CacheRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, filepath.FromSlash(repo)), nil
 }
 
 // Download streams f from repo into dir, verifying the sha256 HF declared for it, and
