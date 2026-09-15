@@ -114,8 +114,16 @@ func Gemma4() *Template {
 //     in the prompt.
 //
 // Reasoning effort defaults to "medium", matching the upstream template's own default.
+//
+// STOPS ARE UPSTREAM'S, NOT "EVERY END MARKER". gpt-oss-20b's generation_config.json lists
+// eos_token_id [200002, 199999, 200012] = <|return|>, <|endoftext|>, <|call|>. <|end|> is NOT a stop:
+// it closes each MESSAGE, and one reply is several — the analysis message ends in <|end|>, then the
+// model opens <|start|>assistant<|channel|>final<|message|> and ends the turn with <|return|> (or
+// <|call|> for a tool call). Stopping on <|end|> ended every reply after its thinking: through serve,
+// gpt-oss streamed only its analysis channel and never an answer (found 2026-09-14 by the web UI's W6
+// capture, docs/tasks/task-web-ui-2026-09.md).
 func Harmony() *Template {
-	return &Template{name: "harmony", stops: []string{"<|return|>", "<|end|>"}, render: func(system string, turns []Turn) []Segment {
+	return &Template{name: "harmony", stops: []string{"<|return|>", "<|call|>", "<|endoftext|>"}, render: func(system string, turns []Turn) []Segment {
 		var b segBuf
 		b.sp("<|start|>")
 		b.ct("system")

@@ -40,6 +40,29 @@ func TestHarmony_byteExact(t *testing.T) {
 	}
 }
 
+// TestHarmony_stopsAreUpstreams pins the turn stops to gpt-oss's own generation_config.json
+// (eos_token_id [200002, 199999, 200012] — <|return|>, <|endoftext|>, <|call|>), and asserts <|end|>
+// is NOT among them. <|end|> closes a message, not a turn: with it as a stop, a gpt-oss reply ended
+// after its analysis channel and never reached the final answer.
+func TestHarmony_stopsAreUpstreams(t *testing.T) {
+	got := map[string]bool{}
+	for _, s := range Harmony().Stops().Strings {
+		got[s] = true
+	}
+	for _, want := range []string{"<|return|>", "<|call|>", "<|endoftext|>"} {
+		if !got[want] {
+			t.Errorf("harmony stops %v lack %s, which gpt-oss's generation_config.json lists as a stop", Harmony().Stops().Strings, want)
+		}
+	}
+	if got["<|end|>"] {
+		t.Errorf("harmony stops include <|end|>: that ends a MESSAGE, so every reply would stop after its " +
+			"analysis channel, before the final answer")
+	}
+	if len(got) != 3 {
+		t.Errorf("harmony stops = %v, want exactly upstream's three", Harmony().Stops().Strings)
+	}
+}
+
 // Detect must resolve harmony, and must NOT confuse it with Gemma 4. The two are one
 // character apart in the marker Detect keys on: Gemma tests "<|channel>", harmony's is
 // "<|channel|>", and "<|channel|>" does NOT contain "<|channel>" because the trailing pipe

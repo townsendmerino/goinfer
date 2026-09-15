@@ -446,10 +446,9 @@
   {
    "model": "gpt-oss-20b-MXFP4.gguf",
    "prompt": "What is 17*23?",
-   "max_tokens": 120,
+   "max_tokens": 300,
    "finish_reason": "stop",
-   "note": "serve stops at the analysis channel's <|end|>, so this reply has NO final channel — the open server defect recorded in docs/tasks/task-web-ui-2026-09.md W6.",
-   "answer": "",
+   "answer": "17 × 23 = 391.",
    "deltas": [
     "<|channel|>",
     "analysis",
@@ -507,8 +506,25 @@
     ".",
     " Provide",
     " answer",
+    ".",
+    "<|end|>",
+    "<|start|>",
+    "assistant",
+    "<|channel|>",
+    "final",
+    "<|message|>",
+    "17",
+    " ",
+    "×",
+    " ",
+    "23",
+    " ",
+    "=",
+    " ",
+    "391",
     "."
-   ]
+   ],
+   "note": "captured after the harmony stop-token fix (serve used to stop on <|end|> and stream only the analysis channel; the page's analysis-only case is covered by a synthetic reply in the gate)."
   }
  ]
 }
