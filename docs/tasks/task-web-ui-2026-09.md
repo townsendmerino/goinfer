@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W32 added 2026-09-15 (§7) now that J1–J4 have shipped; W27, W28 and W29 DONE 2026-09-15, W30–W32 next.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W32 added 2026-09-15 (§7) now that J1–J4 have shipped; W27, W28, W29 and W30 DONE 2026-09-15, W31–W32 next.** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
