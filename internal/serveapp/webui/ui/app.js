@@ -794,6 +794,7 @@ function syncActions() {
     for (const b of msg.querySelectorAll(".msg-edit, .msg-regen, .msg-delete")) b.disabled = busy;
   }
   for (const b of $("chat-list").querySelectorAll("button")) b.disabled = busy;   // W9
+  showExport();   // W14
 }
 
 // --- regenerate, edit, delete (W7) ------------------------------------------------
@@ -1181,6 +1182,7 @@ function renderChatList() {
     return li;
   });
   ul.replaceChildren(...items);
+  showExport();   // W14
 }
 
 $("chat-list").addEventListener("click", e => {
@@ -1192,6 +1194,69 @@ $("chat-list").addEventListener("click", e => {
   else if (btn.classList.contains("chat-rename")) startRename(id, li);
   else if (btn.classList.contains("chat-delete")) deleteChat(id);
 });
+
+// --- export (W14) -----------------------------------------------------------------------------
+// The open conversation, to a file: Markdown to read, JSON to keep or process. No share link — that would
+// be a server-side copy, and an anti-goal. Both are built from the transcript, the same source the
+// screen and storage use. The system prompt is a page SETTING, not recorded with messages (W4), so it is
+// exported labelled as what was set when the file was made.
+const EXPORT_FORMAT = "goinfer.chat";
+
+// exportName turns a title into a safe file name: letters, digits and dashes, never a path.
+function exportName(title, ext, when = new Date()) {
+  const slug = (title || "").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60).replace(/-+$/, "");
+  const day = when.toISOString().slice(0, 10);
+  return (slug || "conversation") + "-" + day + "." + ext;
+}
+
+function chatMarkdown(when = new Date()) {
+  const lines = ["# " + (currentChat.title || "Conversation"), ""];
+  lines.push("*Exported from goinfer on " + when.toISOString().slice(0, 16).replace("T", " ") + " UTC · " + transcript.length + " message" + (transcript.length === 1 ? "" : "s") + "*", "");
+  const sys = systemText();
+  if (sys) lines.push("> **System prompt at export time** (a setting of the page, not recorded per message):", ">", ...sys.split("\n").map(l => "> " + l), "");
+  for (const e of transcript) {
+    if (e.role === "user") {
+      lines.push("## You", "");
+      if (e.content) lines.push(e.content, "");
+      if (e.image) lines.push("![attached image](" + e.image + ")", "");
+      continue;
+    }
+    lines.push("## " + (e.model || "Assistant"), "");
+    const p = splitThinking(e.content, false);
+    if (p && p.thinking) lines.push("<details><summary>Thinking</summary>", "", p.thinking.trim(), "", "</details>", "");
+    const answer = p ? p.answer : e.content;
+    if (answer) lines.push(answer, "");
+    const meta = metaText(e);
+    if (meta) lines.push("*" + meta + "*", "");
+  }
+  return lines.join("\n");
+}
+
+function chatJSON(when = new Date()) {
+  return JSON.stringify({
+    format: EXPORT_FORMAT, version: 1, exported_at: when.toISOString(),
+    title: currentChat.title || "", system_prompt_at_export: systemText() || null,
+    messages: transcript,
+  }, null, 2) + "\n";
+}
+
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], {type}));
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function showExport() {
+  const empty = !transcript.length;
+  $("export-md").disabled = empty || !!ac;
+  $("export-json").disabled = empty || !!ac;
+}
+$("export-md").onclick = () => { if (transcript.length && !ac) download(exportName(currentChat.title, "md"), chatMarkdown(), "text/markdown;charset=utf-8"); };
+$("export-json").onclick = () => { if (transcript.length && !ac) download(exportName(currentChat.title, "json"), chatJSON(), "application/json"); };
 
 // --- generated titles (W9) --------------------------------------------------------------------
 // After a conversation's first reply, the model is asked once, in the background, for a short title.

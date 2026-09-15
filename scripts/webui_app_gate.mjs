@@ -53,6 +53,8 @@
 //        400 context) — each explained with its remedy; Retry / Enter API key / Refresh models / New chat each
 //        do it; an unreachable server; a mid-reply server error or dropped connection keeps the partial answer,
 //        labelled; finish_reason length and cancelled explained; the model list's own errors; persisted.
+//   W14 — export: the exact Markdown (turns, image, folded thinking, stats and state, labelled system prompt)
+//        and JSON (the stored conversation, format tag, version); safe file names; disabled when empty or busy.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -1442,8 +1444,89 @@ const phase23 = phase(W13_PRELUDE + String.raw`
   check("W13 an unknown stored state is dropped, not written back on the next save", stored().messages.at(-1).state === undefined && stored().messages.at(-1).note === undefined, JSON.stringify(stored().messages.at(-1)).slice(0, 120));
 `);
 
+// ---- phase 24: W14 — export the conversation ---------------------------------------------------------------
+const phase24 = phase(String.raw`
+  const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  window.confirm = () => true;
+  // capture what a download would save, instead of saving it
+  const downloads = [];
+  const realCreate = URL.createObjectURL;
+  URL.createObjectURL = blob => { const u = realCreate(blob); downloads.push({ url: u, blob }); return u; };
+  const realClick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function () { const d = downloads.find(x => x.url === this.href); if (d) { d.name = this.download; d.rel = this.rel; } };
+  const lastDownload = async () => { const d = downloads.at(-1); return d && { name: d.name, type: d.blob.type, text: await d.blob.text() }; };
+
+  $("newchat").click();
+  check("W14 export is disabled on an empty chat", $("export-md").disabled && $("export-json").disabled, $("export-md").disabled);
+  $("export-md").click();
+  check("W14 an empty chat exports nothing", downloads.length === 0, downloads.length);
+
+  // a conversation with every shape an export has to carry
+  const c = document.createElement("canvas"); c.width = 4; c.height = 4;
+  const png = c.toDataURL("image/png");
+  const id = "exportcase1";
+  const messages = [
+    { role: "user", content: "Explain *ownership*.", image: png },
+    { role: "assistant", content: "<think>\nThe user wants Rust.\n</think>\n\nOwnership means **one owner**.", model: "qwen3", meta: "12 tok · 30.0 tok/s · 0.4s" },
+    { role: "user", content: "More?" },
+    { role: "assistant", content: "Half of an answ", model: "qwen3", meta: "4 tok", state: "failed", note: "the connection to the server was lost" },
+  ];
+  localStorage.setItem("goinfer.chat.v2." + id, JSON.stringify({ v: 2, id, title: "../../Rust: ownership & borrowing?", titled: "user", updated: Date.now(), messages }));
+  openChat(id);
+  $("system").value = "Be brief.\nUse examples."; $("system").dispatchEvent(new Event("input", { bubbles: true }));
+  check("W14 export is enabled once there is a conversation", !$("export-md").disabled && !$("export-json").disabled, $("export-md").disabled);
+
+  $("export-md").click();
+  await until(() => downloads.length === 1);
+  const md = await lastDownload();
+  const day = new Date().toISOString().slice(0, 10);
+  check("W14 Markdown file name is the title made safe, plus the date — never a path", md.name === "rust-ownership-borrowing-" + day + ".md" && md.type.startsWith("text/markdown"), md.name + " / " + md.type);
+  const lines = md.text.split("\n");
+  check("W14 Markdown starts with the title and when it was exported", lines[0] === "# ../../Rust: ownership & borrowing?" && /^\*Exported from goinfer on \d{4}-\d\d-\d\d \d\d:\d\d UTC · 4 messages\*$/.test(lines[2]), lines.slice(0, 3).join(" | "));
+  const body = md.text.slice(md.text.indexOf("\n> **System prompt"));
+  const expected = [
+    "> **System prompt at export time** (a setting of the page, not recorded per message):", ">", "> Be brief.", "> Use examples.", "",
+    "## You", "", "Explain *ownership*.", "", "![attached image](" + png + ")", "",
+    "## qwen3", "", "<details><summary>Thinking</summary>", "", "The user wants Rust.", "", "</details>", "", "Ownership means **one owner**.", "", "*12 tok · 30.0 tok/s · 0.4s*", "",
+    "## You", "", "More?", "",
+    "## qwen3", "", "Half of an answ", "", "*4 tok · incomplete — the connection to the server was lost. Regenerate to try again.*", "",
+  ].join("\n");
+  check("W14 Markdown carries each turn: your text and image, the model's name, thinking folded, the answer, and each reply's stats and state", body === "\n" + expected, JSON.stringify(body).slice(0, 400));
+
+  $("export-json").click();
+  await until(() => downloads.length === 2);
+  const js = await lastDownload();
+  let parsed = null; try { parsed = JSON.parse(js.text); } catch {}
+  check("W14 JSON file name and type", js.name === "rust-ownership-borrowing-" + day + ".json" && js.type === "application/json", js.name + " / " + js.type);
+  check("W14 JSON is the conversation as stored, with a format tag, version and export time", parsed && parsed.format === "goinfer.chat" && parsed.version === 1 && !isNaN(Date.parse(parsed.exported_at)) && parsed.title === "../../Rust: ownership & borrowing?" && JSON.stringify(parsed.messages) === JSON.stringify(stored().messages), js.text.slice(0, 200));
+  check("W14 JSON labels the system prompt as the one set at export time", parsed && parsed.system_prompt_at_export === "Be brief.\nUse examples.", parsed && JSON.stringify(parsed.system_prompt_at_export));
+
+  // no system prompt, no title
+  $("system").value = ""; $("system").dispatchEvent(new Event("input", { bubbles: true }));
+  const id2 = "exportcase2";
+  localStorage.setItem("goinfer.chat.v2." + id2, JSON.stringify({ v: 2, id: id2, title: "", titled: "user", updated: Date.now(), messages: [{ role: "user", content: "日本語だけ" }] }));
+  openChat(id2);
+  $("export-md").click();
+  await until(() => downloads.length === 3);
+  const md2 = await lastDownload();
+  check("W14 a title with nothing file-safe falls back to 'conversation', and no system prompt means no quote block", md2.name === "conversation-" + day + ".md" && md2.text.startsWith("# Conversation\n") && !md2.text.includes("System prompt"), md2.name + " / " + md2.text.slice(0, 60));
+  $("export-json").click();
+  await until(() => downloads.length === 4);
+  check("W14 JSON with no system prompt says null, not an empty string", JSON.parse((await lastDownload()).text).system_prompt_at_export === null, "");
+
+  // busy
+  streamAnswer("slow ", { hang: true });
+  $("prompt").value = "busy";
+  const run = send();
+  await until(() => !$("stop").hidden);
+  check("W14 export is disabled while a reply is generating", $("export-md").disabled && $("export-json").disabled, $("export-md").disabled);
+  $("stop").click(); await run; await until(() => $("stop").hidden);
+  check("W14 and enabled again afterwards", !$("export-md").disabled, $("export-md").disabled);
+  URL.createObjectURL = realCreate; HTMLAnchorElement.prototype.click = realClick;
+`);
+
 const all = [];
-for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23].entries()) {
+for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24].entries()) {
   if (i > 0) await page.reload();
   all.push(...finishOrExit("webui app gate (phase " + (i + 1) + ")", await page.evaluate(prog), all));
 }
