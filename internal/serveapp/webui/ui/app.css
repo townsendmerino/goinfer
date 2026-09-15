@@ -1567,3 +1567,10 @@ details.think{margin:0 0 .7em;border-left:3px solid color-mix(in srgb,var(--gi-m
 details.think summary{cursor:pointer;font-size:13px;color:var(--gi-muted);width:max-content}
 details.think.live summary{color:var(--gi-accent)}
 details.think .think-body{color:var(--gi-muted);font-size:13px;margin-top:.5em}
+
+/* W7: regenerate / edit / delete */
+.actions button[disabled]{opacity:.45;cursor:default}
+.edit-box{width:100%;box-sizing:border-box;min-height:72px;font:inherit}
+.edit-row{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+.edit-row button{font-size:13px;padding:5px 12px;border-radius:6px}
+.edit-row .edit-save{color:var(--gi-accent);font-weight:600}

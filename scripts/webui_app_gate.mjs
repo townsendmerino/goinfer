@@ -27,6 +27,10 @@
 //        and gpt-oss's channels: no raw tag ever on screen while streaming, a reader's open fold kept
 //        open, Copy and the next request carry only the answer, a thought-but-never-answered reply says
 //        so, a mention of the tag is not folded, hostile content inert, and the fold rebuilt after reload.
+//   W7 — Regenerate (last reply only, including a stopped one), Edit (in place; Escape cancels, Ctrl+Enter
+//        saves; asks before dropping more than the one reply; resends from the edited message) and Delete
+//        (the whole exchange, after asking): exactly what is sent, shown and saved after each; all of them
+//        disabled while generating or editing; hostile edits inert; and the actions restored after reload.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -586,8 +590,133 @@ const phase10 = phase(String.raw`
   check("W6 a non-numeric stored duration falls back to a plain label", box?.querySelector("summary")?.textContent === "Thinking" && document.querySelectorAll("img").length === 0 && window.__pwned === 0, box?.querySelector("summary")?.textContent);
 `);
 
+// ---- phase 11: W7 — regenerate, edit, delete -----------------------------------------------------------
+const phase11 = phase(String.raw`
+  const until = async (cond, ms = 3000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  const idle = () => until(() => $("stop").hidden);
+  let asked = [], answer = true;
+  window.confirm = m => { asked.push(m); return answer; };
+  $("newchat").click();
+  const bots = () => [...document.querySelectorAll("#log .msg.bot")], yous = () => [...document.querySelectorAll("#log .msg.you")];
+  const sent = () => window.__lastBody.messages.filter(m => m.role !== "system").map(m => m.role[0] + ":" + m.content).join("|");
+  const shown = () => [...document.querySelectorAll("#log .msg")].map(m => (m.classList.contains("you") ? "u:" : "a:") + (m.querySelector(".think-answer") || m.children[1]).textContent.trim()).join("|");
+  const saved = () => stored().messages.map(m => m.role[0] + ":" + m.content).join("|");
+  const visibleRegen = () => [...document.querySelectorAll("#log .msg-regen")].filter(b => !b.hidden);
+  const turn = async (q, a) => { streamAnswer(a); $("prompt").value = q; await send(); await idle(); };
+  await turn("q1", "a1"); await turn("q2", "a2"); await turn("q3", "a3");
+
+  check("W7 your messages have Edit, Copy, Delete", yous().every(m => [...m.querySelectorAll(".actions button")].map(b => b.textContent).join(",") === "Edit,Copy,Delete"), yous().map(m => [...m.querySelectorAll(".actions button")].map(b => b.textContent)));
+  check("W7 Regenerate is offered only on the last reply", visibleRegen().length === 1 && visibleRegen()[0].closest(".msg") === bots().at(-1), visibleRegen().length);
+
+  // ---- regenerate ----
+  streamAnswer("a3 again");
+  visibleRegen()[0].click(); await idle();
+  check("W7 regenerate asks again with the history up to the last question", sent() === "u:q1|a:a1|u:q2|a:a2|u:q3", sent());
+  check("W7 regenerate replaces the last reply, on screen and saved", shown() === "u:q1|a:a1|u:q2|a:a2|u:q3|a:a3 again" && saved() === "u:q1|a:a1|u:q2|a:a2|u:q3|a:a3 again", shown() + " / " + saved());
+
+  // ---- nothing changes the conversation while a reply is generating ----
+  streamAnswer("a slow reply ", { hang: true });
+  visibleRegen()[0].click();
+  await until(() => !$("stop").hidden); await wait(100);
+  const acting = [...document.querySelectorAll("#log .msg-edit, #log .msg-regen, #log .msg-delete")];
+  check("W7 edit, regenerate and delete are disabled while generating", acting.length > 0 && acting.every(b => b.disabled), acting.filter(b => !b.disabled).map(b => b.textContent));
+  asked = [];
+  yous()[0].querySelector(".msg-delete").click();
+  check("W7 a disabled Delete does nothing", asked.length === 0 && yous().length === 3, asked.length + " asked, " + yous().length + " yous");
+  // The actions refuse on their own too, not only through a disabled button: W17's keyboard shortcuts
+  // will call them with no button in between.
+  const snapshot = JSON.stringify(transcript);
+  regenerate(transcript[transcript.length - 1]);
+  deleteExchange(transcript[0]);
+  check("W7 regenerate() and deleteExchange() refuse while generating, when called directly", JSON.stringify(transcript) === snapshot && asked.length === 0, asked.length + " asked");
+  $("stop").click(); await idle(); await wait(50);
+  const stoppedRegen = bots().at(-1).querySelector(".msg-regen");
+  check("W7 a stopped reply can be regenerated", stoppedRegen && !stoppedRegen.hidden && !stoppedRegen.disabled, stoppedRegen?.outerHTML);
+  streamAnswer("a3 final");
+  stoppedRegen.click(); await idle();
+  check("W7 regenerating a stopped reply replaces it", shown() === "u:q1|a:a1|u:q2|a:a2|u:q3|a:a3 final" && !/stopped/.test(bots().at(-1).textContent), shown());
+
+  // ---- edit ----
+  const beforeEdit = window.__lastBody;
+  yous()[1].querySelector(".msg-edit").click();
+  let ta = document.querySelector("#log textarea.edit-box");
+  check("W7 Edit opens the message in place, focused, with its text", ta && ta.value === "q2" && document.activeElement === ta && yous()[1].querySelector(".actions").hidden, ta?.value);
+  check("W7 while editing: Send and the other actions are disabled", $("send").disabled && [...document.querySelectorAll("#log .msg-edit, #log .msg-delete")].every(b => b.disabled), $("send").disabled);
+  $("prompt").value = "sneaks in while editing";
+  await send();
+  check("W7 the prompt cannot send while a message is being edited", window.__lastBody === beforeEdit && yous().length === 3 && $("prompt").value === "sneaks in while editing", yous().length);
+  $("prompt").value = "";
+  window.dispatchEvent(new StorageEvent("storage", { key: "goinfer.chat.v1" }));
+  check("W7 another tab's change does not close an open edit", document.querySelector("#log textarea.edit-box") === ta, !!document.querySelector("#log textarea.edit-box"));
+  ta.value = "changed but cancelled";
+  ta.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  check("W7 Escape cancels: nothing changed, nothing sent", shown() === "u:q1|a:a1|u:q2|a:a2|u:q3|a:a3 final" && window.__lastBody === beforeEdit && !$("send").disabled, shown());
+
+  yous()[1].querySelector(".msg-edit").click();
+  ta = document.querySelector("#log textarea.edit-box");
+  ta.value = "   ";
+  document.querySelector("#log .edit-save").click();
+  check("W7 saving an empty edit keeps the box open", document.querySelector("#log textarea.edit-box") === ta && saved().includes("u:q2|"), saved());
+  ta.value = "q2 edited";
+  asked = []; answer = false;
+  document.querySelector("#log .edit-save").click();
+  check("W7 an edit that would drop later turns asks first, naming how many", asked.length === 1 && /remove the 3 messages/.test(asked[0]), JSON.stringify(asked));
+  check("W7 declining keeps the conversation and the edit", document.querySelector("#log textarea.edit-box") === ta && saved() === "u:q1|a:a1|u:q2|a:a2|u:q3|a:a3 final", saved());
+  answer = true;
+  streamAnswer("a2 new");
+  ta.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }));
+  await idle();
+  check("W7 saving an edit resends from that message", sent() === "u:q1|a:a1|u:q2 edited", sent());
+  check("W7 saving an edit drops what came after it, on screen and saved", shown() === "u:q1|a:a1|u:q2 edited|a:a2 new" && saved() === "u:q1|a:a1|u:q2 edited|a:a2 new", shown() + " / " + saved());
+
+  asked = [];
+  yous()[1].querySelector(".msg-edit").click();
+  document.querySelector("#log textarea.edit-box").value = "<img src=x onerror=\"window.__pwned=1\">";
+  streamAnswer("a2 newer");
+  document.querySelector("#log .edit-save").click(); await idle(); await wait(100);
+  check("W7 editing the last question replaces only its reply, without asking", asked.length === 0 && bots().length === 2, asked.length + " asked");
+  check("W7 a hostile edit is shown as text and stays inert", yous()[1].children[1].textContent === "<img src=x onerror=\"window.__pwned=1\">" && document.querySelectorAll("#log img").length === 0 && window.__pwned === 0, yous()[1].children[1].innerHTML);
+
+  // ---- delete ----
+  asked = []; answer = false;
+  bots()[0].querySelector(".msg-delete").click();
+  check("W7 Delete asks first", asked.length === 1 && /message and its reply/.test(asked[0]), JSON.stringify(asked));
+  check("W7 declining keeps the exchange", yous().length === 2 && bots().length === 2, yous().length + "/" + bots().length);
+  answer = true;
+  bots()[0].querySelector(".msg-delete").click();
+  check("W7 deleting a reply removes the whole exchange, on screen and saved", shown().startsWith("u:<img") && saved() === "u:<img src=x onerror=\"window.__pwned=1\">|a:a2 newer", shown() + " / " + saved());
+  await turn("q9", "a9");
+  yous().at(-1).querySelector(".msg-delete").click();
+  check("W7 deleting your message removes its reply too, and Regenerate moves to the new last reply", bots().length === 1 && visibleRegen().length === 1 && visibleRegen()[0].closest(".msg") === bots()[0], shown());
+  await turn("next question", "next answer");
+  check("W7 after deleting, the next request carries the history as it now stands", sent() === "u:<img src=x onerror=\"window.__pwned=1\">|a:a2 newer|u:next question", sent());
+
+  // New chat while editing cancels the edit
+  yous()[0].querySelector(".msg-edit").click();
+  $("newchat").click();
+  check("W7 New chat while editing cancels the edit and clears", !document.querySelector("#log textarea.edit-box") && document.querySelectorAll("#log .msg").length === 0 && !$("send").disabled, document.querySelectorAll("#log .msg").length);
+
+  // leave a small conversation for the reload phase
+  await turn("keep me", "kept");
+  await turn("second", "last reply");
+`);
+
+// ---- phase 12: after a reload — the actions come back with the conversation ------------------------------
+const phase12 = phase(String.raw`
+  const until = async (cond, ms = 3000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  const bots = [...document.querySelectorAll("#log .msg.bot")];
+  const regen = [...document.querySelectorAll("#log .msg-regen")].filter(b => !b.hidden);
+  check("W7 after reload: Regenerate is back, on the last reply only", bots.length === 2 && regen.length === 1 && regen[0].closest(".msg") === bots[1] && !regen[0].disabled, regen.length);
+  check("W7 after reload: Edit and Delete are back on every message", document.querySelectorAll("#log .msg-edit").length === 2 && document.querySelectorAll("#log .msg-delete").length === 4, document.querySelectorAll("#log .msg-edit").length + "/" + document.querySelectorAll("#log .msg-delete").length);
+  streamAnswer("regenerated after reload");
+  regen[0].click();
+  await until(() => $("stop").hidden && /regenerated after reload/.test(document.querySelector("#log .msg.bot:last-of-type")?.textContent || ""));
+  const sent = window.__lastBody.messages.filter(m => m.role !== "system").map(m => m.role[0] + ":" + m.content).join("|");
+  check("W7 after reload: Regenerate sends the restored history", sent === "u:keep me|a:kept|u:second", sent);
+`);
+
 const all = [];
-for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10].entries()) {
+for (const [i, prog] of [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12].entries()) {
   if (i > 0) await page.reload();
   all.push(...finishOrExit("webui app gate (phase " + (i + 1) + ")", await page.evaluate(prog), all));
 }

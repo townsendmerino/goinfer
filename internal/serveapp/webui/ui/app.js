@@ -320,14 +320,14 @@ function renderEntry(e) {
   if (e.role === "user") {
     const b = bubble("you", "you amb-surface");
     b.textContent = e.content;
-    addActions(b, e.content);
+    addActions(b, e.content, e);
     return;
   }
   const out = bubble(e.model || "assistant", "bot amb-surface-convex amb-elevation-1");
   out.classList.add("md");
   renderReply(out, e.content, false, e);
   addMeta(out, metaText(e));
-  if (e.content) addActions(out, copyOf(e.content));
+  addActions(out, e.content ? copyOf(e.content) : "", e);
 }
 
 function showTranscript(list) {
@@ -337,19 +337,140 @@ function showTranscript(list) {
   for (const e of transcript) renderEntry(e);
 }
 
-// addActions records a finished message's source and adds its action row (Copy; W7 adds more here).
-function addActions(content, src) {
+// addActions records a finished message's source and adds its action row: Copy (W2), and W7's Edit on
+// the user's messages, Regenerate on the last reply, and Delete on both. entry is the message's
+// transcript entry — the row acts on the conversation through it, never through the DOM.
+const entries = new WeakMap();   // .msg element -> its transcript entry
+function addActions(content, src, entry) {
   sources.set(content, src);
+  const msg = content.parentElement;
+  entries.set(msg, entry);
   const row = document.createElement("div");
   row.className = "actions";
-  const b = document.createElement("button");
-  b.type = "button";
-  b.className = "msg-copy";
-  b.textContent = "Copy";
-  b.setAttribute("aria-label", "Copy message");
-  row.appendChild(b);
-  content.parentElement.appendChild(row);
+  const button = (cls, label, aria) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = cls;
+    b.textContent = label;
+    b.setAttribute("aria-label", aria);
+    row.appendChild(b);
+  };
+  if (entry.role === "user") button("msg-edit", "Edit", "Edit message");
+  else button("msg-regen", "Regenerate", "Regenerate reply");
+  if (src) button("msg-copy", "Copy", "Copy message");
+  button("msg-delete", "Delete", "Delete this exchange");
+  msg.appendChild(row);
+  syncActions();
 }
+
+// syncActions keeps every row truthful: Regenerate only on the reply that is LAST in the conversation
+// (regenerating an earlier one would silently discard everything after it — that is what Edit is
+// for), and nothing that changes the conversation while a reply is generating or a message is being
+// edited.
+function syncActions() {
+  const last = transcript[transcript.length - 1];
+  const busy = !!ac || !!editing;
+  for (const msg of document.querySelectorAll("#log .msg")) {
+    const e = entries.get(msg);
+    if (!e) continue;
+    const regen = msg.querySelector(".msg-regen");
+    if (regen) regen.hidden = e !== last;
+    for (const b of msg.querySelectorAll(".msg-edit, .msg-regen, .msg-delete")) b.disabled = busy;
+  }
+}
+
+// --- regenerate, edit, delete (W7) ------------------------------------------------
+// History is addressable now: each action edits the transcript, re-renders the log from it, saves, and
+// (for Regenerate and Edit) asks for a new reply to the conversation as it now stands.
+let editing = null;   // {entry, msg} while a message is open for editing
+
+function rerender() {
+  showTranscript(transcript.slice());
+  save();
+}
+
+function regenerate(entry) {
+  if (ac || editing || entry !== transcript[transcript.length - 1] || entry.role !== "assistant") return;
+  transcript.pop();
+  rerender();
+  generate();
+}
+
+// deleteExchange removes a user message together with its reply — deleting half an exchange would
+// leave two user turns in a row, which some chat templates refuse. No undo exists, so it asks first.
+function deleteExchange(entry) {
+  if (ac || editing) return;
+  const i = transcript.indexOf(entry);
+  if (i < 0) return;
+  const start = entry.role === "assistant" && transcript[i - 1]?.role === "user" ? i - 1 : i;
+  const end = transcript[start].role === "user" && transcript[start + 1]?.role === "assistant" ? start + 2 : start + 1;
+  if (!confirm(end - start > 1 ? "Delete this message and its reply?" : "Delete this message?")) return;
+  transcript.splice(start, end - start);
+  rerender();
+}
+
+function startEdit(entry, msg) {
+  if (ac || editing) return;
+  const box = msg.children[1];
+  const ta = document.createElement("textarea");
+  ta.className = "edit-box";
+  ta.value = entry.content;
+  ta.setAttribute("aria-label", "Edit message");
+  const row = document.createElement("div");
+  row.className = "edit-row";
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "button"; saveBtn.className = "edit-save"; saveBtn.textContent = "Save & send";
+  const cancel = document.createElement("button");
+  cancel.type = "button"; cancel.className = "edit-cancel"; cancel.textContent = "Cancel";
+  row.appendChild(cancel); row.appendChild(saveBtn);
+  box.replaceChildren(ta, row);
+  msg.querySelector(".actions").hidden = true;
+  editing = {entry, msg};
+  syncActions();
+  $("send").disabled = true;
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  saveBtn.onclick = () => finishEdit(ta.value);
+  cancel.onclick = () => finishEdit(null);
+  ta.addEventListener("keydown", e => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); finishEdit(ta.value); }
+    if (e.key === "Escape") { e.preventDefault(); finishEdit(null); }
+  });
+}
+
+// finishEdit(null) cancels. Saving replaces the message, drops everything after it — asking first when
+// that is more than the one reply the edit is about to replace — and generates a new reply.
+function finishEdit(value) {
+  if (!editing) return;
+  const {entry} = editing;
+  if (value === null) {
+    editing = null;
+    $("send").disabled = false;
+    showTranscript(transcript.slice());
+    return;
+  }
+  const text = value.trim();
+  if (!text) return;   // an empty message is not a message; keep the box open
+  const i = transcript.indexOf(entry);
+  const later = transcript.length - i - 1;
+  if (later > 1 && !confirm("Saving will remove the " + later + " messages after this one. Continue?")) return;
+  editing = null;
+  $("send").disabled = false;
+  entry.content = text;
+  transcript.length = i + 1;
+  rerender();
+  generate();
+}
+
+$("log").addEventListener("click", e => {
+  const btn = e.target.closest("button.msg-regen, button.msg-edit, button.msg-delete");
+  if (!btn || btn.disabled) return;
+  const msg = btn.closest(".msg"), entry = entries.get(msg);
+  if (!entry) return;
+  if (btn.classList.contains("msg-regen")) regenerate(entry);
+  else if (btn.classList.contains("msg-edit")) startEdit(entry, msg);
+  else deleteExchange(entry);
+});
 
 function bubble(who, cls) {
   const d = document.createElement("div");
@@ -367,19 +488,28 @@ function bubble(who, cls) {
 
 async function send() {
   const text = $("prompt").value.trim();
-  if (!text || ac) return;
-  const model = $("model").value;
-  if (!model) { $("chat-status").textContent = "no model loaded"; return; }
+  if (!text || ac || editing) return;
+  if (!$("model").value) { $("chat-status").textContent = "no model loaded"; return; }
 
   // What you type is recessed (amb-surface-concave, decision 3); the echo of
   // it in the log is a quieter flat surface — neither is the "product".
   const mine = bubble("you", "you amb-surface");
   mine.textContent = text;
-  addActions(mine, text);
-  transcript.push({role: "user", content: text});
+  const u = {role: "user", content: text};
+  transcript.push(u);
+  addActions(mine, text, u);
+  $("prompt").value = "";
+  await generate();
+}
+
+// generate asks for a reply to the conversation as it stands: after send(), and after W7's Regenerate
+// and Edit, which change the transcript first.
+async function generate() {
+  if (ac || editing) return;
+  const model = $("model").value;
+  if (!model) { $("chat-status").textContent = "no model loaded"; return; }
   const messages = apiMessages();          // taken BEFORE the assistant entry exists
   save();
-  $("prompt").value = "";
   // What the engine produces sits proud (amb-surface-convex, decision 3).
   const out = bubble(model, "bot amb-surface-convex amb-elevation-1");
   out.classList.add("md");
@@ -390,6 +520,7 @@ async function send() {
   $("chat-status").textContent = "generating…";
 
   ac = new AbortController();
+  syncActions();
   const started = performance.now();
   let got = 0, acc = "", lastSave = 0;
   // Render model output as Markdown (W1). Throttled to one parse per animation frame: a fast token
@@ -440,7 +571,7 @@ async function send() {
     delete entry.state;
     renderReply(out, acc, false, entry);   // the entry is final now: "no answer" can be judged
     addMeta(out, entry.meta);
-    addActions(out, copyOf(acc));
+    addActions(out, copyOf(acc), entry);
     $("chat-status").textContent = "";
   } catch (e) {
     if (e.name === "AbortError") {
@@ -451,7 +582,7 @@ async function send() {
       if (got) entry.meta = got + " tok";
       addMeta(out, metaText(entry));
       $("chat-status").textContent = "stopped";
-      if (acc) addActions(out, copyOf(acc));   // a stopped answer is still worth copying
+      addActions(out, acc ? copyOf(acc) : "", entry);   // a stopped answer is still worth copying, and regenerating
     } else {
       // A failed request is not a turn: drop it, as the old history never recorded one either.
       transcript.splice(transcript.indexOf(entry), 1);
@@ -461,6 +592,7 @@ async function send() {
     generating = null;
     save();
     ac = null; $("send").disabled = false; $("stop").hidden = true; $("newchat").disabled = false;
+    syncActions();
   }
 }
 $("send").onclick = send;
@@ -469,6 +601,7 @@ $("send").onclick = send;
 // because clearing has no undo. Disabled while a reply is generating.
 $("newchat").onclick = () => {
   if (ac) return;
+  if (editing) finishEdit(null);
   if (transcript.length && !confirm("Start a new chat? This conversation will be cleared.")) return;
   transcript.length = 0;
   $("log").replaceChildren();
@@ -484,7 +617,7 @@ addEventListener("pagehide", () => { if (generating) save(); });
 // (its own save wins then), or, for the system prompt, the user is typing in that box right now.
 addEventListener("storage", e => {
   if ((e.key === SYSTEM_STORE || e.key === null) && document.activeElement !== $("system")) loadSystem();
-  if ((e.key === STORE || e.key === null) && !ac) showTranscript(loadStored());
+  if ((e.key === STORE || e.key === null) && !ac && !editing) showTranscript(loadStored());
 });
 
 $("system").addEventListener("input", () => { showSystemState(); saveSystem(); });
