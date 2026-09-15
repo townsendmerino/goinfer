@@ -56,6 +56,12 @@ any surface may still change.
 
 ### Fixed
 
+- **The `serve` startup banner hid the real context size.** Its `context:` line printed "backend
+  default" when `-ctx` was unset, and the requested `-ctx` when it was set, even above the model's own
+  maximum. It ignored a per-model `ctx=` too. It now prints the limit requests are actually held to,
+  and what set it, e.g. `8192 tokens (backend default; model maximum 40960 — raise with --ctx)`.
+  Audit N-26. The `fit:` line below it still prices the requested cap and is tracked separately.
+
 - **gpt-oss never gave its answer.** The harmony chat template stopped on `<|end|>`, which closes each
   message rather than the turn, so a reply ended after its analysis (thinking) channel and never
   reached the `final` channel. This affected `serve`, `goinfer-chat` and the demo agent. The stops

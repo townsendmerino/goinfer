@@ -1267,7 +1267,7 @@ supports.
 | `docs/audit-2026-09-10.md|internal/serveapp/anthropic.go:172` | goinfer | `func anthropicInputBytes(req *anthropicReq) int {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/anthropic.go:496` | goinfer | `if gr, err = lm.prepare(req.toSampling(), ids, lm.adapter == ""); err != nil {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/anthropic_stream.go:62` | goinfer | `anthropicEvent(ss, "ping", map[string]any{"type": "ping"}) // liveness check; cheap insu` |
-| `docs/audit-2026-09-10.md|internal/serveapp/banner.go:79` | goinfer | `ctxLine := "context: "` |
+| `docs/audit-2026-09-10.md|internal/serveapp/banner.go:94` | goinfer | `ctxLine := "context: "` |
 | `docs/audit-2026-09-10.md|internal/serveapp/decoder_embedder.go:111` | goinfer | `m, err := decoder.Load(cfg.embedPath, decoder.Options{})` |
 | `docs/audit-2026-09-10.md|internal/serveapp/helpers.go:214` | goinfer | `// frame writes one preformatted SSE frame under the lock, and is the ONLY place this pa` |
 | `docs/audit-2026-09-10.md|internal/serveapp/helpers.go:60` | goinfer | `func maxBytes(n int64, h http.HandlerFunc, note ...string) http.HandlerFunc {` |
