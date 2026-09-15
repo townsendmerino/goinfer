@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Tests for queue_citation_lint.py's J0 fix (task-work-queue-2026-09.md) — an untracked live doc
+must not red the lint, and the same doc must red once it IS tracked. Mutation-checked: builds an
+isolated temp git repo (never touches this checkout's own git state) so `git add`/commit here have
+no side effect on the real tree. Run directly:
+    python3 scripts/test_queue_citation_lint.py
+"""
+import contextlib
+import importlib.util
+import io
+import os
+import pathlib
+import subprocess
+import sys
+import tempfile
+import unittest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_spec = importlib.util.spec_from_file_location(
+    "queue_citation_lint", os.path.join(HERE, "queue_citation_lint.py"))
+qcl = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(qcl)
+
+
+def _git(repo, *args):
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+
+
+class TestUntrackedDocsSkipped(unittest.TestCase):
+    """The gate the brief asks for: red before the fix (not exercised here — this pins the FIXED
+    behavior), green with a note while the doc is untracked, red again the moment it is staged."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = self.tmp.name
+        _git(self.repo, "init", "-q")
+        _git(self.repo, "config", "user.email", "test@example.com")
+        _git(self.repo, "config", "user.name", "Test")
+
+        # A cited target: some .py file with real content, tracked from the start. The CITING doc
+        # (docs/task-scratch.md, below) is what starts untracked -- that is the half under test.
+        pkg = os.path.join(self.repo, "pkg.py")
+        with open(pkg, "w") as f:
+            f.write("x = 1\ny = 2\n")
+        os.makedirs(os.path.join(self.repo, "docs"))
+        _git(self.repo, "add", "pkg.py")
+        _git(self.repo, "commit", "-q", "-m", "init")
+        sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True,
+                              text=True, check=True).stdout.strip()
+
+        # A minimal QUEUE.md: one resolving commit citation (main() refuses on zero SHA citations),
+        # no generated index block yet (body_without_index/tail_after_index both handle that).
+        queue = os.path.join(self.repo, "docs", "QUEUE.md")
+        with open(queue, "w") as f:
+            f.write(f"# QUEUE\n\ncommit {sha} — init\n")
+        _git(self.repo, "add", "docs/QUEUE.md")
+        _git(self.repo, "commit", "-q", "-m", "queue")
+
+        # Monkeypatch the module's ROOT/QUEUE to this isolated repo, and reset its process-lifetime
+        # tracked-files cache (it was already populated, if at all, against the real goinfer repo).
+        self._orig_root, self._orig_queue = qcl.ROOT, qcl.QUEUE
+        qcl.ROOT = pathlib.Path(self.repo)
+        qcl.QUEUE = qcl.ROOT / "docs" / "QUEUE.md"
+        qcl._tracked_cache = qcl._TRACKED_SENTINEL
+
+        # Bootstrap the generated SHA index main() requires on a non---update run — a real
+        # docs/QUEUE.md always already carries one; this test's own commit citation needs the same
+        # one-time --update a freshly-filed queue entry would get before anyone runs the lint bare.
+        code, out = self._run(["--update"])
+        assert code == 0, out
+        _git(self.repo, "add", "docs/QUEUE.md")
+        _git(self.repo, "commit", "-q", "-m", "index")
+
+    def tearDown(self):
+        qcl.ROOT, qcl.QUEUE = self._orig_root, self._orig_queue
+        qcl._tracked_cache = qcl._TRACKED_SENTINEL
+        self.tmp.cleanup()
+
+    def _run(self, argv):
+        """Invoke qcl.main() as the CLI would, capturing BOTH stdout and stderr as one stream —
+        the note and most failure reports print to stdout, but some (e.g. unresolved path
+        citations) go to stderr, and the CLI's own combined terminal output doesn't distinguish
+        them either."""
+        old_argv = sys.argv
+        sys.argv = ["queue_citation_lint.py"] + list(argv)
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                code = qcl.main()
+        finally:
+            sys.argv = old_argv
+        return code, buf.getvalue()
+
+    def test_untracked_doc_skipped_then_reds_once_tracked(self):
+        scratch = os.path.join(self.repo, "docs", "task-scratch.md")
+        # An UNRESOLVABLE citation: pkg.py exists, but no file goinfer would ever resolve exists
+        # under this name -- the simplest form of "cannot resolve" (resolve_path returns nothing).
+        with open(scratch, "w") as f:
+            f.write("see `nonexistent_module_xyz.py:1` for details\n")
+
+        # Step 1/2: untracked -> green, and the note names the file (not silent).
+        code, out = self._run([])
+        self.assertEqual(code, 0, out)
+        self.assertIn("task-scratch.md", out)
+        self.assertIn("note:", out)
+
+        # Step 5 (first half): --update must NOT index the untracked file's citation.
+        code, out = self._run(["--update"])
+        self.assertEqual(code, 0, out)
+        queue_text = qcl.QUEUE.read_text()
+        self.assertNotIn("task-scratch.md", queue_text)
+
+        # Step 3/4: git add (no commit) -> now tracked; must red, naming that citation.
+        _git(self.repo, "add", "docs/task-scratch.md")
+        qcl._tracked_cache = qcl._TRACKED_SENTINEL  # ls-files result changed; drop the cache
+        code, out = self._run([])
+        self.assertNotEqual(code, 0, out)
+        self.assertIn("nonexistent_module_xyz.py", out)
+        self.assertNotIn("note:", out)  # nothing left untracked to report
+
+        # Step 5 (second half): once it resolves AND is tracked, --update DOES index it.
+        with open(scratch, "w") as f:
+            f.write("see `pkg.py:1` for details\n")
+        qcl._tracked_cache = qcl._TRACKED_SENTINEL
+        code, out = self._run(["--update"])
+        self.assertEqual(code, 0, out)
+        queue_text = qcl.QUEUE.read_text()
+        self.assertIn("task-scratch.md", queue_text)
+
+    def test_no_git_degrades_to_lint_everything_and_says_so(self):
+        # Simulate "git ls-files fails" directly rather than deleting .git (which would also break
+        # this test's own setUp/tearDown git calls) -- _tracked_files() is the single chokepoint.
+        qcl._tracked_cache = None
+        orig = qcl._tracked_files
+        qcl._tracked_files = lambda: None
+        try:
+            scratch = os.path.join(self.repo, "docs", "task-scratch.md")
+            with open(scratch, "w") as f:
+                f.write("see `nonexistent_module_xyz.py:1` for details\n")
+            code, out = self._run([])
+            self.assertNotEqual(code, 0, out)  # linted despite being untracked -> reds
+            self.assertIn("git ls-files unavailable", out)
+        finally:
+            qcl._tracked_files = orig
+            qcl._tracked_cache = qcl._TRACKED_SENTINEL
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -55,6 +55,7 @@ if [ "$status" -ne 0 ]; then
     echo "" >&2
     echo "  A rebase or amend rewrites SHAs; a cited one then resolves nowhere for anybody else." >&2
     echo "  Re-point the citation, or run --update if it is only the index that is stale." >&2
+    echo "  If the red is a doc you have not committed yet, commit it — do not move it out of the tree." >&2
     echo "  Deliberate push over a red lint: git push --no-verify" >&2
     exit 1
 fi

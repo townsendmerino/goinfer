@@ -50,6 +50,16 @@ the citation correct, it makes the fact that nobody has verified it VISIBLE, whi
 
 Deliberately NOT checking that the surrounding prose describes the commit accurately — that is not
 mechanisable. It checks the citation, which is the part that was wrong.
+
+SECOND INCIDENT, 2026-09-13, on the PATH side. `docs/task-work-queue-2026-09.md` was written and
+left untracked for a few hours — this repo's normal resting state for a fresh design record —
+which reded this lint, because live_docs() used to walk the filesystem (`ROOT.rglob`) rather than
+git. The only remedy on offer was to remove the file from the tree, which is what happened, under
+time pressure, to unblock an unrelated push; it was never restored, and the doc is gone from every
+branch, stash, dangling object and backup. The fix (J0) is the same shape as the SHA-lint's own
+`docs/internal/` exclusion, generalised from a directory to a property: `live_docs()` now skips
+anything `git ls-files` does not resolve, tracked and untracked alike, and prints what it skipped
+rather than silencing it — see `untracked_live_docs()` and its doc comment.
 """
 
 import collections
@@ -63,15 +73,36 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 QUEUE = ROOT / "docs" / "QUEUE.md"
 
 
-def live_docs():
-    """Every LIVE markdown document, i.e. everything outside docs/completed/.
+_TRACKED_SENTINEL = object()
+_tracked_cache = _TRACKED_SENTINEL
 
-    The burial folder is deliberately excluded: those are historical records, and their citations are
-    SUPPOSED to age with the code they described. Linting them would fight the archival rule and bury
-    the live signal in ~300 lines of expected noise. QUEUE.md is checked first because it hosts the
-    index.
+
+def _tracked_files():
+    """Every path `git ls-files` reports for this repo, as a set of `ROOT`-relative strings — one
+    subprocess call, cached for the process (J0, task-work-queue-2026-09.md). None means git itself
+    is unusable here (no repository, git missing): callers must degrade to their pre-J0 behavior
+    (lint everything) and say so, never fail silently shut or silently open.
     """
-    out = [QUEUE]
+    global _tracked_cache
+    if _tracked_cache is not _TRACKED_SENTINEL:
+        return _tracked_cache
+    try:
+        # -z / null-split, not the default newline-delimited output: git quotes paths containing
+        # spaces or non-ASCII bytes in that mode, which would silently mismatch every str(Path)
+        # comparison below for such a file. No filename in this repo needs it today, but the
+        # subprocess call is cheap either way and a doc title is not this lint's business to ban.
+        out = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=True)
+        _tracked_cache = {p for p in out.stdout.decode("utf-8", "replace").split("\0") if p}
+    except Exception:
+        _tracked_cache = None
+    return _tracked_cache
+
+
+def _candidate_docs():
+    """The rglob scan shared by live_docs() and untracked_live_docs(), before the tracked-file
+    split — one filesystem walk instead of two, and the single place the docs/internal/ and
+    testdata/ exclusions live."""
+    out = []
     for f in sorted(ROOT.rglob("*.md")):
         if "/.git/" in str(f) or "docs/completed/" in str(f) or f == QUEUE:
             continue
@@ -80,7 +111,9 @@ def live_docs():
         # machine and on none of the clones CI or anyone else runs. Linting it produces failures
         # that are structurally unfixable from anywhere but here -- it has already generated
         # local-only false positives -- and a lint that reds on files CI cannot see is a lint people
-        # stop reading. That is a worse outcome than the coverage it buys.
+        # stop reading. That is a worse outcome than the coverage it buys. Now belt-and-braces once
+        # untracked() below also excludes it (it is .gitignore'd, hence untracked) — left in place so
+        # the reasoning stays attached to the example it was written for.
         if "docs/internal/" in str(f):
             continue
         # testdata/ files are gate test inputs (prose prompts), not documentation.
@@ -89,6 +122,44 @@ def live_docs():
             continue
         out.append(f)
     return out
+
+
+def live_docs():
+    """Every LIVE, GIT-TRACKED markdown document, i.e. everything outside docs/completed/.
+
+    The burial folder is deliberately excluded: those are historical records, and their citations are
+    SUPPOSED to age with the code they described. Linting them would fight the archival rule and bury
+    the live signal in ~300 lines of expected noise. QUEUE.md is checked first because it hosts the
+    index.
+
+    UNTRACKED FILES ARE EXCLUDED (J0, 2026-09-13). `docs/task-work-queue-2026-09.md` was written,
+    left untracked for a few hours — this repo's normal resting state for a fresh design record —
+    and reded the pre-push lint, because this function used to walk the filesystem rather than git.
+    The only remedy the lint offered was to remove the file from the tree; that is what happened,
+    under time pressure, to unblock an unrelated push, and it was never restored. The exclusion
+    already written for docs/internal/ applies word for word: an untracked file's citations resolve
+    on exactly one machine, and a lint that reds on files CI cannot see is a lint people stop
+    reading. See untracked_live_docs() for the ones this skips, and main()'s startup note, which
+    prints that set rather than silencing it — a false red traded for an invisible hole would repeat
+    the same failure one door down.
+    """
+    tracked = _tracked_files()
+    out = [QUEUE]
+    for f in _candidate_docs():
+        if tracked is not None and str(f.relative_to(ROOT)) not in tracked:
+            continue
+        out.append(f)
+    return out
+
+
+def untracked_live_docs():
+    """The live-doc-shaped .md files live_docs() is skipping because git does not track them —
+    printed once by main(), never silently. Empty when git is unusable (there is nothing to skip on
+    that basis; the degrade-to-everything note covers that case instead)."""
+    tracked = _tracked_files()
+    if tracked is None:
+        return []
+    return [f for f in _candidate_docs() if str(f.relative_to(ROOT)) not in tracked]
 MARK_BEGIN = "<!-- CITATION-INDEX: generated by scripts/queue_citation_lint.py --update; do not edit by hand -->"
 MARK_END = "<!-- /CITATION-INDEX -->"
 
@@ -578,6 +649,21 @@ def main() -> int:
     update = "--update" in sys.argv
     text = QUEUE.read_text()
     body = body_without_index(text)
+
+    # J0 (task-work-queue-2026-09.md): say what live_docs() is skipping, and why, up front — a
+    # silent skip trades a false red for an invisible hole, the same shape this file's own module
+    # docstring names for the SHA-lint allowlist. Printed once here regardless of how many times
+    # live_docs()/untracked_live_docs() run later in this invocation.
+    if _tracked_files() is None:
+        print("queue_citation_lint: git ls-files unavailable here (no repository, or git missing) — "
+              "linting every markdown file in the tree, tracked or not, matching pre-J0 behavior.")
+    else:
+        untracked = untracked_live_docs()
+        if untracked:
+            print(f"queue_citation_lint: note: {len(untracked)} untracked doc(s) not linted (commit "
+                  f"them to bring their citations under the gate):")
+            for f in untracked:
+                print(f"    {f.relative_to(ROOT)}")
 
     found = []
     for m in SHA_RE.finditer(body):
