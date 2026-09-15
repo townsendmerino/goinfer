@@ -324,7 +324,7 @@ chat, or delete earlier exchanges (W7). If a request does hit the wall, the erro
 in plain words, with the server's own message underneath. Other 400s are left as they are.
 
 **Server: `/v1/models` (and `/health`) publish `context_window`.** It comes from one function,
-`contextWindow` (`internal/serveapp/openai.go:804`), which `prepare` also uses to enforce the limit,
+`contextWindow` (`internal/serveapp/openai.go:816`), which `prepare` also uses to enforce the limit,
 so the number a client plans against is exactly the one that rejects it. On a resident GPU backend
 that is the resident KV cap, not the model's `MaxPositions`. Measured on this box (CUDA, Qwen3-1.7B):
 `context_window: 8192` rather than Qwen3's native maximum. A prompt of 8192 tokens is rejected naming
@@ -630,7 +630,7 @@ system prompt adds every other sampling field `/v1/chat/completions` accepts: `t
 Temperature and max tokens stay in the top row.
 
 **A correction to what this row used to say:** it listed `logit_bias` among the fields the route
-accepts. It does not. The request struct (`internal/serveapp/openai.go:439`) has no such field. The
+accepts. It does not. The request struct (`internal/serveapp/openai.go:451`) has no such field. The
 sampler supports `LogitBias`, `MinP` and `RepeatPenalty`, but the HTTP route exposes none of them, so
 W10 covers what the route actually takes. Exposing the other three is a server item of its own.
 
@@ -915,9 +915,9 @@ and would change *how* the queue is served without changing this.
 `internal/serveapp/webui/ui/app.css:1513` (layout) · `internal/serveapp/webui/index.html:13` (tabs) ·
 `internal/serveapp/webui/ui/app.js:309`, `:935`, `:122`, `:1434`, `:1581`, `:357`, `:841`, `:86`, `:489`, `:1358`, `:641`, `:205`, `:1288`, `:7`, `:946` (the conversation transcript, the
 rendering rule, the error explanations, the keyboard handling, the load offer that replaced the dead-end line, the thinking split,
-regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:796` (`contextWindow`) ·
+regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:808` (`contextWindow`) ·
 `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
-`internal/serveapp/openai.go:449` (the sampling fields the page never sends) ·
+`internal/serveapp/openai.go:461` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:179` (`Size`, for the
 fit verdict) · `demo/agent/cmd/agent-web/index.html:129`, `:183`, `:198` (the image composer, the
 markdown TODO, the tool chips — all transplantable) ·

@@ -1554,10 +1554,10 @@ re-baked by the code it checks (G-04).
   warm-cache for the same reason.
 - N-38 `metal/prefill_ttft_test.go:81` — the first `PrefillLast` (P=256) includes the one-time compile;
   the L2 record's P=256 row carries it in both arms.
-- N-39 `internal/serveapp/openai.go:1186-1086` — comment says adapter requests "drop to the staged
+- N-39 `internal/serveapp/openai.go:1198-1086` — comment says adapter requests "drop to the staged
   path"; since G3 they reach the resident path on a `prefillFrom == 0` turn. Later-turn behaviour
   (`decoder/session.go`) not in tree. **FIXED 2026-09-13** — rewrote the three comments describing
-  adapter routing (`internal/serveapp/openai.go:1186-1093,735-739,826-829`) to say what
+  adapter routing (`internal/serveapp/openai.go:1198-1093,735-739,826-829`) to say what
   `decoder/model.go:1264`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
   (commit == nil || (lora != nil && resAdapter != nil))`) does: a session's FIRST turn
   (`prefillFrom==0`) with a bound resident adapter reaches the resident GPU path; a later turn on
