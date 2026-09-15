@@ -98,12 +98,27 @@ func (p Plan) NeedBytes() int64 {
 	return p.DenseBytes + p.ExpertBytesUsed + p.KVBytes + p.ExtraBytes
 }
 
-// kvBytesPerPosition is Plan's own KV-cost formula: per-layer (a per-layer-varying family like
-// Gemma 4 is not approximated by one model-level figure — the same reason metal/backend.go's
-// residentKVBytes sums per layer rather than using a single kvDim), summed for K+V, at the
-// requested precision. Bytes-per-element figures match decoder/fitguard.go's kvBytesPerPosition
-// exactly (f32 4.0, f16 2, int8 1.125-including-scale) — kept as an independent constant set
-// rather than a shared call, same reasoning as ctxPlanFloor above.
+// kvBytesPerPositionAllLayers is Plan's own KV-cost formula: per-layer (a per-layer-varying
+// family like Gemma 4 is not approximated by one model-level figure — the same reason
+// metal/backend.go's residentKVBytes sums per layer rather than using a single kvDim), summed
+// for K+V, at the requested precision. Bytes-per-element figures match
+// decoder/arch.go's kvBytesForCtx exactly (f32 4.0, f16 2, int8 1.125-including-scale).
+//
+// M-28 (docs/audit-2026-09-10.md): the per-layer WIDTH now uses Architecture.kvDimAt — zero for
+// a linear/mamba/conv mixer layer (no position-indexed K/V at all), MLA's real compressed
+// latent width instead of the reconstructed per-head width — fixing the same overpricing bug
+// decoder/fitguard.go's estimateKVBytes fixes for the load-time host-RAM guard.
+//
+// DELIBERATELY NOT applying the sliding-window COUNT cap (kvPositionsAt) here, unlike
+// kvBytesForCtx: this function returns a flat PER-POSITION rate (the caller multiplies by
+// whatever ctx it is evaluating), and a sliding-window layer's true cost is not linear in ctx —
+// it flattens at SlidingWindow. Doing that properly needs tryCtx/chooseCtx below to search
+// rather than multiply, a real restructuring with no sliding-window fixture in this file's own
+// test suite to verify against; scoped out of this pass rather than guessed at. Every family
+// this IS fixed for (MLA, DeltaNet/Mamba/conv hybrids) has no sliding window, so this rate stays
+// exact for them; a family with BOTH (none exists in the registry today) would still be
+// overpriced by the uncapped ctx term, the same direction the guard already erred in before
+// M-28, never the unsafe direction.
 func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 	perElem := 4.0
 	switch {
@@ -112,10 +127,16 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 	case f16:
 		perElem = 2
 	}
+	arch := m.w.arch
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	var perPos float64
 	for l := 0; l < nLayers; l++ {
-		kvDim := m.KVHeadsAtResident(l) * m.HeadDimAtResident(l)
+		var kvDim int
+		if arch != nil {
+			kvDim = arch.kvDimAt(l)
+		} else {
+			kvDim = m.KVHeadsAtResident(l) * m.HeadDimAtResident(l)
+		}
 		perPos += 2 * float64(kvDim) * perElem // ×2 for K and V
 	}
 	return int64(perPos)

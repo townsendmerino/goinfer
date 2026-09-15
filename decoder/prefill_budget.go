@@ -113,7 +113,7 @@ func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int, residentPath boo
 	// 8 GB CUDA box would have served entirely in VRAM.
 	var kv int64
 	if !(residentPath && m.ResidentActive()) {
-		kv = kvBytesPerPosition(cfg, m.kvF16, m.kvI8) * int64(positions)
+		kv = estimateKVBytes(cfg, positions, m.kvF16, m.kvI8)
 	}
 	scratch := prefillScratchBytes(cfg, promptTokens)
 	need := kv + scratch
@@ -162,7 +162,7 @@ func (m *Model) FitBudgetSummary() (ctx int, kvBytes, weightBytes, budgetBytes i
 		ctx = cfg.MaxPositions
 	}
 	budgetBytes = int64(float64(avail) * fitMemFraction)
-	kvBytes = kvBytesPerPosition(cfg, m.kvF16, m.kvI8) * int64(ctx)
+	kvBytes = estimateKVBytes(cfg, ctx, m.kvF16, m.kvI8)
 	return ctx, kvBytes, weightBytes, budgetBytes, true
 }
 

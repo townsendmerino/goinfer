@@ -496,6 +496,71 @@ func (a *Architecture) kvHeadsAt(i int) int {
 	return a.NumKVHeads
 }
 
+// kvDimAt returns the number of f32-equivalent elements layer i's K (or V — the two are always
+// equal width) cache actually stores PER POSITION it holds — zero for a linear/mamba/conv mixer
+// layer (M-28, docs/audit-2026-09-10.md: these hold no position-indexed K/V array at all, a
+// small fixed-size recurrent state instead, not something that grows with context), MLA's real
+// compressed latent width (KVLoRARank+QKRopeHeadDim — what forward_deepseek.go's cache actually
+// stores) instead of the full reconstructed per-head width when a.mla != nil, else the ordinary
+// kvHeadsAt(i)*headDimAt(i) every ordinary softmax-attention family already used. This is the
+// WIDTH only; kvPositionsAt below is the COUNT (a sliding-window layer holds fewer positions
+// than ctx once ctx exceeds its window).
+func (a *Architecture) kvDimAt(i int) int {
+	if a.isLinearLayer(i) || a.isMambaLayer(i) || a.isConvLayer(i) {
+		return 0
+	}
+	if a.mla != nil {
+		return a.mla.KVLoRARank + a.mla.QKRopeHeadDim
+	}
+	return a.kvHeadsAt(i) * a.headDimAt(i)
+}
+
+// kvPositionsAt returns how many of ctx cache positions layer i's K/V actually needs to hold
+// resident: ctx itself for an ordinary layer, or SlidingWindow once ctx exceeds it for a LOCAL
+// (non-global) layer under a sliding-window architecture — the ring buffer never grows past its
+// own window regardless of how long the context gets (M-28, docs/audit-2026-09-10.md). Meaningless
+// but harmless for a layer kvDimAt already prices at zero (the caller multiplies the two).
+func (a *Architecture) kvPositionsAt(i, ctx int) int {
+	if a.SlidingWindow > 0 && !a.isGlobalLayer(i) && ctx > a.SlidingWindow {
+		return a.SlidingWindow
+	}
+	return ctx
+}
+
+// kvBytesForCtx sums the REAL per-layer KV cost at ctx positions across the whole architecture —
+// kvDimAt (WIDTH: zero for linear/mamba/conv, MLA's compressed latent instead of the
+// reconstructed per-head width) combined with kvPositionsAt (COUNT: capped at SlidingWindow for a
+// local layer) — the fix for M-28 (docs/audit-2026-09-10.md): the flat NumLayers×NumKVHeads×
+// headDim formula this replaces overpriced hybrid (DeltaNet/conv/Mamba), sliding-window, and MLA
+// models 3-7x by charging every layer full softmax-attention KV regardless of what it actually
+// caches. Used by decoder/fitguard.go's load-time host-RAM guard and decoder/prefill_budget.go's
+// request-time guard, both Config-only (no loaded weights yet) via resolveArchitecture. NOT used
+// by decoder/fitplan.go's device-VRAM Plan(), which needs only the WIDTH half (kvDimAt) via its
+// own per-layer loop — see that file's kvBytesPerPositionAllLayers doc comment for why the
+// sliding-window COUNT cap is deliberately not applied there.
+func kvBytesForCtx(arch *Architecture, ctx int, kvF16, kvI8 bool) int64 {
+	if arch == nil || ctx <= 0 || arch.NumLayers <= 0 {
+		return 0
+	}
+	perElem := 4.0
+	switch {
+	case kvI8:
+		perElem = 1.125 // int8 payload + per-row f32 scale
+	case kvF16:
+		perElem = 2
+	}
+	var total float64
+	for l := 0; l < arch.NumLayers; l++ {
+		dim := arch.kvDimAt(l)
+		if dim == 0 {
+			continue
+		}
+		positions := arch.kvPositionsAt(l, ctx)
+		total += 2 * perElem * float64(dim) * float64(positions) // ×2 for K and V
+	}
+	return int64(total)
+}
+
 func (a *Architecture) ffnAt(i int) int {
 	if a.gemma4 != nil && i >= 0 && i < len(a.gemma4.FFNPerLayer) {
 		return a.gemma4.FFNPerLayer[i]

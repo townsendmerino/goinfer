@@ -1085,7 +1085,7 @@ supports.
 | `docs/audit-2026-09-10.md|cuda/vision_encoder.go:247` | goinfer | `q := r.stream` |
 | `docs/audit-2026-09-10.md|cuda/vision_encoder.go:256` | goinfer | `var scratch []Buffer` |
 | `docs/audit-2026-09-10.md|decoder/arch.go:273` | goinfer | `// sigmoid-activated where Laguna's is softplus (verified against source, not assumed). ` |
-| `docs/audit-2026-09-10.md|decoder/arch.go:529` | goinfer | `RouterSigmoid bool    // score experts with per-expert sigmoid(logit) instead of softmax` |
+| `docs/audit-2026-09-10.md|decoder/arch.go:594` | goinfer | `RouterSigmoid bool    // score experts with per-expert sigmoid(logit) instead of softmax` |
 | `docs/audit-2026-09-10.md|decoder/attention.go:158` | goinfer | `acc64 := true` |
 | `docs/audit-2026-09-10.md|decoder/attention.go:166` | goinfer | `pool := scr.headWorkerPool(nH, 1, nKeys, hd, !acc64 && cache.treeMask == nil, acc64)` |
 | `docs/audit-2026-09-10.md|decoder/blockdrafter.go:141` | goinfer | `func DrafterResidentBytesEstimate(dw BlockDrafterWeights) int64 {` |
@@ -1119,10 +1119,10 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/fitguard.go:151` | goinfer | `func (f fitCheck) remedy() string {` |
 | `docs/audit-2026-09-10.md|decoder/fitguard.go:206` | goinfer | `_, own := arch.ownForward()` |
 | `docs/audit-2026-09-10.md|decoder/fitguard.go:227` | goinfer | `anchor: func (f fitCheck) declineErr() *FitDeclineError {` |
-| `docs/audit-2026-09-10.md|decoder/fitguard.go:365` | goinfer | `if len(dims) < 2 {` |
-| `docs/audit-2026-09-10.md|decoder/fitguard.go:422` | goinfer | `func kvBytesPerPosition(cfg *Config, kvF16, kvI8 bool) int64 {` |
-| `docs/audit-2026-09-10.md|decoder/fitplan.go:107` | goinfer | `func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {` |
-| `docs/audit-2026-09-10.md|decoder/fitplan.go:228` | goinfer | `tryCtx := func(ctx int) (kv int64, fits bool) {` |
+| `docs/audit-2026-09-10.md|decoder/fitguard.go:412` | goinfer | `func estimateGGUFWeightBytes(path string, q quantMode) int64 {` |
+| `docs/audit-2026-09-10.md|decoder/fitguard.go:523` | goinfer | `func kvBytesPerPosition(cfg *Config, kvF16, kvI8 bool) int64 {` |
+| `docs/audit-2026-09-10.md|decoder/fitplan.go:122` | goinfer | `func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {` |
+| `docs/audit-2026-09-10.md|decoder/fitplan.go:249` | goinfer | `tryCtx := func(ctx int) (kv int64, fits bool) {` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4.go:33` | goinfer | `func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4_batched.go:198` | goinfer | `// All K rows must be appended before ANY row's attention is read this` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4_moe.go:112` | goinfer | `if pager != nil {` |
@@ -1146,7 +1146,6 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/generate_vl.go:89` | goinfer | `if m.tryClaimResident() {` |
 | `docs/audit-2026-09-10.md|decoder/generate_vl_resident.go:20` | goinfer | `func (m *Model) residentUploadPrefill(cache *KVCache) error {` |
 | `docs/audit-2026-09-10.md|decoder/gguf.go:1550` | goinfer | `// no layer tensors (they were freed); the caller writes the trailing CRC. Streaming` |
-| `docs/audit-2026-09-10.md|decoder/gguf.go:2267` | goinfer | `if mw.inProj, e = f32mat(p+"ssm_in.weight", projDim, hidden); e != nil {` |
 | `docs/audit-2026-09-10.md|decoder/gguf.go:2613` | goinfer | `if gm.routerProj, e = streamMat(p+"ffn_gate_inp.weight", nE, hidden, quantNone, func(r i` |
 | `docs/audit-2026-09-10.md|decoder/gguf.go:2858` | goinfer | `if l.Router, err = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, quant` |
 | `docs/audit-2026-09-10.md|decoder/gguf.go:488` | goinfer | `cfg.RopeParameters = json.RawMessage(fmt.Sprintf(` |
@@ -1192,7 +1191,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/mtp.go:35` | goinfer | `anchor: type MTPHead struct {` |
 | `docs/audit-2026-09-10.md|decoder/prefill_budget.go:100` | goinfer | `avail := cachedHostRAMAvailable()` |
 | `docs/audit-2026-09-10.md|decoder/prefill_budget.go:114` | goinfer | `var kv int64` |
-| `docs/audit-2026-09-10.md|decoder/prefill_budget.go:116` | goinfer | `kv = kvBytesPerPosition(cfg, m.kvF16, m.kvI8) * int64(positions)` |
+| `docs/audit-2026-09-10.md|decoder/prefill_budget.go:116` | goinfer | `kv = estimateKVBytes(cfg, positions, m.kvF16, m.kvI8)` |
 | `docs/audit-2026-09-10.md|decoder/prefill_budget.go:41` | goinfer | `// PRIOR test's value within the same 250ms window.` |
 | `docs/audit-2026-09-10.md|decoder/registry.go:1082` | goinfer | `// backfillFlatRope BEFORE validateLlama: the released checkpoints carry ONLY a nested` |
 | `docs/audit-2026-09-10.md|decoder/registry.go:181` | goinfer | `func validateConfigBounds(cfg *Config) error {` |

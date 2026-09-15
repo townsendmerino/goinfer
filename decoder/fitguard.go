@@ -333,6 +333,76 @@ func measureBytesPerElem(q quantMode) float64 {
 	return 4
 }
 
+// f32PinnedTensorName reports whether a checkpoint tensor name is one the loaders ALWAYS keep
+// resident at f32 regardless of the requested quant (M-29, docs/audit-2026-09-10.md): a Mamba-2
+// mixer (Granite-4.0-H's "mamba.*" prefix, GGUF "ssm_*") or an MLA attention projection
+// (DeepSeek/Bailing — GGUF "attn_q_a"/"attn_q_b"/"attn_kv_a_mqa"/"attn_kv_b", safetensors
+// "q_a_proj"/"q_b_proj"/"kv_a_proj"/"kv_b_proj").
+//
+// DELIBERATELY NOT a bare "mixer."/"in_proj"/"out_proj" match: Nemotron-H shares the "mixer."
+// prefix across its Mamba-2 (f32), attention, MLP, and MoE layer types (decoder/weights.go's
+// buildNemotronWeights loadLayer — same prefix, different block kinds), and "in_proj"/"out_proj"
+// alone collide with LFM2's conv mixer and qwen3.5/qwen3_next's DeltaNet hybrid, where SOME
+// "linear_attn.in_proj_*" sub-tensors are f32 and OTHERS (loaded via mkQ two lines away in
+// weights.go) are genuinely quantized — a name-only classifier cannot safely tell those apart.
+// Nemotron-H's Mamba-2 in_proj/out_proj/conv1d ARE matched below, but via the full
+// "mixer.in_proj"/"mixer.out_proj"/"mixer.conv1d" compound (never bare "mixer." or bare
+// "in_proj"), which no other Nemotron block-kind tensor name contains.
+//
+// KNOWN RESIDUAL GAP, left unfixed rather than over-matched: MLA's output projection
+// (self_attn.o_proj.weight / Bailing's dense.weight) is ALSO f32-pinned
+// (loadDeepseekAttn/loadDeepseekAttnGGUF), but "o_proj"/"dense.weight" are ordinary, WIDELY-used
+// quantizable tensor names in every non-MLA family — matching them bare would misclassify most
+// of the registry. Left as a small, honest under-estimate (verified in
+// TestFitEstimate_f32PinnedMixersAgreeWithResident: o_proj is a minority of MLA's own attention
+// weight, not the dominant term) rather than risk a much larger false-positive elsewhere.
+func f32PinnedTensorName(name string) bool {
+	for _, s := range []string{
+		"ssm_", "mamba.",
+		"mixer.in_proj", "mixer.out_proj", "mixer.conv1d", // Nemotron-H Mamba-2 only (see doc comment)
+		"attn_q_a", "attn_q_b", "attn_kv_a", "attn_kv_b",
+		"q_a_proj", "q_b_proj", "kv_a_proj", "kv_b_proj",
+	} {
+		if strings.Contains(name, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// visionTowerTensorName reports whether name belongs to a bundled multimodal vision tower or
+// projector rather than the text decoder (M-29, docs/audit-2026-09-10.md). decoder/weights.go's
+// text loader already never REQUESTS these names (see its own comment on this exact prefix
+// pair) — it only reads specific tensor names, so they are silently skipped there. This
+// estimator instead walks EVERY tensor in the checkpoint's metadata, so it must recognize and
+// exclude them explicitly or they get swept into the text model's per-element quant price.
+func visionTowerTensorName(name string) bool {
+	return strings.Contains(name, "vision_tower.") || strings.Contains(name, "multi_modal_projector.")
+}
+
+// gptqAWQAuxSuffix reports whether name is a GPTQ/AWQ auxiliary tensor (qzeros/g_idx/scales,
+// decoder/gptq.go, decoder/awq.go) that is fully consumed during the one-time
+// reconstruct-then-requantize step and never itself kept resident — pricing it as an ordinary
+// weight matrix at the target quant's rate would double-count storage the real load path
+// discards after use. M-29 (docs/audit-2026-09-10.md).
+func gptqAWQAuxSuffix(name string) bool {
+	for _, s := range []string{".qzeros", ".g_idx", ".scales"} {
+		if strings.HasSuffix(name, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// gptqAWQPackFactor is how many 4-bit codes GPTQ/AWQ pack into each element along qweight's
+// packed dimension (decoder/gptq.go: "8 4-bit codes pack into each int32... qweight packs the
+// input dim") — so qweight's ON-DISK shape under-counts the LOGICAL [in,out] matrix it
+// represents by exactly this factor. M-29 (docs/audit-2026-09-10.md): without correcting for it,
+// the estimator priced the packed shape's element count at the target quant's bytes/elem,
+// landing ~8x low — the checkpoint is fully unpacked and RE-quantized to the requested resident
+// quant at load time (decoder/weights.go's loadProj), not kept in its packed on-disk form.
+const gptqAWQPackFactor = 8
+
 // estimateGGUFWeightBytes sums every tensor's element count from the GGUF's metadata and prices
 // it at the target quant. Metadata only: no tensor data is touched, so this costs a header parse
 // on a model that is about to be read in full anyway.
@@ -363,6 +433,12 @@ func estimateGGUFWeightBytes(path string, q quantMode) int64 {
 			continue
 		}
 		if len(dims) < 2 {
+			total += 4 * float64(n)
+			continue
+		}
+		// M-29 (docs/audit-2026-09-10.md): Mamba-2/MLA tensors stay f32 regardless of the
+		// requested quant — price them at what they actually cost, not the ambient rate.
+		if f32PinnedTensorName(name) {
 			total += 4 * float64(n)
 			continue
 		}
@@ -407,9 +483,34 @@ func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
 		if n == 0 {
 			continue
 		}
+		// M-29 (docs/audit-2026-09-10.md): a GPTQ/AWQ auxiliary tensor is fully consumed during
+		// reconstruction and never itself kept resident — price it at zero, not as an ordinary
+		// weight matrix (which would double-count storage the real load path discards).
+		if gptqAWQAuxSuffix(name) {
+			continue
+		}
+		// A bundled vision tower/projector loads at its own precision, independent of the text
+		// model's requested quant (aikit/vision.LoadEncoder's own -vision-quant knob, invisible
+		// here) — price it at f32, the default the text loader never touches it at, rather than
+		// blending it into the text quant rate.
+		if visionTowerTensorName(name) {
+			total += 4 * float64(n)
+			continue
+		}
 		if len(t.Shape) < 2 {
 			total += 4 * float64(n)
 			continue
+		}
+		// M-29: Mamba-2/MLA tensors stay f32 regardless of the requested quant.
+		if f32PinnedTensorName(name) {
+			total += 4 * float64(n)
+			continue
+		}
+		// A GPTQ/AWQ qweight tensor's ON-DISK shape is the packed [in/8, out] layout, not the
+		// logical [in, out] matrix it is unpacked and re-quantized to at load time — correct for
+		// the pack factor before pricing at the target quant's rate, or this under-counts ~8x.
+		if strings.HasSuffix(name, ".qweight") {
+			n *= gptqAWQPackFactor
 		}
 		total += quantBytesPerElem(q) * float64(n)
 	}
@@ -452,6 +553,16 @@ func kvBytesPerPosition(cfg *Config, kvF16, kvI8 bool) int64 {
 func estimateKVBytes(cfg *Config, ctx int, kvF16, kvI8 bool) int64 {
 	if ctx <= 0 {
 		return 0
+	}
+	// M-28 (docs/audit-2026-09-10.md): kvBytesPerPosition's flat formula overpriced hybrid
+	// (DeltaNet/conv/Mamba), sliding-window, and MLA models 3-7x. Resolve the real per-layer
+	// geometry when possible (kvBytesForCtx, decoder/arch.go) and fall back to the flat formula
+	// only when the architecture cannot be resolved at all — not a real load (every real GGUF/
+	// safetensors config that reaches this point already resolved one further up in
+	// fitCheckFor/denseStreamable), but a synthetic Config with no registered model_type, the
+	// shape several of this file's own unit tests construct directly.
+	if arch, _, err := resolveArchitecture(cfg); err == nil && arch != nil {
+		return kvBytesForCtx(arch, ctx, kvF16, kvI8)
 	}
 	return kvBytesPerPosition(cfg, kvF16, kvI8) * int64(ctx)
 }
@@ -539,26 +650,41 @@ func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 // smallerFittingContext solves for the largest context ≤ f.effCtx whose weights+KV fit the
 // budget, floored at ctxFloor. Only meaningful when the caller did not pin a context — a pin is
 // an explicit request and is refused outright rather than silently downgraded (see guardFit).
+//
+// M-28 (docs/audit-2026-09-10.md): this used to divide the budget by a single flat per-position
+// rate, exact only because the flat formula priced every position identically. estimateKVBytes
+// is no longer exactly linear in ctx once a sliding-window layer's cost flattens past its own
+// window — but it IS still monotonic non-decreasing (more context never needs LESS KV), so a
+// binary search finds the largest fitting ctx exactly, the same guarantee the division used to
+// give for free.
 func (f fitCheck) smallerFittingContext() (int, bool) {
 	if f.pinned || f.cfg == nil {
-		return 0, false
-	}
-	rate := kvBytesPerPosition(f.cfg, f.kvF16, f.kvI8)
-	if rate <= 0 {
 		return 0, false
 	}
 	available := f.budget() - f.weightBytes
 	if available <= 0 {
 		return 0, false
 	}
-	ctx := int(available / rate)
-	if ctx > f.effCtx {
-		ctx = f.effCtx // never suggest MORE than what was already being priced
-	}
-	if ctx < ctxFloor {
+	fits := func(ctx int) bool { return estimateKVBytes(f.cfg, ctx, f.kvF16, f.kvI8) <= available }
+	if !fits(ctxFloor) {
 		return 0, false
 	}
-	return ctx, true
+	if fits(f.effCtx) {
+		// KV genuinely costs nothing extra all the way to effCtx (e.g. an all-recurrent model with
+		// no attention layers at all) — the caller only reaches this function when the ORIGINAL
+		// fits() was false, so this is a defensive fallback, not the expected common case.
+		return f.effCtx, true
+	}
+	lo, hi := ctxFloor, f.effCtx
+	for lo < hi {
+		mid := lo + (hi-lo+1)/2
+		if fits(mid) {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	return lo, true
 }
 
 // capNote is the banner line printed when the guard auto-pins a smaller context — the default
