@@ -1310,7 +1310,9 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// The rest of the resolved state — context cap, KV precision, session reuse (and WHY when
 	// it is off), and the features a harness asks about — comes from modelBanner so a test can
 	// hold it to the runtime's own state rather than trusting a run of Fprintf calls.
-	for _, line := range modelBanner(lm, cfg) {
+	bannerCfg := cfg
+	bannerCfg.ctxSize = opts.ResidentContext // the -ctx this model actually asked for (a per-model ctx= wins)
+	for _, line := range modelBanner(lm, bannerCfg) {
 		fmt.Fprintf(os.Stderr, "  %s\n", line)
 	}
 	// C-10: the same reasoning one line up, applied to the TOKENIZER. A pre-tokenizer this build

@@ -1,6 +1,8 @@
 package serveapp
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -74,25 +76,71 @@ func TestBanner_reportsResolvedNotRequested(t *testing.T) {
 }
 
 // TestBanner_contextAndKV: the two numbers that decide whether a harness's turn fits, and
-// whether the KV is lossy.
+// whether the KV is lossy. The context is the RESOLVED limit, never the request: "backend default"
+// told a user nothing, and printing a -ctx above the model's maximum reported a limit that did not exist.
 func TestBanner_contextAndKV(t *testing.T) {
 	for _, tc := range []struct {
-		ctx        int
-		kv         string
-		wantSubstr []string
+		name        string
+		window, max int
+		ctx         int
+		kv          string
+		want        []string
+		notWant     []string
 	}{
-		{0, "", []string{"backend default", "KV f32"}},
-		{4096, "f32", []string{"4096 tokens", "KV f32"}},
-		{32768, "f16", []string{"32768 tokens", "KV f16", "lossy"}},
-		{65536, "i8", []string{"65536 tokens", "KV i8", "lossy"}},
+		{"no -ctx, resident cap below the model maximum", 8192, 40960, 0, "", []string{"context: 8192 tokens (backend default; model maximum 40960 — raise with --ctx)", "KV f32"}, []string{"backend default ·"}},
+		{"no -ctx, model maximum binds", 32768, 32768, 0, "", []string{"context: 32768 tokens (model maximum)"}, []string{"backend default"}},
+		{"-ctx below the model maximum", 4096, 40960, 4096, "f32", []string{"context: 4096 tokens (--ctx; model maximum 40960)", "KV f32"}, nil},
+		{"-ctx above the model maximum", 8192, 8192, 100000, "f16", []string{"context: 8192 tokens (model maximum; --ctx 100000 is above it)", "KV f16", "lossy"}, []string{"100000 tokens"}},
+		{"-ctx equal to the model maximum", 65536, 65536, 65536, "i8", []string{"context: 65536 tokens (model maximum)", "KV i8", "lossy"}, nil},
+		{"unknown", 0, 0, 0, "", []string{"context: unknown"}, nil},
 	} {
-		lines := modelBannerFrom(bannerFacts{hasTemplate: true}, config{ctxSize: tc.ctx, kvPrec: tc.kv})
+		lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: tc.window, maxPositions: tc.max}, config{ctxSize: tc.ctx, kvPrec: tc.kv})
 		got := bannerLine(lines, "context:")
-		for _, want := range tc.wantSubstr {
+		for _, want := range tc.want {
 			if !strings.Contains(got, want) {
-				t.Errorf("ctx=%d kv=%q: line %q missing %q", tc.ctx, tc.kv, got, want)
+				t.Errorf("%s: line %q missing %q", tc.name, got, want)
 			}
 		}
+		for _, bad := range tc.notWant {
+			if strings.Contains(got, bad) {
+				t.Errorf("%s: line %q must not contain %q", tc.name, got, bad)
+			}
+		}
+	}
+}
+
+// TestBanner_contextIsTheEnforcedWindow ties the banner to the limit itself, through the real
+// factsOf on a loaded model: the number printed is contextWindow's — the same one prepare enforces
+// and /v1/models publishes — not a value re-derived from flags.
+func TestBanner_contextIsTheEnforcedWindow(t *testing.T) {
+	_, lm := tinyServed(t)
+	f := factsOf(lm)
+	want := lm.contextWindow(lm.adapter == "")
+	if want <= 0 || f.ctxWindow != want || f.maxPositions != lm.model.Config().MaxPositions {
+		t.Fatalf("factsOf: ctxWindow=%d maxPositions=%d, want %d / %d", f.ctxWindow, f.maxPositions, want, lm.model.Config().MaxPositions)
+	}
+	got := bannerLine(modelBanner(lm, config{}), "context:")
+	if !strings.Contains(got, fmt.Sprintf("context: %d tokens", want)) {
+		t.Errorf("banner context line %q does not state the enforced window %d", got, want)
+	}
+	// On cpu the resident cap does not exist, so window == MaxPositions and a factsOf that read
+	// MaxPositions directly would pass the check above. The GPU case — where they differ, 8192 against
+	// 40960 on the 2070 — is held by the source: factsOf must take the window from contextWindow, and
+	// the load path must hand the banner the -ctx THIS model resolved (a per-model ctx= override wins).
+	src, err := os.ReadFile("banner.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts := string(src)[strings.Index(string(src), "func factsOf("):]
+	if !strings.Contains(facts[:strings.Index(facts, "\n}\n")], "f.ctxWindow = lm.contextWindow(lm.adapter == \"\")") {
+		t.Error("factsOf no longer takes ctxWindow from lm.contextWindow — the banner can drift from the enforced limit")
+	}
+	mainSrc, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mainSrc), "bannerCfg.ctxSize = opts.ResidentContext") {
+		t.Error("the load path no longer passes the model's resolved -ctx to the banner — a per-model ctx= would be misreported")
 	}
 }
 

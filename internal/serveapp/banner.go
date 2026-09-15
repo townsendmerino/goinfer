@@ -39,6 +39,12 @@ type bannerFacts struct {
 	fitKVBytes     int64
 	fitWeightBytes int64
 	fitBudgetBytes int64
+
+	// The context a text request is ACTUALLY held to (contextWindow — the function prepare enforces and
+	// /v1/models publishes as context_window), and the model's own maximum, so the banner can say which of
+	// the two bound it. 0 = unknown.
+	ctxWindow    int
+	maxPositions int
 }
 
 func factsOf(lm *loadedModel) bannerFacts {
@@ -55,6 +61,8 @@ func factsOf(lm *loadedModel) bannerFacts {
 		_, _, _, _, f.toolCallForm = lm.tmpl.ToolCallWrapper()
 	}
 	f.fitCtx, f.fitKVBytes, f.fitWeightBytes, f.fitBudgetBytes, f.fitKnown = lm.model.FitBudgetSummary()
+	f.ctxWindow = lm.contextWindow(lm.adapter == "")
+	f.maxPositions = lm.model.Config().MaxPositions
 	return f
 }
 
@@ -76,11 +84,25 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 
 	// How much context, and at what KV precision — the two numbers that decide whether a
 	// harness's turn fits at all.
+	//
+	// THE RESOLVED NUMBER, NOT THE REQUEST. This line used to print "backend default" when -ctx was
+	// unset, and the -ctx value when it was set — neither of which is the limit. The limit is
+	// min(model maximum, resident KV cap), and an invisible default found out by degradation is the
+	// exact complaint users make about other local servers. It now prints ctxWindow (what prepare
+	// enforces and /v1/models publishes), and says what set it. cfg.ctxSize is the REQUESTED -ctx for
+	// this model (the caller passes the per-model ctx= override when there is one).
 	ctxLine := "context: "
-	if cfg.ctxSize > 0 {
-		ctxLine += fmt.Sprintf("%d tokens (--ctx)", cfg.ctxSize)
-	} else {
-		ctxLine += "backend default"
+	switch {
+	case f.ctxWindow <= 0:
+		ctxLine += "unknown (the model declares no maximum)"
+	case f.maxPositions > 0 && f.ctxWindow < f.maxPositions && cfg.ctxSize > 0:
+		ctxLine += fmt.Sprintf("%d tokens (--ctx; model maximum %d)", f.ctxWindow, f.maxPositions)
+	case f.maxPositions > 0 && f.ctxWindow < f.maxPositions:
+		ctxLine += fmt.Sprintf("%d tokens (backend default; model maximum %d — raise with --ctx)", f.ctxWindow, f.maxPositions)
+	case cfg.ctxSize > f.ctxWindow:
+		ctxLine += fmt.Sprintf("%d tokens (model maximum; --ctx %d is above it)", f.ctxWindow, cfg.ctxSize)
+	default:
+		ctxLine += fmt.Sprintf("%d tokens (model maximum)", f.ctxWindow)
 	}
 	if p := cfg.kvPrec; p != "" && p != "f32" {
 		ctxLine += " · KV " + p + " (lossy)"
