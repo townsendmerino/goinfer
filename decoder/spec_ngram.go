@@ -208,6 +208,28 @@ func (target *Model) genNgram(ctx context.Context, prompt []int, maxTokens int, 
 	return out, g, nil
 }
 
+// specRoundDraftWidth clamps a speculative round's draft width (k proposed tokens, verified
+// together with `cur` at absolute position pos as a [1+k]-row batch) to what's left under the
+// resident context cap — the shared M-03 (docs/audit-2026-09-10.md) shape used by both
+// genNgramInto (this file) and GenerateSpeculative (speculative.go), mirroring
+// blockSpecRoundWidth's (blockspec.go) identical M-13 fix for block speculation. Returns k
+// unchanged when ctxCap doesn't bind (<=0) or there's already room. Returns -1 when there is no
+// room even for `cur` alone (pos >= ctxCap) — the caller's signal to stop cleanly rather than
+// attempt a verify round, exactly like blockSpecRoundWidth's own width<1 case.
+func specRoundDraftWidth(k, pos, ctxCap int) int {
+	if ctxCap <= 0 {
+		return k
+	}
+	room := ctxCap - pos - 1
+	if room < 0 {
+		return -1
+	}
+	if room < k {
+		return room
+	}
+	return k
+}
+
 // genNgramInto is the synchronous speculative decode loop, mirroring generateInto:
 // it assumes cache already holds prompt[:prefillFrom] (a Session's warm prefix; 0
 // and a nil cache for a fresh run), prefills the rest, then runs the n-gram verify
@@ -384,6 +406,20 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			draftTok := proposed
 			if ad != nil {
 				draftTok = proposed[:ad.Depth(len(proposed))]
+			}
+			// M-03 (docs/audit-2026-09-10.md): trim the draft further so verifying [cur,
+			// draft…] never asks the backend to write past the resident context cap — same
+			// M-13 shape blockSpecRoundWidth (blockspec.go) already fixed for block
+			// speculation: verifying past the cap makes checkCap refuse the WHOLE round
+			// with a hard error instead of finishing cleanly at the limit like plain decode
+			// does. Applied AFTER the adaptive-depth clamp above, not instead of it — this
+			// only tightens an already-chosen depth. A -1 means no room even for `cur`
+			// alone: stop, don't attempt a verify round at all.
+			if w := specRoundDraftWidth(len(draftTok), tpos, target.ResidentContextCap()); w < 0 {
+				commitResident()
+				return
+			} else if w != len(draftTok) {
+				draftTok = draftTok[:w]
 			}
 			kEff := len(draftTok)
 			matchLen := 0

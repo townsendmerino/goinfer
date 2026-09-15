@@ -211,3 +211,39 @@ func TestNgramAdaptiveThetaAtLeastOne_declinesToGenerate(t *testing.T) {
 		t.Error("nil drafter with Theta>=1: expected an error (same as genNgram would give), got nil")
 	}
 }
+
+// M-03 (docs/audit-2026-09-10.md): verifying past the resident context cap made the backend's
+// checkCap refuse the WHOLE round with a hard error instead of finishing cleanly at the limit —
+// the same M-13 shape TestBlockSpec_roundWidthRespectsBothBudgets already pins for block
+// speculation (blockSpecRoundWidth, blockspec.go). specRoundDraftWidth is the shared fix used by
+// both genNgramInto (this file) and GenerateSpeculative (speculative.go); this test is their
+// actual TDD gate — it fails red against the pre-fix behavior (no clamp: a round always verified
+// the full proposed width regardless of the cap) and passes green with the clamp in place.
+func TestSpecRoundDraftWidth_respectsResidentContextCap(t *testing.T) {
+	if got := specRoundDraftWidth(4, 100, 0); got != 4 {
+		t.Errorf("uncapped (ctxCap<=0): got %d, want 4 unchanged", got)
+	}
+	if got := specRoundDraftWidth(4, 100, 1000); got != 4 {
+		t.Errorf("plenty of room: got %d, want 4 unchanged", got)
+	}
+	// pos=4090, cap=4096: room for cur (position 4090) plus 5 more (4091..4095) = 5 draft tokens.
+	if got := specRoundDraftWidth(8, 4090, 4096); got != 5 {
+		t.Errorf("width at pos 4090 of a 4096 cap = %d, want 5", got)
+	}
+	// Exactly one slot left (for cur alone): 0 draft tokens, not a refusal — the caller still
+	// verifies cur by itself, exactly like blockSpecRoundWidth's own width==1 case.
+	if got := specRoundDraftWidth(8, 4095, 4096); got != 0 {
+		t.Errorf("width at pos 4095 of a 4096 cap = %d, want 0 (verify cur alone)", got)
+	}
+	// No room even for cur: -1 tells the caller to stop cleanly, never attempt a verify round.
+	if got := specRoundDraftWidth(8, 4096, 4096); got != -1 {
+		t.Errorf("width at the context cap = %d, want -1 (stop, no verify round)", got)
+	}
+	if got := specRoundDraftWidth(8, 5000, 4096); got != -1 {
+		t.Errorf("width past the context cap = %d, want -1 (stop, no verify round)", got)
+	}
+	// k=0 (a miss/empty proposal) at plenty of room: still 0, not clamped to something negative.
+	if got := specRoundDraftWidth(0, 100, 4096); got != 0 {
+		t.Errorf("k=0 with room: got %d, want 0", got)
+	}
+}

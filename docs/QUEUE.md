@@ -1209,14 +1209,17 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
 | `docs/audit-2026-09-10.md|decoder/spec_adaptive.go:228` | goinfer | `if pf, ok := m.resident.(Prefiller); ok {` |
 | `docs/audit-2026-09-10.md|decoder/spec_ngram.go:180` | goinfer | `return fmt.Errorf("decoder.GenerateNgramSpeculative: this model has recurrent state (Mam` |
-| `docs/audit-2026-09-10.md|decoder/spec_ngram.go:271` | goinfer | `targetVerify := func(seq []int, base int) ([][]float32, error) {` |
-| `docs/audit-2026-09-10.md|decoder/spec_ngram.go:316` | goinfer | `target.residentForgetIDs()` |
-| `docs/audit-2026-09-10.md|decoder/spec_ngram.go:421` | goinfer | `if needHist {` |
+| `docs/audit-2026-09-10.md|decoder/spec_ngram.go:219` | goinfer | `func specRoundDraftWidth(k, pos, ctxCap int) int {` |
+| `docs/audit-2026-09-10.md|decoder/spec_ngram.go:293` | goinfer | `targetVerify := func(seq []int, base int) ([][]float32, error) {` |
+| `docs/audit-2026-09-10.md|decoder/spec_ngram.go:338` | goinfer | `target.residentForgetIDs()` |
+| `docs/audit-2026-09-10.md|decoder/spec_ngram.go:418` | goinfer | `if w := specRoundDraftWidth(len(draftTok), tpos, target.ResidentContextCap()); w < 0 {` |
+| `docs/audit-2026-09-10.md|decoder/spec_ngram.go:457` | goinfer | `if needHist {` |
 | `docs/audit-2026-09-10.md|decoder/spec_sample.go:36` | goinfer | `if s.p.TopK <= 0 && s.p.TopP <= 0 && s.p.MinP <= 0 {` |
 | `docs/audit-2026-09-10.md|decoder/spec_sample.go:86` | goinfer | `func (s *Sampler) specStep(p []float64, x int) (int, bool) {` |
 | `docs/audit-2026-09-10.md|decoder/spec_sample_test.go:81` | goinfer | `// TestNgramSampledFirstTokenMatchesPlain checks the sampled path against plain` |
 | `docs/audit-2026-09-10.md|decoder/speculative.go:207` | goinfer | `targetVerify := func(seq []int, base int) ([][]float32, error) {` |
 | `docs/audit-2026-09-10.md|decoder/speculative.go:235` | goinfer | `if seedLogits, err = target.residentPrefillSeed(ctx, prompt, 0, false); err != nil {` |
+| `docs/audit-2026-09-10.md|decoder/speculative.go:280` | goinfer | `kRound := specRoundDraftWidth(K, tpos, target.ResidentContextCap())` |
 | `docs/audit-2026-09-10.md|decoder/staged_device_note_test.go:48` | goinfer | `{"metal", "int8", "int8"},` |
 | `docs/audit-2026-09-10.md|decoder/weightmat.go:44` | goinfer | `func matmulQuant(base quantMode, name string) quantMode {` |
 | `docs/audit-2026-09-10.md|decoder/weightmat.go:771` | goinfer | `if q4, q4s, group, ok := w.Int4(); ok {` |

@@ -58,6 +58,53 @@ func TestSpeculativeGreedyParity(t *testing.T) {
 	}
 }
 
+// TestGenerateSpeculative_residentContextCapFinishesCleanly is M-03's (docs/audit-2026-09-10.md)
+// own gate: verifying past the resident context cap must finish the generation cleanly instead of
+// the backend's checkCap refusing the whole round with a hard error (specRoundDraftWidth,
+// spec_ngram.go — shared with genNgramInto). capPos is set to exactly len(prompt)+1 so round 1
+// deterministically lands on the kRound==0 boundary (room for `cur` alone, no draft token) — the
+// case needing its own draft-cache-sync branch in speculative.go (`case allAccept:` with no
+// draftTok[kRound-1] to feed, since none were drafted — `cur` itself was never fed to the draft's
+// cache this round, and must be fed explicitly instead).
+//
+// fakeResident's logits are position-only (argmax at position p is always p%vocab, regardless of
+// the fed token — decoder/resident_seam_test.go), so the whole token sequence is hand-computable
+// here rather than needing a second live reference call (which would also double-use the same
+// fakeResident's mutated position state).
+func TestGenerateSpeculative_residentContextCapFinishesCleanly(t *testing.T) {
+	target, be := loadWithFakeResident(t)
+	draft, err := Load(tinyFixture(t), Options{})
+	if err != nil {
+		t.Fatalf("load draft: %v", err)
+	}
+	t.Cleanup(func() { _ = draft.Close() })
+
+	prompt := []int{1, 2}
+	be.rf.capPos = len(prompt) + 1 // exactly one position of headroom beyond the prompt
+	vocab := be.rf.vocab
+
+	ch, gen, err := target.GenerateSpeculative(context.Background(), prompt, 100, draft, 4, SamplingParams{Temperature: 0})
+	if err != nil {
+		t.Fatalf("GenerateSpeculative: %v", err)
+	}
+	got := collectTokens(ch)
+	if err := gen.Err(); err != nil {
+		t.Fatalf("resident overran the cap instead of finishing cleanly: %v", err)
+	}
+
+	// cur (prefill's seed) = argmax at position len(prompt)-1 = (len(prompt)-1)%vocab.
+	// Round 1 verifies just cur at position len(prompt) (kRound==0) — its argmax becomes the
+	// next pending token, emitted before the loop re-checks the cap and stops.
+	want := []int{(len(prompt) - 1) % vocab, len(prompt) % vocab}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v (hand-computed from fakeResident's position-only logits)", got, want)
+	}
+	if be.rf.forwards != be.rf.capPos {
+		t.Errorf("resident forwards = %d, want %d (prefill %d + the one kRound==0 verify)",
+			be.rf.forwards, be.rf.capPos, len(prompt))
+	}
+}
+
 // TestSpeculativeGreedyParity_draftTarget runs the real pair — 1.5B target, 0.5B
 // draft — exercising the mismatch/correction path. Output must STILL be
 // token-identical to plain 1.5B greedy (the target's distribution is preserved

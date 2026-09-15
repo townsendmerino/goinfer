@@ -272,10 +272,21 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			return
 		}
 		for {
-			// 1. Draft K tokens greedily on the draft model.
-			draftTok := make([]int, K)
+			// M-03 (docs/audit-2026-09-10.md): clamp this round's fixed K to what's left under
+			// the resident context cap, fresh each round — see specRoundDraftWidth
+			// (spec_ngram.go) for the shared shape and rationale (mirrors blockSpecRoundWidth's
+			// M-13 fix). A -1 means no room even for `cur` alone: stop cleanly rather than
+			// attempt a verify round the backend's checkCap would refuse with a hard error.
+			kRound := specRoundDraftWidth(K, tpos, target.ResidentContextCap())
+			if kRound < 0 {
+				return
+			}
+
+			// 1. Draft kRound tokens greedily on the draft model (kRound may be 0 at the cap
+			// boundary: no draft, just a plain verified step on cur).
+			draftTok := make([]int, kRound)
 			d := cur
-			for i := 0; i < K; i++ {
+			for i := 0; i < kRound; i++ {
 				dl, err := draftForward(d)
 				if err != nil {
 					g.err = err
@@ -288,7 +299,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			// 2. Verify: one target pass over [cur, draftTok...] gives the target's
 			// argmax after each, in one weight stream (the speculative win).
 			base := tpos // cur will be appended at this position
-			seq := make([]int, 0, K+1)
+			seq := make([]int, 0, kRound+1)
 			seq = append(seq, cur)
 			seq = append(seq, draftTok...)
 			logitsN, err := targetVerify(seq, base)
@@ -300,11 +311,11 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			// 3. Greedy accept: keep draftTok[i] while it equals the target's argmax
 			// at position i; the first mismatch is replaced by the target's token.
 			stats.Rounds++
-			stats.Drafted += K
+			stats.Drafted += kRound
 			accepted := 0
 			allAccept := true
 			var nextTok int
-			for i := 0; i < K; i++ {
+			for i := 0; i < kRound; i++ {
 				ti := argmax(logitsN[i])
 				if draftTok[i] == ti {
 					accepted++
@@ -319,7 +330,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 				stats.Evaluated++ // ...plus the one rejection this round (EvalAcceptanceRate)
 			}
 			if allAccept {
-				nextTok = argmax(logitsN[K]) // bonus token
+				nextTok = argmax(logitsN[kRound]) // bonus token (kRound==0: cur's own verified next)
 			}
 			stats.Accepted += accepted
 
@@ -328,11 +339,21 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			// as plain decode would carry it.
 			keep := base + 1 + accepted
 			targetTruncate(keep)
-			if allAccept {
-				// The draft only cached cur..draftTok[K-2]; on a full accept,
-				// draftTok[K-1] is confirmed too, so feed it once to sync the draft
+			switch {
+			case allAccept && kRound > 0:
+				// The draft only cached cur..draftTok[kRound-2]; on a full accept,
+				// draftTok[kRound-1] is confirmed too, so feed it once to sync the draft
 				// cache before trimming (a no-op trim here).
-				if _, err := draftForward(draftTok[K-1]); err != nil {
+				if _, err := draftForward(draftTok[kRound-1]); err != nil {
+					g.err = err
+					return
+				}
+			case allAccept:
+				// M-03: kRound==0 — no draft ran this round, so `cur` itself was never fed to
+				// the draft's cache (the loop above only starts feeding from `cur` when
+				// kRound>=1). Feed it now so the draft cache stays in sync with the target's
+				// confirmed position before next round's draft resumes from nextTok.
+				if _, err := draftForward(cur); err != nil {
 					g.err = err
 					return
 				}
