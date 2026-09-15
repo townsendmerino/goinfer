@@ -36,7 +36,7 @@ These are the pages to trust, and to update when reality moves.
 | [next-models.md](next-models.md) | which model families next, and why; what became of the last list (was `post-v1.0-models.md`) |
 | [capability-matrix.md](capability-matrix.md), [hardware-matrix.md](hardware-matrix.md), [env-vars.md](env-vars.md), [giw-bundles.md](giw-bundles.md) | generated or reference tables |
 
-## Open work — four queues by success criterion
+## Open work — five queues by success criterion
 
 [`QUEUE.md`](QUEUE.md) indexes them and holds the cross-cutting material. An entry lives in
 exactly one queue, keyed by *the question it answers*:
@@ -47,8 +47,9 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-correctness.md](queue-correctness.md) | does it compute the right thing — one PARKED item (G8, unvalidatable on hardware here) as of 2026-08-31; closed entries in [completed/queue-correctness.md](completed/queue-correctness.md) |
 | [queue-engineering.md](queue-engineering.md) | would we find out |
 | [queue-release.md](queue-release.md) | can we tag |
+| [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (28: 23 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (29: 24 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -71,7 +72,7 @@ it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (75)
+## Evidence — `measurements/` (77)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world
