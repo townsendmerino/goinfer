@@ -1581,11 +1581,13 @@ code{font-family:var(--mono);font-size:12.5px;padding:2px 6px;border-radius:6px}
 /* ---- copy affordances (W2) ----
    Quiet by default and always visible: hover-only controls do not exist on a touch screen, and the
    phone on the LAN is a planned client (W16). */
-.md .md-code-head{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 0 12px;min-height:26px}
+.md .md-code-head{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:4px 6px 0 12px;min-height:26px}
 .md .md-lang{padding:0}
 .md .md-code-head .md-copy{margin-left:auto}
-.md-copy,.actions button{font-family:var(--mono);font-size:11px;color:var(--gi-muted);padding:2px 8px;border-radius:6px}
-.md-copy:hover,.actions button:hover,.md-copy:focus-visible,.actions button:focus-visible{color:var(--gi-accent);background:color-mix(in srgb,var(--gi-ink) 7%,transparent)}
+.md-copy,.md-preview,.actions button{font-family:var(--mono);font-size:11px;color:var(--gi-muted);padding:2px 8px;border-radius:6px}
+.md-copy:hover,.md-preview:hover,.actions button:hover,.md-copy:focus-visible,.md-preview:focus-visible,.actions button:focus-visible{color:var(--gi-accent);background:color-mix(in srgb,var(--gi-ink) 7%,transparent)}
+/* W25: the sandboxed preview iframe — a null-origin document, not a peer of the page's own layout */
+.md-preview-frame{display:block;width:100%;min-height:200px;border:0;border-top:1px solid color-mix(in srgb,var(--gi-ink) 10%,transparent);background:#fff}
 .actions{display:flex;justify-content:flex-end;gap:4px;margin-top:4px}
 
 /* ---- system prompt (W4) ---- */
@@ -1659,6 +1661,12 @@ input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1p
 #attach-note{margin:6px 0 0}
 .msg .uimg{display:block;margin-top:8px;max-width:min(320px,100%);max-height:320px;border-radius:8px}
 
+/* W20: attached text/source files */
+.doc-preview{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.doc-chip{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:12px;color:var(--gi-ink);background:color-mix(in srgb,var(--gi-ink) 6%,transparent);border-radius:6px;padding:4px 6px 4px 10px}
+.doc-chip button{color:var(--gi-muted);padding:0 4px;border-radius:4px;font-size:14px;line-height:1}
+#doc-note{margin:6px 0 0}
+
 /* W13: errors that say what to do */
 .msg.err .err-title{margin:0;font-weight:600;color:var(--gi-err)}
 .msg.err .err-detail{margin:6px 0 0;font-family:var(--mono);font-size:12px;color:var(--gi-muted);white-space:pre-wrap;overflow-wrap:anywhere}
@@ -1672,7 +1680,11 @@ input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1p
 .chats-export button[disabled]{opacity:.45;cursor:default}
 
 /* W15: theme control */
-.theme-pick{font-size:12px;color:var(--gi-muted);display:flex;align-items:center;gap:6px}
+/* margin-top/bottom:auto forces true cross-axis centering as a flex item of <header>: as a mixed
+   text+form-control flex container itself, .theme-pick's own auto-centering (from header's
+   align-items) drifted a measured 3px high in every engine tested (not just one) — auto margins
+   override that regardless of the cause. Found from a real screenshot, not assumed. */
+.theme-pick{font-size:12px;color:var(--gi-muted);display:flex;align-items:center;gap:6px;margin-top:auto;margin-bottom:auto}
 .theme-pick select{font-size:12px;padding:3px 6px}
 
 /* W16: phone layout. The desktop header is one row (brand, stats, Book, Theme, tabs) that cannot fit a phone:
@@ -1696,8 +1708,8 @@ input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1p
    grow to at least 32 px tall — above WCAG 2.5.8's 24 px minimum, which several were under (the Export
    buttons at 21 px, the System prompt / Sampling toggles at 20 px). Desktop with a mouse keeps its density. */
 @media (max-width: 600px), (pointer: coarse){
-  .actions button,.md-copy,.chats-export button,.chat-rename,.chat-delete,.chat-cancel-job,.attach-preview button,
-  .err-actions button,.edit-row button,.theme-pick select,.resident-unload{min-height:32px}
+  .actions button,.md-copy,.md-preview,.chats-export button,.chat-rename,.chat-delete,.chat-cancel-job,.attach-preview button,
+  .err-actions button,.edit-row button,.theme-pick select,.resident-unload,.doc-chip button{min-height:32px}
   /* padding, not display:flex — a flex <summary> loses its disclosure triangle */
   details.system summary,details.think summary{padding-block:7px}
   .chat-open{min-height:36px}

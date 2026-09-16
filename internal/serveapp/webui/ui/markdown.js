@@ -154,6 +154,17 @@ const Markdown = (() => {
         copy.textContent = "Copy";
         copy.setAttribute("aria-label", "Copy code");
         head.appendChild(copy);
+        // W25: a rendered preview, offered only for HTML — the one fenced language that is itself a
+        // renderable document. Also handled by delegation (app.js); hidden while the reply is still
+        // streaming (renderReply toggles it), since this whole block is rebuilt from scratch on every
+        // frame and an open preview would just flicker away on the next token.
+        if (lang === "html") {
+          const preview = el("button", "md-preview");
+          preview.type = "button";
+          preview.textContent = "Preview";
+          preview.setAttribute("aria-label", "Preview this code, sandboxed");
+          head.appendChild(preview);
+        }
         wrap.appendChild(head);
         const pre = el("pre");
         const code = el("code", lang ? "language-" + lang : "");

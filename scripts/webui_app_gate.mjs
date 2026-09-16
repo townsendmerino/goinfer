@@ -2368,6 +2368,101 @@ const phase39 = phase(String.raw`
   check("W32 no resident card when nothing has a decoder", $("resident-card").hidden, $("resident-card").hidden);
 `);
 
+// ---- phase 40: W20 — attach a text/source file: read, fence, prepend (client-side only) -----------
+const phase40 = phase(W27_PRELUDE + String.raw`
+  const dt = f => { const d = new DataTransfer(); d.items.add(f); return d; };
+  const viaInput = files => { const d = new DataTransfer(); for (const f of files) d.items.add(f); $("doc-file").files = d.files; $("doc-file").dispatchEvent(new Event("change")); };
+  const viaDrop = f => { const d = dt(f); $("pane-chat").dispatchEvent(new DragEvent("dragover", { dataTransfer: d, bubbles: true, cancelable: true })); $("pane-chat").dispatchEvent(new DragEvent("drop", { dataTransfer: d, bubbles: true, cancelable: true })); };
+  const textFile = (name, text) => new File([text], name, { type: "text/plain" });
+  const binFile = (name, bytes) => new File([new Uint8Array(bytes)], name, { type: "application/octet-stream" });
+  const chips = () => [...$("doc-preview").children];
+
+  $("sampling-reset").click();
+  $("newchat").click();
+
+  viaInput([textFile("main.go", "package main\n\nfunc main() {}\n")]);
+  await until(() => chips().length === 1);
+  check("W20 attaching a text file adds one chip naming it and its length", chips()[0].querySelector(".doc-name").textContent === "main.go (29 chars)" && !$("doc-preview").hidden, chips()[0]?.textContent);
+
+  viaInput([textFile("notes.txt", "hello")]);
+  await until(() => chips().length === 2);
+  check("W20 a second file adds a second chip, in order, the first untouched", chips().length === 2 && chips()[0].querySelector(".doc-name").textContent.startsWith("main.go") && chips()[1].querySelector(".doc-name").textContent.startsWith("notes.txt"), chips().map(c => c.textContent).join(" | "));
+
+  chips()[0].querySelector("button").click();
+  check("W20 removing one chip leaves the other, not the one clicked", chips().length === 1 && chips()[0].querySelector(".doc-name").textContent.startsWith("notes.txt"), chips().map(c => c.textContent).join(" | "));
+
+  // a binary file (a NUL byte) is refused, not silently mangled — the pending list is unchanged
+  viaInput([binFile("a.bin", [0, 1, 2, 3])]);
+  await until(() => /binary/.test($("doc-note").textContent));
+  check("W20 a binary file (a NUL byte) is refused as not text, and nothing is added", /binary/.test($("doc-note").textContent) && chips().length === 1, $("doc-note").textContent + " / " + chips().length);
+
+  // invalid UTF-8 (a lone continuation byte) is refused too — a NUL-free binary would sail through
+  // the first check, so this is a DIFFERENT defect the first check cannot catch
+  viaInput([binFile("bad.txt", [0xc3, 0x28])]);
+  await until(() => /UTF-8/.test($("doc-note").textContent));
+  check("W20 invalid UTF-8 is refused, distinct from the NUL-byte check", /UTF-8/.test($("doc-note").textContent) && chips().length === 1, $("doc-note").textContent);
+
+  // oversized is refused with a specific reason, naming the file
+  viaInput([textFile("huge.txt", "x".repeat(262_145))]);
+  await until(() => /huge\.txt/.test($("doc-note").textContent));
+  check("W20 an oversized file is refused by name, not silently truncated", /huge\.txt/.test($("doc-note").textContent) && /larger than/.test($("doc-note").textContent) && chips().length === 1, $("doc-note").textContent);
+
+  // more than the per-message cap: the first DOC_MAX_FILES-1 more are accepted, the rest refused with a note
+  viaInput([1, 2, 3, 4, 5, 6].map(n => textFile("f" + n + ".txt", "n" + n)));
+  await until(() => /Up to/.test($("doc-note").textContent));
+  check("W20 more than the per-message cap is refused with a note, not silently dropped", chips().length === 5 && /Up to 5 files/.test($("doc-note").textContent), chips().length + " / " + $("doc-note").textContent);
+
+  // clear back down to exactly the two files this phase sends
+  while (chips().length) chips()[0].querySelector("button").click();
+  viaInput([textFile("a.go", "package a\n"), textFile("weird.xyz", "???")]);
+  await until(() => chips().length === 2);
+
+  // send: the fenced content is PREPENDED to the typed text, in attachment order — the same string
+  // sent, shown in the user's own bubble, and saved (W20 never touches the server: no new route, no
+  // content-part — it is exactly what apiMessages would have carried had the user typed it by hand)
+  jobs[JOB] = { status: "running", events: realEvents };
+  $("prompt").value = "explain this";
+  await settle(send()); await idle(); await wait(30);
+  const wantPrefix = "\`a.go\`:\n\`\`\`go\npackage a\n\`\`\`\n\n\`weird.xyz\`:\n\`\`\`\n???\n\`\`\`\n\nexplain this";
+  check("W20 the sent message is the fenced files then the typed text, languages guessed from extension (unknown: bare fence)", window.__lastBody?.messages?.at(-1)?.content === wantPrefix, JSON.stringify(window.__lastBody?.messages?.at(-1)?.content));
+  // the user's own message is TEXT, never Markdown (W3: "the user's text as text") — so the fence
+  // markers show up literally, exactly as sent and saved, not as a rendered code block
+  check("W20 the user's own bubble shows the literal fenced text, matching what was sent and saved", lastYou().children[1].textContent === wantPrefix && stored().messages.at(-2).content === wantPrefix, lastYou().children[1].textContent);
+  check("W20 sending clears the pending files", chips().length === 0 && $("doc-preview").hidden, chips().length);
+
+  // sending with attachments and NO typed text at all is allowed (images already work this way)
+  viaInput([textFile("only.go", "package only\n")]);
+  await until(() => chips().length === 1);
+  jobs[JOB] = { status: "running", events: realEvents };
+  $("prompt").value = "";
+  await settle(send()); await idle(); await wait(30);
+  check("W20 an attachment with no typed text still sends — the fenced file alone", stored().messages.at(-2).content === "\`only.go\`:\n\`\`\`go\npackage only\n\`\`\`\n\n", JSON.stringify(stored().messages.at(-2).content));
+
+  // a non-image file dropped on the chat pane attaches the same way the file picker does
+  viaDrop(textFile("dropped.py", "print(1)\n"));
+  await until(() => chips().length === 1);
+  check("W20 dropping a non-image file onto the chat pane attaches it", chips()[0]?.querySelector(".doc-name")?.textContent.startsWith("dropped.py"), chips()[0]?.textContent);
+  chips()[0].querySelector("button").click();
+
+  // an image dropped on the pane goes to the OTHER attach path silently — no doc chip, and no
+  // "binary file" rejection note either: that message would be true (image bytes aren't text) but
+  // wrong to show, since the user never asked to attach it as a file in the first place
+  $("doc-note").textContent = ""; $("doc-note").hidden = true;
+  viaDrop(new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "pic.png", { type: "image/png" }));
+  await wait(80);
+  check("W20 dropping an IMAGE never reaches the doc path — no chip, no spurious rejection note", chips().length === 0 && $("doc-note").hidden && !$("doc-note").textContent, chips().length + " / " + $("doc-note").textContent);
+
+  // busy (mid-generation) refuses new attachments, same as the image path
+  jobs[JOB] = { status: "running", events: "hang" };
+  $("prompt").value = "long running";
+  const bgRun = send();
+  await until(() => generating && generating.job === JOB);
+  viaInput([textFile("busy.go", "package busy\n")]);
+  await wait(50);
+  check("W20 attaching while a reply is generating is refused, same as image attach", chips().length === 0, chips().length);
+  $("stop").click(); await settle(bgRun); await idle();
+`);
+
 const all = [];
 const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
@@ -2380,7 +2475,7 @@ const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, 
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }); },
   phase29,
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false }); },
-  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38, phase39];
+  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38, phase39, phase40];
 let n = 0;
 for (const prog of PHASES) {
   if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase

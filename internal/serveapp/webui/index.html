@@ -68,6 +68,8 @@
       <button type="button" id="attach-remove" aria-label="Remove image">Remove</button>
     </div>
     <p class="note" id="attach-note" hidden></p>
+    <ul id="doc-preview" class="doc-preview" hidden></ul>
+    <p class="note" id="doc-note" hidden></p>
     <div id="ctx" class="ctx" hidden>
       <div class="bar ambient amb-surface-concave amb-rounded" role="meter" id="ctx-bar" aria-label="Context used" aria-valuemin="0" aria-valuemax="100"><div id="ctx-fill"></div></div>
       <span id="ctx-text" class="note"></span>
@@ -77,6 +79,8 @@
       <div class="fit"><label class="enter-pick" for="enter-sends"><input type="checkbox" id="enter-sends"> Enter sends</label></div>
       <div class="fit"><input type="file" id="attach-file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
       <button class="ambient amb-surface amb-rounded" id="attach" type="button" hidden title="Attach an image — or drop or paste one">Attach image</button>
+      <input type="file" id="doc-file" multiple hidden>
+      <button class="ambient amb-surface amb-rounded" id="attach-doc" type="button" title="Attach a text or source file — or drop one">Attach file</button>
       <button class="ambient amb-surface amb-rounded" id="stop" hidden>Stop</button>
       <button class="ambient amb-surface-convex amb-elevation-2 amb-rounded go" id="send">Send</button></div>
     </div>

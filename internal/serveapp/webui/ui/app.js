@@ -369,6 +369,90 @@ $("pane-chat").addEventListener("drop", e => {
   e.preventDefault();
   attachFile(f);
 });
+
+// --- text/source file attach (W20) ---------------------------------------------------------
+// One or more text files, read and fenced CLIENT-SIDE, then prepended to the message text — never a
+// server-side content part the way images are, so there is nothing for the server to do
+// differently and no new route. A file that doesn't decode as text (a binary, a PDF, a picture) is
+// refused, not silently mangled with replacement characters. PDF extraction is its own, much larger
+// decision (a parser, in pure Go with no new root dependency, or in the browser with no external
+// script — task-embed-and-harness-ux.md §0 / task-web-ui-2026-09.md §6.1) and is out of scope here.
+const DOC_MAX_BYTES = 262_144, DOC_MAX_FILES = 5;
+let pendingDocs = [];   // [{name, content}], most recently attached last
+const LANG_BY_EXT = {
+  go: "go", py: "python", js: "javascript", mjs: "javascript", cjs: "javascript", ts: "typescript",
+  tsx: "tsx", jsx: "jsx", rs: "rust", c: "c", h: "c", cc: "cpp", cpp: "cpp", hpp: "cpp", java: "java",
+  kt: "kotlin", swift: "swift", rb: "ruby", php: "php", sh: "bash", bash: "bash", zsh: "bash",
+  sql: "sql", json: "json", yaml: "yaml", yml: "yaml", toml: "toml", css: "css", html: "html",
+  xml: "xml", md: "markdown",
+};
+function langFor(name) {
+  const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+  return LANG_BY_EXT[ext] || "";
+}
+function docNote(text) {
+  $("doc-note").textContent = text;
+  $("doc-note").hidden = !text;
+}
+function showDocs() {
+  const ul = $("doc-preview");
+  ul.textContent = "";
+  ul.hidden = pendingDocs.length === 0;
+  pendingDocs.forEach((d, i) => {
+    const li = document.createElement("li");
+    li.className = "doc-chip";
+    const name = document.createElement("span");
+    name.className = "doc-name";
+    name.textContent = d.name + " (" + d.content.length.toLocaleString() + " chars)";
+    const rm = document.createElement("button");
+    rm.type = "button"; rm.textContent = "×"; rm.setAttribute("aria-label", "Remove " + d.name);
+    rm.onclick = () => { pendingDocs.splice(i, 1); showDocs(); };
+    li.append(name, rm);
+    ul.appendChild(li);
+  });
+}
+// readDocFile: a NUL byte or an invalid UTF-8 sequence means "not text" — refused rather than
+// silently decoded with replacement characters, which would send the model mangled garbage.
+function readDocFile(file) {
+  return new Promise((resolve, reject) => {
+    if (file.size > DOC_MAX_BYTES) return reject(new Error(file.name + " is larger than " + Math.round(DOC_MAX_BYTES / 1024) + " KB — trim it or paste an excerpt."));
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error("couldn't read " + file.name));
+    fr.onload = () => {
+      const bytes = new Uint8Array(fr.result);
+      if (bytes.includes(0)) return reject(new Error(file.name + " looks like a binary file, not text."));
+      let content;
+      try { content = new TextDecoder("utf-8", {fatal: true}).decode(bytes); }
+      catch { return reject(new Error(file.name + " isn't valid UTF-8 text.")); }
+      resolve({name: file.name, content});
+    };
+    fr.readAsArrayBuffer(file);
+  });
+}
+async function attachDocs(files) {
+  if (ac || editing) return;
+  for (const file of files) {
+    if (pendingDocs.length >= DOC_MAX_FILES) { docNote("Up to " + DOC_MAX_FILES + " files per message."); break; }
+    try { pendingDocs.push(await readDocFile(file)); docNote(""); }
+    catch (e) { docNote(String(e.message || e)); }
+  }
+  showDocs();
+}
+$("attach-doc").onclick = () => $("doc-file").click();
+$("doc-file").addEventListener("change", () => { const files = [...$("doc-file").files]; $("doc-file").value = ""; if (files.length) attachDocs(files); });
+$("pane-chat").addEventListener("drop", e => {
+  const files = [...(e.dataTransfer?.files || [])].filter(f => !f.type.startsWith("image/"));
+  if (!files.length) return;
+  e.preventDefault();
+  attachDocs(files);
+});
+// fenceDocs is what actually gets prepended to the message: the user's own text, not a hidden
+// system aside, so what they typed/sent/saved and what the model read can never drift apart (W7's
+// edit and regenerate then apply to it exactly as sent, same as any other part of the message).
+function fenceDocs(docs) {
+  return docs.map(d => "`" + d.name + "`:\n```" + langFor(d.name) + "\n" + d.content.replace(/\n?$/, "\n") + "```\n\n").join("");
+}
+
 loadModels();
 
 // --- chat -------------------------------------------------------------------
@@ -469,6 +553,7 @@ function renderReply(out, text, live, e) {
   if (!p) {
     if (folded) out.replaceChildren();
     Markdown.render(out, text);
+    hidePreviewsWhileLive(out, live);
     return;
   }
   if (p.pending) {
@@ -499,6 +584,15 @@ function renderReply(out, text, live, e) {
     n.textContent = "No answer after the thinking — the model stopped before it answered.";
     ans.appendChild(n);
   }
+  hidePreviewsWhileLive(out, live);
+}
+
+// hidePreviewsWhileLive (W25): a code block is rebuilt from scratch on every streamed frame
+// (Markdown.render replaces the whole container), so an open preview would just flicker away on
+// the next token — the Preview button is hidden until the reply is no longer live, rather than
+// offering something that immediately breaks.
+function hidePreviewsWhileLive(out, live) {
+  out.querySelectorAll(".md-preview").forEach(b => { b.hidden = live; });
 }
 
 // --- copy (W2) ----------------------------------------------------------------
@@ -543,6 +637,37 @@ $("log").addEventListener("click", async e => {
   if (text == null) return;
   try { await copyText(text); flash(btn, "Copied"); }
   catch { flash(btn, "Copy failed"); }
+});
+
+// --- rendered code preview (W25) --------------------------------------------------------------
+// A sandboxed iframe, or not at all. sandbox="allow-scripts" with NO allow-same-origin gives it a
+// unique, opaque origin: no access to this page's cookies, storage, or API key, and no top-level
+// navigation. The strict CSP baked into the document additionally blocks every network request the
+// sandboxed page could make (fetch, images, fonts, nested frames), so "preview of generated code"
+// cannot double as a beacon calling out to whatever URL the code names. Loaded via iframe.src on a
+// data: URI — never .srcdoc, which TestWebUI_noHTMLStringSinks bans outright as an HTML-string sink.
+function previewDoc(html) {
+  const csp = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:;";
+  const doc = '<meta http-equiv="Content-Security-Policy" content="' + csp.replace(/"/g, "&quot;") + '">' + html;
+  return "data:text/html;charset=utf-8;base64," + btoa(unescape(encodeURIComponent(doc)));
+}
+$("log").addEventListener("click", e => {
+  const btn = e.target.closest("button.md-preview");
+  if (!btn || btn.disabled) return;
+  const wrap = btn.closest(".md-code");
+  let frame = wrap?.nextElementSibling;
+  if (!(frame && frame.classList.contains("md-preview-frame"))) {
+    const code = wrap?.querySelector("pre code")?.textContent;
+    if (code == null) return;
+    frame = document.createElement("iframe");
+    frame.className = "md-preview-frame";
+    frame.setAttribute("sandbox", "allow-scripts");
+    frame.setAttribute("title", "Preview");
+    frame.src = previewDoc(code);
+    wrap.after(frame);
+  }
+  frame.hidden = !frame.hidden;
+  btn.textContent = frame.hidden ? "Preview" : "Hide preview";
 });
 
 // --- persistence (W3) and conversations (W9) -------------------------------------------
@@ -1064,11 +1189,12 @@ function modelDivider(from, to) {
 }
 
 async function send() {
-  const text = $("prompt").value.trim();
-  if ((!text && !pendingImage) || ac || editing) return;
+  const typed = $("prompt").value.trim();
+  if ((!typed && !pendingImage && !pendingDocs.length) || ac || editing) return;
   if (!$("model").value) { $("chat-status").textContent = "no model loaded"; return; }
   if (!samplingOK()) return;   // W10: before the message is added, so a bad setting loses nothing
   if (pendingImage && !visionOK()) { showAttach(); $("chat-status").textContent = "The selected model can't see images."; return; }   // W11
+  const text = fenceDocs(pendingDocs) + typed;   // W20: attachments first, fenced, then what was typed
 
   // What you type is recessed (amb-surface-concave, decision 3); the echo of
   // it in the log is a quieter flat surface — neither is the "product".
@@ -1080,7 +1206,9 @@ async function send() {
   addActions(mine, text, u);
   $("prompt").value = "";
   pendingImage = null;
+  pendingDocs = [];
   showAttach();
+  showDocs();
   await generate();
 }
 
