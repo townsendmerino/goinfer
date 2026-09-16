@@ -3,8 +3,10 @@
 package gpu
 
 import (
+	"encoding/json"
 	"math"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -91,5 +93,88 @@ func TestNemotronMoEResidentParityWebGPU(t *testing.T) {
 	// (gpt2_resident_parity_test.go's own precedent), not a bar invented for this test.
 	if minCos < 0.95 {
 		t.Errorf("minCosine %.6f < 0.95 — resident diverges from CPU", minCos)
+	}
+}
+
+// TestNemotronMoEResident_noSharedExpertBuilds is M-35's gate (audit-2026-09-10): a Nemotron-H
+// MoE block with n_shared_experts=0 (a real, validator-accepted config shape — decoder/config.go's
+// validateNemotron only errors on the opposite combination, n_shared_experts>0 with the
+// intermediate size unset) used to fail BuildResident with "unsupported projection precision
+// \"\"" — the case-3 branch of the per-layer switch projected SharedExpert.Up/.Down
+// unconditionally, so a zero-value SharedExpert (no tensors for it exist when
+// moe_shared_expert_intermediate_size is also 0) hit proj() with nothing to wrap. Neither real
+// Nemotron-H checkpoint has this shape (both ship a shared expert), so this is a config-space
+// hole, not something the existing parity test above ever exercised.
+//
+// Derives its fixture from testdata/nemotron3nano-tiny by copying config.json with
+// n_shared_experts and moe_shared_expert_intermediate_size zeroed (which makes
+// arch.MoE.SharedIntermediateDim resolve to 0 — decoder/registry.go's nemotron branch reads it
+// directly from moe_shared_expert_intermediate_size, NOT derived from n_shared_experts, so both
+// must be zeroed) and symlinking the same real model.safetensors — its now-unreferenced
+// mixer.shared_experts.* tensors are simply never looked up by either the CPU or GPU loader once
+// SharedIntermediateDim is 0, so no fresh weights need to be generated.
+func TestNemotronMoEResident_noSharedExpertBuilds(t *testing.T) {
+	const srcDir = "../testdata/nemotron3nano-tiny"
+	srcWeights := filepath.Join(srcDir, "model.safetensors")
+	if _, err := os.Stat(srcWeights); err != nil {
+		t.Skipf("no fixture weights (%s; config.json alone is tracked)", srcWeights)
+	}
+	if c, err := New(); err != nil {
+		t.Skipf("no webgpu device: %v", err)
+	} else {
+		c.Close()
+	}
+
+	raw, err := os.ReadFile(filepath.Join(srcDir, "config.json"))
+	if err != nil {
+		t.Fatalf("read config.json: %v", err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatalf("parse config.json: %v", err)
+	}
+	if cfg["n_shared_experts"] == float64(0) {
+		t.Fatal("test bug: source fixture already has n_shared_experts=0 — this test no longer exercises the gap")
+	}
+	cfg["n_shared_experts"] = 0
+	cfg["moe_shared_expert_intermediate_size"] = 0
+	edited, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal edited config: %v", err)
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), edited, 0o644); err != nil {
+		t.Fatalf("write config.json: %v", err)
+	}
+	if genCfg, err := os.ReadFile(filepath.Join(srcDir, "generation_config.json")); err == nil {
+		if err := os.WriteFile(filepath.Join(dir, "generation_config.json"), genCfg, 0o644); err != nil {
+			t.Fatalf("write generation_config.json: %v", err)
+		}
+	}
+	absWeights, err := filepath.Abs(srcWeights)
+	if err != nil {
+		t.Fatalf("abs path: %v", err)
+	}
+	if err := os.Symlink(absWeights, filepath.Join(dir, "model.safetensors")); err != nil {
+		t.Fatalf("symlink weights: %v", err)
+	}
+
+	mg, err := decoder.Load(dir, decoder.Options{Backend: "webgpu", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("BuildResident refused an n_shared_experts=0 Nemotron-H MoE config: %v", err)
+	}
+	defer mg.Close()
+	rf := mg.ResidentForwardForTest()
+	if rf == nil {
+		t.Fatalf("did not go resident — decode path %q; decline: %s", mg.DecodePath(), mg.ResidentDecline())
+	}
+	t.Logf("resident decode path: %s (n_shared_experts=0 config)", mg.DecodePath())
+
+	// A forward pass must actually run without panicking on the nil shUp/shDown fields the
+	// fixed residency.go now leaves unbuilt — the decode-time `if lw.shUp != nil` guard
+	// (gpu/decoderunner.go) is what this exercises end to end, not just that Load succeeds.
+	if _, err := rf.Forward(mg.EmbedResidentForTest(1), 0); err != nil {
+		t.Fatalf("resident forward with no shared expert: %v", err)
 	}
 }

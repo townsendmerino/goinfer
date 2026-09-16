@@ -1252,6 +1252,7 @@ supports.
 | `docs/audit-2026-09-10.md|gpu/backend.go:240` | goinfer | `func (b *webgpuBackend) MatmulW4A8Batch(a []float32, M, K, group int, ops []linalg.W4A8O` |
 | `docs/audit-2026-09-10.md|gpu/backend_w4a8_test.go:29` | goinfer | `anchor: func TestWebGPUBackend_MatmulW4A8_matchesCPU(t *testing.T) {` |
 | `docs/audit-2026-09-10.md|gpu/backend_w4a8_test.go:70` | goinfer | `cos := dot / (math.Sqrt(na)*math.Sqrt(nb) + 1e-30)` |
+| `docs/audit-2026-09-10.md|gpu/decoderunner.go:1122` | goinfer | `if lw.shUp != nil { // always present: SharedIntermediateDim > 0 gates rl.shUp's build` |
 | `docs/audit-2026-09-10.md|gpu/decoderunner.go:1275` | goinfer | `hasSinkUni := uni([]uint32{boolU32(lw.hasSink), 0, 0, 0})` |
 | `docs/audit-2026-09-10.md|gpu/decoderunner.go:1323` | goinfer | `if lw.isMoE {` |
 | `docs/audit-2026-09-10.md|gpu/decoderunner.go:1537` | goinfer | `anchor: func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {` |
@@ -1259,9 +1260,9 @@ supports.
 | `docs/audit-2026-09-10.md|gpu/gemv_w4a8.go:94` | goinfer | `bScales *wgpu.Buffer // [N, kp/32] f32 per-group scales` |
 | `docs/audit-2026-09-10.md|gpu/gpu.go:769` | goinfer | `if err := pass.TryEnd(); err != nil {` |
 | `docs/audit-2026-09-10.md|gpu/lora_resident.go:191` | goinfer | `built := make([]loraRunLayer, len(layers))` |
-| `docs/audit-2026-09-10.md|gpu/residency.go:1026` | goinfer | `// FeatAttnSink (gpt-oss): attnSinks is ALWAYS bound (a real one-element dummy when the` |
-| `docs/audit-2026-09-10.md|gpu/residency.go:1158` | goinfer | `if err := rd.checkCap(startPos, n); err != nil {` |
-| `docs/audit-2026-09-10.md|gpu/residency.go:652` | goinfer | `if rl.shUp, e = proj(&lw.SharedExpert.Up); e != nil {` |
+| `docs/audit-2026-09-10.md|gpu/residency.go:1036` | goinfer | `// FeatAttnSink (gpt-oss): attnSinks is ALWAYS bound (a real one-element dummy when the` |
+| `docs/audit-2026-09-10.md|gpu/residency.go:1168` | goinfer | `if err := rd.checkCap(startPos, n); err != nil {` |
+| `docs/audit-2026-09-10.md|gpu/residency.go:661` | goinfer | `if rl.shUp, e = proj(&lw.SharedExpert.Up); e != nil {` |
 | `docs/audit-2026-09-10.md|internal/chatapp/main.go:116` | goinfer | `// standalone fetcher they would have to go and download first would reintroduce exactly` |
 | `docs/audit-2026-09-10.md|internal/chatapp/main.go:203` | goinfer | `model   = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference f` |
 | `docs/audit-2026-09-10.md|internal/chatapp/main.go:224` | goinfer | `specK       = flag.Int("spec-k", 4, "speculative decoding: draft tokens proposed per ver` |
@@ -1663,7 +1664,7 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:215` | goinfer | `// SetImageBlocks/attendHi), the resident twin of prefillLogitsVL's CPU forward` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:217` | goinfer | `// paying for the CPU prefill; without it — or on any decline from it — that turn falls ` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:252` | goinfer | `// resident-capability-gap discipline as every other optional extension here) — Generate` |
-| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1034` | goinfer | `rl.hasSink = true` |
+| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1044` | goinfer | `rl.hasSink = true` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:495` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:1001` | goinfer | `lm.sessions.adapter = spec.name` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:178` | goinfer | `MoECacheSlots:    cfg.moeCacheSlots,` |

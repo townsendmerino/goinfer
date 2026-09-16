@@ -649,11 +649,21 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					return fail(e)
 				}
 				keepF(rl.expDown.Release)
-				if rl.shUp, e = proj(&lw.SharedExpert.Up); e != nil {
-					return fail(e)
-				}
-				if rl.shDown, e = proj(&lw.SharedExpert.Down); e != nil {
-					return fail(e)
+				// M-35 (audit-2026-09-10): gated on shInter > 0, matching the generic branch's
+				// own shared-expert gate below (`if shInter > 0`) — n_shared_experts==0 is a
+				// real, validator-accepted config shape (decoder/config.go's validateNemotron
+				// only errors on the opposite combination), but this branch projected
+				// SharedExpert.Up/.Down unconditionally, so a zero-value SharedExpert failed
+				// proj() with "unsupported projection precision \"\"" and fell back to CPU
+				// with the wrong stated reason. decoder/forward_nemotron.go's CPU path already
+				// gates the equivalent add on `moe.SharedIntermediateDim > 0`.
+				if shInter > 0 {
+					if rl.shUp, e = proj(&lw.SharedExpert.Up); e != nil {
+						return fail(e)
+					}
+					if rl.shDown, e = proj(&lw.SharedExpert.Down); e != nil {
+						return fail(e)
+					}
 				}
 			default:
 				// N-12: no default meant an unhandled block kind (nemoMoE) appended a layer
