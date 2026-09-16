@@ -216,7 +216,7 @@
         "decoder/gptoss_safetensors.go",
         "decoder/gptoss_safetensors_test.go"
       ],
-      "deps_hash": "sha256:7327936efea80b64c3a9d6ed1c361158d86372d9a25f5d7fa8a1aef1366a241d",
+      "deps_hash": "sha256:77713bea7ece86550ce618dc77709a5166169a7c067d361abc47f1cb40bc1307",
       "status": "validated",
       "validated_at": "25a4711",
       "date": "2026-07-27",
@@ -416,7 +416,7 @@
       "own": [
         "decoder/forward_llama4.go"
       ],
-      "deps_hash": "sha256:d25517855be373729187dd9a52f65d945fed4432d8782728918353c9f02e15a5",
+      "deps_hash": "sha256:91a1ec5d9b13df05147cf842a0f3a9d8332386a3e312d8d8dba6b4f125c6ff40",
       "status": "experimental",
       "validated_at": "3f23c96",
       "date": "2026-06-16",
@@ -524,7 +524,7 @@
       "own": [
         "decoder/forward_nemotron.go"
       ],
-      "deps_hash": "sha256:ba9c8bcec7facf5bbd701deb7ecadd15e896b12971baf1a68c5f3207ce00a436",
+      "deps_hash": "sha256:78e3768cdabcdca5cd4a5ca1ca228b4eab8c38da29f0ff060366bddf13127398",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
