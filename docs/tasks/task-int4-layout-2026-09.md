@@ -150,7 +150,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   comes back zero), so no code change was needed there. Under this gate it is now provably
   unreachable in practice too: `webgpu` is never the literal string `"cpu"`, so
   `wantsCanonicalInt4` always keeps canonical for it regardless.
-- **Item 4: no code change needed.** `internal/serveapp/main.go:429`,
+- **Item 4: no code change needed.** `internal/serveapp/main.go:465`,
   `internal/chatapp/main.go:177`, and `internal/gemmaapp/main.go:47` all already register `--backend` with
   `flag.String(..., "cpu", ...)` — the literal default is already `"cpu"`, not empty. The root
   (no-tags) CPU release binaries already got this saving the moment L1 landed; nothing to wire up.

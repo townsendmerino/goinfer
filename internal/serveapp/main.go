@@ -350,7 +350,7 @@ type config struct {
 // exactPrefillHelp is --exact-prefill's usage text, held as a const so the disclosure can be
 // asserted by test. It is the universal opt-out: one flag that disables fast prefill on EVERY
 // backend that has one (currently CPU f32 attention + Metal f16-MMA batched prefill).
-const exactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — disables BOTH the CPU f32-attention fast path (--cpu-fast-attention) AND Metal's f16-MMA batched prefill (default-on since 2026-09-09 above 512 tokens). Use when diffing outputs across versions, reproducing a bug report, or whenever decode==prefill bit-identity matters more than time-to-first-token. Wins over --cpu-fast-attention and --metal-fast-prefill if any are combined. Both fast paths are fidelity-gated before becoming the default (CPU: §3.1; Metal: §3.2, pooled form) — the exact path is a regression reference, not a correctness emergency"
+const exactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — disables the CPU f32-attention fast path (--cpu-fast-attention), Metal's f16-MMA batched prefill (default-on since 2026-09-09 above 512 tokens), AND CUDA's tensor-core batched prefill (GOINFER_CUDA_FAST_PREFILL, default-on above 512 tokens). Use when diffing outputs across versions, reproducing a bug report, or whenever decode==prefill bit-identity matters more than time-to-first-token. Wins over --cpu-fast-attention and --metal-fast-prefill if any are combined. CPU and Metal's fast paths are fidelity-gated before becoming the default (CPU: §3.1; Metal: §3.2, pooled form) — the exact path is a regression reference, not a correctness emergency"
 
 // cpuExactPrefillHelp is the opt-OUT half (CPU only). Held as a const for the same reason as
 // cpuFastAttentionHelp: the test asserts on the text, so the disclosure cannot silently drift
@@ -358,6 +358,42 @@ const exactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — d
 const cpuExactPrefillHelp = "force BIT-EXACT prompt ingestion on the CPU backend: use the f64-accumulating attention kernel for prefill instead of the f32 one that is now the default. Costs the speed --cpu-fast-attention buys (measured 2.28x slower prefill on an 8k prompt, dense 1.5B) and buys back decode==prefill bit-identity, so a long-prompt response is reproducible against a build from before f32 prefill became the default. Use it when you are diffing outputs across versions, reproducing a bug report, or anything where 'same prompt, same tokens' matters more than time-to-first-token. Wins over --cpu-fast-attention if both are given. CPU backend only — use --exact-prefill to disable fast prefill on all backends at once. MoE models take the same f32 path as dense ones — the exclusion was measured and dropped in 66d0a05, so this is the only way to get bit-exact prefill for them too"
 
 const cpuFastAttentionHelp = "DEFAULT ON since 2026-08-31 (pass --cpu-exact-prefill to turn it off). Compute PROMPT attention in f32 instead of the f64-accumulating kernel — measured 2.28x faster prefill on an 8k prompt (dense 1.5B, M1 Pro: 602.9s to 264.6s) because attention is ~70% of a long prefill and the f64 path is ~8x slower than f32 at those shapes. NOT bit-identical: measured cosine 0.9976 against the default (stable across 256/1024/2048-token prompts), so a long-prompt response CAN differ from what you would get with this off, even at temperature 0. Decode is unaffected — this changes only how the prompt is ingested. Speculative decoding is never affected (its verify pass always uses the exact kernel, or verify would stop matching greedy). Applies to MoE models too: the old REFUSAL was dropped in 66d0a05 after being measured (1-cosine 2.126e-3 for MoE against 2.400e-3 for the dense case, depth-matched, with a 48/48 identical greedy continuation), and this help text went on claiming it for two days afterwards. FLOORED AT 512 PROMPT TOKENS: below that the exact kernel runs regardless, because the win scales with prompt length and the divergence does not — an 8-token prompt diverged at the third generated token while buying nothing (1.15x at 512, 1.43x at 2048, 2.28x at 8192). CPU backend only"
+
+// applyExactPrefillEnv sets the per-backend fast-prefill env vars from the parsed flags — a pure
+// function (no os.Args, no process exit, no server) so a test can drive it directly, unlike
+// Main() itself. Called once from Main() right after flag.Parse().
+func applyExactPrefillEnv(cfg config) {
+	// --metal-fast-prefill is DEPRECATED (fast prefill is default-on since §3.2 gate passed 2026-09-09).
+	// --exact-prefill sets GOINFER_METAL_FAST_PREFILL=0 to suppress it on all backends.
+	if cfg.exactPrefill {
+		os.Setenv("GOINFER_METAL_FAST_PREFILL", "0")
+	}
+	// M-48 (docs/audit-2026-09-10.md): --exact-prefill promised "ALL backends" but never touched
+	// CUDA's default-ON tensor-core prefill (GOINFER_CUDA_FAST_PREFILL, cuda/prefill.go) — the
+	// help text described only CPU and Metal while claiming universal coverage. Same reasoning as
+	// the Metal line above: --exact-prefill is the universal opt-out, so it must set every
+	// backend's own knob, not just the two that existed when it was first wired up.
+	if cfg.exactPrefill {
+		os.Setenv("GOINFER_CUDA_FAST_PREFILL", "0")
+	}
+	// Same disclosure argument: the decoder reads GOINFER_CPU_FAST_ATTENTION,
+	// and a divergence a user opts into should be spelled out in --help rather than
+	// discoverable only by reading the source. The MoE refusal and the
+	// speculative-verify exclusion are enforced in the decoder, not here, so they
+	// hold however the env var arrives.
+	// DEFAULT ON, so the env is set EXPLICITLY either way rather than left unset. The decoder
+	// treats unset as on, but an inherited GOINFER_CPU_FAST_ATTENTION from the caller's
+	// environment would otherwise outrank the flags — the server's own flags must win over
+	// whatever the shell happened to export.
+	//
+	// --exact-prefill and --cpu-exact-prefill both disable the CPU fast attention; between a
+	// speed request and a correctness request, the correctness one is the safe resolution.
+	if cfg.exactPrefill || cfg.cpuExactPrefill || !cfg.cpuFastAttention {
+		os.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")
+	} else {
+		os.Setenv("GOINFER_CPU_FAST_ATTENTION", "1")
+	}
+}
 
 func Main() {
 	// Subcommand dispatch, before flag.Parse so `pull` gets its own flag set. Shares one
@@ -526,28 +562,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 			filepath.Base(os.Args[0]), args[0])
 		os.Exit(2)
 	}
-	// --metal-fast-prefill is DEPRECATED (fast prefill is default-on since §3.2 gate passed 2026-09-09).
-	// --exact-prefill sets GOINFER_METAL_FAST_PREFILL=0 to suppress it on all backends.
-	if cfg.exactPrefill {
-		os.Setenv("GOINFER_METAL_FAST_PREFILL", "0")
-	}
-	// Same disclosure argument: the decoder reads GOINFER_CPU_FAST_ATTENTION,
-	// and a divergence a user opts into should be spelled out in --help rather than
-	// discoverable only by reading the source. The MoE refusal and the
-	// speculative-verify exclusion are enforced in the decoder, not here, so they
-	// hold however the env var arrives.
-	// DEFAULT ON, so the env is set EXPLICITLY either way rather than left unset. The decoder
-	// treats unset as on, but an inherited GOINFER_CPU_FAST_ATTENTION from the caller's
-	// environment would otherwise outrank the flags — the server's own flags must win over
-	// whatever the shell happened to export.
-	//
-	// --exact-prefill and --cpu-exact-prefill both disable the CPU fast attention; between a
-	// speed request and a correctness request, the correctness one is the safe resolution.
-	if cfg.exactPrefill || cfg.cpuExactPrefill || !cfg.cpuFastAttention {
-		os.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")
-	} else {
-		os.Setenv("GOINFER_CPU_FAST_ATTENTION", "1")
-	}
+	applyExactPrefillEnv(cfg)
 	// Was --quant given, or is cfg.quant the "int4" default? The .giw explicit-quant check (T1-7)
 	// must fire only on an explicit request — the default must not "mismatch" a non-int4 bundle.
 	flag.Visit(func(f *flag.Flag) {

@@ -188,7 +188,7 @@ stats now follow whichever model is selected, not always the first one listed.
 **The gate decision: a narrow route, not the admin load.** `POST /admin/models/load`
 (`internal/serveapp/admin.go:113`) takes any caller-named path and stays behind
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
-(`internal/serveapp/main.go:724`), registered only under `-web` and wrapped like pull
+(`internal/serveapp/main.go:739`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
 (`webLoadPath`, `internal/serveapp/webui.go:322`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither
@@ -1031,7 +1031,7 @@ second, parallel implementation of the same use-after-free-avoiding logic.
 filesystem path the admin route would otherwise trust unconditionally; unload names nothing but a
 registry key, and the only keys that exist are ones `GET /v1/models` already publishes to every
 client. `handleWebUnload` (`internal/serveapp/webui.go:495`) is `sameOrigin(auth(...))` behind
-`-web` — W5's exact gate stack (`internal/serveapp/main.go:728`) — with `s.models[req.Name]` under
+`-web` — W5's exact gate stack (`internal/serveapp/main.go:743`) — with `s.models[req.Name]` under
 `regMu` (inside `unloadByName`) as the entire "policy": a name not loaded is a 404, the same shape
 as any other unknown model. `TestWebUI_disabledByDefault` and the AST wiring guard
 (`TestWebUI_listAndPullAreWrappedInSameOrigin`, `internal/serveapp/webui_test.go`) were both

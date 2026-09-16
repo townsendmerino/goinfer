@@ -1,16 +1,23 @@
 # Multimodal (vision-language) for goinfer — plan
 
-> **Status (2026-09-07): P0–P4.5 SHIPPED (June); P5 HALF-LANDED; everything below §"2026-09
-> update" is the June plan kept as the design record.** Where it stands today, in one paragraph:
-> images work end-to-end for **one family** (Gemma 3, SigLIP tower, fixed 256-token block, base
-> resolution, single image per turn) on the OpenAI and Anthropic surfaces and in `demo/agent`;
-> Qwen2.5-VL loads its **text side only** (tiny-oracle parity, safetensors only — the image path
-> and the GGUF `mmproj` seam are P5's open half). The vision tower runs on the **CPU** (~171 s/image,
-> a pre-re-anchor June figure never re-measured) or on **WebGPU** (18.8 s, same caveat) — and WebGPU
-> needs cgo, so **the cgo-free release binaries have no GPU vision at all**; a downloaded
-> `goinfer-serve` does images at CPU speed on every platform. No audio in, no video, no image out.
-> Nothing multimodal is in `serve check`, the fit guard, the recommendation registry, or the
-> cold-user protocol. The next program is §"2026-09 update" below.
+> **Status (2026-09-15, M-54): three families served, per-backend GPU support uneven — see below.
+> Everything below §"2026-09 update" is the June plan kept as the design record; it describes an
+> earlier, narrower state than either this line or that section's own body.** Where it stands
+> today, in one paragraph: images work end-to-end for **three families** — Gemma 3 (SigLIP
+> tower), Qwen2.5-VL (own ViT, image path now real, not text-only), and Gemma 4 (E2B/E4B/26B-A4B/
+> 31B) — on the OpenAI and Anthropic surfaces and in `demo/agent`. Per backend: **CPU** serves all
+> three, always. **CUDA** resident-serves Gemma 3's tower (wired 2026-09-15, M-18; 1.58×, 41.3 s →
+> 26.1 s CPU-vs-resident at int8) and can run GPU-resident decode after any tower for Gemma 3
+> (13.26×) or Qwen2.5-VL (3.86×); Qwen2.5-VL's and Gemma 4's own towers stay CPU-only (no
+> `EnableResident` path yet); Gemma 4's `GenerateGemma4VL` is CPU-only v1 with no resident decode
+> bridge at all. **WebGPU** resident-serves Gemma 3's tower (~9×, needs cgo). **Metal** has no
+> vision tower for any family yet. Both CUDA's and WebGPU's resident towers need cgo, so **the
+> cgo-free release binaries still have no GPU vision for any family** — a downloaded
+> `goinfer-serve` does every image at CPU speed regardless of which family. CPU tower cost is
+> ~31.3 s/image (SigLIP, re-measured 2026-09-08, §A "Vision tower CPU prefill" in
+> `docs/benchmarks.md` — flat vs. the pre-measurement baseline, not a regression). No audio in, no
+> video, no image out. Nothing multimodal is in `serve check`, the fit guard, the recommendation
+> registry, or the cold-user protocol. The next program is §"2026-09 update" below.
 >
 > The June status text, kept as written: P0–P3 (image→logits at HF parity) landed through
 > `9412e4e`; P4 (serve vision API + agent image input) is a real user-facing feature —

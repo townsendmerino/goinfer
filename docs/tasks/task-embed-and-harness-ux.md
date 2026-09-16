@@ -132,7 +132,7 @@ now with a reason to exist beyond release hygiene.
 | tool calls that round-trip | M-18 (Responses loop) fixed; **M-20 Gemma-4 tool template fixed 2026-09-02** (`chat/gemma4_tools.go`'s `gemmaValue`/`gemmaParseValue`, byte-exact `call_result`); **M-26 usage chunk on tool streams fixed 2026-09-02**, confirmed by measurement in §6 phase 2 | N-18 `tool_choice` required/any with 2+ tools (the named-tool-not-found half of N-18 was fixed 2026-09-02; `any`/`required` with 2+ tools is still unenforced) |
 | structured output through the API | works for objects; **M-27 top-level scalars fixed 2026-09-02** (`StopWhenComplete` may-end/must-end split); **M-30 no-arg tool schema fixed 2026-09-02** (narrowed in `ToolCallGrammar`, not `compile`) | magnitude bounds on sized/unsigned ints (M-28's "NOT fixed: magnitude" — shape and requiredness are enforced, a `uint8` can still be handed an out-of-range value that `Unmarshal` then rejects) |
 | an 8k-token turn that finishes | CUDA prefill 270 tok/s measured (`docs/server.md:173-200`); CPU ~30; **resident prefix reuse shipped 2026-09-02 (3358e6b)** — agent turn 3 went 9.13 → 0.42 s, so a turn now costs its suffix, not its history | reuse is token-id bookkeeping only (`residentReuseLen`, `decoder/resident_reuse.go`) and nothing rewinds a recurrent state: on the Gated-DeltaNet/Mamba hybrids a reused prefix runs against the state decode left behind, and it was found silently corrupting Qwen3.5 output on CUDA (2026-09-02 run on the 8 GB box; its QUEUE §A entry was still uncommitted there when this line was written) — needs a family exclusion until the state is snapshotted with the prefix; also single-conversation (QUEUE §A) |
-| knowing what it will do before the first request | the banner prints resolved decode/prefill paths (`internal/serveapp/main.go:1322-986`) | the rest of §3.3 |
+| knowing what it will do before the first request | the banner prints resolved decode/prefill paths (`internal/serveapp/main.go:1337-986`) | the rest of §3.3 |
 | finding out it does not work, fast | `-require-backend` (`:354`) | nothing exercises the *routes* a harness uses |
 
 ### 3.2 One command
@@ -343,7 +343,7 @@ by default (the banner says how to turn it on); which of the five routes a given
 (the six-step example the facade replaces) · `internal/chatapp/main.go` (the 632-line reference
 implementation of mode 2) · `decoder/model.go:217`, `:193`, `:802` (`Options`, `Load`,
 `Generate`) · `chat/chat.go:123` (`Detect`) · `pull/pull.go` (the library `pull`
-exports) · `internal/serveapp/main.go:368`, `:354`, `:927-932` (`-web`, `-require-backend`, the
+exports) · `internal/serveapp/main.go:404`, `:354`, `:927-932` (`-web`, `-require-backend`, the
 resolved-path banner) · `docs/server.md:109-133`, `:173-200` (Claude Code and dsh today) ·
 `docs/scoping-dsh-goinfer.md` (Tier 0–2) · `docs/task-model-pull.md` (shipped; `hf:` refs, the
 cache dir, the web UI's contract) · `docs/tasks/parked/task-bindings.md` (what the facade is for downstream) ·

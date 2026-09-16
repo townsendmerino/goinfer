@@ -177,8 +177,14 @@ SSRF guard, returns 400). An image runs through the matching pure-Go vision towe
 (SigLIP encoder + projector for Gemma 3, HF-parity-gated) into the decoder's
 embed-by-vector seam; image tokens count in `usage`. `demo/agent`'s web UI takes a
 dropped/pasted image too. Caveat (Gemma 3's SigLIP path specifically): the tower's
-prefill is CPU-heavy (~3 min/image at 896²) — correct but slow; an int8 tower is
-the planned speedup (`docs/completed/task-cpu-vision-prefill.md`).
+prefill is CPU-heavy — measured ~31.3 s/image at 896² (`docs/benchmarks.md` §A "Vision
+tower CPU prefill"), correct but slow. `-vision-quant int8` (default `f32`) is already
+shipped, not a future plan — `docs/completed/task-cpu-vision-prefill.md` is closed, and
+its own finding was that int8 only speeds this compute-bound prefill on AVX512-VNNI
+hardware; on plain AVX2 it measured a wash, which is why f32 stays the default.
+`--backend webgpu`/`--backend cuda` force the int8 tower regardless of `-vision-quant`
+(needed for the resident GPU matmul weights); CUDA's resident tower measured 26.1 s
+against the same 41.3 s CPU baseline (1.58×, M-18).
 
 ```bash
 go run ./cmd/serve --model ~/models/gemma-3-4b-it --vision ~/models/gemma-3-4b-it
@@ -204,6 +210,17 @@ exact kernel costs 1.43x on a cold 2048-token turn. Below 512 tokens the fast pa
 engage and reuse is exact either way. `--kv-sessions N` sets how many conversations
 to keep warm (default 4; 0 disables); `--session-dir DIR` persists the warm
 sessions to disk and restores them on restart.
+
+**GPU-resident models reuse prefixes too, by a different mechanism.** A `-backend
+cuda`/`metal`/`webgpu` resident model has no session cache (the two are mutually
+exclusive) — instead, resident prefix reuse (`decoder/resident_reuse.go`) compares
+the new prompt's committed token ids directly against the resident KV's own positions
+and prefills only the divergent suffix, reported to the client as
+`prefill_reused_tokens`. Its suffix goes through the same batched prefill path an
+ordinary cold prefill uses, so it inherits that path's own exactness knob, not
+`GOINFER_CPU_FAST_ATTENTION`: **Metal and CUDA** — `--exact-prefill` covers both
+(`GOINFER_METAL_FAST_PREFILL=0`/`GOINFER_CUDA_FAST_PREFILL=0`). **WebGPU** — no
+fast/exact split exists on this backend, so there is nothing to opt out of.
 
 **Embeddings.** Point `--embed-model` at a [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)
 HF snapshot to serve `/v1/embeddings` (`--embed-quant f32|q8`). `--model` and
@@ -246,14 +263,17 @@ window. It must emit a tool call *and then answer from the result*; a model that
 tool forever looks like a server bug and is not one. A 1.5B failed this; **Qwen2.5-7B-Instruct
 passes**. Prefill dominates an agent turn (the harness sends a ~4 KB system prompt plus ~25 tool
 schemas, ~8k tokens), so a GPU backend is strongly preferred: measured **270 tok/s prefill on an
-RTX 2070 SUPER** vs ~30 tok/s on an M1 Pro CPU. This trades away the prompt-prefix KV caching
-above, not just adds to it: GPU-resident models (`-backend cuda`/`metal`/`webgpu`) take a
-STATELESS decode path with no session and no cross-turn prefix reuse at all — every turn of the
-agent loop reprefills the whole ~8k-token history from scratch, including the system prompt and
-tool schemas that stayed fixed. That is still the right trade here (measured 13 tok/s stateless
+RTX 2070 SUPER** vs ~30 tok/s on an M1 Pro CPU. This trades the session-based prompt-prefix KV
+caching above for a different mechanism, not a loss of prefix reuse itself: GPU-resident models
+(`-backend cuda`/`metal`/`webgpu`) take a STATELESS decode path with no session, but still get
+resident prefix reuse (above) against their own resident KV — so a typical agent turn still
+reprefills only the divergent suffix (the new tool result and reply), not the whole ~8k-token
+history, as long as the fixed system prompt and tool schemas stay a genuine prefix of the next
+turn. That is still the right trade here (measured 13 tok/s stateless
 CPU/staged fallback vs ~460 resident on a 0.5B, RTX 2070 SUPER — the loss from going stateless is
-far smaller than the loss from leaving the GPU's resident decode path), but it means the doc's
-usual advice to expect reuse across turns does not apply once `-backend cuda` is in play.
+far smaller than the loss from leaving the GPU's resident decode path); the doc's usual advice to
+expect reuse across turns still applies once `-backend cuda` is in play, just via resident prefix
+reuse rather than the session cache.
 
 ```bash
 # Loopback:

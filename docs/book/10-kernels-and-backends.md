@@ -194,9 +194,14 @@ backend, which is the standing tax of owning the forward pass rather than inheri
 
 Against current Ollama, this repo's own summary in [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) is that goinfer is at
 parity or slower almost everywhere. The cgo-free CUDA backend holds a real edge only on
-tiny-model dense 4-bit decode — about 1.7× at 0.5B, where launch overhead dominates and Go's
-cheaper dispatch shows — and reaches parity at 1.5B. It loses on long-context decode and
-loses substantially on prefill, as Chapter 8 covered.
+small-model dense 4-bit decode at short context (≤512 tokens) — 0.5B **1.24×**, 1.5B **1.13×**,
+where launch overhead dominates and Go's cheaper dispatch shows — and reaches parity at 7B
+(1.00×). *(An earlier draft of this paragraph said "about 1.7× at 0.5B... parity at 1.5B," from a
+pairing whose goinfer half was later retired as a methodology mismatch; both figures are
+withdrawn — see `docs/benchmarks.md`'s own note on it.)* The edge inverts at deeper context —
+Ollama wins, and the gap widens with depth — and it still loses on prefill, though far less than
+it used to: 1.9–3.2× behind now, down from 12–15× before the CUDA tensor-core prefill kernel
+landed, as Chapter 8 covered.
 
 That is the trade stated plainly. A years-tuned CUDA kernel written by people who do only
 that will beat a portable one. Owning the forward pass in Go costs throughput.

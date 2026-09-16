@@ -67,10 +67,12 @@ On the CUDA side, running a 35B-A3B model on an 8 GB card, roughly **48%** of ea
 expert data movement. Not arithmetic — moving expert weights across PCIe to the device. Nearly
 half of every token is a bus transfer.
 
-That figure is the whole optimization story for this model class. The measured throughput:
-10.74 tok/s at the default settings, rising to 15.69 tok/s with CUDA graphs enabled, which cut
-launch overhead. Work on overlapping the transfer with computation is bounded at about 1.18×,
-because the transfer is already close to the bus's ceiling.
+That figure is the whole optimization story for this model class. The measured throughput has
+moved since this was first measured — an early record on this same class of model
+(35B-A3B, `-moe-cache-experts` streaming, 8 GB CUDA card) put it at 10.74–15.69 tok/s; the current
+peer-comparison run (`docs/benchmarks.md`, "M35 (Qwen3.6-35B-A3B)") measures **23.5 tok/s**,
+essentially matching Ollama's 23.9 on the same hardware. Work on overlapping the transfer with
+computation is bounded at about 1.18×, because the transfer is already close to the bus's ceiling.
 
 When almost half your token is a bus transfer, the levers are: move less, move it earlier, or
 move it once and keep it. Chapter 6's slot tuning is the third. There isn't a fourth.
@@ -154,8 +156,9 @@ explains why attention was consuming the time.
 ## What it costs
 
 Mixture of Experts is the reason large models run on small machines at all. A 35B-A3B model
-runs on an 8 GB CUDA card at 10.74–15.69 tok/s, and on a 16 GB Mac at about 2.2 tok/s. Neither
-of those would be possible with a dense model of the same total size.
+runs on an 8 GB CUDA card at **23.5 tok/s** (current measurement; an early record on this same
+setup put it at 10.74–15.69 tok/s), and on a 16 GB Mac at about 2.2 tok/s. Neither of those would
+be possible with a dense model of the same total size.
 
 The costs are concentrated in the plumbing rather than the model: about half of a token is
 expert transfer on the constrained GPU, benchmark inputs need rethinking because content now

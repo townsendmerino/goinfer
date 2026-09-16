@@ -47,31 +47,32 @@ Chapter 4's prefix reuse matters so much for this workload.
 
 ## What prefill costs here
 
-Measured on CPU, with the number of workers as the variable:
+This used to be the book's example of superlinear scaling: an older measurement (pre-2026-09-01,
+6 CPU workers) had a 3,020-token prompt costing 3.0× the time of a 1,520-token one for only 2.0×
+the tokens — the O(K²) attention cost Chapter 2 diagrammed, showing up directly in wall-clock time.
+That measurement has since been superseded by real kernel work, and the current numbers tell a
+different, arguably more interesting story:
 
-| prompt tokens | 1 worker | 6 workers (shipped default) | speedup |
+| prompt tokens | pre-2026-09-01 record | **current, best of 3** | speedup |
 |---|---|---|---|
-| 1,520 | 89.7 s (16.9 tok/s) | **33.8 s (44.9 tok/s)** | 2.65× |
-| 3,020 | 333.3 s (9.1 tok/s) | **101.6 s (29.7 tok/s)** | 3.28× |
+| 170 | 3.3 s | **2.2 s (78.4 tok/s)** | 1.52× |
+| 620 | 19.7 s | **7.0 s (89.0 tok/s)** | 2.83× |
+| 1,520 | 93.2 s | **18.1 s (84.1 tok/s)** | 5.16× |
+| 3,020 | 334.9 s | **38.9 s (77.7 tok/s)** | **8.61×** |
 
-Two things stand out.
+The per-token rate is now roughly FLAT across this whole range (78–89 tok/s) instead of falling
+as prompt length grows — where it used to collapse from 51.5 down to 9.0 tok/s over the same span.
+The O(K²) attention cost is still real in principle (it has to be — each position genuinely
+compares against every earlier one), but a well-optimized kernel can keep it from dominating
+wall-clock time across a practical prompt-length range; it reappears at much deeper context
+instead, where `docs/benchmarks.md`'s own long-context row shows the gap against peers widening
+with depth rather than staying flat.
 
-The parallel speedup is good but sublinear — 3.28× from six workers. Prefill has real
-parallelism available, and 3.28× is a respectable fraction of six.
-
-More importantly, look at the scaling with prompt length:
-
-```
-  prompt tokens    1,520  →  3,020        2.0× more tokens
-  time (6 workers)  33.8s → 101.6s        3.0× more time
-
-  if prefill were linear in prompt length, 2× the tokens would cost 2×
-  the time. It costs 3×, because each position compares against every
-  earlier position — exactly what Chapter 2's attention diagram showed.
-```
-
-Against peers, this is the weakest lane. [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) records Ollama at roughly 4–5×
-faster per prefill token. Decode is competitive; prefill is not.
+Against peers on this same CPU path, the picture has actually flipped — [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md)
+now records goinfer 1.54× *behind* Ollama at K=512 but 0.91× (AHEAD) by K=3,900, a 0.86× ratio
+over the whole curve in goinfer's favor — superseding the "roughly 4–5× behind" this book used to
+quote. (The lane where goinfer is still clearly behind on prefill is CUDA, not CPU: 1.9–3.2× at
+depth, down from 12–15× before its own tensor-core prefill kernel landed — see Chapter 10.)
 
 ---
 
@@ -206,7 +207,8 @@ nobody happened to be testing against.
 So tensor cores are not pursued, **as a decision, not an omission** — recorded 2026-08-04. The
 format stays group-scaled int4.
 
-That leaves the 4–5× prefill gap this chapter measured as two problems wearing one number. Part of
+That leaves the CUDA prefill gap (1.9–3.2× behind at depth, down from 12–15× before the
+tensor-core prefill kernel landed — Chapter 10) as two problems wearing one number. Part of
 it is this fork: dp4a, the integer path GEMV actually runs on, tops out around a third of what
 tensor cores could reach on this hardware, full stop, without opening the fork above. But goinfer's
 GEMV is only at 54% of the dp4a ceiling it's already allowed to reach today — which costs nothing in
@@ -216,20 +218,21 @@ bit-identity, isn't blocked by anything in this section, and is still on the tab
 
 ## What it costs
 
-The concrete version, for a user: a 3,020-token prompt takes 101.6 seconds to process at the
-shipped CPU default. With fast attention at 1.52×, roughly 67 seconds. In an agent loop
-resending a growing context every turn without prefix reuse, that difference compounds over
-every turn.
+The concrete version, for a user: a 3,020-token prompt now takes 38.9 seconds to process at the
+shipped CPU default (77.7 tok/s) — down from the 101.6 seconds this chapter used to quote, before
+the 2026-09-01 CPU prefill work. In an agent loop resending a growing context every turn without
+prefix reuse, even the improved cost compounds over every turn.
 
 Set against decode on the same class of machine — around 39–41 tok/s on a 1.5B model — the
-asymmetry is stark:
+asymmetry is smaller than it used to be, but still real:
 
 ```
   generating a 500-token reply     500 / 40 tok/s   ≈   12 seconds
-  reading the 3,020-token prompt   measured         =  101.6 seconds
+  reading the 3,020-token prompt   measured         =   38.9 seconds
 
-  the prompt costs roughly 8× the reply, and the user waits for the
-  prompt before seeing a single word
+  the prompt still costs roughly 3× the reply, and the user waits for
+  the prompt before seeing a single word — down from ~8× before the
+  2026-09-01 prefill work
 ```
 
 That is the shape of the problem, and it's why prefill is where the work is.
