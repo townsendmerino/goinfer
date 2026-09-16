@@ -1321,7 +1321,7 @@ supports.
 | `docs/audit-2026-09-10.md|internal/serveapp/vision_serve.go:207` | goinfer | `patches, positionIDs, err := vision.Gemma4Preprocess(img.data, lm.gemma4MaxSoft)` |
 | `docs/audit-2026-09-10.md|internal/serveapp/vision_serve.go:268` | goinfer | `gr, err := lm.prepare(req.sampling, vi.ids, false)` |
 | `docs/audit-2026-09-10.md|internal/serveapp/webui.go:109` | goinfer | `func sameOrigin(h http.HandlerFunc) http.HandlerFunc {` |
-| `docs/audit-2026-09-10.md|internal/serveapp/webui.go:248` | goinfer | `fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)` |
+| `docs/audit-2026-09-10.md|internal/serveapp/webui.go:272` | goinfer | `fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)` |
 | `docs/audit-2026-09-10.md|internal/servecheck/check.go:192` | goinfer | `anchor: func (c *Client) Chat(ctx context.Context, model, prompt string, maxTokens int, ` |
 | `docs/audit-2026-09-10.md|internal/servecheck/cmd.go:21` | goinfer | `Exits non-zero if any row fails, so it works as a smoke test in a script.` |
 | `docs/audit-2026-09-10.md|metal/backend.go:26` | goinfer | `// residentFitsMemory's own budget, exposed to decoder.Model.Plan (docs/tasks/task-fit-t` |
@@ -1732,6 +1732,8 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:243` | goinfer | `func (s *server) unloadByName(name string, wait time.Duration) (status int, body map[str` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/anthropic.go:35` | goinfer | `// dropped by the decoder); stop_reason is therefore never "thinking" in v1.` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/jobs_http.go:114` | goinfer | `// W28: a waiting job's place in line — its own request's state, the only queue informat` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:497` | goinfer | `flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu \| webgpu \| cuda \| m` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:502` | goinfer | `flag.StringVar(&cfg.quant, "quant", "int4", "default decoder weight quant — the accuracy/` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:739` | goinfer | `mux.HandleFunc("POST /web/models/load", sameOrigin(auth(maxBytes(textCap, srv.handleWebL` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:743` | goinfer | `mux.HandleFunc("POST /web/models/unload", sameOrigin(auth(maxBytes(textCap, srv.handleWe` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:254` | goinfer | `func (lm *loadedModel) queueFullMsg() string {` |
@@ -1741,12 +1743,13 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:813` | goinfer | `// Why the resident cap: on a resident backend the stateless path prefills the fixed-siz` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:821` | goinfer | `func (lm *loadedModel) contextWindow(residentPath bool) int {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/vision_serve.go:20` | goinfer | `maxImagesPerTurn = 1 // v1: a single image per request (the interleave API is shaped for` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:322` | goinfer | `func webLoadPath(p string) (string, error) {` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:458` | goinfer | `func (s *server) unloadSuggestion(err error) string {` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:495` | goinfer | `func (s *server) handleWebUnload(w http.ResponseWriter, r *http.Request) {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:346` | goinfer | `func webLoadPath(p string) (string, error) {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:482` | goinfer | `func (s *server) unloadSuggestion(err error) string {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:51` | goinfer | `//go:embed webui` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:521` | goinfer | `func (s *server) webEnabled(w http.ResponseWriter) bool {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:519` | goinfer | `func (s *server) handleWebUnload(w http.ResponseWriter, r *http.Request) {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:545` | goinfer | `func (s *server) webEnabled(w http.ResponseWriter) bool {` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:179` | goinfer | `Size   int64` |
+| `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:96` | goinfer | `func Curated() map[string]CuratedTier {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/chatapp/main.go:203` | goinfer | `model   = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference f` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/anthropic.go:507` | goinfer | `// A full queue is honest backpressure: 529 overloaded_error (the kind` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/embeddings.go:34` | goinfer | `maxEmbedInputs     = 2048` |

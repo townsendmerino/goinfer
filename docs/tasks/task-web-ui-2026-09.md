@@ -24,7 +24,7 @@ The page is **a small embedded directory** — `//go:embed webui` (`internal/ser
 step, no external stylesheet, font or script. *(Until 2026-09-14 it was one 1,828-line file; §6.1
 records the split.)* That is deliberate and load-bearing: a CDN reference would make the UI of an
 offline-capable engine require the network. It is off by default behind `-web`
-(`internal/serveapp/webui.go:521`), and it is a client of the same `/v1` routes any other client
+(`internal/serveapp/webui.go:545`), and it is a client of the same `/v1` routes any other client
 uses — so it cannot drift from the API, because it *is* the API's user.
 
 Two tabs (`internal/serveapp/webui/index.html:13`):
@@ -190,7 +190,7 @@ stats now follow whichever model is selected, not always the first one listed.
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
 (`internal/serveapp/main.go:739`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
-(`webLoadPath`, `internal/serveapp/webui.go:322`). Symlinks are resolved on both the path and the
+(`webLoadPath`, `internal/serveapp/webui.go:346`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither
 `../` nor a symlink planted in the cache can point the loader outside it. The suffix check also
 rejects a half-finished `.part` download. The page can load what it pulled, and nothing else.
@@ -743,6 +743,30 @@ checks that the list is laid out below its heading at full width (found by W15's
 - **W25 — Rendered preview of generated code.** The sandboxing *is* the job: a sandboxed iframe at
   a null origin, or not at all. L.
 - **W26 — Prompt library.** M, and the weakest pull on the list for this audience.
+- **W33 — A model picker instead of blind text entry.** Filed 2026-09-15 from a live session on
+  this box: asked to load a bigger coding model, the obvious move — pull `Qwen2.5-Coder-7B-Instruct`
+  over the just-fixed pull flow, Load it — silently landed on single-threaded CPU at ~2 tok/s. The
+  server was still running `-quant int8int8` from an earlier, smaller model, so the 7B's weights
+  needed 7.6 GB against 6.5 GB free (the smaller model was also still resident — load does not
+  auto-evict, W32's own rule) and CUDA declined; nothing on the page said any of that, or offered a
+  way to see or change it. Two related gaps, both real, both worth naming separately:
+  1. **Repo entry is free text with no memory of what's known-good.** `pull.Curated()` /
+     `CuratedNames()` (`pull/pull.go:96`, `:110`) already exists — reachable today only by typing
+     `demo:0.5b` into the same box (`#repo`, `internal/serveapp/webui/index.html:98`), undiscoverable
+     unless someone already knows the trick. A dropdown of curated names beside the free-text box —
+     pick one, or paste a repo — is a small, additive change over what already exists.
+  2. **The quant/backend a model loads at is invisible and unchangeable from the page.** `-quant`
+     and `-backend` (`internal/serveapp/main.go:497`, `:502`) are server-startup flags with "no
+     per-request override" (W5's own decision, §2). That was the right call for *requests*; it is
+     what made *this* incident invisible — the page had no way to show what quant was about to be
+     used, or that a bigger model would blow the budget under it. Arguably the higher-value half of
+     this item: a visible, changeable quant control on the load flow would have caught the problem
+     before it happened, not after.
+  Both still owe the design decision §1 asks of every Tier C item — in particular, part 2 changes
+  what W5 called settled ("the server's own settings … no per-request override"), so it needs its
+  own explicit re-examination, not an assumption that W5's reasoning still holds unchanged for a
+  *load-time* (not per-chat-request) choice. M for either half alone; committing to both together
+  is more, and they do not have to ship in the same pass.
 
 ---
 
@@ -1030,7 +1054,7 @@ second, parallel implementation of the same use-after-free-avoiding logic.
 **No path policy needed here, unlike load.** `webLoadPath` (W5) exists because a load names a
 filesystem path the admin route would otherwise trust unconditionally; unload names nothing but a
 registry key, and the only keys that exist are ones `GET /v1/models` already publishes to every
-client. `handleWebUnload` (`internal/serveapp/webui.go:495`) is `sameOrigin(auth(...))` behind
+client. `handleWebUnload` (`internal/serveapp/webui.go:519`) is `sameOrigin(auth(...))` behind
 `-web` — W5's exact gate stack (`internal/serveapp/main.go:743`) — with `s.models[req.Name]` under
 `regMu` (inside `unloadByName`) as the entire "policy": a name not loaded is a 404, the same shape
 as any other unknown model. `TestWebUI_disabledByDefault` and the AST wiring guard
@@ -1060,7 +1084,7 @@ than claiming to observe it: *"A request already in flight elsewhere will finish
 route to it until it is loaded again."* When *this* page's own reply is the one running on that
 model (`generating.model === name`), the wording says so specifically instead.
 
-**The fit refusal now names a way out.** `unloadSuggestion` (`internal/serveapp/webui.go:458`)
+**The fit refusal now names a way out.** `unloadSuggestion` (`internal/serveapp/webui.go:482`)
 checks `errors.Is(err, decoder.ErrWontFitResident)` — the exported sentinel `FitDeclineError`
 unwraps to, chosen over `errors.As` on the concrete type specifically so the check (and its test)
 never need that type's unexported fields — and, if something is resident, appends *"Unload
@@ -1105,7 +1129,7 @@ and would change *how* the queue is served without changing this.
 
 ## Sources
 
-`internal/serveapp/webui.go:51`, `:521` (the embed, the `-web` gate) ·
+`internal/serveapp/webui.go:51`, `:545` (the embed, the `-web` gate) ·
 `internal/serveapp/webui/ui/app.css:1513` (layout) · `internal/serveapp/webui/index.html:13` (tabs) ·
 `internal/serveapp/webui/ui/app.js:309`, `:935`, `:122`, `:1434`, `:1581`, `:357`, `:841`, `:86`, `:489`, `:1358`, `:641`, `:205`, `:1288`, `:7`, `:946` (the conversation transcript, the
 rendering rule, the error explanations, the keyboard handling, the load offer that replaced the dead-end line, the thinking split,
