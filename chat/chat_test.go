@@ -32,6 +32,7 @@ type goldenFile struct {
 
 var ctors = map[string]func() *Template{
 	"gemma3": Gemma3, "gemma4": Gemma4, "chatml": ChatML, "llama3": Llama3, "mistral": Mistral, "mellum2": Mellum2,
+	"ministral": Ministral,
 }
 
 func loadGoldens(t *testing.T) []goldenFile {
@@ -104,6 +105,37 @@ func TestDetect_fromTemplate(t *testing.T) {
 		if tmpl.Name() != g.Family {
 			t.Errorf("%s: Detect → %q, want %q", g.Family, tmpl.Name(), g.Family)
 		}
+	}
+}
+
+// TestDetect_declinesSmolLM3AndOlmo3 is M-36's decline gate (docs/audit-2026-09-10.md): both
+// families use plain <|im_start|>/<|im_end|> markers — the same substring ChatML's own Detect
+// test matches — but each diverges from generic ChatML enough that silently rendering it that
+// way would be wrong, not just imprecise: SmolLM3 (HuggingFaceTB/SmolLM3-3B) always emits its own
+// "## Metadata" system preamble the caller never asked for; Olmo 3 (allenai/Olmo-3-7B-Instruct)
+// uses <functions>/<function_calls> XML for tool declarations/calls, not ChatML/Qwen's Hermes
+// <tool_call> JSON dialect. Per the user's own design decision (this session, 2026-09-16):
+// decline rather than guess at an unverified template, since only Ministral 3 was independently
+// confirmed enough to be worth a real renderer. Both fingerprints below are the exact real
+// substrings fetched live from each checkpoint's own chat_template.jinja on 2026-09-16, not
+// synthesized guesses — see the docs/audit-2026-09-10.md closure note for the full excerpts.
+func TestDetect_declinesSmolLM3AndOlmo3(t *testing.T) {
+	cases := map[string]string{
+		"smollm3": `{{- "<|im_start|>system\n" -}}{%- if "/system_override" in system_message -%}{{- custom_instructions -}}{%- else -%}{{- "## Metadata\n\n" -}}{%- endif -%}`,
+		"olmo3":   `{%- elif message['role'] == 'assistant' -%}{{- '<|im_start|>assistant\n' -}}{%- if message.get('function_calls', none) is not none -%}{{- '<function_calls>' + message['function_calls'] + '</function_calls>' -}}{%- endif -%}`,
+	}
+	for name, tmpl := range cases {
+		if _, err := Detect(Meta{ChatTemplate: tmpl}); err != ErrUnknownTemplate {
+			t.Errorf("%s: Detect from template = %v, want ErrUnknownTemplate — a template using "+
+				"generic <|im_start|> markers but a distinctive per-family shape must decline, not "+
+				"silently render as plain ChatML (M-36)", name, err)
+		}
+	}
+	// Control: a genuinely plain ChatML template (no "## Metadata", no "<function_calls>") must
+	// still match — these two fingerprints must not be so broad they catch ordinary ChatML too.
+	if tmpl, err := Detect(Meta{ChatTemplate: "{{ '<|im_start|>' + role + '\\n' + content + '<|im_end|>' }}"}); err != nil || tmpl.Name() != "chatml" {
+		t.Errorf("plain ChatML template: Detect = (%v, %v), want (chatml, nil) — the new "+
+			"fingerprints are too broad and now shadow ordinary ChatML checkpoints", tmpl, err)
 	}
 }
 

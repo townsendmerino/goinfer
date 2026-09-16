@@ -1,6 +1,6 @@
 // Package chat renders a conversation into the exact prompt string a model's
 // chat template expects — no Jinja engine. goinfer loads a handful of families
-// (Gemma 3/4, ChatML/Qwen, Llama-3, Mistral); each has a small native Go
+// (Gemma 3/4, ChatML/Qwen, Llama-3, Mistral, Ministral 3); each has a small native Go
 // renderer here, checked against HuggingFace's apply_chat_template (see the
 // testdata/chat_goldens fixtures).
 //
@@ -141,6 +141,29 @@ func Detect(meta Meta) (*Template, error) {
 		// name it "mellum2" (banner/serve) before the generic <|im_start|> branch.
 		case strings.Contains(t, "normalize_content") && strings.Contains(t, "<|im_start|>"):
 			return Mellum2(), nil
+		// M-36 (audit-2026-09-10): three fingerprints checked BEFORE their generic siblings,
+		// same "more specific first" discipline already used above (Harmony-before-Gemma4,
+		// Mellum2-before-ChatML) — each of these three otherwise matches a generic branch's
+		// substring test and would get silently misrendered rather than refused or routed
+		// correctly. All three verified 2026-09-16 against real, live checkpoint templates,
+		// not guessed:
+		//   - SmolLM3 (HuggingFaceTB/SmolLM3-3B): <|im_start|> markers (matches ChatML's own
+		//     test) but always emits its own "## Metadata" system preamble the caller never
+		//     asked for — declined rather than silently rendered as plain ChatML.
+		//   - Olmo 3 (allenai/Olmo-3-7B-Instruct): <|im_start|> markers too, but its tool
+		//     syntax is <functions>/<function_calls> XML, not ChatML/Qwen's Hermes
+		//     <tool_call> JSON dialect — a tool-calling request would render/parse the wrong
+		//     shape under generic ChatML, so this declines too rather than guessing.
+		//   - Ministral 3 (mistralai/Ministral-3-8B-Instruct-2512): contains "[INST]" (matches
+		//     Mistral()'s own test) but is [SYSTEM_PROMPT]-based, not v0.3's system-folded-
+		//     into-the-last-user-turn shape — routed to the real Ministral() renderer instead
+		//     of silently misrendering under the wrong Mistral version.
+		case strings.Contains(t, "## Metadata"):
+			return nil, ErrUnknownTemplate
+		case strings.Contains(t, "<function_calls>"):
+			return nil, ErrUnknownTemplate
+		case strings.Contains(t, "[SYSTEM_PROMPT]"):
+			return Ministral(), nil
 		case strings.Contains(t, "<|im_start|>"):
 			return ChatML(), nil
 		case strings.Contains(t, "[INST]"):

@@ -260,3 +260,53 @@ func Mistral() *Template {
 		return []Segment{{Text: sb.String(), Special: true}}
 	}}
 }
+
+// Ministral — Ministral 3's own template (mistralai/Ministral-3-8B-Instruct-2512's real
+// chat_template.jinja, fetched and read 2026-09-16, not guessed from Mistral v0.3's shape): "<s>"
+// once, an EXPLICIT system message as its own "[SYSTEM_PROMPT]{system}[/SYSTEM_PROMPT]" block —
+// no "[INST] " space before user content (unlike v0.3's Mistral(), which has one), and no eos
+// leading space before an assistant turn either.
+//
+// M-36 (audit-2026-09-10): this family was previously misdetected as Mistral() via the shared
+// "[INST]" substring — a different template version with a different id stream on every turn
+// (no [SYSTEM_PROMPT] at all, "[INST] " WITH a space, system folded into the last user turn
+// instead of rendered as its own block).
+//
+// System placement: the real template emits [SYSTEM_PROMPT]...[/SYSTEM_PROMPT] wherever a
+// role=="system" message naturally falls in the conversation (validated to be first or absent by
+// its own role-ordering pass in the common case) — this renders it FIRST, right after "<s>" and
+// before any turn, which is exactly what the real template produces when the caller's system
+// message is the conversation's first message, the only shape goinfer's system-as-a-separate-
+// parameter Render(system, turns) interface can represent (there is no per-turn system Turn).
+//
+// NOT implemented: the real template's default system message (injected only when the caller
+// provides NONE at all — a long, Mistral-product-branded prompt naming "Ministral-3-8B-
+// Instruct-2512" and "Le Chat" by identity, with {today}/{yesterday} date substitutions) is
+// deliberately NOT replicated here, the same documented divergence ChatML() already has for
+// Qwen's own default system message (chat.go's own "byte-exact" scope note) — injecting
+// Mistral's own product identity into a self-hosted goinfer response would be actively wrong, not
+// just an omission. The no-system-message case is therefore NOT byte-exact for this family
+// (goldens below cover explicit-system cases only, same convention as ChatML's).
+//
+// Tool calling is NOT wired for this family (SupportsTools() declines it, chat/tools.go): the
+// real wire format ([TOOL_CALLS]name[ARGS]{json} per call, no JSON-array wrapping) differs from
+// the existing "mistral" tool dialect (a JSON array of call objects) enough that reusing it would
+// silently mis-render/mis-parse rather than simply be incomplete — declining is the honest choice
+// until that dialect is built for real, not a guess dressed up as support.
+func Ministral() *Template {
+	return &Template{name: "ministral", stops: []string{"</s>"}, render: func(system string, turns []Turn) []Segment {
+		var sb strings.Builder
+		sb.WriteString("<s>")
+		if system != "" {
+			sb.WriteString("[SYSTEM_PROMPT]" + system + "[/SYSTEM_PROMPT]")
+		}
+		for _, t := range turns {
+			if t.Role == "assistant" {
+				sb.WriteString(t.Content + "</s>")
+				continue
+			}
+			sb.WriteString("[INST]" + t.Content + "[/INST]")
+		}
+		return []Segment{{Text: sb.String(), Special: true}}
+	}}
+}
