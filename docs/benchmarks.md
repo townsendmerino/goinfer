@@ -1806,6 +1806,104 @@ same-session, shared-state design (send the natural continuation, then a divergi
 against the *same* live resident state) which this pass did not build. Flagged as a specific
 follow-up, not glossed over.
 
+### Re-run 2026-09-15/16 — CUDA re-anchor after ~100 commits, dense confirmed clean, a real MoE regression found and fixed
+
+Prompted by "a lot of work since the last release" (`v0.18.0`, 2026-09-13) — an overnight re-run of
+this matrix's CUDA rows against the current tree, to check nothing regressed since the last
+same-harness measurement (`abcdd1fe`, 2026-09-04, the source of the W1/W3 tables above).
+
+**Provenance.** `nobara-pc`, RTX 2070 SUPER, driver `595.91.07`, Nobara 44 · goinfer `529d988a`
+(code clean; `git status` reads dirty only from this run's own in-progress output file, not an
+uncommitted code change) · Ollama `0.32.5` · llama-server `0.4.0-dev (build 1, commit 427291b)`,
+built from source with CUDA · `scripts/bench_peer.py`, `BENCH_BACKENDS=cuda`, greedy, restart
+between cells, idle-gated, binaries built fresh from the tested commit (not the stale
+`bench-v0.15.0` binaries the harness defaults to). Raw:
+`docs/measurements/peer-matrix-2026-09-15/nobara-pc-cuda-sweep.json`.
+
+**Dense models (0.5B/1.5B/7B): confirmed unchanged, within noise, against the existing TL;DR
+anchor** — and llama.cpp is now a third data point on every cell (not part of the original
+2026-08-25 re-anchor), landing ahead of both other engines everywhere.
+
+| model @ depth | goinfer | Ollama | llama.cpp | goinfer/Ollama tonight | goinfer/Ollama, existing TL;DR |
+|---|---|---|---|---|---|
+| 0.5B @128  | 341.9 | 268.3 | 378.0 | 1.27× | 1.24× |
+| 0.5B @2048 | 259.2 | 271.2 | 367.0 | 0.96× | 0.95× |
+| 0.5B @3900 | 206.1 | 259.4 | 453.1 | 0.79× | 0.78× |
+| 1.5B @128  | 227.0 | 195.4 | 226.7 | 1.16× | 1.13× |
+| 1.5B @2048 | 161.3 | 179.6 | 217.7 | 0.90× | 0.89× |
+| 1.5B @3900 | 125.0 | 174.6 | 211.4 | 0.72× | 0.71× |
+| 7B @128    |  72.9 |  74.1 |  80.2 | 0.98× | 1.00× |
+| 7B @2048   |  58.4 |  70.9 |  76.0 | 0.82× | 0.82× |
+| 7B @3900   |  52.0 |  69.6 |  74.3 | 0.75× | 0.71× |
+
+Every cell within 1–3 points of the existing anchor — the M-01→M-58 audit-fix batch (correctness
+and crash-prevention work, not throughput levers) moved nothing here either way, as expected.
+
+**M35/M26 (MoE, host↔VRAM expert-cache streaming): a real ~2× drop, found, root-caused, and fixed
+before this was written up — not averaged over.**
+
+| model @ depth | goinfer, first measurement tonight | goinfer @ `abcdd1fe` (2026-09-04, same harness/bundle) | Ollama tonight | llama.cpp tonight |
+|---|---|---|---|---|
+| M35 @128  | 18.9 | 23.5 | 23.8 | 32.8 |
+| M26 @128  | 12.9 | 24.6 | 22.2 | 27.1 |
+| M35 @8000 | 21.5 | 21.6 (post-P20-fix, see W3 above) | 22.8 | 30.8 |
+| M26 @8000 | 13.8 | 15.5 (post-P20-fix, see W3 above) | 19.2 | 22.3 |
+
+(The 8000-depth cells needed `BENCH_DEEP_CTX=8192` set explicitly so goinfer/Ollama/llama-server
+all resolve the same context window — the first attempt with no explicit ctx ran Ollama and
+llama-server at their 4096-token default against an 8000+-token prompt: two failed loud with 400
+Bad Request, and a third (Ollama/M26) returned a number under a context smaller than the prompt,
+which could not be trusted as a real depth-8000 measurement and was discarded rather than kept
+next to the others.)
+
+Ollama and llama.cpp are stable against their own 2026-09-04 history (Ollama/M26 @128: 22.2 both
+times, an exact match — the peer side of the harness behaves identically). **goinfer's numbers are
+not**: M26 fell 24.6→12.9 (-48%), M35 fell 23.5→18.9 (-20%), at depth 128.
+
+**Root cause, confirmed by direct comparison, not inferred.** Built the exact `abcdd1fe` commit in
+a scratch worktree and loaded M26 with identical flags (`-moe-cache-experts`) to compare against
+current `HEAD` directly:
+
+| commit | free VRAM after KV | expert-cache slots granted | context |
+|---|---|---|---|
+| `abcdd1fe` (2026-09-04) | 3.4 GB | 28 | `backend default` (unstated) |
+| `529d988a` (2026-09-15, pre-fix) | 1.5 GB | 10 | 8192 (printed explicitly) |
+
+`git bisect run` against a script that builds each candidate and reads the `C′ cache: … capping to
+N` line (28 commits tested, ~10 automated steps) landed on `6c3645d2` — **"feat(cuda):
+task-fit-to-hardware.md Phase 2, CUDA-only — fit-by-default context"** (2026-09-09). That commit is
+a deliberate, well-verified feature: an unpinned CUDA load's default context grows from the
+historical 4096 to up to 8192 when the card can afford it, replacing headroom nobody who didn't
+know to pass `-ctx` ever got. Its own rate bar (`TestProdThroughput`, dense, fixed decode depth)
+measured 8192 vs 4096 within noise — correctly, for a load with nothing else competing for the
+freed VRAM. **What it didn't have in its test matrix: a load where something else IS competing for
+that same free VRAM** — `-moe-cache-experts`' host↔VRAM expert-slot cache, which is exactly as
+elastic as "whatever's left after KV," and for which §B4.1's own table already documents that
+fewer slots costs real decode rate (16 slots → 11.4 tok/s, 30 → 16.1, 40 → 17.6). Doubling the
+default context ate 1.9 GB that used to go to the expert cache instead, on a card that was already
+oversubscribed by design (that's the entire point of `-moe-cache-experts`). The commit's own
+message names this exact class of gap as a known, unclosed risk ("a drafter+target pairing that
+fit under the old 4096 default might not under 8192") — for the drafter case specifically; the MoE
+expert cache is the same shape of companion allocation, just not the one that pairing was written
+about.
+
+**Fixed**: `resolveCtxCapFit` (`cuda/resident.go`) now treats `m.MoECacheExperts()` the same as
+`m.FitDisabled()` — an unpinned MoE-cache-experts load keeps the historical 4096 default rather
+than growing into VRAM the expert cache needs, restoring the original commit's own stated invariant
+("there is no configuration where turning this on makes an existing deployment worse") for the one
+class of load it didn't hold for. Unlike the drafter fix (M-22), the expert cache's cost can't be
+priced into `ExtraBytes` and left for `Plan` to work around — its whole design is "however much
+VRAM is left over," so the fix is to not let ctx grow into that leftover at all when
+`-moe-cache-experts` is set, mirroring `FitDisabled`'s existing opt-out exactly.
+`TestResolveCtxCapFit_shortcuts` gained two cases; mutation-checked by reverting the fix and
+confirming the new case goes red (`resolveCtxCapFit(m, 0, 32768) = 8192, want 4096`), then restoring
+it. **Verified end to end**, not just at the unit level: a binary built with the fix reproduces the
+old 28-slot/3.4 GB-free banner exactly, and a real measured cell puts M26 @128 back to **23.1
+tok/s** (was 12.9 broken, 24.6 the original baseline — within noise of full recovery).
+
+Dense models never called `-moe-cache-experts`, so this fix changes nothing for them — consistent
+with the dense re-anchor above showing zero movement.
+
 ### Not done yet
 
 - **W2** (prefill at 512/3900 tokens, TTFT) — not built as its own row in *this* matrix, but both
@@ -1827,7 +1925,7 @@ follow-up, not glossed over.
   real hardware mismatch, not an oversight.
 - **`go-llama`/`goccy`** (the Go-lane CPU peer) — not installed on either box.
 - **W3 at 2k/32k** — only 8k has been run.
-- **M35/M26 W3 post-fix re-run** — in progress, see the note above.
+- **M35/M26 W3 post-fix re-run** — done, see "Re-run 2026-09-15/16" above.
 
 ## Table 4 — Load time, by phase (2026-09-06)
 

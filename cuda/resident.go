@@ -87,8 +87,22 @@ const fitDefaultCtx = 8192
 // var precursor), or whose free-VRAM probe is unknown, gets EXACTLY today's resolveCtxCap — this
 // function can only improve on the historical default, never regress it, so there is no failure
 // mode where turning fit-by-default off would have helped.
+//
+// m.MoECacheExperts() gets the same treatment, found live 2026-09-15/16 re-measuring the peer
+// matrix: growing the default context is a pure win for a model whose KV is the only thing
+// competing for free VRAM (the commit that introduced this measured exactly that, at fixed decode
+// depth), but a MoE-cache-experts load has a SECOND, elastic claimant on that same free VRAM — the
+// host↔VRAM expert-slot cache (docs/benchmarks.md §B4.1's own slots-vs-ctx table) — and every byte
+// this function hands to KV is a byte the expert cache never sees. Measured on gemma4-26b-int4.giw
+// (RTX 2070 SUPER): growing ctx 4096→8192 here cut free VRAM after KV from 3.4 GB to 1.5 GB, which
+// capped the expert cache from 28 slots to 10 and cut decode from 24.6 to 12.9 tok/s — a ~48%
+// regression this function's own "can only improve, never regress" invariant was supposed to rule
+// out, just not for this class of load. Unlike the drafter case (M-22), the expert cache isn't a
+// fixed cost that can be priced into ExtraBytes and left to Plan — its whole design is "however
+// much VRAM is left after everything pinned", so the fix is to not let ctx grow into that
+// leftover at all when this mode is on, the same way FitDisabled already opts out.
 func resolveCtxCapFit(m *decoder.Model, request, modelCtx int) int {
-	if request > 0 || m.FitDisabled() {
+	if request > 0 || m.FitDisabled() || m.MoECacheExperts() {
 		return resolveCtxCap(request, modelCtx) // an explicit -ctx is untouched either way
 	}
 	candidate := fitDefaultCtx

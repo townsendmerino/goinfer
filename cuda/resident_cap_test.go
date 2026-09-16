@@ -86,14 +86,20 @@ func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 		request, modelCtx int
 		noFitEnv          bool
 		disableFitOpt     bool
+		moeCacheOpt       bool
 		want              int
 	}{
-		{"explicit request bypasses fit entirely", 8192, 32768, false, false, 8192},
-		{"explicit request bypasses fit even with the env var set", 8192, 32768, true, false, 8192},
-		{"GOINFER_NO_FIT_DEFAULT restores the historical default", 0, 32768, true, false, cudaCtxCapDefault},
-		{"Options.DisableFit (--fit=off) restores the historical default", 0, 32768, false, true, cudaCtxCapDefault},
-		{"model window at the historical default has nothing to gain", 0, cudaCtxCapDefault, false, false, cudaCtxCapDefault},
-		{"model window below the historical default has nothing to gain", 0, 2048, false, false, cudaCtxCapDefault},
+		{"explicit request bypasses fit entirely", 8192, 32768, false, false, false, 8192},
+		{"explicit request bypasses fit even with the env var set", 8192, 32768, true, false, false, 8192},
+		{"GOINFER_NO_FIT_DEFAULT restores the historical default", 0, 32768, true, false, false, cudaCtxCapDefault},
+		{"Options.DisableFit (--fit=off) restores the historical default", 0, 32768, false, true, false, cudaCtxCapDefault},
+		{"model window at the historical default has nothing to gain", 0, cudaCtxCapDefault, false, false, false, cudaCtxCapDefault},
+		{"model window below the historical default has nothing to gain", 0, 2048, false, false, false, cudaCtxCapDefault},
+		// Found live 2026-09-15/16: growing ctx starves the expert-slot cache's own claim on the
+		// same free VRAM (resolveCtxCapFit's own doc comment has the measured numbers). An explicit
+		// -ctx still overrides it below — this only changes the UNPINNED default.
+		{"Options.MoECacheExperts restores the historical default, same as DisableFit", 0, 32768, false, false, true, cudaCtxCapDefault},
+		{"explicit request still bypasses fit with MoECacheExperts set", 8192, 32768, false, false, true, 8192},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if c.noFitEnv {
@@ -101,7 +107,7 @@ func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 			} else {
 				os.Unsetenv("GOINFER_NO_FIT_DEFAULT")
 			}
-			m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Quant: "int4", DisableFit: c.disableFitOpt})
+			m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Quant: "int4", DisableFit: c.disableFitOpt, MoECacheExperts: c.moeCacheOpt})
 			if err != nil {
 				t.Fatalf("Load: %v", err)
 			}
