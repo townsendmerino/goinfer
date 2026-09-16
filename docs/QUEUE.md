@@ -1351,6 +1351,7 @@ supports.
 | `docs/audit-2026-09-10.md|metal/moe.go:805` | goinfer | `r.uPos.SetU32(uint32(pos))` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:339` | goinfer | `for (uint j0s=j0superStart; j0s<nKeysMax; j0s+=ATTN_KTILE) {` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:444` | goinfer | `func (r *resident) ensurePrefill() {` |
+| `docs/audit-2026-09-10.md|metal/prefill.go:497` | goinfer | `func parallelEmbedsF32ToF16(dst []uint16, embs [][]float32, H int) {` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:548` | goinfer | `xh := make([]uint16, Mpad*H)` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:645` | goinfer | `e.Dispatch(pf.pRope, M*r.nH*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalQ, uStride, uBa` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:684` | goinfer | `for m := 0; m < M; m++ {` |
