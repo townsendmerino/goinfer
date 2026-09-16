@@ -3,9 +3,12 @@ package decoder
 import "math"
 
 // F4 (docs/completed/task-families-2026-09.md): KDA (Kimi Delta Attention) recurrence rehearsal for
-// Ling-3.0-tiny / Kimi K3's linear-attention mixer. NOT wired to any registered family — this is
-// the scoped bring-up the F4 brief asked for: prove the one genuinely new piece of KDA's math
-// against a real reference before any registry work.
+// Ling-3.0-tiny / Kimi K3's linear-attention mixer, written as the scoped bring-up the F4 brief
+// asked for: prove the one genuinely new piece of KDA's math against a real reference before any
+// registry work. N-08 (audit-2026-09-10): "NOT wired to any registered family" went stale as of
+// e6b31cc — kdaMixerStep (decoder/kda.go, called from forward_bailing.go's served path for
+// bailing_hybrid/Ling 3.0) reuses kdaLowerBoundGate and kdaRecurrentStep below directly, so this
+// is production code now, not just a bring-up rehearsal.
 //
 // Verified against fla-org/flash-linear-attention's actual source (fla/ops/kda/{naive,gate}.py,
 // not the HF modeling file's paraphrase, which only calls the opaque Triton kernel): KDA's

@@ -177,7 +177,7 @@ func validateNgramSpec(m *Model, drafter Drafter, sp SamplingParams) error {
 		return fmt.Errorf("decoder.GenerateNgramSpeculative: repetition penalties / logit bias are not supported in greedy speculative decoding; use Generate")
 	}
 	if !m.specRollbackSafe() {
-		return fmt.Errorf("decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate")
+		return fmt.Errorf("decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate")
 	}
 	return nil
 }

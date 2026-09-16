@@ -1090,8 +1090,6 @@ func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp Sa
 // bumped, TestPrefillDivergenceRate is 0/50 on the real 1.5B (was 42/50), gap
 // byte-identical. GOINFER_BATCHED_PREFILL=0 force-disables.
 // See docs/task-batched-prefill-bitidentity.md.
-// from is the first position to compute: prompt[:from] is already committed to the resident
-// KV (prefix reuse, resident_reuse.go) and positions carry through unchanged because the cache
 // prefillDeclineDigitsRE normalizes a decline error's varying numbers (prompt length, floor,
 // byte counts) out of the dedup key below, so e.g. every below-floor prompt — a different
 // promptLen each time — collapses to the SAME reason instead of re-triggering the warning.
@@ -1145,6 +1143,8 @@ func warnPrefillDeclined(n int, err error) {
 		"the per-token path (slower TTFT; each distinct reason is reported once): %v\n", n, err)
 }
 
+// from is the first position to compute: prompt[:from] is already committed to the resident
+// KV (prefix reuse, resident_reuse.go) and positions carry through unchanged because the cache
 // is positional. from == 0 is the cold path.
 //
 // hasAdapter must be true whenever this call runs under a bound resident adapter (cache.lora

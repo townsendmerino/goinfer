@@ -321,12 +321,13 @@ type Config struct {
 	// P7 entry, verified against modeling_gemma4.py, not assumed). Empty/null
 	// on E2B/E4B, where image-block attention is plain causal — exactly what
 	// GenerateGemma4VL's sequential embed-by-vector prefill
-	// (decoder/generate_gemma4_vl.go) already produces. GenerateGemma4VL
-	// implements ONLY the causal (E2B/E4B) case; a checkpoint reporting a
-	// non-empty value here must be refused at vision-tower load time
-	// (internal/serveapp), not silently served with the wrong mask. Lives
-	// under text_config in a real checkpoint, picked up automatically by
-	// loadConfig's existing text_config merge — same shape as PadTokenID above.
+	// (decoder/generate_gemma4_vl.go) already produces. A non-empty value ("vision",
+	// 26B-A4B/31B) is SERVED, not refused: GenerateGemma4VL dispatches it to the genuinely
+	// batched, blockwise-masked forward (prefillLogitsGemma4VLBidirectional /
+	// runLayersGemma4FromEmbedN, decoder/forward_gemma4_batched.go) rather than the
+	// sequential causal path E2B/E4B use. Lives under text_config in a real checkpoint,
+	// picked up automatically by loadConfig's existing text_config merge — same shape as
+	// PadTokenID above.
 	//
 	// Typed as gemma4BidirectionalAttention, NOT plain string: Config is one
 	// flat struct shared by every family, and a REAL, unrelated field of the

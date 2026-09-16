@@ -11,6 +11,13 @@ import "math"
 // single-token streaming — so it carries no regression risk to the proven
 // sequential path.
 //
+// N-09 (audit-2026-09-10): the equivalence above is proven only for qwen3_5_moe's plain case.
+// It ignores gatedDeltaNet's Olmo-Hybrid-only terms — p.NegEigval (doubles the write-gate beta,
+// decoder/deltanet.go:227-228) and p.ONormEps (overrides the output gated-RMSNorm epsilon,
+// :173-174) — both no-ops for qwen3_5_moe (NegEigval=false, ONormEps=0) but real, load-bearing
+// terms for Olmo Hybrid. A perf rewrite that reuses this scan for Olmo Hybrid without adding both
+// would silently diverge from the sequential reference; TestGatedDeltaNet_chunkedMatchesSequential
+// does not catch this today because it only exercises the qwen3_5_moe param shape.
 // Derivation (per value head, chunk of L positions, incoming state S_in):
 // unrolling S_i = gt_i·S_{i-1} + k_i⊗u_i with u_i = β_i·(v_i − (gt_i·S_{i-1})ᵀk_i)
 // and cumulative decay c_i = Π_{j≤i} gt_j gives a unit-lower-triangular solve

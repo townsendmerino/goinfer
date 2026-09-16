@@ -1527,10 +1527,10 @@ re-baked by the code it checks (G-04).
   still green.
 - N-34 `gpu/metal_copy.go`, `metal_upload_batch.go` — unused by goinfer (correct on UMA); note they
   are host-side and unfenced, so a `CopyDevice` during an in-flight command buffer would race.
-- N-35 `decoder/model.go:1135-1091,1134` — `warnPrefillDeclined` is process-lifetime `sync.Once`; on
+- N-35 `decoder/model.go:1133-1091,1134` — `warnPrefillDeclined` is process-lifetime `sync.Once`; on
   Metal the first sub-floor prompt consumes it, so a later real decline (cap, OOM) is silent (N-49).
   **FIXED 2026-09-13**: replaced the single `sync.Once` with a mutex-guarded set keyed on the
-  decline reason with its numbers normalized out (`decoder/model.go:1098,1053-1073`) — every
+  decline reason with its numbers normalized out (`decoder/model.go:1096,1053-1073`) — every
   below-floor prompt has a different `promptLen` in its message but normalizes to the same key, so
   the routine Metal case still logs once, while a later, differently-worded decline (a resident-cap
   refusal, an OOM) now gets its own one-time line instead of being silenced by the first. The old

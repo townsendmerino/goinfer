@@ -112,12 +112,14 @@ func (m *Model) canBatchN(K int) bool {
 // specRollbackSafe reports whether speculative decode's rollback — KVCache.TruncateTo
 // after a partial accept — correctly restores this model's state. True for softmax /
 // GQA (truncate the appended K/V) and MLA (reslice the latent KV) — both live in the
-// cache, so a verified-then-rejected draft block leaves no residue. FALSE for the
-// recurrent families — Mamba-2 (granite / nemotron_h) and Gated DeltaNet
-// (qwen3_5_moe) — whose rolling state mamba2Step / the delta scan mutate IN PLACE and
-// TruncateTo does NOT roll back (it only reslices KV layouts). Verifying a K-token
-// block over-advances that state, and the next round decodes from it: a silent
-// distribution bug, not a crash (00-core §6). Those families need the
+// cache, so a verified-then-rejected draft block leaves no residue. FALSE for every
+// family hasRecurrentState below marks Recurrent — not just the two most obvious
+// examples, Mamba-2 (granite / nemotron_h) and Gated DeltaNet (qwen3_5_moe), whose
+// rolling state mamba2Step / the delta scan mutate IN PLACE, but also LFM2's conv
+// window and KDA (bailing_hybrid) — and TruncateTo does NOT roll back any of them (it
+// only reslices KV layouts). Verifying a K-token block over-advances that state, and
+// the next round decodes from it: a silent distribution bug, not a crash (00-core §6;
+// N-10). Those families need the
 // checkpoint-at-block-start / restore path (not yet built); until then the n-gram
 // speculative entry points refuse them and the caller falls back to plain decode.
 // hasRecurrentState reports whether this model carries state that is mutated IN PLACE per token —
