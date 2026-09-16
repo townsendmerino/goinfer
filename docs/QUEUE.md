@@ -1637,7 +1637,7 @@ supports.
 | `docs/tasks/task-first-hour.md|linalg/weightmat_row4_arm64.go:23` | aikit | `func (w *WeightMat) RepackInt4Row4() bool {` |
 | `docs/tasks/task-first-hour.md|tokenizer/bytelevel.go:258` | goinfer | `//	(?i:'s\|'t\|'re\|'ve\|'m\|'ll\|'d)\|[^\r\n\p{L}\p{N}]?\p{L}+\|\p{N}\|` |
 | `docs/tasks/task-fit-to-hardware.md|decoder/model.go:194` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
-| `docs/tasks/task-fit-to-hardware.md|decoder/weightbytes.go:56` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(0) }` |
+| `docs/tasks/task-fit-to-hardware.md|decoder/weightbytes.go:94` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(0) }` |
 | `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:488` | goinfer | `flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f3` |
 | `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:512` | goinfer | `"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n"+` |
 | `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:534` | goinfer | `"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost` |

@@ -353,7 +353,7 @@ before this one) · `docs/completed/task-metal-expert-streaming-at-scale.md` (N=
 G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residency eligibility, generated) ·
 `internal/serveapp/main.go:488-376` (the flags the plan subsumes) · `decoder/model.go:194-187`
 (`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:115-194` (the guard) ·
-`decoder/weightbytes.go:56` (`ResidentWeightBytes`, the accountant to replace) ·
+`decoder/weightbytes.go:94` (`ResidentWeightBytes`, the accountant to replace) ·
 `pull/pull.go:179` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
 priority order borrowed).
 

@@ -1,6 +1,10 @@
 package decoder
 
-import "github.com/townsendmerino/aikit/linalg"
+import (
+	"unsafe"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
 
 // wmBytes is one weight matrix's in-memory footprint, read from the BACKING SLICES rather than
 // computed from Rows()*Cols(). The two disagree: a quantized matrix carries per-group scales
@@ -22,6 +26,40 @@ func wmBytes(w *linalg.WeightMat) int64 {
 		n += 4 * int64(len(f))
 	}
 	n += int64(w.SplitHalfBytes())
+	return n
+}
+
+// mmapAliasedBytes is wmBytes' quantized-kind sum, but ONLY counting bytes that actually alias
+// m's .giw mmap region (m.MmapByteOffset) — a genuinely zero-copy load, not a heap allocation
+// this model's own quantizer produced. Mirrors wmBytes' own int8/int4/int4Row4 cases (f32 and
+// SplitHalfBytes are never mmap-aliased: f32 is copied at .giw read time — LoadSerializedWeights'
+// own doc comment says "float arrays are copied" — and SplitHalfBytes is a derived repack, not a
+// stored tensor). M-24 (docs/audit-2026-09-10.md): unlike aikit's WeightMat.MappedSpan (used for
+// the expert PAGING registry, metal/moepaging.go), this does NOT page-align — a byte accounting
+// question ("did this allocation happen at all") is not the same question as a pageable-span
+// question ("can MADV_DONTNEED release whole pages of it"), and page-rounding would undercount a
+// small-but-real mmap-backed tensor for no reason that matters here.
+func mmapAliasedBytes(m *Model, w *linalg.WeightMat) int64 {
+	if m == nil || len(m.mmap) == 0 {
+		return 0
+	}
+	var n int64
+	if q8, sc, _, ok := w.Int8(); ok && len(q8) > 0 {
+		raw := unsafe.Slice((*byte)(unsafe.Pointer(&q8[0])), len(q8))
+		if _, aliased := m.MmapByteOffset(raw); aliased {
+			n += int64(len(q8)) + 4*int64(len(sc))
+		}
+	}
+	if q4, sc, _, ok := w.Int4(); ok && len(q4) > 0 {
+		if _, aliased := m.MmapByteOffset(q4); aliased {
+			n += int64(len(q4)) + 4*int64(len(sc))
+		}
+	}
+	if p4, sc, ok := w.Int4Row4(); ok && len(p4) > 0 {
+		if _, aliased := m.MmapByteOffset(p4); aliased {
+			n += int64(len(p4)) + 4*int64(len(sc))
+		}
+	}
 	return n
 }
 
@@ -67,7 +105,7 @@ func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(
 // actually needed. A layer's experts are uniform in shape, so "per-expert bytes" is the full
 // per-layer expert sum divided by the expert count — exact, not an approximation across layers.
 func (m *Model) ResidentWeightBytesPaged(slots int) int64 {
-	dense, expertBytesAt := m.residentWeightBytesSplit()
+	dense, _, expertBytesAt, _ := m.residentWeightBytesSplit()
 	return dense + expertBytesAt(slots)
 }
 
@@ -80,7 +118,7 @@ func (m *Model) ResidentWeightBytesPaged(slots int) int64 {
 // ResidentWeightBytesPaged(0) — that includes every expert too, which would incorrectly decline a
 // model whose experts are ABOUT to be sized down to fit.
 func (m *Model) ResidentDenseWeightBytes() int64 {
-	dense, _ := m.residentWeightBytesSplit()
+	dense, _, _, _ := m.residentWeightBytesSplit()
 	return dense
 }
 
@@ -92,34 +130,59 @@ func (m *Model) ResidentDenseWeightBytes() int64 {
 // ~2x the guard's own estimate for exactly this reason.
 //
 // Dense weights (every non-expert matrix, including the mixer/MLA/Mamba/shortConv projections and
-// an UNPAGED model's experts) always double this way — the loader never keeps them mmap-backed
-// once quantized. Genuinely PAGED routed experts (0 < slots < nExperts) do NOT: they stream via
-// pread straight from the .giw file into their device slot buffer, or via an mmap the OS can
-// reclaim under pressure (metal/moe.go, metal/gemma4_moe.go) — an UNSTAGED expert leaves no
-// committed host allocation behind to double. So the addend is the FULL weight sum when unpaged
-// (slots<=0), or just the dense (non-expert) sum when paged.
+// an UNPAGED model's experts) always double this way for a GGUF/safetensors load — the loader
+// materializes a fresh heap-allocated quantized copy, and int4Buf/int8Buf build a SEPARATE device
+// buffer from it, nothing released in between. Genuinely PAGED routed experts (0 < slots <
+// nExperts) do NOT: they stream via pread straight from the .giw file into their device slot
+// buffer, or via an mmap the OS can reclaim under pressure (metal/moe.go, metal/gemma4_moe.go) —
+// an UNSTAGED expert leaves no committed host allocation behind to double.
+//
+// M-24 (docs/audit-2026-09-10.md): a THIRD case the doc comment above used to miss entirely — a
+// .giw-loaded model's int8/int4 payloads are themselves mmap-ALIASED (LoadSerializedWeights'
+// own doc comment: "Big int8/int4 arrays are aliased into data (zero-copy)"), not heap-allocated,
+// for every tensor the format supports zero-copy for, not just paged experts. That mmap-backed
+// data is reclaimable page cache, not a second committed host allocation — so it must NOT count
+// as a "host copy" alongside the (separately, genuinely allocated) device buffer int4Buf builds.
+// Before this fix, a .giw int4 dense model's real ≈8.75 GB anonymous footprint priced at ≈17.3 GB
+// (measured shape from the finding): once, correctly, as the device buffer's estimated size
+// (ResidentWeightBytesPaged, unaffected by this fix), and once again, incorrectly, as if the
+// mmap-aliased source were ALSO a genuine second host-resident copy.
 func (m *Model) ResidentHostCopyBytes(slots int) int64 {
-	dense, expertBytesAt := m.residentWeightBytesSplit()
+	dense, mmapDense, expertBytesAt, mmapExpertBytesAt := m.residentWeightBytesSplit()
 	if slots > 0 {
-		return dense // paged experts stream; only dense doubles
+		return dense - mmapDense // paged experts stream; only dense doubles, minus any mmap-aliased portion
 	}
-	return dense + expertBytesAt(0) // unpaged: every expert is a materialized host copy too
+	// unpaged: every expert is a materialized host copy too, minus any mmap-aliased portion of
+	// either dense or expert bytes.
+	return dense + expertBytesAt(0) - mmapDense - mmapExpertBytesAt(0)
 }
 
 // residentWeightBytesSplit does the one enumeration pass ResidentWeightBytesPaged and
 // ResidentHostCopyBytes both need, returning the DENSE (non-expert) sum plus a closure that caps
 // the routed-expert sum at `slots` experts (see pagedExperts' own doc) — so the two accessors
-// cannot enumerate the model differently and disagree about what "dense" means.
-func (m *Model) residentWeightBytesSplit() (dense int64, expertBytesAt func(slots int) int64) {
+// cannot enumerate the model differently and disagree about what "dense" means. mmapDense and
+// mmapExpertBytesAt are the M-24 (docs/audit-2026-09-10.md) parallel sums: the portion of dense/
+// expert bytes that alias this model's .giw mmap rather than a heap allocation — computed in the
+// SAME pass so the two accounting questions ("how many bytes" and "how many of those are
+// mmap-backed") can never disagree about which matrices exist either.
+func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesAt, mmapExpertBytesAt func(slots int) int64) {
+	noop := func(int) int64 { return 0 }
 	if m == nil || m.w == nil {
-		return 0, func(int) int64 { return 0 }
+		return 0, 0, noop, noop
 	}
 	w := m.w
-	n := wmBytes(&w.Embed) + wmBytes(&w.LMHead) + wmBytes(&w.PosEmbed)
+	count := func(mat *linalg.WeightMat) {
+		dense += wmBytes(mat)
+		mmapDense += mmapAliasedBytes(m, mat)
+	}
+	count(&w.Embed)
+	count(&w.LMHead)
+	count(&w.PosEmbed)
 	// Gemma 4's model-level PLE tables (per_layer_token_embd / per_layer_model_proj) — empty
 	// WeightMats, so a no-op sum, on every other family.
-	n += wmBytes(&w.PerLayerTokenEmbed) + wmBytes(&w.PerLayerModelProj)
-	var fullExpertBytes []int64 // one entry per (layer, expert-kind) — generic l.Experts and gemma4moe's fused set are both "kinds"
+	count(&w.PerLayerTokenEmbed)
+	count(&w.PerLayerModelProj)
+	var fullExpertBytes, mmapExpertBytes []int64 // one entry per (layer, expert-kind) — generic l.Experts and gemma4moe's fused set are both "kinds"
 	var expertCounts []int
 	for i := range w.Layers {
 		l := &w.Layers[i]
@@ -128,71 +191,89 @@ func (m *Model) residentWeightBytesSplit() (dense int64, expertBytesAt func(slot
 			&l.GateProj, &l.UpProj, &l.DownProj,
 			&l.Router, &l.SharedGate, &l.PLEGate, &l.PLEProj,
 		} {
-			n += wmBytes(mat)
+			count(mat)
 		}
 		// The experts are the whole point of this accessor — a sparse MoE is mostly experts, and
 		// omitting them is the specific under-report that would let gpt-oss through the guard.
-		var expertBytes int64
+		var expertBytes, mmapEBytes int64
 		for j := range l.Experts {
 			e := &l.Experts[j]
 			expertBytes += wmBytes(&e.Gate) + wmBytes(&e.Up) + wmBytes(&e.Down)
+			mmapEBytes += mmapAliasedBytes(m, &e.Gate) + mmapAliasedBytes(m, &e.Up) + mmapAliasedBytes(m, &e.Down)
 		}
 		fullExpertBytes = append(fullExpertBytes, expertBytes)
+		mmapExpertBytes = append(mmapExpertBytes, mmapEBytes)
 		expertCounts = append(expertCounts, len(l.Experts))
-		n += wmBytes(&l.SharedExpert.Gate) + wmBytes(&l.SharedExpert.Up) + wmBytes(&l.SharedExpert.Down)
+		count(&l.SharedExpert.Gate)
+		count(&l.SharedExpert.Up)
+		count(&l.SharedExpert.Down)
 
 		// M-01: qwen3_5_moe's per-layer mixer (DeltaNet or gated-softmax attention) — the three
 		// dominant projections quantize (WeightMat, 2026-08-19); the rest stay f32 vectors small
 		// enough to fall under the doc's norms/biases exemption. At most one of these is non-nil.
 		if d := l.delta; d != nil {
-			n += wmBytes(&d.inProjQKV) + wmBytes(&d.inProjZ) + wmBytes(&d.outProj)
+			count(&d.inProjQKV)
+			count(&d.inProjZ)
+			count(&d.outProj)
 		}
 		if q := l.qattn; q != nil {
-			n += wmBytes(&q.qProj) + wmBytes(&q.kProj) + wmBytes(&q.vProj) + wmBytes(&q.oProj)
+			count(&q.qProj)
+			count(&q.kProj)
+			count(&q.vProj)
+			count(&q.oProj)
 		}
-		// M-01: MLA (DeepSeek/Kimi) — parity-first f32, real projection matrices, not norms.
+		// M-01: MLA (DeepSeek/Kimi) — parity-first f32, real projection matrices, not norms. f32
+		// slices are never mmap-aliased (LoadSerializedWeights copies float arrays), so no mmap
+		// counterpart here.
 		if mla := l.mla; mla != nil {
-			n += f32SliceBytes(mla.qAProj) + f32SliceBytes(mla.qBProj) + f32SliceBytes(mla.qProj) +
+			dense += f32SliceBytes(mla.qAProj) + f32SliceBytes(mla.qBProj) + f32SliceBytes(mla.qProj) +
 				f32SliceBytes(mla.kvAProj) + f32SliceBytes(mla.kvBProj) + f32SliceBytes(mla.oProj)
 		}
 		// M-01: Mamba-2 (Granite/Nemotron) — parity-first f32; the recurrent STATE is per-sequence
 		// and never resident here, only the weights below.
 		if mb := l.mamba; mb != nil {
-			n += f32SliceBytes(mb.inProj) + f32SliceBytes(mb.convW) + f32SliceBytes(mb.outProj)
+			dense += f32SliceBytes(mb.inProj) + f32SliceBytes(mb.convW) + f32SliceBytes(mb.outProj)
 		}
 		// M-01: LFM2's gated short-convolution mixer — parity-first f32.
 		if sc := l.shortConv; sc != nil {
-			n += f32SliceBytes(sc.inProj) + f32SliceBytes(sc.convW) + f32SliceBytes(sc.outProj)
+			dense += f32SliceBytes(sc.inProj) + f32SliceBytes(sc.convW) + f32SliceBytes(sc.outProj)
 		}
 		// M-01: Gemma 4's MoE sub-block. mlpGate/mlpUp/mlpDown ALIAS l.GateProj/UpProj/DownProj
 		// (serialize.go's gemma4Layer comment) — already counted above; only routerProj and the
 		// fused experts are new tensors here. The fused experts page the same way as l.Experts.
 		if mo := l.gemma4moe; mo != nil {
-			n += wmBytes(&mo.routerProj)
-			var fusedBytes int64
+			count(&mo.routerProj)
+			var fusedBytes, mmapFusedBytes int64
 			for e := range mo.expertsGateUp {
 				fusedBytes += wmBytes(&mo.expertsGateUp[e]) + wmBytes(&mo.expertsDown[e])
+				mmapFusedBytes += mmapAliasedBytes(m, &mo.expertsGateUp[e]) + mmapAliasedBytes(m, &mo.expertsDown[e])
 			}
 			fullExpertBytes = append(fullExpertBytes, fusedBytes)
+			mmapExpertBytes = append(mmapExpertBytes, mmapFusedBytes)
 			expertCounts = append(expertCounts, len(mo.expertsGateUp))
 		}
 	}
-	dense = n
-	expertBytesAt = func(slots int) int64 {
-		// pagedExperts takes one expert-kind's FULL routed-expert byte sum and its expert COUNT
-		// (not the matrix count — each expert contributes multiple matrices, e.g. Gate+Up+Down, so
-		// the two must not be conflated) and caps it at `slots` experts when paging applies. A
-		// layer's experts are uniform in shape, so per-expert bytes = full/nExperts exactly.
-		var total int64
-		for k, full := range fullExpertBytes {
-			nExperts := expertCounts[k]
-			if nExperts == 0 || slots <= 0 || slots >= nExperts {
-				total += full
-				continue
+	// capAt builds a closure that caps a per-expert-kind FULL byte sum at `slots` experts when
+	// paging applies — shared by expertBytesAt (the real byte totals) and mmapExpertBytesAt (the
+	// mmap-aliased subset of them, M-24), so the two cannot disagree about which experts are
+	// "in" at a given slot count.
+	capAt := func(full []int64) func(slots int) int64 {
+		return func(slots int) int64 {
+			// pagedExperts takes one expert-kind's FULL routed-expert byte sum and its expert COUNT
+			// (not the matrix count — each expert contributes multiple matrices, e.g. Gate+Up+Down, so
+			// the two must not be conflated) and caps it at `slots` experts when paging applies. A
+			// layer's experts are uniform in shape, so per-expert bytes = full/nExperts exactly.
+			var total int64
+			for k, fullK := range full {
+				nExperts := expertCounts[k]
+				if nExperts == 0 || slots <= 0 || slots >= nExperts {
+					total += fullK
+					continue
+				}
+				total += fullK / int64(nExperts) * int64(slots)
 			}
-			total += full / int64(nExperts) * int64(slots)
+			return total
 		}
-		return total
 	}
-	return dense, expertBytesAt
+	return dense, mmapDense, capAt(fullExpertBytes), capAt(mmapExpertBytes)
 }

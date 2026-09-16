@@ -2,11 +2,14 @@ package decoder
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
 // loadGemma4MoETiny loads the gitignored tiny gemma4-MoE fixture, skipping (not failing) when it
@@ -206,4 +209,80 @@ func TestResidentHostCopyBytes_exemptsPagedExperts(t *testing.T) {
 	if got := m.ResidentDenseWeightBytes(); got != wantDense {
 		t.Errorf("ResidentDenseWeightBytes() = %d, want %d", got, wantDense)
 	}
+}
+
+// buildTinyGIWInt4 loads dir at Quant:"int4" and re-serializes it as a weights-only .giw in a
+// temp dir (SerializeWeightsToForTarget + giw.WriteStream, the same pattern
+// TestGIWRoundTrip_preservesMergedEOSIDs and decoder/moepaging_test.go's buildTinyGIW use) —
+// int4, not int8: MmapByteOffset itself doesn't care about kind, but int4 is llama-tiny's own
+// resident-eligible quant (matches the audit's own "14B int4 .giw" shape) and lets this test
+// share fixture setup with nothing else that would make the two diverge.
+func buildTinyGIWInt4(t *testing.T, dir string) string {
+	t.Helper()
+	m, err := Load(dir, Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("Load(%s, int4): %v", dir, err)
+	}
+	out := filepath.Join(t.TempDir(), "tiny-int4.giw")
+	f, err := os.Create(out)
+	if err != nil {
+		t.Fatalf("create %s: %v", out, err)
+	}
+	werr := giw.WriteStream(f, nil, func(w io.Writer) (int64, error) {
+		return SerializeWeightsToForTarget(w, m.Weights(), "weightbytes-fixture", GIWTargetNone)
+	})
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	m.Close()
+	if werr != nil {
+		t.Fatalf("write %s: %v", out, werr)
+	}
+	return out
+}
+
+// TestResidentHostCopyBytes_exemptsMmapAliasedGIWWeights is M-24's gate (docs/audit-2026-09-10.md):
+// a .giw-loaded model's int8/int4 payloads are mmap-ALIASED (LoadSerializedWeights' own doc
+// comment — "Big int8/int4 arrays are aliased into data (zero-copy)"), not a heap allocation this
+// model's own quantizer produced, so they must NOT count as a second "host copy" alongside the
+// separately-estimated device buffer — unlike a heap-loaded (GGUF/safetensors) model, where the
+// doubling is real. Both loaded from the SAME testdata/llama-tiny fixture, at the same quant, so
+// any difference between them is exactly the mmap-aliasing fix, not a shape difference.
+func TestResidentHostCopyBytes_exemptsMmapAliasedGIWWeights(t *testing.T) {
+	const dir = "../testdata/llama-tiny"
+
+	heap, err := Load(dir, Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("Load(heap): %v", err)
+	}
+	defer heap.Close()
+	heapDevice := heap.ResidentWeightBytesPaged(0)
+	heapHost := heap.ResidentHostCopyBytes(0)
+	if heapHost != heapDevice {
+		t.Fatalf("heap-loaded: ResidentHostCopyBytes(0) = %d, want exactly ResidentWeightBytesPaged(0) "+
+			"%d — a genuinely heap-allocated quantized copy must still double (control case)", heapHost, heapDevice)
+	}
+
+	giwPath := buildTinyGIWInt4(t, dir)
+	mg, err := Load(giwPath, Options{})
+	if err != nil {
+		t.Fatalf("Load(.giw): %v", err)
+	}
+	defer mg.Close()
+	giwDevice := mg.ResidentWeightBytesPaged(0)
+	giwHost := mg.ResidentHostCopyBytes(0)
+
+	// NOT asserted: giwDevice == heapDevice. The .giw round trip can choose a different int4
+	// packing kind (canonical vs row4/split-half) than the original heap load, which changes the
+	// reported byte size independent of anything this test checks — that's a serialization-format
+	// question, not what M-24 is about. What must hold regardless of which kind was chosen: an
+	// mmap-backed load's host-copy addend must be strictly smaller than its own device estimate,
+	// where a heap-backed load's is exactly equal (asserted above).
+	if giwHost >= giwDevice {
+		t.Errorf(".giw-loaded: ResidentHostCopyBytes(0) = %d, want strictly < ResidentWeightBytesPaged(0) "+
+			"%d — mmap-aliased int4 payloads are still being counted as a second host copy (M-24)", giwHost, giwDevice)
+	}
+	t.Logf("heap: device=%d host=%d (doubles, correctly) | .giw: device=%d host=%d (mmap-aliased "+
+		"portion excluded, %.1f%% of the heap case)", heapDevice, heapHost, giwDevice, giwHost,
+		100*float64(giwHost)/float64(heapHost))
 }
