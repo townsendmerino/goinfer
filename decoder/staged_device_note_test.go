@@ -36,18 +36,23 @@ func TestDeclinedToCPUReason(t *testing.T) {
 	}
 }
 
-// TestResidentQuantLabel pins G10's reporting fix (docs/tasks/task-gpu-paths-2026-09.md): Metal has no
-// int8 GEMV kernel, so an int8int8 resident load must not claim that precision back to the user —
-// every other (backend, quant) pair, including int8int8 on cuda/webgpu (which DO have a real W8A8
-// kernel) and every non-int8int8 quant on metal, must be a pure passthrough of the requested quant
-// string.
+// TestResidentQuantLabel pins G10's reporting fix (docs/tasks/task-gpu-paths-2026-09.md), widened
+// by M-25 (audit-2026-09-10): Metal has no int8 GEMV kernel, so ANY Int8()-kind resident load
+// (int8, int8int8, and int4mix's int8-kind tensors) must not claim a precision this backend never
+// actually runs — every other (backend, quant) pair, including int8-family quants on cuda/webgpu
+// (which DO have a real W8A8 kernel) and int4/f32 on metal (which never hit the int8→int4
+// fallback at all — int4 is already what it claims, and f32 has no int4Buf path to silently
+// requantize through), must be a pure passthrough of the requested quant string.
 func TestResidentQuantLabel(t *testing.T) {
 	for _, tc := range []struct{ backend, quant, want string }{
 		{"metal", "int8int8", "int8int8→int4, no Metal int8 GEMV kernel"},
+		{"metal", "int8", "int8→int4, no Metal int8 GEMV kernel"},
+		{"metal", "int4mix", "int4mix→int4, no Metal int8 GEMV kernel"},
 		{"metal", "int4", "int4"},
-		{"metal", "int8", "int8"},
 		{"metal", "f32", "f32"},
 		{"cuda", "int8int8", "int8int8"},
+		{"cuda", "int8", "int8"},
+		{"cuda", "int4mix", "int4mix"},
 		{"webgpu", "int8int8", "int8int8"},
 		{"cpu", "int8int8", "int8int8"},
 	} {

@@ -1196,9 +1196,10 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/registry.go:181` | goinfer | `func validateConfigBounds(cfg *Config) error {` |
 | `docs/audit-2026-09-10.md|decoder/registry.go:769` | goinfer | `EmbedScale:       0,` |
 | `docs/audit-2026-09-10.md|decoder/registry.go:825` | goinfer | `var base float64` |
+| `docs/audit-2026-09-10.md|decoder/residency.go:1000` | goinfer | `func (m *Model) DecodePath() string {` |
 | `docs/audit-2026-09-10.md|decoder/residency.go:1025` | goinfer | `// metal: both backends' own Backend.MatmulBT implementations are themselves bare CPU` |
-| `docs/audit-2026-09-10.md|decoder/residency.go:1109` | goinfer | `return false, "sequential — this arch has its own per-token forward (no batched CPU pref` |
-| `docs/audit-2026-09-10.md|decoder/residency.go:1146` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
+| `docs/audit-2026-09-10.md|decoder/residency.go:1116` | goinfer | `return false, "sequential — this arch has its own per-token forward (no batched CPU pref` |
+| `docs/audit-2026-09-10.md|decoder/residency.go:1153` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/audit-2026-09-10.md|decoder/residency.go:137` | goinfer | `// ResidentHiddenLast is an OPTIONAL ResidentForward extension: ingest a whole sequence ` |
 | `docs/audit-2026-09-10.md|decoder/residency.go:35` | goinfer | `// v1 scope (documented limitations):` |
 | `docs/audit-2026-09-10.md|decoder/residency.go:404` | goinfer | `if a.granite != nil {` |
@@ -1230,7 +1231,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/speculative.go:207` | goinfer | `targetVerify := func(seq []int, base int) ([][]float32, error) {` |
 | `docs/audit-2026-09-10.md|decoder/speculative.go:235` | goinfer | `if seedLogits, err = target.residentPrefillSeed(ctx, prompt, 0, false); err != nil {` |
 | `docs/audit-2026-09-10.md|decoder/speculative.go:280` | goinfer | `kRound := specRoundDraftWidth(K, tpos, target.ResidentContextCap())` |
-| `docs/audit-2026-09-10.md|decoder/staged_device_note_test.go:48` | goinfer | `{"metal", "int8", "int8"},` |
+| `docs/audit-2026-09-10.md|decoder/staged_device_note_test.go:48` | goinfer | `{"metal", "int8int8", "int8int8→int4, no Metal int8 GEMV kernel"},` |
 | `docs/audit-2026-09-10.md|decoder/weightmat.go:44` | goinfer | `func matmulQuant(base quantMode, name string) quantMode {` |
 | `docs/audit-2026-09-10.md|decoder/weightmat.go:839` | goinfer | `ws.SetThreshold(DefaultDecodeParallelThreshold)` |
 | `docs/audit-2026-09-10.md|decoder/weights.go:1568` | goinfer | `// override the corresponding suffix above on layers where isLinearLayer(i) is` |
@@ -1266,16 +1267,16 @@ supports.
 | `docs/audit-2026-09-10.md|internal/chatapp/main.go:116` | goinfer | `// standalone fetcher they would have to go and download first would reintroduce exactly` |
 | `docs/audit-2026-09-10.md|internal/chatapp/main.go:203` | goinfer | `model   = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference f` |
 | `docs/audit-2026-09-10.md|internal/chatapp/main.go:224` | goinfer | `specK       = flag.Int("spec-k", 4, "speculative decoding: draft tokens proposed per ver` |
-| `docs/audit-2026-09-10.md|internal/chatapp/main.go:394` | goinfer | `fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s qu` |
-| `docs/audit-2026-09-10.md|internal/chatapp/main.go:409` | goinfer | `s.tokenBytes = constrain.TokenBytes(s.vocab, tk.TokenText)` |
-| `docs/audit-2026-09-10.md|internal/chatapp/main.go:410` | goinfer | `tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})` |
-| `docs/audit-2026-09-10.md|internal/chatapp/main.go:528` | goinfer | `func (s *session) streamGen(tokens <-chan int, onChunk func(string)) (text string, nTok ` |
-| `docs/audit-2026-09-10.md|internal/chatapp/main.go:664` | goinfer | `for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {` |
+| `docs/audit-2026-09-10.md|internal/chatapp/main.go:394` | goinfer | `// M-25 (audit-2026-09-10): DecodePath(), not Quant() — on Metal, --quant int8/int8int8/` |
+| `docs/audit-2026-09-10.md|internal/chatapp/main.go:413` | goinfer | `s.tokenBytes = constrain.TokenBytes(s.vocab, tk.TokenText)` |
+| `docs/audit-2026-09-10.md|internal/chatapp/main.go:414` | goinfer | `tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})` |
+| `docs/audit-2026-09-10.md|internal/chatapp/main.go:532` | goinfer | `func (s *session) streamGen(tokens <-chan int, onChunk func(string)) (text string, nTok ` |
+| `docs/audit-2026-09-10.md|internal/chatapp/main.go:668` | goinfer | `for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {` |
 | `docs/audit-2026-09-10.md|internal/chatapp/prequant.go:118` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-10.md|internal/chatapp/serveonly.go:133` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-10.md|internal/fitcmd/fit.go:114` | goinfer | `if *measure {` |
 | `docs/audit-2026-09-10.md|internal/fitcmd/fit.go:83` | goinfer | `m, err := decoder.Load(path, decoder.Options{Quant: *quant})` |
-| `docs/audit-2026-09-10.md|internal/gemmaapp/main.go:96` | goinfer | `cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), mod` |
+| `docs/audit-2026-09-10.md|internal/gemmaapp/main.go:97` | goinfer | `cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), mod` |
 | `docs/audit-2026-09-10.md|internal/prequant/prequant.go:154` | goinfer | `// TEMP + RENAME, same reason as Transcode's GGUF branch above (M-12/M-33): a write to` |
 | `docs/audit-2026-09-10.md|internal/prequant/prequant.go:96` | goinfer | `f, err := os.Create(tmp)` |
 | `docs/audit-2026-09-10.md|internal/pullcmd/pull.go:136` | goinfer | `// Ctrl-C cancels the transfer; the partial .part file is cleaned up by Download.` |
@@ -1582,7 +1583,7 @@ supports.
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/ollama-chase.md|decoder/model.go:1553` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
 | `docs/ollama-chase.md|decoder/registry.go:1715` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
-| `docs/ollama-chase.md|decoder/residency.go:1146` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
+| `docs/ollama-chase.md|decoder/residency.go:1153` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/ollama-chase.md|decoder/weightmat.go:764` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:578` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:1532` | goinfer | `free, _, err := r.dev.Context().MemInfo()` |

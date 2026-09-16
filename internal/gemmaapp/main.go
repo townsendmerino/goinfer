@@ -88,12 +88,13 @@ func run(modelDir, prompt string, maxTok int, backend, quant string, jsonMode bo
 		return fmt.Errorf("load model: %w", err)
 	}
 	cfg := model.Config()
-	q := quant
-	if q == "" {
-		q = "f32"
-	}
-	fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s quant=%s]\n",
-		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), model.BackendReport(), q)
+	// M-25 (audit-2026-09-10): DecodePath(), not the raw requested -quant flag — on Metal,
+	// int8/int8int8/int4mix all silently re-quantize to int4 at resident-build time (no int8
+	// GEMV kernel on that backend), so printing the flag verbatim named a precision the GPU never
+	// actually runs. DecodePath() reports the corrected label (decoder/residency.go's
+	// residentQuantLabel).
+	fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s decode=%s]\n",
+		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), model.BackendReport(), model.DecodePath())
 
 	// 2b) Constrained decoding: mask every step's logits to the tokens a JSON
 	// grammar permits, so the model physically cannot emit malformed JSON. The

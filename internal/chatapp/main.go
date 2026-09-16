@@ -391,8 +391,12 @@ func loadFromBytes(raw []byte, opts decoder.Options) (*session, error) {
 // newSession assembles the REPL session and prints the load summary to stderr.
 func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, opts decoder.Options, dt time.Duration) *session {
 	cfg := model.Config()
-	fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s quant=%s]\n",
-		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), model.BackendReport(), model.Quant())
+	// M-25 (audit-2026-09-10): DecodePath(), not Quant() — on Metal, --quant int8/int8int8/int4mix
+	// all silently re-quantize to int4 at resident-build time (no int8 GEMV kernel on that
+	// backend), so the raw requested quant string was printing a precision the GPU never actually
+	// runs. DecodePath() reports the corrected label (decoder/residency.go's residentQuantLabel).
+	fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s decode=%s]\n",
+		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), model.BackendReport(), model.DecodePath())
 	// The phase split, on the line under the banner. chat is where a first-time user meets a load
 	// time at all -- the cold-user run's scenario A measured 3.314s here and had no way to know
 	// what it was spent on.

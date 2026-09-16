@@ -1043,14 +1043,21 @@ func (m *Model) DecodePath() string {
 // residentQuantLabel is DecodePath's resident-quant string, split out so it is testable without a
 // live Model (see decoder/staged_device_note_test.go) — same shape as declinedToCPUReason below.
 //
-// G10 (docs/tasks/task-gpu-paths-2026-09.md): Metal has no int8 GEMV kernel at all — an int8-loaded
-// weight is silently re-quantized to W4A8 (int4) at resident-build time (metal/model.go's
-// int4Buf), so "metal-resident (int8int8)" would claim a precision this backend never actually
-// runs. Say what executes, not what was requested; every other (backend, quant) pair is
-// unaffected and echoes the requested quant string exactly as before.
+// G10 (docs/tasks/task-gpu-paths-2026-09.md), widened by M-15... M-25 (audit-2026-09-10): Metal has
+// no int8 GEMV kernel at all — ANY Int8()-kind weight is silently re-quantized to W4A8 (int4) at
+// resident-build time (metal/model.go's int4Buf falls back to w.Int8() whenever int4DirectWords
+// finds no already-int4 nibbles), not just under `--quant int8int8`. `--quant int8` produces the
+// same Int8-kind WeightMat and hits the identical fallback; `--quant int4mix`'s int8-kind tensors
+// (the ones it deliberately did NOT keep at int4) do too, so even a "mix" ends up effectively
+// uniform int4 on this backend. f32 is NOT affected: an f32-kind WeightMat has neither int4Buf
+// fallback available (int4DirectWords finds no nibbles, w.Int8() finds no q8) and int4Buf's own
+// call sites panic rather than silently proceed, so this backend never actually produces a
+// resident build to mislabel in the first place — it errors/declines well before DecodePath would
+// print anything. Every (backend, quant) pair outside these three metal cases is unaffected and
+// echoes the requested quant string exactly as before.
 func residentQuantLabel(backend, quant string) string {
-	if backend == "metal" && quant == "int8int8" {
-		return "int8int8→int4, no Metal int8 GEMV kernel"
+	if backend == "metal" && (quant == "int8" || quant == "int8int8" || quant == "int4mix") {
+		return quant + "→int4, no Metal int8 GEMV kernel"
 	}
 	return quant
 }
