@@ -119,6 +119,10 @@ func newServer(modelDir, backend, quant string) (*server, error) {
 	}
 	fmt.Printf("loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s quant=%s]\n",
 		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), model.BackendReport(), q)
+	// M-41 (audit-2026-09-10): same C-10 reasoning serve already applies.
+	if d := tk.PreTokenizerDecline(); d != "" {
+		log.Printf("!! tokenizer: %s", d)
+	}
 	srv := &server{tk: tk, model: model, special: tk.Special()}
 	if tmpl, derr := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has}); derr == nil {
 		srv.tmpl = tmpl

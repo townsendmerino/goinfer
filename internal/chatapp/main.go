@@ -399,6 +399,12 @@ func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, opts decoder.Opti
 	if sum := model.LoadProfile().Summary(); sum != "" {
 		fmt.Fprintln(os.Stderr, sum)
 	}
+	// M-41 (audit-2026-09-10): the same C-10 reasoning serve already applies, extended here — the
+	// REPL is the release asset whose whole pitch is "point it at your own GGUF," so a declined
+	// pre-tokenizer here is the single most likely place a user hits one, silently.
+	if d := tk.PreTokenizerDecline(); d != "" {
+		fmt.Fprintf(os.Stderr, "  !! tokenizer: %s\n", d)
+	}
 	s := &session{tk: tk, model: model, special: tk.Special(), vocab: cfg.VocabSize}
 	s.tokenBytes = constrain.TokenBytes(s.vocab, tk.TokenText)
 	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})

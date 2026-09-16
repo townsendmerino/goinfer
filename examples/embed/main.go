@@ -35,6 +35,9 @@ func main() {
 
 	tok, err := tokenizer.LoadGGUF(path)
 	check(err, "tokenizer")
+	if d := tok.PreTokenizerDecline(); d != "" {
+		fmt.Fprintln(os.Stderr, "!! tokenizer:", d)
+	}
 
 	ids, err := buildPrompt(tok, prompt)
 	check(err, "encode")

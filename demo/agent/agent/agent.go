@@ -596,6 +596,12 @@ func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, dt time.Duration)
 			cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), model.Quant()),
 	}
 	s.tokenBytes = constrain.TokenBytes(s.vocab, tk.TokenText)
+	// M-41 (audit-2026-09-10): same C-10 reasoning serve already applies, surfaced through
+	// LoadSummary since that's how this session reports its load state (there is no separate
+	// stderr banner to append to, unlike chatapp/serve).
+	if d := tk.PreTokenizerDecline(); d != "" {
+		s.LoadSummary += fmt.Sprintf(" !! tokenizer: %s", d)
+	}
 	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
 	if err != nil {
 		s.LoadSummary += " (no recognized chat template; raw completions)"
