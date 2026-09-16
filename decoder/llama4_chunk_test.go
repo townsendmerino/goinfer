@@ -84,7 +84,7 @@ func TestLlama4_attendQueryHonoursTheChunk(t *testing.T) {
 	// Positions 0..5. Key 0 is the one the chunk mask must exclude for a query at pos 4/5;
 	// its VALUE is the marker, so if it is attended the context carries it.
 	const nPos = 6
-	c := NewKVCache(nLayers, nKV, hd, 0, nPos)
+	c := NewKVCache(nLayers, nKV, hd, 0, nPos, nil)
 	for p := range nPos {
 		k := []float32{1, 0}
 		v := []float32{0, 0}

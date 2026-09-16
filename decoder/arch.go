@@ -506,13 +506,40 @@ func (a *Architecture) kvHeadsAt(i int) int {
 // WIDTH only; kvPositionsAt below is the COUNT (a sliding-window layer holds fewer positions
 // than ctx once ctx exceeds its window).
 func (a *Architecture) kvDimAt(i int) int {
-	if a.isLinearLayer(i) || a.isMambaLayer(i) || a.isConvLayer(i) {
+	if a.hasNoAttentionKVAt(i) {
 		return 0
 	}
 	if a.mla != nil {
 		return a.mla.KVLoRARank + a.mla.QKRopeHeadDim
 	}
 	return a.kvHeadsAt(i) * a.headDimAt(i)
+}
+
+// hasNoAttentionKVAt reports whether layer i holds no ordinary softmax-attention K/V array at
+// all: the generic linear/mamba/conv mixer cases (isLinearLayer/isMambaLayer/isConvLayer) PLUS
+// Nemotron's own per-layer block-kind classification. Nemotron needs its own check because its
+// mixer identity is per-layer RUNTIME DATA (nemotronParams.blockKind, read from
+// layers_block_type), not a closure registered once at resolve time the way Granite's
+// layerIsMamba is — isMambaLayer never fires for Nemotron's mamba layers at all, and its mlp/moe
+// block kinds (single-op-block: exactly one of {mamba, attention, mlp, moe} per layer,
+// decoder/forward_nemotron.go's own switch) touch no K/V either, which neither isMambaLayer nor
+// any other generic predicate was ever positioned to catch.
+//
+// Found as a residual gap in M-28 (docs/audit-2026-09-10.md) while implementing P-02: the fix
+// there zeroed KV pricing/allocation for isLinearLayer/isMambaLayer/isConvLayer layers, but
+// Nemotron's mamba AND mlp AND moe layers all slipped through priced as full attention, since
+// none of those three generic predicates ever return true for a Nemotron layer regardless of its
+// real kind (confirmed directly: testdata/nemotron-tiny's `mamba,attention,mlp,mamba,attention`
+// layers all reported kvDimAt=32 before this fix, including the two mamba and one mlp layer that
+// hold no attention K/V at all).
+func (a *Architecture) hasNoAttentionKVAt(i int) bool {
+	if a.isLinearLayer(i) || a.isMambaLayer(i) || a.isConvLayer(i) {
+		return true
+	}
+	if a.nemotron != nil && i < len(a.nemotron.blockKind) && a.nemotron.blockKind[i] != nemoAttn {
+		return true
+	}
+	return false
 }
 
 // kvPositionsAt returns how many of ctx cache positions layer i's K/V actually needs to hold

@@ -27,7 +27,7 @@ func TestMellum2_slidingWindowEviction(t *testing.T) {
 	// 2. WindowStart at a position past the window.
 	pos := N - 1 // 7
 	build := func(blowUpPos0 bool) *KVCache {
-		c := NewKVCache(1, 1, hd, W, N)
+		c := NewKVCache(1, 1, hd, W, N, nil)
 		for p := range N {
 			k, v := []float32{float32(p + 1), 0}, []float32{float32(p + 1), float32(p + 1)}
 			if blowUpPos0 && p == 0 {

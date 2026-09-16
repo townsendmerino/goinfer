@@ -163,7 +163,18 @@ type KVCache struct {
 // NewKVCache allocates an empty cache for a model with the given geometry.
 // capHint pre-sizes the per-layer slices to avoid reallocation during a
 // known-length generation; 0 is fine (grow on demand).
-func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int) *KVCache {
+//
+// skipLayer (nil-safe: nil ⇒ no layer skipped) reports whether layer l never writes
+// c.keys[l]/c.vals[l] at all — a linear/mamba/conv mixer layer, or one of Nemotron's own
+// non-attention block kinds — in which case its capHint reservation is wasted capacity the
+// layer's forward pass never touches (P-02, docs/audit-2026-09-10.md): 100-200 MB+ per stream at
+// realistic context lengths on a hybrid family's non-attention layers, multiplied by however many
+// sessions the LRU keeps warm. This is independent of, and layered on top of, the caller's own
+// whole-cache decision to pass capHint=0 for an MLA family (model.go's own P-02 comment) — an MLA
+// layer DOES hold attention-shaped KV, just in the separate c.mlaLatent array skipLayer knows
+// nothing about, so that case is handled by the caller zeroing capHint itself, not by this
+// parameter.
+func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int, skipLayer func(l int) bool) *KVCache {
 	if capHint < 0 { // defensive: a negative hint (e.g. from a negative max_tokens) would
 		capHint = 0 // panic makeslice with "cap out of range"; the HTTP surface rejects it
 	} // upstream (audit C-19), this guards every other caller too.
@@ -178,8 +189,12 @@ func NewKVCache(numLayers, numKVHeads, headDim, window, capHint int) *KVCache {
 		stride:    make([]int, numLayers),
 	}
 	for l := range numLayers {
-		c.keys[l] = make([]float32, 0, capHint*kvDim)
-		c.vals[l] = make([]float32, 0, capHint*kvDim)
+		lc := capHint
+		if skipLayer != nil && skipLayer(l) {
+			lc = 0
+		}
+		c.keys[l] = make([]float32, 0, lc*kvDim)
+		c.vals[l] = make([]float32, 0, lc*kvDim)
 	}
 	c.rings = make([]*ring, numLayers) // all nil: append-forever until enableRings
 	return c

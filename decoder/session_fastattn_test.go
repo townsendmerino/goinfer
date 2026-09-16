@@ -34,7 +34,7 @@ func TestSessionFastAttnDivergence(t *testing.T) {
 	prefill := func(prompt []int, fast bool) []float32 {
 		t.Helper()
 		t.Setenv("GOINFER_CPU_FAST_ATTENTION", map[bool]string{true: "1", false: "0"}[fast])
-		cache := NewKVCache(nL, nKV, hd, 0, len(prompt)+8)
+		cache := NewKVCache(nL, nKV, hd, 0, len(prompt)+8, nil)
 		lg, err := m.prefillLogits(context.Background(), prompt, cache)
 		if err != nil {
 			t.Fatalf("prefillLogits(fast=%v, %d tokens): %v", fast, len(prompt), err)

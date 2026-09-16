@@ -8,7 +8,7 @@ import "testing"
 // rewindForReuse cold-prefills instead of decoding from stale recurrent state.
 func TestTruncateTo_resetsRecurrent(t *testing.T) {
 	newCache := func() *KVCache {
-		c := NewKVCache(1, 1, 1, 0, 4)
+		c := NewKVCache(1, 1, 1, 0, 4, nil)
 		c.pos = 5
 		c.mamba = []*mamba2State{{ssm: []float32{1, 2, 3}, convWin: [][]float32{{9}}}}
 		c.delta = []*deltaState{{s: []float32{4, 5}, convWin: [][]float32{{7}}}}
@@ -49,7 +49,7 @@ func TestTruncateTo_resetsRecurrent(t *testing.T) {
 // prefix reuse can't inherit stale image blocks / m-RoPE offsets. This runs on a plain
 // (non-recurrent) cache, proving the reset happens outside the recurrent guard.
 func TestTruncateTo_resetsMultimodal(t *testing.T) {
-	c := NewKVCache(1, 1, 1, 0, 4)
+	c := NewKVCache(1, 1, 1, 0, 4, nil)
 	c.pos = 5
 	c.SetImageBlocks([][2]int{{1, 4}})
 	c.mropePos = [][3]int{{0, 0, 0}, {1, 1, 1}}
@@ -80,7 +80,7 @@ func TestTruncateTo_resetsMultimodal(t *testing.T) {
 // This cache carries ONLY conv, which is the whole point of it being a separate test.
 func TestTruncateTo_resetsConvWindowAlone(t *testing.T) {
 	newCache := func() *KVCache {
-		c := NewKVCache(1, 1, 1, 0, 4)
+		c := NewKVCache(1, 1, 1, 0, 4, nil)
 		c.pos = 5
 		c.conv = []*shortConvState{{convWin: [][]float32{{9}, {8}}}}
 		return c
@@ -110,7 +110,7 @@ func TestTruncateTo_resetsConvWindowAlone(t *testing.T) {
 // rebuilds through NewCache(pos) with empty windows, so the session comes back "warm" and wrong.
 // Reachable through -session-dir and -kv-idle-demote (audit-2026-09-02 C-02, the C-05 shape).
 func TestSnapshot_refusesConvCache(t *testing.T) {
-	c := NewKVCache(1, 1, 1, 0, 4)
+	c := NewKVCache(1, 1, 1, 0, 4, nil)
 	c.pos = 2
 	c.conv = []*shortConvState{{convWin: [][]float32{{9}}}}
 	s := &Session{cache: c}

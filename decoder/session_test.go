@@ -59,7 +59,7 @@ func gen(t *testing.T, run func() (<-chan int, *Generation)) []int {
 func TestKVCache_TruncateTo_kvShared(t *testing.T) {
 	const layers, kvHeads, headDim = 3, 1, 4
 	kvDim := kvHeads * headDim // nominal = 4
-	c := NewKVCache(layers, kvHeads, headDim, 0, 8)
+	c := NewKVCache(layers, kvHeads, headDim, 0, 8, nil)
 	c.manualPos = true                  // gemma4 advances pos explicitly
 	narrow := []float32{1, 2, 3, 4}     // layer 0: width 4 (== nominal kvDim)
 	wide := []float32{1, 2, 3, 4, 5, 6} // layer 1: width 6 (per-layer head_dim ≠ nominal)

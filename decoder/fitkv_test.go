@@ -25,6 +25,31 @@ func TestKvDimAt_zeroForRecurrentLayers(t *testing.T) {
 	}
 }
 
+// TestKvDimAt_zeroForNemotronNonAttentionLayers gates a residual gap in M-28 found while
+// implementing P-02 (docs/audit-2026-09-10.md): Nemotron's mixer identity is per-layer RUNTIME
+// DATA (nemotronParams.blockKind, read from layers_block_type), not a registry-time closure like
+// Granite's layerIsMamba — so isMambaLayer never fires for a Nemotron mamba layer at all, and its
+// mlp/moe block kinds (decoder/forward_nemotron.go's own switch: only nemoAttn ever touches
+// cache) touch no K/V either, uncaught by any generic predicate. Real fixture, not synthetic:
+// testdata/nemotron-tiny's layers_block_type is exactly
+// ["mamba","attention","mlp","mamba","attention"].
+func TestKvDimAt_zeroForNemotronNonAttentionLayers(t *testing.T) {
+	_, arch := realArchFixture(t, "../testdata/nemotron-tiny")
+	if arch.nemotron == nil {
+		t.Fatal("test bug: nemotron-tiny did not resolve as a Nemotron architecture")
+	}
+	want := map[int]bool{0: true, 1: false, 2: true, 3: true, 4: false} // true = zero KV expected
+	for i, wantZero := range want {
+		got := arch.kvDimAt(i)
+		if wantZero && got != 0 {
+			t.Errorf("layer %d (non-attention): kvDimAt = %d, want 0", i, got)
+		}
+		if !wantZero && got == 0 {
+			t.Errorf("layer %d (attention): kvDimAt = 0, want nonzero", i)
+		}
+	}
+}
+
 // TestKvDimAt_mlaUsesCompressedLatentNotReconstructedWidth gates M-28's MLA sub-fix: the cache
 // holds the compressed KVLoRARank+QKRopeHeadDim latent (forward_deepseek.go reconstructs
 // per-head K/V from it each step), not NumKVHeads*HeadDim's full reconstructed width — the audit's

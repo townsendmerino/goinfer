@@ -209,7 +209,7 @@ func LoadMTPHead(dir string) (*MTPHead, error) {
 // NewMTPState builds the head's one-layer KV. capHint bounds a single draft block, not a
 // generation: the state is discarded per round.
 func (m *Model) NewMTPState(h *MTPHead, capHint int) *MTPState {
-	c := NewKVCache(1, h.nKV, h.headDim, 0, capHint)
+	c := NewKVCache(1, h.nKV, h.headDim, 0, capHint, nil) // MTP head: one layer, always ordinary attention
 	c.scr = newDecodeScratch(m.w.arch)
 	return &MTPState{cache: c}
 }

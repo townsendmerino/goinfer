@@ -155,7 +155,7 @@ func TestOwnForward_lifecycleSeamsRefuseEveryOwnForwardFamily(t *testing.T) {
 		arch := archWithFamily(t, f)
 		m := &Model{w: &Weights{arch: arch}}
 
-		if _, _, _, _, err := m.ForwardSubCapture(0, NewKVCache(1, 1, 1, 0, 4)); err == nil {
+		if _, _, _, _, err := m.ForwardSubCapture(0, NewKVCache(1, 1, 1, 0, 4, nil)); err == nil {
 			t.Errorf("%s: ForwardSubCapture returned no error; it needs runLayersFromEmbed's "+
 				"uniform block, which no own-forward loop routes through", f.Name)
 		}
@@ -166,7 +166,7 @@ func TestOwnForward_lifecycleSeamsRefuseEveryOwnForwardFamily(t *testing.T) {
 			t.Errorf("%s: newLayerPager built a pager; the family's loop never calls enterLayer, "+
 				"so the RAM-bound banner promises what it cannot deliver (N-13)", f.Name)
 		}
-		_, _, err := m.ForwardCapture(0, NewKVCache(1, 1, 1, 0, 4), nil)
+		_, _, err := m.ForwardCapture(0, NewKVCache(1, 1, 1, 0, 4, nil), nil)
 		if f.Captures && err != nil && strings.Contains(err.Error(), "seam not wired") {
 			t.Errorf("%s: ForwardCapture refuses a family the table marks as capturing", f.Name)
 		}

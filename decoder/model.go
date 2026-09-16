@@ -583,7 +583,16 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	if a.mla != nil {
 		kvCapHint = 0
 	}
-	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint)
+	// P-02's second half (docs/audit-2026-09-10.md, "recurrent families reserve the same dead
+	// capacity on their non-attention layers"): a linear/mamba/conv mixer layer (or one of
+	// Nemotron's own mlp/moe block kinds) reserves the SAME dead capHint*kvDim capacity as an
+	// ordinary attention layer despite never writing c.keys[l]/c.vals[l] at all — its own
+	// recurrent state (c.delta/c.mamba/c.conv/c.kda, set up below) is the whole store for that
+	// layer. Found while verifying this fix: Nemotron's mamba/mlp/moe layers weren't caught by
+	// any of isLinearLayer/isMambaLayer/isConvLayer at all (its mixer identity is per-layer
+	// runtime data, not a registry-time closure) — hasNoAttentionKVAt (decoder/arch.go) is the
+	// single place that now knows all of these cases, shared with kvDimAt's own pricing use.
+	c := NewKVCache(a.NumLayers, a.NumKVHeads, a.HeadDim, a.SlidingWindow, kvCapHint, a.hasNoAttentionKVAt)
 	c.scr = newDecodeScratch(a)
 	// int8 KV storage (opt-in, Options.KVQuant=="i8"): the uniform dense families
 	// only — MoE routes attention through the acc64 kernel for bit-stable expert

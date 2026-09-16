@@ -9,7 +9,7 @@ import "testing"
 // on the first TruncateTo. Refusal (nil) makes the caller cold-prefill instead.
 func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {
 	// Uniform-width cache: snapshot succeeds (control).
-	uni := NewKVCache(2, 4, 16, 0, 4) // kvDim = 64
+	uni := NewKVCache(2, 4, 16, 0, 4, nil) // kvDim = 64
 	uni.stride[0], uni.stride[1] = 64, 64
 	uni.pos = 1
 	uni.keys[0] = make([]float32, 64)
@@ -21,7 +21,7 @@ func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {
 	}
 
 	// Non-uniform: layer 1 has a wider KV stride (gemma-4 style) → must refuse.
-	non := NewKVCache(2, 4, 16, 0, 4) // kvDim = 64
+	non := NewKVCache(2, 4, 16, 0, 4, nil) // kvDim = 64
 	non.stride[0], non.stride[1] = 64, 128
 	non.pos = 1
 	if b := (&Session{cache: non, tokens: []int{7}}).Snapshot("s"); b != nil {

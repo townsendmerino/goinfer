@@ -36,11 +36,11 @@ func TestKVI8_decodeQuality(t *testing.T) {
 	kvDim, qDim := nKV*hd, nH*hd
 	arch := ringTestArch(nH, nKV, hd, W, func(l int) bool { return l == 1 }) // L0 local ring, L1 global
 
-	f32 := NewKVCache(nLayers, nKV, hd, W, N+1)
+	f32 := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
 	f32.enableRings(W, arch.isGlobalLayer)
 	f32.scr = newDecodeScratch(arch)
 
-	i8 := NewKVCache(nLayers, nKV, hd, W, N+1)
+	i8 := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
 	i8.setQuant(kvI8, N+1)
 	i8.enableRings(W, arch.isGlobalLayer)
 	i8.scr = newDecodeScratch(arch)
@@ -90,7 +90,7 @@ func TestKVI8_truncateReappend(t *testing.T) {
 	kvDim := nKV * hd
 	arch := ringTestArch(nH, nKV, hd, W, func(l int) bool { return l == 1 }) // L0 ring, L1 global
 	mk := func() *KVCache {
-		c := NewKVCache(nLayers, nKV, hd, W, 16)
+		c := NewKVCache(nLayers, nKV, hd, W, 16, nil)
 		c.setQuant(kvI8, 16)
 		c.enableRings(W, arch.isGlobalLayer)
 		c.scr = newDecodeScratch(arch)

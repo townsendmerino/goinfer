@@ -8,7 +8,7 @@ import "testing"
 // instead of reading stale history.
 func TestTruncateTo_wrappedRingRewindIsInexact(t *testing.T) {
 	const W, hd, nKV = 4, 2, 1
-	c := NewKVCache(1, nKV, hd, W, 16)
+	c := NewKVCache(1, nKV, hd, W, 16, nil)
 	c.enableRings(W, func(l int) bool { return false }) // layer 0 local (ring)
 	kvDim := nKV * hd
 	for range 10 { // 10 positions into a W=4 ring ⇒ wraps
@@ -31,7 +31,7 @@ func TestTruncateTo_wrappedRingRewindIsInexact(t *testing.T) {
 // permanently misaligned).
 func TestTruncateTo_raggedLayerUsesRecordedStride(t *testing.T) {
 	const hd, nKV = 8, 1
-	c := NewKVCache(2, nKV, hd, 0, 16) // window 0 ⇒ global (append-forever) layers
+	c := NewKVCache(2, nKV, hd, 0, 16, nil) // window 0 ⇒ global (append-forever) layers
 	kvDim := nKV * hd
 	k := make([]float32, kvDim)
 	for range 2 { // 2 clean positions across both layers

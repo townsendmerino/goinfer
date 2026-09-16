@@ -39,10 +39,10 @@ func TestRing_decodeBitExact(t *testing.T) {
 	kvDim, qDim := nKV*hd, nH*hd
 	arch := ringTestArch(nH, nKV, hd, W, func(l int) bool { return l == 1 })
 
-	ringC := NewKVCache(nLayers, nKV, hd, W, N+1)
+	ringC := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
 	ringC.enableRings(W, arch.isGlobalLayer)
 	ringC.scr = newDecodeScratch(arch)
-	fullC := NewKVCache(nLayers, nKV, hd, W, N+1)
+	fullC := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
 	fullC.scr = newDecodeScratch(arch)
 
 	rng := rand.New(rand.NewSource(11))
@@ -94,7 +94,7 @@ func TestRing_batchedBitExact(t *testing.T) {
 	v := randVec(rng, K*kvDim)
 
 	// Reference: append-forever cache holding all K rows, base 0.
-	full := NewKVCache(1, nKV, hd, W, K)
+	full := NewKVCache(1, nKV, hd, W, K, nil)
 	full.keys[0] = append(full.keys[0], k...)
 	full.vals[0] = append(full.vals[0], v...)
 	full.pos = K
@@ -108,7 +108,7 @@ func TestRing_batchedBitExact(t *testing.T) {
 	attendBatchedHeads(q, fCtx, full.keys[0], full.vals[0], 0, full, 0, 0, K, false, arch, false, bufs(K))
 
 	// Ring: empty cache (startPos 0), assemble [base, K) from (empty history + new).
-	ring := NewKVCache(1, nKV, hd, W, K)
+	ring := NewKVCache(1, nKV, hd, W, K, nil)
 	ring.enableRings(W, arch.isGlobalLayer)
 	alk := make([]float32, K*kvDim)
 	alv := make([]float32, K*kvDim)
@@ -140,9 +140,9 @@ func TestRing_moeDecodeBitExact(t *testing.T) {
 	kvDim, qDim := nKV*hd, nH*hd
 	arch := ringTestArch(nH, nKV, hd, W, func(int) bool { return false }) // all local
 
-	ring := NewKVCache(1, nKV, hd, W, N+1)
+	ring := NewKVCache(1, nKV, hd, W, N+1, nil)
 	ring.enableRings(W, arch.isGlobalLayer)
-	full := NewKVCache(1, nKV, hd, W, N+1)
+	full := NewKVCache(1, nKV, hd, W, N+1, nil)
 
 	mkbufs := func(nKeys int) []headWorkerScratch {
 		return []headWorkerScratch{{
