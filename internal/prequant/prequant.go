@@ -151,9 +151,18 @@ func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool, t
 		return fmt.Errorf("load %s (%s): %w", dir, quant, err)
 	}
 	defer m.Close()
-	f, err := os.Create(out)
+	// TEMP + RENAME, same reason as Transcode's GGUF branch above (M-12/M-33): a write to
+	// `out` directly leaves a placeholder-length bundle behind on SIGKILL/OOM-kill/power
+	// loss — exactly the interruption class this whole-model-resident path is most exposed
+	// to, since it holds the entire quantized model in RAM while writing. Written in place,
+	// that half-written file is newer than the source and "fresh" forever, so every later
+	// `serve` fails at boot with "truncated bundle" until a human deletes it. The temp name
+	// must still end in ".giw" (V-01) for selfCheck's decoder.Load to route to the bundle
+	// loader at all.
+	tmp := strings.TrimSuffix(out, ".giw") + ".tmp.giw"
+	f, err := os.Create(tmp)
 	if err != nil {
-		return fmt.Errorf("create %s: %w", out, err)
+		return fmt.Errorf("create %s: %w", tmp, err)
 	}
 	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
 		return decoder.SerializeWeightsToForTarget(w, m.Weights(), filepath.Base(dir), target)
@@ -163,12 +172,16 @@ func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool, t
 		werr = cerr
 	}
 	if werr != nil {
-		_ = os.Remove(out)
+		_ = os.Remove(tmp)
 		return fmt.Errorf("write bundle: %w", werr)
 	}
-	if err := selfCheck(out); err != nil {
-		_ = os.Remove(out)
+	if err := selfCheck(tmp); err != nil {
+		_ = os.Remove(tmp)
 		return fmt.Errorf("self-check: %w", err)
+	}
+	if err := os.Rename(tmp, out); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("publish %s: %w", out, err)
 	}
 	return nil
 }

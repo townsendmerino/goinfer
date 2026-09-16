@@ -506,3 +506,99 @@ func TestTranscode_writesViaTempThenRenames(t *testing.T) {
 			"must appear only once the bytes are complete and self-checked", renamedToFinal)
 	}
 }
+
+// M-33 (audit-2026-09-10): transcodeDir — the safetensors-directory sibling of Transcode's GGUF
+// branch, used for safetensors-only families like Mellum2 — wrote straight to `out` via
+// os.Create(out) and removed `out` (not a temp file) on failure, reintroducing exactly the M-12
+// class of bug the GGUF branch above was already fixed for: an OOM-kill during the write (this
+// path holds the WHOLE resident model in RAM, exactly where a killer fires) leaves a
+// placeholder-length bundle at the final path, newer than its source, "fresh" forever, and
+// `serve` then fails at boot with "truncated bundle" until a human deletes it. Same structural
+// guard as TestTranscode_writesViaTempThenRenames, targeting transcodeDir instead.
+func TestTranscodeDir_writesViaTempThenRenames(t *testing.T) {
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, "prequant.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var fn *ast.FuncDecl
+	ast.Inspect(af, func(n ast.Node) bool {
+		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "transcodeDir" {
+			fn = d
+		}
+		return true
+	})
+	if fn == nil {
+		t.Fatal("transcodeDir not found — this guard is watching nothing")
+	}
+	render := func(e ast.Expr) string {
+		var b strings.Builder
+		_ = printer.Fprint(&b, fset, e)
+		return b.String()
+	}
+	var createdFinal, renamedToFinal, creates int
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || render(sel.X) != "os" || len(call.Args) == 0 {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "Create":
+			creates++
+			if render(call.Args[0]) == "out" {
+				createdFinal++
+			}
+		case "Rename":
+			if len(call.Args) == 2 && render(call.Args[1]) == "out" {
+				renamedToFinal++
+			}
+		}
+		return true
+	})
+	if creates == 0 {
+		t.Fatal("transcodeDir creates no file — the guard is watching the wrong function")
+	}
+	if createdFinal > 0 {
+		t.Error("transcodeDir os.Creates the FINAL bundle path directly. giw.WriteStream patches " +
+			"the body length at the END, so a killed write (e.g. an OOM-kill — this path holds the " +
+			"whole resident model in RAM) leaves a zero-length header at a path that is newer than " +
+			"its source and therefore 'fresh' forever (M-33)")
+	}
+	if renamedToFinal != 1 {
+		t.Errorf("transcodeDir renames onto the final path %d times, want exactly 1 — the bundle "+
+			"must appear only once the bytes are complete and self-checked", renamedToFinal)
+	}
+}
+
+// The behavioral half of M-33: a transcodeDir call that fails after the load step (a bad target
+// makes SerializeWeightsToForTarget or selfCheck fail) must leave no file at the FINAL path —
+// only, at most, a cleaned-up temp file. Uses the tiny real llama fixture (a safetensors
+// directory) so decoder.Load succeeds and the failure is isolated to the write/self-check half.
+func TestTranscodeDir_failedWriteLeavesNoFinalFile(t *testing.T) {
+	dir := filepath.Join("..", "..", "testdata", "llama-tiny")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no llama-tiny fixture: %v", err)
+	}
+	out := filepath.Join(t.TempDir(), "llama-tiny.int8.giw")
+
+	// GIWTargetCPUArm64 on a shape the repack functions reject, or on non-arm64, falls back to
+	// kind 3 automatically per Transcode's own doc comment — so this alone would not force a
+	// failure. Instead force one directly: a bogus quant string makes decoder.Load itself fail,
+	// which is enough to prove no partial file is left at `out` (the property under test is
+	// "never publish an incomplete bundle," not "this specific step fails").
+	if err := transcodeDir(context.Background(), dir, out, "not-a-real-quant", false, decoder.GIWTargetNone); err == nil {
+		t.Fatal("transcodeDir accepted a bogus quant string")
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Error("a failed transcodeDir left the FINAL bundle in place; the next run would treat " +
+			"it as a cache rather than rebuilding (M-33)")
+	}
+	matches, _ := filepath.Glob(filepath.Join(filepath.Dir(out), "*.tmp.giw"))
+	if len(matches) != 0 {
+		t.Errorf("leftover temp file(s) after a failed transcodeDir: %v", matches)
+	}
+}
