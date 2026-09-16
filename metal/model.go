@@ -1622,8 +1622,11 @@ func (r *resident) ForwardArgmax(id, pos int) uint32 {
 		// correct always beats fast-but-wrong, and GPT-2's vocab is cheap to materialize.
 		return uint32(argmaxF32(r.forwardLogits(pos)))
 	}
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
+	// N-48 (docs/audit-2026-09-10.md): setPos, not a direct uPos/uNKeys write — same gap as the
+	// paged MoE forwards (metal/moe.go, gemma4_moe.go), this one a genuine production entry
+	// point (the fast-greedy path), not test-only. Currently a no-op like the paged case (no
+	// family combining ForwardArgmax's dispatch with FeatAttnTemp today).
+	r.setPos(pos)
 	e := r.q.Begin()
 	r.encodeTrunkInto(e)
 	e.Dispatch(r.pGemvW8Amax, (r.V)*32, 256, r.aq, r.aSc, r.lmW, r.lmS, r.part, r.uH) // tile partials (int8 head)

@@ -189,6 +189,25 @@ func (r *DecodeRunner) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 		return &loraRunProj{a: aBuf, b: bBuf, uDown: uDown, uUp: uUp, bgDown: bgDown, bgUp: bgUp, outn: proj.Out}, nil
 	}
 	built := make([]loraRunLayer, len(layers))
+	// N-82 (docs/audit-2026-09-10.md): an mk error partway through used to return immediately,
+	// leaking every already-built projection in built (metal/lora.go's own C-04, audit-metal-
+	// 2026-09-12.md, already fixed the identical shape there — same defer+bound idiom, applied
+	// here too). Worse than a leak alone: r.loraLayers was already released and nilled above, but
+	// r.steps was left pointing at the PREVIOUS adapter's now-released bind groups — this file's
+	// own doc comment on SetAdapter promises "r.steps restored to r.baseSteps" on any error, which
+	// rebuildSteps() (keyed on r.loraLayers, already nil) is what actually delivers; without
+	// calling it here, a Run() after a failed rebind would dispatch against freed WebGPU
+	// resources. bound latches true only once every projection in every layer has converted
+	// cleanly; the deferred release fires on any earlier return (explicit or panic) or the
+	// rebuildSteps() call afterward, undoing exactly the partial work this call itself allocated
+	// and keeping r.steps consistent with the nil r.loraLayers either way.
+	bound := false
+	defer func() {
+		if !bound {
+			releaseLoraLayers(built)
+			r.rebuildSteps()
+		}
+	}()
 	for l := range layers {
 		src := &layers[l]
 		for _, kind := range []loraProjKind{loraQ, loraK, loraV, loraO, loraGate, loraUp, loraDown} {
@@ -199,6 +218,7 @@ func (r *DecodeRunner) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 			*built[l].fieldFor(kind) = p
 		}
 	}
+	bound = true
 	r.loraLayers = built
 	r.rebuildSteps()
 	return nil

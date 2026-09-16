@@ -802,8 +802,12 @@ func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {
 			logits = nil
 		}
 	}()
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
+	// N-48 (docs/audit-2026-09-10.md): setPos, not a direct uPos/uNKeys write — this paged path
+	// used to bypass it, so uQTempScale (Ministral 3, FeatAttnTemp) never refreshed here,
+	// contradicting setPos's own "called at every forward entry point" doc comment. Currently a
+	// no-op (no paged family has FeatAttnTemp: r.attnTempBeta==0 gives scale=1 unconditionally),
+	// but it silently stays stale the day one does.
+	r.setPos(pos)
 	mo := r.moe
 	// N-23 (audit-metal-2026-09-12.md): consecutive dense layers share ONE command buffer instead
 	// of a submit+wait each — only a paged MoE layer's router readback is a genuine value-dependent

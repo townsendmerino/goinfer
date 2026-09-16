@@ -508,8 +508,9 @@ func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {
 			// DrainPool/End would nil-panic or commit a half-encoded command buffer — worse than the leak.
 		}
 	}()
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
+	// N-48 (docs/audit-2026-09-10.md): setPos, not a direct uPos/uNKeys write — same gap as
+	// metal/moe.go's paged path, see its own comment there.
+	r.setPos(pos)
 	g := r.g4moe
 	p := &r.prof
 	// GOINFER_MOE_PROF_SPLIT: split each End() into commit() vs waitUntilCompleted() to locate the
