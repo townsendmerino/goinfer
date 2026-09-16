@@ -812,6 +812,20 @@ def main() -> int:
                                f"green with the prose still citing a line that no longer holds what "
                                f"the sentence claims. Fix the citation to :{at} in the document, "
                                f"then re-run --update.")
+            else:
+                # N-51 (docs/audit-2026-09-10.md): CONTENT-ABSENT, not just shifted. The old
+                # content isn't a shift victim — it does not exist ANYWHERE in the current file
+                # (deleted, rewritten, or the cited line now runs past EOF, resolve_path's ""
+                # case). The SHIFTED branch above is this same refusal for "moved"; this is its
+                # missing twin for "gone", and without it --update silently re-keyed the citation
+                # to whatever (if anything) now sits at the stale line — exactly the "weakening a
+                # key... as a side effect" this whole guard exists to refuse.
+                got = content[:48] if content else "(line does not exist in the file)"
+                launder.append(f"  {key}  CONTENT GONE — `{oldrec[:48]}` no longer appears "
+                               f"anywhere in {rel} (not shifted, deleted or rewritten). --update "
+                               f"would re-key this to `{got}` — whatever happens to be there now — "
+                               f"instead of refusing. Point the citation at real, current content, "
+                               f"then re-run --update.")
         if launder:
             sys.stderr.write("queue_citation_lint --update: refusing to weaken shifted citation(s):\n")
             sys.stderr.write("\n".join(launder) + "\n")

@@ -8,7 +8,10 @@
 # machine-readable half of that document; incompatible changes outside it are REPORTED, not fatal.
 #
 # Usage:
-#   scripts/apidiff_check.sh                 # baseline v0.13.0 (the last released tag)
+#   scripts/apidiff_check.sh                 # baseline v0.13.0 (deliberately frozen — the
+#                                             # pre-1.0 API-freeze point, not "the last released
+#                                             # tag" (N-54, docs/audit-2026-09-10.md) — several
+#                                             # tags have shipped since)
 #   scripts/apidiff_check.sh v0.14.0         # baseline an explicit tag
 #
 # Needs: apidiff (auto-installed to a temp GOBIN if absent) and the baseline TAG present locally

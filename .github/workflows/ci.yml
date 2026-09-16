@@ -75,7 +75,10 @@ jobs:
       # descriptors and drafters are named Experimental in that document precisely because they
       # move as families land; a gate that failed on those would be switched off within a minor,
       # and a switched-off gate is worse than none.
-      - name: apidiff (Hard tier vs the last release)
+      # v0.13.0 is a deliberately FROZEN baseline (the pre-1.0 API-freeze point), not "the last
+      # release" — several tags have shipped since (N-54, docs/audit-2026-09-10.md: this step's
+      # own name used to claim otherwise).
+      - name: apidiff (Hard tier vs the v0.13.0 API-freeze baseline)
         run: scripts/apidiff_check.sh v0.13.0
 
       # The lint resolves aikit/gpu path citations against cuda/go.mod's required version (B10:
@@ -236,6 +239,13 @@ jobs:
       - name: build demo/agent (workspace)
         run: go build ./demo/agent/...
 
+      # N-61 (docs/audit-2026-09-10.md): the build step above never ran the module's own tests —
+      # `go test ./...` at root cannot reach a module with its own go.mod, so n26_test.go's
+      # security-hardening assertions (N-26: cross-origin, unbounded body, special-token
+      # forgery) had zero CI coverage. Fast (<1s) and asset-free — no reason not to run it here.
+      - name: test demo/agent (workspace)
+        run: go test ./demo/agent/...
+
       # Compile the WIRED serve + demo entrypoints (gpu/cmd/serve, gpu/cmd/chat): the
       # RegisterBackend blank-imports live in the submodule cmd/ mains since audit M-19, so a
       # backend signature drift must fail CI here (it once broke the shipped -tags gpu binary
@@ -370,9 +380,11 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: metal/go.sum
 
-      # metal/go.mod `replace`s the unpublished root but does not `require` it, so a standalone
-      # build cannot resolve the root's own deps (aikit). The workspace supplies the root module —
-      # same ephemeral stitch as gpu-darwin (go.work is gitignored).
+      # metal/go.mod `require`s the unpublished root (N-54, docs/audit-2026-09-10.md: this used to
+      # say the reverse) but has no `replace` for it, so a standalone build resolves the root from
+      # the module proxy at whatever version is required — not this checkout's own tree. The
+      # workspace supplies the LOCAL root module instead — same ephemeral stitch as gpu-darwin
+      # (go.work is gitignored).
       - name: workspace (resolve unpublished goinfer locally)
         run: go work init . ./metal
 

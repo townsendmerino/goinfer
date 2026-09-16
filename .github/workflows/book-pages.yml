@@ -13,6 +13,12 @@ on:
     branches: [main]
     paths:
       - 'docs/book/**'
+      # N-57 (docs/audit-2026-09-10.md): the build step below also reads
+      # docs/book-search/head-custom.html and runs scripts/build_search_index.py — neither was
+      # in this filter, so a push touching only the search UI or its index builder silently
+      # left the deployed Pages site stale.
+      - 'docs/book-search/**'
+      - 'scripts/build_search_index.py'
       - '.github/workflows/book-pages.yml'
   workflow_dispatch:
 

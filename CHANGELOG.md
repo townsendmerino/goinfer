@@ -266,7 +266,12 @@ release rather than after.
   decline on every pull.** Measured the real HF `tokenizer.json`'s Split regex (byte-identical to
   an already-implemented shape, different digit cap and merge-handling than its nearest sibling)
   and added the missing case. A new registry gate reads each entry's committed GGUF-header fixture
-  and fails on any pre-tokenizer decline.
+  and fails on any pre-tokenizer decline. **Correction (N-55, docs/audit-2026-09-10.md):** "each
+  entry" overstated it at the time and still does — `registryTokenizerFixtures`
+  (`pull/registry_tokenizer_test.go`) covers 2 of the registry's 5 checkpoints
+  (`granite-4.0-h-tiny`, `qwen2.5-coder-0.5b`); the other 3 (`phi3-mini-4k`, `gpt-oss-20b`,
+  `gemma-4-26b-a4b`) SKIP for lack of a committed fixture, which the test's own output already
+  states plainly ("this is a skip, not a pass") — this entry just hadn't caught up to it.
 - **`serve check`'s minimal one-tool schema passed against a server that a real agent then broke
   under its own larger tool schema.** Added a second, harness-scale tools row (a dozen tools with
   nested parameters, shaped like a real agent's) that reports a checkpoint too small to hold up as

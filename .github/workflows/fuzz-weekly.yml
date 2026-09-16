@@ -49,17 +49,28 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # Retry ONCE, but only when no reproducer was written. `go test -fuzz` with a
+      # Retry ONCE, but only when no NEW reproducer was written. `go test -fuzz` with a
       # duration deadline can report a deadline error with no crasher when the coordinator
       # can't wind its workers down within the grace on a slow/loaded runner — a
-      # shutdown-timing flake, not a bug (empty testdata/fuzz). A REAL find persists a
-      # reproducer under testdata/fuzz/<Target>/ that replays deterministically, so if one
-      # exists we fail immediately: never retry a real crasher away, and let the upload
-      # step capture it.
+      # shutdown-timing flake, not a bug. A REAL find persists a reproducer under
+      # testdata/fuzz/<Target>/ that replays deterministically, so if a NEW one appears this
+      # run we fail immediately: never retry a real crasher away, and let the upload step
+      # capture it.
+      #
+      # N-56 (docs/audit-2026-09-10.md): checking non-emptiness alone (`compgen -G` against
+      # the live crashdir) is wrong for a target with COMMITTED regression seeds —
+      # constrain/testdata/fuzz/FuzzJSONSchema/ carries 5 from past real finds, kept on
+      # purpose as a permanent corpus. Those always match, so this target's retry path was
+      # permanently dead: every failure, flake or not, read as "reproducer written" on
+      # attempt 1 and never got a second try. Snapshot the crashdir BEFORE fuzzing and diff
+      # against it after a failure — a genuinely NEW file is a real crash; an unchanged
+      # listing (empty, or exactly the pre-existing seeds) is the flake case.
       - name: fuzz ${{ matrix.pkg }} ${{ matrix.fn }}
         shell: bash
         run: |
           crashdir="${{ matrix.pkg }}/testdata/fuzz/${{ matrix.fn }}"
+          before="$(mktemp)"
+          ls -1 "${crashdir}" 2>/dev/null | sort > "${before}"
           out="$(mktemp)"
           for attempt in 1 2; do
             echo "::group::fuzz attempt ${attempt}: ${{ matrix.pkg }} ${{ matrix.fn }}"
@@ -78,13 +89,16 @@ jobs:
               exit 0
             fi
             echo "::endgroup::"
-            if compgen -G "${crashdir}/*" >/dev/null 2>&1; then
-              echo "reproducer written under ${crashdir} — real failure, not retrying"
+            after="$(mktemp)"
+            ls -1 "${crashdir}" 2>/dev/null | sort > "${after}"
+            new_files="$(comm -13 "${before}" "${after}")"
+            if [ -n "${new_files}" ]; then
+              echo "NEW reproducer(s) written under ${crashdir}: ${new_files} — real failure, not retrying"
               exit 1
             fi
-            echo "no reproducer written (shutdown/deadline flake) — retry ${attempt}/2"
+            echo "no NEW reproducer written (shutdown/deadline flake) — retry ${attempt}/2"
           done
-          echo "fuzz flaked with no reproducer on both attempts"
+          echo "fuzz flaked with no new reproducer on both attempts"
           exit 1
 
       # A crash drops a reproducer under testdata/fuzz/<Target>/; keep it so the failure

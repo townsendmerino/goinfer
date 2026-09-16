@@ -172,9 +172,25 @@ push**:
 | `testdata/mixtral-tiny/` | Mixtral / MoE dispatch (`decoder`, CUDA) | 3.6 MB | `scripts/pin_mixtral_tiny.py` |
 | `testdata/cohere-tiny/` | Cohere / Command-R v1 (`cohere_test.go`) | 656 KB | `scripts/pin_cohere_tiny.py` |
 | `testdata/cohere2-tiny/` | Cohere2 / Command-R v2 (`cohere2_test.go`) | 656 KB | `scripts/pin_cohere2_tiny.py` |
+| `testdata/lfm2-tiny/` | LFM2 / LFM2.5 short-conv hybrid (`TestLFM2_textParity`) | ~713 KB | `scripts/pin_lfm2_tiny.py` |
+| `testdata/llama-tiny/` | llama, untied LM head (`llama` parity gate; the LoRA gates also depend on it) | ~727 KB | `scripts/pin_llama_tiny.py` |
+| `testdata/granite-dense-tiny/` | Granite dense | ~826 KB | `scripts/pin_granite_dense_tiny.py` |
+| `testdata/ministral3-tiny/` | Ministral 3 | ~826 KB | `scripts/pin_ministral3_tiny.py` |
+| `testdata/olmo_hybrid-tiny/` | Olmo Hybrid | ~940 KB | `scripts/pin_olmo_hybrid_tiny.py` |
+| `testdata/qwen3moe-tiny/` | Qwen3.5 MoE / Gated DeltaNet | ~1.2 MB | `scripts/pin_qwen3moe_tiny.py` |
+| `testdata/smollm3-tiny/` | SmolLM3 | ~694 KB | `scripts/pin_smollm3_tiny.py` |
+| `testdata/dflash_qwen3_4b_ref.safetensors` | DFlash reference trace (P10 kill-gate 1; T3-in-practice — also needs the gitignored drafter weights) | ~2.6 MB | `scripts/pin_dflash_trace.py` |
+| `testdata/dspark_qwen3_4b_ref.safetensors` | DSpark reference trace (same gate/caveat as DFlash's) | ~2.5 MB | `scripts/pin_dflash_trace.py` |
+| `testdata/glm-tiny.gguf` | GLM4 MoE, synthetic GGUF (`TestStreamTranscodeMatchesResident`, .giw round-trip) | ~829 KB | `scripts/pin_glm_tiny.py` + `scripts/pin_glm_tiny_gguf.py` |
 
-All three are deterministic random-weight models (no license, no real data), committed
-because each is the *only* CI-runnable proof of its family's numerics.
+**N-59 (docs/audit-2026-09-10.md):** this table used to list only the first three — accurate the
+day it was written, stale since the five v0.17.0 tiny fixtures and `lfm2-tiny`/`llama-tiny`/
+`glm-tiny.gguf`/the DFlash-DSpark reference pair were committed for the identical reason (each
+closes a real "gate could not block anything because it skipped in CI" gap; see the `!testdata/`
+exceptions' own rationale comments in `.gitignore`). All are deterministic random-weight or
+synthetic models (no license, no real data) except the DFlash/DSpark reference traces, which are
+upstream's own output, not weights. Each is committed because it is the *only* CI-runnable proof
+of its family's numerics (or, for DFlash/DSpark, the oracle a kill-gate compares against).
 
 **Everything else is generator-reproducible per-machine, and that is also a choice.** The
 other tiny/scaled fixtures (`gemma4-dense-scaled-*`, `tiny-qwen2-moe`, the `*-vl-tiny`

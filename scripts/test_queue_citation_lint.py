@@ -145,5 +145,96 @@ class TestUntrackedDocsSkipped(unittest.TestCase):
             qcl._tracked_cache = qcl._TRACKED_SENTINEL
 
 
+class TestContentGoneRefused(unittest.TestCase):
+    """N-51 (docs/audit-2026-09-10.md): --update already refuses to launder a SHIFTED citation
+    (the old content found elsewhere in the file) but had no equivalent refusal for a
+    CONTENT-ABSENT one (the old content found NOWHERE — deleted or rewritten, not moved). Before
+    the fix, that case fell through the SHIFTED branch's `if at is not None` and silently re-keyed
+    to whatever (if anything) now sits at the stale line. This pins the fix in isolation, same
+    isolated-temp-repo discipline as TestUntrackedDocsSkipped (never touches this checkout's git
+    state)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = self.tmp.name
+        _git(self.repo, "init", "-q")
+        _git(self.repo, "config", "user.email", "test@example.com")
+        _git(self.repo, "config", "user.name", "Test")
+
+        self.pkg = os.path.join(self.repo, "pkg.py")
+        # A genuinely discriminating (>=12 chars, alnum) line 2 to cite and later delete outright.
+        with open(self.pkg, "w") as f:
+            f.write("x = 1\ndef a_real_distinctive_function_name():\n    pass\n")
+        os.makedirs(os.path.join(self.repo, "docs"))
+        self.scratch = os.path.join(self.repo, "docs", "task-scratch.md")
+        with open(self.scratch, "w") as f:
+            f.write("see `pkg.py:2` for details\n")
+
+        queue = os.path.join(self.repo, "docs", "QUEUE.md")
+        sha_placeholder_commit = _git_commit_all(self.repo, "init")
+        with open(queue, "w") as f:
+            f.write(f"# QUEUE\n\ncommit {sha_placeholder_commit} — init\n")
+        _git(self.repo, "add", "docs/QUEUE.md", "docs/task-scratch.md")
+        _git(self.repo, "commit", "-q", "-m", "queue+scratch")
+
+        self._orig_root, self._orig_queue = qcl.ROOT, qcl.QUEUE
+        qcl.ROOT = pathlib.Path(self.repo)
+        qcl.QUEUE = qcl.ROOT / "docs" / "QUEUE.md"
+        qcl._tracked_cache = qcl._TRACKED_SENTINEL
+
+        # Bootstrap the index: pkg.py:2 gets keyed to its real, current, discriminating content.
+        code, out = self._run(["--update"])
+        assert code == 0, out
+        self.assertIn("a_real_distinctive_function_name", qcl.QUEUE.read_text())
+        _git(self.repo, "add", "docs/QUEUE.md")
+        _git(self.repo, "commit", "-q", "-m", "index")
+
+    def tearDown(self):
+        qcl.ROOT, qcl.QUEUE = self._orig_root, self._orig_queue
+        qcl._tracked_cache = qcl._TRACKED_SENTINEL
+        self.tmp.cleanup()
+
+    def _run(self, argv):
+        old_argv = sys.argv
+        sys.argv = ["queue_citation_lint.py"] + list(argv)
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                code = qcl.main()
+        finally:
+            sys.argv = old_argv
+        return code, buf.getvalue()
+
+    def test_update_refuses_when_old_content_is_gone_not_shifted(self):
+        # Rewrite pkg.py so the cited line's exact text does not appear ANYWHERE in the file —
+        # not moved to a different line (that's the SHIFTED case, already covered), genuinely
+        # replaced. A different discriminating string at the SAME line number, so a naive
+        # "line count didn't change" check couldn't mistake this for nothing having happened.
+        with open(self.pkg, "w") as f:
+            f.write("x = 1\ndef a_totally_different_unrelated_name():\n    pass\n")
+
+        code, out = self._run(["--update"])
+        self.assertNotEqual(code, 0, out)
+        self.assertIn("CONTENT GONE", out)
+        self.assertIn("pkg.py:2", out)
+        # The OLD text should be named (what's missing), not silently dropped.
+        self.assertIn("a_real_distinctive_function_name", out)
+
+        # Confirm --update genuinely did NOT rewrite the index out from under the refusal: the
+        # stale content-key must still be what's on disk, not the new function's name.
+        queue_text = qcl.QUEUE.read_text()
+        self.assertIn("a_real_distinctive_function_name", queue_text)
+        self.assertNotIn("a_totally_different_unrelated_name", queue_text)
+
+
+def _git_commit_all(repo, msg):
+    """Commit whatever is currently staged/tracked and return the resulting short SHA — used
+    where a test needs a real, resolving commit to cite before the file it commits exists yet."""
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", msg, "--allow-empty")
+    return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=repo,
+                           capture_output=True, text=True, check=True).stdout.strip()
+
+
 if __name__ == "__main__":
     unittest.main()

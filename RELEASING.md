@@ -315,10 +315,11 @@ GOINFER_GATE_MODELS=/path/to/models go run ./cmd/gate gpu
 
 **What green means — all four, or it is not green:**
 
-1. **All 7 declared check groups report a verdict.** Metal declares
-   `cleangpu seam suite cgofree lifecycle prefill repo`. The script reconciles declared against
-   emitted, because a block that died mid-run used to vanish and still report PASS (audit G-01). A
-   group that emits nothing is itself a FAIL.
+1. **All 9 declared check groups report a verdict** (N-53, docs/audit-2026-09-10.md: `parity` and
+   `webgpu` joined since this said 7). Metal declares
+   `cleangpu seam suite parity cgofree lifecycle prefill webgpu repo`. The script reconciles
+   declared against emitted, because a block that died mid-run used to vanish and still report
+   PASS (audit G-01). A group that emits nothing is itself a FAIL.
 2. **Zero FAIL**, and the verdict line names the commit. A dirty tree is reported as a
    PROVENANCE failure even when every check passed — the verdict names a commit, and an
    uncommitted edit means it does not describe what that commit contains.
