@@ -1732,7 +1732,6 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/anthropic.go:35` | goinfer | `// dropped by the decoder); stop_reason is therefore never "thinking" in v1.` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/jobs_http.go:114` | goinfer | `// W28: a waiting job's place in line — its own request's state, the only queue informat` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:497` | goinfer | `flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu \| webgpu \| cuda \| m` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:502` | goinfer | `flag.StringVar(&cfg.quant, "quant", "int4", "default decoder weight quant — the accuracy/` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:739` | goinfer | `mux.HandleFunc("POST /web/models/load", sameOrigin(auth(maxBytes(textCap, srv.handleWebL` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:743` | goinfer | `mux.HandleFunc("POST /web/models/unload", sameOrigin(auth(maxBytes(textCap, srv.handleWe` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:254` | goinfer | `func (lm *loadedModel) queueFullMsg() string {` |
