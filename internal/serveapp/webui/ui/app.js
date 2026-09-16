@@ -984,6 +984,13 @@ function showTranscript(list) {
     if (from) modelDivider(from, e.model);
     renderEntry(e);
   });
+  // Each bubble() call above already scrolled once, but it does so right after creating the
+  // bubble's empty shell — before its own content is filled in (renderEntry fills content AFTER
+  // bubble() returns). So the scroll position after the loop reflects everything up through the
+  // SECOND-to-last bubble's content plus only the last bubble's empty header, short by exactly
+  // the last message's own height. One more call here, once everything is actually in the DOM,
+  // corrects it — found live by testing that reopening a conversation lands at its true bottom.
+  scrollLogToEnd();
   showContext();
   showAttach();
 }
@@ -1136,6 +1143,26 @@ $("log").addEventListener("click", e => {
   else deleteExchange(entry);
 });
 
+// #log is a bounded, internally-scrolling panel (app.css) — scrollIntoView on a bubble inside it
+// would walk every scrollable ancestor including the page itself, which is the "jumps around,
+// loses the footer" behaviour found live: the whole window kept re-scrolling to chase a growing
+// reply. Scrolling #log's own scrollTop instead touches nothing outside the panel.
+//
+// Forced INSTANT here (overriding app.css's scroll-behavior:smooth on #log), found live testing
+// this fix: this function runs on every streamed token and on every message of a reopened
+// conversation, both of which reassign the target many times a second — a smooth animation
+// restarted that often never catches up to the true bottom, it visibly trails behind the growing
+// reply and settles well short of it once the stream stops. CSS's smooth default stays on #log
+// for anything that scrolls it once (a manual scroll, a future scrollIntoView) — it is only this
+// keep-pace-with-new-content case that needs to be a snap, not a chase.
+function scrollLogToEnd() {
+  const log = $("log");
+  const prevBehavior = log.style.scrollBehavior;
+  log.style.scrollBehavior = "auto";
+  log.scrollTop = log.scrollHeight;
+  log.style.scrollBehavior = prevBehavior;
+}
+
 function bubble(who, cls) {
   const d = document.createElement("div");
   d.className = "msg ambient amb-rounded " + cls;
@@ -1144,7 +1171,7 @@ function bubble(who, cls) {
   const b = document.createElement("div");
   d.appendChild(h); d.appendChild(b);
   $("log").appendChild(d);
-  d.scrollIntoView({block: "end"});
+  scrollLogToEnd();
   // Content goes in via textContent (the user's own text, errors) or Markdown.render (model
   // output, W1) — never innerHTML. TestWebUI_noHTMLStringSinks enforces that for the whole page.
   return b;
@@ -1291,7 +1318,7 @@ async function runReply(out, entry, divider, open) {
     if (p && p.thinking && !thinkFrom) thinkFrom = performance.now();
     if (p && thinkFrom && !p.open && entry.thought === undefined) entry.thought = (performance.now() - thinkFrom) / 1000;
     renderReply(out, acc, live, entry);
-    out.scrollIntoView({block: "end"});
+    scrollLogToEnd();
   };
   // W28: until the first token, a job that is waiting for its turn says where it stands.
   let polling = null;
@@ -1410,7 +1437,10 @@ async function runReply(out, entry, divider, open) {
     const wasDetach = detaching;
     detaching = false;
     generating = null;
-    if (!wasDetach) save();
+    if (!wasDetach) { save(); scrollLogToEnd(); }   // addMeta/addActions above grow out AFTER paint()'s last
+                                                      // scroll call — this corrects the shortfall they leave.
+                                                      // Skipped on detach: #log already shows a DIFFERENT
+                                                      // conversation's content by the time this runs (W29).
     ac = null; $("send").disabled = false; $("stop").hidden = true;
     syncActions();
     renderChatList();   // W9: this conversation moves to the top, and the list is usable again

@@ -1615,6 +1615,17 @@ const W15_PRELUDE = String.raw`
   };
   const isDark = () => lum(parse(getComputedStyle(document.body).backgroundColor)) < 0.2;
   const setTheme = v => { $("theme").value = v; $("theme").dispatchEvent(new Event("change")); };
+  // Found live 2026-09-16: dark mode's shading read as nearly flat — WCAG text contrast (worst(),
+  // above) held throughout, because that regression was never in a text colour. AmbientCSS renders
+  // elevation as box-shadow layers, each pure black (a drop shadow) or pure white (a highlight) at
+  // some alpha; the alpha itself IS the perceptibility (RGB is always 0 or 255 either way). The
+  // highlight carried nearly all of the lost contrast when this broke (measured: 0.976 fixed vs
+  // 0.38 broken on .card's own strongest highlight layer) — the drop-shadow layers barely moved.
+  const strongestHighlightAlpha = el => {
+    let max = 0;
+    for (const m of getComputedStyle(el).boxShadow.matchAll(/rgba\(255, 255, 255, ([\d.]+)\)/g)) max = Math.max(max, +m[1]);
+    return max;
+  };
 `;
 const phase25 = phase(W15_PRELUDE + String.raw`
   // a message on screen, so a message surface is measured too
@@ -1639,6 +1650,8 @@ const phase26 = phase(W15_PRELUDE + String.raw`
   check("W15 System under a dark preference is dark, with nothing stored", isDark() && $("theme").value === "system" && getComputedStyle(document.documentElement).colorScheme === "dark", getComputedStyle(document.body).backgroundColor);
   let w = worst();
   check("W15 dark (system): every text colour on every surface meets WCAG AA (worst " + w.r.toFixed(2) + ":1, " + w.what + ")", w.r >= 4.5, w.r.toFixed(2) + " " + w.what);
+  const hi = strongestHighlightAlpha(document.querySelector(".card"));
+  check("W15 dark: a card's shading is actually perceptible, not just WCAG-legal — its strongest highlight layer is well above the 0.38 alpha the old dimming produced", hi > 0.7, hi);
   setTheme("light");
   check("W15 choosing Light overrides a dark system preference", !isDark() && getComputedStyle(document.documentElement).colorScheme === "light", getComputedStyle(document.body).backgroundColor);
   w = worst();
@@ -2463,6 +2476,61 @@ const phase40 = phase(W27_PRELUDE + String.raw`
   $("stop").click(); await settle(bgRun); await idle();
 `);
 
+// Found live 2026-09-16, not from the task doc's W-list: an unbounded #log made a streaming reply
+// grow the WHOLE PAGE, so the composer below it kept sliding further down and off-screen ("losing
+// the footer") while app.js's own scrollIntoView re-scrolled the window every frame to chase it
+// ("jumps around"). Fixed by bounding #log (overflow-y:auto, scroll-behavior:smooth) and scrolling
+// its own scrollTop instead of the window. A long synthetic reply (600 chunks) is used, not a short
+// captured one, because the panel has to genuinely overflow its bound for any of this to be
+// checking something real rather than a page that never grew past one screen anyway.
+const phase41 = phase(W27_PRELUDE + String.raw`
+  $("sampling-reset").click();
+  $("newchat").click();
+
+  const N = 600;
+  const chunks = [];
+  for (let i = 0; i < N; i++) {
+    chunks.push("data: " + JSON.stringify({ choices: [{ delta: { content: "lorem" + i + " " }, finish_reason: null, index: 0 }], created: 1, id: JOB, model: "q", object: "chat.completion.chunk" }));
+  }
+  chunks.push("data: " + JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }], created: 1, id: JOB, model: "q", object: "chat.completion.chunk" }));
+  chunks.push("data: [DONE]");
+  jobs[JOB] = { status: "running", events: chunks };
+
+  const log = $("log");
+  const pageScroll0 = document.scrollingElement.scrollTop;
+
+  $("prompt").value = "write something long";
+  const run = send();
+  // Sample once #log has GENUINELY overflowed its own bound, not at an arbitrary character count —
+  // a short prefix of the reply is well under the 60vh cap and the checks below would be checking
+  // nothing real if it hadn't. If it never does (e.g. the bound itself regresses), this check alone
+  // catches that; the composer-position checks below exist to catch a DIFFERENT class of
+  // regression — the panel scrolling correctly but something still moving the page around it —
+  // and are read against a baseline taken here, once the panel is doing its real job, not before.
+  await until(() => log.scrollHeight > log.clientHeight + 20, 4000);
+  const composerTop0 = $("send").getBoundingClientRect().top;
+
+  check("scroll panel: #log is bounded and genuinely overflowing mid-stream, not just tall", log.scrollHeight > log.clientHeight + 20, log.scrollHeight + " / " + log.clientHeight);
+  check("scroll panel: #log stays scrolled to its OWN bottom while streaming", log.scrollTop + log.clientHeight >= log.scrollHeight - 2, log.scrollTop + "+" + log.clientHeight + " vs " + log.scrollHeight);
+  check("scroll panel: the page itself has not scrolled while the reply streams in", document.scrollingElement.scrollTop === pageScroll0, document.scrollingElement.scrollTop + " vs " + pageScroll0);
+
+  await wait(120);   // several more frames of streaming, sampled mid-flight, not just at one instant
+  check("scroll panel: the composer has not moved since the panel started overflowing — the page around #log stays put", Math.abs($("send").getBoundingClientRect().top - composerTop0) < 1, $("send").getBoundingClientRect().top + " vs " + composerTop0);
+  check("scroll panel: #log is still following its own bottom a moment later, not falling behind", log.scrollTop + log.clientHeight >= log.scrollHeight - 2, log.scrollTop + "+" + log.clientHeight + " vs " + log.scrollHeight);
+
+  await settle(run); await idle();
+
+  check("scroll panel: still scrolled to #log's own bottom once the reply finishes", log.scrollTop + log.clientHeight >= log.scrollHeight - 2, log.scrollTop + "+" + log.clientHeight + " vs " + log.scrollHeight);
+  check("scroll panel: the composer still has not moved after the reply finishes", Math.abs($("send").getBoundingClientRect().top - composerTop0) < 1, $("send").getBoundingClientRect().top + " vs " + composerTop0);
+
+  // opening a different (empty) conversation, then reopening this one, lands scrolled to its
+  // newest message too — not just the live-streaming case above
+  const thisChat = currentChat.id;
+  $("newchat").click();
+  openChat(thisChat);
+  check("scroll panel: reopening a conversation shows it scrolled to the newest message", log.scrollTop + log.clientHeight >= log.scrollHeight - 2, log.scrollTop + "+" + log.clientHeight + " vs " + log.scrollHeight);
+`);
+
 const all = [];
 const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
@@ -2475,7 +2543,7 @@ const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, 
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }); },
   phase29,
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false }); },
-  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38, phase39, phase40];
+  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38, phase39, phase40, phase41];
 let n = 0;
 for (const prog of PHASES) {
   if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase

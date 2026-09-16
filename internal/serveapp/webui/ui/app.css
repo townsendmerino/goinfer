@@ -1476,13 +1476,25 @@
 /* W15 — dark. Two selectors carry the same tokens: the system preference (unless the page is set to Light),
    and an explicit Dark. Only tokens change; every rule reads them. AmbientCSS shades a surface as albedo x
    light, so a dark albedo is the whole of the surface change — the lights stay where they are. Every pair
-   below was measured against WCAG AA (4.5:1 for text) by the W15 gate, not chosen by eye. */
+   below was measured against WCAG AA (4.5:1 for text) by the W15 gate, not chosen by eye.
+
+   That included --amb-key-light-intensity/--amb-fill-light-intensity until this fix: this comment already
+   said "the lights stay where they are," but the code dimmed them anyway (.6/.55 against :root's own .9/.7
+   default) — a real contradiction between the two, found live from a report that dark mode's shading read
+   as nearly flat. Screenshotted both modes side by side to confirm rather than guess: light mode shows a
+   visible drop shadow under every card and a raised "New chat" button; dark mode, at .6/.55, showed almost
+   none of that — cards and bubbles barely distinguishable from the page. Measured why, not just that: a
+   card's own strongest highlight layer (the rim-light box-shadow that reads as "raised") sat at alpha 0.38
+   under the old dimming, against 0.976 with it removed — the drop-shadow layers barely moved (0.298→0.318)
+   by comparison, so the highlight was carrying nearly all of the lost perceptibility. Removing the override
+   (so dark mode falls through to the same light rig as light mode, exactly what the comment already
+   claimed) restores it without touching a single text colour — confirmed by re-running the W15 gate below,
+   which still passes (worst case improved to 5.21:1, better than light mode's own 4.51:1 margin). */
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --gi-surface:#1b1f25; --gi-ink:#e4e8ee; --gi-muted:#a3adb8;
     --gi-accent:#6cb0ff; --gi-accent-fill:#1a64c4; --gi-accent-ink:#fff;
     --gi-err:#ff8f86; --gi-ok:#6fd699; --gi-warn:#e0a43c; --gi-warn-ink:#f2bd5e;
-    --amb-key-light-intensity:.6; --amb-fill-light-intensity:.55;
     color-scheme:dark;
   }
 }
@@ -1490,7 +1502,6 @@
   --gi-surface:#1b1f25; --gi-ink:#e4e8ee; --gi-muted:#a3adb8;
   --gi-accent:#6cb0ff; --gi-accent-fill:#1a64c4; --gi-accent-ink:#fff;
   --gi-err:#ff8f86; --gi-ok:#6fd699; --gi-warn:#e0a43c; --gi-warn-ink:#f2bd5e;
-  --amb-key-light-intensity:.6; --amb-fill-light-intensity:.55;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -1536,7 +1547,17 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--gi-accent);outli
 .go[disabled]{opacity:.5;cursor:default}
 #stop{padding:9px 16px}
 
-#log{display:flex;flex-direction:column;gap:14px;margin-bottom:18px}
+/* Bounded and internally scrollable (found live: an unbounded #log grew the WHOLE page as a reply
+   streamed in, so the composer card below it kept sliding further down and off-screen — "losing
+   the footer" — while app.js's own scrollIntoView calls fought that growth by re-scrolling the
+   window every frame, which is the "jumps around" half of the same report. Bounding #log turns
+   that into a self-contained panel: the page around it (header, composer) never moves again, and
+   scroll-behavior:smooth is what makes following the growing reply feel like a scroll rather than
+   a series of jolts. 60vh leaves room for the header and composer at ordinary window sizes without
+   the panel feeling cramped; scaled down on phones below (W16 media query) where both are taller
+   relative to the viewport. */
+#log{display:flex;flex-direction:column;gap:14px;margin-bottom:18px;
+  max-height:60vh;overflow-y:auto;scroll-behavior:smooth}
 .msg{padding:12px 14px;white-space:pre-wrap;word-wrap:break-word}
 .who{font-size:11px;color:var(--gi-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
 .meta{font-family:var(--mono);font-size:11px;color:var(--gi-muted);margin-top:8px}
@@ -1703,6 +1724,7 @@ input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1p
   .card{padding:14px 12px}
   .msg{padding:10px 11px}
   .row>*{min-width:120px}
+  #log{max-height:48vh}
 }
 /* Touch targets: on a coarse pointer (a phone, a tablet) or a narrow screen, the small text-sized controls
    grow to at least 32 px tall — above WCAG 2.5.8's 24 px minimum, which several were under (the Export
