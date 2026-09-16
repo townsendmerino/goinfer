@@ -282,12 +282,32 @@ type Options struct {
 	// Model.ExtraResidentKVPerPosition's own doc comment and decoder.DrafterKVBytesPerPosition for
 	// the shape and rationale. 0 (the default) is today's behavior, unchanged.
 	ExtraResidentKVPerPosition int64
+	// ExactPrefill forces bit-exact prompt ingestion on every backend that has a faster,
+	// non-exact default: CUDA's tensor-core batched prefill (GOINFER_CUDA_FAST_PREFILL),
+	// Metal's f16-MMA batched prefill (GOINFER_METAL_FAST_PREFILL), and CPU's f32-attention
+	// fast path (GOINFER_CPU_FAST_ATTENTION) — all three default ON above their own
+	// thresholds. false (the default) leaves whichever env state the process already has
+	// untouched, so a caller managing these knobs itself (serve's own --exact-prefill/
+	// --cpu-exact-prefill/--cpu-fast-attention, which are more granular than this single
+	// bool and set the env vars directly) is not overridden. M-26 (docs/audit-2026-09-10.md):
+	// this is the library-level chokepoint docs/completed/task-prefill-gap.md already
+	// documented as existing; chatapp/gemmaapp's own --exact-prefill flag sets it.
+	ExactPrefill bool
 }
 
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
 // and selects a backend. The forward pass (M3) is implemented; the CPU
 // backend is the default and the only one wired (webgpu falls back to CPU).
 func Load(dir string, opts Options) (*Model, error) {
+	// M-26 (docs/audit-2026-09-10.md): set before any backend/prefill work below reads these —
+	// only on true, no else branch, so a caller managing the same env vars itself (serve's own
+	// applyExactPrefillEnv, which is more granular than this single bool) is never overridden by
+	// a Load that didn't ask for exact prefill.
+	if opts.ExactPrefill {
+		os.Setenv("GOINFER_METAL_FAST_PREFILL", "0")
+		os.Setenv("GOINFER_CUDA_FAST_PREFILL", "0")
+		os.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")
+	}
 	be, beErr := NewBackend(opts.Backend)
 	// A nil backend means the name was genuinely unknown (not a registered/fallback backend) —
 	// abort rather than proceed and panic at the first matmul (M14). A non-nil be with a

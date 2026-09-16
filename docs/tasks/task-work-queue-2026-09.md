@@ -113,7 +113,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
   (`internal/serveapp/embeddings.go:34`) — the only bulk surface in the product, and the shape J4
   generalises.
 - **No batch CLI.** `goinfer-chat` takes one `--model` and one conversation
-  (`internal/chatapp/main.go:203`); there is no file-in/file-out mode.
+  (`internal/chatapp/main.go:210`); there is no file-in/file-out mode.
 - **From K1/K2/K5, already shipped:** a generation registry with cancel-by-id, global halt with
   in-flight cancellation, and an admin unix socket. J2 and J3 are the durable layer those three
   already assume exists and currently do without.
@@ -469,7 +469,7 @@ check, `drive`) · `internal/serveapp/helpers.go:84` (`-max-inflight`, distinct 
 429) · `internal/serveapp/main.go:538`, `:508` (`-kv-sessions`, `-max-queue`) ·
 `internal/serveapp/anthropic.go:545` (529 on a full queue) · `internal/serveapp/sessions.go:14`
 (the session LRU J6 schedules around) · `internal/serveapp/embeddings.go:34` (the one existing bulk
-surface) · `internal/chatapp/main.go:203` (the CLI J5 extends) ·
+surface) · `internal/chatapp/main.go:210` (the CLI J5 extends) ·
 [`task-halt-2026-09.md`](task-halt-2026-09.md) K1/K2/K4/K5/K9 ·
 [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) §3.3 ·
 [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W27–W31 · `docs/api-tiers.md` (what `serve` promises)

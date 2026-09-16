@@ -47,6 +47,9 @@ func Main() {
 		backend  = flag.String("backend", "cpu", "compute backend: cpu | webgpu | metal (metal needs -tags metal + --quant int8int8, darwin)")
 		quant    = flag.String("quant", "", "weight quantization: \"\" (f32) | int8 | int8int8 | int4")
 		jsonMode = flag.Bool("json", false, "constrain output to valid JSON (logit masking via constrain.JSON)")
+		// M-26 (audit-2026-09-10): the same --exact-prefill goinfer-chat and serve have, wired
+		// to the decoder.Options.ExactPrefill field that used to exist only in a task doc's claim.
+		exactPrefill = flag.Bool("exact-prefill", false, "force BIT-EXACT prompt ingestion on every backend that has a faster, non-exact default (CPU f32-attention, Metal's f16-MMA batched prefill, CUDA's tensor-core batched prefill — all default ON above their own length thresholds)")
 	)
 	flag.Parse()
 
@@ -56,7 +59,7 @@ func Main() {
 		os.Exit(2)
 	}
 
-	if err := run(*modelDir, *prompt, *maxTok, *backend, *quant, *jsonMode, decoder.SamplingParams{
+	if err := run(*modelDir, *prompt, *maxTok, *backend, *quant, *jsonMode, *exactPrefill, decoder.SamplingParams{
 		Temperature: *temp,
 		TopK:        *topK,
 		TopP:        *topP,
@@ -68,7 +71,7 @@ func Main() {
 	}
 }
 
-func run(modelDir, prompt string, maxTok int, backend, quant string, jsonMode bool, sp decoder.SamplingParams) error {
+func run(modelDir, prompt string, maxTok int, backend, quant string, jsonMode, exactPrefill bool, sp decoder.SamplingParams) error {
 	// 1) Tokenizer. A bare .gguf carries its tokenizer in metadata
 	// (tokenizer.LoadGGUF); an HF checkpoint dir has a tokenizer.json
 	// (tokenizer.Load).
@@ -83,7 +86,7 @@ func run(modelDir, prompt string, maxTok int, backend, quant string, jsonMode bo
 
 	// 2) Model + backend.
 	t0 := time.Now()
-	model, err := decoder.Load(modelDir, decoder.Options{Backend: backend, Quant: quant})
+	model, err := decoder.Load(modelDir, decoder.Options{Backend: backend, Quant: quant, ExactPrefill: exactPrefill})
 	if err != nil {
 		return fmt.Errorf("load model: %w", err)
 	}

@@ -51,6 +51,13 @@ import (
 // and a sane starting point you can override with --system or /system.
 const defaultSystem = "You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations."
 
+// exactPrefillHelp is --exact-prefill's usage text (M-26, audit-2026-09-10): serve has had this
+// flag since G6/M-48; this REPL never did, despite docs/completed/task-prefill-gap.md documenting
+// an Options.ExactPrefill "(library)" half that decoder.Options only just gained. One flag,
+// decoder.Options.ExactPrefill sets every backend's own fast-prefill env var (CPU f32-attention,
+// Metal f16-MMA batched prefill, CUDA tensor-core batched prefill) to the bit-exact path.
+const exactPrefillHelp = "force BIT-EXACT prompt ingestion on every backend that has a faster, non-exact default (CPU f32-attention, Metal's f16-MMA batched prefill, CUDA's tensor-core batched prefill — all default ON above their own length thresholds). Use when diffing outputs across versions, reproducing a bug report, or whenever decode==prefill bit-identity matters more than time-to-first-token."
+
 // msg is one conversation turn kept in history.
 type msg struct{ role, content string }
 
@@ -206,23 +213,24 @@ All flags:
 			"and MoE architectures resident; cuda needs -tags cuda, metal's own submodule entrypoint is darwin-gated and needs no "+
 			"tag of its own. On cuda/metal, GPU means fully resident — a model/arch that does not fit or is not resident-eligible "+
 			"declines straight to CPU; neither has a partial \"staged\" GPU path.")
-		quant       = flag.String("quant", "int4", "weight quant: int4 (smallest, fastest, and the default on Metal too — Metal consumes int4 directly) | int4mix (attn int8+FFN int4, GGUF only) | int8int8 (W8A8, higher accuracy + more RAM) | int8 | \"\" (native f32). All quantized modes get batched CUDA prefill; native f32 falls back to sequential. Default int4")
-		lora        = flag.String("lora", "", "optional PEFT LoRA adapter dir, merged into the safetensors base at load")
-		maxTok      = flag.Int("max", 512, "max tokens per reply")
-		temp        = flag.Float64("temp", 0.7, "sampling temperature (0 = greedy)")
-		topK        = flag.Int("top-k", 20, "top-k filter (0 = off)")
-		topP        = flag.Float64("top-p", 0.8, "top-p / nucleus (0 = off)")
-		minP        = flag.Float64("min-p", 0, "min-p: keep tokens with prob ≥ min-p×max-prob (0 = off)")
-		repPen      = flag.Float64("repeat-penalty", 0, "repetition penalty over the last --repeat-last-n tokens (1 or 0 = off)")
-		presPen     = flag.Float64("presence-penalty", 0, "presence penalty: flat logit drop for tokens already seen (0 = off)")
-		freqPen     = flag.Float64("frequency-penalty", 0, "frequency penalty: logit drop ∝ token count (0 = off)")
-		repLastN    = flag.Int("repeat-last-n", 64, "window (in tokens) the repetition penalties consider (≤0 = whole context)")
-		schema      = flag.String("schema", "", "constrain output to a JSON Schema file (implies JSON mode); the model cannot emit non-conforming JSON")
-		seed        = flag.Int64("seed", 0, "sampling RNG seed")
-		modelTmp    = flag.Bool("model-tmp", false, "embed build: stream the baked-in model to a temp file + mmap instead of loading it into memory. Lower peak RAM for big models, but needs a writable temp dir. Also via GOINFER_MODEL_TMP=1. (If your temp dir is a tmpfs / RAM-backed, this saves no RAM.)")
-		draft       = flag.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab.")
-		specK       = flag.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
-		showVersion = flag.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
+		quant        = flag.String("quant", "int4", "weight quant: int4 (smallest, fastest, and the default on Metal too — Metal consumes int4 directly) | int4mix (attn int8+FFN int4, GGUF only) | int8int8 (W8A8, higher accuracy + more RAM) | int8 | \"\" (native f32). CUDA and Metal both batch-prefill quantized modes by default (see --exact-prefill to force the bit-exact path instead); native f32 falls back to sequential. Default int4")
+		lora         = flag.String("lora", "", "optional PEFT LoRA adapter dir, merged into the safetensors base at load")
+		exactPrefill = flag.Bool("exact-prefill", false, exactPrefillHelp)
+		maxTok       = flag.Int("max", 512, "max tokens per reply")
+		temp         = flag.Float64("temp", 0.7, "sampling temperature (0 = greedy)")
+		topK         = flag.Int("top-k", 20, "top-k filter (0 = off)")
+		topP         = flag.Float64("top-p", 0.8, "top-p / nucleus (0 = off)")
+		minP         = flag.Float64("min-p", 0, "min-p: keep tokens with prob ≥ min-p×max-prob (0 = off)")
+		repPen       = flag.Float64("repeat-penalty", 0, "repetition penalty over the last --repeat-last-n tokens (1 or 0 = off)")
+		presPen      = flag.Float64("presence-penalty", 0, "presence penalty: flat logit drop for tokens already seen (0 = off)")
+		freqPen      = flag.Float64("frequency-penalty", 0, "frequency penalty: logit drop ∝ token count (0 = off)")
+		repLastN     = flag.Int("repeat-last-n", 64, "window (in tokens) the repetition penalties consider (≤0 = whole context)")
+		schema       = flag.String("schema", "", "constrain output to a JSON Schema file (implies JSON mode); the model cannot emit non-conforming JSON")
+		seed         = flag.Int64("seed", 0, "sampling RNG seed")
+		modelTmp     = flag.Bool("model-tmp", false, "embed build: stream the baked-in model to a temp file + mmap instead of loading it into memory. Lower peak RAM for big models, but needs a writable temp dir. Also via GOINFER_MODEL_TMP=1. (If your temp dir is a tmpfs / RAM-backed, this saves no RAM.)")
+		draft        = flag.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab.")
+		specK        = flag.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
+		showVersion  = flag.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
 	)
 	fit := fitFlag(true)
 	flag.Var(&fit, "fit", "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/tasks/task-fit-to-hardware.md). --fit=off restores the pre-fit-by-default behavior")
@@ -243,7 +251,7 @@ All flags:
 		os.Exit(2)
 	}
 
-	opts := decoder.Options{Backend: *backend, Quant: *quant, LoRA: *lora, DisableFit: !bool(fit)}
+	opts := decoder.Options{Backend: *backend, Quant: *quant, LoRA: *lora, DisableFit: !bool(fit), ExactPrefill: *exactPrefill}
 	// The quant the user EXPLICITLY chose (vs the "int4" default) — for the .giw mismatch check
 	// (T1-7); a bare default must not conflict with an already-baked bundle.
 	explicitQuant := ""

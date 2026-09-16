@@ -82,3 +82,37 @@ func TestFitFlag_realBinaryAcceptsOff(t *testing.T) {
 		}
 	}
 }
+
+// TestExactPrefillFlag_realBinaryParses is M-26 (audit-2026-09-10): chatapp had no --exact-prefill
+// flag at all despite docs/completed/task-prefill-gap.md documenting it as existing on this REPL.
+// Same discipline as TestFitFlag_realBinaryAcceptsOff: proves the flag is actually REGISTERED on
+// the real flag.CommandLine (a typo'd flag.Bool name would make this exit 2 with "flag provided
+// but not defined"), not just present in source. --version exits before touching a model.
+func TestExactPrefillFlag_realBinaryParses(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a binary")
+	}
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go toolchain")
+	}
+	bin := filepath.Join(t.TempDir(), "goinfer-chat")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	build := exec.Command("go", "build", "-o", bin, "github.com/townsendmerino/goinfer/demo/chat")
+	build.Dir = ".."
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Skipf("cannot build demo/chat here: %v\n%s", err, out)
+	}
+	out, err := exec.Command(bin, "--exact-prefill", "--version").CombinedOutput()
+	if err != nil {
+		t.Fatalf("--exact-prefill --version: %v\n%s", err, out)
+	}
+	s := string(out)
+	if strings.Contains(s, "flag provided but not defined") {
+		t.Errorf("--exact-prefill is not a registered flag:\n%s", s)
+	}
+	if !strings.Contains(s, "backends:") {
+		t.Errorf("--exact-prefill --version output missing a backends: line:\n%s", s)
+	}
+}
