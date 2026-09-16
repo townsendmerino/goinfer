@@ -24,7 +24,7 @@ The page is **a small embedded directory** — `//go:embed webui` (`internal/ser
 step, no external stylesheet, font or script. *(Until 2026-09-14 it was one 1,828-line file; §6.1
 records the split.)* That is deliberate and load-bearing: a CDN reference would make the UI of an
 offline-capable engine require the network. It is off by default behind `-web`
-(`internal/serveapp/webui.go:545`), and it is a client of the same `/v1` routes any other client
+(`internal/serveapp/webui.go:542`), and it is a client of the same `/v1` routes any other client
 uses — so it cannot drift from the API, because it *is* the API's user.
 
 Two tabs (`internal/serveapp/webui/index.html:13`):
@@ -190,7 +190,7 @@ stats now follow whichever model is selected, not always the first one listed.
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
 (`internal/serveapp/main.go:739`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
-(`webLoadPath`, `internal/serveapp/webui.go:346`). Symlinks are resolved on both the path and the
+(`webLoadPath`, `internal/serveapp/webui.go:343`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither
 `../` nor a symlink planted in the cache can point the loader outside it. The suffix check also
 rejects a half-finished `.part` download. The page can load what it pulled, and nothing else.
@@ -324,7 +324,7 @@ chat, or delete earlier exchanges (W7). If a request does hit the wall, the erro
 in plain words, with the server's own message underneath. Other 400s are left as they are.
 
 **Server: `/v1/models` (and `/health`) publish `context_window`.** It comes from one function,
-`contextWindow` (`internal/serveapp/openai.go:842`), which `prepare` also uses to enforce the limit,
+`contextWindow` (`internal/serveapp/openai.go:880`), which `prepare` also uses to enforce the limit,
 so the number a client plans against is exactly the one that rejects it. On a resident GPU backend
 that is the resident KV cap, not the model's `MaxPositions`. Measured on this box (CUDA, Qwen3-1.7B):
 `context_window: 8192` rather than Qwen3's native maximum. A prompt of 8192 tokens is rejected naming
@@ -1054,7 +1054,7 @@ second, parallel implementation of the same use-after-free-avoiding logic.
 **No path policy needed here, unlike load.** `webLoadPath` (W5) exists because a load names a
 filesystem path the admin route would otherwise trust unconditionally; unload names nothing but a
 registry key, and the only keys that exist are ones `GET /v1/models` already publishes to every
-client. `handleWebUnload` (`internal/serveapp/webui.go:519`) is `sameOrigin(auth(...))` behind
+client. `handleWebUnload` (`internal/serveapp/webui.go:516`) is `sameOrigin(auth(...))` behind
 `-web` — W5's exact gate stack (`internal/serveapp/main.go:743`) — with `s.models[req.Name]` under
 `regMu` (inside `unloadByName`) as the entire "policy": a name not loaded is a 404, the same shape
 as any other unknown model. `TestWebUI_disabledByDefault` and the AST wiring guard
@@ -1084,7 +1084,7 @@ than claiming to observe it: *"A request already in flight elsewhere will finish
 route to it until it is loaded again."* When *this* page's own reply is the one running on that
 model (`generating.model === name`), the wording says so specifically instead.
 
-**The fit refusal now names a way out.** `unloadSuggestion` (`internal/serveapp/webui.go:482`)
+**The fit refusal now names a way out.** `unloadSuggestion` (`internal/serveapp/webui.go:479`)
 checks `errors.Is(err, decoder.ErrWontFitResident)` — the exported sentinel `FitDeclineError`
 unwraps to, chosen over `errors.As` on the concrete type specifically so the check (and its test)
 never need that type's unexported fields — and, if something is resident, appends *"Unload
@@ -1133,7 +1133,7 @@ and would change *how* the queue is served without changing this.
 `internal/serveapp/webui/ui/app.css:1513` (layout) · `internal/serveapp/webui/index.html:13` (tabs) ·
 `internal/serveapp/webui/ui/app.js:309`, `:935`, `:122`, `:1434`, `:1581`, `:357`, `:841`, `:86`, `:489`, `:1358`, `:641`, `:205`, `:1288`, `:7`, `:946` (the conversation transcript, the
 rendering rule, the error explanations, the keyboard handling, the load offer that replaced the dead-end line, the thinking split,
-regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:834` (`contextWindow`) ·
+regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:872` (`contextWindow`) ·
 `internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:487` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:179` (`Size`, for the

@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -242,6 +243,26 @@ func (s *sseWriter) Err() error {
 // newSSEWriter wraps a streaming response. Shared by both protocols' start helpers.
 func newSSEWriter(w http.ResponseWriter, f http.Flusher) *sseWriter {
 	return &sseWriter{w: w, f: f, rc: http.NewResponseController(w)}
+}
+
+// sseJSONSender builds a JSON-payload SSE event sender that calls cancel when a write fails
+// (N-23, docs/audit-2026-09-10.md): a stalled-but-open reader is caught by sseWriter.frame's own
+// write deadline, not by ctx alone, so calling cancel here is what actually stops whatever the
+// caller is streaming progress for — matching M-17's "a client that stops reading must not pin
+// the handler forever" for callers that (unlike the two protocol streams) don't already own an
+// sseWriter and a cancelable context together. Marshal errors are dropped, same as before this
+// existed — a payload that can't become JSON has no frame to send or fail.
+func sseJSONSender(w http.ResponseWriter, f http.Flusher, cancel context.CancelFunc) func(event string, payload any) {
+	sw := newSSEWriter(w, f)
+	return func(event string, payload any) {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return
+		}
+		if sw.frame("event: %s\ndata: %s\n\n", event, b) != nil {
+			cancel()
+		}
+	}
 }
 
 func sseStart(w http.ResponseWriter) (*sseWriter, bool) {

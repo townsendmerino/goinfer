@@ -76,6 +76,40 @@ func TestHandleChat_emptyMessages(t *testing.T) {
 	}
 }
 
+// TestHandleChat_nRejected is N-30 (docs/audit-2026-09-10.md): "n" was an entirely unparsed
+// JSON key, so a request asking for n:3 silently got ONE choice back under a 200 — nothing in
+// the response named that 2 of the 3 requested completions were simply never generated. Reaches
+// the guard right after decodeJSON (before model routing), same shape as
+// TestHandleChat_emptyMessages, so an empty server suffices.
+func TestHandleChat_nRejected(t *testing.T) {
+	s := &server{models: map[string]*loadedModel{}}
+	cases := []struct {
+		body    string
+		wantErr bool
+	}{
+		{`{"model":"m","messages":[{"role":"user","content":"hi"}]}`, false},       // n omitted
+		{`{"model":"m","messages":[{"role":"user","content":"hi"}],"n":1}`, false}, // n:1 explicit
+		{`{"model":"m","messages":[{"role":"user","content":"hi"}],"n":3}`, true},
+		{`{"model":"m","messages":[{"role":"user","content":"hi"}],"n":0}`, true},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(c.body))
+		w := httptest.NewRecorder()
+		s.handleChat(w, r)
+		if c.wantErr {
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("body %s: status %d, want 400", c.body, w.Code)
+			}
+			if !strings.Contains(w.Body.String(), "n=") {
+				t.Errorf("body %s: 400 does not name the n value: %s", c.body, w.Body.String())
+			}
+		} else if w.Code == http.StatusBadRequest && strings.Contains(w.Body.String(), "n=") {
+			t.Errorf("body %s: rejected on n, want the n check to pass (later guards may still "+
+				"fail for other reasons on this empty server): %s", c.body, w.Body.String())
+		}
+	}
+}
+
 // TestEmbeddings_unconfigured gates G7: with no embedding model, /v1/embeddings returns a JSON
 // error naming -embed-model (not Go's text/plain 404, which SDKs read as a wrong URL).
 func TestEmbeddings_unconfigured(t *testing.T) {

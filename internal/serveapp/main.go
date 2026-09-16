@@ -484,13 +484,13 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present halts the server (every inference route 503s, in-flight generations are cancelled), absent resumes it. No HTTP call, socket, or signal needed; a supervisor halts with `touch` and resumes with `rm`. The model stays loaded either way; resume is instant. Off by default")
 	flag.IntVar(&cfg.haltExitCode, "halt-exit-code", 0, "K2: when nonzero, any halt (admin, -halt-file, or SIGUSR1) exits the process with this code once every cancelled generation has actually stopped, instead of staying up halted. For a supervisor whose restart policy must not undo a deliberate halt (RestartPreventExitStatus=N or the equivalent). 0 (default) means halt never exits the process")
 	flag.StringVar(&cfg.adminSocket, "admin-socket", "", fmt.Sprintf("K5: serve /admin/* (load/unload plus K1/K2's cancel/list/halt/resume) on a Unix socket instead of the TCP listener — mode 0600, unlinked and recreated fresh at start, no -api-key check (the socket's file permissions are the auth). Removes /admin/* from the TCP listener entirely (404, not 403) — see -allow-admin. Suggested path: %s. Off by default (empty = /admin/* stays on TCP, gated by -allow-admin as before). Control it with the same binary: `%[2]s status|ls|cancel <id>|halt [reason]|resume` talks to this socket (defaults to the suggested path above when -admin-socket is not repeated on that command line)", defaultAdminSocketPath(), filepath.Base(os.Args[0])))
-	flag.StringVar(&cfg.visionPath, "vision", "", "vision tower dir (SigLIP encoder + projector) for a multimodal --model; enables image content parts. Defaults to the --model dir when it contains a vision tower")
+	flag.StringVar(&cfg.visionPath, "vision", "", "vision tower dir for a multimodal --model (auto-discovered per family: SigLIP+projector for Gemma 3, Qwen2.5-VL's own ViT, or Gemma 4's own encoder — N-35, docs/audit-2026-09-10.md); enables image content parts. Defaults to the --model dir when it contains a vision tower")
 	flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
 	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
 		"OpenAI `model` field. Append comma-separated per-model overrides of the global\n"+
 		"defaults below: `--model big=moe.giw,stream,weight-cache=16 --model fast=small.giw`\n"+
-		"streams only the big MoE. Keys: quant,lora,kv,kv-quant,stream,weight-cache,embed-int4.\n"+
+		"streams only the big MoE. Keys: quant,lora,kv,kv-quant,ctx,stream,weight-cache,embed-int4.\n"+
 		"(Paths may not contain commas.)")
 	flag.StringVar(&cfg.drafter, "drafter", "", "directory of a pretrained BLOCK drafter (z-lab DFlash) paired with --model: the drafter proposes a whole block of tokens per round and the target verifies them in ONE batched pass, measured 1.6-1.8x on code/math and ~0.96x on open chat (docs/spec/08). LOSSLESS — every emitted token is one the target's own argmax produced, so output is identical to plain greedy. Greedy only: a request with temperature, penalties or logit bias falls back to normal decoding automatically. Requires a resident GPU backend (--backend cuda); declines with a reason otherwise")
 	showVersion := flag.Bool("version", false, "print version, the backends COMPILED INTO this binary, and the Go toolchain, then exit. `backends:` is the compiled-in truth — --backend accepts names this build cannot run and falls back to cpu")
@@ -517,7 +517,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		"  \"\"        native (no quantization, f32): most accurate, largest, slowest.\n"+
 		"All quantized modes (int4/int4mix/int8/int8int8) get batched CUDA prefill (fast TTFT); only native f32\n"+
 		"falls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant.")
-	flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. int8int8 on cuda, ~9× slower TTFT). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
+	flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. native f32 on cuda, ~9x slower TTFT — N-35, docs/audit-2026-09-10.md: every quantized mode gets batched CUDA prefill, see -quant's own help above; only f32 falls back). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
 	flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose experts EXCEED VRAM/RAM: routed experts stream host→device per token instead of being held resident, so every expert still executes on the GPU (no CPU offload). Costs a per-token transfer; bit-identical to fully-resident. Off by default — with it off, a model that doesn't fit declines to the CPU path and says why. CUDA and Metal (with no --moe-cache-slots, Metal auto-sizes the slot count from free RAM — audit-metal-2026-09-12.md M-13)")
 	flag.BoolVar(&cfg.metalFastPrefill, "metal-fast-prefill", false, "DEPRECATED — Metal's f16-MMA batched prefill is now DEFAULT ON above 256 tokens (floor lowered from 512, audit-metal-2026-09-12.md M-02; §3.2 gate passed 2026-09-09, S model K=256/512/1024; see docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md). This flag is a no-op. Use --exact-prefill to opt out of fast prefill on all backends. Metal backend only")
 	flag.BoolVar(&cfg.exactPrefill, "exact-prefill", false, exactPrefillHelp)
@@ -1009,8 +1009,10 @@ func (s *server) loadAdapters(cfg config) error {
 	return nil
 }
 
-// loadVisionTower attaches a SigLIP encoder + projector to the (single) loaded
-// model, making it vision-capable (serve then accepts image content parts). The
+// loadVisionTower attaches a vision tower to the (single) loaded model, making it
+// vision-capable (serve then accepts image content parts). Per-family, not SigLIP-only
+// (N-35, docs/audit-2026-09-10.md): Gemma 3 gets a SigLIP encoder + projector, Qwen2.5-VL
+// its own ViT, Gemma 4 its own encoder — visionModelType below picks the family. The
 // dir is -vision if set, else the sole --model's own dir when it carries a vision
 // tower (auto-discovery). A multimodal tower only makes sense for a single model,
 // so it errors if -vision is set with a model zoo. Absent a tower it is a no-op:
@@ -1036,8 +1038,13 @@ func (s *server) loadVisionTower(cfg config) error {
 			return nil // no vision tower — text-only model
 		}
 	}
-	if len(s.models) != 1 {
-		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(s.models))
+	// N-28 (docs/audit-2026-09-10.md): cfg.models, not s.models — loadAdapters (called just
+	// above) already populated s.models with each --adapter's OWN served name too, so
+	// `--model base --adapter ft=…` counted 2 and refused a perfectly valid single-base-model
+	// vision setup. cfg.models is the raw --model list, matching the auto-discovery branch's
+	// own len(cfg.models) == 1 check above.
+	if len(cfg.models) != 1 {
+		return fmt.Errorf("-vision needs exactly one --model (got %d)", len(cfg.models))
 	}
 	// The resident GPU encoder needs int8 (W8A8) matmul weights, so --backend
 	// webgpu/cuda implies an int8 tower even if --vision-quant wasn't set.

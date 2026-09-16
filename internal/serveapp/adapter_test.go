@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -265,5 +266,50 @@ func writeST(t *testing.T, path string, data map[string][]float32, shapes map[st
 	buf = append(append(append(buf, lenHdr...), hjson...), blob...)
 	if err := os.WriteFile(path, buf, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestLoadVisionTower_countsCfgModelsNotSMap is N-28 (docs/audit-2026-09-10.md):
+// loadVisionTower's "-vision needs exactly one --model" check counted len(s.models), which
+// loadAdapters (called just before it in main()) already populated with each --adapter's OWN
+// served name too — so `--model base --adapter ft=base=dir --vision dir` had s.models holding
+// TWO entries ("base" and "ft") and refused a perfectly valid single-base-model vision setup.
+// Reuses TestServe_multiAdapter's synthetic base+adapter (a real decoder.Model is required —
+// loadAdapters calls Model.LoadAdapter before any of its own early-return guards could avoid it)
+// and asserts the refusal is gone: -vision must still fail past the count check (LoadEncoder
+// rejects the empty temp dir this test passes), but with a DIFFERENT error — proof the count
+// check itself let it through.
+func TestLoadVisionTower_countsCfgModelsNotSMap(t *testing.T) {
+	base := buildSyntheticBase(t)
+	adapterDir := buildSyntheticAdapter(t, +1)
+
+	m, err := decoder.Load(base, decoder.Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatalf("decoder.Load base: %v", err)
+	}
+	defer m.Close()
+	baseLM := &loadedModel{model: m, name: "base", fp: "base", sessions: newSessionLRU(m, 4, 0, "base")}
+	s := &server{models: map[string]*loadedModel{"base": baseLM}}
+	cfg := config{
+		models:     modelFlag{{name: "base", path: base}},
+		adapters:   adapterFlag{{"ft", "base", adapterDir}},
+		kvSessions: 4,
+		visionPath: t.TempDir(), // real, empty dir: LoadEncoder fails cleanly past the count check
+	}
+	if err := s.loadAdapters(cfg); err != nil {
+		t.Fatalf("loadAdapters: %v", err)
+	}
+	if len(s.models) != 2 {
+		t.Fatalf("test setup: s.models has %d entries, want 2 (base + adapter) — this test's "+
+			"premise (s.models over-counts) did not reproduce", len(s.models))
+	}
+
+	err = s.loadVisionTower(cfg)
+	if err == nil {
+		t.Fatal("loadVisionTower with an empty vision dir unexpectedly succeeded")
+	}
+	if strings.Contains(err.Error(), "needs exactly one --model") {
+		t.Errorf("loadVisionTower refused on the adapter-inflated s.models count (%d): %v — "+
+			"cfg.models has exactly one entry, this should have passed the count check", len(s.models), err)
 	}
 }

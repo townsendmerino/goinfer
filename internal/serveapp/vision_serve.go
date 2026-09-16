@@ -293,9 +293,15 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		sseSend(ss, chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil))
 		// nComp was discarded here; include_usage needs the real generated-token count,
 		// which no count of emitted chunks can report (M-26).
+		//
+		// N-24 (docs/audit-2026-09-10.md): nothing else is sent before the first token, and on
+		// CPU an image prefill can take minutes — the M-19 gate that catches a missing heartbeat
+		// on the text-only lm.drive( sites never enumerated the driveVL sites at all.
+		stopBeat := sseHeartbeat(ss)
 		finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
+		stopBeat()
 		if gerr != nil {
 			sseErr(ss, "generation failed: "+gerr.Error())
 			sseDone(ss)
@@ -401,12 +407,16 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 			"type": "content_block_start", "index": 0,
 			"content_block": map[string]any{"type": "text", "text": ""},
 		})
+		// N-24 (docs/audit-2026-09-10.md): the ping above is one-shot, not a keep-alive — an
+		// image prefill on CPU can take minutes with nothing sent until the first token.
+		stopBeat := sseHeartbeat(ss)
 		finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			anthropicEvent(ss, "content_block_delta", map[string]any{
 				"type": "content_block_delta", "index": 0,
 				"delta": map[string]any{"type": "text_delta", "text": t},
 			})
 		})
+		stopBeat()
 		if gerr != nil {
 			anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 			anthropicStreamErr(ss, "generation failed: "+gerr.Error())

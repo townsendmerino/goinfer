@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -102,6 +104,45 @@ func TestSSEWriter_stalledClientFailsTheWriteInsteadOfBlocking(t *testing.T) {
 	}
 }
 
+// TestSSEJSONSender_cancelsOnWriteFailure is N-23's other half (docs/audit-2026-09-10.md):
+// sseWriter.frame's write deadline (proven above) stops a stalled write from blocking forever,
+// but handleWebPull (webui.go) still needs THAT failure to actually stop the pull — otherwise
+// the goroutine returns from send but pull.Download keeps running against a dead client, still
+// pinning the single-flight pullState until the download finishes or errors on its own. This
+// pins the wiring sseJSONSender exists for: a failed frame must call the CancelFunc, the same
+// way the r.Context() cancellation already stops Download for an outright closed tab.
+func TestSSEJSONSender_cancelsOnWriteFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var cancelled int32
+	send := sseJSONSender(blockingWriter{}, nopFlusher{}, func() {
+		atomic.StoreInt32(&cancelled, 1)
+		cancel()
+	})
+
+	send("start", map[string]string{"file": "x"})
+
+	if atomic.LoadInt32(&cancelled) == 0 {
+		t.Fatal("a failed write did not call cancel — a stalled-but-open reader would keep " +
+			"pinning the pull indefinitely, same shape as M-17 before its fix")
+	}
+	if ctx.Err() == nil {
+		t.Error("ctx was not actually cancelled")
+	}
+
+	// A working write must NOT cancel — this pins the other direction, so a fix here can't
+	// silently cancel every pull after its first frame.
+	cancelled = 0
+	rec := httptest.NewRecorder()
+	send2 := sseJSONSender(rec, rec, func() { atomic.StoreInt32(&cancelled, 1) })
+	send2("start", map[string]string{"file": "x"})
+	if atomic.LoadInt32(&cancelled) != 0 {
+		t.Error("a successful write called cancel — every pull would abort after its first event")
+	}
+	if !strings.Contains(rec.Body.String(), `"file":"x"`) {
+		t.Errorf("frame not written on the successful path: %q", rec.Body.String())
+	}
+}
+
 // The deadline is actually installed on a real connection. httptest.NewRecorder has no
 // ResponseController support, so the unit test above cannot cover this half.
 func TestSSEWriter_setsAWriteDeadlineOnARealConnection(t *testing.T) {
@@ -155,6 +196,55 @@ func (b blockingWriter) Write([]byte) (int, error) {
 type nopFlusher struct{}
 
 func (nopFlusher) Flush() {}
+
+// N-24 (docs/audit-2026-09-10.md): EVERY lm.drive/driveVL STREAMING SITE MUST START A HEARTBEAT,
+// NOT ONLY THE BUFFER-THEN-STREAM ONES.
+//
+// TestSSE_everyBufferedStreamSiteHeartbeats below (M-19) only classifies buffer-then-stream
+// callbacks, and only ones that literally call lm.drive( — a site that streams per token as it
+// generates is deliberately exempted there (unconditionalStreamCall), and a site that calls
+// lm.driveVL( instead of lm.drive( is invisible to driveCallback's own substring search. Neither
+// exemption holds for the gap N-24 is about: the PREFILL window, which is silent no matter how a
+// site streams once tokens start, and applies identically to drive and driveVL. Six sites had it —
+// serveChatText and serveCompletion (openai.go, drive), streamMessages's plain-text branch
+// (anthropic_stream.go, drive), serveVisionChatWith and serveVisionMessages (vision_serve.go,
+// driveVL), and serveResponsesWith's plain-text branch (responses.go, drive) — found by reading
+// every lm.drive(/lm.driveVL( call site directly rather than trusting either classifier's
+// coverage. This pins them explicitly rather than trying to widen the delicate M-19 classifier
+// (driveCallback/unconditionalStreamCall) to a shape it was not designed for.
+func TestSSE_everyStreamingDriveSiteHeartbeats(t *testing.T) {
+	sites := []struct{ file, fn string }{
+		{"openai.go", "serveChatText"},
+		{"openai.go", "serveCompletion"},
+		{"anthropic_stream.go", "streamMessages"},
+		{"vision_serve.go", "serveVisionChatWith"},
+		{"vision_serve.go", "serveVisionMessages"},
+		{"responses.go", "serveResponsesWith"},
+	}
+	fnRe := regexp.MustCompile(`(?ms)^func (?:\([^)]*\) )?(\w+)\([^\n]*\{\n(.*?)\n\}`)
+	for _, site := range sites {
+		b, err := os.ReadFile(site.file)
+		if err != nil {
+			t.Fatalf("read %s: %v", site.file, err)
+		}
+		var body string
+		for _, m := range fnRe.FindAllStringSubmatch(string(b), -1) {
+			if m[1] == site.fn {
+				body = m[2]
+				break
+			}
+		}
+		if body == "" {
+			t.Fatalf("%s: function %s not found — this test's site list is stale", site.file, site.fn)
+		}
+		if !strings.Contains(body, "sseHeartbeat(") {
+			t.Errorf("%s.%s streams via drive/driveVL under an SSE writer but starts no "+
+				"heartbeat — a CPU prefill (minutes for an image) sends nothing until the first "+
+				"token, against harness idle timeouts (N-24, docs/audit-2026-09-10.md)",
+				site.file, site.fn)
+		}
+	}
+}
 
 // M-19: EVERY BUFFER-THEN-STREAM SITE MUST START A HEARTBEAT.
 //

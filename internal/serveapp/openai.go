@@ -517,6 +517,11 @@ type chatReq struct {
 	StreamOptions *streamOptions  `json:"stream_options"`
 	Tools         []toolSpec      `json:"tools"`
 	ToolChoice    json.RawMessage `json:"tool_choice"` // "auto"|"none"|{"type":"function","function":{"name":…}}
+	// N is OpenAI's "how many choices" field (N-30, docs/audit-2026-09-10.md — this repo
+	// generates exactly one). Was entirely unparsed: an unrecognized JSON key is silently
+	// dropped, so `n: 3` used to get one choice back under a 200 rather than an error naming
+	// what was ignored. *int (not int) so n:0 and "omitted" are distinguishable from n:1.
+	N *int `json:"n"`
 	sampling
 }
 
@@ -576,6 +581,8 @@ type completionReq struct {
 	// M-26: /v1/completions never parsed stream_options, so include_usage was silently
 	// ignored on this surface rather than unsupported-with-an-error.
 	StreamOptions *streamOptions `json:"stream_options"`
+	// N-30 (docs/audit-2026-09-10.md): same unparsed "n" gap as chatReq's own N field.
+	N *int `json:"n"`
 	sampling
 }
 
@@ -618,6 +625,10 @@ func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	var req chatReq
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := validateN(req.N); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	// G5: a request that dropped (or emptied) messages must be a 400, not a confident
@@ -687,9 +698,15 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		}
 		role := chatChunk(id, created, lm.name, delta{Role: "assistant"}, nil)
 		sseSend(ss, role)
+		// N-24 (docs/audit-2026-09-10.md): nothing else is sent between here and the first
+		// token — on CPU that gap is the whole prefill (an 8k agent prompt ~270s), against a
+		// 300s harness idle timeout. Streaming per token once generation starts does not cover
+		// the prefill window itself, same shape as the buffer-then-stream sites M-19 fixed.
+		stopBeat := sseHeartbeat(ss)
 		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
+		stopBeat()
 		if gerr != nil {
 			sseErr(ss, "generation failed: "+gerr.Error())
 			sseDone(ss)
@@ -737,7 +754,23 @@ func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	if err := validateN(req.N); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	s.withModel(w, req.Model, func(lm *loadedModel) { s.serveCompletion(w, r, req, lm) })
+}
+
+// validateN rejects an explicit "n" other than 1 (N-30, docs/audit-2026-09-10.md): this server
+// always generates exactly one choice, and "n" used to be an unrecognized JSON key that decoded
+// silently — a request asking for n:3 got ONE choice back under a 200, with nothing in the
+// response naming what was ignored. n omitted (nil) is the default (1) and passes; n:1 passes;
+// anything else is a clean 400 rather than a silently wrong choice count.
+func validateN(n *int) error {
+	if n != nil && *n != 1 {
+		return fmt.Errorf("n=%d is not supported; this server always returns exactly one choice", *n)
+	}
+	return nil
 }
 
 // serveCompletion runs a /v1/completions generation. Reached ONLY through withModel (liveness RLock held).
@@ -778,9 +811,14 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		if !ok {
 			return
 		}
+		// N-24 (docs/audit-2026-09-10.md): same prefill-silence gap as the chat-completions
+		// stream above — nothing is sent until the first token, which on CPU is after the
+		// whole prefill.
+		stopBeat := sseHeartbeat(ss)
 		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, completionChunk(id, created, lm.name, t, nil))
 		})
+		stopBeat()
 		if gerr != nil {
 			sseErr(ss, "generation failed: "+gerr.Error())
 			sseDone(ss)

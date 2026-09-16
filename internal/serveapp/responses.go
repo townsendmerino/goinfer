@@ -174,12 +174,17 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0),
 		})
 		var sb strings.Builder
+		// N-24 (docs/audit-2026-09-10.md): nothing is sent between response.created and the
+		// first token — on CPU that gap is the whole prefill. The tools-active branch below
+		// already starts one (G19); this plain-text branch did not.
+		stopBeat := sseHeartbeat(ss)
 		finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
 			sseEvent(ss, "response.output_text.delta", map[string]any{
 				"type": "response.output_text.delta", "item_id": id + "-msg", "output_index": 0, "content_index": 0, "delta": t,
 			})
 		})
+		stopBeat()
 		if gerr != nil {
 			sseEvent(ss, "error", map[string]any{"type": "error", "message": "generation failed: " + gerr.Error()})
 			sseDone(ss)

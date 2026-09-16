@@ -264,18 +264,15 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 
-	send := func(event string, payload any) {
-		b, err := json.Marshal(payload)
-		if err != nil {
-			return
-		}
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
-		flusher.Flush()
-	}
-
 	// r.Context() dies when the browser tab closes, which cancels the transfer and lets
-	// Download clean up its .part file — no orphaned multi-GB write after a closed tab.
-	ctx := r.Context()
+	// Download clean up its .part file — no orphaned multi-GB write after a closed tab. Wrapped
+	// in our own cancel (N-23, docs/audit-2026-09-10.md) so a STALLED-but-open connection —
+	// caught by sseWriter's write deadline below, not by r.Context() — stops the download the
+	// same way.
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	send := sseJSONSender(w, flusher, cancel)
 	if err := pull.CheckAccess(ctx, ref.Repo); err != nil {
 		send("error", map[string]string{"message": err.Error()})
 		return

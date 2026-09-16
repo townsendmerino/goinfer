@@ -71,12 +71,17 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 		"type": "content_block_start", "index": 0,
 		"content_block": map[string]any{"type": "text", "text": ""},
 	})
+	// N-24 (docs/audit-2026-09-10.md): the ping above is a one-shot liveness check, not a
+	// keep-alive — nothing else is sent until the first token, which on CPU is after the whole
+	// prefill (minutes for an image, ~270s for an 8k agent prompt) against a 300s idle timeout.
+	stopBeat := sseHeartbeat(ss)
 	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 		anthropicEvent(ss, "content_block_delta", map[string]any{
 			"type": "content_block_delta", "index": 0,
 			"delta": map[string]any{"type": "text_delta", "text": t},
 		})
 	})
+	stopBeat()
 	if gerr != nil {
 		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 		anthropicStreamErr(ss, "generation failed: "+gerr.Error())

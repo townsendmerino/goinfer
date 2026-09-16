@@ -129,6 +129,13 @@ func (lm *loadedModel) closeEntryNatives() {
 		lm.qwenEnc = nil
 	}
 	lm.vproj = nil // no native Close (weights); drop the reference
+	// N-32 (docs/audit-2026-09-10.md): gemma4Enc (*vision.Gemma4Encoder) has no Close method
+	// either — same shape as vproj, plain weights — but unlike vproj it was never dropped here
+	// at all, retaining a served Gemma 4 vision tower's weight memory past unload. The audit
+	// flagged this as a latent risk "if a native Close appears"; it is simpler than that: the
+	// field is already live (main.go's loadGemma4VisionTower, vision_serve.go's Forward path)
+	// and just needed the same nil-out vproj already gets.
+	lm.gemma4Enc = nil
 }
 
 // startDrain runs the DETACHED phase of unload. The entry is already unpublished (Phase 1). On a bare

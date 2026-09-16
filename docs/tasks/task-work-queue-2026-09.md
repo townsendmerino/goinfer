@@ -101,9 +101,9 @@ Not rebuilt below; this is the floor J1–J9 build on.
   `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:545`). A global
   `-max-inflight` (default 128) bounds the pre-queue stage — JSON and image decode, tokenisation,
   template render — and is deliberately distinct from the per-model 429
-  (`internal/serveapp/helpers.go:84`).
+  (`internal/serveapp/helpers.go:85`).
 - **Nothing is durable.** `drive` runs the generation for the life of the request
-  (`internal/serveapp/openai.go:1161`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
+  (`internal/serveapp/openai.go:1199`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
 - **There is warm state worth scheduling around.** The session LRU keeps prefilled KV and hands a
   request the session that already holds its prompt as a prefix
   (`internal/serveapp/sessions.go:14`), `-kv-sessions` 4 by default
@@ -465,7 +465,7 @@ The only throughput item, and it is deliberately last.
 ## Sources
 
 `internal/serveapp/openai.go:94`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
-check, `drive`) · `internal/serveapp/helpers.go:84` (`-max-inflight`, distinct from the per-model
+check, `drive`) · `internal/serveapp/helpers.go:85` (`-max-inflight`, distinct from the per-model
 429) · `internal/serveapp/main.go:538`, `:508` (`-kv-sessions`, `-max-queue`) ·
 `internal/serveapp/anthropic.go:545` (529 on a full queue) · `internal/serveapp/sessions.go:14`
 (the session LRU J6 schedules around) · `internal/serveapp/embeddings.go:34` (the one existing bulk
