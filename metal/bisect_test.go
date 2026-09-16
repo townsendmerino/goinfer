@@ -85,7 +85,7 @@ func bisectModel(t *testing.T, path string) {
 		t.Fatalf("load int4: %v", err)
 	}
 	_, nL, _, nKV, hd, _, _ := m4.Dims()
-	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 
 	// Walk both sides over the seed so the KV caches hold real history, then probe the LAST
 	// seed token — an ordinary word at pos>0, where multi-key attention and RoPE actually run.
@@ -158,7 +158,7 @@ func bisectModel(t *testing.T, path string) {
 	if e8w != nil {
 		t.Fatalf("load int8-weight-only reference: %v", e8w)
 	}
-	c8w := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	c8w := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 	var trueHidden []float32
 	for i := range seed {
 		_, h, cerr := m8w.ForwardCapture(seed[i], c8w, []int{nL - 1})
@@ -238,7 +238,7 @@ func TestGemmaBisect_Head(t *testing.T) {
 				t.Fatalf("load int4: %v", err)
 			}
 			_, nL, _, nKV, hd, _, _ := m4.Dims()
-			cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+			cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 			layers := []int{nL - 1}
 			var cpuLogits []float32
 			var lastHidden []float32
@@ -402,7 +402,7 @@ func TestGemmaTraceDims(t *testing.T) {
 		t.Fatalf("load int4: %v", err)
 	}
 	_, nL, _, nKV, hd, _, _ := m4.Dims()
-	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 	layers := make([]int, nL)
 	for i := range layers {
 		layers[i] = i
@@ -412,7 +412,7 @@ func TestGemmaTraceDims(t *testing.T) {
 	// GPU and CPU-int4 do), then CPU-int4 and CPU-int8 diverge too and it is a quantization
 	// property, not a Metal bug. If CPU-int4 tracks CPU-int8 on these dims while Metal alone
 	// diverges, the fault is in Metal's compute.
-	cache8 := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	cache8 := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 	var hidden, hidden8 [][]float32
 	for i := range seed {
 		_, hidden, _ = m4.ForwardCapture(seed[i], cache, layers)

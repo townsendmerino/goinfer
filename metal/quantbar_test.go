@@ -83,8 +83,8 @@ func cpuQuantFork(t *testing.T, path string, seed []int, steps int) forkStats {
 		t.Fatalf("load int4: %v", err)
 	}
 	_, nL, _, nKV, hd, _, _ := m8.Dims()
-	c8 := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
-	c4 := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	c8 := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
+	c4 := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 
 	st := forkStats{steps: steps, minCos: 1}
 	tok := seed[0]

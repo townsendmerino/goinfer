@@ -62,7 +62,7 @@ func TestParityFloorControl(t *testing.T) {
 			t.Fatalf("load cpu %s: %v", mdl, err)
 		}
 		_, nL, _, nKV, hd, _, _ := mcpu.Dims()
-		cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+		cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 		minCos := 1.0
 		for i, tok := range seed {
 			cpuL, e1 := mcpu.ForwardForTest(tok, cache)

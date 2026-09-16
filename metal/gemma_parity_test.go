@@ -88,7 +88,7 @@ func residentParity(t *testing.T, path string, seed []int, steps int) parityStat
 		t.Fatalf("load (cpu): %v", err)
 	}
 	_, nL, _, nKV, hd, _, _ := mcpu.Dims()
-	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 
 	st := parityStats{steps: steps, minCos: 1}
 	tok := seed[0]

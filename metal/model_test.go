@@ -34,7 +34,7 @@ func TestRealModel_parityAndThroughput(t *testing.T) {
 		t.Fatalf("BuildResident: %v", err)
 	}
 	_, nL, _, nKV, hd, _, _ := m.Dims()
-	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 
 	// ---- (a) argmax parity vs CPU decode, in lockstep ----
 	ids := []int{785, 12095, 8948, 264, 6236, 1140, 13, 358, 3003, 264} // arbitrary valid ids

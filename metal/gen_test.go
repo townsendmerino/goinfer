@@ -77,7 +77,7 @@ func TestGemma3_GeneratesCoherently(t *testing.T) {
 		}
 		return float64(l[id]-mx) - math.Log(sum)
 	}
-	cache := decoder.NewKVCache(nL, nKV, hd, 0, 256)
+	cache := decoder.NewKVCache(nL, nKV, hd, 0, 256, nil)
 	var worst float64
 	for i := 0; i < len(prompt)-1; i++ {
 		cpuL, _ := mcpu.ForwardForTest(prompt[i], cache)
@@ -95,7 +95,7 @@ func TestGemma3_GeneratesCoherently(t *testing.T) {
 	t.Logf("worst dNLL over the prompt = %.4f nats  (<0.3 = fine, >>1 = broken)", worst)
 
 	// Free-run greedy continuation on Metal, then read it back.
-	cache2 := decoder.NewKVCache(nL, nKV, hd, 0, 256)
+	cache2 := decoder.NewKVCache(nL, nKV, hd, 0, 256, nil)
 	_ = cache2
 	var out []int
 	tok := prompt[0]

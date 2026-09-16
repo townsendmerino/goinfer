@@ -67,8 +67,8 @@ func TestGemma_Int4DirectContext(t *testing.T) {
 		t.Fatalf("load int8-weight truth: %v", e2)
 	}
 	_, nL, _, nKV, hd, _, _ := ref.Dims()
-	cr := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
-	ct := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	cr := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
+	ct := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 	for i := range pos {
 		if _, err := ref.ForwardForTest(seed[i], cr); err != nil {
 			t.Fatalf("ref walk: %v", err)

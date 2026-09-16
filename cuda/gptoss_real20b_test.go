@@ -73,7 +73,7 @@ func TestGptOssResidentParityCUDA(t *testing.T) {
 	}
 	defer mcpu.Close()
 	_, nL, _, nKV, hd, _, _ := mcpu.Dims()
-	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 
 	var minCos float64 = 1
 	exact := 0

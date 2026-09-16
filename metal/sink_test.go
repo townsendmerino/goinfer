@@ -63,7 +63,7 @@ func TestSink_NormsNotCosines(t *testing.T) {
 	kvDim := nKV * hd
 
 	for _, tok := range []int{2 /* <bos> — the sink */, 6037 /* an ordinary word token */} {
-		cache := decoder.NewKVCache(nL, nKV, hd, 0, 64)
+		cache := decoder.NewKVCache(nL, nKV, hd, 0, 64, nil)
 		if _, err := mcpu.ForwardForTest(tok, cache); err != nil {
 			t.Fatalf("cpu fwd: %v", err)
 		}

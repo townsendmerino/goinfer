@@ -122,7 +122,7 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 		t.Fatalf("load int8-weight f32-truth: %v", e8w)
 	}
 	_, nL, _, nKV, hd, _, _ := m8w.Dims()
-	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 	for i := range pos {
 		if _, err := m8w.ForwardForTest(seed[i], cache); err != nil {
 			t.Fatalf("cpu walk: %v", err)
@@ -143,7 +143,7 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 	if e4 != nil {
 		t.Fatalf("load int4 ctx reference: %v", e4)
 	}
-	c4 := decoder.NewKVCache(nL, nKV, hd, 0, 1024)
+	c4 := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 	for i := range pos {
 		if _, err := m4.ForwardForTest(seed[i], c4); err != nil {
 			t.Fatalf("int4 walk: %v", err)
