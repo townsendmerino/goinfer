@@ -1363,6 +1363,7 @@ supports.
 | `docs/audit-2026-09-10.md|pull/pull.go:523` | goinfer | `if st, err := os.Stat(part); err == nil && st.Size() > 0 && (f.Size <= 0 \|\| st.Size() < ` |
 | `docs/audit-2026-09-10.md|pull/pull.go:569` | goinfer | `if copyErr != nil {` |
 | `docs/audit-2026-09-10.md|pull/pull.go:603` | goinfer | `func cachedIntact(dir string, f File) (string, bool) {` |
+| `docs/audit-2026-09-10.md|pull/pull.go:654` | goinfer | `func cachedFileSHA256(path string) (string, error) {` |
 | `docs/audit-2026-09-10.md|pull/registry_tokenizer_test.go:27` | goinfer | `func TestRegistry_noEntryHasATokenizerDecline(t *testing.T) {` |
 | `docs/audit-2026-09-10.md|pull/resolve.go:33` | goinfer | `if ref.File == "" \|\| ref.Pin == "" \|\| ref.Bytes <= 0 {` |
 | `docs/audit-2026-09-10.md|scripts/gate_ledger.py:62` | goinfer | `def func_source(name):` |
