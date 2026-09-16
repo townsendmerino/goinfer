@@ -91,11 +91,12 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 // ResidentW4A8 is an int4 group-wise weight matrix resident on the GPU.
 type ResidentW4A8 struct {
 	bq      *wgpu.Buffer // [N, kp/32] vec4<u32> packed nibbles
-	bScales *wgpu.Buffer // [N, kp/32] f32 per-group scales
-	rows    int          // N
-	cols    int          // K (unpadded)
-	kp      int          // K padded to mult of 32
-	nGroups int          // kp/32
+	bScales *wgpu.Buffer // [N, kp/32] f16 per-group scales, packed 2/u32 (N-83, docs/audit-2026-09-10.md:
+	// both writers below pack via packF16Pairs, not raw f32 — this field's comment was stale)
+	rows    int // N
+	cols    int // K (unpadded)
+	kp      int // K padded to mult of 32
+	nGroups int // kp/32
 }
 
 // Release frees the resident GPU buffers.

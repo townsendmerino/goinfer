@@ -451,6 +451,19 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					i, hidden, len(lw.PostAttnNorm), len(lw.PostMLPNorm)))
 			}
 		}
+		// N-89 (docs/audit-2026-09-10.md): decoderunner.go's MoE FFN branch (gpt-oss and the
+		// generic path both) writes the expert-down output and the shared-expert add straight
+		// into r.xd with no postMLPNorm step at all — unlike the dense FFN branch right below it,
+		// which applies lw.postMLPNorm before the residual add. Unreachable today (the only family
+		// with both sandwich norms and MoE, Gemma 4 MoE, is already declined above by
+		// PerLayerGeomOK for an unrelated reason), but silent on the day something else admits
+		// that combination — a real, wrong logits bug, not a build-time refusal. Implementing
+		// postMLPNorm support in the MoE branch is real feature work this batch is not scoped to
+		// do; refuse loudly instead so the gap can never ship silently.
+		if moeOK {
+			return fail(fmt.Errorf("gpu: sandwich norms (FeatSandwichNorm) + MoE is not supported — " +
+				"the MoE FFN dispatch has no postMLPNorm step (N-89, docs/audit-2026-09-10.md)"))
+		}
 	}
 	// buildStacked packs one projection (gate/up/down) across all nE experts into a
 	// resident stacked int8 buffer the indexed expert GEMV reads. int8 only — int4
@@ -1037,6 +1050,17 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		// layer has none — WGSL bind groups can't bind a null storage buffer), matching Metal's
 		// exact convention (metal/model.go's L.attnSinks/L.uHasSink) rather than CUDA's
 		// null-pointer sentinel.
+		//
+		// N-87 (docs/audit-2026-09-10.md, confirmed 2026-09-16, no action needed — genuinely
+		// cosmetic): this uploads its own tiny one-float dummy per non-gpt-oss layer, and
+		// decoderunner.go's noAttnSinks ALSO allocates one — but noAttnSinks's own doc comment
+		// says why they can't just share one: it exists purely as a RUNNER-local fallback for
+		// hand-built test fixtures that skip BuildResident and leave rl.attnSinks nil, not as a
+		// reuse mechanism for the production path (a real BuildResident load, like this one,
+		// always populates rl.attnSinks for real, so noAttnSinks's fallback never fires for it).
+		// The two buffers have different owners and lifetimes (resident, shared across runners,
+		// vs per-runner) for a real reason; the redundancy is a handful of 4-byte buffers against
+		// weight/KV-cache VRAM, not worth the complexity of unifying them.
 		if sinks := m.GptOssSinksResident(i); len(sinks) > 0 {
 			if rl.attnSinks, e = up32(sinks); e != nil {
 				return fail(e)

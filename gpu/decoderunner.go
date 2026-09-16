@@ -1520,9 +1520,18 @@ func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {
 	// / kv-store), so nothing forces a pass break.
 	pass := enc.BeginComputePass(nil)
 	r.record(pass)
-	pass.TryEnd()
+	// N-84 (docs/audit-2026-09-10.md): these two used to discard their error returns, unlike
+	// every other fallible call in this function (and unlike gpu.go's run(), the reference this
+	// mirrors) — a validation error here surfaced only later as an opaque "DecodeRunner map
+	// failed" with no indication which call actually caused it.
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		return nil, fmt.Errorf("gpu: end compute pass: %w", err)
+	}
 	pass.Release()
-	enc.TryCopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4))
+	if err := enc.TryCopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4)); err != nil {
+		return nil, fmt.Errorf("gpu: copy logits→stage: %w", err)
+	}
 	cmd, err := enc.TryFinish(nil)
 	if err != nil {
 		return nil, err
@@ -1571,10 +1580,17 @@ func runBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 	for i := range n {
 		runners[i].record(pass)
 	}
-	pass.TryEnd()
+	// N-84 (docs/audit-2026-09-10.md): see Run's identical fix above for why these must be
+	// checked rather than discarded.
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		return nil, fmt.Errorf("gpu: end compute pass: %w", err)
+	}
 	pass.Release()
 	for i := range n {
-		enc.TryCopyBufferToBuffer(runners[i].lastLogits, 0, runners[i].stag, 0, uint64(runners[i].vocab*4))
+		if err := enc.TryCopyBufferToBuffer(runners[i].lastLogits, 0, runners[i].stag, 0, uint64(runners[i].vocab*4)); err != nil {
+			return nil, fmt.Errorf("gpu: copy logits→stage for runner %d: %w", i, err)
+		}
 	}
 	cmd, err := enc.TryFinish(nil)
 	if err != nil {

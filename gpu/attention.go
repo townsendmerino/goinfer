@@ -16,6 +16,22 @@ import (
 // decode token's full forward records into one command buffer (no CPU interleave).
 // Both match the CPU (decoder.applyRoPE / attendQuery) to f32 tolerance (the CPU
 // uses f64 accumulation; the GPU f32 — cosine ~1.0, not bit-exact).
+//
+// N-85 (docs/audit-2026-09-10.md, measured 2026-09-16): every `theta := f32(pos) * invFreq[d]`
+// below (this kernel and its siblings further down this file) feeds WGSL's `sin`/`cos` with an
+// angle that grows with position — at a long context's far end that argument is tens of
+// thousands of radians, and how a GPU's `sin`/`cos` range-reduces an argument that large before
+// evaluating it is implementation-defined (vendor/driver-specific), unlike the CPU reference's
+// f64 accumulation. Was flagged UNMEASURED; TestRoPE_parityAtLongContextCeiling (this package's
+// own test file) now measures it directly at pos=65535 (decoder/fitplan.go's int8-KV
+// fit-by-default context ceiling, a position a real served request can actually reach) on real
+// hardware: cosine 0.99999978, maxAbs 2.9e-3 — about 1000x worse than TestRoPE_parity's pos=37
+// baseline (maxAbs 3.1e-06), a real and measured effect, not just a theoretical one. Whether that
+// magnitude matters for real model quality is a product decision this file does not make; the
+// test records the number rather than asserting a pass/fail bar this session has no basis to
+// pick. `metal/kernels.go`'s identical `float(pos)*invf[dd]` pattern (the "09-02" Metal note
+// this cross-references) remains unmeasured — this file's measurement does not carry over to
+// Metal, since GPU vendors' sin/cos range reduction is independently implementation-defined.
 
 // RoPE: rotate the (d, half+d) pair of each head by pos·invFreq[d], scaled. One
 // thread per (head, d) pair. vec is q or k in place; invFreq is the layer's
