@@ -485,12 +485,22 @@ func ggufMellumConfig(g *embed.GGUFFile) (*Config, error) {
 	if baseSwa == 0 {
 		baseSwa = base
 	}
+	// attention_factor: the same trap ggufLagunaConfig documents and avoids (N-69,
+	// docs/audit-2026-09-10.md — this used to be synthesized unconditionally here). llama.cpp
+	// writes rope.scaling.yarn_attn_factor = 1.0 as its "unset" sentinel and 0 is
+	// metadata-absent; passing either through as an explicit attention_factor would override
+	// YaRN's own computed mscale (get_mscale(factor) = 0.1·ln(factor)+1) with a no-op or zero.
+	// Omit the field at the sentinel/absent cases so the decoder computes it instead.
+	attnFactor := ""
+	if af := gf("rope.scaling.yarn_attn_factor"); af != 0 && af != 1 {
+		attnFactor = fmt.Sprintf(`,"attention_factor":%g`, af)
+	}
 	cfg.RopeParameters = json.RawMessage(fmt.Sprintf(
-		`{"full_attention":{"rope_type":"yarn","rope_theta":%g,"factor":%g,"original_max_position_embeddings":%g,"beta_fast":%g,"beta_slow":%g,"attention_factor":%g},`+
+		`{"full_attention":{"rope_type":"yarn","rope_theta":%g,"factor":%g,"original_max_position_embeddings":%g,"beta_fast":%g,"beta_slow":%g%s},`+
 			`"sliding_attention":{"rope_type":"default","rope_theta":%g}}`,
 		base, gf("rope.scaling.factor"), gf("rope.scaling.original_context_length"),
 		gf("rope.scaling.yarn_beta_fast"), gf("rope.scaling.yarn_beta_slow"),
-		gf("rope.scaling.yarn_attn_factor"), baseSwa))
+		attnFactor, baseSwa))
 	ggufEOS(g, cfg)
 	return cfg, nil
 }
@@ -1548,8 +1558,12 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 // and freed in turn, so peak RAM is ~one layer rather than the whole model — this is
 // what lets a model larger than RAM be transcoded. The returned *Weights then holds
 // no layer tensors (they were freed); the caller writes the trailing CRC. Streaming
-// is supported for the generic per-layer loader (llama/qwen2/qwen3/mellum/glm4_moe);
-// the qwen35/gemma4 dedicated paths reject it (those models fit resident).
+// is supported for the generic per-layer loader (llama/qwen2/qwen3/mellum/glm4_moe) and for
+// qwen35's own dedicated branch, which streams per layer too (N-64, docs/audit-2026-09-10.md:
+// this used to say qwen35 rejected streaming — loadQ35 builds each layer independently, so a
+// sequential build-then-write-then-release loop bounds peak RSS the same way). gemma4 (whose
+// fused PLE/MoE tail genuinely cannot stream) and five other families are instead routed through
+// the resident-build fallback — see needsResidentSerialize's own doc comment for the list and why.
 func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string) (*Weights, error) {
 	hidden, hd := arch.HiddenDim, arch.HeadDim
 	w := &Weights{Cfg: *cfg, arch: arch, Layers: make([]LayerWeights, arch.NumLayers)}

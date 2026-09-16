@@ -133,7 +133,10 @@ func Run(args []string) int {
 		return 2
 	}
 
-	// Ctrl-C cancels the transfer; the partial .part file is cleaned up by Download.
+	// Ctrl-C cancels the transfer via ctx. Download deliberately KEEPS the partial .part file
+	// on this path (N-65, docs/audit-2026-09-10.md: this used to say the opposite) — pull/pull.go
+	// only removes it on a digest mismatch (known-bad bytes); an interrupted-but-otherwise-good
+	// partial is exactly what a re-run resumes from.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 

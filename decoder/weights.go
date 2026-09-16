@@ -1566,7 +1566,18 @@ type tensorSchema struct {
 	PreMLPNorm, PostMLPNorm    string
 	// PreAttnNormLinear/PostAttnNormLinear/PreMLPNormLinear/PostMLPNormLinear
 	// override the corresponding suffix above on layers where isLinearLayer(i) is
-	// true. "" (every family so far) ⇒ no override, same suffix on every layer.
+	// true — but AS A GROUP, not per-field (N-62, docs/audit-2026-09-10.md: this
+	// used to describe a per-field fallback that isn't what the code does).
+	// buildWeightsFromSafetensors ORs the four together into one
+	// hasLinearNormOverride flag; if ANY is non-empty, ALL FOUR replace the
+	// generic suffixes above for isLinearLayer(i) rows — including a field left
+	// "" within that group, which then means "no norm at this position on linear
+	// layers" (Olmo Hybrid's own PostAttnNormLinear/PostMLPNormLinear below), NOT
+	// "fall back to the generic PostAttnNorm/PostMLPNorm". Leaving exactly one of
+	// the four set and the rest "" expecting per-field fallback would silently
+	// drop the other three's generic norms on linear layers instead. Every family
+	// so far (Olmo Hybrid, the only user) sets all four together, which is why
+	// this has never mattered in practice — but the contract is group-or-nothing.
 	// Olmo Hybrid needs this: its two decoder-layer CLASSES each independently
 	// define an attribute literally NAMED "post_attention_layernorm", but in
 	// DIFFERENT POSITIONAL ROLES — a post-attn norm on full-attention layers

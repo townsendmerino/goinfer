@@ -117,6 +117,89 @@ func TestDownload_serverIgnoresRange(t *testing.T) {
 	}
 }
 
+// TestDownload_rangeNotSatisfiableOnAnAlreadyCompletePart is N-70 (docs/audit-2026-09-10.md):
+// f.Size <= 0 (a non-LFS file with no declared size) admits ANY existing .part into the resume
+// path regardless of whether it is actually complete — there is no size to compare against. If
+// a prior run fetched every byte but was interrupted before the digest-check-and-rename, the
+// next run's Range request starts exactly at EOF and HuggingFace answers 416, not 206/200.
+// Before this fix that fell into the catch-all default case: a confusing "HuggingFace returned
+// 416" error, AND the .part was never cleared — so every subsequent retry hit the identical 416
+// forever. This drives that exact shape and asserts it now succeeds instead.
+func TestDownload_rangeNotSatisfiableOnAnAlreadyCompletePart(t *testing.T) {
+	body := []byte(strings.Repeat("goinfer-n70-", 500))
+	sum := sha256.Sum256(body)
+	want := hex.EncodeToString(sum[:])
+
+	var ranges []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ranges = append(ranges, r.Header.Get("Range"))
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+	}))
+	defer srv.Close()
+	hfCDN = srv.URL
+	defer func() { hfCDN = "https://huggingface.co" }()
+
+	dir := t.TempDir()
+	// Seed a .part that is ALREADY the complete, correct file — the shape a prior run leaves
+	// when it finished fetching but never reached the rename.
+	if err := os.WriteFile(filepath.Join(dir, "m.gguf.part"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// f.Size <= 0: the non-LFS case this finding is about — no declared size to compare the
+	// .part against, so the resume guard admits it unconditionally.
+	f := File{Path: "m.gguf", Size: 0, SHA256: want}
+
+	path, err := Download(context.Background(), "o/r", f, dir, nil)
+	if err != nil {
+		t.Fatalf("download: %v (ranges requested: %v)", err, ranges)
+	}
+	got, err := fileSHA256(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Errorf("digest = %s, want %s", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "m.gguf.part")); !os.IsNotExist(err) {
+		t.Error(".part should be gone once the already-complete file is verified and renamed")
+	}
+	if len(ranges) != 1 || !strings.HasPrefix(ranges[0], "bytes=") {
+		t.Errorf("expected exactly one Range request, got %v", ranges)
+	}
+}
+
+// TestDownload_rangeNotSatisfiableWithBadDigestIsCleanedUp: the 416 fast path must still
+// verify the digest, not just trust "the server said no more bytes" — a LOCALLY corrupted
+// .part that happens to be the same length as the real file must still be caught and removed,
+// not renamed straight to the final path.
+func TestDownload_rangeNotSatisfiableWithBadDigestIsCleanedUp(t *testing.T) {
+	body := []byte(strings.Repeat("goinfer-n70-corrupt-", 300))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+	}))
+	defer srv.Close()
+	hfCDN = srv.URL
+	defer func() { hfCDN = "https://huggingface.co" }()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "m.gguf.part"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A digest that does NOT match body — the local .part is corrupt, not really complete.
+	f := File{Path: "m.gguf", Size: 0, SHA256: strings.Repeat("c", 64)}
+
+	if _, err := Download(context.Background(), "o/r", f, dir, nil); err == nil {
+		t.Fatal("a digest mismatch on the 416 fast path must fail")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "m.gguf.part")); !os.IsNotExist(err) {
+		t.Error("a corrupt .part on the 416 fast path must be removed, or every retry hits the same 416 forever")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "m.gguf")); !os.IsNotExist(err) {
+		t.Error("nothing may be written to the final path on a digest mismatch")
+	}
+}
+
 // TestDownload_badDigestIsNotKept: a completed transfer whose digest is wrong must leave
 // nothing behind. Otherwise the next run resumes from known-bad bytes forever.
 func TestDownload_badDigestIsNotKept(t *testing.T) {

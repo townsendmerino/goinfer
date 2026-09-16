@@ -190,6 +190,14 @@ func validateConfigBounds(cfg *Config) error {
 		{"num_key_value_heads", cfg.NumKVHeads, maxGGUFHeads},
 		{"vocab_size", cfg.VocabSize, maxGGUFVocabSize},
 		{"num_experts", cfg.NumExperts, maxGGUFExperts},
+		// N-68 (docs/audit-2026-09-10.md): num_local_experts (mixtral/gpt-oss/llama4) and
+		// n_routed_experts (glm4_moe/deepseek/nemotron_h) are the SAME kind of value as
+		// num_experts above under different spellings, but were absent from this loop — the
+		// .giw reader's own caps already stop a hostile/corrupt config from becoming an OOM at
+		// allocation time, so this is defense-in-depth (refuse here, before any allocation),
+		// not closing a live exploit.
+		{"num_local_experts", cfg.NumLocalExperts, maxGGUFExperts},
+		{"n_routed_experts", cfg.NRoutedExperts, maxGGUFExperts},
 	} {
 		if d.v > d.max {
 			return fmt.Errorf("decoder: %s %d exceeds the %d ceiling — refusing before it is "+

@@ -30,6 +30,11 @@ func TestValidateConfigBounds_hostileCountsAreRefusedBeforeAllocation(t *testing
 		"num_key_value_heads":    {func(c *Config) { c.NumKVHeads = 1 << 30 }, "num_key_value_heads"},
 		"vocab_size":             {func(c *Config) { c.VocabSize = 1 << 40 }, "vocab_size"},
 		"num_experts":            {func(c *Config) { c.NumExperts = 1 << 30 }, "num_experts"},
+		// N-68 (docs/audit-2026-09-10.md): num_experts' own two other spellings
+		// (mixtral/gpt-oss/llama4's num_local_experts, glm4_moe/deepseek/nemotron_h's
+		// n_routed_experts) were unbounded here.
+		"num_local_experts": {func(c *Config) { c.NumLocalExperts = 1 << 30 }, "num_local_experts"},
+		"n_routed_experts":  {func(c *Config) { c.NRoutedExperts = 1 << 30 }, "n_routed_experts"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg := &Config{}

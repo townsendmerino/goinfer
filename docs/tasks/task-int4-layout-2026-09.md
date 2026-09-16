@@ -159,7 +159,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   default, since gemma-web was out of this item's named list.
 
 **Out of scope, unchanged:** down-proj / router / experts; amd64 split-half (L5); the
-`.giw` path (L2, and its scope note in `decoder/gguf.go:1401` is corrected under L3).
+`.giw` path (L2, and its scope note in `decoder/gguf.go:1411` is corrected under L3).
 
 **Size.** Small — the branch already had the mechanism; this was the gate's final shape plus
 reporting and the error.
@@ -341,11 +341,11 @@ its test), `cmd/prequant/main.go`, `internal/serveapp/main.go`, `demo/chat/build
 
 ## L3 — Doc corrections (do with L1) (DONE 2026-09-11)
 
-- `decoder/gguf.go:1401` and the branch's scope notes say the `.giw` path is out of scope
+- `decoder/gguf.go:1411` and the branch's scope notes say the `.giw` path is out of scope
   "mirroring `repackW4A8Row4IfEligible`'s 'deliberately NOT wired into the .giw loader'
   precedent" and that "the existing canonical+row4 both policy isn't wired into `.giw` loading".
   The second claim is false — kind 4 *is* the both policy on disk, loaded at
-  `decoder/serialize.go:1499`. The true precedent is that the **in-RAM** repack is not applied to a
+  `decoder/serialize.go:1500`. The true precedent is that the **in-RAM** repack is not applied to a
   mmap'd `.giw`. Replace both with a pointer to L2.
 - `internal/prequant/prequant.go:36–47` comment: "always emits kind 3" becomes the L2 target
   rule when L2 lands; until then add one line saying the CPU cache is on the canonical kernel.

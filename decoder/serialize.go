@@ -1225,7 +1225,8 @@ func (w *giwWriter) v8Layer(l *LayerWeights) {
 // v9Layer writes Bailing Hybrid's (Ling 3.0) per-layer v9 tail: MLA's optional attention-output
 // gate (l.mla.gProj — added to mlaWeights after v6Layer's MLA block already shipped, so it rides a
 // new version rather than retrofitting v6Layer's fixed byte layout, which would corrupt every
-// existing v6/v7/v8 file's read), then the KDA mixer (presence byte + the nine tensors) —
+// existing v6/v7/v8 file's read), then the KDA mixer (presence byte + the thirteen tensors,
+// kdaWeights' own field count — N-63, docs/audit-2026-09-10.md: this used to say nine) —
 // caught by TestSerializeCensus_noSilentFieldDrop the same way v8Layer's LFM2 gap was (R3/C-03):
 // l.kda existed and this file did not mention it once, so a round-tripped bailing_hybrid bundle
 // nil-dereferenced in kdaMixerStep on the first KDA layer.

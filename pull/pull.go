@@ -545,6 +545,27 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 		// here would silently produce a corrupt file that fails the checksum with no clue why.
 		resumeFrom = 0
 		h.Reset()
+	case http.StatusRequestedRangeNotSatisfiable:
+		// N-70 (docs/audit-2026-09-10.md): resumeFrom landed at or past EOF — the .part file
+		// already covers everything the server has. The common cause is f.Size <= 0 (a non-LFS
+		// file with no declared size): the resume guard above admits ANY existing .part
+		// regardless of completeness when there's no size to compare against, so a prior run
+		// that fetched every byte but was interrupted before this digest-check-and-rename
+		// re-requests a Range starting exactly at EOF next time — 416, not 206/200. Falling into
+		// the default case below used to report a confusing "HuggingFace returned 416" AND leave
+		// the .part in place, so every retry hit the identical 416 forever. h already covers the
+		// whole .part (hashPrefix, above); verify it directly instead of copying a body a 416
+		// response doesn't have.
+		if f.SHA256 != "" {
+			if got := hex.EncodeToString(h.Sum(nil)); got != f.SHA256 {
+				os.Remove(part)
+				return "", fmt.Errorf("checksum mismatch for %s:\n  want %s (declared by HuggingFace)\n  got  %s\nthe local partial download was already complete but corrupt; removed, re-run to refetch", f.Path, f.SHA256, got)
+			}
+		}
+		if err := os.Rename(part, final); err != nil {
+			return "", err
+		}
+		return final, nil
 	default:
 		return "", fmt.Errorf("downloading %s: HuggingFace returned %s", f.Path, resp.Status)
 	}
