@@ -41,22 +41,29 @@ declines rather than dropping the feature silently (`decoder/features.go`).
 ### Resident context capacity (`-ctx`)
 
 The resident K/V caches are allocated once at load, so their capacity is fixed for the process. It
-defaults to **4096 positions** and is raised with `-ctx N` (or per model, `--model name=path,ctx=N`):
+is raised with `-ctx N` (or per model, `--model name=path,ctx=N`); an EXPLICIT `-ctx` is always
+`min(model context window, -ctx)`, unchanged since this doc was first written.
 
-```
-cap = min(model context window, -ctx)        # -ctx unset (0) ⇒ 4096
-```
-
-**4096 is a round, conservative DEFAULT — it has never been tuned against real VRAM headroom, and
-the code does not claim otherwise.** It was chosen (`ca29d6c`) purely so a caller who never passes
-`-ctx` never allocates deep-KV VRAM; no measurement set it to 4096 specifically. The real per-card
-ceiling is typically much higher and is worth measuring for your own model/quant: on an RTX 2070
-SUPER (8 GB) with D7 (Qwen2.5-7B-Instruct) at `int4`, resident loads fine at `-ctx 20000`
-(7257/8192 MiB used) and fails at `-ctx 24576` (needs 2.82 GB of KV, only 2.90 GB free) — a true
-ceiling roughly 5-6× the default, left on the table for anyone who does not know to raise it
+N-39 (docs/audit-2026-09-10.md): what happens with `-ctx` UNSET changed under this doc since then.
+`6c3645d` ("fit-by-default context") wired `Plan()` into the unpinned default itself: unless
+`--fit=off` or `-moe-cache-experts` is set, or the model's own context window is already ≤ 4096, an
+unpinned load tries `min(model context window, 8192)` and uses whatever the fit probe lands on —
+never less than the historical 4096, but often more, on a card with the headroom for it
+(`cuda/resident.go`'s `resolveCtxCapFit`/`fitDefaultCtx`). **4096 is now only a FLOOR** — the value
+used when fit is off, disabled by `-moe-cache-experts` (that mode gives the elastic MoE expert-slot
+cache first claim on free VRAM instead; growing ctx there measured a real regression, see
+`resolveCtxCapFit`'s own comment), or when the fit probe can't get a usable free-VRAM reading — not
+the unconditional default it was when this section was first written (`ca29d6c`). It was chosen
+purely so a caller who never passes `-ctx` and never hits fit's path still never allocates deep-KV
+VRAM; no measurement set it to 4096 specifically. The real per-card ceiling is typically much higher
+still and worth measuring for your own model/quant: on an RTX 2070 SUPER (8 GB) with D7
+(Qwen2.5-7B-Instruct) at `int4`, resident loads fine at `-ctx 20000` (7257/8192 MiB used) and fails
+at `-ctx 24576` (needs 2.82 GB of KV, only 2.90 GB free) — a ceiling well above even fit's own 8192
+candidate, left on the table for anyone who does not know to raise `-ctx` explicitly
 (`docs/tasks/parked/task-kv-cache-streaming.md`).
 
-**A prompt beyond the ACTIVE cap (4096, or whatever `-ctx` set) is rejected with a clean HTTP 400
+**A prompt beyond the ACTIVE cap (the resolved value above, whether `-ctx` set it explicitly or
+fit-by-default did) is rejected with a clean HTTP 400
 `context_length_exceeded` — there is no per-request fallback to the staged path.** This paragraph
 used to say there was; that was true when written (`ca29d6c`, 2026-08-09) and stopped being true
 once a later audit (R-10) found the fallback attempt produced a 500 leaking an internal "use the
@@ -204,13 +211,18 @@ deliberate — the router's output steers a *discrete* choice, so a quantization
 tie does not perturb the result slightly, it runs a different expert. The experts are
 row-stacked into one buffer per projection and selected by indexing, which keeps the launch
 geometry fixed no matter what the routing picks. The always-on **shared expert** (Qwen-MoE /
-GLM / DeepSeek) is **not** built yet and declines at load.
+GLM / DeepSeek) is wired: both the ungated form and Qwen-MoE's sigmoid-gated
+`shared_gate_combine` variant pack and dispatch like a routed expert's gate/up/down, and a real
+load only declines here if the checkpoint's shared-expert shape disagrees with `sharedInter`
+(N-39, docs/audit-2026-09-10.md — corrected 2026-09-16; this section previously said "not built
+yet").
 
 Everything off that path routes to the existing staged/CPU path automatically — never a
 crash:
 
 - **No NVIDIA driver / dlopen fails** → declines, falls back to CPU, one-line stderr note.
-- **MLA / Mamba / hybrid / vision, or a MoE with a shared expert** → declines; runs staged.
+- **MLA / Mamba / hybrid / vision** → declines; runs staged. (A MoE with a shared expert no
+  longer belongs on this list — see above.)
 - **Backend not built in** (`--backend cuda` on a binary without `-tags cuda`) → falls back
   to CPU with a note telling you to rebuild with `-tags cuda`.
 

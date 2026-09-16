@@ -475,7 +475,7 @@ against the **2.7%** observed — the effect is fully explained with nothing lef
 
 > **CORRECTION, made the same day and before the number was acted on: this tail is NOT the sampler
 > alone, and calling it "the sampling step" would have sent the next reader to the wrong function.**
-> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:3108`
+> On CUDA the two configs do not differ only in host-side sampling. `cuda/resident.go:3123`
 > documents `ForwardArgmax` as the greedy fast path that "reduce[s] the argmax on-device and read[s]
 > back 4 B instead of the whole logits vector", and `cuda/softcap.go:25` records the consequence:
 > the sampled path is "the path that also does the ~1 MB readback", and pays softcap where the
@@ -1036,7 +1036,7 @@ supports.
 
 | doc \| path:line | repo | line content |
 |---|---|---|
-| `docs/QUEUE.md|cuda/resident.go:3108` | goinfer | `// ForwardArgmax is the greedy fast path (decoder.ResidentGreedy): reduce the argmax on-` |
+| `docs/QUEUE.md|cuda/resident.go:3123` | goinfer | `// ForwardArgmax is the greedy fast path (decoder.ResidentGreedy): reduce the argmax on-` |
 | `docs/QUEUE.md|cuda/softcap.go:25` | goinfer | `// This runs on the SAMPLING path only. ForwardArgmax reduces the argmax on-device and r` |
 | `docs/audit-2026-09-10.md|chat/chat.go:169` | goinfer | `case strings.Contains(t, "[INST]"):` |
 | `docs/audit-2026-09-10.md|chat/chat.go:2` | goinfer | `// chat template expects — no Jinja engine. goinfer loads a handful of families` |
@@ -1054,6 +1054,7 @@ supports.
 | `docs/audit-2026-09-10.md|constrain/tool_grammar.go:17` | goinfer | `type toolGrammar struct {` |
 | `docs/audit-2026-09-10.md|cuda/backend.go:1447` | goinfer | `// the maximum forces the pool for every kernel. That moe_route IS the maximum is not as` |
 | `docs/audit-2026-09-10.md|cuda/backend.go:369` | goinfer | `rf, ok := lw.Router.F32()` |
+| `docs/audit-2026-09-10.md|cuda/backend.go:413` | goinfer | `// Always-on shared expert (ungated). gate‖up concatenated the same way as a routed` |
 | `docs/audit-2026-09-10.md|cuda/backend.go:553` | goinfer | `residentCtxCap := resolveCtxCapFit(m, m.ResidentContextRequest(), m.Config().MaxPosition` |
 | `docs/audit-2026-09-10.md|cuda/backend.go:586` | goinfer | `extraBytes: m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(residentCtxCap` |
 | `docs/audit-2026-09-10.md|cuda/backend.go:787` | goinfer | `fns := []struct {` |
@@ -1067,21 +1068,21 @@ supports.
 | `docs/audit-2026-09-10.md|cuda/lora.go:179` | goinfer | `func (r *cudaResident) applyLora(p *cudaLoraProj, aq, ascale Buffer, k int, dst Buffer) ` |
 | `docs/audit-2026-09-10.md|cuda/lora.go:209` | goinfer | `type loraProjKey struct {` |
 | `docs/audit-2026-09-10.md|cuda/lora_resident_parity_test.go:95` | goinfer | `if cos < 0.95 {` |
-| `docs/audit-2026-09-10.md|cuda/prefill.go:1289` | goinfer | `// RELEASE BEFORE GROWING. This was grow-only: each larger prompt abandoned the previous` |
-| `docs/audit-2026-09-10.md|cuda/prefill.go:1512` | goinfer | `func (r *cudaResident) useGemmMMA(kind string, K, M int) bool {` |
+| `docs/audit-2026-09-10.md|cuda/prefill.go:1303` | goinfer | `// RELEASE BEFORE GROWING. This was grow-only: each larger prompt abandoned the previous` |
+| `docs/audit-2026-09-10.md|cuda/prefill.go:1526` | goinfer | `func (r *cudaResident) useGemmMMA(kind string, K, M int) bool {` |
 | `docs/audit-2026-09-10.md|cuda/prefill.go:171` | goinfer | `func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]float32, sta` |
-| `docs/audit-2026-09-10.md|cuda/prefill.go:247` | goinfer | `func (r *cudaResident) HiddenLast(ctx context.Context, embeddings [][]float32, startPos ` |
-| `docs/audit-2026-09-10.md|cuda/prefill.go:722` | goinfer | `switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_CUDA_FAST_PREFILL"))) {` |
-| `docs/audit-2026-09-10.md|cuda/prefill.go:811` | goinfer | `r.forceExactKernels = tail != tailLastLogits` |
+| `docs/audit-2026-09-10.md|cuda/prefill.go:261` | goinfer | `func (r *cudaResident) HiddenLast(ctx context.Context, embeddings [][]float32, startPos ` |
+| `docs/audit-2026-09-10.md|cuda/prefill.go:736` | goinfer | `switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_CUDA_FAST_PREFILL"))) {` |
+| `docs/audit-2026-09-10.md|cuda/prefill.go:825` | goinfer | `r.forceExactKernels = tail != tailLastLogits` |
 | `docs/audit-2026-09-10.md|cuda/resident.go:104` | goinfer | `func resolveCtxCapFit(m *decoder.Model, request, modelCtx int) int {` |
 | `docs/audit-2026-09-10.md|cuda/resident.go:143` | goinfer | `extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate)` |
-| `docs/audit-2026-09-10.md|cuda/resident.go:1572` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
-| `docs/audit-2026-09-10.md|cuda/resident.go:1658` | goinfer | `// (pos, pos), so this does not duplicate Forward's body — it is what Forward calls with` |
-| `docs/audit-2026-09-10.md|cuda/resident.go:1850` | goinfer | `func (r *cudaResident) Close() error {` |
-| `docs/audit-2026-09-10.md|cuda/resident.go:1924` | goinfer | `r.launchN++ // per-token dispatch count (diagnostic: graph-capturable-fraction bound)` |
-| `docs/audit-2026-09-10.md|cuda/resident.go:2033` | goinfer | `if e := gpu.Download(src, h); e != nil {` |
+| `docs/audit-2026-09-10.md|cuda/resident.go:1584` | goinfer | `// always been allocated without one, and a hard failure here would regress every driver` |
+| `docs/audit-2026-09-10.md|cuda/resident.go:1670` | goinfer | `// (pos, pos), so this does not duplicate Forward's body — it is what Forward calls with` |
+| `docs/audit-2026-09-10.md|cuda/resident.go:1862` | goinfer | `func (r *cudaResident) Close() error {` |
+| `docs/audit-2026-09-10.md|cuda/resident.go:1936` | goinfer | `r.launchN++ // per-token dispatch count (diagnostic: graph-capturable-fraction bound)` |
+| `docs/audit-2026-09-10.md|cuda/resident.go:2045` | goinfer | `if e := gpu.Download(src, h); e != nil {` |
 | `docs/audit-2026-09-10.md|cuda/resident.go:601` | goinfer | `dnQSplit, dnAttnGate                     Pipeline // the family's fused double-width q_p` |
-| `docs/audit-2026-09-10.md|cuda/resident.go:645` | goinfer | `forceExactKernels                                       bool` |
+| `docs/audit-2026-09-10.md|cuda/resident.go:657` | goinfer | `forceExactKernels                                       bool` |
 | `docs/audit-2026-09-10.md|cuda/vision_encoder.go:247` | goinfer | `q := r.stream` |
 | `docs/audit-2026-09-10.md|cuda/vision_encoder.go:256` | goinfer | `var scratch []Buffer` |
 | `docs/audit-2026-09-10.md|decoder/arch.go:273` | goinfer | `// sigmoid-activated where Laguna's is softplus (verified against source, not assumed). ` |
@@ -1216,7 +1217,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/scratch.go:317` | goinfer | `if c := nKeys * hd; cap(p.kh) < c {` |
 | `docs/audit-2026-09-10.md|decoder/serialize.go:1225` | goinfer | `// v9Layer writes Bailing Hybrid's (Ling 3.0) per-layer v9 tail: MLA's optional attentio` |
 | `docs/audit-2026-09-10.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
-| `docs/audit-2026-09-10.md|decoder/spec_adaptive.go:228` | goinfer | `if pf, ok := m.resident.(Prefiller); ok {` |
+| `docs/audit-2026-09-10.md|decoder/spec_adaptive.go:242` | goinfer | `if pf, ok := m.resident.(Prefiller); ok {` |
 | `docs/audit-2026-09-10.md|decoder/spec_ngram.go:180` | goinfer | `return fmt.Errorf("decoder.GenerateNgramSpeculative: this model has recurrent state (Mam` |
 | `docs/audit-2026-09-10.md|decoder/spec_ngram.go:219` | goinfer | `func specRoundDraftWidth(k, pos, ctxCap int) int {` |
 | `docs/audit-2026-09-10.md|decoder/spec_ngram.go:293` | goinfer | `targetVerify := func(seq []int, base int) ([][]float32, error) {` |
@@ -1549,13 +1550,13 @@ supports.
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/forwardn.go:614` | goinfer | `ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, moePrefillScr, m.pager)` |
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/mlp.go:340` | goinfer | `matmul(be, &ex.Gate, h, gate, 1)` |
 | `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md|metal/backend.go:523` | goinfer | `func metalFusedAttentionEnabled() bool {` |
-| `docs/measurements/prefill-l2l3-phase0-2026-09-05.md|cuda/prefill.go:1310` | goinfer | `// weight READS of a 195 MB head, and a host argmax over M x vocab costs ~1.1 ms against` |
+| `docs/measurements/prefill-l2l3-phase0-2026-09-05.md|cuda/prefill.go:1324` | goinfer | `// weight READS of a 195 MB head, and a host argmax over M x vocab costs ~1.1 ms against` |
 | `docs/measurements/prefill-l2l3-phase0-2026-09-05.md|cuda/resident.go:235` | goinfer | `func attnShmemBytes(nWin int) int { return (nWin + 128) * 4 }` |
 | `docs/measurements/prefill-l2l3-phase1-2026-09-05.md|metal/backend.go:487` | goinfer | `func metalFastPrefillEnabled() bool {` |
 | `docs/measurements/reduction-tree-accuracy-2026-09-12.md|cuda/attn_fused_test.go:18` | goinfer | `// plus "cosine >= 0.9999 per row", derived from f16 operand rounding. That bar failed w` |
-| `docs/measurements/reduction-tree-accuracy-2026-09-12.md|cuda/prefill.go:698` | goinfer | `//	S  K=1024, K=3900 SHIP — fast is CLOSER to the reference than exact on all three crit` |
+| `docs/measurements/reduction-tree-accuracy-2026-09-12.md|cuda/prefill.go:712` | goinfer | `//	S  K=1024, K=3900 SHIP — fast is CLOSER to the reference than exact on all three crit` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|cuda/backend.go:116` | goinfer | `return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))` |
-| `docs/measurements/spec-x-pager-2026-09-02.md|cuda/prefill.go:291` | goinfer | `if e := r.prefillStaticDecline(); e != nil {` |
+| `docs/measurements/spec-x-pager-2026-09-02.md|cuda/prefill.go:305` | goinfer | `if e := r.prefillStaticDecline(); e != nil {` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|decoder/forwardn.go:148` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|decoder/spec_adaptive.go:177` | goinfer | `case "cuda":` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|internal/serveapp/blockdrafter.go:20` | goinfer | `// IT FAILS STARTUP RATHER THAN DEGRADING SILENTLY. An operator who passed --drafter wan` |
@@ -1565,18 +1566,18 @@ supports.
 | `docs/measurements/splitkv-d7-fthreshold-2026-09-13.md|cuda/resident.go:218` | goinfer | `// M-16, MEASURED on the RTX 2070 SUPER (Turing) rather than inferred:` |
 | `docs/measurements/splitkv-f-depth-invariance-2026-09-13.md|cuda/resident.go:218` | goinfer | `// M-16, MEASURED on the RTX 2070 SUPER (Turing) rather than inferred:` |
 | `docs/measurements/splitkv-mechanism-ncu-2026-09-12.md|cuda/resident.go:218` | goinfer | `// M-16, MEASURED on the RTX 2070 SUPER (Turing) rather than inferred:` |
-| `docs/measurements/splitkv-mechanism-ncu-PREREGISTERED.md|cuda/resident.go:2990` | goinfer | `// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): rhalf == hd/2 for full rotary, rotaryD` |
+| `docs/measurements/splitkv-mechanism-ncu-PREREGISTERED.md|cuda/resident.go:3005` | goinfer | `// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): rhalf == hd/2 for full rotary, rotaryD` |
 | `docs/measurements/splitkv-sector-efficiency-2026-09-13.md|cuda/resident.go:218` | goinfer | `// M-16, MEASURED on the RTX 2070 SUPER (Turing) rather than inferred:` |
 | `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:677` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
-| `docs/measurements/vsum-split-fidelity-PREREGISTERED.md|cuda/prefill.go:705` | goinfer | `// The exact path — attn_batched and gemv_w4a8_rn — remains selectable, remains bit-iden` |
+| `docs/measurements/vsum-split-fidelity-PREREGISTERED.md|cuda/prefill.go:719` | goinfer | `// The exact path — attn_batched and gemv_w4a8_rn — remains selectable, remains bit-iden` |
 | `docs/measurements/vsum-split-fidelity-PREREGISTERED.md|cuda/prefill_gate_ref_test.go:284` | goinfer | `lg, err := rf.Forward(m.EmbedResidentForTest(refTokens[i-1]), pos)` |
 | `docs/multimodal.md|decoder/config.go:1359` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `cfg.LayerTypes = append(cfg.LayerTypes, "linear_attention")` |
 | `docs/multimodal.md|decoder/weights.go:447` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
-| `docs/ollama-chase.md|cuda/resident.go:1842` | goinfer | `// exists for, so the release-the-context shortcut was wrong exactly where it mattered m` |
+| `docs/ollama-chase.md|cuda/resident.go:1854` | goinfer | `// exists for, so the release-the-context shortcut was wrong exactly where it mattered m` |
 | `docs/ollama-chase.md|cuda/resident.go:54` | goinfer | `// resolveCtxCap turns a request into the effective resident KV capacity:` |
-| `docs/ollama-chase.md|cuda/resident.go:681` | goinfer | `// expert-sum branch, rn = the router's weightless-normed raw-h input. Kept SEPARATE fro` |
-| `docs/ollama-chase.md|cuda/resident.go:930` | goinfer | `// upExperts left the expert stacks host-mapped-only, so the expert GEMVs would bind zer` |
+| `docs/ollama-chase.md|cuda/resident.go:693` | goinfer | `// expert-sum branch, rn = the router's weightless-normed raw-h input. Kept SEPARATE fro` |
+| `docs/ollama-chase.md|cuda/resident.go:942` | goinfer | `// upExperts left the expert stacks host-mapped-only, so the expert GEMVs would bind zer` |
 | `docs/ollama-chase.md|decoder/gguf.go:754` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/ollama-chase.md|decoder/model.go:1573` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
@@ -1584,16 +1585,16 @@ supports.
 | `docs/ollama-chase.md|decoder/residency.go:1153` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/ollama-chase.md|decoder/weightmat.go:764` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:578` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
-| `docs/parity-coverage-policy.md|cuda/resident.go:1546` | goinfer | `free, _, err := r.dev.Context().MemInfo()` |
+| `docs/parity-coverage-policy.md|cuda/resident.go:1558` | goinfer | `free, _, err := r.dev.Context().MemInfo()` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
 | `docs/queue-correctness.md|decoder/gguf.go:50` | goinfer | `anchor: func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {` |
 | `docs/queue-engineering.md|cmd/gate/configs.go:14` | goinfer | `models := env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cmd/gate/gpu.go:423` | goinfer | `g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))` |
 | `docs/queue-engineering.md|cuda/argmax_tiebreak_test.go:19` | goinfer | `func TestArgmaxTieBreak(t *testing.T) {` |
 | `docs/queue-engineering.md|cuda/backend.go:1429` | goinfer | `// cache, so the cap is correct by construction rather than covered by a margin.` |
-| `docs/queue-engineering.md|cuda/prefill.go:832` | goinfer | `defer func() {` |
+| `docs/queue-engineering.md|cuda/prefill.go:846` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:416` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
-| `docs/queue-engineering.md|cuda/resident.go:744` | goinfer | `// decodes garbage. The setup job's last statement returns r.setupErr, which BuildReside` |
+| `docs/queue-engineering.md|cuda/resident.go:756` | goinfer | `// decodes garbage. The setup job's last statement returns r.setupErr, which BuildReside` |
 | `docs/queue-engineering.md|decoder/forwardn.go:1120` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
@@ -1608,7 +1609,7 @@ supports.
 | `docs/queue-engineering.md|linalg/quant.go:216` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1145` | goinfer | `if paged && os.Getenv("GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:763` | goinfer | `def gate_cell_idle():` |
-| `docs/queue-performance.md|cuda/resident.go:1199` | goinfer | `wOff, wLen := e*w.perExpertW*4, w.perExpertW*4` |
+| `docs/queue-performance.md|cuda/resident.go:1211` | goinfer | `wOff, wLen := e*w.perExpertW*4, w.perExpertW*4` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:2835` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:51` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,        // the text-only checkpoint's model_type` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:383` | goinfer | `// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND,` |
@@ -1651,8 +1652,8 @@ supports.
 | `docs/tasks/task-fp4-formats.md|decoder/gptoss_safetensors.go:17` | goinfer | `//  1. MXFP4 nibbles are SEQUENTIAL here (byte j holds elements 2j and 2j+1), where GGML` |
 | `docs/tasks/task-freetoken-techniques.md|decoder/model.go:234` | goinfer | `MoECacheSlots int` |
 | `docs/tasks/task-freetoken-techniques.md|internal/serveapp/main.go:307` | goinfer | `moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper b` |
-| `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:289` | goinfer | `chunk = learned // a previous prompt already found the default too wide for this card` |
-| `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:312` | goinfer | `tail := tailKVOnly` |
+| `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:303` | goinfer | `chunk = learned // a previous prompt already found the default too wide for this card` |
+| `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:326` | goinfer | `tail := tailKVOnly` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/embed.go:36` | goinfer | `// guard, as ForwardCapture.` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:129` | goinfer | `// single scalar per head — verified against fla-org/flash-linear-attention's actual sou` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:390` | goinfer | `// residentPerLayerGeomOK reports whether backend implements the per-layer geometry a's ` |
@@ -1688,7 +1689,7 @@ supports.
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:733` | goinfer | `// its own (pullState), which is the bound that actually fits it.` |
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:1255` | goinfer | `ctx, cancel := context.WithCancel(parent)` |
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:533` | goinfer | `ToolCalls  []apiToolCall   `json:"tool_calls,omitempty"`   // assistant messages` |
-| `docs/tasks/task-int4-layout-2026-09.md|cuda/resident.go:3148` | goinfer | `p := make([]uint32, N*(K/4))` |
+| `docs/tasks/task-int4-layout-2026-09.md|cuda/resident.go:3163` | goinfer | `p := make([]uint32, N*(K/4))` |
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/gguf.go:1411` | goinfer | `// row4 from canonical), even on a cpu-arm64 target that will write kind 5` |
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/model.go:424` | goinfer | `w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), ` |
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/serialize.go:1500` | goinfer | `return linalg.WrapInt4Row4(q4, q4s, rows, cols, group, q4Row4, q4Row4Scales)` |
@@ -1703,7 +1704,7 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|metal/model.go:498` | goinfer | `func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:450` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/snapshot_golden_test.go:124` | goinfer | `func TestMetalSnapshotGolden(t *testing.T) {` |
-| `docs/tasks/task-l01-hybrid-moe-cpu-gpu.md|cuda/resident.go:2332` | goinfer | `if r.l01Enabled && r.l01CPUMask[j] {` |
+| `docs/tasks/task-l01-hybrid-moe-cpu-gpu.md|cuda/resident.go:2347` | goinfer | `if r.l01Enabled && r.l01CPUMask[j] {` |
 | `docs/tasks/task-moe-streaming.md|decoder/forwardn.go:530` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
 | `docs/tasks/task-moe-streaming.md|decoder/forwardn.go:97` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
 | `docs/tasks/task-moe-streaming.md|decoder/mlp.go:84` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |

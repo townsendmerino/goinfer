@@ -615,12 +615,18 @@ type cudaResident struct {
 	bRopeKVMRoPE             Pipeline // rope_kv_mrope_batched (rope_mrope_prefill.ptx) — Qwen2.5-VL's m-RoPE batched-prefill rotation; own module, see cuda/rope_mrope_prefill.cu
 	mropePrefillReady        bool     // bRopeKVMRoPE loaded AND this model has MRopeSection; PrefillMRoPELast usable. A load failure (or a non-m-RoPE model) is not fatal: it stays false and the caller falls back to CPU prefill + UploadKV
 	mropeSec0, mropeSec1     int32    // cumulative MRopeSection boundaries (sec0=section[0], sec1=section[0]+section[1]), computed once at build time — see rope_kv_mrope_batched's own doc comment for the (d<sec0)?t:(d<sec1?h:w) rule this feeds
-	// prefillChunkCap is prefillChunked's LEARNED row budget: 0 until a pass OOMs, then the width
-	// that worked. It exists so a card that cannot hold the default chunk is discovered ONCE rather
-	// than on every prompt. Repeatedly driving the context to CUDA_ERROR_OUT_OF_MEMORY is not merely
-	// wasteful: per backend.go's A13 note a context taken to refusal and kept in use can afterwards
-	// launch kernels that "return SUCCESS and execute NOTHING". Atomic because prefillChunked runs on
-	// the CALLER's goroutine (only the per-pass job is serialized through the executor).
+	// prefillChunkCap is the LEARNED row budget shared by every batched-prefill caller that has a
+	// row-count knob to shrink: prefillChunked (which retries the SAME pass smaller and stores
+	// whatever width worked) and PrefillImageLast (N-41, docs/audit-2026-09-10.md — it cannot
+	// retry a bidirectional image block at a smaller width, since an image OOM is a function of
+	// that block's own M, but still halves and stores the budget on OOM so the NEXT image call is
+	// caught by its cheap pre-check instead of repeating the same real OOM). 0 until a pass OOMs,
+	// then the width that worked (or, for the image path, the width to try next). It exists so a
+	// card that cannot hold the default chunk is discovered ONCE rather than on every prompt.
+	// Repeatedly driving the context to CUDA_ERROR_OUT_OF_MEMORY is not merely wasteful: per
+	// backend.go's A13 note a context taken to refusal and kept in use can afterwards launch
+	// kernels that "return SUCCESS and execute NOTHING". Atomic because both callers run on their
+	// own CALLER's goroutine (only the per-pass job is serialized through the executor).
 	prefillChunkCap atomic.Int64
 	prof            *prefillProf // non-nil ⇒ PrefillLast times each kernel category (test-only; adds stream syncs)
 	// passPromptLen is the TOTAL prompt length this batched pass belongs to (startPos+M), set once
@@ -628,6 +634,12 @@ type cudaResident struct {
 	// chunk: prefillChunked splits a long prompt into passes of <=512 rows, so gating on M alone
 	// would judge a 3900-token prompt by its 512-row chunk. Per-pass mutable state on the resident,
 	// the same shape as prof above.
+	//
+	// N-43 (docs/audit-2026-09-10.md): this is NOT cleared after prefillCore returns, and
+	// residentDrafter.DraftBlock (cuda/drafter.go) reads it too, via aboveFastPrefillFloor/
+	// bGemvB — the drafter never calls prefillCore, so it inherits whatever the TARGET model's
+	// last prefill happened to set this to. See DraftBlock's own doc comment for why that
+	// coupling costs acceptance rate at worst, never correctness.
 	passPromptLen int
 	// forceExactKernels disables useAttnFused/useGemmMMA (the L2/L3 fast levers) for the
 	// DURATION of one prefillCore pass — the same "per-pass mutable state on the resident" shape
@@ -2094,9 +2106,12 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 	}
 	// 2. softmax in place (block 128 — MUST match attn_batched for byte-identical max/denominator).
 	if e := r.launch(r.skSoftmax, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
-		// ArgNull: no attention sink. gpt-oss is the only family with one, and it is not
-		// resident-eligible yet (its clamped-SwiGLU expert kernel does not exist), so every
-		// caller today passes null and the kernel stays bit-identical to before.
+		// N-38 (docs/audit-2026-09-10.md, corrected 2026-09-16): gpt-oss is the only family with
+		// an attention sink, and it IS resident-eligible (glu_quant_gptoss/route_gptoss and its
+		// per-expert down bias are all real, wired kernels — see gptOssSw/gptOssRoute/
+		// fMoEWaccBias above). r.sinkArg(l) below returns the real per-layer sink for it and
+		// ArgNull() for every other family, so this is not an always-null argument; the kernel
+		// itself is unchanged either way.
 		Arg(r.skScoreBuf), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nWin)), Arg(r.skInvBuf), r.sinkArg(l)); e != nil {
 		return e
 	}

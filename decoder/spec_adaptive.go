@@ -199,6 +199,20 @@ func thetaFor(backend string) float64 {
 // Options.Backend alone would hand a declined-residency model the GPU value and
 // silently mis-tune the one case where the decline is already costing the user
 // the whole forward.
+//
+// N-49 (docs/audit-2026-09-10.md, documented 2026-09-16): the PrefillPathReporter check below
+// asks about PREFILL (prompt ingestion), not about the VERIFY forward this function is actually
+// pricing -- those are separate code paths that only happen to agree for cudaResident, whose
+// ForwardN is documented (right below) to fall back to the per-row loop under exactly the
+// predicate it reports. metalResident ALSO implements PrefillPathReporter, but its ForwardN is
+// unconditionally a per-row loop regardless of what PrefillPath() says (Metal has no batched
+// verify at all yet) -- so for Metal this function is currently correct ONLY because
+// thetaFor("metal") is independently ALSO >= 1 (measured, sequential-shaped) in the branch this
+// predicate would otherwise skip. TestThetaFor_cudaConstantUnchanged's thetaFor(metal) < 1 check
+// is the tripwire: if a real batched Metal verify path ever ships and that constant drops below
+// 1 without this predicate being revisited for Metal specifically, that test fails first. Until
+// then this is a documented coincidence, not a bug -- Metal never actually reads the biased
+// CUDA-shaped assumption because its own thetaFor lands on the same disabling value either way.
 func (m *Model) verifyTheta() float64 {
 	if m == nil || m.resident == nil {
 		return defaultTheta // staged or CPU: the verify is the CPU batched ForwardN

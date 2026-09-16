@@ -138,7 +138,7 @@ re-run on the 0.5B.
 the only serving caller.
 
 **Fix.** A resident `HiddenLast`: the resident prefill already exposes hidden-state capture for the
-block drafter (`hidCapTaps`, `cuda/prefill.go:312–319`), so a "prefill and return the last row's
+block drafter (`hidCapTaps`, `cuda/prefill.go:326–319`), so a "prefill and return the last row's
 pre-LM-head hidden state" entry is mostly wiring on CUDA; Metal and WebGPU need the same tap. Must
 respect `ownForward` families (they error today, keep that), claim `resBusy`, and forget `resIDs`
 after (it drives the shared positional KV).
@@ -211,7 +211,7 @@ FeatPartialRotary}`; `metal/model.go:609` sets `prefillOK` from it; `metal/backe
 Separately, `metal/backend.go:495` declines batched prefill unless `GOINFER_METAL_BATCHED_PREFILL=1`
 (the 54% stream divergence, §A2-Metal). So MoE, Gemma, DeltaNet, gpt-oss and GPT-2 prompts on the
 Mac are one forward per prompt token regardless of `--metal-fast-prefill`. CUDA's batched prefill
-covers dense and MoE (`cuda/prefill.go:289–320`) and declines only f32 projections and the
+covers dense and MoE (`cuda/prefill.go:303–320`) and declines only f32 projections and the
 per-token debug seams.
 
 **Fix.** Two levers, in order: (a) extend the f16-MMA prefill to MoE (per-row FFN off the batched

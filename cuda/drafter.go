@@ -432,6 +432,17 @@ func checkDrafterShmem(ctxLen, M int) error {
 // prefill qk-norm all read r.eps and r.addOneArg(), and reusing them here would apply the
 // target's normalization to the drafter's weights — silent, plausible, and wrong. Each is
 // launched directly with the drafter's own eps and a plain (addOne=0) norm.
+// N-43 (docs/audit-2026-09-10.md, documented 2026-09-16, not a correctness bug): every d.r.bGemvB
+// call below (q/k/v/o/gate/up/down) reads r.aboveFastPrefillFloor(), which is r.passPromptLen —
+// state set once at the TOP of the TARGET model's prefillCore and never cleared afterward (see
+// its own doc comment on the field, cuda/resident.go). The drafter never calls prefillCore itself,
+// so a draft block's choice between gemm_w4a8_mma and gemv_w4a8_rn is decided by the LENGTH OF THE
+// TARGET'S LAST PROMPT, not by anything about this block — an undocumented coupling nothing here
+// used to explain. It costs no correctness: speculative decoding's own verify step accepts or
+// rejects each draft token against the target's real logits regardless of which kernel produced
+// the draft, so a "wrong" kernel choice here can only shift acceptance rate, never the final
+// output (the same "costs acceptance rather than correctness" framing NewResidentDrafter's own
+// N-08 comment already uses for a different upload-failure case).
 func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 	M := len(blockIn)
 	if M == 0 {

@@ -190,6 +190,20 @@ func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]floa
 	}
 	outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits, imgStart, imgEnd, nil)
 	if err != nil {
+		// N-41 (docs/audit-2026-09-10.md): unlike prefillChunked, this call cannot retry at a
+		// smaller width — a bidirectional image block has to land in one pass, and errPrefillOOM
+		// here is a function of THIS M, not of chunk, so a smaller chunk would not change M or
+		// rescue this attempt. But leaving prefillChunkCap unlearned means the pre-check above
+		// keeps admitting up to prefillImageChunkRows() on every future image turn too, so the
+		// SAME OOM repeats on every one — and per prefillChunkCap's own doc comment
+		// (cuda/resident.go), repeatedly driving the context to CUDA_ERROR_OUT_OF_MEMORY risks the
+		// context afterward launching kernels that "return SUCCESS and execute NOTHING", not just
+		// wasted retries. Halve the budget for the NEXT image call, same floor prefillChunked
+		// already uses, so a smaller image is caught by the cheap pre-check instead of repeating
+		// the same real OOM.
+		if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
+			r.prefillChunkCap.Store(int64(max(chunk/2, prefillMinChunk)))
+		}
 		return nil, err
 	}
 	return outs[len(outs)-1], nil

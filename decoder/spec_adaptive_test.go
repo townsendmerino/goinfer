@@ -72,11 +72,20 @@ func (f *fakeThetaResident) PrefillPath() (bool, string) {
 
 // The CUDA constant itself is unchanged and still measured — M-14 is about WHEN it applies, not
 // what it is. Pinned so a change to one is not mistaken for the other.
+//
+// The thetaFor("metal") >= 1 check is ALSO the N-49 (docs/audit-2026-09-10.md) tripwire —
+// verifyTheta's own doc comment explains why: metalResident implements PrefillPathReporter, but
+// its ForwardN is unconditionally sequential regardless of what PrefillPath() reports, so the
+// M-14 predicate only produces the right answer for Metal because this constant independently
+// also disables speculation. If Metal ever ships a real batched verify and this drops below 1,
+// this assertion is what catches that the predicate needs to be revisited for Metal too.
 func TestThetaFor_cudaConstantUnchanged(t *testing.T) {
 	if got := thetaFor("cuda"); got != 0.251 {
 		t.Errorf("thetaFor(cuda) = %v, want 0.251 (cuda/theta_probe_test.go, dense 0.5B/1.5B)", got)
 	}
 	if got := thetaFor("metal"); got < 1 {
-		t.Errorf("thetaFor(metal) = %v; it is >= 1 BY MEASUREMENT and disables speculation", got)
+		t.Errorf("thetaFor(metal) = %v; it is >= 1 BY MEASUREMENT and disables speculation "+
+			"(N-49: this is also the tripwire for verifyTheta's Metal/PrefillPathReporter "+
+			"coincidence — see its doc comment)", got)
 	}
 }
