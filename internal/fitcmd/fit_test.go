@@ -2,7 +2,12 @@ package fitcmd
 
 import (
 	"bytes"
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -130,5 +135,102 @@ func TestRun_measureOffByDefault(t *testing.T) {
 	})
 	if bytes.Contains([]byte(out), []byte("(measure)")) {
 		t.Errorf("output contains a '(measure)' line without -measure being passed:\n%s", out)
+	}
+}
+
+// TestRun_measureRateExcludesPrefill is M-20's behavioral half (docs/audit-2026-09-10.md):
+// selfMeasure's printed rate used to be n/(prefill+decode) — roughly a third of the true decode
+// rate on the CPU staged path (the audit's own measurement) — because the clock started before
+// Generate was even called. It now starts after the FIRST token arrives, so the printed line must
+// say so explicitly (not the old "includes a N-token prompt prefill" phrasing, which described
+// the bug rather than a fix for it) and must report decode steps counted as probeDecode-1, not
+// probeDecode — proving the first step was excluded from the denominator, not just relabeled.
+func TestRun_measureRateExcludesPrefill(t *testing.T) {
+	out := captureStdout(t, func() {
+		Run([]string{"../../testdata/llama-tiny", "-ctx", "512", "-measure"})
+	})
+	if !bytes.Contains([]byte(out), []byte("after the first token")) {
+		t.Fatalf("measure line does not say it excludes the first token/prefill:\n%s", out)
+	}
+	if bytes.Contains([]byte(out), []byte("includes a")) {
+		t.Errorf("measure line still uses the old 'includes a N-token prompt prefill' phrasing "+
+			"(M-20 not actually fixed, just relabeled):\n%s", out)
+	}
+	// probeDecode is 32 (fit.go); the printed decode-step count must be 31 (32-1), proving the
+	// first token's step was excluded from the count, not just from the label.
+	if !bytes.Contains([]byte(out), []byte(" 31 decode steps ")) {
+		t.Errorf("measure line does not report 31 decode steps (probeDecode=32 minus the excluded "+
+			"first token) — the denominator may still include the first step:\n%s", out)
+	}
+}
+
+// TestRun_closesFirstLoadBeforeMeasuring is M-20's other half: selfMeasure loads the SAME
+// checkpoint again, so Run must close its own first Load BEFORE calling selfMeasure — leaving it
+// open the whole time means two full quantized copies resident simultaneously on the CPU backend,
+// which can itself trip the memory guard the probe exists to measure honestly. The interruption
+// that matters (a real large checkpoint tripping the guard) can't be reproduced with this repo's
+// tiny fixtures, so this is asserted structurally instead, the same technique
+// TestTranscode_writesViaTempThenRenames (internal/prequant) uses for an analogous ordering
+// property: parse Run's AST and confirm the statement calling m.Close() appears BEFORE the `if
+// *measure` block that calls selfMeasure, not after.
+func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, "fit.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var fn *ast.FuncDecl
+	ast.Inspect(af, func(n ast.Node) bool {
+		if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == "Run" {
+			fn = d
+		}
+		return true
+	})
+	if fn == nil {
+		t.Fatal("Run not found — this guard is watching nothing")
+	}
+	render := func(e ast.Expr) string {
+		var b strings.Builder
+		_ = printer.Fprint(&b, fset, e)
+		return b.String()
+	}
+	var closeCallIdx, measureIfIdx = -1, -1
+	for i, stmt := range fn.Body.List {
+		switch s := stmt.(type) {
+		case *ast.ExprStmt:
+			if call, ok := s.X.(*ast.CallExpr); ok {
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Close" && render(sel.X) == "m" {
+					closeCallIdx = i
+				}
+			}
+		case *ast.AssignStmt:
+			for _, rhs := range s.Rhs {
+				if call, ok := rhs.(*ast.CallExpr); ok {
+					if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Close" && render(sel.X) == "m" {
+						closeCallIdx = i
+					}
+				}
+			}
+		case *ast.IfStmt:
+			ast.Inspect(s, func(n ast.Node) bool {
+				if call, ok := n.(*ast.CallExpr); ok {
+					if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "selfMeasure" {
+						measureIfIdx = i
+					}
+				}
+				return true
+			})
+		}
+	}
+	if closeCallIdx == -1 {
+		t.Fatal("no m.Close() call found in Run — this guard is watching the wrong function")
+	}
+	if measureIfIdx == -1 {
+		t.Fatal("no selfMeasure call found in Run — this guard is watching the wrong function")
+	}
+	if closeCallIdx >= measureIfIdx {
+		t.Errorf("m.Close() (statement %d) does not precede the selfMeasure call (statement %d) — "+
+			"selfMeasure's own fresh Load can run while the first copy is still resident (M-20)",
+			closeCallIdx, measureIfIdx)
 	}
 }

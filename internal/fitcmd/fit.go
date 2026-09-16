@@ -85,7 +85,6 @@ func Run(args []string) int {
 		fmt.Fprintf(os.Stderr, "load %s: %v\n", path, err)
 		return 1
 	}
-	defer m.Close()
 
 	req := decoder.PlanRequest{Ctx: *ctx, CtxPinned: ctxPinned, KVF16: *kvF16, KVI8: *kvI8, Slots: *slots}
 	fmt.Printf("%s @ %s, ctx=%d%s\n\n", path, quantLabel(*quant), *ctx, pinnedNote(ctxPinned))
@@ -104,6 +103,14 @@ func Run(args []string) int {
 		}
 	}
 
+	// M-20 (docs/audit-2026-09-10.md): close m BEFORE selfMeasure's own fresh Load, not after —
+	// selfMeasure loads the SAME checkpoint again, so leaving m open the whole time left two full
+	// quantized copies resident on the CPU backend, which could itself trip the very memory guard
+	// the probe is trying to measure honestly (a swapping machine's number is exactly the
+	// "plausible, wrong" result task-fit-to-hardware.md §5 warns against). No use of m follows
+	// this point on either branch, so an explicit close here (not a function-scoped defer, which
+	// silently discarded the error the same way this does) is exactly once on every path.
+	_ = m.Close()
 	if *measure {
 		selfMeasure(path, *quant, admitted)
 	}
@@ -144,20 +151,39 @@ func selfMeasure(path, quant string, admitted []string) {
 		prompt[i] = (i*2654435761 + 1) % vocab // deterministic, in-range — a throughput probe, not a real prompt
 	}
 
+	// M-20 (docs/audit-2026-09-10.md): time from the FIRST generated token, not from before
+	// Generate is called — the first token's own latency includes the fixed one-time prompt
+	// prefill (probePrompt tokens), so folding it into the rate understated true decode
+	// throughput by roughly a third on the CPU staged path (the audit's own measurement). Every
+	// step after the first is pure decode, so that's what the rate reports.
 	t0 := time.Now()
 	out, gen := pm.Generate(context.Background(), prompt, probeDecode, decoder.SamplingParams{Temperature: 0})
 	n := 0
+	var firstTokAt time.Time
 	for range out {
 		n++
+		if n == 1 {
+			firstTokAt = time.Now()
+		}
 	}
-	elapsed := time.Since(t0)
+	now := time.Now()
+	totalElapsed := now.Sub(t0)
 	if gen.Err() != nil {
 		fmt.Printf("\n(measure) %s: probe failed: %v\n", backend, gen.Err())
 		return
 	}
-	rate := float64(n) / elapsed.Seconds()
-	fmt.Printf("\n(measure) %-6s %.1f tok/s over %d/%d decode steps (includes a %d-token prompt prefill; measured on this machine, not projected)\n",
-		backend, rate, n, probeDecode, probePrompt)
+	if n < 2 {
+		fmt.Printf("\n(measure) %-6s only %d/%d decode step(s) produced — not enough after the "+
+			"first token to report a decode-only rate\n", backend, n, probeDecode)
+		return
+	}
+	decodeSteps := n - 1
+	decodeElapsed := now.Sub(firstTokAt)
+	rate := float64(decodeSteps) / decodeElapsed.Seconds()
+	fmt.Printf("\n(measure) %-6s %.1f tok/s over %d decode steps after the first token (excludes "+
+		"the %d-token prompt prefill and the first decode step; total wall time for all %d steps "+
+		"including that prefill: %s; measured on this machine, not projected)\n",
+		backend, rate, decodeSteps, probePrompt, n, totalElapsed.Round(time.Millisecond))
 }
 
 // freeBytesFor is CompiledBackends' "cpu" special case (HostRAMAvailableBytes, which predates

@@ -1273,7 +1273,7 @@ supports.
 | `docs/audit-2026-09-10.md|internal/chatapp/main.go:664` | goinfer | `for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {` |
 | `docs/audit-2026-09-10.md|internal/chatapp/prequant.go:118` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-10.md|internal/chatapp/serveonly.go:133` | goinfer | `UNKEYABLE` |
-| `docs/audit-2026-09-10.md|internal/fitcmd/fit.go:107` | goinfer | `if *measure {` |
+| `docs/audit-2026-09-10.md|internal/fitcmd/fit.go:114` | goinfer | `if *measure {` |
 | `docs/audit-2026-09-10.md|internal/fitcmd/fit.go:83` | goinfer | `m, err := decoder.Load(path, decoder.Options{Quant: *quant})` |
 | `docs/audit-2026-09-10.md|internal/gemmaapp/main.go:96` | goinfer | `cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, time.Since(t0).Round(time.Millisecond), mod` |
 | `docs/audit-2026-09-10.md|internal/prequant/prequant.go:154` | goinfer | `// TEMP + RENAME, same reason as Transcode's GGUF branch above (M-12/M-33): a write to` |
