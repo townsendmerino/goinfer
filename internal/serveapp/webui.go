@@ -197,6 +197,37 @@ func (s *server) handleWebList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"repo": ref.Repo, "files": out})
 }
 
+// webPullRef resolves a pull request's repo box and the clicked selector (if any) into one Ref,
+// WITHOUT string concatenation. req.Repo alone decides ref.Repo (`pull.ParseRef` cuts at the
+// FIRST colon, so blindly appending a second selector after a box that already carries one —
+// "owner/repo:q4_k_m" typed in, then a file clicked — produced "owner/repo:q4_k_m:file.gguf",
+// re-cut into repo="owner/repo", selector="q4_k_m:file.gguf": a ".gguf"-suffixed string that
+// LOOKS like a filename and is looked up as one, verbatim, in a repo that publishes no such name.
+// Listing never showed this, because handleWebList parses req.Repo alone and only ever reads
+// ref.Repo back out of it — so every Pull button failed while List worked, which read like a bad
+// repo rather than a bad concatenation.
+//
+// A clicked file or quant REPLACES whatever selector the box already carried, rather than
+// appending to it — the click is the more specific, more recent choice. With neither clicked, the
+// box's own parse is returned as-is: re-parsing a resolved `demo:` tier would still yield the same
+// Repo/File, but would drop Pin/Bytes (ParseRef only ever sets those for a literal "demo:tier"
+// input, not for the repo/file pair a tier resolves to) — the digest a demo: pull is supposed to
+// verify against.
+func webPullRef(req webPullReq) (pull.Ref, error) {
+	base, err := pull.ParseRef(req.Repo)
+	if err != nil {
+		return pull.Ref{}, err
+	}
+	switch {
+	case req.File != "":
+		return pull.Ref{Repo: base.Repo, File: req.File}, nil
+	case req.Quant != "":
+		return pull.Ref{Repo: base.Repo, Quant: req.Quant}, nil
+	default:
+		return base, nil
+	}
+}
+
 // handleWebPull streams download progress as SSE. It reuses the pull package unchanged,
 // so the digest verification and the .part-then-rename behaviour are identical to the CLI's
 // — the UI is a second front end on one implementation, not a second implementation.
@@ -208,14 +239,7 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	spec := req.Repo
-	switch {
-	case req.File != "":
-		spec += ":" + req.File
-	case req.Quant != "":
-		spec += ":" + req.Quant
-	}
-	ref, err := pull.ParseRef(spec)
+	ref, err := webPullRef(req)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return

@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/pull"
 )
 
 // TestWebUI_disabledByDefault pins that the -web routes refuse when the flag is off. The
@@ -51,6 +53,58 @@ func TestWebUI_rejectsBadRepo(t *testing.T) {
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("repo %q: status %d, want 400", repo, w.Code)
 		}
+	}
+}
+
+// TestWebUI_pullRefReplacesSelector pins the fix for a real bug hit from the page: typing
+// "owner/repo:q4_k_m" into the repo box (List works fine — handleWebList parses req.Repo alone)
+// and then clicking a file button used to send {repo: "owner/repo:q4_k_m", file: "x.gguf"},
+// concatenated into "owner/repo:q4_k_m:x.gguf" and re-parsed. pull.ParseRef cuts at the FIRST
+// colon, so that became repo="owner/repo", selector="q4_k_m:x.gguf" — a string that still ends in
+// ".gguf" and is therefore looked up as a literal filename no repo publishes, in a repo that
+// actually has "x.gguf" under a normal name. Every Pull button failed while List kept working,
+// which reads like a bad repo rather than a bad concatenation — exactly what the user hit.
+func TestWebUI_pullRefReplacesSelector(t *testing.T) {
+	const repo = "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"
+	cases := []struct {
+		name string
+		req  webPullReq
+		want pull.Ref
+	}{
+		{"a clicked file REPLACES the box's own selector, not appends to it",
+			webPullReq{Repo: repo + ":q4_k_m", File: "qwen2.5-coder-1.5b-instruct-q8_0.gguf"},
+			pull.Ref{Repo: repo, File: "qwen2.5-coder-1.5b-instruct-q8_0.gguf"}},
+		{"a clicked file with no selector in the box (the path everyone tested by hand)",
+			webPullReq{Repo: repo, File: "qwen2.5-coder-1.5b-instruct-q8_0.gguf"},
+			pull.Ref{Repo: repo, File: "qwen2.5-coder-1.5b-instruct-q8_0.gguf"}},
+		{"a clicked quant REPLACES the box's own selector the same way",
+			webPullReq{Repo: repo + ":q4_k_m", Quant: "q8_0"},
+			pull.Ref{Repo: repo, Quant: "q8_0"}},
+	}
+	for _, c := range cases {
+		got, err := webPullRef(c.req)
+		if err != nil || got != c.want {
+			t.Errorf("%s:\n  webPullRef(%+v) = %+v, %v\n  want %+v, <nil>", c.name, c.req, got, err, c.want)
+		}
+	}
+
+	// neither file nor quant clicked: the box's own parse returns AS-IS, so a resolved demo: tier
+	// keeps its Pin/Bytes (re-parsing "repo:file" would drop them — ParseRef only ever sets those
+	// for a literal "demo:tier" input).
+	names := pull.CuratedNames()
+	if len(names) == 0 {
+		t.Fatal("no curated demo tiers to test against")
+	}
+	tier := pull.Curated()[names[0]]
+	want := pull.Ref{Repo: tier.Repo, File: tier.File, Pin: tier.SHA256, Bytes: tier.Bytes}
+	got, err := webPullRef(webPullReq{Repo: "demo:" + names[0]})
+	if err != nil || got != want {
+		t.Errorf("nothing clicked, demo:%s: webPullRef = %+v, %v, want %+v, <nil> (Pin/Bytes must survive)", names[0], got, err, want)
+	}
+
+	// an invalid repo still fails exactly as ParseRef reports it
+	if _, err := webPullRef(webPullReq{Repo: "../.."}); err == nil {
+		t.Error("webPullRef(\"../..\") = <nil> error, want ParseRef's own rejection")
 	}
 }
 
