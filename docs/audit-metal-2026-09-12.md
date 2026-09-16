@@ -449,7 +449,8 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/kernels.go:848-873` (`// ONE THREADGROUP ONLY … looping over ranks serially …
   is cheap`; `for (uint r = 0; r < R; r++)` with a 256-wide tree reduce + barrier per rank; up
   stage `Out/256` rows per thread), `metal/lora.go:211-216` (`e.Dispatch(r.pLoraDelta, tgReduceNorm,
-  tgReduceNorm, …)` — n == tg == 256, one threadgroup); `docs/audit-2026-09-10.md:1130-1176` (CUDA:
+  tgReduceNorm, …)` — n == tg == 256, one threadgroup); `docs/completed/audit-2026-09-10.md:4250-4296`
+  (moved here 2026-09-16 when the live audit's closed findings were archived; CUDA:
   "ONE block that looped over every rank, pulling ~61 MB of f32 A matrices per token through a
   single SM … 20.06 ms vs 8.89 ms"; fix "strides ranks by `blockIdx`"; Metal disposition "the same
   class of fix").
@@ -1275,7 +1276,10 @@ re-baked by the code it checks (G-04).
   text-only (no `ForwardMRoPE` in `metal/`); Gemma 4 E2B/E4B CPU-only under a "✅" row — no footnote.
   **FIXED 2026-09-13**: all three corrected/added (the int8 claim, a new Qwen-VL text-only bullet,
   a new Gemma-4 E2B/E4B carve-out on the existing bullet).
-- N-05 `docs/audit-2026-09-10.md:153` lists C-08 open; `:1216-1224` records it fixed (d9139bc).
+- N-05 `docs/audit-2026-09-10.md:153` (as it stood 2026-09-13) listed C-08 open; `:1216-1224`
+  recorded it fixed (d9139bc) — both now moved: C-08's whole entry, with its closure note, is
+  `docs/completed/audit-2026-09-10.md:1520-1552` since the live doc's 2026-09-16 restructure
+  archived every Critical/Gate/Major finding, C-08 included.
   **FIXED 2026-09-13**: the doc's own "what remains" summary line corrected (C-08 fully closed,
   G-08 partially) — the per-finding entries themselves already carried accurate closure notes.
 - N-06 `docs/tasks/task-autoresearch-loop.md:3` "not started" / §3 "do NOT point it at Metal" — it ran on
