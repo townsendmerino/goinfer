@@ -672,16 +672,30 @@ func rawPrompt(system string, turns []chat.Turn) string {
 // jsonMasker constrains output to valid JSON via logit masking; EOS/end-of-turn
 // are gated until the document is complete.
 func (s *session) jsonMasker() func(generated []int, logits []float32) {
+	// N-71 (docs/audit-2026-09-10.md): EOS/EndOfTurn alone misses the template's own turn-stop
+	// ids (s.stopIDs, resolved from tmpl.Stops()) — Llama-3's <|eot_id|> and harmony's <|end|>
+	// are neither EOS nor EndOfTurn, so without stopIDs the masker never holds them back and a
+	// constrained JSON generation could emit one mid-document. internal/serveapp/openai.go's own
+	// masker already unions eosIDs with stopIDs; this mirrors that.
 	var eos []int
 	for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {
 		if id >= 0 {
 			eos = append(eos, id)
 		}
 	}
+	eos = append(eos, s.stopIDs...)
 	g := constrain.JSON()
 	if s.schema != nil { // --schema: constrain to the schema, not just well-formed JSON
 		if sg, err := constrain.JSONSchema(s.schema); err == nil {
 			g = sg
+		} else {
+			// N-78 (docs/audit-2026-09-10.md): main's flag parsing already fail-fasts (os.Exit) on
+			// an invalid --schema before s.schema is ever set, so this branch is unreachable today
+			// — but silently downgrading to the unconstrained JSON grammar here means a future
+			// caller that sets s.schema some other way (a reload, a per-request schema) would get a
+			// silently WEAKER constraint instead of an error, the exact shape constrain's own
+			// JSONSchema/GrammarFromStruct refuse to produce elsewhere. Say so instead of hiding it.
+			fmt.Fprintf(os.Stderr, "warning: schema failed to compile (%v); falling back to unconstrained JSON\n", err)
 		}
 	}
 	m := constrain.NewMasker(g, s.tokenBytes, eos).StopWhenComplete()

@@ -550,12 +550,23 @@ func (s *Session) schemaMasker(schema []byte) func(generated []int, logits []flo
 	if err != nil { // compile-time constant schema: this is a programmer error
 		panic(fmt.Sprintf("agent: bad decision schema: %v", err))
 	}
+	// N-71 (docs/audit-2026-09-10.md): EOS/EndOfTurn alone misses the template's own turn-stop
+	// ids (s.stopIDs, resolved from tmpl.Stops()) — Llama-3's <|eot_id|> and harmony's <|end|>
+	// are neither EOS nor EndOfTurn, so without stopIDs the masker never holds them back and a
+	// constrained JSON generation could emit one mid-document. internal/serveapp/openai.go's own
+	// masker already unions eosIDs with stopIDs; this mirrors that.
+	// N-71 (docs/audit-2026-09-10.md): EOS/EndOfTurn alone misses the template's own turn-stop
+	// ids (s.stopIDs, resolved from tmpl.Stops()) — Llama-3's <|eot_id|> and harmony's <|end|>
+	// are neither EOS nor EndOfTurn, so without stopIDs the masker never holds them back and a
+	// constrained JSON generation could emit one mid-document. internal/serveapp/openai.go's own
+	// masker already unions eosIDs with stopIDs; this mirrors that.
 	var eos []int
 	for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {
 		if id >= 0 {
 			eos = append(eos, id)
 		}
 	}
+	eos = append(eos, s.stopIDs...)
 	return constrain.NewMasker(g, s.tokenBytes, eos).StopWhenComplete().Process
 }
 

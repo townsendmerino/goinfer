@@ -190,6 +190,60 @@ func TestGrammarFromStruct_roundTrip(t *testing.T) {
 	}
 }
 
+// TestGrammarFromStruct_byteSliceAndFixedArray is N-74 (docs/audit-2026-09-10.md):
+//   - []byte used to map to {"type":"array","items":{"type":"integer"}}, but encoding/json's
+//     Marshal/Unmarshal treat []byte as a SPECIAL CASE — a base64-encoded STRING, never an
+//     element-wise array of integers — so every grammar-legal output was guaranteed to fail
+//     json.Unmarshal. It must map to {"type":"string"} instead.
+//   - A fixed-size Go array ([N]T) got no minItems/maxItems, so the grammar could legally
+//     produce the wrong element count; json.Unmarshal into [N]T does not error on that (it
+//     silently truncates or zero-pads), so the schema's "shape is guaranteed" promise (M-28,
+//     09-02) held even less than the slice case — no error ANYWHERE, just silently wrong data.
+//
+// Not covered here: base64 CONTENT validity. A random grammar-legal string is not guaranteed to
+// be valid base64 (this package has no "pattern" JSON Schema keyword to constrain that), so this
+// checks the SCHEMA shape directly rather than fuzzing a full struct round-trip — the fix's own
+// scope is the "array vs string" and "no length limit" shape guarantees M-28 is about, matching
+// what json.Unmarshal actually rejects on SHAPE (before ever getting to whether the bytes decode).
+func TestGrammarFromStruct_byteSliceAndFixedArray(t *testing.T) {
+	type Blob struct {
+		Data  []byte  `json:"data"`
+		Fixed [3]int  `json:"fixed"`
+		Tag   *string `json:"tag,omitempty"`
+	}
+
+	// A hand-built, schema-legal payload with REAL base64 content unmarshals cleanly — the
+	// string shape is genuinely compatible with []byte, not just "no longer an array".
+	var b Blob
+	valid := `{"data":"aGVsbG8=","fixed":[1,2,3]}`
+	if err := json.Unmarshal([]byte(valid), &b); err != nil {
+		t.Fatalf("a valid string-shaped payload failed to unmarshal: %v", err)
+	}
+	if string(b.Data) != "hello" {
+		t.Errorf("Data = %q, want %q", b.Data, "hello")
+	}
+
+	// The schema itself, structurally: data is a string (not an array), fixed pins min==max==3.
+	raw, err := SchemaFromStruct(Blob{})
+	if err != nil {
+		t.Fatalf("SchemaFromStruct: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parse schema: %v", err)
+	}
+	props := doc["properties"].(map[string]any)
+	data := props["data"].(map[string]any)
+	if data["type"] != "string" {
+		t.Errorf(`schema for []byte field "data" has type %v, want "string"`, data["type"])
+	}
+	fixed := props["fixed"].(map[string]any)
+	if fixed["minItems"] != float64(3) || fixed["maxItems"] != float64(3) {
+		t.Errorf(`schema for [3]int field "fixed" has minItems=%v maxItems=%v, want both 3`,
+			fixed["minItems"], fixed["maxItems"])
+	}
+}
+
 // TestSchema_unsupported confirms unenforceable keywords are loud errors.
 func TestSchema_unsupported(t *testing.T) {
 	for _, s := range []string{
@@ -220,6 +274,11 @@ func TestSchema_rejectsUnsatisfiable(t *testing.T) {
 		// negative bounds are not valid non-negative integers.
 		`{"type":"array","items":{"type":"integer"},"maxItems":-1}`,
 		`{"type":"array","items":{"type":"integer"},"minItems":-3}`,
+		// N-76 (docs/audit-2026-09-10.md): a maxItems too large to fit an int used to convert
+		// via implementation-defined float64->int behavior, which can come back NEGATIVE — and
+		// maxItems<0 means "unbounded" (the opposite of what a huge bound should mean).
+		`{"type":"array","items":{"type":"integer"},"maxItems":1e30}`,
+		`{"type":"array","items":{"type":"integer"},"minItems":1e30}`,
 	}
 	for _, s := range reject {
 		if _, err := JSONSchema([]byte(s)); err == nil {
@@ -565,6 +624,52 @@ func TestSchemaFromStruct_unexportedEmbedIsStillPromoted(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"id":7,"name":"x"}`), &p); err != nil || p.ID != 7 {
 		t.Fatalf("premise: json.Unmarshal promotes id through an unexported embed "+
 			"(got ID=%d, err=%v)", p.ID, err)
+	}
+}
+
+// TestSchemaFromStruct_unexportedEmbedPromotedAsNestedFieldToo is N-75 (docs/audit-2026-09-10.md):
+// the SAME shape as TestSchemaFromStruct_unexportedEmbedIsStillPromoted above — accepted there
+// because SchemaFromStruct calls structSchema directly for the TOP-level struct — used to be
+// LOUDLY refused the moment it appeared as a NESTED field type instead, because typeSchema's own
+// hasExportedFields gate (checked before structSchema ever runs for a nested struct) did not
+// share structSchema's own V-14 fix for an unexported-type anonymous embed.
+func TestSchemaFromStruct_unexportedEmbedPromotedAsNestedFieldToo(t *testing.T) {
+	type base struct {
+		ID int `json:"id"`
+	}
+	// Person has NO directly-exported field of its own — id is its ONLY content, entirely
+	// through the unexported embed. This is what isolates the bug: a Person with any other
+	// exported field alongside the embed (e.g. a Name string) would make hasExportedFields
+	// return true via THAT field regardless of whether the embed's own promotion is fixed,
+	// proving nothing about the embed-specific path.
+	type Person struct {
+		base
+	}
+	type Wrapper struct {
+		P Person `json:"p"`
+	}
+	raw, err := SchemaFromStruct(Wrapper{})
+	if err != nil {
+		t.Fatalf("SchemaFromStruct: %v — Person has real promoted content (id) entirely "+
+			"through its unexported embed; hasExportedFields must not refuse it just because "+
+			"it is reached as a nested field type instead of the top-level struct", err)
+	}
+	var doc struct {
+		Properties map[string]struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+			Required   []string                   `json:"required"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parse schema: %v", err)
+	}
+	p, ok := doc.Properties["p"]
+	if !ok {
+		t.Fatalf(`no "p" property in schema: %s`, raw)
+	}
+	if _, promoted := p.Properties["id"]; !promoted {
+		t.Errorf(`nested Person's embedded unexported-type "base" was not promoted; `+
+			"p.properties = %v", slices.Sorted(maps.Keys(p.Properties)))
 	}
 }
 

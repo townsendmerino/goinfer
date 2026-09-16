@@ -1041,11 +1041,11 @@ supports.
 | `docs/audit-2026-09-10.md|chat/chat.go:169` | goinfer | `case strings.Contains(t, "[INST]"):` |
 | `docs/audit-2026-09-10.md|chat/chat.go:2` | goinfer | `// chat template expects — no Jinja engine. goinfer loads a handful of families` |
 | `docs/audit-2026-09-10.md|chat/templates.go:239` | goinfer | `func Mistral() *Template {` |
-| `docs/audit-2026-09-10.md|chat/tools.go:108` | goinfer | `func funcDefJSON(t Tool) string {` |
-| `docs/audit-2026-09-10.md|chat/tools.go:191` | goinfer | `func renderMistralTools(system string, turns []Turn, tools []Tool) string {` |
+| `docs/audit-2026-09-10.md|chat/tools.go:109` | goinfer | `func funcDefJSON(t Tool) string {` |
+| `docs/audit-2026-09-10.md|chat/tools.go:214` | goinfer | `func renderMistralTools(system string, turns []Turn, tools []Tool) string {` |
 | `docs/audit-2026-09-10.md|cmd/gate/gpu.go:445` | goinfer | `g.expect = []string{"cleangpu", "seam", "suite", "parity", "cgofree", "lifecycle", "pref` |
 | `docs/audit-2026-09-10.md|cmd/prequant/main.go:30` | goinfer | `quant := flag.String("quant", "int8int8", "weight quant baked into the bundle: int8int8 ` |
-| `docs/audit-2026-09-10.md|constrain/constrain.go:236` | goinfer | `if plain && !canEnd && m.plainOK.has(id) {` |
+| `docs/audit-2026-09-10.md|constrain/constrain.go:251` | goinfer | `if plain && !canEnd && m.plainOK.has(id) {` |
 | `docs/audit-2026-09-10.md|constrain/plainstring.go:339` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-10.md|constrain/reflect.go:215` | goinfer | `if !hasExportedFields(t) {` |
 | `docs/audit-2026-09-10.md|constrain/reflect.go:220` | goinfer | `case reflect.Slice, reflect.Array:` |
@@ -1240,9 +1240,9 @@ supports.
 | `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:343` | goinfer | `turns := append([]msg(nil), s.history...)` |
 | `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:454` | goinfer | `func (s *Session) streamGen(ctx context.Context, tokens <-chan int, gen *decoder.Generat` |
 | `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:518` | goinfer | `out[i] = tokenizer.Segment{Text: seg.Text, Special: seg.Special}` |
-| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:554` | goinfer | `for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {` |
-| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:559` | goinfer | `return constrain.NewMasker(g, s.tokenBytes, eos).StopWhenComplete().Process` |
-| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:609` | goinfer | `tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})` |
+| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:564` | goinfer | `for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {` |
+| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:570` | goinfer | `return constrain.NewMasker(g, s.tokenBytes, eos).StopWhenComplete().Process` |
+| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:620` | goinfer | `tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})` |
 | `docs/audit-2026-09-10.md|examples/embed/main.go:36` | goinfer | `tok, err := tokenizer.LoadGGUF(path)` |
 | `docs/audit-2026-09-10.md|gpu/attention.go:34` | goinfer | `let theta = f32(p.pos) * invFreq[d];` |
 | `docs/audit-2026-09-10.md|gpu/backend.go:156` | goinfer | `// M=1 only (decode): the M>1 (prefill/tiled) case has no int4 GEMM kernel on this backe` |
@@ -1270,7 +1270,7 @@ supports.
 | `docs/audit-2026-09-10.md|internal/chatapp/main.go:421` | goinfer | `s.tokenBytes = constrain.TokenBytes(s.vocab, tk.TokenText)` |
 | `docs/audit-2026-09-10.md|internal/chatapp/main.go:422` | goinfer | `tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})` |
 | `docs/audit-2026-09-10.md|internal/chatapp/main.go:540` | goinfer | `func (s *session) streamGen(tokens <-chan int, onChunk func(string)) (text string, nTok ` |
-| `docs/audit-2026-09-10.md|internal/chatapp/main.go:676` | goinfer | `for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {` |
+| `docs/audit-2026-09-10.md|internal/chatapp/main.go:681` | goinfer | `for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {` |
 | `docs/audit-2026-09-10.md|internal/chatapp/prequant.go:118` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-10.md|internal/chatapp/serveonly.go:133` | goinfer | `UNKEYABLE` |
 | `docs/audit-2026-09-10.md|internal/fitcmd/fit.go:114` | goinfer | `if *measure {` |
@@ -1726,8 +1726,8 @@ supports.
 | `docs/tasks/task-recompute-audit.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
 | `docs/tasks/task-recompute-audit.md|decoder/session.go:98` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
 | `docs/tasks/task-recompute-audit.md|decoder/speculative.go:130` | goinfer | `if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {` |
-| `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:77` | goinfer | `func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok bool) {` |
-| `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:92` | goinfer | `func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {` |
+| `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:78` | goinfer | `func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok bool) {` |
+| `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:93` | goinfer | `func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|constrain/constrain.go:23` | goinfer | `type Grammar interface {` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|constrain/tool_grammar.go:30` | goinfer | `func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, paramSchema [` |
 | `docs/tasks/task-verification-surface-audit.md|decoder/blockspec.go:588` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |

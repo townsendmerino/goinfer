@@ -43,6 +43,21 @@ func refSplitO200k(s string) []string {
 				// leaves the second to attach to the word. A first cut of this oracle only matched
 				// a run at end-of-input, disagreed with the walker, and was itself the thing that
 				// was wrong — the walker had it right, and so does splitGPT2, which shares the rule.
+				//
+				// N-73 (docs/audit-2026-09-10.md), investigated 2026-09-16, NOT fixed: ws-1 below
+				// assumes the run's last rune is one byte (an ASCII space) — a multi-byte trailing
+				// whitespace rune would be sliced mid-character. Dormant today (the random alphabet
+				// below is ASCII-whitespace-only), and NOT a safe drive-by fix: a first attempt at
+				// fixing the byte/rune slicing directly exposed a SECOND, deeper mismatch this
+				// oracle already has for multi-byte whitespace — Go's RE2 `\s` (used unqualified in
+				// o200kAlts[3]/[4]'s patterns, e.g. `^ ?[^\s\p{L}\p{N}]+...`) is ASCII-only
+				// ([\t\n\f\r ]), while unicode.IsSpace here is Unicode-aware, so a rune like U+2003
+				// EM SPACE is "not whitespace" to the regex alternatives but "whitespace" to this
+				// branch — the two halves of the SAME oracle disagree with each other before either
+				// is compared to the walker. Fixing the byte-slice alone reproduces a wrong answer
+				// with more confidence, not a right one; a real fix needs deciding (and verifying
+				// against the real tiktoken/HF reference) what "whitespace" means here for every
+				// alternative consistently, not just this one branch.
 				ws := 0
 				for _, r := range s {
 					if !unicode.IsSpace(r) {

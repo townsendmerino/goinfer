@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -110,10 +111,32 @@ func funcDefJSON(t Tool) string {
 		"name": t.Name, "description": t.Description, "parameters": json.RawMessage(t.Parameters),
 	}}
 	b, _ := json.Marshal(m)
-	return string(b)
+	return tojsonEscape(string(b))
 }
 
-func jsonStr(s string) string { b, _ := json.Marshal(s); return string(b) }
+func jsonStr(s string) string { b, _ := json.Marshal(s); return tojsonEscape(string(b)) }
+
+// tojsonEscape applies the one HTML-safety substitution encoding/json's default escaping
+// (SetEscapeHTML's true default, on by construction here since we never turn it off) leaves out.
+// N-80 (docs/audit-2026-09-10.md): encoding/json already turns the raw bytes for less-than,
+// greater-than and ampersand into their six-character backslash-u-NNNN escapes — the same
+// substitution Jinja2's own htmlsafe_json_dumps (what the `| tojson` filter these chat templates
+// use calls) makes for those three. The fourth one, an apostrophe, is the one encoding/json has
+// no flag for, so it was missing here — a tool description or default value containing one
+// rendered one byte different from what the reference Jinja template would produce. (The
+// audit's own citation for this said Jinja renders it as the HTML entity for an apostrophe;
+// verified 2026-09-16 against jinja2's actual source (src/jinja2/utils.py,
+// htmlsafe_json_dumps) and it is the same backslash-u-NNNN form as the other three, not an
+// entity — correcting the claim rather than reproducing it.)
+func tojsonEscape(s string) string {
+	return strings.ReplaceAll(s, "'", apostropheEscape)
+}
+
+// apostropheEscape is the exact 6-byte sequence Jinja2's htmlsafe_json_dumps substitutes for an
+// apostrophe (backslash, lowercase u, then the code point 0027 in hex) — built from Sprintf
+// rather than a literal so no editing tool along the way can silently decode it back into a raw
+// apostrophe, which is exactly the bug this function exists to avoid reintroducing.
+var apostropheEscape = fmt.Sprintf(`\u%04x`, '\'')
 
 // callObjectJSON renders {"name":..,"arguments":{...}} (argsKey lets Llama-3 use
 // "parameters"); used to render assistant tool-call history.

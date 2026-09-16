@@ -5,6 +5,8 @@ package chatapp
 import (
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // R6 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): the release's embedded-tier chat
@@ -51,4 +53,21 @@ func TestEmbedBuild_versionReportsWhatWasActuallyBaked(t *testing.T) {
 			t.Errorf("injected embeddedTier/embeddedQuant not reflected in --version output:\n%s", report)
 		}
 	})
+}
+
+// N-78 (docs/audit-2026-09-10.md): decoder.NewModel (what loadEmbedded's prequant path calls,
+// unlike loadFromPath's decoder.Load) takes no *decoder.Options, so there is no chokepoint that
+// could ever merge opts.LoRA into a .giw bundle's already-serialized weights. --lora used to be
+// silently dropped instead of rejected. This drives loadEmbedded directly with a real (if tiny,
+// gitignored) staged model.giw present — see the file-level comment on why that asset is
+// required at all under -tags prequant — but relies on the LoRA check firing BEFORE giw.Read, so
+// the stub's bytes are never actually parsed as a bundle.
+func TestLoadEmbedded_rejectsLoRAInsteadOfSilentlyIgnoringIt(t *testing.T) {
+	_, err := loadEmbedded(false, decoder.Options{LoRA: "/some/adapter/dir"})
+	if err == nil {
+		t.Fatal("loadEmbedded(opts.LoRA set) returned no error — a prequant build has no way to apply it and used to silently ignore it")
+	}
+	if !strings.Contains(err.Error(), "lora") && !strings.Contains(err.Error(), "LoRA") {
+		t.Errorf("error should name LoRA as the reason, got: %v", err)
+	}
 }

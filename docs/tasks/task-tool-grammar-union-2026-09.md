@@ -17,7 +17,7 @@
 ## 1. Why
 
 **The failure.** With two or more tools and `tool_choice` left at `auto`, the model free-runs.
-`ParseToolCalls` (`chat/tools.go:92`) then parses whatever came out, and malformed JSON yields no
+`ParseToolCalls` (`chat/tools.go:93`) then parses whatever came out, and malformed JSON yields no
 call — which the harness reads as a prose answer where it expected a tool result. It retries,
 re-reads files it has already read, and burns the context window on the retry loop. The damage is
 not one bad turn; it is that a bad turn looks like a *different kind* of turn.
@@ -62,7 +62,7 @@ case is where things fall apart. Neither Ollama nor llama.cpp's default path mak
   drops into `constrain.NewMasker` unchanged.
 - **Masking already enables grammar-fused speculative decode.** `gr.masker` is what turns it on
   (`internal/serveapp/tools.go`), so a union masker that respects the interface inherits it.
-- **Only four templates have a constrainable call form.** `ToolCallWrapper` (`chat/tools.go:77`)
+- **Only four templates have a constrainable call form.** `ToolCallWrapper` (`chat/tools.go:78`)
   covers `chatml`/`mellum2` (`<tool_call>\n` … `\n</tool_call>`), `llama3` (**empty prefix and
   suffix**, `parameters` as the args key), and `mistral` (`[TOOL_CALLS] `, one-element array).
   Everything else returns `ok=false` and is untouched by this work.
@@ -220,8 +220,8 @@ and a tool call that cannot fail to parse.
 `constrain/tool_grammar.go:30` (`ToolCallGrammar`, the single-tool case) ·
 `constrain/constrain.go:23` (the `Grammar` interface, including `Clone`) · `constrain/schema.go`
 (the keyword contract, and `oneOf` among the unenforced) · `internal/serveapp/tools.go` ("tight
-when unambiguous", and `gr.masker` enabling grammar-fused spec) · `chat/tools.go:77` (the four
-wrapper families, and llama3's empty prefix) · `chat/tools.go:92` (`ParseToolCalls`, where a
+when unambiguous", and `gr.masker` enabling grammar-fused spec) · `chat/tools.go:78` (the four
+wrapper families, and llama3's empty prefix) · `chat/tools.go:93` (`ParseToolCalls`, where a
 malformed call becomes a prose answer) · `docs/server.md:144` (the user-facing claim this rewrites)
 · `docs/QUEUE.md:201` (N-18, open) ·
 [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) (mode 3, G5's preconditions) ·

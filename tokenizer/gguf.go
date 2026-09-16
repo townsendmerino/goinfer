@@ -321,9 +321,20 @@ func byteLevelKnobs(pre string) (maxDigits int, form norm.Form, normOn, ignoreMe
 		return 3, norm.NFC, false, false, false, shapeCl100k, true
 	case "gpt-2", "default", "":
 		// GPT-2's OWN alternation is not the cl100k one either (no contraction clause, ` ?\p{N}+`
-		// rather than a capped run), so these knobs are the historical behaviour and not a claim of
-		// correctness — see PreTokenizerDecline. Reported as known so the decline names the real
-		// remaining gap (the walker) rather than the name lookup.
+		// rather than a capped run) — shapeGPT2Original implements it directly (split_gpt2orig.go,
+		// its own golden-tested file), not a fallback of unknown correctness (N-72,
+		// docs/audit-2026-09-10.md corrects an earlier, more hedged version of this comment).
+		//
+		// "default" is grouped in here too, but it should NOT be: llama.cpp's own source
+		// (llama-vocab.cpp, fetched directly 2026-09-16) shows LLAMA_VOCAB_PRE_TYPE_DEFAULT falls
+		// to that switch's OWN default: case, whose regex_exprs is FOUR separate patterns —
+		// leading punctuation (`[\p{P}\$\+<=>\^~\|]+`), THEN the same alternation GPT-2 uses, THEN
+		// unbounded digit runs (`\p{N}+`), THEN a fixed 3-digit grouping (`[0-9][0-9][0-9]`) — a
+		// materially different, multi-pass shape from GPT-2's single pattern. A pre="default" (or
+		// absent) GGUF is walked with GPT-2's shape here, a shape the file never actually declared.
+		// Confirmed, not "plausible, from llama.cpp as remembered" as the earlier version of this
+		// finding put it — but implementing the real DEFAULT shape (a new splitShape, its own
+		// goldens) is real new work, deferred rather than rushed into this comment fix.
 		return 1, norm.NFC, false, false, false, shapeGPT2Original, true
 	default:
 		return 1, norm.NFC, false, false, false, shapeUnknown, false

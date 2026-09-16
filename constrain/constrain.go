@@ -229,6 +229,21 @@ func (m *Masker) maskID(g Grammar, id int, canEnd, plain bool) bool {
 	if m.eosAt(id) {
 		return !canEnd // EOS only once the document is complete
 	}
+	// N-79 (docs/audit-2026-09-10.md, investigated 2026-09-16, NOT fixed — deferred, see below):
+	// only ids in eosIDs are masked-until-canEnd; every other id, including a special/control
+	// token that is neither EOS nor a template stop id, is judged purely by TryBytes(b) below. A
+	// control token's literal surface (tokenizer.TokenText's documented behavior, see
+	// sentencepiece.go's TokenText) is ordinary printable text with no '"' or backslash, which is
+	// plain-string-legal JSON content — so inside a string value TryBytes accepts it like any
+	// other run of bytes, and a real control-token id can leak into constrained output as if it
+	// were content. Fixing this needs a DIFFERENT semantics than eosIDs: eosIDs are masked only
+	// UNTIL canEnd, but a control token must be forbidden ALWAYS, everywhere, including mid-
+	// string — that is new plumbing (an always-forbidden id set threaded through NewMasker and
+	// every call site: internal/serveapp/openai.go, internal/chatapp/main.go,
+	// demo/agent/agent/agent.go, plus a tokenizer-side way to enumerate "special/control ids"
+	// uniformly across byte-level/SentencePiece/WordPiece modes — isAdded exists but is
+	// unexported and not obviously complete for this purpose), not a local fix to this function.
+	// Deferred to individual review rather than bolted on here.
 	// Plain-string fast path: one bit test instead of a grammar walk, for the 96.88% of ids
 	// that cannot leave a string state or make it invalid (plainstring.go). `!canEnd` is
 	// belt-and-braces — a document cannot be complete mid-string, so the whitespace rule

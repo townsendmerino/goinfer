@@ -26,6 +26,10 @@ func refSplitGPT2Original(s string) []string {
 		var m string
 		for _, re := range gpt2OrigAlts {
 			if re == nil {
+				// Same \s+(?!\S) oracle as split_o200k_test.go's refSplitO200k — see its comment
+				// on this branch for N-73 (docs/audit-2026-09-10.md): a real multi-byte-whitespace
+				// fix needs resolving a deeper Unicode-vs-ASCII `\s` mismatch first, not just this
+				// byte-slice. Dormant here too (ASCII-whitespace-only alphabet below).
 				ws := 0
 				for _, r := range s {
 					if !unicode.IsSpace(r) {

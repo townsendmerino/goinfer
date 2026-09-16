@@ -827,6 +827,13 @@ func (t *Tokenizer) DecodePiece(id int) (string, error) {
 // decoder; a SentencePiece byte-fallback token yields its single raw byte; a
 // normal SentencePiece piece has ▁ mapped to a space. Special tokens render as
 // their literal surface form (so a grammar that forbids them masks them out).
+//
+// That parenthetical is only true where the surface is grammar-illegal in context — e.g.
+// outside a string, where a literal '<' breaks JSON syntax. INSIDE a JSON string value, a
+// special token's surface is typically ordinary printable text (no '"' or backslash), which is
+// plain-string-legal content, so it is NOT masked out there. See N-79
+// (docs/audit-2026-09-10.md, investigated 2026-09-16, deferred) and constrain/constrain.go's
+// maskID for the fuller explanation and why fixing it needs new plumbing, not a local patch.
 // An out-of-range id returns nil.
 func (t *Tokenizer) TokenText(id int) []byte {
 	if id < 0 || id >= len(t.idToPiece) {

@@ -218,11 +218,29 @@ func typeSchema(t reflect.Type, visited map[reflect.Type]bool) (map[string]any, 
 		}
 		return structSchema(t, visited)
 	case reflect.Slice, reflect.Array:
+		// N-74 (docs/audit-2026-09-10.md): []byte is encoding/json's own special case — it
+		// marshals/unmarshals as a base64 STRING, never as a JSON array of integers, regardless
+		// of what a naive element-type schema would say. Emitting {"type":"array","items":
+		// {"type":"integer"}} for it guaranteed json.Unmarshal would fail on every grammar-legal
+		// output — exactly the "shape is guaranteed" violation M-28 (09-02) this function exists
+		// to prevent for other cases.
+		if t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Uint8 {
+			return map[string]any{"type": "string"}, nil
+		}
 		items, err := typeSchema(t.Elem(), visited)
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"type": "array", "items": items}, nil
+		schema := map[string]any{"type": "array", "items": items}
+		// A fixed-size Go array must constrain the model to exactly that many elements: Go's
+		// json.Unmarshal into [N]T does not error on the wrong count — it silently truncates
+		// (extra JSON elements dropped) or zero-pads (too few) — so an unconstrained length here
+		// is a second guaranteed-shape violation, just a silent-wrong one instead of an error.
+		if t.Kind() == reflect.Array {
+			schema["minItems"] = t.Len()
+			schema["maxItems"] = t.Len()
+		}
+		return schema, nil
 	default:
 		return nil, fmt.Errorf("unsupported type %v", t)
 	}
@@ -251,8 +269,31 @@ func jsonField(f reflect.StructField) (name string, optional, skip bool) {
 }
 
 // hasExportedFields reports whether t has at least one exported, non-json:"-" field.
+//
+// N-75 (docs/audit-2026-09-10.md): this used to skip EVERY unexported field uniformly,
+// including an anonymous embed of an unexported-TYPE struct — but encoding/json (and this
+// package's own structSchema, fixed for the same reason at V-14, docs/review-2026-09-04.md)
+// still promotes THAT struct's own exported fields; only the embed's field NAME being
+// unexported (it equals the type name) doesn't mean it carries no exported content. The gap
+// was inconsistent rather than silent: SchemaFromStruct calls structSchema directly for the
+// TOP-level struct (never through this gate), so a struct shaped this way was accepted there
+// but refused the moment the identical shape appeared as a NESTED field type (typeSchema's
+// own hasExportedFields gate, which every non-top-level struct goes through) — "has no
+// exported fields" for a type that, one level up, plainly did.
 func hasExportedFields(t reflect.Type) bool {
 	for f := range t.Fields() {
+		if f.Anonymous {
+			et := f.Type
+			if et.Kind() == reflect.Pointer {
+				et = et.Elem()
+			}
+			if !f.IsExported() && et.Kind() == reflect.Struct {
+				if hasExportedFields(et) { // recurse: the embed's own exported fields still promote
+					return true
+				}
+				continue
+			}
+		}
 		if !f.IsExported() {
 			continue
 		}

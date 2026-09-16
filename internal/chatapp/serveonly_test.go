@@ -27,6 +27,14 @@ func TestServeOnlyInvocation(t *testing.T) {
 		{"chat's own pull", []string{"pull", "hf:owner/repo:q4_k_m"}, ""},
 		{"no args", nil, ""},
 		{"a path that merely contains the word serve", []string{"--model", "/models/serve/m.gguf"}, ""},
+		// N-77 (docs/audit-2026-09-10.md): every argv token used to be checked uniformly, with no
+		// notion of "this token is a FLAG'S VALUE, not a flag or subcommand" — a chat flag's value
+		// that happens to equal a serveOnly word (most plausibly "serve" itself, via --system)
+		// wrongly triggered the redirect.
+		{"a flag VALUE that happens to equal a serveOnly word", []string{"--system", "serve"}, ""},
+		{"same, with a serve-only flag genuinely after it", []string{"--system", "serve", "--web"}, "--web"},
+		{"a genuine serve-only flag is still caught when NOT preceded by a value-taking flag",
+			[]string{"--model", "m.gguf", "serve"}, "serve"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := serveOnlyInvocation(tc.args); got != tc.want {

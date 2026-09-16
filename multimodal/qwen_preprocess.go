@@ -184,8 +184,15 @@ func qwenSmartResize(h, w, factor, minPixels, maxPixels int) (int, int) {
 	wb := max(factor, roundF(w))
 	if hb*wb > maxPixels {
 		beta := math.Sqrt(float64(h*w) / float64(maxPixels))
-		// max(factor, …): an extreme aspect ratio floors a dimension to 0 → empty
-		// pixel_values with no error (HF raises past ratio 200). Keep at least one cell.
+		// N-81 (docs/audit-2026-09-10.md, re-verified 2026-09-16, no action needed): HF's
+		// smart_resize raises ValueError past aspect ratio 200 instead of returning a
+		// resized shape at all; this function has no error return (int, int) only, and
+		// changing that ripples through every caller for what upstream itself treats as a
+		// malformed-input rejection, not a resizing decision. max(factor, …) below is the
+		// deliberate choice already made here: an extreme ratio floors a dimension to 0 →
+		// empty pixel_values with no error, so flooring to one cell trades an HF-parity
+		// crash for a degraded-but-non-crashing grid on an input real models don't produce.
+		// Kept as documented, acknowledged behavior rather than added scope this batch.
 		hb = max(factor, int(math.Floor(float64(h)/beta/float64(factor)))*factor)
 		wb = max(factor, int(math.Floor(float64(w)/beta/float64(factor)))*factor)
 	} else if hb*wb < minPixels {

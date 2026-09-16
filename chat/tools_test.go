@@ -334,6 +334,30 @@ func TestChatML_noSystem_documentedDivergence(t *testing.T) {
 	}
 }
 
+// TestFuncDefJSON_escapesApostropheLikeJinjaTojson is N-80 (docs/audit-2026-09-10.md):
+// encoding/json's default HTML-escaping already turns the raw bytes for less-than, greater-than
+// and ampersand into their backslash-u-NNNN escapes, matching Jinja2's htmlsafe_json_dumps (what
+// `| tojson` calls) exactly for those three — but tojson also escapes an apostrophe the same
+// way, which encoding/json has no flag for, so a tool description containing one used to render
+// one byte different from what the reference template produces. Verified 2026-09-16 against
+// jinja2's own source (src/jinja2/utils.py) that the substitution is that backslash-u-NNNN form,
+// not the HTML entity the audit's own citation named — this pins the verified form via the
+// production code's own apostropheEscape rather than retyping the escape sequence by hand (an
+// easy way to reintroduce a decoded raw apostrophe by accident, see tools.go's comment on it).
+func TestFuncDefJSON_escapesApostropheLikeJinjaTojson(t *testing.T) {
+	got := funcDefJSON(Tool{
+		Name:        "get_weather",
+		Description: "user's preferred weather tool",
+		Parameters:  json.RawMessage(`{}`),
+	})
+	if strings.Contains(got, "'") {
+		t.Errorf("funcDefJSON left a literal apostrophe unescaped: %s", got)
+	}
+	if !strings.Contains(got, "user"+apostropheEscape+"s") {
+		t.Errorf("expected \"user's\" to render with Jinja's tojson apostrophe escape, got: %s", got)
+	}
+}
+
 // loadToolGoldenPlain reads a non-tools golden (chatml.json, not tools_chatml.json).
 func loadToolGoldenPlain(t *testing.T, fam string) *toolGolden {
 	t.Helper()

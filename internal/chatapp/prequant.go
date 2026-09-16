@@ -37,6 +37,13 @@ const quantIsFixedAtBuildTime = true
 // On a bundle mismatch (version/quant/CRC — e.g. a stale build) it returns the
 // error so main can report it; the user can fall back with --model <gguf>.
 func loadEmbedded(_ bool, opts decoder.Options) (*session, error) {
+	// N-78 (docs/audit-2026-09-10.md): decoder.NewModel below (unlike decoder.Load, which
+	// loadFromPath uses) takes no *decoder.Options at all — there is no chokepoint downstream of
+	// this function that could ever apply opts.LoRA to an already-serialized .giw bundle. Silently
+	// dropping it made --lora on a prequant build a no-op that looked like a merged adapter.
+	if opts.LoRA != "" {
+		return nil, fmt.Errorf("--lora is not supported on a prequant build: the bundle's weights are pre-quantized and aliased from the binary image, with no base to merge an adapter into (rebuild with a safetensors base via --model, or use a non-prequant build)")
+	}
 	t0 := time.Now()
 	weightsBlob, tokGGUF, err := giw.Read(modelGIW)
 	if err != nil {

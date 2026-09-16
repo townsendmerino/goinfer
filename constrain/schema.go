@@ -337,6 +337,15 @@ func intKeyword(s map[string]any, key string) (val int, present bool, err error)
 	if f < 0 || f != math.Trunc(f) {
 		return 0, true, fmt.Errorf("constrain: %s must be a non-negative integer, got %v", key, raw)
 	}
+	// N-76 (docs/audit-2026-09-10.md): converting a float64 that does not fit in an int is
+	// IMPLEMENTATION-DEFINED per the Go spec — on amd64/arm64 it can come back negative, and
+	// maxItems specifically treats <0 as "unbounded" (node.maxItems' own doc comment above).
+	// A huge, presumably-hostile maxItems would then silently mean NO limit instead of being
+	// refused or clamped — the opposite of what a bound is for. Refuse rather than clamp: a
+	// caller asking for more items than fit in an int has no sane bounded interpretation here.
+	if f > float64(math.MaxInt) {
+		return 0, true, fmt.Errorf("constrain: %s is too large (%v exceeds %d)", key, raw, math.MaxInt)
+	}
 	return int(f), true, nil
 }
 
