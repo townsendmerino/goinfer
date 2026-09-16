@@ -52,15 +52,41 @@ for c in "${CMDS[@]}"; do
 	ran=$((ran + 1))
 done
 
-# smoke-help: the command is not executed (it needs a real model), but every flag it names must
-# exist. That catches the README documenting a flag the binary does not have — which is exactly
-# what `goinfer-chat -web` was: "flag provided but not defined: -web".
+# M-45 (docs/audit-2026-09-10.md): the smoke-help flag-parity check below used to test whichever
+# `serve` binary the <!-- smoke --> commands happened to install into $GOBIN — which is always the
+# PUBLISHED @latest module (README.md's own `go install .../cmd/serve@latest` line), never this
+# checkout. That means a README line documenting a flag added at HEAD read red until the next tag
+# landed (a gate "red by design" is one people learn to ignore), and a flag REMOVED at HEAD read
+# green right up until publish, then failed only after the fact. Build from the actual checkout
+# ($ROOT, not $WORK — $WORK is deliberately an empty dir simulating a stranger with no checkout,
+# the scenario every OTHER check in this script still needs; only this one flag-parity check wants
+# HEAD) and overwrite whatever $GOBIN/serve the @latest install above produced, so the flag check
+# always tests what is actually being committed, not what was last published. Native
+# linux/amd64 only — matching this repo's own root `go build ./...` CI job, not a
+# cross-compile matrix: a platform-specific compile break belongs to a different gate's job, not
+# README-flag-accuracy testing.
 if [ "${#HELPCMDS[@]}" -gt 0 ]; then
+	echo "==> building serve from this checkout (HEAD, not @latest) for the flag-parity check"
+	if ! ( cd "$ROOT" && GOWORK=off go build -o "$GOBIN/serve" ./cmd/serve 2>&1 | sed 's/^/    /'; exit "${PIPESTATUS[0]}" ); then
+		echo "    FAILED to build serve from HEAD — cannot check flag parity against it"; fail=1
+	fi
 	if [ -x "$GOBIN/serve" ]; then
+		# Captured ONCE to a file, not re-piped into grep -q per flag inside the loop below.
+		# Found while verifying M-45: with pipefail set (line 21), grep -q exits the instant it
+		# finds a match, and if that happens EARLY in a long --help dump, the still-writing
+		# `serve --help` producer can get SIGPIPE'd — whose non-zero exit status then becomes
+		# the PIPELINE's status under pipefail, even though grep itself matched. Reproduced with
+		# -backend (early alphabetically, so grep -q returns almost immediately): it reported
+		# "FLAG NOT IN --help" on every run despite genuinely being in the output — flags later in
+		# the alphabet (-model, -stream-weights) never hit it, because by the time grep found
+		# them the producer had already finished writing. Grepping a FILE has no producer process
+		# to SIGPIPE, so the race cannot happen.
+		HELPTEXT="$WORK/serve-help.txt"
+		"$GOBIN/serve" --help >"$HELPTEXT" 2>&1
 		for c in "${HELPCMDS[@]}"; do
 			echo "==> (flags only) $c"
 			for f in $(echo "$c" | grep -oE '(^| )-[a-zA-Z][-a-zA-Z0-9]*' | tr -d ' '); do
-				if ! "$GOBIN/serve" --help 2>&1 | grep -q -- "  $f\b\|^ *$f "; then
+				if ! grep -q -- "  $f\b\|^ *$f " "$HELPTEXT"; then
 					echo "    FLAG NOT IN --help: $f"; fail=1
 				fi
 			done
@@ -79,8 +105,8 @@ if [ "${#HELPCMDS[@]}" -gt 0 ]; then
 			ran=$((ran + 1))
 		done
 	else
-		echo "readme-smoke: INCONCLUSIVE — smoke-help lines present but no serve binary was built"
-		echo "              by the <!-- smoke --> steps, so their flags could not be checked."
+		echo "readme-smoke: INCONCLUSIVE — smoke-help lines present but no serve binary from HEAD"
+		echo "              exists (the build above failed), so their flags could not be checked."
 		fail=1
 	fi
 fi

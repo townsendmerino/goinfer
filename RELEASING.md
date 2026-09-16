@@ -130,8 +130,30 @@ git push origin main cuda/v0.10.1 gpu/v0.10.1 metal/v0.10.1 demo/agent/v0.10.1
 ## GitHub Release (non-optional final step)
 
 Every version also gets a **GitHub Release on the ROOT tag only** (13/13 prior versions; never
-per-submodule). After all five tags are pushed:
+per-submodule).
+
+**M-43 (docs/audit-2026-09-10.md): `release-assets.yml` now creates this automatically if it
+does not exist yet** — Step 1's root tag push above is what TRIGGERS that workflow, so following
+these steps in the order written means the tag exists (and the workflow has already started, or
+finished) before a human gets here; `publish`'s own "ensure the GitHub Release exists" step runs
+`gh release view "$TAG" || gh release create "$TAG" --latest` right before it uploads assets, so
+the release is never missing one when `gh release upload` needs it, regardless of exactly when
+a human runs the command below. That auto-created release is **non-draft, `--latest`, titled and
+noted from `--generate-notes`** (GitHub's own commit-log summary) — good enough to exist, not
+necessarily the release you want to point users at. Give it a real title and notes from the
+CHANGELOG once the workflow has attached assets. **Check which case you're in first** —
+`gh release create` on a tag that already has a release ERRORS (`release already exists`), it does
+not update one:
 ```
+# If the workflow's auto-create step already ran (the common case — check `gh release view v0.10.1`
+# first), EDIT it instead of trying to create it again:
+gh release edit v0.10.1 \
+  --title "goinfer v0.10.1 — <one-line descriptor>" \
+  --notes-file <notes-from-changelog> \
+  --latest
+
+# Only if `gh release view` says no such release exists yet (the workflow hasn't run/finished, or
+# this is being done by hand ahead of it):
 gh release create v0.10.1 \
   --title "goinfer v0.10.1 — <one-line descriptor>" \
   --notes-file <notes-from-changelog> \

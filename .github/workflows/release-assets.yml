@@ -410,7 +410,17 @@ jobs:
   publish:
     name: attach to the release
     needs: [plain, embedded]
-    if: always() && needs.plain.result == 'success'
+    # M-42 (docs/audit-2026-09-10.md): this used to check only needs.plain.result, so an HF fetch
+    # failure or a pinned-digest mismatch in `embedded` (a separate job, no shared steps with
+    # `plain`) still let `publish` run and attach only the six runtime binaries — the release went
+    # live missing the "entire model in one file" asset the README's headline promises, and the
+    # post-publish URL check below couldn't catch it (it only knows about README.md's OWN
+    # goinfer-serve-* URL, never an embedded-tier one). `embedded`'s "skip 1.5B unless asked" gate
+    # is a STEP-level if:, not a job-level one — every step in a skipped matrix leg is individually
+    # skipped, none of them fail, so the job itself still reports 'success' (confirmed: a job only
+    # reports 'skipped' from a job-level if:, which this job doesn't have). No `|| == 'skipped'`
+    # needed here.
+    if: always() && needs.plain.result == 'success' && needs.embedded.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -441,6 +451,50 @@ jobs:
           # `goinfer-chat-*` glob checksummed only our own build output.
           sha256sum -- * > checksums.txt.tmp && mv checksums.txt.tmp checksums.txt
           ls -lh
+      - name: assert every embedded asset the README promises is present
+        run: |
+          set -euo pipefail
+          # M-42 (docs/audit-2026-09-10.md): the README's own table (README.md) promises
+          # goinfer-chat-0.5b-<os>-<arch> and goinfer-chat-1.5b-<os>-<arch> — the "entire model in
+          # one file" headline asset. This runs AFTER embedded's own assets have been collected
+          # into dist/ (unlike plain's "assert serve assets exist", which runs too early to see
+          # them), and BEFORE upload, so a gap is caught before the release goes live rather than
+          # discovered by a user's 404.
+          fail=0
+          for t in darwin-arm64 darwin-amd64 linux-amd64 linux-arm64; do
+            [ -f "dist/goinfer-chat-0.5b-$t" ] || { echo "MISSING dist/goinfer-chat-0.5b-$t"; fail=1; }
+          done
+          for t in windows-amd64 windows-arm64; do
+            [ -f "dist/goinfer-chat-0.5b-$t.exe" ] || { echo "MISSING dist/goinfer-chat-0.5b-$t.exe"; fail=1; }
+          done
+          # The 1.5B tier is legitimately absent only when explicitly opted out via
+          # workflow_dispatch (embedded's own "skip 1.5B unless asked" gate) — a tag-push release
+          # (no inputs) always builds it, matching that gate's own condition exactly.
+          if [ "${{ github.event.inputs.tier_1_5b }}" = "false" ]; then
+            echo "1.5B tier was explicitly opted out (workflow_dispatch tier_1_5b=false) — not asserting it"
+          else
+            for t in darwin-arm64 darwin-amd64 linux-amd64 linux-arm64; do
+              [ -f "dist/goinfer-chat-1.5b-$t" ] || { echo "MISSING dist/goinfer-chat-1.5b-$t"; fail=1; }
+            done
+            for t in windows-amd64 windows-arm64; do
+              [ -f "dist/goinfer-chat-1.5b-$t.exe" ] || { echo "MISSING dist/goinfer-chat-1.5b-$t.exe"; fail=1; }
+            done
+          fi
+          [ "$fail" = 0 ] || { echo "one or more embedded-tier assets the README promises are missing from this release"; exit 1; }
+      - name: ensure the GitHub Release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          # M-43 (docs/audit-2026-09-10.md): RELEASING.md's documented order pushes the root tag
+          # (which triggers this very workflow) BEFORE the "create the GitHub Release" step, and
+          # this workflow itself never created one — `upload` below only works against an EXISTING
+          # release. Idempotent: a no-op if a human (or a previous run) already created it, whatever
+          # order they did it in.
+          gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1 \
+            || gh release create "$TAG" --latest --repo "${{ github.repository }}" \
+                 --title "$TAG" --generate-notes
       - name: upload
         env:
           GH_TOKEN: ${{ github.token }}

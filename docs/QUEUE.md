@@ -1370,7 +1370,7 @@ supports.
 | `docs/audit-2026-09-10.md|scripts/pin_gemma3_real.py:63` | goinfer | `input_ids = prefix + [boi] + [image_token] * mm_tokens + [eoi] + suffix` |
 | `docs/audit-2026-09-10.md|scripts/pin_gemma3_vl_image.py:40` | goinfer | `input_ids = prefix + [IMAGE_TOKEN] * MM_TOKENS + suffix` |
 | `docs/audit-2026-09-10.md|scripts/queue_citation_lint.py:692` | goinfer | `for m in BARE_RE.finditer(body):   # bare refs: QUEUE.md only, where they carry decision` |
-| `docs/audit-2026-09-10.md|scripts/readme_smoke.sh:62` | goinfer | `for f in $(echo "$c" \| grep -oE '(^\| )-[a-zA-Z][-a-zA-Z0-9]*' \| tr -d ' '); do` |
+| `docs/audit-2026-09-10.md|scripts/readme_smoke.sh:55` | goinfer | `# M-45 (docs/audit-2026-09-10.md): the smoke-help flag-parity check below used to test w` |
 | `docs/audit-2026-09-10.md|tokenizer/gguf.go:322` | goinfer | `case "gpt-2", "default", "":` |
 | `docs/audit-2026-09-10.md|tokenizer/sentencepiece.go:822` | goinfer | `// TokenText returns the raw surface bytes a single token id contributes when` |
 | `docs/audit-2026-09-10.md|tokenizer/split_o200k_test.go:44` | goinfer | `// a run at end-of-input, disagreed with the walker, and was itself the thing that` |
