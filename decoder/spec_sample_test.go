@@ -79,11 +79,14 @@ func freq(c []float64, n int) []float64 {
 }
 
 // TestNgramSampledFirstTokenMatchesPlain checks the sampled path against plain
-// Generate at the integration level: under pure temperature (no filters) with the
-// same seed, the FIRST emitted token must be identical — both are drawFull over the
-// same seed-position softmax with an identically seeded RNG. (Beyond the first token
-// the two RNG streams diverge by construction, so only the first is bit-comparable;
-// full-sequence equivalence is distributional, proven by TestSpecStepLossless.)
+// Generate at the integration level: under pure temperature (no filters, no
+// Logprobs) with the same seed, the FIRST emitted token must be identical — both
+// go through Sampler.Draw's sampleChunked branch (N-14, docs/audit-2026-09-10.md:
+// stale since P2b, when sampleChunked replaced drawFull for this no-filter,
+// no-Logprobs case) over the same seed-position logits with an identically seeded
+// RNG. (Beyond the first token the two RNG streams diverge by construction, so
+// only the first is bit-comparable; full-sequence equivalence is distributional,
+// proven by TestSpecStepLossless.)
 func TestNgramSampledFirstTokenMatchesPlain(t *testing.T) {
 	m, err := loadBenchModel()
 	if err != nil {

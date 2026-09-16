@@ -162,6 +162,16 @@ func LoadEagleHead(dir string) (*EagleHead, error) {
 	for i, v := range d2t64 {
 		head.d2t[i] = int32(v)
 	}
+	// Every mapped id must land inside the TARGET vocab; an out-of-range one would index the
+	// target's embedding out of bounds at verify time (TargetID below). DFlash's loader already
+	// carries this check (decoder/dflash.go); eagle.go's own did not (N-19, docs/audit-2026-09-10.md).
+	if c.VocabSize > 0 {
+		for i, off := range head.d2t {
+			if tid := i + int(off); tid < 0 || tid >= c.VocabSize {
+				return nil, fmt.Errorf("eagle: d2t[%d] maps to target id %d, outside vocab %d", i, tid, c.VocabSize)
+			}
+		}
+	}
 	head.st = st
 	loaded = true
 	return head, nil

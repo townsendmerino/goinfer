@@ -1114,8 +1114,8 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/features.go:152` | goinfer | `add(!a.ropeUniform(), FeatPerLayerRoPE)` |
 | `docs/audit-2026-09-10.md|decoder/features.go:280` | goinfer | `// ResidentEligible reports whether `backend` can run architecture `a` on its resident (` |
 | `docs/audit-2026-09-10.md|decoder/features.go:440` | goinfer | `// rotary, and MoE (routed + ungated shared expert). Still NOT implemented: per-layer ro` |
-| `docs/audit-2026-09-10.md|decoder/fidelity_testhook.go:149` | goinfer | `func NearTieArgmaxForTest(refLogits, candLogits []float32) (agree bool, gapPct float64, ` |
-| `docs/audit-2026-09-10.md|decoder/fidelity_testhook.go:202` | goinfer | `func KLDivergenceForTest(pLogits, qLogits []float32) float64 {` |
+| `docs/audit-2026-09-10.md|decoder/fidelity_testhook.go:157` | goinfer | `func NearTieArgmaxForTest(refLogits, candLogits []float32) (agree bool, gapPct float64, ` |
+| `docs/audit-2026-09-10.md|decoder/fidelity_testhook.go:210` | goinfer | `func KLDivergenceForTest(pLogits, qLogits []float32) float64 {` |
 | `docs/audit-2026-09-10.md|decoder/fitguard.go:151` | goinfer | `func (f fitCheck) remedy() string {` |
 | `docs/audit-2026-09-10.md|decoder/fitguard.go:206` | goinfer | `_, own := arch.ownForward()` |
 | `docs/audit-2026-09-10.md|decoder/fitguard.go:227` | goinfer | `anchor: func (f fitCheck) declineErr() *FitDeclineError {` |

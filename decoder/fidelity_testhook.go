@@ -146,6 +146,14 @@ const NearTieHardFailPct = 0.03
 // the reference's logit range -- smaller gaps are quant/reassociation noise, not a real
 // preference change. gapPct is always computed (0 when they agree), so a caller can report the
 // worst gap seen across a run even on ticks that don't hard-fail.
+//
+// READ THE 3% IN LOGIT-RANGE UNITS, NOT PROBABILITY UNITS (N-20, docs/audit-2026-09-10.md): on
+// Qwen's typical logit range this threshold is ~2 nats, which is NOT a subtle tie in softmax
+// space -- a 2-nat gap is roughly the separation between probabilities 0.85 and 0.11. "Near-tie"
+// here means "near" the reference's own full logit spread, not "near" in the sense a reader of
+// softmax probabilities would expect. This is the tree's established rule (also used inline by
+// cuda/realforward_test.go and gpu/kv_i8_parity_test.go) restated here for one gate, not a
+// proposal to change the threshold -- doing that would need to move in all three places at once.
 func NearTieArgmaxForTest(refLogits, candLogits []float32) (agree bool, gapPct float64, hardFail bool) {
 	refArg, candArg := argmax(refLogits), argmax(candLogits)
 	if refArg == candArg {
