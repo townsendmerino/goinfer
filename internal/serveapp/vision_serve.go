@@ -150,7 +150,7 @@ func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageR
 		}
 		return feats, nil
 	}
-	block := multimodal.Gemma3ImageBlock(n) + "\n"
+	block := multimodal.Gemma3PromptBlock(n)
 	turns[idx].Content = block + turns[idx].Content
 	ids, err := encodeVisionSegments(lm, system, turns, block)
 	if err != nil {
@@ -184,7 +184,11 @@ func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx in
 		}
 		return feats, nil
 	}
-	block := multimodal.QwenImageBlock(n) + "\n"
+	// M-38 (audit-2026-09-10): Qwen2.5-VL's real chat_template.json (verified live against
+	// Qwen/Qwen2.5-VL-7B-Instruct) splices <|vision_start|><|image_pad|><|vision_end|> inline
+	// with NO adjacent newline on either side — the trailing "\n" this used to append doesn't
+	// exist in the real template.
+	block := multimodal.QwenImageBlock(n)
 	turns[idx].Content = block + turns[idx].Content
 	ids, err := encodeVisionSegments(lm, system, turns, block)
 	if err != nil {
@@ -221,7 +225,10 @@ func (lm *loadedModel) gemma4VisionPrompt(system string, turns []chat.Turn, idx 
 		}
 		return feats, nil
 	}
-	block := multimodal.Gemma4ImageBlock(n) + "\n"
+	// M-38 (audit-2026-09-10): Gemma 4's own processor (processing_gemma4.py, verified against the
+	// real transformers source) does f"{boi_token}{image_tokens}{eoi_token}" — no adjacent
+	// newline at all, unlike the trailing "\n" this used to append.
+	block := multimodal.Gemma4ImageBlock(n)
 	turns[idx].Content = block + turns[idx].Content
 	ids, err := encodeVisionSegments(lm, system, turns, block)
 	if err != nil {

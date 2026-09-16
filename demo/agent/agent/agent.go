@@ -335,9 +335,13 @@ func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev E
 	}
 	n := s.vproj.MMTokens()
 
+	// M-38 (audit-2026-09-10): block itself stays bare (no newlines) since spliceImageBlock only
+	// needs it as a substring to locate, not to match the msg verbatim; the actual splice below
+	// uses multimodal.Gemma3PromptBlock, which wraps it in "\n\n" on both sides the way Gemma 3's
+	// own processor does (verified against the real transformers processing_gemma3.py).
 	block := multimodal.Gemma3ImageBlock(n)
 	turns := append([]msg(nil), s.history...)
-	turns = append(turns, msg{"user", block + "\n" + user})
+	turns = append(turns, msg{"user", multimodal.Gemma3PromptBlock(n) + user})
 	segs, err := spliceImageBlock(s.buildPromptSegments(visionSystem, turns), block)
 	if err != nil {
 		return "", err

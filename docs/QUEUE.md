@@ -1237,12 +1237,12 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/weights.go:960` | goinfer | `if l.Router, err = loadMat(st, tn(i, s.Router), arch.MoE.NumExperts, hd); err != nil {` |
 | `docs/audit-2026-09-10.md|decoder/weights.go:98` | goinfer | `// Granite-4.0-H Mamba-2 mixer weights, set only on the mamba layers (the` |
 | `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:282` | goinfer | `enc, err := vision.LoadEncoder(dir, s.opts.VisionQuant == "int8" \|\| webgpu)` |
-| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:339` | goinfer | `turns := append([]msg(nil), s.history...)` |
-| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:450` | goinfer | `func (s *Session) streamGen(ctx context.Context, tokens <-chan int, gen *decoder.Generat` |
-| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:514` | goinfer | `out[i] = tokenizer.Segment{Text: seg.Text, Special: seg.Special}` |
-| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:550` | goinfer | `for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {` |
-| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:555` | goinfer | `return constrain.NewMasker(g, s.tokenBytes, eos).StopWhenComplete().Process` |
-| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:605` | goinfer | `tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})` |
+| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:343` | goinfer | `turns := append([]msg(nil), s.history...)` |
+| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:454` | goinfer | `func (s *Session) streamGen(ctx context.Context, tokens <-chan int, gen *decoder.Generat` |
+| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:518` | goinfer | `out[i] = tokenizer.Segment{Text: seg.Text, Special: seg.Special}` |
+| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:554` | goinfer | `for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {` |
+| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:559` | goinfer | `return constrain.NewMasker(g, s.tokenBytes, eos).StopWhenComplete().Process` |
+| `docs/audit-2026-09-10.md|demo/agent/agent/agent.go:609` | goinfer | `tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})` |
 | `docs/audit-2026-09-10.md|examples/embed/main.go:36` | goinfer | `tok, err := tokenizer.LoadGGUF(path)` |
 | `docs/audit-2026-09-10.md|gpu/attention.go:34` | goinfer | `let theta = f32(p.pos) * invFreq[d];` |
 | `docs/audit-2026-09-10.md|gpu/backend.go:156` | goinfer | `// M=1 only (decode): the M>1 (prefill/tiled) case has no int4 GEMM kernel on this backe` |
@@ -1320,9 +1320,9 @@ supports.
 | `docs/audit-2026-09-10.md|internal/serveapp/tools.go:31` | goinfer | `// M-15 (audit-2026-09-10): tools are ACTIVE on this path (that's why serveChatToolsWith` |
 | `docs/audit-2026-09-10.md|internal/serveapp/tools.go:48` | goinfer | `gr, err := lm.prepare(req.sampling, ids, lm.residentPath())` |
 | `docs/audit-2026-09-10.md|internal/serveapp/vision_serve.go:118` | goinfer | `func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageRef) (vis` |
-| `docs/audit-2026-09-10.md|internal/serveapp/vision_serve.go:153` | goinfer | `block := multimodal.Gemma3ImageBlock(n) + "\n"` |
-| `docs/audit-2026-09-10.md|internal/serveapp/vision_serve.go:207` | goinfer | `patches, positionIDs, err := vision.Gemma4Preprocess(img.data, lm.gemma4MaxSoft)` |
-| `docs/audit-2026-09-10.md|internal/serveapp/vision_serve.go:268` | goinfer | `gr, err := lm.prepare(req.sampling, vi.ids, false)` |
+| `docs/audit-2026-09-10.md|internal/serveapp/vision_serve.go:153` | goinfer | `block := multimodal.Gemma3PromptBlock(n)` |
+| `docs/audit-2026-09-10.md|internal/serveapp/vision_serve.go:211` | goinfer | `patches, positionIDs, err := vision.Gemma4Preprocess(img.data, lm.gemma4MaxSoft)` |
+| `docs/audit-2026-09-10.md|internal/serveapp/vision_serve.go:275` | goinfer | `gr, err := lm.prepare(req.sampling, vi.ids, false)` |
 | `docs/audit-2026-09-10.md|internal/serveapp/webui.go:109` | goinfer | `func sameOrigin(h http.HandlerFunc) http.HandlerFunc {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/webui.go:272` | goinfer | `fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)` |
 | `docs/audit-2026-09-10.md|internal/servecheck/check.go:192` | goinfer | `anchor: func (c *Client) Chat(ctx context.Context, model, prompt string, maxTokens int, ` |

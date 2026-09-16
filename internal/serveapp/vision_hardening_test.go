@@ -1,6 +1,10 @@
 package serveapp
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -183,4 +187,62 @@ func TestServe_noRouteEncodesARenderedPrompt(t *testing.T) {
 		t.Fatal("no source file scanned — the check is inert")
 	}
 	t.Logf("%d file(s) scanned for Encode-over-Render", scanned)
+}
+
+// TestVision_imageBlockNewlinesMatchTheRealProcessors is M-38's regression guard
+// (docs/audit-2026-09-10.md): the real HF processors (verified live 2026-09-16 against
+// transformers' processing_gemma3.py/processing_gemma4.py and Qwen2.5-VL-7B-Instruct's own
+// chat_template.json) wrap the image sequence in "\n\n" on both sides for Gemma 3, and with NO
+// adjacent newline at all for Gemma 4 and Qwen2.5-VL — the opposite of what this file used to
+// splice (a bare trailing "\n" on all three, or none on Gemma 3). This can't be driven through
+// the real *VisionPrompt methods without a real vision tower, so it is asserted structurally on
+// the source: qwenVisionPrompt's and gemma4VisionPrompt's block assignment must be a BARE
+// multimodal.*ImageBlock(n) call with nothing concatenated onto it, in each function's own AST —
+// not a repo-wide grep, which could not tell one family's assignment from another's.
+func TestVision_imageBlockNewlinesMatchTheRealProcessors(t *testing.T) {
+	fset := token.NewFileSet()
+	af, err := parser.ParseFile(fset, "vision_serve.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	render := func(e ast.Expr) string {
+		var b strings.Builder
+		_ = printer.Fprint(&b, fset, e)
+		return b.String()
+	}
+	check := func(fnName, wantCall string) {
+		var fn *ast.FuncDecl
+		ast.Inspect(af, func(n ast.Node) bool {
+			if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == fnName {
+				fn = d
+			}
+			return true
+		})
+		if fn == nil {
+			t.Fatalf("%s not found — this guard is watching nothing", fnName)
+		}
+		var found bool
+		ast.Inspect(fn, func(n ast.Node) bool {
+			assign, ok := n.(*ast.AssignStmt)
+			if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+				return true
+			}
+			id, ok := assign.Lhs[0].(*ast.Ident)
+			if !ok || id.Name != "block" {
+				return true
+			}
+			found = true
+			got := render(assign.Rhs[0])
+			if got != wantCall {
+				t.Errorf("%s: block := %s, want exactly %s — a newline was concatenated onto (or "+
+					"dropped from) the real processor's shape (M-38)", fnName, got, wantCall)
+			}
+			return true
+		})
+		if !found {
+			t.Errorf("%s: no `block :=` assignment found — this guard is watching the wrong thing", fnName)
+		}
+	}
+	check("qwenVisionPrompt", "multimodal.QwenImageBlock(n)")
+	check("gemma4VisionPrompt", "multimodal.Gemma4ImageBlock(n)")
 }
