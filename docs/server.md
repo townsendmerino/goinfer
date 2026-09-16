@@ -277,10 +277,10 @@ reuse rather than the session cache.
 
 ```bash
 # Loopback:
-goinfer -model coder=~/models/qwen2.5-7b-instruct-q4_k_m.gguf -quant int4 -backend cuda -ctx 16384
+goinfer-serve -model coder=~/models/qwen2.5-7b-instruct-q4_k_m.gguf -quant int4 -backend cuda -ctx 16384
 
 # Across a network: non-loopback REQUIRES an API key (serve refuses to start otherwise).
-GOINFER_API_KEY=<secret> goinfer -model coder=... -backend cuda -addr 0.0.0.0:8080 -ctx 16384
+GOINFER_API_KEY=<secret> goinfer-serve -model coder=... -backend cuda -addr 0.0.0.0:8080 -ctx 16384
 ```
 
 **3. Point dsh at it** — `$DSH_HOME/settings.yaml`. Three details each cost a debugging cycle:

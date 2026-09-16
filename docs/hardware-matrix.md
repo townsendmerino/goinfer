@@ -55,6 +55,12 @@ features). Two load-time notes the taxonomy does not encode:
   residency is unified-memory-bound.
 - **Precision policy:** Nemotron-H resident is int4-only by default (int8 is opt-in via
   `GOINFER_SSM_RESIDENT`) — a precision choice applied at load, not a capability.
+- **Granite-4.0-H's CPU row is the SAME env var, a DIFFERENT gate (N-94, docs/audit-2026-09-10.md).**
+  `GOINFER_SSM_RESIDENT` is Nemotron-H's precision knob above, but for Granite-4.0-H it is an
+  ELIGIBILITY gate inside `Architecture.decodeRunnerEligible()` itself, still parity-bring-up-guarded
+  off by default — this table's generator pins it empty, so every column reads CPU regardless of
+  backend capability. WebGPU already declares `FeatSSM`; the gap here is the gate not yet being
+  lifted, not a missing kernel. Set the env var non-empty to see what each backend actually admits.
 - **Nemotron-H's row is generated from a DENSE representative config.** Real, downloadable
   Nemotron 3 Nano and 3.5 Lightning checkpoints add a fourth per-layer block kind (MoE
   FFN) this representative config never exercises — WebGPU implements it (G7 part 2,

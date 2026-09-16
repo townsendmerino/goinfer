@@ -109,9 +109,9 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
   `ErrBlockSpecUnsupported`.
 - **`Options` fields that reach the above**: `Backend`, `KVPrecision`, `KVQuant`,
   `MoECacheExperts`, `MoECacheSlots`, `StreamWeights`, `WeightCacheBytes` and their `serve` flag
-  twins (`--backend`'s non-cpu values, `--kv-prec`, `--kv-quant`, `--moe-cache-*`,
+  twins (`--backend`'s non-cpu values, `--kv`, `--kv-quant`, `--moe-cache-*`,
   `--stream-weights`, `--drafter`, `--spec`, `--adapter`, `--vision-*`, `--metal-fast-prefill`,
-  `--embed-*`, `--require-be`, `--allow-admin` bodies). `Options.Quant` and `Options.LoRA` are
+  `--embed-*`, `--require-backend`, `--allow-admin` bodies). `Options.Quant` and `Options.LoRA` are
   Hard and listed above.
 - **Checkpoint fetching.** The `pull` package — `Resolve`, `IsRef`, `ParseRef`, `Ref`, `File`,
   `List`, `Select`, `CheckAccess`, `Download`, `CacheDir`, `CacheRoot`, `Curated`, `CuratedNames`,

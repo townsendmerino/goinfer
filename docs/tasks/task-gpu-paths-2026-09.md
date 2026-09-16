@@ -149,7 +149,7 @@ after (it drives the shared positional KV).
 
 ### G5 — families CPU-only on CUDA and Metal for one or two small features
 
-**Where.** `decoder/features.go:390–541` (the three backend tables) against
+**Where.** `decoder/features.go:400–541` (the three backend tables) against
 `decoder/features.go:129–221` (`residentFeatures`). Everything below declines to the staged path,
 which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole model's speed.
 
@@ -161,7 +161,7 @@ which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole
 | Olmo Hybrid | the two above + `FeatNoPE` | same | its Gated-DeltaNet half is already declared on both backends |
 | Command-R / R7B | `FeatLayerNorm`, `FeatParallelBlock`, `FeatLogitScale` | `FeatParallelBlock`, `FeatLogitScale` | parallel attn‖MLP from one normed input, summed; logits scale is a host-side multiply; Metal already has the LayerNorm (generalized for Cohere, `features.go` note) |
 | Nemotron-H | `FeatSSM`, `FeatNonGatedMLP`, `FeatLogitScale`… | `FeatSSM`, `FeatLogitScale` | the Mamba-2 engine exists on WebGPU (`gpu/`); a port, not a design |
-| DeepSeek-V2/V3, Kimi K2 | `FeatMLA` | `FeatMLA` | exists on WebGPU; **gate the nGroup/topkGroup mapping first** (the CUDA TRAP comment, `decoder/features.go:396–405`) |
+| DeepSeek-V2/V3, Kimi K2 | `FeatMLA` | `FeatMLA` | exists on WebGPU; **gate the nGroup/topkGroup mapping first** (the CUDA TRAP comment, `decoder/features.go:456–464`) |
 | Laguna | `FeatAttnOutputGate` | same | not on any backend; WebGPU's DeltaNet has a fused output gate to crib from |
 | LFM2.5 | `FeatShortConv` + "own forward, not bridged" | same | `decoder/residency.go:217` declines it before features are consulted |
 | Llama 4 | own forward, not bridged | same | `decoder/residency.go:215` |

@@ -1,6 +1,6 @@
 # What "parity-gated" means
 
-goinfer's README says it supports 35 model families, HuggingFace-parity-gated. This page explains
+goinfer's README says it supports 36 model families, HuggingFace-parity-gated. This page explains
 what stands behind that phrase, and — as importantly — what it does not cover.
 
 ---
@@ -85,6 +85,14 @@ synthetic weights, not fixtures. Per cell:
   JSON included, reported alongside a reference peer on the same machine
 
 So the serve path is exercised end to end, not just the decoder.
+
+N-101 (docs/audit-2026-09-10.md, confirmed 2026-09-16 — was "Plausible," now checked directly):
+this describes the FULL qualification ideal, but `RELEASING.md`'s actual pre-flight checklist
+does not gate a release on it. What `RELEASING.md` actually requires is §C1 (real T3 parity
+re-validation — the correctness half above) and a cold-user run; neither §C1 nor the top-level
+pre-flight list mentions a per-cell peer timing anywhere. The peer-timing half is good practice
+this page recommends, not a release blocker `RELEASING.md` enforces today — read this section as
+aspirational for that half, not as what gates a tag.
 
 ---
 

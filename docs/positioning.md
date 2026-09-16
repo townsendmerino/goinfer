@@ -32,9 +32,10 @@ and runs them **in-process**. What makes it different — you don't have to choo
   MLA (DeepSeek-V2/V3, Kimi K2) and Nemotron-H are WebGPU-only; Gemma 4, Command-R, Olmo,
   SmolLM3 and Ministral 3 are CUDA/Metal-only; Llama 4, Granite-4.0-H, LFM2.5, Laguna and Ling 3.0
   run on the CPU path everywhere. Going fast never costs you the single binary.
-- **36 model families, one binary.** All four attention / sequence-mixing families —
-  softmax·GQA, gated-linear (DeltaNet), state-space (Mamba-2), latent-KV (MLA) — plus dense
-  and sparse-MoE, across 36 model families as of 2026-09-12 — the count is generated, not
+- **36 model families, one binary.** All six attention / sequence-mixing families —
+  softmax·GQA, gated-linear (DeltaNet, KDA), state-space (Mamba-2), short-conv (LFM2),
+  latent-KV (MLA) — plus dense and sparse-MoE, across 36 model families as of 2026-09-12 —
+  the count is generated, not
   maintained by hand: `docs/capability-matrix.md` is emitted from the `decoder` registry, so it
   cannot drift from the code (Gemma 3/4, Qwen 2.5/3/3.5/3.8/Next and the Qwen VL pair, Llama and
   Llama 4, Mistral/Ministral, Mixtral, Qwen-MoE, GLM-4.5/4.6, DeepSeek-V2/V3 + Kimi, Phi-3/4,

@@ -1,6 +1,6 @@
 # The docs, and how they fit together
 
-`docs/` holds ~320 files. They are not one kind of thing, and reading them as if they were is the
+`docs/` holds ~470 files. They are not one kind of thing, and reading them as if they were is the
 main way people get a wrong answer here: a **design record** explains why something is built as it
 is, a **queue** holds what is still open, a **measurement** is evidence with a machine and a date
 on it, and an **archive** is finished work kept for its reasoning. Only some of them are current
@@ -43,8 +43,8 @@ exactly one queue, keyed by *the question it answers*:
 
 | queue | the question |
 |---|---|
-| [queue-performance.md](queue-performance.md) | how fast, how much memory — **empty as of 2026-08-31**; the closed record is [completed/queue-performance.md](completed/queue-performance.md) |
-| [queue-correctness.md](queue-correctness.md) | does it compute the right thing — one PARKED item (G8, unvalidatable on hardware here) as of 2026-08-31; closed entries in [completed/queue-correctness.md](completed/queue-correctness.md) |
+| [queue-performance.md](queue-performance.md) | how fast, how much memory — **four open items as of 2026-09-05** (P20–P23; was briefly empty on 2026-08-31); the closed record is [completed/queue-performance.md](completed/queue-performance.md) |
+| [queue-correctness.md](queue-correctness.md) | does it compute the right thing — one open item (G12, LFM2 GGUF loader) plus one PARKED item (G8, unvalidatable on hardware here); closed entries in [completed/queue-correctness.md](completed/queue-correctness.md) |
 | [queue-engineering.md](queue-engineering.md) | would we find out |
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
@@ -72,7 +72,7 @@ it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (77)
+## Evidence — `measurements/` (222)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world

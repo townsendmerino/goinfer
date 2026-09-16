@@ -482,7 +482,7 @@ type familyDoc struct {
 var familyDocs = map[string]familyDoc{
 	"gemma3":              {"Gemma 3", "Google Gemma 3 dense (270M/1B/4B/12B/27B)", "safetensors, GGUF", "text (+ vision via VL text_config)"},
 	"gemma3_text":         {"Gemma 3", "Google Gemma 3 dense (270M/1B/4B/12B/27B)", "safetensors, GGUF", "text (+ vision via VL text_config)"},
-	"gemma4":              {"Gemma 4", "Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)", "safetensors, GGUF", "text"},
+	"gemma4":              {"Gemma 4", "Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)", "safetensors, GGUF", "text (+ vision tower)"},
 	"gemma4_text":         {"Gemma 4", "Google Gemma 4 text (incl. 26B-A4B parallel dense+MoE FFN, enable_moe_block)", "safetensors, GGUF", "text"},
 	"gemma4_unified_text": {"Gemma 4", "Google Gemma 4 unified checkpoints' text decoder (K=V globals, model.language_model.* prefix)", "safetensors, GGUF", "text"},
 	"qwen3":               {"Qwen3", "Alibaba Qwen3 dense (QK-norm, no bias)", "safetensors, GGUF", "text"},

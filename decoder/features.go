@@ -289,6 +289,16 @@ func missingFeatures(required []ResidentFeature, implemented map[ResidentFeature
 // POLICY that a model-free predicate cannot know — the Nemotron int4-only / GOINFER_SSM_RESIDENT
 // precision gate (Model.DecodeRunnerEligible). Those are precision choices, not "can this backend
 // run this family", so the matrix shows capability and footnotes the policy.
+//
+// N-94 (docs/audit-2026-09-10.md): "model-free (arch flags only)" is NOT true of granite. Unlike
+// Nemotron's policy gate above (which lives in the separate, model-level Model.DecodeRunnerEligible),
+// granite's admission gate lives INSIDE Architecture.decodeRunnerEligible() itself — the very
+// function this comment describes as arch-only — and reads os.Getenv("GOINFER_SSM_RESIDENT")
+// directly (see that function's granite case). The hardware-matrix generator pins this env var
+// empty (decoder/hardware_matrix_test.go), so the published table shows granite as CPU-only on
+// every backend, including WebGPU (which already declares FeatSSM) — not because no backend can
+// run it, but because this specific arch-level gate is still parity-bring-up-guarded off by
+// default. See docs/hardware-matrix.md's own footnote on this.
 func ResidentEligible(a *Architecture, backend string) bool {
 	impl, ok := residentBackendFeatures[backend]
 	if !ok {
@@ -437,8 +447,11 @@ func ResidentBackendFeatures(backend string) map[ResidentFeature]bool {
 var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 	// cgo-free CUDA (cuda/): the dense Qwen2/Llama block, plus QK-norm, sliding window, the
 	// Gemma set ((1+w) RMS, sandwich norms, GeGLU, embed scale, per-layer RoPE base), partial
-	// rotary, and MoE (routed + ungated shared expert). Still NOT implemented: per-layer rotary
-	// WIDTH (only per-layer base); no YaRN mscale; no logit softcap; no MLA/SSM.
+	// rotary, and MoE (routed + ungated shared expert). N-100 (docs/audit-2026-09-10.md,
+	// corrected 2026-09-16): YaRN mscale (FeatRopeMscale) and logit softcap
+	// (FeatFinalLogitSoftcap) are BOTH declared below now — this comment's "no YaRN mscale; no
+	// logit softcap" was stale, from before they landed. What remains genuinely NOT implemented:
+	// per-layer rotary WIDTH (only per-layer base); no MLA/SSM.
 	//
 	// TRAP — before adding FeatMLA here (or otherwise making a GROUP-ROUTED family
 	// CUDA-admissible), verify the nGroup/topkGroup mapping at cuda/resident.go's moe_route

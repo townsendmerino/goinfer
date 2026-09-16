@@ -13,7 +13,7 @@
 > §B8 …) are stable and are cited from code; the *Retired section IDs* index near the end maps
 > the IDs that no longer have a block here to where their record went.
 
-## TL;DR — 2026-08-31
+## TL;DR — filed 2026-08-31, rows updated individually since (each cites its own date)
 
 <!-- OPEN DECISION, filed 2026-09-05, carried over from 2026-09-01: should this TL;DR section move
      ABOVE the "What this page is" blockquote? The Apple Silicon rows below already exist either

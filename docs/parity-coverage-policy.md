@@ -1791,3 +1791,15 @@ is blocked on a dependency this repo does not control (a stale symbol in the che
 own remote code); mixtral, llama4_text, and glm4_moe are the three whose tier reflects
 hardware (RAM) or format (no bf16 safetensors asset), not validation effort — confirmed
 blocked in the earlier scoping pass, not reattempted here.
+
+N-92 (docs/audit-2026-09-10.md, re-verified 2026-09-16): the "10 of 16 … 6 remain" split
+above is this pass's own dated result, kept as written rather than silently bumped forward —
+but the CURRENT state has since moved twice: `internlm2` and `qwen2_moe` were BOTH promoted
+past `experimental: tiny-oracle` entirely (to `full-oracle` and `real-oracle` respectively,
+per `docs/capability-matrix.md`), so neither belongs in the "validated but still
+experimental" bucket anymore either; and `qwen3_vl` was added as a new family that also sits
+at `experimental: tiny-oracle`, never named in this paragraph. `docs/capability-matrix.md`
+(generated from the registry) is the live source of truth and currently shows **15** total
+`experimental: tiny-oracle` families: 8 already validated against released weights
+(smollm3, lfm2, mistral3, granite, olmo3, olmo_hybrid, qwen3_moe, qwen2_5_vl) and 7 that
+remain tiny-oracle-only (the original 6 above, plus qwen3_vl).
