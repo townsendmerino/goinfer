@@ -165,14 +165,52 @@ func anthropicText(raw json.RawMessage) string {
 }
 
 // anthropicInputBytes sums the TOKENIZABLE text across an Anthropic request — the system prompt
-// plus every message's text blocks. It is the /v1/messages analogue of chatInputBytes, and it
-// matters that it uses anthropicText: image blocks (and tool_use/cache_control metadata) are
-// excluded, so a base64 image is never charged against a context window it does not consume. A
-// vision request is a few hundred tokens of image regardless of its megabytes on the wire.
+// plus every message's text blocks, its replayed tool_use calls, and any declared tool schemas.
+// It is the /v1/messages analogue of chatInputBytes, and it matters that the text half uses
+// anthropicText: image blocks (and cache_control metadata) are excluded, so a base64 image is
+// never charged against a context window it does not consume. A vision request is a few hundred
+// tokens of image regardless of its megabytes on the wire.
+//
+// M-15 (audit-2026-09-10): tool_use blocks and req.Tools were excluded entirely before this —
+// anthropicText's text-only sum skips a tool_use block's own type ("tool_use", not "text"), and
+// nothing summed req.Tools at all. anthropicTurns renders an assistant's replayed tool_use calls
+// into the prompt regardless of whether tools are active THIS turn, and RenderToolsSegments
+// renders every declared tool's schema whenever they are — both callers of this function guard
+// BOTH branches with one call (their own documented design), so both are priced unconditionally
+// here too, matching that intent rather than duplicating the guard per branch.
 func anthropicInputBytes(req *anthropicReq) int {
 	n := len(anthropicText(req.System))
 	for i := range req.Messages {
 		n += len(anthropicText(req.Messages[i].Content))
+		n += anthropicToolCallBytes(req.Messages[i].Content)
+	}
+	n += anthropicToolSchemaBytes(req.Tools)
+	return n
+}
+
+// anthropicToolCallBytes sums a message content field's tool_use blocks (M-15): an assistant's
+// own prior tool calls, replayed into the prompt by anthropicTurns's tool_use case. Ignores
+// anything that doesn't parse as a block array (a plain string has none).
+func anthropicToolCallBytes(raw json.RawMessage) int {
+	var blocks []anthropicBlock
+	if json.Unmarshal(raw, &blocks) != nil {
+		return 0
+	}
+	n := 0
+	for _, bl := range blocks {
+		if bl.Type == "tool_use" {
+			n += len(bl.Name) + len(bl.Input)
+		}
+	}
+	return n
+}
+
+// anthropicToolSchemaBytes sums a tool declaration list's rendered bytes (M-15): the schemas
+// RenderToolsSegments renders into the prompt whenever tools are active.
+func anthropicToolSchemaBytes(tools []anthropicTool) int {
+	n := 0
+	for _, t := range tools {
+		n += len(t.Name) + len(t.Description) + len(t.InputSchema)
 	}
 	return n
 }

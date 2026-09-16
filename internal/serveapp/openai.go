@@ -171,10 +171,31 @@ func promptByteBudgetError(inputBytes, ctx, maxTokenBytes int) error {
 
 // chatInputBytes sums the tokenizable text across chat messages — the input the BPE runs
 // over (JSON structure and image data are not tokenized), so it is what the G1c guard bounds.
+//
+// M-15 (audit-2026-09-10): also sums each message's REPLAYED tool_calls[].function.arguments.
+// messagesToTurns converts an assistant message's ToolCalls into chat.Turn.ToolCalls
+// unconditionally — a chat template renders that replay into the prompt whenever it appears in
+// history, regardless of whether tools are active THIS turn — so a large replayed arguments blob
+// used to pass this guard in constant time and then run the full BPE over it anyway.
 func chatInputBytes(msgs []chatMessage) int {
 	n := 0
 	for _, m := range msgs {
 		n += len(m.text())
+		for _, tc := range m.ToolCalls {
+			n += len(tc.Function.Name) + len(tc.Function.Arguments)
+		}
+	}
+	return n
+}
+
+// toolSchemaBytes sums an OpenAI-shaped tool declaration list's rendered bytes (M-15,
+// audit-2026-09-10): RenderToolsSegments renders every tool's name/description/parameters into
+// the prompt whenever tools are active, so a large schema list must be priced at the same guard
+// that already prices the messages, not left to run the full BPE unpriced.
+func toolSchemaBytes(tools []toolSpec) int {
+	n := 0
+	for _, t := range tools {
+		n += len(t.Function.Name) + len(t.Function.Description) + len(t.Function.Parameters)
 	}
 	return n
 }

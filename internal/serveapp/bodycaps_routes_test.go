@@ -145,6 +145,35 @@ func TestAnthropicInputBytes_excludesImages(t *testing.T) {
 	}
 }
 
+// TestAnthropicInputBytes_countsToolUseAndSchemas is M-15's Anthropic-side gate
+// (docs/audit-2026-09-10.md): a message's tool_use block (an assistant's own replayed call,
+// rendered into the prompt by anthropicTurns regardless of whether tools are active THIS turn)
+// and a declared tool's input_schema (rendered whenever tools ARE active) must both be counted —
+// anthropicText's own text-only sum explicitly skips both, by design, for the text field it
+// bounds, but nothing else was pricing them either.
+func TestAnthropicInputBytes_countsToolUseAndSchemas(t *testing.T) {
+	// Realistic shapes: input_schema/input are JSON OBJECTS on the wire, not bare strings —
+	// embedded as json.RawMessage (inserted verbatim by json.Marshal, unlike a Go string value
+	// which would come back re-quoted) so their byte length round-trips exactly.
+	bigInput := json.RawMessage(fmt.Sprintf(`{"q":%q}`, strings.Repeat("x", 10000)))
+	bigSchema := json.RawMessage(fmt.Sprintf(`{"type":"object","q":%q}`, strings.Repeat("y", 8000)))
+	msgWithToolUse, err := json.Marshal([]map[string]any{
+		{"type": "tool_use", "name": "f", "input": bigInput},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req := &anthropicReq{
+		Messages: []anthropicMessage{{Role: "assistant", Content: msgWithToolUse}},
+		Tools:    []anthropicTool{{Name: "get_weather", Description: "Get weather", InputSchema: bigSchema}},
+	}
+	got := anthropicInputBytes(req)
+	want := len("f") + len(bigInput) + len("get_weather") + len("Get weather") + len(bigSchema)
+	if got != want {
+		t.Errorf("anthropicInputBytes = %d, want %d — tool_use/input_schema bytes not fully covered (M-15)", got, want)
+	}
+}
+
 // TestEmbeddings413_namesTheRoutesOwnBounds: /v1/embeddings advertises per-DIMENSION limits (2048
 // inputs, 1 MiB each) that multiply out to 2 GiB — far past any body cap, so the two can never all
 // be satisfied at once. A 413 naming only the body cap leaves a client that respected both

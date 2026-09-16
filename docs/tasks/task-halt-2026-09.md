@@ -19,7 +19,7 @@
 ## Where goinfer sits, and what that means for a kill switch
 
 goinfer is the **model server**. `serve` turns prompts into tokens and, when a client asks for
-tools, emits `tool_calls` (`internal/serveapp/openai.go:507`); **the client executes them**.
+tools, emits `tool_calls` (`internal/serveapp/openai.go:528`); **the client executes them**.
 The one in-tree agent (`demo/agent`) has a single read-only tool — ken `search` over MCP
 (`demo/agent/agent/kenclient.go:42`). So goinfer cannot, by itself, stop a client that already
 received a `tool_call` from acting on it, and it cannot undo anything. What it can do, and what
@@ -79,7 +79,7 @@ a supervised deployment shape; an executor pattern; a drill.
 
 ## K1 — Cancel by id: the task-level switch
 
-**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/serveapp/`: the handlers that create a generation context (a bare `ctx, cancel := context.WithCancel(parent)` in `drive`/`driveVL`, un-cited by line number here since K1's own implementation replaced that exact code — see `internal/serveapp/openai.go:1196,1197` for the current `context.WithCancel` call sites, now `generationRegistry`-aware), `internal/serveapp/helpers.go`'s `reqID()`.
+**Where (original, pre-K1 locations — see the Status paragraph below for the shape that shipped).** `internal/serveapp/`: the handlers that create a generation context (a bare `ctx, cancel := context.WithCancel(parent)` in `drive`/`driveVL`, un-cited by line number here since K1's own implementation replaced that exact code — see `internal/serveapp/openai.go:1217,1197` for the current `context.WithCancel` call sites, now `generationRegistry`-aware), `internal/serveapp/helpers.go`'s `reqID()`.
 **Fix.** A process-wide registry `map[id]*generation{cancel, started, model, session, tokens,
 toolCalls}` populated when a handler mints its id and cleared on completion. `GET
 /admin/generations` lists in-flight; `POST /admin/generations/{id}/cancel` calls the cancel and

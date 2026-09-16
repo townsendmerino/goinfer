@@ -28,7 +28,10 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	// G1c, extended (audit-2026-09-02 M-21). The guard reached three routes; this was one of the
 	// five that still ran a full O(n) tokenize over an arbitrary body before rejecting it — the
 	// G1c comment prices what it removes at "~27 s of BPE + gigabytes of ids" on a multi-MiB body.
-	if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages)); err != nil {
+	// M-15 (audit-2026-09-10): tools are ACTIVE on this path (that's why serveChatToolsWith was
+	// reached at all), so req.Tools' schema bytes are added here — RenderToolsSegments below
+	// renders every one of them into the prompt.
+	if err := lm.promptTooLargeForContext(chatInputBytes(req.Messages) + toolSchemaBytes(req.Tools)); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}

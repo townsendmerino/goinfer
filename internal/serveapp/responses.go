@@ -112,7 +112,10 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	// covers both — /v1/responses was two of the five routes that tokenized an arbitrary body
 	// before rejecting it, and the assembled `messages` here include anything a stored
 	// previous_response_id dragged in, which is the input the BPE would actually run over.
-	if err := lm.promptTooLargeForContext(chatInputBytes(messages)); err != nil {
+	// M-15 (audit-2026-09-10): req.Tools' schema bytes are added unconditionally too, matching
+	// this guard's own "covers both branches" design — if tools end up active below,
+	// RenderToolsSegments renders every one of them into the prompt.
+	if err := lm.promptTooLargeForContext(chatInputBytes(messages) + toolSchemaBytes(req.Tools)); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}

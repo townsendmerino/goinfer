@@ -578,3 +578,78 @@ func TestConstrainForcedTool_namedButNonexistentIs400(t *testing.T) {
 		t.Errorf("unnamed choice with no forced tool errored: %v", err)
 	}
 }
+
+// M-15 (audit-2026-09-10): the G1c guard's argument counted message TEXT only — tool schemas and
+// replayed tool_calls[].arguments are rendered into the prompt too (via RenderToolsSegments and
+// messagesToTurns respectively) but were never priced, so a small message with a huge schema or
+// huge replayed arguments passed the guard in constant time and then ran the full BPE anyway. The
+// existing TestServe_everyTokenizingRouteGuardsItsInputSize only checks the guard is PRESENT, not
+// what it measures — these test what it measures, directly and end to end.
+
+// TestChatInputBytes_countsReplayedToolCallArguments is the direct unit gate: an assistant
+// message's ToolCalls (OpenAI/Responses shape) must be counted, not just its own text.
+func TestChatInputBytes_countsReplayedToolCallArguments(t *testing.T) {
+	textOnly := []chatMessage{{Role: "user", Content: rawStr("hi")}}
+	base := chatInputBytes(textOnly)
+
+	bigArgs := strings.Repeat("x", 10000)
+	withReplay := []chatMessage{
+		{Role: "user", Content: rawStr("hi")},
+		{Role: "assistant", ToolCalls: []apiToolCall{{Function: struct {
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		}{Name: "f", Arguments: bigArgs}}}},
+	}
+	got := chatInputBytes(withReplay)
+	want := base + len("f") + len(bigArgs)
+	if got != want {
+		t.Errorf("chatInputBytes with a replayed tool call = %d, want %d (base %d + name/arguments) "+
+			"— the guard's argument does not cover tool_calls[].function.arguments (M-15)", got, want, base)
+	}
+}
+
+// TestToolSchemaBytes_countsFunctionFields is the direct unit gate for the OpenAI/Responses tool
+// declaration list.
+func TestToolSchemaBytes_countsFunctionFields(t *testing.T) {
+	tools := []toolSpec{{Type: "function"}}
+	tools[0].Function.Name = "get_weather"
+	tools[0].Function.Description = "Get the current weather"
+	tools[0].Function.Parameters = json.RawMessage(strings.Repeat("x", 5000))
+	got := toolSchemaBytes(tools)
+	want := len(tools[0].Function.Name) + len(tools[0].Function.Description) + len(tools[0].Function.Parameters)
+	if got != want {
+		t.Errorf("toolSchemaBytes = %d, want %d — not every field the renderer reads is covered (M-15)", got, want)
+	}
+}
+
+// TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage matches the audit's own
+// worst-case example (a tiny message, a huge schema): composed the exact way
+// serveChatToolsWith's real guard call does (chatInputBytes(msgs) + toolSchemaBytes(tools)), the
+// combined byte count must trip a budget the message text alone would pass. This is NOT a call
+// through the real HTTP handler — promptTooLargeForContext short-circuits to nil without a real
+// *decoder.Model, which a unit test here does not load — so it instead proves the composition
+// this session's fix sites now share is correct, leaving the direct per-function unit tests above
+// to prove each addend's own arithmetic.
+func TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage(t *testing.T) {
+	msgs := []chatMessage{{Role: "user", Content: rawStr("hi")}}
+	tools := []toolSpec{{Type: "function"}}
+	tools[0].Function.Name = "f"
+	tools[0].Function.Parameters = json.RawMessage(strings.Repeat("x", 100000))
+
+	textOnly := chatInputBytes(msgs)
+	withSchema := textOnly + toolSchemaBytes(tools)
+	if withSchema <= textOnly {
+		t.Fatal("test bug: schema bytes did not add anything measurable")
+	}
+	// A context/maxTokenBytes budget that admits textOnly but refuses withSchema — proving the
+	// schema bytes are what tips it over, not an unrelated budget choice.
+	const maxTokenBytes = 4
+	ctx := (textOnly + toolSchemaBytes(tools)) / (2 * maxTokenBytes) // budget strictly between the two
+	if err := promptByteBudgetError(textOnly, ctx, maxTokenBytes); err != nil {
+		t.Fatalf("test bug: text-only bytes alone already exceed the chosen budget: %v", err)
+	}
+	if err := promptByteBudgetError(withSchema, ctx, maxTokenBytes); err == nil {
+		t.Error("a huge tool schema on a tiny message did not trip the budget guard (M-15) — " +
+			"the guard's argument does not include toolSchemaBytes")
+	}
+}
