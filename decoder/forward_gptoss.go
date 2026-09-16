@@ -3,6 +3,7 @@ package decoder
 import (
 	"fmt"
 	"math"
+	"unsafe"
 )
 
 // gpt-oss forward (own path, CPU-only). gpt-oss is a sparse-MoE family whose two
@@ -173,6 +174,16 @@ func (m *Model) gptOssMoE(h []float32, lw *LayerWeights, arch *Architecture) ([]
 	}
 	idx, topv := topK(logits, moe.TopK)
 	wts := softmaxF32(topv) // softmax over the top-k selected logits
+
+	// M-34 (audit-2026-09-10): touch every routed expert before evaluating it, same as
+	// moeMLP (decoder/mlp.go) — without this, m.pager's budget banner and SpanCache LRU are
+	// built but never consulted for gpt-oss, so -stream-weights enforces no RAM bound at all
+	// on this family and every expert is served through raw demand page-faults instead.
+	if m.pager != nil {
+		for _, e := range idx {
+			m.pager.touch(unsafe.Pointer(&lw.Experts[e]))
+		}
+	}
 
 	out := make([]float32, hidden)
 	expOut := make([]float32, hidden)

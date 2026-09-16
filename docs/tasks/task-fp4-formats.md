@@ -154,7 +154,7 @@ Ambiguous → parked, in every case.
 - `off` is an arm in every comparison.
 - Label the regime at the point of recording. A CPU MXFP4 kernel result does not transfer to a GPU
   path, and an Apple Silicon result does not transfer to x86 — the existing MXFP4 work already
-  notes that x86 speed and bench numbers were deferred (`decoder/forward_gptoss.go:17`).
+  notes that x86 speed and bench numbers were deferred (`decoder/forward_gptoss.go:18`).
 - Do not use the words "honest" or "honesty".
 - Leave uncommitted for review.
 

@@ -1,5 +1,7 @@
 package decoder
 
+import "unsafe"
+
 // Nemotron-H (nemotron_h) forward path — a SINGLE-OP-per-block hybrid: each layer is
 // exactly one of {Mamba-2 mixer, NoPE GQA attention, non-gated relu² MLP, non-gated
 // relu² MoE FFN}, applied pre-norm with a residual add — NOT the mixer+FFN block
@@ -101,6 +103,16 @@ func (m *Model) nemotronMoE(n []float32, lw *LayerWeights, arch *Architecture, h
 	logits := make([]float32, moe.NumExperts)
 	matmul(m.be, &lw.Router, n, logits, 1)
 	idx, wts := routeExperts(logits, lw.RouterBias, moe.TopK, moe.RouterSigmoid, moe.NormTopKProb, moe.RoutedScale, moe.NGroup, moe.TopkGroup)
+
+	// M-34 (audit-2026-09-10): touch every routed expert before evaluating it, same as
+	// moeMLP (decoder/mlp.go) — without this, m.pager's budget banner and SpanCache LRU are
+	// built but never consulted for Nemotron 3 Nano, so -stream-weights enforces no RAM
+	// bound at all on this family.
+	if m.pager != nil {
+		for _, e := range idx {
+			m.pager.touch(unsafe.Pointer(&lw.Experts[e]))
+		}
+	}
 
 	out := make([]float32, hidden)
 	for j, e := range idx {

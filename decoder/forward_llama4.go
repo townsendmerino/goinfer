@@ -1,6 +1,9 @@
 package decoder
 
-import "math"
+import (
+	"math"
+	"unsafe"
+)
 
 // Llama 4 (llama4_text) forward path — the iRoPE text decoder. Each block is a standard
 // Pre2 residual stack (input_layernorm → attention → +residual → post_attention_layernorm →
@@ -117,6 +120,16 @@ func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture
 
 	// Shared expert on the unscaled input, ungated.
 	swiGLUExpert(&lw.SharedExpert, h, out, moe.SharedIntermediateDim, m.be, l4gate, l4up)
+
+	// M-34 (audit-2026-09-10): touch every routed expert before evaluating it, same as
+	// moeMLP (decoder/mlp.go) — without this, m.pager's budget banner and SpanCache LRU are
+	// built but never consulted for Llama 4, so -stream-weights enforces no RAM bound at all
+	// on this family.
+	if m.pager != nil {
+		for _, e := range idx {
+			m.pager.touch(unsafe.Pointer(&lw.Experts[e]))
+		}
+	}
 
 	scaled := make([]float32, hidden)
 	expOut := make([]float32, hidden)

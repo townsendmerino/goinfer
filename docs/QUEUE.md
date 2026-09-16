@@ -1126,10 +1126,10 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4.go:33` | goinfer | `func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4_batched.go:198` | goinfer | `// All K rows must be appended before ANY row's attention is read this` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4_moe.go:112` | goinfer | `if pager != nil {` |
-| `docs/audit-2026-09-10.md|decoder/forward_gptoss.go:165` | goinfer | `func (m *Model) gptOssMoE(h []float32, lw *LayerWeights, arch *Architecture) ([]float32,` |
-| `docs/audit-2026-09-10.md|decoder/forward_llama4.go:106` | goinfer | `func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture) {` |
-| `docs/audit-2026-09-10.md|decoder/forward_nemotron.go:113` | goinfer | `if moe.SharedIntermediateDim > 0 {` |
-| `docs/audit-2026-09-10.md|decoder/forward_nemotron.go:99` | goinfer | `func (m *Model) nemotronMoE(n []float32, lw *LayerWeights, arch *Architecture, hidden in` |
+| `docs/audit-2026-09-10.md|decoder/forward_gptoss.go:166` | goinfer | `func (m *Model) gptOssMoE(h []float32, lw *LayerWeights, arch *Architecture) ([]float32,` |
+| `docs/audit-2026-09-10.md|decoder/forward_llama4.go:109` | goinfer | `func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture) {` |
+| `docs/audit-2026-09-10.md|decoder/forward_nemotron.go:101` | goinfer | `func (m *Model) nemotronMoE(n []float32, lw *LayerWeights, arch *Architecture, hidden in` |
+| `docs/audit-2026-09-10.md|decoder/forward_nemotron.go:125` | goinfer | `if moe.SharedIntermediateDim > 0 {` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:106` | goinfer | `if _, own := a.ownForward(); own {` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:1131` | goinfer | `anchor: func (m *Model) lmHeadN(h []float32, M int) []float32 {` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:1133` | goinfer | `anchor: func (m *Model) lmHeadN(h []float32, M int) []float32 {` |
@@ -1645,7 +1645,7 @@ supports.
 | `docs/tasks/task-fit-to-hardware.md|metal/gemma4_moe.go:217` | goinfer | `if s := metalMoESlotsRequest(m); s != "" {` |
 | `docs/tasks/task-fit-to-hardware.md|metal/moe.go:429` | goinfer | `if s := metalMoESlotsRequest(m); s != "" {` |
 | `docs/tasks/task-fit-to-hardware.md|pull/pull.go:179` | goinfer | `Size   int64` |
-| `docs/tasks/task-fp4-formats.md|decoder/forward_gptoss.go:17` | goinfer | `// speed on x86, and bench numbers are deferred (docs/completed/task-mxfp4-gptoss.md §6.` |
+| `docs/tasks/task-fp4-formats.md|decoder/forward_gptoss.go:18` | goinfer | `// speed on x86, and bench numbers are deferred (docs/completed/task-mxfp4-gptoss.md §6.` |
 | `docs/tasks/task-fp4-formats.md|decoder/gguf.go:851` | goinfer | `if err != nil {` |
 | `docs/tasks/task-fp4-formats.md|decoder/gptoss_safetensors.go:17` | goinfer | `//  1. MXFP4 nibbles are SEQUENTIAL here (byte j holds elements 2j and 2j+1), where GGML` |
 | `docs/tasks/task-freetoken-techniques.md|decoder/model.go:234` | goinfer | `MoECacheSlots int` |
@@ -1707,7 +1707,7 @@ supports.
 | `docs/tasks/task-moe-streaming.md|decoder/forwardn.go:97` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
 | `docs/tasks/task-moe-streaming.md|decoder/mlp.go:84` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |
 | `docs/tasks/task-moe-streaming.md|decoder/moepaging.go:15` | goinfer | `// only K·L per token; the router's top-k selection is the demand signal. The` |
-| `docs/tasks/task-moe-streaming.md|decoder/moepaging_test.go:13` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
+| `docs/tasks/task-moe-streaming.md|decoder/moepaging_test.go:18` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
 | `docs/tasks/task-moe-streaming.md|decoder/residency.go:316` | goinfer | `return m.residentProjsInt4()` |
 | `docs/tasks/task-recompute-audit.md|cuda/resident.go:376` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/tasks/task-recompute-audit.md|decoder/attention.go:89` | goinfer | `matmulInto(scr.ws, be, &lw.QProj, h, q, 1)` |
