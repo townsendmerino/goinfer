@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W32 added 2026-09-15 (§7) now that J1–J4 have shipped; W27–W32 all DONE 2026-09-15. Tier C is what remains.** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W32 added 2026-09-15 (§7) now that J1–J4 have shipped; W27–W32 all DONE 2026-09-15. Tier C is what remains, plus W34 (§8, added 2026-09-17).** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -1193,6 +1193,116 @@ scheduling) was measured 2026-09-15 and **killed** — 1.024× against a 1.3–2
 (`docs/measurements/j6-prefix-scheduling-2026-09-15.md`) — so admission stays plain FIFO and W28's
 "position while waiting" is exactly arrival order, unqualified. J8 (N decode workers) is still open
 and would change *how* the queue is served without changing this.
+
+---
+
+## 8. Showing the work — W34, added 2026-09-17
+
+Filed after the owner asked how the page could show the steps the engine takes, tying the UI
+to the repo's own inference primer. Tier-B class: in scope under §1, no further sign-off.
+Its server-side half is [`task-turn-telemetry-2026-09.md`](task-turn-telemetry-2026-09.md),
+which is a separate doc because the wire format has consumers beyond this page — the peer
+benchmark matrix and any harness wanting a TTFT it did not time itself.
+
+### W34 — Show what the engine is doing, in the book's own words
+
+**The page reports the outcome of a turn and nothing about the work.** goinfer's whole position is
+that it can tell you what it did, and there is an eleven-chapter primer in this repo
+(`docs/book/`, published at https://townsendmerino.github.io/goinfer/) describing exactly these
+stages. The chat page is the only place those ideas can be watched happening rather than read
+about. No other local chat UI shows this, and for this audience it is worth more than any
+remaining Claude-app parity item.
+
+**It also closes a real gap.** tok/s exists — `internal/serveapp/webui/ui/app.js` writes
+`N tok · 41.3 tok/s · 6.2s` into the reply's meta line — but only *after* the reply finishes.
+During the generation, which is when someone is actually watching, there is no rate at all.
+
+#### What the page already receives, with no server change
+
+This is the part that makes W34 cheap: nobody has to invent telemetry.
+
+- **`usage.prefill_reused_tokens`** — already a documented vendor extension
+  (`internal/serveapp/openai.go`, the `usage` struct): how many leading prompt tokens the prefill
+  skipped because they were still resident. That is Chapter 4's KV cache as a number, per turn,
+  and it is the single most surprising line a newcomer can be shown.
+- **`prompt_tokens` / `completion_tokens`** — the two sides of Chapter 8's split.
+- **`decode_path` and `quant`** per model, already in the header chrome — Chapters 5 and 10.
+- **Queue position** — W28 already polls it, so the page knows when it stopped waiting.
+- **TTFT and wall time** — the page can measure both itself.
+
+#### Three depths, and the default stays quiet
+
+1. **Live, during the turn.** One line that changes as the stage changes:
+   *waiting — 2nd in line* → *reading your prompt — 116 new of 1,204* → *writing — 41 tok/s*.
+   This is the highest-value part and the cheapest; it is also where the missing live rate goes.
+2. **At rest.** The existing meta line, unchanged.
+3. **Expanded.** A per-turn breakdown, **collapsed by default**, one row per stage, each row
+   linking to its chapter.
+
+Rows, and the chapter each belongs to:
+
+| row | shown as | chapter |
+|---|---|---|
+| Tokenized | `1,204 tokens` | 1 — Text becomes numbers |
+| Waited | `2nd in line · 1.4 s` (only when it waited) | — (J1 admission) |
+| Prompt | `1,088 reused from the last turn, 116 prefilled` (only when reuse fired) | 4 — The loop and the KV cache |
+| Prefill | `116 tokens` | 8 — Prefill versus decode |
+| Decode | `312 tokens · 41.3 tok/s` | 8, and 3 — Picking a token |
+| Path | `metal · int4` | 5 — Making the weights small, 10 — Kernels and backends |
+| Experts | hit rate (when the pager is active) | 7 — Mixture of Experts |
+| Drafted | `accepted 182 of 240` (when a drafter is attached) | 9 — Guessing ahead |
+
+The last two need `task-turn-telemetry-2026-09.md` X3/X4 and are absent until then.
+
+#### The honesty rules — the part that actually matters
+
+This repo measures things for a living, and a UI that prints a confident wrong number is worse
+than one that prints nothing.
+
+- **Client-measured TTFT includes queue wait, JSON decode and the network.** Label it *time to
+  first token*. It is **not** prefill time and must never be shown as one. The exact split needs
+  the server — that is X1 in the telemetry doc, and it is what makes the Prefill row's *duration*
+  possible. Until then the Prefill row shows a token count and no rate.
+- **Do not derive a prefill rate client-side.** It would be TTFT-minus-guesses, and it would be
+  wrong by however long the queue and the tokenizer took. Omit it.
+- **Reuse of 0 is ambiguous** — the extension's own comment says a cold prefill, a path that does
+  not track reuse, and nothing-reused are indistinguishable from the number alone. So **omit the
+  row** rather than rendering "0 reused" as if it had been measured.
+- **Decode rate is the one rate that is honest client-side**: completion tokens over the time from
+  first token to last. Note that this differs from today's meta line, which divides by the whole
+  wall time including TTFT — so W34 makes the existing number *more* correct, and the two should
+  be reconciled rather than left to disagree.
+
+#### Keep it a chat, not a dashboard
+
+One line live, one line at rest, panel collapsed, its open/closed state persisted with the
+conversation (W3's storage). The Claude-app work was parity; this is the opposite — the thing
+nobody else has — and it is worth more as something you can open than as something always on
+screen.
+
+**Chapter links are already sanctioned.** `TestWebUI_pageIsSelfContained` forbids remote *assets*
+but explicitly permits an `<a href>`, and the AmbientCSS restyle already added one to the
+published book. Links to the chapters cost the offline property nothing.
+
+**Effort: S for the live line, M for the panel.** Ship the live line on its own — it is most of
+the value and needs nothing new.
+
+#### Gates
+
+- The live rate and the final meta rate agree within rounding at the end of a turn.
+- A turn where reuse fired shows the Prompt row; a cold turn shows **no** Prompt row, not "0".
+- The panel is collapsed on first paint, and its state survives a reload.
+- Offline: no asset loads; chapter links are `<a href>` only (the self-contained test already
+  covers this and must stay green).
+- **Nothing is shown that was not measured** — a test asserting no prefill *duration* appears
+  while only client-side timing exists. This is the gate that stops X1's absence from being papered
+  over with an estimate.
+
+#### Later, named but not scoped
+
+**The explainer run**: the first turn a new user sends, played back stage by stage with the
+chapter links, once. That is the demo that makes the book discoverable, which is the visibility
+problem this project actually has. Bigger build; it should not block the above.
 
 ---
 
