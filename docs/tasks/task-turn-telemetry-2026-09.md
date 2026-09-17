@@ -1,6 +1,6 @@
 # Task: what a turn actually cost — per-generation telemetry on the wire (X1–X6) — 2026-09
 
-> **Status: SCOPED 2026-09-17, unstarted.**
+> **Status: SCOPED 2026-09-17, unstarted. X7/X8 added and the build order reversed the same day.**
 >
 > goinfer measures itself better than any peer and tells a *caller* almost none of it. Per
 > generation the API reports token counts and one vendor extension
@@ -15,6 +15,15 @@
 > any harness that wants a TTFT it did not have to time itself.
 
 ---
+
+## 0. Build order
+
+**X7 first, then X8, then X1.** X7 and X8 are static or near-static facts the engine has already
+decided — no clocks, no per-token work, nothing that can slow decode — and between them they cover
+Chapters 1, 2, 3, 4, 5, 6, 10 and 11. X1's timing block covers Chapters 8 and part of 4 and costs
+the most care, because it is the only part that instruments the hot path.
+
+This reverses the order these items were first filed in on 2026-09-17, on the reasoning above.
 
 ## 1. What exists today
 
@@ -62,14 +71,21 @@ that does not track reuse. A caller can then tell "nothing was reused" from "nob
 which today it cannot.
 
 ### X3 — speculative decoding, on the wire (Chapter 9)
-When a drafter is attached: `draft_tokens_proposed`, `draft_tokens_accepted`, and the rounds count.
-The acceptance figure is the single number that says whether speculation is earning its keep on
-this traffic, and it currently exists only in test logs. Absent when `-drafter`/`-spec` is off.
+When a drafter is attached: `draft_tokens_proposed`, `draft_tokens_accepted`, the rounds count, and
+**the break-even α for the configuration in force**. The acceptance figure currently exists only in
+test logs. Ship it *with* its break-even: Chapter 9's own conclusion is that speculative decoding
+"is not a speedup, it is a bet on α", so α alone is a number while α against break-even is the
+idea — and the difference decides whether a user should keep the drafter attached. Absent when
+`-drafter`/`-spec` is off.
 
 ### X4 — MoE expert cache, on the wire (Chapter 7)
-When the expert pager is active: hits, misses, and the slot count in force. This is the number that
-explains a paged MoE's decode rate, and it is the one a user staring at 1.4 tok/s most needs.
-Absent on a dense model or a fully-resident MoE.
+When the expert pager is active: hits, misses, the slot count in force, and **expert transfer as a
+share of decode time**. This is the number that explains a paged MoE's decode rate, and it is the
+one a user staring at 1.4 tok/s most needs. The share is what makes it Chapter 7 rather than a
+counter — that chapter's measured result is that roughly half of a token is expert transfer on the
+constrained GPU, and a share is the only form in which a user can recognise it. It also makes the
+chapter's stranger claim checkable from the chair: content determines cost, so two prompts on the
+same model give different hit rates. Absent on a dense model or a fully-resident MoE.
 
 ### X5 — the same shape everywhere
 `/v1/chat/completions` (streamed — in the final usage chunk — and buffered), `/v1/completions`,
@@ -85,6 +101,59 @@ same facts a live stream would. Where a route's own schema has a natural home (A
   measures anything (paired, same session, on the quiet box). If it is not within noise, the
   design is wrong and gets coarser, not shipped.
 
+### X7 — the model card: what was decided at load (Chapters 1, 2, 5, 6, 10, 11)
+
+**Build this first — see the order note in §0.** Everything here is resolved once, at load, so it
+costs nothing per token, needs no clock, and is not subject to X6's overhead gate at all. It also
+covers six chapters where X1–X4 together cover four.
+
+**The gap it closes is an asymmetry, not an absence.** `internal/serveapp/banner.go` already prints
+most of this at startup — decode path, prefill path, the context cap and KV precision, the features
+line, and session reuse with the reason when it is off ("resident decode is stateless, so every turn
+re-prefills its whole prompt"). A terminal user is told. A browser user gets a model name and a
+decode path. Since the web UI is now the product surface (owner decision 2026-09-14), **the page
+shows less than the startup log**, and that is the finding.
+
+Expose on `/v1/models`, per model, as vendor extensions under the existing convention:
+
+- `vocab_size` — Chapter 1's closing cost made concrete: every forward pass produces a score for
+  every entry, on every token, forever.
+- `n_layers`, `d_model`, `n_params` — Chapter 2's shape.
+- `weight_bytes_resident`, and what the same model would cost at the other quant — Chapter 5,
+  including its counter-intuitive result.
+- `placement` with the arithmetic that chose it — resident / N expert slots / paged / CPU, against
+  weights + KV + scratch vs available. Chapter 6. The fit guard already computes this to make its
+  decision; it simply does not report it.
+- `kernels` — the variant selections this build resolved for this model and machine (fast attention
+  on or off, `i8mm` absent, which W4A8 kernel). Chapter 10.
+- `parity` — the loaded family's row from `docs/capability-matrix.json`: `full-oracle
+  100.0%/1.00000`, `real-oracle 100.0%/0.98988`, `experimental: tiny-oracle`, and so on.
+  **Chapter 11, and the most distinctive line available to this product.** No other local engine
+  tells a user how its numerics were validated, or admits which families are still experimental.
+  It is already in the tree; nothing computes it, nothing reports it.
+
+Rule: the card is read once, not watched. It belongs beside the model, not in the reply stream, and
+it must not drift into a benchmark readout.
+
+### X8 — two per-turn facts that need no clock (Chapters 3, 4)
+
+Neither is a timing, so neither carries X1's measurement risk.
+
+- **Reuse eligibility, and the reason when it is no** (Chapter 4). The highest-value single field in
+  this doc. On the recurrent and hybrid families the prefix-reuse exclusion means every turn
+  re-prefills the whole prompt; the user sees consistently slow turns with nothing to attribute them
+  to, and `prefill_reused_tokens: 0` is indistinguishable from a cold first turn (X2). The banner
+  already carries the sentence for the whole server — this is the same fact, per turn, for the model
+  actually answering.
+- **The sampler path taken** (Chapter 3) — greedy, or the sampler with the parameters that survived
+  clamping, and whether the T ≤ 0.2 optimistic-forward cap applied. That chapter is about a shipped
+  default that was wrong and the measurement that nearly missed it; reporting the path actually
+  taken is the chapter's own lesson applied to the product.
+
+**Not here, because it needs no server at all:** characters per token for the user's own prompt
+(Chapter 1) is derivable in the page from `prompt_tokens` and the text they typed.
+[`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W34 owns it.
+
 ## 4. Not in scope
 
 - **A metrics endpoint / Prometheus.** This is per-generation facts for the caller who asked, not
@@ -99,7 +168,9 @@ same facts a live stream would. Where a route's own schema has a natural home (A
 `internal/serveapp/openai.go` (the `usage` struct and `prefill_reused_tokens`'s own comment on its
 ambiguity; the `decode_path`/`prefill_path` vendor-extension convention) ·
 `decoder/dflash_accept_test.go`, `decoder/eagle_accept_test.go` (acceptance, measured but not
-exported) · [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W34 ·
+exported) · `internal/serveapp/banner.go` (what a terminal user is already told at startup, and
+the page is not — X7's premise) · `docs/capability-matrix.json` (the per-family `parity` column
+X7 surfaces) · `decoder/fitguard.go` (the placement arithmetic X7 reports rather than recomputes) · [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W34 ·
 [`task-peer-benchmarks.md`](task-peer-benchmarks.md) · [`task-work-queue-2026-09.md`](task-work-queue-2026-09.md)
 J1/J3/J9 · `docs/book/` chapters 4, 7, 8, 9 (what each field is the observable of) ·
 `docs/api-tiers.md` (what may be added without breaking the promise)
