@@ -814,9 +814,10 @@ line was corrected (it had drifted when A9-FIX inserted the warm-up above it);
 the two bare `decoder/weightmat.go` / `decoder/mlp.go` references repo-qualified or de-numbered; the
 `linalg/quant.go` reference resolves in aikit once the lint searches the sibling set (line 113 at the
 time — the scalar `int8→f32` widen loop this citation was making the point about; that code is gone,
-replaced by the SIMD widen at `linalg/quant.go:216` (shifted from `:138` by the 2026-09-03 aikit
-v1.33.0 bump) once aikit v1.18.0/P2 landed and goinfer bumped to v1.19.0, 2026-08-15 — retargeted
-so the citation still resolves).
+replaced by the SIMD widen at `linalg/quant.go:214` (shifted from `:216` by the 2026-09-16 aikit
+v1.44.0 bump; previously shifted from `:138` by the 2026-09-03 aikit v1.33.0 bump) once aikit
+v1.18.0/P2 landed and goinfer bumped to v1.19.0, 2026-08-15 — retargeted so the citation still
+resolves).
 
 **And one turned out not to be a line drift at all.** `cuda/resident.go:416` was cited for audit
 C-08 — `_ = gpu.Upload(...)` discarding errors. That code is **gone**: `recordUpload` captures the
@@ -954,9 +955,9 @@ of them:
 |---|---|
 | `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
 | `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
-| `decoder/forwardn.go:1120` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-08-24; previously retargeted 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
-| `decoder/model.go:969` | unchanged — same freeze |
-| `metal/model.go:1145` | unchanged — Metal is on hold for core-numerics surfaces |
+| `decoder/forwardn.go:1149` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-09-16; previously retargeted 2026-08-24, and 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
+| `decoder/model.go:1018` | unchanged — same freeze |
+| `metal/model.go:1155` | unchanged — Metal is on hold for core-numerics surfaces |
 
 The three unchanged members are a **deliberate** partial fix, not an oversight, and they are the
 reason this row exists: had P3 been taken at face value and only `cuda/resident.go` parallelised,

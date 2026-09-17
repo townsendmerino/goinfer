@@ -69,7 +69,7 @@
 | **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | **`spec_ngram.go` fixed 2026-09-03**; `spec_eagle.go` never touches resident state — the fix doesn't apply there (see below) |
 | **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | open; **P-18 confirmed and measured 2026-09-03** (148× TTFT at 2k tokens on the real prefill path, well past L-15's own funding bar) — the fix itself is still L-15's, not attempted |
 | **R-05** | the int4 nibble unpack, per token, per paged expert | `decoder/moepaging.go:62-77` — a paged tensor is never repacked; the canonical kernel runs every use | row4 vs canonical is 1.33× on the M=1 GEMV; MoE is ~70% of a CPU-paged 35B token | repack into the slot on fetch (the owned-buffer fetch already copies) | **investigated 2026-09-03, not implemented**: the described mechanism belongs to the Metal pager, not this one; the CPU-paged equivalent (`.giw` kind-4 row4) already SHIPPED and its own performance case is UNRESOLVED per this repo's own measurement saga (swung between −49% and +49% across sessions) — see below |
-| **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:89-111` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | **wired and measured 2026-09-03/04, PARKED (default-off)**: aikit `MatmulBTW4A8Batch` shipped at v1.34.0; goinfer wired it behind `GOINFER_W4A8_BATCH` (default off) in q/k/v (`attention.go`) and gate/up (`mlp.go`); reproduced on two independent architectures via `bench_peer.py` (n=10 paired, idle-gated) — arm64/Metal 1.071× (stdev 0.009), amd64/CPU 1.066× (stdev 0.0008) — both squarely inside the pre-registered ambiguous zone between the 1.05× park / 1.15× ship thresholds, so it stays off by default per this repo's own "ambiguous → parked" rule |
+| **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:91-110` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | **wired and measured 2026-09-03/04, PARKED (default-off)**: aikit `MatmulBTW4A8Batch` shipped at v1.34.0; goinfer wired it behind `GOINFER_W4A8_BATCH` (default off) in q/k/v (`attention.go`) and gate/up (`mlp.go`); reproduced on two independent architectures via `bench_peer.py` (n=10 paired, idle-gated) — arm64/Metal 1.071× (stdev 0.009), amd64/CPU 1.066× (stdev 0.0008) — both squarely inside the pre-registered ambiguous zone between the 1.05× park / 1.15× ship thresholds, so it stays off by default per this repo's own "ambiguous → parked" rule |
 | **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | **fully fixed 2026-09-03**: `decoder/embed.go`'s per-token forward (`hiddenLastBatched`, ~12-14× measured) and `embeddings.go`'s double-tokenize (`embedBatchCounter`) are both done |
 | **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | **fixed on the serving hot path, 2026-09-03**: P-13, P-15, and now P-17's `openai.go` `streamTokens` (incremental `DecodePiece` + windowed stop-scan, differentially tested against the old algorithm) are all FIXED; the three demo-CLI copies (`chatapp`/`gemmaapp`/agent) are a different shape and stay open, deliberately deprioritized below the serving path as the original audit itself specified |
 | **R-09** | the whole `.giw` CRC on every start | P-10 | a full read of a >RAM bundle before the first token | per-layer CRCs | filed, not implemented (disposition 2026-09-03) |
@@ -93,8 +93,8 @@ positions are inherent, not recompute.
   `resident_reuse.go`, `spec_eagle.go`, `spec_ngram.go`. `blockspec.go` does not claim `resBusy`
   either.
 - **Mechanism:** `resIDs` is written only by `residentCommitIDs` at the end of a completed plain
-  generation (`decoder/model.go:1604`) and read by `residentReuseLen` at the start of the next
-  (`decoder/model.go:1385-1248`). `serve` routes a greedy request to `BlockSpec.GenerateStream` and a
+  generation (`decoder/model.go:1665`) and read by `residentReuseLen` at the start of the next
+  (`decoder/model.go:1446`). `serve` routes a greedy request to `BlockSpec.GenerateStream` and a
   sampled one to `Model.Generate` on the **same** `*Model` (`internal/serveapp/openai.go`, the
   `--drafter` branch). So: plain turn A commits A's ids → greedy turn B prefills B over the same
   positional rows → sampled turn C whose prompt extends A matches A's ids and skips the prefix,
@@ -128,7 +128,7 @@ positions are inherent, not recompute.
   needs a much heavier harness than `BlockSpec.generate`'s synchronous call, and R-03 (which
   upgrades the forget to a commit) is the natural point to build that harness rather than
   duplicating it now for a single-line change whose shape is otherwise identical to the
-  already-tested `decoder/model.go:1385-1248` pattern.
+  already-tested `decoder/model.go:1446` pattern.
 
 ### R-01 · The hybrid families re-prefill the whole conversation every turn (resident path)
 
@@ -139,7 +139,7 @@ positions are inherent, not recompute.
   re-zeroed only at pos 0.
 - **What the staged path already does, and the resident path should copy:** the CPU `Session`
   reuses through `rewindForReuse` (`decoder/session.go:73-80`) → `KVCache.TruncateTo`
-  (`decoder/kvcache.go:525-473`), whose rule for recurrent state is: `pos == 0` resets, `pos < c.pos`
+  (`decoder/kvcache.go:539`), whose rule for recurrent state is: `pos == 0` resets, `pos < c.pos`
   is **inexact** (cold prefill), and `pos == c.pos` is **exact**. An agent turn is `previous prompt +
   reply + tool result`, so `commonPrefixLen == c.pos` and the staged cache reuses it warm — the
   recurrent state after the committed sequence *is* the live state, nothing to rewind. The only
@@ -223,7 +223,7 @@ positions are inherent, not recompute.
 ### R-02 · A cancelled generation forgets a prefix that is intact
 
 - **Where:** `generateInto`'s `select { case <-ctx.Done(): g.err = ctx.Err(); return ... }` before
-  `out <- next` (`decoder/model.go:1469`, the send that M8 made cancellable).
+  `out <- next` (`decoder/model.go:1530`, the send that M8 made cancellable).
 - **Mechanism:** at that point the last forward has completed and been sampled, `next` has not been
   forwarded, and `generated` holds exactly the tokens whose K/V (and, for a hybrid, whose recurrent
   state) the cache holds. The cache is as consistent as it is at the commit two branches later; the
@@ -252,7 +252,7 @@ positions are inherent, not recompute.
   consistent there as at the send-select exit — but the top-of-loop exit was never wired to commit,
   so most real cancels (the ones landing during Forward, not during the microsecond sample/send
   window) still cold-prefilled. Fixed: the same `if useGPU { m.residentCommitIDs(prompt, generated)
-  }` added to the top-of-loop exit too (`decoder/model.go:1469`). Mutation-checked at
+  }` added to the top-of-loop exit too (`decoder/model.go:1530`). Mutation-checked at
   `-count 100`: without this second commit the existing test fails intermittently (~35/100 runs,
   confirming V-10's "scheduling-dependent" characterization empirically); with it, 100/100 pass,
   and `-race -count 20` alongside the R-03 sibling test is clean.
@@ -394,7 +394,7 @@ positions are inherent, not recompute.
 
 ### R-06 · One activation, quantised seven times per layer
 
-- **Where:** `decoder/attention.go:89-111` (`matmulInto` ×3 for q, k, v when they are W4A8; the
+- **Where:** `decoder/attention.go:91-110` (`matmulInto` ×3 for q, k, v when they are W4A8; the
   W8A8 case already batches through `qkvOps` at `:74-77`), the gate/up pair in `decoder/mlp.go`.
   Each `MatmulBTW4A8Into` re-quantises its input row.
 - **Fix:** aikit `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (task-simd-audit S-02/S-03),
