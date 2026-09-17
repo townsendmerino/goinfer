@@ -1904,6 +1904,54 @@ tok/s** (was 12.9 broken, 24.6 the original baseline — within noise of full re
 Dense models never called `-moe-cache-experts`, so this fix changes nothing for them — consistent
 with the dense re-anchor above showing zero movement.
 
+### Re-run 2026-09-17 — the ctx-fit fix confirmed durable in a full clean sweep; aikit v1.44.0 cleared
+
+Prompted by "get on tip and re-run the same peer benchmarks" after two days of further commits,
+including one worth checking directly: `a1640a6a`, bumping aikit to v1.44.0 for "batch/pipeline
+forward optimizations." Same harness, same shape as the 2026-09-15/16 re-run above.
+
+**Provenance.** `nobara-pc`, RTX 2070 SUPER, driver `595.91.07`, Nobara 44 · goinfer `1ca68807`
+(clean) · Ollama `0.32.5` · llama-server `0.4.0-dev (build 1, commit 427291b)` · `scripts/bench_peer.py`,
+`BENCH_BACKENDS=cuda`, greedy, restart between cells, idle-gated, binaries built fresh from the
+tested commit. Raw: `docs/measurements/peer-matrix-2026-09-17/nobara-pc-cuda-sweep.json`.
+
+**Everything except M35/M26 @128: flat, as expected.** Every dense cell and both models' depth-8000
+cells landed within 0–2% of the 09-15/16 anchor — the peer engines (Ollama, llama.cpp) landing
+within **0.0%** on most cells is worth noting on its own: it's the control that says the harness and
+box behave consistently run to run, so a real delta elsewhere isn't just noise. aikit v1.44.0 moved
+nothing measured here either way.
+
+**M35/M26 @128: goinfer +84.5% and +25.4%.** Real, and expected once traced: the ctx-fit fix above
+(`18a6f73d`) predates this sweep but postdates the *committed* 09-15/16 sweep file, which was never
+re-generated after the fix — only spot-verified once (23.1 tok/s, the number quoted in that section
+above). This is the first full, clean sweep with the fix in it:
+
+| model @128 | 09-15/16 (pre-fix, committed) | 09-17 (post-fix) |
+|---|---|---|
+| M26, goinfer | 12.9 | **23.8** |
+| M35, goinfer | 18.9 | **23.7** |
+
+**A real bug this session found in its OWN wrapper script, not in goinfer — worth recording since
+it produced a confusing first read.** The first pass at this re-run showed M26 @128 at **17.6**
+tok/s — up from the broken 12.9, but well short of the fix's own already-verified 23.1, and with a
+suspiciously tight spread (0.0 across 4 completions) that ruled out ordinary noise. Traced by
+building three intermediate commits in scratch worktrees and re-measuring the same cell directly,
+isolated from the rest of the sweep: `18a6f73d` (the fix itself) → 23.4 · `5b3f1eba` (right before
+the aikit bump) → 23.5 · `a1640a6a` (the aikit bump itself, first attempt) → a noisy 22.0, cleanly
+re-measured on an idle box → **23.8**. None of the three showed the drop — the regression wasn't in
+any commit between the fix and today's tip. It was `BENCH_DEEP_CTX=8192`, set for the *entire* MoE
+step of this run's own wrapper (to avoid the depth-8000 protocol gap the 09-15/16 follow-up pass
+had to fix after the fact — see above), leaking into the phase-128 cells it was never meant to
+touch: `gen_params()` (`scripts/bench_peer.py`) switches to the deep-context token/completion count
+whenever `DEEP_CTX` is truthy *regardless of which depth the cell is actually at*, and the same env
+var also forces goinfer's own `-ctx 8192` onto a cell that should have been unpinned — which, per
+the fix directly above, changes the expert-cache slot budget exactly the way the original bug did,
+just on purpose this time via the wrong knob. Fixed by purging just the 6 contaminated cells
+(M35/M26 × 3 engines @128) and re-running them alone, `BENCH_DEEP_CTX` unset, matching the protocol
+every other phase-128 cell in this sweep used — landed at 23.8/23.7, consistent with the three
+isolated single-commit checks to within noise. **Lesson for next time this harness's wrapper sets
+`BENCH_DEEP_CTX`: scope it to a `BENCH_DEPTHS=8000`-restricted invocation, never the whole step.**
+
 ### Not done yet
 
 - **W2** (prefill at 512/3900 tokens, TTFT) — not built as its own row in *this* matrix, but both

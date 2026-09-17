@@ -1,0 +1,2905 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-09-17T15:07:55Z",
+  "host": "nobara-pc",
+  "uname": "Linux 7.2.0-202.nobara.fc44.x86_64 x86_64",
+  "distro": "Nobara Linux 44",
+  "goinfer_commit": "1ca68807",
+  "goinfer_tree_dirty": true,
+  "peer": {
+   "ollama_bin": "/home/francis/ollama-0325/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "/home/francis/mycode/peers/llama.cpp/build/bin/llama-server",
+   "version": "0.4.0-dev (build 1, commit 427291b)"
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-cpu",
+    "mtime": "2026-08-22T18:18:03Z"
+   },
+   "cuda": {
+    "path": "/home/francis/bench-2026-09-17/serve-cuda",
+    "mtime": "2026-09-17T10:57:29Z"
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu",
+    "mtime": "2026-08-22T18:17:55Z"
+   },
+   "metal": {
+    "path": "/nonexistent/serve-metal",
+    "mtime": null
+   }
+  },
+  "serve_binaries_old": {},
+  "gpu": {
+   "driver": "595.91.07",
+   "name": "NVIDIA GeForce RTX 2070 SUPER",
+   "temp_c": 49,
+   "mem_used_mib": 637,
+   "mem_total_mib": 8192
+  },
+  "cpu_count": 16,
+  "loadavg_at_start": [
+   0.48876953125,
+   1.2802734375,
+   1.08984375
+  ],
+  "gpu_compute_apps_at_start": [
+   "1748, 21 MiB"
+  ],
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "resumed_from": [
+   {
+    "utc": "2026-09-17T10:57:53Z",
+    "goinfer_commit": "1ca68807",
+    "gpu": {
+     "driver": "595.91.07",
+     "name": "NVIDIA GeForce RTX 2070 SUPER",
+     "temp_c": 50,
+     "mem_used_mib": 669,
+     "mem_total_mib": 8192
+    },
+    "uname": "Linux 7.2.0-202.nobara.fc44.x86_64 x86_64"
+   },
+   {
+    "utc": "2026-09-17T11:16:07Z",
+    "goinfer_commit": "1ca68807",
+    "gpu": {
+     "driver": "595.91.07",
+     "name": "NVIDIA GeForce RTX 2070 SUPER",
+     "temp_c": 53,
+     "mem_used_mib": 669,
+     "mem_total_mib": 8192
+    },
+    "uname": "Linux 7.2.0-202.nobara.fc44.x86_64 x86_64"
+   }
+  ]
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   337.99739628224415,
+   335.7660681355005
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.05859375,
+    0.03369140625,
+    0.0029296875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 50,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 11.0,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    332.10719885682454,
+    334.3809381619226,
+    332.09475170990714,
+    338.8345780229917,
+    341.7158046303628,
+    342.72574691376974,
+    341.69306196804547,
+    340.4270899941291,
+    324.193500345732,
+    333.0775280630779,
+    340.2780794716404,
+    336.51744177711083,
+    335.1469446754645,
+    332.0808001307045,
+    342.04010164603255,
+    342.79414897424124
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1116680
+  },
+  "mean": 336.9,
+  "spread": 2.2
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   268.68163850493505,
+   269.2717288428826
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.52392578125,
+    0.13232421875,
+    0.03515625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 53,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 19.9,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    267.8498635559488,
+    268.7127988983091,
+    269.20134577989484,
+    268.23826358768497,
+    269.4919979744547,
+    268.61627045892783,
+    269.58274174596284,
+    267.7598260382973,
+    270.6983592023016,
+    268.36074142773515,
+    268.15081929227966,
+    267.6030530757573,
+    270.27181003762354,
+    270.48262873079153,
+    269.17871996571387,
+    269.4276990108585
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 872444
+  },
+  "mean": 269.0,
+  "spread": 0.6
+ },
+ {
+  "phase": "A",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   367.8789400227987,
+   375.2103329105174
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.65966796875,
+    0.18994140625,
+    0.056640625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 7.3,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    380.8575689866105,
+    361.20555554213314,
+    360.7434964716894,
+    358.7061612682895,
+    360.6786673615878,
+    372.25427459636524,
+    376.2320277617162,
+    372.35376819399755,
+    378.76614621521134,
+    358.4034682037272,
+    378.2113203377743,
+    377.88439383574035,
+    376.19902470270216,
+    375.18727871911096,
+    380.496064083838,
+    376.5349671860353
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 520316
+  },
+  "mean": 371.5,
+  "spread": 7.3
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   227.54477383836243,
+   227.4663565063106
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.6318359375,
+    0.2001953125,
+    0.0615234375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 52,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 16.7,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    227.9761240931883,
+    227.37451100626114,
+    227.24677014990414,
+    227.2455988063432,
+    227.46678714269575,
+    227.81848156715094,
+    227.44132922734636,
+    227.78858871400968,
+    226.75930802798624,
+    227.91362416094452,
+    227.93634189495552,
+    227.60050647396852,
+    227.27143021182144,
+    226.89843080759888,
+    227.71224889930315,
+    227.6389615739065
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 2530344
+  },
+  "mean": 227.5,
+  "spread": 0.1
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   195.31078945790904,
+   194.88973156756083
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.71435546875,
+    0.240234375,
+    0.07763671875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 20.4,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    195.67988753266974,
+    195.80540989302375,
+    195.0729762022206,
+    195.27963919184054,
+    195.5896963701862,
+    195.1062877332767,
+    195.2842819787281,
+    194.6681367613266,
+    194.2677585325722,
+    195.29009939633724,
+    194.49932747491712,
+    195.07563997337368,
+    194.93806975690535,
+    194.53193879262113,
+    195.28503259264647,
+    195.22998602111343
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1454020
+  },
+  "mean": 195.1,
+  "spread": 0.4
+ },
+ {
+  "phase": "A",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   228.1499345776337,
+   225.80476581322696
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.93798828125,
+    0.32275390625,
+    0.10888671875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 9.2,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    226.19642640273457,
+    228.20020883533192,
+    227.06080057185923,
+    229.78318568944619,
+    230.22577565420522,
+    230.69992529276152,
+    230.33660715655958,
+    222.69654701817132,
+    227.66421609918666,
+    223.2649000301597,
+    229.74607973277543,
+    226.4902679445598,
+    222.33985371879217,
+    229.34684348092995,
+    222.33521636478125,
+    225.2507491346308
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 550464
+  },
+  "mean": 227.0,
+  "spread": 2.3
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   73.02501739694128,
+   73.02073660339103
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.86767578125,
+    0.32861328125,
+    0.11279296875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 52,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 45.2,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    72.99307224974847,
+    72.96148148339127,
+    73.03921751350406,
+    73.03691256174262,
+    73.02008338825259,
+    73.03707606380047,
+    73.0147586140593,
+    73.09753730103142,
+    73.02575861406119,
+    72.96824035066832,
+    73.05199184729784,
+    73.05155467182304,
+    73.07486681859544,
+    73.0074978812225,
+    73.00832033252641,
+    72.97766231093352
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 9503620
+  },
+  "mean": 73.0,
+  "spread": 0.0
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   74.22609932127143,
+   74.2531744432136
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.95068359375,
+    0.607421875,
+    0.23828125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 48,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 29.7,
+  "counts": {
+   "tokens": 832,
+   "chunks": 816,
+   "tokens_per_chunk": 1.0196078431372548,
+   "completion_rates": [
+    74.18620471854992,
+    74.18061413390512,
+    74.18418678654866,
+    74.13957081174793,
+    74.35068432326239,
+    74.23145154184213,
+    74.22622673363439,
+    74.30985552068093,
+    74.26512734380574,
+    74.26176099387934,
+    74.1845179566943,
+    74.28338003824082,
+    74.30637360480164,
+    74.30303274272416,
+    74.16664935154509,
+    74.25455351401772
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 4967072
+  },
+  "mean": 74.2,
+  "spread": 0.0
+ },
+ {
+  "phase": "A",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   80.69714395012983,
+   80.40573613474271
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.0,
+    0.66015625,
+    0.26953125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 53,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 13.5,
+  "counts": {
+   "tokens": 592,
+   "chunks": 576,
+   "tokens_per_chunk": 1.0277777777777777,
+   "completion_rates": [
+    80.84968091563375,
+    80.80142697995257,
+    80.78225116050511,
+    80.9965236309048,
+    80.90723566772337,
+    80.72768346790993,
+    80.26734573378994,
+    80.2450040446191,
+    79.77298876743498,
+    80.6434994618373,
+    80.65336213259727,
+    80.68391288552463,
+    80.3120143156144,
+    80.19859810465597,
+    80.51600686856837,
+    80.46550654170873
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 729820
+  },
+  "mean": 80.6,
+  "spread": 0.3
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   344.2977807751015,
+   345.0390375673977
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.919921875,
+    0.66064453125,
+    0.27587890625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 53,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 10.9,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    347.78638987186997,
+    341.2848736175706,
+    350.048250305537,
+    338.71924169066546,
+    351.0884208936792,
+    341.2462007691625,
+    333.31255508663304,
+    350.89631396569433,
+    349.8515307811073,
+    338.2020507132831,
+    346.88595464755116,
+    345.43304884171266,
+    359.9353247265465,
+    343.2248277301741,
+    339.16372648432036,
+    337.6158366144863
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1127104
+  },
+  "mean": 344.7,
+  "spread": 0.7
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   268.91284426254526,
+   268.39608448210504
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.8525390625,
+    0.6552734375,
+    0.27783203125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 53,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 18.1,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    268.65030204964785,
+    270.43401339464464,
+    267.84214280691134,
+    268.759947742248,
+    268.6894186128868,
+    268.4355129892855,
+    269.1671503148973,
+    269.3242661898406,
+    267.83559530537593,
+    268.7727208025039,
+    268.33034889935027,
+    269.08040964179304,
+    268.1964364024796,
+    266.58371030745786,
+    269.21011140059005,
+    269.15934309728965
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 607996
+  },
+  "mean": 268.7,
+  "spread": 0.5
+ },
+ {
+  "phase": "B",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   368.5741346441448,
+   374.21954393364405
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.87744140625,
+    0.6767578125,
+    0.29296875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 7.3,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    346.652555409851,
+    368.07126436561344,
+    375.32268588554643,
+    356.82498757974423,
+    372.2224517292798,
+    377.3402123202588,
+    374.9599328429639,
+    377.1989870199009,
+    376.45882726898964,
+    375.38416319564845,
+    376.49763586502587,
+    376.60996727229104,
+    364.0524320018304,
+    377.56599695490047,
+    377.68786513761387,
+    369.49946377285266
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 522192
+  },
+  "mean": 371.4,
+  "spread": 5.6
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   259.92839741845,
+   259.95597792336247
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.80712890625,
+    0.6650390625,
+    0.291015625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 13.0,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    259.9007906800005,
+    259.9508182804728,
+    260.34880938177884,
+    259.59383833443223,
+    260.61405226902343,
+    259.53441058936636,
+    259.6862165177071,
+    259.79824329481875,
+    260.449530751667,
+    259.33608999268347,
+    260.1752957857334,
+    260.5033029629889,
+    259.92320154751394,
+    259.3007484596505,
+    260.1001362442183,
+    259.8595176424442
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1156268
+  },
+  "mean": 259.9,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   270.73742712256853,
+   270.80554174987805
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.73388671875,
+    0.767578125,
+    0.359375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 49,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 18.0,
+  "counts": {
+   "tokens": 928,
+   "chunks": 912,
+   "tokens_per_chunk": 1.0175438596491229,
+   "completion_rates": [
+    270.86820442621035,
+    271.026506174832,
+    271.92784389730826,
+    270.59303811965526,
+    270.2486580719759,
+    270.27297941976934,
+    271.3840230642304,
+    269.5781638065667,
+    271.6574868189387,
+    269.0190434429706,
+    271.8571866285447,
+    271.1063125282159,
+    271.2024118773626,
+    270.8918405365442,
+    270.95613488939875,
+    269.75391727704886
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 608460
+  },
+  "mean": 270.8,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   359.9955502337674,
+   367.6382334820227
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.79345703125,
+    0.779296875,
+    0.37060546875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 53,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 7.5,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    365.18296457853796,
+    362.9737547845193,
+    356.86438159111424,
+    362.42203750831044,
+    360.0121478471523,
+    359.7273985835556,
+    368.64749056793784,
+    344.13422640901143,
+    363.0250817838589,
+    368.35917258460745,
+    369.2227972211956,
+    369.62409689202207,
+    367.58955214214524,
+    368.6074127860486,
+    367.424327162788,
+    367.25342728351563
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 528240
+  },
+  "mean": 363.8,
+  "spread": 7.6
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   206.564642794999,
+   206.64773118219358
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.7451171875,
+    0.77001953125,
+    0.37158203125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 53,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 15.5,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    206.53276581056613,
+    205.53503768204234,
+    206.22088744437647,
+    207.25079062142808,
+    206.71221940982252,
+    207.04534490965472,
+    206.3042951252727,
+    206.91580135682904,
+    206.70380194842792,
+    206.55505076409085,
+    206.3819212888408,
+    206.3428373278425,
+    206.71765167833556,
+    206.7504596174706,
+    207.0318723802492,
+    206.69825445229114
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1218776
+  },
+  "mean": 206.6,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   259.86210663013554,
+   260.05063133560526
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.7216796875,
+    0.7646484375,
+    0.3759765625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 53,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 18.2,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    260.2746785928597,
+    260.31001723095443,
+    259.7541636192562,
+    260.8269235274443,
+    259.7014699374689,
+    258.21352210968575,
+    259.9456376943207,
+    259.87044032909444,
+    260.85303698259185,
+    260.32556132496114,
+    260.17559664433537,
+    261.008919119891,
+    258.6779237159619,
+    260.2597222470835,
+    258.78849740860744,
+    260.31579324140984
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 872612
+  },
+  "mean": 260.0,
+  "spread": 0.2
+ },
+ {
+  "phase": "B",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   469.40630539273764,
+   473.9716373560307
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.86376953125,
+    0.79345703125,
+    0.3916015625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 52,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 5.1,
+  "counts": {
+   "tokens": 80,
+   "chunks": 64,
+   "tokens_per_chunk": 1.25,
+   "completion_rates": [
+    450.7279410782068,
+    471.3246103666024,
+    471.35015786818116,
+    471.5824430399884,
+    473.49045285565666,
+    470.370149327369,
+    474.72048070484533,
+    471.68420790105137,
+    471.0137541724309,
+    460.14764755893026,
+    472.5551208061948,
+    468.10830683656883,
+    482.47476740082595,
+    482.1897775325583,
+    476.5388025333334,
+    478.7449220074032
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 531932
+  },
+  "mean": 471.7,
+  "spread": 4.6
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   200.32453478740294,
+   200.32986056755897
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.875,
+    0.79736328125,
+    0.39501953125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 16.7,
+  "counts": {
+   "tokens": 1008,
+   "chunks": 1008,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    200.18418365150438,
+    199.66897396786575,
+    200.68103113900324,
+    199.77772407822266,
+    200.5373268179843,
+    200.72151420061772,
+    200.70304789850445,
+    200.32247654552097,
+    200.70908966486002,
+    200.25375573746285,
+    200.2957165881628,
+    200.54330739265427,
+    200.1137698369455,
+    200.36089132122964,
+    199.82279585085917,
+    200.53955814829737
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 2534292
+  },
+  "mean": 200.3,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   247.81036040787708,
+   207.0637214060485
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.95849609375,
+    0.904296875,
+    0.458984375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 48,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 14.6,
+  "counts": {
+   "tokens": 80,
+   "chunks": 64,
+   "tokens_per_chunk": 1.25,
+   "completion_rates": [
+    246.6158600846993,
+    264.6640073354391,
+    260.3735593199044,
+    263.79791695755307,
+    249.99567219345084,
+    233.56367214340884,
+    242.54907442222532,
+    220.9231208063358,
+    210.63272961759188,
+    221.06583928050114,
+    221.16828147454427,
+    206.50285766657063,
+    205.86093275136557,
+    195.05470962522577,
+    201.2798883827739,
+    194.94453244981483
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 998704
+  },
+  "mean": 227.4,
+  "spread": 40.7
+ },
+ {
+  "phase": "B",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   301.16615006725374,
+   298.9230959018882
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.8876953125,
+    0.89306640625,
+    0.4619140625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 50,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 5.3,
+  "counts": {
+   "tokens": 80,
+   "chunks": 64,
+   "tokens_per_chunk": 1.25,
+   "completion_rates": [
+    282.555556829048,
+    304.93608433540214,
+    305.9719917864862,
+    307.51059278913044,
+    306.59888172426423,
+    306.5509476621631,
+    295.67397895526153,
+    299.53116645627443,
+    299.15347817344673,
+    297.929080303788,
+    299.62425596549207,
+    296.6400690876183,
+    302.54295713342435,
+    300.6197882146338,
+    299.462323270754,
+    295.41281506594817
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 551412
+  },
+  "mean": 300.0,
+  "spread": 2.2
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   160.90052323181126,
+   161.1033996793518
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.81640625,
+    0.8779296875,
+    0.458984375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 52,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 20.2,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    161.03364747500376,
+    161.38578147703367,
+    160.84796637388942,
+    160.81167564450436,
+    160.82603970578685,
+    160.20466893806025,
+    161.11305862163758,
+    160.98134761857415,
+    160.81011993590775,
+    161.1508503553244,
+    161.0906851993009,
+    161.19678882587039,
+    161.22147366845715,
+    160.89690905129973,
+    161.19990288979037,
+    161.26046750886383
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 2607372
+  },
+  "mean": 161.0,
+  "spread": 0.2
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   180.03712900043723,
+   179.81281653614778
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.72216796875,
+    0.8583984375,
+    0.46923828125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 48,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 20.5,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    180.25096238813592,
+    180.3204985677001,
+    180.07841231413838,
+    180.35688659584775,
+    179.9451784116179,
+    179.65534252107838,
+    179.91903129821978,
+    179.77071990675955,
+    179.90304716399132,
+    179.69039242320204,
+    180.2243499695536,
+    180.00159996686656,
+    179.40460482257282,
+    179.61419742788638,
+    179.1840230882443,
+    180.48031742686516
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1487712
+  },
+  "mean": 179.9,
+  "spread": 0.2
+ },
+ {
+  "phase": "B",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   218.3762378466591,
+   216.51833215912768
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.7890625,
+    0.86767578125,
+    0.48046875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 9.7,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    217.66639846480587,
+    220.51871089837704,
+    219.4397272604275,
+    217.27584900511465,
+    217.46752903301675,
+    218.08481254306113,
+    217.971713831905,
+    218.5851617365649,
+    217.1736331208038,
+    217.17742954091233,
+    217.1316342519167,
+    213.73365914311768,
+    217.73323117404013,
+    217.08029525715426,
+    214.00794505849726,
+    218.10882972657922
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 557432
+  },
+  "mean": 217.4,
+  "spread": 1.9
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   124.52601599687051,
+   124.51862212574733
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.7412109375,
+    0.85546875,
+    0.48046875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 25.2,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    124.4515034560114,
+    124.52699655347134,
+    124.44566984665403,
+    124.63099556674636,
+    124.60018618787701,
+    124.53033704904598,
+    124.3596030695184,
+    124.66283624563954,
+    124.4230289341928,
+    124.431052591851,
+    124.56796616170888,
+    124.50594017720346,
+    124.54670116537366,
+    124.64548474662483,
+    124.56070799702044,
+    124.46809523200355
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 2648632
+  },
+  "mean": 124.5,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   174.783756656835,
+   174.83297915568392
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.7431640625,
+    0.85546875,
+    0.49951171875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 48,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 20.9,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    174.75670468311628,
+    174.1000204135815,
+    174.93137441630438,
+    174.60176150345023,
+    174.59274738150322,
+    175.45583767595187,
+    175.03636038857903,
+    174.79524679219367,
+    174.8869851195958,
+    174.84306427059573,
+    174.97245788797463,
+    174.62613950231977,
+    174.77393040493183,
+    174.7846366804498,
+    174.6784213853262,
+    175.09819799427743
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 630424
+  },
+  "mean": 174.8,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "1.5B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   211.84408470929935,
+   210.78662236087024
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.80419921875,
+    0.86474609375,
+    0.5107421875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 52,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 10.1,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    209.12046927618184,
+    211.40439319927046,
+    213.20235625598644,
+    213.6479482787103,
+    213.15299461000933,
+    213.36380991049452,
+    210.2229631650001,
+    210.63774297874178,
+    210.72692571591247,
+    210.12720331797888,
+    210.31896414302625,
+    210.80202723402985,
+    210.55094373552848,
+    211.70316678148566,
+    210.69025851837256,
+    211.3734894406278
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 561976
+  },
+  "mean": 211.3,
+  "spread": 1.1
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   69.5877148356744,
+   69.48710763378278
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.75439453125,
+    0.8525390625,
+    0.5107421875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 53,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 46.7,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    69.59323850302128,
+    69.63164811888046,
+    69.61118771720376,
+    69.57176268614673,
+    69.5829331202751,
+    69.59622912737449,
+    69.57366733063485,
+    69.54105208185861,
+    69.52691085747837,
+    69.4854038380788,
+    69.53786279902727,
+    69.4671471530096,
+    69.50818602574331,
+    69.44645794829293,
+    69.4499091086403,
+    69.47498333999164
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 9505724
+  },
+  "mean": 69.5,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   73.8014324081996,
+   73.68014212428166
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.751953125,
+    0.96484375,
+    0.60107421875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 49,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 27.8,
+  "counts": {
+   "tokens": 864,
+   "chunks": 848,
+   "tokens_per_chunk": 1.0188679245283019,
+   "completion_rates": [
+    73.76634244048321,
+    73.95668409143605,
+    73.90054444229379,
+    73.8780600427411,
+    73.77894930824802,
+    73.77774665790675,
+    73.71311367804881,
+    73.64001860443905,
+    73.74979883783084,
+    73.72506866405247,
+    73.75866665708554,
+    73.82995396518204,
+    73.586672669911,
+    73.8414292977662,
+    73.30780931778736,
+    73.64173758463778
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 4967272
+  },
+  "mean": 73.7,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   77.62561056775357,
+   77.4798085720036
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.88037109375,
+    0.9833984375,
+    0.62060546875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 53,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 19.9,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    77.50339499606838,
+    77.41957927317637,
+    77.52792861815497,
+    77.68921130781881,
+    77.8655639914102,
+    77.66686948886068,
+    77.69445115112102,
+    77.63788571541816,
+    77.56864944171537,
+    77.67847601321644,
+    77.11889705809834,
+    77.27528815593307,
+    77.59269878791675,
+    77.35911644732728,
+    77.57501450506905,
+    77.67032816675261
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 731248
+  },
+  "mean": 77.6,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   58.53194159560796,
+   58.40690204842113
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.8349609375,
+    0.96826171875,
+    0.62451171875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 54,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 55.6,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    58.536606361276924,
+    58.53228429583425,
+    58.53974158942831,
+    58.46933028846198,
+    58.537824165160465,
+    58.5522454318651,
+    58.532938022890846,
+    58.554562609945826,
+    58.53318927167094,
+    58.440200330129436,
+    58.405367430288806,
+    58.381124932532316,
+    58.3424892682671,
+    58.39244616903512,
+    58.386943522708165,
+    58.373455462737155
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 9583960
+  },
+  "mean": 58.5,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   70.96396620750893,
+   70.97247895994965
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.859375,
+    1.06884765625,
+    0.70458984375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 48,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 30.6,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    70.95501276584582,
+    71.02180210871381,
+    71.02641815741516,
+    71.03207281493651,
+    70.98174720269274,
+    70.89573037271934,
+    70.89185242894473,
+    70.9070938088033,
+    70.99245103776057,
+    70.9153157199513,
+    70.9950119722459,
+    70.89100685320372,
+    71.06886049991958,
+    70.9066645317637,
+    70.97235301650835,
+    71.0381680482441
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 4965336
+  },
+  "mean": 71.0,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   76.04597353376676,
+   76.0241302987433
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.96923828125,
+    1.0771484375,
+    0.7216796875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 54,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 20.7,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    76.31032162535065,
+    75.82187144486691,
+    76.3272285519914,
+    76.31652538761176,
+    75.893248812834,
+    75.82585860304997,
+    76.29852994926867,
+    75.57420389516064,
+    76.04081269753283,
+    76.03289088945421,
+    75.7763313121679,
+    76.3878899353855,
+    75.94382167794653,
+    75.97538840786208,
+    75.85406941173876,
+    76.18183805785864
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 736756
+  },
+  "mean": 76.0,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   52.01787741361266,
+   52.01228539670272
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.98388671875,
+    1.07177734375,
+    0.72900390625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 56,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 67.5,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    52.02617950339769,
+    52.00939545970316,
+    52.02587321779243,
+    52.018876242591496,
+    52.016203919952716,
+    52.01628418830679,
+    52.0185708567514,
+    52.01163592040561,
+    52.02283369347972,
+    52.017049996209,
+    51.9785579506473,
+    52.026330737535694,
+    51.983060046330884,
+    52.03794876390272,
+    52.00156289616231,
+    52.03093908935415
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 9506468
+  },
+  "mean": 52.0,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   69.63025925139536,
+   69.55294921215375
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.93212890625,
+    1.23583984375,
+    0.8447265625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 48,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 32.7,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    69.62280168416913,
+    69.58837094728254,
+    69.67575504931008,
+    69.6695454243037,
+    69.62692831894631,
+    69.62248468559696,
+    69.60253180386795,
+    69.63365609768621,
+    69.67959972705789,
+    69.56847832286888,
+    69.56470035592858,
+    69.49948746990079,
+    69.54508619426133,
+    69.5968003715581,
+    69.39789530174532,
+    69.57154595390912
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 4968184
+  },
+  "mean": 69.6,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "7B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   74.4497382093256,
+   74.66339730542772
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.74462890625,
+    1.1484375,
+    0.83642578125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 49,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 22.1,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    74.30450417980754,
+    74.49297465298453,
+    74.14400368033266,
+    74.364324723372,
+    74.46076867651404,
+    74.48484199505862,
+    74.64042535074152,
+    74.70606241579391,
+    74.73608357772646,
+    74.64222939802204,
+    74.47786978855667,
+    74.74469685190765,
+    74.84826954819614,
+    74.81833413930435,
+    74.73505958921275,
+    74.30463555049566
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 741056
+  },
+  "mean": 74.6,
+  "spread": 0.2
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "M35",
+  "depth": 8000,
+  "prompt_tokens": 8012,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   21.40078800980387,
+   21.476791821231046
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.91064453125,
+    1.61865234375,
+    1.64013671875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 49,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 1433.9,
+  "counts": {
+   "tokens": 512,
+   "chunks": 512,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    21.37082861441792,
+    21.430747405189816,
+    21.46870006825286,
+    21.484883574209228
+   ],
+   "ngen": 128,
+   "rss_peak_kb": 51218764
+  },
+  "mean": 21.4,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "M35",
+  "depth": 8000,
+  "prompt_tokens": 8012,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   22.833023701592936,
+   22.82138135431532
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.7158203125,
+    3.55615234375,
+    3.97705078125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 50,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 85.0,
+  "counts": {
+   "tokens": 512,
+   "chunks": 0,
+   "tokens_per_chunk": null,
+   "completion_rates": [
+    22.842940433342804,
+    22.823106969843064,
+    22.832246058272737,
+    22.810516650357904
+   ],
+   "ngen": 128,
+   "rss_peak_kb": 21643336
+  },
+  "mean": 22.8,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "M35",
+  "depth": 8000,
+  "prompt_tokens": 8012,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   31.03808284263497,
+   31.060783129597652
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.9677734375,
+    2.736328125,
+    3.60791015625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 49,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 62.7,
+  "counts": {
+   "tokens": 512,
+   "chunks": 0,
+   "tokens_per_chunk": null,
+   "completion_rates": [
+    31.077663558019665,
+    30.998502127250273,
+    31.167385614123038,
+    30.954180645072267
+   ],
+   "ngen": 128,
+   "rss_peak_kb": 21026304
+  },
+  "mean": 31.0,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "M26",
+  "depth": 8000,
+  "prompt_tokens": 8017,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   13.866723783562922,
+   13.862470077738546
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.734375,
+    2.1689453125,
+    3.279296875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 49,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 408.3,
+  "counts": {
+   "tokens": 512,
+   "chunks": 512,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    13.850516868030626,
+    13.882930699095215,
+    13.8511202014553,
+    13.87381995402179
+   ],
+   "ngen": 128,
+   "rss_peak_kb": 49869384
+  },
+  "mean": 13.9,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "M26",
+  "depth": 8000,
+  "prompt_tokens": 8017,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   19.245967447103343,
+   19.219512534509462
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.79931640625,
+    2.587890625,
+    3.18994140625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 50,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 86.8,
+  "counts": {
+   "tokens": 512,
+   "chunks": 0,
+   "tokens_per_chunk": null,
+   "completion_rates": [
+    19.25670396663108,
+    19.235230927575607,
+    19.240607485949774,
+    19.198417583069155
+   ],
+   "ngen": 128,
+   "rss_peak_kb": 17570952
+  },
+  "mean": 19.2,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "M26",
+  "depth": 8000,
+  "prompt_tokens": 8017,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   22.329498824700224,
+   22.31462176415723
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.8974609375,
+    2.1455078125,
+    2.93310546875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 49,
+    "mem_used_mib": 669,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 67.6,
+  "counts": {
+   "tokens": 512,
+   "chunks": 0,
+   "tokens_per_chunk": null,
+   "completion_rates": [
+    22.371834075989295,
+    22.28716357341115,
+    22.370964888837126,
+    22.258278639477336
+   ],
+   "ngen": 128,
+   "rss_peak_kb": 17463360
+  },
+  "mean": 22.3,
+  "spread": 0.0
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "M35",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   23.666244363331476,
+   23.83164556467942
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.48876953125,
+    1.2802734375,
+    1.08984375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 49,
+    "mem_used_mib": 637,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 582.9,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    23.94245660857248,
+    23.922000381130932,
+    22.485465459648985,
+    23.89042865568977,
+    23.47476202743856,
+    23.88789793528364,
+    23.90211581877556,
+    23.824828020111866,
+    23.864316813104917,
+    23.923292946020194,
+    23.79443215084473,
+    23.693121963990734,
+    23.89490675010782,
+    23.82088134635924,
+    23.778490551901843,
+    23.883721995105883
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 50383200
+  },
+  "mean": 23.7,
+  "spread": 0.2
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "M35",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   24.174926166155338,
+   24.131383007425388
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.88330078125,
+    2.8544921875,
+    2.30224609375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 50,
+    "mem_used_mib": 637,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 88.5,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 0,
+   "tokens_per_chunk": null,
+   "completion_rates": [
+    24.190445990402157,
+    24.198587018090123,
+    24.18557177362671,
+    24.165295101844062,
+    24.161608633301555,
+    24.179877879227558,
+    24.15587173960716,
+    24.162151193143373,
+    24.0476803477011,
+    24.097003271111905,
+    24.134054162016895,
+    24.149187600196345,
+    24.177165600176973,
+    24.137653146255534,
+    24.121152739684472,
+    24.187167192259874
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 21633680
+  },
+  "mean": 24.2,
+  "spread": 0.0
+ },
+ {
+  "phase": "A",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "M35",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   32.367765258720276,
+   32.576653138067165
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.84326171875,
+    2.3037109375,
+    2.1982421875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 637,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 61.8,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 0,
+   "tokens_per_chunk": null,
+   "completion_rates": [
+    32.755492562576855,
+    32.70028471590984,
+    31.80584004332941,
+    31.821377214650948,
+    32.42100061217305,
+    32.65963824688824,
+    32.35636932934669,
+    32.422119344887186,
+    32.406594074772315,
+    32.70234149823805,
+    32.7691247548755,
+    32.79594071399438,
+    32.258369409890655,
+    32.73866205733713,
+    32.23911908955305,
+    32.703073505876226
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 20969952
+  },
+  "mean": 32.5,
+  "spread": 0.2
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "M26",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   23.773761273771143,
+   23.782075987801875
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.7177734375,
+    2.02392578125,
+    2.1357421875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 50,
+    "mem_used_mib": 637,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 124.2,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    23.468485210860248,
+    23.565380245066137,
+    23.889660330118257,
+    23.86861910093795,
+    23.802976506857274,
+    23.879480706406376,
+    23.874568393124104,
+    23.840919696798814,
+    23.920034767657135,
+    23.79631155959789,
+    23.86718377721576,
+    23.68046608379429,
+    23.750349329359654,
+    23.877862160761815,
+    23.859365835291815,
+    23.505034388736647
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 51787952
+  },
+  "mean": 23.8,
+  "spread": 0.0
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "M26",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   22.135668970580106,
+   22.186055663924463
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.8583984375,
+    1.81787109375,
+    2.0478515625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 50,
+    "mem_used_mib": 637,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 96.3,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 0,
+   "tokens_per_chunk": null,
+   "completion_rates": [
+    22.23775613025759,
+    22.258322913929184,
+    22.238799619535826,
+    22.259459085834177,
+    22.20534079015689,
+    22.21575591697925,
+    21.907043051676474,
+    21.76287425627144,
+    22.196321338702806,
+    22.24307545463476,
+    22.138756424340862,
+    22.228601705393384,
+    22.21703363191604,
+    22.227435257575443,
+    22.180873084257108,
+    22.0563484145753
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 17184264
+  },
+  "mean": 22.2,
+  "spread": 0.1
+ },
+ {
+  "phase": "A",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "M26",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   27.08454237976604,
+   27.168362968257767
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.8291015625,
+    1.8291015625,
+    2.04736328125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 637,
+    "mem_total_mib": 8192
+   }
+  },
+  "secs": 69.6,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 0,
+   "tokens_per_chunk": null,
+   "completion_rates": [
+    27.0923417349428,
+    26.964721677258336,
+    27.223322610807205,
+    27.09627735840409,
+    27.071806745465796,
+    26.844019599341316,
+    27.19463416050394,
+    27.189215151404845,
+    27.1360407445249,
+    27.212422505997996,
+    27.22668262668313,
+    27.152362869802737,
+    27.22965189667236,
+    27.329521389528864,
+    27.44548868770798,
+    26.614733025144183
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 17040480
+  },
+  "mean": 27.1,
+  "spread": 0.1
+ }
+]
