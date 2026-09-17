@@ -215,6 +215,8 @@ type ring struct {
 	count    int       // logical positions written (the absolute next position)
 	quant    kvQuant   // kvF32 | kvI8 (set by enableRings)
 	headDim  int       // for int8 scale striding (nKV = stride/headDim)
+	tq       []int8    // int8 mode scratch (stride)
+	tsc      []float32 // int8 mode scale scratch (nKV)
 }
 
 // write stores position p's k/v into slot p%w and advances count past p. O(stride),
@@ -354,14 +356,26 @@ func growI8(s []int8, n int) []int8 {
 	if cap(s)-len(s) >= n {
 		return s[:len(s)+n]
 	}
-	return append(s, make([]int8, n)...)
+	newCap := 2 * cap(s)
+	if newCap < len(s)+n {
+		newCap = len(s) + n
+	}
+	grown := make([]int8, len(s)+n, newCap)
+	copy(grown, s)
+	return grown
 }
 
 func growF32(s []float32, n int) []float32 {
 	if cap(s)-len(s) >= n {
 		return s[:len(s)+n]
 	}
-	return append(s, make([]float32, n)...)
+	newCap := 2 * cap(s)
+	if newCap < len(s)+n {
+		newCap = len(s) + n
+	}
+	grown := make([]float32, len(s)+n, newCap)
+	copy(grown, s)
+	return grown
 }
 
 // Advance bumps the stored-position count by one — the gemma4 forward's explicit
@@ -597,17 +611,36 @@ func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV 
 	}
 	base = max(startPos-r.w+1, 0)
 	hist := startPos - base // resident history rows, ≤ W-1 and ≤ r.count
+	slot0 := base % r.w
+	seg1 := min(hist, r.w-slot0)
 	if r.quant == kvI8 {
 		// int8 ring: dequant the resident window from int8, and round-trip the K
 		// new rows (quantize→dequant) so prefill attends the SAME dequantized K/V
 		// decode will (commitBatch writes the same int8). The f32 matmul is unchanged.
 		nKV := stride / r.headDim
-		for p := base; p < startPos; p++ {
-			o, so, d := (p%r.w)*stride, (p%r.w)*nKV, (p-base)*stride
-			dequantHeads(r.kq[o:o+stride], r.ksc[so:so+nKV], nKV, r.headDim, dstK[d:d+stride])
-			dequantHeads(r.vq[o:o+stride], r.vsc[so:so+nKV], nKV, r.headDim, dstV[d:d+stride])
+		if seg1 > 0 {
+			len1 := seg1 * stride
+			src1 := slot0 * stride
+			sc1 := slot0 * nKV
+			rows1 := seg1 * nKV
+			linalg.DequantizeRowsInt8Into(dstK[:len1], r.kq[src1:src1+len1], r.ksc[sc1:sc1+rows1], rows1, r.headDim)
+			linalg.DequantizeRowsInt8Into(dstV[:len1], r.vq[src1:src1+len1], r.vsc[sc1:sc1+rows1], rows1, r.headDim)
 		}
-		tq, tsc := make([]int8, stride), make([]float32, nKV)
+		if seg2 := hist - seg1; seg2 > 0 {
+			len1 := seg1 * stride
+			len2 := seg2 * stride
+			rows2 := seg2 * nKV
+			linalg.DequantizeRowsInt8Into(dstK[len1:len1+len2], r.kq[:len2], r.ksc[:rows2], rows2, r.headDim)
+			linalg.DequantizeRowsInt8Into(dstV[len1:len1+len2], r.vq[:len2], r.vsc[:rows2], rows2, r.headDim)
+		}
+		if cap(r.tq) < stride {
+			r.tq = make([]int8, stride)
+		}
+		if cap(r.tsc) < nKV {
+			r.tsc = make([]float32, nKV)
+		}
+		tq := r.tq[:stride]
+		tsc := r.tsc[:nKV]
 		for i := range K {
 			d := (hist + i) * stride
 			quantizeHeads(newK[i*stride:(i+1)*stride], tq, tsc, nKV, r.headDim)
@@ -617,11 +650,17 @@ func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV 
 		}
 		return base, hist + K
 	}
-	for p := base; p < startPos; p++ {
-		o := (p % r.w) * stride
-		d := (p - base) * stride
-		copy(dstK[d:d+stride], r.k[o:o+stride])
-		copy(dstV[d:d+stride], r.v[o:o+stride])
+	if seg1 > 0 {
+		len1 := seg1 * stride
+		src1 := slot0 * stride
+		copy(dstK[:len1], r.k[src1:src1+len1])
+		copy(dstV[:len1], r.v[src1:src1+len1])
+	}
+	if seg2 := hist - seg1; seg2 > 0 {
+		len1 := seg1 * stride
+		len2 := seg2 * stride
+		copy(dstK[len1:len1+len2], r.k[:len2])
+		copy(dstV[len1:len1+len2], r.v[:len2])
 	}
 	copy(dstK[hist*stride:(hist+K)*stride], newK[:K*stride])
 	copy(dstV[hist*stride:(hist+K)*stride], newV[:K*stride])
@@ -636,11 +675,13 @@ func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV 
 func (c *KVCache) dequantGlobalLayer(layer, kvDim int, dstK, dstV []float32) int {
 	nKV := kvDim / c.headDim
 	n := len(c.keysQ[layer]) / kvDim
-	for p := range n {
-		o, so := p*kvDim, p*nKV
-		dequantHeads(c.keysQ[layer][o:o+kvDim], c.keyScale[layer][so:so+nKV], nKV, c.headDim, dstK[o:o+kvDim])
-		dequantHeads(c.valsQ[layer][o:o+kvDim], c.valScale[layer][so:so+nKV], nKV, c.headDim, dstV[o:o+kvDim])
+	if n == 0 {
+		return 0
 	}
+	totalRows := n * nKV
+	totalFloats := n * kvDim
+	linalg.DequantizeRowsInt8Into(dstK[:totalFloats], c.keysQ[layer][:totalFloats], c.keyScale[layer][:totalRows], totalRows, c.headDim)
+	linalg.DequantizeRowsInt8Into(dstV[:totalFloats], c.valsQ[layer][:totalFloats], c.valScale[layer][:totalRows], totalRows, c.headDim)
 	return n
 }
 
@@ -650,9 +691,44 @@ func (c *KVCache) dequantGlobalLayer(layer, kvDim int, dstK, dstV []float32) int
 func (c *KVCache) commitBatch(layer, startPos, K int, newK, newV []float32) {
 	r := c.rings[layer]
 	stride := len(newK) / K
-	for i := range K {
-		o := i * stride
-		r.write(startPos+i, newK[o:o+stride], newV[o:o+stride])
+	if r.stride == 0 {
+		r.stride = stride
+		if r.quant == kvI8 {
+			nKV := r.stride / r.headDim
+			r.kq = make([]int8, r.w*r.stride)
+			r.vq = make([]int8, r.w*r.stride)
+			r.ksc = make([]float32, r.w*nKV)
+			r.vsc = make([]float32, r.w*nKV)
+		} else {
+			r.k = make([]float32, r.w*r.stride)
+			r.v = make([]float32, r.w*r.stride)
+		}
+	}
+	if r.quant == kvI8 {
+		for i := range K {
+			o := i * stride
+			r.write(startPos+i, newK[o:o+stride], newV[o:o+stride])
+		}
+		return
+	}
+	effK := min(K, r.w)
+	effStart := startPos + K - effK
+	srcOffset := (K - effK) * stride
+	slot0 := effStart % r.w
+	seg1 := min(effK, r.w-slot0)
+	if seg1 > 0 {
+		len1 := seg1 * stride
+		copy(r.k[slot0*stride:(slot0+seg1)*stride], newK[srcOffset:srcOffset+len1])
+		copy(r.v[slot0*stride:(slot0+seg1)*stride], newV[srcOffset:srcOffset+len1])
+	}
+	if seg2 := effK - seg1; seg2 > 0 {
+		len1 := seg1 * stride
+		len2 := seg2 * stride
+		copy(r.k[:len2], newK[srcOffset+len1:srcOffset+len1+len2])
+		copy(r.v[:len2], newV[srcOffset+len1:srcOffset+len1+len2])
+	}
+	if startPos+K > r.count {
+		r.count = startPos + K
 	}
 }
 

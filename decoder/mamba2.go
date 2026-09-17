@@ -133,7 +133,21 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 			var acc float32
 			row := S[pi*N : pi*N+N]
 			dx := dth * xh[pi]
-			for n := range N {
+			_ = row[N-1]
+			_ = Bh[N-1]
+			_ = Ch[N-1]
+			n := 0
+			for ; n+3 < N; n += 4 {
+				row[n] = row[n]*dA + dx*Bh[n]
+				acc += row[n] * Ch[n]
+				row[n+1] = row[n+1]*dA + dx*Bh[n+1]
+				acc += row[n+1] * Ch[n+1]
+				row[n+2] = row[n+2]*dA + dx*Bh[n+2]
+				acc += row[n+2] * Ch[n+2]
+				row[n+3] = row[n+3]*dA + dx*Bh[n+3]
+				acc += row[n+3] * Ch[n+3]
+			}
+			for ; n < N; n++ {
 				row[n] = row[n]*dA + dx*Bh[n]
 				acc += row[n] * Ch[n]
 			}

@@ -34,25 +34,19 @@ func (m *Model) runLayersLlama4(id int, cache *KVCache) ([]float32, error) {
 	h := make([]float32, hidden)
 	m.w.Embed.Row(id, h)
 
+	scr := cache.scr
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
-		n := append([]float32(nil), h...)
-		rmsNorm(n, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
-		attn := m.llama4Attention(n, lw, arch, cache, l, pos)
-		for i := range h {
-			h[i] += attn[i]
-		}
-		n2 := append([]float32(nil), h...)
-		rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-		ffn := make([]float32, hidden)
+		rmsNormInto(scr.norm, h, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
+		attn := m.llama4Attention(scr.norm, lw, arch, cache, l, pos)
+		addResidual(h, attn)
+		rmsNormInto(scr.norm, h, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
 		if arch.llama4.isMoE[l] {
-			m.llama4MoE(n2, ffn, lw, arch) // input-scaled experts + ungated shared (Llama 4-specific)
-		} else if err := mlp(n2, ffn, lw, arch, m.be, cache.scr, m.pager, nil); err != nil {
+			m.llama4MoE(scr.norm, scr.sub, lw, arch) // input-scaled experts + ungated shared (Llama 4-specific)
+		} else if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager, nil); err != nil {
 			return nil, err // dense layer → gatedMLP
 		}
-		for i := range h {
-			h[i] += ffn[i]
-		}
+		addResidual(h, scr.sub)
 	}
 	// No explicit Advance: every layer runs standard attention + cache.Append, so the
 	// last layer's Append auto-advances pos (like llama/qwen). manualPos is NOT set.
@@ -139,9 +133,7 @@ func (m *Model) llama4MoE(h, out []float32, lw *LayerWeights, arch *Architecture
 			scaled[i] = w * h[i]
 		}
 		swiGLUExpert(&lw.Experts[e], scaled, expOut, moe.IntermediateDim, m.be, l4gate, l4up)
-		for i := range out {
-			out[i] += expOut[i]
-		}
+		addResidual(out, expOut)
 	}
 }
 

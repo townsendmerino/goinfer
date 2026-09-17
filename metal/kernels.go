@@ -915,4 +915,11 @@ kernel void qk_norm(device float* qkv[[buffer(0)]], device const float* qn[[buff
     float rms=rsqrt(red[0]/float(hd)+eps);
     for(uint i=tid;i<hd;i+=tgs){ float wt = addOne!=0u ? (1.0f+w[i]) : w[i]; x[i]=x[i]*rms*wt; }
 }
+
+// copy_f32 copies N elements from src to dst. Used by batched ForwardN to stage each
+// token's input embedding on-device into r.x without host-GPU synchronization.
+kernel void copy_f32(device const float* src [[buffer(0)]], device float* dst [[buffer(1)]],
+    constant uint& N [[buffer(2)]], uint i [[thread_position_in_grid]]) {
+    if (i < N) dst[i] = src[i];
+}
 ` + moeKernels + gemma4MoeKernels + deltaNetKernels

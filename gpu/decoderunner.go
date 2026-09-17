@@ -1498,6 +1498,52 @@ func (r *DecodeRunner) record(pass *wgpu.ComputePassEncoder) {
 	}
 }
 
+// recordTrunk records all dispatches up to the final norm, omitting the last step (the LM head GEMV).
+func (r *DecodeRunner) recordTrunk(pass *wgpu.ComputePassEncoder) {
+	steps := r.steps
+	if len(steps) > 0 {
+		steps = steps[:len(steps)-1]
+	}
+	for _, s := range steps {
+		pass.SetPipeline(s.pl)
+		pass.SetBindGroup(0, s.bg, nil)
+		pass.DispatchWorkgroups(s.gx, s.gy, 1)
+	}
+}
+
+// RunNoLogits executes all trunk layers and populates the KV cache for token at position pos,
+// skipping the LM head GEMV dispatch, logits staging copy, MapAsync, and readback.
+func (r *DecodeRunner) RunNoLogits(x []float32, pos, ropePos int) error {
+	c := r.c
+	tw := time.Now()
+	if err := r.writeInputs(x, pos, ropePos); err != nil {
+		return err
+	}
+	r.TWrite = time.Since(tw)
+	te := time.Now()
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return err
+	}
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	r.recordTrunk(pass)
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		return fmt.Errorf("gpu: end compute pass: %w", err)
+	}
+	pass.Release()
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return err
+	}
+	defer cmd.Release()
+	r.TEncode = time.Since(te)
+	c.queue.Submit(cmd)
+	c.device.Poll(false, nil)
+	return nil
+}
+
 // Run executes the plan for one token at absolute position pos. x is the token's
 // input embedding [hidden]; returns the logits [vocab]. One Submit + one Poll.
 // ropePos: see posUni's doc comment — equal to pos except for Qwen2.5-VL m-RoPE decode.

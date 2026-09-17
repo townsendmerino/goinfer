@@ -16,20 +16,76 @@ import "math"
 // the f32 round-off still matters at the ≥1−1e-4 parity bar, mirroring the
 // float64-accumulation discipline embed/ and encoder/ already rely on.
 func rmsNorm(x, weight []float32, rows, dim int, eps float64, addOne bool) {
+	rmsNormInto(x, x, weight, rows, dim, eps, addOne)
+}
+
+// rmsNormInto applies RMSNorm from src into dst over each row ([rows, dim]).
+// It supports dst == src (in place) as well as dst != src (out of place).
+//
+// The sum-of-squares reduction below is four parallel partial sums (ss0..ss3),
+// not one sequential accumulator — this changes the floating-point addition
+// order and is therefore NOT bit-identical to a strictly sequential sum,
+// though it is within the ≥1−1e-4 parity bar every family test enforces.
+func rmsNormInto(dst, src, weight []float32, rows, dim int, eps float64, addOne bool) {
+	if dim <= 0 {
+		return
+	}
 	for r := range rows {
-		row := x[r*dim : r*dim+dim]
-		var ss float64
-		for _, v := range row {
-			ss += float64(v) * float64(v)
+		dstRow := dst[r*dim : (r+1)*dim]
+		srcRow := src[r*dim : (r+1)*dim]
+		w := weight[:dim]
+		_ = dstRow[dim-1]
+		_ = srcRow[dim-1]
+		_ = w[dim-1]
+
+		var ss0, ss1, ss2, ss3 float64
+		i := 0
+		for ; i+3 < len(srcRow); i += 4 {
+			_ = srcRow[i+3]
+			v0 := float64(srcRow[i])
+			v1 := float64(srcRow[i+1])
+			v2 := float64(srcRow[i+2])
+			v3 := float64(srcRow[i+3])
+			ss0 += v0 * v0
+			ss1 += v1 * v1
+			ss2 += v2 * v2
+			ss3 += v3 * v3
 		}
+		var ssTail float64
+		for ; i < len(srcRow); i++ {
+			v := float64(srcRow[i])
+			ssTail += v * v
+		}
+		ss := (ss0 + ss1) + (ss2 + ss3) + ssTail
+
 		inv := float32(1.0 / math.Sqrt(ss/float64(dim)+eps))
 		if addOne {
-			for i, v := range row {
-				row[i] = (v * inv) * (1 + weight[i])
+			i = 0
+			for ; i+3 < len(srcRow); i += 4 {
+				_ = dstRow[i+3]
+				_ = srcRow[i+3]
+				_ = w[i+3]
+				dstRow[i] = (srcRow[i] * inv) * (1 + w[i])
+				dstRow[i+1] = (srcRow[i+1] * inv) * (1 + w[i+1])
+				dstRow[i+2] = (srcRow[i+2] * inv) * (1 + w[i+2])
+				dstRow[i+3] = (srcRow[i+3] * inv) * (1 + w[i+3])
+			}
+			for ; i < len(srcRow); i++ {
+				dstRow[i] = (srcRow[i] * inv) * (1 + w[i])
 			}
 		} else {
-			for i, v := range row {
-				row[i] = (v * inv) * weight[i]
+			i = 0
+			for ; i+3 < len(srcRow); i += 4 {
+				_ = dstRow[i+3]
+				_ = srcRow[i+3]
+				_ = w[i+3]
+				dstRow[i] = (srcRow[i] * inv) * w[i]
+				dstRow[i+1] = (srcRow[i+1] * inv) * w[i+1]
+				dstRow[i+2] = (srcRow[i+2] * inv) * w[i+2]
+				dstRow[i+3] = (srcRow[i+3] * inv) * w[i+3]
+			}
+			for ; i < len(srcRow); i++ {
+				dstRow[i] = (srcRow[i] * inv) * w[i]
 			}
 		}
 	}
@@ -47,27 +103,96 @@ func rmsNorm(x, weight []float32, rows, dim int, eps float64, addOne bool) {
 // its ln_1/ln_2 bias. Mean and variance accumulate in float64, matching
 // rmsNorm's parity discipline.
 func layerNorm(x, weight, bias []float32, rows, dim int, eps float64) {
+	layerNormInto(x, x, weight, bias, rows, dim, eps)
+}
+
+// layerNormInto applies LayerNorm from src into dst over each row ([rows, dim]).
+// It supports dst == src (in place) as well as dst != src (out of place).
+//
+// Mean and variance below use the same four-way parallel-partial-sum pattern
+// as rmsNormInto's ss reduction (see its comment) — not bit-identical to a
+// sequential sum, within tolerance.
+func layerNormInto(dst, src, weight, bias []float32, rows, dim int, eps float64) {
+	if dim <= 0 {
+		return
+	}
 	for r := range rows {
-		row := x[r*dim : r*dim+dim]
-		var mean float64
-		for _, v := range row {
-			mean += float64(v)
-		}
-		mean /= float64(dim)
-		var variance float64
-		for _, v := range row {
-			d := float64(v) - mean
-			variance += d * d
-		}
-		variance /= float64(dim)
-		inv := 1.0 / math.Sqrt(variance+eps)
+		dstRow := dst[r*dim : (r+1)*dim]
+		srcRow := src[r*dim : (r+1)*dim]
+		w := weight[:dim]
+		_ = dstRow[dim-1]
+		_ = srcRow[dim-1]
+		_ = w[dim-1]
+		var b []float32
 		if bias != nil {
-			for i, v := range row {
-				row[i] = float32((float64(v)-mean)*inv)*weight[i] + bias[i]
+			b = bias[:dim]
+			_ = b[dim-1]
+		}
+
+		var m0, m1, m2, m3 float64
+		i := 0
+		for ; i+3 < len(srcRow); i += 4 {
+			_ = srcRow[i+3]
+			m0 += float64(srcRow[i])
+			m1 += float64(srcRow[i+1])
+			m2 += float64(srcRow[i+2])
+			m3 += float64(srcRow[i+3])
+		}
+		var mTail float64
+		for ; i < len(srcRow); i++ {
+			mTail += float64(srcRow[i])
+		}
+		mean := ((m0 + m1) + (m2 + m3) + mTail) / float64(dim)
+
+		var v0, v1, v2, v3 float64
+		i = 0
+		for ; i+3 < len(srcRow); i += 4 {
+			_ = srcRow[i+3]
+			d0 := float64(srcRow[i]) - mean
+			d1 := float64(srcRow[i+1]) - mean
+			d2 := float64(srcRow[i+2]) - mean
+			d3 := float64(srcRow[i+3]) - mean
+			v0 += d0 * d0
+			v1 += d1 * d1
+			v2 += d2 * d2
+			v3 += d3 * d3
+		}
+		var vTail float64
+		for ; i < len(srcRow); i++ {
+			d := float64(srcRow[i]) - mean
+			vTail += d * d
+		}
+		variance := ((v0 + v1) + (v2 + v3) + vTail) / float64(dim)
+		inv := 1.0 / math.Sqrt(variance+eps)
+
+		if b != nil {
+			i = 0
+			for ; i+3 < len(srcRow); i += 4 {
+				_ = dstRow[i+3]
+				_ = srcRow[i+3]
+				_ = w[i+3]
+				_ = b[i+3]
+				dstRow[i] = float32((float64(srcRow[i])-mean)*inv)*w[i] + b[i]
+				dstRow[i+1] = float32((float64(srcRow[i+1])-mean)*inv)*w[i+1] + b[i+1]
+				dstRow[i+2] = float32((float64(srcRow[i+2])-mean)*inv)*w[i+2] + b[i+2]
+				dstRow[i+3] = float32((float64(srcRow[i+3])-mean)*inv)*w[i+3] + b[i+3]
+			}
+			for ; i < len(srcRow); i++ {
+				dstRow[i] = float32((float64(srcRow[i])-mean)*inv)*w[i] + b[i]
 			}
 		} else {
-			for i, v := range row {
-				row[i] = float32((float64(v) - mean) * inv * float64(weight[i]))
+			i = 0
+			for ; i+3 < len(srcRow); i += 4 {
+				_ = dstRow[i+3]
+				_ = srcRow[i+3]
+				_ = w[i+3]
+				dstRow[i] = float32((float64(srcRow[i]) - mean) * inv * float64(w[i]))
+				dstRow[i+1] = float32((float64(srcRow[i+1]) - mean) * inv * float64(w[i+1]))
+				dstRow[i+2] = float32((float64(srcRow[i+2]) - mean) * inv * float64(w[i+2]))
+				dstRow[i+3] = float32((float64(srcRow[i+3]) - mean) * inv * float64(w[i+3]))
+			}
+			for ; i < len(srcRow); i++ {
+				dstRow[i] = float32((float64(srcRow[i]) - mean) * inv * float64(w[i]))
 			}
 		}
 	}

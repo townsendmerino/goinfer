@@ -144,16 +144,11 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *
 		out, expOut = make([]float32, hidden), make([]float32, hidden)
 		egate, eup = make([]float32, sc), make([]float32, sc)
 	}
-	for i := range out {
-		out[i] = 0
-	}
+	clear(out)
 	for j, e := range idx {
 		ex := &lw.Experts[e]
 		swiGLUExpert(ex, h, expOut, moe.IntermediateDim, be, egate, eup)
-		w := wts[j]
-		for i := range out {
-			out[i] += w * expOut[i]
-		}
+		addScaled(out, expOut, wts[j])
 	}
 
 	// Shared always-on expert (Qwen2-MoE / GLM). Qwen2 scales it by a per-token
@@ -161,16 +156,12 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *
 	if moe.SharedIntermediateDim > 0 {
 		swiGLUExpert(&lw.SharedExpert, h, expOut, moe.SharedIntermediateDim, be, egate, eup)
 		if moe.SharedUngated {
-			for i := range out {
-				out[i] += expOut[i]
-			}
+			addResidual(out, expOut)
 		} else {
 			var gl [1]float32
 			matmul(be, &lw.SharedGate, h, gl[:], 1)
 			g := float32(1.0 / (1.0 + math.Exp(-float64(gl[0])))) // sigmoid
-			for i := range out {
-				out[i] += g * expOut[i]
-			}
+			addScaled(out, expOut, g)
 		}
 	}
 	return out, nil
@@ -188,21 +179,33 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *
 // into nGroup contiguous groups, each group scored by the sum of its top-2 selection
 // scores; only experts in the top topkGroup groups are eligible for the per-token top-k.
 func routeExperts(logits, bias []float32, k int, sigmoid, norm bool, scale float64, nGroup, topkGroup int) (idx []int, wts []float32) {
+	var scoreBuf [128]float32
 	var scores []float32
 	if sigmoid {
-		scores = make([]float32, len(logits))
+		if len(logits) <= len(scoreBuf) {
+			scores = scoreBuf[:len(logits)]
+		} else {
+			scores = make([]float32, len(logits))
+		}
 		for i, l := range logits {
 			scores[i] = float32(1.0 / (1.0 + math.Exp(-float64(l))))
 		}
 	} else {
 		scores = softmaxF32(logits)
 	}
-	sel := scores
+	var selBuf [128]float32
+	var sel []float32
 	if bias != nil {
-		sel = make([]float32, len(scores))
+		if len(scores) <= len(selBuf) {
+			sel = selBuf[:len(scores)]
+		} else {
+			sel = make([]float32, len(scores))
+		}
 		for i := range scores {
 			sel[i] = scores[i] + bias[i]
 		}
+	} else {
+		sel = scores
 	}
 	if nGroup > 1 {
 		sel = groupLimit(sel, nGroup, topkGroup) // mask experts outside the top groups to -inf
@@ -323,6 +326,52 @@ func parallelElementwise(n int, fn func(lo, hi int)) {
 	wg.Wait()
 }
 
+func swiglu(gate, up []float32) {
+	n := len(gate)
+	if n == 0 {
+		return
+	}
+	u := up[:n]
+	_ = gate[n-1]
+	_ = u[n-1]
+	i := 0
+	for ; i+3 < n; i += 4 {
+		_ = gate[i+3]
+		_ = u[i+3]
+		g0, g1, g2, g3 := gate[i], gate[i+1], gate[i+2], gate[i+3]
+		gate[i] = silu(g0) * u[i]
+		gate[i+1] = silu(g1) * u[i+1]
+		gate[i+2] = silu(g2) * u[i+2]
+		gate[i+3] = silu(g3) * u[i+3]
+	}
+	for ; i < n; i++ {
+		gate[i] = silu(gate[i]) * u[i]
+	}
+}
+
+func geglu(gate, up []float32) {
+	n := len(gate)
+	if n == 0 {
+		return
+	}
+	u := up[:n]
+	_ = gate[n-1]
+	_ = u[n-1]
+	i := 0
+	for ; i+3 < n; i += 4 {
+		_ = gate[i+3]
+		_ = u[i+3]
+		g0, g1, g2, g3 := gate[i], gate[i+1], gate[i+2], gate[i+3]
+		gate[i] = geluTanh(g0) * u[i]
+		gate[i+1] = geluTanh(g1) * u[i+1]
+		gate[i+2] = geluTanh(g2) * u[i+2]
+		gate[i+3] = geluTanh(g3) * u[i+3]
+	}
+	for ; i < n; i++ {
+		gate[i] = geluTanh(gate[i]) * u[i]
+	}
+}
+
 // swiGLUExpert evaluates one gated (SwiGLU) expert MLP of the given intermediate
 // width into dst[:hidden]: dst = Down·(silu(Gate·h) ⊙ Up·h).
 // P6: gate/up come from the CALLER so a token's k experts share one pair instead of allocating a
@@ -339,21 +388,37 @@ func swiGLUExpert(ex *expertWeights, h, dst []float32, inter int, be Backend, ga
 	gate, up = gate[:inter], up[:inter]
 	matmul(be, &ex.Gate, h, gate, 1)
 	matmul(be, &ex.Up, h, up, 1)
-	parallelElementwise(len(gate), func(lo, hi int) {
-		for i := lo; i < hi; i++ {
-			gate[i] = silu(gate[i]) * up[i]
-		}
-	})
+	if len(gate) < activationFanoutThreshold {
+		swiglu(gate, up)
+	} else {
+		parallelElementwise(len(gate), func(lo, hi int) {
+			swiglu(gate[lo:hi], up[lo:hi])
+		})
+	}
 	matmul(be, &ex.Down, gate, dst, 1)
 }
 
 // softmaxF32 returns the softmax of xs (float64 accumulation, max-shifted for
 // stability). Small (NumExperts) so allocation is cheap.
 func softmaxF32(xs []float32) []float32 {
+	if len(xs) == 0 {
+		return nil
+	}
 	maxv := xs[0]
-	for _, v := range xs {
-		if v > maxv {
-			maxv = v
+	i := 1
+	_ = xs[len(xs)-1]
+	for ; i+3 < len(xs); i += 4 {
+		v0, v1, v2, v3 := xs[i], xs[i+1], xs[i+2], xs[i+3]
+		m0 := max(v0, v1)
+		m1 := max(v2, v3)
+		m := max(m0, m1)
+		if m > maxv {
+			maxv = m
+		}
+	}
+	for ; i < len(xs); i++ {
+		if xs[i] > maxv {
+			maxv = xs[i]
 		}
 	}
 	out := make([]float32, len(xs))
@@ -364,8 +429,16 @@ func softmaxF32(xs []float32) []float32 {
 		sum += e
 	}
 	inv := float32(1.0 / sum)
-	for i := range out {
-		out[i] *= inv
+	_ = out[len(out)-1]
+	j := 0
+	for ; j+3 < len(out); j += 4 {
+		out[j] *= inv
+		out[j+1] *= inv
+		out[j+2] *= inv
+		out[j+3] *= inv
+	}
+	for ; j < len(out); j++ {
+		out[j] *= inv
 	}
 	return out
 }
@@ -375,7 +448,13 @@ func softmaxF32(xs []float32) []float32 {
 func topK(xs []float32, k int) ([]int, []float32) {
 	idx := make([]int, 0, k)
 	val := make([]float32, 0, k)
-	used := make([]bool, len(xs))
+	var usedBuf [128]bool
+	var used []bool
+	if len(xs) <= len(usedBuf) {
+		used = usedBuf[:len(xs)]
+	} else {
+		used = make([]bool, len(xs))
+	}
 	for ; k > 0; k-- {
 		best, bi := float32(math.Inf(-1)), -1
 		for i, v := range xs {
@@ -449,17 +528,21 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 	}
 	switch arch.Act {
 	case ActGeluTanh:
-		parallelElementwise(len(gate), func(lo, hi int) {
-			for i := lo; i < hi; i++ {
-				gate[i] = geluTanh(gate[i]) * up[i]
-			}
-		})
+		if len(gate) < activationFanoutThreshold {
+			geglu(gate, up)
+		} else {
+			parallelElementwise(len(gate), func(lo, hi int) {
+				geglu(gate[lo:hi], up[lo:hi])
+			})
+		}
 	case ActSiLU:
-		parallelElementwise(len(gate), func(lo, hi int) {
-			for i := lo; i < hi; i++ {
-				gate[i] = silu(gate[i]) * up[i]
-			}
-		})
+		if len(gate) < activationFanoutThreshold {
+			swiglu(gate, up)
+		} else {
+			parallelElementwise(len(gate), func(lo, hi int) {
+				swiglu(gate[lo:hi], up[lo:hi])
+			})
+		}
 	default:
 		return fmt.Errorf("decoder: unsupported activation %d (have GeGLU/SwiGLU)", arch.Act)
 	}
@@ -606,11 +689,13 @@ func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be
 		ex := &lw.Experts[e]
 		matmul(be, &ex.Gate, gathered[:m*hidden], gate[:m*inter], m)
 		matmul(be, &ex.Up, gathered[:m*hidden], up[:m*inter], m)
-		parallelElementwise(m*inter, func(lo, hi int) {
-			for i := lo; i < hi; i++ {
-				gate[i] = silu(gate[i]) * up[i]
-			}
-		})
+		if m*inter < activationFanoutThreshold {
+			swiglu(gate[:m*inter], up[:m*inter])
+		} else {
+			parallelElementwise(m*inter, func(lo, hi int) {
+				swiglu(gate[lo:hi], up[lo:hi])
+			})
+		}
 		matmul(be, &ex.Down, gate[:m*inter], outBuf[:m*hidden], m)
 		for i, s := range slots { // SCATTER into (row, rank)
 			copy(perRank[(s.row*k+s.rank)*hidden:(s.row*k+s.rank+1)*hidden], outBuf[i*hidden:(i+1)*hidden])
@@ -622,18 +707,33 @@ func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be
 	// what makes this bit-identical rather than merely close.
 	for r := range n {
 		o := dst[r*hidden : (r+1)*hidden]
-		for i := range o {
-			o[i] = 0
-		}
+		clear(o)
 		for j := range idxs[r] {
 			w := wtss[r][j]
 			p := perRank[(r*k+j)*hidden : (r*k+j+1)*hidden]
-			for i := range o {
-				o[i] += w * p[i]
-			}
+			addScaled(o, p, w)
 		}
 	}
 	return true, nil
+}
+
+// addScaled computes dst[i] += scale * src[i] over len(dst) elements.
+func addScaled(dst, src []float32, scale float32) {
+	if len(dst) == 0 {
+		return
+	}
+	_ = dst[len(dst)-1]
+	_ = src[len(dst)-1]
+	i := 0
+	for ; i+3 < len(dst); i += 4 {
+		dst[i] += scale * src[i]
+		dst[i+1] += scale * src[i+1]
+		dst[i+2] += scale * src[i+2]
+		dst[i+3] += scale * src[i+3]
+	}
+	for ; i < len(dst); i++ {
+		dst[i] += scale * src[i]
+	}
 }
 
 // moePrefillScratch enables the P18 ATTRIBUTION arm: reuse one scratch across the

@@ -27,17 +27,38 @@ import (
 // attention_scaling. Pass 1.0 for non-YaRN families (no scaling).
 func applyRoPE(vec []float32, heads, headDim, pos int, invFreq []float64, scale float64) {
 	half := len(invFreq) // == rotaryDim/2
+	if half == 0 || heads == 0 {
+		return
+	}
 	posF := float64(pos)
+	var cosTable, sinTable [128]float64
+	var cosBuf, sinBuf []float64
+	if half <= len(cosTable) {
+		cosBuf, sinBuf = cosTable[:half], sinTable[:half]
+	} else {
+		cosBuf, sinBuf = make([]float64, half), make([]float64, half)
+	}
 	for d := range half {
 		theta := posF * invFreq[d]
-		c := math.Cos(theta) * scale
-		s := math.Sin(theta) * scale
-		for h := range heads {
-			off := h * headDim
-			x1 := float64(vec[off+d])
-			x2 := float64(vec[off+half+d])
-			vec[off+d] = float32(x1*c - x2*s)
-			vec[off+half+d] = float32(x2*c + x1*s)
+		cosBuf[d] = math.Cos(theta) * scale
+		sinBuf[d] = math.Sin(theta) * scale
+	}
+	_ = cosBuf[half-1]
+	_ = sinBuf[half-1]
+	for h := range heads {
+		off := h * headDim
+		hVec := vec[off : off+headDim]
+		hVec1 := hVec[:half]
+		hVec2 := hVec[half : 2*half]
+		_ = hVec1[half-1]
+		_ = hVec2[half-1]
+		for d := range half {
+			c := cosBuf[d]
+			s := sinBuf[d]
+			x1 := float64(hVec1[d])
+			x2 := float64(hVec2[d])
+			hVec1[d] = float32(x1*c - x2*s)
+			hVec2[d] = float32(x2*c + x1*s)
 		}
 	}
 }
@@ -51,17 +72,58 @@ func applyRoPE(vec []float32, heads, headDim, pos int, invFreq []float64, scale 
 // the tail through, matching applyRoPE.
 func applyRoPEInterleaved(vec []float32, heads, headDim, pos int, invFreq []float64, scale float64) {
 	half := len(invFreq) // == rotaryDim/2
+	if half == 0 || heads == 0 {
+		return
+	}
 	posF := float64(pos)
+	var cosTable, sinTable [128]float64
+	var cosBuf, sinBuf []float64
+	if half <= len(cosTable) {
+		cosBuf, sinBuf = cosTable[:half], sinTable[:half]
+	} else {
+		cosBuf, sinBuf = make([]float64, half), make([]float64, half)
+	}
 	for d := range half {
 		theta := posF * invFreq[d]
-		c := math.Cos(theta) * scale
-		s := math.Sin(theta) * scale
-		for h := range heads {
-			off := h * headDim
-			x1 := float64(vec[off+2*d])
-			x2 := float64(vec[off+2*d+1])
-			vec[off+2*d] = float32(x1*c - x2*s)
-			vec[off+2*d+1] = float32(x2*c + x1*s)
+		cosBuf[d] = math.Cos(theta) * scale
+		sinBuf[d] = math.Sin(theta) * scale
+	}
+	_ = cosBuf[half-1]
+	_ = sinBuf[half-1]
+	for h := range heads {
+		off := h * headDim
+		hVec := vec[off : off+2*half]
+		_ = hVec[2*half-1]
+		d := 0
+		for ; d+3 < half; d += 4 {
+			cb := cosBuf[d : d+4]
+			sb := sinBuf[d : d+4]
+			hv := hVec[2*d : 2*d+8]
+			_ = cb[3]
+			_ = sb[3]
+			_ = hv[7]
+			c0, c1, c2, c3 := cb[0], cb[1], cb[2], cb[3]
+			s0, s1, s2, s3 := sb[0], sb[1], sb[2], sb[3]
+			x1_0, x2_0 := float64(hv[0]), float64(hv[1])
+			x1_1, x2_1 := float64(hv[2]), float64(hv[3])
+			x1_2, x2_2 := float64(hv[4]), float64(hv[5])
+			x1_3, x2_3 := float64(hv[6]), float64(hv[7])
+			hv[0] = float32(x1_0*c0 - x2_0*s0)
+			hv[1] = float32(x2_0*c0 + x1_0*s0)
+			hv[2] = float32(x1_1*c1 - x2_1*s1)
+			hv[3] = float32(x2_1*c1 + x1_1*s1)
+			hv[4] = float32(x1_2*c2 - x2_2*s2)
+			hv[5] = float32(x2_2*c2 + x1_2*s2)
+			hv[6] = float32(x1_3*c3 - x2_3*s3)
+			hv[7] = float32(x2_3*c3 + x1_3*s3)
+		}
+		for ; d < half; d++ {
+			c := cosBuf[d]
+			s := sinBuf[d]
+			x1 := float64(hVec[2*d])
+			x2 := float64(hVec[2*d+1])
+			hVec[2*d] = float32(x1*c - x2*s)
+			hVec[2*d+1] = float32(x2*c + x1*s)
 		}
 	}
 }
@@ -129,20 +191,41 @@ func mropeDelta(pos [][3]int, seqLen int) int {
 // fall in the same component under both formulas, so one component index per d suffices either way.
 func applyMRoPE(vec []float32, heads, headDim int, pos [3]int, section []int, invFreq []float64, scale float64, interleaved bool) {
 	half := len(invFreq) // == rotaryDim/2; section sums to this
+	if half == 0 || heads == 0 {
+		return
+	}
 	comp := mropeComponent
 	if interleaved {
 		comp = mropeComponentInterleaved
 	}
+	var cosTable, sinTable [128]float64
+	var cosBuf, sinBuf []float64
+	if half <= len(cosTable) {
+		cosBuf, sinBuf = cosTable[:half], sinTable[:half]
+	} else {
+		cosBuf, sinBuf = make([]float64, half), make([]float64, half)
+	}
 	for d := range half {
 		theta := float64(pos[comp(d, section)]) * invFreq[d]
-		c := math.Cos(theta) * scale
-		s := math.Sin(theta) * scale
-		for h := range heads {
-			off := h * headDim
-			x1 := float64(vec[off+d])
-			x2 := float64(vec[off+half+d])
-			vec[off+d] = float32(x1*c - x2*s)
-			vec[off+half+d] = float32(x2*c + x1*s)
+		cosBuf[d] = math.Cos(theta) * scale
+		sinBuf[d] = math.Sin(theta) * scale
+	}
+	_ = cosBuf[half-1]
+	_ = sinBuf[half-1]
+	for h := range heads {
+		off := h * headDim
+		hVec := vec[off : off+headDim]
+		hVec1 := hVec[:half]
+		hVec2 := hVec[half : 2*half]
+		_ = hVec1[half-1]
+		_ = hVec2[half-1]
+		for d := range half {
+			c := cosBuf[d]
+			s := sinBuf[d]
+			x1 := float64(hVec1[d])
+			x2 := float64(hVec2[d])
+			hVec1[d] = float32(x1*c - x2*s)
+			hVec2[d] = float32(x2*c + x1*s)
 		}
 	}
 }

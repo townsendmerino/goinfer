@@ -7,9 +7,27 @@ import (
 )
 
 // addBias adds a per-output bias vector to a projection result in place
+// addBias adds b into x in place. Used for architectures with QKV bias
 // (Qwen2's q/k/v projections). len(b) must equal len(x).
 func addBias(x, b []float32) {
-	for i := range x {
+	n := min(len(x), len(b))
+	if n == 0 {
+		return
+	}
+	x = x[:n]
+	b = b[:n]
+	_ = x[n-1]
+	_ = b[n-1]
+	i := 0
+	for ; i+3 < n; i += 4 {
+		_ = x[i+3]
+		_ = b[i+3]
+		x[i] += b[i]
+		x[i+1] += b[i+1]
+		x[i+2] += b[i+2]
+		x[i+3] += b[i+3]
+	}
+	for ; i < n; i++ {
 		x[i] += b[i]
 	}
 }
@@ -270,9 +288,7 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 		for s := start; s < nKeys; s++ {
 			w := float32(float64(scores[s]) * inv)
 			vHead := vals[rowBase(s)+kvh*hd : rowBase(s)+kvh*hd+hd]
-			for d := range hd {
-				oHead[d] += w * vHead[d]
-			}
+			addScaled(oHead, vHead, w)
 		}
 	}
 }
@@ -308,7 +324,13 @@ func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, glo
 	start := max(cache.WindowStart(pos, global), arch.attnChunkStart(layer, pos))
 	scale := arch.AttnScale
 	group := nH / nKV
-	qq := make([]int8, hd) // quantized query head (reused across keys)
+	var qqBuf [256]int8
+	var qq []int8
+	if hd <= len(qqBuf) {
+		qq = qqBuf[:hd]
+	} else {
+		qq = make([]int8, hd)
+	}
 
 	clear(ctx)
 	for qh := range nH {
@@ -333,13 +355,22 @@ func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, glo
 		}
 		inv := 1.0 / sum
 		oHead := ctx[qh*hd : qh*hd+hd]
+		_ = oHead[hd-1]
 		for s := start; s < nKeys; s++ {
 			w := float32(float64(scores[s]) * inv)
 			row, srow := phys(s)*kvDim+kvh*hd, phys(s)*nKV+kvh
-			vs := vSc[srow]
+			wvs := w * vSc[srow]
 			vrow := vQ[row : row+hd]
-			for d := range hd {
-				oHead[d] += w * vs * float32(vrow[d])
+			_ = vrow[hd-1]
+			d := 0
+			for ; d+3 < hd; d += 4 {
+				oHead[d] += wvs * float32(vrow[d])
+				oHead[d+1] += wvs * float32(vrow[d+1])
+				oHead[d+2] += wvs * float32(vrow[d+2])
+				oHead[d+3] += wvs * float32(vrow[d+3])
+			}
+			for ; d < hd; d++ {
+				oHead[d] += wvs * float32(vrow[d])
 			}
 		}
 	}

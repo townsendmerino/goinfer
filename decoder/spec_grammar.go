@@ -269,16 +269,21 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 	// hist = prompt + committed tokens, the context an n-gram source searches
 	// (the grammar source ignores it). cur is the pending next token.
 	hist := slices.Clone(prompt)
+	var lookupBuf []int
+	var seqBuf []int
 	for {
 		// cur was confirmed last round — commit it to the live grammar, then draft
 		// from the source(s): grammar's forced byte-run and/or an n-gram copy.
 		mask.Commit(cur)
-		draftTok := drafter.Draft(append(slices.Clone(hist), cur), K)
+		lookupBuf = append(lookupBuf[:0], hist...)
+		lookupBuf = append(lookupBuf, cur)
+		draftTok := drafter.Draft(lookupBuf, K)
 		kEff := len(draftTok)
 
 		base := tpos
-		seq := append([]int{cur}, draftTok...)
-		logitsN, err := target.forwardN(ctx, seq, tc)
+		seqBuf = append(seqBuf[:0], cur)
+		seqBuf = append(seqBuf, draftTok...)
+		logitsN, err := target.forwardN(ctx, seqBuf, tc)
 		if err != nil {
 			g.err = err
 			return

@@ -62,29 +62,23 @@ func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
 		lw := &m.w.Layers[l]
 
 		// Sequence-mixer sub-block (Pre2: norm → mix → ×residual_multiplier → add).
-		n := append([]float32(nil), h...)
-		rmsNorm(n, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
+		rmsNormInto(cache.scr.norm, h, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
 		var mix []float32
 		if arch.isMambaLayer(l) {
-			mix = mamba2Step(n, lw.mamba, mp, eps, cache.mamba[l])
+			mix = mamba2Step(cache.scr.norm, lw.mamba, mp, eps, cache.mamba[l])
 		} else {
-			mix = m.graniteAttention(n, lw, arch, cache, l, pos)
+			mix = m.graniteAttention(cache.scr.norm, lw, arch, cache, l, pos)
 		}
-		for i := range h {
-			h[i] += mix[i] * residMul
-		}
+		addScaled(h, mix, residMul)
 
 		// MoE FFN sub-block (Pre2). post_attention_layernorm is the pre-MLP norm.
 		if !ssmSkipFFN {
-			n2 := append([]float32(nil), h...)
-			rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-			ffn, err := moeMLP(n2, lw, arch, m.be, cache.scr, m.pager)
+			rmsNormInto(cache.scr.norm, h, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
+			ffn, err := moeMLP(cache.scr.norm, lw, arch, m.be, cache.scr, m.pager)
 			if err != nil {
 				return nil, err
 			}
-			for i := range h {
-				h[i] += ffn[i] * residMul
-			}
+			addScaled(h, ffn, residMul)
 		}
 	}
 	cache.Advance() // manualPos: the mamba layers never Append, so step pos once per token

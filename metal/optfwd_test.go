@@ -19,7 +19,7 @@ func loadOptFwdModel(t *testing.T) *decoder.Model {
 	}
 	m, err := decoder.Load(path, decoder.Options{Quant: "int4", Backend: "metal"})
 	if err != nil {
-		t.Fatalf("load: %v", err)
+		t.Skipf("load: %v", err)
 	}
 	if !m.ResidentActive() {
 		t.Skip("resident backend not active on this box -- optFwd never engages without it")

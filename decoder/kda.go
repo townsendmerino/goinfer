@@ -77,7 +77,6 @@ func kdaSlideWindow(win [][]float32, x []float32, K int) [][]float32 {
 func kdaMixerStep(be Backend, h []float32, w *kdaWeights, p kdaParams, hidden int, eps float64, st *kdaState) []float32 {
 	H, D, K := p.NumHeads, p.HeadDim, p.ConvKernel
 	projSize := H * D
-	qScale := float32(1 / math.Sqrt(float64(D)))
 
 	// 1. Project, then per-stream depthwise causal conv + SiLU.
 	qm := matvecWM(be, &w.qProj, h)
@@ -97,22 +96,7 @@ func kdaMixerStep(be Backend, h []float32, w *kdaWeights, p kdaParams, hidden in
 	// 3. Per-head KDA recurrence — the one genuinely new primitive (per-channel decay), reusing
 	// kda_rehearsal.go's already-reference-verified functions unchanged.
 	core := make([]float32, projSize)
-	for hh := range H {
-		qh := l2normScaled(q[hh*D:(hh+1)*D], qScale)
-		kh := l2normScaled(k[hh*D:(hh+1)*D], 1)
-		vh := v[hh*D : (hh+1)*D]
-		rawGate := gDecayRaw[hh*D : (hh+1)*D]
-		dtb := w.dtBias[hh*D : (hh+1)*D]
-		gateLog := kdaLowerBoundGate(rawGate, dtb, w.aLog[hh], float32(p.LowerBound))
-		decay := make([]float32, D)
-		for i, x := range gateLog {
-			decay[i] = float32(math.Exp(float64(x)))
-		}
-		beta := sigmoidf(betaLogits[hh])
-		S := st.s[hh*D*D : (hh+1)*D*D]
-		out := kdaRecurrentStep(qh, kh, vh, decay, beta, S)
-		copy(core[hh*D:(hh+1)*D], out)
-	}
+	kdaRecurrence(core, q, k, v, gDecayRaw, betaLogits, w, p, st)
 
 	// 4. Gated RMSNorm (over headDim, × sigmoid(g), NOT SiLU — FusedRMSNormGated's own
 	// activation='sigmoid'), then out_proj.
@@ -131,3 +115,49 @@ func kdaMixerStep(be Backend, h []float32, w *kdaWeights, p kdaParams, hidden in
 	}
 	return matvecWM(be, &w.oProj, core)
 }
+
+func kdaRecurrence(core, q, k, v, gDecayRaw, betaLogits []float32, w *kdaWeights, p kdaParams, st *kdaState) {
+	H, D := p.NumHeads, p.HeadDim
+	qScale := float32(1 / math.Sqrt(float64(D)))
+
+	var qhBuf, khBuf, gateLogBuf, decayBuf [256]float32
+	var qh, kh, gateLog, decay []float32
+	if D <= len(qhBuf) {
+		qh = qhBuf[:D]
+		kh = khBuf[:D]
+		gateLog = gateLogBuf[:D]
+		decay = decayBuf[:D]
+	} else {
+		qh = make([]float32, D)
+		kh = make([]float32, D)
+		gateLog = make([]float32, D)
+		decay = make([]float32, D)
+	}
+
+	for hh := range H {
+		l2normScaledInto(qh, q[hh*D:(hh+1)*D], qScale)
+		l2normScaledInto(kh, k[hh*D:(hh+1)*D], 1)
+		vh := v[hh*D : (hh+1)*D]
+		rawGate := gDecayRaw[hh*D : (hh+1)*D]
+		dtb := w.dtBias[hh*D : (hh+1)*D]
+		kdaLowerBoundGateInto(gateLog, rawGate, dtb, w.aLog[hh], float32(p.LowerBound))
+		_ = decay[D-1]
+		_ = gateLog[D-1]
+		di := 0
+		for ; di+3 < D; di += 4 {
+			decay[di] = float32(math.Exp(float64(gateLog[di])))
+			decay[di+1] = float32(math.Exp(float64(gateLog[di+1])))
+			decay[di+2] = float32(math.Exp(float64(gateLog[di+2])))
+			decay[di+3] = float32(math.Exp(float64(gateLog[di+3])))
+		}
+		for ; di < D; di++ {
+			decay[di] = float32(math.Exp(float64(gateLog[di])))
+		}
+
+		beta := sigmoidf(betaLogits[hh])
+		S := st.s[hh*D*D : (hh+1)*D*D]
+		out := core[hh*D : (hh+1)*D]
+		kdaRecurrentStepInto(out, qh, kh, vh, decay, beta, S)
+	}
+}
+

@@ -165,8 +165,6 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 	keyDim, valueDim := hk*nk, hv*nv
 	convDim := 2*keyDim + valueDim
 	K := p.ConvKernel
-	rep := nv / nk
-	qScale := float32(1 / math.Sqrt(float64(hk)))
 	// onEps (Olmo Hybrid): the output gated-RMSNorm's own epsilon, hardcoded in HF's
 	// source independent of the model's rms_norm_eps — see ONormEps's own comment.
 	onEps := eps
@@ -213,62 +211,7 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 
 	// 3. Gated delta-rule recurrence, per value head; state persists in st.s.
 	core := make([]float32, valueDim)
-	for headV := range nv {
-		if deltaNetTiming {
-			t0 = time.Now()
-		}
-		headK := headV / rep
-		q := l2normScaled(conv[headK*hk:headK*hk+hk], qScale)
-		k := l2normScaled(conv[keyDim+headK*hk:keyDim+headK*hk+hk], 1)
-		v := conv[2*keyDim+headV*hv : 2*keyDim+headV*hv+hv]
-		g := w.negExpA[headV] * softplusf(at[headV]+w.dtBias[headV]) // log-decay (negExpA = −exp(A_log))
-		gt := float32(math.Exp(float64(g)))
-		beta := sigmoidf(bt[headV])
-		if p.NegEigval {
-			beta *= 2 // Olmo Hybrid: widen sigmoid's [0,1) write-gate to [0,2) — see NegEigval's own comment
-		}
-		if deltaNetTiming {
-			dnOtherNs.Add(int64(time.Since(t0))) // l2normScaled × 2 + gate scalars
-			t0 = time.Now()
-		}
-
-		S := st.s[headV*hk*hv : (headV+1)*hk*hv] // [hk, hv]
-		for i := range S {
-			S[i] *= gt
-		}
-		out := core[headV*hv : headV*hv+hv]
-		// P-07: kd-outer / vd-inner, walking S row-major (S[kd*hv:kd*hv+hv] is contiguous)
-		// instead of the original vd-outer / kd-inner, which strided hv floats (512 B at
-		// hk=hv=128) apart on every access. Bit-identical: for a fixed vd, both reductions
-		// (kv, then out) still sum their kd=0..hk-1 contributions in the same ascending
-		// order; S's columns are disjoint across vd, so computing every vd's read-phase
-		// (kv) before any vd's write-phase (the S update + out accumulation), rather than
-		// interleaved per vd as the original did, changes nothing either.
-		kv := make([]float32, hv)
-		for kd := range hk {
-			row := S[kd*hv : kd*hv+hv]
-			kk := k[kd]
-			for vd := range hv {
-				kv[vd] += row[vd] * kk
-			}
-		}
-		delta := kv // aliased and overwritten in place: index vd is read once, then written once
-		for vd := range hv {
-			delta[vd] = (v[vd] - kv[vd]) * beta
-		}
-		for kd := range hk {
-			row := S[kd*hv : kd*hv+hv]
-			kk, qq := k[kd], q[kd]
-			for vd := range hv {
-				row[vd] += kk * delta[vd]
-				out[vd] += row[vd] * qq
-			}
-		}
-		if deltaNetTiming {
-			dnRecurNs.Add(int64(time.Since(t0)))
-			dnStateElems.Add(int64(hk * hv))
-		}
-	}
+	deltaNetRecurrence(core, conv, at, bt, w, p, st)
 
 	var capPre, capGate []float32
 	if deltaCapHook != nil { // test seam: step 3's output, before step 4 overwrites it in place
@@ -318,6 +261,133 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 	return out
 }
 
+func deltaNetRecurrence(core, conv, at, bt []float32, w *deltaNetWeights, p qwen35Params, st *deltaState) {
+	nk, nv := p.NumKeyHeads, p.NumValueHeads
+	hk, hv := p.KeyHeadDim, p.ValueHeadDim
+	keyDim := hk * nk
+	rep := nv / nk
+	qScale := float32(1 / math.Sqrt(float64(hk)))
+
+	var t0 time.Time
+	if deltaNetTiming {
+		t0 = time.Now()
+	}
+
+	// 1. Precompute q and k L2-normalized projections across the nk key heads.
+	// In Gated DeltaNet, q and k depend only on headK = headV / rep.
+	// Precomputing avoids recomputing them rep times and avoids 2*nv heap allocations.
+	var qAllBuf, kAllBuf [512]float32
+	var qAll, kAll []float32
+	if keyDim <= len(qAllBuf) {
+		qAll = qAllBuf[:keyDim]
+		kAll = kAllBuf[:keyDim]
+	} else {
+		qAll = make([]float32, keyDim)
+		kAll = make([]float32, keyDim)
+	}
+	for headK := 0; headK < nk; headK++ {
+		l2normScaledInto(qAll[headK*hk:(headK+1)*hk], conv[headK*hk:(headK+1)*hk], qScale)
+		l2normScaledInto(kAll[headK*hk:(headK+1)*hk], conv[keyDim+headK*hk:keyDim+(headK+1)*hk], 1)
+	}
+
+	// 2. Stack buffer for kv / delta to eliminate nv allocations per step.
+	var kvBuf [256]float32
+	var kv []float32
+	if hv <= len(kvBuf) {
+		kv = kvBuf[:hv]
+	} else {
+		kv = make([]float32, hv)
+	}
+
+	for headV := range nv {
+		if deltaNetTiming {
+			t0 = time.Now()
+		}
+		headK := headV / rep
+		q := qAll[headK*hk : (headK+1)*hk]
+		k := kAll[headK*hk : (headK+1)*hk]
+		v := conv[2*keyDim+headV*hv : 2*keyDim+headV*hv+hv]
+		g := w.negExpA[headV] * softplusf(at[headV]+w.dtBias[headV]) // log-decay (negExpA = −exp(A_log))
+		gt := float32(math.Exp(float64(g)))
+		beta := sigmoidf(bt[headV])
+		if p.NegEigval {
+			beta *= 2 // Olmo Hybrid: widen sigmoid's [0,1) write-gate to [0,2) — see NegEigval's own comment
+		}
+		if deltaNetTiming {
+			dnOtherNs.Add(int64(time.Since(t0))) // gate scalars
+			t0 = time.Now()
+		}
+
+		S := st.s[headV*hk*hv : (headV+1)*hk*hv] // [hk, hv]
+		sLen := len(S)
+		_ = S[sLen-1]
+		si := 0
+		for ; si+3 < sLen; si += 4 {
+			S[si] *= gt
+			S[si+1] *= gt
+			S[si+2] *= gt
+			S[si+3] *= gt
+		}
+		for ; si < sLen; si++ {
+			S[si] *= gt
+		}
+
+		out := core[headV*hv : headV*hv+hv]
+		clear(kv)
+		for kd := range hk {
+			row := S[kd*hv : kd*hv+hv]
+			kk := k[kd]
+			addScaled(kv, row, kk)
+		}
+
+		delta := kv // aliased and overwritten in place: index vd is read once, then written once
+		_ = delta[hv-1]
+		_ = v[hv-1]
+		vdi := 0
+		for ; vdi+3 < hv; vdi += 4 {
+			delta[vdi] = (v[vdi] - delta[vdi]) * beta
+			delta[vdi+1] = (v[vdi+1] - delta[vdi+1]) * beta
+			delta[vdi+2] = (v[vdi+2] - delta[vdi+2]) * beta
+			delta[vdi+3] = (v[vdi+3] - delta[vdi+3]) * beta
+		}
+		for ; vdi < hv; vdi++ {
+			delta[vdi] = (v[vdi] - delta[vdi]) * beta
+		}
+
+		_ = out[hv-1]
+		for kd := range hk {
+			row := S[kd*hv : kd*hv+hv]
+			kk, qq := k[kd], q[kd]
+			_ = row[hv-1]
+			_ = delta[hv-1]
+			vd := 0
+			for ; vd+3 < hv; vd += 4 {
+				r0 := row[vd] + kk*delta[vd]
+				r1 := row[vd+1] + kk*delta[vd+1]
+				r2 := row[vd+2] + kk*delta[vd+2]
+				r3 := row[vd+3] + kk*delta[vd+3]
+				row[vd] = r0
+				row[vd+1] = r1
+				row[vd+2] = r2
+				row[vd+3] = r3
+				out[vd] += r0 * qq
+				out[vd+1] += r1 * qq
+				out[vd+2] += r2 * qq
+				out[vd+3] += r3 * qq
+			}
+			for ; vd < hv; vd++ {
+				r := row[vd] + kk*delta[vd]
+				row[vd] = r
+				out[vd] += r * qq
+			}
+		}
+		if deltaNetTiming {
+			dnRecurNs.Add(int64(time.Since(t0)))
+			dnStateElems.Add(int64(hk * hv))
+		}
+	}
+}
+
 // deltaCapHook (test seam, gpu/deltanet_test.go) hands a backend every intermediate its kernels
 // must reproduce, per step:
 //
@@ -350,16 +420,35 @@ func gatedDeltaNet(be Backend, h [][]float32, w *deltaNetWeights, p qwen35Params
 	return out
 }
 
-// l2normScaled returns x/‖x‖ (eps 1e-6, matching FLA's l2norm) times s.
-func l2normScaled(x []float32, s float32) []float32 {
+// l2normScaledInto writes x/‖x‖ (eps 1e-6, matching FLA's l2norm) times s into dst.
+func l2normScaledInto(dst, x []float32, s float32) {
+	n := len(x)
+	if n == 0 {
+		return
+	}
+	_ = dst[n-1]
+	_ = x[n-1]
 	var ss float64
 	for _, v := range x {
 		ss += float64(v) * float64(v)
 	}
 	inv := float32(math.Sqrt(1/(ss+1e-6))) * s
-	out := make([]float32, len(x))
-	for i, v := range x {
-		out[i] = v * inv
+	i := 0
+	for ; i+3 < n; i += 4 {
+		dst[i] = x[i] * inv
+		dst[i+1] = x[i+1] * inv
+		dst[i+2] = x[i+2] * inv
+		dst[i+3] = x[i+3] * inv
 	}
+	for ; i < n; i++ {
+		dst[i] = x[i] * inv
+	}
+}
+
+// l2normScaled returns x/‖x‖ (eps 1e-6, matching FLA's l2norm) times s.
+func l2normScaled(x []float32, s float32) []float32 {
+	out := make([]float32, len(x))
+	l2normScaledInto(out, x, s)
 	return out
 }
+

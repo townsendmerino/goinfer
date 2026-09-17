@@ -32,26 +32,20 @@ func (m *Model) runLayersDeepseek(id int, cache *KVCache) ([]float32, error) {
 	h := make([]float32, hidden)
 	m.w.Embed.Row(id, h)
 
+	scr := cache.scr
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
 		// Attention sub-block (Pre2).
-		n := append([]float32(nil), h...)
-		rmsNorm(n, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
-		attn := m.mlaAttention(n, lw, arch, cache, l, pos)
-		for i := range h {
-			h[i] += attn[i]
-		}
+		rmsNormInto(scr.norm, h, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
+		attn := m.mlaAttention(scr.norm, lw, arch, cache, l, pos)
+		addResidual(h, attn)
 		// FFN sub-block (Pre2). post_attention_layernorm is the pre-MLP norm; mlp()
 		// routes dense (l < FirstKDense, Experts nil) vs DeepSeekMoE per layer.
-		n2 := append([]float32(nil), h...)
-		rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-		ffn := make([]float32, hidden)
-		if err := mlp(n2, ffn, lw, arch, m.be, cache.scr, m.pager, nil); err != nil {
+		rmsNormInto(scr.norm, h, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
+		if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager, nil); err != nil {
 			return nil, err
 		}
-		for i := range h {
-			h[i] += ffn[i]
-		}
+		addResidual(h, scr.sub)
 	}
 	cache.Advance() // manualPos: MLA appends only the latent (not via Append), so step pos once per token
 	return h, nil

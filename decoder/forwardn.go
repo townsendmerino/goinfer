@@ -418,11 +418,12 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		qDim := nH * hd
 		q, ctx := q[:K*qDim], ctx[:K*qDim]
 
-		copy(norm, h)
 		if !postOnly {
 			for i := range K {
-				normalize(arch, row(norm, i, hidden), lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
+				normalizeInto(arch, row(norm, i, hidden), row(h, i, hidden), lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
 			}
+		} else {
+			copy(norm, h)
 		}
 		if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
 			qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
@@ -528,14 +529,13 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		}
 		if !parallel {
 			// Sequential: add the attention residual, then re-norm the updated stream for the MLP.
-			for j := range h {
-				h[j] += att[j]
-			}
-			copy(norm, h)
+			addResidual(h, att)
 			if !postOnly {
 				for i := range K {
-					normalize(arch, row(norm, i, hidden), lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
+					normalizeInto(arch, row(norm, i, hidden), row(h, i, hidden), lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
 				}
+			} else {
+				copy(norm, h)
 			}
 		}
 		// Parallel (Cohere/GPT-J): `norm` still holds the single shared input norm and
@@ -647,17 +647,25 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		}
 		switch arch.Act {
 		case ActGeluTanh:
-			parallelElementwise(len(gate), func(lo, hi int) {
-				for j := lo; j < hi; j++ {
-					gate[j] = geluTanh(gate[j]) * up[j]
-				}
-			})
+			if len(gate) < activationFanoutThreshold {
+				geglu(gate, up)
+			} else {
+				parallelElementwise(len(gate), func(lo, hi int) {
+					for j := lo; j < hi; j++ {
+						gate[j] = geluTanh(gate[j]) * up[j]
+					}
+				})
+			}
 		case ActSiLU:
-			parallelElementwise(len(gate), func(lo, hi int) {
-				for j := lo; j < hi; j++ {
-					gate[j] = silu(gate[j]) * up[j]
-				}
-			})
+			if len(gate) < activationFanoutThreshold {
+				swiglu(gate, up)
+			} else {
+				parallelElementwise(len(gate), func(lo, hi int) {
+					for j := lo; j < hi; j++ {
+						gate[j] = silu(gate[j]) * up[j]
+					}
+				})
+			}
 		default:
 			return nil, errNotImplemented
 		}
@@ -669,13 +677,9 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		}
 		if parallel {
 			// Single residual add: attention + MLP, both from the shared input norm.
-			for j := range h {
-				h[j] += att[j] + mlpOut[j]
-			}
+			addResidual2(h, att, mlpOut)
 		} else {
-			for j := range h {
-				h[j] += mlpOut[j]
-			}
+			addResidual(h, mlpOut)
 		}
 		// Read-only hidden-state seam (05), batched: copy all K rows of this layer's
 		// output when requested. captured[ci] holds [K*hidden]. nil ⇒ zero overhead.
@@ -921,29 +925,37 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				// future tokens). Equals pos with no image blocks — inert for text.
 				loP := cache.WindowStart(pos, global) - base
 				hiP := cache.attendHi(pos) - base
-				maxS := math.Inf(-1)
-				for s := loP; s <= hiP; s++ {
-					sc := float64(rowS[s]) * scale
-					rowS[s] = float32(sc)
-					if sc > maxS {
-						maxS = sc
+				if loP < 0 {
+					loP = 0
+				}
+				if hiP >= nKeys {
+					hiP = nKeys - 1
+				}
+				if loP <= hiP {
+					active := rowS[loP : hiP+1]
+					_ = active[len(active)-1]
+					maxS := math.Inf(-1)
+					for s, v := range active {
+						sc := float64(v) * scale
+						active[s] = float32(sc)
+						if sc > maxS {
+							maxS = sc
+						}
 					}
-				}
-				var sum float64
-				for s := loP; s <= hiP; s++ {
-					e := math.Exp(float64(rowS[s]) - maxS)
-					rowS[s] = float32(e)
-					sum += e
-				}
-				inv := 1.0 / sum
-				for s := range loP {
-					rowS[s] = 0
-				}
-				for s := loP; s <= hiP; s++ {
-					rowS[s] = float32(float64(rowS[s]) * inv)
-				}
-				for s := hiP + 1; s < nKeys; s++ {
-					rowS[s] = 0
+					var sum float64
+					for s, v := range active {
+						e := math.Exp(float64(v) - maxS)
+						active[s] = float32(e)
+						sum += e
+					}
+					inv := 1.0 / sum
+					clear(rowS[:loP])
+					for s, v := range active {
+						active[s] = float32(float64(v) * inv)
+					}
+					clear(rowS[hiP+1 : nKeys])
+				} else {
+					clear(rowS[:nKeys])
 				}
 			}
 			// scores·V: ctx_head[K,hd] = scores[K,nKeys] · V_head[nKeys,hd]
@@ -996,6 +1008,8 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				kvBase := s*kvDim + kvh*hd
 				copy(ws.kh[s*hd:s*hd+hd], keys[kvBase:kvBase+hd])
 				vrow := vals[kvBase : kvBase+hd]
+				_ = vrow[hd-1]
+				_ = ws.vt[(hd-1)*nKeys+s]
 				for d := range hd {
 					ws.vt[d*nKeys+s] = vrow[d]
 				}
@@ -1041,7 +1055,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		}
 		var wg sync.WaitGroup
 		headsPer := (nH + workers - 1) / workers
-		for w := range workers {
+		for w := 1; w < workers; w++ {
 			h0, h1 := w*headsPer, min((w+1)*headsPer, nH)
 			if h0 >= h1 {
 				continue
@@ -1063,6 +1077,16 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					attendOneHead(qhead, ws, ws.mmWS.MatmulBT)
 				}
 			}(w, h0, h1)
+		}
+		h1_0 := min(headsPer, nH)
+		ws0 := &pool[0]
+		lastKVH0 := -1
+		for qhead := 0; qhead < h1_0; qhead++ {
+			if kvh := qhead / group; kvh != lastKVH0 {
+				gatherKV(ws0, kvh)
+				lastKVH0 = kvh
+			}
+			attendOneHead(qhead, ws0, ws0.mmWS.MatmulBT)
 		}
 		wg.Wait()
 		return
@@ -1087,7 +1111,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	workers := min(len(pool), nH)
 	var wg sync.WaitGroup
 	headsPer := (nH + workers - 1) / workers
-	for w := range workers {
+	for w := 1; w < workers; w++ {
 		h0, h1 := w*headsPer, min((w+1)*headsPer, nH)
 		if h0 >= h1 {
 			continue
@@ -1100,6 +1124,11 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				attendOneHead(qhead, ws, nil)
 			}
 		}(w, h0, h1)
+	}
+	h1_0 := min(headsPer, nH)
+	ws0 := &pool[0]
+	for qhead := 0; qhead < h1_0; qhead++ {
+		attendOneHead(qhead, ws0, nil)
 	}
 	wg.Wait()
 }

@@ -176,6 +176,7 @@ type resident struct {
 	pQKNorm                                                            Pipeline // per-head QK-RMSNorm (Qwen3)
 	pRmsF32                                                            Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
 	pGemvW8, pGemvW8Amax                                               Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
+	pCopyVec                                                           Pipeline // copy_f32 for on-device embedding copy in batched forward
 	qkNorm                                                             bool     // arch has QK-norm
 	qkNormWhole                                                        bool     // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
 	sandwich                                                           bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
@@ -272,6 +273,12 @@ type resident struct {
 	residency                                                  ResidencySet // pinned working set (GOINFER_MOE_RESIDENCY, paged path); zero value if unused
 	residencyBufs                                              []Buffer     // exactly the buffers added to `residency` (for the teardown-consistency gate)
 
+	// Batched ForwardN buffers: pre-allocated up to batchCap tokens
+	batchCap                                 int
+	batchX                                   Buffer
+	batchLogits                              Buffer
+	batchUPos, batchUNKeys, batchUQTempScale []Buffer
+
 	// pipelined logits executor (encode-ahead): a persistent OS-thread-pinned goroutine that
 	// commits token t, pre-encodes t+1 while the GPU runs t, then waits — hiding the ~0.9ms
 	// host encode bubble. Lazily (re-)started on the first ForwardEmbPipe after execReq is nil —
@@ -330,8 +337,9 @@ func (r *resident) takeExecErr() error {
 }
 
 type execJob struct {
-	emb []float32
-	pos int
+	emb    []float32
+	pos    int
+	noHead bool
 }
 
 func byteBuf(d *Device, n int) Buffer {
@@ -627,6 +635,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pRope, r.pRope2, r.pKv, r.pAttn = pipe("rope"), pipe("rope2"), pipe("kv_store"), pipe("attention")
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
 	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
+	r.pCopyVec = pipe("copy_f32")
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
 	r.qkNorm = m.HasQKNorm()
 	r.qkNormWhole = m.QKNormWholeResident() // G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
@@ -1126,6 +1135,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.finalSoftcap = m.FinalLogitSoftcapResident() // Gemma 4: 30 (host-side softcap); 0 for every other family
 	r.embedScale = float32(m.EmbedScaleResident()) // Gemma: √hidden; 0 for every non-scaled family (G-02)
 	r.logitsHost = make([]float32, V)
+	r.ensureBatchCap(16)
 
 	// Residency set (default ON when supported + paged; GOINFER_MOE_RESIDENCY=0 opts out). The paged
 	// path submits per-layer, and the pread stage CPU-writes the slot buffers each token — dirtying
@@ -1227,16 +1237,38 @@ func (r *resident) loadEmbedRow(id, pos int) {
 // embedding lookup) since it happens once per token before any GPU dispatch, mirroring
 // decoder/model.go's ResidentForward (arch.LearnedPosEmbed: h[i] += wpe[pos][i]). A no-op for
 // every family without FeatLearnedPos.
-func (r *resident) addLearnedPos(pos int) {
+func (r *resident) addLearnedPosTo(dst []float32, pos int) {
 	if !r.learnedPos {
 		return
 	}
-	dst := r.x.Floats()
 	pe := make([]float32, len(dst))
 	r.posEmbed.Row(pos, pe)
 	for i := range dst {
 		dst[i] += pe[i]
 	}
+}
+
+func (r *resident) addLearnedPos(pos int) {
+	r.addLearnedPosTo(r.x.Floats(), pos)
+}
+
+// ensureBatchCap ensures r.batchX, r.batchLogits, and per-token uniform buffers have capacity for at least n tokens.
+func (r *resident) ensureBatchCap(n int) {
+	if n <= r.batchCap {
+		return
+	}
+	c := 16
+	for c < n {
+		c *= 2
+	}
+	r.batchX = r.d.NewBufferLen(c * r.H)
+	r.batchLogits = r.d.NewBufferLen(c * r.V)
+	for i := len(r.batchUPos); i < c; i++ {
+		r.batchUPos = append(r.batchUPos, NewBufferU32(r.d, 0))
+		r.batchUNKeys = append(r.batchUNKeys, NewBufferU32(r.d, 1))
+		r.batchUQTempScale = append(r.batchUQTempScale, NewBufferFloats(r.d, []float32{1}))
+	}
+	r.batchCap = c
 }
 
 // setPos writes pos/nKeys/qTempScale into their uniform buffers in place — called at every
@@ -1405,6 +1437,15 @@ func softcapParallel(logits []float32, softcap float32) {
 	wg.Wait()
 }
 
+func (r *resident) ensureExec() {
+	if r.execReq == nil {
+		r.execReq = make(chan execJob)
+		r.execAck = make(chan []float32)
+		r.execDone = make(chan struct{})
+		go r.execLoop()
+	}
+}
+
 // ForwardEmbPipe is ForwardEmb through the pipelined executor (encode-ahead) — the production
 // decode path. Returns logits[V] (reused buffer; consume before the next call). Synchronous to
 // the caller (one job in, one logits out), but the executor overlaps the next token's encode
@@ -1419,14 +1460,35 @@ func (r *resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
 	if r.moe != nil && r.moe.paged { // generic MoE's twin — same reasoning, same fallback
 		return r.ForwardEmb(emb, pos)
 	}
-	if r.execReq == nil {
-		r.execReq = make(chan execJob)
-		r.execAck = make(chan []float32)
-		r.execDone = make(chan struct{})
-		go r.execLoop()
-	}
-	r.execReq <- execJob{emb: emb, pos: pos}
+	r.ensureExec()
+	r.execReq <- execJob{emb: emb, pos: pos, noHead: false}
 	return <-r.execAck
+}
+
+// ForwardEmbNoLogitsPipe is ForwardNoLogits through the pipelined executor (encode-ahead) —
+// overlapping token t+1's trunk encode with token t's GPU execution while skipping the LM head
+// dispatch and logits readback.
+func (r *resident) ForwardEmbNoLogitsPipe(emb []float32, pos int) {
+	if r.g4moe != nil && r.g4moe.paged {
+		r.ForwardEmb(emb, pos)
+		return
+	}
+	if r.moe != nil && r.moe.paged {
+		r.ForwardEmb(emb, pos)
+		return
+	}
+	r.ensureExec()
+	r.execReq <- execJob{emb: emb, pos: pos, noHead: true}
+	<-r.execAck
+}
+
+// encodeTrunkCB builds an uncommitted command buffer with only the trunk (no LM head),
+// autoreleasing into the executor's long-lived pool.
+func (r *resident) encodeTrunkCB() *Encoder {
+	e := r.q.BeginNP()
+	r.encodeTrunkInto(e)
+	e.FinishEncoding()
+	return e
 }
 
 // encodeLogitsCB builds a complete, un-committed command buffer (trunk + full lm head) with no
@@ -1449,10 +1511,23 @@ func (r *resident) execLoop() {
 	const drainEvery = 64
 	pool := NewARPool()
 	var cur *Encoder
+	var curNoHead bool
 	count := 0
 	for job := range r.execReq {
-		if cur == nil {
-			cur = r.encodeLogitsCB()
+		if cur == nil || curNoHead != job.noHead {
+			if cur != nil {
+				pool.Drain()
+				pool = NewARPool()
+				cur = nil
+				count = 0
+			}
+			if job.noHead {
+				cur = r.encodeTrunkCB()
+				curNoHead = true
+			} else {
+				cur = r.encodeLogitsCB()
+				curNoHead = false
+			}
 		}
 		copy(r.x.Floats(), job.emb) // this token's embedding + pos (set at commit time, not encode)
 		r.addLearnedPos(job.pos)    // GPT-2: += wpe[pos], same commit-time placement as the copy above
@@ -1462,13 +1537,22 @@ func (r *resident) execLoop() {
 		count++
 		drain := count%drainEvery == 0
 		var next *Encoder
+		var nextNoHead bool
 		if !drain {
-			next = r.encodeLogitsCB() // overlaps cur's GPU execution — the encode-ahead win
+			if job.noHead {
+				next = r.encodeTrunkCB()
+				nextNoHead = true
+			} else {
+				next = r.encodeLogitsCB()
+				nextNoHead = false
+			}
 		}
 		cur.WaitDone()
 		r.recordExecErr(cur.Err()) // C-09: set BEFORE the execAck send so the adapter's read is ordered
 		r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = cur.GPUStart(), cur.GPUEnd(), cur.KernStart(), cur.KernEnd()
-		r.finalizeLogits()
+		if !job.noHead {
+			r.finalizeLogits()
+		}
 
 		if drain { // no un-committed cb live now → safe to drain the shared pool
 			pool.Drain()
@@ -1476,8 +1560,13 @@ func (r *resident) execLoop() {
 			cur = nil
 		} else {
 			cur = next
+			curNoHead = nextNoHead
 		}
-		r.execAck <- r.logitsHost
+		if job.noHead {
+			r.execAck <- nil
+		} else {
+			r.execAck <- r.logitsHost
+		}
 	}
 	pool.Drain()
 }
@@ -1865,16 +1954,22 @@ func (r *resident) forwardHeadForTest(emb []float32, pos int) (act, logits []flo
 	return act, append([]float32(nil), r.logits.Floats()...)
 }
 
+// encodeTrunkWith encodes all decoder layers + the final norm into e using the specified
+// uPos, uNKeys, and uQTempScale uniform buffers.
+func (r *resident) encodeTrunkWith(e *Encoder, uPos, uNKeys, uQTempScale Buffer) {
+	for l := 0; l < r.nL; l++ {
+		r.encodeLayerWith(e, l, uPos, uNKeys, uQTempScale)
+	}
+	r.encodeNorm(e, r.x, r.finalNorm, r.finalNormBias, r.aq, r.aSc)
+}
+
 // encodeTrunkInto encodes all decoder layers + the final norm into e, leaving the quantized
 // final hidden state in r.aq/r.aSc ready for an lm head. It ONLY records dispatches (referencing
 // the shared buffers) — it does NOT set uPos/uNKeys or fill r.x; the caller sets those before
 // commit. This value-independence is what lets the executor pre-encode token t+1 while token t
 // runs (encode-ahead).
 func (r *resident) encodeTrunkInto(e *Encoder) {
-	for l := 0; l < r.nL; l++ {
-		r.encodeLayer(e, l)
-	}
-	r.encodeNorm(e, r.x, r.finalNorm, r.finalNormBias, r.aq, r.aSc)
+	r.encodeTrunkWith(e, r.uPos, r.uNKeys, r.uQTempScale)
 }
 
 // encodeNorm dispatches the family's pre-GEMV norm+quant into aq/aSc — layernorm_quant (GPT-2's
@@ -1890,13 +1985,13 @@ func (r *resident) encodeNorm(e *Encoder, x, w, bias, aq, aSc Buffer) {
 	}
 }
 
-// encodeLayer encodes one decoder layer (attention block + FFN block) into e. Factored out of
-// encodeTrunkInto so Step 6's expert-paging work has a per-layer SEAM: the pre-encode-cost
-// measurement wraps each call in its own command buffer (the per-layer submit+wait regime), and the
-// eventual paging path hangs its router-readback / expert-stage handshake here. Byte-identical to the
-// old inline loop body (same dispatches, same order), so encodeTrunkInto stays the single-command-
-// buffer, value-independent trunk it was.
+// encodeLayer encodes one decoder layer (attention block + FFN block) into e using default uniform buffers.
 func (r *resident) encodeLayer(e *Encoder, l int) {
+	r.encodeLayerWith(e, l, r.uPos, r.uNKeys, r.uQTempScale)
+}
+
+// encodeLayerWith encodes one decoder layer (attention block + FFN block) into e with parameterized uniforms.
+func (r *resident) encodeLayerWith(e *Encoder, l int, uPos, uNKeys, uQTempScale Buffer) {
 	L := &r.layers[l]
 	if L.delta != nil {
 		// Gated-DeltaNet mixer: replaces the whole attention sub-block (norm through o-proj) —
@@ -1904,7 +1999,7 @@ func (r *resident) encodeLayer(e *Encoder, l int) {
 		// is the ordinary one for this layer (dense or MoE), unchanged.
 		r.encodeDeltaNetMixer(e, L)
 	} else {
-		r.encodeAttention(e, l)
+		r.encodeAttentionWith(e, l, uPos, uNKeys, uQTempScale)
 	}
 	// --- ffn block (dense SwiGLU/GeGLU, generic MoE, or Gemma-4 parallel dense‖MoE) ---
 	if L.g4moe != nil {
@@ -1979,6 +2074,10 @@ func (r *resident) encodeLayer(e *Encoder, l int) {
 // command buffer, submit+wait, read the router idx, stage experts, then encode [experts + join] in a
 // second — the value-dependent seam paging forces. Byte-identical to the old inline attention block.
 func (r *resident) encodeAttention(e *Encoder, l int) {
+	r.encodeAttentionWith(e, l, r.uPos, r.uNKeys, r.uQTempScale)
+}
+
+func (r *resident) encodeAttentionWith(e *Encoder, l int, uPos, uNKeys, uQTempScale Buffer) {
 	L := &r.layers[l]
 	g := L.geom
 	nHhd := r.nH * g.hd
@@ -2052,10 +2151,10 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 		// One merged dispatch for both Q and K (rope2, kernels.go) instead of two: gid<qTotal
 		// addresses Q at offset 0, gid>=qTotal addresses K at offset g.uNHhd (the fused qkv
 		// buffer's kOff, in elements) — V (at vOff) is untouched either way.
-		e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, r.uQTempScale)
+		e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, uQTempScale)
 	}
-	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
-	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, uPos)
+	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 	if L.qGate { // ctx *= sigmoid(gate), before o-proj — matches the CPU qwen35Attention
 		e.Dispatch(r.pDnAttnGate, nHhd, 256, r.ctx, r.dnAGate, g.uNHhd)
 	}
@@ -2087,4 +2186,82 @@ func (r *resident) encodeAttention(e *Encoder, l int) {
 			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, r.x)
 		}
 	}
+}
+
+// ForwardBatch runs N embeddings at consecutive positions starting at startPos,
+// encoding all N token forward passes into a SINGLE Metal command buffer and
+// single compute command encoder, returning all N logits vectors.
+func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float32, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	n := len(embeddings)
+	if n == 0 {
+		return nil, nil
+	}
+
+	// Drain and stop the pipelined executor so we have exclusive, synchronous access to the queue
+	// and no in-flight or pre-encoded command buffers conflict with our batch.
+	r.stopExec()
+
+	r.ensureBatchCap(n)
+
+	// Populate batch input embeddings and per-token uniforms up front.
+	for m, emb := range embeddings {
+		if len(emb) != r.H {
+			return nil, fmt.Errorf("metal: embedding[%d] len %d != hidden %d", m, len(emb), r.H)
+		}
+		dst := r.batchX.Floats()[m*r.H : (m+1)*r.H]
+		copy(dst, emb)
+		pos := startPos + m
+		if r.learnedPos {
+			r.addLearnedPosTo(dst, pos)
+		}
+		r.batchUPos[m].SetU32(uint32(pos))
+		r.batchUNKeys[m].SetU32(uint32(pos + 1))
+		scale := float32(1)
+		if r.attnTempBeta != 0 {
+			scale = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(pos)/r.attnTempOrigMaxPos)))
+		}
+		r.batchUQTempScale[m].Floats()[0] = scale
+	}
+
+	// Encode all N tokens into a SINGLE command buffer and single compute encoder.
+	e := r.q.Begin()
+	for m := range n {
+		// 1. Copy token m's input embedding into r.x on the device.
+		e.Dispatch(r.pCopyVec, r.H, 256, r.batchX.At(m*r.H*4), r.x, r.uH)
+
+		// 2. Encode full trunk (layers 0..nL-1 + final norm) for token m.
+		r.encodeTrunkWith(e, r.batchUPos[m], r.batchUNKeys[m], r.batchUQTempScale[m])
+
+		// 3. Dispatch LM head writing logits for token m into batchLogits at offset m*V.
+		e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.batchLogits.At(m*r.V*4), r.uH)
+	}
+	e.End()
+
+	r.recordExecErr(e.Err())
+	if err := r.takeExecErr(); err != nil {
+		return nil, err
+	}
+	r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = e.GPUStart(), e.GPUEnd(), e.KernStart(), e.KernEnd()
+
+	// Read back and finalize logits for each token.
+	out := make([][]float32, n)
+	bLogits := r.batchLogits.Floats()
+	for m := range n {
+		row := make([]float32, r.V)
+		copy(row, bLogits[m*r.V:(m+1)*r.V])
+		if r.finalSoftcap > 0 {
+			softcapParallel(row, r.finalSoftcap)
+		}
+		if r.logitScale != 0 && r.logitScale != 1 {
+			for j, v := range row {
+				row[j] = v * r.logitScale
+			}
+		}
+		out[m] = row
+	}
+
+	return out, nil
 }

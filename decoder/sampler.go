@@ -183,10 +183,12 @@ func (s *Sampler) Observe(ids ...int) {
 // silently desync histCounts from the count applyPenalties' fast path relies on.
 func (s *Sampler) recordHistory(id int) {
 	s.history = append(s.history, id)
-	if s.histCounts == nil {
-		s.histCounts = map[int]int{}
+	if s.penaltiesConfigured() && s.p.RepeatLastN <= 0 {
+		if s.histCounts == nil {
+			s.histCounts = map[int]int{}
+		}
+		s.histCounts[id]++
 	}
-	s.histCounts[id]++
 }
 
 // Sample returns the chosen token id for the given logits ([VocabSize]).
@@ -502,10 +504,35 @@ func lastWithMass(p []float64, lo, hi int) int {
 }
 
 func argmax(logits []float32) int {
+	if len(logits) == 0 {
+		return 0
+	}
+	_ = logits[len(logits)-1]
 	best, bi := logits[0], 0
-	for i, v := range logits[1:] {
+	i := 1
+	for ; i+3 < len(logits); i += 4 {
+		_ = logits[i+3]
+		v0 := logits[i]
+		if v0 > best {
+			best, bi = v0, i
+		}
+		v1 := logits[i+1]
+		if v1 > best {
+			best, bi = v1, i+1
+		}
+		v2 := logits[i+2]
+		if v2 > best {
+			best, bi = v2, i+2
+		}
+		v3 := logits[i+3]
+		if v3 > best {
+			best, bi = v3, i+3
+		}
+	}
+	for ; i < len(logits); i++ {
+		v := logits[i]
 		if v > best {
-			best, bi = v, i+1
+			best, bi = v, i
 		}
 	}
 	return bi
@@ -524,6 +551,10 @@ func softmaxStable(logits []float32, temperature float64) []float64 {
 // one — same one-position-at-a-time contract as distBufN/specLogitsBufN, which this now shares
 // its buffer with rather than allocating its own each call.
 func softmaxStableInto(logits []float32, temperature float64, dst []float64) []float64 {
+	if len(logits) == 0 {
+		return nil
+	}
+	_ = logits[len(logits)-1]
 	if temperature <= 0 {
 		temperature = 1
 	}
@@ -539,6 +570,7 @@ func softmaxStableInto(logits []float32, temperature float64, dst []float64) []f
 	} else {
 		out = make([]float64, len(logits))
 	}
+	_ = out[len(out)-1]
 	var sum float64
 	for i, v := range logits {
 		e := math.Exp((float64(v) - maxv) / temperature)
@@ -593,12 +625,24 @@ func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP
 	if texp <= 0 {
 		texp = 1 // defensive; SampleWithInfo only reaches here for temperature > 0
 	}
-	maxL := float64(logits[0])
-	for _, v := range logits[1:] {
-		if float64(v) > maxL {
-			maxL = float64(v)
+	maxF := logits[0]
+	i := 1
+	_ = logits[len(logits)-1]
+	for ; i+3 < len(logits); i += 4 {
+		v0, v1, v2, v3 := logits[i], logits[i+1], logits[i+2], logits[i+3]
+		m0 := max(v0, v1)
+		m1 := max(v2, v3)
+		m := max(m0, m1)
+		if m > maxF {
+			maxF = m
 		}
 	}
+	for ; i < len(logits); i++ {
+		if logits[i] > maxF {
+			maxF = logits[i]
+		}
+	}
+	maxL := float64(maxF)
 	// Z (full-vocab softmax denominator) is needed ONLY for the top-p cutoff.
 	topPActive := topP > 0 && topP < 1
 	var Z float64
@@ -618,7 +662,7 @@ func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP
 	case minP > 0:
 		// e_i ≥ minP·e_max ⟺ logit_i ≥ maxL + T·ln(minP)  (e_max = 1 at the argmax).
 		thr := maxL + texp*math.Log(minP)
-		cand = make([]int, 0, 64)
+		cand = candScratch[:0]
 		for i, v := range logits {
 			if float64(v) >= thr {
 				cand = append(cand, i)

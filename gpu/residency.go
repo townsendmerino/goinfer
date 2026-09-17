@@ -81,8 +81,9 @@ func (c *Context) uploadProj(w *linalg.WeightMat) (decodeWeight, error) {
 }
 
 var (
-	_ decoder.ResidentForward = (*residentDecoder)(nil)
-	_ decoder.ResidentAdapter = (*residentDecoder)(nil)
+	_ decoder.ResidentForward   = (*residentDecoder)(nil)
+	_ decoder.ResidentAdapter   = (*residentDecoder)(nil)
+	_ decoder.ResidentPrefillKV = (*residentDecoder)(nil)
 )
 
 // residentDecoder is the gpu side of decoder.ResidentForward: a persistent
@@ -1178,6 +1179,21 @@ func (rd *residentDecoder) ForwardMRoPE(embedding []float32, pos, ropePos int) (
 	}
 	applySoftcap(logits, rd.finalSoftcap)
 	return logits, nil
+}
+
+// ForwardNoLogits implements decoder.ResidentPrefillKV: run one prefill token to populate
+// the resident KV cache, skipping the LM head GEMV dispatch, logits staging copy, D2H transfer, and softcap.
+func (rd *residentDecoder) ForwardNoLogits(embedding []float32, pos int) error {
+	if err := rd.checkCap(pos, 1); err != nil {
+		return err
+	}
+	if pos == 0 {
+		rd.Reset()
+		if rd.resetErr != nil {
+			return rd.resetErr
+		}
+	}
+	return rd.runner.RunNoLogits(embedding, pos, pos)
 }
 
 // ForwardN runs K tokens at startPos..startPos+K-1 in one command buffer. It lazily

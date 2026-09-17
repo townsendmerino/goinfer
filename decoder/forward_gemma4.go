@@ -138,6 +138,9 @@ func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVC
 		cstack: make([]float32, nH*maxHd),
 	}
 
+	normd := make([]float32, hidden)
+	sub := make([]float32, hidden)
+
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
 		global := arch.isGlobalLayer(l)
@@ -150,9 +153,7 @@ func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVC
 		}
 
 		// --- attention sub-block (sandwich) ---
-		normd := make([]float32, hidden)
-		copy(normd, h)
-		normalize(arch, normd, lw.PreAttnNorm, nil, hidden)
+		normalizeInto(arch, normd, h, lw.PreAttnNorm, nil, hidden)
 
 		q := make([]float32, nH*hd)
 		matmul(be, &lw.QProj, normd, q, 1)
@@ -186,12 +187,9 @@ func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVC
 		start := cache.WindowStart(pos, global)
 		gemma4Attend(q, ctx, keys, vals, nH, nKV, hd, start, nKeys, arch.AttnScale, &g4sc)
 
-		attnOut := make([]float32, hidden)
-		matmul(be, &lw.OProj, ctx, attnOut, 1)
-		normalize(arch, attnOut, lw.PostAttnNorm, nil, hidden) // post-attn (sandwich)
-		for i := range h {
-			h[i] += attnOut[i]
-		}
+		matmul(be, &lw.OProj, ctx, sub, 1)
+		normalize(arch, sub, lw.PostAttnNorm, nil, hidden) // post-attn (sandwich)
+		addResidual(h, sub)
 
 		// --- FFN sub-block ---
 		if lw.gemma4moe != nil {
@@ -202,23 +200,21 @@ func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVC
 			h = gemma4MoEFFN(be, arch, h, lw.gemma4moe, m.pager)
 		} else {
 			// dense variant: MLP sub-block (sandwich), GeGLU at the per-layer width.
-			copy(normd, h)
-			normalize(arch, normd, lw.PreMLPNorm, nil, hidden)
+			normalizeInto(arch, normd, h, lw.PreMLPNorm, nil, hidden)
 			gate := make([]float32, ffn)
 			up := make([]float32, ffn)
 			matmul(be, &lw.GateProj, normd, gate, 1)
 			matmul(be, &lw.UpProj, normd, up, 1)
-			parallelElementwise(len(gate), func(lo, hi int) {
-				for i := lo; i < hi; i++ {
-					gate[i] = geluTanh(gate[i]) * up[i]
-				}
-			})
-			mlpOut := make([]float32, hidden)
-			matmul(be, &lw.DownProj, gate, mlpOut, 1)
-			normalize(arch, mlpOut, lw.PostMLPNorm, nil, hidden) // post-FFN (sandwich)
-			for i := range h {
-				h[i] += mlpOut[i]
+			if len(gate) < activationFanoutThreshold {
+				geglu(gate, up)
+			} else {
+				parallelElementwise(len(gate), func(lo, hi int) {
+					geglu(gate[lo:hi], up[lo:hi])
+				})
 			}
+			matmul(be, &lw.DownProj, gate, sub, 1)
+			normalize(arch, sub, lw.PostMLPNorm, nil, hidden) // post-FFN (sandwich)
+			addResidual(h, sub)
 
 			// --- PLE branch: gate→gelu→×per-layer-embedding→proj→norm→+residual ---
 			if pleDim > 0 {
@@ -230,12 +226,9 @@ func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVC
 						px[i] = geluTanh(px[i]) * pl[i]
 					}
 				})
-				pout := make([]float32, hidden)
-				matmul(be, &lw.PLEProj, px, pout, 1)
-				normalize(arch, pout, lw.PostPLENorm, nil, hidden)
-				for i := range h {
-					h[i] += pout[i]
-				}
+				matmul(be, &lw.PLEProj, px, sub, 1)
+				normalize(arch, sub, lw.PostPLENorm, nil, hidden)
+				addResidual(h, sub)
 			}
 
 			// --- per-layer output scalar ---

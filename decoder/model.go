@@ -809,8 +809,7 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 			// h += attn(n) + mlp(n), where n = norm(h). Both read the same n
 			// (attention leaves scr.norm intact), so MLP takes scr.norm, NOT the
 			// post-attention residual. No pre-MLP norm, no post-sublayer norms.
-			copy(scr.norm, h)
-			normalize(arch, scr.norm, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
+			normalizeInto(arch, scr.norm, h, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
 			if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be, ld); err != nil {
 				return nil, err
 			}
@@ -825,13 +824,12 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 				cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub2...)
 				cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub2...)
 			}
-			for i := range h {
-				h[i] += scr.sub[i] + scr.sub2[i]
-			}
+			addResidual2(h, scr.sub, scr.sub2)
 		} else {
-			copy(scr.norm, h)
 			if !postOnly {
-				normalize(arch, scr.norm, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
+				normalizeInto(arch, scr.norm, h, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
+			} else {
+				copy(scr.norm, h)
 			}
 			if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be, ld); err != nil {
 				return nil, err
@@ -845,12 +843,11 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 			if cache.subCapture { // scr.sub is now the attention contribution about to hit the residual
 				cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
 			}
-			for i := range h {
-				h[i] += scr.sub[i]
-			}
-			copy(scr.norm, h)
+			addResidual(h, scr.sub)
 			if !postOnly {
-				normalize(arch, scr.norm, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
+				normalizeInto(arch, scr.norm, h, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
+			} else {
+				copy(scr.norm, h)
 			}
 			if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager, ld); err != nil {
 				return nil, err
@@ -864,9 +861,7 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 			if cache.subCapture { // scr.sub is now the MLP contribution about to hit the residual
 				cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub...)
 			}
-			for i := range h {
-				h[i] += scr.sub[i]
-			}
+			addResidual(h, scr.sub)
 		}
 		// Read-only hidden-state seam (05): copy this layer's output residual stream
 		// when requested. A copy (not a reference) — h is mutated by later layers.
@@ -879,6 +874,55 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 		}
 	}
 	return h, nil
+}
+
+func addResidual(h, sub []float32) {
+	n := min(len(h), len(sub))
+	if n == 0 {
+		return
+	}
+	h = h[:n]
+	sub = sub[:n]
+	_ = h[n-1]
+	_ = sub[n-1]
+	i := 0
+	for ; i+3 < n; i += 4 {
+		_ = h[i+3]
+		_ = sub[i+3]
+		h[i] += sub[i]
+		h[i+1] += sub[i+1]
+		h[i+2] += sub[i+2]
+		h[i+3] += sub[i+3]
+	}
+	for ; i < n; i++ {
+		h[i] += sub[i]
+	}
+}
+
+func addResidual2(h, sub, sub2 []float32) {
+	n := min(len(h), min(len(sub), len(sub2)))
+	if n == 0 {
+		return
+	}
+	h = h[:n]
+	sub = sub[:n]
+	sub2 = sub2[:n]
+	_ = h[n-1]
+	_ = sub[n-1]
+	_ = sub2[n-1]
+	i := 0
+	for ; i+3 < n; i += 4 {
+		_ = h[i+3]
+		_ = sub[i+3]
+		_ = sub2[i+3]
+		h[i] += sub[i] + sub2[i]
+		h[i+1] += sub[i+1] + sub2[i+1]
+		h[i+2] += sub[i+2] + sub2[i+2]
+		h[i+3] += sub[i+3] + sub2[i+3]
+	}
+	for ; i < n; i++ {
+		h[i] += sub[i] + sub2[i]
+	}
 }
 
 // embedToken writes the residual-stream embedding for token id into dst ([hidden])
@@ -902,15 +946,20 @@ func (m *Model) embedToken(id int, dst []float32) {
 	// learned-pos family goes multimodal (none today do).
 }
 
-// normalize applies the architecture's normalization in place over one row:
+// normalizeInto applies the architecture's normalization from src into dst over one row:
 // LayerNorm (mean-centered, with bias) for GPT-2/NeoX, else RMSNorm. bias is
 // ignored by RMSNorm (and nil for the Sandwich4 post-norms).
-func normalize(arch *Architecture, x, weight, bias []float32, dim int) {
+func normalizeInto(arch *Architecture, dst, src, weight, bias []float32, dim int) {
 	if arch.Norm == NormLayer {
-		layerNorm(x, weight, bias, 1, dim, arch.NormEps)
+		layerNormInto(dst, src, weight, bias, 1, dim, arch.NormEps)
 		return
 	}
-	rmsNorm(x, weight, 1, dim, arch.NormEps, arch.RMSAddOne)
+	rmsNormInto(dst, src, weight, 1, dim, arch.NormEps, arch.RMSAddOne)
+}
+
+// normalize applies the architecture's normalization in place over one row.
+func normalize(arch *Architecture, x, weight, bias []float32, dim int) {
+	normalizeInto(arch, x, x, weight, bias, dim)
 }
 
 // forward runs runLayers then the final norm + LM head, returning the logit
@@ -1024,8 +1073,20 @@ func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
 	}
 	if arch.LogitScale != 0 && arch.LogitScale != 1 { // Granite logits_scaling: logits /= scale
 		inv := float32(1 / arch.LogitScale)
-		for i := range logits {
-			logits[i] *= inv
+		n := len(logits)
+		if n > 0 {
+			_ = logits[n-1]
+			i := 0
+			for ; i+3 < n; i += 4 {
+				_ = logits[i+3]
+				logits[i] *= inv
+				logits[i+1] *= inv
+				logits[i+2] *= inv
+				logits[i+3] *= inv
+			}
+			for ; i < n; i++ {
+				logits[i] *= inv
+			}
 		}
 	}
 	return logits

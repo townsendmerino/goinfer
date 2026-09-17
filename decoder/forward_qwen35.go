@@ -31,9 +31,12 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 
 		// Attention sub-block (Pre2: norm → mix → residual; postOnly: mix reads the
 		// raw residual directly, its OUTPUT is normalized before the add instead).
-		n := append([]float32(nil), h...)
+		var n []float32
 		if !postOnly {
-			rmsNorm(n, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
+			rmsNormInto(cache.scr.norm, h, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
+			n = cache.scr.norm
+		} else {
+			n = h
 		}
 		var attn []float32
 		if arch.isLinearLayer(l) {
@@ -52,9 +55,7 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 		if postOnly {
 			normalize(arch, attn, lw.PostAttnNorm, nil, hidden)
 		}
-		for i := range h {
-			h[i] += attn[i]
-		}
+		addResidual(h, attn)
 
 		// FFN sub-block (Pre2). post_attention_layernorm is the pre-MLP norm.
 		//
@@ -63,9 +64,12 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 		// the ONLY structural difference in this forward — the DeltaNet step, the gated
 		// attention, the hybrid cache and the sequential prefill are all untouched — so it
 		// branches here rather than getting a forward of its own.
-		n2 := append([]float32(nil), h...)
+		var n2 []float32
 		if !postOnly {
-			rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
+			rmsNormInto(cache.scr.norm, h, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
+			n2 = cache.scr.norm
+		} else {
+			n2 = h
 		}
 		var ffn []float32
 		var err error
@@ -81,9 +85,7 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 		if postOnly {
 			normalize(arch, ffn, lw.PostMLPNorm, nil, hidden)
 		}
-		for i := range h {
-			h[i] += ffn[i]
-		}
+		addResidual(h, ffn)
 		cache.captureResidual(l, h)
 	}
 	cache.Advance() // manualPos: one stored position per token

@@ -29,12 +29,31 @@ import "math"
 // output are all per-channel ([head_k_dim] for one head); aLog is that head's single scalar
 // parameter. The result is a log-decay in (lowerBound, 0), exponentiated by the caller before
 // use in kdaRecurrentStep.
+// kdaLowerBoundGateInto computes KDA's "safe_gate" per-channel log-decay directly into out.
+func kdaLowerBoundGateInto(out, rawGate, dtBias []float32, aLog, lowerBound float32) {
+	n := len(rawGate)
+	if n == 0 {
+		return
+	}
+	_ = out[n-1]
+	_ = rawGate[n-1]
+	_ = dtBias[n-1]
+	scale := float32(math.Exp(float64(aLog)))
+	i := 0
+	for ; i+3 < n; i += 4 {
+		out[i] = lowerBound * sigmoidf(scale*(rawGate[i]+dtBias[i]))
+		out[i+1] = lowerBound * sigmoidf(scale*(rawGate[i+1]+dtBias[i+1]))
+		out[i+2] = lowerBound * sigmoidf(scale*(rawGate[i+2]+dtBias[i+2]))
+		out[i+3] = lowerBound * sigmoidf(scale*(rawGate[i+3]+dtBias[i+3]))
+	}
+	for ; i < n; i++ {
+		out[i] = lowerBound * sigmoidf(scale*(rawGate[i]+dtBias[i]))
+	}
+}
+
 func kdaLowerBoundGate(rawGate, dtBias []float32, aLog, lowerBound float32) []float32 {
 	out := make([]float32, len(rawGate))
-	scale := float32(math.Exp(float64(aLog)))
-	for i, g := range rawGate {
-		out[i] = lowerBound * sigmoidf(scale*(g+dtBias[i]))
-	}
+	kdaLowerBoundGateInto(out, rawGate, dtBias, aLog, lowerBound)
 	return out
 }
 
@@ -49,38 +68,89 @@ func kdaLowerBoundGate(rawGate, dtBias []float32, aLog, lowerBound float32) []fl
 // exactly as gatedDeltaNetStep does, then the identical outer-product delta write and q·S(final)
 // read. The three-phase structure is unchanged from Gated DeltaNet; only phase 1 (decay) differs.
 func kdaRecurrentStep(q, k, v, decay []float32, beta float32, S []float32) []float32 {
+	out := make([]float32, len(v))
+	kdaRecurrentStepInto(out, q, k, v, decay, beta, S)
+	return out
+}
+
+// kdaRecurrentStepInto is the zero-allocation, 4-way vectorized implementation of kdaRecurrentStep
+// writing directly into the caller's out buffer.
+func kdaRecurrentStepInto(out, q, k, v, decay []float32, beta float32, S []float32) {
 	K, V := len(q), len(v)
 
 	// 1. Per-channel decay — KDA's departure from Gated DeltaNet's single scalar.
 	for kd := range K {
 		row := S[kd*V : kd*V+V]
 		dk := decay[kd]
-		for vd := range V {
+		_ = row[V-1]
+		vd := 0
+		for ; vd+3 < V; vd += 4 {
+			row[vd] *= dk
+			row[vd+1] *= dk
+			row[vd+2] *= dk
+			row[vd+3] *= dk
+		}
+		for ; vd < V; vd++ {
 			row[vd] *= dk
 		}
 	}
+
 	// 2. kv = k · S(decayed); delta = beta·(v − kv) — identical to gatedDeltaNetStep.
-	kv := make([]float32, V)
+	var kvBuf [256]float32
+	var kv []float32
+	if V <= len(kvBuf) {
+		kv = kvBuf[:V]
+	} else {
+		kv = make([]float32, V)
+	}
+	clear(kv)
 	for kd := range K {
 		row := S[kd*V : kd*V+V]
 		kk := k[kd]
-		for vd := range V {
-			kv[vd] += row[vd] * kk
-		}
+		addScaled(kv, row, kk)
 	}
+
 	delta := kv // aliased and overwritten in place, same convention as gatedDeltaNetStep
-	for vd := range V {
-		delta[vd] = (v[vd] - kv[vd]) * beta
+	_ = delta[V-1]
+	_ = v[V-1]
+	vd := 0
+	for ; vd+3 < V; vd += 4 {
+		delta[vd] = (v[vd] - delta[vd]) * beta
+		delta[vd+1] = (v[vd+1] - delta[vd+1]) * beta
+		delta[vd+2] = (v[vd+2] - delta[vd+2]) * beta
+		delta[vd+3] = (v[vd+3] - delta[vd+3]) * beta
 	}
+	for ; vd < V; vd++ {
+		delta[vd] = (v[vd] - delta[vd]) * beta
+	}
+
 	// 3. S += k ⊗ delta; out = q · S(final) — identical to gatedDeltaNetStep.
-	out := make([]float32, V)
+	clear(out)
+	_ = out[V-1]
 	for kd := range K {
 		row := S[kd*V : kd*V+V]
 		kk, qq := k[kd], q[kd]
-		for vd := range V {
-			row[vd] += kk * delta[vd]
-			out[vd] += row[vd] * qq
+		_ = row[V-1]
+		_ = delta[V-1]
+		vd := 0
+		for ; vd+3 < V; vd += 4 {
+			r0 := row[vd] + kk*delta[vd]
+			r1 := row[vd+1] + kk*delta[vd+1]
+			r2 := row[vd+2] + kk*delta[vd+2]
+			r3 := row[vd+3] + kk*delta[vd+3]
+			row[vd] = r0
+			row[vd+1] = r1
+			row[vd+2] = r2
+			row[vd+3] = r3
+			out[vd] += r0 * qq
+			out[vd+1] += r1 * qq
+			out[vd+2] += r2 * qq
+			out[vd+3] += r3 * qq
+		}
+		for ; vd < V; vd++ {
+			r := row[vd] + kk*delta[vd]
+			row[vd] = r
+			out[vd] += r * qq
 		}
 	}
-	return out
 }

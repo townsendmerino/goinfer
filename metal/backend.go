@@ -435,10 +435,9 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 // a Gemma-class vocabulary). The layer chain — hence the K/V written at pos — is identical to
 // Forward, so decode from the last prompt token is byte-identical.
 //
-// Synchronous (forwardHiddenNoHead), not routed through the pipelined encode-ahead executor that
-// Forward uses: mirrors cuda/resident.go's own ForwardNoLogits, which is synchronous for the same
-// reason. M-01's fuller fix — a noHead bit on execJob so KV-only tokens keep encode-ahead's
-// overlap too — is a follow-up worth ~0.9 ms/token; this lands the head-skip itself first.
+// Pipelined through the encode-ahead executor (ForwardEmbNoLogitsPipe) via a noHead bit on execJob:
+// overlaps token t+1's trunk encode with token t's GPU execution while skipping the LM head
+// dispatch and logits readback (~0.9 ms/token prefill latency recovery).
 //
 // On a paged MoE (g4moe or generic moe), forwardHiddenNoHead's trunk encoder has no paged branch
 // — only Forward → forwardLogitsPaged/forwardLogitsMoEPaged does (the same gap C-02 found at
@@ -458,9 +457,7 @@ func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
 	if pos == 0 {
 		a.Reset() // fresh sequence — same reason as Forward
 	}
-	if _, err := a.r.forwardHiddenNoHead(embedding, pos, false); err != nil {
-		return err
-	}
+	a.r.ForwardEmbNoLogitsPipe(embedding, pos)
 	return a.r.takeExecErr() // C-09: a command buffer aborted — surface it
 }
 
@@ -672,21 +669,41 @@ func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, 
 	return out, nil
 }
 
-// ForwardN runs a batch of embeddings at consecutive positions (prefill). Each row is copied
-// off the reused host logits buffer so all survive.
+// ForwardN runs a batch of embeddings at consecutive positions (prefill/verify).
+// It sequences all N token forward steps inside a SINGLE Metal command buffer
+// and single compute encoder (one commit, one wait), returning all N logits vectors.
+// For paged MoE (which requires mid-layer host interaction), it falls back to the
+// sequential loop.
 func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, error) {
-	// Fail-fast before any write: the loop's Forward calls each guard their own pos, but checking
-	// the whole batch up front refuses an over-cap run without partial KV writes.
+	// Fail-fast before any write: checking the whole batch up front refuses an over-cap run
+	// without partial KV writes.
 	if e := a.checkCap(startPos, len(embeddings)); e != nil {
 		return nil, e
 	}
-	out := make([][]float32, len(embeddings))
-	for i, emb := range embeddings {
-		l, err := a.Forward(emb, startPos+i)
-		if err != nil {
-			return nil, err
+	if len(embeddings) == 0 {
+		return nil, nil
+	}
+	// Fall back to sequential loop for paged MoE where per-layer host interaction is required.
+	if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) {
+		out := make([][]float32, len(embeddings))
+		for i, emb := range embeddings {
+			l, err := a.Forward(emb, startPos+i)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = append([]float32(nil), l...)
 		}
-		out[i] = append([]float32(nil), l...)
+		return out, nil
+	}
+	if startPos == 0 {
+		a.Reset() // fresh sequence — same DeltaNet-state reset Forward(pos==0) does
+	}
+	out, err := a.r.ForwardBatch(embeddings, startPos)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.r.takeExecErr(); err != nil {
+		return nil, err // C-09: a command buffer aborted — surface it
 	}
 	return out, nil
 }

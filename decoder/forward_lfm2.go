@@ -119,29 +119,23 @@ func (m *Model) runLayersLFM2(id int, cache *KVCache) ([]float32, error) {
 		// Mixer sub-block. operator_norm is the pre-mixer norm for BOTH kinds — LFM2 does
 		// not have separate conv/attention norm names, which is why lfm2TensorSchema maps
 		// it to PreAttnNorm and both branches read the same field.
-		n := append([]float32(nil), h...)
-		rmsNorm(n, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
+		rmsNormInto(cache.scr.norm, h, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
 		var mix []float32
 		if arch.isConvLayer(l) {
-			mix = shortConvStep(n, lw.shortConv, *g, hidden, cache.conv[l])
+			mix = shortConvStep(cache.scr.norm, lw.shortConv, *g, hidden, cache.conv[l])
 		} else {
-			mix = m.lfm2Attention(n, lw, arch, cache, l, pos)
+			mix = m.lfm2Attention(cache.scr.norm, lw, arch, cache, l, pos)
 		}
-		for i := range h {
-			h[i] += mix[i]
-		}
+		addResidual(h, mix)
 
 		// FFN sub-block. ffn_norm is the pre-FFN norm; the FFN is SwiGLU (w1 gate, w3 up,
 		// w2 down) and identical on conv and attention layers.
-		n2 := append([]float32(nil), h...)
-		rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-		ffn := make([]float32, hidden)
-		if err := gatedMLP(n2, ffn, lw, arch, m.be, cache.scr, nil); err != nil {
+		rmsNormInto(cache.scr.norm, h, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
+		ffn := cache.scr.sub
+		if err := gatedMLP(cache.scr.norm, ffn, lw, arch, m.be, cache.scr, nil); err != nil {
 			return nil, err
 		}
-		for i := range h {
-			h[i] += ffn[i]
-		}
+		addResidual(h, ffn)
 	}
 
 	cache.Advance()

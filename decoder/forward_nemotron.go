@@ -34,22 +34,19 @@ func (m *Model) runLayersNemotron(id int, cache *KVCache) ([]float32, error) {
 
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
-		n := append([]float32(nil), h...)
-		rmsNorm(n, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
+		rmsNormInto(cache.scr.norm, h, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
 		var op []float32
 		switch np.blockKind[l] {
 		case nemoMamba:
-			op = mamba2Step(n, lw.mamba, mp, eps, cache.mamba[l])
+			op = mamba2Step(cache.scr.norm, lw.mamba, mp, eps, cache.mamba[l])
 		case nemoAttn:
-			op = m.nemotronAttention(n, lw, arch, cache, l, pos)
+			op = m.nemotronAttention(cache.scr.norm, lw, arch, cache, l, pos)
 		case nemoMLP:
-			op = m.nemotronMLP(n, lw, hidden)
+			op = m.nemotronMLP(cache.scr.norm, lw, hidden)
 		case nemoMoE:
-			op = m.nemotronMoE(n, lw, arch, hidden)
+			op = m.nemotronMoE(cache.scr.norm, lw, arch, hidden)
 		}
-		for i := range h {
-			h[i] += op[i]
-		}
+		addResidual(h, op)
 	}
 	cache.Advance() // manualPos: only attention layers Append, so step pos once per token
 	return h, nil
@@ -117,16 +114,11 @@ func (m *Model) nemotronMoE(n []float32, lw *LayerWeights, arch *Architecture, h
 	out := make([]float32, hidden)
 	for j, e := range idx {
 		expOut := m.nemotronExpertFFN(&lw.Experts[e], n, moe.IntermediateDim, hidden)
-		w := wts[j]
-		for i := range out {
-			out[i] += w * expOut[i]
-		}
+		addScaled(out, expOut, wts[j])
 	}
 	if moe.SharedIntermediateDim > 0 {
 		shOut := m.nemotronExpertFFN(&lw.SharedExpert, n, moe.SharedIntermediateDim, hidden)
-		for i := range out {
-			out[i] += shOut[i]
-		}
+		addResidual(out, shOut)
 	}
 	return out
 }

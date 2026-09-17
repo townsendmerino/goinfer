@@ -38,25 +38,19 @@ func (m *Model) runLayersGptOss(id int, cache *KVCache) ([]float32, error) {
 		lw := &m.w.Layers[l]
 
 		// h += attn(preAttnNorm(h))
-		copy(norm, h)
-		normalize(arch, norm, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
+		normalizeInto(arch, norm, h, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
 		if err := m.gptOssAttention(l, norm, attnOut, lw, cache); err != nil {
 			return nil, err
 		}
-		for i := range h {
-			h[i] += attnOut[i]
-		}
+		addResidual(h, attnOut)
 
 		// h += moe(preMLPNorm(h))
-		copy(norm, h)
-		normalize(arch, norm, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
+		normalizeInto(arch, norm, h, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
 		moeOut, err := m.gptOssMoE(norm, lw, arch)
 		if err != nil {
 			return nil, err
 		}
-		for i := range h {
-			h[i] += moeOut[i]
-		}
+		addResidual(h, moeOut)
 		cache.captureResidual(l, h)
 	}
 	return h, nil

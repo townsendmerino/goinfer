@@ -36,7 +36,8 @@ type NgramDrafter struct {
 	MinMatch int // shortest suffix length trusted as a match (default 2)
 	MaxMatch int // longest suffix length probed (default 16); caps the scan
 
-	lastMatch int // suffix length of the most recent Draft hit (0 on miss); for SpecTrace
+	lastMatch   int   // suffix length of the most recent Draft hit (0 on miss); for SpecTrace
+	proposalBuf []int // reused proposal buffer for zero-alloc Draft
 }
 
 // DraftInfo is optional per-Draft metadata a Drafter may expose for SpecTrace.
@@ -132,7 +133,8 @@ func (d *NgramDrafter) Draft(ctx []int, k int) []int {
 			cont := ctx[s+L:] // tokens that followed this earlier occurrence
 			m := min(k, len(cont))
 			d.lastMatch = L
-			return slices.Clone(cont[:m])
+			d.proposalBuf = append(d.proposalBuf[:0], cont[:m]...)
+			return d.proposalBuf
 		}
 	}
 	return nil
@@ -397,10 +399,14 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			commitResident()
 			return
 		}
+		var lookupBuf []int
+		var seqBuf []int
+		var phBuf []int
 		for {
 			// 1. Draft up to K tokens from the context ending at cur (zero on a miss).
-			lookupCtx := append(slices.Clone(hist), cur)
-			proposed := drafter.Draft(lookupCtx, K)
+			lookupBuf = append(lookupBuf[:0], hist...)
+			lookupBuf = append(lookupBuf, cur)
+			proposed := drafter.Draft(lookupBuf, K)
 			// Fixed K verifies the whole proposal; the adaptive controller trims it to
 			// the depth its running acceptance estimate still justifies (04).
 			draftTok := proposed
@@ -432,8 +438,9 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			// 2. Verify: one target pass over [cur, draft…] gives the target's argmax
 			// after each position in a single weight stream.
 			base := tpos
-			seq := append([]int{cur}, draftTok...)
-			logitsN, err := targetVerify(seq, base)
+			seqBuf = append(seqBuf[:0], cur)
+			seqBuf = append(seqBuf, draftTok...)
+			logitsN, err := targetVerify(seqBuf, base)
 			if err != nil {
 				g.err = err
 				return
@@ -455,7 +462,9 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			// history-dependent transform is active).
 			var ph []int
 			if needHist {
-				ph = append(slices.Clone(hist), cur)
+				phBuf = append(phBuf[:0], hist...)
+				phBuf = append(phBuf, cur)
+				ph = phBuf
 			}
 			for i := range kEff {
 				var acc bool

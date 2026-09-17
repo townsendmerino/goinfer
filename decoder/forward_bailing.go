@@ -28,28 +28,22 @@ func (m *Model) runLayersBailingHybrid(id int, cache *KVCache) ([]float32, error
 		lw := &m.w.Layers[l]
 
 		// Attention sub-block (Pre2).
-		n := append([]float32(nil), h...)
-		rmsNorm(n, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
+		rmsNormInto(cache.scr.norm, h, lw.PreAttnNorm, 1, hidden, eps, arch.RMSAddOne)
 		var attn []float32
 		if arch.isLinearLayer(l) {
-			attn = kdaMixerStep(m.be, n, lw.kda, *arch.kda, hidden, eps, cache.kda[l])
+			attn = kdaMixerStep(m.be, cache.scr.norm, lw.kda, *arch.kda, hidden, eps, cache.kda[l])
 		} else {
-			attn = m.mlaAttention(n, lw, arch, cache, l, pos)
+			attn = m.mlaAttention(cache.scr.norm, lw, arch, cache, l, pos)
 		}
-		for i := range h {
-			h[i] += attn[i]
-		}
+		addResidual(h, attn)
 
 		// FFN sub-block (Pre2). mlp() routes dense (l < FirstKDense, Experts nil) vs MoE.
-		n2 := append([]float32(nil), h...)
-		rmsNorm(n2, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
-		ffn := make([]float32, hidden)
-		if err := mlp(n2, ffn, lw, arch, m.be, cache.scr, m.pager, nil); err != nil {
+		rmsNormInto(cache.scr.norm, h, lw.PreMLPNorm, 1, hidden, eps, arch.RMSAddOne)
+		ffn := cache.scr.sub
+		if err := mlp(cache.scr.norm, ffn, lw, arch, m.be, cache.scr, m.pager, nil); err != nil {
 			return nil, err
 		}
-		for i := range h {
-			h[i] += ffn[i]
-		}
+		addResidual(h, ffn)
 	}
 	// manualPos: MLA layers append only the latent (not via Append), and KDA layers never
 	// Append at all, so neither can drive the last-layer position trigger reliably.
