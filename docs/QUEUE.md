@@ -1457,11 +1457,11 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:872` | goinfer | `// Why the resident cap: on a resident backend the stateless path prefills the fixed-siz` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:880` | goinfer | `func (lm *loadedModel) contextWindow(residentPath bool) int {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/vision_serve.go:20` | goinfer | `maxImagesPerTurn = 1 // v1: a single image per request (the interleave API is shaped for` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:384` | goinfer | `func webLoadPath(p string) (string, error) {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:386` | goinfer | `func webLoadPath(p string) (string, error) {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:51` | goinfer | `//go:embed webui` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:520` | goinfer | `func (s *server) unloadSuggestion(err error) string {` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:557` | goinfer | `func (s *server) handleWebUnload(w http.ResponseWriter, r *http.Request) {` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:583` | goinfer | `func (s *server) webEnabled(w http.ResponseWriter) bool {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:522` | goinfer | `func (s *server) unloadSuggestion(err error) string {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:559` | goinfer | `func (s *server) handleWebUnload(w http.ResponseWriter, r *http.Request) {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:585` | goinfer | `func (s *server) webEnabled(w http.ResponseWriter) bool {` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:181` | goinfer | `Size   int64` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:328` | goinfer | `func Search(ctx context.Context, q, kind string, limit int) ([]SearchResult, error) {` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:98` | goinfer | `func Curated() map[string]CuratedTier {` |

@@ -208,8 +208,10 @@ type webSearchReq struct {
 
 // searchLimit bounds how many suggestions a search returns — a dropdown, not a full listing;
 // pull.Search sends no limit= to HuggingFace at all when given 0, which is a request shape this
-// route should never produce.
-const searchLimit = 8
+// route should never produce. Raised from 8 to 50 live during testing (2026-09-17): 8 was too
+// narrow to surface a less-trending-but-still-relevant repo past HF's own trendingScore ordering
+// (pull.Search's own doc comment — not downloads or likes) for anything but the most obvious query.
+const searchLimit = 50
 
 // handleWebSearch answers the repo box's search-as-you-type: candidates to PICK from, not a
 // commitment to any of them — CheckAccess/List (handleWebList, above) still run, unchanged, once
