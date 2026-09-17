@@ -18,7 +18,7 @@ before profiling. `attn_batched` at **M=1 decode**, split-KV OFF, depth 3900, bo
 
 ## Verdict 1 — the gate's own justification is REFUTED
 
-`cuda/resident.go:222-221` says: *"at/above this many query heads the single-block kernel **already
+`cuda/resident.go:223-221` says: *"at/above this many query heads the single-block kernel **already
 fills the device**, so split-KV is pure cost."* That is the entire stated basis for `splitkvMaxHeads`.
 
 Measured at nH=32 on both models: **achieved occupancy 12.68% and 11.34%**, 32 blocks on a 40-SM

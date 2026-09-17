@@ -83,6 +83,47 @@ func (c *Context) ropeInPlace(vec, invFreq *DeviceBuffer, heads, headDim, pos in
 	return []func(){pbuf.Release, bg.Release}, nil
 }
 
+// qkNormInPlace normalizes each head of vec in place with weight (submit, no poll).
+func (c *Context) qkNormInPlace(vec, weight *DeviceBuffer, heads, hd int, eps float32, addOne bool) ([]func(), error) {
+	if err := c.ensureQKNorm(); err != nil {
+		return nil, err
+	}
+	pbuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label:    "qknorm-p",
+		Contents: wgpu.ToBytes([]uint32{uint32(heads), uint32(hd), f32bits(eps), boolU32(addOne)}),
+		Usage:    wgpu.BufferUsageUniform,
+	})
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: c.qkNormLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: vec.buf, Size: vec.buf.GetSize()},
+			{Binding: 1, Buffer: weight.buf, Size: weight.buf.GetSize()},
+			{Binding: 2, Buffer: pbuf, Size: pbuf.GetSize()},
+		},
+	})
+	if err != nil {
+		pbuf.Release()
+		return nil, err
+	}
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.qkNormPipeline)
+	pass.SetBindGroup(0, bg, nil)
+	pass.DispatchWorkgroups(uint32(heads), 1, 1)
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		pbuf.Release()
+		bg.Release()
+		return nil, err
+	}
+	pass.Release()
+	cmd, _ := enc.TryFinish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	return []func(){pbuf.Release, bg.Release}, nil
+}
+
 // kvAppend copies a device k or v [kvDim] into the cache at position pos (a copy
 // command, submitted; no poll).
 func (c *Context) kvAppend(src, cache *DeviceBuffer, pos, kvDim int) error {
@@ -161,6 +202,77 @@ type AttnWeights struct {
 	// PrefillLastW8A8 (gpu/prefillrunner.go) reads these today — DecodeToken/
 	// DecodeTokenFused/DecodeTokenFusedBatched predate bias support and ignore them.
 	QBias, KBias, VBias *DeviceBuffer
+
+	// QNorm, KNorm: optional per-head QK-norm weights [hd] (Qwen3/GLM); nil ⇒ no QK-norm.
+	QNorm, KNorm *DeviceBuffer
+
+	// QGate: optional per-head query/gate split (q_proj emits [query ‖ gate] per head).
+	QGate bool
+}
+
+// qSplitDevice splits a double-width [query ‖ gate] projection into separate q and gate buffers.
+func (c *Context) qSplitDevice(qg *DeviceBuffer, n, headDim int) (*DeviceBuffer, *DeviceBuffer, []func(), error) {
+	if err := c.ensureDeltaQSplit(); err != nil {
+		return nil, nil, nil, err
+	}
+	q, err := c.newF32("qsplit-q", n)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	gate, err := c.newF32("qsplit-gate", n)
+	if err != nil {
+		q.Release()
+		return nil, nil, nil, err
+	}
+	pbuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label:    "qsplit-p",
+		Contents: wgpu.ToBytes([]uint32{uint32(n), uint32(headDim), 0, 0}),
+		Usage:    wgpu.BufferUsageUniform,
+	})
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: c.deltaQSplitLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: qg.buf, Size: qg.buf.GetSize()},
+			{Binding: 1, Buffer: q, Size: q.GetSize()},
+			{Binding: 2, Buffer: gate, Size: gate.GetSize()},
+			{Binding: 3, Buffer: pbuf, Size: pbuf.GetSize()},
+		},
+	})
+	if err != nil {
+		q.Release()
+		gate.Release()
+		pbuf.Release()
+		return nil, nil, nil, err
+	}
+	if err := c.submitUnary(c.deltaQSplitPipeline, bg, n); err != nil {
+		return nil, nil, nil, err
+	}
+	free := []func(){func() { q.Release() }, func() { gate.Release() }, pbuf.Release, bg.Release}
+	return newDeviceBuffer(q, n), newDeviceBuffer(gate, n), free, nil
+}
+
+// attnGateInPlace applies ctx *= sigmoid(gate) in place (submit, no poll).
+func (c *Context) attnGateInPlace(ctxv, gate *DeviceBuffer, n int) ([]func(), error) {
+	if err := c.ensureDeltaAttnGate(); err != nil {
+		return nil, err
+	}
+	pbuf, _ := c.dims4("attngate-p", uint32(n), 0)
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: c.deltaAttnGateLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: ctxv.buf, Size: ctxv.buf.GetSize()},
+			{Binding: 1, Buffer: gate.buf, Size: gate.buf.GetSize()},
+			{Binding: 2, Buffer: pbuf, Size: pbuf.GetSize()},
+		},
+	})
+	if err != nil {
+		pbuf.Release()
+		return nil, err
+	}
+	if err := c.submitUnary(c.deltaAttnGatePipeline, bg, n); err != nil {
+		return nil, err
+	}
+	return []func(){pbuf.Release, bg.Release}, nil
 }
 
 // attnBlockInto runs the attention sub-block on the device buffer xd IN PLACE
@@ -198,6 +310,25 @@ func (c *Context) attnBlockInto(xd *DeviceBuffer, w AttnWeights, hidden, nH, nKV
 	}
 	frees = append(frees, func() { q.Close() }, func() { k.Close() }, func() { v.Close() })
 
+	var aGate *DeviceBuffer
+	if w.QGate {
+		var fsQ []func()
+		q, aGate, fsQ, err = c.qSplitDevice(q, nH*hd, hd)
+		if err := keep(fsQ, err); err != nil {
+			return nil, err
+		}
+		frees = append(frees, func() { q.Close() }, func() { aGate.Close() })
+	}
+
+	if w.QNorm != nil {
+		if err := keep(c.qkNormInPlace(q, w.QNorm, nH, hd, eps, addOne)); err != nil {
+			return nil, err
+		}
+		if err := keep(c.qkNormInPlace(k, w.KNorm, nKV, hd, eps, addOne)); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := keep(c.ropeInPlace(q, w.InvFreq, nH, hd, pos, 1)); err != nil {
 		return nil, err
 	}
@@ -214,6 +345,11 @@ func (c *Context) attnBlockInto(xd *DeviceBuffer, w AttnWeights, hidden, nH, nKV
 	ctxv, fs2, err := c.attnDevice(q, w.KCache, w.VCache, nH, nKV, hd, pos+1, start, scale)
 	if err := keep(fs2, err); err != nil {
 		return nil, err
+	}
+	if aGate != nil {
+		if err := keep(c.attnGateInPlace(ctxv, aGate, nH*hd)); err != nil {
+			return nil, err
+		}
 	}
 	cq, cs, err := c.quantizeDevice(ctxv, 1, nH*hd)
 	if err != nil {
@@ -275,9 +411,34 @@ func (c *Context) swigluDevice(gate, up *DeviceBuffer, inter int) (*DeviceBuffer
 	return newDeviceBuffer(mid, inter), []func(){func() { mid.Release() }, pbuf.Release, bg.Release}, nil
 }
 
-// mlpInto runs the gated-MLP sub-block on xd in place (xd += Down(swiglu(Gate/Up
+// gegluDevice: gelu_tanh(gate)·up → new device buffer (submit, no poll).
+func (c *Context) gegluDevice(gate, up *DeviceBuffer, inter int) (*DeviceBuffer, []func(), error) {
+	if err := c.ensureLayer(); err != nil {
+		return nil, nil, err
+	}
+	mid, err := c.newF32("geglu-mid", inter)
+	if err != nil {
+		return nil, nil, err
+	}
+	pbuf, _ := c.dims4("geglu-p", uint32(inter), 0)
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.gegluLayout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: gate.buf, Size: gate.buf.GetSize()}, {Binding: 1, Buffer: up.buf, Size: up.buf.GetSize()},
+		{Binding: 2, Buffer: mid, Size: mid.GetSize()}, {Binding: 3, Buffer: pbuf, Size: pbuf.GetSize()},
+	}})
+	if err != nil {
+		mid.Release()
+		pbuf.Release()
+		return nil, nil, err
+	}
+	if err := c.submitUnary(c.gegluPipeline, bg, inter); err != nil {
+		return nil, nil, err
+	}
+	return newDeviceBuffer(mid, inter), []func(){func() { mid.Release() }, pbuf.Release, bg.Release}, nil
+}
+
+// mlpInto runs the gated-MLP sub-block on xd in place (xd += Down(swiglu/geglu(Gate/Up
 // (rmsnorm(xd))))), submit-no-poll. Returns scratch frees (free after the fence).
-func (c *Context) mlpInto(xd, rmsW *DeviceBuffer, gate, up, down *ResidentW8A8, hidden, inter int, eps float32, addOne bool) ([]func(), error) {
+func (c *Context) mlpInto(xd, rmsW *DeviceBuffer, gate, up, down *ResidentW8A8, hidden, inter int, eps float32, addOne bool, gelu ...bool) ([]func(), error) {
 	var frees []func()
 	keep := func(fs []func(), err error) error { frees = append(frees, fs...); return err }
 	xn, fs, err := c.rmsnormDevice(xd, rmsW, hidden, eps, addOne)
@@ -298,7 +459,13 @@ func (c *Context) mlpInto(xd, rmsW *DeviceBuffer, gate, up, down *ResidentW8A8, 
 		return frees, err
 	}
 	frees = append(frees, func() { gd.Close() }, func() { ud.Close() })
-	mid, fs2, err := c.swigluDevice(gd, ud, inter)
+	var mid *DeviceBuffer
+	var fs2 []func()
+	if len(gelu) > 0 && gelu[0] {
+		mid, fs2, err = c.gegluDevice(gd, ud, inter)
+	} else {
+		mid, fs2, err = c.swigluDevice(gd, ud, inter)
+	}
 	if err := keep(fs2, err); err != nil {
 		return frees, err
 	}
@@ -330,6 +497,8 @@ type ModelW struct {
 	Layers    []LayerW
 	FinalNorm *DeviceBuffer
 	LMHead    *ResidentW8A8
+	GatedGELU bool
+	KVF16     bool
 }
 
 // hasBias reports whether any layer carries q/k/v bias (Qwen2) — callers that
@@ -339,6 +508,26 @@ type ModelW struct {
 func (m ModelW) hasBias() bool {
 	for i := range m.Layers {
 		if m.Layers[i].Attn.QBias != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// hasQKNorm reports whether any layer carries QK-norm weights (Qwen3/GLM).
+func (m ModelW) hasQKNorm() bool {
+	for i := range m.Layers {
+		if m.Layers[i].Attn.QNorm != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// hasQGate reports whether any layer carries a query/gate split (qGate).
+func (m ModelW) hasQGate() bool {
+	for i := range m.Layers {
+		if m.Layers[i].Attn.QGate {
 			return true
 		}
 	}
@@ -369,7 +558,7 @@ func (c *Context) DecodeToken(x []float32, m ModelW, hidden, nH, nKV, hd, inter,
 			relAll()
 			return nil, err
 		}
-		fm, err := c.mlpInto(xd, lw.MLPNorm, lw.Gate, lw.Up, lw.Down, hidden, inter, eps, addOne)
+		fm, err := c.mlpInto(xd, lw.MLPNorm, lw.Gate, lw.Up, lw.Down, hidden, inter, eps, addOne, m.GatedGELU)
 		frees = append(frees, fm...)
 		if err != nil {
 			relAll()

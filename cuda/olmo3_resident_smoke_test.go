@@ -3,6 +3,8 @@
 package cuda
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -74,6 +76,34 @@ func testOlmoFamilyResidentSmokeCUDA(t *testing.T, ckpt string) {
 			if v != v { // NaN check without importing math
 				t.Fatalf("resident forward[%d]: logit[%d] is NaN", i, j)
 			}
+		}
+	}
+
+	// Prefill check: Olmo 3 admits batched prefill; Olmo Hybrid declines due to DeltaNet recurrence.
+	cr, isCR := rf.(*cudaResident)
+	if isCR {
+		rf.Reset()
+		embs := make([][]float32, ntok)
+		for i := range ntok {
+			tok := (i*37 + 3) % vocab
+			embs[i] = mc.EmbedResidentForTest(tok)
+		}
+		got, err := cr.PrefillLast(context.Background(), embs, 0)
+		if cr.dnet != nil {
+			if !errors.Is(err, errPrefillDeclined) {
+				t.Fatalf("Olmo Hybrid has recurrent DeltaNet state and must decline batched prefill, got %v", err)
+			}
+			t.Logf("Olmo Hybrid properly declined batched prefill: %v", err)
+		} else {
+			if err != nil {
+				t.Fatalf("Olmo 3 PrefillLast: %v (batched prefill should not decline)", err)
+			}
+			for j, v := range got {
+				if v != v {
+					t.Fatalf("PrefillLast: logit[%d] is NaN", j)
+				}
+			}
+			t.Logf("Olmo 3 batched prefill succeeded with %d tokens", ntok)
 		}
 	}
 }

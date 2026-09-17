@@ -269,6 +269,13 @@ type PrefillPathReporter interface {
 	PrefillPath() (batched bool, reason string)
 }
 
+// VerifyPathReporter is an OPTIONAL resident extension: report at LOAD time whether the
+// speculative verify path (ForwardN) is batched or falls back to a sequential loop.
+// reason names the condition when sequential (e.g. "sequential — paged MoE requires per-layer host staging").
+type VerifyPathReporter interface {
+	VerifyPath() (batched bool, reason string)
+}
+
 // ResidentCapped is an OPTIONAL ResidentForward extension exposing the backend's fixed
 // KV context capacity (in positions). A write past it is an out-of-bounds device write
 // (silent KV corruption); the backends refuse it mid-generation, but generateInto also

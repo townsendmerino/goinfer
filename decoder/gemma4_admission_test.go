@@ -32,11 +32,8 @@ func TestGemma4Admission_unconditional(t *testing.T) {
 		if !a.decodeRunnerEligible() {
 			t.Errorf("GOINFER_GEMMA4_RESIDENT=%q: dense Gemma 4 NOT admitted — the predicate must no longer read this variable", v)
 		}
-		if !ResidentEligible(a, "cuda") || !ResidentEligible(a, "metal") {
-			t.Errorf("GOINFER_GEMMA4_RESIDENT=%q: cuda/metal decline dense Gemma 4 despite shipping every required feature", v)
-		}
-		if ResidentEligible(a, "webgpu") {
-			t.Errorf("GOINFER_GEMMA4_RESIDENT=%q: webgpu admits dense Gemma 4 but lacks its Gemma kernels", v)
+		if !ResidentEligible(a, "cuda") || !ResidentEligible(a, "metal") || !ResidentEligible(a, "webgpu") {
+			t.Errorf("GOINFER_GEMMA4_RESIDENT=%q: cuda/metal/webgpu decline dense Gemma 4 despite shipping every required feature", v)
 		}
 	}
 

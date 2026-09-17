@@ -49,7 +49,7 @@ unmentioned.
 
 ## What is now confirmed
 
-`splitkvNever` is **mis-keyed**. `cuda/resident.go:222-223` sets the class on query-head count alone,
+`splitkvNever` is **mis-keyed**. `cuda/resident.go:223-223` sets the class on query-head count alone,
 anchored on phi3-mini's nH=32. mistral-7b is **the same nH=32** and measures the opposite sign:
 
 | model | nH | nKV | hd | KV floats/key | @3900 |

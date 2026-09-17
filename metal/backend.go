@@ -10,6 +10,7 @@ package metal
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -42,9 +43,11 @@ var (
 	_ decoder.Backend             = (*metalBackend)(nil)
 	_ decoder.ResidencyBackend    = (*metalBackend)(nil)
 	_ decoder.ResidentForward     = (*metalResident)(nil)
+	_ decoder.ResidentMRoPE       = (*metalResident)(nil)
 	_ decoder.ResidentAdapter     = (*metalResident)(nil)
 	_ decoder.Prefiller           = (*metalResident)(nil)
 	_ decoder.PrefillPathReporter = (*metalResident)(nil)
+	_ decoder.VerifyPathReporter  = (*metalResident)(nil)
 )
 
 // metalBackend implements decoder.Backend + decoder.ResidencyBackend.
@@ -274,7 +277,10 @@ func residentKVBytes(m *decoder.Model) int64 {
 		ctxCap = metalCtxCapMax
 	}
 	_, nLayers, _, _, _, _, _ := m.Dims()
-	const bytesPerElem = 2 // f16; see comment above
+	bytesPerElem := int64(2) // f16; see comment above
+	if m.KVCacheI8() {
+		bytesPerElem = 1 // int8 KV: 1 byte/elem + per-head scales
+	}
 	// N-36 (audit-metal-2026-09-12.md): a Gated-DeltaNet layer (qwen3_5/qwen3_5_moe/qwen3_next's
 	// linear-attention layers) has no attention geometry at all — no q/k/v/o, no KV cache;
 	// metal/model.go's own buildResident comment is explicit that r.kc[l]/r.vc[l] stay zero-value
@@ -282,8 +288,7 @@ func residentKVBytes(m *decoder.Model) int64 {
 	// estimate on every DeltaNet-hybrid model (qwen3_5_moe is 3:1 linear:softmax), in the
 	// conservative direction (a guard that overcounts can only decline early, never admit a model
 	// that doesn't fit) but still wrong — the same chokepoint metal/model.go's own layer-build loop
-	// uses to decide "does this layer get a DeltaNet mixer" (Qwen35ResidentParams' ok plus
-	// Qwen35LinearLayer per layer), not a second, potentially-disagreeing predicate.
+	// skips past.
 	_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
 	var total int64
 	for l := 0; l < nLayers; l++ {
@@ -292,6 +297,9 @@ func residentKVBytes(m *decoder.Model) int64 {
 		}
 		kvDim := int64(m.KVHeadsAtResident(l)) * int64(m.HeadDimAtResident(l))
 		total += 2 * int64(ctxCap) * kvDim * bytesPerElem // ×2 for K and V
+		if m.KVCacheI8() {
+			total += 2 * int64(ctxCap) * int64(m.KVHeadsAtResident(l)) * 4 // ×2 for K scale and V scale (f32)
+		}
 	}
 	return total
 }
@@ -378,7 +386,7 @@ type metalResident struct {
 // semantics, so a nil/zero r reads as "no explicit request was ever resolved here", not as 0.
 func (a *metalResident) ctxCap() int {
 	if a.r == nil || a.r.ctxCap == 0 {
-		return metalCtxCapMax
+		return metalCtxCapDefault
 	}
 	return a.r.ctxCap
 }
@@ -403,15 +411,13 @@ func (a *metalResident) checkCap(pos, n int) error {
 // the cap instead of erroring mid-decode). Queryable so callers clamp rather than discover mid-run.
 func (a *metalResident) ContextCap() int { return a.ctxCap() }
 
-// Forward runs one token given its embedding[H] at absolute position pos, returning logits[V].
-// The returned slice is reused across calls (the decode loop consumes it before the next call).
-func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error) {
+// ForwardMRoPE is decoder.ResidentMRoPE: like Forward, but the rotation angle (ropePos) and the
+// KV-cache/attention position (pos) are supplied separately — Qwen2.5-VL decode past an image
+// block needs them to differ. Forward itself is ForwardMRoPE(pos, pos).
+func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {
 	if len(embedding) != a.hidden {
 		return nil, fmt.Errorf("metal: embedding len %d != hidden %d", len(embedding), a.hidden)
 	}
-	// Guard before the pipelined executor enqueues the job: the KV write happens at commit with
-	// r.uPos=pos, so refusing here (pre-enqueue) prevents any OOB device write. This path also
-	// covers PrefillLast's >cap decline, which falls back to sequential Forward(emb, i).
 	if e := a.checkCap(pos, 1); e != nil {
 		return nil, e
 	}
@@ -420,11 +426,17 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 		// Generate on this resident (audit C-01's CUDA analogue). No-op for every other family.
 		a.Reset()
 	}
-	logits := a.r.ForwardEmbPipe(embedding, pos) // pipelined executor (encode-ahead)
+	logits := a.r.ForwardEmbMRoPEPipe(embedding, pos, ropePos)
 	if err := a.r.takeExecErr(); err != nil {
 		return nil, err // C-09: a command buffer aborted — surface it, do NOT return stale logits
 	}
 	return logits, nil
+}
+
+// Forward runs one token given its embedding[H] at absolute position pos, returning logits[V].
+// The returned slice is reused across calls (the decode loop consumes it before the next call).
+func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error) {
+	return a.ForwardMRoPE(embedding, pos, pos)
 }
 
 // ForwardNoLogits (decoder.ResidentPrefillKV) runs the token's forward to build ONLY its
@@ -708,6 +720,15 @@ func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]floa
 	return out, nil
 }
 
+// VerifyPath (decoder.VerifyPathReporter) reports whether this resident's ForwardN executes
+// a single-command-buffer batched pass or falls back to a sequential loop.
+func (a *metalResident) VerifyPath() (bool, string) {
+	if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) {
+		return false, "sequential — paged MoE requires per-layer host staging"
+	}
+	return true, "batched layer-major single-command-buffer"
+}
+
 // UploadKV (prefix-reuse bridge) is not supported: the resident decoder owns its KV writes
 // per Forward, and the stateless Generate path re-runs the prompt through Forward instead.
 // SetAdapter implements decoder.ResidentAdapter (G3, docs/tasks/task-gpu-paths-2026-09.md) —
@@ -716,8 +737,87 @@ func (a *metalResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error 
 	return a.r.SetAdapter(layers)
 }
 
+// UploadKV writes a layer's post-RoPE K and raw V into the resident caches at absolute
+// position base..base+n-1, where n = len(keys)/kvDim. Used by decoder.residentUploadPrefill
+// to push a CPU-computed prefill's KV into the resident GPU cache, letting GenerateVL and
+// GenerateQwenVL run text decode on resident GPU rather than dropping to CPU.
 func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
-	return fmt.Errorf("metal: UploadKV not supported (re-run the prefix through Forward)")
+	if a.r == nil {
+		return fmt.Errorf("metal: resident is nil")
+	}
+	if layer < 0 || layer >= len(a.r.layers) {
+		return fmt.Errorf("metal: UploadKV layer %d out of range", layer)
+	}
+	if a.r.kc[layer] == (Buffer{}) {
+		return nil // recurrent DeltaNet layer with no attention KV cache
+	}
+	g := a.r.layers[layer].geom
+	if g == nil {
+		return fmt.Errorf("metal: layer %d has no attention geometry", layer)
+	}
+	kvDim := g.kvDim
+	if kvDim == 0 {
+		return fmt.Errorf("metal: layer %d has zero kvDim", layer)
+	}
+	if len(keys) != len(vals) || len(keys)%kvDim != 0 {
+		return fmt.Errorf("metal: UploadKV len(keys)=%d len(vals)=%d not aligned to kvDim=%d", len(keys), len(vals), kvDim)
+	}
+	n := len(keys) / kvDim
+	if e := a.checkCap(base, n); e != nil {
+		return e
+	}
+	off := base * kvDim
+	if a.r.kvI8 {
+		nKV := g.nKV
+		hd := g.hd
+		kc := a.r.kc[layer].Int8s()
+		vc := a.r.vc[layer].Int8s()
+		ks := a.r.ks[layer].Floats()
+		vs := a.r.vs[layer].Floats()
+		for p := 0; p < n; p++ {
+			pos := base + p
+			for h := 0; h < nKV; h++ {
+				kHead := keys[p*kvDim+h*hd : p*kvDim+(h+1)*hd]
+				vHead := vals[p*kvDim+h*hd : p*kvDim+(h+1)*hd]
+				var amaxK, amaxV float32
+				for _, v := range kHead {
+					if a := float32(math.Abs(float64(v))); a > amaxK {
+						amaxK = a
+					}
+				}
+				for _, v := range vHead {
+					if a := float32(math.Abs(float64(v))); a > amaxV {
+						amaxV = a
+					}
+				}
+				scK := amaxK / 127.0
+				if scK == 0 {
+					scK = 1.0
+				}
+				scV := amaxV / 127.0
+				if scV == 0 {
+					scV = 1.0
+				}
+				ks[pos*nKV+h] = scK
+				vs[pos*nKV+h] = scV
+				invK := 1.0 / scK
+				invV := 1.0 / scV
+				for d := 0; d < hd; d++ {
+					kc[pos*kvDim+h*hd+d] = int8(math.Round(float64(kHead[d] * invK)))
+					vc[pos*kvDim+h*hd+d] = int8(math.Round(float64(vHead[d] * invV)))
+				}
+			}
+		}
+	} else if a.r.kvF32 {
+		copy(a.r.kc[layer].Floats()[off:off+len(keys)], keys)
+		copy(a.r.vc[layer].Floats()[off:off+len(vals)], vals)
+	} else {
+		kc := a.r.kc[layer].U16s()[off : off+len(keys)]
+		vc := a.r.vc[layer].U16s()[off : off+len(vals)]
+		parallelF32ToF16(kc, keys)
+		parallelF32ToF16(vc, vals)
+	}
+	return nil
 }
 
 // TruncateTo is a no-op: KV positions are overwritten on write, and attention only reads

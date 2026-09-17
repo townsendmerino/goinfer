@@ -200,6 +200,9 @@ type Context struct {
 	attnKeysBatchedShader   *wgpu.ShaderModule
 	attnKeysBatchedPipeline *wgpu.ComputePipeline
 	attnKeysBatchedLayout   *wgpu.BindGroupLayout
+	attnBatchedF16Shader    *wgpu.ShaderModule
+	attnBatchedF16Pipeline  *wgpu.ComputePipeline
+	attnBatchedF16Layout    *wgpu.BindGroupLayout
 	// Fused q-rope + k-rope-store + v-store (decode fusion, f32 KV): one dispatch for the
 	// three post-projection KV ops, cutting two dispatches/layer off the decode chain.
 	qkvFinShader   *wgpu.ShaderModule
@@ -287,6 +290,16 @@ type Context struct {
 	qkNormShader   *wgpu.ShaderModule
 	qkNormPipeline *wgpu.ComputePipeline
 	qkNormLayout   *wgpu.BindGroupLayout
+
+	// Gemma 4 scale-less v_norm (qknorm.go): derives V from raw pre-RoPE K for K=V global layers.
+	vNormShader   *wgpu.ShaderModule
+	vNormPipeline *wgpu.ComputePipeline
+	vNormLayout   *wgpu.BindGroupLayout
+
+	// Gemma 4 dense per-layer output scalar (qknorm.go): multiplies xd by layerScalar after MLP residual add.
+	scaleVecShader   *wgpu.ShaderModule
+	scaleVecPipeline *wgpu.ComputePipeline
+	scaleVecLayout   *wgpu.BindGroupLayout
 
 	// Resident Mamba-2 SSM decode (mamba.go): the hybrid mixer as a bounded per-token
 	// recurrence — mambaConv (causal-conv ring), mambaSSM (selective state update),

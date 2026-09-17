@@ -35,7 +35,7 @@ for. The validity check dominates: the primary number is moot when the substitut
 
 ## The finding: `splitkvNever` is keyed on the wrong variable
 
-`cuda/resident.go:222-223` states the rule and its reasoning: *"at/above this many query heads the
+`cuda/resident.go:223-223` states the rule and its reasoning: *"at/above this many query heads the
 single-block kernel already fills the device, so split-KV is pure cost. Anchored at phi3-mini's
 measured nH=32 ('never') and lowered to 24…"*
 

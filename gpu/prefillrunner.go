@@ -242,12 +242,73 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
+// attnBatchedF16ShaderWGSL is attnBatchedShaderWGSL with f16-packed keys and values:
+// keys and vals are array<u32>, two f16 per word, unpacked with unpack2x16float.
+const attnBatchedF16ShaderWGSL = `
+struct P { nH: u32, nKV: u32, hd: u32, basePos: u32, group: u32, scale: f32, m: u32, _p: u32 };
+@group(0) @binding(0) var<storage, read>       q:     array<f32>;  // [M, nH*hd]
+@group(0) @binding(1) var<storage, read>       keys:  array<u32>;  // [nKeysCache*nKV*hd/2] f16-packed
+@group(0) @binding(2) var<storage, read>       vals:  array<u32>;  // [nKeysCache*nKV*hd/2] f16-packed
+@group(0) @binding(3) var<storage, read_write> ctx:   array<f32>;  // [M, nH*hd]
+@group(0) @binding(4) var<uniform>             p:     P;
+var<workgroup> red: array<f32, 128>;
+@compute @workgroup_size(128)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let qh = wid.x;
+    let row = wid.y;
+    if (qh >= p.nH || row >= p.m) { return; }
+    let d = lid.x;
+    let hd = p.hd;
+    let kvDim = p.nKV * hd;
+    let kvh = qh / p.group;
+    let qbase = row * p.nH * hd + qh * hd;
+    let kvbase = kvh * hd;
+    let lane = d < hd;
+    var qd: f32 = 0.0;
+    if (lane) { qd = q[qbase + d]; }
+    var acc: f32 = 0.0;
+    var mx: f32 = -1e30;
+    var l: f32 = 0.0;
+    let nKeys = p.basePos + row + 1u;
+    for (var s: u32 = 0u; s < nKeys; s = s + 1u) {
+        let ki = s * kvDim + kvbase + d;
+        var prod: f32 = 0.0;
+        if (lane) {
+            let kpair = unpack2x16float(keys[ki >> 1u]);
+            prod = qd * select(kpair.x, kpair.y, (ki & 1u) == 1u);
+        }
+        red[d] = prod;
+        workgroupBarrier();
+        var stride: u32 = 64u;
+        loop {
+            if (stride == 0u) { break; }
+            if (d < stride) { red[d] = red[d] + red[d + stride]; }
+            workgroupBarrier();
+            stride = stride / 2u;
+        }
+        let x = red[0] * p.scale;
+        let mnew = max(mx, x);
+        let corr = exp(mx - mnew);
+        let pe = exp(x - mnew);
+        if (lane) {
+            let vpair = unpack2x16float(vals[ki >> 1u]);
+            acc = acc * corr + pe * select(vpair.x, vpair.y, (ki & 1u) == 1u);
+        }
+        l = l * corr + pe;
+        mx = mnew;
+        workgroupBarrier();
+    }
+    if (lane) { ctx[qbase + d] = acc / l; }
+}
+`
+
 // attnBatchedKernel picks the batched attention pipeline+layout for a geometry,
 // mirroring attnKernel's (attention.go) own preference for the tiled key-split
-// decomposition — restricted to the two cases PrefillLastW8A8 can ever reach
-// (runModelToModelW already declines kvF16/kvI8/hd>attnWG), unlike attnKernel's
-// full 5-way switch.
-func (c *Context) attnBatchedKernel(hd, kvDim int) (*wgpu.ComputePipeline, *wgpu.BindGroupLayout) {
+// decomposition, and routing f16 KV cache to attnBatchedF16.
+func (c *Context) attnBatchedKernel(hd, kvDim int, kvF16 ...bool) (*wgpu.ComputePipeline, *wgpu.BindGroupLayout) {
+	if len(kvF16) > 0 && kvF16[0] {
+		return c.attnBatchedF16Pipeline, c.attnBatchedF16Layout
+	}
 	if !attnKeysDisabled && attnKeysEligible(hd, kvDim, false, false) {
 		return c.attnKeysBatchedPipeline, c.attnKeysBatchedLayout
 	}
@@ -282,6 +343,11 @@ func (c *Context) ensurePrefillBatched() error {
 	}
 	if c.attnKeysBatchedPipeline == nil {
 		if c.attnKeysBatchedShader, c.attnKeysBatchedPipeline, c.attnKeysBatchedLayout, err = mk("attn-keys-batched", attnKeysBatchedShaderWGSL); err != nil {
+			return err
+		}
+	}
+	if c.attnBatchedF16Pipeline == nil {
+		if c.attnBatchedF16Shader, c.attnBatchedF16Pipeline, c.attnBatchedF16Layout, err = mk("attn-batched-f16", attnBatchedF16ShaderWGSL); err != nil {
 			return err
 		}
 	}
@@ -371,7 +437,7 @@ func (c *Context) ensurePrefillBatched() error {
 // only the former must decline.
 func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
 	if rm.moe != nil || rm.mla != nil || rm.mamba != nil || rm.dnet != nil ||
-		rm.kvF16 || rm.kvI8 || rm.slidingWindow != 0 || rm.gatedGELU ||
+		rm.kvI8 || rm.slidingWindow != 0 ||
 		(rm.ropeHalf != 0 && rm.ropeHalf != hd/2) ||
 		hd > attnWG { // ensureAttnWide is never in PrefillLastW8A8's ensure-list (attnKernel
 		// would otherwise dispatch a nil c.attnWidePipeline); dnet/mamba above already
@@ -388,13 +454,13 @@ func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
 	layers := make([]LayerW, len(rm.layers))
 	for i := range rm.layers {
 		l := &rm.layers[i]
-		if l.qNorm != nil || l.kNorm != nil ||
+		if (l.qNorm == nil) != (l.kNorm == nil) ||
 			l.oBias != nil || l.postAttnNorm != nil || l.postMLPNorm != nil ||
 			l.hasSink || l.isLocal || (l.ropeScale != 0 && l.ropeScale != 1) ||
 			l.ghd != 0 || l.gnKV != 0 || l.ghalf != 0 || l.gKEqV ||
 			l.isMoE || l.shGate != nil ||
 			l.mlaQA != nil || l.mlaQB != nil || l.mlaQ != nil || l.mlaKVA != nil || l.mlaO != nil ||
-			l.isMamba || l.nemoKind != nemoNone || l.isDeltaNet || l.qGate {
+			l.isMamba || l.nemoKind != nemoNone || l.isDeltaNet {
 			return ModelW{}, false
 		}
 		q, qOK := l.q.(*ResidentW8A8)
@@ -412,6 +478,8 @@ func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
 				Norm: view(l.attnNorm), QProj: q, KProj: k, VProj: v, OProj: o,
 				InvFreq: view(l.invFreq), KCache: view(l.kCache), VCache: view(l.vCache),
 				QBias: view(l.qBias), KBias: view(l.kBias), VBias: view(l.vBias),
+				QNorm: view(l.qNorm), KNorm: view(l.kNorm),
+				QGate: l.qGate,
 			},
 			MLPNorm: view(l.mlpNorm),
 			Gate:    gate, Up: up, Down: down,
@@ -421,7 +489,13 @@ func runModelToModelW(rm *runModel, hd int) (ModelW, bool) {
 	if !lmOK {
 		return ModelW{}, false
 	}
-	return ModelW{Layers: layers, FinalNorm: view(rm.finalNorm), LMHead: lmHead}, true
+	return ModelW{
+		Layers:    layers,
+		FinalNorm: view(rm.finalNorm),
+		LMHead:    lmHead,
+		GatedGELU: rm.gatedGELU,
+		KVF16:     rm.kvF16,
+	}, true
 }
 
 // PrefillLastW8A8 is the batched-prefill analogue of DecodeTokenFusedBatched: it
@@ -451,8 +525,16 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	if len(positions) != M {
 		return nil, fmt.Errorf("gpu: PrefillLastW8A8 %d rows but %d positions", M, len(positions))
 	}
-	for _, f := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureTiled, c.ensureTiledBias, c.ensurePrefillBatched} {
+	for _, f := range []func() error{c.ensureGEMV, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureTiled, c.ensureTiledBias, c.ensurePrefillBatched, c.ensureQKNorm} {
 		if err := f(); err != nil {
+			return nil, err
+		}
+	}
+	if m.hasQGate() {
+		if err := c.ensureDeltaQSplit(); err != nil {
+			return nil, err
+		}
+		if err := c.ensureDeltaAttnGate(); err != nil {
 			return nil, err
 		}
 	}
@@ -644,6 +726,20 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		disp(c.rmsnormBatchedPipeline, bind(c.rmsnormBatchedLayout, inPacked, w, out, p), 1, uint32(M))
 		return out
 	}
+	// qkNormB normalizes ALL M rows of a packed [M, heads*hd] buffer in place with
+	// weight [hd], before RoPE (Qwen3/GLM). Each workgroup processes one head across
+	// the batch.
+	qkNormB := func(vecPacked, weight *wgpu.Buffer, heads int) {
+		totalHeads := uint32(M * heads)
+		p := uni([]uint32{totalHeads, uint32(hd), f32bits(eps), boolU32(addOne)})
+		gx := totalHeads
+		gy := uint32(1)
+		if gx > 65535 {
+			gx = 65535
+			gy = (totalHeads + 65534) / 65535
+		}
+		disp(c.qkNormPipeline, bind(c.qkNormLayout, vecPacked, weight, p), gx, gy)
+	}
 	// ropeB rotates ALL M rows of a packed [M, heads*hd] buffer in place, in one
 	// dispatch. positions are always start, start+1, …, start+M-1 within one
 	// PrefillLastW8A8 call (residency.go), so passing start (not a per-row array) is
@@ -665,7 +761,11 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	swigluB := func(gatePacked, upPacked *wgpu.Buffer) *wgpu.Buffer {
 		n := M * inter
 		dst := storF(n)
-		dispFlat(c.swigluPipeline, c.swigluLayout, n, gatePacked, upPacked, dst)
+		pl, ly := c.swigluPipeline, c.swigluLayout
+		if m.GatedGELU {
+			pl, ly = c.gegluPipeline, c.gegluLayout
+		}
+		dispFlat(pl, ly, n, gatePacked, upPacked, dst)
 		return dst
 	}
 	// quantPackedM quantizes ALL M rows of a packed [M, K] buffer in ONE dispatch,
@@ -733,16 +833,39 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		if lw.Attn.QBias != nil { // Qwen2 q/k/v bias — fused into the GEMM epilogue,
 			qBias, kBias, vBias = lw.Attn.QBias.buf, lw.Attn.KBias.buf, lw.Attn.VBias.buf // matching decoderunner.go's gemvBias, not a separate post-hoc add (see tiledProjB's doc comment)
 		}
-		q := tiledProjB(xn, M, lw.Attn.QProj, qBias)
+		var q *wgpu.Buffer
+		var aGate *wgpu.Buffer
+		if lw.Attn.QGate {
+			qRaw := tiledProjB(xn, M, lw.Attn.QProj, qBias)
+			qN := M * nH * hd
+			q = storF(qN)
+			aGate = storF(qN)
+			p := uni([]uint32{uint32(qN), uint32(hd), 0, 0})
+			disp(c.deltaQSplitPipeline, bind(c.deltaQSplitLayout, qRaw, q, aGate, p), uint32(qN+63)/64, 1)
+		} else {
+			q = tiledProjB(xn, M, lw.Attn.QProj, qBias)
+		}
 		k := tiledProjB(xn, M, lw.Attn.KProj, kBias)
 		v := tiledProjB(xn, M, lw.Attn.VProj, vBias)
+		if lw.Attn.QNorm != nil {
+			qkNormB(q, lw.Attn.QNorm.buf, nH)
+			qkNormB(k, lw.Attn.KNorm.buf, nKV)
+		}
 		ropeB(q, lw.Attn.InvFreq.buf, nH)
 		ropeB(k, lw.Attn.InvFreq.buf, nKV)
 		// Bulk KV-cache write: positions are contiguous (positions[0]..positions[0]+M-1,
 		// residency.go), so k/v's packed [M, kvDim] rows land at one contiguous range of
 		// the cache — a single copy per k/v instead of M.
-		cpy(k, 0, lw.Attn.KCache.buf, uint64(positions[0]*kvDim*4), uint64(M*kvDim*4))
-		cpy(v, 0, lw.Attn.VCache.buf, uint64(positions[0]*kvDim*4), uint64(M*kvDim*4))
+		if m.KVF16 {
+			totalElems := M * kvDim
+			totalWords := totalElems / 2
+			p := uni([]uint32{uint32(totalElems), uint32(positions[0] * kvDim), 0, 0})
+			disp(c.kvStoreF16Pipeline, bind(c.kvStoreF16Layout, k, lw.Attn.KCache.buf, p), uint32(totalWords+63)/64, 1)
+			disp(c.kvStoreF16Pipeline, bind(c.kvStoreF16Layout, v, lw.Attn.VCache.buf, p), uint32(totalWords+63)/64, 1)
+		} else {
+			cpy(k, 0, lw.Attn.KCache.buf, uint64(positions[0]*kvDim*4), uint64(M*kvDim*4))
+			cpy(v, 0, lw.Attn.VCache.buf, uint64(positions[0]*kvDim*4), uint64(M*kvDim*4))
+		}
 		// All rows' K/V are now in the cache; each row attends to its causal prefix
 		// (including earlier rows of this same prefill block) — the same ordering
 		// DecodeTokenFusedBatched's parity gate already proves correct.
@@ -755,10 +878,13 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		// each row's own offset inside the shader now, so the qRow-extract/cv-scatter
 		// copy pair this loop used to need is gone entirely, not just the M-1 spare
 		// allocations of it.
-		attnPl, attnLy := c.attnBatchedKernel(hd, kvDim)
+		attnPl, attnLy := c.attnBatchedKernel(hd, kvDim, m.KVF16)
 		ctxv := storF(M * nH * hd)
 		ap := uni([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(positions[0]), uint32(nH / nKV), f32bits(scale), uint32(M), 0})
 		disp(attnPl, bind(attnLy, q, lw.Attn.KCache.buf, lw.Attn.VCache.buf, ctxv, ap), uint32(nH), uint32(M))
+		if aGate != nil {
+			dispFlat(c.deltaAttnGatePipeline, c.deltaAttnGateLayout, M*nH*hd, ctxv, aGate)
+		}
 		attnOut := tiledProjB(ctxv, M, lw.Attn.OProj, nil)
 		xd = residualB(xd, attnOut) // in-place: xd += attnOut
 		xn2 := rmsB(xd, lw.MLPNorm.buf)

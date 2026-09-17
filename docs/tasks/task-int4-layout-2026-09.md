@@ -73,7 +73,7 @@ nil-slice fault in `linalg.MatmulBT`, not a slowdown).
 **The gap it hit.** `TestMetalSnapshotGolden` (`metal/snapshot_golden_test.go:124`) loads with no
 `Backend` set, then calls Metal's unexported `buildResident` directly — an idiom used at 87 sites
 in `metal/*_test.go` (6 in `gpu/`, `cuda/` unchecked). With the empty backend resolving to CPU
-and therefore repacked-only, `int4Concat` (`metal/model.go:506`) declined via its
+and therefore repacked-only, `int4Concat` (`metal/model.go:490`) declined via its
 panic-and-recover. Not a crash — but it shows the gate had turned `*decoder.Model` from
 backend-agnostic data into something with a hidden property and a silent failure mode.
 
@@ -132,7 +132,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   `TestBackendReport_int4LayoutVisible` (both surfaces, both arms — `Backend:"cpu"` shows
   `row4-only`, unspecified does not).
 - **Item 3 ("Same by inspection in `cuda/` and `gpu/`") found a REAL latent bug in `cuda/`, worse
-  than Metal's.** `cuda/resident.go:3296`'s `packWeight` switches on `w.Kind()` (stays `"int4"`
+  than Metal's.** `cuda/resident.go:3308`'s `packWeight` switches on `w.Kind()` (stays `"int4"`
   for a repacked-only tensor — `Kind()` is precision, not layout) and used to discard `Int4()`'s
   `ok` entirely (`q4, sc, _, _ := w.Int4()`), so a repacked-only tensor's nil `q4` would panic on
   an out-of-range slice index (`q4[i*4:i*4+4]`) rather than decline through the function's own

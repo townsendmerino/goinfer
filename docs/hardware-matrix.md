@@ -18,7 +18,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |
 | Gemma 3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| Gemma 4 | ✅ | CPU | ✅ resident | ✅ resident |
+| Gemma 4 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Granite 4.2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Granite-4.0-H | ✅ | CPU | CPU | CPU |
 | InternLM2 | ✅ | ✅ resident | ✅ resident | ✅ resident |

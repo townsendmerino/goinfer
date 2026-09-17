@@ -1,8 +1,9 @@
 package decoder
 
-import "slices"
-
-import "maps"
+import (
+	"maps"
+	"slices"
+)
 
 // ResidentFeature is one architecture capability a resident (GPU) decode path must implement
 // in order to run a model CORRECTLY.
@@ -307,7 +308,8 @@ func ResidentEligible(a *Architecture, backend string) bool {
 	return a.decodeRunnerEligible() &&
 		len(missingFeatures(a.residentFeatures(), impl)) == 0 &&
 		residentMoECapacityOK(a, backend) &&
-		residentPerLayerGeomOK(a, backend)
+		residentPerLayerGeomOK(a, backend) &&
+		residentGemma4MoEOK(a, backend)
 }
 
 // residentBackendMoECap is the router-kernel capacity of each backend whose MoE scoreboard is a
@@ -395,7 +397,7 @@ func residentMoECapacityOK(a *Architecture, backend string) bool {
 // that crashes on upload ("gpu: residency unsupported projection precision \"\"") rather than
 // mis-running quietly — still a decline this predicate exists to make deliberate instead of
 // accidental.
-var residentPerLayerGeomBackends = map[string]bool{"cuda": true, "metal": true}
+var residentPerLayerGeomBackends = map[string]bool{"cuda": true, "metal": true, "webgpu": true}
 
 // residentPerLayerGeomOK reports whether backend implements the per-layer geometry a's layers
 // actually need. true for every arch that doesn't vary (the overwhelming majority); false only
@@ -407,6 +409,19 @@ func residentPerLayerGeomOK(a *Architecture, backend string) bool {
 	return residentPerLayerGeomBackends[backend]
 }
 
+// residentGemma4MoEBackends declares which resident backends implement Gemma 4's parallel
+// dense+MoE FFN (enable_moe_block, gemma4MoeMLP). CUDA and Metal implement the joint dense‖MoE
+// bridge; WebGPU implements the per-layer attention geometry for dense Gemma 4, but does not
+// implement the parallel MoE FFN.
+var residentGemma4MoEBackends = map[string]bool{"cuda": true, "metal": true}
+
+func residentGemma4MoEOK(a *Architecture, backend string) bool {
+	if a.gemma4 == nil || a.MoE == nil {
+		return true
+	}
+	return residentGemma4MoEBackends[backend]
+}
+
 // PerLayerGeomOK is residentPerLayerGeomOK's Model-level twin, exported so a resident backend's
 // own BuildResident can check it directly — the same pattern ResidentBackendMoECap already
 // established (a runtime check a backend calls individually, rather than through the combined
@@ -416,6 +431,17 @@ func residentPerLayerGeomOK(a *Architecture, backend string) bool {
 // silently admitted dense Gemma 4 once G6's Gemma-set features landed — see
 // residentPerLayerGeomBackends' own comment for the incident this predicate exists to prevent.
 func (m *Model) PerLayerGeomOK(backend string) bool { return residentPerLayerGeomOK(m.w.arch, backend) }
+
+// Gemma4MoEOK is residentGemma4MoEOK's Model-level twin, exported so a resident backend's own
+// BuildResident can check it directly.
+func (m *Model) Gemma4MoEOK(backend string) bool { return residentGemma4MoEOK(m.w.arch, backend) }
+
+// HasPerLayerGeometry reports whether the model's layers genuinely differ in attention geometry
+// (e.g. Gemma 4's local/global head_dim split: 256 vs 512).
+func (m *Model) HasPerLayerGeometry() bool {
+	a := m.w.arch
+	return a.gemma4 != nil && a.gemma4.GlobalHeadDim > 0 && a.gemma4.GlobalHeadDim != a.HeadDim
+}
 
 // ResidentBackendFeatures returns a COPY of the feature set a resident backend implements
 // (nil if the backend is unknown). Returning a copy keeps the source map read-only from

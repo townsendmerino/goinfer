@@ -49,6 +49,7 @@ func testOlmoFamilyResidentSmoke(t *testing.T, ckpt string) {
 			"FeatPostOnlyNorm and FeatQKNormWhole; if the fixture changed, this test no longer "+
 			"gates what it claims", feats)
 	}
+	t.Logf("required feats: %v, missing from prefill: %v", feats, mRes.MissingResidentFeatures(prefillFeatures))
 
 	rf := mRes.ResidentForwardForTest()
 	if rf == nil {
@@ -71,5 +72,45 @@ func testOlmoFamilyResidentSmoke(t *testing.T, ckpt string) {
 				t.Fatalf("resident forward[%d]: logit[%d] is NaN", i, j)
 			}
 		}
+	}
+
+	// Prefill check: Olmo 3 admits batched prefill; Olmo Hybrid declines due to DeltaNet recurrence.
+	mr, ok := rf.(*metalResident)
+	if !ok {
+		t.Fatalf("rf is not *metalResident")
+	}
+	batched, reason := mRes.PrefillPath()
+	if mr.r.dnet != nil {
+		if batched {
+			t.Fatalf("Olmo Hybrid has recurrent DeltaNet state and must decline batched prefill, got %s", reason)
+		}
+		t.Logf("Olmo Hybrid properly declined batched prefill: %s", reason)
+	} else {
+		if !batched {
+			t.Fatalf("Olmo 3 reported sequential prefill path (%q); expected batched prefill", reason)
+		}
+		t.Logf("Olmo 3 prefill path: %s", reason)
+
+		t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
+		pf, ok := rf.(decoder.Prefiller)
+		if !ok {
+			t.Fatalf("rf does not implement decoder.Prefiller")
+		}
+		rf.Reset()
+		embs := make([][]float32, ntok)
+		for i := range ntok {
+			tok := (i*37 + 3) % vocab
+			embs[i] = mRes.EmbedResidentForTest(tok)
+		}
+		preLogits, err := pf.PrefillLast(t.Context(), embs, 0)
+		if err != nil {
+			t.Fatalf("Olmo 3 PrefillLast error: %v", err)
+		}
+		for j, v := range preLogits {
+			if v != v {
+				t.Fatalf("Olmo 3 PrefillLast: logit[%d] is NaN", j)
+			}
+		}
+		t.Logf("Olmo 3 batched prefill succeeded with %d tokens", ntok)
 	}
 }

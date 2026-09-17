@@ -179,11 +179,16 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			return nil, false, nil
 		}
 	}
+	if m.HasGemma4MoEResident() {
+		fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: Gemma 4 MoE (parallel dense+MoE FFN) is not implemented on WebGPU\n")
+		return nil, false, nil
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	c := b.ctx
 	w := m.Weights()
 	hidden, _, nH, nKV, hd, inter, vocab := m.Dims() // arch-backed (Cfg may be zero for GGUF/.giw)
+	half := m.RotaryDimResident() / 2
 	eps := m.NormEps()
 	// f32 KV caps context at 16k (the proven 8 GB fit); f16 halves per-token KV
 	// bytes → 32k (task-gpu-f16-kv.md); int8 quarters them → ~64k (task-gpu-kv-i8.md).
@@ -329,19 +334,29 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	fail := func(err error) (decoder.ResidentForward, bool, error) { rd.release(); return nil, false, err }
 
 	// Per-layer RoPE (Lever C7): bind each layer the global or local invFreq table. Most
-	// models share one (cache keyed on the global/local flag); Mellum has two (YaRN global,
-	// default local). ropeHalf = rotaryDim/2 is uniform (the guard requires equal lengths).
+	// models share one (cache keyed on table equality); Mellum has two (YaRN global,
+	// default local); Gemma 4 has two (local full, global proportional).
 	invFreq := m.RopeInvFreq()
-	ropeInvCache := map[bool]*wgpu.Buffer{}
-	ropeInvBuf := func(global bool, layer int) (*wgpu.Buffer, error) {
-		if b, ok := ropeInvCache[global]; ok {
-			return b, nil
+	type ropeEntry struct {
+		invf []float32
+		buf  *wgpu.Buffer
+	}
+	var ropeInvCache []ropeEntry
+	ropeInvBuf := func(layer int) (*wgpu.Buffer, error) {
+		invf := m.RopeInvFreqLayerResident(layer)
+		if len(invf) == 0 {
+			return nil, nil
 		}
-		b, err := up32(m.RopeInvFreqLayer(layer))
+		for _, ent := range ropeInvCache {
+			if slices.Equal(ent.invf, invf) {
+				return ent.buf, nil
+			}
+		}
+		b, err := up32(invf)
 		if err != nil {
 			return nil, err
 		}
-		ropeInvCache[global] = b
+		ropeInvCache = append(ropeInvCache, ropeEntry{invf: invf, buf: b})
 		return b, nil
 	}
 	finalNorm, err := up32(w.FinalNorm)
@@ -555,9 +570,21 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 
 	for i := range w.Layers {
 		lw := &w.Layers[i]
+		lhd := m.HeadDimAtResident(i)
+		lnKV := m.KVHeadsAtResident(i)
+		lrot := m.RotaryDimAtResident(i)
+		lrhalf := lrot / 2
+		kEqV := m.VFromKResident(i)
 		rl := runLayer{
-			isLocal:   m.LayerIsLocalResident(i),     // sliding-window layer (Lever C6)
-			ropeScale: float32(m.RopeMscaleLayer(i)), // per-layer YaRN mscale (Lever C7)
+			isLocal:     m.LayerIsLocalResident(i),     // sliding-window layer (Lever C6)
+			ropeScale:   float32(m.RopeMscaleLayer(i)), // per-layer YaRN mscale (Lever C7)
+			layerScalar: m.Gemma4DenseLayerScalarAtResident(i),
+		}
+		if lhd != hd || lnKV != nKV || lrhalf != half || kEqV {
+			rl.ghd = lhd
+			rl.gnKV = lnKV
+			rl.ghalf = lrhalf
+			rl.gKEqV = kEqV
 		}
 		var e error
 		if nemoOK {
@@ -699,7 +726,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		if rl.mlpNorm, e = up32(lw.PreMLPNorm); e != nil {
 			return fail(e)
 		}
-		if rl.invFreq, e = ropeInvBuf(m.LayerRopeGlobal(i), i); e != nil {
+		if rl.invFreq, e = ropeInvBuf(i); e != nil {
 			return fail(e)
 		}
 		if dnetOK && m.Qwen35LinearLayer(i) {
@@ -947,8 +974,10 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			if rl.k, e = proj(&lw.KProj); e != nil {
 				return fail(e)
 			}
-			if rl.v, e = proj(&lw.VProj); e != nil {
-				return fail(e)
+			if !rl.gKEqV {
+				if rl.v, e = proj(&lw.VProj); e != nil {
+					return fail(e)
+				}
 			}
 			if rl.o, e = projMul(&lw.OProj, rmul); e != nil {
 				return fail(e)
@@ -1089,7 +1118,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	rd.prefillLast = func(xs [][]float32, startPos int) ([]float32, error) {
 		mw, ok := runModelToModelW(&rd.rm, hd)
 		if !ok {
-			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside plain dense W8A8 (MoE/MLA/SSM/QK-norm/sliding-window/…)")
+			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside plain dense W8A8 (MoE/MLA/SSM/sliding-window/…)")
 		}
 		// q/k/v bias (Qwen2): the fused-epilogue tiled GEMM (gemm.go's
 		// matmulTiledW8A8BiasKernelWGSL, added to fix a real nKeys-dependent

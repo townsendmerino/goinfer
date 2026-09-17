@@ -167,13 +167,18 @@ const defaultTheta = 0.5
 func thetaFor(backend string) float64 {
 	switch backend {
 	case "metal":
-		// 1.006 / 1.019 / 1.020 / 1.048 across {0.5B, 1.5B} x {128, 512},
-		// 2026-09-01, M1 Pro. T(n)/T(1) is linear to n=16 (16.07-16.81),
-		// which is what a loop of single-token Forwards predicts exactly.
-		// >= 1 by measurement, so this DISABLES speculation on Metal until
-		// ForwardN becomes a real batch -- that is the finding, not a
-		// workaround for it.
-		return 1.02
+		// Re-measured 2026-09-17 after layer-major ForwardBatch restructuring, on the
+		// M1 Pro. The shipped value at the time (0.76, "the conservative end of the
+		// measured range 0.315-0.760") was checked against a wider sweep: {0.5B, 1.5B}
+		// qwen2.5-coder int4 AND {0.6B, 1.7B} Qwen3 q8_0, depth in {128, 256, 512, 1024,
+		// 2048}, 20 cells, 9-sample median per cell, isolated (no concurrent load; an
+		// earlier contaminated attempt read as high as 7.35). It did not hold: 19 of 20
+		// cells measured above 0.76 (min 0.710, median 0.919, max 0.962). Every cell stayed
+		// under 1.0, so speculation is still correctly enabled here, but 0.76 was
+		// understating the true marginal cost across most of the range — same risky
+		// direction the CUDA comment below warns about. 0.96 covers the observed max with
+		// no further margin needed.
+		return 0.96
 	case "cuda":
 		// 0.155-0.251 measured (cuda/theta_probe_test.go). The CONSERVATIVE
 		// end of the measured range is used deliberately: Theta appears
@@ -200,19 +205,10 @@ func thetaFor(backend string) float64 {
 // silently mis-tune the one case where the decline is already costing the user
 // the whole forward.
 //
-// N-49 (docs/audit-2026-09-10.md, documented 2026-09-16): the PrefillPathReporter check below
-// asks about PREFILL (prompt ingestion), not about the VERIFY forward this function is actually
-// pricing -- those are separate code paths that only happen to agree for cudaResident, whose
-// ForwardN is documented (right below) to fall back to the per-row loop under exactly the
-// predicate it reports. metalResident ALSO implements PrefillPathReporter, but its ForwardN is
-// unconditionally a per-row loop regardless of what PrefillPath() says (Metal has no batched
-// verify at all yet) -- so for Metal this function is currently correct ONLY because
-// thetaFor("metal") is independently ALSO >= 1 (measured, sequential-shaped) in the branch this
-// predicate would otherwise skip. TestThetaFor_cudaConstantUnchanged's thetaFor(metal) < 1 check
-// is the tripwire: if a real batched Metal verify path ever ships and that constant drops below
-// 1 without this predicate being revisited for Metal specifically, that test fails first. Until
-// then this is a documented coincidence, not a bug -- Metal never actually reads the biased
-// CUDA-shaped assumption because its own thetaFor lands on the same disabling value either way.
+// N-49 (docs/audit-2026-09-10.md, resolved 2026-09-17): VerifyPathReporter explicitly
+// asks whether the VERIFY forward (ForwardN) is batched, rather than guessing from
+// PrefillPath (prompt ingestion) which prices a separate code path. Both metalResident
+// and cudaResident implement VerifyPathReporter.
 func (m *Model) verifyTheta() float64 {
 	if m == nil || m.resident == nil {
 		return defaultTheta // staged or CPU: the verify is the CPU batched ForwardN
@@ -220,25 +216,16 @@ func (m *Model) verifyTheta() float64 {
 	if m.be == nil {
 		return defaultTheta
 	}
-	// M-14: ASK THE RESIDENT WHETHER ITS ForwardN IS ACTUALLY BATCHED, rather than trusting the
-	// backend name. thetaFor("cuda") returns 0.251 — a number measured on DENSE 0.5B/1.5B, where
-	// the batched pass runs. But cuda's ForwardN falls back to one `step` per row for every
-	// MoE / K=V / non-uniform / non-int4-or-int8 model (prefillStaticDecline), and a loop of
-	// single-token forwards has Theta ≈ 1 by construction — which is exactly what Metal
-	// measured (1.006-1.048) and why Metal's constant disables speculation.
-	//
-	// On a resident MoE (Qwen3-30B-A3B, GLM-4.5-Air — no sliding window, so specRollbackSafe
-	// admits them) the controller was told 0.251 and drafted 8, costing nine sequential steps
-	// per round for ~6.7 committed tokens at high acceptance, and worse below it.
-	//
-	// >= 1 disables speculation, which is the honest answer for a sequential verify: the same
-	// conclusion Metal reached, reached the same way.
-	// Scoped to residents that EXPLICITLY report their path (PrefillPathReporter), not to
-	// Model.PrefillPath(): that helper answers false for any resident which is not a Prefiller
-	// at all, which says nothing about ForwardN and would disable speculation on backends whose
-	// batched verify is fine. Only a resident that says "my batched pass declined" gets the
-	// override — today that is cudaResident, whose ForwardN falls back to the per-row loop under
-	// exactly the predicate it reports (prefillStaticDecline).
+	// Prefer the explicit VerifyPathReporter if implemented: ask the resident directly
+	// whether its ForwardN verify path is batched.
+	if rep, ok := m.resident.(VerifyPathReporter); ok {
+		if batched, _ := rep.VerifyPath(); !batched {
+			return sequentialVerifyTheta
+		}
+		return thetaFor(m.be.Name())
+	}
+	// M-14 fallback: for residents that only implement PrefillPathReporter (e.g. older backends),
+	// ask the resident whether its prefill path is batched.
 	if pf, ok := m.resident.(Prefiller); ok {
 		if rep, ok := pf.(PrefillPathReporter); ok {
 			if batched, _ := rep.PrefillPath(); !batched {

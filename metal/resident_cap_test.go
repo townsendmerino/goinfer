@@ -15,20 +15,20 @@ import (
 // — a real device write there is out-of-bounds and, on unified memory, silently corrupts adjacent
 // MTLBuffers. Pure logic (checkCap only reads ctxCap()), so no Metal device is needed. A
 // zero-value &metalResident{} (r == nil) deliberately exercises ctxCap()'s nil-safe fallback to
-// metalCtxCapMax (G6, docs/tasks/task-gpu-paths-2026-09.md added resident.ctxCap as a per-build,
+// metalCtxCapDefault (G6, docs/tasks/task-gpu-paths-2026-09.md added resident.ctxCap as a per-build,
 // request-aware value; this test predates that and is meant to keep testing "the historical
 // ceiling" as pure logic, not require a real *resident).
 func TestMetalResidentCheckCap(t *testing.T) {
 	r := &metalResident{}
-	if r.ContextCap() != metalCtxCapMax {
-		t.Fatalf("ContextCap = %d, want %d", r.ContextCap(), metalCtxCapMax)
+	if r.ContextCap() != metalCtxCapDefault {
+		t.Fatalf("ContextCap = %d, want %d", r.ContextCap(), metalCtxCapDefault)
 	}
 	for _, c := range []struct {
 		pos, n int
 		ok     bool
 	}{
-		{0, 1, true}, {metalCtxCapMax - 1, 1, true}, {metalCtxCapMax, 1, false},
-		{0, metalCtxCapMax, true}, {0, metalCtxCapMax + 1, false}, {-1, 1, false},
+		{0, 1, true}, {metalCtxCapDefault - 1, 1, true}, {metalCtxCapDefault, 1, false},
+		{0, metalCtxCapDefault, true}, {0, metalCtxCapDefault + 1, false}, {-1, 1, false},
 	} {
 		err := r.checkCap(c.pos, c.n)
 		if (err == nil) != c.ok {
@@ -38,25 +38,24 @@ func TestMetalResidentCheckCap(t *testing.T) {
 }
 
 // TestMetalCtxCapWithinKernelBound pins the invariant that keeps the resident context ceiling a
-// FACT rather than an assertion: checkCap only bounds nKeys to ctxCap(), which is itself always
-// <= metalCtxCapMax (resolveMetalCtxCap never returns more), so the attention kernel's static
-// `threadgroup float sc[4096]` (attnScoreKeyBound) is what actually caps a correct run — the guard
-// is only safe because metalCtxCapMax ≤ that array. Gemma 4 advertises 256K context and its five
-// global layers grow with position, so nKeys past the ceiling IS reachable; this test fails the
-// moment someone bumps metalCtxCapMax past the kernel's score buffer without resizing sc[], turning
-// a silent OOB threadgroup write (unified-memory corruption) into a compile-then-test stop. The
-// matching correctness measurement at the exact boundary (nKeys=4096) lives in
-// TestAttention_ShippedKernelShapes. Pure logic — no Metal device needed.
+// FACT: checkCap bounds nKeys to ctxCap() <= metalCtxCapMax (32768). The attention kernel operates
+// with a static threadgroup score tile buffer `threadgroup float sc[4096]` (attnScoreTileBound).
+// Deep context (>4096) is handled via online softmax tiling in multiples of attnScoreTileBound.
+// This test asserts metalCtxCapDefault <= attnScoreTileBound and metalCtxCapMax is a multiple of attnScoreTileBound.
 func TestMetalCtxCapWithinKernelBound(t *testing.T) {
-	if metalCtxCapMax > attnScoreKeyBound {
-		t.Fatalf("metalCtxCapMax=%d exceeds the attention kernel's sc[%d] score buffer — a run at nKeys in (%d,%d] is an out-of-bounds threadgroup write; resize `threadgroup float sc[...]` in kernels.go before raising the cap",
-			metalCtxCapMax, attnScoreKeyBound, attnScoreKeyBound, metalCtxCapMax)
+	if metalCtxCapDefault > attnScoreTileBound {
+		t.Fatalf("metalCtxCapDefault=%d exceeds attention kernel tile bound %d",
+			metalCtxCapDefault, attnScoreTileBound)
+	}
+	if metalCtxCapMax%attnScoreTileBound != 0 {
+		t.Fatalf("metalCtxCapMax=%d is not a multiple of attention tile bound %d",
+			metalCtxCapMax, attnScoreTileBound)
 	}
 }
 
 // TestResolveMetalCtxCap is G6's own gate for the real, pre-existing gap found scoping it
 // (docs/tasks/task-gpu-paths-2026-09.md): Metal never read decoder.Model.ResidentContextRequest() at
-// all, so an explicit -ctx was silently ignored, always using metalCtxCapMax. Uses
+// all, so an explicit -ctx was silently ignored, always using metalCtxCapDefault. Uses
 // testdata/llama-tiny (TRACKED in git, max_position_embeddings=128), so every case runs in CI
 // unconditionally — no device needed, resolveMetalCtxCap is pure logic over decoder.Model state.
 func TestResolveMetalCtxCap(t *testing.T) {
@@ -70,14 +69,14 @@ func TestResolveMetalCtxCap(t *testing.T) {
 		return m
 	}
 
-	t.Run("unset ⇒ metalCtxCapMax, unchanged historical default", func(t *testing.T) {
+	t.Run("unset ⇒ metalCtxCapDefault, unchanged historical default", func(t *testing.T) {
 		m := load(t, 0)
 		got, err := resolveMetalCtxCap(m)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if got != metalCtxCapMax {
-			t.Errorf("resolveMetalCtxCap = %d, want %d", got, metalCtxCapMax)
+		if got != metalCtxCapDefault {
+			t.Errorf("resolveMetalCtxCap = %d, want %d", got, metalCtxCapDefault)
 		}
 	})
 
@@ -88,8 +87,8 @@ func TestResolveMetalCtxCap(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if got != 64 {
-			t.Errorf("resolveMetalCtxCap = %d, want 64 (the explicit request, NOT metalCtxCapMax — "+
-				"this is the bug: it used to always return %d regardless)", got, metalCtxCapMax)
+			t.Errorf("resolveMetalCtxCap = %d, want 64 (the explicit request, NOT metalCtxCapDefault — "+
+				"this is the bug: it used to always return %d regardless)", got, metalCtxCapDefault)
 		}
 	})
 

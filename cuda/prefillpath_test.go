@@ -113,6 +113,23 @@ func TestPrefillPath_matchesPrefillCore(t *testing.T) {
 			r.layers[1].d.kind = "int8"
 			return r
 		}()},
+		{"postOnly", func() *cudaResident {
+			r := declineFixture(2, "int4")
+			r.postOnly = true
+			return r
+		}()},
+		{"qkNormWhole", func() *cudaResident {
+			r := declineFixture(2, "int4")
+			r.qkNorm = true
+			r.qkNormWhole = true
+			return r
+		}()},
+		{"layerNorm-parallelBlock", func() *cudaResident {
+			r := declineFixture(2, "int4")
+			r.layerNorm = true
+			r.parallelBlock = true
+			return r
+		}()},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -225,5 +242,33 @@ func TestPrefillPath_seamGuardsAreMoEOnly(t *testing.T) {
 	r.moe = true
 	if err := r.prefillStaticDecline(); err == nil {
 		t.Error("MoE model with layerCap armed was ADMITTED — it would append M snapshots per layer")
+	}
+}
+
+// TestPrefillPath_normPlacementsBatch verifies that Olmo 3 (postOnly, qkNormWhole) and
+// Cohere/Command-R (layerNorm, parallelBlock) report batched prefill and are admitted by
+// prefillStaticDecline without falling back to sequential prefill.
+func TestPrefillPath_normPlacementsBatch(t *testing.T) {
+	// Olmo 3: postOnly + qkNormWhole
+	rOlmo := declineFixture(2, "int4")
+	rOlmo.postOnly = true
+	rOlmo.qkNorm = true
+	rOlmo.qkNormWhole = true
+	if err := rOlmo.prefillStaticDecline(); err != nil {
+		t.Errorf("Olmo 3 (postOnly + qkNormWhole) was refused by prefillStaticDecline: %v", err)
+	}
+	if batched, why := rOlmo.PrefillPath(); !batched {
+		t.Errorf("Olmo 3 reported as not batched: %s", why)
+	}
+
+	// Cohere / Command-R: layerNorm + parallelBlock
+	rCohere := declineFixture(2, "int4")
+	rCohere.layerNorm = true
+	rCohere.parallelBlock = true
+	if err := rCohere.prefillStaticDecline(); err != nil {
+		t.Errorf("Cohere (layerNorm + parallelBlock) was refused by prefillStaticDecline: %v", err)
+	}
+	if batched, why := rCohere.PrefillPath(); !batched {
+		t.Errorf("Cohere reported as not batched: %s", why)
 	}
 }

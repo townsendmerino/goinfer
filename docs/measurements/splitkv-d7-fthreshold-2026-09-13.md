@@ -50,7 +50,7 @@ the whole answer to P24.
 ## Occupancy, a third time
 
 12.61% achieved, 28 blocks on 40 SMs — indistinguishable from mistral's 12.68% and phi3's 11.34%.
-Three geometries, three near-identical occupancies, three different signs. `cuda/resident.go:222`'s
+Three geometries, three near-identical occupancies, three different signs. `cuda/resident.go:223`'s
 "already fills the device" remains refuted, now on three points instead of two.
 
 ## Limitations

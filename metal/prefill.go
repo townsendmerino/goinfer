@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"sync"
 )
@@ -192,12 +193,13 @@ kernel void rope_f16(device half* x[[buffer(0)]], device const float* invf[[buff
     constant uint& hd[[buffer(2)]], device const uint* positions[[buffer(3)]],
     constant uint& total[[buffer(4)]], constant uint& stride[[buffer(5)]],
     constant uint& base0[[buffer(6)]], constant uint& rhalf[[buffer(7)]],
+    constant float& scale[[buffer(8)]],
     uint gid[[thread_position_in_grid]]) {
     uint pairsPerRow = (total/hd) * rhalf;   // nHeads*half; half=rotaryDim/2 (<hd/2 = partial rotary)
     uint m = gid / pairsPerRow, p = gid % pairsPerRow;
     uint head = p/rhalf, dd = p%rhalf;
     uint base = m*stride + base0 + head*hd;
-    float th = float(positions[m]) * invf[dd]; float c=cos(th), s=sin(th);
+    float th = float(positions[m]) * invf[dd]; float c=cos(th)*scale, s=sin(th)*scale;
     float x0=float(x[base+dd]), x1=float(x[base+rhalf+dd]);
     x[base+dd]=half(x0*c-x1*s); x[base+rhalf+dd]=half(x0*s+x1*c);
 }
@@ -425,6 +427,185 @@ kernel void kv_store_f16(device const half* qkv[[buffer(0)]], device half* kc[[b
     kc[pos*kvDim + i] = qkv[m*stride + kOff + i];
     vc[pos*kvDim + i] = qkv[m*stride + vOff + i];
 }
+
+// router_gemm_f16: batched router projection — normF[M×H](f16) · routerWᵀ[nE×H](f32) → logits[M×nE](f32).
+// Grid = M*nE*32 threads (one simdgroup of 32 lanes per (token, expert) pair).
+kernel void router_gemm_f16(
+    device const half* in[[buffer(0)]],
+    device const float* wf[[buffer(1)]],
+    device float* logits[[buffer(2)]],
+    constant uint& H[[buffer(3)]],
+    constant uint& nE[[buffer(4)]],
+    constant uint& M[[buffer(5)]],
+    uint tid[[thread_position_in_grid]]) {
+    uint sg = tid >> 5u;
+    uint m = sg / nE;
+    uint e = sg % nE;
+    if (m >= M || e >= nE) return;
+    uint lane = tid & 31u;
+    device const float* wr = wf + e * H;
+    device const half* ar = in + m * H;
+    float acc = 0.0f;
+    for (uint h = lane; h < H; h += 32u) {
+        acc += wr[h] * float(ar[h]);
+    }
+    acc = simd_sum(acc);
+    if (lane == 0) {
+        logits[m * nE + e] = acc;
+    }
+}
+
+// moe_route_batch: batched top-k router selection for all M prompt rows.
+// Grid = M*32 threads (simdgroup per token; lane 0 executes route logic).
+kernel void moe_route_batch(
+    device const float* logits[[buffer(0)]],
+    device const float* bias[[buffer(1)]],
+    device uint* outIdx[[buffer(2)]],
+    device float* outWgt[[buffer(3)]],
+    constant uint& nE[[buffer(4)]],
+    constant uint& k[[buffer(5)]],
+    constant uint& sigmoid[[buffer(6)]],
+    constant uint& norm[[buffer(7)]],
+    constant float& scale[[buffer(8)]],
+    constant uint& nGroup[[buffer(9)]],
+    constant uint& topkGroup[[buffer(10)]],
+    constant uint& M[[buffer(11)]],
+    uint tid[[thread_position_in_grid]]) {
+    uint m = tid >> 5u;
+    uint lane = tid & 31u;
+    if (m >= M || lane != 0u) return;
+    device const float* rowLogits = logits + m * nE;
+    device uint* rowIdx = outIdx + m * k;
+    device float* rowWgt = outWgt + m * k;
+
+    float score[256];
+    float sel[256];
+    if (sigmoid != 0u) {
+        for (uint i=0u;i<nE;i++) score[i] = 1.0f/(1.0f+exp(-rowLogits[i]));
+    } else {
+        float mx = rowLogits[0]; for (uint i=1u;i<nE;i++) mx = max(mx, rowLogits[i]);
+        float sum = 0.0f; for (uint i=0u;i<nE;i++){ float e = exp(rowLogits[i]-mx); score[i]=e; sum+=e; }
+        float inv = 1.0f/sum; for (uint i=0u;i<nE;i++) score[i] *= inv;
+    }
+    for (uint i=0u;i<nE;i++) sel[i] = score[i] + bias[i];
+
+    if (nGroup > 1u) {
+        uint gsz = nE / nGroup;
+        float gscore[64];
+        for (uint g=0u; g<nGroup; g++) {
+            float t1=-INFINITY, t2=-INFINITY;
+            for (uint i=g*gsz; i<(g+1u)*gsz; i++) { float v=sel[i]; if (v>t1){t2=t1;t1=v;} else if (v>t2){t2=v;} }
+            gscore[g]=t1+t2;
+        }
+        bool keep[64];
+        for (uint g=0u; g<nGroup; g++) keep[g]=false;
+        for (uint j=0u; j<topkGroup; j++) {
+            uint bg=0u; float bv=-INFINITY; bool found=false;
+            for (uint g=0u; g<nGroup; g++) if (!keep[g] && gscore[g]>bv){ bv=gscore[g]; bg=g; found=true; }
+            if (found) keep[bg]=true;
+        }
+        for (uint g=0u; g<nGroup; g++) if (!keep[g]) for (uint i=g*gsz; i<(g+1u)*gsz; i++) sel[i]=-INFINITY;
+    }
+    float wsum = 0.0f;
+    for (uint j=0u; j<k; j++) {
+        uint best=0u; float bv=-INFINITY;
+        for (uint i=0u; i<nE; i++) if (sel[i]>bv){ bv=sel[i]; best=i; }
+        rowIdx[j]=best; rowWgt[j]=score[best]; wsum+=score[best]; sel[best]=-INFINITY;
+    }
+    if (norm != 0u && wsum > 0.0f) for (uint j=0u; j<k; j++) rowWgt[j] /= wsum;
+    if (scale != 0.0f && scale != 1.0f) for (uint j=0u; j<k; j++) rowWgt[j] *= scale;
+}
+
+// route_gptoss_batch: batched router for gpt-oss MoE.
+kernel void route_gptoss_batch(device const float* logits[[buffer(0)]], device const float* bias[[buffer(1)]],
+    device uint* outIdx[[buffer(2)]], device float* outWgt[[buffer(3)]], constant uint& nE[[buffer(4)]],
+    constant uint& k[[buffer(5)]], constant uint& M[[buffer(6)]],
+    uint tid[[thread_position_in_grid]]) {
+    uint m = tid >> 5u;
+    uint lane = tid & 31u;
+    if (m >= M || lane != 0u) return;
+    device const float* rowLogits = logits + m * nE;
+    device uint* rowIdx = outIdx + m * k;
+    device float* rowWgt = outWgt + m * k;
+    float sc[256];
+    for (uint i=0u;i<nE;i++) sc[i] = rowLogits[i] + bias[i];
+    bool taken[256];
+    for (uint i=0u;i<nE;i++) taken[i]=false;
+    float chosen[256];
+    for (uint j=0u;j<k;j++) {
+        int best=-1; float bv=-INFINITY;
+        for (uint i=0u;i<nE;i++) if (!taken[i] && sc[i]>bv) { bv=sc[i]; best=int(i); }
+        taken[uint(best)]=true;
+        rowIdx[j]=uint(best);
+        chosen[j]=bv;
+    }
+    float mx=chosen[0];
+    for (uint j=1u;j<k;j++) mx=max(mx,chosen[j]);
+    float sum=0.0f;
+    for (uint j=0u;j<k;j++) { chosen[j]=exp(chosen[j]-mx); sum+=chosen[j]; }
+    float inv=1.0f/sum;
+    for (uint j=0u;j<k;j++) rowWgt[j]=chosen[j]*inv;
+}
+
+// gather_rows_f16: gathers Ce rows from src[M×H] into dst[CePad×H] according to rowIndices[Ce],
+// writing 0.0h for any padding rows Ce <= i < CePad.
+kernel void gather_rows_f16(
+    device const half* src[[buffer(0)]],
+    device half* dst[[buffer(1)]],
+    device const uint* rowIndices[[buffer(2)]],
+    constant uint& H[[buffer(3)]],
+    constant uint& Ce[[buffer(4)]],
+    constant uint& CePad[[buffer(5)]],
+    uint tid[[thread_position_in_grid]]) {
+    uint total = CePad * H;
+    if (tid >= total) return;
+    uint i = tid / H;
+    uint h = tid % H;
+    if (i < Ce) {
+        uint srcRow = rowIndices[i];
+        dst[i * H + h] = src[srcRow * H + h];
+    } else {
+        dst[i * H + h] = 0.0h;
+    }
+}
+
+// scatter_add_weighted_f16: scatters Ce rows from src[CePad×H] into residual[M×H], multiplying by weights[Ce].
+kernel void scatter_add_weighted_f16(
+    device const half* src[[buffer(0)]],
+    device half* residual[[buffer(1)]],
+    device const uint* rowIndices[[buffer(2)]],
+    device const float* weights[[buffer(3)]],
+    constant uint& H[[buffer(4)]],
+    constant uint& Ce[[buffer(5)]],
+    constant uint& M[[buffer(6)]],
+    uint tid[[thread_position_in_grid]]) {
+    uint total = Ce * H;
+    if (tid >= total) return;
+    uint i = tid / H;
+    uint h = tid % H;
+    uint dstRow = rowIndices[i];
+    if (dstRow >= M) return;
+    float w = weights[i];
+    float val = float(src[i * H + h]) * w;
+    residual[dstRow * H + h] += half(val);
+}
+
+// shared_gate_add_f16: qwen2_moe gated shared expert — residual[m*H+h] += sigmoid(gl[m]) * src[m*H+h].
+kernel void shared_gate_add_f16(
+    device const half* src[[buffer(0)]],
+    device half* residual[[buffer(1)]],
+    device const float* gl[[buffer(2)]],
+    constant uint& H[[buffer(3)]],
+    constant uint& M[[buffer(4)]],
+    uint tid[[thread_position_in_grid]]) {
+    uint total = M * H;
+    if (tid >= total) return;
+    uint m = tid / H;
+    uint h = tid % H;
+    float sig = 1.0f / (1.0f + exp(-gl[m]));
+    float val = float(src[m * H + h]) * sig;
+    residual[m * H + h] += half(val);
+}
 `
 
 // prefillState holds the lazily-compiled prefill pipelines (opt-in; decode-only builds skip it).
@@ -439,6 +620,14 @@ type prefillState struct {
 	// pAttn. Default ON since §3 gate passed 2026-09-10 (metalFusedAttentionEnabled, backend.go);
 	// GOINFER_METAL_FUSED_ATTENTION=0 or --exact-prefill falls back to pAttn.
 	pAttnFused Pipeline
+
+	// Expert-major MoE prefill pipelines
+	pRouterGemm       Pipeline
+	pMoeRouteBatch    Pipeline
+	pRouteGptOssBatch Pipeline
+	pGatherRows       Pipeline
+	pScatterAdd       Pipeline
+	pSharedGateAdd    Pipeline
 }
 
 func (r *resident) ensurePrefill() {
@@ -482,6 +671,13 @@ func (r *resident) ensurePrefill() {
 		pRmsQ:   p("rmsnorm_quant_f16"),
 		pResF32: p("residual_f16_from_f32"), pZeroF32: p("zero_f32"),
 		pAttnFused: p("attention_prefill_fused"),
+
+		pRouterGemm:       p("router_gemm_f16"),
+		pMoeRouteBatch:    p("moe_route_batch"),
+		pRouteGptOssBatch: p("route_gptoss_batch"),
+		pGatherRows:       p("gather_rows_f16"),
+		pScatterAdd:       p("scatter_add_weighted_f16"),
+		pSharedGateAdd:    p("shared_gate_add_f16"),
 	}
 }
 
@@ -544,6 +740,16 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	qkvDim := nHhd + 2*kvDim
 	qDim := nHhd
 
+	maxI := I
+	if r.moe != nil {
+		if r.moe.inter > maxI {
+			maxI = r.moe.inter
+		}
+		if r.moe.sharedInter > maxI {
+			maxI = r.moe.sharedInter
+		}
+	}
+
 	// f16 activation scratch (per call, sized to the padded prompt).
 	xh := make([]uint16, Mpad*H)
 	parallelEmbedsF32ToF16(xh, embs, H)
@@ -551,8 +757,8 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	normF := NewBufferU16s(d, make([]uint16, Mpad*H))
 	qkvF := NewBufferU16s(d, make([]uint16, Mpad*qkvDim))
 	ctxF := NewBufferU16s(d, make([]uint16, Mpad*qDim))
-	guF := NewBufferU16s(d, make([]uint16, Mpad*2*I))
-	dqF := NewBufferU16s(d, make([]uint16, Mpad*I))
+	guF := NewBufferU16s(d, make([]uint16, Mpad*2*maxI))
+	dqF := NewBufferU16s(d, make([]uint16, Mpad*maxI))
 	posv := make([]uint32, Mpad)
 	for m := range M {
 		posv[m] = uint32(startPos + m)
@@ -587,6 +793,26 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	// MoE, avoiding a nil-buffer special case in the loop below.
 	moeDst := NewBufferFloats(d, make([]float32, H))
 
+	// MoE expert-major prefill scratch buffers (allocated only when model has MoE layers).
+	var (
+		moeLogits  Buffer
+		moeIdx     Buffer
+		moeWgt     Buffer
+		expertIn   Buffer
+		expertDown Buffer
+		rowIdxBuf  Buffer
+		rowWgtBuf  Buffer
+	)
+	if r.moe != nil {
+		moeLogits = NewBufferFloats(d, make([]float32, M*r.moe.nE))
+		moeIdx = NewBufferUint32s(d, make([]uint32, M*r.moe.k))
+		moeWgt = NewBufferFloats(d, make([]float32, M*r.moe.k))
+		expertIn = NewBufferU16s(d, make([]uint16, Mpad*H))
+		expertDown = NewBufferU16s(d, make([]uint16, Mpad*H))
+		rowIdxBuf = NewBufferUint32s(d, make([]uint32, Mpad*r.moe.k))
+		rowWgtBuf = NewBufferFloats(d, make([]float32, Mpad*r.moe.k))
+	}
+
 	// C5: every buffer above is per-call scratch/uniform allocated onto the device ledger, which
 	// ReleaseAll frees only at Close — so before this fix each PrefillLast leaked ~24 buffers
 	// (~100–150 MB for a 7B; guF alone is Mpad*2I*2), ratcheting until the mustBuf OOM panic killed
@@ -599,20 +825,36 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		uM, uI, u2I, uQkv, uQDim, uStride, uKOff, uVOff, uStartPos,
 		uTotalQ, uTotalK, uBase0, uBaseK, m0, m1, m2, dummyBias, uMReal,
 	}
+	if r.moe != nil {
+		scratch = append(scratch, moeLogits, moeIdx, moeWgt, expertIn, expertDown, rowIdxBuf, rowWgtBuf)
+	}
 	defer func() {
 		for _, b := range scratch {
 			d.ReleaseBuf(b)
 		}
 	}()
 
+	// Uniform buffer cache to avoid per-expert dynamic allocations
+	uConsts := make(map[int]Buffer)
+	getU32 := func(val int) Buffer {
+		if b, ok := uConsts[val]; ok {
+			return b
+		}
+		b := NewBufferU32(d, uint32(val))
+		uConsts[val] = b
+		scratch = append(scratch, b)
+		return b
+	}
+
 	// gemm grid helper: numRblk×(N/8) simdgroups, rounded up to a full tg (256 threads).
-	gg := func(N int) (int, int) {
-		numRblk := (Mpad/8 + 3) / 4 // RPS=4 (32 M-rows/simdgroup)
+	ggM := func(mPad, N int) (int, int) {
+		numRblk := (mPad/8 + 3) / 4 // RPS=4 (32 M-rows/simdgroup)
 		tilesN := (N + 31) / 32     // CPS=4 (32 N-cols/simdgroup, M-03) — ceil: N is only %8, not %32
 		total := numRblk * tilesN * 32
 		total = (total + 255) / 256 * 256
 		return total, 256
 	}
+	gg := func(N int) (int, int) { return ggM(Mpad, N) }
 	// L2-Metal: attention_prefill_fused's grid — nH×ceil(M/8) simdgroups (ATTN_SGPT=4/threadgroup,
 	// prefill.go's own #define, matched here). Real M (unpadded): the tail row-tile's out-of-range
 	// rows are masked in-kernel via buffer(11), not dropped from the grid.
@@ -629,12 +871,24 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		L := &r.layers[l]
 		// pre-attn norm — addOne (Gemma's 1+w) matters even for a plain non-sandwich family's
 		// GEMV-input norm, so it is always passed (0 for every family without RMSAddOne).
-		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, r.uEps, r.uAddOne)
+		// Olmo 3 / Olmo Hybrid (postOnly): no pre-norm; GEMV reads raw residual xF directly.
+		inAttn := normF
+		if r.postOnly {
+			inAttn = xF
+		} else {
+			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, r.uEps, r.uAddOne)
+		}
 		// fused QKV (+bias)
 		t, tg := gg(qkvDim)
-		e.Dispatch(pf.pGemmStore, t, tg, normF, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
-		if r.qkNorm { // Qwen3: per-head Q/K RMSNorm before RoPE
-			e.Dispatch(pf.pQK, M*(r.nH+g0.nKV)*tgReduceAttn, tgReduceAttn, qkvF, L.qNorm, L.kNorm, r.uNH, g0.uNKV, uHd, g0.uNHhd, uStride, r.uEps, r.uAddOne)
+		e.Dispatch(pf.pGemmStore, t, tg, inAttn, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
+		if r.qkNorm { // Qwen3 / Olmo 3: per-head Q/K RMSNorm before RoPE
+			qkNH, qkNKV, qkHD, qkNHhd := r.uNH, g0.uNKV, uHd, g0.uNHhd
+			tgCount := r.nH + g0.nKV
+			if r.qkNormWhole {
+				qkNH, qkNKV, qkHD, qkNHhd = r.uQKWholeOne, r.uQKWholeOne, r.uQKWholeHD, r.uQKWholeHD
+				tgCount = 2
+			}
+			e.Dispatch(pf.pQK, M*tgCount*tgReduceAttn, tgReduceAttn, qkvF, L.qNorm, L.kNorm, qkNH, qkNKV, qkHD, qkNHhd, uStride, r.uEps, r.uAddOne)
 		}
 		// rope q, k (per-row positions) — bind the PER-LAYER RoPE table and window, exactly as decode
 		// does (encodeTrunkInto), not the model-level r.invf/r.uWindow. For a mixed local/global-window
@@ -642,8 +896,8 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		// bindings applied the local window (and one RoPE table) to every layer (audit M-09). Admitted
 		// prefill archs have a uniform RoPE table (FeatPerLayerRoPE is not claimed), so L.invf equals
 		// r.invf there — this is behaviour-neutral for them and correct for the mixed-window case.
-		e.Dispatch(pf.pRope, M*r.nH*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalQ, uStride, uBase0, g0.uHalf)
-		e.Dispatch(pf.pRope, M*g0.nKV*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalK, uStride, uBaseK, g0.uHalf)
+		e.Dispatch(pf.pRope, M*r.nH*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalQ, uStride, uBase0, g0.uHalf, L.mscale)
+		e.Dispatch(pf.pRope, M*g0.nKV*g0.half, 128, qkvF, L.invf, uHd, posB, uTotalK, uStride, uBaseK, g0.uHalf, L.mscale)
 		// scatter K,V to cache
 		e.Dispatch(pf.pKv, M*kvDim, 128, qkvF, r.kc[l], r.vc[l], posB, uKvDim, uStride, uKOff, uVOff)
 		// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
@@ -652,7 +906,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		} else {
 			e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, uHd, uStartPos, r.uScale, uStride, L.uWindow)
 		}
-		// o-proj, then either the plain residual epilogue or Gemma's sandwich norm (G8):
+		// o-proj, then either the plain residual epilogue, Gemma's sandwich norm (G8), or Olmo 3 postOnly:
 		// mode-0 write into normF (free scratch at this point — its last use, the fused-QKV
 		// input, already ran; its next use, the pre-MLP norm's output, is below), norm the
 		// sublayer OUTPUT in place (safe — rmsnorm_f16's read pass fully completes before its
@@ -660,7 +914,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		// families skip straight to the fused mode-2 residual epilogue, byte-identical to before
 		// this row.
 		t, tg = gg(H)
-		if r.sandwich {
+		if r.sandwich || r.postOnly {
 			e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, normF, uM, uH, uQDim, dummyBias, m0)
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postAttnNorm, normF, uH, r.uEps, r.uAddOne)
 			e.Dispatch(pf.pRes, M*H, 256, xF, normF)
@@ -668,39 +922,163 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
 		}
 		if L.moe != nil {
-			// G8 (docs/tasks/task-gpu-paths-2026-09.md): MoE FFN — batch the attention half above as
-			// usual, but run the FFN ROW BY ROW off the batched residual (xF), reusing the EXACT
-			// per-token decode MoE dispatch chain (encodeMoERoute/encodeMoEExperts/
-			// encodeMoESharedExpert, metal/moe.go) unchanged — the same approach CUDA's own
-			// batched prefill already uses for MoE (cuda/prefill.go: "row by row off the batched
-			// residual"). No new routing math, no batched-GEMM-over-experts kernel.
-			//
-			// Those dispatches are F32-only (decode's own r.x is F32); prefill's residual (xF) is
-			// F16. Bridged per row: rmsnorm_quant_f16 norms+quantizes the row DIRECTLY (no F32
-			// conversion needed — it already takes an F16 input, unlike r.pRms) into r.mq/r.mSc,
-			// the expert loop accumulates into moeDst (an isolated F32 scratch, zeroed first —
-			// unlike decode's r.x, which starts each token already holding the residual to
-			// accumulate onto), and residual_f16_from_f32 folds that scratch into xF's row once.
+			if os.Getenv("GOINFER_MOE_EXPERT_MAJOR") == "0" {
+				// Fallback to row-by-row path for A/B testing
+				for m := 0; m < M; m++ {
+					row := xF.At(m * H * 2)
+					e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, row, L.postNorm, r.mq, r.mSc, uH, r.uEps, r.uAddOne)
+					r.encodeMoERoute(e, L)
+					e.Dispatch(pf.pZeroF32, r.H, 256, moeDst)
+					r.encodeMoEExperts(e, L, moeDst)
+					e.Dispatch(pf.pResF32, r.H, 256, row, moeDst)
+				}
+				continue
+			}
+
+			// --- EXPERT-MAJOR PATH ---
+			// 1. Pre-norm all M rows into normF
+			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps, r.uAddOne)
+
+			// 2. Batched Router GEMM: normF [M, H] x routerW [nE, H] -> moeLogits [M, nE]
+			totalRouterThreads := (M*r.moe.nE*32 + 255) / 256 * 256
+			e.Dispatch(pf.pRouterGemm, totalRouterThreads, 256, normF, L.moe.routerW, moeLogits, uH, r.moe.uNE, uMReal)
+
+			// 3. Batched Top-k Route: moeLogits -> moeIdx [M, k], moeWgt [M, k]
+			if r.moe.isGptOss {
+				e.Dispatch(pf.pRouteGptOssBatch, M*32, 32, moeLogits, L.moe.routerBias, moeIdx, moeWgt, r.moe.uNE, r.moe.uK, uMReal)
+			} else {
+				e.Dispatch(pf.pMoeRouteBatch, M*32, 32, moeLogits, L.moe.routerBias, moeIdx, moeWgt, r.moe.uNE, r.moe.uK, r.moe.uSigmoid, r.moe.uNorm, r.moe.uScale, r.moe.uNGroup, r.moe.uTopkGroup, uMReal)
+			}
+
+			// 4. Commit and wait so the host can read the routing decisions
+			e.End()
+			r.recordExecErr(e.Err())
+			if err := r.takeExecErr(); err != nil {
+				return nil
+			}
+
+			// 5. Host Grouping: group (token m, rank j) by expert e
+			type moeSlot struct {
+				row  int
+				rank int
+				wgt  float32
+			}
+			byExpert := make([][]moeSlot, r.moe.nE)
+			idxSlice := moeIdx.U32s()[:M*r.moe.k]
+			wgtSlice := moeWgt.Floats()[:M*r.moe.k]
 			for m := 0; m < M; m++ {
-				row := xF.At(m * H * 2)
-				e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, row, L.postNorm, r.mq, r.mSc, uH, r.uEps, r.uAddOne)
-				r.encodeMoERoute(e, L)
-				e.Dispatch(pf.pZeroF32, r.H, 256, moeDst)
-				r.encodeMoEExperts(e, L, moeDst)
-				e.Dispatch(pf.pResF32, r.H, 256, row, moeDst)
+				for j := 0; j < r.moe.k; j++ {
+					eIdx := int(idxSlice[m*r.moe.k+j])
+					w := wgtSlice[m*r.moe.k+j]
+					if eIdx >= 0 && eIdx < r.moe.nE {
+						byExpert[eIdx] = append(byExpert[eIdx], moeSlot{row: m, rank: j, wgt: w})
+					}
+				}
+			}
+
+			// 6. Begin new command encoder for expert dispatches
+			e = r.q.Begin()
+
+			// 7. Dispatch each active expert
+			moeInter := r.moe.inter
+			rowsPerExpertGu := 2 * moeInter
+			rowsPerExpertD := H
+			wprGu := H / 8
+			gprGu := H / 32
+			wprD := moeInter / 8
+			gprD := moeInter / 32
+
+			rowIdxHost := rowIdxBuf.U32s()
+			rowWgtHost := rowWgtBuf.Floats()
+
+			slotOffset := 0
+			for eIdx, slots := range byExpert {
+				Ce := len(slots)
+				if Ce == 0 {
+					continue
+				}
+
+				for i, s := range slots {
+					rowIdxHost[slotOffset+i] = uint32(s.row)
+					rowWgtHost[slotOffset+i] = s.wgt
+				}
+
+				CePad := (Ce + 7) / 8 * 8
+				uCe := getU32(Ce)
+				uCePad := getU32(CePad)
+				uMoeI := getU32(moeInter)
+				u2MoeI := getU32(2 * moeInter)
+
+				expIdxBuf := rowIdxBuf.At(slotOffset * 4)
+				expWgtBuf := rowWgtBuf.At(slotOffset * 4)
+
+				// A. Gather Ce rows from normF into expertIn (with padding zeroed)
+				gatherTotal := (CePad*H + 255) / 256 * 256
+				e.Dispatch(pf.pGatherRows, gatherTotal, 256, normF, expertIn, expIdxBuf, uH, uCe, uCePad)
+
+				// B. Expert Gate/Up GEMM
+				guWOff := eIdx * rowsPerExpertGu * wprGu * 4
+				guSOff := eIdx * rowsPerExpertGu * gprGu * 2
+				tGu, tgGu := ggM(CePad, rowsPerExpertGu)
+				e.Dispatch(pf.pGemmStore, tGu, tgGu, expertIn, L.moe.expGuW.At(guWOff), L.moe.expGuS.At(guSOff), guF, uCePad, u2MoeI, uH, dummyBias, m0)
+
+				// C. SwiGLU
+				e.Dispatch(pf.pSw, CePad*moeInter, 256, guF, dqF, uMoeI, r.uAct)
+
+				// D. Expert Down GEMM
+				dOff := eIdx * rowsPerExpertD * wprD * 4
+				dSOff := eIdx * rowsPerExpertD * gprD * 2
+				tD, tgD := ggM(CePad, rowsPerExpertD)
+				e.Dispatch(pf.pGemmStore, tD, tgD, dqF, L.moe.expDW.At(dOff), L.moe.expDS.At(dSOff), expertDown, uCePad, uH, uMoeI, dummyBias, m0)
+
+				// E. Scatter-add weighted output into residual xF
+				scatterTotal := (Ce*H + 255) / 256 * 256
+				e.Dispatch(pf.pScatterAdd, scatterTotal, 256, expertDown, xF, expIdxBuf, expWgtBuf, uH, uCe, uMReal)
+
+				slotOffset += Ce
+			}
+
+			// 8. Shared expert (if present)
+			if r.moe.sharedInter > 0 {
+				shI := r.moe.sharedInter
+				u2ShI := getU32(2 * shI)
+				uShI := getU32(shI)
+
+				tShGu, tgShGu := ggM(Mpad, 2*shI)
+				e.Dispatch(pf.pGemmStore, tShGu, tgShGu, normF, L.moe.shGuW, L.moe.shGuS, guF, uM, u2ShI, uH, dummyBias, m0)
+				e.Dispatch(pf.pSw, Mpad*shI, 256, guF, dqF, uShI, r.uAct)
+
+				tShD, tgShD := ggM(Mpad, H)
+				if r.moe.sharedUngated {
+					// dst += down directly into xF
+					e.Dispatch(pf.pGemmStore, tShD, tgShD, dqF, L.moe.shDW, L.moe.shDS, xF, uM, uH, uShI, dummyBias, m2)
+				} else {
+					// gated variant (Qwen2-MoE): compute sigmoid(gate)*down
+					e.Dispatch(pf.pGemmStore, tShD, tgShD, dqF, L.moe.shDW, L.moe.shDS, expertDown, uM, uH, uShI, dummyBias, m0)
+					// Gate logit for all M rows
+					gateLogitsTotal := (M*32 + 255) / 256 * 256
+					e.Dispatch(pf.pRouterGemm, gateLogitsTotal, 256, normF, L.moe.shGateW, moeLogits, uH, getU32(1), uMReal)
+					// Combine into xF via shared_gate_add_f16
+					e.Dispatch(pf.pSharedGateAdd, (M*H+255)/256*256, 256, expertDown, xF, moeLogits, uH, uMReal)
+				}
 			}
 			continue
 		}
 		// pre-MLP norm
-		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps, r.uAddOne)
+		inFFN := normF
+		if r.postOnly {
+			inFFN = xF
+		} else {
+			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps, r.uAddOne)
+		}
 		// gate/up
 		t, tg = gg(2 * I)
-		e.Dispatch(pf.pGemmStore, t, tg, normF, L.guW, L.guS, guF, uM, u2I, uH, dummyBias, m0)
+		e.Dispatch(pf.pGemmStore, t, tg, inFFN, L.guW, L.guS, guF, uM, u2I, uH, dummyBias, m0)
 		// swiglu/geglu (G8: r.uAct selects — 0 for every family without FeatGatedGELU)
 		e.Dispatch(pf.pSw, M*I, 256, guF, dqF, uI, r.uAct)
 		// down-proj, same plain-vs-sandwich split as o-proj above.
 		t, tg = gg(H)
-		if r.sandwich {
+		if r.sandwich || r.postOnly {
 			e.Dispatch(pf.pGemmStore, t, tg, dqF, L.dW, L.dS, normF, uM, uH, uI, dummyBias, m0)
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postMLPNorm, normF, uH, r.uEps, r.uAddOne)
 			e.Dispatch(pf.pRes, M*H, 256, xF, normF)

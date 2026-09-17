@@ -68,13 +68,13 @@ func TestAttention_ShippedKernelShapes(t *testing.T) {
 		{"gemma4 global (hd=512), hd-only mutation off gemma3", 8, 4, 512, 24, 0},
 		{"gemma4 global (hd=512, nKV=2), real geom", 8, 2, 512, 24, 0},
 		{"gemma4 global (hd=512, nKV=2), long ctx", 8, 2, 512, 600, 0},
-		// The resident context ceiling, measured at the exact boundary. checkCap refuses nKeys >
-		// metalCtxCapMax (4096), and the attention kernel's `threadgroup float sc[4096]` holds one
-		// score per key — so nKeys=4096 (indices 0..4095) is the LAST value both allow, and Gemma
-		// 4's global layers (256K advertised context) genuinely reach it. Correct here = the cap is
-		// placed at a value the kernel actually handles, not a conservative guess; the drift guard
-		// (TestMetalCtxCapWithinKernelBound) keeps metalCtxCapMax ≤ sc[] so this stays reachable-and-safe.
+		// The resident context ceiling, measured at the exact boundary.
 		{"gemma4 global (hd=512, nKV=2), nKeys=cap 4096", 8, 2, 512, 4096, 0},
+		// Deep context (>4096) exercising the multi-tile online softmax path:
+		{"control qwen2.5-1.5b (hd=128), deep ctx nKeys=8192", 12, 2, 128, 8192, 0},
+		{"gemma4 global (hd=512, nKV=2), deep ctx nKeys=8192", 8, 2, 512, 8192, 0},
+		{"control qwen2.5-1.5b (hd=128), deep ctx nKeys=16384", 12, 2, 128, 16384, 0},
+		{"control qwen2.5-1.5b (hd=128), deep ctx nKeys=32768", 12, 2, 128, 32768, 0},
 	} {
 		t.Run(tc.what, func(t *testing.T) {
 			cos, maxabs, gn, rn := runAttnCase(t, d, pAttn, tc.nH, tc.nKV, tc.hd, tc.nKeys, tc.window)

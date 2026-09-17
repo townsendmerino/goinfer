@@ -489,7 +489,7 @@ func (r *resident) encodeG4Phase2Paged(e *Encoder, pool *expertPool) {
 // +43%): [attention + dense + router] → submit+wait → read rIdx → stage the routed top-k into the
 // layer's LRU slot pool → [experts-from-slots + join] → submit+wait. Assumes the caller filled r.x
 // with the embedding and holds the OS thread (ForwardEmb does both).
-func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {
+func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32) {
 	// The pread staging closure (stagePread) and the per-token MustBuf allocations panic on a
 	// transient .giw read error or OOM — deep inside expertPool.ensureResident, at DECODE time, where
 	// no recover otherwise exists (buildResident's is build-scoped). A single external-volume hiccup on
@@ -510,7 +510,11 @@ func (r *resident) forwardLogitsPaged(pos int) (logits []float32) {
 	}()
 	// N-48 (docs/audit-2026-09-10.md): setPos, not a direct uPos/uNKeys write — same gap as
 	// metal/moe.go's paged path, see its own comment there.
-	r.setPos(pos)
+	rp := pos
+	if len(ropePos) > 0 {
+		rp = ropePos[0]
+	}
+	r.setPos(pos, rp)
 	g := r.g4moe
 	p := &r.prof
 	// GOINFER_MOE_PROF_SPLIT: split each End() into commit() vs waitUntilCompleted() to locate the

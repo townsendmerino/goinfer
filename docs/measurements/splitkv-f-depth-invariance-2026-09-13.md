@@ -57,5 +57,5 @@ would make the gate simple as a side effect.
 
 Nothing here touches the three-point ordering result. `splitkvNever` keyed on `nH` is still refuted
 at identical nH, D7 still forfeits **+9.94%** at depth 8000 under the shipped gate, and the
-occupancy claim in `cuda/resident.go:222` is still false on three geometries. This run was about the
+occupancy claim in `cuda/resident.go:223` is still false on three geometries. This run was about the
 shape of the replacement, not whether a replacement is needed.

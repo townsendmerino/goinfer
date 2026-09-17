@@ -81,8 +81,8 @@ func TestTheta_belowOneStillDrafts(t *testing.T) {
 // edit that "tidies" a constant has to change a test that says where it came
 // from. Bounds, not exact equality: the point is the regime each backend is in.
 func TestThetaFor_measuredValues(t *testing.T) {
-	if got := thetaFor("metal"); got < 1.0 {
-		t.Fatalf("metal Theta %v < 1.0 — measured 1.006-1.048; below 1 re-enables drafting on a loop ForwardN", got)
+	if got := thetaFor("metal"); got <= 0 || got >= 1.0 {
+		t.Fatalf("metal Theta %v outside the measured 0.710-0.962 regime (layer-major batched ForwardN, re-measured 2026-09-17)", got)
 	}
 	if got := thetaFor("cuda"); got <= 0 || got >= 0.5 {
 		t.Fatalf("cuda Theta %v outside the measured 0.155-0.251 regime", got)

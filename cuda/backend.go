@@ -921,6 +921,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				load(&r.bQuant, pbmod, "quant_vec_batched")
 				load(&r.bSw, pbmod, "glu_quant_batched")
 				load(&r.bRes, pbmod, "residual_batched")
+				if lnmod, e6 := r.dev.CompileLibrary(layernormQuantPTX); e6 == nil {
+					load(&r.bLN, lnmod, "layernorm_quant_batched")
+				}
 				r.prefillReady = ok
 			}
 		}
@@ -1500,6 +1503,12 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		r.oO = r.af(H)
 		r.mSc, r.mq = r.af(1), r.ai(H/4)
+		if r.layerNorm {
+			r.zeroBias = r.af(H)
+			if err := gpu.Upload(r.zeroBias, make([]float32, H)); err != nil {
+				return err
+			}
+		}
 		// DENSE-FFN scratch, and only if the model HAS a dense FFN. A model whose every layer is
 		// routed reports intermediate_size 0 — Qwen3.6-35B-A3B's config omits the key entirely —
 		// and these become 0-byte allocations, which this driver rejects as "invalid length". The

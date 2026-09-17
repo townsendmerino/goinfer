@@ -18,53 +18,33 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// metalCtxCapMax is the HARD ceiling on resident KV positions — not a conservative default the
-// way CUDA's cudaCtxCapDefault is (cuda/resident.go), a real kernel-level limit: the attention
-// kernel's static score buffer (`threadgroup float sc[4096]` in kernels.go, attnScoreKeyBound
-// below) holds one score per key, so the kernel is only correct for nKeys ≤ this.
-// TestMetalCtxCapWithinKernelBound asserts metalCtxCapMax ≤ attnScoreKeyBound, and
-// TestAttention_ShippedKernelShapes measures correctness at the exact boundary (nKeys=4096).
-// Raising this past attnScoreKeyBound without resizing sc[] is a silent OOB threadgroup write; on
-// Metal's unified memory that corrupts adjacent buffers. Named …Max (not …Cap, formerly
-// metalCtxCap) since Phase 2 (docs/tasks/task-gpu-paths-2026-09.md, G6) gave resident.ctxCap its own
-// per-build, request-aware VALUE — this constant is now the ceiling that value can never exceed,
-// not the value itself.
-const metalCtxCapMax = 4096
+// metalCtxCapDefault is the resident KV capacity in positions when nothing asks for more (4096).
+// The staged/CPU path handles longer unless explicitly requested via decoder.Options.ResidentContext.
+const metalCtxCapDefault = 4096
 
-// attnScoreKeyBound is the attention kernel's static score-buffer capacity: the
-// `threadgroup float sc[4096]` in kernels.go holds one score per key, so the kernel
-// is only correct for nKeys ≤ this. metalCtxCapMax MUST NOT exceed it (checkCap refuses
-// nKeys > resident.ctxCap ≤ metalCtxCapMax, so the cap is what keeps the kernel in-bounds) —
-// TestMetalCtxCapWithinKernelBound asserts the invariant, and TestAttention_ShippedKernelShapes
-// measures correctness at the exact boundary (nKeys=4096). Bumping metalCtxCapMax past this
-// without resizing sc[] is a silent OOB threadgroup write; on Metal's unified memory that
-// corrupts adjacent buffers.
-const attnScoreKeyBound = 4096
+// metalCtxCapMax is the ceiling on resident KV positions for this backend (32768).
+// The attention kernel uses tiled online softmax with a 4096-key threadgroup score buffer
+// (attnScoreTileBound), allowing deep context up to metalCtxCapMax without threadgroup memory overflow.
+const metalCtxCapMax = 32768
+
+// attnScoreTileBound is the attention kernel's threadgroup score-buffer tile capacity:
+// `threadgroup float sc[4096]` in kernels.go holds one score per key in the active tile.
+const attnScoreTileBound = 4096
 
 // resolveMetalCtxCap turns a request into the effective resident KV capacity, mirroring
-// cuda/resident.go's resolveCtxCap[Fit] in SHAPE but not in policy: CUDA raises an unpinned
-// default toward available VRAM because cudaCtxCapDefault is a conservative, arbitrary choice.
-// metalCtxCapMax is NOT arbitrary — it is the kernel ceiling — so there is no "raise it when
-// there's room" story here; an unpinned load always gets exactly metalCtxCapMax, unchanged from
-// this backend's historical behavior.
-//
-// What WAS broken (found scoping G6, docs/tasks/task-gpu-paths-2026-09.md): this backend never read
-// decoder.Model.ResidentContextRequest() at all — an explicit -ctx was silently ignored on every
-// load, always using metalCtxCapMax regardless of what was asked for. This closes that: a request
-// in (0, metalCtxCapMax] is honored (optionally clamped further to the model's own window, same
-// as CUDA does); a request ABOVE metalCtxCapMax is REFUSED with the numbers (G6: "honoured or
-// refused", never silently substituted) rather than silently clamped down, since Metal genuinely
-// cannot run it — the caller (metal/backend.go's BuildResident) turns this into a clean decline.
+// cuda/resident.go's resolveCtxCap[Fit] in SHAPE: an unpinned load (req <= 0) gets metalCtxCapDefault (4096);
+// an explicit request up to metalCtxCapMax (32768) is honored (optionally clamped to the model's window);
+// and a request ABOVE metalCtxCapMax is REFUSED with the numbers.
 func resolveMetalCtxCap(m *decoder.Model) (cap int, err error) {
 	req := m.ResidentContextRequest()
 	if req <= 0 {
-		return metalCtxCapMax, nil
+		return metalCtxCapDefault, nil
 	}
 	if req > metalCtxCapMax {
 		return 0, fmt.Errorf("metal: resident context %d positions exceeds this backend's hard "+
-			"ceiling of %d (a fixed-size kernel score buffer, not a tunable default) — use the "+
+			"ceiling of %d (kernel score tile capacity %d with deep-context online softmax) — use the "+
 			"staged/CPU path for a longer context, or request %d or fewer",
-			req, metalCtxCapMax, metalCtxCapMax)
+			req, metalCtxCapMax, attnScoreTileBound, metalCtxCapMax)
 	}
 	if modelCtx := m.Config().MaxPositions; modelCtx > 0 && req > modelCtx {
 		return modelCtx, nil // clamp to the model's own window, same as CUDA's resolveCtxCap
@@ -120,12 +100,11 @@ var prefillFeatures = map[decoder.ResidentFeature]bool{
 	decoder.FeatFinalLogitSoftcap: true,
 	decoder.FeatMoE:               true,
 	decoder.FeatMoEGatedShared:    true,
-	// M-06 (audit-metal-2026-09-12.md): the dispatch loop already binds L.invf/L.uWindow PER
-	// LAYER (prefill.go's pRope dispatch), so a per-layer RoPE table was always implemented here
-	// — it just wasn't claimed, which silently declined every real Gemma 3 (5:1 local/global) to
-	// the sequential per-token path. FeatRopeMscale stays undeclared on purpose: a per-layer
-	// *mscale* family (Mellum's YaRN long-context variant) must still decline.
-	decoder.FeatPerLayerRoPE: true,
+	decoder.FeatPerLayerRoPE:      true,
+	decoder.FeatRopeMscale:        true, // YaRN attention_factor (Mellum, Olmo 3) — threaded via L.mscale to rope_f16
+	decoder.FeatNoPE:              true, // SmolLM3 NoPE layers — invFreq is zero, exact identity in rope_f16
+	decoder.FeatPostOnlyNorm:      true, // Olmo 3 / Olmo Hybrid — no pre-norm; sublayer outputs normed before residual
+	decoder.FeatQKNormWhole:       true, // Olmo 3 / Olmo Hybrid — single QK reduction over the whole projected width
 }
 
 type residLayer struct {
@@ -252,6 +231,9 @@ type resident struct {
 	finalNorm, finalNormBias Buffer // finalNormBias: GPT-2 ln_f's LayerNorm bias (unused for RMS families)
 	lmW, lmS                 Buffer
 	kc, vc                   []Buffer
+	ks, vs                   []Buffer           // int8 KV scales (paddedCtxCap * nKV floats)
+	kvI8                     bool               // m.KVCacheI8() (CLI flag --kv i8)
+	pKvI8, pAttnI8           Pipeline           // int8 KV store and attention pipelines
 	moe                      *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
 	g4moe                    *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
 
@@ -264,7 +246,7 @@ type resident struct {
 
 	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits Buffer
 	invf, uH, uI, uNH, uScale, uEps                            Buffer // invf = model-level rope (prefill only); geometry uniforms live on residLayer.geom
-	uPos, uNKeys, uQTempScale                                  Buffer
+	uPos, uNKeys, uRopePos, uQTempScale                        Buffer
 	uQKWholeOne, uQKWholeHD                                    Buffer // G5 QKNormWhole: constant-1 nH/nKV replacement + the full nH*hd width
 	part, tok, uP                                              Buffer // fused-argmax: tile partials, token out, tile count
 	logitsHost                                                 []float32
@@ -337,9 +319,10 @@ func (r *resident) takeExecErr() error {
 }
 
 type execJob struct {
-	emb    []float32
-	pos    int
-	noHead bool
+	emb     []float32
+	pos     int
+	ropePos int
+	noHead  bool
 }
 
 func byteBuf(d *Device, n int) Buffer {
@@ -663,6 +646,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.kvF32 {
 		r.pKv, r.pAttn = pipe("kv_store_f32"), pipe("attention_f32")
 	}
+	r.kvI8 = m.KVCacheI8()
+	if r.kvI8 {
+		r.pKvI8, r.pAttnI8 = pipe("kv_store_i8"), pipe("attention_i8")
+	}
 	// Gated-MLP activation: ordinals ARE decoder.ActKind's iota (0=GELU-tanh, 1=SiLU), so this
 	// passes straight through to glu_act. Gemma is GeGLU; everything else admitted is SwiGLU.
 	r.uAct = NewBufferU32(d, uint32(m.GatedActResident()))
@@ -713,16 +700,13 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// layer (256 vs 512). decoder.Model.PerLayerGeomOK(backend) answers "does this arch need
 	// per-layer geometry, and does BACKEND declare support" — Metal's DECODE path does (it has
 	// its own per-layer geom seam, encodeAttention's geomFor), so calling it with "metal" would
-	// wrongly clear Gemma 4 here too. Calling it with "webgpu" instead (webgpu never declares
-	// per-layer-geom support) is a deliberate reuse: it answers the ARCH-ONLY half of that
-	// question — true for every uniform-geometry family regardless of backend, false only when
-	// the arch genuinely varies AND no backend without the seam could serve it — which is exactly
+	// wrongly clear Gemma 4 here too. Checking !m.HasPerLayerGeometry() directly answers
 	// "does this arch vary per layer at all", the thing this uniform-g0 fast path can't handle
 	// regardless of what Metal's decode path separately supports.
 	// G8 MoE (docs/tasks/task-gpu-paths-2026-09.md): Gemma-4's enable_moe_block variant (parallel
 	// dense‖MoE FFN, residLayer.g4moe, encodeGemma4MoEFFN) is a THIRD FFN shape this row's
 	// L.moe != nil branch in PrefillLast does not cover at all — declaring FeatMoE above would
-	// otherwise admit it if it happens to have uniform per-layer geometry (PerLayerGeomOK alone
+	// otherwise admit it if it happens to have uniform per-layer geometry (HasPerLayerGeometry alone
 	// only catches the local/global head_dim variance dense Gemma 4 has; nothing about g4moe's
 	// FFN shape is geometry). Explicit, checked directly rather than assumed caught by the other
 	// guard — the exact class of blind spot this doc's own G6 WebGPU incident already burned once.
@@ -730,8 +714,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// are zero-value (moe.go — the real weights live in the slot pool instead), but PrefillLast's
 	// row loop calls the same non-paged encodeMoERoute/encodeMoEExperts pair unconditionally.
 	// Same predicate as the dense Gemma-4 MoE guard above, generalized to the generic twin.
-	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0 && m.PerLayerGeomOK("webgpu") &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged)
+	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0 && !m.HasPerLayerGeometry() &&
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && r.dnet == nil
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()
@@ -758,6 +742,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	r.layers = make([]residLayer, nL)
 	r.kc, r.vc = make([]Buffer, nL), make([]Buffer, nL)
+	if r.kvI8 {
+		r.ks, r.vs = make([]Buffer, nL), make([]Buffer, nL)
+	}
 	// Per-layer attention geometry, deduped by value (geom.go). Uniform families resolve every
 	// layer to one geom; Gemma 4's local/global interleave resolves to two. maxNHhd/maxKvDim size
 	// the shared per-token scratch to the widest layer (== the model shape for a uniform family).
@@ -971,7 +958,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// unchanged) so that read lands in the buffer's own padding, never past its end.
 			paddedCtxCap := (r.ctxCap + 7) / 8 * 8
 			kvBytes := paddedCtxCap * L.geom.kvDim * 2 // f16 KV: 2 bytes/elem (halves the cache)
-			if r.kvF32 {
+			if r.kvI8 {
+				kvBytes = paddedCtxCap * L.geom.kvDim * 1 // int8 KV: 1 byte/elem
+				r.ks[l] = d.NewBufferLen(paddedCtxCap * L.geom.nKV)
+				r.vs[l] = d.NewBufferLen(paddedCtxCap * L.geom.nKV)
+			} else if r.kvF32 {
 				kvBytes = paddedCtxCap * L.geom.kvDim * 4 // Gemma: f32 KV — see r.kvF32
 			}
 			r.kc[l] = byteBuf(d, kvBytes)
@@ -1104,7 +1095,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.uH, r.uI = NewBufferU32(d, uint32(H)), NewBufferU32(d, uint32(I))
 	r.uNH = NewBufferU32(d, uint32(nH)) // query heads: constant across a family, so model-level
 	r.uScale, r.uEps = NewBufferFloats(d, []float32{m.AttnScale()}), NewBufferFloats(d, []float32{m.NormEps()})
-	r.uPos, r.uNKeys = NewBufferU32(d, 0), NewBufferU32(d, 1)
+	r.uPos, r.uNKeys, r.uRopePos = NewBufferU32(d, 0), NewBufferU32(d, 1), NewBufferU32(d, 0)
 	r.attnTempBeta, r.attnTempOrigMaxPos = m.AttnTempParams()
 	r.uQTempScale = NewBufferFloats(d, []float32{1}) // identity; overwritten per call alongside uPos
 	if r.qkNormWhole {
@@ -1280,9 +1271,14 @@ func (r *resident) ensureBatchCap(n int) {
 // family without this feature) always gives exactly 1 without evaluating the division at all —
 // same guard as decoder/attention.go's sequential path, load-bearing: attnTempOrigMaxPos is 0
 // for those families, and pos/0 would poison every Q with NaN otherwise.
-func (r *resident) setPos(pos int) {
+func (r *resident) setPos(pos int, ropePos ...int) {
+	rp := pos
+	if len(ropePos) > 0 {
+		rp = ropePos[0]
+	}
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
+	r.uRopePos.SetU32(uint32(rp))
 	scale := float32(1)
 	if r.attnTempBeta != 0 {
 		scale = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(pos)/r.attnTempOrigMaxPos)))
@@ -1314,17 +1310,22 @@ func (r *resident) Forward(id, pos int) []float32 {
 // admitted gemma3/gemma4, and Forward carried on ignoring the scale. Forward now applies it
 // (loadEmbedRow), so the two are equivalent again on every admitted family.
 func (r *resident) ForwardEmb(emb []float32, pos int) []float32 {
+	return r.ForwardEmbMRoPE(emb, pos, pos)
+}
+
+// ForwardEmbMRoPE is ForwardEmb with decoupled rotation position (ropePos) and KV cache position (pos).
+func (r *resident) ForwardEmbMRoPE(emb []float32, pos, ropePos int) []float32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	copy(r.x.Floats(), emb)
 	r.addLearnedPos(pos)
 	if r.g4moe != nil && r.g4moe.paged { // synchronous expert paging: per-layer submit+wait, staged experts
-		return r.forwardLogitsPaged(pos)
+		return r.forwardLogitsPaged(pos, ropePos)
 	}
 	if r.moe != nil && r.moe.paged { // generic MoE's twin (moe.go) — same mechanism, generalized
-		return r.forwardLogitsMoEPaged(pos)
+		return r.forwardLogitsMoEPaged(pos, ropePos)
 	}
-	return r.forwardLogits(pos)
+	return r.forwardLogits(pos, ropePos)
 }
 
 // forwardHiddenNoHead encodes the trunk (all layers + final norm) for one token at absolute
@@ -1363,8 +1364,12 @@ func (r *resident) forwardHiddenNoHead(emb []float32, pos int, want bool) ([]flo
 
 // forwardLogits encodes the trunk + full lm head and reads back logits[V]. Caller must hold
 // the OS thread and have filled r.x with the input embedding.
-func (r *resident) forwardLogits(pos int) []float32 {
-	r.setPos(pos)
+func (r *resident) forwardLogits(pos int, ropePos ...int) []float32 {
+	rp := pos
+	if len(ropePos) > 0 {
+		rp = ropePos[0]
+	}
+	r.setPos(pos, rp)
 	e := r.q.Begin()
 	r.encodeTrunkInto(e)                                                           // 28 layers → final norm → r.aq/r.aSc
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH) // full lm head (int8 — logit-critical)
@@ -1451,17 +1456,22 @@ func (r *resident) ensureExec() {
 // the caller (one job in, one logits out), but the executor overlaps the next token's encode
 // with this token's GPU execution.
 func (r *resident) ForwardEmbPipe(emb []float32, pos int) []float32 {
+	return r.ForwardEmbMRoPEPipe(emb, pos, pos)
+}
+
+// ForwardEmbMRoPEPipe is ForwardEmbMRoPE through the pipelined executor (encode-ahead).
+func (r *resident) ForwardEmbMRoPEPipe(emb []float32, pos, ropePos int) []float32 {
 	if r.g4moe != nil && r.g4moe.paged {
 		// Paging tears each MoE layer into two submits with a host readback between — the encode-ahead
 		// executor (one static command buffer/token) cannot express it. Fall back to the synchronous
 		// paged path; there is no pipelining to lose (Step-0: paging is submit-bound, not encode-bound).
-		return r.ForwardEmb(emb, pos)
+		return r.ForwardEmbMRoPE(emb, pos, ropePos)
 	}
 	if r.moe != nil && r.moe.paged { // generic MoE's twin — same reasoning, same fallback
-		return r.ForwardEmb(emb, pos)
+		return r.ForwardEmbMRoPE(emb, pos, ropePos)
 	}
 	r.ensureExec()
-	r.execReq <- execJob{emb: emb, pos: pos, noHead: false}
+	r.execReq <- execJob{emb: emb, pos: pos, ropePos: ropePos, noHead: false}
 	return <-r.execAck
 }
 
@@ -1478,7 +1488,7 @@ func (r *resident) ForwardEmbNoLogitsPipe(emb []float32, pos int) {
 		return
 	}
 	r.ensureExec()
-	r.execReq <- execJob{emb: emb, pos: pos, noHead: true}
+	r.execReq <- execJob{emb: emb, pos: pos, ropePos: pos, noHead: true}
 	<-r.execAck
 }
 
@@ -1531,7 +1541,7 @@ func (r *resident) execLoop() {
 		}
 		copy(r.x.Floats(), job.emb) // this token's embedding + pos (set at commit time, not encode)
 		r.addLearnedPos(job.pos)    // GPT-2: += wpe[pos], same commit-time placement as the copy above
-		r.setPos(job.pos)
+		r.setPos(job.pos, job.ropePos)
 		cur.Commit()
 
 		count++
@@ -1610,9 +1620,11 @@ func (r *resident) slotBuffers() []Buffer {
 
 // kvBuffers returns the per-layer KV cache buffers — GPU-WRITTEN by attention every token.
 func (r *resident) kvBuffers() []Buffer {
-	out := make([]Buffer, 0, len(r.kc)+len(r.vc))
+	out := make([]Buffer, 0, len(r.kc)+len(r.vc)+len(r.ks)+len(r.vs))
 	out = append(out, r.kc...)
 	out = append(out, r.vc...)
+	out = append(out, r.ks...)
+	out = append(out, r.vs...)
 	return out
 }
 
@@ -1621,7 +1633,7 @@ func (r *resident) kvBuffers() []Buffer {
 func (r *resident) scratchBuffers() []Buffer {
 	out := []Buffer{
 		r.x, r.aq, r.aSc, r.ctx, r.cq, r.cSc, r.oO, r.mq, r.mSc, r.dq, r.dSc, r.dO,
-		r.logits, r.qkv, r.gu, r.part, r.tok, r.uPos, r.uNKeys,
+		r.logits, r.qkv, r.gu, r.part, r.tok, r.uPos, r.uNKeys, r.uRopePos,
 	}
 	if g := r.g4moe; g != nil {
 		out = append(out, g.rLogits, g.rIdx, g.rWgt, g.g4x1, g.g4x2, g.g4rn)
@@ -1793,8 +1805,13 @@ func (r *resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 			e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 		}
 		e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, r.uQTempScale)
-		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
-		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+		if r.kvI8 {
+			e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.ks[l], r.vs[l], g.uNKV, g.uHd, r.uPos)
+			e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ks[l], r.vs[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+		} else {
+			e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, r.uPos)
+			e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+		}
 		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
 		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
 		e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
@@ -1854,8 +1871,13 @@ func (r *resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []floa
 		e.Dispatch(r.pQKNorm, (r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, r.qkv, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne)
 	}
 	e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, r.uQTempScale)
-	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0], r.vc[0], g.uKvDim, r.uPos)
-	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+	if r.kvI8 {
+		e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0], r.vc[0], r.ks[0], r.vs[0], g.uNKV, g.uHd, r.uPos)
+		e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[0], r.vc[0], r.ks[0], r.vs[0], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+	} else {
+		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0], r.vc[0], g.uKvDim, r.uPos)
+		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[0], r.vc[0], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+	}
 	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
 	e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
 	e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
@@ -1923,9 +1945,17 @@ func (r *resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 		// Use Metal's OWN walked KV history: RoPE K and store pos into the cache (isolates the
 		// f16-KV drift of positions 0..pos-1 from Metal's walk, with a matched residual).
 		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf, L.mscale)
-		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer], r.vc[layer], g.uKvDim, r.uPos)
+		if r.kvI8 {
+			e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer], r.vc[layer], r.ks[layer], r.vs[layer], g.uNKV, g.uHd, r.uPos)
+		} else {
+			e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer], r.vc[layer], g.uKvDim, r.uPos)
+		}
 	}
-	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+	if r.kvI8 {
+		e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[layer], r.vc[layer], r.ks[layer], r.vs[layer], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+	} else {
+		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[layer], r.vc[layer], r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+	}
 	e.End()
 	return append([]float32(nil), r.ctx.Floats()[:nHhd]...)
 }
@@ -1956,9 +1986,13 @@ func (r *resident) forwardHeadForTest(emb []float32, pos int) (act, logits []flo
 
 // encodeTrunkWith encodes all decoder layers + the final norm into e using the specified
 // uPos, uNKeys, and uQTempScale uniform buffers.
-func (r *resident) encodeTrunkWith(e *Encoder, uPos, uNKeys, uQTempScale Buffer) {
+func (r *resident) encodeTrunkWith(e *Encoder, uPos, uNKeys, uQTempScale Buffer, uRopePos ...Buffer) {
+	rp := uPos
+	if len(uRopePos) > 0 && uRopePos[0] != (Buffer{}) {
+		rp = uRopePos[0]
+	}
 	for l := 0; l < r.nL; l++ {
-		r.encodeLayerWith(e, l, uPos, uNKeys, uQTempScale)
+		r.encodeLayerWith(e, l, uPos, uNKeys, uQTempScale, rp)
 	}
 	r.encodeNorm(e, r.x, r.finalNorm, r.finalNormBias, r.aq, r.aSc)
 }
@@ -1969,7 +2003,7 @@ func (r *resident) encodeTrunkWith(e *Encoder, uPos, uNKeys, uQTempScale Buffer)
 // commit. This value-independence is what lets the executor pre-encode token t+1 while token t
 // runs (encode-ahead).
 func (r *resident) encodeTrunkInto(e *Encoder) {
-	r.encodeTrunkWith(e, r.uPos, r.uNKeys, r.uQTempScale)
+	r.encodeTrunkWith(e, r.uPos, r.uNKeys, r.uQTempScale, r.uRopePos)
 }
 
 // encodeNorm dispatches the family's pre-GEMV norm+quant into aq/aSc — layernorm_quant (GPT-2's
@@ -1987,11 +2021,20 @@ func (r *resident) encodeNorm(e *Encoder, x, w, bias, aq, aSc Buffer) {
 
 // encodeLayer encodes one decoder layer (attention block + FFN block) into e using default uniform buffers.
 func (r *resident) encodeLayer(e *Encoder, l int) {
-	r.encodeLayerWith(e, l, r.uPos, r.uNKeys, r.uQTempScale)
+	r.encodeLayerWith(e, l, r.uPos, r.uNKeys, r.uQTempScale, r.uRopePos)
 }
 
 // encodeLayerWith encodes one decoder layer (attention block + FFN block) into e with parameterized uniforms.
-func (r *resident) encodeLayerWith(e *Encoder, l int, uPos, uNKeys, uQTempScale Buffer) {
+func (r *resident) encodeLayerWith(e *Encoder, l int, uPos, uNKeys, uQTempScale Buffer, uRopePos ...Buffer) {
+	r.encodeLayerResidualWith(e, l, r.x, uPos, uNKeys, uQTempScale, uRopePos...)
+}
+
+// encodeLayerResidualWith encodes one decoder layer into e with parameterized residual buffer x and uniforms.
+func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uNKeys, uQTempScale Buffer, uRopePos ...Buffer) {
+	rp := uPos
+	if len(uRopePos) > 0 && uRopePos[0] != (Buffer{}) {
+		rp = uRopePos[0]
+	}
 	L := &r.layers[l]
 	if L.delta != nil {
 		// Gated-DeltaNet mixer: replaces the whole attention sub-block (norm through o-proj) —
@@ -1999,23 +2042,23 @@ func (r *resident) encodeLayerWith(e *Encoder, l int, uPos, uNKeys, uQTempScale 
 		// is the ordinary one for this layer (dense or MoE), unchanged.
 		r.encodeDeltaNetMixer(e, L)
 	} else {
-		r.encodeAttentionWith(e, l, uPos, uNKeys, uQTempScale)
+		r.encodeAttentionResidualWith(e, l, x, uPos, uNKeys, uQTempScale, rp)
 	}
 	// --- ffn block (dense SwiGLU/GeGLU, generic MoE, or Gemma-4 parallel dense‖MoE) ---
 	if L.g4moe != nil {
 		r.encodeGemma4MoEFFN(e, L)
 	} else if L.moe != nil {
-		r.encodeMoEFFN(e, L)
+		r.encodeMoEFFNWithX(e, L, x)
 	} else if r.nonGatedMLP {
 		// GPT-2: up→act→down, no gate — a single up-proj (K=hidden, checked against the M-11
 		// threadgroup-memory guard at buildResident time for whichever GPT-2 size loads; not
 		// separately verified per size here) feeding
 		// act_quant (glu_act with no multiply), then the coal-family down-proj (K=intermediate,
 		// always past the SA cap) fused with its bias and the residual add.
-		r.encodeNorm(e, r.x, L.postNorm, L.postNormBias, r.mq, r.mSc)
+		r.encodeNorm(e, x, L.postNorm, L.postNormBias, r.mq, r.mSc)
 		e.DispatchTG(r.pSABias, r.I*32, 256, r.H*2, L.upW, L.upS, r.mq, r.mSc, r.gu, L.upBias, r.uH)
 		e.Dispatch(r.pActQuant, 256, 256, r.gu, r.dq, r.dSc, r.uI, r.uAct)
-		e.Dispatch(r.pCoalBiasResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, L.downBias, r.uI)
+		e.Dispatch(r.pCoalBiasResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, x, L.downBias, r.uI)
 	} else {
 		// postOnly is model-level, but this FFN half is SHARED with DeltaNet layers (the mixer
 		// above only replaces the attention half) — Olmo Hybrid's DeltaNet layers reach NormPre2
@@ -2032,9 +2075,9 @@ func (r *resident) encodeLayerWith(e *Encoder, l int, uPos, uNKeys, uQTempScale 
 			gq, gSc = r.aq, r.aSc
 		case postOnlyHere:
 			// Olmo 3/Olmo Hybrid: no pre-MLP norm either — quantize the raw residual directly.
-			e.Dispatch(r.pQv, 256, 256, r.x, r.mq, r.mSc, r.uH)
+			e.Dispatch(r.pQv, 256, 256, x, r.mq, r.mSc, r.uH)
 		default:
-			r.encodeNorm(e, r.x, L.postNorm, L.postNormBias, r.mq, r.mSc)
+			r.encodeNorm(e, x, L.postNorm, L.postNormBias, r.mq, r.mSc)
 		}
 		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
 		if r.loraLayers != nil {
@@ -2059,11 +2102,11 @@ func (r *resident) encodeLayerWith(e *Encoder, l int, uPos, uNKeys, uQTempScale 
 			if r.sandwich || postOnlyHere {
 				e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
 			}
-			e.Dispatch(r.pRes, r.H, 256, r.x, r.dO)
+			e.Dispatch(r.pRes, r.H, 256, x, r.dO)
 		} else {
-			e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.x, r.uI) // down + residual
+			e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, x, r.uI) // down + residual
 			if r.loraLayers != nil {
-				r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, r.x)
+				r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, x)
 			}
 		}
 	}
@@ -2074,10 +2117,18 @@ func (r *resident) encodeLayerWith(e *Encoder, l int, uPos, uNKeys, uQTempScale 
 // command buffer, submit+wait, read the router idx, stage experts, then encode [experts + join] in a
 // second — the value-dependent seam paging forces. Byte-identical to the old inline attention block.
 func (r *resident) encodeAttention(e *Encoder, l int) {
-	r.encodeAttentionWith(e, l, r.uPos, r.uNKeys, r.uQTempScale)
+	r.encodeAttentionWith(e, l, r.uPos, r.uNKeys, r.uQTempScale, r.uRopePos)
 }
 
-func (r *resident) encodeAttentionWith(e *Encoder, l int, uPos, uNKeys, uQTempScale Buffer) {
+func (r *resident) encodeAttentionWith(e *Encoder, l int, uPos, uNKeys, uQTempScale Buffer, uRopePos ...Buffer) {
+	r.encodeAttentionResidualWith(e, l, r.x, uPos, uNKeys, uQTempScale, uRopePos...)
+}
+
+func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos, uNKeys, uQTempScale Buffer, uRopePos ...Buffer) {
+	rp := uPos
+	if len(uRopePos) > 0 && uRopePos[0] != (Buffer{}) {
+		rp = uRopePos[0]
+	}
 	L := &r.layers[l]
 	g := L.geom
 	nHhd := r.nH * g.hd
@@ -2093,9 +2144,9 @@ func (r *resident) encodeAttentionWith(e *Encoder, l int, uPos, uNKeys, uQTempSc
 	// encodeDeltaNetMixer instead), so the bare model-level flag is safe here unlike encodeLayer's
 	// shared FFN half below.
 	if r.postOnly {
-		e.Dispatch(r.pQv, 256, 256, r.x, r.aq, r.aSc, r.uH)
+		e.Dispatch(r.pQv, 256, 256, x, r.aq, r.aSc, r.uH)
 	} else {
-		r.encodeNorm(e, r.x, L.preNorm, L.preNormBias, r.aq, r.aSc)
+		r.encodeNorm(e, x, L.preNorm, L.preNormBias, r.aq, r.aSc)
 	}
 	if L.qGate {
 		// This family's softmax layer: q_proj is DOUBLE WIDTH ([query ‖ gate] per head,
@@ -2151,10 +2202,15 @@ func (r *resident) encodeAttentionWith(e *Encoder, l int, uPos, uNKeys, uQTempSc
 		// One merged dispatch for both Q and K (rope2, kernels.go) instead of two: gid<qTotal
 		// addresses Q at offset 0, gid>=qTotal addresses K at offset g.uNHhd (the fused qkv
 		// buffer's kOff, in elements) — V (at vOff) is untouched either way.
-		e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, uQTempScale)
+		e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, rp, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, uQTempScale)
 	}
-	e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, uPos)
-	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+	if r.kvI8 {
+		e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], r.ks[l], r.vs[l], g.uNKV, g.uHd, uPos)
+		e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ks[l], r.vs[l], r.ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+	} else {
+		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, uPos)
+		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+	}
 	if L.qGate { // ctx *= sigmoid(gate), before o-proj — matches the CPU qwen35Attention
 		e.Dispatch(r.pDnAttnGate, nHhd, 256, r.ctx, r.dnAGate, g.uNHhd)
 	}
@@ -2174,23 +2230,24 @@ func (r *resident) encodeAttentionWith(e *Encoder, l int, uPos, uNKeys, uQTempSc
 		if r.sandwich || r.postOnly {
 			e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.oO, L.postAttnNorm, r.uH, r.uEps, r.uAddOne)
 		}
-		e.Dispatch(r.pRes, r.H, 256, r.x, r.oO)
+		e.Dispatch(r.pRes, r.H, 256, x, r.oO)
 	} else if r.outBias { // GPT-2/gpt-oss: o-proj carries an additive bias, fused with the residual add
-		e.DispatchTG(r.pSABiasResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, L.oBias, g.uNHhd)
+		e.DispatchTG(r.pSABiasResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, x, L.oBias, g.uNHhd)
 		if r.loraLayers != nil {
-			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, r.x)
+			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, x)
 		}
 	} else {
-		e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.x, g.uNHhd) // o-proj + residual
+		e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, x, g.uNHhd) // o-proj + residual
 		if r.loraLayers != nil {
-			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, r.x)
+			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, x)
 		}
 	}
 }
 
 // ForwardBatch runs N embeddings at consecutive positions starting at startPos,
 // encoding all N token forward passes into a SINGLE Metal command buffer and
-// single compute command encoder, returning all N logits vectors.
+// single compute command encoder using a LAYER-MAJOR dispatch schedule (weights
+// streamed once per layer across all N tokens), returning all N logits vectors.
 func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float32, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -2226,16 +2283,17 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 		r.batchUQTempScale[m].Floats()[0] = scale
 	}
 
-	// Encode all N tokens into a SINGLE command buffer and single compute encoder.
+	// Encode all N tokens in LAYER-MAJOR order into a SINGLE command buffer and single compute encoder.
+	// Layer l's weights stay hot in GPU cache/memory across all N tokens instead of streaming the
+	// full multi-GB model weights N separate times.
 	e := r.q.Begin()
+	for l := 0; l < r.nL; l++ {
+		for m := range n {
+			r.encodeLayerResidualWith(e, l, r.batchX.At(m*r.H*4), r.batchUPos[m], r.batchUNKeys[m], r.batchUQTempScale[m])
+		}
+	}
 	for m := range n {
-		// 1. Copy token m's input embedding into r.x on the device.
-		e.Dispatch(r.pCopyVec, r.H, 256, r.batchX.At(m*r.H*4), r.x, r.uH)
-
-		// 2. Encode full trunk (layers 0..nL-1 + final norm) for token m.
-		r.encodeTrunkWith(e, r.batchUPos[m], r.batchUNKeys[m], r.batchUQTempScale[m])
-
-		// 3. Dispatch LM head writing logits for token m into batchLogits at offset m*V.
+		r.encodeNorm(e, r.batchX.At(m*r.H*4), r.finalNorm, r.finalNormBias, r.aq, r.aSc)
 		e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.batchLogits.At(m*r.V*4), r.uH)
 	}
 	e.End()

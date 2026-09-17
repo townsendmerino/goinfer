@@ -564,6 +564,32 @@ kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[
     constant uint& pos[[buffer(5)]], uint i[[thread_position_in_grid]]) {
     kc[pos*kvDim+i]=half(k[i]); vc[pos*kvDim+i]=half(v[i]); // f16 KV: half the cache bytes + read BW
 }
+// kv_store_i8 — stores K and V as symmetric int8 per-head with f32 scales (ks, vs).
+// Each thread handles one KV head: reduces absmax → scale (maxabs/127) → stores quantized int8.
+kernel void kv_store_i8(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],
+    device char* kc[[buffer(2)]], device char* vc[[buffer(3)]],
+    device float* ks[[buffer(4)]], device float* vs[[buffer(5)]],
+    constant uint& nKV[[buffer(6)]], constant uint& hd[[buffer(7)]],
+    constant uint& pos[[buffer(8)]], uint kvh[[thread_position_in_grid]]) {
+    if (kvh >= nKV) return;
+    uint kvDim = nKV * hd;
+    uint base = kvh * hd;
+    float amax_k = 0.0f, amax_v = 0.0f;
+    for (uint d = 0; d < hd; d++) {
+        amax_k = max(amax_k, abs(k[base + d]));
+        amax_v = max(amax_v, abs(v[base + d]));
+    }
+    float sc_k = amax_k / 127.0f; if (sc_k == 0.0f) sc_k = 1.0f;
+    float sc_v = amax_v / 127.0f; if (sc_v == 0.0f) sc_v = 1.0f;
+    ks[pos * nKV + kvh] = sc_k;
+    vs[pos * nKV + kvh] = sc_v;
+    float inv_k = 1.0f / sc_k;
+    float inv_v = 1.0f / sc_v;
+    for (uint d = 0; d < hd; d++) {
+        kc[pos * kvDim + base + d] = char(clamp(round(k[base + d] * inv_k), -127.0f, 127.0f));
+        vc[pos * kvDim + base + d] = char(clamp(round(v[base + d] * inv_v), -127.0f, 127.0f));
+    }
+}
 // rope2_kv: fuses rope2 (merged Q+K RoPE) with kv_store (K/V cache write) into ONE dispatch --
 // every production call site launches these back-to-back, RoPE-then-store, and K's cache write
 // needs exactly the ROTATED value RoPE just computed, so storing it inline removes a full
@@ -634,60 +660,165 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
     uint kvDim = nKV*hd; uint kvh = qh/(nH/nKV);
     uint winStart = (window>0u && nKeys>window) ? nKeys-window : 0u;
+    uint nWin = nKeys - winStart;
     device const float* qr = q + qh*hd;
     device const half*  kb = kc + kvh*hd;   // f16 KV; dot/accum stay in f32 -> parity-neutral
     device const half*  vb = vc + kvh*hd;
     threadgroup float sc[4096];
     threadgroup float red[128];
-    for (uint s=winStart+tid; s<nKeys; s+=tgs) {
-        float a=0; device const half* k=kb+s*kvDim; uint d=0;
-        // half4 vectorized K-read (1.79x @2048 ctx): the one-thread-per-key access is uncoalesced
-        // (adjacent lanes stride kvDim), so 8-byte loads recover sector utilization. SAME sequential
-        // accumulation order ⇒ bit-identical; guarded on hd%4==0 for alignment, scalar tail otherwise.
-        if ((hd&3u)==0u) for (; d<hd; d+=4u){ half4 k4=*((device const half4*)(k+d)); a+=qr[d]*float(k4.x); a+=qr[d+1u]*float(k4.y); a+=qr[d+2u]*float(k4.z); a+=qr[d+3u]*float(k4.w); }
-        for (; d<hd; d++) a += qr[d]*float(k[d]);
-        sc[s]=a*scale;
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    float m=-INFINITY; for (uint s=winStart+tid;s<nKeys;s+=tgs) m=max(m,sc[s]);
-    red[tid]=m; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
-    float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-    float sink=0.0f; bool hasS = hasSink != 0u;
-    if (hasS) { sink = sinks[qh]; mx = max(mx, sink); }
-    float ls=0; for (uint s=winStart+tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
-    red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
-    // DENOMINATOR SUM — float-add is non-associative, so this result is coupled to tgs (the reduction
-    // WIDTH). tgs is pinned to tgReduceAttn (128, model.go); do NOT parameterize/sweep it, and any
-    // alternate attention kernel MUST reduce at the same width or it diverges byte-exactly (past
-    // nKeys>width). No existing gate catches this. See ollama-chase §A2-Metal.
-    for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
-    float sum=red[0];
-    if (hasS) sum += exp(sink-mx); // sink joins the denominator only — no value vector, numerator untouched
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    // V-READ: order-preserving 8-wide load-batch unroll. Each thread walks nKeys serially at
-    // stride kvDim (the same "distinct per-key, latency-exposed" shape the K-read's half4 fix
-    // (1.79x @2048, above) already treats) -- issue 8 independent loads ahead, retire the adds in
-    // the SAME sequential order as the plain scalar loop, so this is bit-identical by construction
-    // (float accumulation order unchanged, only load scheduling). Scalar tail for nKeys not a
-    // multiple of 8. Measured (2026-08-21, git-stash A/B, tight-alternated, 2048 ctx): ~26.6%
-    // faster than scalar; width-4 also won (~17-18%) but 8 measured further ahead of it.
-    for (uint d=tid; d<hd; d+=tgs){
-        float a=0; uint s=winStart; uint nMain = winStart + ((nKeys-winStart) & ~7u);
-        for (; s<nMain; s+=8u) {
-            float v0=float(vb[(s+0u)*kvDim+d]);
-            float v1=float(vb[(s+1u)*kvDim+d]);
-            float v2=float(vb[(s+2u)*kvDim+d]);
-            float v3=float(vb[(s+3u)*kvDim+d]);
-            float v4=float(vb[(s+4u)*kvDim+d]);
-            float v5=float(vb[(s+5u)*kvDim+d]);
-            float v6=float(vb[(s+6u)*kvDim+d]);
-            float v7=float(vb[(s+7u)*kvDim+d]);
-            a += sc[s+0u]*v0; a += sc[s+1u]*v1; a += sc[s+2u]*v2; a += sc[s+3u]*v3;
-            a += sc[s+4u]*v4; a += sc[s+5u]*v5; a += sc[s+6u]*v6; a += sc[s+7u]*v7;
+
+    // Single-tile fast path (nWin <= 4096): bit-identical reduction tree & float-add order for all
+    // historical contexts. Fixes sliding-window indexing: sc[] is indexed relative to winStart so
+    // that windowed attention at pos >= 4096 never overflows sc[4096].
+    if (nWin <= 4096u) {
+        for (uint s=winStart+tid; s<nKeys; s+=tgs) {
+            float a=0; device const half* k=kb+s*kvDim; uint d=0;
+            // half4 vectorized K-read (1.79x @2048 ctx): the one-thread-per-key access is uncoalesced
+            // (adjacent lanes stride kvDim), so 8-byte loads recover sector utilization. SAME sequential
+            // accumulation order ⇒ bit-identical; guarded on hd%4==0 for alignment, scalar tail otherwise.
+            if ((hd&3u)==0u) for (; d<hd; d+=4u){ half4 k4=*((device const half4*)(k+d)); a+=qr[d]*float(k4.x); a+=qr[d+1u]*float(k4.y); a+=qr[d+2u]*float(k4.z); a+=qr[d+3u]*float(k4.w); }
+            for (; d<hd; d++) a += qr[d]*float(k[d]);
+            sc[s - winStart]=a*scale;
         }
-        for (; s<nKeys; s++) a += sc[s]*float(vb[s*kvDim+d]);
-        out[qh*hd+d]=a/sum;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        float m=-INFINITY; for (uint s=tid;s<nWin;s+=tgs) m=max(m,sc[s]);
+        red[tid]=m; threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
+        float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+        float sink=0.0f; bool hasS = hasSink != 0u;
+        if (hasS) { sink = sinks[qh]; mx = max(mx, sink); }
+        float ls=0; for (uint s=tid;s<nWin;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
+        red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
+        // DENOMINATOR SUM — float-add is non-associative, so this result is coupled to tgs (the reduction
+        // WIDTH). tgs is pinned to tgReduceAttn (128, model.go); do NOT parameterize/sweep it, and any
+        // alternate attention kernel MUST reduce at the same width or it diverges byte-exactly (past
+        // nKeys>width). No existing gate catches this. See ollama-chase §A2-Metal.
+        for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+        float sum=red[0];
+        if (hasS) sum += exp(sink-mx); // sink joins the denominator only — no value vector, numerator untouched
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        // V-READ: order-preserving 8-wide load-batch unroll. Each thread walks nKeys serially at
+        // stride kvDim (the same "distinct per-key, latency-exposed" shape the K-read's half4 fix
+        // (1.79x @2048, above) already treats) -- issue 8 independent loads ahead, retire the adds in
+        // the SAME sequential order as the plain scalar loop, so this is bit-identical by construction
+        // (float accumulation order unchanged, only load scheduling). Scalar tail for nKeys not a
+        // multiple of 8. Measured (2026-08-21, git-stash A/B, tight-alternated, 2048 ctx): ~26.6%
+        // faster than scalar; width-4 also won (~17-18%) but 8 measured further ahead of it.
+        for (uint d=tid; d<hd; d+=tgs){
+            float a=0; uint s=winStart; uint nMain = winStart + (nWin & ~7u);
+            for (; s<nMain; s+=8u) {
+                uint sc_idx = s - winStart;
+                float v0=float(vb[(s+0u)*kvDim+d]);
+                float v1=float(vb[(s+1u)*kvDim+d]);
+                float v2=float(vb[(s+2u)*kvDim+d]);
+                float v3=float(vb[(s+3u)*kvDim+d]);
+                float v4=float(vb[(s+4u)*kvDim+d]);
+                float v5=float(vb[(s+5u)*kvDim+d]);
+                float v6=float(vb[(s+6u)*kvDim+d]);
+                float v7=float(vb[(s+7u)*kvDim+d]);
+                a += sc[sc_idx+0u]*v0; a += sc[sc_idx+1u]*v1; a += sc[sc_idx+2u]*v2; a += sc[sc_idx+3u]*v3;
+                a += sc[sc_idx+4u]*v4; a += sc[sc_idx+5u]*v5; a += sc[sc_idx+6u]*v6; a += sc[sc_idx+7u]*v7;
+            }
+            for (; s<nKeys; s++) a += sc[s - winStart]*float(vb[s*kvDim+d]);
+            out[qh*hd+d]=a/sum;
+        }
+        return;
+    }
+
+    // Deep-context tiled online softmax path (nWin > 4096):
+    // Accumulate across tiles of 4096 keys using online softmax rescaling:
+    // m_new = max(m_prev, m_tile), alpha = exp(m_prev - m_new), l_new = l_prev*alpha + sum_tile,
+    // acc[slot] = acc[slot]*alpha + sum(p * v).
+    float m_prev = -INFINITY;
+    float l_prev = 0.0f;
+    bool hasS = hasSink != 0u;
+    if (hasS) {
+        m_prev = sinks[qh];
+        l_prev = 1.0f;
+    }
+    float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    for (uint tileBase = winStart; tileBase < nKeys; tileBase += 4096u) {
+        uint tileEnd = min(tileBase + 4096u, nKeys);
+        uint tileLen = tileEnd - tileBase;
+
+        for (uint s = tileBase + tid; s < tileEnd; s += tgs) {
+            float a = 0; device const half* k = kb + s*kvDim; uint d = 0;
+            if ((hd&3u) == 0u) for (; d < hd; d += 4u) {
+                half4 k4 = *((device const half4*)(k+d));
+                a += qr[d]*float(k4.x);
+                a += qr[d+1u]*float(k4.y);
+                a += qr[d+2u]*float(k4.z);
+                a += qr[d+3u]*float(k4.w);
+            }
+            for (; d < hd; d++) a += qr[d]*float(k[d]);
+            sc[s - tileBase] = a * scale;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        float m_t = -INFINITY;
+        for (uint s = tid; s < tileLen; s += tgs) m_t = max(m_t, sc[s]);
+        red[tid] = m_t;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint st = tgs/2; st > 0; st >>= 1) {
+            if (tid < st) red[tid] = max(red[tid], red[tid+st]);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }
+        float m_tile = red[0];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        float m_new = max(m_prev, m_tile);
+        float alpha = (m_prev == -INFINITY) ? 0.0f : exp(m_prev - m_new);
+
+        float ls = 0;
+        for (uint s = tid; s < tileLen; s += tgs) {
+            float p = exp(sc[s] - m_new);
+            sc[s] = p;
+            ls += p;
+        }
+        red[tid] = ls;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint st = tgs/2; st > 0; st >>= 1) {
+            if (tid < st) red[tid] += red[tid+st];
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }
+        float sum_tile = red[0];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        l_prev = l_prev * alpha + sum_tile;
+        m_prev = m_new;
+
+        for (uint slot = 0; slot < 4u; slot++) {
+            uint d = tid + slot * tgs;
+            if (d >= hd) break;
+            float a = acc[slot] * alpha;
+            uint s = tileBase;
+            uint nMain = tileBase + (tileLen & ~7u);
+            for (; s < nMain; s += 8u) {
+                uint sc_idx = s - tileBase;
+                float v0 = float(vb[(s+0u)*kvDim+d]);
+                float v1 = float(vb[(s+1u)*kvDim+d]);
+                float v2 = float(vb[(s+2u)*kvDim+d]);
+                float v3 = float(vb[(s+3u)*kvDim+d]);
+                float v4 = float(vb[(s+4u)*kvDim+d]);
+                float v5 = float(vb[(s+5u)*kvDim+d]);
+                float v6 = float(vb[(s+6u)*kvDim+d]);
+                float v7 = float(vb[(s+7u)*kvDim+d]);
+                a += sc[sc_idx+0u]*v0; a += sc[sc_idx+1u]*v1; a += sc[sc_idx+2u]*v2; a += sc[sc_idx+3u]*v3;
+                a += sc[sc_idx+4u]*v4; a += sc[sc_idx+5u]*v5; a += sc[sc_idx+6u]*v6; a += sc[sc_idx+7u]*v7;
+            }
+            for (; s < tileEnd; s++) {
+                a += sc[s - tileBase]*float(vb[s*kvDim+d]);
+            }
+            acc[slot] = a;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    for (uint slot = 0; slot < 4u; slot++) {
+        uint d = tid + slot * tgs;
+        if (d >= hd) break;
+        out[qh*hd + d] = acc[slot] / l_prev;
     }
 }
 // attention_f32 — identical to attention but reads an f32 KV cache (Gemma sandwich path). Same
@@ -700,28 +831,268 @@ kernel void attention_f32(device const float* q[[buffer(0)]], device const float
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
     uint kvDim = nKV*hd; uint kvh = qh/(nH/nKV);
     uint winStart = (window>0u && nKeys>window) ? nKeys-window : 0u;
+    uint nWin = nKeys - winStart;
     device const float* qr = q + qh*hd;
     device const float* kb = kc + kvh*hd;
     device const float* vb = vc + kvh*hd;
     threadgroup float sc[4096];
     threadgroup float red[128];
-    for (uint s=winStart+tid; s<nKeys; s+=tgs) {
-        float a=0; device const float* k=kb+s*kvDim; uint d=0;
-        // float4 vectorized K-read (same coalescing fix as attention, f32 KV). Bit-identical.
-        if ((hd&3u)==0u) for (; d<hd; d+=4u){ float4 k4=*((device const float4*)(k+d)); a+=qr[d]*k4.x; a+=qr[d+1u]*k4.y; a+=qr[d+2u]*k4.z; a+=qr[d+3u]*k4.w; }
-        for (; d<hd; d++) a += qr[d]*k[d];
-        sc[s]=a*scale;
+
+    // Single-tile fast path (nWin <= 4096)
+    if (nWin <= 4096u) {
+        for (uint s=winStart+tid; s<nKeys; s+=tgs) {
+            float a=0; device const float* k=kb+s*kvDim; uint d=0;
+            // float4 vectorized K-read (same coalescing fix as attention, f32 KV). Bit-identical.
+            if ((hd&3u)==0u) for (; d<hd; d+=4u){ float4 k4=*((device const float4*)(k+d)); a+=qr[d]*k4.x; a+=qr[d+1u]*k4.y; a+=qr[d+2u]*k4.z; a+=qr[d+3u]*k4.w; }
+            for (; d<hd; d++) a += qr[d]*k[d];
+            sc[s - winStart]=a*scale;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        float m=-INFINITY; for (uint s=tid;s<nWin;s+=tgs) m=max(m,sc[s]);
+        red[tid]=m; threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
+        float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+        float ls=0; for (uint s=tid;s<nWin;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
+        red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+        float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s - winStart]*vb[s*kvDim+d]; out[qh*hd+d]=a/sum; }
+        return;
     }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    float m=-INFINITY; for (uint s=winStart+tid;s<nKeys;s+=tgs) m=max(m,sc[s]);
-    red[tid]=m; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
-    float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-    float ls=0; for (uint s=winStart+tid;s<nKeys;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
-    red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
-    float sum=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint d=tid; d<hd; d+=tgs){ float a=0; for(uint s=winStart;s<nKeys;s++) a += sc[s]*vb[s*kvDim+d]; out[qh*hd+d]=a/sum; }
+
+    // Deep-context tiled online softmax path (nWin > 4096)
+    float m_prev = -INFINITY;
+    float l_prev = 0.0f;
+    float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    for (uint tileBase = winStart; tileBase < nKeys; tileBase += 4096u) {
+        uint tileEnd = min(tileBase + 4096u, nKeys);
+        uint tileLen = tileEnd - tileBase;
+
+        for (uint s = tileBase + tid; s < tileEnd; s += tgs) {
+            float a = 0; device const float* k = kb + s*kvDim; uint d = 0;
+            if ((hd&3u) == 0u) for (; d < hd; d += 4u) {
+                float4 k4 = *((device const float4*)(k+d));
+                a += qr[d]*k4.x;
+                a += qr[d+1u]*k4.y;
+                a += qr[d+2u]*k4.z;
+                a += qr[d+3u]*k4.w;
+            }
+            for (; d < hd; d++) a += qr[d]*k[d];
+            sc[s - tileBase] = a * scale;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        float m_t = -INFINITY;
+        for (uint s = tid; s < tileLen; s += tgs) m_t = max(m_t, sc[s]);
+        red[tid] = m_t;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint st = tgs/2; st > 0; st >>= 1) {
+            if (tid < st) red[tid] = max(red[tid], red[tid+st]);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }
+        float m_tile = red[0];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        float m_new = max(m_prev, m_tile);
+        float alpha = (m_prev == -INFINITY) ? 0.0f : exp(m_prev - m_new);
+
+        float ls = 0;
+        for (uint s = tid; s < tileLen; s += tgs) {
+            float p = exp(sc[s] - m_new);
+            sc[s] = p;
+            ls += p;
+        }
+        red[tid] = ls;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint st = tgs/2; st > 0; st >>= 1) {
+            if (tid < st) red[tid] += red[tid+st];
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }
+        float sum_tile = red[0];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        l_prev = l_prev * alpha + sum_tile;
+        m_prev = m_new;
+
+        for (uint slot = 0; slot < 4u; slot++) {
+            uint d = tid + slot * tgs;
+            if (d >= hd) break;
+            float a = acc[slot] * alpha;
+            for (uint s = tileBase; s < tileEnd; s++) {
+                a += sc[s - tileBase]*vb[s*kvDim+d];
+            }
+            acc[slot] = a;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    for (uint slot = 0; slot < 4u; slot++) {
+        uint d = tid + slot * tgs;
+        if (d >= hd) break;
+        out[qh*hd + d] = acc[slot] / l_prev;
+    }
+}
+// attention_i8: reads int8 KV cache with per-(position,KV-head) f32 scales (ks, vs).
+// Halves KV memory bandwidth and cache memory footprint vs f16 KV.
+kernel void attention_i8(device const float* q[[buffer(0)]], device const char* kc[[buffer(1)]],
+    device const char* vc[[buffer(2)]], device const float* ks[[buffer(3)]],
+    device const float* vs[[buffer(4)]], device float* out[[buffer(5)]],
+    constant uint& nH[[buffer(6)]], constant uint& nKV[[buffer(7)]], constant uint& hd[[buffer(8)]],
+    constant uint& nKeys[[buffer(9)]], constant float& scale[[buffer(10)]],
+    constant uint& window[[buffer(11)]], device const float* sinks[[buffer(12)]],
+    constant uint& hasSink[[buffer(13)]],
+    uint qh[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    uint kvDim = nKV*hd; uint kvh = qh/(nH/nKV);
+    uint winStart = (window>0u && nKeys>window) ? nKeys-window : 0u;
+    uint nWin = nKeys - winStart;
+    device const float* qr = q + qh*hd;
+    device const char*  kb = kc + kvh*hd;
+    device const char*  vb = vc + kvh*hd;
+    threadgroup float sc[4096];
+    threadgroup float red[128];
+
+    // Single-tile fast path (nWin <= 4096)
+    if (nWin <= 4096u) {
+        for (uint s=winStart+tid; s<nKeys; s+=tgs) {
+            float a=0; device const char* k=kb+s*kvDim; uint d=0;
+            float k_scale = ks[s*nKV + kvh];
+            if ((hd&3u)==0u) for (; d<hd; d+=4u){ char4 k4=*((device const char4*)(k+d)); a+=qr[d]*float(k4.x); a+=qr[d+1u]*float(k4.y); a+=qr[d+2u]*float(k4.z); a+=qr[d+3u]*float(k4.w); }
+            for (; d<hd; d++) a += qr[d]*float(k[d]);
+            sc[s - winStart]=(a * k_scale)*scale;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        float m=-INFINITY; for (uint s=tid;s<nWin;s+=tgs) m=max(m,sc[s]);
+        red[tid]=m; threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]=max(red[tid],red[tid+st]); threadgroup_barrier(mem_flags::mem_threadgroup); }
+        float mx=red[0]; threadgroup_barrier(mem_flags::mem_threadgroup);
+        float sink=0.0f; bool hasS = hasSink != 0u;
+        if (hasS) { sink = sinks[qh]; mx = max(mx, sink); }
+        float ls=0; for (uint s=tid;s<nWin;s+=tgs){ float p=exp(sc[s]-mx); sc[s]=p; ls+=p; }
+        red[tid]=ls; threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint st=tgs/2; st>0; st>>=1){ if(tid<st) red[tid]+=red[tid+st]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+        float sum=red[0];
+        if (hasS) sum += exp(sink-mx);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint d=tid; d<hd; d+=tgs){
+            float a=0; uint s=winStart; uint nMain = winStart + (nWin & ~7u);
+            for (; s<nMain; s+=8u) {
+                uint sc_idx = s - winStart;
+                float vs0=vs[(s+0u)*nKV+kvh], vs1=vs[(s+1u)*nKV+kvh], vs2=vs[(s+2u)*nKV+kvh], vs3=vs[(s+3u)*nKV+kvh];
+                float vs4=vs[(s+4u)*nKV+kvh], vs5=vs[(s+5u)*nKV+kvh], vs6=vs[(s+6u)*nKV+kvh], vs7=vs[(s+7u)*nKV+kvh];
+                float v0=float(vb[(s+0u)*kvDim+d])*vs0;
+                float v1=float(vb[(s+1u)*kvDim+d])*vs1;
+                float v2=float(vb[(s+2u)*kvDim+d])*vs2;
+                float v3=float(vb[(s+3u)*kvDim+d])*vs3;
+                float v4=float(vb[(s+4u)*kvDim+d])*vs4;
+                float v5=float(vb[(s+5u)*kvDim+d])*vs5;
+                float v6=float(vb[(s+6u)*kvDim+d])*vs6;
+                float v7=float(vb[(s+7u)*kvDim+d])*vs7;
+                a += sc[sc_idx+0u]*v0; a += sc[sc_idx+1u]*v1; a += sc[sc_idx+2u]*v2; a += sc[sc_idx+3u]*v3;
+                a += sc[sc_idx+4u]*v4; a += sc[sc_idx+5u]*v5; a += sc[sc_idx+6u]*v6; a += sc[sc_idx+7u]*v7;
+            }
+            for (; s<nKeys; s++) a += sc[s - winStart]*(float(vb[s*kvDim+d])*vs[s*nKV+kvh]);
+            out[qh*hd+d]=a/sum;
+        }
+        return;
+    }
+
+    // Deep-context tiled online softmax path (nWin > 4096)
+    float m_prev = -INFINITY;
+    float l_prev = 0.0f;
+    bool hasS = hasSink != 0u;
+    if (hasS) {
+        m_prev = sinks[qh];
+        l_prev = 1.0f;
+    }
+    float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+    for (uint tileBase = winStart; tileBase < nKeys; tileBase += 4096u) {
+        uint tileEnd = min(tileBase + 4096u, nKeys);
+        uint tileLen = tileEnd - tileBase;
+
+        for (uint s = tileBase + tid; s < tileEnd; s += tgs) {
+            float a = 0; device const char* k = kb + s*kvDim; uint d = 0;
+            float k_scale = ks[s*nKV + kvh];
+            if ((hd&3u) == 0u) for (; d < hd; d += 4u) {
+                char4 k4 = *((device const char4*)(k+d));
+                a += qr[d]*float(k4.x);
+                a += qr[d+1u]*float(k4.y);
+                a += qr[d+2u]*float(k4.z);
+                a += qr[d+3u]*float(k4.w);
+            }
+            for (; d < hd; d++) a += qr[d]*float(k[d]);
+            sc[s - tileBase] = (a * k_scale) * scale;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        float m_t = -INFINITY;
+        for (uint s = tid; s < tileLen; s += tgs) m_t = max(m_t, sc[s]);
+        red[tid] = m_t;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint st = tgs/2; st > 0; st >>= 1) {
+            if (tid < st) red[tid] = max(red[tid], red[tid+st]);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }
+        float m_tile = red[0];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        float m_new = max(m_prev, m_tile);
+        float alpha = (m_prev == -INFINITY) ? 0.0f : exp(m_prev - m_new);
+
+        float ls = 0;
+        for (uint s = tid; s < tileLen; s += tgs) {
+            float p = exp(sc[s] - m_new);
+            sc[s] = p;
+            ls += p;
+        }
+        red[tid] = ls;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint st = tgs/2; st > 0; st >>= 1) {
+            if (tid < st) red[tid] += red[tid+st];
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }
+        float sum_tile = red[0];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        l_prev = l_prev * alpha + sum_tile;
+        m_prev = m_new;
+
+        for (uint slot = 0; slot < 4u; slot++) {
+            uint d = tid + slot * tgs;
+            if (d >= hd) break;
+            float a = acc[slot] * alpha;
+            uint s = tileBase;
+            uint nMain = tileBase + (tileLen & ~7u);
+            for (; s < nMain; s += 8u) {
+                uint sc_idx = s - tileBase;
+                float vs0=vs[(s+0u)*nKV+kvh], vs1=vs[(s+1u)*nKV+kvh], vs2=vs[(s+2u)*nKV+kvh], vs3=vs[(s+3u)*nKV+kvh];
+                float vs4=vs[(s+4u)*nKV+kvh], vs5=vs[(s+5u)*nKV+kvh], vs6=vs[(s+6u)*nKV+kvh], vs7=vs[(s+7u)*nKV+kvh];
+                float v0 = float(vb[(s+0u)*kvDim+d]) * vs0;
+                float v1 = float(vb[(s+1u)*kvDim+d]) * vs1;
+                float v2 = float(vb[(s+2u)*kvDim+d]) * vs2;
+                float v3 = float(vb[(s+3u)*kvDim+d]) * vs3;
+                float v4 = float(vb[(s+4u)*kvDim+d]) * vs4;
+                float v5 = float(vb[(s+5u)*kvDim+d]) * vs5;
+                float v6 = float(vb[(s+6u)*kvDim+d]) * vs6;
+                float v7 = float(vb[(s+7u)*kvDim+d]) * vs7;
+                a += sc[sc_idx+0u]*v0; a += sc[sc_idx+1u]*v1; a += sc[sc_idx+2u]*v2; a += sc[sc_idx+3u]*v3;
+                a += sc[sc_idx+4u]*v4; a += sc[sc_idx+5u]*v5; a += sc[sc_idx+6u]*v6; a += sc[sc_idx+7u]*v7;
+            }
+            for (; s < tileEnd; s++) {
+                a += sc[s - tileBase]*(float(vb[s*kvDim+d])*vs[s*nKV+kvh]);
+            }
+            acc[slot] = a;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    for (uint slot = 0; slot < 4u; slot++) {
+        uint d = tid + slot * tgs;
+        if (d >= hd) break;
+        out[qh*hd + d] = acc[slot] / l_prev;
+    }
 }
 // glu_act selects the gated MLP's activation. The ordinals are deliberately decoder.ActKind's
 // iota (ActGeluTanh=0, ActSiLU=1) so the host passes int(m.GatedActResident()) straight through.

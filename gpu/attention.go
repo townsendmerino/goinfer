@@ -660,6 +660,112 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
+// attnI8DP4AShaderWGSL: hardware-accelerated dot4I8Packed variant of attnI8ShaderWGSL.
+// The query vector is dynamically quantized to int8 once per head, packing 4 int8s per
+// word into workgroup shared memory. Each key dot product is computed using dot4I8Packed
+// over (hd/4) words in parallel, cutting key read bandwidth by 4x and reducing reduction
+// barriers from 7 to 5 steps per position.
+const attnI8DP4AShaderWGSL = `
+struct P { nH: u32, nKV: u32, hd: u32, nKeys: u32, start: u32, group: u32, scale: f32, _p: u32 };
+struct HS { v: u32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<storage, read>       q:      array<f32>;  // [nH*hd] (RoPE'd, f32)
+@group(0) @binding(1) var<storage, read>       keys:   array<u32>;  // [nKeys*nKV*hd] int8-packed (4/word)
+@group(0) @binding(2) var<storage, read>       vals:   array<u32>;  // [nKeys*nKV*hd] int8-packed
+@group(0) @binding(3) var<storage, read>       kScale: array<f32>;  // [nKeys*nKV]
+@group(0) @binding(4) var<storage, read>       vScale: array<f32>;  // [nKeys*nKV]
+@group(0) @binding(5) var<storage, read_write> ctx:    array<f32>;  // [nH*hd]
+@group(0) @binding(6) var<storage, read>       sinks:  array<f32>;  // [nH]; real but unused when hasSink==0
+@group(0) @binding(7) var<uniform>             p:      P;
+@group(0) @binding(8) var<uniform>             hs:     HS;
+var<workgroup> red: array<f32, 128>;
+var<workgroup> sh_qw: array<u32, 32>;
+var<workgroup> sh_qs: f32;
+
+fn unpacki8(w: u32, e: u32) -> f32 {
+    let b = (e & 3u) * 8u;
+    return f32(i32(w << (24u - b)) >> 24u);
+}
+
+@compute @workgroup_size(128)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let qh = wid.x;
+    if (qh >= p.nH) { return; }
+    let d = lid.x;
+    let hd = p.hd;
+    let kvDim = p.nKV * hd;
+    let kvh = qh / p.group;
+    let qbase = qh * hd;
+    let kvbase = kvh * hd;
+    let lane = d < hd;
+    var qd: f32 = 0.0;
+    if (lane) { qd = q[qbase + d]; }
+
+    red[d] = abs(qd);
+    workgroupBarrier();
+    var qstride: u32 = 64u;
+    loop {
+        if (qstride == 0u) { break; }
+        if (d < qstride) { red[d] = max(red[d], red[d + qstride]); }
+        workgroupBarrier();
+        qstride = qstride / 2u;
+    }
+    if (d == 0u) {
+        var amax = red[0];
+        if (amax == 0.0) { amax = 1.0; }
+        sh_qs = amax / 127.0;
+    }
+    workgroupBarrier();
+    let qs = sh_qs;
+    var qi: i32 = 0;
+    if (lane) {
+        qi = clamp(i32(round(qd / qs)), -127, 127);
+    }
+    red[d] = f32(qi);
+    workgroupBarrier();
+    let numWords = hd >> 2u;
+    if (d < numWords) {
+        let b0 = u32(i32(red[d * 4u + 0u]) & 0xff);
+        let b1 = u32(i32(red[d * 4u + 1u]) & 0xff);
+        let b2 = u32(i32(red[d * 4u + 2u]) & 0xff);
+        let b3 = u32(i32(red[d * 4u + 3u]) & 0xff);
+        sh_qw[d] = b0 | (b1 << 8u) | (b2 << 16u) | (b3 << 24u);
+    }
+    workgroupBarrier();
+
+    let q_scale_comb = qs * p.scale;
+    var acc: f32 = 0.0;
+    var m: f32 = select(-1e30, sinks[qh], hs.v == 1u);
+    var l: f32 = select(0.0, 1.0, hs.v == 1u);
+    for (var s: u32 = p.start; s < p.nKeys; s = s + 1u) {
+        let kw_base = (s * kvDim + kvbase) >> 2u;
+        let sci = s * p.nKV + kvh;
+        var idot: i32 = 0;
+        if (d < numWords) {
+            idot = dot4I8Packed(sh_qw[d], keys[kw_base + d]);
+        }
+        red[d] = f32(idot);
+        workgroupBarrier();
+        var stride: u32 = 16u;
+        loop {
+            if (stride == 0u) { break; }
+            if (d < stride) { red[d] = red[d] + red[d + stride]; }
+            workgroupBarrier();
+            stride = stride / 2u;
+        }
+        let x = red[0] * (q_scale_comb * kScale[sci]);
+        let mnew = max(m, x);
+        let corr = exp(m - mnew);
+        let pe = exp(x - mnew);
+        let ki = s * kvDim + kvbase + d;
+        if (lane) { acc = acc * corr + pe * unpacki8(vals[ki >> 2u], ki) * vScale[sci]; }
+        l = l * corr + pe;
+        m = mnew;
+        workgroupBarrier();
+    }
+    if (lane) { ctx[qbase + d] = acc / l; }
+}
+`
+
 // ropeStoreI8: rotate K, per-head absmax → int8. One thread per KV head; two
 // passes over headDim (recompute the cheap rope rather than spill a local array).
 const ropeStoreI8ShaderWGSL = `
@@ -767,7 +873,11 @@ func (c *Context) ensureAttn() error {
 	if c.kvStoreF16Shader, c.kvStoreF16Pipeline, c.kvStoreF16Layout, err = mk("kv-store-f16", kvStoreF16ShaderWGSL); err != nil {
 		return err
 	}
-	if c.attnI8Shader, c.attnI8Pipeline, c.attnI8Layout, err = mk("attn-i8", attnI8ShaderWGSL); err != nil {
+	attnI8Code, attnI8Label := attnI8ShaderWGSL, "attn-i8"
+	if c.hasDP4A {
+		attnI8Code, attnI8Label = attnI8DP4AShaderWGSL, "attn-i8-dp4a"
+	}
+	if c.attnI8Shader, c.attnI8Pipeline, c.attnI8Layout, err = mk(attnI8Label, attnI8Code); err != nil {
 		return err
 	}
 	if c.ropeStoreI8Shader, c.ropeStoreI8Pipeline, c.ropeStoreI8Layout, err = mk("rope-store-i8", ropeStoreI8ShaderWGSL); err != nil {

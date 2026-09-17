@@ -27,9 +27,10 @@ import (
 // round-trip per token. Dense residency only (Qwen2/Llama, DecodeRunnerEligible), mixed
 // int4/int8/f32 weights as the real q4_k_m checkpoint stores them.
 var (
-	_ decoder.ResidentForward = (*cudaResident)(nil)
-	_ decoder.ResidentGreedy  = (*cudaResident)(nil)
-	_ decoder.ResidentMRoPE   = (*cudaResident)(nil)
+	_ decoder.ResidentForward    = (*cudaResident)(nil)
+	_ decoder.ResidentGreedy     = (*cudaResident)(nil)
+	_ decoder.ResidentMRoPE      = (*cudaResident)(nil)
+	_ decoder.VerifyPathReporter = (*cudaResident)(nil)
 )
 
 // cudaCtxCapDefault is the resident KV capacity in positions when nothing asks for more; the staged
@@ -586,6 +587,8 @@ type cudaResident struct {
 	bW8                                          Pipeline // batched W8A8 GEMV (int8 bundles); §C6. nil ⇒ int8 prefill declines
 	bQKN                                         Pipeline // batched per-head Q/K RMSNorm (qwen3 etc.); loaded with the batched set
 	bNormF32                                     Pipeline // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
+	bLN                                          Pipeline // batched mean-centered LayerNorm+quant (layernorm_quant.ptx) for Cohere/Command-R
+	zeroBias                                     Buffer   // [hidden] zeros for bias-free layernorm_quant_batched
 	skScores, skSoftmax, skVsum                  Pipeline // Campaign-A split-KV decode attention (high-occupancy, bit-identical)
 	skScoreBuf, skInvBuf                         Buffer   // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
 	skVsumPartial, skVsumCombine                 Pipeline // flash-decode V-sum SPIKE (opt-in, NOT bit-identical) — scoping-decode-tree-recanon.md §6
@@ -1786,6 +1789,15 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 		return nil
 	})
 	return out, err
+}
+
+// VerifyPath (decoder.VerifyPathReporter) reports whether this resident's ForwardN executes
+// a batched weight-stationary pass or falls back to a sequential per-row loop.
+func (r *cudaResident) VerifyPath() (bool, string) {
+	if !r.prefillReady || r.dnet != nil {
+		return false, "sequential — arch/geometry not supported by batched verify"
+	}
+	return true, "batched weight-stationary CUDA pass"
 }
 
 // UploadKV writes a layer's post-RoPE K and raw V into the resident caches at absolute

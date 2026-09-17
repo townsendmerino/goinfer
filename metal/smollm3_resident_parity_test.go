@@ -58,6 +58,7 @@ func TestSmolLM3ResidentSmokeMetal(t *testing.T) {
 	const ntok = 32
 	_, _, _, _, _, _, vocab := mRes.Dims()
 	rf.Reset()
+	var lastSeqLogits []float32
 	for i := range ntok {
 		tok := (i*37 + 3) % vocab
 		lr, err := rf.Forward(mRes.EmbedResidentForTest(tok), i)
@@ -69,5 +70,40 @@ func TestSmolLM3ResidentSmokeMetal(t *testing.T) {
 				t.Fatalf("resident forward[%d]: logit[%d] is NaN", i, j)
 			}
 		}
+		lastSeqLogits = lr
+	}
+
+	// Batched prefill check: SmolLM3 with FeatNoPE must admit batched prefill.
+	batched, reason := mRes.PrefillPath()
+	if !batched {
+		t.Fatalf("SmolLM3 reported sequential prefill path (%q); expected batched prefill", reason)
+	}
+	t.Logf("SmolLM3 prefill path: %s", reason)
+
+	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
+	pf, ok := rf.(decoder.Prefiller)
+	if !ok {
+		t.Fatalf("rf does not implement decoder.Prefiller")
+	}
+	rf.Reset()
+	embs := make([][]float32, ntok)
+	for i := range ntok {
+		tok := (i*37 + 3) % vocab
+		embs[i] = mRes.EmbedResidentForTest(tok)
+	}
+	preLogits, err := pf.PrefillLast(t.Context(), embs, 0)
+	if err != nil {
+		t.Fatalf("PrefillLast error: %v", err)
+	}
+	for j, v := range preLogits {
+		if v != v {
+			t.Fatalf("PrefillLast: logit[%d] is NaN", j)
+		}
+	}
+	t.Logf("SmolLM3 batched prefill succeeded (%d tokens)", ntok)
+	cos := cosF(lastSeqLogits, preLogits)
+	t.Logf("SmolLM3 sequential vs batched prefill cosine: %.5f", cos)
+	if cos < 0.98 {
+		t.Errorf("cosine %.5f < 0.98 between sequential decode and batched prefill", cos)
 	}
 }

@@ -59,5 +59,5 @@ and a proposal that leads with the traffic argument is leading with the weaker h
 ## What is unchanged
 
 The three-point f ordering, the +9.94% D7 forfeits at depth 8000, and the refutation of
-`cuda/resident.go:222`'s "already fills the device" all stand. This run was about a proposed fix,
+`cuda/resident.go:223`'s "already fills the device" all stand. This run was about a proposed fix,
 and it says the fix was misaimed.

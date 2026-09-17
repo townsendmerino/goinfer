@@ -286,3 +286,114 @@ func TestKVI8Attn(t *testing.T) {
 		t.Logf("attnI8 vs f32-over-dequant (%d keys): cosine %.6f", nKeys, cos)
 	}
 }
+
+func TestKVI8Attn_DP4A(t *testing.T) {
+	c := newOrSkipHW(t)
+	defer c.Close()
+	if !c.hasDP4A {
+		t.Skip("adapter does not accept dot4I8Packed")
+	}
+
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "attn-i8-dp4a",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: attnI8DP4AShaderWGSL},
+	})
+	if err != nil {
+		t.Fatalf("compile attn-i8-dp4a: %v", err)
+	}
+	defer sh.Release()
+
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label:   "attn-i8-dp4a",
+		Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+	})
+	if err != nil {
+		t.Fatalf("pipeline attn-i8-dp4a: %v", err)
+	}
+	defer pl.Release()
+
+	ly := c.bgl(pl)
+	defer ly.Release()
+
+	const nH, nKV, hd, nKeys = 8, 4, 128, 40
+	group := nH / nKV
+	kvDim := nKV * hd
+	scale := float32(1.0 / math.Sqrt(float64(hd)))
+	rng := i8rng()
+	q := randF(rng, nH*hd)
+
+	kWords := make([]uint32, (nKeys*kvDim+3)/4)
+	vWords := make([]uint32, (nKeys*kvDim+3)/4)
+	kSc := make([]float32, nKeys*nKV)
+	vSc := make([]float32, nKeys*nKV)
+	deK := make([]float32, nKeys*kvDim)
+	deV := make([]float32, nKeys*kvDim)
+	quant := func(head []float32, words []uint32, sc []float32, de []float32, base, sci int) {
+		var amax float32
+		for _, v := range head {
+			if a := float32(math.Abs(float64(v))); a > amax {
+				amax = a
+			}
+		}
+		s := amax / 127
+		if s == 0 {
+			s = 1
+		}
+		sc[sci] = s
+		for d, v := range head {
+			qv := int8(math.Max(-127, math.Min(127, math.Round(float64(v)/float64(s)))))
+			e := base + d
+			words[e>>2] |= uint32(uint8(qv)) << ((e & 3) * 8)
+			de[e] = float32(qv) * s
+		}
+	}
+	for s := range nKeys {
+		for h := range nKV {
+			quant(randF(rng, hd), kWords, kSc, deK, s*kvDim+h*hd, s*nKV+h)
+			quant(randF(rng, hd), vWords, vSc, deV, s*kvDim+h*hd, s*nKV+h)
+		}
+	}
+
+	want := make([]float32, nH*hd)
+	for qh := range nH {
+		kvh := qh / group
+		sc := make([]float64, nKeys)
+		mx := math.Inf(-1)
+		for s := range nKeys {
+			var dot float64
+			for d := range hd {
+				dot += float64(q[qh*hd+d]) * float64(deK[s*kvDim+kvh*hd+d])
+			}
+			sc[s] = dot * float64(scale)
+			if sc[s] > mx {
+				mx = sc[s]
+			}
+		}
+		var sum float64
+		for s := range sc {
+			sc[s] = math.Exp(sc[s] - mx)
+			sum += sc[s]
+		}
+		for d := range hd {
+			var acc float64
+			for s := range nKeys {
+				acc += sc[s] / sum * float64(deV[s*kvDim+kvh*hd+d])
+			}
+			want[qh*hd+d] = float32(acc)
+		}
+	}
+
+	ctx := c.zbuf(nH * hd)
+	uni := c.ubuf([]uint32{nH, nKV, uint32(hd), nKeys, 0, uint32(group), math.Float32bits(scale), 0})
+	noSinks := c.zbuf(1)
+	noHasSink := c.ubuf([]uint32{0, 0, 0, 0})
+	if err := c.dispatchI8(pl, ly, nH, []*wgpu.Buffer{c.sbuf(q), c.wbuf(kWords), c.wbuf(vWords), c.sbuf(kSc), c.sbuf(vSc), ctx, noSinks}, uni, noHasSink); err != nil {
+		t.Fatal(err)
+	}
+	got := c.readF(ctx, nH*hd)
+	cos := cosF(got, want)
+	t.Logf("attnI8 DP4A vs f32-over-dequant (%d keys): cosine %.6f", nKeys, cos)
+	if cos < 0.9999 {
+		t.Errorf("attnI8 DP4A vs f32-over-dequant: cosine %.6f < 0.9999", cos)
+	}
+}

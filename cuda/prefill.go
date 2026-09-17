@@ -472,28 +472,6 @@ func (r *cudaResident) prefillStaticDecline() error {
 		return fmt.Errorf("cuda prefill: Gated-DeltaNet recurrent state advances one token at a "+
 			"time and cannot be batched: %w", errPrefillDeclined)
 	}
-	// G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3's no-pre-norm (postOnly) and whole-vector
-	// QK-norm (qkNormWhole) are wired into the SEQUENTIAL decode path (segA/segB/segBFFN) only —
-	// prefillCore's batched glue (rmsnorm_quant_batched, qk_norm_batched) still assumes a real
-	// pre-norm weight and per-head QK-norm geometry unconditionally. Since CUDA's batched prefill
-	// is DEFAULT ON (unlike Metal's), silently running it on a postOnly/qkNormWhole model would
-	// produce plausible-but-wrong logits, not a missing feature — decline explicitly and let the
-	// caller fall back to the sequential path (correct, just without the batched TTFT win). Olmo
-	// Hybrid never reaches this line at all: it always has r.dnet != nil (declined above), so this
-	// guard is Olmo-3-only in practice today.
-	if r.postOnly || r.qkNormWhole {
-		return fmt.Errorf("cuda prefill: postOnly/QKNormWhole norm placement is not implemented "+
-			"in the batched glue yet (sequential decode only): %w", errPrefillDeclined)
-	}
-	// Cohere/Command-R (FeatLayerNorm, FeatParallelBlock) are sequential-only for the same reason.
-	// The batched glue runs rmsnorm_quant_batched at every norm site, and it re-normalises the
-	// post-attention residual with Ly.postNorm, which parallelBlock never allocates. On cohere-tiny
-	// that measured "launch bRms: cuda: nil buffer" (audit-2026-09-10 C-04). Decline until the glue
-	// carries the LayerNorm and the parallel-block reuse.
-	if r.layerNorm || r.parallelBlock {
-		return fmt.Errorf("cuda prefill: LayerNorm / parallel-block (Cohere) is not implemented in "+
-			"the batched glue yet (sequential decode only): %w", errPrefillDeclined)
-	}
 	// PER-LAYER geometry, not layer 0's hoisted and asserted uniform. The batched launches bind
 	// each layer's own hd/nKV/qDim/kvDim/rhalf exactly as the decode launches already do, and the
 	// M-sized scratch is sized by the MAX across layers — so a family whose layers differ (Gemma-4:
@@ -863,7 +841,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		// residual, so the o-proj and down GEMVs write a temp instead of accumulating in place. One
 		// [M, hidden] buffer, reused for both (the two uses are sequential).
 		var sbB Buffer
-		if r.sandwich {
+		if r.sandwich || r.postOnly || r.parallelBlock {
 			sbB = af(M * hidden)
 		}
 		residMN := uint32((M*hidden + 255) / 256)
@@ -913,8 +891,16 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			// segA: rmsnorm+quant (glue), then Q/K/V GEMVs. Category timers (r.prof) sync r.stream at
 			// each group boundary; nil in production, so the launch sequence is otherwise unchanged.
 			t := r.profTic()
-			if e := r.bRmsB(xB, Ly.preNorm, hidden, aqB, aScB, M); e != nil {
-				return e
+			if r.postOnly {
+				// Olmo 3/Olmo Hybrid: no pre-norm at all — quantize the raw residual
+				if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+					Arg(xB), gpu.ArgValue(int32(hidden)), Arg(aqB), Arg(aScB), gpu.ArgValue(int32(M))); e != nil {
+					return e
+				}
+			} else {
+				if e := r.bNormB(xB, Ly.preNorm, hidden, aqB, aScB, M); e != nil {
+					return e
+				}
 			}
 			r.profToc(glueCat, t)
 			t = r.profTic()
@@ -945,9 +931,13 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				if r.rmsAddOne {
 					addOne = 1
 				}
-				if e := r.launch(r.bQKN, LaunchConfig{GridX: uint32(r.nH + nKV), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
+				qkNH, qkNKV, qkHD := r.nH, nKV, hd
+				if r.qkNormWhole {
+					qkNH, qkNKV, qkHD = 1, 1, r.nH*hd
+				}
+				if e := r.launch(r.bQKN, LaunchConfig{GridX: uint32(qkNH + qkNKV), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
 					Arg(qBb), Arg(kBb), Arg(Ly.qNorm), Arg(Ly.kNorm),
-					gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+					gpu.ArgValue(int32(qkNH)), gpu.ArgValue(int32(qkNKV)), gpu.ArgValue(int32(qkHD)),
 					gpu.ArgValue(r.eps), gpu.ArgValue(addOne), gpu.ArgValue(int32(M))); e != nil {
 					return e
 				}
@@ -1061,9 +1051,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			}
 			r.profToc(glueCat, t)
 			t = r.profTic()
-			if r.sandwich {
-				// o-proj → temp (accum=0), Gemma post-attn RMSNorm per row, then add to residual.
-				// Mirrors segB's decode sandwich path (o-proj → normF32 → residual) exactly, per row.
+			if r.sandwich || r.postOnly || r.parallelBlock {
+				// o-proj → temp (accum=0), post-attn RMSNorm per row, then add to residual.
+				// For parallelBlock (Cohere), postAttnNorm is unallocated (Len==0), so bNormF32B no-ops.
 				if e := r.bGemvB(Ly.o, cqB, cScB, r.oBiasArg(Ly), sbB, M, 0); e != nil {
 					return e
 				}
@@ -1120,15 +1110,28 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				r.profToc(gemvCat, t)
 			} else {
 				t = r.profTic()
-				if e := r.bRmsB(xB, Ly.postNorm, hidden, mqB, mScB, M); e != nil {
-					return e
+				gqB, gScB := mqB, mScB
+				if r.parallelBlock {
+					// Cohere/Command-R: reuse segA's shared input norm (aqB/aScB) — MLP consumes the SAME
+					// normed activation already computed, with zero norm dispatch.
+					gqB, gScB = aqB, aScB
+				} else if r.postOnly {
+					// Olmo 3/Olmo Hybrid: no pre-MLP norm — quantize raw residual xB directly.
+					if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+						Arg(xB), gpu.ArgValue(int32(hidden)), Arg(mqB), Arg(mScB), gpu.ArgValue(int32(M))); e != nil {
+						return e
+					}
+				} else {
+					if e := r.bNormB(xB, Ly.postNorm, hidden, mqB, mScB, M); e != nil {
+						return e
+					}
 				}
 				r.profToc(glueCat, t)
 				t = r.profTic()
-				if e := r.bGemvB(Ly.g, mqB, mScB, ArgNull(), gOb, M, 0); e != nil {
+				if e := r.bGemvB(Ly.g, gqB, gScB, ArgNull(), gOb, M, 0); e != nil {
 					return e
 				}
-				if e := r.bGemvB(Ly.u, mqB, mScB, ArgNull(), uOb, M, 0); e != nil {
+				if e := r.bGemvB(Ly.u, gqB, gScB, ArgNull(), uOb, M, 0); e != nil {
 					return e
 				}
 				r.profToc(gemvCat, t)
@@ -1140,8 +1143,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				}
 				r.profToc(glueCat, t)
 				t = r.profTic()
-				if r.sandwich {
-					// down → temp (accum=0), Gemma post-MLP RMSNorm per row, then add to residual.
+				if r.sandwich || r.postOnly || r.parallelBlock {
+					// down → temp (accum=0), Gemma/Olmo post-MLP RMSNorm per row, then add to residual.
+					// For parallelBlock, postMLPNorm is unallocated (Len==0), so bNormF32B no-ops.
 					if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
 						return e
 					}
@@ -1310,7 +1314,7 @@ func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int
 		r.logitsBCap = M
 	}
 	// Batched final norm + quant over all M rows, exactly as the layer loop norms its input.
-	if e := r.bRmsB(xB, r.finalNorm, r.hidden, aqB, aScB, M); e != nil {
+	if e := r.bNormB(xB, r.finalNorm, r.hidden, aqB, aScB, M); e != nil {
 		return e
 	}
 	// ONE head GEMV for all M rows: the weights are read once instead of M times.
@@ -1372,6 +1376,34 @@ func (r *cudaResident) attnTempRows(startPos, M int) (gpu.KernelArg, error) {
 		r.qTempRowsKey = key
 	}
 	return Arg(r.qTempRowsB), nil
+}
+
+// bNormB dispatches the batched pre-GEMV norm+quant for M rows — layernorm_quant_batched
+// (Cohere's bias-free mean-centered LayerNorm) when r.layerNorm, else the default rmsnorm_quant_batched —
+// mirroring r.norm's decode-path dispatch.
+func (r *cudaResident) bNormB(x, w Buffer, N int, qOut, sOut Buffer, M int) error {
+	if r.layerNorm {
+		return r.bLayerNormQuantB(x, w, N, M, qOut, sOut)
+	}
+	return r.bRmsB(x, w, N, qOut, sOut, M)
+}
+
+func (r *cudaResident) bLayerNormQuantB(x, w Buffer, N, M int, qOut, sOut Buffer) error {
+	if r.bLN != (Pipeline{}) && r.zeroBias != (Buffer{}) {
+		return r.launch(r.bLN, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((256 + N) * 4)},
+			Arg(x), Arg(w), Arg(r.zeroBias), gpu.ArgValue(int32(N)), gpu.ArgValue(r.eps), Arg(qOut), Arg(sOut))
+	}
+	// Fallback: loop M rows with r.fLN (layernorm_quant from glue.ptx)
+	for m := 0; m < M; m++ {
+		xm := x.At(m * N * 4)
+		qm := qOut.At(m * N) // N bytes per row (N/4 int32 words)
+		sm := sOut.At(m * 4) // 4 bytes per float32 scale
+		if e := r.launch(r.fLN, onecfg(256, (N+256)*4),
+			Arg(xm), Arg(w), gpu.ArgValue(int32(N)), gpu.ArgValue(r.eps), Arg(qm), Arg(sm)); e != nil {
+			return e
+		}
+	}
+	return nil
 }
 
 func (r *cudaResident) bRmsB(x, w Buffer, N int, qOut, sOut Buffer, M int) error {

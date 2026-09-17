@@ -43,7 +43,7 @@ one feature or geometry seam). For each, the predicate that declines it and one 
 ### CPU on every backend
 
 - **Llama 4** (`llama4_text`, `decoder/forward_llama4.go`) — declines at the arch-shape gate
-  before any feature is even checked (`decoder/residency.go:383`, `case a.llama4 != nil: return
+  before any feature is even checked (`decoder/residency.go:390`, `case a.llama4 != nil: return
   false // own forward, not yet bridged`). Needs: **iRoPE** (per-layer RoPE/NoPE interleave —
   RoPE layers use interleaved complex-pair RoPE + a parameter-free L2 QK-norm applied after
   rope; NoPE layers skip rope and apply an attention-temperature tweak to the query), and
@@ -51,30 +51,30 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   scale the expert *input* by the gate rather than the output — a variant of the existing MoE
   router kernel, not the current one). All three are new kernels, individually small, medium in
   aggregate; no recurrence involved.
-- **LFM2.5** — also an arch-shape decline (`decoder/residency.go:384-390`, `case a.lfm2 != nil:
+- **LFM2.5** — also an arch-shape decline (`decoder/residency.go:391-390`, `case a.lfm2 != nil:
   ... return false`), same discipline as Llama 4: 22 of 30 layers run a gated short convolution
   with a rolling window no uniform-layer runner can express. Even past that gate, no backend
-  declares `FeatShortConv` (`decoder/features.go:97`) — "no resident backend implements the conv
+  declares `FeatShortConv` (`decoder/features.go:99`) — "no resident backend implements the conv
   OR its recurrent state."
-- **Laguna** — needs `FeatAttnOutputGate` (`decoder/features.go:96`): `ctx *=
+- **Laguna** — needs `FeatAttnOutputGate` (`decoder/features.go:99`): `ctx *=
   softplus(g_proj·h)` applied before `o_proj`, plus a per-layer query head count. "No resident
   backend implements either." WebGPU's Gated-DeltaNet output gate is a similar shape (fused
   double-width q-proj + sigmoid) but not interchangeable — Laguna's is a separate `g_proj`
-  through softplus, spelled differently on purpose (`decoder/features.go:52-65` explains why the
+  through softplus, spelled differently on purpose (`decoder/features.go:53-65` explains why the
   two must not be conflated).
-- **Ling 3.0** — needs `FeatKDA` (`decoder/features.go:132`), Kimi Delta Attention: a delta-rule
+- **Ling 3.0** — needs `FeatKDA` (`decoder/features.go:133`), Kimi Delta Attention: a delta-rule
   recurrence structurally close to Gated DeltaNet but with a per-channel decay (one value per
   state-matrix row) where DeltaNet's is a single scalar per head. "No resident backend
   implements it."
 - **Granite-4.0-H** — genuinely different from the other four: it is **opt-in, not unimplemented**.
-  `decoder/residency.go:404-396` declines it unless `GOINFER_SSM_RESIDENT` is set
+  `decoder/residency.go:411-396` declines it unless `GOINFER_SSM_RESIDENT` is set
   (`if a.granite != nil { return os.Getenv("GOINFER_SSM_RESIDENT") != "" }`), and the
   hardware-matrix generator explicitly runs with that variable forced empty
   (`decoder/hardware_matrix_test.go:41`, `t.Setenv("GOINFER_SSM_RESIDENT", "")`) — the same
   deliberate "show the off-by-default state" choice `hardware-matrix.md`'s own footnote makes
   for Nemotron-H's int4-vs-int8 policy, just not footnoted for Granite the same way. Both
   Granite-4.0-H and Nemotron-H need `FeatSSM`, which only WebGPU declares
-  (`decoder/features.go:608`); with the flag set, the same arch-level gate that admits
+  (`decoder/features.go:634`); with the flag set, the same arch-level gate that admits
   Nemotron-H's Mamba-2 engine on WebGPU should admit Granite-4.0-H's too — not independently
   verified here beyond the arch gate itself, flagged rather than asserted. Not a code finding:
   the generator is working as designed, showing the real default state.
@@ -83,61 +83,59 @@ one feature or geometry seam). For each, the predicate that declines it and one 
 
 - **MLA family** — DeepSeek-V2, DeepSeek-V3, Kimi K2: resident on WebGPU, CPU on CUDA and Metal.
   Both decline on the same missing feature, `FeatMLA`, declared only for webgpu
-  (`decoder/features.go:607`). Named reuse path already scoped:
+  (`decoder/features.go:633`). Named reuse path already scoped:
   [docs/completed/task-mla-cuda-residency.md](completed/task-mla-cuda-residency.md).
 - **Nemotron-H** — resident on WebGPU (default-on, int4), CPU on CUDA and Metal. Declines there
-  on the same missing feature as Granite-4.0-H above, `FeatSSM` (`decoder/features.go:608`, webgpu
+  on the same missing feature as Granite-4.0-H above, `FeatSSM` (`decoder/features.go:634`, webgpu
   only) — the Mamba-2 scan a CUDA/Metal port would need already exists on WebGPU
   (`gpu/mamba2.go`), so this is a port, not a new design.
-- **Gemma 4** (dense + MoE) — resident on CUDA and Metal, CPU on WebGPU. Not a missing
-  `ResidentFeature` — WebGPU otherwise has everything Gemma 4 needs. The decline is
-  `residentPerLayerGeomBackends` (`decoder/features.go:398`, `map[string]bool{"cuda": true,
-  "metal": true}`): a layer's own head_dim/KV-head count genuinely differing from another's
-  (Gemma 4's local/global split, head_dim 256 vs 512) needs a per-layer geometry seam CUDA and
-  Metal both implement (`cuda/resident.go`'s `cudaLayer.hd/nKV`, `metal/model.go`'s
-  `residLayer.geom`) and WebGPU's own twin fields exist but are never populated by its per-layer
-  builder (`decoder/features.go:381-388`'s own comment has the full history, including the
-  2026-09-08 near-miss this predicate was added to prevent).
+- **Gemma 4 dense** — resident on CUDA, Metal, and (as of 2026-09-17) WebGPU too: WebGPU's
+  per-layer geometry seam (`gpu/residency.go`'s `ghd`/`gnKV`/`ghalf`/`gKEqV`, mirroring
+  `cuda/resident.go`'s `cudaLayer.hd/nKV` and `metal/model.go`'s `residLayer.geom`), K=V
+  (`attention_k_eq_v`, a new dedicated `vNorm` WGSL kernel) and the per-layer output scalar (a
+  new `scaleVec` kernel) are all now populated/implemented — closing the gap
+  `residentPerLayerGeomBackends` (`decoder/features.go:400`) previously described.
+  **Gemma 4 MoE (26B-A4B, the parallel dense+MoE FFN) remains resident on CUDA and Metal only,
+  CPU on WebGPU** — a separate, still-open gap gated by `residentGemma4MoEOK`
+  (`decoder/features.go:418`), not `residentPerLayerGeomBackends`; WebGPU implements the dense
+  per-layer attention geometry but not the joint dense‖MoE FFN bridge.
   <br>**Carve-out (N-04, `docs/audit-metal-2026-09-12.md`): the E2B/E4B E-models are CPU-only on
   EVERY backend, including CUDA and Metal** — the "resident on CUDA and Metal" above describes
   only the dense 12B/26B shape. E2B/E4B add per-layer embeddings (PLE, `hidden_size_per_layer_input
   > 0`), a cross-layer shared-KV pattern, and variable per-layer FFN width; `FeatGemma4EModel`
-  (`decoder/features.go:98`) is declared by NO resident backend, so `decodeRunnerEligible` declines
+  (`decoder/features.go:99`) is declared by NO resident backend, so `decodeRunnerEligible` declines
   all three uniformly until an E-model bridge lands (the dense bridges were built PLE-free and
   would silently skip the PLE branch if admitted). `hardware-matrix.md`'s single "Gemma 4" row
   cannot distinguish E2B/E4B from the dense shape it actually measures.
 - **Command-R / Command-R7B** — resident on CUDA and Metal, CPU on WebGPU. Missing
-  `FeatLayerNorm` (declared `decoder/features.go:592` for cuda, `decoder/features.go:687` for
+  `FeatLayerNorm` (declared `decoder/features.go:618` for cuda, `decoder/features.go:713` for
   metal, absent from webgpu's map) — a genuinely new kernel there (mean-centered LayerNorm, no
   learned bias), plus `FeatParallelBlock` and `FeatLogitScale`, both sequencing/host-side changes
   once the norm exists.
 - **Olmo 3 / Olmo Hybrid** — resident on CUDA and Metal, CPU on WebGPU. Missing
   `FeatPostOnlyNorm` (no pre-norm; the sublayer's output is normalized before the residual add —
-  declared `decoder/features.go:575` for cuda, `decoder/features.go:696` for metal) and
+  declared `decoder/features.go:601` for cuda, `decoder/features.go:722` for metal) and
   `FeatQKNormWhole` (QK-norm over the whole projected vector, not per head — declared
-  `decoder/features.go:580` for cuda, `decoder/features.go:697` for metal), neither declared on
+  `decoder/features.go:606` for cuda, `decoder/features.go:723` for metal), neither declared on
   webgpu.
 - **SmolLM3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatNoPE` (declared
-  `decoder/features.go:561` for cuda, `decoder/features.go:694` for metal, absent from webgpu) —
+  `decoder/features.go:587` for cuda, `decoder/features.go:720` for metal, absent from webgpu) —
   some layers skip RoPE entirely, an all-zero per-layer invFreq table rather than a new kernel.
 - **Ministral 3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatAttnTemp` (declared
-  `decoder/features.go:569` for cuda, `decoder/features.go:695` for metal, absent from webgpu) —
+  `decoder/features.go:595` for cuda, `decoder/features.go:721` for metal, absent from webgpu) —
   a post-RoPE query scale, one scalar per position, folded into the existing rope launch on the
   backends that have it.
 - **GPT-2** — resident on Metal ONLY, CPU on both WebGPU and CUDA (not just WebGPU — the one
   family here where the gap isn't purely "WebGPU is behind"). Needs `FeatLayerNorm`,
   `FeatNonGatedMLP`, `FeatLearnedPos`, `FeatOutBias`. Metal declares all four
-  (`decoder/features.go:687-677`). CUDA declares `FeatLayerNorm` (`decoder/features.go:592`,
-  added for Command-R) and `FeatOutBias` (`decoder/features.go:555`, added for gpt-oss) but not
+  (`decoder/features.go:713-677`). CUDA declares `FeatLayerNorm` (`decoder/features.go:618`,
+  added for Command-R) and `FeatOutBias` (`decoder/features.go:581`, added for gpt-oss) but not
   `FeatNonGatedMLP` or `FeatLearnedPos` anywhere. WebGPU declares none of the four.
-- **Qwen2.5-VL / Qwen3-VL on Metal are TEXT-ONLY residents (N-04, `docs/audit-metal-2026-09-12.md`)
-  despite `hardware-matrix.md` showing "✅ resident" across every backend.** Decoding past an image
-  block needs `decoder.ResidentMRoPE`'s `ForwardMRoPE` (the m-RoPE variant that takes a separate
-  rotation position from the token position, `decoder/residency.go`) — implemented in
-  `cuda/resident.go` and `gpu/residency.go` (WebGPU), absent from `metal/` entirely. The matrix's
-  single ✅ per family/backend cell measures the base text-decoder shape only; it has no way to
-  flag a backend that is resident for plain text but falls back for the image-turn case a VL model
-  actually exists for.
+- **Qwen2.5-VL / Qwen3-VL on Metal support full multimodal resident decode via `decoder.ResidentMRoPE`
+  and `UploadKV`.** Metal resident implements `ForwardMRoPE` (`metal/backend.go`, `metal/model.go`)
+  decoupling rope rotation position from KV cache position via `uRopePos`, and `UploadKV` enables
+  bridging CPU-computed image prefill into resident GPU KV cache. Parity verified in
+  `metal/forwardmrope_parity_test.go` and `metal/uploadkv_parity_test.go`.
 
 ## What's not here
 

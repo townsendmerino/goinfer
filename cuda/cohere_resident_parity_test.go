@@ -4,7 +4,6 @@ package cuda
 
 import (
 	"context"
-	"errors"
 	"math"
 	"path/filepath"
 	"testing"
@@ -92,30 +91,25 @@ func cohereResidentParityCUDA(t *testing.T, ckpt string) {
 			"(want <= 0.10) — the final norm is not the family's LayerNorm (audit C-04)", worstCos, worstRel)
 	}
 
-	// Prefill: the batched path, or its decline.
+	// Prefill: the batched path (now supported via layernorm_quant_batched and parallel-block reuse).
 	rf.Reset()
 	embs := make([][]float32, len(prompt))
 	for i, tok := range prompt {
 		embs[i] = mRes.EmbedResidentForTest(tok)
 	}
 	got, err := cr.PrefillLast(context.Background(), embs, 0)
-	switch {
-	case errors.Is(err, errPrefillDeclined):
-		t.Logf("batched prefill declined, so the sequential path serves the prompt: %v", err)
-	case err != nil:
-		t.Fatalf("PrefillLast: %v", err)
-	default:
-		want, err := mCPU.PrefillLogitsForTest(context.Background(), prompt, mCPU.NewCache(len(prompt)))
-		if err != nil {
-			t.Fatalf("cpu prefill: %v", err)
-		}
-		cos, _ := cosF32(got, want)
-		rel := relL2(got, want)
-		t.Logf("batched prefill last-token logits vs CPU: cosine %.6f relL2 %.4f", cos, rel)
-		if cos < 0.995 || rel > 0.10 {
-			t.Errorf("batched prefill diverges from the CPU prefill: cosine %.6f relL2 %.4f — it runs RMSNorm "+
-				"and a missing post-attention norm on a LayerNorm/parallel-block family (audit C-04)", cos, rel)
-		}
+	if err != nil {
+		t.Fatalf("PrefillLast: %v (batched prefill should not decline)", err)
+	}
+	want, err := mCPU.PrefillLogitsForTest(context.Background(), prompt, mCPU.NewCache(len(prompt)))
+	if err != nil {
+		t.Fatalf("cpu prefill: %v", err)
+	}
+	cos, _ := cosF32(got, want)
+	rel := relL2(got, want)
+	t.Logf("batched prefill last-token logits vs CPU: cosine %.6f relL2 %.4f", cos, rel)
+	if cos < 0.995 || rel > 0.10 {
+		t.Errorf("batched prefill diverges from the CPU prefill: cosine %.6f relL2 %.4f", cos, rel)
 	}
 }
 

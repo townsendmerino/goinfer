@@ -64,8 +64,15 @@ func (a *AttnWeights) Release() {
 	closeDeviceBuffer(a.InvFreq)
 	closeDeviceBuffer(a.KCache)
 	closeDeviceBuffer(a.VCache)
+	closeDeviceBuffer(a.QBias)
+	closeDeviceBuffer(a.KBias)
+	closeDeviceBuffer(a.VBias)
+	closeDeviceBuffer(a.QNorm)
+	closeDeviceBuffer(a.KNorm)
 	a.Norm, a.InvFreq, a.KCache, a.VCache = nil, nil, nil, nil
 	a.QProj, a.KProj, a.VProj, a.OProj = nil, nil, nil, nil
+	a.QBias, a.KBias, a.VBias = nil, nil, nil
+	a.QNorm, a.KNorm = nil, nil
 }
 
 func closeDeviceBuffer(d *DeviceBuffer) {

@@ -632,10 +632,12 @@ func f32Mat(d *Device, w *linalg.WeightMat) Buffer {
 	return NewBufferFloats(d, f)
 }
 
-// encodeMoEFFN records the MoE FFN for one layer, replacing the dense gate/up/swiglu/down
+// encodeMoEFFNWithX records the MoE FFN for one layer, replacing the dense gate/up/swiglu/down
 // dispatches. post-attn norm → router logits → on-GPU top-k → per-selected-expert
 // gate|up/swiglu/weighted-down → optional shared expert. Value-independent (idx/wgt read at
-// kernel-execution time), so the encode-ahead executor still pre-encodes it.
+// kernel-execution time), so the encode-ahead executor still pre-encodes it. x is the
+// post-attention hidden state to route from (r.x for the decode path; a caller-owned buffer for
+// batched prefill, hence the WithX form rather than a fixed r.x read).
 //
 // This is the NON-PAGED path: it reads the stacked all-E buffers (ml.expGuW/expGuS/expDW/expDS),
 // which stay zero-value once the layer is paged (see moeLayer's own comment on the pool field).
@@ -651,21 +653,25 @@ func f32Mat(d *Device, w *linalg.WeightMat) Buffer {
 // GC to finalize hits exactly that assertion (observed: "[_MTLCommandEncoder dealloc]: failed
 // assertion" on the first version of this guard). Ending encoding without committing discards the
 // partial work cleanly with no GPU execution and no side effect on r.x.
-func (r *resident) encodeMoEFFN(e *Encoder, L *residLayer) {
+func (r *resident) encodeMoEFFNWithX(e *Encoder, L *residLayer, x Buffer) {
 	if L.moe.pool != nil {
 		e.FinishEncoding()
-		panic("metal: encodeMoEFFN reached a paged MoE layer — route through forwardLogitsMoEPaged instead (C-02)")
+		panic("metal: encodeMoEFFNWithX reached a paged MoE layer — route through forwardLogitsMoEPaged instead (C-02)")
 	}
-	r.encodeMoERouter(e, L)
-	r.encodeMoEExperts(e, L, r.x)
+	r.encodeMoERouterWithX(e, L, x)
+	r.encodeMoEExperts(e, L, x)
 }
 
 // encodeMoERouter is the value-INDEPENDENT head of the FFN: post-attn norm → router logits →
 // on-GPU top-k, ending with rIdx[k]/rWgt[k] written on-device. In the paged forward this is the
 // first command buffer; the host then reads rIdx and stages the routed experts before the second.
 func (r *resident) encodeMoERouter(e *Encoder, L *residLayer) {
+	r.encodeMoERouterWithX(e, L, r.x)
+}
+
+func (r *resident) encodeMoERouterWithX(e *Encoder, L *residLayer, x Buffer) {
 	// post-attn RMSNorm → quantized activation mq/mSc (same as the dense FFN entry).
-	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, r.x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+	e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, x, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
 	r.encodeMoERoute(e, L)
 }
 
@@ -793,7 +799,7 @@ func (r *resident) encodeMoESharedExpert(e *Encoder, L *residLayer, dst Buffer) 
 // [mixer/attention + router] -> submit+wait -> read rIdx -> stage the routed top-k into the
 // layer's LRU slot pool -> [experts-from-slots] -> submit+wait. Assumes the caller filled r.x with
 // the embedding and holds the OS thread (ForwardEmb does both).
-func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {
+func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []float32) {
 	// Same abort discipline as forwardLogitsPaged (audit R-02/C-09): a transient staging error or
 	// OOM deep inside expertPool.ensureResident at decode time must not crash the process.
 	defer func() {
@@ -807,7 +813,11 @@ func (r *resident) forwardLogitsMoEPaged(pos int) (logits []float32) {
 	// contradicting setPos's own "called at every forward entry point" doc comment. Currently a
 	// no-op (no paged family has FeatAttnTemp: r.attnTempBeta==0 gives scale=1 unconditionally),
 	// but it silently stays stale the day one does.
-	r.setPos(pos)
+	rp := pos
+	if len(ropePos) > 0 {
+		rp = ropePos[0]
+	}
+	r.setPos(pos, rp)
 	mo := r.moe
 	// N-23 (audit-metal-2026-09-12.md): consecutive dense layers share ONE command buffer instead
 	// of a submit+wait each — only a paged MoE layer's router readback is a genuine value-dependent

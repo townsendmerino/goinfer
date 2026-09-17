@@ -70,22 +70,51 @@ func (f *fakeThetaResident) PrefillPath() (bool, string) {
 	return false, "sequential — one forward per row"
 }
 
+type fakeVerifyResident struct {
+	fakeResident
+	batched bool
+}
+
+func (f *fakeVerifyResident) VerifyPath() (bool, string) {
+	if f.batched {
+		return true, "batched"
+	}
+	return false, "sequential — paged MoE requires per-layer host staging"
+}
+
+type fakeNamedBackend string
+
+func (b fakeNamedBackend) Name() string                            { return string(b) }
+func (b fakeNamedBackend) MatmulBT(_, _, _ []float32, _, _, _ int) {}
+func (b fakeNamedBackend) Close() error                            { return nil }
+
+func TestVerifyTheta_VerifyPathReporter(t *testing.T) {
+	// Metal resident with batched ForwardN gets Metal's measured constant 0.96.
+	mBatched := &Model{resident: &fakeVerifyResident{batched: true}, be: fakeNamedBackend("metal")}
+	if got := mBatched.verifyTheta(); got != 0.96 {
+		t.Errorf("batched verify on metal: got %v, want 0.96", got)
+	}
+
+	// Metal resident with sequential ForwardN (e.g. paged MoE) gets sequentialVerifyTheta (1.02),
+	// disabling speculative decode.
+	mSeq := &Model{resident: &fakeVerifyResident{batched: false}, be: fakeNamedBackend("metal")}
+	if got := mSeq.verifyTheta(); got != sequentialVerifyTheta {
+		t.Errorf("sequential verify on metal: got %v, want %v", got, sequentialVerifyTheta)
+	}
+}
+
 // The CUDA constant itself is unchanged and still measured — M-14 is about WHEN it applies, not
 // what it is. Pinned so a change to one is not mistaken for the other.
 //
-// The thetaFor("metal") >= 1 check is ALSO the N-49 (docs/audit-2026-09-10.md) tripwire —
-// verifyTheta's own doc comment explains why: metalResident implements PrefillPathReporter, but
-// its ForwardN is unconditionally sequential regardless of what PrefillPath() reports, so the
-// M-14 predicate only produces the right answer for Metal because this constant independently
-// also disables speculation. If Metal ever ships a real batched verify and this drops below 1,
-// this assertion is what catches that the predicate needs to be revisited for Metal too.
+// Metal ships thetaFor("metal") = 0.96 (re-measured 2026-09-17 across {0.5B,1.5B} qwen2.5-coder and
+// {0.6B,1.7B} Qwen3, depth 128-2048; down from 1.02+ when ForwardN was an unbatched loop). N-49
+// tripwire: batched verify reports via VerifyPathReporter, unblocking speculative decoding on
+// Metal for all non-paged models.
 func TestThetaFor_cudaConstantUnchanged(t *testing.T) {
 	if got := thetaFor("cuda"); got != 0.251 {
 		t.Errorf("thetaFor(cuda) = %v, want 0.251 (cuda/theta_probe_test.go, dense 0.5B/1.5B)", got)
 	}
-	if got := thetaFor("metal"); got < 1 {
-		t.Errorf("thetaFor(metal) = %v; it is >= 1 BY MEASUREMENT and disables speculation "+
-			"(N-49: this is also the tripwire for verifyTheta's Metal/PrefillPathReporter "+
-			"coincidence — see its doc comment)", got)
+	if got := thetaFor("metal"); got != 0.96 {
+		t.Errorf("thetaFor(metal) = %v, want 0.96 (re-measured 2026-09-17, {0.5B,1.5B} qwen2.5-coder + {0.6B,1.7B} Qwen3, depth 128-2048, max observed 0.962)", got)
 	}
 }
