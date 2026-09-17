@@ -13,8 +13,8 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 |---|---|---|---|---|
 | Command-R | ✅ | CPU | ✅ resident | ✅ resident |
 | Command-R7B | ✅ | CPU | ✅ resident | ✅ resident |
-| DeepSeek-V2 | ✅ | ✅ resident | CPU | CPU |
-| DeepSeek-V3 | ✅ | ✅ resident | CPU | CPU |
+| DeepSeek-V2 | ✅ | ✅ resident | ✅ resident | CPU |
+| DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | CPU |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |
 | Gemma 3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
@@ -22,7 +22,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Granite 4.2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Granite-4.0-H | ✅ | CPU | CPU | CPU |
 | InternLM2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| Kimi K2 | ✅ | ✅ resident | CPU | CPU |
+| Kimi K2 | ✅ | ✅ resident | ✅ resident | CPU |
 | LFM2.5 | ✅ | CPU | CPU | CPU |
 | Laguna | ✅ | CPU | CPU | CPU |
 | Ling 3.0 | ✅ | CPU | CPU | CPU |
