@@ -728,6 +728,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		// auth() alone is a no-op, and these two routes act — pull triggers a caller-named
 		// multi-gigabyte download. See sameOrigin's own doc comment in webui.go.
 		mux.HandleFunc("POST /web/models/list", sameOrigin(auth(maxBytes(textCap, srv.handleWebList))))
+		// Live search-as-you-type suggestions over the repo box (pull.Search, GGUF only today):
+		// read-only, same origin/auth stack as list/list-adjacent routes above.
+		mux.HandleFunc("POST /web/models/search", sameOrigin(auth(maxBytes(textCap, srv.handleWebSearch))))
 		// Not wrapped in inf(): the inflight gate bounds INFERENCE, and a download that runs
 		// for minutes must not occupy one of those slots. handleWebPull is single-flighted on
 		// its own (pullState), which is the bound that actually fits it.

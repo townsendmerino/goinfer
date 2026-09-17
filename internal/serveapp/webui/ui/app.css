@@ -1655,6 +1655,17 @@ details.think .think-body{color:var(--gi-muted);font-size:13px;margin-top:.5em}
 .chat-rename,.chat-delete,.chat-cancel-job{font-family:var(--mono);font-size:11px;color:var(--gi-muted);padding:2px 6px;border-radius:6px;opacity:.7}
 .chat-item:hover .chat-rename,.chat-item:hover .chat-delete,.chat-item:hover .chat-cancel-job,.chat-rename:focus-visible,.chat-delete:focus-visible,.chat-cancel-job:focus-visible{opacity:1}
 .chat-list button[disabled],#chat-list button[disabled]{opacity:.45;cursor:default}
+
+/* Repo search suggestions (the HF search-as-you-type dropdown) — same shape as #chat-list's own
+   rows (a plain list of buttons, no floating overlay), pushed into normal document flow right
+   below the row rather than absolutely positioned: this page has no other floating layer to get
+   the z-index/viewport-edge cases right for, so it does not start needing one here either. */
+.repo-suggest{list-style:none;margin:8px 0 0;padding:0;max-height:220px;overflow-y:auto}
+.repo-suggest li{display:flex}
+.repo-suggest button{flex:1;text-align:left;padding:7px 9px;border-radius:6px;font-size:13px;color:var(--gi-ink);display:flex;justify-content:space-between;gap:10px;white-space:nowrap;overflow:hidden}
+.repo-suggest button:hover,.repo-suggest button:focus-visible{background:color-mix(in srgb,var(--gi-accent) 9%,transparent)}
+.repo-suggest .repo-id{overflow:hidden;text-overflow:ellipsis}
+.repo-suggest .repo-downloads{flex:0 0 auto;font-family:var(--mono);font-size:11px;color:var(--gi-muted)}
 .chat-rename-box{flex:1;min-width:0;font:inherit;font-size:13px;padding:4px 8px}
 
 /* W32: resident models list (Models tab) */
@@ -1731,7 +1742,7 @@ input.invalid,textarea.invalid{outline:2px solid var(--gi-err);outline-offset:1p
    buttons at 21 px, the System prompt / Sampling toggles at 20 px). Desktop with a mouse keeps its density. */
 @media (max-width: 600px), (pointer: coarse){
   .actions button,.md-copy,.md-preview,.chats-export button,.chat-rename,.chat-delete,.chat-cancel-job,.attach-preview button,
-  .err-actions button,.edit-row button,.theme-pick select,.resident-unload,.doc-chip button{min-height:32px}
+  .err-actions button,.edit-row button,.theme-pick select,.resident-unload,.doc-chip button,.repo-suggest button{min-height:32px}
   /* padding, not display:flex — a flex <summary> loses its disclosure triangle */
   details.system summary,details.think summary{padding-block:7px}
   .chat-open{min-height:36px}

@@ -29,9 +29,14 @@ func TestWebUI_disabledByDefault(t *testing.T) {
 		"pull":   s.handleWebPull,
 		"load":   s.handleWebLoad,
 		"unload": s.handleWebUnload,
+		"search": s.handleWebSearch,
 	} {
 		w := httptest.NewRecorder()
-		h(w, httptest.NewRequest(http.MethodPost, "/web/models/"+name, strings.NewReader(`{"repo":"a/b","quant":"q4_k_m"}`)))
+		body := `{"repo":"a/b","quant":"q4_k_m"}`
+		if name == "search" {
+			body = `{"query":"qwen","kind":"gguf"}`
+		}
+		h(w, httptest.NewRequest(http.MethodPost, "/web/models/"+name, strings.NewReader(body)))
 		if w.Code != http.StatusForbidden {
 			t.Errorf("%s with -web off: status %d, want 403", name, w.Code)
 		}
@@ -609,7 +614,7 @@ func TestWebUI_listAndPullAreWrappedInSameOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	var listFound, pullFound, loadFound, unloadFound, listSO, pullSO, loadSO, unloadSO bool
+	var listFound, pullFound, loadFound, unloadFound, searchFound, listSO, pullSO, loadSO, unloadSO, searchSO bool
 	ast.Inspect(af, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -643,11 +648,14 @@ func TestWebUI_listAndPullAreWrappedInSameOrigin(t *testing.T) {
 		case `"POST /web/models/unload"`:
 			unloadFound = true
 			unloadSO = isSameOrigin
+		case `"POST /web/models/search"`:
+			searchFound = true
+			searchSO = isSameOrigin
 		}
 		return true
 	})
-	if !listFound || !pullFound || !loadFound || !unloadFound {
-		t.Fatalf("route(s) not found (list=%v pull=%v load=%v unload=%v) — this guard is watching nothing", listFound, pullFound, loadFound, unloadFound)
+	if !listFound || !pullFound || !loadFound || !unloadFound || !searchFound {
+		t.Fatalf("route(s) not found (list=%v pull=%v load=%v unload=%v search=%v) — this guard is watching nothing", listFound, pullFound, loadFound, unloadFound, searchFound)
 	}
 	if !loadSO {
 		t.Error("POST /web/models/load is not wrapped in sameOrigin(...) — a cross-origin POST could " +
@@ -664,5 +672,9 @@ func TestWebUI_listAndPullAreWrappedInSameOrigin(t *testing.T) {
 	if !unloadSO {
 		t.Error("POST /web/models/unload is not wrapped in sameOrigin(...) — a cross-origin POST " +
 			"could free a resident model on the key-free loopback default (V-20), W32")
+	}
+	if !searchSO {
+		t.Error("POST /web/models/search is not wrapped in sameOrigin(...) — a cross-origin POST " +
+			"could make this server proxy arbitrary HuggingFace searches on the key-free loopback default (V-20)")
 	}
 }

@@ -197,6 +197,47 @@ func (s *server) handleWebList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"repo": ref.Repo, "files": out})
 }
 
+type webSearchReq struct {
+	Query string `json:"query"`
+	// Kind narrows the search (pull.Search's own searchKinds table). The page always sends
+	// "gguf" today — the only kind this build's pull flow actually loads — but the field exists
+	// now, not added later, so a future kind is a client change plus one table entry in pull.go,
+	// never a new route or request shape.
+	Kind string `json:"kind"`
+}
+
+// searchLimit bounds how many suggestions a search returns — a dropdown, not a full listing;
+// pull.Search sends no limit= to HuggingFace at all when given 0, which is a request shape this
+// route should never produce.
+const searchLimit = 8
+
+// handleWebSearch answers the repo box's search-as-you-type: candidates to PICK from, not a
+// commitment to any of them — CheckAccess/List (handleWebList, above) still run, unchanged, once
+// a person actually chooses one. A network or HF-side failure here is not fatal to typing a repo
+// name by hand, so it is reported as an ordinary error the page can show or quietly drop, never a
+// reason to block the box itself.
+func (s *server) handleWebSearch(w http.ResponseWriter, r *http.Request) {
+	if !s.webEnabled(w) {
+		return
+	}
+	var req webSearchReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	results, err := pull.Search(ctx, req.Query, req.Kind, searchLimit)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	out := make([]map[string]any, 0, len(results))
+	for _, res := range results {
+		out = append(out, map[string]any{"repo": res.Repo, "downloads": res.Downloads, "likes": res.Likes})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"repos": out})
+}
+
 // webPullRef resolves a pull request's repo box and the clicked selector (if any) into one Ref,
 // WITHOUT string concatenation. req.Repo alone decides ref.Repo (`pull.ParseRef` cuts at the
 // FIRST colon, so blindly appending a second selector after a box that already carries one —

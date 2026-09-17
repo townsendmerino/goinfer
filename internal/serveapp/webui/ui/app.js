@@ -1914,10 +1914,100 @@ async function* sse(resp) {
   }
 }
 
+// --- repo search-as-you-type (HF search, GGUF only for now — /web/models/search's own "kind"
+// field already carries a value, so widening this to another kind later is a client change plus
+// one table entry in pull.go, never a new route or request shape) -------------------------------
+const SEARCH_MIN_CHARS = 4;
+const SEARCH_DEBOUNCE_MS = 300;
+let searchTimer = null;
+let searchAC = null;
+let searchSeq = 0;   // a second guard against a stale response winning a race the abort should
+                      // already prevent — belt and suspenders, not redundant: the abort signal and
+                      // the fetch's own resolution are two independent async events, and nothing
+                      // guarantees which one the event loop delivers first.
+
+function hideSuggestions() {
+  $("repo-suggest").replaceChildren();
+  $("repo-suggest").hidden = true;
+  $("repo").setAttribute("aria-expanded", "false");
+  $("repo-suggest-note").hidden = true;
+  $("repo-suggest-note").textContent = "";
+}
+
+function renderSuggestions(repos) {
+  const ul = $("repo-suggest");
+  ul.replaceChildren();
+  if (!repos.length) {
+    ul.hidden = true;
+    $("repo").setAttribute("aria-expanded", "false");
+    $("repo-suggest-note").hidden = false;
+    $("repo-suggest-note").textContent = "No matching GGUF repos on HuggingFace.";
+    return;
+  }
+  $("repo-suggest-note").hidden = true;
+  for (const r of repos) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.setAttribute("role", "option");
+    const id = document.createElement("span"); id.className = "repo-id"; id.textContent = r.repo;
+    const dl = document.createElement("span"); dl.className = "repo-downloads";
+    if (r.downloads) dl.textContent = r.downloads.toLocaleString() + " ↓";
+    btn.appendChild(id); btn.appendChild(dl);
+    // Selecting a suggestion both fills the box AND lists it — the point of offering one is
+    // fewer clicks than typing the whole name out, not just a spelling aid.
+    btn.onclick = () => { $("repo").value = r.repo; hideSuggestions(); $("list").click(); };
+    li.appendChild(btn);
+    ul.appendChild(li);
+  }
+  ul.hidden = false;
+  $("repo").setAttribute("aria-expanded", "true");
+}
+
+async function searchRepos(query) {
+  if (searchAC) searchAC.abort();
+  const ac = new AbortController();
+  searchAC = ac;
+  const mySeq = ++searchSeq;
+  try {
+    const r = await fetch("/web/models/search", {method: "POST", headers: headers(), body: JSON.stringify({query, kind: "gguf"}), signal: ac.signal});
+    if (mySeq !== searchSeq) return;   // superseded while this was in flight
+    const j = await r.json();
+    if (!r.ok) throw new Error((j.error && j.error.message) || ("HTTP " + r.status));
+    if (mySeq !== searchSeq) return;
+    renderSuggestions(j.repos || []);
+  } catch (e) {
+    if (e.name === "AbortError" || mySeq !== searchSeq) return;   // superseded, not a real failure
+    // A failed search is not a reason to block typing a repo name by hand — say so, quietly,
+    // rather than leaving the box looking broken or silently doing nothing.
+    $("repo-suggest").replaceChildren();
+    $("repo-suggest").hidden = true;
+    $("repo").setAttribute("aria-expanded", "false");
+    $("repo-suggest-note").hidden = false;
+    $("repo-suggest-note").textContent = "Couldn't search HuggingFace: " + (e.message || e);
+  }
+}
+
+$("repo").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const q = $("repo").value.trim();
+  if (q.length < SEARCH_MIN_CHARS) {
+    if (searchAC) searchAC.abort();
+    hideSuggestions();
+    return;
+  }
+  searchTimer = setTimeout(() => searchRepos(q), SEARCH_DEBOUNCE_MS);
+});
+$("repo").addEventListener("keydown", e => { if (e.key === "Escape") hideSuggestions(); });
+// Delayed so a click on a suggestion (which blurs the input first) still registers before the
+// list disappears out from under it.
+$("repo").addEventListener("blur", () => setTimeout(hideSuggestions, 150));
+
 // --- pull -------------------------------------------------------------------
 $("list").onclick = async () => {
   const repo = $("repo").value.trim();
   if (!repo) return;
+  hideSuggestions();
   $("list").disabled = true;
   $("files-card").hidden = false;
   $("files").textContent = "listing…";

@@ -27,10 +27,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -284,6 +286,76 @@ func List(ctx context.Context, repo string) ([]File, error) {
 		out = append(out, f)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out, nil
+}
+
+// searchKinds maps a caller's requested KIND of pull target to the HF `filter=` query parameter
+// that narrows search results to it, and is the one place that needs to change to widen search to
+// a new kind. "gguf" is the only one this build's pull flow actually loads today (ParseRef/List/
+// Select are all GGUF-specific); a caller asking for anything else gets an explicit error rather
+// than a filter this package cannot really honour. Deliberately a table, not a switch inlined into
+// Search itself: the day a second kind (e.g. safetensors) is real, it is one more entry here, not
+// a second copy of the request/parse/sort logic below.
+var searchKinds = map[string]string{
+	"gguf": "gguf",
+}
+
+// SearchResult is one repo suggestion — enough for a caller to show a name and let a person pick
+// it, nothing more: no per-repo follow-up request, no gating check (that already exists at
+// CheckAccess, which runs before anything downloads regardless of how the repo was found).
+type SearchResult struct {
+	Repo      string `json:"repo"`
+	Downloads int    `json:"downloads"`
+	Likes     int    `json:"likes"`
+}
+
+// searchHit is the subset of HF's models-search response we read.
+type searchHit struct {
+	ID        string `json:"id"`
+	Downloads int    `json:"downloads"`
+	Likes     int    `json:"likes"`
+	Private   bool   `json:"private"`
+}
+
+// Search finds repos whose id or tags match q, narrowed to kind (searchKinds). Returns at most
+// limit results (HF's own default applies if limit is not positive), in HuggingFace's own
+// relevance/trending order — it does not re-sort by name or downloads.
+//
+// NOT FUZZY, and that is a real gap worth a caller knowing rather than discovering: this is a
+// substring match against the repo id and its tags. "quen" does not find "Qwen" — a typo is not
+// corrected, only completed. Good for "I know roughly the name and want to see what exists," not
+// for spelling correction.
+func Search(ctx context.Context, q, kind string, limit int) ([]SearchResult, error) {
+	filter, ok := searchKinds[kind]
+	if !ok {
+		return nil, fmt.Errorf("search: unknown kind %q (known: gguf)", kind)
+	}
+	if q == "" {
+		return nil, nil
+	}
+	v := url.Values{"search": {q}, "filter": {filter}}
+	if limit > 0 {
+		v.Set("limit", strconv.Itoa(limit))
+	}
+	resp, err := get(ctx, hfAPI+"?"+v.Encode())
+	if err != nil {
+		return nil, fmt.Errorf("searching %q: %w", q, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("searching %q: HuggingFace returned %s", q, resp.Status)
+	}
+	var hits []searchHit
+	if err := json.NewDecoder(resp.Body).Decode(&hits); err != nil {
+		return nil, fmt.Errorf("parsing search results: %w", err)
+	}
+	out := make([]SearchResult, 0, len(hits))
+	for _, h := range hits {
+		if h.Private || h.ID == "" {
+			continue // a private hit is not pullable anonymously; skip rather than offer a dead end
+		}
+		out = append(out, SearchResult{Repo: h.ID, Downloads: h.Downloads, Likes: h.Likes})
+	}
 	return out, nil
 }
 

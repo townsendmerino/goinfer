@@ -2531,6 +2531,85 @@ const phase41 = phase(W27_PRELUDE + String.raw`
   check("scroll panel: reopening a conversation shows it scrolled to the newest message", log.scrollTop + log.clientHeight >= log.scrollHeight - 2, log.scrollTop + "+" + log.clientHeight + " vs " + log.scrollHeight);
 `);
 
+// ---- phase 42: repo search-as-you-type (HF search, GGUF only for now) --------------------------
+const phase42 = phase(String.raw`
+  const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  tab("models");
+  const setRepo = v => { $("repo").value = v; $("repo").dispatchEvent(new Event("input")); };
+  let calls = [];
+  const stub = (repos, status = 200) => { window.fetch = async (url, opts) => {
+    calls.push({ url, method: (opts && opts.method) || "GET", body: opts && opts.body ? JSON.parse(opts.body) : null });
+    if (url === "/web/models/search") return new Response(JSON.stringify(status === 200 ? { repos } : { error: { message: "HuggingFace returned " + status } }), { status });
+    return new Response("{}", { status: 200 }); // covers /web/models/list, from clicking a suggestion below
+  }; };
+
+  // below the 4-char minimum: never fetches at all
+  stub([{ repo: "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF", downloads: 12345, likes: 10 }]);
+  setRepo("abc");
+  await wait(400);
+  check("search: below the 4-char minimum never fetches", !calls.some(c => c.url === "/web/models/search"), JSON.stringify(calls));
+
+  // rapid typing before the debounce fires coalesces into ONE request, for the latest text only —
+  // both values here clear the 4-char minimum on their own, so this isolates the debounce from
+  // that other gate rather than accidentally retesting it (an earlier draft used "qwe" then
+  // "qwen", where "qwe" alone never fires regardless of debounce — it is 3 characters)
+  calls = [];
+  setRepo("qwen"); await wait(60); setRepo("qwen2");
+  await wait(400);
+  let hits = calls.filter(c => c.url === "/web/models/search");
+  check("search: rapid typing coalesces into ONE request, for the latest text", hits.length === 1 && hits[0].body.query === "qwen2" && hits[0].body.kind === "gguf", JSON.stringify(hits));
+
+  // a match renders as a suggestion row; picking it fills the box AND lists it immediately —
+  // the point of offering one is fewer clicks than typing the whole name, not just spelling help
+  await until(() => $("repo-suggest").children.length === 1);
+  check("search: a match renders as a suggestion naming the repo, and the box says it is expanded", $("repo-suggest").children[0].textContent.includes("Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF") && !$("repo-suggest").hidden && $("repo").getAttribute("aria-expanded") === "true", $("repo-suggest").textContent);
+  calls = [];
+  $("repo-suggest").querySelector("button").click();
+  await wait(30);
+  check("search: picking a suggestion fills the box, closes the list, and lists it immediately", $("repo").value === "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF" && $("repo-suggest").hidden && calls.some(c => c.url === "/web/models/list" && c.body.repo === "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"), $("repo").value + " / " + JSON.stringify(calls));
+
+  // no matches: a note, not a stale or silently-empty list
+  stub([]);
+  setRepo("zzzz"); await wait(60); setRepo("zzzznomatch");
+  await wait(400);
+  check("search: no matches shows a note, not a stale or empty-looking list", $("repo-suggest").hidden && !$("repo-suggest-note").hidden && /No matching/.test($("repo-suggest-note").textContent), $("repo-suggest-note").textContent);
+
+  // a failed search is not fatal to the box: a quiet note, nothing left stale on screen
+  stub([], 502);
+  setRepo("errq"); await wait(60); setRepo("errq123");
+  await wait(400);
+  check("search: a failed search shows a quiet note instead of breaking the box", $("repo-suggest").hidden && /Couldn't search HuggingFace/.test($("repo-suggest-note").textContent), $("repo-suggest-note").textContent);
+
+  // Escape closes the list without touching what was typed
+  stub([{ repo: "a/b", downloads: 1, likes: 1 }]);
+  setRepo("escq"); await wait(60); setRepo("escq123");
+  await until(() => !$("repo-suggest").hidden);
+  $("repo").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  check("search: Escape closes the suggestions without changing the typed text", $("repo-suggest").hidden && $("repo").value === "escq123", $("repo").value + " / " + $("repo-suggest").hidden);
+
+  // THE RACE: starting a new search aborts the previous request's own signal (not just a sequence
+  // counter's job) — and even if a stale request's response arrives AFTER a newer one's, it must
+  // never overwrite what the newer one already rendered. Two independent guards (abort + a
+  // sequence number the async handler checks itself), because nothing guarantees the event loop
+  // delivers an abort rejection before a response that was already in flight when it fired.
+  const resolvers = [];
+  const signals = [];
+  window.fetch = async (url, opts) => {
+    if (url !== "/web/models/search") return new Response("{}", { status: 200 });
+    signals.push(opts.signal);
+    return new Promise(resolve => resolvers.push({ query: JSON.parse(opts.body).query, resolve }));
+  };
+  setRepo("race"); await wait(60); setRepo("race1"); await wait(310);   // debounce fires: request #1 pending
+  setRepo("race12"); await wait(310);                                   // debounce fires again: request #2 pending, #1 superseded
+  check("search: starting a new search aborts the previous request's own AbortSignal", signals.length === 2 && signals[0].aborted === true && signals[1].aborted === false, signals.map(s => s && s.aborted));
+  // Resolve OUT OF ORDER: the newer query's response arrives FIRST, the stale one SECOND.
+  resolvers[1].resolve(new Response(JSON.stringify({ repos: [{ repo: "newer/match", downloads: 2, likes: 2 }] }), { status: 200 }));
+  await wait(30);
+  resolvers[0].resolve(new Response(JSON.stringify({ repos: [{ repo: "stale/match", downloads: 1, likes: 1 }] }), { status: 200 }));
+  await wait(30);
+  check("search: a stale response that resolves AFTER a newer one never overwrites it", $("repo-suggest").textContent.includes("newer/match") && !$("repo-suggest").textContent.includes("stale/match"), $("repo-suggest").textContent);
+`);
+
 const all = [];
 const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
@@ -2543,7 +2622,7 @@ const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, 
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }); },
   phase29,
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false }); },
-  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38, phase39, phase40, phase41];
+  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38, phase39, phase40, phase41, phase42];
 let n = 0;
 for (const prog of PHASES) {
   if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase
