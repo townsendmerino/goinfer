@@ -190,7 +190,7 @@ cache is a large fraction of a full one (57% hit at 16 slots vs 82% at 38, `docs
   of 16 GB); expect the 1.5B–7B class". Cheap: the planner reads the header of the file it just
   wrote.
 - **The web UI's Models tab shows fit before download.** `pull.File` already carries `Size`
-  (`pull/pull.go:179`), and a GGUF's size is within a few percent of its resident
+  (`pull/pull.go:181`), and a GGUF's size is within a few percent of its resident
   bytes at the same quant, so the file table can say *fits / needs streaming / will not fit* per
   row from the listing alone, before the multi-gigabyte transfer. The exact plan comes after the
   header is on disk.
@@ -354,7 +354,7 @@ G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residenc
 `internal/serveapp/main.go:488-376` (the flags the plan subsumes) · `decoder/model.go:194-187`
 (`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:115-194` (the guard) ·
 `decoder/weightbytes.go:94` (`ResidentWeightBytes`, the accountant to replace) ·
-`pull/pull.go:179` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
+`pull/pull.go:181` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
 priority order borrowed).
 
 <!-- doc-reviewed: 2026-09-13 -->
