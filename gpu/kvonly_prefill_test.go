@@ -66,7 +66,7 @@ func TestWebGPU_ForwardNoLogits_byteIdenticalKV(t *testing.T) {
 
 			// Generate 4 continuation tokens from the reference state
 			wantCont := make([]int, 4)
-			currEmb := m.EmbedResidentForTest(prompt[len(prompt)-1])
+			var currEmb []float32
 			pos := len(prompt)
 			lastL := wantLogits
 			for step := 0; step < 4; step++ {

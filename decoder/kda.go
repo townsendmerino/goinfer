@@ -160,4 +160,3 @@ func kdaRecurrence(core, q, k, v, gDecayRaw, betaLogits []float32, w *kdaWeights
 		kdaRecurrentStepInto(out, qh, kh, vh, decay, beta, S)
 	}
 }
-

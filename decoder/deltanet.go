@@ -451,4 +451,3 @@ func l2normScaled(x []float32, s float32) []float32 {
 	l2normScaledInto(out, x, s)
 	return out
 }
-
