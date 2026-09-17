@@ -769,13 +769,65 @@ checks that the list is laid out below its heading at full width (found by W15's
      what made *this* incident invisible — the page had no way to show what quant was about to be
      used, or that a bigger model would blow the budget under it. Arguably the higher-value half of
      this item: a visible, changeable quant control on the load flow would have caught the problem
-     before it happened, not after.
+     before it happened, not after. **Scoped 2026-09-17** (below) rather than re-derived from
+     scratch: most of this is already designed, in a doc this entry did not originally cross-link.
   Part 1 shipped without needing the design-decision write-up §1 asks of a Tier C item — it is
   additive to the existing pull flow, not a change to any settled behavior. **Part 2 still owes
   it**, and still more than part 1 did: it changes what W5 called settled ("the server's own
   settings … no per-request override"), so it needs its own explicit re-examination, not an
   assumption that W5's reasoning still holds unchanged for a *load-time* (not per-chat-request)
   choice.
+
+  **Scoping (2026-09-17).** Part 2 is really two questions this entry originally ran together —
+  *seeing* what a load would do, and *changing* it — and they are not the same size.
+
+  **This is not a fresh idea; most of it is already designed.**
+  `docs/tasks/task-fit-to-hardware.md` §3 has an entry, "The web UI's Models tab shows fit before
+  download," written before this incident and never wired up: `pull.File` already carries `Size`
+  (`pull/pull.go:181`), and a GGUF's size is within a few percent of its resident bytes at the same
+  quant, so *the file table can say fits / needs streaming / will not fit per row from the listing
+  alone, before the multi-gigabyte transfer* — no header parsing needed for that coarse read. That
+  doc's own worked example is worth re-reading directly: a gemma-4-26B expert-cache decline, three
+  lines, every number computed by the plan (§4).
+
+  **What's actually buildable now, checked against the tree rather than assumed:**
+  - **A coarse per-file tag in "List files" — cheapest, no new decision.** `handleWebList`
+    (`internal/serveapp/webui.go`) already returns each file's size; `decoder.FreeBytesFor(name
+    string) (int64, bool)` (`decoder/backend.go:151`) is a standalone query — no model load, callable
+    against `s.cfg.backend` any time — and `s.cfg.quant` is already on the server struct
+    (`internal/serveapp/openai.go:294`, field `cfg`). `size vs free-at-current-quant` is enough for a
+    *fits / tight / won't fit* label on every row, before anything downloads. This alone would have
+    caught the original incident: the 7B file would have shown "won't fit at int8int8" before the
+    pull, not after the Load.
+  - **An exact check right after a pull finishes, before Load.** `internal/fitcmd` already computes
+    the real plan via `decoder.Model.Plan` — but only as a CLI dry run that loads the checkpoint and
+    prints to stdout (`Run`, unexported everything else). Extracting that into a library function
+    returning a struct, callable from a new `/web/models/fit`-shaped route right after a pull
+    completes (the file is local by then; the cost is one real load, which is small next to the
+    transfer that just finished), would show the numbers `docs/tasks/task-fit-to-hardware.md` §4
+    already specifies the wording for — before the Load button is even clicked, using the CURRENT
+    quant/backend. Read-only: shows what *would* happen, changes nothing.
+  - **Still blocked, not this item's problem to solve:** an EXACT check *before* the download —
+    header-only GGUF parsing (param counts/MoE geometry without a full `Load()`) — is the specific
+    half `task-fit-to-hardware.md` Phase 1 left unstarted (`docs/tasks/task-gpu-paths-2026-09.md`'s
+    G11 entries have the full reasoning for why). The coarse size-based tag above is what stands in
+    for it until that lands; do not conflate the two or promise the exact number pre-download.
+  - **Making it changeable, not just visible — the part that actually revisits W5.** The mechanism
+    already exists: `--model name=path,quant=…` is a real, already-parsed per-model override
+    (`internal/serveapp/main.go`, the `-quant` flag's own help text). `handleWebLoad` (W5) already
+    narrows *what path* the page may act on (`webLoadPath`); exposing a quant *choice* on that same
+    narrow route is a smaller lift than it sounds, technically — but it is still the load-bearing
+    decision this entry keeps deferring, because "the server's own settings, no per-request
+    override" was W5's stated reasoning and a load-time quant picker is a real, if narrower,
+    exception to it. Reusable groundwork (the fit-check route above) makes the choice legible before
+    committing to it either way, which is worth having regardless of how this decision lands.
+
+  **Recommendation, in build order:** the coarse per-file tag first (S — no design decision owed,
+  reuses three things that already exist, closes the exact gap the incident exposed) · the exact
+  post-pull check second (M — a real but contained refactor of `internal/fitcmd`, still no new
+  policy) · the changeable quant control last and separately (needs its own sign-off, not a
+  default). Not proposing to build any of them without a further go-ahead — this is the scoping the
+  entry itself said it still owed.
 
 ---
 
