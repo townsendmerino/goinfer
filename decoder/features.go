@@ -451,17 +451,16 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 	// corrected 2026-09-16): YaRN mscale (FeatRopeMscale) and logit softcap
 	// (FeatFinalLogitSoftcap) are BOTH declared below now — this comment's "no YaRN mscale; no
 	// logit softcap" was stale, from before they landed. What remains genuinely NOT implemented:
-	// per-layer rotary WIDTH (only per-layer base); no MLA/SSM.
+	// per-layer rotary WIDTH (only per-layer base); no SSM.
 	//
-	// TRAP — before adding FeatMLA here (or otherwise making a GROUP-ROUTED family
-	// CUDA-admissible), verify the nGroup/topkGroup mapping at cuda/resident.go's moe_route
-	// launch END TO END. DeepSeek and Kimi are the only families with nGroup != topkGroup, and
-	// they decline on this line today, which is the sole reason that mapping has never run.
-	// Every admissible MoE model has nGroup == topkGroup, so a transposition there is a no-op
-	// and passes every gate in the repo (verified by transposing it). Adding MLA arms it: the
-	// first group-routed forward would route through the wrong groups, and NOTHING would go red
-	// — expert selection is discrete, so the output is unrelated rather than slightly off, the
-	// exact class the Granite SSM investigation cost 66% agreement to. Gate the mapping first.
+	// TRAP, resolved 2026-09 — see cuda/resident.go's own moe_route call site for the full
+	// story: the nGroup/topkGroup argument order was unverified for a real mismatch until this
+	// pass (found live, not assumed: a deliberate transposition passed the existing
+	// TestMLAResidentParityCUDA clean, since its generation check compared only the first
+	// token). Closed by strengthening that test to compare the full sequence, confirmed to
+	// catch the same transposition, restored clean. FeatMLA declared below with real
+	// end-to-end parity against testdata/deepseek-tiny (n_group=2, topk_group=1 — genuinely
+	// mismatched, not a coincidental no-op case).
 	//
 	// FeatMoE covers the ROUTED block (router + stacked experts + every routing flavour the
 	// route kernel handles) AND the always-on UNGATED shared expert (GLM/DeepSeek). The GATED
@@ -593,6 +592,7 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatLayerNorm:     true,
 		FeatParallelBlock: true,
 		FeatLogitScale:    true,
+		FeatMLA:           true, // C4a-d latent-KV attention (DeepSeek, Kimi)
 	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.

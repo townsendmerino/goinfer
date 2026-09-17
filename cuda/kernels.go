@@ -237,6 +237,12 @@ var routerF32PTX []byte
 //go:embed testdata/fused_qkv.ptx
 var fusedQKVPTX []byte
 
+// mlaPTX: mla_latent_store, mla_head_matvec, mla_q_rope, mla_attn — DeepSeek / Kimi
+// Multi-head Latent Attention (MLA) resident decode kernels (FeatMLA).
+//
+//go:embed testdata/mla.ptx
+var mlaPTX []byte
+
 // nibblePosFast maps a weight's index within an 8-weight word (0..7) to its nibble slot,
 // so the coalesced GEMV's even/odd byte split (word&0x0F0F0F0F / (word>>4)&0x0F0F0F0F)
 // lands weights 0..3 in the low-nibble bytes and 4..7 in the high-nibble bytes.

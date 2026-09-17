@@ -180,6 +180,8 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		// (audit-2026-09-10 G-13(b)). Both figures are this census's first reading of them.
 		"route_gptoss":          4608, // gptoss_act.ptx; larger than moe_route, so backend.go forces it too
 		"rope_kv_mrope_batched": 32,   // rope_mrope_prefill.ptx
+		"mla_q_rope":            32,   // mla.ptx (FeatMLA)
+		"mla_latent_store":      32,   // mla.ptx (FeatMLA)
 	}
 	got := map[string]int{}
 	for _, r := range rows {

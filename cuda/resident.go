@@ -155,9 +155,13 @@ func resolveCtxCapFit(m *decoder.Model, request, modelCtx int) int {
 func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 	var perPos int64
 	for i := range layers {
-		perPos += int64(layers[i].kvDim)
+		if layers[i].isMLA {
+			perPos += int64(layers[i].kvDim) * 4 // MLA caches 1 row of latDim floats per pos (not 2x for K+V)
+		} else {
+			perPos += int64(layers[i].kvDim) * 2 * 4 // K+V
+		}
 	}
-	return perPos * 2 /* K+V */ * 4 /* f32 */ * int64(cap)
+	return perPos * int64(cap)
 }
 
 // splitkvNever disables the split-KV decode attention for a geometry (no depth within the resident's
@@ -392,6 +396,12 @@ type cudaLayer struct {
 	// head) and the context is scaled by sigmoid(gate) before o_proj. The weight stays fused
 	// because it is quantized; the split happens on the activation.
 	qGate bool
+
+	// MLA (DeepSeek / Kimi, FeatMLA)
+	isMLA                      bool
+	mlaQA, mlaQB, mlaQ, mlaKVA cudaWQ
+	mlaQANorm, mlaKVANorm      Buffer
+	mlaWUK, mlaWUV             Buffer
 
 	// CUDA-graph capture of this layer's three STATIC launch segments (r.graphs). segA = QKV proj +
 	// qk/v-norm (pre-RoPE); segB = ctx-quant + o-proj + the MLP up to the router readback; segC =
@@ -658,6 +668,19 @@ type cudaResident struct {
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
 	fMoEWaccBias                                            Pipeline // gpt-oss: wacc + per-expert down bias
 	fRouterF32, fScaleWgt, fRmsNW, fScaleVec                Pipeline // gemma4 MoE (router_f32 module)
+	fMlaStore, fMlaHeadMV, fMlaQRope, fMlaAttn              Pipeline // MLA (mla module, FeatMLA)
+
+	// MLA (DeepSeek / Kimi, FeatMLA) geometry & params
+	isMLA         bool
+	mlaRank       int // kv_lora_rank
+	mlaLatDim     int // kv_lora_rank + qk_rope_head_dim
+	mlaQKHead     int // qk_nope + qk_rope
+	mlaQKNope     int // qk_nope_head_dim
+	mlaQKRope     int // qk_rope_head_dim
+	mlaVHead      int // v_head_dim
+	mlaQLoRA      int // q_lora_rank (0 if direct q_proj)
+	mlaInterleave bool
+	mlaRopeScale  float32
 
 	fuseQKV     bool  // all of Q/K/V/gate/up int4 ⇒ the fused K1 (fQKV) + fGU super-kernels are usable
 	launchErr   error // sticky first launch error within a launchToken call (reset per token) — M23
@@ -688,6 +711,10 @@ type cudaResident struct {
 	dnQg                                                                         Buffer // [2*qDim] the fused [query ‖ gate] q_proj output, before the split
 	dnAGate                                                                      Buffer // [qDim] attention output gate (qGate layers)
 	moeQ                                                                         Buffer
+
+	// MLA per-token scratch (allocated only when isMLA).
+	mlaQAOut, mlaQAQ, mlaQASc Buffer
+	mlaKVDown, qAbs, wsum     Buffer
 
 	// Gemma-4 MoE branch scratch [hidden] (allocated only when gemma4Moe). x1 = dense branch, x2 =
 	// expert-sum branch, rn = the router's weightless-normed raw-h input. Kept SEPARATE from r.x
@@ -2058,10 +2085,14 @@ func (r *cudaResident) addOneArg() int32 {
 	return 0
 }
 
-func (r *cudaResident) rms(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
-	return r.launch(r.fRms, onecfg(256, (r.hidden+256)*4),
-		Arg(src), Arg(nrm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
+func (r *cudaResident) rmsDim(src, nrm Buffer, dim int, qOut Buffer, sOut Buffer) error {
+	return r.launch(r.fRms, onecfg(256, (dim+256)*4),
+		Arg(src), Arg(nrm), gpu.ArgValue(int32(dim)), gpu.ArgValue(r.eps),
 		gpu.ArgValue(r.addOneArg()), Arg(qOut), Arg(sOut))
+}
+
+func (r *cudaResident) rms(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
+	return r.rmsDim(src, nrm, r.hidden, qOut, sOut)
 }
 
 // layerNormQuant is rms's mean-centered twin (Cohere/Command-R, FeatLayerNorm): no addOne
@@ -2198,20 +2229,23 @@ func (r *cudaResident) moeMLPPre(Ly *cudaLayer, x Buffer) error {
 		gpu.ArgValue(int32(r.hidden)), Arg(r.rLogits)); e != nil {
 		return e
 	}
-	// TRAP: the nGroup/topkGroup mapping below has NEVER been exercised through this path.
+	// TRAP, formerly live, now closed with a test that actually catches it (2026-09): CUDA now
+	// declares FeatMLA (DeepSeek/Kimi, decoder/features.go), so the group-routed families this
+	// comment used to say could never reach this line now do, with a REAL mismatch —
+	// testdata/deepseek-tiny sets n_group=2, topk_group=1.
 	//
-	// moe_route's group-limited routing is well gated as a KERNEL — TestMoERoute constructs
-	// nGroup != topkGroup (8/4) across four cases and asserts against cpuRoute. But that test
-	// builds its own argument list and calls the kernel directly, so it validates the kernel's
-	// math, not this call's argument ORDER. Every CUDA-admissible MoE model has
-	// nGroup == topkGroup (glm-tiny sets 1/1; mixtral and gemma4-moe set neither, so both
-	// default to 0; the gemma4 path below hardcodes 1, 1), because the group-routed families
-	// (DeepSeek, Kimi) decline earlier on FeatMLA, which CUDA does not declare.
-	//
-	// Consequence, measured not assumed: transposing these two arguments and re-running every
-	// gate — kernel-level suite, resident parity gates, TestMoERoute itself — passes all of
-	// them. The transposition is currently INERT rather than silent-wrong, since nGroup ==
-	// topkGroup makes the swap a no-op, but nothing here would notice if it were live.
+	// This mapping was found UNVERIFIED reviewing that change: TestMoERoute constructs
+	// nGroup != topkGroup (8/4) and asserts against cpuRoute, but builds its own argument list
+	// and calls the kernel directly, so it validates the kernel's math, not this call's argument
+	// ORDER — and TestMLAResidentParityCUDA's own greedy-generation check compared only
+	// cpuToks[0], not the sequence, which a transposition passed cleanly (forward-logit cosine
+	// unaffected; token 0 unaffected; tokens 4-7 silently different — a discrete-selection bug
+	// does not have to show up in the first few tokens the same way a numerical one would).
+	// Reproduced directly: swapping the two ArgValue calls below, TestMLAResidentParityCUDA
+	// PASSED. Fixed by comparing the full generated sequence, not just its first token
+	// (cuda/mla_resident_test.go) — re-run with the same swap, it now fails at token 4 exactly
+	// where the logged (but previously unchecked) divergence already was. Restored the correct
+	// order and confirmed clean again before either change shipped.
 	//
 	// Typed launch wrappers (one generated type per (parameter name, C type)) make a
 	// transposition at this site a COMPILE error. They do not verify that the values are the
@@ -2683,6 +2717,95 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 	return nil
 }
 
+// segAMLA runs the MLA attention block: pre-norm -> Q (direct or LoRA bottleneck) ->
+// KV-A projection -> latent store -> W_UK absorb -> Q RoPE -> MLA latent attention ->
+// W_UV lift. Leaves the attention context in r.cctx [Ly.qDim], ready for segB (o-proj + FFN).
+func (r *cudaResident) segAMLA(Ly *cudaLayer, l, pos, ropePos int) error {
+	nullBias := ArgNull()
+	// 1. Pre-norm on r.x -> (r.aq, r.aSc)
+	if e := r.norm(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
+		return e
+	}
+	// 2. Query projection: direct or LoRA bottleneck (q_a -> norm -> q_b)
+	if r.mlaQLoRA > 0 {
+		if e := r.doG(Ly.mlaQA, r.aq, r.aSc, nullBias, r.mlaQAOut, 0); e != nil {
+			return e
+		}
+		if e := r.rmsDim(r.mlaQAOut, Ly.mlaQANorm, r.mlaQLoRA, r.mlaQAQ, r.mlaQASc); e != nil {
+			return e
+		}
+		if e := r.doG(Ly.mlaQB, r.mlaQAQ, r.mlaQASc, nullBias, r.qB, 0); e != nil {
+			return e
+		}
+	} else {
+		if e := r.doG(Ly.mlaQ, r.aq, r.aSc, nullBias, r.qB, 0); e != nil {
+			return e
+		}
+	}
+	// 3. KV-A projection -> r.mlaKVDown [latDim]
+	if e := r.doG(Ly.mlaKVA, r.aq, r.aSc, nullBias, r.mlaKVDown, 0); e != nil {
+		return e
+	}
+	// 4. Latent Store: RMSNorm(kvDown[:rank]) + decoupled RoPE(kvDown[rank:]) -> r.kc[l][pos*latDim]
+	var intl int32
+	if r.mlaInterleave {
+		intl = 1
+	}
+	base := pos * r.mlaLatDim
+	if err := r.launch(r.fMlaStore, onecfg(64, 0),
+		Arg(r.mlaKVDown), Arg(Ly.mlaKVANorm), Arg(Ly.invF), Arg(r.kc[l]),
+		gpu.ArgValue(int32(r.mlaRank)), gpu.ArgValue(int32(r.mlaQKRope)), gpu.ArgValue(int32(ropePos)),
+		gpu.ArgValue(r.eps), gpu.ArgValue(int32(base)), gpu.ArgValue(r.mlaRopeScale), gpu.ArgValue(intl)); err != nil {
+		return err
+	}
+	// 5. W_UK Absorb: per-head block-diagonal matvec of W_UKᵀ with Q's qkNope slice -> r.qAbs
+	elemCountAbs := r.nH * r.mlaRank
+	cfgAbs := LaunchConfig{GridX: uint32(elemCountAbs), GridY: 1, GridZ: 1, BlockX: 64, BlockY: 1, BlockZ: 1}
+	if err := r.launch(r.fMlaHeadMV, cfgAbs,
+		Arg(r.qB), Arg(Ly.mlaWUK), Arg(r.qAbs),
+		gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.mlaRank)), gpu.ArgValue(int32(r.mlaQKNope)),
+		gpu.ArgValue(int32(r.mlaQKHead)), gpu.ArgValue(int32(r.mlaLatDim))); err != nil {
+		return err
+	}
+	// 6. Q RoPE: decoupled RoPE on Q's qkRope slice -> r.qAbs[h*latDim + rank]
+	half := r.mlaQKRope / 2
+	cfgRope := LaunchConfig{GridX: uint32((r.nH*half + 63) / 64), GridY: 1, GridZ: 1, BlockX: 64, BlockY: 1, BlockZ: 1}
+	if err := r.launch(r.fMlaQRope, cfgRope,
+		Arg(r.qB), Arg(Ly.invF), Arg(r.qAbs),
+		gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.mlaQKHead)), gpu.ArgValue(int32(r.mlaQKNope)),
+		gpu.ArgValue(int32(r.mlaQKRope)), gpu.ArgValue(int32(r.mlaRank)), gpu.ArgValue(int32(r.mlaLatDim)),
+		gpu.ArgValue(int32(ropePos)), gpu.ArgValue(intl), gpu.ArgValue(r.mlaRopeScale)); err != nil {
+		return err
+	}
+	// 7. MLA Latent Attention: causal dot over latDim, two-pass softmax, value accumulation over rank prefix -> r.wsum
+	nKeys := pos + 1
+	nWin := nKeys
+	if Ly.window > 0 && nKeys > int(Ly.window) {
+		nWin = int(Ly.window)
+	}
+	cfgAttn := LaunchConfig{
+		GridX: uint32(r.nH), GridY: 1, GridZ: 1,
+		BlockX: 128, BlockY: 1, BlockZ: 1,
+		SharedMemBytes: uint32((nWin + 128) * 4),
+	}
+	if err := r.launch(r.fMlaAttn, cfgAttn,
+		Arg(r.qAbs), Arg(r.kc[l]), Arg(r.wsum),
+		gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.mlaLatDim)), gpu.ArgValue(int32(r.mlaRank)),
+		gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1))); err != nil {
+		return err
+	}
+	// 8. W_UV Lift: per-head block-diagonal matvec of W_UV with r.wsum -> r.cctx [Ly.qDim]
+	elemCountLift := r.nH * r.mlaVHead
+	cfgLift := LaunchConfig{GridX: uint32(elemCountLift), GridY: 1, GridZ: 1, BlockX: 64, BlockY: 1, BlockZ: 1}
+	if err := r.launch(r.fMlaHeadMV, cfgLift,
+		Arg(r.wsum), Arg(Ly.mlaWUV), Arg(r.cctx),
+		gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(r.mlaVHead)), gpu.ArgValue(int32(r.mlaRank)),
+		gpu.ArgValue(int32(r.mlaRank)), gpu.ArgValue(int32(r.mlaVHead))); err != nil {
+		return err
+	}
+	return nil
+}
+
 // segB: context-quant + o-proj (accum into the residual, or sandwich-norm then add) + the MLP up to
 // the router readback — the whole dense MLP for a dense layer (no readback gap, segC is nil), or the
 // MoE pre-readback half (moeMLPPre / gemma4MoeMLPPre) for a routed layer.
@@ -2907,6 +3030,10 @@ func (r *cudaResident) captureGraphs() error {
 			}
 			continue
 		}
+		if Ly.isMLA {
+			// For MLA, segA is dynamic (rope and attention depend on pos) and graphs are disabled.
+			continue
+		}
 		gA, e := r.stream.Capture(func() error { return r.segA(Ly, ll) })
 		if e != nil {
 			return fmt.Errorf("layer %d segA: %w", l, e)
@@ -2987,76 +3114,82 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 			}
 			continue
 		}
-		// segA: QKV proj + qk/v-norm (pre-RoPE, static).
-		if gA {
-			if e := Ly.gSegA.Replay(); e != nil {
+		if Ly.isMLA {
+			if e := r.segAMLA(Ly, l, pos, ropePos); e != nil {
 				return e
 			}
-			if r.graphsSync {
-				if err := r.stream.Sync(); err != nil {
+		} else {
+			// segA: QKV proj + qk/v-norm (pre-RoPE, static).
+			if gA {
+				if e := Ly.gSegA.Replay(); e != nil {
+					return e
+				}
+				if r.graphsSync {
+					if err := r.stream.Sync(); err != nil {
+						return err
+					}
+				}
+			} else if e := r.segA(Ly, l); e != nil {
+				return e
+			}
+			// --- dynamic gap: rope_kv + attention (bind pos/nKeys; attention's shared-mem grows with the
+			// attended span — never graph-static). Same stream as the segments, so ordering is preserved.
+			// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): rhalf == hd/2 for full rotary, rotaryDim/2 for partial.
+			if err := r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
+				Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
+				gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+				gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(ropePos)), gpu.ArgValue(int32(Ly.rhalf)),
+				gpu.ArgValue(Ly.mscale), gpu.ArgValue(qTempScale)); err != nil {
+				return err
+			}
+			nKeys := pos + 1
+			// Sliding window (per layer: Mistral all-local, Mellum interleaves); shared sized to the attended span.
+			nWin := nKeys
+			if Ly.window > 0 && nKeys > int(Ly.window) {
+				nWin = int(Ly.window)
+			}
+			// M-16: split-KV is REQUIRED, not merely preferred, once the single-block launch would
+			// exceed the device's shared-memory limit. The `r.splitkvAttn` env gate and the
+			// per-geometry perf threshold both describe when split-KV is FASTER; neither knows when
+			// the alternative cannot run at all. Without this, -ctx 16384 on a model whose geometry
+			// says splitkvNever (nH >= 24: Qwen2.5-7B, Llama-3-8B, phi3-mini) fails at position
+			// 12,160 — or silently drops to the sequential prefill.
+			mustSplit := splitKVRequired(nWin)
+			if mustSplit && (!r.splitkvAttn || r.skScores == (Pipeline{})) {
+				return fmt.Errorf("cuda: attention at %d attended keys needs %d B of shared memory, "+
+					"past this device's %d B limit, and split-KV is unavailable (%s) — lower -ctx or "+
+					"re-enable GOINFER_SPLITKV_ATTN (M-16)", nWin, attnShmemBytes(nWin),
+					singleBlockAttnShmemLimit,
+					map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
+			}
+			if r.splitkvAttn && r.skScores != (Pipeline{}) && (mustSplit || nWin >= r.splitkvMin(Ly.nKV, Ly.hd)) {
+				// Campaign-A split-KV: high-occupancy, BIT-IDENTICAL to attn_batched(M=1) (proven by
+				// TestSplitKV_bitIdentical) — fills the SMs the single-block kernel leaves idle at long ctx.
+				// Gated PER LAYER on nWin (the EFFECTIVE attended span) against a per-geometry threshold, so
+				// shallow decode keeps the cheaper single-block path. nWin not nKeys: a sliding-window layer
+				// never attends more than `window` keys, so its cost is set by the window, not by position —
+				// gating it on position made gemma3's windowed layers take the split path at a 512-key span
+				// (its loss regime) at every depth past the window. Both arms are byte-identical, so a layer
+				// flipping arms mid-request as nWin grows is safe by construction.
+				if err := r.splitKVAttnDecode(l, pos); err != nil {
 					return err
 				}
-			}
-		} else if e := r.segA(Ly, l); e != nil {
-			return e
-		}
-		// --- dynamic gap: rope_kv + attention (bind pos/nKeys; attention's shared-mem grows with the
-		// attended span — never graph-static). Same stream as the segments, so ordering is preserved.
-		// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): rhalf == hd/2 for full rotary, rotaryDim/2 for partial.
-		if err := r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
-			Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
-			gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-			gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(ropePos)), gpu.ArgValue(int32(Ly.rhalf)),
-			gpu.ArgValue(Ly.mscale), gpu.ArgValue(qTempScale)); err != nil {
-			return err
-		}
-		nKeys := pos + 1
-		// Sliding window (per layer: Mistral all-local, Mellum interleaves); shared sized to the attended span.
-		nWin := nKeys
-		if Ly.window > 0 && nKeys > int(Ly.window) {
-			nWin = int(Ly.window)
-		}
-		// M-16: split-KV is REQUIRED, not merely preferred, once the single-block launch would
-		// exceed the device's shared-memory limit. The `r.splitkvAttn` env gate and the
-		// per-geometry perf threshold both describe when split-KV is FASTER; neither knows when
-		// the alternative cannot run at all. Without this, -ctx 16384 on a model whose geometry
-		// says splitkvNever (nH >= 24: Qwen2.5-7B, Llama-3-8B, phi3-mini) fails at position
-		// 12,160 — or silently drops to the sequential prefill.
-		mustSplit := splitKVRequired(nWin)
-		if mustSplit && (!r.splitkvAttn || r.skScores == (Pipeline{})) {
-			return fmt.Errorf("cuda: attention at %d attended keys needs %d B of shared memory, "+
-				"past this device's %d B limit, and split-KV is unavailable (%s) — lower -ctx or "+
-				"re-enable GOINFER_SPLITKV_ATTN (M-16)", nWin, attnShmemBytes(nWin),
-				singleBlockAttnShmemLimit,
-				map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
-		}
-		if r.splitkvAttn && r.skScores != (Pipeline{}) && (mustSplit || nWin >= r.splitkvMin(Ly.nKV, Ly.hd)) {
-			// Campaign-A split-KV: high-occupancy, BIT-IDENTICAL to attn_batched(M=1) (proven by
-			// TestSplitKV_bitIdentical) — fills the SMs the single-block kernel leaves idle at long ctx.
-			// Gated PER LAYER on nWin (the EFFECTIVE attended span) against a per-geometry threshold, so
-			// shallow decode keeps the cheaper single-block path. nWin not nKeys: a sliding-window layer
-			// never attends more than `window` keys, so its cost is set by the window, not by position —
-			// gating it on position made gemma3's windowed layers take the split path at a 512-key span
-			// (its loss regime) at every depth past the window. Both arms are byte-identical, so a layer
-			// flipping arms mid-request as nWin grows is safe by construction.
-			if err := r.splitKVAttnDecode(l, pos); err != nil {
-				return err
-			}
-		} else if r.prefillReady {
-			// Coalesced M=1 decode attention: attn_batched with M=1 is BIT-IDENTICAL to the glue
-			// `attention` (TestAttnBatched_bitIdentical) but reads K via float4 — 21.96%→98% bytes/sector.
-			// ncu found the glue decode attention L1TEX-latency-bound at 2048 (~63% of the decode budget,
-			// the 221→97 tok/s long-context deficit vs current Ollama); the coalesced read recovers it.
-			// startPos=pos, M=1 → nKeys = pos+1; same GridX/block/shared/ctx-layout as the glue launch, so
-			// decode stays byte-identical. glue `attention` (audited) is UNTOUCHED and is the fallback below.
-			if err := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-				Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l)); err != nil {
-				return err
-			}
-		} else {
-			if err := r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-				Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx)); err != nil {
-				return err
+			} else if r.prefillReady {
+				// Coalesced M=1 decode attention: attn_batched with M=1 is BIT-IDENTICAL to the glue
+				// `attention` (TestAttnBatched_bitIdentical) but reads K via float4 — 21.96%→98% bytes/sector.
+				// ncu found the glue decode attention L1TEX-latency-bound at 2048 (~63% of the decode budget,
+				// the 221→97 tok/s long-context deficit vs current Ollama); the coalesced read recovers it.
+				// startPos=pos, M=1 → nKeys = pos+1; same GridX/block/shared/ctx-layout as the glue launch, so
+				// decode stays byte-identical. glue `attention` (audited) is UNTOUCHED and is the fallback below.
+				if err := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
+					Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l)); err != nil {
+					return err
+				}
+			} else {
+				if err := r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
+					Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx)); err != nil {
+					return err
+				}
 			}
 		}
 		if r.subCap { // pre-o-proj attention context (qDim), before quant — the cross-box discriminator (live path only)

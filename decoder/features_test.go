@@ -194,8 +194,8 @@ var admissionGolden = map[string][]string{
 	// two backends cohere does.
 	"cohere":      {"cuda", "metal"},
 	"cohere2":     {"cuda", "metal"},
-	"deepseek_v2": {"webgpu"},
-	"deepseek_v3": {"webgpu"},
+	"deepseek_v2": {"cuda", "webgpu"},
+	"deepseek_v3": {"cuda", "webgpu"},
 	// G6 (docs/tasks/task-gpu-paths-2026-09.md): webgpu declares FeatEmbedScale/FeatFinalLogitSoftcap/
 	// FeatSandwichNorm/FeatGatedGELU — gemma3 (uniform head_dim) now reaches it for real,
 	// verified against a genuine non-seeded checkpoint (testdata/gemma3-vl-tiny's text tower,
@@ -236,7 +236,7 @@ var admissionGolden = map[string][]string{
 	// Metal's own gate uses on this fixture).
 	"gpt_oss":          {"cuda", "metal", "webgpu"},
 	"granitemoehybrid": {"webgpu"},
-	"kimi_k2":          {"webgpu"},
+	"kimi_k2":          {"cuda", "webgpu"},
 	"bailing_hybrid":   {}, // FeatKDA undeclared everywhere -- new this pass
 	"llama":            {"cuda", "metal", "webgpu"},
 	// G5 (docs/tasks/task-gpu-paths-2026-09.md): FeatNoPE declared on cuda+metal (RopeInvFreqLayer
@@ -376,7 +376,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap,
 			FeatDeltaNet, FeatMoEGatedShared, FeatRopeMscale, FeatAttnSink, FeatOutBias,
 			FeatNoPE, FeatAttnTemp, FeatPostOnlyNorm, FeatQKNormWhole,
-			FeatLayerNorm, FeatParallelBlock, FeatLogitScale},
+			FeatLayerNorm, FeatParallelBlock, FeatLogitScale,
+			FeatMLA},
 		// G6 (docs/tasks/task-gpu-paths-2026-09.md) added six more: FeatEmbedScale (free — decoder
 		// already applies it host-side), FeatFinalLogitSoftcap/FeatOutBias (existing-kernel
 		// wiring), FeatSandwichNorm (defeats the fused residual epilogue, no new kernel),
@@ -568,18 +569,14 @@ func TestResidentMoECapacity_routerCap(t *testing.T) {
 	if !residentMoECapacityOK(arch, "cuda") {
 		t.Error("kimi_k2 (384 experts) must now pass the CUDA router cap (raised to 512)")
 	}
-	// ...and WebGPU is where that actually matters: it is the only backend declaring FeatMLA, so
-	// K2 is genuinely resident-eligible there now. On cuda/metal it still declines, on FEATURES not
-	// capacity — asserted below so a future MLA-on-CUDA leg does not mistake this for already-done.
+	// ...and WebGPU + CUDA are where that actually matters: both declare FeatMLA, so
+	// K2 is genuinely resident-eligible there now. On metal it still declines on both features
+	// (needs FeatMLA) and router capacity (shader 256).
 	if !ResidentEligible(arch, "webgpu") {
 		t.Error("kimi_k2 must be WebGPU-resident-eligible once the router cap admits 384")
 	}
-	if ResidentEligible(arch, "cuda") {
-		t.Error("kimi_k2 must still decline on CUDA — it needs FeatMLA, which CUDA does not implement")
-	}
-	if miss := missingFeatures(arch.residentFeatures(), residentBackendFeatures["cuda"]); len(miss) == 0 {
-		t.Error("the CUDA decline for kimi_k2 must be a FEATURE decline (MLA); if this is empty the " +
-			"cap is now the only guard and the assertion above is testing the wrong thing")
+	if !ResidentEligible(arch, "cuda") {
+		t.Error("kimi_k2 must now be resident-eligible on CUDA with FeatMLA declared")
 	}
 
 	// Metal is DECLARED in the cap map for the first time (its shader really is 256 and rejects

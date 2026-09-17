@@ -205,7 +205,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		qGate                                 bool
 		dnQKV, dnZ, dnOut, dnB, dnA           hostW
 		dnConvW, dnDtBias, dnNegExpA, dnNormW []float32
+
+		// MLA (DeepSeek / Kimi, FeatMLA)
+		isMLA                      bool
+		mlaQA, mlaQB, mlaQ, mlaKVA hostW
+		mlaQANorm, mlaKVANorm      []float32
+		mlaWUK, mlaWUV             []float32
 	}
+	// MLA geometry (DeepSeek / Kimi).
+	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, mlaAttnScale, mlaRopeScale, mlaOK := m.MLAResidentParams()
+
 	// Gated-DeltaNet hybrid geometry. Resolved before the per-layer pack because BOTH layer kinds
 	// branch on it: the linear layers take the recurrence, and the softmax ones carry the fused
 	// double-width q_proj that no other family has.
@@ -289,6 +298,46 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					"(%d/%d) — the loader did not populate them for this container", l, len(qN), len(kN)))
 			}
 			proj = []projEnt{{&hl.q, qP}, {&hl.k, kP}, {&hl.v, vP}, {&hl.o, oP}}
+		case mlaOK:
+			hl.isMLA = true
+			qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.MLALayerWeights(l)
+			hl.mlaQANorm, hl.mlaKVANorm = qANorm, kvANorm
+			latDim := kvLoRA + qkRope
+			if qLoRA > 0 {
+				qaWM := linalg.WrapF32(qA, qLoRA, H)
+				qbWM := linalg.WrapF32(qB, nH*(qkNope+qkRope), qLoRA)
+				proj = append(proj,
+					projEnt{&hl.mlaQA, &qaWM},
+					projEnt{&hl.mlaQB, &qbWM},
+				)
+			} else {
+				qWM := linalg.WrapF32(qProj, nH*(qkNope+qkRope), H)
+				proj = append(proj, projEnt{&hl.mlaQ, &qWM})
+			}
+			kvaWM := linalg.WrapF32(kvA, latDim, H)
+			oWM := linalg.WrapF32(oProj, H, nH*vHead)
+			proj = append(proj,
+				projEnt{&hl.mlaKVA, &kvaWM},
+				projEnt{&hl.o, &oWM},
+			)
+			// kvB is [nH*(qkNope+vHead), kvLoRA] row-major (per head: k_nope rows ‖ v rows).
+			// Slice into W_UKᵀ [nH, kvLoRA, qkNope] (transposed for the absorb GEMV) and
+			// W_UV [nH, vHead, kvLoRA] (the lift, used as-is) — matching gpu/residency.go:880-893.
+			hRow := qkNope + vHead
+			wuk := make([]float32, nH*kvLoRA*qkNope)
+			wuv := make([]float32, nH*vHead*kvLoRA)
+			for h := range nH {
+				for d := range qkNope {
+					src := kvB[(h*hRow+d)*kvLoRA : (h*hRow+d)*kvLoRA+kvLoRA]
+					for cc := range kvLoRA {
+						wuk[(h*kvLoRA+cc)*qkNope+d] = src[cc]
+					}
+				}
+				for ev := range vHead {
+					copy(wuv[(h*vHead+ev)*kvLoRA:(h*vHead+ev)*kvLoRA+kvLoRA], kvB[(h*hRow+qkNope+ev)*kvLoRA:(h*hRow+qkNope+ev)*kvLoRA+kvLoRA])
+				}
+			}
+			hl.mlaWUK, hl.mlaWUV = wuk, wuv
 		default:
 			proj = []projEnt{{&hl.q, &lw.QProj}, {&hl.k, &lw.KProj}, {&hl.o, &lw.OProj}}
 			if !m.VFromKResident(l) { // K=V (attention_k_eq_v) global layers carry NO v_proj — V=v_norm(k)
@@ -477,6 +526,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			hls[l] = hl
 			continue
 		}
+		if hl.isMLA {
+			if len(hl.preNorm) == 0 || len(hl.postNorm) == 0 {
+				return declined(fmt.Errorf("layer %d missing pre/pre-MLP norm", l))
+			}
+			hls[l] = hl
+			continue
+		}
 		// Gemma sandwich (both norms) / Olmo 3 postOnly (post-norm only, no pre-norm — see
 		// below): both dispatch PostAttnNorm/PostMLPNorm on the sublayer OUTPUT. Required to be
 		// present when the arch declares either — a silently-missing one would drop the norm,
@@ -570,6 +626,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// cacheExperts (nothing to offload without the slot cache's own miss classification).
 		l01Enabled: os.Getenv("GOINFER_CUDA_L01_CPU_OFFLOAD") != "" && m.MoECacheExperts(),
 		dnet:       dnetP,
+		isMLA:      mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
+		mlaQKHead: qkNope + qkRope, mlaQKNope: qkNope, mlaQKRope: qkRope,
+		mlaVHead: vHead, mlaQLoRA: qLoRA, mlaInterleave: interleave,
+		mlaRopeScale: float32(mlaRopeScale),
 		// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site:
 		// several buffers are sized from it earlier (the split-KV score scratch among them), and a
 		// zero-value ctxCap makes those 0-byte allocations that fail the whole resident build.
@@ -590,6 +650,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	}
 	if moeNorm {
 		r.moeNormTopK = 1
+	}
+	if mlaOK && mlaAttnScale != 0 {
+		r.attnScale = float32(mlaAttnScale)
 	}
 	// C′ step 2: device slots per layer — an LRU cache of nSlots experts (clamped [topK, nE]).
 	// VRAM is nLayers·nSlots·perExpert, so more slots trades VRAM for fewer per-token DMAs.
@@ -1155,6 +1218,36 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			r.dnZOut, r.dnCore, r.dnGated = r.af(dp.valueDim), r.af(dp.valueDim), r.af(dp.valueDim)
 			r.dnGq, r.dnGSc = r.ai(dp.valueDim/4), r.af(1)
 		}
+		if r.isMLA {
+			mlamod, me := r.dev.CompileLibrary(mlaPTX)
+			if me != nil {
+				return fmt.Errorf("cuda: JIT mla.ptx: %w", me)
+			}
+			var lerr error
+			loadMLA := func(dst *Pipeline, name string) {
+				pl, pe := r.dev.NewComputePipeline(mlamod, name)
+				if pe != nil {
+					lerr = fmt.Errorf("cuda: mla kernel %q: %w", name, pe)
+					return
+				}
+				*dst = pl
+			}
+			loadMLA(&r.fMlaStore, "mla_latent_store")
+			loadMLA(&r.fMlaHeadMV, "mla_head_matvec")
+			loadMLA(&r.fMlaQRope, "mla_q_rope")
+			loadMLA(&r.fMlaAttn, "mla_attn")
+			if lerr != nil {
+				return lerr
+			}
+			r.mlaKVDown = r.af(r.mlaLatDim)
+			r.qAbs = r.af(r.nH * r.mlaLatDim)
+			r.wsum = r.af(r.nH * r.mlaRank)
+			if r.mlaQLoRA > 0 {
+				r.mlaQAOut = r.af(r.mlaQLoRA)
+				r.mlaQAQ = r.ai((r.mlaQLoRA + 3) / 4)
+				r.mlaQASc = r.af(1)
+			}
+		}
 		r.layers = make([]cudaLayer, nLayers)
 		for l := range nLayers {
 			h := &hls[l]
@@ -1185,6 +1278,22 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				L.dnNegExpA, L.dnNormW = r.up32(h.dnNegExpA), r.up32(h.dnNormW)
 				L.dnWin = r.up32(make([]float32, (dp.convK-1)*dp.convDim))
 				L.dnState = r.up32(make([]float32, dp.stateElems))
+			} else if h.isMLA {
+				L.isMLA = true
+				if r.mlaQLoRA > 0 {
+					L.mlaQA = r.upW(h.mlaQA)
+					L.mlaQB = r.upW(h.mlaQB)
+					L.mlaQANorm = r.up32(h.mlaQANorm)
+				} else {
+					L.mlaQ = r.upW(h.mlaQ)
+				}
+				L.mlaKVA = r.upW(h.mlaKVA)
+				L.mlaKVANorm = r.up32(h.mlaKVANorm)
+				L.mlaWUK = r.up32(h.mlaWUK)
+				L.mlaWUV = r.up32(h.mlaWUV)
+				L.o = r.upW(h.o)
+				L.invF = r.up32(h.invFreq)
+				L.mscale = float32(m.RopeMscaleLayer(l))
 			} else {
 				L.q, L.k, L.o = r.upW(h.q), r.upW(h.k), r.upW(h.o) // v below (K=V layers have none)
 				L.invF = r.up32(h.invFreq)
@@ -1212,13 +1321,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 			// Both of these are ATTENTION side tables: a DeltaNet mixer layer has neither, and
 			// its nil slices would become 0-byte allocations (a hard error, not a no-op).
-			if h.hasBias && !h.isDeltaNet {
+			if h.hasBias && !h.isDeltaNet && !h.isMLA {
 				L.qb, L.kb, L.vb, L.hasBias = r.up32(h.qb), r.up32(h.kb), r.up32(h.vb), true
 			}
 			if h.hasOBias && !h.isDeltaNet {
 				L.ob, L.hasOBias = r.up32(h.ob), true
 			}
-			if r.qkNorm && !h.isDeltaNet {
+			if r.qkNorm && !h.isDeltaNet && !h.isMLA {
 				L.qNorm, L.kNorm = r.up32(h.qNorm), r.up32(h.kNorm)
 			}
 			if h.isMoE {
@@ -1258,6 +1367,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				// cache this layer never reads — real VRAM, silently wasted, on the one family
 				// that most needs it.
 				L.hd, L.nKV, L.rhalf, L.qDim, L.kvDim = 0, 0, 0, 0, 0
+				r.layers[l] = L
+				continue
+			}
+			if h.isMLA {
+				L.hd = r.mlaQKHead
+				L.nKV = 1
+				L.rhalf = r.mlaQKRope / 2
+				L.qDim = nH * r.mlaVHead
+				L.kvDim = r.mlaLatDim
 				r.layers[l] = L
 				continue
 			}
@@ -1326,11 +1444,15 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.dnQg, r.dnAGate = r.af(2*maxQDim), r.af(maxQDim)
 			}
 		}
-		if maxQDim != nH*maxHd {
+		if !r.isMLA && maxQDim != nH*maxHd {
 			return fmt.Errorf("cuda: scratch maxQDim=%d != nH*maxHd=%d*%d=%d — per-layer geometry inconsistent with the accessors", maxQDim, nH, maxHd, nH*maxHd)
 		}
 		r.x, r.aSc, r.aq = r.af(H), r.af(1), r.ai(H/4)
-		r.qB, r.kB, r.vB = r.af(maxQDim), r.af(maxKVDim), r.af(maxKVDim)
+		qBufDim := maxQDim
+		if r.isMLA {
+			qBufDim = nH * r.mlaQKHead
+		}
+		r.qB, r.kB, r.vB = r.af(qBufDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
 		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check
 		// belongs HERE, though: it needs the per-layer kvDims, and running it immediately before the
@@ -1349,6 +1471,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			if r.layers[l].isDeltaNet {
 				// No KV cache for a recurrent mixer. Allocating one would be pure waste on the
 				// family least able to afford it: 3 of every 4 layers are this kind.
+				continue
+			}
+			if r.layers[l].isMLA {
+				if r.layers[l].kvDim != r.mlaLatDim {
+					return fmt.Errorf("cuda: layer %d MLA latent cache kvDim=%d != latDim=%d", l, r.layers[l].kvDim, r.mlaLatDim)
+				}
+				r.kc[l] = r.af(r.ctxCap * r.layers[l].kvDim)
 				continue
 			}
 			if want := m.KVHeadsAtResident(l) * m.HeadDimAtResident(l); r.layers[l].kvDim != want {
@@ -1541,13 +1670,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// path has nowhere to hand the normed activation back to the caller.
 		r.fuseQKV = false
 	}
+	if r.isMLA {
+		r.fuseQKV = false
+	}
 	// CUDA graphs (GOINFER_CUDA_GRAPHS): capture each layer's static launch segments now that fuseQKV
 	// is final (segA/segB branch on it), so decode replays them instead of re-issuing the launches.
 	// Incompatible with the g4cap diagnostic (it syncs inside a segment). Off ⇒ launchToken is
 	// byte-identical to before. Promotion to "on" is safe-gated in admitGraphs (tenancy + self-test):
 	// replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS, so a shared-GPU box under DEFAULT
 	// declines to the live path rather than silently mis-running (docs/cuda-graphs-investigation.md).
-	r.graphs = os.Getenv("GOINFER_CUDA_GRAPHS") != "" && !r.g4cap
+	r.graphs = os.Getenv("GOINFER_CUDA_GRAPHS") != "" && !r.g4cap && !r.isMLA
 	r.graphsSync = os.Getenv("GOINFER_CUDA_GRAPHS_SYNC") != "" // debug: serialize replays (bisect ordering hazards)
 	r.graphMask = os.Getenv("GOINFER_CUDA_GRAPHS_ONLY")        // debug: replay only these segments (A/B/C), rest live
 	if e := r.admitGraphs(); e != nil {

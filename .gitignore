@@ -1,5 +1,6 @@
 # Editor / agent local config (per-user, never committed)
 .claude/settings.local.json
+.cuda_tools/
 
 # Build artifacts
 /dist/
