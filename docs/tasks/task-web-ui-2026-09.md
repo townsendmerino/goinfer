@@ -24,7 +24,7 @@ The page is **a small embedded directory** — `//go:embed webui` (`internal/ser
 step, no external stylesheet, font or script. *(Until 2026-09-14 it was one 1,828-line file; §6.1
 records the split.)* That is deliberate and load-bearing: a CDN reference would make the UI of an
 offline-capable engine require the network. It is off by default behind `-web`
-(`internal/serveapp/webui.go:585`), and it is a client of the same `/v1` routes any other client
+(`internal/serveapp/webui.go:639`), and it is a client of the same `/v1` routes any other client
 uses — so it cannot drift from the API, because it *is* the API's user.
 
 Two tabs (`internal/serveapp/webui/index.html:13`):
@@ -190,7 +190,7 @@ stats now follow whichever model is selected, not always the first one listed.
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
 (`internal/serveapp/main.go:742`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
-(`webLoadPath`, `internal/serveapp/webui.go:386`). Symlinks are resolved on both the path and the
+(`webLoadPath`, `internal/serveapp/webui.go:440`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither
 `../` nor a symlink planted in the cache can point the loader outside it. The suffix check also
 rejects a half-finished `.part` download. The page can load what it pulled, and nothing else.
@@ -791,14 +791,22 @@ checks that the list is laid out below its heading at full width (found by W15's
   lines, every number computed by the plan (§4).
 
   **What's actually buildable now, checked against the tree rather than assumed:**
-  - **A coarse per-file tag in "List files" — cheapest, no new decision.** `handleWebList`
-    (`internal/serveapp/webui.go`) already returns each file's size; `decoder.FreeBytesFor(name
-    string) (int64, bool)` (`decoder/backend.go:151`) is a standalone query — no model load, callable
-    against `s.cfg.backend` any time — and `s.cfg.quant` is already on the server struct
-    (`internal/serveapp/openai.go:294`, field `cfg`). `size vs free-at-current-quant` is enough for a
-    *fits / tight / won't fit* label on every row, before anything downloads. This alone would have
-    caught the original incident: the 7B file would have shown "won't fit at int8int8" before the
-    pull, not after the Load.
+  - **A coarse per-file tag in "List files" — DONE 2026-09-17.** `fitEstimate`
+    (`internal/serveapp/webui.go:195`) bands a file's own size against
+    `freeBytesForActiveBackend` (`:172` — `decoder.FreeBytesFor`, `decoder/backend.go:151`, for every
+    GPU backend; `decoder.HostRAMAvailableBytes` special-cased for `cpu`/the empty default, which the
+    registry has never covered) into *fits / tight / won't fit*, returned per file from
+    `handleWebList` (`:208`) alongside the backend name and free amount — omitted entirely, not
+    guessed, when no probe is available (webgpu today). Client (`app.js`'s `renderFiles`) shows it as
+    a labelled tag per row with a note stating the estimate's own limits: it reads the file's own
+    size, so it only approximates resident bytes when the file is already close to the quant this
+    server loads at, and doesn't count context/KV on top — deliberately not solved here (would need
+    real quant-name parsing this coarse a check has no business doing). Gate: phase 43 of
+    `scripts/webui_app_gate.mjs`, 6 checks; 4 mutations against `app.js` (always showing the column,
+    swapping a band's colour class, fabricating a verdict for a file the server sent none for, and
+    gutting the disclosure note), each red; 3 more against the Go banding/backend logic (both
+    boundary operators, dropping the `cpu` special case), each red. This alone would have caught the
+    original incident: the 7B file would have shown "won't fit" before the pull, not after the Load.
   - **An exact check right after a pull finishes, before Load.** `internal/fitcmd` already computes
     the real plan via `decoder.Model.Plan` — but only as a CLI dry run that loads the checkpoint and
     prints to stdout (`Run`, unexported everything else). Extracting that into a library function
@@ -822,12 +830,12 @@ checks that the list is laid out below its heading at full width (found by W15's
     exception to it. Reusable groundwork (the fit-check route above) makes the choice legible before
     committing to it either way, which is worth having regardless of how this decision lands.
 
-  **Recommendation, in build order:** the coarse per-file tag first (S — no design decision owed,
-  reuses three things that already exist, closes the exact gap the incident exposed) · the exact
-  post-pull check second (M — a real but contained refactor of `internal/fitcmd`, still no new
-  policy) · the changeable quant control last and separately (needs its own sign-off, not a
-  default). Not proposing to build any of them without a further go-ahead — this is the scoping the
-  entry itself said it still owed.
+  **Recommendation, in build order — the first is now built:** the coarse per-file tag first
+  (S — no design decision owed, reuses three things that already exist, closes the exact gap the
+  incident exposed) — **DONE**, see above · the exact post-pull check second (M — a real but
+  contained refactor of `internal/fitcmd`, still no new policy) — still open · the changeable quant
+  control last and separately (needs its own sign-off, not a default) — still open. Not proposing to
+  build the remaining two without a further go-ahead.
 
 ---
 
@@ -1115,7 +1123,7 @@ second, parallel implementation of the same use-after-free-avoiding logic.
 **No path policy needed here, unlike load.** `webLoadPath` (W5) exists because a load names a
 filesystem path the admin route would otherwise trust unconditionally; unload names nothing but a
 registry key, and the only keys that exist are ones `GET /v1/models` already publishes to every
-client. `handleWebUnload` (`internal/serveapp/webui.go:559`) is `sameOrigin(auth(...))` behind
+client. `handleWebUnload` (`internal/serveapp/webui.go:613`) is `sameOrigin(auth(...))` behind
 `-web` — W5's exact gate stack (`internal/serveapp/main.go:746`) — with `s.models[req.Name]` under
 `regMu` (inside `unloadByName`) as the entire "policy": a name not loaded is a 404, the same shape
 as any other unknown model. `TestWebUI_disabledByDefault` and the AST wiring guard
@@ -1145,7 +1153,7 @@ than claiming to observe it: *"A request already in flight elsewhere will finish
 route to it until it is loaded again."* When *this* page's own reply is the one running on that
 model (`generating.model === name`), the wording says so specifically instead.
 
-**The fit refusal now names a way out.** `unloadSuggestion` (`internal/serveapp/webui.go:522`)
+**The fit refusal now names a way out.** `unloadSuggestion` (`internal/serveapp/webui.go:576`)
 checks `errors.Is(err, decoder.ErrWontFitResident)` — the exported sentinel `FitDeclineError`
 unwraps to, chosen over `errors.As` on the concrete type specifically so the check (and its test)
 never need that type's unexported fields — and, if something is resident, appends *"Unload

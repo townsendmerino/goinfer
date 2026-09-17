@@ -164,6 +164,45 @@ type webPullReq struct {
 	File  string `json:"file"`
 }
 
+// freeBytesForActiveBackend reports free memory for the server's own currently-configured
+// backend. decoder.FreeBytesFor's registry covers every GPU backend, but "cpu" (and this
+// server's own "" default) has never gone through it — decoder/backend.go's own doc comment says
+// so: it predates the registry and is used by decoder/fitguard.go directly — so that one case is
+// special-cased here rather than silently reporting "unknown" for the single most common backend.
+func (s *server) freeBytesForActiveBackend() (int64, bool) {
+	if s.cfg.backend == "" || s.cfg.backend == "cpu" {
+		b := decoder.HostRAMAvailableBytes()
+		return b, b > 0
+	}
+	return decoder.FreeBytesFor(s.cfg.backend)
+}
+
+// fitEstimate is a COARSE per-file verdict for the file listing, using only the file's own
+// on-disk size against free memory for the backend this server actually runs — no header
+// parsing, no model load (docs/tasks/task-fit-to-hardware.md §3's own words: "the file table can
+// say fits / needs streaming / will not fit per row from the listing alone, before the
+// multi-gigabyte transfer"). NOT exact, and the UI note beside this field says so: a GGUF's size
+// only approximates its resident bytes when the file is already at roughly the quant this server
+// loads at — `-quant` re-quantizes at load time regardless of the file's own native format
+// (decoder/gguf.go's buildGGUFWeights), so pulling a Q8_0 file onto an int4 server resident-loads
+// far smaller than this file's size suggests, and the reverse case overshoots. Parsing the
+// file's own quant hint out of its name to correct for that would need a real quant-name table
+// this coarse a check has no business building — see the scoping note in
+// task-web-ui-2026-09.md's W33 part 2 for why that line was drawn here.
+//
+// Bands are deliberately conservative (fewer false "fits"): a resident load also needs KV cache
+// and context on top of raw weight bytes, so "file size == everything free" already does not fit.
+func fitEstimate(fileSize, free int64) string {
+	switch {
+	case fileSize >= free:
+		return "wont_fit"
+	case fileSize >= free*6/10:
+		return "tight"
+	default:
+		return "fits"
+	}
+}
+
 // handleWebList answers the UI's "what does this repo publish?" step. Separate from the
 // pull itself so the user chooses a concrete file before anything multi-gigabyte starts.
 func (s *server) handleWebList(w http.ResponseWriter, r *http.Request) {
@@ -190,11 +229,26 @@ func (s *server) handleWebList(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	free, freeOK := s.freeBytesForActiveBackend()
 	out := make([]map[string]any, 0, len(files))
 	for _, f := range files {
-		out = append(out, map[string]any{"path": f.Path, "size": f.Size, "human": pull.HumanBytes(f.Size), "sha256": f.SHA256})
+		row := map[string]any{"path": f.Path, "size": f.Size, "human": pull.HumanBytes(f.Size), "sha256": f.SHA256}
+		if freeOK {
+			row["fit"] = fitEstimate(f.Size, free)
+		}
+		out = append(out, row)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"repo": ref.Repo, "files": out})
+	resp := map[string]any{"repo": ref.Repo, "files": out}
+	if freeOK {
+		backend := s.cfg.backend
+		if backend == "" {
+			backend = "cpu" // the flag's own default (main.go) — never shown blank to the page
+		}
+		resp["fit_backend"] = backend
+		resp["free_bytes"] = free
+		resp["free_human"] = pull.HumanBytes(free)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 type webSearchReq struct {

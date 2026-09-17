@@ -2610,6 +2610,49 @@ const phase42 = phase(String.raw`
   check("search: a stale response that resolves AFTER a newer one never overwrites it", $("repo-suggest").textContent.includes("newer/match") && !$("repo-suggest").textContent.includes("stale/match"), $("repo-suggest").textContent);
 `);
 
+// ---- phase 43: the coarse fit tag in "List files" (W33 part 2's scoped first step) -------------
+const phase43 = phase(String.raw`
+  const until = async (cond, ms = 4000) => { const t0 = Date.now(); while (!cond() && Date.now() - t0 < ms) await wait(10); return cond(); };
+  tab("models");
+  $("repo").value = "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF";
+
+  window.fetch = async (url, opts) => {
+    if (url !== "/web/models/list") return new Response("{}", { status: 200 });
+    return new Response(JSON.stringify({
+      repo: "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
+      fit_backend: "cuda", free_bytes: 6000000000, free_human: "6.0 GB",
+      files: [
+        { path: "model-q4_k_m.gguf", size: 900000000, human: "900 MB", sha256: "", fit: "fits" },
+        { path: "model-q8_0.gguf", size: 5900000000, human: "5.9 GB", sha256: "", fit: "tight" },
+        { path: "model-f16.gguf", size: 11000000000, human: "11.0 GB", sha256: "", fit: "wont_fit" },
+        { path: "model-mystery.gguf", size: 1000000000, human: "1.0 GB", sha256: "" },
+      ],
+    }), { status: 200 });
+  };
+  $("list").click();
+  await until(() => $("files").querySelectorAll("tr").length > 0);
+
+  const rows = () => [...$("files").querySelectorAll("tr")].slice(1);
+  const tagOf = tr => tr.querySelector(".fit-tag");
+  const noteText = () => $("files").querySelector("p.note")?.textContent || "";
+  check("fit: the note names the backend and free amount, only shown when the server sent fit info", /cuda/.test(noteText()) && /6\.0 GB/.test(noteText()), noteText());
+  check("fit: a comfortably-small file is tagged Fits", tagOf(rows()[0])?.textContent === "Fits" && tagOf(rows()[0])?.classList.contains("ok"), tagOf(rows()[0])?.outerHTML);
+  check("fit: a file in the tight band is tagged Tight, not Fits", tagOf(rows()[1])?.textContent === "Tight" && tagOf(rows()[1])?.classList.contains("warn"), tagOf(rows()[1])?.outerHTML);
+  check("fit: a file bigger than free is tagged Won't fit", tagOf(rows()[2])?.textContent === "Won't fit" && tagOf(rows()[2])?.classList.contains("err"), tagOf(rows()[2])?.outerHTML);
+  check("fit: a file the server sent no verdict for shows a plain dash, not a guess", rows()[3].querySelectorAll("td")[2].textContent === "—" && !tagOf(rows()[3]), rows()[3].querySelectorAll("td")[2].textContent);
+
+  // No fit info at all from the server (e.g. webgpu, which has no live free-memory probe): the
+  // table must degrade to exactly what it looked like before this feature existed — no Fit
+  // column, no note, nothing guessed.
+  window.fetch = async (url, opts) => {
+    if (url !== "/web/models/list") return new Response("{}", { status: 200 });
+    return new Response(JSON.stringify({ repo: "x/y", files: [{ path: "a.gguf", size: 100, human: "100 B", sha256: "" }] }), { status: 200 });
+  };
+  $("list").click();
+  await until(() => $("files").querySelectorAll("tr").length > 0);
+  check("fit: with no fit_backend from the server, there is no Fit column and no note — nothing guessed", !$("files").querySelector("p.note") && [...$("files").querySelectorAll("th")].map(th => th.textContent).join(",") === "File,Size,", [...$("files").querySelectorAll("th")].map(th => th.textContent));
+`);
+
 const all = [];
 const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, phase9, phase10, phase11, phase12, phase13, phase14, phase15, phase16, phase17, phase18, phase19, phase20, phase21, phase22, phase23, phase24,
   // headless Chrome's own default is a DARK preference — so the light phase must set light explicitly
@@ -2622,7 +2665,7 @@ const PHASES = [phase1, phase2, phase3, phase4, phase5, phase6, phase7, phase8, 
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 2, mobile: true }); },
   phase29,
   async () => { await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false }); },
-  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38, phase39, phase40, phase41, phase42];
+  phase30, phase31, phase32, phase33, phase34, phase35, phase36, phase37, phase38, phase39, phase40, phase41, phase42, phase43];
 let n = 0;
 for (const prog of PHASES) {
   if (typeof prog === "function") { await prog(); continue; }   // a Node-side step between phases, not a phase

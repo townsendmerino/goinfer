@@ -2015,7 +2015,7 @@ $("list").onclick = async () => {
     const r = await fetch("/web/models/list", {method: "POST", headers: headers(), body: JSON.stringify({repo})});
     const j = await r.json();
     if (!r.ok) throw new Error((j.error && j.error.message) || ("HTTP " + r.status));
-    renderFiles(repo, j.files || []);
+    renderFiles(repo, j.files || [], j.fit_backend, j.free_human);
   } catch (e) {
     $("files").textContent = "";
     const p = document.createElement("p"); p.className = "err"; p.textContent = String(e.message || e);
@@ -2023,22 +2023,57 @@ $("list").onclick = async () => {
   } finally { $("list").disabled = false; }
 };
 
-function renderFiles(repo, files) {
+// task-web-ui-2026-09.md's W33 part 2, the "coarse tag" recommendation: a rough per-file fits/
+// tight/won't-fit read from the file's own size against free memory on this server's ACTIVE
+// backend (internal/serveapp/webui.go's fitEstimate) — no header parsing, no model load, and
+// deliberately not exact (the note below says so): it assumes the file is already at roughly the
+// quant this server loads at, which is not guaranteed (-quant re-quantizes at load time
+// regardless of the file's own native format).
+const FIT_LABEL = {fits: "Fits", tight: "Tight", wont_fit: "Won't fit"};
+const FIT_CLASS = {fits: "ok", tight: "warn", wont_fit: "err"};
+
+function renderFiles(repo, files, fitBackend, freeHuman) {
   const host = $("files"); host.textContent = "";
   if (!files.length) { host.textContent = "no .gguf files in this repo"; return; }
+  // fitBackend is only sent when the server could actually read free memory for its own active
+  // backend (internal/serveapp/webui.go's freeBytesForActiveBackend) — e.g. webgpu has no live
+  // probe. Absent it, the table renders exactly as before: no Fit column, nothing guessed.
+  const showFit = !!fitBackend;
+  if (showFit) {
+    const note = document.createElement("p");
+    note.className = "note";
+    note.textContent = "Fit is a rough estimate from each file's own size against " + freeHuman +
+      " free on this server's " + fitBackend + " backend — not exact: it assumes the file is " +
+      "already close to the quant this server loads at, and doesn't count context/KV on top.";
+    host.appendChild(note);
+  }
   const t = document.createElement("table");
   const head = document.createElement("tr");
-  for (const h of ["File", "Size", ""]) { const th = document.createElement("th"); th.textContent = h; head.appendChild(th); }
+  const cols = showFit ? ["File", "Size", "Fit", ""] : ["File", "Size", ""];
+  for (const h of cols) { const th = document.createElement("th"); th.textContent = h; head.appendChild(th); }
   t.appendChild(head);
   for (const f of files) {
     const tr = document.createElement("tr");
     const a = document.createElement("td"); a.className = "f"; a.textContent = f.path;
     const b = document.createElement("td"); b.className = "n"; b.textContent = f.human;
+    tr.appendChild(a); tr.appendChild(b);
+    if (showFit) {
+      const fitTd = document.createElement("td"); fitTd.className = "n";
+      if (f.fit && FIT_LABEL[f.fit]) {
+        const tag = document.createElement("span");
+        tag.className = "fit-tag " + FIT_CLASS[f.fit];
+        tag.textContent = FIT_LABEL[f.fit];
+        fitTd.appendChild(tag);
+      } else {
+        fitTd.textContent = "—";
+      }
+      tr.appendChild(fitTd);
+    }
     const c = document.createElement("td"); c.className = "n";
     const btn = document.createElement("button"); btn.className = "ambient amb-surface-convex amb-elevation-1 amb-rounded go"; btn.textContent = "Pull";
     btn.onclick = () => pull(repo, f.path);
     c.appendChild(btn);
-    tr.appendChild(a); tr.appendChild(b); tr.appendChild(c);
+    tr.appendChild(c);
     t.appendChild(tr);
   }
   host.appendChild(t);

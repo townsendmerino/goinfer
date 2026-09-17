@@ -1570,7 +1570,8 @@ td.n{text-align:right;color:var(--gi-muted);white-space:nowrap}
 .bar{height:8px;border-radius:5px;overflow:hidden;margin:11px 0 8px;padding:1px}
 .bar>div{height:100%;width:0;border-radius:4px;background:var(--gi-accent);transition:width .25s}
 .note{font-size:13px;color:var(--gi-muted)}
-.err{color:var(--gi-err)} .ok{color:var(--gi-ok)}
+.err{color:var(--gi-err)} .ok{color:var(--gi-ok)} .warn{color:var(--gi-warn-ink)}
+.fit-tag{font-weight:600;white-space:nowrap}
 code{font-family:var(--mono);font-size:12.5px;padding:2px 6px;border-radius:6px}
 
 /* ---- rendered model output (W1: ui/markdown.js builds these nodes; app.js marks the bubble .md) ----

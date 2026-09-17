@@ -46,6 +46,49 @@ func TestWebUI_disabledByDefault(t *testing.T) {
 	}
 }
 
+// TestFitEstimate pins the band boundaries directly: >= free is "wont_fit" (a resident load also
+// needs KV/context on top of raw weight bytes, so equal already does not fit), >= 60% of free is
+// "tight", below that is "fits" — deliberately conservative bands, so the boundary values
+// themselves (not just values comfortably inside a band) are what this checks.
+func TestFitEstimate(t *testing.T) {
+	const free = 10_000_000_000 // 10 GB
+	for _, c := range []struct {
+		name string
+		size int64
+		want string
+	}{
+		{"well under the tight threshold", 1_000_000_000, "fits"},
+		{"just under the tight threshold (59% of free)", 5_900_000_000, "fits"},
+		{"exactly the tight threshold (60% of free)", 6_000_000_000, "tight"},
+		{"between tight and full", 9_000_000_000, "tight"},
+		{"exactly free — already does not fit, KV/context need room too", free, "wont_fit"},
+		{"well over free", 20_000_000_000, "wont_fit"},
+	} {
+		if got := fitEstimate(c.size, free); got != c.want {
+			t.Errorf("%s: fitEstimate(%d, %d) = %q, want %q", c.name, c.size, free, got, c.want)
+		}
+	}
+}
+
+// TestWebUI_freeBytesForActiveBackend pins the one case decoder.FreeBytesFor's own registry does
+// NOT cover (decoder/backend.go's doc comment: "cpu" predates the registry) — the empty default
+// and the explicit "cpu" backend both fall to decoder.HostRAMAvailableBytes instead of silently
+// reporting unknown for the single most common backend. An unregistered/nonexistent backend name
+// still correctly reports unknown, through the registry path unchanged.
+func TestWebUI_freeBytesForActiveBackend(t *testing.T) {
+	for _, backend := range []string{"", "cpu"} {
+		s := &server{cfg: config{backend: backend}}
+		free, ok := s.freeBytesForActiveBackend()
+		if !ok || free <= 0 {
+			t.Errorf("backend %q: freeBytesForActiveBackend() = %d, %v — want a positive value and ok on any machine running this test", backend, free, ok)
+		}
+	}
+	s := &server{cfg: config{backend: "not-a-real-backend"}}
+	if free, ok := s.freeBytesForActiveBackend(); ok {
+		t.Errorf("an unregistered backend name reported ok=true (free=%d) — should be unknown, not guessed", free)
+	}
+}
+
 // TestWebUI_rejectsBadRepo is the network boundary for the traversal fix in the pull package:
 // the repo name now arrives from an HTTP body, which is exactly the untrusted source the
 // allow-list exists for. No network is reached — ParseRef fails first, which is the point.

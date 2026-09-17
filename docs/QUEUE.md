@@ -1452,18 +1452,18 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:742` | goinfer | `mux.HandleFunc("POST /web/models/load", sameOrigin(auth(maxBytes(textCap, srv.handleWebL` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:746` | goinfer | `mux.HandleFunc("POST /web/models/unload", sameOrigin(auth(maxBytes(textCap, srv.handleWe` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:275` | goinfer | `func (lm *loadedModel) queueFullMsg() string {` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:294` | goinfer | `type server struct {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:452` | goinfer | `"quant":          lm.model.Quant(),` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:477` | goinfer | `names = append(names, s.embedID)` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:487` | goinfer | `TopP                *float64        `json:"top_p"`` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:872` | goinfer | `// Why the resident cap: on a resident backend the stateless path prefills the fixed-siz` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:880` | goinfer | `func (lm *loadedModel) contextWindow(residentPath bool) int {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/vision_serve.go:20` | goinfer | `maxImagesPerTurn = 1 // v1: a single image per request (the interleave API is shaped for` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:386` | goinfer | `func webLoadPath(p string) (string, error) {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:195` | goinfer | `func fitEstimate(fileSize, free int64) string {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:440` | goinfer | `func webLoadPath(p string) (string, error) {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:51` | goinfer | `//go:embed webui` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:522` | goinfer | `func (s *server) unloadSuggestion(err error) string {` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:559` | goinfer | `func (s *server) handleWebUnload(w http.ResponseWriter, r *http.Request) {` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:585` | goinfer | `func (s *server) webEnabled(w http.ResponseWriter) bool {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:576` | goinfer | `func (s *server) unloadSuggestion(err error) string {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:613` | goinfer | `func (s *server) handleWebUnload(w http.ResponseWriter, r *http.Request) {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:639` | goinfer | `func (s *server) webEnabled(w http.ResponseWriter) bool {` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:181` | goinfer | `Size   int64` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:328` | goinfer | `func Search(ctx context.Context, q, kind string, limit int) ([]SearchResult, error) {` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:98` | goinfer | `func Curated() map[string]CuratedTier {` |
