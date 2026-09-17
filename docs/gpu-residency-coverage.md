@@ -107,28 +107,28 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   would silently skip the PLE branch if admitted). `hardware-matrix.md`'s single "Gemma 4" row
   cannot distinguish E2B/E4B from the dense shape it actually measures.
 - **Command-R / Command-R7B** — resident on CUDA and Metal, CPU on WebGPU. Missing
-  `FeatLayerNorm` (declared `decoder/features.go:593` for cuda, `decoder/features.go:687` for
+  `FeatLayerNorm` (declared `decoder/features.go:592` for cuda, `decoder/features.go:687` for
   metal, absent from webgpu's map) — a genuinely new kernel there (mean-centered LayerNorm, no
   learned bias), plus `FeatParallelBlock` and `FeatLogitScale`, both sequencing/host-side changes
   once the norm exists.
 - **Olmo 3 / Olmo Hybrid** — resident on CUDA and Metal, CPU on WebGPU. Missing
   `FeatPostOnlyNorm` (no pre-norm; the sublayer's output is normalized before the residual add —
-  declared `decoder/features.go:576` for cuda, `decoder/features.go:696` for metal) and
+  declared `decoder/features.go:575` for cuda, `decoder/features.go:696` for metal) and
   `FeatQKNormWhole` (QK-norm over the whole projected vector, not per head — declared
-  `decoder/features.go:581` for cuda, `decoder/features.go:697` for metal), neither declared on
+  `decoder/features.go:580` for cuda, `decoder/features.go:697` for metal), neither declared on
   webgpu.
 - **SmolLM3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatNoPE` (declared
-  `decoder/features.go:562` for cuda, `decoder/features.go:694` for metal, absent from webgpu) —
+  `decoder/features.go:561` for cuda, `decoder/features.go:694` for metal, absent from webgpu) —
   some layers skip RoPE entirely, an all-zero per-layer invFreq table rather than a new kernel.
 - **Ministral 3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatAttnTemp` (declared
-  `decoder/features.go:570` for cuda, `decoder/features.go:695` for metal, absent from webgpu) —
+  `decoder/features.go:569` for cuda, `decoder/features.go:695` for metal, absent from webgpu) —
   a post-RoPE query scale, one scalar per position, folded into the existing rope launch on the
   backends that have it.
 - **GPT-2** — resident on Metal ONLY, CPU on both WebGPU and CUDA (not just WebGPU — the one
   family here where the gap isn't purely "WebGPU is behind"). Needs `FeatLayerNorm`,
   `FeatNonGatedMLP`, `FeatLearnedPos`, `FeatOutBias`. Metal declares all four
-  (`decoder/features.go:687-677`). CUDA declares `FeatLayerNorm` (`decoder/features.go:593`,
-  added for Command-R) and `FeatOutBias` (`decoder/features.go:556`, added for gpt-oss) but not
+  (`decoder/features.go:687-677`). CUDA declares `FeatLayerNorm` (`decoder/features.go:592`,
+  added for Command-R) and `FeatOutBias` (`decoder/features.go:555`, added for gpt-oss) but not
   `FeatNonGatedMLP` or `FeatLearnedPos` anywhere. WebGPU declares none of the four.
 - **Qwen2.5-VL / Qwen3-VL on Metal are TEXT-ONLY residents (N-04, `docs/audit-metal-2026-09-12.md`)
   despite `hardware-matrix.md` showing "✅ resident" across every backend.** Decoding past an image
