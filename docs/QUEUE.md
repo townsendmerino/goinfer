@@ -1253,6 +1253,8 @@ supports.
 | `docs/ideas-weight-memory.md|decoder/mlp.go:70` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
 | `docs/measurements/aikit-w4a8-opsperbyte.md|linalg/quant.go:317` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
 | `docs/measurements/c3-metal-consumer-window-v0.14.0.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
+| `docs/measurements/c3-metal-consumer-window-v0.18.0.md|cmd/gate/parity.go:848` | goinfer | `// line counts, and only before `package` — decoder/int4_golden_test.go discusses `//go:` |
+| `docs/measurements/c3-metal-consumer-window-v0.18.0.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/model.go:488` | goinfer | `switch o.Backend {` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:877` | goinfer | `func (m *Model) withResidency() *Model {` |
 | `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
