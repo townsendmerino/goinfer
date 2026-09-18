@@ -1,6 +1,6 @@
 # Task: `serve -web` as a real chat interface — the Claude-app gap (W1–W26) — 2026-09
 
-> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W32 added 2026-09-15 (§7) now that J1–J4 have shipped; W27–W32 all DONE 2026-09-15. Tier C is what remains, plus W34 (§8, added 2026-09-17).** Filed from
+> **Status: SCOPED 2026-09-13, SCOPE DECIDED 2026-09-14, IN PROGRESS — §6.1, Tier A (W1–W8), Tier B done except W12 (skipped for now, owner 2026-09-14): W9–W11 and W13–W18. Tier C next, each needing its own design decision (§1). W27–W32 added 2026-09-15 (§7) now that J1–J4 have shipped; W27–W32 all DONE 2026-09-15. Tier C is what remains, plus W34 (§8, added 2026-09-17) and W35 (§9, added 2026-09-18).** Filed from
 > a feature comparison against the Claude desktop/web app, read against the tree at `9d29d625`.
 >
 > **The scope question is settled: the web UI is a product surface, to be made as fully useful for
@@ -1306,6 +1306,137 @@ problem this project actually has. Bigger build; it should not block the above.
 
 ---
 
+## 9. Keeping a long conversation alive — W35, added 2026-09-18
+
+Filed after reading *An Empirical Study of Harness Design for Coding Agents* (arXiv:2609.20804).
+Its context-management result is the one part that transfers to this page; the design below is not
+a copy of it, because goinfer has a constraint their harness does not (§9.2).
+
+### W35 — Elision: keep a long conversation going without throwing it away
+
+**Today the page is the paper's worst arm.** `send()` composes the whole transcript and posts it
+every turn. W8 warns at 80% and 95% and then explains the refusal when a message no longer fits.
+That is their **T0** — no compaction, terminate on overflow — and T0 is the arm the paper argues
+against: at a 32k window, unmanaged runs lost 78.7% of tasks to overflow while every managed tier
+overflowed on *zero*, and the managed-minus-unmanaged success gap was 35.7 points. Local windows
+are usually smaller than their tightest cell, so this page sits past the left edge of their charts.
+
+A refusal is the one outcome with no upside. Almost any policy beats it.
+
+#### 9.2 The constraint that makes this goinfer's problem, not a generic one
+
+**Elision costs a re-prefill, and prefix reuse is why this page is fast.**
+
+Reuse is longest-common-prefix matching against a resident or stored token sequence
+(`decoder/resident_reuse.go`, `internal/serveapp/sessions.go`). Change a token in the middle of the
+conversation and the LCP collapses to whatever precedes the change — so eliding turn 3 of 20 means
+the next turn re-prefills everything from turn 3 onward. The book's own CPU number for that is
+101.6 s for a 3,020-token prompt. Recurrent and hybrid families are stricter still: they can reuse
+only an exact strict extension, so *any* elision costs them a full prefill by construction.
+
+**So the policy must be rare and chunky, never a per-turn trim.** Crossing the threshold fires one
+elision event that drops well below it, and the re-prefill is amortised across the many turns that
+follow, each reusing normally against the new prefix. A policy that shaved a little every turn
+would pay a cold prefill *every turn* — measurably worse than doing nothing at all. This is an
+independent reason for the same "budget-sized recent window" shape the paper arrived at for cost
+reasons, and it is the single most important line in this item.
+
+#### 9.3 Where it lives: the page, not the server
+
+- **The server stays literal.** `serve` is OpenAI- and Anthropic-compatible, and an API that
+  silently drops messages from a request it was given is a broken API. Compatibility is the promise
+  (`docs/api-tiers.md`). Elision is a client policy, and this page is a client.
+- **The page already owns the transcript** (W3, W9), so it is the only place that can elide *and*
+  show what it did.
+- **It can count exactly**, using the server's own tokenizer: `POST /v1/messages/count_tokens`
+  already exists, takes a model, runs no generation and takes no decode mutex.
+  **Caution:** M-21 records that this route bypasses the per-model queue, so up to `-max-inflight`
+  of them can run concurrently. Call it once per composed send, debounced — never per keystroke.
+
+#### 9.4 What gets elided, in order
+
+A chat has no bulky tool observations, so the paper's own elision target does not exist here. The
+equivalents, most to least worth dropping:
+
+1. **Attachment bodies from older turns.** The biggest single thing in a conversation, the least
+   missed, and the most recoverable — the file is still on the user's disk. Needs §9.6.
+2. **Images from older turns.** An image costs many tokens and the oldest one rarely decides the
+   next answer.
+3. **Whole oldest exchanges**, user and assistant together, never splitting a pair.
+
+Never elided: the system prompt, the last two exchanges, and the message being sent.
+
+#### 9.5 Elision is a send-time policy, not deletion — so recall needs no machinery
+
+The transcript keeps everything. What changes is only the message list that gets posted. Where the
+boundary falls, the page shows a marker — *"4 earlier messages and 2 attachments aren't being sent:
+they would push past this model's window"* — and clicking it reveals them, because the content never
+went anywhere.
+
+This settles the paper's negative result rather than arguing with it. They found **model-driven**
+recall (an external store plus a `recall_event` tool) was never called in 36 of 64 settings, had a
+median invocation count of zero, and did not beat plain elision on accuracy. **That machinery is
+not built here.** A *user-driven* un-elide is free, because nothing was externalised — and unlike
+the model, the user can see what is missing and decide whether it mattered.
+
+#### 9.6 Prerequisite: attachments must stop being merged into the message text
+
+`send()` currently does `fenceDocs(pendingDocs) + typed` and stores the merged string, so an
+attachment body cannot be dropped without mangling the user's own words. Store
+`{content, docs: [{name, content}]}` and compose at send time instead.
+
+Stored conversations are `{v: 2, …}` in `localStorage`. This is a **v3**, with a migration that
+leaves v2 conversations un-elidable at the attachment level rather than guessing which fenced block
+was once a file. Old conversations still elide whole exchanges.
+
+#### 9.7 Thresholds
+
+As fractions of the effective window, which W8 already has from `context_window`:
+
+- **Trigger at 0.85.** Below that, nothing happens.
+- **Elide down to 0.55.** The gap is what makes the event chunky, per §9.2.
+- **Floor:** never elide below the last two exchanges.
+- **If still over after everything eligible is gone**, that is the existing refusal — with a better
+  message, because at that point the problem is one oversized message rather than a long history.
+
+Both numbers are settings, both visible. They are starting points, not measured optima; §9.9 says
+what would move them.
+
+#### 9.8 No summarization in v1, and the reason is stronger here than in the paper
+
+The paper summarizes above a hard threshold and still found elision-first cheaper. Locally the
+asymmetry is worse: a summarization pass is a **whole extra generation on the hardware that is
+already the bottleneck**, and on a small model it is also among the least reliable things that
+model does. Elision costs nothing but tokens.
+
+If summarization is ever added it carries a kill gate: it must beat plain elision on answer quality
+by a pre-registered margin, on a small local model, or it does not ship.
+
+#### 9.9 Gates
+
+- After an elision event the composed request is strictly smaller, and the turn completes.
+- **Nothing is deleted:** an export taken after elision contains every message and every attachment.
+- The system prompt and the last two exchanges survive every policy path.
+- The sent list is the system prompt plus a **contiguous suffix** — never a hole in the middle.
+  Assert it directly; a hole is the shape that would quietly destroy reuse forever.
+- **The re-prefill is paid once.** After an elision event the next turn reports low
+  `prefill_reused_tokens` and the turn after it reports high. This is the gate that proves the
+  rare-and-chunky policy is actually rare — a per-turn trim would show low reuse on every turn.
+  (X2 and X8 in [`task-turn-telemetry-2026-09.md`](task-turn-telemetry-2026-09.md) make this
+  directly observable; without them it can only be inferred from timing.)
+- On a reuse-ineligible family, elision triggers identically and nothing regresses.
+- A v2 stored conversation loads, and is simply not elidable at the attachment level.
+
+#### 9.10 Not in scope
+
+- **Server-side elision**, for the reason in §9.3.
+- **Summarization**, per §9.8.
+- **Search over elided content** — that is W21's job, and it is a better answer to "where did that
+  go" than recall ever was.
+- Anything that changes what `serve` sends to a model on behalf of an API client.
+
+---
+
 ## Sources
 
 `internal/serveapp/webui.go:51`, `:545` (the embed, the `-web` gate) ·
@@ -1323,6 +1454,9 @@ markdown TODO, the tool chips — all transplantable) ·
 [`task-work-queue-2026-09.md`](task-work-queue-2026-09.md) J3, J8, J9 ·
 [`task-halt-2026-09.md`](task-halt-2026-09.md) K1/K2/K5 ·
 `docs/completed/task-web-ui-ambient.md` (the current visual design) ·
-`docs/completed/review-2026-09-04.md` V-20 (the cross-origin lesson)
+`docs/completed/review-2026-09-04.md` V-20 (the cross-origin lesson) ·
+*An Empirical Study of Harness Design for Coding Agents* (arXiv:2609.20804) — W35's
+context-management evidence and its recall negative result · `decoder/resident_reuse.go`,
+`internal/serveapp/sessions.go` (the prefix reuse W35's policy is shaped around)
 
 <!-- doc-reviewed: 2026-09-13 -->
