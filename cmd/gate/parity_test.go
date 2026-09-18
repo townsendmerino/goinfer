@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -679,6 +681,85 @@ func TestRealckptRunReachesEveryScannedAndRequiredGate(t *testing.T) {
 	// the realckpt tag's perf and diagnostic tests into a release sweep.
 	if re.MatchString("TestQwen35GGUF_gateExtraSlowDiagnostic") {
 		t.Errorf("derived -run %q is unanchored — it selects tests merely CONTAINING a gate name", pattern)
+	}
+}
+
+// scopeChecks is the piece that keeps a GATE_RUN re-run from reporting every EXCLUDED required
+// gate as "DID NOT RUN (blocker)" — narrowing which tests EXECUTE without also narrowing which
+// gates are REQUIRED would make a deliberately scoped, fast re-run look identical to a broken
+// sweep. Both directions checked: the matching gate survives, the non-matching one is dropped
+// (not merely left unmarked — classifyChecks would still see it and blocker it if it stayed).
+func TestScopeChecks_keepsOnlyMatchingGates(t *testing.T) {
+	checks := []gateCheck{{"a", "TestKeepThis"}, {"b", "TestDropThis"}, {"c", "TestAlsoKeepThis"}}
+	got := scopeChecks(checks, regexp.MustCompile("Keep"))
+	var names []string
+	for _, g := range got {
+		names = append(names, g.Test)
+	}
+	want := "TestKeepThis,TestAlsoKeepThis"
+	if strings.Join(names, ",") != want {
+		t.Fatalf("scopeChecks = %v, want %s", names, want)
+	}
+}
+
+// GATE_RUN must narrow realckptRun's actual -run pattern, not just print a note about intending
+// to — otherwise a "scoped" re-run pays the full ~70-90min realckpt cell cost anyway. Both
+// directions: the selected gate stays reachable, an excluded one does not.
+func TestGateRunFilter_narrowsTheRealckptPattern(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatalf("cannot locate the repo root: %v", err)
+	}
+	all := realckptGateTests(root)
+	if len(all) < 2 {
+		t.Fatalf("need at least 2 realckpt gate-shaped tests to prove narrowing; found %d", len(all))
+	}
+	target := all[0]
+	t.Setenv("GATE_RUN", "^"+regexp.QuoteMeta(target)+"$")
+	pattern, note := realckptRun()
+	if strings.HasPrefix(note, "!!") {
+		t.Fatalf("realckptRun fell back with GATE_RUN set: %s", note)
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("-run %q does not compile: %v", pattern, err)
+	}
+	if !re.MatchString(target) {
+		t.Fatalf("GATE_RUN-scoped pattern %q does not select its own target %s", pattern, target)
+	}
+	excluded := 0
+	for _, other := range all {
+		if other != target && re.MatchString(other) {
+			t.Errorf("GATE_RUN=%s also selected %s, which it should have excluded", target, other)
+		} else if other != target {
+			excluded++
+		}
+	}
+	if excluded == 0 {
+		t.Fatalf("every other gate-shaped test coincidentally matched target %s — the exclusion half "+
+			"of this test proved nothing", target)
+	}
+	if !strings.Contains(note, "GATE_RUN") {
+		t.Errorf("note %q does not mention GATE_RUN — a reader watching the sweep's own output has "+
+			"no way to see a filter is active", note)
+	}
+}
+
+// An unparseable GATE_RUN must refuse loudly, not silently fall back to running everything — the
+// exact failure mode a bad regex would otherwise produce (a full sweep that LOOKS scoped because
+// the operator typed GATE_RUN, timed identically to an unscoped one, and nobody notices until the
+// clock says so).
+func TestGateRunFilter_badRegexRefusesRatherThanRunningEverything(t *testing.T) {
+	if os.Getenv("GOINFER_GATE_RUN_SUBPROCESS") == "1" {
+		gateRunFilter()
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=TestGateRunFilter_badRegexRefusesRatherThanRunningEverything")
+	cmd.Env = append(os.Environ(), "GOINFER_GATE_RUN_SUBPROCESS=1", "GATE_RUN=(unclosed")
+	out, err := cmd.CombinedOutput()
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) || ee.ExitCode() != 2 {
+		t.Fatalf("expected exit 2 on an unparseable GATE_RUN, got err=%v output=%s", err, out)
 	}
 }
 

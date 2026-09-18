@@ -203,13 +203,55 @@ var emitGates = []gateCheck{
 // build the asset.
 var assetNeverBuilt = map[string]bool{}
 
+// gateRunFilter reads GATE_RUN — an optional narrowing filter for a granular re-run of the sweep
+// (e.g. after fixing a specific blocker, without paying for the full ~2h two-cell run again to get
+// the SAME checkset classification, ledger/neverConfirmed handling and verdict logic a targeted
+// `go test -run` alone would skip). "" (the default) means the full sweep, unchanged.
+func gateRunFilter() (re *regexp.Regexp, raw string) {
+	raw = env("GATE_RUN", "")
+	if raw == "" {
+		return nil, ""
+	}
+	re, err := regexp.Compile(raw)
+	if err != nil {
+		// Fail LOUD, not silently back to "everything": a bad GATE_RUN that quietly ran the full
+		// sweep would look identical to a correctly-scoped one until someone timed it.
+		fmt.Fprintf(os.Stderr, "!! GATE_RUN=%q does not compile as a regexp: %v — refusing rather than "+
+			"silently running the full sweep\n", raw, err)
+		os.Exit(2)
+	}
+	return re, raw
+}
+
+// scopeChecks narrows a required checkset to the entries a GATE_RUN filter selects.
+//
+// THIS NARROWS THE REQUIRED LIST ITSELF, NOT JUST WHICH TESTS EXECUTE — otherwise every required
+// gate outside the filter would report "DID NOT RUN (blocker)" and a deliberately scoped, fast
+// re-run would look identical to a broken sweep. The tradeoff this accepts: a scoped run's "ALL
+// REQUIRED GATES GREEN" verdict answers "is everything I selected green", not "is the release
+// ready" — it is a tool for checking a specific fix landed, never a substitute for the full
+// unfiltered sweep before a tag.
+func scopeChecks(checks []gateCheck, filter *regexp.Regexp) []gateCheck {
+	var scoped []gateCheck
+	for _, g := range checks {
+		if filter.MatchString(g.Test) {
+			scoped = append(scoped, g)
+		}
+	}
+	return scoped
+}
+
 // parityCells builds the sweep's two cells. env carries whatever the asset preflight resolved.
 func parityCells(env map[string]string, realckpt bool, timeout string) []cell {
+	_, rawFilter := gateRunFilter()
 	base := cell{
 		Name:    "./decoder/ ./tokenizer/",
 		Pkgs:    []string{"./decoder/", "./tokenizer/"},
 		Timeout: timeout,
 		Env:     env,
+		// GATE_RUN narrows the base cell the same way it narrows realckpt below — applied directly
+		// since this cell has no pre-derived name list to filter, unlike realckptRun's.
+		Run: rawFilter,
 	}
 	cells := []cell{base}
 	if realckpt {
@@ -361,6 +403,12 @@ func runParity(w io.Writer, logDir string) int {
 	checks := parityGates
 	if realckpt {
 		checks = append(append([]gateCheck{}, parityGates...), parityRealckptGates...)
+	}
+	if runFilter, raw := gateRunFilter(); runFilter != nil {
+		scoped := scopeChecks(checks, runFilter)
+		fmt.Fprintf(w, "\n== GATE_RUN=%q: checkset narrowed from %d to %d required gate(s) — "+
+			"THIS IS A SCOPED RE-RUN, NOT A RELEASE-READY VERDICT ==\n", raw, len(checks), len(scoped))
+		checks = scoped
 	}
 
 	rows, blockers, gaps, firstRuns := classifyChecks(res, checks, ledgerClassify, cfg.Cells)
@@ -937,10 +985,28 @@ func realckptRun() (pattern, note string) {
 		set[g.Test] = true
 	}
 	names := sortedSet(set)
+	filterNote := ""
+	if runFilter, raw := gateRunFilter(); runFilter != nil {
+		var kept []string
+		for _, n := range names {
+			if runFilter.MatchString(n) {
+				kept = append(kept, n)
+			}
+		}
+		filterNote = fmt.Sprintf(", %d after GATE_RUN=%q", len(kept), raw)
+		names = kept
+	}
+	if len(names) == 0 {
+		// An empty alternation ("^()$") matches nothing the way an ordinary user would expect, but
+		// silently running zero tests and reporting a green cell is exactly the false-confidence
+		// shape this whole file exists to catch — so refuse instead of building it.
+		return "", fmt.Sprintf("!! GATE_RUN selected zero of %d realckpt gate(s) — nothing would run; "+
+			"check the filter", scanned)
+	}
 	pattern = "^(" + strings.Join(names, "|") + ")$"
 	return pattern, fmt.Sprintf("realckpt -run derived from the //go:build realckpt files: %d "+
 		"gate-shaped test(s) scanned, %d carried from the legacy pattern, %d selected after the "+
-		"union with parityRealckptGates", scanned, len(carried), len(names))
+		"union with parityRealckptGates%s", scanned, len(carried), len(sortedSet(set)), filterNote)
 }
 
 // unlistedFailures returns the tests that FAILED and are not one of the named gates.
