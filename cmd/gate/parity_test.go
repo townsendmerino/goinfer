@@ -115,6 +115,39 @@ func TestParity_assetNeverBuiltIsAGapNotABlocker(t *testing.T) {
 	}
 }
 
+// A gate in neverConfirmed must not block on either outcome that made it neverConfirmed in the
+// first place — a SKIP (asset absent, docs/measurements/... explains why) or a FAIL (the gate ran
+// and genuinely failed on this box). Measured 2026-09-18: neverConfirmed's own doc comment already
+// promised "never blocks a tag" but the live classifier never actually consulted the map — only
+// the separate static TestParity_everyRequiredGateIsConfirmed did — so TestNemotron35LightningReal_oracle
+// sat in neverConfirmed since 2026-09-13 while its SKIP kept counting as a blocker on every run.
+// Both cases are covered here, plus the "unlisted gate is unaffected" control so the fix can't be
+// satisfied by treating every skip/fail as non-blocking.
+func TestParity_neverConfirmedIsNotABlockerEitherWay(t *testing.T) {
+	neverConfirmed["TestDeferredSkip"] = "2026-09-18 — asset never pulled to this box, real reason"
+	neverConfirmed["TestDeferredFail"] = "2026-09-18 — this box cannot fit this checkpoint, real reason"
+	defer delete(neverConfirmed, "TestDeferredSkip")
+	defer delete(neverConfirmed, "TestDeferredFail")
+
+	res := parityResults(t, map[string]string{
+		"TestDeferredSkip": "skip",
+		"TestDeferredFail": "fail",
+		"TestOtherSkip":    "skip",
+		"TestOtherFail":    "fail",
+	})
+	_, blockers, gaps, firstRuns := classifyChecks(res,
+		[]gateCheck{
+			{"a", "TestDeferredSkip"}, {"b", "TestDeferredFail"},
+			{"c", "TestOtherSkip"}, {"d", "TestOtherFail"},
+		},
+		func(string) string { return "CONFIRMED" }, oneUnfilteredCell)
+	if blockers != 2 || gaps != 2 || firstRuns != 0 {
+		t.Fatalf("blockers=%d gaps=%d firstRuns=%d, want 2/2/0 — the two neverConfirmed "+
+			"entries must not block regardless of skip vs fail; the two unlisted ones must",
+			blockers, gaps, firstRuns)
+	}
+}
+
 // A broken or absent ledger must fail SAFE: an unreachable classifier means the failure stays a
 // BLOCKER. The other direction would let one broken script silently downgrade every regression in
 // the sweep to an item.

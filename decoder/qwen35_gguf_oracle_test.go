@@ -17,6 +17,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -45,6 +46,9 @@ func TestQwen35GGUF_vsSafetensors(t *testing.T) {
 		prev := runtime.GOMAXPROCS(2)
 		m, err := Load(path, Options{Quant: "int8int8"})
 		runtime.GOMAXPROCS(prev)
+		if errors.Is(err, ErrWontFitResident) {
+			t.Skipf("%s: fit-guard declined on this box: %v", label, err)
+		}
 		if err != nil {
 			t.Fatalf("%s Load: %v", label, err)
 		}

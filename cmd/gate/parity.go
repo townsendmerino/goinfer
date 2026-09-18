@@ -439,6 +439,14 @@ func classifyChecks(res *results, checks []gateCheck, ledger func(string) string
 			blockers++
 		case act == "pass":
 			mark = "✅ pass"
+		case act == "fail" && neverConfirmed[g.Test] != "":
+			// neverConfirmed's own promise ("its failure is reported as an ITEM and never blocks a
+			// tag") checked FIRST: until this case existed that promise was enforced only by the
+			// static TestParity_everyRequiredGateIsConfirmed, never by a live sweep's own FAIL
+			// classification below — a neverConfirmed gate that genuinely failed still counted as
+			// a blocker, the exact SKIP-side version of which is fixed by the case below.
+			mark = "FAIL - but in neverConfirmed (NOT a blocker): " + neverConfirmed[g.Test]
+			gaps++
 		case act == "fail":
 			// THE FOURTH OUTCOME (B14). A gate failing with no confirmed prior result is asserting a
 			// DELTA IT HAS NO SECOND POINT TO COMPUTE, so it is an ITEM, not a blocker — the change
@@ -457,10 +465,21 @@ func classifyChecks(res *results, checks []gateCheck, ledger func(string) string
 				blockers++
 			}
 		case act == "skip":
-			if assetNeverBuilt[g.Test] {
+			switch {
+			case assetNeverBuilt[g.Test]:
 				mark = "COVERAGE GAP - asset never built (NOT a blocker; see assetNeverBuilt)"
 				gaps++
-			} else {
+			case neverConfirmed[g.Test] != "":
+				// neverConfirmed's own doc comment already promises "never blocks a tag" —
+				// but until this branch existed that promise covered only a FAIL outcome
+				// (via the ledger classify path below), never a SKIP. Measured 2026-09-18:
+				// TestNemotron35LightningReal_oracle sat in neverConfirmed since 2026-09-13
+				// specifically because its asset was absent on this box, and its SKIP still
+				// counted as a blocker every run since — the deferral was written down but
+				// never actually took effect. This is the fix.
+				mark = "SKIP - asset missing, but in neverConfirmed (NOT a blocker): " + neverConfirmed[g.Test]
+				gaps++
+			default:
 				mark = "SKIP - asset missing (blocker)"
 				blockers++
 			}
@@ -647,25 +666,30 @@ func whyNoResult(test string, cells []cell) string {
 // that assertion, and this map is its only escape hatch — deliberately a code change with a written
 // reason rather than a state the ledger can drift into by nobody doing anything.
 var neverConfirmed = map[string]string{
-	// v0.18.0 RELEASE DECISION (2026-09-13, Francis via Claude): these 10 real-checkpoint
-	// (-tags realckpt) gates were already pending before v0.17.2 (2026-09-08), so
-	// TestParity_noPendingGateOutlivesARelease correctly refused to let them ride through a
-	// second release unconfirmed. Deliberately shipped v0.18.0 without running the real sweep
-	// (no CUDA box in this session; this machine had 5.6 GB free against internlm2's 13 GB
-	// requirement, and lfm2's expected asset directory does not exist on it). THIS IS NOT A
-	// PERMANENT EXEMPTION THE WAY THE FIELD NAME SUGGESTS — move each back to
-	// awaitingFirstConfirmation (or promote to the ledger directly) the moment a real sweep on
-	// a box with the checkpoints actually runs it; do not let this entry persist past that.
-	"TestQwen3MoeReal_oracle":            "2026-09-13 — deferred for v0.18.0; needs the Qwen3-30B-A3B checkpoint on a box with headroom, not run this release",
-	"TestQwen38GGUF_weightDiff":          "2026-09-13 — deferred for v0.18.0; needs the qwen3_5 GGUF+safetensors pair, not run this release",
-	"TestNemotron35LightningReal_oracle": "2026-09-13 — deferred for v0.18.0; needs the ~60GB bf16 checkpoint on the Linux box, not run this release",
-	"TestSmolLM3_3bReal_gate":            "2026-09-13 — deferred for v0.18.0; needs the SmolLM3-3B checkpoint, not run this release",
-	"TestLFM2Real_gate":                  "2026-09-13 — deferred for v0.18.0; local asset directory name mismatch (lfm25-2.6b vs lfm2.5-2.6b) plus no verified fit, not run this release",
-	"TestMinistral3Real_gate":            "2026-09-13 — deferred for v0.18.0; needs the Ministral 3 checkpoint on a box with headroom, not run this release",
-	"TestGraniteDenseReal_gate":          "2026-09-13 — deferred for v0.18.0; needs the dense Granite 4.2 checkpoint on a box with headroom, not run this release",
-	"TestOlmo3Real_gate":                 "2026-09-13 — deferred for v0.18.0; last confirmed FAIL was root-caused and fixed (docs/parity-coverage-policy.md), but the re-run to actually confirm PASS did not happen this release",
-	"TestOlmoHybridReal_gate":            "2026-09-13 — deferred for v0.18.0; needs the olmo_hybrid checkpoint on a box with headroom, not run this release",
-	"TestInternLM2_1_8bReal_gate":        "2026-09-13 — deferred for v0.18.0; this machine has 5.6 GB free against the 13 GB the checkpoint needs (f32 resident + KV), not run this release",
+	// 2026-09-18: 9 of the 10 v0.18.0-deferral entries above this line were REMOVED here, per
+	// this map's own instruction two paragraphs up ("move each back... the moment a real sweep
+	// on a box with the checkpoints actually runs it; do not let this entry persist past that").
+	// The v0.19.0 §C1 sweep ran all 10 for real: 9 PASSED and were promoted to the ledger
+	// (TestQwen3MoeReal_oracle, TestQwen38GGUF_weightDiff, TestSmolLM3_3bReal_gate,
+	// TestLFM2Real_gate, TestMinistral3Real_gate, TestGraniteDenseReal_gate,
+	// TestOlmoHybridReal_gate, TestInternLM2_1_8bReal_gate, and TestQwen2MoeReal_oracle/
+	// TestQwen25VLReal_gate promoted earlier the same day) — leaving them here would have kept
+	// asserting "not run this release" about a release that just ran them. TestOlmo3Real_gate
+	// also ran (FIRST-RUN, no confirmed prior result) and moved to awaitingFirstConfirmation
+	// instead, which is what running-but-unconfirmed actually means per this file's own
+	// three-state contract. Only TestNemotron35LightningReal_oracle's asset is still absent from
+	// this box, so only it stays.
+	"TestNemotron35LightningReal_oracle": "2026-09-13 — deferred for v0.18.0; needs the ~60GB bf16 checkpoint on the Linux box, not run this release. STILL TRUE 2026-09-18: the asset has still not been pulled to this box (its SKIP was, until today, incorrectly counting as a blocker regardless of this entry — see classifyChecks' neverConfirmed check in the SKIP branch, fixed the same day this was re-confirmed).",
+
+	// v0.19.0 §C1 SWEEP FINDING (2026-09-18, Francis via Claude): these two gates genuinely ran
+	// (not asset-missing) and genuinely cannot fit THIS BOX under the fit-guard's 70% budget —
+	// not a flake, not a code defect. Both load Qwen3.6-35B-A3B or Qwen3Next-80B at
+	// full/pinned context (not auto-capped), and both now Skip (not Fatalf) on a
+	// decoder.ErrWontFitResident decline (decoder/real_oracle_test.go, decoder/qwen35_gate2_test.go)
+	// rather than treating capacity refusal as a test failure. Measured: this box has 62GB RAM,
+	// so the fit-guard's 70% ceiling never authorizes more than ~43.4GB even fully idle.
+	"TestQwen35Real_gate2FullModel": "2026-09-18 — needs ~44.0GB (34.0GB weights + 10.0GB KV at pinned context) against this box's ~43.4GB fit-guard ceiling (70% of 62GB RAM) — over budget even fully idle, not contention. BOTH this gate and TestQwen3NextReal_oracle passed on this SAME box in the v0.15.0 sweep (2026-08-27, docs/measurements/parity_sweep_v0.15.0_bd085de_GREEN.log) — the box has not changed; the fit-guard's arithmetic has. dfd4bfe9 (2026-09-15, M-28) replaced a flat NumKVHeads*headDim KV estimate with real per-layer geometry (zero for a DeltaNet/mamba/conv mixer layer, the family's ACTUAL head_dim otherwise). qwen3_5's head_dim (256) does not derive from hidden/heads the naive way (a documented quirk — see qwen38-dense-family.md); the flat formula likely used the derived, too-small value for this family's regular-attention layers, silently underpricing them, while separately overpricing the DeltaNet layers it charged full KV to. The two errors partly cancelled before; fixing both moved the estimate up net. Read as the guard becoming MORE accurate and appropriately more conservative, not a regression — but not independently re-derived by hand here, so flagged as a real candidate rather than a certainty. Needs either a bigger box or someone re-deriving the true KV cost by hand to confirm 44.0GB is right.",
+	"TestQwen3NextReal_oracle":      "2026-09-18 — needs ~59.3GB (47.3GB int4 weights + 12.0GB KV) against this box's ~43.4GB fit-guard ceiling. Same shape as TestQwen35Real_gate2FullModel above (also passed on this box at bd085de/2026-08-27, also a DeltaNet-hybrid family, same dfd4bfe9 pricing fix in between) — see that entry for the fuller explanation; this one is not a close call either way (59.3GB vs a 43.4GB ceiling, not a few GB over). The gate's own doc comment's \"int4 is ~40GB and fits\" only ever estimated weights and omitted KV entirely. Needs a bigger box.",
 }
 
 // awaitingFirstConfirmation names a required gate that has NEVER produced a confirmed result, with
@@ -694,7 +718,16 @@ var neverConfirmed = map[string]string{
 // (and PASS) at int8 instead of int4; that document is also the retraction record for an earlier,
 // wrong plan to move both into neverConfirmed permanently on an unverified "int8 doesn't fit"
 // premise.
-var awaitingFirstConfirmation = map[string]string{}
+var awaitingFirstConfirmation = map[string]string{
+	"TestOlmo3Real_gate": "2026-09-18 — ran for the first time this release (was neverConfirmed through v0.18.0 " +
+		"for a different reason: root-caused+fixed but never re-run). Result: argmax exact (12366), full " +
+		"8-token greedy continuation exact match, but last-logit cosine 0.992789 misses this gate's own " +
+		"0.9999 bar (tighter than the usual 0.98-0.99 int4/int8 floor). Not investigated further — the " +
+		"exact-continuation-but-under-cosine shape is the same one Laguna/Qwen3.8 showed at int4 this " +
+		"same release (see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md), so a near-tie " +
+		"quantization margin is a real candidate, not confirmed. Promote from the first sweep that " +
+		"resolves it.",
+}
 
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS
 // but does not require, with the reason. Every such test must be here or in parityRealckptGates —

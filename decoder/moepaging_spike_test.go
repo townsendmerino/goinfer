@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"container/list"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -35,6 +36,9 @@ func TestMoEPagingSpike(t *testing.T) {
 	prog.Phase("load 35B MoE GGUF (int8int8)")
 	t.Logf("loading %s (int8int8)…", path)
 	m, err := Load(path, Options{Quant: "int8int8"})
+	if errors.Is(err, ErrWontFitResident) {
+		t.Skipf("fit-guard declined on this box: %v", err)
+	}
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

@@ -18,6 +18,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 )
@@ -59,6 +60,9 @@ func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, referenc
 	prog := newProgress(t, t.Name(), len(g.PromptIDs)+g.NNew)
 	prog.Phase("load " + quant + " (streams + quantizes the full checkpoint)")
 	m, err := Load(ckpt, Options{Quant: quant})
+	if errors.Is(err, ErrWontFitResident) {
+		t.Skipf("fit-guard declined on this box: %v", err)
+	}
 	if err != nil {
 		t.Fatalf("Load(%s): %v", ckpt, err)
 	}

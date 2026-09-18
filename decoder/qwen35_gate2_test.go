@@ -15,6 +15,7 @@ package decoder
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -117,6 +118,9 @@ func TestQwen35Real_gate2FullModel(t *testing.T) {
 	prev := runtime.GOMAXPROCS(2)
 	m, err := Load(dir, Options{Quant: "int8int8"})
 	runtime.GOMAXPROCS(prev)
+	if errors.Is(err, ErrWontFitResident) {
+		t.Skipf("fit-guard declined on this box: %v", err)
+	}
 	if err != nil {
 		t.Fatalf("Load(int8int8): %v", err)
 	}
