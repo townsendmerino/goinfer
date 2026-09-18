@@ -194,7 +194,7 @@ true of Nemotron-H and false of the two models people download. docs/completed/t
 
 **Fix, two parts.** (1) Today: a footnote on the matrix row and a line in the Lightning/Nano
 family docs; `serve check` should say "CPU (MoE block not resident)" for these. (2) The real one:
-add the MoE FFN case to the WebGPU Nemotron block switch (`gpu/residency.go:581`, cases 0/1/2;
+add the MoE FFN case to the WebGPU Nemotron block switch (`gpu/residency.go:584`, cases 0/1/2;
 the `default` that residency.go's comment says is missing is there now at line 583, so an
 unknown kind declines cleanly), gated on the real Nano checkpoint on the Linux box.
 
@@ -227,7 +227,7 @@ dense (`docs/ollama-chase.md`), and the Mac's remaining gap to Ollama is mostly 
 
 ### G9 — WebGPU has no batched prefill at all
 
-**Where.** `decoder/model.go:1092`: "WebGPU implements no Prefiller"; `gpu/residency.go:1155`
+**Where.** `decoder/model.go:1092`: "WebGPU implements no Prefiller"; `gpu/residency.go:1158`
 seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit per token.
 
 **Fix.** A `Prefiller` on the WebGPU runner, dense first, following the CUDA shape
