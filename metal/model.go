@@ -1767,8 +1767,7 @@ func (r *resident) forwardTrunkForTest(emb []float32, pos, nLayers int) []float3
 	r.nL = nLayers
 	defer func() { r.nL = saved }()
 	copy(r.x.Floats(), emb)
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
+	r.setPos(pos)
 	e := r.q.Begin()
 	r.encodeTrunkInto(e)
 	e.End()
@@ -1788,8 +1787,7 @@ func (r *resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	copy(r.x.Floats(), emb)
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
+	r.setPos(pos)
 	grab := func() []float32 { return append([]float32(nil), r.oO.Floats()...) }
 	grabD := func() []float32 { return append([]float32(nil), r.dO.Floats()...) }
 	for l := 0; l < r.nL; l++ {
@@ -1857,8 +1855,7 @@ func (r *resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []floa
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	copy(r.x.Floats(), emb)
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
+	r.setPos(pos)
 	L := &r.layers[0]
 	g := L.geom
 	nHhd := r.nH * g.hd
@@ -1913,8 +1910,7 @@ func (r *resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 	qkvRows := nHhd + 2*g.kvDim
 	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4
 	copy(r.x.Floats(), resid)
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
+	r.setPos(pos)
 	if injectKV {
 		// Inject goinfer's post-RoPE K and raw V — matched KV history. f32 cache (Gemma) takes the
 		// values verbatim; the f16 cache narrows them (still cos 1.0 for the CORRECT values — the
@@ -1970,8 +1966,7 @@ func (r *resident) forwardHeadForTest(emb []float32, pos int) (act, logits []flo
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	copy(r.x.Floats(), emb)
-	r.uPos.SetU32(uint32(pos))
-	r.uNKeys.SetU32(uint32(pos + 1))
+	r.setPos(pos)
 	e := r.q.Begin()
 	r.encodeTrunkInto(e)
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
