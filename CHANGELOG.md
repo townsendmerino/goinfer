@@ -60,6 +60,33 @@ any surface may still change.
     method is composing), ↑ in an empty box edits your last message, Esc stops a reply.
   - Each reply shows which model wrote it and the compute path it ran on, and a divider marks where the
     model changed in a conversation.
+  - Attach one or more text/source files to a message (read client-side, fenced and prepended to the
+    text — not a server content-part the way images are), a rendered preview for fenced code in a
+    reply, and a coarse **fits / tight / won't-fit** tag on every file in the Models tab's file list
+    before you commit to pulling it.
+  - The repo box does live HuggingFace search (GGUF only for now) instead of requiring an exact
+    `owner/repo` from memory.
+  - A **Batch tab**: pick a `.jsonl` file, upload and run it against `/v1/batches`
+    (`/v1/chat/completions` only), watch progress, download the result.
+  - A generation now runs as a server-side job and the page **re-attaches after a reload** instead of
+    losing it — including from another conversation, and including a job that finished while the page
+    was away. The queue-full `429` now says how busy, not just that it's busy. A backgrounded job can
+    be cancelled by id from the chat list.
+  - **Unload a model from the page**, and see what's currently resident — the load half shipped
+    earlier had no way to free room on the 16 GB Mac this product targets, so the only option used to
+    be "load until full, then restart".
+- New background job queue (`docs/tasks/task-work-queue-2026-09.md`): fair admission, a durable job
+  journal, `/v1/jobs` (submit/poll/re-attach) and two batch APIs (`/v1/files`, `/v1/batches`) over one
+  job store. A job's event stream closes the same way a chat stream does, and reports its queue
+  position while waiting; a full queue is reported as a queue state, not folded into a cancellation.
+- **CUDA MLA resident decode** (`FeatMLA`) — DeepSeek-V2/V3 and Kimi K2 now run resident on CUDA
+  instead of falling back to the CPU/staged path.
+- **WebGPU/Metal: Gemma4 dense residency, batched-prefill feature parity, and deep-context Metal
+  attention** (up to 32768 tokens) — see `docs/gpu-residency-coverage.md` for the updated coverage
+  table.
+- `decoder.Options.ExactPrefill` is now a real load-time field (previously only `serve`'s own
+  CLI-local env-var helper existed, though the docs described it as if it were this); `goinfer-chat`
+  and `goinfer-gemma` gain their own `--exact-prefill` flag on top of `serve`'s.
 - `/v1/models` and `/health` publish `context_window` per model: the exact token limit a text request
   is held to, from the same function that enforces it (on a GPU backend this can be the resident KV
   cap, lower than the model's own maximum). A goinfer-only extension field, like `decode_path`.
@@ -81,6 +108,63 @@ any surface may still change.
   reached the `final` channel. This affected `serve`, `goinfer-chat` and the demo agent. The stops
   are now gpt-oss's own (`<|return|>`, `<|call|>`, `<|endoftext|>`, from its
   `generation_config.json`). Replies still contain the raw channel markers in `content`.
+
+- **The 2026-09-10 audit's every Critical (9/9), Gate (13/13) and Major (58/58) finding is now
+  closed**, along with 94/101 Minor findings (batches A–J) — see `docs/audit-2026-09-10.md` for the
+  full, itemized record; the standouts:
+  - **A resident route past the context cap could die mid-prefill with a leaking 500 instead of a
+    clean 400** — an adapter's own first turn, and a vision P9a image-reuse turn, both keyed context
+    enforcement on "no adapter" rather than on whether a resident GPU decode was actually active, so
+    the one case where both were true went unenforced (M-01).
+  - **Six GGUF MoE families (Laguna, Granite-H, Nemotron, Llama-4, Gemma4, and the shared
+    GLM/Mellum/Qwen3-MoE/DeepSeek2 loader) quantized the MoE router on load**, which silently declined
+    CUDA/Metal residency at every quant but f32 — discrete top-k expert selection needs an f32 router
+    or quantization can flip which experts win near a tie, not just add rounding noise (M-27).
+  - **WebGPU's resident context cap wasn't clamped to the model's own window**, so a no-GQA model
+    (phi3-mini: `head_count_kv == head_count`, ~6× a typical GQA model's KV bytes/position) could run
+    out of VRAM mid-load and silently fall back to CPU speed under a "webgpu" label. Fixing that
+    clamp exposed a real, still-unexplained resident-decode divergence on no-GQA WebGPU models, so
+    `BuildResident` now declines `nKV == nH` outright (scoped around MLA/DeltaNet/Nemotron, whose own
+    `nKV`/`nH` can coincide for unrelated reasons) rather than ship a fast-but-wrong path —
+    `docs/tasks/task-webgpu-nogqa-decode-bug.md` has the elimination trail.
+  - **`--fit`'s default-ON context sizing (shipped in v0.18.0) could starve `-moe-cache-experts`'s
+    VRAM budget** — an unpinned load's context growing from the historical 4096 default toward 8192
+    ate headroom the expert cache needed on an already-oversubscribed card, costing MoE decode up to
+    ~2× (traced and reproduced by bisection; `docs/benchmarks.md` "Re-run 2026-09-15/16"). Fixed by
+    excluding `-moe-cache-experts` loads from the auto-grow, the same way `-fit=off` already is.
+  - **Ministral 3 was rendered with the wrong template** (plain Mistral `[INST]`, no
+    `[SYSTEM_PROMPT]`); it now gets its own renderer. SmolLM3 and Olmo 3 previously fell through to a
+    silent ChatML match with no confirmed template on file; `Detect` now declines them explicitly
+    instead of guessing (M-36).
+  - **Vision image-block newlines didn't match the real HF processors** — Gemma 3 was missing its
+    `\n\n` sentinel pair, Gemma 4 and Qwen were adding a spurious `\n` neither processor emits (M-38).
+  - **The pre-tokenize request-size guard didn't price tool schemas or replayed tool-call
+    arguments**, only message text — a large tool definition or a long replayed call could pass a
+    guard sized to block exactly that class of request (M-15).
+  - **`prequant`'s directory-transcode path wrote its output in place**, unlike the single-file path's
+    existing temp-file-then-rename; a failure partway through could leave a corrupt bundle at the
+    real output path instead of no bundle at all (M-33).
+  - Nemotron-H MoE without a shared expert failed `BuildResident` outright instead of loading (M-35);
+    gpt-oss/Llama 4/Nemotron 3 Nano's MoE loops never touched the expert pager, so their paging stats
+    stayed permanently zero (M-34); Metal's quant label only special-cased `int8int8`, so `int8`/
+    `int4mix` silently ran the same int4 GEMV requant without saying so in the banner (M-25); the
+    resident embedder was unreachable and `-embed-quant` was ignored (M-17); the resident CUDA vision
+    tower leaked scratch memory and was never actually enabled (M-18); a Gemma4 VL resident commit
+    dropped the image-block record (M-07); VL resident clamp sites never published
+    `Budget`/`BudgetClamped` (M-02); speculative decoding loops weren't refused at the resident
+    context cap (M-03); `fit -measure` double-loaded the checkpoint and folded prefill time into its
+    reported decode rate (M-20); the Metal fit guard double-counted `.giw`-mmap-backed weights as a
+    fresh host copy (M-24); the fit guard's KV/weight pricing was wrong for hybrid/MLA/GPTQ/vision
+    checkpoints (M-28, M-29); the safetensors-directory refusal recommended a remedy that couldn't
+    actually work (M-30); `-embed-int4` was silently ignored for GGUF input (M-31); the ctx-fit margin
+    was ignored and a drafter's K/V went unpriced against the chosen context (M-12, M-22); a
+    speculative drafter's device scratch grew-and-abandoned at four sites instead of reusing (M-21);
+    fast-kernel dispatch wasn't gated by call purpose on CUDA/WebGPU (M-09, M-10, M-11); a declined
+    pre-tokenizer wasn't surfaced outside `serve` (M-41); the release process could publish before an
+    asset embedded, auto-created releases it shouldn't have, and `readme-smoke` didn't test `@latest`
+    (M-42, M-43, M-45); `--exact-prefill` never actually covered the CUDA backend (M-48, M-54, M-55,
+    M-58); recurrent/Nemotron non-attention layers reserved dead KV capacity they never use (P-02,
+    M-28 addendum).
 
 ## [v0.18.0] — 2026-09-13
 
