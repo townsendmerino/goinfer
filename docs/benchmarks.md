@@ -22,8 +22,10 @@
 **Re-anchored, with two stated exceptions.** Every row the 2026-08-25 re-anchor scoped — the
 peer comparisons in §B2/§B4/§B5/§B6/§B7 — has been re-measured on the current stack (RTX 2070
 SUPER, driver `595.91.07`, Nobara 44 / kernel 7.2.0, CUDA 13.2) against **Ollama v0.32.5**, or
-deliberately withdrawn. Mac rows (§A) were never affected; last measured 2026-08-24. **Not
-covered, and it says so in place:** peer *prefill* (no harness exists — see the table). The
+deliberately withdrawn. Mac CPU decode was last measured 2026-08-24 until the 2026-09-17 dense
+re-run below updated it (§ "Re-run 2026-09-17 — MacBook"); Mac Metal decode picked up two new
+cells (0.5B, phi3-mini) the same night and re-confirmed the existing 1.5B/7B anchor unchanged.
+**Not covered, and it says so in place:** peer *prefill* (no harness exists — see the table). The
 Mellum2 MoE prefill row is a Linux row from June the re-anchor never scoped; it is marked stale
 and sits in `legacy-benchmarks.md` §A. The SigLIP vision-prefill row was the same kind of stale
 row but **is current again as of 2026-09-08** (§A, "Vision tower CPU prefill") — re-measured,
@@ -40,7 +42,8 @@ not re-anchored against a peer (no vision peer harness exists either).
 | **Apple Silicon Metal prefill** | **STALE (N-01): 3.33× behind Ollama on TTFT at K=512, 8.81× at K=3900 — measured 2026-09-09 against the PRE-fused exact attention kernel**, superseded the next day by the default-ON fused kernel (≈4.3× at K=3900 per the tree's own L2 record) and by M-03's GEMM fix (2026-09-13); no fresh same-session Ollama re-run exists yet. Fast f16-MMA path (default ON above 512 tokens since §3.2 gate) was **2.0–3.75× faster than sequential** within goinfer at K≥512 in that same pre-fix run | §A |
 | **Apple Silicon CPU prefill** | **vs Ollama: 1.54× behind at K=512, reaching 0.91× (AHEAD) at K=3900; whole-curve marginal ratio 0.86×, goinfer faster** — aikit v1.34.0's S-01 int4 tile roughly doubled it (67.6→141.7 tok/s at K=512, measured pre/post on one box). Supersedes the 2026-09-01 row of 2.98×/1.80×, which the pre-tile arm reproduced to within 4% | §A |
 | ↳ *and against our own past* | **8.61× faster than the pre-2026-09-01 record at 3020 tokens** (334.9 s → 38.9 s); the rate no longer falls with length (78.4 → 77.7 tok/s where it used to collapse 51.5 → 9.0) | §A |
-| **Apple Silicon CPU decode** | **goinfer is behind** — 0.75–0.77× (0.5B) and 0.57–0.60× (1.5B) of Ollama CPU on an M1 Pro. `int4` is the right default there | §A |
+| **Apple Silicon CPU decode** | **goinfer is behind** — 0.67× (0.5B) and 0.65× (1.5B) of Ollama CPU on an M1 Pro as of 2026-09-17 (was 0.75–0.77×/0.57–0.60× on 2026-08-24; both engines got faster since, ratio moved opposite directions per model, unresolved — see the re-run). `int4` is the right default there | §A, "Re-run 2026-09-17 — MacBook" |
+| **Apple Silicon Metal decode** | **goinfer is behind on 1.5B/7B/phi3-mini (0.86×/0.86×/0.94×), narrowly ahead on 0.5B (1.08×, still n=2, unconfirmed)** — 1.5B/7B unchanged from the 2026-09-04/05 anchor | "Re-run 2026-09-17 — MacBook" |
 | **Cold start & footprint** | **goinfer alone** — first token in **0.48 s**, **77 MB** resident, model compiled *into* the binary | §A, Table 1 |
 | **Peer-independent** | pure Go, `CGO_ENABLED=0` (no libcuda/libnvrtc linked), **bit-identical** decode, HF logit-parity gate as a contract | Table 1 |
 | **goinfer does not have** | continuous batching · GPU breadth · broad multimodal (vision-in only, no audio) · 36 architectures ʲ vs peers' dozens | Table 1 |
@@ -156,6 +159,30 @@ A measurement enters a table **only if it satisfies all of**:
   It survived into three documents and a release note before a disagreeing instrument caught it.
   **A number with no recorded machine state cannot be argued with later**; that is what made this
   one expensive rather than merely wrong. See the withdrawn G15 in `docs/queue-performance.md`.
+
+  **macOS qualifier, added 2026-09-17.** The rule above was written against the Linux rig, which
+  is headless and idles at load 0.00 — on that box, `BENCH_MAX_LOADAVG=1.0` (`scripts/bench_peer.py`'s
+  default) is trivially achievable and "idle" means what it says. The MacBook is not that box: a
+  full desktop session (WindowServer, Dock, an IDE, this repo's own agent sessions) carries a
+  nonzero floor that does not go away by closing windows — **measured 2026-09-17**, a "quiet as it
+  gets" MacBook (2 editor windows, nothing else user-facing) held 1-min load average **1.2–2.4**
+  sustained, spiking to **3.5–6.8** for several minutes under a macOS telemetry-daemon burst
+  (`duetexpertd`/`logd`, not this repo's process or user activity) that neither party could
+  identify a cause for or shut down. A `BENCH_MAX_LOADAVG=1.0` run on this rig spent over ten
+  minutes retrying a single cell and still timed out. Chasing a literal-zero-load Mac is not a
+  fight worth having — it does not converge, and the two real CUDA-side mistakes this qualifier's
+  own sibling section exists to avoid (`Re-run 2026-09-17` below) were about silent state
+  corruption and scope leakage, not about a loaded box, so the lesson does not transfer unmodified.
+  **Mac rows therefore use `BENCH_MAX_LOADAVG=2.0`** (roughly 20% aggregate utilization on this
+  10-core M1 Pro) instead of the Linux-implicit near-zero floor, and compensate with more
+  repetitions on the cells cheap enough to afford it (`BENCH_RUNS`, see `gen_params()`'s own
+  §B5/phi3-mini precedent for why the run count itself has to be recorded, not just raised) —
+  **statistical averaging over environmental purity**, on the theory that discarding outliers from
+  more samples finds the real number faster than gating harder ever will on a machine that will
+  not go quiet. The machine-state-recorded-beside-the-number half of this rule is UNCHANGED — every
+  Mac row still carries its load average and thermal note, same as every other row; only the
+  ACCEPTANCE THRESHOLD is platform-specific, and it is why the threshold used is now a stated fact
+  next to the number, not a silent assumption.
 
 Anything not matching all of these is `—` and a re-measure, never a guess. This page
 exists *because* a sloppy comparison is worse than none: `docs/completed/gpu-assessment.md`
@@ -1951,6 +1978,106 @@ just on purpose this time via the wrong knob. Fixed by purging just the 6 contam
 every other phase-128 cell in this sweep used — landed at 23.8/23.7, consistent with the three
 isolated single-commit checks to within noise. **Lesson for next time this harness's wrapper sets
 `BENCH_DEEP_CTX`: scope it to a `BENCH_DEPTHS=8000`-restricted invocation, never the whole step.**
+
+### Re-run 2026-09-17 — MacBook (Apple Silicon), Metal + CPU dense matrix
+
+Companion to the nobara re-run directly above — run as part of the same "coordinated re-run across
+both boxes" request. **Scope: dense models only** (0.5B, 1.5B, 7B, phi3-mini), goinfer vs Ollama,
+Metal and CPU backends, depth 128 only. Excluded, deliberately, not by oversight:
+
+- **M35/M26** — parked on this Mac since the 2026-09-04/05 kernel-panic/swap-thrashing incident
+  (see "M35/M26 on the Mac" above); out of scope for this run without a separate go-ahead.
+- **G20** — goinfer has no resident Metal backend for gpt-oss (the same `FeatAttnSink` gap noted for
+  CUDA at the G20 table above), so a "Metal" label on this box would silently measure the
+  CPU-staged fallback rather than the backend named. Not attempted rather than shipped mislabeled.
+- **gemma3-1b** — its GGUF is not present in `~/models` or the archive on this box; excluded rather
+  than pulled ad hoc mid-run.
+- **MLX** — not verified set up for this session; excluded rather than risk a garbage number from
+  an unconfirmed toolchain.
+- **Depth curve (Phase B / W3-style rows)** — `scripts/bench_peer.py`'s `main()` hardcodes Phase B
+  to `backend="cuda"` with no override (by its own comment: "depth curve, CUDA only... the depth
+  axis is about the engine's prefill/attention scaling, not the backend"). Confirmed by reading the
+  code, not assumed. The Metal depth axis is a different instrument entirely — the
+  `TestZZ_metalDepthBench`-driven curve at §B3 above — so this run used `BENCH_DEPTHS=none` and
+  does not claim a Metal depth-curve result.
+
+**Provenance.** Apple M1 Pro, 16 GB RAM, macOS 26.6.2 (`Darwin 25.6.0 arm64`), AC power · goinfer
+`f9eae352` (tree dirty only from this section's own in-progress edit to this file at build time —
+confirmed via `git status`, no code file was uncommitted) · Ollama `0.32.5`
+(`/opt/homebrew/bin/ollama`, the box's real Homebrew install — this Mac has no `~/ollama-0325`
+convention directory, unlike the CUDA box; version matches the pin either way) · `scripts/bench_peer.py`,
+greedy, restart between cells, same-session interleaved, checkpoints from `~/models` only (0.5B/1.5B/7B
+already resident; phi3-mini pulled via `models-pull` for this run), GGUF Q4_K_M for 0.5B/1.5B/7B, q4
+GGUF for phi3-mini — same files both engines load. **`BENCH_MAX_LOADAVG=2.0`, per the macOS
+Methodology qualifier above** (this is the first row set measured under it): 1-min loadavg at start
+was 1.23–1.87 for the Metal chunk, 2.00–2.92 for the CPU chunk (both recorded in each raw JSON's
+provenance header, not just asserted here). Run counts follow the qualifier's own guidance —
+5 reps on 0.5B/1.5B/phi3-mini, 2 on 7B — except the Metal/0.5B/goinfer cell, still at 2 reps (see
+below). Raw: `docs/measurements/peer-matrix-2026-09-17/macbook-metal-sweep.json`,
+`docs/measurements/peer-matrix-2026-09-17/macbook-cpu-sweep.json`.
+
+| model | Metal goinfer | Metal Ollama | Metal ratio | CPU goinfer | CPU Ollama | CPU ratio |
+|---|---|---|---|---|---|---|
+| 0.5B | 157.2 (n=2, spread 12.0) | 145.4 (n=5, spread 0.6) | **1.08×** | 100.1 (n=5, spread 1.2) | 148.5 (n=5, spread 6.5) | 0.67× |
+| 1.5B | 73.9 (n=5, spread 0.1) | 85.8 (n=5, spread 0.4) | 0.86× | 49.5 (n=5, spread 0.4) | 75.9 (n=5, spread 1.9) | 0.65× |
+| 7B | 21.9 (n=2, spread 0.0) | 25.5 (n=2, spread 0.0) | 0.86× | 17.2 (n=2, spread 0.7) | 20.6 (n=2, spread 0.2) | 0.83× |
+| phi3-mini | 39.6 (n=5, spread 1.1) | 41.9 (n=5, spread 0.1) | 0.94× | 24.1 (n=5, spread 0.2) | 29.7 (n=5, spread 3.3) | 0.81× |
+
+(Figures are the median of `n` runs; `spread` is max−min across those runs, both computed directly
+from the raw JSON, not hand-transcribed.)
+
+**Metal, dense re-anchor against the 2026-09-04/05 same-harness pass (D7/S tables above): flat,
+confirmed.** 1.5B and 7B are the only two sizes with a prior Metal `bench_peer.py` reading to check
+against:
+
+| model @ Metal, depth 128 | 09-04/05 (`abcdd1fe`) goinfer | 09-04/05 Ollama | 09-17/18 (`f9eae352`) goinfer | 09-17/18 Ollama |
+|---|---|---|---|---|
+| 1.5B (S) | 72.7 | 84.3 | 73.9 | 85.8 |
+| 7B (D7) | 21.8 | 25.5 | 21.9 | 25.5 |
+
+Both engines land within 1–2% of the six-week-old anchor on both models — the ~100 intervening
+commits (Gemma4 dense residency, batched-prefill parity, deep-context attention, the speculative-decode
+Theta re-measurement, the aikit v1.45.1 bump) moved nothing on this cell, as expected: none of that
+work targets short-context dense Metal decode. 0.5B and phi3-mini have no prior `bench_peer.py`
+Metal reading to compare against — §B3's 2026-08-04 0.5B figure (0.96×) used a different instrument
+(hand-run, 256-token wall-clock cap, W4A8-labeled) and is not diffed against tonight's number
+directly for that reason, same caution §B3 itself already states about not folding its own two
+methods together.
+
+**The one goinfer win in this matrix — 0.5B on Metal — is also the least-supported cell and should
+be re-measured before being quoted on its own.** Every other cell has goinfer behind Ollama, matching
+every other backend/box combination measured for this repo to date. 0.5B/Metal/goinfer is still at
+n=2 (spread 12.0, ~7.6% of its median) because it ran before this run's mid-sweep switch to 5 reps
+on cheap cells; re-running it alone at n=5 for parity with the rest of the row is a cheap follow-up,
+not done here.
+
+**CPU, compared against the 2026-08-24 anchor (§A): both engines got faster in absolute terms, and
+the goinfer/Ollama ratio moved in opposite directions per model — flagged, not explained.**
+
+| model @ CPU, depth 128 | 08-24 (`a11c56b`) goinfer int4 | 08-24 Ollama | ratio then | 09-17/18 (`f9eae352`) goinfer | 09-17/18 Ollama | ratio now |
+|---|---|---|---|---|---|---|
+| 0.5B | 81.9–83.75 | 109.0 | 0.75–0.77× | 100.1 | 148.5 | 0.67× |
+| 1.5B | 39.1–40.7 | 68.3 | 0.57–0.60× | 49.5 | 75.9 | 0.65× |
+
+goinfer rose ~20–24% on both sizes and Ollama rose ~11–36% (0.5B moved more than 1.5B) — on the
+*same pinned Ollama version*, `0.32.5`, both times, so the peer-side jump is not a version change.
+0.5B's ratio fell (0.76×→0.67×) while 1.5B's rose (0.58×→0.65×): a genuine goinfer regression or a
+genuine Ollama speedup would be expected to move both sizes the same direction, so this reads more
+like per-model noise across ~24 days and many intervening commits than a single systematic cause —
+but that is a read, not a bisection. Unlike the CUDA M26/M35 drop above, this was not traced to a
+specific commit; it is recorded as an open, unresolved gap rather than either dismissed or chased
+further, and the 08-24 anchor's own provenance line does not state a macOS version or a loadavg
+figure to compare against tonight's (a real methodology difference: that row claims "quiet box";
+tonight's CPU chunk ran up to loadavg 2.92 under the qualifier above). Re-measuring both under
+matched conditions is the honest way to settle it and is not done here.
+
+**Retry/methodology note, since this is the first row set measured under the new macOS qualifier.**
+An initial attempt at the default `BENCH_MAX_LOADAVG=1.0` exhausted its capped 20-attempt retry
+budget without converging, driven by a sustained macOS telemetry-daemon load burst neither this
+session nor Francis could root-cause (`duetexpertd`/`logd`) — the direct trigger for raising the
+threshold to 2.0 and adding repetitions on the cheap cells rather than continuing to chase a quiet
+box (see the Methodology qualifier above). No data was lost by that failed attempt; every cell in
+the tables above is from the run that completed under the revised parameters.
 
 ### Not done yet
 
