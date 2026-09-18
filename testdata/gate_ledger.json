@@ -361,6 +361,15 @@
       "value": "PASS"
     },
     {
+      "commit": "9ddde345",
+      "date": "2026-09-18",
+      "gate": "TestLagunaReal_oracle",
+      "note": "int4->int8 fix (2026-09-18): cosine 0.998845, argmax exact (22345), full 8-token continuation exact match, 474s, peak RSS 43GB. int4 near-tie divergence at continuation[3] resolved by switching precision, not a code defect (see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md)",
+      "promoted_by": "francis",
+      "source_sha256": "c0ecd264dfd5ecf3",
+      "value": "PASS"
+    },
+    {
       "commit": "679c9e5",
       "date": "2026-08-14",
       "gate": "TestLlama32_forwardParity",
@@ -523,6 +532,24 @@
       "value": "PASS"
     },
     {
+      "commit": "9ddde345",
+      "date": "2026-09-18",
+      "gate": "TestQwen25VLReal_gate",
+      "note": "cosine 0.999459, argmax exact \u2014 reproduced 2026-09-18, matches first-run 2026-09-08 result",
+      "promoted_by": "francis",
+      "source_sha256": "b75d811762605bb8",
+      "value": "PASS"
+    },
+    {
+      "commit": "9ddde345",
+      "date": "2026-09-18",
+      "gate": "TestQwen2MoeReal_oracle",
+      "note": "first-ever run 2026-09-18: argmax exact, cosine 0.999544, full 8-token greedy continuation bit-identical, 38s",
+      "promoted_by": "francis",
+      "source_sha256": "a6b00aadc7fb47ac",
+      "value": "PASS"
+    },
+    {
       "commit": "679c9e5",
       "date": "2026-08-14",
       "gate": "TestQwen2Moe_forwardParity",
@@ -592,6 +619,15 @@
       "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
       "promoted_by": "francis",
       "source_sha256": "53a7373f42c5cde1",
+      "value": "PASS"
+    },
+    {
+      "commit": "9ddde345",
+      "date": "2026-09-18",
+      "gate": "TestQwen38Real_oracle",
+      "note": "int4->int8 fix (2026-09-18): cosine 0.999886, argmax exact (11751), full 8-token continuation exact match, 90s, peak RSS 27GB. int4 near-tie divergence at continuation[2] resolved by switching precision, not a code defect (see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md)",
+      "promoted_by": "francis",
+      "source_sha256": "4c266481b65136ad",
       "value": "PASS"
     },
     {

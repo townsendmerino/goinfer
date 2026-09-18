@@ -203,14 +203,25 @@ func TestLagunaReal_gate(t *testing.T) {
 // the same technique scripts/pin_qwen3next_real.py already proved on an 80B model). Until this
 // gate, TestLagunaReal_gate above was coherence-only BY DESIGN: it proves the loader reads the
 // real checkpoint correctly (three real surprises found that way, see the file doc comment) but
-// never compared a single logit against an independent reference. int4, not int8: 33B bf16 is
-// ~63GB on disk and does not fit alongside f32 activations in 62GB of RAM at int8 either — the
-// same capacity-forced choice qwen3next's own real gate makes, hence the 0.98 (not 0.99) floor.
+// never compared a single logit against an independent reference.
+//
+// int8, NOT int4 (changed 2026-09-18) — see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md
+// for the full account. This comment used to say int8 "does not fit alongside f32 activations in
+// 62GB of RAM" and cited qwen3next's own real gate as the same capacity-forced choice — THAT WAS
+// WRONG, and it was never actually measured before this comment asserted it. Measured 2026-09-18:
+// int8 peaks at ~43GB RSS on this box (62GB total, comfortable headroom), takes ~8 minutes, and —
+// the reason this matters beyond a comment fix — the int4 gate this comment used to defend had a
+// real, reproducible divergence at continuation[3] (int4: cosine 0.984776, wrong token; confirmed
+// via a floating-point-rounding-noise control that it was a genuine near-tie in int4's coarser
+// grid, not a wiring bug). At int8 that divergence is GONE: cosine 0.998845, all 8 continuation
+// tokens exact. Caught by independent review (Gemini) challenging the capacity claim directly
+// rather than accepting "accept the int4 divergence as permanent" on the strength of a premise
+// nobody had actually run.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestLagunaReal_oracle -v -timeout 60m
 func TestLagunaReal_oracle(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_LAGUNA_XS2")
 	realLogitOracleQuant(t, ckpt, "../testdata/laguna_real_golden.json", "laguna", "laguna",
-		"HF bf16 (poolside Laguna-XS.2, 33B-A3B; full model via accelerate disk offload; int4 weights, f32 activations)", "int4")
+		"HF bf16 (poolside Laguna-XS.2, 33B-A3B; full model via accelerate disk offload; int8 weights, f32 activations)", "int8")
 }

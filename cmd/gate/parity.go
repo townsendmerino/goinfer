@@ -686,45 +686,15 @@ var neverConfirmed = map[string]string{
 // So they are first-run, which is the correct and honest outcome — their failures are ITEMS until a
 // sweep produces a value a person promotes. The date is required so an entry that quietly becomes
 // permanent is visible as one.
-var awaitingFirstConfirmation = map[string]string{
-	"TestQwen2MoeReal_oracle": "2026-09-08 — newly required (T3 promotion of qwen2_moe from tiny-golden to a " +
-		"released checkpoint); registered alongside the gate and asset in the same change, per the " +
-		"discipline established after smollm3/lfm2/mistral3/internlm2's registration gaps; promote from " +
-		"the first sweep that runs it",
-	"TestLagunaReal_oracle": "2026-09-08 — newly required (T3 numeric promotion of laguna; " +
-		"TestLagunaReal_gate above was coherence-only by design, never comparing a logit against an " +
-		"independent reference); pinned via scripts/pin_sequential_oracle.py's accelerate disk-offload " +
-		"technique (adapted from pin_qwen3next_real.py) on a checkpoint already resident on this box, " +
-		"no download. First run FAILED on the greedy continuation (argmax on the prompt matched, " +
-		"cosine 0.984776 cleared the pre-registered 0.98 int4 floor, but continuation[3] diverged: " +
-		"got 110, want 785) — not investigated further; consistent with, but not confirmed as, the " +
-		"MoE router-flip noise this repo has already characterized at int8 (docs/queue's " +
-		"'MoE router-flip noise floor'), now seen at int4 on a 256-expert top-8 router. Left required " +
-		"and red rather than moved to realckptNotRequired. Still promote from the first sweep that " +
-		"runs it once resolved.",
-	"TestQwen38Real_oracle": "2026-09-08 — newly required (T3 numeric promotion of qwen3_5; " +
-		"TestQwen38Real_gate above was coherence-only — this family's own manifest text said plainly " +
-		"no bf16 reference forward had ever been run); pinned via scripts/pin_sequential_oracle.py " +
-		"(the SAME script as laguna's, --family qwen3_5) on a checkpoint already resident on this " +
-		"box, no download. First run FAILED on the greedy continuation, the same shape as laguna's " +
-		"above: argmax on the prompt matched (11751), cosine 0.993235 cleared the 0.98 int4 floor " +
-		"comfortably, but continuation[2] diverged (got 11751 — repeats \"Paris\" — want 198, a " +
-		"newline). Unlike laguna this family is DENSE (no MoE), so the router-flip explanation " +
-		"offered there does not apply here; the two families sharing the same failure SHAPE (prompt " +
-		"argmax + floor-clearing cosine, continuation drift a few tokens in) despite sharing no " +
-		"mixer in common (DeltaNet+softmax hybrid vs MoE) may point at int4 itself on this box's " +
-		"quantizer rather than either family's own wiring — not investigated further; a real lead " +
-		"for whoever picks this up next, not a claim. Left required and red rather than moved to " +
-		"realckptNotRequired. Still promote from the first sweep that runs it once resolved.",
-	"TestQwen25VLReal_gate": "2026-09-08 — newly required (T3 promotion of qwen2_5_vl from tiny-golden " +
-		"to a released checkpoint). The first family in this batch with a DIFFERENT oracle shape: " +
-		"a real AutoImageProcessor run on a real (pre-sized) image, through the real vision encoder " +
-		"and real decoder — not a text-only forward. Scoped to the prefill forward only, not greedy " +
-		"continuation past the image block (a genuinely different, unbuilt m-RoPE-continuation code " +
-		"path — see the gate's own doc comment). PASSED first run: argmax exact, cosine 0.999459. " +
-		"Registered alongside the gate and asset in the same change; promote from the first sweep " +
-		"that runs it.",
-}
+// EMPTY, 2026-09-18. The four gates that sat here since 2026-09-08 (TestQwen2MoeReal_oracle,
+// TestLagunaReal_oracle, TestQwen38Real_oracle, TestQwen25VLReal_gate) have all now produced a
+// confirmed PASS and been promoted to the ledger. Laguna and Qwen3.8's first-run FAILs (recorded
+// in the git history of this map) turned out to be genuine int4 near-tie sensitivity, not a code
+// defect — see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md — and both now run
+// (and PASS) at int8 instead of int4; that document is also the retraction record for an earlier,
+// wrong plan to move both into neverConfirmed permanently on an unverified "int8 doesn't fit"
+// premise.
+var awaitingFirstConfirmation = map[string]string{}
 
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS
 // but does not require, with the reason. Every such test must be here or in parityRealckptGates —

@@ -230,14 +230,21 @@ func TestQwen38Real_gate(t *testing.T) {
 // said plainly that no bf16 reference forward had ever been run. The released checkpoint is a
 // vision-language wrapper (Qwen3_5ForConditionalGeneration) even though only the text path is
 // used; the pin script loads it via AutoModelForImageTextToText with pixel_values=None, the
-// same shape mistral3's own real-checkpoint gate needed. int4, not int8: 27.8B bf16 is 55.6 GB
-// on disk and does not fit alongside f32 activations in 62 GB of RAM at int8 either — the same
-// capacity-forced choice TestQwen38Real_gate above and laguna's real gate both make.
+// same shape mistral3's own real-checkpoint gate needed.
+//
+// int8, NOT int4 (changed 2026-09-18) — see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md.
+// This comment used to say int8 "does not fit alongside f32 activations in 62 GB of RAM" — WRONG,
+// and never actually measured. Measured 2026-09-18: int8 peaks at ~27GB RSS here, ~90s. The int4
+// gate this defended had a real, reproducible divergence at continuation[2] (int4: cosine
+// 0.993235, "Paris" repeating instead of a newline; confirmed via a floating-point-rounding-noise
+// control as a genuine near-tie in int4's coarser grid, sharing the same signature Laguna showed
+// despite the two families sharing no mixer — both resolved by the same fix). At int8: cosine
+// 0.999886, all 8 continuation tokens exact.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestQwen38Real_oracle -v -timeout 60m
 func TestQwen38Real_oracle(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_QWEN38")
 	realLogitOracleQuant(t, ckpt, "../testdata/qwen3_5_real_golden.json", "qwen3_5", "qwen3_5",
-		"HF bf16 (Qwen/Qwen3.8-27B, Qwen3_5ForConditionalGeneration text path; full model via accelerate disk offload; int4 weights, f32 activations)", "int4")
+		"HF bf16 (Qwen/Qwen3.8-27B, Qwen3_5ForConditionalGeneration text path; full model via accelerate disk offload; int8 weights, f32 activations)", "int8")
 }
