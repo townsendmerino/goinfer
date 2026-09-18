@@ -394,9 +394,17 @@ rediscovered:
   `promoted_by` means a person checked the gate's value, and the assertion itself just changed.
   `scripts/gate_ledger.py promote --gate TestQwen38GGUF_weightDiff --value PASS --by francis`.
 
-- **olmo3 is FIXED (`2aa4540`) and the gate is green — but it still fails on nobara-pc, and the
-  reason is a fixture-propagation gap worth generalising.** CORRECTION: an earlier revision of this
-  entry concluded "no single parser greens both the tiny gate and the real one." **That was wrong.**
+- **olmo3 is FIXED (`2aa4540`) and the gate is green — nobara-pc CONFIRMED FIXED 2026-09-18 by
+  following this entry's own remedy.** `~/g4venv` had drifted to transformers 5.10.2 (not even the
+  5.12.0 this entry originally measured); `pip install "transformers==5.15.0"` + re-running the
+  UNMODIFIED `scripts/pin_olmo3_tiny.py` regenerated both the checkpoint and
+  `testdata/olmo3_forward_golden.json` together, and `TestOlmo3_forwardParity` now passes at
+  cosine 0.9999999999998239 (essentially bit-exact) — not a loosened bar, the genuine one. The
+  general fixture-propagation trap this entry documents is unchanged and still worth reading; only
+  nobara-pc's specific instance of it is now closed. The rest of this entry (below) is kept as
+  written at the time. CORRECTION (of the ORIGINAL investigation, unrelated to the above): an
+  earlier revision of this entry concluded "no single parser greens both the tiny gate and the real
+  one." **That was wrong.**
   `2aa4540` restored olmo3's per-layer-type RoPE split in `decoder/registry.go` — transformers
   5.15.0's `Olmo3RotaryEmbedding.forward` takes an explicit `layer_type` and returns a genuinely
   different (cos, sin) per call (full-attention YaRN-scaled, sliding-attention plain at the same
@@ -1372,8 +1380,8 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:215` | goinfer | `// SetImageBlocks/attendHi), the resident twin of prefillLogitsVL's CPU forward` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:217` | goinfer | `// paying for the CPU prefill; without it — or on any decline from it — that turn falls ` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:252` | goinfer | `// resident-capability-gap discipline as every other optional extension here) — Generate` |
-| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1155` | goinfer | `rl.hasSink = true` |
-| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:581` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
+| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1158` | goinfer | `rl.hasSink = true` |
+| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:584` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:1004` | goinfer | `lm.sessions.adapter = spec.name` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:178` | goinfer | `MoECacheSlots:    cfg.moeCacheSlots,` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1258` | goinfer | `var gen *decoder.Generation` |
