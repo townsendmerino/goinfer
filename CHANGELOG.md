@@ -165,6 +165,14 @@ any surface may still change.
     (M-42, M-43, M-45); `--exact-prefill` never actually covered the CUDA backend (M-48, M-54, M-55,
     M-58); recurrent/Nemotron non-attention layers reserved dead KV capacity they never use (P-02,
     M-28 addendum).
+  - **v0.18.0 published with zero release assets.** `internal/serveapp/main.go` referenced
+    `syscall.SIGUSR1`/`SIGUSR2` unconditionally for K2's halt signal wiring; those identifiers are
+    undefined on `GOOS=windows`, so `release-assets.yml`'s windows cross-compile failed and — because
+    nothing checked that the release which resulted actually had anything attached — the tag still
+    published, looking identical to every prior release page except a 0 asset count where each of the
+    three before it had 27 (H1). Fixed by moving the signal wiring behind a build tag
+    (`internal/serveapp/haltsignal_unix.go` / `haltsignal_windows.go`), verified with a real
+    `GOOS=windows GOARCH=amd64` build.
 
 ## [v0.18.0] — 2026-09-13
 
