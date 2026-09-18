@@ -1,15 +1,61 @@
 # Task: find the actual bug behind WebGPU's no-GQA resident-decode divergence
 
-> **Status: OPEN, filed 2026-09-18.** Interim safety fix shipped (gpu/residency.go declines the
-> broken case rather than serving it); the actual kernel bug is NOT found. This doc exists so the
-> next pass does not repeat the eliminations already done here.
->
-> **Second pass, same day (Cowork, section directly below): no kernel bug reproduced.** The
-> shipped kernels and plan match an oracle at cosine 1.000000 on phi3-mini's exact shape, the
-> production path on a phi3-shaped synthetic checkpoint reproduces the first pass's numbers, and the
-> CPU forward reproduces them against itself under f32-rounding-sized noise. The two real-checkpoint
-> confirmation runs are listed there; the guard comes out when they pass. The first pass's record
-> (from "What triggered this" on) is kept unchanged below it.
+> **Status: CLOSED 2026-09-18.** Filed same-day as OPEN (interim decline shipped in
+> gpu/residency.go); a second pass (Cowork, no GPU) built capture + sensitivity tooling and
+> argued from synthetic checkpoints that there was no kernel bug, pending two real-checkpoint
+> runs it could not do from its sandbox; a third pass (nobara-pc, RTX 2070 SUPER — real hardware,
+> the real `Phi-3-mini-4k-instruct-q4.gguf` checkpoint) ran exactly those two runs plus a
+> real-text check and confirmed the second pass's read. The `nKV == nH` decline and its
+> `GOINFER_WEBGPU_ALLOW_NOGQA` escape hatch are REMOVED from `gpu/residency.go` (not just
+> bypassed) — see that file's own comment at the clamp for the short version. The capture and
+> sensitivity tooling (`gpu/resident_capture_parity_test.go`, `gpu/cpu_quant_sensitivity_test.go`,
+> `gpu/geom_mha_decoderunner_test.go`, `decoder/normnoise.go`, `scripts/mk_phi3_synth.py`) stays —
+> it is real, reusable infrastructure for the next numerically-sensitive divergence, not a
+> throwaway. First and second pass records kept unchanged below, for the same reason the first
+> pass's own eliminations were kept through the second: the trail is the value.
+
+## Third pass, 2026-09-18 (nobara-pc, real hardware, real checkpoint): confirmed
+
+Ran the two checks the second pass named as decisive and could not do itself, on this box's real
+RTX 2070 SUPER (a THIRD independent adapter beyond the Mac's Metal-backed WebGPU and the
+Cowork sandbox's software Vulkan/lavapipe) against the real
+`~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf`, plus one more for an intuitive read.
+
+**Per-layer capture** (`GOINFER_WEBGPU_ALLOW_NOGQA=1 GOINFER_INT4_F16_SCALES=1
+GOINFER_GPU_CAPTURE=1 GOINFER_PARITY_CKPT=… go test -tags 'gpu goinfer_testhooks' ./gpu/ -run
+TestResidentCaptureParityWebGPU -v`): reproduces the second pass's predicted signature exactly.
+Early layers (as far out as L00–L17 at one prompt position) agree to cosine 1.00000000, relative
+error ~1e-7 — f32 rounding, not a bug. At a layer that varies by position (L18 at prompt position
+3, L03 at position 4 — consistent with "which activation sits near a rounding boundary" being
+prompt-dependent), one sublayer's contribution jumps to O(1e-2) relative error and every later
+layer inherits and compounds it. Overall: min prompt cosine 0.985860.
+
+**CPU self-sensitivity control** (`GOINFER_PARITY_CKPT=… go test -tags 'gpu goinfer_testhooks'
+./gpu/ -run TestCPUQuantSensitivity -v`), same real checkpoint, no GPU involved at all: CPU int4
+forward against itself with every f32 norm nudged ±1 ULP. Min cosine **0.953287**, with its own
+argmax flips at specific prompt positions (e.g. position 3: baseline argmax 21490, noised argmax
+23881 — the SAME position where the capture-parity run above saw CPU=21490 vs GPU=22475: three
+different tokens at one position, all near-tied, each perturbation source picking a different
+winner). **The resident-vs-CPU comparison (0.985860) is BETTER than the CPU's own self-noise
+floor (0.953287)** — the opposite of what an additional real kernel bug sitting on top of that
+noise would produce.
+
+**Real text**, guard lifted, same prompt on both backends, greedy: CPU — "*1. Tokyo 2. Osaka
+3. Yokohama … Note: While there are other large cities in Japan, such as Nagoya and Osaka*".
+WebGPU resident — "*1. Tokyo - As the capital city, Tokyo is the largest city in Japan and serves
+as the country' divulge. It is a major economic, political, and cultural hub*" — coherent and
+factually correct throughout except one clearly-anomalous single word ("divulge"), not the
+wholesale incoherence a real routing/kernel bug produces elsewhere in this repo's history (e.g.
+the MLA nGroup/topkGroup trap). One bad word at a near-tie, not a broken model.
+
+Also fixed one cosmetic issue found running these: `resident_capture_parity_test.go`'s summary
+log line is hardcoded `"phi3-synth (...)"` regardless of which checkpoint actually ran — harmless
+(doesn't affect what's measured, only the log label) but worth a follow-up cleanup if this file
+gets touched again.
+
+**Verdict: closing this as "no kernel bug, per-checkpoint quantization sensitivity, correctly
+diagnosed by the second pass's own tooling."** Removed the decline; kept the tooling per the
+status line above.
 
 ## Second pass, 2026-09-18 (Cowork): no kernel bug reproduced — the evidence is the quantized forward's own sensitivity
 

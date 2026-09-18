@@ -133,6 +133,8 @@ and `release-assets.yml`), and unset it skips.
 | `GOINFER_MEM_PROBE` | RSS/heap attribution probe around the test suite. |
 | `GOINFER_FAKEQUANT` (`_ACT` / `_EXPERTS` / `_PERROW`) | Parity-debugging: simulate a quantization on the f32 path to isolate a numeric gap. |
 | `GOINFER_G4_CAPTURE` / `GOINFER_MOE_PROF_SPLIT` | Gemma-4 / MoE internal capture + profiling splits. |
+| `GOINFER_GPU_CAPTURE` | Per-layer WebGPU resident-decode capture (attention context, post-attention and post-MLP residuals) into `DecodeRunner.ReadCapture` — the WebGPU twin of `decoder.Model.ForwardSubCapture`, for localising a resident-vs-CPU divergence to one sublayer instead of arguing from final logits (`docs/tasks/task-webgpu-nogqa-decode-bug.md`). Nothing allocated or dispatched when unset. |
+| `GOINFER_NORM_ULP_NOISE=<seed>` | Nudges every f32 norm vector a loaded model carries by an independent ±1/0 ULP per element (`decoder/normnoise.go`) — noise of exactly f32-rounding size, the same magnitude two correct implementations that reduce in a different order differ by. Measures a checkpoint's OWN sensitivity to that noise, the floor below which a resident-vs-CPU cosine on a quantized (W4A8/W8A8) forward carries no information about the kernels (`docs/tasks/task-webgpu-nogqa-decode-bug.md`). |
 
 
 ## CI & test gates

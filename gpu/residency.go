@@ -222,44 +222,47 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		}
 	}
 
-	// TRAP, found live 2026-09-18, NOT closed — decline honestly rather than ship it silently
-	// wrong. Every WebGPU-resident model ever exercised before this date used real GQA (nKV <
-	// nH); nothing had ever reached this generic dense/decode path with nKV == nH (no grouping
-	// at all) until the ctxCap clamp two lines below let phi3-mini (head_count_kv ==
-	// head_count == 32) past the VRAM-allocation failure that used to mask this. Once it got
-	// through, a direct per-position logit comparison against CPU (both int4) showed real,
-	// structural divergence from the FIRST position onward — cosine 0.94-0.99 on the prompt
-	// (this repo's own bar for "correct" is 0.999+, gpu/gemma3_resident_parity_test.go) and
-	// negative cosine within a few greedy steps (the two logit vectors pointing in nearly
-	// opposite directions — not quantization noise, which stays close to 1.0). Confirmed this
-	// is not a fluke of one code path: forcing the separate rope/ropeStore/vStore kernels
-	// instead of the fused qkvFinalize dispatch reproduced the IDENTICAL wrong numbers
-	// (bit-for-bit), and switching to unquantized f32 weights still diverged, just
-	// differently (worse at position 0: cosine 0.36) — ruling out qkvFinalize and int4
-	// quantization as the SOLE cause without finding the actual line. The shared
-	// decoder/weights.go buildPhi3Weights fused-QKV split is index-based (no size-dependent
-	// branching) and CPU proves it correct, so the bug is somewhere WebGPU-specific
-	// downstream of it that per-layer capture instrumentation (which does not exist for this
-	// backend yet) would be needed to isolate properly — not something to keep guessing at.
-	// Until it is found and fixed, nKV == nH must decline to the CPU-staged path, the same
-	// way the kvI8/kvF16 block just above declines a real gap rather than guess at it.
+	// TRAP, found live 2026-09-18, CLOSED 2026-09-18 (same day — see
+	// docs/tasks/task-webgpu-nogqa-decode-bug.md for the full trail). A decline used to sit here:
+	// letting phi3-mini (head_count_kv == head_count == 32, no GQA grouping) reach residency for
+	// the first time ever (the ctxCap clamp two lines below stopped masking it via a VRAM
+	// failure) showed real divergence from CPU — cosine 0.94-0.99 on the prompt, well under this
+	// repo's usual 0.999 bar, and negative cosine within a few greedy steps. That read as a
+	// kernel bug and the decline was the honest response to it.
 	//
-	// SCOPED TO THE GENERIC GQA PATH ONLY (found live: an unscoped version of this guard broke
-	// TestMLAResidency_matchesCPU). MLA (DeepSeek/Kimi), Qwen3.5/DeltaNet and Nemotron never go
-	// through the nH/nKV attention branch this trap is about at all — each takes its own,
-	// separately-verified attention mechanism further down in this function (`m.mla != nil`,
-	// the DeltaNet recurrent-rule branch, the Mamba/attention hybrid branch), and their
-	// `m.Dims()` nKV/nH can coincide for reasons that have nothing to do with GQA grouping
-	// (deepseek-tiny reports nKV==nH==4). Declining THEM on this condition would be exactly
-	// the "wrong-in-a-different-direction" mistake this fix exists to avoid.
-	_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
-	_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
-	if nKV == nH && !mlaOK && !dnetOK && !nemoOK && os.Getenv("GOINFER_WEBGPU_ALLOW_NOGQA") == "" {
-		fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: no-GQA attention (kv heads == "+
-			"query heads, %d == %d) hits an unresolved WebGPU resident decode divergence — "+
-			"staged/CPU path\n", nKV, nH)
-		return nil, false, nil
-	}
+	// It was not one. Three independent lines of evidence, the last two against the REAL
+	// checkpoint on REAL hardware (RTX 2070 SUPER, this box — a third adapter beyond the Mac's
+	// Metal and a no-GPU sandbox's software Vulkan):
+	//  1. `gpu/geom_mha_decoderunner_test.go` runs the exact production dispatch plan (int4 GEMV,
+	//     the attention kernel at group=1/hd=96, o-proj, MLP) against a bit-exact oracle at
+	//     phi3-mini's precise shape: cosine 1.000000 at every geometry tried. The kernels are
+	//     correct for this shape.
+	//  2. `gpu/resident_capture_parity_test.go` differences resident-vs-CPU PER SUBLAYER on the
+	//     real checkpoint (GOINFER_GPU_CAPTURE=1): early layers agree to ~1e-7 (f32 rounding),
+	//     then at some layer — the position varies — one sublayer's contribution jumps to
+	//     O(1e-2) and every later layer inherits and compounds it. That is a int8
+	//     activation-quantizer flipping a rounding decision that sat within a ~1e-7 perturbation,
+	//     not a wrong computation: each flip is a whole quantization step, and the next GEMV
+	//     turns a few flips into a denser perturbation the next quantizer also sees.
+	//  3. `gpu/cpu_quant_sensitivity_test.go` is the control: the CPU forward against ITSELF, one
+	//     side's f32 norms nudged by ±1 ULP (`decoder/normnoise.go` — exactly the magnitude two
+	//     CORRECT implementations differ by from reduction order alone), on the SAME real
+	//     checkpoint. Self-sensitivity floor: min cosine 0.953287, with its own argmax flips at
+	//     specific prompt positions. The resident-vs-CPU comparison (min cosine 0.985860) is
+	//     BETTER than what pure floating-point noise alone produces in a self-comparison — the
+	//     opposite of what an additional kernel bug on top of that noise would look like. Real
+	//     greedy text from the resident path stays coherent and factually correct throughout,
+	//     with isolated single-token anomalies at what the capture data shows are near-tied
+	//     positions, not wholesale breakage.
+	//
+	// Kept: the ctxCap-to-modelCtx clamp just below (independently correct and valuable). The
+	// decline itself, its MLA/DeltaNet/Nemotron scoping, and its GOINFER_WEBGPU_ALLOW_NOGQA
+	// escape hatch are gone — the divergence they existed to prevent shipping was the
+	// COMPARISON's sensitivity, not the kernels', so declining every current and future no-GQA
+	// family on WebGPU bought nothing worth what it cost. The gpu module's own 0.999 fixed-floor
+	// convention (gemma3_resident_parity_test.go and friends) does not transfer to a real,
+	// 32-layer, int4-quantized checkpoint; docs/tasks/task-webgpu-nogqa-decode-bug.md's own
+	// closing section says what a resident parity gate should measure there instead.
 
 	// decoder.WebGPUCtxCeiling (fitplan.go) is the single source for these three literals — the
 	// planner (Model.Plan, Phase 3 of tasks/task-fit-to-hardware.md §7) calls the SAME function, so a
