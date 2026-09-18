@@ -51,6 +51,18 @@ type DecodeRunner struct {
 	// (gpu/mamba_resident_capture_test.go). nil for non-hybrid; zero production cost.
 	mcapProj, mcapConv, mcapY, mcapGated *wgpu.Buffer
 
+	// Per-layer residual-stream capture (GOINFER_GPU_CAPTURE=1, docs/tasks/
+	// task-webgpu-nogqa-decode-bug.md): the attention context (pre-o-proj, [nH*hd]), the
+	// residual after the attention sublayer's add and after the MLP's add ([hidden] each), per
+	// generic-attention layer, copied by an extra kv-store dispatch recorded into the plan at
+	// build. They hold the LAST run's values; ReadCapture copies them back. This is the WebGPU
+	// twin of decoder.Model.ForwardSubCapture's subCtx/subAttn/subMLP so a resident-vs-CPU
+	// divergence can be localised to a sublayer of a layer in ONE run (CLAUDE.md: "prefer
+	// differencing per layer over reasoning from final logits"). nil unless the env var is set;
+	// no dispatch is recorded and nothing is allocated otherwise.
+	capCtx, capAttn, capMLP []*wgpu.Buffer
+	capCtxN, capHidden      int
+
 	// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md — see lora_resident.go).
 	// baseSteps is the pristine plan built above (no adapter) — SetAdapter never mutates it,
 	// only rebuilds r.steps from it plus loraHooks, so clearing an adapter is a cheap restore
@@ -1184,6 +1196,21 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		return keepBuf(b)
 	}()
 
+	// Per-layer capture (GOINFER_GPU_CAPTURE=1): a kv-store dispatch (dst[i] = src[i]) copying
+	// a live buffer into a build-once capture buffer, recorded in plan order so it sees exactly
+	// what the next dispatch sees. Reuses the kv-store kernel rather than adding one.
+	captureOn := os.Getenv("GOINFER_GPU_CAPTURE") != ""
+	capStep := func(src *wgpu.Buffer, n int) *wgpu.Buffer {
+		dst := storF(n)
+		p := uni([]uint32{uint32(n), 0, 0, 0})
+		add(c.kvStorePipeline, bind(c.kvStoreLayout, src, dst, p), uint32(n+63)/64, 1)
+		return dst
+	}
+	if captureOn {
+		r.capHidden = hidden
+		r.capCtxN = nH * hd
+	}
+
 	// A bound (all-zero) bias buffer for MoE layers without a selection bias
 	// (Mixtral softmax routing): the route kernel binds it but hasBias=0 keeps it
 	// out of the math. CreateBuffer zero-inits, so no upload needed.
@@ -1418,6 +1445,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			if aGate != nil { // ctx *= sigmoid(gate), before o_proj (matches CPU)
 				attnGate(ctxv, aGate, nH*g.hd)
 			}
+			if captureOn { // the pre-o-proj context — decoder's subCtx[l]
+				r.capCtx = append(r.capCtx, capStep(ctxv, nH*g.hd))
+			}
 			cq, cs := quant(ctxv, nH*g.hd)
 			// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatOutBias (gpt-oss o_proj bias) / FeatSandwichNorm
 			// (Gemma's post-attn norm) both need the sublayer output BEFORE the residual add — the
@@ -1438,6 +1468,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				gemvAdd(cq, cs, lw.o, r.xd) // o-proj + residual into xd
 				r.loraHooks = append(r.loraHooks,
 					loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraO, aq: cq, ascale: cs, dst: r.xd, k: nH * g.hd})
+			}
+			if captureOn { // residual after the attention sublayer's add — decoder's h after addResidual(h, subAttn)
+				r.capAttn = append(r.capAttn, capStep(r.xd, hidden))
 			}
 		}
 		if lw.nemoKind == nemoKMamba || lw.nemoKind == nemoKAttn {
@@ -1520,6 +1553,9 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		}
 		if lw.layerScalar != 0 && lw.layerScalar != 1.0 {
 			scaleVec(r.xd, lw.layerScalar, hidden)
+		}
+		if captureOn { // this layer's output residual — decoder's captured[l] / h after the MLP add
+			r.capMLP = append(r.capMLP, capStep(r.xd, hidden))
 		}
 	}
 	// Distinct attention geometries the plan actually built (1 for uniform families, 2 for
@@ -1619,6 +1655,73 @@ func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, ga
 		return nil, nil, nil, nil, err
 	}
 	return proj, conv, y, gated, nil
+}
+
+// ReadCapture copies the per-layer capture buffers (GOINFER_GPU_CAPTURE=1 at build — see the
+// capCtx/capAttn/capMLP field comment) back to the host, as recorded by the most recent Run:
+// ctx[l] is layer l's attention context (pre-o-proj, [nH*hd]), attn[l] the residual stream after
+// its attention add, mlp[l] the residual after its MLP add ([hidden] each). Layers that take a
+// non-generic mixer (Mamba/DeltaNet/MLA/Nemotron kinds) record no ctx/attn entry, so the three
+// slices are indexed by generic-attention-layer order for ctx/attn and by plan-layer order for
+// mlp. Returns an error when capture was not enabled or a buffer map fails.
+func (r *DecodeRunner) ReadCapture() (ctx, attn, mlp [][]float32, err error) {
+	if r.capHidden == 0 {
+		return nil, nil, nil, fmt.Errorf("gpu: ReadCapture: runner was built without GOINFER_GPU_CAPTURE")
+	}
+	rd := func(b *wgpu.Buffer, n int) ([]float32, error) {
+		stag, e := r.c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		if e != nil {
+			return nil, e
+		}
+		defer stag.Release()
+		enc, e := r.c.device.TryCreateCommandEncoder(nil)
+		if e != nil {
+			return nil, e
+		}
+		defer enc.Release()
+		if e := enc.TryCopyBufferToBuffer(b, 0, stag, 0, uint64(n*4)); e != nil {
+			return nil, e
+		}
+		cmd, e := enc.TryFinish(nil)
+		if e != nil {
+			return nil, e
+		}
+		defer cmd.Release()
+		r.c.queue.Submit(cmd)
+		st := wgpu.MapAsyncStatus(0)
+		if e := stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.MapAsyncStatus) { st = s }); e != nil {
+			return nil, e
+		}
+		r.c.device.Poll(true, nil)
+		if st != wgpu.MapAsyncStatusSuccess {
+			return nil, fmt.Errorf("gpu: ReadCapture: buffer map failed (status %v)", st)
+		}
+		out := make([]float32, n)
+		copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(n*4))))
+		stag.TryUnmap()
+		return out, nil
+	}
+	read := func(bufs []*wgpu.Buffer, n int) ([][]float32, error) {
+		out := make([][]float32, len(bufs))
+		for i, b := range bufs {
+			v, e := rd(b, n)
+			if e != nil {
+				return nil, e
+			}
+			out[i] = v
+		}
+		return out, nil
+	}
+	if ctx, err = read(r.capCtx, r.capCtxN); err != nil {
+		return nil, nil, nil, err
+	}
+	if attn, err = read(r.capAttn, r.capHidden); err != nil {
+		return nil, nil, nil, err
+	}
+	if mlp, err = read(r.capMLP, r.capHidden); err != nil {
+		return nil, nil, nil, err
+	}
+	return ctx, attn, mlp, nil
 }
 
 func (r *DecodeRunner) record(pass *wgpu.ComputePassEncoder) {

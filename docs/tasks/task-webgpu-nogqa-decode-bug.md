@@ -3,6 +3,188 @@
 > **Status: OPEN, filed 2026-09-18.** Interim safety fix shipped (gpu/residency.go declines the
 > broken case rather than serving it); the actual kernel bug is NOT found. This doc exists so the
 > next pass does not repeat the eliminations already done here.
+>
+> **Second pass, same day (Cowork, section directly below): no kernel bug reproduced.** The
+> shipped kernels and plan match an oracle at cosine 1.000000 on phi3-mini's exact shape, the
+> production path on a phi3-shaped synthetic checkpoint reproduces the first pass's numbers, and the
+> CPU forward reproduces them against itself under f32-rounding-sized noise. The two real-checkpoint
+> confirmation runs are listed there; the guard comes out when they pass. The first pass's record
+> (from "What triggered this" on) is kept unchanged below it.
+
+## Second pass, 2026-09-18 (Cowork): no kernel bug reproduced — the evidence is the quantized forward's own sensitivity
+
+> **Status after this pass: the kernel-bug hypothesis is refuted for the SHAPE and explained for the
+> VALUES; the guard should come out once the two real-checkpoint confirmation runs below pass.**
+> Everything above this section is the first pass's elimination trail and still stands as recorded;
+> what changed is the reading of the two numbers it could not explain.
+
+### How this was run
+
+The `gpu` module was built and run in a cloud sandbox with no GPU at all: Mesa lavapipe (llvmpipe,
+Vulkan 1.3, the same software adapter CI's headless runner uses), wgpu-native's Vulkan backend,
+Go 1.27.1, tree `6bb16fca` plus the instrumentation listed under "Tooling landed". Nothing in
+`gpu/` was changed except the additions below; the kernels and the dispatch plan are the shipped
+ones. The real phi3-mini checkpoint cannot be fetched from that sandbox, so every real-checkpoint
+number in this section is from the first pass; every synthetic number is new and reproducible
+with `scripts/mk_phi3_synth.py`.
+
+### Result 1 — the kernels and the plan are correct for phi3-mini's exact shape
+
+`gpu/geom_mha_decoderunner_test.go` (`TestDecodeRunnerW4A8_geometries`) is
+`TestDecodeRunnerW4A8_parity` re-run over geometries no synthetic test had ever used (all of them
+used qwen2.5-1.5B's `(nH,nKV,hd) = (12,2,128)`), through the production `newDecodeRunner` plan —
+`rmsQuant` → W4A8 q/k/v → `qkvFinalize` → the key-split attention kernel → `quant` → o-proj
+`gemvAdd` → `rmsQuant` → gate/up → `swigluQuant` → down `gemvAdd` → final norm → LM head —
+against the same int4/int8 oracle, at position 0 (one key, attention is the identity on V) and
+position 20:
+
+| geometry | hidden | nH | nKV | hd | inter | vocab | pos 0 | pos 20 |
+|---|---|---|---|---|---|---|---|---|
+| qwen2.5-1.5b (control) | 1536 | 12 | 2 | 128 | 8960 | 4096 | cosine 1.000000, maxAbs 7.6e-6 | 1.000000, 7.6e-6 |
+| **phi3-mini** | **3072** | **32** | **32** | **96** | **8192** | **32064** | **1.000000, 1.5e-5** | **1.000000, 7.6e-6** |
+| MHA only (group=1, hd 128) | 1536 | 12 | 12 | 128 | 8960 | 4096 | 1.000000, 3.8e-6 | 1.000000, 7.6e-6 |
+| hd=96 only (GQA 12/2) | 1536 | 12 | 2 | 96 | 8960 | 4096 | 1.000000, 3.8e-6 | 1.000000, 1.5e-5 |
+
+That closes suspects 1–3 of "where to look next": the int4 GEMV at `[3072,3072]`/`[8192,3072]`/
+`[3072,8192]`/`[32064,3072]`, the attention kernel at `group = 1` and `hd = 96`, and the
+o-proj/MLP chain all match the oracle to f32 rounding. The argmax agrees in every cell.
+
+### Result 2 — the production path on a phi3-shaped checkpoint reproduces the first pass's NUMBERS, and per-layer capture shows what they are
+
+`scripts/mk_phi3_synth.py` writes a random `Phi3ForCausalLM` safetensors with phi3-mini-4k's exact
+per-layer dims (fused `qkv_proj`/`gate_up_proj`, untied head, 4 layers). `gpu/resident_capture_parity_test.go`
+(`TestResidentCaptureParityWebGPU`) loads it exactly the way the first pass loaded the real model —
+`decoder.Load` with `Backend:"webgpu", Quant:"int4"` (so `BuildResident`, the `UploadW4A8Packed`
+fast path and the `fusedSplit` are all the real ones) against `decoder.Load` with `Quant:"int4"` —
+and runs the same `[1 7 42 100 5 200 13 88]` prompt plus a greedy continuation:
+
+| comparison | prompt cosines (8 positions) | notes |
+|---|---|---|
+| resident int4 vs CPU int4, as the first pass ran it | 0.9982 – 0.9991 | argmax flip at position 6 (cpu 8317 / gpu 24969) |
+| same, with `GOINFER_INT4_F16_SCALES=1` (both sides carry the f16 group scales the GPU stores) | 0.9993 – 0.9996 | the only single-variable form of the comparison |
+| resident W8A8 (`Quant:""` → int8 rows at upload) vs CPU **f32** — the first pass's "f32" run | 0.9963 – 0.9985 | greedy flip at step 2, then cosines 0.25 |
+| same, on a copy with a crude planted "massive activation" channel | 0.966 – 0.999 | argmax flip at position 4 |
+
+So a 4-layer *random* phi3-shaped checkpoint with no outliers already sits below this repo's 0.999
+bar on the exact test the first pass used, and the "f32" comparison sits below it by more. With
+`GOINFER_GPU_CAPTURE=1` the same test differences the two forwards per sublayer (the runner's new
+capture buffers vs `decoder.ForwardSubCaptureLogitsForTest`), relative L2 error `‖gpu−cpu‖/‖cpu‖`,
+f16 scales matched, position 0:
+
+| layer | attention context (pre o-proj) | attention contribution | MLP contribution |
+|---|---|---|---|
+| 0 | 3.5e-7 | 2.0e-7 | 4.2e-7 |
+| 1 | 1.3e-7 | 5.0e-4 | 1.5e-2 |
+| 2 | 1.4e-2 | 1.8e-2 | 3.5e-2 |
+| 3 | 2.1e-2 | 2.5e-2 | 4.4e-2 |
+
+Layer 0 — identical input on both sides — agrees to f32 rounding across all three sublayers. At
+layer 1 the attention *context* still agrees to 1.3e-7 while the attention *contribution* (the
+o-proj output) is off by 5e-4 and the MLP contribution by 1.5e-2. The only operations between
+those points are `quant(ctx)` and the o-proj GEMV, then `rmsQuant`, gate/up, `swigluQuant`, down.
+That is the int8 activation re-quantization acting on a dense ~1e-7 difference: each quantizer
+flips the rounding decisions that sit within the perturbation of a half-step, every flip is a
+whole step, the next GEMV turns the flips into a dense perturbation roughly the square root of a
+step larger, and the next quantizer sees that. One flip in a 3072-wide int8 row is ~1e-3 of a GEMV
+output; a 1e-3 dense perturbation flips ~hundreds of the next 8192-wide row; that is the 1.5e-2.
+From there it compounds per layer and saturates near the quantization noise itself.
+
+### Result 3 — the control: the CPU forward against ITSELF shows the same profile
+
+`gpu/cpu_quant_sensitivity_test.go` (`TestCPUQuantSensitivity`) uses no GPU. It runs the CPU int4
+forward twice on the same checkpoint, the second time with every f32 norm vector nudged by −1/0/+1
+ULP per element (`GOINFER_NORM_ULP_NOISE`, `decoder/normnoise.go`: f32-rounding-sized noise, dense,
+which is what two correct implementations that reduce in different orders look like to each other):
+
+| | pos 0 | pos 1 | pos 2 | pos 3 | pos 4 | pos 5 | pos 6 | pos 7 |
+|---|---|---|---|---|---|---|---|---|
+| CPU int4 vs CPU int4 + ULP noise (phi3-shaped, 4 layers) | 0.99956 | 0.99952 | 0.99950 | 0.99940 | 0.99946 | 0.99946 | 0.99946 | 0.99943 |
+| argmax | = | = | = | = | = | = | **8317 / 24969** | = |
+
+Same magnitude as resident-vs-CPU, the same per-layer profile (layer 0 to 1e-7, layer 1's MLP
+contribution 2.3e-2, layer 3's 5e-2 — the same columns as the table above), and the argmax flips
+at the same position to the same token the GPU produced. Whether the noise is absorbed or amplified
+is itself a coin toss on where the activations sit relative to rounding boundaries: a second seed
+of the same noise, and a single-element nudge, both came back bit-identical or within one flip —
+which is why a comparison that happens to land clean on one checkpoint proves nothing about the
+next. A 4-layer GQA control with qwen2.5-1.5B's attention geometry (`(12,2,128)`, separate q/k/v,
+llama family) behaves the same way: resident-vs-CPU 0.9997 with one flip seeding layer 1 at
+position 1, CPU-vs-CPU-noise 0.9977–0.9984 with an argmax flip at position 2. **This is not a
+no-GQA property and not a phi3 property. It is what an int4/int8 forward with per-row int8
+activations does on any checkpoint wide and deep enough, and 32 layers of a real model with real
+outlier channels is the far end of it.**
+
+### What this does to the first pass's evidence
+
+- **0.94–0.99 prompt cosines, int4 vs int4.** Within what the CPU shows against itself on a
+  4-layer synthetic (0.9994) extrapolated over 32 layers and real activations; the f16-vs-f32
+  scale representation the comparison never matched costs another ~1e-3 on its own.
+- **Greedy generation diverging at step 0–1 and going cosine-negative.** Once either side picks a
+  different argmax, the two logit vectors are for different contexts and their cosine measures
+  nothing; the synthetic runs reproduce the exact signature (0.999986 one step, 0.28 the next) off
+  a near-tie flip. The random-token prompt makes near-ties the norm.
+- **The "f32" path diverging "differently", worse at position 0 (0.358).** `Quant:""` on the
+  resident path is W8A8 — `uploadProj` quantizes every f32 projection to int8 rows at upload and
+  the activations are int8 per row throughout — compared against an unquantized f32 CPU forward.
+  That is not a second code path agreeing on a bug, it is the int8 activation quantization error
+  itself, and per-token int8 activations are known to be worst exactly at the first token of a
+  real LLM (the massive-activation position). The synthetic W8A8-vs-f32 run is at 0.996 with no
+  outliers and 0.966 with a crude one.
+- **Position 0 diverging "where RoPE and softmax are inert".** Correct observation, and the
+  geometry gate now confirms the position-0 chain (norm, V, o-proj, MLP, head) is exact on this
+  shape; the position-0 numbers on the real model are the value-dependent effects above.
+- **"Bit-for-bit identical" with the separate rope/ropeStore/vStore kernels.** Expected: those
+  kernels are documented bit-identical to `qkvFinalize`, so the experiment could not distinguish
+  anything either way.
+
+### What still has to be run, on the real checkpoint (RTX box or the Mac)
+
+Both are cheap and both are decisive; neither was possible from the sandbox.
+
+1. **Text.** Lift the guard with `GOINFER_WEBGPU_ALLOW_NOGQA=1`, run `goinfer-chat` on
+   `Phi-3-mini-4k-instruct-q4.gguf` with `--backend webgpu` int4, greedy, on a real prompt, and read
+   the output beside the CPU run's. Coherent, same-or-near-same text ⇒ there is no bug to find.
+   Garbage ⇒ there is, and (2) localises it.
+2. **Per-layer capture on the real model.**
+   `GOINFER_WEBGPU_ALLOW_NOGQA=1 GOINFER_INT4_F16_SCALES=1 GOINFER_GPU_CAPTURE=1
+   GOINFER_PARITY_CKPT=~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf go test -tags
+   'gpu goinfer_testhooks' ./gpu/ -run TestResidentCaptureParityWebGPU -v`, then
+   `GOINFER_PARITY_CKPT=… -run TestCPUQuantSensitivity -v` for the floor. Expected if there is no
+   bug: layer 0 at ~1e-7 in all three columns, then growth by layer with the CPU-vs-CPU-noise run
+   showing the same profile. A bug looks different: one layer/sublayer whose input still agrees to
+   ~1e-7 while its own contribution jumps to O(1) — and the column names which kernel.
+3. Then delete the `nKV == nH` decline in `gpu/residency.go` (and its escape hatch). As written the
+   guard also declines every future MHA family on WebGPU (`decoder/registry.go`'s notes list several
+   real ones), for a divergence that the evidence now says is the comparison, not the kernel.
+
+### What a resident parity gate should be for a deep real checkpoint
+
+The 0.999 floor in `gpu/gemma3_resident_parity_test.go` was measured on a tiny fixture where the
+cascade has nowhere to compound; it is a real floor for that fixture and no floor at all for a
+32-layer model. For a real checkpoint: match the scale representation (`GOINFER_INT4_F16_SCALES=1`
+on the CPU side); difference per sublayer with relative error, not final-logit cosine; run
+`TestCPUQuantSensitivity` on the same checkpoint and treat its number as the resolving power of
+any cosine on it; and judge fidelity the way the prefill gate already does (`docs/completed/task-prefill-gap.md` §3.2 — argmax agreement / KL against the **f32** CPU reference over a real
+prompt, pooled), where the resident int4 path and the CPU int4 path are two arms and neither is
+the reference. Never read W8A8-vs-f32 at a first token as a code-path signal.
+
+### Tooling landed (uncommitted on the Mac by Cowork; gofmt clean, `go vet` clean under `gpu`, `gpu goinfer_testhooks`, and untagged; staticcheck not run — the sandbox cannot fetch it)
+
+- `gpu/decoderunner.go` — `GOINFER_GPU_CAPTURE=1` records a kv-store copy of the attention context,
+  the post-attention residual and the post-MLP residual per layer into build-once capture buffers
+  (`DecodeRunner.ReadCapture`). Nothing is allocated or dispatched when unset.
+- `decoder/testhooks.go` — `ForwardSubCaptureLogitsForTest`: `ForwardSubCapture` plus the logits
+  from the same forward (running the token twice would append it to the KV cache twice).
+- `decoder/normnoise.go` + one line in `withResidency` — the `GOINFER_NORM_ULP_NOISE=<seed>`
+  diagnostic (copies, never in place: a norm can alias a read-only mmap).
+- `gpu/residency.go` — `GOINFER_WEBGPU_ALLOW_NOGQA=1` bypasses the decline for the runs above.
+- `gpu/geom_mha_decoderunner_test.go`, `gpu/resident_capture_parity_test.go`,
+  `gpu/cpu_quant_sensitivity_test.go` — the three tests above; the last two are env-gated on
+  `GOINFER_PARITY_CKPT` and skip otherwise. `scripts/mk_phi3_synth.py` writes the checkpoint they
+  were developed on (`python3 scripts/mk_phi3_synth.py /tmp/phi3-synth 4`; `--outlier` for the
+  planted channel).
+- Full `gpu` suite on the software adapter with these changes: 62 pass / 108 skip (hardware-only
+  and asset-gated) / 0 fail.
 
 ## What triggered this
 
@@ -138,3 +320,5 @@ and removes the `nKV == nH` guard. `docs/hardware-matrix.md`'s "✅ resident" fo
 WebGPU is unaffected by this change (it reflects feature *admission*, checked with no device
 present, not a real `BuildResident` attempt — the same admission/runtime-fit distinction this
 repo's MLA nGroup/topkGroup trap already documents at `decoder/features.go`).
+
+<!-- doc-reviewed: 2026-09-18 -->

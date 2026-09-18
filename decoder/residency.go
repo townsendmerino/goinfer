@@ -875,7 +875,7 @@ func (m *Model) FinalLogitSoftcapResident() float32 { return float32(m.w.arch.Fi
 // the arch is eligible, then returns m. A no-op for the CPU backend / ineligible
 // archs (m.resident stays nil → staged/CPU path). Called at every model-load site.
 func (m *Model) withResidency() *Model {
-	if os.Getenv("GOINFER_NO_RESIDENCY") != "" {
+	if applyNormULPNoiseDiag(m.w); os.Getenv("GOINFER_NO_RESIDENCY") != "" { // normnoise.go diagnostic first: it must precede any resident upload of the norms
 		return m // force the per-matmul staged path (decision-matrix measurement)
 	}
 	rb, ok := m.be.(ResidencyBackend)

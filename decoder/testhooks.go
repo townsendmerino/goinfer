@@ -21,6 +21,32 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
+// ForwardSubCaptureLogitsForTest is ForwardSubCapture plus the token's logits from the SAME
+// forward — the gpu package's per-layer resident-vs-CPU parity gate needs both, and running the
+// token twice would append it to the KV cache twice. Same arch guard and same byte-identical-
+// output contract as ForwardSubCapture. See docs/tasks/task-webgpu-nogqa-decode-bug.md.
+func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits []float32, attn, mlp, ctx, mlpPre [][]float32, err error) {
+	a := m.w.arch
+	if _, own := a.ownForward(); own {
+		return nil, nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCaptureLogitsForTest: not wired for arch %q (own runLayers)", a.Name)
+	}
+	nL := a.NumLayers
+	cache.subCapture = true
+	cache.subAttn = make([][]float32, nL)
+	cache.subMLP = make([][]float32, nL)
+	cache.subMLPpre = make([][]float32, nL)
+	cache.subCtx = make([][]float32, nL)
+	defer func() {
+		cache.subCapture = false
+		cache.subAttn, cache.subMLP, cache.subMLPpre, cache.subCtx = nil, nil, nil, nil
+	}()
+	lg, ferr := m.forward(id, cache)
+	if ferr != nil {
+		return nil, nil, nil, nil, nil, ferr
+	}
+	return append([]float32(nil), lg...), cache.subAttn, cache.subMLP, cache.subCtx, cache.subMLPpre, nil
+}
+
 // FinalNormForTest applies the model's final normalization to a copy of h — the CPU reference
 // for the last step of a resident bisect (the seam between the trunk and the LM head, where the
 // hidden state is normed then projected). Does NOT project to logits; that is the head.

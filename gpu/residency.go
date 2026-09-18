@@ -254,7 +254,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// the "wrong-in-a-different-direction" mistake this fix exists to avoid.
 	_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
 	_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
-	if nKV == nH && !mlaOK && !dnetOK && !nemoOK {
+	if nKV == nH && !mlaOK && !dnetOK && !nemoOK && os.Getenv("GOINFER_WEBGPU_ALLOW_NOGQA") == "" {
 		fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: no-GQA attention (kv heads == "+
 			"query heads, %d == %d) hits an unresolved WebGPU resident decode divergence — "+
 			"staged/CPU path\n", nKV, nH)
