@@ -1372,8 +1372,8 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:215` | goinfer | `// SetImageBlocks/attendHi), the resident twin of prefillLogitsVL's CPU forward` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:217` | goinfer | `// paying for the CPU prefill; without it — or on any decline from it — that turn falls ` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:252` | goinfer | `// resident-capability-gap discipline as every other optional extension here) — Generate` |
-| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1098` | goinfer | `rl.hasSink = true` |
-| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:524` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
+| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1155` | goinfer | `rl.hasSink = true` |
+| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:581` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:1004` | goinfer | `lm.sessions.adapter = spec.name` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:178` | goinfer | `MoECacheSlots:    cfg.moeCacheSlots,` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1258` | goinfer | `var gen *decoder.Generation` |
@@ -1464,6 +1464,8 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:181` | goinfer | `Size   int64` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:328` | goinfer | `func Search(ctx context.Context, q, kind string, limit int) ([]SearchResult, error) {` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:98` | goinfer | `func Curated() map[string]CuratedTier {` |
+| `docs/tasks/task-webgpu-nogqa-decode-bug.md|gpu/attention.go:118` | goinfer | `let kvh = qh / p.group;` |
+| `docs/tasks/task-webgpu-nogqa-decode-bug.md|gpu/decodelayer.go:146` | goinfer | `group := nH / nKV` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/chatapp/main.go:210` | goinfer | `model   = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference f` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/anthropic.go:545` | goinfer | `// A full queue is honest backpressure: 529 overloaded_error (the kind` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/embeddings.go:34` | goinfer | `maxEmbedInputs     = 2048` |

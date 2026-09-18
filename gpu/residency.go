@@ -222,10 +222,67 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		}
 	}
 
+	// TRAP, found live 2026-09-18, NOT closed — decline honestly rather than ship it silently
+	// wrong. Every WebGPU-resident model ever exercised before this date used real GQA (nKV <
+	// nH); nothing had ever reached this generic dense/decode path with nKV == nH (no grouping
+	// at all) until the ctxCap clamp two lines below let phi3-mini (head_count_kv ==
+	// head_count == 32) past the VRAM-allocation failure that used to mask this. Once it got
+	// through, a direct per-position logit comparison against CPU (both int4) showed real,
+	// structural divergence from the FIRST position onward — cosine 0.94-0.99 on the prompt
+	// (this repo's own bar for "correct" is 0.999+, gpu/gemma3_resident_parity_test.go) and
+	// negative cosine within a few greedy steps (the two logit vectors pointing in nearly
+	// opposite directions — not quantization noise, which stays close to 1.0). Confirmed this
+	// is not a fluke of one code path: forcing the separate rope/ropeStore/vStore kernels
+	// instead of the fused qkvFinalize dispatch reproduced the IDENTICAL wrong numbers
+	// (bit-for-bit), and switching to unquantized f32 weights still diverged, just
+	// differently (worse at position 0: cosine 0.36) — ruling out qkvFinalize and int4
+	// quantization as the SOLE cause without finding the actual line. The shared
+	// decoder/weights.go buildPhi3Weights fused-QKV split is index-based (no size-dependent
+	// branching) and CPU proves it correct, so the bug is somewhere WebGPU-specific
+	// downstream of it that per-layer capture instrumentation (which does not exist for this
+	// backend yet) would be needed to isolate properly — not something to keep guessing at.
+	// Until it is found and fixed, nKV == nH must decline to the CPU-staged path, the same
+	// way the kvI8/kvF16 block just above declines a real gap rather than guess at it.
+	//
+	// SCOPED TO THE GENERIC GQA PATH ONLY (found live: an unscoped version of this guard broke
+	// TestMLAResidency_matchesCPU). MLA (DeepSeek/Kimi), Qwen3.5/DeltaNet and Nemotron never go
+	// through the nH/nKV attention branch this trap is about at all — each takes its own,
+	// separately-verified attention mechanism further down in this function (`m.mla != nil`,
+	// the DeltaNet recurrent-rule branch, the Mamba/attention hybrid branch), and their
+	// `m.Dims()` nKV/nH can coincide for reasons that have nothing to do with GQA grouping
+	// (deepseek-tiny reports nKV==nH==4). Declining THEM on this condition would be exactly
+	// the "wrong-in-a-different-direction" mistake this fix exists to avoid.
+	_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
+	_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
+	if nKV == nH && !mlaOK && !dnetOK && !nemoOK {
+		fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: no-GQA attention (kv heads == "+
+			"query heads, %d == %d) hits an unresolved WebGPU resident decode divergence — "+
+			"staged/CPU path\n", nKV, nH)
+		return nil, false, nil
+	}
+
 	// decoder.WebGPUCtxCeiling (fitplan.go) is the single source for these three literals — the
 	// planner (Model.Plan, Phase 3 of tasks/task-fit-to-hardware.md §7) calls the SAME function, so a
 	// plan's promised ctx and this actual allocation can never drift apart.
 	ctxCap := decoder.WebGPUCtxCeiling(kvF16, kvI8)
+	// Clamp to the model's own window BEFORE anything else. WebGPUCtxCeiling's "proven 8 GB fit"
+	// was proven against the GQA geometry every previously-tested model shares (nKV well below
+	// nH); it says nothing about a model whose nKV == nH (no GQA at all). Found live 2026-09-18
+	// benchmarking phi3-mini (head_count_kv == head_count == 32, vs. e.g. qwen2.5-7B's 4): its
+	// real per-position KV cost is ~6x a typical GQA model's, so reserving the ceiling's 16384
+	// positions — four times phi3-mini's own 4096-token max_position_embeddings, and positions
+	// the model could never actually serve — ran the per-layer allocation loop below out of VRAM
+	// partway through (layer 13 of 32), and BuildResident declined to the CPU-staged path for a
+	// reason that had nothing to do with whether phi3-mini actually fits this card: at its own
+	// 4096-position ceiling the real KV need is ~3.1 GB, which fits an 8 GB card easily beside
+	// phi3-mini's ~2.3 GB of int4 weights. cuda/resident.go's resolveCtxCap already clamps to
+	// modelCtx for exactly this reason; WebGPU never did. No live free-VRAM query exists for this
+	// backend (unlike CUDA's driver MemInfo()) to catch this the way cuda/resident.go's
+	// checkKVFits does, so the model's own window is the one geometry-aware signal available
+	// here, and skipping it lets any zero-GQA model try to over-allocate the same way.
+	if mc := m.Config().MaxPositions; mc > 0 && mc < ctxCap {
+		ctxCap = mc
+	}
 	// M-32, the -ctx half: Options.ResidentContext / `serve -ctx` was read nowhere under gpu/,
 	// so -ctx 32768 silently kept 16k (requests past it fail at checkCap) and -ctx 2048 still
 	// allocated 16k per layer. min(), not the request: the caps above are proven-fit ceilings,
