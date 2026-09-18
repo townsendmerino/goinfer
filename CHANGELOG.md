@@ -15,6 +15,8 @@ any surface may still change.
 
 ## [Unreleased]
 
+## [v0.19.0] — 2026-09-18
+
 ### Added
 
 - **`serve -web` is becoming a full chat interface** (`docs/tasks/task-web-ui-2026-09.md`; the page
