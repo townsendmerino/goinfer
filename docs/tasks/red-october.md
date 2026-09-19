@@ -10,7 +10,11 @@
 > step 2 (a further GEMM-tile change) is killed. **R2 step 0:** the decode-at-depth gap has
 > genuinely narrowed against the only true same-session comparison on record — Ollama flat across
 > six weeks, goinfer more than doubled at depth (4.19×→1.96× behind at ~4000) — after a same-day
-> isolation caught an unrelated KV-cache-quant confound in the first measurement pass. See each
+> isolation caught an unrelated KV-cache-quant confound in the first measurement pass. **R1's Build
+> attempt (2026-09-19) is PARKED**: the kernel is correctness-proven in isolation (gate 1), but a
+> real, reproducible-from-a-clean-input catastrophic divergence was found and localized to layer
+> 26 of qwen2.5-1.5B's 28 (gate/up's GEMV specifically) — two natural theories for it were tested
+> and falsified, the actual mechanism wasn't found before the investigation was parked. See each
 > brief for the full result and record. Everything else below is still a projection band
 > registered before anyone measured, held to it as the campaign rule requires.
 >
@@ -318,7 +322,7 @@ Status table, kept current as briefs move:
 
 | # | brief | box | size | status |
 |---|---|---|---|---|
-| R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | **lane decision made 2026-09-18 (option 2, §3.2 gate) — build fundable** |
+| R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | **PARKED 2026-09-19: kernel proven correct (gate 1), catastrophic bug found and localized to layer 26's gate/up GEMV, root cause not found — see the record** |
 | R2 | Metal decode attention in the peer's shape | Mac | M–L | **step 0 done 2026-09-18: gap genuinely narrowed to 1.96× at 3900 (was 4.19× same-session 2026-08-04); Build phase now fundable — lane decision made (option 2, §3.2 gate)** |
 | R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | scoped |
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
@@ -410,6 +414,23 @@ in the parked band is *parked*, not shipped — the same rule that parked the CU
 correction (the MLX bandwidth figures next to the verdict's ceiling sentence); the TL;DR Metal
 decode row moves; `ollama-chase.md` §10 gets a one-line qualifier on the GEMV entries. If parked or
 killed, the same files, same care.
+
+**Build attempt, 2026-09-19 — PARKED, not killed**
+([`w4f16-decode-investigation-2026-09-19.md`](../measurements/w4f16-decode-investigation-2026-09-19.md)).
+Kernel built and scoped to the plain dense QKV/o-proj/gate-up path (down-proj and every special
+case stay W4A8 — the real integration surface turned out to be 13+ dispatch sites, not a single
+swap point). Gate (1) passed cleanly: the exponent-bias nibble dequant is bit-exact for all 16
+values, and all three kernel variants match an independent scalar reference at cosine 1.000000
+(K=1536/8960). The real-checkpoint sanity check then failed badly — cosine 0.48 against the shipped
+path — and tracing it down layer by layer found a genuine, reproducible-from-a-clean-input
+catastrophic break at layer 26 of qwen2.5-1.5B's 28 (cosine goes negative), localized to gate/up's
+GEMV. Two natural explanations (a "massive activation" precision-loss theory; a model-level-chaos
+theory, tested directly by perturbing the trusted W4A8 path itself with a matched-magnitude
+difference and finding it stays mild) were both directly tested and falsified. The mechanism itself
+was not found before the investigation was parked — real, reusable groundwork (a proven-correct
+kernel, a precise localization, a clean minimal reproducer that fails loudly by design) for
+whoever picks this back up, not a dead end. No speed measurement was taken — there is no point
+benchmarking a lane that fails a basic sanity check before reaching the fidelity gate.
 
 **Out of scope.** The LM head (N-40), KV precision, any change to the W4A8 path, prefill (already
 f16), the 26B/35B paged path (its GEMVs are launch-floor-bound, not stream-bound — audit §5).

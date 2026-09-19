@@ -151,20 +151,31 @@ type resident struct {
 	q                                                                  Queue
 	pRms, pQv, pGemv, pGemvResid, pRope, pRope2, pKv, pAttn, pSw, pRes Pipeline
 	pSA, pSABias, pSAResid                                             Pipeline // Stage A gemv (K bounded by the M-11 threadgroup-memory guard, not a fixed constant)
-	pArgFinish                                                         Pipeline // fused block-argmax lm head reduce
-	pQKNorm                                                            Pipeline // per-head QK-RMSNorm (Qwen3)
-	pRmsF32                                                            Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
-	pGemvW8, pGemvW8Amax                                               Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
-	pCopyVec                                                           Pipeline // copy_f32 for on-device embedding copy in batched forward
-	qkNorm                                                             bool     // arch has QK-norm
-	qkNormWhole                                                        bool     // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
-	sandwich                                                           bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
-	postOnly                                                           bool     // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — quantize the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
-	kvF32                                                              bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
-	uAct                                                               Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
-	uAddOne, uWindow                                                   Buffer   // qk_norm + sliding-window uniforms
-	uZero                                                              Buffer   // constant 0 (nH=0 / nHhd=0 / addOne=0 for the scale-less v_norm dispatch)
-	vNormUnit                                                          Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x·rms·w, addOne=0) = scale-less v_norm for K=V layers
+	// R1 (docs/tasks/red-october.md): the W4F16 decode lane — f16 activations, no int8
+	// quantization, gated by GOINFER_METAL_DECODE_LANE=w4f16 (decodeLaneW4F16). Pipelines are
+	// always built ("one binary carries both arms", per the brief); only DISPATCH is
+	// conditional. First slice only: plain dense QKV/o-proj/gate-up (see canUseF16Lane) — down-
+	// proj (the "coal" family) and every special-case path (MoE, paged, sandwich, postOnly,
+	// parallelBlock, qGate, outBias, DeltaNet, nonGatedMLP) stay on the shipped W4A8 kernels.
+	pRmsF16                         Pipeline // rmsnorm_f16_act: f32 residual in, half activation out, no quant
+	pF32ToF16                       Pipeline // bare convert, for o-proj's input (no norm/weight there)
+	pSAf16, pSAf16Bias, pSAf16Resid Pipeline
+	decodeLaneW4F16                 bool
+	axF16, mxF16, cxF16             Buffer   // half-typed activation buffers for the f16 lane (QKV-in, gate/up-in, o-proj-in)
+	pArgFinish                      Pipeline // fused block-argmax lm head reduce
+	pQKNorm                         Pipeline // per-head QK-RMSNorm (Qwen3)
+	pRmsF32                         Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
+	pGemvW8, pGemvW8Amax            Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
+	pCopyVec                        Pipeline // copy_f32 for on-device embedding copy in batched forward
+	qkNorm                          bool     // arch has QK-norm
+	qkNormWhole                     bool     // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
+	sandwich                        bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
+	postOnly                        bool     // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — quantize the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
+	kvF32                           bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
+	uAct                            Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
+	uAddOne, uWindow                Buffer   // qk_norm + sliding-window uniforms
+	uZero                           Buffer   // constant 0 (nH=0 / nHhd=0 / addOne=0 for the scale-less v_norm dispatch)
+	vNormUnit                       Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x·rms·w, addOne=0) = scale-less v_norm for K=V layers
 
 	// GPT-2 (FeatLayerNorm/FeatNonGatedMLP/FeatLearnedPos/FeatOutBias).
 	pLayerNorm, pActQuant            Pipeline          // layernorm_quant, act_quant
@@ -610,6 +621,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pRms, r.pQv, r.pGemv = pipe("rmsnorm_quant"), pipe("quant_vec"), pipe("gemv_w4a8_coal")
 	r.pGemvResid = pipe("gemv_w4a8_resid")
 	r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w4a8_sa"), pipe("gemv_w4a8_sa_bias"), pipe("gemv_w4a8_sa_resid")
+	r.pRmsF16 = pipe("rmsnorm_f16_act")
+	r.pF32ToF16 = pipe("f32_to_f16")
+	r.pSAf16, r.pSAf16Bias, r.pSAf16Resid = pipe("gemv_w4f16_sa"), pipe("gemv_w4f16_sa_bias"), pipe("gemv_w4f16_sa_resid")
+	r.decodeLaneW4F16 = os.Getenv("GOINFER_METAL_DECODE_LANE") == "w4f16"
 	r.pArgFinish = pipe("argmax_finish")
 	// N-09: the gemv_w4a8_bias and gemv_w4a8_sa_amax pipelines were created here but never dispatched
 	// (ForwardArgmax uses the int8 pGemvW8Amax head; the profiler builds gemv_w4a8_bias locally).
@@ -1077,6 +1092,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.gu = d.NewBufferLen(2 * guDim)             // fused [gate | up]
 	r.ctx, r.cq, r.cSc = d.NewBufferLen(maxNHhd), byteBuf(d, maxNHhd), d.NewBufferLen(1)
 	r.oO, r.mq, r.mSc = d.NewBufferLen(H), byteBuf(d, H), d.NewBufferLen(1)
+	// R1 W4F16 lane: half-typed twins of aq/mq/cq (2 bytes/elem, no separate scale buffer — the
+	// f16 activation values are already the true values). Always allocated ("one binary carries
+	// both arms"); only used when decodeLaneW4F16 dispatches into them.
+	r.axF16, r.mxF16, r.cxF16 = byteBuf(d, 2*H), byteBuf(d, 2*H), byteBuf(d, 2*maxNHhd)
 	r.dq, r.dSc, r.dO = byteBuf(d, guDim), d.NewBufferLen(1), d.NewBufferLen(H)
 	r.logits = d.NewBufferLen(V)
 	// CEIL, not floor: ForwardArgmax dispatches V*32 threads = ceil(V/8) threadgroups and the amax
@@ -2060,6 +2079,7 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 		// via NormPlacementLinear instead and carry a REAL pre-MLP norm (L.postNorm), so gate on
 		// the per-layer truth, matching cuda/resident.go segBFFN's postOnlyHere.
 		postOnlyHere := r.postOnly && L.delta == nil
+		f16Lane := r.canUseF16Lane(l)
 		gq, gSc := r.mq, r.mSc
 		switch {
 		case r.parallelBlock:
@@ -2071,10 +2091,16 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 		case postOnlyHere:
 			// Olmo 3/Olmo Hybrid: no pre-MLP norm either — quantize the raw residual directly.
 			e.Dispatch(r.pQv, 256, 256, x, r.mq, r.mSc, r.uH)
+		case f16Lane:
+			e.Dispatch(r.pRmsF16, tgReduceNorm, tgReduceNorm, x, L.postNorm, r.mxF16, r.uH, r.uEps, r.uAddOne)
 		default:
 			r.encodeNorm(e, x, L.postNorm, L.postNormBias, r.mq, r.mSc)
 		}
-		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
+		if f16Lane {
+			e.DispatchTG(r.pSAf16, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mxF16, r.gu, r.uH) // fused gate|up
+		} else {
+			e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
+		}
 		if r.loraLayers != nil {
 			// G3: added into r.gu BEFORE the activation (r.pSw) below — matching applyLoRA's CPU
 			// order exactly ("delta into gate/up before the activation", decoder/mlp.go). gq/gSc
@@ -2105,6 +2131,28 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 			}
 		}
 	}
+}
+
+// canUseF16Lane reports whether layer l's attention block and FFN gate/up can use the R1 W4F16
+// decode lane (docs/tasks/red-october.md) instead of the shipped W4A8 path. First-slice scope
+// only: the plainest possible dense layer — every special case (Gemma sandwich, Olmo
+// postOnly/qkNorm-whole, Cohere parallelBlock, GPT-2 non-gated MLP or FeatOutBias, qGate's
+// double-width Q, MoE/Gemma-4-MoE, DeltaNet, compute-time LoRA) keeps the int8 path, since each
+// changes which kernel family or epilogue is dispatched and none of that has been ported here.
+// Down-proj (the "coal" family, a different kernel shape) is out of scope regardless — see
+// encodeLayer's default branch, which never checks this for r.pGemvResid.
+func (r *resident) canUseF16Lane(l int) bool {
+	if !r.decodeLaneW4F16 {
+		return false
+	}
+	if r.sandwich || r.postOnly || r.parallelBlock || r.nonGatedMLP || r.outBias || r.layerNorm {
+		return false
+	}
+	if r.loraLayers != nil {
+		return false
+	}
+	L := &r.layers[l]
+	return L.moe == nil && L.g4moe == nil && L.delta == nil && !L.qGate
 }
 
 // encodeAttention records one layer's attention block (through the o-proj + residual/sandwich norm).
@@ -2138,8 +2186,14 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 	// instead. encodeAttention is never called for a DeltaNet layer (encodeLayer routes those to
 	// encodeDeltaNetMixer instead), so the bare model-level flag is safe here unlike encodeLayer's
 	// shared FFN half below.
+	f16Lane := r.canUseF16Lane(l)
 	if r.postOnly {
 		e.Dispatch(r.pQv, 256, 256, x, r.aq, r.aSc, r.uH)
+	} else if f16Lane {
+		// R1: f16 activation, no quantization — bypasses encodeNorm (which always produces the
+		// int8 aq/aSc pair) since preNorm here has no bias on the plain dense path canUseF16Lane
+		// admits (a biased pre-norm would need layernorm_quant's shape, not rmsnorm's).
+		e.Dispatch(r.pRmsF16, tgReduceNorm, tgReduceNorm, x, L.preNorm, r.axF16, r.uH, r.uEps, r.uAddOne)
 	} else {
 		r.encodeNorm(e, x, L.preNorm, L.preNormBias, r.aq, r.aSc)
 	}
@@ -2153,6 +2207,8 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 		e.DispatchTG(r.pSA, 2*nHhd*32, 256, r.H*2, L.dnQw, L.dnQs, r.aq, r.aSc, r.dnQg, r.uH)
 		e.Dispatch(r.pDnQSplit, nHhd, 256, r.dnQg, r.qkv, r.dnAGate, g.uNHhd, g.uHd)
 		e.DispatchTG(r.pSA, 2*g.kvDim*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv.At(kOff), r.uH)
+	} else if f16Lane {
+		e.DispatchTG(r.pSAf16Bias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.axF16, L.qkvBias, r.qkv, r.uH)
 	} else {
 		e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		if r.loraLayers != nil {
@@ -2209,7 +2265,11 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 	if L.qGate { // ctx *= sigmoid(gate), before o-proj — matches the CPU qwen35Attention
 		e.Dispatch(r.pDnAttnGate, nHhd, 256, r.ctx, r.dnAGate, g.uNHhd)
 	}
-	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
+	if f16Lane {
+		e.Dispatch(r.pF32ToF16, nHhd, 256, r.ctx, r.cxF16)
+	} else {
+		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
+	}
 	if r.sandwich || r.postOnly || r.parallelBlock {
 		// Gemma sandwich / Olmo 3 postOnly: the sublayer OUTPUT is normed BEFORE the residual
 		// add, which the fused _resid epilogue can't express — project into the (otherwise
@@ -2231,6 +2291,8 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 		if r.loraLayers != nil {
 			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, x)
 		}
+	} else if f16Lane {
+		e.DispatchTG(r.pSAf16Resid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cxF16, x, g.uNHhd) // o-proj + residual
 	} else {
 		e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, x, g.uNHhd) // o-proj + residual
 		if r.loraLayers != nil {
