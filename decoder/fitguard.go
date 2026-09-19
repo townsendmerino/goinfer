@@ -68,6 +68,38 @@ type fitCheck struct {
 	kvBytes     int64  // KV at effCtx (see below) — always priced now, not only when pinned
 	availBytes  int64  // CURRENTLY AVAILABLE memory at check time (R13-follow-on), 0 when unknown
 
+	// srcFileBytes is the on-disk size of a plain (non-streamed) .gguf SOURCE file, priced as an
+	// ADDITIONAL transient term alongside weightBytes+kvBytes.
+	//
+	// MEASURED, 2026-09-18, docs/measurements/cold-user-2026-09-18-nobara-pc.md Scenario D,
+	// reproduced directly on nobara-pc (the same box) with a heap profile + /proc RSS sampling
+	// around a real `decoder.Load` of gpt-oss-20b (12.11 GB MXFP4 GGUF, int4 resident weights
+	// 12.58 GB): peak RSS reached ~24.5 GB — matching weightBytes+fileSize (12.58+12.11=24.69 GB)
+	// to within 2%, NOT the ~12.58 GB this guard priced before this field existed. Once
+	// decoder.Load returns and the mmap is closed, RSS drops back to ~13.0 GB, confirming the
+	// extra ~12 GB was the mmap'd SOURCE file, not a second copy of the resident weights.
+	//
+	// WHY: loadGGUFWeights's own comment ("mmap, not heap-read: the raw quantized bytes stay in
+	// reclaimable page cache") is true but incomplete — those pages are reclaimable in principle,
+	// but the mapping (embed.OpenGGUFMmap) is held open for the ENTIRE build (buildWeightsFromGGUF
+	// runs parallelLayers across every layer before the deferred g.Close() in loadGGUFWeights
+	// finally runs), and RowDequantizer's per-row reads touch essentially every page of the file
+	// by the time the model is fully quantized — so for most of the load, the WHOLE source file is
+	// resident in RAM at the same time as the (also whole, by the end) resident weight set. This is
+	// not double-buffering of the SAME data — it is source-plus-destination coexisting because
+	// nothing releases the source pages incrementally as each tensor is consumed. That release
+	// would need per-tensor madvise inside aikit/embed (a separate module, out of scope here); this
+	// guard fixes what goinfer controls — pricing the real peak instead of only the final size.
+	//
+	// Only meaningful for a plain resident `.gguf` load (isGGUF && !streamWeights): a `.giw` load
+	// mmaps its own weight blob directly (no separate dequant-and-copy pass) and a safetensors
+	// directory's loader has its own accounting; StreamWeights (once transcoded to .giw) also
+	// leaves this repo through a different Load branch entirely (see model.go's ".giw" branch,
+	// which never reaches fitCheckFor at all — a separate, pre-existing gap this change does not
+	// touch). Zero when not applicable, so an existing fitCheck literal built by a test or another
+	// caller is unaffected.
+	srcFileBytes int64
+
 	// cfg, effCtx, pinned, kvF16, kvI8 carry what R13's re-pricing needs to recompute KV at a
 	// SMALLER context when the load does not fit and the caller never pinned one — see
 	// smallerFittingContext. cfg is nil when the GGUF's config could not be read (proceeds as
@@ -91,7 +123,7 @@ type fitCheck struct {
 	isGGUF bool
 }
 
-func (f fitCheck) need() int64   { return f.weightBytes + f.kvBytes }
+func (f fitCheck) need() int64   { return f.weightBytes + f.kvBytes + f.srcFileBytes }
 func (f fitCheck) budget() int64 { return int64(float64(f.availBytes) * fitMemFraction) }
 
 // known reports whether both sides of the comparison are real numbers. Anything else proceeds.
@@ -115,7 +147,16 @@ func (f fitCheck) arithmetic() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s needs ~%.1f GB resident at quant %s", f.name, float64(f.weightBytes)/fitGB, f.quant)
 	if f.kvBytes > 0 {
-		fmt.Fprintf(&b, " + %.1f GB KV = %.1f GB", float64(f.kvBytes)/fitGB, float64(f.need())/fitGB)
+		fmt.Fprintf(&b, " + %.1f GB KV", float64(f.kvBytes)/fitGB)
+	}
+	if f.srcFileBytes > 0 {
+		// MEASURED (see srcFileBytes's own doc comment): the on-disk .gguf stays mmap-resident for
+		// the whole load, alongside the resident weights being built from it — named explicitly so
+		// this doesn't read as a doubled weight estimate.
+		fmt.Fprintf(&b, " + %.1f GB reading the checkpoint (the .gguf stays mapped resident for the whole load)", float64(f.srcFileBytes)/fitGB)
+	}
+	if f.kvBytes > 0 || f.srcFileBytes > 0 {
+		fmt.Fprintf(&b, " = %.1f GB", float64(f.need())/fitGB)
 	}
 	fmt.Fprintf(&b, "; this machine currently has %.1f GB of memory available (budget %.1f GB = %.0f%% of that)",
 		float64(f.availBytes)/fitGB, float64(f.budget())/fitGB, fitMemFraction*100)
@@ -603,6 +644,20 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 	if strings.HasSuffix(path, ".gguf") {
 		f.isGGUF = true
 		f.weightBytes = estimateGGUFWeightBytes(path, quant)
+		// srcFileBytes prices the TRANSIENT peak (see its own doc comment), not the final resident
+		// weight estimate above — the two are deliberately separate terms and this does not
+		// contradict this function's own "never from on-disk file size" rule for weightBytes: that
+		// rule is about not mis-estimating the FINAL size from a shrinking-on-quantize file; this is
+		// about the SOURCE file staying mapped resident for the whole build, on top of whatever the
+		// final size turns out to be. Only priced for a plain resident load: StreamWeights means
+		// this exact path is about to be transcoded to a .giw and re-loaded from THAT (a different
+		// Load call, a different fitCheckFor invocation, currently not priced at all — see
+		// srcFileBytes's doc comment on that pre-existing, separate gap).
+		if !opts.StreamWeights {
+			if fi, serr := os.Stat(path); serr == nil {
+				f.srcFileBytes = fi.Size()
+			}
+		}
 		g, err := embed.OpenGGUFMmap(path)
 		if err != nil {
 			return f // unknown ⇒ proceed, same as always
@@ -661,7 +716,11 @@ func (f fitCheck) smallerFittingContext() (int, bool) {
 	if f.pinned || f.cfg == nil {
 		return 0, false
 	}
-	available := f.budget() - f.weightBytes
+	// srcFileBytes is a FIXED term exactly like weightBytes (see its own doc comment) — it does not
+	// shrink when ctx shrinks, so it has to come out of the budget here too, or a load whose
+	// weights+file already exceed the budget would still get offered a smaller-context "fit" that
+	// only ever re-prices KV.
+	available := f.budget() - f.weightBytes - f.srcFileBytes
 	if available <= 0 {
 		return 0, false
 	}

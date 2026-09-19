@@ -176,6 +176,22 @@ any surface may still change.
     (`internal/serveapp/haltsignal_unix.go` / `haltsignal_windows.go`), verified with a real
     `GOOS=windows GOARCH=amd64` build.
 
+- **Loading a large `.gguf` (e.g. `gpt-oss-20b`, 12.11 GB MXFP4) drove real, incremental swap
+  growth with no warning printed first**, on `chat --backend cuda` and
+  `serve --backend cuda --moe-cache-experts` alike, on a machine with 37+ GB RAM free — while
+  `chat fit`'s pre-flight estimate reported it comfortably fitting (cold-user 2026-09-18,
+  `docs/measurements/cold-user-2026-09-18-nobara-pc.md` Scenario D). `--backend cuda` was a red
+  herring: gpt-oss declines CUDA residency (missing `FeatAttnSink`), so both commands ran the
+  plain CPU-resident `.gguf` load path. Reproduced directly with a heap profile + `/proc` RSS
+  sampling: `decoder.Load`'s non-streamed `.gguf` path keeps the entire source file mmap-resident
+  for the whole build (`embed.OpenGGUFMmap`'s mapping stays open until every layer is quantized),
+  simultaneously with the fully-built resident weight set — peak RSS reached ~24.5 GB, matching
+  weights+file-size (12.58+12.11 GB) to within 2%, not the ~12.58 GB the fit guard priced. The
+  load-time guard (`decoder/fitguard.go`) now also prices the on-disk `.gguf` file size as a
+  transient term for a plain resident load (not `--stream-weights`, which resolves through a
+  `.giw` instead), so a load whose true peak won't fit is now refused/warned accurately instead of
+  silently passing.
+
 ## [v0.18.0] — 2026-09-13
 
 ### Changed

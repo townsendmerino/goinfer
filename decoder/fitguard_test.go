@@ -66,6 +66,86 @@ func TestFitGuard_refusesBeforeAllocating(t *testing.T) {
 	}
 }
 
+// TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights gates the cold-user 2026-09-18
+// nobara-pc Scenario D defect (docs/measurements/cold-user-2026-09-18-nobara-pc.md): loading
+// gpt-oss-20b (12.11 GB MXFP4 GGUF) via `chat --backend cuda` (no special flags) or
+// `serve --backend cuda --moe-cache-experts` drove REAL, incremental swap growth on a machine
+// with 37+ GB RAM free, with zero warning printed first — while `chat fit`'s pre-flight estimate
+// (dense+experts+KV, ~13.3 GB) reported comfortably fitting. Reproduced directly on nobara-pc (the
+// same box) with a heap profile + /proc RSS sampling around a bare decoder.Load of the real
+// checkpoint (CUDA and --moe-cache-experts are red herrings here: gpt-oss declines CUDA residency
+// via the missing FeatAttnSink feature — decoder/registry.go's own gptOssArchitecture comment — so
+// both commands actually ran this exact CPU-resident .gguf load path): peak RSS reached ~24.5 GB,
+// matching weightBytes+fileSize (12.58+12.11=24.69 GB) to within 2%, not the ~12.58 GB the OLD
+// (pre-fix) estimator priced.
+//
+// This test pins the fix on the tiny fixture without needing the 12 GB real checkpoint: read the
+// REAL weightBytes+kvBytes+srcFileBytes off fitCheckFor itself (not a hand-derived guess — the
+// fixture's real config resolves a non-zero kvBytes too, so reimplementing the arithmetic by hand
+// would silently under-count and prove nothing; caught by mutation-checking this test against the
+// pre-fix `need()`, which passed spuriously until this was fixed to read the real fields), pick a
+// RAM figure whose budget sits strictly between (weightBytes+kvBytes) and
+// (weightBytes+kvBytes+srcFileBytes), and confirm the guard now refuses on the strength of
+// srcFileBytes alone.
+func TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights(t *testing.T) {
+	const gguf = "testdata/gptoss_tiny.gguf"
+
+	// availBytes doesn't affect weightBytes/kvBytes/srcFileBytes, so this reads the real terms
+	// before choosing what RAM to inject.
+	probe := fitCheckFor(gguf, "int4", quantInt4, Options{})
+	if probe.weightBytes <= 0 {
+		t.Fatal("estimator returned 0 for a real GGUF")
+	}
+	if probe.srcFileBytes <= 0 {
+		t.Fatal("srcFileBytes is 0 for a plain .gguf resident load — the fix did not populate it")
+	}
+	oldNeed := probe.weightBytes + probe.kvBytes // what the PRE-FIX need() computed
+	newNeed := oldNeed + probe.srcFileBytes      // what need() computes now
+	// Budget must land strictly between the two: old formula fits, new formula does not.
+	ram := int64(float64(oldNeed)/fitMemFraction) + 4096
+	budget := int64(float64(ram) * fitMemFraction)
+	if oldNeed > budget {
+		t.Fatalf("test setup: oldNeed (%d) already exceeds budget (%d) at ram=%d — margin too small", oldNeed, budget, ram)
+	}
+	if newNeed <= budget {
+		t.Fatalf("test setup: newNeed (%d) still fits budget (%d) at ram=%d — fixture's file too small relative to its own weight+KV estimate to exercise this fix", newNeed, budget, ram)
+	}
+
+	restore := injectHostRAM(t, ram)
+	defer restore()
+
+	before := weightAllocs.Load()
+	m, err := Load(gguf, Options{Quant: "int4"})
+	if err == nil {
+		if m != nil {
+			m.Close()
+		}
+		t.Fatalf("Load succeeded with RAM sized for weights+KV alone (%d bytes, budget %d) — "+
+			"the guard is not pricing the on-disk .gguf file (%d bytes) that stays mmap-resident "+
+			"for the whole load, on top of the resident weights being built from it", ram, budget, probe.srcFileBytes)
+	}
+	if got := weightAllocs.Load() - before; got != 0 {
+		t.Errorf("loadWeights was entered %d time(s) despite the refusal", got)
+	}
+	if !strings.Contains(err.Error(), "reading the checkpoint") {
+		t.Errorf("refusal does not name the on-disk-file term:\n%s", err.Error())
+	}
+}
+
+// TestFitGuard_streamWeightsSourceIsNotDoubleCounted: the srcFileBytes term must NOT apply when
+// StreamWeights is set on a .gguf path — that request is resolved by transcoding to a .giw and
+// re-loading from THAT (a separate Load call this guard never sees), so pricing the source .gguf's
+// size here would price a load that is not actually about to happen through this path. Uses the
+// same RAM figure the test above proves refuses WITHOUT this guard, to show StreamWeights changes
+// the outcome.
+func TestFitGuard_streamWeightsSourceIsNotDoubleCounted(t *testing.T) {
+	const gguf = "testdata/gptoss_tiny.gguf"
+	f := fitCheckFor(gguf, "int4", quantInt4, Options{StreamWeights: true})
+	if f.srcFileBytes != 0 {
+		t.Errorf("srcFileBytes = %d, want 0 when StreamWeights is set (the .gguf is not what actually gets resident-loaded)", f.srcFileBytes)
+	}
+}
+
 // The escape hatch has to work, or a machine the threshold is wrong about has no way forward.
 // This also proves the refusal above came from the GUARD and not from something else about the
 // fixture: same file, same injected RAM, only the variable differs.
