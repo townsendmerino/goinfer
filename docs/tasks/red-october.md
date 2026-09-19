@@ -1,15 +1,18 @@
 # Red October — the backend × area gap matrix, and the briefs to close it (2026-09-18)
 
-> **Status: SCOPED 2026-09-18; R4 and R2 step 0 both ran the same day.** Two of the twelve briefs
-> (R1, R6) open a fidelity-gated *decode* lane and need an owner decision before they start;
-> everything else is fundable as written. **R4 step 0:** the Metal prefill ladder improved post
-> M-03/M-04 (K=512 3.33×→2.54× behind Ollama) but missed the registered ship/park bands, so step 2
-> (a further GEMM-tile change) is killed. **R2 step 0:** the decode-at-depth gap has genuinely
-> narrowed against the only true same-session comparison on record — Ollama flat across six weeks,
-> goinfer more than doubled at depth (4.19×→1.96× behind at ~4000) — after a same-day isolation
-> caught an unrelated KV-cache-quant confound in the first measurement pass. See each brief for the
-> full result and record. Everything else below is still a projection band registered before anyone
-> measured, held to it as the campaign rule requires.
+> **Status: SCOPED 2026-09-18; R4 and R2 step 0 both ran the same day, and the decode fidelity-lane
+> decision that R1/R2/R6 needed has been made.** **Owner decision, 2026-09-18:** decode's fast
+> kernels may ship as the *default* once they pass the same pooled §3.2 fidelity gate the prefill
+> lane already uses (`completed/task-prefill-gap.md` §3) — the bar CUDA decode's own exact path is
+> already held to, not a relaxed one; a kernel that does not ship the gate stays opt-in. R1, R2's
+> Build phase, and R6 are all unblocked by this. **R4 step 0:** the Metal prefill ladder improved
+> post M-03/M-04 (K=512 3.33×→2.54× behind Ollama) but missed the registered ship/park bands, so
+> step 2 (a further GEMM-tile change) is killed. **R2 step 0:** the decode-at-depth gap has
+> genuinely narrowed against the only true same-session comparison on record — Ollama flat across
+> six weeks, goinfer more than doubled at depth (4.19×→1.96× behind at ~4000) — after a same-day
+> isolation caught an unrelated KV-cache-quant confound in the first measurement pass. See each
+> brief for the full result and record. Everything else below is still a projection band
+> registered before anyone measured, held to it as the campaign rule requires.
 >
 > **Why the name.** The promotion gate is "at least as fast as Ollama on the machines people
 > actually have" ([`roadmap.md`](../roadmap.md), owner decision 2026-09-11). This doc is the
@@ -120,7 +123,9 @@ bytes per weight. MLX and llama.cpp both run f16-activation FMA paths. goinfer's
 ~90–98 GB/s (the 1.5B token is 13.5 ms; subtract ~2.8 ms of launch floor, attention and glue). A
 W4F16 decode GEMV — the activation precision the prefill lane already uses — at 140–160 GB/s puts
 the 1.5B at 103–113 tok/s and the 7B at 30–34. Not bit-identical to W4A8; arguably higher fidelity
-(no int8 activation), which is why it is a fidelity-gated lane and an owner decision (R1).
+(no int8 activation), which is why it is a fidelity-gated lane — the owner decision (2026-09-18,
+§4) means this kernel may ship as the default once it passes the §3.2 pooled gate; it stays
+opt-in if it does not.
 
 ### 2.2 Decode at depth
 
@@ -278,23 +283,32 @@ delta-per-hour on the machine that measures it, with measurement-only steps firs
 would otherwise be scoped against a stale number.
 
 **Mac track (Metal + Mac CPU).** R4 step 0 (re-measure the Metal prefill ladder post M-03/M-04
-against the peer — one session, no code) → R1 (W4F16 decode GEMV; needs the lane decision) → R2
-(decode attention in the peer's shape; measurement step first) → R3 (the short-prompt floor) → R12's
-Mac halves (ForwardN batching; MLX and the Metal peer depth row into `benchmarks.md`) → R9's Mac
-half (S-02 attribution, then S-05).
+against the peer — one session, no code) → R1 (W4F16 decode GEMV; lane decision made, build
+fundable) → R2 (decode attention in the peer's shape; measurement step first, Build now fundable
+too) → R3 (the short-prompt floor) → R12's Mac halves (ForwardN batching; MLX and the Metal peer
+depth row into `benchmarks.md`) → R9's Mac half (S-02 attribution, then S-05).
 
 **Linux track (CUDA + WebGPU + Linux CPU).** R5 (prefill attention tile; P24 re-scoped) → R6 (the
-flash-decode lane; needs the lane decision; step 1 is a mechanism, not a re-roll) → R8 (the vision
-tower onto the L2/L3 kernels) → R7 (sampled-decode cliff, CUDA first) → R11 (L01 funding cell; P20
-expert-major prefill) → R10 (WebGPU glue fusion; batched-prefill profile) → R9's Linux half (the
+flash-decode lane; lane decision made, build fundable; step 1 is a mechanism, not a re-roll) → R8
+(the vision tower onto the L2/L3 kernels) → R7 (sampled-decode cliff, CUDA first) → R11 (L01
+funding cell; P20 expert-major prefill) → R10 (WebGPU glue fusion; batched-prefill profile) → R9's
+Linux half (the
 0.5B anomaly).
 
-**Owner decisions before R1 and R6 start.** Both open a fidelity-gated *decode* lane. The prefill
-lane's contract (`completed/task-prefill-gap.md` §3: exact path on request, fast path default only
-where the §3.2 pooled gate ships, per backend) is the template; what is new is that decode has so
-far kept bit-identity as its default on every GPU backend. The options are the same three the
-prefill decision had — opt-in flag only, default-on above a gate, or not at all — and the briefs
-are written to be valid under either of the first two.
+**Owner decision, 2026-09-18: option 2 — default-on above a fidelity gate, held to the same bar
+CUDA decode's own exact path already answers to, not a relaxed one.** R1, R2's Build phase, and R6
+may all ship their fast decode kernels as the *default* once they pass the same pooled §3.2 gate
+the prefill lane already uses (`completed/task-prefill-gap.md` §3): hard-flip rate pooled ≤
+exact + 2√exact, teacher-forced top-1 agreement pooled ≥ exact − 2√d/N, mean KL pooled ≤ exact's
+AND lower on ≥ half the decision-set prompts AND no single cell's fast mean KL > 1.1× that cell's
+exact mean KL — reported per-cell, never vetoed per-cell (§3.2's own correction: a per-cell veto
+fails an arm of equal quality most of the time). A kernel that does not ship the gate stays
+opt-in, with the failure recorded beside it, exactly as the prefill contract already specifies for
+a backend that fails. Below-floor short prompts stay exact, matching the prefill lane's own Floor
+clause. Each brief's own decision-set K's and confirmation cells are as already registered in its
+own text (R1 and R2 both name S at depth 3900 as a decision/confirmation cell; R6 registers its
+own served-throughput band separately and inherits this fidelity mechanism alongside it, not
+instead of it).
 
 ---
 
@@ -304,12 +318,12 @@ Status table, kept current as briefs move:
 
 | # | brief | box | size | status |
 |---|---|---|---|---|
-| R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | scoped; lane decision pending |
-| R2 | Metal decode attention in the peer's shape | Mac | M–L | **step 0 done 2026-09-18: gap genuinely narrowed to 1.96× at 3900 (was 4.19× same-session 2026-08-04); Build phase still needs the lane decision** |
+| R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | **lane decision made 2026-09-18 (option 2, §3.2 gate) — build fundable** |
+| R2 | Metal decode attention in the peer's shape | Mac | M–L | **step 0 done 2026-09-18: gap genuinely narrowed to 1.96× at 3900 (was 4.19× same-session 2026-08-04); Build phase now fundable — lane decision made (option 2, §3.2 gate)** |
 | R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | scoped |
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
 | R5 | CUDA prefill attention tile — P24 re-scoped with the corrected cap | Linux | M | scoped |
-| R6 | CUDA flash-decode lane — mechanism for the parked spike, then the kernel | Linux | M–L | scoped; lane decision pending |
+| R6 | CUDA flash-decode lane — mechanism for the parked spike, then the kernel | Linux | M–L | **lane decision made 2026-09-18 (option 2, §3.2 gate) — build fundable** |
 | R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | scoped |
 | R8 | CUDA vision tower onto the L2/L3 kernels | Linux | M | scoped |
 | R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | scoped |

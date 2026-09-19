@@ -1198,8 +1198,8 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:786` | goinfer | `dummyBias := NewBufferFloats(d, make([]float32, 1))` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:820` | goinfer | `// commits AND waits, so the GPU is finished with them by the time this returns — releas` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:867` | goinfer | `useFusedAttn := metalFusedAttentionEnabled() && g0.hd%8 == 0 && g0.hd <= 128` |
-| `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:186` | goinfer | `for _, K := range decisionKs {` |
-| `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:429` | goinfer | `// refLogitsRef — no separate refTokens value is needed here (see readNote for why).` |
+| `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:215` | goinfer | `for _, K := range decisionKs {` |
+| `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:458` | goinfer | `// refLogitsRef — no separate refTokens value is needed here (see readNote for why).` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gate_test.go:65` | goinfer | `anchor: func TestPrefillGate(t *testing.T) {` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gemma_test.go:44` | goinfer | `if !r.prefillOK {` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_ttft_test.go:45` | goinfer | `t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")` |

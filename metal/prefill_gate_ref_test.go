@@ -8,6 +8,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,6 +64,33 @@ import (
 // A model ships iff all three pooled criteria hold over its full decision set.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./metal/ -run TestPrefillGateVsReference -v -timeout 4h
+//
+// metalGateDecisionKs lets a run pool the decision over a DIFFERENT set of K's than the standing
+// {256, 512, 1024}, via GOINFER_METAL_GATE_DECISION_KS (comma-separated) — mirrors
+// decoder/prefill_ref_gen_test.go's refKs, and exists for the same reason: a floor must be
+// measured at the depth it is set to, and a candidate depth is tested by pooling it WITH the
+// already-known-good cells (a lone new cell has the same low resolving power the withdrawn
+// per-cell form had — see the pooling rationale above), not by replacing them. Reference files for
+// every K named here must already exist (run TestPrefillGateReference with a matching
+// GOINFER_CPU_REF_KS first) or that cell is skipped from the pool with a logged reason, same as
+// any other missing cell.
+func metalGateDecisionKs(def []int) []int {
+	v := os.Getenv("GOINFER_METAL_GATE_DECISION_KS")
+	if strings.TrimSpace(v) == "" {
+		return def
+	}
+	out := make([]int, 0, len(def)+2)
+	for _, f := range strings.Split(v, ",") {
+		if k, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && k > 0 {
+			out = append(out, k)
+		}
+	}
+	if len(out) == 0 {
+		return def
+	}
+	return out
+}
+
 func TestPrefillGateVsReference(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads real checkpoints; needs Phase A's reference files)")
@@ -87,7 +116,7 @@ func TestPrefillGateVsReference(t *testing.T) {
 		{"S", "GOINFER_METAL_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
 		{"D7", "GOINFER_METAL_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf"},
 	}
-	decisionKs := []int{256, 512, 1024}
+	decisionKs := metalGateDecisionKs([]int{256, 512, 1024})
 	confirmKsByModel := map[string][]int{"S": {3900}}
 
 	for _, mc := range models {
