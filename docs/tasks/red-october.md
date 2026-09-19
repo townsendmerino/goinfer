@@ -1,10 +1,12 @@
 # Red October — the backend × area gap matrix, and the briefs to close it (2026-09-18)
 
-> **Status: SCOPED 2026-09-18, unstarted.** Two of the twelve briefs (R1, R6) open a fidelity-gated
-> *decode* lane and need an owner decision before they start; everything else is fundable as
-> written. Nothing below is a measurement of anything new — every standing is a number the tree
-> already carries, and every delta is a projection band registered here, before anyone measures,
-> so the result can be held to it.
+> **Status: SCOPED 2026-09-18; R4 step 0 ran the same day.** Two of the twelve briefs (R1, R6) open
+> a fidelity-gated *decode* lane and need an owner decision before they start; everything else is
+> fundable as written. R4 step 0's result: the Metal prefill ladder improved post M-03/M-04 (K=512
+> 3.33×→2.54× behind Ollama) but missed the registered ship/park bands, so step 2 (a further
+> GEMM-tile change) is killed — see R4's brief for the full result and record. Everything else
+> below is still a projection band registered before anyone measured, held to it as the campaign
+> rule requires.
 >
 > **Why the name.** The promotion gate is "at least as fast as Ollama on the machines people
 > actually have" ([`roadmap.md`](../roadmap.md), owner decision 2026-09-11). This doc is the
@@ -302,7 +304,7 @@ Status table, kept current as briefs move:
 | R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | scoped; lane decision pending |
 | R2 | Metal decode attention in the peer's shape | Mac | M–L | scoped; measurement step fundable now |
 | R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | scoped |
-| R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | scoped |
+| R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
 | R5 | CUDA prefill attention tile — P24 re-scoped with the corrected cap | Linux | M | scoped |
 | R6 | CUDA flash-decode lane — mechanism for the parked spike, then the kernel | Linux | M–L | scoped; lane decision pending |
 | R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | scoped |
@@ -554,6 +556,16 @@ gate as precondition.
 prefill" subsection replaced (the pre-fix table moves to `legacy-benchmarks.md` verbatim, per the
 page's rule) and the TL;DR row; audit M-03's closure note gets its "re-measurement not run" line
 closed.
+
+**Step 0 result, 2026-09-18** ([`metal-prefill-ladder-2026-09-18.md`](../measurements/metal-prefill-ladder-2026-09-18.md)).
+K=512 measured 2.54× behind Ollama on TTFT — improved from the 3.33× pre-fix baseline (M-03/M-04
+did help), but past the >2.4× kill line, not in the ≤1.8× ship or 1.8–2.4× park bands. **Step 2 is
+KILLED per the pre-registered rule: the tile is not the lever the audit thought.** The whole-curve
+marginal fit was invalid on all three arms (TTFT superlinear in K, including Ollama); on local
+intervals goinfer fast's own marginal cost grows with depth faster than Ollama's does, so the
+ratio widens (3.17×→3.60×) rather than holding flat — a mechanism profile, not a re-roll of the
+same tile design, is what a future step 2 attempt would need. `benchmarks.md` §A and its TL;DR row
+updated in the same commit; audit M-03's closure note updated.
 
 **Out of scope.** The floor (R3), attention below 18% of TTFT, MoE prefill (R11).
 

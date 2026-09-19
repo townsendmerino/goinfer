@@ -1713,7 +1713,11 @@ Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line a
    TTFT ladder re-run at K∈{64,128,256,512} this item called for.
 2. **M-03** — **CLOSED 2026-09-13** (`f6c222ee`). 32×32 per-simdgroup block, all-lane dequant, A
    staged per threadgroup, exactly as scoped. §3.2 pooled gate SHIPS (see M-03's own closure note);
-   the P=256 TTFT re-measurement this item called for has not been run.
+   the P=256 TTFT re-measurement this item called for **ran 2026-09-18** (`docs/tasks/red-october.md`
+   R4 step 0, [`metal-prefill-ladder-2026-09-18.md`](measurements/metal-prefill-ladder-2026-09-18.md)) —
+   K=512 came in at 2.54× behind Ollama, improved from the 3.33× pre-fix baseline but short of this
+   item's own ≤1.8× ship projection; the further GEMM-tile change (R4 step 2) that projection would
+   have funded is killed on this result.
 3. **M-04** — **CLOSED 2026-09-13, narrower than scoped** (`c660ab78`). 32-key tile shipped; the
    register-O + diagonal-α rewrite and GQA grouping this item also named were deliberately left as
    a separate follow-up (see M-04's own closure note for why). §3.2 re-run: SHIPS.

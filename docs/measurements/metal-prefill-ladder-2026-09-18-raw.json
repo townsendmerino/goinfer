@@ -1,0 +1,486 @@
+{
+  "header": {
+    "utc": "2026-09-19T03:12:12Z",
+    "host": "macbookpro.lan",
+    "driver": "26.6.2",
+    "gpu": "",
+    "kernel": "25.6.0",
+    "distro": "",
+    "goinfer_commit": "e2927f41",
+    "goinfer_dirty": true,
+    "peer_version": "ollama version is 0.32.5",
+    "serve_mtime": "",
+    "loadavg": ""
+  },
+  "cache_check": [
+    {
+      "model": "1.5B",
+      "depth": 256,
+      "engine": "goinfer_exact",
+      "repeat_over_new": 0.005656411383807892
+    },
+    {
+      "model": "1.5B",
+      "depth": 256,
+      "engine": "goinfer",
+      "repeat_over_new": 0.0252675932289997
+    },
+    {
+      "model": "1.5B",
+      "depth": 256,
+      "engine": "ollama",
+      "repeat_over_new": 0.36883071281807683
+    },
+    {
+      "model": "1.5B",
+      "depth": 512,
+      "engine": "goinfer_exact",
+      "repeat_over_new": 0.003005564692600465
+    },
+    {
+      "model": "1.5B",
+      "depth": 512,
+      "engine": "goinfer",
+      "repeat_over_new": 0.011725864222502208
+    },
+    {
+      "model": "1.5B",
+      "depth": 512,
+      "engine": "ollama",
+      "repeat_over_new": 0.21923507661777616
+    },
+    {
+      "model": "1.5B",
+      "depth": 1024,
+      "engine": "goinfer_exact",
+      "repeat_over_new": 0.001570125202596968
+    },
+    {
+      "model": "1.5B",
+      "depth": 1024,
+      "engine": "goinfer",
+      "repeat_over_new": 0.006048683655928232
+    },
+    {
+      "model": "1.5B",
+      "depth": 1024,
+      "engine": "ollama",
+      "repeat_over_new": 0.12045797911332076
+    },
+    {
+      "model": "1.5B",
+      "depth": 2048,
+      "engine": "goinfer_exact",
+      "repeat_over_new": 0.0008354380155453433
+    },
+    {
+      "model": "1.5B",
+      "depth": 2048,
+      "engine": "goinfer",
+      "repeat_over_new": 0.003141852994032866
+    },
+    {
+      "model": "1.5B",
+      "depth": 2048,
+      "engine": "ollama",
+      "repeat_over_new": 0.05769828035142153
+    },
+    {
+      "model": "1.5B",
+      "depth": 3900,
+      "engine": "goinfer_exact",
+      "repeat_over_new": 0.00047704711560177325
+    },
+    {
+      "model": "1.5B",
+      "depth": 3900,
+      "engine": "goinfer",
+      "repeat_over_new": 0.0017485602535636442
+    },
+    {
+      "model": "1.5B",
+      "depth": 3900,
+      "engine": "ollama",
+      "repeat_over_new": 0.028733519893459885
+    }
+  ],
+  "scaling_check": {
+    "goinfer_exact:1.5B": {
+      "depths": [
+        256,
+        3900
+      ],
+      "ttft_ms": [
+        3099.2,
+        69443.2
+      ],
+      "ttft_growth": 22.41,
+      "depth_growth": 15.23
+    },
+    "goinfer:1.5B": {
+      "depths": [
+        256,
+        3900
+      ],
+      "ttft_ms": [
+        718.2,
+        17420.4
+      ],
+      "ttft_growth": 24.26,
+      "depth_growth": 15.23
+    },
+    "ollama:1.5B": {
+      "depths": [
+        256,
+        3900
+      ],
+      "ttft_ms": [
+        367.4,
+        5039.8
+      ],
+      "ttft_growth": 13.72,
+      "depth_growth": 15.23
+    }
+  },
+  "marginal": {
+    "goinfer_exact:1.5B": {
+      "marginal_tok_s": 54.9,
+      "ms_per_token": 18.2304,
+      "fixed_overhead_ms": -3953.4,
+      "local": [
+        {
+          "from": 263.0,
+          "to": 519.0,
+          "ms_per_token": 12.3102,
+          "tok_s": 81.2
+        },
+        {
+          "from": 519.0,
+          "to": 1031.0,
+          "ms_per_token": 13.7486,
+          "tok_s": 72.7
+        },
+        {
+          "from": 1031.0,
+          "to": 2067.0,
+          "ms_per_token": 16.4467,
+          "tok_s": 60.8
+        },
+        {
+          "from": 2067.0,
+          "to": 3919.0,
+          "ms_per_token": 21.1201,
+          "tok_s": 47.3
+        }
+      ],
+      "LINEAR_FIT_INVALID": "negative fitted overhead: TTFT is superlinear in K, so marginal_tok_s is not a constant for this engine -- read `local` instead"
+    },
+    "goinfer:1.5B": {
+      "marginal_tok_s": 217.6,
+      "ms_per_token": 4.5965,
+      "fixed_overhead_ms": -969.2,
+      "local": [
+        {
+          "from": 263.0,
+          "to": 519.0,
+          "ms_per_token": 2.9945,
+          "tok_s": 333.9
+        },
+        {
+          "from": 519.0,
+          "to": 1031.0,
+          "ms_per_token": 3.9479,
+          "tok_s": 253.3
+        },
+        {
+          "from": 1031.0,
+          "to": 2067.0,
+          "ms_per_token": 4.215,
+          "tok_s": 237.3
+        },
+        {
+          "from": 2067.0,
+          "to": 3919.0,
+          "ms_per_token": 5.1553,
+          "tok_s": 194.0
+        }
+      ],
+      "LINEAR_FIT_INVALID": "negative fitted overhead: TTFT is superlinear in K, so marginal_tok_s is not a constant for this engine -- read `local` instead"
+    },
+    "ollama:1.5B": {
+      "marginal_tok_s": 778.7,
+      "ms_per_token": 1.2842,
+      "fixed_overhead_ms": -121.3,
+      "local": [
+        {
+          "from": 284.0,
+          "to": 540.0,
+          "ms_per_token": 0.9445,
+          "tok_s": 1058.7
+        },
+        {
+          "from": 540.0,
+          "to": 1052.0,
+          "ms_per_token": 1.0359,
+          "tok_s": 965.3
+        },
+        {
+          "from": 1052.0,
+          "to": 2088.0,
+          "ms_per_token": 1.2048,
+          "tok_s": 830.0
+        },
+        {
+          "from": 2088.0,
+          "to": 3940.0,
+          "ms_per_token": 1.432,
+          "tok_s": 698.3
+        }
+      ],
+      "LINEAR_FIT_INVALID": "negative fitted overhead: TTFT is superlinear in K, so marginal_tok_s is not a constant for this engine -- read `local` instead"
+    },
+    "ratio:1.5B": 3.58
+  },
+  "cells": [
+    {
+      "model": "1.5B",
+      "depth": 256,
+      "calibrated_tokens": 256,
+      "goinfer_exact": {
+        "ttft_ms_median": 3099.2,
+        "ttft_ms_all": [
+          3143.3,
+          3098.5,
+          3099.9,
+          3068.0,
+          3073.3,
+          3117.7
+        ],
+        "prompt_tokens": 263.0,
+        "ttft_tok_s": 84.9,
+        "spread_pct": 2.4
+      },
+      "goinfer": {
+        "ttft_ms_median": 718.2,
+        "ttft_ms_all": [
+          733.6,
+          789.7,
+          696.9,
+          794.1,
+          702.7,
+          568.2
+        ],
+        "prompt_tokens": 263.0,
+        "ttft_tok_s": 366.2,
+        "spread_pct": 31.5
+      },
+      "ollama": {
+        "ttft_ms_median": 367.4,
+        "ttft_ms_all": [
+          394.6,
+          369.5,
+          367.3,
+          367.5,
+          366.0,
+          367.0
+        ],
+        "prompt_tokens": 284.0,
+        "ttft_tok_s": 773.0,
+        "spread_pct": 7.8
+      },
+      "ttft_peer_over_goinfer": 2.11
+    },
+    {
+      "model": "1.5B",
+      "depth": 512,
+      "calibrated_tokens": 512,
+      "goinfer_exact": {
+        "ttft_ms_median": 6250.6,
+        "ttft_ms_all": [
+          6309.6,
+          6240.4,
+          6268.8,
+          6237.5,
+          6240.2,
+          6260.7
+        ],
+        "prompt_tokens": 519.0,
+        "ttft_tok_s": 83.0,
+        "spread_pct": 1.2
+      },
+      "goinfer": {
+        "ttft_ms_median": 1484.8,
+        "ttft_ms_all": [
+          1502.0,
+          1467.6,
+          1448.2,
+          1426.3,
+          1670.4,
+          1504.5
+        ],
+        "prompt_tokens": 519.0,
+        "ttft_tok_s": 349.5,
+        "spread_pct": 16.4
+      },
+      "ollama": {
+        "ttft_ms_median": 609.2,
+        "ttft_ms_all": [
+          631.0,
+          612.4,
+          610.4,
+          608.1,
+          608.0,
+          608.0
+        ],
+        "prompt_tokens": 540.0,
+        "ttft_tok_s": 886.3,
+        "spread_pct": 3.8
+      },
+      "ttft_peer_over_goinfer": 2.54
+    },
+    {
+      "model": "1.5B",
+      "depth": 1024,
+      "calibrated_tokens": 1024,
+      "goinfer_exact": {
+        "ttft_ms_median": 13289.9,
+        "ttft_ms_all": [
+          13221.8,
+          13220.2,
+          13244.7,
+          13411.6,
+          13446.6,
+          13335.2
+        ],
+        "prompt_tokens": 1031.0,
+        "ttft_tok_s": 77.6,
+        "spread_pct": 1.7
+      },
+      "goinfer": {
+        "ttft_ms_median": 3506.1,
+        "ttft_ms_all": [
+          3568.3,
+          3547.2,
+          3280.1,
+          3459.9,
+          3502.6,
+          3509.6
+        ],
+        "prompt_tokens": 1031.0,
+        "ttft_tok_s": 294.1,
+        "spread_pct": 8.2
+      },
+      "ollama": {
+        "ttft_ms_median": 1139.6,
+        "ttft_ms_all": [
+          1147.7,
+          1139.4,
+          1141.2,
+          1139.0,
+          1136.4,
+          1139.9
+        ],
+        "prompt_tokens": 1052.0,
+        "ttft_tok_s": 923.1,
+        "spread_pct": 1.0
+      },
+      "ttft_peer_over_goinfer": 3.14
+    },
+    {
+      "model": "1.5B",
+      "depth": 2048,
+      "calibrated_tokens": 2060,
+      "goinfer_exact": {
+        "ttft_ms_median": 30328.7,
+        "ttft_ms_all": [
+          30369.8,
+          30351.7,
+          30223.1,
+          30238.0,
+          30326.1,
+          30331.3
+        ],
+        "prompt_tokens": 2067.0,
+        "ttft_tok_s": 68.2,
+        "spread_pct": 0.5
+      },
+      "goinfer": {
+        "ttft_ms_median": 7872.8,
+        "ttft_ms_all": [
+          7727.9,
+          7906.1,
+          7839.5,
+          7928.2,
+          7766.4,
+          7926.4
+        ],
+        "prompt_tokens": 2067.0,
+        "ttft_tok_s": 262.5,
+        "spread_pct": 2.5
+      },
+      "ollama": {
+        "ttft_ms_median": 2387.8,
+        "ttft_ms_all": [
+          2400.4,
+          2383.3,
+          2390.5,
+          2385.8,
+          2388.6,
+          2386.9
+        ],
+        "prompt_tokens": 2088.0,
+        "ttft_tok_s": 874.5,
+        "spread_pct": 0.7
+      },
+      "ttft_peer_over_goinfer": 3.33
+    },
+    {
+      "model": "1.5B",
+      "depth": 3900,
+      "calibrated_tokens": 3912,
+      "goinfer_exact": {
+        "ttft_ms_median": 69443.2,
+        "ttft_ms_all": [
+          69602.0,
+          69452.8,
+          69238.0,
+          69291.0,
+          69433.6,
+          69773.7
+        ],
+        "prompt_tokens": 3919.0,
+        "ttft_tok_s": 56.4,
+        "spread_pct": 0.8
+      },
+      "goinfer": {
+        "ttft_ms_median": 17420.4,
+        "ttft_ms_all": [
+          17437.2,
+          17333.2,
+          17568.6,
+          17331.4,
+          17609.5,
+          17403.7
+        ],
+        "prompt_tokens": 3919.0,
+        "ttft_tok_s": 225.0,
+        "spread_pct": 1.6
+      },
+      "ollama": {
+        "ttft_ms_median": 5039.8,
+        "ttft_ms_all": [
+          5046.6,
+          5040.2,
+          5034.4,
+          5036.2,
+          5040.9,
+          5039.3
+        ],
+        "prompt_tokens": 3940.0,
+        "ttft_tok_s": 781.8,
+        "spread_pct": 0.2
+      },
+      "ttft_peer_over_goinfer": 3.47
+    }
+  ]
+}

@@ -39,7 +39,7 @@ not re-anchored against a peer (no vision peer harness exists either).
 | **Prefill** | **Was 12–15× behind on overhead-free throughput at depth; now 1.9–3.2× after the CUDA tensor-core prefill landed 2026-09-05.** `attn_fused` + `gemm_w4a8_mma` are **default ON above a 512-token prompt floor** (`GOINFER_CUDA_FAST_PREFILL=0` opts out; short prompts stay exact because the §3 fidelity gate fails at K=256 and passes at 512/1024/3900). End-to-end prefill **3.91× faster at K=3900** (5.451 s → 1.393 s, 1.5B int4). Marginal cost per token vs Ollama: **12.1× → 3.16× behind (1.5B)**, **14.5× → 1.89× (0.5B)**. On TTFT the crossover moves from ~K=600 to past K=2048 (1.5B) and off the ladder entirely on 0.5B. goinfer's marginal still RISES with K where Ollama's is flat — the residual O(K²) term, with the fused kernel at 1.72% of tensor peak, so it is headroom not a floor. Pre-2026-09-05 rows measured the exact path; set `=0` to reproduce them | §B2, `measurements/prefill-l2l3-phase{1,2,3,4}-2026-09-05.md` |
 | **Total request time** | **not re-derived** since the 2026-09-01 prefill re-anchor. The pre-re-anchor crossover (~320-token prompts at 1.5B) is a legacy figure and is not quoted here | legacy §B2 |
 | **26B MoE on an 8 GB card** | **both engines run it.** goinfer keeps **every expert on the GPU** (host↔VRAM streaming) at 16.1 tok/s, 17.6 at ctx 2048; Ollama is **faster (~24.5)** by offloading 58% to CPU. An architecture distinction, not a capability peers lack | §B4.1 |
-| **Apple Silicon Metal prefill** | **STALE (N-01): 3.33× behind Ollama on TTFT at K=512, 8.81× at K=3900 — measured 2026-09-09 against the PRE-fused exact attention kernel**, superseded the next day by the default-ON fused kernel (≈4.3× at K=3900 per the tree's own L2 record) and by M-03's GEMM fix (2026-09-13); no fresh same-session Ollama re-run exists yet. Fast f16-MMA path (default ON above 512 tokens since §3.2 gate) was **2.0–3.75× faster than sequential** within goinfer at K≥512 in that same pre-fix run | §A |
+| **Apple Silicon Metal prefill** | **Re-measured 2026-09-18, post M-03/M-04 (R4 step 0): 2.54× behind Ollama on TTFT at K=512 (was 3.33× pre-fix), 3.47× at K=3900 (was 8.81× TTFT / ~4.3× L2-record pre-fix)** — improved, but short of the audit's ≤1.8×-ships projection; R4 step 2 (a further GEMM-tile change) is **KILLED** on this result, past the registered >2.4×-kill line. Fast path's internal speedup over sequential now holds flat ~3.8–4.3× at every depth (was shrinking 3.75×→2.04× pre-fix) | §A |
 | **Apple Silicon CPU prefill** | **vs Ollama: 1.54× behind at K=512, reaching 0.91× (AHEAD) at K=3900; whole-curve marginal ratio 0.86×, goinfer faster** — aikit v1.34.0's S-01 int4 tile roughly doubled it (67.6→141.7 tok/s at K=512, measured pre/post on one box). Supersedes the 2026-09-01 row of 2.98×/1.80×, which the pre-tile arm reproduced to within 4% | §A |
 | ↳ *and against our own past* | **8.61× faster than the pre-2026-09-01 record at 3020 tokens** (334.9 s → 38.9 s); the rate no longer falls with length (78.4 → 77.7 tok/s where it used to collapse 51.5 → 9.0) | §A |
 | **Apple Silicon CPU decode** | **goinfer is behind** — 0.67× (0.5B) and 0.65× (1.5B) of Ollama CPU on an M1 Pro as of 2026-09-17 (was 0.75–0.77×/0.57–0.60× on 2026-08-24; both engines got faster since, ratio moved opposite directions per model, unresolved — see the re-run). `int4` is the right default there | §A, "Re-run 2026-09-17 — MacBook" |
@@ -526,69 +526,42 @@ cache lookup. Record: `measurements/cpu-peer-prefill-2026-09-01.md`.
 2026-06-10) is a pre-2026-08-25 Linux row the re-anchor never scoped, still kept in legacy §A,
 marked stale. The SigLIP vision-prefill row below it **is** current as of 2026-09-08 (see next).
 
-#### Metal prefill (fast f16-MMA path, default ON) — 2026-09-09
+#### Metal prefill (fast f16-MMA path, default ON) — re-measured 2026-09-18, post M-03/M-04
 
-goinfer `82b7b8a`, Ollama v0.32.5, M1 Pro 16 GB, `~/models` (internal SSD). Model:
-`qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` (1.5B int4). Three engines interleaved per cell:
-`goinfer_exact` (`--exact-prefill`, sequential per-token), `goinfer` (fast f16-MMA default),
-`ollama` (Metal, q4_K_M). n=6 distinct prefixes per cell; medians reported.
-`scripts/bench_peer_prefill.py --backend metal --models 1.5B --depths 256,512,1024,2048,3900`.
-Record: `goinfer-logs/w2-mac-peer-prefill-20260909-143305.json`.
+**R4 step 0** (`docs/tasks/red-october.md`) — same-session re-run against the current kernels,
+superseding the 2026-09-09 pre-fix row (now in `legacy-benchmarks.md` §A) per N-01's flag. Full
+record: [`metal-prefill-ladder-2026-09-18.md`](measurements/metal-prefill-ladder-2026-09-18.md).
 
-**TTFT tok/s** (prompt_tokens / wall-clock-TTFT — includes per-request overhead; see below for
-overhead-free marginal):
+goinfer `e2927f41`, Ollama v0.32.5 (FA on, `OLLAMA_KV_CACHE_TYPE=q8_0`), M1 Pro 16 GB, `~/models`
+(internal SSD). Model: `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` (1.5B int4). Three engines
+interleaved per cell: `goinfer_exact` (`--exact-prefill`, sequential), `goinfer` (fast path,
+default), `ollama`. n=6 distinct prefixes per cell; medians reported.
+`scripts/bench_peer_prefill.py --backend metal --models 1.5B --depths 256,512,1024,2048,3900 --n 6`.
+
+**TTFT tok/s:**
 
 | K | goinfer exact | goinfer fast | fast / exact | Ollama | Ollama / goinfer fast |
 |---|---|---|---|---|---|
-| 256 | 77.3 | 77.2 | 1.0× | 789.6 | 10.2× |
-| 512 | 74.1 | **277.9** | **3.75×** | 924.8 | 3.3× |
-| 1024 | 70.4 | **228.6** | **3.25×** | 991.5 | 4.3× |
-| 2048 | 63.2 | **172.1** | **2.72×** | 983.5 | 5.7× |
-| 3900 | 52.4 | **107.0** | **2.04×** | 942.5 | 8.8× |
+| 256 | 84.9 | 366.2 | 4.31× | 773.0 | 2.11× |
+| 512 | 83.0 | 349.5 | 4.21× | 886.3 | **2.54×** |
+| 1024 | 77.6 | 294.1 | 3.79× | 923.1 | 3.14× |
+| 2048 | 68.2 | 262.5 | 3.85× | 874.5 | 3.33× |
+| 3900 | 56.4 | 225.0 | 3.99× | 781.8 | 3.47× |
 
-K=256 is identical between exact and fast — both use sequential because K=256 is below the
-512-token floor (`GOINFER_METAL_FAST_PREFILL_FLOOR=512`; the §3.2 fidelity gate passed at
-K=512/1024 and the floor is anchored there). Spread: ≤2% for goinfer_exact and Ollama; 2–14%
-for goinfer fast at K=1024/2048 — some thermal variability at the session's middle cells.
+**Improved over the pre-fix baseline** (K=512: 3.33×→2.54×; K=3900: 8.81× TTFT / ~4.3× L2-record
+→ 3.47×) — M-03/M-04 measurably helped, and the internal fast/exact speedup now holds flat around
+3.8–4.3× at every depth rather than shrinking with depth (pre-fix: 3.75×→2.04×).
 
-**Overhead-free marginal throughput.** Both goinfer arms are superlinear in K (TTFT grows
-faster than K), so the global linear fit is invalid — read local interval slopes:
-
-| K interval | goinfer exact (seq.) | goinfer fast | Ollama |
-|---|---|---|---|
-| 256→512 | 71 tok/s | — ¹ | 1142 tok/s |
-| 512→1024 | 67 tok/s | **194 tok/s** | 1073 tok/s |
-| 1024→2048 | 57 tok/s | **138 tok/s** | 976 tok/s |
-| 2048→3900 | 44 tok/s | **75 tok/s** | 900 tok/s |
-| whole-curve fit | 51 tok/s | 106 tok/s ¹ | **953 tok/s** |
-
-¹ The 256→512 interval for goinfer fast is invalid (path switches at the 512 floor, so the
-two endpoints are not on the same curve). Whole-curve fit also invalid for both goinfer arms
-(negative fitted overhead). Ollama fit is valid (overhead 3 ms, near-flat 900–1142 tok/s).
-
-**Overhead-free marginal ratio: 9× behind Ollama** (whole-curve fits; both arms invalid so
-read as a rough orientation — the local intervals above are the honest numbers).
-
-**The O(K²) attention term is the bottleneck.** Ollama's marginal is near-flat (900–1140
-tok/s); goinfer's drops 194→75 tok/s from K=512→K=3900. The fast path's GEMM term is weight-
-stationary and flat in K; `attention_prefill` is one threadgroup per (row, head) and is
-O(K²) — the same structure §2.2 names as the target for L2's fused kernel. The L1 gain
-(2–3.75× within goinfer) is real and the default is now ON; the remaining gap vs Ollama is
-the attention kernel, not the GEMM.
-
-**SUPERSEDED (N-01, `docs/audit-metal-2026-09-12.md` §0): the last two sentences are false as of
-the fused `simdgroup_matrix` attention kernel (default the day after this row, 2026-09-10) and
-the 32×32 GEMM tile (M-03, 2026-09-13).** This whole row still measures the PRE-fused exact
-attention kernel — the tree's own L2 record
-([`prefill-l2-metal-fused-attn-2026-09-09.md`](measurements/prefill-l2-metal-fused-attn-2026-09-09.md))
-puts P=3900 at 17.9 s (≈4.3× behind Ollama), not the 8.8× above. And the audit's own arithmetic on
-this tree's post-M-03/M-04 numbers finds the OPPOSITE attribution: `gemm_w4f16_store` runs at
-~0.73 TFLOPS (≈0.5×3.6 ms/token, now improved by M-03's wider tile) against Ollama's ≥2.4 TFLOPS —
-the GEMM, not attention, is the flat term behind at every depth; attention was ≈18% of TTFT at
-K=3900 and ≈1.5% at K=256 even before M-04's tiling. A fresh same-session Ollama-interleaved
-re-run on this tree (§3.2's own protocol) is still owed — see the audit doc's Program item 9 —
-so no new ratio is quoted here; treat every number in this subsection as the pre-fix baseline,
-not current.
+**Short of the registered band, and R4 step 2 is KILLED on this result.** The audit's own
+post-M-03 projection was ≤1.8× behind at K=512 to ship a further GEMM-tile change, 1.8–2.4× to
+park it, above 2.4× to kill it and say the tile is not the lever the gap needs. K=512 measured
+2.54× — past the kill line. The whole-curve marginal fit is invalid for all three arms
+(TTFT is superlinear in K on every arm, including Ollama this time); on local intervals goinfer
+fast's own marginal cost grows with depth (2.99→5.16 ms/token) faster than Ollama's does
+(0.94→1.43 ms/token), so the ratio widens from 3.17× to 3.60× rather than holding flat — see the
+full record for the per-interval table and what step 2 being killed does and does not mean for
+R4's remaining scope (attention, MoE prefill, and the short-prompt floor stay out of scope here
+and are R2/R11/R3's respective territory).
 
 #### Vision tower CPU prefill — re-measured 2026-09-08
 
