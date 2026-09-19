@@ -46,6 +46,21 @@ leaves speed on the table. The contribution here is to drive depth from goinfer'
 **own measured** `α̂` and **own measured** `c`, rather than a tuned heuristic — the
 instrumentation in [00-core](./00-core.md) makes that data first-class.
 
+**External precedent, not yet acted on (2026-09-19).** Nirvana Code
+(github.com/niravlekinwala/nirvana-code, MIT, v0.3.0) stops drafting once the *draft* model's own
+greedy top-token probability falls below a fixed constant — `DRAFT_P_MIN = 0.75`
+(`src/speculative.rs:34`, gating `src/speculative.rs:381`; their own comment notes it matches
+llama.cpp's `common/speculative` default) — not the target model's confidence, despite how their
+README's "Confidence-Gated" label reads. Reported +8% end-to-end at 82% acceptance, 0.5B draft
+against a 7B target, output byte-identical; single machine, self-reported, DIRECTIONAL ONLY. This
+is a **leading** signal for the same quantity [00-core](./00-core.md) §3 already names as "the
+cheapest single predictor" of `α` (`QTop1`) and this doc already lists above as a draft-time input
+to `α̂`. The shipped controller (`decoder/spec_adaptive.go`, `AdaptiveDepth`) does not use it yet —
+it runs purely on an EMA of realized accepts, which is **lagging**: it learns from rounds already
+spent, where `QTop1` is available before drafting starts. Worth revisiting once `00-core`'s
+calibrated predictor ships and `QTop1` is actually wired into a decision; their 0.75 is a constant
+tuned to their own draft/target pairing, not a transferable number.
+
 ## Why it suits goinfer
 
 - It needs only the acceptance predictor and a per-backend cost number — both

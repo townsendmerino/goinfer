@@ -86,6 +86,11 @@ and CPU-only. goinfer implements the forward pass itself, which is what lets it 
 multi-threaded, reach a GPU, and load safetensors, GPTQ and AWQ alongside GGUF. Measured numbers, every cell with provenance:
 [docs/benchmarks.md](benchmarks.md).
 
+[Nirvana Code](https://github.com/niravlekinwala/nirvana-code) sits in the same category from
+the Apple Silicon side — a single Rust binary presenting llama.cpp's Metal kernels and Apple
+MLX (bridged via a subprocess today, by their own roadmap) under one CLI/TUI/server, without
+implementing a forward pass of its own.
+
 ![Mellum2 — a 12B coding MoE running GPU-resident on an 8 GB card, in pure Go](assets/mellum2-gpu.gif)
 
 *Bigger than your VRAM: JetBrains **Mellum2** — a 12B sparse-MoE coding model — decoding

@@ -245,3 +245,38 @@ network. This project's actual answer is shorter and stronger than a competitor'
 connects online" implies something does) — nothing connects, ever — and stating that as its own
 line, near the top, is the open work; the underlying fact is already true and already said, just
 not gathered into one place a skimming reader would find.
+
+**U15 · Surface prefix caching and KV persistence as user-visible claims** — README /
+benchmarks, **OPEN, filed 2026-09-19**
+
+We have both and advertise neither. `docs/multimodal.md`'s P9(a) shipped image-block resident
+prefix reuse — a cold turn's forced full CPU prefill drops to warm resident reuse, measured
+**159.98×** (8.215 s → 0.051 s, `docs/benchmarks.md:759–760`) — and `--session-dir` persists warm
+`.giw-kv` sessions to disk **and restores them on restart**
+([`docs/server.md:211`](server.md)). Neither appears in the README pitch or the landing-site plan
+(U8).
+
+Nirvana Code (github.com/niravlekinwala/nirvana-code, MIT, v0.3.0) leads its README with exactly
+these two as headline features, quantified: warm-vs-cold TTFT on an 862-token prompt and a
+first-token number for a freshly relaunched process under `--persist-kv` — their numbers, one
+M2 Pro 16 GB, self-measured with their own bench tool, DIRECTIONAL ONLY and not ours to adopt.
+Its comparison table lists disk-persisted KV cache as a column where Ollama and LM Studio both
+read No. Depends on **U11** (load-time instrumentation) — a claim like this needs our own
+measured cold-vs-warm figures, not a prose assertion.
+
+**U16 · A comparison table** — README / landing site, **OPEN, filed 2026-09-19**
+
+Nirvana Code (see U15) built one placing itself beside Ollama, LM Studio and llama.cpp CLI, and
+it reads as confident rather than defensive. Our equivalent facts appear nowhere a visitor can
+see: a single static binary with no daemon to install (`README.md:69`), no native runtime
+dependency (no CUDA toolkit, no C++ compiler, no Python — `docs/positioning.md:15–18`), the
+model itself compilable into the binary (`docs/roadmap.md:17`), decode gated bit-identical
+against its own reference path on every backend (`docs/positioning.md:56–58`), and 36
+parity-gated model families (`docs/positioning.md:35–49`) — stronger than several of their rows.
+
+Note the tension to resolve before building this: a comparison table sits awkwardly next to this
+project's own hedging convention (a claim ships with its own caveat attached, not smoothed over —
+`benchmarks.md`'s Methodology section and CLAUDE.md's measurement-discipline rules are both built
+on this), and any row claiming a speed advantage must match what `benchmarks.md` actually says,
+including where goinfer loses (its own CUDA-vs-native figure is already flagged as narrower and
+older than it reads, `docs/positioning.md:26–27`).

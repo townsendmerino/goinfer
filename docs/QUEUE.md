@@ -1345,6 +1345,8 @@ supports.
 | `docs/tasks/red-october.md|decoder/sampler.go:220` | goinfer | `func (s *Sampler) ArgmaxEquivalent() bool {` |
 | `docs/tasks/red-october.md|metal/backend.go:513` | goinfer | `if v := os.Getenv("GOINFER_METAL_FAST_PREFILL_FLOOR"); v != "" {` |
 | `docs/tasks/red-october.md|metal/backend.go:689` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
+| `docs/tasks/task-cpu-thread-affinity.md|decoder/mlp.go:296` | goinfer | `// activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as` |
+| `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:177` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
 | `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:123` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1110` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:217` | goinfer | `type Options struct {` |
