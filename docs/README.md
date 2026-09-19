@@ -49,7 +49,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (31: 26 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (33: 28 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -64,6 +64,12 @@ One exception, by design: [`task-demo-refresh.md`](task-demo-refresh.md) stays i
 two-line pointer stub (the `docs/plan-still-slow.md` shape) because its real content already lives
 at `docs/completed/task-demo-refresh.md` and other pages still link the old path — it is not a
 design record itself, so it is not counted above.
+
+One is a program rather than a single design, and is named without the `task-` prefix:
+[`red-october.md`](tasks/red-october.md) — the backend × area performance gap matrix (CPU / WebGPU /
+CUDA / Metal against the peers, as of 2026-09-18), the mechanism behind each cell, the registered
+projection bands, and the twelve briefs R1–R12 that would close them. It is the one place the whole
+chase is on a page; `benchmarks.md` stays the source of every ratio it quotes.
 
 One is the outside view rather than a design: [`task-first-hour.md`](tasks/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running
