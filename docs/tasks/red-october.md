@@ -333,7 +333,7 @@ Status table, kept current as briefs move:
 | R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | scoped |
 | R10 | WebGPU glue fusion and on-device argmax; batched-prefill profile | Linux | M | scoped; profile first |
 | R11 | MoE: L01 funding cell; P20 expert-major prefill; Metal pager measurement and M-11 | both | L | scoped |
-| R12 | Metal `ForwardN` batching (P21); the missing peer rows (MLX, Metal depth, vision, W7) | both | S–M | scoped |
+| R12 | Metal `ForwardN` batching (P21); the missing peer rows (MLX, Metal depth, vision, W7) | both | S–M | **MLX row (i) re-confirmed 2026-09-18 (1.5B/7B only — 0.5B/phi3-mini need an MLX download); Metal depth row (ii) done via R2 step 0; vision (iii) and W7 (iv) not attempted; P21 build not started** |
 
 Every brief below has the same shape: goal, the standing and the band registered here, what to read
 first (prior art and the negatives not to re-propose), what to build, the gates, the measurement
@@ -1093,6 +1093,14 @@ still green.
 **Record.** `theta-per-backend-…` successor file; `benchmarks.md` peer matrix (MLX column filled,
 a vision row, a W7 row), §B3 (depth row); P21/P22 closed; `docs/spec/` gets a one-line status
 line pointing here.
+
+**Measurement briefs, progress 2026-09-18/19.** (ii) is done — R2 step 0 was the same run, per this
+brief's own note. (i) is partly done:
+[`r12-mlx-row-2026-09-18.md`](../measurements/r12-mlx-row-2026-09-18.md) re-confirms the existing
+`benchmarks.md` peer-matrix row (goinfer/Ollama/MLX, 1.5B and 7B, all deltas inside ~3.5% ordinary
+session drift — not a revision) but does not extend it to 0.5B or phi3-mini, since no MLX-format
+checkpoint for either is cached locally; that needs an explicit download decision, not made here.
+(iii) the vision peer row and (iv) W7 were not attempted. P21 (the actual build) has not started.
 
 **Out of scope.** MTP heads (`spec/09`), DFlash (P15), the drafter zoo — this brief is the
 mechanism, not the drafter.

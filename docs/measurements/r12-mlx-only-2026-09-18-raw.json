@@ -1,0 +1,155 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-09-19T05:05:05Z",
+  "host": "macbookpro.lan",
+  "uname": "Darwin 25.6.0 arm64",
+  "distro": "",
+  "goinfer_commit": "3bf5fbb3",
+  "goinfer_tree_dirty": true,
+  "peer": {
+   "ollama_bin": "/opt/homebrew/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": "0.3.0 (build 10621, commit c1d0e7a00)"
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-cpu",
+    "mtime": null
+   },
+   "cuda": {
+    "path": "/home/francis/bench-v0.15.0/serve-cuda",
+    "mtime": null
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu",
+    "mtime": null
+   },
+   "metal": {
+    "path": "/Users/francistownsend-merino/bench-cur/serve-metal",
+    "mtime": "2026-09-19T03:10:38Z"
+   }
+  },
+  "serve_binaries_old": {},
+  "gpu": null,
+  "cpu_count": 8,
+  "loadavg_at_start": [
+   1.34814453125,
+   1.94384765625,
+   1.7265625
+  ],
+  "gpu_compute_apps_at_start": [],
+  "sampling": "sent explicitly per cell; see each record's `sent`"
+ },
+ {
+  "phase": "A",
+  "engine": "mlx",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   108.71681374410211,
+   109.42277173310671
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.34814453125,
+    1.94384765625,
+    1.7265625
+   ],
+   "gpu": null
+  },
+  "secs": 17.9,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    106.05607546103323,
+    105.62707272550361,
+    107.0580877138743,
+    104.1275773341601,
+    114.47976751013621,
+    114.39254975691438,
+    108.60233960359811,
+    109.39103984759699,
+    107.49190107841424,
+    111.21915080651438,
+    109.94303116484653,
+    112.48295180772584,
+    113.68858717628287,
+    112.87495648893531,
+    106.8173112239363,
+    100.86428411819828
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1149904
+  },
+  "mean": 109.1,
+  "spread": 0.7
+ },
+ {
+  "phase": "A",
+  "engine": "mlx",
+  "backend": "metal",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   39.07548852618967,
+   39.13087844855808
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.3994140625,
+    1.9287109375,
+    1.72509765625
+   ],
+   "gpu": null
+  },
+  "secs": 29.1,
+  "counts": {
+   "tokens": 736,
+   "chunks": 720,
+   "tokens_per_chunk": 1.0222222222222221,
+   "completion_rates": [
+    38.633675691141576,
+    39.06379704008026,
+    39.219397473384966,
+    39.02518416681675,
+    39.17449191440901,
+    39.052193135882284,
+    39.20721843816712,
+    39.22795034963541,
+    39.17597828899743,
+    39.16250263977971,
+    39.17523507073065,
+    39.099493755442246,
+    39.08061691767154,
+    39.1495726939269,
+    39.07538945074573,
+    39.128238771170395
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 4395792
+  },
+  "mean": 39.1,
+  "spread": 0.1
+ }
+]

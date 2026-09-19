@@ -1,0 +1,313 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-09-19T04:58:38Z",
+  "host": "macbookpro.lan",
+  "uname": "Darwin 25.6.0 arm64",
+  "distro": "",
+  "goinfer_commit": "3bf5fbb3",
+  "goinfer_tree_dirty": true,
+  "peer": {
+   "ollama_bin": "/opt/homebrew/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": "0.3.0 (build 10621, commit c1d0e7a00)"
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-cpu",
+    "mtime": null
+   },
+   "cuda": {
+    "path": "/home/francis/bench-v0.15.0/serve-cuda",
+    "mtime": null
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu",
+    "mtime": null
+   },
+   "metal": {
+    "path": "/Users/francistownsend-merino/bench-cur/serve-metal",
+    "mtime": "2026-09-19T03:10:38Z"
+   }
+  },
+  "serve_binaries_old": {},
+  "gpu": null,
+  "cpu_count": 8,
+  "loadavg_at_start": [
+   1.6181640625,
+   1.69482421875,
+   1.5244140625
+  ],
+  "gpu_compute_apps_at_start": [],
+  "sampling": "sent explicitly per cell; see each record's `sent`"
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   74.00307619883226,
+   73.60243878530805
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.6181640625,
+    1.69482421875,
+    1.5244140625
+   ],
+   "gpu": null
+  },
+  "secs": 25.7,
+  "counts": {
+   "tokens": 960,
+   "chunks": 960,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    74.17073348484556,
+    74.04882942017147,
+    74.20022144114284,
+    74.00217777593333,
+    73.98076598261655,
+    74.10420652801203,
+    73.65174774106727,
+    73.865927216869,
+    71.63698145088813,
+    74.21814252958511,
+    74.58958738667089,
+    72.93745776094659,
+    73.94927786843651,
+    73.90573323576359,
+    73.95043257425966,
+    73.63189747591395
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 2885360
+  },
+  "mean": 73.8,
+  "spread": 0.4
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   86.18582827218401,
+   85.7678259976984
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.73974609375,
+    1.708984375,
+    1.533203125
+   ],
+   "gpu": null
+  },
+  "secs": 20.0,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    86.20146083191996,
+    86.42077069491698,
+    86.0731385645025,
+    86.21416175553797,
+    86.01147877769863,
+    86.56241090979441,
+    86.05857363757855,
+    85.94463100552312,
+    86.07987138288827,
+    84.63556138319328,
+    85.88418449862984,
+    85.97221698777442,
+    86.12363662690439,
+    85.96764663531128,
+    86.03562678984147,
+    85.44386367704419
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1360464
+  },
+  "mean": 86.0,
+  "spread": 0.4
+ },
+ {
+  "phase": "A",
+  "engine": "mlx",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": null,
+  "error": "[Errno 2] No such file or directory: 'mlx_lm.server'",
+  "machine": {
+   "loadavg": [
+    1.9775390625,
+    1.8125,
+    1.58203125
+   ],
+   "gpu": null
+  },
+  "secs": 0.0
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   21.6861643566951,
+   21.930181181271625
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.9775390625,
+    1.8125,
+    1.58203125
+   ],
+   "gpu": null
+  },
+  "secs": 94.2,
+  "counts": {
+   "tokens": 848,
+   "chunks": 848,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    20.34304403974435,
+    21.93382908530237,
+    21.876215360766167,
+    21.789748101885685,
+    21.86758228601263,
+    21.928111039014485,
+    21.88187260455551,
+    21.868912336279617,
+    21.8715955427642,
+    21.90018422492094,
+    22.02846819386554,
+    21.847275361197326,
+    21.99140836967764,
+    21.983478749240945,
+    21.973331981280655,
+    21.84570702722576
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 3514464
+  },
+  "mean": 21.8,
+  "spread": 0.2
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   25.428020401942213,
+   25.25923840048724
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.47900390625,
+    1.74169921875,
+    1.57666015625
+   ],
+   "gpu": null
+  },
+  "secs": 46.2,
+  "counts": {
+   "tokens": 832,
+   "chunks": 816,
+   "tokens_per_chunk": 1.0196078431372548,
+   "completion_rates": [
+    25.512212376969124,
+    25.513291889194733,
+    25.508458170991222,
+    25.19264967404238,
+    25.44862135823529,
+    25.515437362606033,
+    25.42704610562038,
+    25.30644627787853,
+    25.44332234051668,
+    25.369261098651513,
+    25.357896465426876,
+    25.281510862681394,
+    25.046801101896783,
+    25.080565673542658,
+    25.262053034363976,
+    25.232496626818065
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 4906432
+  },
+  "mean": 25.3,
+  "spread": 0.2
+ },
+ {
+  "phase": "A",
+  "engine": "mlx",
+  "backend": "metal",
+  "model": "7B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": null,
+  "error": "[Errno 2] No such file or directory: 'mlx_lm.server'",
+  "machine": {
+   "loadavg": [
+    1.97705078125,
+    1.85107421875,
+    1.6259765625
+   ],
+   "gpu": null
+  },
+  "secs": 0.0
+ }
+]

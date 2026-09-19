@@ -1605,6 +1605,11 @@ above 1-min loadavg 1.0).
 `go-llama`/`goccy`, the task doc's other CPU-lane peer, is not installed on either box yet — the
 CPU-lane row above is Ollama/llama.cpp/goinfer only.
 
+**Mac/Metal row re-confirmed same-session, 2026-09-18** (R12,
+[`r12-mlx-row-2026-09-18.md`](measurements/r12-mlx-row-2026-09-18.md)): goinfer/Ollama/MLX at both
+sizes, all deltas inside this box's ~3.5% ordinary session drift (73.8/86.0/109.1 at 1.5B,
+21.8/25.3/39.1 at 7B) — the standing above is unchanged, this is confirmation, not revision.
+
 ### M35 (Qwen3.6-35B-A3B) and M26 (Gemma-4-26B-A4B) — W1, depth 128, nobara CUDA only
 
 Both are MoE models past this card's 8 GB VRAM, so goinfer runs `-moe-cache-experts` streaming and
