@@ -1058,7 +1058,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/embed.go:44` | goinfer | `if _, own := a.ownForward(); own {` |
 | `docs/audit-2026-09-10.md|decoder/embed.go:74` | goinfer | `if m.resident != nil {` |
 | `docs/audit-2026-09-10.md|decoder/fidelity_testhook.go:210` | goinfer | `func KLDivergenceForTest(pLogits, qLogits []float32) float64 {` |
-| `docs/audit-2026-09-10.md|decoder/fitguard.go:206` | goinfer | `_, own := arch.ownForward()` |
+| `docs/audit-2026-09-10.md|decoder/fitguard.go:247` | goinfer | `_, own := arch.ownForward()` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4.go:33` | goinfer | `func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4_batched.go:198` | goinfer | `// All K rows must be appended before ANY row's attention is read this` |
 | `docs/audit-2026-09-10.md|decoder/forwardn.go:106` | goinfer | `if _, own := a.ownForward(); own {` |
@@ -1099,7 +1099,7 @@ supports.
 | `docs/audit-2026-09-10.md|tokenizer/sentencepiece.go:822` | goinfer | `// TokenText returns the raw surface bytes a single token id contributes when` |
 | `docs/audit-metal-2026-09-12.md|decoder/features.go:153` | goinfer | `add(!a.ropeUniform(), FeatPerLayerRoPE)` |
 | `docs/audit-metal-2026-09-12.md|decoder/features.go:329` | goinfer | `"metal":  {experts: 256, groups: 64}, // metal/moe.go: float score[256]/sel[256], gscore` |
-| `docs/audit-metal-2026-09-12.md|decoder/fitguard.go:275` | goinfer | `// 0.625") is right about the encoding and wrong about the FOOTPRINT, because the loader` |
+| `docs/audit-metal-2026-09-12.md|decoder/fitguard.go:316` | goinfer | `// 0.625") is right about the encoding and wrong about the FOOTPRINT, because the loader` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1157` | goinfer | `var prefillDeclineDigitsRE = regexp.MustCompile(`\d+`)` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1194` | goinfer | `func warnPrefillDeclined(n int, err error) {` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1225` | goinfer | `if os.Getenv("GOINFER_BATCHED_PREFILL") != "0" && len(suffix) >= 8 && !hasAdapter {` |
