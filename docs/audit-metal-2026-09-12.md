@@ -1270,7 +1270,10 @@ re-baked by the code it checks (G-04).
   `ForwardArgmax` loop; `metalResident` does not implement `ResidentGreedy`, so production greedy
   runs `ForwardEmbPipe` → full head + host argmax. Labelling defect (fused argmax is a recorded
   speed-neutral on UMA), but the curve measures a path serve never takes. **FIXED 2026-09-13**: a
-  caveat now names which path production actually calls.
+  caveat now names which path production actually calls. **SUPERSEDED 2026-09-18** (R2 step 0,
+  `docs/tasks/red-october.md`): the caveat's own argument is now moot rather than merely noted —
+  `scripts/bench_peer.py` drives goinfer over its real HTTP server, measuring the production path
+  directly instead of arguing the internal one should be representative of it.
 - N-04 `docs/gpu-residency-coverage.md:19-25` — "in int8 W8A8": Metal has no int8 GEMV and
   re-quantises to W4A8 (`metal/model.go:461-461`). Qwen2.5-VL/Qwen3-VL "✅ resident" Metal cells are
   text-only (no `ForwardMRoPE` in `metal/`); Gemma 4 E2B/E4B CPU-only under a "✅" row — no footnote.

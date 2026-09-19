@@ -43,7 +43,7 @@ not re-anchored against a peer (no vision peer harness exists either).
 | **Apple Silicon CPU prefill** | **vs Ollama: 1.54× behind at K=512, reaching 0.91× (AHEAD) at K=3900; whole-curve marginal ratio 0.86×, goinfer faster** — aikit v1.34.0's S-01 int4 tile roughly doubled it (67.6→141.7 tok/s at K=512, measured pre/post on one box). Supersedes the 2026-09-01 row of 2.98×/1.80×, which the pre-tile arm reproduced to within 4% | §A |
 | ↳ *and against our own past* | **8.61× faster than the pre-2026-09-01 record at 3020 tokens** (334.9 s → 38.9 s); the rate no longer falls with length (78.4 → 77.7 tok/s where it used to collapse 51.5 → 9.0) | §A |
 | **Apple Silicon CPU decode** | **goinfer is behind** — 0.67× (0.5B) and 0.65× (1.5B) of Ollama CPU on an M1 Pro as of 2026-09-17 (was 0.75–0.77×/0.57–0.60× on 2026-08-24; both engines got faster since, ratio moved opposite directions per model, unresolved — see the re-run). `int4` is the right default there | §A, "Re-run 2026-09-17 — MacBook" |
-| **Apple Silicon Metal decode** | **goinfer is behind on 1.5B/7B/phi3-mini (0.86×/0.86×/0.94×), narrowly ahead on 0.5B (1.08×, still n=2, unconfirmed)** — 1.5B/7B unchanged from the 2026-09-04/05 anchor | "Re-run 2026-09-17 — MacBook" |
+| **Apple Silicon Metal decode** | **goinfer is behind on 1.5B/7B/phi3-mini (0.86×/0.86×/0.94×), narrowly ahead on 0.5B (1.08×, still n=2, unconfirmed)** — 1.5B/7B unchanged from the 2026-09-04/05 anchor. **At depth (R2 step 0, 2026-09-18): the gap grows with K (1.17×→1.96× behind, 128→3900) but has genuinely narrowed since the last matched comparison** — goinfer more than doubled at 4000 (18.5→39.1 tok/s) over six weeks while Ollama held flat (±4%), a real gain on a held-constant peer | "Re-run 2026-09-17 — MacBook"; depth curve §B3 |
 | **Cold start & footprint** | **goinfer alone** — first token in **0.48 s**, **77 MB** resident, model compiled *into* the binary | §A, Table 1 |
 | **Peer-independent** | pure Go, `CGO_ENABLED=0` (no libcuda/libnvrtc linked), **bit-identical** decode, HF logit-parity gate as a contract | Table 1 |
 | **goinfer does not have** | continuous batching · GPU breadth · broad multimodal (vision-in only, no audio) · 36 architectures ʲ vs peers' dozens | Table 1 |
@@ -1015,39 +1015,42 @@ it registers via `decoder.RegisterBackend` and must be blank-imported by the bin
   and adds prefill + HTTP/JSON + detokenize + sampling. The two are consistent; the served rate
   asymptotes ~55–58 tok/s as fixed per-request overhead amortizes (16-tok req 30 tok/s → 512-tok 55).
 
-#### Metal greedy decode by KV depth — qwen2.5-coder-1.5b (the depth axis, current binary)
+#### Metal greedy decode by KV depth — qwen2.5-coder-1.5b (the depth axis, peer-paired 2026-09-18)
 
 The §B3 rows above are a single short-prompt point; this is the depth curve, the Metal analogue of
-the CUDA §B6/§B7 sweep, so the Metal side stops being a pre-P6a single number. **Split-KV was never
-enabled on Metal** (built, measured a regression, reverted — ollama-chase §A2-Metal), so unlike the
-CUDA 0.5B curve these rows carry **no split-KV caveat**: this is the single attention path Metal
-ships. Provenance: **Apple M1 Pro**, macOS 26.6.1, **qwen2.5-coder-1.5b W4A8**, greedy decode-only
-(the resident `ForwardArgmax` on-device-argmax path, no serving/prompt overhead — isolates the depth
-term), KV warmed incrementally, min-of-batches, current binary, 2026-08-09 (`TestZZ_metalDepthBench`,
-opt-in `GOINFER_METAL_DEPTH_BENCH=1`). 4000 is near `metalCtxCap=4096`; the top cell is clamped
-inside the resident KV.
+the CUDA §B6/§B7 sweep. **Split-KV was never enabled on Metal** (built, measured a regression,
+reverted — ollama-chase §A2-Metal), so unlike the CUDA 0.5B curve these rows carry **no split-KV
+caveat**: this is the single attention path Metal ships.
 
-**Labelling caveat (N-03, `docs/audit-metal-2026-09-12.md`): production greedy decode does NOT
-take the `ForwardArgmax` path this curve measures.** `metalResident` has no `ResidentGreedy`
-implementation, so `generateInto`'s greedy case runs the same full-logits `ForwardEmbPipe` every
-other sampling mode uses and argmaxes host-side — recorded speed-neutral on UMA (the zero-copy
-logits view makes the host argmax ~30 µs), so the depth SHAPE below should still be representative
-of what serving actually does, but the curve's own framing as "the" greedy decode path is not
-accurate to which method production calls.
+**R2 step 0** (`docs/tasks/red-october.md`), full record:
+[`metal-depth-r2-2026-09-18.md`](measurements/metal-depth-r2-2026-09-18.md). Provenance: Apple M1
+Pro, 16 GB, macOS 26.6.2, qwen2.5-coder-1.5b int4, both engines driven over their real HTTP
+servers (`scripts/bench_peer.py`), goinfer `a0924fb6`, Ollama v0.32.5 (FA on). Unlike the
+superseded row below, this measures goinfer's real production serving path, not the internal
+`ForwardArgmax` test harness — closing N-03's labelling caveat (`docs/audit-metal-2026-09-12.md`)
+by measuring the path it argued was merely "representative" rather than relying on that argument.
 
-| depth | goinfer 1.5B (Metal, decode-only) | µs/pos vs previous |
-|---|---|---|
-| 128  | 62.0 tok/s | — |
-| 512  | 47.8 tok/s | +12.46 |
-| 2048 | 27.2 tok/s | +10.30 |
-| 4000 | 18.2 tok/s | +9.33 |
+| depth | goinfer | Ollama | ratio (Ollama/goinfer) |
+|---|---|---|---|
+| 128 | 73.7 tok/s | 85.9 tok/s | 1.17× |
+| 512 | 69.1 tok/s | 113.5 tok/s | 1.64× ¹ |
+| 1024 | 61.9 tok/s | 82.6 tok/s | 1.33× |
+| 2048 | 50.7 tok/s | 80.2 tok/s | 1.58× |
+| 3900 | 39.1 tok/s | 76.7 tok/s | 1.96× |
 
-The per-position term is a **~9–12 µs/pos plateau** — roughly an order of magnitude above the same
-model's CUDA coefficients (legacy §B7: +0.55 / +0.99 µs/pos) and far above the peer's ~0.03–0.09. Decode
-falls 3.4× over 128→4000 (vs 1.8× on CUDA), i.e. Metal degrades harder at depth. This is the
-latency/occupancy-bound attention the half-width KV probe confirmed (plan §P4: q8 costs 88% of full,
-so byte reduction is not the lever) plus the absence of split-KV — not a bandwidth wall. The lever is
-the occupancy/latency rewrite, not KV-quant; q8 on Metal buys VRAM/reachability, not decode speed.
+¹ K=512 on Ollama shows a streaming-chunking artifact (`tokens_per_chunk=1.25`, reproduced twice)
+that likely inflates this one cell — see the full record.
+
+**Against the one truly matched same-session comparison that exists** (`completed/metal-verdict.md`
+M0, 2026-08-04: goinfer 63.8/39.8/28.4/18.5 vs Ollama 85.2/79.1/~80/77.5, ratio 1.34×→4.19×),
+**Ollama's Metal decode-at-depth is flat within ordinary session noise (−1.0% to +4.4%) across the
+six weeks between the two runs, while goinfer more than doubled at the deep end** (18.5→39.1
+tok/s, +111%) and improved substantially at every depth. The true same-session ratio moved from
+**4.19× behind at 4000 to 1.96× behind at 3900** — a real, held-constant-peer improvement, not a
+peer regression or a measurement artifact. (A same-day isolation caught and removed one: the first
+pass of this run used `OLLAMA_KV_CACHE_TYPE=q8_0`, inherited from the prefill protocol, which was
+independently costing Ollama 14–36% of its decode throughput, growing with depth — see the record
+for the isolation that found and excluded it.)
 
 ### B4. Host↔VRAM MoE streaming — a 26B that does not fit the card (cgo-free CUDA)
 

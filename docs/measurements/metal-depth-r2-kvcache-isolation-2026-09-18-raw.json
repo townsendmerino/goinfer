@@ -1,0 +1,377 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-09-19T04:26:05Z",
+  "host": "macbookpro.lan",
+  "uname": "Darwin 25.6.0 arm64",
+  "distro": "",
+  "goinfer_commit": "a0924fb6",
+  "goinfer_tree_dirty": true,
+  "peer": {
+   "ollama_bin": "/opt/homebrew/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": "0.3.0 (build 10621, commit c1d0e7a00)"
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-cpu",
+    "mtime": null
+   },
+   "cuda": {
+    "path": "/home/francis/bench-v0.15.0/serve-cuda",
+    "mtime": null
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu",
+    "mtime": null
+   },
+   "metal": {
+    "path": "/Users/francistownsend-merino/bench-cur/serve-metal",
+    "mtime": "2026-09-19T03:10:38Z"
+   }
+  },
+  "serve_binaries_old": {},
+  "gpu": null,
+  "cpu_count": 8,
+  "loadavg_at_start": [
+   1.1376953125,
+   1.49462890625,
+   1.5078125
+  ],
+  "gpu_compute_apps_at_start": [],
+  "sampling": "sent explicitly per cell; see each record's `sent`"
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   84.88169451442903,
+   84.49435486555329
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.1376953125,
+    1.49462890625,
+    1.5078125
+   ],
+   "gpu": null
+  },
+  "secs": 19.4,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    85.53893578101841,
+    84.68141725098944,
+    84.38876497206331,
+    84.96452201331236,
+    84.59384881702952,
+    84.23090025444495,
+    84.95052559118267,
+    85.70464143539151,
+    84.82559335866195,
+    85.3749348681444,
+    85.67032378339147,
+    85.62001633151476,
+    85.63211965649336,
+    85.21533163055747,
+    83.02920405775771,
+    80.58731523790522
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1373760
+  },
+  "mean": 84.7,
+  "spread": 0.4
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   85.87133662539948,
+   85.87160105024296
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.92919921875,
+    1.67578125,
+    1.57373046875
+   ],
+   "gpu": null
+  },
+  "secs": 19.2,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    86.01614680200835,
+    85.88495524820287,
+    85.90248719669768,
+    85.83412264112353,
+    85.72170618213745,
+    85.92254067575918,
+    85.81085210987429,
+    85.87788214739247,
+    85.84939631563745,
+    85.97321422165486,
+    85.9381487470247,
+    85.86022379761256,
+    85.7873119595209,
+    85.81811396010472,
+    85.8444539375312,
+    85.90194546285723
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1370416
+  },
+  "mean": 85.9,
+  "spread": 0.0
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 512,
+  "prompt_tokens": 512,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   113.10450196543172,
+   113.82376597017564
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.73779296875,
+    1.64794921875,
+    1.56591796875
+   ],
+   "gpu": null
+  },
+  "secs": 8.2,
+  "counts": {
+   "tokens": 80,
+   "chunks": 64,
+   "tokens_per_chunk": 1.25,
+   "completion_rates": [
+    106.28051406234604,
+    114.3548728738799,
+    113.73828215500889,
+    113.91994973161054,
+    114.76129179967647,
+    113.81824641887009,
+    114.00856261923354,
+    113.95429606282836,
+    113.91616697903866,
+    113.44339705207362,
+    117.18091992940512,
+    111.61765381709156,
+    113.19072665063175,
+    114.36304324259187,
+    113.26351102683478,
+    113.61470906373782
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1382256
+  },
+  "mean": 113.5,
+  "spread": 0.7
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 1024,
+  "prompt_tokens": 1024,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   82.67472864909259,
+   82.60452852558676
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.92529296875,
+    1.7265625,
+    1.59912109375
+   ],
+   "gpu": null
+  },
+  "secs": 20.9,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    83.01190005172495,
+    82.7455453119736,
+    82.56053408148418,
+    82.66672353127143,
+    82.51663065538206,
+    82.58581882682593,
+    82.62101840625795,
+    82.68965832782055,
+    82.58505202423748,
+    82.54014005447966,
+    82.64102801656269,
+    82.4856279876934,
+    82.7189001816353,
+    82.66120534433749,
+    82.65091663518623,
+    82.55335796056183
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1382368
+  },
+  "mean": 82.6,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 2048,
+  "prompt_tokens": 2060,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   80.62923801107532,
+   79.72572993082167
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.99267578125,
+    1.74560546875,
+    1.607421875
+   ],
+   "gpu": null
+  },
+  "secs": 22.3,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    79.85633464577921,
+    80.4774699163751,
+    81.37180379355596,
+    81.2523873624515,
+    81.38892132016112,
+    81.38164938219026,
+    81.275649234417,
+    78.02968843367235,
+    78.62680575545868,
+    79.99000343582274,
+    79.8465847515993,
+    79.945987782153,
+    79.86866457424595,
+    79.84298813202328,
+    79.83671066447147,
+    79.84809435079897
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1391648
+  },
+  "mean": 80.2,
+  "spread": 0.9
+ },
+ {
+  "phase": "B",
+  "engine": "ollama",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 3900,
+  "prompt_tokens": 3912,
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   76.23824883280818,
+   77.12850983372851
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.7900390625,
+    1.71240234375,
+    1.59765625
+   ],
+   "gpu": null
+  },
+  "secs": 25.1,
+  "counts": {
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    76.31307695825322,
+    76.37505022343109,
+    76.1804685058401,
+    76.21138679612224,
+    76.21217044750396,
+    76.2532156039489,
+    76.16850263037443,
+    76.19211949699151,
+    76.14793381750444,
+    76.38388188582374,
+    77.58327679274761,
+    77.82096360793224,
+    77.49515171871015,
+    77.58324898628887,
+    77.52295303657674,
+    76.49066882424434
+   ],
+   "ngen": 64,
+   "rss_peak_kb": 1390080
+  },
+  "mean": 76.7,
+  "spread": 0.9
+ }
+]

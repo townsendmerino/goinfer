@@ -1,12 +1,15 @@
 # Red October — the backend × area gap matrix, and the briefs to close it (2026-09-18)
 
-> **Status: SCOPED 2026-09-18; R4 step 0 ran the same day.** Two of the twelve briefs (R1, R6) open
-> a fidelity-gated *decode* lane and need an owner decision before they start; everything else is
-> fundable as written. R4 step 0's result: the Metal prefill ladder improved post M-03/M-04 (K=512
-> 3.33×→2.54× behind Ollama) but missed the registered ship/park bands, so step 2 (a further
-> GEMM-tile change) is killed — see R4's brief for the full result and record. Everything else
-> below is still a projection band registered before anyone measured, held to it as the campaign
-> rule requires.
+> **Status: SCOPED 2026-09-18; R4 and R2 step 0 both ran the same day.** Two of the twelve briefs
+> (R1, R6) open a fidelity-gated *decode* lane and need an owner decision before they start;
+> everything else is fundable as written. **R4 step 0:** the Metal prefill ladder improved post
+> M-03/M-04 (K=512 3.33×→2.54× behind Ollama) but missed the registered ship/park bands, so step 2
+> (a further GEMM-tile change) is killed. **R2 step 0:** the decode-at-depth gap has genuinely
+> narrowed against the only true same-session comparison on record — Ollama flat across six weeks,
+> goinfer more than doubled at depth (4.19×→1.96× behind at ~4000) — after a same-day isolation
+> caught an unrelated KV-cache-quant confound in the first measurement pass. See each brief for the
+> full result and record. Everything else below is still a projection band registered before anyone
+> measured, held to it as the campaign rule requires.
 >
 > **Why the name.** The promotion gate is "at least as fast as Ollama on the machines people
 > actually have" ([`roadmap.md`](../roadmap.md), owner decision 2026-09-11). This doc is the
@@ -302,7 +305,7 @@ Status table, kept current as briefs move:
 | # | brief | box | size | status |
 |---|---|---|---|---|
 | R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | scoped; lane decision pending |
-| R2 | Metal decode attention in the peer's shape | Mac | M–L | scoped; measurement step fundable now |
+| R2 | Metal decode attention in the peer's shape | Mac | M–L | **step 0 done 2026-09-18: gap genuinely narrowed to 1.96× at 3900 (was 4.19× same-session 2026-08-04); Build phase still needs the lane decision** |
 | R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | scoped |
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
 | R5 | CUDA prefill attention tile — P24 re-scoped with the corrected cap | Linux | M | scoped |
@@ -469,6 +472,19 @@ reads first.
 `metal-attn-fa-2026-MM-DD.md` after; `benchmarks.md` §B3 depth table and the TL;DR Metal decode row;
 `ollama-chase.md` §A2-Metal gets a dated paragraph either way — a fifth negative belongs next to the
 four.
+
+**Step 0 result, 2026-09-18** ([`metal-depth-r2-2026-09-18.md`](../measurements/metal-depth-r2-2026-09-18.md)).
+Re-ran the depth bench peer-paired for the first time (`scripts/bench_peer.py`, extended with
+`BENCH_DEPTH_BACKEND` since Phase B was CUDA-only, per this brief's own suggestion). A first pass
+used `OLLAMA_KV_CACHE_TYPE=q8_0` (wrongly inherited from R4's prefill protocol) that was costing
+Ollama 14–36% of its decode throughput, growing with depth; isolated and excluded the same day.
+**Against the only true same-session comparison that exists** (`metal-verdict.md` M0, 2026-08-04:
+63.8/39.8/28.4/18.5 vs peer 85.2/79.1/~80/77.5, ratio 1.34×→4.19×), **Ollama held flat (±4%) across
+six weeks while goinfer more than doubled at depth** (18.5→39.1 tok/s at ~4000) — the gap is real
+and closing, from 4.19× to 1.96× behind at 3900–4000, on a held-constant peer. `benchmarks.md` §B3
+and its TL;DR row updated in the same commit; the pre-fix goinfer-only table moved to
+`legacy-benchmarks.md`; audit N-03's caveat marked superseded (this run measures the real serving
+path directly rather than arguing the internal one is representative of it).
 
 **Out of scope.** KV quantisation (§A3 — a byte lever on a term this brief says is not byte-bound),
 prefill attention (R4), the paged families' attention (their term is the command-buffer boundary,

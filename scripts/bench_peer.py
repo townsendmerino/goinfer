@@ -1318,13 +1318,24 @@ def main():
                         ("goinfer_old","metal")]:
             if be in bes and eng in engs:
                 plan.append(("A", eng, be, mk, 128, "greedy"))
-    # B) depth curve, CUDA only, all engines. "cuda" here is no longer just a label (V-08): every
-    #    engine's launch now maps it to a real GPU-offload flag (goinfer -backend cuda, ollama's
-    #    default un-forced GPU, llamacpp -ngl 99), so a Phase-B cell is genuinely GPU on all three.
+    # B) depth curve, one GPU backend, all engines. Defaults to CUDA, unchanged from before
+    # (V-08): every engine's launch maps it to a real GPU-offload flag (goinfer -backend cuda,
+    # ollama's default un-forced GPU, llamacpp -ngl 99), so a Phase-B cell is genuinely GPU on all
+    # three. BENCH_DEPTH_BACKEND overrides it -- e.g. "metal" on darwin, the same "ollama"/"metal"
+    # and "llamacpp"/"metal" pairing Phase A already uses (run_cell has no separate metal branch;
+    # backend=="cpu" is the only special case either payload builder makes). Must be one of the
+    # backends BENCH_BACKENDS also selected, or Phase A and B would silently disagree about which
+    # GPU is under test.
+    depth_be = os.environ.get("BENCH_DEPTH_BACKEND", "cuda").strip()
+    if depth_be not in SERVE:
+        sys.exit(f"BENCH_DEPTH_BACKEND: unknown backend {depth_be!r}; known: {sorted(SERVE)}")
+    if plan_depths() and depth_be not in plan_backends():
+        sys.exit(f"BENCH_DEPTH_BACKEND={depth_be!r} is not in BENCH_BACKENDS={plan_backends()!r} "
+                  "-- phase A and B would test different backends silently")
     for mk in plan_models():
         for d in plan_depths():
             for eng in plan_engines():
-                plan.append(("B", eng, "cuda", mk, d, "greedy"))
+                plan.append(("B", eng, depth_be, mk, d, "greedy"))
 
     # Phase C is the SAMPLING axis, and it is empty unless asked for. §B5's stale set is "the
     # sampled (temp / temp+top_p) rows"; CONFIGS has carried those definitions all along but no
