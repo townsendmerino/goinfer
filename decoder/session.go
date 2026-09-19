@@ -140,6 +140,14 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 	if len(prompt) > 0 {
 		matched = s.rewindForReuse(prompt)
 	}
+	// generateInto only sets g.PrefillReused itself on the resident/GPU path (prefillFrom == 0,
+	// so matched == 0 here too — this write is a harmless no-op there, since that branch may
+	// still overwrite it with the resident's own reuse count once the goroutine below runs). A
+	// plain session (commit != nil, no adapter) always takes generateInto's CPU/staged path
+	// instead (see its own "G3" comment), which never touches g.PrefillReused at all — without
+	// this line, every session's real, correctly-computed prefix reuse (rewindForReuse above)
+	// silently reported 0 to every caller, including usage.prefill_reused_tokens in the API.
+	g.PrefillReused = matched
 
 	// After prefill the cache holds the whole prompt; commit appends each generated token as its
 	// forward lands it in the cache, so seq mirrors the cache exactly — including a clean rollback

@@ -137,10 +137,27 @@ func TestSession_reuseParity(t *testing.T) {
 		t.Fatal("first generation produced no tokens")
 	}
 	ext := append(append([]int(nil), prompt...), first...) // prompt + generated
-	reused := gen(t, func() (<-chan int, *Generation) { return sess.Generate(ctx, ext, 6, greedy) })
+	stream, g2 := sess.Generate(ctx, ext, 6, greedy)
+	var reused []int
+	for id := range stream {
+		reused = append(reused, id)
+	}
+	if err := g2.Err(); err != nil {
+		t.Fatalf("reused generation error: %v", err)
+	}
 	cold := gen(t, func() (<-chan int, *Generation) { return m.Generate(ctx, ext, 6, greedy) })
 	if !slices.Equal(reused, cold) {
 		t.Fatalf("extension reuse diverged from cold prefill:\n  reused %v\n  cold   %v", reused, cold)
+	}
+	// The whole point of a session is to skip re-prefilling what's already warm — assert
+	// the CPU/staged path (the one every plain session takes, per generateInto's G3 comment)
+	// actually reports that, not just that output matches. Regression test for a bug where
+	// Generation.PrefillReused was set only in generateInto's useGPU branch (decoder/model.go),
+	// so a plain session's CPU-path reuse was real (rewindForReuse genuinely skipped the prefix)
+	// but always reported 0 to every caller (usage.prefill_reused_tokens in the API, and here).
+	if want := len(ext) - 1; g2.PrefillReused < want {
+		t.Errorf("PrefillReused = %d, want >= %d (all but the one-token reuse floor) — "+
+			"the session's own extension must report the prefix it actually skipped", g2.PrefillReused, want)
 	}
 
 	// --- divergent suffix: reuse the shared prefix, re-prefill a different tail ---
