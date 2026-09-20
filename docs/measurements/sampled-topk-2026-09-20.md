@@ -5,6 +5,9 @@
 **0.657 → 0.957** and **SHIPS**. `top_k` (0.961) and `min_p` (0.971) clear it too. **Temperature-only
 sampling (T=1.0, no truncation) is not served and stays at 0.739** — see "What is not served".
 
+> **Later the same day (R7b):** the temperature-only cell this record leaves unserved was then served by a different
+> draw — see [`sampled-gumbel-2026-09-20.md`](sampled-gumbel-2026-09-20.md). Nothing below is edited.
+
 Predecessor record: [`sampled-topk-baseline-2026-09-20.md`](sampled-topk-baseline-2026-09-20.md) (step 0).
 Raw logs: [`sampled-topk-2026-09-20.log`](sampled-topk-2026-09-20.log).
 

@@ -1191,8 +1191,15 @@ kernel.
 
 ### D6. Sampling on the critical path — the `temperature==0` readback cliff — **SCOPED, evidence-attached**
 
+> **R7b UPDATE 2026-09-20 (later the same day) — temperature-only is now served too, by a different draw.** Owner
+> decision: plain-`temperature` sampling draws by Gumbel-max (Philox counter RNG) on every backend, and CUDA and
+> WebGPU draw it on-device: paired vs greedy on the 0.5B, CUDA **0.744 → 1.008**, WebGPU **0.796 → 1.035**. The
+> distribution is unchanged, the seeded stream is not (a disclosed break). Record:
+> `docs/measurements/sampled-gumbel-2026-09-20.md`. The R7 paragraph below stands for what it measured, but its
+> statements that temperature-only "cannot be served" are superseded.
+>
 > **R7 UPDATE 2026-09-20 — the device top-K half is BUILT for CUDA filtered sampling (`top_k` / `top_p` /
-> `min_p`); temperature-only is not served.** The "banked" rationale below (host term ~78%, readback ~2%,
+> `min_p`); temperature-only was not served by it.** The "banked" rationale below (host term ~78%, readback ~2%,
 > so a device top-K only removes the readback) was measured before P2b and does not hold afterwards for
 > filtered samplers: on the 0.5B, `GOINFER_DECODE_TIMING` still shows host sampling at 0.92–0.97 ms/token
 > (temperature-only) and 1.29–1.33 ms (top_p), against a 0.1–0.2 ms readback — ~85% of the sampled-decode

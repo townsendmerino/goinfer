@@ -1261,9 +1261,11 @@ explicitly to both sides, never assumed · int4 / q4_K_M · raw cells `b5-reanch
 > CUDA (the temperature-only rows are not).** CUDA now samples `top_k` / `top_p` / `min_p` from a device
 > top-K (`docs/measurements/sampled-topk-2026-09-20.md`). Measured **goinfer-only**, same binary, same
 > session, interleaved n=15, qwen2.5-coder-0.5b int4, RTX 2070 SUPER, driver `595.91.07`: paired ratio to
-> greedy **top_p 0.95: 0.657 → 0.957; top_k 40: 0.961; min_p 0.05: 0.971; temperature-only: 0.739 (unchanged,
-> not served)**. **The peer was not re-run**, so no Ollama ratio is claimed for the new state, and the
-> 227.2 / 124.7 / 102.1 tok/s top_p cells and the top_k rows above should not be quoted as current for CUDA.
+> greedy **top_p 0.95: 0.657 → 0.957; top_k 40: 0.961; min_p 0.05: 0.971**. **Temperature-only (T=1.0) was 0.739
+> here and is superseded by R7b (`docs/measurements/sampled-gumbel-2026-09-20.md`): 0.744 with the device draw off →
+> 1.008 with it on (CUDA, same session, n=15); WebGPU 0.796 → 1.035 (n=12).** **The peer was not re-run**, so no Ollama ratio is claimed for the new state, and the
+> 237.7 / 143.7 / 109.8 temperature-only cells, the 227.2 / 124.7 / 102.1 top_p cells and the top_k rows above should not
+> be quoted as current for CUDA (the temperature-only draw changed too: R7b, same date).
 > A peer sweep (`scripts/bench_peer.py`, the §B5.1 sampled configs) is the open follow-up.
 
 **The peer did not move, so the goinfer-side deltas are attributable.** Ollama reads 125.6 → 125.6

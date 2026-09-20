@@ -1,0 +1,85 @@
+######## CUDA ladder (TestSampledDecodeLadder, n=15) — ran on the a4d66f92 source before it was committed
+=== RUN   TestSampledDecodeLadder
+    sampled_decode_ladder_test.go:160: model=/home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf prompt=77 tokens gen<=160 reps=15 (decode tok/s, prefill excluded)
+    sampled_decode_ladder_test.go:163: greedy       n=15 dropped=0  median 331.1  mean 331.1  sd 3.9  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:163: T1.0 device-sample off n=15 dropped=0  median 246.2  mean 246.7  sd 2.7  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:163: T1.0         n=15 dropped=0  median 332.3  mean 333.2  sd 3.1  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:163: T1.3         n=15 dropped=0  median 333.7  mean 334.1  sd 4.6  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:163: T0.8+p0.95 topk-off n=15 dropped=0  median 216.7  mean 216.2  sd 3.8  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:163: T0.8+p0.95   n=15 dropped=0  median 315.3  mean 314.7  sd 5.0  top-K served=2342 fallbacks=13
+    sampled_decode_ladder_test.go:163: T0.7+k40     n=15 dropped=0  median 321.1  mean 320.7  sd 2.3  top-K served=2385 fallbacks=0
+    sampled_decode_ladder_test.go:163: T1.0+minp0.05 n=15 dropped=0  median 322.5  mean 321.8  sd 2.7  top-K served=2327 fallbacks=0
+    sampled_decode_ladder_test.go:167: PAIRED T1.0 device-sample off / greedy: n=15 median 0.744  mean 0.745  sd 0.011
+    sampled_decode_ladder_test.go:167: PAIRED T1.0       / greedy: n=15 median 1.008  mean 1.007  sd 0.016
+    sampled_decode_ladder_test.go:167: PAIRED T1.3       / greedy: n=15 median 1.010  mean 1.009  sd 0.017
+    sampled_decode_ladder_test.go:167: PAIRED T0.8+p0.95 topk-off / greedy: n=15 median 0.653  mean 0.653  sd 0.010
+    sampled_decode_ladder_test.go:167: PAIRED T0.8+p0.95 / greedy: n=15 median 0.951  mean 0.951  sd 0.019
+    sampled_decode_ladder_test.go:167: PAIRED T0.7+k40   / greedy: n=15 median 0.969  mean 0.968  sd 0.011
+    sampled_decode_ladder_test.go:167: PAIRED T1.0+minp0.05 / greedy: n=15 median 0.972  mean 0.972  sd 0.013
+--- PASS: TestSampledDecodeLadder (73.65s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	73.708s
+
+######## CUDA end-to-end stream identity (TestSampledGumbelStreamIdentity)
+    sampled_gumbel_identity_test.go:99: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf T=1.0 tokens host=1000 device=1000  device-sampled=1000  first divergence -1
+    sampled_gumbel_identity_test.go:99: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf T=0.7 tokens host=1000 device=1000  device-sampled=1000  first divergence -1
+    sampled_gumbel_identity_test.go:99: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf T=1.3 tokens host=1000 device=1000  device-sampled=1000  first divergence -1
+    sampled_gumbel_identity_test.go:99: gemma3-1b-q4_k_m.gguf                  T=1.0 tokens host=585 device=585  device-sampled=585  first divergence -1
+    sampled_gumbel_identity_test.go:99: gemma3-1b-q4_k_m.gguf                  T=0.7 tokens host=1000 device=1000  device-sampled=1000  first divergence -1
+    sampled_gumbel_identity_test.go:99: gemma3-1b-q4_k_m.gguf                  T=1.3 tokens host=1000 device=1000  device-sampled=1000  first divergence -1
+    sampled_gumbel_identity_test.go:99: llama-3.2-1b-instruct-q4_k_m.gguf      T=1.0 tokens host=1000 device=1000  device-sampled=1000  first divergence -1
+    sampled_gumbel_identity_test.go:99: llama-3.2-1b-instruct-q4_k_m.gguf      T=0.7 tokens host=1000 device=1000  device-sampled=1000  first divergence -1
+    sampled_gumbel_identity_test.go:99: llama-3.2-1b-instruct-q4_k_m.gguf      T=1.3 tokens host=1000 device=1000  device-sampled=1000  first divergence -1
+--- PASS: TestSampledGumbelStreamIdentity (91.52s)
+ok  	github.com/townsendmerino/goinfer/cuda	91.626s
+
+######## decoder statistical suite (TestGumbel*, TestPhilox*)
+--- PASS: TestPhilox4x32_knownAnswers (0.00s)
+    sampler_gumbel_test.go:104: T=0.6 df=30 z=+0.63
+    sampler_gumbel_test.go:104: T=1.0 df=39 z=-0.71
+    sampler_gumbel_test.go:104: T=1.7 df=39 z=-0.33
+--- PASS: TestGumbelDraw_goodnessOfFit (20.76s)
+    sampler_gumbel_test.go:142: two-sample vs legacy: df=198 z=+0.57
+--- PASS: TestGumbelDraw_equivalentToLegacyDistribution (23.95s)
+    sampler_gumbel_test.go:194: tail (rank>256): exact mass 0.0248, observed 0.0247, z=-0.04
+--- PASS: TestGumbelDraw_largeVocabTailAndHead (13.48s)
+    sampler_gumbel_test.go:233: max |G_f32 - G_f64| over 2e6 points = 5.40e-07
+--- PASS: TestGumbelNoise_transformAndRange (0.14s)
+--- PASS: TestGumbelDraw_parallelEqualsSequential (0.50s)
+--- PASS: TestGumbelDraw_invariances (0.23s)
+--- PASS: TestGumbelDraw_edgeRows (4.55s)
+ok  	github.com/townsendmerino/goinfer/decoder	63.603s
+
+######## archived GPU re-run on a quiet box (CUDA + WebGPU agreement, WebGPU identity and ladder)
+load at start: 0.39 2.41 3.20 11:09:40
+## CUDA kernel agreement
+    gumbel_test.go:120: 15840 draws: 0 mismatches (0.00e+00); worst host-key gap among them 0.00e+00
+--- PASS: TestGumbelDeviceAgreesWithHost (21.23s)
+ok  	github.com/townsendmerino/goinfer/cuda	21.284s
+## WebGPU kernel agreement
+    gumbel_test.go:112: 12000 draws: 0 mismatches (0.00e+00); worst host-key gap among them 0.00e+00
+--- PASS: TestGumbelDeviceAgreesWithHost (9.55s)
+ok  	github.com/townsendmerino/goinfer/gpu	9.611s
+## WebGPU stream identity
+    sampled_gumbel_identity_test.go:94: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf T=1.0 tokens host=419 device=419 device-sampled=419 first divergence -1
+    sampled_gumbel_identity_test.go:94: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf T=0.7 tokens host=500 device=500 device-sampled=500 first divergence -1
+    sampled_gumbel_identity_test.go:94: llama-3.2-1b-instruct-q4_k_m.gguf T=1.0 tokens host=500 device=500 device-sampled=500 first divergence -1
+    sampled_gumbel_identity_test.go:94: llama-3.2-1b-instruct-q4_k_m.gguf T=0.7 tokens host=261 device=261 device-sampled=261 first divergence -1
+--- PASS: TestSampledGumbelStreamIdentity (35.39s)
+ok  	github.com/townsendmerino/goinfer/gpu	35.444s
+## WebGPU ladder (load at start: 0.75 2.14 3.05)
+    sampled_decode_ladder_test.go:123: greedy                   n=12 median 183.7 tok/s
+    sampled_decode_ladder_test.go:123: T1.0 device-sample off   n=12 median 147.4 tok/s
+    sampled_decode_ladder_test.go:123: T1.0                     n=12 median 189.9 tok/s
+    sampled_decode_ladder_test.go:126: PAIRED T1.0 device-sample off   / greedy: n=12 median 0.803
+    sampled_decode_ladder_test.go:126: PAIRED T1.0                     / greedy: n=12 median 1.036
+--- PASS: TestSampledDecodeLadder (33.37s)
+ok  	github.com/townsendmerino/goinfer/gpu	33.420s
+ARCHIVE DONE
+
+######## parity refresh proof
+==> Running forward goldens (the numeric proof a core refresh is non-numeric)…
+    forward goldens: 61 passed, 0 failed, 0 skipped
+==> PROOF (paste into the commit body — makes the exception auditable):
+    forward goldens green at 67d7b4b5 on arch=amd64: 61 passed / 0 skipped / 0 failed.
+    Deps-Hash-Refresh: 67d7b4b5 goldens=61 arch=amd64

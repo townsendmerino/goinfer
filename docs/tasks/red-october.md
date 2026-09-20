@@ -328,7 +328,7 @@ Status table, kept current as briefs move:
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
 | R5 | CUDA prefill attention tile — P24 re-scoped with the corrected cap | Linux | M | scoped |
 | R6 | CUDA flash-decode lane — mechanism for the parked spike, then the kernel | Linux | M–L | **lane decision made 2026-09-18 (option 2, §3.2 gate) — build fundable** |
-| R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | **CUDA filtered sampling SHIPPED 2026-09-20 (top_p 0.657→0.957 of greedy; top_k 0.961; min_p 0.971). Temperature-only NOT served (0.739). Metal / WebGPU not started.** |
+| R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | **CUDA filtered sampling SHIPPED 2026-09-20 (top_p 0.657→0.957 of greedy; top_k 0.961; min_p 0.971). R7b, same day, owner decision: temperature-only by Gumbel-max on every backend — CUDA 0.744→1.008, WebGPU 0.796→1.035 (device draw); Metal host draw only, device kernel NOT started (Mac).** |
 | R8 | CUDA vision tower onto the L2/L3 kernels | Linux | M | scoped |
 | R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | scoped |
 | R10 | WebGPU glue fusion and on-device argmax; batched-prefill profile | Linux | M | scoped; profile first |
@@ -757,6 +757,15 @@ bound; do not carry this diagnosis across, per the record's own §A2-Metal lesso
 ---
 
 ### R7 · Sampled-decode cliff — device-side bounded top-K
+
+> **R7b — RESULT 2026-09-20 (owner decision, same day): temperature-only sampling by Gumbel-max on every backend.**
+> The R7 result below left the OpenAI-default cell (plain `temperature`) at 0.739 because a top-K cannot reproduce an
+> inverse-CDF draw in index order. The owner chose to change the *draw* instead: `argmax(logit/T + Gumbel noise)` with a
+> Philox counter RNG, one algorithm on every backend, the host implementation the reference. **A disclosed break: the
+> distribution is unchanged, the seeded stream is not.** Record: `docs/measurements/sampled-gumbel-2026-09-20.md`.
+> Paired vs greedy, 0.5B: **CUDA 0.744 → 1.008 (n=15); WebGPU 0.796 → 1.035 (n=12)**. Device kernels agree with the host on
+> 15,840 (CUDA) and 12,000 (WebGPU) draws; device/host streams are identical on every real-model run. **Open:** Metal
+> device kernel (Mac; handoff note written), a Mac/peer re-baseline of any unfiltered-sampling cell, the Ollama peer sweep.
 
 > **RESULT 2026-09-20 — CUDA `top_k` / `top_p` / `min_p` SHIP; temperature-only does not, and the brief's
 > design could not have served it.** Record: `docs/measurements/sampled-topk-2026-09-20.md` (step 0:

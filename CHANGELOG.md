@@ -17,6 +17,21 @@ any surface may still change.
 
 ### Changed
 
+- **BREAKING for seeded output: plain-`temperature` sampling now draws a different stream, and is faster.** Sampling
+  at `temperature` > 0 with none of `top_k` / `top_p` / `min_p` (the OpenAI default) now draws by **Gumbel-max**:
+  the token is `argmax(logit/T + noise)`, the noise from a Philox4x32-10 counter generator keyed by the seed and the
+  draw index, on every backend. **The distribution is unchanged, but for a given seed the tokens are not the ones any
+  earlier release produced.** Sampling with a `top_k` / `top_p` / `min_p` is unchanged token for token. Logprobs,
+  penalties and bias no longer change which token a seed yields. CUDA and WebGPU draw the token **on-device** and
+  return only its id: paired against greedy on the 0.5B, CUDA plain `temperature` **0.744 → 1.008**, WebGPU
+  **0.796 → 1.035**; CPU and Metal still draw on the host, ~1.8x cheaper than before
+  (`docs/measurements/sampled-gumbel-2026-09-20.md`). Verified by a goodness-of-fit and two-sample test against the
+  exact distribution and the old sampler, the device kernels agreeing with the host reference on 15,840 (CUDA) and
+  12,000 (WebGPU) draws, and identical device/host token streams on real checkpoints. Speculative decoding's seed and
+  bonus tokens use the same draw, so its first token still equals plain decoding's under the same seed.
+  `GOINFER_NO_SAMPLE_FASTPATH=1` disables the device draw (an A/B switch: the stream is the same either way except
+  where two candidates' scores differ by an f32 rounding, ~1e-6 per token).
+
 - **CUDA: `top_k` / `top_p` / `min_p` sampling is now 0.96–0.97× of greedy speed, up from ~0.66** (qwen2.5-coder-0.5b,
   same-session paired, n=15; `docs/measurements/sampled-topk-2026-09-20.md`). The resident CUDA forward reduces the
   logits row on-device to its K best (a new `topk_select` kernel) and the sampler draws from those instead of
@@ -27,8 +42,7 @@ any surface may still change.
   the one theoretical exception is a `top_p` draw that lands on a rounding-level boundary of the cutoff, because the
   device's normaliser differs from the host's in the last bits). A per-token fallback reads the full row when the
   K best cannot prove they hold the retained set (0–0.5% of steps). **Plain `temperature` with no truncation
-  is not served and stays ~0.74× of greedy**, and adding one of the three filters is now faster than leaving
-  them off on CUDA (`docs/server.md` amended). `GOINFER_NO_TOPK_FASTPATH=1` disables it. CPU, Metal and WebGPU are
+  was not served by this change (it is, by the entry above)**, which needed a different draw (`docs/server.md` amended). `GOINFER_NO_TOPK_FASTPATH=1` disables it. CPU, Metal and WebGPU are
   unchanged.
 
 ## [v0.19.0] — 2026-09-18
