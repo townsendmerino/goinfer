@@ -145,6 +145,14 @@ func (s *decodeScratch) gateBuf(n int) []float32 {
 type headWorkerScratch struct {
 	qh, kh, vt, scores, ch []float32
 	avAcc                  []float64
+	// groupScores/groupCtx/groupAvAcc are R13's grouped-kernel scratch: one
+	// MatmulQKAcc64Group/MatmulAVAcc64Group call covers attnGroupedNEONSize
+	// query heads (aikit's NEON port is specialized for that exact group
+	// size) instead of attnGroupedNEONSize separate MatmulQKAcc64/
+	// MatmulAVAcc64 calls. Sized ×attnGroupedNEONSize the single-head
+	// scores/ch/avAcc sizing — see headWorkerPool.
+	groupScores, groupCtx []float32
+	groupAvAcc            []float64
 	// mmWS is this slot's private matmul Workspace, threshold pinned so high
 	// that MatmulBT through it is always SERIAL. The f32 attention path fans
 	// out over query heads (A3); MatmulBT ALSO fans out internally over its
@@ -323,6 +331,14 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused, useAcc64 
 		if c := K * nKeys; cap(p.scores) < c {
 			g := max(2*cap(p.scores), c)
 			p.scores = make([]float32, g)
+		}
+		if c := K * nKeys * attnGroupedNEONSize; cap(p.groupScores) < c {
+			g := max(2*cap(p.groupScores), c)
+			p.groupScores = make([]float32, g)
+		}
+		if c := K * hd * attnGroupedNEONSize; cap(p.groupCtx) < c {
+			p.groupCtx = make([]float32, c)
+			p.groupAvAcc = make([]float64, c)
 		}
 	}
 	return s.headPool[:n]

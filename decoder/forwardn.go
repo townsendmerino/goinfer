@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -89,6 +90,40 @@ const fastAttnMinPrompt = 512
 // confirmed instance of that bug class, here avoided rather than repeated).
 // Measured, not guessed — see the campaign doc's move (a) writeup.
 const attnHeadsParThreshold = 0
+
+// attnGroupedNEONSize is the query-head group size aikit's grouped acc64
+// kernels (MatmulQKAcc64Group/MatmulAVAcc64Group) have a NEON port for — the
+// 1.5B's real GQA ratio (NumHeads/NumKVHeads), R13's registered decision
+// shape (docs/tasks/red-october.md, aikit linalg commit af926e3). Any other
+// group ratio still runs correctly through the same Group functions (their
+// Go fallback is the oracle every G is gated against), but slower than G
+// separate per-head calls — so attendGroupedHeads is gated to EXACTLY this
+// size, never called for a model whose group ratio differs, rather than
+// trusting the kernel's own internal G-dispatch to save a mismatched caller.
+const attnGroupedNEONSize = 6
+
+// attnGroupedMinKeys is the nWin gate: below this many attended keys, the
+// per-head path runs unchanged. R13 step 0(iii)'s distinct-bytes probe
+// (docs/measurements/r13-distinct-bytes-probe-2026-09-19.md) found the
+// cache already dedups a GQA group's shared reads below roughly K=1024; the
+// aikit kernel A/B (docs/measurements/r13-neon-kernel-ab-2026-09-20.md)
+// nonetheless measured a real win from the smallest depth it tested (130),
+// so 128 — the smallest depth either R13 record measured, not the cache
+// probe's own crossover — is the conservative floor here, not the
+// aggressive one.
+const attnGroupedMinKeys = 128
+
+// attnGroupedEnabled reports whether R13's grouped-kernel decode path may
+// run. DEFAULT ON, matching moeExpertMajor's sense (mlp.go) — GOINFER_ATTN_GROUPED=0
+// restores today's per-head path everywhere, as the brief's own wiring text names it.
+func attnGroupedEnabled() bool { return os.Getenv("GOINFER_ATTN_GROUPED") != "0" }
+
+// attnGroupedRuns counts attendGroupedHeads calls — R13 Gate (4), the wiring
+// proof. Bit-identity hides dispatch inertness (a grouped path that never
+// runs passes every correctness gate); this is what a test asserts nonzero
+// above attnGroupedMinKeys and zero below it, mirroring moeExpertMajorRuns'
+// (mlp.go) exact idiom.
+var attnGroupedRuns int64
 
 // canBatchN reports whether the batched M=K path applies: the gated-MLP families
 // (Qwen / Llama / Gemma) AND standard sparse-MoE (Mellum / Mixtral) with K>1 —
@@ -986,6 +1021,98 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		}
 	}
 
+	// attendGroupedHeads is R13's grouped-kernel path: one MatmulQKAcc64Group/
+	// MatmulAVAcc64Group call pair covers all attnGroupedNEONSize query heads
+	// of ONE kv head, instead of attnGroupedNEONSize separate attendOneHead
+	// calls each re-reading the same K/V rows. Callable only when the caller
+	// has already checked K==1 (decode; M>1 is not wired — "wire decode
+	// first" per the brief), no tree mask (its per-(row,column) mask needs
+	// attendOneHead's own branch), and group == attnGroupedNEONSize exactly.
+	//
+	// Q for these heads at this one position is CONTIGUOUS in q's [K,qDim]
+	// layout (qDim = nH*hd, heads are laid out head-major within a row, and
+	// a kv group's query heads are themselves contiguous head indices) — so
+	// no gather is needed, unlike attendOneHead's per-tile copy. Same for
+	// ctx on the scatter side. Softmax stays PER HEAD, row by row, identical
+	// to attendOneHead's own non-tree branch (same masking, same max/exp/sum/
+	// normalize sequence) — grouping only shares the QKᵀ and scores·V loads/
+	// folds, never the reduction each head's own softmax performs, matching
+	// the brief's own "the per-head softmax between them as it is today".
+	attendGroupedHeads := func(kvh int, ws *headWorkerScratch) {
+		qh0 := kvh * group
+		a := q[qh0*hd : qh0*hd+group*hd]
+		gScores := ws.groupScores[:group*nKeys]
+		linalg.MatmulQKAcc64Group(a, keys, gScores, group, hd, nKeys, kvh*hd, kvDim)
+		pos := startPos // K==1 is a precondition, so this call's only row is gi=0
+		loP := cache.WindowStart(pos, global) - base
+		hiP := cache.attendHi(pos) - base
+		if loP < 0 {
+			loP = 0
+		}
+		if hiP >= nKeys {
+			hiP = nKeys - 1
+		}
+		for g := range group {
+			rowS := gScores[g*nKeys : g*nKeys+nKeys]
+			if loP <= hiP {
+				active := rowS[loP : hiP+1]
+				_ = active[len(active)-1]
+				maxS := math.Inf(-1)
+				for s, v := range active {
+					sc := float64(v) * scale
+					active[s] = float32(sc)
+					if sc > maxS {
+						maxS = sc
+					}
+				}
+				var sum float64
+				for s, v := range active {
+					e := math.Exp(float64(v) - maxS)
+					active[s] = float32(e)
+					sum += e
+				}
+				inv := 1.0 / sum
+				clear(rowS[:loP])
+				for s, v := range active {
+					active[s] = float32(float64(v) * inv)
+				}
+				clear(rowS[hiP+1 : nKeys])
+			} else {
+				clear(rowS[:nKeys])
+			}
+		}
+		gCtx := ws.groupCtx[:group*hd]
+		gAvAcc := ws.groupAvAcc[:group*hd]
+		linalg.MatmulAVAcc64Group(gScores, vals, gCtx, gAvAcc, group, nKeys, hd, kvh*hd, kvDim)
+		copy(ctx[qh0*hd:qh0*hd+group*hd], gCtx)
+		atomic.AddInt64(&attnGroupedRuns, 1)
+	}
+	// attnGroupedOK is this call's eligibility for the grouped path — checked
+	// once per attendBatchedHeads call, not per head, since none of these
+	// depend on qhead. cache.treeMask != nil excludes speculative verify (its
+	// per-(row,column) mask attendGroupedHeads does not implement); K != 1
+	// excludes prefill/batched M>1 (not wired yet).
+	attnGroupedOK := useAcc64 && K == 1 && cache.treeMask == nil &&
+		group == attnGroupedNEONSize && nKeys >= attnGroupedMinKeys && attnGroupedEnabled()
+	// runHeadRange walks qhead across [h0,h1), taking the grouped path for
+	// any run of attnGroupedNEONSize heads that (a) starts on a kv-group
+	// boundary and (b) fits entirely inside [h0,h1) — i.e. exactly the
+	// "same-KV-head run a worker already owns" the brief's Arm A wiring
+	// names; a worker whose range splits a kv group falls back to
+	// attendOneHead for that group's heads, unchanged from today.
+	runHeadRange := func(ws *headWorkerScratch, h0, h1 int) {
+		qhead := h0
+		for qhead < h1 {
+			if attnGroupedOK && qhead%group == 0 && qhead+group <= h1 {
+				attendGroupedHeads(qhead/group, ws)
+				qhead += group
+				continue
+			}
+			attendOneHead(qhead, ws, nil)
+			qhead++
+		}
+	}
+
 	if !useAcc64 {
 		// f32 path — the DEFAULT for prefill above fastAttnMinPrompt since
 		// 2026-08-31, not the test-only fallback it was written as.
@@ -1102,10 +1229,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	// level down (Gate A0 item 2 — this is the SAME bug class, avoided here
 	// rather than repeated a third time).
 	if len(pool) <= 1 || nH <= 1 || K*nKeys < attnHeadsParThreshold {
-		ws := &pool[0]
-		for qhead := range nH {
-			attendOneHead(qhead, ws, nil)
-		}
+		runHeadRange(&pool[0], 0, nH)
 		return
 	}
 	workers := min(len(pool), nH)
@@ -1119,17 +1243,11 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		wg.Add(1)
 		go func(w, h0, h1 int) {
 			defer wg.Done()
-			ws := &pool[w]
-			for qhead := h0; qhead < h1; qhead++ {
-				attendOneHead(qhead, ws, nil)
-			}
+			runHeadRange(&pool[w], h0, h1)
 		}(w, h0, h1)
 	}
 	h1_0 := min(headsPer, nH)
-	ws0 := &pool[0]
-	for qhead := 0; qhead < h1_0; qhead++ {
-		attendOneHead(qhead, ws0, nil)
-	}
+	runHeadRange(&pool[0], 0, h1_0)
 	wg.Wait()
 }
 
