@@ -10,10 +10,12 @@ and closes neither — but narrows the search space in a way the next session sh
 redo.
 
 **Status: STILL PARKED 2026-09-20. A genuine race was found, reproduced in isolation, and fixed —
-but proven, empirically, to have zero effect on the actual reproduction test. Position-independence
-of the divergence is now confirmed (rules out a data-dependent trigger). A full line-by-line audit
-of the kernel source and every Go-side dispatch/uniform/buffer site found no defect. The root cause
-remains unknown.**
+but proven, empirically, to have zero effect on the actual reproduction test. §2's own
+"position-independence, call-count/state mechanism" conclusion is RETRACTED — see §2b — by a
+sharper experiment that found it was drawing a real conclusion from a confounded test. The
+corrected picture is that the divergence IS position-linked, but not to a fixed absolute position
+or residue class either; a full line-by-line audit of the kernel source and every Go-side
+dispatch/uniform/buffer site still found no defect. The root cause remains unknown.**
 
 ## 1. The encode-ahead race: real, reproduced, fixed — then ruled out as R2's cause
 
@@ -84,7 +86,7 @@ was never going to touch, this reproduction test.
 **This was reported to the user directly as a walk-back rather than presented as a fix**, and the
 user chose to keep investigating for the real, stateful cause rather than stop here.
 
-## 2. Position-independence: the divergence is not tied to specific K/V content
+## 2. Position-independence claimed here — RETRACTED in §2b, read that first
 
 ### Hypothesis under test
 
@@ -123,7 +125,11 @@ Side by side with the original depth-1600 result:
 | 3 | 1603 | 0.9995052 | 0.623 | 2203 | 0.9992243 | 0.890 |
 | 4 | 1604 | 0.9995974 | 0.569 | 2204 | 0.9997135 | 0.497 |
 
-### Conclusion
+### Conclusion — RETRACTED, see §2b
+
+**This section's conclusion is wrong. Left in place, struck through in spirit not in markdown, so
+the reasoning error is visible rather than quietly edited away — see §2b for why and for the
+corrected picture.**
 
 Changing the prefill depth by 600 tokens — which changes every K/V value the decode steps
 attend to, via a different RNG consumption offset — does **not** move the failure. It still starts
@@ -146,6 +152,83 @@ same relative decode step. It does, which is only possible if `attention_fa` act
 at decode step 0 in both cases — i.e., the "third call" is the third `forwardLogits`/`ForwardEmb`
 invocation, full stop, not the third time `attention_fa` fires including some prefill-internal
 usage.
+
+## 2b. RETRACTION, 2026-09-20 (later the same day): §2's conclusion was drawn from a confounded test
+
+An outside review (relayed by the user, from a separate Claude session that read this record cold)
+caught the error directly: **§2's two prefill depths, 1600 and 2200, are both multiples of 8.**
+Every decode step in both runs therefore lands on a position congruent to the same residue mod 4
+(and mod 8) as the equivalent step in the other run — so "the third `ForwardEmb` call" and "key
+count ≡ 3 (mod 4)" were **the same event in both runs tested**, and §2's experiment could not have
+distinguished a call-count trigger from a position-residue trigger even in principle. `attention_fa`
+groups its cooperative key load by 4 (`metal/kernels.go`'s own doc comment: "32 lanes x half4"), so
+a boundary tied to `nKeys mod 4` is not a stretch — it is the single most structurally-motivated
+alternative the original test happened to be blind to.
+
+The same review offered a second, independent hypothesis worth checking alongside the first: that
+"two clean steps, then a stable wrong plateau" is simply the generic *shape* of crossing a rounding
+boundary in ANY non-bit-identical kernel (attention_fa is deliberately not bit-identical, by its own
+gate's design), with no state-carrying mechanism at all — in which case R2 should stop hunting a
+mechanism and go straight to its registered fidelity gate.
+
+**Both were tested directly, same session, same hardware (`metal/attn_fa_confound_test.go`).**
+
+### Test 1 — break the mod-4 confound: sweep prefillLen over 1601, 1602, 1603
+
+Three depths chosen specifically NOT to share 1600/2200's residue. Each run as its own process
+(subtests invoked one at a time) after two back-to-back loads inside one process both hit this
+machine's memory-fit guard — a real, incidental finding of its own, not the mechanism under test.
+
+| prefillLen | first bad step | first bad absolute position | curNKeys at first bad step |
+|---|---|---|---|
+| 1600 (§2, for reference) | 2 | 1602 | 1603 |
+| 1601 | **1** | **1602** | 1603 |
+| 1602 | **0** | **1602** | 1603 |
+| 1603 | 0 (only step tested; 1602 never visited as a decode step — it's already in the prefill) | 1603 | 1604 |
+| 2200 (§2, for reference) | 2 | 2202 | 2203 |
+
+**This falsifies the call-count conclusion outright.** If the trigger were "the third `ForwardEmb`
+call, independent of position," the first-bad STEP would stay at 2 across 1601/1602/1603 — instead
+it moves to step 1, then step 0, tracking the absolute position exactly: every one of 1600, 1601,
+and 1602 first goes bad at **curNKeys = 1603**, regardless of whether that curNKeys value is reached
+on the first, second, or third decode call. Position 1602's *entry into the attended set* — not a
+count of calls — is what the four 1600-neighborhood runs have in common.
+
+But it is not simply "absolute position 1602/1603 is poisoned forever once attended," either: the
+2200 run's own prefill already has position 1603 in its KV cache from the start (it's deep inside a
+2200-token prefill), and that run's first two decode steps (positions 2200, 2201) are still clean —
+so whatever is special about "curNKeys reaching 1603" for the 1600-neighborhood is NOT simply about
+that fixed absolute position's content being bad; the 2200 run has its own, different threshold
+(curNKeys ≈ 2203) that happens to sit at the same **+3 offset from 1600** that 2200 itself sits at
+relative to 1600 (2203 − 1603 = 600 = 2200 − 1600). That arithmetic coincidence is recorded, not
+explained — it is exactly the kind of detail a real mechanism should eventually account for, and
+right now nothing here does.
+
+### Test 2 — control arm: perturb the REFERENCE kernel's scale by 1 float32 ULP
+
+Both arms use the shipped (non-`attention_fa`) kernel only; `r.uScale`'s bit pattern differs by
+exactly one ULP (`math.Nextafter32`, 0.0883883461 → 0.0883883536, Δ7.45e-9) between them. If
+"clean-then-jump" is the generic shape of any tiny perturbation crossing a rounding boundary
+somewhere downstream, this control should show it.
+
+**It does not.** All 5 steps (positions 1600-1604) diverge immediately and uniformly (cosine
+0.9990-0.9994, maxAbs 0.72-0.94) — no clean steps at all, let alone two. This is evidence against
+the "any perturbation looks like this" hypothesis: a genuine ULP-scale perturbation on this same
+model, same depth, produces a qualitatively different signature (immediate, not delayed) from
+`attention_fa`'s own divergence. One control, one perturbation site and direction — not proof the
+hypothesis is false everywhere, but the direct test it invited came back negative.
+
+### What this changes
+
+**Established, corrected:** the divergence is real and position-linked, but neither to a fixed
+absolute position nor to a simple residue class — it tracks something that shifts with prefillLen
+in a way only checked at two prefillLen "families" (1600-neighborhood, 2200) so far. **Retracted:**
+the "call-count/carried-state, independent of position" conclusion — falsified directly. **Still
+standing, unaffected by the retraction:** the ForwardBatch-cannot-dispatch-attention_fa structural
+argument two paragraphs above (a separate, sound argument from the kernel's own addressing scheme,
+not from the call-count interpretation), the race fix in §1, and the clean kernel/dispatch audit in
+§3 below (re-read now with the corrected question: not "why does the third call fail" but "what
+does curNKeys crossing ~1603, or ~2203, actually change").
 
 ## 3. Full kernel and dispatch source audit — clean
 
@@ -194,26 +277,35 @@ uniform-timing bug anywhere in the code this session could read (full audit, cle
 
 ## 4. What is and isn't established now
 
-**Established, beyond what the original record had:**
+**Established:**
 - The `execLoop` pipelining race is real, reproduced in isolation, and fixed — genuine hardening,
   independently worth keeping, but not R2's cause.
-- The divergence is call-count/state-based, not data-dependent — confirmed by changing the prefill
-  depth (and thus all underlying K/V content) by 600 tokens without moving the failure off relative
-  decode step 2.
-- `ForwardBatch` cannot itself be invoking `attention_fa` mid-prefill (a structural fact inferred
-  from the position-independence result, not previously stated explicitly).
+- The divergence is **position-linked** (§2b): four separately-tested prefillLen values in the
+  1600-neighborhood (1600, 1601, 1602, 1603) all first go bad at the same absolute `curNKeys =
+  1603`, regardless of which decode call reaches it — not at a fixed call count. **Retracted:**
+  the earlier "call-count/state, independent of position" conclusion (§2/§2b) — directly falsified.
+- The threshold is NOT a single fixed absolute position either: the 2200 run's own threshold sits
+  at `curNKeys ≈ 2203`, a different absolute value, offset from the 1600-neighborhood's 1603 by
+  exactly the same 600 that separates the two prefill lengths. Unexplained arithmetic, recorded
+  honestly rather than papered over.
+- A direct control (perturbing the REFERENCE kernel's own scale by 1 float32 ULP, `attention_fa`
+  not involved at all) does NOT reproduce the "clean steps then stable jump" shape — it diverges
+  immediately and uniformly instead. Evidence against "any tiny perturbation looks like this,"
+  though only one perturbation site/direction was tried.
+- `ForwardBatch` cannot itself be invoking `attention_fa` mid-prefill (a structural fact from the
+  kernel's own single-query-position addressing scheme, unaffected by the retraction above).
 - Every dispatch parameter, buffer size, buffer address computation, and uniform-write timing site
-  reachable by reading the code is self-consistent and correct for step 2 exactly as for steps 0-1.
+  reachable by reading the code is self-consistent — §3's audit stands, but its own framing
+  ("why does the third call fail") was aimed at the wrong question; re-reading it against "what
+  does curNKeys crossing ~1603/~2203 change" is the next pass, not yet done.
 
-**Still not established:** what specifically differs, at the Metal/GPU level, about the third
-`forwardLogits`/`ForwardEmb` call under the fully synchronous `Begin()`/`End()` pattern. Every
-Go-level and kernel-source explanation this and the original session could think of has now been
-checked and rejected. What remains is either something below the level a source read can see (GPU
-driver/command-queue-internal state, e.g. Metal's typical triple-buffering depth — coincidentally
-also 3 — for some internal resource neither `metal/model.go` nor the kernel source directly
-controls), or a kernel-internal execution-order dependency that a static read cannot catch (though
-the bug's exact, byte-for-byte reproducibility across independent runs argues against an ordinary
-nondeterministic in-kernel race, which would typically vary run to run on real hardware).
+**Still not established:** the actual mechanism. The corrected empirical picture (position-linked,
+but not fixed-absolute-position, with a same-offset relationship between the two tested prefill
+families) is a real, narrower target than "third call" was, but nothing here yet explains WHY
+curNKeys crossing a specific, prefillLen-relative threshold flips the result. Two prefill "families"
+is not enough data to fit the relationship with confidence — a third, unrelated prefillLen (not
+1600±3 and not 2200) would test whether the "+3 from 1600, matching the family's own offset from
+1600" pattern generalizes or was itself a two-point coincidence.
 
 ## 5. File status and recommendation
 
@@ -226,26 +318,32 @@ All from this session, uncommitted as of this record:
   against this record before commit so it doesn't imply (as an earlier draft of the reasoning did)
   that this race explains the real-generation bug.
 - `metal/attn_fa_e2e_depth_test.go` — the depth-2200 variant. Recommend keeping as a second,
-  permanent repro alongside the original: it's the only evidence for position-independence, and a
-  future attempt at the root cause should re-run both together to make sure any fix closes both at
-  once.
-- `docs/tasks/red-october.md` — NOT touched this session; it is substantially uncommitted from
-  another session's work (388 lines) and R2's row there already correctly points at "root cause not
-  found — see the record." Whoever commits this record should add this file to that pointer chain
-  without otherwise touching the other session's in-flight edits.
+  permanent repro alongside the original.
+- `metal/attn_fa_confound_test.go` (§2b) — the position sweep (subtests, one process per depth —
+  necessary on this machine: two back-to-back real-checkpoint loads inside one process hit the
+  memory-fit guard even though either alone loads fine) and the ULP control arm. Recommend keeping
+  both as permanent diagnostics; their own doc comments already state what each result does and
+  does not establish.
+- `docs/tasks/red-october.md` — R2's row there needs its own correction pass to match §2b before
+  being treated as current; not done as part of this edit.
 
 ## 6. Next step, for whoever picks this up
 
-The cheap, readable-from-source leads are exhausted. What's left needs either:
-- A Metal GPU frame capture / `MTLCaptureManager` trace of the third command buffer specifically,
-  to see what the GPU actually scheduled differently from the first two (a tool-access question,
-  not a code-reading one).
-- A minimal harness that chains multiple *separate*, fully-synchronous (`Begin`/`End`) command
-  buffers back-to-back — not a full 28-layer real model, and not the pipelined pattern
-  `attn_fa_pipeline_race_test.go` already covers — specifically to see whether the "third
-  synchronous command buffer" boundary itself (as opposed to real-model state) is sufficient to
-  reproduce the jump, which would point at something Metal-internal rather than anything in this
-  repo's own buffer/uniform management.
+**Do not re-open the call-count hypothesis — §2b closed it directly, with data, not by inference.**
+The corrected target is narrower: what does `curNKeys` crossing a threshold near `prefillLen`'s own
+"+3 from 1600" offset actually change. Concretely:
+- **A third, unrelated prefillLen family** (not near 1600, not near 2200) would test whether the
+  "+3 offset scales with prefillLen" pattern §2b found is real or a two-point coincidence — the
+  single highest-value next experiment, cheaper than anything below.
+- **`GOINFER_ATTNFA_DEBUG=1`'s per-dispatch print, re-read now for curNKeys specifically crossing
+  1603/2203** rather than for cross-layer consistency (which is what the original investigation
+  used it for) — the debug print already exists and was never read with this question in mind.
+- A Metal GPU frame capture / `MTLCaptureManager` trace at the specific curNKeys value that flips,
+  to see what the GPU actually does differently on either side of the threshold.
+- The kernel-source audit in §3, re-read against "what changes about `attnFASplitFor`'s inputs, or
+  any other per-call-recomputed quantity, specifically as `nKeys` crosses ~1603 or ~2203" — not
+  re-read for the "third call" framing it was originally checked against.
 
-`TestAttentionFA_endToEndReproduction` and `TestAttentionFA_endToEndReproductionDepth2200` remain
-the two known-good, fully deterministic repros — start from them, not from rebuilding a new one.
+`TestAttentionFA_endToEndReproduction`, `TestAttentionFA_endToEndReproductionDepth2200`, and now
+`TestAttentionFA_positionSweep`/`TestAttentionFA_ulpPerturbationControl` are the known-good, fully
+deterministic repros — start from them, not from rebuilding new ones.
