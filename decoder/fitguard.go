@@ -100,6 +100,22 @@ type fitCheck struct {
 	// caller is unaffected.
 	srcFileBytes int64
 
+	// cudaBuildBytes is the HOST peak of building a CUDA C' expert cache (--backend cuda
+	// --moe-cache-experts) from a plain .gguf: 2*weightBytes + expertBytes. Zero when that path is
+	// not in play. It REPLACES the weights+KV+srcFileBytes total when it is larger rather than adding
+	// to it, because the phases do not overlap: decoder.Load unmaps the source file before
+	// cuda.BuildResident starts, and on the resident path KV lives in VRAM.
+	//
+	// MEASURED 2026-09-19 on the real gpt-oss-20b (docs/measurements/cold-user-2026-09-18-nobara-pc.md
+	// follow-up), GC-traced with a per-region /proc breakdown: after Load the canonical weights sit on
+	// the Go heap (~13 GB live); BuildResident then host-packs every layer (a second, packed copy of
+	// the same size) and cacheWQ copies each expert stack into pinned host memory (~10 GB, counted
+	// as neither anon nor file). Peak RSS 39.1 GB against this model's 2*12.2 + 11.1 = 35.5 GB — the
+	// ~9% remainder is Go heap slack, not priced here. Before cuda.packWeightStack stopped regrowing
+	// its slices the same load reached 50 GB+ and was killed unfinished.
+	cudaBuildBytes int64
+	expertBytes    int64
+
 	// cfg, effCtx, pinned, kvF16, kvI8 carry what R13's re-pricing needs to recompute KV at a
 	// SMALLER context when the load does not fit and the caller never pinned one — see
 	// smallerFittingContext. cfg is nil when the GGUF's config could not be read (proceeds as
@@ -123,7 +139,13 @@ type fitCheck struct {
 	isGGUF bool
 }
 
-func (f fitCheck) need() int64   { return f.weightBytes + f.kvBytes + f.srcFileBytes }
+func (f fitCheck) need() int64 {
+	n := f.weightBytes + f.kvBytes + f.srcFileBytes
+	if f.cudaBuildBytes > n {
+		n = f.cudaBuildBytes
+	}
+	return n
+}
 func (f fitCheck) budget() int64 { return int64(float64(f.availBytes) * fitMemFraction) }
 
 // known reports whether both sides of the comparison are real numbers. Anything else proceeds.
@@ -145,6 +167,13 @@ const fitGB = 1 << 30
 // different numbers for the same load.
 func (f fitCheck) arithmetic() string {
 	var b strings.Builder
+	if f.cudaBuildBytes > f.weightBytes+f.kvBytes+f.srcFileBytes {
+		fmt.Fprintf(&b, "%s needs ~%.1f GB of host memory while building the CUDA expert cache (%.1f GB weights + %.1f GB packed copy + %.1f GB pinned copy of the experts)",
+			f.name, float64(f.cudaBuildBytes)/fitGB, float64(f.weightBytes)/fitGB, float64(f.weightBytes)/fitGB, float64(f.expertBytes)/fitGB)
+		fmt.Fprintf(&b, "; this machine currently has %.1f GB of memory available (budget %.1f GB = %.0f%% of that)",
+			float64(f.availBytes)/fitGB, float64(f.budget())/fitGB, fitMemFraction*100)
+		return b.String()
+	}
 	fmt.Fprintf(&b, "%s needs ~%.1f GB resident at quant %s", f.name, float64(f.weightBytes)/fitGB, f.quant)
 	if f.kvBytes > 0 {
 		fmt.Fprintf(&b, " + %.1f GB KV", float64(f.kvBytes)/fitGB)
@@ -451,12 +480,19 @@ const gptqAWQPackFactor = 8
 // 1-D tensors (norms, biases) stay f32 whatever the quant, so they are priced as f32. They round
 // to nothing beside the matrices, which is exactly the accounting ResidentWeightBytes documents.
 func estimateGGUFWeightBytes(path string, q quantMode) int64 {
+	total, _ := estimateGGUFWeightBreakdown(path, q)
+	return total
+}
+
+// estimateGGUFWeightBreakdown is estimateGGUFWeightBytes plus the share of it that is routed-expert
+// weight (GGUF names carry "_exps"; the small per-expert bias tables are left out).
+func estimateGGUFWeightBreakdown(path string, q quantMode) (total, experts int64) {
 	g, err := embed.OpenGGUFMmap(path)
 	if err != nil {
-		return 0 // unknown ⇒ proceed
+		return 0, 0 // unknown ⇒ proceed
 	}
 	defer g.Close()
-	var total float64
+	var sum, exp float64
 	for _, name := range g.Names() {
 		dims, ok := g.Dims(name)
 		if !ok {
@@ -474,18 +510,22 @@ func estimateGGUFWeightBytes(path string, q quantMode) int64 {
 			continue
 		}
 		if len(dims) < 2 {
-			total += 4 * float64(n)
+			sum += 4 * float64(n)
 			continue
 		}
 		// M-29 (docs/audit-2026-09-10.md): Mamba-2/MLA tensors stay f32 regardless of the
 		// requested quant — price them at what they actually cost, not the ambient rate.
 		if f32PinnedTensorName(name) {
-			total += 4 * float64(n)
+			sum += 4 * float64(n)
 			continue
 		}
-		total += quantBytesPerElem(q) * float64(n)
+		b := quantBytesPerElem(q) * float64(n)
+		sum += b
+		if strings.Contains(name, "_exps") && !strings.HasSuffix(name, ".bias") {
+			exp += b
+		}
 	}
-	return int64(total)
+	return int64(sum), int64(exp)
 }
 
 // estimateSafetensorsWeightBytes is estimateGGUFWeightBytes's safetensors twin: same
@@ -643,7 +683,13 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 	f.kvI8 = opts.KVQuant == "i8"
 	if strings.HasSuffix(path, ".gguf") {
 		f.isGGUF = true
-		f.weightBytes = estimateGGUFWeightBytes(path, quant)
+		var expertBytes int64
+		f.weightBytes, expertBytes = estimateGGUFWeightBreakdown(path, quant)
+		if !opts.StreamWeights && expertBytes > 0 && opts.Backend == "cuda" &&
+			(opts.MoECacheExperts || os.Getenv("GOINFER_MOE_CACHE_EXPERTS") != "") {
+			f.expertBytes = expertBytes
+			f.cudaBuildBytes = 2*f.weightBytes + expertBytes
+		}
 		// srcFileBytes prices the TRANSIENT peak (see its own doc comment), not the final resident
 		// weight estimate above — the two are deliberately separate terms and this does not
 		// contradict this function's own "never from on-disk file size" rule for weightBytes: that
@@ -720,6 +766,10 @@ func (f fitCheck) smallerFittingContext() (int, bool) {
 	// shrink when ctx shrinks, so it has to come out of the budget here too, or a load whose
 	// weights+file already exceed the budget would still get offered a smaller-context "fit" that
 	// only ever re-prices KV.
+	// The CUDA build peak has no KV in it, so a smaller context cannot bring it under the budget.
+	if f.cudaBuildBytes > f.budget() {
+		return 0, false
+	}
 	available := f.budget() - f.weightBytes - f.srcFileBytes
 	if available <= 0 {
 		return 0, false

@@ -196,8 +196,11 @@ any surface may still change.
   layer's 32 experts onto an unsized slice, stranding every outgrown copy, and across 24 layers the
   collector let the heap reach ~40 GB with ~23 GB live. It now reserves the whole stack up front. On
   the same real load the peak RSS fell from 50 GB+ (killed unfinished, 6 GB left available) to 39 GB
-  (15 GB left) and the load completes cuda-resident. The fit guard still prices this path at
-  29.5 GB, below the measured peak.
+  (15 GB left) and the load completes cuda-resident. The fit guard now prices that build separately
+  (`--backend cuda --moe-cache-experts` on a plain `.gguf`): weights + a packed copy + a pinned copy
+  of the experts, 35.5 GB for this checkpoint against a measured 39.1 GB peak (the remaining ~9% is
+  Go heap slack), taken as the larger of that and the CPU-path total, not their sum. A smaller
+  context cannot fix that peak, so it is refused or warned rather than auto-capped.
 
 ## [v0.18.0] — 2026-09-13
 

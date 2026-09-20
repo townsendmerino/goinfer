@@ -132,6 +132,65 @@ func TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights(t *testing.T)
 	}
 }
 
+// TestFitGuard_pricesTheCUDAExpertCacheBuildPeak: --backend cuda --moe-cache-experts holds the
+// canonical weights, a packed copy of them and a pinned copy of the experts on the host at once
+// (measured on the real gpt-oss-20b: 39 GB peak for a 12 GB checkpoint). In the regime that
+// matters that exceeds the weights+KV+file total the CPU path is priced at, and it does not stack
+// with the file term (the source is unmapped before the build), so need() takes the larger.
+//
+// Two halves, because the tiny fixture cannot be in that regime (its KV at the full window dwarfs
+// its weights): the wiring is checked on the real GGUF, the arithmetic on realistic numbers.
+func TestFitGuard_pricesTheCUDAExpertCacheBuildPeak(t *testing.T) {
+	const gguf = "testdata/gptoss_tiny.gguf"
+	opts := Options{Quant: "int4", Backend: "cuda", MoECacheExperts: true}
+
+	probe := fitCheckFor(gguf, "int4", quantInt4, opts)
+	if probe.expertBytes <= 0 {
+		t.Fatal("no routed-expert bytes found in a MoE GGUF — the '_exps' tensor match is broken")
+	}
+	if want := 2*probe.weightBytes + probe.expertBytes; probe.cudaBuildBytes != want {
+		t.Fatalf("cudaBuildBytes = %d, want 2*weights+experts = %d", probe.cudaBuildBytes, want)
+	}
+	if plain := fitCheckFor(gguf, "int4", quantInt4, Options{Quant: "int4", Backend: "cuda"}); plain.cudaBuildBytes != 0 {
+		t.Errorf("cudaBuildBytes = %d without --moe-cache-experts; the term is only for the expert-cache build", plain.cudaBuildBytes)
+	}
+	if cpu := fitCheckFor(gguf, "int4", quantInt4, Options{Quant: "int4", Backend: "cpu", MoECacheExperts: true}); cpu.cudaBuildBytes != 0 {
+		t.Errorf("cudaBuildBytes = %d on the cpu backend", cpu.cudaBuildBytes)
+	}
+	if st := fitCheckFor(gguf, "int4", quantInt4, Options{Quant: "int4", Backend: "cuda", MoECacheExperts: true, StreamWeights: true}); st.cudaBuildBytes != 0 {
+		t.Errorf("cudaBuildBytes = %d with StreamWeights (that load goes through a .giw)", st.cudaBuildBytes)
+	}
+
+	// gpt-oss-20b's measured numbers on a 64 GB box: 12.2 GB weights, 11.1 GB of them experts,
+	// 11.3 GB file, 6 GB worst-case KV. CPU path: 29.5 GB. CUDA build: 35.5 GB. Budget: between.
+	f := probe
+	f.weightBytes, f.expertBytes = 12<<30, 11<<30
+	f.srcFileBytes, f.kvBytes = 11<<30, 6<<30
+	f.cudaBuildBytes = 2*f.weightBytes + f.expertBytes
+	budgetGB := 33.0
+	f.availBytes = int64(budgetGB * fitGB / fitMemFraction) // budget 33 GB: fits 29 GB, not 35 GB
+	if cpuNeed := f.weightBytes + f.kvBytes + f.srcFileBytes; f.need() != f.cudaBuildBytes || cpuNeed >= f.budget() || f.cudaBuildBytes <= f.budget() {
+		t.Fatalf("test setup: need=%d build=%d cpu=%d budget=%d", f.need(), f.cudaBuildBytes, cpuNeed, f.budget())
+	}
+	if f.fits() {
+		t.Fatal("fits() is true with the budget below the CUDA build peak")
+	}
+	if !strings.Contains(f.arithmetic(), "CUDA expert cache") {
+		t.Errorf("arithmetic does not name the CUDA expert-cache term:\n%s", f.arithmetic())
+	}
+	// The peak has no KV in it, so shrinking the context cannot fix it; guardFit must refuse
+	// instead of auto-pinning a smaller context and letting the load through.
+	if ctx, err := guardFit(f); err == nil {
+		t.Fatalf("guardFit passed (pinned ctx %d) although the CUDA expert-cache build peak exceeds the budget", ctx)
+	}
+	// And with headroom above the peak it is silent.
+	budgetGB = 80.0
+	f.availBytes = int64(budgetGB * fitGB / fitMemFraction)
+	if _, err := guardFit(f); err != nil {
+		t.Errorf("guardFit refused a machine with ample headroom: %v", err)
+	}
+}
+
 // TestFitGuard_streamWeightsSourceIsNotDoubleCounted: the srcFileBytes term must NOT apply when
 // StreamWeights is set on a .gguf path — that request is resolved by transcoding to a .giw and
 // re-loading from THAT (a separate Load call this guard never sees), so pricing the source .gguf's
