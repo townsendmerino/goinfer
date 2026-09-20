@@ -439,6 +439,19 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 	return a.ForwardMRoPE(embedding, pos, pos)
 }
 
+var _ decoder.ResidentSample = (*metalResident)(nil)
+
+// SampleAvailable/ForwardSample (decoder.ResidentSample, R7b Mac half — gumbel_sample.go) delegate
+// straight to *resident: this wrapper adds no logic of its own here, but the methods must exist on
+// *metalResident (not just *resident) because *decoder.Model.resident holds a *metalResident, and
+// Go does not promote a NAMED field's (a.r) methods the way an embedded one would — see this
+// struct's own field comment and every other delegating method below it.
+func (a *metalResident) SampleAvailable() bool { return a.r != nil && a.r.SampleAvailable() }
+
+func (a *metalResident) ForwardSample(embedding []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
+	return a.r.ForwardSample(embedding, pos, temperature, seed, draw)
+}
+
 // ForwardNoLogits (decoder.ResidentPrefillKV) runs the token's forward to build ONLY its
 // resident K/V — skipping the final norm's LM-head dispatch, the ~1 MB logits readback, and any
 // softcap. residentPrefillSeed calls this for every prompt token but the last (audit-

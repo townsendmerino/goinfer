@@ -1530,4 +1530,4 @@ kernel void copy_f32(device const float* src [[buffer(0)]], device float* dst [[
     constant uint& N [[buffer(2)]], uint i [[thread_position_in_grid]]) {
     if (i < N) dst[i] = src[i];
 }
-` + moeKernels + gemma4MoeKernels + deltaNetKernels
+` + moeKernels + gemma4MoeKernels + deltaNetKernels + gumbelMSLKernels

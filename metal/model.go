@@ -204,6 +204,22 @@ type resident struct {
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — encodeLayer reuses encodeAttention's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in finalizeLogits; 0 ⇒ none (FeatLogitScale)
 
+	// R7b Mac half (docs/tasks/red-october.md): device-side temperature-only sampling by
+	// Gumbel-max, decoder.ResidentSample (gumbel_sample.go). Always built (like attnFAPartial
+	// above): SampleAvailable is a per-call gate (finalSoftcap/logitScale), not a build-time one.
+	pGumbel1, pGumbel2 Pipeline
+	gumbelNB           int    // stage-1 dispatch size: ceil(V / (4*GB_THREADS))
+	gumbelBKey         Buffer // [gumbelNB] per-threadgroup winning keys
+	gumbelBIdx         Buffer // [gumbelNB] per-threadgroup winning indices (int32)
+	gumbelOut          Buffer // [1] the drawn id (int32), -1 if nothing was comparable
+	// uGumbelV/uGumbelNB are immutable (V and gumbelNB never change for a built resident); the
+	// other four are reused scratch, SetU32'd/Floats-written fresh before each draw — safe because
+	// ForwardSample's command buffer is synchronous (Begin/End), the same argument uAttnFAG/
+	// uAttnFANSplit's field comment makes for the per-layer attention_fa uniforms above.
+	uGumbelV, uGumbelNB                        Buffer
+	uGumbelInvT                                Buffer
+	uGumbelK0, uGumbelK1, uGumbelD0, uGumbelD1 Buffer
+
 	// gpt-oss (FeatAttnSink, DECLARED for metal — kernels wired end-to-end; TestGptOssResidentParity).
 	attnSink                 bool    // arch.gptoss != nil
 	gptossAlpha, gptossLimit float64 // clamped-SwiGLU constants (0 for every other family)
@@ -651,6 +667,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
 	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
 	r.pCopyVec = pipe("copy_f32")
+	// R7b Mac half: device Gumbel-max sampler over r.logits (the same buffer pGemvW8 writes for
+	// forwardLogits/ForwardEmbPipe) — see gumbel_sample.go. Always built, sized once for V.
+	r.pGumbel1, r.pGumbel2 = pipe("gumbel_stage1"), pipe("gumbel_stage2")
+	r.gumbelNB = gumbelBlocks(V)
+	r.gumbelBKey, r.gumbelBIdx = d.NewBufferLen(r.gumbelNB), d.NewBufferLen(r.gumbelNB)
+	r.gumbelOut = d.NewBufferLen(1)
+	r.uGumbelV, r.uGumbelNB = NewBufferU32(d, uint32(V)), NewBufferU32(d, uint32(r.gumbelNB))
+	r.uGumbelInvT = NewBufferFloats(d, []float32{1})
+	r.uGumbelK0, r.uGumbelK1 = NewBufferU32(d, 0), NewBufferU32(d, 0)
+	r.uGumbelD0, r.uGumbelD1 = NewBufferU32(d, 0), NewBufferU32(d, 0)
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
 	r.qkNorm = m.HasQKNorm()
 	r.qkNormWhole = m.QKNormWholeResident() // G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
