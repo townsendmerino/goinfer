@@ -113,6 +113,18 @@ sampling behavior, just not as a performance workaround for plain `temperature` 
 (Removing the last full-vocabulary-normalization cost entirely is scoped in
 `docs/ollama-chase.md` §8 D6.) Greedy (`temperature=0`) stays the fastest path and is unaffected.
 
+**Update 2026-09-20 (R7) — on the CUDA resident path the advice above reverses for filtered sampling.**
+With `top_k`, `top_p` or `min_p` set (temperature > 0, and no logit bias, repetition/presence/frequency
+penalty, logprobs or constrained decoding), CUDA now reduces the logits row on the device and samples from
+the K best. Measured on qwen2.5-coder-0.5b, same session, paired against greedy: **top_p 0.95 → 0.957,
+top_k 40 → 0.961, min_p 0.05 → 0.971** (they were 0.657 for top_p before), while plain `temperature` with no
+truncation stays at **0.739** — it draws over the whole vocabulary and cannot be served from a top-K. So on
+CUDA, adding one of the three filters is now *faster* than leaving them off. CPU, Metal and WebGPU are
+unchanged, and the paragraph above still holds there. Token streams are identical with the fast path on or
+off at a fixed seed (12 of 12 real-model streams; the one theoretical exception is a `top_p` draw landing on
+a rounding-level boundary). `GOINFER_NO_TOPK_FASTPATH=1` turns it off. Record:
+`docs/measurements/sampled-topk-2026-09-20.md`.
+
 > **Tie-break (changed in v0.10.3).** Tokens with *equal* probability now resolve by **ascending
 > token id**. Before v0.10.3 the order came from an unstable sort and was arbitrary — an
 > unspecified part of the result, since that order feeds the cumulative-probability draw. The

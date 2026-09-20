@@ -1,0 +1,79 @@
+######## f-sampler
+=== RUN   TestSampleFromTopK_matchesFullPath
+    sampler_topk_test.go:160: 102336 draws, 88538 served from the top-K row (86.5%), the rest fell back; 0 mismatches
+--- PASS: TestSampleFromTopK_matchesFullPath (94.72s)
+=== RUN   TestSampleFromTopK_typicalConfigRarelyFallsBack
+--- PASS: TestSampleFromTopK_typicalConfigRarelyFallsBack (0.07s)
+=== RUN   TestSampleFromTopK_deviceRoundedZ
+    sampler_topk_test.go:207: relative Z error 1e-6: 0/5000 draws differ
+--- PASS: TestSampleFromTopK_deviceRoundedZ (11.14s)
+=== RUN   TestSampleFromTopK_ineligibleConfigs
+--- PASS: TestSampleFromTopK_ineligibleConfigs (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	105.927s
+######## r-kernel
+=== RUN   TestTopKSelect_matchesReference
+    topk_test.go:125: 272 (vocab × shape × K) rows identical to the reference order; Z within 1e-6
+    topk_test.go:147: launch-only V=151936 K=256 wantZ=false: 165 µs/call
+    topk_test.go:147: launch-only V=151936 K=256 wantZ=true: 187 µs/call
+    topk_test.go:163: V=151936 K=256 wantZ=false: 265 µs/call (includes the upload the hook adds)
+    topk_test.go:163: V=151936 K=256 wantZ=true: 277 µs/call (includes the upload the hook adds)
+--- PASS: TestTopKSelect_matchesReference (6.88s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	6.935s
+######## r-identity
+=== RUN   TestSampledTopKStreamIdentity
+    sampled_topk_identity_test.go:112: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf T0.8+top_p0.95           tokens full=1000 fast=1000  served=999 fallbacks=0 (0.00%)  stream diverges at -1 (0 positions differ after)
+    sampled_topk_identity_test.go:112: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf T0.7+top_k40             tokens full=1000 fast=1000  served=999 fallbacks=0 (0.00%)  stream diverges at -1 (0 positions differ after)
+    sampled_topk_identity_test.go:112: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf T1.0+min_p0.05           tokens full=1000 fast=1000  served=999 fallbacks=0 (0.00%)  stream diverges at -1 (0 positions differ after)
+    sampled_topk_identity_test.go:112: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf T0.8+top_k40+top_p0.9    tokens full=1000 fast=1000  served=999 fallbacks=0 (0.00%)  stream diverges at -1 (0 positions differ after)
+    sampled_topk_identity_test.go:112: gemma3-1b-q4_k_m.gguf                  T0.8+top_p0.95           tokens full=844 fast=844  served=844 fallbacks=0 (0.00%)  stream diverges at -1 (0 positions differ after)
+    sampled_topk_identity_test.go:112: gemma3-1b-q4_k_m.gguf                  T0.7+top_k40             tokens full=578 fast=578  served=578 fallbacks=0 (0.00%)  stream diverges at -1 (0 positions differ after)
+    sampled_topk_identity_test.go:112: gemma3-1b-q4_k_m.gguf                  T1.0+min_p0.05           tokens full=946 fast=946  served=946 fallbacks=0 (0.00%)  stream diverges at -1 (0 positions differ after)
+    sampled_topk_identity_test.go:112: gemma3-1b-q4_k_m.gguf                  T0.8+top_k40+top_p0.9    tokens full=749 fast=749  served=749 fallbacks=0 (0.00%)  stream diverges at -1 (0 positions differ after)
+    sampled_topk_identity_test.go:112: llama-3.2-1b-instruct-q4_k_m.gguf      T0.8+top_p0.95           tokens full=1000 fast=1000  served=995 fallbacks=4 (0.40%)  stream diverges at -1 (0 positions differ after)
+    sampled_topk_identity_test.go:112: llama-3.2-1b-instruct-q4_k_m.gguf      T0.7+top_k40             tokens full=354 fast=354  served=354 fallbacks=0 (0.00%)  stream diverges at -1 (0 positions differ after)
+    sampled_topk_identity_test.go:112: llama-3.2-1b-instruct-q4_k_m.gguf      T1.0+min_p0.05           tokens full=185 fast=185  served=185 fallbacks=0 (0.00%)  stream diverges at -1 (0 positions differ after)
+    sampled_topk_identity_test.go:112: llama-3.2-1b-instruct-q4_k_m.gguf      T0.8+top_k40+top_p0.9    tokens full=1000 fast=1000  served=999 fallbacks=0 (0.00%)  stream diverges at -1 (0 positions differ after)
+--- PASS: TestSampledTopKStreamIdentity (102.93s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	103.010s
+######## r-ladder
+=== RUN   TestSampledDecodeLadder
+    sampled_decode_ladder_test.go:151: model=/home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf prompt=77 tokens gen<=160 reps=15 (decode tok/s, prefill excluded)
+    sampled_decode_ladder_test.go:154: greedy       n=15 dropped=0  median 340.3  mean 340.6  sd 4.2  top-K served=477 fallbacks=0
+    sampled_decode_ladder_test.go:154: T1.0         n=15 dropped=0  median 251.4  mean 251.3  sd 2.2  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:154: T0.8+p0.95 topk-off n=15 dropped=0  median 224.5  mean 223.7  sd 3.9  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:154: T0.8+p0.95   n=15 dropped=0  median 326.0  mean 324.8  sd 4.2  top-K served=2342 fallbacks=13
+    sampled_decode_ladder_test.go:154: T0.7+k40     n=15 dropped=0  median 326.4  mean 326.4  sd 3.6  top-K served=2385 fallbacks=0
+    sampled_decode_ladder_test.go:154: T1.0+minp0.05 n=15 dropped=0  median 329.3  mean 330.0  sd 3.2  top-K served=2327 fallbacks=0
+    sampled_decode_ladder_test.go:158: PAIRED T1.0       / greedy: n=15 median 0.739  mean 0.738  sd 0.011
+    sampled_decode_ladder_test.go:158: PAIRED T0.8+p0.95 topk-off / greedy: n=15 median 0.657  mean 0.657  sd 0.013
+    sampled_decode_ladder_test.go:158: PAIRED T0.8+p0.95 / greedy: n=15 median 0.957  mean 0.954  sd 0.016
+    sampled_decode_ladder_test.go:158: PAIRED T0.7+k40   / greedy: n=15 median 0.961  mean 0.958  sd 0.017
+    sampled_decode_ladder_test.go:158: PAIRED T1.0+minp0.05 / greedy: n=15 median 0.971  mean 0.969  sd 0.017
+--- PASS: TestSampledDecodeLadder (56.79s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	56.854s
+######## mutate.out
+=== M1 min-p verification removed
+--- FAIL: TestSampleFromTopK_matchesFullPath (85.45s)
+    sampler_topk_test.go:150: v=1000 flat minp0.05 T=0.3 draw 0 used=true: device-path id 217 != full-path id 848
+    sampler_topk_test.go:150: v=1000 flat minp0.05 T=0.3 draw 1 used=true: device-path id 165 != full-path id 645
+    sampler_topk_test.go:150: v=1000 flat minp0.05 T=0.3 draw 2 used=true: device-path id 188 != full-path id 738
+=== M2 nucleus verification removed
+--- FAIL: TestSampleFromTopK_matchesFullPath (61.23s)
+    sampler_topk_test.go:150: v=1000 normal topp0.999 T=0.8 draw 5 used=true: device-path id 247 != full-path id 154
+    sampler_topk_test.go:150: v=1000 normal topp0.999 T=0.8 draw 19 used=true: device-path id 498 != full-path id 187
+    sampler_topk_test.go:150: v=1000 normal topp0.999 T=0.8 draw 35 used=true: device-path id 846 != full-path id 513
+=== M3 eligibility uses penaltiesActive
+--- FAIL: TestSampleFromTopK_ineligibleConfigs (0.00s)
+    sampler_topk_test.go:225: repeat penalty must not be served from a top-K row
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.003s
+=== M4 tie extension removed
+ok  	github.com/townsendmerino/goinfer/decoder	93.979s
+=== restored: identical
+MUTATIONS DONE
+######## ncu (representative launch, normal logits, pre-rewrite radix kernel)
+topk_select (radix, plain shared atomics): 222.2 us; hot instructions were BREV (match_any) in the aggregated variant

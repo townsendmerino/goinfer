@@ -1191,6 +1191,20 @@ kernel.
 
 ### D6. Sampling on the critical path — the `temperature==0` readback cliff — **SCOPED, evidence-attached**
 
+> **R7 UPDATE 2026-09-20 — the device top-K half is BUILT for CUDA filtered sampling (`top_k` / `top_p` /
+> `min_p`); temperature-only is not served.** The "banked" rationale below (host term ~78%, readback ~2%,
+> so a device top-K only removes the readback) was measured before P2b and does not hold afterwards for
+> filtered samplers: on the 0.5B, `GOINFER_DECODE_TIMING` still shows host sampling at 0.92–0.97 ms/token
+> (temperature-only) and 1.29–1.33 ms (top_p), against a 0.1–0.2 ms readback — ~85% of the sampled-decode
+> gap. A device `topk_select` plus the existing exact filter over the K best takes the paired
+> sampled ÷ greedy ratio **top_p 0.657 → 0.957, top_k 40 0.961, min_p 0.05 0.971**, with token streams
+> identical to the full-row path on 3 real models (12 of 12). **Temperature-only stays at 0.739** and cannot
+> be served this way (inverse-CDF draw in index order over a full-V normalisation; P2b's refutation of the
+> tail shortcut stands). The named cost — a device Z differing from the host's — is real but small: it can
+> move a `top_p` draw only at a rounding-level boundary (0 of 5,000 draws under a 1e-6 Z error; 0
+> divergences in 12 streams), CUDA-only. Metal and WebGPU are not done. Record and gates:
+> `docs/measurements/sampled-topk-2026-09-20.md`; brief: `docs/tasks/red-october.md` R7.
+
 Surfaced by outside-consumer testing of the released **v0.10.2** across a five-model sweep. Two
 distinct sampling cliffs were measured; **one is now fixed, one remains and is the lever here.**
 
@@ -1277,7 +1291,7 @@ the filtered path). Given-seed sampled output changed once, for both paths; dist
    at K=256 (8.65), reaching 11.6 only at K=2048 (0.60) — where the interval still spans 60% so most
    draws straddle a boundary and grow again, each growth costing a full O(V) pass. Reverted; table in
    `docs/plan-still-slow.md` P2.
-2. **On-device sampling — BANKED, and no longer the finisher.** The host term is ~78% of the
+2. **On-device sampling — BANKED, and no longer the finisher.** *(Superseded 2026-09-20 for filtered samplers on CUDA: see the R7 update at the top of D6 — the ~2% premise did not survive a post-P2b attribution.)* The host term is ~78% of the
    temperature-only penalty and the readback ~2% (measured 2026-08-09), and **P2b then took the host
    term down 3.06× at 152k / 4.72× at 262k** with deterministic parallel chunked normalization —
    host-only, no kernels. So on-device sampling now addresses the ~2% readback of an already-shrunk
@@ -1486,10 +1500,10 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
   path.
 - ~~**embedResident host-scratch reuse — still open.**~~ **DONE, `c28c847` (2026-09-10, P-08 of
-  audit-2026-09-10.md).** `embedResidentInto(id, dst)` added (`decoder/residency.go:1160`);
+  audit-2026-09-10.md).** `embedResidentInto(id, dst)` added (`decoder/residency.go:1185`);
   `embedResident` itself is now a one-line `dst=nil` wrapper (`:1121`) kept for the batch-collection
   call sites that must not share a buffer. The resident decode loop's two hot call sites now pass a
-  reused `embScratch` (`decoder/model.go:1634,1463`) instead of allocating fresh per token. Gated by
+  reused `embScratch` (`decoder/model.go:1676,1463`) instead of allocating fresh per token. Gated by
   `decoder/embed_resident_scratch_test.go`. Found stale 2026-09-12: this bullet's own line-number
   citations had been silently re-keyed by `--update` in the SAME commit that fixed the code, without
   the "still open" claim itself being revisited. Bigger follow-on, still genuinely open: an
@@ -1544,16 +1558,16 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   bit-identity is structural (per-element, no accumulation order to perturb), not merely convenient.
 - **CUDA g4x2 accumulator clear: H2D per MoE layer per token** (Cursor audit, verified). `cudaResident`
   clears the `g4x2` expert accumulator by uploading host zeros (`g4zero`, "no D2D helper" —
-  cuda/resident.go:723,1183) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
+  cuda/resident.go:725,1183) every MoE layer. An on-stream memset/zero kernel removes an H2D (and its
   implicit null-stream sync) per MoE layer per token. cuda/ not frozen; bit-identical (a zero is a zero).
 
 ### Medium / larger — verify + measure before funding
-- **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:972) does Sync → D2H routing
+- **MoE expert-cache host round-trip.** `loadRoutedExperts` (cuda/resident.go:974) does Sync → D2H routing
   indices → H2D expert misses; the Metal paged path is worse (submit/wait per layer, `metal/gemma4_moe.go`).
   A device-side gather or async overlap matters whenever experts are paged — see the standing verdict that
   synchronous MoE paging is dead and *speculative prefetch* is the path (memory: Metal MoE paging needs
   speculation). cuda/metal not frozen.
-- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:1893) runs the selected experts
+- **Parallel top-k expert GEMVs.** `moeMLPPost` (cuda/resident.go:1895) runs the selected experts
   sequentially. Concurrent launches need separate per-expert scratch + an ORDERED combine, or the FMA
   association changes and the bit-identity gate fails. Real but bit-identity-delicate; measure the win
   against the added scratch VRAM.

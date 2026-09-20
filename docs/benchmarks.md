@@ -1257,6 +1257,15 @@ explicitly to both sides, never assumed · int4 / q4_K_M · raw cells `b5-reanch
 | temp 0.8 + top_k 40 | gemma3-1b | **156.4** | 148.0 | **goinfer 1.06×** | — (new cell) |
 | temp 0.8 + top_k 40 | phi3-mini | 112.1 | 125.7 | Ollama 1.12× | — (new cell) |
 
+> **R7 addendum, 2026-09-20 — the goinfer-side figures for the `top_p` / `top_k` rows above are STALE on
+> CUDA (the temperature-only rows are not).** CUDA now samples `top_k` / `top_p` / `min_p` from a device
+> top-K (`docs/measurements/sampled-topk-2026-09-20.md`). Measured **goinfer-only**, same binary, same
+> session, interleaved n=15, qwen2.5-coder-0.5b int4, RTX 2070 SUPER, driver `595.91.07`: paired ratio to
+> greedy **top_p 0.95: 0.657 → 0.957; top_k 40: 0.961; min_p 0.05: 0.971; temperature-only: 0.739 (unchanged,
+> not served)**. **The peer was not re-run**, so no Ollama ratio is claimed for the new state, and the
+> 227.2 / 124.7 / 102.1 tok/s top_p cells and the top_k rows above should not be quoted as current for CUDA.
+> A peer sweep (`scripts/bench_peer.py`, the §B5.1 sampled configs) is the open follow-up.
+
 **The peer did not move, so the goinfer-side deltas are attributable.** Ollama reads 125.6 → 125.6
 on phi3-mini and 149.1 → 148.2 on gemma3-1b across the two anchors, despite the point-release
 difference. Five of six comparable cells improved, three of them by 8–19%.

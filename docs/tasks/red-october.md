@@ -328,7 +328,7 @@ Status table, kept current as briefs move:
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
 | R5 | CUDA prefill attention tile — P24 re-scoped with the corrected cap | Linux | M | scoped |
 | R6 | CUDA flash-decode lane — mechanism for the parked spike, then the kernel | Linux | M–L | **lane decision made 2026-09-18 (option 2, §3.2 gate) — build fundable** |
-| R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | scoped |
+| R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | **CUDA filtered sampling SHIPPED 2026-09-20 (top_p 0.657→0.957 of greedy; top_k 0.961; min_p 0.971). Temperature-only NOT served (0.739). Metal / WebGPU not started.** |
 | R8 | CUDA vision tower onto the L2/L3 kernels | Linux | M | scoped |
 | R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | scoped |
 | R10 | WebGPU glue fusion and on-device argmax; batched-prefill profile | Linux | M | scoped; profile first |
@@ -757,6 +757,22 @@ bound; do not carry this diagnosis across, per the record's own §A2-Metal lesso
 ---
 
 ### R7 · Sampled-decode cliff — device-side bounded top-K
+
+> **RESULT 2026-09-20 — CUDA `top_k` / `top_p` / `min_p` SHIP; temperature-only does not, and the brief's
+> design could not have served it.** Record: `docs/measurements/sampled-topk-2026-09-20.md` (step 0:
+> `sampled-topk-baseline-2026-09-20.md`). Paired sampled ÷ greedy on the 0.5B, same session, n=15:
+> **top_p 0.95: 0.657 → 0.957 (SHIPS, bar 0.90); top_k 40: 0.961; min_p 0.05: 0.971; T=1.0 temperature-only:
+> 0.739, unchanged.** Token streams are identical to the full-row path (3 checkpoints × 4 configs, 12 of 12;
+> 102,336 sampler draws, 0 mismatches; kernel exact on 272 crafted rows), with a per-token fallback
+> (0–0.5%). **What the brief got wrong, recorded at the same value as the win:** (1) it proposed serving the
+> temperature-only path from the returned K ("normalise over the returned K with the tail mass bounded") — the
+> tail bound was already refuted by P2b, and that path's draw is an inverse CDF in vocabulary *index* order
+> that a top-K cannot reproduce, so the headline `T=1.0` cell (0.74) is untouched; (2) it read P3 as
+> banked for good reason, but a post-P2b attribution shows host sampling is still ~85% of the gap
+> (0.9–1.3 ms/token) and the readback only ~0.1–0.2 ms, so the banking premise was measured false for
+> filtered samplers. **Open:** a temperature-only sampler needs an owner decision on a non-stream-identical
+> device sampler; Metal and WebGPU are not done (the Mac matrix's sampled row is still empty); the peer sweep
+> is not re-run, so `benchmarks.md` §B5.1's peer ratios are stale for the filtered cells (noted there).
 
 **Goal.** Make `temperature > 0` cost what it costs the peer: nothing measurable.
 

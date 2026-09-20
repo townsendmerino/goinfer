@@ -15,6 +15,22 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed
+
+- **CUDA: `top_k` / `top_p` / `min_p` sampling is now 0.96–0.97× of greedy speed, up from ~0.66** (qwen2.5-coder-0.5b,
+  same-session paired, n=15; `docs/measurements/sampled-topk-2026-09-20.md`). The resident CUDA forward reduces the
+  logits row on-device to its K best (a new `topk_select` kernel) and the sampler draws from those instead of
+  reading and filtering the whole vocab-wide row. Applies at temperature > 0 with none of: logit bias,
+  repetition/presence/frequency penalties, logprobs, a constrained-decoding processor; families whose logits are
+  transformed on the host after readback (Gemma final-logit softcap, Cohere logit scale) keep the full path.
+  Token streams are identical to the full-row path at a fixed seed (12 of 12 real-model streams, up to 1,000 tokens;
+  the one theoretical exception is a `top_p` draw that lands on a rounding-level boundary of the cutoff, because the
+  device's normaliser differs from the host's in the last bits). A per-token fallback reads the full row when the
+  K best cannot prove they hold the retained set (0–0.5% of steps). **Plain `temperature` with no truncation
+  is not served and stays ~0.74× of greedy**, and adding one of the three filters is now faster than leaving
+  them off on CUDA (`docs/server.md` amended). `GOINFER_NO_TOPK_FASTPATH=1` disables it. CPU, Metal and WebGPU are
+  unchanged.
+
 ## [v0.19.0] — 2026-09-18
 
 ### Added

@@ -30,10 +30,10 @@
 //   a bitonic sort orders the K survivors. Used for short vocabularies, K close to V, and any row
 //   whose sampled estimate missed (heavy ties, adversarial layouts).
 //
-// WHY NOT ONE HISTOGRAM PASS: measured on the RTX 2070 SUPER, the radix path alone took ~220 us for
-// V=152k on normal logits. Logit keys concentrate into a few dozen bins, so shared-memory atomics
-// serialise, and __match_any_sync (the warp-aggregation fix) is microcoded on Turing as a BREV/FLO loop
-// over distinct values and was slower still (ncu source-level stall sampling, 2026-09-20).
+// WHY NOT A HISTOGRAM-ONLY SELECT: the one clean ncu reading of a radix-select kernel here (warp-aggregated
+// histogram, V=152k, normal logits, RTX 2070 SUPER, 2026-09-20) was ~222 us, with the hottest instructions on
+// BREV — how __match_any_sync is microcoded on Turing. That was too slow for the budget, so the fast path
+// above avoids histogramming the whole row; the radix path remains as the exact fallback.
 //
 // The selection path is compares and integer ops; the only floating-point arithmetic is the Z sum.
 // TestKernelFMALint applies to this file like any other.
