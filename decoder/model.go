@@ -1492,6 +1492,24 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// the plain sequential path (escape hatch / A-B check), same convention as
 	// GOINFER_NO_GREEDY_FASTPATH.
 	optFwd := useGPU && !fastGreedy && m.optFwdEligible(sp) && os.Getenv("GOINFER_NO_OPTFWD") == ""
+
+	// Device top-K fast path (R7, sampler_topk.go): a FILTERED sampler (top_k / top_p / min_p at
+	// temperature > 0) needs only the K best logits, so the resident reduces the row on-device and reads
+	// back ~2 KB instead of the whole vocab-wide row, and the host filters K candidates instead of V.
+	// Excluded: anything that needs or rewrites the full row (bias, penalties, logprobs, a
+	// LogitProcessor), the greedy and optimistic-forward paths, and backends whose logits are
+	// transformed on the host after readback. GOINFER_NO_TOPK_FASTPATH forces the full-row path
+	// (escape hatch / A-B check), same convention as GOINFER_NO_GREEDY_FASTPATH.
+	var topKRF ResidentTopK
+	topKWidth, topKVocab := 0, len(logits)
+	if useGPU && !fastGreedy && !optFwd && sp.LogitProcessor == nil && os.Getenv("GOINFER_NO_TOPK_FASTPATH") == "" && sampler.TopKEligible() {
+		if rf, ok := m.resident.(ResidentTopK); ok && rf.TopKAvailable() {
+			if w, wok := sampler.TopKWidth(len(logits)); wok {
+				topKRF, topKWidth = rf, w
+			}
+		}
+	}
+	var topKRow *TopKRow // this step's device top-K row, set instead of logits when topKRF is active
 	var optGate *optFwdGate
 	if optFwd {
 		optGate = &optFwdGate{}
@@ -1575,25 +1593,49 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			optNextLogits = res.nextLogits
 			optResolved = true
 		} else {
-			// Constrained decoding: let the processor mask this step's logits
-			// (based on what's been generated) before sampling and the stop check.
-			if sp.LogitProcessor != nil {
-				sp.LogitProcessor(generated, logits)
+			// Device top-K row from the previous forward: draw from it if the K candidates prove they
+			// hold the whole retained set; otherwise read the full row for this token (no randomness
+			// has been consumed, so the fallback is invisible) and take the ordinary path below.
+			drew := false
+			if topKRow != nil {
+				if inf, ok := sampler.SampleFromTopK(*topKRow, topKVocab); ok {
+					info, next, drew = inf, inf.ID, true
+					g.TopKServed++
+				} else {
+					full, ferr := topKRow.Full()
+					if ferr != nil {
+						g.err = ferr
+						return
+					}
+					logits = full
+					g.TopKFallbacks++
+				}
+				topKRow = nil
+				if decodeTiming {
+					tSample += time.Since(t0)
+				}
 			}
-			if decodeTiming {
-				tProc += time.Since(t0)
-				t0 = time.Now()
+			if !drew {
+				// Constrained decoding: let the processor mask this step's logits
+				// (based on what's been generated) before sampling and the stop check.
+				if sp.LogitProcessor != nil {
+					sp.LogitProcessor(generated, logits)
+				}
+				if decodeTiming {
+					tProc += time.Since(t0)
+					t0 = time.Now()
+				}
+				var serr error
+				info, serr = sampler.SampleWithInfo(logits)
+				if serr != nil {
+					g.err = serr
+					return
+				}
+				if decodeTiming {
+					tSample += time.Since(t0)
+				}
+				next = info.ID
 			}
-			var serr error
-			info, serr = sampler.SampleWithInfo(logits)
-			if serr != nil {
-				g.err = serr
-				return
-			}
-			if decodeTiming {
-				tSample += time.Since(t0)
-			}
-			next = info.ID
 		}
 		if m.isStop(next, sp) {
 			break
@@ -1642,6 +1684,12 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				// Greedy fast path: the resident picks the argmax on-device and returns
 				// just the id, skipping the full-logits readback.
 				fastNext, err = greedyRF.ForwardArgmax(emb, gpuPos)
+			} else if topKRF != nil {
+				var row TopKRow
+				row, err = topKRF.ForwardTopK(emb, gpuPos, topKWidth, sp.Temperature, sampler.topPActive())
+				if err == nil {
+					topKRow = &row
+				}
 			} else {
 				logits, err = m.resident.Forward(emb, gpuPos)
 			}
@@ -1705,6 +1753,10 @@ type Generation struct {
 	ImgPrefillResident bool
 	Spec               *SpecStats
 	OptFwd             *OptFwdStats // non-nil when optFwdEligible held for this run; see spec_optfwd.go
+	// TopKServed / TopKFallbacks count decode steps sampled from the device top-K row and the steps where
+	// K could not prove it held the retained set (the full row was read instead). Both 0 unless the
+	// device top-K fast path was active; served/(served+fallbacks) is the fast path's hit rate.
+	TopKServed, TopKFallbacks int
 	// Logprobs holds one entry per emitted token (in order) when
 	// SamplingParams.Logprobs was set — the chosen token's log-probability and
 	// any requested top alternatives. Complete once the stream has closed.

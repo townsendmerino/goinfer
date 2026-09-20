@@ -121,6 +121,13 @@ var gluePTX []byte
 //go:embed testdata/argmax.ptx
 var argmaxPTX []byte
 
+// topkPTX: topk_select — the device-side bounded top-K the sampled-decode fast path reads instead of the
+// full logits row (R7). Its own module for the same reason as argmaxPTX: nothing audited is regenerated.
+// Built at the ambient NVRTC (12.9.86), never claimed otherwise. See cuda/topk.cu.
+//
+//go:embed testdata/topk.ptx
+var topkPTX []byte
+
 // loraPTX: lora_delta_down/lora_delta_up — compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md).
 // A brand-new kernel pair, so per cuda/testdata/REGEN.md's rule ("adding a NEW kernel → new .cu
 // file, new .ptx, built at whatever NVRTC is present") this is its own module, never touching

@@ -687,6 +687,15 @@ func topFilterLogits(logits []float32, temperature float64, topK int, topP, minP
 	for i, id := range cand {
 		ips[i] = indexedProb{id: id, p: math.Exp((float64(logits[id]) - maxL) / texp)}
 	}
+	return finishFilter(ips, minP, topP, topPActive, Z)
+}
+
+// finishFilter is topFilterLogits' tail, shared with the device top-K path (sampler_topk.go) so the two
+// can never diverge after candidate selection: order the candidates by (prob desc, id asc), apply the
+// min-p then top-p cuts, drop zero-probability tokens, and renormalize in descending order. ips must
+// hold unnormalized e = exp((logit−max)/T) values; Z is the full-vocabulary denominator and is read
+// only when topPActive.
+func finishFilter(ips []indexedProb, minP, topP float64, topPActive bool, Z float64) []indexedProb {
 	slices.SortFunc(ips, func(a, b indexedProb) int {
 		switch {
 		case a.p > b.p:

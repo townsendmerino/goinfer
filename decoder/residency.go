@@ -106,6 +106,31 @@ type ResidentGreedy interface {
 	ForwardArgmax(embedding []float32, pos int) (int, error)
 }
 
+// TopKRow is one decode step's logits row reduced on-device to its K best entries (R7,
+// docs/tasks/red-october.md). IDs/Logits are ordered (logit DESCENDING, token id ASCENDING) — the tie
+// order decoder.topKByLogit defines, which feeds the sampler's cumulative draw — so Logits[0] is the
+// row's exact maximum and IDs[0] its argmax. Z is the full-vocabulary softmax denominator
+// Σ exp((l−max)/T) at the temperature the row was requested with; 0 unless it was asked for. Full
+// reads the whole row for the token where K was not enough, and is valid only until the next forward.
+type TopKRow struct {
+	IDs    []int32
+	Logits []float32
+	Z      float64
+	Full   func() ([]float32, error)
+}
+
+// ResidentTopK is an optional ResidentForward extension: run a token's forward and return only the K
+// best logits (plus Z when wantZ), instead of the whole vocab-wide row. The decode loop uses it only
+// for a filtered sampler (top_k / top_p / min_p at temperature > 0) with no bias, penalties, logprobs
+// or logit processor — anything that needs, or rewrites, the full row keeps the full path.
+// TopKAvailable is false for a backend whose logits are transformed on the host after readback
+// (final-logit softcap, logit scale): ranking the raw device row would not be ranking what the
+// sampler sees.
+type ResidentTopK interface {
+	TopKAvailable() bool
+	ForwardTopK(embedding []float32, pos, k int, temperature float64, wantZ bool) (TopKRow, error)
+}
+
 // ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to build ONLY its
 // resident KV, skipping the final norm + LM head matmul + full-logits readback (+ any host-side
 // softcap). generateInto uses it for prompt[:-1] — every prefill token except the last needs only its

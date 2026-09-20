@@ -65,15 +65,26 @@ func TestSampledDecodeLadder(t *testing.T) {
 	}
 
 	arms := []struct {
-		name string
-		sp   decoder.SamplingParams
+		name  string
+		sp    decoder.SamplingParams
+		noTop bool // GOINFER_NO_TOPK_FASTPATH=1: the device top-K path forced off (the do-nothing arm)
 	}{
-		{"greedy", decoder.SamplingParams{}},
-		{"T1.0", decoder.SamplingParams{Temperature: 1.0, Seed: 7}},
-		{"T0.8+p0.95", decoder.SamplingParams{Temperature: 0.8, TopP: 0.95, Seed: 7}},
+		{"greedy", decoder.SamplingParams{}, false},
+		{"T1.0", decoder.SamplingParams{Temperature: 1.0, Seed: 7}, false},
+		{"T0.8+p0.95 topk-off", decoder.SamplingParams{Temperature: 0.8, TopP: 0.95, Seed: 7}, true},
+		{"T0.8+p0.95", decoder.SamplingParams{Temperature: 0.8, TopP: 0.95, Seed: 7}, false},
+		{"T0.7+k40", decoder.SamplingParams{Temperature: 0.7, TopK: 40, Seed: 7}, false},
+		{"T1.0+minp0.05", decoder.SamplingParams{Temperature: 1.0, MinP: 0.05, Seed: 7}, false},
 	}
 
-	one := func(sp decoder.SamplingParams, seed int64) (float64, int, error) {
+	var served, fallbacks [16]int
+	armIdx := 0
+	one := func(sp decoder.SamplingParams, seed int64, noTop bool) (float64, int, error) {
+		if noTop {
+			t.Setenv("GOINFER_NO_TOPK_FASTPATH", "1")
+		} else {
+			t.Setenv("GOINFER_NO_TOPK_FASTPATH", "")
+		}
 		if sp.Temperature > 0 {
 			sp.Seed = seed
 		}
@@ -91,6 +102,8 @@ func TestSampledDecodeLadder(t *testing.T) {
 		if err := g.Err(); err != nil {
 			return 0, n, err
 		}
+		served[armIdx] += g.TopKServed
+		fallbacks[armIdx] += g.TopKFallbacks
 		if n < 2 {
 			return 0, n, nil
 		}
@@ -99,11 +112,12 @@ func TestSampledDecodeLadder(t *testing.T) {
 
 	// Warm every arm once (JIT, caches) and discard.
 	for _, a := range arms {
-		if _, _, err := one(a.sp, 1); err != nil {
+		if _, _, err := one(a.sp, 1, a.noTop); err != nil {
 			t.Fatalf("warmup %s: %v", a.name, err)
 		}
 	}
 
+	served, fallbacks = [16]int{}, [16]int{} // the warm-ups above are not part of the measurement
 	rates := make([][]float64, len(arms))
 	dropped := make([]int, len(arms))
 	ratios := make([][]float64, len(arms))
@@ -113,7 +127,8 @@ func TestSampledDecodeLadder(t *testing.T) {
 		ok := make([]bool, len(arms))
 		for k := range arms {
 			i := (k + r) % len(arms) // rotate the starting arm so no arm always runs first
-			rate, n, err := one(arms[i].sp, int64(100+r))
+			armIdx = i
+			rate, n, err := one(arms[i].sp, int64(100+r), arms[i].noTop)
 			if err != nil {
 				t.Fatalf("round %d %s: %v", r, arms[i].name, err)
 			}
@@ -137,7 +152,7 @@ func TestSampledDecodeLadder(t *testing.T) {
 	t.Logf("model=%s prompt=%d tokens gen<=%d reps=%d (decode tok/s, prefill excluded)", path, len(prompt), nTok, reps)
 	for i, a := range arms {
 		m, sd := ladderMeanSD(rates[i])
-		t.Logf("%-12s n=%2d dropped=%d  median %.1f  mean %.1f  sd %.1f", a.name, len(rates[i]), dropped[i], ladderMedian(rates[i]), m, sd)
+		t.Logf("%-12s n=%2d dropped=%d  median %.1f  mean %.1f  sd %.1f  top-K served=%d fallbacks=%d", a.name, len(rates[i]), dropped[i], ladderMedian(rates[i]), m, sd, served[i], fallbacks[i])
 	}
 	for i := 1; i < len(arms); i++ {
 		m, sd := ladderMeanSD(ratios[i])

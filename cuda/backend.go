@@ -873,6 +873,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fArg, e = r.dev.NewComputePipeline(amod, "argmax_reduce"); e != nil {
 			return e
 		}
+		// topk_select (R7): its own module, same isolation as argmax_reduce above.
+		tmod, e2 := r.dev.CompileLibrary(topkPTX)
+		if e2 != nil {
+			return e2
+		}
+		if r.fTopK, e = r.dev.NewComputePipeline(tmod, "topk_select"); e != nil {
+			return e
+		}
 		// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md) — own module, same isolation
 		// reasoning as argmax_reduce/router_f32 above. Loaded unconditionally: cheap, and whether
 		// this model will ever receive an adapter isn't known here.
@@ -1558,6 +1566,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)
+		r.topkOut = r.ai(2*topkMaxK + 2)      // sampled fast-path readback (~2 KB vs 594 KB)
 		if hb, e := gpu.NewHostBuffer[float32](r.dev, vocab); e != nil {
 			return e
 		} else {
