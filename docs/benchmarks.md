@@ -1290,10 +1290,14 @@ explicitly to both sides, never assumed · int4 / q4_K_M · raw cells `b5-reanch
 >
 > Sampling now costs goinfer almost nothing on CUDA (temp-only within 2% of greedy on all three models); phi3-mini
 > is bandwidth-bound and sits at parity with Ollama, and its **top_p** cell (114.1, -8% vs its own greedy) is the one
-> place a sampling cost remains; it is a flat-prompt fallback effect (17% of steps on the sweep's "the the the" filler, 0.2% on twelve ordinary prompts, where top_p is 0.990 of greedy) — see `docs/measurements/sampled-topk-2026-09-20.md`. Ollama's 0.5B top_k
-> cell (286.9) is 7% above its other 0.5B configs (~268) in both runs, tight spread; cause unknown, so that row's
-> 1.13x is the one to treat as least settled. The earlier version of this section's temp-only 0.5B/gemma cells were
-> Ollama-ahead (1.13x / 1.03x); they are now goinfer-ahead, from R7b plus the earlier stack changes, not separated here.
+> place a sampling cost remains; it is a flat-prompt fallback effect (17% of steps on the sweep's "the the the" filler, 0.2% on twelve ordinary prompts, where top_p is 0.990 of greedy) — see `docs/measurements/sampled-topk-2026-09-20.md`. Ollama's 0.5B top_k cell (286.9) is **real, not noise**: three further separate-session repeats
+> (server restarts, interleaved, idle box; `b5-r7b-repeat{1,2,3}-cbf2c25d.json`) gave Ollama top_k 287.4 / 287.7 / 287.0
+> against 267.5 / 266.9 / 267.5 for its top_p and 268.0 / 267.9 / 268.6 for greedy — ~7% faster with `top_k 40` than with
+> greedy, every time. goinfer over the same repeats: top_k 321.1 / 325.5 / 322.0, top_p 314.0 / 317.1 / 314.2, greedy 336.9 /
+> 332.4 / 334.4, so the top_k ratio is **goinfer 1.12x** and top_p **1.18x**. The MECHANISM behind Ollama's top_k speed-up is
+> not measured (a plausible reading is a cheaper host-side sampler on the truncated set, but that is a guess, not a result).
+> The earlier version of this section's temp-only 0.5B/gemma cells were Ollama-ahead (1.13x / 1.03x); they are now
+> goinfer-ahead, from R7b plus the earlier stack changes, not separated here.
 
 **The peer did not move, so the goinfer-side deltas are attributable.** Ollama reads 125.6 → 125.6
 on phi3-mini and 149.1 → 148.2 on gemma3-1b across the two anchors, despite the point-release
