@@ -328,7 +328,7 @@ Status table, kept current as briefs move:
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
 | R5 | CUDA prefill attention tile — P24 re-scoped with the corrected cap | Linux | M | scoped |
 | R6 | CUDA flash-decode lane — mechanism for the parked spike, then the kernel | Linux | M–L | **lane decision made 2026-09-18 (option 2, §3.2 gate) — build fundable** |
-| R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | **CUDA filtered sampling SHIPPED 2026-09-20 (top_p 0.657→0.957 of greedy; top_k 0.961; min_p 0.971). R7b, same day, owner decision: temperature-only by Gumbel-max on every backend — CUDA 0.744→1.008, WebGPU 0.796→1.035 (device draw); Metal host draw only, device kernel NOT started (Mac).** |
+| R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | **CUDA filtered sampling SHIPPED 2026-09-20 (top_p 0.657→0.957 of greedy; top_k 0.961; min_p 0.971). R7b, same day, owner decision: temperature-only by Gumbel-max on every backend — CUDA 0.744→1.008, WebGPU 0.796→1.035 (device draw). Metal device kernel BUILT, GATED AND MEASURED 2026-09-20 (Mac session): 0 mismatches/15,840 draws, 12,000/12,000 real-generation tokens identical to host, device draw 0.96× greedy (do-nothing arm 0.82-0.84×) — see the record.** |
 | R8 | CUDA vision tower onto the L2/L3 kernels | Linux | M | scoped |
 | R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | scoped |
 | R10 | WebGPU glue fusion and on-device argmax; batched-prefill profile | Linux | M | scoped; profile first |
@@ -766,6 +766,36 @@ bound; do not carry this diagnosis across, per the record's own §A2-Metal lesso
 > Paired vs greedy, 0.5B: **CUDA 0.744 → 1.008 (n=15); WebGPU 0.796 → 1.035 (n=12)**. Device kernels agree with the host on
 > 15,840 (CUDA) and 12,000 (WebGPU) draws; device/host streams are identical on every real-model run. **Open:** Metal
 > device kernel (Mac; handoff note written), a Mac/peer re-baseline of any unfiltered-sampling cell, the Ollama peer sweep.
+
+> **R7b Mac — RESULT 2026-09-20: Metal device kernel built and gated (`decoder.ResidentSample`).**
+> `metal/gumbel.go` (`gumbel_stage1`/`gumbel_stage2` MSL kernels, ported from `cuda/gumbel.cu`/`gpu/gumbel.go`) +
+> `metal/gumbel_sample.go` + `metal/backend.go` (the `*metalResident` delegation every other
+> `decoder.ResidentForward` method already needed — easy to miss since `*resident`'s own methods don't
+> promote through the wrapper's named field). Kernel-vs-host: **0 mismatches in 15,840 draws**, matching
+> CUDA's own figure exactly. End-to-end device-vs-host token streams: **12,000/12,000 tokens identical**
+> (qwen2.5-coder 0.5B + 1.5B × T∈{1.0,0.7,1.3}, 1,000 tokens each), device sampler engaged on every token
+> (never fell back). Mutation check (a Philox constant flipped) goes red (189/300 mismatches, worst
+> host-key gap 11 — confirms the gate can catch a broken kernel, not just pass vacuously). **One real bug
+> found and fixed during development**, worth recording since the isolation method is reusable: the
+> small-w noise branch was missing a negation (`e = -log1p(-w)`, coded as `e = log1p(-w)`), giving NaN
+> keys for roughly half the `uint32` range — invisible on every case where the true winner's LOGIT margin
+> dominated the (garbage) noise, but 100% wrong on a flat-logits row where noise is the only
+> differentiator; found by isolating Philox (checked clean against the Random123 vectors first) and the
+> noise transform (checked against the host's own f64 values next) before ever touching the full
+> two-stage reduction. MSL has neither `log1p` (absent from the spec's own accuracy tables — checked, not
+> assumed) nor statement-boundary immunity from FMA fusion (the spec documents `fast` contraction as
+> fusing *across* statements, not just within one expression) — handled with a ported 12-term polynomial
+> and a `#pragma METAL fp contract(off)` bracket respectively, both cited against the spec directly in
+> `metal/gumbel.go`'s header. Record: `docs/measurements/r7b-metal-mac-2026-09-20.md`.
+>
+> **Speed, same day, follow-up pass:** paired vs greedy, interleaved with a rotating arm order, 0.5B,
+> same session (`metal/sampled_gumbel_speed_test.go`, no committed CUDA harness to port — built
+> to the protocol description). Do-nothing arm (host draw) **0.82-0.84× greedy**; device draw
+> **0.96×** — a real ~13-19% win over the do-nothing arm, directionally consistent with CUDA
+> (0.744→1.008) and WebGPU (0.796→1.035) but not full greedy parity the way either of those reach
+> (Metal's UMA has no PCIe/MapAsync readback to eliminate, so this path's win is from replacing the
+> host's own full-vocab loop, not from a transfer saving — an inference, not measured directly).
+> **Open:** a Mac/peer sweep (`scripts/bench_peer.py`) and a profile of the remaining gap to greedy.
 
 > **RESULT 2026-09-20 — CUDA `top_k` / `top_p` / `min_p` SHIP; temperature-only does not, and the brief's
 > design could not have served it.** Record: `docs/measurements/sampled-topk-2026-09-20.md` (step 0:
