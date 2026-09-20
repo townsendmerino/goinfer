@@ -1266,7 +1266,34 @@ explicitly to both sides, never assumed · int4 / q4_K_M · raw cells `b5-reanch
 > 1.008 with it on (CUDA, same session, n=15); WebGPU 0.796 → 1.035 (n=12).** **The peer was not re-run**, so no Ollama ratio is claimed for the new state, and the
 > 237.7 / 143.7 / 109.8 temperature-only cells, the 227.2 / 124.7 / 102.1 top_p cells and the top_k rows above should not
 > be quoted as current for CUDA (the temperature-only draw changed too: R7b, same date).
-> A peer sweep (`scripts/bench_peer.py`, the §B5.1 sampled configs) is the open follow-up.
+> **Peer sweep, 2026-09-20 — the tables above are superseded by this one for CUDA.** goinfer serve built from
+> `cbf2c25d` (tree clean, includes R7 + R7b) vs Ollama v0.32.5, RTX 2070 SUPER, driver `595.91.07`, Nobara 44,
+> `scripts/bench_peer.py`, both over HTTP, interleaved cell by cell with server restarts, depth 128, 64 tokens x 8
+> completions x 2 runs, idle box (load < 1.0), int4 / q4_K_M, zero errors. Raw cells `b5-r7b-cbf2c25d.json`, log
+> `b5-r7b-cbf2c25d_run.log` (in `docs/measurements/`). Not measured here: thermal beyond the harness's per-cell GPU
+> temperature stamp; no repeat sweep, so cross-session drift (~3.5% on this box) is not bounded.
+>
+> | config | model | goinfer | Ollama v0.32.5 | verdict |
+> |---|---|---|---|---|
+> | greedy | qwen2.5-coder-0.5b | 335.0 | 269.2 | goinfer 1.24x |
+> | greedy | gemma3-1b | 190.0 | 149.8 | goinfer 1.27x |
+> | greedy | phi3-mini | 124.4 | 125.8 | Ollama 1.01x |
+> | temp 1.0, no truncation | qwen2.5-coder-0.5b | 329.5 | 268.6 | goinfer 1.23x |
+> | temp 1.0, no truncation | gemma3-1b | 191.8 | 149.8 | goinfer 1.28x |
+> | temp 1.0, no truncation | phi3-mini | 124.3 | 125.8 | Ollama 1.01x |
+> | temp 0.8 + top_p 0.95 | qwen2.5-coder-0.5b | 316.4 | 268.0 | goinfer 1.18x |
+> | temp 0.8 + top_p 0.95 | gemma3-1b | 186.8 | 149.7 | goinfer 1.25x |
+> | temp 0.8 + top_p 0.95 | phi3-mini | 114.1 | 125.9 | **Ollama 1.10x** |
+> | temp 0.8 + top_k 40 | qwen2.5-coder-0.5b | 323.7 | 286.9 | goinfer 1.13x |
+> | temp 0.8 + top_k 40 | gemma3-1b | 182.9 | 149.3 | goinfer 1.23x |
+> | temp 0.8 + top_k 40 | phi3-mini | 123.1 | 125.7 | Ollama 1.02x |
+>
+> Sampling now costs goinfer almost nothing on CUDA (temp-only within 2% of greedy on all three models); phi3-mini
+> is bandwidth-bound and sits at parity with Ollama, and its **top_p** cell (114.1, -8% vs its own greedy) is the one
+> place a sampling cost remains, unexplained — R7's device top-K was profiled on the 0.5B only. Ollama's 0.5B top_k
+> cell (286.9) is 7% above its other 0.5B configs (~268) in both runs, tight spread; cause unknown, so that row's
+> 1.13x is the one to treat as least settled. The earlier version of this section's temp-only 0.5B/gemma cells were
+> Ollama-ahead (1.13x / 1.03x); they are now goinfer-ahead, from R7b plus the earlier stack changes, not separated here.
 
 **The peer did not move, so the goinfer-side deltas are attributable.** Ollama reads 125.6 → 125.6
 on phi3-mini and 149.1 → 148.2 on gemma3-1b across the two anchors, despite the point-release
