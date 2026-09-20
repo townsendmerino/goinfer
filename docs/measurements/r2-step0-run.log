@@ -1,0 +1,119 @@
++ cd /Users/francistownsend-merino/tmcode/goinfer
++ export GOINFER_SERVE_METAL=/Users/francistownsend-merino/bench-cur/serve-metal
++ GOINFER_SERVE_METAL=/Users/francistownsend-merino/bench-cur/serve-metal
++ export OLLAMA_BIN=/opt/homebrew/bin/ollama
++ OLLAMA_BIN=/opt/homebrew/bin/ollama
++ export OLLAMA_MODELS=/Users/francistownsend-merino/.ollama/models
++ OLLAMA_MODELS=/Users/francistownsend-merino/.ollama/models
++ export OLLAMA_FLASH_ATTENTION=1
++ OLLAMA_FLASH_ATTENTION=1
++ export OLLAMA_KV_CACHE_TYPE=q8_0
++ OLLAMA_KV_CACHE_TYPE=q8_0
++ export BENCH_MAX_LOADAVG=2.0
++ BENCH_MAX_LOADAVG=2.0
++ export BENCH_MODELS=1.5B
++ BENCH_MODELS=1.5B
++ export BENCH_BACKENDS=metal
++ BENCH_BACKENDS=metal
++ export BENCH_DEPTHS=128,512,1024,2048,4000
++ BENCH_DEPTHS=128,512,1024,2048,4000
++ export BENCH_DEPTH_BACKEND=metal
++ BENCH_DEPTH_BACKEND=metal
++ timeout 3600 python3 -u scripts/bench_peer.py docs/measurements/metal-depth-r2-2026-09-18-raw.json
+# preflight OK: loadavg [1.998046875, 1.71337890625, 1.48388671875] · gpu None · compute apps []
+# 12 cells planned, 0 already done
+#   tokens/chunks = 1.0000  (960 tok / 960 chunks)
+#   rss_peak = 2.690 GiB (2820592 KiB)
+{"phase": "A", "engine": "goinfer", "backend": "metal", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [73.10042193772216, 73.39401588569825], "error": null, "machine": {"loadavg": [1.998046875, 1.71337890625, 1.48388671875], "gpu": null}, "secs": 24.6, "counts": {"tokens": 960, "chunks": 960, "tokens_per_chunk": 1.0, "completion_rates": [71.95786315018897, 72.96619864449005, 73.54709047228081, 73.53150040941627, 73.51212322312048, 73.41517321719648, 73.38267010958634, 72.49075627549783, 73.2931507839784, 73.60942513590732, 73.37420182233215, 73.06692318731984, 73.12152433274275, 72.97990617420228, 73.8788224106273, 73.82817323847603], "ngen": 64, "rss_peak_kb": 2820592}, "mean": 73.2, "spread": 0.3}
+# cell gate: loadavg 2.38 > 2.00, waiting (0/600s)
+# cell gate: loadavg 2.28 > 2.00, waiting (20/600s)
+# cell gate: loadavg 2.12 > 2.00, waiting (40/600s)
+#   tokens/chunks = 1.0000  (1024 tok / 1024 chunks)
+#   rss_peak = 1.239 GiB (1299104 KiB)
+{"phase": "A", "engine": "ollama", "backend": "metal", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [75.29603282628477, 75.31502515476029], "error": null, "machine": {"loadavg": [1.71923828125, 1.76220703125, 1.52685546875], "gpu": null}, "secs": 21.7, "counts": {"tokens": 1024, "chunks": 1024, "tokens_per_chunk": 1.0, "completion_rates": [75.25966447426163, 75.22645545508055, 75.46623986287032, 75.30796700241794, 75.4031073464642, 75.26774555809477, 75.27965117475162, 75.1574317363372, 75.24915829669067, 75.08941451029796, 75.2499372892947, 75.410662681104, 75.41481514791894, 75.3945723768964, 75.29897727782149, 75.41266365805816], "ngen": 64, "rss_peak_kb": 1299104}, "mean": 75.3, "spread": 0.0}
+#   tokens/chunks = 1.0000  (960 tok / 960 chunks)
+#   rss_peak = 3.021 GiB (3168000 KiB)
+{"phase": "B", "engine": "goinfer", "backend": "metal", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [73.80292583426967, 73.61997025400993], "error": null, "machine": {"loadavg": [1.373046875, 1.6796875, 1.50146484375], "gpu": null}, "secs": 21.8, "counts": {"tokens": 960, "chunks": 960, "tokens_per_chunk": 1.0, "completion_rates": [73.95259924686061, 73.88415358334181, 73.78502482831487, 73.85705035024714, 73.75587364073155, 73.18904412672215, 73.99733609591127, 74.00232480202796, 73.78743172034781, 73.75173233749561, 73.58364724506279, 73.27587831954133, 73.30795686657069, 73.52000873686227, 73.70340175909628, 74.02970504710268], "ngen": 64, "rss_peak_kb": 3168000}, "mean": 73.7, "spread": 0.2}
+# cell gate: loadavg 2.88 > 2.00, waiting (0/600s)
+# cell gate: loadavg 2.35 > 2.00, waiting (20/600s)
+#   tokens/chunks = 1.0000  (1024 tok / 1024 chunks)
+#   rss_peak = 1.241 GiB (1300960 KiB)
+{"phase": "B", "engine": "ollama", "backend": "metal", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [75.39038530094966, 75.31792975529012], "error": null, "machine": {"loadavg": [1.83056640625, 1.880859375, 1.59619140625], "gpu": null}, "secs": 21.8, "counts": {"tokens": 1024, "chunks": 1024, "tokens_per_chunk": 1.0, "completion_rates": [75.42178213278406, 75.42663567700176, 75.41545457889119, 75.38918166162301, 75.46317020966453, 75.34300873625364, 75.32367507213641, 75.3401743392427, 75.15317308164875, 75.24827074390306, 75.36380224775749, 75.26976522473991, 75.37384078846173, 75.31055517875464, 75.36108654293758, 75.46294423411778], "ngen": 64, "rss_peak_kb": 1300960}, "mean": 75.4, "spread": 0.1}
+#   tokens/chunks = 1.0000  (368 tok / 368 chunks)
+#   rss_peak = 3.024 GiB (3171200 KiB)
+{"phase": "B", "engine": "goinfer", "backend": "metal", "model": "1.5B", "depth": 512, "prompt_tokens": 512, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [69.09848412129791, 69.06707635799847], "error": null, "machine": {"loadavg": [1.6669921875, 1.84033203125, 1.58837890625], "gpu": null}, "secs": 13.8, "counts": {"tokens": 368, "chunks": 368, "tokens_per_chunk": 1.0, "completion_rates": [69.11015570483595, 69.00200091224056, 69.24753641539678, 69.41288393375513, 69.05777453860965, 69.07727170860964, 68.85709601791858, 69.023153739017, 69.08761172059448, 69.0855326736915, 69.13275067290621, 68.99621233941652, 69.15166507464066, 69.18070393569364, 68.95645626740736, 68.94567817963747], "ngen": 64, "rss_peak_kb": 3171200}, "mean": 69.1, "spread": 0.0}
+#   tokens/chunks = 1.2500  (80 tok / 64 chunks)
+#   rss_peak = 1.257 GiB (1318400 KiB)
+{"phase": "B", "engine": "ollama", "backend": "metal", "model": "1.5B", "depth": 512, "prompt_tokens": 512, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [97.6018666013783, 97.26250251628338], "error": null, "machine": {"loadavg": [1.376953125, 1.76611328125, 1.56591796875], "gpu": null}, "secs": 8.5, "counts": {"tokens": 80, "chunks": 64, "tokens_per_chunk": 1.25, "completion_rates": [97.19176545096111, 98.86531525326156, 98.67558867347192, 96.93376207327346, 97.19639191686133, 96.93180547727803, 96.80756948432057, 98.21273448159843, 96.69572575367066, 97.44659480172315, 97.5332214718683, 97.61910895993941, 98.67305461052109, 97.0475326264264, 97.09994744665535, 95.9848344594627], "ngen": 64, "rss_peak_kb": 1318400}, "mean": 97.4, "spread": 0.3}
+#   tokens/chunks = 1.0000  (1024 tok / 1024 chunks)
+#   rss_peak = 3.064 GiB (3213152 KiB)
+{"phase": "B", "engine": "goinfer", "backend": "metal", "model": "1.5B", "depth": 1024, "prompt_tokens": 1024, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [61.97508853024021, 61.87466002216414], "error": null, "machine": {"loadavg": [1.3466796875, 1.7529296875, 1.5625], "gpu": null}, "secs": 27.6, "counts": {"tokens": 1024, "chunks": 1024, "tokens_per_chunk": 1.0, "completion_rates": [62.11616205108292, 62.073213283464, 61.77803558560098, 61.97041064648136, 61.875591612608005, 62.15602221902067, 61.92377513086486, 61.90749771279886, 61.8993166871054, 62.2026142998442, 61.91769668006202, 62.106305784851926, 61.697534202103455, 61.58527332447657, 61.73599664505579, 61.85254255381379], "ngen": 64, "rss_peak_kb": 3213152}, "mean": 61.9, "spread": 0.1}
+#   tokens/chunks = 1.0000  (1024 tok / 1024 chunks)
+#   rss_peak = 1.261 GiB (1322432 KiB)
+{"phase": "B", "engine": "ollama", "backend": "metal", "model": "1.5B", "depth": 1024, "prompt_tokens": 1024, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [69.56534528358523, 69.76349811137199], "error": null, "machine": {"loadavg": [1.49658203125, 1.76904296875, 1.57568359375], "gpu": null}, "secs": 23.4, "counts": {"tokens": 1024, "chunks": 1024, "tokens_per_chunk": 1.0, "completion_rates": [69.65703908073063, 69.85703238144318, 69.74158480066424, 69.72956874521236, 69.86092823704033, 68.95229229030079, 68.93098572363245, 69.79333100965783, 69.73148851835768, 69.8234500874146, 69.77252536628309, 69.74124386825645, 69.78182842901589, 69.70401290738138, 69.80683866162741, 69.74659705263937], "ngen": 64, "rss_peak_kb": 1322432}, "mean": 69.7, "spread": 0.2}
+#   tokens/chunks = 1.0000  (1024 tok / 1024 chunks)
+#   rss_peak = 2.968 GiB (3112576 KiB)
+{"phase": "B", "engine": "goinfer", "backend": "metal", "model": "1.5B", "depth": 2048, "prompt_tokens": 2060, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [50.68187748383834, 50.77443931583836], "error": null, "machine": {"loadavg": [1.490234375, 1.75048828125, 1.57373046875], "gpu": null}, "secs": 36.3, "counts": {"tokens": 1024, "chunks": 1024, "tokens_per_chunk": 1.0, "completion_rates": [50.5223499737466, 50.7451924676664, 50.84002037699165, 50.646321788674975, 50.74874366191061, 50.52738122739284, 50.968069716715604, 50.45694065760805, 50.87666518429868, 50.77159220688036, 50.51711046171236, 50.87227960543754, 50.56403141664188, 50.96619879246522, 50.749619201655435, 50.878017657615366], "ngen": 64, "rss_peak_kb": 3112576}, "mean": 50.7, "spread": 0.1}
+#   tokens/chunks = 1.0000  (1024 tok / 1024 chunks)
+#   rss_peak = 1.260 GiB (1321584 KiB)
+{"phase": "B", "engine": "ollama", "backend": "metal", "model": "1.5B", "depth": 2048, "prompt_tokens": 2060, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [63.91513861325343, 63.66019034708489], "error": null, "machine": {"loadavg": [1.16552734375, 1.63720703125, 1.54052734375], "gpu": null}, "secs": 26.4, "counts": {"tokens": 1024, "chunks": 1024, "tokens_per_chunk": 1.0, "completion_rates": [64.29204233028948, 63.88588693780401, 63.7371976880418, 63.638029604676426, 64.07244998462173, 64.06279914642582, 64.17916377408758, 63.45353944008065, 63.55094436257471, 62.766482509140836, 63.792515665881716, 62.98804537191081, 64.0316159912845, 64.54973422612592, 63.05714029774777, 64.54504435201285], "ngen": 64, "rss_peak_kb": 1321584}, "mean": 63.8, "spread": 0.3}
+Traceback (most recent call last):
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_peer.py", line 1414, in <module>
+    main()
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_peer.py", line 1382, in main
+    rates, err, counts = run_cell(engine, mk, depth, cfg, backend)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_peer.py", line 803, in run_cell
+    prompt = prompt_for_depth(depth, model_key)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_peer.py", line 653, in prompt_for_depth
+    return _PROMPTS[f"{model_key}:{depth}"]["text"]
+           ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+KeyError: '1.5B:4000'
++ echo R2-STEP0-EXIT-CODE=1
+R2-STEP0-EXIT-CODE=1
++ launchctl remove r2-step0-depth-bench
++ cd /Users/francistownsend-merino/tmcode/goinfer
++ export GOINFER_SERVE_METAL=/Users/francistownsend-merino/bench-cur/serve-metal
++ GOINFER_SERVE_METAL=/Users/francistownsend-merino/bench-cur/serve-metal
++ export OLLAMA_BIN=/opt/homebrew/bin/ollama
++ OLLAMA_BIN=/opt/homebrew/bin/ollama
++ export OLLAMA_MODELS=/Users/francistownsend-merino/.ollama/models
++ OLLAMA_MODELS=/Users/francistownsend-merino/.ollama/models
++ export OLLAMA_FLASH_ATTENTION=1
++ OLLAMA_FLASH_ATTENTION=1
++ export OLLAMA_KV_CACHE_TYPE=q8_0
++ OLLAMA_KV_CACHE_TYPE=q8_0
++ export BENCH_MAX_LOADAVG=2.0
++ BENCH_MAX_LOADAVG=2.0
++ export BENCH_MODELS=1.5B
++ BENCH_MODELS=1.5B
++ export BENCH_BACKENDS=metal
++ BENCH_BACKENDS=metal
++ export BENCH_DEPTHS=128,512,1024,2048,3900
++ BENCH_DEPTHS=128,512,1024,2048,3900
++ export BENCH_DEPTH_BACKEND=metal
++ BENCH_DEPTH_BACKEND=metal
++ timeout 600 python3 -u scripts/bench_peer.py docs/measurements/metal-depth-r2-2026-09-18-raw.json
+# resuming: 11 cells already recorded in docs/measurements/metal-depth-r2-2026-09-18-raw.json
+# preflight OK: loadavg [1.5537109375, 1.58203125, 1.54150390625] · gpu None · compute apps []
+# 12 cells planned, 10 already done
+# skip (done): ('A', 'goinfer', 'metal', '1.5B', 128, 'greedy')
+# skip (done): ('A', 'ollama', 'metal', '1.5B', 128, 'greedy')
+# skip (done): ('B', 'goinfer', 'metal', '1.5B', 128, 'greedy')
+# skip (done): ('B', 'ollama', 'metal', '1.5B', 128, 'greedy')
+# skip (done): ('B', 'goinfer', 'metal', '1.5B', 512, 'greedy')
+# skip (done): ('B', 'ollama', 'metal', '1.5B', 512, 'greedy')
+# skip (done): ('B', 'goinfer', 'metal', '1.5B', 1024, 'greedy')
+# skip (done): ('B', 'ollama', 'metal', '1.5B', 1024, 'greedy')
+# skip (done): ('B', 'goinfer', 'metal', '1.5B', 2048, 'greedy')
+# skip (done): ('B', 'ollama', 'metal', '1.5B', 2048, 'greedy')
+#   tokens/chunks = 1.0000  (1024 tok / 1024 chunks)
+#   rss_peak = 3.253 GiB (3411248 KiB)
+{"phase": "B", "engine": "goinfer", "backend": "metal", "model": "1.5B", "depth": 3900, "prompt_tokens": 3912, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [39.0779764001198, 39.15625964714551], "error": null, "machine": {"loadavg": [1.5537109375, 1.58203125, 1.54150390625], "gpu": null}, "secs": 52.4, "counts": {"tokens": 1024, "chunks": 1024, "tokens_per_chunk": 1.0, "completion_rates": [39.22750863816322, 38.62831467663007, 39.354546901109615, 39.140102313818, 38.97687256219447, 39.28922058198657, 39.14484764722326, 38.862397879833196, 39.27377084965819, 39.13128344499962, 39.482341579764416, 39.275473495454754, 39.13289069974308, 38.85892613844564, 39.15205352454943, 38.94333744454895], "ngen": 64, "rss_peak_kb": 3411248}, "mean": 39.1, "spread": 0.1}
+#   tokens/chunks = 1.0000  (1024 tok / 1024 chunks)
+#   rss_peak = 1.261 GiB (1321776 KiB)
+{"phase": "B", "engine": "ollama", "backend": "metal", "model": "1.5B", "depth": 3900, "prompt_tokens": 3912, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [56.419794929660966, 56.44631802134974], "error": null, "machine": {"loadavg": [1.55419921875, 1.60498046875, 1.55419921875], "gpu": null}, "secs": 31.5, "counts": {"tokens": 1024, "chunks": 1024, "tokens_per_chunk": 1.0, "completion_rates": [56.438828647789926, 56.49646157744222, 56.4720920813778, 56.41232813559134, 56.44334784723272, 56.388600963926066, 56.36658951115947, 56.3401106727682, 56.45103959126875, 56.34148574359134, 56.42866347546942, 56.39983305322197, 56.47481727436318, 56.433225330954976, 56.55317805158531, 56.48830165034294], "ngen": 64, "rss_peak_kb": 1321776}, "mean": 56.4, "spread": 0.0}
++ echo R2-STEP0-RETRY-EXIT-CODE=0
+R2-STEP0-RETRY-EXIT-CODE=0
++ launchctl remove r2-step0-depth-bench-retry

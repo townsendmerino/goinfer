@@ -96,10 +96,11 @@ separate sweep because this step kept being skipped at move time.
 
 ## Other kinds
 
-- `prompts/` (5) — briefs written for another session or the other machine to execute. 21 of the
+- `prompts/` (6) — briefs written for another session or the other machine to execute. 21 of the
   original 25 were archived to `completed/` in a 2026-09-13 sweep once verified delivered; the 4
   remaining are each genuinely still open (drafted-by-decision, blocked, or unshipped, per their
-  own status).
+  own status). Newest: `prompts/cuda-r6-flash-decode.md` (2026-09-19), the Linux kickoff for
+  `red-october.md`'s R6.
 - `releases/` (8) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
 - `scoping-*.md`, `plan-*.md` — pre-build scoping, some superseded; check the status header.
 - [`what-parity-gated-means.md`](what-parity-gated-means.md) — the reader-facing explanation of

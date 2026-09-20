@@ -1,0 +1,35 @@
++ cd /Users/francistownsend-merino/tmcode/goinfer
++ export PATH=/Users/francistownsend-merino/.venvs/goinfer-bench/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Library/TeX/texbin:/usr/local/go/bin:/opt/homebrew/bin
++ PATH=/Users/francistownsend-merino/.venvs/goinfer-bench/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Library/TeX/texbin:/usr/local/go/bin:/opt/homebrew/bin
++ export GOINFER_SERVE_METAL=/Users/francistownsend-merino/bench-cur/serve-metal
++ GOINFER_SERVE_METAL=/Users/francistownsend-merino/bench-cur/serve-metal
++ export OLLAMA_BIN=/opt/homebrew/bin/ollama
++ OLLAMA_BIN=/opt/homebrew/bin/ollama
++ export OLLAMA_MODELS=/Users/francistownsend-merino/.ollama/models
++ OLLAMA_MODELS=/Users/francistownsend-merino/.ollama/models
++ export OLLAMA_FLASH_ATTENTION=1
++ OLLAMA_FLASH_ATTENTION=1
++ export BENCH_MAX_LOADAVG=2.0
++ BENCH_MAX_LOADAVG=2.0
++ export BENCH_MODELS=1.5B,7B
++ BENCH_MODELS=1.5B,7B
++ export BENCH_BACKENDS=metal
++ BENCH_BACKENDS=metal
++ export BENCH_ENGINES=mlx
++ BENCH_ENGINES=mlx
++ export BENCH_DEPTHS=none
++ BENCH_DEPTHS=none
++ export 'MLX_MODELS={"1.5B":"mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit","7B":"mlx-community/Qwen2.5-7B-Instruct-4bit"}'
++ MLX_MODELS='{"1.5B":"mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit","7B":"mlx-community/Qwen2.5-7B-Instruct-4bit"}'
++ timeout 900 python3 -u scripts/bench_peer.py docs/measurements/r12-mlx-only-2026-09-18-raw.json
+# preflight OK: loadavg [1.34814453125, 1.94384765625, 1.7265625] · gpu None · compute apps []
+# 2 cells planned, 0 already done
+#   tokens/chunks = 1.0000  (1024 tok / 1024 chunks)
+#   rss_peak = 1.097 GiB (1149904 KiB)
+{"phase": "A", "engine": "mlx", "backend": "metal", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [108.71681374410211, 109.42277173310671], "error": null, "machine": {"loadavg": [1.34814453125, 1.94384765625, 1.7265625], "gpu": null}, "secs": 17.9, "counts": {"tokens": 1024, "chunks": 1024, "tokens_per_chunk": 1.0, "completion_rates": [106.05607546103323, 105.62707272550361, 107.0580877138743, 104.1275773341601, 114.47976751013621, 114.39254975691438, 108.60233960359811, 109.39103984759699, 107.49190107841424, 111.21915080651438, 109.94303116484653, 112.48295180772584, 113.68858717628287, 112.87495648893531, 106.8173112239363, 100.86428411819828], "ngen": 64, "rss_peak_kb": 1149904}, "mean": 109.1, "spread": 0.7}
+#   tokens/chunks = 1.0222  (736 tok / 720 chunks)
+#   rss_peak = 4.192 GiB (4395792 KiB)
+{"phase": "A", "engine": "mlx", "backend": "metal", "model": "7B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [39.07548852618967, 39.13087844855808], "error": null, "machine": {"loadavg": [1.3994140625, 1.9287109375, 1.72509765625], "gpu": null}, "secs": 29.1, "counts": {"tokens": 736, "chunks": 720, "tokens_per_chunk": 1.0222222222222221, "completion_rates": [38.633675691141576, 39.06379704008026, 39.219397473384966, 39.02518416681675, 39.17449191440901, 39.052193135882284, 39.20721843816712, 39.22795034963541, 39.17597828899743, 39.16250263977971, 39.17523507073065, 39.099493755442246, 39.08061691767154, 39.1495726939269, 39.07538945074573, 39.128238771170395], "ngen": 64, "rss_peak_kb": 4395792}, "mean": 39.1, "spread": 0.1}
++ echo R12-MLX-RETRY-EXIT-CODE=0
+R12-MLX-RETRY-EXIT-CODE=0
++ launchctl remove r12-mlx-row-retry

@@ -1,0 +1,55 @@
++ cd /Users/francistownsend-merino/tmcode/goinfer
++ export OLLAMA_BIN=/opt/homebrew/bin/ollama
++ OLLAMA_BIN=/opt/homebrew/bin/ollama
++ export OLLAMA_MODELS=/Users/francistownsend-merino/.ollama/models
++ OLLAMA_MODELS=/Users/francistownsend-merino/.ollama/models
++ export OLLAMA_FLASH_ATTENTION=1
++ OLLAMA_FLASH_ATTENTION=1
++ export OLLAMA_KV_CACHE_TYPE=q8_0
++ OLLAMA_KV_CACHE_TYPE=q8_0
++ timeout 3600 python3 -u scripts/bench_peer_prefill.py --backend metal --models 1.5B --depths 256,512,1024,2048,3900 --n 6 docs/measurements/metal-prefill-ladder-2026-09-18-raw.json
+{
+  "utc": "2026-09-19T03:12:12Z",
+  "host": "macbookpro.lan",
+  "driver": "26.6.2",
+  "gpu": "",
+  "kernel": "25.6.0",
+  "distro": "",
+  "goinfer_commit": "e2927f41",
+  "goinfer_dirty": true,
+  "peer_version": "ollama version is 0.32.5",
+  "serve_mtime": "",
+  "loadavg": ""
+}
+  [cache-check] goinfer_exact 1.5B:256 repeat/fresh=0.01  caches; fresh prompts miss it (healthy)
+  [cache-check] goinfer      1.5B:256 repeat/fresh=0.03  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:256 repeat/fresh=0.37  caches; fresh prompts miss it (healthy)
+1.5B   K=256     goinfer_exact      84.9 tok/s   goinfer     366.2 tok/s   ollama     773.0 tok/s   ratio(ollama/goinfer) 2.11
+  [cache-check] goinfer_exact 1.5B:512 repeat/fresh=0.00  caches; fresh prompts miss it (healthy)
+  [cache-check] goinfer      1.5B:512 repeat/fresh=0.01  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:512 repeat/fresh=0.22  caches; fresh prompts miss it (healthy)
+1.5B   K=512     goinfer_exact      83.0 tok/s   goinfer     349.5 tok/s   ollama     886.3 tok/s   ratio(ollama/goinfer) 2.54
+  [cache-check] goinfer_exact 1.5B:1024 repeat/fresh=0.00  caches; fresh prompts miss it (healthy)
+  [cache-check] goinfer      1.5B:1024 repeat/fresh=0.01  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:1024 repeat/fresh=0.12  caches; fresh prompts miss it (healthy)
+1.5B   K=1024    goinfer_exact      77.6 tok/s   goinfer     294.1 tok/s   ollama     923.1 tok/s   ratio(ollama/goinfer) 3.14
+  [cache-check] goinfer_exact 1.5B:2048 repeat/fresh=0.00  caches; fresh prompts miss it (healthy)
+  [cache-check] goinfer      1.5B:2048 repeat/fresh=0.00  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:2048 repeat/fresh=0.06  caches; fresh prompts miss it (healthy)
+1.5B   K=2048    goinfer_exact      68.2 tok/s   goinfer     262.5 tok/s   ollama     874.5 tok/s   ratio(ollama/goinfer) 3.33
+  [cache-check] goinfer_exact 1.5B:3900 repeat/fresh=0.00  caches; fresh prompts miss it (healthy)
+  [cache-check] goinfer      1.5B:3900 repeat/fresh=0.00  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:3900 repeat/fresh=0.03  caches; fresh prompts miss it (healthy)
+1.5B   K=3900    goinfer_exact      56.4 tok/s   goinfer     225.0 tok/s   ollama     781.8 tok/s   ratio(ollama/goinfer) 3.47
+  [marginal] goinfer:1.5B     {'marginal_tok_s': 217.6, 'ms_per_token': 4.5965, 'fixed_overhead_ms': -969.2, 'local': [{'from': 263.0, 'to': 519.0, 'ms_per_token': 2.9945, 'tok_s': 333.9}, {'from': 519.0, 'to': 1031.0, 'ms_per_token': 3.9479, 'tok_s': 253.3}, {'from': 1031.0, 'to': 2067.0, 'ms_per_token': 4.215, 'tok_s': 237.3}, {'from': 2067.0, 'to': 3919.0, 'ms_per_token': 5.1553, 'tok_s': 194.0}], 'LINEAR_FIT_INVALID': 'negative fitted overhead: TTFT is superlinear in K, so marginal_tok_s is not a constant for this engine -- read `local` instead'}
+  [marginal] goinfer_exact:1.5B {'marginal_tok_s': 54.9, 'ms_per_token': 18.2304, 'fixed_overhead_ms': -3953.4, 'local': [{'from': 263.0, 'to': 519.0, 'ms_per_token': 12.3102, 'tok_s': 81.2}, {'from': 519.0, 'to': 1031.0, 'ms_per_token': 13.7486, 'tok_s': 72.7}, {'from': 1031.0, 'to': 2067.0, 'ms_per_token': 16.4467, 'tok_s': 60.8}, {'from': 2067.0, 'to': 3919.0, 'ms_per_token': 21.1201, 'tok_s': 47.3}], 'LINEAR_FIT_INVALID': 'negative fitted overhead: TTFT is superlinear in K, so marginal_tok_s is not a constant for this engine -- read `local` instead'}
+  [marginal] ollama:1.5B      {'marginal_tok_s': 778.7, 'ms_per_token': 1.2842, 'fixed_overhead_ms': -121.3, 'local': [{'from': 284.0, 'to': 540.0, 'ms_per_token': 0.9445, 'tok_s': 1058.7}, {'from': 540.0, 'to': 1052.0, 'ms_per_token': 1.0359, 'tok_s': 965.3}, {'from': 1052.0, 'to': 2088.0, 'ms_per_token': 1.2048, 'tok_s': 830.0}, {'from': 2088.0, 'to': 3940.0, 'ms_per_token': 1.432, 'tok_s': 698.3}], 'LINEAR_FIT_INVALID': 'negative fitted overhead: TTFT is superlinear in K, so marginal_tok_s is not a constant for this engine -- read `local` instead'}
+  [marginal] ratio:1.5B       3.58x
+  [scaling] goinfer_exact:1.5B 256->3900 tok  3099->69443 ms  (22.41x over 15.23x depth)
+  [scaling] goinfer:1.5B     256->3900 tok  718->17420 ms  (24.26x over 15.23x depth)
+  [scaling] ollama:1.5B      256->3900 tok  367->5040 ms  (13.72x over 15.23x depth)
+
+wrote docs/measurements/metal-prefill-ladder-2026-09-18-raw.json
++ echo R4-STEP0-EXIT-CODE=0
+R4-STEP0-EXIT-CODE=0
++ launchctl remove r4-step0-prefill-ladder

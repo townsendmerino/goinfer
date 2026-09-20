@@ -1,0 +1,43 @@
++ cd /Users/francistownsend-merino/tmcode/goinfer
++ export GOINFER_SERVE_METAL=/Users/francistownsend-merino/bench-cur/serve-metal
++ GOINFER_SERVE_METAL=/Users/francistownsend-merino/bench-cur/serve-metal
++ export OLLAMA_BIN=/opt/homebrew/bin/ollama
++ OLLAMA_BIN=/opt/homebrew/bin/ollama
++ export OLLAMA_MODELS=/Users/francistownsend-merino/.ollama/models
++ OLLAMA_MODELS=/Users/francistownsend-merino/.ollama/models
++ export OLLAMA_FLASH_ATTENTION=1
++ OLLAMA_FLASH_ATTENTION=1
++ export BENCH_MAX_LOADAVG=2.0
++ BENCH_MAX_LOADAVG=2.0
++ export BENCH_MODELS=1.5B,7B
++ BENCH_MODELS=1.5B,7B
++ export BENCH_BACKENDS=metal
++ BENCH_BACKENDS=metal
++ export BENCH_ENGINES=goinfer,ollama,mlx
++ BENCH_ENGINES=goinfer,ollama,mlx
++ export BENCH_DEPTHS=none
++ BENCH_DEPTHS=none
++ export 'MLX_MODELS={"1.5B":"mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit","7B":"mlx-community/Qwen2.5-7B-Instruct-4bit"}'
++ MLX_MODELS='{"1.5B":"mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit","7B":"mlx-community/Qwen2.5-7B-Instruct-4bit"}'
++ timeout 900 python3 -u scripts/bench_peer.py docs/measurements/r12-mlx-row-2026-09-18-raw.json
+# preflight OK: loadavg [1.6181640625, 1.69482421875, 1.5244140625] · gpu None · compute apps []
+# 6 cells planned, 0 already done
+#   tokens/chunks = 1.0000  (960 tok / 960 chunks)
+#   rss_peak = 2.752 GiB (2885360 KiB)
+{"phase": "A", "engine": "goinfer", "backend": "metal", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [74.00307619883226, 73.60243878530805], "error": null, "machine": {"loadavg": [1.6181640625, 1.69482421875, 1.5244140625], "gpu": null}, "secs": 25.7, "counts": {"tokens": 960, "chunks": 960, "tokens_per_chunk": 1.0, "completion_rates": [74.17073348484556, 74.04882942017147, 74.20022144114284, 74.00217777593333, 73.98076598261655, 74.10420652801203, 73.65174774106727, 73.865927216869, 71.63698145088813, 74.21814252958511, 74.58958738667089, 72.93745776094659, 73.94927786843651, 73.90573323576359, 73.95043257425966, 73.63189747591395], "ngen": 64, "rss_peak_kb": 2885360}, "mean": 73.8, "spread": 0.4}
+#   tokens/chunks = 1.0000  (1024 tok / 1024 chunks)
+#   rss_peak = 1.297 GiB (1360464 KiB)
+{"phase": "A", "engine": "ollama", "backend": "metal", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [86.18582827218401, 85.7678259976984], "error": null, "machine": {"loadavg": [1.73974609375, 1.708984375, 1.533203125], "gpu": null}, "secs": 20.0, "counts": {"tokens": 1024, "chunks": 1024, "tokens_per_chunk": 1.0, "completion_rates": [86.20146083191996, 86.42077069491698, 86.0731385645025, 86.21416175553797, 86.01147877769863, 86.56241090979441, 86.05857363757855, 85.94463100552312, 86.07987138288827, 84.63556138319328, 85.88418449862984, 85.97221698777442, 86.12363662690439, 85.96764663531128, 86.03562678984147, 85.44386367704419], "ngen": 64, "rss_peak_kb": 1360464}, "mean": 86.0, "spread": 0.4}
+# cell gate: loadavg 2.58 > 2.00, waiting (0/600s)
+# cell gate: loadavg 2.28 > 2.00, waiting (20/600s)
+{"phase": "A", "engine": "mlx", "backend": "metal", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": null, "error": "[Errno 2] No such file or directory: 'mlx_lm.server'", "machine": {"loadavg": [1.9775390625, 1.8125, 1.58203125], "gpu": null}, "secs": 0.0}
+#   tokens/chunks = 1.0000  (848 tok / 848 chunks)
+#   rss_peak = 3.352 GiB (3514464 KiB)
+{"phase": "A", "engine": "goinfer", "backend": "metal", "model": "7B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [21.6861643566951, 21.930181181271625], "error": null, "machine": {"loadavg": [1.9775390625, 1.8125, 1.58203125], "gpu": null}, "secs": 94.2, "counts": {"tokens": 848, "chunks": 848, "tokens_per_chunk": 1.0, "completion_rates": [20.34304403974435, 21.93382908530237, 21.876215360766167, 21.789748101885685, 21.86758228601263, 21.928111039014485, 21.88187260455551, 21.868912336279617, 21.8715955427642, 21.90018422492094, 22.02846819386554, 21.847275361197326, 21.99140836967764, 21.983478749240945, 21.973331981280655, 21.84570702722576], "ngen": 64, "rss_peak_kb": 3514464}, "mean": 21.8, "spread": 0.2}
+#   tokens/chunks = 1.0196  (832 tok / 816 chunks)
+#   rss_peak = 4.679 GiB (4906432 KiB)
+{"phase": "A", "engine": "ollama", "backend": "metal", "model": "7B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [25.428020401942213, 25.25923840048724], "error": null, "machine": {"loadavg": [1.47900390625, 1.74169921875, 1.57666015625], "gpu": null}, "secs": 46.2, "counts": {"tokens": 832, "chunks": 816, "tokens_per_chunk": 1.0196078431372548, "completion_rates": [25.512212376969124, 25.513291889194733, 25.508458170991222, 25.19264967404238, 25.44862135823529, 25.515437362606033, 25.42704610562038, 25.30644627787853, 25.44332234051668, 25.369261098651513, 25.357896465426876, 25.281510862681394, 25.046801101896783, 25.080565673542658, 25.262053034363976, 25.232496626818065], "ngen": 64, "rss_peak_kb": 4906432}, "mean": 25.3, "spread": 0.2}
+{"phase": "A", "engine": "mlx", "backend": "metal", "model": "7B", "depth": 128, "prompt_tokens": 129, "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": null, "error": "[Errno 2] No such file or directory: 'mlx_lm.server'", "machine": {"loadavg": [1.97705078125, 1.85107421875, 1.6259765625], "gpu": null}, "secs": 0.0}
++ echo R12-MLX-EXIT-CODE=0
+R12-MLX-EXIT-CODE=0
++ launchctl remove r12-mlx-row

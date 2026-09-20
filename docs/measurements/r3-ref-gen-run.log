@@ -1,0 +1,22 @@
++ cd /Users/francistownsend-merino/tmcode/goinfer
++ export GOINFER_HEAVY_TESTS=1
++ GOINFER_HEAVY_TESTS=1
++ export GOINFER_CPU_REF_KS=64,128
++ GOINFER_CPU_REF_KS=64,128
++ timeout 3600 go test -tags goinfer_testhooks ./decoder/ -run TestPrefillGateReference/S -v -timeout 55m
+=== RUN   TestPrefillGateReference
+    prefill_ref_gen_test.go:86: prompt set "a" (10 files) -> /Users/francistownsend-merino/goinfer-logs/prefill-ref
+=== RUN   TestPrefillGateReference/S
+    prefill_ref_gen_test.go:134: load: decoder: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~6.6 GB resident at quant f32 + 0.0 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 7.7 GB; this machine currently has 6.1 GB of memory available (budget 4.3 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestPrefillGateReference (0.13s)
+    --- FAIL: TestPrefillGateReference/S (0.12s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.515s
+FAIL
++ echo R3-REFGEN-EXIT-CODE=1
+R3-REFGEN-EXIT-CODE=1
++ launchctl remove r3-ref-gen

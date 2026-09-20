@@ -26,7 +26,7 @@
 >
 > **What it is.** §1 is the matrix. §2 is the per-row analysis with the arithmetic behind each
 > band. §3 names three ceilings the record carries that its own later numbers have moved. §4 orders
-> the work by machine. §5 is the briefs, R1–R12, written to be handed to a session as they stand.
+> the work by machine. §5 is the briefs, R1–R13, written to be handed to a session as they stand.
 > §6 is the rules every brief inherits; §7 is what this doc does not claim.
 >
 > **Siblings.** [`benchmarks.md`](../benchmarks.md) (standings — the only source of a ratio quoted
@@ -72,7 +72,7 @@ Mac CPU rows are the M1 Pro; CUDA, WebGPU and Linux CPU rows are the RTX box.
 | Area | CPU | WebGPU | CUDA | Metal |
 |---|---|---|---|---|
 | **Decode, ≤512 ctx, dense** | Mac 0.65–0.67× (0.5B/1.5B), 0.81–0.83× (phi3/7B); Linux 0.41× (0.5B), 0.73× (1.5B), 0.82× (7B) → Mac **0.85–1.0×**; Linux **1.4–2.4× on the cell** (P) | 0.37 / 0.60 / 0.63× of goinfer's own CUDA (no peer) → **0.8–0.86× of CUDA** (P) | 1.27 / 1.16 / 0.98×; vs llama.cpp 0.90 / 1.00 / 0.91× → **≤1.1×**, at ceiling (K) | 1.08× (0.5B, n=2) / 0.86× / 0.86×; vs MLX 0.66× (1.5B), 0.58× (7B) → **1.4–1.55×** via a W4F16 GEMV (P) — R1 |
-| **Decode, 2k–8k ctx** | no peer row at depth → measure (R12) | −12% from 128→1024 after G36; ≥2k unmeasured → measure (R10) | 0.72–0.79× @3900, 0.63× @8k (7B); vs llama.cpp 0.45–0.70× → **1.0–1.1× Ollama** (1.4–1.6× on the cell) (K) — R6 | 0.64× @2048, **0.52× @4000** (peer flat 85→77) → **~0.8× Ollama** from attention alone (1.3× @2048, 1.5× @4000); ~1.1× stacked with R1 (P) — R2 |
+| **Decode, 2k–8k ctx** | no peer row at depth → measure first; the f64 decode path loads and widens each KV head's K/V once per QUERY head (6–7×) → group-major acc64 kernels, bit-identical, **1.5–1.8× on the QK+AV term** by µop count (?) — R13 | −12% from 128→1024 after G36; ≥2k unmeasured → measure (R10) | 0.72–0.79× @3900, 0.63× @8k (7B); vs llama.cpp 0.45–0.70× → **1.0–1.1× Ollama** (1.4–1.6× on the cell) (K) — R6 | 0.64× @2048, **0.52× @4000** (peer flat 85→77) → **~0.8× Ollama** from attention alone (1.3× @2048, 1.5× @4000); ~1.1× stacked with R1 (P) — R2 |
 | **Prefill — weight term** | Mac 1.54× behind @512 (weight term ≈ all of it) → **~1.2× behind** (K) — R9; Linux: no peer row | batched path landed 2026-09-13: 317 tok/s @P=1024 (0.5B int8) = **8× behind own CUDA-exact, 45× behind CUDA-fast**; unprofiled → ≥5× plausible (?) — R10 | 0.136 ms/tok flat vs Ollama's *whole* marginal 0.152 → **≤1.2×**, at ceiling (K) | pre-fix GEMM 0.73 TFLOPS vs ≥2.4 (3.3× behind @512); M-03 shipped 2026-09-13, **unmeasured** → **1.5–2× e2e** at K≤1024; parity needs 3.5× on the GEMM (P) — R4 |
 | **Prefill — attention term, O(K²)** | Mac 0.91× @3900 (ahead), rate flat 78 tok/s → at parity (K) | per-query-row `attnBatched` (grid nH×M), the pre-L2 shape → inside the ≥5× above (?) — R10 | 3.16× / 1.89× behind on marginal @3900 (1.5B/0.5B); `attn_fused` at 1.72% tensor peak, 12.6% occupancy, **58% of TTFT** → marginal **~1.4–1.7× behind**, TTFT@3900 1.39 s → 0.71–0.84 s = **ahead of Ollama on TTFT** (K) — R5 | M-04 32-key tile shipped; ~18% of TTFT @3900 → ~1.2× e2e (K) — R4. Separately: **prompts of 8–255 tokens run sequential** at ~77 tok/s vs Ollama 790 @256 → floor→64 is **~4× on a 200-token turn** (K) — R3 |
 | **Sampled decode, T>0** | host selection fixed (68×); full-V normalize remains → small, measure (R7) | full-logits `MapAsync` every token, greedy included → part of the glue row (R10) | **0.81–0.97× sampled vs 0.99–1.24× greedy** on ≤1.5B; the peer loses 0% → **+30–40%** on small models (K) — R7 | zero-copy logits, but host softmax/select over 152k per token ≈ 1.8 ms of a 13.5 ms token (counted) → ~10–15%, unmeasured (P) — R7 |
@@ -158,6 +158,70 @@ group sharing each K/V read, online softmax, and a key-split across threadgroups
 one small combine dispatch. Deterministic by construction; a snapshot-golden re-baseline with a
 mechanism. Band: depth term → 2–3 ms is 59–63 tok/s at 4000 (0.77–0.82×) and 63–65 at 2048;
 stacked with R1's GEMV it lands near 1.1× (R2).
+
+**The depth curves as a line, 2026-09-19 — arithmetic on rows already in `benchmarks.md`, no new
+measurement.** Every served depth curve on the page fits `t(K) = F + A·K` (ms/token; F is the
+depth-independent cost, A the cost per cached position) at R² ≥ 0.995 on goinfer's side, so each
+cell splits into a flat ratio and a slope ratio. Least squares over the published cells; the two
+Ollama cells the page itself flags are dropped (Metal K=512, the chunking artifact; CUDA 1.5B@512,
+the unstable cell), and the peer's slopes are small enough to be noisy (R² 0.91–0.997), so read its
+A as ±20% at best.
+
+| cell (source row) | F goinfer / Ollama (ms) | F ratio | A goinfer / Ollama (µs/position) | A ratio | nH/nKV | A ratio ÷ (nH/nKV) |
+|---|---|---|---|---|---|---|
+| CUDA 0.5B (§B8, 2026-08-26) | 2.97 / 3.71 | 0.80× | 0.499 / 0.037 | 13.5× | 7 | 1.9 |
+| CUDA 1.5B (§B8) | 4.48 / 5.14 | 0.87× | 0.924 / 0.168 | 5.5× | 6 | 0.9 |
+| CUDA 7B (§B8) | 13.46 / 13.73 | 0.98× | 1.784 / 0.171 | 10.4× | 7 | 1.5 |
+| CUDA phi3-mini (§B5.1, 2026-08-27) | 7.58 / 7.88 | 0.96× | 2.600 / 1.474 | 1.8× | 1 (MHA) | 1.8 |
+| Metal 1.5B (§B3, 2026-09-18) | 12.97 / 11.67 | 1.11× | 3.235 / 0.362 | 8.9× | 6 | 1.5 |
+
+(An F ratio below 1.0 means goinfer's flat term is the faster one. Greedy, decode-only, served path,
+as each source row states.) Four readings, in the order of how much weight they bear:
+
+1. **The flat term is at parity or ahead on every cell; the slope is the whole depth deficit.** With
+   the peer's A and its own F, goinfer would read 194.7 tok/s at 3900 on the CUDA 1.5B (Ollama
+   174.2), 70.8 on the 7B (69.5), and 69.5 on Metal (76.7 — 0.91×, the remainder being R1's flat
+   term). The windowed control says the same from the other side: gemma3-1b (window 512, §B5.1) has
+   no growing-K term, and goinfer leads it 1.08–1.12× at every depth.
+2. **The registered bands, restated as slope targets** (served-path F held). R6's ≥170 tok/s at 3900
+   is A ≤ 0.36 µs/position — 2.6× under today's 0.924 and about 2× the peer's; its 150 park line is
+   A ≤ 0.56. R2's ≥60 at 4000 is A ≤ 0.92 — 3.5× under today's 3.24 and about 2.5× the peer's; its
+   48 kill line is A ≤ 1.97. R2's band is registered on the depth bench, whose F differs a little
+   from the served path's, so read those two as ±10%.
+3. **goinfer's A follows QUERY heads; the peer's follows KV bytes (P — a regularity and a reading,
+   not a profile).** On CUDA, A per query-head element (nH·hd·layers) is 23.2 / 21.5 / 17.8 / 26.5 ps
+   on the 0.5B / 1.5B / 7B / phi3-mini — flat within ±20% across GQA 7, 6, 7 and MHA. Ollama's A per
+   f16 KV byte is 3.0 / 5.9 / 3.0 / 3.75 ps (the 1.5B is its noisy curve): 170–336 GB/s, 38–75% of
+   the 448 GB/s roof, i.e. within a small factor of bandwidth-bound on KV read once per KV head.
+   That is why the A ratio tracks nH/nKV — the last column is 0.9–1.9 on every cell, the MHA control
+   included. **This is not the traffic argument `splitkv-kernel-exploration-2026-09-13.md` retired,
+   and that record stands**: the split path reads 1.06× ideal DRAM traffic, and L2 already dedups
+   the group. It is a statement about what the kernel's *time* follows. goinfer pays the same
+   ~18–26 ps per query-head element whether the bytes come from DRAM (phi3-mini, where
+   `splitkv-mechanism-ncu-2026-09-12.md` measured 67.83% DRAM and this fit independently gives
+   302 GB/s = 67.5%) or from L2 (the GQA geometries, under 30% DRAM in the same ncu records). A cost
+   per *issued element* is what the stall profile's two bounds have in common — load issue in
+   `scores`, memory latency per fold step in `vsum`. For R6 step 2 that means the group axis earns
+   its place through issue/latency sharing (one K or V load serving all nH/nKV heads), not through
+   traffic; and it suggests an acceptance check beside the band — after the kernel, A per KV byte
+   should be flat across the four geometries, as the peer's is.
+4. **On the MHA control the residual is the KV element width, not the kernel (P).** phi3-mini has
+   nothing to group: both engines sit near the bandwidth bound (goinfer 302 GB/s reading f32 KV,
+   Ollama 267 GB/s reading f16) and the 1.8× is the 2× in bytes. `completed/plan-still-slow.md` P4's
+   "KV-quant is not a speed lever" was measured on the GQA 0.5B/1.5B, where the kernel is
+   latency-bound and the verdict holds; it does not cover a geometry that is already byte-bound, and
+   once R6 lands the GQA geometries inherit the same 2× floor against an f16 peer. f16 resident KV
+   on CUDA (Metal already ships it for the non-Gemma families) is therefore a depth lever with a
+   trigger — any geometry whose decode attention reads ≥~50% DRAM — and phi3-mini meets it today:
+   halving its A reads 79 tok/s at 3900 against Ollama's 73.3 (arithmetic, not a measurement, and a
+   fidelity-gated lane like every other non-exact path). Not funded here; recorded so R6's "KV
+   quantisation out of scope" is read as *for the GQA cells*, which is what its evidence covers.
+
+Metal has one cell, so reading 3 cannot be checked across geometries there (goinfer 75.2 ps per
+query-head element; Ollama 12.6 ps per f16 KV byte = 79 GB/s, ~40% of the fabric). A phi3-mini or
+7B Metal depth row — R12's instrument, one session — would say whether Metal's A follows query heads
+too. Against the 2026-08-04 M0 run the Metal slope has come down 9.87 → 3.24 µs/position while F
+moved 14.7 → 13.0 ms: nearly all of the six-week gain was slope work, and 8.9× of slope remains.
 
 ### 2.3 Prefill — the weight term
 
@@ -290,7 +354,10 @@ would otherwise be scoped against a stale number.
 against the peer — one session, no code) → R1 (W4F16 decode GEMV; lane decision made, build
 fundable) → R2 (decode attention in the peer's shape; measurement step first, Build now fundable
 too) → R3 (the short-prompt floor) → R12's Mac halves (ForwardN batching; MLX and the Metal peer
-depth row into `benchmarks.md`) → R9's Mac half (S-02 attribution, then S-05).
+depth row into `benchmarks.md`) → R9's Mac half (S-02 attribution, then S-05). R13 (CPU decode
+attention, group-major, bit-identical) runs beside this track rather than in it: its step 0 is
+measurement-only and fundable now on both boxes, and its build is aikit work that blocks on no lane
+decision and on no other brief.
 
 **Linux track (CUDA + WebGPU + Linux CPU).** R5 (prefill attention tile; P24 re-scoped) → R6 (the
 flash-decode lane; lane decision made, build fundable; step 1 is a mechanism, not a re-roll) → R8
@@ -323,7 +390,7 @@ Status table, kept current as briefs move:
 | # | brief | box | size | status |
 |---|---|---|---|---|
 | R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | **PARKED 2026-09-19: kernel proven correct (gate 1), catastrophic bug found and localized to layer 26's gate/up GEMV, root cause not found — see the record** |
-| R2 | Metal decode attention in the peer's shape | Mac | M–L | **step 0 done 2026-09-18: gap genuinely narrowed to 1.96× at 3900 (was 4.19× same-session 2026-08-04); Build phase now fundable — lane decision made (option 2, §3.2 gate)** |
+| R2 | Metal decode attention in the peer's shape | Mac | M–L | step 0 done 2026-09-18 (gap narrowed to 1.96× at 3900). **Build: PARKED 2026-09-19 — attention_fa kernel proven correct in isolation (16/16 adversarial cases), real speed win in isolation (up to 1.26× at K=3900), but diverges starting at the 3rd real decode token past the depth floor; root cause not found — see the record** |
 | R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | scoped |
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
 | R5 | CUDA prefill attention tile — P24 re-scoped with the corrected cap | Linux | M | scoped |
@@ -333,7 +400,8 @@ Status table, kept current as briefs move:
 | R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | scoped |
 | R10 | WebGPU glue fusion and on-device argmax; batched-prefill profile | Linux | M | scoped; profile first |
 | R11 | MoE: L01 funding cell; P20 expert-major prefill; Metal pager measurement and M-11 | both | L | scoped |
-| R12 | Metal `ForwardN` batching (P21); the missing peer rows (MLX, Metal depth, vision, W7) | both | S–M | **MLX row (i) re-confirmed 2026-09-18 (1.5B/7B only — 0.5B/phi3-mini need an MLX download); Metal depth row (ii) done via R2 step 0; vision (iii) and W7 (iv) not attempted; P21 build not started** |
+| R12 | Metal `ForwardN` batching (P21); the missing peer rows (MLX, Metal depth, vision, W7) | both | S–M | **MLX row (i) re-confirmed 2026-09-18; Metal depth row (ii) done via R2 step 0; W7 (iv) done 2026-09-19 (simplified — see the record) — goinfer 60.1→36.1→36.4 tok/s at 1/2/4 clients (a real loss that plateaus), llama-server 84.8→95.9→149.7 (scales up), 4.11× gap at n=4; vision (iii) not attempted; P21 build not started** |
+| R13 | CPU decode attention, group-major acc64 kernels (bit-identical) | both (aikit + goinfer) | S (measure) + M (two kernels ×2 ISAs, wiring) | **step 0 complete 2026-09-19**: (i) peer depth row done but not benchmarks.md-quality (thermal drift, re-run needed); (ii) softmax caps the QK+AV grouping ceiling to ~1.39-1.54× overall, not 1.8-1.85×; (iii) the cache-dedup gap is depth-dependent — nil below ~K=1024, 2-5× above K=2048, reinforcing (ii)'s decision depth. **SHIPPED 2026-09-20** — aikit kernel A/B real (1.53-2.39×); goinfer wiring found a real bug (softmax accidentally serialized, not the scheduler-contention red herring a first CPU profile suggested — `go tool trace`'s per-goroutine breakdown found the actual cause). Fixed: parity at depth 2048, **1.32× served at depth 8192**. `GOINFER_ATTN_GROUPED` defaults on. Three-arm/both-box/all-model sweep still not done |
 
 Every brief below has the same shape: goal, the standing and the band registered here, what to read
 first (prior art and the negatives not to re-propose), what to build, the gates, the measurement
@@ -494,6 +562,27 @@ as the exact arm; expected to pass comfortably (`reduction-tree-accuracy-2026-09
 fold measured 1.76–4.93× *closer* to f64 than the sequential one on CUDA — a prediction here, not a
 result). (4) Paged ≡ non-paged byte-identity holds trivially (same kernel both arms) — keep the test.
 
+**Gate (1), amended 2026-09-19 — the inputs are part of the gate.** A key-parallel kernel with an
+online softmax has one piece of new arithmetic — the rescale when the running max moves, and
+the fixed-order combine across splits — and a diffuse test cannot see it. `metal/attn_shape_test.go`'s
+header says why in this repo's own words: random q/k give every key ~1/nKeys, errors average out,
+and a random-weight synthetic passed at 0.997 while the real model did not. So gate (1) runs
+`runAttnCase`'s pattern, not random fill — a sharp hot key, an outlier V row, a near-zero-norm sink
+at key 0, the reference computed over the f16-rounded K/V — with the hot key placed in the first
+split, in the LAST split, and on each side of a split boundary; plus a rising score ramp that moves
+the running max in every split; at S ∈ {1, 2, 4}; and on a windowed case with `winStart` > 0. Bars
+as that test: cosine ≥ 0.9999 and max|Δ| ≤ 1e-2. A rescale or combine defect is wrong by a fraction
+of |V| on these inputs and by almost nothing on diffuse ones. Two debts in the shipped tests, found
+while checking this, that the new kernel's tests must not copy. `TestMetalKVI8_DeepContext` drives
+`attention_i8`'s tiled path at 8192 keys and asserts only that the output is finite, so that path
+has no correctness test (the f16 `attention` kernel's does: `TestAttention_ShippedKernelShapes` puts
+its hot key at nKeys/2, which lands in a later tile at 8192 / 16384 / 32768). And
+`TestAttentionPrefillFused` uses uniform random fill at ≤ 520 keys against a 0.999 cosine and a
+0.05 max|Δ| that is about the size of the output itself on those inputs, where the CUDA twin holds
+1e-3 of max|V| and 0.9999 (`cuda/attn_fused_test.go`); what covers that kernel on sharp attention
+today is the served §3.2 gate, not a unit test. Each is one `runAttnCase`-style case away from
+closed; R4 owns the second.
+
 **Measure.** The depth bench, three runs, both arms, then `scripts/bench_peer.py` at depths 128 and a
 4000-token calibrated prompt (the harness's Phase B is hardcoded CUDA-only — extend it or use the
 depth bench as the instrument of record and say so). Cross-check the depth term's GPU-busy time with
@@ -520,6 +609,22 @@ and closing, from 4.19× to 1.96× behind at 3900–4000, on a held-constant pee
 and its TL;DR row updated in the same commit; the pre-fix goinfer-only table moved to
 `legacy-benchmarks.md`; audit N-03's caveat marked superseded (this run measures the real serving
 path directly rather than arguing the internal one is representative of it).
+
+**Build result — PARKED, 2026-09-19** ([`r2-attn-fa-2026-09-19.md`](../measurements/r2-attn-fa-2026-09-19.md)).
+`attention_fa`/`attention_fa_combine` built exactly as scoped (grid by kvHead×split, cooperative
+register-direct loads, S sized for real occupancy). Gate (1) fully clear: 16/16 adversarial cases
+(hot key at every split boundary, a rising score ramp, S ∈ {1,2,4,8,14}) pass at cosine 1.0000000.
+Isolated-kernel speed is real but modest and depth-gated: S=1 is uniformly WORSE than shipped at
+every depth (0.38-0.53×, not just "below a crossover" as this brief's own Build text first
+framed it — a correction the probe surfaced), crossing to a win only past K≈1536, reaching 1.26×
+at K=3900 with S=28. Wired into production (env-gated off by default,
+`GOINFER_METAL_ATTN_FA=1`; confirmed a true no-op when disabled — `TestMetalSnapshotGolden` byte-
+identical), a real qwen2.5-1.5b decode run diverges starting at the THIRD token past the depth
+floor — bit-perfect for two tokens, then a stable, fully deterministic wrong answer (cosine
+~0.9995, not a growing drift). Root cause not found; the dispatch parameters themselves were
+ruled out via a debug print (`GOINFER_ATTNFA_DEBUG=1`, kept in the source). Same PARKED shape as
+R1. Kept, not shipped: `TestAttentionFA_endToEndReproduction` (heavy-gated) is the keeper repro
+for whoever picks this up. End-to-end served tok/s against the registered band was never reached.
 
 **Out of scope.** KV quantisation (§A3 — a byte lever on a term this brief says is not byte-bound),
 prefill attention (R4), the paged families' attention (their term is the command-buffer boundary,
@@ -753,6 +858,74 @@ row; `task-decode-splitkv-attention.md` status; `ollama-chase.md` §4 closing pa
 
 **Out of scope.** KV quantisation, prefill (R5), Metal (R2 — different hardware, different
 bound; do not carry this diagnosis across, per the record's own §A2-Metal lesson).
+
+**Amendment, 2026-09-19 — from reading the spike's source and from §2.2's fit.** Six things, the
+first three about step 1 as written.
+
+1. **The S=1 detector is vacuous as the code stands.** Both the loader (`cuda/backend.go`, where
+   `GOINFER_SPLITKV_VSUM_SPLIT` is parsed) and the launch site (`cuda/resident.go`, the V-sum step of
+   the split-KV decode) require S > 1, so S=1 silently runs the exact `splitkv_vsum` and the check
+   compares the exact path with itself. Step 1 needs a test-only way to run `splitkv_vsum_partial` +
+   `splitkv_vsum_combine` at nSplit=1, and a precondition that proves they launched (a launch
+   counter — the mirror image of the fidelity gate's "630/630 rows differing").
+2. **The spike has no partial max and no α.** Scores and softmax are the exact kernels; only the V
+   fold is split — contiguous chunks from (nKeys − winStart, nSplit), an ascending combine, then
+   × inv. So the combine-defect surface is the chunk bounds on windowed layers (`winStart` > 0), the
+   partials layout and its `nH × maxHd × S` sizing against a per-layer hd, and the z-grid. The
+   partial-max / α / f16 candidates named above belong to step 2's kernel, not to this spike.
+3. **If the detector comes back clean, the open question is the gate's resolving power.** With
+   prompts as the unit (positions inside one teacher-forced prompt share a cache and are not
+   independent), D7's per-prompt KL ratios average 1.057 with a standard error of 0.029: t = 1.96,
+   two-sided p ≈ 0.08; the "8 of 10 higher" is a sign test at p ≈ 0.11. S reads 0.994, spike lower
+   on 6 of 10. A null arm measures what the 1.05 line can resolve: S ∈ {2, 8, 16} beside S=4, all
+   blocked trees at least as accurate as the sequential fold
+   (`reduction-tree-accuracy-2026-09-12.md`), same reference, same prompts. If equally valid trees
+   scatter in KL by about as much as 5.85%, band (c) has no resolving power at D7@8000 and *that* is
+   the mechanism — the `completed/task-prefill-gap.md` §3.2 precedent, where two single-cell misses
+   turned out to sit under thresholds an equal arm failed most of the time. If every S > 1 sits
+   consistently above exact, the excess is a property of blocked-vs-sequential at this cell, and the
+   top-k-restricted KL the fidelity record proposed says whether it lives in the head or the tail.
+   Either way it is a new pre-registration on prompt set B, never a re-score of set A.
+4. **Step 2: do not stop at the V-sum, and justify the group axis by issue, not bytes.** With the
+   V-sum split, `splitkv_scores` is ~70% of the kernel (218.9 of 318.1 µs at S=4 on D7@8000), and
+   after q-staging it still reads 117.67 cyc of lg_throttle beside 31.89 of long_scoreboard
+   (`splitkv-q-staging-2026-09-13.md`) — two stalls, both paid per loaded element. One K load
+   serving all nH/nKV dots cuts issued K loads G× and amortises each memory latency over G dots.
+   That is a different argument from the traffic one `splitkv-kernel-exploration-2026-09-13.md`
+   retired, which stands; §2.2's reading 3 is the evidence for it. A grouped `splitkv_scores` is
+   itself bit-identical (each dot keeps its d-order; scores are independent outputs), so it can be
+   built and ncu-profiled inside the exact lane, under `TestSplitKV_bitIdentical`, before the
+   non-exact kernel exists — with the recanon doc's <5% kill / 5–15% park / >15% keep rule on the
+   `scores` kernel, and the cost named in advance: G×hd floats of staged q per block where
+   q-staging's hd already cost 12% occupancy.
+5. **An acceptance check beside the band, and what "KV quantisation out of scope" covers.** After
+   the kernel, A per KV byte should be flat across the 0.5B / 1.5B / 7B (and phi3-mini wherever the
+   lane runs), as the peer's is — today goinfer's A is flat per *query-head element* instead
+   (§2.2). And the decline this brief expects on the phi3 class leaves that class with no depth
+   lever from step 2 at all: it is already byte-bound (67.83% DRAM), its 1.8× against Ollama is f32
+   KV against f16, and f16 resident KV is its lever — a step 3 with its own pre-registration, not
+   part of this band. From §2.2's fit, halving phi3-mini's A reads 79 tok/s at 3900 (today 56.2,
+   Ollama 73.3): **ships at ≥70, parked 62–70, killed below 62**, fidelity-gated under the same
+   pooled §3.2 rule. No family is known to need f32 KV: Metal ships f16 KV for every family, and
+   the one finding that said otherwise (Gemma, 0.64 against 0.92 cosine) is refuted in
+   `metal/model.go`'s own comment — the crater was the position-0 K/V compute, precision was a red
+   herring — although the old claim still stands in the comment above `kv_store_f32` in
+   `metal/kernels.go` and on the `kvF32` field. *(Corrected the same day: this sentence first read
+   "Gemma kept on f32", from that stale comment.)* The family decision is the gate's, behind one
+   precondition: record max |K| and max |V| per layer on the gate prompts, and refuse f16 KV for a
+   family that comes within 2× of f16's 65504. Every GQA
+   geometry inherits the same 2× floor once step 2 makes it byte-bound, so the trigger is general:
+   decode attention reading ≥~50% DRAM under ncu.
+6. **Kernel-level gate vectors for `attn_decode_fa` and its combine.** R6's gates are S=1 identity,
+   the served fidelity gate, and token identity with the lane off. None of them checks the new
+   arithmetic at kernel level on inputs built to break it, and the fidelity gate's real prompts put
+   many heads' max on the first token, where every later rescale is ×1. Add
+   `TestAttnFused_vsF16Reference`'s shape for the decode kernel — exact f64 math over the kernel's
+   own rounded inputs, per head and never pooled, bars 1e-3 of max|V| and cosine 0.9999 on
+   conditioned rows — with inputs that force the mechanism: a sharp hot key in the first split, in
+   the LAST split, and on both sides of a split boundary; a rising score ramp, so the running max
+   moves in every tile; a sink that dominates and one that does not; a windowed case with
+   `winStart` > 0; nKeys straddling the 128-key tile and every split boundary; S ∈ {1, 2, 4, 8}.
 
 ---
 
@@ -1169,8 +1342,204 @@ session drift — not a revision) but does not extend it to 0.5B or phi3-mini, s
 checkpoint for either is cached locally; that needs an explicit download decision, not made here.
 (iii) the vision peer row and (iv) W7 were not attempted. P21 (the actual build) has not started.
 
+**(iv) W7 result, 2026-09-19** ([`w7-plain-concurrency-2026-09-19.md`](../measurements/w7-plain-concurrency-2026-09-19.md)).
+A simplified variant, not the exact W4 tool-calling transcript — the memory-safe 1.5B model does
+not reliably satisfy llama-server's tool-call parser (verified directly, including with the real
+Qwen tool template extracted from the 7B checkpoint's own GGUF metadata) and the 7B model that
+does carries this session's own demonstrated memory risk. Ran six plain multi-turn text questions
+instead (`scripts/bench_w7_plain.py`, new). **goinfer 60.1 → 36.1 → 36.4 tok/s at 1/2/4 clients — a
+real loss that plateaus rather than keeps collapsing; llama-server 84.8 → 95.9 → 149.7 — genuinely
+scales with concurrency (1.76× from 1→4). 4.11× gap at n=4.** Per-client latency shape is
+consistent with goinfer FIFO-serializing one request at a time against llama-server's continuous
+batching giving every client near-identical service time. Sizes the brief's own "batched
+multi-request decode item" (`task-work-queue-2026-09.md` J8) as real and substantial, not sized to
+the tool-calling shape specifically. A clean re-run with the exact W4 transcript remains open if a
+memory-safe, genuinely tool-call-capable model becomes available.
+
 **Out of scope.** MTP heads (`spec/09`), DFlash (P15), the drafter zoo — this brief is the
 mechanism, not the drafter.
+
+---
+
+### R13 · CPU decode attention, group-major — the acc64 kernels stop paying per query head (bit-identical)
+
+**Goal.** Take the CPU decode attention depth term down by sharing each K/V row's load-and-widen
+across the nH/nKV query heads that read it, without moving one output bit — the only depth lever on
+any backend that needs no fidelity lane.
+
+**Standing and the registered band.** There is no standing, and that is the first finding: CPU has
+no peer row at depth on either box (§1), and the only depth curve on record is the isolated
+attention bench in `completed/task-attention-decode-cost.md` (2026-08-23, 1.5B shape, 28 layers,
+M1 Pro): 2.81 / 7.80 / 19.65 / 85.23 ms per token at 128 / 512 / 2048 / 8192 — about 10 µs per
+position, against §2.2's 3.2 on Metal and 0.92 on CUDA. That table predates S-04's NEON and AVX2
+ports, so it is a stale "before" and step 0 replaces it. What the code does today is not in doubt:
+`causalAttention` hardcodes `acc64`, `attendBatchedHeads` fans out over QUERY heads, and each head
+calls `linalg.MatmulQKAcc64` and `linalg.MatmulAVAcc64` on its own — so each KV head's f32 K and V
+rows are loaded and widened to f64 nH/nKV times per layer (6× on the 1.5B, 7× on the 0.5B and 7B):
+344 KB issued per position per token on the 1.5B, against 57 KB if the group shared them. **Whether
+that is paid in bytes is NOT established.** `completed/task-w4a8-neon-bandwidth.md` measured this
+box's STREAM ceiling at 121 GB/s on six threads and the August table works out to ~33 GB/s of as-if
+traffic, well under it; and §2.2's reading 3 is the standing warning that a cache can dedup a
+group's reads in hardware. So the band is registered on µops, which are paid either way. From the
+shipped kernels' own instruction accounting (aikit's `linalg/attn_acc64_arm64.s` header): QK costs
+~1.53 SIMD µops per MAC, of which the two loads, two ZIPs and four widens per key pair are K-side
+work identical for every head of the group; AV costs ~1.09, of which the loads and the sixteen
+widens per 32 dims are V-side. Shared across G heads that is 0.73 + 0.73 at G=6 — **1.80× fewer
+µops per MAC (1.85× at G=7; 1.31× for a two-head sub-group).** **Band (QK+AV category time at depth
+3900, 1.5B shape, Mac, three arms interleaved, min-of-batches): ships at ≥1.5× AND the flat term F
+of `BenchmarkDecodeAtDepth`'s `t(K) = F + A·K` within 3% AND phi3-mini (G=1, the control) within
+±2%; parked at 1.2–1.5×; killed below 1.2×.** The slope band and the served band are registered
+after step 0, by Amdahl on the category split step 0 measures — they cannot be registered now,
+because the split is the thing nobody has (see step 0 (ii) on the softmax).
+
+**Read first.** `completed/task-attention-decode-cost.md`, all of it — the invariant enumerated
+(what acc64 buys: decode ≡ verify ≡ exact prefill for speculative decoding, MoE router stability),
+moves (a)/(b)/(c) and why each is bit-identical, the depth-aware fan-out argument, and its A2/A3
+disposition ("closed for now, revisit if long-context work wants more" — this brief is that
+revisit, and it takes the rung *below* A2: still no numerics change).
+`task-decode-splitkv-attention.md` for the principle every move here leans on: split the
+independent axes, never the reduction. aikit's `linalg/matmul_qk_acc64.go`,
+`linalg/matmul_av_acc64.go`, `linalg/attn_acc64_arm64.s` and `linalg/attn_acc64_amd64.s` (the Go
+kernels are the definition and the oracle; the identity argument and the register use are in the
+`.s` headers) and aikit's `docs/task-simd-audit.md` S-04. `ollama-chase.md` §A2-Metal for what
+happened when the same dedup was tried where co-locating a group costs occupancy: those four losses
+are about threadgroups and dispatches, neither of which a CPU has, which is why this is not a fifth
+attempt at the same thing. §2.2's 2026-09-19 note for the per-query-head regularity and its warning
+about reading it as bytes.
+
+**Step 0 — measure; no build, fundable now.** (i) The peer depth row, both boxes:
+`scripts/bench_peer.py` with `BENCH_DEPTH_BACKEND=cpu`, depths {128, 512, 2048, 3900}, greedy, the
+1.5B and 0.5B int4 plus phi3-mini as the MHA control — the first CPU depth cells `benchmarks.md`
+will have. (ii) `BenchmarkDecodeAtDepth` on the current tree at {128, 512, 2048, 3900, 8192}, fitted
+to `t(K) = F + A·K`, with the slope split by category — QK, softmax, AV. Gate A0 found the softmax
+"noise", but that was against QK/AV kernels roughly ten times slower than today's; the acc64 softmax
+is still one f64 `math.Exp` per key per head, and if it is now a third of the slope it caps what
+this brief can buy and becomes the next item. (iii) The distinct-bytes probe, on the kernel A/B
+bench: the real GQA layout (nKV heads shared by nH query heads) against an MHA-expanded layout with
+nH distinct KV heads — identical issued work, nH/nKV× the distinct bytes. If the two read the same,
+the caches are not deduping the group, every query head is paying DRAM for its reads, and the top
+of the band is live; if GQA is markedly faster, the hardware already dedups and the gain is the µop
+sharing alone. It is the CPU's version of the Metal collapse probe and CUDA's ncu traffic ratio, and
+it says which end of the band to expect before a line of assembly exists. Output: the
+pre-registration, with the slope and served bands filled in.
+
+**Step 0(i) result, 2026-09-19** ([`r13-cpu-depth-row-2026-09-19.md`](../measurements/r13-cpu-depth-row-2026-09-19.md)).
+Tooling gap closed (`BENCH_DEPTH_BACKEND=cpu` on the Mac, real Ollama peer). **Not yet a
+`benchmarks.md`-quality row**: the ~77-minute run found two real mechanisms rather than a clean
+curve — (1) repeated deep-context sampling on a small-context model (phi3-mini, 4096 ctx) exhausts
+`-kv-sessions`' per-slot KV memory within a few identical-prompt calls (each cold-misses
+`bestExtend`'s strict prefix rule and takes a fresh, expensive slot), correctly refused by the fit
+guard, not a bug — `phi3-mini K=3900` is out of scope on this machine under the default session
+count, not just at that one depth; (2) unexplained throughput drift of up to ~2× on the *same*
+cell measured twice ~18 minutes apart (0.5B/K=128: 99.2 → 48.9 tok/s) with loadavg flat throughout
+— plausibly thermal/frequency throttling over sustained CPU saturation, not confirmed (no thermal
+telemetry captured). Re-run needed (shorter sub-sweeps, cooldown pauses, `powermetrics` alongside)
+before this row is fit to enter `benchmarks.md`. (ii) and (iii) not started.
+
+**Step 0(ii) result, 2026-09-19** ([`r13-attn-category-split-2026-09-19.md`](../measurements/r13-attn-category-split-2026-09-19.md)).
+Softmax is NOT a minor category — the single largest share on the 0.5B (~39-40% of QK+softmax+AV,
+bigger than QK or AV alone) and a stable ~22-26% on the 1.5B, split stable across depth within each
+model but sharply different between them (plausibly the `hd` difference — QK/AV scale with `hd`,
+softmax's per-key `math.Exp` does not). Applying Amdahl to the brief's own registered QK+AV grouping
+ceilings (1.85× at G=7 for 0.5B, 1.80× at G=6 for 1.5B, softmax untouched) projects the achievable
+OVERALL decode-attention speedup at only ~1.39× (0.5B) / ~1.54× (1.5B), not 1.8-1.85× — confirming
+this brief's own pre-registered worry ("if it is now a third of the slope it caps what this brief
+can buy") and putting a number on it. A temporary diagnostic (time.Now() around the acc64 decode
+path, gated off by default, verified bit-identical/cosine-1.0 with every correctness gate) produced
+this data and was reverted rather than shipped — see the record for why. (iii) still open.
+
+**Step 0(iii) result, 2026-09-19** ([`r13-distinct-bytes-probe-2026-09-19.md`](../measurements/r13-distinct-bytes-probe-2026-09-19.md)).
+Depth-dependent, not a single answer: at K∈{128,512} the real GQA layout and an MHA-expanded
+control (same issued QKᵀ/scores·V work, `nH/nKV×` the distinct bytes) run within 1-2% of each
+other — the cache already dedups the group's reads there, so an explicit-sharing kernel would buy
+nothing extra at shallow K. At K∈{2048,3900} — this brief's own decision depths — GQA is 2.1-3.3×
+faster (0.5B) / 3.0-4.9× faster (1.5B): past a crossover somewhere in (512, 2048], the working set
+stops fitting in cache and the group's redundant reads become real memory traffic. "The top of the
+band is live" exactly where the Build's decision cell (K=3900, 1.5B) is registered, reinforcing
+rather than competing with the softmax ceiling from (ii). Standalone, permanent benchmark
+(`decoder.BenchmarkAttnDistinctBytes`, synthetic data, touches no production file). **Step 0 is now
+complete** (i)/(ii)/(iii).
+
+**Build.** aikit first, goinfer second, two arms so the ladder and the stop rule can disagree (§6
+rule 1). *Kernels:* `MatmulQKAcc64Group` and `MatmulAVAcc64Group` — Go definitions first (they
+become the oracle), then the NEON and AVX2 ports. QK: per block of keys, load and widen each K quad
+once, then one FMLA chain per (head, key) against that head's q — every chain still the d-ascending
+fold it is today. AV: per key, load and widen the V dims once, then fold into per-(head, dim)
+accumulators key-ascending, each head's scores widened once per token into an f64 row rather than
+once per pass. The register budget decides the block shapes and is the design problem: on NEON's 32
+registers, QK at 8 keys × G=6 is 24 accumulators + 4 widened K + 2 q = 30, and at G=7 it must drop
+to 4 keys (18); AV at 8 dims × G=6 is 24 + 4 V + 1 score = 29, and at G=7 (33) it must drop to
+4-dim blocks or split the group 4+3. 8-dim AV blocks mean sixteen passes over the keys where
+today's 32-dim kernel makes four per head — cheap while a pass's lines stay cache-resident, and
+exactly what the bench decides rather than the brief. *Wiring, arm A (cheap):* keep today's fan-out
+— contiguous runs of heads per worker — and group only the same-KV-head run a worker already owns
+(two heads on the 1.5B); no new barrier, ~1.3× by the same count. *Arm B (full):* fan out over (KV
+head × key range) for QK and (KV head × dim range) for AV, all G heads per task, with the per-head
+softmax between them as it is today — two more fork-joins per layer, every load shared by the whole
+group. Both arms sit behind one gate on the layer's effective attended span `nWin` (the split-KV
+lesson: a windowed layer never sees more than its window), below which the per-head path runs
+unchanged; `GOINFER_ATTN_GROUPED=0` restores it everywhere. The same kernels serve M>1 (exact
+prefill, spec verify), because no output's fold order depends on M — wire decode first, M>1 only
+once decode clears the band.
+
+**Gates.** (1) aikit: raw-bit equality of the grouped kernels against the per-head kernels, G ∈
+{1, 2, 4, 6, 7, 8}, nKeys straddling every block boundary {1, 7, 8, 9, 15, 16, 17, 127, 128, 129,
+4097}, hd ∈ {64, 96, 128, 256}, nonzero `bOff`/`headOff`, plus NEON-vs-Go and AVX2-vs-Go block
+tests in the existing style. (2) goinfer: `TestForwardN_matchesSequential`,
+`TestSpeculativeGreedyParity`, the ring-parity suite, `TestAttendBatchedHeads_vsNaive`,
+`TestAttendStrided_matchesGatherReference` and the parity manifest — **all green with zero golden
+changes; a golden that moves is a defect, not a re-base.** (3) `go test -race` on the new fan-out:
+arm B's tasks write disjoint score ranges and disjoint ctx dims, and the race detector is the check
+that they do. (4) The wiring proof. Bit-identity hides dispatch inertness
+(`completed/task-w4a8-neon-bandwidth.md`'s named lesson): a grouped path that never runs passes
+every gate above. A test-hook counter of grouped-kernel calls, asserted through `causalAttention`
+to be nonzero above the gate and ZERO below it, and printed once in the served bench's startup line.
+
+**Measure.** aikit's kernel A/B bench first (per-head as the do-nothing arm, A's two-head shape, B's
+full group) — it nominates. Then `BenchmarkDecodeAtDepth`, three arms interleaved, at {128, 512,
+2048, 3900, 8192} on the 1.5B, 0.5B, 7B and phi3-mini, both boxes; the Linux half matters more than
+its size suggests, because the 3700X's measured read ceiling is 30.5 GB/s against the Mac's 121.
+Then served: `scripts/bench_peer.py` CPU depth cells, paired on/off adjacent with alternating order,
+against the step-0 peer row — it elects.
+
+**Decision rule.** The category band above; the slope and served bands from step 0. Arm A ships
+alone if B misses and A clears 1.2× with no shallow regression — a small bit-identical win is still
+free. A flat-term regression beyond 3% parks either arm regardless of the depth win.
+
+**Build progress, 2026-09-20** ([`r13-neon-kernel-ab-2026-09-20.md`](../measurements/r13-neon-kernel-ab-2026-09-20.md)).
+aikit's kernel A/B bench (the Measure section's first step) is done: G=6 NEON ports of both grouped
+kernels are gate-1 green (bit-exact against the per-head kernels) and 1.53-2.39× faster than G
+separate calls at depth {130,2048,8192} on the Mac — the win the pure-Go checkpoint couldn't show,
+now confirmed once real NEON assembly existed, per the brief's own register-budget argument above.
+aikit commit `af926e3`, committed locally, not yet pushed/version-bumped into goinfer.
+
+**SHIPPED, 2026-09-20** ([`r13-served-decode-2026-09-20.md`](../measurements/r13-served-decode-2026-09-20.md)).
+Three goinfer-side wiring designs (Arm A full-group, Arm B split, Arm B serial — all bit-identical,
+gate-1/`-race` green throughout) all measured SLOWER than the unmodified per-head path against a
+real checkpoint (`qwen2.5-coder-1.5b`, depth 2048/8192) before the real cause was found. A first
+CPU profile pointed at aikit's MLP matmul parallelism as pre-existing decode-wide scheduler
+contention — a plausible-looking but WRONG lead (plain CPU pprof miscounts idle parked workers,
+matching a prior refuted false trail in this repo's own history). The correct tool (`go tool
+trace`'s per-goroutine time breakdown) found the real cause: `attendGroupedLayer` had accidentally
+serialized softmax onto one goroutine, where the ungrouped path already runs it 6-way parallel —
+a real, local, fully mechanistic bug, not scheduler contention. Fixed by splitting softmax the
+same way QK/AV already are. Result: parity at depth 2048 (~1% overhead, noise-level), a real
+**1.32× served speedup at depth 8192** (matching the depth-dependence step 0 predicted).
+`GOINFER_ATTN_GROUPED` defaults ON. Not yet done: the three-arm/both-box/all-model sweep and the
+served `bench_peer.py` measurement against the peer row — this record used the fast diagnostic
+only, at one model, two depths, one machine.
+
+**Record.** `docs/measurements/cpu-attn-group-PREREGISTERED.md` before the first cell,
+`cpu-attn-group-2026-MM-DD.md` after; `benchmarks.md` §A gains the CPU depth table (peer-paired)
+and the TL;DR a CPU-at-depth row; §1's CPU cell here; aikit's S-04 entry (cross-repo: described,
+not path-cited); a negative goes in `ollama-chase.md` §10 beside the GPU ones.
+
+**Out of scope.** Any numerics change on CPU decode. The M-independent f32 kernel (A2), and routing
+dense decode through the fused f32 schedule prefill already uses by default (A3's decode half), are
+the fidelity-lane follow-ons, with a trigger: the served CPU depth row still more than 1.5× behind
+at 3900 after this brief. int8-KV decode's own depth term (`causalAttention` dequantises the
+layer's whole history into f32 scratch on every token) — real, separate, unmeasured. f16 KV on CPU.
+CPU prefill, which is at parity or ahead at depth (§1, §2.3).
 
 ---
 
@@ -1195,7 +1564,7 @@ Stated once, so the briefs can cite them by number.
 5. **Tokens from `usage`, never from frame counts**; realistic prompts for anything content-
    dependent; `BENCH_DEEP_CTX` scoped to the deep cells only.
 6. **Bit-identity is a lane, not a default, and each brief says which lane it is in.** R3, R4 step
-   0, R5's exact arm, R8's gates, R9, R10's fusions, R11 (b) keep bit-identity; R1, R2, R5's fast
+   0, R5's exact arm, R8's gates, R9, R10's fusions, R11 (b) and R13 keep bit-identity; R1, R2, R5's fast
    arm, R6 and R7's device path are fidelity-gated and say so in their flags, their `--help` text
    and their `benchmarks.md` rows. The snapshot golden is re-baked only with a stated mechanism,
    never because a number moved.
@@ -1219,6 +1588,9 @@ Stated once, so the briefs can cite them by number.
 - No band here is a measurement. Every one is Amdahl on the record's own category shares, and the
   peer extrapolation that sits on top has already been ~25% optimistic once (`task-prefill-gap.md`
   §6.2). A brief that lands in its parked band is a result.
+- R13's band is µop arithmetic read off the shipped kernels' own headers, on a category whose
+  current share of the CPU slope nobody has measured — the softmax's per-key f64 `math.Exp` may no
+  longer be the noise Gate A0 found it to be. Step 0 exists to say so before anything is built.
 - The Metal kernels in R1 and R2 may lose to the M1 Pro's dispatch/occupancy floor the way four
   designs before them did. The briefs are written so that a fifth negative is worth as much as a
   win — a kernel shape that does not transfer from the peer's silicon is a finding about the
@@ -1246,13 +1618,15 @@ re-runs 2026-09-15/16 and 2026-09-17 on both boxes) · `docs/legacy-benchmarks.m
 `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md` ·
 `docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md` ·
 `docs/measurements/prefill-batched-ttft-2026-09-13.md` ·
-`docs/measurements/splitkv-{8000-reanchor,mechanism-ncu,stall-profile,q-staging,d7-fthreshold,f-depth-invariance,sector-efficiency,aa-floor}-2026-09-1[23].md` ·
+`docs/measurements/splitkv-{8000-reanchor,mechanism-ncu,stall-profile,q-staging,d7-fthreshold,f-depth-invariance,sector-efficiency,aa-floor,kernel-exploration}-2026-09-1[23].md` ·
+`docs/completed/plan-still-slow.md` (P4, the KV-quant verdict §2.2's 2026-09-19 fit qualifies) ·
 `docs/measurements/vsum-split-{spike,fidelity}-2026-09-13.md` ·
 `docs/measurements/reduction-tree-accuracy-2026-09-12.md` ·
 `docs/measurements/theta-per-backend-2026-09-01.md` · `docs/ollama-chase.md` (§1–§4, §7, §D4–§D6,
 §9–§13) · `docs/completed/metal-verdict.md` (§1 rows 3–4, §2a–2b, §4) ·
 `docs/completed/task-metal-cgofree-spike.md` (P1–P5) · `docs/completed/cuda-decode-headroom-audit.md` ·
-`docs/completed/task-w4a8-neon-bandwidth.md` · `docs/QUEUE.md` (G35, G36, G26, G28) ·
+`docs/completed/task-w4a8-neon-bandwidth.md` · `docs/completed/task-attention-decode-cost.md` ·
+`docs/measurements/vsum-split-fidelity-2026-09-13.md` (per-prompt tables, for R6's 2026-09-19 amendment) · `docs/QUEUE.md` (G35, G36, G26, G28) ·
 `docs/decode-fusion-next.md` · `docs/completed/gpu-next-levers-assessment.md` ·
 `docs/tasks/task-gpu-paths-2026-09.md` (G9, G10, G11, the 2026-09-09 notes) ·
 `docs/tasks/task-l01-hybrid-moe-cpu-gpu.md` · `docs/tasks/task-decode-splitkv-attention.md` ·
@@ -1260,8 +1634,12 @@ re-runs 2026-09-15/16 and 2026-09-17 on both boxes) · `docs/legacy-benchmarks.m
 (measurement discipline) · code read for this doc: `cuda/vision_encoder.go`, `cuda/attn_img_prefill.cu`,
 `cuda/decode_splitkv.cu`, `cuda/resident.go` (the split-KV gate), `cuda/l01_cpu_offload.go`,
 `metal/kernels.go` (`attention`, the `gemv_w4a8_*` set), `metal/prefill.go`, `metal/backend.go`,
-`gpu/gemv_w4a8.go`, `gpu/prefillrunner.go`, `decoder/sampler.go`, `decoder/spec_adaptive.go` ·
-aikit: `docs/task-simd-audit.md`, `linalg/attn_acc64_arm64.s` and the `dot_w4a8_*` kernels, plus
+`gpu/gemv_w4a8.go`, `gpu/prefillrunner.go`, `decoder/sampler.go`, `decoder/spec_adaptive.go`; for R13 and
+R6's amendment (2026-09-19): `decoder/attention.go` (`causalAttention`), `decoder/forwardn.go`
+(`attendBatchedHeads`), `decoder/scratch.go` (`headWorkerPool`), `decoder/decode_depth_bench_test.go`,
+`cuda/backend.go` and `cuda/resident.go` (the V-sum spike's loader and launch site) ·
+aikit: `docs/task-simd-audit.md`, `linalg/attn_acc64_arm64.s` (and, for R13, `linalg/attn_acc64_amd64.s`,
+`linalg/matmul_qk_acc64.go`, `linalg/matmul_av_acc64.go`, read at the vendored v1.45.1) and the `dot_w4a8_*` kernels, plus
 aikit's internal roofline and CPU-acceleration notes (gitignored there, so described rather than
 path-cited).
 
