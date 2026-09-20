@@ -2166,7 +2166,7 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 	// SPIKE PATH, opt-in only. Splits the V fold over S key chunks and combines in fixed order —
 	// NOT bit-identical to attn_batched, which is why it is unreachable unless
 	// GOINFER_SPLITKV_VSUM_SPLIT is set. Prices the trade the scoping doc's kill criteria decide on.
-	if r.skVsumSplit > 1 && r.skVsumPartial != (Pipeline{}) && r.skVsumCombine != (Pipeline{}) {
+	if r.skVsumSplit >= 1 && r.skVsumPartial != (Pipeline{}) && r.skVsumCombine != (Pipeline{}) {
 		nSplit := r.skVsumSplit
 		dy := uint32((Ly.hd + dTile - 1) / dTile)
 		if e := r.launch(r.skVsumPartial, LaunchConfig{GridX: uint32(r.nH), GridY: dy, GridZ: uint32(nSplit), BlockX: dTile, BlockY: 1, BlockZ: 1},

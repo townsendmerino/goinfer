@@ -1,0 +1,29 @@
+=== RUN   TestVsumMechanism
+    vsum_mechanism_test.go:98: D7 K=8000 prompt set "a", 10 prompts, S=[1 2 4 8 16]
+[vsum-mech] prompt  1/10 done, S=1 identical so far=true, elapsed 5m19s
+[vsum-mech] prompt  2/10 done, S=1 identical so far=true, elapsed 10m40s
+[vsum-mech] prompt  3/10 done, S=1 identical so far=true, elapsed 16m2s
+[vsum-mech] prompt  4/10 done, S=1 identical so far=true, elapsed 21m23s
+[vsum-mech] prompt  5/10 done, S=1 identical so far=true, elapsed 26m39s
+[vsum-mech] prompt  6/10 done, S=1 identical so far=true, elapsed 31m55s
+[vsum-mech] prompt  7/10 done, S=1 identical so far=true, elapsed 37m15s
+[vsum-mech] prompt  8/10 done, S=1 identical so far=true, elapsed 42m36s
+[vsum-mech] prompt  9/10 done, S=1 identical so far=true, elapsed 47m57s
+[vsum-mech] prompt 10/10 done, S=1 identical so far=true, elapsed 53m18s
+=== VSUM MECHANISM D7 K=8000, 10 prompts x 64 positions ===
+arm        meanKL    head100       tail   KL/exact       HF    agree% KL(ex||arm)      b1-16     b17-48     b49-63
+exact    0.100480   0.100334   0.000146     1.0000       15     86.09    0.000000   0.101524   0.101764   0.095522
+S=1      0.100480   0.100334   0.000146     1.0000       15     86.09    0.000000   0.101524   0.101764   0.095522
+S=2      0.098524   0.098204   0.000320     0.9805       16     85.94    0.044350   0.097959   0.100457   0.093768
+S=4      0.099048   0.099605  -0.000557     0.9857       17     86.41    0.042987   0.101899   0.099844   0.093107
+S=8      0.100011   0.100011  -0.000001     0.9953       14     85.94    0.044288   0.099080   0.100188   0.099491
+S=16     0.100407   0.100399   0.000008     0.9993       17     85.31    0.045755   0.102238   0.104033   0.089609
+paired per-prompt KL delta (arm - exact): mean ± s.e., #prompts higher
+  S=1  delta +0.000000 ± 0.000000  higher on 0/10 prompts; head delta +0.000000, tail delta +0.000000; rowsDiffering=0
+  S=2  delta -0.001956 ± 0.001990  higher on 5/10 prompts; head delta -0.002131, tail delta +0.000175; rowsDiffering=630
+  S=4  delta -0.001432 ± 0.001887  higher on 4/10 prompts; head delta -0.000730, tail delta -0.000703; rowsDiffering=630
+  S=8  delta -0.000469 ± 0.003713  higher on 5/10 prompts; head delta -0.000323, tail delta -0.000146; rowsDiffering=630
+  S=16 delta -0.000073 ± 0.002092  higher on 4/10 prompts; head delta +0.000065, tail delta -0.000138; rowsDiffering=630
+--- PASS: TestVsumMechanism (3223.89s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	3223.957s
