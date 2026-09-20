@@ -33,7 +33,7 @@ active `SlidingWindow`, `RotaryDim < HeadDim` and return `ok=false` until each f
 
 ## What `metal/model.go` bakes in (assumptions)
 
-`BuildResident` (`metal/model.go:121-215`) + `encodeTrunkInto` (`:348-370`) hardcode one dense
+`BuildResident` (`metal/model.go:121-225`) + `encodeTrunkInto` (`:348-370`) hardcode one dense
 block shape:
 - **RoPE**: single full-head-dim NeoX table, no scaling (`r.invf` from layer 0; kernel rotates
   full `hd`, `kernels.go:233-239`). No mscale/YaRN, partial, dual, or m-RoPE.
