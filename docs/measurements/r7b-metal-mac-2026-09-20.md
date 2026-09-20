@@ -9,8 +9,11 @@ device kernel implementing `decoder.ResidentSample`. Both were done. This record
 
 **Status: DONE 2026-09-20.** Verification found no regressions and one real, useful correction to
 the branch's own claim (see §1). The Metal device kernel is built, gated, end-to-end correct, and
-now measured: a real ~13-19% decode-speed win over the do-nothing (host-draw) arm, though not full
-greedy parity the way CUDA/WebGPU achieved (see §4).
+measured two ways: an internal harness (device draw converges on ~0.96× greedy across three runs)
+and, after fixing a real gap in `scripts/bench_peer.py` (Phase C had no Metal-backend override),
+the official peer instrument — where **goinfer beats Ollama on both greedy (1.15×) and
+temperature-only sampling (1.10×)** on this Mac (see §4). Not full greedy parity the way CUDA/WebGPU
+reach on their own sampled/greedy ratio, but ahead of the peer on both configs regardless.
 
 ## 0. A claim in the handoff was wrong — checked, not trusted
 
@@ -194,7 +197,7 @@ used earlier the same day for a different Metal bug: isolate the cheapest-to-che
 (known-answer vectors), then the next (a hand-computed reference), before trusting a result from the
 full pipeline.
 
-### Speed (added in a follow-up pass, same day)
+### Speed, internal harness (added in a follow-up pass, same day)
 
 `metal/sampled_gumbel_speed_test.go`: three arms (greedy T=0; host draw T=1.0 with
 `GOINFER_NO_SAMPLE_FASTPATH=1`, the do-nothing arm; device draw T=1.0), one seed, one 125-token
@@ -203,28 +206,67 @@ order rotated every round** and ratios computed **per round then summarized** (n
 CLAUDE.md's own measurement-discipline rule 7), decode-only timing (first emitted token to last,
 prefill excluded). CUDA's own `TestSampledDecodeLadder` was not found committed anywhere in this
 tree to port directly (checked repo-wide — no match), so this is a from-scratch harness built to
-the same protocol description, not a line-for-line port. Two back-to-back runs, same session,
-qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, int4, from `~/models`:
+the same protocol description, not a line-for-line port. Three runs, same session (the third after
+rebasing onto `origin/main`), qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, int4, from `~/models`:
 
-| | run 1 (13:58) | run 2 (13:59, after a cosmetic date-format fix) |
-|---|---:|---:|
-| greedy | 161.5 tok/s | 159.3 tok/s |
-| host (do-nothing arm) | 137.4 tok/s (**0.842**× greedy) | 129.5 tok/s (**0.822**× greedy) |
-| device | 154.8 tok/s (**0.958**× greedy) | 154.6 tok/s (**0.964**× greedy) |
-| device ÷ host (the device path's own win) | **1.132**× | **1.186**× |
+| | run 1 (13:58) | run 2 (13:59, cosmetic date-fmt fix) | run 3 (14:12, post-rebase) |
+|---|---:|---:|---:|
+| greedy | 161.5 tok/s | 159.3 tok/s | 160.4 tok/s |
+| host (do-nothing arm) | 137.4 (**0.842**×) | 129.5 (**0.822**×) | 127.0 (**0.799**×) |
+| device | 154.8 (**0.958**×) | 154.6 (**0.964**×) | 154.8 (**0.964**×) |
+| device ÷ host | **1.132**× | **1.186**× | **1.212**× |
 
-Device sampler engaged every round (`device-sampled-ever=true`); the ratios above are paired
-medians per round, not ratios of the pooled medians shown for readability. **A real, repeatable
-~13-19% win over the do-nothing arm**, consistent in direction with CUDA (0.744 → 1.008) and WebGPU
-(0.796 → 1.035) — but Metal's device draw does not clear greedy parity the way CUDA's and WebGPU's
-do (0.958-0.964× here vs >1.0 there). A plausible reason, **not measured, an inference**: CUDA and
-WebGPU's device path additionally saves a PCIe/`MapAsync` full-vocabulary readback the host path
-pays for, which is where each of them crosses 1.0; Metal's logits buffer is already unified memory
-with no transfer to save either way, so this device path's win is purely from replacing the host's
-own full-vocab Go loop (Philox + noise + argmax over ~152k entries) with two GPU dispatches — a real
-saving, just a smaller one than a transfer-elimination win. Confirming this would need a profile of
-where the remaining ~4-18% relative to greedy goes (the two extra dispatches' own encode/commit
-cost is the first suspect, not investigated here).
+Device sampler engaged every round in all three (`device-sampled-ever=true`); the ratios above are
+paired medians per round, not ratios of the pooled medians shown for readability. **A real,
+repeatable ~13-21% win over the do-nothing arm**, device draw converging tightly around **0.96×
+greedy** across three independent runs.
+
+### Speed, official peer harness (`scripts/bench_peer.py`, same day)
+
+The internal harness above is a from-scratch Go test, not this repo's committed peer-measurement
+tool — the number that actually belongs beside CUDA's and WebGPU's in `benchmarks.md` §B5.1 has to
+come from `scripts/bench_peer.py`, driven through the real HTTP server, the same instrument every
+other backend's R7/R7b row used. Running it surfaced a real, reusable gap: **Phase C (the sampling
+axis) was hard-coded to `backend="cuda"`**, with no override — unlike Phase A/B, which both respect
+`BENCH_BACKENDS`/`BENCH_DEPTH_BACKEND`. A `BENCH_CONFIGS=temp1.0_notrunc BENCH_BACKENDS=metal` run
+silently tried a nonexistent `/home/francis/.../serve-cuda` path and produced nothing for goinfer on
+Metal at all — which is *why* no Mac/WebGPU sampled peer cell has ever existed before, not merely
+that nobody had run one. Fixed in `scripts/bench_peer.py` by adding `BENCH_SAMPLED_BACKEND`,
+mirroring `BENCH_DEPTH_BACKEND`'s existing override pattern exactly (same "must be in
+`BENCH_BACKENDS`" guard, same reasoning) rather than a one-off hack — this is now available for any
+future Mac or WebGPU sampled cell, not just this one.
+
+**Provenance.** goinfer serve built from `561e72f6` (this branch, tree clean) vs Ollama v0.32.5 —
+version-matched to the CUDA peer sweep's own anchor. Both over HTTP, `scripts/bench_peer.py`,
+interleaved with a server restart between cells, depth 128, 1,024 decode tokens/cell (16 completions
+× 64 tokens × 2 runs), qwen2.5-coder-0.5b, int4 / q4_K_M, **same weights verified per-tensor**
+(`scripts/gguf_same_weights.py`: 291/291 tensors identical between `~/models/qwen2.5-coder-0.5b-
+instruct-q4_k_m.gguf` and Ollama's `q05` blob). Raw cells `b5-mac-r7b-561e72f6.json`, log
+`b5-mac-r7b-561e72f6_run.log` (in `docs/measurements/`).
+**Disclosed deviation from protocol**: `BENCH_MAX_LOADAVG` raised from the script's default 1.0 to
+3.0. This machine's ambient 1-minute load (this very Claude Code session, an editor, the desktop)
+sits at 1.6-2.2 even with nothing else running — 1.0 is not reachable on this box without stopping
+the session doing the measuring, and the script's own preflight text names raising the cap
+deliberately as the sanctioned alternative to an unbounded wait. Recorded loadavg at every cell was
+1.5-2.2, i.e. genuinely idle *for this machine*, not spiking under the load of a concurrent unrelated
+job — but this is a looser bar than the CUDA sweep's, and is flagged here rather than left implicit.
+
+| config | engine | tok/s | vs Ollama | own cost vs greedy |
+|---|---|---:|---:|---:|
+| greedy | goinfer | 163.4 | **1.154×** | — |
+| greedy | Ollama | 141.6 | (ref) | — |
+| temp 1.0, no truncation | goinfer | 159.1 | **1.100×** | 0.974× |
+| temp 1.0, no truncation | Ollama | 144.7 | (ref) | 1.022× |
+
+goinfer beats Ollama on **both** greedy (1.15×) and temperature-only sampling (1.10×) on this Mac's
+Metal backend — and goinfer's own sampled/greedy ratio (0.974×) independently confirms the internal
+harness's three runs (0.958-0.964×) via a completely different measurement path (through the real
+server, restarted between cells, peer-interleaved) rather than merely repeating the same number.
+Ollama's own sampled/greedy ratio (1.022×, essentially free) is the interesting asymmetry: Ollama's
+sampling cost on this box is near zero while goinfer's is ~2.6%, which is consistent with §4's
+"Metal draw isn't a PCIe/MapAsync-readback win, just a full-vocab-loop-replacement win" inference —
+Ollama likely never paid a comparable host-side full-vocab cost to begin with on Metal, so it has
+nothing large to recover.
 
 ### Not done this session
 

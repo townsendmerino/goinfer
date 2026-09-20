@@ -328,7 +328,7 @@ Status table, kept current as briefs move:
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
 | R5 | CUDA prefill attention tile — P24 re-scoped with the corrected cap | Linux | M | scoped |
 | R6 | CUDA flash-decode lane — mechanism for the parked spike, then the kernel | Linux | M–L | **lane decision made 2026-09-18 (option 2, §3.2 gate) — build fundable** |
-| R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | **CUDA filtered sampling SHIPPED 2026-09-20 (top_p 0.657→0.957 of greedy; top_k 0.961; min_p 0.971). R7b, same day, owner decision: temperature-only by Gumbel-max on every backend — CUDA 0.744→1.008, WebGPU 0.796→1.035 (device draw). Metal device kernel BUILT, GATED AND MEASURED 2026-09-20 (Mac session): 0 mismatches/15,840 draws, 12,000/12,000 real-generation tokens identical to host, device draw 0.96× greedy (do-nothing arm 0.82-0.84×) — see the record.** |
+| R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | **CUDA filtered sampling SHIPPED 2026-09-20 (top_p 0.657→0.957 of greedy; top_k 0.961; min_p 0.971). R7b, same day, owner decision: temperature-only by Gumbel-max on every backend — CUDA 0.744→1.008, WebGPU 0.796→1.035 (device draw). Metal device kernel BUILT, GATED AND MEASURED 2026-09-20 (Mac session): 0 mismatches/15,840 draws, 12,000/12,000 real-generation tokens identical to host, device draw 0.96× greedy internally AND peer-verified (goinfer 1.15× Ollama greedy, 1.10× Ollama sampled, both Metal) — see the record.** |
 | R8 | CUDA vision tower onto the L2/L3 kernels | Linux | M | scoped |
 | R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | scoped |
 | R10 | WebGPU glue fusion and on-device argmax; batched-prefill profile | Linux | M | scoped; profile first |
@@ -790,12 +790,24 @@ bound; do not carry this diagnosis across, per the record's own §A2-Metal lesso
 >
 > **Speed, same day, follow-up pass:** paired vs greedy, interleaved with a rotating arm order, 0.5B,
 > same session (`metal/sampled_gumbel_speed_test.go`, no committed CUDA harness to port — built
-> to the protocol description). Do-nothing arm (host draw) **0.82-0.84× greedy**; device draw
-> **0.96×** — a real ~13-19% win over the do-nothing arm, directionally consistent with CUDA
-> (0.744→1.008) and WebGPU (0.796→1.035) but not full greedy parity the way either of those reach
-> (Metal's UMA has no PCIe/MapAsync readback to eliminate, so this path's win is from replacing the
-> host's own full-vocab loop, not from a transfer saving — an inference, not measured directly).
-> **Open:** a Mac/peer sweep (`scripts/bench_peer.py`) and a profile of the remaining gap to greedy.
+> to the protocol description). Do-nothing arm (host draw) **0.80-0.84× greedy** (3 runs); device
+> draw **0.96×** (3 runs, tight) — a real ~13-21% win over the do-nothing arm, directionally
+> consistent with CUDA (0.744→1.008) and WebGPU (0.796→1.035) but not full greedy parity the way
+> either of those reach (Metal's UMA has no PCIe/MapAsync readback to eliminate, so this path's win
+> is from replacing the host's own full-vocab loop, not from a transfer saving — an inference, not
+> measured directly).
+>
+> **Mac/peer sweep, same day, second follow-up:** `scripts/bench_peer.py`, fixed to give Phase C a
+> Metal-backend override (`BENCH_SAMPLED_BACKEND`, mirroring `BENCH_DEPTH_BACKEND` — Phase C was
+> hard-coded to `cuda`, which is *why* no Mac sampled peer cell had ever existed, not just that
+> nobody had run one). goinfer vs Ollama v0.32.5, both Metal, same weights verified per-tensor:
+> **greedy goinfer 1.15× Ollama; temp-only goinfer 1.10× Ollama** — goinfer ahead on both. goinfer's
+> own sampled/greedy ratio through this independent instrument (0.974×) confirms the internal
+> harness's 0.96× via a different measurement path. `BENCH_MAX_LOADAVG` raised 1.0→3.0, disclosed
+> (this box's ambient load with the measuring session itself running never reaches 1.0). Full
+> numbers: `docs/benchmarks.md` §B3 addendum, `docs/measurements/r7b-metal-mac-2026-09-20.md` §4.
+> **Open:** a profile of the remaining ~2.6% gap between goinfer's own sampled and greedy Metal
+> rates.
 
 > **RESULT 2026-09-20 — CUDA `top_k` / `top_p` / `min_p` SHIP; temperature-only does not, and the brief's
 > design could not have served it.** Record: `docs/measurements/sampled-topk-2026-09-20.md` (step 0:

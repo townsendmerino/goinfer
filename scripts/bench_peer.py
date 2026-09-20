@@ -1343,10 +1343,25 @@ def main():
     # not simply be re-run after the 2026-08-25 re-anchor.
     #
     #     BENCH_CONFIGS=temp0.8_topp0.95,temp0.8_topk40 python3 scripts/bench_peer.py ...
+    #
+    # BENCH_SAMPLED_BACKEND overrides the hard-coded "cuda" -- e.g. "metal" on darwin, the SAME
+    # override pattern BENCH_DEPTH_BACKEND already gives Phase B above (mirrored deliberately, not
+    # reinvented): Phase C had no such override at all until R7b's Mac session needed one, which
+    # is why every Mac/WebGPU sampled cell before this had no reproducible path either — the same
+    # gap the R7 brief's own text flagged ("Metal and WebGPU are not done") but the harness itself
+    # had never actually closed for anyone to hit. Same "must be one of the backends BENCH_BACKENDS
+    # also selected" guard Phase B uses, same reason: a silent Phase A/C backend mismatch would be
+    # a cross-backend comparison presented as if it were a peer cell.
+    sampled_be = os.environ.get("BENCH_SAMPLED_BACKEND", "cuda").strip()
+    if sampled_be not in SERVE:
+        sys.exit(f"BENCH_SAMPLED_BACKEND: unknown backend {sampled_be!r}; known: {sorted(SERVE)}")
+    if plan_configs() and sampled_be not in plan_backends():
+        sys.exit(f"BENCH_SAMPLED_BACKEND={sampled_be!r} is not in BENCH_BACKENDS={plan_backends()!r} "
+                  "-- phase A and C would test different backends silently")
     for cfg in plan_configs():
         for mk in plan_models():
             for eng in plan_engines():
-                plan.append(("C", eng, "cuda", mk, 128, cfg))
+                plan.append(("C", eng, sampled_be, mk, 128, cfg))
 
     # Phase D: embeddings throughput (run_embed_cell). Different request shape entirely from A/B/C
     # (no streaming, no chat model, no depth-curve semantics -- "depth" here is

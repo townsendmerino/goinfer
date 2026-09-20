@@ -1015,6 +1015,36 @@ it registers via `decoder.RegisterBackend` and must be blank-imported by the bin
   and adds prefill + HTTP/JSON + detokenize + sampling. The two are consistent; the served rate
   asymptotes ~55–58 tok/s as fixed per-request overhead amortizes (16-tok req 30 tok/s → 512-tok 55).
 
+> **R7b addendum, 2026-09-20 — the first Mac sampled peer cell, ever.** Every row above is
+> `temperature 0` (greedy) only; no sampled Metal cell existed before this because
+> `scripts/bench_peer.py`'s Phase C (the sampling axis) was hard-coded to `backend="cuda"` with no
+> override, so a `BENCH_BACKENDS=metal` sampled run silently tried a nonexistent CUDA binary and
+> produced nothing — fixed same-day by adding `BENCH_SAMPLED_BACKEND`, mirroring
+> `BENCH_DEPTH_BACKEND`'s existing pattern. goinfer built from `561e72f6` vs Ollama v0.32.5, both
+> Metal, qwen2.5-coder-0.5b int4/q4_K_M, **same weights verified per-tensor**
+> (`scripts/gguf_same_weights.py`, 291/291 identical), depth 128, `scripts/bench_peer.py`'s standard
+> protocol (16×64-token completions × 2 runs, decode-only, server-restart-interleaved) — **not**
+> this section's own best-of-3/dropped-first-run protocol above, so treat this as its own
+> comparison point rather than a same-table update. `BENCH_MAX_LOADAVG` raised from the default 1.0
+> to 3.0 (disclosed, not silent — this box's own ambient load with the measuring session itself
+> running sits at 1.6-2.2; recorded per-cell loadavg 1.5-2.2, i.e. idle for this machine, but a
+> looser bar than usual). Raw cells + log: `docs/measurements/b5-mac-r7b-561e72f6.json` /
+> `_run.log`. Full writeup: `docs/measurements/r7b-metal-mac-2026-09-20.md` §4.
+>
+> | config | goinfer | Ollama v0.32.5 | verdict |
+> |---|---:|---:|---|
+> | greedy | 163.4 | 141.6 | **goinfer 1.15×** |
+> | temp 1.0, no truncation | 159.1 | 144.7 | **goinfer 1.10×** |
+>
+> goinfer leads on both cells here — unlike the 0.96×/0.74× greedy-only table above (`38e5cd7`,
+> 2026-08-04, 6 weeks and many decode-path commits earlier). Not a contradiction: different
+> goinfer commit, different protocol, and the table above's `~116`/`~121` absolute values on this
+> same 0.5B model are also far below this row's 163/142 — the stack has materially sped up since
+> August, this row just isn't presented as a re-anchor of the table above (different method, per
+> the note two paragraphs up). goinfer's own sampled/greedy ratio here (159.1/163.4 = 0.974×)
+> independently confirms `docs/measurements/r7b-metal-mac-2026-09-20.md`'s internal-harness result
+> (0.958-0.964× across three runs) via a completely different instrument.
+
 #### Metal greedy decode by KV depth — qwen2.5-coder-1.5b (the depth axis, peer-paired 2026-09-18)
 
 The §B3 rows above are a single short-prompt point; this is the depth curve, the Metal analogue of
