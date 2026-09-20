@@ -69,6 +69,8 @@ type SampleInfo struct {
 type Sampler struct {
 	p        SamplingParams
 	rng      *rand.Rand
+	gseed    uint64    // Philox key for the temperature-only Gumbel-max draw (sampler_gumbel.go)
+	gdraw    uint64    // index of the next such draw: the counter, so the stream is (seed, step, logits) only
 	history  []int     // tokens seen so far: prompt (via Observe) + each drawn token
 	vocabBuf []float64 // [vocab] scratch shared by sampleChunked's e and chunkedZ's tmp — one full-vocab
 	// allocation reused every token instead of a fresh make() each draw; the two are never live
@@ -114,7 +116,7 @@ func NewSampler(p SamplingParams) *Sampler {
 	if p.MinP > 1 {
 		p.MinP = 1
 	}
-	return &Sampler{p: p, rng: rand.New(rand.NewSource(p.Seed))}
+	return &Sampler{p: p, rng: rand.New(rand.NewSource(p.Seed)), gseed: uint64(p.Seed)}
 }
 
 // vocabBufN returns a length-n float64 scratch buffer, reusing the backing array when it is
@@ -276,19 +278,10 @@ func (s *Sampler) SampleWithInfo(logits []float32) (SampleInfo, error) {
 			// beats a −1 propagating out as a token, and beats a panic in this goroutine.
 			info.ID = argmax(work)
 		}
-	} else if s.p.Logprobs {
-		// Logprobs needs the full normalized distribution anyway, so the exact path costs nothing extra.
-		info.ID = s.drawFull(softmaxStable(work, s.p.Temperature))
 	} else {
-		// P2b: deterministic PARALLEL normalization over a FIXED chunk count, drawing against
-		// unnormalized weights (the divide pass is gone). Same exp values as before; the sum is
-		// regrouped by chunk, which shifts Z by ULPs and therefore moves near-boundary draws — the
-		// one given-seed change, bundled with the top-p Z pass below.
-		//
-		// LAZY Z WAS TRIED HERE AND REFUTED (P2, bc59c56): skipping the tail is not possible at these
-		// vocabularies (the remainder bound needs an ~11.2-nat gap; real logits give 5.29 at K=32).
-		// So the work is done in parallel instead of avoided.
-		info.ID = s.sampleChunked(work, s.p.Temperature, s.rng.Float64())
+		// Temperature-only, with or without logprobs: Gumbel-max (sampler_gumbel.go, R7b). One draw for
+		// every variant, so asking for logprobs or a penalty cannot change which token a seed produces.
+		info.ID = s.gumbelDraw(work, s.p.Temperature)
 	}
 	if s.p.Logprobs {
 		info.Logprob, info.Top = computeLogprobs(work, info.ID, s.p.Temperature, s.p.TopLogprobs, s.distBufN(len(work)))

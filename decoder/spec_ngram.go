@@ -359,7 +359,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		// from the seed distribution (sampled) — exactly what plain decode emits first.
 		cur := argmax(seedLogits)
 		if sampled {
-			cur = sampler.drawDist(dist(seedLogits, hist)) // seed history = prompt
+			cur = sampler.drawTarget(seedLogits, hist) // seed history = prompt
 		}
 
 		emit := func(tok int) bool {
@@ -509,7 +509,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				// ph here is prompt+committed+cur+draft[:kEff] — the bonus position's
 				// history.
 				if sampled {
-					nextTok = sampler.drawDist(dist(logitsN[kEff], ph))
+					nextTok = sampler.drawTarget(logitsN[kEff], ph)
 				} else {
 					nextTok = argmax(logitsN[kEff])
 				}

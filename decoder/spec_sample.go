@@ -59,8 +59,14 @@ func (s *Sampler) distVectorFrom(logits []float32) []float64 {
 // draw from at that position (where its history is prompt + all tokens emitted so
 // far). Falls back to the cheap distVector when no such transform is configured.
 func (s *Sampler) distVectorHist(logits []float32, history []int) []float64 {
+	return s.distVectorFrom(s.histLogits(logits, history))
+}
+
+// histLogits returns the logits with the history-dependent transforms (bias, penalties over `history`)
+// applied — the row itself when none is configured, otherwise a reused scratch copy (P-14).
+func (s *Sampler) histLogits(logits []float32, history []int) []float32 {
 	if !s.needsHistory() {
-		return s.distVectorFrom(logits)
+		return logits
 	}
 	work := s.specLogitsBufN(len(logits)) // P-14: reused scratch instead of a fresh slices.Clone
 	copy(work, logits)
@@ -68,7 +74,26 @@ func (s *Sampler) distVectorHist(logits []float32, history []int) []float64 {
 	if s.penaltiesConfigured() {
 		s.applyPenaltiesOver(work, penaltyWindowOf(history, s.p.RepeatLastN))
 	}
-	return s.distVectorFrom(work)
+	return work
+}
+
+// gumbelServes reports whether plain decoding draws this configuration by Gumbel-max (temperature > 0 with no
+// top-k / top-p / min-p): SampleWithInfo's temperature-only branch.
+func (s *Sampler) gumbelServes() bool {
+	return s.p.Temperature > 0 && s.p.TopK <= 0 && s.p.TopP <= 0 && s.p.MinP <= 0
+}
+
+// drawTarget draws the TARGET's own next token — the seed token and each round's bonus token — exactly as plain
+// decoding would: by Gumbel-max for the temperature-only configuration (so the first token of a sampled
+// speculative run equals plain decode's under the same seed, TestNgramSampledFirstTokenMatchesPlain), and by the
+// explicit distribution otherwise. The accept/reject and residual draws stay on the sampler's math/rand stream:
+// each token is still drawn from exactly the target distribution, and an independent counter-based stream for
+// some tokens does not disturb that (in-distribution lossless, TestSpecStepLossless).
+func (s *Sampler) drawTarget(logits []float32, history []int) int {
+	if s.gumbelServes() {
+		return s.gumbelDraw(s.histLogits(logits, history), s.p.Temperature)
+	}
+	return s.drawDist(s.distVectorHist(logits, history))
 }
 
 // needsHistory reports whether the sampling distribution depends on the token

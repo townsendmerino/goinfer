@@ -352,3 +352,21 @@ func SetDeltaCapHook(f func(mixed, conv, gateIn, betaGate, corePre, gated, z []f
 // norm kernel is gated against the reference rather than against a five-line reimplementation of
 // it. The epsilon is load-bearing for a zero-magnitude head, which is the case worth gating.
 func L2NormScaledForTest(x []float32, s float32) []float32 { return l2normScaled(x, s) }
+
+// GumbelDrawForTest is decoder's reference temperature-only draw for an explicit (seed, draw): the host
+// implementation every device kernel (CUDA, and the other backends') is held to. Sequential and
+// chunk-independent.
+func GumbelDrawForTest(logits []float32, temperature float64, seed, draw uint64) int {
+	_, idx := gumbelArgmaxRange(logits, 0, len(logits), float32(1/temperature), [2]uint32{uint32(seed), uint32(seed >> 32)}, draw)
+	if idx < 0 {
+		return argmax(logits)
+	}
+	return idx
+}
+
+// GumbelKeyForTest is the host's score for token i under the same (seed, draw) — what the device must agree
+// with; a device/host mismatch is legitimate only when two tokens' host keys are within a few ulps.
+func GumbelKeyForTest(logits []float32, temperature float64, seed, draw uint64, i int) float32 {
+	r := philox4x32([4]uint32{uint32(i >> 2), uint32(draw), uint32(draw >> 32), 0}, [2]uint32{uint32(seed), uint32(seed >> 32)})
+	return gumbelKey(logits[i], float32(1/temperature), r[i&3])
+}

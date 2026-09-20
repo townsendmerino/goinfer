@@ -1509,6 +1509,15 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			}
 		}
 	}
+	// Device temperature-only sampling (R7b, sampler_gumbel.go): the resident draws the next token by
+	// Gumbel-max on-device and returns just the id, reusing the greedy fast path's fastNext mechanism. Same
+	// exclusions as the top-K path; GOINFER_NO_SAMPLE_FASTPATH forces the host draw (A/B check, escape hatch).
+	var sampleRF ResidentSample
+	if useGPU && !fastGreedy && !optFwd && sp.LogitProcessor == nil && os.Getenv("GOINFER_NO_SAMPLE_FASTPATH") == "" && sampler.SampleEligible() {
+		if rf, ok := m.resident.(ResidentSample); ok && rf.SampleAvailable() {
+			sampleRF = rf
+		}
+	}
 	var topKRow *TopKRow // this step's device top-K row, set instead of logits when topKRF is active
 	var optGate *optFwdGate
 	if optFwd {
@@ -1684,6 +1693,12 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				// Greedy fast path: the resident picks the argmax on-device and returns
 				// just the id, skipping the full-logits readback.
 				fastNext, err = greedyRF.ForwardArgmax(emb, gpuPos)
+			} else if sampleRF != nil {
+				seed, draw := sampler.NextDraw()
+				fastNext, err = sampleRF.ForwardSample(emb, gpuPos, sp.Temperature, seed, draw)
+				if err == nil {
+					g.DeviceSampled++
+				}
 			} else if topKRF != nil {
 				var row TopKRow
 				row, err = topKRF.ForwardTopK(emb, gpuPos, topKWidth, sp.Temperature, sampler.topPActive())
@@ -1757,6 +1772,9 @@ type Generation struct {
 	// K could not prove it held the retained set (the full row was read instead). Both 0 unless the
 	// device top-K fast path was active; served/(served+fallbacks) is the fast path's hit rate.
 	TopKServed, TopKFallbacks int
+	// DeviceSampled counts decode steps whose token the resident drew on-device by Gumbel-max (R7b); 0 unless
+	// that fast path was active.
+	DeviceSampled int
 	// Logprobs holds one entry per emitted token (in order) when
 	// SamplingParams.Logprobs was set — the chosen token's log-probability and
 	// any requested top alternatives. Complete once the stream has closed.

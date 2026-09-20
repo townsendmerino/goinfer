@@ -303,12 +303,18 @@ func TestSamplingThroughputGate(t *testing.T) {
 	// nucleus over 262k entries retains an enormous candidate set, where REAL peaked decode logits
 	// retain a handful. The e2e A/B on real models shows the filtered path ~2× FASTER after P2b
 	// (gemma3-1b 56.3 → 117.0 tok/s), the opposite of what this ratio suggests in isolation.
+	//
+	// RE-ANCHORED after R7b (2026-09-20), the bar NOT moved. Production temperature-only sampling became
+	// Gumbel-max, ~1.3-1.8x cheaper on the CPU (1.49 -> 1.16 ms at 262k), which moved this ratio from 4.14x to
+	// 5.26x while top_p itself was unchanged (6.17 -> 6.09 ms) — the same "baseline moved" hazard as above. The
+	// denominator is now the LEGACY chunked inverse-CDF draw, kept unchanged in sampler_chunked_ref_test.go, so
+	// the ratio means exactly what it meant when the 5.0x bar was set.
 	const factor = 5.0
 	for _, V := range []int{152064, 262144} {
 		r := rand.New(rand.NewSource(1))
 		logits := randLogits(V, r)
 
-		base := benchSample(logits, SamplingParams{Temperature: 0.8})
+		base := benchLegacyTempOnly(logits, 0.8)
 		topp := benchSample(logits, SamplingParams{Temperature: 0.8, TopP: 0.95})
 		ratio := float64(topp) / float64(base)
 		t.Logf("V=%d: temp-only %d ns/op, temp+top_p %d ns/op → %.2f×", V, base, topp, ratio)
@@ -345,6 +351,25 @@ func benchSample(logits []float32, p SamplingParams) int64 {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_, _ = s.SampleWithInfo(logits)
+			}
+		})
+		if ns := res.NsPerOp(); best == 0 || ns < best {
+			best = ns
+		}
+	}
+	return best
+}
+
+// benchLegacyTempOnly is benchSample for the LEGACY temperature-only draw (sampleChunked), the yardstick
+// TestSamplingThroughputGate's bar was set against.
+func benchLegacyTempOnly(logits []float32, T float64) int64 {
+	best := int64(0)
+	for range 3 {
+		res := testing.Benchmark(func(b *testing.B) {
+			s := NewSampler(SamplingParams{Temperature: T})
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = s.sampleChunked(logits, T, s.rng.Float64())
 			}
 		})
 		if ns := res.NsPerOp(); best == 0 || ns < best {

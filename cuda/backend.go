@@ -881,6 +881,17 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fTopK, e = r.dev.NewComputePipeline(tmod, "topk_select"); e != nil {
 			return e
 		}
+		// gumbel_stage1/2 (R7b): own module, same isolation.
+		gumod, e2 := r.dev.CompileLibrary(gumbelPTX)
+		if e2 != nil {
+			return e2
+		}
+		if r.fGumbel1, e = r.dev.NewComputePipeline(gumod, "gumbel_stage1"); e != nil {
+			return e
+		}
+		if r.fGumbel2, e = r.dev.NewComputePipeline(gumod, "gumbel_stage2"); e != nil {
+			return e
+		}
 		// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md) — own module, same isolation
 		// reasoning as argmax_reduce/router_f32 above. Loaded unconditionally: cheap, and whether
 		// this model will ever receive an adapter isn't known here.
@@ -1567,6 +1578,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.dO, r.logits = r.af(H), r.af(vocab)
 		r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)
 		r.topkOut = r.ai(2*topkMaxK + 2)      // sampled fast-path readback (~2 KB vs 594 KB)
+		nGb := gumbelBlocks(vocab)
+		r.gbKey, r.gbIdx, r.gbOut = r.af(nGb), r.ai(nGb), r.ai(1) // Gumbel-max sampling scratch (R7b)
 		if hb, e := gpu.NewHostBuffer[float32](r.dev, vocab); e != nil {
 			return e
 		} else {

@@ -131,6 +131,17 @@ type ResidentTopK interface {
 	ForwardTopK(embedding []float32, pos, k int, temperature float64, wantZ bool) (TopKRow, error)
 }
 
+// ResidentSample is an optional ResidentForward extension: run a token's forward and DRAW the next token
+// on-device by Gumbel-max (sampler_gumbel.go), returning just the id — no logits readback and no host
+// normalisation. It serves the temperature-only configuration (temperature > 0, no top-k / top-p / min-p), the
+// server's default sampling shape. (seed, draw) are the sampler's own (Sampler.NextDraw), so whichever path
+// serves a step the stream is a function of (seed, step, logits) only. SampleAvailable is false for a backend
+// whose logits are transformed on the host after readback (final-logit softcap, logit scale).
+type ResidentSample interface {
+	SampleAvailable() bool
+	ForwardSample(embedding []float32, pos int, temperature float64, seed, draw uint64) (int, error)
+}
+
 // ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to build ONLY its
 // resident KV, skipping the final norm + LM head matmul + full-logits readback (+ any host-side
 // softcap). generateInto uses it for prompt[:-1] — every prefill token except the last needs only its

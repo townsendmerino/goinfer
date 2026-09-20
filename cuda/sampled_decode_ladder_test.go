@@ -68,18 +68,26 @@ func TestSampledDecodeLadder(t *testing.T) {
 		name  string
 		sp    decoder.SamplingParams
 		noTop bool // GOINFER_NO_TOPK_FASTPATH=1: the device top-K path forced off (the do-nothing arm)
+		noSmp bool // GOINFER_NO_SAMPLE_FASTPATH=1: the device Gumbel sampler forced off (the do-nothing arm)
 	}{
-		{"greedy", decoder.SamplingParams{}, false},
-		{"T1.0", decoder.SamplingParams{Temperature: 1.0, Seed: 7}, false},
-		{"T0.8+p0.95 topk-off", decoder.SamplingParams{Temperature: 0.8, TopP: 0.95, Seed: 7}, true},
-		{"T0.8+p0.95", decoder.SamplingParams{Temperature: 0.8, TopP: 0.95, Seed: 7}, false},
-		{"T0.7+k40", decoder.SamplingParams{Temperature: 0.7, TopK: 40, Seed: 7}, false},
-		{"T1.0+minp0.05", decoder.SamplingParams{Temperature: 1.0, MinP: 0.05, Seed: 7}, false},
+		{"greedy", decoder.SamplingParams{}, false, false},
+		{"T1.0 device-sample off", decoder.SamplingParams{Temperature: 1.0, Seed: 7}, false, true},
+		{"T1.0", decoder.SamplingParams{Temperature: 1.0, Seed: 7}, false, false},
+		{"T1.3", decoder.SamplingParams{Temperature: 1.3, Seed: 7}, false, false},
+		{"T0.8+p0.95 topk-off", decoder.SamplingParams{Temperature: 0.8, TopP: 0.95, Seed: 7}, true, false},
+		{"T0.8+p0.95", decoder.SamplingParams{Temperature: 0.8, TopP: 0.95, Seed: 7}, false, false},
+		{"T0.7+k40", decoder.SamplingParams{Temperature: 0.7, TopK: 40, Seed: 7}, false, false},
+		{"T1.0+minp0.05", decoder.SamplingParams{Temperature: 1.0, MinP: 0.05, Seed: 7}, false, false},
 	}
 
 	var served, fallbacks [16]int
 	armIdx := 0
-	one := func(sp decoder.SamplingParams, seed int64, noTop bool) (float64, int, error) {
+	one := func(sp decoder.SamplingParams, seed int64, noTop, noSmp bool) (float64, int, error) {
+		if noSmp {
+			t.Setenv("GOINFER_NO_SAMPLE_FASTPATH", "1")
+		} else {
+			t.Setenv("GOINFER_NO_SAMPLE_FASTPATH", "")
+		}
 		if noTop {
 			t.Setenv("GOINFER_NO_TOPK_FASTPATH", "1")
 		} else {
@@ -112,7 +120,7 @@ func TestSampledDecodeLadder(t *testing.T) {
 
 	// Warm every arm once (JIT, caches) and discard.
 	for _, a := range arms {
-		if _, _, err := one(a.sp, 1, a.noTop); err != nil {
+		if _, _, err := one(a.sp, 1, a.noTop, a.noSmp); err != nil {
 			t.Fatalf("warmup %s: %v", a.name, err)
 		}
 	}
@@ -128,7 +136,7 @@ func TestSampledDecodeLadder(t *testing.T) {
 		for k := range arms {
 			i := (k + r) % len(arms) // rotate the starting arm so no arm always runs first
 			armIdx = i
-			rate, n, err := one(arms[i].sp, int64(100+r), arms[i].noTop)
+			rate, n, err := one(arms[i].sp, int64(100+r), arms[i].noTop, arms[i].noSmp)
 			if err != nil {
 				t.Fatalf("round %d %s: %v", r, arms[i].name, err)
 			}

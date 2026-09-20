@@ -128,6 +128,12 @@ var argmaxPTX []byte
 //go:embed testdata/topk.ptx
 var topkPTX []byte
 
+// gumbelPTX: gumbel_stage1/gumbel_stage2 — device-side temperature-only sampling by Gumbel-max (R7b). Its own
+// module for the same reason as argmaxPTX/topkPTX. Built at the ambient NVRTC. See cuda/gumbel.cu.
+//
+//go:embed testdata/gumbel.ptx
+var gumbelPTX []byte
+
 // loraPTX: lora_delta_down/lora_delta_up — compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md).
 // A brand-new kernel pair, so per cuda/testdata/REGEN.md's rule ("adding a NEW kernel → new .cu
 // file, new .ptx, built at whatever NVRTC is present") this is its own module, never touching

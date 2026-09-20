@@ -158,3 +158,19 @@ func (r *cudaResident) TopKLaunchForTest(v, k int, temperature float64, wantZ bo
 		return e
 	})
 }
+
+// GumbelForTest runs the resident's on-device Gumbel-max draw over caller-supplied logits (len ≤ r.vocab) for an
+// explicit (seed, draw), returning the id — the seam TestGumbelDeviceAgreesWithHost uses to compare the kernel
+// with decoder's reference implementation on rows a real forward would not produce.
+func (r *cudaResident) GumbelForTest(logits []float32, temperature float64, seed, draw uint64) (int, error) {
+	var id int
+	err := r.do(func() error {
+		if e := gpu.Upload(r.logits, logits); e != nil {
+			return e
+		}
+		var e error
+		id, e = r.gumbelPick(len(logits), float32(1/temperature), seed, draw)
+		return e
+	})
+	return id, err
+}

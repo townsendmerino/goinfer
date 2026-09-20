@@ -577,6 +577,7 @@ type cudaResident struct {
 	stream                                                                                  Queue
 	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN, fLN Pipeline
 	fTopK                                                                                   Pipeline // topk_select (R7)
+	fGumbel1, fGumbel2                                                                      Pipeline // gumbel_stage1/2 (R7b)
 	// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md — cuda/lora.go). Own module
 	// (lora.ptx), loaded unconditionally like every other glue pipeline — cheap, and whether a
 	// model will ever receive an adapter isn't known at BuildResident time.
@@ -700,6 +701,7 @@ type cudaResident struct {
 	aq, cq, mq, dq, argIdx                                                Buffer
 	argVal                                                                Buffer
 	topkOut                                                               Buffer // topk_select output: ids, logit bits, Z hi/lo bits
+	gbKey, gbIdx, gbOut                                                   Buffer // gumbel_stage1 per-block winners, and the drawn id (R7b)
 	kc, vc                                                                []Buffer
 
 	// MoE per-token scratch (allocated only when moe). Sized to the MoE expert width, which is
