@@ -9,7 +9,7 @@
 
 **Status:** design only — nothing implemented. Read this before any code. It is the durable target
 for the two comments that describe the hazard inline: `handleAdminUnload` (internal/serveapp/admin.go:95–121)
-and the reciprocal note at `resident.Close` (metal/model.go:972–976); update both to cite this file
+and the reciprocal note at `resident.Close` (metal/model.go:998–976); update both to cite this file
 when the fix lands.
 
 **One line:** `handleAdminUnload` must release the model's native memory, but the obvious

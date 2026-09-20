@@ -28,7 +28,7 @@ next, and so on, until you decide to stop. Everything below is detail about (a)
 how that one prediction works and (b) the engineering tricks that make running it
 thousands of times not unbearably slow.
 
-That outer loop lives in [`decoder/model.go:1327-1474`](../decoder/model.go#L1138-L1474), a
+That outer loop lives in [`decoder/model.go:1327-1474`](../decoder/model.go#L1164-L1500), a
 function called `generateInto`.
 
 ---
@@ -60,9 +60,9 @@ turned back into text.
 This is the heart of it. Given the list of token IDs so far, how do we predict the
 next one? The computation that does this is called the **forward pass** (data
 flows *forward* through the network). In this repo, for a single new token, it's
-[`Model.forward`](../decoder/model.go#L468-L474) — a small wrapper that runs the
-layer stack ([`runLayers`](../decoder/model.go#L330)) and then projects to scores
-([`logitsFromHidden`](../decoder/model.go#L492)). Here are its stages.
+[`Model.forward`](../decoder/model.go#L484-L490) — a small wrapper that runs the
+layer stack ([`runLayers`](../decoder/model.go#L346)) and then projects to scores
+([`logitsFromHidden`](../decoder/model.go#L508)). Here are its stages.
 
 ### 2a. Each token becomes a vector (the embedding)
 
@@ -72,7 +72,7 @@ numbers (a **vector**, maybe 4,096 numbers long). That vector is the model's
 learned "meaning" of that token. Words used in similar ways end up with similar
 vectors.
 
-The lookup is literally one line: [`m.w.Embed.Row(id, h)`](../decoder/model.go#L350)
+The lookup is literally one line: [`m.w.Embed.Row(id, h)`](../decoder/model.go#L366)
 — "go fetch row `id` from the embedding table and put it in `h`." From here on,
 the token *is* that vector, called the **hidden state** (`h` in the code). The
 entire job of the network is to repeatedly transform this vector so that, by the
@@ -84,7 +84,7 @@ This is the "deep" in "deep learning." The model has dozens of **layers** stacke
 on top of each other (could be 32, 80, more). The vector enters layer 1, gets
 transformed, the result enters layer 2, gets transformed, and so on. Each layer
 does the same two operations, and this loop is
-[`runLayersFromEmbed`](../decoder/model.go#L386-L430):
+[`runLayersFromEmbed`](../decoder/model.go#L402-L446):
 
 1. **Attention** — "look at the other words and pull in relevant context."
 2. **MLP** (also called the feed-forward network) — "think about what you just
@@ -146,7 +146,7 @@ section — it's central to this repo's recent work.)
 
 After the vector exits the last layer, it has been refined into a representation
 of "what should come next." The final step,
-[`logitsFromHidden`](../decoder/model.go#L492-L514), multiplies it against the
+[`logitsFromHidden`](../decoder/model.go#L508-L530), multiplies it against the
 vocabulary table to produce one score for *every* token in the vocabulary —
 100,000 numbers, where a high score means "this token is a likely next one."
 These raw scores are called **logits**.
@@ -183,7 +183,7 @@ The output is a single integer — the next token.
 
 ## Step 4: The loop (autoregression)
 
-Now zoom back out to [`generateInto`](../decoder/model.go#L893-L1131). We:
+Now zoom back out to [`generateInto`](../decoder/model.go#L919-L1157). We:
 
 1. Run the forward pass on the prompt,
 2. Sample one new token,
@@ -191,7 +191,7 @@ Now zoom back out to [`generateInto`](../decoder/model.go#L893-L1131). We:
 4. Run the forward pass again — now with that new token as input,
 5. Sample the next one,
 6. Repeat until we hit a stop token or a length limit
-   ([decoder/model.go:1555](../decoder/model.go#L1004-L1130)).
+   ([decoder/model.go:1555](../decoder/model.go#L1030-L1156)).
 
 This is called **autoregression** — the model's own outputs become its next
 inputs. The text you see "streaming" out of a chatbot is exactly this loop, one

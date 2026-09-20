@@ -250,7 +250,7 @@ exp > attention MACs at so400m) and the S-06 NEON transcendentals unwired (R9).
 
 ### 2.9 Speculative decode and concurrency
 
-Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:689` — a loop of
+Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:702` — a loop of
 `Forward`s, one command buffer each); CUDA's 0.25 with the same drafter is the existence proof that
 batching the verify into one command buffer turns speculation from "declines" into 1.2–1.8× on agent
 output (R12). Concurrency has no row on any backend; it is the axis a serving deployment buys, and
@@ -539,7 +539,7 @@ moves to the smallest K in {64, 128} at which the §3.2 pooled gate ships; at th
 must beat sequential by ≥2× on TTFT (ships), 1.3–2× parked, below 1.3× the floor stays.**
 
 **Read first.** Audit `M-01`, `M-02` and their closure notes (`6cc862a0` — the floor is 256 today,
-`GOINFER_METAL_FAST_PREFILL_FLOOR` read in `metal/backend.go:513`; `ForwardNoLogits` shipped
+`GOINFER_METAL_FAST_PREFILL_FLOOR` read in `metal/backend.go:526`; `ForwardNoLogits` shipped
 synchronous, the `noHead` executor-job version with ~0.9 ms/token of encode-ahead overlap still
 open), `G-02`/`G-08` (the pooled gate drops missing cells silently and never exercises
 `startPos > 0`, which every prefix-reuse turn uses — fix G-08 as part of this brief, since a
@@ -1114,7 +1114,7 @@ verify cost, and the Metal small-M GEMM is the reason — record it beside P10's
 `docs/spec/00-core.md` and `10-optfwd-gate.md` (the lossless contract and the prompt-form caveat),
 `completed/task-metal-batched-verify-kernel.md` and `completed/metal-batched-verify.md` (the small-M
 verify kernel that measured ~1.13× and was not adopted — P21 is about the command-buffer boundary,
-not that kernel), `metal/backend.go:689` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
+not that kernel), `metal/backend.go:702` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
 (`decoder/residency.go` — the interface that now reports whether the verify is batched; wire it
 truthfully), `task-peer-benchmarks.md` (W7's definition; the MLX quant caveat), `scripts/bench_peer.py`
 (the `mlx` engine branch; `BENCH_VISION=1`; `scripts/bench_peer_transcript.py` for W4/W7).
