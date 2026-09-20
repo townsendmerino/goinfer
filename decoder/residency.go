@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -958,8 +959,19 @@ func (m *Model) withResidency() *Model {
 		return m
 	}
 	m.resident = rf
+	// BuildResident's host-side work — the CUDA backend packs every layer's weights on the Go heap before it
+	// uploads them, and stages the expert stacks in pinned memory — is garbage the moment it returns, but Go hands
+	// freed heap back to the OS only when its background scavenger gets round to it. MEASURED 2026-09-20 on the
+	// real gpt-oss-20b (--backend cuda --moe-cache-experts): RSS sat at ~39 GB for ~5 minutes after the load
+	// finished, then fell to ~22 GB. Release it now, once, at load time: a resident model's whole point is that the
+	// host copy is no longer needed.
+	releaseHostMemory()
 	return m
 }
+
+// releaseHostMemory returns freed heap to the OS. A variable so a test can observe that a successful resident
+// build calls it (and a declined one does not); production is always debug.FreeOSMemory.
+var releaseHostMemory = debug.FreeOSMemory
 
 // --- Granite-4.0-H resident SSM bridge (P5b: resident Mamba decode, docs/ssm-residency-scope.md) ---
 // These expose the hybrid's per-layer mixer-kind + Mamba-2 mixer weights + scalar multipliers

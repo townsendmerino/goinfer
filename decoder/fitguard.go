@@ -95,8 +95,9 @@ type fitCheck struct {
 	// mmaps its own weight blob directly (no separate dequant-and-copy pass) and a safetensors
 	// directory's loader has its own accounting; StreamWeights (once transcoded to .giw) also
 	// leaves this repo through a different Load branch entirely (see model.go's ".giw" branch,
-	// which never reaches fitCheckFor at all — a separate, pre-existing gap this change does not
-	// touch). Zero when not applicable, so an existing fitCheck literal built by a test or another
+	// which never reaches fitCheckFor at all — by design, not a gap: measured 2026-09-20, a 7.8 GB
+	// `.giw` loads as 1.46 GB anonymous + 7.4 GB file-backed pages the kernel can drop under
+	// pressure, so there is no allocation peak for a guard to price). Zero when not applicable, so an existing fitCheck literal built by a test or another
 	// caller is unaffected.
 	srcFileBytes int64
 
@@ -697,8 +698,8 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 		// about the SOURCE file staying mapped resident for the whole build, on top of whatever the
 		// final size turns out to be. Only priced for a plain resident load: StreamWeights means
 		// this exact path is about to be transcoded to a .giw and re-loaded from THAT (a different
-		// Load call, a different fitCheckFor invocation, currently not priced at all — see
-		// srcFileBytes's doc comment on that pre-existing, separate gap).
+		// Load call that never reaches fitCheckFor — file-backed, so deliberately unpriced; see
+		// srcFileBytes's doc comment).
 		if !opts.StreamWeights {
 			if fi, serr := os.Stat(path); serr == nil {
 				f.srcFileBytes = fi.Size()

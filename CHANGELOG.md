@@ -129,6 +129,11 @@ any surface may still change.
 
 ### Fixed
 
+- **A CUDA load of a large MoE (gpt-oss-20b) no longer leaves ~17 GB of dead host memory behind.** The Go heap kept the
+  build's transient host copies after the weights moved to the device; the decoder now returns them to the OS once a
+  resident build succeeds. Measured on gpt-oss-20b with `--backend cuda --moe-cache-experts`: RSS 39.5 GB at peak,
+  22.2 GB within ~10 s of load and stable (was 39 GB for 5+ min).
+
 - **The `serve` startup banner hid the real context size.** Its `context:` line printed "backend
   default" when `-ctx` was unset, and the requested `-ctx` when it was set, even above the model's own
   maximum. It ignored a per-model `ctx=` too. It now prints the limit requests are actually held to,
