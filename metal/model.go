@@ -117,6 +117,7 @@ type residLayer struct {
 	invf                                 Buffer          // per-layer RoPE inv-freq (Gemma local 10k vs global 1M base)
 	mscale                               Buffer          // per-layer YaRN mscale (RopeMscaleLayer; 1.0 = no-op for every family without it)
 	uWindow                              Buffer          // per-layer attention window (0 = full causal; Gemma mixes local/global)
+	window                               uint32          // R2: CPU-side twin of uWindow's value, for canUseAttnFA's dispatch-time guard (windows are out of scope for attention_fa — see its own doc comment)
 	// GPT-2 (FeatLayerNorm/FeatNonGatedMLP/FeatOutBias): preNormBias/postNormBias are LayerNorm's
 	// bias (unused for RMS families — layernorm_quant only dispatches when arch.Norm==NormLayer).
 	// upW/upS is the SEPARATE (not gate-fused) up-projection a non-gated MLP uses instead of
@@ -163,19 +164,33 @@ type resident struct {
 	decodeLaneW4F16                 bool
 	axF16, mxF16, cxF16             Buffer   // half-typed activation buffers for the f16 lane (QKV-in, gate/up-in, o-proj-in)
 	pArgFinish                      Pipeline // fused block-argmax lm head reduce
-	pQKNorm                         Pipeline // per-head QK-RMSNorm (Qwen3)
-	pRmsF32                         Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
-	pGemvW8, pGemvW8Amax            Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
-	pCopyVec                        Pipeline // copy_f32 for on-device embedding copy in batched forward
-	qkNorm                          bool     // arch has QK-norm
-	qkNormWhole                     bool     // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
-	sandwich                        bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
-	postOnly                        bool     // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — quantize the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
-	kvF32                           bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
-	uAct                            Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
-	uAddOne, uWindow                Buffer   // qk_norm + sliding-window uniforms
-	uZero                           Buffer   // constant 0 (nH=0 / nHhd=0 / addOne=0 for the scale-less v_norm dispatch)
-	vNormUnit                       Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x·rms·w, addOne=0) = scale-less v_norm for K=V layers
+	// R2 (docs/tasks/red-october.md): the split-KV decode-attention lane, gridded by (kvHead,
+	// split) instead of by query head, gated by GOINFER_METAL_ATTN_FA=1 (decodeAttnFA). Pipelines
+	// always built; dispatch is conditional (canUseAttnFA), same "one binary carries both arms"
+	// shape as R1's f16 lane above. hd==128-only, dense-GQA-only (no window/sinks/f32-KV) — see
+	// attention_fa's own doc comment in kernels.go for why, and §2.2/R2's own speed-probe record
+	// for why S must be sized for real occupancy (S=1 is UNIFORMLY worse than the shipped kernel
+	// at every depth measured, not just below some crossover — a correction to this brief's own
+	// original "S=1 below a measured crossover" text).
+	pAttnFA, pAttnFACombine Pipeline
+	decodeAttnFA            bool
+	attnFAPartial           Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
+	attnFAMaxSplit          int
+	curNKeys                int      // CPU-side twin of uNKeys' value, set by setPos — canUseAttnFA's depth gate
+	uAttnFAG, uAttnFANSplit Buffer   // reused scratch uniforms, SetU32'd fresh before each attention_fa dispatch
+	pQKNorm                 Pipeline // per-head QK-RMSNorm (Qwen3)
+	pRmsF32                 Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
+	pGemvW8, pGemvW8Amax    Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
+	pCopyVec                Pipeline // copy_f32 for on-device embedding copy in batched forward
+	qkNorm                  bool     // arch has QK-norm
+	qkNormWhole             bool     // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
+	sandwich                bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
+	postOnly                bool     // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — quantize the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
+	kvF32                   bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
+	uAct                    Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
+	uAddOne, uWindow        Buffer   // qk_norm + sliding-window uniforms
+	uZero                   Buffer   // constant 0 (nH=0 / nHhd=0 / addOne=0 for the scale-less v_norm dispatch)
+	vNormUnit               Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x·rms·w, addOne=0) = scale-less v_norm for K=V layers
 
 	// GPT-2 (FeatLayerNorm/FeatNonGatedMLP/FeatLearnedPos/FeatOutBias).
 	pLayerNorm, pActQuant            Pipeline          // layernorm_quant, act_quant
@@ -625,6 +640,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pF32ToF16 = pipe("f32_to_f16")
 	r.pSAf16, r.pSAf16Bias, r.pSAf16Resid = pipe("gemv_w4f16_sa"), pipe("gemv_w4f16_sa_bias"), pipe("gemv_w4f16_sa_resid")
 	r.decodeLaneW4F16 = os.Getenv("GOINFER_METAL_DECODE_LANE") == "w4f16"
+	r.pAttnFA, r.pAttnFACombine = pipe("attention_fa"), pipe("attention_fa_combine")
+	r.decodeAttnFA = os.Getenv("GOINFER_METAL_ATTN_FA") == "1"
 	r.pArgFinish = pipe("argmax_finish")
 	// N-09: the gemv_w4a8_bias and gemv_w4a8_sa_amax pipelines were created here but never dispatched
 	// (ForwardArgmax uses the int8 pGemvW8Amax head; the profiler builds gemv_w4a8_bias locally).
@@ -765,6 +782,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// the shared per-token scratch to the widest layer (== the model shape for a uniform family).
 	geomCache := map[[4]int]*attnGeom{}
 	var maxNHhd, maxKvDim, maxHd int
+	var maxAttnFAPartialElems int // R2: max over layers of nKV*G*(hd+2), G=nH/nKV — see attnFAPartial's own comment
 	_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
 	for l := range nL {
 		lw := &w.Layers[l]
@@ -947,11 +965,18 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			if r.nH*L.geom.hd > maxNHhd {
 				maxNHhd = r.nH * L.geom.hd
 			}
+			if L.geom.nKV > 0 && L.geom.hd == 128 {
+				g := r.nH / L.geom.nKV
+				if e := L.geom.nKV * g * (L.geom.hd + 2); e > maxAttnFAPartialElems {
+					maxAttnFAPartialElems = e
+				}
+			}
 			lw2 := uint32(0) // 0 = full causal; only local layers carry the window
 			if m.LayerIsLocalResident(l) {
 				lw2 = uint32(win)
 			}
 			L.uWindow = NewBufferU32(d, lw2)
+			L.window = lw2
 			if !L.qGate {
 				// combined qkv bias (zeros where absent) so the fused pSABias GEMV epilogue is
 				// uniform, sized for the full [Q|K|V] concat pSABias expects. qGate's K‖V is only
@@ -1091,6 +1116,15 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.qkv = d.NewBufferLen(maxNHhd + 2*maxKvDim) // fused [q | k | v], sized to the widest layer
 	r.gu = d.NewBufferLen(2 * guDim)             // fused [gate | up]
 	r.ctx, r.cq, r.cSc = d.NewBufferLen(maxNHhd), byteBuf(d, maxNHhd), d.NewBufferLen(1)
+	// R2: attnFAPartial is independent of context depth (nSplit is capped, not depth-proportional —
+	// see canUseAttnFA/attnFASplitFor), so it is sized once here, not per-token. Zero-size (no
+	// hd==128 layer) on a model this kernel can never engage for — canUseAttnFA's own hd guard
+	// then always declines, so the zero buffer is never dispatched into.
+	r.attnFAMaxSplit = 32
+	if maxAttnFAPartialElems > 0 {
+		r.attnFAPartial = d.NewBufferLen(maxAttnFAPartialElems * r.attnFAMaxSplit)
+		r.uAttnFAG, r.uAttnFANSplit = NewBufferU32(d, 0), NewBufferU32(d, 0)
+	}
 	r.oO, r.mq, r.mSc = d.NewBufferLen(H), byteBuf(d, H), d.NewBufferLen(1)
 	// R1 W4F16 lane: half-typed twins of aq/mq/cq (2 bytes/elem, no separate scale buffer — the
 	// f16 activation values are already the true values). Always allocated ("one binary carries
@@ -1297,6 +1331,7 @@ func (r *resident) setPos(pos int, ropePos ...int) {
 	}
 	r.uPos.SetU32(uint32(pos))
 	r.uNKeys.SetU32(uint32(pos + 1))
+	r.curNKeys = pos + 1
 	r.uRopePos.SetU32(uint32(rp))
 	scale := float32(1)
 	if r.attnTempBeta != 0 {
@@ -2155,6 +2190,64 @@ func (r *resident) canUseF16Lane(l int) bool {
 	return L.moe == nil && L.g4moe == nil && L.delta == nil && !L.qGate
 }
 
+// attnFACoreCount is the M1 Pro's GPU core count attention_fa's split count targets ("kvHead x S
+// >= 2x the core count", R2's own registered rule) — hardcoded, not device-queried: aikit's Device
+// has no core-count accessor, and this kernel is gated off by default (GOINFER_METAL_ATTN_FA=1)
+// precisely because it is uncommitted experimental work, not a shipped cross-chip feature; a wider
+// port would need this read from the device, not assumed.
+const attnFACoreCount = 14
+
+// attnFADepthFloor is where attention_fa (at a properly-sized split count) starts beating the
+// shipped kernel — measured directly (metal/attn_fa_speed_test.go, tight-interleaved min-of-40,
+// S sized to attnFACoreCount*2): 0.98x at K=1024 (not yet a win), 1.07x at K=1536, climbing to
+// 1.26x at K=3900. S=1 (no split) is NOT a shallow-depth fallback within this kernel — it measured
+// UNIFORMLY worse than shipped at every depth tried (0.38-0.53x even at K=1024), so below this
+// floor canUseAttnFA declines entirely and the shipped kernel runs, rather than this kernel at
+// S=1 as R2's own Build text first proposed ("S=1 below a measured crossover") — a correction the
+// speed probe surfaced, recorded here rather than silently overriding the brief's own text.
+const attnFADepthFloor = 1536
+
+// canUseAttnFA reports whether attention_fa may replace the shipped kernel for layer l's CURRENT
+// dispatch (r.curNKeys, set by setPos). R2 (docs/tasks/red-october.md): dense-GQA only, hd==128
+// only (the kernel's own cooperative-load tiling is fixed to 32 lanes x half4) — sinks, windows,
+// and the f32-KV twin are explicitly out of scope until the dense-GQA kernel clears the band (the
+// brief's own text), same reasoning as canUseF16Lane's family exclusions above it.
+func (r *resident) canUseAttnFA(l int) bool {
+	if !r.decodeAttnFA || r.attnFAPartial == (Buffer{}) {
+		return false
+	}
+	if r.sandwich || r.postOnly || r.parallelBlock || r.attnSink || r.kvI8 {
+		return false
+	}
+	if r.loraLayers != nil {
+		return false
+	}
+	L := &r.layers[l]
+	if L.moe != nil || L.g4moe != nil || L.delta != nil || L.qGate || L.window != 0 {
+		return false
+	}
+	g := L.geom
+	return g != nil && g.hd == 128 && g.nKV > 0 && r.curNKeys >= attnFADepthFloor
+}
+
+// attnFASplitFor picks S so kvHead*S clears 2x attnFACoreCount (R2's own registered rule),
+// capped at r.attnFAMaxSplit (the partial buffer's own allocation) and at nKeys/32 (a floor on
+// keys-per-split — an S so large most splits see one or zero keys wastes the second dispatch's
+// combine pass for no parallelism gain).
+func (r *resident) attnFASplitFor(nKeys, nKV int) int {
+	want := (2*attnFACoreCount + nKV - 1) / nKV
+	if splitCap := max(nKeys/32, 1); want > splitCap {
+		want = splitCap
+	}
+	if want > r.attnFAMaxSplit {
+		want = r.attnFAMaxSplit
+	}
+	if want < 1 {
+		want = 1
+	}
+	return want
+}
+
 // encodeAttention records one layer's attention block (through the o-proj + residual/sandwich norm).
 // Split from encodeLayer so the paged Gemma-4 MoE forward can put [attention + dense + router] in one
 // command buffer, submit+wait, read the router idx, stage experts, then encode [experts + join] in a
@@ -2260,7 +2353,21 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 		e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ks[l], r.vs[l], r.ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 	} else {
 		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, uPos)
-		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+		if r.canUseAttnFA(l) {
+			nSplit := r.attnFASplitFor(r.curNKeys, g.nKV)
+			if os.Getenv("GOINFER_ATTNFA_DEBUG") == "1" {
+				fmt.Fprintf(os.Stderr, "[ATTNFA] l=%d curNKeys=%d nSplit=%d nKV=%d G=%d hd=%d partialLen=%d\n",
+					l, r.curNKeys, nSplit, g.nKV, r.nH/g.nKV, g.hd, r.attnFAPartial.Len())
+			}
+			r.uAttnFAG.SetU32(uint32(r.nH / g.nKV))
+			r.uAttnFANSplit.SetU32(uint32(nSplit))
+			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
+			e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, r.qkv, r.kc[l], r.vc[l], r.attnFAPartial,
+				g.uNKV, r.uAttnFAG, uNKeys, r.uScale, L.uWindow, r.uAttnFANSplit)
+			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, r.ctx, r.uAttnFAG, g.uHd, r.uAttnFANSplit)
+		} else {
+			e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+		}
 	}
 	if L.qGate { // ctx *= sigmoid(gate), before o-proj — matches the CPU qwen35Attention
 		e.Dispatch(r.pDnAttnGate, nHhd, 256, r.ctx, r.dnAGate, g.uNHhd)
@@ -2313,6 +2420,14 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 	if n == 0 {
 		return nil, nil
 	}
+
+	// R2: this path drives encodeAttentionResidualWith with ITS OWN per-token r.batchUNKeys[m]
+	// buffers, never through setPos — so r.curNKeys (canUseAttnFA's depth gate) would otherwise
+	// stay stale from whatever a PRIOR single-token call last set it to. Force it off for the
+	// whole batch rather than dispatch attention_fa off a stale depth reading: R2's kernel targets
+	// decode (M=1) specifically, so declining here (shipped kernel) is also the intended choice,
+	// not just a safe fallback.
+	r.curNKeys = 0
 
 	// Drain and stop the pipelined executor so we have exclusive, synchronous access to the queue
 	// and no in-flight or pre-encoded command buffers conflict with our batch.
