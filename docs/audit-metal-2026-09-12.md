@@ -105,7 +105,7 @@ re-baked by the code it checks (G-04).
 
 #### M-01 · `ResidentPrefillKV` is not implemented on Metal — every sequential prompt token runs the full int8 LM head and a 608 KB readback for logits nobody reads
 - **Where:** `decoder/model.go:1250` (`kvOnly, hasKV := m.resident.(ResidentPrefillKV)`),
-  `decoder/residency.go:145-109`; `metal/backend.go:387-560` (the complete `metalResident` method
+  `decoder/residency.go:146-109`; `metal/backend.go:387-560` (the complete `metalResident` method
   set — no `ForwardNoLogits`); `metal/model.go:1519-1384` (`encodeLogitsCB`, the only executor job
   shape, always appends `pGemvW8`); `metal/model.go:1385-1281` (`forwardHiddenNoHead` — the
   trunk-only encode already exists, used only by `HiddenLast`); `metal/model.go:1444`
@@ -333,7 +333,7 @@ re-baked by the code it checks (G-04).
   true }`), `:440-444` (`repackedOnlyOrCanonical` → `repackW4A8IfEligible(canon)` — both kept),
   `:251-257` ("both ALLOCATE A SECOND BUFFER and keep the canonical nibbles alongside"),
   `metal/model.go:487-444,475-478` (`int4DirectWords` → `NewBufferUint32s` = `newBufferWithBytes`,
-  a third copy); `decoder/fitguard.go:345-260` (the guard prices int4 at ~2× on arm64 because of
+  a third copy); `decoder/fitguard.go:346-260` (the guard prices int4 at ~2× on arm64 because of
   row4); commit `3931ae1` (log: "2365.1 MB (Backend:"cpu") vs 3254.7 MB (unspecified) — 889.6 MB
   saved").
 - **Mechanism and bound (record):** once resident the GPU reads only the MTLBuffer; the host row4

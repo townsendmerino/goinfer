@@ -163,8 +163,8 @@ which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole
 | Nemotron-H | `FeatSSM`, `FeatNonGatedMLP`, `FeatLogitScale`… | `FeatSSM`, `FeatLogitScale` | the Mamba-2 engine exists on WebGPU (`gpu/`); a port, not a design |
 | DeepSeek-V2/V3, Kimi K2 | ~~`FeatMLA`~~ done 2026-09-17 (`decoder/features.go:483`, `cuda/mla.cu`) | `FeatMLA` | CUDA shipped: latent-cache attention + absorbed W_UK/W_UV, real parity gate against `testdata/deepseek-tiny`; the nGroup/topkGroup mapping this row used to flag as ungated is now covered by `TestMLAResidentParityCUDA`'s full-sequence check. WebGPU already had it; Metal still doesn't |
 | Laguna | `FeatAttnOutputGate` | same | not on any backend; WebGPU's DeltaNet has a fused output gate to crib from |
-| LFM2.5 | `FeatShortConv` + "own forward, not bridged" | same | `decoder/residency.go:253` declines it before features are consulted |
-| Llama 4 | own forward, not bridged | same | `decoder/residency.go:251` |
+| LFM2.5 | `FeatShortConv` + "own forward, not bridged" | same | `decoder/residency.go:254` declines it before features are consulted |
+| Llama 4 | own forward, not bridged | same | `decoder/residency.go:252` |
 | Ling 3.0 | `FeatKDA` | same | not on any backend |
 | Gemma 4 E2B/E4B | `FeatGemma4EModel` | same | PLE + shared-KV + per-layer FFN — not on any backend; the 26B/31B are resident |
 
@@ -186,7 +186,7 @@ WebGPU.
 
 ### G7 — Nemotron 3 Nano / 3.5 Lightning are CPU on every backend, and the matrix says otherwise
 
-**Where.** `decoder/residency.go:288`: `if a.nemotron != nil { return a.MoE == nil }` — the
+**Where.** `decoder/residency.go:289`: `if a.nemotron != nil { return a.MoE == nil }` — the
 MoE block kind has no resident builder on any backend (comment at 234–240). `docs/hardware-matrix.md`
 row "Nemotron-H → WebGPU ✅ resident" is generated from the *dense* representative config, so it is
 true of Nemotron-H and false of the two models people download. docs/completed/task-families-2026-09.md F2
