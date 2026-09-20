@@ -1,0 +1,25 @@
+=== RUN   TestSampledDecodeLadder
+[ladder] round 1/15 elapsed 2s
+[ladder] round 2/15 elapsed 4s
+[ladder] round 3/15 elapsed 6s
+[ladder] round 4/15 elapsed 7s
+[ladder] round 5/15 elapsed 9s
+[ladder] round 6/15 elapsed 11s
+[ladder] round 7/15 elapsed 13s
+[ladder] round 8/15 elapsed 15s
+[ladder] round 9/15 elapsed 17s
+[ladder] round 10/15 elapsed 18s
+[ladder] round 11/15 elapsed 20s
+[ladder] round 12/15 elapsed 22s
+[ladder] round 13/15 elapsed 24s
+[ladder] round 14/15 elapsed 26s
+[ladder] round 15/15 elapsed 27s
+    sampled_decode_ladder_test.go:137: model=/home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf prompt=77 tokens gen<=160 reps=15 (decode tok/s, prefill excluded)
+    sampled_decode_ladder_test.go:140: greedy       n=15 dropped=0  median 341.6  mean 340.2  sd 4.3
+    sampled_decode_ladder_test.go:140: T1.0         n=15 dropped=0  median 248.3  mean 248.7  sd 1.8
+    sampled_decode_ladder_test.go:140: T0.8+p0.95   n=15 dropped=0  median 222.4  mean 223.1  sd 6.0
+    sampled_decode_ladder_test.go:144: PAIRED T1.0       / greedy: n=15 median 0.729  mean 0.731  sd 0.010
+    sampled_decode_ladder_test.go:144: PAIRED T0.8+p0.95 / greedy: n=15 median 0.651  mean 0.656  sd 0.021
+--- PASS: TestSampledDecodeLadder (33.53s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	33.589s
