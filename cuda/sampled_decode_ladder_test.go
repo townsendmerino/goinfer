@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,18 +54,32 @@ func TestSampledDecodeLadder(t *testing.T) {
 	// GOINFER_LADDER_PROMPT_FILE swaps the story for another raw text (e.g. scripts/prompts.json's depth-128
 	// filler), because how often the top-K row must fall back to the full logits depends on how flat the
 	// next-token distribution is, and that depends on the prompt.
-	text := prose
+	//
+	// The file may hold several prompts separated by a line "===": round r uses prompt r%N for EVERY arm, so
+	// pairing is preserved and the per-prompt fallback counts are logged. GOINFER_LADDER_CHAT=1 wraps each
+	// in the model's chat template the way `serve` does, instead of feeding raw text.
+	texts := []string{prose}
 	if f := os.Getenv("GOINFER_LADDER_PROMPT_FILE"); f != "" {
 		b, rerr := os.ReadFile(f)
 		if rerr != nil {
 			t.Fatalf("GOINFER_LADDER_PROMPT_FILE: %v", rerr)
 		}
-		text = string(b)
+		texts = strings.Split(strings.TrimSpace(string(b)), "\n===\n")
 	}
-	prompt, err := tok.Encode(text, false)
-	if err != nil {
-		t.Fatalf("encode: %v", err)
+	var prompts [][]int
+	for _, text := range texts {
+		var ids []int
+		if os.Getenv("GOINFER_LADDER_CHAT") != "" {
+			ids, err = decoder.EncodeChatForTest(tok, text)
+		} else {
+			ids, err = tok.Encode(text, false)
+		}
+		if err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+		prompts = append(prompts, ids)
 	}
+	prompt := prompts[0]
 
 	m, err := decoder.Load(path, decoder.Options{Quant: "int4", Backend: "cuda"})
 	if err != nil {
@@ -92,6 +107,9 @@ func TestSampledDecodeLadder(t *testing.T) {
 	}
 
 	var served, fallbacks [16]int
+	ppServed := make([][16]int, len(prompts)) // per-prompt copies, to show which prompts force fallbacks
+	ppFallbacks := make([][16]int, len(prompts))
+	promptIdx := 0
 	armIdx := 0
 	one := func(sp decoder.SamplingParams, seed int64, noTop, noSmp bool) (float64, int, error) {
 		if noSmp {
@@ -107,7 +125,7 @@ func TestSampledDecodeLadder(t *testing.T) {
 		if sp.Temperature > 0 {
 			sp.Seed = seed
 		}
-		ch, g := m.Generate(context.Background(), prompt, nTok, sp)
+		ch, g := m.Generate(context.Background(), prompts[promptIdx], nTok, sp)
 		var first, last time.Time
 		n := 0
 		for range ch {
@@ -123,6 +141,8 @@ func TestSampledDecodeLadder(t *testing.T) {
 		}
 		served[armIdx] += g.TopKServed
 		fallbacks[armIdx] += g.TopKFallbacks
+		ppServed[promptIdx][armIdx] += g.TopKServed
+		ppFallbacks[promptIdx][armIdx] += g.TopKFallbacks
 		if n < 2 {
 			return 0, n, nil
 		}
@@ -137,11 +157,15 @@ func TestSampledDecodeLadder(t *testing.T) {
 	}
 
 	served, fallbacks = [16]int{}, [16]int{} // the warm-ups above are not part of the measurement
+	for i := range ppServed {
+		ppServed[i], ppFallbacks[i] = [16]int{}, [16]int{}
+	}
 	rates := make([][]float64, len(arms))
 	dropped := make([]int, len(arms))
 	ratios := make([][]float64, len(arms))
 	start := time.Now()
 	for r := 0; r < reps; r++ {
+		promptIdx = r % len(prompts)
 		round := make([]float64, len(arms))
 		ok := make([]bool, len(arms))
 		for k := range arms {
@@ -168,6 +192,15 @@ func TestSampledDecodeLadder(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[ladder] round %d/%d elapsed %s\n", r+1, reps, time.Since(start).Round(time.Second))
 	}
 
+	if len(prompts) > 1 {
+		for pi := range prompts {
+			for ai, a := range arms {
+				if a.sp.TopP > 0 && !a.noTop {
+					t.Logf("prompt %d (%d tokens) %-12s top-K served=%d fallbacks=%d", pi, len(prompts[pi]), a.name, ppServed[pi][ai], ppFallbacks[pi][ai])
+				}
+			}
+		}
+	}
 	t.Logf("model=%s prompt=%d tokens gen<=%d reps=%d (decode tok/s, prefill excluded)", path, len(prompt), nTok, reps)
 	for i, a := range arms {
 		m, sd := ladderMeanSD(rates[i])

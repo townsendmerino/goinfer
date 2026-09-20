@@ -1290,7 +1290,7 @@ explicitly to both sides, never assumed · int4 / q4_K_M · raw cells `b5-reanch
 >
 > Sampling now costs goinfer almost nothing on CUDA (temp-only within 2% of greedy on all three models); phi3-mini
 > is bandwidth-bound and sits at parity with Ollama, and its **top_p** cell (114.1, -8% vs its own greedy) is the one
-> place a sampling cost remains, unexplained — R7's device top-K was profiled on the 0.5B only. Ollama's 0.5B top_k
+> place a sampling cost remains; it is a flat-prompt fallback effect (17% of steps on the sweep's "the the the" filler, 0.2% on twelve ordinary prompts, where top_p is 0.990 of greedy) — see `docs/measurements/sampled-topk-2026-09-20.md`. Ollama's 0.5B top_k
 > cell (286.9) is 7% above its other 0.5B configs (~268) in both runs, tight spread; cause unknown, so that row's
 > 1.13x is the one to treat as least settled. The earlier version of this section's temp-only 0.5B/gemma cells were
 > Ollama-ahead (1.13x / 1.03x); they are now goinfer-ahead, from R7b plus the earlier stack changes, not separated here.

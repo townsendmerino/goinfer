@@ -1,0 +1,23 @@
+Write a Python function that merges two sorted lists into one sorted list, and explain its time complexity.
+===
+Explain why the sky is blue, in a way a ten-year-old would understand.
+===
+Write a short story about a lighthouse keeper who finds a message in a bottle.
+===
+Summarize the causes of the French Revolution in a few paragraphs.
+===
+What are some good strategies for learning a new language as an adult?
+===
+Draft a polite email to my landlord asking for the broken heater to be fixed this week.
+===
+Give me a recipe for a vegetarian dinner that takes under thirty minutes.
+===
+Translate into French: "The train leaves at noon, so please be at the station by eleven thirty."
+===
+Explain the difference between a mutex and a semaphore with examples.
+===
+Brainstorm ten names for a small independent coffee shop that also sells used books.
+===
+Tell me something interesting about octopuses.
+===
+Hi! How are you today?

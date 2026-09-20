@@ -146,3 +146,17 @@ outgrow) stayed at 0.99 on both prompts. Not established: the fallback rate on r
 uses raw text, not the chat template), or whether a wider device row would remove the fallbacks and at what cost.
 Logs: `sampled-topk-phi3-story-2026-09-20.log`, `sampled-topk-phi3-harnessprompt-2026-09-20.log`. The ladder
 gained `GOINFER_LADDER_PROMPT_FILE` to run on a chosen prompt.
+
+### Follow-up: ordinary prompts (same day)
+
+Twelve everyday prompts (code, explanation, story, summary, email, recipe, translation, small talk; the file is
+`sampled-topk-phi3-12prompts-2026-09-20.prompts.txt`), `GOINFER_LADDER_PROMPT_FILE`, 24 paired rounds, two rounds per
+prompt with the same prompt across all arms, 160 tokens, same binary, idle box. Fed as **raw text**, because
+`chat.Detect` does not recognise this phi3-mini GGUF's template (`ErrUnknownTemplate`), so `serve` feeds it raw too.
+Result: **top_p 0.95 / greedy = 0.990** (sd 0.002), top-K off 0.931; **7 fallbacks in 3,686 top-K steps (0.2%)**,
+against 17% on the sweep's filler. The one prompt with fewer served steps (188 vs ~318) simply ended early.
+Conclusion: on natural text the device row is wide enough, and **no widening is warranted**. The §B5.1 phi3-mini
+top_p cell (114.1, Ollama 1.10x) is the pathological-prompt figure; a cell on ordinary prompts would read ~0.99 of
+greedy, level with Ollama. Not measured: a peer run on these prompts, so no Ollama ratio is claimed for them; and
+prompts long enough to be flat for other reasons (high-temperature creative sampling at T>1.3 with top_p).
+Log: `sampled-topk-phi3-12prompts-2026-09-20.log`.

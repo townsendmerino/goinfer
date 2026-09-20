@@ -1,0 +1,56 @@
+=== RUN   TestSampledDecodeLadder
+[ladder] round 1/24 elapsed 10s
+[ladder] round 2/24 elapsed 21s
+[ladder] round 3/24 elapsed 31s
+[ladder] round 4/24 elapsed 41s
+[ladder] round 5/24 elapsed 52s
+[ladder] round 6/24 elapsed 1m2s
+[ladder] round 7/24 elapsed 1m13s
+[ladder] round 8/24 elapsed 1m20s
+[ladder] round 9/24 elapsed 1m30s
+[ladder] round 10/24 elapsed 1m41s
+[ladder] round 11/24 elapsed 1m51s
+[ladder] round 12/24 elapsed 2m2s
+[ladder] round 13/24 elapsed 2m12s
+[ladder] round 14/24 elapsed 2m22s
+[ladder] round 15/24 elapsed 2m33s
+[ladder] round 16/24 elapsed 2m43s
+[ladder] round 17/24 elapsed 2m53s
+[ladder] round 18/24 elapsed 3m4s
+[ladder] round 19/24 elapsed 3m14s
+[ladder] round 20/24 elapsed 3m18s
+[ladder] round 21/24 elapsed 3m29s
+[ladder] round 22/24 elapsed 3m39s
+[ladder] round 23/24 elapsed 3m49s
+[ladder] round 24/24 elapsed 4m0s
+    sampled_decode_ladder_test.go:199: prompt 0 (21 tokens) T0.8+p0.95   top-K served=316 fallbacks=2
+    sampled_decode_ladder_test.go:199: prompt 1 (20 tokens) T0.8+p0.95   top-K served=318 fallbacks=0
+    sampled_decode_ladder_test.go:199: prompt 2 (20 tokens) T0.8+p0.95   top-K served=317 fallbacks=1
+    sampled_decode_ladder_test.go:199: prompt 3 (15 tokens) T0.8+p0.95   top-K served=318 fallbacks=0
+    sampled_decode_ladder_test.go:199: prompt 4 (15 tokens) T0.8+p0.95   top-K served=317 fallbacks=1
+    sampled_decode_ladder_test.go:199: prompt 5 (23 tokens) T0.8+p0.95   top-K served=318 fallbacks=0
+    sampled_decode_ladder_test.go:199: prompt 6 (16 tokens) T0.8+p0.95   top-K served=317 fallbacks=1
+    sampled_decode_ladder_test.go:199: prompt 7 (23 tokens) T0.8+p0.95   top-K served=188 fallbacks=0
+    sampled_decode_ladder_test.go:199: prompt 8 (16 tokens) T0.8+p0.95   top-K served=318 fallbacks=0
+    sampled_decode_ladder_test.go:199: prompt 9 (18 tokens) T0.8+p0.95   top-K served=316 fallbacks=2
+    sampled_decode_ladder_test.go:199: prompt 10 (9 tokens) T0.8+p0.95   top-K served=318 fallbacks=0
+    sampled_decode_ladder_test.go:199: prompt 11 (7 tokens) T0.8+p0.95   top-K served=318 fallbacks=0
+    sampled_decode_ladder_test.go:204: model=/home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf prompt=21 tokens gen<=160 reps=24 (decode tok/s, prefill excluded)
+    sampled_decode_ladder_test.go:207: greedy       n=24 dropped=0  median 126.8  mean 126.8  sd 0.2  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:207: T1.0 device-sample off n=22 dropped=2  median 120.2  mean 120.2  sd 0.2  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:207: T1.0         n=22 dropped=2  median 126.9  mean 126.9  sd 0.2  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:207: T1.3         n=22 dropped=2  median 126.8  mean 126.8  sd 0.3  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:207: T0.8+p0.95 topk-off n=23 dropped=1  median 118.1  mean 118.0  sd 0.3  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:207: T0.8+p0.95   n=23 dropped=1  median 125.5  mean 125.5  sd 0.3  top-K served=3679 fallbacks=7
+    sampled_decode_ladder_test.go:207: T0.7+k40     n=24 dropped=0  median 125.3  mean 125.3  sd 0.2  top-K served=3809 fallbacks=0
+    sampled_decode_ladder_test.go:207: T1.0+minp0.05 n=23 dropped=1  median 125.7  mean 125.7  sd 0.3  top-K served=3650 fallbacks=0
+    sampled_decode_ladder_test.go:211: PAIRED T1.0 device-sample off / greedy: n=22 median 0.947  mean 0.947  sd 0.001
+    sampled_decode_ladder_test.go:211: PAIRED T1.0       / greedy: n=22 median 1.000  mean 1.000  sd 0.001
+    sampled_decode_ladder_test.go:211: PAIRED T1.3       / greedy: n=22 median 1.000  mean 1.000  sd 0.002
+    sampled_decode_ladder_test.go:211: PAIRED T0.8+p0.95 topk-off / greedy: n=23 median 0.931  mean 0.930  sd 0.002
+    sampled_decode_ladder_test.go:211: PAIRED T0.8+p0.95 / greedy: n=23 median 0.990  mean 0.989  sd 0.002
+    sampled_decode_ladder_test.go:211: PAIRED T0.7+k40   / greedy: n=24 median 0.988  mean 0.988  sd 0.001
+    sampled_decode_ladder_test.go:211: PAIRED T1.0+minp0.05 / greedy: n=23 median 0.991  mean 0.991  sd 0.002
+--- PASS: TestSampledDecodeLadder (260.94s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	260.998s
