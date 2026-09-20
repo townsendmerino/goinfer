@@ -22,9 +22,10 @@ any surface may still change.
   the token is `argmax(logit/T + noise)`, the noise from a Philox4x32-10 counter generator keyed by the seed and the
   draw index, on every backend. **The distribution is unchanged, but for a given seed the tokens are not the ones any
   earlier release produced.** Sampling with a `top_k` / `top_p` / `min_p` is unchanged token for token. Logprobs,
-  penalties and bias no longer change which token a seed yields. CUDA and WebGPU draw the token **on-device** and
+  penalties and bias no longer change which token a seed yields. CUDA, WebGPU and Metal draw the token **on-device** and
   return only its id: paired against greedy on the 0.5B, CUDA plain `temperature` **0.744 → 1.008**, WebGPU
-  **0.796 → 1.035**; CPU and Metal still draw on the host, ~1.8x cheaper than before
+  **0.796 → 1.035**, Metal **~0.80 → ~0.96** (`docs/measurements/r7b-metal-mac-2026-09-20.md`; Metal declines
+  for softcapped / logit-scaled and paged-MoE models and falls back to the host draw); CPU still draws on the host, ~1.8x cheaper than before
   (`docs/measurements/sampled-gumbel-2026-09-20.md`). Verified by a goodness-of-fit and two-sample test against the
   exact distribution and the old sampler, the device kernels agreeing with the host reference on 15,840 (CUDA) and
   12,000 (WebGPU) draws, and identical device/host token streams on real checkpoints. Speculative decoding's seed and
