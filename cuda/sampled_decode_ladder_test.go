@@ -50,7 +50,18 @@ func TestSampledDecodeLadder(t *testing.T) {
 		"had learned to read the sea the way other men read faces. On the morning the storm finally broke, " +
 		"the water lay flat and pewter-colored under a sky the same shade, and he climbed the spiral stair " +
 		"with his logbook to record what he had seen through the night. He wrote"
-	prompt, err := tok.Encode(prose, false)
+	// GOINFER_LADDER_PROMPT_FILE swaps the story for another raw text (e.g. scripts/prompts.json's depth-128
+	// filler), because how often the top-K row must fall back to the full logits depends on how flat the
+	// next-token distribution is, and that depends on the prompt.
+	text := prose
+	if f := os.Getenv("GOINFER_LADDER_PROMPT_FILE"); f != "" {
+		b, rerr := os.ReadFile(f)
+		if rerr != nil {
+			t.Fatalf("GOINFER_LADDER_PROMPT_FILE: %v", rerr)
+		}
+		text = string(b)
+	}
+	prompt, err := tok.Encode(text, false)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}

@@ -1,0 +1,35 @@
+=== RUN   TestSampledDecodeLadder
+[ladder] round 1/15 elapsed 11s
+[ladder] round 2/15 elapsed 19s
+[ladder] round 3/15 elapsed 30s
+[ladder] round 4/15 elapsed 41s
+[ladder] round 5/15 elapsed 51s
+[ladder] round 6/15 elapsed 1m2s
+[ladder] round 7/15 elapsed 1m12s
+[ladder] round 8/15 elapsed 1m23s
+[ladder] round 9/15 elapsed 1m33s
+[ladder] round 10/15 elapsed 1m44s
+[ladder] round 11/15 elapsed 1m54s
+[ladder] round 12/15 elapsed 2m5s
+[ladder] round 13/15 elapsed 2m15s
+[ladder] round 14/15 elapsed 2m26s
+[ladder] round 15/15 elapsed 2m36s
+    sampled_decode_ladder_test.go:160: model=/home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf prompt=87 tokens gen<=160 reps=15 (decode tok/s, prefill excluded)
+    sampled_decode_ladder_test.go:163: greedy       n=15 dropped=0  median 124.5  mean 124.5  sd 0.1  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:163: T1.0 device-sample off n=14 dropped=1  median 118.1  mean 118.0  sd 0.2  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:163: T1.0         n=14 dropped=1  median 124.6  mean 124.5  sd 0.2  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:163: T1.3         n=15 dropped=0  median 124.6  mean 124.5  sd 0.1  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:163: T0.8+p0.95 topk-off n=15 dropped=0  median 114.2  mean 114.3  sd 0.6  top-K served=0 fallbacks=0
+    sampled_decode_ladder_test.go:163: T0.8+p0.95   n=15 dropped=0  median 122.2  mean 122.1  sd 0.5  top-K served=2289 fallbacks=60
+    sampled_decode_ladder_test.go:163: T0.7+k40     n=15 dropped=0  median 123.1  mean 123.1  sd 0.1  top-K served=2385 fallbacks=0
+    sampled_decode_ladder_test.go:163: T1.0+minp0.05 n=15 dropped=0  median 123.4  mean 123.4  sd 0.2  top-K served=2385 fallbacks=0
+    sampled_decode_ladder_test.go:167: PAIRED T1.0 device-sample off / greedy: n=14 median 0.948  mean 0.948  sd 0.001
+    sampled_decode_ladder_test.go:167: PAIRED T1.0       / greedy: n=14 median 1.000  mean 1.000  sd 0.001
+    sampled_decode_ladder_test.go:167: PAIRED T1.3       / greedy: n=15 median 1.000  mean 1.000  sd 0.001
+    sampled_decode_ladder_test.go:167: PAIRED T0.8+p0.95 topk-off / greedy: n=15 median 0.918  mean 0.919  sd 0.005
+    sampled_decode_ladder_test.go:167: PAIRED T0.8+p0.95 / greedy: n=15 median 0.981  mean 0.981  sd 0.004
+    sampled_decode_ladder_test.go:167: PAIRED T0.7+k40   / greedy: n=15 median 0.989  mean 0.989  sd 0.001
+    sampled_decode_ladder_test.go:167: PAIRED T1.0+minp0.05 / greedy: n=15 median 0.991  mean 0.991  sd 0.001
+--- PASS: TestSampledDecodeLadder (177.96s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	178.034s

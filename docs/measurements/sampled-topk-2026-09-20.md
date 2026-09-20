@@ -126,3 +126,23 @@ GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -run 'TestTopKSelec
 go test -run TestSampleFromTopK -v ./decoder/
 # A/B on any run: GOINFER_NO_TOPK_FASTPATH=1
 ```
+
+## Addendum: why phi3-mini top_p read 0.917 of greedy in the peer sweep (2026-09-20)
+
+`benchmarks.md` §B5.1's peer sweep had phi3-mini `temp 0.8 + top_p 0.95` at 114.1 tok/s against 124.4 greedy
+(Ollama ahead 1.10x), the one sampled cell still behind. Same binary (`cbf2c25d`), `TestSampledDecodeLadder`, n=15
+paired, interleaved, top-K-off arm as the do-nothing baseline, RTX 2070 SUPER, idle box:
+
+| prompt | top_p / greedy, top-K on | top-K off | top-K steps served / fell back |
+|---|---|---|---|
+| lighthouse story (the R7 ladder's prompt) | **0.981** | 0.918 | 2289 / 60 (2.6%) |
+| sweep's depth-128 filler (`prompts.json` `phi3-mini:128`, "the the the ...") | **0.885** (sd 0.045) | 0.853 | 1980 / 405 (17%) |
+
+So the device top-K works on phi3-mini (also over HTTP: 126.5 vs 127.8 greedy on the story prompt), and the sweep's
+cell is a **prompt effect**: on a degenerate repeated-word context the next-token distribution is flat, the 0.95
+nucleus outgrows the device row in 17% of steps, and each of those falls back to the full-logit host path.
+The sweep cell is therefore a worst case for goinfer top_p, not a typical one; `top_k` and `min_p` (no nucleus to
+outgrow) stayed at 0.99 on both prompts. Not established: the fallback rate on real chat prompts (the ladder
+uses raw text, not the chat template), or whether a wider device row would remove the fallbacks and at what cost.
+Logs: `sampled-topk-phi3-story-2026-09-20.log`, `sampled-topk-phi3-harnessprompt-2026-09-20.log`. The ladder
+gained `GOINFER_LADDER_PROMPT_FILE` to run on a chosen prompt.
