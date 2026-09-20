@@ -180,17 +180,19 @@ any surface may still change.
   growth with no warning printed first**, on `chat --backend cuda` and
   `serve --backend cuda --moe-cache-experts` alike, on a machine with 37+ GB RAM free — while
   `chat fit`'s pre-flight estimate reported it comfortably fitting (cold-user 2026-09-18,
-  `docs/measurements/cold-user-2026-09-18-nobara-pc.md` Scenario D). `--backend cuda` was a red
-  herring: gpt-oss declines CUDA residency (missing `FeatAttnSink`), so both commands ran the
-  plain CPU-resident `.gguf` load path. Reproduced directly with a heap profile + `/proc` RSS
-  sampling: `decoder.Load`'s non-streamed `.gguf` path keeps the entire source file mmap-resident
-  for the whole build (`embed.OpenGGUFMmap`'s mapping stays open until every layer is quantized),
-  simultaneously with the fully-built resident weight set — peak RSS reached ~24.5 GB, matching
-  weights+file-size (12.58+12.11 GB) to within 2%, not the ~12.58 GB the fit guard priced. The
-  load-time guard (`decoder/fitguard.go`) now also prices the on-disk `.gguf` file size as a
-  transient term for a plain resident load (not `--stream-weights`, which resolves through a
-  `.giw` instead), so a load whose true peak won't fit is now refused/warned accurately instead of
-  silently passing.
+  `docs/measurements/cold-user-2026-09-18-nobara-pc.md` Scenario D). Measured on the CPU-resident
+  path with a heap profile + `/proc` RSS sampling: `decoder.Load`'s non-streamed `.gguf` path keeps
+  the entire source file mmap-resident for the whole build (`embed.OpenGGUFMmap`'s mapping stays
+  open until every layer is quantized), simultaneously with the fully-built resident weight set —
+  peak RSS ~24.5 GB, matching weights+file-size (12.58+12.11 GB) to within 2%, not the ~12.58 GB
+  the fit guard priced. The load-time guard (`decoder/fitguard.go`) now also prices the on-disk
+  `.gguf` file size as a transient term for a plain resident load (not `--stream-weights`, which
+  resolves through a `.giw` instead). **This does not fully cover `--backend cuda
+  --moe-cache-experts`:** a monitored load of the same checkpoint there reached ~42.7 GB RSS
+  (still climbing, killed) against the guard's 29.5 GB, with VRAM untouched until the host-side
+  build finished. An earlier version of this entry called CUDA a red herring (gpt-oss declining
+  CUDA for lack of `FeatAttnSink`); that was wrong — CUDA declares `FeatAttnSink` and runs
+  gpt-oss resident. The CUDA host-side peak is open work.
 
 ## [v0.18.0] — 2026-09-13
 
