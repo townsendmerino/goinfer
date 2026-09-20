@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -93,4 +94,44 @@ func TestPackWeightStack_rejectsRagged(t *testing.T) {
 	if _, err := packWeightStack(); err == nil {
 		t.Error("packWeightStack accepted an empty stack")
 	}
+}
+
+// TestPackWeightStack_reservesTheWholeStack: appending each member onto an unsized slice regrows
+// it geometrically and strands every outgrown copy for the collector. On the real gpt-oss-20b that
+// garbage put the heap at ~40 GB with ~23 GB live while CUDA host-packed 24 layers of experts.
+// The stack size is known before the first append, so the result must have no spare capacity and
+// the packer must not allocate much more than the stack itself plus one member's temporaries.
+func TestPackWeightStack_reservesTheWholeStack(t *testing.T) {
+	const nE, N, K, group = 64, 32, 256, 32
+	f := make([]float32, N*K)
+	for i := range f {
+		f[i] = float32(i%97-48) / 48
+	}
+	mats := make([]linalg.WeightMat, nE)
+	ptrs := make([]*linalg.WeightMat, nE)
+	for e := range nE {
+		mats[e] = linalg.QuantizeInt4(f, N, K, group)
+		ptrs[e] = &mats[e]
+	}
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	stacked, err := packWeightStack(ptrs...)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatalf("packWeightStack: %v", err)
+	}
+
+	if cap(stacked.wpk) != len(stacked.wpk) || cap(stacked.ws16) != len(stacked.ws16) {
+		t.Fatalf("stack has spare capacity (wpk %d/%d, ws16 %d/%d): it was grown by append, not reserved",
+			len(stacked.wpk), cap(stacked.wpk), len(stacked.ws16), cap(stacked.ws16))
+	}
+	final := uint64(len(stacked.wpk))*4 + uint64(len(stacked.ws16))*2
+	got := after.TotalAlloc - before.TotalAlloc
+	// The stack once, plus each member's own packed copy once: ~2x. Regrowth by append is ~5x.
+	if got > 3*final {
+		t.Fatalf("packWeightStack allocated %d bytes for a %d-byte stack (%.1fx) — outgrown append copies "+
+			"are being left for the collector", got, final, float64(got)/float64(final))
+	}
+	t.Logf("stack %d bytes, allocated %d (%.2fx)", final, got, float64(got)/float64(final))
 }

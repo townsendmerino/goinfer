@@ -192,7 +192,12 @@ any surface may still change.
   (still climbing, killed) against the guard's 29.5 GB, with VRAM untouched until the host-side
   build finished. An earlier version of this entry called CUDA a red herring (gpt-oss declining
   CUDA for lack of `FeatAttnSink`); that was wrong — CUDA declares `FeatAttnSink` and runs
-  gpt-oss resident. The CUDA host-side peak is open work.
+  gpt-oss resident. The extra CUDA peak was Go garbage: `cuda.packWeightStack` appended each of a
+  layer's 32 experts onto an unsized slice, stranding every outgrown copy, and across 24 layers the
+  collector let the heap reach ~40 GB with ~23 GB live. It now reserves the whole stack up front. On
+  the same real load the peak RSS fell from 50 GB+ (killed unfinished, 6 GB left available) to 39 GB
+  (15 GB left) and the load completes cuda-resident. The fit guard still prices this path at
+  29.5 GB, below the measured peak.
 
 ## [v0.18.0] — 2026-09-13
 

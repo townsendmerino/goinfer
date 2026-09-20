@@ -3386,6 +3386,25 @@ func packWeightStack(ws ...*linalg.WeightMat) (hostW, error) {
 		}
 		if i == 0 {
 			out.kind, out.K = h.kind, h.K
+			// Reserve the whole stack up front. Without this the appends below regrow the slice
+			// geometrically and leave every outgrown copy as garbage; measured 2026-09-19 on the
+			// real gpt-oss-20b (--moe-cache-experts), the heap reached ~40 GB with ~23 GB live because
+			// the collector let that garbage pile up across all layers' expert stacks.
+			if h.N > 0 {
+				totalN := 0
+				for _, x := range ws {
+					totalN += x.Rows()
+				}
+				if n := len(h.wpk); n > 0 {
+					out.wpk = make([]uint32, 0, n/h.N*totalN)
+				}
+				if n := len(h.ws); n > 0 {
+					out.ws = make([]float32, 0, n/h.N*totalN)
+				}
+				if n := len(h.ws16); n > 0 {
+					out.ws16 = make([]uint16, 0, n/h.N*totalN)
+				}
+			}
 		}
 		if h.kind != out.kind {
 			return hostW{}, fmt.Errorf("cuda: packWeightStack[%d]: kind %q != %q — a mixed-precision "+
