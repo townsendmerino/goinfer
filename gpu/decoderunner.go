@@ -24,6 +24,7 @@ type DecodeRunner struct {
 	steps                []runStep
 	posUnis              []posUni
 	xd, stag, lastLogits *wgpu.Buffer
+	smp                  *gumbelState // device Gumbel-max sampling resources, built on first RunSample (R7b)
 	vocab                int
 	uniScratch           [16]uint32
 	// logitsHost is the reused host-side logits buffer Run copies the mapped staging range
