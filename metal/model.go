@@ -176,21 +176,31 @@ type resident struct {
 	decodeAttnFA            bool
 	attnFAPartial           Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
 	attnFAMaxSplit          int
-	curNKeys                int      // CPU-side twin of uNKeys' value, set by setPos — canUseAttnFA's depth gate
-	uAttnFAG, uAttnFANSplit Buffer   // reused scratch uniforms, SetU32'd fresh before each attention_fa dispatch
-	pQKNorm                 Pipeline // per-head QK-RMSNorm (Qwen3)
-	pRmsF32                 Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
-	pGemvW8, pGemvW8Amax    Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
-	pCopyVec                Pipeline // copy_f32 for on-device embedding copy in batched forward
-	qkNorm                  bool     // arch has QK-norm
-	qkNormWhole             bool     // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
-	sandwich                bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
-	postOnly                bool     // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — quantize the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
-	kvF32                   bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
-	uAct                    Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
-	uAddOne, uWindow        Buffer   // qk_norm + sliding-window uniforms
-	uZero                   Buffer   // constant 0 (nH=0 / nHhd=0 / addOne=0 for the scale-less v_norm dispatch)
-	vNormUnit               Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x·rms·w, addOne=0) = scale-less v_norm for K=V layers
+	curNKeys                int    // CPU-side twin of uNKeys' value, set by setPos — canUseAttnFA's depth gate
+	attnFANKV               int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
+	uAttnFAG, uAttnFANSplit Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
+	// per-layer dispatch site: a prior version SetU32'd these once per LAYER, i.e. during encodeTrunkCB's
+	// encoding of the NEXT command buffer while the CURRENT one was still executing on the GPU (the
+	// pipelined executor's own "encode t+1 while t runs" design, execLoop). That is a raw CPU write to
+	// shared memory racing a concurrently-running GPU kernel's read of the SAME buffer — Metal's automatic
+	// hazard tracking covers GPU-encoded command dependencies, not this. Reproduced in isolation
+	// (TestAttentionFA_pipelinedEncodeRace, varying nSplit per iteration to make it observable) with
+	// EXACTLY R2's own real-generation signature: iterations 0-1 correct, iteration 2 wrong, an irregular
+	// pass/fail pattern across later iterations — the signature of a genuine race, not a deterministic
+	// logic bug. Root cause of the divergence r2-attn-fa-2026-09-19.md left unexplained.
+	pQKNorm              Pipeline // per-head QK-RMSNorm (Qwen3)
+	pRmsF32              Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
+	pGemvW8, pGemvW8Amax Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
+	pCopyVec             Pipeline // copy_f32 for on-device embedding copy in batched forward
+	qkNorm               bool     // arch has QK-norm
+	qkNormWhole          bool     // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
+	sandwich             bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
+	postOnly             bool     // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — quantize the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
+	kvF32                bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
+	uAct                 Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
+	uAddOne, uWindow     Buffer   // qk_norm + sliding-window uniforms
+	uZero                Buffer   // constant 0 (nH=0 / nHhd=0 / addOne=0 for the scale-less v_norm dispatch)
+	vNormUnit            Buffer   // [maxHd] of 1.0 — unit weight so qk_norm (x·rms·w, addOne=0) = scale-less v_norm for K=V layers
 
 	// GPT-2 (FeatLayerNorm/FeatNonGatedMLP/FeatLearnedPos/FeatOutBias).
 	pLayerNorm, pActQuant            Pipeline          // layernorm_quant, act_quant
@@ -996,6 +1006,15 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				if e := L.geom.nKV * g * (L.geom.hd + 2); e > maxAttnFAPartialElems {
 					maxAttnFAPartialElems = e
 				}
+				// R2 fix: cache nKV here (attention_fa is dense-GQA-only, so every
+				// eligible layer shares one nKV — canUseAttnFA's own layer.geom.nKV>0/
+				// hd==128 gate is this same condition) so setPos can compute G/nSplit
+				// ONCE per decode step instead of the per-layer dispatch site doing it
+				// during encode-ahead — see uAttnFAG/uAttnFANSplit's own field comment
+				// for why that was a real race, not just untidy.
+				if r.attnFANKV == 0 {
+					r.attnFANKV = L.geom.nKV
+				}
 			}
 			lw2 := uint32(0) // 0 = full causal; only local layers carry the window
 			if m.LayerIsLocalResident(l) {
@@ -1359,6 +1378,17 @@ func (r *resident) setPos(pos int, ropePos ...int) {
 	r.uNKeys.SetU32(uint32(pos + 1))
 	r.curNKeys = pos + 1
 	r.uRopePos.SetU32(uint32(rp))
+	// R2 fix: uAttnFAG/uAttnFANSplit written HERE, not at the per-layer dispatch
+	// site — see their own field comment. Same "safe because it happens before
+	// THIS buffer commits, not during the NEXT buffer's encode-ahead" argument
+	// uPos/uNKeys/uRopePos above already rely on. attnFANKV==0 means no layer is
+	// attention_fa-eligible on this model; the buffers stay unused (canUseAttnFA
+	// gates on it too) so writing garbage into them is harmless, but skip the
+	// divide-by-zero regardless.
+	if r.attnFANKV > 0 {
+		r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))
+		r.uAttnFANSplit.SetU32(uint32(r.attnFASplitFor(r.curNKeys, r.attnFANKV)))
+	}
 	scale := float32(1)
 	if r.attnTempBeta != 0 {
 		scale = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(pos)/r.attnTempOrigMaxPos)))
@@ -2380,13 +2410,22 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 	} else {
 		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l], r.vc[l], g.uKvDim, uPos)
 		if r.canUseAttnFA(l) {
+			// nSplit here is for the DISPATCH GRID SIZE only (fixed once a command
+			// buffer's commands are encoded — it can't change later) — NOT written
+			// into r.uAttnFANSplit here; that happens once per decode step from
+			// setPos, before THIS buffer commits (see uAttnFAG/uAttnFANSplit's own
+			// field comment for why the old per-layer SetU32 here was a real race).
+			// The two stay consistent in the only regime attention_fa ever runs in:
+			// canUseAttnFA gates on curNKeys >= attnFADepthFloor (1536), and
+			// attnFASplitFor's nKeys/32 cap (>=48 at that floor) never binds below
+			// its nKV-only want (~14 for nKV=2) — so nSplit is a depth-INDEPENDENT
+			// constant for the entire regime this kernel engages in, regardless of
+			// which decode step's curNKeys computes it.
 			nSplit := r.attnFASplitFor(r.curNKeys, g.nKV)
 			if os.Getenv("GOINFER_ATTNFA_DEBUG") == "1" {
 				fmt.Fprintf(os.Stderr, "[ATTNFA] l=%d curNKeys=%d nSplit=%d nKV=%d G=%d hd=%d partialLen=%d\n",
 					l, r.curNKeys, nSplit, g.nKV, r.nH/g.nKV, g.hd, r.attnFAPartial.Len())
 			}
-			r.uAttnFAG.SetU32(uint32(r.nH / g.nKV))
-			r.uAttnFANSplit.SetU32(uint32(nSplit))
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
 			e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, r.qkv, r.kc[l], r.vc[l], r.attnFAPartial,
 				g.uNKV, r.uAttnFAG, uNKeys, r.uScale, L.uWindow, r.uAttnFANSplit)
