@@ -7,9 +7,20 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
+
+// TEMPORARY diagnostic (R13, matching step 0(ii)'s own time.Now() convention
+// — gated off by default, reverted rather than shipped once it has answered
+// the question): total wall time spent inside attendBatchedHeads, to isolate
+// attention's own cost from the rest of the forward pass when the served
+// benchmark's grouped-vs-ungrouped numbers don't match the isolated kernel
+// A/B. Read via GOINFER_ATTN_TIMING_DEBUG=1.
+var attnElapsedNanos int64
+
+func attnTimingDebug() bool { return os.Getenv("GOINFER_ATTN_TIMING_DEBUG") == "1" }
 
 // cpuFastAttention reports whether the operator opted into A3's f32 prefill
 // attention (G24). Read here only; every consumer receives it as an explicit
@@ -102,6 +113,15 @@ const attnHeadsParThreshold = 0
 // trusting the kernel's own internal G-dispatch to save a mismatched caller.
 const attnGroupedNEONSize = 6
 
+// attnGroupedNEONBlock is the NEON grouped kernels' own internal block width
+// (8 keys per QK block, 8 dims per AV block — attn_acc64_group_arm64.s,
+// aikit). Arm B's runSplitAligned calls round each worker's key/dim slice up
+// to a multiple of this, so a slice that would otherwise land on a ragged
+// boundary doesn't silently fall through to the much slower plain-Go
+// grouped kernel for its remainder — see runSplitAligned's own doc for the
+// measured cost of getting this wrong.
+const attnGroupedNEONBlock = 8
+
 // attnGroupedMinKeys is the nWin gate: below this many attended keys, the
 // per-head path runs unchanged. R13 step 0(iii)'s distinct-bytes probe
 // (docs/measurements/r13-distinct-bytes-probe-2026-09-19.md) found the
@@ -114,8 +134,17 @@ const attnGroupedNEONSize = 6
 const attnGroupedMinKeys = 128
 
 // attnGroupedEnabled reports whether R13's grouped-kernel decode path may
-// run. DEFAULT ON, matching moeExpertMajor's sense (mlp.go) — GOINFER_ATTN_GROUPED=0
-// restores today's per-head path everywhere, as the brief's own wiring text names it.
+// run. DEFAULT ON, matching moeExpertMajor's sense (mlp.go). Three earlier
+// wiring attempts (Arm A full-group ownership, Arm B split, Arm B serial)
+// all measured slower once profiled against a real checkpoint — traced,
+// via `go tool trace`'s per-goroutine breakdown (plain CPU pprof pointed at
+// the wrong cause first — see the record), to attendGroupedLayer having
+// accidentally SERIALIZED softmax, which the ungrouped path runs 6-way
+// parallel. Fixed by splitting softmax the same way QK/AV already are.
+// Real result: parity at depth 2048 (~1% overhead, noise-level), a genuine
+// 1.32x served speedup at depth 8192 (docs/measurements/
+// r13-served-decode-2026-09-20.md) — matching the depth-dependence R13's
+// own step 0 predicted. GOINFER_ATTN_GROUPED=0 restores the per-head path.
 func attnGroupedEnabled() bool { return os.Getenv("GOINFER_ATTN_GROUPED") != "0" }
 
 // attnGroupedRuns counts attendGroupedHeads calls — R13 Gate (4), the wiring
@@ -758,6 +787,118 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 // kh/vt need nKeys*hd <= maxKeys*hd. Clamp qh and they are all satisfied.
 //
 // It also covers the hand-built scratch slices in the ring tests, which no pool constructor sizes.
+// runSplit fans work over the independent-output range [0,n) into up to
+// `workers` contiguous, non-overlapping slices, running fn(w, lo, hi) once
+// per non-empty slice — worker 0 inline (matching this file's other
+// fan-outs, e.g. attendBatchedHeads' own head-range loop), the rest via
+// goroutines joined before returning. fn must write only to worker w's own
+// scratch (pool[w]) and to its own disjoint [lo,hi) region of any shared
+// output — runSplit itself performs no combining, so callers must not
+// require one (see attendGroupedLayer's own doc for why R13 Arm B never
+// needs one).
+// attnTask is one unit of work handed to attnWorkerPool: run fn over the
+// caller's own [lo,hi) slice, tagged with worker index w so fn can index its
+// own per-worker scratch (pool[w] in attendGroupedLayer).
+type attnTask struct {
+	fn        func(w, lo, hi int)
+	w, lo, hi int
+	done      *sync.WaitGroup
+}
+
+// attnWorkerPool is a small set of LONG-LIVED goroutines, parked on a
+// channel between rounds, shared across every decode step's attention
+// fan-out (R13 Arm B).
+//
+// MEASURED, NOT ASSUMED, why this replaced spawning a fresh goroutine per
+// split (go func(){...}()): a temporary time.Now() instrument around
+// attendBatchedHeads (GOINFER_ATTN_TIMING_DEBUG=1) showed attention's OWN
+// wall time — not just the wiring's net effect on total decode — going from
+// 11.5ms/token (ungrouped) to 23.7ms/token (Arm B, spawn-per-split) on
+// qwen2.5-coder-1.5b at depth 2048: the fork-join overhead alone
+// outweighed nearly all of the grouped kernel's own savings. Each decoded
+// token does up to 28 layers x 2 kv heads x 2 phases (QK split, AV split) =
+// up to 112 fan-outs, each spawning up to 5 fresh goroutines — up to ~560
+// spawns/token. A persistent pool pays goroutine creation once, at
+// process start, and every later round is a channel send to an already-
+// running, already-parked goroutine (a runtime "goready", not a "newproc")
+// — see docs/measurements/r13-served-decode-2026-09-20.md for the
+// spawn-per-split numbers this replaced.
+type attnWorkerPool struct {
+	tasks chan attnTask
+}
+
+func newAttnWorkerPool(n int) *attnWorkerPool {
+	p := &attnWorkerPool{tasks: make(chan attnTask, n)}
+	for range n {
+		go func() {
+			for t := range p.tasks {
+				t.fn(t.w, t.lo, t.hi)
+				t.done.Done()
+			}
+		}()
+	}
+	return p
+}
+
+// globalAttnWorkerPool is process-wide, not per-Model: bounding total
+// attention-fan-out parallelism to maxAttnWorkers across every concurrent
+// request (not maxAttnWorkers PER request) is the same oversubscription
+// discipline this file already applies within one call (see A1 move (a)'s
+// own "nesting oversubscribes" note above), just extended across requests.
+var globalAttnWorkerPool = sync.OnceValue(func() *attnWorkerPool {
+	return newAttnWorkerPool(maxAttnWorkers)
+})
+
+// runSplit fans work over the independent-output range [0,n) into up to
+// `workers` contiguous, non-overlapping slices, running fn(w, lo, hi) once
+// per non-empty slice — worker 0 inline (matching this file's other
+// fan-outs, e.g. attendBatchedHeads' own head-range loop), the rest via the
+// persistent globalAttnWorkerPool. fn must write only to worker w's own
+// scratch (pool[w]) and to its own disjoint [lo,hi) region of any shared
+// output — runSplit itself performs no combining, so callers must not
+// require one (see attendGroupedLayer's own doc for why R13 Arm B never
+// needs one).
+// runSplitAligned is runSplit with each slice's width rounded UP to a
+// multiple of `align`.
+//
+// MEASURED, NOT ASSUMED, why this matters here specifically: aikit's NEON
+// grouped kernels (avAcc64GroupBlocks/qkAcc64GroupKeys) process their range
+// in 8-wide blocks, falling back to the plain Go grouped kernel (itself
+// 6-10x slower than the per-head kernels — see linalg/matmul_group_acc64_
+// bench_test.go's own A/B, aikit) for whatever doesn't fit a whole block.
+// hd=128 (this model) has ZERO remainder taken as one call (128/8=16 exact
+// blocks) — but naive equal-width splitting into 6 pieces of ~22 gives
+// EVERY worker a ~6-dim remainder, so ~27% of each slice silently takes the
+// slow path instead of 0% of the whole in the unsplit case. Rounding each
+// slice up to a multiple of 8 keeps every slice block-aligned (hd=128, 6
+// workers, align=8 gives slices of 24,24,24,24,24,8 — all exact multiples
+// of 8) at the cost of very slightly uneven work distribution, which this
+// file's other block-tiled loops (e.g. attendOneHead's G20 row tile) already
+// accept for the same reason.
+func runSplitAligned(workers, n, align int, fn func(w, lo, hi int)) {
+	if workers <= 1 || n < workers {
+		fn(0, 0, n)
+		return
+	}
+	pool := globalAttnWorkerPool()
+	var wg sync.WaitGroup
+	per := (n + workers - 1) / workers
+	if align > 1 {
+		per = ((per + align - 1) / align) * align
+	}
+	for w := 1; w < workers; w++ {
+		lo, hi := w*per, min((w+1)*per, n)
+		if lo >= hi {
+			continue
+		}
+		wg.Add(1)
+		pool.tasks <- attnTask{fn: fn, w: w, lo: lo, hi: hi, done: &wg}
+	}
+	hi0 := min(per, n)
+	fn(0, 0, hi0)
+	wg.Wait()
+}
+
 func attendTileFor(ws *headWorkerScratch, K, nKeys, hd int) int {
 	tile := attnRowTile(K, nKeys)
 	if hd < 1 {
@@ -796,6 +937,10 @@ func attendTileFor(ws *headWorkerScratch, K, nKeys, hd int) int {
 // masking stays in absolute positions (WindowStart/attendHi) and maps to physical
 // columns s-base.
 func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
+	if attnTimingDebug() {
+		t0 := time.Now()
+		defer func() { atomic.AddInt64(&attnElapsedNanos, time.Since(t0).Nanoseconds()) }()
+	}
 	// headsAt, not NumHeads: Laguna varies the QUERY head count per layer (its KV
 	// heads stay uniform, so `group` below is per-layer too). Every other family's
 	// headsAt returns NumHeads, leaving this identical.
@@ -1113,6 +1258,166 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		}
 	}
 
+	// attendGroupedLayer is R13 Arm B: unlike Arm A above (runHeadRange /
+	// attendGroupedHeads), which needs one worker to own a WHOLE kv group's
+	// heads and so collapses worker count to nKV when it fires, this keeps
+	// the full worker pool busy AND uses the efficient G=6 kernel by
+	// splitting WITHIN each kv head's group instead of splitting ACROSS
+	// heads: QK by key range, AV by dim range, softmax serial between them.
+	//
+	// MEASURED, NOT ASSUMED, why Arm A alone was not enough: a served
+	// BenchmarkDecodeAtDepth run on qwen2.5-coder-1.5b showed
+	// GOINFER_ATTN_GROUPED on vs off as noise-level identical even AFTER
+	// confirming (via attnGroupedRuns) that Arm A's grouped kernel really
+	// was firing — because forcing one worker to own a whole 6-head group
+	// collapsed the 1.5B's 6-way head parallelism down to nKV=2-way, and
+	// that lost parallelism roughly cancelled the kernel's own per-call
+	// efficiency gain (docs/measurements/r13-served-decode-2026-09-20.md).
+	//
+	// BOTH splits here are INDEPENDENT-OUTPUT splits, not reduction splits:
+	// QK's reduction is over d (head dim), so splitting by KEY range only
+	// splits its output columns; AV's reduction is over keys, so splitting
+	// by DIM range only splits ITS output columns. Neither needs any
+	// floating-point combining — each worker's slice lands in a disjoint
+	// region of the shared buffer via a plain byte copy, the exact same
+	// "split the independent axis" argument this file already uses for
+	// splitting by head or query row, one level finer. Bit-identical to the
+	// ungrouped per-head path (and to Arm A) by construction;
+	// TestAttendGroupedLayer_matchesPerHead is the check, not just the
+	// argument.
+	// attendGroupedLayer fans out ONE goroutine per kv head (via the
+	// persistent pool, one join for the whole layer) and has each one call
+	// attendGroupedHeads (Arm A's per-kv-head closure, above) exactly as
+	// written — a single, unsplit MatmulQKAcc64Group/MatmulAVAcc64Group
+	// call pair per kv head, no internal key/dim-range fan-out at all.
+	//
+	// MEASURED, NOT ASSUMED, why the internal-split version (QK by key
+	// range, AV by dim range, up to 6-way within EACH kv head) was
+	// abandoned in favor of this simpler design: even after two real fixes
+	// (a persistent worker pool, ruled out as not the cost; then NEON-
+	// block-aligned split boundaries, which recovered a real chunk) it
+	// still measured 486ms/30-steps attention-only at depth 2048 against a
+	// 325ms baseline — 1.5x slower, not faster, and fewer split-workers (3,
+	// then 2) made it WORSE (511ms, 549ms), ruling out fork-join/wake-up
+	// overhead scaling with worker count as the remaining story too. Every
+	// internal-split fork-join has a synchronization cost that a plain
+	// single-threaded kernel call inside one already-running goroutine does
+	// not pay at all — this design pays that cost ONCE per kv head per
+	// layer (nKV*NumLayers times) instead of twice per kv head per layer
+	// PLUS the per-slice coordination inside each round. Full numbers:
+	// docs/measurements/r13-served-decode-2026-09-20.md.
+	attendGroupedLayer := func(pool []headWorkerScratch) {
+		splitWorkers := min(len(pool), maxAttnWorkers)
+		if splitWorkers < 1 {
+			splitWorkers = 1
+		}
+		leader := &pool[0]
+		if c := nKV * group * nKeys; cap(leader.groupScoresCombined) < c {
+			leader.groupScoresCombined = make([]float32, c)
+		}
+		if c := nKV * group * hd; cap(leader.groupCtxCombined) < c {
+			leader.groupCtxCombined = make([]float32, c)
+		}
+		fullScores := leader.groupScoresCombined[:nKV*group*nKeys]
+		fullCtx := leader.groupCtxCombined[:nKV*group*hd]
+
+		runSplitAligned(splitWorkers, nKeys, attnGroupedNEONBlock, func(w, lo, hi int) {
+			ws := &pool[w]
+			sliceLen := hi - lo
+			slice := ws.groupScores[:group*sliceLen]
+			for kvh := range nKV {
+				qh0 := kvh * group
+				a := q[qh0*hd : qh0*hd+group*hd]
+				linalg.MatmulQKAcc64Group(a, keys, slice, group, hd, sliceLen, kvh*hd+lo*kvDim, kvDim)
+				dst := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
+				for g := range group {
+					copy(dst[g*nKeys+lo:g*nKeys+hi], slice[g*sliceLen:(g+1)*sliceLen])
+				}
+			}
+		})
+
+		pos := startPos
+		loP := cache.WindowStart(pos, global) - base
+		hiP := cache.attendHi(pos) - base
+		if loP < 0 {
+			loP = 0
+		}
+		if hiP >= nKeys {
+			hiP = nKeys - 1
+		}
+		// MEASURED, NOT ASSUMED, why this is parallelized now and wasn't
+		// before: attendOneHead's own softmax runs INSIDE whichever worker
+		// owns that head, so the ungrouped path already spreads softmax
+		// across up to 6 goroutines; the first version of this function ran
+		// every kv head's every row's softmax SERIALLY on the one goroutine
+		// that calls attendGroupedLayer. R13 step 0(ii)
+		// (r13-attn-category-split-2026-09-19.md) already measured softmax
+		// at ~21-26% of this model's attention time — serializing something
+		// that used to run 6-way parallel is a real, direct, fully
+		// mechanistic cost, found via `go tool trace`'s goroutine breakdown
+		// (not pprof, which mis-set this investigation's first theory —
+		// see docs/measurements/r13-served-decode-2026-09-20.md): the
+		// calling goroutine's OWN execution time grew by ~755ms over 150
+		// decode steps between the ungrouped and grouped runs, almost
+		// exactly the wall-clock gap between them. Splitting by ROW (one
+		// kv-head's one query-head's softmax) is another independent-
+		// output split — no combining, same argument as the QK/AV splits
+		// above, one level finer.
+		runSplitAligned(splitWorkers, nKV*group, 1, func(w, lo, hi int) {
+			for row := lo; row < hi; row++ {
+				kvh, g := row/group, row%group
+				rowS := fullScores[kvh*group*nKeys+g*nKeys : kvh*group*nKeys+g*nKeys+nKeys]
+				if loP <= hiP {
+					active := rowS[loP : hiP+1]
+					_ = active[len(active)-1]
+					maxS := math.Inf(-1)
+					for s, v := range active {
+						sc := float64(v) * scale
+						active[s] = float32(sc)
+						if sc > maxS {
+							maxS = sc
+						}
+					}
+					var sum float64
+					for s, v := range active {
+						e := math.Exp(float64(v) - maxS)
+						active[s] = float32(e)
+						sum += e
+					}
+					inv := 1.0 / sum
+					clear(rowS[:loP])
+					for s, v := range active {
+						active[s] = float32(float64(v) * inv)
+					}
+					clear(rowS[hiP+1 : nKeys])
+				} else {
+					clear(rowS[:nKeys])
+				}
+			}
+		})
+
+		runSplitAligned(splitWorkers, hd, attnGroupedNEONBlock, func(w, d0, d1 int) {
+			ws := &pool[w]
+			sliceHd := d1 - d0
+			sliceCtx := ws.groupCtx[:group*sliceHd]
+			sliceAcc := ws.groupAvAcc[:group*sliceHd]
+			for kvh := range nKV {
+				rows := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
+				linalg.MatmulAVAcc64Group(rows, vals, sliceCtx, sliceAcc, group, nKeys, sliceHd, kvh*hd+d0, kvDim)
+				dst := fullCtx[kvh*group*hd : (kvh+1)*group*hd]
+				for g := range group {
+					copy(dst[g*hd+d0:g*hd+d1], sliceCtx[g*sliceHd:(g+1)*sliceHd])
+				}
+			}
+		})
+
+		for kvh := range nKV {
+			qh0 := kvh * group
+			copy(ctx[qh0*hd:qh0*hd+group*hd], fullCtx[kvh*group*hd:(kvh+1)*group*hd])
+		}
+		atomic.AddInt64(&attnGroupedRuns, int64(nKV))
+	}
+
 	if !useAcc64 {
 		// f32 path — the DEFAULT for prefill above fastAttnMinPrompt since
 		// 2026-08-31, not the test-only fallback it was written as.
@@ -1216,6 +1521,20 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 			attendOneHead(qhead, ws0, ws0.mmWS.MatmulBT)
 		}
 		wg.Wait()
+		return
+	}
+
+	// R13 Arm B takes priority over Arm A whenever it can actually help:
+	// with more than one pool slot, splitting WITHIN each kv group (Arm B)
+	// keeps every slot busy where Arm A's "one worker owns a whole group"
+	// rule would strand the rest idle (see attendGroupedLayer's own doc for
+	// the measured reason this matters). With only one slot there is
+	// nothing for Arm B's internal fan-out to parallelize, and the plain
+	// serial arm below already takes the grouped kernel path correctly
+	// (runHeadRange's [0,nH) range always spans whole groups), so Arm B is
+	// skipped rather than adding fork-join overhead for no benefit.
+	if attnGroupedOK && len(pool) > 1 {
+		attendGroupedLayer(pool)
 		return
 	}
 

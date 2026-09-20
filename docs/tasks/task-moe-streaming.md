@@ -242,9 +242,9 @@ becomes the binding constraint after the batched GEMV lands.
 > Shipped default ON 2026-09-01, `GOINFER_MOE_EXPERT_MAJOR=0` opts out
 > (`docs/queue-performance.md` §P18). This lever is done.
 
-`decoder/forwardn.go:97` states it plainly: batched prefill vectorizes attention but "the
+`decoder/forwardn.go:161` states it plainly: batched prefill vectorizes attention but "the
 MoE FFN itself stays per-row (router picks different experts per token)" — the per-row call
-is `decoder/forwardn.go:531`. Under streaming that is the worst case: the same expert can be
+is `decoder/forwardn.go:595`. Under streaming that is the worst case: the same expert can be
 fetched once per row.
 
 fieldfare's fix is chunks of ≤128 tokens so one fetched expert serves multiple rows.
@@ -593,7 +593,7 @@ redirected toward the expert-DMA cost rather than the batching itself.
 In-repo: `docs/ideas-weight-memory.md` §2 (shipped 2026-06-13; skew and hit-rate/latency
 tables; the "unhideable" claim) and §4 (dense layer streaming), `decoder/moepaging.go`,
 `decoder/layerpaging.go`, `decoder/moepaging_spike_test.go`, `decoder/mlp.go:84`,
-`decoder/forwardn.go:97`/`:228`, `decoder/residency.go:360`, `go.mod:6`,
+`decoder/forwardn.go:161`/`:228`, `decoder/residency.go:323`, `go.mod:6`,
 `docs/completed/task-gemma4-moe.md`, `docs/benchmarks.md`.
 aikit: `mmap/spancache.go`, `mmap/madvise_darwin.go` (the darwin no-op eviction),
 `mmap/madvise_linux.go`, commit `6c0483f` — the accompanying perf-campaign write-up was an uncommitted working note and no copy survives, so the commit is the whole record

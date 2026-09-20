@@ -13,7 +13,7 @@
 The CPU decode path's only accommodation for the P-core/E-core split today is a hardcoded
 **worker-count cap**, not a placement decision. `maxAttnWorkers = 6` caps attention's head-parallel
 fan-out at the measured P-core count rather than `GOMAXPROCS(0)`'s full 8
-(`decoder/scratch.go:177`), grounded in `docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md`
+(`decoder/scratch.go:194`), grounded in `docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md`
 (6 P-cores measured marginally faster than 8 in every cell tested, §4 item 1). `mlp.go` reuses the
 same constant for its own activation fan-out (`activationFanoutWorkers = maxAttnWorkers`,
 `decoder/mlp.go:296–299`) rather than redefining it, so the MLP/MoE-expert activation step is

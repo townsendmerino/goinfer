@@ -138,6 +138,11 @@ func TestAttendGroupedHeads_concurrentWorkers(t *testing.T) {
 				groupAvAcc:  make([]float64, hd*attnGroupedNEONSize),
 			}
 		}
+		// Arm B (attendGroupedLayer) uses pool[0] as the "leader" slot holding
+		// the full-width combined buffers every worker's slice scatters into
+		// — see headWorkerScratch's own doc. Only slot 0 needs them.
+		pool[0].groupScoresCombined = make([]float32, nKeys*attnGroupedNEONSize)
+		pool[0].groupCtxCombined = make([]float32, hd*attnGroupedNEONSize)
 		return pool
 	}
 
@@ -156,6 +161,58 @@ func TestAttendGroupedHeads_concurrentWorkers(t *testing.T) {
 	for i := range ungrouped {
 		if math.Float32bits(ungrouped[i]) != math.Float32bits(grouped[i]) {
 			t.Fatalf("idx %d: ungrouped %v vs grouped %v — not bit-identical under concurrent fan-out", i, ungrouped[i], grouped[i])
+		}
+	}
+}
+
+// TestAttendGroupedLayer_manyWorkers exercises Arm B (attendGroupedLayer)
+// with a full-size worker pool (maxAttnWorkers=6) and shapes that do NOT
+// divide evenly by the worker count (nKeys=203, hd=97), so the QK key-range
+// and AV dim-range splits both have a ragged last slice — exactly where an
+// off-by-one in runSplit's range arithmetic or the scatter-copy offsets
+// would show up. Compares directly against the ungrouped per-head path,
+// not a stored golden.
+func TestAttendGroupedLayer_manyWorkers(t *testing.T) {
+	arch := syntheticGroupedArch(97) // hd=97: not a multiple of 6, forces a ragged AV dim split
+	const nKeys = 203                // not a multiple of 6 either, and >= attnGroupedMinKeys
+	cache, q := syntheticDecodeCache(t, arch, nKeys, 0x511D)
+	hd := arch.HeadDim
+	qDim := arch.NumHeads * hd
+	keys, vals := cache.Keys(0), cache.Vals(0)
+
+	newPool := func(n int) []headWorkerScratch {
+		pool := make([]headWorkerScratch, n)
+		for i := range pool {
+			pool[i] = headWorkerScratch{
+				qh: make([]float32, hd), ch: make([]float32, hd),
+				scores:      make([]float32, nKeys),
+				avAcc:       make([]float64, hd),
+				groupScores: make([]float32, nKeys*attnGroupedNEONSize),
+				groupCtx:    make([]float32, hd*attnGroupedNEONSize),
+				groupAvAcc:  make([]float64, hd*attnGroupedNEONSize),
+			}
+		}
+		pool[0].groupScoresCombined = make([]float32, nKeys*attnGroupedNEONSize)
+		pool[0].groupCtxCombined = make([]float32, hd*attnGroupedNEONSize)
+		return pool
+	}
+
+	t.Setenv("GOINFER_ATTN_GROUPED", "0")
+	ungrouped := make([]float32, qDim)
+	attendBatchedHeads(q, ungrouped, keys, vals, 0, cache, 0, nKeys-1, 1, true, arch, true, newPool(1))
+
+	t.Setenv("GOINFER_ATTN_GROUPED", "1")
+	pool := newPool(maxAttnWorkers)
+	before := atomic.LoadInt64(&attnGroupedRuns)
+	grouped := make([]float32, qDim)
+	attendBatchedHeads(q, grouped, keys, vals, 0, cache, 0, nKeys-1, 1, true, arch, true, pool)
+	if got := atomic.LoadInt64(&attnGroupedRuns) - before; got != int64(arch.NumKVHeads) {
+		t.Fatalf("attnGroupedRuns advanced by %d, want %d — Arm B did not fire as expected", got, arch.NumKVHeads)
+	}
+
+	for i := range ungrouped {
+		if math.Float32bits(ungrouped[i]) != math.Float32bits(grouped[i]) {
+			t.Fatalf("idx %d: ungrouped %v vs grouped(ArmB) %v — not bit-identical with a ragged key/dim split", i, ungrouped[i], grouped[i])
 		}
 	}
 }

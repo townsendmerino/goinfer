@@ -64,7 +64,7 @@ Four facts from the scan worth carrying forward:
 
 ## The binding constraint is the seam, not the checkpoints
 
-`decoder/forwardn.go:148`:
+`decoder/forwardn.go:212`:
 
 ```go
 func (m *Model) specRollbackSafe() bool {
@@ -96,7 +96,7 @@ different lists:
 | gate | refuses |
 |---|---|
 | `ForwardCapture` (`decoder/model.go:992`) — 08's capture seam | granite, nemotron, mla, llama4 — **not qwen35** |
-| `specRollbackSafe` (`decoder/forwardn.go:148`) | granite, nemotron, **qwen35**, `SlidingWindow > 0` |
+| `specRollbackSafe` (`decoder/forwardn.go:212`) | granite, nemotron, **qwen35**, `SlidingWindow > 0` |
 
 **qwen35 passes the capture seam and is refused by rollback safety.** The cause is in the arch
 itself: `qwen35Architecture` sets `layerIsLinear: cfg.IsLinearLayer // Gated DeltaNet layers`, and
