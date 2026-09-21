@@ -1,0 +1,49 @@
+{
+  "utc": "2026-09-21T21:58:34Z",
+  "host": "nobara-pc",
+  "driver": "595.91.07",
+  "gpu": "NVIDIA GeForce RTX 2070 SUPER",
+  "kernel": "7.2.0-202.nobara.fc44.x86_64",
+  "distro": "Nobara Linux 44 (KDE Plasma Desktop Edition)",
+  "goinfer_commit": "fd34ce30",
+  "goinfer_dirty": true,
+  "peer_version": "Warning: could not connect to a running Ollama instance",
+  "serve_mtime": "2026-09-21 14:58:24.169992211 -0700",
+  "loadavg": "1.21 1.85 1.65 1/1027 3762098"
+}
+  [cache-check] goinfer      0.5B:512 repeat/fresh=0.14  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       0.5B:512 repeat/fresh=0.91  no caching detected on identical prompts
+0.5B   K=512     goinfer   14972.0 tok/s   ollama    1447.0 tok/s   ratio(ollama/goinfer) 0.1
+  [cache-check] goinfer      0.5B:1024 repeat/fresh=0.07  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       0.5B:1024 repeat/fresh=0.96  no caching detected on identical prompts
+0.5B   K=1024    goinfer   14317.4 tok/s   ollama    2634.6 tok/s   ratio(ollama/goinfer) 0.18
+  [cache-check] goinfer      0.5B:2048 repeat/fresh=0.05  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       0.5B:2048 repeat/fresh=0.76  caches; fresh prompts miss it (healthy)
+0.5B   K=2048    goinfer   12263.9 tok/s   ollama    4709.2 tok/s   ratio(ollama/goinfer) 0.38
+  [cache-check] goinfer      0.5B:3900 repeat/fresh=0.04  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       0.5B:3900 repeat/fresh=0.59  caches; fresh prompts miss it (healthy)
+0.5B   K=3900    goinfer   10394.1 tok/s   ollama    6658.1 tok/s   ratio(ollama/goinfer) 0.64
+  [cache-check] goinfer      1.5B:512 repeat/fresh=0.07  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:512 repeat/fresh=0.77  caches; fresh prompts miss it (healthy)
+1.5B   K=512     goinfer    5901.3 tok/s   ollama    1216.8 tok/s   ratio(ollama/goinfer) 0.21
+  [cache-check] goinfer      1.5B:1024 repeat/fresh=0.04  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:1024 repeat/fresh=0.70  caches; fresh prompts miss it (healthy)
+1.5B   K=1024    goinfer    5604.4 tok/s   ollama    2100.8 tok/s   ratio(ollama/goinfer) 0.37
+  [cache-check] goinfer      1.5B:2048 repeat/fresh=0.03  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:2048 repeat/fresh=0.55  caches; fresh prompts miss it (healthy)
+1.5B   K=2048    goinfer    4779.2 tok/s   ollama    3189.8 tok/s   ratio(ollama/goinfer) 0.67
+  [cache-check] goinfer      1.5B:3900 repeat/fresh=0.02  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:3900 repeat/fresh=0.36  caches; fresh prompts miss it (healthy)
+1.5B   K=3900    goinfer    4104.3 tok/s   ollama    4144.4 tok/s   ratio(ollama/goinfer) 1.01
+  [marginal] goinfer:0.5B     {'marginal_tok_s': 9815.8, 'ms_per_token': 0.1019, 'fixed_overhead_ms': -28.9, 'local': [{'from': 519.0, 'to': 1031.0, 'ms_per_token': 0.0729, 'tok_s': 13726.5}, {'from': 1031.0, 'to': 2067.0, 'ms_per_token': 0.0931, 'tok_s': 10735.8}, {'from': 2067.0, 'to': 3919.0, 'ms_per_token': 0.1126, 'tok_s': 8882.5}], 'LINEAR_FIT_INVALID': 'negative fitted overhead: TTFT is superlinear in K, so marginal_tok_s is not a constant for this engine -- read `local` instead'}
+  [marginal] goinfer:1.5B     {'marginal_tok_s': 3876.1, 'ms_per_token': 0.258, 'fixed_overhead_ms': -71.2, 'local': [{'from': 519.0, 'to': 1031.0, 'ms_per_token': 0.1877, 'tok_s': 5327.8}, {'from': 1031.0, 'to': 2067.0, 'ms_per_token': 0.2399, 'tok_s': 4169.0}, {'from': 2067.0, 'to': 3919.0, 'ms_per_token': 0.2821, 'tok_s': 3545.2}], 'LINEAR_FIT_INVALID': 'negative fitted overhead: TTFT is superlinear in K, so marginal_tok_s is not a constant for this engine -- read `local` instead'}
+  [marginal] ollama:0.5B      {'marginal_tok_s': 15537.5, 'ms_per_token': 0.0644, 'fixed_overhead_ms': 329.3, 'local': [{'from': 540.0, 'to': 1052.0, 'ms_per_token': 0.051, 'tok_s': 19616.9}, {'from': 1052.0, 'to': 2088.0, 'ms_per_token': 0.0426, 'tok_s': 23492.1}, {'from': 2088.0, 'to': 3940.0, 'ms_per_token': 0.0801, 'tok_s': 12479.8}]}
+  [marginal] ollama:1.5B      {'marginal_tok_s': 6623.2, 'ms_per_token': 0.151, 'fixed_overhead_ms': 349.8, 'local': [{'from': 540.0, 'to': 1052.0, 'ms_per_token': 0.1113, 'tok_s': 8982.5}, {'from': 1052.0, 'to': 2088.0, 'ms_per_token': 0.1485, 'tok_s': 6736.0}, {'from': 2088.0, 'to': 3940.0, 'ms_per_token': 0.1599, 'tok_s': 6254.6}]}
+  [marginal] ratio:0.5B       1.58x
+  [marginal] ratio:1.5B       1.71x
+  [scaling] goinfer:0.5B     512->3900 tok  35->377 ms  (10.86x over 7.62x depth)
+  [scaling] goinfer:1.5B     512->3900 tok  88->955 ms  (10.86x over 7.62x depth)
+  [scaling] ollama:0.5B      512->3900 tok  373->592 ms  (1.59x over 7.62x depth)
+  [scaling] ollama:1.5B      512->3900 tok  444->951 ms  (2.14x over 7.62x depth)
+
+wrote /tmp/peer-prefill-new.json
