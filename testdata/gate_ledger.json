@@ -721,6 +721,15 @@
       "value": "PASS"
     },
     {
+      "commit": "650c1b5f",
+      "date": "2026-09-21",
+      "gate": "TestSpark25Real_gate",
+      "note": "Real oracle vs XHToken/Spark-X2.5-1.7B: argmax exact, cosine 1.000000, full 8-token greedy continuation match. Required a monitored GOINFER_NO_FIT_GUARD bypass on this machine (user-approved), no incident.",
+      "promoted_by": "claude",
+      "source_sha256": "226c31951a97fac5",
+      "value": "PASS"
+    },
+    {
       "commit": "bd085de",
       "date": "2026-08-27",
       "gate": "TestW4A8DecodeParity",

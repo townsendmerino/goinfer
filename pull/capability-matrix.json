@@ -700,6 +700,26 @@
     "parity": "full-oracle 100.0%/1.00000"
   },
   {
+    "name": "spark2_5",
+    "model_types": [
+      "spark2_5"
+    ],
+    "display_name": "Spark-X2.5",
+    "description": "XHToken Spark-X2.5 (1.7B/4B): fused QKV, sigmoid head-wise attention output gate, 1:3 sliding:full interleave with layer-dependent partial RoPE, gated exact-GELU MLP",
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "interleave",
+    "qk_norm": false,
+    "rope_style": "partial",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "GELU (gated)",
+    "tied_lm_head": false,
+    "loaders": "safetensors",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "full-oracle 100.0%/1.00000"
+  },
+  {
     "name": "gpt-oss",
     "model_types": [
       "gpt_oss"
