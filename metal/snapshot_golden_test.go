@@ -56,7 +56,13 @@ import (
 // Regenerate too on a hardware change (different Mac). Runs on every `go test` (tiny committed models,
 // no heavy-model dependency). Coverage: mixtral-tiny is full-causal (attention softmax denom over
 // >256 keys → the width coupling at multi-iteration depth) + rmsnorm_quant; gemma4-dense-scaled covers
-// rmsnorm_f32 + qk_norm. Union = every pinned-width reduction kernel this build DISPATCHES.
+// rmsnorm_f32 + qk_norm. llama-attnfa-tiny (added 2026-09-21, R2 golden-coverage follow-up) covers
+// `attention_fa`, DEFAULT ON past depth 1536 (metal/model.go's attnFADepthFloor) — the other two
+// fixtures both fail canUseAttnFA's head_dim==128 guard (8 and 256 respectively) and can never
+// dispatch it regardless of depth, so this kernel had zero coverage from this suite until this
+// fixture existed. Its checkpoints straddle the floor exactly (1534 declines, 1535 engages) so an
+// off-by-one at the boundary is caught, not just steady-state behavior on either side. Union = every
+// pinned-width reduction kernel plus `attention_fa` this build DISPATCHES.
 //
 // N-28: this used to claim attention_f32 as well. It is not covered and cannot be — model.go
 // hard-wires `r.kvF32 = false` and builds kv_store_f32/attention_f32 only inside `if r.kvF32`,
@@ -122,12 +128,28 @@ func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {
 }
 
 func TestMetalSnapshotGolden(t *testing.T) {
-	models := []struct{ dir, quant string }{
-		{"../testdata/mixtral-tiny", "int8int8"},    // full-causal: attention denom past width; rmsnorm_quant
-		{"../testdata/gemma4-dense-scaled", "int4"}, // sandwich: rmsnorm_f32, qk_norm (N-13: NOT attention_f32 — N-28 above)
+	models := []struct {
+		dir, quant  string
+		checkpoints map[int]bool
+		maxD        int
+	}{
+		// full-causal: attention denom past width; rmsnorm_quant
+		{"../testdata/mixtral-tiny", "int8int8", map[int]bool{130: true, 260: true, 320: true}, 320},
+		// sandwich: rmsnorm_f32, qk_norm (N-13: NOT attention_f32 — N-28 above)
+		{"../testdata/gemma4-dense-scaled", "int4", map[int]bool{130: true, 260: true, 320: true}, 320},
+		// R2: attention_fa, DEFAULT ON past attnFADepthFloor=1536 (metal/model.go). Every other
+		// fixture here has head_dim != 128 (mixtral-tiny: 8, gemma4-dense-scaled: 256), so
+		// canUseAttnFA's hd==128 guard declines on both, regardless of depth — neither can ever
+		// cover this kernel. llama-attnfa-tiny (scripts/pin_llama_attnfa_tiny.py) is a plain dense
+		// GQA Llama shaped to clear every other guard too (no sandwich/postOnly/parallelBlock/
+		// attnSink/kvI8/lora/MoE/DeltaNet/qGate/window — see canUseAttnFA). Checkpoints straddle
+		// the floor exactly: curNKeys = pos+1, so pos=1534 (curNKeys=1535) is the last declining
+		// position and pos=1535 (curNKeys=1536) is the first engaging one — confirmed directly
+		// against r.canUseAttnFA before wiring this in. 1400 is a shipped-kernel-only control well
+		// below the floor; 1600 confirms the engaged kernel stays stable past the boundary, not
+		// just at it. 1600 decode steps on this fixture measured ~1.1s — no heavy-test gate needed.
+		{"../testdata/llama-attnfa-tiny", "int4", map[int]bool{1400: true, 1534: true, 1535: true, 1600: true}, 1600},
 	}
-	checkpoints := map[int]bool{130: true, 260: true, 320: true} // past 128 and 256
-	const maxD = 320
 	ids := []int{1, 7, 42, 100, 5, 200, 13, 88, 3, 71, 9, 17, 60, 200, 33, 2} // fixed, arbitrary valid ids
 
 	got := snapGolden{Env: snapEnv{OS: macOSVersion()}}
@@ -150,8 +172,8 @@ func TestMetalSnapshotGolden(t *testing.T) {
 		}
 		tok := ids[0]
 		emb := make([]float32, H)
-		for pos := 0; pos <= maxD; pos++ {
-			if checkpoints[pos] {
+		for pos := 0; pos <= mm.maxD; pos++ {
+			if mm.checkpoints[pos] {
 				// Drive the PRODUCTION entry point (audit G-02). decoder.embedResident does the
 				// lookup + embed scale and calls ForwardEmb; hashing r.Forward instead pinned a
 				// stream production never produces — it skipped the √hidden scale on gemma4, so
@@ -221,7 +243,7 @@ func TestMetalSnapshotGolden(t *testing.T) {
 	if !sameEnv {
 		t.Logf("NOTE: entries match but env metadata differs (golden %s/%s vs run %s/%s) — bits happened to coincide; consider refreshing metadata.", want.Env.GPU, want.Env.OS, got.Env.GPU, got.Env.OS)
 	}
-	t.Logf("Metal snapshot: %d checkpoints byte-identical to golden on %s / macOS %s (mixtral-tiny + gemma4-dense-scaled, depths past 128/256)", len(got.Entries), got.Env.GPU, got.Env.OS)
+	t.Logf("Metal snapshot: %d checkpoints byte-identical to golden on %s / macOS %s (mixtral-tiny + gemma4-dense-scaled past depth 128/256; llama-attnfa-tiny straddling the attention_fa floor at 1536)", len(got.Entries), got.Env.GPU, got.Env.OS)
 }
 
 type snapGolden struct {

@@ -52,6 +52,13 @@ demo/chat/dist/
 # built UNTIED on purpose: the tied families cannot exercise the separate-LMHead path.
 !testdata/llama-tiny/
 !testdata/llama-tiny/model.safetensors
+# llama-attnfa-tiny (~10 MB, scripts/pin_llama_attnfa_tiny.py): head_dim=128 dense-GQA Llama, the
+# ONE property (canUseAttnFA's hd==128 guard) none of mixtral-tiny/gemma4-dense-scaled/llama-tiny
+# have, so TestMetalSnapshotGolden had zero coverage of `attention_fa` (default on past depth
+# 1536, R2) until this fixture existed. Committed, unlike gemma4-dense-scaled (449 MB, untracked,
+# a pre-existing separate gap — see that fixture's own history, not fixed here).
+!testdata/llama-attnfa-tiny/
+!testdata/llama-attnfa-tiny/model.safetensors
 # EXCEPTION: the five v0.17.0 tiny fixtures (0.7-1.2 MB each, deterministic random weights
 # from scripts/pin_{granite_dense,ministral3,smollm3,olmo_hybrid,qwen3moe}_tiny.py). Committed
 # 2026-09-12 for the reason G-03 (docs/audit-2026-09-10.md) gives: while they were gitignored

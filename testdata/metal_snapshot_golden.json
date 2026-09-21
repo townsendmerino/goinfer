@@ -45,6 +45,34 @@
       "depth": 320,
       "argmax": 2,
       "sha256": "481b69dad8235fa6f171f3772da3ce370b1610fa750a4c85db6e2629d88d10d0"
+    },
+    {
+      "model": "llama-attnfa-tiny",
+      "quant": "int4",
+      "depth": 1400,
+      "argmax": 196,
+      "sha256": "151c008b2aad47b5f17ada7582cf8f540b25d5a3e90a2a9d56a9032778526b40"
+    },
+    {
+      "model": "llama-attnfa-tiny",
+      "quant": "int4",
+      "depth": 1534,
+      "argmax": 196,
+      "sha256": "311b32fa6a2aec35715add980f0157c0cc15dc100719e7c0eb6efd8ee35148a6"
+    },
+    {
+      "model": "llama-attnfa-tiny",
+      "quant": "int4",
+      "depth": 1535,
+      "argmax": 41,
+      "sha256": "b9df1daccf8b702edd3f1949ded93609ddb6c800adc4c7b66e9fa50920e78b68"
+    },
+    {
+      "model": "llama-attnfa-tiny",
+      "quant": "int4",
+      "depth": 1600,
+      "argmax": 242,
+      "sha256": "6697ab8830208f9f487590bfc47f85d5a200316a7d79ecccfcfae820d0070611"
     }
   ]
 }

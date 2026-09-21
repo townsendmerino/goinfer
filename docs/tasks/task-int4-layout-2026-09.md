@@ -70,7 +70,7 @@ at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFW
 `QuantBackend4.MatmulW4A8` consult stays under `Int4()`'s ok (mutation-tested: reverting is a
 nil-slice fault in `linalg.MatmulBT`, not a slowdown).
 
-**The gap it hit.** `TestMetalSnapshotGolden` (`metal/snapshot_golden_test.go:124`) loads with no
+**The gap it hit.** `TestMetalSnapshotGolden` (`metal/snapshot_golden_test.go:130`) loads with no
 `Backend` set, then calls Metal's unexported `buildResident` directly — an idiom used at 87 sites
 in `metal/*_test.go` (6 in `gpu/`, `cuda/` unchecked). With the empty backend resolving to CPU
 and therefore repacked-only, `int4Concat` (`metal/model.go:543`) declined via its

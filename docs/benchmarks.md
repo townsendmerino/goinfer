@@ -1121,8 +1121,9 @@ this is the "after" beside that "before".
 Against Ollama at 3900 (flat at 76.2–76.6 across both runs, the drift control): the gap narrows
 from **1.96× behind to 1.64× behind**. Not bit-identical to the previous kernel — see
 `docs/env-vars.md`'s `GOINFER_METAL_ATTN_FA` entry for the full consequence list (test pins added,
-a `TestMetalSnapshotGolden` coverage gap left open, a second pre-existing source of decode/`ForwardN`
-divergence on the already-non-viable Metal spec-decode verify path).
+the `TestMetalSnapshotGolden` coverage gap closed 2026-09-21 via `llama-attnfa-tiny`, a second
+pre-existing source of decode/`ForwardN` divergence on the already-non-viable Metal spec-decode
+verify path).
 
 ### B4. Host↔VRAM MoE streaming — a 26B that does not fit the card (cgo-free CUDA)
 
