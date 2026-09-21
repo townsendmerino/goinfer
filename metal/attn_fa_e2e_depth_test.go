@@ -11,15 +11,14 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestAttentionFA_endToEndReproduction is the KEEPER reproducer for R2's (docs/tasks/red-
-// october.md) open bug: PARKED 2026-09-19 — a kernel proven correct in isolation (16/16 adversarial
-// cases in TestAttentionFA_vsReference, cosine 1.0000000 every time) diverges once wired into a
-// real generation, and the root cause was not found before the investigation was parked. (R1's
-// same-day layer-26 investigation, which this was first filed beside, turned out on 2026-09-20 to
-// be an oracle error — the shipped W4A8 lane used as ground truth; see
-// docs/measurements/r1-layer26-rootcause-2026-09-20.md and r1_gu_reference_test.go. That does not
-// transfer here: the shipped attention kernel this test compares against is f32, not int8-activation,
-// and steps 0-1 below agree with it to f32 rounding before the divergence appears.)
+// TestAttentionFA_endToEndReproductionDepth2200 is the depth-2200 twin of attn_fa_e2e_test.go's
+// keeper reproducer of the signature that PARKED R2 (docs/tasks/red-october.md) on 2026-09-19.
+// EXPLAINED 2026-09-21 (docs/measurements/r2-attn-fa-rootcause-2026-09-21.md; instrument:
+// r2_ctx_diff_test.go): not a kernel defect — on identical inputs attention_fa matches the shipped
+// kernel to <=1e-5 at every layer and step; the logit divergence is one int8 activation-quantization
+// rounding crossing on accumulated f32 reduction-order noise (the kernel is non-bit-identical by
+// design), amplified downstream and carried forward by the KV cache. The numbers this test
+// measures are unchanged; what they mean is.
 //
 // The reproduction is precise and fully deterministic (identical across repeated runs): batch-
 // prefill a real qwen2.5-1.5b checkpoint to depth 1600 (> attnFADepthFloor), then decode 5 tokens

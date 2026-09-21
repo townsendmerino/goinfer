@@ -12,6 +12,16 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
+// RESOLVED 2026-09-21 (docs/measurements/r2-attn-fa-rootcause-2026-09-21.md): both diagnostics
+// below measured something real and neither measured a kernel defect. The position linkage the
+// sweep found is the INPUT's — position 1602's forward pass has an element within ~1e-6 of an int8
+// activation-quantization rounding boundary, which attention_fa's sparse f32 reduction-order noise
+// crosses at layer 16 (r2_ctx_diff_test.go's accumulated-divergence table). The ULP control's
+// "immediate, uniform" divergence was evidence FOR that hypersensitivity, not against it: a scale
+// nudge is a dense perturbation of every score at every layer and crosses a boundary at once; the
+// proper control (shipped kernels + a 1e-6 residual nudge after layer 0, same magnitude as the
+// kernel's real discrepancy) reproduces attention_fa's 0.6-level logit jump at every step.
+//
 // TestAttentionFA_positionSweep answers a sharp objection to the "call-count, not position"
 // conclusion in docs/measurements/r2-attn-fa-followup-2026-09-20.md: the two prefill depths
 // already tried, 1600 and 2200, are BOTH multiples of 8 — so "third decode call" and "key count ≡

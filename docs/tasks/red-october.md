@@ -390,7 +390,7 @@ Status table, kept current as briefs move:
 | # | brief | box | size | status |
 |---|---|---|---|---|
 | R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | **DECIDED 2026-09-21: KILLED on speed.** 2026-09-20 correction: the 2026-09-19 "catastrophic bug" was the oracle, not the kernel. Gate (3) then PASSED cleanly 2026-09-21 (f16 slightly *more* faithful than shipped W4A8 against a CPU reference) — but served tok/s at the 1.5B decision cell is 75.2 vs W4A8's 73.1 (1.03×), below even the 1.10× killed floor; the depth curve confirms a flat ~2-4% gain everywhere, nowhere near the 1.25× ship bar. Kernel and tests kept, lane stays off by default — see the records |
-| R2 | Metal decode attention in the peer's shape | Mac | M–L | step 0 done 2026-09-18 (gap narrowed to 1.96× at 3900). **Build: PARKED 2026-09-19 — attention_fa kernel proven correct in isolation (16/16 adversarial cases), real speed win in isolation (up to 1.26× at K=3900), but diverges starting at the 3rd real decode token past the depth floor; root cause not found — see the record. 2026-09-20 follow-up: a race found+fixed (not the cause); an outside review caught the follow-up's own "call-count, not position" conclusion as drawn from a confounded test (both tried depths shared a mod-4 residue) — corrected: the divergence IS position-linked (a threshold in curNKeys, not a fixed call count), but not to one fixed absolute position either; root cause still open — see `docs/measurements/r2-attn-fa-followup-2026-09-20.md` §2b for the retraction and the corrected data.** |
+| R2 | Metal decode attention in the peer's shape | Mac | M–L | step 0 done 2026-09-18 (gap narrowed to 1.96× at 3900). Build PARKED 2026-09-19 on an end-to-end divergence at the 3rd decode token; 2026-09-20 follow-up fixed a real race (not the cause) and narrowed it to "position-linked, mechanism unknown". **UN-PARKED 2026-09-21: root cause found — not a kernel defect.** On identical inputs `attention_fa` matches the shipped kernel to ≤1e-5 at every layer and step; the divergence was one int8 activation-quantization rounding crossing (layer 16, position 1602) on accumulated f32 reduction-order noise through a hypersensitive Gaussian-noise input — a shipped-kernel run with a 1e-6 residual nudge reproduces it. **Gate (3) then PASSES on real prompts at K=3900** (hard flips 68 vs 70, agreement 80.3% vs 79.5%, mean KL 0.4859 vs 0.4861). The depth-bench speed band remains — see `docs/measurements/r2-attn-fa-rootcause-2026-09-21.md` |
 | R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | **SHIPPED 2026-09-20**: §3.2 gate SHIPS at K=64 alone and K=64+128 pooled; batched beats sequential TTFT 3.83× at K=64, 4.66× at K=128 (both past the ≥2× band) — floor moved 256→64. `noHead`/M-01 follow-on and `startPos`-on-speed still open |
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
 | R5 | CUDA prefill attention tile — P24 re-scoped with the corrected cap | Linux | M | scoped |
@@ -671,6 +671,28 @@ floor — bit-perfect for two tokens, then a stable, fully deterministic wrong a
 ruled out via a debug print (`GOINFER_ATTNFA_DEBUG=1`, kept in the source). Same PARKED shape as
 R1. Kept, not shipped: `TestAttentionFA_endToEndReproduction` (heavy-gated) is the keeper repro
 for whoever picks this up. End-to-end served tok/s against the registered band was never reached.
+
+**Root cause, 2026-09-21 — the divergence was the instrument; gate (3) PASSES; R2 UN-PARKED**
+([`r2-attn-fa-rootcause-2026-09-21.md`](../measurements/r2-attn-fa-rootcause-2026-09-21.md)). Both
+prior records compared **end-to-end logits** of a kernel that is non-bit-identical *by design*
+against the shipped path, on Gaussian-noise embeddings, through goinfer's per-tensor int8
+activation quantization — a discontinuous map — and neither measured the kernel's own output on
+real data. `metal/r2_ctx_diff_test.go` does: one resident, `r.decodeAttnFA` toggled at runtime, and
+at every (step, layer) the shipped kernel and `attention_fa` run on the *identical* residual and KV
+state. Result: `|ctxFA − ctxShipped|` ≤ 1e-5 at all 140 cells, including every "bad" step — the
+isolated gate's numbers are the production numbers. The accumulated trajectory divergence stays ≤
+3e-5 for 16 layers at position 1602 and then jumps in one layer to 6e-2 across 1334/1536 residual
+elements — one int8 rounding crossing, at a layer whose own kernel discrepancy is 3e-6 — and grows
+to 0.78 by layer 27: the record's 0.588, to the digit, with or without prior `attention_fa` steps
+(prefill 1602, step 0, reproduces it bit-for-bit). A control with the **shipped kernels only** plus
+a 1e-6 residual nudge after layer 0 produces the same 0.57–0.74 logit jump at every step. The
+follow-up's position linkage was real and is the input's (a near-boundary element at position
+1602); its ULP control was evidence *for* hypersensitivity, misread as evidence against. Then the
+real gate (3) the brief specifies — S at K=3900, 10 prompts × 64 teacher-forced positions against
+the CPU f32 reference, `metal/r2_gate_test.go` — **passes on all three pooled criteria** (hard flips
+68 ≤ 70, agreement 80.31% ≥ 79.53%, mean KL 0.4859 ≤ 0.4861, lower on 6/10 prompts). **What remains
+is the depth-bench speed band above, unchanged; not run here.** The three e2e/sweep/control tests
+are kept with their doc comments corrected; the 2026-09-20 race fix stands.
 
 **Out of scope.** KV quantisation (§A3 — a byte lever on a term this brief says is not byte-bound),
 prefill attention (R4), the paged families' attention (their term is the command-buffer boundary,
