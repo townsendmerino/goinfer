@@ -1715,9 +1715,13 @@ Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line a
 
 1. **M-02 + M-01 + G-01** — **CLOSED 2026-09-13** (`6cc862a0`). Floor → 256; `ForwardNoLogits`
    shipped synchronous rather than as a `noHead` executor job (see M-01's own closure note for the
-   scoped-down fix and the follow-up that stays open); the red test made green. Not yet done: the
-   full `noHead`-executor-job version (~0.9 ms/token of unclaimed encode-ahead overlap) and the
-   TTFT ladder re-run at K∈{64,128,256,512} this item called for.
+   scoped-down fix and the follow-up that stays open); the red test made green. The TTFT ladder
+   re-run this item called for **ran 2026-09-20/21** (`docs/tasks/red-october.md` R3,
+   [`metal-prefill-floor-2026-09-20.md`](measurements/metal-prefill-floor-2026-09-20.md) +
+   [`r3-startpos-speed-2026-09-21.md`](measurements/r3-startpos-speed-2026-09-21.md)) — floor moved
+   256→64, batched beats sequential 3.83-4.66× at `startPos=0` and 4.01-4.13× at the realistic
+   `startPos=512` prefix-reuse shape. Not yet done: the full `noHead`-executor-job version
+   (~0.9 ms/token of unclaimed encode-ahead overlap) — still open, unattempted.
 2. **M-03** — **CLOSED 2026-09-13** (`f6c222ee`). 32×32 per-simdgroup block, all-lane dequant, A
    staged per threadgroup, exactly as scoped. §3.2 pooled gate SHIPS (see M-03's own closure note);
    the P=256 TTFT re-measurement this item called for **ran 2026-09-18** (`docs/tasks/red-october.md`
