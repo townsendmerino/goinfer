@@ -1967,6 +1967,12 @@ func onecfg(b, sh int) LaunchConfig {
 	return LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: uint32(b), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(sh)}
 }
 
+// glueQuantThreads is glu_quant's block size. The kernel is ONE block (its int8 scale needs the max over the whole intermediate
+// vector), so its time is the serial per-thread loop over I elements: at 256 threads it measured 35.7 us per layer on D7 (I = 18944),
+// 6.7-7.3% of a decode token. Its only reduction is a MAX (exact, order-independent) and every element's value and packing are per-element, so
+// the block size changes nothing but how the work is divided: the output is bit-identical (checked on real logits, docs/measurements/d7-decode-breakdown-2026-09-21.md).
+const glueQuantThreads = 1024
+
 func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) error {
 	if r.dbgFreeBeforeLaunch == 0 { // A1: free VRAM at the FIRST launch, recording only
 		if f0, _, e0 := r.dev.Context().MemInfo(); e0 == nil {
@@ -2389,7 +2395,7 @@ func (r *cudaResident) launchGluSplitExpert(gu Buffer, inter int, outQ, outSc, o
 			gpu.ArgValue(r.gptOssAlpha), gpu.ArgValue(r.gptOssLimit),
 			Arg(outQ), Arg(outSc), Arg(outScr))
 	}
-	return r.launch(r.fSw, onecfg(256, 256*4),
+	return r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4),
 		Arg(gu), Arg(gu), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(inter)),
 		gpu.ArgValue(int32(inter)), gpu.ArgValue(r.act),
 		Arg(outQ), Arg(outSc), Arg(outScr))
@@ -2517,7 +2523,7 @@ func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int, x Buffer) error {
 	if e := r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0); e != nil {
 		return e
 	}
-	if e := r.launch(r.fSw, onecfg(256, 256*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)),
+	if e := r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)),
 		gpu.ArgValue(int32(r.inter)), gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); e != nil {
 		return e
 	}
@@ -2959,7 +2965,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 			return e
 		}
 	}
-	if err := r.launch(r.fSw, onecfg(256, 256*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.inter)),
+	if err := r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.inter)),
 		gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); err != nil {
 		return err
 	}

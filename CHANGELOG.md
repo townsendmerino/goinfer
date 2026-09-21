@@ -17,6 +17,11 @@ any surface may still change.
 
 ### Changed
 
+- **CUDA decode is ~4-5% faster on models with a wide MLP, bit-identically.** `glu_quant` (the SwiGLU/GeGLU activation + int8 quantise, a single-block kernel) was launched with 256 threads and
+  cost 36 us per layer on qwen2.5-7b, 7% of a token; it now uses 1024 (13.6 us). Its only reduction is a max, so the output is unchanged (SHA-256 of 25 steps' logits identical on three
+  models; `TestGluQuantBlockSizeInvariant`). Same-session vs the previous build: 1.5B +5.3-5.8%, qwen2.5-7b +4.1-4.5% (now 0.99-1.03x of Ollama v0.32.5 from 0.95-0.98x), 0.5B +0.5%
+  (`docs/measurements/d7-decode-breakdown-2026-09-21.md`).
+
 - **Metal decode attention now defaults to `attention_fa` past depth 1536** (dense-GQA, hd=128;
   the shipped `attention` kernel still runs below the floor, and for windowed/sink/paged-MoE/f32-KV
   layers unconditionally). A real, deterministic **1.11–1.19× at depth** (54.9 vs 49.4 tok/s at
