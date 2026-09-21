@@ -230,6 +230,13 @@ var geluQuantPTX []byte
 //go:embed testdata/attn_fused.ptx
 var attnFusedPTX []byte
 
+// attnFusedBMPTX: R5 phase-1 tile-shape variants of attn_fused (32-row query tile, 64- or 32-key tile), template
+// parameters of cuda/attn_fused_bm.cu. Its own module: attn_fused.ptx is audited and not regenerated.
+// Experiment arms (docs/measurements/attn-fused-tile-PREREGISTERED.md), selected only by attnTile.
+//
+//go:embed testdata/attn_fused_bm.ptx
+var attnFusedBMPTX []byte
+
 // gemmMMAPTX: gemm_w4a8_mma — the L3 tensor-core int4xint8 GEMM with group scales
 // (docs/completed/task-prefill-gap.md §4 L3). Own module, same isolation reason as attn_fused.cu: the
 // audited moe.ptx / glue.ptx / prefill_batched.ptx must not be regenerated to add a kernel.

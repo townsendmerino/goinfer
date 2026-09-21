@@ -1019,6 +1019,26 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 				loadF(&r.bAttnFused64, "attn_fused_hd64")
 				loadF(&r.bAttnFused128, "attn_fused_hd128")
+				if bmod, eb := r.dev.CompileLibrary(attnFusedBMPTX); eb == nil {
+					loadF2 := func(dst *Pipeline, name string) {
+						if pl, pe := r.dev.NewComputePipeline(bmod, name); pe == nil {
+							*dst = pl
+						}
+					}
+					loadF2(&r.bAttnBM32x64hd64, "attn_fused_bm32_hd64")
+					loadF2(&r.bAttnBM32x64hd128, "attn_fused_bm32_hd128")
+					loadF2(&r.bAttnBM32x32hd64, "attn_fused_bm32n32_hd64")
+					loadF2(&r.bAttnBM32x32hd128, "attn_fused_bm32n32_hd128")
+					loadF2(&r.bAttnBM128hd64, "attn_fused_bm128_hd64")
+					loadF2(&r.bAttnBM128hd128, "attn_fused_bm128_hd128")
+					if v := os.Getenv("GOINFER_CUDA_ATTN_FUSED_TILE"); v == "128x64" {
+						r.attnTile = 3
+					} else if v == "32x64" {
+						r.attnTile = 1
+					} else if v == "32x32" {
+						r.attnTile = 2
+					}
+				}
 			}
 			// L3 tensor-core GEMM, its own module and its own half of the gate. Bound through the
 			// same &r.<field> loader closure as every other pipeline here, which is what

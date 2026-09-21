@@ -452,187 +452,220 @@ func TestAttnFused_vsF16Reference(t *testing.T) {
 		{"hd64/window+sinks", 4, 2, 64, 70, 150, 96, true},
 	}
 	const scale = 0.125
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			qDim, kvDim := c.nH*c.hd, c.nKV*c.hd
-			nKeys := c.startPos + c.M
-			q := make([]float32, c.M*qDim)
-			kc := make([]float32, nKeys*kvDim)
-			vc := make([]float32, nKeys*kvDim)
-			for i := range q {
-				q[i] = float32(math.Sin(float64(i)*0.37)) * 0.5
-			}
-			for i := range kc {
-				kc[i] = float32(math.Cos(float64(i) * 0.21))
-				vc[i] = float32(math.Sin(float64(i)*0.13)) * 0.7
-			}
-			var sinkVals []float32
-			if c.sinks {
-				sinkVals = make([]float32, c.nH)
-				for i := range sinkVals {
-					sinkVals[i] = float32(math.Cos(float64(i)*1.7)) * 2
+	// R5 phase 1 (attn-fused-tile-PREREGISTERED.md): every arm is held to the same logic bar. arm 0 is the shipped 64x64;
+	// 1 = 32x64 and 2 = 32x32 (query rows x keys per tile). The reference walks the ARM'S tiles, as it must (see below).
+	arms := []struct {
+		name   string
+		bm, bn int
+	}{{"64x64", 64, 64}, {"32x64", 32, 64}, {"32x32", 32, 32}, {"128x64", 128, 64}}
+	for ai, arm := range arms {
+		bmT, bnT := arm.bm, arm.bn
+		for _, c := range cases {
+			t.Run(arm.name+"/"+c.name, func(t *testing.T) {
+				qDim, kvDim := c.nH*c.hd, c.nKV*c.hd
+				nKeys := c.startPos + c.M
+				q := make([]float32, c.M*qDim)
+				kc := make([]float32, nKeys*kvDim)
+				vc := make([]float32, nKeys*kvDim)
+				for i := range q {
+					q[i] = float32(math.Sin(float64(i)*0.37)) * 0.5
 				}
-			}
+				for i := range kc {
+					kc[i] = float32(math.Cos(float64(i) * 0.21))
+					vc[i] = float32(math.Sin(float64(i)*0.13)) * 0.7
+				}
+				var sinkVals []float32
+				if c.sinks {
+					sinkVals = make([]float32, c.nH)
+					for i := range sinkVals {
+						sinkVals[i] = float32(math.Cos(float64(i)*1.7)) * 2
+					}
+				}
 
-			// Reference: exact f64 over f16-rounded operands, ROUNDED AND SEQUENCED THE WAY THE
-			// KERNEL DOES IT.
-			//
-			// A one-pass softmax over the global max is mathematically equal to the online form but
-			// NOT numerically equal, and modelling it that way is a real error rather than a nicety:
-			// the kernel rounds each tile's PROVISIONAL weights exp(s - m_running) to f16 and then
-			// rescales the f32 accumulator by exp(m_old - m_new), so the f16 rounding happens at a
-			// different scale than a global-max reference would apply. Measured, before this was
-			// fixed: a global-max reference put the multi-tile cases at cosine 0.9992-0.9994 while
-			// single-tile cases sat at 0.99999996 — a gap that reads exactly like a rescale defect
-			// and is in fact the reference not modelling the algorithm. So the reference walks the
-			// same BN-key tiles in the same order and carries the same running state.
-			ref := make([]float64, c.M*qDim)
-			for m := 0; m < c.M; m++ {
-				nk := c.startPos + m + 1
-				win := 0
-				if c.window > 0 && nk > int(c.window) {
-					win = nk - int(c.window)
-				}
-				for h := 0; h < c.nH; h++ {
-					kvh := h / (c.nH / c.nKV)
-					// Block-uniform tile bounds, exactly as the kernel computes them.
-					qTile := (m / attnFusedBM) * attnFusedBM
-					lastRow := qTile + attnFusedBM - 1
-					if lastRow > c.M-1 {
-						lastRow = c.M - 1
+				// Reference: exact f64 over f16-rounded operands, ROUNDED AND SEQUENCED THE WAY THE
+				// KERNEL DOES IT.
+				//
+				// A one-pass softmax over the global max is mathematically equal to the online form but
+				// NOT numerically equal, and modelling it that way is a real error rather than a nicety:
+				// the kernel rounds each tile's PROVISIONAL weights exp(s - m_running) to f16 and then
+				// rescales the f32 accumulator by exp(m_old - m_new), so the f16 rounding happens at a
+				// different scale than a global-max reference would apply. Measured, before this was
+				// fixed: a global-max reference put the multi-tile cases at cosine 0.9992-0.9994 while
+				// single-tile cases sat at 0.99999996 — a gap that reads exactly like a rescale defect
+				// and is in fact the reference not modelling the algorithm. So the reference walks the
+				// same BN-key tiles in the same order and carries the same running state.
+				ref := make([]float64, c.M*qDim)
+				for m := 0; m < c.M; m++ {
+					nk := c.startPos + m + 1
+					win := 0
+					if c.window > 0 && nk > int(c.window) {
+						win = nk - int(c.window)
 					}
-					blockMax := c.startPos + lastRow + 1
-					blockMinWin := 0
-					if c.window > 0 {
-						if fk := c.startPos + qTile + 1; fk > int(c.window) {
-							blockMinWin = fk - int(c.window)
+					for h := 0; h < c.nH; h++ {
+						kvh := h / (c.nH / c.nKV)
+						// Block-uniform tile bounds, exactly as the kernel computes them.
+						qTile := (m / bmT) * bmT
+						lastRow := qTile + bmT - 1
+						if lastRow > c.M-1 {
+							lastRow = c.M - 1
 						}
-					}
-					mRun := math.Inf(-1)
-					lRun := 0.0
-					if c.sinks {
-						mRun, lRun = float64(sinkVals[h]), 1.0
-					}
-					acc := make([]float64, c.hd)
-					for s0 := blockMinWin; s0 < blockMax; s0 += attnFusedBM {
-						nkTile := attnFusedBM
-						if blockMax-s0 < nkTile {
-							nkTile = blockMax - s0
-						}
-						tileMax := math.Inf(-1)
-						sc := make([]float64, nkTile)
-						ok := make([]bool, nkTile)
-						for j := 0; j < nkTile; j++ {
-							key := s0 + j
-							if key < win || key >= nk {
-								continue
+						blockMax := c.startPos + lastRow + 1
+						blockMinWin := 0
+						if c.window > 0 {
+							if fk := c.startPos + qTile + 1; fk > int(c.window) {
+								blockMinWin = fk - int(c.window)
 							}
-							var dot float64
+						}
+						mRun := math.Inf(-1)
+						lRun := 0.0
+						if c.sinks {
+							mRun, lRun = float64(sinkVals[h]), 1.0
+						}
+						acc := make([]float64, c.hd)
+						for s0 := blockMinWin; s0 < blockMax; s0 += bnT {
+							nkTile := bnT
+							if blockMax-s0 < nkTile {
+								nkTile = blockMax - s0
+							}
+							tileMax := math.Inf(-1)
+							sc := make([]float64, nkTile)
+							ok := make([]bool, nkTile)
+							for j := 0; j < nkTile; j++ {
+								key := s0 + j
+								if key < win || key >= nk {
+									continue
+								}
+								var dot float64
+								for d := 0; d < c.hd; d++ {
+									dot += float64(f16rne(q[m*qDim+h*c.hd+d])) * float64(f16rne(kc[key*kvDim+kvh*c.hd+d]))
+								}
+								sc[j] = dot * scale
+								ok[j] = true
+								tileMax = math.Max(tileMax, sc[j])
+							}
+							mNew := math.Max(mRun, tileMax)
+							alpha := math.Exp(mRun - mNew)
+							if math.IsInf(mRun, -1) && math.IsInf(mNew, -1) {
+								alpha = 1
+							}
+							live := !math.IsInf(mNew, -1)
+							var sum float64
+							for j := 0; j < nkTile; j++ {
+								if ok[j] && live {
+									sc[j] = math.Exp(sc[j] - mNew)
+									sum += sc[j]
+								} else {
+									sc[j] = 0
+								}
+							}
 							for d := 0; d < c.hd; d++ {
-								dot += float64(f16rne(q[m*qDim+h*c.hd+d])) * float64(f16rne(kc[key*kvDim+kvh*c.hd+d]))
+								acc[d] *= alpha
 							}
-							sc[j] = dot * scale
-							ok[j] = true
-							tileMax = math.Max(tileMax, sc[j])
-						}
-						mNew := math.Max(mRun, tileMax)
-						alpha := math.Exp(mRun - mNew)
-						if math.IsInf(mRun, -1) && math.IsInf(mNew, -1) {
-							alpha = 1
-						}
-						live := !math.IsInf(mNew, -1)
-						var sum float64
-						for j := 0; j < nkTile; j++ {
-							if ok[j] && live {
-								sc[j] = math.Exp(sc[j] - mNew)
-								sum += sc[j]
-							} else {
-								sc[j] = 0
+							for j := 0; j < nkTile; j++ {
+								if sc[j] == 0 {
+									continue
+								}
+								pj := float64(f16rne(float32(sc[j])))
+								for d := 0; d < c.hd; d++ {
+									acc[d] += pj * float64(f16rne(vc[(s0+j)*kvDim+kvh*c.hd+d]))
+								}
 							}
+							lRun = alpha*lRun + sum
+							mRun = mNew
 						}
 						for d := 0; d < c.hd; d++ {
-							acc[d] *= alpha
+							ref[m*qDim+h*c.hd+d] = acc[d] / lRun
 						}
-						for j := 0; j < nkTile; j++ {
-							if sc[j] == 0 {
-								continue
-							}
-							pj := float64(f16rne(float32(sc[j])))
-							for d := 0; d < c.hd; d++ {
-								acc[d] += pj * float64(f16rne(vc[(s0+j)*kvDim+kvh*c.hd+d]))
-							}
-						}
-						lRun = alpha*lRun + sum
-						mRun = mNew
-					}
-					for d := 0; d < c.hd; d++ {
-						ref[m*qDim+h*c.hd+d] = acc[d] / lRun
 					}
 				}
-			}
 
-			var fused []float32
-			err := r.do(func() error {
-				qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(vc))
-				ob := r.af(c.M * qDim)
-				sinkArg := ArgNull()
-				if c.sinks {
-					sb := r.af(len(sinkVals))
-					if e := gpu.Upload(sb, sinkVals); e != nil {
+				var fused []float32
+				err := r.do(func() error {
+					qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(vc))
+					ob := r.af(c.M * qDim)
+					sinkArg := ArgNull()
+					if c.sinks {
+						sb := r.af(len(sinkVals))
+						if e := gpu.Upload(sb, sinkVals); e != nil {
+							return e
+						}
+						sinkArg = Arg(sb)
+					}
+					for b, src := range map[Buffer][]float32{qb: q, kb: kc, vb: vc} {
+						if e := gpu.Upload(b, src); e != nil {
+							return e
+						}
+					}
+					pipe, shmem := r.attnFusedFor(c.hd)
+					cfg := LaunchConfig{GridX: uint32(c.nH), GridY: uint32((c.M + attnFusedBM - 1) / attnFusedBM),
+						GridZ: 1, BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: shmem}
+					if ai != 0 {
+						pipe = tilePipeline(r, ai, c.hd)
+						cfg.GridY, cfg.BlockX = uint32((c.M+bmT-1)/bmT), uint32(bmT/16*32)
+						cfg.SharedMemBytes = uint32(2 * (bnT*(c.hd+attnFusedKPAD) + c.hd*(bnT+attnFusedKPAD)))
+					}
+					if e := r.launch(pipe, cfg, Arg(qb), Arg(kb), Arg(vb),
+						gpu.ArgValue(int32(c.nH)), gpu.ArgValue(int32(c.nKV)), gpu.ArgValue(int32(c.hd)),
+						gpu.ArgValue(int32(c.startPos)), gpu.ArgValue(float32(scale)),
+						gpu.ArgValue(c.window), gpu.ArgValue(int32(c.M)), Arg(ob), sinkArg); e != nil {
 						return e
 					}
-					sinkArg = Arg(sb)
-				}
-				for b, src := range map[Buffer][]float32{qb: q, kb: kc, vb: vc} {
-					if e := gpu.Upload(b, src); e != nil {
+					if e := r.stream.Sync(); e != nil {
 						return e
 					}
+					fused = make([]float32, c.M*qDim)
+					return gpu.Download(ob, fused)
+				})
+				if err != nil {
+					t.Fatalf("launch: %v", err)
 				}
-				pipe, shmem := r.attnFusedFor(c.hd)
-				cfg := LaunchConfig{GridX: uint32(c.nH), GridY: uint32((c.M + attnFusedBM - 1) / attnFusedBM),
-					GridZ: 1, BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: shmem}
-				if e := r.launch(pipe, cfg, Arg(qb), Arg(kb), Arg(vb),
-					gpu.ArgValue(int32(c.nH)), gpu.ArgValue(int32(c.nKV)), gpu.ArgValue(int32(c.hd)),
-					gpu.ArgValue(int32(c.startPos)), gpu.ArgValue(float32(scale)),
-					gpu.ArgValue(c.window), gpu.ArgValue(int32(c.M)), Arg(ob), sinkArg); e != nil {
-					return e
+
+				worst, worstAt := 1.0, ""
+				for m := 0; m < c.M; m++ {
+					for h := 0; h < c.nH; h++ {
+						off := m*qDim + h*c.hd
+						var dot, na, nb float64
+						for d := 0; d < c.hd; d++ {
+							x, y := float64(fused[off+d]), ref[off+d]
+							dot += x * y
+							na += x * x
+							nb += y * y
+						}
+						if na == 0 || nb == 0 {
+							continue
+						}
+						if cos := dot / (math.Sqrt(na) * math.Sqrt(nb)); cos < worst {
+							worst, worstAt = cos, fmt.Sprintf("m=%d h=%d", m, h)
+						}
+					}
 				}
-				if e := r.stream.Sync(); e != nil {
-					return e
+				t.Logf("%s: worst per-row cosine vs f16-input f64 reference = %.8f (%s)", c.name, worst, worstAt)
+				// The kernel reproduces its own inputs' arithmetic; anything below this is LOGIC.
+				if worst < 0.99999 {
+					t.Errorf("%s: worst cosine %.8f at %s vs the f16-input reference — this is a kernel "+
+						"logic defect, not operand precision, because the reference uses the same f16 "+
+						"operands the kernel does", c.name, worst, worstAt)
 				}
-				fused = make([]float32, c.M*qDim)
-				return gpu.Download(ob, fused)
 			})
-			if err != nil {
-				t.Fatalf("launch: %v", err)
-			}
-
-			worst, worstAt := 1.0, ""
-			for m := 0; m < c.M; m++ {
-				for h := 0; h < c.nH; h++ {
-					off := m*qDim + h*c.hd
-					var dot, na, nb float64
-					for d := 0; d < c.hd; d++ {
-						x, y := float64(fused[off+d]), ref[off+d]
-						dot += x * y
-						na += x * x
-						nb += y * y
-					}
-					if na == 0 || nb == 0 {
-						continue
-					}
-					if cos := dot / (math.Sqrt(na) * math.Sqrt(nb)); cos < worst {
-						worst, worstAt = cos, fmt.Sprintf("m=%d h=%d", m, h)
-					}
-				}
-			}
-			t.Logf("%s: worst per-row cosine vs f16-input f64 reference = %.8f (%s)", c.name, worst, worstAt)
-			// The kernel reproduces its own inputs' arithmetic; anything below this is LOGIC.
-			if worst < 0.99999 {
-				t.Errorf("%s: worst cosine %.8f at %s vs the f16-input reference — this is a kernel "+
-					"logic defect, not operand precision, because the reference uses the same f16 "+
-					"operands the kernel does", c.name, worst, worstAt)
-			}
-		})
+		}
 	}
+}
+
+// tilePipeline returns the R5 phase-1 arm's pipeline (1 = 32x64, 2 = 32x32) for a head dim; the zero Pipeline if not loaded.
+func tilePipeline(r *cudaResident, arm, hd int) Pipeline {
+	switch {
+	case arm == 1 && hd == 64:
+		return r.bAttnBM32x64hd64
+	case arm == 1 && hd == 128:
+		return r.bAttnBM32x64hd128
+	case arm == 3 && hd == 64:
+		return r.bAttnBM128hd64
+	case arm == 3 && hd == 128:
+		return r.bAttnBM128hd128
+	case arm == 2 && hd == 64:
+		return r.bAttnBM32x32hd64
+	case arm == 2 && hd == 128:
+		return r.bAttnBM32x32hd128
+	}
+	return Pipeline{}
 }

@@ -1,0 +1,82 @@
+=== round 1 arm 64x64 14:31:03
+=== RUN   TestPrefillDecomp
+    prefill_decomp_test.go:55: N            gemv       attn       glue     catSum    attn%
+    prefill_decomp_test.go:92: 512    68.394605ms 12.851313ms 10.874508ms 92.120426ms    14.0%
+    prefill_decomp_test.go:92: 1024   136.220285ms 46.05792ms 22.069913ms 204.348118ms    22.5%
+    prefill_decomp_test.go:92: 2048   273.673824ms 210.610631ms 45.799489ms 530.083944ms    39.7%
+    prefill_decomp_test.go:92: 3900   530.956729ms 808.586598ms 90.564395ms 1.430107722s    56.5%
+--- PASS: TestPrefillDecomp (17.43s)
+PASS
+=== round 1 arm 32x64 14:31:21
+=== RUN   TestPrefillDecomp
+    prefill_decomp_test.go:55: N            gemv       attn       glue     catSum    attn%
+    prefill_decomp_test.go:92: 512    68.480798ms 33.079198ms 11.551969ms 113.111965ms    29.2%
+    prefill_decomp_test.go:92: 1024   136.2247ms 120.665751ms 22.975842ms 279.866293ms    43.1%
+    prefill_decomp_test.go:92: 2048   272.336898ms 546.10124ms 46.608254ms 865.046392ms    63.1%
+    prefill_decomp_test.go:92: 3900   528.560308ms 2.306412323s 92.412831ms 2.927385462s    78.8%
+--- PASS: TestPrefillDecomp (24.99s)
+PASS
+=== round 1 arm 32x32 14:31:46
+=== RUN   TestPrefillDecomp
+    prefill_decomp_test.go:55: N            gemv       attn       glue     catSum    attn%
+    prefill_decomp_test.go:92: 512    68.629537ms 19.004109ms 11.498966ms 99.132612ms    19.2%
+    prefill_decomp_test.go:92: 1024   136.196452ms 65.459221ms 22.43712ms 224.092793ms    29.2%
+    prefill_decomp_test.go:92: 2048   273.096406ms 267.846636ms 46.112325ms 587.055367ms    45.6%
+    prefill_decomp_test.go:92: 3900   528.594604ms 961.202385ms 89.785787ms 1.579582776s    60.9%
+--- PASS: TestPrefillDecomp (18.33s)
+PASS
+=== round 2 arm 64x64 14:32:04
+=== RUN   TestPrefillDecomp
+    prefill_decomp_test.go:55: N            gemv       attn       glue     catSum    attn%
+    prefill_decomp_test.go:92: 512    68.19829ms 12.801279ms 11.113552ms 92.113121ms    13.9%
+    prefill_decomp_test.go:92: 1024   136.602906ms 46.39305ms 22.235814ms 205.23177ms    22.6%
+    prefill_decomp_test.go:92: 2048   273.691742ms 211.25405ms 45.072759ms 530.018551ms    39.9%
+    prefill_decomp_test.go:92: 3900   530.781558ms 806.362834ms 90.604619ms 1.427749011s    56.5%
+--- PASS: TestPrefillDecomp (17.33s)
+PASS
+=== round 2 arm 32x64 14:32:21
+=== RUN   TestPrefillDecomp
+    prefill_decomp_test.go:55: N            gemv       attn       glue     catSum    attn%
+    prefill_decomp_test.go:92: 512    67.953328ms 32.946707ms 11.014005ms 111.91404ms    29.4%
+    prefill_decomp_test.go:92: 1024   135.89386ms 120.634565ms 22.894199ms 279.422624ms    43.2%
+    prefill_decomp_test.go:92: 2048   272.526821ms 547.251116ms 45.399222ms 865.177159ms    63.3%
+    prefill_decomp_test.go:92: 3900   528.411616ms 2.307685383s 92.399448ms 2.928496447s    78.8%
+--- PASS: TestPrefillDecomp (25.02s)
+PASS
+=== round 2 arm 32x32 14:32:46
+=== RUN   TestPrefillDecomp
+    prefill_decomp_test.go:55: N            gemv       attn       glue     catSum    attn%
+    prefill_decomp_test.go:92: 512    67.939705ms 18.893967ms 10.579966ms 97.413638ms    19.4%
+    prefill_decomp_test.go:92: 1024   135.926191ms 65.20397ms 21.913526ms 223.043687ms    29.2%
+    prefill_decomp_test.go:92: 2048   273.651111ms 268.956553ms 44.572289ms 587.179953ms    45.8%
+    prefill_decomp_test.go:92: 3900   530.926915ms 963.5344ms 86.95335ms 1.581414665s    60.9%
+--- PASS: TestPrefillDecomp (18.34s)
+PASS
+=== round 3 arm 64x64 14:33:05
+=== RUN   TestPrefillDecomp
+    prefill_decomp_test.go:55: N            gemv       attn       glue     catSum    attn%
+    prefill_decomp_test.go:92: 512    68.119046ms 12.822983ms 11.278001ms 92.22003ms    13.9%
+    prefill_decomp_test.go:92: 1024   136.086332ms 46.115002ms 22.199848ms 204.401182ms    22.6%
+    prefill_decomp_test.go:92: 2048   272.105769ms 210.020609ms 45.894578ms 528.020956ms    39.8%
+    prefill_decomp_test.go:92: 3900   530.794418ms 808.312655ms 89.845819ms 1.428952892s    56.6%
+--- PASS: TestPrefillDecomp (17.40s)
+PASS
+=== round 3 arm 32x64 14:33:22
+=== RUN   TestPrefillDecomp
+    prefill_decomp_test.go:55: N            gemv       attn       glue     catSum    attn%
+    prefill_decomp_test.go:92: 512    67.860913ms 32.682135ms 11.625551ms 112.168599ms    29.1%
+    prefill_decomp_test.go:92: 1024   136.257801ms 120.630412ms 22.654109ms 279.542322ms    43.2%
+    prefill_decomp_test.go:92: 2048   272.392824ms 545.756613ms 45.881998ms 864.031435ms    63.2%
+    prefill_decomp_test.go:92: 3900   528.743026ms 2.307277169s 92.154737ms 2.928174932s    78.8%
+--- PASS: TestPrefillDecomp (25.15s)
+PASS
+=== round 3 arm 32x32 14:33:48
+=== RUN   TestPrefillDecomp
+    prefill_decomp_test.go:55: N            gemv       attn       glue     catSum    attn%
+    prefill_decomp_test.go:92: 512    68.023243ms 18.95019ms 10.862948ms 97.836381ms    19.4%
+    prefill_decomp_test.go:92: 1024   136.041094ms 65.349523ms 22.09424ms 223.484857ms    29.2%
+    prefill_decomp_test.go:92: 2048   273.776055ms 269.450631ms 45.697402ms 588.924088ms    45.8%
+    prefill_decomp_test.go:92: 3900   531.174479ms 964.933543ms 88.983345ms 1.585091367s    60.9%
+--- PASS: TestPrefillDecomp (18.35s)
+PASS
+ALLDONE

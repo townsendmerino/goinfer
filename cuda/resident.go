@@ -617,6 +617,11 @@ type cudaResident struct {
 	// loaded; every selection site treats the zero Pipeline as "use attn_batched". Kept in its own
 	// alignment group so adding them does not re-align (and so re-diff) the fields above.
 	bAttnFused64, bAttnFused128 Pipeline
+	// R5 phase-1 tile-shape arms of attn_fused (attn_fused_bm.cu): 32x64 and 32x32 (query rows x keys), per head dim.
+	// attnTile picks the arm (0 = shipped 64x64, 1 = 32x64, 2 = 32x32, 3 = 128x64 diagnostic); GOINFER_CUDA_ATTN_FUSED_TILE, default 0.
+	bAttnBM32x64hd64, bAttnBM32x64hd128, bAttnBM32x32hd64, bAttnBM32x32hd128 Pipeline
+	bAttnBM128hd64, bAttnBM128hd128                                          Pipeline
+	attnTile                                                                 int
 	// L3 (§4 L3): the tensor-core int4 GEMM. Zero-valued unless selected AND loaded; bGemvB
 	// treats the zero Pipeline as "use gemv_w4a8_rn", which is the exact path.
 	bGemmMMA Pipeline
