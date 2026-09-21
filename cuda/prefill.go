@@ -1016,12 +1016,20 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l),
 			}
 			var attnErr error
+			// FLASH-DECODE LANE FOR SPECULATIVE VERIFY (attn-decode-fa-verify-PREREGISTERED.md): rows [laneFrom, M) of an all-rows
+			// verify batch are served by the multi-row lane, whose output is bit-identical to the M=1 lane at each row's position
+			// (TestFlashDecodeRowsBitIdentical), so a verified position scores exactly as plain lane decode scores it. Rows below
+			// laneFrom are under the attended-span floor and take the exact path below, as their M=1 decode would. laneFrom == M is
+			// "no lane rows" (the common case, and everything when the lane is off). laneFrom == 0 skips the exact launch entirely.
+			laneFrom := r.verifyLaneFrom(l, startPos, M, tail, imgEnd > imgStart)
 			// IMAGE BLOCK FIRST, unconditionally, before useAttnFused is even consulted — attn_fused's
 			// tile-level aggregates assume monotonic per-row nKeys across a 64-row tile, which an image
 			// block breaks (not supported; attn_batched's exact-path twin, attn_img_batched, is used
 			// instead). Checking imgEnd>imgStart after useAttnFused would risk silently routing a >=512
 			// -token image prompt through the incompatible fused kernel instead of declining to it.
-			if imgEnd > imgStart {
+			if laneFrom == 0 {
+				// every row is a lane row: the exact attention launch is skipped and the lane below writes the whole context buffer
+			} else if imgEnd > imgStart {
 				imgArgs := append(append([]gpu.KernelArg{}, attnArgs...),
 					gpu.ArgValue(int32(imgStart)), gpu.ArgValue(int32(imgEnd)))
 				attnErr = r.launch(r.bAttnImg, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
@@ -1038,6 +1046,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			} else {
 				attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
 					BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, attnArgs...)
+			}
+			if attnErr == nil && laneFrom < M {
+				attnErr = r.flashVerifyAttn(l, startPos, laneFrom, M, qBb, cctxB)
 			}
 			if attnErr != nil {
 				return attnErr

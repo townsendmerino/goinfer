@@ -56,6 +56,11 @@ var _ decoder.ExactAttentionScoper = (*cudaResident)(nil)
 // EnterExactAttention holds the exact-attention scope: while the count is non-zero the lane is bypassed. Counted, so nested or
 // overlapping scopes compose; atomic, because it is entered on a caller goroutine and read on the executor.
 func (r *cudaResident) EnterExactAttention() (leave func()) {
+	if r.faVerify {
+		// The multi-row lane serves verify rows bit-identically to M=1 lane decode, so decode and verify already share ONE tree (the lane's)
+		// and speculation needs no exact scope. GOINFER_CUDA_FLASH_DECODE_VERIFY=0 restores the scope (option A).
+		return func() {}
+	}
 	r.faExactScope.Add(1)
 	var once sync.Once
 	return func() { once.Do(func() { r.faExactScope.Add(-1) }) }
