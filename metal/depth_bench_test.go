@@ -31,13 +31,21 @@ func TestZZ_metalDepthBench(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("model not present: %v", path)
 	}
-	m, err := decoder.Load(path, decoder.Options{Quant: "int4"}) // Metal W4A8 decode path (matches §B3)
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4"}) // W4A8 weights; decode attention lane per r.decodeAttnFA below
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("resident: %v", err)
+	}
+	// Ambient GOINFER_METAL_ATTN_FA, not pinned: this test reports whichever arm the environment
+	// selects (default ON since 2026-09-21, R2) rather than hardcoding a label that would go stale
+	// the moment the default changed — see r.decodeAttnFA, set at buildResident from
+	// metalAttnFAEnabled(). The label below reflects it exactly.
+	attnLane := "shipped attention"
+	if r.decodeAttnFA {
+		attnLane = "attention_fa (default since 2026-09-21)"
 	}
 
 	const tok = 100 // any valid token id; content is decode-timing-irrelevant
@@ -80,7 +88,7 @@ func TestZZ_metalDepthBench(t *testing.T) {
 		rows = append(rows, row{d, float64(iters) / best.Seconds()})
 	}
 
-	t.Logf("Metal greedy decode by KV depth — qwen2.5-coder-1.5b (W4A8), M1 Pro, current binary:")
+	t.Logf("Metal greedy decode by KV depth — qwen2.5-coder-1.5b (W4A8, %s), M1 Pro, current binary:", attnLane)
 	for i, rw := range rows {
 		coef := ""
 		if i > 0 {

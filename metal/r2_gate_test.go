@@ -54,7 +54,7 @@ func TestR2_decodeFidelityGate(t *testing.T) {
 		}
 	}
 
-	t.Setenv("GOINFER_METAL_ATTN_FA", "") // kernel OFF at build; toggled at runtime below
+	t.Setenv("GOINFER_METAL_ATTN_FA", "0") // kernel OFF at build; toggled at runtime below
 	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: K + contN + 8})
 	if err != nil {
 		t.Fatalf("load: %v", err)

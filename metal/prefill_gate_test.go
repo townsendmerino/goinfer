@@ -64,6 +64,9 @@ func TestPrefillGate(t *testing.T) {
 		t.Skip("long-running gate: skipped in -short")
 	}
 	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1") // the FAST arm; the exact arm calls Forward directly
+	// Pin the "exact" arm off R2's decode attention lane (default-on since 2026-09-21, see
+	// prefill_gate_ref_test.go's identical pin for why) — this test is about the prefill lane.
+	t.Setenv("GOINFER_METAL_ATTN_FA", "0")
 	// G-07 (audit-metal-2026-09-12.md): this test's K=256 decision cell used to Fatalf outright —
 	// metalFastPrefillFloor was 512 and nothing here overrode it, so PrefillLast declined before
 	// any comparison ran. M-02 (same audit) lowered the default floor to 256, which happens to

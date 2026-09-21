@@ -43,7 +43,7 @@ not re-anchored against a peer (no vision peer harness exists either).
 | **Apple Silicon CPU prefill** | **vs Ollama: 1.54× behind at K=512, reaching 0.91× (AHEAD) at K=3900; whole-curve marginal ratio 0.86×, goinfer faster** — aikit v1.34.0's S-01 int4 tile roughly doubled it (67.6→141.7 tok/s at K=512, measured pre/post on one box). Supersedes the 2026-09-01 row of 2.98×/1.80×, which the pre-tile arm reproduced to within 4% | §A |
 | ↳ *and against our own past* | **8.61× faster than the pre-2026-09-01 record at 3020 tokens** (334.9 s → 38.9 s); the rate no longer falls with length (78.4 → 77.7 tok/s where it used to collapse 51.5 → 9.0) | §A |
 | **Apple Silicon CPU decode** | **goinfer is behind** — 0.67× (0.5B) and 0.65× (1.5B) of Ollama CPU on an M1 Pro as of 2026-09-17 (was 0.75–0.77×/0.57–0.60× on 2026-08-24; both engines got faster since, ratio moved opposite directions per model, unresolved — see the re-run). `int4` is the right default there | §A, "Re-run 2026-09-17 — MacBook" |
-| **Apple Silicon Metal decode** | **goinfer is behind on 1.5B/7B/phi3-mini (0.86×/0.86×/0.94×), narrowly ahead on 0.5B (1.08×, still n=2, unconfirmed)** — 1.5B/7B unchanged from the 2026-09-04/05 anchor. **At depth (R2 step 0, 2026-09-18): the gap grows with K (1.17×→1.96× behind, 128→3900) but has genuinely narrowed since the last matched comparison** — goinfer more than doubled at 4000 (18.5→39.1 tok/s) over six weeks while Ollama held flat (±4%), a real gain on a held-constant peer | "Re-run 2026-09-17 — MacBook"; depth curve §B3 |
+| **Apple Silicon Metal decode** | **goinfer is behind on 1.5B/7B/phi3-mini (0.86×/0.86×/0.94×), narrowly ahead on 0.5B (1.08×, still n=2, unconfirmed)** — 1.5B/7B unchanged from the 2026-09-04/05 anchor. **At depth (R2 step 0, 2026-09-18): the gap grows with K (1.17×→1.96× behind, 128→3900) but has genuinely narrowed since the last matched comparison** — goinfer more than doubled at 4000 (18.5→39.1 tok/s) over six weeks while Ollama held flat (±4%), a real gain on a held-constant peer. **2026-09-21: Metal decode attention defaults to `attention_fa` past depth 1536** (R2 Build, shipped by owner decision despite missing this repo's own peer-parity band) — 1.11×/1.19× on the cell at 2048/4000, narrowing the 3900 gap from 1.96× to **1.64× behind** (46.4 vs 76.2 tok/s); shallow depths (≤512) unaffected, same kernel | "Re-run 2026-09-17 — MacBook"; depth curve §B3 |
 | **Cold start & footprint** | **goinfer alone** — first token in **0.48 s**, **77 MB** resident, model compiled *into* the binary | §A, Table 1 |
 | **Peer-independent** | pure Go, `CGO_ENABLED=0` (no libcuda/libnvrtc linked), **bit-identical** decode, HF logit-parity gate as a contract | Table 1 |
 | **goinfer does not have** | continuous batching · GPU breadth · broad multimodal (vision-in only, no audio) · 36 architectures ʲ vs peers' dozens | Table 1 |
@@ -1101,6 +1101,28 @@ peer regression or a measurement artifact. (A same-day isolation caught and remo
 pass of this run used `OLLAMA_KV_CACHE_TYPE=q8_0`, inherited from the prefill protocol, which was
 independently costing Ollama 14–36% of its decode throughput, growing with depth — see the record
 for the isolation that found and excluded it.)
+
+**2026-09-21 — `attention_fa` shipped as Metal's default decode attention past depth 1536** (R2
+Build, `docs/tasks/red-october.md`), by owner decision, despite missing the peer-parity band this
+brief itself registered (needed ≥60 tok/s at depth 4000; measured 44.9). Full record:
+[`r2-attn-fa-speed-2026-09-21.md`](measurements/r2-attn-fa-speed-2026-09-21.md) (speed) and
+[`r2-attn-fa-rootcause-2026-09-21.md`](measurements/r2-attn-fa-rootcause-2026-09-21.md) (fidelity
+gate PASSES, and why the 2026-09-19/20 "divergence" that first parked this kernel was an
+instrument artifact, not a defect). Same box/model/protocol as the row above; not replacing it —
+this is the "after" beside that "before".
+
+| depth | shipped `attention` | `attention_fa` (now default) | ratio |
+|---|---|---|---|
+| 128 (served) | 73.6 tok/s | 74.0 tok/s | 1.01× (same kernel below the 1536 floor) |
+| 512 (depth bench) | 67.0 tok/s | 67.0 tok/s | 1.00× (same kernel) |
+| 2048 (depth bench) | 49.4 tok/s | 54.9 tok/s | 1.11× |
+| 3900 (served) | 39.1 tok/s | 46.4 tok/s | **1.19×** |
+
+Against Ollama at 3900 (flat at 76.2–76.6 across both runs, the drift control): the gap narrows
+from **1.96× behind to 1.64× behind**. Not bit-identical to the previous kernel — see
+`docs/env-vars.md`'s `GOINFER_METAL_ATTN_FA` entry for the full consequence list (test pins added,
+a `TestMetalSnapshotGolden` coverage gap left open, a second pre-existing source of decode/`ForwardN`
+divergence on the already-non-viable Metal spec-decode verify path).
 
 ### B4. Host↔VRAM MoE streaming — a 26B that does not fit the card (cgo-free CUDA)
 

@@ -17,6 +17,20 @@ any surface may still change.
 
 ### Changed
 
+- **Metal decode attention now defaults to `attention_fa` past depth 1536** (dense-GQA, hd=128;
+  the shipped `attention` kernel still runs below the floor, and for windowed/sink/paged-MoE/f32-KV
+  layers unconditionally). A real, deterministic **1.11–1.19× at depth** (54.9 vs 49.4 tok/s at
+  2048, 44.9 vs 37.8 at 4000, qwen2.5-coder-1.5b; identical below the floor —
+  `docs/measurements/r2-attn-fa-speed-2026-09-21.md`), shipped by owner decision despite missing
+  the peer-parity band this repo registers speed decisions against (needed ≥60 tok/s at depth
+  4000). Fidelity gate PASSES against a CPU f32 reference on real prompts
+  (`docs/measurements/r2-attn-fa-rootcause-2026-09-21.md`). **Not bit-identical** to the previous
+  kernel (reduction/combine order differs by design — moves argmax at the margin on some inputs,
+  same class of change as any non-bit-identical kernel this repo has shipped). `TestMetalSnapshotGolden`
+  does not currently exercise this path (its checkpoints top out at depth 320, below the 1536
+  floor) — a known coverage gap, not closed here. `GOINFER_METAL_ATTN_FA=0` opts back to the
+  previous kernel unconditionally.
+
 - **BREAKING for seeded output: plain-`temperature` sampling now draws a different stream, and is faster.** Sampling
   at `temperature` > 0 with none of `top_k` / `top_p` / `min_p` (the OpenAI default) now draws by **Gumbel-max**:
   the token is `argmax(logit/T + noise)`, the noise from a Philox4x32-10 counter generator keyed by the seed and the

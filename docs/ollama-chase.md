@@ -436,6 +436,21 @@ wall as the whole decode path (`docs/completed/task-metal-cgofree-spike.md`: meg
 ceiling). **A1-Metal (half4 coalescing, 1.37–1.40×) remains the one capturable decode-attention win on
 this box.** Stop proposing dedup layouts; the lever is elsewhere (KV-quant §A3, or accept the floor).
 
+**Fifth attempt, 2026-09-21 (R2, `docs/tasks/red-october.md`): not a dedup layout, a grid-shape
+change — and it worked, partially.** `attention_fa` grids by (kvHead, split) instead of (kvHead ×
+query-head-group) so a group's K/V read is one cooperative coalesced load per key per simdgroup,
+sidestepping the co-location-vs-occupancy trap above entirely (no group co-location, no extra
+per-key dispatches — the split axis adds threadgroups, not dispatches). Measured, not projected:
+**1.11× at depth 2048, 1.19× at depth 4000** end to end
+(`docs/measurements/r2-attn-fa-speed-2026-09-21.md`), fidelity-clean against a CPU f32 reference
+on real prompts (`r2-attn-fa-rootcause-2026-09-21.md`). Still **below this repo's own registered
+peer-parity band** (needed ≥60 tok/s at depth 4000; got 44.9) — the M1's dispatch/occupancy floor
+this section already named wins again, just less completely than the four dedup attempts did.
+Shipped as Metal's default decode attention anyway, by owner decision, as an incremental win
+outside the peer-parity goal this section's own conclusion was written for. Does not revise "stop
+proposing dedup layouts" — this was never a dedup layout — but does revise "the lever is
+elsewhere": a grid-shape lever existed and was real, just insufficient on its own for parity.
+
 **The floor is confirmed at the COMMIT level too, not only at dispatch count (census, 2026-08-12).**
 An external Metal write-up (dmikey's A1111 fork) frames the dominant hidden cost as command-buffer
 *submits* and CPU⇄GPU *syncs* — "the fastest kernel still loses if you submit the command buffer after

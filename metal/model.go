@@ -165,13 +165,15 @@ type resident struct {
 	axF16, mxF16, cxF16             Buffer   // half-typed activation buffers for the f16 lane (QKV-in, gate/up-in, o-proj-in)
 	pArgFinish                      Pipeline // fused block-argmax lm head reduce
 	// R2 (docs/tasks/red-october.md): the split-KV decode-attention lane, gridded by (kvHead,
-	// split) instead of by query head, gated by GOINFER_METAL_ATTN_FA=1 (decodeAttnFA). Pipelines
-	// always built; dispatch is conditional (canUseAttnFA), same "one binary carries both arms"
-	// shape as R1's f16 lane above. hd==128-only, dense-GQA-only (no window/sinks/f32-KV) — see
-	// attention_fa's own doc comment in kernels.go for why, and §2.2/R2's own speed-probe record
-	// for why S must be sized for real occupancy (S=1 is UNIFORMLY worse than the shipped kernel
-	// at every depth measured, not just below some crossover — a correction to this brief's own
-	// original "S=1 below a measured crossover" text).
+	// split) instead of by query head, DEFAULT ON since 2026-09-21 (decodeAttnFA, set from
+	// metalAttnFAEnabled(); GOINFER_METAL_ATTN_FA=0 opts out) — see that function's own doc
+	// comment for the gate/speed/verify-oracle history. Pipelines always built; dispatch is
+	// conditional (canUseAttnFA), same "one binary carries both arms" shape as R1's f16 lane
+	// above. hd==128-only, dense-GQA-only (no window/sinks/f32-KV) — see attention_fa's own doc
+	// comment in kernels.go for why, and §2.2/R2's own speed-probe record for why S must be sized
+	// for real occupancy (S=1 is UNIFORMLY worse than the shipped kernel at every depth measured,
+	// not just below some crossover — a correction to this brief's own original "S=1 below a
+	// measured crossover" text).
 	pAttnFA, pAttnFACombine Pipeline
 	decodeAttnFA            bool
 	attnFAPartial           Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
@@ -667,7 +669,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pSAf16, r.pSAf16Bias, r.pSAf16Resid = pipe("gemv_w4f16_sa"), pipe("gemv_w4f16_sa_bias"), pipe("gemv_w4f16_sa_resid")
 	r.decodeLaneW4F16 = os.Getenv("GOINFER_METAL_DECODE_LANE") == "w4f16"
 	r.pAttnFA, r.pAttnFACombine = pipe("attention_fa"), pipe("attention_fa_combine")
-	r.decodeAttnFA = os.Getenv("GOINFER_METAL_ATTN_FA") == "1"
+	r.decodeAttnFA = metalAttnFAEnabled()
 	r.pArgFinish = pipe("argmax_finish")
 	// N-09: the gemv_w4a8_bias and gemv_w4a8_sa_amax pipelines were created here but never dispatched
 	// (ForwardArgmax uses the int8 pGemvW8Amax head; the profiler builds gemv_w4a8_bias locally).
@@ -2248,9 +2250,9 @@ func (r *resident) canUseF16Lane(l int) bool {
 
 // attnFACoreCount is the M1 Pro's GPU core count attention_fa's split count targets ("kvHead x S
 // >= 2x the core count", R2's own registered rule) — hardcoded, not device-queried: aikit's Device
-// has no core-count accessor, and this kernel is gated off by default (GOINFER_METAL_ATTN_FA=1)
-// precisely because it is uncommitted experimental work, not a shipped cross-chip feature; a wider
-// port would need this read from the device, not assumed.
+// has no core-count accessor, and this kernel is default-on on every chip via metalAttnFAEnabled()
+// (2026-09-21) despite being tuned and measured on the M1 Pro alone; a wider port (other Apple
+// GPU core counts) would need this read from the device, not assumed.
 const attnFACoreCount = 14
 
 // attnFADepthFloor is where attention_fa (at a properly-sized split count) starts beating the

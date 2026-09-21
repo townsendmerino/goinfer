@@ -524,6 +524,34 @@ func metalFastPrefillEnabled() bool {
 	return true // §3.2 gate passed 2026-09-09 (S cells K=256/512/1024); floor lowered to 64 2026-09-20 (R3)
 }
 
+// metalAttnFAEnabled reports whether decode attention defaults to attention_fa (R2,
+// docs/tasks/red-october.md) — the kvHead×split-gridded kernel, gated per layer by
+// canUseAttnFA (dense-GQA, hd=128, curNKeys >= attnFADepthFloor). DEFAULT ON since
+// 2026-09-21: gate (3) PASSES (docs/measurements/r2-attn-fa-rootcause-2026-09-21.md — the
+// kernel is exact on real data; the divergence that parked the Build attempt was an
+// end-to-end-logits instrument crossing one int8 rounding boundary, not a kernel defect),
+// and it is a real, deterministic 1.11-1.19x at depth (docs/measurements/r2-attn-fa-
+// speed-2026-09-21.md) — KILLED on the brief's own peer-parity band (needs >=60 tok/s at
+// depth 4000, measured 44.9), shipped anyway by owner decision as an incremental win. NOT
+// bit-identical to the shipped `attention` kernel (reduction/combine order differs by
+// design), so this moves argmax at the margin on some inputs (gate (3)'s own hard-flip
+// counts) and is a SECOND source of decode/ForwardN divergence on top of the pre-existing
+// one docs/spec/08-dspark-dflash.md already names (PrefillLast's f16-MMA activations) —
+// Metal spec-decode verify (P10) was already not a legal oracle for that reason and stays
+// so; nothing here newly breaks a path that was shippable before.
+//
+//	GOINFER_METAL_ATTN_FA  1 | true | on    on (explicit; harmless, matches the default)
+//	                       0 | false | off  off (opt out; the shipped `attention` kernel only)
+func metalAttnFAEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_ATTN_FA"))) {
+	case "0", "false", "off":
+		return false
+	case "1", "true", "on":
+		return true
+	}
+	return true // default ON 2026-09-21 (R2) — see the doc comment above
+}
+
 // metalFastPrefillFloorFor returns the prompt-length floor, allowing experiment or escape.
 // Set GOINFER_METAL_FAST_PREFILL_FLOOR to override; 0 disables the floor entirely.
 func metalFastPrefillFloorFor() int {

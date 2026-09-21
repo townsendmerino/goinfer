@@ -63,7 +63,7 @@ func TestAttentionFA_endToEndReproductionDepth2200(t *testing.T) {
 		if enableFA {
 			t.Setenv("GOINFER_METAL_ATTN_FA", "1")
 		} else {
-			t.Setenv("GOINFER_METAL_ATTN_FA", "")
+			t.Setenv("GOINFER_METAL_ATTN_FA", "0")
 		}
 		m, err := decoder.Load(path, decoder.Options{Quant: "int4"})
 		if err != nil {

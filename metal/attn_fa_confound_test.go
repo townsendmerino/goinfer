@@ -57,7 +57,7 @@ func TestAttentionFA_positionSweep(t *testing.T) {
 		if enableFA {
 			t.Setenv("GOINFER_METAL_ATTN_FA", "1")
 		} else {
-			t.Setenv("GOINFER_METAL_ATTN_FA", "")
+			t.Setenv("GOINFER_METAL_ATTN_FA", "0")
 		}
 		m, err := decoder.Load(path, decoder.Options{Quant: "int4"})
 		if err != nil {
@@ -186,7 +186,7 @@ func TestAttentionFA_ulpPerturbationControl(t *testing.T) {
 
 	runOne := func(perturbScale bool) (H int, logitsPerStep [][]float32) {
 		t.Helper()
-		t.Setenv("GOINFER_METAL_ATTN_FA", "") // attention_fa OFF in BOTH arms -- shipped kernel only
+		t.Setenv("GOINFER_METAL_ATTN_FA", "0") // attention_fa OFF in BOTH arms -- shipped kernel only
 		m, err := decoder.Load(path, decoder.Options{Quant: "int4"})
 		if err != nil {
 			t.Fatalf("Load: %v", err)

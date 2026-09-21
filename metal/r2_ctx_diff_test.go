@@ -81,7 +81,7 @@ func TestR2_perLayerCtxDiff(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[r2-ctx] "+format+"\n", args...)
 	}
 
-	t.Setenv("GOINFER_METAL_ATTN_FA", "") // built with the kernel OFF; toggled at runtime below
+	t.Setenv("GOINFER_METAL_ATTN_FA", "0") // built with the kernel OFF; toggled at runtime below
 	m, err := decoder.Load(path, decoder.Options{Quant: "int4"})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
