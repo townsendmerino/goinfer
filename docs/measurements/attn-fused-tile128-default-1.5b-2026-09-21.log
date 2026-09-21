@@ -1,0 +1,30 @@
+=== round 1 arm 64x64
+    prefill_decomp_test.go:96: 512    68.104208ms  12.9675ms 10.687133ms 91.758841ms    14.1%
+    prefill_decomp_test.go:96: 1024   135.752829ms 46.136697ms 22.247616ms 204.137142ms    22.6%
+    prefill_decomp_test.go:96: 2048   273.120671ms 209.667512ms 45.485561ms 528.273744ms    39.7%
+    prefill_decomp_test.go:96: 3900   527.943696ms 804.082969ms 89.703502ms 1.421730167s    56.6%
+=== round 1 arm default
+    prefill_decomp_test.go:96: 512    67.722077ms 6.501161ms 10.188957ms 84.412195ms     7.7%
+    prefill_decomp_test.go:96: 1024   135.84034ms 23.504383ms 21.111399ms 180.456122ms    13.0%
+    prefill_decomp_test.go:96: 2048   272.764058ms 96.174012ms 45.117622ms 414.055692ms    23.2%
+    prefill_decomp_test.go:96: 3900   526.254159ms 335.487625ms 86.161453ms 947.903237ms    35.4%
+=== round 2 arm 64x64
+    prefill_decomp_test.go:96: 512    67.488696ms 12.742694ms 10.708308ms 90.939698ms    14.0%
+    prefill_decomp_test.go:96: 1024   135.83445ms 45.958754ms 21.447279ms 203.240483ms    22.6%
+    prefill_decomp_test.go:96: 2048   272.216847ms 209.690721ms 44.459116ms 526.366684ms    39.8%
+    prefill_decomp_test.go:96: 3900   526.995692ms 805.247521ms 87.78282ms 1.420026033s    56.7%
+=== round 2 arm default
+    prefill_decomp_test.go:96: 512    67.67595ms 6.446251ms 10.694587ms 84.816788ms     7.6%
+    prefill_decomp_test.go:96: 1024   136.113554ms 24.018013ms 21.495868ms 181.627435ms    13.2%
+    prefill_decomp_test.go:96: 2048   274.189034ms 96.690289ms 44.69723ms 415.576553ms    23.3%
+    prefill_decomp_test.go:96: 3900   530.400512ms 336.824838ms 87.17215ms 954.3975ms    35.3%
+=== round 3 arm 64x64
+    prefill_decomp_test.go:96: 512    68.255926ms 12.86279ms 10.577552ms 91.696268ms    14.0%
+    prefill_decomp_test.go:96: 1024   136.309823ms 46.071364ms  22.1151ms 204.496287ms    22.5%
+    prefill_decomp_test.go:96: 2048   272.48906ms 209.643227ms 45.597032ms 527.729319ms    39.7%
+    prefill_decomp_test.go:96: 3900   528.271924ms 803.981067ms 89.528864ms 1.421781855s    56.5%
+=== round 3 arm default
+    prefill_decomp_test.go:96: 512     68.1737ms 6.577318ms 10.825095ms 85.576113ms     7.7%
+    prefill_decomp_test.go:96: 1024   136.259725ms 23.560752ms 21.935406ms 181.755883ms    13.0%
+    prefill_decomp_test.go:96: 2048   272.605979ms 95.935189ms 44.503465ms 413.044633ms    23.2%
+    prefill_decomp_test.go:96: 3900   530.264828ms 337.271826ms 88.396312ms 955.932966ms    35.3%

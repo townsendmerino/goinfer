@@ -1031,7 +1031,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					loadF2(&r.bAttnBM32x32hd128, "attn_fused_bm32n32_hd128")
 					loadF2(&r.bAttnBM128hd64, "attn_fused_bm128_hd64")
 					loadF2(&r.bAttnBM128hd128, "attn_fused_bm128_hd128")
-					if v := os.Getenv("GOINFER_CUDA_ATTN_FUSED_TILE"); v == "128x64" {
+					if v := os.Getenv("GOINFER_CUDA_ATTN_FUSED_TILE"); v == "64x64" {
+						r.attnTile = -1
+					} else if v == "128x64" {
 						r.attnTile = 3
 					} else if v == "32x64" {
 						r.attnTile = 1

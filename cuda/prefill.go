@@ -1045,26 +1045,34 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				fcfg := LaunchConfig{GridX: uint32(r.nH),
 					GridY: uint32((M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
 					BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: fsh}
-				if r.attnTile != 0 {
+				// Default tile (attn-fused-tile128-default-PREREGISTERED.md): hd128 layers with no sliding window run the
+				// 128-row-tile kernel (bit-identical to the 64x64 one for window == 0, 2.4x faster at K=3900). hd64 stays 64x64
+				// (0.5B measured ~5% slower with it), and so do windowed layers (their key-tile grouping starts at the block's
+				// first row, so a taller block is not bit-identical there). GOINFER_CUDA_ATTN_FUSED_TILE=64x64 forces 64x64.
+				tile := r.attnTile
+				if tile == 0 && hd == 128 && Ly.window <= 0 && r.bAttnBM128hd128 != (Pipeline{}) {
+					tile = 3
+				}
+				if tile > 0 {
 					// R5 phase-1/diagnostic arms (attn-fused-tile-PREREGISTERED.md): query tile 32 / 32 / 128 rows.
 					// Each pipeline is named at its launch (TestPipelineLint_boundKernelsAreLaunched keys on that).
 					bm, bn := 32, 64
-					if r.attnTile == 2 {
+					if tile == 2 {
 						bn = 32
-					} else if r.attnTile == 3 {
+					} else if tile == 3 {
 						bm = 128
 					}
 					fcfg.GridY = uint32((M + bm - 1) / bm)
 					fcfg.BlockX = uint32(bm / 16 * 32)
 					fcfg.SharedMemBytes = uint32(2 * (bn*(hd+attnFusedKPAD) + hd*(bn+attnFusedKPAD)))
 					switch {
-					case r.attnTile == 1 && hd == 64:
+					case tile == 1 && hd == 64:
 						attnErr = r.launch(r.bAttnBM32x64hd64, fcfg, attnArgs...)
-					case r.attnTile == 1:
+					case tile == 1:
 						attnErr = r.launch(r.bAttnBM32x64hd128, fcfg, attnArgs...)
-					case r.attnTile == 2 && hd == 64:
+					case tile == 2 && hd == 64:
 						attnErr = r.launch(r.bAttnBM32x32hd64, fcfg, attnArgs...)
-					case r.attnTile == 2:
+					case tile == 2:
 						attnErr = r.launch(r.bAttnBM32x32hd128, fcfg, attnArgs...)
 					case hd == 64:
 						attnErr = r.launch(r.bAttnBM128hd64, fcfg, attnArgs...)
@@ -1072,6 +1080,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 						attnErr = r.launch(r.bAttnBM128hd128, fcfg, attnArgs...)
 					}
 					r.fastAttnLaunches++
+					if tile == 3 {
+						r.tile128Launches++
+					}
 				} else if hd == 64 {
 					attnErr = r.launch(r.bAttnFused64, fcfg, attnArgs...)
 					r.fastAttnLaunches++

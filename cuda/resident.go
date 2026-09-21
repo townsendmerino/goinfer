@@ -618,7 +618,7 @@ type cudaResident struct {
 	// alignment group so adding them does not re-align (and so re-diff) the fields above.
 	bAttnFused64, bAttnFused128 Pipeline
 	// R5 phase-1 tile-shape arms of attn_fused (attn_fused_bm.cu): 32x64 and 32x32 (query rows x keys), per head dim.
-	// attnTile picks the arm (0 = shipped 64x64, 1 = 32x64, 2 = 32x32, 3 = 128x64 diagnostic); GOINFER_CUDA_ATTN_FUSED_TILE, default 0.
+	// attnTile: 0 = default (128x64 for hd128 layers without a window, else 64x64), -1 = 64x64 everywhere (GOINFER_CUDA_ATTN_FUSED_TILE=64x64), 1/2/3 = force 32x64 / 32x32 / 128x64 (experiment arms).
 	bAttnBM32x64hd64, bAttnBM32x64hd128, bAttnBM32x32hd64, bAttnBM32x32hd128 Pipeline
 	bAttnBM128hd64, bAttnBM128hd128                                          Pipeline
 	attnTile                                                                 int
@@ -701,6 +701,7 @@ type cudaResident struct {
 	chunkPromptLen int
 	// fastAttnLaunches / fastGemmLaunches count attn_fused and gemm_w4a8_mma launches, so a test can prove WHICH kernels a prefill pass used rather than infer it from timing.
 	fastAttnLaunches, fastGemmLaunches                      int
+	tile128Launches                                         int // attn_fused launches that used the 128-row-tile kernel (default for hd128 layers without a window)
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
 	fMoEWaccBias                                            Pipeline // gpt-oss: wacc + per-expert down bias
 	fRouterF32, fScaleWgt, fRmsNW, fScaleVec                Pipeline // gemma4 MoE (router_f32 module)

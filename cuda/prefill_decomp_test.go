@@ -24,7 +24,11 @@ func TestPrefillDecomp(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)")
 	}
-	path := modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	name := "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+	if v := os.Getenv("GOINFER_DECOMP_MODEL"); v != "" { // e.g. qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (hd64)
+		name = v
+	}
+	path := modelPath(name)
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)
 	}

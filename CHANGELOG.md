@@ -193,6 +193,10 @@ any surface may still change.
 - `pull.CacheRoot()` — the directory every pulled model lands under (Experimental, like the rest of
   `pull`).
 
+### Changed
+
+- **CUDA prefill attention: 128-row query tile for hd128 layers without a sliding window** (R5/P24). `attn_fused`'s K/V staging is a per-block cost, so a taller tile amortises it: attention at 3900 tokens on the 1.5B 804 -> 337 ms (2.39x), whole prefill 1.42 s -> 0.95 s (1.50x), output bit-identical to the previous kernel (0 of 151,936 logits differ, 456 kernel shapes). hd64 (0.5B, measured 1.05x slower) and windowed layers keep the 64x64 kernel; `GOINFER_CUDA_ATTN_FUSED_TILE=64x64` restores it everywhere. A 32-row tile, R5's original proposal, was 2.9x slower and is not shipped (`docs/measurements/attn-fused-tile-2026-09-21.md`).
+
 ### Fixed
 
 - **CUDA prefill of any prompt longer than 512 tokens ran all but its last 512-row chunk on the slow exact kernels (v0.19.0 included).** The M-09/M-10/M-11 audit fix (2026-09-10) forced the exact GEMM and attention for every pass whose tail is not `tailLastLogits`, to keep speculative-verify and embedding tails decode-identical — but the non-final chunks of a long prompt use a KV-only tail, so they were demoted too: at 3900 tokens on the 1.5B, 5.0 s instead of 1.4 s (3.5x; 2.4-3.3x for 1-3k tokens); prompts of 512 or fewer tokens were unaffected. The fast kernels now serve every chunk of an ordinary prompt (and `HiddenLast` still keeps every chunk exact), and the fast-prefill floor is judged on the whole prompt, not the prompt so far. `TestPrefillChunked_bitIdentical`, red since the audit fix, is green; fidelity gate S K=3900 passes (`docs/measurements/prefill-chunk-demotion-2026-09-21.md`).

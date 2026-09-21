@@ -46,8 +46,8 @@ func tileBitIdentical(t *testing.T, armID, bm int) {
 	const scale = 0.125
 	checked := 0
 	for _, hd := range []int{64, 128} {
-		for _, M := range []int{1, 7, 31, 32, 33, 64, 65, 200, 517} {
-			for _, sp := range []int{0, 5, 1024} {
+		for _, M := range []int{1, 7, 16, 17, 31, 32, 33, 48, 64, 65, 96, 127, 128, 129, 200, 255, 256, 257, 517} {
+			for _, sp := range []int{0, 5, 384, 1024} {
 				for _, g := range []struct {
 					nH, nKV int
 					sinks   bool
