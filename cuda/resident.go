@@ -597,12 +597,13 @@ type cudaResident struct {
 	skPartialBuf                                 Buffer   // [nH·maxHd·nSplit] partial folds for the spike
 	skVsumSplit                                  int      // GOINFER_SPLITKV_VSUM_SPLIT; 0 = off (the shipped path)
 	// Flash-decode lane (decode_fa.cu, R6): opt-in via GOINFER_CUDA_FLASH_DECODE=S, NOT bit-identical.
-	faPartial  [3]Pipeline // fa_partial_{64,128,256}
-	faCombine  Pipeline
-	faSplit    int    // S key splits per kv head; 0 = lane off (the shipped path)
-	faMinKeys  int    // attended-span floor below which the exact path runs (GOINFER_CUDA_FLASH_DECODE_MIN_KEYS)
-	faBuf      Buffer // partials [nH][S*8][hd+4]
-	faLaunches int    // launches of fa_partial, so a test can prove the lane ran
+	faPartial    [3]Pipeline // fa_partial_{64,128,256}
+	faCombine    Pipeline
+	faSplit      int          // S key splits per kv head; 0 = lane off (the shipped path)
+	faMinKeys    int          // attended-span floor below which the exact path runs (GOINFER_CUDA_FLASH_DECODE_MIN_KEYS)
+	faBuf        Buffer       // partials [nH][S*8][hd+4]
+	faLaunches   int          // launches of fa_partial, so a test can prove the lane ran
+	faExactScope atomic.Int32 // >0: a speculative generation holds the exact-attention scope, so the lane is bypassed
 
 	// L2 (docs/completed/task-prefill-gap.md §4 L2): the fused prefill attention, one instantiation per
 	// supported head dim. Zero-valued unless GOINFER_CUDA_FAST_PREFILL selected it AND the module
@@ -3185,7 +3186,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 					singleBlockAttnShmemLimit,
 					map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
 			}
-			if r.faSplit > 0 && nWin >= r.faMinKeys && r.faEligible(l) {
+			if r.faSplit > 0 && r.faExactScope.Load() == 0 && nWin >= r.faMinKeys && r.faEligible(l) {
 				// Opt-in flash-decode lane (GOINFER_CUDA_FLASH_DECODE, R6): NOT bit-identical, fidelity-gated.
 				// Checked first because it replaces the exact path's three launches outright when eligible.
 				if err := r.flashDecodeAttn(l, pos); err != nil {

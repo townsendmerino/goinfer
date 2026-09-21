@@ -63,3 +63,16 @@ much of that a bit-compatible kernel could recover.
 
 One model, one prompt, one depth; spec acceptance was not recorded here; the ncu window is one run; nothing above was run with the lane
 inside a verify. Option B's benefit is arithmetic from a profile.
+
+## Option A: implemented (2026-09-21)
+
+`decoder.ExactAttentionScoper` (`decoder/spec_verify_guard.go`) is implemented by the CUDA resident (`EnterExactAttention`, a counted atomic scope);
+the three speculative entry points (`genNgram`, `GenerateSpeculative`, `BlockSpec.GenerateStream`) enter it synchronously before their goroutine starts and
+release it in the goroutine's defer. `DecodeVerifyDivergence` no longer errors for the lane (the V-sum spike, which has no scope to enter, still does), so
+`serve --spec ngram` / `--drafter` start with the lane env set. Gate: `TestFlashDecodeSpeculativeScope` (real 1.5B, copy-heavy prompt): no conflict reported;
+a plain lane generation launches the lane; a speculative generation launches it **0** times over 11 verify rounds and equals plain EXACT greedy token for token
+(96 tokens); the lane resumes afterwards; a cancelled speculative stream leaves the scope at 0. **Mutation-checked:** with the scope's increment removed the test
+fails ("the lane launched 28 times inside a speculative generation"). Served, same prompt, 3 runs: exact 151.5, lane 202.6-203.2, exact+spec 323.5-325.9,
+**lane+spec 326.6-328.1** (formerly a startup refusal) — equal to exact+spec within noise, as the design says it must be: speculation gets no lane speed until option B.
+Not covered: the two-model and block-drafter paths are wrapped identically but only the n-gram path has a lane-on test; concurrent generations on one Model are not
+possible (single-tenant KV), so the scope is per-Model rather than per-request by construction.

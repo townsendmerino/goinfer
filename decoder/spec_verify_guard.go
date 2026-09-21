@@ -16,6 +16,33 @@ type DecodeVerifyDiverger interface {
 	DecodeVerifyDivergence() error
 }
 
+// ExactAttentionScoper is implemented by a resident whose M=1 decode attention has an OPT-IN lane that is not
+// bit-identical to the tree its batched verify uses (cuda's flash-decode lane, GOINFER_CUDA_FLASH_DECODE). While a
+// scope is held the resident runs its EXACT decode attention, so a speculative generation decodes and verifies with
+// one tree and stays token-identical to plain greedy on that tree — instead of refusing to run (the V-sum spike's
+// treatment, which has no scope to enter and so still refuses via DecodeVerifyDiverger).
+//
+// A scope is per GENERATION and must be held from before the first decode step of a speculative run until its last;
+// nesting is allowed (a counter, not a flag). The resident's KV is single-tenant, so no plain generation can be
+// interleaved inside a speculative one on the same Model. Exported so an implementation can pin itself to it at
+// compile time, for the same fail-open reason as DecodeVerifyDiverger.
+type ExactAttentionScoper interface {
+	EnterExactAttention() (leave func())
+}
+
+// enterExactAttention holds the resident's exact-attention scope for one speculative generation and returns its
+// release; a no-op for any model whose resident has no such lane. Called synchronously, BEFORE the generation's
+// goroutine starts, so the scope is active from the moment the entry point returns.
+func (m *Model) enterExactAttention() func() {
+	if m == nil || m.resident == nil {
+		return func() {}
+	}
+	if sc, ok := m.resident.(ExactAttentionScoper); ok {
+		return sc.EnterExactAttention()
+	}
+	return func() {}
+}
+
 // SpecDecodeConflict reports why speculative decoding on this model would not be lossless, or nil
 // when it would be. Two independent sources, checked in order:
 //

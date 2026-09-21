@@ -52,8 +52,9 @@ any surface may still change.
 
 - **Opt-in CUDA flash-decode attention lane, `GOINFER_CUDA_FLASH_DECODE=16` (R6).** Replaces decode attention's three-launch exact path with a
   key-split online-softmax kernel (one CTA per kv-head x 16 key splits, fixed-order combine) once the attended span reaches
-  `GOINFER_CUDA_FLASH_DECODE_MIN_KEYS` (default 2048). **Not bit-identical** to the exact path, so it is off by default and speculative decoding
-  refuses to start while it is set. Served, greedy, paired, idle box: 1.5B at 3900 **124.7 -> 194.1 tok/s**, qwen2.5-7b at 8000 **39.6 -> 61.1**, 0.5B
+  `GOINFER_CUDA_FLASH_DECODE_MIN_KEYS` (default 2048). **Not bit-identical** to the exact path, so it is off by default. Speculative decoding
+  works with it set: speculative generations run the exact tree for both decode and verify (an exact-attention scope), so they stay lossless; only
+  non-speculative requests use the lane. Served, greedy, paired, idle box: 1.5B at 3900 **124.7 -> 194.1 tok/s**, qwen2.5-7b at 8000 **39.6 -> 61.1**, 0.5B
   at 3900 206 -> 305; below the floor and on unsupported geometries (hd outside 64/128/256, GQA > 8, attention sinks, phi3-mini's hd 96) it is
   the exact path (ratio 1.000). Same-session vs Ollama v0.32.5 (`docs/measurements/attn-decode-fa-peer-2026-09-21.md`): ahead on every 0.5B/1.5B cell (1.11-1.25x) and D7@8000 (1.08x), still 0.95-0.97x on D7@2048-3900. Fidelity gate on held-out prompts passed on both registered cells (D7@8000 KL 0.986x, hard flips 7 vs 7; 1.5B@3900
   KL 1.021x, 10 vs 11) — see `docs/measurements/attn-decode-fa-fidelity-2026-09-20.md`..

@@ -118,8 +118,10 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 	out := make(chan int)
 	stats := &SpecStats{}
 	g := &Generation{Spec: stats}
+	leaveExact := target.enterExactAttention() // decode and verify must share one attention tree
 	go func() {
 		defer close(out)
+		defer leaveExact()
 		// Claim the single shared resident KV before any device write (audit C-03): both
 		// generateInto and the n-gram path CAS this, GenerateSpeculative did not — so a
 		// second concurrent Generate on the same *Model would prefill into the same

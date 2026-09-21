@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -37,11 +38,6 @@ var _ decoder.DecodeVerifyDiverger = (*cudaResident)(nil)
 // and its miss-redo both go through M=1 Forward — the same tree as decode — so it stays consistent
 // with the spike on.
 func (r *cudaResident) DecodeVerifyDivergence() error {
-	if r.faSplit > 0 {
-		return fmt.Errorf("GOINFER_CUDA_FLASH_DECODE=%d is set, so decode attention uses an online-softmax key-split "+
-			"reduction the batched verify speculative decoding uses does not share — the two can pick different "+
-			"tokens at near-ties. Unset GOINFER_CUDA_FLASH_DECODE to use speculative decoding", r.faSplit)
-	}
 	if r.skVsumSplit > 1 {
 		return fmt.Errorf("GOINFER_SPLITKV_VSUM_SPLIT=%d is set, so decode sums attention values in "+
 			"a different order from the batched verify speculative decoding uses — the two can pick "+
@@ -50,4 +46,17 @@ func (r *cudaResident) DecodeVerifyDivergence() error {
 			"docs/measurements/vsum-split-spike-2026-09-13.md)", r.skVsumSplit)
 	}
 	return nil
+}
+
+// The flash-decode lane (GOINFER_CUDA_FLASH_DECODE) is NOT a divergence source here, because speculative generations hold an
+// exact-attention scope (decoder.ExactAttentionScoper): while one is active the lane is bypassed, so decode and verify both run
+// the exact tree. Pinned at compile time for the same fail-open reason as DecodeVerifyDiverger above.
+var _ decoder.ExactAttentionScoper = (*cudaResident)(nil)
+
+// EnterExactAttention holds the exact-attention scope: while the count is non-zero the lane is bypassed. Counted, so nested or
+// overlapping scopes compose; atomic, because it is entered on a caller goroutine and read on the executor.
+func (r *cudaResident) EnterExactAttention() (leave func()) {
+	r.faExactScope.Add(1)
+	var once sync.Once
+	return func() { once.Do(func() { r.faExactScope.Add(-1) }) }
 }
