@@ -397,7 +397,7 @@ Status table, kept current as briefs move:
 | R6 | CUDA flash-decode lane — mechanism for the parked spike, then the kernel | Linux | M–L | **lane decision made 2026-09-18 (option 2, §3.2 gate) — build fundable** |
 | R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | **CUDA filtered sampling SHIPPED 2026-09-20 (top_p 0.657→0.957 of greedy; top_k 0.961; min_p 0.971). R7b, same day, owner decision: temperature-only by Gumbel-max on every backend — CUDA 0.744→1.008, WebGPU 0.796→1.035 (device draw). Metal device kernel BUILT, GATED AND MEASURED 2026-09-20 (Mac session): 0 mismatches/15,840 draws, 12,000/12,000 real-generation tokens identical to host, device draw 0.96× greedy internally AND peer-verified (goinfer 1.15× Ollama greedy, 1.10× Ollama sampled, both Metal) — see the record.** |
 | R8 | CUDA vision tower onto the L2/L3 kernels | Linux | M | scoped |
-| R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | **Step 1 Mac half done, 2026-09-20**: per-component split at depth 128 on all three named sizes (0.5B/1.5B/7B — 7B needed the fit guard bypassed, user-approved, monitored, no near-incident) — MLP dominates and its share GROWS with size (56.7%→61.5%→70.1%), attention shrinks (28.6%→26.8%→21.4%), LM head 8-13%, sample/logitProc/embed all noise. Points step 2 at wiring aikit's already-built `MatmulBTW4A8Batch` (S-02) into `decoder/attention.go`/`mlp.go`. Linux half and per-worker fan-out timestamps still open |
+| R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | **Step 1 Mac half done, 2026-09-20**: per-component split at depth 128 on all three named sizes (0.5B/1.5B/7B — 7B needed the fit guard bypassed, user-approved, monitored, no near-incident) — MLP dominates and its share GROWS with size (56.7%→61.5%→70.1%), attention shrinks (28.6%→26.8%→21.4%), LM head 8-13%, sample/logitProc/embed all noise. **Correction:** the fork/join batching this pointed at (`MatmulBTW4A8Batch`, q‖k‖v/gate‖up) is NOT new work — already wired and parked as finding R-06 (ambiguous 1.07× on the 1.5B, two architectures). **Follow-up, same day:** re-measured at 7B specifically — an even cleaner null (OFF/ON differ by 0.017ms against ~2ms stdevs), confirming the fixed-per-barrier-cost reasoning (matters *less*, not more, as matmuls get bigger) rather than the naive size-trend read. R-06 stays parked at both sizes now. Real open levers: S-05 and the other MLP compute-level remedies (unmeasured end to end), plus the Linux half and per-worker fan-out timestamps |
 | R10 | WebGPU glue fusion and on-device argmax; batched-prefill profile | Linux | M | scoped; profile first |
 | R11 | MoE: L01 funding cell; P20 expert-major prefill; Metal pager measurement and M-11 | both | L | (a)/(b) CUDA-only, not attempted. **(c) Metal M26: two near-incidents, 2026-09-20** — `DecodePath`/`g4moe.paged` confirm the paged mechanism engages correctly at both auto-sized N=64 and manual N=32, but both drove this machine into a severe swap spiral before a served rate was reached; both killed manually before either a kernel panic or a completed measurement — see the record. Not retried a third time this session. |
 | R12 | Metal `ForwardN` batching (P21); the missing peer rows (MLX, Metal depth, vision, W7) | both | S–M | **MLX row (i) re-confirmed 2026-09-18; Metal depth row (ii) done via R2 step 0; W7 (iv) done 2026-09-19 (simplified — see the record) — goinfer 60.1→36.1→36.4 tok/s at 1/2/4 clients (a real loss that plateaus), llama-server 84.8→95.9→149.7 (scales up), 4.11× gap at n=4; vision (iii) not attempted; P21 build not started** |
@@ -1191,14 +1191,25 @@ external RSS/swap monitor matching R11(c)'s discipline; swap never grew, no near
 time): **MLP is the dominant component at every size — more than attention and LM head
 combined — and its share GROWS with model size** (56.7% → 61.5% → 70.1% from 0.5B to 1.5B to 7B,
 attention shrinking the mirror amount: 28.6% → 26.8% → 21.4%; LM head 8-13%). This is the opposite
-emphasis from R13's own attention-focused Build, and it directly names step 2's target — more
-strongly at the larger sizes, where the served-rate gap against Ollama is also largest: aikit's
-S-02 already built and kernel-gate-checked `MatmulBTW4A8Batch` (q‖k‖v/gate‖up fork-join fusion,
-1.12-1.21× measured there) but it is not yet wired into `decoder/attention.go`/`decoder/mlp.go`'s
-separate per-op W4A8 calls — this measurement confirms that wiring lands on the component that
-actually dominates a real token, increasingly so as size grows. **Linux half (the 0.5B anomaly)
-and per-worker fan-out timestamps inside a real token remain open** — this session had no Linux
-access.
+emphasis from R13's own attention-focused Build.
+
+**Correction, same day.** This step's own first draft pointed step 2 at wiring aikit S-02's
+`MatmulBTW4A8Batch` (q‖k‖v/gate‖up fork-join fusion) into `decoder/attention.go`/`decoder/mlp.go`,
+citing aikit's own doc as saying it was unwired — that citation was stale against goinfer's actual
+code. It is already wired (`GOINFER_W4A8_BATCH`, default off) and already measured as finding
+**R-06** (`docs/tasks/task-recompute-audit.md`): ambiguous 1.071×/1.066× on the 1.5B, two
+independent architectures, correctly parked. **Follow-up, same day**
+([`w4a8-batch-7b-2026-09-20.md`](../measurements/w4a8-batch-7b-2026-09-20.md)): re-measured at 7B,
+where MLP's share is largest, since a naive reading of the size trend above might suggest R-06
+does better there. It does not — OFF 58.98 ms/token (stdev 2.10), ON 59.0 (stdev 1.60), a 0.017 ms
+difference against ~2 ms stdevs, an even cleaner null than the 1.5B result. This confirms the
+mechanistic reasoning rather than the naive trend-read: R-06 amortizes a roughly *fixed*
+per-barrier cost, which matters proportionally *less*, not more, as the matmuls it's amortized
+against get bigger. **R-06 stays parked at both sizes now — this avenue is checked and closed,
+not still open.** The real remaining MLP-specific levers are compute-level (S-05 and the other
+aikit kernels R9 step 2 already names as built-but-unmeasured-end-to-end), a different question
+from fan-out. **Linux half (the 0.5B anomaly) and per-worker fan-out timestamps inside a real
+token remain open** — this session had no Linux access.
 
 ---
 

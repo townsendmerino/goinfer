@@ -77,17 +77,23 @@ before being trusted for the finer split.
 combined.** This is the opposite emphasis from R13's own attention-focused Build (grouped QK/AV
 kernels) — that work targets a term that is a minority of the token even before accounting for
 softmax's own untouched share within it (R13's own step 0(ii): attention's QK+AV alone is 61-78%
-of *attention*, itself only ~21-29% of the *whole token* here). **The MLP fan-out (gate/up/down
-projections, three to four W4A8 calls per layer) is the larger lever by a wide margin on CPU
-decode**, and it is exactly the term aikit's own S-02 section already investigated in isolation
-(goroutine-wake-stagger, not kernel or P/E-core-skew — `MatmulBTW4A8Batch` built and gate-checked
-there, q‖k‖v and gate‖up fork-join fusion measuring 1.12-1.21× at the kernel level) but which R9's
-own "Read first" section notes is **not yet wired into goinfer's actual `decoder/attention.go` and
-`decoder/mlp.go` call sites** ("q, k, v, gate, up issued as separate W4A8 calls" — aikit S-02's own
-"Where" line). This measurement is the missing piece connecting the two: MLP genuinely is the
-dominant real-token cost on this box, so `MatmulBTW4A8Batch`'s gate‖up fusion in particular (the
-larger of its two measured wins, 1.21× at 6 workers) lands on the component that matters most,
-not a minor one.
+of *attention*, itself only ~21-29% of the *whole token* here).
+
+**Correction, made while writing this section, not left in the earlier draft:** R9's own "Read
+first" citation of aikit's S-02 doc ("q, k, v, gate, up issued as separate W4A8 calls") is *stale*
+relative to goinfer's actual current code, not an open gap. `MatmulBTW4A8Batch` for q‖k‖v
+(`decoder/attention.go`) and gate/up (`decoder/mlp.go`) is **already wired**, behind
+`GOINFER_W4A8_BATCH` (default off) — shipped `e4e04992`, tracked as finding **R-06** in
+`docs/tasks/task-recompute-audit.md`. It has already been measured, twice, on independent
+architectures: arm64/Metal 1.071× (stdev 0.009), amd64/CPU 1.066× (stdev 0.0008), both squarely
+in the ambiguous zone between the 1.05× park / 1.15× ship bands aikit's S-02 itself registered —
+correctly parked (not shipped), and not a fragile single-sample result given how tightly the two
+architectures agree. This measurement (MLP dominates, and increasingly so at larger sizes) doesn't
+reopen that decision on its own: R-06's win comes from amortizing a roughly *fixed* per-call
+fork/join cost, not from touching MLP's own compute, so a growing MLP *share* doesn't obviously
+predict R-06 does better at larger sizes — if anything, a fixed per-call cost should matter
+*less*, proportionally, as each matmul gets bigger. What's actually still open is whether R-06 was
+ever measured at 7B (R-06's own A/B ran on the 1.5B only) — see the follow-up record.
 
 **MLP's share grows with model size** (56.7% → 61.5% → 70.1% from 0.5B to 1.5B to 7B) while
 attention's shrinks (28.6% → 26.8% → 21.4%) — consistent with MLP's intermediate dimension scaling
@@ -116,14 +122,14 @@ larger sizes.
   case (goroutine-wake stagger); whether the same mechanism dominates inside a real, running
   goinfer token with real cache/context effects is inferred by analogy here, not independently
   re-measured.
-- Whether wiring `MatmulBTW4A8Batch` into `decoder/attention.go`/`decoder/mlp.go` actually delivers
-  the served-decode win this data suggests it should — that is R9 step 2's own work, gated on
-  this table existing, which it now does.
+- Whether R-06's already-built, already-parked `GOINFER_W4A8_BATCH` behaves differently at 7B
+  than the 1.5B it was measured on — untested by R-06's own record, and the natural next question
+  this table's own size trend raises (see the follow-up).
 
 ## Next step this points at
 
-R9 step 2, in the order the brief already names: wire `MatmulBTW4A8Batch` for q‖k‖v (attention)
-and gate‖up (MLP) in `decoder/attention.go`/`decoder/mlp.go`, bit-identical by construction (same
-per-op math, batched fork-join), gated the same way S-01/S-04's own kernel changes are, then the
-1.5B served decode cell (`bench_peer`, paired, ship ≥1.15×/park <1.05× per aikit S-02's own
-registered band) decides. Not started here — this record is step 1's table, not step 2's build.
+Not "wire it" — R-06 already is. The open question this table raises is narrower: R-06's paired
+A/B ran on the 1.5B only; re-measure `GOINFER_W4A8_BATCH` at 7B, where MLP's share is largest, to
+either confirm the fixed-cost reasoning above (a smaller relative win, reinforcing park) or find
+it wrong (a real, size-dependent effect R-06's own record didn't have the data to see). See
+[`w4a8-batch-7b-2026-09-20.md`](w4a8-batch-7b-2026-09-20.md) for the result.
