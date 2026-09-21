@@ -1,0 +1,183 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"fmt"
+	"math"
+	"math/rand"
+	"os"
+	"testing"
+
+	gpu "github.com/townsendmerino/aikit/gpu"
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+var gemvXVariants = []string{"gemv_w4a8_xs", "gemv_w4a8_xh", "gemv_w4a8_xc", "gemv_w4a8_xsh", "gemv_w4a8_xsc", "gemv_w4a8_xhc", "gemv_w4a8_xshc"}
+
+// gemvXGeoms are the (N = output rows, K = input width) of the decode o-projection and down-projection of the dense families goinfer runs on CUDA.
+var gemvXGeoms = []struct {
+	name string
+	N, K int
+}{
+	{"D7 o (3584,3584)", 3584, 3584}, {"D7 down (3584,18944)", 3584, 18944},
+	{"1.5B o (1536,1536)", 1536, 1536}, {"1.5B down (1536,8960)", 1536, 8960},
+	{"0.5B o (896,896)", 896, 896}, {"0.5B down (896,4864)", 896, 4864},
+	{"qwen3-4b o (2560,4096)", 2560, 4096}, {"qwen3-4b down (2560,9728)", 2560, 9728},
+	{"llama3-8b o (4096,4096)", 4096, 4096}, {"llama3-8b down (4096,14336)", 4096, 14336},
+	{"gemma3-1b down (1152,6912)", 1152, 6912}, {"3b down (2048,11008)", 2048, 11008},
+}
+
+// gemvXRun runs the ORIGINAL gemv_w4a8_fwd (variant "") or a gemv_w4a8_x* variant at rowsPerWarp on random int4 weights, n launches back to back, with bias and accumulate as decode uses them.
+func gemvXRun(t *testing.T, rf *cudaResident, pipes map[string]Pipeline, N, K int, variant string, rowsPerWarp, n int, accum bool, seed int64) []float32 {
+	t.Helper()
+	rng := rand.New(rand.NewSource(seed))
+	Kwords, Kgroups := K/8, K/32
+	W := make([]uint32, N*Kwords)
+	for i := range W {
+		W[i] = rng.Uint32()
+	}
+	S := make([]uint16, N*Kgroups)
+	for i := range S {
+		S[i] = uint16(0x2400 + rng.Intn(0x1400))
+	}
+	a := make([]int32, 2*Kwords)
+	for i := range a {
+		var w uint32
+		for b := 0; b < 4; b++ {
+			w |= uint32(uint8(int8(rng.Intn(255)-127))) << (8 * b)
+		}
+		a[i] = int32(w)
+	}
+	bias := make([]float32, N)
+	dst0 := make([]float32, N)
+	for i := range bias {
+		bias[i] = float32(rng.NormFloat64() * 0.3)
+		dst0[i] = float32(rng.NormFloat64())
+	}
+	out := make([]float32, N)
+	if err := rf.do(func() error {
+		Wb, Sb := rf.upu32(W), rf.upu16(S)
+		ab := rf.ai(len(a))
+		if e := gpu.Upload(ab, a); e != nil {
+			return e
+		}
+		asb := rf.up32([]float32{0.0123})
+		bb := rf.up32(bias)
+		db := rf.up32(dst0)
+		acc := int32(0)
+		if accum {
+			acc = 1
+		}
+		for i := 0; i < n; i++ {
+			if n > 1 || i == 0 {
+				if e := gpu.Upload(db, dst0); e != nil { // same starting dst every launch, so accumulate is repeatable
+					return e
+				}
+			}
+			var e error
+			if variant == "" {
+				e = rf.launch(rf.gemvW4, LaunchConfig{GridX: uint32((N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+					Arg(Wb), Arg(ab), Arg(Sb), Arg(asb), Arg(bb), gpu.ArgValue(int32(N)), gpu.ArgValue(int32(Kwords)), gpu.ArgValue(int32(Kgroups)), Arg(db), gpu.ArgValue(acc))
+			} else {
+				rows := 8 * rowsPerWarp
+				shm := uint32(0)
+				if variant[len("gemv_w4a8_x")] == 's' {
+					shm = uint32(2 * Kwords * 4)
+				}
+				e = rf.launch(pipes[variant], LaunchConfig{GridX: uint32((N + rows - 1) / rows), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
+					Arg(Wb), Arg(ab), Arg(Sb), Arg(asb), Arg(bb), gpu.ArgValue(int32(N)), gpu.ArgValue(int32(Kwords)), gpu.ArgValue(int32(Kgroups)), Arg(db), gpu.ArgValue(acc), gpu.ArgValue(int32(rowsPerWarp)))
+			}
+			if e != nil {
+				return e
+			}
+		}
+		if e := rf.stream.Sync(); e != nil {
+			return e
+		}
+		return gpu.Download(db, out)
+	}); err != nil {
+		t.Fatalf("gemv %s rpw=%d: %v", variant, rowsPerWarp, err)
+	}
+	return out
+}
+
+func gemvXLoad(t *testing.T, rf *cudaResident) map[string]Pipeline {
+	t.Helper()
+	pipes := map[string]Pipeline{}
+	if err := rf.do(func() error {
+		mod, e := rf.dev.CompileLibrary(gemvW4XPTX)
+		if e != nil {
+			return e
+		}
+		for _, v := range gemvXVariants {
+			p, le := rf.dev.NewComputePipeline(mod, v)
+			if le != nil {
+				return le
+			}
+			pipes[v] = p
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("load gemv_w4a8_x: %v", err)
+	}
+	return pipes
+}
+
+// TestGemvW4A8XBitIdentical: every gemv_w4a8_x* variant at rows-per-warp {1,2,4} equals aikit's gemv_w4a8_fwd BIT FOR BIT on the real decode projection shapes, with bias, both accumulate modes.
+func TestGemvW4A8XBitIdentical(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1")
+	}
+	m, err := decoder.Load(modelPath("qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Skipf("load: %v", err)
+	}
+	defer m.Close()
+	rf, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Skip("resident path declined")
+	}
+	pipes := gemvXLoad(t, rf)
+	checked := 0
+	for _, g := range gemvXGeoms {
+		for _, accum := range []bool{false, true} {
+			ref := gemvXRun(t, rf, pipes, g.N, g.K, "", 1, 1, accum, 9)
+			for _, v := range gemvXVariants {
+				for _, rpw := range []int{1, 2, 4} {
+					got := gemvXRun(t, rf, pipes, g.N, g.K, v, rpw, 1, accum, 9)
+					for i := range ref {
+						checked++
+						if math.Float32bits(ref[i]) != math.Float32bits(got[i]) {
+							t.Fatalf("%s accum=%v %s rpw=%d: row %d differs: original %v, variant %v", g.name, accum, v, rpw, i, ref[i], got[i])
+						}
+					}
+				}
+			}
+		}
+	}
+	t.Logf("all %d gemv_w4a8_x variants x rows-per-warp {1,2,4} == gemv_w4a8_fwd over %d outputs", len(gemvXVariants), checked)
+}
+
+// TestGemvW4A8XBench launches the original and each variant per shape for ncu timing (asserts nothing). GOINFER_GEMVX_BENCH=1.
+func TestGemvW4A8XBench(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" || os.Getenv("GOINFER_GEMVX_BENCH") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1 GOINFER_GEMVX_BENCH=1")
+	}
+	m, err := decoder.Load(modelPath("qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Skipf("load: %v", err)
+	}
+	defer m.Close()
+	rf := m.ResidentForwardForTest().(*cudaResident)
+	pipes := gemvXLoad(t, rf)
+	for _, g := range gemvXGeoms {
+		fmt.Printf("GEOM %s\n", g.name)
+		gemvXRun(t, rf, pipes, g.N, g.K, "", 1, 15, false, 1)
+		for _, v := range gemvXVariants {
+			for _, rpw := range []int{1, 2, 4} {
+				gemvXRun(t, rf, pipes, g.N, g.K, v, rpw, 15, false, 1)
+			}
+		}
+	}
+}

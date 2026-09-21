@@ -1,0 +1,399 @@
+#include <cuda_fp16.h>
+// gemv_w4a8_x*: variants of aikit's gemv_w4a8_fwd (the decode o-proj / down-proj GEMV) that keep every lane's accumulation order — lane l folds words l, l+32, l+64, ... in ascending
+// order with the same __fmaf_rn sequence, and the final 5-step __shfl_down reduction is unchanged — so they are BIT-IDENTICAL to it. What changes is only WHERE operands come from and
+// how many rows a warp walks:
+//   S : the int8 activation is staged in shared memory once per block (the original re-reads it from global, 4 cached loads per 2 weight loads per lane, which looks LSU-issue-bound)
+//   H : the group scale is loaded by 16 lanes and broadcast by shuffle (the original issues 2 half loads per lane per iteration) — identical values
+//   C : weights are read with ld.global.cs (streaming), so the once-only weight stream does not evict the activation / scales from cache
+// rowsPerWarp lets one block reuse its staged activation over more rows. The remainder (K not a multiple of 64 words) runs the original scalar loops. Own module; aikit's kernel is not touched.
+//
+// Args as gemv_w4a8_fwd plus rowsPerWarp: W [N,Kwords] u32, a [2*Kwords] int, gs [N,Kgroups] f16, aScalePtr, bias, N, Kwords, Kgroups, dst, accum, rowsPerWarp.
+
+#define ACT(i) a[(i)]
+#define LOADW(p) __ldcs(p)
+
+extern "C" __global__ void gemv_w4a8_xc(
+    const unsigned int* __restrict__ W, const int* __restrict__ a, const __half* __restrict__ gs,
+    const float* __restrict__ aScalePtr, const float* __restrict__ bias,
+    int N, int Kwords, int Kgroups, float* __restrict__ dst, int accum, int rowsPerWarp)
+{
+    extern __shared__ __align__(16) int sa_[];
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5, warps = blockDim.x >> 5;
+    const int nAct = 2 * Kwords;
+    
+    const int rowBase = blockIdx.x * (warps * rowsPerWarp);
+    for (int i = 0; i < rowsPerWarp; i++) {
+        const int n = rowBase + warp * rowsPerWarp + i;
+        if (n >= N) return;
+        const unsigned int* wr = W + (long)n * Kwords;
+        const __half* sr = gs + (long)n * Kgroups;
+        float facc = 0.f;
+        int base = 0;
+        for (; base + 64 <= Kwords; base += 64) {
+            const int wi0 = base + lane, wi1 = base + 32 + lane;
+            const unsigned int w0 = LOADW(wr + wi0), w1 = LOADW(wr + wi1);
+            int p0 = 0, p1 = 0;
+            p0 = __dp4a((int)__vsub4(w0 & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi0), p0);
+            p0 = __dp4a((int)__vsub4((w0 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi0 + 1), p0);
+            p1 = __dp4a((int)__vsub4(w1 & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi1), p1);
+            p1 = __dp4a((int)__vsub4((w1 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi1 + 1), p1);
+            const float s0 = __half2float(sr[wi0 >> 2]); const float s1 = __half2float(sr[wi1 >> 2]);
+            facc = __fmaf_rn((float)p0, s0, facc);
+            facc = __fmaf_rn((float)p1, s1, facc);
+        }
+        for (; base < Kwords; base += 32) {
+            const int wi = base + lane;
+            if (wi < Kwords) {
+                const unsigned int word = LOADW(wr + wi);
+                int p = 0;
+                p = __dp4a((int)__vsub4(word & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi), p);
+                p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi + 1), p);
+                facc = __fmaf_rn((float)p, __half2float(sr[wi >> 2]), facc);
+            }
+        }
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, off);
+        if (lane == 0) {
+            float val = __fmaf_rn(facc, *aScalePtr, (bias ? bias[n] : 0.f));
+            dst[n] = accum ? dst[n] + val : val;
+        }
+    }
+}
+#undef ACT
+#undef LOADW
+#define ACT(i) a[(i)]
+#define LOADW(p) (*(p))
+
+extern "C" __global__ void gemv_w4a8_xh(
+    const unsigned int* __restrict__ W, const int* __restrict__ a, const __half* __restrict__ gs,
+    const float* __restrict__ aScalePtr, const float* __restrict__ bias,
+    int N, int Kwords, int Kgroups, float* __restrict__ dst, int accum, int rowsPerWarp)
+{
+    extern __shared__ __align__(16) int sa_[];
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5, warps = blockDim.x >> 5;
+    const int nAct = 2 * Kwords;
+    
+    const int rowBase = blockIdx.x * (warps * rowsPerWarp);
+    for (int i = 0; i < rowsPerWarp; i++) {
+        const int n = rowBase + warp * rowsPerWarp + i;
+        if (n >= N) return;
+        const unsigned int* wr = W + (long)n * Kwords;
+        const __half* sr = gs + (long)n * Kgroups;
+        float facc = 0.f;
+        int base = 0;
+        for (; base + 64 <= Kwords; base += 64) {
+            const int wi0 = base + lane, wi1 = base + 32 + lane;
+            const unsigned int w0 = LOADW(wr + wi0), w1 = LOADW(wr + wi1);
+            int p0 = 0, p1 = 0;
+            p0 = __dp4a((int)__vsub4(w0 & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi0), p0);
+            p0 = __dp4a((int)__vsub4((w0 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi0 + 1), p0);
+            p1 = __dp4a((int)__vsub4(w1 & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi1), p1);
+            p1 = __dp4a((int)__vsub4((w1 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi1 + 1), p1);
+            const __half gv = (lane < 16) ? sr[(base >> 2) + lane] : __float2half(0.f);
+            const float sv = __half2float(gv);
+            const float s0 = __shfl_sync(0xffffffffu, sv, lane >> 2);
+            const float s1 = __shfl_sync(0xffffffffu, sv, 8 + (lane >> 2));
+            facc = __fmaf_rn((float)p0, s0, facc);
+            facc = __fmaf_rn((float)p1, s1, facc);
+        }
+        for (; base < Kwords; base += 32) {
+            const int wi = base + lane;
+            if (wi < Kwords) {
+                const unsigned int word = LOADW(wr + wi);
+                int p = 0;
+                p = __dp4a((int)__vsub4(word & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi), p);
+                p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi + 1), p);
+                facc = __fmaf_rn((float)p, __half2float(sr[wi >> 2]), facc);
+            }
+        }
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, off);
+        if (lane == 0) {
+            float val = __fmaf_rn(facc, *aScalePtr, (bias ? bias[n] : 0.f));
+            dst[n] = accum ? dst[n] + val : val;
+        }
+    }
+}
+#undef ACT
+#undef LOADW
+#define ACT(i) a[(i)]
+#define LOADW(p) __ldcs(p)
+
+extern "C" __global__ void gemv_w4a8_xhc(
+    const unsigned int* __restrict__ W, const int* __restrict__ a, const __half* __restrict__ gs,
+    const float* __restrict__ aScalePtr, const float* __restrict__ bias,
+    int N, int Kwords, int Kgroups, float* __restrict__ dst, int accum, int rowsPerWarp)
+{
+    extern __shared__ __align__(16) int sa_[];
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5, warps = blockDim.x >> 5;
+    const int nAct = 2 * Kwords;
+    
+    const int rowBase = blockIdx.x * (warps * rowsPerWarp);
+    for (int i = 0; i < rowsPerWarp; i++) {
+        const int n = rowBase + warp * rowsPerWarp + i;
+        if (n >= N) return;
+        const unsigned int* wr = W + (long)n * Kwords;
+        const __half* sr = gs + (long)n * Kgroups;
+        float facc = 0.f;
+        int base = 0;
+        for (; base + 64 <= Kwords; base += 64) {
+            const int wi0 = base + lane, wi1 = base + 32 + lane;
+            const unsigned int w0 = LOADW(wr + wi0), w1 = LOADW(wr + wi1);
+            int p0 = 0, p1 = 0;
+            p0 = __dp4a((int)__vsub4(w0 & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi0), p0);
+            p0 = __dp4a((int)__vsub4((w0 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi0 + 1), p0);
+            p1 = __dp4a((int)__vsub4(w1 & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi1), p1);
+            p1 = __dp4a((int)__vsub4((w1 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi1 + 1), p1);
+            const __half gv = (lane < 16) ? sr[(base >> 2) + lane] : __float2half(0.f);
+            const float sv = __half2float(gv);
+            const float s0 = __shfl_sync(0xffffffffu, sv, lane >> 2);
+            const float s1 = __shfl_sync(0xffffffffu, sv, 8 + (lane >> 2));
+            facc = __fmaf_rn((float)p0, s0, facc);
+            facc = __fmaf_rn((float)p1, s1, facc);
+        }
+        for (; base < Kwords; base += 32) {
+            const int wi = base + lane;
+            if (wi < Kwords) {
+                const unsigned int word = LOADW(wr + wi);
+                int p = 0;
+                p = __dp4a((int)__vsub4(word & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi), p);
+                p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACT(2 * wi + 1), p);
+                facc = __fmaf_rn((float)p, __half2float(sr[wi >> 2]), facc);
+            }
+        }
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, off);
+        if (lane == 0) {
+            float val = __fmaf_rn(facc, *aScalePtr, (bias ? bias[n] : 0.f));
+            dst[n] = accum ? dst[n] + val : val;
+        }
+    }
+}
+#undef ACT
+#undef LOADW
+#define ACTLO(w) (((const int2*)sa_)[(w)].x)
+#define ACTHI(w) (((const int2*)sa_)[(w)].y)
+#define LOADW(p) (*(p))
+
+extern "C" __global__ void gemv_w4a8_xs(
+    const unsigned int* __restrict__ W, const int* __restrict__ a, const __half* __restrict__ gs,
+    const float* __restrict__ aScalePtr, const float* __restrict__ bias,
+    int N, int Kwords, int Kgroups, float* __restrict__ dst, int accum, int rowsPerWarp)
+{
+    extern __shared__ __align__(16) int sa_[];
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5, warps = blockDim.x >> 5;
+    const int nAct = 2 * Kwords;
+    for (int k = threadIdx.x; k < nAct; k += blockDim.x) sa_[k] = a[k];
+    __syncthreads();
+    const int rowBase = blockIdx.x * (warps * rowsPerWarp);
+    for (int i = 0; i < rowsPerWarp; i++) {
+        const int n = rowBase + warp * rowsPerWarp + i;
+        if (n >= N) return;
+        const unsigned int* wr = W + (long)n * Kwords;
+        const __half* sr = gs + (long)n * Kgroups;
+        float facc = 0.f;
+        int base = 0;
+        for (; base + 64 <= Kwords; base += 64) {
+            const int wi0 = base + lane, wi1 = base + 32 + lane;
+            const unsigned int w0 = LOADW(wr + wi0), w1 = LOADW(wr + wi1);
+            int p0 = 0, p1 = 0;
+            p0 = __dp4a((int)__vsub4(w0 & 0x0F0F0F0Fu, 0x08080808u), ACTLO(wi0), p0);
+            p0 = __dp4a((int)__vsub4((w0 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTHI(wi0), p0);
+            p1 = __dp4a((int)__vsub4(w1 & 0x0F0F0F0Fu, 0x08080808u), ACTLO(wi1), p1);
+            p1 = __dp4a((int)__vsub4((w1 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTHI(wi1), p1);
+            const float s0 = __half2float(sr[wi0 >> 2]); const float s1 = __half2float(sr[wi1 >> 2]);
+            facc = __fmaf_rn((float)p0, s0, facc);
+            facc = __fmaf_rn((float)p1, s1, facc);
+        }
+        for (; base < Kwords; base += 32) {
+            const int wi = base + lane;
+            if (wi < Kwords) {
+                const unsigned int word = LOADW(wr + wi);
+                int p = 0;
+                p = __dp4a((int)__vsub4(word & 0x0F0F0F0Fu, 0x08080808u), ACTLO(wi), p);
+                p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTHI(wi), p);
+                facc = __fmaf_rn((float)p, __half2float(sr[wi >> 2]), facc);
+            }
+        }
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, off);
+        if (lane == 0) {
+            float val = __fmaf_rn(facc, *aScalePtr, (bias ? bias[n] : 0.f));
+            dst[n] = accum ? dst[n] + val : val;
+        }
+    }
+}
+#undef ACTLO
+#undef ACTHI
+#undef LOADW
+#define ACTLO(w) (((const int2*)sa_)[(w)].x)
+#define ACTHI(w) (((const int2*)sa_)[(w)].y)
+#define LOADW(p) __ldcs(p)
+
+extern "C" __global__ void gemv_w4a8_xsc(
+    const unsigned int* __restrict__ W, const int* __restrict__ a, const __half* __restrict__ gs,
+    const float* __restrict__ aScalePtr, const float* __restrict__ bias,
+    int N, int Kwords, int Kgroups, float* __restrict__ dst, int accum, int rowsPerWarp)
+{
+    extern __shared__ __align__(16) int sa_[];
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5, warps = blockDim.x >> 5;
+    const int nAct = 2 * Kwords;
+    for (int k = threadIdx.x; k < nAct; k += blockDim.x) sa_[k] = a[k];
+    __syncthreads();
+    const int rowBase = blockIdx.x * (warps * rowsPerWarp);
+    for (int i = 0; i < rowsPerWarp; i++) {
+        const int n = rowBase + warp * rowsPerWarp + i;
+        if (n >= N) return;
+        const unsigned int* wr = W + (long)n * Kwords;
+        const __half* sr = gs + (long)n * Kgroups;
+        float facc = 0.f;
+        int base = 0;
+        for (; base + 64 <= Kwords; base += 64) {
+            const int wi0 = base + lane, wi1 = base + 32 + lane;
+            const unsigned int w0 = LOADW(wr + wi0), w1 = LOADW(wr + wi1);
+            int p0 = 0, p1 = 0;
+            p0 = __dp4a((int)__vsub4(w0 & 0x0F0F0F0Fu, 0x08080808u), ACTLO(wi0), p0);
+            p0 = __dp4a((int)__vsub4((w0 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTHI(wi0), p0);
+            p1 = __dp4a((int)__vsub4(w1 & 0x0F0F0F0Fu, 0x08080808u), ACTLO(wi1), p1);
+            p1 = __dp4a((int)__vsub4((w1 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTHI(wi1), p1);
+            const float s0 = __half2float(sr[wi0 >> 2]); const float s1 = __half2float(sr[wi1 >> 2]);
+            facc = __fmaf_rn((float)p0, s0, facc);
+            facc = __fmaf_rn((float)p1, s1, facc);
+        }
+        for (; base < Kwords; base += 32) {
+            const int wi = base + lane;
+            if (wi < Kwords) {
+                const unsigned int word = LOADW(wr + wi);
+                int p = 0;
+                p = __dp4a((int)__vsub4(word & 0x0F0F0F0Fu, 0x08080808u), ACTLO(wi), p);
+                p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTHI(wi), p);
+                facc = __fmaf_rn((float)p, __half2float(sr[wi >> 2]), facc);
+            }
+        }
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, off);
+        if (lane == 0) {
+            float val = __fmaf_rn(facc, *aScalePtr, (bias ? bias[n] : 0.f));
+            dst[n] = accum ? dst[n] + val : val;
+        }
+    }
+}
+#undef ACTLO
+#undef ACTHI
+#undef LOADW
+#define ACTLO(w) (((const int2*)sa_)[(w)].x)
+#define ACTHI(w) (((const int2*)sa_)[(w)].y)
+#define LOADW(p) (*(p))
+
+extern "C" __global__ void gemv_w4a8_xsh(
+    const unsigned int* __restrict__ W, const int* __restrict__ a, const __half* __restrict__ gs,
+    const float* __restrict__ aScalePtr, const float* __restrict__ bias,
+    int N, int Kwords, int Kgroups, float* __restrict__ dst, int accum, int rowsPerWarp)
+{
+    extern __shared__ __align__(16) int sa_[];
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5, warps = blockDim.x >> 5;
+    const int nAct = 2 * Kwords;
+    for (int k = threadIdx.x; k < nAct; k += blockDim.x) sa_[k] = a[k];
+    __syncthreads();
+    const int rowBase = blockIdx.x * (warps * rowsPerWarp);
+    for (int i = 0; i < rowsPerWarp; i++) {
+        const int n = rowBase + warp * rowsPerWarp + i;
+        if (n >= N) return;
+        const unsigned int* wr = W + (long)n * Kwords;
+        const __half* sr = gs + (long)n * Kgroups;
+        float facc = 0.f;
+        int base = 0;
+        for (; base + 64 <= Kwords; base += 64) {
+            const int wi0 = base + lane, wi1 = base + 32 + lane;
+            const unsigned int w0 = LOADW(wr + wi0), w1 = LOADW(wr + wi1);
+            int p0 = 0, p1 = 0;
+            p0 = __dp4a((int)__vsub4(w0 & 0x0F0F0F0Fu, 0x08080808u), ACTLO(wi0), p0);
+            p0 = __dp4a((int)__vsub4((w0 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTHI(wi0), p0);
+            p1 = __dp4a((int)__vsub4(w1 & 0x0F0F0F0Fu, 0x08080808u), ACTLO(wi1), p1);
+            p1 = __dp4a((int)__vsub4((w1 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTHI(wi1), p1);
+            const __half gv = (lane < 16) ? sr[(base >> 2) + lane] : __float2half(0.f);
+            const float sv = __half2float(gv);
+            const float s0 = __shfl_sync(0xffffffffu, sv, lane >> 2);
+            const float s1 = __shfl_sync(0xffffffffu, sv, 8 + (lane >> 2));
+            facc = __fmaf_rn((float)p0, s0, facc);
+            facc = __fmaf_rn((float)p1, s1, facc);
+        }
+        for (; base < Kwords; base += 32) {
+            const int wi = base + lane;
+            if (wi < Kwords) {
+                const unsigned int word = LOADW(wr + wi);
+                int p = 0;
+                p = __dp4a((int)__vsub4(word & 0x0F0F0F0Fu, 0x08080808u), ACTLO(wi), p);
+                p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTHI(wi), p);
+                facc = __fmaf_rn((float)p, __half2float(sr[wi >> 2]), facc);
+            }
+        }
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, off);
+        if (lane == 0) {
+            float val = __fmaf_rn(facc, *aScalePtr, (bias ? bias[n] : 0.f));
+            dst[n] = accum ? dst[n] + val : val;
+        }
+    }
+}
+#undef ACTLO
+#undef ACTHI
+#undef LOADW
+#define ACTLO(w) (((const int2*)sa_)[(w)].x)
+#define ACTHI(w) (((const int2*)sa_)[(w)].y)
+#define LOADW(p) __ldcs(p)
+
+extern "C" __global__ void gemv_w4a8_xshc(
+    const unsigned int* __restrict__ W, const int* __restrict__ a, const __half* __restrict__ gs,
+    const float* __restrict__ aScalePtr, const float* __restrict__ bias,
+    int N, int Kwords, int Kgroups, float* __restrict__ dst, int accum, int rowsPerWarp)
+{
+    extern __shared__ __align__(16) int sa_[];
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5, warps = blockDim.x >> 5;
+    const int nAct = 2 * Kwords;
+    for (int k = threadIdx.x; k < nAct; k += blockDim.x) sa_[k] = a[k];
+    __syncthreads();
+    const int rowBase = blockIdx.x * (warps * rowsPerWarp);
+    for (int i = 0; i < rowsPerWarp; i++) {
+        const int n = rowBase + warp * rowsPerWarp + i;
+        if (n >= N) return;
+        const unsigned int* wr = W + (long)n * Kwords;
+        const __half* sr = gs + (long)n * Kgroups;
+        float facc = 0.f;
+        int base = 0;
+        for (; base + 64 <= Kwords; base += 64) {
+            const int wi0 = base + lane, wi1 = base + 32 + lane;
+            const unsigned int w0 = LOADW(wr + wi0), w1 = LOADW(wr + wi1);
+            int p0 = 0, p1 = 0;
+            p0 = __dp4a((int)__vsub4(w0 & 0x0F0F0F0Fu, 0x08080808u), ACTLO(wi0), p0);
+            p0 = __dp4a((int)__vsub4((w0 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTHI(wi0), p0);
+            p1 = __dp4a((int)__vsub4(w1 & 0x0F0F0F0Fu, 0x08080808u), ACTLO(wi1), p1);
+            p1 = __dp4a((int)__vsub4((w1 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTHI(wi1), p1);
+            const __half gv = (lane < 16) ? sr[(base >> 2) + lane] : __float2half(0.f);
+            const float sv = __half2float(gv);
+            const float s0 = __shfl_sync(0xffffffffu, sv, lane >> 2);
+            const float s1 = __shfl_sync(0xffffffffu, sv, 8 + (lane >> 2));
+            facc = __fmaf_rn((float)p0, s0, facc);
+            facc = __fmaf_rn((float)p1, s1, facc);
+        }
+        for (; base < Kwords; base += 32) {
+            const int wi = base + lane;
+            if (wi < Kwords) {
+                const unsigned int word = LOADW(wr + wi);
+                int p = 0;
+                p = __dp4a((int)__vsub4(word & 0x0F0F0F0Fu, 0x08080808u), ACTLO(wi), p);
+                p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTHI(wi), p);
+                facc = __fmaf_rn((float)p, __half2float(sr[wi >> 2]), facc);
+            }
+        }
+        #pragma unroll
+        for (int off = 16; off > 0; off >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, off);
+        if (lane == 0) {
+            float val = __fmaf_rn(facc, *aScalePtr, (bias ? bias[n] : 0.f));
+            dst[n] = accum ? dst[n] + val : val;
+        }
+    }
+}
+#undef ACTLO
+#undef ACTHI
+#undef LOADW
