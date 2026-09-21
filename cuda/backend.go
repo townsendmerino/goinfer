@@ -854,6 +854,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.fGURows = Pipeline{}
 			}
 		}
+		r.readSMShape() // device shape for wave-sized fused-projection grids (waveRowsPerWarp); unreadable -> zero -> the static rules
 		// rows-per-warp variant of fused_rms_qkv (own module; see fused_qkv_rows.cu). A load failure only leaves the original kernel in use.
 		if rmod, re2 := r.dev.CompileLibrary(fusedQKVRowsPTX); re2 == nil {
 			var le error

@@ -48,6 +48,11 @@ any surface may still change.
 
 ### Changed
 
+- **CUDA decode: two more bit-identical fusion-kernel speedups (D7 +1.7-3.5%, 1.5B +1.9-3.0%).** `fused_rms_qkv` and `fused_rms_gu` recomputed the layer's rmsnorm + int8 quantisation in every block before streaming any weight; the QKV and gate/up
+  projections now let each warp walk several rows off one shared activation, and size the grid to one resident wave from the device's SM count and per-SM limits (`GOINFER`-independent; a device whose shape cannot be read keeps the previous static rules). Output is unchanged:
+  1.3M kernel outputs and the decode-logit hashes of four models are bit-identical. D7 GPU time per token 13.39 -> 11.87 ms across this and the `glu_quant` change (`docs/measurements/fused-rms-qkv-2026-09-21.md`, `fused-rms-gu-diagnosis-2026-09-21.md`); the down/o-projection GEMV was measured to be at its bandwidth bound (`gemv-w4a8-2026-09-21.md`, no change).
+  Also fixed: `cuda/flash_decode.go` lacked its `//go:build cuda` tag, so an untagged build of the package failed.
+
 - **CUDA decode is ~4-5% faster on models with a wide MLP, bit-identically.** `glu_quant` (the SwiGLU/GeGLU activation + int8 quantise, a single-block kernel) was launched with 256 threads and
   cost 36 us per layer on qwen2.5-7b, 7% of a token; it now uses 1024 (13.6 us). Its only reduction is a max, so the output is unchanged (SHA-256 of 25 steps' logits identical on three
   models; `TestGluQuantBlockSizeInvariant`). Same-session vs the previous build: 1.5B +5.3-5.8%, qwen2.5-7b +4.1-4.5% (now 0.99-1.03x of Ollama v0.32.5 from 0.95-0.98x), 0.5B +0.5%

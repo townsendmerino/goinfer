@@ -292,3 +292,26 @@ func TestFusedGUBench(t *testing.T) {
 		}
 	}
 }
+
+// TestWaveRowsPerWarpFor pins the rule on the measured card (40 SMs, 1024 threads/SM, 64 KB shared per SM) to the values the microbenchmark validated, and its "cannot tell" answers.
+func TestWaveRowsPerWarpFor(t *testing.T) {
+	sms, thr, sm := 40, 1024, 65536
+	smem := func(h int) int { return (h + 256 + h/4) * 4 }
+	for _, c := range []struct {
+		name    string
+		rows, h int
+		want    int
+	}{
+		{"D7 gate/up", 37888, 3584, 40}, {"D7 qkv", 4608, 3584, 5}, {"1.5B gate/up", 17920, 1536, 14}, {"1.5B qkv", 2048, 1536, 2},
+		{"0.5B qkv (no gain: stays original)", 1152, 896, 1}, {"llama3-8b gate/up", 28672, 4096, 30}, {"gemma3-1b gate/up", 13824, 1152, 11},
+	} {
+		if got := waveRowsPerWarpFor(c.rows, smem(c.h), sms, thr, sm); got != c.want {
+			t.Errorf("%s: waveRowsPerWarpFor = %d, want %d", c.name, got, c.want)
+		}
+	}
+	for _, bad := range [][5]int{{0, 1000, 40, 1024, 65536}, {100, 0, 40, 1024, 65536}, {100, 1000, 0, 1024, 65536}, {100, 1000, 40, 128, 65536}, {100, 70000, 40, 1024, 65536}} {
+		if got := waveRowsPerWarpFor(bad[0], bad[1], bad[2], bad[3], bad[4]); got != 0 {
+			t.Errorf("waveRowsPerWarpFor(%v) = %d, want 0 (cannot tell)", bad, got)
+		}
+	}
+}

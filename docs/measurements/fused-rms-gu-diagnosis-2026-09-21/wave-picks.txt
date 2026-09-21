@@ -1,0 +1,19 @@
+GU D7 qwen2.5-7b H=3584 I=18944 rule=40 current=16
+GU qwen2.5-3b H=2048 I=11008 rule=18 current=32
+GU 1.5B H=1536 I=8960 rule=14 current=8
+GU 0.5B H=896 I=4864 rule=8 current=8
+GU qwen3-4b H=2560 I=9728 rule=16 current=16
+GU qwen3-1.7b H=2048 I=6144 rule=10 current=16
+GU llama3-8b H=4096 I=14336 rule=30 current=32
+GU gemma3-1b H=1152 I=6912 rule=11 current=16
+GU phi3-mini H=3072 I=8192 rule=13 current=16
+QKV D7 qwen2.5-7b H=3584 rows=4608 rule=5 current=8
+QKV qwen2.5-3b H=2048 rows=2560 rule=2 current=4
+QKV 1.5B H=1536 rows=2048 rule=2 current=4
+QKV 0.5B H=896 rows=1152 rule=1 current=1
+QKV qwen3-4b H=2560 rows=6144 rule=5 current=8
+QKV qwen3-1.7b H=2048 rows=4096 rule=4 current=8
+QKV llama3-8b/mistral-7b H=4096 rows=6144 rule=7 current=8
+QKV gemma3-1b H=1152 rows=1536 rule=2 current=2
+QKV phi3-mini (MHA) H=3072 rows=9216 rule=8 current=16
+QKV olmo/llama-1b H=2048 rows=3072 rule=3 current=4

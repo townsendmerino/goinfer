@@ -579,6 +579,7 @@ type cudaResident struct {
 	fTopK                                                                                   Pipeline // topk_select (R7)
 	fQKVRows                                                                                Pipeline // fused_rms_qkv_rows: fused_rms_qkv with rows-per-warp (zero when its module did not load)
 	fGURows                                                                                 Pipeline // fused_rms_gu_rows: fused_rms_gu with rows-per-warp (zero when its module did not load)
+	smCount, smThreads, smSmem                                                              int      // device shape for wave-sized fused-projection grids (zero when unread): SM count, max threads per SM, max shared memory per SM
 	fGumbel1, fGumbel2                                                                      Pipeline // gumbel_stage1/2 (R7b)
 	// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md — cuda/lora.go). Own module
 	// (lora.ptx), loaded unconditionally like every other glue pipeline — cheap, and whether a
@@ -2642,7 +2643,11 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
 		// Rows-per-warp variant (fused_qkv_rows.cu): each warp walks several rows off one shared activation, so fewer blocks pay the redundant
 		// rmsnorm+quant prologue. Bit-identical to the one-row-per-warp kernel (TestFusedQKVRowsBitIdentical), so this only ever changes speed.
-		if rpw := fusedQKVRowsPerWarp(nrows); rpw > 1 && r.fQKVRows != (Pipeline{}) {
+		rpw := r.waveRowsPerWarp(nrows, int(cfg.SharedMemBytes))
+		if rpw == 0 {
+			rpw = fusedQKVRowsPerWarp(nrows) // device shape unread: the static rule
+		}
+		if rpw > 1 && r.fQKVRows != (Pipeline{}) {
 			rcfg := cfg
 			rcfg.GridX = uint32((nrows + 8*rpw - 1) / (8 * rpw))
 			if e := r.launch(r.fQKVRows, rcfg,
@@ -2930,7 +2935,11 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 			BlockX: 256, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
 		// Rows-per-warp variant (fused_gu_rows.cu) for the geometries measured to win; bit-identical to the original (TestFusedGURowsBitIdentical).
-		if rpw := fusedGURowsPerWarp(r.hidden, r.inter); rpw != 8 && r.fGURows != (Pipeline{}) {
+		rpw := r.waveRowsPerWarp(2*r.inter, int(cfg.SharedMemBytes))
+		if rpw == 0 {
+			rpw = fusedGURowsPerWarp(r.hidden, r.inter) // device shape unread: the measured-geometry table
+		}
+		if rpw != 8 && r.fGURows != (Pipeline{}) {
 			rcfg := cfg
 			rcfg.GridX = uint32((2*r.inter + 8*rpw - 1) / (8 * rpw))
 			if e := r.launch(r.fGURows, rcfg,

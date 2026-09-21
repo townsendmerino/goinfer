@@ -1,0 +1,108 @@
+#include <cuda_fp16.h>
+// SCRATCH ablations of fused_rms_gu_rows (not embedded, not committed). Same row loop as the original; what varies is where the activation comes from and whether the prologue runs.
+#define ROWLOOP(ACTREAD) \
+    int warp = t / 32, lane = t & 31, warps = nt / 32; \
+    int blockBase = blockIdx.x * (warps * rowsPerWarp); \
+    for (int i = 0; i < rowsPerWarp; i++) { \
+        int r = blockBase + warp * rowsPerWarp + i; \
+        if (r >= 2 * I) return; \
+        const unsigned int* W; const __half* gs; float* dst; int row; \
+        if (r < I) { W = Wg; gs = gsg; dst = gOut; row = r; } else { W = Wu; gs = gsu; dst = uOut; row = r - I; } \
+        const unsigned int* wr = W + (long)row * Kwords; const __half* sr = gs + (long)row * Kgroups; \
+        float facc = 0.f; int base = 0; \
+        for (; base + 64 <= Kwords; base += 64) { \
+            int wi0 = base + lane, wi1 = base + 32 + lane; unsigned int w0 = wr[wi0], w1 = wr[wi1]; int p0 = 0, p1 = 0; \
+            p0 = __dp4a((int)__vsub4(w0 & 0x0F0F0F0Fu, 0x08080808u), ACTREAD[2 * wi0], p0); \
+            p0 = __dp4a((int)__vsub4((w0 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTREAD[2 * wi0 + 1], p0); \
+            p1 = __dp4a((int)__vsub4(w1 & 0x0F0F0F0Fu, 0x08080808u), ACTREAD[2 * wi1], p1); \
+            p1 = __dp4a((int)__vsub4((w1 >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTREAD[2 * wi1 + 1], p1); \
+            facc = __fmaf_rn((float)p0, __half2float(sr[wi0 >> 2]), facc); \
+            facc = __fmaf_rn((float)p1, __half2float(sr[wi1 >> 2]), facc); } \
+        for (; base < Kwords; base += 32) { int wi = base + lane; if (wi < Kwords) { unsigned int word = wr[wi]; int p = 0; \
+            p = __dp4a((int)__vsub4(word & 0x0F0F0F0Fu, 0x08080808u), ACTREAD[2 * wi], p); \
+            p = __dp4a((int)__vsub4((word >> 4) & 0x0F0F0F0Fu, 0x08080808u), ACTREAD[2 * wi + 1], p); \
+            facc = __fmaf_rn((float)p, __half2float(sr[wi >> 2]), facc); } } \
+        _Pragma("unroll") for (int o = 16; o > 0; o >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, o); \
+        if (lane == 0) dst[row] = __fmul_rn(facc, aScale); }
+
+#define PROLOGUE \
+    float ss = 0.f; \
+    for (int k = t; k < H; k += nt) ss = __fmaf_rn(x[k], x[k], ss); \
+    red[t] = ss; __syncthreads(); \
+    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); } \
+    float rnorm = rsqrtf(red[0] / H + eps); __syncthreads(); \
+    float ma = 0.f; \
+    for (int k = t; k < H; k += nt) { float g = addOne ? (1.f + nrm[k]) : nrm[k]; float v = x[k] * g * rnorm; normed[k] = v; ma = fmaxf(ma, fabsf(v)); } \
+    red[t] = ma; __syncthreads(); \
+    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] = fmaxf(red[t], red[t + o]); __syncthreads(); } \
+    float aScale = red[0] / 127.f; float inv = aScale > 0.f ? 1.f / aScale : 0.f; \
+    for (int j = t; j < H / 4; j += nt) { int packed = 0; \
+        _Pragma("unroll") for (int b = 0; b < 4; b++) { int q = __float2int_rn(normed[4 * j + b] * inv); q = max(-127, min(127, q)); packed |= (q & 0xff) << (8 * b); } \
+        aq[j] = packed; } \
+    __syncthreads();
+
+#define SIG(NAME) extern "C" __global__ void NAME( \
+    const float* __restrict__ x, const float* __restrict__ nrm, int H, float eps, int addOne, \
+    const unsigned int* __restrict__ Wg, const __half* __restrict__ gsg, const unsigned int* __restrict__ Wu, const __half* __restrict__ gsu, \
+    int I, int Kwords, int Kgroups, int rowsPerWarp, float* __restrict__ gOut, float* __restrict__ uOut, \
+    const int* __restrict__ aqg, const float* __restrict__ aScalePtr)
+
+
+#define PROLOGUE_FAST \
+    float ss = 0.f; \
+    for (int k = t; k < H; k += nt) ss = __fmaf_rn(x[k], x[k], ss); \
+    red[t] = ss; __syncthreads(); \
+    if (t < 128) red[t] += red[t + 128]; __syncthreads(); \
+    if (t < 64) red[t] += red[t + 64]; __syncthreads(); \
+    if (t < 32) red[t] += red[t + 32]; __syncthreads(); \
+    if (t < 32) { float v = red[t]; \
+        _Pragma("unroll") for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffffu, v, o); \
+        if (t == 0) red[0] = v; } \
+    __syncthreads(); \
+    float rnorm = rsqrtf(red[0] / H + eps); __syncthreads(); \
+    float ma = 0.f; \
+    for (int k = t; k < H; k += nt) { float g = addOne ? (1.f + nrm[k]) : nrm[k]; float v = x[k] * g * rnorm; normed[k] = v; ma = fmaxf(ma, fabsf(v)); } \
+    _Pragma("unroll") for (int o = 16; o > 0; o >>= 1) ma = fmaxf(ma, __shfl_down_sync(0xffffffffu, ma, o)); \
+    if ((t & 31) == 0) red[t >> 5] = ma; \
+    __syncthreads(); \
+    if (t < 32) { float mv = (t < 8) ? red[t] : 0.f; \
+        _Pragma("unroll") for (int o = 16; o > 0; o >>= 1) mv = fmaxf(mv, __shfl_down_sync(0xffffffffu, mv, o)); \
+        if (t == 0) red[0] = mv; } \
+    __syncthreads(); \
+    float aScale = red[0] / 127.f; float inv = aScale > 0.f ? 1.f / aScale : 0.f; \
+    for (int j = t; j < H / 4; j += nt) { int packed = 0; \
+        _Pragma("unroll") for (int b = 0; b < 4; b++) { int q = __float2int_rn(normed[4 * j + b] * inv); q = max(-127, min(127, q)); packed |= (q & 0xff) << (8 * b); } \
+        aq[j] = packed; } \
+    __syncthreads();
+
+SIG(abl_full_fast) {
+    extern __shared__ float sh[]; float* normed = sh; float* red = normed + H; int* aq = (int*)(red + 256); int t = threadIdx.x, nt = blockDim.x;
+    PROLOGUE_FAST
+    ROWLOOP(aq)
+}
+// A0: the full fused kernel (== fused_rms_gu_rows)
+SIG(abl_full) {
+    extern __shared__ float sh[]; float* normed = sh; float* red = normed + H; int* aq = (int*)(red + 256); int t = threadIdx.x, nt = blockDim.x;
+    PROLOGUE
+    ROWLOOP(aq)
+}
+// A1: NO prologue math — the activation is copied from a precomputed global buffer into the SAME shared array (isolates the three reductions + quantisation from the smem read path)
+SIG(abl_staged) {
+    extern __shared__ float sh[]; float* normed = sh; float* red = normed + H; int* aq = (int*)(red + 256); int t = threadIdx.x, nt = blockDim.x;
+    float aScale = *aScalePtr;
+    for (int j = t; j < H / 4; j += nt) aq[j] = aqg[j];
+    __syncthreads();
+    ROWLOOP(aq)
+}
+// A2: prologue ONLY (no rows): the cost of the redundant rmsnorm+quant per block. The store keeps the reduction and quantisation from being optimised away.
+SIG(abl_prologue_only) {
+    extern __shared__ float sh[]; float* normed = sh; float* red = normed + H; int* aq = (int*)(red + 256); int t = threadIdx.x, nt = blockDim.x;
+    PROLOGUE
+    if (aScale == 12345.f) gOut[0] = (float)aq[t % (H / 4)];
+}
+// A3: NO shared memory, NO prologue: the activation is read straight from global (L1-cached), exactly as the plain GEMV does. Same row selection / dst split as the fused kernel.
+SIG(abl_global) {
+    int t = threadIdx.x, nt = blockDim.x;
+    float aScale = *aScalePtr;
+    ROWLOOP(aqg)
+}
