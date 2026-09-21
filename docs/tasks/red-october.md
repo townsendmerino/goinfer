@@ -390,7 +390,7 @@ Status table, kept current as briefs move:
 | # | brief | box | size | status |
 |---|---|---|---|---|
 | R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | **DECIDED 2026-09-21: KILLED on speed.** 2026-09-20 correction: the 2026-09-19 "catastrophic bug" was the oracle, not the kernel. Gate (3) then PASSED cleanly 2026-09-21 (f16 slightly *more* faithful than shipped W4A8 against a CPU reference) — but served tok/s at the 1.5B decision cell is 75.2 vs W4A8's 73.1 (1.03×), below even the 1.10× killed floor; the depth curve confirms a flat ~2-4% gain everywhere, nowhere near the 1.25× ship bar. Kernel and tests kept, lane stays off by default — see the records |
-| R2 | Metal decode attention in the peer's shape | Mac | M–L | step 0 done 2026-09-18 (gap narrowed to 1.96× at 3900). Build PARKED 2026-09-19 on an end-to-end divergence at the 3rd decode token; 2026-09-20 follow-up fixed a real race (not the cause) and narrowed it to "position-linked, mechanism unknown". **UN-PARKED 2026-09-21: root cause found — not a kernel defect.** On identical inputs `attention_fa` matches the shipped kernel to ≤1e-5 at every layer and step; the divergence was one int8 activation-quantization rounding crossing (layer 16, position 1602) on accumulated f32 reduction-order noise through a hypersensitive Gaussian-noise input — a shipped-kernel run with a 1e-6 residual nudge reproduces it. **Gate (3) then PASSES on real prompts at K=3900** (hard flips 68 vs 70, agreement 80.3% vs 79.5%, mean KL 0.4859 vs 0.4861). The depth-bench speed band remains — see `docs/measurements/r2-attn-fa-rootcause-2026-09-21.md` |
+| R2 | Metal decode attention in the peer's shape | Mac | M–L | step 0 done 2026-09-18 (gap narrowed to 1.96× at 3900). Build PARKED 2026-09-19 on an end-to-end divergence at the 3rd decode token; 2026-09-20 follow-up fixed a real race (not the cause) and narrowed it to "position-linked, mechanism unknown". **UN-PARKED 2026-09-21: root cause found — not a kernel defect.** On identical inputs `attention_fa` matches the shipped kernel to ≤1e-5 at every layer and step; the divergence was one int8 activation-quantization rounding crossing (layer 16, position 1602) on accumulated f32 reduction-order noise through a hypersensitive Gaussian-noise input — a shipped-kernel run with a 1e-6 residual nudge reproduces it. **Gate (3) then PASSES on real prompts at K=3900** (hard flips 68 vs 70, agreement 80.3% vs 79.5%, mean KL 0.4859 vs 0.4861). **Speed band, same day: KILLED** — depth bench median-of-3: 44.9 tok/s at 4000 vs shipped 37.8 (1.19×), 54.9 vs 49.4 at 2048 (1.11×), identical at 128/512; the band's kill line is 48 at 4000. Served harness agrees (39.1 → 46.4 at 3900; Ollama flat). A real, fidelity-clean 1.19× that misses the peer-parity band; whether to enable it anyway is an open owner decision, lane stays off — see `docs/measurements/r2-attn-fa-rootcause-2026-09-21.md`, `r2-attn-fa-speed-2026-09-21.md` |
 | R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | **SHIPPED 2026-09-20**: §3.2 gate SHIPS at K=64 alone and K=64+128 pooled; batched beats sequential TTFT 3.83× at K=64, 4.66× at K=128 (both past the ≥2× band) — floor moved 256→64. `noHead`/M-01 follow-on and `startPos`-on-speed still open |
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
 | R5 | CUDA prefill attention tile — P24 re-scoped with the corrected cap | Linux | M | scoped |
@@ -693,6 +693,23 @@ the CPU f32 reference, `metal/r2_gate_test.go` — **passes on all three pooled 
 68 ≤ 70, agreement 80.31% ≥ 79.53%, mean KL 0.4859 ≤ 0.4861, lower on 6/10 prompts). **What remains
 is the depth-bench speed band above, unchanged; not run here.** The three e2e/sweep/control tests
 are kept with their doc comments corrected; the 2026-09-20 race fix stands.
+
+**Speed band, 2026-09-21 — KILLED on the registered band; a real 1.19× at depth recorded**
+([`metal-attn-fa-PREREGISTERED.md`](../measurements/metal-attn-fa-PREREGISTERED.md),
+[`r2-attn-fa-speed-2026-09-21.md`](../measurements/r2-attn-fa-speed-2026-09-21.md)). Depth bench,
+three interleaved runs per arm, median of best-of-batches: shipped 71.1 / 67.0 / 49.4 / 37.8 tok/s
+at 128 / 512 / 2048 / 4000; `attention_fa` 71.9 / 67.0 / 54.9 / 44.9 — 1.01× / 1.00× / 1.11× / 1.19×,
+spread 0.1 tok/s at 4000. Against the band above: 44.9 at 4000 is below the 48 kill line, 54.9 at
+2048 is below the 58 ship bar, and the ≤3% criterion at 128 holds (+1.1%; identical kernel below
+the floor). Served cross-check (`bench_peer.py`, the pipelined `execLoop` path) reproduces the
+ratio to the third digit — goinfer 39.1 → 46.4 at the 3900 prompt, Ollama flat at 76.6 / 76.2 — so
+the two instruments agree. Depth term 12.4 → 8.4 ms at 4000: the cooperative K/V read did what
+the brief said it would to *that* term, and the term that remains is not the K/V read pattern.
+**Fifth negative on this axis, and the first one that is fidelity-clean and strictly faster at
+every depth where it engages** — so one question the band does not answer is left open for the
+owner: whether a deterministic, gate-passing 1.19× at depth that misses peer parity is worth
+enabling as an incremental improvement, against the bit-identity contract it would break.
+`GOINFER_METAL_ATTN_FA` stays off. R2's Build phase is closed.
 
 **Out of scope.** KV quantisation (§A3 — a byte lever on a term this brief says is not byte-bound),
 prefill attention (R4), the paged families' attention (their term is the command-buffer boundary,
