@@ -127,11 +127,11 @@ Note `top_k_experts`, **not** `num_experts_per_tok` — see §A4.
 | 5:1 local:global interleave, dual-base RoPE | `layerIsGlobal` + `RoPELocalBase`/`RoPEGlobalBase` |
 | final-logit softcap 30 | `FinalLogitSoftcap` (already wired for this family) |
 | sandwich norms, GeGLU, √hidden embed scale, tied head | `NormSandwich4`, `ActGeluTanh`, `EmbedScale`, `TiedLMHead` |
-| `text_config` flattening for nested configs | `decoder/config.go:673–684` |
-| per-layer FFN width dispatch | `arch.ffnAt` (`decoder/arch.go:233`) |
+| `text_config` flattening for nested configs | `decoder/config.go:681–684` |
+| per-layer FFN width dispatch | `arch.ffnAt` (`decoder/arch.go:244`) |
 | softmax top-k router + renorm | `routeExperts` (`decoder/mlp.go:160`) |
 | routed-expert MLP driver | `moeMLP` (`decoder/mlp.go:82`) |
-| **fused stacked expert loader** (`gate_up_proj` / `down_proj`) | `loadFusedExperts` (`decoder/weights.go:641`, gpt-oss path) |
+| **fused stacked expert loader** (`gate_up_proj` / `down_proj`) | `loadFusedExperts` (`decoder/weights.go:647`, gpt-oss path) |
 | GGUF stacked-expert reader | `stackedExperts` (`decoder/gguf.go:1212`) |
 
 That is most of the surface. The work below is genuinely five things.

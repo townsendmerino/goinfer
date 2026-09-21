@@ -142,6 +142,7 @@ var parityRealckptGates = []gateCheck{
 	// missing, not the check itself.
 	{"lfm2-2.6b", "TestLFM2Real_gate"},
 	{"mistral3-real", "TestMinistral3Real_gate"},
+	{"spark2_5-1.7b", "TestSpark25Real_gate"},
 	// granite-dense-real is deliberately NOT named "granite-*" alone — granite-gguf/granite-oracle
 	// above already claim that shape for the granitemoehybrid family; the label makes the two
 	// unmistakable in the sweep's own report, not just in code.

@@ -563,12 +563,13 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		} else {
 			attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, global, arch, useAcc64, attnPool)
 		}
-		// Laguna output gating, per row, BEFORE o_proj — the batched twin of the K=1
-		// call in causalAttention, sharing applyGateRow so the two cannot diverge.
-		// `norm` still holds this layer's POST-input_layernorm rows here (it is not
-		// recomputed for the MLP until after the o_proj below), which is exactly the
-		// tensor the gate reads.
-		if arch.laguna != nil {
+		// Output gating, per row, BEFORE o_proj — the batched twin of the K=1 call in
+		// causalAttention, sharing applyGateRow/applySigmoidGateRow so the two paths cannot
+		// diverge. `norm` still holds this layer's POST-input_layernorm rows here (it is not
+		// recomputed for the MLP until after the o_proj below), which is exactly the tensor the
+		// gate reads. Laguna (softplus) keys off arch.laguna != nil, unchanged; Spark-X2.5
+		// (sigmoid) keys off arch.AttnGate == GateSigmoid.
+		if arch.laguna != nil || arch.AttnGate == GateSigmoid {
 			gRows := lw.GProj.Rows()
 			if cap(gbuf) < K*gRows {
 				gbuf = make([]float32, K*gRows)
@@ -577,7 +578,11 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			matmul(be, &lw.GProj, norm, gb, K)
 			perHead := gRows == nH
 			for i := range K {
-				applyGateRow(row(gb, i, gRows), row(ctx, i, qDim), perHead, nH, hd)
+				if arch.AttnGate == GateSigmoid {
+					applySigmoidGateRow(row(gb, i, gRows), row(ctx, i, qDim), perHead, nH, hd)
+				} else {
+					applyGateRow(row(gb, i, gRows), row(ctx, i, qDim), perHead, nH, hd)
+				}
 			}
 		}
 		matmul(be, &lw.OProj, ctx, att, K)

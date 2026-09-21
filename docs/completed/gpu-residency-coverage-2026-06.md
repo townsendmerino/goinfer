@@ -116,7 +116,7 @@ elsewhere in the codebase; only the *combination* is new to the resident path:
 `registry.go` `gemma3Architecture`). Sliding window and per-layer dual-base RoPE
 are now handled (C6/C7); the remaining deltas are all expressible primitives:
 - **`NormSandwich4`** — post-attention and post-FFN norms in addition to the two
-  pre-norms (`decoder/registry.go:272`). The runner does Pre2 only; this needs 2
+  pre-norms (`decoder/registry.go:273`). The runner does Pre2 only; this needs 2
   extra RMSNorm dispatches/weights per layer and a norm-placement branch.
 - **GeGLU** (gelu activation in the gated MLP) instead of SwiGLU(silu) — a
   one-line activation variant of the existing `swigluQuant` fuse.
@@ -255,7 +255,7 @@ still declines — ~~it lacks the four Gemma kernels~~ **RETRACTED 2026-09-12 (N
 audit-2026-09-10.md).** False by the time this footnote was written: the decline reason had
 already become per-layer attention geometry, not a missing kernel set — WebGPU's runner has no
 seam for a layer's own head_dim/KV-head count genuinely differing from another's (Gemma 4's
-local/global split), which `residentPerLayerGeomBackends` (`decoder/features.go:388`) declares
+local/global split), which `residentPerLayerGeomBackends` (`decoder/features.go:392`) declares
 CUDA and Metal implement and WebGPU does not. **E-models (E2B/E4B, per-layer
 embeddings) decline on every backend**, since none implements the PLE branch and admitting one
 would silently skip it. Both are the feature gate's answer, not a hardcoded row, and both are

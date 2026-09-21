@@ -330,6 +330,20 @@ func representativeConfig(modelType string) *Config {
 				`"original_max_position_embeddings":8192,"beta_fast":64.0,"beta_slow":1.0,"partial_rotary_factor":0.5},` +
 				`"sliding_attention":{"rope_type":"default","rope_theta":10000.0,"partial_rotary_factor":1.0}}`),
 		}
+	case "spark2_5":
+		// Mirrors testdata/spark2-5-tiny (scripts/pin_spark2_5_tiny.py): decoupled head_dim
+		// (32, not hidden/heads=16), 1:3 sliding:full interleave with a window smaller than a
+		// real prompt, and rope_parameters keyed by layer type (partial 0.25/theta 5e6 on full,
+		// full-width/theta 1e4 on sliding) — the combination spark25Architecture resolves.
+		return &Config{
+			ModelType: "spark2_5", HiddenDim: 64, NumLayers: 4, NumHeads: 4, NumKVHeads: 2,
+			HeadDim: 32, VocabSize: 256, IntermediateDim: 128, RMSNormEps: 1e-6,
+			HeadwiseAttnOutputGate: true, GateAttnActMode: "sigmoid",
+			SlidingWindow: 8,
+			LayerTypes:    []string{"sliding_attention", "sliding_attention", "sliding_attention", "full_attention"},
+			RopeParameters: json.RawMessage(`{"full_attention":{"rope_theta":5000000,"partial_rotary_factor":0.25},` +
+				`"sliding_attention":{"rope_theta":10000,"partial_rotary_factor":1.0}}`),
+		}
 	case "granitemoehybrid":
 		return &Config{
 			ModelType: "granitemoehybrid", HiddenDim: 64, NumLayers: 4, NumHeads: 4, NumKVHeads: 2,
@@ -517,6 +531,7 @@ var familyDocs = map[string]familyDoc{
 	"qwen3_next":       {"Qwen3-Next", "Qwen3-Next 80B-A3B: same DeltaNet/softmax/MoE hybrid shape as Qwen3.5, computed (not stated) layer pattern", "safetensors", "text"},
 	"glm4_moe":         {"GLM-4.5/4.6", "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)", "safetensors, GGUF", "text"},
 	"laguna":           {"Laguna", "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads", "safetensors, GGUF", "text"},
+	"spark2_5":         {"Spark-X2.5", "XHToken Spark-X2.5 (1.7B/4B): fused QKV, sigmoid head-wise attention output gate, 1:3 sliding:full interleave with layer-dependent partial RoPE, gated exact-GELU MLP", "safetensors", "text"},
 	"granitemoehybrid": {"Granite-4.0-H", "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer", "safetensors, GGUF", "text"},
 	"granite":          {"Granite 4.2", "IBM Granite 4.2 dense (3B/8B/30B): llama skeleton + Granite's scalar multipliers", "safetensors, GGUF", "text"},
 	"nemotron_h":       {"Nemotron-H", "NVIDIA Nemotron-H/Nemotron 3 Nano single-op-per-block hybrid (mamba | attention | relu² MLP | MoE-FFN)", "safetensors, GGUF", "text"},

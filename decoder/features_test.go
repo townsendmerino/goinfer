@@ -100,7 +100,18 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// layers, and the family-specific output gate. The XS generations carry all of
 	// these; M.1 drops the sliding-window half, but this table states the family's
 	// BASE profile and RequiredResidentFeatures derives the per-model truth.
-	"laguna":      {FeatAttnOutputGate, FeatMoE, FeatPartialRotary, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
+	"laguna": {FeatAttnOutputGate, FeatMoE, FeatPartialRotary, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
+	// spark2_5: same attention-output-gate CPU-only forcing function as Laguna (FeatAttnOutputGate
+	// — sigmoid here, softplus there; no resident backend implements either). Also gets
+	// FeatGatedGELU "for free" from residentFeatures' derivation (!NonGatedMLP && Act != ActSiLU),
+	// which is worth flagging explicitly: this is the FIRST family combining a gated MLP with
+	// ActGelu (exact erf) rather than ActGeluTanh — GatedActResident passes the raw ordinal to
+	// CUDA's glu_quant kernel, which has never been asked for this activation on the gated path,
+	// so whether it's even correct there is UNVERIFIED. It doesn't matter for now: FeatAttnOutputGate
+	// alone already forces CPU-only, so this combination never reaches a GPU kernel — but the next
+	// family with a gated exact-GELU MLP and NO attention gate would need that verified for real,
+	// not assumed safe by this precedent.
+	"spark2_5":    {FeatAttnOutputGate, FeatGatedGELU, FeatPartialRotary, FeatPerLayerRoPE, FeatSlidingWindow},
 	"deepseek_v2": {FeatMLA, FeatMoE},
 	"deepseek_v3": {FeatMLA, FeatMoE},
 	"kimi_k2":     {FeatMLA, FeatMoE},
@@ -221,6 +232,10 @@ var admissionGolden = map[string][]string{
 	// skipped (the gate multiplies the whole attention context; a wrong head count
 	// mis-shapes q/o). CPU-only until a bridge lands.
 	"laguna": {},
+	// spark2_5: same reasoning as laguna directly above — its sigmoid attention output gate is
+	// unimplemented on every resident backend, and skipping it silently would multiply the wrong
+	// (unmodified) context into o_proj. CPU-only until a bridge lands.
+	"spark2_5": {},
 	// lfm2: no resident backend implements the gated short conv (FeatShortConv) or its
 	// rolling window, so every one declines. CPU-only until a bridge lands.
 	"lfm2": {},

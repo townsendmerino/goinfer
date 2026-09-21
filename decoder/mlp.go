@@ -372,6 +372,34 @@ func geglu(gate, up []float32) {
 	}
 }
 
+// gegluExact is geglu with the EXACT erf GELU (geluErf) instead of the tanh approximation —
+// Spark-X2.5's gated MLP: down(gelu(gate(x)) * up(x)), verified against the real
+// modeling_spark.py's Spark2_5MLP.forward, which raises unless hidden_act=="gelu" (HF's exact
+// "gelu", not "gelu_new"/"gelu_pytorch_tanh"). Before this, ActGelu only reached the NON-gated
+// MLP path (nonGatedMLP, Nemotron-H) — gatedMLP's switch had no case for it at all.
+func gegluExact(gate, up []float32) {
+	n := len(gate)
+	if n == 0 {
+		return
+	}
+	u := up[:n]
+	_ = gate[n-1]
+	_ = u[n-1]
+	i := 0
+	for ; i+3 < n; i += 4 {
+		_ = gate[i+3]
+		_ = u[i+3]
+		g0, g1, g2, g3 := gate[i], gate[i+1], gate[i+2], gate[i+3]
+		gate[i] = geluErf(g0) * u[i]
+		gate[i+1] = geluErf(g1) * u[i+1]
+		gate[i+2] = geluErf(g2) * u[i+2]
+		gate[i+3] = geluErf(g3) * u[i+3]
+	}
+	for ; i < n; i++ {
+		gate[i] = geluErf(gate[i]) * u[i]
+	}
+}
+
 // swiGLUExpert evaluates one gated (SwiGLU) expert MLP of the given intermediate
 // width into dst[:hidden]: dst = Down·(silu(Gate·h) ⊙ Up·h).
 // P6: gate/up come from the CALLER so a token's k experts share one pair instead of allocating a
@@ -543,8 +571,16 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 				swiglu(gate[lo:hi], up[lo:hi])
 			})
 		}
+	case ActGelu:
+		if len(gate) < activationFanoutThreshold {
+			gegluExact(gate, up)
+		} else {
+			parallelElementwise(len(gate), func(lo, hi int) {
+				gegluExact(gate[lo:hi], up[lo:hi])
+			})
+		}
 	default:
-		return fmt.Errorf("decoder: unsupported activation %d (have GeGLU/SwiGLU)", arch.Act)
+		return fmt.Errorf("decoder: unsupported activation %d (have GeGLU/SwiGLU/exact-GELU-GLU)", arch.Act)
 	}
 	matmulInto(scr.ws, be, &lw.DownProj, gate, out, 1) // [1,hidden] = mid · DownProjᵀ (gate now holds the activated mid)
 	if lora != nil {

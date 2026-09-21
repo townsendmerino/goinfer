@@ -548,6 +548,12 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	if arch.Name == "internlm2" {
 		return buildInternLM2Weights(cfg, arch, st, quant, skipRow4) // renamed tensors + GROUPED fused wqkv
 	}
+	if arch.Name == "spark2_5" {
+		if lora != nil {
+			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the spark2_5 (fused qkv) layout")
+		}
+		return buildSpark25Weights(cfg, arch, st, quant, skipRow4) // split fused q_k_v_proj → generic forward
+	}
 	if arch.llama4 != nil {
 		if lora != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for the llama4_text (iRoPE + fused-expert) layout")
@@ -2065,6 +2071,12 @@ var internlm2TensorSchema = tensorSchema{
 // buildPhi3Weights into the standard fields, after which the generic llama forward runs.
 var phi3TensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
 
+// spark25TensorSchema is a marker — Spark-X2.5's fused q_k_v_proj is split by
+// buildSpark25Weights into the standard fields, after which the generic forward runs. Note the
+// non-standard embedding tensor name (model.embedding.weight, not model.embed_tokens.weight —
+// verified against the real modeling_spark.py's `self.embedding = nn.Embedding(...)`).
+var spark25TensorSchema = tensorSchema{Embed: "model.embedding.weight", GProj: "self_attn.g_proj.weight"}
+
 // llama4TensorSchema is a marker — Llama 4's per-layer dense/MoE FFN, fused+transposed
 // batched experts, and parameter-free L2 QK-norm are loaded directly by buildLlama4Weights.
 var llama4TensorSchema = tensorSchema{Embed: "model.embed_tokens.weight"}
@@ -2537,6 +2549,90 @@ func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		}
 		l.GateProj = q(linalg.WrapF32(gu[0:inter*hidden], inter, hidden))
 		l.UpProj = q(linalg.WrapF32(gu[inter*hidden:2*inter*hidden], inter, hidden))
+		if l.DownProj, e = loadMat(st, p+"mlp.down_proj.weight", hidden, inter); e != nil {
+			return e
+		}
+		l.DownProj = q(l.DownProj)
+		return nil
+	}
+	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
+		return nil, err
+	}
+	return w, nil
+}
+
+// buildSpark25Weights loads Spark-X2.5 (model_type spark2_5): fused q_k_v_proj splits by
+// output rows exactly like buildPhi3Weights's qkv_proj, but gate_proj/up_proj/down_proj are
+// SEPARATE tensors (not fused, unlike Phi-3's gate_up_proj) so they load through the ordinary
+// loadMat path. Two tensor names differ from the usual Llama-family convention (verified against
+// the real modeling_spark.py, not assumed): the embedding is model.embedding.weight (not
+// embed_tokens) and the attention output projection is self_attn.out_proj.weight (not o_proj).
+// GProj (the sigmoid attention-output gate) is always per-head here — no per-element variant
+// like Laguna's, since headwise_attn_output_gate is a plain bool — and loads unquantized, same
+// as Laguna's own GProj (see the generic loader's own comment on why: deliberately excluded from
+// quantization). No bias tensors: spark25Architecture rejects attention_bias=true before this
+// runs, so every released config's shape is the only one this function needs to handle.
+func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile, quant quantMode, skipRow4 bool) (*Weights, error) {
+	hidden, inter, vocab := arch.HiddenDim, arch.IntermediateDim, arch.VocabSize
+	hd, nH := arch.HeadDim, arch.NumHeads
+	qDim, kvDim := nH*hd, arch.NumKVHeads*hd
+	w := &Weights{Cfg: *cfg, arch: arch, st: st, Layers: make([]LayerWeights, arch.NumLayers)}
+	var err error
+	q := func(m linalg.WeightMat) linalg.WeightMat {
+		if skipRow4 {
+			return quantizeWMSkipRow4(m, quant)
+		}
+		return quantizeWM(m, quant)
+	}
+	if w.Embed, err = loadMat(st, "model.embedding.weight", vocab, hidden); err != nil {
+		return nil, err
+	}
+	w.Embed = quantizeWM(w.Embed, quant.embedding())
+	if w.FinalNorm, err = st.TensorF32("model.norm.weight", hidden); err != nil {
+		return nil, err
+	}
+	arch.TiedLMHead = true
+	if head, herr := loadMat(st, "lm_head.weight", vocab, hidden); herr == nil {
+		w.LMHead = quantizeWM(head, quant.embedding())
+		arch.TiedLMHead = false
+	}
+
+	loadLayer := func(i int) error {
+		l := &w.Layers[i]
+		p := fmt.Sprintf("model.layers.%d.", i)
+		var e error
+		if l.PreAttnNorm, e = st.TensorF32(p+"input_layernorm.weight", hidden); e != nil {
+			return e
+		}
+		if l.PreMLPNorm, e = st.TensorF32(p+"post_attention_layernorm.weight", hidden); e != nil {
+			return e
+		}
+		// Fused q_k_v_proj [qDim+2*kvDim, hidden] → Q ‖ K ‖ V by output rows, exactly the
+		// order modeling_spark.py's Spark2_5Attention.forward splits: q, then k, then v.
+		qkv, qerr := st.TensorF32(p+"self_attn.q_k_v_proj.weight", qDim+2*kvDim, hidden)
+		if qerr != nil {
+			return qerr
+		}
+		l.QProj = q(linalg.WrapF32(qkv[0:qDim*hidden], qDim, hidden))
+		l.KProj = q(linalg.WrapF32(qkv[qDim*hidden:(qDim+kvDim)*hidden], kvDim, hidden))
+		l.VProj = q(linalg.WrapF32(qkv[(qDim+kvDim)*hidden:(qDim+2*kvDim)*hidden], kvDim, hidden))
+		if l.OProj, e = loadMat(st, p+"self_attn.out_proj.weight", hidden, qDim); e != nil {
+			return e
+		}
+		l.OProj = q(l.OProj)
+		gw, gerr := st.TensorF32(p+"self_attn.g_proj.weight", nH, hidden)
+		if gerr != nil {
+			return gerr
+		}
+		l.GProj = linalg.WrapF32(gw, nH, hidden) // unquantized — see the doc comment
+		if l.GateProj, e = loadMat(st, p+"mlp.gate_proj.weight", inter, hidden); e != nil {
+			return e
+		}
+		l.GateProj = q(l.GateProj)
+		if l.UpProj, e = loadMat(st, p+"mlp.up_proj.weight", inter, hidden); e != nil {
+			return e
+		}
+		l.UpProj = q(l.UpProj)
 		if l.DownProj, e = loadMat(st, p+"mlp.down_proj.weight", hidden, inter); e != nil {
 			return e
 		}

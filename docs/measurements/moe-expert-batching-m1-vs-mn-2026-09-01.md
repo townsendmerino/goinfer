@@ -27,8 +27,8 @@ and inside `moeMLP`, **`swiGLUExpert` is 93.1%** — so the expert weight matmul
 prefill and the largest single bucket. `routeExperts` is 1.7% of `moeMLP`; routing is not the cost.
 
 At K=8192 the batched-prefill loop calls `moeMLP` **once per row**
-([`decoder/forwardn.go:678`](../../decoder/forwardn.go)) and `swiGLUExpert` issues its three
-matmuls at **M=1** ([`decoder/mlp.go:389`](../../decoder/mlp.go)), so an expert's weights are
+([`decoder/forwardn.go:683`](../../decoder/forwardn.go)) and `swiGLUExpert` issues its three
+matmuls at **M=1** ([`decoder/mlp.go:417`](../../decoder/mlp.go)), so an expert's weights are
 re-read for every token that routes to it.
 
 ## What the parked verdict actually measured

@@ -96,6 +96,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **SmolLM3** — HuggingFaceTB SmolLM3-3B: llama dense + per-layer NoPE on every 4th layer, tied embeddings
 
+> **Spark-X2.5** — XHToken Spark-X2.5 (1.7B/4B): fused QKV, sigmoid head-wise attention output gate, 1:3 sliding:full interleave with layer-dependent partial RoPE, gated exact-GELU MLP
+
 > **gpt-oss** — OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on BOTH Metal and CUDA since 2026-08-31 — the CUDA half validated on the real 20B, resident on an 8 GB card via --moe-cache-experts)
 
 | Family | model_type(s) | MoE | Sliding window | QK-norm | RoPE | Norm | Activation | Tied head | Loaders | Modality | GPU-resident | Parity |
@@ -125,6 +127,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Qwen3-MoE | `qwen3_moe` | sparse, no-shared | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99834 |
 | Qwen3-VL | `qwen3_vl` | dense | none | yes | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | SmolLM3 | `smollm3` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | full-oracle 100.0%/1.00000 |
+| Spark-X2.5 | `spark2_5` | dense | interleave | no | partial | RMSNorm, pre-norm | GELU (gated) | no | safetensors | text | no | full-oracle 100.0%/1.00000 |
 | gpt-oss | `gpt_oss` | sparse, no-shared | interleave | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99843 |
 
 ## state-space hybrid (Mamba-2)

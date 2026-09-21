@@ -159,6 +159,14 @@ type Config struct {
 	// FeatAttnOutputGate already ships, but sigmoid where Laguna's is softplus, a real difference
 	// verified against source, not assumed identical).
 	GatedAttentionProjGranularity string `json:"gated_attention_proj_granularity_type"`
+	// HeadwiseAttnOutputGate/GateAttnActMode (Spark-X2.5): its own, differently-shaped spelling of
+	// the same "gate before out_proj" idea — a plain bool (always per-head when on; no
+	// per-element variant, unlike MLA's granularity string above) plus an explicit activation-mode
+	// string ("sigmoid" is the only released value; "silu" is a legal-but-unreleased option per
+	// the real modeling_spark.py, which goinfer does not implement — validateResolved rejects it
+	// rather than silently mis-running).
+	HeadwiseAttnOutputGate bool   `json:"headwise_attn_output_gate"`
+	GateAttnActMode        string `json:"gate_attn_act_mode"`
 	// KDA's own wrapper geometry: a depthwise short causal conv (kernel ShortConvKernelSize,
 	// SiLU-activated, THREE separate q/k/v convs — modeling_bailing_moe_v3.py's
 	// BailingMoeV3KimiDeltaAttention has independent self.q_conv1d/k_conv1d/v_conv1d modules, not

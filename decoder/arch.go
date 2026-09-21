@@ -44,6 +44,17 @@ type Architecture struct {
 	QKVBias bool // additive bias on the q/k/v projections (Qwen2, GPT-2)
 	OutBias bool // additive bias on the attention output projection (GPT-2)
 	QKNorm  bool // RMSNorm on Q and K per head before RoPE (Gemma3, Qwen3)
+	// AttnGate selects the head-wise output gate applied to the attention context BEFORE the
+	// output projection: GateNone (default), GateSoftplus (Laguna's g_proj, unchanged — Laguna
+	// itself still gates via `arch.laguna != nil`, not this field, so its behavior is byte-for-byte
+	// unaffected), GateSigmoid (Spark-X2.5's g_proj — verified against the real modeling_spark.py:
+	// `gate = torch.sigmoid(gate_score); attn_output = attn_output * gate`, applied before
+	// out_proj, exactly Laguna's STRUCTURE with a different activation). Distinct from
+	// mlaParams.GateGranularity, which is MLA-only (DeepSeek/Bailing Hybrid forward,
+	// forward_deepseek.go) and reached through a completely separate call site; this field is for
+	// the GENERIC (non-MLA) attention forward's gate hook (applyAttnGate, attention.go/forwardn.go).
+	AttnGate GateKind
+
 	// QKNormWhole (Olmo 3/Olmo Hybrid): when QKNorm is also set, normalize the WHOLE projected
 	// q/k vector as one RMSNorm (num_heads*head_dim elements, one statistic) instead of per-head
 	// — verified against the real modeling_olmo3.py, not the standard per-head convention every
@@ -735,6 +746,16 @@ func (a ActKind) String() string {
 		return "unknown"
 	}
 }
+
+// GateKind selects the generic (non-MLA) attention-output gate's activation — see
+// Architecture.AttnGate's doc comment for the full story.
+type GateKind int
+
+const (
+	GateNone     GateKind = iota // no gate (every family but Laguna/Spark-X2.5)
+	GateSoftplus                 // reserved for a future generic-path user; Laguna's own gate is still keyed on arch.laguna, not this
+	GateSigmoid                  // Spark-X2.5
+)
 
 // isGlobalLayer reports whether layer i uses full (global) attention vs local
 // (sliding-window). Defaults to global when no per-layer function is set.

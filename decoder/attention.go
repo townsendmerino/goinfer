@@ -203,12 +203,12 @@ func causalAttention(
 		attendBatchedHeads(q, ctx, cache.Keys(layer), cache.Vals(layer), 0, cache, layer, pos, 1, global, arch, acc64, pool)
 	}
 
-	// 6b. Laguna output gating, applied to the attention context BEFORE o_proj:
-	//     ctx *= softplus(g_proj · h)
-	// where h is this layer's POST-input_layernorm hidden state — the same tensor
-	// q/k/v were projected from, so no extra tap is needed. No-op for every other
-	// family (arch.laguna == nil).
-	if arch.laguna != nil {
+	// 6b. Output gating, applied to the attention context BEFORE o_proj: ctx *= gate(g_proj · h),
+	// where h is this layer's POST-input_layernorm hidden state — the same tensor q/k/v were
+	// projected from, so no extra tap is needed. Laguna (softplus) keys off arch.laguna != nil,
+	// unchanged; Spark-X2.5 (sigmoid) keys off arch.AttnGate == GateSigmoid — applyAttnGate itself
+	// dispatches the activation. No-op for every other family.
+	if arch.laguna != nil || arch.AttnGate == GateSigmoid {
 		applyAttnGate(scr, be, lw, arch, h, ctx, nH, hd)
 	}
 
@@ -405,6 +405,10 @@ func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, glo
 func applyAttnGate(scr *decodeScratch, be Backend, lw *LayerWeights, arch *Architecture, h, ctx []float32, nH, hd int) {
 	gates := scr.gateBuf(lw.GProj.Rows())
 	matmulInto(scr.ws, be, &lw.GProj, h, gates, 1)
+	if arch.AttnGate == GateSigmoid {
+		applySigmoidGateRow(gates, ctx, lw.GProj.Rows() == nH, nH, hd)
+		return
+	}
 	applyGateRow(gates, ctx, lw.GProj.Rows() == nH, nH, hd)
 }
 

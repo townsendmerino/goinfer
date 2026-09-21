@@ -21,7 +21,7 @@
 |---|---|
 | `decoder/features.go:48` | `FeatMLA ResidentFeature = "mla"` — the declaration |
 | `decoder/features.go:126` | `add(a.mla != nil, FeatMLA)` — an arch *requires* it iff it has `mlaParams` |
-| `decoder/features.go:330` | `"webgpu": { FeatMLA: true }` — **the only backend that declares it** |
+| `decoder/features.go:334` | `"webgpu": { FeatMLA: true }` — **the only backend that declares it** |
 | cuda / metal feature maps | `FeatMLA` absent ⇒ `missingFeatures(...)` non-empty ⇒ `ResidentEligible` false |
 | `cuda/backend.go:89` | the runtime twin: `MissingResidentFeatures(...)` → `declined(...)` |
 
@@ -30,7 +30,7 @@ and there is no second hidden guard — the capacity cap is now 512 and K2's 384
 
 ### Op inventory — what an MLA decode step needs vs what CUDA already has
 
-`mlaParams` (`decoder/arch.go:173-182`): `QLoRARank`, `KVLoRARank` (= *rank*), `QKNopeHeadDim`,
+`mlaParams` (`decoder/arch.go:184-193`): `QLoRARank`, `KVLoRARank` (= *rank*), `QKNopeHeadDim`,
 `QKRopeHeadDim`, `VHeadDim`; `qkHeadDim() = QKNope + QKRope`.
 
 | op | shape | CUDA today |

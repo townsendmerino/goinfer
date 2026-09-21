@@ -15,6 +15,31 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Added
+
+- **Spark-X2.5 as a new family** (`spark2_5`; XHToken, 1.7B/4B, community coding-tuned quants).
+  Fused QKV (one `q_k_v_proj` linear, split Q‖K‖V by output rows — `buildSpark25Weights`, modeled
+  on `buildPhi3Weights`'s split), a head-wise sigmoid attention-output gate applied before
+  `out_proj` (the same STRUCTURE Laguna's own gate ships, sigmoid where Laguna's is softplus — the
+  math already existed via `applySigmoidGateRow` for MLA/Bailing Hybrid, but reaching it from the
+  plain-GQA forward path this family uses was new wiring: `Architecture.AttnGate`/`GateSigmoid`),
+  a 1:3 sliding:full attention interleave (window 512) with layer-dependent partial RoPE (full
+  layers rotate 1/4 of head_dim at theta 5e6, sliding layers rotate the full width at theta 1e4 —
+  reuses Laguna's `RotaryDim`/`RotaryDimLocal`/`RoPEGlobalBase`/`RoPELocalBase` mechanism
+  verbatim), and a gated MLP whose activation is exact-erf GELU rather than SiLU or GELU-tanh
+  (`gegluExact`, `decoder/mlp.go` — `ActGelu` had previously only ever reached the non-gated MLP
+  path). The scoping audit's own claims that this family used Cohere's parallel residual block and
+  a non-gated MLP were both wrong — checked directly against the real `configuration_spark.py`/
+  `modeling_spark.py` before writing any code; it is a standard sequential (Llama-shaped) residual
+  block, and the MLP is gated. CPU-only for now (`FeatAttnOutputGate`; no resident backend
+  implements the gate). Gate 1 (tiny synthetic): cosine 1.00000000. Gate 2 (real
+  Spark-X2.5-1.7B): argmax exact, cosine 1.000000, full 8-token greedy continuation match. Gate 3
+  (fit guard at 131072 context): the sliding-window KV price is correctly capped at the window
+  (3.80 GB) instead of the naive full-context price (15.03 GB, a 3.95× difference), and an
+  oversized explicit pin is cleanly refused rather than silently swapped. The 4B was not
+  attempted — its real-oracle load needs ~16 GB resident at f32, this machine's entire RAM, not a
+  close call the way the 1.7B's small shortfall was.
+
 ### Changed
 
 - **CUDA decode is ~4-5% faster on models with a wide MLP, bit-identically.** `glu_quant` (the SwiGLU/GeGLU activation + int8 quantise, a single-block kernel) was launched with 256 threads and

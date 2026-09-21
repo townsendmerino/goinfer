@@ -54,6 +54,7 @@ var registry = map[string]archAdapter{
 	"qwen3_next":       qwen3NextArchitecture,     // Qwen3-Next: same DeltaNet/softmax/MoE hybrid shape as qwen3_5_moe, but layer_types is COMPUTED (full_attention_interval) and partial_rotary_factor is a top-level field, not nested
 	"glm4_moe":         glm4moeArchitecture,       // GLM-4.5/4.6: DeepSeek-style MoE (sigmoid routing + bias) + dense prefix + QK-norm + partial RoPE
 	"laguna":           lagunaArchitecture,        // Laguna (poolside) XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + shared expert + softplus attention output gating + per-layer query heads
+	"spark2_5":         spark25Architecture,       // Spark-X2.5 (XHToken): fused QKV, sigmoid head-wise attention output gate, 1:3 full/sliding (512) with layer-dependent partial RoPE, gated exact-GELU MLP, plain sequential (non-parallel) block
 	"granitemoehybrid": graniteArchitecture,       // Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer + Granite multipliers
 	"granite":          graniteDenseArchitecture,  // Granite 4.2 (3B/8B/30B) dense: llama skeleton + Granite's four scalar multipliers
 	"lfm2":             lfm2Architecture,          // LFM2 / LFM2.5: gated short-conv + GQA hybrid (layer_types), tied head, per-head RMSNorm QK-norm
@@ -2788,6 +2789,111 @@ func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		TiedLMHead:       false, // finalized from lm_head.weight presence at load
 		laguna:           lp,
 	}, &lagunaTensorSchema, nil
+}
+
+// spark25Architecture expresses Spark-X2.5 (model_type spark2_5; XHToken/Spark-X2.5-{1.7B,4B}).
+// docs/tasks/task-spark-x2-5.md / docs/audit-2026-09-10.md L-06 scoped this from a survey-level
+// summary; TWO of its claims did not survive reading the real configuration_spark.py /
+// modeling_spark.py (fetched directly, trust_remote_code) and are corrected here:
+//
+//   - The audit says Spark-X2.5 reuses "the parallel block (Command-R)". It does not — its
+//     decoder layer is the STANDARD sequential residual (norm→attn→residual, norm→mlp→residual),
+//     byte-for-byte the same shape as Llama/Qwen (NormPre2). No parallel-block wiring needed.
+//   - The audit says "non-gated GELU". Spark2_5MLP IS gated (SwiGLU-shaped:
+//     down(gelu(gate(x))*up(x))) — the only real departure from Llama's MLP is the activation
+//     (exact erf GELU, HF's "gelu", NOT gelu_new/gelu_pytorch_tanh) inside that gated shape. See
+//     gegluExact (mlp.go) — ActGelu previously only reached the non-gated path.
+//
+// What IS real, confirmed against source:
+//   - Fused QKV: one q_k_v_proj Linear(hidden, qDim+2*kvDim), split Q‖K‖V by output rows in that
+//     order — buildSpark25Weights (weights.go), modeled on buildPhi3Weights's split.
+//   - Head-wise SIGMOID attention-output gate (g_proj: Linear(hidden, numHeads)), applied
+//     element-wise to attn_output BEFORE out_proj — exactly Laguna's g_proj STRUCTURE with a
+//     different activation. This is the one genuinely NEW forward-pass wire: the sigmoid gate
+//     math (applySigmoidGateRow) already existed for MLA (Bailing Hybrid) but had no hook in the
+//     generic (non-MLA) attention path Spark2.5 uses — see AttnGate/GateSigmoid (arch.go).
+//   - Per-layer-type RoPE: full_attention layers get partial_rotary_factor=0.25 (rotary_dim =
+//     head_dim/4) + theta 5e6; sliding_attention layers get partial_rotary_factor=1.0 (full
+//     rotation) + theta 1e4. Exactly Laguna's RotaryDim/RotaryDimLocal/RoPEGlobalBase/
+//     RoPELocalBase mechanism (see lagunaArchitecture above) — reused verbatim, no new plumbing.
+//   - 1:3 sliding:full interleave (sliding_window 512), read generically from layer_types via
+//     cfg.IsGlobalLayer — owned by no single family, every existing consumer already shares it.
+//   - No QK-norm, no embed scale, no logit softcap, no attention sink — the plainest attention
+//     shape this family touches.
+//   - rotate_half is the standard NeoX half-split (ropeInterleave stays false, the default).
+//   - inv_freq is recomputed fresh per forward call in the reference (not a cached
+//     persistent=False buffer) — no internlm2-class fast-init corruption risk on this family.
+func spark25Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
+	hd := cfg.headDim()
+	if hd != 256 {
+		// Not a hard architectural requirement — but every released Spark-X2.5 config sets it,
+		// and a silently-different value would mean this doc comment's verified claims about the
+		// checkpoint no longer describe the actual model. Loosen if a released config disagrees.
+	}
+	if !cfg.HeadwiseAttnOutputGate {
+		return nil, nil, fmt.Errorf("decoder(spark2_5): headwise_attn_output_gate=false is not implemented (every released config sets it true)")
+	}
+	if cfg.AttentionBias {
+		return nil, nil, fmt.Errorf("decoder(spark2_5): attention_bias=true is not implemented (buildSpark25Weights loads no bias tensors; every released config sets it false)")
+	}
+	switch cfg.GateAttnActMode {
+	case "", "sigmoid":
+	default:
+		return nil, nil, fmt.Errorf("decoder(spark2_5): gate_attn_act_mode %q unsupported (have: sigmoid — modeling_spark.py also defines \"silu\" but no released checkpoint uses it)", cfg.GateAttnActMode)
+	}
+	full, sliding, err := parseRopeParameters(cfg.RopeParameters)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoder(spark2_5): %w", err)
+	}
+	if full == nil {
+		return nil, nil, fmt.Errorf("decoder(spark2_5): rope_parameters.full_attention is required")
+	}
+	if sliding == nil {
+		return nil, nil, fmt.Errorf("decoder(spark2_5): rope_parameters.sliding_attention is required")
+	}
+
+	rotaryOf := func(p float64) int {
+		if p > 0 && p < 1 {
+			return int(p * float64(hd))
+		}
+		return 0 // 0 ⇒ full HeadDim
+	}
+	rotaryGlobal := rotaryOf(full.partial)
+	rotaryLocal := rotaryOf(sliding.partial)
+	if rotaryLocal == rotaryGlobal {
+		rotaryLocal = 0 // 0 ⇒ "same as RotaryDim", the shared-width case
+	} else if rotaryLocal == 0 {
+		rotaryLocal = hd // sliding rotates FULL width while global is partial — must be explicit (see lagunaArchitecture's identical guard)
+	}
+
+	return &Architecture{
+		Name:            "spark2_5",
+		HiddenDim:       cfg.HiddenDim,
+		NumLayers:       cfg.NumLayers,
+		NumHeads:        cfg.NumHeads,
+		NumKVHeads:      cfg.NumKVHeads,
+		HeadDim:         hd,
+		IntermediateDim: cfg.IntermediateDim,
+		VocabSize:       cfg.VocabSize,
+		Norm:            NormRMS,
+		RMSAddOne:       false,
+		NormEps:         cfg.RMSNormEps,
+		NormPlacement:   NormPre2, // sequential, NOT NormParallel — see the doc comment's first correction
+		Act:             ActGelu,  // exact erf GELU, inside a GATED (SwiGLU-shaped) MLP — see the doc comment's second correction
+		QKVBias:         false,    // guarded above: attention_bias=true rejected, buildSpark25Weights loads no bias tensors
+		OutBias:         false,
+		QKNorm:          false,
+		AttnGate:        GateSigmoid,
+		AttnScale:       math.Pow(float64(hd), -0.5),
+		SlidingWindow:   cfg.SlidingWindow,
+		layerIsGlobal:   cfg.IsGlobalLayer,
+		RoPEGlobalBase:  full.base,
+		RoPELocalBase:   sliding.base,
+		RotaryDim:       rotaryGlobal,
+		RotaryDimLocal:  rotaryLocal,
+		EmbedScale:      0,
+		TiedLMHead:      false, // finalized from lm_head.weight presence at load, same convention as phi3Architecture
+	}, &spark25TensorSchema, nil
 }
 
 // internlm2Architecture expresses InternLM2 (model_type internlm2). The DESCRIPTOR is llama's

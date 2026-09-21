@@ -1314,9 +1314,9 @@ re-baked by the code it checks (G-04).
   2026-09-13** (the two `metal/model.go` comments; `metal-verdict.md` is `docs/completed/` — an
   archived record left as-is per that directory's own convention).
 - N-11 `metal/cmd/serve/main.go` said "Dense residency only … int8": MoE is resident; int8 is the
-  re-quantised case. `decoder/features.go:329` cited `metal/moe.go:207-211`; it is `:375`. **FIXED
+  re-quantised case. `decoder/features.go:333` cited `metal/moe.go:207-211`; it is `:375`. **FIXED
   2026-09-13** — `metal/cmd/serve/main.go:5-10` now names both corrections inline; the
-  `decoder/features.go:329` citation repointed to `metal/moe.go:379-376`.
+  `decoder/features.go:333` citation repointed to `metal/moe.go:379-376`.
 - N-12 `docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md:14` names `qwen2.5-1.5b-instruct`;
   test default and L2 record say `qwen2.5-coder-1.5b-instruct` — methodology wants the exact file.
   **FIXED 2026-09-13.**

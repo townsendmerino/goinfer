@@ -575,6 +575,15 @@
       "note": "HuggingFaceTB/SmolLM3-3B (SmolLM3ForCausalLM), 2 f32-cast bf16 shards / ~5.8 GB \u2014 the smallest AND only released size in the family. Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
     },
     {
+      "env": "GOINFER_SPARK25_1_7B",
+      "kind": "dir",
+      "members": ["config.json"],
+      "members_any": ["model.safetensors.index.json", "model.safetensors"],
+      "candidates": ["$MODELS/spark25-1.7b"],
+      "used_by": ["TestSpark25Real_gate"],
+      "note": "XHToken/Spark-X2.5-1.7B (Spark2_5ForCausalLM), 2 bf16-cast-to-f32 shards / ~3.2 GB — the smaller of the two released sizes (task doc's own \"start with the 1.7B\"), 28 layers (1:3 full:sliding). Same prompt_ids-from-golden rule as GOINFER_COHERE_AYA."
+    },
+    {
       "env": "GOINFER_LFM2_2_6B",
       "kind": "dir",
       "members": ["config.json"],

@@ -220,7 +220,11 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	// Laguna's attention output gate AND its per-layer query-head count. Both live on
 	// arch.laguna and neither has a resident implementation; either one alone would be
 	// silently skipped by a resident runner, so the whole family is CPU-only for now.
-	add(a.laguna != nil, FeatAttnOutputGate)
+	// Spark-X2.5's sigmoid gate (arch.AttnGate == GateSigmoid) is the SAME structural
+	// situation — a generic (non-MLA) attention-output gate with no resident implementation —
+	// so it derives the same feature through the same OR, matching applyAttnGate's own
+	// dispatch condition in attention.go/forwardn.go exactly (must not drift from it).
+	add(a.laguna != nil || a.AttnGate == GateSigmoid, FeatAttnOutputGate)
 	// Gemma-4 E-model (E2B/E4B) shape: PLE, cross-layer shared-KV, variable per-layer FFN — all
 	// co-present and NONE ported to the resident bridges (built/validated on the PLE-free dense 12B and
 	// 26B-A4B). Without this, an E-model needs no feature CUDA lacks ⇒ admitted-but-mis-run (the PLE
