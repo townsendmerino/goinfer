@@ -1,5 +1,15 @@
 # R1 — Metal W4F16 decode GEMV: kernel proven correct, catastrophic bug found and localized, root cause not yet found
 
+> **SUPERSEDED 2026-09-20** by [`r1-layer26-rootcause-2026-09-20.md`](r1-layer26-rootcause-2026-09-20.md).
+> The "catastrophic bug" below is real as a *disagreement* between the two arms but its attribution
+> is inverted: every comparison in this record uses the shipped W4A8 lane as ground truth, and at
+> position 0 (the attention-sink token) W4A8's per-tensor int8 activation scale zeroes 96.9% of
+> layer 26's FFN input. Against an f64 reference the f16 lane is exact and the W4A8 arm is the one
+> off; against a CPU reference the f16 lane is at least as faithful. The "row 2908: 54.7 want vs
+> 71.6 got" line has its labels backwards (f64 reference 71.62), its nibble-at-channel-408 claim is
+> wrong at layer 26 (5, not 8), and the reproducer named below has been deleted and replaced.
+> Kept unedited as the record of what was measured and how the instrument misled.
+
 **R1** (`docs/tasks/red-october.md`): a Metal decode GEMV in the f16-FMA regime MLX and llama.cpp
 use, instead of the shipped W4A8 (int8-activation) regime. Unblocked by the 2026-09-18 owner
 decision (option 2, default-on above the §3.2 pooled fidelity gate). This record is the build

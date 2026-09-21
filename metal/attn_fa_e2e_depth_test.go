@@ -12,10 +12,14 @@ import (
 )
 
 // TestAttentionFA_endToEndReproduction is the KEEPER reproducer for R2's (docs/tasks/red-
-// october.md) open bug: PARKED 2026-09-19, same status as R1's layer-26 investigation
-// (gemv_w4f16_layer26_repro_test.go) — a kernel proven correct in isolation (16/16 adversarial
+// october.md) open bug: PARKED 2026-09-19 — a kernel proven correct in isolation (16/16 adversarial
 // cases in TestAttentionFA_vsReference, cosine 1.0000000 every time) diverges once wired into a
-// real generation, and the root cause was not found before the investigation was parked.
+// real generation, and the root cause was not found before the investigation was parked. (R1's
+// same-day layer-26 investigation, which this was first filed beside, turned out on 2026-09-20 to
+// be an oracle error — the shipped W4A8 lane used as ground truth; see
+// docs/measurements/r1-layer26-rootcause-2026-09-20.md and r1_gu_reference_test.go. That does not
+// transfer here: the shipped attention kernel this test compares against is f32, not int8-activation,
+// and steps 0-1 below agree with it to f32 rounding before the divergence appears.)
 //
 // The reproduction is precise and fully deterministic (identical across repeated runs): batch-
 // prefill a real qwen2.5-1.5b checkpoint to depth 1600 (> attnFADepthFloor), then decode 5 tokens

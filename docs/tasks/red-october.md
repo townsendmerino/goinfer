@@ -389,7 +389,7 @@ Status table, kept current as briefs move:
 
 | # | brief | box | size | status |
 |---|---|---|---|---|
-| R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | **PARKED 2026-09-19: kernel proven correct (gate 1), catastrophic bug found and localized to layer 26's gate/up GEMV, root cause not found — see the record** |
+| R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | **UN-PARKED 2026-09-20: the 2026-09-19 "catastrophic bug" was the oracle — W4A8 used as ground truth at the attention-sink position; the f16 lane is exact on real data and at least as faithful as W4A8 against a CPU reference. Gate (3) and the speed measurement remain — see the correction in the brief** |
 | R2 | Metal decode attention in the peer's shape | Mac | M–L | step 0 done 2026-09-18 (gap narrowed to 1.96× at 3900). **Build: PARKED 2026-09-19 — attention_fa kernel proven correct in isolation (16/16 adversarial cases), real speed win in isolation (up to 1.26× at K=3900), but diverges starting at the 3rd real decode token past the depth floor; root cause not found — see the record. 2026-09-20 follow-up: a race found+fixed (not the cause); an outside review caught the follow-up's own "call-count, not position" conclusion as drawn from a confounded test (both tried depths shared a mod-4 residue) — corrected: the divergence IS position-linked (a threshold in curNKeys, not a fixed call count), but not to one fixed absolute position either; root cause still open — see `docs/measurements/r2-attn-fa-followup-2026-09-20.md` §2b for the retraction and the corrected data.** |
 | R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | **SHIPPED 2026-09-20**: §3.2 gate SHIPS at K=64 alone and K=64+128 pooled; batched beats sequential TTFT 3.83× at K=64, 4.66× at K=128 (both past the ≥2× band) — floor moved 256→64. `noHead`/M-01 follow-on and `startPos`-on-speed still open |
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
@@ -499,6 +499,27 @@ was not found before the investigation was parked — real, reusable groundwork 
 kernel, a precise localization, a clean minimal reproducer that fails loudly by design) for
 whoever picks this back up, not a dead end. No speed measurement was taken — there is no point
 benchmarking a lane that fails a basic sanity check before reaching the fidelity gate.
+
+**Correction, 2026-09-20 — the bug was the oracle; R1 UN-PARKED**
+([`r1-layer26-rootcause-2026-09-20.md`](../measurements/r1-layer26-rootcause-2026-09-20.md)).
+The parked record scored the f16 lane against the shipped W4A8 lane and never against anything
+else — the exact exact-as-oracle scoring `completed/task-prefill-gap.md` §3.1 had already withdrawn
+for the prefill lane on 2026-09-05. Re-measured with an f64 reference from the same resident weight
+bits and the same post-attention residual (`metal/r1_gu_reference_test.go`): the f16 gate/up GEMV is
+exact on real data at every layer including 26 (cosine 1.000000000 vs the f64 dot of its own input,
+maxRel ≤ 6.6e-5) and sits on the reference (cosine ≥ 0.99999997), while W4A8 is the coarse arm — its
+single per-tensor int8 activation scale (amax/127 = 1.15 at layer 26, position 0, the BOS
+attention-sink token) zeroes 96.9% of the FFN input channels. The record's "row 2908, 31% off" had
+its labels backwards (f64 71.62, f16 71.62, W4A8 54.70); the repro's cosine −0.585 reproduces exactly
+and decomposes into the massive-activation channels the residual-cosine instrument is blind to.
+Teacher-forced against an external CPU reference (int8 weights, f32 activations, N=48;
+`metal/r1_lane_vs_cpu_test.go`), the f16 lane is at least as faithful as W4A8 on every pooled
+criterion (mean KL 0.060 vs 0.334, top-1 45/48 vs 43/48, hard flips 1 vs 2) — the whole margin at
+position 0, where the *shipped* lane has a hard flip at 80% of the logit range. This is not a
+gate-(3) pass (one prompt, one cell); it is the absence of any f16 defect. **Gate (3) and the
+served-tok/s measurement against the registered band are what remain**, exactly as the brief
+already required. The deliberately-failing keeper test is deleted, not loosened; the two new tests
+replace it.
 
 **Out of scope.** The LM head (N-40), KV precision, any change to the W4A8 path, prefill (already
 f16), the 26B/35B paged path (its GEMVs are launch-floor-bound, not stream-bound — audit §5).
