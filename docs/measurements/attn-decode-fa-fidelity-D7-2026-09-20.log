@@ -1,0 +1,17 @@
+=== RUN   TestFlashDecodeGateVsReference
+=== RUN   TestFlashDecodeGateVsReference/D7-K8000
+    flash_decode_gate_test.go:262: D7 K=8000: A/A bit-identical over 64 rows
+[fa-gate] D7 K=8000 prompt  1/10 exact(agree=98.4% HF=0/64 KL=0.04331) lane(agree=98.4% HF=0/64 KL=0.03246) diff(agree=+0.00pt KL=-0.01085) rowsDiffering=63/63 elapsed=2m34s
+[fa-gate] D7 K=8000 prompt  2/10 exact(agree=89.1% HF=3/64 KL=0.09468) lane(agree=95.3% HF=1/64 KL=0.09169) diff(agree=+6.25pt KL=-0.00300) rowsDiffering=63/63 elapsed=4m18s
+[fa-gate] D7 K=8000 prompt  3/10 exact(agree=85.9% HF=1/64 KL=0.10624) lane(agree=82.8% HF=1/64 KL=0.10653) diff(agree=-3.12pt KL=+0.00029) rowsDiffering=63/63 elapsed=6m2s
+[fa-gate] D7 K=8000 prompt  4/10 exact(agree=100.0% HF=0/64 KL=0.00002) lane(agree=100.0% HF=0/64 KL=0.00002) diff(agree=+0.00pt KL=-0.00000) rowsDiffering=63/63 elapsed=7m44s
+[fa-gate] D7 K=8000 prompt  5/10 exact(agree=100.0% HF=0/64 KL=0.00035) lane(agree=100.0% HF=0/64 KL=0.00040) diff(agree=+0.00pt KL=+0.00005) rowsDiffering=63/63 elapsed=9m27s
+[fa-gate] D7 K=8000 prompt  6/10 exact(agree=100.0% HF=0/64 KL=0.00004) lane(agree=100.0% HF=0/64 KL=0.00004) diff(agree=+0.00pt KL=+0.00001) rowsDiffering=63/63 elapsed=11m11s
+[fa-gate] D7 K=8000 prompt  7/10 exact(agree=81.2% HF=2/64 KL=0.10647) lane(agree=82.8% HF=3/64 KL=0.10738) diff(agree=+1.56pt KL=+0.00091) rowsDiffering=63/63 elapsed=12m54s
+[fa-gate] D7 K=8000 prompt  8/10 exact(agree=87.5% HF=1/64 KL=0.07454) lane(agree=89.1% HF=0/64 KL=0.06946) diff(agree=+1.56pt KL=-0.00507) rowsDiffering=63/63 elapsed=14m37s
+[fa-gate] D7 K=8000 prompt  9/10 exact(agree=100.0% HF=0/64 KL=0.00207) lane(agree=98.4% HF=1/64 KL=0.01431) diff(agree=-1.56pt KL=+0.01224) rowsDiffering=63/63 elapsed=16m21s
+[fa-gate] D7 K=8000 prompt 10/10 exact(agree=82.8% HF=0/64 KL=0.11022) lane(agree=81.2% HF=1/64 KL=0.10821) diff(agree=-1.56pt KL=-0.00201) rowsDiffering=63/63 elapsed=18m4s
+=== FLASH-DECODE GATE D7 K=8000 (DECISION cell, set b, n=10 x 64 positions, S=16): exact(meanAgree=92.50% HF=7/640 worstGap=9.202% meanKL=0.053793) lane(meanAgree=92.81% HF=7/640 worstGap=29.439% meanKL=0.053050) pairedWins=7/10 rowsDiffering=630 critA(amended)=true [strict true] critB=true critC=true KLratio=0.9862 — PASSES ===
+--- PASS: TestFlashDecodeGateVsReference (1110.15s)
+    --- PASS: TestFlashDecodeGateVsReference/D7-K8000 (1110.15s)
+PASS
