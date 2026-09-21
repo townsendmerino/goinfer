@@ -1351,6 +1351,10 @@ this session** — each attempt left the machine's swap file permanently larger 
 `benchmarks.md` NOT yet updated with a pointer to this (see the "Record" line above; this is a
 negative result, recorded with the same care, not a "ships" row to add there).
 
+---
+
+### R12 · Metal `ForwardN` batching, and the peer rows the page is missing
+
 **Goal.** Make speculation pay on the Mac, and fill the four measurement gaps that keep recurring
 as "unmeasured" in this doc: the MLX row, the Metal peer depth row, a vision peer, and W7.
 
