@@ -520,7 +520,7 @@ Two more `ActGeluTanh` branches (`mlp.go`'s `gatedMLP`, `forwardn.go`'s dense-ML
 the same switch statements as the named `ActSiLU` cases and were parallelized too, for
 consistency; they were not in the brief's exact list and are called out here rather than folded
 in silently. Left untouched, out of scope as scoped: the softmax reduction loops
-(`decoder/attention.go:264/330`, `decoder/forwardn.go:893/925` — they accumulate, and belong to step 2/3 once the
+(`decoder/attention.go:264/330`, `decoder/forwardn.go:903/925` — they accumulate, and belong to step 2/3 once the
 sum order is pinned as part of the numeric contract), RMSNorm and RoPE (the audit's standing
 "leave"), and the DeltaNet/Mamba2/KDA per-channel conv silus plus the MoE-expert-batch geluTanh
 sites (`forward_gemma4_moe.go`, `eagle.go`, `dflash.go`) — same shape, not named in the brief,

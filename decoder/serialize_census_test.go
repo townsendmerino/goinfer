@@ -105,6 +105,12 @@ var censusList = []string{
 	// conv-window-triple + matrix state, alongside MLA's latent cache on the same family's other
 	// layers) -- added anyway per the census's own default.
 	"../testdata/bailing_hybrid-tiny",
+	// spark2-5-tiny (2026-09-21, task-spark-x2-5.md): the fused q_k_v_proj split
+	// (buildSpark25Weights) and the generic (non-MLA) sigmoid attention-output gate (GProj under
+	// Architecture.AttnGate/GateSigmoid, not the MLA-only GatedAttentionProjGranularity path
+	// laguna/bailing_hybrid already exercise) are both real per-layer state no other censused
+	// fixture covers.
+	"testdata/spark2-5-tiny",
 }
 
 // censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with

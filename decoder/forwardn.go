@@ -735,6 +735,16 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 					}
 				})
 			}
+		case ActGelu:
+			if len(gate) < activationFanoutThreshold {
+				gegluExact(gate, up)
+			} else {
+				parallelElementwise(len(gate), func(lo, hi int) {
+					for j := lo; j < hi; j++ {
+						gate[j] = geluErf(gate[j]) * up[j]
+					}
+				})
+			}
 		default:
 			return nil, errNotImplemented
 		}

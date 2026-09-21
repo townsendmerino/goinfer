@@ -28,7 +28,13 @@ any surface may still change.
   reuses Laguna's `RotaryDim`/`RotaryDimLocal`/`RoPEGlobalBase`/`RoPELocalBase` mechanism
   verbatim), and a gated MLP whose activation is exact-erf GELU rather than SiLU or GELU-tanh
   (`gegluExact`, `decoder/mlp.go` — `ActGelu` had previously only ever reached the non-gated MLP
-  path). The scoping audit's own claims that this family used Cohere's parallel residual block and
+  path). `decoder/forwardn.go`'s batched-prefill path carries its OWN copy of the gated-MLP
+  activation switch, separate from `mlp.go`'s — `ActGelu` was missed there on the first pass, so
+  any multi-token prompt through the real `Generate()` entry point hit `errNotImplemented`
+  immediately; none of the three gates below caught it (all drive `m.forward()` directly, never
+  `Generate()`), `decoder/serialize_census_test.go`'s `.giw` round-trip check did (it calls
+  `Generate()` for real). Fixed by mirroring the same case into both switches. The scoping audit's
+  own claims that this family used Cohere's parallel residual block and
   a non-gated MLP were both wrong — checked directly against the real `configuration_spark.py`/
   `modeling_spark.py` before writing any code; it is a standard sequential (Llama-shaped) residual
   block, and the MLP is gated. CPU-only for now (`FeatAttnOutputGate`; no resident backend

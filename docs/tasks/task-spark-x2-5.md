@@ -39,6 +39,24 @@ by Cohere2/Mellum/Gemma/etc).
 cosine 1.00000000, maxAbs 1.79e-7, full greedy continuation match against the real
 `modeling_spark.py`.
 
+**A real gap none of the three gates caught, found by an unrelated CI check instead.**
+`decoder/forwardn.go`'s batched-prefill path has its OWN copy of the gated-MLP activation
+switch, separate from `decoder/mlp.go`'s (the same "decode path fixed, batched prefill wasn't"
+class of bug this repo's own culture names explicitly). `gegluExact`/`ActGelu` was added to the
+decode-path switch but not this one, so it fell to `default: return nil, errNotImplemented` —
+meaning ANY multi-token prompt through the real `Generate()` entry point would have crashed
+immediately. Gate 1/2/3's own tests never caught this because all three drive `m.forward()` in a
+manual per-token loop, never `Generate()` itself — a real test-through-the-entry-point gap, the
+same class this repo's own CLAUDE.md names ("a unit test that supplies its own calling convention
+proves the unit works when called that way — not that anything calls it that way"). What caught
+it: `decoder/serialize_census_test.go`'s `.giw` round-trip check, run generically over every
+family in `censusList` (spark2-5-tiny was added there, not excluded, since the fused-QKV split
+and the generic sigmoid gate are real per-layer state no other censused fixture covers) —
+`greedyN` calls `m.Generate(...)` for real, an 8-token prompt long enough to route through batched
+prefill. Fixed by mirroring the exact same `case ActGelu:` into `forwardn.go`'s switch. Re-ran all
+three gates after the fix; unaffected (none of them exercise this path either way, which is
+itself the point).
+
 **Gate 2** (real oracle, `XHToken/Spark-X2.5-1.7B`, `scripts/pin_spark2_5_real.py`,
 `decoder/spark25_real_test.go`): PASS — argmax exact, logit cosine **1.000000**, full 8-token
 greedy continuation matches token-for-token (`"The capital of France is"` → `" Paris."`, then
