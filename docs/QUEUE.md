@@ -1492,8 +1492,6 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:181` | goinfer | `Size   int64` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:328` | goinfer | `func Search(ctx context.Context, q, kind string, limit int) ([]SearchResult, error) {` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:98` | goinfer | `func Curated() map[string]CuratedTier {` |
-| `docs/tasks/task-webgpu-nogqa-decode-bug.md|gpu/attention.go:118` | goinfer | `let kvh = qh / p.group;` |
-| `docs/tasks/task-webgpu-nogqa-decode-bug.md|gpu/decodelayer.go:146` | goinfer | `group := nH / nKV` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/chatapp/main.go:210` | goinfer | `model   = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference f` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/anthropic.go:545` | goinfer | `// A full queue is honest backpressure: 529 overloaded_error (the kind` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/embeddings.go:34` | goinfer | `maxEmbedInputs     = 2048` |
