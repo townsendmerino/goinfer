@@ -16,7 +16,7 @@ fan-out at the measured P-core count rather than `GOMAXPROCS(0)`'s full 8
 (`decoder/scratch.go:194`), grounded in `docs/measurements/mac-cpu-decode-vs-ollama-2026-08-22.md`
 (6 P-cores measured marginally faster than 8 in every cell tested, §4 item 1). `mlp.go` reuses the
 same constant for its own activation fan-out (`activationFanoutWorkers = maxAttnWorkers`,
-`decoder/mlp.go:296–299`) rather than redefining it, so the MLP/MoE-expert activation step is
+`decoder/mlp.go:300–299`) rather than redefining it, so the MLP/MoE-expert activation step is
 already under the same cap.
 
 A count cap bounds *how many* goroutines run, not *where* they land — the OS scheduler is still
