@@ -121,6 +121,47 @@ per-page read, since `WILLNEED` is only a hint). Every existing bit-exactness gu
 holds unchanged — the bytes still come from the same read-only mapping. This is the cheap
 half and it should be measured on its own: **if queue depth is the whole story, stop here.**
 
+**1a — MEASURED 2026-09-21, MacBook (arm64/Metal box, internal SSD): net harmful, reverted,
+not shipped.** Built the naive version exactly as scoped: a per-call `sync.WaitGroup`
+worker pool (`workers := min(GOMAXPROCS, len(keys))`, a mutex-guarded `grab()` index
+counter — the same pattern as `weights.go`'s `parallelLayers`) that concurrently touches
+every span for a token's top-k experts, wired into `moeMLP` and `gemma4MoEFFN` via a new
+`expertPager.touchBatch`. Correctness held throughout: race-clean under `-race` in
+isolation, bit-exact (unchanged read-only mapping, same bytes), existing family-forward
+goldens still cosine 1.0.
+
+Performance did not. Same-session A/B (`decoder/zz_lever1a_bench_test.go`, since deleted —
+scaffolding, not the deliverable): two disjoint real mmap'd files (one per arm, randomly
+filled, so neither arm's page-cache warmth leaks into the other), Zipfian-skewed expert
+selection (α=1.5, matching this doc's own measured "hottest 10% absorb ~72%" real-world
+skew), a small forced-eviction budget so most tokens are genuine cold misses, sequential
+`touch()` vs `touchBatch()` compared apples-to-apples (asserted identical miss/eviction
+counts per arm before trusting the timing). Ratio = sequential-elapsed / touchBatch-elapsed,
+so >1.0x would mean the concurrent path won:
+
+| topK | ratio (sequential / touchBatch) |
+|---|---|
+| 4 | 0.81x |
+| 8 (4 reps) | 0.93x, 0.28x, 0.35x, 0.21x |
+
+`touchBatch` lost every single run, and the loss *worsened* as topK grew — the opposite of
+what a genuine I/O-queue-depth win should look like (more concurrent misses per call should
+help more, not less, if faulting latency were the bottleneck being hidden). Read directly:
+on this Mac's internal SSD, per-call goroutine-pool overhead (fresh `wg.Go` spawns, the
+mutex-guarded `grab()` counter) dominates over whatever real page-fault latency there is to
+hide. **Queue depth is not the bottleneck on this hardware** — the premise this doc borrowed
+from fieldfare's differently-provisioned target machine does not transfer here.
+
+Reverted in full (`decoder/moepaging.go`, `mlp.go`, `forward_gemma4_moe.go`,
+`moepaging_test.go` restored to pre-1a state; the throwaway benchmark file deleted) rather
+than shipped, per this repo's "negative results get committed with the same care as wins"
+rule. This specifically refutes the *naive per-call worker-pool* shape — it does not by
+itself rule out a **persistent/reusable** worker pool (goroutines parked on a channel across
+calls, avoiding the per-call spawn cost this measurement indicts) which was considered but
+explicitly not attempted here: that is real additional scope beyond what "1a" was meant to
+be as the doc's own "cheap half," and would need its own separate same-session A/B before
+any claim about it. Left as a candidate follow-up, not a plan.
+
 **1b — owned buffers.** If 1a does not close the gap, or the darwin cap matters more than
 zero-copy, move the expert path off mmap: `pread` into pooled, page-aligned buffers the
 pager owns, bounded-parallel, with the pager's own residency accounting. This buys a firm
