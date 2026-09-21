@@ -28,8 +28,8 @@ re-run on it is a re-roll, not a check** (the parked-gate rule).
 >= exact on >= half the prompts: met (+0.31 pt / +0.16 pt; 7/10 each). (c) KL <= 1.10x: met, and **outside the 1.05-1.10x parked band on
 both**. Verdict per the registered rule: **PASSES** on the decision cell, and the confirmation cell agrees.
 
-Paired KL deltas (lane - exact) across prompts: D7 mean -0.00074 +- 0.0018 (s.e.); S mean +0.00102 +- 0.00067. Neither is more than
-2 standard errors above zero (S is ~1.5), so the registered "inside the pass region but > 2 s.e. above zero" flag is not triggered.
+Paired KL deltas (lane - exact) across prompts: D7 mean -0.00074 +- 0.0018 (s.e.); S mean +0.00102 +- 0.00063. Neither is more than
+2 standard errors above zero (S is ~1.6), so the registered "inside the pass region but > 2 s.e. above zero" flag is not triggered.
 
 ## Things to read alongside the PASS, not to explain away
 
@@ -37,7 +37,7 @@ Paired KL deltas (lane - exact) across prompts: D7 mean -0.00074 +- 0.0018 (s.e.
   is **29.4% against 9.2% for exact**. It is one prompt of ten and the aggregate criteria pass with it in, but it is the largest single
   deviation in either cell and is not explained here. Prompts 4-6 have exact KL of 2e-5-4e-4 (near-deterministic continuations),
   where any change shows as a large relative jump on a tiny base.
-- S has 7 of 10 prompts with lane KL above exact (a 2% mean excess, 1.5 s.e.); D7 has the opposite sign. Two cells cannot say whether
+- S has 7 of 10 prompts with lane KL above exact (a 2% mean excess, ~1.6 s.e.); D7 has the opposite sign. Two cells cannot say whether
   the lane is neutral or slightly worse on the smaller model. The lane's attention is *more accurate* than the exact path's against an f64
   recompute (precondition 4), so a systematic KL excess would not come from attention accuracy; it is unexplained if real.
 - The step-1 result stands unchanged: the V-sum spike's earlier KL excess did not reproduce. This gate is about a different kernel.
