@@ -96,6 +96,6 @@ func (r *cudaResident) flashDecodeLaunch(q, kc, vc, ctx Buffer, hd, nKV, winStar
 		return e
 	}
 	r.faLaunches++
-	return r.launch(r.faCombine, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: uint32(hd), BlockY: 1, BlockZ: 1},
+	return r.launch(r.faCombine, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: uint32(hd), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(3 * r.faSplit * faWarps * 4)},
 		Arg(r.faBuf), gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(r.faSplit*faWarps)), Arg(ctx))
 }

@@ -32,6 +32,7 @@
 // kernel_fma_lint_test.go checks no other float multiply-add pair is left to the compiler.
 #define FA_WARPS 8
 #define FA_NEG (-1e30f)
+#define FA_SEEN (-5e29f) // a unit with any key has m > FA_SEEN
 
 template <int HD>
 __device__ __forceinline__ void fa_partial_impl(
@@ -185,24 +186,31 @@ extern "C" __global__ void fa_partial_256(const float* __restrict__ q, const flo
     fa_partial_impl<256>(q, kc, vc, nH, nKV, winStart, nKeys, scale, nSplit, partial);
 }
 
-// fa_combine: grid nH, block hd. Merges the U = nSplit*8 unit partials of a head in fixed ascending order.
-// A unit with no keys carries m = FA_NEG, l = 0 and contributes nothing; the global max is over units that
-// saw a key (m > FA_NEG/2), and at least one always did (the caller guarantees nKeys > winStart).
+// fa_combine: grid nH, block hd, dynamic shared memory 3*U floats. Merges the U = nSplit*8 unit partials of a head
+// in FIXED ascending order (no atomics, so the result is deterministic). The per-unit (m, l) are loaded once into
+// shared memory, the global max M and the weights w_u = exp(m_u - M) are computed once per head instead of once per
+// output dim, and the main loop then carries no load-dependent branch, so its V-partial loads are independent and
+// pipeline. A unit with no keys carries m = FA_NEG, l = 0 and contributes nothing (w_u = 0); at least one unit
+// always saw a key (the caller guarantees nKeys > winStart).
 extern "C" __global__ void fa_combine(const float* __restrict__ partial, int hd, int U, float* __restrict__ ctx) {
+    extern __shared__ float cs[];
+    float* sm = cs; float* sw = cs + U; float* sl = cs + 2 * U;
     const int h = blockIdx.x, d = threadIdx.x;
-    if (d >= hd) return;
-    const float* base = partial + (long)h * U * (hd + 4);
+    const int stride = hd + 4;
+    const float* base = partial + (long)h * U * stride;
+    for (int u = threadIdx.x; u < U; u += blockDim.x) { sm[u] = base[(long)u * stride + hd]; sl[u] = base[(long)u * stride + hd + 1]; }
+    __syncthreads();
     float M = FA_NEG;
-    for (int u = 0; u < U; u++) M = fmaxf(M, base[(long)u * (hd + 4) + hd]);
+    for (int u = 0; u < U; u++) M = fmaxf(M, sm[u]);
+    for (int u = threadIdx.x; u < U; u += blockDim.x) sw[u] = (sm[u] > FA_SEEN) ? __expf(sm[u] - M) : 0.f;
+    __syncthreads();
+    if (d >= hd) return;
     float num = 0.f, den = 0.f;
+#pragma unroll 8
     for (int u = 0; u < U; u++) {
-        const float* pu = base + (long)u * (hd + 4);
-        const float mu = pu[hd];
-        if (mu > FA_NEG * 0.5f) {
-            const float w = __expf(mu - M);
-            num = __fmaf_rn(w, pu[d], num);
-            den = __fmaf_rn(w, pu[hd + 1], den);
-        }
+        const float w = sw[u];
+        num = __fmaf_rn(w, base[(long)u * stride + d], num);
+        den = __fmaf_rn(w, sl[u], den);
     }
     ctx[(long)h * hd + d] = num / den;
 }
