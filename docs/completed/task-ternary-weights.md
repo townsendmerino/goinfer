@@ -1,8 +1,40 @@
 # Task — ternary weights: Bonsai 2 27B and the sub-4-bit question
 
-**Status:** proposed, gates before code. Filed 2026-09-17.
+**Status:** CLOSED 2026-09-21 — Gate 0 FAILS for the format this doc describes. See Step 0 Results.
+Filed 2026-09-17.
 **Venue:** `mac` and `linux`.
 **Deliverable of step 0 is a decision, not a kernel.**
+
+---
+
+## Step 0 Results (2026-09-21) — Gate 0 fails; not ambiguous, closing rather than parking
+
+Research only, per this doc's own Constraints — no code written.
+
+| # | Question | Finding |
+|---|---|---|
+| 1 | Retention independently supported? | **No.** Every quality figure (83.9, 98.2%, every category average) traces to PrismML's own 20-benchmark suite and own harness. Zero third-party reproductions found, 4 days after release (2026-09-17). One independent commentary piece (orcarouter.ai) explicitly flags this ("nobody outside the company has reproduced it") and notes PrismML's own numbers already show a real weak spot: Terminal-Bench 2.1 at 52.8 vs the FP16 baseline's 69.7, which the vendor itself calls "partial." |
+| 2 | What's distributed, what format? | GGUF and MLX, at all four sizes (1.7B/4B/8B/27B) — the task doc's assumption that only the smaller sizes ship a cheap format does not hold; all sizes ship both. GGUF uses two **custom** quant types (`PTQ1_0`, `PQ2_0`) that do not exist in upstream llama.cpp. |
+| 3 | Ternary format documented well enough to transcribe? | **Split, and this is the load-bearing finding.** The GGUF format — the one actually carrying the 1.76-bit/98.2%-retention claim this task is about — applies a "blockwise Hadamard rotation (block 1024, fixed ±1 signs)... folded into the stored weights, with the matching transform applied to activations at runtime." That is named but never specified: no formula for how the block's sign pattern is derived, no algorithm for the runtime activation-side transform, no public reference code — only PrismML's own closed-source llama.cpp fork (`github.com/PrismML-Eng/llama.cpp`), explicitly stated to be required ("not in stock llama.cpp"). This is real new arithmetic on the activation side, not a loader transcription — Step 0 Q3's own dividing line ("if it is only defined by their kernels, transcribing it is a reverse-engineering job, not a loader job") is exactly what this is. Separately, the MLX 2-bit builds describe a DIFFERENT, simpler scheme with no rotation at all (`w_i = scale_g · t_i`, group 128, plain group-wise ternary affine quant) — genuinely easier to transcribe, but not confirmed to be the same quantization the 98.2% claim was measured on. |
+| 4 | Reference to diff against? | **No, for the format this task describes.** No PyTorch/HuggingFace `trust_remote_code` reference exists anywhere for the Hadamard-rotated ternary scheme — the only way to run it is PrismML's own fork, which is not an independent oracle (same vendor, same unverified-elsewhere position as the benchmark claim). The MLX 2-bit variant runs on stock, unmodified `mlx-lm` (`pip install mlx-lm`, no fork) and COULD serve as a real oracle on this Mac — but only for that separate, unverified-retention scheme, not for "Bonsai's ternary format" as advertised. |
+| 5 | Vision tower coupling? | Confirmed optional — the vision tower ships as a separate Q8_0 `mmproj` file, loaded only for image input. Text-only use is real and does not pull in a second front. |
+
+**Gate 0 (loadable and diffable) FAILS for the format this task is actually about**, on two of
+its three sub-conditions independently: the Hadamard rotation is named but not specified precisely
+enough to reproduce, and no standard-framework reference forward exists to diff against — only the
+vendor's own closed fork. Per this doc's own rule ("No oracle, no ship — that is not negotiable"),
+that alone closes the item; **Gate 1 also fails independently** (no third-party retention evidence
+at all, one critical commentary piece actively pointing at a real weak spot in the vendor's own
+numbers). Two failures, not one ambiguous one — this is a close, not a park.
+
+**What does NOT close, and is worth naming so it isn't silently lost:** the MLX 2-bit variant is a
+genuinely different, smaller, more tractable question — a plain non-rotated group-wise ternary
+scheme, runnable via stock `mlx-lm` on this exact machine, that could plausibly clear a Gate 0 of
+its own. But it is not confirmed to carry the 98.2%-retention claim (that number was measured on
+the Hadamard-rotated GGUF build specifically, per every source found), so pursuing it would need
+its OWN retention check, not inherited credit from this task's numbers, and its own task doc rather
+than being folded into this one's now-closed verdict. Not started here — filing a new item is a
+separate decision, not a natural continuation of this one.
 
 ---
 
