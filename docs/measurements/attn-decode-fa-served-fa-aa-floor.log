@@ -1,0 +1,22 @@
+# preflight OK: loadavg [0.6337890625, 2.04150390625, 3.654296875] · gpu {'driver': '595.91.07', 'name': 'NVIDIA GeForce RTX 2070 SUPER', 'temp_c': 50, 'mem_used_mib': 639, 'mem_total_mib': 8192} · compute apps ['1748, 20 MiB']
+# 8 cells: 2 geometries x 2 depths x 2 arms
+  [1/8] 1.5B:3900 on: 124.90 tok/s (spread 0.08) · elapsed 0.4m eta 3.0m
+  [2/8] 1.5B:3900 off: 124.52 tok/s (spread 0.01) · elapsed 0.9m eta 2.6m
+      -> ratio 1.003
+  [3/8] 1.5B:8000 on: 83.86 tok/s (spread 0.18) · elapsed 1.6m eta 2.6m
+  [4/8] 1.5B:8000 off: 83.88 tok/s (spread 0.13) · elapsed 2.3m eta 2.3m
+      -> ratio 1.000
+  [5/8] 7B:3900 off: 51.86 tok/s (spread 0.00) · elapsed 3.4m eta 2.0m
+  [6/8] 7B:3900 on: 52.00 tok/s (spread 0.01) · elapsed 4.5m eta 1.5m
+      -> ratio 1.003
+  [7/8] 7B:8000 off: 39.61 tok/s (spread 0.00) · elapsed 6.4m eta 0.9m
+  [8/8] 7B:8000 on: 39.60 tok/s (spread 0.00) · elapsed 8.2m eta 0.0m
+      -> ratio 1.000
+
+# ratios (A/A floor: both arms the exact path)  [8.2 min]
+| geometry | 3900 | 8000 |
+|---|---|---|
+| 1.5B | 1.003 | 1.000 |
+| 7B | 1.003 | 1.000 |
+
+raw cells: /home/francis/bench-r7b/fa-aa-floor.json

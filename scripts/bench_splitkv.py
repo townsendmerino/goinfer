@@ -80,6 +80,16 @@ MODES = {
                "off": {"GOINFER_SPLITKV_ATTN": "0"}},
     "aa-on":  {"on": {"GOINFER_SPLITKV_MIN_KEYS": "0"},
                "off": {"GOINFER_SPLITKV_MIN_KEYS": "0"}},
+    # R6: the flash-decode lane (cuda/decode_fa.cu) at its registered S=16, forced on at every depth
+    # (MIN_KEYS=0, so the crossover is measurable), against the shipped exact path. Not bit-identical,
+    # so this is a SPEED arm; fidelity is TestFlashDecodeGateVsReference's job.
+    "flash": {"on": {"GOINFER_CUDA_FLASH_DECODE": "16", "GOINFER_CUDA_FLASH_DECODE_MIN_KEYS": "0"},
+              "off": {}},
+    # The lane at its SHIPPED default floor (GOINFER_CUDA_FLASH_DECODE=16 only): below the floor both arms run the
+    # exact path, so ~1.000 there is the PASS (no shallow regression), and the win must survive above it.
+    "flash-gate": {"on": {"GOINFER_CUDA_FLASH_DECODE": "16"}, "off": {}},
+    # A/A floor for the flash arm: BOTH arms the exact path, through the same fresh-serve-per-arm path.
+    "aa-flash": {"on": {}, "off": {}},
 }
 
 
@@ -92,6 +102,8 @@ def run_arm(path, prompt, arm_env, backend, quant):
     # Clear both knobs first: inheriting one from the caller would silently redefine the arm.
     env.pop("GOINFER_SPLITKV_ATTN", None)
     env.pop("GOINFER_SPLITKV_MIN_KEYS", None)
+    env.pop("GOINFER_CUDA_FLASH_DECODE", None)
+    env.pop("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", None)
     env.update(arm_env)
     proc = subprocess.Popen(
         [bp.SERVE[backend], "-model", f"bench={path}", "-backend", backend,
@@ -207,7 +219,7 @@ def main():
                                   "ngen": bp.NGEN, "ncomp": bp.NCOMP, "nruns": bp.NRUNS},
                        "cells": cells}, open(args.out, "w"), indent=1, sort_keys=True)
 
-    label = ("split-KV forced on / off" if args.mode == "force"
+    label = ("split-KV forced on / off" if args.mode == "force" else "flash-decode lane (S=16) on / off, forced at every depth" if args.mode == "flash" else "A/A floor: both arms the exact path" if args.mode == "aa-flash"
              else "shipped gate / off — ~1.000 is the PASS, not a null result")
     print(f"\n# ratios ({label})  [{(time.time()-t0)/60:.1f} min]")
     hdr = "| geometry | " + " | ".join(str(d) for d in depths) + " |"

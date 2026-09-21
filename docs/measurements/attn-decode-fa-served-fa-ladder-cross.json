@@ -1,0 +1,236 @@
+{
+ "cells": {
+  "0.5B:1024": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=14 nKV=2 hd=64 L=24 \u2014 crossover ~2560",
+   "off": {
+    "blocks": [
+     313.95139866489114,
+     317.52095007290814
+    ],
+    "mean": 315.73617436889964,
+    "spread": 3.5695514080169914
+   },
+   "on": {
+    "blocks": [
+     300.54678632816393,
+     301.93518359522125
+    ],
+    "mean": 301.24098496169256,
+    "spread": 1.3883972670573144
+   },
+   "prompt_tokens": 1024,
+   "ratio_on_over_off": 0.9540908182719944
+  },
+  "0.5B:256": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=14 nKV=2 hd=64 L=24 \u2014 crossover ~2560",
+   "off": {
+    "blocks": [
+     329.68879408189997,
+     327.68104476596125
+    ],
+    "mean": 328.68491942393064,
+    "spread": 2.0077493159387245
+   },
+   "on": {
+    "blocks": [
+     304.9907367672858,
+     307.15945946281204
+    ],
+    "mean": 306.07509811504895,
+    "spread": 2.1687226955262418
+   },
+   "prompt_tokens": 256,
+   "ratio_on_over_off": 0.9312112604724647
+  },
+  "1.5B:1024": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=12 nKV=2 hd=128 L=28 \u2014 crossover in (512,1024]",
+   "off": {
+    "blocks": [
+     191.63615789827642,
+     191.97819160820208
+    ],
+    "mean": 191.80717475323925,
+    "spread": 0.3420337099256585
+   },
+   "on": {
+    "blocks": [
+     215.18381955365996,
+     215.47098340807995
+    ],
+    "mean": 215.32740148086995,
+    "spread": 0.2871638544199868
+   },
+   "prompt_tokens": 1024,
+   "ratio_on_over_off": 1.122624332264367
+  },
+  "1.5B:256": {
+   "arm_order": [
+    "off",
+    "on"
+   ],
+   "geometry_note": "nH=12 nKV=2 hd=128 L=28 \u2014 crossover in (512,1024]",
+   "off": {
+    "blocks": [
+     217.77056908181305,
+     217.8146487953474
+    ],
+    "mean": 217.79260893858023,
+    "spread": 0.04407971353435869
+   },
+   "on": {
+    "blocks": [
+     223.30922215834406,
+     223.4452894597279
+    ],
+    "mean": 223.37725580903597,
+    "spread": 0.13606730138383227
+   },
+   "prompt_tokens": 256,
+   "ratio_on_over_off": 1.0256420403689213
+  },
+  "gemma3-1b:1024": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=4 nKV=1 hd=256 L=26, sliding window 512 \u2014 the nWin-vs-nKeys case",
+   "off": {
+    "blocks": [
+     180.3969700908976,
+     181.00587435419465
+    ],
+    "mean": 180.7014222225461,
+    "spread": 0.6089042632970347
+   },
+   "on": {
+    "blocks": [
+     176.03490221229268,
+     175.63470475409525
+    ],
+    "mean": 175.83480348319398,
+    "spread": 0.40019745819742525
+   },
+   "prompt_tokens": 1024,
+   "ratio_on_over_off": 0.9730681768881788
+  },
+  "gemma3-1b:256": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=4 nKV=1 hd=256 L=26, sliding window 512 \u2014 the nWin-vs-nKeys case",
+   "off": {
+    "blocks": [
+     190.62683338384048,
+     189.50924290769944
+    ],
+    "mean": 190.06803814576995,
+    "spread": 1.1175904761410322
+   },
+   "on": {
+    "blocks": [
+     179.765179025476,
+     180.8472396851315
+    ],
+    "mean": 180.30620935530374,
+    "spread": 1.0820606596555251
+   },
+   "prompt_tokens": 256,
+   "ratio_on_over_off": 0.9486403453957918
+  }
+ },
+ "config": {
+  "arms": {
+   "off": {},
+   "on": {
+    "GOINFER_CUDA_FLASH_DECODE": "16",
+    "GOINFER_CUDA_FLASH_DECODE_MIN_KEYS": "0"
+   }
+  },
+  "backend": "cuda",
+  "mode": "flash",
+  "ncomp": 8,
+  "ngen": 64,
+  "nruns": 2,
+  "quant": "int4"
+ },
+ "machine": {
+  "gpu": {
+   "driver": "595.91.07",
+   "mem_total_mib": 8192,
+   "mem_used_mib": 639,
+   "name": "NVIDIA GeForce RTX 2070 SUPER",
+   "temp_c": 54
+  },
+  "loadavg": [
+   2.60888671875,
+   2.517578125,
+   3.00244140625
+  ]
+ },
+ "provenance": {
+  "cpu_count": 16,
+  "distro": "Nobara Linux 44",
+  "goinfer_commit": "4e571d2b",
+  "goinfer_tree_dirty": true,
+  "gpu": {
+   "driver": "595.91.07",
+   "mem_total_mib": 8192,
+   "mem_used_mib": 639,
+   "name": "NVIDIA GeForce RTX 2070 SUPER",
+   "temp_c": 54
+  },
+  "gpu_compute_apps_at_start": [
+   "1748, 20 MiB"
+  ],
+  "host": "nobara-pc",
+  "kind": "provenance",
+  "loadavg_at_start": [
+   2.60888671875,
+   2.517578125,
+   3.00244140625
+  ],
+  "peer": {
+   "ollama_bin": "/home/francis/ollama-0325/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": null
+  },
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "serve_binaries": {
+   "cpu": {
+    "mtime": "2026-08-22T18:18:03Z",
+    "path": "/home/francis/bench-v0.15.0/serve-cpu"
+   },
+   "cuda": {
+    "mtime": "2026-09-21T00:24:20Z",
+    "path": "/home/francis/bench-r7b/serve-cuda-fa"
+   },
+   "metal": {
+    "mtime": null,
+    "path": "/nonexistent/serve-metal"
+   },
+   "webgpu": {
+    "mtime": "2026-08-22T18:17:55Z",
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu"
+   }
+  },
+  "serve_binaries_old": {},
+  "uname": "Linux 7.2.0-202.nobara.fc44.x86_64 x86_64",
+  "utc": "2026-09-21T01:03:33Z"
+ }
+}

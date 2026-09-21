@@ -13,9 +13,10 @@ import (
 // units per head.
 const faWarps = 8
 
-// flashDecodeDefaultMinKeys is the attended-span floor for the lane until a ladder sets it: below it the exact
-// path runs. Deliberately the split-KV conservative default; the R6 ladder replaces it with a measured value.
-const flashDecodeDefaultMinKeys = 1024
+// flashDecodeDefaultMinKeys is the attended-span floor for the lane: below it the exact
+// path runs. Set from the served forced-on ladder (docs/measurements/attn-decode-fa-served-2026-09-20.md): the 0.5B and
+// gemma3-1b lose 3-9% up to 1024 keys and win from 2048, so 2048 is the lowest floor with no measured regression.
+const flashDecodeDefaultMinKeys = 2048
 
 // loadFlashDecode wires the opt-in flash-decode lane when GOINFER_CUDA_FLASH_DECODE=S (S >= 1) is set. A stock
 // binary loads nothing and allocates nothing. Any failure leaves the lane OFF (faSplit 0), never half-on.

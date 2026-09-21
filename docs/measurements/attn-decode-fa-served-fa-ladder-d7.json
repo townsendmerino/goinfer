@@ -1,0 +1,161 @@
+{
+ "cells": {
+  "7B:2048": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=28 nKV=4 hd=128 L=28 ctx=32768 \u2014 D7; 512 floats/key, the low-f end",
+   "off": {
+    "blocks": [
+     58.37665039148618,
+     58.39404670016972
+    ],
+    "mean": 58.38534854582795,
+    "spread": 0.017396308683537143
+   },
+   "on": {
+    "blocks": [
+     68.78464446387345,
+     68.78220995207114
+    ],
+    "mean": 68.7834272079723,
+    "spread": 0.0024345118023063606
+   },
+   "prompt_tokens": 2060,
+   "ratio_on_over_off": 1.17809397256544
+  },
+  "7B:3900": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=28 nKV=4 hd=128 L=28 ctx=32768 \u2014 D7; 512 floats/key, the low-f end",
+   "off": {
+    "blocks": [
+     52.01222989390013,
+     52.00537316697357
+    ],
+    "mean": 52.00880153043685,
+    "spread": 0.006856726926557144
+   },
+   "on": {
+    "blocks": [
+     66.24989799377765,
+     66.25573343705231
+    ],
+    "mean": 66.25281571541498,
+    "spread": 0.005835443274662566
+   },
+   "prompt_tokens": 3912,
+   "ratio_on_over_off": 1.2738769932362732
+  },
+  "7B:8000": {
+   "arm_order": [
+    "on",
+    "off"
+   ],
+   "geometry_note": "nH=28 nKV=4 hd=128 L=28 ctx=32768 \u2014 D7; 512 floats/key, the low-f end",
+   "off": {
+    "blocks": [
+     39.59254485872708,
+     39.58938687640558
+    ],
+    "mean": 39.590965867566325,
+    "spread": 0.0031579823215039937
+   },
+   "on": {
+    "blocks": [
+     61.09189043406255,
+     61.110322306396895
+    ],
+    "mean": 61.10110637022972,
+    "spread": 0.018431872334346622
+   },
+   "prompt_tokens": 8000,
+   "ratio_on_over_off": 1.5433093139130742
+  }
+ },
+ "config": {
+  "arms": {
+   "off": {},
+   "on": {
+    "GOINFER_CUDA_FLASH_DECODE": "16",
+    "GOINFER_CUDA_FLASH_DECODE_MIN_KEYS": "0"
+   }
+  },
+  "backend": "cuda",
+  "mode": "flash",
+  "ncomp": 8,
+  "ngen": 64,
+  "nruns": 2,
+  "quant": "int4"
+ },
+ "machine": {
+  "gpu": {
+   "driver": "595.91.07",
+   "mem_total_mib": 8192,
+   "mem_used_mib": 639,
+   "name": "NVIDIA GeForce RTX 2070 SUPER",
+   "temp_c": 60
+  },
+  "loadavg": [
+   1.345703125,
+   2.37548828125,
+   3.837890625
+  ]
+ },
+ "provenance": {
+  "cpu_count": 16,
+  "distro": "Nobara Linux 44",
+  "goinfer_commit": "4e571d2b",
+  "goinfer_tree_dirty": true,
+  "gpu": {
+   "driver": "595.91.07",
+   "mem_total_mib": 8192,
+   "mem_used_mib": 639,
+   "name": "NVIDIA GeForce RTX 2070 SUPER",
+   "temp_c": 60
+  },
+  "gpu_compute_apps_at_start": [
+   "1748, 20 MiB"
+  ],
+  "host": "nobara-pc",
+  "kind": "provenance",
+  "loadavg_at_start": [
+   1.345703125,
+   2.37548828125,
+   3.837890625
+  ],
+  "peer": {
+   "ollama_bin": "/home/francis/ollama-0325/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": null
+  },
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "serve_binaries": {
+   "cpu": {
+    "mtime": "2026-08-22T18:18:03Z",
+    "path": "/home/francis/bench-v0.15.0/serve-cpu"
+   },
+   "cuda": {
+    "mtime": "2026-09-21T00:24:20Z",
+    "path": "/home/francis/bench-r7b/serve-cuda-fa"
+   },
+   "metal": {
+    "mtime": null,
+    "path": "/nonexistent/serve-metal"
+   },
+   "webgpu": {
+    "mtime": "2026-08-22T18:17:55Z",
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu"
+   }
+  },
+  "serve_binaries_old": {},
+  "uname": "Linux 7.2.0-202.nobara.fc44.x86_64 x86_64",
+  "utc": "2026-09-21T00:48:37Z"
+ }
+}

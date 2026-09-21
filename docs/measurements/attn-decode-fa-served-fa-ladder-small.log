@@ -1,0 +1,60 @@
+# preflight OK: loadavg [0.7158203125, 5.97509765625, 7.30517578125] · gpu {'driver': '595.91.07', 'name': 'NVIDIA GeForce RTX 2070 SUPER', 'temp_c': 53, 'mem_used_mib': 639, 'mem_total_mib': 8192} · compute apps ['1748, 20 MiB']
+# 32 cells: 4 geometries x 4 depths x 2 arms
+  [1/32] 0.5B:128 on: 305.41 tok/s (spread 7.49) · elapsed 0.2m eta 5.9m
+  [2/32] 0.5B:128 off: 335.11 tok/s (spread 3.44) · elapsed 0.4m eta 5.6m
+      -> ratio 0.911
+  [3/32] 0.5B:512 on: 306.57 tok/s (spread 1.11) · elapsed 0.6m eta 5.5m
+  [4/32] 0.5B:512 off: 330.19 tok/s (spread 3.67) · elapsed 0.8m eta 5.3m
+      -> ratio 0.928
+  [5/32] 0.5B:2048 on: 304.72 tok/s (spread 0.99) · elapsed 1.0m eta 5.2m
+  [6/32] 0.5B:2048 off: 259.19 tok/s (spread 0.08) · elapsed 1.2m eta 5.1m
+      -> ratio 1.176
+  [7/32] 0.5B:3900 on: 302.86 tok/s (spread 5.21) · elapsed 1.4m eta 4.9m
+  [8/32] 0.5B:3900 off: 206.31 tok/s (spread 0.16) · elapsed 1.6m eta 4.9m
+      -> ratio 1.468
+  [9/32] 1.5B:128 off: 226.81 tok/s (spread 0.30) · elapsed 1.9m eta 4.9m
+  [10/32] 1.5B:128 on: 224.28 tok/s (spread 0.58) · elapsed 2.2m eta 4.8m
+      -> ratio 0.989
+  [11/32] 1.5B:512 off: 200.62 tok/s (spread 0.23) · elapsed 2.5m eta 4.7m
+  [12/32] 1.5B:512 on: 222.34 tok/s (spread 0.32) · elapsed 2.8m eta 4.6m
+      -> ratio 1.108
+  [13/32] 1.5B:2048 off: 160.87 tok/s (spread 0.12) · elapsed 3.1m eta 4.5m
+  [14/32] 1.5B:2048 on: 205.66 tok/s (spread 0.05) · elapsed 3.4m eta 4.4m
+      -> ratio 1.278
+  [15/32] 1.5B:3900 off: 124.66 tok/s (spread 0.14) · elapsed 3.9m eta 4.4m
+  [16/32] 1.5B:3900 on: 194.09 tok/s (spread 0.43) · elapsed 4.2m eta 4.2m
+      -> ratio 1.557
+  [17/32] gemma3-1b:128 on: 180.25 tok/s (spread 3.27) · elapsed 4.5m eta 4.0m
+  [18/32] gemma3-1b:128 off: 188.44 tok/s (spread 3.27) · elapsed 4.7m eta 3.6m
+      -> ratio 0.957
+  [19/32] gemma3-1b:512 on: 175.16 tok/s (spread 0.71) · elapsed 4.9m eta 3.4m
+  [20/32] gemma3-1b:512 off: 185.39 tok/s (spread 1.74) · elapsed 5.1m eta 3.1m
+      -> ratio 0.945
+  [21/32] gemma3-1b:2048 on: 179.64 tok/s (spread 2.40) · elapsed 5.4m eta 2.8m
+  [22/32] gemma3-1b:2048 off: 169.82 tok/s (spread 1.21) · elapsed 5.6m eta 2.6m
+      -> ratio 1.058
+  [23/32] gemma3-1b:3900 on: 179.18 tok/s (spread 0.17) · elapsed 5.9m eta 2.3m
+  [24/32] gemma3-1b:3900 off: 178.74 tok/s (spread 1.28) · elapsed 6.2m eta 2.1m
+      -> ratio 1.002
+  [25/32] phi3-mini:128 off: 124.40 tok/s (spread 0.19) · elapsed 6.6m eta 1.8m
+  [26/32] phi3-mini:128 on: 124.48 tok/s (spread 0.03) · elapsed 7.0m eta 1.6m
+      -> ratio 1.001
+  [27/32] phi3-mini:512 off: 112.18 tok/s (spread 0.12) · elapsed 7.4m eta 1.4m
+  [28/32] phi3-mini:512 on: 112.22 tok/s (spread 0.11) · elapsed 7.8m eta 1.1m
+      -> ratio 1.000
+  [29/32] phi3-mini:2048 off: 78.16 tok/s (spread 0.02) · elapsed 8.5m eta 0.9m
+  [30/32] phi3-mini:2048 on: 78.20 tok/s (spread 0.00) · elapsed 9.1m eta 0.6m
+      -> ratio 1.001
+  [31/32] phi3-mini:3900 off: 56.14 tok/s (spread 0.01) · elapsed 10.3m eta 0.3m
+  [32/32] phi3-mini:3900 on: 56.16 tok/s (spread 0.01) · elapsed 11.4m eta 0.0m
+      -> ratio 1.000
+
+# ratios (shipped gate / off — ~1.000 is the PASS, not a null result)  [11.4 min]
+| geometry | 128 | 512 | 2048 | 3900 |
+|---|---|---|---|---|
+| 0.5B | 0.911 | 0.928 | 1.176 | 1.468 |
+| 1.5B | 0.989 | 1.108 | 1.278 | 1.557 |
+| gemma3-1b | 0.957 | 0.945 | 1.058 | 1.002 |
+| phi3-mini | 1.001 | 1.000 | 1.001 | 1.000 |
+
+raw cells: /home/francis/bench-r7b/fa-ladder-small.json

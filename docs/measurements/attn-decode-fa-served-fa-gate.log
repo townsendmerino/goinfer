@@ -1,0 +1,72 @@
+# preflight OK: loadavg [0.65478515625, 2.86572265625, 3.19775390625] · gpu {'driver': '595.91.07', 'name': 'NVIDIA GeForce RTX 2070 SUPER', 'temp_c': 52, 'mem_used_mib': 639, 'mem_total_mib': 8192} · compute apps ['1748, 20 MiB']
+# 40 cells: 4 geometries x 5 depths x 2 arms
+  [1/40] 0.5B:128 on: 327.61 tok/s (spread 1.44) · elapsed 0.2m eta 7.2m
+  [2/40] 0.5B:128 off: 333.10 tok/s (spread 0.94) · elapsed 0.4m eta 7.0m
+      -> ratio 0.983
+  [3/40] 0.5B:512 on: 333.69 tok/s (spread 0.12) · elapsed 0.6m eta 6.8m
+  [4/40] 0.5B:512 off: 333.49 tok/s (spread 4.71) · elapsed 0.7m eta 6.7m
+      -> ratio 1.001
+  [5/40] 0.5B:1024 on: 318.13 tok/s (spread 1.81) · elapsed 0.9m eta 6.5m
+  [6/40] 0.5B:1024 off: 319.99 tok/s (spread 0.94) · elapsed 1.1m eta 6.3m
+      -> ratio 0.994
+  [7/40] 0.5B:2048 on: 298.10 tok/s (spread 0.60) · elapsed 1.3m eta 6.3m
+  [8/40] 0.5B:2048 off: 258.86 tok/s (spread 0.02) · elapsed 1.5m eta 6.2m
+      -> ratio 1.152
+  [9/40] 0.5B:3900 on: 304.58 tok/s (spread 1.62) · elapsed 1.7m eta 6.0m
+  [10/40] 0.5B:3900 off: 206.39 tok/s (spread 0.24) · elapsed 2.0m eta 6.0m
+      -> ratio 1.476
+  [11/40] 1.5B:128 off: 227.12 tok/s (spread 0.25) · elapsed 2.3m eta 6.0m
+  [12/40] 1.5B:128 on: 227.17 tok/s (spread 0.09) · elapsed 2.6m eta 6.0m
+      -> ratio 1.000
+  [13/40] 1.5B:512 off: 200.80 tok/s (spread 0.12) · elapsed 2.9m eta 5.9m
+  [14/40] 1.5B:512 on: 200.77 tok/s (spread 0.02) · elapsed 3.1m eta 5.8m
+      -> ratio 1.000
+  [15/40] 1.5B:1024 off: 191.84 tok/s (spread 0.29) · elapsed 3.4m eta 5.7m
+  [16/40] 1.5B:1024 on: 191.93 tok/s (spread 0.13) · elapsed 3.7m eta 5.6m
+      -> ratio 1.000
+  [17/40] 1.5B:2048 off: 161.61 tok/s (spread 0.03) · elapsed 4.1m eta 5.5m
+  [18/40] 1.5B:2048 on: 206.16 tok/s (spread 0.14) · elapsed 4.4m eta 5.4m
+      -> ratio 1.276
+  [19/40] 1.5B:3900 off: 124.48 tok/s (spread 0.02) · elapsed 4.8m eta 5.3m
+  [20/40] 1.5B:3900 on: 194.23 tok/s (spread 0.40) · elapsed 5.2m eta 5.2m
+      -> ratio 1.560
+  [21/40] gemma3-1b:128 on: 186.03 tok/s (spread 3.76) · elapsed 5.4m eta 4.9m
+  [22/40] gemma3-1b:128 off: 183.54 tok/s (spread 0.19) · elapsed 5.6m eta 4.6m
+      -> ratio 1.014
+  [23/40] gemma3-1b:512 on: 182.68 tok/s (spread 2.15) · elapsed 5.8m eta 4.3m
+  [24/40] gemma3-1b:512 off: 183.90 tok/s (spread 0.83) · elapsed 6.1m eta 4.0m
+      -> ratio 0.993
+  [25/40] gemma3-1b:1024 on: 181.44 tok/s (spread 0.66) · elapsed 6.3m eta 3.8m
+  [26/40] gemma3-1b:1024 off: 181.86 tok/s (spread 0.45) · elapsed 6.6m eta 3.5m
+      -> ratio 0.998
+  [27/40] gemma3-1b:2048 on: 183.95 tok/s (spread 1.77) · elapsed 6.8m eta 3.3m
+  [28/40] gemma3-1b:2048 off: 169.42 tok/s (spread 0.34) · elapsed 7.1m eta 3.0m
+      -> ratio 1.086
+  [29/40] gemma3-1b:3900 on: 181.30 tok/s (spread 0.54) · elapsed 7.3m eta 2.8m
+  [30/40] gemma3-1b:3900 off: 178.45 tok/s (spread 0.55) · elapsed 7.6m eta 2.5m
+      -> ratio 1.016
+  [31/40] phi3-mini:128 off: 124.40 tok/s (spread 0.03) · elapsed 8.0m eta 2.3m
+  [32/40] phi3-mini:128 on: 124.41 tok/s (spread 0.01) · elapsed 8.4m eta 2.1m
+      -> ratio 1.000
+  [33/40] phi3-mini:512 off: 112.15 tok/s (spread 0.04) · elapsed 8.8m eta 1.9m
+  [34/40] phi3-mini:512 on: 112.28 tok/s (spread 0.24) · elapsed 9.2m eta 1.6m
+      -> ratio 1.001
+  [35/40] phi3-mini:1024 off: 98.08 tok/s (spread 0.14) · elapsed 9.7m eta 1.4m
+  [36/40] phi3-mini:1024 on: 98.14 tok/s (spread 0.19) · elapsed 10.2m eta 1.1m
+      -> ratio 1.001
+  [37/40] phi3-mini:2048 off: 78.15 tok/s (spread 0.00) · elapsed 10.8m eta 0.9m
+  [38/40] phi3-mini:2048 on: 78.21 tok/s (spread 0.00) · elapsed 11.5m eta 0.6m
+      -> ratio 1.001
+  [39/40] phi3-mini:3900 off: 56.14 tok/s (spread 0.00) · elapsed 12.6m eta 0.3m
+  [40/40] phi3-mini:3900 on: 56.18 tok/s (spread 0.00) · elapsed 13.8m eta 0.0m
+      -> ratio 1.001
+
+# ratios (shipped gate / off — ~1.000 is the PASS, not a null result)  [13.8 min]
+| geometry | 128 | 512 | 1024 | 2048 | 3900 |
+|---|---|---|---|---|---|
+| 0.5B | 0.983 | 1.001 | 0.994 | 1.152 | 1.476 |
+| 1.5B | 1.000 | 1.000 | 1.000 | 1.276 | 1.560 |
+| gemma3-1b | 1.014 | 0.993 | 0.998 | 1.086 | 1.016 |
+| phi3-mini | 1.000 | 1.001 | 1.001 | 1.001 | 1.001 |
+
+raw cells: /home/francis/bench-r7b/fa-gate.json

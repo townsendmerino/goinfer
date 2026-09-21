@@ -1,0 +1,29 @@
+# preflight OK: loadavg [0.787109375, 2.193359375, 3.0234375] · gpu {'driver': '595.91.07', 'name': 'NVIDIA GeForce RTX 2070 SUPER', 'temp_c': 52, 'mem_used_mib': 639, 'mem_total_mib': 8192} · compute apps ['1748, 20 MiB']
+# 12 cells: 3 geometries x 2 depths x 2 arms
+  [1/12] 0.5B:256 on: 306.08 tok/s (spread 2.17) · elapsed 0.2m eta 2.0m
+  [2/12] 0.5B:256 off: 328.68 tok/s (spread 2.01) · elapsed 0.4m eta 1.8m
+      -> ratio 0.931
+  [3/12] 0.5B:1024 on: 301.24 tok/s (spread 1.39) · elapsed 0.6m eta 1.7m
+  [4/12] 0.5B:1024 off: 315.74 tok/s (spread 3.57) · elapsed 0.8m eta 1.5m
+      -> ratio 0.954
+  [5/12] 1.5B:256 off: 217.79 tok/s (spread 0.04) · elapsed 1.0m eta 1.4m
+  [6/12] 1.5B:256 on: 223.38 tok/s (spread 0.14) · elapsed 1.3m eta 1.3m
+      -> ratio 1.026
+  [7/12] 1.5B:1024 off: 191.81 tok/s (spread 0.34) · elapsed 1.6m eta 1.2m
+  [8/12] 1.5B:1024 on: 215.33 tok/s (spread 0.29) · elapsed 1.9m eta 1.0m
+      -> ratio 1.123
+  [9/12] gemma3-1b:256 on: 180.31 tok/s (spread 1.08) · elapsed 2.2m eta 0.7m
+  [10/12] gemma3-1b:256 off: 190.07 tok/s (spread 1.12) · elapsed 2.4m eta 0.5m
+      -> ratio 0.949
+  [11/12] gemma3-1b:1024 on: 175.83 tok/s (spread 0.40) · elapsed 2.7m eta 0.2m
+  [12/12] gemma3-1b:1024 off: 180.70 tok/s (spread 0.61) · elapsed 2.9m eta 0.0m
+      -> ratio 0.973
+
+# ratios (flash-decode lane (S=16) on / off, forced at every depth)  [2.9 min]
+| geometry | 256 | 1024 |
+|---|---|---|
+| 0.5B | 0.931 | 0.954 |
+| 1.5B | 1.026 | 1.123 |
+| gemma3-1b | 0.949 | 0.973 |
+
+raw cells: /home/francis/bench-r7b/fa-ladder-cross.json

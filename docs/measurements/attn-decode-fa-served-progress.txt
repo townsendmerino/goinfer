@@ -1,0 +1,24 @@
+17:24:40 reference PAUSED (pid 3572585)
+17:27:10 box idle: 0.72 5.97 7.31 1/1062 3584217
+17:38:36 fa-ladder-small done rc=0
+17:38:36 fa-ladder-d7 done rc=0
+17:38:36 fa-aa-floor done rc=0
+17:38:36 ALLDONE
+17:38:36 reference RESUMED (pid 3572585)
+17:39:06 reference PAUSED again (pid 3572585)
+17:41:06 idle 0.79 2.72 4.63 1/1052 3586356
+17:48:37 fa-ladder-d7 done rc=0
+17:49:22 idle 0.63 2.04 3.65 1/1047 3587015
+17:57:32 fa-aa-floor done rc=0
+17:57:32 ALLDONE2
+17:57:32 reference RESUMED (pid 3572585)
+17:58:36 reference PAUSED (3rd) (pid 3572585)
+18:00:36 idle 0.79 2.19 3.02 2/1051 3587967
+18:03:33 fa-ladder-cross done rc=0
+18:03:33 ALLDONE3
+18:03:33 reference RESUMED (pid 3572585)
+18:06:12 reference PAUSED (3rd) (pid 3572585)
+18:08:42 idle 0.65 2.87 3.20 1/1056 3589146
+18:22:30 fa-gate done rc=0
+18:22:30 ALLDONE4
+18:22:30 reference RESUMED (pid 3572585)

@@ -1,0 +1,18 @@
+# preflight OK: loadavg [0.78955078125, 2.71826171875, 4.6337890625] · gpu {'driver': '595.91.07', 'name': 'NVIDIA GeForce RTX 2070 SUPER', 'temp_c': 51, 'mem_used_mib': 639, 'mem_total_mib': 8192} · compute apps ['1748, 20 MiB']
+# 6 cells: 1 geometries x 3 depths x 2 arms
+  [1/6] 7B:2048 on: 68.78 tok/s (spread 0.00) · elapsed 0.9m eta 4.6m
+  [2/6] 7B:2048 off: 58.39 tok/s (spread 0.02) · elapsed 1.9m eta 3.7m
+      -> ratio 1.178
+  [3/6] 7B:3900 on: 66.25 tok/s (spread 0.01) · elapsed 2.9m eta 2.9m
+  [4/6] 7B:3900 off: 52.01 tok/s (spread 0.01) · elapsed 4.1m eta 2.0m
+      -> ratio 1.274
+  [5/6] 7B:8000 on: 61.10 tok/s (spread 0.02) · elapsed 5.7m eta 1.1m
+  [6/6] 7B:8000 off: 39.59 tok/s (spread 0.00) · elapsed 7.5m eta 0.0m
+      -> ratio 1.543
+
+# ratios (flash-decode lane (S=16) on / off, forced at every depth)  [7.5 min]
+| geometry | 2048 | 3900 | 8000 |
+|---|---|---|---|
+| 7B | 1.178 | 1.274 | 1.543 |
+
+raw cells: /home/francis/bench-r7b/fa-ladder-d7.json
