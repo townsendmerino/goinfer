@@ -1270,6 +1270,8 @@ supports.
 | `docs/measurements/prefill-l2l3-phase1-2026-09-05.md|metal/backend.go:513` | goinfer | `func metalFastPrefillEnabled() bool {` |
 | `docs/measurements/r2-attn-fa-followup-2026-09-20.md|metal/kernels.go:953` | goinfer | `kernel void attention_fa(` |
 | `docs/measurements/r2-attn-fa-followup-2026-09-20.md|metal/model.go:1192` | goinfer | `if invf0 := m.RopeInvFreq(); len(invf0) > 0 {` |
+| `docs/measurements/r9-s03-s04-shipped-measurement-2026-09-21.md|decoder/attention.go:338` | goinfer | `qScale := float64(linalg.QuantizeRowInt8(q[qh*hd:qh*hd+hd], qq))` |
+| `docs/measurements/r9-s03-s04-shipped-measurement-2026-09-21.md|linalg/quant.go:135` | aikit | `func QuantizeRowInt8(row []float32, q []int8) (scale float32) {` |
 | `docs/measurements/reduction-tree-accuracy-2026-09-12.md|cuda/attn_fused_test.go:18` | goinfer | `// plus "cosine >= 0.9999 per row", derived from f16 operand rounding. That bar failed w` |
 | `docs/measurements/reduction-tree-accuracy-2026-09-12.md|cuda/prefill.go:690` | goinfer | `//	S  K=1024, K=3900 SHIP — fast is CLOSER to the reference than exact on all three crit` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|cuda/backend.go:116` | goinfer | `return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))` |
