@@ -1825,6 +1825,16 @@ llama.cpp and Ollama, which don't go through goinfer's residency guard, ran fine
 M35/M26 at depth 128 (see the W1 table above) — the boundary is specific to goinfer's own
 CPU-staged fallback, not to running these models on this hardware at all.
 
+**Addendum, 2026-09-20 — the paged GPU-resident path (`MoECacheExperts`, a different mechanism
+from the CPU-staged fallback above) also proved unsafe on this machine, at two different slot
+counts, though for a different reason.** Full record:
+[`metal-moe-autopager-m26-2026-09-20.md`](measurements/metal-moe-autopager-m26-2026-09-20.md).
+`DecodePath()` confirmed the correct (paged, not staged) mechanism engaged both times; both times,
+system swap spiraled within under a minute regardless — once during load/build at an auto-sized
+N=64, once during/after the first decode token at a hand-picked N=32. Both killed manually before
+either a kernel panic or a served rate. This machine's real, non-idle headroom for M26-class MoE
+paging remains an open, unresolved question, not a cleared one.
+
 ### Tier-2 goinfer variants, Mac only
 
 | variant | model | tok/s | vs. int4/on baseline |

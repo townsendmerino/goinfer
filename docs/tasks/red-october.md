@@ -399,7 +399,7 @@ Status table, kept current as briefs move:
 | R8 | CUDA vision tower onto the L2/L3 kernels | Linux | M | scoped |
 | R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | scoped |
 | R10 | WebGPU glue fusion and on-device argmax; batched-prefill profile | Linux | M | scoped; profile first |
-| R11 | MoE: L01 funding cell; P20 expert-major prefill; Metal pager measurement and M-11 | both | L | scoped |
+| R11 | MoE: L01 funding cell; P20 expert-major prefill; Metal pager measurement and M-11 | both | L | (a)/(b) CUDA-only, not attempted. **(c) Metal M26: two near-incidents, 2026-09-20** — `DecodePath`/`g4moe.paged` confirm the paged mechanism engages correctly at both auto-sized N=64 and manual N=32, but both drove this machine into a severe swap spiral before a served rate was reached; both killed manually before either a kernel panic or a completed measurement — see the record. Not retried a third time this session. |
 | R12 | Metal `ForwardN` batching (P21); the missing peer rows (MLX, Metal depth, vision, W7) | both | S–M | **MLX row (i) re-confirmed 2026-09-18; Metal depth row (ii) done via R2 step 0; W7 (iv) done 2026-09-19 (simplified — see the record) — goinfer 60.1→36.1→36.4 tok/s at 1/2/4 clients (a real loss that plateaus), llama-server 84.8→95.9→149.7 (scales up), 4.11× gap at n=4; vision (iii) not attempted; P21 build not started** |
 | R13 | CPU decode attention, group-major acc64 kernels (bit-identical) | both (aikit + goinfer) | S (measure) + M (two kernels ×2 ISAs, wiring) | **step 0 complete 2026-09-19**: (i) peer depth row done but not benchmarks.md-quality (thermal drift, re-run needed); (ii) softmax caps the QK+AV grouping ceiling to ~1.39-1.54× overall, not 1.8-1.85×; (iii) the cache-dedup gap is depth-dependent — nil below ~K=1024, 2-5× above K=2048, reinforcing (ii)'s decision depth. **SHIPPED 2026-09-20** — aikit kernel A/B real (1.53-2.39×); goinfer wiring found a real bug (softmax accidentally serialized, not the scheduler-contention red herring a first CPU profile suggested — `go tool trace`'s per-goroutine breakdown found the actual cause). Fixed: parity at depth 2048, **1.32× served at depth 8192**. `GOINFER_ATTN_GROUPED` defaults on. Three-arm/both-box/all-model sweep still not done |
 
@@ -1297,9 +1297,28 @@ provenance; audit M-11/M-13 closure notes.
 26B's KV/slot arithmetic (settled in §B4.2), cpubrrr Q4_K (R9 decides whether the CPU path
 matters again).
 
----
-
-### R12 · Metal `ForwardN` batching, and the peer rows the page is missing
+**(c) result — two near-incidents, 2026-09-20**
+([`metal-moe-autopager-m26-2026-09-20.md`](../measurements/metal-moe-autopager-m26-2026-09-20.md)).
+Attempted the M26 row against the real mechanism this item asks about, twice: once auto-sized
+(`MoECacheExperts` with no explicit slot count — the real `autoMoESlots` path, which
+`TestGemma4_26B_pagedRuns`'s own `GOINFER_METAL_MOE_SLOTS` override bypasses and had never actually
+been exercised), landing on N=64 (the formula's own ceiling); once by hand at N=32 (half of that,
+`TestGemma4_26B_pagedRuns`'s existing default). Both times, `DecodePath()` and `r.g4moe.paged`
+confirmed the *correct* mechanism engaged — the paged, GPU-resident path, not the CPU-staged
+fallback the original incident (`benchmarks.md` "M35/M26 on the Mac") went through — so that
+half of this item's premise holds. But both times, independent external monitoring (outside the
+test process, specifically to catch a spiral before the test's own safeguards could) showed system
+swap explode within under a minute, well before a served rate was reached; both killed manually.
+Run 1's spiral started during load/build; run 2 (smaller N) got further — `buildResident` actually
+completed, RSS a modest 892 MB right after — but spiraled during/after the first decode token
+instead. The auto-sizer's snapshot-timing behavior (a live free-memory read that this same machine
+is measured to swing by multiple GB within single-digit seconds) explains run 1 on its own, but
+run 2's failure at a smaller, hand-picked, previously-used N means that explanation is not the
+whole story — this machine's real, current, non-idle headroom may simply be too thin for this
+model class regardless of N. **No served rate obtained for M26 at any N. Not retried a third time
+this session** — each attempt left the machine's swap file permanently larger than before it.
+`benchmarks.md` NOT yet updated with a pointer to this (see the "Record" line above; this is a
+negative result, recorded with the same care, not a "ships" row to add there).
 
 **Goal.** Make speculation pay on the Mac, and fill the four measurement gaps that keep recurring
 as "unmeasured" in this doc: the MLX row, the Metal peer depth row, a vision peer, and W7.
