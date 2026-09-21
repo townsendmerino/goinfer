@@ -108,8 +108,12 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	// Weight residency (idea #2): the router selection is the demand signal. Touch each
 	// chosen expert before its matmuls so the pager faults it in and evicts the LRU tail
 	// to stay within budget. Keyed by the gateUp element address (newExpertPager's key).
-	// Bit-exact — released experts re-fault from the read-only mapping.
+	// Bit-exact — released experts re-fault from the read-only mapping (mmap mode) or are
+	// re-pread (pool mode). Lock/Unlock spans touch AND the matmul reads further below
+	// (the expert loop over w.expertsGateUp/expertsDown) — see expertPager's doc comment.
 	if pager != nil {
+		pager.Lock()
+		defer pager.Unlock()
 		for _, e := range idx {
 			pager.touch(unsafe.Pointer(&w.expertsGateUp[e]))
 		}

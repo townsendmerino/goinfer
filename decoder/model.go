@@ -367,7 +367,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		if opts.StreamWeights {
 			// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
 			if w.arch.MoE != nil {
-				if m.pager = newExpertPager(w, data, opts.WeightCacheBytes); m.pager != nil {
+				if m.pager = newExpertPager(w, data, opts.WeightCacheBytes, dir); m.pager != nil {
 					fmt.Fprintln(os.Stderr, "decoder: "+pagerSummary(m.pager))
 				} else {
 					fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored (no mmap-backed MoE experts to page)")
@@ -551,6 +551,10 @@ func (m *Model) Config() *Config {
 // for the CPU backend with no mapping. Safe to call once after the model is done;
 // the weights must not be touched afterward (the mapping is gone).
 func (m *Model) Close() error {
+	if m.pager != nil {
+		_ = m.pager.close()
+		m.pager = nil
+	}
 	if m.resident != nil {
 		_ = m.resident.Close()
 		m.resident = nil

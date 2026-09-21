@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"unsafe"
 
@@ -25,23 +26,55 @@ import (
 //
 // Only experts whose quantized weights actually alias the mapping are managed;
 // heap-backed weights (a GGUF load) and the always-on shared expert are left alone.
-// Guarded by an internal mutex (audit C-30): the pager lives on *Model and StreamWeights supports
-// concurrent decode streams, so its shared LRU cache is locked (SpanCache is not internally locked).
+//
+// Two backing modes, chosen once at build time (newExpertPager):
+//   - mmap+madvise (default): cache aliases the read-only mapping directly, WILLNEED faults it
+//     in, DONTNEED releases it. Zero-copy, but on darwin DONTNEED is a no-op (madvise_darwin.go)
+//     -- there is no real RAM cap on macOS with this mode.
+//   - owned-buffer pread (opt-in, GOINFER_MOE_PREAD_CPU=1; Lever 1b, task-moe-streaming.md):
+//     pool holds a fixed set of owned buffers it fills via pread, giving a firm cap on every
+//     platform at the cost of a memcpy per miss and losing .giw zero-copy aliasing.
+//
+// Guarded by two internal mutexes (audit C-30 plus Lever 1b's own cross-call requirement — see
+// their doc comments below): the pager lives on *Model and StreamWeights supports concurrent
+// decode streams, so its shared LRU state is locked (SpanCache is not internally locked, and
+// pool needs its own protection for a different reason).
 type expertPager struct {
-	// mu guards cache, which mmap.SpanCache does NOT lock internally (audit C-30). The pager lives on
-	// *Model, shared across every Generate, and Touch mutates the LRU list — so two concurrent streams
-	// on a StreamWeights MoE model race without this. All cache mutation/read goes through touch/stats.
-	mu       sync.Mutex
-	cache    *mmap.SpanCache[unsafe.Pointer]
-	nExperts int   // mapping-backed experts under management (for the banner)
-	total    int64 // total mapped expert bytes (for the banner)
+	// mu guards touch()'s own mutation (cache.Touch or pool.ensure) — held internally, for the
+	// duration of that one call, regardless of mode. This is the ORIGINAL C-30 contract
+	// (TestExpertPager_concurrentNoRace calls touch() directly, concurrently, with no outer
+	// locking of its own, and must remain safe doing so): touch() is always self-contained-safe
+	// to call from any goroutine. It does NOT by itself protect a caller's reads of the
+	// WeightMat fields AFTER touch() returns — see readMu.
+	mu sync.Mutex
+	// readMu is pool mode's additional requirement, on top of mu: a slot's owned buffer is
+	// mutable storage a competing miss can refill mid-read, unlike an mmap alias (whose bytes
+	// never move) — so pool-mode callers must hold readMu across touch() AND every subsequent
+	// matmul read of the repointed WeightMat fields, for the duration of one MoE FFN call (see
+	// expertBufferPool's doc comment). Lock/Unlock export this. A distinct mutex from mu (never
+	// nested on the same object) — mmap-mode callers may take it too for uniformity, but
+	// touch()'s own self-locking via mu already makes that mode safe without it.
+	readMu   sync.Mutex
+	cache    *mmap.SpanCache[unsafe.Pointer] // mmap+madvise mode; nil if pool is set
+	pool     *expertBufferPool               // owned-buffer pread mode; nil if cache is set
+	nExperts int                             // mapping-backed experts under management (for the banner)
+	total    int64                           // total mapped expert bytes (for the banner)
 }
+
+// Lock/Unlock should wrap touch() and the matmul reads that follow it, for the duration of one
+// MoE FFN call (see readMu's doc comment). Required for correctness in pool mode; a no-op-ish
+// safety margin in mmap mode, where touch() is already self-contained-safe on its own.
+func (p *expertPager) Lock()   { p.readMu.Lock() }
+func (p *expertPager) Unlock() { p.readMu.Unlock() }
 
 // newExpertPager builds a pager over the experts of an mmap-backed MoE model, or
 // returns nil when paging doesn't apply (not MoE, not mmap-backed, or no expert
 // weights alias the mapping). budget ≤ 0 selects an automatic budget (~half of
-// available RAM); it is clamped to [one expert, total expert bytes].
-func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
+// available RAM); it is clamped to [one expert, total expert bytes]. giwPath is the
+// .giw file the mapping was built from (Model.GiwPath) -- only consulted when the
+// owned-buffer pread mode is requested (GOINFER_MOE_PREAD_CPU=1), to open an
+// independent fd for pread (the mmap's own fd is closed right after mapping).
+func newExpertPager(w *Weights, mapping []byte, budget int64, giwPath string) *expertPager {
 	if w.arch.MoE == nil || len(mapping) == 0 {
 		return nil
 	}
@@ -53,6 +86,7 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 		spans [][]byte
 	}
 	var members []member
+	var poolMembers []poolMember
 	var total, maxExpert int64
 	// addExpert registers one expert under a stable identity (the address of its primary
 	// weight struct — the same value the forward touches), collecting only the projections
@@ -72,7 +106,9 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 	// row4 when present, canonical otherwise. Never both.
 	addExpert := func(key unsafe.Pointer, wms ...*linalg.WeightMat) {
 		var spans [][]byte
+		var fields []expertField
 		var n int64
+		pageable := true
 		for _, wm := range wms {
 			s := wm.MappedSpanRow4(base, end)
 			if len(s) == 0 {
@@ -83,11 +119,19 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 			}
 			spans = append(spans, s)
 			n += int64(len(s))
+			if f, ok := buildExpertField(wm, base, end); ok {
+				fields = append(fields, f)
+			} else {
+				pageable = false // a field that mapped for madvise purposes didn't resolve for pread — don't offer this member to pool mode
+			}
 		}
 		if n == 0 {
 			return // heap-backed — nothing to page
 		}
 		members = append(members, member{key, spans})
+		if pageable && len(fields) == len(wms) {
+			poolMembers = append(poolMembers, poolMember{key, fields})
+		}
 		total += n
 		if n > maxExpert {
 			maxExpert = n
@@ -120,6 +164,14 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 	if budget < maxExpert {
 		budget = maxExpert // must hold at least one expert
 	}
+	if os.Getenv("GOINFER_MOE_PREAD_CPU") == "1" && giwPath != "" && len(poolMembers) == len(members) {
+		pool, err := newExpertBufferPool(giwPath, poolMembers, budget, w.arch.MoE.TopK)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "decoder: MoE pread pool init failed (%v), falling back to mmap paging\n", err)
+		} else {
+			return &expertPager{pool: pool, nExperts: len(poolMembers), total: total}
+		}
+	}
 	// Frequency-aware (classic LRU tail) eviction: the router's demand signal is
 	// skewed FREQUENCY, not a scan — the hottest ~10% of experts absorb ~72% of the
 	// top-k picks — so the hot set must stay resident. SpanCache's default is
@@ -134,12 +186,27 @@ func newExpertPager(w *Weights, mapping []byte, budget int64) *expertPager {
 }
 
 // touch records that ex is needed now: it becomes most-recently-used and, if it
-// wasn't resident, is faulted in (and the LRU tail released to stay within budget).
-// A no-op for experts the pager doesn't manage.
+// wasn't resident, is faulted in (mmap mode, evicting the LRU tail to stay within
+// budget) or refilled into an owned pread slot (pool mode). A no-op for experts the
+// pager doesn't manage. Always self-contained-safe to call directly and concurrently
+// (mu, held internally, for the ORIGINAL C-30 guarantee — see expertPager's doc
+// comment) — but in pool mode, the caller must ADDITIONALLY hold Lock() across this
+// call and its subsequent reads of the repointed WeightMat fields, or a concurrent
+// touch() can repoint them mid-read (readMu's doc comment).
 func (p *expertPager) touch(key unsafe.Pointer) {
 	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.pool != nil {
+		if err := p.pool.ensure(key); err != nil {
+			// No error return here (matching the mmap path, which cannot fail either) --
+			// a pread failure mid-forward isn't recoverable at this call depth. Leaving the
+			// WeightMat fields at their last-good contents and logging is the least-bad
+			// option; this should only happen on real I/O failure or on-disk corruption.
+			fmt.Fprintf(os.Stderr, "decoder: MoE pread refill failed for expert: %v\n", err)
+		}
+		return
+	}
 	p.cache.Touch(key)
-	p.mu.Unlock()
 }
 
 // stats returns cumulative (hits, misses, evictions) over all touch calls. A
@@ -148,20 +215,36 @@ func (p *expertPager) touch(key unsafe.Pointer) {
 func (p *expertPager) stats() (hits, misses, evictions int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.pool != nil {
+		return p.pool.stats()
+	}
 	return p.cache.Stats()
 }
 
-// advisedBytes returns cumulative bytes passed to the WILLNEED residency hint over
-// every miss — what THIS pager asked the OS to fetch, independent of whatever else
-// the machine's disk is doing. A durable, contamination-proof I/O check: a member
-// registering redundant spans (the kind-4 double-WILLNEED bug this exists to catch,
-// docs/completed/task-zeno-compare.md's "At-scale acceptance run") shows up here directly as
-// bytes-per-miss exceeding the expected per-expert working set, immune to whatever an
-// external tool like iostat would also be counting on a shared machine.
+// advisedBytes returns cumulative bytes fetched from disk over every miss — WILLNEED-hinted
+// bytes in mmap mode, pread'd bytes in pool mode — independent of whatever else the machine's
+// disk is doing. A durable, contamination-proof I/O check: a member registering redundant spans
+// (the kind-4 double-WILLNEED bug this exists to catch, docs/completed/task-zeno-compare.md's
+// "At-scale acceptance run") shows up here directly as bytes-per-miss exceeding the expected
+// per-expert working set, immune to whatever an external tool like iostat would also be
+// counting on a shared machine.
 func (p *expertPager) advisedBytes() int64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.pool != nil {
+		return p.pool.bytesRead
+	}
 	return p.cache.AdvisedBytes()
+}
+
+// close releases the pager's resources — currently only meaningful in pool mode (the
+// independent pread fd; mmap mode owns nothing beyond the mapping itself, which the caller
+// unmaps separately).
+func (p *expertPager) close() error {
+	if p.pool != nil {
+		return p.pool.close()
+	}
+	return nil
 }
 
 // pagerSummary is a one-line description of a built pager for the load banner.
@@ -169,6 +252,14 @@ func pagerSummary(p *expertPager) string {
 	if p == nil {
 		return ""
 	}
-	return fmt.Sprintf("expert paging: %d experts, %.1f GB total, %.1f GB budget",
-		p.nExperts, float64(p.total)/1e9, float64(p.cache.Budget())/1e9)
+	mode := "mmap"
+	budget := int64(0)
+	if p.pool != nil {
+		mode = "pread"
+		budget = p.pool.budget()
+	} else {
+		budget = p.cache.Budget()
+	}
+	return fmt.Sprintf("expert paging (%s): %d experts, %.1f GB total, %.1f GB budget",
+		mode, p.nExperts, float64(p.total)/1e9, float64(budget)/1e9)
 }

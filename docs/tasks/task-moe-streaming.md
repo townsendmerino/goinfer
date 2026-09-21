@@ -94,7 +94,7 @@ Work:
    `NewSpanCacheWithPolicy`) so the ANN scan keeps scan-resistance and the expert pager
    keeps a frequency-aware policy. That is an aikit change; land it there and bump.
 3. Stale artifacts to fix in the same pass: `aikit/mmap/spancache.go`'s type doc still says
-   Touch "releases the least-recently-touched members"; `decoder/moepaging.go:15–16`
+   Touch "releases the least-recently-touched members"; `decoder/moepaging.go:16–17`
    describes "the generic span-residency LRU … release the budget tail";
    `decoder/moepaging_test.go:18` cites `TestSpanCache_evictsLRUTailOverBudget`, renamed in
    aikit to `TestSpanCache_evictsMostRecentOverBudget`.
@@ -174,6 +174,96 @@ Bit-exactness stays trivially provable either way (the bytes are the same file b
 
 **Deliverable:** a tok/s-and-p99-latency-vs-budget curve on both darwin and linux, for
 QD1-mmap / parallel-mmap / parallel-pread. The darwin column is the one that decides 1b.
+
+**1b — BUILT + MEASURED 2026-09-21, MacBook (arm64/Metal box, internal SSD): shipped, opt-in,
+default off — a real RAM cap, not a speed win on this machine.** Built exactly as scoped: a new
+`decoder/moepool.go` (`expertBufferPool`) — a fixed-N-slot owned-buffer pool, N floored at the
+model's real top-k (never self-thrashes within one token's routed set), opened against an
+independent fd on the `.giw` path (`Model.GiwPath`, since `aikit/mmap.MapReadOnly` closes its own
+fd right after mapping). On a miss it `pread`s every managed field's EXACT (unaligned) byte range
+— never `MappedSpan`'s page-rounded interior, which is wrong for a pread offset/length — and
+repoints the expert's `WeightMat` at the filled buffer via aikit/linalg's existing exported
+`Wrap*`/accessor API (`Int4`/`Int4Row4`/`Int8`, `WrapInt4`/`WrapInt4Row4Only`/`WrapInt8`) — no
+aikit API change needed, since scales/rows/cols/group are already heap copies untouched by
+paging (only the packed nibble/code payload ever aliases the mmap). Row4-vs-canonical selection
+mirrors `newExpertPager`'s existing preference exactly (never registers both, the same kind-4
+double-fetch bug this repo already found once). Wired into both existing paging call sites
+(`mlp.go`'s `moeMLP`, `forward_gemma4_moe.go`'s `gemma4MoEFFN`) behind `GOINFER_MOE_PREAD_CPU=1`
+(default off, undocumented-knob convention — see `docs/env-vars.md`'s Diagnostics section).
+
+**A concurrency hazard the mmap path never had, found and closed before shipping.** Unlike an
+mmap alias (bytes never move), a pool slot's owned buffer IS mutable storage a competing miss can
+overwrite mid-read — two decode streams sharing one pager (an existing, intended,
+already-tested scenario, audit C-30) could otherwise tear a read. First cut moved the pager's
+existing lock scope from "just the LRU/pool mutation" to "touch + the caller's subsequent matmul
+reads," which is correct but broke `TestExpertPager_concurrentNoRace` (the pre-existing C-30
+gate, which calls `touch()` directly and concurrently with no outer lock, expecting it to be
+self-contained-safe) — a real regression caught by re-running the full suite before trusting the
+change, not assumed away. Fixed with two separate mutexes on `expertPager`: `mu`, self-locked
+*inside* `touch()` for its own mutation regardless of mode (restores the original C-30 contract
+exactly), and a new `readMu` (`Lock()`/`Unlock()`) that pool-mode callers additionally hold across
+touch()-through-compute for the cross-stream protection — never nested on the same object, so no
+deadlock. A new test, `TestExpertPager_poolModeLockPreventsCrossStreamCorruption` (many goroutines
+racing touch+read over a pool deliberately smaller than the key count, asserting every read sees
+the CORRECT expert's output, not just that `-race` stays quiet — the hazard is a logical
+correctness race, not a Go memory race, so `-race` alone would not have caught it), was verified to
+actually have teeth by temporarily removing its lock calls and confirming a hard `fatal error:
+concurrent map writes` — the failure mode this design exists to prevent. Bit-exactness (byte-exact
+refill vs. the mmap source, through an actual `MatmulBT` call, not just a raw-byte comparison) and
+the top-k-never-self-evicts / LRU-eviction-accounting properties are each their own test in
+`decoder/moepool_test.go`.
+
+**The performance measurement, same-session A/B (mirroring Lever 1a's own discipline — see its
+entry above for why "should be faster" wasn't trusted without a same-machine test):**
+`zz_lever1b_bench_test.go` (deleted after recording this — scaffolding, not the deliverable),
+two real file-backed arms (mmap+touch vs. pool+pread), same Zipfian-skewed access pattern
+(α=1.5, matching this doc's own measured real-world skew), same forced-eviction budget, same
+per-expert 3-field split (Mixtral's harder, more-syscalls-per-miss shape, not gemma4's easier
+2-field case), apples-to-apples miss/eviction counts asserted equal before trusting the timing.
+
+Two real measurement mistakes were caught and fixed before trusting the number, both the same
+class of error this repo's rules warn about (an unmatched observation, not a matched one):
+- First pass measured mmap 9x FASTER, because the mmap arm only called `cache.Touch()`
+  (issuing `MADV_WILLNEED`, an async hint) and never actually read the bytes afterward — the
+  real cost of an mmap fault only shows up when something (the matmul) actually touches the
+  page. The pool arm's `ensure()` does a real synchronous `pread`, so the first number was
+  "issue a hint" vs. "actually fetch the data," not the mechanism comparison intended.
+- Second pass (added a post-touch read to the mmap arm) swung to mmap 33x SLOWER, because that
+  fix sampled only one byte per page (cheap) while the pool arm's read-back scanned every byte
+  (a real ~16 MB memcpy-cost scan) — the mirror-image mistake, now making the mmap arm
+  artificially cheap instead.
+- Third pass made both arms read every payload byte after residency (matching what a real
+  matmul actually does), and only THEN treated the ratio as meaningful.
+
+**Result (3 fresh reps, `-count=1` to rule out `go test`'s result cache — the first "3 identical
+reps" run was silently replaying one cached PASS, not re-executing):**
+
+| rep | mmap ms/tok | pool ms/tok | ratio (mmap/pool) |
+|---|---|---|---|
+| 1 | 44.1 | 55.3 | 0.80x |
+| 2 | 42.7 | 55.6 | 0.77x |
+| 3 | 42.7 | 55.9 | 0.76x |
+
+Consistent, low-variance: **mmap is ~25-30% faster than the pread pool on this Mac's CPU decode
+path.** This is the opposite of the Metal precedent (`metal/expertpool.go`, measured 1.26x
+faster / 9.8x fewer cold-read bytes-per-second for pread over mmap byte-copy) — not a
+contradiction, a different mechanism: the GPU path ALWAYS pays a host→device copy regardless of
+source (mmap byte-copy or pread), so pread's one-syscall sequential read beats N page faults plus
+a copy either way. CPU decode's mmap path has no such mandatory copy — `matmul` reads bytes
+**directly through the mapped page**, zero-copy, so pread's explicit fetch-into-an-owned-buffer
+is *pure added overhead* with nothing to offset it. The fault path here isn't free, but it isn't
+markedly worse than a syscall+memcpy for this access pattern on this internal SSD either.
+
+**Disposition: shipped anyway, opt-in, default off — unlike Lever 1a, this is not a pure
+regression with nothing to show for it.** Lever 1a was reverted because the naive worker pool
+was worse in every dimension. Pool mode trades ~25-30% CPU-decode MoE throughput for something
+mmap+madvise categorically cannot give on this platform: a **real** RAM cap (darwin's
+`MADV_DONTNEED` is a documented no-op — mmap mode can WILLNEED bytes in but never actually
+release them). Whether that trade is worth making is a per-deployment call (a hard OS-level
+memory ceiling matters more on some boxes than a 25-30% MoE-layer slowdown), not something to
+decide unilaterally by shipping it as the default. `GOINFER_MOE_PREAD_CPU=1` exists for whoever
+needs the guarantee; `docs/env-vars.md`'s Diagnostics section documents it as exactly that
+(bit-exact, performance not established as a win, default off).
 
 ## Lever 2 — eviction policy matched to the demand signal — **REPLAYED; verdict: keep LRU**
 

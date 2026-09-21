@@ -122,8 +122,12 @@ func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *
 	// Weight residency (idea #2): the router selection is the demand signal. Touch
 	// every chosen expert before the matmuls so the pager faults them in and keeps
 	// resident RAM within budget (releasing the LRU tail). Bit-exact — released
-	// experts re-fault from the read-only mapping.
+	// experts re-fault from the read-only mapping (mmap mode) or are re-pread (pool
+	// mode). Lock/Unlock spans touch AND the matmul reads below it (swiGLUExpert) —
+	// see expertPager's doc comment for why pool mode needs this held that long.
 	if pager != nil {
+		pager.Lock()
+		defer pager.Unlock()
 		for _, e := range idx {
 			pager.touch(unsafe.Pointer(&lw.Experts[e]))
 		}
