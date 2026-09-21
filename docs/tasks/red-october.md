@@ -397,7 +397,7 @@ Status table, kept current as briefs move:
 | R6 | CUDA flash-decode lane — mechanism for the parked spike, then the kernel | Linux | M–L | **lane decision made 2026-09-18 (option 2, §3.2 gate) — build fundable** |
 | R7 | Sampled-decode cliff — device-side bounded top-K | Linux first, then Mac | M | **CUDA filtered sampling SHIPPED 2026-09-20 (top_p 0.657→0.957 of greedy; top_k 0.961; min_p 0.971). R7b, same day, owner decision: temperature-only by Gumbel-max on every backend — CUDA 0.744→1.008, WebGPU 0.796→1.035 (device draw). Metal device kernel BUILT, GATED AND MEASURED 2026-09-20 (Mac session): 0 mismatches/15,840 draws, 12,000/12,000 real-generation tokens identical to host, device draw 0.96× greedy internally AND peer-verified (goinfer 1.15× Ollama greedy, 1.10× Ollama sampled, both Metal) — see the record.** |
 | R8 | CUDA vision tower onto the L2/L3 kernels | Linux | M | scoped |
-| R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | scoped |
+| R9 | CPU decode attribution (Mac fixed cost; the Linux 0.5B anomaly), then S-05 | both | S (measure) + M (aikit) | **Step 1 Mac half done, 2026-09-20**: per-component split at depth 128 on 0.5B/1.5B (7B declined by the fit guard both times, not forced) — MLP dominates (57-62% of the token), attention 27-29%, LM head 11-13%, sample/logitProc/embed all noise. Points step 2 at wiring aikit's already-built `MatmulBTW4A8Batch` (S-02) into `decoder/attention.go`/`mlp.go`. Linux half and per-worker fan-out timestamps still open |
 | R10 | WebGPU glue fusion and on-device argmax; batched-prefill profile | Linux | M | scoped; profile first |
 | R11 | MoE: L01 funding cell; P20 expert-major prefill; Metal pager measurement and M-11 | both | L | (a)/(b) CUDA-only, not attempted. **(c) Metal M26: two near-incidents, 2026-09-20** — `DecodePath`/`g4moe.paged` confirm the paged mechanism engages correctly at both auto-sized N=64 and manual N=32, but both drove this machine into a severe swap spiral before a served rate was reached; both killed manually before either a kernel panic or a completed measurement — see the record. Not retried a third time this session. |
 | R12 | Metal `ForwardN` batching (P21); the missing peer rows (MLX, Metal depth, vision, W7) | both | S–M | **MLX row (i) re-confirmed 2026-09-18; Metal depth row (ii) done via R2 step 0; W7 (iv) done 2026-09-19 (simplified — see the record) — goinfer 60.1→36.1→36.4 tok/s at 1/2/4 clients (a real loss that plateaus), llama-server 84.8→95.9→149.7 (scales up), 4.11× gap at n=4; vision (iii) not attempted; P21 build not started** |
@@ -1179,6 +1179,23 @@ rather than path-cited).
 **Out of scope.** Prefill (S-05 helps it too — measure, do not claim), the 26B on CPU (D5's
 question, R11), vision on CPU (the S-06 transcendentals: wire them under this brief only if step 1
 puts the tower's exp above 10% of an image on the CPU path — otherwise R8's GPU path is the answer).
+
+**Step 1 result — Mac half, 2026-09-20**
+([`cpu-decode-attribution-2026-09-20.md`](../measurements/cpu-decode-attribution-2026-09-20.md)).
+Coarse split via the already-shipped `GOINFER_DECODE_TIMING`: `sample`/`logitProc`/`embed` are all
+noise (≤0.10 ms/token); essentially the whole token is `forward`. A temporary diagnostic (R13 step
+0(ii)'s own precedent — gated, verified bit-identical, reverted, not committed since
+`decoder/model.go` is a parity-manifest `core` file) split `forward` further: **MLP is the
+dominant component on both 0.5B and 1.5B (57-62% of the token) — more than attention and LM head
+combined** (attention 27-29%, LM head 11-13%). This is the opposite emphasis from R13's own
+attention-focused Build, and it directly names step 2's target: aikit's S-02 already built and
+kernel-gate-checked `MatmulBTW4A8Batch` (q‖k‖v/gate‖up fork-join fusion, 1.12-1.21× measured
+there) but it is not yet wired into `decoder/attention.go`/`decoder/mlp.go`'s separate per-op W4A8
+calls — this measurement confirms that wiring lands on the component that actually dominates a
+real token, not a minor one. 7B not measured (fit-guard decline, not forced, given this session's
+other near-incidents with large loads on this machine). **Linux half (the 0.5B anomaly) and
+per-worker fan-out timestamps inside a real token remain open** — this session had no Linux
+access.
 
 ---
 
