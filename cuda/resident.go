@@ -577,6 +577,8 @@ type cudaResident struct {
 	stream                                                                                  Queue
 	gemvW4, gemvW8, ropeKV, fRms, fRmsF32, fQ, fAttn, fSw, fRes, fArg, fQKV, fGU, fQKN, fLN Pipeline
 	fTopK                                                                                   Pipeline // topk_select (R7)
+	fQKVRows                                                                                Pipeline // fused_rms_qkv_rows: fused_rms_qkv with rows-per-warp (zero when its module did not load)
+	fGURows                                                                                 Pipeline // fused_rms_gu_rows: fused_rms_gu with rows-per-warp (zero when its module did not load)
 	fGumbel1, fGumbel2                                                                      Pipeline // gumbel_stage1/2 (R7b)
 	// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md — cuda/lora.go). Own module
 	// (lora.ptx), loaded unconditionally like every other glue pipeline — cheap, and whether a
@@ -2638,7 +2640,23 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 		cfg := LaunchConfig{GridX: uint32((nrows + 7) / 8), GridY: 1, GridZ: 1,
 			BlockX: 256, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
-		if e := r.launch(r.fQKV, cfg,
+		// Rows-per-warp variant (fused_qkv_rows.cu): each warp walks several rows off one shared activation, so fewer blocks pay the redundant
+		// rmsnorm+quant prologue. Bit-identical to the one-row-per-warp kernel (TestFusedQKVRowsBitIdentical), so this only ever changes speed.
+		if rpw := fusedQKVRowsPerWarp(nrows); rpw > 1 && r.fQKVRows != (Pipeline{}) {
+			rcfg := cfg
+			rcfg.GridX = uint32((nrows + 8*rpw - 1) / (8 * rpw))
+			if e := r.launch(r.fQKVRows, rcfg,
+				Arg(r.x), Arg(Ly.preNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
+				gpu.ArgValue(r.addOneArg()),
+				Arg(Ly.q.W), Arg(Ly.q.ws16), qb,
+				Arg(Ly.k.W), Arg(Ly.k.ws16), kb,
+				Arg(Ly.v.W), Arg(Ly.v.ws16), vb,
+				gpu.ArgValue(int32(Ly.qDim)), gpu.ArgValue(int32(Ly.kvDim)),
+				gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)), gpu.ArgValue(int32(rpw)),
+				Arg(r.qB), Arg(r.kB), Arg(r.vB)); e != nil {
+				return e
+			}
+		} else if e := r.launch(r.fQKV, cfg,
 			Arg(r.x), Arg(Ly.preNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
 			gpu.ArgValue(r.addOneArg()),
 			Arg(Ly.q.W), Arg(Ly.q.ws16), qb,
@@ -2911,7 +2929,20 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 		cfg := LaunchConfig{GridX: uint32((2*r.inter + 63) / 64), GridY: 1, GridZ: 1,
 			BlockX: 256, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((r.hidden + 256 + r.hidden/4) * 4)}
-		if e := r.launch(r.fGU, cfg,
+		// Rows-per-warp variant (fused_gu_rows.cu) for the geometries measured to win; bit-identical to the original (TestFusedGURowsBitIdentical).
+		if rpw := fusedGURowsPerWarp(r.hidden, r.inter); rpw != 8 && r.fGURows != (Pipeline{}) {
+			rcfg := cfg
+			rcfg.GridX = uint32((2*r.inter + 8*rpw - 1) / (8 * rpw))
+			if e := r.launch(r.fGURows, rcfg,
+				Arg(x), Arg(Ly.postNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
+				gpu.ArgValue(r.addOneArg()),
+				Arg(Ly.g.W), Arg(Ly.g.ws16),
+				Arg(Ly.u.W), Arg(Ly.u.ws16),
+				gpu.ArgValue(int32(r.inter)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)), gpu.ArgValue(int32(rpw)),
+				Arg(r.gO), Arg(r.uO)); e != nil {
+				return e
+			}
+		} else if e := r.launch(r.fGU, cfg,
 			Arg(x), Arg(Ly.postNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
 			gpu.ArgValue(r.addOneArg()),
 			Arg(Ly.g.W), Arg(Ly.g.ws16),

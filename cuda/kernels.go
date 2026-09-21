@@ -256,6 +256,18 @@ var routerF32PTX []byte
 //go:embed testdata/fused_qkv.ptx
 var fusedQKVPTX []byte
 
+// fusedQKVRowsPTX: fused_rms_qkv_rows — fused_rms_qkv with rows-per-warp as a runtime parameter (fewer redundant rmsnorm prologues).
+// Its own module so the audited fused_qkv.ptx is not regenerated at a different NVRTC; built at the ambient NVRTC (12.9.86). See cuda/fused_qkv_rows.cu.
+//
+//go:embed testdata/fused_qkv_rows.ptx
+var fusedQKVRowsPTX []byte
+
+// fusedGURowsPTX: fused_rms_gu_rows — fused_rms_gu with rows-per-warp as a runtime parameter. Its own module (the audited fused_qkv.ptx is not regenerated); built at the
+// ambient NVRTC (12.9.86). See cuda/fused_gu_rows.cu.
+//
+//go:embed testdata/fused_gu_rows.ptx
+var fusedGURowsPTX []byte
+
 // mlaPTX: mla_latent_store, mla_head_matvec, mla_q_rope, mla_attn — DeepSeek / Kimi
 // Multi-head Latent Attention (MLA) resident decode kernels (FeatMLA).
 //

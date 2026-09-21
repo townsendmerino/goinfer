@@ -847,6 +847,20 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fQKN, e = r.dev.NewComputePipeline(qmod, "qk_norm"); e != nil {
 			return e
 		}
+		// rows-per-warp variant of fused_rms_gu (own module; see fused_gu_rows.cu). A load failure only leaves the original kernel in use.
+		if gmod2, ge2 := r.dev.CompileLibrary(fusedGURowsPTX); ge2 == nil {
+			var le error
+			if r.fGURows, le = r.dev.NewComputePipeline(gmod2, "fused_rms_gu_rows"); le != nil {
+				r.fGURows = Pipeline{}
+			}
+		}
+		// rows-per-warp variant of fused_rms_qkv (own module; see fused_qkv_rows.cu). A load failure only leaves the original kernel in use.
+		if rmod, re2 := r.dev.CompileLibrary(fusedQKVRowsPTX); re2 == nil {
+			var le error
+			if r.fQKVRows, le = r.dev.NewComputePipeline(rmod, "fused_rms_qkv_rows"); le != nil {
+				r.fQKVRows = Pipeline{}
+			}
+		}
 		fns := []struct {
 			dst  *Pipeline
 			name string
