@@ -1410,7 +1410,8 @@ brief's own note. (i) is partly done:
 `benchmarks.md` peer-matrix row (goinfer/Ollama/MLX, 1.5B and 7B, all deltas inside ~3.5% ordinary
 session drift — not a revision) but does not extend it to 0.5B or phi3-mini, since no MLX-format
 checkpoint for either is cached locally; that needs an explicit download decision, not made here.
-(iii) the vision peer row and (iv) W7 were not attempted.
+(iii) the vision peer row and (iv) W7 were not attempted as of 2026-09-18/19 — both have since been
+run; see the results below.
 
 **Correction, 2026-09-20** ([`r12-p21-theta-post-batch-2026-09-20.md`](../measurements/r12-p21-theta-post-batch-2026-09-20.md)).
 The "Build (P21) has not started" line above was wrong — `ForwardN` on Metal already batches all N
@@ -1426,6 +1427,17 @@ is the remaining blocker) reads as confirmed, not just asserted: batching remove
 boundaries this measurement can see it removing (`T(16)/T(1)` moved from ~16.1–16.8, matching a
 plain loop, to ~13.9–15.4), without moving Θ into the ship or park band. Re-opening speculative
 decode on Metal needs a different lever than P21's own scope.
+
+**(iii) vision peer row result, 2026-09-20** ([`r12-vision-peer-2026-09-20.md`](../measurements/r12-vision-peer-2026-09-20.md)).
+Half-closed. Ollama's `gemma3:4b` CPU TTFT measured at 0.4 s (mean of 2 warm-process runs) — a real,
+usable number. goinfer's own row stays unmeasured: the load-time fit guard correctly declined
+`gemma-3-4b-it` on this Mac's real current headroom (needs ~6.1 GB resident, ~5.0 GB free), and
+bypassing it (chosen after weighing the shortfall as "modest," ~1.1 GB) produced a genuine
+near-incident — system swap grew 2.87 GB → 6.6 GB in ~15-20 seconds, caught and killed via an
+external monitor before anything worse, with zero TTFT samples collected. Not retried a third time.
+This generalizes the Mac's known memory-risk class beyond the large MoE checkpoints already flagged
+elsewhere (a plain dense 4B model triggers the same signature under a bypass) — recorded in this
+session's own memory system, not just this doc.
 
 **(iv) W7 result, 2026-09-19** ([`w7-plain-concurrency-2026-09-19.md`](../measurements/w7-plain-concurrency-2026-09-19.md)).
 A simplified variant, not the exact W4 tool-calling transcript — the memory-safe 1.5B model does
