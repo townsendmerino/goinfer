@@ -110,6 +110,9 @@ its value; kept only so tests can still force both branches while the code path 
 mmap+madvise to an owned-buffer pread pool — Lever 1b, docs/tasks/task-moe-streaming.md. Bit-exact
 either way (`TestExpertBufferPool_refillIsByteExact`), but performance is not yet established on
 real hardware at scale; default off),
+`GOINFER_CUDA_ATTN_FUSED_TILE` (CUDA: overrides the attn_fused kernel's tile-size selection —
+`64x64`, `128x64`, `32x64`, or `32x32`; an R5-phase investigation knob, default unchanged, the
+32-row tiles are a measured regression kept only for A/B comparison),
 `GOINFER_SPLITKV_VSUM_SPLIT` (an unpromoted spike: splits the decode split-KV V-sum across the
 key axis, measured +40-43% on the attention block and +15.6% served on one geometry, and it is
 **NOT bit-identical** to the default path. Unset, the pipelines are not loaded and no scratch is
