@@ -18,7 +18,7 @@ split-KV WINS for mistral-7b and LOSES for phi3-mini at the SAME nH=32. My propo
 `attn_batched` at **M=1 (decode)**, split-KV OFF (`GOINFER_SPLITKV_ATTN=0`), depth **3900** on both
 geometries. 3900 because it is the depth where both have a measured force-ratio and the signs differ,
 and because phi3-mini is a 4k model and cannot go deeper. Decode launches are identified by grid
-`(nH, 1, 1)` (`cuda/resident.go:3202`); prefill's are `(nH, M, 1)` and at 3900 tokens prefill attention
+`(nH, 1, 1)` (`cuda/resident.go:3211`); prefill's are `(nH, M, 1)` and at 3900 tokens prefill attention
 is `attn_fused` anyway.
 
 ## Prediction, and what would falsify it
