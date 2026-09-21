@@ -353,3 +353,196 @@ func TestFlashDecodeForwardNBitIdentical(t *testing.T) {
 		t.Fatal("lane logits equal exact-path logits everywhere: the comparison would be the exact path against itself")
 	}
 }
+
+// TestFlashDecodeBlockSpecLane is the block-drafter twin of TestFlashDecodeSpecVerifyLane, on the real Qwen3-4B (hd128, GQA 4) with its DFlash
+// drafter (GOINFER_DFLASH_F32 asset), through the SYNCHRONOUS entry point spec.Generate (the shared core the streaming entry also uses). With
+// the lane on and the multi-row verify lane enabled, block-speculative output equals plain LANE greedy and fa_partial_rows really ran inside verify;
+// with GOINFER_CUDA_FLASH_DECODE_VERIFY=0 it equals plain EXACT greedy and the lane never launched (the exact-attention scope, held in generate()).
+// MIN_KEYS=0 forces the lane on the short prompt; otherwise the lane would sit under its 2048-key floor and the test would prove nothing.
+func TestFlashDecodeBlockSpecLane(t *testing.T) {
+	requireHeavyModel(t)
+	tgt := os.Getenv("GOINFER_CUDA_MODEL")
+	if tgt == "" {
+		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
+	}
+	ddir := decoder.AssetPathForTest(t, "GOINFER_DFLASH_F32")
+	for _, mode := range []struct{ name, verify string }{{"multirow-verify", ""}, {"optionA-scope", "0"}} {
+		t.Run(mode.name, func(t *testing.T) {
+			t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16")
+			t.Setenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "0")
+			t.Setenv("GOINFER_CUDA_FLASH_DECODE_VERIFY", mode.verify)
+			mc, err := decoder.Load(tgt, decoder.Options{Backend: "cuda", Quant: "int4"})
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer mc.Close()
+			rf, ok := mc.ResidentForwardForTest().(*cudaResident)
+			if !ok || rf.faSplit != 16 {
+				t.Skip("resident path declined or lane not loaded")
+			}
+			if !mc.BlockSpecCapable() {
+				t.Skip("not block-spec capable")
+			}
+			dr, err := decoder.LoadDFlashDrafter(ddir)
+			if err != nil {
+				t.Fatalf("drafter: %v", err)
+			}
+			defer dr.Close()
+			tk, err := decoder.LoadTokenizerForTest(tgt)
+			if err != nil {
+				t.Skipf("tokenizer: %v", err)
+			}
+			prompt, err := decoder.EncodeChatForTest(tk, "Write a Python function that returns the nth Fibonacci number.")
+			if err != nil {
+				t.Fatalf("encode: %v", err)
+			}
+			if e := mc.SpecDecodeConflict(); e != nil {
+				t.Fatalf("SpecDecodeConflict with the lane on = %v, want nil", e)
+			}
+			spec, err := mc.NewBlockSpec(dr, dr.TargetLayerIDs())
+			if err != nil {
+				t.Fatalf("NewBlockSpec refused with the lane on: %v", err)
+			}
+			plain := func(n int) []int {
+				ch, g := mc.Generate(context.Background(), prompt, n, decoder.SamplingParams{})
+				var out []int
+				for id := range ch {
+					out = append(out, id)
+				}
+				if e := g.Err(); e != nil {
+					t.Fatalf("plain: %v", e)
+				}
+				return out
+			}
+			const maxNew = 96
+			rf.faLaunches, rf.faRowLaunches = 0, 0
+			got, rounds, err := spec.Generate(prompt, decoder.BlockSpecOptions{MaxTokens: maxNew})
+			if err != nil {
+				t.Fatalf("Generate: %v", err)
+			}
+			laneInSpec, rowsInSpec := rf.faLaunches, rf.faRowLaunches
+			var want []int
+			wantName := "plain LANE"
+			if mode.verify == "0" {
+				wantName = "plain EXACT"
+				rf.faSplit = 0
+				want = plain(len(got))
+				rf.faSplit = 16
+				if laneInSpec != 0 {
+					t.Fatalf("option A: the lane launched %d times inside block speculation", laneInSpec)
+				}
+			} else {
+				want = plain(len(got))
+				if rowsInSpec == 0 {
+					t.Fatal("VACUOUS: no fa_partial_rows launch inside the block-speculative generation")
+				}
+			}
+			if len(got) != len(want) {
+				t.Fatalf("speculative %d tokens vs %s %d", len(got), wantName, len(want))
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("block speculation diverged from %s at token %d: %d vs %d", wantName, i, got[i], want[i])
+				}
+			}
+			t.Logf("%s: block speculation == %s over %d tokens; %d rounds; multi-row launches %d, lane launches %d inside", mode.name, wantName, len(got), rounds, rowsInSpec, laneInSpec)
+		})
+	}
+}
+
+// TestFlashDecodeTwoModelSpecLane covers the two-model speculative path (GenerateSpeculative: a small draft model proposes, the target verifies) with
+// the lane on: qwen2.5-coder-0.5b drafts for the 1.5B (same tokenizer). Multi-row verify: output == plain LANE greedy with fa_partial_rows counted inside
+// verify; GOINFER_CUDA_FLASH_DECODE_VERIFY=0: output == plain EXACT greedy and the target's lane never launched (the scope held in GenerateSpeculative).
+// The draft is a separate Model with its own resident; it decodes with whatever it has (a proposer's numerics never affect the output).
+func TestFlashDecodeTwoModelSpecLane(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a 1.5B target and a 0.5B draft)")
+	}
+	tpath := modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	dpath := modelPath("qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	for _, p := range []string{tpath, dpath} {
+		if _, err := os.Stat(p); err != nil {
+			t.Skipf("no fixture at %s", p)
+		}
+	}
+	tk, err := tokenizer.LoadGGUF(tpath)
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	prompt, err := tk.Encode("func add(a, b int) int {\n\treturn a + b\n}\n\nfunc sub(a, b int) int {\n\treturn a - b\n}\n\nfunc mul(a, b int) int {\n", false)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	for _, mode := range []struct{ name, verify string }{{"multirow-verify", ""}, {"optionA-scope", "0"}} {
+		t.Run(mode.name, func(t *testing.T) {
+			t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16")
+			t.Setenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "0")
+			t.Setenv("GOINFER_CUDA_FLASH_DECODE_VERIFY", mode.verify)
+			target, err := decoder.Load(tpath, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 2048})
+			if err != nil {
+				t.Fatalf("load target: %v", err)
+			}
+			defer target.Close()
+			draft, err := decoder.Load(dpath, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 2048})
+			if err != nil {
+				t.Skipf("draft load (memory?): %v", err)
+			}
+			defer draft.Close()
+			rf, ok := target.ResidentForwardForTest().(*cudaResident)
+			if !ok || rf.faSplit != 16 {
+				t.Skip("resident path declined or lane not loaded")
+			}
+			plain := func() []int {
+				ch, g := target.Generate(context.Background(), prompt, 64, decoder.SamplingParams{})
+				var out []int
+				for id := range ch {
+					out = append(out, id)
+				}
+				if e := g.Err(); e != nil {
+					t.Fatalf("plain: %v", e)
+				}
+				return out
+			}
+			rf.faLaunches, rf.faRowLaunches = 0, 0
+			ch, g, err := target.GenerateSpeculative(context.Background(), prompt, 64, draft, 4, decoder.SamplingParams{})
+			if err != nil {
+				t.Fatalf("GenerateSpeculative refused with the lane on: %v", err)
+			}
+			var got []int
+			for id := range ch {
+				got = append(got, id)
+			}
+			if e := g.Err(); e != nil {
+				t.Fatalf("speculative: %v", e)
+			}
+			laneIn, rowsIn := rf.faLaunches, rf.faRowLaunches
+			if g.Spec == nil || g.Spec.Rounds == 0 {
+				t.Fatalf("no verify rounds (%+v)", g.Spec)
+			}
+			want, name := []int(nil), "plain LANE"
+			if mode.verify == "0" {
+				name = "plain EXACT"
+				rf.faSplit = 0
+				want = plain()
+				rf.faSplit = 16
+				if laneIn != 0 {
+					t.Fatalf("option A: the target's lane launched %d times inside two-model speculation", laneIn)
+				}
+			} else {
+				want = plain()
+				if rowsIn == 0 {
+					t.Fatal("VACUOUS: no fa_partial_rows launch inside two-model speculation")
+				}
+			}
+			if len(got) != len(want) {
+				t.Fatalf("speculative %d tokens vs %s %d", len(got), name, len(want))
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("two-model speculation diverged from %s at token %d: %d vs %d", name, i, got[i], want[i])
+				}
+			}
+			t.Logf("%s: two-model speculation == %s over %d tokens; %d rounds; multi-row launches %d, lane launches %d inside", mode.name, name, len(got), g.Spec.Rounds, rowsIn, laneIn)
+		})
+	}
+}

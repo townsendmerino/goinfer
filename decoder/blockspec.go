@@ -200,6 +200,10 @@ func (s *BlockSpec) Generate(prompt []int, opt BlockSpecOptions) ([]int, int, er
 // tokens per round instead of at the end.
 func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) (out []int, rounds int, err error) {
 	m, host, rd, dw := s.m, s.host, s.rd, s.dw
+	// Defense in depth, and NOT load-bearing today: this loop takes no M=1 decode step (it seeds through a batched pass and then only verifies), so with the
+	// multi-row verify lane off its verify rows are exact whether or not this scope is held — removing it does not change TestFlashDecodeBlockSpecLane's outcome
+	// (checked: the mutant survives). It is here so a future edit that adds an M=1 step to this loop cannot silently mix trees. Counted, so GenerateStream's hold nests.
+	defer m.enterExactAttention()()
 	width := opt.VerifyWidth
 	if width <= 0 {
 		width = defaultVerifyWidth

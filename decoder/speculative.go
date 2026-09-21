@@ -118,6 +118,9 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 	out := make(chan int)
 	stats := &SpecStats{}
 	g := &Generation{Spec: stats}
+	// Held so decode and verify cannot use different attention trees. Not load-bearing for THIS loop today (it seeds and verifies in batches and takes no M=1
+	// step, so its rows are exact whether or not the scope is held; TestFlashDecodeTwoModelSpecLane's mutant survives) — kept as defense in depth. The n-gram loop is
+	// the one that needs it (TestFlashDecodeSpeculativeScope kills its mutant).
 	leaveExact := target.enterExactAttention() // decode and verify must share one attention tree
 	go func() {
 		defer close(out)

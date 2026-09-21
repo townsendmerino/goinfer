@@ -304,6 +304,35 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			}
 			return target.forwardN(ctx, seq, tc)
 		}
+		// ARGMAX-ONLY VERIFY (greedy, resident, no tracer): the accept decision compares each draft token with the target's argmax, so the full logits row
+		// per verified row — 608 KB of device-to-host at a 152k vocab, plus a host argmax over it — is pure overhead. A one-row round (no draft, i.e. a plain decode
+		// step) takes the same device-argmax fast path Model.Generate uses (ResidentGreedy: a 4-byte readback); a multi-row round takes the batched argmax pass block
+		// speculation already verifies with (PrefillLastNArgmax). The ids equal the logits path's argmax (TestPrefillLastNArgmax_matchesPerRow; the M=1 path is the one
+		// plain decode takes), so output is unchanged. Any error falls back to the full-logits ForwardN once and turns this path off, so a backend whose batched pass
+		// declines (MoE) keeps working. nil when not applicable.
+		var idsVerify func(seq []int, base int) ([]int, error)
+		if resident && !sampled && tr == nil {
+			rg, hasG := target.resident.(ResidentGreedy)
+			av, hasAV := target.resident.(interface {
+				PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
+			})
+			if hasG || hasAV {
+				idsVerify = func(seq []int, base int) ([]int, error) {
+					if len(seq) == 1 && hasG {
+						id, e := rg.ForwardArgmax(target.embedResident(seq[0]), base)
+						return []int{id}, e
+					}
+					if !hasAV {
+						return nil, fmt.Errorf("decoder: no argmax-only batched verify on this resident")
+					}
+					embs := make([][]float32, len(seq))
+					for i, tok := range seq {
+						embs[i] = target.embedResident(tok)
+					}
+					return av.PrefillLastNArgmax(embs, base)
+				}
+			}
+		}
 		targetTruncate := func(keep int) {
 			tpos = keep
 			if resident {
@@ -408,7 +437,12 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			// 1. Draft up to K tokens from the context ending at cur (zero on a miss).
 			lookupBuf = append(lookupBuf[:0], hist...)
 			lookupBuf = append(lookupBuf, cur)
-			proposed := drafter.Draft(lookupBuf, K)
+			// When the depth controller is already at 0 for any proposal (its acceptance estimate says even one node is not worth it, and no probe is due),
+			// the round is a plain decode step, so the drafter's scan of the whole context (88 us at 4.9k tokens, growing with it) is skipped.
+			var proposed []int
+			if ad == nil || ad.Depth(K) > 0 {
+				proposed = drafter.Draft(lookupBuf, K)
+			}
 			// Fixed K verifies the whole proposal; the adaptive controller trims it to
 			// the depth its running acceptance estimate still justifies (04).
 			draftTok := proposed
@@ -442,10 +476,19 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			base := tpos
 			seqBuf = append(seqBuf[:0], cur)
 			seqBuf = append(seqBuf, draftTok...)
-			logitsN, err := targetVerify(seqBuf, base)
-			if err != nil {
-				g.err = err
-				return
+			var logitsN [][]float32
+			var ids []int
+			var err error
+			if idsVerify != nil {
+				if ids, err = idsVerify(seqBuf, base); err != nil || len(ids) != len(seqBuf) {
+					idsVerify, ids = nil, nil // fall back, permanently, to the full-logits path below
+				}
+			}
+			if ids == nil {
+				if logitsN, err = targetVerify(seqBuf, base); err != nil {
+					g.err = err
+					return
+				}
 			}
 
 			// 3. Verify each draft position. Greedy: accept while draftTok[i] equals the
@@ -484,7 +527,12 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 						ph = append(ph, draftTok[i]) // advance to the next position's history
 					}
 				} else {
-					ti := argmax(logitsN[i])
+					var ti int
+					if ids != nil {
+						ti = ids[i]
+					} else {
+						ti = argmax(logitsN[i])
+					}
 					acc = draftTok[i] == ti
 					if tr != nil {
 						pTop1, pEnt, pTok := targetDist(logitsN[i], draftTok[i])
@@ -513,7 +561,11 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				if sampled {
 					nextTok = sampler.drawTarget(logitsN[kEff], ph)
 				} else {
-					nextTok = argmax(logitsN[kEff])
+					if ids != nil {
+						nextTok = ids[kEff]
+					} else {
+						nextTok = argmax(logitsN[kEff])
+					}
 				}
 			}
 			stats.Accepted += accepted
