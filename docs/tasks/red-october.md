@@ -391,7 +391,7 @@ Status table, kept current as briefs move:
 |---|---|---|---|---|
 | R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | **DECIDED 2026-09-21: KILLED on speed.** 2026-09-20 correction: the 2026-09-19 "catastrophic bug" was the oracle, not the kernel. Gate (3) then PASSED cleanly 2026-09-21 (f16 slightly *more* faithful than shipped W4A8 against a CPU reference) — but served tok/s at the 1.5B decision cell is 75.2 vs W4A8's 73.1 (1.03×), below even the 1.10× killed floor; the depth curve confirms a flat ~2-4% gain everywhere, nowhere near the 1.25× ship bar. Kernel and tests kept, lane stays off by default — see the records |
 | R2 | Metal decode attention in the peer's shape | Mac | M–L | step 0 done 2026-09-18 (gap narrowed to 1.96× at 3900). Build PARKED 2026-09-19 on an end-to-end divergence at the 3rd decode token; 2026-09-20 follow-up fixed a real race (not the cause) and narrowed it to "position-linked, mechanism unknown". **UN-PARKED 2026-09-21: root cause found — not a kernel defect.** On identical inputs `attention_fa` matches the shipped kernel to ≤1e-5 at every layer and step; the divergence was one int8 activation-quantization rounding crossing (layer 16, position 1602) on accumulated f32 reduction-order noise through a hypersensitive Gaussian-noise input — a shipped-kernel run with a 1e-6 residual nudge reproduces it. **Gate (3) then PASSES on real prompts at K=3900** (hard flips 68 vs 70, agreement 80.3% vs 79.5%, mean KL 0.4859 vs 0.4861). **Speed band, same day: KILLED** — depth bench median-of-3: 44.9 tok/s at 4000 vs shipped 37.8 (1.19×), 54.9 vs 49.4 at 2048 (1.11×), identical at 128/512; the band's kill line is 48 at 4000. Served harness agrees (39.1 → 46.4 at 3900; Ollama flat). A real, fidelity-clean 1.19× that misses the peer-parity band; whether to enable it anyway is an open owner decision, lane stays off — see `docs/measurements/r2-attn-fa-rootcause-2026-09-21.md`, `r2-attn-fa-speed-2026-09-21.md` |
-| R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | **SHIPPED 2026-09-20, startPos-speed closed 2026-09-21**: §3.2 gate SHIPS at K=64 alone and K=64+128 pooled; batched beats sequential TTFT 3.83× at K=64, 4.66× at K=128 (both past the ≥2× band) — floor moved 256→64. `startPos>0` speed now measured too: 4.01×/4.13× at K=64/128 from a realistic 512-token resident prefix, confirming no regression at the shape that matters in production. `noHead`/M-01 follow-on still open, unattempted (build item, needs scope decision) |
+| R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | **SHIPPED 2026-09-20, startPos-speed closed 2026-09-21**: §3.2 gate SHIPS at K=64 alone and K=64+128 pooled; batched beats sequential TTFT 3.83× at K=64, 4.66× at K=128 (both past the ≥2× band) — floor moved 256→64. `startPos>0` speed now measured too: 4.01×/4.13× at K=64/128 from a realistic 512-token resident prefix, confirming no regression at the shape that matters in production. `noHead`/M-01 follow-on: **already shipped 2026-09-16** (`a1640a6a`, pre-dates R3 itself) — this brief's "still open" note was stale doc drift, corrected 2026-09-21; the ~0.9ms/token claim itself is still unmeasured on a real model |
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
 | R5 | CUDA prefill attention tile — P24 re-scoped with the corrected cap | Linux | M | scoped |
 | R6 | CUDA flash-decode lane — mechanism for the parked spike, then the kernel | Linux | M–L | **lane decision made 2026-09-18 (option 2, §3.2 gate) — build fundable** |
@@ -801,8 +801,10 @@ false-negative ~1.0-1.1× ratio before `GOINFER_METAL_FAST_PREFILL_FLOOR=0` was 
 numbers above emerged. `startPos > 0` was NOT re-tested against the pooled statistical gate — G-08
 already closed that code path's coverage question with a cheaper, targeted correctness test
 (`metal/prefill_startpos_test.go`), and this brief deferred to that rather than re-litigating it.
-The `noHead` executor-job/M-01 follow-on and a `startPos`-on-speed sweep remain unmeasured, left
-for whoever picks this up next.
+A `startPos`-on-speed sweep remained unmeasured at ship time, left for whoever picked this up
+next. (The `noHead` executor-job/M-01 follow-on named alongside it here was, at the time this
+sentence was written, believed still open — corrected below: it had in fact already shipped four
+days earlier, in `a1640a6a`, before this very SHIPPED note was written.)
 
 **`startPos`-on-speed, closed 2026-09-21**
 ([`r3-startpos-speed-2026-09-21.md`](../measurements/r3-startpos-speed-2026-09-21.md)). Measured the
@@ -816,10 +818,25 @@ that actually matters in production, not just at the `startPos=0` shape the orig
 to measure first. No shipped default changes as a result — this closes an open measurement, not a
 new decision.
 
-**Still open, unattempted:** the `noHead` executor-job/M-01 follow-on (real new pipelining code on
-`execJob`/`encodeLogitsCB`/the Metal executor loop, ~0.9 ms/token of currently-unclaimed
-encode-ahead overlap, with a known paged-MoE branch gap in the trunk encoder to design around) —
-this is a build item, not a measurement, and needs a scope decision before anyone starts it.
+**`noHead` executor-job/M-01 follow-on — CORRECTION 2026-09-21: already shipped, this brief's own
+"still open" note was stale doc drift.** Traced via a scoping pass requested after the startPos
+item closed above: `a1640a6a` (2026-09-16, three days after M-01's own synchronous-only closure,
+and — worth naming plainly — four days *before* this very brief's SHIPPED note above was first
+written, on 2026-09-20) shipped the full async version: `execJob.noHead`
+(`metal/model.go:379`), `execLoop` branching on it to pre-encode the next command buffer while the
+current one is still on the GPU (`metal/model.go:1639-1691`), and `ForwardEmbNoLogitsPipe`
+(`metal/backend.go:485`) as the entry point — matching M-01's own Fix-section sketch almost
+verbatim. Paged MoE is declined, not pipelined (`metal/backend.go:475-478`): its per-layer
+route/stage/submit loop needs a host readback mid-token before the next dispatch can even be
+built, which is a structural incompatibility with pre-encoding, not a small extension — genuinely
+pipelining paged MoE would be a separate, larger redesign, not scoped here. Gated by three
+byte-identical tests (`metal/kvonly_prefill_test.go`). **What remains genuinely open:** the
+claimed ~0.9 ms/token overlap has no real-model measurement — only a synthetic-fixture benchmark
+(`BenchmarkForwardNoLogits_SyncVsPipe`, ~4% wall-time win on a trivial trunk too small to carry
+meaningful CPU encode time) — and the population that benefits shrank once R3's own floor dropped
+256→64: only sub-64-token prompts, LoRA-adapter sessions, and speculative-decoding prefill still
+take the sequential/pipelined path today. See `docs/audit-metal-2026-09-12.md` §7 item 1 for the
+fuller correction.
 
 ---
 

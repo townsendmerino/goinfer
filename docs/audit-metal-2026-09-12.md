@@ -1713,15 +1713,29 @@ peer extrapolation was ~25% optimistic; internal projections held within 1.5%):
 Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line and a
 `benchmarks.md` touch.
 
-1. **M-02 + M-01 + G-01** — **CLOSED 2026-09-13** (`6cc862a0`). Floor → 256; `ForwardNoLogits`
-   shipped synchronous rather than as a `noHead` executor job (see M-01's own closure note for the
-   scoped-down fix and the follow-up that stays open); the red test made green. The TTFT ladder
-   re-run this item called for **ran 2026-09-20/21** (`docs/tasks/red-october.md` R3,
-   [`metal-prefill-floor-2026-09-20.md`](measurements/metal-prefill-floor-2026-09-20.md) +
+1. **M-02 + M-01 + G-01** — **CLOSED 2026-09-13** (`6cc862a0`), noHead pipelining **CLOSED
+   2026-09-16** (`a1640a6a`). Floor → 256; `ForwardNoLogits` shipped synchronous first (see M-01's
+   own closure note for the scoped-down fix), then the full async `noHead` bit on `execJob`
+   shipped three days later — `execJob.noHead` (`metal/model.go:379`), `execLoop` branching on it
+   to pre-encode the next command buffer while the current one is still executing
+   (`metal/model.go:1639-1691`), and `ForwardEmbNoLogitsPipe`
+   (`metal/backend.go:485`) as the entry point. Paged MoE (`g4moe`/`moe` paged) is declined, not
+   pipelined — its per-layer route/stage/submit loop needs a host readback mid-token, which is a
+   structural incompatibility with pre-encoding, not a small extension
+   (`metal/backend.go:475-478`). Gated by three byte-identical tests
+   (`metal/kvonly_prefill_test.go`: `TestForwardNoLogits_byteIdenticalKV`,
+   `TestForwardNoLogits_pagedMoEFallback`, `TestForwardNoLogits_pipelineTransitionParity`). The
+   claimed ~0.9 ms/token overlap has **no real-model measurement** — only a synthetic-fixture
+   benchmark (`BenchmarkForwardNoLogits_SyncVsPipe`, ~4% wall-time win on a trivial trunk, too
+   small to carry meaningful CPU encode time) — so treat the headline number as unverified, not
+   confirmed. The TTFT ladder re-run this item called for **ran 2026-09-20/21**
+   (`docs/tasks/red-october.md` R3, [`metal-prefill-floor-2026-09-20.md`](measurements/metal-prefill-floor-2026-09-20.md) +
    [`r3-startpos-speed-2026-09-21.md`](measurements/r3-startpos-speed-2026-09-21.md)) — floor moved
    256→64, batched beats sequential 3.83-4.66× at `startPos=0` and 4.01-4.13× at the realistic
-   `startPos=512` prefix-reuse shape. Not yet done: the full `noHead`-executor-job version
-   (~0.9 ms/token of unclaimed encode-ahead overlap) — still open, unattempted.
+   `startPos=512` prefix-reuse shape. Note R3's own floor drop (512→64) shrank the population that
+   still benefits from the noHead pipelining down to sub-64-token prompts, LoRA-adapter sessions,
+   and speculative-decoding prefill — a smaller slice of real traffic than when M-01 first scoped
+   this against a 512-token floor.
 2. **M-03** — **CLOSED 2026-09-13** (`f6c222ee`). 32×32 per-simdgroup block, all-lane dequant, A
    staged per threadgroup, exactly as scoped. §3.2 pooled gate SHIPS (see M-03's own closure note);
    the P=256 TTFT re-measurement this item called for **ran 2026-09-18** (`docs/tasks/red-october.md`
