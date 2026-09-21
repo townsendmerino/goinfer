@@ -314,7 +314,7 @@ exp > attention MACs at so400m) and the S-06 NEON transcendentals unwired (R9).
 
 ### 2.9 Speculative decode and concurrency
 
-Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:702` — a loop of
+Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:706` — a loop of
 `Forward`s, one command buffer each); CUDA's 0.25 with the same drafter is the existence proof that
 batching the verify into one command buffer turns speculation from "declines" into 1.2–1.8× on agent
 output (R12). Concurrency has no row on any backend; it is the axis a serving deployment buys, and
@@ -391,7 +391,7 @@ Status table, kept current as briefs move:
 |---|---|---|---|---|
 | R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | **PARKED 2026-09-19: kernel proven correct (gate 1), catastrophic bug found and localized to layer 26's gate/up GEMV, root cause not found — see the record** |
 | R2 | Metal decode attention in the peer's shape | Mac | M–L | step 0 done 2026-09-18 (gap narrowed to 1.96× at 3900). **Build: PARKED 2026-09-19 — attention_fa kernel proven correct in isolation (16/16 adversarial cases), real speed win in isolation (up to 1.26× at K=3900), but diverges starting at the 3rd real decode token past the depth floor; root cause not found — see the record. 2026-09-20 follow-up: a race found+fixed (not the cause); an outside review caught the follow-up's own "call-count, not position" conclusion as drawn from a confounded test (both tried depths shared a mod-4 residue) — corrected: the divergence IS position-linked (a threshold in curNKeys, not a fixed call count), but not to one fixed absolute position either; root cause still open — see `docs/measurements/r2-attn-fa-followup-2026-09-20.md` §2b for the retraction and the corrected data.** |
-| R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | scoped |
+| R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | **SHIPPED 2026-09-20**: §3.2 gate SHIPS at K=64 alone and K=64+128 pooled; batched beats sequential TTFT 3.83× at K=64, 4.66× at K=128 (both past the ≥2× band) — floor moved 256→64. `noHead`/M-01 follow-on and `startPos`-on-speed still open |
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
 | R5 | CUDA prefill attention tile — P24 re-scoped with the corrected cap | Linux | M | scoped |
 | R6 | CUDA flash-decode lane — mechanism for the parked spike, then the kernel | Linux | M–L | **lane decision made 2026-09-18 (option 2, §3.2 gate) — build fundable** |
@@ -644,7 +644,7 @@ moves to the smallest K in {64, 128} at which the §3.2 pooled gate ships; at th
 must beat sequential by ≥2× on TTFT (ships), 1.3–2× parked, below 1.3× the floor stays.**
 
 **Read first.** Audit `M-01`, `M-02` and their closure notes (`6cc862a0` — the floor is 256 today,
-`GOINFER_METAL_FAST_PREFILL_FLOOR` read in `metal/backend.go:526`; `ForwardNoLogits` shipped
+`GOINFER_METAL_FAST_PREFILL_FLOOR` read in `metal/backend.go:530`; `ForwardNoLogits` shipped
 synchronous, the `noHead` executor-job version with ~0.9 ms/token of encode-ahead overlap still
 open), `G-02`/`G-08` (the pooled gate drops missing cells silently and never exercises
 `startPos > 0`, which every prefix-reuse turn uses — fix G-08 as part of this brief, since a
@@ -671,6 +671,21 @@ cells; `docs/env-vars.md` if the default changes.
 
 **Out of scope.** The GEMM (R4), anything on CUDA (its floor is 512 on a gate that failed at 256 —
 a separate question with its own record).
+
+**SHIPPED, 2026-09-20** ([`metal-prefill-floor-2026-09-20.md`](../measurements/metal-prefill-floor-2026-09-20.md)).
+§3.2 pooled gate SHIPS at K=64 alone (critA/B/C all true) and at K=64+128 pooled (S model, new CPU
+f32 reference generated for both K's). Speed: batched beats sequential TTFT by **3.83× at K=64,
+4.66× at K=128** (`bench_peer_prefill.py`, three arms interleaved, n=6) — both well past the ≥2×
+ships band. K=64, the smaller registered candidate, is the new floor. `metalFastPrefillFloor`
+(`metal/backend.go`) moved 256 → 64. A methodology trap caught mid-run: the first two speed
+attempts only toggled `GOINFER_METAL_FAST_PREFILL=1` and left the (separate) floor override unset,
+so the "batched" arm was silently still declining below the old 256 floor in both — producing a
+false-negative ~1.0-1.1× ratio before `GOINFER_METAL_FAST_PREFILL_FLOOR=0` was added and the real
+numbers above emerged. `startPos > 0` was NOT re-tested against the pooled statistical gate — G-08
+already closed that code path's coverage question with a cheaper, targeted correctness test
+(`metal/prefill_startpos_test.go`), and this brief deferred to that rather than re-litigating it.
+The `noHead` executor-job/M-01 follow-on and a `startPos`-on-speed sweep remain unmeasured, left
+for whoever picks this up next.
 
 ---
 
@@ -1299,7 +1314,7 @@ verify cost, and the Metal small-M GEMM is the reason — record it beside P10's
 `docs/spec/00-core.md` and `10-optfwd-gate.md` (the lossless contract and the prompt-form caveat),
 `completed/task-metal-batched-verify-kernel.md` and `completed/metal-batched-verify.md` (the small-M
 verify kernel that measured ~1.13× and was not adopted — P21 is about the command-buffer boundary,
-not that kernel), `metal/backend.go:702` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
+not that kernel), `metal/backend.go:706` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
 (`decoder/residency.go` — the interface that now reports whether the verify is batched; wire it
 truthfully), `task-peer-benchmarks.md` (W7's definition; the MLX quant caveat), `scripts/bench_peer.py`
 (the `mlx` engine branch; `BENCH_VISION=1`; `scripts/bench_peer_transcript.py` for W4/W7).

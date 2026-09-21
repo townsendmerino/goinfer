@@ -563,6 +563,26 @@ full record for the per-interval table and what step 2 being killed does and doe
 R4's remaining scope (attention, MoE prefill, and the short-prompt floor stay out of scope here
 and are R2/R11/R3's respective territory).
 
+#### Metal short-prompt prefill floor — R3, 2026-09-20
+
+**Floor lowered 256 → 64 tokens.** Full record:
+[`metal-prefill-floor-2026-09-20.md`](measurements/metal-prefill-floor-2026-09-20.md). Same setup
+as the R4 table above (goinfer `aaf73268`, Ollama v0.32.5, M1 Pro 16 GB, S model int4), depths
+below R4's own 256 floor: `scripts/bench_peer_prefill.py --backend metal --models 1.5B --depths
+32,64,128,256 --n 6`, batched arm forced past the *pre-existing* floor via
+`GOINFER_METAL_FAST_PREFILL_FLOOR=0` to measure what it would do there.
+
+| K | goinfer exact | goinfer fast | fast / exact | Ollama |
+|---|---|---|---|---|
+| 32  | 104.9 | 263.4 | 2.51× | 328.7 |
+| 64  | 95.4  | 365.5 | **3.83×** | 485.6 |
+| 128 | 90.6  | 422.2 | **4.66×** | 639.5 |
+| 256 | 86.1  | 337.6 | 3.92× | 782.6 |
+
+Both K=64 and K=128 clear the registered ≥2× ships band by a wide margin, and both pass the §3.2
+pooled fidelity gate (K=64 alone and K=64+128 pooled; see the record). K=64, the smaller
+candidate, is the new floor. `metal/backend.go`'s `metalFastPrefillFloor` moved from 256 to 64.
+
 #### Vision tower CPU prefill — re-measured 2026-09-08
 
 **SigLIP/Gemma 3 tower** (`gemma-3-4b-it`, 896², 4096 patches) and **Qwen2.5-VL tower**

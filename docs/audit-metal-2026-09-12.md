@@ -105,7 +105,7 @@ re-baked by the code it checks (G-04).
 
 #### M-01 · `ResidentPrefillKV` is not implemented on Metal — every sequential prompt token runs the full int8 LM head and a 608 KB readback for logits nobody reads
 - **Where:** `decoder/model.go:1250` (`kvOnly, hasKV := m.resident.(ResidentPrefillKV)`),
-  `decoder/residency.go:146-109`; `metal/backend.go:387-573` (the complete `metalResident` method
+  `decoder/residency.go:146-109`; `metal/backend.go:387-577` (the complete `metalResident` method
   set — no `ForwardNoLogits`); `metal/model.go:1575-1440` (`encodeLogitsCB`, the only executor job
   shape, always appends `pGemvW8`); `metal/model.go:1441-1326` (`forwardHiddenNoHead` — the
   trunk-only encode already exists, used only by `HiddenLast`); `metal/model.go:1500`
@@ -169,6 +169,10 @@ re-baked by the code it checks (G-04).
   Verified: `go test ./metal/...` (79 pass) and `-tags goinfer_testhooks` (129 pass, 52 skip) both
   green, `go test ./decoder/...` (488 pass), gofmt clean, staticcheck clean (same pre-existing
   U1000s as `main`, none new).
+- **Follow-up, 2026-09-20 (R3, `docs/tasks/red-october.md`).** The floor moved again: 256 → 64.
+  §3.2 pooled gate ships at K=64 alone and at K=64+128 pooled (S model); the batched arm beats
+  sequential TTFT by 3.83× at K=64 and 4.66× at K=128, both past the ≥2× ships band. Full record:
+  [`metal-prefill-floor-2026-09-20.md`](measurements/metal-prefill-floor-2026-09-20.md).
 
 #### M-03 · `gemm_w4f16_store` dequants each weight tile with 8 of 32 lanes, runs 4 MMAs per barrier pair, and stages neither operand — the flat 3.3–3.6× GEMM term at every K
 - **Where:** `metal/prefill.go:64-119` (kernel; `if (lane < 8u)` dequant at `:87-92`, `RPS 4` at
@@ -243,7 +247,7 @@ re-baked by the code it checks (G-04).
 #### M-05 · MoE batched prefill runs the FFN half as M sequential rows; paged/DeltaNet families prefill as M decode tokens — bounded by M × active-expert bytes, undocumented
 - **Where:** `metal/prefill.go:867-674` (`for m := 0; m < M; m++ { … r.encodeMoEExperts(e, L, moeDst) }`),
   `metal/moe.go:709-682`; `metal/model.go:779-718` (paged/g4moe/DeltaNet → `prefillOK=false`);
-  `metal/backend.go:559-458` (`PrefillPath` reports "batched f16-MMA" for it);
+  `metal/backend.go:563-458` (`PrefillPath` reports "batched f16-MMA" for it);
   `docs/tasks/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").
 - **Mechanism and bound (counted):** non-paged: per row per MoE layer (5 + 3k [+3–5 shared])
   dispatches and a full read of the k routed experts — bytes ≈ M × L × k·3·H·I/2: Qwen1.5-MoE-class
@@ -942,7 +946,7 @@ re-baked by the code it checks (G-04).
   discriminates: fails red (2368 vs 2560 bytes) with the fix reverted, passes with it restored.
 
 #### C-02 · `HiddenLast` (serve `/v1/embeddings`), `Forward(id,pos)` and `ForwardArgmax` on a paged MoE bind the zero-value stacked-expert buffers — C-08's defect on three more entry points
-- **Where:** `metal/backend.go:636-564` (`HiddenLast` → `forwardHiddenNoHead` per position),
+- **Where:** `metal/backend.go:640-568` (`HiddenLast` → `forwardHiddenNoHead` per position),
   `metal/model.go:1441-1316` (→ `encodeTrunkInto` → `encodeLayer`, `:1808-1813` — no paged branch;
   paging lives only in `Forward`'s dispatch to `forwardLogitsPaged`, `:1241`), `metal/moe.go:300-291`
   ("expGuW/expGuS/expDW/expDS stay zero-value when paged"), `:651-659` (bound unconditionally);
@@ -1076,7 +1080,7 @@ re-baked by the code it checks (G-04).
 
 #### G-01 · `TestMoE_declinesPrefill` has been red on every Metal box since the 512 floor landed; three commits carry it as "pre-existing, unrelated"
 - **Where:** `metal/moe_model_test.go:302,321-327` (8 embeddings; sets `GOINFER_METAL_BATCHED_PREFILL=1`
-  only), `metal/backend.go:552-431` (floor check precedes `prefillOK`); log lines 859, 909, 1213.
+  only), `metal/backend.go:556-431` (floor check precedes `prefillOK`); log lines 859, 909, 1213.
 - **Mechanism:** 8 < 512 ⇒ decline ⇒ `Fatalf` before any MoE code runs; the admit-side MoE-vs-dense
   check C-08's fix relies on has not run green since the floor. A `go test ./metal/` that is always
   red trains everyone to ignore it.
@@ -1432,7 +1436,7 @@ re-baked by the code it checks (G-04).
 - N-24 `metal/moe.go:30-37,622` — f32 router weight: 84 MB/token on the 35B (deliberate, ≤0.4 ms).
   `moe_route` on one GPU thread (deliberate, value-independent dispatch; ~10% of a fitting ~5 ms
   MoE token).
-- N-25 `metal/backend.go:636-576` — `HiddenLast` is one synchronous command buffer per position
+- N-25 `metal/backend.go:640-580` — `HiddenLast` is one synchronous command buffer per position
   (≈K × 13–18 ms; ~7–9 s for 512 tokens) where the batched trunk would take ~1.8 s; the stated
   rationale ("declined by default") is stale. Fix is `PrefillLast` minus its last two dispatches.
   **PARTIALLY CLOSED 2026-09-13**: the stale rationale was real — `HiddenLast`'s doc comment said
@@ -1445,7 +1449,7 @@ re-baked by the code it checks (G-04).
   kind of S-cell tolerance gate PrefillLast passed, verified against the current sequential
   `HiddenLast` as the oracle) — left as follow-up work, not attempted same-sitting, similar to
   M-05/M-15's treatment.
-- N-26 `metal/backend.go:697` (retargeted 2026-09-16: `ForwardN` itself was rewritten by the aikit
+- N-26 `metal/backend.go:701` (retargeted 2026-09-16: `ForwardN` itself was rewritten by the aikit
   v1.44.0 batch/pipeline optimization pass to actually batch into one command buffer, which is what
   this finding asked for — frozen record below describes the PRE-fix state) — `ForwardN` is a
   per-token loop allocating 608 KB per row; cold

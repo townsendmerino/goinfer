@@ -488,18 +488,22 @@ func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
 
 // metalFastPrefillFloor is the PROMPT-LENGTH floor (whole prompt = startPos+M) below which
 // the f16-MMA batched pass declines and the sequential per-token loop runs instead. Lowered to
-// 256 (2026-09-12, audit-metal-2026-09-12.md M-02): the K=256 "expected to fail §3.2" this floor
-// was originally set against is CUDA's own combined L2+L3 result, not Metal's — Metal's K=256
-// decision cell has PASSED on both the ref-B gate (docs/measurements/prefill-gate-l1-ref-
-// b-2026-09-09.md) and the fused-attention gate (prefill-l2-metal-fused-attn-2026-09-09.md).
-// Going lower needs one more passing decision cell at the new depth (the harness already
-// parameterises FLOOR via GOINFER_METAL_FAST_PREFILL_FLOOR, 0 = no floor).
-const metalFastPrefillFloor = 256
+// 64 (2026-09-20, R3, docs/tasks/red-october.md and docs/measurements/metal-prefill-floor-
+// 2026-09-20.md): the §3.2 pooled gate SHIPS at K=64 alone (critA/B/C all true, S model) and at
+// K=64+128 pooled together, and the batched arm beats sequential on served TTFT by 3.83x at
+// K=64 and 4.66x at K=128 (bench_peer_prefill.py, three arms interleaved, n=6) — both well past
+// the >=2x ships band, not just the fidelity precondition. K=64 is the smaller of the two
+// registered candidates {64, 128}, so it is the new floor per the brief's own decision rule.
+// Previously lowered to 256 (2026-09-12, audit-metal-2026-09-12.md M-02). Going lower than 64
+// needs one more passing decision cell at the new depth (the harness already parameterises
+// FLOOR via GOINFER_METAL_FAST_PREFILL_FLOOR, 0 = no floor).
+const metalFastPrefillFloor = 64
 
 // metalFastPrefillEnabled reports whether the batched f16-MMA prefill path is selected.
 //
-// Default ON above metalFastPrefillFloor (256 tokens, M-02) since §3.2 gate (TestPrefillGateVsReference)
-// passed 2026-09-09 (S model, K=256/512/1024). GOINFER_METAL_FAST_PREFILL=0/false/off or
+// Default ON above metalFastPrefillFloor (64 tokens, R3) since §3.2 gate (TestPrefillGateVsReference)
+// passed 2026-09-20 (S model, K=64/128 pooled and K=64 alone; see docs/measurements/metal-
+// prefill-floor-2026-09-20.md). GOINFER_METAL_FAST_PREFILL=0/false/off or
 // --exact-prefill to opt out.
 //
 //	GOINFER_METAL_FAST_PREFILL  1 | true | on   on (even below the floor — for tests)
@@ -517,7 +521,7 @@ func metalFastPrefillEnabled() bool {
 	if v := strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_BATCHED_PREFILL"))); v != "" {
 		return v == "1"
 	}
-	return true // §3.2 gate passed 2026-09-09 (S cells K=256/512/1024; D7 skipped — fit-guard on 16GB)
+	return true // §3.2 gate passed 2026-09-09 (S cells K=256/512/1024); floor lowered to 64 2026-09-20 (R3)
 }
 
 // metalFastPrefillFloorFor returns the prompt-length floor, allowing experiment or escape.
@@ -553,8 +557,8 @@ func metalFusedAttentionEnabled() bool {
 }
 
 // PrefillPath (decoder.PrefillPathReporter) reports at load time whether this resident will use
-// the batched f16-MMA path. Default ON above metalFastPrefillFloor (256 tokens, M-02) since §3.2
-// gate passed 2026-09-09. The floor applies per-call; PrefillPath reports true iff the enabled
+// the batched f16-MMA path. Default ON above metalFastPrefillFloor (64 tokens, R3) since §3.2
+// gate passed 2026-09-20. The floor applies per-call; PrefillPath reports true iff the enabled
 // state AND arch both allow batching.
 func (a *metalResident) PrefillPath() (bool, string) {
 	if !a.r.prefillOK {
