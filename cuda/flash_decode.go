@@ -46,12 +46,11 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 			return
 		}
 	}
-	comb, e := r.dev.NewComputePipeline(mod, "fa_combine")
-	if e != nil {
+	if r.faCombine, e = r.dev.NewComputePipeline(mod, "fa_combine"); e != nil {
 		fmt.Fprintf(os.Stderr, "[cuda] GOINFER_CUDA_FLASH_DECODE ignored: %v\n", e)
 		return
 	}
-	r.faPartial, r.faCombine = pipes, comb
+	r.faPartial = pipes
 	r.faBuf = r.af(r.nH * s * faWarps * (maxHd + 4))
 	r.faMinKeys = flashDecodeDefaultMinKeys
 	if v, err := strconv.Atoi(os.Getenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS")); err == nil && v >= 0 {
