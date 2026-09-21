@@ -312,6 +312,10 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		}
 		return outs[len(outs)-1], nil
 	}
+	// The non-final passes are tailKVOnly; they belong to this prompt's prefill and take the kernels its FINAL tail takes (see chunkOrdinary).
+	r.chunkOrdinary = finalTail == tailLastLogits
+	r.chunkPromptLen = startPos + M
+	defer func() { r.chunkOrdinary, r.chunkPromptLen = false, 0 }()
 	for i := 0; i < M; {
 		// Between passes: the coarsest of the two checks, and the one that bounds a cancelled
 		// request to a single chunk's work instead of the whole prompt.
@@ -794,13 +798,16 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	// The fast-prefill floor is judged on the WHOLE prompt, so record it once here rather than
 	// letting each selector see only this chunk's M (prefillChunked passes <=512 rows at a time).
 	r.passPromptLen = startPos + M
+	if r.chunkPromptLen > r.passPromptLen {
+		r.passPromptLen = r.chunkPromptLen // a chunk of a longer prompt: the floor is the prompt's, not this pass's
+	}
 	// M-09/M-10/M-11 (docs/audit-2026-09-10.md): every tail EXCEPT tailLastLogits (ordinary
 	// single-row prefill) needs decode-identical numerics — HiddenLast's bit-identity contract,
 	// speculative verify's "verify == sequential greedy" invariant — so the fast L2/L3 levers,
 	// which are cosine-close but not proven bit-identical, must not engage for those tails. See
 	// forceExactKernels's own doc comment (cuda/resident.go) for why this is a field rather than a
 	// parameter threaded through bGemvB's ~20 call sites.
-	r.forceExactKernels = tail != tailLastLogits
+	r.forceExactKernels = tail != tailLastLogits && !(tail == tailKVOnly && r.chunkOrdinary)
 	maxQDim, maxKvDim := r.prefillMaxGeom()
 	hidden, inter := r.hidden, r.inter
 
@@ -1040,8 +1047,10 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: fsh}
 				if hd == 64 {
 					attnErr = r.launch(r.bAttnFused64, fcfg, attnArgs...)
+					r.fastAttnLaunches++
 				} else {
 					attnErr = r.launch(r.bAttnFused128, fcfg, attnArgs...)
+					r.fastAttnLaunches++
 				}
 			} else {
 				attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
@@ -1588,6 +1597,7 @@ func (r *cudaResident) bGemvB(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffe
 				GridX: uint32((wt.N + gemmMMABN - 1) / gemmMMABN),
 				GridY: uint32((M + gemmMMABM - 1) / gemmMMABM), GridZ: 1,
 				BlockX: gemmMMAThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: gemmMMAShmem()}
+			r.fastGemmLaunches++
 			return r.launch(r.bGemmMMA, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
 				gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/8)), gpu.ArgValue(int32(wt.K/32)),
 				gpu.ArgValue(int32(M)), Arg(dst), gpu.ArgValue(accum))

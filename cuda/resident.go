@@ -684,7 +684,18 @@ type cudaResident struct {
 	// existing cosine-gated tolerance already applies and always has); the drafter's own forward
 	// (cuda/drafter.go) never touches this field, so its bGemvB calls are unaffected — a proposal
 	// never needs to be bit-identical to anything, only the target's verify of it does.
-	forceExactKernels                                       bool
+	forceExactKernels bool
+	// chunkOrdinary is set by prefillChunked for the duration of a multi-chunk prefill whose FINAL tail is the ordinary tailLastLogits: its non-final passes (tailKVOnly) are part of that
+	// same prompt prefill and must get the same kernels as the final pass. Without it forceExactKernels (tail != tailLastLogits) demoted EVERY non-final chunk to the exact path —
+	// M-09/M-10/M-11 meant to protect verify and hidden-state tails, but a prompt over one chunk (512 rows) then ran 7 of 8 chunks on the slow exact GEMM and attention at K=3900
+	// (5.0 s against 1.1 s, docs/measurements/prefill-chunk-demotion-2026-09-21.md). A HiddenLast prefill (tailHiddenLast) leaves it false, so every one of its chunks stays exact.
+	chunkOrdinary bool
+	// chunkPromptLen is the WHOLE prompt's length (startPos + all rows), set by prefillChunked for the duration of a multi-chunk prefill so the fast-prefill floor is judged on the prompt and not on
+	// the prompt-so-far: passPromptLen is startPos+M of THIS pass, so a first chunk narrower than the floor (chunk < 512: the OOM-halving path, or GOINFER_PREFILL_CHUNK) ran the exact kernels and
+	// its later chunks the fast ones, mixing numerics inside one prompt (TestPrefillChunked_bitIdentical, chunk=300). Zero outside a chunked prefill.
+	chunkPromptLen int
+	// fastAttnLaunches / fastGemmLaunches count attn_fused and gemm_w4a8_mma launches, so a test can prove WHICH kernels a prefill pass used rather than infer it from timing.
+	fastAttnLaunches, fastGemmLaunches                      int
 	fRoute, fRouterGemv, fMoEGemv, fMoEWacc, fSharedCombine Pipeline
 	fMoEWaccBias                                            Pipeline // gpt-oss: wacc + per-expert down bias
 	fRouterF32, fScaleWgt, fRmsNW, fScaleVec                Pipeline // gemma4 MoE (router_f32 module)

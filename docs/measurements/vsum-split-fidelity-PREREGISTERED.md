@@ -89,7 +89,7 @@ this prediction is written down rather than recalled afterwards.
 
 ## What a PASS does and does not buy
 
-A pass does **not** flip the default. `cuda/prefill.go:697` records the invariant: the exact path
+A pass does **not** flip the default. `cuda/prefill.go:701` records the invariant: the exact path
 "remains bit-identical to the M=1 decode kernels, remains what spec-decode verify and the parity
 gates run". Promoting the spike breaks (1) `TestSplitKV_bitIdentical` by construction, (2)
 spec-decode losslessness — `--drafter` and `--spec ngram` ship *gated lossless*, which holds only

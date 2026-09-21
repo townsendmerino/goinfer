@@ -195,6 +195,8 @@ any surface may still change.
 
 ### Fixed
 
+- **CUDA prefill of any prompt longer than 512 tokens ran all but its last 512-row chunk on the slow exact kernels (v0.19.0 included).** The M-09/M-10/M-11 audit fix (2026-09-10) forced the exact GEMM and attention for every pass whose tail is not `tailLastLogits`, to keep speculative-verify and embedding tails decode-identical — but the non-final chunks of a long prompt use a KV-only tail, so they were demoted too: at 3900 tokens on the 1.5B, 5.0 s instead of 1.4 s (3.5x; 2.4-3.3x for 1-3k tokens); prompts of 512 or fewer tokens were unaffected. The fast kernels now serve every chunk of an ordinary prompt (and `HiddenLast` still keeps every chunk exact), and the fast-prefill floor is judged on the whole prompt, not the prompt so far. `TestPrefillChunked_bitIdentical`, red since the audit fix, is green; fidelity gate S K=3900 passes (`docs/measurements/prefill-chunk-demotion-2026-09-21.md`).
+
 - **A CUDA load of a large MoE (gpt-oss-20b) no longer leaves ~17 GB of dead host memory behind.** The Go heap kept the
   build's transient host copies after the weights moved to the device; the decoder now returns them to the OS once a
   resident build succeeds. Measured on gpt-oss-20b with `--backend cuda --moe-cache-experts`: RSS 39.5 GB at peak,
