@@ -335,6 +335,66 @@ DeepSeek), where the shared expert plays the dense branch's role.
 not mean tok/s at a budget where everything hits anyway. Run it at a budget that forces a
 real miss rate.
 
+**SHIPPED 2026-09-21, MacBook (arm64/Metal box, internal SSD) — a genuine, reproducible win,
+default-on.** `decoder/forward_gemma4_moe.go`'s `gemma4MoEFFN` reordered exactly as scoped: the
+router (needs only `h`) now runs first, the expert fills (Lever 1b's pool, or the mmap path)
+are issued on a second goroutine, the dense branch's matmuls run on the calling goroutine
+while that goroutine's fills are in flight, then a `sync.WaitGroup.Wait()` before the moe
+branch reads the (possibly-repointed) expert weights. `expertPager.Lock()`/`Unlock()` still
+spans the whole window (touch through the moe branch's reads), now across the wait boundary
+instead of a purely sequential call — no new locking primitive needed, the pool-mode
+cross-stream protection built for Lever 1b already covers this.
+
+**Correctness gates** (`decoder/gemma4_moe_overlap_test.go`): `TestGemma4MoEFFN_overlapBitIdentical`
+checks the reordered/overlapped output against a fully-resident (no pager) reference across
+many tokens, in BOTH pager modes (mmap and pool), each forced to evict — bit-exact in both.
+`TestGemma4MoEFFN_overlapConcurrentStreamsNoCorruption` stresses the same cross-stream hazard
+Lever 1b's own test closes, at this call site instead of the pool level (many simulated
+concurrent decode streams sharing one pool-mode pager); verified to have real teeth the same
+way Lever 1b's did — temporarily removing the `Lock()`/`Unlock()` calls reproduced a consistent
+~3% wrong-output rate (7-8/240 calls) across 5 reps, confirming the test catches the exact
+failure it exists to catch. The pre-existing `TestGemma4MoEFFN_parity` golden (f32, no pager)
+also stayed bit-exact through the reordering (cosine 1.00000000, unchanged from before this
+lever). One real fixture pitfall found and worked around: `WeightMat.MappedSpan`'s page-
+rounding returns an EMPTY span for sub-page synthetic tensors on Apple Silicon's 16 KB pages
+(the same limitation `moepaging_test.go`'s own `newRealMmapPager` doc comment names) — the
+correctness-test fixture had to use production-representative per-expert sizes, not toy ones,
+before the mmap-mode pager would manage it at all.
+
+**Measurement** (same-session A/B, mirroring Levers 1a/1b's own discipline; scaffolding
+deleted after recording): `gemma4MoEFFN` (overlapped) vs a test-local
+`gemma4MoEFFNSequential` (the pre-lever order, same math) — same fixture at ~3 MB/expert
+(matching this doc's own "one expert ≈ 3.0 MB at int4" arithmetic), same pool-mode pager, a
+4-of-32-experts-resident budget forcing heavy real eviction (misses=398, evictions=390 over 60
+tokens, identical in both arms — the apples-to-apples check). Each arm got its OWN fresh
+fixture (pool mode REPOINTS the expert `WeightMat`s in place on every fill, so a second arm
+reusing the first arm's already-mutated structs would find they no longer alias the mmap at
+all and `buildExpertField` correctly rejects them — a real pitfall hit and fixed before
+trusting any number, the same "disjoint arms" lesson Levers 1a/1b's own benches already
+learned, for a different underlying reason here: mutation, not page-cache warmth).
+
+Eight reps, arm order swapped halfway through to rule out an ordering/warm-cache artifact:
+
+| rep | order | ratio (sequential/overlapped) |
+|---|---|---|
+| 1 | seq-first | 0.90x (outlier — see below) |
+| 2 | seq-first | 1.15x |
+| 3 | seq-first | 1.14x |
+| 4 | seq-first | 1.16x |
+| 5 | seq-first | 1.15x |
+| 6 | seq-first | 1.12x |
+| 7 | overlap-first | 1.13x |
+| 8 | overlap-first | 1.19x |
+| 9 | overlap-first | 1.09x |
+
+Consistent **~1.09x-1.19x favoring overlap** across 8 of 9 reps, independent of which arm ran
+first (rules out warm-cache/ordering bias) — rep 1's 0.90x reads as a cold-start artifact (the
+first invocation of a freshly-built test binary) rather than a real signal, given how tightly
+the other 8 cluster. A genuine, modest, reproducible win, and — unlike Lever 1a (reverted,
+net-harmful) and Lever 1b (shipped opt-in, a net throughput cost traded for a real RAM cap) —
+this one has no downside to weigh: same correctness, same lock discipline, strictly less wall
+time. Shipped as the new default behavior, no env var gate.
+
 ## Parked candidate — int32-per-group GEMV (opens IMMA, at a parity-refresh price)
 
 The batched prefill GEMV (`cuda/gemv_w4a8_batched.cu`, milestone 1) is a **weight-stationary

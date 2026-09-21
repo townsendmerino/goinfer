@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"math"
+	"sync"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -42,35 +43,30 @@ type gemma4MoEWeights struct {
 // gemma4MoEFFN applies the sub-block to one token's post-attention residual h
 // ([hidden]) and returns the layer output ([hidden]). Position-independent, so the
 // decode loop calls it per token.
+//
+// Lever 3 (task-moe-streaming.md, "overlap routed reads with the resident branch"):
+// the router only needs h (not the dense branch's output), and the dense branch only
+// needs h (not the router's chosen experts) — the two are independent until the join.
+// So the router runs FIRST (to learn which experts to fetch), the expert fills are
+// ISSUED, and the dense branch's matmuls run on the calling goroutine WHILE a second
+// goroutine drives the fills — hiding a cold miss's fault/pread latency behind the
+// dense branch's own compute time instead of paying both serially. Bit-identical
+// either way (dense and moe branches touch disjoint memory and are summed
+// order-independently at the join; TestGemma4MoEFFN_overlapBitIdentical), backend
+// calls untouched (the fill goroutine never touches `be`, only the pager).
 func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeights, pager *expertPager) []float32 {
 	hidden := arch.HiddenDim
 	eps := arch.NormEps
-
-	// dense branch: x1 = post_ffn_norm_1( mlp( pre_ffn_norm(h) ) ), gelu-tanh GeGLU.
 	// The weighted norms follow arch.RMSAddOne (the (1+w) offset) exactly like the
 	// dense forward's normalize(arch, …), so if that flag is ever flipped for gemma4
 	// these five track it rather than silently diverging. false today (Gemma4RMSNorm
 	// is plain x*w); the router's norm at rmsNormNoWeight below is genuinely weightless.
 	addOne := arch.RMSAddOne
-	xd := append([]float32(nil), h...)
-	rmsNorm(xd, w.preFFNNorm, 1, hidden, eps, addOne)
-	gate := make([]float32, w.denseInter)
-	up := make([]float32, w.denseInter)
-	matmul(be, &w.mlpGate, xd, gate, 1)
-	matmul(be, &w.mlpUp, xd, up, 1)
-	for i := range gate {
-		gate[i] = geluTanh(gate[i]) * up[i]
-	}
-	x1 := make([]float32, hidden)
-	matmul(be, &w.mlpDown, gate, x1, 1)
-	rmsNorm(x1, w.postFFNNorm1, 1, hidden, eps, addOne)
-	if routerCapture {
-		routerCaptureDo(func() { routerX1Buf = append(routerX1Buf, append([]float32(nil), x1...)) })
-	}
 
 	// moe branch — router on the RAW residual h (its own weightless RMSNorm + learned
 	// scale + hidden^-0.5), softmax over all experts → top-k → UNCONDITIONAL renorm →
-	// per-expert scale.
+	// per-expert scale. Computed BEFORE the dense branch so idx is known in time to
+	// issue the fills the dense branch's compute below will overlap.
 	rn := append([]float32(nil), h...)
 	rmsNormNoWeight(rn, 1, hidden, eps)
 	root := float32(math.Pow(float64(hidden), -0.5))
@@ -106,17 +102,25 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 		routerCaptureDo(func() { routerMarginBuf = append(routerMarginBuf, minSel-maxRej) })
 	}
 	// Weight residency (idea #2): the router selection is the demand signal. Touch each
-	// chosen expert before its matmuls so the pager faults it in and evicts the LRU tail
-	// to stay within budget. Keyed by the gateUp element address (newExpertPager's key).
-	// Bit-exact — released experts re-fault from the read-only mapping (mmap mode) or are
-	// re-pread (pool mode). Lock/Unlock spans touch AND the matmul reads further below
-	// (the expert loop over w.expertsGateUp/expertsDown) — see expertPager's doc comment.
+	// chosen expert so the pager faults it in and evicts the LRU tail to stay within
+	// budget. Keyed by the gateUp element address (newExpertPager's key). Bit-exact —
+	// released experts re-fault from the read-only mapping (mmap mode) or are re-pread
+	// (pool mode). Issued on a separate goroutine (Lever 3) so the fills run WHILE the
+	// dense branch below computes on the calling goroutine, instead of paying both
+	// serially; Lock/Unlock still spans touch AND the matmul reads further below (the
+	// expert loop over w.expertsGateUp/expertsDown), now across the wg.Wait() boundary
+	// — see expertPager's doc comment for why pool mode needs the lock held that long.
+	var fillWG sync.WaitGroup
 	if pager != nil {
 		pager.Lock()
 		defer pager.Unlock()
-		for _, e := range idx {
-			pager.touch(unsafe.Pointer(&w.expertsGateUp[e]))
-		}
+		fillWG.Add(1)
+		go func() {
+			defer fillWG.Done()
+			for _, e := range idx {
+				pager.touch(unsafe.Pointer(&w.expertsGateUp[e]))
+			}
+		}()
 	}
 	var sum float32
 	for _, v := range topv {
@@ -129,6 +133,32 @@ func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeigh
 	if routerCapture {
 		routerCaptureDo(func() { routerWtsBuf = append(routerWtsBuf, append([]float32(nil), wts...)) })
 	}
+
+	// dense branch: x1 = post_ffn_norm_1( mlp( pre_ffn_norm(h) ) ), gelu-tanh GeGLU.
+	// Runs here — after the fills are issued, before they're waited on — so its compute
+	// overlaps the fill goroutine's I/O (Lever 3). Touches only dense weights (never
+	// paged) and fresh local buffers, disjoint from what the fill goroutine touches, so
+	// this is safe without any lock of its own.
+	xd := append([]float32(nil), h...)
+	rmsNorm(xd, w.preFFNNorm, 1, hidden, eps, addOne)
+	gate := make([]float32, w.denseInter)
+	up := make([]float32, w.denseInter)
+	matmul(be, &w.mlpGate, xd, gate, 1)
+	matmul(be, &w.mlpUp, xd, up, 1)
+	for i := range gate {
+		gate[i] = geluTanh(gate[i]) * up[i]
+	}
+	x1 := make([]float32, hidden)
+	matmul(be, &w.mlpDown, gate, x1, 1)
+	rmsNorm(x1, w.postFFNNorm1, 1, hidden, eps, addOne)
+	if routerCapture {
+		routerCaptureDo(func() { routerX1Buf = append(routerX1Buf, append([]float32(nil), x1...)) })
+	}
+
+	// The moe branch below reads w.expertsGateUp/expertsDown, which the fill goroutine
+	// may still be repointing (pool mode) or fault-servicing (mmap mode) — wait for it
+	// before touching them. A no-op wait when pager == nil (fillWG never Add'd).
+	fillWG.Wait()
 
 	// experts on pre_ffn_norm_2(h): gelu-tanh GeGLU, gate/up = contiguous halves.
 	xe := append([]float32(nil), h...)
