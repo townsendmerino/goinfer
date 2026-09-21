@@ -1128,7 +1128,7 @@ re-baked by the code it checks (G-04).
   — see M-06's closure note for the full test tally.
 
 #### G-04 · The absolute snapshot golden is re-baked by the code it checks after each accepted kernel round; the autoresearch ledger is outside the tree
-- **Where:** `metal/snapshot_golden_test.go:20,177-184` ("the ABSOLUTE STORED REFERENCE";
+- **Where:** `metal/snapshot_golden_test.go:21,201-208` ("the ABSOLUTE STORED REFERENCE";
   `GOINFER_UPDATE_GOLDENS` writes whatever current code produces), `metal/kernels.go:37-29` ("only
   deep-mantissa sha bits move — see the round's own commit"); `docs/tasks/task-autoresearch-loop.md:3`
   ("not started") and §3 ("Do NOT point it at Metal") vs `metal/kernels.go:135,147,729-754` (Metal rounds

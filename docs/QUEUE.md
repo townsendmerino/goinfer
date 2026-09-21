@@ -1208,7 +1208,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/prefill_ttft_test.go:81` | goinfer | `if _, e := rf.PrefillLast(context.Background(), embs, 0); e != nil {` |
 | `docs/audit-metal-2026-09-12.md|metal/profile_test.go:78` | goinfer | `down := prof("down gemv (1536xK8960)", 200, func(r int) { q.Run1DBatch(pGemvR, H*32, 32,` |
 | `docs/audit-metal-2026-09-12.md|metal/residency_probe_test.go:11` | goinfer | `// TestZZ_residencyProbe isolates the per-submit RESIDENCY cost that dominates the paged` |
-| `docs/audit-metal-2026-09-12.md|metal/snapshot_golden_test.go:20` | goinfer | `// TestMetalSnapshotGolden is the ABSOLUTE STORED REFERENCE the Metal gate suite otherwi` |
+| `docs/audit-metal-2026-09-12.md|metal/snapshot_golden_test.go:21` | goinfer | `// TestMetalSnapshotGolden is the ABSOLUTE STORED REFERENCE the Metal gate suite otherwi` |
 | `docs/audit-metal-2026-09-12.md|metal/spec_prefill_regression_test.go:43` | goinfer | `// METAL-SPECIFIC PRECONDITION — GOINFER_METAL_BATCHED_PREFILL=1 IS MANDATORY HERE, and ` |
 | `docs/audit-metal-2026-09-12.md|metal/spec_prefill_regression_test.go:46` | goinfer | `// decode path (54% stream divergence, a figure once measured by TestMetalPrefillDiverge` |
 | `docs/audit-metal-2026-09-12.md|metal/spec_verify_curve_test.go:22` | goinfer | `// path once measured 54% stream divergence, §A2-Metal, docs/ollama-chase.md:623 — histo` |
@@ -1436,7 +1436,7 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|metal/gemma4_moe.go:234` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/model.go:543` | goinfer | `func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:450` | goinfer | `if p := m.GiwPath(); p != "" {` |
-| `docs/tasks/task-int4-layout-2026-09.md|metal/snapshot_golden_test.go:130` | goinfer | `func TestMetalSnapshotGolden(t *testing.T) {` |
+| `docs/tasks/task-int4-layout-2026-09.md|metal/snapshot_golden_test.go:138` | goinfer | `func TestMetalSnapshotGolden(t *testing.T) {` |
 | `docs/tasks/task-l01-hybrid-moe-cpu-gpu.md|cuda/resident.go:2415` | goinfer | `if r.l01Enabled && r.l01CPUMask[j] {` |
 | `docs/tasks/task-moe-streaming.md|decoder/forwardn.go:161` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
 | `docs/tasks/task-moe-streaming.md|decoder/forwardn.go:595` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |

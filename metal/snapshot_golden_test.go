@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -53,8 +54,15 @@ import (
 // `mixtral-tiny` has no embed scale and its entries must NOT move; if they do, something other than
 // G-02 changed and the re-bake should be refused pending investigation.
 //
-// Regenerate too on a hardware change (different Mac). Runs on every `go test` (tiny committed models,
-// no heavy-model dependency). Coverage: mixtral-tiny is full-causal (attention softmax denom over
+// Regenerate too on a hardware change (different Mac). Runs on every `go test` for the two
+// COMMITTED models (mixtral-tiny, llama-attnfa-tiny — no heavy-model dependency, always
+// available). gemma4-dense-scaled (449 MB) is NOT committed — over GitHub's practical push
+// limit, unlike the tiny ones — so it's a local-only fixture regenerated deterministically via
+// `scripts/pin_gemma4_dense_scaled.py`; when it's absent this test skips it and still fully
+// checks the other two (keyed comparison, not positional — see below), rather than failing
+// opaquely or silently losing coverage for the always-available fixtures too (fixed 2026-09-21;
+// every OTHER consumer of that fixture already skipped gracefully, this test was the outlier).
+// Coverage: mixtral-tiny is full-causal (attention softmax denom over
 // >256 keys → the width coupling at multi-iteration depth) + rmsnorm_quant; gemma4-dense-scaled covers
 // rmsnorm_f32 + qk_norm. llama-attnfa-tiny (added 2026-09-21, R2 golden-coverage follow-up) covers
 // `attention_fa`, DEFAULT ON past depth 1536 (metal/model.go's attnFADepthFloor) — the other two
@@ -153,8 +161,24 @@ func TestMetalSnapshotGolden(t *testing.T) {
 	ids := []int{1, 7, 42, 100, 5, 200, 13, 88, 3, 71, 9, 17, 60, 200, 33, 2} // fixed, arbitrary valid ids
 
 	got := snapGolden{Env: snapEnv{OS: macOSVersion()}}
+	skipped := 0
 	for _, mm := range models {
 		name := filepath.Base(mm.dir)
+		// gemma4-dense-scaled (449 MB) is NOT committed — GitHub's practical push limit is well
+		// under that, so it can't be, unlike mixtral-tiny/llama-attnfa-tiny — and every OTHER
+		// consumer of this fixture (metal/gemma4_dense_scaled_test.go, the cuda/gpu prefill tests,
+		// decoder/gemma4_moe_forward_test.go) already skips gracefully when it's absent, pointing
+		// at scripts/pin_gemma4_dense_scaled.py (deterministic, seed 0) to regenerate it. This test
+		// was the one outlier that didn't, so a fresh machine got an opaque t.Fatalf instead of a
+		// clean skip. Skipping one model here must not cost the OTHER (committed, always-available)
+		// fixtures' coverage — see the schema-tolerant comparison below, keyed by (Model,Quant,Depth)
+		// rather than positional/count equality, so mixtral-tiny and llama-attnfa-tiny still get
+		// fully checked on any machine even when this one is locally absent.
+		if _, err := os.Stat(mm.dir + "/model.safetensors"); err != nil {
+			t.Logf("skip %s: no fixture (%v) — run scripts/pin_gemma4_dense_scaled.py to regenerate it locally", name, err)
+			skipped++
+			continue
+		}
 		m, err := decoder.Load(mm.dir, decoder.Options{Quant: mm.quant})
 		if err != nil {
 			t.Fatalf("load %s: %v", mm.dir, err)
@@ -197,6 +221,12 @@ func TestMetalSnapshotGolden(t *testing.T) {
 	}
 
 	if os.Getenv("GOINFER_UPDATE_GOLDENS") != "" {
+		if skipped > 0 {
+			t.Fatalf("refusing to write the golden with %d model(s) skipped (missing fixture) — "+
+				"a partial re-bake would silently DROP those models' entries for every machine that "+
+				"reads this golden afterward. Get every fixture in `models` present locally first "+
+				"(see the skip log above for which is missing and how to regenerate it), then re-run.", skipped)
+		}
 		b, _ := json.MarshalIndent(got, "", "  ")
 		if err := os.WriteFile(snapGoldenPath, append(b, '\n'), 0o644); err != nil {
 			t.Fatalf("write golden: %v", err)
@@ -214,16 +244,32 @@ func TestMetalSnapshotGolden(t *testing.T) {
 		t.Fatalf("parse golden: %v", err)
 	}
 	sameEnv := want.Env == got.Env
-	if len(want.Entries) != len(got.Entries) {
-		t.Fatalf("golden has %d entries, run produced %d — schema changed; regenerate with GOINFER_UPDATE_GOLDENS=1", len(want.Entries), len(got.Entries))
+
+	// Keyed, not positional/count: a model skipped here (fixture missing locally) must not make
+	// this test blind to drift in the models that DID run — it just means the golden has entries
+	// this run has nothing to compare them against, which is expected and reported, not an error.
+	key := func(e snapEntry) string { return e.Model + "|" + e.Quant + "|" + strconv.Itoa(e.Depth) }
+	wantByKey := make(map[string]snapEntry, len(want.Entries))
+	for _, e := range want.Entries {
+		wantByKey[key(e)] = e
 	}
-	mism := 0
-	for i := range got.Entries {
-		if got.Entries[i] != want.Entries[i] {
+	mism, matched, notInGolden := 0, 0, 0
+	for _, ge := range got.Entries {
+		we, ok := wantByKey[key(ge)]
+		if !ok {
+			notInGolden++
+			t.Errorf("NEW checkpoint %s q=%s depth=%d has no golden entry — schema changed; regenerate with GOINFER_UPDATE_GOLDENS=1", ge.Model, ge.Quant, ge.Depth)
+			continue
+		}
+		matched++
+		if ge != we {
 			mism++
 			t.Errorf("DRIFT %s q=%s depth=%d: argmax %d→%d  sha %s→%s",
-				got.Entries[i].Model, got.Entries[i].Quant, got.Entries[i].Depth, want.Entries[i].Argmax, got.Entries[i].Argmax, want.Entries[i].SHA256[:12], got.Entries[i].SHA256[:12])
+				ge.Model, ge.Quant, ge.Depth, we.Argmax, ge.Argmax, we.SHA256[:12], ge.SHA256[:12])
 		}
+	}
+	if skipped > 0 {
+		t.Logf("NOTE: %d model(s) skipped (fixture missing locally) — %d golden entries for them were not exercised this run, not a failure", skipped, len(want.Entries)-matched-notInGolden)
 	}
 	if mism > 0 {
 		// Branch the guidance on env — the difference between "expected on other hardware, do NOT
@@ -243,7 +289,7 @@ func TestMetalSnapshotGolden(t *testing.T) {
 	if !sameEnv {
 		t.Logf("NOTE: entries match but env metadata differs (golden %s/%s vs run %s/%s) — bits happened to coincide; consider refreshing metadata.", want.Env.GPU, want.Env.OS, got.Env.GPU, got.Env.OS)
 	}
-	t.Logf("Metal snapshot: %d checkpoints byte-identical to golden on %s / macOS %s (mixtral-tiny + gemma4-dense-scaled past depth 128/256; llama-attnfa-tiny straddling the attention_fa floor at 1536)", len(got.Entries), got.Env.GPU, got.Env.OS)
+	t.Logf("Metal snapshot: %d/%d checkpoints byte-identical to golden on %s / macOS %s (%d model(s) run, %d skipped)", matched, len(want.Entries), got.Env.GPU, got.Env.OS, len(models)-skipped, skipped)
 }
 
 type snapGolden struct {
