@@ -1127,6 +1127,8 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:387` | goinfer | `func (a *metalResident) ctxCap() int {` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:455` | goinfer | `// ForwardNoLogits (decoder.ResidentPrefillKV) runs the token's forward to build ONLY it` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:456` | goinfer | `// resident K/V — skipping the final norm's LM-head dispatch, the ~1 MB logits readback,` |
+| `docs/audit-metal-2026-09-12.md|metal/backend.go:475` | goinfer | `if (a.r.g4moe != nil && a.r.g4moe.paged) \|\| (a.r.moe != nil && a.r.moe.paged) {` |
+| `docs/audit-metal-2026-09-12.md|metal/backend.go:485` | goinfer | `a.r.ForwardEmbNoLogitsPipe(embedding, pos)` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:584` | goinfer | `return true // §3 gate passed 2026-09-10 (S set B decision cells K=256/512/1024 + K=3900` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:591` | goinfer | `func (a *metalResident) PrefillPath() (bool, string) {` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:668` | goinfer | `// HiddenLast (decoder.ResidentHiddenLast) ingests a whole sequence starting at startPos` |
@@ -1162,9 +1164,11 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/model.go:154` | goinfer | `pSA, pSABias, pSAResid                                             Pipeline // Stage A g` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:1570` | goinfer | `func (r *resident) ForwardEmbPipe(emb []float32, pos int) []float32 {` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:1577` | goinfer | `// Paging tears each MoE layer into two submits with a host readback between — the encod` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:1639` | goinfer | `if cur == nil \|\| curNoHead != job.noHead {` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:2208` | goinfer | `e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, r.uI) // down → scratch` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:2309` | goinfer | `// encodeAttention records one layer's attention block (through the o-proj + residual/sa` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:2397` | goinfer | `// head takes the K branch at base 0+head*hd, a UNIT weight, and addOne=0 → x·rms·1. Run` |
+| `docs/audit-metal-2026-09-12.md|metal/model.go:379` | goinfer | `noHead  bool` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:435` | goinfer | `// []uint32 allocation) plus the f16 group scales. The nibble bytes are byte-for-byte th` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:515` | goinfer | `// packed K/8 words + K/32 scales with no partial-group handling. A K%32 != 0 weight wou` |
 | `docs/audit-metal-2026-09-12.md|metal/model.go:781` | goinfer | `// FFN shape is geometry). Explicit, checked directly rather than assumed caught by the ` |
@@ -1347,8 +1351,12 @@ supports.
 | `docs/spec/README.md|decoder/forwardn.go:212` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/tasks/red-october.md|cuda/resident.go:249` | goinfer | `case nKV*hd >= splitkvNeverKVFloats:` |
 | `docs/tasks/red-october.md|decoder/sampler.go:222` | goinfer | `func (s *Sampler) ArgmaxEquivalent() bool {` |
+| `docs/tasks/red-october.md|metal/backend.go:475` | goinfer | `if (a.r.g4moe != nil && a.r.g4moe.paged) \|\| (a.r.moe != nil && a.r.moe.paged) {` |
+| `docs/tasks/red-october.md|metal/backend.go:485` | goinfer | `a.r.ForwardEmbNoLogitsPipe(embedding, pos)` |
 | `docs/tasks/red-october.md|metal/backend.go:558` | goinfer | `if v := os.Getenv("GOINFER_METAL_FAST_PREFILL_FLOOR"); v != "" {` |
 | `docs/tasks/red-october.md|metal/backend.go:734` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
+| `docs/tasks/red-october.md|metal/model.go:1639` | goinfer | `if cur == nil \|\| curNoHead != job.noHead {` |
+| `docs/tasks/red-october.md|metal/model.go:379` | goinfer | `noHead  bool` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/mlp.go:296` | goinfer | `// activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:194` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
 | `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:123` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
