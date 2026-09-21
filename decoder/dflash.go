@@ -584,10 +584,7 @@ func (m *Model) DrafterHeadLogits(h []float32) []float32 {
 		matmul(m.be, &m.w.LMHead, h, logits, 1)
 	}
 	if arch.FinalLogitSoftcap > 0 {
-		softcap := float32(arch.FinalLogitSoftcap)
-		for i, v := range logits {
-			logits[i] = softcap * float32(math.Tanh(float64(v/softcap)))
-		}
+		softcapParallel(logits, float32(arch.FinalLogitSoftcap))
 	}
 	if arch.LogitScale != 0 && arch.LogitScale != 1 {
 		inv := float32(1 / arch.LogitScale)

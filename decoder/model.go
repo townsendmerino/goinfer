@@ -1056,6 +1056,21 @@ func (m *Model) forwardFromEmbed(h []float32, cache *KVCache) ([]float32, error)
 	return m.logitsFromHidden(h, cache), nil
 }
 
+// softcapParallel applies Gemma's final-logit softcap sc·tanh(x/sc) in place, fanning the loop
+// out via parallelElementwise. Every element is independent and math.Tanh is deterministic, so
+// splitting the loop is BYTE-IDENTICAL to the serial form (disjoint writes, no reduction) --
+// gated by TestSoftcapParallel_bitIdentical. Mirrors metal/model.go's softcapParallel (Metal
+// already had this; the generic CPU decode path didn't -- task-moe-streaming.md's re-ranked
+// lever #3). At Gemma's 256k vocab this is a real per-token tax fanned out over GOMAXPROCS.
+func softcapParallel(logits []float32, softcap float32) {
+	sc := softcap
+	parallelElementwise(len(logits), func(lo, hi int) {
+		for j := lo; j < hi; j++ {
+			logits[j] = sc * float32(math.Tanh(float64(logits[j]/sc)))
+		}
+	})
+}
+
 // logitsFromHidden applies the final norm + LM head (tied embedding or separate
 // lm_head) + optional Gemma logit soft-cap to a layer-stack output h, returning
 // the next-token logits ([VocabSize]). One home for the head math, shared by
@@ -1070,10 +1085,7 @@ func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
 		matmulInto(cache.scr.ws, m.be, &m.w.LMHead, h, logits, 1) // separate output projection
 	}
 	if arch.FinalLogitSoftcap > 0 {
-		softcap := float32(arch.FinalLogitSoftcap)
-		for i, v := range logits {
-			logits[i] = softcap * float32(math.Tanh(float64(v/softcap)))
-		}
+		softcapParallel(logits, float32(arch.FinalLogitSoftcap))
 	}
 	if arch.LogitScale != 0 && arch.LogitScale != 1 { // Granite logits_scaling: logits /= scale
 		inv := float32(1 / arch.LogitScale)

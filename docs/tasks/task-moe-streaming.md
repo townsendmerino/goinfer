@@ -634,6 +634,14 @@ decoding at pos 27–91 vs 29 ms at the direct-drive's pos 12–60; attention is
    declines (`CHANGELOG.md`, "Findings" — 2026-09 entry). Item 2's "largest decode lever" ranking
    is stale; nothing here replaces it as a decode lever.
 3. **Softcap** (temperature>0, Gemma only): ~4.5 ms/tok host loop — parallelize/SIMD the tanh. Small, gated.
+   **DONE 2026-09-21** — `decoder/model.go`'s `softcapParallel` fans the loop out via the
+   existing `parallelElementwise` helper (`decoder/mlp.go`, the same 8192-element threshold /
+   `activationFanoutWorkers` cap Metal's own `softcapParallel` uses). Bit-identical to the
+   serial form by construction (`TestSoftcapParallel_bitIdentical`, mirroring
+   `metal/softcap_test.go`'s own gate) — race-clean. Measured on this MacBook (M1 Pro):
+   gemma-scale vocab (262144) softcap drops from 3.47 ms to 0.76 ms, a 4.56x speedup, matching
+   this doc's own ~4.5 ms/tok estimate. Wired into both call sites (`logitsFromHidden` and
+   `dflash.go`'s draft-model logits path, which had the same duplicated serial loop).
 4. **Task 2 (async miss-DMA):** 4.28 ms at 38 slots.
 5. **Task 1 (idx readback):** 0.81 ms — retired (re-enters only within on-device cache mgmt).
 6. **Allocation:** not material, no lever.
