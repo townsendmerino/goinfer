@@ -1,5 +1,43 @@
 # Task — batched-prefill attention (the long-context lever)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status (2026-09-21, doc review): SUPERSEDED — the verdict below ("not funded; prefill cannot
+> reach parity regardless") was overturned by the L2/L3 prefill campaign the same month it was
+> written about.** Every instruction and "fund it if…" below is a record of what was asked at the
+> time, not a task.
+>
+> - **Path 3 (tolerance-gated flash) shipped.** `cuda/attn_fused.cu` — a FlashAttention-style fused
+>   prefill kernel (K/V tiles streamed once per 64-query block through shared memory, QKᵀ and PV on
+>   `mma.sync` tensor cores, online softmax in f32) — landed 2026-09-05 as campaign step L2
+>   (`completed/task-prefill-gap.md` §4), **default ON above a 512-token prompt floor** (`useAttnFused`,
+>   `cuda/prefill.go`; `GOINFER_CUDA_FAST_PREFILL=0` opts out). It is deliberately NOT bit-identical
+>   (online rescale re-associates the denominator and the AV fold — the price this doc named for
+>   Path 3) and is gated by the §3.2 fidelity gate (`TestPrefillGateVsReference`), not by the byte-identical
+>   gates listed below. It measured **1.70× end-to-end** against a ≥1.4× band, and 3.76× on the attention
+>   category (`docs/measurements/prefill-l2l3-phase1-2026-09-05.md`).
+> - **Paths 1 and 2 were never built and no longer have a reason to be.** The exact kernel this doc
+>   set out to tile (`attn_batched`) remains the path the parity gates, speculative-decode verify
+>   (when the flash-decode lane is off) and every prompt under the 512 floor run; a bit-identical
+>   ~1.15× on that path would not move any number a user sees.
+> - **"Prefill cannot reach Ollama parity (§7 dp4a/IMMA ceiling)" is overtaken.** L3 shipped
+>   `gemm_w4a8_mma` (tensor-core GEMM, default ON above the same floor). The current CUDA prefill row
+>   (`docs/benchmarks.md` TL;DR) is **1.9–3.2× behind Ollama, from 12–15×**; at K=3900, 1.5B: 531 ms GEMM +
+>   **805 ms attention** + 57 ms other of 1393 ms — attention is the larger term again, on `attn_fused`
+>   itself, which runs at **1.72% of tensor peak and 12.6% occupancy** (`queue-performance.md` P24).
+> - **The remaining work has owners.** `docs/tasks/red-october.md` **R5** (CUDA prefill attention tile;
+>   P24 re-scoped: phase 1 the BM=32 grid arm, phase 2 an FA-style 64–128-row tile, both with
+>   registered bands) and `queue-performance.md` **P24**. As of this review R5 is scoped and NOT started
+>   (no `attn-fused-bm32` measurement exists).
+> - The **"Correction (2026-09-13)"** note below stands as written: the "Why" and "Profiled bound" numbers
+>   are pre-A1 float4 coalescing, and are kept as the design-time record.
+
+
 Status: **DESIGN REVISED (2026-08-04) — the clean ~1.3× is NOT bit-identical-buildable on Turing.**
 
 > **Correction (2026-09-13, doc review) — the "Why" and "Profiled bound" numbers below are
@@ -152,5 +190,3 @@ within the shared-memory budget.
 
 GEMV activation-staging fix → 26B non-expert half → this. The crossover is served by the GEMV; this is
 the long-context regime and can wait behind the product-urgent number.
-
-<!-- doc-reviewed: 2026-09-13 -->

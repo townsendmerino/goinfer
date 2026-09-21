@@ -734,7 +734,7 @@ comparison on this page.
   - **Attention residual (the next build, not yet done): L1TEX still 99.51% saturated after float4** —
     coalescing fixed the *waste per read*, but the **O(M²) redundant re-reads** remain (each K/V read ~M
     times, L1-served — DRAM idle). Only **query-tiling** (share a staged K/V tile across a query block)
-    removes it, the bit-identical query-tiled + 2-pass-recompute design in `docs/tasks/task-prefill-attention.md`.
+    removes it, the bit-identical query-tiled + 2-pass-recompute design in `docs/completed/task-prefill-attention.md`.
     Design constraint surfaced by the profile: attention()'s exact float-sum order fixes the blockDim=128
     reduction tree and thread→key map, forcing Bk=128 key tiles that strain the 64 KB shared budget at
     hd=128/256 — the 2-pass-recompute (no materialized scores) is how it fits.
