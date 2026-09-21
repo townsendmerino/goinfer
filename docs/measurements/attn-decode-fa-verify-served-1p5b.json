@@ -1,0 +1,327 @@
+{
+ "cells": {
+  "1.5B:14800": {
+   "aa": [],
+   "aa_ratio": 0.9977495776998797,
+   "context": {
+    "P0": {
+     "mean": 122.36591201534453,
+     "prompt_tokens": 3998,
+     "rates": [
+      122.37268742627734,
+      122.35913660441173
+     ],
+     "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+    },
+    "PL": {
+     "mean": 192.91758675155563,
+     "prompt_tokens": 3998,
+     "rates": [
+      192.8914779656528,
+      192.94369553745847
+     ],
+     "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+    }
+   },
+   "median_ratio_B_over_A": 1.4878862757205236,
+   "pairs": [
+    {
+     "A": {
+      "mean": 255.93029550108366,
+      "prompt_tokens": 3998,
+      "rates": [
+       255.86558108814214,
+       255.9950099140252
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 380.7951742171604,
+      "prompt_tokens": 3998,
+      "rates": [
+       378.99213736803364,
+       382.5982110662872
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.4878862757205236
+    },
+    {
+     "A": {
+      "mean": 257.12045793551965,
+      "prompt_tokens": 3998,
+      "rates": [
+       257.55238705769716,
+       256.6885288133421
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 385.6797039517407,
+      "prompt_tokens": 3998,
+      "rates": [
+       386.5074523748067,
+       384.8519555286747
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.4999961770776753
+    },
+    {
+     "A": {
+      "mean": 258.11619226228936,
+      "prompt_tokens": 3998,
+      "rates": [
+       258.35915671241554,
+       257.87322781216324
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 381.9215260809173,
+      "prompt_tokens": 3998,
+      "rates": [
+       381.1947685124825,
+       382.64828364935215
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.4796496211009535
+    }
+   ]
+  },
+  "1.5B:28500": {
+   "aa": [],
+   "aa_ratio": 1.0050387254230906,
+   "context": {
+    "P0": {
+     "mean": 84.56972853345745,
+     "prompt_tokens": 7848,
+     "rates": [
+      84.55699325728561,
+      84.58246380962929
+     ],
+     "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+    },
+    "PL": {
+     "mean": 169.7837892547431,
+     "prompt_tokens": 7848,
+     "rates": [
+      169.7631709104348,
+      169.80440759905144
+     ],
+     "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+    }
+   },
+   "median_ratio_B_over_A": 1.9130817584086115,
+   "pairs": [
+    {
+     "A": {
+      "mean": 165.73181381668667,
+      "prompt_tokens": 7848,
+      "rates": [
+       165.801157506865,
+       165.6624701265083
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 316.5738554168482,
+      "prompt_tokens": 7848,
+      "rates": [
+       315.22048733116816,
+       317.9272235025282
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.9101574292006813
+    },
+    {
+     "A": {
+      "mean": 165.60713195280812,
+      "prompt_tokens": 7848,
+      "rates": [
+       165.7162032261114,
+       165.49806067950485
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 317.56898360634113,
+      "prompt_tokens": 7848,
+      "rates": [
+       316.8210266966438,
+       318.3169405160384
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.917604512931463
+    },
+    {
+     "A": {
+      "mean": 165.6405878235709,
+      "prompt_tokens": 7848,
+      "rates": [
+       165.7633168882984,
+       165.51785875884343
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 316.8839870173531,
+      "prompt_tokens": 7848,
+      "rates": [
+       321.1272853067339,
+       312.64068872797236
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.9130817584086115
+    }
+   ]
+  },
+  "1.5B:7000": {
+   "aa": [],
+   "aa_ratio": 1.0048573759194994,
+   "context": {
+    "P0": {
+     "mean": 165.34261902923413,
+     "prompt_tokens": 1838,
+     "rates": [
+      165.49747946031817,
+      165.18775859815008
+     ],
+     "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+    },
+    "PL": {
+     "mean": 165.69373278052495,
+     "prompt_tokens": 1838,
+     "rates": [
+      165.8328361459216,
+      165.55462941512835
+     ],
+     "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+    }
+   },
+   "median_ratio_B_over_A": 1.0052150689958645,
+   "pairs": [
+    {
+     "A": {
+      "mean": 354.2755768118893,
+      "prompt_tokens": 1838,
+      "rates": [
+       353.11207073242656,
+       355.43908289135203
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 356.24827743794015,
+      "prompt_tokens": 1838,
+      "rates": [
+       357.2280236281531,
+       355.2685312477272
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.0055682659352447
+    },
+    {
+     "A": {
+      "mean": 357.28044212977954,
+      "prompt_tokens": 1838,
+      "rates": [
+       357.24618399841245,
+       357.3147002611467
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 357.14702982836195,
+      "prompt_tokens": 1838,
+      "rates": [
+       356.5664313627745,
+       357.72762829394935
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 0.9996265894079667
+    },
+    {
+     "A": {
+      "mean": 354.9618226689392,
+      "prompt_tokens": 1838,
+      "rates": [
+       354.891754993262,
+       355.0318903446164
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "B": {
+      "mean": 356.81297306505553,
+      "prompt_tokens": 1838,
+      "rates": [
+       356.58754023289345,
+       357.0384058972176
+      ],
+      "text_head": "```go\npackage decoder\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"m"
+     },
+     "ratio_B_over_A": 1.0052150689958645
+    }
+   ]
+  }
+ },
+ "provenance": {
+  "cpu_count": 16,
+  "distro": "Nobara Linux 44",
+  "goinfer_commit": "7b4ee245",
+  "goinfer_tree_dirty": true,
+  "gpu": {
+   "driver": "595.91.07",
+   "mem_total_mib": 8192,
+   "mem_used_mib": 639,
+   "name": "NVIDIA GeForce RTX 2070 SUPER",
+   "temp_c": 50
+  },
+  "gpu_compute_apps_at_start": [
+   "1748, 20 MiB"
+  ],
+  "host": "nobara-pc",
+  "kind": "provenance",
+  "loadavg_at_start": [
+   0.40576171875,
+   1.27978515625,
+   1.1796875
+  ],
+  "peer": {
+   "ollama_bin": "/home/francis/ollama-0325/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": null
+  },
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "serve_binaries": {
+   "cpu": {
+    "mtime": "2026-08-22T18:18:03Z",
+    "path": "/home/francis/bench-v0.15.0/serve-cpu"
+   },
+   "cuda": {
+    "mtime": "2026-09-21T14:09:50Z",
+    "path": "/home/francis/bench-r7b/serve-cuda-fa3"
+   },
+   "metal": {
+    "mtime": null,
+    "path": "/nonexistent/serve-metal"
+   },
+   "webgpu": {
+    "mtime": "2026-08-22T18:17:55Z",
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu"
+   }
+  },
+  "serve_binaries_old": {},
+  "uname": "Linux 7.2.0-202.nobara.fc44.x86_64 x86_64",
+  "utc": "2026-09-21T14:13:36Z"
+ }
+}
