@@ -126,6 +126,7 @@ var censusExcluded = map[string]string{
 	"mellum-mellum2-slice": "4.0 GB — a real-weight 4-layer slice. Measured: still running after 90s while all 29 listed fixtures together take 0.27s. mellum's per-layer fields are the generic set.",
 	"siglip-tiny":          "a vision encoder, not a decoder — Load refuses it, so there are no LayerWeights to census.",
 	"mistral-tiny-window":  "config-only fixture (no model.safetensors); it exists to pin sliding-window CONFIG parsing, and Load cannot open it.",
+	"llama-attnfa-tiny":    "plain llama arch, same per-layer field set llama-tiny already covers (GQA, SwiGLU, RMSNorm) — it differs only in geometry (hidden_size 512, head_dim 128, vs llama-tiny's 64/16), chosen to clear Metal's canUseAttnFA hd==128 dispatch guard. Its job is metal/snapshot_golden_test.go's attention_fa coverage, not this census.",
 
 	// The Linux box's nine local drops, 549 MB to 17 GB and ~44 GB together. Recorded as decisions
 	// rather than left to be re-reported every run. TWO reasons apply to all of them and both are
