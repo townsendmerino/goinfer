@@ -79,7 +79,7 @@ Mac CPU rows are the M1 Pro; CUDA, WebGPU and Linux CPU rows are the RTX box.
 | **MoE over capacity — decode** | 26B full-model 5.5 tok/s (62 GB box); Mac 35B paged ~1.4 (SSD-bound) → 1.2–1.8× (cpubrrr Q4_K ceiling) (P) | no paging path; declines → n/a | M35 1.0× Ollama / **0.72× llama.cpp**; M26 1.07× / 0.88×; ~48% of the token is expert DMA → **1.25–1.45×** (L01 async; funding cell unrun) (P) — R11 | 35B ~2 tok/s; pager auto-sized 2026-09-13, unmeasured; 2L+1 sync command buffers at ~14 ms each (M-11 open) → **3–4 tok/s counted**; Zeno's 8.7–13 is structural past that (P) — R11 |
 | **MoE prefill, 8k prompt** | P18 expert-major 4.36× landed; no peer row | n/a | wall-clock **M35 17×, M26 4.3× behind** → **2–5×** (expert-major; M35 also needs batched GDN); 2–8× behind after (P) — R11 | FFN half runs M sequential rows; expert-major landed 2026-09-17, unmeasured → measure (R11) |
 | **Vision tower, image turn** | 31.3 s/image SigLIP f32 (3700X); exp on `math.Exp`, the S-06 transcendentals have zero callers → 1.5–2× (K) — R9 | 18.8 s (June, stale) → re-measure (R10) | 26.1 s (1.58× over CPU): dp4a batched GEMV + per-row attention = **the pre-L2/L3 shapes**, plus 54 host round-trips → **~7 s counted**; a ~1 s class needs a real int8 tensor-core GEMM at hd=72 (K) — R8 | tower runs on the **CPU** on a Metal box (M-15) → ≥3× once aikit's Metal ViT is wired (P) — R8 |
-| **Speculative decode** | Θ 0.5; P25 break-even miscalibrated for MoE targets (Laguna 0.82×) | Θ unmeasured (P22) → measure (R12) | Θ 0.25; 1.2–1.8× shipped → done | **Θ 0.96 — declines to draft**; `ForwardN` is a loop, not one command buffer (P21) → **1.2–1.5×** on agent-style decode (P) — R12 |
+| **Speculative decode** | Θ 0.5; P25 break-even miscalibrated for MoE targets (Laguna 0.82×) | Θ unmeasured (P22) → measure (R12) | Θ 0.25; 1.2–1.8× shipped → done | **P21 already shipped (`a1640a6a`, 2026-09-16) and is now measured: Θ 0.86–0.96, still above the 0.8 kill line at every cell — declines to draft, killed** (correction, [`r12-p21-theta-post-batch-2026-09-20.md`](../measurements/r12-p21-theta-post-batch-2026-09-20.md)) — R12 |
 | **Concurrency** | one decode worker per model on every backend; the peers run parallel slots; no instrument (W7) → unmeasured everywhere — R12 | | | |
 
 ---
@@ -1373,7 +1373,8 @@ not that kernel), `metal/backend.go:706` (`ForwardN` today), the 2026-09-17 note
 truthfully), `task-peer-benchmarks.md` (W7's definition; the MLX quant caveat), `scripts/bench_peer.py`
 (the `mlx` engine branch; `BENCH_VISION=1`; `scripts/bench_peer_transcript.py` for W4/W7).
 
-**Build (P21).** `ForwardN` on Metal encodes the K verify tokens into one command buffer — the
+**Build (P21) — CLOSED 2026-09-20, see the Correction below the progress notes.** The plan as
+registered when this brief was written, kept for the record: `ForwardN` on Metal encodes the K verify tokens into one command buffer — the
 `PrefillLast` machinery already assembles all layers into one buffer for M>1; the verify is M=K≤16
 appended at `startPos`, which is the shape `PrefillLast` with prefix reuse already serves — so the
 build is the dispatch (route `ForwardN` through the batched prefill path when K ≥ 2 and the
@@ -1409,7 +1410,22 @@ brief's own note. (i) is partly done:
 `benchmarks.md` peer-matrix row (goinfer/Ollama/MLX, 1.5B and 7B, all deltas inside ~3.5% ordinary
 session drift — not a revision) but does not extend it to 0.5B or phi3-mini, since no MLX-format
 checkpoint for either is cached locally; that needs an explicit download decision, not made here.
-(iii) the vision peer row and (iv) W7 were not attempted. P21 (the actual build) has not started.
+(iii) the vision peer row and (iv) W7 were not attempted.
+
+**Correction, 2026-09-20** ([`r12-p21-theta-post-batch-2026-09-20.md`](../measurements/r12-p21-theta-post-batch-2026-09-20.md)).
+The "Build (P21) has not started" line above was wrong — `ForwardN` on Metal already batches all N
+verify-token forward steps into one command buffer, shipped in `a1640a6a` (2026-09-16, bundled into
+an aikit-bump commit, one day before this brief's own cited "Θ=0.96, 2026-09-17 sweep" standing
+figure — which, on today's re-check, appears to already have been measuring the batched path).
+Freshly measured today with the same `TestThetaProbe_Metal` instrument as the original 2026-09-01
+record: real, consistent improvement (0.5B Θ 1.02–1.05 → 0.86; 1.5B Θ 1.01–1.02 → 0.95–0.96), but
+every one of the four cells (0.5B/1.5B × depth 128/512) still lands above this brief's own 0.8 kill
+line. **Reading against the registered band above: P21 is closed, killed** — not open, not
+"not started." The band's own reasoning (the Metal small-M GEMM, not the command-buffer boundary,
+is the remaining blocker) reads as confirmed, not just asserted: batching removed the K−1
+boundaries this measurement can see it removing (`T(16)/T(1)` moved from ~16.1–16.8, matching a
+plain loop, to ~13.9–15.4), without moving Θ into the ship or park band. Re-opening speculative
+decode on Metal needs a different lever than P21's own scope.
 
 **(iv) W7 result, 2026-09-19** ([`w7-plain-concurrency-2026-09-19.md`](../measurements/w7-plain-concurrency-2026-09-19.md)).
 A simplified variant, not the exact W4 tool-calling transcript — the memory-safe 1.5B model does
