@@ -1,6 +1,6 @@
 # Task: a site for goinfer — a browsable library, generated from the repo (S0–S7) — 2026-09
 
-> **Status: SCOPED 2026-09-18, unstarted.** Filed after the owner looked at ollama.com and wanted
+> **Status: SCOPED 2026-09-18, unstarted. Domain registered 2026-09-21: `goinfer.dev` (§5).** Filed after the owner looked at ollama.com and wanted
 > something similar in organisation — "not a perfect copy".
 >
 > **The decision this doc makes:** copy their *models library*, not their site. ollama.com is now a
@@ -94,8 +94,19 @@ beside each. This is the promise the README makes, given a page.
 - **Two options, decide once:** keep Pages and point a domain at it with a CNAME, or move to
   Cloudflare Pages (the owner already has the account that serves Numeratica's docs site). Either
   works; splitting the site across both does not.
-- **The domain is also the collision fix.** Naming is the owner's call; this doc records only the
-  requirement — it must disambiguate from the four other repos called goinfer.
+- **The domain: `goinfer.dev` — registered 2026-09-21.** Chosen over `.io` (a country-code TLD
+  whose long-term future has been uncertain since the 2024 Chagos agreement) and `.ai` (several
+  times the price, and it brands an engine as an AI product). `goinfer.com` was already taken —
+  registered December 2023, not by this project. `.dev` echoes `go.dev`, which is the right
+  neighbourhood for an audience of Go engineers, and the whole TLD is HSTS-preloaded, so the site is
+  HTTPS-only by construction. That is no constraint on either Pages option, both of which issue
+  certificates automatically.
+- **Put the book on a subdomain now — `book.goinfer.dev` — rather than the apex.** Pointing the apex
+  at today's book would make the domain useful immediately, but it would move every chapter's URL a
+  second time when the real site arrives and claims the apex. A subdomain moves the book exactly
+  once, forever, and leaves the apex free for S1. GitHub Pages redirects the old
+  `townsendmerino.github.io/goinfer` URLs to a configured custom domain on its own, which satisfies
+  the URL rule below for that move.
 - **Existing URLs must keep working.** The primer is linked from the README, from release notes, and
   from chapter to chapter. Redirects are a requirement of this item, not a nicety.
 
