@@ -36,10 +36,7 @@ func TestFlashDecodeKernelLadder(t *testing.T) {
 	}
 	depths := []int{2048, 3900, 8000}
 	if v := os.Getenv("GOINFER_LADDER_DEPTHS"); v != "" {
-		depths = depths[:0]
-		for _, f := range splitInts(v) {
-			depths = append(depths, f)
-		}
+		depths = append(depths[:0], splitInts(v)...)
 	}
 	maxD := 0
 	for _, d := range depths {
