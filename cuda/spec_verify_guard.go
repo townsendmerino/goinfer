@@ -37,6 +37,11 @@ var _ decoder.DecodeVerifyDiverger = (*cudaResident)(nil)
 // and its miss-redo both go through M=1 Forward — the same tree as decode — so it stays consistent
 // with the spike on.
 func (r *cudaResident) DecodeVerifyDivergence() error {
+	if r.faSplit > 0 {
+		return fmt.Errorf("GOINFER_CUDA_FLASH_DECODE=%d is set, so decode attention uses an online-softmax key-split "+
+			"reduction the batched verify speculative decoding uses does not share — the two can pick different "+
+			"tokens at near-ties. Unset GOINFER_CUDA_FLASH_DECODE to use speculative decoding", r.faSplit)
+	}
 	if r.skVsumSplit > 1 {
 		return fmt.Errorf("GOINFER_SPLITKV_VSUM_SPLIT=%d is set, so decode sums attention values in "+
 			"a different order from the batched verify speculative decoding uses — the two can pick "+

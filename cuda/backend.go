@@ -1108,6 +1108,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 		}
+		if r.prefillReady {
+			r.loadFlashDecode(m, nLayers)
+		}
 		// MoE module: loaded only for a routed model, so a dense one JITs nothing extra.
 		if r.moe {
 			mmod, e2 := r.dev.CompileLibrary(moePTX)
