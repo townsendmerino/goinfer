@@ -237,6 +237,12 @@ var attnFusedPTX []byte
 //go:embed testdata/attn_fused_bm.ptx
 var attnFusedBMPTX []byte
 
+// attnFusedVitPTX: attn_vit_hd72_bm64 / attn_vit_hd72_bm128 — R8 phase A, the non-causal fused attention for the SigLIP vision
+// tower (hd 72 padded to 80). Own module; see cuda/attn_fused_vit.cu and docs/measurements/vision-tower-attn-PREREGISTERED.md.
+//
+//go:embed testdata/attn_fused_vit.ptx
+var attnFusedVitPTX []byte
+
 // gemmMMAPTX: gemm_w4a8_mma — the L3 tensor-core int4xint8 GEMM with group scales
 // (docs/completed/task-prefill-gap.md §4 L3). Own module, same isolation reason as attn_fused.cu: the
 // audited moe.ptx / glue.ptx / prefill_batched.ptx must not be regenerated to add a kernel.

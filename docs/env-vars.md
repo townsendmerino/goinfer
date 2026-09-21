@@ -113,6 +113,7 @@ real hardware at scale; default off),
 `GOINFER_CUDA_ATTN_FUSED_TILE` (CUDA: overrides the attn_fused kernel's tile-size selection —
 `64x64`, `128x64`, `32x64`, or `32x32`; an R5-phase investigation knob, default unchanged, the
 32-row tiles are a measured regression kept only for A/B comparison),
+`GOINFER_CUDA_VISION_ATTN` (CUDA vision tower: `bm64` / `bm128` select the R8 fused non-causal attention kernel for the SigLIP tower — 6.4× faster tower (26.0 → 4.1 s/image) but its output differs from the default `attn_img_batched` path at tower level (cosine 0.96 vs the pre-change resident output; cosine vs the CPU int8 reference unchanged), so it is opt-in; unset or `exact` keeps `attn_img_batched`),
 `GOINFER_SPLITKV_VSUM_SPLIT` (an unpromoted spike: splits the decode split-KV V-sum across the
 key axis, measured +40-43% on the attention block and +15.6% served on one geometry, and it is
 **NOT bit-identical** to the default path. Unset, the pipelines are not loaded and no scratch is

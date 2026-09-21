@@ -24,6 +24,7 @@ package cuda
 import (
 	"fmt"
 	"math"
+	"os"
 	"runtime"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
@@ -56,6 +57,10 @@ type VisionEncoder struct {
 	bQuant          Pipeline // quant_vec_batched (prefill_batched.ptx) — plain int8 quantize
 	bW8             Pipeline // gemv_w8a8_batched — every linear projection
 	bAttnImg        Pipeline // attn_img_batched — full bidirectional attention, imgStart=0/imgEnd=M
+	// R8 phase A: fused non-causal attention for hd 72 (padded to 80), two query-tile heights. Zero-valued if the module did not
+	// load; visionAttn picks the arm (0 = attn_img_batched, 1 = bm64, 2 = bm128) — GOINFER_CUDA_VISION_ATTN = exact | bm64 | bm128.
+	bAttnVit64, bAttnVit128 Pipeline
+	visionAttn              int
 
 	hidden, inter, numLayers, numHeads, headDim int
 	numPatches, cpp                             int
@@ -120,6 +125,22 @@ func NewVisionEncoder(w vision.GPUWeights) (ve *VisionEncoder, err error) {
 			}
 			*dst = p
 			return nil
+		}
+		// R8 phase A kernels: a load failure is not fatal (the tower falls back to attn_img_batched).
+		if vmod, ve := r.dev.CompileLibrary(attnFusedVitPTX); ve == nil {
+			loadV := func(dst *Pipeline, name string) {
+				if pl, pe := r.dev.NewComputePipeline(vmod, name); pe == nil {
+					*dst = pl
+				}
+			}
+			loadV(&r.bAttnVit64, "attn_vit_hd72_bm64")
+			loadV(&r.bAttnVit128, "attn_vit_hd72_bm128")
+			switch os.Getenv("GOINFER_CUDA_VISION_ATTN") {
+			case "bm64":
+				r.visionAttn = 1
+			case "bm128":
+				r.visionAttn = 2
+			}
 		}
 		for _, k := range []struct {
 			ptx  []byte
@@ -237,6 +258,7 @@ func (r *VisionEncoder) geluQuant(q *Queue, x Buffer, N int, qOut, sOut Buffer, 
 func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	M, hidden, inter, hd, nH := r.numPatches, r.hidden, r.inter, r.headDim, r.numHeads
 	qDim := nH * hd
+	nKVvit := nH // the tower is MHA: q, k and v all have nH heads
 	scale := float32(1.0 / math.Sqrt(float64(hd)))
 	if len(patches) != M*r.cpp {
 		return nil, fmt.Errorf("cuda vision: patches len %d, want %d (%d patches x %d)", len(patches), M*r.cpp, M, r.cpp)
@@ -317,14 +339,40 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 			// store step, unlike the text decoder's rope kernel which writes q/k/v INTO r.kc/r.vc
 			// as a side effect; this tower has no rope at all, so qb/kb/vb already sit where the
 			// attention kernel expects to read them.
-			maxNWin := M
-			if e := q.Launch(r.bAttnImg, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ: 1,
-				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)},
-				Arg(qb), Arg(kb), Arg(vb), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nH)),
-				gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(0)), gpu.ArgValue(scale),
-				gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M)), Arg(attnOut), ArgNull(),
-				gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M))); e != nil {
-				return e
+			// R8 phase A: the fused non-causal kernel for hd 72 (padded to 80) when selected and loaded; otherwise (or for any
+			// other head dim) attn_img_batched exactly as before. Each pipeline is named at its own launch (pipeline lint).
+			vitBM := 0
+			if hd == 72 && nKVvit == nH {
+				if r.visionAttn == 1 && r.bAttnVit64 != (Pipeline{}) {
+					vitBM = 64
+				} else if r.visionAttn == 2 && r.bAttnVit128 != (Pipeline{}) {
+					vitBM = 128
+				}
+			}
+			if vitBM != 0 {
+				vcfg := LaunchConfig{GridX: uint32(nH), GridY: uint32((M + vitBM - 1) / vitBM), GridZ: 1,
+					BlockX: uint32(vitBM / 16 * 32), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(2 * (64*(80+8) + 80*(64+8)))}
+				if vitBM == 64 {
+					if e := q.Launch(r.bAttnVit64, vcfg, Arg(qb), Arg(kb), Arg(vb), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nH)),
+						gpu.ArgValue(scale), gpu.ArgValue(int32(M)), Arg(attnOut)); e != nil {
+						return e
+					}
+				} else {
+					if e := q.Launch(r.bAttnVit128, vcfg, Arg(qb), Arg(kb), Arg(vb), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nH)),
+						gpu.ArgValue(scale), gpu.ArgValue(int32(M)), Arg(attnOut)); e != nil {
+						return e
+					}
+				}
+			} else {
+				maxNWin := M
+				if e := q.Launch(r.bAttnImg, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ: 1,
+					BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)},
+					Arg(qb), Arg(kb), Arg(vb), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nH)),
+					gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(0)), gpu.ArgValue(scale),
+					gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M)), Arg(attnOut), ArgNull(),
+					gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M))); e != nil {
+					return e
+				}
 			}
 			if e := r.quant(&q, attnOut, qDim, aoq, aos, M); e != nil {
 				return e

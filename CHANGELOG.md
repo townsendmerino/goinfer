@@ -46,6 +46,10 @@ any surface may still change.
   attempted — its real-oracle load needs ~16 GB resident at f32, this machine's entire RAM, not a
   close call the way the 1.7B's small shortfall was.
 
+### Added
+
+- **CUDA vision tower: opt-in fused attention (`GOINFER_CUDA_VISION_ATTN=bm128`), 26.0 -> 4.1 s per 896^2 image (6.4x)** (R8). `attn_img_batched` was 87% of the tower (ncu); the new non-causal `mma.sync` kernel (hd 72 padded to 80) replaces it when selected. Not default: tower output differs from the default path (cosine 0.96, ambiguous under the registered 0.98 bar; cosine vs the CPU int8 reference is unchanged, 0.913 vs 0.914). `docs/measurements/vision-tower-mma-2026-09-21.md`.
+
 ### Changed
 
 - **CUDA decode: two more bit-identical fusion-kernel speedups (D7 +1.7-3.5%, 1.5B +1.9-3.0%).** `fused_rms_qkv` and `fused_rms_gu` recomputed the layer's rmsnorm + int8 quantisation in every block before streaming any weight; the QKV and gate/up

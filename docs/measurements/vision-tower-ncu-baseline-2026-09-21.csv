@@ -1,0 +1,7 @@
+kernel,launches,total_ns
+attn_img_batched,27,22259681408
+gemv_w8a8_batched,163,3268721216
+layernorm_quant_batched,54,7528544
+gelu_quant_batched,27,6265280
+quant_vec_batched,28,1840832
+layernorm_f32_batched,1,116096
