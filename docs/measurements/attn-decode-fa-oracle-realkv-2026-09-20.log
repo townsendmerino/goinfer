@@ -1,0 +1,33 @@
+=== RUN   TestFlashDecodeOracleRealKV
+    flash_decode_gate_test.go:77: prompt set "b" file task-attention-decode-cost.md prefilled to K=8000; S=16
+    flash_decode_gate_test.go:162: layer  0: exact err median 6.83e-06 max 0.000186 | lane err median 4.12e-06 max 8.21e-05 | ok
+    flash_decode_gate_test.go:162: layer  1: exact err median 2.04e-07 max 8.24e-05 | lane err median 1.25e-07 max 5.7e-06 | ok
+    flash_decode_gate_test.go:162: layer  2: exact err median 8.96e-07 max 8.8e-06 | lane err median 3.19e-07 max 4.11e-06 | ok
+    flash_decode_gate_test.go:162: layer  3: exact err median 1.49e-06 max 4.28e-05 | lane err median 3.24e-07 max 8.26e-06 | ok
+    flash_decode_gate_test.go:162: layer  4: exact err median 9.14e-07 max 4.79e-06 | lane err median 1.17e-07 max 2.92e-07 | ok
+    flash_decode_gate_test.go:162: layer  5: exact err median 1.53e-06 max 3.13e-05 | lane err median 1.92e-07 max 1.31e-06 | ok
+    flash_decode_gate_test.go:162: layer  6: exact err median 1.73e-06 max 1.98e-05 | lane err median 2.31e-07 max 9.98e-07 | ok
+    flash_decode_gate_test.go:162: layer  7: exact err median 2.96e-06 max 1.63e-05 | lane err median 3.58e-07 max 1.71e-06 | ok
+    flash_decode_gate_test.go:162: layer  8: exact err median 7.8e-07 max 1.12e-05 | lane err median 1.76e-07 max 6.91e-07 | ok
+    flash_decode_gate_test.go:162: layer  9: exact err median 1.14e-06 max 7.65e-06 | lane err median 2.27e-07 max 4.54e-07 | ok
+    flash_decode_gate_test.go:162: layer 10: exact err median 2.29e-06 max 1.18e-05 | lane err median 1.94e-07 max 1.07e-06 | ok
+    flash_decode_gate_test.go:162: layer 11: exact err median 4.74e-07 max 2.2e-05 | lane err median 1.91e-07 max 8.84e-07 | ok
+    flash_decode_gate_test.go:162: layer 12: exact err median 1.56e-06 max 1.32e-05 | lane err median 1.95e-07 max 5.5e-07 | ok
+    flash_decode_gate_test.go:162: layer 13: exact err median 1.53e-06 max 9.65e-06 | lane err median 3.95e-07 max 2.49e-06 | ok
+    flash_decode_gate_test.go:162: layer 14: exact err median 6.47e-07 max 1.07e-05 | lane err median 1.77e-07 max 4.76e-07 | ok
+    flash_decode_gate_test.go:162: layer 15: exact err median 1.71e-06 max 1.06e-05 | lane err median 1.68e-07 max 1.19e-06 | ok
+    flash_decode_gate_test.go:162: layer 16: exact err median 7.02e-07 max 8.19e-06 | lane err median 1.66e-07 max 4.73e-07 | ok
+    flash_decode_gate_test.go:162: layer 17: exact err median 1.61e-06 max 1.78e-05 | lane err median 2.23e-07 max 8.65e-07 | ok
+    flash_decode_gate_test.go:162: layer 18: exact err median 2.52e-06 max 1.79e-05 | lane err median 2.99e-07 max 7.89e-07 | ok
+    flash_decode_gate_test.go:162: layer 19: exact err median 1.47e-06 max 4.56e-06 | lane err median 1.97e-07 max 2.4e-06 | ok
+    flash_decode_gate_test.go:162: layer 20: exact err median 2.21e-06 max 1.44e-05 | lane err median 2.45e-07 max 5.69e-07 | ok
+    flash_decode_gate_test.go:162: layer 21: exact err median 1.31e-06 max 2.12e-05 | lane err median 3.21e-07 max 1.26e-06 | ok
+    flash_decode_gate_test.go:162: layer 22: exact err median 1.18e-06 max 8.16e-06 | lane err median 1.82e-07 max 7.14e-07 | ok
+    flash_decode_gate_test.go:162: layer 23: exact err median 1.31e-06 max 1.47e-05 | lane err median 2.09e-07 max 7.07e-07 | ok
+    flash_decode_gate_test.go:162: layer 24: exact err median 1.32e-06 max 1.3e-05 | lane err median 1.85e-07 max 9.86e-07 | ok
+    flash_decode_gate_test.go:162: layer 25: exact err median 1.17e-06 max 6.88e-06 | lane err median 1.6e-07 max 4.62e-07 | ok
+    flash_decode_gate_test.go:162: layer 26: exact err median 9.61e-07 max 9.51e-06 | lane err median 2.4e-07 max 1.52e-06 | ok
+    flash_decode_gate_test.go:162: layer 27: exact err median 7.73e-07 max 4.27e-06 | lane err median 1.47e-07 max 9.1e-07 | ok
+--- PASS: TestFlashDecodeOracleRealKV (87.71s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	87.894s
