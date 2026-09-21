@@ -39,11 +39,31 @@ func TestFlashDecodeOracleRealKV(t *testing.T) {
 	if s, _ := strconv.Atoi(os.Getenv("GOINFER_CUDA_FLASH_DECODE")); s < 1 {
 		t.Skip("set GOINFER_CUDA_FLASH_DECODE=16")
 	}
-	const K = 8000
 	path := os.Getenv("GOINFER_CUDA_GATE_MODEL_D7")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf")
 	}
+	flashOracleRealKV(t, path, 8000, true)
+}
+
+// TestFlashDecodeOracleRealKVGemma runs the same check on gemma3-1b (hd=256, GQA 4, 22 of 26 layers sliding-window at 512)
+// at K=3000, so the windowed layers really attend to a strict suffix and winStart > 0. GOINFER_CUDA_FLASH_DECODE=16.
+func TestFlashDecodeOracleRealKVGemma(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1")
+	}
+	if s, _ := strconv.Atoi(os.Getenv("GOINFER_CUDA_FLASH_DECODE")); s < 1 {
+		t.Skip("set GOINFER_CUDA_FLASH_DECODE=16")
+	}
+	flashOracleRealKV(t, modelPath("gemma3-1b-q4_k_m.gguf"), 3000, false)
+}
+
+// flashOracleRealKV: strict=true is the registered precondition (lane no worse than exact vs f64, per layer). strict=false
+// is a sanity bound for geometries outside the gate: on gemma3-1b's 512-key windows the exact fold is already accurate to
+// ~1e-8, so the lane can sit a few ulp above it (measured: 2 of 26 layers, by <= 2.5e-7 relative); there the check is that
+// the lane's error stays under 1e-5 of max|ref| at every layer, and the comparison is logged.
+func flashOracleRealKV(t *testing.T, path string, K int, strict bool) {
+	t.Helper()
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}
@@ -54,12 +74,7 @@ func TestFlashDecodeOracleRealKV(t *testing.T) {
 	defer m.Close()
 	rf, ok := m.ResidentForwardForTest().(*cudaResident)
 	if !ok || rf.faSplit < 1 {
-		t.Fatalf("resident/lane not active (ok=%v faSplit=%d)", ok, func() int {
-			if rf != nil {
-				return rf.faSplit
-			}
-			return -1
-		}())
+		t.Fatalf("resident/lane not active (ok=%v)", ok)
 	}
 	tk, err := tokenizer.LoadGGUF(path)
 	if err != nil {
@@ -155,6 +170,9 @@ func TestFlashDecodeOracleRealKV(t *testing.T) {
 		lMed, lMax := perHead(lane)
 		const allowance = 1e-7
 		bad := lMed > eMed+allowance || lMax > eMax+allowance
+		if !strict {
+			bad = lMax > 1e-5
+		}
 		if bad {
 			failures++
 		}

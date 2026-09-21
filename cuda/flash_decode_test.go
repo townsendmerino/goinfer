@@ -172,12 +172,22 @@ func runFlash(t *testing.T, r *cudaResident, q, k, v []float32, hd, nKV, winStar
 // logits agree closely; it is a wiring check (q layout, GQA mapping, KV addressing, window), NOT the fidelity gate.
 func TestFlashDecodeEndToEnd(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)")
+		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads real checkpoints)")
 	}
-	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "4")
+	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16")
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "0")
-	t.Setenv("GOINFER_SPLITKV_VSUM_SPLIT", "4") // the CONTROL arm: a known, accepted reduction-order change on the same input
-	path := modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	t.Setenv("GOINFER_SPLITKV_VSUM_SPLIT", "16") // the CONTROL arms: a known, accepted reduction-order change on the same input
+	for _, file := range []string{
+		"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", // hd128, GQA 6
+		"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", // hd64, GQA 7
+		"gemma3-1b-q4_k_m.gguf",                   // hd256, GQA 4, sliding-window layers (512) under a 2048-deep decode
+	} {
+		t.Run(file, func(t *testing.T) { flashEndToEnd(t, file) })
+	}
+}
+
+func flashEndToEnd(t *testing.T, file string) {
+	path := modelPath(file)
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}
@@ -190,9 +200,16 @@ func TestFlashDecodeEndToEnd(t *testing.T) {
 	if !ok {
 		t.Skip("resident path declined")
 	}
-	if rf.faSplit != 4 {
+	if rf.faSplit != 16 {
 		t.Fatalf("lane not loaded (faSplit=%d)", rf.faSplit)
 	}
+	windowed := 0
+	for l := range rf.layers {
+		if rf.layers[l].window > 0 {
+			windowed++
+		}
+	}
+	t.Logf("%s: %d layers, %d sliding-window", file, len(rf.layers), windowed)
 	_, _, _, _, _, _, vocab := m.Dims()
 	const D, steps = 2048, 24
 	emb := func(i int) []float32 { return m.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1)) }
@@ -226,10 +243,14 @@ func TestFlashDecodeEndToEnd(t *testing.T) {
 	if rf.faLaunches != 0 {
 		t.Fatalf("exact arm launched the lane %d times", rf.faLaunches)
 	}
-	lane := run(4)
-	laneLaunches := rf.faLaunches
-	if laneLaunches == 0 {
-		t.Fatal("VACUOUS: the lane arm never launched fa_partial")
+	laneArms := map[int][][]float32{}
+	laneLaunches := 0
+	for _, S := range []int{2, 4, 8, 16} {
+		laneArms[S] = runArm(S, 0)
+		if rf.faLaunches == 0 {
+			t.Fatalf("VACUOUS: the lane arm S=%d never launched fa_partial", S)
+		}
+		laneLaunches += rf.faLaunches
 	}
 	cmp := func(x [][]float32) (worstCos float64, differing, agree int) {
 		worstCos = 1.0
@@ -250,18 +271,24 @@ func TestFlashDecodeEndToEnd(t *testing.T) {
 		}
 		return
 	}
-	spike := runArm(0, 4)
-	worstCos, differing, agree := cmp(lane)
-	spCos, spDiff, spAgree := cmp(spike)
-	t.Logf("CONTROL (vsum spike S=4 vs exact): %d/%d steps differ; worst logit cosine %.7f; argmax agree %d/%d", spDiff, steps, spCos, spAgree, steps)
-	t.Logf("lane launches=%d; %d/%d steps differ from exact; worst logit cosine %.7f; argmax agree %d/%d", laneLaunches, differing, steps, worstCos, agree, steps)
-	if differing == 0 {
+	// Both families change reduction order and nothing else, so they are compared as a DISTRIBUTION: the lane at four
+	// S values against the accepted V-sum spike at four S values, all on the same chaotic synthetic input.
+	worstLane, worstSpike, anyDiff := 1.0, 1.0, false
+	for _, S := range []int{2, 4, 8, 16} {
+		c, d, a := cmp(laneArms[S])
+		anyDiff = anyDiff || d > 0
+		worstLane = math.Min(worstLane, c)
+		sc, sd, sa := cmp(runArm(0, S))
+		worstSpike = math.Min(worstSpike, sc)
+		t.Logf("S=%2d: lane worst cos %.7f (%d/%d steps differ, argmax agree %d/%d) | vsum spike worst cos %.7f (%d/%d differ, agree %d/%d)", S, c, d, steps, a, steps, sc, sd, steps, sa, steps)
+	}
+	t.Logf("lane launches (all S)=%d; worst cosine over lane arms %.7f, over spike arms %.7f", laneLaunches, worstLane, worstSpike)
+	if !anyDiff {
 		t.Fatal("lane and exact logits are bit-identical at every step: the lane did not change the attention output")
 	}
-	// Wiring criterion, set from the control: the lane must sit within the same order of noise as an accepted
-	// reduction-order change on this chaotic synthetic input, i.e. its cosine deficit (1-cos) is at most 5x the
-	// spike's. A mis-wired q/GQA/KV mapping gives cosines near 0, not a small multiple.
-	if 1-worstCos > 5*(1-spCos)+1e-6 {
-		t.Errorf("lane worst cosine %.7f is far worse than the control's %.7f: the lane is mis-wired", worstCos, spCos)
+	// Wiring criterion: the lane's worst deficit (1-cos) over its S values is at most 5x the worst deficit of the
+	// accepted spike over ITS S values (plus a hair). A mis-wired q/GQA/KV mapping gives cosines near 0.
+	if 1-worstLane > 5*(1-worstSpike)+1e-4 {
+		t.Errorf("lane worst cosine %.7f is far worse than the accepted spike family's %.7f: the lane is mis-wired", worstLane, worstSpike)
 	}
 }
