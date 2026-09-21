@@ -71,7 +71,7 @@ Mac CPU rows are the M1 Pro; CUDA, WebGPU and Linux CPU rows are the RTX box.
 
 | Area | CPU | WebGPU | CUDA | Metal |
 |---|---|---|---|---|
-| **Decode, ≤512 ctx, dense** | Mac 0.65–0.67× (0.5B/1.5B), 0.81–0.83× (phi3/7B); Linux 0.41× (0.5B), 0.73× (1.5B), 0.82× (7B) → Mac **0.85–1.0×**; Linux **1.4–2.4× on the cell** (P) | 0.37 / 0.60 / 0.63× of goinfer's own CUDA (no peer) → **0.8–0.86× of CUDA** (P) | 1.27 / 1.16 / 0.98×; vs llama.cpp 0.90 / 1.00 / 0.91× → **≤1.1×**, at ceiling (K) | 1.08× (0.5B, n=2) / 0.86× / 0.86×; vs MLX 0.66× (1.5B), 0.58× (7B) → **1.4–1.55×** via a W4F16 GEMV (P) — R1 |
+| **Decode, ≤512 ctx, dense** | Mac 0.65–0.67× (0.5B/1.5B), 0.81–0.83× (phi3/7B); Linux 0.41× (0.5B), 0.73× (1.5B), 0.82× (7B) → Mac **0.85–1.0×**; Linux **1.4–2.4× on the cell** (P) | 0.37 / 0.60 / 0.63× of goinfer's own CUDA (no peer) → **0.8–0.86× of CUDA** (P) | 1.27 / 1.16 / 0.98×; vs llama.cpp 0.90 / 1.00 / 0.91× → **≤1.1×**, at ceiling (K) | 1.08× (0.5B, n=2) / 0.86× / 0.86×; vs MLX 0.66× (1.5B), 0.58× (7B) → **KILLED**: W4F16 measured 75.2 vs W4A8 73.1 tok/s (1.03×) at the 1.5B decision cell, below the 1.10× floor; fidelity passed but speed did not (K) — R1 |
 | **Decode, 2k–8k ctx** | no peer row at depth → measure first; the f64 decode path loads and widens each KV head's K/V once per QUERY head (6–7×) → group-major acc64 kernels, bit-identical, **1.5–1.8× on the QK+AV term** by µop count (?) — R13 | −12% from 128→1024 after G36; ≥2k unmeasured → measure (R10) | 0.72–0.79× @3900, 0.63× @8k (7B); vs llama.cpp 0.45–0.70× → **1.0–1.1× Ollama** (1.4–1.6× on the cell) (K) — R6 | 0.64× @2048, **0.52× @4000** (peer flat 85→77) → **~0.8× Ollama** from attention alone (1.3× @2048, 1.5× @4000); ~1.1× stacked with R1 (P) — R2 |
 | **Prefill — weight term** | Mac 1.54× behind @512 (weight term ≈ all of it) → **~1.2× behind** (K) — R9; Linux: no peer row | batched path landed 2026-09-13: 317 tok/s @P=1024 (0.5B int8) = **8× behind own CUDA-exact, 45× behind CUDA-fast**; unprofiled → ≥5× plausible (?) — R10 | 0.136 ms/tok flat vs Ollama's *whole* marginal 0.152 → **≤1.2×**, at ceiling (K) | pre-fix GEMM 0.73 TFLOPS vs ≥2.4 (3.3× behind @512); M-03 shipped 2026-09-13, **unmeasured** → **1.5–2× e2e** at K≤1024; parity needs 3.5× on the GEMM (P) — R4 |
 | **Prefill — attention term, O(K²)** | Mac 0.91× @3900 (ahead), rate flat 78 tok/s → at parity (K) | per-query-row `attnBatched` (grid nH×M), the pre-L2 shape → inside the ≥5× above (?) — R10 | 3.16× / 1.89× behind on marginal @3900 (1.5B/0.5B); `attn_fused` at 1.72% tensor peak, 12.6% occupancy, **58% of TTFT** → marginal **~1.4–1.7× behind**, TTFT@3900 1.39 s → 0.71–0.84 s = **ahead of Ollama on TTFT** (K) — R5 | M-04 32-key tile shipped; ~18% of TTFT @3900 → ~1.2× e2e (K) — R4. Separately: **prompts of 8–255 tokens run sequential** at ~77 tok/s vs Ollama 790 @256 → floor→64 is **~4× on a 200-token turn** (K) — R3 |
@@ -389,7 +389,7 @@ Status table, kept current as briefs move:
 
 | # | brief | box | size | status |
 |---|---|---|---|---|
-| R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | **UN-PARKED 2026-09-20: the 2026-09-19 "catastrophic bug" was the oracle — W4A8 used as ground truth at the attention-sink position; the f16 lane is exact on real data and at least as faithful as W4A8 against a CPU reference. Gate (3) and the speed measurement remain — see the correction in the brief** |
+| R1 | Metal W4F16 decode GEMV — a fidelity-gated decode lane | Mac | M (kernel + gate) | **DECIDED 2026-09-21: KILLED on speed.** 2026-09-20 correction: the 2026-09-19 "catastrophic bug" was the oracle, not the kernel. Gate (3) then PASSED cleanly 2026-09-21 (f16 slightly *more* faithful than shipped W4A8 against a CPU reference) — but served tok/s at the 1.5B decision cell is 75.2 vs W4A8's 73.1 (1.03×), below even the 1.10× killed floor; the depth curve confirms a flat ~2-4% gain everywhere, nowhere near the 1.25× ship bar. Kernel and tests kept, lane stays off by default — see the records |
 | R2 | Metal decode attention in the peer's shape | Mac | M–L | step 0 done 2026-09-18 (gap narrowed to 1.96× at 3900). **Build: PARKED 2026-09-19 — attention_fa kernel proven correct in isolation (16/16 adversarial cases), real speed win in isolation (up to 1.26× at K=3900), but diverges starting at the 3rd real decode token past the depth floor; root cause not found — see the record. 2026-09-20 follow-up: a race found+fixed (not the cause); an outside review caught the follow-up's own "call-count, not position" conclusion as drawn from a confounded test (both tried depths shared a mod-4 residue) — corrected: the divergence IS position-linked (a threshold in curNKeys, not a fixed call count), but not to one fixed absolute position either; root cause still open — see `docs/measurements/r2-attn-fa-followup-2026-09-20.md` §2b for the retraction and the corrected data.** |
 | R3 | Metal short-prompt floor 256 → 64, and what stays sequential | Mac | S | **SHIPPED 2026-09-20**: §3.2 gate SHIPS at K=64 alone and K=64+128 pooled; batched beats sequential TTFT 3.83× at K=64, 4.66× at K=128 (both past the ≥2× band) — floor moved 256→64. `noHead`/M-01 follow-on and `startPos`-on-speed still open |
 | R4 | Metal prefill ladder re-run post M-03/M-04; GEMM step 2 if the band is missed | Mac | S (measure) + M (build) | **step 0 done 2026-09-18: K=512 2.54× behind, step 2 KILLED** |
@@ -520,6 +520,31 @@ gate-(3) pass (one prompt, one cell); it is the absence of any f16 defect. **Gat
 served-tok/s measurement against the registered band are what remain**, exactly as the brief
 already required. The deliberately-failing keeper test is deleted, not loosened; the two new tests
 replace it.
+
+**Final decision, 2026-09-21 — gate (3) PASSED, speed KILLED**
+([`w4f16-decode-fidelity-PREREGISTERED.md`](../measurements/w4f16-decode-fidelity-PREREGISTERED.md),
+[`w4f16-decode-speed-2026-09-21.md`](../measurements/w4f16-decode-speed-2026-09-21.md)). Gate (3)
+ran, pre-registered before any cell, reusing the S-K64 CPU f32-weight/f32-activation reference
+already built for R6's own gate (10 prompts × 64 teacher-forced decode positions) and the same
+§3.2 pooled implementation (`poolCells`) two other gates in this repo already use: all three
+criteria hold (hard flips 4=4, agreement 91.25% ≥ 90.78%, mean KL 0.0460 ≤ 0.0474, lower on 7/10
+prompts) — a clean, even slightly favorable, pass. The served-tok/s measurement then decided it:
+at the 1.5B decision cell (depth 128), W4F16 measures 75.2 tok/s against W4A8's 73.1 — a 1.03×
+ratio, below the registered 1.10× killed floor (81 tok/s) and far from the 1.25× ship bar (92
+tok/s). The depth curve ({128, 512, 2048, 4000}) confirms a flat ~2–4% gain at every depth, not a
+shallow win bought by a deep regression — there is simply no regime where the win is large enough.
+`GOINFER_METAL_DECODE_LANE` stays off by default and undocumented as an operator knob. **R1 is
+closed: fidelity was never the blocker; the f16-FMA activation regime does not reach the
+served-tok/s win the brief's own premise (≥130–140 GB/s weight-stream bandwidth) predicted on this
+GPU's real dispatch/occupancy floor.** Kernel, wiring, and the three new test files
+(`metal/r1_gu_reference_test.go`, `metal/r1_lane_vs_cpu_test.go`, `metal/r1_gate3_test.go`) are
+kept as correctness-proven groundwork, matching this repo's own convention for a killed-but-correct
+lane — the original deliberately-failing repro they replace stays deleted. Gate (4) is clean with
+the lane off; with it on, one test (`TestMoE_assemblyVsDense`) fails but is diagnosed as a
+test-isolation artifact, not a lane regression — it builds a second, incidental dense resident that
+silently inherits the ambient env var while its MoE resident (correctly, verified directly) stays
+untouched; forcing both residents onto the same lane setting restores cosine to exactly 1.000000 —
+see the speed record's gate-(4) section for the full diagnosis.
 
 **Out of scope.** The LM head (N-40), KV precision, any change to the W4A8 path, prefill (already
 f16), the 26B/35B paged path (its GEMVs are launch-floor-bound, not stream-bound — audit §5).
