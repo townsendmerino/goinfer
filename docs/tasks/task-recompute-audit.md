@@ -63,7 +63,7 @@
 
 | id | what is recomputed | where | size of the redo | fix shape | status |
 |---|---|---|---|---|---|
-| **R-00** | a plain turn reuses resident KV rows a block-spec or draft-model generation overwrote | `decoder/blockspec.go:201`, `decoder/speculative.go:130-135` — neither calls `residentForgetIDs` | wrong output, silently | forget (or commit) on both paths; a test that alternates the paths | **bug — fix first** |
+| **R-00** | a plain turn reuses resident KV rows a block-spec or draft-model generation overwrote | `decoder/blockspec.go:201`, `decoder/speculative.go:132-135` — neither calls `residentForgetIDs` | wrong output, silently | forget (or commit) on both paths; a test that alternates the paths | **bug — fix first** |
 | **R-01** | the whole conversation, every turn, on every recurrent family, resident path | `decoder/resident_reuse.go:120` refuses `hasRecurrentState()` outright | a full prefill per agent turn (8.85 s at 2.3k tokens on the 7B dense; the 35B-A3B is the model this hits) | phase 0: exact-extension reuse, no snapshot; phase 1: the narrow snapshot via `CopyDeviceBatch`; phase 2: parked checkpoints | **phase 0 fixed 2026-09-03** (exact-extension reuse; CUDA-hardware scenarios unrun); phase 1/2 open; L-05 |
 | **R-02** | the prefix, after a cancelled generation | `decoder/model.go` `generateInto`'s `select` on `ctx.Done` returns without committing | the next turn cold-prefills after every interrupt | commit `prompt+generated` at that exit — the cache is consistent there | **fixed 2026-09-03** |
 | **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | **`spec_ngram.go` fixed 2026-09-03**; `spec_eagle.go` never touches resident state — the fix doesn't apply there (see below) |
@@ -88,7 +88,7 @@ positions are inherent, not recompute.
 
 - **Where:** `decoder/blockspec.go:201` (`BlockSpec.generate`: `PrefillLastNArgmax(embs, 0)` /
   `PrefillSeedArgmax` prefill the prompt from position 0, then every verify round writes rows) and
-  `decoder/speculative.go:130-135` (`GenerateSpeculative` claims `resBusy` and runs the target's
+  `decoder/speculative.go:132-135` (`GenerateSpeculative` claims `resBusy` and runs the target's
   verify on the resident KV). The five files that forget are `generate_vl.go`, `model.go`,
   `resident_reuse.go`, `spec_eagle.go`, `spec_ngram.go`. `blockspec.go` does not claim `resBusy`
   either.
