@@ -1403,7 +1403,7 @@ find out where the batched prefill's time goes before scoping a build for it.
 G35's ablation the non-GEMV remainder is ~4.25 ms of a 7.27 ms token. Batched prefill: 0.5B int8
 P=1024 in 3.23 s (`prefill-batched-ttft-2026-09-13.md`). **Band (decode, 1.5B int4, `gpu/cmd/serve`
 server-to-server greedy, the G36 protocol): ≥170 tok/s ships (1.24×), 150–170 parked, below 150
-killed. Prefill: no band until the profile exists — register one in the profile's write-up.**
+killed. Prefill: no band until the profile exists — register one in the profile's write-up.** **PROFILE DONE 2026-09-22 (`docs/measurements/webgpu-prefill-profile-2026-09-22.md`): the tiled W8A8 GEMM (`matmulTiledW8A8KernelWGSL`, 16×16 tile, DP4A active) is 81–94% of batched prefill at a flat ~1 TFLOPS = ~11% of f32 peak / ~3% of DP4A peak; attention is only 2.5–15% (R5's tile lever does NOT transfer). Band registered there: a register-blocked GEMM rewrite ships at ≥2.0× on the GEMM class at 1.5B/P=512 (≈1.85× whole prefill), 1.3–2.0× parked, <1.3× killed; bit-identical by construction (exact i32 K-sum, scales once). Build not started. Two instrument defects caught by built-in self-checks (unsubmitted-work poll; cold-JIT warm-up) before any number was trusted.**
 
 **Read first.** `docs/QUEUE.md` G35 and G36 in full (the ablation harness `TestDecode_dispatchProfile`,
 the "13 → 3 was never a WGSL-side possibility" table — K1 yes, K2 no, K3 bandwidth-fatal; the lesson

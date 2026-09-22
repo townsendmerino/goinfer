@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -826,9 +827,34 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 	}
 	keepBuf(xd)
 
+	// R10 prefill decomposition (gpu/prefill_prof.go): pt is a no-op (time.Time{}) whenever
+	// c.prefillProf is nil, so every call below costs one nil-check when profiling is off —
+	// mirroring cudaResident's own profTic/profToc exactly, including the accepted trade-off
+	// that category boundaries are syncs, so the category sum runs a bit over pipelined wall
+	// time (docs/measurements/webgpu-prefill-decomp-2026-09-22.md has the numbers). residualB
+	// and swigluB (elementwise, not GEMM/attn/norm-rope/kv-write) fold into normsRope, the
+	// same "glue" role cuda/prefill.go's glueCat plays.
+	// profBoundary closes one category: it FLUSHES the open encoder first (Poll only waits for
+	// submitted work — dispatches still in the encoder are invisible to it, so without this the
+	// split follows the 32-dispatch flush cadence, not the categories; the first run of this
+	// profiler read attention at 544 ms for P=256 and 55 ms for P=512, physically impossible for an
+	// O(P^2) kernel, which is how the bug was found), then polls and books the elapsed time. The
+	// extra flushes happen ONLY when profiling is on; production cadence is untouched.
+	var pt time.Time
+	profBoundary := func(cat prefillProfCat) {
+		if c.prefillProf == nil {
+			return
+		}
+		flushPasses()
+		dispCount = 0
+		c.prefillProfToc(cat, pt)
+		pt = c.prefillProfTic()
+	}
+	pt = c.prefillProfTic()
 	for i := range m.Layers {
 		lw := &m.Layers[i]
 		xn := rmsB(xd, lw.Attn.Norm.buf)
+		profBoundary(profNormsRope)
 		var qBias, kBias, vBias *wgpu.Buffer
 		if lw.Attn.QBias != nil { // Qwen2 q/k/v bias — fused into the GEMM epilogue,
 			qBias, kBias, vBias = lw.Attn.QBias.buf, lw.Attn.KBias.buf, lw.Attn.VBias.buf // matching decoderunner.go's gemvBias, not a separate post-hoc add (see tiledProjB's doc comment)
@@ -847,12 +873,14 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		}
 		k := tiledProjB(xn, M, lw.Attn.KProj, kBias)
 		v := tiledProjB(xn, M, lw.Attn.VProj, vBias)
+		profBoundary(profGemm)
 		if lw.Attn.QNorm != nil {
 			qkNormB(q, lw.Attn.QNorm.buf, nH)
 			qkNormB(k, lw.Attn.KNorm.buf, nKV)
 		}
 		ropeB(q, lw.Attn.InvFreq.buf, nH)
 		ropeB(k, lw.Attn.InvFreq.buf, nKV)
+		profBoundary(profNormsRope)
 		// Bulk KV-cache write: positions are contiguous (positions[0]..positions[0]+M-1,
 		// residency.go), so k/v's packed [M, kvDim] rows land at one contiguous range of
 		// the cache — a single copy per k/v instead of M.
@@ -866,6 +894,7 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 			cpy(k, 0, lw.Attn.KCache.buf, uint64(positions[0]*kvDim*4), uint64(M*kvDim*4))
 			cpy(v, 0, lw.Attn.VCache.buf, uint64(positions[0]*kvDim*4), uint64(M*kvDim*4))
 		}
+		profBoundary(profKVWrite)
 		// All rows' K/V are now in the cache; each row attends to its causal prefix
 		// (including earlier rows of this same prefill block) — the same ordering
 		// DecodeTokenFusedBatched's parity gate already proves correct.
@@ -885,14 +914,21 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		if aGate != nil {
 			dispFlat(c.deltaAttnGatePipeline, c.deltaAttnGateLayout, M*nH*hd, ctxv, aGate)
 		}
+		profBoundary(profAttn)
 		attnOut := tiledProjB(ctxv, M, lw.Attn.OProj, nil)
+		profBoundary(profGemm)
 		xd = residualB(xd, attnOut) // in-place: xd += attnOut
 		xn2 := rmsB(xd, lw.MLPNorm.buf)
+		profBoundary(profNormsRope)
 		gate := tiledProjB(xn2, M, lw.Gate, nil)
 		up := tiledProjB(xn2, M, lw.Up, nil)
+		profBoundary(profGemm)
 		mid := swigluB(gate, up)
+		profBoundary(profNormsRope)
 		down := tiledProjB(mid, M, lw.Down, nil)
+		profBoundary(profGemm)
 		xd = residualB(xd, down) // in-place: xd += down
+		profBoundary(profNormsRope)
 	}
 
 	// Final norm + LM head on the LAST row ONLY (matches decoder/forwardn.go's

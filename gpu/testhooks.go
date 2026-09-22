@@ -15,6 +15,7 @@ package gpu
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -319,3 +320,22 @@ func (c *Context) GptOssDownForTest(s *ResidentStackedW8A8, aq []int8, aScale fl
 // (R10/G38's root-cause isolation: does the same real buffer cost the same standalone as it does
 // inside a full decode token, or is the cost specific to co-residency/pass position).
 func (r *DecodeRunner) LMHeadForTest() decodeWeight { return r.lmHead }
+
+// SetPrefillProfForTest enables (on=true) or disables the R10 prefill decomposition profiler
+// (gpu/prefill_prof.go) and resets its accumulators. See PrefillProfForTest.
+func (c *Context) SetPrefillProfForTest(on bool) {
+	if on {
+		c.prefillProf = &prefillProf{}
+	} else {
+		c.prefillProf = nil
+	}
+}
+
+// PrefillProfForTest reports the accumulated per-category wall time since the profiler was last
+// enabled/reset. Zero values if profiling was never turned on.
+func (c *Context) PrefillProfForTest() (gemm, attn, normsRope, kvWrite time.Duration) {
+	if c.prefillProf == nil {
+		return 0, 0, 0, 0
+	}
+	return c.prefillProf.gemm, c.prefillProf.attn, c.prefillProf.normsRope, c.prefillProf.kvWrite
+}

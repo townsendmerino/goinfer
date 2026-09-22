@@ -1,0 +1,15 @@
+=== RUN   TestPrefill_dispatchProfile
+    prefill_dispatch_profile_test.go:69: geometry: hidden=1536 layers=28 nH=12 nKV=2 headDim=128 inter=8960 vocab=151936
+    prefill_dispatch_profile_test.go:157: === P=256: wall 770.2 ms | category sum 736.0 ms (95.6% of wall — sync overcount) ===
+    prefill_dispatch_profile_test.go:164: gemm             688.34    93.5%
+    prefill_dispatch_profile_test.go:164: attn              18.49     2.5%
+    prefill_dispatch_profile_test.go:164: normsRope         27.42     3.7%
+    prefill_dispatch_profile_test.go:164: kvWrite            1.76     0.2%
+    prefill_dispatch_profile_test.go:166: GEMM class: 670.8 GFLOP over 688.341ms -> 974.5 GFLOPS achieved
+    prefill_dispatch_profile_test.go:157: === P=512: wall 1544.0 ms | category sum 1488.1 ms (96.4% of wall — sync overcount) ===
+    prefill_dispatch_profile_test.go:164: gemm            1366.96    91.9%
+    prefill_dispatch_profile_test.go:164: attn              62.16     4.2%
+    prefill_dispatch_profile_test.go:164: normsRope         56.01     3.8%
+    prefill_dispatch_profile_test.go:164: kvWrite            2.95     0.2%
+    prefill_dispatch_profile_test.go:166: GEMM class: 1341.6 GFLOP over 1.366958s -> 981.5 GFLOPS achieved
+ok  	github.com/townsendmerino/goinfer/gpu	13.477s

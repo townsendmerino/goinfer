@@ -70,6 +70,9 @@ type Context struct {
 	// Registering at the allocation site makes the default behaviour correct for pipelines that do
 	// not exist yet.
 	releases []func()
+	// prefillProf, when non-nil, accumulates per-category wall time in PrefillLastW8A8
+	// (prefill_prof.go) — nil by default, zero cost (one nil check per category boundary) when off.
+	prefillProf *prefillProf
 	// closed makes Close IDEMPOTENT. `defer m.Close()` alongside an explicit m.Close() is the
 	// ordinary Go shape, and decoder.Model.Close calls m.be.Close() unconditionally — so a second
 	// Close used to double-release the wgpu handles, a use-after-free inside the native layer. The
