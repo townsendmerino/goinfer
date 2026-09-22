@@ -1,8 +1,10 @@
 # Task: never swap — file-backed weights by default, a firm cap where one is possible, and a tripwire where one is not (S0–S6) — 2026-09
 
-> **Status: S3 FURTHER BUILT 2026-09-22 (the watch mechanism, the serving consumer, and now the
-> load-time consumer's plumbing + both server-side halves of the wiring — unit-tested; the real
-> gpt-oss-20b positive-control run is still outstanding — see S3's own status note below),
+> **Status: S3 BUILT AND MEASURED 2026-09-22 (the watch mechanism, the serving consumer, and the
+> load-time consumer's plumbing + both server-side halves of the wiring, all unit-tested and
+> committed as `84c70c38`; the real gpt-oss-20b positive-control run found a genuine, documented
+> LIMIT — the guard detects on time but does not hold the machine under its own +1 GB bound
+> unassisted, see S3's own status note below and `docs/measurements/swap-tripwire-2026-09-22.md`),
 > S1/S2/S4/S5/S6 unstarted.** S2 is the precondition for S1 covering the families that matter most
 > on the Mac;
 > S4, S6 and S5 follow. S6 is the structural fix for the Metal path the R11(c) runs of
@@ -379,12 +381,32 @@ unless a tail needs a field — if it does, v12 with the usual reader guard).
 >   swap delta — **mutation-checked**: dropping the `close(abortCh)` line turns the trip test red
 >   (timeout), confirmed then reverted. The full `decoder` and `internal/serveapp` suites pass under
 >   `-race`; `gofmt`, `go vet` (native + linux cross), and CI's pinned `staticcheck` are all clean.
-> - **What is still NOT built.** The actual positive-control gate this brief is written against —
->   "a direct gpt-oss-20b load trips and aborts before swap-used exceeds baseline + 1 GB" — has not
->   been run; nor have the two negative controls (sidecar 1.5B, 7B Metal, 100 completions each never
->   tripping). The Measure step (three real-machine controls, external `sysctl` polling alongside
->   the guard's own reading) is unstarted. `chat` (item 3 of Build, below) has no load-time guard
->   wired at all yet — only `internal/serveapp`. None of this is committed.
+> - **Committed and pushed** as `84c70c38`; CI and `govulncheck` both green.
+> - **The positive-control gate ran 2026-09-22 — result: a genuine, documented LIMIT, not a clean
+>   pass.** `docs/measurements/swap-tripwire-2026-09-22.md` has the full run. Short version: the
+>   in-process guard's `OnTrip` fired at baseline+0.72–0.80 GB (inside the registered "+1 GB"
+>   bound), but real swap-used kept climbing for several seconds after — a burst of ~400–550 MB/s
+>   once dequant work started outran both the guard's 2s poll and an independent external
+>   kill-switch's 1s poll, peaking at baseline+1.69 GB before the kill-switch had to `SIGKILL` the
+>   process. The machine recovered fully and immediately (no hang, no panic) — a materially better
+>   outcome than the historical 22.9 GB incident, roughly an order of magnitude less exposure — but
+>   the mechanism did NOT hold the line at +1 GB unassisted. Likely cause (reasoned, not directly
+>   instrumented): `parallelLayers` deliberately lets an already-grabbed layer finish rather than
+>   cancelling it mid-write, and several `GOMAXPROCS` workers were most likely still mid-dequant on
+>   gpt-oss-20b's large per-layer MoE tensors when the trip fired. Reaching this test at all also
+>   required `GOINFER_NO_FIT_GUARD=1` — the static fit guard refuses this exact load cleanly with
+>   zero swap growth by default (`-fit=off` alone does NOT bypass it, confirmed the hard way on a
+>   first attempt), so the tripwire is only ever the last line of defense on this machine for this
+>   model, never what a normal invocation hits. Per explicit instruction: record the limit, do not
+>   chase a fix under further real-hardware risk this pass — `Options.LoadAbort` and its unit tests
+>   stand as built (they are correct on the narrow, already-proven contract; the gap is what a real
+>   burst can do to a coarse-grained, poll-based backstop, not a bug in the dispatch logic itself).
+> - **Still not done.** The two negative controls (sidecar 1.5B, 7B Metal, 100 completions each
+>   never tripping); a direct per-worker allocation trace to confirm the in-flight-drain theory
+>   rather than infer it from timing; `chat` (item 3 of Build, below) has no load-time guard wired
+>   at all — only `internal/serveapp`. A real fix, if picked up later, would need either bounding
+>   worker concurrency once armed or a finer-grained abort check inside a huge-tensor family's own
+>   layer build — neither designed here.
 
 **Goal.** goinfer notices swap growing during its own load or serving and acts before the machine
 thrashes — abort the load with a message naming the term, or stop admitting requests — instead of
