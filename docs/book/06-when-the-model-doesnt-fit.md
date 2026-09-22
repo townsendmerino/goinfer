@@ -173,5 +173,5 @@ Chapter 7 explains why Mixture-of-Experts models are the ones where all this wor
 
 ---
 
-*Sources: [`docs/completed/task-metal-expert-streaming-at-scale.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/completed/task-metal-expert-streaming-at-scale.md), [`docs/tasks/task-moe-streaming.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/tasks/task-moe-streaming.md),
+*Sources: [`docs/completed/task-metal-expert-streaming-at-scale.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/completed/task-metal-expert-streaming-at-scale.md), [`docs/completed/task-moe-streaming.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/completed/task-moe-streaming.md),
 `CLAUDE.md` (measurement discipline), [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) §B4.*
