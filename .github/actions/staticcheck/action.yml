@@ -1,0 +1,36 @@
+name: install-staticcheck
+description: >
+  Downloads the pinned staticcheck release binary (linux_amd64) and puts it on PATH, verified
+  against a hardcoded SHA-256 -- replaces `go run honnef.co/go/tools/cmd/staticcheck@vX.Y.Z`,
+  which compiles from source on every run (measured 24s median, docs/measurements/ci-timing-2026-09.md)
+  since setup-go's cache key (go.sum) does not cover a `go run <module>@version` invocation the
+  way it covers this repo's own declared dependencies. C5 (docs/tasks/task-ci-speed-2026-09.md).
+  Only linux_amd64 -- the three call sites (root's lint job, gpu, cuda) all run on ubuntu-latest;
+  add another `if:`-gated arch/os branch here if a caller ever runs on something else.
+inputs:
+  version:
+    description: >
+      The staticcheck release TAG (e.g. "2026.2" for v0.8.0 -- staticcheck's release tags are its
+      own CalVer, not the vX.Y.Z the tool reports; check https://github.com/dominikh/go-tools/releases
+      for the mapping when bumping). Must match `checksum` below -- both are pinned together.
+    required: true
+  checksum:
+    description: The published SHA-256 of staticcheck_linux_amd64.tar.gz for `version`.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: download + verify staticcheck ${{ inputs.version }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        url="https://github.com/dominikh/go-tools/releases/download/${{ inputs.version }}/staticcheck_linux_amd64.tar.gz"
+        tmp="$(mktemp -d)"
+        curl -sSL -o "$tmp/staticcheck.tar.gz" "$url"
+        echo "${{ inputs.checksum }}  $tmp/staticcheck.tar.gz" | sha256sum -c -
+        tar -xzf "$tmp/staticcheck.tar.gz" -C "$tmp"
+        mkdir -p "$HOME/.local/bin"
+        mv "$tmp/staticcheck/staticcheck" "$HOME/.local/bin/staticcheck"
+        chmod +x "$HOME/.local/bin/staticcheck"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        rm -rf "$tmp"

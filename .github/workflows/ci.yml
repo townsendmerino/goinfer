@@ -17,10 +17,32 @@ on:
 permissions:
   contents: read
 
+# C2 (docs/tasks/task-ci-speed-2026-09.md): a run superseded by a newer push on the SAME ref is
+# cancelled rather than left to finish on a runner nobody will read the result of — this repo has
+# real multi-commit-burst days (85 commits in two days, 2026-09-08-10). Safe to cancel mid-way
+# (unlike book-pages.yml's Pages deploy, which explicitly does not): a cancelled CI run has no
+# external side effect, it just stops checking a commit that is no longer the tip of the ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Root module: the pure-Go runtime (decoder / tokenizer / constrain / demo).
   # Resolves the published aikit from the proxy — no workspace needed.
-  root:
+  #
+  # C1 (docs/tasks/task-ci-speed-2026-09.md): split from one `root` job into `lint` (gofmt,
+  # build, both vets, staticcheck, apidiff, citation lint, book link lint, cleanliness guard --
+  # everything that needs the full-history checkout) and `test` (the -race suite + sampler
+  # gates, shallow checkout) so both start at t=0 instead of the test step waiting behind a
+  # measured ~71s median lint stretch (docs/measurements/ci-timing-2026-09.md). `test` does NOT
+  # duplicate `lint`'s own gofmt/build/vet steps -- `go test` fails to compile the same way `go
+  # build`/`go vet` would if something is actually broken, just surfaced inside the test job's
+  # own output instead of a separate step, and `lint` is a required check regardless.
+  #
+  # NOTE for whoever manages branch protection: if `root` is named individually in a required-
+  # status-checks list, that name-based rule needs updating to `lint` + `test` after this lands
+  # -- nothing in this repo's own files can see or change that GitHub-side setting.
+  lint:
     runs-on: ubuntu-latest
     steps:
       # fetch-depth: 0 is REQUIRED, and only on this job — it is the one that runs the citation
@@ -63,8 +85,16 @@ jobs:
 
       # staticcheck (incl. the unused/U1000 check) — mirrors the go vet tag matrix
       # across the three module jobs (no-tag / gpu / cuda). Pinned like fin/ken.
+      # C5: a downloaded, checksum-verified release binary (./.github/actions/staticcheck),
+      # not `go run @version` (measured 24s median compiling from source every run,
+      # docs/measurements/ci-timing-2026-09.md) -- same pin (2026.2 == v0.8.0), just fetched
+      # once as a binary instead of built from source on every job that needs it.
+      - uses: ./.github/actions/staticcheck
+        with:
+          version: "2026.2" # v0.8.0
+          checksum: df1fd2b42de9fdef42231329522ea8f1f6846a5eb1a0200fad14c90bba464d02
       - name: staticcheck
-        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.0 ./...
+        run: staticcheck ./...
 
       # API compatibility against the SIGNED-OFF Hard tier (docs/api-tiers.md, v1.0 gate §3).
       # It runs on THIS job because it needs the full history the citation lint already requires:
@@ -139,6 +169,21 @@ jobs:
             exit 1
           fi
           echo "clean: no webgpu/gocudrv/purego/aikit-gpu/submodules in the goinfer root (packages or module graph)"
+
+  # C1's other half: the -race suite + sampler gates, split out of `lint` so both start at t=0.
+  # Shallow (default depth-1) checkout -- this job never touches git history, only source at HEAD.
+  # A `go test` compile failure surfaces here too (it builds what it tests), so this job is not
+  # missing fast-fail coverage by not repeating `lint`'s own gofmt/build/vet steps -- it just
+  # surfaces a compile error inside `test`'s own output instead of a dedicated step, and `lint`
+  # (which DOES run those as fast, separate, clearly-named steps) is a required check regardless.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       # Model-asset parity tests skip themselves when their checkpoints /
       # goldens are absent (see testdata/README), so this is green on a fresh
@@ -256,8 +301,13 @@ jobs:
       - name: vet -tags gpu
         run: go vet -tags 'gpu goinfer_testhooks' ./gpu/...
 
+      # C5: pinned release binary, not `go run @version` -- see .github/actions/staticcheck.
+      - uses: ./.github/actions/staticcheck
+        with:
+          version: "2026.2" # v0.8.0
+          checksum: df1fd2b42de9fdef42231329522ea8f1f6846a5eb1a0200fad14c90bba464d02
       - name: staticcheck -tags gpu
-        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.0 -tags 'gpu goinfer_testhooks' ./gpu/...
+        run: staticcheck -tags 'gpu goinfer_testhooks' ./gpu/...
 
       # GPU tests skip cleanly with no adapter (headless runner); this confirms
       # they compile and the resident-matmul path is exercised where possible.
@@ -292,8 +342,16 @@ jobs:
       - name: vet -tags cuda
         run: go vet -tags 'cuda goinfer_testhooks' ./cuda/...
 
+      # C5: pinned release binary, not `go run @version` -- see .github/actions/staticcheck.
+      # CGO_ENABLED=0 dropped here: it only affects Go compilation (go build/run/test), and this
+      # is now a prebuilt binary invocation, not a `go run` -- the env var had no effect on the
+      # binary's own analysis of the cuda module either way.
+      - uses: ./.github/actions/staticcheck
+        with:
+          version: "2026.2" # v0.8.0
+          checksum: df1fd2b42de9fdef42231329522ea8f1f6846a5eb1a0200fad14c90bba464d02
       - name: staticcheck -tags cuda
-        run: CGO_ENABLED=0 go run honnef.co/go/tools/cmd/staticcheck@v0.8.0 -tags 'cuda goinfer_testhooks' ./cuda/...
+        run: staticcheck -tags 'cuda goinfer_testhooks' ./cuda/...
 
       # Compile + skip cleanly on the GPU-less runner (tests t.Skip without a device).
       - name: test -tags cuda
@@ -322,6 +380,22 @@ jobs:
       # Model-asset parity tests self-skip without their checkpoints, so this is
       # green and fast on a fresh checkout (the heavy 12B parity only runs where
       # assets are present, e.g. the local sweep box). Race detector on.
+      #
+      # C4 (docs/tasks/task-ci-speed-2026-09.md): `-short`, unlike `lint`'s Linux twin (`test`,
+      # which stays exhaustive as the canonical gate). This job's OWN stated purpose is catching
+      # darwin-specific BUILD breaks (a `//go:build unix` too broad, decoder/madvise_*.go) — the
+      # platform-independent exhaustive sweeps it was ALSO running bought nothing running twice
+      # (the sampler-gates step comment already makes this argument for 25s of gates; C4 applies
+      # it to the ~1290s median suite, docs/measurements/ci-timing-2026-09.md, which measured
+      # root-darwin as the workflow's actual wall-time long pole, ahead of `test`). `-short` keeps
+      # the arm64 compile of every test file (still catches a real darwin build break) and a real
+      # -race run of everything that isn't explicitly gated slow; it drops only tests that check
+      # `testing.Short()` themselves — verified before this change that real sites exist beyond
+      # the already-self-skipping (no checkpoint asset in CI either way) parity tests: ~9
+      # "microbench"-labeled sites plus throughput/dispatch-profile/decomposition tests, none
+      # asset-gated, all currently running in CI on both platforms for no platform-specific
+      # reason. `-short` is not new to this file — `gpu`/`cuda` already use it
+      # (ci.yml's own gpu/cuda jobs) — this applies the same, already-proven pattern here.
       - name: test
         # -timeout 25m: the default is 10m PER PACKAGE, and ./decoder carries heavy parity +
         # exhaustive sampler sweeps that the race detector slows down substantially. main went red
@@ -329,7 +403,7 @@ jobs:
         # package was two-fifths of the way to the default before the sampler work landed. The
         # sweep is now sharded across parallel subtests and strided under -race; this raises the
         # ceiling so a slow runner cannot re-trip it, while still catching a real hang.
-        run: go test -race -timeout 25m -tags goinfer_testhooks ./...
+        run: go test -short -race -timeout 25m -tags goinfer_testhooks ./...
 
   # GPU submodule on darwin/arm64 — the resident Metal decode path. Same
   # ephemeral-workspace stitch as the Linux gpu job, but no apt deps: Metal is a
