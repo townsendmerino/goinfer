@@ -49,7 +49,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (35: 30 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (36: 31 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -70,6 +70,13 @@ One is a program rather than a single design, and is named without the `task-` p
 CUDA / Metal against the peers, as of 2026-09-18), the mechanism behind each cell, the registered
 projection bands, and the twelve briefs R1–R12 that would close them. It is the one place the whole
 chase is on a page; `benchmarks.md` stays the source of every ratio it quotes.
+
+[`task-never-swap-2026-09.md`](tasks/task-never-swap-2026-09.md) (S0–S6, filed 2026-09-22) is its
+memory-side companion: what is anonymous and what is file-backed on each load path (why a plain
+`.gguf` load and a Metal resident build swap on the MacBook and a CPU `.giw` load does not), and the
+briefs for file-backed weights by default, a swap tripwire in the binary, the fit guard on the
+`.giw` path, Metal aliasing the mapping instead of copying it, and a firm cap for the MoE pager
+where darwin allows one.
 
 One is the outside view rather than a design: [`task-first-hour.md`](tasks/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running

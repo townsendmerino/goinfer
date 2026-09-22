@@ -38,7 +38,11 @@
 > ceilings §3 revisits) · [`task-peer-benchmarks.md`](task-peer-benchmarks.md) (the peer matrix and
 > its unbuilt rows) · [`task-l01-hybrid-moe-cpu-gpu.md`](task-l01-hybrid-moe-cpu-gpu.md) (R11's
 > CUDA half) · [`task-decode-splitkv-attention.md`](task-decode-splitkv-attention.md) (R6's prior
-> art) · aikit's `docs/task-simd-audit.md` (R9's kernel-side record; cross-repo, described not cited).
+> art) · [`task-never-swap-2026-09.md`](task-never-swap-2026-09.md) (S0–S6, filed 2026-09-22: the
+> memory-side companion — what R11(c)'s three M26 swap spirals are made of, file-backed weights by
+> default, the swap tripwire, the fit guard on the `.giw` path, Metal aliasing the mapping; S3, S4
+> and S6 are the preconditions for a fourth R11(c) attempt) ·
+> aikit's `docs/task-simd-audit.md` (R9's kernel-side record; cross-repo, described not cited).
 
 ---
 

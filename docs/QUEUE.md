@@ -1439,6 +1439,18 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:450` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/snapshot_golden_test.go:138` | goinfer | `func TestMetalSnapshotGolden(t *testing.T) {` |
 | `docs/tasks/task-l01-hybrid-moe-cpu-gpu.md|cuda/resident.go:2744` | goinfer | `if r.l01Enabled && r.l01CPUMask[j] {` |
+| `docs/tasks/task-never-swap-2026-09.md|decoder/gguf.go:1488` | goinfer | `func needsResidentSerialize(a *Architecture) bool {` |
+| `docs/tasks/task-never-swap-2026-09.md|decoder/gguf.go:1977` | goinfer | `if sink != nil {` |
+| `docs/tasks/task-never-swap-2026-09.md|decoder/layerpaging.go:105` | goinfer | `budget = mmap.AutoBudget()` |
+| `docs/tasks/task-never-swap-2026-09.md|decoder/model.go:327` | goinfer | `if strings.HasSuffix(dir, ".giw") {` |
+| `docs/tasks/task-never-swap-2026-09.md|decoder/model.go:415` | goinfer | `pinnedCtx, err := guardFit(fitCheckFor(dir, opts.Quant, quant, opts))` |
+| `docs/tasks/task-never-swap-2026-09.md|decoder/moepaging.go:159` | goinfer | `budget = mmap.AutoBudget()` |
+| `docs/tasks/task-never-swap-2026-09.md|decoder/moepaging.go:167` | goinfer | `if os.Getenv("GOINFER_MOE_PREAD_CPU") == "1" && giwPath != "" && len(poolMembers) == len` |
+| `docs/tasks/task-never-swap-2026-09.md|internal/chatapp/main.go:373` | goinfer | `model, err := decoder.Load(path, opts)` |
+| `docs/tasks/task-never-swap-2026-09.md|internal/fitcmd/fit.go:83` | goinfer | `m, err := decoder.Load(path, decoder.Options{Quant: *quant})` |
+| `docs/tasks/task-never-swap-2026-09.md|internal/prequant/prequant.go:198` | goinfer | `func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (string, erro` |
+| `docs/tasks/task-never-swap-2026-09.md|internal/serveapp/main.go:1268` | goinfer | `if !opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&` |
+| `docs/tasks/task-never-swap-2026-09.md|metal/backend.go:139` | goinfer | `const residentMemFraction = 0.70` |
 | `docs/tasks/task-recompute-audit.md|cuda/resident.go:395` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/tasks/task-recompute-audit.md|decoder/attention.go:91` | goinfer | `if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {` |
 | `docs/tasks/task-recompute-audit.md|decoder/blockspec.go:201` | goinfer | `func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) ` |
