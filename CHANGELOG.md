@@ -15,6 +15,7 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **CUDA: opt-in expert-major MoE prefill (`GOINFER_CUDA_MOE_EXPERT_MAJOR`, default off)** (R11/P20). Reorders the batched prefill FFN to admit/DMA each distinct routed expert once per chunk instead of once per (row, rank) — no new kernel, reuses the frozen `moe.ptx` GEMVs and `residual_batched`, bit-identical by construction (mutation-checked on two fixtures). Real measurement on the only available real target (Mellum2, 51 C′ slots, already 98.1% cache hit rate): a real but small 3.5-4.3% win. The model this was designed for (Gemma-4-26B, 10 slots, 61.3% hit rate, ~2.3x projected) needs a further extension not built in this pass — `docs/measurements/p20-expert-major-2026-09-21.md`.
 ### Changed
 
 - **CUDA vision tower: the R8 fused attention kernel is now DEFAULT** (26.0 -> 4.1 s/image, 6.4x), overriding both pre-registered rules on owner decision: tower-level cosine vs the old kernel was 0.96 (registered pass line 0.98) and a served downstream check found it perturbs greedy generation somewhat more than a 1-LSB pixel jitter control (registered pass line f_N<=1, measured 6/8) — no defect found in either check. `GOINFER_CUDA_VISION_ATTN=exact` restores the old kernel. `docs/measurements/vision-tower-mma-2026-09-21.md`, `vision-tower-downstream-2026-09-21.md`.

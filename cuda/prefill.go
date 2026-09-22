@@ -1148,21 +1148,31 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			// with either armed rather than quietly returning M× the rows they expect.
 			if Ly.g4moe || Ly.isMoE {
 				t = r.profTic()
-				for m := 0; m < M; m++ {
-					// Between ROWS: this loop is the one that made cancellation coarse. A MoE
-					// chunk is M sequential per-token FFNs, so without this a cancelled 512-row
-					// chunk still runs every one of them — measured ~22 s on M26, against the
-					// ~46 ms the per-token fallback it replaced would have taken to notice.
-					// Checked per row, so the granularity is back to roughly one token.
-					if e := ctx.Err(); e != nil {
+				// R11/P20 (cuda/moe_expert_major.go, docs/measurements/p20-expert-locality-2026-09-21.md):
+				// route+bucket+admit-once-per-distinct-expert instead of once per (row, rank), when eligible
+				// (generic MoE only — Ly.g4moe's own parallel dense‖MoE shape is not covered here). Checked
+				// once per layer, not per row, so ineligible layers pay nothing beyond one field-and-map read.
+				if !Ly.g4moe && r.prefillMoEExpertMajorEligible(Ly) {
+					if e := r.prefillMoEExpertMajorRun(ctx, Ly, xB, M, hidden); e != nil {
 						return e
 					}
-					xm := xB.At(m * hidden * 4)
-					if e := r.segBFFN(Ly, l, xm); e != nil {
-						return e
-					}
-					if e := r.layerTail(Ly, l, false, xm); e != nil {
-						return e
+				} else {
+					for m := 0; m < M; m++ {
+						// Between ROWS: this loop is the one that made cancellation coarse. A MoE
+						// chunk is M sequential per-token FFNs, so without this a cancelled 512-row
+						// chunk still runs every one of them — measured ~22 s on M26, against the
+						// ~46 ms the per-token fallback it replaced would have taken to notice.
+						// Checked per row, so the granularity is back to roughly one token.
+						if e := ctx.Err(); e != nil {
+							return e
+						}
+						xm := xB.At(m * hidden * 4)
+						if e := r.segBFFN(Ly, l, xm); e != nil {
+							return e
+						}
+						if e := r.layerTail(Ly, l, false, xm); e != nil {
+							return e
+						}
 					}
 				}
 				r.profToc(gemvCat, t)

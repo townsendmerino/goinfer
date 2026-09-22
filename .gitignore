@@ -84,6 +84,8 @@ demo/chat/dist/
 !testdata/olmo_hybrid-tiny/model.safetensors
 !testdata/qwen3moe-tiny/
 !testdata/qwen3moe-tiny/model.safetensors
+!testdata/qwen3moe-tiny-k3/
+!testdata/qwen3moe-tiny-k3/model.safetensors
 !testdata/smollm3-tiny/
 !testdata/smollm3-tiny/model.safetensors
 

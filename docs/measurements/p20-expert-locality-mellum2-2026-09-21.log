@@ -1,0 +1,38 @@
+=== RUN   TestP20ExpertLocality
+[cuda] C′ cache: 64 slots/layer would need 6.3 GB VRAM but only 5.6 GB free — capping to 51 (5.2 GB)
+    p20_expert_locality_test.go:61: loaded mellum2.int4.giw in 22s
+=== P20 EXPERT LOCALITY: mellum2.int4.giw, M=512, cacheSlots=51, nE=64, topK=8 ===
+layer      rows distinct   row*topK  dupFactor fitsInSlots?
+0           512       63       4096      65.02           NO
+1           512       64       4096      64.00           NO
+2           512       63       4096      65.02           NO
+3           512       63       4096      65.02           NO
+4           512       62       4096      66.06           NO
+5           512       62       4096      66.06           NO
+6           512       61       4096      67.15           NO
+7           512       61       4096      67.15           NO
+8           512       56       4096      73.14           NO
+9           512       57       4096      71.86           NO
+10          512       59       4096      69.42           NO
+11          512       58       4096      70.62           NO
+12          512       54       4096      75.85           NO
+13          512       55       4096      74.47           NO
+14          512       50       4096      81.92          yes
+15          512       46       4096      89.04          yes
+16          512       50       4096      81.92          yes
+17          512       53       4096      77.28           NO
+18          512       51       4096      80.31          yes
+19          512       60       4096      68.27           NO
+20          512       54       4096      75.85           NO
+21          512       56       4096      73.14           NO
+22          512       54       4096      75.85           NO
+23          512       57       4096      71.86           NO
+24          512       57       4096      71.86           NO
+25          512       53       4096      77.28           NO
+26          512       52       4096      78.77           NO
+27          512       43       4096      95.26          yes
+MoE layers=28, worst-case distinct/layer=64 (cacheSlots=51), mean row-to-distinct dup factor=73.55
+EXISTING per-row LRU cache, this same prefill: 112459 hits / 2229 misses (98.1% hit rate) — the headroom expert-major would have to beat
+distinct-per-layer distribution: min=43 p25=53 median=57 p75=61 max=64
+--- PASS: TestP20ExpertLocality (29.56s)
+PASS
