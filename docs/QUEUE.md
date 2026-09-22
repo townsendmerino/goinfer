@@ -2442,3 +2442,88 @@ grammar implementations. Proven able to go red: mis-classifying control bytes as
   or greedy-fast-path configuration is HIGHER than the ratios above. Sizing that is open.
 - The remaining L-07 levers (per-state first-byte bitmap, string-state cache, vocab byte-trie)
   are untouched. This measured the floor and took only the cheapest one.
+
+## G38 · WebGPU greedy decode: the "608 KB readback" R10 named is 2-7% of the token — the LM-head GEMV itself is 72-82%, ~10-17× over its own bandwidth roofline
+
+Investigated 2026-09-21 starting from `docs/tasks/red-october.md` R10's decode-build item ("on-device
+argmax for the greedy path with a K-entry MapAsync ... so the 608 KB readback goes"). Read first:
+G35/G36 above — both of R10's OTHER named decode items (the K1 rmsQuant fusion, the attention
+occupancy lever) are **already done**: G35 killed K1 on its own arithmetic (5.2%→2.2% of the token,
+can't clear any real bar even free) and fixed a real serial-scan bug instead (+13%); G36 shipped
+key-split attention (2.5× at 1k context). R10's "Standing" numbers (137.6 tok/s baseline) predate
+both and are stale. Only the argmax item and the prefill profile were genuinely open.
+
+**Box:** RTX 2070 SUPER, driver 595.91.07, Qwen2.5-Coder-1.5B and -0.5B (`int8int8`, GPU-resident),
+greedy, `TestDecodeArgmaxHeadroom` (`gpu/decode_argmax_headroom_test.go`, committed).
+
+### The readback is not the cost — checked directly, not assumed
+
+`ForwardSample`'s greedy branch (`gpu/resident_sample.go`, `invT == +Inf`) calls `Run()`: full
+LM-head GEMV → copy `vocab*4` bytes to a staging buffer → `MapAsync` → a host linear scan for the
+max. `RunNoLogits` (already in tree, unused by any test until now) skips the GEMV, the copy, and the
+readback entirely, so `Run() − RunNoLogits()` bounds what ANY logits-avoiding scheme — a device-side
+argmax kernel included — could possibly recover, since a real kernel still has to run the GEMV.
+
+| | 1.5B (hidden=1536) | 0.5B (hidden=896) |
+|---|---:|---:|
+| `Run()` | 10,335 µs/token | 5,884 µs/token |
+| `RunNoLogits()` | 1,572 µs/token | 1,226 µs/token |
+| delta (GEMV + copy + map + scan) | 8,763 µs = **84.8%** | 4,658 µs = **79.2%** |
+
+Then the delta itself is split: re-running the SAME copy+`MapAsync`+host-scan on the buffer a prior
+`Run()` already left populated — **zero new dispatch, zero new compute** — isolates the piece a
+device-argmax kernel actually removes.
+
+| | 1.5B | 0.5B |
+|---|---:|---:|
+| copy+map+scan ALONE | 251 µs = **2.4%** of the token | 394 µs = **6.7%** |
+| implied LM-head GEMV cost | 8,512 µs = **82.4%** | 4,264 µs = **72.5%** |
+
+**The item R10 named is dead: building a device-side argmax kernel recovers 2-7% of the token, not
+the 85% `TSync`'s share in `TestDecodeTWE_split` made it LOOK like** (`TSync` there is the whole
+GPU-blocked wait — real trunk compute plus the GEMV plus the copy/map, not isolated to the copy/map;
+reading it as "the readback" would have been the same analogy-transfers-its-assumptions mistake G36
+corrected itself out of for attention occupancy). Not built.
+
+### What was actually found: the LM-head GEMV is 10-17× over its own bandwidth roofline, and it is NOT a dispatch or occupancy defect
+
+The GEMV cost scales near-linearly with `hidden` (8,512 → 4,264 µs as hidden drops 1536 → 896, ratio
+0.58 vs the shape's 0.50 — real, not noise), which rules out a **fixed-per-workgroup / dispatch-count**
+defect (that would cost the SAME regardless of K) — this is genuine, proportional compute, just at
+low measured efficiency. It is the SAME shared kernel (`gemvW8A8ShaderWGSL`, `gpu/gemv.go`) every
+trunk projection uses — one workgroup per output row, 64-lane parallel tree reduce (not a serial
+scan; no G35-class bug in the kernel body itself), `gemvGrid` sizes a proper 2D grid for N>32768
+(151,936 → 5×32,768 = 163,840 workgroups, far more than this card's SM count — not an occupancy
+defect either).
+
+**Roofline, for the 1.5B:** 151,936 rows × 1,536 int8 weight bytes/row ≈ 233 MB; at this card's
+measured 448 GB/s (G36's own figure) that is **~0.52 ms**. Measured: **8.51 ms — a 16.4× gap.**
+Cross-checked a second way: G35's own baseline (113 GEMV dispatches/token, 4.226 ms at pos=64,
+mostly N in the 1,536-8,960 range) implies roughly tens of ns/workgroup; at that rate 163,840
+workgroups project to well under 1 ms, not 8.5 ms — the SAME shape of gap from a second, independent
+estimate.
+
+**Not root-caused.** The leading, unconfirmed hypothesis: the small (1,536-byte) activation buffer
+`aq` is re-read by every one of 163,840 workgroups, and stays cache-resident across the ~9,000
+workgroups a typical trunk GEMV dispatches — but likely does not across 163,840, if the driver's
+scheduling window or this card's cache can't hold enough in-flight workgroups' worth of reuse at that
+count. This is a hypothesis, not a finding: this box's WebGPU stack has no occupancy/cache-hit-rate
+counters (`TestDecodeTWE_split` already found "device-timestamp: unavailable"), so it cannot be
+checked here. Confirming it needs either upstream WebGPU profiling support this binding does not
+expose, or a comparable CUDA-side experiment (same one-workgroup-per-row int8 GEMV shape, ncu
+available) as a cross-check instrument — not attempted this pass.
+
+**Why this matters more than anything else in R10:** at 72-82% of the greedy-decode token, this
+single term dwarfs G35 (quantize fix, +13%) and G36 (attention, 2.5× at 1k) combined, on a MUCH
+shorter/well-bounded lever *if* the mechanism turns out to be fixable — but "high value, unattributed
+mechanism" is a profile-first item, not a build-first one, per this repo's own convention. Register a
+band and root-cause it before proposing a kernel change; do not guess at a fix from a hypothesis
+this pass could not confirm.
+
+### Limits, stated
+
+- One box, one card, `int8int8` quant, two model sizes (0.5B/1.5B). W4A8 and the wider (gemma-class)
+  weight formats were not checked for the same anomaly.
+- Prefill's own LM-head cost was not measured (R10's prefill-profile item is separate and still
+  open); this is decode (M=1) only.
+- No peer number is licensed by anything here.
