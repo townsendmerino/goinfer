@@ -129,6 +129,15 @@ func TestSampleFromTopK_matchesFullPath(t *testing.T) {
 				case v >= 32000:
 					draws = 40
 				}
+				// C8 (docs/completed/task-ci-speed-2026-09.md): under -race the DRAW axis is strided by
+				// the same constant the exactness sweep strides its seeds with — every (vocab, shape,
+				// config) cell still runs, with 1/7 of its draws — because this is pure computation the
+				// detector finds nothing in, and it was 369 s of every CI run (44 s un-raced). The full
+				// draw count runs in ci.yml's non-race sampler-gates step, which
+				// TestSweepCoverage_fullSweepRunsSomewhere requires to name this test.
+				if sweepSeedStride > 1 {
+					draws = max(1, draws/sweepSeedStride)
+				}
 				for d := 0; d < draws; d++ {
 					want, err := full.SampleWithInfo(logits)
 					if err != nil {
@@ -157,7 +166,7 @@ func TestSampleFromTopK_matchesFullPath(t *testing.T) {
 	if mismatched != 0 {
 		t.Fatalf("%d of %d draws differ from the full path", mismatched, total)
 	}
-	t.Logf("%d draws, %d served from the top-K row (%.1f%%), the rest fell back; 0 mismatches", total, served, 100*float64(served)/float64(total))
+	t.Logf("%d draws, %d served from the top-K row (%.1f%%), the rest fell back; 0 mismatches — sweep: %s", total, served, 100*float64(served)/float64(total), sweepMode)
 }
 
 // TestSampleFromTopK_typicalConfigRarelyFallsBack: the fallback exists for the pathological flat row,

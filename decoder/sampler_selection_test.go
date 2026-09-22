@@ -149,9 +149,22 @@ func TestTopFilterLogits_MatchesReference(t *testing.T) {
 	// than truncating keeps the selection spread across the whole range, so both logit shapes
 	// (tie-heavy / tie-free, which alternate on seed parity) stay represented. All 15 configs and
 	// all 4 temperatures run for every selected seed either way.
+	//
+	// C8 (docs/completed/task-ci-speed-2026-09.md): the stride below WAS this loop's whole point
+	// and it went missing in 324f63c9 ("go fix: modernize"), which rewrote
+	// `for s := 0; s < seeds; s += sweepSeedStride` into `for s := range seeds` — every seed ran
+	// under -race for months while the mode string said "strided subset", and this test was 217 s
+	// of every CI run. The check right after the loop is the guard that shape needs: a build that
+	// declares a stride must be seen to apply it.
 	var seedList []int
-	for s := range seeds {
+	for s := 0; s < seeds; s += sweepSeedStride {
 		seedList = append(seedList, s)
+	}
+	if sweepSeedStride > 1 && len(seedList) >= seeds {
+		t.Fatalf("sweepSeedStride=%d but %d of %d seeds selected — the stride is declared and not applied", sweepSeedStride, len(seedList), seeds)
+	}
+	if sweepSeedStride == 1 && len(seedList) != seeds {
+		t.Fatalf("full sweep declared (stride 1) but only %d of %d seeds selected", len(seedList), seeds)
 	}
 
 	// The shards are nested inside one group subtest: parallel subtests only run once their
@@ -445,6 +458,12 @@ func TestSweepCoverage_fullSweepRunsSomewhere(t *testing.T) {
 		t.Skipf("no ci.yml to check (%v) — this gate only applies in the repo", err)
 	}
 	ci := string(b)
+	// Every sweep that strides itself under -race must be named on a non-race `go test` step:
+	// the exactness sweep (seed stride) and, since C8, the device top-K draw sweep (draw stride —
+	// TestSampleFromTopK_matchesFullPath, sampler_topk_test.go). Add to this list when a third
+	// sweep takes the same shape; a name missing here is a gate that silently shrank.
+	strided := []string{"TestTopFilterLogits_MatchesReference", "TestSampleFromTopK_matchesFullPath"}
+	found := map[string]bool{}
 	for line := range strings.SplitSeq(ci, "\n") {
 		s := strings.TrimSpace(line)
 		if !strings.HasPrefix(s, "run:") || !strings.Contains(s, "go test") {
@@ -453,11 +472,17 @@ func TestSweepCoverage_fullSweepRunsSomewhere(t *testing.T) {
 		if strings.Contains(s, "-race") || !strings.Contains(s, "./decoder/") {
 			continue
 		}
-		if strings.Contains(s, "TestTopFilterLogits_MatchesReference") {
-			return // found a non-race step running the full sweep
+		for _, name := range strided {
+			if strings.Contains(s, name) {
+				found[name] = true
+			}
 		}
 	}
-	t.Error("no CI step runs TestTopFilterLogits_MatchesReference WITHOUT -race. Both root jobs use " +
-		"-race, where the sweep strides its seed axis — so the full 24,018-case exactness gate is " +
-		"currently running nowhere. Restore the 'sampler gates (no -race)' step in .github/workflows/ci.yml.")
+	for _, name := range strided {
+		if !found[name] {
+			t.Errorf("no CI step runs %s WITHOUT -race. Both root jobs use -race, where this sweep runs a "+
+				"strided subset — so its exhaustive form is currently running nowhere. Add it to the "+
+				"'sampler gates (no -race)' step (and its zero-match guard) in .github/workflows/ci.yml.", name)
+		}
+	}
 }

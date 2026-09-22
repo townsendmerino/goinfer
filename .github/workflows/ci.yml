@@ -312,10 +312,18 @@ jobs:
       #     detector finds nothing in a pure-compute sweep and costs a lot), so this step is the
       #     ONLY place the exhaustive gate actually runs. Without it, gating on race mode would
       #     silently shrink the gate to a subset in every job.
+      #   - the device top-K draw sweep (TestSampleFromTopK_matchesFullPath), since C8
+      #     (docs/completed/task-ci-speed-2026-09.md): the -race build strides its DRAW axis by the
+      #     same constant, so this step is where its full draw count runs. C7's per-test timing
+      #     found it at 369 s under -race (44 s un-raced) -- and found the exactness sweep at 217 s
+      #     because its stride had been silently dropped by a "go fix" pass; both are pure compute.
       #   - the throughput ratio gate: a wall-clock ratio measured under -race measures the
       #     detector. It passed on linux/-race and failed on darwin/-race (3.86x, 3.99x vs a 3.0x
       #     bound) on commits touching no sampler code.
-      # ~25s. Linux only: both are platform-independent, so running them twice buys nothing.
+      # ~25s before C8, ~70s with the draw sweep added (still far below the ~9 min it removes from
+      # the -race step). Linux only: all are platform-independent, so running them twice buys nothing.
+      # TestSweepCoverage_fullSweepRunsSomewhere reads this file and fails if either strided sweep's
+      # name is missing from a non-race `go test` line here.
       #
       # ZERO-MATCH GUARD (audit-2026-09-10.md, found 2026-09-11): `go test -run '<pattern>'`
       # exits 0 and prints `ok ... [no tests to run]` when the pattern matches NOTHING —
@@ -328,7 +336,7 @@ jobs:
       # and would make this guard pass wrongly (caught by testing that exact case here).
       - name: sampler gates exist (zero-match guard)
         run: |
-          pattern='TestTopFilterLogits_MatchesReference|TestSample_DrawIdentity|TestSamplingThroughputGate|TestSweepCoverage'
+          pattern='TestTopFilterLogits_MatchesReference|TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestSamplingThroughputGate|TestSweepCoverage'
           matched=$(go test -list "$pattern" ./decoder/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
             echo "::error::pattern '$pattern' matched NO test in ./decoder/ — renamed or deleted? the next step would silently report green running nothing"
@@ -337,7 +345,7 @@ jobs:
           echo "matched:"
           echo "$matched"
       - name: sampler gates (no -race)
-        run: go test -count=1 -run 'TestTopFilterLogits_MatchesReference|TestSample_DrawIdentity|TestSamplingThroughputGate|TestSweepCoverage' ./decoder/
+        run: go test -count=1 -run 'TestTopFilterLogits_MatchesReference|TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestSamplingThroughputGate|TestSweepCoverage' ./decoder/
 
   # GPU submodule: the opt-in WebGPU backend, built under -tags gpu (cgo).
   # It imports the as-yet-unpublished goinfer root, so we stitch an ephemeral

@@ -482,6 +482,43 @@ sweep already is (the `-race` build keeps the shape, the no-race gate step keeps
 form) is a ~10-minute lever on the critical path with no coverage change. Filed as **C8**, not
 built here.
 
+### C8 — stride the two sampler sweeps under `-race` (built 2026-09-22, same day as the instrument)
+
+**What the instrument turned up on reading the code, and it is worse than "unstrided".**
+`TestTopFilterLogits_MatchesReference` *already claims* to stride its seed axis under `-race`
+(`sampler_sweep_race_test.go`: `sweepSeedStride = 7`, mode string "strided subset") — but the
+seed loop reads `for s := range seeds`, and the stride constant's only remaining use was in an
+error message. `git log -L` names the commit: **`324f63c9` "go fix: modernize to the language/library
+idioms go 1.27 unlocks"** rewrote `for s := 0; s < seeds; s += sweepSeedStride` into the
+`range int` idiom and dropped the stride, silently; every seed ran under `-race` from then on
+while the log line said "strided", and nothing was red. A tool-driven rewrite that preserves
+the *shape* of a loop and not its *semantics*, caught only because C7 put a per-test number next
+to the name. So C8 is one bug fix and one extension:
+
+1. **The exactness sweep's stride is applied again** (400 → 58 seeds under `-race`; all 15
+   configs × 4 temperatures per seed unchanged), and the test now **fails if a build that
+   declares a stride > 1 selects every seed, or a stride-1 build selects fewer than all** — the
+   guard the lost-stride shape needed (the mode-string assertion could not catch it, because the
+   string is set in the same file as the constant, not derived from the loop).
+2. **`TestSampleFromTopK_matchesFullPath` strides its DRAW axis** by the same constant under
+   `-race` (every (vocab, shape, config) cell still runs, with 1/7 of its draws — 150 → 21,
+   40 → 5, 3 → 1) and is added to the no-`-race` sampler-gates step, where its full draw count
+   runs. `TestSweepCoverage_fullSweepRunsSomewhere` now requires **both** names on a non-race
+   `go test` line in `ci.yml` (it read only the first before); the zero-match guard step names it
+   too, so a rename cannot silently drop it.
+
+- **Band (pre-registered):** the linux `test` job's `decoder` package under `-race` from 834s
+  (the cold-start run; 1069s on the noisy run after it) to **≤ 450s**, i.e. ≥ 40% off, and the
+  job's wall to ≤ 10 min; the no-race gates step grows from ~49s to ≤ 120s. Coverage: the
+  exhaustive forms run on every push in the gates step, exactly as before for the exactness
+  sweep and newly for the draw sweep.
+- **Kill:** `decoder` under `-race` improves < 20%, or the gates step exceeds 3 min — then the
+  draw sweep's exhaustive form is too expensive to run per push un-raced and needs its own
+  weekly slot instead.
+- **Verification:** shape (3) for C7 as a side effect — this push changes `decoder` test files,
+  so `decoder` re-runs (correct); the summary step's per-test list is the measurement. Results
+  below when they land.
+
 ## 3. Order, and what the article would call the compounding
 
 C0 → C2 (free) → C1 → C3 → then C1′/C4/C5 as C0 selects them → C6 if the tail exists.
