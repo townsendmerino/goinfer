@@ -295,7 +295,22 @@
   rate (47,575 misses); a perfect once-per-chunk fetch would need only 2,090 (98.3% hit rate) — a **22.8x**
   reduction in remaining DMA calls. Calls-proportional on the 59.5% DMA share measured above: **~2.32x
   projected (46.5 -> ~20 ms/token)**, inside R11(b)'s own ships band — a projection, not a result, same
-  caveat as the one below it. Not built yet; the pre-registered decision rule for the build is in that record.
+  caveat as the one below it.
+
+  **BUILT AND SHIPPED OPT-IN 2026-09-21** (`docs/measurements/p20-expert-major-2026-09-21.md`,
+  `GOINFER_CUDA_MOE_EXPERT_MAJOR`, default off): route+bucket+admit-once-per-distinct-expert instead of
+  once per (row, rank), no new kernel (reuses the frozen `moe.ptx` GEMVs and `residual_batched`),
+  bit-identical by construction, mutation-checked on two fixtures. **Generic MoE path only — declines
+  `Ly.g4moe`, so M26 itself does not take this path and the ~2.32x above is still unmeasured.** The only
+  real checkpoint on this box that reaches the built path is Mellum2 (a much looser 51-slot / 98.1%-hit-rate
+  cache than M26's), where it measures a real but small 3.5-4.3%.
+
+  **OPEN, ORPHANED: the gemma4-specific extension this needs to actually reach M26.** Gemma-4's FFN is a
+  parallel dense‖MoE branch (`gemma4MoeMLPPre/Post`, not the generic `moeMLPPre/Post` the 2026-09-21 build
+  covers) — structurally similar (same per-row route → bucket-by-expert → rank-ordered-fold shape) but a
+  distinct combine (two branches, two post-norms, a join, a per-layer scalar) that needs its own per-row
+  `g4x1`/routing storage and its own scratch before that existing chain. Not started. This is the item that
+  would let R11(b)'s ~2.32x / <=25ms/token projection actually be tested against M26.
 
   **Sequenced work, cheapest first:**
   1. ~~**M26, steps 1–3 above**~~ **DONE 2026-09-04 — 1.085×, bit-identical.** Kept for the
