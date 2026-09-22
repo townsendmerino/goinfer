@@ -1,0 +1,23 @@
+##### arm=off 22:54:38
+[longprompt] loaded in 47.907s
+[longprompt] guards: prefillReady=true moe=true gemma4Moe=true sandwich=true qkNorm=true
+[longprompt] M=512   batched OK 25.754s    (50.301 ms/token)
+[longprompt] M=2048  batched OK 1m41.557s  (49.588 ms/token)
+[longprompt] M=4096  batched OK 3m22.727s  (49.494 ms/token)
+[longprompt] M=8012  batched OK 6m42.845s  (50.280 ms/token)
+[longprompt] M=512   SEQUENTIAL 27.823s    (54.343 ms/token)
+[longprompt] M=2048  SEQUENTIAL 1m50.602s  (54.005 ms/token)
+[longprompt] M=4096  SEQUENTIAL 3m40.804s  (53.907 ms/token)
+[longprompt] M=8012  SEQUENTIAL 7m9.099s   (53.557 ms/token)
+##### arm=on 23:20:50
+[longprompt] loaded in 59.32s
+[longprompt] guards: prefillReady=true moe=true gemma4Moe=true sandwich=true qkNorm=true
+[longprompt] M=512   batched OK 9.675s     (18.897 ms/token)
+[longprompt] M=2048  batched OK 40.693s    (19.870 ms/token)
+[longprompt] M=4096  batched OK 1m24.806s  (20.705 ms/token)
+[longprompt] M=8012  batched OK 2m58.355s  (22.261 ms/token)
+[longprompt] M=512   SEQUENTIAL 27.823s    (54.342 ms/token)
+[longprompt] M=2048  SEQUENTIAL 1m50.37s   (53.891 ms/token)
+[longprompt] M=4096  SEQUENTIAL 3m40.195s  (53.759 ms/token)
+[longprompt] M=8012  SEQUENTIAL 7m8.07s    (53.429 ms/token)
+ALLDONE

@@ -114,14 +114,18 @@ real hardware at scale; default off),
 `64x64`, `128x64`, `32x64`, or `32x32`; an R5-phase investigation knob, default unchanged, the
 32-row tiles are a measured regression kept only for A/B comparison),
 `GOINFER_CUDA_VISION_ATTN` (CUDA vision tower: `bm128` is the DEFAULT since 2026-09-21 — the R8 fused non-causal attention kernel for the SigLIP tower, 6.4× faster (26.0 → 4.1 s/image). Its output differs from the pre-2026-09-21 `attn_img_batched` path at tower level (cosine 0.96 vs the old resident output; cosine vs the CPU int8 reference unchanged, ~0.91-0.93 either way) and a pre-registered served downstream check found it perturbs greedy generation somewhat MORE than a 1-LSB pixel jitter control does (no defect found in either check) — the owner chose the speedup anyway, overriding both pre-registered rules; see `docs/measurements/vision-tower-mma-2026-09-21.md` and `vision-tower-downstream-2026-09-21.md`. `exact` restores the old kernel; `bm64` selects the other fused arm),
-`GOINFER_CUDA_MOE_EXPERT_MAJOR` (CUDA: opt-in expert-major restructuring of the generic-MoE batched
-prefill FFN — routes every row of a chunk first, then admits/DMAs each DISTINCT expert once instead
-of once per (row, routing rank), which the P20 locality measurement found reduces a 512-row chunk's
-DMA calls up to ~23x on a tight-VRAM card. Bit-identical by construction (verified on tiny fixtures,
-`TestMoEExpertMajorCUDA_bitIdentical`, mutation-checked); declines to the per-row path on a shared
-expert, a gpt-oss per-expert bias table, or `Ly.g4moe` (Gemma-4's own parallel dense‖MoE FFN is a
-separate shape, not covered — see `docs/measurements/p20-expert-locality-2026-09-21.md`). Default
-off pending a real-checkpoint speed measurement),
+`GOINFER_CUDA_MOE_EXPERT_MAJOR` (CUDA: DEFAULT ON since 2026-09-21 — expert-major restructuring of
+the batched prefill MoE FFN, both the generic path (`cuda/moe_expert_major.go`) and Gemma-4's own
+parallel dense‖MoE FFN (`cuda/moe_expert_major_gemma4.go`). Routes every row of a chunk first, then
+admits/DMAs each DISTINCT expert once instead of once per (row, routing rank). Bit-identical by
+construction (`TestMoEExpertMajorCUDA_bitIdentical`, `TestMoEExpertMajorGemma4CUDA_bitIdentical`,
+mutation-checked). Measured on the real 26B (Gemma-4, the tight-VRAM case this was built for): 2.66x
+/ 2.50x / 2.39x / 2.26x at M=512/2048/4096/8012, sequential control unmoved (`docs/measurements/
+p20-expert-major-m26-2026-09-21.md`); the generic path's own measured win (Mellum2, a looser-VRAM
+model) is smaller, 3.5-4.3% (`p20-expert-major-2026-09-21.md`). Declines to the per-row path on a
+shared expert or a gpt-oss per-expert bias table (the generic path only — gemma4 has neither).
+`GOINFER_CUDA_MOE_EXPERT_MAJOR=0` restores the per-row path, mirroring the CPU precedent this
+mirrors throughout (`decoder/mlp.go`'s P18, `GOINFER_MOE_EXPERT_MAJOR`, same `!= "0"` convention)),
 `GOINFER_SPLITKV_VSUM_SPLIT` (an unpromoted spike: splits the decode split-KV V-sum across the
 key axis, measured +40-43% on the attention block and +15.6% served on one geometry, and it is
 **NOT bit-identical** to the default path. Unset, the pipelines are not loaded and no scratch is

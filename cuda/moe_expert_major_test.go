@@ -42,7 +42,7 @@ func TestMoEExpertMajorCUDA_bitIdentical(t *testing.T) {
 				if on {
 					t.Setenv("GOINFER_CUDA_MOE_EXPERT_MAJOR", "1")
 				} else {
-					t.Setenv("GOINFER_CUDA_MOE_EXPERT_MAJOR", "")
+					t.Setenv("GOINFER_CUDA_MOE_EXPERT_MAJOR", "0")
 				}
 				mc, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
 				if err != nil {

@@ -43,10 +43,17 @@ import (
 // the same way, and it was never verified against this scheme), and gpt-oss's own route kernel.
 
 // prefillExpertMajorEnabled reports whether the expert-major MoE prefill restructuring is on.
-// GOINFER_CUDA_MOE_EXPERT_MAJOR, default off — measured on real hardware in one pass
-// (docs/measurements/p20-expert-major-2026-09-21.md); not yet promoted to default.
+// DEFAULT ON since 2026-09-21 (docs/measurements/p20-expert-major-m26-2026-09-21.md — the gemma4
+// extension, cuda/moe_expert_major_gemma4.go, measured 2.66x/2.50x/2.39x/2.26x at M=512/2048/4096/8012
+// on the real M26, sequential control unmoved within 0.3% noise), mirroring the CPU precedent this
+// build mirrors throughout (decoder/mlp.go's moeExpertMajor, P18: "GOINFER_MOE_EXPERT_MAJOR=0
+// restores the per-row path... an escape hatch and an A/B handle, not a user setting"). The generic
+// (non-gemma4) path's own measured win (Mellum2, 3.5-4.3%) is real but small — it rides the same
+// default because it is bit-identical and never measured a regression, not because it was the case
+// this default was chosen for.
+// GOINFER_CUDA_MOE_EXPERT_MAJOR=0 restores the per-row path.
 func prefillExpertMajorEnabled() bool {
-	return os.Getenv("GOINFER_CUDA_MOE_EXPERT_MAJOR") != ""
+	return os.Getenv("GOINFER_CUDA_MOE_EXPERT_MAJOR") != "0"
 }
 
 // moeExpertMajorRuns counts chunks/layers that actually took this path — a non-vacuity counter, the same

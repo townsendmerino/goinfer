@@ -1148,12 +1148,16 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			// with either armed rather than quietly returning M× the rows they expect.
 			if Ly.g4moe || Ly.isMoE {
 				t = r.profTic()
-				// R11/P20 (cuda/moe_expert_major.go, docs/measurements/p20-expert-locality-2026-09-21.md):
-				// route+bucket+admit-once-per-distinct-expert instead of once per (row, rank), when eligible
-				// (generic MoE only — Ly.g4moe's own parallel dense‖MoE shape is not covered here). Checked
-				// once per layer, not per row, so ineligible layers pay nothing beyond one field-and-map read.
+				// R11/P20 (cuda/moe_expert_major.go + moe_expert_major_gemma4.go,
+				// docs/measurements/p20-expert-locality-2026-09-21.md): route+bucket+admit-once-per-distinct-
+				// expert instead of once per (row, rank), when eligible. Checked once per layer, not per
+				// row, so ineligible layers pay nothing beyond one field-and-map read.
 				if !Ly.g4moe && r.prefillMoEExpertMajorEligible(Ly) {
 					if e := r.prefillMoEExpertMajorRun(ctx, Ly, xB, M, hidden); e != nil {
+						return e
+					}
+				} else if Ly.g4moe && r.prefillGemma4ExpertMajorEligible(Ly) {
+					if e := r.prefillGemma4ExpertMajorRun(ctx, Ly, xB, M, hidden); e != nil {
 						return e
 					}
 				} else {

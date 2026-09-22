@@ -305,12 +305,11 @@
   real checkpoint on this box that reaches the built path is Mellum2 (a much looser 51-slot / 98.1%-hit-rate
   cache than M26's), where it measures a real but small 3.5-4.3%.
 
-  **OPEN, ORPHANED: the gemma4-specific extension this needs to actually reach M26.** Gemma-4's FFN is a
-  parallel dense‖MoE branch (`gemma4MoeMLPPre/Post`, not the generic `moeMLPPre/Post` the 2026-09-21 build
-  covers) — structurally similar (same per-row route → bucket-by-expert → rank-ordered-fold shape) but a
-  distinct combine (two branches, two post-norms, a join, a per-layer scalar) that needs its own per-row
-  `g4x1`/routing storage and its own scratch before that existing chain. Not started. This is the item that
-  would let R11(b)'s ~2.32x / <=25ms/token projection actually be tested against M26.
+  **BUILT AND SHIPPED 2026-09-21** (`cuda/moe_expert_major_gemma4.go`, `docs/measurements/p20-expert-major-m26-2026-09-21.md`):
+  the gemma4-specific extension, same mechanism against `gemma4MoeMLPPre/Post`'s parallel dense‖MoE shape. Measured
+  on the real 26B: **2.66x / 2.50x / 2.39x / 2.26x at M=512/2048/4096/8012** — the ~2.32x/~20ms projection held, and
+  every cell clears the ships band by a wide margin. Sequential control unmoved. `GOINFER_CUDA_MOE_EXPERT_MAJOR`
+  flipped to DEFAULT ON (both the generic and gemma4 paths; `=0` opts out), mirroring the CPU P18 precedent.
 
   **Sequenced work, cheapest first:**
   1. ~~**M26, steps 1–3 above**~~ **DONE 2026-09-04 — 1.085×, bit-identical.** Kept for the
