@@ -1438,13 +1438,6 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:450` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/snapshot_golden_test.go:138` | goinfer | `func TestMetalSnapshotGolden(t *testing.T) {` |
 | `docs/tasks/task-l01-hybrid-moe-cpu-gpu.md|cuda/resident.go:2444` | goinfer | `if r.l01Enabled && r.l01CPUMask[j] {` |
-| `docs/tasks/task-moe-streaming.md|decoder/forwardn.go:161` | goinfer | `// MoE FFN itself stays per-row (router picks different experts per token).` |
-| `docs/tasks/task-moe-streaming.md|decoder/forwardn.go:600` | goinfer | `// Sequential: add the attention residual, then re-norm the updated stream for the MLP.` |
-| `docs/tasks/task-moe-streaming.md|decoder/mlp.go:84` | goinfer | `// Only the chosen experts are evaluated — the point of MoE.` |
-| `docs/tasks/task-moe-streaming.md|decoder/moepaging.go:16` | goinfer | `// only K·L per token; the router's top-k selection is the demand signal. The` |
-| `docs/tasks/task-moe-streaming.md|decoder/moepaging_test.go:18` | goinfer | `// it with the frequency-aware policy (TestSpanCache_evictsLeastRecentWithPolicy),` |
-| `docs/tasks/task-moe-streaming.md|decoder/residency.go:323` | goinfer | `ContextCap() int` |
-| `docs/tasks/task-moe-streaming.md|decoder/residency.go:360` | goinfer | `return m.residentProjsInt4()` |
 | `docs/tasks/task-recompute-audit.md|cuda/resident.go:395` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/tasks/task-recompute-audit.md|decoder/attention.go:91` | goinfer | `if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {` |
 | `docs/tasks/task-recompute-audit.md|decoder/blockspec.go:201` | goinfer | `func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) ` |
