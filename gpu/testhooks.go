@@ -313,3 +313,9 @@ func (c *Context) GptOssDownForTest(s *ResidentStackedW8A8, aq []int8, aScale fl
 	stg.TryUnmap()
 	return out, nil
 }
+
+// LMHeadForTest returns the runner's LM-head weight (decodeWeight), for tests that need to call the
+// same GEMV kernel directly against the model's own resident buffer — see gpu/gemv_lmhead_isolation_test.go
+// (R10/G38's root-cause isolation: does the same real buffer cost the same standalone as it does
+// inside a full decode token, or is the cost specific to co-residency/pass position).
+func (r *DecodeRunner) LMHeadForTest() decodeWeight { return r.lmHead }

@@ -24,6 +24,7 @@ type DecodeRunner struct {
 	steps                []runStep
 	posUnis              []posUni
 	xd, stag, lastLogits *wgpu.Buffer
+	lmHead               decodeWeight // kept for LMHeadForTest (G38 root-cause isolation); gemv() closures already capture it too
 	smp                  *gumbelState // device Gumbel-max sampling resources, built on first RunSample (R7b)
 	vocab                int
 	uniScratch           [16]uint32
@@ -488,7 +489,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			return nil, err
 		}
 	}
-	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows(), logitsHost: make([]float32, m.lmHead.nRows()), nLayers: len(m.layers)}
+	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows(), logitsHost: make([]float32, m.lmHead.nRows()), nLayers: len(m.layers), lmHead: m.lmHead}
 	// buildErr accumulates the FIRST device-allocation/bind failure (M21): the storF/uni/
 	// storFZ/bind helpers short-circuit once it's set and the constructor returns it, so VRAM
 	// exhaustion is an error the caller can fall back on — never a panic in library code.

@@ -1,0 +1,10 @@
+=== RUN   TestDecodeArgmaxHeadroom
+    decode_argmax_headroom_test.go:113: vocab=151936 hidden=1536
+    decode_argmax_headroom_test.go:114: Run()        median  11788.0 us/token
+    decode_argmax_headroom_test.go:115: RunNoLogits  median  11344.0 us/token
+    decode_argmax_headroom_test.go:116: delta (LM-head GEMV + 594 KB copy + MapAsync + host scan, upper bound on the argmax-kernel win): 444.0 us = 3.8% of the token
+    decode_argmax_headroom_test.go:158: copy+MapAsync+host-scan ALONE (no new GEMV dispatch): 385.0 us = 86.7% of the delta above, 3.3% of the token
+    decode_argmax_headroom_test.go:160:   -> implied LM-head GEMV's OWN cost (delta minus this): 59.0 us = 0.5% of the token
+--- PASS: TestDecodeArgmaxHeadroom (16.13s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	16.166s

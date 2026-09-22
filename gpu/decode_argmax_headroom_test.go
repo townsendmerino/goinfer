@@ -20,15 +20,22 @@ import (
 // so the 608 KB readback goes"): ForwardSample's greedy branch (gpu/resident_sample.go) still calls
 // Run() — full LM-head GEMV + a vocab*4-byte staging copy + MapAsync + a host linear scan — where a
 // device-side argmax kernel would need only the GEMV (unavoidable either way) plus a tiny readback.
+// Isolates the piece a device-argmax kernel would remove: RunNoLogits skips the LM-head GEMV
+// dispatch, the staging copy, AND the MapAsync/readback entirely, so Run-vs-RunNoLogits bounds what
+// ANY logits-avoiding scheme (device argmax included) could recover.
 //
-// TestDecodeTWE_split already found TSync at 91% of the token on the real 1.5B, but TSync there is
-// the WHOLE GPU-blocked wait (real trunk compute + the LM-head GEMV + the copy/map), not isolated to
-// the copy/map specifically -- this repo has a retired mistake built on exactly that kind of
-// conflation (an analogy that transfers a diagnosis also transfers what it was measuring). This
-// isolates the achievable UPPER BOUND: RunNoLogits skips the LM-head GEMV dispatch, the staging copy,
-// AND the MapAsync/readback entirely, so Run-vs-RunNoLogits bounds what ANY logits-avoiding scheme
-// (device argmax included) could recover -- a real device-argmax kernel still pays the GEMV, so it
-// recovers LESS than this delta, never more.
+// RETRACTION, 2026-09-21 (docs/QUEUE.md G38-CORRECTED): the first version of this test read the
+// delta at 81-85% of the token and reported an "LM-head GEMV 10-17x over roofline" finding — WRONG,
+// and wrong for a reason worth stating plainly: RunNoLogits calls c.device.Poll(false, nil) —
+// NON-BLOCKING — while Run() calls Poll(true, nil). Timing RunNoLogits back-to-back without an
+// explicit blocking poll measures CPU-side submission only, not GPU completion, so the very first
+// delta compared "wait for everything" against "don't wait at all" — an apples-to-oranges bug in
+// THIS test, not in RunNoLogits itself (whose real callers do not need synchronous timing). Fixed
+// by adding an explicit c.device.Poll(true, nil) after RunNoLogits and alternating small blocks of
+// each arm (not two long back-to-back runs) so drift cannot bias one side. The corrected delta is
+// 4.7-4.8% of the token, reproduced across two independent runs — the on-device-argmax item really
+// is low-value, but not for the reason first reported, and the "LM-head GEMV" finding is retracted
+// in full; it does not exist.
 //
 //	GOINFER_DECODE_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
 //	  go test -tags 'gpu goinfer_testhooks' ./gpu/ -run TestDecodeArgmaxHeadroom -v
@@ -86,11 +93,21 @@ func TestDecodeArgmaxHeadroom(t *testing.T) {
 			t.Fatalf("warmup: %v", err)
 		}
 	}
-	const N = 200
-	full := timeIt(N, func() error { _, e := r.Run(emb, 8+N, 8+N); return e })
-	// same trunk state, continuing positions -- RunNoLogits still advances the KV cache correctly,
-	// this only compares per-token WALL COST, not correctness (Run's own parity gates cover that).
-	noLog := timeIt(N, func() error { return r.RunNoLogits(emb, 8+2*N, 8+2*N) })
+	const perRound = 40
+	const rounds = 8 // 320 calls total per arm, alternating in small blocks so drift cannot bias one arm
+	pos := 8
+	var full, noLog []float64
+	for round := 0; round < rounds; round++ {
+		full = append(full, timeIt(perRound, func() error { _, e := r.Run(emb, pos, pos); pos++; return e })...)
+		noLog = append(noLog, timeIt(perRound, func() error {
+			if e := r.RunNoLogits(emb, pos, pos); e != nil {
+				return e
+			}
+			pos++
+			c.device.Poll(true, nil)
+			return nil
+		})...)
+	}
 
 	mFull, mNoLog := median(full), median(noLog)
 	t.Logf("vocab=%d hidden=%d", vocab, hidden)
@@ -104,7 +121,7 @@ func TestDecodeArgmaxHeadroom(t *testing.T) {
 	// LM-head GEMV's own compute cost excluded entirely -- the piece a device-argmax kernel actually
 	// removes, vs the GEMV cost it does NOT (a real kernel still runs the GEMV; only the reduction and
 	// the readback size change).
-	copyMapOnly := timeIt(N, func() error {
+	copyMapOnly := timeIt(perRound*rounds, func() error {
 		enc, e := c.device.TryCreateCommandEncoder(nil)
 		if e != nil {
 			return e

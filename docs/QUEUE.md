@@ -2445,6 +2445,29 @@ grammar implementations. Proven able to go red: mis-classifying control bytes as
 
 ## G38 · WebGPU greedy decode: the "608 KB readback" R10 named is 2-7% of the token — the LM-head GEMV itself is 72-82%, ~10-17× over its own bandwidth roofline
 
+> **RETRACTED same day, 2026-09-21 — the "LM-head GEMV" finding below does not exist. Full record:
+> `docs/measurements/g38-retraction-2026-09-21.md`.** Root-causing this finding (chasing the 10-17×
+> gap with an isolated kernel sweep, then an isolated-buffer test against the model's own real
+> weights) is what caught the bug: a clean, isolated N=151,936 GEMV measured **874 µs at ~267 GB/s —
+> matching the roofline this section computes, not missing it by 16×.** The REAL model's own
+> lm-head buffer, called standalone, matched that clean number too (864-887 µs), fresh-after-load
+> and after 200 real decode steps alike. The only thing left that could explain the original 8.5 ms
+> reading was the comparison itself: `RunNoLogits` calls `c.device.Poll(false, nil)` —
+> **non-blocking** — while `Run()` calls `Poll(true, nil)`. Timing `RunNoLogits` back-to-back
+> without an explicit blocking poll measures CPU-side submission only, never waiting for the GPU to
+> actually finish the 28-layer trunk — so the very first delta compared "wait for everything"
+> against "don't wait at all," attributing the trunk's own real GPU time to the LM head. Corrected
+> (explicit `Poll(true, nil)` after `RunNoLogits`, arms alternated in small blocks instead of two
+> long back-to-back runs so drift cannot bias one side): the delta is **3.8-4.8% of the token**,
+> reproduced across three independent runs, and the LM-head GEMV's OWN implied share is close to
+> zero (0.5-2.7%, within noise of the copy+map cost alone). **The bottom-line verdict is unchanged**
+> (on-device argmax is low-value, do not build it) **but for a completely different and far smaller
+> reason** — there never was a bandwidth anomaly, and the "10-17× over roofline" / "not root-caused"
+> framing below is wrong in its entirety, not merely imprecise. Left in place, struck through in
+> spirit but not in text, because the RETRACTION explains what looked like a real finding and why it
+> wasn't — deleting the body would lose that lesson. **Do not cite the "72-82%" or "10-17×" figures
+> from anywhere below this notice; they are retracted.**
+
 Investigated 2026-09-21 starting from `docs/tasks/red-october.md` R10's decode-build item ("on-device
 argmax for the greedy path with a K-entry MapAsync ... so the 608 KB readback goes"). Read first:
 G35/G36 above — both of R10's OTHER named decode items (the K1 rmsQuant fusion, the attention
