@@ -1,6 +1,7 @@
 # Task: make `ci.yml` faster — critical path, gating, duplicated work (C0–C6) — 2026-09
 
-> **Status: CLOSED 2026-09-22. C0/C1/C2/C3/C5(staticcheck) SHIPPED; C4 shipped as `-short`,
+> **Status: C0–C6 CLOSED 2026-09-22; C7 (rolling Go test cache + per-test timing capture)
+> filed the same day, its probe pending. C0/C1/C2/C3/C5(staticcheck) SHIPPED; C4 shipped as `-short`,
 > measured as a null, and replaced the same day by "no `-race` per push + `race-weekly.yml`"
 > (owner decision); C1′ killed as a null by post-C1 per-package data; C6 killed by C0's data.**
 > C3 landed in a second pass the same day, after its own kill-line was measured (37% of recent
@@ -406,6 +407,55 @@ instead of eating the 25-minute ceiling. Only worth doing if the tail shows up i
 **KILLED by C0, 2026-09-22.** The checkout step shows no meaningful tail on `lint` (formerly
 `root`): 6s median, 8s p90 — the stall scenario this item guards against isn't in the data. Not
 built.
+
+### C7 — Persist the Go build+test cache across runs (rolling key) — filed 2026-09-22
+
+Asked after the closing pass — *"any way to reduce the time for the linux `test` job?"* — because
+it is the critical path now: 1197s on `bf9759ab` = setup 20s + `go test -race ./...` **1117s**
+(of which `./decoder` ≈ 1064s) + sampler gates 55s.
+
+**The lever.** `go test` caches a passing package's result keyed on the test binary, the
+cacheable flags, every env var the tests read and every file they open or stat under the module
+root — `docs/env-vars.md` included, so the C3 hazard is handled by Go itself, exactly rather
+than by basename. Verified locally 2026-09-22: rerun → `(cached)`; `touch docs/env-vars.md` →
+re-ran; rerun → `(cached)` again (`GODEBUG=gocachetest=1` shows the input-ID lookups). The
+step's flags are all cacheable (`-race`, `-timeout`, `-tags`; no `-count`, no `-shuffle`; `-json`
+is `-test.v` underneath and replays the recorded per-test lines — also verified). Of the last 60
+commits on `main`, **9** touch `decoder/` or an input of it (`go.mod`/`go.sum`, `tokenizer/`,
+`constrain/`, `multimodal/`, `chat/`); the other 51 would replay `decoder` from cache.
+
+**Why it does not already happen.** setup-go's cache is keyed on `go.sum`'s hash and saved only
+on a miss, so every run restores the snapshot from whenever `go.sum` last changed — its test
+results are stale by construction, and most of its build objects are too (the 394MB linux entry
+in `gh cache list` is that snapshot). The change: setup-go `cache: false`, and `actions/cache`
+(v5.1.0, SHA-pinned like everything else here; the tag was checked to be a commit, not an
+annotated tag) on `~/.cache/go-build` + `~/go/pkg/mod` with a key ending in `github.sha` (never
+hits, so the post-step saves after every successful run) and `restore-keys` that restore the
+newest previous run (same `go.sum` first, any second). Applied to `test` and `root-darwin`
+(`~/Library/Caches/go-build` there); `lint`'s setup-go cache is untouched. Go trims cache
+entries unused for five days, so the snapshot stays bounded.
+
+**The instrument that rides along.** The `test` step now writes `go test -json` to a file and
+`scripts/ci_test_summary.py` prints the readable form: build failures verbatim — with Go ≥ 1.24
+and stdout redirected, a compile error appears **only** in the JSON stream (measured on a
+scratch module: zero bytes on stderr), so the step is load-bearing, not cosmetic, and it exits 1
+on a capture with no package result (the zero-match-guard shape) — failed tests verbatim, one
+line per package with `(cached)` marked, and the N slowest top-level tests. That last list is
+the per-test CI timing which slicing `./decoder` across the runner's cores needs and never had;
+the local distribution is a poor proxy for it (the local #1, `TestPrefillAttnRowTileInvariance`
+at 63s, loads a bench model and skips in CI; the local #2, `TestSampleFromTopK_matchesFullPath`
+at 44s, is synthetic, runs in CI, and measures 1.13 cores — `./decoder` has 785 top-level tests
+and one `t.Parallel()`, so most of its ~18 min is one core of the runner's four).
+
+- **Band:** on a push that changes nothing `./decoder` depends on, `test` job wall ≤ 150s (from
+  ~1197s) with `decoder` marked `(cached)`; on a push that does, the full suite runs (Go's own
+  invalidation) and the job is no slower than before beyond the save/restore.
+- **Kill:** save + restore > 45s at p50, or fewer than 1 in 3 of the next 20 code pushes hit —
+  revert to setup-go's cache and record why.
+- **Verification shapes.** (1) The push carrying this: cold — no `go-test-*` key exists, nothing
+  restores, the full suite runs, the post-step saves. (2) The next code push that does not touch
+  `./decoder`'s inputs: the probe — expect `decoder (cached)` and the band. (3) A push that does:
+  the control — expect a full run. Results recorded here when they land.
 
 ## 3. Order, and what the article would call the compounding
 

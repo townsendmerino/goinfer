@@ -253,7 +253,29 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
+          cache: false # C7: replaced by the rolling cache below
+      # C7 (docs/completed/task-ci-speed-2026-09.md): the Go BUILD+TEST cache, persisted from one
+      # run to the next. `go test` caches a passing package's result keyed on the test binary,
+      # the flags, every env var the tests read and every file they open or stat under the module
+      # root -- so on a push that changes nothing ./decoder depends on (51 of the last 60 commits),
+      # the ~1064s package replays as `(cached)`. docs/env-vars.md and friends are hashed too: a
+      # touched doc re-runs the test that reads it (verified locally 2026-09-22), so this is Go's
+      # own exact version of the C3 gate's approximation. setup-go's cache cannot deliver it: it is
+      # keyed on go.sum's hash and SAVED ONLY ON A MISS, so every run restores the snapshot from
+      # whenever go.sum last changed, whose test results are stale by construction. A key ending
+      # in the commit sha never hits, so the post-step saves after every successful run;
+      # restore-keys then restore the newest previous run's cache (same go.sum first, any second).
+      # Go trims entries unused for five days, so the snapshot stays bounded (~400MB today). Scope
+      # is GitHub's: a PR can read main's caches, main never reads a PR's.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-test-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-test-${{ runner.os }}-
 
       # Model-asset parity tests skip themselves when their checkpoints /
       # goldens are absent (see testdata/README), so this is green on a fresh
@@ -265,7 +287,25 @@ jobs:
         # package was two-fifths of the way to the default before the sampler work landed. The
         # sweep is now sharded across parallel subtests and strided under -race; this raises the
         # ceiling so a slow runner cannot re-trip it, while still catching a real hang.
-        run: go test -race -timeout 25m -tags goinfer_testhooks ./...
+        #
+        # -json into a file (C7): the per-test timings from a REAL runner that the CI-speed work
+        # had no source for, and that slicing ./decoder across the runner's cores needs. -json is
+        # `-test.v` underneath, a cacheable flag, so a cached package replays its recorded per-test
+        # lines (verified locally). THE EXIT CODE OF THIS STEP IS WHAT FAILS THE JOB; the step
+        # below only reports. With go >= 1.24 a build failure is emitted as JSON events on stdout
+        # and NOTHING on stderr (measured: zero bytes), so the summary step is where a compile
+        # error becomes visible -- it is load-bearing, not cosmetic.
+        run: go test -race -timeout 25m -tags goinfer_testhooks -json ./... > test.json
+      - name: test summary (build errors and failures verbatim, per-package lines, slowest tests)
+        if: always()
+        # Fallback if the summary script itself breaks: dump the raw build/fail events so a red
+        # job always has its reason on the log, then fail this step so the breakage is seen.
+        run: |
+          python3 scripts/ci_test_summary.py test.json --top 40 || {
+            echo "::error::ci_test_summary.py failed; raw build/fail events follow"
+            grep -E '"Action":"(build-output|build-fail|fail)"' test.json | head -300
+            exit 1
+          }
 
       # The sampler gates that MUST NOT run under the race detector, run here without it.
       #   - the full 24,018-case exactness sweep: the -race build strides the seed axis (the
@@ -447,7 +487,19 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
+          cache: false # C7: replaced by the rolling cache below
+      # C7: the same rolling build+test cache as the linux `test` job (the comment there is the
+      # explanation); darwin's default GOCACHE is ~/Library/Caches/go-build. runner.os is part of
+      # the key, so the two never restore each other's objects.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/Library/Caches/go-build
+            ~/go/pkg/mod
+          key: go-test-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-test-${{ runner.os }}-
 
       - name: build
         run: go build ./...
