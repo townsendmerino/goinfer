@@ -1,0 +1,39 @@
+=== RUN   TestP20ExpertLocality
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 1.6 GB free — capping to 10 (1.1 GB)
+    p20_expert_locality_test.go:61: loaded gemma4-26b-int4.giw in 1m0s
+=== P20 EXPERT LOCALITY: gemma4-26b-int4.giw, M=512, cacheSlots=10, nE=128, topK=8 ===
+layer      rows distinct   row*topK  dupFactor fitsInSlots?
+0           512       86       4096      47.63           NO
+1           512      116       4096      35.31           NO
+2           512      117       4096      35.01           NO
+3           512      116       4096      35.31           NO
+4           512       99       4096      41.37           NO
+5           512       95       4096      43.12           NO
+6           512      104       4096      39.38           NO
+7           512      104       4096      39.38           NO
+8           512       98       4096      41.80           NO
+9           512       94       4096      43.57           NO
+10          512       77       4096      53.19           NO
+11          512       65       4096      63.02           NO
+12          512       39       4096     105.03           NO
+13          512       28       4096     146.29           NO
+14          512       35       4096     117.03           NO
+15          512       36       4096     113.78           NO
+16          512       36       4096     113.78           NO
+17          512       41       4096      99.90           NO
+18          512       53       4096      77.28           NO
+19          512       46       4096      89.04           NO
+20          512       47       4096      87.15           NO
+21          512       48       4096      85.33           NO
+22          512       46       4096      89.04           NO
+23          512       75       4096      54.61           NO
+24          512       72       4096      56.89           NO
+25          512       64       4096      64.00           NO
+26          512       66       4096      62.06           NO
+27          512       64       4096      64.00           NO
+28          512       66       4096      62.06           NO
+29          512       57       4096      71.86           NO
+MoE layers=30, worst-case distinct/layer=117 (cacheSlots=10), mean row-to-distinct dup factor=69.24
+distinct-per-layer distribution: min=28 p25=46 median=66 p75=95 max=117
+--- PASS: TestP20ExpertLocality (87.73s)
+PASS

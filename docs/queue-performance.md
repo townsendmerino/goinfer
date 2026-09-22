@@ -256,7 +256,7 @@
   **(3) has a no-new-kernel route that the tree's own comment says does not exist.**
   `resident.go` states "gocudrv exposes no buffer view/offset, so the split is the kernel's
   gOff/uOff rather than Go-side pointer arithmetic" — but `aikit/gpu.Buffer.At(byteOff)` returns a
-  zero-copy sub-view, is already used for the C′ expert-slot DMA (`cuda/resident.go:1277`), and its
+  zero-copy sub-view, is already used for the C′ expert-slot DMA (`cuda/resident.go:1283`), and its
   `arg()` binds the offset as a raw device pointer. So the existing per-row MoE kernels can be fed
   row *m* of a batched residual as `xB.At(m*hidden*4)`, and the first slice — batch the attention
   half, loop the FFN per row — becomes a Go refactor (thread the residual buffer through
@@ -286,6 +286,16 @@
   fetch-count reduction cannot become a time estimate without assuming the driver is fetch count and
   not per-call overhead — the same shape of assumption this item has already had refuted once today.
   Capture `UploadProfForTest`'s byte counters in the next probe and size it from those.
+
+  **MEASURED 2026-09-21** (`docs/measurements/p20-expert-locality-2026-09-21.md`): a 512-row chunk touches
+  28-117 distinct experts per layer (median 66) against this box's 10-slot C′ cache — infeasible to hold
+  ALL of them resident at once (that reading of "stage each distinct expert once per chunk" was this
+  record's own first, wrong one), but a real expert-major design processes experts sequentially/in small
+  waves and needs no such simultaneous residency. Real numbers: current per-row LRU already gets 61.3% hit
+  rate (47,575 misses); a perfect once-per-chunk fetch would need only 2,090 (98.3% hit rate) — a **22.8x**
+  reduction in remaining DMA calls. Calls-proportional on the 59.5% DMA share measured above: **~2.32x
+  projected (46.5 -> ~20 ms/token)**, inside R11(b)'s own ships band — a projection, not a result, same
+  caveat as the one below it. Not built yet; the pre-registered decision rule for the build is in that record.
 
   **Sequenced work, cheapest first:**
   1. ~~**M26, steps 1–3 above**~~ **DONE 2026-09-04 — 1.085×, bit-identical.** Kept for the

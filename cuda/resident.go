@@ -796,7 +796,13 @@ type cudaResident struct {
 	// run, so the first attempt at this probe silently recorded nothing. The test sets the field on
 	// the resident it already holds, which has no ordering question in it. Off by default — the
 	// probe costs a MemInfo round-trip and a reflection scan on EVERY launch.
-	dbgProbe      bool
+	dbgProbe bool
+	// routeRecord, when non-nil, is called once per loadRoutedExperts call with the layer index and
+	// that call's routed expert ids (r.hostIdx[:topK]) — a P20 measurement hook (docs/queue-performance.md
+	// P20 "measure the split before building": how many DISTINCT experts a whole M-row chunk touches
+	// per layer, which bounds what expert-major batching could remove). A field, same reason dbgProbe
+	// is a field and not an env var: set on the resident the test already holds, no init-order question.
+	routeRecord   func(layer int, ids []uint32)
 	cacheSlotsReq int   // slots REQUESTED (pre-cap), so errors can name both
 	dbgAllocSizes []int // every requested slot-buffer size, recording only
 }
@@ -1319,6 +1325,9 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 	}
 	if e := gpu.Download(r.rIdx, r.hostIdx[:r.topK]); e != nil {
 		return e
+	}
+	if r.routeRecord != nil {
+		r.routeRecord(L.idx, r.hostIdx[:r.topK])
 	}
 	// L-01 (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE. Two more small D2H reads, only
 	// when the mechanism is on: rWgt (the routing weight per position, needed to weight a
