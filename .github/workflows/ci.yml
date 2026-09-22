@@ -27,6 +27,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # C3 (docs/tasks/task-ci-speed-2026-09.md): change detection, at the JOB level. A push that
+  # changes only files under docs/ -- and none that Go code or tests READ (scripts/ci_docs_only.sh
+  # decides; 477da08a is the precedent: a docs-only env-vars.md fix flipped
+  # TestEnvVars_docAndCodeAgree, so "docs-only" cannot mean "skip tests" without that read check)
+  # -- runs `lint` alone. Every other job `needs:` this one and skips when docs_only == 'true'.
+  #
+  # It sits in front of everything, so it is the cheapest job in the file: one checkout (full
+  # history -- measured 6s median here, and the diff needs github.event.before to be present) and
+  # one script. FAIL-OPEN BY CONSTRUCTION, twice over: the script always exits 0 and prints
+  # "false" on any doubt (bad/zero SHAs, a diff that errors, an empty diff, a failed self-check),
+  # and the dependent jobs' `if:` uses !cancelled() so even a failed or missing gate runs the full
+  # matrix instead of skipping it -- a plain `needs:` would skip dependents when this job fails,
+  # the one outcome the gate must never produce.
+  #
+  # NOT a workflow-level paths-ignore: that would skip `lint` too, and the citation + book-link
+  # lints are ABOUT docs and must run on exactly these pushes. (It would also leave a required
+  # check Pending forever under branch protection; main has no protection and no rulesets today
+  # -- checked with `gh api` 2026-09-22 -- but the job-level shape holds either way.)
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.gate.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: docs-only push?
+        id: gate
+        env:
+          # A PR compares against its base; a push compares against the previous tip. On branch
+          # creation `before` is all zeros and the script fails open (runs everything).
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          v=$(scripts/ci_docs_only.sh "$BASE" "$HEAD")
+          echo "docs_only=$v" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$v  (base=$BASE head=$HEAD)"
+
   # Root module: the pure-Go runtime (decoder / tokenizer / constrain / demo).
   # Resolves the published aikit from the proxy — no workspace needed.
   #
@@ -142,6 +180,14 @@ jobs:
       - name: book link lint
         run: python3 scripts/book_link_lint.py
 
+      # C3's zero-match guard: the `changes` gate decides "docs-only" partly by detecting which
+      # docs/ files Go tests READ (scripts/ci_docs_only.sh). If that detection ever stops seeing
+      # a file a test is known to read, the gate has silently widened what gets skipped -- this
+      # step makes that a red `lint` on every push instead. Same shape as the sampler-gates
+      # zero-match guard in `test`.
+      - name: docs-only gate self-check (zero-match guard)
+        run: scripts/ci_docs_only.sh --selfcheck
+
       # Core promise: the cgo WebGPU/CUDA/Metal deps must never enter the runtime's
       # module graph. They live only in the opt-in ./gpu, ./cuda, ./metal submodules,
       # reached through their own cmd/ entrypoints (audit M-19) — never blank-imported
@@ -177,6 +223,8 @@ jobs:
   # surfaces a compile error inside `test`'s own output instead of a dedicated step, and `lint`
   # (which DOES run those as fast, separate, clearly-named steps) is a required check regardless.
   test:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3: skip on a docs-only push; !cancelled() keeps it fail-open
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -236,6 +284,8 @@ jobs:
   # and these workspace steps become unnecessary.
   readme-smoke:
     name: readme-smoke (a stranger's install, from an empty dir)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3 (root README.md is NOT docs/, so a README push still runs this)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -250,6 +300,8 @@ jobs:
         run: bash scripts/readme_smoke.sh README.md
 
   gpu:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -321,6 +373,8 @@ jobs:
   # GPU-less CI runner. Mirrors the gpu job: ephemeral `go work init` stitches the
   # unpublished goinfer root locally (submodule go.mods are replace-free since 2026-08-15).
   cuda:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -363,6 +417,8 @@ jobs:
   # job exists so that class of break fails CI instead of surfacing only in a
   # manual Apple-silicon sweep. macos-latest is Apple Silicon (arm64).
   root-darwin:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3: no macOS runner starts for a docs-only push
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -411,6 +467,8 @@ jobs:
   # Tests skip cleanly with no usable adapter; the build/vet alone compile-check
   # the cgo Metal path that the Linux jobs never touch.
   gpu-darwin:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -446,6 +504,8 @@ jobs:
   # device-INDEPENDENT falsifiability test (TestParity_NaNCosineFailsTheGate) runs here. The full
   # correctness gate remains `go run ./cmd/gate gpu`, hand-run on a Metal box.
   metal-darwin:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
