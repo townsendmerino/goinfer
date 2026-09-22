@@ -135,7 +135,15 @@ func NewVisionEncoder(w vision.GPUWeights) (ve *VisionEncoder, err error) {
 			}
 			loadV(&r.bAttnVit64, "attn_vit_hd72_bm64")
 			loadV(&r.bAttnVit128, "attn_vit_hd72_bm128")
+			// DEFAULT since 2026-09-21 (owner override of the pre-registered rule; the served downstream
+			// gate came back f_N=6/8 against the registered <=1 pass line — docs/measurements/
+			// vision-tower-downstream-2026-09-21.md — with no defect found; the owner chose the 6.4x
+			// speedup anyway, the same shape as R2's "shipped anyway" call). GOINFER_CUDA_VISION_ATTN=exact
+			// restores the old kernel; =bm64 selects the other fused arm.
+			r.visionAttn = 2
 			switch os.Getenv("GOINFER_CUDA_VISION_ATTN") {
+			case "exact":
+				r.visionAttn = 0
 			case "bm64":
 				r.visionAttn = 1
 			case "bm128":

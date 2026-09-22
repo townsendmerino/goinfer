@@ -15,6 +15,10 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed
+
+- **CUDA vision tower: the R8 fused attention kernel is now DEFAULT** (26.0 -> 4.1 s/image, 6.4x), overriding both pre-registered rules on owner decision: tower-level cosine vs the old kernel was 0.96 (registered pass line 0.98) and a served downstream check found it perturbs greedy generation somewhat more than a 1-LSB pixel jitter control (registered pass line f_N<=1, measured 6/8) — no defect found in either check. `GOINFER_CUDA_VISION_ATTN=exact` restores the old kernel. `docs/measurements/vision-tower-mma-2026-09-21.md`, `vision-tower-downstream-2026-09-21.md`.
+
 ### Added
 
 - **Spark-X2.5 as a new family** (`spark2_5`; XHToken, 1.7B/4B, community coding-tuned quants).

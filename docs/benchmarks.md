@@ -612,7 +612,17 @@ it removes a real np×np score-matrix materialization whose benefit just didn't 
 box's config — untested: a memory-constrained box, or a shape where per-head parallelism can't
 already saturate the core count. `aikit` CHANGELOG `[1.38.0]`, `docs/multimodal.md` P6a.
 
-#### Resident CUDA vision tower (P6's other half) — 2026-09-08
+#### Resident CUDA vision tower (P6's other half) — 2026-09-08, superseded by R8 phase A 2026-09-21
+
+**SUPERSEDED as of 2026-09-21**: the `attn_img_batched` tower this section measures is no longer the
+default. R8 phase A's fused non-causal attention kernel now runs by default (26.1 s -> 4.1 s/image,
+6.4x): tower-level cosine vs this section's own output is 0.96 (below the pre-registered 0.98 pass
+line) and a served downstream check found it perturbs greedy generation somewhat more than a 1-LSB
+pixel-jitter control (registered pass line f_N<=1 of 8, measured 6/8) — no defect found in either
+check, and the owner chose the speedup anyway, overriding both pre-registered rules.
+`GOINFER_CUDA_VISION_ATTN=exact` restores the path this section describes. See
+`docs/measurements/vision-tower-mma-2026-09-21.md` and `vision-tower-downstream-2026-09-21.md`. The
+numbers below are the pre-2026-09-21 baseline, kept for the historical comparison.
 
 **The CUDA/Metal half of P6, previously "not started, lower priority"** (`docs/multimodal.md`)
 now has a real, measured CUDA implementation for the SigLIP/Gemma-3 tower — see that doc's P6
