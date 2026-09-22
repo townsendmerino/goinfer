@@ -1850,7 +1850,7 @@ cross-backend decode-path review (docs/completed/task-moe-streaming.md's own clo
 not yet measured. `cuda/drafter.go`'s `DraftTokens` (~653-718), `FuseContext` (~230-240), and the
 block-forward path (~597-608) all: sync the stream, download the ENTIRE `M×vocab` logits block to
 host, then run a hand-written serial host argmax loop per row — where the main decode path already
-has an on-device fused-argmax kernel (`ForwardArgmax`, `cuda/resident.go:3384`, `r.fArg`, a 4-byte
+has an on-device fused-argmax kernel (`ForwardArgmax`, `cuda/resident.go:3551`, `r.fArg`, a 4-byte
 readback) for exactly this reduction. `M` here is the speculative block size (small — single-digit
 to low tens of tokens), so the absolute cost is plausibly minor; unlike R11's MoE case, nothing here
 has been measured, so **no band is registered — step 0 is the measurement, same discipline as R4/R10

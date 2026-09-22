@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -97,5 +98,39 @@ func TestMoEStreamingDecodeProfile(t *testing.T) {
 			tot.Round(time.Millisecond), genDur.Round(time.Millisecond), 100*float64(tot)/float64(genDur),
 			perTok.Round(time.Microsecond))
 		t.Logf("dma-of-total-token time: %.1f%%", 100*float64(dma)/float64(genDur))
+	}
+	// Per-class split of the same token (sync-bounded, so every class carries its launch latency
+	// and the sum is slightly over the unprofiled token). Then the overlap ceilings, PRE-REGISTERED
+	// before this ran (docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md):
+	//   C1 = min(dense, dma)          — only the dense branch runs under the miss DMA
+	//   C2 = min(dense+segC, dma)     — plus the hit-expert prefix of segC, rank order kept
+	//   S  = clear + stall            — host syncs a stream-ordered design removes outright
+	// Kill without building if C2+S < 5% of the token; otherwise the build's own bar applies.
+	attn, dense, router, clear, rt, segC, head := r.DecodeClassProfForTest()
+	if sum := attn + dense + router + clear + rt + segC + head; sum > 0 {
+		per := func(d time.Duration) string {
+			return fmt.Sprintf("%s/tok (%.1f%%)", (d / nNew).Round(time.Microsecond), 100*float64(d)/float64(sum))
+		}
+		t.Logf("decode classes over %d tokens (sum %s/tok vs %s/tok wall):", nNew, (sum / nNew).Round(time.Microsecond), (genDur / nNew).Round(time.Microsecond))
+		t.Logf("  attn   %s", per(attn))
+		t.Logf("  dense  %s", per(dense))
+		t.Logf("  router %s", per(router))
+		t.Logf("  clear  %s", per(clear))
+		t.Logf("  rt     %s  (loadRoutedExperts: stall+host+dma)", per(rt))
+		t.Logf("  segC   %s", per(segC))
+		t.Logf("  head   %s", per(head))
+		stall, _, dma, _ := r.CacheProfForTest()
+		minD := func(a, b time.Duration) time.Duration {
+			if a < b {
+				return a
+			}
+			return b
+		}
+		c1, c2, s := minD(dense, dma), minD(dense+segC, dma), clear+stall
+		t.Logf("overlap ceilings: C1(dense only) %s/tok = %.1f%% | C2(dense+segC prefix) %s/tok = %.1f%% | S(removable syncs) %s/tok = %.1f%% | C2+S = %.1f%%",
+			(c1 / nNew).Round(time.Microsecond), 100*float64(c1)/float64(sum),
+			(c2 / nNew).Round(time.Microsecond), 100*float64(c2)/float64(sum),
+			(s / nNew).Round(time.Microsecond), 100*float64(s)/float64(sum),
+			100*float64(c2+s)/float64(sum))
 	}
 }

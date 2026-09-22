@@ -1593,6 +1593,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				r.slotIdx = r.au32(topK)
 				r.hostIdx = make([]uint32, topK)
 				r.hostSlot = make([]uint32, topK)
+				if hb, e := gpu.NewHostBuffer[uint8](r.dev, topK*4); e != nil {
+					return e
+				} else {
+					r.slotIdxHost = hb
+				}
 				if r.l01Enabled { // L-01 prototype scratch (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md)
 					r.hostWgt = make([]float32, topK)
 					r.hostMQ = make([]byte, H)
@@ -1756,6 +1761,16 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if e := r.admitGraphs(); e != nil {
 		r.Close()
 		return declined(fmt.Errorf("cuda: %w", e))
+	}
+	// C′ compute/DMA overlap (see the overlap field). Not under graphs: a captured segB cannot record
+	// the router event mid-segment and a captured segC cannot wait per miss. Not with L-01: its
+	// CPU-routed ranks have no slot to wait on.
+	r.overlap = r.cacheExperts && !r.graphs && !r.l01Enabled && os.Getenv("GOINFER_MOE_DMA_OVERLAP") != "0"
+	if r.overlap {
+		if e := r.initOverlap(); e != nil {
+			r.Close()
+			return declined(fmt.Errorf("cuda: overlap: %w", e))
+		}
 	}
 	b.resident = r
 	return r, true, nil

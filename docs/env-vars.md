@@ -114,6 +114,13 @@ real hardware at scale; default off),
 `64x64`, `128x64`, `32x64`, or `32x32`; an R5-phase investigation knob, default unchanged, the
 32-row tiles are a measured regression kept only for A/B comparison),
 `GOINFER_CUDA_VISION_ATTN` (CUDA vision tower: `bm128` is the DEFAULT since 2026-09-21 — the R8 fused non-causal attention kernel for the SigLIP tower, 6.4× faster (26.0 → 4.1 s/image). Its output differs from the pre-2026-09-21 `attn_img_batched` path at tower level (cosine 0.96 vs the old resident output; cosine vs the CPU int8 reference unchanged, ~0.91-0.93 either way) and a pre-registered served downstream check found it perturbs greedy generation somewhat MORE than a 1-LSB pixel jitter control does (no defect found in either check) — the owner chose the speedup anyway, overriding both pre-registered rules; see `docs/measurements/vision-tower-mma-2026-09-21.md` and `vision-tower-downstream-2026-09-21.md`. `exact` restores the old kernel; `bm64` selects the other fused arm),
+`GOINFER_MOE_DMA_OVERLAP` (CUDA C′ decode: DEFAULT ON when the expert-slot cache is on; `0` restores
+the draining path. The routing readback waits on an event recorded after the router instead of
+draining the stream; cache misses are DMA'd on a second stream while the kernels issued after the
+router (Gemma-4's dense branch, then the hit-expert ranks of segC) execute; each MoE rank waits
+device-side only if it missed. Launch order and arithmetic are unchanged, so it is bit-identical to
+the draining path. Off under `GOINFER_CUDA_GRAPHS` and `GOINFER_CUDA_L01_CPU_OFFLOAD`. Ceiling, decision
+rule and A/B: `docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md`),
 `GOINFER_CUDA_MOE_EXPERT_MAJOR` (CUDA: DEFAULT ON since 2026-09-21 — expert-major restructuring of
 the batched prefill MoE FFN, both the generic path (`cuda/moe_expert_major.go`) and Gemma-4's own
 parallel dense‖MoE FFN (`cuda/moe_expert_major_gemma4.go`). Routes every row of a chunk first, then

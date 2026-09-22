@@ -15,6 +15,15 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **CUDA: C′ expert-cache decode overlaps compute with the miss DMA, DEFAULT ON (`GOINFER_MOE_DMA_OVERLAP=0` opts out).**
+  The per-layer routing readback used to drain the stream, so every cache-miss DMA ran against an idle GPU (30% of a
+  26B token). Now the host waits on an event recorded after the router, misses are DMA'd on a second stream while the
+  kernels issued after the router (Gemma-4's dense branch, then the hit-expert ranks) execute, and each MoE rank waits
+  device-side only if it missed. Launch order and arithmetic unchanged → bit-identical (48 tokens × 262k logits,
+  `Float32bits`). Real 26B on the RTX 2070 SUPER, paired ABBA on one loaded model: **1.271× (30.4 → 38.7 tok/s)**, 8/8
+  pairs within 1.269–1.288. Generic to every C′ architecture (Qwen3-MoE, GLM, gpt-oss, …), not only Gemma-4. Needs
+  aikit gpu/v0.33.2 (`Event`, `Queue.UploadAsyncAt`, `Queue.ZeroAsync`). Ceiling profile, pre-registered rule and A/B:
+  `docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md`.
 - **CUDA: expert-major MoE prefill, DEFAULT ON (`GOINFER_CUDA_MOE_EXPERT_MAJOR=0` opts out)** (R11/P20). Reorders the batched prefill FFN to admit/DMA each distinct routed expert once per chunk instead of once per (row, rank) — no new kernel, reuses the frozen `moe.ptx` GEMVs and `residual_batched`, bit-identical by construction (mutation-checked on tiny fixtures for both the generic MoE path and Gemma-4's own parallel dense‖MoE FFN). Real measurement on Gemma-4-26B (10 C′ slots, the tight-VRAM case this was built for): **2.66x / 2.50x / 2.39x / 2.26x at M=512/2048/4096/8012**, sequential control unmoved — `docs/measurements/p20-expert-major-m26-2026-09-21.md`. The generic path's own real target (Mellum2, a looser 51-slot cache) measures a smaller 3.5-4.3% — `docs/measurements/p20-expert-major-2026-09-21.md`.
 
 ### Changed

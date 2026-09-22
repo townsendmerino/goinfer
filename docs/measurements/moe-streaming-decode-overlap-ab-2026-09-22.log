@@ -1,0 +1,16 @@
+=== RUN   TestMoEDMAOverlapAB
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    moe_dma_overlap_ab_test.go:53: loaded 26B .giw in 47s, cacheSlots=29
+    moe_dma_overlap_ab_test.go:112: bit-identical: 48 tokens x 262144 logits, Float32bits equal
+    moe_dma_overlap_ab_test.go:137: pair 0: off 30.37 tok/s | on 39.11 tok/s | on/off speedup 1.288x
+    moe_dma_overlap_ab_test.go:137: pair 1: off 30.40 tok/s | on 38.75 tok/s | on/off speedup 1.275x
+    moe_dma_overlap_ab_test.go:137: pair 2: off 30.23 tok/s | on 38.46 tok/s | on/off speedup 1.272x
+    moe_dma_overlap_ab_test.go:137: pair 3: off 30.48 tok/s | on 38.73 tok/s | on/off speedup 1.271x
+    moe_dma_overlap_ab_test.go:137: pair 4: off 30.33 tok/s | on 38.61 tok/s | on/off speedup 1.273x
+    moe_dma_overlap_ab_test.go:137: pair 5: off 30.35 tok/s | on 38.55 tok/s | on/off speedup 1.270x
+    moe_dma_overlap_ab_test.go:137: pair 6: off 30.40 tok/s | on 38.62 tok/s | on/off speedup 1.270x
+    moe_dma_overlap_ab_test.go:137: pair 7: off 30.35 tok/s | on 38.51 tok/s | on/off speedup 1.269x
+    moe_dma_overlap_ab_test.go:155: paired median speedup 1.271x (min 1.269, max 1.288) over 8 pairs; pooled off 30.36 vs on 38.66 tok/s — SHIP (>=3%)
+--- PASS: TestMoEDMAOverlapAB (78.43s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	78.516s

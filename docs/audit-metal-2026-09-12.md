@@ -1522,7 +1522,7 @@ re-baked by the code it checks (G-04).
   says.
 - N-31 `metal.go:744-747` — `WaitDone` reads four GPU timestamps per production token for
   `LastGPUTimes` (tests only); µs.
-- N-32 `metal_vit.go:576-578` — "64×64 tile" stale (32×32). `:665-666` — the ViT library compiles
+- N-32 `metal_vit.go:1117-1119` — "64×64 tile" stale (32×32). `:665-666` — the ViT library compiles
   fast-math OFF library-wide for one exact divide; `precise::divide` per op would free the rest.
   **PARTIALLY CLOSED 2026-09-13** (aikit `3214193`): fixed the stale comment — `SGBigBlock` is 32,
   and `GEMMF32Plan`'s own comment two lines below already correctly said "32×32 tile", so the fixed

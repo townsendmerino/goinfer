@@ -451,10 +451,23 @@ type cudaResident struct {
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — segBFFN reuses segA's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in step(); 0 ⇒ none (FeatLogitScale)
 	cacheExperts  bool    // C′: routed experts DMA'd host→VRAM slots per token (device read; correct)
-	cacheProf     bool    // GOINFER_MOE_CACHE_PROF: time the per-layer routing round trip
-	profStall     time.Duration
-	profHost      time.Duration
-	profDMA       time.Duration
+	// overlap (GOINFER_MOE_DMA_OVERLAP, default on with C′; off under graphs and L-01): the C′ round
+	// trip no longer drains the stream. The host waits on evRoute (recorded right after the router),
+	// the misses are copied on dmaQ — a second stream — while the kernels issued after the router keep
+	// running, and segC's rank loop waits device-side only before a rank that missed, so the hit ranks
+	// ahead of it execute under the DMA in their original order. Everything keeps its launch order and
+	// arithmetic, so the output is bit-identical to the draining path; only the idle time moves.
+	// Ceiling and decision rule: docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md.
+	overlap     bool
+	dmaQ        Queue
+	evRoute     gpu.Event
+	evMiss      []gpu.Event        // per miss of one call (≤ topK): recorded on dmaQ after that miss's two copies
+	missEv      []int              // per rank: index into evMiss, or -1 for a hit
+	slotIdxHost *HostBuffer[uint8] // pinned source of the per-token slot-id upload (UploadAsync needs pinned)
+	cacheProf   bool               // GOINFER_MOE_CACHE_PROF: time the per-layer routing round trip
+	profStall   time.Duration
+	profHost    time.Duration
+	profDMA     time.Duration
 	// Phase 0 (G31 follow-up): split the expert DMA into the BIG weight copy and the TINY scale
 	// copy, with bytes and call counts for each. If a ~4 KB scale upload costs nearly as much as a
 	// ~600 KB weight upload, the path is PER-CALL-OVERHEAD bound rather than bandwidth bound, and
@@ -477,6 +490,13 @@ type cudaResident struct {
 	profBatchTime time.Duration
 	profSyncCalls uint64
 	profCalls     uint64
+	// Per-class decode timing for a g4moe token, sync-bounded (profMark), same cacheProf gate. It
+	// exists to size the compute/DMA overlap ceiling: only dense (independent of the routing) and
+	// the hit-expert prefix of segC can run under a miss DMA, so those two are the classes that
+	// bound any overlap design. Sync-to-sync, so each class includes its own launch latency and
+	// the token is slower with the profiler on; the numbers are upper bounds on class cost.
+	profT0                                                                 time.Time
+	profAttn, profDense, profRouter, profClear, profRT, profSegC, profHead time.Duration
 	// loraLayers is nil until SetAdapter binds a compute-time LoRA adapter; then non-nil for the
 	// life of that bind. segA/segB check it directly (cuda/lora.go's applyLora), so it must never
 	// be bound while r.graphs replays a captured segment — a graph was captured with this nil, so
@@ -1316,7 +1336,13 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 	if r.cacheProf {
 		t0 = time.Now()
 	}
-	if e := r.stream.Sync(); e != nil {
+	if r.overlap {
+		// Wait for the ROUTER, not the stream: everything issued after it keeps executing while the
+		// idx is read back and the misses are copied on dmaQ.
+		if e := r.evRoute.Sync(); e != nil {
+			return e
+		}
+	} else if e := r.stream.Sync(); e != nil {
 		return e
 	}
 	if r.cacheProf {
@@ -1389,6 +1415,9 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 		if r.l01Enabled {
 			r.l01CPUMask[j] = false
 		}
+		if r.overlap {
+			r.missEv[j] = -1
+		}
 		if !hit {
 			r.pendingAdmits = append(r.pendingAdmits, pendingAdmit{slot: slot, expert: e})
 			var td time.Time
@@ -1396,13 +1425,49 @@ func (r *cudaResident) loadRoutedExperts(L *cudaLayer) error {
 				r.profHost += time.Since(t0)
 				td = time.Now()
 			}
-			r.appendExpertSlot(&L.expGU, int(e), slot)
-			r.appendExpertSlot(&L.expDown, int(e), slot)
+			if r.overlap {
+				// Both copies on dmaQ, then the event this rank's launches will wait on. A later rank
+				// routed to the same expert is ordered behind this rank's wait by the stream itself.
+				k := len(r.pendingAdmits) - 1
+				r.missEv[j] = k
+				err := r.dmaExpertSlot(&L.expGU, int(e), slot)
+				if err == nil {
+					err = r.dmaExpertSlot(&L.expDown, int(e), slot)
+				}
+				if err == nil {
+					err = r.dmaQ.Record(r.evMiss[k])
+				}
+				if err != nil {
+					r.rollbackAdmits(c)
+					return err
+				}
+			} else {
+				r.appendExpertSlot(&L.expGU, int(e), slot)
+				r.appendExpertSlot(&L.expDown, int(e), slot)
+			}
 			if r.cacheProf {
-				r.profDMA += time.Since(td)
+				r.profDMA += time.Since(td) // overlap: enqueue time, not transfer time
 				t0 = time.Now()
 			}
 		}
+	}
+	if r.overlap {
+		// The slot-id table rides r.stream, ordered before segC by the stream; its pinned source is
+		// next rewritten only after the next layer's evRoute wait, which follows this layer's segC.
+		hs := r.slotIdxHost.Slice()
+		for j := 0; j < r.topK; j++ {
+			v := r.hostSlot[j]
+			hs[4*j], hs[4*j+1], hs[4*j+2], hs[4*j+3] = byte(v), byte(v>>8), byte(v>>16), byte(v>>24)
+		}
+		if e := r.stream.UploadAsync(r.slotIdx, r.slotIdxHost); e != nil {
+			r.rollbackAdmits(c)
+			return e
+		}
+		if r.cacheProf {
+			r.profHost += time.Since(t0)
+			r.profCalls++
+		}
+		return nil
 	}
 	// One synchronize for the WHOLE layer: every expert-slot miss plus the per-token slot-index
 	// upload the GEMV reads this round's routing from, folded into the SAME batch (P-21). This
@@ -1450,6 +1515,98 @@ func (r *cudaResident) rollbackAdmits(c *expertCache) {
 // count. Zero unless GOINFER_MOE_CACHE_PROF is set.
 func (r *cudaResident) CacheProfForTest() (stall, host, dma time.Duration, calls uint64) {
 	return r.profStall, r.profHost, r.profDMA, r.profCalls
+}
+
+// profMark closes one decode class: drains the stream, books the time since the previous mark
+// into acc, and restarts the clock. No-op unless cacheProf. A drain error is parked in launchErr
+// (the sticky accumulator launchToken already returns) rather than dropped.
+func (r *cudaResident) profMark(acc *time.Duration) {
+	if !r.cacheProf {
+		return
+	}
+	if e := r.stream.Sync(); e != nil && r.launchErr == nil {
+		r.launchErr = e
+	}
+	now := time.Now()
+	*acc += now.Sub(r.profT0)
+	r.profT0 = now
+}
+
+// initOverlap builds the overlap path's resources: the DMA stream, the router event, one event per
+// possible miss rank.
+func (r *cudaResident) initOverlap() error {
+	r.dmaQ = r.dev.NewCommandQueue()
+	ev, e := r.dev.NewEvent()
+	if e != nil {
+		return e
+	}
+	r.evRoute = ev
+	r.evMiss = make([]gpu.Event, r.topK)
+	for k := range r.evMiss {
+		if r.evMiss[k], e = r.dev.NewEvent(); e != nil {
+			return e
+		}
+	}
+	r.missEv = make([]int, r.topK)
+	for j := range r.missEv {
+		r.missEv[j] = -1
+	}
+	return nil
+}
+
+// recordRouted marks the router's position on r.stream — the ONLY thing loadRoutedExperts waits for
+// in overlap mode. Called by every MoE pre-half right after its route kernel.
+func (r *cudaResident) recordRouted() error {
+	if !r.overlap {
+		return nil
+	}
+	return r.stream.Record(r.evRoute)
+}
+
+// waitMiss makes r.stream wait, device-side, for rank j's expert DMA if that rank missed the cache
+// this call. Hit ranks — and every rank when overlap is off — pass straight through, so the ranks
+// ahead of a miss execute under its DMA in exactly the order they always did.
+func (r *cudaResident) waitMiss(j int) error {
+	if !r.overlap || r.missEv[j] < 0 {
+		return nil
+	}
+	return r.stream.Wait(r.evMiss[r.missEv[j]])
+}
+
+// dmaExpertSlot enqueues one expert's weight+scales copy on dmaQ, stream-ordered and unsynchronized —
+// the overlap-mode twin of appendExpertSlot.
+func (r *cudaResident) dmaExpertSlot(w *cudaWQ, e, slot int) error {
+	wOff, wLen := e*w.perExpertW*4, w.perExpertW*4
+	sOff, sLen := e*w.perExpertS*2, w.perExpertS*2
+	if err := r.dmaQ.UploadAsyncAt(w.W.At(slot*w.perExpertW*4), w.srcW.Host(), wOff, wLen); err != nil {
+		return err
+	}
+	if err := r.dmaQ.UploadAsyncAt(w.ws16.At(slot*w.perExpertS*2), w.srcS.Host(), sOff, sLen); err != nil {
+		return err
+	}
+	if r.cacheProf {
+		r.profWBytes += uint64(wLen)
+		r.profWCalls++
+		r.profSBytes += uint64(sLen)
+		r.profSCalls++
+	}
+	return nil
+}
+
+// SetOverlapForTest flips the overlap path between tokens for an A/B on one loaded model. Returns
+// false (and changes nothing) if the model was loaded without the overlap resources.
+func (r *cudaResident) SetOverlapForTest(on bool) bool {
+	if r.evMiss == nil {
+		return false
+	}
+	r.overlap = on
+	return true
+}
+
+// DecodeClassProfForTest reports the per-class g4moe decode split (see profMark). Zero unless
+// GOINFER_MOE_CACHE_PROF is set.
+func (r *cudaResident) DecodeClassProfForTest() (attn, dense, router, clear, rt, segC, head time.Duration) {
+	return r.profAttn, r.profDense, r.profRouter, r.profClear, r.profRT, r.profSegC, r.profHead
 }
 
 // UploadProfForTest reports the expert-DMA split: the big weight copies vs the tiny scale copies,
@@ -2319,15 +2476,21 @@ func (r *cudaResident) moeMLPPre(Ly *cudaLayer, x Buffer) error {
 	// BIASED logits. Same selection, different weights — which is why the wrong one produces
 	// plausible output rather than an error.
 	if r.gptOssRoute != (Pipeline{}) {
-		return r.launch(r.gptOssRoute, onecfg(1, 0),
+		if e := r.launch(r.gptOssRoute, onecfg(1, 0),
 			Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
-			gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK)))
+			gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK))); e != nil {
+			return e
+		}
+		return r.recordRouted()
 	}
-	return r.launch(r.fRoute, onecfg(1, 0),
+	if e := r.launch(r.fRoute, onecfg(1, 0),
 		Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
 		gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK)), gpu.ArgValue(r.moeSigmoid),
 		gpu.ArgValue(r.moeNormTopK), gpu.ArgValue(r.moeScale),
-		gpu.ArgValue(int32(r.nGroup)), gpu.ArgValue(int32(r.topkGroup)))
+		gpu.ArgValue(int32(r.nGroup)), gpu.ArgValue(int32(r.topkGroup))); e != nil {
+		return e
+	}
+	return r.recordRouted()
 }
 
 // launchGluSplit runs the fused-gate‖up SwiGLU (glu_quant): dscratch[k]=act(gu[k])*gu[inter+k], then
@@ -2444,6 +2607,9 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer, x Buffer) error {
 		if r.l01Enabled && r.l01CPUMask[j] {
 			continue
 		}
+		if e := r.waitMiss(j); e != nil {
+			return e
+		}
 		// gate‖up for the routed expert, in ONE indexed GEMV: the stack interleaves each
 		// expert's gate and up rows (packWeightStack(g0,u0,g1,u1,...)), so one row range of
 		// width 2*moeInter is exactly this expert's pair.
@@ -2541,6 +2707,33 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer, x Buffer) error {
 // both of which stay live in the segB→segC gap (an H2D and, optionally, a D2H — neither capturable).
 func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int, x Buffer) error {
 	nullBias := ArgNull()
+	r.profMark(&r.profAttn)
+
+	// --- router FIRST (on RAW h): rmsnorm_nw → gemv_f32_f32(folded proj) → moe_route → per-expert-scale
+	// fold. It needs only h, and it is the one thing the host waits for (recordRouted); the dense
+	// branch below then executes while the routing is read back and the misses are DMA'd. The two
+	// share no buffers, so this order is bit-identical to dense-first. ---
+	if e := r.launch(r.fRmsNW, onecfg(256, 256*4), Arg(x), Arg(r.g4rn), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps)); e != nil {
+		return e
+	}
+	if e := r.launch(r.fRouterF32, LaunchConfig{GridX: uint32(r.nE), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+		Arg(Ly.routerW), Arg(r.g4rn), gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.hidden)), Arg(r.rLogits)); e != nil {
+		return e
+	}
+	// softmax (sigmoid=0), UNCONDITIONAL renorm (norm=1), scale=1, no group routing.
+	if e := r.launch(r.fRoute, onecfg(1, 0), Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
+		gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(1)),
+		gpu.ArgValue(float32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
+		return e
+	}
+	if e := r.launch(r.fScaleWgt, LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: uint32(r.topK), BlockY: 1, BlockZ: 1},
+		Arg(r.rWgt), Arg(r.rIdx), Arg(Ly.perExpertScaleB), gpu.ArgValue(int32(r.topK))); e != nil {
+		return e
+	}
+	if e := r.recordRouted(); e != nil {
+		return e
+	}
+	r.profMark(&r.profRouter)
 
 	// --- dense branch → g4x1 ---
 	if e := r.rms(x, Ly.g4preFFN, r.mq, r.mSc); e != nil { // xd = preFFNNorm(h), int8
@@ -2562,29 +2755,15 @@ func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int, x Buffer) error {
 	if e := r.normF32(r.g4x1, Ly.g4postFFN1); e != nil {
 		return e
 	}
-
-	// --- router (on RAW h): rmsnorm_nw → gemv_f32_f32(folded proj) → moe_route → per-expert-scale fold ---
-	if e := r.launch(r.fRmsNW, onecfg(256, 256*4), Arg(x), Arg(r.g4rn), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps)); e != nil {
-		return e
-	}
-	if e := r.launch(r.fRouterF32, LaunchConfig{GridX: uint32(r.nE), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-		Arg(Ly.routerW), Arg(r.g4rn), gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.hidden)), Arg(r.rLogits)); e != nil {
-		return e
-	}
-	// softmax (sigmoid=0), UNCONDITIONAL renorm (norm=1), scale=1, no group routing.
-	if e := r.launch(r.fRoute, onecfg(1, 0), Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
-		gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(1)),
-		gpu.ArgValue(float32(1)), gpu.ArgValue(int32(1)), gpu.ArgValue(int32(1))); e != nil {
-		return e
-	}
-	if e := r.launch(r.fScaleWgt, LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: uint32(r.topK), BlockY: 1, BlockZ: 1},
-		Arg(r.rWgt), Arg(r.rIdx), Arg(Ly.perExpertScaleB), gpu.ArgValue(int32(r.topK))); e != nil {
-		return e
-	}
+	r.profMark(&r.profDense)
 
 	// xe = preFFNNorm2(h); reuse mq/mSc (dense branch done with them). This is the last static op
 	// before the gap: launchToken clears g4x2 (H2D) and, if caching, reads back the routing (D2H).
-	return r.rms(x, Ly.g4preFFN2, r.mq, r.mSc)
+	if e := r.rms(x, Ly.g4preFFN2, r.mq, r.mSc); e != nil {
+		return e
+	}
+	r.profMark(&r.profRouter)
+	return nil
 }
 
 // gemma4MoeMLPPost issues the post-readback half: the expert loop accumulating into the (already
@@ -2593,6 +2772,9 @@ func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int, x Buffer) error {
 func (r *cudaResident) gemma4MoeMLPPost(Ly *cudaLayer, l int, x Buffer) error {
 	gu := 2 * r.moeInter
 	for j := 0; j < r.topK; j++ {
+		if e := r.waitMiss(j); e != nil {
+			return e
+		}
 		if e := r.launch(r.fMoEGemv, LaunchConfig{GridX: uint32((gu + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 			Arg(Ly.expGU.W), Arg(r.mq), Arg(Ly.expGU.ws16), Arg(r.mSc), Arg(r.expIdx()),
 			gpu.ArgValue(int32(j)), gpu.ArgValue(int32(gu)), gpu.ArgValue(int32(gu)),
@@ -3174,6 +3356,9 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 	if e := gpu.Upload(r.x, emb); e != nil {
 		return e
 	}
+	if r.cacheProf {
+		r.profT0 = time.Now()
+	}
 	// useGraphs replays the captured static segments instead of re-issuing their launches. Gated on
 	// !subCap: the sublayer-capture diagnostic syncs mid-segment, which a captured graph cannot do
 	// (and which a test may enable on a graphs-built runner) — so it falls back to the live seg calls.
@@ -3331,6 +3516,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 		if e := r.doG(r.lmW, r.aq, r.aSc, nullBias, r.logits, 0); e != nil {
 			return e
 		}
+		r.profMark(&r.profHead)
 	}
 	return r.launchErr // surface any launch error discarded in the dense chain above (M23)
 }
@@ -3648,16 +3834,28 @@ func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool, x Buffer) error 
 		// Without this, the DMA can land mid-segC(l-1) and zero the previous layer's expert
 		// contribution before the join reads it: a data race on every g4moe layer after the first.
 		// Sync r.stream so the clear is ordered after the prior layer's kernels (audit R-03).
-		if e := r.stream.Sync(); e != nil {
-			return e
+		// Overlap mode: a memset ON r.stream is ordered by the stream itself — after segC(l-1)'s
+		// join read it, before segC(l) accumulates into it — and drains nothing.
+		if r.overlap {
+			if e := r.stream.ZeroAsync(r.g4x2, r.hidden*4); e != nil {
+				return e
+			}
+		} else {
+			if e := r.stream.Sync(); e != nil {
+				return e
+			}
+			if e := gpu.Upload(r.g4x2, r.g4zero); e != nil {
+				return e
+			}
 		}
-		if e := gpu.Upload(r.g4x2, r.g4zero); e != nil {
-			return e
-		}
+		r.profMark(&r.profClear)
 	}
 	if (Ly.g4moe || Ly.isMoE) && r.cacheExperts {
 		if e := r.loadRoutedExperts(Ly); e != nil {
 			return e
+		}
+		if Ly.g4moe {
+			r.profMark(&r.profRT)
 		}
 	}
 	// segC: the post-readback MoE half (expert loop + join). Dense layers have none.
@@ -3673,6 +3871,9 @@ func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool, x Buffer) error 
 			}
 		} else if e := r.segC(Ly, l, x); e != nil {
 			return e
+		}
+		if Ly.g4moe {
+			r.profMark(&r.profSegC)
 		}
 	}
 	// hidden-state seam: this layer's OUTPUT residual, for a drafter that taps it.

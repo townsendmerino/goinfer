@@ -1,0 +1,18 @@
+=== RUN   TestMoEStreamingDecodeProfile
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    moe_streaming_decode_profile_test.go:59: loaded 26B .giw in 47s, cacheSlots=29
+    moe_streaming_decode_profile_test.go:88: generated 48 tokens in 1.691s (28.39 tok/s), C′ hit rate 87.6% (10090 hits / 1430 misses)
+    moe_streaming_decode_profile_test.go:93: C′ round trip over 1440 layer-calls: stall 5.35ms (1.0%) | host 28.291ms (5.3%) | dma 497.044ms (93.7%) = 531ms of 1.691s generation (31.4%), 11.056ms/token
+    moe_streaming_decode_profile_test.go:100: dma-of-total-token time: 29.4%
+    moe_streaming_decode_profile_test.go:114: decode classes over 48 tokens (sum 35.056ms/tok vs 35.223ms/tok wall):
+    moe_streaming_decode_profile_test.go:115:   attn   4.613ms/tok (13.2%)
+    moe_streaming_decode_profile_test.go:116:   dense  2.593ms/tok (7.4%)
+    moe_streaming_decode_profile_test.go:117:   router 2.121ms/tok (6.1%)
+    moe_streaming_decode_profile_test.go:118:   clear  1.479ms/tok (4.2%)
+    moe_streaming_decode_profile_test.go:119:   rt     11.223ms/tok (32.0%)  (loadRoutedExperts: stall+host+dma)
+    moe_streaming_decode_profile_test.go:120:   segC   11.138ms/tok (31.8%)
+    moe_streaming_decode_profile_test.go:121:   head   1.89ms/tok (5.4%)
+    moe_streaming_decode_profile_test.go:130: overlap ceilings: C1(dense only) 2.593ms/tok = 7.4% | C2(dense+segC prefix) 10.355ms/tok = 29.5% | S(removable syncs) 1.59ms/tok = 4.5% | C2+S = 34.1%
+--- PASS: TestMoEStreamingDecodeProfile (51.14s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	51.200s
