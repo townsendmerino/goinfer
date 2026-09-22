@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -300,8 +301,15 @@ func (w *Weights) bodyMatmulWeights() []*linalg.WeightMat {
 // Use LoadWeightsFromFS for fs.FS-backed (MapFS, embed.FS) paths — that
 // route stays heap-backed because fs.FS doesn't expose a file descriptor.
 func LoadWeights(dir string) (*Weights, error) {
-	return loadWeights(dir, quantNone, false, true, false, nil)
+	return loadWeights(dir, quantNone, false, true, false, nil, nil)
 }
+
+// errLoadAborted is parallelLayers' own sentinel when abort closes mid-build — S3
+// (docs/tasks/task-never-swap-2026-09.md): the swap tripwire's LOAD-TIME consumer. decoder.Load
+// has no view of WHY abort closed (a swap watch it does not own and does not import); the caller
+// that armed the watch is expected to check errors.Is(err, errLoadAborted) and wrap it with
+// whatever reason/pricing detail IT has (see Options.LoadAbort's own doc comment).
+var errLoadAborted = errors.New("decoder: load aborted")
 
 // parallelLayers runs fn over the n layer indices across a worker pool, so the
 // per-tensor dequant + re-quant (independent per layer — distinct linalg.WeightMat
@@ -309,9 +317,21 @@ func LoadWeights(dir string) (*Weights, error) {
 // work and is returned. Transient memory scales with the worker count (each
 // in-flight layer briefly holds its dequantized f32); GOMAXPROCS workers on a
 // machine that can hold the model is the right trade.
-func parallelLayers(n int, fn func(i int) error) error {
+//
+// abort, if non-nil, is checked BETWEEN layers (at grab, never inside a layer already in
+// flight — S3's own "the direct build needs a check between layers"): once closed, no new fn(i)
+// starts, in-flight ones finish normally, and the whole call returns errLoadAborted (wrapping
+// whatever partial error, if any, a still-running fn(i) itself returned — abort never masks a
+// real build error). A nil abort channel blocks forever in a select, so this is a zero-cost,
+// zero-special-casing no-op for every caller that does not pass one.
+func parallelLayers(n int, abort <-chan struct{}, fn func(i int) error) error {
 	if n <= 1 {
 		if n == 1 {
+			select {
+			case <-abort:
+				return errLoadAborted
+			default:
+			}
 			return fn(0)
 		}
 		return nil
@@ -321,6 +341,7 @@ func parallelLayers(n int, fn func(i int) error) error {
 		next     int
 		mu       sync.Mutex
 		firstErr error
+		aborted  bool
 		wg       sync.WaitGroup
 	)
 	grab := func() (int, bool) {
@@ -328,6 +349,12 @@ func parallelLayers(n int, fn func(i int) error) error {
 		defer mu.Unlock()
 		if next >= n || firstErr != nil {
 			return 0, false
+		}
+		select {
+		case <-abort:
+			aborted = true
+			return 0, false
+		default:
 		}
 		i := next
 		next++
@@ -352,7 +379,13 @@ func parallelLayers(n int, fn func(i int) error) error {
 		})
 	}
 	wg.Wait()
-	return firstErr
+	if firstErr != nil {
+		return firstErr // a real build error always wins over a concurrent abort
+	}
+	if aborted {
+		return errLoadAborted
+	}
+	return nil
 }
 
 // loadWeights is the quant-aware internal load. When quant is int8/int4, each
@@ -362,14 +395,16 @@ func parallelLayers(n int, fn func(i int) error) error {
 // big quantized checkpoint load in a quarter (int8) or eighth (int4) of the RAM
 // the load-everything-then-quantize path needed. The forward output is identical
 // to quantizing after load; only the peak memory differs.
-func loadWeights(dir string, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter) (*Weights, error) {
+func loadWeights(dir string, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter, abort <-chan struct{}) (*Weights, error) {
 	// One atomic add per model load, so the fit guard's test can OBSERVE that a refused load
 	// allocated nothing rather than infer it from an error string. Inferring is how a guard that
 	// fires after the allocation still looks correct (docs/tasks/task-first-hour.md, R3).
 	weightAllocs.Add(1)
 	if strings.HasSuffix(dir, ".gguf") {
-		return loadGGUFWeights(dir, quant, embedInt4, needCanonical, skipRow4) // quantized llama.cpp checkpoint (G7); LoRA guarded in Load
+		return loadGGUFWeights(dir, quant, embedInt4, needCanonical, skipRow4, abort) // quantized llama.cpp checkpoint (G7); LoRA guarded in Load
 	}
+	// S3: the safetensors direct-build path does not check abort yet (task-never-swap-2026-09.md's
+	// own status note) — abort is silently unused past this point for a safetensors dir.
 	if quant == quantInt4Mix {
 		return nil, fmt.Errorf("decoder: int4mix is GGUF-only (got safetensors %s)", dir)
 	}
@@ -1085,7 +1120,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			arch.gemma4.FFNPerLayer = ffnPerLayer
 		}
 	}
-	if err := parallelLayers(cfg.NumLayers, loadLayer); err != nil {
+	if err := parallelLayers(cfg.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
 		return nil, err
 	}
 	return w, nil
@@ -2332,7 +2367,7 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		lw.SharedExpert.Down = q(linalg.WrapF32(append([]float32(nil), dn...), hidden, sInter))
 		return nil
 	}
-	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
+	if err := parallelLayers(arch.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
 		return nil, err
 	}
 	return w, nil
@@ -2480,7 +2515,7 @@ func buildNemotronWeights(cfg *Config, arch *Architecture, st *embed.Safetensors
 		}
 		return nil
 	}
-	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
+	if err := parallelLayers(arch.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
 		return nil, err
 	}
 	return w, nil
@@ -2555,7 +2590,7 @@ func buildPhi3Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFile
 		l.DownProj = q(l.DownProj)
 		return nil
 	}
-	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
+	if err := parallelLayers(arch.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
 		return nil, err
 	}
 	return w, nil
@@ -2639,7 +2674,7 @@ func buildSpark25Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 		l.DownProj = q(l.DownProj)
 		return nil
 	}
-	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
+	if err := parallelLayers(arch.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
 		return nil, err
 	}
 	return w, nil
@@ -2774,7 +2809,7 @@ func buildLlama4Weights(cfg *Config, arch *Architecture, st *embed.SafetensorsFi
 		}
 		return nil
 	}
-	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
+	if err := parallelLayers(arch.NumLayers, nil, loadLayer); err != nil { // S3: safetensors abort-wiring not built yet, see task-never-swap-2026-09.md
 		return nil, err
 	}
 	return w, nil

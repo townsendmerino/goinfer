@@ -727,6 +727,21 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 	return f.priceCtxAndKV(cfg, opts)
 }
 
+// FitDescribe returns the same priced-terms sentence the fit guard's own refusal/warning
+// messages use (fitCheck.arithmetic() — "X needs ~N GB resident at quant Q + M GB reading the
+// checkpoint = T GB; this machine currently has A GB available"), for a caller that wants to name
+// resident-weight and mapped-source bytes in its own message without re-deriving decoder's
+// pricing. Built for S3's load-time swap-abort wrap (docs/tasks/task-never-swap-2026-09.md):
+// Options.LoadAbort's own doc comment promises a caller will add "reason/pricing detail" once
+// ErrLoadAborted comes back, and this is that detail's source.
+func FitDescribe(path string, opts Options) (string, error) {
+	quant, err := parseQuant(opts.Quant)
+	if err != nil {
+		return "", err
+	}
+	return fitCheckFor(path, opts.Quant, quant, opts).arithmetic(), nil
+}
+
 // priceCtxAndKV fills in effCtx/pinned/kvBytes from a resolved Config — the ctx-pricing logic
 // fitCheckFor's .gguf and safetensors branches share verbatim (R13: price at opts.ResidentContext
 // when pinned, else the model's own MaxPositions, the worst case a real request can reach).

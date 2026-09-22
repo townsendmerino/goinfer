@@ -305,7 +305,31 @@ type Options struct {
 	// this is the library-level chokepoint docs/completed/task-prefill-gap.md already
 	// documented as existing; chatapp/gemmaapp's own --exact-prefill flag sets it.
 	ExactPrefill bool
+
+	// LoadAbort, if non-nil, is checked BETWEEN LAYERS during a direct (non-.giw) GGUF weight
+	// build — S3 (docs/tasks/task-never-swap-2026-09.md): the swap tripwire's LOAD-TIME
+	// consumer. Closing it aborts the load with an error satisfying errors.Is(err,
+	// ErrLoadAborted); Load has no view of WHY it closed (it does not own or import
+	// decoder.SwapWatch — the caller does), so a caller arming a watch for this is expected to
+	// wrap the returned error with its own reason/pricing detail once it comes back. A nil
+	// channel (the zero value — every existing caller) blocks forever in a select, so this is a
+	// genuine no-op, not a special case every caller needs to opt out of.
+	//
+	// SCOPE, STATED RATHER THAN HIDDEN: only the GGUF direct-build path
+	// (loadGGUFWeights/buildWeightsFromGGUF's resident, non-streaming branch) checks this today
+	// — the path S0's own mechanism table names as the dangerous one ("fresh heap copies... the
+	// whole resident weight set") and the one the historical gpt-oss-20b incident took. The
+	// safetensors direct-build path (decoder/weights.go, 5 separate buildXWeights entry points)
+	// and StreamTranscodeGGUF's own transcode path (which already has its own M-21
+	// ctx-cancellation, checked at a different granularity) do NOT check this yet — see the task
+	// doc's own S3 status note for why this pass stopped here rather than threading it further.
+	LoadAbort <-chan struct{}
 }
+
+// ErrLoadAborted is returned (wrapped) from Load when opts.LoadAbort closed mid-build. Check
+// with errors.Is, not ==, since it may be wrapped with additional context by the time a caller
+// sees it.
+var ErrLoadAborted = errLoadAborted
 
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
 // and selects a backend. The forward pass (M3) is implemented; the CPU
@@ -433,7 +457,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		opts.ResidentContext = pinnedCtx
 	}
 
-	w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), !wantsRow4Fallback(opts.Backend), lora)
+	w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), !wantsRow4Fallback(opts.Backend), lora, opts.LoadAbort)
 	if err != nil {
 		closeBackend(be)
 		return nil, err

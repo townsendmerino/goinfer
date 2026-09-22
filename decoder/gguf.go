@@ -1295,7 +1295,7 @@ func loadDeepseekAttnGGUF(g *embed.GGUFFile, p string, l *LayerWeights, arch *Ar
 
 // loadGGUFWeights parses a .gguf file and builds the weight bundle, mapping
 // llama.cpp tensor names to the descriptor and un-permuting q/k.
-func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
+func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, skipRow4 bool, abort <-chan struct{}) (*Weights, error) {
 	// mmap, not heap-read: the raw quantized bytes stay in reclaimable page
 	// cache while we dequantize tensor-by-tensor. The weights end up as fresh
 	// (f32 or int8) copies, so the mapping is unneeded once the build returns.
@@ -1313,7 +1313,10 @@ func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, ski
 	var w *Weights
 	// `build` is the CPU-bound phase: dequantize every tensor and re-quantize/repack it into the
 	// resident precision. On a large model this dominates, which is the fact the banner surfaces.
-	if err := prof.timed("build", func() (e error) { w, e = buildGGUFWeights(g, quant, embedInt4, needCanonical, skipRow4); return e }); err != nil {
+	if err := prof.timed("build", func() (e error) {
+		w, e = buildGGUFWeights(g, quant, embedInt4, needCanonical, skipRow4, abort)
+		return e
+	}); err != nil {
 		return nil, err
 	}
 	w.prof = prof
@@ -1324,7 +1327,7 @@ func loadGGUFWeights(path string, quant quantMode, embedInt4, needCanonical, ski
 // memory-mapped (loadGGUFWeights) or backed by an in-memory slice
 // (LoadGGUFBytes). It resolves the config + architecture from the GGUF's own
 // metadata, so both entry points produce an identical model.
-func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool) (*Weights, error) {
+func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, abort <-chan struct{}) (*Weights, error) {
 	cfg, err := ggufConfig(g)
 	if err != nil {
 		return nil, err
@@ -1336,7 +1339,7 @@ func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4, needCanonic
 	if err != nil {
 		return nil, err
 	}
-	return buildWeightsFromGGUF(cfg, arch, g, quant, embedInt4, needCanonical, skipRow4, nil, "")
+	return buildWeightsFromGGUF(cfg, arch, g, quant, embedInt4, needCanonical, skipRow4, nil, "", abort)
 }
 
 // StreamTranscodeGGUF transcodes the GGUF at path into a .giw weights body written
@@ -1412,14 +1415,18 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 		// (canonical-absent) to DISK. See docs/tasks/task-int4-layout-2026-09.md's L2 — the
 		// in-RAM construction policy (wantsCanonicalInt4) and the on-disk kind policy
 		// (target) are independent decisions.
-		w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, nil, "")
+		// abort=nil: this is the cmd/prequant transcode path, which already observes ctx
+		// per-layer via M-21's ctxWriter — a different, already-covered cancellation
+		// granularity, not decoder.Load's own resident direct-build (S3 scopes the swap
+		// tripwire's load-time consumer to that path only — see Options.LoadAbort).
+		w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, nil, "", nil)
 		if berr != nil {
 			return 0, berr
 		}
 		return SerializeWeightsToForTarget(out, w, id, target)
 	}
 	wr := &giwWriter{sink: out, target: target}
-	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, wr, id); err != nil {
+	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, wr, id, nil); err != nil {
 		return wr.n, err
 	}
 	var crc [4]byte
@@ -1534,7 +1541,7 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 		closeBackend(be)
 		return nil, err
 	}
-	w, err := buildGGUFWeights(g, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), !wantsRow4Fallback(opts.Backend))
+	w, err := buildGGUFWeights(g, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), !wantsRow4Fallback(opts.Backend), opts.LoadAbort)
 	g.Close()
 	if err != nil {
 		closeBackend(be)
@@ -1564,7 +1571,7 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 // sequential build-then-write-then-release loop bounds peak RSS the same way). gemma4 (whose
 // fused PLE/MoE tail genuinely cannot stream) and five other families are instead routed through
 // the resident-build fallback — see needsResidentSerialize's own doc comment for the list and why.
-func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string) (*Weights, error) {
+func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
 	hidden, hd := arch.HiddenDim, arch.HeadDim
 	w := &Weights{Cfg: *cfg, arch: arch, Layers: make([]LayerWeights, arch.NumLayers)}
 
@@ -1987,7 +1994,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return w, nil
 		}
-		if err := parallelLayers(arch.NumLayers, loadQ35); err != nil {
+		if err := parallelLayers(arch.NumLayers, abort, loadQ35); err != nil {
 			return nil, err
 		}
 		return w, nil
@@ -2092,7 +2099,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
-		if err := parallelLayers(arch.NumLayers, loadGptOss); err != nil {
+		if err := parallelLayers(arch.NumLayers, abort, loadGptOss); err != nil {
 			return nil, err
 		}
 		if sink != nil {
@@ -2225,7 +2232,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
-		if err := parallelLayers(arch.NumLayers, loadLaguna); err != nil {
+		if err := parallelLayers(arch.NumLayers, abort, loadLaguna); err != nil {
 			return nil, err
 		}
 		if sink != nil {
@@ -2353,7 +2360,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
-		if err := parallelLayers(arch.NumLayers, loadGranite); err != nil {
+		if err := parallelLayers(arch.NumLayers, abort, loadGranite); err != nil {
 			return nil, err
 		}
 		if sink != nil {
@@ -2501,7 +2508,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
-		if err := parallelLayers(arch.NumLayers, loadNemo); err != nil {
+		if err := parallelLayers(arch.NumLayers, abort, loadNemo); err != nil {
 			return nil, err
 		}
 		if sink != nil {
@@ -2658,7 +2665,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
-		if err = parallelLayers(arch.NumLayers, loadG4); err != nil {
+		if err = parallelLayers(arch.NumLayers, abort, loadG4); err != nil {
 			return nil, err
 		}
 		// K=V (attention_k_eq_v) on the 12B global layers: V reuses K's projection
@@ -2734,7 +2741,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
-		if err = parallelLayers(arch.NumLayers, loadL4); err != nil {
+		if err = parallelLayers(arch.NumLayers, abort, loadL4); err != nil {
 			return nil, err
 		}
 		if sink != nil {
@@ -2950,7 +2957,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		return w, nil
 	}
-	if err := parallelLayers(arch.NumLayers, loadLayer); err != nil {
+	if err := parallelLayers(arch.NumLayers, abort, loadLayer); err != nil {
 		return nil, err
 	}
 	return w, nil

@@ -62,7 +62,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
 ## L1 — Load-time policy: `Backend: "cpu"` is a promise, and it unlocks repacked-only (DONE 2026-09-11)
 
 **Where.** `decoder/weightmat.go:487 wantsCanonicalInt4(backendName, be)`,
-`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:436` (computed once
+`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:460` (computed once
 at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFWeights` /
 `buildWeightsFromSafetensors` → `quantizeEmbedWM` / `streamQuantizedEmbed` /
 `quantizeBatchedProjWM` / `streamQuantizedBatchedProj`. Dispatch prerequisite already done:
@@ -159,7 +159,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   default, since gemma-web was out of this item's named list.
 
 **Out of scope, unchanged:** down-proj / router / experts; amd64 split-half (L5); the
-`.giw` path (L2, and its scope note in `decoder/gguf.go:1411` is corrected under L3).
+`.giw` path (L2, and its scope note in `decoder/gguf.go:1414` is corrected under L3).
 
 **Size.** Small — the branch already had the mechanism; this was the gate's final shape plus
 reporting and the error.
@@ -341,7 +341,7 @@ its test), `cmd/prequant/main.go`, `internal/serveapp/main.go`, `demo/chat/build
 
 ## L3 — Doc corrections (do with L1) (DONE 2026-09-11)
 
-- `decoder/gguf.go:1411` and the branch's scope notes say the `.giw` path is out of scope
+- `decoder/gguf.go:1414` and the branch's scope notes say the `.giw` path is out of scope
   "mirroring `repackW4A8Row4IfEligible`'s 'deliberately NOT wired into the .giw loader'
   precedent" and that "the existing canonical+row4 both policy isn't wired into `.giw` loading".
   The second claim is false — kind 4 *is* the both policy on disk, loaded at

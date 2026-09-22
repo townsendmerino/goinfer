@@ -1258,8 +1258,20 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		return nil, fmt.Errorf("load tokenizer (%s): %w", loadPath, err)
 	}
 	t0 := time.Now()
-	model, err := decoder.Load(loadPath, opts)
+	// S3 (docs/tasks/task-never-swap-2026-09.md): only the GGUF direct-build resident path checks
+	// Options.LoadAbort today (see the field's own doc comment) — arming the watch for a
+	// .giw/streaming load would start a goroutine that nothing ever observes, so it is scoped to
+	// exactly the case this exists for.
+	loadOpts := opts
+	wrapLoadErr := func(err error) error { return err }
+	stopLoadGuard := func() {}
+	if !opts.StreamWeights && strings.HasSuffix(loadPath, ".gguf") {
+		loadOpts.LoadAbort, wrapLoadErr, stopLoadGuard = startLoadSwapGuard(loadPath, opts)
+	}
+	model, err := decoder.Load(loadPath, loadOpts)
+	stopLoadGuard() // done with this attempt either way — never left running through a retry's transcode+reload below
 	if err != nil {
+		err = wrapLoadErr(err)
 		// tasks/task-fit-to-hardware.md's CPU placement piece: a plain .gguf that does not fit resident
 		// RAM gets ONE automatic retry with weight streaming instead of just refusing — UNLESS the
 		// model is MoE or an "own-forward" family (decoder.FitDeclineError.DenseStreamable's own

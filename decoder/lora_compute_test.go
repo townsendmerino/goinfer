@@ -125,7 +125,7 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 
 	be, _ := NewBackend("")
 	newModel := func(lo *loraAdapter) *Model {
-		w, err := loadWeights(base, quantNone, false, true, false, lo)
+		w, err := loadWeights(base, quantNone, false, true, false, lo, nil)
 		if err != nil {
 			t.Fatalf("loadWeights: %v", err)
 		}
@@ -219,7 +219,7 @@ func TestLoadAdapter_dimMismatchRejects(t *testing.T) {
 	}
 	writeSafetensors(t, filepath.Join(base, "model.safetensors"), ts)
 
-	w, err := loadWeights(base, quantNone, false, true, false, nil)
+	w, err := loadWeights(base, quantNone, false, true, false, nil, nil)
 	if err != nil {
 		t.Fatalf("loadWeights: %v", err)
 	}
