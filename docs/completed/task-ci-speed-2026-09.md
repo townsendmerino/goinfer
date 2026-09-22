@@ -634,6 +634,37 @@ that is a known, accepted gap, not an oversight.
 - **Verification.** This push is shape 1 (cold: no `go-test-*-<shard>-*` key exists for any of
   the 6 new shard suffixes yet). Results recorded once the run lands.
 
+**Measured (`90562051`, run 35775881666): all 13 jobs green, LPT landed almost exactly on
+prediction, and the linux `test` job stopped being the workflow's long pole.**
+
+| job | wall |
+|---|--:|
+| `root-darwin` | 287s |
+| `gpu-darwin` | 255s |
+| `test-decoder-a` | 198s |
+| `test-decoder-b` | 180s |
+| `test-decoder-c` | 180s |
+| `test-rest` | 161s |
+| `test-decoder-d` | 147s |
+| `gpu` | 115s |
+| `lint` | 68s |
+| `test-decoder-tail` | 47s |
+
+`test-decoder-a`'s own headline confirms it ran real content, not an accidental no-op: 169s of
+actual test time (predicted 167.0s — a 1.2% miss). **Total workflow wall: 313s (5m13s)**, against
+the band's ≤300s target on the linux shards alone — met on the shards (max 198s, well inside
+the ≤300s/predicted-~210s band) — but the workflow-level number is now gated by `root-darwin`
+(287s) and `gpu-darwin` (255s), both untouched by C9 and already faster than the old `test` job
+was. The linux `test` job's own wall, taking the slowest of its six shards, dropped from **726s
+to 198s — a 73% cut**, and the day's full chain (C7+C8+C9 combined, on top of C0–C6's earlier
+work) took the workflow from **~20 minutes at the start of this task to ~5m13s.**
+
+**root-darwin is now the honest next target, not filed further here.** It was not touched by C0
+or by today's session and has been sitting at 242-300s since C4 dropped `-race` there; the same
+LPT-sharding approach would apply if it becomes worth doing, but darwin runners are scarcer/more
+expensive than Linux ones on GitHub-hosted CI, which changes the cost side of that decision in a
+way this doc has not evaluated. Recorded as the next real lever, not built.
+
 ## 3. Order, and what the article would call the compounding
 
 C0 → C2 (free) → C1 → C3 → then C1′/C4/C5 as C0 selects them → C6 if the tail exists.
