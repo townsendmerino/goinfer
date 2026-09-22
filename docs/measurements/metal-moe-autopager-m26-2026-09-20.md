@@ -1,11 +1,16 @@
-# R11(c) — Metal MoE pager on M26: two near-incidents, not a clean measurement
+# R11(c) — Metal MoE pager on M26: three near-incidents across the whole N range, not a clean measurement
 
 **Result: the pager mechanism genuinely engages correctly (confirmed `metal-resident`, confirmed
-`g4moe.paged`) at both an auto-sized N=64 and a manually-forced N=32, but BOTH runs drove this
-machine into a severe swap spiral before the timed decode loop got far — the second time even
-after halving the slot count from the first. Both killed manually. No served rate obtained at
-either N.** This is recorded with the same care as a clean result, per this repo's own measurement
-discipline — a near-miss that isn't written down teaches nothing to whoever reads this next.
+`g4moe.paged`) at an auto-sized N=64, a manually-forced N=32, AND the floor N=8 (`top_k` itself,
+2026-09-22), but ALL THREE runs drove this machine into a swap spiral before the timed decode
+loop got far. No served rate obtained at any N across the whole valid range — the ceiling, the
+previous default, and the floor all failed the same way.** This is recorded with the same care
+as a clean result, per this repo's own measurement discipline — a near-miss that isn't written
+down teaches nothing to whoever reads this next. The third run used an automated kill switch
+(2026-09-22 section below) instead of manual monitoring and caught the spiral far earlier — peak
+swap growth was +341 MB versus the first two runs' 7–9× baseline peaks — but the underlying
+failure (this model class does not currently fit this machine's real headroom, at any N) is
+unchanged.
 
 Box: `apple-m1pro` (M1 Pro, 6P+2E, 16 GB, already under ordinary desktop/editor memory pressure —
 not an idle machine). goinfer `fd1a9cb2`. Model: `gemma4-26b-int4.giw` (Gemma-4-26B-A4B, int4,
@@ -142,12 +147,71 @@ not obviously safe given that pattern, and each attempt has left this machine's 
 permanently larger (less true headroom) than before it — a third attempt is a real decision, not
 a reflex, and isn't taken here without it being asked for again.
 
+*(2026-09-22 update: a third attempt WAS asked for, explicitly, and run — see the dated section
+below. It also failed, at the floor N. The "not retried" line above is left as the historical
+record of the 2026-09-20 session's own decision, not edited in place.)*
+
+## Third attempt, 2026-09-22 — N=8 (the topK floor), automated kill switch, same result
+
+A third attempt was asked for explicitly (this doc's own "isn't taken here without it being
+asked for again" line, honored), at N=8 — `top_k_experts` itself, the smallest N the paged
+path can run at all (below topK a single token's routing couldn't fit its own working set).
+This time with an **automated** kill switch instead of manual monitoring: the two 2026-09-20
+runs both went from stable to a multi-GB spike within a single 1-2s external-monitor tick (run
+1: 2,285→4,030→7,749 MB across three consecutive ticks), faster than a human "poll, read,
+decide, kill" round-trip can reliably beat. A shell script polled `vm.swapusage` every 1s in a
+tight loop, outside the test process, and sent `SIGKILL` to the test PID itself the instant it
+saw two consecutive ticks of >80MB swap growth (or a single >300MB jump, or swap crossing 85%
+of its total, or free pages critically low) — no human in that decision loop.
+
+**Same box** (`apple-m1pro`, still under ordinary desktop/editor load — 49 Code/Electron
+processes running, including this session), **same test** (`TestGemma4_26B_pagedRuns`,
+`GOINFER_PAGED_N=8` bypassing the auto-sizer, same as the N=32 run). Starting state was checked
+first and was comparable to (not better than) the 2026-09-20 runs: swap 1,370/3,072 MB used
+(44.6%) baseline, free pages fluctuating 3,500–13,000 (~55–210 MB) sample to sample — confirming
+this doc's own note that free-memory readings swing by multiple GB in single-digit seconds on
+this machine.
+
+| time | tick | swap used | delta |
+|---|---|---|---|
+| 05:47:01 | 0 | 1,370 MB | baseline |
+| 05:47:02–05:47:45 | 1–43 | 1,370 MB (flat) | — |
+| 05:47:46 | 44 | 1,462 MB | +92 MB |
+| 05:47:47 | 45 | 1,711 MB | +249 MB — **kill fired** |
+
+Swap was flat for 43 straight seconds, then grew on two consecutive ticks — the script killed
+the test PID within 1 second of the second tick, at 45s elapsed. **The spiral pattern
+reproduced again, at the smallest possible N** — this is not an N-tuning problem, it is this
+machine's current real headroom being too thin for this model class, exactly as the 2026-09-20
+diagnosis concluded from N=64 vs N=32 alone; N=8 now confirms it at the floor. Unlike the first
+two attempts, the automated kill caught it far earlier: peak swap this time was **1,711 MB**
+(a +341 MB, +25% delta from baseline) versus the earlier runs' peaks of 12,063 MB and 7,907 MB
+(7–9× baseline). System recovered immediately and cleanly (free pages jumped to 112,543 within
+the same second; no orphan process; `ps` confirmed clean). No `t.Logf` output was captured
+(SIGKILL doesn't flush Go's buffered per-test log, and the test never got past `=== RUN` in the
+raw `-v` stream), so which phase (load, build, or first token) the growth started in is not
+directly known this time — the growth's precise start (tick 44, 45s in) sits close to both
+prior runs' failure points (run 1 ~50s during load/build, run 2 ~45s during/after the first
+token), so it doesn't discriminate between them.
+
+**Still not shipped. Not retried further this session** — the floor (N=8) has now failed
+alongside the ceiling (N=64) and the previous default (N=32); there is no smaller N left to try
+within the paged path's own valid range. The fix this doc's own "not built here" section
+proposes (a lower default for this model class on 16 GB Metal, treated as a hardware-fit
+question, not a formula-tuning one) is the remaining lever, not a smaller N. The automated
+kill-switch script (poll `vm.swapusage` every 1s, kill on 2 consecutive >80MB ticks) is worth
+keeping as the standard harness for ANY future attempt at this model class on this box, given it
+cut the peak excursion by roughly 5–7× compared to manual monitoring on the first two runs.
+
 ## Out of scope, not established here
 
-- A served tok/s number for M26 under any paging configuration — never reached, at N=64 or N=32.
-- The floor of what *would* work on this machine right now (N=16? N=8, the `top_k` minimum?) —
-  untested. Given N=32 already failed, there is no strong reason to expect a modest further
-  reduction succeeds, but it is genuinely unknown, not ruled out.
+- A served tok/s number for M26 under any paging configuration — never reached, at N=64, N=32, or
+  N=8 (2026-09-22).
+- ~~The floor of what *would* work on this machine right now~~ — **tested 2026-09-22: N=8, the
+  `top_k` minimum, also failed.** There is no smaller N within the paged path's valid range to
+  try next; N=16 specifically was skipped (N=8 being the harder, more informative floor case)
+  and remains, strictly, unrun, but a value between two failures (32, 8) is a low-value next
+  step given N=8 already failed at the actual floor.
 - Whether either N would be safe on a quieter box (this machine had ordinary desktop/editor load
   throughout both runs, not an idle baseline) — these runs cannot separate "this N is too large in
   general" from "this machine's ambient load makes any N this size too large right now."
