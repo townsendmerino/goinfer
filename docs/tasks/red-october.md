@@ -75,11 +75,11 @@ Mac CPU rows are the M1 Pro; CUDA, WebGPU and Linux CPU rows are the RTX box.
 | **Decode, 2k–8k ctx** | no peer row at depth → measure first; the f64 decode path loads and widens each KV head's K/V once per QUERY head (6–7×) → group-major acc64 kernels, bit-identical, **1.5–1.8× on the QK+AV term** by µop count (?) — R13 | −12% from 128→1024 after G36; ≥2k unmeasured → measure (R10) | 0.72–0.79× @3900, 0.63× @8k (7B); vs llama.cpp 0.45–0.70× → **1.0–1.1× Ollama** (1.4–1.6× on the cell) (K) — R6 | 0.51× @3900 pre-fix (39.1 vs 76.6) → **`attention_fa` SHIPPED as default 2026-09-21** (1.11× @2048, 1.19× @4000 on the cell; killed on the brief's own ≥60-tok/s-@4000 band, shipped anyway by owner decision) → **0.61× Ollama @3900** (46.4 vs 76.2) — R2 |
 | **Prefill — weight term** | Mac 1.54× behind @512 (weight term ≈ all of it) → **~1.2× behind** (K) — R9; Linux: no peer row | batched path landed 2026-09-13: 317 tok/s @P=1024 (0.5B int8) = **8× behind own CUDA-exact, 45× behind CUDA-fast**; unprofiled → ≥5× plausible (?) — R10 | 0.136 ms/tok flat vs Ollama's *whole* marginal 0.152 → **≤1.2×**, at ceiling (K) | pre-fix GEMM 0.73 TFLOPS vs ≥2.4 (3.3× behind @512); M-03 shipped 2026-09-13, **unmeasured** → **1.5–2× e2e** at K≤1024; parity needs 3.5× on the GEMM (P) — R4 |
 | **Prefill — attention term, O(K²)** | Mac 0.91× @3900 (ahead), rate flat 78 tok/s → at parity (K) | per-query-row `attnBatched` (grid nH×M), the pre-L2 shape → inside the ≥5× above (?) — R10 | 3.16× / 1.89× behind on marginal @3900 (1.5B/0.5B); `attn_fused` at 1.72% tensor peak, 12.6% occupancy, **58% of TTFT** → marginal **~1.4–1.7× behind**, TTFT@3900 1.39 s → 0.71–0.84 s = **ahead of Ollama on TTFT** (K) — R5 | M-04 32-key tile shipped; ~18% of TTFT @3900 → ~1.2× e2e (K) — R4. Separately: **prompts of 8–255 tokens run sequential** at ~77 tok/s vs Ollama 790 @256 → floor→64 is **~4× on a 200-token turn** (K) — R3 |
-| **Sampled decode, T>0** | host selection fixed (68×); full-V normalize remains → small, measure (R7) | full-logits `MapAsync` every token, greedy included → part of the glue row (R10) | **0.81–0.97× sampled vs 0.99–1.24× greedy** on ≤1.5B; the peer loses 0% → **+30–40%** on small models (K) — R7 | zero-copy logits, but host softmax/select over 152k per token ≈ 1.8 ms of a 13.5 ms token (counted) → ~10–15%, unmeasured (P) — R7 |
+| **Sampled decode, T>0** | host selection fixed (68×); full-V normalize remains → small, measure (R7). `topFilterLogits`'s max-scan measured 2026-09-22: parallel LOSES (1.39–3.78× slower, goroutine overhead > a cheap-per-element comparison) — CLOSED, negative; `topKByLogit`/min-p scan sized (~250/167 µs @gemma vocab) but unmeasured for parallel benefit — R15 | full-logits `MapAsync` every token, greedy included → part of the glue row (R10) | **0.81–0.97× sampled vs 0.99–1.24× greedy** on ≤1.5B; the peer loses 0% → **+30–40%** on small models (K) — R7 | zero-copy logits, but host softmax/select over 152k per token ≈ 1.8 ms of a 13.5 ms token (counted) → ~10–15%, unmeasured (P) — R7 |
 | **MoE over capacity — decode** | 26B full-model 5.5 tok/s (62 GB box); Mac 35B paged ~1.4 (SSD-bound) → 1.2–1.8× (cpubrrr Q4_K ceiling) (P) | no paging path; declines → n/a | M35 1.0× Ollama / **0.72× llama.cpp**; M26 1.07× / 0.88×; ~48% of the token is expert DMA → **1.25–1.45×** (L01 async; funding cell unrun) (P) — R11 | 35B ~2 tok/s; pager auto-sized 2026-09-13, unmeasured; 2L+1 sync command buffers at ~14 ms each (M-11 open) → **3–4 tok/s counted**; Zeno's 8.7–13 is structural past that (P) — R11 |
 | **MoE prefill, 8k prompt** | P18 expert-major 4.36× landed; no peer row | n/a | wall-clock **M35 17×, M26 4.3× behind** → **2–5×** (expert-major; M35 also needs batched GDN); 2–8× behind after (P) — R11 | FFN half runs M sequential rows; expert-major landed 2026-09-17, unmeasured → measure (R11) |
 | **Vision tower, image turn** | 31.3 s/image SigLIP f32 (3700X); exp on `math.Exp`, the S-06 transcendentals have zero callers → 1.5–2× (K) — R9 | 18.8 s (June, stale) → re-measure (R10) | 26.1 s (1.58× over CPU): dp4a batched GEMV + per-row attention = **the pre-L2/L3 shapes**, plus 54 host round-trips → **~7 s counted**; a ~1 s class needs a real int8 tensor-core GEMM at hd=72 (K) — R8 | tower runs on the **CPU** on a Metal box (M-15) → ≥3× once aikit's Metal ViT is wired (P) — R8 |
-| **Speculative decode** | Θ 0.5; P25 break-even miscalibrated for MoE targets (Laguna 0.82×) | Θ unmeasured (P22) → measure (R12) | Θ 0.25; 1.2–1.8× shipped → done | **P21 already shipped (`a1640a6a`, 2026-09-16) and is now measured: Θ 0.86–0.96, still above the 0.8 kill line at every cell — declines to draft, killed** (correction, [`r12-p21-theta-post-batch-2026-09-20.md`](../measurements/r12-p21-theta-post-batch-2026-09-20.md)) — R12 |
+| **Speculative decode** | Θ 0.5; P25 break-even miscalibrated for MoE targets (Laguna 0.82×) | Θ unmeasured (P22) → measure (R12) | Θ 0.25; 1.2–1.8× shipped → done. Separately: the drafter's per-block step (`DraftTokens`) syncs, downloads the full `M×vocab` logits, and runs a serial host argmax — the main decode path's on-device `ForwardArgmax` reduction isn't reused here; unmeasured (scoped 2026-09-22, no band yet) — R14 | **P21 already shipped (`a1640a6a`, 2026-09-16) and is now measured: Θ 0.86–0.96, still above the 0.8 kill line at every cell — declines to draft, killed** (correction, [`r12-p21-theta-post-batch-2026-09-20.md`](../measurements/r12-p21-theta-post-batch-2026-09-20.md)) — R12 |
 | **Concurrency** | one decode worker per model on every backend; the peers run parallel slots; no instrument (W7) → unmeasured everywhere — R12 | | | |
 
 ---
@@ -357,14 +357,16 @@ too) → R3 (the short-prompt floor) → R12's Mac halves (ForwardN batching; ML
 depth row into `benchmarks.md`) → R9's Mac half (S-02 attribution, then S-05). R13 (CPU decode
 attention, group-major, bit-identical) runs beside this track rather than in it: its step 0 is
 measurement-only and fundable now on both boxes, and its build is aikit work that blocks on no lane
-decision and on no other brief.
+decision and on no other brief. R15 (CPU sampler filter scans) is the same shape as R13 — measurement
+-only, fundable now, blocks on nothing; its max-scan sub-item is already closed (2026-09-22).
 
 **Linux track (CUDA + WebGPU + Linux CPU).** R5 (prefill attention tile; P24 re-scoped) → R6 (the
 flash-decode lane; lane decision made, build fundable; step 1 is a mechanism, not a re-roll) → R8
 (the vision tower onto the L2/L3 kernels) → R7 (sampled-decode cliff, CUDA first) → R11 (L01
 funding cell; P20 expert-major prefill) → R10 (WebGPU glue fusion; batched-prefill profile) → R9's
 Linux half (the
-0.5B anomaly).
+0.5B anomaly). R14 (the speculative-decode drafter's full-logits download) is measurement-only and
+fundable now, no ordering dependency on the rest of the track.
 
 **Owner decision, 2026-09-18: option 2 — default-on above a fidelity gate, held to the same bar
 CUDA decode's own exact path already answers to, not a relaxed one.** R1, R2's Build phase, and R6
@@ -402,6 +404,8 @@ Status table, kept current as briefs move:
 | R11 | MoE: L01 funding cell; P20 expert-major prefill; Metal pager measurement and M-11 | both | L | (a)/(b) CUDA-only, not attempted. **(c) Metal M26: three near-incidents across the whole N range, 2026-09-20 + 2026-09-22** — `DecodePath`/`g4moe.paged` confirm the paged mechanism engages correctly at auto-sized N=64, manual N=32, AND the floor N=8 (`top_k` itself), but ALL THREE drove this machine into a swap spiral before a served rate was reached, killed before either a kernel panic or a completed measurement — see the record. The N=8 run (automated kill switch, not manual monitoring) caught the spiral far earlier (+341 MB peak vs the first two runs' 7-9x baseline peaks) but did not avoid it. The ceiling, the previous default, and the floor have now all failed the same way; the remaining lever is a lower default for this model class on 16 GB Metal as a hardware-fit question, not further N-tuning. |
 | R12 | Metal `ForwardN` batching (P21); the missing peer rows (MLX, Metal depth, vision, W7) | both | S–M | **CLOSED 2026-09-20/21.** MLX row (i) re-confirmed 2026-09-18; Metal depth row (ii) done via R2 step 0; W7 (iv) done 2026-09-19 (simplified — see the record) — goinfer 60.1→36.1→36.4 tok/s at 1/2/4 clients (a real loss that plateaus), llama-server 84.8→95.9→149.7 (scales up), 4.11× gap at n=4; vision (iii) done 2026-09-20 — Ollama 0.4s TTFT measured, goinfer's own row unmeasured (a fit-guard bypass on this Mac caused a real near-incident, caught and killed before completion — see the record). **P21 was already shipped** (`a1640a6a`, 2026-09-16, predating this brief) — re-measured 2026-09-20: Θ 0.86–0.96, above the 0.8 kill line at every cell, killed |
 | R13 | CPU decode attention, group-major acc64 kernels (bit-identical) | both (aikit + goinfer) | S (measure) + M (two kernels ×2 ISAs, wiring) | **step 0 complete 2026-09-19**: (i) peer depth row done but not benchmarks.md-quality (thermal drift, re-run needed); (ii) softmax caps the QK+AV grouping ceiling to ~1.39-1.54× overall, not 1.8-1.85×; (iii) the cache-dedup gap is depth-dependent — nil below ~K=1024, 2-5× above K=2048, reinforcing (ii)'s decision depth. **SHIPPED 2026-09-20** — aikit kernel A/B real (1.53-2.39×); goinfer wiring found a real bug (softmax accidentally serialized, not the scheduler-contention red herring a first CPU profile suggested — `go tool trace`'s per-goroutine breakdown found the actual cause). Fixed: parity at depth 2048, **1.32× served at depth 8192**. `GOINFER_ATTN_GROUPED` defaults on. Three-arm/both-box/all-model sweep still not done |
+| R14 | CUDA speculative-decode drafter — full-logits download, host argmax, no overlap | Linux | S (measure) + S–M (port on-device argmax if real) | scoped 2026-09-22 from a cross-backend decode review; not yet measured — no band registered, step 0 is the measurement |
+| R15 | CPU sampler filter scans (`topFilterLogits`) — max-scan vs `parallelMax` | Mac | S (measure; build only if a future component wins) | **max-scan sub-item CLOSED 2026-09-22, clean negative result**: parallel LOSES at every vocab size tested (1.39-3.78× SLOWER; `decoder/sampler_filter_bench_test.go`) — goroutine overhead exceeds savings for a plain float comparison, unlike softcap's exp/tanh. `topKByLogit` (~247-262 µs) and the min-p scan (~167 µs) at gemma vocab are sized but not measured for parallel benefit — open, unfunded |
 
 Every brief below has the same shape: goal, the standing and the band registered here, what to read
 first (prior art and the negatives not to re-propose), what to build, the gates, the measurement
@@ -1832,6 +1836,120 @@ the fidelity-lane follow-ons, with a trigger: the served CPU depth row still mor
 at 3900 after this brief. int8-KV decode's own depth term (`causalAttention` dequantises the
 layer's whole history into f32 scratch on every token) — real, separate, unmeasured. f16 KV on CPU.
 CPU prefill, which is at parity or ahead at depth (§1, §2.3).
+
+---
+
+### R14 · CUDA speculative-decode drafter — full-logits download, host argmax, no overlap
+
+**Goal.** Check whether the drafter's per-block draft step pays a sync→full-D2H→serial-host-argmax
+tax similar in shape to R11's MoE miss-DMA gap, and if the cost is real, replace it with the
+on-device reduction the main decode path already has.
+
+**Standing and the registered band.** No standing — this is a fresh finding from a 2026-09-22
+cross-backend decode-path review (docs/completed/task-moe-streaming.md's own closure prompted it),
+not yet measured. `cuda/drafter.go`'s `DraftTokens` (~653-718), `FuseContext` (~230-240), and the
+block-forward path (~597-608) all: sync the stream, download the ENTIRE `M×vocab` logits block to
+host, then run a hand-written serial host argmax loop per row — where the main decode path already
+has an on-device fused-argmax kernel (`ForwardArgmax`, `cuda/resident.go:3384`, `r.fArg`, a 4-byte
+readback) for exactly this reduction. `M` here is the speculative block size (small — single-digit
+to low tens of tokens), so the absolute cost is plausibly minor; unlike R11's MoE case, nothing here
+has been measured, so **no band is registered — step 0 is the measurement, same discipline as R4/R10
+step 0.**
+
+**Read first.** `cuda/drafter.go` in full (the three call sites named above), `cuda/resident.go`'s
+`ForwardArgmax`/`r.fArg` (the on-device reduction pattern to port), `docs/measurements/moe-streaming-decode-dma-2026-09-22.md`
+(the sibling finding this one was found alongside, same review pass — read it for the *shape* of a
+sync→readback→host-loop gap, not because the mechanism transfers: MoE's gap is about DMA/compute
+overlap, this one is about avoiding a full-vocab download + host reduction at all, closer to R7's
+device-side sampling shape than R11's paging shape). `docs/spec/00-core.md` and `10-optfwd-gate.md`
+for the lossless contract a drafter change must not break (the accepted/rejected token sequence is
+compared bit-for-bit against the target model; changing HOW the draft argmax is computed must not
+change WHICH token it picks).
+
+**Step 0 — measure.** Isolate `DraftTokens`'s three phases (stream sync, D2H download, host argmax
+loop) the same way `docs/completed/task-moe-streaming.md`'s production-config decomposition isolated
+C′'s (structural readback / miss-DMA / compute), at a real spec-decode block size on a real model —
+report ms/block and % of the drafter's own per-block time, not just an isolated microbenchmark of
+the host loop (which would repeat R9's own "the microbenchmark trap" lesson if it ignored what
+actually calls this at what M).
+
+**Step 1 — build, only if step 0 shows a real share.** Port `ForwardArgmax`'s on-device reduction
+kernel to the M-row draft-block shape (a batched argmax, not the M=1 case) — bit-identical by
+construction if the reduction itself is unchanged (same as R7's own device-sampling gate).
+
+**Gates.** Bit-identity: the accepted-token sequence from a real spec-decode run must be byte-for-
+byte identical before/after (the lossless contract — this is a correctness invariant, not a speed
+tradeoff to gate loosely). No fidelity lane needed if the reduction itself doesn't change, only where
+it runs.
+
+**Decision rule.** Registered after step 0's measurement, per this doc's own §6 rule (a band
+registered before data exists is a projection; one registered after is a finding).
+
+**Record.** A new `docs/measurements/r14-drafter-argmax-*.md`; this doc's own status table row.
+
+**Out of scope.** CUDA graphs (already a measured null, R6/§3 — do not re-propose). Anything in the
+main (non-speculative) decode path — that's R11/R6's territory, not this brief's.
+
+---
+
+### R15 · CPU sampler filter scans — the max-scan component measured, parallel LOSES
+
+**Goal.** Check whether `topFilterLogits`'s (`decoder/sampler.go`) full-vocab filter-selection work
+(the max-scan ahead of top-k/min-p/top-p, `topKByLogit`'s heap select, the min-p linear scan) has the
+same "serial when a parallel primitive already exists" shape the softcap fix (R-adjacent, shipped
+2026-09-21) closed, found in the same 2026-09-22 cross-backend review.
+
+**Standing and the registered band — step 0 is DONE, this session, Mac.** The max-scan component
+specifically was measured, not assumed: `decoder/sampler_filter_bench_test.go`,
+`BenchmarkMaxScan_{gemmaVocab,152kVocab,32kVocab}_{serial,parallel}`, `-count=1`, M1 Pro. **Result:
+parallel LOSES at every vocab size tested** — gemma (262144) 83.0 µs serial vs 115.4 µs parallel
+(1.39× slower); 152k vocab 48.0 vs 84.3 µs (1.76× slower); 32k vocab 10.1 vs 38.4 µs (3.78× slower).
+Bit-identical (`TestMaxScanSerial_matchesParallelMax` — `parallelMax` and the inline serial scan
+agree exactly at every size, as expected since max is associative/commutative), so this isn't a
+fidelity question, purely a speed one, and the answer is **no, do not swap in `parallelMax` here.**
+Mechanism: unlike softcap (a `math.Exp`/`math.Tanh` call per element — genuinely CPU-bound, where
+splitting the work wins), a plain float comparison is too cheap per element for `numChunks=64`
+goroutine-dispatch overhead to amortize — the same lesson Lever 1a's naive worker pool taught this
+session for MoE expert touches, now confirmed for a totally different kind of per-element work.
+**R15's max-scan sub-item is CLOSED as a clean negative result — do not build.**
+
+The other two components are SIZED but NOT measured for parallel benefit: `topKByLogit` (a k-bounded
+min-heap select, O(V log k)) costs ~247-262 µs at gemma vocab across k∈{1,8,40} (`BenchmarkTopKByLogit_gemmaVocab_k{1,8,40}`);
+the min-p linear scan costs ~167 µs (`BenchmarkMinPScan_gemmaVocab`). Both are, like the max-scan,
+per-element work that's cheap-per-element (a comparison, or a comparison + heap-sift) rather than
+exp/tanh-expensive — the max-scan result is a real precedent suggesting the same goroutine-overhead
+tax would apply, but **this is a prediction by analogy, not a measurement, and should not be treated
+as one.** End-to-end, `topFilterLogits` at gemma vocab costs 345 µs (topK=40 path), 249 µs (min-p
+path), and 849 µs (top-p path, the most expensive — dominated by `topPCandidates`/the exp-heavy
+nucleus cut, not isolated separately here) — real costs, the same order of magnitude as softcap's
+own pre-fix serial cost (3.44 ms) was for the case that DID win from parallelizing, so this is not a
+"nothing here" finding; it's "the one component actually tested doesn't benefit, and the other two
+remain open, unfunded questions."
+
+**Band, if either of the other two components is measured:** ships if a parallel form beats serial
+by ≥1.2× at gemma-vocab scale with `TestTopKByLogit`/`TestMinPScan`-class bit-identity (order-
+preserving for min-p's candidate list, since downstream code may depend on ascending-id order —
+verify this before assuming a chunked-then-concatenated parallel form is a drop-in); killed if not,
+same as the max-scan sub-item.
+
+**Read first.** `decoder/sampler_chunked.go` in full (`parallelMax`, `expChunked`, `foldChunkSums`,
+`forEachChunk`'s `numChunks=64` compile-time-constant discipline — the machine-independence
+invariant any parallel form here MUST preserve, per that file's own extensive comment on why chunk
+count is not sized to `GOMAXPROCS`). `decoder/sampler_filter_bench_test.go` (this brief's own
+benchmark/gate file) before re-measuring or extending it.
+
+**Decision rule.** Max-scan: decided, closed, do not re-propose without new evidence (e.g. a
+different machine where the goroutine-overhead balance differs). `topKByLogit`/min-p: unfunded —
+measure a parallel candidate against the numbers already on record here before building one from
+scratch.
+
+**Record.** This brief; `decoder/sampler_filter_bench_test.go` is the permanent benchmark (kept, not
+throwaway, matching `decoder/softcap_test.go`'s own precedent) — re-run it before trusting these
+numbers on a different machine or after any change to `sampler.go`'s filter logic.
+
+**Out of scope.** `topPCandidates`'s own internal cost (the top-p path's 849 µs end-to-end figure
+was not decomposed further this pass). Any change to the selection ALGORITHM (e.g. a different
+top-k data structure) — this brief is about parallelizing the existing one, not replacing it.
 
 ---
 

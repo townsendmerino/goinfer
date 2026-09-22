@@ -1350,6 +1350,7 @@ supports.
 | `docs/spec/09-mtp-heads.md|decoder/weights.go:584` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/spec/README.md|decoder/forwardn.go:212` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/tasks/red-october.md|cuda/resident.go:249` | goinfer | `case nKV*hd >= splitkvNeverKVFloats:` |
+| `docs/tasks/red-october.md|cuda/resident.go:3384` | goinfer | `anchor: func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) ` |
 | `docs/tasks/red-october.md|decoder/sampler.go:222` | goinfer | `func (s *Sampler) ArgmaxEquivalent() bool {` |
 | `docs/tasks/red-october.md|metal/backend.go:475` | goinfer | `if (a.r.g4moe != nil && a.r.g4moe.paged) \|\| (a.r.moe != nil && a.r.moe.paged) {` |
 | `docs/tasks/red-october.md|metal/backend.go:485` | goinfer | `a.r.ForwardEmbNoLogitsPipe(embedding, pos)` |
