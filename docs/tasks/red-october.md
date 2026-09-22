@@ -1485,6 +1485,8 @@ pattern). (c) Metal: nothing to build for the measurement; M-11 afterwards is on
 token with a shared event between the pread stages and the GPU, measured on the paged shape at
 the ~14 ms boundary, G-05's rule.
 
+**(a) L01 result — KILLED 2026-09-21, real hardware** (`docs/measurements/l01-funding-cell-2026-09-21.md`). Built §9's remainder (goroutine-per-expert CPU compute, bit-identical) and ran §0's funding cell on Qwen3.6-35B-A3B int4 on the real 8 GB card: **~11x SLOWER than C′ off (0.083x-0.094x vs the >=1.3x bar)**. Root cause read from source: the miss branch's `unadmit` reverts a slot to EMPTY rather than its prior occupant, so the C′ cache can never warm once L01 is on — hit rate settles at exactly 0% by the third token, so 100% of every layer's experts route to CPU forever, not the bounded q* fraction the audit's own design specifies. A real re-attempt needs the actual q* split (bounded CPU-offload fraction, rest stays on the normal admit+DMA path) — a redesign, not a re-roll; the committed driver (`cuda/l01_funding_cell_test.go`) is ready to reuse.
+
 **Gates.** L01: `TestL01_e2eDecode_matchesBaseline` (cosine 1.0, argmax at every position) with
 overlap on; the coherence floor the B4 gate uses (distinct-trigram ≥0.70). P20: bit-identity to
 sequential on `testdata/qwen35-tiny`-class fixtures plus one real-checkpoint stream comparison. Metal:

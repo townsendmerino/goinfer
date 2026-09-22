@@ -1,0 +1,19 @@
+##### arm=off round=1 17:26:04
+    l01_funding_cell_test.go:78: loaded 35B in 1m44s, l01=false, cacheSlots=64
+=== L01FUNDING l01=false tokens=128 dur=6.523s rate=19.623 hitRate=0.8110 hits=41263 misses=9617 tokHash=b58cb1ee5c120f78 ===
+    l01_funding_cell_test.go:134: continuation: "<think>\n\n</think>\n\nWhen multiple keys hash to the same index, a collision occurs, and hash tables resolve this primarily through two methods: chaining and open addressing. In chaining, each bucket in the hash table contains a linked list (or another dynamic structure) that stores all entries hashing to that specific index. When a collision happens, the new entry is simply appended to the list at that index. Alternatively, open addressing resolves collisions by probing for the next available slot within the array itself. Common probing strategies include linear probing (checking the next slot sequentially), quadratic probing, or double hashing, which uses a second hash function to determine the step size"
+--- FAIL: TestL01FundingCell (113.62s)
+FAIL
+##### arm=on round=1 17:27:58
+    l01_funding_cell_test.go:78: loaded 35B in 1m34s, l01=true, cacheSlots=64
+=== L01FUNDING l01=true tokens=128 dur=1m18.894s rate=1.622 hitRate=0.0000 hits=0 misses=50880 tokHash=7db490a7cdd7e830 ===
+    l01_funding_cell_test.go:134: continuation: "<think>\n\n</think>\n\nWhen multiple keys map to the same index in a hash table, a collision occurs, and the data structure must employ a strategy to store both entries. The most common method, **chaining**, involves each bucket containing a linked list (or another dynamic structure) of all items that hash to that index. When a collision happens, the new item is simply appended to the list at that bucket. Alternatively, **open addressing** resolves collisions by probing for the next available empty slot within the table itself. Techniques like linear probing check the next slot sequentially, while quadratic probing or double hashing use mathematical functions to skip ahead, ensuring"
+--- FAIL: TestL01FundingCell (176.88s)
+FAIL
+##### arm=on round=2 17:30:55
+    l01_funding_cell_test.go:78: loaded 35B in 4m58s, l01=true, cacheSlots=64
+=== L01FUNDING l01=true tokens=128 dur=1m19.24s rate=1.615 hitRate=0.0000 hits=0 misses=50880 tokHash=7db490a7cdd7e830 ===
+    l01_funding_cell_test.go:134: continuation: "<think>\n\n</think>\n\nWhen multiple keys map to the same index in a hash table, a collision occurs, and the data structure must employ a strategy to store both entries. The most common method, **chaining**, involves each bucket containing a linked list (or another dynamic structure) of all items that hash to that index. When a collision happens, the new item is simply appended to the list at that bucket. Alternatively, **open addressing** resolves collisions by probing for the next available empty slot within the table itself. Techniques like linear probing check the next slot sequentially, while quadratic probing or double hashing use mathematical functions to skip ahead, ensuring"
+--- FAIL: TestL01FundingCell (381.56s)
+FAIL
+##### arm=off round=2 17:37:17

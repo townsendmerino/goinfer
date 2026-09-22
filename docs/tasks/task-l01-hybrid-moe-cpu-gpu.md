@@ -38,12 +38,23 @@
 > the sketch. `TestL01_e2eDecode_matchesBaseline` (`cuda/l01_e2e_decode_test.go`) verifies the
 > flag on vs off end to end on `testdata/qwen35-tiny`: bit-identical to float32 rounding (cosine
 > 1.0, max abs diff ~1e-7, argmax matches at every position), including the deliberately hardest
-> case (empty LRU at pos 0, so every routed expert goes to CPU). **What is still true, and is the
-> actual remainder:** this is a *synchronous* prototype only — no real overlap between CPU
-> compute and the GPU's own per-layer compute — and the audit's pre-registered
-> paired-and-interleaved funding measurement against C′ (§0's decision rule, on
-> Qwen3.6-35B-A3B) has not run. §9 below is corrected to match; nothing else in this doc needed
-> correction.
+> case (empty LRU at pos 0, so every routed expert goes to CPU).
+>
+> **KILLED 2026-09-21, real hardware, §0's own decision rule.** §9's stated remainder was built
+> (goroutine-per-expert parallel CPU compute alongside the GPU's own async hit-path launches,
+> bit-identical, race-clean) and the funding measurement was run on Qwen3.6-35B-A3B int4 on the
+> real 8 GB card: **~11x SLOWER than C′ off (0.083x-0.094x, vs a >=1.3x fund bar), not the
+> projected win.** Root cause, read from source: routing a miss to CPU calls `unadmit`, which
+> reverts the slot to EMPTY rather than to its previous occupant — so the C′ cache can never
+> accumulate a resident expert once L01 is on, hit rate goes to and STAYS at exactly 0% from the
+> third token onward, and 100% of every layer's experts route to CPU forever, not the bounded q*
+> fraction the audit's own design (§0, restated below) specifies. This is a different, far worse
+> regime than §3's isolated per-layer microbenchmark measured (a warm cache's typical miss count,
+> not a permanently cold one), so §3's own reversal (send every miss to CPU) does not generalise
+> to how the prototype was actually wired. Full record: `docs/measurements/l01-funding-cell-2026-09-21.md`.
+> **`GOINFER_CUDA_L01_CPU_OFFLOAD` stays default-off; a real re-attempt needs the actual q* split
+> (bound the CPU-offloaded fraction, keep the rest on the normal admit+DMA path so the cache stays
+> warm) — a redesign, not a re-roll of this wiring.**
 
 ## 0. What L-01 is, verbatim from the audit
 
@@ -370,13 +381,30 @@ synchronous.** `loadRoutedExperts`/`moeMLPPost` (`cuda/resident.go`) now branch 
 (`TestL01_e2eDecode_matchesBaseline`, `cuda/l01_e2e_decode_test.go`). What remains is exactly
 what this list already said, minus the wiring/merge item it no longer needs:
 
-1. **A real concurrent prototype** — not a synchronous isolated benchmark — that actually
-   overlaps CPU expert compute with GPU hit-path compute for the SAME layer and measures
-   wall-clock, not two separate numbers added by hand. This is where CUDA/async work becomes
-   unavoidable, and it should happen on Qwen3.6-35B-A3B (the audit's own decision-rule model),
-   not gemma-4-26b (this pass's stand-in for geometry convenience).
-2. Only then: the audit's pre-registered, paired-and-interleaved measurement on the real card
-   per §0's decision rule (fund ≥1.3×, park <1.15×).
+1. ~~A real concurrent prototype...~~ **DONE 2026-09-21**: goroutine-per-expert CPU compute
+   (`cuda/l01_cpu_offload.go`'s `l01MergeCPUExperts`), bit-identical, race-clean; the GPU hit-path
+   loop already issues async launches with no intervening sync, so the two kinds of overlap §9
+   asked for both exist in the code — but see the finding below for why they do not help.
+2. ~~Only then: the audit's pre-registered...~~ **DONE 2026-09-21, KILLED**: run on
+   Qwen3.6-35B-A3B int4 on the real card. Result ~11x SLOWER than C′ off (0.083x-0.094x), not
+   ambiguous, nowhere near the park floor. **Root cause found, not just measured**: the miss
+   branch's `unadmit(slot, e)` reverts the slot to EMPTY (its OWN doc comment: "rolled back to
+   EMPTY rather than to the evicted expert"), so the C′ cache can never accumulate a resident
+   expert once L01 is on — hit rate is not degraded, it settles at EXACTLY 0% by the third token
+   and stays there (confirmed: two independent runs produced byte-identical output token
+   sequences). Every layer's FULL topK routes to CPU forever, not the bounded q* fraction §0
+   itself specifies — a different, far worse regime than §3's isolated microbenchmark (a warm
+   cache's typical miss count) measured. A secondary, unattributed cost also appears to be present
+   at this volume (a back-of-envelope check using §3's own 272 us/expert, even fully sequential,
+   accounts for only ~87 ms of the token-time gap the measurement shows) — not isolated further;
+   a `pprof` profile of one L01-on token is the next diagnostic if this is revisited. Full record:
+   `docs/measurements/l01-funding-cell-2026-09-21.md`.
+
+**What a real re-attempt needs — a redesign, not a re-roll:** implement the audit's actual q*
+split (§0: "the REST computed on CPU", implying a BOUNDED fraction) — keep DMA'ing a bounded
+number of misses per layer normally, so `admit`'s bookkeeping stays intact for them and the cache
+actually warms, and offload only misses past that bound to CPU. Re-run the same committed driver
+(`cuda/l01_funding_cell_test.go`) once that exists; it needs no changes to be reused.
 
 ## Sources
 

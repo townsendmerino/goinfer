@@ -1,0 +1,7 @@
+=== RUN   TestL01FundingCell
+    l01_funding_cell_test.go:78: loaded 35B in 2m2s, l01=false, cacheSlots=64
+goinfer: batched prefill declined for a 31-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: Gated-DeltaNet recurrent state advances one token at a time and cannot be batched: cuda prefill: batched path declined (arch/geometry)
+=== L01FUNDING l01=false tokens=32 dur=2.912s rate=10.989 hitRate=0.7237 hits=14590 misses=5570 tokHash=0f58521bef119322 ===
+    l01_funding_cell_test.go:134: continuation: "<think>\n\n</think>\n\nWhen multiple keys hash to the same index, a collision occurs, and hash tables resolve this primarily through two methods: chaining and open addressing."
+--- PASS: TestL01FundingCell (128.67s)
+PASS

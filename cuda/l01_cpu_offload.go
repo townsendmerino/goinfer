@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"sync"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/gpu"
@@ -11,8 +12,18 @@ import (
 )
 
 // L-01 hybrid CPU/GPU MoE expert execution (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE,
-// synchronous only (no overlap yet — correctness first). Wired into loadRoutedExperts and
-// moeMLPPost (cuda/resident.go), behind GOINFER_CUDA_L01_CPU_OFFLOAD, default off. See
+// KILLED 2026-09-21 (~11x regression on the real target model; docs/measurements/l01-funding-cell-2026-09-21.md).
+// DO NOT re-enable without reading that record: the miss branch below calls unadmit(), which reverts the C′
+// cache's slot to EMPTY rather than to its prior occupant, so the cache can never warm once this is on — 100%
+// of every layer's experts route to CPU forever, not the bounded fraction the audit's own q* design specifies.
+// A real re-attempt needs that bounded split (keep DMA'ing SOME misses normally so the cache stays warm),
+// not this wiring. Kept default off, in tree as a correctness-verified building block for that redesign.
+//
+// 2026-09-21 (built, then measured killed): goroutine-per-expert CPU compute alongside the GPU's own async
+// hit-path launches (see l01MergeCPUExperts's own header for the distinction) — real, bit-identical,
+// race-clean, and NECESSARY for any future attempt, but not SUFFICIENT: it does not touch the cache-poisoning
+// mechanism above. Wired into loadRoutedExperts and moeMLPPost (cuda/resident.go), behind
+// GOINFER_CUDA_L01_CPU_OFFLOAD, default off. See
 // docs/tasks/task-l01-hybrid-moe-cpu-gpu.md §9/§10 for why the extraction below was verified in
 // isolation FIRST (cuda/l01_cpu_offload_test.go), before any decode-path
 // wiring: a wrong nibble layout here would silently produce plausible-looking wrong logits.
@@ -131,18 +142,35 @@ func (r *cudaResident) l01ComputeExpert(L *cudaLayer, e int, h, dst []float32) {
 // the way moeMLP's own `out[i] += w*expOut[i]` already does (§6 of the design doc — merging an
 // arbitrary expert subset is not new math, just a different SOURCE for some of the subset),
 // then uploads the ONE resulting [hidden] vector and adds it into x via the existing `residual`
-// kernel (cuda/glue.cu) — no new CUDA kernel needed. Synchronous for this prototype: no attempt
-// yet to overlap the CPU compute with the GPU loop above it (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md
-// §9's real remaining item).
+// kernel (cuda/glue.cu) — no new CUDA kernel needed.
+//
+// TWO KINDS OF OVERLAP, both real, neither new CUDA, NEITHER SUFFICIENT (docs/measurements/l01-funding-cell-2026-09-21.md
+// KILLED this prototype on the real card): (1) the GPU-side loop above this call issues ASYNC kernel launches
+// (r.launch enqueues on r.stream and returns; cuda/resident.go's own launch has no Sync), so hit-path kernels
+// are already running on the device while THIS function's host-side CPU compute below executes — but this is
+// VACUOUS whenever the hit-path loop launched zero kernels, which is exactly what happens once loadRoutedExperts's
+// unadmit() has poisoned the C′ cache to 0% hits (see that measurement): there is nothing async to overlap WITH.
+// (2) computing each CPU-routed expert's SwiGLU MLP in its own goroutine, so m misses cost close to ONE expert's
+// wall time (bounded by core count) instead of m of them — exactly the §3 finding this doc is named for
+// ("computing ALL of a layer's missed experts on CPU IN PARALLEL... is faster... at every miss count from m=1
+// to m=8"), which a single-goroutine sequential loop left unclaimed. Both are real, bit-identical improvements
+// in isolation; together they still measured ~11x SLOWER end to end, because the cache-poisoning bug (not this
+// function) forces m=topK every layer, forever — see the measurement record for the full mechanism.
+//
+// BIT-IDENTICAL to the prior sequential version: each goroutine writes to its OWN dst[j] (no
+// shared mutable state during compute — l01ComputeExpert already allocates its own gate/up
+// scratch per call), and the WEIGHTED SUM into r.l01Sum still runs single-threaded, in the same
+// j=0..topK-1 order as before, after every goroutine has finished — only the compute is
+// parallel, not the accumulation order, so float rounding is unchanged
+// (TestL01_e2eDecode_matchesBaseline covers this).
 func (r *cudaResident) l01MergeCPUExperts(L *cudaLayer, x Buffer) error {
-	any := false
+	var misses []int // indices j into [0,topK) that this layer sent to CPU
 	for j := 0; j < r.topK; j++ {
 		if r.l01CPUMask[j] {
-			any = true
-			break
+			misses = append(misses, j)
 		}
 	}
-	if !any {
+	if len(misses) == 0 {
 		return nil
 	}
 
@@ -155,16 +183,25 @@ func (r *cudaResident) l01MergeCPUExperts(L *cudaLayer, x Buffer) error {
 		h[i] = float32(int8(r.hostMQ[i])) * sc
 	}
 
+	// One goroutine per missed expert, each into its own dst slice (h is read-only, shared).
+	dsts := make([][]float32, len(misses))
+	var wg sync.WaitGroup
+	wg.Add(len(misses))
+	for k, j := range misses {
+		dsts[k] = make([]float32, r.hidden)
+		go func(k, j int) {
+			defer wg.Done()
+			r.l01ComputeExpert(L, int(r.hostIdx[j]), h, dsts[k])
+		}(k, j)
+	}
+	wg.Wait()
+
 	for i := range r.l01Sum {
 		r.l01Sum[i] = 0
 	}
-	dst := make([]float32, r.hidden)
-	for j := 0; j < r.topK; j++ {
-		if !r.l01CPUMask[j] {
-			continue
-		}
-		r.l01ComputeExpert(L, int(r.hostIdx[j]), h, dst)
+	for k, j := range misses { // fixed j order, same as the old sequential loop: bit-identical accumulation
 		w := r.hostWgt[j]
+		dst := dsts[k]
 		for i := range r.l01Sum {
 			r.l01Sum[i] += w * dst[i]
 		}
