@@ -4,7 +4,7 @@ description: >
   against a hardcoded SHA-256 -- replaces `go run honnef.co/go/tools/cmd/staticcheck@vX.Y.Z`,
   which compiles from source on every run (measured 24s median, docs/measurements/ci-timing-2026-09.md)
   since setup-go's cache key (go.sum) does not cover a `go run <module>@version` invocation the
-  way it covers this repo's own declared dependencies. C5 (docs/tasks/task-ci-speed-2026-09.md).
+  way it covers this repo's own declared dependencies. C5 (docs/completed/task-ci-speed-2026-09.md).
   Only linux_amd64 -- the three call sites (root's lint job, gpu, cuda) all run on ubuntu-latest;
   add another `if:`-gated arch/os branch here if a caller ever runs on something else.
 inputs:

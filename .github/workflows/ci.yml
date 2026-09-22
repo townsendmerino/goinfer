@@ -17,7 +17,7 @@ on:
 permissions:
   contents: read
 
-# C2 (docs/tasks/task-ci-speed-2026-09.md): a run superseded by a newer push on the SAME ref is
+# C2 (docs/completed/task-ci-speed-2026-09.md): a run superseded by a newer push on the SAME ref is
 # cancelled rather than left to finish on a runner nobody will read the result of — this repo has
 # real multi-commit-burst days (85 commits in two days, 2026-09-08-10). Safe to cancel mid-way
 # (unlike book-pages.yml's Pages deploy, which explicitly does not): a cancelled CI run has no
@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # C3 (docs/tasks/task-ci-speed-2026-09.md): change detection, at the JOB level. A push that
+  # C3 (docs/completed/task-ci-speed-2026-09.md): change detection, at the JOB level. A push that
   # changes only files under docs/ -- and none that Go code or tests READ (scripts/ci_docs_only.sh
   # decides; 477da08a is the precedent: a docs-only env-vars.md fix flipped
   # TestEnvVars_docAndCodeAgree, so "docs-only" cannot mean "skip tests" without that read check)
@@ -47,12 +47,26 @@ jobs:
   # -- checked with `gh api` 2026-09-22 -- but the job-level shape holds either way.)
   changes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # to read the BASE commit's own ci conclusion (the second condition below)
     outputs:
       docs_only: ${{ steps.gate.outputs.docs_only }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+      # TWO conditions, both required to skip. (1) The diff is docs-only (the script). (2) The
+      # commit this push builds on already has a COMPLETED, SUCCESSFUL ci run. Without (2), C2
+      # and C3 combine into a coverage hole on a busy branch: a code push lands, its run is
+      # in flight, a docs-only push lands on top -- C2 cancels the code push's run, C3 skips the
+      # tests on the docs push, and the tip reads green with the code underneath never verified.
+      # Found 2026-09-22 with exactly that shape live (two sessions pushing to main minutes
+      # apart), before the gate's first docs-only probe. "You may skip the matrix only if what
+      # you build on already passed it" closes it. Fail-open: any answer other than the literal
+      # "success" (in_progress, cancelled, failure, no run, API error, an older gh without
+      # --commit) runs everything. `--commit` wants the FULL 40-char sha -- a short one returns
+      # nothing (measured), which is also the safe answer; github.event.before is always full.
       - name: docs-only push?
         id: gate
         env:
@@ -60,15 +74,23 @@ jobs:
           # creation `before` is all zeros and the script fails open (runs everything).
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           v=$(scripts/ci_docs_only.sh "$BASE" "$HEAD")
+          base_run="(not checked)"
+          if [ "$v" = "true" ]; then
+            base_run=$(gh run list --workflow ci.yml --commit "$BASE" --json conclusion --jq '.[0].conclusion' 2>/dev/null || true)
+            if [ "$base_run" != "success" ]; then
+              v=false
+            fi
+          fi
           echo "docs_only=$v" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$v  (base=$BASE head=$HEAD)"
+          echo "docs_only=$v  (base=$BASE head=$HEAD; base's last ci run: '${base_run:-none}')"
 
   # Root module: the pure-Go runtime (decoder / tokenizer / constrain / demo).
   # Resolves the published aikit from the proxy — no workspace needed.
   #
-  # C1 (docs/tasks/task-ci-speed-2026-09.md): split from one `root` job into `lint` (gofmt,
+  # C1 (docs/completed/task-ci-speed-2026-09.md): split from one `root` job into `lint` (gofmt,
   # build, both vets, staticcheck, apidiff, citation lint, book link lint, cleanliness guard --
   # everything that needs the full-history checkout) and `test` (the -race suite + sampler
   # gates, shallow checkout) so both start at t=0 instead of the test step waiting behind a
@@ -437,29 +459,22 @@ jobs:
       # green and fast on a fresh checkout (the heavy 12B parity only runs where
       # assets are present, e.g. the local sweep box). Race detector on.
       #
-      # C4 (docs/tasks/task-ci-speed-2026-09.md): `-short`, unlike `lint`'s Linux twin (`test`,
-      # which stays exhaustive as the canonical gate). This job's OWN stated purpose is catching
-      # darwin-specific BUILD breaks (a `//go:build unix` too broad, decoder/madvise_*.go) — the
-      # platform-independent exhaustive sweeps it was ALSO running bought nothing running twice
-      # (the sampler-gates step comment already makes this argument for 25s of gates; C4 applies
-      # it to the ~1290s median suite, docs/measurements/ci-timing-2026-09.md, which measured
-      # root-darwin as the workflow's actual wall-time long pole, ahead of `test`). `-short` keeps
-      # the arm64 compile of every test file (still catches a real darwin build break) and a real
-      # -race run of everything that isn't explicitly gated slow; it drops only tests that check
-      # `testing.Short()` themselves — verified before this change that real sites exist beyond
-      # the already-self-skipping (no checkpoint asset in CI either way) parity tests: ~9
-      # "microbench"-labeled sites plus throughput/dispatch-profile/decomposition tests, none
-      # asset-gated, all currently running in CI on both platforms for no platform-specific
-      # reason. `-short` is not new to this file — `gpu`/`cuda` already use it
-      # (ci.yml's own gpu/cuda jobs) — this applies the same, already-proven pattern here.
+      # C4 (docs/completed/task-ci-speed-2026-09.md): NO -race here, per push. Owner decision
+      # 2026-09-22 after measurement: this job's stated purpose is darwin-specific BUILD breaks
+      # (a `//go:build unix` too broad, decoder/madvise_*.go) plus the arm64 NEON/DotProd kernels
+      # the linux runner never executes -- both of which a plain `go test` covers. The -race
+      # twin of the suite already runs on every push in the linux `test` job, and the detector
+      # only sees code that EXECUTES, so darwin -race adds coverage only for the darwin/arm64-only
+      # Go files -- real, small, slow-changing, and now run weekly instead (race-weekly.yml).
+      # First attempt was `-short` (keeping -race): measured a NULL -- darwin decoder 1295s with
+      # -short vs 1086s without, the exhaustive sweeps that cost the time never check
+      # testing.Short() -- and it reduced coverage for nothing, so it was reverted the same day.
+      # Dropping -race is the lever that actually moves this job (~3x): C0 measured -race darwin
+      # at ~1290s median, all of it ./decoder, and it was the workflow's wall-time long pole.
       - name: test
-        # -timeout 25m: the default is 10m PER PACKAGE, and ./decoder carries heavy parity +
-        # exhaustive sampler sweeps that the race detector slows down substantially. main went red
-        # on a TIMEOUT (not a failure) at 600.0s; ./decoder was already 246s at v0.10.2, so the
-        # package was two-fifths of the way to the default before the sampler work landed. The
-        # sweep is now sharded across parallel subtests and strided under -race; this raises the
-        # ceiling so a slow runner cannot re-trip it, while still catching a real hang.
-        run: go test -short -race -timeout 25m -tags goinfer_testhooks ./...
+        # -timeout 25m kept from the -race era (the default is 10m PER PACKAGE; ./decoder was the
+        # package that tripped it) -- generous now without the detector, but a hang still fails.
+        run: go test -timeout 25m -tags goinfer_testhooks ./...
 
   # GPU submodule on darwin/arm64 — the resident Metal decode path. Same
   # ephemeral-workspace stitch as the Linux gpu job, but no apt deps: Metal is a

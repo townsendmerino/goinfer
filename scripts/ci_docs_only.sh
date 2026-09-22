@@ -3,7 +3,7 @@
 # ci_docs_only.sh --selfcheck -> exits 1 if the read-detection below has stopped catching the
 #                                docs files tests are KNOWN to read (a zero-match guard)
 #
-# C3 (docs/tasks/task-ci-speed-2026-09.md). "true" iff EVERY file changed between BASE and HEAD is
+# C3 (docs/completed/task-ci-speed-2026-09.md). "true" iff EVERY file changed between BASE and HEAD is
 # under docs/ AND NONE of them is read by Go code or tests. Two rules, both load-bearing:
 #
 #  1. Only docs/** counts. Root *.md (README.md, CHANGELOG.md, RELEASING.md) and everything else

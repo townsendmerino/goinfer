@@ -1,0 +1,43 @@
+name: race-weekly
+
+# The darwin/arm64 race-detector run, weekly instead of per push (owner decision, 2026-09-22;
+# docs/completed/task-ci-speed-2026-09.md C4). The per-push `root-darwin` job in ci.yml keeps
+# `go test ./...` WITHOUT -race: that still compiles every test file on arm64 (the darwin-specific
+# build breaks the job exists for), still exercises the arm64 NEON/DotProd kernels the linux
+# runner never runs, and is ~3x faster than the -race form (C0 measured -race darwin at
+# ~1290s median, all of it the decoder package).
+#
+# Why weekly is enough: the race detector only sees code that EXECUTES, and the linux `test`
+# job already runs the identical suite under -race on every push. What darwin -race adds is
+# races in the darwin/arm64-only Go files (decoder/madvise_darwin.go, hostram_darwin.go, the
+# _arm64 Go paths) -- real, small, slow-changing: weekly-sized, like fuzz-weekly's reasoning.
+#
+# Reporting: same as fuzz-weekly -- the run itself goes red; nothing opens an issue (that would
+# need `issues: write`). Check with `gh run list --workflow race-weekly.yml`. "Red does not
+# announce itself" applies here exactly as it does to every other scheduled workflow.
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Mondays, 08:00 UTC (an hour after fuzz-weekly, not on top of it)
+  workflow_dispatch: # and on demand
+
+permissions:
+  contents: read
+
+jobs:
+  race-darwin:
+    name: darwin/arm64 -race (weekly)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      # The exact per-push root-darwin invocation as it stood before 2026-09-22, -race included,
+      # no -short (C4 measured -short as a null on darwin: the exhaustive sweeps that cost the
+      # time never check testing.Short()). -timeout 40m: the ci.yml comment's reasoning for 25m
+      # applies with more margin here -- a weekly run has no critical path to protect.
+      - name: test -race (darwin/arm64)
+        run: go test -race -timeout 40m -tags goinfer_testhooks ./...
