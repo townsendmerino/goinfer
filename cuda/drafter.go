@@ -65,6 +65,7 @@ type residentDrafter struct {
 	headQ     Buffer
 	headSc    Buffer
 	headOut   Buffer
+	headIdx   Buffer // [headCap] int32: argmax_rows' output (R14)
 	headCap   int
 	attnBlock Pipeline // attn_block_full — bound HERE, where the consumer now exists
 }
@@ -667,10 +668,12 @@ func (d *residentDrafter) DraftTokens(trunk [][]float32) ([]int, error) {
 				r.dev.ReleaseBuf(d.headQ)
 				r.dev.ReleaseBuf(d.headSc)
 				r.dev.ReleaseBuf(d.headOut)
+				r.dev.ReleaseBuf(d.headIdx)
 			}
 			d.headIn = r.af(M * hidden)
 			d.headQ, d.headSc = r.ai(M*(hidden/4)), r.af(M)
 			d.headOut = r.af(M * r.vocab)
+			d.headIdx = r.ai(M)
 			d.headCap = M
 		}
 		flat := make([]float32, 0, M*hidden)
@@ -692,22 +695,8 @@ func (d *residentDrafter) DraftTokens(trunk [][]float32) ([]int, error) {
 		if e := r.bGemvB(r.lmW, d.headQ, d.headSc, ArgNull(), d.headOut, M, 0); e != nil {
 			return e
 		}
-		if e := r.stream.Sync(); e != nil {
+		if e := r.argmaxRows(d.headOut, d.headIdx, M, ids); e != nil {
 			return e
-		}
-		host := make([]float32, M*r.vocab)
-		if e := gpu.Download(d.headOut, host); e != nil {
-			return e
-		}
-		for m := 0; m < M; m++ {
-			row := host[m*r.vocab : (m+1)*r.vocab]
-			bi, bv := 0, row[0]
-			for i, v := range row {
-				if v > bv {
-					bi, bv = i, v
-				}
-			}
-			ids[m] = bi
 		}
 		return r.launchErr
 	})

@@ -1,0 +1,12 @@
+=== RUN   TestR14DrafterArgmaxAB
+    r14_drafter_argmax_ab_test.go:95: bit-identical: 582 device argmax calls matched the host loop row-for-row; emitted sequences equal on 2 prompts
+    r14_drafter_argmax_ab_test.go:113: pair 0: host 1309 ms | device 1050 ms | speedup 1.247x
+    r14_drafter_argmax_ab_test.go:113: pair 1: host 1308 ms | device 1051 ms | speedup 1.245x
+    r14_drafter_argmax_ab_test.go:113: pair 2: host 1293 ms | device 1050 ms | speedup 1.231x
+    r14_drafter_argmax_ab_test.go:113: pair 3: host 1300 ms | device 1052 ms | speedup 1.236x
+    r14_drafter_argmax_ab_test.go:113: pair 4: host 1293 ms | device 1053 ms | speedup 1.228x
+    r14_drafter_argmax_ab_test.go:113: pair 5: host 1288 ms | device 1055 ms | speedup 1.221x
+    r14_drafter_argmax_ab_test.go:124: paired median speedup 1.234x (min 1.221, max 1.247) over 6 pairs; pooled host 7791 vs device 6311 ms — SHIP (>=2%)
+--- PASS: TestR14DrafterArgmaxAB (37.89s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	38.012s

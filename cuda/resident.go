@@ -495,6 +495,14 @@ type cudaResident struct {
 	// the hit-expert prefix of segC can run under a miss DMA, so those two are the classes that
 	// bound any overlap design. Sync-to-sync, so each class includes its own launch latency and
 	// the token is slower with the profiler on; the numbers are upper bounds on class cost.
+	headProf *headArgProf
+	// R14: the batched head tails' argmax runs on the device (fArgRows, M ints back) unless
+	// hostArgmaxPath forces the old M×vocab download + host loop (the A/B's do-nothing arm).
+	// argCheck additionally runs the host loop on the same logits and counts agreement.
+	fArgRows                                                               Pipeline
+	hostArgmaxPath                                                         bool
+	argCheck                                                               bool
+	argChecks                                                              int
 	profT0                                                                 time.Time
 	profAttn, profDense, profRouter, profClear, profRT, profSegC, profHead time.Duration
 	// loraLayers is nil until SetAdapter binds a compute-time LoRA adapter; then non-nil for the
@@ -798,6 +806,7 @@ type cudaResident struct {
 	// job — af/ai require r.dev's context current — and reused across rounds. logitsBCap is the
 	// row count the current allocation covers; a wider block reallocates once and then holds.
 	logitsB    Buffer
+	logitsBIdx Buffer // [logitsBCap] int32: argmax_rows' output for the verify tail (R14)
 	logitsBCap int
 	setupErr   error // first alloc/upload error during BuildResident's setup job
 	// A1 instrument, RECORDING ONLY — never read by production logic. Free device VRAM immediately
@@ -1602,6 +1611,134 @@ func (r *cudaResident) SetOverlapForTest(on bool) bool {
 	r.overlap = on
 	return true
 }
+
+// headArgProf times the three phases of a batched head→argmax tail (stream drain, M×vocab D2H, host
+// argmax loop) at its two sites — the drafter's DraftTokens and the verify's batchedHeadArgmax — so
+// R14 can say what the full-logits download costs against the spec round it sits in. Nil by default.
+type headArgProf struct {
+	sync, dl, host time.Duration
+	calls, rows    int
+}
+
+// SetHeadArgProfForTest arms (or disarms) the R14 head-argmax phase profiler.
+func (r *cudaResident) SetHeadArgProfForTest(on bool) {
+	if on {
+		r.headProf = &headArgProf{}
+	} else {
+		r.headProf = nil
+	}
+}
+
+// HeadArgProfForTest reports the accumulated phases; zero when disarmed.
+func (r *cudaResident) HeadArgProfForTest() (sync, dl, host time.Duration, calls, rows int) {
+	if r.headProf == nil {
+		return 0, 0, 0, 0, 0
+	}
+	p := r.headProf
+	return p.sync, p.dl, p.host, p.calls, p.rows
+}
+
+// hostArgmaxRows is the serial host argmax both tails share: strict > from element 0, so ties go
+// to the lowest index — the same tie-break argmax_reduce implements on the device.
+func (r *cudaResident) hostArgmaxRows(host []float32, M int, ids []int) {
+	for m := 0; m < M; m++ {
+		row := host[m*r.vocab : (m+1)*r.vocab]
+		bi, bv := 0, row[0]
+		for i, v := range row {
+			if v > bv {
+				bi, bv = i, v
+			}
+		}
+		ids[m] = bi
+	}
+}
+
+// argmaxRows is the batched head tail's reduction (R14): argmax_rows over the M rows of logits on
+// the device, one drain, an M-int readback — in place of downloading M×vocab floats and looping
+// on the host. Same strided scan and tie-break as argmax_reduce, so row m gets the token the host
+// loop (strict >, lowest index) gets. hostArgmaxPath keeps the old tail for the A/B; argCheck runs
+// both and compares.
+func (r *cudaResident) argmaxRows(logits, idxBuf Buffer, M int, ids []int) error {
+	var t0 time.Time
+	if r.hostArgmaxPath {
+		if r.headProf != nil {
+			t0 = time.Now()
+		}
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		if r.headProf != nil {
+			r.headProf.sync += time.Since(t0)
+			t0 = time.Now()
+		}
+		host := make([]float32, M*r.vocab)
+		if e := gpu.Download(logits, host); e != nil {
+			return e
+		}
+		if r.headProf != nil {
+			r.headProf.dl += time.Since(t0)
+			t0 = time.Now()
+		}
+		r.hostArgmaxRows(host, M, ids)
+		if r.headProf != nil {
+			r.headProf.host += time.Since(t0)
+			r.headProf.calls++
+			r.headProf.rows += M
+		}
+		return nil
+	}
+	if e := r.launch(r.fArgRows, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256*4 + 256*4},
+		Arg(logits), gpu.ArgValue(int32(r.vocab)), gpu.ArgValue(int32(M)), Arg(idxBuf)); e != nil {
+		return e
+	}
+	if r.headProf != nil {
+		t0 = time.Now()
+	}
+	if e := r.stream.Sync(); e != nil {
+		return e
+	}
+	if r.headProf != nil {
+		r.headProf.sync += time.Since(t0)
+		t0 = time.Now()
+	}
+	out := make([]int32, M)
+	if e := gpu.Download(idxBuf, out); e != nil {
+		return e
+	}
+	for m := range out {
+		ids[m] = int(out[m])
+	}
+	if r.headProf != nil {
+		r.headProf.dl += time.Since(t0)
+		r.headProf.calls++
+		r.headProf.rows += M
+	}
+	if r.argCheck {
+		host := make([]float32, M*r.vocab)
+		if e := gpu.Download(logits, host); e != nil {
+			return e
+		}
+		ref := make([]int, M)
+		r.hostArgmaxRows(host, M, ref)
+		for m := range ref {
+			if ref[m] != ids[m] {
+				return fmt.Errorf("cuda: argmax_rows row %d = %d, host loop = %d (logit %g vs %g)",
+					m, ids[m], ref[m], host[m*r.vocab+ids[m]], host[m*r.vocab+ref[m]])
+			}
+		}
+		r.argChecks += M
+	}
+	return nil
+}
+
+// SetHostArgmaxForTest forces (true) or releases (false) the pre-R14 host argmax tail.
+func (r *cudaResident) SetHostArgmaxForTest(host bool) { r.hostArgmaxPath = host }
+
+// SetArgmaxCheckForTest arms the row-for-row device-vs-host comparison inside argmaxRows.
+func (r *cudaResident) SetArgmaxCheckForTest(on bool) { r.argCheck = on; r.argChecks = 0 }
+
+// ArgmaxChecksForTest reports how many rows the check mode compared (all agreed, or the call errored).
+func (r *cudaResident) ArgmaxChecksForTest() int { return r.argChecks }
 
 // DecodeClassProfForTest reports the per-class g4moe decode split (see profMark). Zero unless
 // GOINFER_MOE_CACHE_PROF is set.

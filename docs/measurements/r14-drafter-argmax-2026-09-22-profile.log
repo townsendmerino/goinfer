@@ -1,0 +1,12 @@
+=== RUN   TestR14DrafterArgmaxProfile
+    r14_drafter_argmax_profile_test.go:95: code w=7: 193 tokens, 41 rounds, spec wall 1245 ms (30.37 ms/round)
+    r14_drafter_argmax_profile_test.go:96:   head→argmax tails: 84 calls (582 rows, 6.9 rows/call, vocab 151936): sync 166.019ms | D2H 76.035ms | host argmax 109.432ms | total 351.486ms
+    r14_drafter_argmax_profile_test.go:99:   per round: sync 4.049 ms | D2H 1.855 ms | host 2.669 ms | D2H+host 4.524 ms = 14.9% of the round (sync 13.3%)
+    r14_drafter_argmax_profile_test.go:102:   D2H bandwidth 4.65 GB/s; host argmax 1.2 ns/element
+    r14_drafter_argmax_profile_test.go:95: math w=8: 194 tokens, 33 rounds, spec wall 1166 ms (35.33 ms/round)
+    r14_drafter_argmax_profile_test.go:96:   head→argmax tails: 68 calls (557 rows, 8.2 rows/call, vocab 151936): sync 171.263ms | D2H 72.051ms | host argmax 114.319ms | total 357.633ms
+    r14_drafter_argmax_profile_test.go:99:   per round: sync 5.190 ms | D2H 2.183 ms | host 3.464 ms | D2H+host 5.648 ms = 16.0% of the round (sync 14.7%)
+    r14_drafter_argmax_profile_test.go:102:   D2H bandwidth 4.70 GB/s; host argmax 1.4 ns/element
+--- PASS: TestR14DrafterArgmaxProfile (24.30s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	24.372s

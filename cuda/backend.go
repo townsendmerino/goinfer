@@ -888,6 +888,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if r.fArg, e = r.dev.NewComputePipeline(amod, "argmax_reduce"); e != nil {
 			return e
 		}
+		if r.fArgRows, e = r.dev.NewComputePipeline(amod, "argmax_rows"); e != nil {
+			return e
+		}
 		// topk_select (R7): its own module, same isolation as argmax_reduce above.
 		tmod, e2 := r.dev.CompileLibrary(topkPTX)
 		if e2 != nil {

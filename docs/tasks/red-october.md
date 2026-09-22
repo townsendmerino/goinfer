@@ -404,7 +404,7 @@ Status table, kept current as briefs move:
 | R11 | MoE: L01 funding cell; P20 expert-major prefill; Metal pager measurement and M-11 | both | L | (a)/(b) CUDA-only, not attempted. **(c) Metal M26: three near-incidents across the whole N range, 2026-09-20 + 2026-09-22** — `DecodePath`/`g4moe.paged` confirm the paged mechanism engages correctly at auto-sized N=64, manual N=32, AND the floor N=8 (`top_k` itself), but ALL THREE drove this machine into a swap spiral before a served rate was reached, killed before either a kernel panic or a completed measurement — see the record. The N=8 run (automated kill switch, not manual monitoring) caught the spiral far earlier (+341 MB peak vs the first two runs' 7-9x baseline peaks) but did not avoid it. The ceiling, the previous default, and the floor have now all failed the same way; the remaining lever is a lower default for this model class on 16 GB Metal as a hardware-fit question, not further N-tuning. |
 | R12 | Metal `ForwardN` batching (P21); the missing peer rows (MLX, Metal depth, vision, W7) | both | S–M | **CLOSED 2026-09-20/21.** MLX row (i) re-confirmed 2026-09-18; Metal depth row (ii) done via R2 step 0; W7 (iv) done 2026-09-19 (simplified — see the record) — goinfer 60.1→36.1→36.4 tok/s at 1/2/4 clients (a real loss that plateaus), llama-server 84.8→95.9→149.7 (scales up), 4.11× gap at n=4; vision (iii) done 2026-09-20 — Ollama 0.4s TTFT measured, goinfer's own row unmeasured (a fit-guard bypass on this Mac caused a real near-incident, caught and killed before completion — see the record). **P21 was already shipped** (`a1640a6a`, 2026-09-16, predating this brief) — re-measured 2026-09-20: Θ 0.86–0.96, above the 0.8 kill line at every cell, killed |
 | R13 | CPU decode attention, group-major acc64 kernels (bit-identical) | both (aikit + goinfer) | S (measure) + M (two kernels ×2 ISAs, wiring) | **step 0 complete 2026-09-19**: (i) peer depth row done but not benchmarks.md-quality (thermal drift, re-run needed); (ii) softmax caps the QK+AV grouping ceiling to ~1.39-1.54× overall, not 1.8-1.85×; (iii) the cache-dedup gap is depth-dependent — nil below ~K=1024, 2-5× above K=2048, reinforcing (ii)'s decision depth. **SHIPPED 2026-09-20** — aikit kernel A/B real (1.53-2.39×); goinfer wiring found a real bug (softmax accidentally serialized, not the scheduler-contention red herring a first CPU profile suggested — `go tool trace`'s per-goroutine breakdown found the actual cause). Fixed: parity at depth 2048, **1.32× served at depth 8192**. `GOINFER_ATTN_GROUPED` defaults on. Three-arm/both-box/all-model sweep still not done |
-| R14 | CUDA speculative-decode drafter — full-logits download, host argmax, no overlap | Linux | S (measure) + S–M (port on-device argmax if real) | scoped 2026-09-22 from a cross-backend decode review; not yet measured — no band registered, step 0 is the measurement |
+| R14 | CUDA speculative-decode drafter — full-logits download, host argmax, no overlap | Linux | S (measure) + S–M (port on-device argmax if real) | **MEASURED AND SHIPPED 2026-09-22** ([`r14-drafter-argmax-2026-09-22.md`](../measurements/r14-drafter-argmax-2026-09-22.md)): the tail is at TWO sites (drafter head AND the verify's `batchedHeadArgmax`, same shape) and cost **14.9–16.0% of a spec round** (D2H at 4.7 GB/s pageable + serial host argmax); `argmax_rows` on the device at both sites: row-for-row identical on 582 calls, lossless, **1.234× spec wall** (6/6 pairs 1.22–1.25×, Qwen3-4B + DFlash, w=7) |
 | R15 | CPU sampler filter scans (`topFilterLogits`) — max-scan vs `parallelMax` | Mac | S (measure; build only if a future component wins) | **max-scan sub-item CLOSED 2026-09-22, clean negative result**: parallel LOSES at every vocab size tested (1.39-3.78× SLOWER; `decoder/sampler_filter_bench_test.go`) — goroutine overhead exceeds savings for a plain float comparison, unlike softcap's exp/tanh. `topKByLogit` (~247-262 µs) and the min-p scan (~167 µs) at gemma vocab are sized but not measured for parallel benefit — open, unfunded |
 
 Every brief below has the same shape: goal, the standing and the band registered here, what to read
@@ -1841,6 +1841,18 @@ CPU prefill, which is at parity or ahead at depth (§1, §2.3).
 
 ### R14 · CUDA speculative-decode drafter — full-logits download, host argmax, no overlap
 
+> **DONE 2026-09-22 — measured, built, shipped default.** Step 0 found the shape at TWO sites, not one: the
+> drafter's `DraftTokens` and the verify's `batchedHeadArgmax` (`cuda/prefill.go`, whose own comment deferred "a
+> batched argmax kernel" as "a later, separate ~1 ms"). Together: **14.9% (code, w=7) / 16.0% (math, w=8) of the
+> spec round** — the D2H at 4.7 GB/s (fresh pageable slice per call) plus a serial host argmax at 1.2–1.4
+> ns/element. Step 1: `argmax_rows` (`argmax_reduce`'s reduction, one block per row) at both sites via
+> `argmaxRows`; `argmax.ptx` regenerated at its own NVRTC with `argmax_reduce` byte-identical. Gates: 582 calls
+> row-for-row equal to the host loop, emitted sequences identical, `TestPrefillLastNArgmax_matchesPerRow` and
+> `TestDFlashLoop_lossless` green. **A/B 1.234× spec wall, 6/6 pairs** — more than the profiled share, because
+> the host arm's per-call 4.2 MB allocation's GC cost sat outside the profiler's windows (explained in the
+> record). Record: [`r14-drafter-argmax-2026-09-22.md`](../measurements/r14-drafter-argmax-2026-09-22.md). The
+> brief below is kept as written.
+
 **Goal.** Check whether the drafter's per-block draft step pays a sync→full-D2H→serial-host-argmax
 tax similar in shape to R11's MoE miss-DMA gap, and if the cost is real, replace it with the
 on-device reduction the main decode path already has.
@@ -1850,7 +1862,7 @@ cross-backend decode-path review (docs/completed/task-moe-streaming.md's own clo
 not yet measured. `cuda/drafter.go`'s `DraftTokens` (~653-718), `FuseContext` (~230-240), and the
 block-forward path (~597-608) all: sync the stream, download the ENTIRE `M×vocab` logits block to
 host, then run a hand-written serial host argmax loop per row — where the main decode path already
-has an on-device fused-argmax kernel (`ForwardArgmax`, `cuda/resident.go:3551`, `r.fArg`, a 4-byte
+has an on-device fused-argmax kernel (`ForwardArgmax`, `cuda/resident.go:3688`, `r.fArg`, a 4-byte
 readback) for exactly this reduction. `M` here is the speculative block size (small — single-digit
 to low tens of tokens), so the absolute cost is plausibly minor; unlike R11's MoE case, nothing here
 has been measured, so **no band is registered — step 0 is the measurement, same discipline as R4/R10

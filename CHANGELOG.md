@@ -15,6 +15,12 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **CUDA speculative decode: the block drafter's head and the verify head reduce their argmax on the device**
+  (R14). Both tails used to sync, download the whole `M×vocab` logits block and argmax on the host — measured at
+  14.9–16.0% of a spec round on Qwen3-4B + DFlash (4.7 GB/s pageable D2H + a serial 1.2 ns/element loop). A new
+  `argmax_rows` kernel (`argmax_reduce`'s reduction, one block per row) returns `M` ints instead. Row-for-row
+  identical to the host loop on 582 calls, lossless (emitted sequences equal), **1.234× spec wall-clock** (6/6 ABBA
+  pairs 1.22–1.25×). `docs/measurements/r14-drafter-argmax-2026-09-22.md`.
 - **CUDA: C′ expert-cache decode overlaps compute with the miss DMA, DEFAULT ON (`GOINFER_MOE_DMA_OVERLAP=0` opts out).**
   The per-layer routing readback used to drain the stream, so every cache-miss DMA ran against an idle GPU (30% of a
   26B token). Now the host waits on an event recorded after the router, misses are DMA'd on a second stream while the

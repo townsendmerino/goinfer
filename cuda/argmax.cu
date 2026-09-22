@@ -29,4 +29,26 @@ __global__ void argmax_reduce(const float* __restrict__ logits, int V, int* __re
     if (t == 0) { *outIdx = si[0]; *outVal = sv[0]; }
 }
 
+// argmax_rows: argmax_reduce over M rows of a [M, V] block, one block per row (blockIdx.x), the
+// SAME per-thread strided scan and the SAME tie-break, so row m's answer is exactly what
+// argmax_reduce would return on logits + m*V. R14: the spec loop's two batched head tails (drafter
+// head, verify head) used to download the whole M×V block and argmax on the host; this returns
+// M ints instead.
+__global__ void argmax_rows(const float* __restrict__ logits, int V, int M, int* __restrict__ outIdx) {
+    extern __shared__ float sv[];
+    int* si = (int*)(sv + blockDim.x);
+    int m = blockIdx.x;
+    if (m >= M) return;
+    const float* row = logits + (size_t)m * V;
+    int t = threadIdx.x, nt = blockDim.x;
+    float bv = -1e30f; int bi = -1;
+    for (int k = t; k < V; k += nt) if (row[k] > bv) { bv = row[k]; bi = k; }
+    sv[t] = bv; si[t] = bi; __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) {
+        if (t < o && (sv[t + o] > sv[t] || (sv[t + o] == sv[t] && si[t + o] < si[t]))) { sv[t] = sv[t + o]; si[t] = si[t + o]; }
+        __syncthreads();
+    }
+    if (t == 0) outIdx[m] = si[0];
+}
+
 } // extern "C"

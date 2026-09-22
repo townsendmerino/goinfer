@@ -1381,8 +1381,10 @@ func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int
 		// default, on top of the live one (audit-2026-09-02 C-12).
 		if r.logitsBCap > 0 {
 			r.dev.ReleaseBuf(r.logitsB)
+			r.dev.ReleaseBuf(r.logitsBIdx)
 		}
 		r.logitsB = r.af(M * r.vocab)
+		r.logitsBIdx = r.ai(M)
 		r.logitsBCap = M
 	}
 	// Batched final norm + quant over all M rows, exactly as the layer loop norms its input.
@@ -1393,29 +1395,13 @@ func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int
 	if e := r.bGemvB(r.lmW, aqB, aScB, ArgNull(), r.logitsB, M, 0); e != nil {
 		return e
 	}
-	// The argmax is taken on the HOST, not by M launches of argmax_reduce over slices of the
-	// batched logits. gocudrv exposes no buffer view or offset (the same limitation noted for the
-	// SwiGLU halves at resident.go), so a per-row reduction would need either a batched argmax
-	// kernel or M single-row buffers. Neither is worth it here: the win being chased is the M
-	// weight READS of a 195 MB head, and a host argmax over M x vocab costs ~1.1 ms against the
-	// ~6.4 ms that recovers. A batched argmax kernel is a later, separate ~1 ms.
-	if e := r.stream.Sync(); e != nil {
-		return e
-	}
-	host := make([]float32, M*r.vocab)
-	if e := gpu.Download(r.logitsB, host); e != nil {
-		return e
-	}
+	// The argmax used to be taken on the HOST after downloading all M×vocab logits ("a batched
+	// argmax kernel is a later, separate ~1 ms"). R14 measured that tail at 15-16% of a spec round
+	// (docs/measurements/r14-drafter-argmax-2026-09-22.md); argmax_rows now reduces on the device
+	// and M ints come back.
 	ids := make([]int, M)
-	for m := 0; m < M; m++ {
-		row := host[m*r.vocab : (m+1)*r.vocab]
-		bi, bv := 0, row[0]
-		for i, v := range row {
-			if v > bv {
-				bi, bv = i, v
-			}
-		}
-		ids[m] = bi
+	if e := r.argmaxRows(r.logitsB, r.logitsBIdx, M, ids); e != nil {
+		return e
 	}
 	*out = ids
 	return r.launchErr
