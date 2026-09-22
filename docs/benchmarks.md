@@ -1605,18 +1605,20 @@ session. Treat the 1.15× at that cell as indicative.
 Cells are **tok/s**, same decode-only protocol as the table above (this is depth 128 restated by
 backend rather than by model).
 
-> **The goinfer CPU column is STALE in both directions as of 2026-09-22** and awaits a `bench_peer.py`
-> re-anchor: R9's Linux attribution (`measurements/cpu-decode-attribution-2026-09-22-linux.md`, test harness,
-> not this table's protocol, so not entered here) read the 0.5B at ~41 tok/s (this row: 23.5) before any change,
-> the 1.5B at 13.5 (this row: 17.6), and after the two non-arm64 defaults that record ships, the 1.5B at ~18.3
-> and the 7B at ~5.0. The 2026-08-26 fit this column supported ("~13 ms fixed at 22 GB/s", the 0.5B's "~14 ms
-> unexplained") no longer describes the box.
+> **The goinfer CPU column was RE-ANCHORED 2026-09-22** (`measurements/cpu-peer-reanchor-2026-09-22.md`,
+> `scripts/bench_peer.py`, same protocol as this table, interleaved same-session against Ollama v0.32.5 and a
+> `3ea2f93d` before/after): **0.5B 37.5, 1.5B 17.8, 7B 4.9** (was 23.5/17.6/4.9) — 1.5B and 7B ROSE from R9's
+> two non-arm64 fixes (1.35×/1.09× served, matching the in-process A/B); the 0.5B carries a small
+> (~2.6%), reproducible, investigated-but-unexplained regression against its own pre-fix build, named in the
+> re-anchor record rather than hidden. goinfer still trails Ollama on CPU at every size (0.65×/0.74×/0.82× —
+> closer than the 08-26 fit implied, not parity). The 2026-08-26 fit this column supported ("~13 ms fixed at
+> 22 GB/s") no longer describes the box; see the record for the replacement reading.
 
 | model | goinfer CPU (tok/s) | Ollama CPU (tok/s) | goinfer CUDA (tok/s) | Ollama CUDA (tok/s) | goinfer WebGPU ⁱ (tok/s) |
 |---|---|---|---|---|---|
-| 0.5B | 23.5 ±0.1 | 57.9 ±0.1 | **332.7** ±4.9 | 268.7 ±0.9 | 127.6 ±1.0 |
-| 1.5B | 17.6 ±0.0 | 24.2 ±0.0 | **220.8** ±1.0 | 195.8 ±0.1 | 90.1 ±0.4 |
-| 7B | 4.9 ±0.0 | 6.0 ±0.0 | 73.1 ±0.0 | 72.8 ±0.1 | 46.1 ±0.0 |
+| 0.5B | 37.5 (2026-09-22) | 57.6 ±0.1 | **332.7** ±4.9 | 268.7 ±0.9 | 127.6 ±1.0 |
+| 1.5B | 17.8 (2026-09-22) | 24.1 ±0.0 | **220.8** ±1.0 | 195.8 ±0.1 | 90.1 ±0.4 |
+| 7B | 4.9 (2026-09-22) | 6.0 ±0.0 | 73.1 ±0.0 | 72.8 ±0.1 | 46.1 ±0.0 |
 
 ⁱ **Cross-backend, not a peer cell.** Ollama has no WebGPU build, so this column has no counterpart
 and must never be presented as a like-for-like comparison. It is here to place goinfer's portable
