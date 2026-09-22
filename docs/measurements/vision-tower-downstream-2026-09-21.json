@@ -1,0 +1,234 @@
+{
+ "images": [
+  "/home/francis/mycode/goinfer/testdata/gemma3_preprocess_image.png",
+  "/usr/share/gutenprint/samples/profile.jpg",
+  "/usr/share/inkscape/screens/start-welcome.png",
+  "/usr/share/plasma/avatars/Office Worker Konqi.png",
+  "/usr/share/wallpapers/nobara-wallpaper-2026.png",
+  "/usr/share/iso-flag-png/_earth_pernefeldt.png",
+  "/usr/share/iso-flag-png/ad.png",
+  "/usr/share/iso-flag-png/au.png"
+ ],
+ "N": {
+  "img0": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:**\n\nThe image is a gradient background created using a smooth transition between colors. It has a simple, modern, and slightly abstract feel.\n\n**Color Breakdown:**\n\n*   **Left Side (Darkest):** A deep, dark purple/",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 5.917290687561035
+  },
+  "img1": {
+   "text": "Okay, let's break down the image in detail.\n\n**Overall Description:**\n\nThe image is a grid of nine separate images, arranged in a 3x3 layout.  The purpose of the image is to demonstrate how color manipulation (specifically through color channels like Red, Green, Blue, Cyan, Magenta",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 6.028521537780762
+  },
+  "img2": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:**\n\nThe image is a vibrant, stylized digital illustration with a futuristic and slightly surreal feel. It features a young Black woman as the central subject, surrounded by abstract, energetic elements. \n\n**Subject:**\n\n*   **The Woman:** The",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 5.814492225646973
+  },
+  "img3": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:** The image is a brightly colored, cartoon-style illustration of a friendly, green dinosaur character interacting with a computer. It has a playful and slightly whimsical feel.\n\n**Main Subject:**\n\n*   **Dinosaur Character:** The central figure is",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 5.7857654094696045
+  },
+  "img4": {
+   "text": "Okay, here's a detailed description of the image:\n\n**Overall Impression:**\n\nThe image is a highly detailed, digitally painted illustration in a style reminiscent of anime or manga. It depicts a cozy, slightly cluttered room, likely a gaming or tech enthusiast's space, with a young female character as the central",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 6.3492271900177
+  },
+  "img5": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:**\n\nThe image is a digital graphic of a blue rectangular button with a white, intricate geometric design in the center. It has a slightly glossy, button-like appearance.\n\n**Detailed Breakdown:**\n\n* **Background:** The background is a solid",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 5.825684070587158
+  },
+  "img6": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:** The image is a digital representation of the flag and coat of arms of Romania. It\u2019s a clear, well-defined image with a slightly glossy or reflective effect.\n\n**Flag:**\n\n*   The flag is divided into three horizontal bands",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 5.793712377548218
+  },
+  "img7": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:**\n\nThe image is a digital representation of the flag of Australia. It's presented as a glossy, rectangular graphic, likely intended for use as a digital icon or watermark.\n\n**Detailed Breakdown:**\n\n* **Flag Design:** The image accurately",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 5.864850044250488
+  }
+ },
+ "E": {
+  "img0": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:** The image is a gradient background created with a smooth transition between colors. It has a simple, clean, and slightly abstract aesthetic.\n\n**Color Palette:**\n\n*   **Left Side:** A vibrant, dark green. It's a deep",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.98801016807556
+  },
+  "img1": {
+   "text": "Okay, let's break down the image you've provided. \n\n**Overall Description:**\n\nThe image is a collage of nine different test images, arranged in a 3x3 grid.  Below the grid is a color palette showing various color combinations, including grayscale and primary colors (red, green,",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 28.15330672264099
+  },
+  "img2": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:**\n\nThe image is a vibrant, stylized digital illustration with a futuristic and slightly surreal aesthetic. It features a young Black woman as the central subject, surrounded by abstract, glowing elements. \n\n**Subject:**\n\n*   **The Woman:** The",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.9545156955719
+  },
+  "img3": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:**\n\nThe image features a cartoon-style illustration of a friendly, green lizard character working at a computer. It has a playful and slightly whimsical feel. \n\n**Detailed Breakdown:**\n\n* **Character:** The main subject is a bright green lizard",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.98879647254944
+  },
+  "img4": {
+   "text": "Okay, let's break down this image in detail. \n\n**Overall Impression:**\n\nThe image is a highly detailed, digitally painted illustration with a strong anime/manga aesthetic. It depicts a young woman, styled in a cute, slightly futuristic way, sitting in front of a complex computer setup. The scene",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 28.526941537857056
+  },
+  "img5": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Composition:**\n\nThe image is a digital graphic presented as a rectangular button. The button has a solid blue background.  The central element is a white, intricate geometric design.\n\n**Geometric Design:**\n\n*   **Central Motif:** The core of the",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.971939086914062
+  },
+  "img6": {
+   "text": "Here's a detailed description of the image you sent:\n\n**Overall Impression:**\n\nThe image is a digital representation of a flag, specifically the flag of Romania. It's a stylized, slightly glossy rendering.\n\n**Color Breakdown:**\n\n*   **Top Band:** A vibrant blue.\n*   **",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.957878589630127
+  },
+  "img7": {
+   "text": "Here's a detailed description of the image:\n\n**Overall:**\n\nThe image is a digital representation of the flag of Australia. It\u2019s presented as a glossy, slightly reflective graphic.\n\n**Colors:**\n\n*   **Background:** A deep, solid blue color dominates the image.\n*   **Union",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.911060333251953
+  },
+  "img0#2": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:** The image is a gradient background created with a smooth transition between colors. It has a simple, clean, and slightly abstract aesthetic.\n\n**Color Palette:**\n\n*   **Left Side:** A vibrant, dark green. It's a deep",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.95467495918274
+  },
+  "img1#2": {
+   "text": "Okay, let's break down the image you've provided. \n\n**Overall Description:**\n\nThe image is a collage of nine different test images, arranged in a 3x3 grid.  Below the grid is a color palette showing various color combinations, including grayscale and primary colors (red, green,",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 28.11417555809021
+  },
+  "img2#2": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:**\n\nThe image is a vibrant, stylized digital illustration with a futuristic and slightly surreal aesthetic. It features a young Black woman as the central subject, surrounded by abstract, glowing elements. \n\n**Subject:**\n\n*   **The Woman:** The",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.94996690750122
+  }
+ },
+ "P": {
+  "img0": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:**\n\nThe image is a gradient background with a smooth transition between colors. It has a simple, clean, and slightly muted aesthetic.\n\n**Color Palette:**\n\n*   **Bottom Left:** A deep, dark green. It's a rich",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.977484226226807
+  },
+  "img1": {
+   "text": "Okay, let's break down the image you've provided.\n\n**Overall Description:**\n\nThe image is a color palette or color chart, designed to show how different color combinations can be created using a range of grayscale values and primary colors. It presents a collection of test images arranged in a grid, alongside a",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 28.120267152786255
+  },
+  "img2": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:**\n\nThe image is a vibrant, stylized digital illustration with a strong, energetic feel. It features a young Black woman as the central subject, surrounded by abstract, neon-colored shapes and lines that create a sense of movement and depth. \n\n",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.900896787643433
+  },
+  "img3": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:**\n\nThe image is a brightly colored, cartoon-style illustration featuring a friendly, green dragon character interacting with a computer setup. It has a playful and slightly whimsical feel.\n\n**Detailed Breakdown:**\n\n* **The Dragon:** The main subject is",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.904170751571655
+  },
+  "img4": {
+   "text": "Okay, here's a detailed description of the image:\n\n**Overall Impression:**\n\nThe image is a highly detailed, stylized digital illustration featuring a young woman (likely an anime-style character) in a cluttered, tech-filled room. It has a slightly dark and moody atmosphere, with a focus on a gaming",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 28.40685725212097
+  },
+  "img5": {
+   "text": "Here's a detailed description of the image:\n\n**Overall Impression:** The image presents a stylized, circular emblem or symbol against a solid blue background. It has a slightly digital or graphic design aesthetic.\n\n**Elements:**\n\n*   **Symbol:** The central element is a complex, interwoven design resembling the Seed of",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.88664746284485
+  },
+  "img6": {
+   "text": "Here's a detailed description of the image you sent:\n\n**Overall Image:**\n\nThe image is a digital representation of the flag of Romania. It's presented as a rectangular graphic with a slightly glossy, metallic-looking border.\n\n**Flag Components:**\n\n*   **Color Scheme:** The flag is divided",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.89752197265625
+  },
+  "img7": {
+   "text": "Here's a detailed description of the image:\n\n**Overall:**\n\nThe image is a digital representation of the flag of Australia. It\u2019s presented as a glossy, slightly reflective image, suggesting it might be a digital icon or a screenshot.\n\n**Elements:**\n\n* **Color:** The dominant colors are a",
+   "tokens": [],
+   "logprob0": null,
+   "top0": [],
+   "prompt_tokens": 275,
+   "seconds": 27.880540370941162
+  }
+ }
+}
