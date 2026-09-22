@@ -588,9 +588,39 @@ and the sync probe proved race-free.
   (`allocSlots` defers the slot allocation until after the core + KV are up, queries
   `Context().MemInfo()`, and caps-and-logs — the repo's "adjust honestly at load, never OOM"
   discipline; e.g. `48 slots would need 4.8 GB but only 4.2 GB free — capping to 38`). At the
-  resulting 38 slots (30% of 128): **81.6% hit rate, 16.98 tok/s capture-free**. Next lever: gocudrv
-  v0.3.0 async-H2D overlap of the miss DMAs with compute (its own task) — collapses the remaining
-  per-token bytes toward the ~50 MB estimate.
+  resulting 38 slots (30% of 128): **81.6% hit rate, 16.98 tok/s capture-free**.
+
+  **CORRECTED 2026-09-21/22 — the "next lever: gocudrv v0.3.0 async-H2D" line above was already stale
+  when this section was last touched, and a fresh measurement now closes both this item and P20's
+  redirect below.** `docs/completed/aikit-subrange-async-upload.md` (2026-08-28, i.e. BEFORE this
+  section's own "next lever" note) already investigated exactly this ask and **declined it as scoped**:
+  async H2D's real prize is 5.6% (sync overhead), not the 1.18x the naive framing implies, because
+  async cannot make PCIe itself faster — and gocudrv v0.3.2 (the version actually pinned, `cuda/go.mod`
+  — not v0.2.0) has offset copies and async copies as SEPARATE primitives, never combined on the H2D
+  path, so this would have been a gocudrv change, not a wrapper. The recommended alternative —
+  `gpu.UploadBatch` (N copies, one synchronize) — **shipped instead**, needed no gocudrv bump at all
+  (`CopyFromAt` already existed), and IS what `cuda/resident.go`'s `loadExpertSlot`/`loadRoutedExperts`
+  use today (the same `appendExpertSlot`+`UploadBatch` pattern this session's own L01 and P20 work
+  reused throughout): measured +9.3% tok/s on the 35B (14.55 -> 15.90), 10.3x fewer syncing copies.
+  **Re-measured fresh on the 26B this session** (`cuda/moe_streaming_decode_profile_test.go`,
+  `GOINFER_MOE_CACHE_PROF=1`, real decode, 29 slots — this box's current free VRAM): of the C′ round
+  trip, **host (sync) is 5.2%, stall 1.5%, dma 93.3% (30.5% of the whole token)**. The sync-overhead
+  term UploadBatch was built for is small and already captured; the dominant remaining cost is genuine
+  PCIe transfer TIME, which async H2D cannot reduce by construction (the 2026-08-28 decision's own
+  point, now confirmed on the real 26B rather than reasoned from the 35B). **gocudrv v0.3.0 async-H2D
+  is not a lever here and should not be built** — not "not yet built", genuinely closed twice over.
+
+  **What IS a real, still-open opportunity, found while checking this: CUDA's gemma4 decode path has
+  no equivalent of the CPU's already-shipped Lever 3 (below) — the dense branch's GPU compute finishes
+  and the stream is fully drained (`r.stream.Sync()`, `loadRoutedExperts`) BEFORE the routing readback
+  that decides what to DMA even happens, so there is currently nothing running on the GPU while the
+  miss DMA is in flight.** A genuine compute/DMA overlap restructuring for CUDA's gemma4 decode
+  (issue the miss DMA, then find independent GPU work to run while it transfers) could address the
+  30.5%-of-token dma share directly — but this is NEW, unscoped work with its own correctness risk
+  (the C′ DMA already depends on a host-side routing readback that fully serializes the layer; any
+  overlap needs a different structural shape, not a smaller version of the declined async-H2D ask), not
+  a completion of either item this section originally named. Not attempted in this pass; see
+  `docs/measurements/moe-streaming-decode-dma-2026-09-22.md`.
 - **B′ ACHIEVED (the milestone).** The real gemma4 26B-A4B (~11.4 GB int4 experts, does NOT fit the
   8 GB 2070) decodes RESIDENT via C′ staging: `cuda/gemma4_26b_cache_test.go`. Load 4m49s (the
   11.4 GB pinned alloc + copy — the cost is the load, not the decode; swap-thrashed but no OOM on
@@ -751,8 +781,17 @@ landed for the MoE families and Gemma 4 26B-A4B (M26) is on the batched path as 
 FFN) with no new CUDA kernel. But the win is only **1.085×** (47.382 → 43.681 ms/token, M=512) —
 the pre-registered *ambiguous* band, not the "single biggest TTFT win" this section projected.
 **Why: batching was never the bottleneck; the host→VRAM expert DMA is** — exactly the Lever 1 /
-C′ concern this doc already tracks. M35 (Gated-DeltaNet) remains sequential; P20 stays open,
-redirected toward the expert-DMA cost rather than the batching itself.
+C′ concern this doc already tracks. M35 (Gated-DeltaNet) remains sequential.
+
+**CLOSED 2026-09-21 — P20's redirect is answered.** `docs/measurements/p20-expert-locality-2026-09-21.md`
+found the real mechanism (per-row admission re-fetches the same expert a mean of ~69x per chunk on
+M26's tight VRAM) and `docs/measurements/p20-expert-major-m26-2026-09-21.md` built and shipped the fix
+(`cuda/moe_expert_major_gemma4.go`, admit each distinct expert once per chunk instead of once per row):
+**2.66x / 2.50x / 2.39x / 2.26x at M=512/2048/4096/8012 on the real 26B**, `GOINFER_CUDA_MOE_EXPERT_MAJOR`
+now default on. This is the expert-DMA fix the redirect above asked for, on the prefill side. It does
+NOT touch decode (M=1, no rows to bucket by expert across) — decode's own C′ dma share is still 30.5%
+of the token, measured fresh this session, see the C′ section above for what that does and does not
+open up.
 
 ## Measurement and gates
 
@@ -804,4 +843,4 @@ layer, bounded parallel `pread` into Metal-visible buffers, shared-branch/read o
 ≤128-token prefill chunks, 5.1–6.3 tok/s on an **8 GB M2 Air** and 31–35 tok/s on a **24 GB
 M5 Pro** (different rigs — reference figures, not an M1-Pro same-machine comparison row).
 
-<!-- doc-reviewed: 2026-09-13 -->
+<!-- doc-reviewed: 2026-09-22 -->

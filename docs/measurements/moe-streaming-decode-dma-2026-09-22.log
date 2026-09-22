@@ -1,0 +1,9 @@
+=== RUN   TestMoEStreamingDecodeProfile
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    moe_streaming_decode_profile_test.go:58: loaded 26B .giw in 52s, cacheSlots=29
+    moe_streaming_decode_profile_test.go:87: generated 48 tokens in 1.615s (29.72 tok/s), C′ hit rate 87.6% (10090 hits / 1430 misses)
+    moe_streaming_decode_profile_test.go:92: C′ round trip over 1440 layer-calls: stall 7.962ms (1.5%) | host 28.124ms (5.3%) | dma 492.749ms (93.2%) = 529ms of 1.615s generation (32.7%), 11.017ms/token
+    moe_streaming_decode_profile_test.go:99: dma-of-total-token time: 30.5%
+--- PASS: TestMoEStreamingDecodeProfile (56.42s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	56.554s
