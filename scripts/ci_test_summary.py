@@ -83,6 +83,19 @@ def main(argv):
 
     lines = []
 
+    # Headline first, so the one line a reader (or a grep over many runs) wants is at the top:
+    # the step's wall is the longest package (go test runs packages in parallel), and the
+    # C7 cache's effect is the cached count -- both were being dug out of the PACKAGES block by
+    # hand across the first three runs of this instrument.
+    if pkg_result:
+        longest = max(pkg_result.values(), key=lambda r: r[1])[1]
+        cached_names = ", ".join(sorted(short(p) for p in pkg_cached)) or "none"
+        lines.append(
+            f"== TEST STEP: longest package {longest:.0f}s of {len(pkg_result)} packages, "
+            f"{len(pkg_cached)} (cached): {cached_names} =="
+        )
+        lines.append("")
+
     if build_failed or build_out:
         lines.append("== BUILD FAILURES ==")
         for ip in build_failed or sorted(build_out):

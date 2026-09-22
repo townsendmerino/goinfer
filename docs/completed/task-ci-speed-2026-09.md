@@ -519,6 +519,23 @@ to the name. So C8 is one bug fix and one extension:
   so `decoder` re-runs (correct); the summary step's per-test list is the measurement. Results
   below when they land.
 
+**Measured (`54505861`, run 35767702617).** The two named tests, exactly as predicted in shape:
+`TestSampleFromTopK_matchesFullPath` 369s → **167.0s** (2.21×), `TestTopFilterLogits_MatchesReference`
+217s → **84.8s** (2.56×) — combined 586s → 251.8s, **−57%**. `decoder` overall: 834s → **562s**
+(−32.6%). The no-race gates step (guard + both exhaustive sweeps): **118s**, inside the ≤120s
+band. Job wall for `test`: ~726s, down from ~1197s on the cold-start baseline.
+
+**Against the pre-registered rule: real, above the 20% kill line, short of the ≥40% band on
+`decoder`'s total — and the shortfall is accounted for, not chased further.** The two named tests
+moved almost exactly as their local measurement predicted; the ~60s the package total is short of
+40% sits in tests C8 never touched (the Gumbel trio + `TestSample_DrawIdentity` +
+`TestSampleFromTopK_deviceRoundedZ` read ~60s higher on this run than on the cold-start baseline —
+consistent with the ~19% cross-run drift C0 already measured on this workflow, not a new cost).
+Re-registering the SAME rule against a re-run to chase a cleaner number would be exactly the
+"bend the floor toward the answer" mistake the measurement discipline warns against; the honest
+read is: mechanism confirmed at the predicted magnitude, package total inside natural CI noise of
+the band, shipped as-is.
+
 ## 3. Order, and what the article would call the compounding
 
 C0 → C2 (free) → C1 → C3 → then C1′/C4/C5 as C0 selects them → C6 if the tail exists.
