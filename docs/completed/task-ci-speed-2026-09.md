@@ -284,9 +284,14 @@ completed green so condition (2) holds — expected: `changes` + `lint` run, the
 jobs; gate line `docs_only=false (base=89ddc2d2 …; base's last ci run: '(not checked)')` —
 condition (2) is correctly never evaluated once (1) is already false; `root-darwin` 242s as a
 job / 195s test step, against 1324s / ~20 min on the run immediately before it (`89ddc2d2`,
-still `-race -short`); linux `test` 1197s, on C0's 1170s median.** Shape 2's result is recorded
-by the push after it. Shape 3, a docs push that touches a test-read file, is covered by the
-local battery (`477da08a` → `false`) rather than a live push.
+still `-race -short`); linux `test` 1197s, on C0's 1170s median.** **Shape 2 landed
+(`b6aae48d`, run 35752621166, 16:13 UTC): `changes` 10s + `lint` 62s, whole run 67s; all seven
+gated jobs `skipped`, no macOS runner started; gate line `docs_only=true (base=bf9759ab …;
+base's last ci run: 'success')` — both conditions evaluated, both held. Against the band
+(runner-minutes per docs-only push drop ≥ 85%): the control run summed to ~1994s of runner time
+across nine jobs (504s of it macOS), the probe to 72s — a 96% drop; wall time 1226s → 67s.**
+The push recording this is the second probe. Shape 3, a docs push that touches a test-read
+file, is covered by the local battery (`477da08a` → `false`) rather than a live push.
 
 ### C4 — Stop running platform-independent work twice on darwin
 
