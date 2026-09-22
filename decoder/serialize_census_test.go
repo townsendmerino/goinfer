@@ -133,6 +133,7 @@ var censusExcluded = map[string]string{
 	"siglip-tiny":          "a vision encoder, not a decoder — Load refuses it, so there are no LayerWeights to census.",
 	"mistral-tiny-window":  "config-only fixture (no model.safetensors); it exists to pin sliding-window CONFIG parsing, and Load cannot open it.",
 	"llama-attnfa-tiny":    "plain llama arch, same per-layer field set llama-tiny already covers (GQA, SwiGLU, RMSNorm) — it differs only in geometry (hidden_size 512, head_dim 128, vs llama-tiny's 64/16), chosen to clear Metal's canUseAttnFA hd==128 dispatch guard. Its job is metal/snapshot_golden_test.go's attention_fa coverage, not this census.",
+	"qwen3moe-tiny-k3":     "same qwen3_moe field set qwen3moe-tiny already covers — it differs only in num_experts_per_tok (3 vs 2), needed because float addition of exactly 2 terms is exactly commutative, so a k=2 fixture cannot catch an accumulation-order regression. Its job is cuda/moe_expert_major_test.go's bit-identity gate, not this census.",
 
 	// The Linux box's nine local drops, 549 MB to 17 GB and ~44 GB together. Recorded as decisions
 	// rather than left to be re-reported every run. TWO reasons apply to all of them and both are
