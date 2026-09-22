@@ -1089,7 +1089,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/spec_sample.go:111` | goinfer | `func (s *Sampler) specStep(p []float64, x int) (int, bool) {` |
 | `docs/audit-2026-09-10.md|gpu/backend.go:193` | goinfer | `key := &bQ4[0]` |
 | `docs/audit-2026-09-10.md|internal/serveapp/banner.go:94` | goinfer | `ctxLine := "context: "` |
-| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:602` | goinfer | `PrefillReusedTokens int `json:"prefill_reused_tokens"`` |
+| `docs/audit-2026-09-10.md|internal/serveapp/openai.go:608` | goinfer | `PrefillReusedTokens int `json:"prefill_reused_tokens"`` |
 | `docs/audit-2026-09-10.md|internal/serveapp/sessions.go:165` | goinfer | `func bestExtend(sessions [][]int, prompt []int) int {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/webui.go:109` | goinfer | `func sameOrigin(h http.HandlerFunc) http.HandlerFunc {` |
 | `docs/audit-2026-09-10.md|internal/servecheck/check.go:192` | goinfer | `anchor: func (c *Client) Chat(ctx context.Context, model, prompt string, maxTokens int, ` |
@@ -1109,9 +1109,9 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/residency.go:146` | goinfer | `// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to ` |
 | `docs/audit-metal-2026-09-12.md|decoder/spec_optfwd.go:214` | goinfer | `anchor: func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate ` |
 | `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:473` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
-| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:1055` | goinfer | `if visionModelType(dir) == "qwen2_5_vl" {` |
+| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:1059` | goinfer | `if visionModelType(dir) == "qwen2_5_vl" {` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:521` | goinfer | `flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose ex` |
-| `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1261` | goinfer | `// DecodeRunner when there is no session commit and no prefix reuse (model.go:` |
+| `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1267` | goinfer | `// DecodeRunner when there is no session commit and no prefix reuse (model.go:` |
 | `docs/audit-metal-2026-09-12.md|metal.go:396` | gpu | `func (d *Device) ReleaseAll() {` |
 | `docs/audit-metal-2026-09-12.md|metal.go:438` | gpu | `return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "l` |
 | `docs/audit-metal-2026-09-12.md|metal.go:732` | gpu | `return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder)}` |
@@ -1364,7 +1364,7 @@ supports.
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1157` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:229` | goinfer | `type Options struct {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:313` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1347` | goinfer | `// State the RESOLVED paths, not the requested ones. Both the resident decode path and t` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1351` | goinfer | `// State the RESOLVED paths, not the requested ones. Both the resident decode path and t` |
 | `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:404` | goinfer | `os.Exit(pullcmd.Run(os.Args[2:]))` |
 | `docs/tasks/task-first-hour.md|gpu/matrix_bench_test.go:142` | goinfer | `row("GPU staged (int8)", gguf, decoder.Options{Backend: "webgpu", Quant: "int8int8"}, tr` |
 | `docs/tasks/task-first-hour.md|internal/chatapp/version.go:87` | goinfer | `anchor: func buildIdent() (version, revision string) {` |
@@ -1401,13 +1401,13 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:289` | goinfer | `// resident-capability-gap discipline as every other optional extension here) — Generate` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1158` | goinfer | `rl.hasSink = true` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:584` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:1004` | goinfer | `lm.sessions.adapter = spec.name` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:1008` | goinfer | `lm.sessions.adapter = spec.name` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:178` | goinfer | `MoECacheSlots:    cfg.moeCacheSlots,` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1258` | goinfer | `var gen *decoder.Generation` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1288` | goinfer | `if lm.model.ResidentActive() && lm.adapter == "" {` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1380` | goinfer | `// reuse when the SAME image is resent (P9a); vi.features is then never invoked at` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1264` | goinfer | `var gen *decoder.Generation` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1294` | goinfer | `if lm.model.ResidentActive() && lm.adapter == "" {` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1386` | goinfer | `// reuse when the SAME image is resent (P9a); vi.features is then never invoked at` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:63` | goinfer | `turns     admission   // J1: FIFO, context-aware turn-granter serializing this model's s` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:900` | goinfer | `// leaking 500 instead of a clean 400 (the R-10 regression this fixes). ResidentActive()` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:906` | goinfer | `// leaking 500 instead of a clean 400 (the R-10 regression this fixes). ResidentActive()` |
 | `docs/tasks/task-gpu-paths-2026-09.md|metal/backend.go:521` | goinfer | `if v := strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_BATCHED_PREFILL"))); ` |
 | `docs/tasks/task-gpu-paths-2026-09.md|metal/backend.go:58` | goinfer | `func (b *metalBackend) Name() string { return "metal" }` |
 | `docs/tasks/task-gpu-paths-2026-09.md|metal/backend.go:592` | goinfer | `if !a.r.prefillOK {` |
@@ -1421,8 +1421,8 @@ supports.
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:539` | goinfer | `flag.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm sessi` |
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:702` | goinfer | `// /admin/* (load/unload, K1's cancel-by-id, K2's halt/resume, K5's status) lives on EIT` |
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:736` | goinfer | `// its own (pullState), which is the bound that actually fits it.` |
-| `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:1255` | goinfer | `ctx, cancel := context.WithCancel(parent)` |
-| `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:533` | goinfer | `ToolCalls  []apiToolCall   `json:"tool_calls,omitempty"`   // assistant messages` |
+| `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:1261` | goinfer | `ctx, cancel := context.WithCancel(parent)` |
+| `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:539` | goinfer | `ToolCalls  []apiToolCall   `json:"tool_calls,omitempty"`   // assistant messages` |
 | `docs/tasks/task-int4-layout-2026-09.md|cuda/resident.go:3725` | goinfer | `p := make([]uint32, N*(K/4))` |
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/gguf.go:1411` | goinfer | `// row4 from canonical), even on a cpu-arm64 target that will write kind 5` |
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/model.go:436` | goinfer | `w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), ` |
@@ -1449,7 +1449,7 @@ supports.
 | `docs/tasks/task-never-swap-2026-09.md|internal/chatapp/main.go:373` | goinfer | `model, err := decoder.Load(path, opts)` |
 | `docs/tasks/task-never-swap-2026-09.md|internal/fitcmd/fit.go:83` | goinfer | `m, err := decoder.Load(path, decoder.Options{Quant: *quant})` |
 | `docs/tasks/task-never-swap-2026-09.md|internal/prequant/prequant.go:198` | goinfer | `func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (string, erro` |
-| `docs/tasks/task-never-swap-2026-09.md|internal/serveapp/main.go:1268` | goinfer | `if !opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&` |
+| `docs/tasks/task-never-swap-2026-09.md|internal/serveapp/main.go:1272` | goinfer | `if !opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&` |
 | `docs/tasks/task-never-swap-2026-09.md|metal/backend.go:139` | goinfer | `const residentMemFraction = 0.70` |
 | `docs/tasks/task-recompute-audit.md|cuda/resident.go:395` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/tasks/task-recompute-audit.md|decoder/attention.go:98` | goinfer | `if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {` |
@@ -1483,11 +1483,11 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:742` | goinfer | `mux.HandleFunc("POST /web/models/load", sameOrigin(auth(maxBytes(textCap, srv.handleWebL` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:746` | goinfer | `mux.HandleFunc("POST /web/models/unload", sameOrigin(auth(maxBytes(textCap, srv.handleWe` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:275` | goinfer | `func (lm *loadedModel) queueFullMsg() string {` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:452` | goinfer | `"quant":          lm.model.Quant(),` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:477` | goinfer | `names = append(names, s.embedID)` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:487` | goinfer | `TopP                *float64        `json:"top_p"`` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:872` | goinfer | `// Why the resident cap: on a resident backend the stateless path prefills the fixed-siz` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:880` | goinfer | `func (lm *loadedModel) contextWindow(residentPath bool) int {` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:458` | goinfer | `"quant":          lm.model.Quant(),` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:483` | goinfer | `names = append(names, s.embedID)` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:493` | goinfer | `TopP                *float64        `json:"top_p"`` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:878` | goinfer | `// Why the resident cap: on a resident backend the stateless path prefills the fixed-siz` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:886` | goinfer | `func (lm *loadedModel) contextWindow(residentPath bool) int {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/vision_serve.go:20` | goinfer | `maxImagesPerTurn = 1 // v1: a single image per request (the interleave API is shaped for` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:195` | goinfer | `func fitEstimate(fileSize, free int64) string {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/webui.go:440` | goinfer | `func webLoadPath(p string) (string, error) {` |
@@ -1506,7 +1506,7 @@ supports.
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/liveness.go:94` | goinfer | `func (s *server) withModel(w http.ResponseWriter, name string, fn func(*loadedModel)) {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:538` | goinfer | `flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefille` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:544` | goinfer | `flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests ` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:1199` | goinfer | `// not a client disconnect or shutdown — ended the turn), and any terminal` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:1205` | goinfer | `// not a client disconnect or shutdown — ended the turn), and any terminal` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:230` | goinfer | `if !lm.turns.enter(ctx, rec) {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:241` | goinfer | `if hi := haltState(); hi != nil {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:94` | goinfer | `// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue` |

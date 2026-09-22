@@ -964,6 +964,10 @@ func newServer(cfg config) (*server, error) {
 	if err := s.loadVisionTower(cfg); err != nil {
 		return nil, err
 	}
+	// S3 (docs/tasks/task-never-swap-2026-09.md): armed last, after every startup load that could
+	// itself grow swap has already finished — the guard's baseline should be "steady state after
+	// startup," not a reading taken mid-load that then reads every startup byte as its own delta.
+	s.startSwapGuard()
 	return s, nil
 }
 

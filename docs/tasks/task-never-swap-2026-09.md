@@ -1,10 +1,11 @@
 # Task: never swap — file-backed weights by default, a firm cap where one is possible, and a tripwire where one is not (S0–S6) — 2026-09
 
-> **Status: SCOPED 2026-09-22, unstarted.** S1 and S3 are fundable as written; S2 is the
-> precondition for S1 covering the families that matter most on the Mac; S4, S6 and S5 follow. S6
-> is the structural fix for the Metal path the R11(c) runs of 2026-09-20/22 hit. One
-> owner decision is flagged in S1 (what a MoE `.gguf` that will not fit resident does once the
-> sidecar path exists: refuse, or load and warn).
+> **Status: S3 PARTIALLY BUILT 2026-09-22 (the watch mechanism + the serving consumer; the
+> load-time consumer is explicitly deferred — see S3's own status note below), S1/S2/S4/S5/S6
+> unstarted.** S2 is the precondition for S1 covering the families that matter most on the Mac;
+> S4, S6 and S5 follow. S6 is the structural fix for the Metal path the R11(c) runs of
+> 2026-09-20/22 hit. One owner decision is flagged in S1 (what a MoE `.gguf` that will not fit
+> resident does once the sidecar path exists: refuse, or load and warn).
 >
 > **What this is.** On 2026-09-04/05 the MacBook ran two different failures in one night and
 > `benchmarks.md` files them a few paragraphs apart: a plain-CPU load of gpt-oss-20b drove swap to
@@ -124,7 +125,7 @@ transcoded once to its sidecar `.giw` and mapped, so the resident weights are fi
 **Standing and the registered rule.** Today the sidecar is built only under `-stream-weights`
 (`internal/serveapp/main.go`, `ensureGIW` → `prequant.EnsureCachedGIW`,
 `internal/prequant/prequant.go:198`) or by the dense fit-guard auto-retry
-(`internal/serveapp/main.go:1268`); `chat` (`internal/chatapp/main.go:373`) and `fit`
+(`internal/serveapp/main.go:1272`); `chat` (`internal/chatapp/main.go:373`) and `fit`
 (`internal/fitcmd/fit.go:83`) load direct and have no streaming flag at all. **Rule (Mac, 1.5B and
 gpt-oss-20b, `footprint`/`vmmap -summary` on the serving process after the first completion):
 anonymous footprint of a sidecar load ≤ 25% of the direct load's, swap-used delta across the load
@@ -268,6 +269,90 @@ unless a tail needs a field — if it does, v12 with the usual reader guard).
 ---
 
 ### S3 · Swap tripwire in the binary
+
+> **BUILT 2026-09-22: the watch mechanism and the serving consumer. The load-time consumer is
+> explicitly deferred, not built — read why before picking this up.**
+>
+> `decoder.SwapWatch`/`StartSwapWatch` (`decoder/swapwatch.go`) is the portable mechanism: samples
+> a pluggable `SwapReader` every `PollInterval` (default 2s), captures the FIRST successful
+> reading as baseline (so a machine already deep in swap from something else is measured on what
+> grows AFTER the watch starts, not its pre-existing state), calls `OnTrip` once when
+> `used − baseline > Threshold` (default 512 MiB), and `OnResume` once after staying within
+> threshold continuously for `ResumeAfter` (hysteresis, so it does not flap). `decoder.SwapUsedBytes()`
+> is the real platform probe — `sysctl -n vm.swapusage` on darwin, `/proc/meminfo`'s
+> `SwapTotal − SwapFree` on linux, always-unknown elsewhere — split from the decision logic
+> (`hostram_darwin.go`'s own convention) so both are independently unit-tested against real,
+> committed sample output, not just against each other.
+>
+> **The serving consumer is wired and tested end to end.** `internal/serveapp/swapguard.go`'s
+> `startSwapGuard` arms a real watch at server start (after every startup load, so the baseline is
+> "steady state," not mid-load); a trip sets `server.swapGuardTripped`, which `haltGate`
+> (`halt.go`) now checks as a SECOND, independent condition alongside K2's halt state — reusing
+> the exact admission chokepoint every generation route already goes through (`auth(srv.haltGate(inf(...)))`,
+> 9 call sites), rather than adding a tenth wrapper at each one. Unlike a K2 halt, a swap-guard
+> trip never calls `s.gens.cancelAll` — only new admissions are refused, in-flight generations run
+> to completion, exactly this brief's own "lets in-flight generations finish." `GOINFER_SWAP_GUARD`
+> sets the threshold in MB or disables the guard entirely (`=off`); documented in `docs/env-vars.md`.
+>
+> **Verified, not assumed.** `decoder/swapwatch_test.go`: baseline capture (including the
+> already-deep-in-swap case), the ramp (fires once, not on every tick above threshold — confirmed
+> by mutation: removing the once-guard turns `TestSwapWatch_ramp` red), hysteresis (a dip that
+> doesn't hold resets the clock rather than resuming early), unavailable readings are skipped
+> rather than guessed, the off switch, ctx-cancellation stopping the goroutine — and the
+> INVERTING-GUARD mutation check the brief itself asked for
+> (`TestSwapWatch_keyingOnRSSWouldHaveMissedR11c`): fed the R11(c) run's own real RSS trajectory
+> (7 MB → 892 MB → falling, as darwin reclaimed the MTLBuffer pages under pressure) against its
+> own real swap-used trajectory (2.3 → 12 GB, never recovering) through the identical watch — an
+> RSS-keyed watch resumes mid-spiral (the inversion CLAUDE.md warns about, shown directly); the
+> swap-keyed one never does. `internal/serveapp/swapguard_test.go` drives the trip through the
+> REAL `haltGate` (503 with the swap-guard reason named, then a manual clear back to 200) and
+> confirms directly that a trip never touches `s.gens` (an in-flight generation's own context is
+> never cancelled). The full existing `TestServe_haltUnderLoad` integration test — real
+> `newServer`, real model, real K2 halt under concurrent load — still passes unchanged through the
+> edited `haltGate`. All new/touched code: `gofmt` clean, `go vet` clean (native + linux cross),
+> CI's pinned `staticcheck` clean, `-race` clean.
+>
+> **A real bug caught while wiring this, fixed before it shipped rather than in it:**
+> `startSwapGuard`'s first draft read the probe ONCE itself for a startup banner before starting
+> the watch — harmless for a real time-sampled OS probe, but it silently shifted a scripted test
+> reader's sequence by one entry against the watch's own index, and the shifted numbers happened
+> to land the "trip" delta just under the threshold instead of over it: a test that looked
+> deterministic and was actually order-dependent on an implementation detail invisible from the
+> test itself. Fixed by folding the banner into the watch's own first reading rather than a
+> separate out-of-band call — better for production too (one real syscall instead of two).
+>
+> **A second thing caught, before it could make CI flaky rather than after:** `newServer` calls
+> `startSwapGuard` unconditionally, and ~17 existing test files construct a real `*server` via
+> `newServer` for reasons that have nothing to do with this guard. Left unguarded, each would
+> start an independent real background goroutine polling actual OS swap-used every 2s for the rest
+> of that test binary's life — on a real, often-loaded development box, a genuine risk of some
+> OTHER test's handler spuriously 503ing through `haltGate` if the machine's real swap happened to
+> move during a run. Fixed with `testing.Testing()` (the stdlib's own Go 1.21+-sanctioned way to
+> ask "is this running under `go test`" from production code, confirmed to add no side effects —
+> checked directly, not assumed: the real `goinfer-serve` binary's `--help` output was diffed
+> before/after and gained no `-test.*` flags): under test, the guard stays unarmed UNLESS a test
+> explicitly sets `GOINFER_SWAP_GUARD` itself (which `swapguard_test.go`'s own tests do, by calling
+> `armSwapGuard` — the fully-injectable core — directly rather than through `startSwapGuard`).
+>
+> **What is NOT built: the load-time consumer** ("the callback cancels the load's context...
+> the direct build needs a check between layers in `parallelLayers`"). `decoder.Load` has no
+> `context.Context` parameter today, and `parallelLayers` — the natural single chokepoint for an
+> abort check — has **15 call sites** across 8+ different per-family loaders (`decoder/gguf.go`,
+> `decoder/weights.go`). Threading an abort signal through correctly (as an `Options` field, not a
+> signature break, to avoid rippling across every caller in serve/chat/fit/every test) is real,
+> separate surface area this pass did not build, for a concrete reason beyond scope: this Mac has
+> **no `gpt-oss-20b` checkpoint locally** (the brief's own positive control — the load that
+> historically drove swap to 22.9 GB on this exact machine) and was sitting at **127 MB of free
+> pages** when this was written, so the one scenario that would prove the mechanism correct
+> end-to-end could not be run, and shipping unverified cancellation logic into 15 call sites on
+> the strength of unit tests alone was judged the wrong trade against building it once, properly,
+> when it can actually be measured against the real failure. **Also not built: the Measure step**
+> (the three real-machine controls) — blocked on the same missing checkpoint and tight local RAM.
+> Picking this up: get `gpt-oss-20b` onto this Mac (or measure Step 0/positive-control work on a
+> box that already has it — the Linux box, per `docs/tasks/task-download-and-load.md`'s own
+> store/bench-local discipline, is NOT a substitute since S3's Mac numbers are what the brief's
+> rule is written against), then design the `Options`-field threading, build it, and run the real
+> gate ("a direct gpt-oss-20b load trips and aborts before swap-used exceeds baseline + 1 GB").
 
 **Goal.** goinfer notices swap growing during its own load or serving and acts before the machine
 thrashes — abort the load with a message naming the term, or stop admitting requests — instead of

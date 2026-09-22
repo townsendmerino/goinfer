@@ -70,6 +70,17 @@ func (s *server) haltGate(h http.HandlerFunc) http.HandlerFunc {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "halted", "reason": hi.reason})
 			return
 		}
+		// S3 (docs/tasks/task-never-swap-2026-09.md, swapguard.go): a second, independent
+		// condition at this same chokepoint. Unlike a K2 halt, a tripped swap guard never
+		// cancels anything already running — it only refuses NEW admissions, so this check does
+		// not touch s.gens at all.
+		if s.swapGuardTripped.Load() {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error":  "halted",
+				"reason": "swap guard tripped: swap grew past the guard threshold; refusing new requests until it recovers",
+			})
+			return
+		}
 		h(w, r)
 	}
 }

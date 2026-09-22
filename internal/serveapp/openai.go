@@ -349,6 +349,12 @@ type server struct {
 	// halted is K2's global halt state (docs/tasks/task-halt-2026-09.md); nil = running normally. See
 	// halt.go. Zero value is nil, so no explicit init in newServer is needed.
 	halted atomic.Pointer[haltInfo]
+
+	// swapGuardTripped and swapWatch are S3's serving-side tripwire (task-never-swap-2026-09.md);
+	// see swapguard.go. Zero value (false, nil) is "not armed yet" — startSwapGuard sets swapWatch
+	// during newServer; a nil swapWatch (GOINFER_SWAP_GUARD=off) is a valid, permanent state.
+	swapGuardTripped atomic.Bool
+	swapWatch        *decoder.SwapWatch
 }
 
 // pick resolves the OpenAI `model` field to a loaded generative model: an exact

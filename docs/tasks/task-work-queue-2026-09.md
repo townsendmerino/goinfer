@@ -103,7 +103,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
   template render — and is deliberately distinct from the per-model 429
   (`internal/serveapp/helpers.go:85`).
 - **Nothing is durable.** `drive` runs the generation for the life of the request
-  (`internal/serveapp/openai.go:1199`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
+  (`internal/serveapp/openai.go:1205`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
 - **There is warm state worth scheduling around.** The session LRU keeps prefilled KV and hands a
   request the session that already holds its prompt as a prefix
   (`internal/serveapp/sessions.go:14`), `-kv-sessions` 4 by default
