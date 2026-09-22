@@ -295,14 +295,6 @@ jobs:
         # below only reports. With go >= 1.24 a build failure is emitted as JSON events on stdout
         # and NOTHING on stderr (measured: zero bytes), so the summary step is where a compile
         # error becomes visible -- it is load-bearing, not cosmetic.
-        # TEMPORARY (C7 diagnostic, to be reverted in the same session): GODEBUG=gocachetest=1
-        # prints cmd/go's own reason for a cache miss/hit per package to stderr, which the -json
-        # redirect above (stdout only) does not capture -- it lands directly in this step's log.
-        # C7's probe (push e91d4199, touching neither decoder/ nor go.mod) showed decoder NOT
-        # cached while 4 other packages were; this line finds out which input decoder's tests
-        # touch that differs between two separate CI runs restoring the same GOCACHE.
-        env:
-          GODEBUG: gocachetest=1
         run: go test -race -timeout 25m -tags goinfer_testhooks -json ./... > test.json
       - name: test summary (build errors and failures verbatim, per-package lines, slowest tests)
         if: always()

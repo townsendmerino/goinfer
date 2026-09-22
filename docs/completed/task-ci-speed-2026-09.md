@@ -418,7 +418,9 @@ it is the critical path now: 1197s on `bf9759ab` = setup 20s + `go test -race ./
 cacheable flags, every env var the tests read and every file they open or stat under the module
 root — `docs/env-vars.md` included, so the C3 hazard is handled by Go itself, exactly rather
 than by basename. Verified locally 2026-09-22: rerun → `(cached)`; `touch docs/env-vars.md` →
-re-ran; rerun → `(cached)` again (`GODEBUG=gocachetest=1` shows the input-ID lookups). The
+re-ran; rerun → `(cached)` again (`GODEBUG=gocachetest=1` shows the input-ID lookups). **This
+check ran one small test (`TestEnvVars_docAndCodeAgree`), not the `decoder` package — the claim
+does not extend to `decoder` as a whole; see the correction at the end of this section.** The
 step's flags are all cacheable (`-race`, `-timeout`, `-tags`; no `-count`, no `-shuffle`; `-json`
 is `-test.v` underneath and replays the recorded per-test lines — also verified). Of the last 60
 commits on `main`, **9** touch `decoder/` or an input of it (`go.mod`/`go.sum`, `tokenizer/`,
@@ -481,6 +483,40 @@ assumed for the suite as a whole. Striding the two sweeps under `-race` the way 
 sweep already is (the `-race` build keeps the shape, the no-race gate step keeps the exhaustive
 form) is a ~10-minute lever on the critical path with no coverage change. Filed as **C8**, not
 built here.
+
+**The probe's question answered, and it is a correction to C7's own premise — `decoder` cannot
+cache, structurally, on any machine, not just in CI.** Diagnosed with a temporary
+`GODEBUG=gocachetest=1` step (pushed, read, reverted the same session) plus a direct local test
+that needed no CI at all and should have been the first thing tried: run `go test ./decoder/`
+twice in a row on one box with **nothing changed between the two runs**. The second run still
+took **5m20s** — no cache hit, ever, even locally, even back-to-back. The CI trace explains why:
+for `chat` (no `t.TempDir()` use) the pre-run and post-run "input ID" hashes are **identical**
+(`78b6ed8c…` both times) — a clean miss caused only by the restored cache not yet having that
+exact object, the ordinary cold-start case. For `decoder` the two hashes **differ**
+(`f2f776ef…` → `5b61b1ac…`) — the set of things the package touches is different *after* running
+than it was *before*, which cannot happen for a reproducible test. **21 files under `decoder/`
+call `t.TempDir()`**, which creates a directory with a freshly-random name on every invocation;
+Go's test cache records every path a test opens or stats as part of its cache key, so a path
+that is different every run makes the whole package's key different every run. Caching is
+per-package, not per-test, so one such test anywhere in `decoder` is enough to make the entire
+834s-package permanently uncacheable — this is not fixable by touching CI configuration, and
+splitting the 21 files into a separate package is not realistic given how tightly they depend on
+`decoder`'s unexported internals.
+
+**What this leaves C7 actually delivering, honestly re-stated.** Not "`decoder` replays cached on
+5 of 6 code pushes" — that premise is false and will stay false while any `t.TempDir()` test
+lives in the package. What the cache genuinely buys: the other 20 packages in `./...` (confirmed
+`(cached)` in CI: `cmd/serve`, `internal/giw`, `internal/pullcmd`, `internal/servecheck`, and
+more on other runs) skip re-execution on a push that doesn't touch their own inputs, and
+`root-darwin` showed the same real effect (4/16 packages cached on its first non-cold run).
+Since `decoder` is the job's long pole regardless (echoed by every other package finishing
+underneath it — [[ci-test-wall-time-is-decoder-under-race]]), this does **not** move the `test`
+job's wall time on a push that avoids `decoder`'s inputs, which is what the ≤150s band assumed.
+Band and kill line both retired without being met or failed — the mechanism works exactly as
+designed; the assumption about which package it would help was wrong. Not re-scoped further
+this session: a real fix (isolating the `TempDir`-using tests so the rest of the package can
+cache) is new work, not a tuning knob, and is not filed as a further C-item without a use case
+that needs it.
 
 ### C8 — stride the two sampler sweeps under `-race` (built 2026-09-22, same day as the instrument)
 
