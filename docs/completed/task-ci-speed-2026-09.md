@@ -572,6 +572,68 @@ Re-registering the SAME rule against a re-run to chase a cleaner number would be
 read is: mechanism confirmed at the predicted magnitude, package total inside natural CI noise of
 the band, shipped as-is.
 
+### C9 — shard `./decoder` across parallel CI jobs (built 2026-09-22, same day as C7/C8)
+
+Asked after C7/C8 landed — *"we were going to be able to cut down linux test too"* / *"just do
+it"*. C7 established `./decoder` cannot be cached (t.TempDir() in 21 files, per-package cache
+key, unstable on any machine — see the C7 section); C8 cut the package from 834s to 562s but that
+is still the whole `test` job's wall, on effectively one of the runner's four cores (`./decoder`
+has ~691 top-level tests and only a handful of `t.Parallel()` calls). The only lever left is
+running it as more than one job.
+
+**The split.** An LPT (longest-processing-time-first) bin-pack of the 15 heaviest items — the 14
+named tests C7's instrument found plus the no-race sampler-gates step, real seconds from run
+35767702617 — into 4 buckets: **B1 167.0s** (`TestSampleFromTopK_matchesFullPath` alone), **B2
+160.1s** (sampler-gates + `TestSample_DrawIdentity` + `TestEnvVars_docAndCodeAgree`), **B3
+162.1s** (`TestTopFilterLogits_MatchesReference` + 5 smaller), **B4 163.4s** (the Gumbel trio + 2
+smaller) — max 167.0s against a 163.15s ideal average, within 4.3% of optimal for 4 bins by hand.
+A fifth shard (`test-decoder-tail`) runs everything NOT named in the other four via `-skip` —
+`-skip`'s complement is "everything else" by construction, so coverage cannot develop a gap the
+way a `-run` typo could; the tail is 695 tests summing to ~27s (562.0s package total minus the
+14 named tests' own 534.6s; `go test -list -tags goinfer_testhooks` — the tag CI actually
+builds with — puts the package at **709** top-level tests total, not the 691 an earlier untagged
+count read). A sixth (`test-rest`) runs `./...` minus `./decoder` — computed via `go list`, not a
+hardcoded package list — with `internal/serveapp` (121s) as its own long pole, and it is the one
+shard that still gets C7's caching benefit the way the doc originally hoped, since none of those
+packages carry decoder's `t.TempDir()` instability.
+
+**Verified before pushing, not assumed, and the verification itself needed a correction.** `-skip`
+behaves as documented — confirmed directly with a small controlled run (`TestChunkedSoftmax_*`: 5
+top-level tests, 3 named in a `-skip` list, the other 2 ran, exactly) and a run+skip-the-same-test
+case that correctly produced "no tests to run". The four named shards' `-run` patterns were
+checked pairwise disjoint via `go test -list` (14 distinct names, no overlaps) — `-list`'s own
+pattern argument matches `-run`'s semantics, so this check is valid; **`-list` was found to NOT
+honor a separate `-skip` flag at all** (it lists every test regardless — verified, then saved to
+memory: [[go-test-list-ignores-skip]]), so the tail's coverage was checked by actually RUNNING it
+(`-skip` with all 14 names, `-v`, no `-race` for speed) and counting top-level `=== RUN` lines: a
+first pass read 695 against an expected 677, which does not subtract cleanly from 691 — the
+691-test baseline had been counted WITHOUT `-tags goinfer_testhooks`, the tag CI actually builds
+with, and was missing 18 tag-gated tests. Re-listed with the tag: 709 total. `comm` between the
+709-name list and the 695 that actually ran in the tail confirms the split exactly: **zero names
+in the tail that shouldn't be there, zero of the 14 heavy names present, zero names missing from
+either set.** Every heavy test name was independently confirmed to exist verbatim via `go test
+-list` before being written into a shard pattern (none of the 14 are typos). A pre-existing,
+unrelated failure surfaced in the tail run (one of the five real-checkpoint parity tests this
+session already confirmed fails on unmodified `main` via `git stash`) — expected, not a
+regression from this change.
+
+**Maintenance risk, stated rather than solved.** A renamed heavy test silently drops out of its
+assigned shard's `-run` list and falls into the tail via `-skip`'s complement — a BALANCE
+regression (that shard shrinks, the tail grows), not a coverage one, since the tail's `-skip`
+pattern names every heavy test and a rename simply removes it from that list too. A DELETED test
+makes its shard's `-run` pattern match nothing — the exact zero-match trap this repo already
+guards against — so every shard naming specific tests carries the same zero-match guard step as
+the existing sampler-gates pattern. No automation re-derives the LPT pack when shard times drift;
+that is a known, accepted gap, not an oversight.
+
+- **Band:** `test`'s wall (now the slowest of the six shards plus the ~10s `changes` gate) drops
+  to ≤ 300s from ~726s — the LPT pack predicts ~167s decoder-shard content + ~35-40s fixed
+  per-job overhead (checkout + setup-go + cache restore) ≈ 210s for the slowest shard.
+- **Kill:** if the slowest shard exceeds 400s (LPT badly wrong, or per-job overhead far above
+  estimate), record why and consider re-merging into fewer, larger shards rather than 6.
+- **Verification.** This push is shape 1 (cold: no `go-test-*-<shard>-*` key exists for any of
+  the 6 new shard suffixes yet). Results recorded once the run lands.
+
 ## 3. Order, and what the article would call the compounding
 
 C0 → C2 (free) → C1 → C3 → then C1′/C4/C5 as C0 selects them → C6 if the tail exists.
