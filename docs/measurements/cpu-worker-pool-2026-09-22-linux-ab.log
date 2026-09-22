@@ -1,0 +1,35 @@
+=== RUN   TestR9_cpuTuningAB
+DECODE TIMING (24 tok, gpu=false): forward 53.8 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 9.60 ms | MLP 35.20 ms | LM head 8.65 ms | residual 0.32 ms /token
+DECODE SPLIT MLP: gate+up matmuls 19.68 ms | activation 3.64 ms | down matmul 11.85 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 4.71 ms | rope+KV+scores/softmax/AV core 2.48 ms | o matmul 2.40 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 59.6 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 12.73 ms | MLP 37.86 ms | LM head 8.68 ms | residual 0.38 ms /token
+DECODE SPLIT MLP: gate+up matmuls 20.12 ms | activation 4.18 ms | down matmul 13.54 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 5.86 ms | rope+KV+scores/softmax/AV core 3.78 ms | o matmul 3.08 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 54.5 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 9.83 ms | MLP 35.65 ms | LM head 8.66 ms | residual 0.33 ms /token
+DECODE SPLIT MLP: gate+up matmuls 19.96 ms | activation 3.70 ms | down matmul 11.96 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 4.75 ms | rope+KV+scores/softmax/AV core 2.63 ms | o matmul 2.44 ms /token
+    r9_decode_attribution_test.go:446: worker pool pair 0: ON 59.6 ms/tok (component 33.65) | OFF 54.5 ms/tok (component 31.92) | OFF is 1.095x faster
+DECODE TIMING (24 tok, gpu=false): forward 55.1 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 9.90 ms | MLP 36.20 ms | LM head 8.65 ms | residual 0.32 ms /token
+DECODE SPLIT MLP: gate+up matmuls 20.49 ms | activation 3.63 ms | down matmul 12.06 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 4.80 ms | rope+KV+scores/softmax/AV core 2.63 ms | o matmul 2.45 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 60.1 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 13.05 ms | MLP 38.00 ms | LM head 8.66 ms | residual 0.38 ms /token
+DECODE SPLIT MLP: gate+up matmuls 20.18 ms | activation 4.27 ms | down matmul 13.53 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 6.01 ms | rope+KV+scores/softmax/AV core 3.83 ms | o matmul 3.20 ms /token
+    r9_decode_attribution_test.go:446: worker pool pair 1: ON 60.1 ms/tok (component 33.70) | OFF 55.1 ms/tok (component 32.54) | OFF is 1.091x faster
+DECODE TIMING (24 tok, gpu=false): forward 59.3 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 12.78 ms | MLP 37.50 ms | LM head 8.65 ms | residual 0.37 ms /token
+DECODE SPLIT MLP: gate+up matmuls 19.84 ms | activation 4.22 ms | down matmul 13.42 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 5.87 ms | rope+KV+scores/softmax/AV core 3.83 ms | o matmul 3.07 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 54.5 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 9.92 ms | MLP 35.64 ms | LM head 8.63 ms | residual 0.33 ms /token
+DECODE SPLIT MLP: gate+up matmuls 19.95 ms | activation 3.62 ms | down matmul 12.04 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 4.79 ms | rope+KV+scores/softmax/AV core 2.68 ms | o matmul 2.44 ms /token
+    r9_decode_attribution_test.go:446: worker pool pair 2: ON 59.3 ms/tok (component 33.26) | OFF 54.5 ms/tok (component 31.99) | OFF is 1.088x faster
+    r9_decode_attribution_test.go:448: worker pool: pooled ON 59.7 -> OFF 54.7 ms/tok = 1.091x; component 33.54 -> 32.15 ms/tok
+--- PASS: TestR9_cpuTuningAB (25.68s)
+PASS
