@@ -167,11 +167,19 @@ six-worker rows (4–7%) had already said as much and were discounted for "other
 calls" that turns out not to matter. Recorded as an under-prediction, the same way aikit's own
 scoreboard records its over-predictions.
 
-**Cross-repo bit-identity, checked after the fold and not assumed:** with goinfer built against
-the working aikit (fold on by default), `TestForwardN_matchesSequential` is bit-identical across
-**911,616 (K=6) and 19,447,808 (K=128) logits** and `TestSpeculativeGreedyParity` passes —
-`decode == batched prefill == speculative verify` survives the kernel swap. `TestMoEExpertMajor_bitIdentical`
-**skipped** (no MoE asset on this box) — a skip, not a pass; the box that has the asset owes it.
+**Cross-repo bit-identity, checked after the fold and not assumed — and corrected once.** The
+first run of this check (quoted in commit `937f6c99`'s message) loaded the bench model through
+`loadBenchModel()`'s **default `int8int8`**, i.e. it exercised the W8A8 path and never touched
+the kernel S-05 changed — measuring-performance's §1.1 trap, caught on re-reading the loader
+before writing this paragraph. Re-run with `GOINFER_BENCH_QUANT=int4`, against the **released**
+aikit v1.47.0: `TestForwardN_matchesSequential` is bit-identical across **911,616 (K=6) and
+19,447,808 (K=128) logits** — at int4 that is exactly the M=1 row4 fold kernel against the M>1
+tile, the M-invariance the fold has to preserve — and `TestSpeculativeGreedyParity` passes at
+int4. `decode == batched prefill == speculative verify` survives the kernel swap on the path that
+runs it. `TestMoEExpertMajor_bitIdentical` **skipped** (no MoE asset on this box) — a skip, not a
+pass; the box that has the asset owes it. The parity-manifest refresh that the aikit bump forced
+(`d10b208b`) ran the forward goldens as its own proof; by its own note those are f32 goldens, so
+the int4 evidence is this paragraph plus aikit's exact `==` gates, not the refresh.
 
 ## What this establishes, and what it does not
 

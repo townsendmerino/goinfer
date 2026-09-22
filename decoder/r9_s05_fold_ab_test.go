@@ -1,3 +1,9 @@
+//go:build arm64
+
+// arm64 only: the S-05 fold is an arm64 SDOT kernel, and aikit v1.47.0 declares its A/B toggle
+// (linalg.SetW4A8RowFold / W4A8RowFold) in an arm64-tagged file, so this file does not compile
+// on linux/amd64 without the tag (CI run 35763888743 found that the hard way).
+
 package decoder
 
 import (
