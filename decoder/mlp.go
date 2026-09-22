@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -309,7 +310,7 @@ const activationFanoutWorkers = maxAttnWorkers
 // elementwise activation (silu/geluTanh × gate), never a reduction (a softmax's `sum += e` would
 // reorder under this split and must NOT use it — see S-06 step 1's own scope note).
 func parallelElementwise(n int, fn func(lo, hi int)) {
-	if n < activationFanoutThreshold {
+	if !activationFanoutEnabled || n < activationFanoutThreshold {
 		fn(0, n)
 		return
 	}
@@ -551,8 +552,20 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 		scr.ws.SetThreshold(int4ParThreshold)
 		matmulW4A8Batch(be, scr.ws, h, 1, lw.GateProj.Cols(), group, scr.guOpsW4[:])
 	} else {
+		var dt0 time.Time
+		if decodeTiming {
+			dt0 = time.Now()
+		}
 		matmulInto(scr.ws, be, &lw.GateProj, h, gate, 1)
 		matmulInto(scr.ws, be, &lw.UpProj, h, up, 1)
+		if decodeTiming {
+			atomic.AddInt64(&dtGU, int64(time.Since(dt0)))
+		}
+	}
+	var dt1 time.Time
+	if decodeTiming {
+		dt1 = time.Now()
+		defer func() { atomic.AddInt64(&dtActDown, int64(time.Since(dt1))) }()
 	}
 	if lora != nil { // compute-time LoRA (#7): delta into gate/up before the activation
 		applyLoRA(lora.gate, h, gate, scr)
@@ -585,6 +598,9 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 		}
 	default:
 		return fmt.Errorf("decoder: unsupported activation %d (have GeGLU/SwiGLU/exact-GELU-GLU)", arch.Act)
+	}
+	if decodeTiming {
+		atomic.AddInt64(&dtAct, int64(time.Since(dt1)))
 	}
 	matmulInto(scr.ws, be, &lw.DownProj, gate, out, 1) // [1,hidden] = mid · DownProjᵀ (gate now holds the activated mid)
 	if lora != nil {

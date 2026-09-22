@@ -1,0 +1,51 @@
+=== RUN   TestR9_parWidthSweep
+=== RUN   TestR9_parWidthSweep/0.5B
+    r9_decode_attribution_test.go:177: no fixture at /nonexistent (set GOINFER_CPU_MODEL_05B)
+=== RUN   TestR9_parWidthSweep/1.5B
+DECODE TIMING (8 tok, gpu=false): forward 71.8 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (8 tok): attention 17.41 ms | MLP 45.36 ms | LM head 8.65 ms | residual 0.36 ms /token
+R9 MLP (8 tok): gate+up matmuls 19.93 ms | activation 13.28 ms | down matmul 12.12 ms /token
+R9 WIDTH 1.5B width=16 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 73.1 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 18.51 ms | MLP 45.60 ms | LM head 8.67 ms | residual 0.36 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.20 ms | activation 12.91 ms | down matmul 12.46 ms /token
+R9 WIDTH 1.5B width=8 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 90.4 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 22.44 ms | MLP 59.21 ms | LM head 8.33 ms | residual 0.40 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.73 ms | activation 24.92 ms | down matmul 13.52 ms /token
+R9 WIDTH 1.5B width=4 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 114.2 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 27.07 ms | MLP 78.75 ms | LM head 7.94 ms | residual 0.48 ms /token
+R9 MLP (24 tok): gate+up matmuls 27.47 ms | activation 34.50 ms | down matmul 16.75 ms /token
+R9 WIDTH 1.5B width=2 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 149.5 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 30.46 ms | MLP 108.60 ms | LM head 9.96 ms | residual 0.49 ms /token
+R9 MLP (24 tok): gate+up matmuls 48.77 ms | activation 32.98 ms | down matmul 26.82 ms /token
+R9 WIDTH 1.5B width=1 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 234.8 ms | sample 0.12 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 38.23 ms | MLP 178.53 ms | LM head 17.60 ms | residual 0.47 ms /token
+R9 MLP (24 tok): gate+up matmuls 98.03 ms | activation 31.51 ms | down matmul 48.95 ms /token
+R9 WIDTH 1.5B width=1 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 230.0 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 37.35 ms | MLP 174.60 ms | LM head 17.56 ms | residual 0.48 ms /token
+R9 MLP (24 tok): gate+up matmuls 97.37 ms | activation 28.94 ms | down matmul 48.26 ms /token
+R9 WIDTH 1.5B width=2 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 149.9 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 30.45 ms | MLP 109.01 ms | LM head 9.97 ms | residual 0.48 ms /token
+R9 MLP (24 tok): gate+up matmuls 49.38 ms | activation 32.21 ms | down matmul 27.39 ms /token
+R9 WIDTH 1.5B width=4 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 110.0 ms | sample 0.12 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 26.44 ms | MLP 75.08 ms | LM head 8.03 ms | residual 0.46 ms /token
+R9 MLP (24 tok): gate+up matmuls 27.04 ms | activation 31.40 ms | down matmul 16.60 ms /token
+R9 WIDTH 1.5B width=8 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 92.4 ms | sample 0.11 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 23.39 ms | MLP 60.27 ms | LM head 8.33 ms | residual 0.43 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.95 ms | activation 25.47 ms | down matmul 13.82 ms /token
+R9 WIDTH 1.5B width=16 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 74.0 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 18.82 ms | MLP 46.08 ms | LM head 8.70 ms | residual 0.37 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.13 ms | activation 13.31 ms | down matmul 12.62 ms /token
+--- PASS: TestR9_parWidthSweep (76.31s)
+    --- SKIP: TestR9_parWidthSweep/0.5B (0.00s)
+    --- PASS: TestR9_parWidthSweep/1.5B (76.31s)
+PASS

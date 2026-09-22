@@ -1,0 +1,71 @@
+=== RUN   TestR9_parWidthSweep
+=== RUN   TestR9_parWidthSweep/0.5B
+DECODE TIMING (8 tok, gpu=false): forward 23.0 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (8 tok): attention 5.88 ms | MLP 11.78 ms | LM head 5.10 ms | residual 0.20 ms /token
+R9 WIDTH 0.5B width=16 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 24.1 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 6.47 ms | MLP 12.27 ms | LM head 5.12 ms | residual 0.23 ms /token
+R9 WIDTH 0.5B width=8 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 27.1 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 7.99 ms | MLP 13.98 ms | LM head 4.91 ms | residual 0.25 ms /token
+R9 WIDTH 0.5B width=4 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 32.8 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 9.40 ms | MLP 18.37 ms | LM head 4.72 ms | residual 0.29 ms /token
+R9 WIDTH 0.5B width=2 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 42.2 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 9.40 ms | MLP 26.37 ms | LM head 6.14 ms | residual 0.28 ms /token
+R9 WIDTH 0.5B width=1 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 67.9 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 9.41 ms | MLP 47.18 ms | LM head 11.04 ms | residual 0.27 ms /token
+R9 WIDTH 0.5B width=1 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 69.5 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 9.61 ms | MLP 48.48 ms | LM head 11.13 ms | residual 0.28 ms /token
+R9 WIDTH 0.5B width=2 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 43.8 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 9.39 ms | MLP 27.98 ms | LM head 6.19 ms | residual 0.28 ms /token
+R9 WIDTH 0.5B width=4 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 32.6 ms | sample 0.14 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 9.42 ms | MLP 18.12 ms | LM head 4.79 ms | residual 0.30 ms /token
+R9 WIDTH 0.5B width=8 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 28.8 ms | sample 0.11 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 8.87 ms | MLP 14.68 ms | LM head 4.95 ms | residual 0.27 ms /token
+R9 WIDTH 0.5B width=16 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 23.6 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 6.22 ms | MLP 12.03 ms | LM head 5.10 ms | residual 0.21 ms /token
+=== RUN   TestR9_parWidthSweep/1.5B
+DECODE TIMING (8 tok, gpu=false): forward 72.1 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (8 tok): attention 17.36 ms | MLP 45.64 ms | LM head 8.69 ms | residual 0.37 ms /token
+R9 WIDTH 1.5B width=16 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 76.0 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 19.58 ms | MLP 47.33 ms | LM head 8.67 ms | residual 0.39 ms /token
+R9 WIDTH 1.5B width=8 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 96.0 ms | sample 0.11 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 24.59 ms | MLP 62.57 ms | LM head 8.35 ms | residual 0.45 ms /token
+R9 WIDTH 1.5B width=4 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 112.4 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 27.06 ms | MLP 76.72 ms | LM head 8.11 ms | residual 0.47 ms /token
+R9 WIDTH 1.5B width=2 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 151.1 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 30.57 ms | MLP 110.02 ms | LM head 9.98 ms | residual 0.50 ms /token
+R9 WIDTH 1.5B width=1 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 240.1 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 39.06 ms | MLP 182.81 ms | LM head 17.70 ms | residual 0.49 ms /token
+R9 WIDTH 1.5B width=1 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 233.8 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 38.15 ms | MLP 177.57 ms | LM head 17.53 ms | residual 0.51 ms /token
+R9 WIDTH 1.5B width=2 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 150.4 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 30.76 ms | MLP 109.14 ms | LM head 9.96 ms | residual 0.51 ms /token
+R9 WIDTH 1.5B width=4 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 115.4 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 27.70 ms | MLP 79.23 ms | LM head 7.96 ms | residual 0.49 ms /token
+R9 WIDTH 1.5B width=8 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 91.1 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 22.57 ms | MLP 59.74 ms | LM head 8.35 ms | residual 0.41 ms /token
+R9 WIDTH 1.5B width=16 GOMAXPROCS=16
+DECODE TIMING (24 tok, gpu=false): forward 75.3 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 19.44 ms | MLP 46.81 ms | LM head 8.65 ms | residual 0.37 ms /token
+--- PASS: TestR9_parWidthSweep (105.05s)
+    --- PASS: TestR9_parWidthSweep/0.5B (28.20s)
+    --- PASS: TestR9_parWidthSweep/1.5B (76.85s)
+PASS

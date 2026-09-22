@@ -67,7 +67,19 @@ func runDecodeAttend(t *testing.T, arch *Architecture, cache *KVCache, q []float
 // golden change — this compares directly rather than against a stored
 // golden) and Gate (4) (the wiring proof: attnGroupedRuns must be nonzero
 // with grouping on, at a shape that is actually eligible for it).
+// withGroupedKernels forces the grouped path's platform gate on for one test: these tests exist
+// to exercise and wire-prove the grouped path (Go fallback included), whatever this
+// architecture's shipped default is (cpu_tuning_other.go turns it off on non-arm64 — R9's Linux
+// attribution measured the fallback slower than per-head).
+func withGroupedKernels(t *testing.T) {
+	t.Helper()
+	prev := attnGroupedKernels
+	attnGroupedKernels = true
+	t.Cleanup(func() { attnGroupedKernels = prev })
+}
+
 func TestAttendGroupedHeads_matchesPerHead(t *testing.T) {
+	withGroupedKernels(t)
 	arch := syntheticGroupedArch(64)
 	const nKeys = 200 // >= attnGroupedMinKeys, so the grouped path is eligible
 	cache, q := syntheticDecodeCache(t, arch, nKeys, 0x5119)
@@ -119,6 +131,7 @@ func TestAttendGroupedHeads_belowNWinGateStaysUngrouped(t *testing.T) {
 // pool never reaches. Two workers, two kv heads: each worker's contiguous
 // head range is exactly one kv group, so both take the grouped path.
 func TestAttendGroupedHeads_concurrentWorkers(t *testing.T) {
+	withGroupedKernels(t)
 	arch := syntheticGroupedArch(64)
 	const nKeys = 200
 	cache, q := syntheticDecodeCache(t, arch, nKeys, 0x511C)
@@ -173,6 +186,7 @@ func TestAttendGroupedHeads_concurrentWorkers(t *testing.T) {
 // would show up. Compares directly against the ungrouped per-head path,
 // not a stored golden.
 func TestAttendGroupedLayer_manyWorkers(t *testing.T) {
+	withGroupedKernels(t)
 	arch := syntheticGroupedArch(97) // hd=97: not a multiple of 6, forces a ragged AV dim split
 	const nKeys = 203                // not a multiple of 6 either, and >= attnGroupedMinKeys
 	cache, q := syntheticDecodeCache(t, arch, nKeys, 0x511D)

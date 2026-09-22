@@ -1,0 +1,21 @@
+=== RUN   TestR9_decodeAttribution
+=== RUN   TestR9_decodeAttribution/0.5B
+    r9_decode_attribution_test.go:132: 0.5B: prompt 128 tokens, decoding 24 greedy
+DECODE TIMING (24 tok, gpu=false): forward 21.8 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 5.28 ms | MLP 11.32 ms | LM head 5.04 ms | residual 0.18 ms /token
+    r9_decode_attribution_test.go:141: 0.5B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)
+=== RUN   TestR9_decodeAttribution/1.5B
+    r9_decode_attribution_test.go:132: 1.5B: prompt 128 tokens, decoding 24 greedy
+DECODE TIMING (24 tok, gpu=false): forward 73.9 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 16.42 ms | MLP 48.80 ms | LM head 8.40 ms | residual 0.31 ms /token
+    r9_decode_attribution_test.go:141: 1.5B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)
+=== RUN   TestR9_decodeAttribution/7B
+    r9_decode_attribution_test.go:132: 7B: prompt 128 tokens, decoding 24 greedy
+DECODE TIMING (24 tok, gpu=false): forward 226.1 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 29.10 ms | MLP 177.12 ms | LM head 19.25 ms | residual 0.61 ms /token
+    r9_decode_attribution_test.go:141: 7B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)
+--- PASS: TestR9_decodeAttribution (46.05s)
+    --- PASS: TestR9_decodeAttribution/0.5B (4.20s)
+    --- PASS: TestR9_decodeAttribution/1.5B (9.64s)
+    --- PASS: TestR9_decodeAttribution/7B (32.20s)
+PASS

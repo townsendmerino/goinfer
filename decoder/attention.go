@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"math"
+	"sync/atomic"
+	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -88,6 +90,11 @@ func causalAttention(
 	// query width so every downstream reader sees the right length. Identical to
 	// scr.q for every family whose head count is uniform.
 	q, k, v := scr.q[:nH*hd], scr.k, scr.v
+	var dt0 time.Time
+	if decodeTiming {
+		dt0 = time.Now()
+		defer func() { atomic.AddInt64(&dtAttnAll, int64(time.Since(dt0))) }()
+	}
 	if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
 		scr.qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
 		scr.qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
@@ -107,6 +114,9 @@ func causalAttention(
 		matmulInto(scr.ws, be, &lw.QProj, h, q, 1)
 		matmulInto(scr.ws, be, &lw.KProj, h, k, 1)
 		matmulInto(scr.ws, be, &lw.VProj, h, v, 1)
+	}
+	if decodeTiming {
+		atomic.AddInt64(&dtQKV, int64(time.Since(dt0)))
 	}
 	// Compute-time LoRA (#7): add the low-rank delta to each projection output,
 	// exactly where merge would have folded it into the weight — before QK-norm/RoPE.
@@ -214,7 +224,14 @@ func causalAttention(
 
 	// 7. Output projection into the caller's buffer (+ bias for GPT-2); the
 	// caller applies the post-attn norm + residual.
+	var dt1 time.Time
+	if decodeTiming {
+		dt1 = time.Now()
+	}
 	matmulInto(scr.ws, be, &lw.OProj, ctx, out, 1)
+	if decodeTiming {
+		atomic.AddInt64(&dtO, int64(time.Since(dt1)))
+	}
 	if lora != nil {
 		applyLoRA(lora.o, ctx, out, scr)
 	}

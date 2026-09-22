@@ -1,0 +1,103 @@
+=== RUN   TestR9_groupedDepthSweep
+R9 GROUPED depth=128 grouped=1
+DECODE TIMING (24 tok, gpu=false): forward 73.8 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 18.52 ms | MLP 46.21 ms | LM head 8.75 ms | residual 0.37 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.42 ms | activation 13.17 ms | down matmul 12.59 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 5.35 ms | rope+KV+scores/softmax/AV core 10.56 ms | o matmul 2.60 ms /token
+R9 GROUPED depth=128 grouped=0
+DECODE TIMING (24 tok, gpu=false): forward 64.3 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 10.30 ms | MLP 44.97 ms | LM head 8.66 ms | residual 0.35 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.19 ms | activation 12.60 ms | down matmul 12.15 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 5.03 ms | rope+KV+scores/softmax/AV core 2.73 ms | o matmul 2.53 ms /token
+R9 GROUPED depth=128 grouped=0
+DECODE TIMING (24 tok, gpu=false): forward 65.1 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 10.62 ms | MLP 45.50 ms | LM head 8.66 ms | residual 0.33 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.38 ms | activation 12.57 ms | down matmul 12.52 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 5.16 ms | rope+KV+scores/softmax/AV core 2.89 ms | o matmul 2.56 ms /token
+R9 GROUPED depth=128 grouped=1
+DECODE TIMING (24 tok, gpu=false): forward 75.5 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 19.71 ms | MLP 46.76 ms | LM head 8.66 ms | residual 0.36 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.58 ms | activation 13.30 ms | down matmul 12.84 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 5.64 ms | rope+KV+scores/softmax/AV core 11.42 ms | o matmul 2.63 ms /token
+R9 GROUPED depth=512 grouped=1
+DECODE TIMING (24 tok, gpu=false): forward 117.8 ms | sample 0.11 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 52.81 ms | MLP 55.87 ms | LM head 8.70 ms | residual 0.46 ms /token
+R9 MLP (24 tok): gate+up matmuls 22.01 ms | activation 18.98 ms | down matmul 14.85 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 7.05 ms | rope+KV+scores/softmax/AV core 42.50 ms | o matmul 3.24 ms /token
+R9 GROUPED depth=512 grouped=0
+DECODE TIMING (24 tok, gpu=false): forward 69.0 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 14.38 ms | MLP 45.52 ms | LM head 8.68 ms | residual 0.38 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.20 ms | activation 12.59 ms | down matmul 12.70 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 5.13 ms | rope+KV+scores/softmax/AV core 6.62 ms | o matmul 2.63 ms /token
+R9 GROUPED depth=512 grouped=0
+DECODE TIMING (24 tok, gpu=false): forward 70.3 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 14.69 ms | MLP 46.53 ms | LM head 8.68 ms | residual 0.36 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.34 ms | activation 13.48 ms | down matmul 12.68 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 5.26 ms | rope+KV+scores/softmax/AV core 6.76 ms | o matmul 2.65 ms /token
+R9 GROUPED depth=512 grouped=1
+DECODE TIMING (24 tok, gpu=false): forward 118.3 ms | sample 0.11 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 53.91 ms | MLP 55.20 ms | LM head 8.72 ms | residual 0.45 ms /token
+R9 MLP (24 tok): gate+up matmuls 21.82 ms | activation 18.68 ms | down matmul 14.67 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 7.00 ms | rope+KV+scores/softmax/AV core 43.68 ms | o matmul 3.21 ms /token
+R9 GROUPED depth=1024 grouped=1
+DECODE TIMING (24 tok, gpu=false): forward 156.2 ms | sample 0.12 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 90.28 ms | MLP 56.68 ms | LM head 8.74 ms | residual 0.50 ms /token
+R9 MLP (24 tok): gate+up matmuls 22.46 ms | activation 19.18 ms | down matmul 15.00 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 7.43 ms | rope+KV+scores/softmax/AV core 79.41 ms | o matmul 3.43 ms /token
+R9 GROUPED depth=1024 grouped=0
+DECODE TIMING (24 tok, gpu=false): forward 75.0 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 19.50 ms | MLP 46.42 ms | LM head 8.70 ms | residual 0.36 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.18 ms | activation 13.52 ms | down matmul 12.69 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 5.43 ms | rope+KV+scores/softmax/AV core 11.32 ms | o matmul 2.74 ms /token
+R9 GROUPED depth=1024 grouped=0
+DECODE TIMING (24 tok, gpu=false): forward 74.2 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 19.27 ms | MLP 45.84 ms | LM head 8.69 ms | residual 0.36 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.10 ms | activation 13.06 ms | down matmul 12.64 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 5.28 ms | rope+KV+scores/softmax/AV core 11.25 ms | o matmul 2.72 ms /token
+R9 GROUPED depth=1024 grouped=1
+DECODE TIMING (24 tok, gpu=false): forward 146.3 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 83.45 ms | MLP 53.67 ms | LM head 8.73 ms | residual 0.42 ms /token
+R9 MLP (24 tok): gate+up matmuls 21.88 ms | activation 17.35 ms | down matmul 14.40 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 6.82 ms | rope+KV+scores/softmax/AV core 73.43 ms | o matmul 3.19 ms /token
+R9 GROUPED depth=2048 grouped=1
+DECODE TIMING (24 tok, gpu=false): forward 219.3 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 153.16 ms | MLP 56.93 ms | LM head 8.73 ms | residual 0.49 ms /token
+R9 MLP (24 tok): gate+up matmuls 22.67 ms | activation 19.20 ms | down matmul 15.03 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 7.47 ms | rope+KV+scores/softmax/AV core 142.30 ms | o matmul 3.37 ms /token
+R9 GROUPED depth=2048 grouped=0
+DECODE TIMING (24 tok, gpu=false): forward 85.4 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 29.09 ms | MLP 47.27 ms | LM head 8.69 ms | residual 0.38 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.38 ms | activation 14.11 ms | down matmul 12.75 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 5.49 ms | rope+KV+scores/softmax/AV core 20.83 ms | o matmul 2.75 ms /token
+R9 GROUPED depth=2048 grouped=0
+DECODE TIMING (24 tok, gpu=false): forward 87.8 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 29.45 ms | MLP 49.26 ms | LM head 8.70 ms | residual 0.40 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.45 ms | activation 15.88 ms | down matmul 12.89 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 5.74 ms | rope+KV+scores/softmax/AV core 20.87 ms | o matmul 2.82 ms /token
+R9 GROUPED depth=2048 grouped=1
+DECODE TIMING (24 tok, gpu=false): forward 220.1 ms | sample 0.14 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 153.42 ms | MLP 57.43 ms | LM head 8.75 ms | residual 0.50 ms /token
+R9 MLP (24 tok): gate+up matmuls 22.54 ms | activation 19.86 ms | down matmul 14.99 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 7.45 ms | rope+KV+scores/softmax/AV core 142.56 ms | o matmul 3.39 ms /token
+R9 GROUPED depth=4096 grouped=1
+DECODE TIMING (24 tok, gpu=false): forward 314.9 ms | sample 0.11 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 249.38 ms | MLP 56.33 ms | LM head 8.73 ms | residual 0.46 ms /token
+R9 MLP (24 tok): gate+up matmuls 22.66 ms | activation 18.98 ms | down matmul 14.65 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 7.32 ms | rope+KV+scores/softmax/AV core 238.70 ms | o matmul 3.35 ms /token
+R9 GROUPED depth=4096 grouped=0
+DECODE TIMING (24 tok, gpu=false): forward 110.4 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 50.90 ms | MLP 50.36 ms | LM head 8.70 ms | residual 0.43 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.97 ms | activation 16.12 ms | down matmul 13.23 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 5.97 ms | rope+KV+scores/softmax/AV core 41.94 ms | o matmul 2.98 ms /token
+R9 GROUPED depth=4096 grouped=0
+DECODE TIMING (24 tok, gpu=false): forward 110.9 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 51.08 ms | MLP 50.73 ms | LM head 8.68 ms | residual 0.43 ms /token
+R9 MLP (24 tok): gate+up matmuls 21.00 ms | activation 16.40 ms | down matmul 13.29 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 6.11 ms | rope+KV+scores/softmax/AV core 41.97 ms | o matmul 2.98 ms /token
+R9 GROUPED depth=4096 grouped=1
+DECODE TIMING (24 tok, gpu=false): forward 316.7 ms | sample 0.13 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 249.35 ms | MLP 58.15 ms | LM head 8.76 ms | residual 0.49 ms /token
+R9 MLP (24 tok): gate+up matmuls 22.67 ms | activation 20.49 ms | down matmul 14.94 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 7.49 ms | rope+KV+scores/softmax/AV core 238.46 ms | o matmul 3.38 ms /token
+--- PASS: TestR9_groupedDepthSweep (431.16s)
+PASS

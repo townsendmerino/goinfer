@@ -28,7 +28,7 @@ prefill and the largest single bucket. `routeExperts` is 1.7% of `moeMLP`; routi
 
 At K=8192 the batched-prefill loop calls `moeMLP` **once per row**
 ([`decoder/forwardn.go:683`](../../decoder/forwardn.go)) and `swiGLUExpert` issues its three
-matmuls at **M=1** ([`decoder/mlp.go:421`](../../decoder/mlp.go)), so an expert's weights are
+matmuls at **M=1** ([`decoder/mlp.go:422`](../../decoder/mlp.go)), so an expert's weights are
 re-read for every token that routes to it.
 
 ## What the parked verdict actually measured

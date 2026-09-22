@@ -1,0 +1,17 @@
+=== RUN   TestR9_mlpMatmulIsolated
+=== RUN   TestR9_mlpMatmulIsolated/0.5B
+    r9_decode_attribution_test.go:265: 0.5B: 24 layers, hidden 896, inter 4864, 314 MMAC / 157 MB per MLP sweep
+    r9_decode_attribution_test.go:290: 0.5B width= 1: HOT gate[4864x896] 0.319 ms/call = 13.6 GMAC/s | COLD full-MLP sweep 22.9 ms = 13.7 GMAC/s, 6.9 GB/s weights
+    r9_decode_attribution_test.go:290: 0.5B width=16: HOT gate[4864x896] 0.106 ms/call = 40.8 GMAC/s | COLD full-MLP sweep 11.4 ms = 27.6 GMAC/s, 13.8 GB/s weights
+    r9_decode_attribution_test.go:290: 0.5B width= 1: HOT gate[4864x896] 0.363 ms/call = 12.0 GMAC/s | COLD full-MLP sweep 25.4 ms = 12.4 GMAC/s, 6.2 GB/s weights
+    r9_decode_attribution_test.go:290: 0.5B width=16: HOT gate[4864x896] 0.139 ms/call = 31.2 GMAC/s | COLD full-MLP sweep 10.6 ms = 29.7 GMAC/s, 14.8 GB/s weights
+=== RUN   TestR9_mlpMatmulIsolated/1.5B
+    r9_decode_attribution_test.go:265: 1.5B: 28 layers, hidden 1536, inter 8960, 1156 MMAC / 578 MB per MLP sweep
+    r9_decode_attribution_test.go:290: 1.5B width= 1: HOT gate[8960x1536] 0.939 ms/call = 14.6 GMAC/s | COLD full-MLP sweep 81.5 ms = 14.2 GMAC/s, 7.1 GB/s weights
+    r9_decode_attribution_test.go:290: 1.5B width=16: HOT gate[8960x1536] 0.293 ms/call = 47.0 GMAC/s | COLD full-MLP sweep 29.6 ms = 39.0 GMAC/s, 19.5 GB/s weights
+    r9_decode_attribution_test.go:290: 1.5B width= 1: HOT gate[8960x1536] 0.909 ms/call = 15.1 GMAC/s | COLD full-MLP sweep 83.9 ms = 13.8 GMAC/s, 6.9 GB/s weights
+    r9_decode_attribution_test.go:290: 1.5B width=16: HOT gate[8960x1536] 0.358 ms/call = 38.4 GMAC/s | COLD full-MLP sweep 29.4 ms = 39.3 GMAC/s, 19.6 GB/s weights
+--- PASS: TestR9_mlpMatmulIsolated (11.43s)
+    --- PASS: TestR9_mlpMatmulIsolated/0.5B (3.65s)
+    --- PASS: TestR9_mlpMatmulIsolated/1.5B (7.78s)
+PASS

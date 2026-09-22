@@ -1252,7 +1252,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	// depend on qhead. cache.treeMask != nil excludes speculative verify (its
 	// per-(row,column) mask attendGroupedHeads does not implement); K != 1
 	// excludes prefill/batched M>1 (not wired yet).
-	attnGroupedOK := useAcc64 && K == 1 && cache.treeMask == nil &&
+	attnGroupedOK := useAcc64 && K == 1 && cache.treeMask == nil && attnGroupedKernels &&
 		group == attnGroupedNEONSize && nKeys >= attnGroupedMinKeys && attnGroupedEnabled()
 	// runHeadRange walks qhead across [h0,h1), taking the grouped path for
 	// any run of attnGroupedNEONSize heads that (a) starts on a kv-group

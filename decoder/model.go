@@ -26,6 +26,18 @@ import (
 // path otherwise.
 var decodeTiming = os.Getenv("GOINFER_DECODE_TIMING") != ""
 
+// decodeSplit* are decodeTiming's fine split of forward — attention (q/k/v matmuls, the
+// rope+KV+scores/softmax/AV core, o-proj), MLP (gate+up matmuls, the activation, down), LM head —
+// accumulated in ns behind the same env gate (one bool check per site when off) and printed with
+// the DECODE TIMING line. R9's attribution (docs/measurements/cpu-decode-attribution-2026-09-22-linux.md)
+// found the shares this names — the activation fan-out and the grouped-attention fallback — from
+// exactly these lines; keeping them means the other box can read its own split without a patch.
+var dtAttn, dtMLP, dtHead, dtGU, dtAct, dtActDown, dtQKV, dtO, dtAttnAll int64
+
+// lastDecodeSplit is the most recent DECODE TIMING split in ms/token, for tests that A/B a
+// component in-process (decodeTiming must be on for it to fill).
+var lastDecodeSplit struct{ fwd, attn, mlp, head, gu, act, down, qkv, core, o float64 }
+
 // Model is a loaded Gemma 3 checkpoint plus the compute backend. Goroutine
 // safety follows encoder.Model: Weights are immutable after Load; per-
 // sequence state (the KV cache) is owned by each Generate call, so distinct
@@ -835,8 +847,15 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 			} else {
 				copy(scr.norm, h)
 			}
+			var dt0 time.Time
+			if decodeTiming {
+				dt0 = time.Now()
+			}
 			if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be, ld); err != nil {
 				return nil, err
+			}
+			if decodeTiming {
+				atomic.AddInt64(&dtAttn, int64(time.Since(dt0)))
 			}
 			if cache.subCapture { // scr.ctx is the pre-o-proj context; scr.sub is not yet overwritten
 				cache.subCtx[l] = append(cache.subCtx[l][:0], scr.ctx...)
@@ -853,8 +872,14 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 			} else {
 				copy(scr.norm, h)
 			}
+			if decodeTiming {
+				dt0 = time.Now()
+			}
 			if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager, ld); err != nil {
 				return nil, err
+			}
+			if decodeTiming {
+				atomic.AddInt64(&dtMLP, int64(time.Since(dt0)))
 			}
 			if cache.subCapture { // scr.sub is the down output BEFORE the post-MLP sandwich norm
 				cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub...)
@@ -974,6 +999,12 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 	h, err := m.runLayers(id, cache)
 	if err != nil {
 		return nil, err
+	}
+	if decodeTiming {
+		t0 := time.Now()
+		lg := m.logitsFromHidden(h, cache)
+		atomic.AddInt64(&dtHead, int64(time.Since(t0)))
+		return lg, nil
 	}
 	return m.logitsFromHidden(h, cache), nil
 }
@@ -1749,6 +1780,17 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(nFwd) }
 		fmt.Printf("DECODE TIMING (%d tok, gpu=%v): forward %.1f ms | sample %.2f ms | logitProc %.2f ms | embed %.2f ms /token\n",
 			nFwd, useGPU, ms(tFwd), ms(tSample), ms(tProc), ms(tEmbed))
+		d := func(p *int64) float64 { return ms(time.Duration(atomic.SwapInt64(p, 0))) }
+		a, ml, hd := d(&dtAttn), d(&dtMLP), d(&dtHead)
+		gu, act, ad := d(&dtGU), d(&dtAct), d(&dtActDown)
+		qkv, o, aa := d(&dtQKV), d(&dtO), d(&dtAttnAll)
+		fmt.Printf("DECODE SPLIT: attention %.2f ms | MLP %.2f ms | LM head %.2f ms | residual %.2f ms /token\n",
+			a, ml, hd, ms(tFwd)-a-ml-hd)
+		fmt.Printf("DECODE SPLIT MLP: gate+up matmuls %.2f ms | activation %.2f ms | down matmul %.2f ms /token\n", gu, act, ad-act)
+		fmt.Printf("DECODE SPLIT ATTN: q/k/v matmuls %.2f ms | rope+KV+scores/softmax/AV core %.2f ms | o matmul %.2f ms /token\n", qkv, aa-qkv-o, o)
+		lastDecodeSplit.fwd, lastDecodeSplit.attn, lastDecodeSplit.mlp, lastDecodeSplit.head = ms(tFwd), a, ml, hd
+		lastDecodeSplit.gu, lastDecodeSplit.act, lastDecodeSplit.down = gu, act, ad-act
+		lastDecodeSplit.qkv, lastDecodeSplit.core, lastDecodeSplit.o = qkv, aa-qkv-o, o
 	}
 }
 

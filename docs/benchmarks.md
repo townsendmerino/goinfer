@@ -1605,6 +1605,13 @@ session. Treat the 1.15× at that cell as indicative.
 Cells are **tok/s**, same decode-only protocol as the table above (this is depth 128 restated by
 backend rather than by model).
 
+> **The goinfer CPU column is STALE in both directions as of 2026-09-22** and awaits a `bench_peer.py`
+> re-anchor: R9's Linux attribution (`measurements/cpu-decode-attribution-2026-09-22-linux.md`, test harness,
+> not this table's protocol, so not entered here) read the 0.5B at ~41 tok/s (this row: 23.5) before any change,
+> the 1.5B at 13.5 (this row: 17.6), and after the two non-arm64 defaults that record ships, the 1.5B at ~18.3
+> and the 7B at ~5.0. The 2026-08-26 fit this column supported ("~13 ms fixed at 22 GB/s", the 0.5B's "~14 ms
+> unexplained") no longer describes the box.
+
 | model | goinfer CPU (tok/s) | Ollama CPU (tok/s) | goinfer CUDA (tok/s) | Ollama CUDA (tok/s) | goinfer WebGPU ⁱ (tok/s) |
 |---|---|---|---|---|---|
 | 0.5B | 23.5 ±0.1 | 57.9 ±0.1 | **332.7** ±4.9 | 268.7 ±0.9 | 127.6 ±1.0 |

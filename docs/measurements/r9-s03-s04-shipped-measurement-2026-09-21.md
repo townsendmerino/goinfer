@@ -24,7 +24,7 @@ per this session's now-standard practice after the R-06 and R1/R2 correction pat
   same-day measurement; noted as still open, not attempted here.
 - **S-03** (NEON `quantizeRowInt8Core`, the activation quantizer every W4A8 GEMV calls before its
   fan-out) **is DONE — bit-identical, gate-checked, 2026-09-03**, per aikit commit `ffacb84`.
-  Confirmed live on goinfer's own hot path by direct code read: `decoder/attention.go:338` calls
+  Confirmed live on goinfer's own hot path by direct code read: `decoder/attention.go:355` calls
   `linalg.QuantizeRowInt8`, which is `return quantizeRowInt8Core(row, q, 1)` verbatim
   (`linalg/quant.go:135`) — the exact function S-03 NEON-dispatches on arm64. The MLP
   path's own quantization happens *inside* aikit's `MatmulBTW4A8Into`/`MatmulBTW4A8Row4Into`

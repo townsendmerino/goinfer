@@ -1,0 +1,27 @@
+=== RUN   TestR9_decodeAttribution
+=== RUN   TestR9_decodeAttribution/0.5B
+    r9_decode_attribution_test.go:133: 0.5B: prompt 128 tokens, decoding 24 greedy
+DECODE TIMING (24 tok, gpu=false): forward 24.8 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 6.73 ms | MLP 12.72 ms | LM head 5.09 ms | residual 0.23 ms /token
+R9 MLP (24 tok): gate+up matmuls 6.44 ms | activation 2.07 ms | down matmul 4.20 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 2.87 ms | rope+KV+scores/softmax/AV core 1.63 ms | o matmul 2.22 ms /token
+    r9_decode_attribution_test.go:142: 0.5B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)
+=== RUN   TestR9_decodeAttribution/1.5B
+    r9_decode_attribution_test.go:133: 1.5B: prompt 128 tokens, decoding 24 greedy
+DECODE TIMING (24 tok, gpu=false): forward 74.5 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 19.09 ms | MLP 46.38 ms | LM head 8.68 ms | residual 0.38 ms /token
+R9 MLP (24 tok): gate+up matmuls 20.14 ms | activation 13.54 ms | down matmul 12.67 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 5.53 ms | rope+KV+scores/softmax/AV core 10.97 ms | o matmul 2.58 ms /token
+    r9_decode_attribution_test.go:142: 1.5B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)
+=== RUN   TestR9_decodeAttribution/7B
+    r9_decode_attribution_test.go:133: 7B: prompt 128 tokens, decoding 24 greedy
+DECODE TIMING (24 tok, gpu=false): forward 222.2 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 30.10 ms | MLP 171.46 ms | LM head 20.02 ms | residual 0.60 ms /token
+R9 MLP (24 tok): gate+up matmuls 92.93 ms | activation 27.89 ms | down matmul 50.59 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 15.93 ms | rope+KV+scores/softmax/AV core 4.54 ms | o matmul 9.61 ms /token
+    r9_decode_attribution_test.go:142: 7B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)
+--- PASS: TestR9_decodeAttribution (38.61s)
+    --- PASS: TestR9_decodeAttribution/0.5B (3.98s)
+    --- PASS: TestR9_decodeAttribution/1.5B (8.40s)
+    --- PASS: TestR9_decodeAttribution/7B (26.23s)
+PASS

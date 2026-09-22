@@ -15,6 +15,14 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **CPU decode on non-arm64: two bit-identical defaults from the Linux attribution (R9).** (1) The SwiGLU/GeGLU
+  activation no longer fans out to 6 goroutines per layer on non-arm64 — the wake stagger cost 3× what the
+  9–19k scalar `silu` calls save (1.5B 13.5 → 3.9 ms/token, 7B 27.9 → 8.0). (2) R13's grouped attention path is
+  gated on the platform actually having aikit's grouped kernels (NEON only); on amd64 it was running the pure-Go
+  fallback, 1.18× (depth 128) to **2.86× (depth 4096)** slower than the per-head path on 6-heads-per-KV geometries
+  (Qwen2.5-1.5B). Paired ABBA on the Ryzen 7 3700X: **1.189× and 1.118×; 1.5B 74.5 → 54.5 ms/token (1.37×), 7B
+  1.10×.** arm64 defaults unchanged. `GOINFER_DECODE_TIMING` now also prints a DECODE SPLIT of attention (q/k/v,
+  core, o), MLP (gate+up, activation, down) and LM head. `docs/measurements/cpu-decode-attribution-2026-09-22-linux.md`.
 - **WebGPU batched prefill: register-blocked W8A8 GEMM, DEFAULT (`GOINFER_WEBGPU_GEMM=tiled16` opts out)** (R10).
   The 16×16 tiled kernel was 81–94% of batched prefill at ~1 TFLOPS (~11% of f32 peak). The new 64×64 kernel gives
   each thread a 4×4 block of outputs (8 shared loads per 16 dot4s instead of 2 per 1). Bit-identical by construction

@@ -28,7 +28,7 @@ next, and so on, until you decide to stop. Everything below is detail about (a)
 how that one prediction works and (b) the engineering tricks that make running it
 thousands of times not unbearably slow.
 
-That outer loop lives in [`decoder/model.go:1343-1474`](../decoder/model.go#L1185-L1532), a
+That outer loop lives in [`decoder/model.go:1374-1474`](../decoder/model.go#L1185-L1532), a
 function called `generateInto`.
 
 ---
@@ -124,11 +124,11 @@ Two refinements you'll see in the code, worth knowing because they're everywhere
 in modern models:
 - **Multiple "heads"** — instead of one Query/Key/Value comparison, there are
   many running in parallel (one head might track grammar, another long-range
-  topic). [decoder/attention.go:77](../decoder/attention.go#L59).
+  topic). [decoder/attention.go:79](../decoder/attention.go#L59).
 - **Position information (RoPE)** — raw attention has no sense of word *order*
   ("dog bites man" = "man bites dog"). So the model rotates the Query/Key vectors
   by an amount that depends on each token's position, encoding *where* each word
-  is. [decoder/attention.go:142-139](../decoder/attention.go#L124-L129).
+  is. [decoder/attention.go:152-139](../decoder/attention.go#L124-L129).
 
 ### 2d. The MLP — the "thinking" step
 
@@ -191,7 +191,7 @@ Now zoom back out to [`generateInto`](../decoder/model.go#L931-L1178). We:
 4. Run the forward pass again — now with that new token as input,
 5. Sample the next one,
 6. Repeat until we hit a stop token or a length limit
-   ([decoder/model.go:1571](../decoder/model.go#L1051-L1177)).
+   ([decoder/model.go:1602](../decoder/model.go#L1051-L1177)).
 
 This is called **autoregression** — the model's own outputs become its next
 inputs. The text you see "streaming" out of a chatbot is exactly this loop, one
@@ -218,7 +218,7 @@ So we don't. We compute each token's Key and Value once and **stash them in a
 cache**, then reuse them forever. That's the
 [KVCache](../decoder/kvcache.go#L50-L105), and it's why generation stays roughly
 linear instead of exploding. The cache is appended to on every step
-([decoder/attention.go:193](../decoder/attention.go#L164)).
+([decoder/attention.go:203](../decoder/attention.go#L164)).
 
 The catch: this cache *grows with context length* and becomes the dominant memory
 consumer for long conversations. So a big chunk of this repo is clever ways to

@@ -1,0 +1,22 @@
+=== RUN   TestR9_decodeAttribution
+=== RUN   TestR9_decodeAttribution/0.5B
+    r9_decode_attribution_test.go:111: no fixture at /nonexistent (set GOINFER_CPU_MODEL_05B)
+=== RUN   TestR9_decodeAttribution/1.5B
+    r9_decode_attribution_test.go:133: 1.5B: prompt 128 tokens, decoding 24 greedy
+DECODE TIMING (24 tok, gpu=false): forward 61.2 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 16.54 ms | MLP 35.71 ms | LM head 8.67 ms | residual 0.33 ms /token
+R9 MLP (24 tok): gate+up matmuls 19.77 ms | activation 3.87 ms | down matmul 12.04 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 4.86 ms | rope+KV+scores/softmax/AV core 9.24 ms | o matmul 2.43 ms /token
+    r9_decode_attribution_test.go:142: 1.5B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)
+=== RUN   TestR9_decodeAttribution/7B
+    r9_decode_attribution_test.go:133: 7B: prompt 128 tokens, decoding 24 greedy
+DECODE TIMING (24 tok, gpu=false): forward 203.1 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+R9 SPLIT (24 tok): attention 30.34 ms | MLP 152.11 ms | LM head 20.01 ms | residual 0.61 ms /token
+R9 MLP (24 tok): gate+up matmuls 93.21 ms | activation 7.97 ms | down matmul 50.88 ms /token
+R9 ATTN (24 tok): q/k/v matmuls 15.96 ms | rope+KV+scores/softmax/AV core 4.61 ms | o matmul 9.76 ms /token
+    r9_decode_attribution_test.go:142: 7B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)
+--- PASS: TestR9_decodeAttribution (34.82s)
+    --- SKIP: TestR9_decodeAttribution/0.5B (0.00s)
+    --- PASS: TestR9_decodeAttribution/1.5B (8.44s)
+    --- PASS: TestR9_decodeAttribution/7B (26.37s)
+PASS
