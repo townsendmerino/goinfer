@@ -1,7 +1,12 @@
 # Task: make `ci.yml` faster — critical path, gating, duplicated work (C0–C6) — 2026-09
 
-> **Status: C0/C1/C2/C4 SHIPPED, C5 partial, C1′/C6 killed by C0's own data, C3 explicitly OUT OF
-> SCOPE for this pass (deliberately deferred — see below) — 2026-09-22.** Filed after reading
+> **Status: CLOSED 2026-09-22. C0/C1/C2/C3/C5(staticcheck) SHIPPED; C4 shipped as `-short`,
+> measured as a null, and replaced the same day by "no `-race` per push + `race-weekly.yml`"
+> (owner decision); C1′ killed as a null by post-C1 per-package data; C6 killed by C0's data.**
+> C3 landed in a second pass the same day, after its own kill-line was measured (37% of recent
+> pushes are docs-only) and the branch-protection trap was checked directly (`gh api`: none
+> configured) — and then grew a second gate condition when C2 and C3 together were found to open
+> a coverage hole on a busy branch (its point 6). See its section. Filed after reading
 > Linear's "AI coding has made CI a bottleneck" (linear.app/now/ci-bottleneck-reworked, 2026-09-21)
 > and asking which of its steps apply here. Most do not: third-party runners, `tsgo`, type-free
 > lint, vitest `isolate: false`, filtered `pnpm` installs and the Postgres schema snapshot are
@@ -12,10 +17,11 @@
 > **The decision this doc made and kept:** nothing changed in `ci.yml` until C0 produced per-job
 > and per-step durations from real runs (`docs/measurements/ci-timing-2026-09.md`, 28 completed
 > runs, 2026-09-22). Every item below was built or killed against that data, not against the
-> projection this doc opened with. **C3 (the docs-only fast path) was explicitly excluded from
-> this pass by the person who commissioned it** — everything else ("all but the large one") was
-> in scope. C3 remains unbuilt and unmeasured; its own band/kill-line stand as originally
-> registered, for whoever picks it up next.
+> projection this doc opened with. C3 was excluded from the first pass ("all but the large one")
+> and then commissioned separately the same day, with the explicit instruction to be careful —
+> its section below records what "careful" turned out to require: a kill-line measurement, a
+> direct check of the branch-protection trap, and a real correctness hazard the original scope
+> had not seen (tests that read files under docs/).
 
 ## C0's real numbers, in brief (full record: `docs/measurements/ci-timing-2026-09.md`)
 
@@ -147,6 +153,15 @@ measurement, and a local (non-CI, non-`-race`) timing attempt at `./decoder` alo
 complete in a reasonable window this session and was abandoned rather than trusted as a CI-timing
 proxy. Pick this up once C1's own 10-run re-measurement is in.
 
+**KILLED 2026-09-22 — a null, by the per-package data C0 lacked.** Read off real CI logs of the
+post-C1 `test` job: under `-race`, `decoder` is **1064s of a 1399s per-package sum (76%)**; the
+next largest package, `internal/serveapp`, is 131s, and everything else is under 90s. `go test
+./...` already runs packages in parallel, so the whole non-`decoder` remainder finishes underneath
+`decoder` — the `test` job's wall time *is* `decoder`'s. A two-shard split (`decoder` / the rest)
+therefore moves the wall time by ~0%, straight through the 20% kill-line, while paying a second
+setup. The only real lever left is splitting `decoder` *itself* by test pattern across jobs — a
+new scope with no per-test timing data yet, not this item.
+
 ### C2 — `concurrency` with `cancel-in-progress` on `ci.yml`
 
 ```yaml
@@ -190,16 +205,88 @@ exists because a README install line once shipped broken, so a README-only push 
 that job. The simplest rule is "docs-only means `docs/**` only"; the root `*.md` files stay on
 the full matrix.
 
-**EXPLICITLY OUT OF SCOPE for the 2026-09-22 pass — excluded by the person who commissioned the
-rest of this doc's items ("do all but the large one"), not killed by C0's data.** C0 did measure
-its own selector question (macOS queue wait is trivially small, so runner-scarcity isn't the
-concern C3 would address) but did NOT measure the docs-only-push fraction C3's own kill-line
-needs ("fewer than 1 in 4 pushes over the last 30 are docs-only"). This remains the single
-largest, highest-complexity item in the doc — the real trap it doesn't name explicitly: GitHub
-branch-protection "required status checks" semantics around a job skipped via `if:` need
-verifying against this repo's actual protection rules, not just the workflow file, before
-trusting that a skipped `test`/`gpu`/`cuda`/etc. reads as passing rather than leaving a PR stuck.
-Whoever picks this up next should start from that trap, not from the YAML alone.
+**SHIPPED 2026-09-22 (second pass, same day) — `changes` job + `scripts/ci_docs_only.sh`.** What
+"be careful" required, in the order it was checked:
+
+1. **The kill-line, measured.** Of the last 30 commits on `main`, 11 changed only files under
+   `docs/` — 37%, above the 1-in-4 floor. C3 proceeds on its own registered rule.
+2. **The branch-protection trap, checked directly.** `gh api repos/…/branches/main/protection`
+   → 404 "Branch not protected"; `…/rulesets` → `[]`. There are no required status checks, so a
+   job skipped via `if:` cannot leave anything stuck today. The job-level shape is kept anyway —
+   it is the one that stays correct if protection is ever added; workflow-level `paths-ignore`
+   would not be, and would skip `lint` besides.
+3. **A correctness hazard the original scope had not seen: tests READ files under `docs/`.**
+   `TestEnvVars_docAndCodeAgree` reads `env-vars.md`; `pull/registry_test.go` reads
+   `capability-matrix.json`; `decoder/hardware_matrix_test.go` and `api_tiers_test.go` read
+   `hardware-matrix.md` / `api-tiers.md`; a cuda test reads `benchmarks.md`; a metal test reads
+   `audit-metal-2026-09-12.md`. "Docs-only ⇒ skip `test`" would let a change to any of those go
+   unchecked — and this is not hypothetical: `477da08a`, a docs-only fix to `env-vars.md` earlier
+   the same day, is exactly what flipped `TestEnvVars_docAndCodeAgree` from red to green. So the
+   rule became: every changed file under `docs/` AND none of them read by Go.
+
+   Detection is dynamic, not a curated list (a list drifts as tests are added): a changed file's
+   basename appearing on a Go line shaped like a file read (`ReadFile`/`Open(`/`ReadDir`/
+   `filepath.Join`/`Path`/…). Two candidate rules were measured against the 11 real docs-only
+   commits before choosing: counting ANY mention in Go (comments included — this repo's code cites
+   task docs constantly) left only **2 of 11** eligible, which would have killed the item's value;
+   the read-shaped rule keeps **7 of 11** and blocks exactly the 4 that touched a test-read file.
+   `--selfcheck` (a `lint` step, every push) pins that the detection still catches the six known
+   reads — the same zero-match-guard shape as the sampler gates — so a regex regression goes red
+   instead of silently widening what gets skipped.
+4. **Fail-open, twice.** The script always exits 0 and prints `false` on any doubt (zero/unknown
+   SHAs, a diff that errors, an empty diff, a failed self-check); the seven gated jobs' `if:` is
+   `!cancelled() && needs.changes.outputs.docs_only != 'true'`, so a failed or missing gate runs
+   the full matrix — a plain `needs:` would have SKIPPED dependents on a gate failure, the one
+   outcome the gate must never produce. Tested locally against real history before pushing: 11
+   cases, 3 `true` (pure-docs commits) / 8 `false` (the four test-read commits, a code commit,
+   all-zeros `before`, garbage SHA, unknown SHA, empty diff), every one exit 0. `actionlint` clean.
+5. **The gate's own cost: ~10s in front of everything** (`changes` measured 15:11:09→15:11:19 on
+   its first run). Every push now waits that long before any other job starts. Against C1's ~70s
+   critical-path saving that is a net win on code pushes, and it is what buys the docs-only
+   pushes their whole skipped matrix.
+6. **A hole that C2 and C3 open *together*, closed before the first docs-only probe.** On a busy
+   branch: a code push lands and its run is in flight; a docs-only push lands on top. C2 cancels
+   the code push's run (superseded), C3 skips the tests on the docs push, and the tip of `main`
+   reads green with the code underneath never verified by the jobs that were cancelled. Not
+   hypothetical either — it was live at the moment of writing (two sessions pushing to `main`
+   15 minutes apart; `43ef110d`'s own `root-darwin` was cancelled by `89ddc2d2`), and the probe
+   below was about to be exactly that docs-only push. So the gate has a **second condition**:
+   the commit the push builds on (`github.event.before`) must already have a *completed,
+   successful* `ci` run — `gh run list --workflow ci.yml --commit "$BASE"` in the `changes` job
+   (`actions: read`, ~1s). *Skip the matrix only if what you build on already passed it.* Any
+   answer other than the literal `success` — `in_progress`, `cancelled`, `failure`, no run, API
+   error — runs everything: fail-open in the same direction as the rest. Simulated locally
+   against real runs before pushing: `dc8bdc73` → `success` (skip allowed); `43ef110d` →
+   `cancelled` (no); `89ddc2d2` while in flight → empty (no); all-zeros / garbage SHA → empty
+   (no). `--commit` wants the full 40-char SHA — a short one returns nothing, which is the safe
+   answer, and `github.event.before` is always full.
+
+**A known over-match, found by pre-checking the probe.** The read-detection matches on
+*basename*, and `pull/integrations_doc_test.go` reads the root `README.md` — so a change to
+`docs/README.md` (same basename) is treated as test-read and runs the full matrix. Safe
+direction (a wasted matrix, never a skipped one); cost: `docs/README.md`-only pushes don't get
+the fast path. Recorded rather than fixed — a path-aware rule is a later refinement, and the
+basename rule is what makes `filepath.Join(root, "docs", "env-vars.md")`-style reads catchable.
+
+**Verification.** Shape 1, a code push (the commit carrying the gate, `43ef110d`): the gate
+completed in 10s and released all seven gated jobs — full matrix ran (`test` green in 701s;
+`root-darwin` was then cancelled by C2 when `89ddc2d2` landed on top — the very shape point 6
+describes). Shape 2′, the control, goes **first**: the push carrying condition (2) itself
+(`ci.yml`), `race-weekly.yml`, the no-`-race` `root-darwin`, `docs/README.md` and the root
+`README.md` — expected to run the full matrix (code changed; and even alone, root `README.md` is
+outside `docs/` and `docs/README.md` trips the over-match above). It is also the first
+measurement of `root-darwin` without `-race` (C4). Shape 2, the probe, goes **second**, on the
+new gate: **the push that moves this doc to `completed/`** — one file, under `docs/`, not
+test-read, pre-checked with the script's own rule, pushed only after the control's run had
+completed green so condition (2) holds — expected: `changes` + `lint` run, the other seven show
+`skipped`, no macOS runner starts, and the gate's log line names the base's run as `success`.
+**Shape 2′ landed (`bf9759ab`, run 35750072181, 2026-09-22 15:51 UTC): green across all nine
+jobs; gate line `docs_only=false (base=89ddc2d2 …; base's last ci run: '(not checked)')` —
+condition (2) is correctly never evaluated once (1) is already false; `root-darwin` 242s as a
+job / 195s test step, against 1324s / ~20 min on the run immediately before it (`89ddc2d2`,
+still `-race -short`); linux `test` 1197s, on C0's 1170s median.** Shape 2's result is recorded
+by the push after it. Shape 3, a docs push that touches a test-read file, is covered by the
+local battery (`477da08a` → `false`) rather than a live push.
 
 ### C4 — Stop running platform-independent work twice on darwin
 
@@ -232,6 +319,31 @@ sites beyond the already-self-skipping (no checkpoint in CI either way) parity t
 running on both platforms for no platform-specific reason. `-short` is also not new to this
 `ci.yml` — `gpu`/`cuda` already use it; this applies the same already-proven pattern to
 `root-darwin`. **Not yet re-measured post-change** (needs real runs on `main`, same caveat as C1).
+
+**`-short`: NULL, reverted. `-race` moved to a weekly workflow — 2026-09-22, owner decision.**
+The re-measurement came in and `-short` did nothing: darwin `decoder` **1295s after vs 1086s
+before** (n=1 each, runner noise ~19% in C0's own spread — "unchanged", not "slower"). The
+`testing.Short()` sites grepped above are real but cheap; the time is in the exhaustive family
+goldens, kernel parity and sampler sweeps, none of which check `Short()` (same finding as C1′:
+it is one package, and `-short` does not reach the part of it that costs). The section's second
+option was the live one all along: `-race` is a ~3–3.5× multiplier on the same suite, and the
+linux `test` job runs the *identical* suite under `-race` on every push. What darwin `-race`
+adds beyond that is races in the darwin/arm64-only Go files (`decoder/madvise_darwin.go`,
+`hostram_darwin.go`, the `_arm64` paths) — real, small, slow-changing: weekly-sized, the same
+reasoning `fuzz-weekly` rests on. So, per the owner: `root-darwin` now runs `go test ./...`
+*without* `-race` on every push (it still compiles every test file on arm64 — the darwin build
+breaks the job exists for — and still executes the NEON/DotProd kernels the linux runner never
+runs), and **`.github/workflows/race-weekly.yml`** runs the exact pre-2026-09-22 `-race`
+invocation every Monday 08:00 UTC (an hour after `fuzz-weekly`) and on `workflow_dispatch`.
+Same reporting shape as `fuzz-weekly`: the run goes red, nothing files an issue —
+`gh run list --workflow race-weekly.yml`. Against the band (≥ 50% on `root-darwin`): measured
+from the control push in C3's verification and recorded there.
+
+**Measured (`bf9759ab`, run 35750072181): `root-darwin` 1324s → 242s as a job (−82%), test
+step 195s — the band was ≥ 50%.** As near to same-session interleaved as CI allows: the
+`-race -short` figure is the run immediately before it on the same day (`89ddc2d2`, 15:28→15:50
+UTC), n=1 each. The workflow's critical path is now the linux `test` job (1197s on this run) —
+C1′'s scope, not this item's.
 
 ### C5 — Setup that is paid per job: staticcheck, apt, the setup-go cache
 
