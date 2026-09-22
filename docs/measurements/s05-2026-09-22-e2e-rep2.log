@@ -1,0 +1,63 @@
+=== RUN   TestR9_s05FoldAB
+DECODE TIMING (24 tok, gpu=false): forward 19.5 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.08 ms | MLP 11.90 ms | LM head 2.24 ms | residual 0.31 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.93 ms | activation 1.38 ms | down matmul 3.56 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.77 ms | rope+KV+scores/softmax/AV core 2.18 ms | o matmul 1.11 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 19.5 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.13 ms | MLP 11.91 ms | LM head 2.21 ms | residual 0.27 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.94 ms | activation 1.34 ms | down matmul 3.59 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.77 ms | rope+KV+scores/softmax/AV core 2.20 ms | o matmul 1.15 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 19.9 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.28 ms | MLP 12.22 ms | LM head 2.12 ms | residual 0.27 ms /token
+DECODE SPLIT MLP: gate+up matmuls 7.21 ms | activation 1.29 ms | down matmul 3.69 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.94 ms | rope+KV+scores/softmax/AV core 2.13 ms | o matmul 1.20 ms /token
+    r9_s05_fold_ab_test.go:100: pair 0: fold ON 19.52 ms/tok (matmul terms 15.66) | OFF 19.88 ms/tok (matmul terms 16.16) | ON is 1.018x faster on the token, 1.032x on the matmul terms
+DECODE TIMING (24 tok, gpu=false): forward 19.9 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.26 ms | MLP 12.23 ms | LM head 2.11 ms | residual 0.26 ms /token
+DECODE SPLIT MLP: gate+up matmuls 7.18 ms | activation 1.36 ms | down matmul 3.67 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.94 ms | rope+KV+scores/softmax/AV core 2.14 ms | o matmul 1.17 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 19.5 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.16 ms | MLP 11.81 ms | LM head 2.22 ms | residual 0.27 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.95 ms | activation 1.31 ms | down matmul 3.51 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.76 ms | rope+KV+scores/softmax/AV core 2.24 ms | o matmul 1.15 ms /token
+    r9_s05_fold_ab_test.go:100: pair 1: fold ON 19.46 ms/tok (matmul terms 15.60) | OFF 19.87 ms/tok (matmul terms 16.07) | ON is 1.021x faster on the token, 1.030x on the matmul terms
+DECODE TIMING (24 tok, gpu=false): forward 19.6 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.10 ms | MLP 12.04 ms | LM head 2.18 ms | residual 0.27 ms /token
+DECODE SPLIT MLP: gate+up matmuls 7.07 ms | activation 1.29 ms | down matmul 3.65 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.78 ms | rope+KV+scores/softmax/AV core 2.17 ms | o matmul 1.14 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 20.7 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.40 ms | MLP 12.86 ms | LM head 2.17 ms | residual 0.28 ms /token
+DECODE SPLIT MLP: gate+up matmuls 7.66 ms | activation 1.40 ms | down matmul 3.77 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.98 ms | rope+KV+scores/softmax/AV core 2.21 ms | o matmul 1.20 ms /token
+    r9_s05_fold_ab_test.go:100: pair 2: fold ON 19.60 ms/tok (matmul terms 15.82) | OFF 20.70 ms/tok (matmul terms 16.78) | ON is 1.056x faster on the token, 1.060x on the matmul terms
+DECODE TIMING (24 tok, gpu=false): forward 20.0 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.31 ms | MLP 12.29 ms | LM head 2.17 ms | residual 0.27 ms /token
+DECODE SPLIT MLP: gate+up matmuls 7.23 ms | activation 1.29 ms | down matmul 3.75 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.95 ms | rope+KV+scores/softmax/AV core 2.16 ms | o matmul 1.19 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 19.1 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.01 ms | MLP 11.69 ms | LM head 2.16 ms | residual 0.27 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.85 ms | activation 1.27 ms | down matmul 3.54 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.74 ms | rope+KV+scores/softmax/AV core 2.16 ms | o matmul 1.11 ms /token
+    r9_s05_fold_ab_test.go:100: pair 3: fold ON 19.14 ms/tok (matmul terms 15.40) | OFF 20.04 ms/tok (matmul terms 16.29) | ON is 1.047x faster on the token, 1.058x on the matmul terms
+DECODE TIMING (24 tok, gpu=false): forward 19.1 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 4.98 ms | MLP 11.57 ms | LM head 2.21 ms | residual 0.30 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.77 ms | activation 1.29 ms | down matmul 3.48 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.75 ms | rope+KV+scores/softmax/AV core 2.10 ms | o matmul 1.12 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 20.2 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.32 ms | MLP 12.37 ms | LM head 2.27 ms | residual 0.27 ms /token
+DECODE SPLIT MLP: gate+up matmuls 7.29 ms | activation 1.34 ms | down matmul 3.71 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.93 ms | rope+KV+scores/softmax/AV core 2.16 ms | o matmul 1.21 ms /token
+    r9_s05_fold_ab_test.go:100: pair 4: fold ON 19.06 ms/tok (matmul terms 15.33) | OFF 20.23 ms/tok (matmul terms 16.41) | ON is 1.061x faster on the token, 1.071x on the matmul terms
+DECODE TIMING (24 tok, gpu=false): forward 20.8 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.45 ms | MLP 12.96 ms | LM head 2.15 ms | residual 0.28 ms /token
+DECODE SPLIT MLP: gate+up matmuls 7.67 ms | activation 1.33 ms | down matmul 3.93 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.99 ms | rope+KV+scores/softmax/AV core 2.19 ms | o matmul 1.26 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 19.2 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.02 ms | MLP 11.63 ms | LM head 2.22 ms | residual 0.31 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.80 ms | activation 1.28 ms | down matmul 3.52 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.77 ms | rope+KV+scores/softmax/AV core 2.13 ms | o matmul 1.11 ms /token
+    r9_s05_fold_ab_test.go:100: pair 5: fold ON 19.18 ms/tok (matmul terms 15.43) | OFF 20.84 ms/tok (matmul terms 16.99) | ON is 1.086x faster on the token, 1.101x on the matmul terms
+    r9_s05_fold_ab_test.go:104: S-05 fold end-to-end, 1.5B depth 128: paired ON 19.33 -> OFF 20.26 ms/tok = OFF/ON 1.048x (fold wins 6/6); matmul terms 15.54 -> 16.45 = 1.059x
+--- PASS: TestR9_s05FoldAB (15.93s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	16.227s

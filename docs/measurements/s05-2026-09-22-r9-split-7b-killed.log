@@ -1,0 +1,5 @@
+=== RUN   TestR9_decodeAttribution
+=== RUN   TestR9_decodeAttribution/7B
+signal: terminated
+FAIL	github.com/townsendmerino/goinfer/decoder	10.005s
+FAIL

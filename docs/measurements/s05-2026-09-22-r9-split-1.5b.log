@@ -1,0 +1,12 @@
+=== RUN   TestR9_decodeAttribution
+=== RUN   TestR9_decodeAttribution/1.5B
+    r9_decode_attribution_test.go:133: 1.5B: prompt 128 tokens, decoding 24 greedy
+DECODE TIMING (24 tok, gpu=false): forward 20.3 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 5.41 ms | MLP 12.41 ms | LM head 2.19 ms | residual 0.26 ms /token
+DECODE SPLIT MLP: gate+up matmuls 7.31 ms | activation 1.32 ms | down matmul 3.75 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 1.92 ms | rope+KV+scores/softmax/AV core 2.25 ms | o matmul 1.24 ms /token
+    r9_decode_attribution_test.go:142: 1.5B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)
+--- PASS: TestR9_decodeAttribution (6.28s)
+    --- PASS: TestR9_decodeAttribution/1.5B (6.28s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	6.791s

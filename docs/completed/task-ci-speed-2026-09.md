@@ -457,6 +457,31 @@ and one `t.Parallel()`, so most of its ~18 min is one core of the runner's four)
   `./decoder`'s inputs: the probe — expect `decoder (cached)` and the band. (3) A push that does:
   the control — expect a full run. Results recorded here when they land.
 
+**Shape 1 landed — twice, because C2 cancelled the first.** `74c8a525` (this change) started cold:
+both cache steps completed in under a second with nothing to restore; then a docs-only push from
+the other session (`aecfc9be`) cancelled it at 16:52 — and, since `74c8a525` therefore had no
+completed run, that docs-only push's gate read `base's last ci run: 'cancelled'` and ran the full
+matrix itself: C3 point 6's first live trigger, doing exactly what it was added for. That run
+(35756865344) is the cold start that counts: `test` 875s (16:53:05→17:07:40), post-step save 3s,
+`go-test-Linux-…-aecfc9be` 123 MB. `root-darwin` restored the macOS cache `74c8a525`'s completed
+job had saved and reported **4 of 16 packages `(cached)`** — the mechanism works in CI — but
+`decoder` re-ran (224s) after a push that changed only files under `docs/`, so something
+`decoder`'s tests read is docs-shaped or per-run (Go hashes the listing of any directory a test
+reads, and the push added files under `docs/measurements/`). The probe — the next code push not
+touching `decoder`'s inputs — decides whether that is the common case or a docs-only artefact.
+
+**The instrument's first reading, and a C8 sitting in it.** Of `decoder`'s 834s under `-race`,
+`TestSampleFromTopK_matchesFullPath` is **369s** and `TestTopFilterLogits_MatchesReference`
+**217s** — 586s, 70% of the package and of the whole job's wall — and the second of those ALREADY
+re-runs without `-race` in the sampler-gates step (49s for all four gates). Next:
+`internal/serveapp`'s `TestWebUI_appGateInBrowser` 106s, `multimodal`'s
+`TestQwenPreprocess_inputPixelLimit_M15` 65s, then the Gumbel trio 55/38/31s. Locally without
+`-race` the top test is 44s, so the detector multiplies these sweeps ~8×, not the ~3× the C0 notes
+assumed for the suite as a whole. Striding the two sweeps under `-race` the way the exactness
+sweep already is (the `-race` build keeps the shape, the no-race gate step keeps the exhaustive
+form) is a ~10-minute lever on the critical path with no coverage change. Filed as **C8**, not
+built here.
+
 ## 3. Order, and what the article would call the compounding
 
 C0 → C2 (free) → C1 → C3 → then C1′/C4/C5 as C0 selects them → C6 if the tail exists.

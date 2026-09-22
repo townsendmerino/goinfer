@@ -1,0 +1,20 @@
+=== RUN   TestR9_decodeAttribution
+=== RUN   TestR9_decodeAttribution/0.5B
+    r9_decode_attribution_test.go:133: 0.5B: prompt 128 tokens, decoding 24 greedy
+DECODE TIMING (24 tok, gpu=false): forward 10.3 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 2.85 ms | MLP 5.97 ms | LM head 1.26 ms | residual 0.18 ms /token
+DECODE SPLIT MLP: gate+up matmuls 3.29 ms | activation 0.81 ms | down matmul 1.85 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 0.69 ms | rope+KV+scores/softmax/AV core 1.64 ms | o matmul 0.52 ms /token
+    r9_decode_attribution_test.go:142: 0.5B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)
+=== RUN   TestR9_decodeAttribution/1.5B
+    r9_decode_attribution_test.go:115: load: decoder: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.9 GB; this machine currently has 4.4 GB of memory available (budget 3.1 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestR9_decodeAttribution (1.87s)
+    --- PASS: TestR9_decodeAttribution/0.5B (1.78s)
+    --- FAIL: TestR9_decodeAttribution/1.5B (0.09s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	2.374s
+FAIL

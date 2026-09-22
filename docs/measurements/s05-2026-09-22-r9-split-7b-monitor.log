@@ -1,0 +1,13 @@
+START 10:01:29 PDT; 7B, swap used baseline 2578.62 MB; kill if > +300 MB; expect load ~1-2 min, done ~10:04 PDT
+10:01:29 swap=2578.62MB free=56MB
+10:01:30 swap=2578.62MB free=61MB
+10:01:31 swap=2578.62MB free=57MB
+10:01:32 swap=2578.62MB free=56MB
+10:01:33 swap=2578.62MB free=54MB
+10:01:34 swap=2578.62MB free=59MB
+10:01:35 swap=2578.62MB free=72MB
+10:01:36 swap=2578.62MB free=52MB
+10:01:37 swap=2616.88MB free=54MB
+10:01:38 swap=2851.12MB free=60MB
+10:01:39 swap=3030.50MB free=56MB
+10:01:39 KILL: swap grew 451.88 MB

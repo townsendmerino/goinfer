@@ -1,0 +1,26 @@
+=== RUN   TestW4A8RowFold_hotAB
+    w4a8_fold_arm64_test.go:222: K=1536 (nGroups=48), hot single quad: baseline 138.0 ns (44.5 GMAC/s) | fold 107.0 ns (57.4 GMAC/s) | fold/baseline 1.290x
+    w4a8_fold_arm64_test.go:224: K=1536: corr pre-pass 19.0 ns per activation row = 0.008% of one N=8960 projection's 2240 quad calls at the fold rate
+    w4a8_fold_arm64_test.go:222: K=8960 (nGroups=280), hot single quad: baseline 804.0 ns (44.6 GMAC/s) | fold 626.0 ns (57.3 GMAC/s) | fold/baseline 1.284x
+    w4a8_fold_arm64_test.go:224: K=8960: corr pre-pass 100.0 ns per activation row = 0.042% of one N=1536 projection's 384 quad calls at the fold rate
+--- PASS: TestW4A8RowFold_hotAB (21.68s)
+=== RUN   TestW4A8RowFold_streamedAB
+    w4a8_fold_arm64_test.go:297: K=1536 N=8960 parallel=false pair 0: fold 3.16 ms/pass | unfolded 3.79 ms/pass | fold is 1.196x
+    w4a8_fold_arm64_test.go:297: K=1536 N=8960 parallel=false pair 1: fold 3.04 ms/pass | unfolded 4.03 ms/pass | fold is 1.326x
+    w4a8_fold_arm64_test.go:297: K=1536 N=8960 parallel=false pair 2: fold 3.01 ms/pass | unfolded 3.86 ms/pass | fold is 1.285x
+    w4a8_fold_arm64_test.go:299: K=1536 N=8960 parallel=false: paired mean fold 3.07 ms/pass (53.8 GMAC/s, 33.6 GB/s) vs unfolded 3.89 (42.4 GMAC/s) = 1.268x, fold wins 3/3
+    w4a8_fold_arm64_test.go:297: K=1536 N=8960 parallel=true pair 0: fold 1.54 ms/pass | unfolded 1.58 ms/pass | fold is 1.027x
+    w4a8_fold_arm64_test.go:297: K=1536 N=8960 parallel=true pair 1: fold 1.47 ms/pass | unfolded 1.69 ms/pass | fold is 1.150x
+    w4a8_fold_arm64_test.go:297: K=1536 N=8960 parallel=true pair 2: fold 1.60 ms/pass | unfolded 1.65 ms/pass | fold is 1.031x
+    w4a8_fold_arm64_test.go:299: K=1536 N=8960 parallel=true: paired mean fold 1.54 ms/pass (107.3 GMAC/s, 67.1 GB/s) vs unfolded 1.64 (100.5 GMAC/s) = 1.068x, fold wins 3/3
+    w4a8_fold_arm64_test.go:297: K=8960 N=1536 parallel=false pair 0: fold 3.00 ms/pass | unfolded 3.98 ms/pass | fold is 1.324x
+    w4a8_fold_arm64_test.go:297: K=8960 N=1536 parallel=false pair 1: fold 3.12 ms/pass | unfolded 3.85 ms/pass | fold is 1.234x
+    w4a8_fold_arm64_test.go:297: K=8960 N=1536 parallel=false pair 2: fold 2.94 ms/pass | unfolded 3.93 ms/pass | fold is 1.334x
+    w4a8_fold_arm64_test.go:299: K=8960 N=1536 parallel=false: paired mean fold 3.02 ms/pass (54.6 GMAC/s, 34.2 GB/s) vs unfolded 3.92 (42.2 GMAC/s) = 1.296x, fold wins 3/3
+    w4a8_fold_arm64_test.go:297: K=8960 N=1536 parallel=true pair 0: fold 1.78 ms/pass | unfolded 1.81 ms/pass | fold is 1.016x
+    w4a8_fold_arm64_test.go:297: K=8960 N=1536 parallel=true pair 1: fold 1.63 ms/pass | unfolded 1.76 ms/pass | fold is 1.081x
+    w4a8_fold_arm64_test.go:297: K=8960 N=1536 parallel=true pair 2: fold 1.68 ms/pass | unfolded 1.72 ms/pass | fold is 1.027x
+    w4a8_fold_arm64_test.go:299: K=8960 N=1536 parallel=true: paired mean fold 1.69 ms/pass (97.5 GMAC/s, 60.9 GB/s) vs unfolded 1.76 (93.7 GMAC/s) = 1.040x, fold wins 3/3
+--- PASS: TestW4A8RowFold_streamedAB (4.02s)
+PASS
+ok  	github.com/townsendmerino/aikit/linalg	25.944s
