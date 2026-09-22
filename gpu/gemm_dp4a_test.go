@@ -19,6 +19,12 @@ import (
 // kept test-only rather than folded into gemm.go since production code never needs
 // to run a variant other than the one hasDP4A picked.
 func runTiledKernel(c *Context, code string, aq []int8, aScales []float32, rm *ResidentW8A8, M int) ([]float32, error) {
+	return runTiledKernelTile(c, code, 16, aq, aScales, rm, M)
+}
+
+// runTiledKernelTile is runTiledKernel for a kernel whose workgroup covers a tile×tile
+// output block (16 for the original kernel, 64 for the R10 register-blocked one).
+func runTiledKernelTile(c *Context, code string, tile uint32, aq []int8, aScales []float32, rm *ResidentW8A8, M int) ([]float32, error) {
 	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
 		Label:      "tiled-variant-probe",
 		WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
@@ -85,7 +91,7 @@ func runTiledKernel(c *Context, code string, aq []int8, aScales []float32, rm *R
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
 	pass.SetBindGroup(0, bg, nil)
-	pass.DispatchWorkgroups((uint32(N)+15)/16, (uint32(M)+15)/16, 1)
+	pass.DispatchWorkgroups((uint32(N)+tile-1)/tile, (uint32(M)+tile-1)/tile, 1)
 	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return nil, err

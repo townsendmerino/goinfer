@@ -40,6 +40,40 @@ The kernel: `matmulTiledW8A8KernelWGSL` (`gpu/gemm.go`), instantiated as the DP4
 - **Ships:** ≥ **2.0×** on the GEMM class (≈ 1.85× whole prefill by Amdahl on the 91.9% share; → ~1.9 TFLOPS, still only ~21% of f32 peak — a modest target for a tiled kernel) AND bit-identical (`Float32bits`) to the shipped kernel on the parity fixtures AND no regression >3% on attn/normsRope/kvWrite. **Parked:** 1.3–2.0× on the class. **Killed:** <1.3× (the tile shape was not the wall; profile again before another attempt). **Ambiguous:** any ship-side result within its last 5% is parked, not shipped.
 - Not started in this pass.
 
+## The build, same day — `matmulRB64W8A8` (`gpu/gemm_rb.go`): SHIPPED, default
+
+**What it is.** The same shared-memory staging, but a 64×64 workgroup tile in which each of the 256 threads owns a
+4×4 block of outputs (rows `lid.y + {0,16,32,48}`, columns `lid.x + {0,16,32,48}` — strided so a warp's shared reads
+and dst writes are consecutive across lanes), accumulators in four `vec4<i32>` registers, the shared tiles stored
+word-major with a padded stride of 65 so the staging stores do not bank-conflict. Per packed word of K: 8 shared
+loads feed 16 `dot4`s, against the 16×16 kernel's 2 loads per 1 — the register-level reuse the profile's diagnosis
+named. Plain and bias-epilogue forms, both dot4 flavours; `GOINFER_WEBGPU_GEMM=tiled16` restores the old kernel.
+
+**Bit-identity, as promised by construction and now pinned.** `TestTiledRB64_bitIdentical`: every output float
+`Float32bits`-equal to the 16×16 kernel on 8 shapes (one exact tile; ragged M, N and K; the 1.5B q/o, gate/up, down
+and qkv shapes; the 0.5B kv shape), and the production `MatmulW8A8Tiled` path equal to the same reference. Model
+level: 151,936 last-row logits equal at 1.5B/P=512 and at 0.5B/P=1024. Parity gates on the new default —
+`TestResidentPrefillLast_parity`, `TestLocalize_BiasEpilogue`, `TestTiled_parity`, `TestTiledDP4A_parity`,
+`TestBatchTiled_parity`, `TestGemma3ResidentParityWebGPU`, `TestGemma4DenseScaled_webgpuParity` — all PASS
+(`webgpu-prefill-gemm-rb64-gates-2026-09-22.log`).
+
+**A/B against the registered band** (`TestPrefill_gemmTileAB`: one loaded model, arms flipped between calls, ABBA,
+4 pairs; GEMM class via this profiler, whole prefill without it):
+
+| cell | GEMM class tiled16 → rb64 | paired median | whole prefill | paired median | log |
+|---|---:|---:|---:|---:|---|
+| **1.5B, P=512** (the band's cell) | 1372 → 193 ms | **7.10×** (6.8–7.4) | 1438 → 247 ms | **5.89×** | `…-ab-2026-09-22-1.5b.log` |
+| 0.5B, P=1024 (confirmation) | 802 → 158 ms | **5.08×** (5.0–5.2) | 930 → 280 ms | **3.31×** | `…-ab-2026-09-22-0.5b.log` |
+
+**Verdict by the pre-registered rule: SHIP** (≥ 2.0× on the class; no regression on the other classes — the
+non-GEMM remainder went 66 → 54 ms at 1.5B/P=512). The GEMM class now runs at ~6.9 TOPS on the 1.5B (≈19% of the
+DP4A peak the doc quoted), so batched prefill TTFT at P=512 drops from 1.44 s to 0.25 s on this card. The kernel-
+level microbench (`TestTiledRB64_microbench`) read only 1.7–2.7× because its wall includes an 18 MB upload and
+readback per call; it is a smoke signal, not the measurement.
+
+Not measured here, on purpose: a 128-row or 8×4 variant. The band was cleared 3.5× over; a second ladder rung is a
+new pre-registration, not a follow-on to this one.
+
 ## Not done, stated
 
 R10's Record line also asks for `benchmarks.md` §B8/§B10 WebGPU rows (decode; nothing here changes them) and for the stale 18.8 s WebGPU vision-tower figure in Table 1 to be re-measured or struck — **not done here**; it is a vision-tower re-measure, a separate instrument. Left open, named.

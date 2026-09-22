@@ -173,29 +173,23 @@ func (c *Context) ensureTiledBias() error {
 	if c.tiledBiasPipeline != nil {
 		return nil
 	}
-	code, label := matmulTiledW8A8BiasShaderWGSL, "matmulTiledW8A8Bias"
-	if c.hasDP4A {
-		code, label = matmulTiledW8A8DP4ABiasShaderWGSL, "matmulTiledW8A8DP4ABias"
+	if c.gemmTile == 0 {
+		c.gemmTile = gemmTileDefault()
 	}
-	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:      label,
-		WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
-	})
-	if err != nil {
-		return fmt.Errorf("gpu: compile tiled-bias shader: %w", err)
+	p, ok := c.tiledBiasByTile[c.gemmTile]
+	if !ok {
+		var err error
+		if p, err = c.compileTiled(c.gemmTile, true); err != nil {
+			return err
+		}
+		if c.tiledBiasByTile == nil {
+			c.tiledBiasByTile = map[int]tiledPipes{}
+		}
+		c.tiledBiasByTile[c.gemmTile] = p
 	}
-	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
-		Label:   label,
-		Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
-	})
-	if err != nil {
-		sh.Release()
-		return fmt.Errorf("gpu: create tiled-bias pipeline: %w", err)
-	}
-	c.track(sh.Release, pl.Release)
-	c.tiledBiasShader = sh
-	c.tiledBiasPipeline = pl
-	c.tiledBiasLayout = c.bgl(pl)
+	c.tiledBiasShader = p.sh
+	c.tiledBiasPipeline = p.pl
+	c.tiledBiasLayout = p.layout
 	return nil
 }
 
@@ -203,29 +197,23 @@ func (c *Context) ensureTiled() error {
 	if c.tiledPipeline != nil {
 		return nil
 	}
-	code, label := matmulTiledW8A8ShaderWGSL, "matmulTiledW8A8"
-	if c.hasDP4A {
-		code, label = matmulTiledW8A8DP4AShaderWGSL, "matmulTiledW8A8DP4A"
+	if c.gemmTile == 0 {
+		c.gemmTile = gemmTileDefault()
 	}
-	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:      label,
-		WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
-	})
-	if err != nil {
-		return fmt.Errorf("gpu: compile tiled shader: %w", err)
+	p, ok := c.tiledByTile[c.gemmTile]
+	if !ok {
+		var err error
+		if p, err = c.compileTiled(c.gemmTile, false); err != nil {
+			return err
+		}
+		if c.tiledByTile == nil {
+			c.tiledByTile = map[int]tiledPipes{}
+		}
+		c.tiledByTile[c.gemmTile] = p
 	}
-	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
-		Label:   label,
-		Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
-	})
-	if err != nil {
-		sh.Release()
-		return fmt.Errorf("gpu: create tiled pipeline: %w", err)
-	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
-	c.tiledShader = sh
-	c.tiledPipeline = pl
-	c.tiledLayout = c.bgl(pl)
+	c.tiledShader = p.sh
+	c.tiledPipeline = p.pl
+	c.tiledLayout = p.layout
 	return nil
 }
 
@@ -301,7 +289,8 @@ func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*Residen
 		}
 		pops[i] = perOp{dst: dst, dims: dims, bg: bg, n: N}
 		pass.SetBindGroup(0, bg, nil)
-		pass.DispatchWorkgroups((uint32(N)+15)/16, (uint32(M)+15)/16, 1)
+		gx, gy := c.gemmGrid(N, M)
+		pass.DispatchWorkgroups(gx, gy, 1)
 	}
 	if err := pass.TryEnd(); err != nil {
 		pass.Release()
@@ -413,7 +402,8 @@ func (c *Context) MatmulW8A8Tiled(aq []int8, aScales []float32, rm *ResidentW8A8
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.tiledPipeline)
 	pass.SetBindGroup(0, bg, nil)
-	pass.DispatchWorkgroups((uint32(N)+15)/16, (uint32(M)+15)/16, 1)
+	gx, gy := c.gemmGrid(N, M)
+	pass.DispatchWorkgroups(gx, gy, 1)
 	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return nil, fmt.Errorf("gpu: tiled pass: %w", err)

@@ -1,0 +1,10 @@
+=== RUN   TestPrefill_gemmTileAB
+    prefill_gemm_tile_ab_test.go:108: bit-identical: 151936 last-row logits equal (P=1024)
+    prefill_gemm_tile_ab_test.go:130: pair 0: GEMM class tiled16 804.3 ms | rb64 158.2 ms | 5.083x    whole prefill 925.2 | 279.1 ms | 3.315x
+    prefill_gemm_tile_ab_test.go:130: pair 1: GEMM class tiled16 800.9 ms | rb64 153.1 ms | 5.231x    whole prefill 925.8 | 280.3 ms | 3.304x
+    prefill_gemm_tile_ab_test.go:130: pair 2: GEMM class tiled16 802.6 ms | rb64 161.5 ms | 4.969x    whole prefill 944.7 | 279.5 ms | 3.380x
+    prefill_gemm_tile_ab_test.go:130: pair 3: GEMM class tiled16 799.5 ms | rb64 157.2 ms | 5.086x    whole prefill 925.2 | 280.5 ms | 3.298x
+    prefill_gemm_tile_ab_test.go:149: GEMM class: paired median 5.084x over 4 pairs (pooled 801.9 -> 157.5 ms); whole prefill: paired median 3.309x (pooled 930.2 -> 279.8 ms) — SHIP (>=2.0x on the GEMM class)
+--- PASS: TestPrefill_gemmTileAB (16.90s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	16.950s

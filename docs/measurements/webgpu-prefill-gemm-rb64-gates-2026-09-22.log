@@ -1,0 +1,51 @@
+=== RUN   TestBatchTiled_parity
+    batch_test.go:109: BatchTiled parity OK across 3 ops (M=37)
+--- PASS: TestBatchTiled_parity (0.51s)
+=== RUN   TestTiledDP4A_parity
+    gemm_dp4a_test.go:174: unpacked vs CPU: cosine=1.00000000 maxAbs=0.000e+00
+    gemm_dp4a_test.go:175: dot4I8Packed vs CPU: cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestTiledDP4A_parity (0.21s)
+=== RUN   TestTiled_parity
+    gemm_test.go:47: tiled parity: cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestTiled_parity (0.20s)
+=== RUN   TestGemma3ResidentParityWebGPU
+    gemma3_resident_parity_test.go:74: resident decode path: webgpu:vulkan-resident (int4)
+    gemma3_resident_parity_test.go:107:   pos  0 cosine 0.999978
+    gemma3_resident_parity_test.go:107:   pos  1 cosine 0.999833
+    gemma3_resident_parity_test.go:107:   pos  2 cosine 0.999870
+    gemma3_resident_parity_test.go:107:   pos  3 cosine 0.999765
+    gemma3_resident_parity_test.go:107:   pos  4 cosine 0.999932
+    gemma3_resident_parity_test.go:107:   pos  5 cosine 0.999931
+    gemma3_resident_parity_test.go:107:   pos  6 cosine 0.999836
+    gemma3_resident_parity_test.go:107:   pos  7 cosine 0.999853
+    gemma3_resident_parity_test.go:109: gemma3-vl-tiny text tower, resident vs CPU (int4 both sides): minCosine=0.999765
+--- PASS: TestGemma3ResidentParityWebGPU (0.39s)
+=== RUN   TestGemma4DenseScaled_webgpuParity
+    gemma4_twogeom_test.go:141:   pos  0  cosine 0.996219 maxAbs 1.9820e-01 argmax cpu=1 webgpu=1
+    gemma4_twogeom_test.go:141:   pos  1  cosine 0.989037 maxAbs 3.6997e-01 argmax cpu=7 webgpu=7
+    gemma4_twogeom_test.go:141:   pos  2  cosine 0.966276 maxAbs 5.2276e-01 argmax cpu=42 webgpu=42
+    gemma4_twogeom_test.go:141:   pos  3  cosine 0.965661 maxAbs 4.9261e-01 argmax cpu=100 webgpu=100
+    gemma4_twogeom_test.go:141:   pos  4  cosine 0.962670 maxAbs 6.9336e-01 argmax cpu=5 webgpu=5
+    gemma4_twogeom_test.go:141:   pos  5  cosine 0.911104 maxAbs 7.2535e-01 argmax cpu=200 webgpu=200
+    gemma4_twogeom_test.go:141:   pos  6  cosine 0.833271 maxAbs 1.0980e+00 argmax cpu=13 webgpu=9
+    gemma4_twogeom_test.go:141:   pos  7  cosine 0.886056 maxAbs 8.3345e-01 argmax cpu=88 webgpu=88
+    gemma4_twogeom_test.go:141:   pos  8  cosine 0.936122 maxAbs 6.9066e-01 argmax cpu=3 webgpu=3
+    gemma4_twogeom_test.go:141:   pos  9  cosine 0.933533 maxAbs 7.3755e-01 argmax cpu=71 webgpu=71
+    gemma4_twogeom_test.go:141:   pos 10  cosine 0.868520 maxAbs 1.0043e+00 argmax cpu=128 webgpu=128
+    gemma4_twogeom_test.go:141:   pos 11  cosine 0.868243 maxAbs 9.9631e-01 argmax cpu=9 webgpu=9
+    gemma4_twogeom_test.go:141:   pos 12  cosine 0.896380 maxAbs 8.6688e-01 argmax cpu=250 webgpu=250
+    gemma4_twogeom_test.go:141:   pos 13  cosine 0.868152 maxAbs 1.4588e+00 argmax cpu=17 webgpu=17
+    gemma4_twogeom_test.go:141:   pos 14  cosine 0.801204 maxAbs 1.3244e+00 argmax cpu=60 webgpu=60
+    gemma4_twogeom_test.go:141:   pos 15  cosine 0.822125 maxAbs 1.1670e+00 argmax cpu=200 webgpu=200
+    gemma4_twogeom_test.go:143: scaled dense (256-local / 512-global, 12 layers): minCosine=0.801204 exact-argmax 15/16 pos0=0.996219
+--- PASS: TestGemma4DenseScaled_webgpuParity (0.76s)
+=== RUN   TestLocalize_BiasEpilogue
+    localize_bias_epilogue_test.go:248: fused (production gemvBias) vs unfused (tiled GEMM + separate residual bias-add): cosine=1.000000000 maxAbs=2.384e-07, 98/896 elements differ, max ULP distance=31
+    localize_bias_epilogue_test.go:250: first 8 fused:   [-0.032454304 -0.024442587 -0.06355376 -0.14032792 -15.218498 0.31906718 0.37369108 0.22872825]
+    localize_bias_epilogue_test.go:251: first 8 unfused: [-0.032454304 -0.024442587 -0.06355376 -0.14032792 -15.218498 0.31906718 0.37369108 0.22872825]
+--- PASS: TestLocalize_BiasEpilogue (3.80s)
+=== RUN   TestResidentPrefillLast_parity
+    prefilllast_resident_parity_test.go:112: last row (pos 19): cosine=1.000000 maxAbsDiff=0
+--- PASS: TestResidentPrefillLast_parity (4.04s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	9.976s

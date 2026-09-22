@@ -15,6 +15,12 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **WebGPU batched prefill: register-blocked W8A8 GEMM, DEFAULT (`GOINFER_WEBGPU_GEMM=tiled16` opts out)** (R10).
+  The 16×16 tiled kernel was 81–94% of batched prefill at ~1 TFLOPS (~11% of f32 peak). The new 64×64 kernel gives
+  each thread a 4×4 block of outputs (8 shared loads per 16 dot4s instead of 2 per 1). Bit-identical by construction
+  (exact i32 K-sum, same dequant expression) and pinned on 8 kernel shapes plus model logits. Measured on the RTX
+  2070 SUPER, paired ABBA on one loaded model: **GEMM class 7.10×, whole prefill 5.89× at 1.5B/P=512 (1.44 s →
+  0.25 s TTFT); 5.08× / 3.31× at 0.5B/P=1024.** `docs/measurements/webgpu-prefill-profile-2026-09-22.md`.
 - **CUDA speculative decode: the block drafter's head and the verify head reduce their argmax on the device**
   (R14). Both tails used to sync, download the whole `M×vocab` logits block and argmax on the host — measured at
   14.9–16.0% of a spec round on Qwen3-4B + DFlash (4.7 GB/s pageable D2H + a serial 1.2 ns/element loop). A new

@@ -808,7 +808,7 @@ func (c *Context) PrefillLastW8A8(xs [][]float32, m ModelW, hidden, nH, nKV, hd,
 		}
 		dstC := storF(rowsM * N)
 		p := uni([]uint32{uint32(rowsM), uint32(rm.kp), uint32(N), 0})
-		gx, gy := (uint32(N)+15)/16, (uint32(rowsM)+15)/16
+		gx, gy := c.gemmGrid(N, rowsM)
 		if bias != nil {
 			disp(c.tiledBiasPipeline, bind(c.tiledBiasLayout, aqC, rm.bq, asC, rm.bScales, dstC, p, bias), gx, gy)
 		} else {
