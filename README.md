@@ -224,6 +224,18 @@ back to 2.7 GB, with zero swapouts
 ([`docs/measurements/cold-user-2026-09-06.md`](docs/measurements/cold-user-2026-09-06.md),
 scenario D).
 
+**Caution specific to `gpt-oss-20b` (and every other MoE family): the FIRST run above still pays
+the risk this whole section exists to avoid, once, during the one-time sidecar transcode.**
+`-stream-weights`'s bounded-RAM benefit only applies once the sidecar `.giw` exists; building it
+for a MoE family currently requires a full resident pass first (`docs/tasks/task-never-swap-2026-09.md`
+S2, not built yet — the streaming transcode sink that would avoid this is future work), which is
+exactly the load that drove this machine to 22.9 GB of swap historically. `GOINFER_SWAP_GUARD`'s
+load-time half (armed by default) will abort that build if swap grows too far, but a real run
+found it does not always hold the line unassisted under a fast enough burst
+([`docs/measurements/swap-tripwire-2026-09-22.md`](docs/measurements/swap-tripwire-2026-09-22.md)).
+Until S2 lands, treat the first `-stream-weights` run of a large MoE `.gguf` with the same caution
+as a direct load of one — watch it, don't walk away from it.
+
 **This is `goinfer-serve`'s job, not `goinfer-chat`'s.** The single-shot chat runtime holds all
 weights resident by design; it has no `-stream-weights`. If your model is bigger than your RAM,
 reach for the server.

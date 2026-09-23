@@ -4,10 +4,14 @@
 > load-time consumer's plumbing + both server-side halves of the wiring, all unit-tested and
 > committed as `84c70c38`; the real gpt-oss-20b positive-control run found a genuine, documented
 > LIMIT — the guard detects on time but does not hold the machine under its own +1 GB bound
-> unassisted, see S3's own status note below and `docs/measurements/swap-tripwire-2026-09-22.md`),
-> S1/S2/S4/S5/S6 unstarted.** S2 is the precondition for S1 covering the families that matter most
-> on the Mac;
-> S4, S6 and S5 follow. S6 is the structural fix for the Metal path the R11(c) runs of
+> unassisted, see S3's own status note below and `docs/measurements/swap-tripwire-2026-09-22.md`).
+> **S1 BUILT AND MEASURED 2026-09-22** (darwin default-sidecar for serve/chat/fit, all three
+> registered gates passed on real hardware — see S1's own status note below and
+> `docs/measurements/sidecar-default-2026-09-22.md`), **S2/S4/S5/S6 unstarted.** S2 is now the
+> gating precondition for BOTH the families S1 could not yet cover (gpt-oss and the other
+> `needsResidentSerialize` families still build resident before they can be transcoded at all) and
+> for S3's own gpt-oss-20b positive control to ever reach the historical scenario safely; S4, S6
+> and S5 follow. S6 is the structural fix for the Metal path the R11(c) runs of
 > 2026-09-20/22 hit. One owner decision is flagged in S1 (what a MoE `.gguf` that will not fit
 > resident does once the sidecar path exists: refuse, or load and warn).
 >
@@ -122,15 +126,61 @@ progress logging on anything over a couple of minutes.
 
 ### S1 · Sidecar `.giw` by default for every `.gguf` load on darwin
 
+> **BUILT AND MEASURED 2026-09-22.** `internal/prequant.DefaultToSidecar` is the platform policy
+> (darwin default, opt-out via `-direct-load`/`GOINFER_GGUF_DIRECT=1`; linux keeps direct as its
+> own default, same opt-out flag available there too, as item 1 asked). Wired into all three
+> entry points: `internal/serveapp`'s `loadDecoder` (a new branch alongside the existing
+> `-stream-weights` one — `StreamWeights` itself stays false for this default path, so no pager is
+> built and the LoRA-adapter refusal, which keys on `StreamWeights` not on `.giw`-ness, is
+> unaffected), `internal/chatapp`'s `loadFromPath` call site (chat had no streaming path at all
+> before this), and `internal/fitcmd/fit.go` (item 5: reuse an already-fresh sidecar via the new
+> `prequant.SidecarPathIfFresh`, which never itself transcodes — `fit` stays cheap). `--embed-int4`
+> implies `-direct-load` for this path (item 3's "pick one" — the sidecar has no representation
+> for the int4 embed/head pin yet); the explicit `-stream-weights --embed-int4` combination keeps
+> its prior, unrelated, documented behavior. A disk-space `statfs` guard in `EnsureCachedGIW`
+> refuses before a transcode starts when free disk is under the source file's own size (a
+> conservative proxy — a sidecar at any real quant is never bigger than an f32 source) rather than
+> risking a half-written sidecar on a full disk (M-12's own history).
+>
+> **All three registered gates passed on real hardware** —
+> `docs/measurements/sidecar-default-2026-09-22.md` has the full run. Anonymous footprint of the
+> sidecar load was 16–21% of the direct load's (bound: ≤25%), swap-used delta was 0 MB across
+> every run, and greedy output was byte-identical between direct and sidecar loads on 3 prompts ×
+> 64 tokens, on two real dense models (no phi3-mini checkpoint was available locally, so a second
+> model was substituted — same methodology, not a weaker one). A real confound was found and fixed
+> mid-measurement: a DIFFERENT, pre-existing mechanism (`task-fit-to-hardware.md`'s CPU-placement
+> auto-retry) silently routed a "direct" arm through a sidecar anyway when this machine's tight
+> free RAM tripped the static fit guard — caught from the server's own log line, not assumed away,
+> and the measurement re-run correctly isolated. `internal/prequant/sidecar_identity_test.go` and
+> `sidecar_default_test.go` carry the permanent regression coverage (heavy-gated where a real
+> tokenizer-bearing checkpoint is required, matching this file's own established pattern); the
+> identity comparison was itself checked against a genuine int8int8-vs-int4 mismatch to confirm it
+> is not vacuously passing.
+>
+> **Owner decision (item 6), still flagged, not decided — and now confirmed out of reach until
+> S2:** once a MoE `.gguf` can be mapped without a resident build first, the fit guard's MoE
+> exclusion needs a real answer (refuse / warn-and-load / refuse-without-explicit-flag). It cannot
+> be decided yet because the precondition (S2) is not built — every `needsResidentSerialize`
+> family (gpt-oss included) still requires a full resident pass to produce a sidecar at all today,
+> so S1's own darwin default does not yet reach gpt-oss-20b, the model this whole task is written
+> against.
+>
+> **What is NOT done:** the adapter-parity gate item does not apply — confirmed, not assumed:
+> `decoder.(*Model).LoadAdapter` refuses any base whose `w.schema == nil` ("compute-time LoRA
+> needs a safetensors base"), and a sidecar is exclusively a `.gguf`-derived artifact, so a
+> sidecar-loaded base can never reach `-adapter` in the first place — the combination the brief
+> asked to verify cannot occur. A third interleaved measurement run (brief names three; two ran).
+> `benchmarks.md` Table 1's cold-start/footprint row does not yet carry this measurement's numbers.
+
 **Goal.** A `.gguf` given to `goinfer-serve`, `goinfer-chat` or `goinfer-chat fit` on darwin is
 transcoded once to its sidecar `.giw` and mapped, so the resident weights are file-backed and the
 `.gguf` direct heap load becomes the opt-out, not the default.
 
 **Standing and the registered rule.** Today the sidecar is built only under `-stream-weights`
 (`internal/serveapp/main.go`, `ensureGIW` → `prequant.EnsureCachedGIW`,
-`internal/prequant/prequant.go:198`) or by the dense fit-guard auto-retry
-(`internal/serveapp/main.go:1284`); `chat` (`internal/chatapp/main.go:373`) and `fit`
-(`internal/fitcmd/fit.go:83`) load direct and have no streaming flag at all. **Rule (Mac, 1.5B and
+`internal/prequant/prequant.go:203`) or by the dense fit-guard auto-retry
+(`internal/serveapp/main.go:1301`); `chat` (`internal/chatapp/main.go:389`) and `fit`
+(`internal/fitcmd/fit.go:97`) load direct and have no streaming flag at all. **Rule (Mac, 1.5B and
 gpt-oss-20b, `footprint`/`vmmap -summary` on the serving process after the first completion):
 anonymous footprint of a sidecar load ≤ 25% of the direct load's, swap-used delta across the load
 = 0, and the greedy token stream byte-identical to the direct load on 3 prompts × 64 tokens. All

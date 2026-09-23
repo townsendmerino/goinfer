@@ -42,6 +42,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/fitcmd"
 	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/prequant"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
 	"github.com/townsendmerino/goinfer/pull"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -231,6 +232,7 @@ All flags:
 		draft        = flag.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab.")
 		specK        = flag.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
 		showVersion  = flag.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
+		directLoad   = flag.Bool("direct-load", os.Getenv("GOINFER_GGUF_DIRECT") != "", "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin, a .gguf resolves to its sidecar by default since S1 (task-never-swap-2026-09.md) — this opts back out to the pre-S1 direct-heap-dequant behavior, which is still the default everywhere else. Also via GOINFER_GGUF_DIRECT=1")
 	)
 	fit := fitFlag(true)
 	flag.Var(&fit, "fit", "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/tasks/task-fit-to-hardware.md). --fit=off restores the pre-fit-by-default behavior")
@@ -274,7 +276,21 @@ All flags:
 		// change what an existing --model means.
 		var path string
 		if path, err = pull.ResolveVerbose(context.Background(), *model); err == nil {
-			s, err = loadFromPath(path, opts)
+			// S1 (task-never-swap-2026-09.md): on darwin, resolve a plain .gguf to its sidecar
+			// .giw by default, same policy as goinfer-serve — chat had no streaming flag at all
+			// before this, so this is the first time a chat load can be file-backed rather than
+			// a fresh heap copy of the whole model.
+			if strings.HasSuffix(path, ".gguf") && prequant.DefaultToSidecar(*directLoad) {
+				var giwPath string
+				if giwPath, err = prequant.EnsureCachedGIW(context.Background(), path, *quant, *backend); err != nil {
+					err = fmt.Errorf("sidecar cache (%s): %w — pass -direct-load (or GOINFER_GGUF_DIRECT=1) to load this .gguf straight into the heap instead", path, err)
+				} else {
+					path = giwPath
+				}
+			}
+			if err == nil {
+				s, err = loadFromPath(path, opts)
+			}
 		}
 	case hasEmbeddedModel:
 		// Baked-in model (-tags embed): in-memory by default — no temp file, so

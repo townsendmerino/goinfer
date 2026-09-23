@@ -150,8 +150,8 @@ backend-agnostic data into something with a hidden property and a silent failure
   comes back zero), so no code change was needed there. Under this gate it is now provably
   unreachable in practice too: `webgpu` is never the literal string `"cpu"`, so
   `wantsCanonicalInt4` always keeps canonical for it regardless.
-- **Item 4: no code change needed.** `internal/serveapp/main.go:465`,
-  `internal/chatapp/main.go:177`, and `internal/gemmaapp/main.go:47` all already register `--backend` with
+- **Item 4: no code change needed.** `internal/serveapp/main.go:466`,
+  `internal/chatapp/main.go:178`, and `internal/gemmaapp/main.go:47` all already register `--backend` with
   `flag.String(..., "cpu", ...)` — the literal default is already `"cpu"`, not empty. The root
   (no-tags) CPU release binaries already got this saving the moment L1 landed; nothing to wire up.
   `demo/chat`'s embedded variant shares `internal/chatapp`'s flag registration, so the same holds
@@ -347,7 +347,7 @@ its test), `cmd/prequant/main.go`, `internal/serveapp/main.go`, `demo/chat/build
   The second claim is false — kind 4 *is* the both policy on disk, loaded at
   `decoder/serialize.go:1500`. The true precedent is that the **in-RAM** repack is not applied to a
   mmap'd `.giw`. Replace both with a pointer to L2.
-- `internal/prequant/prequant.go:36–47` comment: "always emits kind 3" becomes the L2 target
+- `internal/prequant/prequant.go:41–47` comment: "always emits kind 3" becomes the L2 target
   rule when L2 lands; until then add one line saying the CPU cache is on the canonical kernel.
 
 **Findings.** The false "isn't wired into .giw loading" claim was mine — introduced this same

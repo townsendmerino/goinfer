@@ -469,6 +469,20 @@ embedded-GGUF path → prequant `.giw` cuts **cold start 2.30 s → 0.48 s (~5×
 **resident heap 772 MB → 78 MB (~10×)** — the weights are mapped from the binary's
 read-only image, not heap-copied.
 
+**Sidecar-by-default footprint (S1, `task-never-swap-2026-09.md`) — 2026-09-22, MacBook arm64,
+`footprint`/`sysctl vm.swapusage`, full run: `docs/measurements/sidecar-default-2026-09-22.md`.**
+The same win as above, generalized from "embedded in the binary" to "any `.gguf` on disk, sidecar
+built once": on darwin this is now the DEFAULT, not something `-stream-weights` has to be asked
+for.
+
+| metric (2 real dense models, direct vs sidecar, int4) | qwen2.5-coder-1.5b | qwen3-1.7b |
+|---|---|---|
+| anonymous (dirty) footprint, direct | 1572–1573 MB | 1506 MB |
+| anonymous (dirty) footprint, sidecar | 319–327 MB | 241 MB |
+| sidecar / direct ratio | 20.3–20.8% | 16.0% |
+| swap-used delta, either arm | 0 MB | 0 MB |
+| greedy output, direct vs sidecar (3 prompts × 64 tok) | byte-identical | byte-identical |
+
 #### CPU prefill — re-anchored 2026-09-01
 
 Four changes landed on 2026-09-01, and every CPU-prefill number before them is superseded (the

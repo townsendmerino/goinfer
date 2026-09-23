@@ -319,6 +319,7 @@ type config struct {
 	kvIdleDemote     time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
 	kvDemotedMax     int           // -kv-demoted-max: cap on the on-disk cold tier
 	streamWeights    bool          // -stream-weights: page MoE expert weights out of an mmap'd .giw under a RAM budget
+	directLoad       bool          // -direct-load (task-never-swap-2026-09.md S1): opt out of the darwin sidecar-by-default and load a .gguf straight into the heap, as every platform did before S1
 	weightCacheGB    float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
 	embedInt4        bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
 	maxQueue         int           // -max-queue: bounded per-model queue depth (0 = unbounded)
@@ -539,6 +540,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm session's KV to -session-dir once it's been idle this long, faulting it back on the next matching request (e.g. 10m; 0 = off). Lets a small-RAM box serve many intermittent chats. Needs -session-dir and -kv-sessions > 0")
 	flag.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
 	flag.BoolVar(&cfg.streamWeights, "stream-weights", false, "page model weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all weights: MoE expert demand-paging (run a 35B-A3B on ~16-20 GB) or dense per-layer streaming (run a model bigger than RAM). Bit-exact; trades RAM for fault latency. A plain .gguf is transparently transcoded to a sidecar .giw cache on first use (one-time). Also triggered automatically, without this flag, for a dense .gguf that does not fit resident RAM (--fit, default on) -- MoE is deliberately excluded from the automatic path (see --fit's help)")
+	flag.BoolVar(&cfg.directLoad, "direct-load", os.Getenv("GOINFER_GGUF_DIRECT") != "", "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin, a .gguf resolves to its sidecar by default since S1 (task-never-swap-2026-09.md) — this opts back out to the pre-S1 direct-heap-dequant behavior, which is still the default everywhere else. Also via GOINFER_GGUF_DIRECT=1. Ignored with -stream-weights, which always needs the sidecar's mmap regardless of platform")
 	flag.Float64Var(&cfg.weightCacheGB, "weight-cache", 0, "resident expert-weight budget in GB for -stream-weights (0 = auto, ~half of available RAM)")
 	flag.BoolVar(&cfg.embedInt4, "embed-int4", false, "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model. Lossy (~2.3 pts top-1, mostly rare tokens); GGUF direct load only (not the -stream-weights .giw cache)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
@@ -1251,6 +1253,21 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 			fmt.Fprintf(os.Stderr, "note: -stream-weights only applies to a .gguf source; %q is a "+
 				"safetensors directory — see cmd/prequant to build a streamable .giw from it\n", spec.path)
 		}
+	} else if strings.HasSuffix(spec.path, ".gguf") && !opts.EmbedInt4 && prequant.DefaultToSidecar(cfg.directLoad) {
+		// S1 (task-never-swap-2026-09.md): on darwin, a plain .gguf resolves to its sidecar .giw
+		// by default now, even without -stream-weights — the resident weights end up as
+		// zero-copy mmap aliases (S0's own table) instead of fresh heap copies, with no active
+		// demand-paging engaged (opts.StreamWeights stays false here, so no pager is built, and
+		// -adapter's own refusal — keyed on StreamWeights, not on the source being a .giw — is
+		// unaffected). --embed-int4 implies -direct-load for this default path rather than
+		// silently losing the int4 embed pin (the S1 brief's own "pick one"; the EXPLICIT
+		// -stream-weights + -embed-int4 combination above keeps its existing, documented,
+		// ignore-and-note behavior — this branch never reaches it).
+		giwPath, err := ensureGIW()
+		if err != nil {
+			return nil, fmt.Errorf("sidecar cache (%s): %w — pass -direct-load (or GOINFER_GGUF_DIRECT=1) to load this .gguf straight into the heap instead", spec.path, err)
+		}
+		loadPath = giwPath
 	}
 
 	tk, err := loadDecoderTokenizer(loadPath)

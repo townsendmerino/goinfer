@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/prequant"
 )
 
 const fitUsage = `%[1]s fit <path> — show how this checkpoint would be placed on this machine, per backend
@@ -80,9 +81,22 @@ func Run(args []string) int {
 	// only "cpu" needs its free bytes captured early; freeBytesFor still queries the rest live.
 	hostFreeBeforeLoad := decoder.HostRAMAvailableBytes()
 
-	m, err := decoder.Load(path, decoder.Options{Quant: *quant})
+	// S1 (task-never-swap-2026-09.md) item 5: measure through an ALREADY-fresh sidecar when one
+	// exists — a mapped load, lazy faults, nearly free next to the resident build below. Never
+	// forces a transcode itself (that would trade one expensive one-time cost for another, not
+	// buy "nearly free" as the brief asks) — a missing or stale sidecar just falls through to
+	// today's direct load, unchanged. Canonical target (backend ""): fit has no -backend flag of
+	// its own (it reports every compiled backend), so this can only ever match a canonically
+	// built cache, never a backend-specific one a `serve -backend metal` load might have written.
+	loadPath := path
+	if strings.HasSuffix(path, ".gguf") {
+		if cached, ok := prequant.SidecarPathIfFresh(path, *quant, ""); ok {
+			loadPath = cached
+		}
+	}
+	m, err := decoder.Load(loadPath, decoder.Options{Quant: *quant})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "load %s: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "load %s: %v\n", loadPath, err)
 		return 1
 	}
 

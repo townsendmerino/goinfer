@@ -28,6 +28,11 @@ import (
 // 64 MiB is comfortably more than any real header.
 const metaPrefixCap = 64 << 20
 
+// freeDiskBytes is indirected (decoder/fitguard.go's own hostRAM/hostRAMAvailable convention)
+// so a test can inject a disk's worth of free space instead of needing one — statfsFreeBytes
+// (diskspace_unix.go / diskspace_other.go) is the real platform probe.
+var freeDiskBytes = statfsFreeBytes
+
 // Transcode writes a .giw bundle at out from the model at in, quantized to quant
 // ("int8int8" | "int8" | "int4" | "" for f32). `in` may be a GGUF file (streamed one
 // layer at a time, peak RAM ≈ one layer — fits a 35B on a modest box) OR a safetensors
@@ -201,6 +206,20 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (stri
 	if cacheFresh(cache, ggufPath) {
 		return cache, nil
 	}
+	// S1 (task-never-swap-2026-09.md): a half-written sidecar on a full disk is a failure this
+	// repo has already had once (M-12's own history). The source .gguf's own size is a
+	// deliberately simple, conservative proxy for the sidecar's projected size — a sidecar at
+	// any real quant is never bigger than the f32 source, so this only ever refuses when it
+	// truly would not have fit, never the reverse. freeDiskBytes returning !ok (no portable
+	// probe, or the statfs itself failed) proceeds unguarded, same as every other unknown
+	// quantity in this codebase (fitguard.go's own rule) — a missing probe must never be the
+	// reason a load that would have worked gets refused.
+	if fi, serr := os.Stat(ggufPath); serr == nil {
+		if free, ok := freeDiskBytes(filepath.Dir(cache)); ok && free < fi.Size() {
+			return "", fmt.Errorf("stream-weights: refusing to transcode %s — projected sidecar size ~%.1f GB exceeds %.1f GB free on this disk (a half-written sidecar on a full disk is worse than refusing up front); free some space and retry, or pass -direct-load to skip the sidecar entirely",
+				filepath.Base(ggufPath), float64(fi.Size())/1e9, float64(free)/1e9)
+		}
+	}
 	fmt.Fprintf(os.Stderr, "stream-weights: transcoding %s → %s (%s, one-time — minutes + ~model-size on disk)…\n",
 		filepath.Base(ggufPath), filepath.Base(cache), quantLabel(quant))
 	t0 := time.Now()
@@ -212,6 +231,36 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (stri
 			float64(fi.Size())/1048576, time.Since(t0).Round(time.Second))
 	}
 	return cache, nil
+}
+
+// SidecarPathIfFresh returns the sidecar .giw for ggufPath at quant/backend's target, and true,
+// ONLY when a fresh one already exists — it never transcodes. For a caller like `fit`
+// (task-never-swap-2026-09.md S1 item 5) where measuring is supposed to stay cheap; forcing a
+// transcode just to check fit would trade a 32 s / 256 CPU-s resident build for an equally
+// expensive one-time transcode, not for "nearly free" as the brief asks.
+func SidecarPathIfFresh(ggufPath, quant, backend string) (string, bool) {
+	cache := streamCachePath(ggufPath, quant, decoder.GIWTargetForBackend(backend))
+	if cacheFresh(cache, ggufPath) {
+		return cache, true
+	}
+	return "", false
+}
+
+// DefaultToSidecar reports whether a .gguf source should resolve to its sidecar .giw by default
+// — S1's own registered rule: "the .gguf direct heap load becomes the opt-out, not the default"
+// on darwin, where the historical swap incidents (gpt-oss-20b, M35/M26) happened. Linux keeps
+// direct as its default for now: the Linux box has far more headroom and the measured peak
+// already fits it (S1's own "out of scope: Linux defaults" — this only wires the SAME opt-out
+// flag there too, so one command line works on both, not a new default). directLoad is the
+// caller's already-resolved -direct-load flag / GOINFER_GGUF_DIRECT env var — an explicit
+// request always wins over the platform default in either direction... except it can only ever
+// turn the sidecar OFF (there is deliberately no "force sidecar on Linux" knob yet; S1 does not
+// register a rule for that platform, so this does not invent one).
+func DefaultToSidecar(directLoad bool) bool {
+	if directLoad {
+		return false
+	}
+	return runtime.GOOS == "darwin"
 }
 
 // streamCachePath is the sidecar cache for a GGUF at a quant and target:
