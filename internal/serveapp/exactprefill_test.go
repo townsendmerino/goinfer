@@ -63,3 +63,21 @@ func TestApplyExactPrefillEnv_defaultLeavesMetalAndCUDAUnset(t *testing.T) {
 		t.Errorf("GOINFER_CPU_FAST_ATTENTION = %q, want %q", got, "1")
 	}
 }
+
+// TestApplyMoEPagerEnv_setsExplicitlyEitherWay gates task-never-swap-2026-09.md S5's Build item
+// 1 — the --moe-pager flag exposes decoder/moepaging.go's existing GOINFER_MOE_PREAD_CPU switch,
+// set explicitly either way (not left unset on "mmap") for the same reason applyExactPrefillEnv
+// does: the flag must win over whatever the shell happened to export.
+func TestApplyMoEPagerEnv_setsExplicitlyEitherWay(t *testing.T) {
+	unsetenvT(t, "GOINFER_MOE_PREAD_CPU")
+
+	applyMoEPagerEnv(config{moePager: "pool"})
+	if got := os.Getenv("GOINFER_MOE_PREAD_CPU"); got != "1" {
+		t.Errorf("--moe-pager=pool: GOINFER_MOE_PREAD_CPU = %q, want %q", got, "1")
+	}
+
+	applyMoEPagerEnv(config{moePager: "mmap"})
+	if got := os.Getenv("GOINFER_MOE_PREAD_CPU"); got != "0" {
+		t.Errorf("--moe-pager=mmap: GOINFER_MOE_PREAD_CPU = %q, want %q", got, "0")
+	}
+}

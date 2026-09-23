@@ -305,6 +305,7 @@ type config struct {
 	kvPrec           string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
 	moeCacheExperts  bool   // stream routed MoE experts host→VRAM (--moe-cache-experts)
 	moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper bound, 0 = built-in default
+	moePager         string // CPU expert pager backing mode: "mmap" (default) | "pool" (--moe-pager, task-never-swap-2026-09.md S5)
 	fit              bool   // tasks/task-fit-to-hardware.md's "fit by default" (--fit, default true); false ⇒ decoder.Options.DisableFit
 	metalFastPrefill bool   // DEPRECATED — fast prefill is default-on since §3.2 gate passed 2026-09-09; kept for backward compat (--metal-fast-prefill is now a no-op; use --exact-prefill to opt out)
 	exactPrefill     bool   // force sequential (exact) prefill on all backends — CPU + Metal (--exact-prefill)
@@ -359,6 +360,23 @@ const exactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — d
 const cpuExactPrefillHelp = "force BIT-EXACT prompt ingestion on the CPU backend: use the f64-accumulating attention kernel for prefill instead of the f32 one that is now the default. Costs the speed --cpu-fast-attention buys (measured 2.28x slower prefill on an 8k prompt, dense 1.5B) and buys back decode==prefill bit-identity, so a long-prompt response is reproducible against a build from before f32 prefill became the default. Use it when you are diffing outputs across versions, reproducing a bug report, or anything where 'same prompt, same tokens' matters more than time-to-first-token. Wins over --cpu-fast-attention if both are given. CPU backend only — use --exact-prefill to disable fast prefill on all backends at once. MoE models take the same f32 path as dense ones — the exclusion was measured and dropped in 66d0a05, so this is the only way to get bit-exact prefill for them too"
 
 const cpuFastAttentionHelp = "DEFAULT ON since 2026-08-31 (pass --cpu-exact-prefill to turn it off). Compute PROMPT attention in f32 instead of the f64-accumulating kernel — measured 2.28x faster prefill on an 8k prompt (dense 1.5B, M1 Pro: 602.9s to 264.6s) because attention is ~70% of a long prefill and the f64 path is ~8x slower than f32 at those shapes. NOT bit-identical: measured cosine 0.9976 against the default (stable across 256/1024/2048-token prompts), so a long-prompt response CAN differ from what you would get with this off, even at temperature 0. Decode is unaffected — this changes only how the prompt is ingested. Speculative decoding is never affected (its verify pass always uses the exact kernel, or verify would stop matching greedy). Applies to MoE models too: the old REFUSAL was dropped in 66d0a05 after being measured (1-cosine 2.126e-3 for MoE against 2.400e-3 for the dense case, depth-matched, with a 48/48 identical greedy continuation), and this help text went on claiming it for two days afterwards. FLOORED AT 512 PROMPT TOKENS: below that the exact kernel runs regardless, because the win scales with prompt length and the divergence does not — an 8-token prompt diverged at the third generated token while buying nothing (1.15x at 512, 1.43x at 2048, 2.28x at 8192). CPU backend only"
+
+// applyMoEPagerEnv sets GOINFER_MOE_PREAD_CPU from the parsed --moe-pager flag — a pure function
+// (matching applyExactPrefillEnv's shape) so a test can drive it directly. This is the CPU expert
+// pager's backing mode only (decoder/moepaging.go): "mmap" is the existing default (advice-based,
+// zero-copy, but darwin's DONTNEED is a no-op so nothing actually shrinks RSS); "pool" is the
+// owned-buffer pread mode, a firm cap on every platform at the cost of a memcpy per miss
+// (task-never-swap-2026-09.md S5 — a same-session mmap-vs-pool A/B on this Mac is still owed;
+// this flag only exposes the existing env var's choice, it does not change today's default). Set
+// explicitly either way, same reasoning as GOINFER_CPU_FAST_ATTENTION above: the server's own flag
+// must win over whatever the shell happened to export.
+func applyMoEPagerEnv(cfg config) {
+	if cfg.moePager == "pool" {
+		os.Setenv("GOINFER_MOE_PREAD_CPU", "1")
+	} else {
+		os.Setenv("GOINFER_MOE_PREAD_CPU", "0")
+	}
+}
 
 // applyExactPrefillEnv sets the per-backend fast-prefill env vars from the parsed flags — a pure
 // function (no os.Args, no process exit, no server) so a test can drive it directly, unlike
@@ -525,6 +543,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.BoolVar(&cfg.cpuFastAttention, "cpu-fast-attention", true, cpuFastAttentionHelp)
 	flag.BoolVar(&cfg.cpuExactPrefill, "cpu-exact-prefill", false, cpuExactPrefillHelp)
 	flag.IntVar(&cfg.moeCacheSlots, "moe-cache-slots", 0, "per-layer expert slots to keep resident for a paged MoE model (CUDA: --moe-cache-experts; Metal: the GOINFER_METAL_MOE_SLOTS env var's replacement, docs/tasks/task-gpu-paths-2026-09.md Phase 2). On CUDA this is an UPPER BOUND: the runtime measures free VRAM and lowers it if the request does not fit, logging what it chose (\"C′ cache: … capping to N\"). On Metal an EXPLICIT value here is NOT auto-lowered — the request is used as given, and a model that does not fit at that count declines to the CPU path instead (the load-time memory guard, metal/backend.go). 0 keeps the built-in default: CUDA asks for all and auto-caps; Metal auto-sizes from free RAM ONLY when --moe-cache-experts is also set (audit-metal-2026-09-12.md M-13), else every expert stays resident, unpaged. More slots ⇒ higher LRU hit rate ⇒ fewer per-token transfers, at more memory cost")
+	flag.StringVar(&cfg.moePager, "moe-pager", "mmap", "CPU backing mode for a .giw-paged MoE model's expert pager: mmap (default — advice-based, zero-copy, but on darwin MADV_DONTNEED is a no-op so RSS is not actually bounded) | pool (owned-buffer pread — a firm cap on every platform, costs a memcpy per miss, exposes GOINFER_MOE_PREAD_CPU; task-never-swap-2026-09.md S5). CPU decode of a paged MoE model only — CUDA/Metal experts use --moe-cache-experts/--moe-cache-slots instead")
 	cfg.fit = true // fitFlag has no BoolVar-style default parameter; set it before registering
 	flag.Var((*fitFlag)(&cfg.fit), "fit", "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/tasks/task-gpu-paths-2026-09.md, tasks/task-fit-to-hardware.md Phase 2). CUDA: an unpinned resident context gets more than the historical 4096 positions when the card has the free VRAM for it (cudaCtxCapDefault's own measurement found the real per-card ceiling is often 5-6x that). CPU: a plain .gguf that will not fit resident RAM gets one automatic retry with weight streaming (a dense model only — see --stream-weights) instead of just refusing. Never touches an EXPLICITLY set -ctx/-quant/--moe-cache-slots/--stream-weights — those are always honoured or refused as asked, with or without this flag. --fit=off restores every pre-Phase-2 default exactly; does not affect bug fixes shipped alongside this work (e.g. Metal now honouring an explicit -ctx at all)")
 	flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exact, 16k ctx) | f16 (lossy, 32k ctx) | i8 (lossy, ~64k ctx) — webgpu backend only")
@@ -565,6 +584,11 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		os.Exit(2)
 	}
 	applyExactPrefillEnv(cfg)
+	if cfg.moePager != "mmap" && cfg.moePager != "pool" {
+		fmt.Fprintf(os.Stderr, "error: -moe-pager must be \"mmap\" or \"pool\" (got %q)\n", cfg.moePager)
+		os.Exit(2)
+	}
+	applyMoEPagerEnv(cfg)
 	// Was --quant given, or is cfg.quant the "int4" default? The .giw explicit-quant check (T1-7)
 	// must fire only on an explicit request — the default must not "mismatch" a non-int4 bundle.
 	flag.Visit(func(f *flag.Flag) {

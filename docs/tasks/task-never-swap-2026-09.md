@@ -17,8 +17,15 @@
 > BUILT 2026-09-23** (the `.giw` load-time KV+scratch guard, `guardGIWFit` — refuses or auto-pins
 > exactly like the `.gguf` path's `guardFit`, against a flat margin over live available memory;
 > unit-tested, mutation-checked twice — arithmetic and wiring separately — and a real end-to-end
-> proof through `Load` on a real on-disk bundle; see S4's own status note below), **S4 items 2-5
-> and S5/S6 unstarted.** S2's one remaining family, gemma4, has a genuinely different obstacle (a
+> proof through `Load` on a real on-disk bundle; see S4's own status note below). **S5 Build item 1
+> PARTIALLY BUILT 2026-09-23** (page-fault counters — `getrusage`-based, pure Go, no `x/sys` — on
+> `expertPager` via `faultDelta()`; the `--moe-pager=mmap|pool` flag exposing the existing
+> `GOINFER_MOE_PREAD_CPU` switch; the pool's cap invariant covered by a new unit test after
+> discovering `decoder/moepool_test.go` already covered refill byte-exactness, top-K self-eviction,
+> LRU order and cross-stream lock safety — see S5's own status note below. The registered rule's
+> real M35 `.giw` measurement, the darwin-default flip, and the dense pread ring (item 3) are
+> UNSTARTED — no M35-class checkpoint fits on this machine's free disk today). **S4 items 2-5 and
+> S6 unstarted.** S2's one remaining family, gemma4, has a genuinely different obstacle (a
 > truly model-level fused PLE/MoE tail) the other five did not. **Correction to an earlier version of
 > this line**: S2 was never actually a
 > precondition for S3's OWN positive control — S3's gpt-oss-20b run (2026-09-22) already reached
@@ -76,7 +83,7 @@ documents (verified empirically) that `MADV_DONTNEED`, `MADV_FREE` and the `msyn
 RSS unchanged on a read-only file mapping, so eviction is a no-op and the Unified Buffer Cache
 decides what stays resident. The auto budget makes it worse than it looks: `mmap.AutoBudget()`
 reads `/proc/meminfo`, which does not exist on macOS, and falls back to a fixed 8 GB
-(`decoder/moepaging.go:159`, `decoder/layerpaging.go:105`) — while goinfer already has a live
+(`decoder/moepaging.go:171`, `decoder/layerpaging.go:105`) — while goinfer already has a live
 darwin probe, `HostRAMAvailableBytes` (`decoder/hostram_darwin.go`, from `vm_stat`), that the pager
 never sees. A 20 GB model in ~11 GB of usable RAM therefore re-faults most of its active experts
 from the SSD every token, continuously — the "RSS ~3.2 GB, re-reading weights from disk per token"
@@ -194,7 +201,7 @@ transcoded once to its sidecar `.giw` and mapped, so the resident weights are fi
 **Standing and the registered rule.** Today the sidecar is built only under `-stream-weights`
 (`internal/serveapp/main.go`, `ensureGIW` → `prequant.EnsureCachedGIW`,
 `internal/prequant/prequant.go:203`) or by the dense fit-guard auto-retry
-(`internal/serveapp/main.go:1301`); `chat` (`internal/chatapp/main.go:389`) and `fit`
+(`internal/serveapp/main.go:1325`); `chat` (`internal/chatapp/main.go:389`) and `fit`
 (`internal/fitcmd/fit.go:97`) load direct and have no streaming flag at all. **Rule (Mac, 1.5B and
 gpt-oss-20b, `footprint`/`vmmap -summary` on the serving process after the first completion):
 anonymous footprint of a sidecar load ≤ 25% of the direct load's, swap-used delta across the load
@@ -674,7 +681,7 @@ reason the Metal probe is static — keep it as the *ceiling* and add the live f
 bound: `min(0.70 × hw.memsize, HostRAMAvailableBytes − margin)`, so the guard can only get stricter,
 never looser, which is the direction the one measured failure allows); `decoder/moepaging.go`
 `newExpertPager` (budget clamp `[one expert, total expert bytes]`, `AutoBudget` at
-`decoder/moepaging.go:159`); `docs/completed/task-w4a8-neon-bandwidth.md` (the pread rate this
+`decoder/moepaging.go:171`); `docs/completed/task-w4a8-neon-bandwidth.md` (the pread rate this
 Mac measured — ~3.7 GB/s at concurrency 1 — as the working-set arithmetic's default until the
 guard measures its own, one 64 MB pread at load); `runtime/debug.SetMemoryLimit` semantics (a
 soft limit: the GC works harder under it, it does not refuse allocation — document it as such;
@@ -726,13 +733,44 @@ the pool mode's own accounting (S5).
 
 ### S5 · Pool mode as the darwin default for the MoE pager; a pread ring for dense layer streaming
 
+> **Build item 1 PARTIALLY BUILT 2026-09-23.** Page-fault counters: `decoder/faultcount_unix.go`
+> (`processFaultCounts`, `syscall.Getrusage(RUSAGE_SELF)` — pure Go stdlib, no `x/sys`, confirmed
+> portable darwin+linux) and `decoder/faultcount_other.go`'s zero-value fallback for every other
+> platform; `expertPager` captures a `(minfltBase, majfltBase, faultsOK)` baseline in
+> `newExpertPager` and exposes the delta via `faultDelta()`. These are PROCESS-WIDE counts, not
+> pager-attributed — `getrusage` cannot key a fault to a specific mapping — documented on the
+> struct field. Deliberately NOT wired into `pagerSummary` (the one-shot load banner): called
+> immediately after construction, the delta would always read zero there and mislead; it is a
+> standalone method for a future A/B script to call, same as the pre-existing `stats()`/
+> `advisedBytes()`, both of which also have no production caller today (verified by grep).
+>
+> `--moe-pager=mmap|pool` (`internal/serveapp/main.go`, `applyMoEPagerEnv`) exposes the existing
+> `GOINFER_MOE_PREAD_CPU` switch as a real flag, set explicitly either way (mirrors
+> `applyExactPrefillEnv`'s reasoning: the flag must win over an inherited env var), validated
+> against `flag.Args`-style rejection of anything but the two names.
+>
+> The pool's cap invariant: `decoder/moepool_test.go` already had thorough coverage (byte-exact
+> refill through compute, top-K self-eviction, LRU order, cross-stream lock correctness) — most of
+> a first draft here duplicated it and was deleted. `TestExpertBufferPool_capNeverExceedsBudget` is
+> the one genuinely new case: a generous BUDGET (not `minSlots`) determines slot count.
+>
+> Mutation-checked: `applyMoEPagerEnv`'s branch inversion caught by its own test; `faultDelta`'s
+> test caught the `newRealMmapPager` test helper bypassing the real baseline-capture path (fixed by
+> making the helper call `processFaultCounts()` too, matching the real constructor).
+>
+> **Unstarted:** the registered rule's real M35 `.giw` mmap-vs-pool A/B (no M35-class checkpoint
+> fits this machine's free disk today), the darwin-default flip (gated on that measurement), and
+> the dense pread ring (Build item 3, explicitly optional — "today the 7B fits"). No `--footprint`
+> snapshots, no swap log, no `docs/measurements/moe-pager-mode-darwin-2026-MM-DD.md` — none of
+> those are possible without the measurement this session cannot run.
+
 **Goal.** On darwin, where advice cannot enforce a budget, the expert pager enforces it by
 allocation — the owned-buffer pread pool already in the tree — if a measurement says the copy
 cost is worth the cap; and dense layer streaming gets the same option.
 
 **Standing and the registered rule.** (The Metal pager's own M26 runs are R11(c)'s three spirals —
 those are S0's dense-copy term plus slots on a box with no headroom, and S6 is their fix; this brief
-is the CPU pager.) `GOINFER_MOE_PREAD_CPU=1` (`decoder/moepaging.go:167`)
+is the CPU pager.) `GOINFER_MOE_PREAD_CPU=1` (`decoder/moepaging.go:180`)
 selects `newExpertBufferPool`: a fixed set of owned buffers refilled by `pread` on an independent
 fd, "a firm cap on every platform at the cost of a memcpy per miss and losing `.giw` zero-copy
 aliasing" — Lever 1b of `task-moe-streaming.md`, never measured on the Mac against the mmap mode

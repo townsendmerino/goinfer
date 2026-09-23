@@ -59,6 +59,18 @@ type expertPager struct {
 	pool     *expertBufferPool               // owned-buffer pread mode; nil if cache is set
 	nExperts int                             // mapping-backed experts under management (for the banner)
 	total    int64                           // total mapped expert bytes (for the banner)
+
+	// S5 (task-never-swap-2026-09.md): process-wide getrusage(RUSAGE_SELF) minor/major
+	// page-fault counts at pager creation — faultDelta() reports how many faults have
+	// happened SINCE, the comparison this brief's own A/B (mmap mode's real WILLNEED faults
+	// vs pool mode's pread, which should show near-zero additional faults) needs. Process-wide
+	// on purpose, not pager-scoped: getrusage has no way to attribute a fault to a specific
+	// mapping, so this is contaminated by whatever else the process does between the baseline
+	// and the read — acceptable for an A/B run with nothing else happening, stated rather than
+	// hidden as a per-fault-attributed number it is not. faultsOK false means the platform has
+	// no probe (faultcount_other.go) — every unknown proceeds; pagerSummary omits the term.
+	minfltBase, majfltBase int64
+	faultsOK               bool
 }
 
 // Lock/Unlock should wrap touch() and the matmul reads that follow it, for the duration of one
@@ -164,12 +176,14 @@ func newExpertPager(w *Weights, mapping []byte, budget int64, giwPath string) *e
 	if budget < maxExpert {
 		budget = maxExpert // must hold at least one expert
 	}
+	minfltBase, majfltBase, faultsOK := processFaultCounts()
 	if os.Getenv("GOINFER_MOE_PREAD_CPU") == "1" && giwPath != "" && len(poolMembers) == len(members) {
 		pool, err := newExpertBufferPool(giwPath, poolMembers, budget, w.arch.MoE.TopK)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "decoder: MoE pread pool init failed (%v), falling back to mmap paging\n", err)
 		} else {
-			return &expertPager{pool: pool, nExperts: len(poolMembers), total: total}
+			return &expertPager{pool: pool, nExperts: len(poolMembers), total: total,
+				minfltBase: minfltBase, majfltBase: majfltBase, faultsOK: faultsOK}
 		}
 	}
 	// Frequency-aware (classic LRU tail) eviction: the router's demand signal is
@@ -182,7 +196,8 @@ func newExpertPager(w *Weights, mapping []byte, budget int64, giwPath string) *e
 	for _, m := range members {
 		cache.Add(m.key, m.spans)
 	}
-	return &expertPager{cache: cache, nExperts: len(members), total: total}
+	return &expertPager{cache: cache, nExperts: len(members), total: total,
+		minfltBase: minfltBase, majfltBase: majfltBase, faultsOK: faultsOK}
 }
 
 // touch records that ex is needed now: it becomes most-recently-used and, if it
@@ -235,6 +250,21 @@ func (p *expertPager) advisedBytes() int64 {
 		return p.pool.bytesRead
 	}
 	return p.cache.AdvisedBytes()
+}
+
+// faultDelta reports this PROCESS's minor/major page faults since the pager was created — the
+// mmap-vs-pool A/B this brief exists to run (mmap mode's WILLNEED-triggered real page faults vs
+// pool mode's pread, which should show near-zero additional faults past the baseline). See the
+// struct field's own doc comment for why this is process-wide, not pager-attributed.
+func (p *expertPager) faultDelta() (minflt, majflt int64, ok bool) {
+	if !p.faultsOK {
+		return 0, 0, false
+	}
+	nowMin, nowMaj, ok := processFaultCounts()
+	if !ok {
+		return 0, 0, false
+	}
+	return nowMin - p.minfltBase, nowMaj - p.majfltBase, true
 }
 
 // close releases the pager's resources — currently only meaningful in pool mode (the
