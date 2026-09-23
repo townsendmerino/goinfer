@@ -1493,12 +1493,16 @@ const (
 // a family that reaches a non-streaming return with a live sink errors loudly instead of writing
 // a header-only bundle.
 func needsResidentSerialize(a *Architecture) bool {
-	// gpt-oss removed 2026-09-23 (S2, task-never-swap-2026-09.md): loadGptOss's per-layer
-	// closure already builds one layer independently of every other (see the streaming branch
-	// at its own parallelLayers call site) — the M-09 lesson applies here too, the comment
-	// moves with the code, not just stays behind as a stale warning.
-	return a.gemma4 != nil || a.laguna != nil ||
-		a.granite != nil || a.nemotron != nil || a.llama4 != nil
+	// gpt-oss, laguna, granite (the Mamba-2+MoE hybrid), nemotron and llama4 removed 2026-09-23
+	// (S2, task-never-swap-2026-09.md): every one of their per-layer closures already builds one
+	// layer independently of every other (see each family's own streaming branch, right at its
+	// parallelLayers call site) — the M-09 lesson applies here too, the comment moves with the
+	// code, not just stays behind as a stale warning. decoder/gguf_streaming_shape_test.go proves
+	// the "independently of every other" half from source and keeps it true.
+	//
+	// gemma4 alone remains: its fused PLE/MoE tail is a genuinely different obstacle (a
+	// model-level dependency, not per-layer data spread across the wrong place) — not attempted.
+	return a.gemma4 != nil
 }
 
 func ggufLayerCount(n int) (int, error) {
@@ -2250,17 +2254,24 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
+		// S2 (task-never-swap-2026-09.md): loadLaguna is self-contained per-layer (every tensor
+		// it reads is blk.{i}.*-named — decoder/gguf_streaming_shape_test.go proves this from
+		// source and keeps it true), so the loadQ35/loadGptOss streaming shape applies unchanged.
+		if sink != nil {
+			for i := range arch.NumLayers {
+				if err := loadLaguna(i); err != nil {
+					return nil, err
+				}
+				sink.layer(&w.Layers[i])
+				if sink.err != nil {
+					return nil, sink.err
+				}
+				w.Layers[i] = LayerWeights{} // release before the next layer
+			}
+			return w, nil
+		}
 		if err := parallelLayers(arch.NumLayers, abort, loadLaguna); err != nil {
 			return nil, err
-		}
-		if sink != nil {
-			// M-09 BACKSTOP. This branch built every layer without calling sink.layer, so
-			// continuing would write a header declaring arch.NumLayers followed by no layers
-			// at all. StreamTranscodeGGUF is supposed to have routed this family through the
-			// resident-build fallback (needsResidentSerialize); if it did not, say so here
-			// rather than emit a CRC-valid bundle that dies at load with "truncated body".
-			return nil, fmt.Errorf("decoder(gguf): %s does not stream per-layer; it must be "+
-				"routed through the resident-build fallback (needsResidentSerialize)", arch.Name)
 		}
 		return w, nil
 	}
@@ -2378,17 +2389,24 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
+		// S2 (task-never-swap-2026-09.md): loadGranite is self-contained per-layer (every tensor
+		// it reads is blk.{i}.*-named — decoder/gguf_streaming_shape_test.go proves this from
+		// source and keeps it true), so the loadQ35/loadGptOss streaming shape applies unchanged.
+		if sink != nil {
+			for i := range arch.NumLayers {
+				if err := loadGranite(i); err != nil {
+					return nil, err
+				}
+				sink.layer(&w.Layers[i])
+				if sink.err != nil {
+					return nil, sink.err
+				}
+				w.Layers[i] = LayerWeights{} // release before the next layer
+			}
+			return w, nil
+		}
 		if err := parallelLayers(arch.NumLayers, abort, loadGranite); err != nil {
 			return nil, err
-		}
-		if sink != nil {
-			// M-09 BACKSTOP. This branch built every layer without calling sink.layer, so
-			// continuing would write a header declaring arch.NumLayers followed by no layers
-			// at all. StreamTranscodeGGUF is supposed to have routed this family through the
-			// resident-build fallback (needsResidentSerialize); if it did not, say so here
-			// rather than emit a CRC-valid bundle that dies at load with "truncated body".
-			return nil, fmt.Errorf("decoder(gguf): %s does not stream per-layer; it must be "+
-				"routed through the resident-build fallback (needsResidentSerialize)", arch.Name)
 		}
 		return w, nil
 	}
@@ -2526,17 +2544,24 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
+		// S2 (task-never-swap-2026-09.md): loadNemo is self-contained per-layer (every tensor it
+		// reads is blk.{i}.*-named — decoder/gguf_streaming_shape_test.go proves this from source
+		// and keeps it true), so the loadQ35/loadGptOss streaming shape applies unchanged.
+		if sink != nil {
+			for i := range arch.NumLayers {
+				if err := loadNemo(i); err != nil {
+					return nil, err
+				}
+				sink.layer(&w.Layers[i])
+				if sink.err != nil {
+					return nil, sink.err
+				}
+				w.Layers[i] = LayerWeights{} // release before the next layer
+			}
+			return w, nil
+		}
 		if err := parallelLayers(arch.NumLayers, abort, loadNemo); err != nil {
 			return nil, err
-		}
-		if sink != nil {
-			// M-09 BACKSTOP. This branch built every layer without calling sink.layer, so
-			// continuing would write a header declaring arch.NumLayers followed by no layers
-			// at all. StreamTranscodeGGUF is supposed to have routed this family through the
-			// resident-build fallback (needsResidentSerialize); if it did not, say so here
-			// rather than emit a CRC-valid bundle that dies at load with "truncated body".
-			return nil, fmt.Errorf("decoder(gguf): %s does not stream per-layer; it must be "+
-				"routed through the resident-build fallback (needsResidentSerialize)", arch.Name)
 		}
 		return w, nil
 	}
@@ -2759,17 +2784,24 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
+		// S2 (task-never-swap-2026-09.md): loadL4 is self-contained per-layer (every tensor it
+		// reads is blk.{i}.*-named — decoder/gguf_streaming_shape_test.go proves this from source
+		// and keeps it true), so the loadQ35/loadGptOss streaming shape applies unchanged.
+		if sink != nil {
+			for i := range arch.NumLayers {
+				if err := loadL4(i); err != nil {
+					return nil, err
+				}
+				sink.layer(&w.Layers[i])
+				if sink.err != nil {
+					return nil, sink.err
+				}
+				w.Layers[i] = LayerWeights{} // release before the next layer
+			}
+			return w, nil
+		}
 		if err = parallelLayers(arch.NumLayers, abort, loadL4); err != nil {
 			return nil, err
-		}
-		if sink != nil {
-			// M-09 BACKSTOP. This branch built every layer without calling sink.layer, so
-			// continuing would write a header declaring arch.NumLayers followed by no layers
-			// at all. StreamTranscodeGGUF is supposed to have routed this family through the
-			// resident-build fallback (needsResidentSerialize); if it did not, say so here
-			// rather than emit a CRC-valid bundle that dies at load with "truncated body".
-			return nil, fmt.Errorf("decoder(gguf): %s does not stream per-layer; it must be "+
-				"routed through the resident-build fallback (needsResidentSerialize)", arch.Name)
 		}
 		return w, nil
 	}

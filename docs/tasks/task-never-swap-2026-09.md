@@ -7,13 +7,16 @@
 > unassisted, see S3's own status note below and `docs/measurements/swap-tripwire-2026-09-22.md`).
 > **S1 BUILT AND MEASURED 2026-09-22** (darwin default-sidecar for serve/chat/fit, all three
 > registered gates passed on real hardware — see S1's own status note below and
-> `docs/measurements/sidecar-default-2026-09-22.md`). **S2 STARTED 2026-09-23, gpt-oss only** (one
-> of six families moved off the resident-build fallback; real-checkpoint memory safety confirmed —
-> swap-used flat throughout a real gpt-oss-20b transcode — though the run itself did not finish,
-> disk-limited on this machine; see S2's own status note below and
-> `docs/measurements/transcode-streaming-2026-09-23.md`), **S4/S5/S6 unstarted.** S2's remaining
-> five families (gemma4, laguna, granite, nemotron, llama4) still build resident before they can be
-> transcoded at all. **Correction to an earlier version of this line**: S2 was never actually a
+> `docs/measurements/sidecar-default-2026-09-22.md`). **S2 FIVE OF SIX FAMILIES DONE 2026-09-23**
+> (gpt-oss, laguna, granite, nemotron and llama4 all moved off the resident-build fallback;
+> gpt-oss alone has real fixture + real-checkpoint verification — swap-used flat throughout a real
+> gpt-oss-20b transcode, though the run itself did not finish, disk-limited on this machine — the
+> other four are backed by a new structural (AST-based) test proving no family reads a non-per-layer
+> tensor, not by fixture byte-identity, since no fixture exists for any of them; see S2's own
+> status note below and `docs/measurements/transcode-streaming-2026-09-23.md`), **S4/S5/S6
+> unstarted.** S2's one remaining family, gemma4, has a genuinely different obstacle (a truly
+> model-level fused PLE/MoE tail) the other five did not. **Correction to an earlier version of
+> this line**: S2 was never actually a
 > precondition for S3's OWN positive control — S3's gpt-oss-20b run (2026-09-22) already reached
 > the true historical scenario directly (a plain resident load, no `-stream-weights`, S2 has
 > nothing to do with that code path) and found its real limit on its own terms. S1+S2 together are
@@ -273,40 +276,51 @@ if a safetensors-only model ever matters on the Mac); Linux defaults; anything a
 
 ### S2 · Streaming transcode sink for the six resident-serialize families
 
-> **STARTED 2026-09-23, gpt-oss only (Mac-relevance-first per this brief's own ordering).**
-> `needsResidentSerialize` no longer names gpt-oss; `loadGptOss`'s per-layer closure turned out to
-> already be self-contained (every tensor it reads is `blk.{i}.*`-named, including the per-layer
-> `AttnSinks`/`RouterBias` — NOT model-level tails for this family, unlike gemma4's PLE/MoE tail;
-> `stackedExperts`/`stackedExpertBias`'s `RowDequantizer` calls are per-tensor, keyed by the same
-> per-layer name, not a whole-file or cross-layer dependency), so the `loadQ35` streaming shape
-> (2026-08-24) applied with no new design work — this family's "obstacle" this brief's own Read
-> First section named turned out not to block anything once actually read.
+> **FIVE OF SIX FAMILIES DONE 2026-09-23 — only gemma4 remains.** `needsResidentSerialize` now
+> names gemma4 alone. gpt-oss, laguna, granite (the Mamba-2+MoE hybrid, `arch.granite` — not the
+> plain dense Granite family `gguf_granite_permute_test.go` covers), nemotron and llama4 all
+> turned out the same way once actually read: every one of their per-layer closures was already
+> self-contained (every tensor `blk.{i}.*`-named, including per-layer router/bias/sink fields this
+> brief worried might be model-level tails — they were not, for any of these five), so the
+> `loadQ35` streaming shape (build → write → release, 2026-08-24) applied with no new design work.
+> This brief's own "Read First" concerns (gpt-oss's `RowDequantizer`, the others' "per-layer block
+> kinds") turned out not to block anything once actually read — only gemma4's genuinely different
+> obstacle (a fused, truly model-level PLE/MoE tail, not per-layer data in the wrong place) held.
 >
-> **Verified on the tiny fixture, then on the real checkpoint.**
-> `internal/prequant/stream_families_test.go`'s `TestGptOss_streamedMatchesResident`: streamed vs
-> resident-build-then-serialize bundles byte-identical across int4/int8int8/f32 on
-> `decoder/testdata/gptoss_tiny.gguf`, mutation-checked (corrupting the sink write to always emit
-> layer 0 turns it red). `TestStreamTranscode_ctxCancel_gptoss` confirms M-21's cancellation
-> contract holds for the new branch too. `TestParityManifest_fresh`'s staleness on
-> `decoder/gguf.go` closed via the sanctioned non-numeric refresh, backed by the byte-identity
-> proof above — not blind trust that a control-flow change is numerically inert. A REAL gpt-oss-20b
-> transcode then ran with external RSS/swap/disk monitoring
-> (`docs/measurements/transcode-streaming-2026-09-23.md`): **swap-used stayed flat the entire
-> run** (it went down 8 MB, not up) — the exact model that historically drove this machine's swap
-> to 22.9 GB transcoded without moving it at all. The run itself did not finish (this machine's 12
-> GB free disk cannot hold the 12 GB source and a ~10+ GB output simultaneously; an external
-> disk-floor kill-switch correctly stopped it at 1 GB free) — a capacity limit of this machine
-> right now, not a streaming-fix failure. A real bug in the kill-switch script itself (wrong
-> temp-file cleanup pattern) left a 10 GB orphaned file; caught by a `df` check immediately after
-> and deleted before it caused further trouble — recorded rather than quietly fixed and forgotten.
+> **Verification is NOT the same depth for all five, and that is stated rather than blurred.**
+> gpt-oss alone has real fixture coverage: `TestGptOss_streamedMatchesResident`
+> (`internal/prequant/stream_families_test.go`) proves streamed-vs-resident byte-identity across
+> int4/int8int8/f32 on `decoder/testdata/gptoss_tiny.gguf`, mutation-checked, PLUS a real
+> `gpt-oss-20b` transcode showing swap-used flat throughout
+> (`docs/measurements/transcode-streaming-2026-09-23.md`; the run itself was disk-limited before
+> finishing, a capacity issue on this machine, not a streaming-fix failure — a bug in the
+> monitoring script's own cleanup, caught and fixed the same session, also recorded there). Laguna,
+> granite, nemotron and llama4 have **no** comparable fixture — no small, tokenizer-bearing,
+> architecture-correct GGUF for any of them exists in this repo or under `~/models`, and building
+> one per family from scratch (each needs a different Mamba-2/MoE tensor set) was judged real,
+> separate work this pass did not do. What DOES cover all six families (the five newly-streaming
+> ones plus gpt-oss and qwen35 as controls) is a new structural test,
+> `decoder/gguf_streaming_shape_test.go`'s `TestStreamableFamilyClosures_onlyReadPerLayerTensors`:
+> it parses `gguf.go`'s own source (the same AST technique `stream_test.go`'s
+> `TestTranscode_writesViaTempThenRenames` already uses for a property real execution can't force)
+> and asserts every tensor-name argument each closure passes to `mat`/`vec`/`vnorm`/`streamMat`/
+> `stackedExperts`/`stackedExpertBias`/`flat` is `p+"..."`-prefixed — never a bare, model-level
+> name. Mutation-checked (injecting one bare-literal read into `loadLaguna` turns it red). This is
+> a real, meaningful, automated guard against exactly the failure mode that would corrupt a
+> streamed bundle — but it is a STRUCTURAL proof, not a numeric one; it cannot catch a bug that
+> reads the RIGHT tensor name at the WRONG index, only a bug that reads the wrong SCOPE of tensor
+> entirely. `TestParityManifest_fresh`'s staleness on `decoder/gguf.go` closed via the sanctioned
+> non-numeric refresh both times (gpt-oss alone, then the other four together), each backed by
+> real evidence (gpt-oss's byte-identity proof; the four others' unchanged resident-path forward-
+> parity tests all still green, since this change only ADDS a new `sink != nil` branch and never
+> touches the existing `sink == nil` path those goldens exercise).
 >
-> **What is NOT done:** the other five families (gemma4, laguna, granite, nemotron, llama4) —
-> gemma4 specifically has a genuinely different obstacle (the fused PLE/MoE tail) that gpt-oss
-> turned out not to have; not attempted. A COMPLETED real gpt-oss-20b transcode (needs more free
-> disk than this machine currently has) to get a real-checkpoint byte-identity confirmation, not
-> just the tiny-fixture one. The brief's own three-run RSS-peak averaging (one run here, disk-
-> limited before even that one finished). `docs/giw-bundles.md` not yet updated to say gpt-oss
-> streams now.
+> **What is NOT done:** gemma4 (the one family with a genuinely different, harder obstacle — not
+> attempted). Real or synthetic fixture-based byte-identity proof for laguna/granite/nemotron/
+> llama4 specifically (the structural test is real evidence, not a substitute for it). A COMPLETED
+> real gpt-oss-20b transcode (needs more free disk than this machine currently has). The brief's
+> own three-run RSS-peak averaging. `docs/giw-bundles.md` not yet updated to say five families
+> stream now.
 
 **Goal.** `StreamTranscodeGGUF` bounds peak RAM to ~one layer for gemma4, gpt-oss, laguna, granite,
 nemotron and llama4, the way it already does for every other family, so S1 holds on the models
@@ -326,7 +340,7 @@ byte-identical to the resident-serialize path's output on the family fixtures (t
 `TestStreamTranscodeMatchesResident` shape, extended per family).**
 
 **Read first.** `decoder/gguf.go` — the qwen35 branch (`loadQ35`, the `sink != nil` streaming
-loop near `decoder/gguf.go:1771`), then each of the six loaders and *why* it was excluded: gemma4's
+loop near `decoder/gguf.go:1775`), then each of the six loaders and *why* it was excluded: gemma4's
 "fused PLE/MoE tail can't stream incrementally" (a model-level tail written after the layers —
 the head/tail split `writeHeadGlobals` already supports: `decoder/serialize.go`'s "streaming
 transcode can emit the head, then produce-write-free each layer" note), gpt-oss's stacked experts
