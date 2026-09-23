@@ -97,13 +97,26 @@
   moved the bottleneck back to the weight term, and that asymmetry is the reason this is filed as
   an open item rather than started.
 
-- **P23 · A3 f32-attention fan-out at K=8192 is unmeasured — deliberately not extrapolated.**
-  Filed 2026-09-05, carried over from the 2026-09-01 A3 fan-out work. The shipped measurement
-  (`docs/measurements/a3-f32-attention-fanout-2026-09-01.md`) covers K=1024/2048/4096 (1.58× at
-  2048, 1.92× at 4096) and stops there on purpose — extrapolating past measured points is the
-  exact error that same campaign spent a morning retracting elsewhere (see P19/CHANGELOG's
-  "the item was costed at ~13% and the estimate was wrong"). The trend is monotone in K, so 8192
-  is *likely* higher than 1.92×, but that is a prediction, not a number to quote.
+- **P23 · A3 f32-attention fan-out at K=8192 — ANSWERED 2026-09-23, not on the original box; the
+  Mac's own point stays open, and the trend did NOT extrapolate the way it looked like it would.**
+  Still counted as open below: this settles whether the monotone-extrapolation assumption is safe
+  (no), not the Mac's own missing cell. Filed
+  2026-09-05, carried over from the 2026-09-01 A3 fan-out work. The shipped measurement
+  (`docs/measurements/a3-f32-attention-fanout-2026-09-01.md`, MacBook) covers K=1024/2048/4096
+  (1.58× at 2048, 1.92× at 4096) and stopped there on purpose — extrapolating past measured points
+  is the exact error that same campaign spent a morning retracting elsewhere. The prediction on
+  file was "the trend is monotone in K, so 8192 is *likely* higher than 1.92×." **Measured on
+  nobara-pc (Linux/amd64), not the Mac — a fresh, self-contained, same-box curve, not a filled-in
+  Mac cell (same-machine comparison rule):** 2.11× → 2.90× → **3.73×** → **3.12×** at
+  1024/2048/4096/8192 — **the trend peaks around 4096 and recedes at 8192**, the opposite of what
+  the monotone prediction expected, tight across 3 pairs (3.07/3.13/3.13, not a single-pair
+  outlier). Checked and ruled out, not left as a guess: `prefillAttnWorkers`'s own scratch-budget
+  ceiling (`decoder/scratch.go`) does not bind at either depth for this model's real geometry (both
+  land at the `maxAttnWorkers=6` cap, computed from the GGUF's own head_count/embedding_length) —
+  the rollover's real cause is NOT identified. Full method and numbers:
+  `docs/measurements/a3-fanout-k8192-2026-09-23.md`. **The Mac's own K=8192 point is still
+  unmeasured** — this doesn't close that, only the cross-box question of whether the shape
+  generalizes, and it does not.
 
 - **P22 · WebGPU Theta — CLOSED 2026-09-23, and it WAS another over-drafting regression like the
   pre-fix Metal one, not assumed, measured.** Filed 2026-09-05, carried over from the same

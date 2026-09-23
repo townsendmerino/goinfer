@@ -42,7 +42,11 @@ func TestA3FanoutEndToEnd(t *testing.T) {
 	}
 	ctx := deadlineCtx(t)
 	const pairs = 3
-	depths := []int{1024, 2048, 4096}
+	// 8192 added 2026-09-23 (P23, docs/queue-performance.md): the doc's own text says
+	// "K=8192 is NOT measured here and is deliberately not extrapolated to" — the trend across
+	// 1024/2048/4096 is monotone but a fourth point is what actually answers whether it holds,
+	// keeps climbing, or plateaus/reverses at the depth the f32 flag's own headline uses.
+	depths := []int{1024, 2048, 4096, 8192}
 
 	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "1") // this item is about the f32 path only
 	start := time.Now()
