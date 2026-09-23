@@ -15,6 +15,16 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **CUDA C′: expert-stack DMA source pinned in place, DEFAULT ON (`GOINFER_MOE_PIN_REGISTER=0` opts out).**
+  The C′ expert-stack staging buffer used to allocate pinned host memory first and copy into it —
+  `cuMemAllocHost` has to find that many bytes of lockable physical RAM right then, which on a box with a
+  large page cache means reclaiming cache pages first. Populating ordinary memory and pinning it in place
+  afterward (aikit `Device.RegisterMappedHostBuffer`, gpu/v0.33.3, plus the additive `Queue.UploadAsyncAtFrom`
+  the C′ decode overlap's async DMA needed for this source) needs no such reclaim. Measured 1.33×–4.46× in an
+  isolated microbenchmark; the real decision measurement (one 26B load per sample, fresh process, 5/5
+  trials) read 1.105× (10.5%) — below the 15% bar pre-registered before either measurement, so this ships
+  as an owner override (same shape as R2/R8): a real, direction-consistent, zero-numerics-risk win taken
+  despite missing its own bar, not a promoted measurement. `docs/measurements/lead3-pin-order-2026-09-22.md`.
 - **CPU decode on non-arm64: two bit-identical defaults from the Linux attribution (R9).** (1) The SwiGLU/GeGLU
   activation no longer fans out to 6 goroutines per layer on non-arm64 — the wake stagger cost 3× what the
   9–19k scalar `silu` calls save (1.5B 13.5 → 3.9 ms/token, 7B 27.9 → 8.0). (2) R13's grouped attention path is

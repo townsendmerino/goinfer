@@ -49,7 +49,7 @@
 |---|---|---|
 | 1. State-checkpoint KV reuse for hybrid/recurrent models | **checked 2026-09-22: still unblocked, no real agent-loop traffic exists to spike against** — orphaned | high |
 | 2. Async-H2D overlap for the CUDA expert cache | **SHIPPED 2026-09-22** (`GOINFER_MOE_DMA_OVERLAP`, 1.27× real 26B) — see below | done |
-| 3. Pin the CUDA expert-stack buffer after filling, not before | **measured 2026-09-22, PARKED**: built, wired, gated (`GOINFER_MOE_PIN_REGISTER`, default off); real decision measurement on the real 26B, 1.105× (10.5%), below the ship bar — see below | medium → parked |
+| 3. Pin the CUDA expert-stack buffer after filling, not before | **measured 2026-09-22, PARKED by the rule, overridden to DEFAULT ON**: real decision measurement on the real 26B, 1.105× (10.5%), below the 15% ship bar but 5/5 winning trials, zero numerics risk — see below | done (default) |
 | 4. Pool the CUDA expert cache globally instead of per-layer | **measured, PARKED 2026-09-22**: unevenness real (2 of 30 layers), bounded upside +0.4 pp hit rate, too small to build for — see below | medium → parked |
 | 5. Bandwidth-adaptive CPU/GPU co-execution | **KILLED 2026-09-21**, real hardware, ~11× regression (cache-poisoning) — see below | closed |
 | — GPU-resident session-skip | **corrected 2026-09-13: fixed in general, not just "not a gap"** — see note below | Lead 1 is now the live remainder |
@@ -206,9 +206,11 @@ load per sample, fresh process each time, ABBA, 4 vs 5 trials: 1.105× — 10.5%
 Against the rule pre-registered before either measurement (ship ≥15%, park 5–15%, kill
 <5%): **PARK.** New never lost a trial, but the effect is diluted inside a ~46s total
 load dominated by disk read and tensor decode, not the ~11.4 GB pin step alone — a
-different regime from the isolated microbenchmark. `GOINFER_MOE_PIN_REGISTER` stays
-opt-in, default off; the code is correct and kept, not shipped as default.
-`docs/measurements/lead3-pin-order-2026-09-22.md`.
+different regime from the isolated microbenchmark. **Owner override, same day: default
+flipped ON anyway** (same shape as R2/R8 elsewhere in this campaign) — 5/5 winning
+trials and zero numerics risk (the DMA source's bytes are identical either way) made
+this a real win worth taking despite missing its own bar. `GOINFER_MOE_PIN_REGISTER=0`
+restores the measured do-nothing arm. `docs/measurements/lead3-pin-order-2026-09-22.md`.
 
 ---
 

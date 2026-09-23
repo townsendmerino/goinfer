@@ -1814,11 +1814,15 @@ func u16bytes(v []uint16) []byte {
 
 // mapBytesRegisterInPlace: Lead 3 (docs/tasks/task-freetoken-techniques.md), measured
 // 2026-09-22 (docs/measurements/lead3-pin-order-2026-09-22.md) — populate-then-pin beat
-// allocate-then-copy 1.33x-4.46x in a standalone microbenchmark at this scale. GOINFER_MOE_PIN_REGISTER
-// gates the real decision measurement this named as the next step: one real 26B load, old order vs
-// new, fresh process each time. Default OFF until that measurement clears its own pre-registered bar
-// (ship >=15% off the load time, park 5-15%, kill <5%) — not yet run.
-var mapBytesRegisterInPlace = os.Getenv("GOINFER_MOE_PIN_REGISTER") != ""
+// allocate-then-copy 1.33x-4.46x in a standalone microbenchmark at this scale, and never lost a
+// single real-load trial (5/5) in the follow-up decision measurement. That measurement's own
+// pre-registered rule (ship >=15% off the real 26B load time) put the result — 1.105x, 10.5% —
+// in its PARK band, not ship. DEFAULT ON ANYWAY, owner override, same day: a real, direction-
+// consistent win with zero losing trials, on a path with no numerics risk (RegisterMappedHostBuffer
+// pins the caller's own already-populated bytes; the DMA source content is byte-for-byte the same
+// either way, gated correctness tests unaffected). `GOINFER_MOE_PIN_REGISTER=0` restores the
+// allocate-then-copy order the pre-registered measurement called the do-nothing arm.
+var mapBytesRegisterInPlace = os.Getenv("GOINFER_MOE_PIN_REGISTER") != "0"
 
 // mapBytes stages src as the C′ DMA source: pinned (device-mapped) host memory holding exactly
 // src's bytes. src is caller-owned and already fully populated (the merged expert-stack slice

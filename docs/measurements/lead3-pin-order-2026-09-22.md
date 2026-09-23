@@ -112,7 +112,17 @@ drift. A bigger run, ideally with `/proc/meminfo` sampled per trial (needs root 
 `drop_caches` between samples), would be needed to separate "the real effect is ~15%+ once the system
 reaches its steady state" from "the real effect is ~10% and the tail three samples are a coincidence."
 
-**Verdict: PARKED, not shipped, not killed.** `GOINFER_MOE_PIN_REGISTER` stays opt-in, default off. The
-code is correct and gated (kept, not thrown away — it is real API surface with a real, if inconclusive,
-measured benefit), but does not clear the ship bar this record itself set before measuring. Revisit with a
-larger sample, or on a box where cache state can be reset between trials, before reconsidering the default.
+**Verdict: PARKED by this record's own pre-registered rule.** `GOINFER_MOE_PIN_REGISTER` was opt-in,
+default off. The code is correct and gated (kept, not thrown away — it is real API surface with a real,
+if inconclusive, measured benefit), but did not clear the ship bar this record itself set before measuring.
+
+## Owner override, same day: default flipped ON
+
+The measurement's own verdict stands — 10.5% did not clear the pre-registered 15% ship bar. Overridden
+anyway: the effect was direction-consistent with zero losing trials (5/5), the DMA source's bytes are
+identical either way (no numerics risk, unlike a kernel-precision override), and the mechanism is
+understood, not a fluke. Same shape as R2's and R8's owner overrides elsewhere in this campaign — a real,
+measured, sub-threshold win taken deliberately rather than left on the table pending a re-measurement that
+may never happen. `GOINFER_MOE_PIN_REGISTER=0` restores the measured do-nothing arm (allocate-then-copy).
+This does not retroactively make the measurement a "ship" — the record above is the finding; this section
+is the decision made in spite of it.

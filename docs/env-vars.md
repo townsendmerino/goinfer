@@ -116,6 +116,15 @@ real hardware at scale; default off),
 `64x64`, `128x64`, `32x64`, or `32x32`; an R5-phase investigation knob, default unchanged, the
 32-row tiles are a measured regression kept only for A/B comparison),
 `GOINFER_CUDA_VISION_ATTN` (CUDA vision tower: `bm128` is the DEFAULT since 2026-09-21 — the R8 fused non-causal attention kernel for the SigLIP tower, 6.4× faster (26.0 → 4.1 s/image). Its output differs from the pre-2026-09-21 `attn_img_batched` path at tower level (cosine 0.96 vs the old resident output; cosine vs the CPU int8 reference unchanged, ~0.91-0.93 either way) and a pre-registered served downstream check found it perturbs greedy generation somewhat MORE than a 1-LSB pixel jitter control does (no defect found in either check) — the owner chose the speedup anyway, overriding both pre-registered rules; see `docs/measurements/vision-tower-mma-2026-09-21.md` and `vision-tower-downstream-2026-09-21.md`. `exact` restores the old kernel; `bm64` selects the other fused arm),
+`GOINFER_MOE_PIN_REGISTER` (CUDA C′: DEFAULT ON. Stages the expert-stack DMA source by pinning the
+already-populated host bytes in place (aikit `Device.RegisterMappedHostBuffer`, gpu/v0.33.3) instead
+of allocating pinned memory first and copying into it — cuMemHostRegister on already-resident pages
+needs no page-cache reclaim, unlike cuMemAllocHost's fresh pinned allocation. Measured
+1.33x-4.46x in an isolated microbenchmark and 1.105x (10.5%) on a real 26B load, fresh process per
+sample, 5/5 trials won — below the pre-registered 15% ship bar (park 5-15%), so this is an OWNER
+OVERRIDE default-on despite the park verdict, not a promoted measurement; the DMA source's bytes
+are identical either way (no numerics risk). `0` restores the allocate-then-copy order. See
+`docs/measurements/lead3-pin-order-2026-09-22.md`),
 `GOINFER_MOE_DMA_OVERLAP` (CUDA C′ decode: DEFAULT ON when the expert-slot cache is on; `0` restores
 the draining path. The routing readback waits on an event recorded after the router instead of
 draining the stream; cache misses are DMA'd on a second stream while the kernels issued after the
