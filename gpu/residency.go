@@ -1341,6 +1341,28 @@ func (rd *residentDecoder) ForwardN(embeddings [][]float32, startPos int) ([][]f
 	return out, nil
 }
 
+// VerifyPath (decoder.VerifyPathReporter) reports whether this resident's ForwardN executes a
+// batched pass whose marginal per-node cost approaches zero, or a sequential one whose marginal
+// cost approaches a full extra step. P22 (docs/queue-performance.md): before this, WebGPU
+// implemented neither VerifyPathReporter nor PrefillPathReporter, so decoder.verifyTheta() fell
+// through to thetaFor("webgpu")'s unmeasured 0.5 default — the same "worst available choice"
+// defect Metal had (a smaller Theta drafts DEEPER, not shallower; spec_adaptive.go's Depth() is
+// monotone-decreasing in Theta), just never caught here because nothing had measured it.
+//
+// MEASURED, not inferred from ForwardN's "one command buffer" doc comment above: despite runBatch
+// recording every row into a single Submit/Poll, Theta = 0.978-1.028 across four real
+// configurations (docs/measurements/theta-webgpu-2026-09-23.md; gpu/theta_probe_test.go), i.e.
+// T(n) is n·T(1) to within noise — indistinguishable from a plain per-token loop. The single
+// submit removes Go-side dispatch/sync overhead between rows, not GPU-side compute: each runner
+// still issues its own full set of per-layer dispatches, so the marginal wall-clock cost of an
+// extra row stays ~1×, which is exactly the quantity this interface's contract is about — a
+// structurally-batched submission is not what "batched" means here if it doesn't move Theta.
+// Always sequential (unconditionally, unlike Metal's paged-MoE-only decline): no configuration
+// measured otherwise, and there is no code path here that behaves differently by model shape.
+func (rd *residentDecoder) VerifyPath() (bool, string) {
+	return false, "sequential — measured Theta 0.978-1.028, indistinguishable from a per-token loop despite the single-submit structure"
+}
+
 var _ decoder.Prefiller = (*residentDecoder)(nil)
 
 // PrefillLast is decoder.Prefiller: process the whole embeddings slice in ONE

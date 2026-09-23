@@ -1,10 +1,12 @@
 # Performance queue
 
-> **Five open items as of 2026-09-23** (P21–P25) — was briefly empty on 2026-08-31, when every item
-> then on the page was closed, refuted, withdrawn, or moved to the track that owns it. P20 closed
-> 2026-09-21 (both its generic and gemma4-specific paths built and shipped default-on, 2.26–2.66×
-> on the real M26); this line was originally "Four open items as of 2026-09-05 (P20–P23)" and had
-> already drifted once (missing P24/P25) before P20's own closure was caught and corrected here.
+> **Four open items as of 2026-09-23** (P21, P23, P24, P25) — was briefly empty on 2026-08-31, when
+> every item then on the page was closed, refuted, withdrawn, or moved to the track that owns it.
+> P20 closed 2026-09-21 (both its generic and gemma4-specific paths built and shipped default-on,
+> 2.26–2.66× on the real M26); P22 closed 2026-09-23 (WebGPU Theta measured at 0.978–1.028, the
+> same over-drafting defect Metal had, fixed and confirmed with a real A/B). This line was
+> originally "Four open items as of 2026-09-05 (P20–P23)" and had already drifted once (missing
+> P24/P25) before P20 and P22's own closures were caught and corrected here.
 >
 > **The closed record is [`docs/completed/queue-performance.md`](./completed/queue-performance.md)**
 > (2,245 lines, G15–G24 · P1–P16 · A1–A11 and the A9-\* series). It moved rather than being deleted
@@ -103,12 +105,22 @@
   "the item was costed at ~13% and the estimate was wrong"). The trend is monotone in K, so 8192
   is *likely* higher than 1.92×, but that is a prediction, not a number to quote.
 
-- **P22 · WebGPU Theta is unmeasured, and falls through to the 0.5 default — explicitly now,
-  rather than by accident.** Filed 2026-09-05, carried over from the same 2026-09-01 work as P21.
-  CPU (0.5), CUDA (0.251) and Metal (≈1.02) all got real probes
+- **P22 · WebGPU Theta — CLOSED 2026-09-23, and it WAS another over-drafting regression like the
+  pre-fix Metal one, not assumed, measured.** Filed 2026-09-05, carried over from the same
+  2026-09-01 work as P21. CPU (0.5), CUDA (0.251) and Metal (≈1.02) all got real probes
   (`docs/measurements/theta-per-backend-2026-09-01.md`, `theta-cuda-ab-2026-09-01.md`); WebGPU did
-  not. Whether the shipped-default 0.5 is close enough or another over-drafting regression like
-  the pre-fix Metal one is an open question, not assumed either way.
+  not — `gpu.residentDecoder` implemented neither `VerifyPathReporter` nor `PrefillPathReporter`,
+  so `decoder.verifyTheta()` fell all the way through to the unmeasured 0.5 default. Measured
+  (`gpu/theta_probe_test.go`, new): **Theta 0.978–1.028** across four real configurations —
+  `ForwardN` records every row into one command-buffer submit, but that removes Go-side dispatch
+  overhead only, not GPU-side compute, so the marginal wall-clock cost of an extra verify row
+  stays ~1×, same shape as Metal's own defect. Fixed by wiring `VerifyPath()` on
+  `gpu.residentDecoder` (returns `false`, routing to the shared `sequentialVerifyTheta = 1.02`
+  constant — no new per-backend value needed). **Confirmed with a real A/B, not asserted from the
+  probe alone** (`gpu/theta_ab_test.go`, mirrors Metal's own): under the old 0.5 default,
+  speculative decode measured **1.22× SLOWER than not speculating at all** on real hardware; wired
+  correctly, it lands within noise of plain generation (0.95×) and **1.28× faster than the broken
+  default**. Full method: `docs/measurements/theta-webgpu-2026-09-23.md`.
 
 - **P21 · Metal `ForwardN` batching — the controller now tells the truth about Metal's Theta;
   batching is what would CHANGE the truth.** Filed 2026-09-05, carried over from the
