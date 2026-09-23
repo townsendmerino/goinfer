@@ -1587,10 +1587,14 @@ func (r *cudaResident) waitMiss(j int) error {
 func (r *cudaResident) dmaExpertSlot(w *cudaWQ, e, slot int) error {
 	wOff, wLen := e*w.perExpertW*4, w.perExpertW*4
 	sOff, sLen := e*w.perExpertS*2, w.perExpertS*2
-	if err := r.dmaQ.UploadAsyncAt(w.W.At(slot*w.perExpertW*4), w.srcW.Host(), wOff, wLen); err != nil {
+	// UploadAsyncAtFrom, not UploadAsyncAt+.Host(): srcW/srcS may be either MappedHostBuffer origin
+	// (NewMappedHostBuffer or, under GOINFER_MOE_PIN_REGISTER, RegisterMappedHostBuffer) and .Host()
+	// returns nil for the latter — Lead 3's register-in-place source has no *gpu.HostBuffer to hand
+	// UploadAsyncAt, only Bytes(), which UploadAsyncAtFrom reads through either origin.
+	if err := r.dmaQ.UploadAsyncAtFrom(w.W.At(slot*w.perExpertW*4), w.srcW, wOff, wLen); err != nil {
 		return err
 	}
-	if err := r.dmaQ.UploadAsyncAt(w.ws16.At(slot*w.perExpertS*2), w.srcS.Host(), sOff, sLen); err != nil {
+	if err := r.dmaQ.UploadAsyncAtFrom(w.ws16.At(slot*w.perExpertS*2), w.srcS, sOff, sLen); err != nil {
 		return err
 	}
 	if r.cacheProf {
@@ -1808,10 +1812,29 @@ func u16bytes(v []uint16) []byte {
 	return unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*2)
 }
 
-// mapBytes allocates pinned (device-mapped) host memory and copies src into it — the C′ DMA source.
-// Panics on the UVA guard failing (NewMappedHostBuffer): eligibility already asserted a UVA device,
-// so a failure here is a broken invariant, not a runtime condition.
+// mapBytesRegisterInPlace: Lead 3 (docs/tasks/task-freetoken-techniques.md), measured
+// 2026-09-22 (docs/measurements/lead3-pin-order-2026-09-22.md) — populate-then-pin beat
+// allocate-then-copy 1.33x-4.46x in a standalone microbenchmark at this scale. GOINFER_MOE_PIN_REGISTER
+// gates the real decision measurement this named as the next step: one real 26B load, old order vs
+// new, fresh process each time. Default OFF until that measurement clears its own pre-registered bar
+// (ship >=15% off the load time, park 5-15%, kill <5%) — not yet run.
+var mapBytesRegisterInPlace = os.Getenv("GOINFER_MOE_PIN_REGISTER") != ""
+
+// mapBytes stages src as the C′ DMA source: pinned (device-mapped) host memory holding exactly
+// src's bytes. src is caller-owned and already fully populated (the merged expert-stack slice
+// packWeight built) — never touched again by anyone else after this call, which is what makes the
+// register-in-place arm safe: the MappedHostBuffer keeps src's backing array reachable for as long
+// as the pin lives, exactly the reference an ordinary caller would have kept anyway.
+// Panics on the UVA guard failing: eligibility already asserted a UVA device, so a failure here is
+// a broken invariant, not a runtime condition.
 func (r *cudaResident) mapBytes(src []byte) *gpu.MappedHostBuffer {
+	if mapBytesRegisterInPlace {
+		mb, err := r.dev.RegisterMappedHostBuffer(src)
+		if err != nil {
+			panic(fmt.Sprintf("cacheWQ: RegisterMappedHostBuffer(%d): %v", len(src), err))
+		}
+		return mb
+	}
 	mb, err := r.dev.NewMappedHostBuffer(len(src))
 	if err != nil {
 		panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", len(src), err))

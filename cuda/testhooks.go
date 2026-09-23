@@ -82,6 +82,21 @@ func (r *cudaResident) CacheStatsForTest() (hits, misses uint64) {
 	return hits, misses
 }
 
+// PerLayerCacheStatsForTest returns hits/misses for every MoE layer individually, in layer order
+// (dense layers report 0/0) — the per-layer breakdown CacheStatsForTest's sum discards. This is
+// the instrument `docs/tasks/task-freetoken-techniques.md` Lead 4 asks for: is C′'s per-layer slot
+// budget wasted on some layers and starved on others, or is demand actually even across layers?
+func (r *cudaResident) PerLayerCacheStatsForTest() (hits, misses []uint64) {
+	hits = make([]uint64, len(r.layers))
+	misses = make([]uint64, len(r.layers))
+	for i := range r.layers {
+		if c := r.layers[i].expCache; c != nil {
+			hits[i], misses[i] = c.hits, c.misses
+		}
+	}
+	return hits, misses
+}
+
 // PagerStageStatsForTest sums the expert pager's DEMAND accounting across layers: stages is the
 // number of staging events (one per routed MoE layer per forward POSITION), distinct is the total
 // number of unique experts those stages asked for. Zero unless the model runs with C′ expert

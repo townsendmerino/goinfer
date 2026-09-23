@@ -1,0 +1,8 @@
+=== RUN   TestLead3_pinOrderMicrobench
+    lead3_pin_order_bench_test.go:97: pair 0: A(alloc-then-copy) alloc 5.762s + copy 907ms = 6.669s  |  B(fill-then-pin) copy 4.235s + register 791ms = 5.026s  |  B/A speedup 1.327x
+    lead3_pin_order_bench_test.go:97: pair 1: A(alloc-then-copy) alloc 17.191s + copy 991ms = 18.182s  |  B(fill-then-pin) copy 4.73s + register 727ms = 5.457s  |  B/A speedup 3.332x
+    lead3_pin_order_bench_test.go:97: pair 2: A(alloc-then-copy) alloc 6.404s + copy 865ms = 7.269s  |  B(fill-then-pin) copy 818ms + register 810ms = 1.629s  |  B/A speedup 4.463x
+    lead3_pin_order_bench_test.go:111: TOTAL over 3 pairs: A 32.12s (1.06 GB/s) | B 12.112s (2.82 GB/s) | speedup 2.652x — SHIP (>=1.5x)
+--- PASS: TestLead3_pinOrderMicrobench (74.22s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	76.696s

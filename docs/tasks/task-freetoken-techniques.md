@@ -27,13 +27,31 @@
 > landed 2026-09-10 (`cuda/l01_cpu_offload.go`, correctness-verified, not yet wired in).
 > Leads 1, 3, and 4 were checked against the current tree and stand as written.
 
+> **Doc-review correction, 2026-09-22 (doc otherwise LIVE, corrections applied in place —
+> see inline notes at each affected section).** `docs/tasks/task-moe-streaming.md`, this
+> doc's own citation target for Leads 2 and 4, has since been archived to
+> `docs/completed/task-moe-streaming.md` — its remaining levers landed. Two of the five
+> leads resolved since the 09-13 pass: (1) **Lead 2 (async-H2D overlap) SHIPPED
+> 2026-09-22** as the C′ compute/DMA overlap (`GOINFER_MOE_DMA_OVERLAP`, aikit
+> `gpu.Event`/`Queue.UploadAsyncAt`), 1.27× on the real 26B, plus its own "refinement"
+> (prefill preloading a layer's full expert set) shipped 2026-09-21 as Lever 4 /
+> R11(b)-P20 (expert-major prefill batching), 2.66×–2.26× on the real 26B — see below.
+> (2) **Lead 5 (bandwidth-adaptive CPU/GPU co-execution) ran its own pre-registered
+> funding measurement 2026-09-21 and was KILLED**, not merely "not yet a funding
+> decision": CPU-offloaded experts permanently poison the C′ cache, an ~11× regression
+> (`docs/measurements/l01-funding-cell-2026-09-21.md`) — `task-l01-hybrid-moe-cpu-gpu.md`
+> itself already records this; this doc's own summary did not. Leads 1, 3, and 4 were
+> re-checked against the current tree (`cuda/resident.go`'s `mapBytes`, `MoECacheSlots`)
+> and stand exactly as written in 2026-09-13 — genuinely unbuilt, unmeasured, unowned by
+> any live doc.
+
 | Lead | Status | Priority |
 |---|---|---|
-| 1. State-checkpoint KV reuse for hybrid/recurrent models | named, deferred (`docs/completed/qwen3_5_moe.md`) | high |
-| 2. Async-H2D overlap for the CUDA expert cache | already scoped (`docs/tasks/task-moe-streaming.md` §C′) | high |
-| 3. Pin the CUDA expert-stack buffer after filling, not before | unverified, now precise | medium |
-| 4. Pool the CUDA expert cache globally instead of per-layer | half-true already (CPU path has it) | medium |
-| 5. Bandwidth-adaptive CPU/GPU co-execution | **started** — see 2026-09-13 correction below | was low/track; now an active design pass |
+| 1. State-checkpoint KV reuse for hybrid/recurrent models | **checked 2026-09-22: still unblocked, no real agent-loop traffic exists to spike against** — orphaned | high |
+| 2. Async-H2D overlap for the CUDA expert cache | **SHIPPED 2026-09-22** (`GOINFER_MOE_DMA_OVERLAP`, 1.27× real 26B) — see below | done |
+| 3. Pin the CUDA expert-stack buffer after filling, not before | **measured 2026-09-22, PARKED**: built, wired, gated (`GOINFER_MOE_PIN_REGISTER`, default off); real decision measurement on the real 26B, 1.105× (10.5%), below the ship bar — see below | medium → parked |
+| 4. Pool the CUDA expert cache globally instead of per-layer | **measured, PARKED 2026-09-22**: unevenness real (2 of 30 layers), bounded upside +0.4 pp hit rate, too small to build for — see below | medium → parked |
+| 5. Bandwidth-adaptive CPU/GPU co-execution | **KILLED 2026-09-21**, real hardware, ~11× regression (cache-poisoning) — see below | closed |
 | — GPU-resident session-skip | **corrected 2026-09-13: fixed in general, not just "not a gap"** — see note below | Lead 1 is now the live remainder |
 
 ---
@@ -78,6 +96,18 @@ lands on the qwen3.5/3.6-class models that are also the ones losing hardest to
 FreeToken on raw throughput (§C of the comparison) — a cheaper agentic re-turn is worth
 more there than anywhere else in the tree.
 
+**Checked, 2026-09-22: still unblocked, and still nothing to measure it against.** The
+"first step" this lead names — a spike measuring how often a real agent loop re-sends a
+boundary-aligned prefix versus edits history mid-context — needs real agent-loop
+traffic. None exists in this repo to analyze: `demo/chat` is a client binary with no
+session logs, and `docs/scoping-dsh-goinfer.md`'s "context stuffing" mention is a single
+passing reference, not a dataset. Building a synthetic traffic generator to produce a
+number would be inventing the answer rather than measuring it — the same trap this
+repo's own measurement discipline warns against, just on the input side instead of the
+output side. Genuinely open, genuinely unblocked, and needs either real traffic capture
+from an actual agent session or someone to say what proxy would count as evidence
+before a spike can start.
+
 ---
 
 ## Lead 2 — async-H2D overlap for the CUDA expert cache (already your own next lever)
@@ -121,6 +151,21 @@ prerequisite; probably sequences after Lever 4.
 what this needs, and it's the direct lever under the 11.33 → 16.98 tok/s numbers in
 the comparison.
 
+**Correction, 2026-09-22: SHIPPED, both halves.** The dependency named above turned out
+unnecessary: aikit was already past v0.3.0 (`gpu/v0.33.2` by the time this landed), and the
+overlap didn't need a version bump so much as new primitives on top of what was there
+(`Event`, `Queue.UploadAsyncAt`, `Queue.ZeroAsync`). `GOINFER_MOE_DMA_OVERLAP` (default on)
+records the router's completion on an event instead of draining the stream, DMAs cache
+misses on a second queue, and lets independent GPU work (the dense branch on hybrid
+layers, hit-expert ranks) run underneath — bit-identical by construction, **1.27× on the
+real 26B (30.4 → 38.7 tok/s)**, paired ABBA, 8/8 pairs 1.269–1.288×
+(`docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md`). The "refinement"
+above — preload a prefill chunk's full expert set rather than wait on per-row routing —
+shipped the day before as Lever 4 / R11(b)-P20: route every row first, admit each distinct
+expert once per chunk, **2.66×/2.50×/2.39×/2.26× at M=512/2048/4096/8012 on the real 26B**
+(`docs/measurements/p20-expert-major-m26-2026-09-21.md`), default on
+(`GOINFER_CUDA_MOE_EXPERT_MAJOR`). Both leads inside this one are closed.
+
 ---
 
 ## Lead 3 — pin the CUDA expert-stack buffer after filling, not before
@@ -145,6 +190,25 @@ already-known, already-measured cost, not a redesign.
 **Priority: medium** — small blast radius, but needs an aikit-side primitive that may
 not exist yet; check `gpu.NewMappedHostBuffer`'s actual implementation before assuming
 this is a goinfer-side change.
+
+**Correction, 2026-09-22: measured twice — a microbenchmark, then the real decision
+measurement — and PARKED.** The primitive already existed one level below aikit's own
+wrapper (gocudrv's `RegisterHost`); a standalone microbenchmark at the real 11.4 GB
+scale found populate-then-register winning every trial, 1.33×–4.46×, with a named
+mechanism (pinning already-resident pages needs no page-cache reclaim; allocating fresh
+pinned memory does). That was flagged as not production-representative (repeated
+in-process trials, no cache reset between them), so the follow-up built it properly —
+`aikit Device.RegisterMappedHostBuffer` + `Queue.UploadAsyncAtFrom` (additive; needed
+because the C′ DMA overlap's `.Host()` call returns nil for this new origin), wired
+behind `GOINFER_MOE_PIN_REGISTER` in `cuda/resident.go`'s `mapBytes`, every existing C′
+correctness gate re-run with it on — and ran the real decision measurement: **one 26B
+load per sample, fresh process each time, ABBA, 4 vs 5 trials: 1.105× — 10.5% faster.**
+Against the rule pre-registered before either measurement (ship ≥15%, park 5–15%, kill
+<5%): **PARK.** New never lost a trial, but the effect is diluted inside a ~46s total
+load dominated by disk read and tensor decode, not the ~11.4 GB pin step alone — a
+different regime from the isolated microbenchmark. `GOINFER_MOE_PIN_REGISTER` stays
+opt-in, default off; the code is correct and kept, not shipped as default.
+`docs/measurements/lead3-pin-order-2026-09-22.md`.
 
 ---
 
@@ -174,6 +238,23 @@ across layers is actually uneven before building anything.
 **Priority: medium** — cheap to measure, uncertain payoff until measured. Exactly the
 kind of claim CLAUDE.md's measurement discipline says to check before building:
 "measure don't assume."
+
+**Correction, 2026-09-22: measured, PARKED — real unevenness, bounded upside too small to
+build for.** `PerLayerCacheStatsForTest` (new, `cuda/testhooks.go`) + `TestMoEPerLayerHitRate`
+ran the real 26B at today's shipped per-layer budget (29 slots, auto-capped). All 30 layers
+are MoE; two of them (layers 10, 11) sit ~1.9 pp below the 96.91% mean, the rest cluster within
+~1 pp of each other — real, but concentrated in two outliers, not a smooth gradient. Computed
+upside if those two were pulled to the other 28's mean via slots taken from elsewhere in the
+same total budget: **~5.7% fewer misses, hit rate 96.91% → ~97.31% (+0.4 pp)** — the ceiling
+of what a global pool buys here, before the cost of building and validating a cross-layer LRU.
+That ceiling is smaller than it would have been a day ago: `GOINFER_MOE_DMA_OVERLAP` (Lead 2,
+shipped the same day) already hides most of a miss's cost under concurrent GPU work, so a
+0.4 pp hit-rate gain now buys less wall-clock than it would have pre-overlap. One run, not
+paired — the effect is small enough that it is worth confirming before trusting the exact
+number, but not worth building around at this size either way.
+(`docs/measurements/lead4-perlayer-hitrate-2026-09-22.md`.) **Parked, not killed**: revisit
+if a different model/config shows larger unevenness, or if per-layer LRU maintenance itself
+becomes a measured cost worth removing on its own terms.
 
 ---
 
@@ -256,6 +337,21 @@ must be renegotiated per verify width. `cuda/spec_pager_interaction_test.go` and
 instrument (`PagerStageStatsForTest`) are in place to answer them; they currently report a
 refusal, which is the right answer for today and the wrong one to carry forward.
 
+**Correction, 2026-09-22: Lead 5's funding measurement ran and it was KILLED, not a still-
+open funding decision.** `task-l01-hybrid-moe-cpu-gpu.md`'s §9 remainder — the goroutine-
+per-expert parallel CPU compute, the merge kernel, async overlap alongside the GPU's own
+hit-path launches — was built (`cuda/l01_cpu_offload.go`, `GOINFER_CUDA_L01_CPU_OFFLOAD`,
+bit-identical per `TestL01_e2eDecode_matchesBaseline`) and run against the pre-registered
+bar this doc itself names (fund ≥1.3×, park <1.15×) on the real target: Qwen3.6-35B-A3B,
+CUDA, RTX 2070 SUPER. **Result: 0.083–0.094× — an ~11× regression, not a win at any
+margin.** Mechanism: CPU-offloaded experts permanently poison the C′ cache — the offloaded
+miss never lands in a VRAM slot, so every later routing to that expert misses again,
+collapsing the hit rate to 0% (`docs/measurements/l01-funding-cell-2026-09-21.md`). The
+"speculation-antagonism" risk registered above is now moot for this specific mechanism (it
+was killed before reaching a design where that collision could occur), but the general
+point — a CPU/GPU split needs host-visible routing, which is also what a batched MoE
+verify needs — stands for any *future*, differently-shaped attempt at this lead.
+
 ---
 
 ## Revisit, don't "fix": GPU-resident models skip session/prefix reuse
@@ -324,4 +420,10 @@ Cowork-drafts / vscode-claude-executes split — this is the scoping pass, not t
 order. Say which lead(s) to open first and a brief can follow the same shape as
 `docs/completed/zeno-compare-phase0.md` (archived 2026-09-13, its own scope complete).
 
-<!-- doc-reviewed: 2026-09-13 -->
+**As of 2026-09-22: Leads 3 and 4 both ran their full measurement to a decision and
+landed on PARK — real, small, direction-consistent effects that don't clear their own
+pre-registered bars.** Only Lead 1 remains genuinely open, and it is blocked on data
+that doesn't exist in this repo, not on anyone's time. Leads 2 and 5 are closed
+(shipped and killed respectively). Nothing here is unblocked-and-unmeasured any more.
+
+<!-- doc-reviewed: 2026-09-22 -->

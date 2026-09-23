@@ -1,0 +1,60 @@
+=== RUN   TestLead3_realLoadTime
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    lead3_realload_time_test.go:54: LOAD_TIME arm= dur_ms=59203 cacheSlots=29
+--- PASS: TestLead3_realLoadTime (61.76s)
+PASS
+trial arm=old ended 14:38:44
+=== RUN   TestLead3_realLoadTime
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    lead3_realload_time_test.go:54: LOAD_TIME arm=1 dur_ms=46420 cacheSlots=29
+--- PASS: TestLead3_realLoadTime (46.97s)
+PASS
+trial arm=new ended 14:39:31
+=== RUN   TestLead3_realLoadTime
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    lead3_realload_time_test.go:54: LOAD_TIME arm=1 dur_ms=45973 cacheSlots=29
+--- PASS: TestLead3_realLoadTime (46.72s)
+PASS
+trial arm=new ended 14:40:18
+=== RUN   TestLead3_realLoadTime
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    lead3_realload_time_test.go:54: LOAD_TIME arm= dur_ms=46106 cacheSlots=29
+--- PASS: TestLead3_realLoadTime (48.86s)
+PASS
+trial arm=old ended 14:41:07
+=== RUN   TestLead3_realLoadTime
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    lead3_realload_time_test.go:54: LOAD_TIME arm= dur_ms=45865 cacheSlots=29
+--- PASS: TestLead3_realLoadTime (48.65s)
+PASS
+trial arm=old ended 14:41:56
+=== RUN   TestLead3_realLoadTime
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    lead3_realload_time_test.go:54: LOAD_TIME arm=1 dur_ms=38831 cacheSlots=29
+--- PASS: TestLead3_realLoadTime (39.55s)
+PASS
+trial arm=new ended 14:42:36
+=== RUN   TestLead3_realLoadTime
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    lead3_realload_time_test.go:54: LOAD_TIME arm= dur_ms=47115 cacheSlots=29
+--- PASS: TestLead3_realLoadTime (49.89s)
+PASS
+trial arm=old ended 14:43:49
+=== RUN   TestLead3_realLoadTime
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    lead3_realload_time_test.go:54: LOAD_TIME arm=1 dur_ms=39086 cacheSlots=29
+--- PASS: TestLead3_realLoadTime (39.78s)
+PASS
+trial arm=new ended 14:44:29
+=== RUN   TestLead3_realLoadTime
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    lead3_realload_time_test.go:54: LOAD_TIME arm= dur_ms=45887 cacheSlots=29
+--- PASS: TestLead3_realLoadTime (48.66s)
+PASS
+trial arm=old ended 14:45:18
+=== RUN   TestLead3_realLoadTime
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    lead3_realload_time_test.go:54: LOAD_TIME arm=1 dur_ms=39015 cacheSlots=29
+--- PASS: TestLead3_realLoadTime (39.76s)
+PASS
+trial arm=new ended 14:45:58

@@ -64,3 +64,5 @@ and even that is advisory.
 
 - Do not use the words "honest" or "honesty".
 - Leave uncommitted for review.
+
+<!-- doc-reviewed: 2026-09-22 -->
