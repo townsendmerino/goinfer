@@ -123,13 +123,18 @@ func (l *sessionLRU) mark(s *decoder.Session) {
 }
 
 // acquire returns the session to generate prompt against and marks it most-
-// recently-used. It reuses a session only when prompt extends that session's
-// entire stored sequence (its tokens are a prefix of prompt) — the chat/agent
-// continuation case, where reuse is a pure win with no KV thrown away. A prompt
-// that merely shares a system-prompt preamble with some other conversation's
-// session does NOT hijack it (that session's later turns aren't a prefix of this
-// prompt), so distinct conversations keep their own slots. Anything else gets a
-// fresh slot, evicting the coldest session when full.
+// recently-used. It reuses whichever session's stored tokens share the longest
+// prefix with prompt (L-15), not only an exact continuation — the decoder's own
+// rewindForReuse truncates that session's cache to the shared length and
+// prefills just the divergent suffix. This also covers a stop-string hit, a
+// max_tokens cut mid-word, or an edited last message (P-18): each commits a few
+// tokens the client's next prompt can't reproduce, which the old whole-
+// containment rule rejected outright, cold-prefilling and evicting a session
+// that was almost entirely reusable. A prompt that merely shares a system-prompt
+// preamble with some other conversation's session still does NOT hijack it —
+// bestExtend requires beating what that session shares with every OTHER known
+// session, not just any nonzero match — so distinct conversations keep their own
+// slots. Anything else gets a fresh slot, evicting the coldest session when full.
 //
 // With size 0 reuse is disabled: every call gets a throwaway session (the old
 // re-prefill-everything behavior).
@@ -156,18 +161,36 @@ func (l *sessionLRU) acquire(prompt []int) *decoder.Session {
 	return l.fresh()
 }
 
-// bestExtend returns the index of the session whose entire token sequence is a
-// prefix of prompt — the continuation case where reuse is a pure win with no KV
-// discarded — preferring the longest (most reused). -1 if none qualifies. A
-// session whose tokens are NOT fully contained in prompt (a different
-// conversation that merely shares a system-prompt preamble) is never chosen, so
-// distinct conversations don't evict each other's tails.
+// bestExtend returns the index of the session whose common prefix with prompt is
+// longest (L-15), preferring reuse whenever a candidate's match beats what that
+// same candidate merely shares with every OTHER known session — a shared
+// system-prompt preamble alone never qualifies, however long, or any two
+// conversations that open the same way would evict each other's own turns.
+// This subsumes the old whole-containment rule (an exact continuation's match is
+// its own full length, which always clears the floor set by other sessions) and
+// additionally catches P-18's cases: a stop-string hit, a max_tokens cut
+// mid-word, or an edited last message each commit a few tokens the client's next
+// prompt can't reproduce, so the session's own tokens are no longer FULLY
+// contained in prompt even though almost all of them still are — the old rule
+// rejected these outright and cold-prefilled instead. The decoder's own
+// rewindForReuse (decoder/session.go) truncates the chosen session's cache to
+// the matched length; bestExtend only picks which session gets that treatment.
+// -1 if nothing qualifies.
 func bestExtend(sessions [][]int, prompt []int) int {
-	best, bestLen := -1, 0
+	best, bestMatch := -1, 0
 	for i, toks := range sessions {
-		n := len(toks)
-		if n > bestLen && n == commonPrefix(toks, prompt) {
-			best, bestLen = i, n
+		match := commonPrefix(toks, prompt)
+		if match == 0 {
+			continue
+		}
+		floor := 0
+		for j, other := range sessions {
+			if j != i {
+				floor = max(floor, commonPrefix(toks, other))
+			}
+		}
+		if match > floor && match > bestMatch {
+			best, bestMatch = i, match
 		}
 	}
 	return best

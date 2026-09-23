@@ -1090,7 +1090,7 @@ supports.
 | `docs/audit-2026-09-10.md|gpu/backend.go:193` | goinfer | `key := &bQ4[0]` |
 | `docs/audit-2026-09-10.md|internal/serveapp/banner.go:94` | goinfer | `ctxLine := "context: "` |
 | `docs/audit-2026-09-10.md|internal/serveapp/openai.go:608` | goinfer | `PrefillReusedTokens int `json:"prefill_reused_tokens"`` |
-| `docs/audit-2026-09-10.md|internal/serveapp/sessions.go:165` | goinfer | `func bestExtend(sessions [][]int, prompt []int) int {` |
+| `docs/audit-2026-09-10.md|internal/serveapp/sessions.go:179` | goinfer | `func bestExtend(sessions [][]int, prompt []int) int {` |
 | `docs/audit-2026-09-10.md|internal/serveapp/webui.go:109` | goinfer | `func sameOrigin(h http.HandlerFunc) http.HandlerFunc {` |
 | `docs/audit-2026-09-10.md|internal/servecheck/check.go:192` | goinfer | `anchor: func (c *Client) Chat(ctx context.Context, model, prompt string, maxTokens int, ` |
 | `docs/audit-2026-09-10.md|internal/servecheck/cmd.go:21` | goinfer | `Exits non-zero if any row fails, so it works as a smoke test in a script.` |
@@ -1458,7 +1458,10 @@ supports.
 | `docs/tasks/task-recompute-audit.md|decoder/forwardn.go:200` | goinfer | `func (m *Model) hasRecurrentState() bool {` |
 | `docs/tasks/task-recompute-audit.md|decoder/forwardn.go:212` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/tasks/task-recompute-audit.md|decoder/kvcache.go:539` | goinfer | `func (c *KVCache) TruncateTo(pos int) (exact bool) {` |
+| `docs/tasks/task-recompute-audit.md|decoder/model.go:1457` | goinfer | `useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil \|\| (lora != nil && res` |
+| `docs/tasks/task-recompute-audit.md|decoder/model.go:1461` | goinfer | `// Claim it non-blockingly — a loser falls back to the staged CPU path, which uses` |
 | `docs/tasks/task-recompute-audit.md|decoder/model.go:1530` | goinfer | `reuseFrom := m.residentReuseLen(prompt, nil, lora)` |
+| `docs/tasks/task-recompute-audit.md|decoder/model.go:1539` | goinfer | `if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {` |
 | `docs/tasks/task-recompute-audit.md|decoder/model.go:1641` | goinfer | `case <-ctx.Done():` |
 | `docs/tasks/task-recompute-audit.md|decoder/model.go:1812` | goinfer | `// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.` |
 | `docs/tasks/task-recompute-audit.md|decoder/model.go:60` | goinfer | `// resDrafterSynced identifies which *BlockSpec's own drafter context is currently in sy` |
@@ -1467,6 +1470,7 @@ supports.
 | `docs/tasks/task-recompute-audit.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
 | `docs/tasks/task-recompute-audit.md|decoder/session.go:98` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
 | `docs/tasks/task-recompute-audit.md|decoder/speculative.go:135` | goinfer | `if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {` |
+| `docs/tasks/task-recompute-audit.md|internal/serveapp/openai.go:1324` | goinfer | `sess := lm.sessions.acquire(gr.promptIDs)` |
 | `docs/tasks/task-spark-x2-5.md|decoder/arch.go:284` | goinfer | `// sigmoid-activated where Laguna's is softplus (verified against source, not assumed). ` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:78` | goinfer | `func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok bool) {` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:93` | goinfer | `func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {` |

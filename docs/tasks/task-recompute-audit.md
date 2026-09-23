@@ -18,7 +18,7 @@
 >
 > **Status: SCOPED 2026-09-03, nothing started as of the scoping.** Read at goinfer `3e45469` and
 > aikit `438acfa` (v1.32.0). Static; every cost figure is quoted from the record that measured it
-> and says so. **Updated 2026-09-04** against `docs/audit-2026-09-02.md`'s full remediation, which
+> and says so. **Updated 2026-09-04** against `docs/completed/audit-2026-09-02.md`'s full remediation, which
 > landed after this doc was scoped (goinfer `f1d98d3`) — several of its cross-references were stale
 > within a day: P-13 is FIXED; P-15 is 2-of-3 fixed (the penalty-map rebuild this doc's R-08 names is
 > done; `forEachChunk` measured not-worth-it; batched-verify buffer churn deferred); P-17 is now
@@ -36,7 +36,7 @@
 > behind `GOINFER_W4A8_BATCH`, measured, PARKED default-off — inside the ambiguous 1.05×/1.15×
 > park/ship zone). This paragraph is a snapshot of the v1.33.0 round and is left as the historical
 > record of that state, not updated in place.
-> Cross-references: `docs/audit-2026-09-02.md` (P-06 and C-12 closed, as before), its L-05 and L-15,
+> Cross-references: `docs/completed/audit-2026-09-02.md` (P-06 and C-12 closed, as before), its L-05 and L-15,
 > `docs/QUEUE.md` §A (the single-conversation limit), `docs/spec/09-mtp-heads.md` ("Pricing the
 > narrow state snapshot"), `docs/tasks/task-freetoken-techniques.md` (Lead 1), aikit
 > `docs/task-simd-audit.md` (S-02, S-03), and — **added 2026-09-13** — `docs/audit-2026-09-10.md`
@@ -64,10 +64,10 @@
 | id | what is recomputed | where | size of the redo | fix shape | status |
 |---|---|---|---|---|---|
 | **R-00** | a plain turn reuses resident KV rows a block-spec or draft-model generation overwrote | `decoder/blockspec.go:201`, `decoder/speculative.go:135-135` — neither calls `residentForgetIDs` | wrong output, silently | forget (or commit) on both paths; a test that alternates the paths | **bug — fix first** |
-| **R-01** | the whole conversation, every turn, on every recurrent family, resident path | `decoder/resident_reuse.go:120` refuses `hasRecurrentState()` outright | a full prefill per agent turn (8.85 s at 2.3k tokens on the 7B dense; the 35B-A3B is the model this hits) | phase 0: exact-extension reuse, no snapshot; phase 1: the narrow snapshot via `CopyDeviceBatch`; phase 2: parked checkpoints | **phase 0 fixed 2026-09-03** (exact-extension reuse; CUDA-hardware scenarios unrun); phase 1/2 open; L-05 |
+| **R-01** | the whole conversation, every turn, on every recurrent family, resident path | `decoder/resident_reuse.go:120` refuses `hasRecurrentState()` outright | a full prefill per agent turn (8.85 s at 2.3k tokens on the 7B dense; the 35B-A3B is the model this hits) | phase 0: exact-extension reuse, no snapshot; phase 1: the narrow snapshot via `CopyDeviceBatch`; phase 2: parked checkpoints | **phase 0 fixed 2026-09-03** (exact-extension reuse; CUDA-hardware scenarios unrun); **phase 1 CLOSED 2026-09-23** (spec/09's own measurement, 11.0% of a decode step, killed 2026-08-28 — this doc missed it until now); phase 2 open; L-05 |
 | **R-02** | the prefix, after a cancelled generation | `decoder/model.go` `generateInto`'s `select` on `ctx.Done` returns without committing | the next turn cold-prefills after every interrupt | commit `prompt+generated` at that exit — the cache is consistent there | **fixed 2026-09-03** |
 | **R-03** | the prefix, after any speculative generation | `decoder/spec_eagle.go`, `decoder/spec_ngram.go` forget; R-00's two never clear | a `--drafter`/`--spec` agent loop gets no prefix reuse at all | commit the accepted sequence for attention-only families; forget (or restore, R-01 phase 1) for recurrent ones | **`spec_ngram.go` fixed 2026-09-03**; `spec_eagle.go` never touches resident state — the fix doesn't apply there (see below) |
-| **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | open; **P-18 confirmed and measured 2026-09-03** (148× TTFT at 2k tokens on the real prefill path, well past L-15's own funding bar) — the fix itself is still L-15's, not attempted |
+| **R-04** | the prefix, when a second conversation interleaves, or a stop string fires | QUEUE §A "single-conversation"; P-18 / L-15 (`internal/serveapp/sessions.go` whole-containment) | a cold prefill per switch; ~8.9 s vs 43 ms to park 257 MiB | park per-conversation KV (+ state, phase 2) in host RAM; ask `rewindForReuse` for the partial prefix | **L-15/P-18 half FIXED 2026-09-23** (`bestExtend` now picks longest-common-prefix, not whole containment, guarded against hijacking a session that merely shares another's system-prompt preamble); the resident-GPU parking half (R-01 phase 2) stays open, pre-registered decision rule below |
 | **R-05** | the int4 nibble unpack, per token, per paged expert | `decoder/moepaging.go:96-113` — a paged tensor is never repacked; the canonical kernel runs every use | row4 vs canonical is 1.33× on the M=1 GEMV; MoE is ~70% of a CPU-paged 35B token | repack into the slot on fetch (the owned-buffer fetch already copies) | **investigated 2026-09-03, not implemented**: the described mechanism belongs to the Metal pager, not this one; the CPU-paged equivalent (`.giw` kind-4 row4) already SHIPPED and its own performance case is UNRESOLVED per this repo's own measurement saga (swung between −49% and +49% across sessions) — see below |
 | **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:98-110` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | **wired and measured 2026-09-03/04, PARKED (default-off)**: aikit `MatmulBTW4A8Batch` shipped at v1.34.0; goinfer wired it behind `GOINFER_W4A8_BATCH` (default off) in q/k/v (`attention.go`) and gate/up (`mlp.go`); reproduced on two independent architectures via `bench_peer.py` (n=10 paired, idle-gated) — arm64/Metal 1.071× (stdev 0.009), amd64/CPU 1.066× (stdev 0.0008) — both squarely inside the pre-registered ambiguous zone between the 1.05× park / 1.15× ship thresholds, so it stays off by default per this repo's own "ambiguous → parked" rule. **Follow-up 2026-09-20** (red-october.md R9 step 1's own finding that MLP's token share grows with model size raised the question of whether this does better at 7B): it does not — OFF 58.98 ms/token (stdev 2.10), ON 59.0 (stdev 1.60), a difference an order of magnitude below either arm's own noise — an even cleaner null than the 1.5B result, not a size-dependent win, consistent with the remedy amortizing a roughly fixed per-barrier cost that matters proportionally *less* as the matmuls it's amortized against get bigger. See `docs/measurements/w4a8-batch-7b-2026-09-20.md`. Stays parked. |
 | **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | **fully fixed 2026-09-03**: `decoder/embed.go`'s per-token forward (`hiddenLastBatched`, ~12-14× measured) and `embeddings.go`'s double-tokenize (`embedBatchCounter`) are both done |
@@ -173,36 +173,76 @@ positions are inherent, not recompute.
   and `CopyDeviceBatch` (every copy issued, one synchronize, adjacent pairs coalesced) on CUDA and
   Metal, since gpu v0.30.1; goinfer's `cuda/go.mod` and `metal/go.mod` both pin gpu v0.32.0 as of the
   2026-09-04 aikit bump (`metal/go.mod` had drifted to v0.30.1 before that — already fixed, not a
-  blocker either way since `CopyDeviceBatch` predates both pins). The
-  same record measured the composition cost the batch form is for: 36 separate copies on the 0.8B
-  ran at 174 GB/s against 347 for one contiguous copy, ~446 → ~250 µs. Allocate each layer's
-  `dnWin`+`dnState` adjacent (or all layers' in one arena) and the batch collapses further. Sizes
-  from the same record: 62.8 MiB for the 35B-A3B, 149.6 MiB for the 27B — at DtoD rates, well under
-  a millisecond against a 60–95 ms decode step on the 2070S. Consumers: Qwen3.8-27B's native MTP
-  head (spec/09), DFlash pairings on hybrid targets, and R-03's commit-after-speculation for
-  recurrent families. `specRollbackSafe` is `decoder/forwardn.go:212` exactly.
+  blocker either way since `CopyDeviceBatch` predates both pins).
 
-  Three design notes from spec/09's own pricing record, carried forward here so they aren't
-  re-derived: (1) **reuse one buffer across rounds** — allocating fresh each time more than doubles
-  the cost (5.2-6.2 ms at int8 vs 2.9 ms reused); (2) **copy `convWin`, not only `S`** — a width-4
-  verify replaces the whole conv window, so skipping it is only 6.6% of the bytes but gives WRONG
-  logits with no error, not a slower-but-correct path; (3) **make the windows contiguous** (per-layer
-  or one arena) so `CopyDeviceBatch`'s adjacent-pair coalescing actually collapses them, which is
-  where the 174 to 347 GB/s composition win comes from. CUDA's `DeltaNet` layer holds
+  > **Correction, 2026-09-23: this whole framing is stale. `docs/spec/09-mtp-heads.md` itself went
+  > on to measure the real decision number and it KILLED this track — the paragraph above only
+  > quotes that same document's EARLIER sections.** The "well under a millisecond against a
+  > 60–95 ms decode step" comparison above is exactly the invalid extrapolation spec/09's own later
+  > section warns against by name ("the 0.8B resident denominator is not a proxy for a 27B resident
+  > denominator... do not extrapolate either way, measure it there") — the 0.8B's own in-situ decode
+  > step measured 5.69–7.92 ms, not 60–95 ms; the larger figure belongs to a bigger model this
+  > pricing was never run on. **The number that matters is the paired ratio through the real
+  > `CopyDeviceBatch` primitive, in situ, against the real decode step it competes with: 623 µs of
+  > snapshot+restore against a 5.69 ms decode step, 11.0% (p50, 3 paired runs, sd 2.0–2.9 pp).**
+  > Against the pre-registered rule (">5% — the narrow version does not pay on its own. Report and
+  > stop.") that fires even under the more favorable K-step framing (5.5–11%, since a batched
+  > verify on a bandwidth-bound decode costs nearer one step than K). spec/09's own words: **"the
+  > narrow snapshot does NOT pay on its own... it does not pay."** The composition cost is also
+  > 2× the isolated-primitive number (real, interleaved buffer layout coalesces far less than a
+  > synthetic consecutively-allocated one) — a second reason the "446 µs" figure this section
+  > quoted was never the real cost. The one thing that could rescue it — a weight-bandwidth-bound
+  > decode step on a 27B+ trunk, where the same absolute snapshot cost would be a smaller fraction
+  > — needs hardware that does not fit an 8 GB card, which is every CUDA box this repo currently
+  > has. **Phase 1 is CLOSED, not open-and-unblocked; do not build it here.** If it resumes, the
+  > entry condition is a resident measurement on an actual 27B+ trunk, not a better acceptance rate
+  > on a small one — spec/09's own words, restated because this doc's own prior text obscured them.
+
+  Kept below for whoever eventually re-opens this on qualifying hardware — every design note remains
+  correct even though the track itself does not currently pay:
+
+  Sizes from spec/09's own record: 62.8 MiB for the 35B-A3B, 149.6 MiB for the 27B. Consumers:
+  Qwen3.8-27B's native MTP head (spec/09), DFlash pairings on hybrid targets, and R-03's
+  commit-after-speculation for recurrent families. `specRollbackSafe` is `decoder/forwardn.go:212`
+  exactly.
+
+  Three design notes from spec/09's own pricing record, carried forward so they aren't re-derived
+  if this resumes: (1) **reuse one buffer across rounds** — allocating fresh each time more than
+  doubles the cost (5.2-6.2 ms at int8 vs 2.9 ms reused); (2) **copy `convWin`, not only `S`** — a
+  width-4 verify replaces the whole conv window, so skipping it is only 6.6% of the bytes but gives
+  WRONG logits with no error, not a slower-but-correct path; (3) **make the windows contiguous**
+  (per-layer or one arena) so `CopyDeviceBatch`'s adjacent-pair coalescing actually collapses them —
+  spec/09 measured this specific gap costing 2× (174 vs 347 GB/s on a synthetic probe; the REAL,
+  interleaved layout measured even worse, 65 GB/s in situ). CUDA's `DeltaNet` layer holds
   `dnWin`+`dnState` at `cuda/resident.go:395`; Metal has the same `CopyDeviceBatch` available.
   WebGPU is NOT covered by this plumbing at all -- its `dnState` lives in `gpu/decoderunner.go`
   (`*wgpu.Buffer`, transposed `[nv*hv*hk]` relative to the CPU's `[hk,hv]`) and would need its own
   copy path; not scoped here.
-  - **Gate:** restore is bit-exact (`convWin` included — spec/09 shows a width-4 verify replaces the
-    whole window), so speculative output on a hybrid equals greedy; `TestDFlashLoop_lossless`'s
-    shape on a hybrid target. Measure snapshot+restore in situ per round as spec/09 did.
+  - **Gate, if this resumes:** restore is bit-exact (`convWin` included — spec/09 shows a width-4
+    verify replaces the whole window), so speculative output on a hybrid equals greedy;
+    `TestDFlashLoop_lossless`'s shape on a hybrid target.
 - **Phase 2 — parked checkpoints.** For non-extending reuse (an edited last message) and for
   R-04's multi-conversation case: at commit, `Download` the recurrent state beside the parked KV
   (~5 ms for 62.8 MiB at PCIe 3 ×16) keyed by conversation; restore = `Upload` both. Bytes are
   bounded by turns, not tokens — which is L-05's "semantic anchors" in the form the code already has.
+  - **Pre-registered decision rule, before any code (2026-09-23) — do not repeat the phase-1
+    mistake of building on a projected number.** The honest do-nothing arm is NOT a cold prefill:
+    per the R-04 finding above, a lost resident slot already falls back to the staged CPU path
+    for that conversation's own cache, and with L-15 shipped that fallback finds its own prefix.
+    So the number that decides Phase 2 is: **(park round-trip once per commit + resident-GPU
+    decode for the turns until this conversation reclaims the slot) vs. (staged CPU decode for
+    those same turns, on the L-15-fixed path).** For a model whose CPU decode is dramatically
+    slower than its resident GPU decode (a large MoE, say) this plausibly favors parking; for a
+    model fast enough on CPU that the gap is small, the ~5-30ms round-trip (scales with recurrent
+    state + KV size, not just the 62.8 MiB figure above) may not be worth the eviction/budget
+    machinery it requires. Measure on a real multi-conversation interleave on this box's own
+    hardware — not projected from spec/09's single-round numbers, which priced a different event
+    (per-verify-round DtoD, killed in phase 1) than this one (per-commit DtoH/HtoD). Ambiguous →
+    park, same as everywhere else in this repo's discipline.
 - **Confidence:** high on phase 0 (the staged path is the existence proof, and the invariant is the
-  one 3358e6b already relies on); high on phase 1's plumbing being present (read in aikit at
-  438acfa); medium on the projected device-side numbers until measured.
+  one 3358e6b already relies on); phase 1 is CLOSED per the 2026-09-23 correction above, not a
+  confidence question any more — the device-side numbers were measured (spec/09) and the answer
+  was no.
 - **Status (2026-09-03): Phase 0 fixed.** `residentReuseLen` (`decoder/resident_reuse.go`) no
   longer blanket-refuses a recurrent family: it now returns `len(m.resIDs)` when the prompt is an
   exact, strict extension of the entire committed sequence (`m.resIDs` is a full prefix of
@@ -230,7 +270,10 @@ positions are inherent, not recompute.
   exit just does not say so. Agent harnesses cancel constantly — interrupts, timeouts, disconnects —
   so today each one costs the next turn a cold prefill.
 - **Fix:** `if useGPU { m.residentCommitIDs(prompt, generated) }` on that exit only. The `err !=
-  nil` exit after a forward stays a forget (a partial write is possible there).
+  nil` exit after a forward stays a forget (a partial write is possible there). (Doc-review
+  note, 2026-09-22: `residentCommitIDs` has since grown two more params for VL image blocks and
+  LoRA — the live call sites pass `m.residentCommitIDs(prompt, generated, nil, lora)`; the
+  two-arg form quoted here is the shape at the time this was written, not copy-pasteable today.)
 - **Gate:** cancel mid-stream, then extend the prompt with what was emitted; equals cold.
 - **Status (2026-09-03): fixed**, exactly as specified — the fix is the literal one-line addition
   quoted above, at the `ctx.Done()` exit only. Gated portably (no GPU/checkpoint needed) with the
@@ -265,7 +308,9 @@ positions are inherent, not recompute.
   rejection the rows past the accepted position are junk that is never consulted and is overwritten
   by the next forward. For an attention-only family the cache after a speculative generation is
   therefore consistent with `prompt + accepted`, exactly as after a plain one. For a recurrent family
-  it is not (the state ran ahead by the rejected width) until R-01 phase 1 restores it.
+  it is not (the state ran ahead by the rejected width) — R-01 phase 1 would have restored it, but
+  that track is closed per its own 2026-09-23 correction, so recurrent families stay on `forget`
+  here for the foreseeable future, not pending a fix already in flight.
 - **Fix:** at the end of each speculative loop, commit `prompt + accepted` when
   `!hasRecurrentState()`, forget otherwise. With `--drafter` this is the difference between an agent
   loop that gets prefix reuse and one that never does.
@@ -327,6 +372,45 @@ positions are inherent, not recompute.
   prompt is the same prefix in every conversation on the box, which is what a prefix tree would
   compute once (FreeToken Lead 1). Measure P-18's cell first: TTFT of turn 3 with `"stop":["\n\n"]`
   vs without at 2k history.
+- **Confirmed 2026-09-23 (scoping R-01 phase 2 before any build): the two "R-04" mechanisms this
+  cell conflates have different failure modes, and one of them already degrades gracefully.**
+  Losing the resident GPU slot (`resBusy` CAS, `decoder/model.go:1457`) is NOT the same event as
+  a cold prefill: the comment at `decoder/model.go:1461` states it directly — "a loser falls back
+  to the staged CPU path, which uses this call's own cache, so both still complete correctly" —
+  and the code confirms it: `useGPU=false` (lines 1457-1500) falls straight into the existing
+  `else` branch's `m.prefillLogits(ctx, prompt[prefillFrom:], cache)` (`decoder/model.go:1539`), i.e. that
+  conversation's own `Session`/`KVCache`, not a fresh one. So a lost CAS costs GPU-vs-CPU decode
+  speed for that turn, nothing more — **provided** the staged session that receives the fallback
+  can find its own prefix. That second condition is exactly P-18/L-15: `sessions.go`'s
+  `bestExtend` whole-containment rule (not `decoder/session.go`'s already-correct
+  `rewindForReuse`/`commonPrefixLen`, which it never calls with a partial match) is what turns an
+  otherwise-graceful CPU fallback into the measured 148× cold-prefill case. **This is why the
+  existing sequencing below (P-18's cell first) is right, not just convenient**: fixing L-15
+  makes the resident GPU's single-slot limit cost "CPU speed for one turn" instead of "cold
+  prefill," which is the correct, cheap floor to have in place before spending any design effort
+  on parking resident device state at all — Phase 2 only has a case to make once that floor
+  exists, because it has to beat *that* baseline, not a cold prefill.
+- **L-15/P-18 half FIXED 2026-09-23.** `bestExtend` (`internal/serveapp/sessions.go`) now scores
+  every candidate by `commonPrefix(toks, prompt)` and picks the largest, but only when it beats
+  the floor that same candidate shares with every OTHER known session (computed the same way,
+  pairwise, inside the same pool) — a session that's nothing but the shared system-prompt preamble
+  never clears its own floor, so two distinct conversations still can't hijack each other, exactly
+  as `TestBestExtend`'s existing `fresh` case requires. An exact continuation's match is its own
+  full length, which always clears that floor, so the old whole-containment cases are unchanged;
+  the new part is that a session whose STORED tokens are no longer fully contained in the prompt —
+  a stop-string hit's invisible tail, a `max_tokens` cut, or an edited last message — now still
+  gets picked and handed to `decoder/session.go`'s `rewindForReuse`, which was already correct and
+  needed no change (confirmed by tracing `internal/serveapp/openai.go:1324`'s
+  `sess := lm.sessions.acquire(gr.promptIDs)` into the very next `sess.Generate(ctx, gr.promptIDs,
+  ...)` call: same prompt both times, so `Generate`'s own `rewindForReuse` independently recomputes
+  the true common prefix regardless of what `bestExtend` matched — `bestExtend` only decides WHICH
+  session receives that treatment). `TestBestExtend_stopStringTokensForceColdPrefill` (P-18's own
+  pinned-bug gate) is now `TestBestExtend_stopStringTokensReuse`, asserting the fix instead of the
+  bug; `TestBestExtend_editedLastMessageReuse` added for P-18's other named case. `faultBack`'s
+  cold-tier candidates get the same treatment for free (same `bestExtend`), though its floor is
+  computed only within the cold pool, not against currently-resident sessions — a real but minor
+  gap, not fixed here. Full `internal/serveapp` suite green (223 tests), `gofmt`/`go vet` clean,
+  `staticcheck` (pinned 0.8.0) clean and confirmed live against a throwaway U1000 case.
 
 ### R-05 · Paged experts are unpacked on every use
 
@@ -401,6 +485,12 @@ positions are inherent, not recompute.
   ("any single-machine micro-benchmark result that will drive more than a day of downstream
   implementation work must reproduce on a different day... before any remedy gets built against
   it"), argues directly against building anything further on this premise before that happens.
+  **Checked 2026-09-22: this box cannot be that different machine either.** `nobara-pc`'s NVMe
+  is at 32 GB free of 1.8 TB (99% used) — less headroom than the 46 GB this doc's own prior
+  session already found insufficient for one model's kind-3+kind-4 `.giw` pair (~35-75 GB), and
+  neither bundle is present here to re-derive from a smaller footprint. The re-run this section
+  calls for remains genuinely unattempted, not just unattempted-here — it needs either freed disk
+  on an existing box or a third machine, not new pager code either way.
 
 ### R-06 · One activation, quantised seven times per layer
 
@@ -535,9 +625,16 @@ listed so the inventory is complete.
 1. **R-01 phase 0**: the exact-extension rule, the two-turn tests, L-05's TTFT rule on the 35B.
    (Shipped 2026-09-03; the `docs/completed/qwen3_5_moe.md:132` correction it called for landed
    2026-09-12, with the archival.)
-2. **R-01 phase 1**: `dnWin`/`dnState` snapshot via `CopyDeviceBatch`; lift `specRollbackSafe`'s
-   refusal for the hybrid families on the resident path; measure per round as spec/09 did.
-3. **R-04** (P-18's cell first) and **R-01 phase 2** together — one parking mechanism.
+2. ~~**R-01 phase 1**~~ — **CLOSED 2026-09-23**: `docs/spec/09-mtp-heads.md` already ran this
+   measurement (2026-08-28) and killed it, 11.0% of a resident decode step against a 5% bar; this
+   doc's own prior text here missed that verdict. Re-entry condition: a resident 27B+ trunk, not
+   available on any CUDA box this repo currently has.
+3. ~~**R-04, L-15/P-18 half**~~ — **FIXED 2026-09-23**: `bestExtend` longest-common-prefix
+   selection, guarded against system-prompt-preamble hijacking. **R-01 phase 2** (resident-GPU
+   state parking) stays open — its economics are NOT the ones phase 1 killed (it pays once per
+   commit/conversation-switch, amortized over a whole turn's tokens, not once per speculative
+   verify round), but the honest baseline it has to beat is now the L-15-fixed staged CPU path,
+   not a cold prefill — see the pre-registered decision rule in R-01's own section above.
 4. **R-06** (needs the aikit batch form), **R-05**, **R-07**, **R-08** — small, independent, each
    with its audit cell.
 
@@ -548,9 +645,9 @@ listed so the inventory is complete.
 `hasRecurrentState`, `resetRecurrent`), `decoder/forwardn.go` (`hasRecurrentState`,
 `specRollbackSafe`), `decoder/blockspec.go`, `decoder/speculative.go`, `decoder/moepaging.go`,
 `decoder/attention.go`, `internal/serveapp/openai.go`; `docs/spec/09-mtp-heads.md` (snapshot
-pricing, 2026-08-28); `docs/completed/qwen3_5_moe.md` §"Hybrid cache"; `docs/audit-2026-09-02.md` (C-12,
+pricing, 2026-08-28); `docs/completed/qwen3_5_moe.md` §"Hybrid cache"; `docs/completed/audit-2026-09-02.md` (C-12,
 P-06, P-09, P-10, P-13, P-15, P-17, P-18, L-05, L-15); `docs/QUEUE.md` §A; aikit
 `gpu/cuda_copy.go`, `gpu/metal_copy.go` (`CopyDevice`, `CopyDeviceBatch`), aikit
 `docs/task-simd-audit.md` (S-01, S-02, S-03, S-09.1).
 
-<!-- doc-reviewed: 2026-09-13 -->
+<!-- doc-reviewed: 2026-09-23 -->

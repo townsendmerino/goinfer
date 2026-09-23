@@ -25,11 +25,13 @@ func TestCommonPrefix(t *testing.T) {
 	}
 }
 
-// TestBestExtend covers the LRU's selection brain: pick the session whose whole
-// token sequence is a prefix of the prompt (a genuine continuation), longest
-// first — and crucially do NOT pick a session that merely shares a system-prompt
-// preamble (its later turns aren't contained in the prompt), so two
-// conversations don't evict each other.
+// TestBestExtend covers the LRU's selection brain for the exact-containment
+// cases: pick the session whose whole token sequence is a prefix of the prompt
+// (a genuine continuation), longest first — and crucially do NOT pick a session
+// that merely shares a system-prompt preamble (its later turns aren't contained
+// in the prompt), so two conversations don't evict each other. The partial-match
+// cases L-15 adds (a session whose tail diverges but whose lead is still worth
+// reusing) are covered separately below.
 func TestBestExtend(t *testing.T) {
 	sys := []int{1, 2, 3, 4} // shared system preamble
 
@@ -125,17 +127,18 @@ func TestMoveToFront(t *testing.T) {
 	}
 }
 
-// TestBestExtend_stopStringTokensForceColdPrefill is the P-18 gate: a session
-// that ends with tokens generated AFTER a stop-string hit is committed to the
-// session's Tokens() (openai.go's streamTokens appends every generated id to
-// ids regardless of the stop cut, and Session.Generate's commit records the
+// TestBestExtend_stopStringTokensReuse is L-15's fix for the P-18 gate: a
+// session that ends with tokens generated AFTER a stop-string hit is committed
+// to the session's Tokens() (openai.go's streamTokens appends every generated id
+// to ids regardless of the stop cut, and Session.Generate's commit records the
 // whole thing), even though only the text up to the cut point ever reached the
 // client. The client's NEXT prompt is built from what it actually saw, so it
-// never contains those invisible tokens — bestExtend's whole-containment rule
-// therefore always misses on the very next turn, forcing a cold prefill plus an
-// eviction, even though the decoder's own rewindForReuse could truncate to the
-// shared prefix if bestExtend ever asked it to (L-15's scope, not this fix's).
-func TestBestExtend_stopStringTokensForceColdPrefill(t *testing.T) {
+// never contains those invisible tokens — the old whole-containment rule missed
+// on every such turn, forcing a cold prefill plus an eviction of a session that
+// was almost entirely reusable. bestExtend now picks it anyway (the decoder's
+// own rewindForReuse truncates to the shared prefix, discarding just the
+// invisible tail).
+func TestBestExtend_stopStringTokensReuse(t *testing.T) {
 	turn1 := []int{1, 2, 3, 4} // system preamble + turn 1
 	visible := append(append([]int(nil), turn1...), 10, 11, 12)
 	// The session actually stored a few more tokens: whatever the model emitted
@@ -145,7 +148,23 @@ func TestBestExtend_stopStringTokensForceColdPrefill(t *testing.T) {
 
 	// Turn 3 continues from what the client saw, not from what the session stored.
 	turn3 := append(append([]int(nil), visible...), 20, 21)
-	if got := bestExtend(sessions, turn3); got != -1 {
-		t.Errorf("bestExtend = %d, want -1 — the session's invisible post-stop tokens should force a cold prefill", got)
+	if got := bestExtend(sessions, turn3); got != 0 {
+		t.Errorf("bestExtend = %d, want 0 — the shared prefix (through the invisible post-stop tokens) should still be reused", got)
+	}
+}
+
+// TestBestExtend_editedLastMessageReuse is P-18's other named case: the client
+// edits its last message and resends. Everything before the edit is still a
+// genuine shared prefix with the session that generated the ORIGINAL reply, even
+// though that session's full token list is no longer contained in the new
+// prompt at all (they diverge mid-conversation, not just at the tail).
+func TestBestExtend_editedLastMessageReuse(t *testing.T) {
+	shared := []int{1, 2, 3, 4, 10, 11, 12}                       // system preamble + turn 1
+	original := append(append([]int(nil), shared...), 20, 21, 22) // turn 2, first draft
+	sessions := [][]int{original}
+
+	edited := append(append([]int(nil), shared...), 30, 31) // turn 2, edited
+	if got := bestExtend(sessions, edited); got != 0 {
+		t.Errorf("bestExtend = %d, want 0 — everything before the edit should still be reused", got)
 	}
 }
