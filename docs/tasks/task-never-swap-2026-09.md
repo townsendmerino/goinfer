@@ -7,11 +7,19 @@
 > unassisted, see S3's own status note below and `docs/measurements/swap-tripwire-2026-09-22.md`).
 > **S1 BUILT AND MEASURED 2026-09-22** (darwin default-sidecar for serve/chat/fit, all three
 > registered gates passed on real hardware — see S1's own status note below and
-> `docs/measurements/sidecar-default-2026-09-22.md`), **S2/S4/S5/S6 unstarted.** S2 is now the
-> gating precondition for BOTH the families S1 could not yet cover (gpt-oss and the other
-> `needsResidentSerialize` families still build resident before they can be transcoded at all) and
-> for S3's own gpt-oss-20b positive control to ever reach the historical scenario safely; S4, S6
-> and S5 follow. S6 is the structural fix for the Metal path the R11(c) runs of
+> `docs/measurements/sidecar-default-2026-09-22.md`). **S2 STARTED 2026-09-23, gpt-oss only** (one
+> of six families moved off the resident-build fallback; real-checkpoint memory safety confirmed —
+> swap-used flat throughout a real gpt-oss-20b transcode — though the run itself did not finish,
+> disk-limited on this machine; see S2's own status note below and
+> `docs/measurements/transcode-streaming-2026-09-23.md`), **S4/S5/S6 unstarted.** S2's remaining
+> five families (gemma4, laguna, granite, nemotron, llama4) still build resident before they can be
+> transcoded at all. **Correction to an earlier version of this line**: S2 was never actually a
+> precondition for S3's OWN positive control — S3's gpt-oss-20b run (2026-09-22) already reached
+> the true historical scenario directly (a plain resident load, no `-stream-weights`, S2 has
+> nothing to do with that code path) and found its real limit on its own terms. S1+S2 together are
+> instead what make that dangerous DIRECT path increasingly avoidable as ordinary usage, not a
+> gate on S3's own already-completed measurement. S4, S6 and S5 follow. S6 is the structural fix
+> for the Metal path the R11(c) runs of
 > 2026-09-20/22 hit. One owner decision is flagged in S1 (what a MoE `.gguf` that will not fit
 > resident does once the sidecar path exists: refuse, or load and warn).
 >
@@ -265,6 +273,41 @@ if a safetensors-only model ever matters on the Mac); Linux defaults; anything a
 
 ### S2 · Streaming transcode sink for the six resident-serialize families
 
+> **STARTED 2026-09-23, gpt-oss only (Mac-relevance-first per this brief's own ordering).**
+> `needsResidentSerialize` no longer names gpt-oss; `loadGptOss`'s per-layer closure turned out to
+> already be self-contained (every tensor it reads is `blk.{i}.*`-named, including the per-layer
+> `AttnSinks`/`RouterBias` — NOT model-level tails for this family, unlike gemma4's PLE/MoE tail;
+> `stackedExperts`/`stackedExpertBias`'s `RowDequantizer` calls are per-tensor, keyed by the same
+> per-layer name, not a whole-file or cross-layer dependency), so the `loadQ35` streaming shape
+> (2026-08-24) applied with no new design work — this family's "obstacle" this brief's own Read
+> First section named turned out not to block anything once actually read.
+>
+> **Verified on the tiny fixture, then on the real checkpoint.**
+> `internal/prequant/stream_families_test.go`'s `TestGptOss_streamedMatchesResident`: streamed vs
+> resident-build-then-serialize bundles byte-identical across int4/int8int8/f32 on
+> `decoder/testdata/gptoss_tiny.gguf`, mutation-checked (corrupting the sink write to always emit
+> layer 0 turns it red). `TestStreamTranscode_ctxCancel_gptoss` confirms M-21's cancellation
+> contract holds for the new branch too. `TestParityManifest_fresh`'s staleness on
+> `decoder/gguf.go` closed via the sanctioned non-numeric refresh, backed by the byte-identity
+> proof above — not blind trust that a control-flow change is numerically inert. A REAL gpt-oss-20b
+> transcode then ran with external RSS/swap/disk monitoring
+> (`docs/measurements/transcode-streaming-2026-09-23.md`): **swap-used stayed flat the entire
+> run** (it went down 8 MB, not up) — the exact model that historically drove this machine's swap
+> to 22.9 GB transcoded without moving it at all. The run itself did not finish (this machine's 12
+> GB free disk cannot hold the 12 GB source and a ~10+ GB output simultaneously; an external
+> disk-floor kill-switch correctly stopped it at 1 GB free) — a capacity limit of this machine
+> right now, not a streaming-fix failure. A real bug in the kill-switch script itself (wrong
+> temp-file cleanup pattern) left a 10 GB orphaned file; caught by a `df` check immediately after
+> and deleted before it caused further trouble — recorded rather than quietly fixed and forgotten.
+>
+> **What is NOT done:** the other five families (gemma4, laguna, granite, nemotron, llama4) —
+> gemma4 specifically has a genuinely different obstacle (the fused PLE/MoE tail) that gpt-oss
+> turned out not to have; not attempted. A COMPLETED real gpt-oss-20b transcode (needs more free
+> disk than this machine currently has) to get a real-checkpoint byte-identity confirmation, not
+> just the tiny-fixture one. The brief's own three-run RSS-peak averaging (one run here, disk-
+> limited before even that one finished). `docs/giw-bundles.md` not yet updated to say gpt-oss
+> streams now.
+
 **Goal.** `StreamTranscodeGGUF` bounds peak RAM to ~one layer for gemma4, gpt-oss, laguna, granite,
 nemotron and llama4, the way it already does for every other family, so S1 holds on the models
 that actually exceed the Mac.
@@ -283,7 +326,7 @@ byte-identical to the resident-serialize path's output on the family fixtures (t
 `TestStreamTranscodeMatchesResident` shape, extended per family).**
 
 **Read first.** `decoder/gguf.go` — the qwen35 branch (`loadQ35`, the `sink != nil` streaming
-loop near `decoder/gguf.go:1767`), then each of the six loaders and *why* it was excluded: gemma4's
+loop near `decoder/gguf.go:1771`), then each of the six loaders and *why* it was excluded: gemma4's
 "fused PLE/MoE tail can't stream incrementally" (a model-level tail written after the layers —
 the head/tail split `writeHeadGlobals` already supports: `decoder/serialize.go`'s "streaming
 transcode can emit the head, then produce-write-free each layer" note), gpt-oss's stacked experts

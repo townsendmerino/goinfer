@@ -1493,7 +1493,11 @@ const (
 // a family that reaches a non-streaming return with a live sink errors loudly instead of writing
 // a header-only bundle.
 func needsResidentSerialize(a *Architecture) bool {
-	return a.gemma4 != nil || a.gptoss != nil || a.laguna != nil ||
+	// gpt-oss removed 2026-09-23 (S2, task-never-swap-2026-09.md): loadGptOss's per-layer
+	// closure already builds one layer independently of every other (see the streaming branch
+	// at its own parallelLayers call site) — the M-09 lesson applies here too, the comment
+	// moves with the code, not just stays behind as a stale warning.
+	return a.gemma4 != nil || a.laguna != nil ||
 		a.granite != nil || a.nemotron != nil || a.llama4 != nil
 }
 
@@ -2099,17 +2103,31 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			}
 			return nil
 		}
+		// S2 (task-never-swap-2026-09.md): streaming (sink != nil, e.g. cmd/prequant) —
+		// loadGptOss already builds one layer's data independently of every other layer
+		// (every tensor it reads is named blk.{i}.*, including the per-layer AttnSinks and
+		// RouterBias this family keeps per-layer rather than as a model-level tail; stackedExperts
+		// and stackedExpertBias are per-tensor RowDequantizer reads keyed by the same blk.{i}.*
+		// name, not a whole-file or cross-layer dependency) — the loadQ35 shape (2026-08-24,
+		// docs/completed/task-zeno-compare.md) applies unchanged: a sequential build-then-write-
+		// then-release loop bounds peak RSS to ~one layer instead of the whole resident model,
+		// which is what the historical gpt-oss-20b 22.9 GB swap incident this whole task is
+		// written against actually built. Non-streaming (sink == nil): unchanged, still parallel.
+		if sink != nil {
+			for i := range arch.NumLayers {
+				if err := loadGptOss(i); err != nil {
+					return nil, err
+				}
+				sink.layer(&w.Layers[i])
+				if sink.err != nil {
+					return nil, sink.err
+				}
+				w.Layers[i] = LayerWeights{} // release before the next layer
+			}
+			return w, nil
+		}
 		if err := parallelLayers(arch.NumLayers, abort, loadGptOss); err != nil {
 			return nil, err
-		}
-		if sink != nil {
-			// M-09 BACKSTOP. This branch built every layer without calling sink.layer, so
-			// continuing would write a header declaring arch.NumLayers followed by no layers
-			// at all. StreamTranscodeGGUF is supposed to have routed this family through the
-			// resident-build fallback (needsResidentSerialize); if it did not, say so here
-			// rather than emit a CRC-valid bundle that dies at load with "truncated body".
-			return nil, fmt.Errorf("decoder(gguf): %s does not stream per-layer; it must be "+
-				"routed through the resident-build fallback (needsResidentSerialize)", arch.Name)
 		}
 		return w, nil
 	}

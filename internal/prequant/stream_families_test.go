@@ -3,6 +3,7 @@ package prequant
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,8 +31,14 @@ func TestStreamTranscode_perFamilyBodiesCarryTheirLayers(t *testing.T) {
 		path    string
 		streams bool // does its GGUF branch drive the sink itself?
 	}{
-		// The regression: a family routed through the resident-build fallback.
-		"gpt-oss": {filepath.Join("..", "..", "decoder", "testdata", "gptoss_tiny.gguf"), false},
+		// The regression, historically: a family routed through the resident-build
+		// fallback. S2 (task-never-swap-2026-09.md, 2026-09-23) moved gpt-oss OFF that
+		// fallback — its own loadGptOss closure already builds one layer independently of
+		// every other, so it now streams natively too, same as glm below. `streams` is
+		// this test's own record of that; TestGptOss_streamedMatchesResident is the byte-
+		// identity gate that actually proves it (this test only proves the bundle isn't
+		// header-only, not which path produced it).
+		"gpt-oss": {filepath.Join("..", "..", "decoder", "testdata", "gptoss_tiny.gguf"), true},
 		// The control: a family whose generic loader streams natively. Without it, a "fix"
 		// that routed EVERYTHING through the resident build would pass unnoticed — and that
 		// would silently discard the one-layer-peak-RAM contract for models that have it.
@@ -67,5 +74,59 @@ func TestStreamTranscode_perFamilyBodiesCarryTheirLayers(t *testing.T) {
 				t.Error("layer 0 has no Q projection — the layers are present but empty")
 			}
 		})
+	}
+}
+
+// TestGptOss_streamedMatchesResident is S2's own registered gate for the first family moved off
+// needsResidentSerialize: the streamed bundle must be byte-identical to the resident-build-then-
+// serialize path's output, same shape as stream_test.go's TestStreamTranscodeMatchesResident (glm)
+// — extended here per family rather than widening that one, since a failure on one fixture should
+// name which family broke, not force a reader to guess from a shared table's row count.
+func TestGptOss_streamedMatchesResident(t *testing.T) {
+	gguf := filepath.Join("..", "..", "decoder", "testdata", "gptoss_tiny.gguf")
+	if _, err := os.Stat(gguf); err != nil {
+		t.Skipf("no tiny gpt-oss GGUF at %s", gguf)
+	}
+	for _, quant := range []string{"int4", "int8int8", ""} {
+		t.Run("quant="+quant, func(t *testing.T) {
+			resident, streamed, label := transcodeBothWays(t, gguf, quant)
+			rPre, rPost := giwSplit(t, resident, giwLabelOffset(t, resident), label)
+			sPre, sPost := giwSplit(t, streamed, giwLabelOffset(t, streamed), "")
+			if !bytes.Equal(rPre, sPre) {
+				t.Errorf("bundles differ BEFORE the quant label (%d vs %d B) — the header itself diverges",
+					len(rPre), len(sPre))
+			}
+			if !bytes.Equal(rPost, sPost) {
+				n := 0
+				for i := 0; i < len(rPost) && i < len(sPost); i++ {
+					if rPost[i] != sPost[i] {
+						n++
+					}
+				}
+				t.Fatalf("bundles differ AFTER the quant label: %d of %d bytes (lengths %d vs %d) — the "+
+					"streaming and resident paths do NOT produce the same weights",
+					n, len(rPost), len(rPost), len(sPost))
+			}
+		})
+	}
+}
+
+// TestStreamTranscode_ctxCancel_gptoss is S2's own gate for TestStreamTranscode_ctxCancel_M21:
+// M-21's cancellation contract ("an already-cancelled context aborts before writing") must still
+// hold for gpt-oss now that it streams too, not just for the families that already did.
+func TestStreamTranscode_ctxCancel_gptoss(t *testing.T) {
+	gguf := filepath.Join("..", "..", "decoder", "testdata", "gptoss_tiny.gguf")
+	if _, err := os.Stat(gguf); err != nil {
+		t.Skipf("no tiny gpt-oss GGUF at %s", gguf)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancelled
+	var body bytes.Buffer
+	n, err := decoder.StreamTranscodeGGUF(ctx, gguf, &body, "int4", false, decoder.GIWTargetNone, "gptoss-tiny")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("StreamTranscodeGGUF with a cancelled ctx = (%d, %v); want a context.Canceled error", n, err)
+	}
+	if body.Len() != 0 {
+		t.Errorf("wrote %d bytes after cancellation; want 0 (the transcode must abort before writing)", body.Len())
 	}
 }
