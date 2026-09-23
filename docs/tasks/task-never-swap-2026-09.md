@@ -13,19 +13,25 @@
 > gpt-oss-20b transcode, though the run itself did not finish, disk-limited on this machine — the
 > other four are backed by a new structural (AST-based) test proving no family reads a non-per-layer
 > tensor, not by fixture byte-identity, since no fixture exists for any of them; see S2's own
-> status note below and `docs/measurements/transcode-streaming-2026-09-23.md`). **S4 ITEM 1
-> BUILT 2026-09-23** (the `.giw` load-time KV+scratch guard, `guardGIWFit` — refuses or auto-pins
-> exactly like the `.gguf` path's `guardFit`, against a flat margin over live available memory;
-> unit-tested, mutation-checked twice — arithmetic and wiring separately — and a real end-to-end
-> proof through `Load` on a real on-disk bundle; see S4's own status note below). **S5 Build item 1
+> status note below and `docs/measurements/transcode-streaming-2026-09-23.md`). **S4 ALL FIVE BUILD
+> ITEMS DONE 2026-09-23** (item 1: the `.giw` load-time KV+scratch guard, `guardGIWFit`; item 2:
+> the streamed-weight budget resolves from the live probe, not aikit's Linux-only/8GB-darwin-
+> fallback `AutoBudget()`; item 3: Metal's static 70% ceiling gains a live-probe second bound,
+> `min`'d so it can only get stricter; item 4: `debug.SetMemoryLimit` after every successful `Load`,
+> off when `GOMEMLIMIT` is already set — its own registered GC-CPU bar was met on ONE real run but
+> only at a scale (1.5B) too small to genuinely bind the limit, honestly recorded as a null result,
+> not a demonstrated win; item 5: the MoE working-set tok/s predictor + `--accept-slow` gate,
+> stated throughout as a PRIOR borrowed from an unrelated CUDA curve, never validated against a real
+> slow load. Every item unit-tested AND wiring-tested through a real `Load` call, every wiring test
+> mutation-checked; see S4's own status note below for the full breakdown). **S5 Build item 1
 > PARTIALLY BUILT 2026-09-23** (page-fault counters — `getrusage`-based, pure Go, no `x/sys` — on
 > `expertPager` via `faultDelta()`; the `--moe-pager=mmap|pool` flag exposing the existing
 > `GOINFER_MOE_PREAD_CPU` switch; the pool's cap invariant covered by a new unit test after
 > discovering `decoder/moepool_test.go` already covered refill byte-exactness, top-K self-eviction,
 > LRU order and cross-stream lock safety — see S5's own status note below. The registered rule's
 > real M35 `.giw` measurement, the darwin-default flip, and the dense pread ring (item 3) are
-> UNSTARTED — no M35-class checkpoint fits on this machine's free disk today). **S4 items 2-5 and
-> S6 unstarted.** S2's one remaining family, gemma4, has a genuinely different obstacle (a
+> UNSTARTED — no M35-class checkpoint fits on this machine's free disk today). **S6 unstarted.**
+> S2's one remaining family, gemma4, has a genuinely different obstacle (a
 > truly model-level fused PLE/MoE tail) the other five did not. **Correction to an earlier version of
 > this line**: S2 was never actually a
 > precondition for S3's OWN positive control — S3's gpt-oss-20b run (2026-09-22) already reached
@@ -92,8 +98,8 @@ that trips watchdogd. The record does not attribute the panic beyond that; S5's 
 where it gets attributed.
 
 **Two guards exist and neither sees the `.giw` path.** `guardFit(fitCheckFor(...))`
-(`decoder/model.go:464`) prices weights + KV + `srcFileBytes` for a `.gguf`, but the `.giw` branch
-(`decoder/model.go:363`) returns before it — by design, since a mapped load has no allocation
+(`decoder/model.go:495`) prices weights + KV + `srcFileBytes` for a `.gguf`, but the `.giw` branch
+(`decoder/model.go:379`) returns before it — by design, since a mapped load has no allocation
 peak to price; it also therefore prices none of the anonymous remainder (KV, scratch, Metal
 buffers). Metal's own guard is a static 70% of `hw.memsize` (`metal/backend.go:139`,
 `residentMemFraction`, set from one measured failure), deliberately not a live query because the
@@ -201,7 +207,7 @@ transcoded once to its sidecar `.giw` and mapped, so the resident weights are fi
 **Standing and the registered rule.** Today the sidecar is built only under `-stream-weights`
 (`internal/serveapp/main.go`, `ensureGIW` → `prequant.EnsureCachedGIW`,
 `internal/prequant/prequant.go:203`) or by the dense fit-guard auto-retry
-(`internal/serveapp/main.go:1325`); `chat` (`internal/chatapp/main.go:389`) and `fit`
+(`internal/serveapp/main.go:1328`); `chat` (`internal/chatapp/main.go:389`) and `fit`
 (`internal/fitcmd/fit.go:97`) load direct and have no streaming flag at all. **Rule (Mac, 1.5B and
 gpt-oss-20b, `footprint`/`vmmap -summary` on the serving process after the first completion):
 anonymous footprint of a sidecar load ≤ 25% of the direct load's, swap-used delta across the load
@@ -215,7 +221,7 @@ reason — "MoE CPU weight streaming is a documented, MEASURED failure mode"); `
 `Transcode` (temp + rename, the V-01 `.tmp.giw` suffix trap, `cacheFresh`'s load-probe freshness —
 M-12/M-11); `decoder/gguf.go` `StreamTranscodeGGUF` and `needsResidentSerialize`
 (`decoder/gguf.go:1495` — read S2 before promising anything about those families);
-`decoder/model.go` `.giw` branch (`decoder/model.go:363`) and what it skips (`decoder/model.go:464`);
+`decoder/model.go` `.giw` branch (`decoder/model.go:379`) and what it skips (`decoder/model.go:495`);
 `decoder/weightmat.go` `GIWTargetForBackend` and the kind-5 policy in `docs/tasks/task-int4-layout-2026-09.md`
 L2 (a cpu-arm64 sidecar is row4-only — about the model's int4 size; a kind-4 dual-representation
 bundle is ~2× that and is what "we shouldn't be building bigger files" refers to — check which
@@ -598,7 +604,112 @@ minutes); Metal VRAM (unified — swap is the signal there too).
 
 ### S4 · The fit guard on the `.giw` path, live probes where they belong, `GOMEMLIMIT`, and the working-set warning
 
-> **ITEM 1 BUILT 2026-09-23; ITEMS 2-5 NOT STARTED.** `guardGIWFit` (`decoder/fitguard.go`) closes
+> **ALL FIVE BUILD ITEMS DONE 2026-09-23.** Summary below; item 1's own detail follows unchanged.
+>
+> **Item 2 — pager budget from the live probe.** `resolveWeightCacheBudget` (`decoder/fitguard.go`)
+> resolves an "auto" (`WeightCacheBytes == 0`) `-stream-weights` request from THIS platform's own
+> `hostRAMAvailable()` (half of it, mirroring aikit's own `AutoBudget()` math) rather than leaving
+> it to aikit's `mmap.AutoBudget()`, which is Linux-only (`/proc/meminfo`) and falls back to a FIXED
+> 8 GB on darwin — a number with no relation to what THIS machine actually has free. Falls through
+> to 0 (aikit's own fallback, now genuinely the worst case) only when the live probe is itself
+> unavailable, logging that. Wired into `decoder.Load`'s `.giw` branch, before either
+> `newExpertPager`/`newLayerPager` sees the budget. Real end-to-end wiring test
+> (`TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe`, `decoder/layerpaging_test.go`) drives two
+> different injected live-available figures through a REAL `.giw` load of the 1.5B fixture (the
+> registry's default 0.5B fixture cannot exercise this: any available figure large enough to clear
+> guardGIWFit's own ~1 GB KV+scratch floor already halves to a budget bigger than 0.5B's whole
+> resident weight set — empirically probed, not assumed) and confirms `newLayerPager`'s own window
+> arithmetic moves with the live figure in both directions. Mutation-checked (reverting the
+> `model.go` wiring line turns the small-probe subtest red).
+>
+> **Item 3 — Metal's static ceiling gains a live-probe bound.** `metalMemoryCeiling`
+> (`metal/backend.go`) is now the ONE arithmetic both the registered `"metal"` memory probe
+> (`decoder.Model.Plan`'s own view) and `residentFitsMemory` (the real `BuildResident`-time guard)
+> share — before this they were two independent copies of `ram*residentMemFraction` that happened
+> to agree only because neither had a second term. Adds `min(staticCeiling, HostRAMAvailableBytes())`
+> — deliberately a MIN, not a swap to the live figure alone: darwin's UBC reclaim makes "available"
+> look artificially GENEROUS under pressure (the exact failure class this repo already paid for once
+> — `[[madvise-dontneed-defeats-warm-cold-rerun]]`'s "guard that inverts under the condition it
+> exists for"), but `min()` can only make the COMBINED ceiling STRICTER than the static 70% alone,
+> never looser — the same direction the brief's own Read-first note names as the only safe one.
+> `fitsResidentBudget` (the pure static-only formula) is UNCHANGED and still exercises its own
+> existing table (`TestResidentMemGuard`) — `metalMemoryCeiling` is a new, separate combined figure,
+> not a signature change to the old one, so no existing test needed touching. Two new tests:
+> `TestMetalMemoryCeiling_takesTheStricterBound` (the arithmetic, 7 cases, mutation-checked) and
+> `TestResidentFitsMemory_honorsLiveCeiling` (the WIRING — a real tiny dense `*decoder.Model` through
+> the real `residentFitsMemory`, injected live-available of 1 byte, mutation-checked by reverting the
+> guard back to the static-only budget, which turns it red). Full `./metal/...` suite re-run clean
+> (125s, no regressions).
+>
+> **Item 4 — `debug.SetMemoryLimit`.** `applyGoMemLimit` (`decoder/fitguard.go`) sets a SOFT Go heap
+> ceiling of `hostRAMAvailable() - giwMemMargin` (the same 1 GB margin item 1 uses) after every
+> successful `decoder.Load`, via a single `defer` on `Load`'s own named return — one hook covering
+> every branch (`.giw`/`.gguf`/safetensors/every backend) rather than one call per return point, so a
+> future new branch cannot silently miss it. A no-op when `GOMEMLIMIT` is already set in the
+> environment (Go's own precedence — the caller's explicit choice always wins). Two tests:
+> `TestApplyGoMemLimit` (arithmetic, 4 cases via `setGoMemLimit`'s own test indirection,
+> mutation-checked by dropping the margin subtraction) and `TestLoad_appliesGoMemLimitOnSuccess` (the
+> WIRING — a real tiny `.giw` load through the real `Load`, mutation-checked by disabling the defer's
+> condition, which turns it red).
+>
+> **Item 4's own decision (registered rule): "kept only if... GC CPU does not rise more than
+> 10%."** ONE real run per the registered bar, honestly reported: `GODEBUG=gctrace=1` on a real CPU
+> decode (qwen2.5-coder-1.5b, int8int8, 300 greedy tokens) with the new default (`GOMEMLIMIT` unset,
+> `applyGoMemLimit` sets it from live-available — several GB on this Mac) against `GOMEMLIMIT=off`
+> — **both runs show 0% GC CPU on every `gc N @...` line, identical heap-goal curves (32/43/76 MB
+> across both)**. At THIS scale the resolved limit sits so far above what a 1.5B model's heap
+> actually needs that GC behavior is unaffected either way — a genuine null result, not a
+> demonstrated win. The bar is met (no rise, trivially), but this run cannot speak to the scenario
+> the brief actually cares about: a load where the limit would genuinely bind (gpt-oss-20b-class),
+> which this session cannot safely run (no M35-class checkpoint fits this machine's free disk — same
+> constraint S5 already hit). **Kept as built** (soft limit, can only cost GC CPU, never refuse an
+> allocation, and is off outright whenever the caller sets `GOMEMLIMIT` themselves) given the
+> asymmetry — the downside of a soft, capped-strictness heap ceiling is bounded and the one
+> registered bar was met, even though only at a scale too small to be the interesting case. The
+> large-scale GC-CPU measurement remains genuinely owed. Full record + raw `gctrace` logs:
+> `docs/measurements/gomemlimit-gctrace-2026-09-23.md`.
+>
+> **Item 5 — the MoE working-set tok/s predictor.** `decoder/moeworkingset.go`:
+> `moeHitRatePrior(residencyFraction)` interpolates CUDA's C′ expert-cache hit-rate curve
+> (`benchmarks.md` §B4.1 — 12.5%→57.3%, 23.4%→76.1%, 31.25%→82.2%) as an explicit PRIOR, not a
+> measurement of this pager (stated as such in the doc comment, per the brief's own "say it is a
+> prior"); `predictedMoETokPerSec` is `1/(missBytes/preadRate)` with compute time deliberately
+> OMITTED (no measured CPU-paged-MoE compute-only figure exists to anchor it on — a guessed constant
+> would be worse than none — so this is an explicit UPPER BOUND on tok/s, not a point estimate);
+> `moePreadRateBytesPerSec` defaults to the ~3.7 GB/s `task-w4a8-neon-bandwidth.md` figure (a
+> DEFAULT, not the brief's own suggested live 64 MB probe — not built this pass).
+> `moeWorkingSetPrediction` resolves the real numbers from a just-built pager
+> (`topK × layers × avgExpertBytes + ResidentDenseWeightBytes()`, residency from
+> `pager.budget()/pager.total`); `moeWorkingSetRefusal` is the registered rule (c)'s pure threshold
+> gate (`moeSlowTokPerSecThreshold`, 2 tok/s), refusing unless the new `Options.AcceptSlowMoE`
+> (`-accept-slow`, `internal/serveapp`) is set. Wired into `Load`'s MoE `StreamWeights` branch, right
+> after the pager is built and its summary printed.
+>
+> Tests split arithmetic from wiring from threshold on purpose, because the only real local MoE
+> `.giw` fixture (`testdata/gemma4-moe-tiny`, gitignored, 9.5 MB) is far too small to ever predict a
+> rate below the 2 tok/s floor on its own — the fixture this session would need to trigger a REAL
+> refusal is exactly the M35/M26-class checkpoint the brief's own historical-incident warnings (and
+> S5's identical scoping decision) rule out running here. `TestMoEHitRatePrior` pins the §B4.1
+> calibration points plus monotonicity; `TestPredictedMoETokPerSec` pins a hand-computed case plus
+> every "unknown ⇒ 0" edge; `TestMoEWorkingSetRefusal` is the PURE threshold gate against synthetic
+> predicted rates (no fixture needed at all); `TestLoad_moeWorkingSetGateWiring` proves `Load` itself
+> reaches the real numbers and the real gate, by pushing `moeSlowTokPerSecThreshold` (a test-only
+> `var`, not a `const`) absurdly high so even `gemma4-moe-tiny`'s genuinely fast prediction reads as
+> "slow" — mutation-checked (bypassing the refusal call in `model.go` turns it red).
+>
+> **Not measured for real: the registered rule's own headline claim** ("the M35 run needed this
+> arithmetic before it started") — this session has never run that arithmetic against a real
+> M35/M26 checkpoint, for the same reason S5's own real measurement is owed rather than done. The
+> mechanism is built, tested, and wired; whether its PREDICTION is any good against a real slow load
+> is unverified.
+>
+> Full `gofmt`/`go build ./...`/`go vet ./...`/`go vet -tags realckpt ./...`/`~/go/bin/staticcheck`
+> (decoder, internal/serveapp, metal — the metal U1000 findings staticcheck reports predate this
+> pass, confirmed via `git diff --stat` showing no changes to those files) clean.
+> `scripts/refresh_parity_hashes.sh` run (non-numeric core edits to `fitguard.go`/`model.go`/
+> `moepaging.go`): 35/24/3 (pre-registered, unrelated) — clean.
+>
+> **Item 1's own detail, unchanged from the earlier pass:** `guardGIWFit` (`decoder/fitguard.go`) closes
 > the gap this brief's own rule (a) names: a `.giw` load's weights are file-backed and correctly
 > unpriced (`fitCheckFor` is never called for one, by design — see `srcFileBytes`'s own doc
 > comment), but its KV cache and prefill scratch are real anonymous allocations that had NO guard
@@ -651,9 +762,8 @@ minutes); Metal VRAM (unified — swap is the signal there too).
 > build happens, and `decoder` cannot import `metal` (the dependency runs the other way). CPU is
 > this guard's only backend today; a Metal-aware version needs its own hook, not designed here.
 >
-> **Items 2-5 (pager budget resolution off the live probe on darwin; Metal's static 70% ceiling
-> gaining a second, live-probe bound; `debug.SetMemoryLimit`; the MoE working-set tok/s
-> predictor) are entirely unstarted.**
+> **Items 2-5 are now built too — see the summary block at the top of this section
+> (2026-09-23).**
 
 **Goal.** Every load path prices the memory it will actually make anonymous, against a live
 figure on darwin where one is trustworthy, and a load whose per-token working set cannot fit says
@@ -674,7 +784,7 @@ and a measured pread rate, and requires an explicit acknowledgement (`--stream-w
 
 **Read first.** `decoder/fitguard.go` in full (the `fitCheck` struct, `srcFileBytes`,
 `cudaBuildBytes`, `smallerFittingContext`, the R13 re-pricing); `decoder/model.go` around
-`decoder/model.go:363`–`decoder/model.go:464`; `decoder/hostram_darwin.go` (the approximation it
+`decoder/model.go:379`–`decoder/model.go:495`; `decoder/hostram_darwin.go` (the approximation it
 states: free + inactive + speculative + purgeable, 16 KB pages read from `vm_stat`'s header);
 `decoder/backend.go` `RegisterMemoryProbe` and `metal/backend.go` `residentMemFraction` (the
 reason the Metal probe is static — keep it as the *ceiling* and add the live figure as a second

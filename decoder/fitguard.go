@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -424,6 +425,67 @@ func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
 			"of %.2f GB available (%.0f GB margin) — pass -ctx to choose, or free memory to lift\n",
 		lo, effCtx, float64(needAt(lo))/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
 	return lo, nil
+}
+
+// resolveWeightCacheBudget is S4 item 2 (task-never-swap-2026-09.md): when the caller leaves
+// WeightCacheBytes at its 0 "auto" default, price the streamed-weight budget from THIS platform's
+// own live probe (hostRAMAvailable — vm_stat on darwin, /proc/meminfo on linux) rather than
+// leaving it entirely to aikit's mmap.AutoBudget(), which is Linux-only (reads /proc/meminfo
+// itself) and falls back to a FIXED 8 GB on every other platform including darwin — a number with
+// no relation to what this machine actually has free right now. Same math AutoBudget itself uses
+// (half of available), so an "auto" request costs nothing new when the live probe already agrees
+// with what AutoBudget would have found on Linux; it only fixes the darwin case AutoBudget cannot
+// see (S0's own finding: the pager's auto budget was Linux-only with an 8 GB darwin fallback).
+//
+// requested > 0 (an explicit --weight-cache) passes straight through unchanged — this resolves
+// only the "auto" (0) case. Falls through to 0 (aikit's own AutoBudget, now genuinely the WORST
+// case rather than the only one) when this platform's own probe is unavailable too, logging that
+// so the fallback is visible rather than silent.
+func resolveWeightCacheBudget(requested int64) int64 {
+	if requested > 0 {
+		return requested
+	}
+	if avail := hostRAMAvailable(); avail > 0 {
+		return avail / 2
+	}
+	fmt.Fprintln(os.Stderr, "decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)")
+	return 0
+}
+
+// setGoMemLimit is debug.SetMemoryLimit, indirected so a test can observe what would have been
+// set without actually constraining ITS OWN heap (mirrors hostRAMAvailable's own indirection
+// pattern above).
+var setGoMemLimit = debug.SetMemoryLimit
+
+// applyGoMemLimit is S4 item 4 (task-never-swap-2026-09.md): after a successful Load, set a SOFT
+// Go heap ceiling from THIS platform's live-available memory minus guardGIWFit's own 1 GB margin.
+// debug.SetMemoryLimit is a soft limit — the GC works harder as the heap approaches it, it does
+// NOT refuse an allocation the way a hard cap would — so setting it costs GC CPU, never
+// correctness, when it turns out to sit below what the process actually needs. The margin exists
+// because the limit is about SLACK, and slack is what a real load was measured short on: the
+// gpt-oss-20b build that motivated S0 (docs/measurements/cold-user-2026-09-18-nobara-pc.md) had
+// ~9% Go heap slack at its peak, not the headroom a limit set exactly at "available" would assume.
+//
+// GOMEMLIMIT already set in the environment wins outright and this is a no-op — Go's own env-var
+// precedence for debug.SetMemoryLimit, and a caller who set it explicitly gets exactly what they
+// asked for, never silently overridden by a load's own guess.
+//
+// Every unknown proceeds, same discipline as every other guard in this file: no live probe on
+// this platform, or an available figure the margin already consumes, leaves the runtime's own
+// default (no limit, i.e. GC paces off live heap size alone) in place rather than guessing.
+func applyGoMemLimit() {
+	if os.Getenv("GOMEMLIMIT") != "" {
+		return
+	}
+	avail := hostRAMAvailable()
+	if avail <= 0 {
+		return
+	}
+	limit := avail - giwMemMargin
+	if limit <= 0 {
+		return
+	}
+	setGoMemLimit(limit)
 }
 
 // quantBytesPerElem is the resident cost of one weight ELEMENT of a 2-D matmul matrix under each

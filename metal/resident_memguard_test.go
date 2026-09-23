@@ -50,6 +50,76 @@ func TestResidentMemGuard(t *testing.T) {
 	}
 }
 
+// TestMetalMemoryCeiling_takesTheStricterBound is S4 item 3's own gate (task-never-swap-2026-09.md):
+// the combined ceiling must equal the static ram*residentMemFraction figure whenever the live
+// probe is unknown or looser, and must equal the LIVE figure whenever that is the tighter one —
+// never the other way around, since a live figure ALLOWED to widen the ceiling would reopen
+// exactly the darwin-UBC "guard that inverts under pressure" failure this file's own doc comment
+// on metalMemoryCeiling explains.
+func TestMetalMemoryCeiling_takesTheStricterBound(t *testing.T) {
+	const gb = int64(1) << 30
+	const ram = 16 * uint64(gb) // static ceiling = 11.2 GB
+	staticCeiling := metalStaticCeiling(ram)
+	for _, c := range []struct {
+		name string
+		live int64
+		want int64
+	}{
+		{"live unknown (0) leaves the static ceiling untouched", 0, staticCeiling},
+		{"live negative (unknown) leaves the static ceiling untouched", -1, staticCeiling},
+		{"live LOOSER than static does not widen the ceiling", 15 * gb, staticCeiling},
+		{"live equal to static does not widen the ceiling", staticCeiling, staticCeiling},
+		{"live TIGHTER than static wins", 3 * gb, 3 * gb},
+		{"live tighter by a small margin still wins", staticCeiling - 1, staticCeiling - 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			orig := metalLiveAvailable
+			metalLiveAvailable = func() int64 { return c.live }
+			t.Cleanup(func() { metalLiveAvailable = orig })
+			if got := metalMemoryCeiling(ram); got != c.want {
+				t.Errorf("metalMemoryCeiling(ram=%d GB) with live=%d = %d, want %d",
+					ram/uint64(gb), c.live, got, c.want)
+			}
+		})
+	}
+	t.Run("ram=0 is unknown regardless of the live probe", func(t *testing.T) {
+		orig := metalLiveAvailable
+		metalLiveAvailable = func() int64 { return 3 * gb }
+		t.Cleanup(func() { metalLiveAvailable = orig })
+		if got := metalMemoryCeiling(0); got != 0 {
+			t.Errorf("metalMemoryCeiling(0) = %d, want 0", got)
+		}
+	})
+}
+
+// TestResidentFitsMemory_honorsLiveCeiling is S4 item 3's own WIRING gate:
+// TestMetalMemoryCeiling_takesTheStricterBound above proves the combined-ceiling arithmetic in
+// isolation; this proves residentFitsMemory — the REAL load-time guard, not a private copy of the
+// same formula — actually reads through it. A version of residentFitsMemory that reverted to its
+// pre-item-3 static-only budget would still pass every other test in this file (they never touch
+// metalLiveAvailable) while silently ignoring a live probe reporting almost no memory at all —
+// exactly the wiring gap this guards against.
+func TestResidentFitsMemory_honorsLiveCeiling(t *testing.T) {
+	if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
+		t.Skip("GOINFER_NO_RESIDENT_MEM_GUARD is set in the environment — the guard is disabled, nothing to exercise")
+	}
+	m := tinyDenseModelWithMoESlots(t, 0)
+	need := residentNeedBytes(m)
+	if need <= 0 {
+		t.Skip("tiny fixture reports zero resident bytes — nothing to price")
+	}
+	orig := metalLiveAvailable
+	// Almost nothing available — far below what this real dev machine's static 70% ceiling would
+	// allow for a model this tiny, so a decline here can ONLY come from the live probe actually
+	// being consulted.
+	metalLiveAvailable = func() int64 { return 1 }
+	t.Cleanup(func() { metalLiveAvailable = orig })
+	if residentFitsMemory(m) {
+		t.Fatalf("residentFitsMemory() = true with metalLiveAvailable() = 1 byte (need=%d bytes) — "+
+			"the guard is not reading the live-tightened ceiling", need)
+	}
+}
+
 // tinyDenseModelWithMoESlots loads a minimal dense fixture (genTinyWeights/writeDense,
 // metal/moe_model_test.go) with the given Options.MoECacheSlots — real MoE structure is
 // irrelevant to what's under test here (the slot REQUEST's resolution, not expert dispatch), so

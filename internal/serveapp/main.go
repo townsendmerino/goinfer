@@ -179,6 +179,7 @@ func (s modelSpec) options(cfg config) decoder.Options {
 		KVQuant:          orStr(s.kvQuant, cfg.kvQuant),
 		StreamWeights:    orBool(s.stream, cfg.streamWeights),
 		WeightCacheBytes: int64(orFloat(s.weightCache, cfg.weightCacheGB) * 1e9),
+		AcceptSlowMoE:    cfg.acceptSlow,
 		EmbedInt4:        orBool(s.embedInt4, cfg.embedInt4),
 		ResidentContext:  orInt(s.ctxSize, cfg.ctxSize),
 		DisableFit:       !cfg.fit,
@@ -322,6 +323,7 @@ type config struct {
 	streamWeights    bool          // -stream-weights: page MoE expert weights out of an mmap'd .giw under a RAM budget
 	directLoad       bool          // -direct-load (task-never-swap-2026-09.md S1): opt out of the darwin sidecar-by-default and load a .gguf straight into the heap, as every platform did before S1
 	weightCacheGB    float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
+	acceptSlow       bool          // -accept-slow: acknowledge a paged-MoE load predicted below decoder's own tok/s floor (S4 item 5, task-never-swap-2026-09.md)
 	embedInt4        bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
 	maxQueue         int           // -max-queue: bounded per-model queue depth (0 = unbounded)
 	jobDir           string        // -job-dir (J2, task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
@@ -561,6 +563,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.BoolVar(&cfg.streamWeights, "stream-weights", false, "page model weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all weights: MoE expert demand-paging (run a 35B-A3B on ~16-20 GB) or dense per-layer streaming (run a model bigger than RAM). Bit-exact; trades RAM for fault latency. A plain .gguf is transparently transcoded to a sidecar .giw cache on first use (one-time). Also triggered automatically, without this flag, for a dense .gguf that does not fit resident RAM (--fit, default on) -- MoE is deliberately excluded from the automatic path (see --fit's help)")
 	flag.BoolVar(&cfg.directLoad, "direct-load", os.Getenv("GOINFER_GGUF_DIRECT") != "", "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin, a .gguf resolves to its sidecar by default since S1 (task-never-swap-2026-09.md) — this opts back out to the pre-S1 direct-heap-dequant behavior, which is still the default everywhere else. Also via GOINFER_GGUF_DIRECT=1. Ignored with -stream-weights, which always needs the sidecar's mmap regardless of platform")
 	flag.Float64Var(&cfg.weightCacheGB, "weight-cache", 0, "resident expert-weight budget in GB for -stream-weights (0 = auto, ~half of available RAM)")
+	flag.BoolVar(&cfg.acceptSlow, "accept-slow", false, "acknowledge a -stream-weights paged-MoE load whose predicted working-set rate falls below decoder's own floor (2 tok/s) and load it anyway. Without this, such a load is refused with the predicted rate named, rather than run for hours with zero completions the way an unacknowledged M35/M26-class load did before this flag existed (task-never-swap-2026-09.md S4). The prediction is a PRIOR borrowed from an unrelated CUDA cache curve, not a measurement of this pager — raising -weight-cache to shrink the predicted miss rate is usually the better fix")
 	flag.BoolVar(&cfg.embedInt4, "embed-int4", false, "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model. Lossy (~2.3 pts top-1, mostly rare tokens); GGUF direct load only (not the -stream-weights .giw cache)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
 	flag.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")

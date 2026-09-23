@@ -257,6 +257,11 @@ type Options struct {
 	// WeightCacheBytes is the resident-bytes budget for streamed weights (0 = auto,
 	// ~half of available RAM). Only meaningful with StreamWeights.
 	WeightCacheBytes int64
+	// AcceptSlowMoE is S4 item 5's (task-never-swap-2026-09.md) explicit acknowledgement: a
+	// paged-MoE StreamWeights load whose predicted working-set rate falls below
+	// moeSlowTokPerSecThreshold (decoder/moeworkingset.go) is refused unless this is true. Only
+	// meaningful for a .giw MoE load under StreamWeights; a no-op everywhere else.
+	AcceptSlowMoE bool
 	// EmbedInt4 relaxes the int8 pin on the token-embedding/LM-head table in int4
 	// mode, storing it at int4 too — halving the single largest resident tensor on a
 	// big-vocab small model. Lossy + opt-in (~2.3 pts top-1, mostly on rare tokens);
@@ -334,7 +339,18 @@ var ErrLoadAborted = errLoadAborted
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
 // and selects a backend. The forward pass (M3) is implemented; the CPU
 // backend is the default and the only one wired (webgpu falls back to CPU).
-func Load(dir string, opts Options) (*Model, error) {
+func Load(dir string, opts Options) (m *Model, err error) {
+	// S4 item 4 (task-never-swap-2026-09.md): a SINGLE hook covering every branch below (.giw,
+	// .gguf, safetensors, every backend) rather than one call per return point — Load has many
+	// early returns and a per-branch call would eventually miss one. Named returns so the defer
+	// can see the real outcome; only applies the limit on genuine success (err == nil && m != nil),
+	// re-evaluated fresh on every Load rather than set once at process start, because "available"
+	// changes as other loads/unloads happen.
+	defer func() {
+		if err == nil && m != nil {
+			applyGoMemLimit()
+		}
+	}()
 	// M-26 (docs/audit-2026-09-10.md): set before any backend/prefill work below reads these —
 	// only on true, no else branch, so a caller managing the same env vars itself (serve's own
 	// applyExactPrefillEnv, which is more granular than this single bool) is never overridden by
@@ -414,10 +430,25 @@ func Load(dir string, opts Options) (*Model, error) {
 		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition}
 		m.withBackendNames(opts.Backend, beErr)
 		if opts.StreamWeights {
+			// S4 item 2 (task-never-swap-2026-09.md): resolve an "auto" (0) weight-cache request
+			// from this platform's own live probe BEFORE either pager sees it, so darwin gets a
+			// real figure instead of aikit's Linux-only /proc probe + fixed 8 GB darwin fallback.
+			opts.WeightCacheBytes = resolveWeightCacheBudget(opts.WeightCacheBytes)
 			// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
 			if w.arch.MoE != nil {
 				if m.pager = newExpertPager(w, data, opts.WeightCacheBytes, dir); m.pager != nil {
 					fmt.Fprintln(os.Stderr, "decoder: "+pagerSummary(m.pager))
+					// S4 item 5: the arithmetic the M35 run needed before it started — predict
+					// the working-set rate and require an explicit acknowledgement below the
+					// registered floor, rather than let a 2h10/zero-completions run discover it.
+					if predicted, ok := moeWorkingSetPrediction(m); ok {
+						fmt.Fprintf(os.Stderr, "decoder: predicted paged-MoE decode rate ~%.2f tok/s "+
+							"(a prior, not a measurement — see moeHitRatePrior's own doc comment)\n", predicted)
+						if rerr := moeWorkingSetRefusal(filepath.Base(dir), predicted, opts.AcceptSlowMoE); rerr != nil {
+							m.Close()
+							return nil, rerr
+						}
+					}
 				} else {
 					fmt.Fprintln(os.Stderr, "decoder: --stream-weights ignored (no mmap-backed MoE experts to page)")
 				}
@@ -509,7 +540,7 @@ func Load(dir string, opts Options) (*Model, error) {
 	if raw, err := json.Marshal(resolvedEOS); err == nil {
 		w.Cfg.EOSTokenID = raw
 	}
-	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition}).withBackendNames(opts.Backend, beErr)
+	m = (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition}).withBackendNames(opts.Backend, beErr)
 	// `resident` is the third phase: weights becoming a device-side runner. Timed here rather than
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user
 	// wondering where nine seconds went is owed that time too.

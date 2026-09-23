@@ -34,7 +34,7 @@ func init() {
 		if err != nil || ram == 0 {
 			return 0, false
 		}
-		return int64(float64(ram) * residentMemFraction), true
+		return metalMemoryCeiling(ram), true
 	})
 }
 
@@ -138,13 +138,56 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 // for, which is why the bar sits just below that measurement rather than at a rounder 0.75.
 const residentMemFraction = 0.70
 
-// fitsResidentBudget is the arithmetic alone, split out so it can be driven with the numbers
-// from the measurement instead of requiring a 12 GB checkpoint to exercise the guard.
+// metalLiveAvailable is decoder.HostRAMAvailableBytes, indirected so a test can inject a
+// machine's live-available figure instead of reading the real one — mirrors decoder/fitguard.go's
+// own hostRAMAvailable indirection for the identical reason (a test needs a machine's worth of RAM
+// without needing one).
+var metalLiveAvailable = decoder.HostRAMAvailableBytes
+
+// metalStaticCeiling is residentMemFraction's own arithmetic, split out so fitsResidentBudget and
+// metalMemoryCeiling below share one formula rather than two copies that happen to agree.
+func metalStaticCeiling(ram uint64) int64 { return int64(float64(ram) * residentMemFraction) }
+
+// fitsResidentBudget is the STATIC arithmetic alone, split out so it can be driven with the
+// numbers from the measurement instead of requiring a 12 GB checkpoint to exercise the guard.
+// Deliberately never calls the live probe (metalMemoryCeiling does that) — its own tests hand it
+// exact ram/need figures and expect the pure ratio, not whatever this machine's real available
+// memory happens to be at test time.
 func fitsResidentBudget(need int64, ram uint64) bool {
 	if need <= 0 || ram == 0 {
 		return true // unknown ⇒ do not refuse
 	}
-	return uint64(need) <= uint64(float64(ram)*residentMemFraction)
+	return uint64(need) <= uint64(metalStaticCeiling(ram))
+}
+
+// metalMemoryCeiling is S4 item 3 (task-never-swap-2026-09.md): the SINGLE arithmetic both
+// residentFitsMemory (the real load-time guard) and the registered "metal" memory probe
+// (decoder.Model.Plan's own view, above) now share, so the two can never disagree — the property
+// RegisterMemoryProbe's own comment already promised and, before this, did not fully keep: it
+// recomputed ram*residentMemFraction independently of residentFitsMemory's own copy of the same
+// formula, two copies that happened to agree only because neither had a second term yet.
+//
+// Adds a SECOND bound from HostRAMAvailableBytes, min'd against the static 70% ceiling — so the
+// result can only get STRICTER than the static ceiling alone, never looser. This is deliberate:
+// darwin's UBC reclaim means "available" can look artificially GENEROUS under memory pressure (a
+// guard keyed on the live figure ALONE would invert exactly when it's needed — the same class of
+// mistake an RSS-keyed budget guard made elsewhere in this repo, reporting LESS memory at a known
+// failure point than at baseline), but min() can never make the COMBINED ceiling look artificially
+// SCARCE, because it only ever lowers what the static 70% already allowed — the one direction a
+// stricter-not-looser bound is safe to move in. live<=0 (no probe on this platform, or genuinely
+// unknown) leaves the static ceiling untouched, same as every other "unknown ⇒ proceed" case here.
+//
+// ram==0 returns 0: every caller here already treats a zero budget from an unreadable hw.memsize
+// as "unknown", unchanged.
+func metalMemoryCeiling(ram uint64) int64 {
+	if ram == 0 {
+		return 0
+	}
+	ceiling := metalStaticCeiling(ram)
+	if live := metalLiveAvailable(); live > 0 && live < ceiling {
+		return live
+	}
+	return ceiling
 }
 
 // metalMoESlotsRequest is the resolved expert-slot request as a string, ready for the SAME
@@ -342,10 +385,12 @@ func residentFitsMemory(m *decoder.Model) bool {
 	if err != nil || ram == 0 {
 		return true
 	}
-	if fitsResidentBudget(need, ram) {
+	// S4 item 3: the SAME combined ceiling the registered "metal" memory probe reports to
+	// decoder.Model.Plan, so the two can never disagree.
+	budget := metalMemoryCeiling(ram)
+	if need <= budget {
 		return true
 	}
-	budget := uint64(float64(ram) * residentMemFraction)
 	const gb = 1 << 30
 	// M-13: name the actual escape hatch for an MoE model, not just the guard override — a model
 	// with routed experts that doesn't fit resident may still fit PAGED, and the decline line
@@ -356,11 +401,16 @@ func residentFitsMemory(m *decoder.Model) bool {
 	} else if _, _, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok {
 		moeHint = " This model routes MoE experts — try --moe-cache-experts (Metal pages them; auto-sizes the slot count from free RAM) or --moe-cache-slots N to pick one yourself."
 	}
+	tightened := ""
+	if staticCeiling := metalStaticCeiling(ram); budget < staticCeiling {
+		tightened = fmt.Sprintf(" (this machine's live-available memory tightened the static %.0f%%/%.2f GB ceiling further)",
+			residentMemFraction*100, float64(staticCeiling)/gb)
+	}
 	fmt.Fprintf(os.Stderr, "[metal] declined — weights %.2f GB exceed %.0f%% of %.1f GB RAM "+
-		"(budget %.2f GB). Metal wires the pages it touches, so loading this would page to swap "+
+		"(budget %.2f GB%s). Metal wires the pages it touches, so loading this would page to swap "+
 		"exhaustion rather than run; continuing on the CPU/staged path. Override with "+
 		"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.%s\n",
-		float64(need)/gb, residentMemFraction*100, float64(ram)/gb, float64(budget)/gb, moeHint)
+		float64(need)/gb, residentMemFraction*100, float64(ram)/gb, float64(budget)/gb, tightened, moeHint)
 	return false
 }
 

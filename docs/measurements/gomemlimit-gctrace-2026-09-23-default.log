@@ -1,0 +1,39 @@
+stream-weights: transcoding qwen2.5-coder-1.5b-instruct-q4_k_m.gguf → qwen2.5-coder-1.5b-instruct-q4_k_m.int8int8.cpu-arm64.giw (int8int8, one-time — minutes + ~model-size on disk)…
+gc 1 @0.000s 4%: 0.031+0.17+0.006 ms clock, 0.25+0/0.23/0.070+0.054 ms cpu, 64->64->64 MB, 64 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 2 @0.072s 0%: 0.015+2.7+0.012 ms clock, 0.12+0.014/4.6/6.1+0.10 ms cpu, 125->126->89 MB, 128 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 3 @0.113s 1%: 0.026+2.2+0.003 ms clock, 0.20+0.083/3.9/5.4+0.029 ms cpu, 392->392->303 MB, 392 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 4 @2.041s 0%: 0.062+2.8+0.030 ms clock, 0.49+0.096/4.0/6.5+0.24 ms cpu, 605->605->558 MB, 607 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 5 @4.922s 0%: 0.046+2.2+0.008 ms clock, 0.37+0.014/4.0/5.4+0.067 ms cpu, 1114->1114->530 MB, 1118 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 6 @7.307s 0%: 0.026+2.3+0.010 ms clock, 0.21+0/3.3/5.8+0.086 ms cpu, 1066->1066->572 MB, 1066 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 7 @7.823s 0%: 0.023+2.1+0.003 ms clock, 0.18+0/3.0/6.0+0.027 ms cpu, 662->662->16 MB, 1144 MB goal, 0 MB stacks, 0 MB globals, 8 P (forced)
+stream-weights: cache ready (1704 MB) in 11s
+gc 8 @10.903s 0%: 0.13+0.99+0.018 ms clock, 1.0+0/1.5/0.45+0.14 ms cpu, 32->33->8 MB, 34 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 9 @10.909s 0%: 0.047+1.0+0.024 ms clock, 0.37+0.020/1.7/1.4+0.19 ms cpu, 17->17->11 MB, 18 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 10 @10.913s 0%: 0.045+1.6+0.023 ms clock, 0.36+0/2.4/2.5+0.18 ms cpu, 23->23->16 MB, 23 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 11 @10.922s 0%: 0.054+2.2+0.015 ms clock, 0.43+0/3.6/5.4+0.12 ms cpu, 32->32->21 MB, 32 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 12 @10.935s 0%: 0.034+4.4+0.014 ms clock, 0.27+0.48/7.6/12+0.11 ms cpu, 41->44->38 MB, 43 MB goal, 0 MB stacks, 0 MB globals, 8 P
+loading + quantizing…
+loaded 28-layer model (hidden 1536, vocab 151936) in 382ms [backend=cpu decode=cpu (int8int8)]
+gc 13 @11.279s 0%: 0.093+3.4+0.019 ms clock, 0.74+0/6.5/15+0.15 ms cpu, 70->70->33 MB, 76 MB goal, 0 MB stacks, 0 MB globals, 8 P
+chat template: chatml
+
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+
+[1myou>[0m [36mgc 14 @11.293s 0%: 0.035+3.3+0.027 ms clock, 0.28+0.70/5.6/10+0.22 ms cpu, 59->62->62 MB, 67 MB goal, 0 MB stacks, 0 MB globals, 8 P
+Once upon a time, in a small coastal town, there was a lighthouse keeper named John. John was a kind and gentle man who loved his job. He spent his days standing at the top of the lighthouse, watching over the sea and guiding ships safely into port.
+
+John's life was simple and peaceful. He had a small family and a small house at the top of the lighthouse. He had a small boat that he used to take his family to the beach and to catch fish. He had a small garden where he grew vegetables and herbs.
+
+John was a good listener and a good communicator. He would listen to the sailors who came to the lighthouse and he would try to understand their needs. He would also listen to the weather reports and he would try to predict the weather.
+
+John was a good worker and a good manager. He would take care of the lighthouse and the surrounding area. He would make sure that the lighthouse was always in good condition and that the surrounding area was safe.
+
+John was a good friend and a good neighbor. He would be friendly to the people who lived in the town and he would be friendly to the people who worked at the lighthouse.
+
+John was a good father and a good husband. He would be a good father to his children and he would be a good husband to his wife.
+
+John was a good son and a good daughter. He would be a good son to his father and he would be a good daughter to his[0m
+[2m[300 tok, 38.8 tok/s][0m
+[1myou>[0m 
+bye

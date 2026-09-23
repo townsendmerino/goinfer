@@ -1,0 +1,26 @@
+stream-weights: transcoding qwen2.5-coder-0.5b-instruct-q4_k_m.gguf → qwen2.5-coder-0.5b-instruct-q4_k_m.int8int8.cpu-arm64.giw (int8int8, one-time — minutes + ~model-size on disk)…
+gc 1 @0.001s 5%: 0.028+0.49+0.007 ms clock, 0.22+0/0.67/0.14+0.057 ms cpu, 64->65->64 MB, 65 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 2 @0.043s 1%: 0.021+2.3+0.036 ms clock, 0.17+0.016/4.2/7.3+0.29 ms cpu, 125->126->89 MB, 128 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 3 @0.084s 1%: 0.029+2.3+0.003 ms clock, 0.23+0.86/3.8/4.8+0.030 ms cpu, 299->299->210 MB, 299 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 4 @0.785s 0%: 0.042+3.2+0.012 ms clock, 0.33+0.20/3.9/5.4+0.10 ms cpu, 421->421->347 MB, 421 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 5 @1.378s 0%: 0.030+2.0+0.003 ms clock, 0.24+0/2.9/6.1+0.030 ms cpu, 615->615->16 MB, 695 MB goal, 0 MB stacks, 0 MB globals, 8 P (forced)
+stream-weights: cache ready (609 MB) in 2s
+gc 6 @1.513s 0%: 0.11+1.1+0.045 ms clock, 0.94+0/1.2/1.1+0.36 ms cpu, 32->32->9 MB, 34 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 7 @1.519s 0%: 0.032+1.7+0.008 ms clock, 0.25+0/2.0/3.0+0.067 ms cpu, 20->20->14 MB, 20 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 8 @1.524s 0%: 0.026+1.6+0.003 ms clock, 0.21+0.058/2.3/2.9+0.025 ms cpu, 29->30->16 MB, 30 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 9 @1.532s 0%: 0.043+3.3+0.015 ms clock, 0.34+0/3.6/6.7+0.12 ms cpu, 33->35->27 MB, 34 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 10 @1.551s 0%: 0.034+3.4+0.012 ms clock, 0.27+0.013/5.5/11+0.096 ms cpu, 49->52->43 MB, 55 MB goal, 0 MB stacks, 0 MB globals, 8 P
+loading + quantizing…
+loaded 24-layer model (hidden 896, vocab 151936) in 163ms [backend=cpu decode=cpu (int8int8)]
+chat template: chatml
+
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+
+[1myou>[0m [36mgc 11 @1.690s 0%: 0.088+4.7+0.017 ms clock, 0.70+0.11/8.2/10+0.14 ms cpu, 75->75->44 MB, 88 MB goal, 0 MB stacks, 0 MB globals, 8 P
+Whispers of the ocean,
+Silent waves dance,
+Whispers of the ocean.[0m
+[2m[17 tok, 79.8 tok/s][0m
+[1myou>[0m 
+bye

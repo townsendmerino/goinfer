@@ -1,0 +1,32 @@
+gc 1 @0.330s 0%: 0.017+0.19+0.021 ms clock, 0.14+0.036/0.20/0+0.17 ms cpu, 3->4->3 MB, 4 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 2 @0.341s 0%: 0.050+0.20+0.002 ms clock, 0.40+0/0.28/0.082+0.023 ms cpu, 10->10->6 MB, 11 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 3 @0.346s 0%: 0.046+1.5+0.010 ms clock, 0.36+0/1.7/0.49+0.081 ms cpu, 12->13->8 MB, 13 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 4 @0.351s 0%: 0.030+2.6+0.005 ms clock, 0.24+0.26/3.1/1.6+0.041 ms cpu, 19->19->12 MB, 19 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 5 @0.356s 0%: 0.028+2.6+0.026 ms clock, 0.23+1.0/3.2/1.7+0.21 ms cpu, 26->26->15 MB, 26 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 6 @0.364s 0%: 0.047+3.1+0.009 ms clock, 0.38+0/4.4/5.0+0.079 ms cpu, 29->30->21 MB, 31 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 7 @0.374s 0%: 0.049+2.8+0.010 ms clock, 0.39+0.051/4.1/9.2+0.085 ms cpu, 38->41->37 MB, 43 MB goal, 0 MB stacks, 0 MB globals, 8 P
+loading + quantizing…
+loaded 28-layer model (hidden 1536, vocab 151936) in 360ms [backend=cpu decode=cpu (int8int8)]
+gc 8 @0.702s 0%: 0.12+4.2+0.022 ms clock, 0.96+0.018/6.7/12+0.18 ms cpu, 69->70->33 MB, 75 MB goal, 0 MB stacks, 0 MB globals, 8 P
+chat template: chatml
+
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+
+[1myou>[0m [36mgc 9 @0.717s 0%: 0.075+5.3+0.044 ms clock, 0.60+0.49/6.0/10+0.35 ms cpu, 60->63->62 MB, 67 MB goal, 0 MB stacks, 0 MB globals, 8 P
+Once upon a time, in a small coastal town, there was a lighthouse keeper named John. John was a kind and gentle man who loved his job. He spent his days standing at the top of the lighthouse, watching over the sea and guiding ships safely into port.
+
+John's life was simple and peaceful. He had a small family and a small house at the top of the lighthouse. He had a small boat that he used to take his family to the beach and to catch fish. He had a small garden where he grew vegetables and herbs.
+
+John was a good listener and a good communicator. He would listen to the sailors who came to the lighthouse and he would try to understand their needs. He would also listen to the weather reports and he would try to predict the weather.
+
+John was a good worker and a good manager. He would take care of the lighthouse and the surrounding area. He would make sure that the lighthouse was always in good condition and that the surrounding area was safe.
+
+John was a good friend and a good neighbor. He would be friendly to the people who lived in the town and he would be friendly to the people who worked at the lighthouse.
+
+John was a good father and a good husband. He would be a good father to his children and he would be a good husband to his wife.
+
+John was a good son and a good daughter. He would be a good son to his father and he would be a good daughter to his[0m
+[2m[300 tok, 42.2 tok/s][0m
+[1myou>[0m 
+bye

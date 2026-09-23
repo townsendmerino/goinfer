@@ -277,19 +277,25 @@ func (p *expertPager) close() error {
 	return nil
 }
 
+// budget is the resident-bytes cap this pager was built with, in either mode — split out of
+// pagerSummary so S4 item 5's working-set prediction (moeworkingset.go) can ask the same question
+// pagerSummary already answers, without a second copy of the mode dispatch.
+func (p *expertPager) budget() int64 {
+	if p.pool != nil {
+		return p.pool.budget()
+	}
+	return p.cache.Budget()
+}
+
 // pagerSummary is a one-line description of a built pager for the load banner.
 func pagerSummary(p *expertPager) string {
 	if p == nil {
 		return ""
 	}
 	mode := "mmap"
-	budget := int64(0)
 	if p.pool != nil {
 		mode = "pread"
-		budget = p.pool.budget()
-	} else {
-		budget = p.cache.Budget()
 	}
 	return fmt.Sprintf("expert paging (%s): %d experts, %.1f GB total, %.1f GB budget",
-		mode, p.nExperts, float64(p.total)/1e9, float64(budget)/1e9)
+		mode, p.nExperts, float64(p.total)/1e9, float64(p.budget())/1e9)
 }

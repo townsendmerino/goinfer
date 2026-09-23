@@ -61,12 +61,20 @@ func TestModelFlag_parse(t *testing.T) {
 }
 
 func TestModelSpec_options(t *testing.T) {
-	cfg := config{backend: "cpu", quant: "int8int8", kvQuant: "f32", streamWeights: false, weightCacheGB: 0, embedInt4: false}
+	cfg := config{backend: "cpu", quant: "int8int8", kvQuant: "f32", streamWeights: false, weightCacheGB: 0, embedInt4: false, acceptSlow: false}
 
 	// No overrides → inherit defaults.
 	base := modelSpec{path: "m.giw"}.options(cfg)
-	if base.Quant != "int8int8" || base.StreamWeights || base.EmbedInt4 || base.WeightCacheBytes != 0 {
+	if base.Quant != "int8int8" || base.StreamWeights || base.EmbedInt4 || base.WeightCacheBytes != 0 || base.AcceptSlowMoE {
 		t.Fatalf("inherit: %+v", base)
+	}
+
+	// -accept-slow (S4 item 5, task-never-swap-2026-09.md) is a server-global flag, no per-model
+	// override — it must reach decoder.Options.AcceptSlowMoE unchanged.
+	acceptCfg := cfg
+	acceptCfg.acceptSlow = true
+	if o := (modelSpec{path: "m.giw"}).options(acceptCfg); !o.AcceptSlowMoE {
+		t.Error("-accept-slow did not reach decoder.Options.AcceptSlowMoE")
 	}
 
 	// Overrides win; an override of "" (f32) is distinct from unset.
