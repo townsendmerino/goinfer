@@ -71,7 +71,7 @@
 | **R-05** | the int4 nibble unpack, per token, per paged expert | `decoder/moepaging.go:96-113` — a paged tensor is never repacked; the canonical kernel runs every use | row4 vs canonical is 1.33× on the M=1 GEMV; MoE is ~70% of a CPU-paged 35B token | repack into the slot on fetch (the owned-buffer fetch already copies) | **investigated 2026-09-03, not implemented**: the described mechanism belongs to the Metal pager, not this one; the CPU-paged equivalent (`.giw` kind-4 row4) already SHIPPED and its own performance case is UNRESOLVED per this repo's own measurement saga (swung between −49% and +49% across sessions) — see below |
 | **R-06** | the same activation row quantised 7× per layer where 4 would do | `decoder/attention.go:98-110` (q, k, v as three `matmulInto`), the gate/up pair in `decoder/mlp.go` — W8A8 batches, W4A8 does not | ~509k elements/token on the 1.5B, plus 3 fork/joins per layer (fork/join measured 1.70× on decode, aikit S-09.1) | a `MatmulBTW4A8Batch` mirroring `MatmulBTW8A8Batch` (aikit S-02/S-03), wired where `qkvOps` already is | **wired and measured 2026-09-03/04, PARKED (default-off)**: aikit `MatmulBTW4A8Batch` shipped at v1.34.0; goinfer wired it behind `GOINFER_W4A8_BATCH` (default off) in q/k/v (`attention.go`) and gate/up (`mlp.go`); reproduced on two independent architectures via `bench_peer.py` (n=10 paired, idle-gated) — arm64/Metal 1.071× (stdev 0.009), amd64/CPU 1.066× (stdev 0.0008) — both squarely inside the pre-registered ambiguous zone between the 1.05× park / 1.15× ship thresholds, so it stays off by default per this repo's own "ambiguous → parked" rule. **Follow-up 2026-09-20** (red-october.md R9 step 1's own finding that MLP's token share grows with model size raised the question of whether this does better at 7B): it does not — OFF 58.98 ms/token (stdev 2.10), ON 59.0 (stdev 1.60), a difference an order of magnitude below either arm's own noise — an even cleaner null than the 1.5B result, not a size-dependent win, consistent with the remedy amortizing a roughly fixed per-barrier cost that matters proportionally *less* as the matmuls it's amortized against get bigger. See `docs/measurements/w4a8-batch-7b-2026-09-20.md`. Stays parked. |
 | **R-07** | one forward per token on the embeddings route; every input tokenised twice | P-17's second half (`decoder/embed.go`, `internal/serveapp/embeddings.go`) | "sequential prefill", ~9× slower than batched | batched prefill through `forwardLayersN`; tokenise once | **fully fixed 2026-09-03**: `decoder/embed.go`'s per-token forward (`hiddenLastBatched`, ~12-14× measured) and `embeddings.go`'s double-tokenize (`embedBatchCounter`) are both done |
-| **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | **fixed on the serving hot path, 2026-09-03**: P-13, P-15, and now P-17's `openai.go` `streamTokens` (incremental `DecodePiece` + windowed stop-scan, differentially tested against the old algorithm) are all FIXED; the three demo-CLI copies (`chatapp`/`gemmaapp`/agent) are a different shape and stay open, deliberately deprioritized below the serving path as the original audit itself specified |
+| **R-08** | per token: the whole generated text re-decoded and rescanned for stops; a penalty map rebuilt over the whole history; a full vocabulary sort for `top_logprobs` | P-17 (`internal/serveapp/openai.go` `streamTokens` and three copies), P-15, P-13 | O(n²) in output length; ~1–2 ms/token late in a 64k reply; 10–20 ms/token with logprobs on | incremental: keep the decoded tail, keep the counts, keep a top-k | **ALL FOUR COPIES FIXED.** Serving hot path 2026-09-03 (P-13, P-15, `openai.go` `streamTokens`); `chatapp`/the demo agent 2026-09-11 (`c0ab6ed3`, found already done this pass — this row's own prior text was stale, see below); `gemmaapp` 2026-09-23 (this pass, its own design needed to preserve the leading-space-strip semantic incrementally, as anticipated) |
 | **R-09** | the whole `.giw` CRC on every start | P-10 | a full read of a >RAM bundle before the first token | per-layer CRCs | filed, not implemented (disposition 2026-09-03) |
 | **R-10** | every KV head's history re-gathered and transposed per layer per token (Gemma-4 CPU) | P-09 | 2–3× attention traffic at long context | store V transposed at append | filed, contingent |
 
@@ -622,16 +622,35 @@ positions are inherent, not recompute.
   by its own documented contract, so the property it protects is unchanged; re-verified by
   mutation (swapping in `Decode` makes the guard fail again). Full `internal/serveapp` suite green
   (134 pass / 0 fail / 27 skip); `gofmt`/`go vet`/`staticcheck` clean.
-  **`chatapp`/`gemmaapp`/the demo agent are NOT touched.** Their loops have a materially different
-  shape — no stop-string logic at all, and their whole-sequence `Decode(out)` call is semantically
-  *correct* there (no M-25 bug: `out` is exactly the response's own ids from position 0, so
-  stripping its one leading space is the intended behavior, not a continuation-vs-whole-sequence
-  mixup) — so the same DecodePiece-and-window fix doesn't port over unchanged; it would need its
-  own design pass to preserve the "strip once, at the very start" semantic incrementally. The
-  original audit already deprioritized these below the serving hot path ("demo CLIs... lower
-  priority once the mechanism is proven correct in openai.go"); that mechanism is now proven, and
-  extending to the demos remains a legitimate, still-open, appropriately-deferred follow-up rather
-  than something to rush through unverified in this pass.
+  **Correction, 2026-09-23: the "NOT touched" claim above was already stale when this doc last
+  said so.** `chatapp` and the demo agent (`demo/agent/agent/agent.go`) were fixed 2026-09-11
+  (`c0ab6ed3`, "decode chat/agent CLI streams incrementally, not per-token whole-slice (P-17)") —
+  eight days before this doc's most recent prior pass reasserted they were untouched. Both extract
+  their own `streamGen` (`DecodePiece` appended to a `strings.Builder`), and both sidestep the
+  strip question this section worried about entirely: they only ever decode the GENERATED
+  continuation through `streamGen` — the prompt is never rendered through it, so there is no
+  sequence-start strip to preserve incrementally in the first place. Found by grepping for
+  `DecodePiece`/`streamGen` in these files directly rather than trusting the doc's own status line
+  (this repo's own `doc-review` skill's rule 0) — a lesson from this doc's own recent R-01 phase 1
+  retraction, applied here before writing anything, not after.
+  **`gemmaapp` genuinely was untouched, and is now fixed too (2026-09-23, this pass).** Unlike
+  chatapp/agent, `internal/gemmaapp/main.go`'s loop ALSO decodes the prompt (through the same call
+  that renders the generation), specifically to make the SentencePiece leading-space strip land
+  once at the true sequence start (`tokenizer/sentencepiece.go:800`'s own comment names this
+  design). The fix keeps that one-time whole-sequence `Decode` call for the prompt exactly as
+  before (it already ran once per request, not once per token, so it was never the O(n²) source)
+  and only replaces the GENERATION loop's repeated whole-sequence re-decode with `DecodePiece`
+  appended to a `strings.Builder` seeded from the prompt's own decoded text — the same
+  concatenation-is-associative argument `streamTokens`/chatapp/agent already rely on, extended one
+  step further to cover a one-time non-piece prefix. Extracted into its own `streamGen(tk,
+  promptIDs, tokens, onChunk)` (`internal/gemmaapp/main.go`) so it's unit-testable without a model,
+  mirroring chatapp's own test shape: `TestStreamGen_matchesWholeSequenceDecode` compares against
+  `tk.Decode(append(promptIDs, genIDs...))` (the exact call the old code made, run once instead of
+  per-token) across a real tokenizer fixture, chunk-by-chunk and on the final text; a second test
+  covers the zero-generated-tokens edge case. `go build`/`go vet`/`gofmt`/`staticcheck` clean;
+  `go test -v ./internal/gemmaapp/...` 2/2 pass. **R-08 is now fully closed — all four copies of
+  this pattern (serving + three demo CLIs) are fixed**, not three of four as this section's prior
+  text believed.
 
 ### R-09 / R-10 · Filed, not implemented
 
@@ -656,8 +675,9 @@ listed so the inventory is complete.
    commit/conversation-switch, amortized over a whole turn's tokens, not once per speculative
    verify round), but the honest baseline it has to beat is now the L-15-fixed staged CPU path,
    not a cold prefill — see the pre-registered decision rule in R-01's own section above.
-4. **R-06** (needs the aikit batch form), **R-05**, **R-07**, **R-08** — small, independent, each
-   with its audit cell.
+4. **R-06** (needs the aikit batch form, PARKED — measured, ambiguous zone, default off),
+   **R-05** (blocked — needs disk/hardware this box doesn't have, checked 2026-09-22), **R-07**
+   (fixed), ~~**R-08**~~ — **FIXED 2026-09-23** (`gemmaapp`, the last of its four copies).
 
 ## 4. Sources
 

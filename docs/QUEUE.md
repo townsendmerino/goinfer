@@ -1471,6 +1471,7 @@ supports.
 | `docs/tasks/task-recompute-audit.md|decoder/session.go:98` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
 | `docs/tasks/task-recompute-audit.md|decoder/speculative.go:135` | goinfer | `if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {` |
 | `docs/tasks/task-recompute-audit.md|internal/serveapp/openai.go:1324` | goinfer | `sess := lm.sessions.acquire(gr.promptIDs)` |
+| `docs/tasks/task-recompute-audit.md|tokenizer/sentencepiece.go:800` | goinfer | `// internal/gemmaapp decodes prompt+generation together for exactly this reason;` |
 | `docs/tasks/task-spark-x2-5.md|decoder/arch.go:284` | goinfer | `// sigmoid-activated where Laguna's is softplus (verified against source, not assumed). ` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:78` | goinfer | `func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok bool) {` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:93` | goinfer | `func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {` |

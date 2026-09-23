@@ -114,56 +114,94 @@ func run(modelDir, prompt string, maxTok int, backend, quant string, jsonMode, e
 		return fmt.Errorf("encode prompt: %w", err)
 	}
 
-	// 4) Generate + stream. Decode the whole running sequence (prompt +
-	// generated) each step and print only the newly-completed bytes, holding
-	// back any trailing incomplete UTF-8 — a byte-fallback token is a single
-	// (possibly partial) byte, so per-token DecodePiece would emit broken
-	// multibyte characters. Decoding the full sequence (not just the generated
-	// tail) is what makes the SentencePiece leading-space strip land once at the
-	// true start, so the space before the first generated word is preserved.
+	// 4) Generate + stream. Print only the newly-completed bytes each step,
+	// holding back any trailing incomplete UTF-8 — a byte-fallback token is a
+	// single (possibly partial) byte, so a naive per-token DecodePiece would
+	// emit broken multibyte characters mid-stream without the holdback.
+	//
+	// R-08 (audit-2026-09-02 P-17, task-recompute-audit.md): this used to
+	// re-Decode the WHOLE running sequence (prompt + every generated token so
+	// far) on every single token, an O(n^2) pattern in output length — the
+	// same defect already fixed in internal/serveapp/openai.go's streamTokens
+	// (2026-09-03) and this repo's other two demo CLIs, chatapp/agent.go
+	// (2026-09-11, c0ab6ed3) — deferred here at the time because this loop
+	// ALSO decodes the prompt through the same call, and needs the
+	// SentencePiece leading-space strip to land once, at the sequence's true
+	// start, which a per-token DecodePiece never applies (chatapp/agent avoid
+	// this because they only ever decode the GENERATED continuation, never the
+	// prompt, through their own streamGen). The fix: decode the prompt once,
+	// with the one-time whole-sequence Decode this always needed anyway (the
+	// strip lands correctly there, and it costs nothing extra — it already ran
+	// once per request, not once per token), then accumulate every GENERATED
+	// token's own DecodePiece onto a strings.Builder seeded with that text.
+	// Concatenation is associative regardless of where the chunk boundary
+	// falls (TestDecodeContinuation_isIncrementallyAssociative, tokenizer/),
+	// so appending the prompt's own decode followed by each token's DecodePiece
+	// is byte-identical to re-decoding the whole growing sequence every time —
+	// strings.Builder, not `text += piece`: Go strings are immutable, so naive
+	// concatenation is itself O(n) per append and would silently reintroduce
+	// the O(n^2) this removes.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	// Seed the display sequence with the prompt ids, minus a leading BOS (which
 	// would render as "<s>"/"<bos>"). The prompt then renders from the tokens,
 	// so what's shown is exactly what the model sees.
-	seq := append([]int(nil), ids...)
-	if len(seq) > 0 && seq[0] == tk.Special().BOS {
-		seq = seq[1:]
-	}
-	printed := 0
-	flush := func(final bool) error {
-		text, derr := tk.Decode(seq)
-		if derr != nil {
-			return derr
-		}
-		b := []byte(text)
-		end := len(b)
-		if !final {
-			end = completeUTF8Len(b)
-		}
-		if end > printed {
-			os.Stdout.Write(b[printed:end])
-			printed = end
-		}
-		return nil
-	}
-	if err := flush(false); err != nil { // render the prompt
-		return fmt.Errorf("decode: %w", err)
+	promptSeq := append([]int(nil), ids...)
+	if len(promptSeq) > 0 && promptSeq[0] == tk.Special().BOS {
+		promptSeq = promptSeq[1:]
 	}
 
 	stream, gen := model.Generate(ctx, ids, maxTok, sp)
-	for id := range stream {
-		seq = append(seq, id)
-		if err := flush(false); err != nil {
-			return fmt.Errorf("decode: %w", err)
-		}
-	}
-	if err := flush(true); err != nil {
+	if _, _, err := streamGen(tk, promptSeq, stream, func(chunk string) {
+		os.Stdout.Write([]byte(chunk))
+	}); err != nil {
 		return fmt.Errorf("decode: %w", err)
 	}
 	fmt.Println()
 	return gen.Err()
+}
+
+// streamGen decodes promptIDs once (applying the SentencePiece leading-space strip at the true
+// sequence start — see run's own R-08 comment above for why that one-time call stays a whole-
+// sequence Decode) then drains tokens into text incrementally, calling onChunk with each newly-
+// completed span exactly as run's inline flush did before this was extracted. Returns the full
+// text (prompt + generated) and the count of GENERATED tokens (promptIDs itself is not counted).
+func streamGen(tk *tokenizer.Tokenizer, promptIDs []int, tokens <-chan int, onChunk func(string)) (text string, nTok int, err error) {
+	promptText, derr := tk.Decode(promptIDs)
+	if derr != nil {
+		return "", 0, derr
+	}
+	var sb strings.Builder
+	sb.WriteString(promptText)
+	printed := 0
+	flush := func(final bool) {
+		txt := sb.String() // O(1): a view over the Builder's buffer, not a copy
+		tail := txt[printed:]
+		end := len(tail) + printed
+		if !final {
+			end = completeUTF8Len([]byte(tail)) + printed
+		}
+		if end > printed {
+			if onChunk != nil {
+				onChunk(txt[printed:end])
+			}
+			printed = end
+		}
+	}
+	flush(false) // render the prompt
+	for id := range tokens {
+		nTok++
+		// DecodePiece, not Decode: these ids CONTINUE the prompt already
+		// rendered above (no sequence-level dummy-prefix strip — M-25), and
+		// appending each token's own piece is exactly what a whole-sequence
+		// decode does internally, one token at a time.
+		piece, _ := tk.DecodePiece(id)
+		sb.WriteString(piece)
+		flush(false)
+	}
+	flush(true)
+	return sb.String(), nTok, nil
 }
 
 // jsonMasker builds the JSON-constraining LogitProcessor: the vocab's surface
