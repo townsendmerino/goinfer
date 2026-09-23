@@ -1,0 +1,32 @@
+=== M35 (qwen3.6-35b-a3b-int4.giw) CPU decode, nobara-pc ===
+2026-09-23T07:16:50-07:00
+commit: e1c867f6c15ac444f761bea2eea1ee350540215e
+load average at start:  07:16:50 up 9 days, 37 min,  4 users,  load average: 0.54, 0.29, 0.14
+               total        used        free      shared  buff/cache   available
+Mem:            62Gi        10Gi        22Gi        55Mi        30Gi        52Gi
+Swap:           77Gi        13Gi        63Gi
+model: /home/francis/models/qwen3.6-35b-a3b-int4.giw (21G)
+
+[phase] launching server (-backend cpu, no -moe-cache-experts, no -stream-weights)
+server pid: 4029460 (ppid should be 1 after setsid)
+[heartbeat] up after 20s
+[phase] load complete in 20s, sending greedy completion request
+[phase] request wall time: 32.653176828s
+[phase] response:
+{"choices":[{"finish_reason":"length","index":0,"message":{"content":"\u003cthink\u003e\nHere's a thinking process:\n\n1.  **Analyze User Input:**\n   - The user provided a text that is just the word \"the\" repeated 50 times.\n   - The prompt says \"Continue this text.\"\n   - This is a classic test/joke prompt where the","role":"assistant"}}],"created":1790173030,"id":"chatcmpl-9fd7be28afcf34310973436dd92af040","model":"bench","object":"chat.completion","usage":{"prompt_tokens":76,"completion_tokens":64,"total_tokens":140,"prefill_reused_tokens":0}}
+
+[phase] load average at end:  07:17:43 up 9 days, 38 min,  4 users,  load average: 2.75, 0.90, 0.35
+[done]
+2026-09-23T07:17:43-07:00
+
+=== streaming decode-only re-run (separates prefill from decode) ===
+2026-09-23T07:18:51-07:00
+load average:  07:18:51 up 9 days, 39 min,  4 users,  load average: 1.38, 0.83, 0.37
+server pid: 4029823
+[heartbeat] up after 5s
+send_to_first_chunk_s=13.849
+first_to_last_chunk_s=15.048
+n_chunks=64
+decode_chunks_per_s=4.187
+load average at end:  07:19:26 up 9 days, 40 min,  4 users,  load average: 1.58, 0.95, 0.42
+[done streaming re-run]

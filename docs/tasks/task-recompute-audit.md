@@ -239,6 +239,27 @@ positions are inherent, not recompute.
     hardware — not projected from spec/09's single-round numbers, which priced a different event
     (per-verify-round DtoD, killed in phase 1) than this one (per-commit DtoH/HtoD). Ambiguous →
     park, same as everywhere else in this repo's discipline.
+  - **Measured 2026-09-23** (`docs/measurements/r01-phase2-cpu-fallback-cost-2026-09-23.md`), real
+    hardware, the model this row names: Qwen3.6-35B-A3B int4 CPU decode-only on nobara-pc is
+    **4.19 tok/s** (streaming, first-to-last-chunk, prefill excluded) against `docs/benchmarks.md`'s
+    M35 CUDA-resident row of **23.5 tok/s** — **5.6× slower, real but not catastrophic** (RAM
+    headroom is why: 21 GiB model against 52 GiB available, unlike the Mac's catastrophic same-path
+    result elsewhere in `docs/benchmarks.md`, where the model didn't fit RAM at all). Arithmetically
+    this makes parking look like an overwhelming win for a several-hundred-token turn (~98s
+    difference against a sub-second round-trip) — **but the measurement exposes that the arithmetic
+    answers a narrower question than Phase 2 needs answered.** Parking only makes a LATER restore
+    cheap (`Upload` vs. a cold GPU reprefill); it does not change what a conversation does WHILE it
+    does not hold the single resident slot, which today is exactly the CPU fallback just measured —
+    that's a **scheduling/concurrency policy question** (should a losing `resBusy` CAS block briefly
+    for the slot instead of falling back immediately?), genuinely separate from the snapshot/restore
+    mechanism Phase 2 was scoped to build, and not obviously worth it on its own: at 5.6× (not two or
+    three orders of magnitude), a losing conversation blocking even a few seconds hoping for the slot
+    could easily lose to just running on CPU immediately, depending on the current holder's own turn
+    length — unmeasured, not assumed either way. **Two distinct, independently-fundable candidates
+    now, not one:** (a) the bounded-wait scheduling policy (small, needs a turn-length-distribution
+    measurement, no new snapshot machinery), and (b) the parking/snapshot mechanism as originally
+    scoped (bigger, still needs the real interleaved measurement named above, now with a real CPU
+    baseline to measure against instead of a projection). Neither built here.
 - **Confidence:** high on phase 0 (the staged path is the existence proof, and the invariant is the
   one 3358e6b already relies on); phase 1 is CLOSED per the 2026-09-23 correction above, not a
   confidence question any more — the device-side numbers were measured (spec/09) and the answer
