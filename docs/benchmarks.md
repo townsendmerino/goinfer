@@ -1788,7 +1788,7 @@ is about. llama.cpp went from *unable to run these cells at all* to *winning bot
 |---|---|---|---|---|---|
 | D7 | nobara CUDA | 35.7 | — | 56.7 | 58.7 |
 | M35 | nobara CUDA | 21.4 → 21.6 | 1528.8s → 1489.9s (**2.5%, noise-level**) | 23.2 | 30.8 |
-| M26 | nobara CUDA | 15.5 → 15.5 | 384.3s → 368.4s (**4.1%, real**) | 19.8 | 22.7 |
+| M26 | nobara CUDA | 15.5 → 15.5 → **34.9** (2026-09-23) | 384.3s → 368.4s → **234.4s** (2026-09-23, **1.57×** further, see below) | 19.8 | 22.7 |
 | S | Mac Metal, `--cpu-fast-attention` | 16.84 (`true`) / 16.53 (`false`) | — | — | — |
 
 **M35/M26 wall-clock, not the tok/s column, was the real finding — and it's now been re-measured
@@ -1840,6 +1840,20 @@ the finding — but the harness that produced it reused `bench_peer.py`'s decode
 without adding TTFT/prefill instrumentation, so the actual prefill-time comparison this row exists
 to answer is still open. Cost 3h38m wall-clock to learn that. A corrected re-run with real TTFT
 capture is a follow-up, not done here.
+
+**M26 re-run 2026-09-23, closing a named follow-up from `docs/tasks/red-october.md`'s R11(b)
+("P20: `benchmarks.md` W3 wall-clock column re-run").** `GOINFER_CUDA_MOE_EXPERT_MAJOR` (P20's
+expert-major MoE prefill restructuring) shipped default-on 2026-09-21 with a real 2.26–2.66×
+per-token win on M26 (`docs/measurements/p20-expert-major-m26-2026-09-21.md`), well past the small
+4.1% fix this row's prose above describes — but this table wasn't updated when that landed. Re-run
+against the current tree (commit `1f2010ff`, same cell/harness/methodology as above):
+**wall-clock 234.4s, was 368.4s — 1.57× faster** (1.64× against the original pre-any-P20-work
+384.3s). Decode tok/s also moved, 15.5 → 34.9, though that is NOT attributable to P20 alone — this
+session's own separate C′ decode/DMA-overlap work (default-on since 2026-09-22) also touches M26
+decode and both are active in this re-run; the two do not simply multiply and are not decomposed
+here. Full method, provenance, and the "what this does and does not attribute" caveat:
+[`w3-m26-rerun-2026-09-23.md`](measurements/w3-m26-rerun-2026-09-23.md). A peer (Ollama/llama.cpp)
+re-run was not performed — their columns are unaffected by a goinfer-only change.
 
 ### G20 (gpt-oss-20b, MXFP4) — W1, depth 128, tier 2
 

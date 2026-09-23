@@ -1,7 +1,10 @@
 # Performance queue
 
-> **Four open items as of 2026-09-05** (P20–P23) — was briefly empty on 2026-08-31, when every item
-> then on the page was closed, refuted, withdrawn, or moved to the track that owns it.
+> **Five open items as of 2026-09-23** (P21–P25) — was briefly empty on 2026-08-31, when every item
+> then on the page was closed, refuted, withdrawn, or moved to the track that owns it. P20 closed
+> 2026-09-21 (both its generic and gemma4-specific paths built and shipped default-on, 2.26–2.66×
+> on the real M26); this line was originally "Four open items as of 2026-09-05 (P20–P23)" and had
+> already drifted once (missing P24/P25) before P20's own closure was caught and corrected here.
 >
 > **The closed record is [`docs/completed/queue-performance.md`](./completed/queue-performance.md)**
 > (2,245 lines, G15–G24 · P1–P16 · A1–A11 and the A9-\* series). It moved rather than being deleted
@@ -120,9 +123,18 @@
   that contract and the batching half not at all, so the doc is currently writing a cheque the
   implementation doesn't honour. `metal/backend.go` is where the CUDA/Metal split lives.
 
-- **P20 · CUDA batched prefill for the MoE families — M26 IS ON THE BATCHED PATH as of 2026-09-04,
-  bit-identical, and it is worth ~8%. The batching was never the bottleneck; the host→VRAM expert
-  DMA is. M35 remains sequential (it needs a batched Gated-DeltaNet). OPEN, redirected.**
+- **P20 · CUDA batched prefill for the MoE families — CLOSED 2026-09-21, both paths BUILT AND
+  SHIPPED DEFAULT ON.** The body below is kept in full as the reasoning trail (the ~8%/1.085×
+  reading was real but was never the ceiling — see "What the 8% refutes"), but the header itself
+  went stale: the generic path (`GOINFER_CUDA_MOE_EXPERT_MAJOR`) and the gemma4-specific extension
+  it needed are both built and shipped, default on since 2026-09-21 (`84d113b8`) — **2.26–2.66× on
+  the real M26** (`docs/measurements/p20-expert-major-m26-2026-09-21.md`), closely matching the
+  ~2.32× projection this section itself derived from real distinct-expert-count data. Credited to
+  the flagship page 2026-09-23: `docs/benchmarks.md`'s W3 M26 cell moved from 368.4s to **234.4s
+  wall-clock (1.57× further)** — `docs/measurements/w3-m26-rerun-2026-09-23.md`. **M35 remains
+  sequential and out of scope — it needs a batched Gated-DeltaNet, a different and harder problem
+  (a recurrent state cannot be reordered across rows the way a stateless MoE FFN can); not started,
+  not this item's closure condition.**
 
   **The one-line verdict, so a scanner does not have to reconstruct it:** all three blockers that
   kept Gemma-4 off the batched prefill path are removed and none needed a new CUDA kernel; the
@@ -316,13 +328,21 @@
      structure, not the number. — per-layer geometry, `kEqV`, and a per-row-fed FFN off a batched
      residual. No new `.cu`. Do this first: M26 is the cheaper of the two models and its sequential
      cell is 6.4 min rather than 25.5.
-  2. **Expert-major routed experts — NOW THE WHOLE ITEM** (the P18 shape on the GPU): a batched
+  2. ~~**Expert-major routed experts — NOW THE WHOLE ITEM**~~ **DONE 2026-09-21 — 2.26–2.66× on
+     the real M26, default on.** Kept for the structure, not the plan: it turned out to need NO new
+     `.cu` after all — the projected "batched router/gather/indexed GEMV" below was superseded by a
+     simpler real design (route every row, bucket by expert, admit/DMA each distinct expert once,
+     fold in rank order), reusing the frozen `moe.ptx` GEMVs unchanged. See the BUILT AND SHIPPED
+     notes above for the real numbers.
+     <details><summary>Original plan text, superseded, kept for the record</summary>
+     (the P18 shape on the GPU): a batched
      router over M rows, a per-expert row gather, an indexed batched GEMV. This one DOES need a new
      `.cu` — `moe.ptx` is the audited 12.6.85 artifact and must stay untouched, the same way
      `decode_splitkv.cu` and `router_f32.cu` were added beside it. NVRTC is available on this box
      (`~/.venv-vl/…/libnvrtc.so.12`, `~/cuda-toolkit/…`), so `build_ptx.sh` runs. **On a model that
      fits the card this is a compute lever; on M26 it is a DMA lever, and the DMA is 59.5%** — so it
      is worth pre-registering the two cases separately rather than assuming one number covers both.
+     </details>
   **A GUARD THAT EXISTED ONLY BY ACCIDENT, now explicit (2026-09-04).** Removing the categorical
   `r.moe` refusal also removed the only thing keeping **M35** off the batched path — and the batched
   pass has no notion of recurrent state, so a DeltaNet layer's conv ring and matrix state would have
