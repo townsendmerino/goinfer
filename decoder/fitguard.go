@@ -338,6 +338,94 @@ func guardFit(f fitCheck) (int, error) {
 	return 0, nil
 }
 
+// giwMemMargin is S4's own literal (task-never-swap-2026-09.md, item 1): "HostRAMAvailableBytes
+// minus a 1 GB margin". A .giw load's WEIGHTS are file-backed (S0's own table: zero-copy aliases,
+// evictable under memory pressure — decoder.Load's own .giw branch never calls loadWeights at
+// all), so guardGIWFit deliberately does NOT reuse fitMemFraction's 70%-of-available conservatism
+// (that number is sized for a load that genuinely commits anonymous memory for its weights); only
+// KV and scratch are real anonymous cost here, and a flat margin against the live probe is what
+// the brief registered.
+const giwMemMargin = 1 << 30 // 1 GB
+
+// guardGIWFit is item 1's load-time check for a .giw load: refuse, or auto-pin to a smaller
+// context, when KV + scratch would exceed CURRENTLY AVAILABLE memory minus giwMemMargin. Mirrors
+// guardFit's own return shape (0 = no pin needed) so decoder.Load can treat either path the same
+// way. Every unknown proceeds, same rule as guardFit: no cfg, no live probe reading, or no usable
+// context all mean "cannot price this, so do not refuse a load that might have been fine."
+//
+// Scratch is priced at prefillAttnScratchBudget alone (the FIXED attention-scratch cap every
+// prefill already enforces) — prefillScratchBytes' other term (gate/up MLP activations) scales
+// with a specific PROMPT's length, which load time does not know; this is the same "state a scope
+// cut rather than guess" prefillScratchBytes' own doc comment already takes for its fixed half.
+//
+// NOT priced here: a Metal buffer-copy term (S4's own item 1 also names "(Metal) buffer
+// projection" — metal/model.go's int4Buf/int4Concat make a real host copy per dense projection on
+// that backend, unlike CPU's pure mmap alias). decoder cannot import metal (metal imports
+// decoder), so that term needs its own hook — not built in this pass; CPU is this function's only
+// backend today.
+func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
+	if os.Getenv("GOINFER_NO_FIT_GUARD") != "" {
+		return 0, nil
+	}
+	if cfg == nil {
+		return 0, nil
+	}
+	avail := hostRAMAvailable()
+	if avail <= 0 {
+		return 0, nil
+	}
+	budget := avail - giwMemMargin
+	if budget < 0 {
+		budget = 0
+	}
+	pinned := opts.ResidentContext > 0
+	effCtx := opts.ResidentContext
+	switch {
+	case pinned:
+		if cfg.MaxPositions > 0 && effCtx > cfg.MaxPositions {
+			effCtx = cfg.MaxPositions
+		}
+	case cfg.MaxPositions > 0:
+		effCtx = cfg.MaxPositions
+	default:
+		return 0, nil // no pin and the model's own max is unknown ⇒ can't price KV; proceed
+	}
+	kvF16, kvI8 := opts.KVPrecision == "f16", opts.KVQuant == "i8"
+	needAt := func(ctx int) int64 { return estimateKVBytes(cfg, ctx, kvF16, kvI8) + prefillAttnScratchBudget }
+	need := needAt(effCtx)
+	if need <= budget {
+		return 0, nil
+	}
+	if pinned {
+		return 0, fmt.Errorf(
+			"decoder: pinned context %d needs ~%.2f GB (KV + scratch) but only %.2f GB of this "+
+				"machine's %.2f GB currently-available memory would be left as a %.0f GB safety "+
+				"margin — pass a smaller -ctx, or set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
+			effCtx, float64(need)/fitGB, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
+	}
+	if needAt(ctxFloor) > budget {
+		return 0, fmt.Errorf(
+			"decoder: this model needs ~%.2f GB (KV + scratch) even at the %d-token floor, but only "+
+				"%.2f GB of this machine's %.2f GB currently-available memory would be left as a "+
+				"%.0f GB safety margin — set GOINFER_NO_FIT_GUARD=1 to allow it anyway",
+			float64(need)/fitGB, ctxFloor, float64(budget)/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
+	}
+	lo, hi := ctxFloor, effCtx
+	for lo < hi {
+		mid := lo + (hi-lo+1)/2
+		if needAt(mid) <= budget {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	fmt.Fprintf(os.Stderr,
+		"decoder: .giw context capped at %d (model allows %d) so that KV+scratch fits: needs ~%.2f GB "+
+			"of %.2f GB available (%.0f GB margin) — pass -ctx to choose, or free memory to lift\n",
+		lo, effCtx, float64(needAt(lo))/fitGB, float64(avail)/fitGB, float64(giwMemMargin)/fitGB)
+	return lo, nil
+}
+
 // quantBytesPerElem is the resident cost of one weight ELEMENT of a 2-D matmul matrix under each
 // quant mode — MEASURED by running a probe matrix through the loader's own quantization, not
 // derived from the nominal bit width.

@@ -13,9 +13,13 @@
 > gpt-oss-20b transcode, though the run itself did not finish, disk-limited on this machine — the
 > other four are backed by a new structural (AST-based) test proving no family reads a non-per-layer
 > tensor, not by fixture byte-identity, since no fixture exists for any of them; see S2's own
-> status note below and `docs/measurements/transcode-streaming-2026-09-23.md`), **S4/S5/S6
-> unstarted.** S2's one remaining family, gemma4, has a genuinely different obstacle (a truly
-> model-level fused PLE/MoE tail) the other five did not. **Correction to an earlier version of
+> status note below and `docs/measurements/transcode-streaming-2026-09-23.md`). **S4 ITEM 1
+> BUILT 2026-09-23** (the `.giw` load-time KV+scratch guard, `guardGIWFit` — refuses or auto-pins
+> exactly like the `.gguf` path's `guardFit`, against a flat margin over live available memory;
+> unit-tested, mutation-checked twice — arithmetic and wiring separately — and a real end-to-end
+> proof through `Load` on a real on-disk bundle; see S4's own status note below), **S4 items 2-5
+> and S5/S6 unstarted.** S2's one remaining family, gemma4, has a genuinely different obstacle (a
+> truly model-level fused PLE/MoE tail) the other five did not. **Correction to an earlier version of
 > this line**: S2 was never actually a
 > precondition for S3's OWN positive control — S3's gpt-oss-20b run (2026-09-22) already reached
 > the true historical scenario directly (a plain resident load, no `-stream-weights`, S2 has
@@ -81,7 +85,7 @@ that trips watchdogd. The record does not attribute the panic beyond that; S5's 
 where it gets attributed.
 
 **Two guards exist and neither sees the `.giw` path.** `guardFit(fitCheckFor(...))`
-(`decoder/model.go:451`) prices weights + KV + `srcFileBytes` for a `.gguf`, but the `.giw` branch
+(`decoder/model.go:464`) prices weights + KV + `srcFileBytes` for a `.gguf`, but the `.giw` branch
 (`decoder/model.go:363`) returns before it — by design, since a mapped load has no allocation
 peak to price; it also therefore prices none of the anonymous remainder (KV, scratch, Metal
 buffers). Metal's own guard is a static 70% of `hw.memsize` (`metal/backend.go:139`,
@@ -204,7 +208,7 @@ reason — "MoE CPU weight streaming is a documented, MEASURED failure mode"); `
 `Transcode` (temp + rename, the V-01 `.tmp.giw` suffix trap, `cacheFresh`'s load-probe freshness —
 M-12/M-11); `decoder/gguf.go` `StreamTranscodeGGUF` and `needsResidentSerialize`
 (`decoder/gguf.go:1495` — read S2 before promising anything about those families);
-`decoder/model.go` `.giw` branch (`decoder/model.go:363`) and what it skips (`decoder/model.go:451`);
+`decoder/model.go` `.giw` branch (`decoder/model.go:363`) and what it skips (`decoder/model.go:464`);
 `decoder/weightmat.go` `GIWTargetForBackend` and the kind-5 policy in `docs/tasks/task-int4-layout-2026-09.md`
 L2 (a cpu-arm64 sidecar is row4-only — about the model's int4 size; a kind-4 dual-representation
 bundle is ~2× that and is what "we shouldn't be building bigger files" refers to — check which
@@ -587,6 +591,63 @@ minutes); Metal VRAM (unified — swap is the signal there too).
 
 ### S4 · The fit guard on the `.giw` path, live probes where they belong, `GOMEMLIMIT`, and the working-set warning
 
+> **ITEM 1 BUILT 2026-09-23; ITEMS 2-5 NOT STARTED.** `guardGIWFit` (`decoder/fitguard.go`) closes
+> the gap this brief's own rule (a) names: a `.giw` load's weights are file-backed and correctly
+> unpriced (`fitCheckFor` is never called for one, by design — see `srcFileBytes`'s own doc
+> comment), but its KV cache and prefill scratch are real anonymous allocations that had NO guard
+> at all before this — an unbounded `-ctx` on a `.giw` load could genuinely swap, silently, no
+> different from the `.gguf` path before R13. Refuses or auto-pins to a smaller context exactly
+> like `guardFit` does for `.gguf` (an explicit pin that does not fit is refused, never silently
+> downgraded — G-07), but against `HostRAMAvailableBytes() − 1 GB` rather than
+> `fitMemFraction`'s 70%-of-available: deliberately NOT the same conservatism, because that number
+> is sized for a load that commits its WEIGHTS too, and a `.giw` load's weights genuinely do not
+> (S0's own table). Scratch is priced at `prefillAttnScratchBudget` alone (the fixed 256 MiB
+> attention-scratch cap every prefill already enforces) — the MLP/batched-matmul term
+> `prefillScratchBytes` also prices scales with a specific PROMPT's length, unknown at load time;
+> the same scope cut that function's own doc comment already takes for its fixed half.
+>
+> **Verified, not assumed**: `decoder/giwfitguard_test.go` — table-driven cases for fits/auto-pin/
+> refuse-at-floor/pinned-refusal/`GOINFER_NO_FIT_GUARD`/unknown-probe/no-config, PLUS
+> `TestLoad_giwAutoPinsUnderTightMemory`, a real end-to-end proof through the actual `Load`
+> function on a real on-disk `.giw` bundle (same `giw.WriteStream` pattern
+> `eos_giw_roundtrip_test.go` already established), not `guardGIWFit` called standalone. TWO
+> separate mutation checks: dropping the margin subtraction turns the margin-specific tests red;
+> disconnecting `pinnedCtx` from `opts.ResidentContext` in `Load`'s own `.giw` branch turns the
+> end-to-end test red — proving the WIRING, not just the arithmetic function in isolation, is
+> exercised. A bug in the test itself was caught and fixed before it could certify the wrong
+> thing: the first version hand-copied `Config` fields into a fresh struct and silently dropped
+> `HeadDim` to 0, which makes `estimateKVBytes` return 0 regardless of context — the test would
+> have passed vacuously (floor and max both "needing" nothing but scratch) without ever exercising
+> a genuine auto-pin. Fixed by using `&w.Cfg` directly, the same struct `Load` itself uses. Full
+> `decoder`/`internal/prequant`/`internal/serveapp`/`internal/chatapp`/`internal/fitcmd` suites
+> re-run clean (no new `.giw`-load regressions from S1's own default-sidecar path now exercising
+> this guard on every darwin load).
+>
+> **One real-machine run, per the Measure section's own third item** ("a `.giw` 1.5B load at
+> `-ctx 32768` that should auto-pin"): `qwen2.5-coder-1.5b-instruct-q4_k_m` sidecar, real
+> transcode, real load, on this Mac. Result, honestly: it did NOT auto-pin — the guard ran,
+> computed real numbers ("32768-token cap needs 1.8 GB KV... budget 3.6 GB"), and correctly
+> decided the load fit without intervention, because this machine's real available memory at the
+> time was ample. Not the scenario the brief's own author expected on whatever machine state
+> produced that line, but a genuinely correct outcome for THIS machine's real state at
+> measurement time — the guard is not being trusted on the strength of the one case that happens
+> to trigger it; the unit/integration tests above are what prove the pinning arithmetic itself,
+> mutation-checked, and this run is what proves the guard reaches a real load with real numbers at
+> all. Forcing a genuine real-machine auto-pin would need either a much bigger model or a
+> deliberately memory-constrained run — not attempted, given the marginal value over the
+> already-mutation-checked synthetic proof.
+>
+> **Not priced: the "(Metal) buffer projection" term the brief's own rule (a) also names.** On
+> Metal, a `.giw` load's dense projections ARE copied into real host memory before becoming
+> MTLBuffers (`metal/model.go`'s `int4Buf`/`int4Concat`) — genuine anonymous cost this guard does
+> not see, since it runs entirely inside `decoder.Load` before any backend-specific residency
+> build happens, and `decoder` cannot import `metal` (the dependency runs the other way). CPU is
+> this guard's only backend today; a Metal-aware version needs its own hook, not designed here.
+>
+> **Items 2-5 (pager budget resolution off the live probe on darwin; Metal's static 70% ceiling
+> gaining a second, live-probe bound; `debug.SetMemoryLimit`; the MoE working-set tok/s
+> predictor) are entirely unstarted.**
+
 **Goal.** Every load path prices the memory it will actually make anonymous, against a live
 figure on darwin where one is trustworthy, and a load whose per-token working set cannot fit says
 what speed that implies before it runs.
@@ -606,7 +667,7 @@ and a measured pread rate, and requires an explicit acknowledgement (`--stream-w
 
 **Read first.** `decoder/fitguard.go` in full (the `fitCheck` struct, `srcFileBytes`,
 `cudaBuildBytes`, `smallerFittingContext`, the R13 re-pricing); `decoder/model.go` around
-`decoder/model.go:363`–`decoder/model.go:451`; `decoder/hostram_darwin.go` (the approximation it
+`decoder/model.go:363`–`decoder/model.go:464`; `decoder/hostram_darwin.go` (the approximation it
 states: free + inactive + speculative + purgeable, 16 KB pages read from `vm_stat`'s header);
 `decoder/backend.go` `RegisterMemoryProbe` and `metal/backend.go` `residentMemFraction` (the
 reason the Metal probe is static — keep it as the *ceiling* and add the live figure as a second

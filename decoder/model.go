@@ -378,6 +378,19 @@ func Load(dir string, opts Options) (*Model, error) {
 			closeBackend(be)
 			return nil, lerr
 		}
+		// S4 (task-never-swap-2026-09.md), item 1: a .giw's weights are file-backed (no
+		// fitCheckFor call here at all, by design — see fitguard.go's own srcFileBytes doc
+		// comment), but its KV cache and prefill scratch ARE real anonymous allocations this
+		// path never priced before. guardGIWFit refuses or auto-pins exactly like the .gguf
+		// path's guardFit does, against a flat margin over live available memory rather than
+		// fitMemFraction's 70%-of-available (sized for a load that commits its weights too).
+		if pinnedCtx, gerr := guardGIWFit(&w.Cfg, opts); gerr != nil {
+			_ = mmap.Unmap(data)
+			closeBackend(be)
+			return nil, gerr
+		} else if pinnedCtx > 0 {
+			opts.ResidentContext = pinnedCtx
+		}
 		// L2 (docs/tasks/task-int4-layout-2026-09.md): a .giw bakes its int4 representation
 		// in at WRITE time (giwWriter.target), so unlike a GGUF/safetensors load —
 		// where wantsCanonicalInt4 decides needCanonical from THIS opts.Backend before

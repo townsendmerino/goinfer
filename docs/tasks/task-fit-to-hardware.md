@@ -51,6 +51,15 @@
 > user's hour. Sibling: `tasks/task-embed-and-harness-ux.md` (modes 2 and 3). Nothing in this doc changes
 > numerics; every gate is an admission/accounting gate, and the do-nothing arm is today's
 > hand-tuned configuration.
+>
+> **Cross-reference, 2026-09-23**: `task-never-swap-2026-09.md` S4 item 1 called itself "this
+> doc's Phase 3" — stale by the time it was built; Phases 3-5 above were already spoken for
+> (WebGPU/measure/host-computed-experts). The actual work — `guardGIWFit`
+> (`decoder/fitguard.go`), a load-time KV+scratch guard for `.giw` loads, refusing or auto-pinning
+> a context exactly like this doc's own fit-by-default guard does for `.gguf` — landed as its own
+> item, not a renumbered phase here. See S4's own status note in that doc for what shipped and
+> what did not (items 2-5: live-probe pager budgets, Metal's second bound, `GOMEMLIMIT`, the
+> working-set tok/s predictor — all still unstarted).
 
 **Who this is for.** One person with one consumer machine — an 8 GB RTX card, a 16 GB Apple
 Silicon laptop, a 32 GB desktop with no GPU — who has just pulled a 26B-A4B or 35B-A3B checkpoint
