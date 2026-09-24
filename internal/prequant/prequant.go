@@ -250,20 +250,18 @@ func SidecarPathIfFresh(ggufPath, quant, backend string) (string, bool) {
 }
 
 // DefaultToSidecar reports whether a .gguf source should resolve to its sidecar .giw by default
-// — S1's own registered rule: "the .gguf direct heap load becomes the opt-out, not the default"
-// on darwin, where the historical swap incidents (gpt-oss-20b, M35/M26) happened. Linux keeps
-// direct as its default for now: the Linux box has far more headroom and the measured peak
-// already fits it (S1's own "out of scope: Linux defaults" — this only wires the SAME opt-out
-// flag there too, so one command line works on both, not a new default). directLoad is the
-// caller's already-resolved -direct-load flag / GOINFER_GGUF_DIRECT env var — an explicit
-// request always wins over the platform default in either direction... except it can only ever
-// turn the sidecar OFF (there is deliberately no "force sidecar on Linux" knob yet; S1 does not
-// register a rule for that platform, so this does not invent one).
+// — S1's own registered rule: "the .gguf direct heap load becomes the opt-out, not the default".
+// darwin since S1 (2026-09-22), where the historical swap incidents (gpt-oss-20b, M35/M26)
+// happened; linux since 2026-09-24, owner decision, after docs/measurements/cpu-giw-vs-direct-2026-09-24.md
+// found no CPU decode cost (1.0007x / 1.0016x on 1.5B / 7B, inside the A/A arm) and a load that
+// maps instead of re-quantizing (0.01 s and ~0 heap vs 5.6-16.5 s and 1.3-5 GB). Other platforms
+// keep the direct load. directLoad is the caller's already-resolved -direct-load flag /
+// GOINFER_GGUF_DIRECT env var; it can only turn the sidecar OFF.
 func DefaultToSidecar(directLoad bool) bool {
 	if directLoad {
 		return false
 	}
-	return runtime.GOOS == "darwin"
+	return runtime.GOOS == "darwin" || runtime.GOOS == "linux"
 }
 
 // streamCachePath is the sidecar cache for a GGUF at a quant and target:

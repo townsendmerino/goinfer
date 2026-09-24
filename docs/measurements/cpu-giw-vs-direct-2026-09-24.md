@@ -78,3 +78,26 @@ from the whole weight set to ~0, as on darwin.
 per model beside it in `~/models`; `/home` ran at 98–100% during this session), the one-time transcode on first load
 (21 s / 102 s here), and that a pending weights format bump (v13, in progress elsewhere) would invalidate every sidecar
 already written. CUDA was not measured (weights end up in VRAM either way).
+
+## CUDA, and the linux default flip (2026-09-24)
+
+Owner decision after the CPU result: make the sidecar the linux default (`internal/prequant.DefaultToSidecar`, darwin + linux).
+CUDA was not covered above, so it was checked before the flip was committed: `serve` built from the flip's tree
+(`cuda/cmd/serve`), sidecar default vs `-direct-load`, a fresh server per arm, ABBA ×2 per model, 3 greedy 256-token decodes per
+server (`scripts/bench_sidecar_cuda.py`; raw rows: `cpu-giw-vs-direct-2026-09-24-cuda.json`). Not pre-registered as a separate
+rule; read against the CPU rule's ±2% band.
+
+| model | output, every arm | decode tok/s, sidecar / direct per ABBA block | load wall, sidecar | load wall, direct | first start (one-time transcode) |
+|---|---|---|---|---|---|
+| Qwen2.5-Coder 1.5B | byte-identical | 0.9969, 0.9993, 0.9984, 1.0045 | 2.6–2.8 s | 8.0–8.2 s | 29.7 s (transcode 20 s) |
+| Qwen2.5 7B | byte-identical | 1.0006, 0.9918, 0.9997, 0.9912 | 10.0–11.0 s | 26.2–26.8 s | 110.4 s (transcode 86 s) |
+
+No decode cost on CUDA either (all blocks inside ±2%; the two 7B blocks near 0.991 each contain one first-after-load reading of
+79.7 tok/s, the rest 81.7), and a ~3× faster load after the first. The cuda-target sidecar (`<base>.int4.cuda.giw`) is a
+separate file from the CPU one (`.cpu-amd64.giw`): the cache key carries the target.
+
+**Behaviour that comes with the default, unchanged from darwin, stated so it is not a surprise:** the first start per
+(model, quant, target) transcodes and writes ~model-size beside the `.gguf`; if free disk is below the source's size, `serve`
+refuses to start and names `-direct-load` rather than falling back; a sidecar that a newer build can still read is NOT rebuilt
+when the format version moves (a pending v13 will leave v12 sidecars in place, readable, until deleted). `-direct-load` /
+`GOINFER_GGUF_DIRECT=1` restores the old load. Not measured: WebGPU, cold page cache, models above 7B.

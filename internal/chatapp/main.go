@@ -232,7 +232,7 @@ All flags:
 		draft        = flag.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab.")
 		specK        = flag.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
 		showVersion  = flag.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
-		directLoad   = flag.Bool("direct-load", os.Getenv("GOINFER_GGUF_DIRECT") != "", "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin, a .gguf resolves to its sidecar by default since S1 (task-never-swap-2026-09.md) — this opts back out to the pre-S1 direct-heap-dequant behavior, which is still the default everywhere else. Also via GOINFER_GGUF_DIRECT=1")
+		directLoad   = flag.Bool("direct-load", os.Getenv("GOINFER_GGUF_DIRECT") != "", "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin (since S1, task-never-swap-2026-09.md) and linux (since 2026-09-24) a .gguf resolves to its sidecar by default — this opts back out to the direct-heap-dequant load, which is still the default on other platforms. Also via GOINFER_GGUF_DIRECT=1")
 	)
 	fit := fitFlag(true)
 	flag.Var(&fit, "fit", "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/tasks/task-fit-to-hardware.md). --fit=off restores the pre-fit-by-default behavior")

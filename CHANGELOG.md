@@ -15,6 +15,12 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **linux: a `.gguf` now loads through its sidecar `.giw` by default, as on darwin (`-direct-load` / `GOINFER_GGUF_DIRECT=1`
+  opts out).** Owner decision. Measured first: CPU decode 1.0007× / 1.0016× (1.5B / 7B, inside the do-nothing arm), CUDA
+  decode 0.99–1.005× with byte-identical output, and loads that map instead of re-quantizing — CUDA 2.7 s vs 8.2 s (1.5B) and
+  10 s vs 26.6 s (7B); CPU Go heap after load ~0 vs 1.3 / 5.0 GB. The first start per model and backend transcodes once
+  (20 s / 86 s here) and writes ~model-size beside the `.gguf`; with less free disk than that, `serve` refuses to start and
+  names `-direct-load`. `docs/measurements/cpu-giw-vs-direct-2026-09-24.md`.
 - **Tool calls: an unwrapped call is accepted on chatml/mellum2 when it names a supplied tool.** Qwen2.5-Coder (0.5B, 1.5B and
   7B; also on Ollama) practically never writes `<tool_call>` under `tool_choice: auto` and emits the call object alone, which
   every surface returned as prose: 0 parsed calls in 1,200 samples. Now an output that opens with a JSON object whose `name` is

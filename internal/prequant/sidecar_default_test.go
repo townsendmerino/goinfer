@@ -56,7 +56,7 @@ func TestDefaultToSidecar(t *testing.T) {
 		t.Error("directLoad=true must always return false, regardless of platform")
 	}
 	got := DefaultToSidecar(false)
-	want := runtime.GOOS == "darwin"
+	want := runtime.GOOS == "darwin" || runtime.GOOS == "linux"
 	if got != want {
 		t.Errorf("directLoad=false on GOOS=%s: got %v, want %v", runtime.GOOS, got, want)
 	}

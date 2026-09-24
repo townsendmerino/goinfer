@@ -1,0 +1,314 @@
+{
+ "1.5B_first_start_s": 29.7,
+ "1.5B_first_load_s": 22.4,
+ "1.5B": [
+  {
+   "arm": "side",
+   "load_s": 2.8,
+   "tok_s": [
+    252.44,
+    252.94,
+    253.73
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "direct",
+   "load_s": 8.21,
+   "tok_s": [
+    250.12,
+    255.55,
+    255.83
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "direct",
+   "load_s": 8.01,
+   "tok_s": [
+    253.11,
+    255.35,
+    255.42
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "side",
+   "load_s": 2.8,
+   "tok_s": [
+    251.44,
+    255.73,
+    256.17
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "side",
+   "load_s": 2.8,
+   "tok_s": [
+    252.15,
+    255.13,
+    255.84
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "direct",
+   "load_s": 8.22,
+   "tok_s": [
+    251.93,
+    256.47,
+    255.95
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "direct",
+   "load_s": 8.21,
+   "tok_s": [
+    247.73,
+    255.88,
+    256.07
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "side",
+   "load_s": 2.6,
+   "tok_s": [
+    252.86,
+    255.61,
+    254.62
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)",
+    "A token-bucket rate limiter is a type of rate limiter that uses a fixed number of tokens to control access to a resource. Tokens are added to the bucket at a constant rate, and when a request comes in, the bucket checks if there are enough tokens to allow the request. If there are, the tokens are consumed and the request is allowed to proceed. If there are not, the request is denied and the bucket is blocked until the tokens are available.\nHere's an example of how a token-bucket rate limiter works in Go:\n```go\npackage main\nimport (\n\t\"fmt\"\n\t\"time\"\n)\ntype TokenBucket struct {\n\ttokens int\n\trate   float64\n}\nfunc NewTokenBucket(tokens int, rate float64) *TokenBucket {\n\treturn &TokenBucket{\n\t\ttokens: tokens,\n\t\trate:   rate,\n\t}\n}\nfunc (t *TokenBucket) AddTokens(tokens int) {\n\tt.tokens += tokens\n}\nfunc (t *TokenBucket) ConsumeTokens(tokens int) {\n\tif t.tokens >= tokens {\n\t\tt.tokens -= tokens\n\t} else {\n\t\tfmt.Println(\"Rate limit exceeded\")\n\t}\n}\nfunc main() {\n\tt := NewTokenBucket(10, 1)"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  }
+ ],
+ "7B_first_start_s": 110.4,
+ "7B_first_load_s": 96.3,
+ "7B": [
+  {
+   "arm": "side",
+   "load_s": 10.01,
+   "tok_s": [
+    81.68,
+    81.69,
+    81.7
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "direct",
+   "load_s": 26.64,
+   "tok_s": [
+    81.61,
+    81.65,
+    81.67
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "direct",
+   "load_s": 26.24,
+   "tok_s": [
+    81.71,
+    81.72,
+    81.73
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "side",
+   "load_s": 11.02,
+   "tok_s": [
+    79.71,
+    81.75,
+    81.69
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "side",
+   "load_s": 10.01,
+   "tok_s": [
+    81.72,
+    81.76,
+    81.72
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "direct",
+   "load_s": 26.84,
+   "tok_s": [
+    81.74,
+    81.79,
+    81.74
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "direct",
+   "load_s": 26.44,
+   "tok_s": [
+    81.76,
+    81.76,
+    81.71
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  },
+  {
+   "arm": "side",
+   "load_s": 10.22,
+   "tok_s": [
+    79.67,
+    81.7,
+    81.69
+   ],
+   "texts": [
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n",
+    "A token-bucket rate limiter is a common technique used to control the rate of packets, requests, or other events in a system. It works by maintaining a bucket of tokens, where tokens are added at a constant rate and consumed when an event occurs. If the bucket is empty, the event is dropped or delayed until more tokens are available.\n\n### How a Token-Bucket Rate Limiter Works\n\n1. **Initialization**: The token bucket is initialized with a certain capacity and a refill rate.\n2. **Refill**: Tokens are added to the bucket at a constant rate, which is the refill rate. For example, if the refill rate is 1 token per second, the bucket will gain one token every second.\n3. **Consumption**: When an event (e.g., a request or packet) occurs, the system checks if there are tokens available in the bucket. If there are tokens, the event is allowed to proceed, and one token is consumed. If there are no tokens, the event is either dropped or delayed until tokens become available.\n\n### Example in Go\n\nLet's implement a simple token-bucket rate limiter in Go. We'll use a `time.Timer` to simulate the token refill and a channel to manage the tokens.\n\n```go\n"
+   ],
+   "n": [
+    257,
+    257,
+    257
+   ]
+  }
+ ]
+}

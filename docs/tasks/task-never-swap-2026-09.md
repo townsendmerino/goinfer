@@ -186,7 +186,9 @@ progress logging on anything over a couple of minutes.
 
 > **BUILT AND MEASURED 2026-09-22.** `internal/prequant.DefaultToSidecar` is the platform policy
 > (darwin default, opt-out via `-direct-load`/`GOINFER_GGUF_DIRECT=1`; linux keeps direct as its
-> own default, same opt-out flag available there too, as item 1 asked). Wired into all three
+> own default, same opt-out flag available there too, as item 1 asked — **superseded 2026-09-24: linux now
+> defaults to the sidecar too, owner decision after `docs/measurements/cpu-giw-vs-direct-2026-09-24.md` measured no CPU or
+> CUDA decode cost**). Wired into all three
 > entry points: `internal/serveapp`'s `loadDecoder` (a new branch alongside the existing
 > `-stream-weights` one — `StreamWeights` itself stays false for this default path, so no pager is
 > built and the LoRA-adapter refusal, which keys on `StreamWeights` not on `.giw`-ness, is
