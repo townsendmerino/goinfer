@@ -53,8 +53,8 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
   slower path. The failure mode we are designing against is a Metal box quietly decoding on the
   CPU.
 - Paged tensors (MoE experts, layer paging) stay canonical on every target. Paging has no
-  load-time repack step and preads canonical spans off the mapping (`metal/moe.go:450`,
-  `metal/gemma4_moe.go:234`, `decoder/moepaging.go`).
+  load-time repack step and preads canonical spans off the mapping (`metal/moe.go:453`,
+  `metal/gemma4_moe.go:237`, `decoder/moepaging.go`).
 - One doc. Findings from doing the work go into the per-item status line here.
 
 ---
@@ -62,7 +62,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
 ## L1 — Load-time policy: `Backend: "cpu"` is a promise, and it unlocks repacked-only (DONE 2026-09-11)
 
 **Where.** `decoder/weightmat.go:487 wantsCanonicalInt4(backendName, be)`,
-`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:502` (computed once
+`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:534` (computed once
 at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFWeights` /
 `buildWeightsFromSafetensors` → `quantizeEmbedWM` / `streamQuantizedEmbed` /
 `quantizeBatchedProjWM` / `streamQuantizedBatchedProj`. Dispatch prerequisite already done:
@@ -73,7 +73,7 @@ nil-slice fault in `linalg.MatmulBT`, not a slowdown).
 **The gap it hit.** `TestMetalSnapshotGolden` (`metal/snapshot_golden_test.go:138`) loads with no
 `Backend` set, then calls Metal's unexported `buildResident` directly — an idiom used at 87 sites
 in `metal/*_test.go` (6 in `gpu/`, `cuda/` unchecked). With the empty backend resolving to CPU
-and therefore repacked-only, `int4Concat` (`metal/model.go:543`) declined via its
+and therefore repacked-only, `int4Concat` (`metal/model.go:557`) declined via its
 panic-and-recover. Not a crash — but it shows the gate had turned `*decoder.Model` from
 backend-agnostic data into something with a hidden property and a silent failure mode.
 
@@ -279,8 +279,8 @@ are half the disk and page cache per int4 tensor, and row4-by-default for CPU ca
   bytes to be present at all for this to work. So: (a) `weightMatKind3Only`'s MoE-expert exclusion
   (`l.Experts[*]`, `mo.expertsGateUp/expertsDown`) is IMPLEMENTED PER THE DOC'S LITERAL TEXT, but
   is more conservative than the inspected code strictly requires — kept as written rather than
-  silently loosened, since Metal's OWN expert paging (`metal/moe.go:450`,
-  `metal/gemma4_moe.go:234`, cited by the ground rule, NOT inspected this round) may have a real
+  silently loosened, since Metal's OWN expert paging (`metal/moe.go:453`,
+  `metal/gemma4_moe.go:237`, cited by the ground rule, NOT inspected this round) may have a real
   canonical-only requirement the CPU pager does not. (b) The doc's worked example for kind 5 —
   "dense projections" — is EXACTLY what `layerpaging.go` pages for a big dense model that doesn't
   fit resident; reading the ground rule to also exclude THOSE would gut L2's own stated purpose
@@ -345,7 +345,7 @@ its test), `cmd/prequant/main.go`, `internal/serveapp/main.go`, `demo/chat/build
   "mirroring `repackW4A8Row4IfEligible`'s 'deliberately NOT wired into the .giw loader'
   precedent" and that "the existing canonical+row4 both policy isn't wired into `.giw` loading".
   The second claim is false — kind 4 *is* the both policy on disk, loaded at
-  `decoder/serialize.go:1628`. The true precedent is that the **in-RAM** repack is not applied to a
+  `decoder/serialize.go:1694`. The true precedent is that the **in-RAM** repack is not applied to a
   mmap'd `.giw`. Replace both with a pointer to L2.
 - `internal/prequant/prequant.go:41–47` comment: "always emits kind 3" becomes the L2 target
   rule when L2 lands; until then add one line saying the CPU cache is on the canonical kernel.

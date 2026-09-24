@@ -1,0 +1,237 @@
+{
+ "label": "alias2",
+ "mode": "",
+ "model": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw",
+ "cmd": [
+  "/tmp/goinfer-metal-serve-s6",
+  "-addr",
+  "127.0.0.1:18102",
+  "-model",
+  "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw",
+  "-backend",
+  "metal",
+  "-ctx",
+  "512"
+ ],
+ "swap_baseline_mb": 224.0,
+ "started": "08:31:05",
+ "gomemlimit": "(server default)",
+ "footprints_during_load": [],
+ "load_s": 2.0,
+ "decode_path": "metal-resident (int4)",
+ "footprint_after_load": {
+  "swap_mb": 224.0,
+  "ps": {
+   "rss_kb": 1706672,
+   "faults": 109465,
+   "pageins": 2
+  },
+  "footprint": {
+   "phys_footprint_mb": 788.0,
+   "categories": {
+    "IOAccelerator (graphics)": {
+     "dirty_mb": 712.0,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 0.0
+    },
+    "untagged (VM_ALLOCATE)": {
+     "dirty_mb": 67.0,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 74.0
+    },
+    "MALLOC_SMALL": {
+     "dirty_mb": 4.140625,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 0.0
+    },
+    "mapped file": {
+     "dirty_mb": 0.0,
+     "clean_mb": 792.0,
+     "reclaimable_mb": 0.0
+    },
+    "TOTAL": {
+     "dirty_mb": 788.0,
+     "clean_mb": 799.0,
+     "reclaimable_mb": 74.0
+    }
+   }
+  }
+ },
+ "served_name": "qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw",
+ "http_status": 200,
+ "tokens": 32,
+ "raw_head": [
+  "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"text\":\" the\"}],\"created\":1790263869,\"id\":\"cmpl-01c4705491d294f7ddda999a4807508e\",\"model\":\"qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw\",\"object\":\"text_completion\"}",
+  "",
+  "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"text\":\" more\"}],\"created\":1790263869,\"id\":\"cmpl-01c4705491d294f7ddda999a4807508e\",\"model\":\"qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw\",\"object\":\"text_completion\"}",
+  "",
+  "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"text\":\" complex\"}],\"created\":1790263869,\"id\":\"cmpl-01c4705491d294f7ddda999a4807508e\",\"model\":\"qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw\",\"object\":\"text_completion\"}"
+ ],
+ "text": " the more complex a system becomes, the more difficult it is to understand and maintain. The more complex a system becomes, the more difficult it is to understand and",
+ "ttft_s": 0.36,
+ "decode_tok_s_1_to_N": 75.6494,
+ "token_times_s": [
+  0.36,
+  0.37,
+  0.38,
+  0.4,
+  0.41,
+  0.42,
+  0.44,
+  0.45,
+  0.46,
+  0.48,
+  0.49,
+  0.5,
+  0.52,
+  0.53,
+  0.54,
+  0.56,
+  0.57,
+  0.58,
+  0.6,
+  0.61,
+  0.62,
+  0.63,
+  0.65,
+  0.66,
+  0.67,
+  0.69,
+  0.7,
+  0.71,
+  0.73,
+  0.74,
+  0.75,
+  0.77
+ ],
+ "prompt_words": 79,
+ "snapshots": {
+  "1": {
+   "t_s": 0.4,
+   "swap_mb": 224.0,
+   "ps": {
+    "rss_kb": 1708768,
+    "faults": 112226,
+    "pageins": 9087
+   },
+   "footprint": {
+    "phys_footprint_mb": 812.0,
+    "categories": {
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 728.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 75.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 67.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.65625,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 791.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 812.0,
+      "clean_mb": 800.0,
+      "reclaimable_mb": 67.0
+     }
+    }
+   }
+  },
+  "16": {
+   "t_s": 0.6,
+   "swap_mb": 224.0,
+   "ps": {
+    "rss_kb": 1708960,
+    "faults": 112325,
+    "pageins": 14566
+   },
+   "footprint": {
+    "phys_footprint_mb": 812.0,
+    "categories": {
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 728.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 75.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 67.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.65625,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 787.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 812.0,
+      "clean_mb": 795.0,
+      "reclaimable_mb": 67.0
+     }
+    }
+   }
+  },
+  "32": {
+   "t_s": 0.8,
+   "swap_mb": 224.0,
+   "ps": {
+    "rss_kb": 1709168,
+    "faults": 112335,
+    "pageins": 14566
+   },
+   "footprint": {
+    "phys_footprint_mb": 812.0,
+    "categories": {
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 728.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 75.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 67.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.65625,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 787.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 812.0,
+      "clean_mb": 795.0,
+      "reclaimable_mb": 67.0
+     }
+    }
+   }
+  }
+ },
+ "faults_during_request": 2870,
+ "pageins_during_request": 14564,
+ "gc": {
+  "count": 29,
+  "last_cum_gc_cpu_pct": 0
+ },
+ "killed": null,
+ "ended_reason": "done",
+ "max_rss_gb": 1.63,
+ "max_swap_delta_mb": 0.0
+}

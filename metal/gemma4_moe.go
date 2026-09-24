@@ -143,6 +143,9 @@ type gemma4MoeResident struct {
 	// giwFile is the re-opened .giw for pread-staging (GOINFER_MOE_PREAD=1); nil ⇒ the mmap byte-copy
 	// path. Shared read-only fd across every layer's pool; closed by resident.Close.
 	giwFile *os.File
+
+	// alias is the S6 weight aliaser (nil unless GOINFER_METAL_ALIAS=1); buildResident sets it before the layer loop.
+	alias *weightAlias
 }
 
 // gemma4MoeLayer holds one enable_moe_block layer's device weights: the parallel dense MLP
@@ -265,9 +268,9 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 	ml.routerW = NewBufferFloats(d, b.RouterProjScaled)
 	ml.routerBias = NewBufferFloats(d, make([]float32, b.NE)) // zeros → sel = score (no e_score_correction_bias)
 	ml.perExpertScale = NewBufferFloats(d, b.PerExpertScale)
-	ml.denseGuW, ml.denseGuS = int4Concat(d, b.MlpGate, b.MlpUp)
+	ml.denseGuW, ml.denseGuS = int4ConcatA(d, g.alias, b.MlpGate, b.MlpUp)
 	var e error
-	if ml.denseDW, ml.denseDS, e = int4Buf(d, b.MlpDown); e != nil {
+	if ml.denseDW, ml.denseDS, e = int4BufA(d, g.alias, b.MlpDown); e != nil {
 		panic(e)
 	}
 	if g.paged {

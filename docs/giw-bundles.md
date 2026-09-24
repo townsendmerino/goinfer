@@ -70,3 +70,38 @@ Compatibility, both ways:
   delete the sidecar (`<model>.<quant>.<target>.giw`, next to the `.gguf`) and it is rebuilt on the
   next `--stream-weights` / darwin default load, or re-run `cmd/prequant`.
 - The trailing CRC still covers the padding; a flipped pad byte fails the load.
+
+## File layout: fused groups for Metal (weights format v13, kind 6)
+
+S6 (`docs/tasks/task-never-swap-2026-09.md`) wants a Metal load's dense int4 weights to be **file-backed
+views of the mapping** instead of a second, anonymous MTLBuffer copy of every tensor. Metal's fused
+GEMVs read **one buffer** holding q‖k‖v (or gate‖up) rows back to back, and an mmap'd file can only be
+aliased into such a buffer if those rows are *adjacent in the file* — which per-tensor records (a
+scales array between each pair of nibble arrays) never are.
+
+For **`-target metal` only**, v13 writes each fused tuple — `(q,k,v)` and `(gate,up)` per layer — as a
+**group**: every member as a kind-6 record (`kind 6 | rows | cols | group | w8a8 | pad | u32 nScales |
+f32 scales`, *no nibbles*), then one **group block**: padding to 16 bytes, then each member's nibbles
+one after another with **no length prefixes** (lengths are `rows*cols/2`; a prefix between members
+would be exactly the gap this removes). Members are canonical group-32 int4 with the same K
+(K%32==0 keeps every member 16-aligned back to back). A tuple with an int8 member, an absent member (a
+K=V layer has no V), or a mixed K is written as ordinary consecutive records — no kind 6.
+
+The reader takes the nibbles out of the mapping as before (`WrapInt4` keeps the alias); the Metal
+build (`GOINFER_METAL_ALIAS=1`, opt-in) checks whether a fused tuple's nibbles are **one contiguous
+run** in the mapping and, if so, binds one no-copy buffer over them (`metal/alias.go`). It is detected,
+not assumed, so a pre-v13 file, a layer whose members are not adjacent, or a heap-backed weight all
+take the old copy path unchanged. Scales are still converted f32→f16 into a small buffer (about ⅛ of
+the nibble bytes); storing them as f16 is a possible later step.
+
+Compatibility:
+
+- **Only a metal-target file is v13.** Every other target still writes v12 (`giwWriter.emitVersion`),
+  so a file that can contain no kind 6 stays readable by a pre-v13 reader. A pre-v13 reader refuses a
+  metal-target v13 file through the version guard, as it did for v12.
+- A v13 reader loads every older bundle unchanged.
+- A metal-target sidecar is now a promise to **one backend**, the way kind 5 is to one arch: nothing
+  stops a CPU load from reading it (the nibbles and scales are ordinary canonical int4), but the
+  group block layout exists for Metal's benefit.
+- Existing metal-target sidecars keep their layout; the Metal aliasing simply does not apply to their
+  fused tuples (it logs `N fused groups not adjacent`). Rebuild to get it.

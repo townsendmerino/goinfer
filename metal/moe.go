@@ -350,6 +350,9 @@ type moeResident struct {
 	// gemma4_moe.go's (GOINFER_MOE_PREAD=0 opts out) — deliberately the same env var, since it is
 	// the same mechanism generalized.
 	giwFile *os.File
+
+	// alias is the S6 weight aliaser (nil unless GOINFER_METAL_ALIAS=1); buildResident sets it before the layer loop.
+	alias *weightAlias
 }
 
 // buildMoE builds the resident-level MoE state (pipelines, config, uniforms, scratch) from a
@@ -607,9 +610,9 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		ml.expDW, ml.expDS = int4Concat(d, downMats...)
 	}
 	if mo.sharedInter > 0 {
-		ml.shGuW, ml.shGuS = int4Concat(d, &lw.SharedExpert.Gate, &lw.SharedExpert.Up)
+		ml.shGuW, ml.shGuS = int4ConcatA(d, mo.alias, &lw.SharedExpert.Gate, &lw.SharedExpert.Up)
 		var e error
-		if ml.shDW, ml.shDS, e = int4Buf(d, &lw.SharedExpert.Down); e != nil {
+		if ml.shDW, ml.shDS, e = int4BufA(d, mo.alias, &lw.SharedExpert.Down); e != nil {
 			panic(e)
 		}
 		if !mo.sharedUngated {

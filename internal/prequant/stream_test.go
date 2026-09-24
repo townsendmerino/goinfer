@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"unsafe"
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"go/ast"
@@ -155,19 +156,25 @@ func giwLabelOffset(t *testing.T, b []byte) int {
 // resolved quant label the buffer path records — see residentLabelFor's own doc comment for why
 // that is NOT always simply the requested quant string.
 func transcodeBothWays(t *testing.T, gguf, quant string) (resident, streamed []byte, label string) {
+	return transcodeBothWaysFor(t, gguf, quant, decoder.GIWTargetNone)
+}
+
+// transcodeBothWaysFor is transcodeBothWays for one named .giw target — v13's fused groups exist only
+// for the Metal target, and the streaming writer must lay them out exactly as the resident writer does.
+func transcodeBothWaysFor(t *testing.T, gguf, quant string, target decoder.GIWTarget) (resident, streamed []byte, label string) {
 	t.Helper()
 	m, err := decoder.Load(gguf, decoder.Options{Quant: quant})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	label = residentLabelFor(quant, m.Quant())
-	resident, err = decoder.SerializeWeights(m.Weights(), "glm-tiny.gguf")
+	resident, err = decoder.SerializeWeightsForTarget(m.Weights(), "glm-tiny.gguf", target)
 	m.Close()
 	if err != nil {
-		t.Fatalf("SerializeWeights: %v", err)
+		t.Fatalf("SerializeWeightsForTarget: %v", err)
 	}
 	var buf bytes.Buffer
-	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &buf, quant, false, decoder.GIWTargetNone, "glm-tiny.gguf"); err != nil {
+	if _, err := decoder.StreamTranscodeGGUF(context.Background(), gguf, &buf, quant, false, target, "glm-tiny.gguf"); err != nil {
 		t.Fatalf("StreamTranscodeGGUF: %v", err)
 	}
 	return resident, buf.Bytes(), label
@@ -266,6 +273,41 @@ func TestStreamTranscodeMatchesResident(t *testing.T) {
 					n, len(rPost), len(rPost), len(sPost))
 			}
 		})
+	}
+}
+
+// TestStreamTranscodeMatchesResident_metalTarget is the same byte-identity gate for the Metal target,
+// where v13 writes fused groups: the streaming sink and the resident writer share giwWriter.layer, so a
+// group block laid out differently between them (padding is a function of the absolute offset, which
+// the streamer and the resident writer reach differently before the layers) would diverge here.
+func TestStreamTranscodeMatchesResident_metalTarget(t *testing.T) {
+	gguf := giwFixture(t)
+	resident, streamed, label := transcodeBothWaysFor(t, gguf, "int4", decoder.GIWTargetMetal)
+	rPre, rPost := giwSplit(t, resident, giwLabelOffset(t, resident), label)
+	sPre, sPost := giwSplit(t, streamed, giwLabelOffset(t, streamed), "")
+	if !bytes.Equal(rPre, sPre) {
+		t.Errorf("metal-target bundles differ before the quant label (%d vs %d B)", len(rPre), len(sPre))
+	}
+	if !bytes.Equal(rPost, sPost) {
+		t.Fatalf("metal-target streaming and resident bundles differ after the quant label (lengths %d vs %d)", len(rPost), len(sPost))
+	}
+	// Not vacuous: the fixture must actually have produced a fused group (a kind-6 record).
+	w, err := decoder.LoadSerializedWeights(streamed)
+	if err != nil {
+		t.Fatalf("LoadSerializedWeights: %v", err)
+	}
+	fused := 0
+	for i := range w.Layers {
+		if a, _, _, ok := w.Layers[i].GateProj.Int4(); ok {
+			if b, _, _, ok2 := w.Layers[i].UpProj.Int4(); ok2 && len(a) > 0 && len(b) > 0 {
+				if uintptr(unsafe.Pointer(&a[0]))+uintptr(len(a)) == uintptr(unsafe.Pointer(&b[0])) {
+					fused++
+				}
+			}
+		}
+	}
+	if fused == 0 {
+		t.Skip("the glm-tiny fixture has no eligible gate|up pair (K%32 != 0) — byte identity held, but nothing was fused")
 	}
 }
 

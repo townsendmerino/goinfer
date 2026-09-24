@@ -84,10 +84,11 @@ import (
 
 const (
 	giwMagic        = "GINFW"
-	giwVersion      = 12 // v12: NO new kind — every weight-matrix payload array (int8 scales+codes, int4 scales+nibbles, row4 scales+row4 nibbles) is now preceded by zero padding so its bytes start 16-aligned relative to the blob start (giwAlignArray), which lets the reader ALIAS the group scales instead of copying them to the heap (docs/measurements/moe-pager-mode-darwin-2026-09-23.md, "Finding"); needs the v3 bundle header (blob at offset 64) to be aligned in the FILE; a pre-v12 reader refuses the file via the version guard, a v12 reader still reads every older layout; v11: no layout change to existing kinds — adds kind 5 (row4-only, docs/tasks/task-int4-layout-2026-09.md L2), gated on version so a pre-v11 reader refuses the file via the version guard rather than hitting an unknown kind byte; v10: a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
+	giwVersion      = 13 // v13: adds kind 6 — an int4 tensor whose nibbles live in a shared GROUP BLOCK after the group's headers, so the members' nibbles are ADJACENT in the file (a Metal fused QKV / gate|up buffer can then alias them, S6); written only for GIWTargetMetal, which is the only writer that emits version 13 (every other target still emits 12, so a pre-v13 reader keeps reading them); a pre-v13 reader refuses a v13 file via the version guard, a v13 reader still reads every older layout; v12: NO new kind — every weight-matrix payload array (int8 scales+codes, int4 scales+nibbles, row4 scales+row4 nibbles) is now preceded by zero padding so its bytes start 16-aligned relative to the blob start (giwAlignArray), which lets the reader ALIAS the group scales instead of copying them to the heap (docs/measurements/moe-pager-mode-darwin-2026-09-23.md, "Finding"); needs the v3 bundle header (blob at offset 64) to be aligned in the FILE; a pre-v12 reader refuses the file via the version guard, a v12 reader still reads every older layout; v11: no layout change to existing kinds — adds kind 5 (row4-only, docs/tasks/task-int4-layout-2026-09.md L2), gated on version so a pre-v11 reader refuses the file via the version guard rather than hitting an unknown kind byte; v10: a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
 	giwMinReadV     = 3  // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv, v9 KDA/MLA-gate, v11 kind 5; older bundles stay valid and fall back to inference)
 	giwV4Gemma4     = 4  // the version at/after which the gemma4 tail is present
 	giwVAligned     = 12 // the version from which weight-matrix payload arrays are 16-byte aligned (see giwVersion)
+	giwVFused       = 13 // the version from which int4 fused-group blocks (kind 6) exist (see giwVersion)
 	giwV10GraniteQK = 10 // the version at/after which a dense-granite bundle's q/k are known un-permuted (audit C-05)
 	giwV6Tail       = 6  // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
 	giwV8ShortConv  = 8  // the version at/after which the LFM2 short-conv tail is present
@@ -266,7 +267,7 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 		return fmt.Errorf("decoder: marshal config: %w", err)
 	}
 	wr.raw([]byte(giwMagic))
-	wr.u32(giwEmitVersion)
+	wr.u32(wr.emitVersion())
 	wr.u32(uint32(w.quantMode()))
 	wr.str(id)
 	wr.bytesField(cfgJSON)
@@ -993,6 +994,16 @@ func (w *giwWriter) raw(b []byte) {
 // leaves it at giwVersion.
 var giwEmitVersion uint32 = giwVersion
 
+// emitVersion is the format version this writer stamps: giwEmitVersion, except that a non-Metal target
+// stays at the last version with no fused-group kind, so a file that can contain no kind 6 is not made
+// unreadable to a pre-v13 reader for nothing.
+func (w *giwWriter) emitVersion() uint32 {
+	if v := giwEmitVersion; v < giwVFused || w.target == GIWTargetMetal {
+		return v
+	}
+	return giwVFused - 1
+}
+
 // pos is how many bytes have been written since the blob start, in either mode — the quantity the
 // alignment padding is defined over.
 func (w *giwWriter) pos() int64 {
@@ -1174,10 +1185,66 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 	}
 }
 
+// fusedEligible reports whether ms can be written as one fused group (kind 6): a Metal-target
+// writer at v13+, at least two members, every member a canonical group-32 int4 with the same K
+// (K%32==0, so every member's nibble bytes are a multiple of 16 and the members stay 16-aligned
+// back to back). Anything else — an absent V on a K=V layer, an int8 tensor, a mixed K — is
+// written the ordinary way, one record at a time.
+func (w *giwWriter) fusedEligible(ms []*linalg.WeightMat) bool {
+	if w.target != GIWTargetMetal || w.emitVersion() < giwVFused || len(ms) < 2 {
+		return false
+	}
+	k := ms[0].Cols()
+	for _, m := range ms {
+		if m.Rows() == 0 || m.Cols() != k || k%32 != 0 {
+			return false
+		}
+		if _, _, group, ok := m.Int4(); !ok || group != 32 {
+			return false
+		}
+	}
+	return true
+}
+
+// fusedGroup writes ms — in the order a resident backend fuses them (q,k,v / gate,up) — as ONE group
+// whose nibbles are contiguous (S6: a Metal fused GEMV wants its rows in one buffer, and an mmap'd
+// file can only be aliased into one if the rows are adjacent there). Layout:
+//
+//	per member:  kind 6 | rows | cols | group | w8a8=0 | pad | u32 nScales | f32 scales     (no nibbles)
+//	then:        pad to 16 | nibbles of member 0 | nibbles of member 1 | …                 (no length prefixes)
+//
+// The nibble lengths are a pure function of each member's shape (rows*cols/2), so the block needs no
+// prefixes — a prefix between two members would be exactly the gap this exists to remove. A group that
+// is not eligible is written as plain consecutive records, byte-for-byte what weightMat writes.
+func (w *giwWriter) fusedGroup(ms ...*linalg.WeightMat) {
+	if !w.fusedEligible(ms) {
+		for _, m := range ms {
+			w.weightMat(m)
+		}
+		return
+	}
+	for _, m := range ms {
+		_, q4s, group, _ := m.Int4()
+		w.raw([]byte{6})
+		w.u32(uint32(m.Rows()))
+		w.u32(uint32(m.Cols()))
+		w.u32(uint32(group))
+		w.raw([]byte{0})
+		w.alignArray()
+		w.f32(q4s)
+	}
+	if pad := int((-w.pos()) & 15); pad > 0 {
+		var z [16]byte
+		w.raw(z[:pad])
+	}
+	for _, m := range ms {
+		q4, _, _, _ := m.Int4()
+		w.raw(q4)
+	}
+}
+
 func (w *giwWriter) layer(l *LayerWeights) {
-	w.weightMat(&l.QProj)
-	w.weightMat(&l.KProj)
-	w.weightMat(&l.VProj)
+	w.fusedGroup(&l.QProj, &l.KProj, &l.VProj)
 	w.weightMat(&l.OProj)
 	w.f32(l.QBias)
 	w.f32(l.KBias)
@@ -1188,8 +1255,7 @@ func (w *giwWriter) layer(l *LayerWeights) {
 	w.f32(l.PreAttnNorm)
 	w.f32(l.PreAttnNormBias)
 	w.f32(l.PostAttnNorm)
-	w.weightMat(&l.GateProj)
-	w.weightMat(&l.UpProj)
+	w.fusedGroup(&l.GateProj, &l.UpProj)
 	w.weightMat(&l.DownProj)
 	w.f32(l.UpBias)
 	w.f32(l.DownBias)
@@ -1659,10 +1725,64 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 	}
 }
 
+// fusedPending is a kind-6 member whose header and scales have been read but whose nibbles are in the
+// group block that follows the group's last record.
+type fusedPending struct {
+	dst               *linalg.WeightMat
+	rows, cols, group int
+	scales            []float32
+}
+
+// fusedGroup reads what giwWriter.fusedGroup wrote: for each member either an ordinary weightMat record or a
+// kind-6 record (header + scales), then — if any member was kind 6 — the shared nibble block, each member's
+// nibbles aliased out of it in member order. A pre-v13 blob never contains kind 6, so it reads exactly as
+// before (each member is just a weightMat).
+func (r *giwReader) fusedGroup(dst ...*linalg.WeightMat) {
+	var pend []fusedPending
+	for _, d := range dst {
+		if r.err == nil && r.version >= giwVFused && r.need(1) && r.data[r.off] == 6 {
+			r.off++
+			rows, cols, group := int(r.u32()), int(r.u32()), int(r.u32())
+			if !r.need(1) {
+				return
+			}
+			r.off++ // w8a8 flag: unused for int4
+			const maxWeightDim = 1 << 26
+			if rows <= 0 || cols <= 0 || rows > maxWeightDim || cols > maxWeightDim || group <= 0 {
+				r.fail(fmt.Sprintf("fused int4 member implausible dims %d×%d group=%d", rows, cols, group))
+				return
+			}
+			r.alignArray()
+			scales := r.f32Alias()
+			if want := rows * ((cols + group - 1) / group); len(scales) != want {
+				r.fail(fmt.Sprintf("fused int4 member %d×%d group=%d: scales=%d (want %d)", rows, cols, group, len(scales), want))
+				return
+			}
+			pend = append(pend, fusedPending{dst: d, rows: rows, cols: cols, group: group, scales: scales})
+			continue
+		}
+		*d = r.weightMat()
+	}
+	if len(pend) == 0 || r.err != nil {
+		return
+	}
+	// The block starts 16-aligned (the writer pads with the position, not with a length prefix) and each
+	// member is a multiple of 16 bytes (K%32==0), so every member's nibbles stay 16-aligned and adjacent.
+	if pad := int((-int64(r.off)) & 15); r.need(pad) {
+		r.off += pad
+	}
+	for _, p := range pend {
+		n := p.rows * ((p.cols + 1) / 2)
+		q4 := r.rawN(n)
+		if r.err != nil {
+			return
+		}
+		*p.dst = linalg.WrapInt4(q4, p.scales, p.rows, p.cols, p.group)
+	}
+}
+
 func (r *giwReader) layer(l *LayerWeights) {
-	l.QProj = r.weightMat()
-	l.KProj = r.weightMat()
-	l.VProj = r.weightMat()
+	r.fusedGroup(&l.QProj, &l.KProj, &l.VProj)
 	l.OProj = r.weightMat()
 	l.QBias = r.f32()
 	l.KBias = r.f32()
@@ -1673,8 +1793,7 @@ func (r *giwReader) layer(l *LayerWeights) {
 	l.PreAttnNorm = r.f32()
 	l.PreAttnNormBias = r.f32()
 	l.PostAttnNorm = r.f32()
-	l.GateProj = r.weightMat()
-	l.UpProj = r.weightMat()
+	r.fusedGroup(&l.GateProj, &l.UpProj)
 	l.DownProj = r.weightMat()
 	l.UpBias = r.f32()
 	l.DownBias = r.f32()

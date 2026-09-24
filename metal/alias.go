@@ -5,6 +5,7 @@ package metal
 import (
 	"fmt"
 	"os"
+	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -41,6 +42,10 @@ type weightAlias struct {
 	copied   int   // eligible int4 tensors that were not in the mapping (heap-backed) and took the copy path
 	copiedB  int64
 	declined int // in the mapping but not 16-byte-aligned (an older .giw layout), so copied
+
+	groups      int   // fused groups (q|k|v, gate|up) wrapped as ONE buffer over their contiguous nibbles
+	groupBytes  int64 // nibble bytes those groups cover
+	nonAdjacent int   // fused groups whose members are in the mapping but not back to back (a pre-v13 layout, or a K=V layer's Q|K|K)
 }
 
 // newWeightAlias returns nil unless the opt-in is set AND the model is backed by a .giw mapping.
@@ -77,12 +82,92 @@ func (a *weightAlias) nibbles(d *Device, w *linalg.WeightMat) (Buffer, bool) {
 	return d.NewBufferNoCopy(base, n).At(off), true
 }
 
+// concatNibbles is nibbles for a FUSED group: it returns ONE buffer bound over the members' nibble bytes
+// when they are a single contiguous run in the mapping in the order the fused kernel wants — which is
+// exactly what a v13 metal-target .giw's group block guarantees for q|k|v and gate|up (decoder/serialize.go,
+// fusedGroup). Detected, not assumed: a pre-v13 file, a K=V layer's q|k|k (k twice), an int8-requantized
+// member or a heap-backed one all fail the check and the caller takes the copy path unchanged. The bytes
+// are the same as int4Concat's concatenation (row-major nibbles, member after member), so the kernel
+// cannot tell the difference.
+func (a *weightAlias) concatNibbles(d *Device, wms []*linalg.WeightMat) (Buffer, bool) {
+	if a == nil || len(wms) == 0 {
+		return Buffer{}, false
+	}
+	first := make([][]byte, len(wms))
+	total := 0
+	for i, w := range wms {
+		q4, _, group, ok := w.Int4()
+		if !ok || group != 32 || len(q4) == 0 {
+			return Buffer{}, false
+		}
+		first[i] = q4
+		total += len(q4)
+	}
+	for i := range first {
+		if _, ok := a.m.MmapByteOffset(first[i]); !ok {
+			a.copied++
+			a.copiedB += int64(total)
+			return Buffer{}, false
+		}
+		if i > 0 {
+			prev := first[i-1]
+			if uintptr(unsafe.Pointer(&prev[0]))+uintptr(len(prev)) != uintptr(unsafe.Pointer(&first[i][0])) {
+				a.nonAdjacent++
+				return Buffer{}, false
+			}
+		}
+	}
+	run := unsafe.Slice(&first[0][0], total) // one slice over the whole contiguous run
+	base, n, off, ok := a.m.MmapAliasWindow(run, a.page)
+	if !ok {
+		a.copied++
+		a.copiedB += int64(total)
+		return Buffer{}, false
+	}
+	if off%16 != 0 {
+		a.declined++
+		return Buffer{}, false
+	}
+	a.groups++
+	a.groupBytes += int64(total)
+	a.aliased += int64(total)
+	return d.NewBufferNoCopy(base, n).At(off), true
+}
+
+// int4ConcatA is int4Concat with the fused-group alias: when the members' nibbles are one contiguous run in
+// the mapping the nibbles are bound in place and only the f16 scales (concatenated in member order, converted
+// exactly as int4Concat converts them) are built; otherwise it is int4Concat unchanged.
+func int4ConcatA(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, Buffer) {
+	for _, w := range wms {
+		if w.Cols()%32 != 0 { // int4Concat owns the K%32 panic (audit M-10)
+			return int4Concat(d, wms...)
+		}
+	}
+	nib, ok := a.concatNibbles(d, wms)
+	if !ok {
+		return int4Concat(d, wms...)
+	}
+	nScales := 0
+	for _, w := range wms {
+		_, q4s, _, _ := w.Int4()
+		nScales += len(q4s)
+	}
+	scales := make([]uint16, 0, nScales)
+	for _, w := range wms {
+		_, q4s, _, _ := w.Int4()
+		for _, s := range q4s {
+			scales = append(scales, f32ToF16(s))
+		}
+	}
+	return nib, NewBufferU16s(d, scales)
+}
+
 // summary is the banner line S6 asks for: the number a user would otherwise never see.
 func (a *weightAlias) summary() string {
 	if a == nil {
 		return ""
 	}
-	return fmt.Sprintf("[metal] weights aliased from the .giw mapping (GOINFER_METAL_ALIAS=1): %d tensors, %.0f MB of int4 nibbles "+
-		"not copied; %d heap-backed and %d unaligned tensors copied as before\n",
-		a.tensors, float64(a.aliased)/(1<<20), a.copied, a.declined)
+	return fmt.Sprintf("[metal] weights aliased from the .giw mapping (GOINFER_METAL_ALIAS=1): %.0f MB of int4 nibbles not copied "+
+		"(%d single tensors + %d fused groups = %.0f MB); copied as before: %d heap-backed, %d unaligned, %d fused groups not adjacent\n",
+		float64(a.aliased)/(1<<20), a.tensors, a.groups, float64(a.groupBytes)/(1<<20), a.copied, a.declined, a.nonAdjacent)
 }

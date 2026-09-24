@@ -1,0 +1,6 @@
+== copy1 (GOINFER_METAL_ALIAS=0) 08:53:52 swap=used = 224.00M
+exit=0 killwatch: 08:55:09 t+76s swap_used=224.00MB delta=+0MB tick=0MB rss=1948768KB free_disk=12G
+== alias2 (GOINFER_METAL_ALIAS=1) 08:55:17 swap=used = 224.00M
+exit=0 killwatch: 08:55:33 killwatch: swap delta +1109.81MB > 600MB -- KILLING 25466
+KILLED — stopping the A/B
+ALLDONE 08:55:34

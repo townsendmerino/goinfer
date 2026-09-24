@@ -818,6 +818,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.uLNHasBias = NewBufferU32(d, 0)
 	}
 	alias := newWeightAlias(m) // nil unless GOINFER_METAL_ALIAS=1 on a .giw-mapped model (S6)
+	if r.g4moe != nil {
+		r.g4moe.alias = alias
+	}
+	if r.moe != nil {
+		r.moe.alias = alias
+	}
 	mk := func(wm *linalg.WeightMat) (Buffer, Buffer) {
 		q, s, e := int4BufA(d, alias, wm)
 		if e != nil {
@@ -875,7 +881,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			}
 			L.qGate = true
 			L.dnQw, L.dnQs = mk(qP)
-			L.qkvW, L.qkvS = int4Concat(d, kP, vP) // K‖V fused (Q handled separately above)
+			L.qkvW, L.qkvS = int4ConcatA(d, alias, kP, vP) // K‖V fused (Q handled separately above)
 			L.oW, L.oS = mk(oP)
 			L.qNorm, L.kNorm = NewBufferFloats(d, qN), NewBufferFloats(d, kN)
 		} else {
@@ -894,7 +900,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			if kEqV {
 				L.qkvW, L.qkvS = int4Concat(d, &lw.QProj, &lw.KProj, &lw.KProj) // V slot = raw k_proj
 			} else {
-				L.qkvW, L.qkvS = int4Concat(d, &lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
+				L.qkvW, L.qkvS = int4ConcatA(d, alias, &lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
 			}
 			L.oW, L.oS = mk(&lw.OProj)
 			if r.outBias {
@@ -938,7 +944,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.upBias = NewBufferFloats(d, lw.UpBias)
 			L.downBias = NewBufferFloats(d, lw.DownBias)
 		default: // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers, and gemma4 dense layers)
-			L.guW, L.guS = int4Concat(d, &lw.GateProj, &lw.UpProj) // fused gate/up
+			L.guW, L.guS = int4ConcatA(d, alias, &lw.GateProj, &lw.UpProj) // fused gate/up
 			L.dW, L.dS = mk(&lw.DownProj)
 		}
 		// postOnly (Olmo 3/Olmo Hybrid, G5 docs/tasks/task-gpu-paths-2026-09.md) is a MODEL-level flag,

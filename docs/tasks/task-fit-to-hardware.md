@@ -104,7 +104,7 @@ Scoped against what exists, the way `task-model-pull.md` was.
 **Already automatic, per backend, in pieces:**
 
 - CUDA expert cache: `--moe-cache-slots 0` means "ask for all and auto-cap to free VRAM"
-  (`decoder/model.go:206`, the cap that accounts for 2 MiB allocation quanta and the first-launch
+  (`decoder/model.go:238`, the cap that accounts for 2 MiB allocation quanta and the first-launch
   reservation — `docs/positioning.md`'s own history of it).
 - CPU weight paging: `--weight-cache 0` is "auto, ~half of available RAM"
   (`internal/serveapp/main.go:568`).
@@ -117,7 +117,7 @@ Scoped against what exists, the way `task-model-pull.md` was.
 | decision | today's surface | what the user has to know |
 |---|---|---|
 | which *mode* — resident, expert-cached, CPU-paged | `--moe-cache-experts` (`internal/serveapp/main.go:545`), `--stream-weights` (`:372`), or neither | that a 26B's experts exceed 8 GB "even at 4-bit"; that without the flag it declines to CPU |
-| Metal slot count | `GOINFER_METAL_MOE_SLOTS` (`metal/gemma4_moe.go:217`, `metal/moe.go:429`), env only, no flag, no auto | the measured optimum was N=64 (`docs/completed/task-metal-expert-streaming-at-scale.md`), and the doc's "default to 64" has no code behind it — that doc's archival note also flags that `fitplan.go`'s generic "largest N that fits" auto-sizer would regress past N=64 on Metal if wired here without a cap |
+| Metal slot count | `GOINFER_METAL_MOE_SLOTS` (`metal/gemma4_moe.go:220`, `metal/moe.go:432`), env only, no flag, no auto | the measured optimum was N=64 (`docs/completed/task-metal-expert-streaming-at-scale.md`), and the doc's "default to 64" has no code behind it — that doc's archival note also flags that `fitplan.go`'s generic "largest N that fits" auto-sizer would regress past N=64 on Metal if wired here without a cap |
 | context cap and KV precision | `-ctx` (`:361`, ignored by WebGPU — M-32), `-kv` (`:360`, breaks three families on WebGPU — M-32), `-kv-quant` (`:362`) | the VRAM a 16k f32 KV costs on their card |
 | quant | `-quant int4` default (`:340`), `--embed-int4` (`:374`) | that int4 is now as fast as int8int8 on CPU (the in-repo guidance was reversed 2026-08-25) |
 | whether it worked | `-require-backend` (`:354`) or reading the decline line | that "declined to CPU" is the failure they are looking for |
@@ -367,7 +367,7 @@ before this one) · `docs/completed/task-metal-expert-streaming-at-scale.md` (N=
 `fitplan.go`'s auto-sizer will need once Metal is wired into it) ·
 `docs/completed/task-moe-streaming.md` §C′ (the CUDA cache and its cap) · `docs/QUEUE.md`
 G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residency eligibility, generated) ·
-`internal/serveapp/main.go:521-376` (the flags the plan subsumes) · `decoder/model.go:206-187`
+`internal/serveapp/main.go:521-376` (the flags the plan subsumes) · `decoder/model.go:238-187`
 (`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:118-194` (the guard) ·
 `decoder/weightbytes.go:94` (`ResidentWeightBytes`, the accountant to replace) ·
 `pull/pull.go:181` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the

@@ -1,0 +1,26 @@
+gc 1 @0.027s 0%: 0.015+0.18+0.004 ms clock, 0.12+0/0.29/0.010+0.033 ms cpu, 31->31->31 MB, 32 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 2 @0.131s 0%: 0.083+2.6+0.030 ms clock, 0.66+0.063/4.5/8.3+0.24 ms cpu, 60->61->47 MB, 62 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 3 @0.222s 0%: 0.025+5.9+0.009 ms clock, 0.20+0/8.1/15+0.073 ms cpu, 93->94->51 MB, 94 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 4 @0.285s 1%: 0.023+5.0+0.023 ms clock, 0.18+0.014/9.0/18+0.18 ms cpu, 101->102->67 MB, 103 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 5 @0.313s 1%: 0.027+5.1+0.007 ms clock, 0.22+4.5/9.1/15+0.060 ms cpu, 132->138->97 MB, 135 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 6 @2.569s 0%: 0.078+8.0+0.021 ms clock, 0.63+0.065/15/31+0.17 ms cpu, 176->177->126 MB, 196 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 7 @2.868s 0%: 0.047+7.3+0.068 ms clock, 0.38+0/13/28+0.55 ms cpu, 230->233->220 MB, 253 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 8 @3.398s 0%: 0.041+6.7+0.026 ms clock, 0.33+0.046/13/28+0.21 ms cpu, 419->420->362 MB, 441 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 9 @4.260s 0%: 0.049+24+0.020 ms clock, 0.39+0/29/30+0.16 ms cpu, 706->708->666 MB, 726 MB goal, 0 MB stacks, 0 MB globals, 8 P
+gc 10 @6.175s 0%: 0.047+7.5+0.099 ms clock, 0.37+0/14/34+0.79 ms cpu, 1310->1312->1159 MB, 1333 MB goal, 0 MB stacks, 0 MB globals, 8 P
+[metal] weights aliased from the .giw mapping (GOINFER_METAL_ALIAS=1): 723 MB of int4 nibbles not copied (60 single tensors + 55 fused groups = 445 MB); copied as before: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent
+gc 11 @10.383s 0%: 0.32+15+0.003 ms clock, 2.6+0/30/73+0.029 ms cpu, 1653->1653->1531 MB, 2319 MB goal, 0 MB stacks, 0 MB globals, 8 P (forced)
+loaded "gemma4-26b-int4-v13.giw": 30-layer model (vocab 262144) in 10.046s [chat: gemma4]
+  decode path: metal-resident (int4)
+  prefill path: sequential — arch/geometry not supported by f16 MMA prefill kernel
+  context: 512 tokens (--ctx; model maximum 262144) · KV f32
+  fit: 512-token cap needs 0.2 GB KV (weights 15.0 GB, budget 2.4 GB, 2.2 GB left for a request's own prefill)
+  session reuse: OFF — resident decode is stateless, so every turn re-prefills its whole prompt
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18112 [chat:[gemma4-26b-int4-v13.giw]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 48.0 MiB (text) / 80.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+goinfer: batched prefill declined for a 96-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): metal: prefill not implemented for this arch's FFN shape (use the sequential path)
