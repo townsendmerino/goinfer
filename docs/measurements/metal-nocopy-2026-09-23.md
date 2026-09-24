@@ -105,11 +105,77 @@ well under 1 GB); removing the dense copy should cut this process's anonymous fo
 the 75-83% measured here — a large, real target, not a marginal one. This is the "before" the rule
 needs; the "after" requires the writer + reader S6's own Build steps 1-3, not attempted this pass.
 
+## M26 (N=8) cell — measured 2026-09-24, after a reboot
+
+The cell the 2026-09-23 pass deliberately did not run. It is the R11(c) configuration (three
+swap-spiral / kernel-panic incidents on this machine), so it ran only after a **reboot** and with the
+external kill-watch armed on a per-tick rate rule, not just a total: `scripts/swap_killwatch.sh`
+(kill on 2 consecutive samples of >80 MB swap growth, or one jump >320 MB, or +600 MB total; 1 s poll)
+plus the harness's own +400 MB kill and S3's in-process tripwire.
+
+**Provenance.** MacBook (darwin/arm64, 16 GB), booted ~10 min earlier · goinfer `972a77a7` +
+harness edits (`scripts/moe_pager_ab.py`, `swap_killwatch.sh`, committed with this record) ·
+`metal/cmd/serve`, `-backend metal -moe-cache-experts -moe-cache-slots 8 -ctx 512` (no
+`-stream-weights`: that flag builds the CPU pager, not Metal's) · `gemma4-26b-int4.giw` (15.7 GB,
+local `~/models`) · `footprint <pid>` sampled every 6 s during the load, right after it, and at
+tokens 1/16/32 of a 32-token greedy request. Machine at start: swap-used **0**, ~7.3 GB available.
+
+| | attempt 1 (cold page cache) | attempt 2 (warm page cache) |
+|---|---|---|
+| starting swap-used / available | 0 MB / ~7.3 GB | 557 MB (left by attempt 1) / ~9.4 GB |
+| load | banner at 50.6 s (`decode path: metal-resident (int4)`) | 12.8 s |
+| peak RSS | ~8.0 GB | 7.6 GB |
+| swap | **0 → 53 → 628 MB within 2 s of load completing → kill-watch fired** | +6.5 MB max; never approached a rule |
+| outcome | killed by the rate rule; no panic, machine stayed responsive | served the request end to end |
+
+Attempt 1 reproduces R11(c)'s signature on a **clean, freshly booted** machine with ~7 GB free: the
+load itself completes, RSS peaks near 8 GB during the build, and swap jumps ~0.6 GB in two seconds as
+it finishes. Attempt 2 did not spike — the one variable that differed was a warm page cache (and a
+larger available figure), so this is **one spike in two attempts, not a rate**; it says the failure
+is reachable on a clean box, not how often.
+
+**Footprint, attempt 2 (`footprint`, MB; dirty = anonymous, clean = file-backed):**
+
+| point | phys footprint | untagged VM_ALLOCATE (dirty) | IOAccelerator (dirty) | mapped file (clean) |
+|---|---|---|---|---|
+| load t = 6 s | 2,770 | 2,774 | — | 2,730 |
+| after load (12.5 s) | **6,940** | 4,513 | 2,407 | 2,257 |
+| token 1 | 7,359 | 4,820 | 2,519 | 0 |
+| token 16 | 7,406 | 4,868 | 2,519 | 0 |
+| token 32 | **7,452** | 4,912 | 2,519 | 0 |
+
+Decode 7.0 tok/s (paged, N=8), first token 14.9 s (a 96-token prompt through the per-token path — the
+banner notes batched prefill is declined for this arch's FFN shape). 155k faults, 151 page-ins.
+
+**Against S6's registered rule** ("anonymous footprint after load ≤ KV + slots + scratch + 15%"): today's
+path holds **~7.4 GB anonymous** (7.45 GB phys, ~0 clean) of a 16 GB machine. KV at ctx 512 is small and
+8 slots × 30 layers is on the order of 1 GB, so the dense/other term is roughly **6 GB above the target**.
+Two findings follow, one measured and one inferred:
+
+- *Measured:* the 2.4–2.5 GB `IOAccelerator` term is the resident MTLBuffer weights S6 aliases away.
+- *Inferred, not profiled:* the **4.5–4.9 GB `untagged (VM_ALLOCATE)`** term is the larger one, and is
+  probably the same thing found on the CPU M35 path — the reader **copies every int4 group-scale array
+  to the heap because the format does not align them** (`moe-pager-mode-darwin-2026-09-23.md`,
+  "Finding"). gemma4-26b's experts' scales at 25% of 15.7 GB of nibbles is ~3 GB, plausibly most of it.
+  If so, **S6's `NewBufferNoCopy` alone would not reach the rule's bar**: it fixes the MTLBuffer copy but
+  leaves the heap copy, and the writer-side alignment change needs to land with (or before) it. This
+  needs a heap profile of a Metal load to confirm; it was not taken.
+
+**Two side observations.**
+- The generated text of the 32-token request was incoherent (`" complexity is a- (\n면- ( ) )…"`), and
+  a short raw `/v1/completions` prompt gave garbage too, but the **chat endpoint answered correctly**
+  ("The capital of France is Paris.") on the same Metal server — so the path works, and raw completions
+  on gemma4 (no chat template; possibly no BOS) are a separate, unexamined issue. Memory numbers do not
+  depend on the prompt.
+- Each attempt leaves swap-used higher (557 → 515 → 531 MB here, not returning to 0), the same
+  ratchet R11(c) recorded.
+
+Raw data: `metal-nocopy-m26-2026-09-24/` (both attempts' JSON, per-second samples, kill-watch logs).
+
 ## What this does NOT show
 
-- **No M26-class measurement** — see Scope above. The 75%/83% pattern at 1.5B/7B is suggestive but
-  not a substitute for the actual M26 (N=8) cell the registered rule names, and R11(c)'s own
-  incidents happened at THAT scale specifically, not at 1.5B/7B.
+- **M26 (N=8): measured 2026-09-24 — see the section above.** The 1.5B/7B pass by itself was not a
+  substitute for that cell.
 - **No decode-time footprint** (after 32 tokens, per the brief's own Measure section) — this is a
   post-load snapshot only, process idle.
 - **No memory-hog arm** (the 6 GB anonymous hog process the registered prediction is about) — not

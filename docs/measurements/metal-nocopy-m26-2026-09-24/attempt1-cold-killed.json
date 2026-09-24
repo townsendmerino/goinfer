@@ -1,0 +1,46 @@
+{
+ "label": "m26-n8",
+ "mode": "",
+ "model": "/Users/francistownsend-merino/models/gemma4-26b-int4.giw",
+ "cmd": [
+  "/tmp/goinfer-metal-serve",
+  "-addr",
+  "127.0.0.1:18094",
+  "-model",
+  "/Users/francistownsend-merino/models/gemma4-26b-int4.giw",
+  "-backend",
+  "metal",
+  "-ctx",
+  "512",
+  "-moe-cache-experts",
+  "-moe-cache-slots",
+  "8"
+ ],
+ "swap_baseline_mb": 0.0,
+ "started": "03:12:13",
+ "gomemlimit": "(server default)",
+ "load_s": 52.1,
+ "decode_path": "metal-resident (int4)",
+ "footprint_after_load": {
+  "swap_mb": 628.5,
+  "ps": null,
+  "footprint": {
+   "categories": {}
+  }
+ },
+ "served_name": "gemma4-26b-int4.giw",
+ "request_error": "URLError(ConnectionRefusedError(61, 'Connection refused'))",
+ "tokens": 0,
+ "raw_head": [],
+ "text": "",
+ "prompt_words": 79,
+ "snapshots": {},
+ "gc": {
+  "count": 11,
+  "last_cum_gc_cpu_pct": 0
+ },
+ "killed": "swap delta 628MB > 400MB at t+52s",
+ "ended_reason": "done",
+ "max_rss_gb": 7.66,
+ "max_swap_delta_mb": 0.0
+}

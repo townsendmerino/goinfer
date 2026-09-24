@@ -9,9 +9,8 @@
 > (1.08 vs 2.27 tok/s, GC cycles 14 → ~8,650) and was removed. **S4 item 5's predictor** over-predicted
 > by ~15–20% (2.62–2.68 predicted vs 2.22–2.27 measured), an upper bound that held 6/6. Also fixed: the
 > `.giw` load's whole-file CRC now runs once per file, not once per load (a 22 GB load: 27 min over a slow
-> link → 72 s the first time, seconds after). **Still open:** S6's Build steps and M26 Step 0 cell (not
-> run — headroom on this Mac is worse than at session start, and it is the R11(c) incident configuration);
-> the rule's 6 GB memory-hog arm (not triggered); and a new finding, now DIAGNOSED — ~5 GB of anonymous memory in a
+> link → 72 s the first time, seconds after). **Still open:** S6's Build steps (its M26 Step 0 cell was measured 2026-09-24 after a reboot — today's
+> Metal path holds ~7.4 GB anonymous; see S6's status note); the rule's 6 GB memory-hog arm (not triggered); and a new finding, now DIAGNOSED — ~5 GB of anonymous memory in a
 > "streamed" M35 is mostly the int4 **group scales** of every expert (3.75 GB), which `giwReader.f32` copies to
 > the heap because the format does not align them (75% of them sit at a non-4-byte-aligned offset); fixing it is a
 > writer/format change (pad + version bump), proposed not made — see the measurement doc's "Finding" section. Older status text
@@ -1003,14 +1002,17 @@ the Metal pager's command-buffer boundary (M-11, R11); Linux defaults.
 > smaller-than-M26, scale, and gives the registered ship-rule's "before" a real number to check
 > against once the writer/reader land.
 >
-> **Not measured: the M26 (N=8) cell the registered rule actually names.** No M26-class checkpoint
-> fits this machine's free disk (the identical constraint blocking S5's own real measurement), and
-> R11(c)'s three swap-spiral/kernel-panic incidents happened at exactly that scale — a scale this
-> session is not attempting without the external kill script the brief's own Step 0 calls for.
-> Decode-time footprint, the 6 GB memory-hog arm, and the depth-128/2048 tok/s bench are also
-> unmeasured (Step 0 is a post-load snapshot only). Build steps 1-4 (the writer, the reader wiring,
-> expert-slot handling, the banner) remain entirely unstarted — this session did not touch
-> `metal/model.go`, `decoder/serialize.go`, or the `.giw` format at all.
+> **M26 (N=8) cell MEASURED 2026-09-24, after a reboot** (`docs/measurements/metal-nocopy-2026-09-23.md`,
+> "M26 (N=8) cell"; data in `metal-nocopy-m26-2026-09-24/`). Kill-watch with a per-tick rate rule armed
+> (`scripts/swap_killwatch.sh`). Two attempts: the first (cold page cache) reproduced R11(c)'s signature
+> on a clean box with ~7 GB free — RSS peaked ~8 GB, swap 0 → 628 MB within 2 s of load completing, killed by
+> the rate rule, no panic; the second (warm cache) completed with swap +6.5 MB. **Today's path holds ~7.4 GB
+> anonymous after load** (4.5–4.9 GB untagged heap + 2.4–2.5 GB `IOAccelerator`), roughly 6 GB above the
+> registered "KV + slots + scratch + 15%" target. **Cross-finding, inferred not profiled:** most of the
+> untagged heap is probably the same unaligned int4 group-scale copies found on the CPU M35 path, in which
+> case `NewBufferNoCopy` alone would NOT reach the bar — the writer-side alignment change has to land with
+> or before it. Still unstarted: Build steps 1–4, the 6 GB memory-hog arm, and the depth-128/2048 tok/s
+> bench (no aliased arm exists to compare against yet).
 
 **Goal.** Dense weights on Metal become file-backed views of the `.giw` mapping instead of
 MTLBuffer copies, so a Metal load's anonymous footprint is KV + expert slots + scratch and nothing

@@ -98,7 +98,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--binary", required=True, help="goinfer-serve binary (CPU build)")
     ap.add_argument("--model", required=True)
-    ap.add_argument("--mode", choices=["mmap", "pool"], required=True)
+    ap.add_argument("--mode", choices=["mmap", "pool"], default="", help="CPU expert pager mode; omit for a non-CPU backend")
+    ap.add_argument("--backend", default="cpu")
+    ap.add_argument("--extra", default="", help="extra server flags, e.g. '-moe-cache-experts -moe-cache-slots 8'")
+    ap.add_argument("--no-stream-weights", action="store_true", help="omit -stream-weights (e.g. a Metal resident load)")
     ap.add_argument("--budget-gb", type=float, default=0.0, help="-weight-cache; 0 = auto (S4's live figure)")
     ap.add_argument("--max-tokens", type=int, default=32)
     ap.add_argument("--prompt-repeat", type=int, default=1, help="repeat the ~90-word prompt to set depth")
@@ -123,8 +126,12 @@ def main():
     env.pop("GOINFER_MOE_PREAD_CPU", None)  # -moe-pager wins anyway (applyMoEPagerEnv); keep the env clean
     if a.gomemlimit:
         env["GOMEMLIMIT"] = a.gomemlimit
-    cmd = [a.binary, "-addr", f"127.0.0.1:{a.port}", "-model", a.model, "-backend", "cpu",
-           "-stream-weights", "-moe-pager", a.mode, "-ctx", str(a.ctx)]
+    cmd = [a.binary, "-addr", f"127.0.0.1:{a.port}", "-model", a.model, "-backend", a.backend, "-ctx", str(a.ctx)]
+    if not a.no_stream_weights:
+        cmd += ["-stream-weights"]
+    if a.mode:
+        cmd += ["-moe-pager", a.mode]
+    cmd += a.extra.split()
     if a.budget_gb > 0:
         cmd += ["-weight-cache", str(a.budget_gb)]
     errf = open(base + ".server.log", "w")
@@ -173,9 +180,16 @@ def main():
 
     # -- wait for the banner
     banner = None
+    next_fp, load_fps = time.time() + 6, []
+    result["footprints_during_load"] = load_fps
     while time.time() - t_start < a.load_box_s:
         if proc.poll() is not None:
             finish("server exited during load"); return
+        if time.time() >= next_fp:  # the split at peak, in case the run is killed before it finishes loading
+            fpx = footprint(proc.pid)
+            load_fps.append({"t_s": round(time.time() - t_start, 1), "swap_mb": swap_used_mb(),
+                             "ps": ps_fields(proc.pid), "footprint": fpx})
+            next_fp = time.time() + 6
         log = open(base + ".server.log").read()
         if "goinfer serving" in log:
             banner = log; break
@@ -183,6 +197,11 @@ def main():
     if banner is None:
         finish("load box exceeded"); return
     result["load_s"] = round(time.time() - t_start, 1)
+    m = re.search(r"decode path: ([^\n]+)", banner)
+    if m:
+        result["decode_path"] = m.group(1).strip()
+    fp_loaded = {"swap_mb": swap_used_mb(), "ps": ps_fields(proc.pid), "footprint": footprint(proc.pid)}
+    result["footprint_after_load"] = fp_loaded
     m = re.search(r"expert paging \((\w+)\): (\d+) experts, ([0-9.]+) GB total, ([0-9.]+) GB budget", banner)
     if m:
         result["banner"] = {"pager": m.group(1), "experts": int(m.group(2)),

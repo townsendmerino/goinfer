@@ -1,0 +1,17 @@
+loaded "gemma4-26b-int4.giw": 30-layer model (vocab 262144) in 11.287s [chat: gemma4]
+  decode path: metal-resident (int4)
+  prefill path: sequential — arch/geometry not supported by f16 MMA prefill kernel
+  context: 512 tokens (--ctx; model maximum 262144) · KV f32
+  fit: 512-token cap needs 0.2 GB KV (weights 15.0 GB, budget 2.4 GB, 2.2 GB left for a request's own prefill)
+  session reuse: OFF — resident decode is stateless, so every turn re-prefills its whole prompt
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18094 [chat:[gemma4-26b-int4.giw]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 48.0 MiB (text) / 80.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+goinfer: batched prefill declined for a 96-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): metal: prefill not implemented for this arch's FFN shape (use the sequential path)
+swap guard: baseline 0.58 GB swap-used
+
+shutting down…
