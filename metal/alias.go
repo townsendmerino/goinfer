@@ -7,8 +7,6 @@ import (
 	"os"
 	"unsafe"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -27,11 +25,14 @@ import (
 // all the kernels' vector loads need). Scales are NOT aliased: the file stores f32 and the kernels read
 // f16, so they are still converted into a small buffer (~1/8 of the nibble bytes).
 //
-// MEASURED CONSEQUENCE, not a free lunch: Metal wires every page of a no-copy buffer that a command
-// buffer touches, and keeps them wired (memory: metal-nocopy-wiring-deadend). A decode step touches every
-// dense weight, so the aliased pages are wired — file-backed and never anonymous, but not evictable. The
-// win is the duplicate (anonymous MTLBuffer copy + the file's own page cache) becoming one copy, not
-// weights that can be dropped under pressure.
+// MEASURED CONSEQUENCE, not a free lunch (docs/measurements/m26-alias-fork-collapse-2026-09-24.md): the
+// .giw is mapped PROT_READ|MAP_PRIVATE, and IOKit wires a no-copy buffer's pages by faulting them with write
+// intent — so every page a command buffer reads becomes a wired, ANONYMOUS copy-on-write page in a kernel
+// shadow object (while the file's own page stays in the cache). It is invisible to the process's footprint,
+// RSS and "mapped file" lines, and it is not file-backed or evictable. What aliasing removes is the SECOND
+// MTLBuffer copy and the build-time heap staging, not the memory itself. And while any such page is wired,
+// fork() of this process copied the WHOLE mapping eagerly — decoder.Load now marks the mapping
+// VM_INHERIT_NONE to prevent that (decoder/forkinherit_darwin.go).
 //
 // Opt-in (GOINFER_METAL_ALIAS=1) until every gate in S6's registered rule passes; off, this type is nil and
 // int4Buf is byte-for-byte what it was.
@@ -50,42 +51,18 @@ type weightAlias struct {
 	nonAdjacent int   // fused groups whose members are in the mapping but not back to back (a pre-v13 layout, or a K=V layer's Q|K|K)
 }
 
-// aliasDecision decides whether the opt-in GOINFER_METAL_ALIAS applies to a .giw of fileBytes on a host with
-// ram bytes of memory. mode is the env value: "1" opts in, "force" opts in regardless of size, anything else
-// is off. A mapping over half of RAM is DECLINED under "1": on gemma4-26b (a 15 GB file on a 16 GB Mac) the
-// aliased arm's memory collapsed at its first request 3 times out of 3 — the process paged out wholesale, swap
-// climbing until a watcher killed it — while the copy arm ran clean (docs/measurements/s6-alias-2026-09-24.md,
-// mechanism unknown). ram==0 (unreadable hw.memsize) means "unknown", and unknown does not decline.
-func aliasDecision(mode string, fileBytes int64, ram uint64) (on bool, why string) {
-	switch mode {
-	case "force":
-		return true, ""
-	case "1":
-		if ram > 0 && fileBytes > int64(ram/2) {
-			return false, fmt.Sprintf("the .giw is %.1f GB, over half of this machine's %.1f GB of RAM — on gemma4-26b the aliased arm's memory "+
-				"collapsed at its first request 3 of 3 times (docs/measurements/s6-alias-2026-09-24.md); GOINFER_METAL_ALIAS=force overrides",
-				float64(fileBytes)/(1<<30), float64(ram)/(1<<30))
-		}
-		return true, ""
-	}
-	return false, ""
-}
-
-// newWeightAlias returns nil unless the opt-in is set AND the model is backed by a .giw mapping AND the file
-// is not so large relative to RAM that aliasing is known to be unsafe (aliasDecision).
+// newWeightAlias returns nil unless the opt-in is set (GOINFER_METAL_ALIAS=1; "force" is accepted as a
+// synonym for scripts written while a size guard existed) AND the model is backed by a .giw mapping.
+//
+// There is deliberately no size limit. One existed from 2026-09-24 until the same day: on gemma4-26b the
+// aliased arm paged the whole server out at its first request, 3 of 3 times. The cause was not aliasing's
+// memory but fork(): a fork while Metal had any page of the MAP_PRIVATE mapping wired copied the entire
+// 15 GB mapping, and the swap guard forked every 2 s. decoder.Load now marks the mapping VM_INHERIT_NONE and
+// the guard reads swap with a bare sysctl; with both, four interleaved M26 arms (two aliased) ran clean with
+// swap flat (docs/measurements/m26-alias-fork-collapse-2026-09-24.md).
 func newWeightAlias(m *decoder.Model) *weightAlias {
 	mode := os.Getenv("GOINFER_METAL_ALIAS")
 	if (mode != "1" && mode != "force") || m == nil || m.GiwPath() == "" {
-		return nil
-	}
-	var size int64
-	if st, err := os.Stat(m.GiwPath()); err == nil {
-		size = st.Size()
-	}
-	ram, _ := unix.SysctlUint64("hw.memsize")
-	on, why := aliasDecision(mode, size, ram)
-	if !on {
-		fmt.Fprintf(os.Stderr, "[metal] GOINFER_METAL_ALIAS=1 ignored (weights copied as before): %s\n", why)
 		return nil
 	}
 	return &weightAlias{m: m, page: os.Getpagesize()}

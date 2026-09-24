@@ -1,7 +1,6 @@
 # Why the M26 alias arm collapsed: fork() copies a whole mapping once Metal has wired any page of it — 2026-09-24
 
-**Status: root-caused and reproduced without a model; fix verified by the same instrument; the fix is NOT yet
-applied and M26 has NOT been re-run with it.** Companion to `s6-alias-2026-09-24.md` (the S6 build and the three
+**Status: root-caused, reproduced without a model, FIXED and confirmed on M26 (§7a).** Companion to `s6-alias-2026-09-24.md` (the S6 build and the three
 collapses) — this document supersedes that record's "mechanism unknown" and corrects several of its numbers.
 
 ## In one paragraph
@@ -48,7 +47,7 @@ Four things in the archived data, none of which needed a run:
    user fault counter flat means the server's thread was inside one long **kernel-initiated** read.
 2. **The swap guard's first probe never returned.** `internal/serveapp/swapguard.go` prints `swap guard: baseline …`
    (or `reports unknown on the first sample`) when its first read returns. Both copy-arm logs have the line; **none of
-   the three alias logs does.** The read is `exec.Command("sysctl","-n","vm.swapusage")` (`decoder/memwatch_darwin.go:18`),
+   the three alias logs does.** The read is `exec.Command("sysctl","-n","vm.swapusage")` (`decoder/memwatch_darwin.go` as of `9c43f016`, line 18 — replaced by the fix in §7),
    a real libc `fork()` on darwin (Go's own `syscall` package, `exec_libc2.go` line 86), on a 2 s ticker.
 3. **The 1.5B was never "clean".** In the first 1.5B alias run the first request paged in 222 MiB; the file's
    never-read remainder after the copy arm's load was 228 MiB (97%). Those pages lie outside every aliased window.
@@ -65,13 +64,13 @@ closed component is Apple's GPU driver, whose behaviour is established by the ex
 | step | what | where |
 |---|---|---|
 | 1 | `decoder.Load` maps the whole `.giw` `PROT_READ`, `MAP_PRIVATE` — one VM map entry over a copy-delayed object with `needs_copy` | aikit `mmap/mmap_unix.go:46`; `kern_mman.c:928-935`; `vm_object.c:4061-4067` |
-| 2 | `weightAlias` creates one `newBufferWithBytesNoCopy` per tensor/fused group over its page-aligned window; creation wires nothing | `metal/alias.go:97-170`; aikit gpu module's `Device.NewBufferNoCopy`; TestNoCopyWiring (+40 pages at creation) |
+| 2 | `weightAlias` creates one `newBufferWithBytesNoCopy` per tensor/fused group over its page-aligned window; creation wires nothing | `metal/alias.go:74-170`; aikit gpu module's `Device.NewBufferNoCopy`; TestNoCopyWiring (+40 pages at creation) |
 | 3 | At the first command buffer that references such a buffer, the driver prepares it: `IOMemoryDescriptor::prepare → wireVirtual → vm_object_iopl_request`, which **faults every page with `prot \| VM_PROT_WRITE`** even for a read-only UPL, and marks the object `true_share`, `COPY_DELAY` | `IOMemoryDescriptor.cpp:4173-4245`; `vm_pageout.c:8404-8422, 8585-8586` |
 | 4 | A write-intent fault on a `needs_copy` private file page **copies it** into a fresh anonymous page of the top (shadow) object — wired, and not in the process's pmap, so invisible to RSS/footprint | `vm_fault.c:2203-2246, 2289-2291` |
 | 5 | `vm_map_fork` sends any entry whose object is `true_share` (or map-wired) to `slow_vm_map_fork_copy`, which copies **the whole entry** | `vm_map.c:13954-13957, 13649-13672` |
 | 6 | The copy is strategised; `vm_object_copy_delayed` **refuses** an object with wired resident pages ("we can't safely take write permission away from wired pages"), so it falls through to `vm_object_copy_slowly` — every page of the entry faulted in (from disk if not cached) and copied, on the forking thread, `THREAD_ABORTSAFE` | `vm_map.c:12742-12814`; `vm_object.c:3641-3981, 4010-4074` |
 | 7 | The forking thread is the server's; `task->pageins` counts each page it reads; no user fault is taken (flat `faults`); other threads block on the map lock (they stop faulting too) | `vm_fault.c:4544`; `vm_page_internal.h:1016-1022` |
-| 8 | The swap guard forks every 2 s; the harness's own `top`/`footprint` run in other processes and do not fork the server | `internal/serveapp/swapguard.go:75,101`; `decoder/swapwatch.go:103-117`; `decoder/memwatch_darwin.go:18` |
+| 8 | The swap guard forks every 2 s; the harness's own `top`/`footprint` run in other processes and do not fork the server | `internal/serveapp/swapguard.go:75,101`; `decoder/swapwatch.go:103-117`; `decoder/memwatch_darwin.go` as of `9c43f016` (line 18) |
 
 Consequences that the records confirm: the copy is 15.4 GB on M26 (cannot fit: everything else is compressed and
 swapped, RSS falls to nothing, the 3.2 GiB of page-ins is the part read before the machine ran out); the guard's
@@ -145,7 +144,7 @@ Readings:
   evidence that the first tick landed after the first command buffer. Its proposed alternative — a request-path driver
   read beyond the windows — is what the probe rules out. Its correction (`THREAD_ABORTSAFE`) is adopted above.
 
-## 7. The fix (proposed, verified in the probe, NOT applied)
+## 7. The fix (applied 2026-09-24)
 
 1. **`minherit(VM_INHERIT_NONE)` on the `.giw` mapping in `decoder.Load` (darwin).** Removes the class, not just the
    guard's instance of it: any future `os/exec` in the server, and any fork by a library, stops copying weights.
@@ -154,8 +153,40 @@ Readings:
    offset 16 of a 32-byte struct; `unix.SysctlUint64("hw.memsize")`) instead of exec'ing `sysctl`. The comment in
    `memwatch_darwin.go` claiming there is "no bare-syscall alternative" mistakes `sysctl -n`'s formatting for the
    sysctl's type. Cheaper on every tick, and the guard's baseline no longer depends on a fork returning.
-3. Then **re-run the M26 alias arm once** (rebooted machine, kill-watch on the server pid, alias first) — the only
-   confirmation that the collapse is gone at scale. Until then `aliasDecision` stays.
+3. Then **re-run the M26 alias arm once** (kill-watch on the server pid, alias first) — done, §7a. `aliasDecision`'s
+   half-of-RAM guard is removed with it.
+
+Applied as: `decoder/forkinherit_darwin.go` (`excludeFromFork`, called on every `.giw` mapping in `decoder.Load` via
+`protectGIWMapping`; tested through `Load` — `TestLoad_protectsTheWholeGIWMappingFromFork`, mutation-checked against
+protecting a sub-slice and against removing the call — and `TestExcludeFromFork_syscallReachesMinherit`);
+`decoder/memwatch_darwin.go` (`SwapUsedBytes` via `syscall.Sysctl("vm.swapusage")`, decoding `xsw_usage`) and
+`decoder/hostram_darwin.go` (`HostRAMBytes` via `syscall.Sysctl("hw.memsize")`), each tested against the `sysctl`
+command's own output on the machine. The root module stays free of `golang.org/x/sys`: `syscall.Sysctl` drops only one
+trailing NUL, so both values arrive intact. `HostRAMAvailableBytes` still execs `vm_stat` (inactive pages have no
+sysctl), but only at load and from the web UI — and the mapping is no longer inherited, so that fork is cheap.
+
+## 7a. Confirmation on M26, same day
+
+Four interleaved arms, alias first (`GOINFER_METAL_ALIAS=force` so the then-present size guard could not silently turn
+the alias arms into copy arms — both alias logs carry the `weights aliased … 723 MB` banner), same file, same cell as
+§1, kill-watch on the server pid, machine NOT rebooted (swap 619 MB left by the earlier collapses). Data:
+`s6-alias-2026-09-24/m26-v13-after-fix/`.
+
+| arm | tokens | decode tok/s | TTFT | swap Δ | task page-ins during the request | swap guard `baseline` line |
+|---|---|---|---|---|---|---|
+| alias1 | 32 | 5.98 | 18.7 s | **0** | +46,431 (725 MiB) | printed |
+| copy2 | 32 | 6.19 | 17.3 s | 0 | +128 | printed |
+| alias3 | 32 | 6.07 | 17.4 s | **0** | +46,395 (725 MiB) | printed |
+| copy4 | 32 | 6.04 | 16.8 s | 0 | +169 | printed |
+
+- **The collapse is gone**: 2 of 2 alias arms completed, swap flat (it had risen 380–1,110 MB and needed a SIGKILL in 3 of
+  3 before the fix), and the guard's first read returned in every arm.
+- **The page-ins are now exactly the windows**: 725 MiB against 723 MiB aliased — the copy-on-write copies made by the
+  wire itself (step 4), paid once per page, and nothing beyond them. Before the fix the same counter showed 2.9–3.2 GiB
+  and still rising.
+- Greedy text identical across all four arms. Decode within noise (n=2 per arm; not a registered bench).
+- Per-process footprint: alias 3,251/3,255 MB after load and 3,762 at token 32 vs copy 3,978/4,485 — **not a RAM saving**
+  (§5: the aliased pages became invisible wired anonymous copies; the 725 MiB of COW page-ins are where they went).
 
 ## 8. What is still NOT established
 

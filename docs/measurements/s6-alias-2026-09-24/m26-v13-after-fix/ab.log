@@ -1,0 +1,9 @@
+== alias1 (GOINFER_METAL_ALIAS=force) 12:27:22 swap=used = 619.06M
+exit=0 killwatch: 12:28:02 killwatch: pid 65570 exited on its own, stopping watch
+== copy2 (GOINFER_METAL_ALIAS=0) 12:28:11 swap=used = 619.06M
+exit=0 killwatch: 12:28:49 t+37s swap_used=619.06MB delta=+0MB tick=0MB rss=1632672KB free_disk=12G
+== alias3 (GOINFER_METAL_ALIAS=force) 12:28:58 swap=used = 619.06M
+exit=0 killwatch: 12:29:35 t+36s swap_used=619.06MB delta=+0MB tick=0MB rss=1877152KB free_disk=12G
+== copy4 (GOINFER_METAL_ALIAS=0) 12:29:44 swap=used = 619.06M
+exit=0 killwatch: 12:30:22 t+37s swap_used=619.06MB delta=+0MB tick=0MB rss=0KB free_disk=12G
+ALLDONE 12:30:31

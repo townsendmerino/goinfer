@@ -3,38 +3,38 @@
 package decoder
 
 import (
-	"os/exec"
-	"strconv"
-	"strings"
+	"encoding/binary"
+	"syscall"
 )
 
-// SwapUsedBytes reads `sysctl -n vm.swapusage`'s "used" field as bytes, or (0, false) when it
-// cannot be determined. Same shelled-out convention as HostRAMBytes (hostram_darwin.go):
-// syscall.Sysctl truncates at the first NUL, and this is a formatted string ("total = 0.00M used
-// = 0.00M free = 0.00M (encrypted)"), not a scalar, so there is no bare-syscall alternative. Same
-// field this repo's own swapUsed test helper (mellum2_prefill_profile_test.go) already reads as
-// a string; this parses the same field into typed bytes for SwapWatchOptions.Read's contract.
+// SwapUsedBytes reads the vm.swapusage sysctl's used field as bytes, or (0, false) when it cannot be
+// determined.
+//
+// A bare sysctl(2) through the stdlib, NOT `exec sysctl -n vm.swapusage`: the serving swap guard calls
+// this every 2 s, and every exec is a fork() — which, while a GPU backend has wired a page of the .giw
+// mapping, used to copy the whole mapping (docs/measurements/m26-alias-fork-collapse-2026-09-24.md;
+// Load now also marks the mapping VM_INHERIT_NONE, so this is the second of two independent fixes).
+// The value is `struct xsw_usage` (sys/sysctl.h): u64 xsu_total, u64 xsu_avail, u64 xsu_used,
+// u32 xsu_pagesize, boolean_t xsu_encrypted — 32 bytes, little-endian on every darwin target.
+// syscall.Sysctl drops only a single trailing NUL (the high byte of xsu_encrypted, always 0), so the
+// struct arrives intact through byte 24. An earlier comment here claimed it "truncates at the first
+// NUL" and that there was therefore no bare-syscall alternative; neither is true.
 func SwapUsedBytes() (usedBytes int64, ok bool) {
-	out, err := exec.Command("sysctl", "-n", "vm.swapusage").Output()
+	v, err := syscall.Sysctl("vm.swapusage")
 	if err != nil {
 		return 0, false
 	}
-	return parseSwapUsageDarwin(string(out))
+	return decodeXswUsed([]byte(v))
 }
 
-// parseSwapUsageDarwin is separated from the exec.Command call so it is unit-testable with real,
-// committed sysctl output — hostram_darwin.go's own split (parseVMStatAvailable), applied here.
-func parseSwapUsageDarwin(out string) (usedBytes int64, ok bool) {
-	fields := strings.Fields(out)
-	for i, f := range fields {
-		if f != "used" || i+2 >= len(fields) {
-			continue
-		}
-		mb, err := strconv.ParseFloat(strings.TrimSuffix(fields[i+2], "M"), 64)
-		if err != nil || mb < 0 {
-			return 0, false
-		}
-		return int64(mb * 1024 * 1024), true
+// decodeXswUsed extracts xsu_used from the raw vm.swapusage bytes.
+func decodeXswUsed(b []byte) (usedBytes int64, ok bool) {
+	if len(b) < 24 {
+		return 0, false
 	}
-	return 0, false
+	used := binary.LittleEndian.Uint64(b[16:24])
+	if used > 1<<62 {
+		return 0, false
+	}
+	return int64(used), true
 }

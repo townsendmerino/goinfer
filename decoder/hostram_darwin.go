@@ -3,35 +3,49 @@
 package decoder
 
 import (
+	"encoding/binary"
 	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 )
 
 // HostRAMBytes is this machine's physical RAM, or 0 when it cannot be determined — and 0 is a
 // real answer that every caller must treat as "proceed", never as "no memory".
 //
-// `sysctl -n hw.memsize`, shelled out ONCE per process, because the pure-Go root module does not
-// depend on golang.org/x/sys and the standard library exposes no 64-bit sysctl (syscall.Sysctl
-// returns a string truncated at the first NUL, which a byte count of 16 GB contains). The Metal
-// module reads the same value through unix.SysctlUint64; it already has that dependency and the
-// root module deliberately does not (audit M-19). cmd/gate/gpu.go shells out for sysctl values
-// the same way.
+// The hw.memsize sysctl read with a bare sysctl(2) through the stdlib, once per process. It is a
+// little-endian u64; syscall.Sysctl drops a single trailing NUL byte (16 GB = 0x4_0000_0000 loses its
+// zero high byte), so the value is zero-extended back to 8 bytes. An earlier version shelled out to
+// `sysctl -n hw.memsize` on the belief that syscall.Sysctl truncates at the FIRST NUL; it drops only
+// the last one. Not forking matters here: every exec is a fork(), and a fork of a process whose .giw
+// mapping a GPU backend has wired used to copy the whole mapping
+// (docs/measurements/m26-alias-fork-collapse-2026-09-24.md).
 func HostRAMBytes() int64 { return hostRAMOnce() }
 
 var hostRAMOnce = sync.OnceValue(func() int64 {
-	out, err := exec.Command("sysctl", "-n", "hw.memsize").Output()
+	v, err := syscall.Sysctl("hw.memsize")
 	if err != nil {
 		return 0
 	}
-	n, err := strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
-	if err != nil || n <= 0 {
+	return decodeSysctlU64([]byte(v))
+})
+
+// decodeSysctlU64 zero-extends a little-endian u64 sysctl value that syscall.Sysctl may have shortened
+// by one trailing NUL. 0 for anything that is not 7 or 8 bytes.
+func decodeSysctlU64(b []byte) int64 {
+	if len(b) != 7 && len(b) != 8 {
 		return 0
 	}
-	return n
-})
+	var p [8]byte
+	copy(p[:], b)
+	n := binary.LittleEndian.Uint64(p[:])
+	if n == 0 || n > 1<<62 {
+		return 0
+	}
+	return int64(n)
+}
 
 // HostRAMAvailableBytes is this machine's CURRENTLY AVAILABLE memory — free plus reclaimable
 // pages, an approximation of what `vm_stat` and Activity Monitor's "memory pressure" both draw
@@ -43,6 +57,10 @@ var hostRAMOnce = sync.OnceValue(func() int64 {
 // breaks. `serve check`'s own requests pushed a load that the load-time guard had already
 // correctly auto-pinned into 9.7 GB of swap, because "70% of 16 GB" was never actually free —
 // this reads what IS actually free instead.
+//
+// Still an exec of vm_stat (the inactive-page count has no sysctl): it runs at load and from the web
+// UI's status, not on a timer, and the .giw mapping is VM_INHERIT_NONE (forkinherit_darwin.go), so the
+// fork it costs no longer copies the weights.
 //
 // APPROXIMATION, STATED RATHER THAN HIDDEN: free + inactive + speculative + purgeable pages,
 // matching the pages vm_stat itself reports and the ones macOS reclaims before it would ever

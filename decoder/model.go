@@ -144,6 +144,10 @@ func (m *Model) MmapByteOffset(b []byte) (int64, bool) {
 	return int64(p - base), true
 }
 
+// protectGIWMapping is applied to every .giw mapping Load creates (excludeFromFork). A variable only so a
+// test can observe that Load really calls it on the whole mapping.
+var protectGIWMapping = excludeFromFork
+
 // MmapAliasWindow returns the page-aligned window of this model's .giw mapping that encloses b, for
 // a consumer that wants to wrap those pages without copying them (Metal's newBufferWithBytesNoCopy
 // needs a page-aligned base and a page-multiple length): base is the pointer to the window's first
@@ -402,6 +406,12 @@ func Load(dir string, opts Options) (*Model, error) {
 		if rerr != nil {
 			closeBackend(be)
 			return nil, fmt.Errorf("decoder: mmap .giw: %w", rerr)
+		}
+		// Keep the weights out of any fork()ed child (forkinherit_darwin.go): once a GPU backend has
+		// wired a page of this private mapping, a fork would otherwise copy ALL of it eagerly — the
+		// M26 collapse. Non-fatal: failing it only restores the old behaviour.
+		if perr := protectGIWMapping(data); perr != nil {
+			fmt.Fprintf(os.Stderr, "decoder: minherit(VM_INHERIT_NONE) on the .giw mapping failed (%v) — a fork of this process may copy the whole mapping\n", perr)
 		}
 		weightsBlob, _, gerr := giw.Read(data)
 		if gerr != nil {
