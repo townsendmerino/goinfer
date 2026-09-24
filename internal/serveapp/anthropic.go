@@ -559,7 +559,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	defer lm.exit()
 
 	if req.Stream {
-		s.streamMessages(w, r, lm, gr, toolsActive)
+		s.streamMessages(w, r, lm, gr, toolsActive, tools)
 		return
 	}
 
@@ -580,7 +580,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	reason := ""
 	var seq any
 	if toolsActive {
-		calls, lead := lm.tmpl.ParseToolCalls(sb.String())
+		calls, lead := lm.tmpl.ParseToolCallsFor(sb.String(), tools)
 		if len(calls) > 0 {
 			if strings.TrimSpace(lead) != "" {
 				content = append(content, textBlock(lead))

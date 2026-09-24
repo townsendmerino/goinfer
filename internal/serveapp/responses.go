@@ -292,7 +292,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
-	calls, lead := lm.tmpl.ParseToolCalls(sb.String())
+	calls, lead := lm.tmpl.ParseToolCallsFor(sb.String(), tools)
 
 	var out []any
 	var toolCalls []apiToolCall // V-18 (docs/review-2026-09-04.md): stored for previous_response_id continuity below

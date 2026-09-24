@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/chat"
 )
 
 // Anthropic SSE differs from the OpenAI flavor: named events
@@ -44,7 +46,7 @@ func anthropicStreamErr(ss *sseWriter, msg string) {
 // buffered fully (tools.go decides from the whole output) and emitted as one
 // input_json_delta — Claude Code accepts the single chunk, as it does for
 // llama.cpp.
-func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *loadedModel, gr genRequest, toolsActive bool) {
+func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *loadedModel, gr genRequest, toolsActive bool, tools []chat.Tool) {
 	ss, ok := anthropicSSEStart(w)
 	if !ok {
 		return
@@ -62,7 +64,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	anthropicEvent(ss, "ping", map[string]any{"type": "ping"}) // liveness check; cheap insurance
 
 	if toolsActive {
-		s.streamMessagesTools(w, r, ss, lm, gr)
+		s.streamMessagesTools(w, r, ss, lm, gr, tools)
 		return
 	}
 
@@ -95,7 +97,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 // streamMessagesTools buffers the generation (a tool decision needs the whole
 // output), then emits an optional leading text block and one tool_use block per
 // call. When no call is parsed it degrades to a single text block.
-func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss *sseWriter, lm *loadedModel, gr genRequest) {
+func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss *sseWriter, lm *loadedModel, gr genRequest, tools []chat.Tool) {
 	var sb strings.Builder
 	// THE THIRD BUFFER-THEN-STREAM SITE. G19 gave the OpenAI tool path and /v1/responses a
 	// heartbeat and left this one emitting nothing after the single `ping` at message_start until
@@ -118,7 +120,7 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 		anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
 		return
 	}
-	calls, lead := lm.tmpl.ParseToolCalls(sb.String())
+	calls, lead := lm.tmpl.ParseToolCallsFor(sb.String(), tools)
 
 	if len(calls) == 0 { // model declined to call: one text block with the output
 		streamTextBlock(ss, 0, sb.String())

@@ -109,7 +109,13 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	var streamed strings.Builder // exactly what left as content deltas
 	var prose *chat.ProseStreamer
 	if incremental {
-		prose = chat.NewProseStreamer(opener)
+		// A family that also accepts a bare call must not stream an output that opens
+		// with '{' — it may yet parse as a call with an empty lead (ParseToolCallsFor).
+		if lm.tmpl.AcceptsBareToolCall() {
+			prose = chat.NewBareAwareProseStreamer(opener)
+		} else {
+			prose = chat.NewProseStreamer(opener)
+		}
 	}
 
 	var stopBeat func()
@@ -158,7 +164,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
-	calls, lead := lm.tmpl.ParseToolCalls(sb.String())
+	calls, lead := lm.tmpl.ParseToolCallsFor(sb.String(), tools)
 
 	msg := map[string]any{"role": "assistant"}
 	if len(calls) > 0 {

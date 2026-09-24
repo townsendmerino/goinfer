@@ -104,6 +104,96 @@ func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {
 	return nil, out
 }
 
+// ParseToolCallsFor is ParseToolCalls with the request's tool list in hand, which
+// lets it recover one more shape: a BARE call — the call object with its wrapper
+// left off — on the families whose wrapper is `<tool_call>` (AcceptsBareToolCall).
+//
+// Why it exists: Qwen2.5-Coder at 0.5B, 1.5B and 7B practically never writes the
+// wrapper under tool_choice "auto"; it emits `{"name": ..., "arguments": {...}}` on
+// its own, which ParseToolCalls reads as prose, so the harness never gets a call.
+// Measured in docs/measurements/tool-call-failure-t0-2026-09-23.md: 0 wrapped calls
+// in 1,200 samples, and the same on Ollama. llama.cpp makes the same allowance for
+// Qwen3-Coder's first call.
+//
+// It is deliberately narrow, because a prose answer that happens to be JSON must
+// stay prose:
+//   - only when ParseToolCalls found no call — a wrapped call is never re-read;
+//   - only when the output's first non-space byte opens a JSON object (a bare call
+//     has an empty lead, and prose-then-JSON is left alone);
+//   - the object's "name" must be a string EXACTLY equal to a supplied tool's name,
+//     and its "arguments" (or "parameters") must be a JSON object — so this can
+//     never produce a call to a tool the caller did not offer;
+//   - the FIRST object only. The 0.5B emits runs of speculative calls one after
+//     another; executing all of them would be worse than the prose it replaces.
+//
+// Every other output, and every other family, gets exactly what ParseToolCalls
+// returns.
+func (t *Template) ParseToolCallsFor(out string, tools []Tool) ([]ToolCall, string) {
+	calls, lead := t.ParseToolCalls(out)
+	if len(calls) > 0 || !t.AcceptsBareToolCall() {
+		return calls, lead
+	}
+	if c, ok := bareToolCall(out, tools); ok {
+		return []ToolCall{c}, ""
+	}
+	return calls, lead
+}
+
+// AcceptsBareToolCall reports whether ParseToolCallsFor also accepts an unwrapped
+// call for this family. A streamer serving such a family must not emit output whose
+// first non-space byte is '{' as prose (NewBareAwareProseStreamer), because it may
+// yet parse as a call.
+func (t *Template) AcceptsBareToolCall() bool {
+	switch t.name {
+	case "chatml", "mellum2":
+		return true
+	}
+	return false
+}
+
+// bareToolCall parses the first JSON object of out as a call to one of tools, under
+// the conditions ParseToolCallsFor documents.
+func bareToolCall(out string, tools []Tool) (ToolCall, bool) {
+	s := strings.TrimLeft(out, " \t\r\n")
+	if !strings.HasPrefix(s, "{") {
+		return ToolCall{}, false
+	}
+	var raw map[string]json.RawMessage
+	if json.NewDecoder(strings.NewReader(s)).Decode(&raw) != nil {
+		return ToolCall{}, false
+	}
+	var name string
+	if json.Unmarshal(raw["name"], &name) != nil {
+		return ToolCall{}, false
+	}
+	known := false
+	for _, tl := range tools {
+		if tl.Name == name {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return ToolCall{}, false
+	}
+	args, ok := raw["arguments"]
+	if !ok {
+		args, ok = raw["parameters"]
+	}
+	if !ok {
+		return ToolCall{}, false
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(args, &obj) != nil || obj == nil {
+		return ToolCall{}, false
+	}
+	var id string
+	if v, ok := raw["id"]; ok {
+		_ = json.Unmarshal(v, &id)
+	}
+	return ToolCall{ID: id, Name: name, Arguments: args}, true
+}
+
 // funcDefJSON renders a tool as the OpenAI function-definition JSON object that
 // the JSON families embed in the prompt.
 func funcDefJSON(t Tool) string {
@@ -458,14 +548,28 @@ func StreamableLen(pending, opener string) int {
 // streamable family: the concatenation of everything Push returns is always a
 // PREFIX of the lead ParseToolCalls will compute over the full output.
 type ProseStreamer struct {
-	opener  string
-	pending strings.Builder
-	started bool // a non-space byte has been emitted
-	done    bool // the opener was seen; nothing after it is prose
+	opener    string
+	bareAware bool // hold an output that opens with '{' (NewBareAwareProseStreamer)
+	pending   strings.Builder
+	started   bool // a non-space byte has been emitted
+	done      bool // the opener was seen; nothing after it is prose
+	held      bool // the output opened with '{': it may be a bare call, emit nothing
 }
 
 // NewProseStreamer returns a streamer for a family's opener (Template.ToolCallOpener).
 func NewProseStreamer(opener string) *ProseStreamer { return &ProseStreamer{opener: opener} }
+
+// NewBareAwareProseStreamer is NewProseStreamer for a family that also accepts a
+// bare, unwrapped call (Template.AcceptsBareToolCall): if the output's first
+// non-space byte is '{' the output may parse as a call with an EMPTY lead, so
+// nothing of it may be emitted as prose. Such an output releases nothing at all;
+// the caller delivers whatever the parser decides was prose once generation ends.
+// Outputs that open any other way stream exactly as NewProseStreamer's do. The
+// guarantee, against ParseToolCallsFor, is asserted by
+// TestBareAwareProseStreamerMatchesParser.
+func NewBareAwareProseStreamer(opener string) *ProseStreamer {
+	return &ProseStreamer{opener: opener, bareAware: true}
+}
 
 // Done reports whether the opener has been seen, after which nothing more is prose.
 func (p *ProseStreamer) Done() bool { return p.done }
@@ -473,11 +577,17 @@ func (p *ProseStreamer) Done() bool { return p.done }
 // Push feeds the next generated chunk and returns the text that is safe to emit
 // now — possibly empty.
 func (p *ProseStreamer) Push(chunk string) string {
-	if p.done {
+	if p.done || p.held {
 		return ""
 	}
 	p.pending.WriteString(chunk)
 	buf := p.pending.String()
+	if p.bareAware && !p.started {
+		if t := strings.TrimLeft(buf, " \t\r\n"); t != "" && t[0] == '{' {
+			p.held = true
+			return ""
+		}
+	}
 
 	n := StreamableLen(buf, p.opener)
 	safe, rest := buf[:n], buf[n:]
