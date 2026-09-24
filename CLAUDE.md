@@ -100,6 +100,11 @@ write it `.json.gz` (Python: `gzip.open(OUT, "wt")` instead of `open(OUT, "w")`)
 unchanged) rather than a raw `os.ReadFile`+`json.Unmarshal`. Existing small `.json` goldens are
 NOT force-migrated — this is for new goldens where the size actually matters.
 
+**THE SAME GOES FOR NEW LARGE MEASUREMENT RAW DATA (ncu CSVs, sweep dumps): commit it `.gz`.** Nine
+`ncu_*.csv` files under `docs/measurements/` are ~6.5–9.8 MB each uncompressed (~60 MB); they are
+already in history, so compressing them now would shrink a checkout but not a clone. The fix is
+forward-only: anything over ~2 MB of text goes in as `.gz`, and the record names the `.gz` path.
+
 **A UNIT TEST THAT SUPPLIES ITS OWN CALLING CONVENTION PROVES THE UNIT WORKS WHEN CALLED THAT WAY —
 NOT THAT ANYTHING CALLS IT THAT WAY.** It is the microbenchmark trap one level up: same failure, in
 composition rather than in cost. Measured here (G27): `optFwdGate` documents a two-way hysteresis

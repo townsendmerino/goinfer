@@ -1,6 +1,6 @@
 # The docs, and how they fit together
 
-`docs/` holds ~470 files. They are not one kind of thing, and reading them as if they were is the
+`docs/` holds ~425 files. They are not one kind of thing, and reading them as if they were is the
 main way people get a wrong answer here: a **design record** explains why something is built as it
 is, a **queue** holds what is still open, a **measurement** is evidence with a machine and a date
 on it, and an **archive** is finished work kept for its reasoning. Only some of them are current
@@ -87,7 +87,7 @@ it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (79)
+## Evidence — `measurements/` (172)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world
@@ -110,7 +110,7 @@ separate sweep because this step kept being skipped at move time.
   remaining are each genuinely still open (drafted-by-decision, blocked, or unshipped, per their
   own status). Newest: `prompts/cuda-r6-flash-decode.md` (2026-09-19), the Linux kickoff for
   `red-october.md`'s R6.
-- `releases/` (8) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
+- `releases/` (9) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
 - `scoping-*.md`, `plan-*.md` — pre-build scoping, some superseded; check the status header.
 - [`what-parity-gated-means.md`](what-parity-gated-means.md) — the reader-facing explanation of
   what a parity claim covers and does not; `parity-coverage-policy.md` and `parity-hunt-playbook.md`
