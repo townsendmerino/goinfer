@@ -58,8 +58,9 @@
 > (`decoder/fitguard.go`), a load-time KV+scratch guard for `.giw` loads, refusing or auto-pinning
 > a context exactly like this doc's own fit-by-default guard does for `.gguf` — landed as its own
 > item, not a renumbered phase here. See S4's own status note in that doc for what shipped and
-> what did not (items 2-5: live-probe pager budgets, Metal's second bound, `GOMEMLIMIT`, the
-> working-set tok/s predictor — all still unstarted).
+> what did not. (Items 2-5 — live-probe pager budgets, Metal's second bound, `GOMEMLIMIT`, the
+> working-set tok/s predictor — shipped later the same day, 2026-09-23; this note said "still
+> unstarted" until then.)
 
 **Who this is for.** One person with one consumer machine — an 8 GB RTX card, a 16 GB Apple
 Silicon laptop, a 32 GB desktop with no GPU — who has just pulled a 26B-A4B or 35B-A3B checkpoint
