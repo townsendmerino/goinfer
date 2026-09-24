@@ -109,7 +109,10 @@ func TestEagle_prefillsWithTheSameKernelAsGenerate(t *testing.T) {
 			continue
 		}
 		switch {
-		case strings.Contains(s, "captureN(prompt, cpuFastAttention())"):
+		// The PER-MODEL form, the one prefillLogits uses since Options.ExactPrefill became a model
+		// property: the package-level cpuFastAttention() ignores it, so an ExactPrefill model would
+		// prefill EAGLE on the fast kernel and Generate on the exact one — M-07's divergence again.
+		case strings.Contains(s, "captureN(prompt, m.cpuFastAttention())"):
 			prefill++
 		case strings.Contains(s, ", false)"):
 			exact++
@@ -119,7 +122,7 @@ func TestEagle_prefillsWithTheSameKernelAsGenerate(t *testing.T) {
 	}
 	// Two prefill sites (the two EAGLE loops), four verify/commit/correction sites.
 	if prefill != 2 {
-		t.Errorf("%d EAGLE prefill(s) use cpuFastAttention(), want 2 — a prefill on the exact "+
+		t.Errorf("%d EAGLE prefill(s) use m.cpuFastAttention(), want 2 — a prefill on the exact "+
 			"kernel builds different KV from Generate's, and EAGLE's token-identical-to-greedy "+
 			"claim depends on them matching (M-07)", prefill)
 	}

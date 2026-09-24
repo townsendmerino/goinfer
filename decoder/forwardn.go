@@ -70,6 +70,14 @@ func attnTimingDebug() bool { return os.Getenv("GOINFER_ATTN_TIMING_DEBUG") == "
 // naming the same list, and both wrong, in opposite directions.
 func cpuFastAttention() bool { return os.Getenv("GOINFER_CPU_FAST_ATTENTION") != "0" }
 
+// cpuFastAttention is the per-model form: off when this model was loaded with
+// Options.ExactPrefill, else the env var's answer.
+func (m *Model) cpuFastAttention() bool { return !m.exactPrefill && cpuFastAttention() }
+
+// ExactPrefill reports whether this model was loaded with Options.ExactPrefill — prompt ingestion
+// must take each backend's bit-exact path. Backends consult it next to their own env var.
+func (m *Model) ExactPrefill() bool { return m.exactPrefill }
+
 // fastAttnMinPrompt is the prompt length below which f32 prefill attention is NOT used, even
 // when enabled. Attention is O(K·nKeys), so the win grows with K while the divergence does not:
 // a short prompt gets a different answer and buys almost nothing for it.
@@ -1697,7 +1705,7 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 		}
 		return m.forward(prompt[len(prompt)-1], cache)
 	}
-	h, err := m.forwardLayersN(ctx, prompt, cache, cpuFastAttention())
+	h, err := m.forwardLayersN(ctx, prompt, cache, m.cpuFastAttention())
 	if err != nil {
 		return nil, err
 	}
@@ -1728,7 +1736,7 @@ func (m *Model) prefillLogitsVL(ctx context.Context, ids []int, imageEmbeds []fl
 	h := m.embedN(ids)
 	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageEmbeds) // raw projected features, no embed scale
 	cache.SetImageBlocks([][2]int{{imgPos, imgPos + imgLen}})
-	hN, err := m.runLayersFromEmbedN(ctx, h, cache, cpuFastAttention())
+	hN, err := m.runLayersFromEmbedN(ctx, h, cache, m.cpuFastAttention())
 	if err != nil {
 		return nil, err
 	}
@@ -1762,7 +1770,7 @@ func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats [
 	copy(h[imgPos*hidden:(imgPos+imgLen)*hidden], imageFeats) // raw merged features, no embed scale
 	cache.mropePos = mropePos                                 // ropeAt switches to m-RoPE for this prefill
 	cache.mropeDelta = mropeDelta(mropePos, len(ids))         // decode past the prefill rotates at seqPos+delta
-	hN, err := m.runLayersFromEmbedN(ctx, h, cache, cpuFastAttention())
+	hN, err := m.runLayersFromEmbedN(ctx, h, cache, m.cpuFastAttention())
 	if err != nil {
 		return nil, err
 	}

@@ -41,16 +41,19 @@ func TestStagedLayerSweep(t *testing.T) {
 	}
 	_, nLayers, _, _, _, _, _ := mc.Dims()
 	cpuLogits := make([][]float32, nLayers)
+	// Both loops run the DECODER's granite forward, which reads GOINFER_SSM_STOP_LAYER once at init;
+	// the truncation goes through the test hook (os.Setenv here used to change nothing, so both sides
+	// ran every layer and each row compared two full-model forwards).
 	for L := range nLayers {
-		os.Setenv("GOINFER_SSM_STOP_LAYER", itoa(L))
+		restore := decoder.SetSSMStopLayerForTest(L)
 		cache := mc.NewCache(8)
 		lg, e := mc.ForwardForTest(tok, cache)
+		restore()
 		if e != nil {
 			t.Fatal(e)
 		}
 		cpuLogits[L] = append([]float32(nil), lg...)
 	}
-	os.Unsetenv("GOINFER_SSM_STOP_LAYER")
 	mc.Close()
 
 	// Staged int8 (D3): webgpu backend, NOT resident; int8 mamba via ssmQ8CPU.
@@ -65,9 +68,10 @@ func TestStagedLayerSweep(t *testing.T) {
 		t.Fatal("expected staged, got resident")
 	}
 	for L := range nLayers {
-		os.Setenv("GOINFER_SSM_STOP_LAYER", itoa(L))
+		restore := decoder.SetSSMStopLayerForTest(L)
 		cache := ms.NewCache(8)
 		lg, e := ms.ForwardForTest(tok, cache)
+		restore()
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -78,5 +82,4 @@ func TestStagedLayerSweep(t *testing.T) {
 		}
 		t.Logf("  after layer %2d (%-5s): STAGED-vs-f32 cosine=%.6f", L, kind, cos)
 	}
-	os.Unsetenv("GOINFER_SSM_STOP_LAYER")
 }

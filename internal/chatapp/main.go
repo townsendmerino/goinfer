@@ -55,8 +55,9 @@ const defaultSystem = "You are a helpful, concise coding assistant. Prefer corre
 // exactPrefillHelp is --exact-prefill's usage text (M-26, audit-2026-09-10): serve has had this
 // flag since G6/M-48; this REPL never did, despite docs/completed/task-prefill-gap.md documenting
 // an Options.ExactPrefill "(library)" half that decoder.Options only just gained. One flag,
-// decoder.Options.ExactPrefill sets every backend's own fast-prefill env var (CPU f32-attention,
-// Metal f16-MMA batched prefill, CUDA tensor-core batched prefill) to the bit-exact path.
+// decoder.Options.ExactPrefill puts THIS model's prefill on the bit-exact path on every backend (CPU
+// f32-attention, Metal f16-MMA batched prefill, CUDA tensor-core batched prefill) — a model property
+// since 2026-09-24, not the process env vars it used to set.
 const exactPrefillHelp = "force BIT-EXACT prompt ingestion on every backend that has a faster, non-exact default (CPU f32-attention, Metal's f16-MMA batched prefill, CUDA's tensor-core batched prefill — all default ON above their own length thresholds). Use when diffing outputs across versions, reproducing a bug report, or whenever decode==prefill bit-identity matters more than time-to-first-token."
 
 // msg is one conversation turn kept in history.

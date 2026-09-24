@@ -68,6 +68,7 @@ type Model struct {
 	kvF16            bool         // residency KV cache precision request (Options.KVPrecision == "f16")
 	kvPrecI8         bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8             bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	exactPrefill     bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
 	resCtxReq        int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	disableFit       bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache         bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
@@ -376,15 +377,13 @@ var ErrLoadAborted = errLoadAborted
 // and selects a backend. The forward pass (M3) is implemented; the CPU
 // backend is the default and the only one wired (webgpu falls back to CPU).
 func Load(dir string, opts Options) (*Model, error) {
-	// M-26 (docs/audit-2026-09-10.md): set before any backend/prefill work below reads these —
-	// only on true, no else branch, so a caller managing the same env vars itself (serve's own
-	// applyExactPrefillEnv, which is more granular than this single bool) is never overridden by
-	// a Load that didn't ask for exact prefill.
-	if opts.ExactPrefill {
-		os.Setenv("GOINFER_METAL_FAST_PREFILL", "0")
-		os.Setenv("GOINFER_CUDA_FAST_PREFILL", "0")
-		os.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")
-	}
+	// Options.ExactPrefill is recorded on the Model (exactPrefill, set in each constructor below
+	// BEFORE withResidency, because CUDA reads it while building its resident) and consulted by
+	// each backend's fast-prefill switch alongside its env var. It used to be applied by
+	// os.Setenv here (M-26), which is process-global and never undone: every model loaded later
+	// in the same process inherited exact prefill whether it asked for it or not. The env vars
+	// themselves are unchanged — serve's applyExactPrefillEnv still sets them from its flags,
+	// which are process-wide by design.
 	be, beErr := NewBackend(opts.Backend)
 	// A nil backend means the name was genuinely unknown (not a registered/fallback backend) —
 	// abort rather than proceed and panic at the first matmul (M14). A non-nil be with a
@@ -467,7 +466,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
-		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition}
+		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition, exactPrefill: opts.ExactPrefill}
 		m.withBackendNames(opts.Backend, beErr)
 		if opts.StreamWeights {
 			// S4 item 2 (task-never-swap-2026-09.md): resolve an "auto" (0) weight-cache request
@@ -580,7 +579,7 @@ func Load(dir string, opts Options) (*Model, error) {
 	if raw, err := json.Marshal(resolvedEOS); err == nil {
 		w.Cfg.EOSTokenID = raw
 	}
-	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition}).withBackendNames(opts.Backend, beErr)
+	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition, exactPrefill: opts.ExactPrefill}).withBackendNames(opts.Backend, beErr)
 	// `resident` is the third phase: weights becoming a device-side runner. Timed here rather than
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user
 	// wondering where nine seconds went is owed that time too.
@@ -742,7 +741,15 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// only — MoE routes attention through the acc64 kernel for bit-stable expert
 	// routing (quantized KV would reopen that), and gemma4/qwen3_5_moe have their
 	// own forward. Must precede enableRings so local layers inherit the mode.
-	if m.kvI8 && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.MoE == nil {
+	//
+	// Every family forward that sizes its scores buffer from the f32 key store
+	// (`len(cache.Keys(layer))` — forward_granite/qwen35/nemotron/llama4/lfm2.go) must be
+	// excluded: with int8 on, that store is empty, the buffer has length 0, and attendQuery
+	// hands it to attendQueryI8, which indexes past it on the first decode step. LFM2 was
+	// missing and panicked (TestLFM2_kvQuantI8_generates); llama4 was excluded only through
+	// a.MoE, so it is named too.
+	if m.kvI8 && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.MoE == nil &&
+		a.lfm2 == nil && a.llama4 == nil {
 		c.setQuant(kvI8, capHint)
 	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most

@@ -86,7 +86,7 @@ func (m *Model) GenerateEagleSpeculativeTree(ctx context.Context, prompt []int, 
 			}
 			return lg, feats, nil
 		}
-		logitsN, feats, err := captureN(prompt, cpuFastAttention())
+		logitsN, feats, err := captureN(prompt, m.cpuFastAttention())
 		if err != nil {
 			g.err = err
 			return
@@ -265,7 +265,7 @@ func (m *Model) GenerateEagleSpeculative(ctx context.Context, prompt []int, maxT
 		}
 
 		// Prefill: one batched pass over the prompt, capturing every position's feature.
-		logitsN, feats, err := captureN(prompt, cpuFastAttention())
+		logitsN, feats, err := captureN(prompt, m.cpuFastAttention())
 		if err != nil {
 			g.err = err
 			return

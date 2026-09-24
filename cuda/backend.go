@@ -1013,6 +1013,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// attn_block.cu established. A load failure is not fatal: it leaves bAttnFused* zero and
 		// every selection site falls back to attn_batched, which is the exact path anyway.
 		r.fastAttn, r.fastGemm = fastPrefillEnabled()
+		if m.ExactPrefill() { // Options.ExactPrefill: this model's prefill stays on the exact path
+			r.fastAttn, r.fastGemm = false, false
+		}
 		if (r.fastAttn || r.fastGemm) && r.prefillReady {
 			if fmod, e6 := r.dev.CompileLibrary(attnFusedPTX); r.fastAttn && e6 == nil {
 				loadF := func(dst *Pipeline, name string) {

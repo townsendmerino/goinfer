@@ -370,3 +370,16 @@ func GumbelKeyForTest(logits []float32, temperature float64, seed, draw uint64, 
 	r := philox4x32([4]uint32{uint32(i >> 2), uint32(draw), uint32(draw >> 32), 0}, [2]uint32{uint32(seed), uint32(seed >> 32)})
 	return gumbelKey(logits[i], float32(1/temperature), r[i&3])
 }
+
+// SetSSMStopLayerForTest sets the granite forward's GOINFER_SSM_STOP_LAYER truncation and returns a
+// func that restores the previous value. Production reads that env var ONCE, at package init
+// (forward_granite.go's ssmStopLayer), so a test that os.Setenv's it inside a loop changes nothing on
+// the decoder side: gpu/mamba_layersweep_test.go's CPU reference and both of
+// gpu/staged_layersweep_test.go's loops ran every layer at every "stop layer", while their comments
+// said the value was re-read per forward. The resident (gpu) runner reads the env var when a runner
+// is built, so its side of a sweep was always real.
+func SetSSMStopLayerForTest(n int) (restore func()) {
+	prev := ssmStopLayer
+	ssmStopLayer = n
+	return func() { ssmStopLayer = prev }
+}

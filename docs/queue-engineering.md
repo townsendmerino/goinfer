@@ -800,7 +800,7 @@ property:
 **No gate remains position-keyed.** The residual surface is **14 `file:line` citations in this file's
 prose**, which no lint covers and which drift silently. Already stale, checked:
 
-- `cuda/backend.go:1637` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
+- `cuda/backend.go:1640` — cited as `allocSlots`'s call site; now points at a bare `//` (A9-FIX
   inserted the warm-up above it).
 - `cuda/resident.go:427` — cited for audit C-08's `_ = gpu.Upload`; now a comment about backend locals.
 - two citations were **unresolvable**, because they omitted the repo — an aikit `linalg/quant.go`
@@ -955,8 +955,8 @@ of them:
 |---|---|
 | `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
 | `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
-| `decoder/forwardn.go:1601` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-09-16; previously retargeted 2026-08-24, and 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
-| `decoder/model.go:1161` | unchanged — same freeze |
+| `decoder/forwardn.go:1609` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-09-16; previously retargeted 2026-08-24, and 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
+| `decoder/model.go:1168` | unchanged — same freeze |
 | `metal/model.go:1267` | unchanged — Metal is on hold for core-numerics surfaces |
 
 The three unchanged members are a **deliberate** partial fix, not an oversight, and they are the

@@ -62,7 +62,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
 ## L1 — Load-time policy: `Backend: "cpu"` is a promise, and it unlocks repacked-only (DONE 2026-09-11)
 
 **Where.** `decoder/weightmat.go:487 wantsCanonicalInt4(backendName, be)`,
-`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:544` (computed once
+`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:543` (computed once
 at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFWeights` /
 `buildWeightsFromSafetensors` → `quantizeEmbedWM` / `streamQuantizedEmbed` /
 `quantizeBatchedProjWM` / `streamQuantizedBatchedProj`. Dispatch prerequisite already done:
@@ -151,7 +151,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   unreachable in practice too: `webgpu` is never the literal string `"cpu"`, so
   `wantsCanonicalInt4` always keeps canonical for it regardless.
 - **Item 4: no code change needed.** `internal/serveapp/main.go:498`,
-  `internal/chatapp/main.go:178`, and `internal/gemmaapp/main.go:47` all already register `--backend` with
+  `internal/chatapp/main.go:179`, and `internal/gemmaapp/main.go:47` all already register `--backend` with
   `flag.String(..., "cpu", ...)` — the literal default is already `"cpu"`, not empty. The root
   (no-tags) CPU release binaries already got this saving the moment L1 landed; nothing to wire up.
   `demo/chat`'s embedded variant shares `internal/chatapp`'s flag registration, so the same holds

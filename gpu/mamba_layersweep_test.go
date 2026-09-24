@@ -35,7 +35,9 @@ func TestMambaResidentLayerSweep(t *testing.T) {
 	ids, _ := tk.Encode("The capital of France is Paris.", true)
 	tok := ids[0]
 
-	// f32 CPU reference (per-layer via stopLayer, cheap — re-read per forward).
+	// f32 CPU reference, truncated per layer. The decoder reads GOINFER_SSM_STOP_LAYER once at init, so
+	// the truncation is set through the test hook — os.Setenv here used to change nothing, and every
+	// "reference" was the full model.
 	os.Unsetenv("GOINFER_SSM_RESIDENT")
 	mc, err := decoder.Load(path, decoder.Options{Backend: "cpu"})
 	if err != nil {
@@ -44,15 +46,15 @@ func TestMambaResidentLayerSweep(t *testing.T) {
 	_, nLayers, _, _, _, _, _ := mc.Dims()
 	cpuLogits := make([][]float32, nLayers)
 	for L := range nLayers {
-		os.Setenv("GOINFER_SSM_STOP_LAYER", itoa(L))
+		restore := decoder.SetSSMStopLayerForTest(L)
 		cache := mc.NewCache(8)
 		lg, e := mc.ForwardForTest(tok, cache)
+		restore()
 		if e != nil {
 			t.Fatal(e)
 		}
 		cpuLogits[L] = append([]float32(nil), lg...)
 	}
-	os.Unsetenv("GOINFER_SSM_STOP_LAYER")
 	mc.Close()
 
 	// Resident: rebuild the plan per stopLayer (shares loaded weights), token-0 from clean state.

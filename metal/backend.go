@@ -123,7 +123,7 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		fmt.Fprintf(os.Stderr, "[metal] BuildResident declined: %v\n", e)
 		return nil, false, nil
 	}
-	b.resident = &metalResident{r: res, hidden: res.H}
+	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill()}
 	return b.resident, true, nil
 }
 
@@ -254,10 +254,18 @@ const autoMoESlotsMax = 64
 // respectively) rather than a fabricated small number — the memory guard downstream still has the
 // final say either way.
 func autoMoESlotsFor(topK int, perSlot, needFixed int64, ram uint64) int {
+	return autoMoESlotsForBudget(topK, perSlot, needFixed, metalStaticCeiling(ram))
+}
+
+// autoMoESlotsForBudget is the formula against an explicit byte budget. autoMoESlots passes the
+// guard's OWN budget (metalMemoryCeiling — the static fraction, tightened by live-available memory
+// since S4): sizing against the static fraction while residentFitsMemory checks the live one made
+// the two disagree under memory pressure — the sizer picked N slots, the guard refused N, and the
+// load fell to CPU instead of taking fewer slots.
+func autoMoESlotsForBudget(topK int, perSlot, needFixed, budget int64) int {
 	if perSlot <= 0 {
 		return max(topK, autoMoESlotsMax)
 	}
-	budget := int64(float64(ram) * residentMemFraction)
 	remaining := budget - needFixed
 	if remaining <= 0 {
 		return topK // the fixed part alone doesn't fit; buildResident/the guard will refuse either way
@@ -281,7 +289,7 @@ func autoMoESlots(m *decoder.Model) int {
 		return max(topK, autoMoESlotsMax)
 	}
 	needFixed := m.ResidentDenseWeightBytes() + m.ResidentHostCopyBytes(1) + residentKVBytes(m) // ResidentHostCopyBytes(>0) is dense-only (paged)
-	return autoMoESlotsFor(topK, perSlot, needFixed, ram)
+	return autoMoESlotsForBudget(topK, perSlot, needFixed, metalMemoryCeiling(ram))
 }
 
 // metalMoESlotsFromEnv is the guard's own reader (residentNeedBytes, below) — it needs an int,
@@ -426,6 +434,7 @@ func (b *metalBackend) Close() error {
 type metalResident struct {
 	r      *resident
 	hidden int
+	exact  bool // the model was loaded with Options.ExactPrefill: fast prefill off for THIS resident
 }
 
 // ctxCap is this resident's resolved KV capacity — a.r.ctxCap when a real *resident exists, else
@@ -642,7 +651,7 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	if !a.r.prefillOK {
 		return false, "sequential — arch/geometry not supported by f16 MMA prefill kernel"
 	}
-	if !metalFastPrefillEnabled() {
+	if a.exact || !metalFastPrefillEnabled() {
 		return false, "sequential — fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill)"
 	}
 	floor := metalFastPrefillFloorFor()
@@ -665,7 +674,7 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	}
 	// DEFAULT ON above metalFastPrefillFloor (256 tokens, M-02) since §3.2 gate passed 2026-09-09
 	// (S cells K=256/512/1024). GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill to opt out.
-	if !metalFastPrefillEnabled() {
+	if a.exact || !metalFastPrefillEnabled() {
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
 	}
 	// FLOOR: below metalFastPrefillFloor no decision cell has passed yet. Sequential path there;

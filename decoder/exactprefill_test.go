@@ -18,14 +18,14 @@ func unsetenvT(t *testing.T, name string) {
 	os.Unsetenv(name)
 }
 
-// TestLoad_exactPrefillOptionSetsAllThreeBackendEnvVars is M-26's chokepoint gate
-// (docs/audit-2026-09-10.md): decoder.Options.ExactPrefill is the library-level field
-// docs/completed/task-prefill-gap.md already documented as existing — this proves Load actually
-// sets the three fast-prefill env vars from it, the same three internal/serveapp's own
-// applyExactPrefillEnv sets from --exact-prefill (that CLI-level helper is untouched by this fix;
-// this is the new chokepoint chatapp/gemmaapp's own --exact-prefill flags now reach instead of
-// duplicating serve's CLI-only logic).
-func TestLoad_exactPrefillOptionSetsAllThreeBackendEnvVars(t *testing.T) {
+// TestLoad_exactPrefillOptionIsAModelProperty is M-26's chokepoint gate (docs/audit-2026-09-10.md),
+// revised 2026-09-24. decoder.Options.ExactPrefill used to be applied by Load setting the three
+// fast-prefill env vars — process-global and never undone, so every model loaded later in the same
+// process inherited it. It is now recorded on the Model and consulted by each backend's switch next
+// to its env var (CPU: Model.cpuFastAttention; CUDA: at resident build; Metal: on its resident). This
+// proves Load reports it on the model, applies it to this model's CPU prefill, and writes nothing to
+// the environment. The two-model inheritance case is TestExactPrefill_isPerModel.
+func TestLoad_exactPrefillOptionIsAModelProperty(t *testing.T) {
 	unsetenvT(t, "GOINFER_METAL_FAST_PREFILL")
 	unsetenvT(t, "GOINFER_CUDA_FAST_PREFILL")
 	unsetenvT(t, "GOINFER_CPU_FAST_ATTENTION")
@@ -36,13 +36,12 @@ func TestLoad_exactPrefillOptionSetsAllThreeBackendEnvVars(t *testing.T) {
 	}
 	defer m.Close()
 
-	for _, want := range []struct{ name, value string }{
-		{"GOINFER_METAL_FAST_PREFILL", "0"},
-		{"GOINFER_CUDA_FAST_PREFILL", "0"},
-		{"GOINFER_CPU_FAST_ATTENTION", "0"},
-	} {
-		if got := os.Getenv(want.name); got != want.value {
-			t.Errorf("Options.ExactPrefill=true: %s = %q, want %q", want.name, got, want.value)
+	if !m.ExactPrefill() || m.cpuFastAttention() {
+		t.Errorf("Options.ExactPrefill=true: ExactPrefill()=%v cpuFastAttention()=%v, want true, false", m.ExactPrefill(), m.cpuFastAttention())
+	}
+	for _, name := range []string{"GOINFER_METAL_FAST_PREFILL", "GOINFER_CUDA_FAST_PREFILL", "GOINFER_CPU_FAST_ATTENTION"} {
+		if got, set := os.LookupEnv(name); set {
+			t.Errorf("Load wrote the process environment: %s=%q", name, got)
 		}
 	}
 }

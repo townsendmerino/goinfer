@@ -93,8 +93,8 @@ positions are inherent, not recompute.
   `resident_reuse.go`, `spec_eagle.go`, `spec_ngram.go`. `blockspec.go` does not claim `resBusy`
   either.
 - **Mechanism:** `resIDs` is written only by `residentCommitIDs` at the end of a completed plain
-  generation (`decoder/model.go:1895`) and read by `residentReuseLen` at the start of the next
-  (`decoder/model.go:1601`). `serve` routes a greedy request to `BlockSpec.GenerateStream` and a
+  generation (`decoder/model.go:1902`) and read by `residentReuseLen` at the start of the next
+  (`decoder/model.go:1608`). `serve` routes a greedy request to `BlockSpec.GenerateStream` and a
   sampled one to `Model.Generate` on the **same** `*Model` (`internal/serveapp/openai.go`, the
   `--drafter` branch). So: plain turn A commits A's ids → greedy turn B prefills B over the same
   positional rows → sampled turn C whose prompt extends A matches A's ids and skips the prefix,
@@ -128,13 +128,13 @@ positions are inherent, not recompute.
   needs a much heavier harness than `BlockSpec.generate`'s synchronous call, and R-03 (which
   upgrades the forget to a commit) is the natural point to build that harness rather than
   duplicating it now for a single-line change whose shape is otherwise identical to the
-  already-tested `decoder/model.go:1601` pattern.
+  already-tested `decoder/model.go:1608` pattern.
 
 ### R-01 · The hybrid families re-prefill the whole conversation every turn (resident path)
 
 - **Where:** `decoder/resident_reuse.go:120` — `if m.hasRecurrentState() {`, added
   2026-09-02 after repeated identical greedy prompts on qwen3.6-35B-A3B decoded from the previous
-  generation's tail state. `decoder/forwardn.go:200-145` is the shared predicate;
+  generation's tail state. `decoder/forwardn.go:208-145` is the shared predicate;
   `cuda/resident.go:395` holds the per-layer `dnWin`/`dnState` that are mutated in place and
   re-zeroed only at pos 0.
 - **What the staged path already does, and the resident path should copy:** the CPU `Session`
@@ -203,7 +203,7 @@ positions are inherent, not recompute.
 
   Sizes from spec/09's own record: 62.8 MiB for the 35B-A3B, 149.6 MiB for the 27B. Consumers:
   Qwen3.8-27B's native MTP head (spec/09), DFlash pairings on hybrid targets, and R-03's
-  commit-after-speculation for recurrent families. `specRollbackSafe` is `decoder/forwardn.go:212`
+  commit-after-speculation for recurrent families. `specRollbackSafe` is `decoder/forwardn.go:220`
   exactly.
 
   Three design notes from spec/09's own pricing record, carried forward so they aren't re-derived
@@ -284,7 +284,7 @@ positions are inherent, not recompute.
 ### R-02 · A cancelled generation forgets a prefix that is intact
 
 - **Where:** `generateInto`'s `select { case <-ctx.Done(): g.err = ctx.Err(); return ... }` before
-  `out <- next` (`decoder/model.go:1717`, the send that M8 made cancellable).
+  `out <- next` (`decoder/model.go:1724`, the send that M8 made cancellable).
 - **Mechanism:** at that point the last forward has completed and been sampled, `next` has not been
   forwarded, and `generated` holds exactly the tokens whose K/V (and, for a hybrid, whose recurrent
   state) the cache holds. The cache is as consistent as it is at the commit two branches later; the
@@ -316,7 +316,7 @@ positions are inherent, not recompute.
   consistent there as at the send-select exit — but the top-of-loop exit was never wired to commit,
   so most real cancels (the ones landing during Forward, not during the microsecond sample/send
   window) still cold-prefilled. Fixed: the same `if useGPU { m.residentCommitIDs(prompt, generated)
-  }` added to the top-of-loop exit too (`decoder/model.go:1717`). Mutation-checked at
+  }` added to the top-of-loop exit too (`decoder/model.go:1724`). Mutation-checked at
   `-count 100`: without this second commit the existing test fails intermittently (~35/100 runs,
   confirming V-10's "scheduling-dependent" characterization empirically); with it, 100/100 pass,
   and `-race -count 20` alongside the R-03 sibling test is clean.
@@ -395,11 +395,11 @@ positions are inherent, not recompute.
   vs without at 2k history.
 - **Confirmed 2026-09-23 (scoping R-01 phase 2 before any build): the two "R-04" mechanisms this
   cell conflates have different failure modes, and one of them already degrades gracefully.**
-  Losing the resident GPU slot (`resBusy` CAS, `decoder/model.go:1528`) is NOT the same event as
-  a cold prefill: the comment at `decoder/model.go:1532` states it directly — "a loser falls back
+  Losing the resident GPU slot (`resBusy` CAS, `decoder/model.go:1535`) is NOT the same event as
+  a cold prefill: the comment at `decoder/model.go:1539` states it directly — "a loser falls back
   to the staged CPU path, which uses this call's own cache, so both still complete correctly" —
   and the code confirms it: `useGPU=false` (lines 1457-1500) falls straight into the existing
-  `else` branch's `m.prefillLogits(ctx, prompt[prefillFrom:], cache)` (`decoder/model.go:1610`), i.e. that
+  `else` branch's `m.prefillLogits(ctx, prompt[prefillFrom:], cache)` (`decoder/model.go:1617`), i.e. that
   conversation's own `Session`/`KVCache`, not a fresh one. So a lost CAS costs GPU-vs-CPU decode
   speed for that turn, nothing more — **provided** the staged session that receives the fallback
   can find its own prefix. That second condition is exactly P-18/L-15: `sessions.go`'s

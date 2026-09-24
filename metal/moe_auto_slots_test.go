@@ -127,3 +127,23 @@ func TestMetalMoESlotsRequest_autoOnlyWithCacheExperts(t *testing.T) {
 	}
 	t.Logf("auto-derived slot request on mixtral-tiny: %q", got)
 }
+
+// The sizer must choose a slot count the guard then accepts, under the guard's OWN budget. With a
+// live budget tighter than the static fraction (memory pressure), sizing against the static figure
+// picked more slots than the live budget holds — the guard refused, and the load fell back to CPU.
+func TestAutoMoESlots_fitsTheGuardsBudget(t *testing.T) {
+	const gb = int64(1 << 30)
+	topK, perSlot, needFixed := 4, int64(200*1024*1024), 4*gb
+	ram := uint64(16 * gb)
+	static := metalStaticCeiling(ram)
+	for _, budget := range []int64{static, static / 2, needFixed + 10*perSlot} {
+		n := autoMoESlotsForBudget(topK, perSlot, needFixed, budget)
+		if n > topK && needFixed+int64(n)*perSlot > budget {
+			t.Errorf("budget %.2f GB: chose %d slots needing %.2f GB — the guard would refuse it",
+				float64(budget)/float64(gb), n, float64(needFixed+int64(n)*perSlot)/float64(gb))
+		}
+	}
+	if a, b := autoMoESlotsForBudget(topK, perSlot, needFixed, static/2), autoMoESlotsForBudget(topK, perSlot, needFixed, static); a >= b {
+		t.Errorf("a tighter budget did not choose fewer slots: %d vs %d", a, b)
+	}
+}

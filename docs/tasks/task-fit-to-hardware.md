@@ -104,13 +104,13 @@ Scoped against what exists, the way `task-model-pull.md` was.
 **Already automatic, per backend, in pieces:**
 
 - CUDA expert cache: `--moe-cache-slots 0` means "ask for all and auto-cap to free VRAM"
-  (`decoder/model.go:242`, the cap that accounts for 2 MiB allocation quanta and the first-launch
+  (`decoder/model.go:243`, the cap that accounts for 2 MiB allocation quanta and the first-launch
   reservation — `docs/positioning.md`'s own history of it).
 - CPU weight paging: `--weight-cache 0` is "auto, ~half of available RAM"
   (`internal/serveapp/main.go:568`).
 - Metal: a memory-fit guard that refuses a model whose weights exceed 70% of RAM
   (`metal/backend.go:139`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
-  directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:412`).
+  directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`metal/backend.go:420`).
 
 **Still the user's decision, with no basis offered for it:**
 
@@ -367,7 +367,7 @@ before this one) · `docs/completed/task-metal-expert-streaming-at-scale.md` (N=
 `fitplan.go`'s auto-sizer will need once Metal is wired into it) ·
 `docs/completed/task-moe-streaming.md` §C′ (the CUDA cache and its cap) · `docs/QUEUE.md`
 G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residency eligibility, generated) ·
-`internal/serveapp/main.go:521-376` (the flags the plan subsumes) · `decoder/model.go:242-187`
+`internal/serveapp/main.go:521-376` (the flags the plan subsumes) · `decoder/model.go:243-187`
 (`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:118-194` (the guard) ·
 `decoder/weightbytes.go:94` (`ResidentWeightBytes`, the accountant to replace) ·
 `pull/pull.go:181` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
