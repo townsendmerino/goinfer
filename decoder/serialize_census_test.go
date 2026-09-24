@@ -131,6 +131,7 @@ var censusExcluded = map[string]string{
 	"gemma4-dense-scaled":  "449 MB. gemma4's per-layer state (PLE, the dense‖MoE sub-block, two-geometry head dims) is covered by four other gemma4 fixtures on the list.",
 	"mellum-mellum2-slice": "4.0 GB — a real-weight 4-layer slice. Measured: still running after 90s while all 29 listed fixtures together take 0.27s. mellum's per-layer fields are the generic set.",
 	"siglip-tiny":          "a vision encoder, not a decoder — Load refuses it, so there are no LayerWeights to census.",
+	"gemma4-vision-tiny":   "a vision encoder (Gemma4VisionModel), not a decoder — same as siglip-tiny: no LayerWeights to census.",
 	"mistral-tiny-window":  "config-only fixture (no model.safetensors); it exists to pin sliding-window CONFIG parsing, and Load cannot open it.",
 	"llama-attnfa-tiny":    "plain llama arch, same per-layer field set llama-tiny already covers (GQA, SwiGLU, RMSNorm) — it differs only in geometry (hidden_size 512, head_dim 128, vs llama-tiny's 64/16), chosen to clear Metal's canUseAttnFA hd==128 dispatch guard. Its job is metal/snapshot_golden_test.go's attention_fa coverage, not this census.",
 	"qwen3moe-tiny-k3":     "same qwen3_moe field set qwen3moe-tiny already covers — it differs only in num_experts_per_tok (3 vs 2), needed because float addition of exactly 2 terms is exactly commutative, so a k=2 fixture cannot catch an accumulation-order regression. Its job is cuda/moe_expert_major_test.go's bit-identity gate, not this census.",
