@@ -687,8 +687,22 @@ func (m *Model) KVHeadsAtResident(i int) int { return m.w.arch.kvHeadsAt(i) }
 // v_proj — V is v_norm(the raw k_proj output). Gemma 4 sets this on its GLOBAL layers (12B/26B;
 // off for E2B). This is arch.KVShared (the per-layer attention_k_eq_v), deliberately distinct
 // from SharedKVLayers (the unrelated cross-layer KV reuse the E-models use).
+//
+// Two sources, OR'd. The config flag (attention_k_eq_v, from config.json) and the per-layer
+// LayerWeights.VFromK the loader sets. The GGUF loader has no config flag to read — a GGUF carries
+// no attention_k_eq_v — so it marks a layer by the ABSENCE of attn_v.weight (gguf.go), leaving the
+// config flag false. Reading only the config flag made every GGUF-derived Gemma 4 K=V layer look like
+// an ordinary QKV layer with an empty V, so a resident backend fused a zero-row matrix and declined
+// (Metal: `int4Concat weight kind "" not int8 or int4`), while a config.json/safetensors-derived
+// bundle of the same model went resident. The per-layer flag is also what a .giw stores.
 func (m *Model) VFromKResident(i int) bool {
-	return m.w.arch.gemma4 != nil && m.w.arch.gemma4.KVShared && m.w.arch.isGlobalLayer(i)
+	if m.w.arch.gemma4 == nil {
+		return false
+	}
+	if m.w.arch.gemma4.KVShared && m.w.arch.isGlobalLayer(i) {
+		return true
+	}
+	return i >= 0 && i < len(m.w.Layers) && m.w.Layers[i].VFromK
 }
 
 // Gemma4DenseLayerScalarAtResident is layer i's per-layer output scalar (out = h*layerScalar,

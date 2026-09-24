@@ -16,8 +16,12 @@
 > writer/format change (pad + version bump), proposed not made — see the measurement doc's "Finding" section.
 > **FIXED 2026-09-24 (weights format v12 / bundle v3, `docs/giw-bundles.md`): M35 Go heap after Load 5.82 → 1.62 GB, dirty
 > footprint at token 32 6.2 → 2.2 GB (pool) and 5.0 → 0.4 GB (mmap); 7B heap 0.615 → 0.003 GB on CPU and Metal;
-> identical greedy tokens aliased vs copied on the real M35 file.** Measured on arm64 darwin only; M26 not re-transcoded;
-> existing sidecars keep the old layout until rebuilt. S6's `NewBufferNoCopy` no longer has to solve the scale copies —
+> identical greedy tokens aliased vs copied on the real M35 file.** Measured on arm64 darwin only. **M26 on Metal, re-transcoded and measured 2026-09-24: untagged heap after load
+> 4.5 → 1.55 GB, phys footprint 6.9 → 4.0 GB after load (7.5 → 4.5 at token 32), swap flat, identical greedy tokens; ~4.5 GB
+> anonymous remains at token 32 (2.5 GB IOAccelerator copy + 1.9 GB untagged incl. `int4DirectBytes`) — S6's target**
+> (`metal-nocopy-2026-09-23.md`, "M26 (N=8) again"). That run also found a separate pre-existing bug — a GGUF-derived Gemma 4
+> never went resident on Metal (`VFromKResident` read only the config flag) — now fixed. Existing sidecars keep the old layout
+> until rebuilt (the old ones were deleted 2026-09-24 on the Mac and the archive). S6's `NewBufferNoCopy` no longer has to solve the scale copies —
 > the remaining Metal heap term is `metal.int4DirectBytes`. Older status text
 > below is kept as written and is superseded where it disagrees.
 >

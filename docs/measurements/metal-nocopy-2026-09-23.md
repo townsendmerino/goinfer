@@ -172,6 +172,62 @@ Two findings follow, one measured and one inferred:
 
 Raw data: `metal-nocopy-m26-2026-09-24/` (both attempts' JSON, per-second samples, kill-watch logs).
 
+## M26 (N=8) again with aligned scales (weights v12) — measured 2026-09-24
+
+The "inferred, not profiled" heap term above was the int4 group scales, and the fix is in
+(`docs/giw-bundles.md`, "File layout"; `moe-pager-mode-darwin-2026-09-23.md`, "The fix"). Same cell as
+attempt 2 above — `metal/cmd/serve -backend metal -ctx 512 -moe-cache-experts -moe-cache-slots 8`, greedy
+32 tokens, `footprint` after load and at tokens 1/16/32 — on a freshly transcoded v12 file, kill-watch armed
+on the SERVER pid (kill on 2 consecutive +80 MB samples or +600 MB total), swap flat for the whole run.
+Provenance: MacBook (darwin/arm64, 16 GB) · goinfer `935b2f7c` + the uncommitted `VFromKResident` change
+below · `gemma4-26b-int4-v12-hf.giw`, 16,120,001,115 B, transcoded on nobara from the HF safetensors dir
+(`-quant int4 -target metal`, the old file's flags) and pulled, size verified byte for byte · local `~/models`.
+
+| | old layout (attempt 2) | v12, HF-derived | v12, GGUF-derived |
+|---|---|---|---|
+| **phys footprint after load** | 6,940 MB | **3,978 MB** | 3,979 MB |
+| untagged VM_ALLOCATE (dirty) after load | 4,513 MB | **1,553 MB** | 1,554 MB |
+| IOAccelerator (dirty) after load | 2,407 MB | 2,407 MB | 2,407 MB |
+| phys footprint at token 32 | 7,452 MB | **4,470 MB** | 4,497 MB |
+| untagged at token 32 | 4,912 MB | **1,933 MB** | 1,959 MB |
+| IOAccelerator at token 32 | 2,519 MB | 2,519 MB | 2,519 MB |
+| peak RSS | 7.6 GB | 5.99 GB | 5.9 GB |
+| swap growth during the run | +6.5 MB | 0 | 0 |
+
+The whole difference is the untagged term (−2.96 GB); IOAccelerator is untouched, as expected — that is
+S6's copy. **The greedy 32-token text from the HF-derived v12 file is identical to attempt 2's**
+(`" complexity is a- (\n면- …"`), so the aliased scales change no output on the same source.
+
+**What is still above S6's registered bar** ("anonymous ≤ KV + slots + scratch + 15%", KV at ctx 512 is
+small, slots on the order of 1 GB — an estimate, not a profile): ~4.5 GB anonymous at token 32, of which
+2.5 GB is the resident MTLBuffer copy `NewBufferNoCopy` targets and, of the 1.9 GB untagged, 1.4 GB is
+`metal.int4DirectBytes` (the earlier heap profile). S6 is the remaining lever; this change removed the term
+that would have made it insufficient.
+
+**A separate, pre-existing bug this run found and fixed.** The first v12 file was transcoded from the
+**GGUF**, and Metal declined to go resident: `metal: BuildResident panicked: metal: int4Concat weight kind
+"" not int8 or int4`, falling to the CPU path (`gguf-derived-before-fix/`, with the stack). Cause: a GGUF
+carries no `attention_k_eq_v`, so the loader marks Gemma 4's K=V global layers per layer (`VFromK`, by
+`attn_v.weight`'s absence) and leaves the config flag false; `Model.VFromKResident` read only the config
+flag, so Metal fused an empty V matrix into QKV. The earlier M26 files were built from the HF dir
+(`config.json` has the flag), which is why this never showed. It is not caused by v12 (it reads
+architecture config, not the arrays) — but the old-layout GGUF-derived file was not run to prove it.
+`VFromKResident` now ORs the per-layer flag with the config rule (`decoder/residency.go`; test
+`decoder/vfromk_resident_test.go`, both sources mutation-checked). **With it, the GGUF-derived file goes
+resident on Metal** (`gguf-derived-after-fix/`, memory identical to the HF-derived file above) and a chat
+request answers correctly ("The capital of France is Paris."). CUDA and WebGPU call the same function, so
+a GGUF-derived Gemma 4 K=V model would now attempt residency there too — **not run on either**.
+
+**Caveats.** Decode 7.7 (HF-derived) / 6.3 (GGUF-derived) tok/s against attempt 2's 7.0 is **not** a
+comparison: n=1 per arm, different boot and memory state, and the GGUF-derived file is a different
+quantization of the model (its raw-completion text differs, and is incoherent — the same raw-`/v1/completions`
+issue noted above, unexamined). One chat prompt is a sanity check on the K=V layers, not a parity result
+(no CPU-vs-Metal logit comparison was run on the GGUF-derived route). Only the arm64/Metal path was
+measured. The memory-hog arm and the depth-128/2048 bench are still not run.
+
+Raw data: `metal-nocopy-m26-v12-2026-09-24/` (`hf-derived/`, `gguf-derived-before-fix/`,
+`gguf-derived-after-fix/`: result JSON, per-second samples, server logs, kill-watch logs).
+
 ## What this does NOT show
 
 - **M26 (N=8): measured 2026-09-24 — see the section above.** The 1.5B/7B pass by itself was not a

@@ -170,8 +170,10 @@ greedy tokens (the test that isolates the layout change). Nine new/changed tests
   against ~2.25 before, but the machine had just been rebooted (~9 GB free vs 2.7 GB), the source file
   differs, and n=1 per arm. Do not credit the layout for a 2× speed-up; the memory numbers, which are
   structural, are the result.
-- The M26 Metal file was not re-transcoded (gemma4 cannot stream its transcode on this Mac); its expected
-  drop (3.0 of the 4.4 GB heap) is extrapolated from the same profile, not measured.
+- ~~The M26 Metal file was not re-transcoded~~ — **measured 2026-09-24** (transcoded on nobara, pulled): untagged
+  heap after load 4,513 → 1,553 MB, phys footprint 6,940 → 3,978 MB, greedy tokens identical on the same source.
+  Record: `metal-nocopy-2026-09-23.md`, "M26 (N=8) again with aligned scales". That run also found and fixed a
+  separate GGUF-derived-Gemma-4 Metal decline (`VFromKResident`).
 - Only measured on arm64 darwin. The code is architecture-independent; Linux/amd64 numbers are unmeasured.
 - Existing sidecars keep the old layout until rebuilt (nothing rebuilds them automatically).
 
