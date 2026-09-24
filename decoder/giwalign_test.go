@@ -133,9 +133,14 @@ func TestGIWAligned_scalesAliasTheMapping(t *testing.T) {
 				gotS, gotKind := scalesOf(t, pair[1])
 				if gotKind == "int4-row4" {
 					// kind 5 stores the REPACKED scales; the same repack of the source is the truth.
+					// repackRow4ForEmit is the writer's own cross-arch entry point; this branch is only
+					// reachable where it is real (arm64), because elsewhere the writer emits kind 3.
 					q4, q4s, group, _ := pair[0].Int4()
-					_ = q4
-					want = linalg.RepackW4A8Row4Scales(q4s, pair[0].Rows(), pair[0].Cols(), group)
+					_, rs, ok := repackRow4ForEmit(q4, q4s, pair[0].Rows(), pair[0].Cols(), group)
+					if !ok {
+						t.Fatalf("%s: stored as row4 but the source shape is not row4-eligible", name)
+					}
+					want = rs
 				}
 				if !sameF32(want, gotS) {
 					t.Errorf("%s: scales differ after the round trip (%s)", name, gotKind)
