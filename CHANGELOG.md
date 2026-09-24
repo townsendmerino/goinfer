@@ -15,6 +15,13 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Tool calls: an unwrapped call is accepted on chatml/mellum2 when it names a supplied tool.** Qwen2.5-Coder (0.5B, 1.5B and
+  7B; also on Ollama) practically never writes `<tool_call>` under `tool_choice: auto` and emits the call object alone, which
+  every surface returned as prose: 0 parsed calls in 1,200 samples. Now an output that opens with a JSON object whose `name` is
+  exactly a supplied tool and whose arguments are an object is that call (first object only). On the 0.5B/1.5B: 0 → 236 / 219
+  parsed calls of 300 with prose unchanged to the sample; 7B and llama3 outputs identical. OpenAI chat, Responses and Anthropic
+  Messages (both paths) all use it; streaming holds an output that opens with `{`. Fixes form only — most recovered small-model
+  calls pick the wrong tool. `docs/measurements/tool-call-failure-t0-2026-09-23.md`.
 - **CPU decode on non-arm64: fused gate+up+SwiGLU fork/join, DEFAULT ON (`GOINFER_CPU_FUSED_GATEUP=0` opts out).** A layer now pays
   one barrier instead of two for its gate and up projections, and the SwiGLU's scalar float64 `exp` (3.65 ms/token on the 1.5B, serial
   because fanning it out separately loses) runs in parallel inside that barrier. **Bit-identical**: each output column is a self-contained

@@ -172,6 +172,14 @@ Constraining that case needs a union grammar over the tool set, which does not e
 paragraph previously said `any` "rides the same constrained decoding, so a malformed tool call is
 impossible", which was true only for the lone-tool case.
 
+**An unwrapped call is accepted on the `<tool_call>` families (chatml, mellum2).** Qwen2.5-Coder at every size tested
+practically never writes the `<tool_call>` wrapper under `auto`; it emits the call object alone, which earlier versions
+returned as prose, so an agent got no call at all. An output whose first non-space byte opens a JSON object whose `name` is
+exactly one of the supplied `tools` and whose arguments are an object is now returned as that one call (the first object only;
+anything else stays prose, and a name you did not supply never becomes a call). This fixes the call's form, not the model's
+choice of tool. Measured in `docs/measurements/tool-call-failure-t0-2026-09-23.md` (0 → 219–236 parsed calls of 300 on the
+0.5B/1.5B; no other output changed).
+
 The `messages` array accepts **only `user` and `assistant`**, as upstream does; any
 other role is a `400 invalid_request_error` naming the offending role. In particular
 `system` is **not** a message role on this API — it is the top-level `system` field —
