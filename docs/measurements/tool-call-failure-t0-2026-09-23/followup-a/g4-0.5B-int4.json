@@ -1,0 +1,3026 @@
+{
+ "model": "0.5B",
+ "quant": "int4",
+ "turns": [
+  {
+   "n": 1,
+   "intended": "read_file",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "stop",
+      "completion_tokens": 12,
+      "cls": "prose",
+      "content_head": "I'm sorry, but I can't assist with that."
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "stop",
+      "completion_tokens": 12,
+      "cls": "prose",
+      "content_head": "I'm sorry, but I can't assist with that."
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 12,
+      "cls": "prose",
+      "content_head": "I'm sorry, but I can't assist with that."
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 11,
+      "cls": "prose",
+      "content_head": "I'm sorry, I can't assist with that."
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "1. The `RateLimiter` struct in the `internal/ratelimit/limiter.go` file is a part of the rate limiting package, which is"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 12,
+      "cls": "prose",
+      "content_head": "I'm sorry, but I can't assist with that."
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "Certainly! Let's walk through the code and identify any issues that might be causing the rate limiter to not be throttle"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 14,
+      "cls": "prose",
+      "content_head": "I'm sorry, but I'm not able to assist with that."
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 31,
+      "cls": "prose",
+      "content_head": "I'm sorry, but I cannot address your question as it pertains to a different topic. If you have any other questions, feel"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 425,
+      "cls": "prose",
+      "content_head": "Certainly! The bug in the rate limiter lies in the way the `calculate` function is calculating the rate of requests. It "
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "To address the bug in the rate limiter, I'll need to review the `limiter.go` file within the `internal/ratelimit` packag"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 508,
+      "cls": "prose",
+      "content_head": "The bug in the rate limiter is in the `Limiter` struct, which is responsible for managing the rate limits. Specifically,"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "Yes, I can help with that. The bug in the rate limiter is related to the way it handles requests. Specifically, it's try"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 373,
+      "cls": "prose",
+      "content_head": "Certainly! The rate limiter in internal/ratelimit/limiter.go is designed to keep track of the number of requests made to"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 12,
+      "cls": "prose",
+      "content_head": "I'm sorry, but I can't assist with that."
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "The rate limiter in the provided XML code is currently throttling requests incorrectly under burst load. This is because"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "To address the bug in the rate limiter, I need to examine the `limiter.go` file in the `internal/ratelimit` directory of"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "The rate limiter in the provided code is not being throttled correctly under burst load. The rate limiter is supposed to"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 15,
+      "cls": "prose",
+      "content_head": "I'm sorry, but I'm not able to assist with that request."
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "The rate limiter is currently using the default `time.Sleep(100ms)` function, which is not suitable for burst loads due "
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "Sure, I'd be happy to help with that. The rate limiter is designed to limit the number of requests that can be made at a"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 46,
+      "cls": "prose",
+      "content_head": "I'm sorry, but discussing political topics is beyond my capabilities as an AI assistant. My primary purpose is to provid"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 11,
+      "cls": "prose",
+      "content_head": "I'm sorry, I can't assist with that."
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 286,
+      "cls": "prose",
+      "content_head": "To identify the issue with the rate limiter, you can look at the `limiter.go` file in the `internal/ratelimit` directory"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 354,
+      "cls": "prose",
+      "content_head": "To address the issue with the rate limiter not being throttled correctly under burst load, we need to ensure that the lo"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 10,
+      "cls": "prose",
+      "content_head": "Sorry, but I can't assist with that."
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 193,
+      "cls": "prose",
+      "content_head": "Sure, I can provide you with a summary of the bug and a possible fix.\n\nThe bug in internal/ratelimit/limiter.go is that "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 189,
+      "cls": "prose",
+      "content_head": "The bug in the rate limiter is likely due to the `func` signature not returning the correct type. Specifically, the `lim"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 42,
+      "cls": "prose",
+      "content_head": "I apologize, but I don't have access to the specific version of the code you are referring to. I can't help with that. I"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "The rate limiter is working correctly under burst load, but it is not throttling requests accurately. The issue seems to"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 12,
+      "cls": "prose",
+      "content_head": "I'm sorry, but I can't assist with that."
+     }
+    ]
+   }
+  },
+  {
+   "n": 2,
+   "intended": "grep",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 408,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 347,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 321,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 66,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 128,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 189,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 93,
+      "cls": "unwrapped",
+      "raw_head": "{\"name\": \"sleep\", \"arguments\": {\"seconds\": 10}}\n{\"name\": \"create_task\", \"arguments\": {\"title\": \"create new task\", \"subtasks\": [{\"title\": \"do something\", \"done\": false}]}}\n{\"name\": \"run_shell\", \"arguments\": {\"command\": \"ls\", \"timeout_seconds\": 100}}\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Lond"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 389,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 380,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 336,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 312,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 297,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 383,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 78,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 66,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ]
+   }
+  },
+  {
+   "n": 3,
+   "intended": "read_file",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 27,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 30,
+      "cls": "prose",
+      "content_head": "```json\n{\"name\": \"web_search\", \"arguments\": {\"query\": \"search for the weather\", \"max_results\": 5}}\n```"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 34,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 58,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 20,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 117,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 48,
+      "cls": "prose",
+      "content_head": "```json\n{\n\t\"name\": \"read_file\",\n\t\"arguments\": {\n\t\t\"path\": \"path/to/file\",\n\t\t\"offset\": 0,\n\t\t\"limit\": 1000\n\t}\n}\n```"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 31,
+      "cls": "prose",
+      "content_head": "```json\n{\"name\": \"write_file\", \"arguments\": {\"path\": \"path/to/file\", \"content\": \"Hello, world!\"}}\n```"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 58,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 18,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 31,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 366,
+      "cls": "prose",
+      "content_head": "To fix the issue with the rate limiter, we need to ensure that the `Allow` method increments the `tokens` for the curren"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 59,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": true
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "glob"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 34,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 18,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 124,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 77,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "glob"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ]
+   }
+  },
+  {
+   "n": 4,
+   "intended": "edit_file",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 166,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "grep"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 330,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 24,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 24,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 18,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 46,
+      "cls": "parsed",
+      "names": [
+       "grep"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 22,
+      "cls": "parsed",
+      "names": [
+       "grep"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 26,
+      "cls": "parsed",
+      "names": [
+       "glob"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 22,
+      "cls": "parsed",
+      "names": [
+       "grep"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 361,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 20,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 22,
+      "cls": "parsed",
+      "names": [
+       "grep"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 20,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 79,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 25,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "glob"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "grep"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 22,
+      "cls": "parsed",
+      "names": [
+       "grep"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 22,
+      "cls": "parsed",
+      "names": [
+       "grep"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 22,
+      "cls": "parsed",
+      "names": [
+       "glob"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 62,
+      "cls": "parsed",
+      "names": [
+       "grep"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 63,
+      "cls": "parsed",
+      "names": [
+       "glob"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 25,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ]
+   }
+  },
+  {
+   "n": 5,
+   "intended": "run_shell",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 56,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 22,
+      "cls": "parsed",
+      "names": [
+       "grep"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 34,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 36,
+      "cls": "prose",
+      "content_head": "```json\n {\"name\": \"edit_file\", \"arguments\": {\"path\": \"path/to/file\", \"old_string\": \"old\", \"new_string\": \"new\"}}\n```"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 25,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 33,
+      "cls": "prose",
+      "content_head": "<{\"name\": \"edit_file\", \"arguments\": {\"path\": \"path/to/file\", \"old_string\": \"old\", \"new_string\": \"new\"}}"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 0,
+      "cls": "prose",
+      "content_head": ""
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 52,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 17,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 25,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 317,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ]
+   }
+  },
+  {
+   "n": 6,
+   "intended": "git_status",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 16,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 20,
+      "cls": "parsed",
+      "names": [
+       "fetch_url"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 31,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 24,
+      "cls": "parsed",
+      "names": [
+       "fetch_url"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 24,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 40,
+      "cls": "prose",
+      "content_head": "```json\n{\"name\": \"run_shell\", \"arguments\": {\n      \"command\": \"echo 'hello' > /dev/null\",\n      \"timeout_seconds\": 10\n  "
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 34,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 39,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 88,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 76,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 22,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 24,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 18,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 50,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 227,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ]
+   }
+  },
+  {
+   "n": 7,
+   "intended": "run_shell",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 24,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 26,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 17,
+      "cls": "parsed",
+      "names": [
+       "get_weather"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 40,
+      "cls": "prose",
+      "content_head": "```json\n{\"name\": \"run_shell\", \"arguments\": {\n      \"command\": \"echo 'hello' > /dev/null\",\n      \"timeout_seconds\": 10\n  "
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 137,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "unwrapped",
+      "raw_head": "{\"name\": \"create_task\", \"arguments\": {\n      \"title\": \"Track a task with nested subtasks.\",\n      \"subtasks\": [\n        {\n          \"title\": \"Create a task with one nested subtask.\",\n          \"subtasks\": [\n            {\n              \"title\": \"Create a task with one nested subtask.\",\n              "
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 66,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 24,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 25,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 37,
+      "cls": "unwrapped",
+      "raw_head": "{\"name\": \"allow\", \"arguments\": {\"path\": \"path/to/file\", \"offset\": 0, \"limit\": 1000, \"done\": true}}\n"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 43,
+      "cls": "unwrapped",
+      "raw_head": "{\"name\": \"open_weather\", \"arguments\": {\"city\": \"New York\", \"weather_data\": {\"temperature\": 72, \"humidity\": 60, \"condition\": \"cloudy\"}}}\n"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 47,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 240,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     }
+    ]
+   }
+  },
+  {
+   "n": 8,
+   "intended": "write_file",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "stop",
+      "completion_tokens": 37,
+      "cls": "unwrapped",
+      "raw_head": "{\"name\": \"create_task\", \"arguments\": {\"title\": \"sample task\", \"subtasks\": [{\"title\": \"subtask 1\", \"done\": false}]}]}"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 20,
+      "cls": "unwrapped",
+      "raw_head": "{\"name\": \"curl\", \"arguments\": {\"url\": \"http://mywebsite.com/api\"})"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 24,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 50,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 50,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 117,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 53,
+      "cls": "prose",
+      "content_head": "```json\n{\"name\": \"run_shell\", \"arguments\": {\n  \"command\": \"git diff --git a/internal/ratelimit/limiter.go b/internal/rat"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 32,
+      "cls": "unwrapped",
+      "raw_head": "{\"name\": \"ratelimit\", \"arguments\": {\"tokens\": 5, \"maxTokens\": 5, \"refillRate\": 1}}"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "unwrapped",
+      "raw_head": "{\"name\": \"delete_file\", \"arguments\": {\"path\": \"path/to/file\", \"old_string\": \"old\", \"new_string\": \"new\"}}\n{\"name\": \"git_status\", \"arguments\": {\"path\": \"path/to/directory\"}}\n{\"name\": \"run_shell\", \"arguments\": {\n      \"command\": \"git status --porcelain\",\n      \"timeout_seconds\": 10\n    }}\n{\"name\": \"gre"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 98,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 50,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ]
+   }
+  },
+  {
+   "n": 9,
+   "intended": "create_task",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 26,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 59,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 74,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 146,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 31,
+      "cls": "prose",
+      "content_head": "```json\n{\"name\": \"fetch_url\", \"arguments\": {\"url\": \"https://example.com\", \"timeout_seconds\": 10}}\n```"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 24,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 35,
+      "cls": "unwrapped",
+      "raw_head": "{\"name\": \"retrive_file\", \"arguments\": {\"path\": \"path/to/file\", \"offset\": 0, \"limit\": 1000}}"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 40,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 52,
+      "cls": "parsed",
+      "names": [
+       "get_weather"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 62,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 24,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 25,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 102,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 52,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 31,
+      "cls": "prose",
+      "content_head": "```json\n{\"name\": \"send_file\", \"arguments\": {\"path\": \"path/to/file\", \"content\": \"file content to send\"}}\n```"
+     }
+    ]
+   }
+  },
+  {
+   "n": 10,
+   "intended": "list_dir",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 77,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "glob"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 0,
+      "cls": "prose",
+      "content_head": ""
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 55,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 32,
+      "cls": "prose",
+      "content_head": "```json\n{\"name\": \"create_task\", \"arguments\": {\n    \"title\": \"Add regression test for elapsed-time burst edge case\"\n  }}\n"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 76,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "unwrapped",
+      "raw_head": "{\"name\": \"edit_file\", \"arguments\": {\n    \"path\": \"test/regression_test.go\",\n    \"content\": \"func TestElapsedTimeBurst(t *testing.T) {\\n    testCases := []struct {\\n        title       string\\n        expected bool\\n    }{\\n            {\"title\": \"Add regression test for elapsed-time burst edge case\","
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 0,
+      "cls": "prose",
+      "content_head": ""
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 77,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 79,
+      "cls": "prose",
+      "content_head": "```json\n{\"name\": \"task_create\", \"arguments\": {\n  \"title\": \"Add regression test for elapsed-time burst edge case\",\n  \"sub"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 77,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 77,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 44,
+      "cls": "prose",
+      "content_head": "```json\n{\n  \"name\": \"run_shell\",\n  \"arguments\": {\n    \"command\": \"echo 'hello' > /dev/null\",\n    \"timeout_seconds\": 10\n "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 80,
+      "cls": "prose",
+      "content_head": "```json\n{\"name\": \"create_task\", \"arguments\": {\n  \"title\": \"Add regression test for elapsed-time burst edge case\",\n  \"sub"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 77,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 54,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 36,
+      "cls": "prose",
+      "content_head": "```json\n{\"name\": \"edit_file\", \"arguments\": {\"path\": \"path/to/file\", \"old_string\": \"old\", \"new_string\": \"new\"}}\n```"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 48,
+      "cls": "prose",
+      "content_head": "```json\n{\n  \"name\": \"edit_file\",\n  \"arguments\": {\n    \"path\": \"path/to/file\",\n    \"old_string\": \"old value\",\n    \"new_st"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 31,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 0,
+      "cls": "prose",
+      "content_head": ""
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 19,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 34,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 77,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 0,
+      "cls": "prose",
+      "content_head": ""
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 77,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 0,
+      "cls": "prose",
+      "content_head": ""
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 142,
+      "cls": "prose",
+      "content_head": "```json\n{\"name\": \"create_task\", \"arguments\": {\n  \"title\": \"Add regression test for elapsed-time burst edge case\",\n  \"sub"
+     }
+    ]
+   }
+  }
+ ],
+ "header": {
+  "utc": "2026-09-24T15:00:04Z",
+  "host": "nobara-pc",
+  "driver": "595.91.07",
+  "commit": "d4a3e33d",
+  "dirty": true,
+  "serve": "/tmp/claude-1000/-home-francis-mycode-goinfer/abe7fa0a-9afb-4159-b5d8-ee18e3f1f849/scratchpad/serve-bare",
+  "serve_mtime": "2026-09-24 07:28:42.577607904 -0700",
+  "loadavg": "0.95 2.77 4.62 1/1038 4141110",
+  "model_path": "/home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+  "fixture": "w4_transcript_base.json",
+  "samples": 30,
+  "temps": [
+   0.0,
+   0.7
+  ],
+  "max_tokens": 512
+ },
+ "summary": {
+  "0.0": {
+   "n": 10,
+   "parsed": 9,
+   "unknown_name": 0,
+   "unparsed": 0,
+   "truncated": 0,
+   "unwrapped": 0,
+   "prose": 1,
+   "attempted": 9,
+   "failures": 0,
+   "any_unusable": 0,
+   "any_unusable_rate": 0.0,
+   "any_unusable_ci95": [
+    0.0,
+    0.2991527535509594
+   ],
+   "fail_rate_of_attempted": 0.0,
+   "ci95_of_attempted": [
+    0.0,
+    0.2991527535509594
+   ],
+   "fail_rate_of_all": 0.0,
+   "ci95_of_all": [
+    -2.0052288475052677e-17,
+    0.2775401687666165
+   ],
+   "args_invalid": 0,
+   "on_intended": 1,
+   "prose_rate": 0.1
+  },
+  "0.7": {
+   "n": 300,
+   "parsed": 236,
+   "unknown_name": 0,
+   "unparsed": 0,
+   "truncated": 0,
+   "unwrapped": 10,
+   "prose": 54,
+   "attempted": 236,
+   "failures": 0,
+   "any_unusable": 10,
+   "any_unusable_rate": 0.04065040650406504,
+   "any_unusable_ci95": [
+    0.02222766338793322,
+    0.07319919907212147
+   ],
+   "fail_rate_of_attempted": 0.0,
+   "ci95_of_attempted": [
+    0.0,
+    0.016017238043775556
+   ],
+   "fail_rate_of_all": 0.0,
+   "ci95_of_all": [
+    0.0,
+    0.012643429997735661
+   ],
+   "args_invalid": 1,
+   "on_intended": 25,
+   "prose_rate": 0.18
+  }
+ }
+}

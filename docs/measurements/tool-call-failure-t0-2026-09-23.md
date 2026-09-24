@@ -187,3 +187,36 @@ first non-space byte starts a JSON object with a string `name` that is EXACTLY o
 
 **Not claimed.** That the calls it recovers are GOOD. The 0.5B/1.5B's bare calls were seen with placeholder paths (`path/to/file`) and
 irrelevant paths; recovering the form does not recover the judgement. `on_intended` and `args_invalid` are reported so this is visible.
+
+### Follow-up A — results (2026-09-24)
+
+Change: `0b5da39e` (`chat.ParseToolCallsFor`, wired into all four tool surfaces). New build = that commit, CUDA `serve`;
+old build = the T0 binary. Same harness, same seeds, same box. Raw data: [`tool-call-failure-t0-2026-09-23/followup-a/`](tool-call-failure-t0-2026-09-23/followup-a/).
+
+**G1–G3 PASS** (`chat/bare_tool_call_test.go`), each shown able to fail: an over-eager variant (`{` anywhere) reddens G1, dropping
+the tool-name check reddens G2 and the fuzz target, a streamer that does not hold reddens G3. `FuzzParseToolCallsFor`: 60 s,
+978K execs, clean; added to `fuzz-weekly.yml`.
+
+**G4(b) PASS** — the two models the change targets, T=0.7, 300 samples each:
+
+| cell | parsed | unwrapped | prose | unknown / unparsed / truncated | args invalid | on intended tool |
+|---|---|---|---|---|---|---|
+| Qwen2.5-Coder 0.5B int4, T0 → now | 0 → **236** | 246 → 10 | 54 → **54** | 0 / 0 / 0 | 1 | 25 of 236 |
+| Qwen2.5-Coder 1.5B int4, T0 → now | 0 → **219** | 223 → 4 | 77 → **77** | 0 / 0 / 0 | 0 | 21 of 219 |
+
+Prose is unchanged to the sample, so every recovered call came out of `unwrapped`: the change converts calls and does not touch
+answers. The residual `unwrapped` rows are bare JSON the parser correctly refuses — names that are not supplied tools
+(`rate_limit`, `rate_limiter`, `sleep`, `allow`) or a body that does not decode. **The recovered calls are mostly the wrong tool**
+(on-intended 9–11%, against 27% for the 7B's parsed calls): the form is fixed, the judgement is not, as pre-registered.
+
+**G4(a) PASS, with one disclosed change to the comparison.**
+- 7B: the new build reproduces the archived T0 counts EXACTLY (97 / 10 / 3 / 1 / 189 at T=0.7; 2 / 8 greedy). Pass as written.
+- llama3-1B: the new build gave 173 / 9 / 2 / 1 / 115 against the archive's 148 / 7 / 2 / 0 / 143, so it fails the literal bar. But
+  the archive does not reproduce **from its own binary**. The T0 binary run today, same harness and seeds: greedy is byte-identical
+  run to run and old vs new (ids stripped); turn-1 sampled 30/30 byte-identical old/old and old/new; and the full old-binary llama3
+  cell today matches the new build **310/310 per sample**. Only the archived run differs (17/30 at turn 1, where there is no history).
+  So the pre-registered comparison against the archive is invalid for this cell, and the valid comparison, same-day old binary vs
+  new build, passes with no difference. Forcing the R6 lane off did not bring the archive back (it is not the cause).
+- What made the archived llama3-1B run differ is **not established**. The Qwen cells and the 7B did reproduce their archives
+  (prose counts to the sample; 7B in full), so it is specific to that run. Both readings of llama3-1B (5.7% and 6.5%, CIs
+  3.0–10.5% and 3.8–11.0%) are AMBIGUOUS under the T0 rule, so the T0 verdict does not change.

@@ -41,7 +41,7 @@ failure (a turn that yields no usable call); it is a floor on the true rate.
 import argparse, json, math, os, platform, signal, socket, subprocess, sys, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PORT = 8097
+PORT = int(os.environ.get("T0_PORT", "8097"))
 SERVE = os.environ.get("GOINFER_SERVE_CUDA", os.path.expanduser("~/bench-cur/serve-cuda"))
 M = os.path.expanduser("~/models/")
 # key -> (path, family opener the parser keys on). llama3 has no opener: its call is a bare JSON
@@ -148,6 +148,8 @@ def classify(body, tool_names, schemas, opener, intended):
     content = msg.get("content") or ""
     fin = ch.get("finish_reason")
     r = {"finish": fin, "completion_tokens": (body.get("usage") or {}).get("completion_tokens")}
+    if os.environ.get("T0_KEEP_RAW"):
+        r["raw"] = {"content": content, "tool_calls": calls}
     if calls:
         names = [(c.get("function") or {}).get("name") for c in calls]
         r["cls"] = "parsed" if all(n in tool_names for n in names) else "unknown_name"
