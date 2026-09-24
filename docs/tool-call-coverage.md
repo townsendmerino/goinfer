@@ -45,7 +45,11 @@ pruned copies without their released template, the row says so instead of guessi
 | Gemma 4 | E2B, 12B, 26B-A4B (HF and GGUF) | gemma4 | **parsed only** | bespoke call syntax, no JSON form |
 | Gemma 3 | gemma-3-4b-it, gemma3-1b | gemma3 | none | template has no tool form in goinfer |
 | gpt-oss | gpt-oss-20b (HF, MXFP4 GGUF), 120b partial | harmony | none | harmony has no tool support in goinfer |
-| SmolLM3, Granite 4.2, LFM2.5, Olmo 3, Olmo Hybrid | smollm3-3b, granite-4.2-3b, lfm25-2.6b, olmo3-7b-think, olmo-hybrid-7b | chatml | *constrained, UNVERIFIED* | local copies carry **no template at all**; they resolve to chatml only by the vocab fallback. `chat.go` declines SmolLM3's and Olmo 3's released templates on purpose (M-36), and LFM2's native call syntax is not Hermes JSON — so the released checkpoints may resolve differently. Not a claim until checked against the released templates |
+| Granite 4.2 | granite-4.2-3b + the released template (`ibm-granite/granite-4.2-3b` @ `e459acceac`) | chatml | **constrained** | released template verified 2026-09-24: chatml turns, Hermes `<tool_call>` JSON — the form goinfer renders, parses and constrains |
+| SmolLM3 | smollm3-3b + the released template (`HuggingFaceTB/SmolLM3-3B` @ `a07cc9a04f`) | none (declined) | none | the released template carries `## Metadata`; `chat.Detect` declines it on purpose (M-36). The local copy has no template and resolves to chatml by the vocab fallback — serve the released checkpoint, not a pruned one |
+| Olmo 3 | olmo3-7b-think + the released templates (`allenai/Olmo-3-7B-Think` @ `d97e442d7c`, `allenai/Olmo-3-7B-Instruct` @ main) | none (declined) | none | both released templates use `<functions>`/`<function_calls>` XML; declined on purpose (M-36). Same pruned-local-copy caveat as SmolLM3 |
+| LFM2.5 | lfm25-2.6b + the released template (`LiquidAI/LFM2.5-2.6B` @ `654f9463ce`) | chatml | **mismatched — not constrained in practice** | the released template has chatml turns but its tool calls are `<|tool_call_start|>[pythonic calls]<|tool_call_end|>`, not Hermes JSON. goinfer renders the tool list and parses/constrains calls in the Hermes form, so the model's real calls are neither parsed nor armed on (finding 4) |
+| Olmo Hybrid | olmo-hybrid-7b + `allenai/Olmo-Hybrid-7B` @ `4f1cc566f9` | chatml (vocab fallback) | not meaningful | the released checkpoint ships no chat template at all; it resolves to chatml only through the vocab fallback, so any tool behaviour is goinfer's guess, not the model's trained format |
 | Granite-4.0-H | granite-hf, granite-4.0-h-tiny Q8_0 | none | none | template (in `chat_template.jinja`, read since finding 1's fix) not recognised: Hermes-style `<tools>` inside `<|start_of_role|>` turns — needs its own renderer |
 | Laguna | laguna-xs2, laguna-xs21 (HF, GGUF) | none | none | template not recognised (xs2's is in `chat_template.jinja`, read since finding 1's fix) |
 | Command-R, Command-R7B | aya-expanse-8b, command-r7b | none | none | list-form `chat_template` (named templates) is ignored by design (finding 2) |
@@ -58,8 +62,8 @@ pruned copies without their released template, the row says so instead of guessi
 | DeepSeek-V3, Kimi K2, Ling 3.0, GPT-2, InternLM2, Qwen3-VL, Spark-X2.5, Mixtral | — | not checked | — | no local checkpoint with a loadable tokenizer.json/GGUF template |
 
 **What can be claimed.** A tool call cannot be malformed or name an unsupplied tool on the **Qwen families** (Qwen2 through Qwen3.8,
-MoE and VL variants), **Nemotron-3-Nano** and **Mellum2**, under `required` and under `auto`; on **Llama 3.x** under `required`/named
-choice only. That is the scope any README or recipe line should use, and no wider.
+MoE and VL variants), **Nemotron-3-Nano**, **Mellum2** and **Granite 4.2**, under `required` and under `auto`; on **Llama 3.x** under
+`required`/named choice only. That is the scope any README or recipe line should use, and no wider.
 
 ## Findings
 
@@ -75,3 +79,11 @@ choice only. That is the scope any README or recipe line should use, and no wide
    `tokenizer/bytelevel.go`, recorded here because it is why both Command-R families have no chat template at all.
 3. Several GGUF templates are not recognised by any fingerprint (DeepSeek-V2, GLM-4.5, Llama 4, Phi-3, Granite-4.0-H, Nemotron-Nano
    9B): raw completion, no tools.
+4. **LFM2.5 advertises tools in a format it does not use.** `chat.Detect` routes its template to chatml (the turn markers match), so
+   `SupportsTools` is true and tool definitions are rendered Hermes-style, but the model's trained call syntax is
+   `<|tool_call_start|>[name(arg=…)]<|tool_call_end|>`. Its calls are therefore not parsed as calls, and the union never arms.
+   Pre-existing (not introduced by T1); needs an LFM2 renderer — or, until one exists, a fingerprint that keeps chatml turns but
+   reports no tool support, so a harness is told the truth. Recorded, not fixed (2026-09-24 scope).
+5. **Two census rows were wrong from pruned local copies.** SmolLM3 and Olmo 3 read as "constrained" from local checkpoints that
+   carried no template; their released templates are declined by `chat.Detect`, as M-36 intends. Corrected above by fetching each
+   released template at the revision the local copy was downloaded from.
