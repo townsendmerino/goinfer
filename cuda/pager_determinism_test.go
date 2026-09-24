@@ -97,9 +97,9 @@ func TestPagerDeterminism(t *testing.T) {
 	for _, mode := range []string{"reuse-on", "reuse-off"} {
 		t.Run(mode, func(t *testing.T) {
 			if mode == "reuse-off" {
-				t.Setenv("GOINFER_NO_RESIDENT_REUSE", "1")
+				decoder.SetKnobEnvForTest(t, m, "GOINFER_NO_RESIDENT_REUSE", "1")
 			} else {
-				t.Setenv("GOINFER_NO_RESIDENT_REUSE", "")
+				decoder.SetKnobEnvForTest(t, m, "GOINFER_NO_RESIDENT_REUSE", "")
 			}
 			runDeterminismArm(t, m, r, tk, tmpl, hb)
 		})

@@ -1,4 +1,4 @@
-//go:build gpu
+//go:build gpu && goinfer_testhooks
 
 package gpu
 
@@ -115,13 +115,13 @@ func TestDecisionMatrix(t *testing.T) {
 
 		// Warm: same prompt again, with reuse enabled, so the cache already holds it.
 		// Restored immediately — every other measurement in this table is cold by contract.
-		os.Unsetenv("GOINFER_NO_RESIDENT_REUSE")
+		reuseOff := decoder.UnsetKnobForTest(m, "GOINFER_NO_RESIDENT_REUSE") // the model snapshotted "1" at Load
 		if ch, _ := m.Generate(context.Background(), longIDs, 1, greedy); ch != nil {
 			consume(ch) // seed the cache with this prompt
 		}
 		ch3, _ := m.Generate(context.Background(), longIDs, 1, greedy)
 		_, ttft256Warm, _ := consume(ch3)
-		os.Setenv("GOINFER_NO_RESIDENT_REUSE", "1")
+		reuseOff()
 		warmCol := "     —" // non-resident paths cannot reuse; an em dash, not a misleading 0
 		if resident {
 			warmCol = fmt.Sprintf("%4.0fms", float64(ttft256Warm.Milliseconds()))

@@ -227,7 +227,7 @@ func (m *Model) ExtraResidentKVPerPosition() int64 { return m.extraKVPerPos }
 // a fit-by-default policy (cuda.resolveCtxCapFit today; a future Metal/CPU equivalent would read
 // the same accessor) — decoder itself has no fit-by-default logic of its own to gate.
 func (m *Model) FitDisabled() bool {
-	return m.disableFit || os.Getenv("GOINFER_NO_FIT_DEFAULT") != ""
+	return m.disableFit || m.knobs.get(knobNoFitDefault) != ""
 }
 
 // MoECacheExperts reports whether routed MoE experts should stream host→VRAM per token instead of
@@ -238,7 +238,7 @@ func (m *Model) FitDisabled() bool {
 //
 // Falls back to GOINFER_MOE_CACHE_EXPERTS so existing scripts keep working.
 func (m *Model) MoECacheExperts() bool {
-	return m.moeCache || os.Getenv("GOINFER_MOE_CACHE_EXPERTS") != ""
+	return m.moeCache || m.knobs.get(knobMoECacheExperts) != ""
 }
 
 // MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as many as
@@ -257,7 +257,7 @@ func (m *Model) MoECacheSlotsRequest() int {
 	if m.moeSlots > 0 {
 		return m.moeSlots
 	}
-	if v, err := strconv.Atoi(os.Getenv("GOINFER_MOE_CACHE_SLOTS")); err == nil && v > 0 {
+	if v, err := strconv.Atoi(m.knobs.get(knobMoECacheSlots)); err == nil && v > 0 {
 		return v
 	}
 	return 0

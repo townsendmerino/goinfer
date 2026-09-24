@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -216,6 +217,30 @@ func TestFitGuard_envOverrideLoads(t *testing.T) {
 	m, err := Load("testdata/gptoss_tiny.gguf", Options{Quant: "int4"})
 	if err != nil {
 		t.Fatalf("GOINFER_NO_FIT_GUARD=1 did not bypass the guard: %v", err)
+	}
+	m.Close()
+}
+
+// The same bypass through Options.Knobs, for one model, with the environment clean — the per-model route
+// (docs/tasks/task-env-config-2026-09.md, phase 2b). The guard runs inside Load before the model's knob
+// snapshot exists, so it reads the knob through loadKnob; this pins that the override reaches it. The
+// refusing half is TestFitGuard_envOverrideLoads' own premise (same fixture, same injected RAM).
+func TestFitGuard_optionsKnobLoads(t *testing.T) {
+	restore := injectHostRAM(t, 128<<10)
+	defer restore()
+	t.Setenv("GOINFER_NO_FIT_GUARD", "")
+	os.Unsetenv("GOINFER_NO_FIT_GUARD")
+
+	if m, err := Load("testdata/gptoss_tiny.gguf", Options{Quant: "int4"}); err == nil {
+		m.Close()
+		t.Fatal("control arm loaded: with no override the guard must refuse this fixture at this RAM, or the arm below proves nothing")
+	}
+	m, err := Load("testdata/gptoss_tiny.gguf", Options{Quant: "int4", Knobs: &Knobs{"GOINFER_NO_FIT_GUARD": "1"}})
+	if err != nil {
+		t.Fatalf("Options.Knobs GOINFER_NO_FIT_GUARD=1 did not bypass the guard: %v", err)
+	}
+	if m.knobs.get(knobNoFitGuard) != "1" {
+		t.Error("the model's snapshot must carry the override too, for the per-request guard (AdmitPrefillMemory)")
 	}
 	m.Close()
 }

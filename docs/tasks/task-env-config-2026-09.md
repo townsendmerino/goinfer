@@ -1,6 +1,6 @@
 # Task: configuration out of the process environment (2026-09)
 
-> **Status 2026-09-24: phase 1 (the ratchet) DONE; phase 2a (the 14 per-call decoder knobs) DONE; 2b and 3–6 open.** Owner asked for this after a review found
+> **Status 2026-09-24: phase 1 (the ratchet) DONE; phase 2a (the 14 per-call decoder knobs) and 2b (7 more) DONE; 3–6 open.** Owner asked for this after a review found
 > configuration passed through the process environment. The four concrete defects that review named are already fixed
 > (`a50815ed`: duplicate doc rows, the darwin pager mode set via env, Metal's prefill flag re-read per call, five campaign
 > switches retired); this doc is the general program.
@@ -86,6 +86,26 @@ learned doing it:
 - **Gate:** `TestKnobs_*` (snapshot at Load, `Options.Knobs` per model, nil snapshot) and
   `TestKnobDrift_firesOnPostLoadSetenv` (the tripwire goes red on a post-Load `t.Setenv` and stays quiet for both
   sanctioned routes). Forward goldens 62/62 green on amd64 via `scripts/refresh_parity_hashes.sh`.
+
+### Phase 2b result (2026-09-24)
+
+Seven more decoder operator knobs join the snapshot: `MOE_CACHE_EXPERTS`, `MOE_CACHE_SLOTS`, `NO_FIT_DEFAULT`,
+`NO_FIT_GUARD`, `NO_RESIDENCY`, `NO_RESIDENT_REUSE`, `SSM_RESIDENT`. All seven leave `testdata/env_reads.txt` (no other
+module reads them directly; CUDA reaches them through the model's accessors).
+
+- **The fit guards run inside Load before the model exists**, so they read through `loadKnob(opts, name)`:
+  `Options.Knobs`, else the environment — the snapshot's own precedence, at the same moment.
+  `TestFitGuard_optionsKnobLoads` pins that an override reaches the guard (with a control arm that must refuse).
+- **`NewModel` (the public wrap of pre-built weights, used by `internal/chatapp`) never bound a snapshot**, so in phase 2a
+  its models still read all fourteen knobs live per call. It binds one now.
+- **`Options.Knobs` became `*Knobs`** (`type Knobs map[string]string`) in `7c9be450`: the map field made `Options`
+  non-comparable, a hard-tier API break the apidiff gate caught on `b772cf4d`.
+- **Test migration:** two post-Load sites — `cuda/pager_determinism_test.go` (`NO_RESIDENT_REUSE` per arm on one loaded
+  35B) and `gpu/matrix_bench_test.go` (the warm-TTFT column), the latter retagged `gpu && goinfer_testhooks`, which is
+  how CI already builds it. Every other set of these seven precedes the Load it configures.
+- **Left for later:** `CPU_FUSED_GATEUP`, `W4A8_BATCH`, `W4A8_SPLITHALF` are read once at package init (process-wide,
+  so they cannot change a loaded model, but two models cannot differ); `MODELS` is the test-asset search path, not a
+  model property; `P13_OFF` and `INT4_F16_SCALES` are load-time diagnostics by their own documentation — phase 6.
 
 Phases 2–5 each shrink `testdata/env_reads.txt`; the task is done when the list holds only diagnostics with a named owner
 and a reason, and the rule-1 guard stays.

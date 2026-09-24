@@ -11,12 +11,14 @@ is grep-derivable and enumerated at the bottom.
 
 ## Read once per model, at Load (since 2026-09-24)
 
-These fourteen decoder knobs are snapshotted when a model is loaded, not read on every forward:
+These twenty-one decoder knobs are snapshotted when a model is loaded, not read on every forward:
 `GOINFER_ATTN_GROUPED`, `GOINFER_ATTN_ROW_TILE`, `GOINFER_PREFILL_ATTN_WORKERS`,
 `GOINFER_FUSED_ATTENTION`, `GOINFER_MLA_NAIVE`, `GOINFER_MOE_EXPERT_MAJOR`, `GOINFER_BATCHED_PREFILL`,
 `GOINFER_NO_KVONLY_PREFILL`, `GOINFER_NO_GREEDY_FASTPATH`, `GOINFER_NO_OPTFWD`,
 `GOINFER_NO_SAMPLE_FASTPATH`, `GOINFER_NO_TOPK_FASTPATH`, `GOINFER_OPTFWD_MAX_TEMP`,
-`GOINFER_CPU_FAST_ATTENTION`. Changing one after Load does not affect a model already loaded. A
+`GOINFER_CPU_FAST_ATTENTION`, and (phase 2b) `GOINFER_MOE_CACHE_EXPERTS`, `GOINFER_MOE_CACHE_SLOTS`,
+`GOINFER_NO_FIT_DEFAULT`, `GOINFER_NO_FIT_GUARD`, `GOINFER_NO_RESIDENCY`, `GOINFER_NO_RESIDENT_REUSE`,
+`GOINFER_SSM_RESIDENT`. Changing one after Load does not affect a model already loaded. A
 library caller can set any of them for one model with `decoder.Options{Knobs: &decoder.Knobs{name: value}}` (which
 overrides the environment for that model only). The backends' own reads of the same name are
 unchanged until their phase: Metal still reads `GOINFER_MOE_EXPERT_MAJOR` itself. See

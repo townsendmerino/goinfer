@@ -356,7 +356,7 @@ func (m *Model) DecodeRunnerEligible() bool {
 	// at near-tied positions, int4 picking f32's #2, zero confident-token errors — see
 	// docs/completed/nemotron-resident.md). int8 (unmeasured on 8 GB; fits ≥12 GB) stays OPT-IN behind
 	// GOINFER_SSM_RESIDENT. Other resident families are unchanged.
-	if m.w.arch.nemotron != nil && os.Getenv("GOINFER_SSM_RESIDENT") == "" {
+	if m.w.arch.nemotron != nil && m.knobs.get(knobSSMResident) == "" {
 		return m.residentProjsInt4()
 	}
 	return true
@@ -446,7 +446,7 @@ func (a *Architecture) decodeRunnerEligible() bool {
 	// attention), so it bypasses the standard GQA gates below. Guarded during the
 	// parity bring-up (P5b.3/P5b.4); P6 makes this unconditional.
 	if a.granite != nil {
-		return os.Getenv("GOINFER_SSM_RESIDENT") != ""
+		return a.knobs.get(knobSSMResident) != ""
 	}
 	// Nemotron-H resident (dense squared-ReLU hybrid): single-op-per-block Mamba-2 / NoPE-GQA /
 	// relu² MLP, reusing the granite SSM engine. Arch-eligible; the int4-default-vs-int8-opt-in
@@ -926,7 +926,7 @@ func (m *Model) FinalLogitSoftcapResident() float32 { return float32(m.w.arch.Fi
 // the arch is eligible, then returns m. A no-op for the CPU backend / ineligible
 // archs (m.resident stays nil → staged/CPU path). Called at every model-load site.
 func (m *Model) withResidency() *Model {
-	if applyNormULPNoiseDiag(m.w); os.Getenv("GOINFER_NO_RESIDENCY") != "" { // normnoise.go diagnostic first: it must precede any resident upload of the norms
+	if applyNormULPNoiseDiag(m.w); m.knobs.get(knobNoResidency) != "" { // normnoise.go diagnostic first: it must precede any resident upload of the norms
 		return m // force the per-matmul staged path (decision-matrix measurement)
 	}
 	rb, ok := m.be.(ResidencyBackend)

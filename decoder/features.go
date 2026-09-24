@@ -298,8 +298,9 @@ func missingFeatures(required []ResidentFeature, implemented map[ResidentFeature
 // N-94 (docs/audit-2026-09-10.md): "model-free (arch flags only)" is NOT true of granite. Unlike
 // Nemotron's policy gate above (which lives in the separate, model-level Model.DecodeRunnerEligible),
 // granite's admission gate lives INSIDE Architecture.decodeRunnerEligible() itself — the very
-// function this comment describes as arch-only — and reads os.Getenv("GOINFER_SSM_RESIDENT")
-// directly (see that function's granite case). The hardware-matrix generator pins this env var
+// function this comment describes as arch-only — and reads GOINFER_SSM_RESIDENT (the model's
+// snapshot, or the live environment for an Architecture built without one, as the matrix
+// generator's are; see that function's granite case). The hardware-matrix generator pins this env var
 // empty (decoder/hardware_matrix_test.go), so the published table shows granite as CPU-only on
 // every backend, including WebGPU (which already declares FeatSSM) — not because no backend can
 // run it, but because this specific arch-level gate is still parity-bring-up-guarded off by

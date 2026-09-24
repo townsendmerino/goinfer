@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -91,10 +90,7 @@ func resetAvailProbeCache() {
 // against host RAM (Metal's unified memory IS host RAM), and has no per-request check at all — this
 // is additive to it, not a replacement.
 func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int, residentPath bool) error {
-	if os.Getenv("GOINFER_NO_FIT_GUARD") != "" {
-		return nil
-	}
-	if m == nil || m.w == nil {
+	if m == nil || m.w == nil || m.knobs.get(knobNoFitGuard) != "" {
 		return nil
 	}
 	avail := cachedHostRAMAvailable()

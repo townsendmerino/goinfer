@@ -1,7 +1,5 @@
 package decoder
 
-import "os"
-
 // Prefix reuse on the RESIDENT positional KV.
 //
 // A resident model decodes statelessly: decoder.Generate engages the resident runner only
@@ -47,7 +45,7 @@ import "os"
 
 // residentReuseDisabled is the escape hatch / A-B switch, same convention as
 // GOINFER_NO_GREEDY_FASTPATH and GOINFER_NO_KVONLY_PREFILL.
-func residentReuseDisabled() bool { return os.Getenv("GOINFER_NO_RESIDENT_REUSE") != "" }
+func (m *Model) residentReuseDisabled() bool { return m.knobs.get(knobNoResidentReuse) != "" }
 
 // residentImageBlock records one image block committed to the resident KV: its absolute
 // position span within resIDs and a content hash of the raw image bytes that produced it (P9a,
@@ -91,7 +89,7 @@ type residentImageClaim struct {
 // lora is the adapter bound for THIS generation (nil = base weights); rule 4 refuses any reuse
 // of KV that was built under a different one.
 func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
-	if residentReuseDisabled() || len(m.resIDs) == 0 || len(prompt) == 0 {
+	if m.residentReuseDisabled() || len(m.resIDs) == 0 || len(prompt) == 0 {
 		return 0
 	}
 	if lora != m.resIDsLora {

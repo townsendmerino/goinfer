@@ -62,6 +62,7 @@ const ctxFloor = 2048
 // fitCheck is the arithmetic, separated from every source of it so it can be driven with the
 // numbers from a measurement rather than a 21 GB checkpoint.
 type fitCheck struct {
+	noGuard     bool   // GOINFER_NO_FIT_GUARD (or Options.Knobs) at Load: skip the guard entirely
 	name        string // what to call the model in the message
 	quant       string // the requested quant, named because it moves the weight term the most
 	weightBytes int64  // estimated resident weight bytes AT THAT QUANT
@@ -319,7 +320,7 @@ func (f fitCheck) declineErr() *FitDeclineError {
 // smaller context ≥ ctxFloor is auto-pinned to that context, reported, and proceeds; an unpinned
 // load that does not fit even at ctxFloor is refused, same as a pinned one.
 func guardFit(f fitCheck) (int, error) {
-	if os.Getenv("GOINFER_NO_FIT_GUARD") != "" {
+	if f.noGuard {
 		return 0, nil
 	}
 	if !f.known() {
@@ -364,7 +365,7 @@ const giwMemMargin = 1 << 30 // 1 GB
 // decoder), so that term needs its own hook — not built in this pass; CPU is this function's only
 // backend today.
 func guardGIWFit(cfg *Config, opts Options) (pinnedCtx int, err error) {
-	if os.Getenv("GOINFER_NO_FIT_GUARD") != "" {
+	if loadKnob(opts, knobNoFitGuard) != "" {
 		return 0, nil
 	}
 	if cfg == nil {
@@ -792,6 +793,7 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 		name:       filepath.Base(path),
 		quant:      quantName,
 		availBytes: hostRAMAvailable(),
+		noGuard:    loadKnob(opts, knobNoFitGuard) != "",
 	}
 	f.kvF16 = opts.KVPrecision == "f16"
 	f.kvI8 = opts.KVQuant == "i8"
@@ -800,7 +802,7 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 		var expertBytes int64
 		f.weightBytes, expertBytes = estimateGGUFWeightBreakdown(path, quant)
 		if !opts.StreamWeights && expertBytes > 0 && opts.Backend == "cuda" &&
-			(opts.MoECacheExperts || os.Getenv("GOINFER_MOE_CACHE_EXPERTS") != "") {
+			(opts.MoECacheExperts || loadKnob(opts, knobMoECacheExperts) != "") {
 			f.expertBytes = expertBytes
 			f.cudaBuildBytes = 2*f.weightBytes + expertBytes
 		}

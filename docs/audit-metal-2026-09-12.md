@@ -337,7 +337,7 @@ re-baked by the code it checks (G-04).
   true }`), `:440-444` (`repackedOnlyOrCanonical` → `repackW4A8IfEligible(canon)` — both kept),
   `:251-257` ("both ALLOCATE A SECOND BUFFER and keep the canonical nibbles alongside"),
   `metal/model.go:521-472,475-478` (`int4DirectWords` → `NewBufferUint32s` = `newBufferWithBytes`,
-  a third copy); `decoder/fitguard.go:459-260` (the guard prices int4 at ~2× on arm64 because of
+  a third copy); `decoder/fitguard.go:460-261` (the guard prices int4 at ~2× on arm64 because of
   row4); commit `3931ae1` (log: "2365.1 MB (Backend:"cpu") vs 3254.7 MB (unspecified) — 889.6 MB
   saved").
 - **Mechanism and bound (record):** once resident the GPU reads only the MTLBuffer; the host row4
@@ -1314,9 +1314,9 @@ re-baked by the code it checks (G-04).
   2026-09-13** (the two `metal/model.go` comments; `metal-verdict.md` is `docs/completed/` — an
   archived record left as-is per that directory's own convention).
 - N-11 `metal/cmd/serve/main.go` said "Dense residency only … int8": MoE is resident; int8 is the
-  re-quantised case. `decoder/features.go:333` cited `metal/moe.go:207-211`; it is `:375`. **FIXED
+  re-quantised case. `decoder/features.go:334` cited `metal/moe.go:207-211`; it is `:375`. **FIXED
   2026-09-13** — `metal/cmd/serve/main.go:5-10` now names both corrections inline; the
-  `decoder/features.go:333` citation repointed to `metal/moe.go:382-376`.
+  `decoder/features.go:334` citation repointed to `metal/moe.go:382-376`.
 - N-12 `docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md:14` names `qwen2.5-1.5b-instruct`;
   test default and L2 record say `qwen2.5-coder-1.5b-instruct` — methodology wants the exact file.
   **FIXED 2026-09-13.**

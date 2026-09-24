@@ -28,12 +28,23 @@ const (
 	knobNoTopKFastpath   = "GOINFER_NO_TOPK_FASTPATH"
 	knobOptFwdMaxTemp    = "GOINFER_OPTFWD_MAX_TEMP"
 	knobCPUFastAttention = "GOINFER_CPU_FAST_ATTENTION"
+
+	// Phase 2b: read at Load or per call on a loaded model.
+	knobMoECacheExperts = "GOINFER_MOE_CACHE_EXPERTS"
+	knobMoECacheSlots   = "GOINFER_MOE_CACHE_SLOTS"
+	knobNoFitDefault    = "GOINFER_NO_FIT_DEFAULT"
+	knobNoFitGuard      = "GOINFER_NO_FIT_GUARD"
+	knobNoResidency     = "GOINFER_NO_RESIDENCY"
+	knobNoResidentReuse = "GOINFER_NO_RESIDENT_REUSE"
+	knobSSMResident     = "GOINFER_SSM_RESIDENT"
 )
 
 var knobNames = []string{
 	knobAttnGrouped, knobAttnRowTile, knobPrefillWorkers, knobFusedAttention, knobMLANaive, knobMoEExpertMajor,
 	knobBatchedPrefill, knobNoKVOnlyPrefill, knobNoGreedyFastpath, knobNoOptFwd, knobNoSampleFastpath,
 	knobNoTopKFastpath, knobOptFwdMaxTemp, knobCPUFastAttention,
+	knobMoECacheExperts, knobMoECacheSlots, knobNoFitDefault, knobNoFitGuard, knobNoResidency,
+	knobNoResidentReuse, knobSSMResident,
 }
 
 // Knobs is Options.Knobs: per-model knob values by environment-variable name.
@@ -88,6 +99,15 @@ func (k *knobSet) pin(name, value string, set bool) (restore func()) {
 	pv, ps, pp := k.val[name], k.set[name], k.pinned[name]
 	k.val[name], k.set[name], k.pinned[name] = value, set, true
 	return func() { k.val[name], k.set[name], k.pinned[name] = pv, ps, pp }
+}
+
+// loadKnob is a knob read during Load BEFORE the model (and its snapshot) exists — the fit guards. Same
+// precedence as the snapshot: Options.Knobs, else the environment, read once, at Load.
+func loadKnob(opts Options, name string) string {
+	if v, ok := opts.Knobs.values()[name]; ok {
+		return v
+	}
+	return os.Getenv(name)
 }
 
 func (k *knobSet) attnGrouped() bool      { return k.get(knobAttnGrouped) != "0" }
