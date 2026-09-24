@@ -37,8 +37,7 @@ func BenchmarkOptFwd(b *testing.B) {
 
 	run := func(temp float64, disable bool) {
 		if disable {
-			os.Setenv("GOINFER_NO_OPTFWD", "1")
-			defer os.Unsetenv("GOINFER_NO_OPTFWD")
+			defer decoder.SetKnobForTest(m, "GOINFER_NO_OPTFWD", "1")()
 		}
 		sp := decoder.SamplingParams{Temperature: temp, TopP: 0.9, Seed: 99}
 		ch, g := m.Generate(ctx, prompt, n, sp)

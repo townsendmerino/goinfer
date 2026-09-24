@@ -72,9 +72,9 @@ func TestSampledGumbelStreamIdentity(t *testing.T) {
 		}
 		run := func(sp decoder.SamplingParams, disable bool) ([]int, *decoder.Generation) {
 			if disable {
-				t.Setenv("GOINFER_NO_SAMPLE_FASTPATH", "1")
+				decoder.SetKnobEnvForTest(t, m, "GOINFER_NO_SAMPLE_FASTPATH", "1")
 			} else {
-				t.Setenv("GOINFER_NO_SAMPLE_FASTPATH", "")
+				decoder.SetKnobEnvForTest(t, m, "GOINFER_NO_SAMPLE_FASTPATH", "")
 			}
 			ch, g := m.Generate(context.Background(), prompt, nTok, sp)
 			var ids []int

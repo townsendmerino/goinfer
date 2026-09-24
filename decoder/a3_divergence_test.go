@@ -49,7 +49,7 @@ func TestA3FastAttentionDivergence(t *testing.T) {
 		}
 		run := func(fast string) []float32 {
 			t.Helper()
-			t.Setenv("GOINFER_CPU_FAST_ATTENTION", fast)
+			setKnob(t, m, knobCPUFastAttention, fast)
 			out, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), cpuFastAttention())
 			if err != nil {
 				t.Fatalf("K=%d fast=%s: %v", K, fast, err)
@@ -155,7 +155,7 @@ func TestA3NeverReachesSpeculativeVerify(t *testing.T) {
 	}
 	run := func(fast string) [][]float32 {
 		t.Helper()
-		t.Setenv("GOINFER_CPU_FAST_ATTENTION", fast)
+		setKnob(t, m, knobCPUFastAttention, fast)
 		out, err := m.forwardN(context.Background(), ids, m.NewCache(K+8))
 		if err != nil {
 			t.Fatalf("forwardN fast=%s: %v", fast, err)

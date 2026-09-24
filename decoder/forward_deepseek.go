@@ -2,8 +2,6 @@ package decoder
 
 import (
 	"math"
-	"os"
-	"sync"
 )
 
 // DeepSeek-V2/V3 (deepseek_v2 / deepseek_v3) forward path — Multi-head Latent Attention
@@ -57,7 +55,7 @@ func (m *Model) runLayersDeepseek(id int, cache *KVCache) ([]float32, error) {
 // algebraically identical (cosine ~1.0, not bit-exact — f32 reorder), gated by
 // TestMLAAbsorb_parity on the tiny golden and the V2-Lite/Moonlight real-model gates.
 func (m *Model) mlaAttention(n []float32, lw *LayerWeights, arch *Architecture, cache *KVCache, layer, pos int) []float32 {
-	if mlaForceNaive || mlaNaiveEnv() {
+	if mlaForceNaive || m.knobs.mlaNaive() {
 		return m.mlaAttentionNaive(n, lw, arch, cache, layer, pos)
 	}
 	return m.mlaAttentionAbsorb(n, lw, arch, cache, layer, pos)
@@ -320,18 +318,6 @@ func (m *Model) mlaAttentionAbsorb(n []float32, lw *LayerWeights, arch *Architec
 // the two paths; production leaves it false and uses the env override below. Tests in
 // this package run serially, so a package var is safe.
 var mlaForceNaive bool
-
-// mlaNaiveEnv reports whether GOINFER_MLA_NAIVE forces the naive MLA path process-wide
-// (read once) — the global fallback/debug switch, distinct from mlaForceNaive.
-func mlaNaiveEnv() bool {
-	mlaNaiveOnce.Do(func() { mlaNaiveFlag = os.Getenv("GOINFER_MLA_NAIVE") != "" })
-	return mlaNaiveFlag
-}
-
-var (
-	mlaNaiveOnce sync.Once
-	mlaNaiveFlag bool
-)
 
 // mlaRope rotates the rope-carrying dims of a [heads, ropeDim] vector at absolute
 // position pos. DeepSeek's rope_interleave (V3 default) lays the rotary dims out as

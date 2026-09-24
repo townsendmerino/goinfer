@@ -3,7 +3,6 @@ package decoder
 import (
 	"fmt"
 	"math"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -680,7 +679,6 @@ const moeExpertMajorChunk = 512
 // measured as its own arm, is worth 0.99x and 1.02x. The mechanism is the
 // restructuring itself; the decomposition of why is measured as unexplained
 // rather than asserted. See docs/measurements/p18-expert-major-e2e-2026-09-01.md.
-func moeExpertMajor() bool { return os.Getenv("GOINFER_MOE_EXPERT_MAJOR") != "0" }
 
 // moeExpertMajorRuns counts chunks that actually took the expert-major path.
 // It exists so the bit-identity gate can prove it is not vacuous: moeMLPBatch

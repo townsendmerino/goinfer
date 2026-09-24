@@ -171,7 +171,7 @@ func TestMoEExpertMajor_bitIdentical(t *testing.T) {
 	}
 	run := func(on string) []float32 {
 		t.Helper()
-		t.Setenv("GOINFER_MOE_EXPERT_MAJOR", on)
+		setKnob(t, m, knobMoEExpertMajor, on)
 		out, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), false)
 		if err != nil {
 			t.Fatalf("forward (expert-major=%q): %v", on, err)
@@ -272,7 +272,7 @@ func TestMoEExpertMajor_endToEnd(t *testing.T) {
 		t.Helper()
 		// The scratch-reuse ATTRIBUTION arm (GOINFER_MOE_PREFILL_SCRATCH) was retired 2026-09-24 after
 		// P18's attribution was recorded; this now times per-row vs expert-major only.
-		t.Setenv("GOINFER_MOE_EXPERT_MAJOR", on)
+		setKnob(t, m, knobMoEExpertMajor, on)
 		before := atomic.LoadInt64(&moeExpertMajorRuns)
 		t0 := time.Now()
 		if _, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), true); err != nil {

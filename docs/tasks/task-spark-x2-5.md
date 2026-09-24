@@ -127,7 +127,7 @@ What we already have, per the audit:
 - the parallel block (Command-R)
 - a softplus gate
 
-**The gap is two things:** a sigmoid gate — `decoder/arch.go:284` already notes that another
+**The gap is two things:** a sigmoid gate — `decoder/arch.go:288` already notes that another
 family's gate is sigmoid — and non-gated GELU combined with the parallel block. The audit's
 estimate: one descriptor plus a gate-activation enum.
 
@@ -216,6 +216,6 @@ Embedding it in a release binary is a separate decision, after gate 2, and needs
 
 ## Related
 
-`docs/audit-2026-09-10.md` L-06 and rec 7; `decoder/arch.go:284` (the existing sigmoid note);
+`docs/audit-2026-09-10.md` L-06 and rec 7; `decoder/arch.go:288` (the existing sigmoid note);
 `docs/parity-coverage-policy.md` (promotion timings and the tier discipline); the R13 fit-guard
 work and its `context_length` → `MaxPositions` regression gate; `docs/capability-matrix.md`.

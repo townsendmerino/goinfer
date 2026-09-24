@@ -758,7 +758,7 @@ func TestFusedAttention_logitDivergence(t *testing.T) {
 		ids[i] = 700 + i%64
 	}
 	run := func(on string) []float32 {
-		t.Setenv("GOINFER_FUSED_ATTENTION", on)
+		setKnob(t, m, knobFusedAttention, on)
 		out, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), true)
 		if err != nil {
 			t.Fatalf("forward(fused=%s): %v", on, err)
@@ -771,7 +771,7 @@ func TestFusedAttention_logitDivergence(t *testing.T) {
 	// would be the cross-machine mistake in another costume. Both arms here, one
 	// checkpoint, one depth.
 	accRun := func() []float32 {
-		t.Setenv("GOINFER_FUSED_ATTENTION", "0")
+		setKnob(t, m, knobFusedAttention, "0")
 		out, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), false) // acc64
 		if err != nil {
 			t.Fatalf("forward(acc64): %v", err)
@@ -893,7 +893,7 @@ func TestFusedAttention_endToEnd(t *testing.T) {
 
 	run := func(on string) time.Duration {
 		t.Helper()
-		t.Setenv("GOINFER_FUSED_ATTENTION", on)
+		setKnob(t, m, knobFusedAttention, on)
 		t0 := time.Now()
 		if _, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), true); err != nil {
 			t.Fatalf("forward(fused=%s): %v", on, err)

@@ -87,8 +87,8 @@ func TestLongPromptFast_forwardParity(t *testing.T) {
 	// "f32 prefill continuation drifted", a false positive: the golden was recorded fused, and an
 	// ambient =0 silently switched this run to the materialized (non-fused) arithmetic path
 	// instead (N-41 (09-02)).
-	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "1")
-	t.Setenv("GOINFER_FUSED_ATTENTION", "1")
+	setKnob(t, m, knobCPUFastAttention, "1")
+	setKnob(t, m, knobFusedAttention, "1")
 	out, gen := m.Generate(context.Background(), prompt, 16, SamplingParams{Temperature: 0})
 	var got []int
 	for id := range out {
@@ -109,7 +109,7 @@ func TestLongPromptFast_forwardParity(t *testing.T) {
 	// NON-VACUITY: prove this golden is on the f32 side. If the floor moved, or the default were
 	// reverted, the assertions above would still pass while testing the exact kernel — a golden
 	// that silently changes which path it covers is worse than no golden.
-	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")
+	setKnob(t, m, knobCPUFastAttention, "0")
 	exOut, _ := m.Generate(context.Background(), prompt, 16, SamplingParams{Temperature: 0})
 	var exact []int
 	for id := range exOut {

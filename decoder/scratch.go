@@ -1,9 +1,6 @@
 package decoder
 
 import (
-	"os"
-	"strconv"
-
 	"github.com/townsendmerino/aikit/linalg"
 )
 
@@ -18,6 +15,7 @@ import (
 // then the MLP output (also sequential). The residual `h` persists across the
 // layer loop; the rest are local to one matmul/attention.
 type decodeScratch struct {
+	knobs    *knobSet  // the owning model's knob snapshot (from its Architecture); nil = live environment
 	h        []float32 // [hidden] residual stream (overwritten by the embedding each step)
 	norm     []float32 // [hidden] normalized layer input (pre-attn, then pre-mlp)
 	sub      []float32 // [hidden] attention output, then MLP output (added to h)
@@ -87,6 +85,7 @@ func newDecodeScratch(a *Architecture) *decodeScratch {
 	ws := &linalg.Workspace{}
 	ws.SetThreshold(DefaultDecodeParallelThreshold)
 	s := &decodeScratch{
+		knobs:  a.knobs,
 		h:      make([]float32, a.HiddenDim),
 		norm:   make([]float32, a.HiddenDim),
 		sub:    make([]float32, a.HiddenDim),
@@ -209,11 +208,12 @@ const attnScoreTileBytes = 8 << 20
 // attnRowTile returns how many QUERY rows one attention pass handles. Never
 // below 1, never above K. GOINFER_ATTN_ROW_TILE overrides it — an A/B handle,
 // and how the bit-identity test forces the untiled shape to compare against.
-func attnRowTile(K, nKeys int) int {
-	if v := os.Getenv("GOINFER_ATTN_ROW_TILE"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
-			return min(n, K)
-		}
+func attnRowTile(K, nKeys int) int { return attnRowTileK(nil, K, nKeys) }
+
+// attnRowTileK is attnRowTile reading the given model's knobs (nil = the live environment).
+func attnRowTileK(k *knobSet, K, nKeys int) int {
+	if n, ok := k.positiveInt(knobAttnRowTile); ok {
+		return min(n, K)
 	}
 	if nKeys < 1 || K < 1 {
 		return max(1, K)
@@ -238,11 +238,12 @@ const prefillAttnScratchBudget = 256 << 20 // 256 MiB
 //
 // GOINFER_PREFILL_ATTN_WORKERS overrides it — an A/B handle and an escape
 // hatch. 1 restores the exact pre-G16 serial path.
-func prefillAttnWorkers(K, nKeys, hd, nH int) int {
-	if v := os.Getenv("GOINFER_PREFILL_ATTN_WORKERS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
-			return min(n, maxAttnWorkers)
-		}
+func prefillAttnWorkers(K, nKeys, hd, nH int) int { return prefillAttnWorkersK(nil, K, nKeys, hd, nH) }
+
+// prefillAttnWorkersK is prefillAttnWorkers reading the given model's knobs (nil = the live environment).
+func prefillAttnWorkersK(k *knobSet, K, nKeys, hd, nH int) int {
+	if n, ok := k.positiveInt(knobPrefillWorkers); ok {
+		return min(n, maxAttnWorkers)
 	}
 	if nH < 1 {
 		return 1
@@ -251,7 +252,7 @@ func prefillAttnWorkers(K, nKeys, hd, nH int) int {
 	// (nKeys*hd each) + qh + ch (tile*hd each), all float32. avAcc is hd float64 —
 	// noise beside these. Tiling is why this is linear in nKeys rather than
 	// quadratic in prompt length, and therefore why long prompts still fan out.
-	t := attnRowTile(K, nKeys)
+	t := attnRowTileK(k, K, nKeys)
 	perSlot := 4 * (t*nKeys + 2*nKeys*hd + 2*t*hd)
 	// P-05: newHeadWorkerPool allocates a fusedScratch (sBlk+tmp+acc+mRun+lRun+vBlk) ALONGSIDE the
 	// materialized shape above whenever the fused schedule is enabled — "both exist while fusion is
@@ -263,7 +264,7 @@ func prefillAttnWorkers(K, nKeys, hd, nH int) int {
 	// measurable complaint (the budget undercounting, causing oversubscription) without touching
 	// what newHeadWorkerPool allocates. Conservative: charged whenever fusion COULD apply, not only
 	// when this specific call will use it, matching the budget's other worst-case assumptions.
-	if fusedAttention() {
+	if k.fusedAttention() {
 		perSlot += 4 * (t*fusedKeyBlock + 2*t*hd + 2*t + hd*nKeys)
 	}
 	if perSlot <= 0 {
@@ -310,8 +311,8 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused, useAcc64 
 		//
 		// linear in context, all of it zero-filled and churned through GC, and none of it read
 		// (audit-2026-09-02 M-03, measured as P-01 asked).
-		if wantFused && fusedAttention() {
-			if t := attnRowTile(K, nKeys); p.fused == nil || !p.fused.fits(t, hd, nKeys) {
+		if wantFused && s.knobs.fusedAttention() {
+			if t := attnRowTileK(s.knobs, K, nKeys); p.fused == nil || !p.fused.fits(t, hd, nKeys) {
 				p.fused = newFusedScratch(t, hd, nKeys)
 			}
 		} else {
@@ -371,11 +372,11 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused, useAcc64 
 // useAcc64 and cache.treeMask are fixed for this pool's whole lifetime, not
 // just true at construction. Under that promise, vt and scores (P-05,
 // audit-2026-09-02) are skipped whenever fusion is also actually enabled
-// (fusedAttention()): vt is unused once fusion is active — gatherKV only
+// (knobSet.fusedAttention): vt is unused once fusion is active — gatherKV only
 // writes it in the non-fused branch — and scores (tile*nKeys, LARGER than
 // vt's nKeys*hd) is unused whenever the fused path is taken, regardless of
 // useAcc64, since attendTileFused writes ch directly. `fused`'s own
-// allocation is intentionally left gated on fusedAttention() alone, exactly
+// allocation is intentionally left gated on knobSet.fusedAttention alone, exactly
 // as before: changing that too would change which arm callers that pass
 // wantFused=false (because they legitimately mix useAcc64 states against one
 // pool, e.g. TestA3FanoutUtilization) actually exercise, which is a
@@ -385,6 +386,11 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused, useAcc64 
 // getting this wrong risks a nil-slice access in the prefill hot path every
 // model goes through, exactly the risk the audit's own disposition flagged.
 func newHeadWorkerPool(n, K, nKeys, hd int, wantFused bool) []headWorkerScratch {
+	return newHeadWorkerPoolK(nil, n, K, nKeys, hd, wantFused)
+}
+
+// newHeadWorkerPoolK is newHeadWorkerPool reading the given model's knobs (nil = the live environment).
+func newHeadWorkerPoolK(k *knobSet, n, K, nKeys, hd int, wantFused bool) []headWorkerScratch {
 	if n > maxAttnWorkers {
 		n = maxAttnWorkers
 	}
@@ -394,13 +400,13 @@ func newHeadWorkerPool(n, K, nKeys, hd int, wantFused bool) []headWorkerScratch 
 	// G20: slots are sized for one ROW TILE, not the whole prompt. attendOneHead
 	// walks its query rows in tiles of exactly this many, so anything larger would
 	// be allocated and never touched.
-	t := attnRowTile(K, nKeys)
-	skipMaterialized := wantFused && fusedAttention()
+	t := attnRowTileK(k, K, nKeys)
+	skipMaterialized := wantFused && k.fusedAttention()
 	pool := make([]headWorkerScratch, n)
 	for i := range pool {
 		p := headWorkerScratch{
 			mmWS:  serialMMWorkspace(),
-			fused: fusedIfEnabled(t, hd, nKeys),
+			fused: fusedIfEnabled(k, t, hd, nKeys),
 			qh:    make([]float32, t*hd),
 			kh:    make([]float32, nKeys*hd),
 			ch:    make([]float32, t*hd),

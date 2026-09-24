@@ -104,7 +104,7 @@ re-baked by the code it checks (G-04).
 ### A. Prefill: the whole-ladder gap and the short-prompt band
 
 #### M-01 · `ResidentPrefillKV` is not implemented on Metal — every sequential prompt token runs the full int8 LM head and a 608 KB readback for logits nobody reads
-- **Where:** `decoder/model.go:1416` (`kvOnly, hasKV := m.resident.(ResidentPrefillKV)`),
+- **Where:** `decoder/model.go:1423` (`kvOnly, hasKV := m.resident.(ResidentPrefillKV)`),
   `decoder/residency.go:146-109`; `metal/backend.go:460-619` (the complete `metalResident` method
   set — no `ForwardNoLogits`); `metal/model.go:1602-1442` (`encodeLogitsCB`, the only executor job
   shape, always appends `pGemvW8`); `metal/model.go:1468-1328` (`forwardHiddenNoHead` — the
@@ -113,7 +113,7 @@ re-baked by the code it checks (G-04).
 - **Mechanism and bound (counted + record):** `hasKV` is false for `*metalResident`, so
   `residentPrefillSeed` takes `m.resident.Forward(emb, i)` for every prompt token. Which prompts
   are sequential on Metal: every prompt below the 512 floor (M-02), every adapter prompt at any
-  length (`decoder/model.go:1391`, C-01 of the prior audit), every family `prefillOK` rejects
+  length (`decoder/model.go:1398`, C-01 of the prior audit), every family `prefillOK` rejects
   (Gemma 3 — M-06 — every DeltaNet family, gpt-oss, GPT-2, Cohere, Olmo, SmolLM3, Ministral 3,
   Mellum, dense Gemma 4, paged MoE), every `HiddenLast` embedding token. Per prompt token: 1.5B
   V×H int8 = 233 MB (≈24% of the ~0.97 GB the token moves) + 608 KB copy; 0.5B 136 MB of ≈420 MB
@@ -1218,7 +1218,7 @@ re-baked by the code it checks (G-04).
 
 #### G-08 · The §3.2 gate never exercises `startPos > 0`, which every resident-prefix-reuse turn uses
 - **Where:** `metal/prefill_gate_ref_test.go:465` (`PrefillLast(ctx, embs, 0)`) vs
-  `decoder/model.go:1399` (`from`); the fused kernel's `startPos`/`uMReal` masking is covered only by
+  `decoder/model.go:1406` (`from`); the fused kernel's `startPos`/`uMReal` masking is covered only by
   a synthetic hd=64 case. The agent-turn shape the peer matrix calls the headline workload is not
   a fidelity cell. **Fix:** one decision cell with `from = K/2` on S. **Confidence:** plausible
   (coverage gap, no defect shown).
@@ -1464,7 +1464,7 @@ re-baked by the code it checks (G-04).
 - N-27 `metal/model.go:1527` — pipe path memcpys 608 KB into `logitsHost` before the ack; the
   zero-copy `r.logits.Floats()` view could be returned (the contract already says "consume before
   the next call"). ≈30–60 µs/token. **INVESTIGATED, DECLINED 2026-09-13**: this is not a free win —
-  `decoder/spec_optfwd.go:214-216` documents the exact failure mode, MEASURED on CUDA before its own
+  `decoder/spec_optfwd.go:202-204` documents the exact failure mode, MEASURED on CUDA before its own
   fix: `cuda/resident.go` used to return a zero-copy alias of its reusable host buffer ("a per-call
   slice" is explicitly NOT what a zero-copy view gives you), and overlapping a speculative second
   `Forward` call with `SampleWithInfo` reading the FIRST call's result raced a DMA write against the
@@ -1543,10 +1543,10 @@ re-baked by the code it checks (G-04).
   still green.
 - N-34 `gpu/metal_copy.go`, `metal_upload_batch.go` — unused by goinfer (correct on UMA); note they
   are host-side and unfenced, so a `CopyDevice` during an in-flight command buffer would race.
-- N-35 `decoder/model.go:1360-1095,1134` — `warnPrefillDeclined` is process-lifetime `sync.Once`; on
+- N-35 `decoder/model.go:1367-1102,1134` — `warnPrefillDeclined` is process-lifetime `sync.Once`; on
   Metal the first sub-floor prompt consumes it, so a later real decline (cap, OOM) is silent (N-49).
   **FIXED 2026-09-13**: replaced the single `sync.Once` with a mutex-guarded set keyed on the
-  decline reason with its numbers normalized out (`decoder/model.go:1323,1053-1073`) — every
+  decline reason with its numbers normalized out (`decoder/model.go:1330,1053-1073`) — every
   below-floor prompt has a different `promptLen` in its message but normalizes to the same key, so
   the routine Metal case still logs once, while a later, differently-worded decline (a resident-cap
   refusal, an OOM) now gets its own one-time line instead of being silenced by the first. The old
@@ -1573,7 +1573,7 @@ re-baked by the code it checks (G-04).
 - N-39 `internal/serveapp/openai.go:1267-1086` — comment says adapter requests "drop to the staged
   path"; since G3 they reach the resident path on a `prefillFrom == 0` turn. Later-turn behaviour
   (`decoder/session.go`) not in tree. **FIXED 2026-09-13** — rewrote the three comments describing
-  adapter routing (`internal/serveapp/openai.go:1267-1093,735-739,826-829`) to say what  `decoder/model.go:1539`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
+  adapter routing (`internal/serveapp/openai.go:1267-1093,735-739,826-829`) to say what  `decoder/model.go:1546`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
   (commit == nil || (lora != nil && resAdapter != nil))`) does: a session's FIRST turn
   (`prefillFrom==0`) with a bound resident adapter reaches the resident GPU path; a later turn on
   the same session (`prefillFrom>0`, continuing off the reused warm prefix) still drops to CPU,

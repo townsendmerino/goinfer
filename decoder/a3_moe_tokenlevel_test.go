@@ -89,7 +89,7 @@ func TestA3MoETokenLevel(t *testing.T) {
 
 	run := func(probe bool) ([]int, []float64) {
 		t.Helper()
-		t.Setenv("GOINFER_CPU_FAST_ATTENTION", map[bool]string{true: "1", false: "0"}[probe])
+		setKnob(t, m, knobCPUFastAttention, map[bool]string{true: "1", false: "0"}[probe])
 		ctx := deadlineCtx(t)
 		cache := m.NewCache(K + N + 8)
 		start := time.Now()

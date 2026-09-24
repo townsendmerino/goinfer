@@ -59,9 +59,9 @@ func TestSampledDecodeLadder(t *testing.T) {
 	}
 	one := func(sp decoder.SamplingParams, seed int64, noSmp bool) (float64, int) {
 		if noSmp {
-			t.Setenv("GOINFER_NO_SAMPLE_FASTPATH", "1")
+			decoder.SetKnobEnvForTest(t, m, "GOINFER_NO_SAMPLE_FASTPATH", "1")
 		} else {
-			t.Setenv("GOINFER_NO_SAMPLE_FASTPATH", "")
+			decoder.SetKnobEnvForTest(t, m, "GOINFER_NO_SAMPLE_FASTPATH", "")
 		}
 		if sp.Temperature > 0 {
 			sp.Seed = seed

@@ -1,8 +1,6 @@
 package decoder
 
 import (
-	"os"
-
 	"github.com/townsendmerino/aikit/linalg"
 )
 
@@ -43,7 +41,6 @@ import (
 // prefill by Amdahl. Eight percent, bought with a user-visible output change.
 //
 // GOINFER_FUSED_ATTENTION=0 restores the materialized schedule.
-func fusedAttention() bool { return os.Getenv("GOINFER_FUSED_ATTENTION") != "0" }
 
 // fusedKeyBlock is the key-block width. 256 and 512 measured within noise of each
 // other (1.731x / 1.687x) and both beat 1024; 512 keeps the per-tile score block
@@ -125,9 +122,9 @@ func newFusedScratch(kt, hd, nKeys int) *fusedScratch {
 	}
 }
 
-// fusedIfEnabled returns a fresh fusedScratch when the schedule is on, else nil.
-func fusedIfEnabled(kt, hd, nKeys int) *fusedScratch {
-	if !fusedAttention() {
+// fusedIfEnabled returns a fresh fusedScratch when the schedule is on (the model's knobs; knobs.go), else nil.
+func fusedIfEnabled(k *knobSet, kt, hd, nKeys int) *fusedScratch {
+	if !k.fusedAttention() {
 		return nil
 	}
 	return newFusedScratch(kt, hd, nKeys)

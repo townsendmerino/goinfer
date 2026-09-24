@@ -69,6 +69,7 @@ type Model struct {
 	kvPrecI8         bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8             bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	exactPrefill     bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
+	knobs            *knobSet     // per-model operator knobs, snapshotted once at Load (knobs.go)
 	resCtxReq        int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	disableFit       bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache         bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
@@ -303,6 +304,10 @@ type Options struct {
 	// zero-copy) or "pool" (owned buffers + pread; a firm cap on every platform). "" = the platform
 	// default (MoEPagerDefault: pool on darwin, mmap elsewhere), unless GOINFER_MOE_PREAD_CPU overrides.
 	MoEPager string
+	// Knobs sets per-model operator knobs by environment-variable name (knobs.go's list, e.g.
+	// "GOINFER_FUSED_ATTENTION": "0"), overriding the process environment for THIS model only. Unset names
+	// take the environment's value, read once at Load. Unknown names are ignored.
+	Knobs map[string]string
 	// EmbedInt4 relaxes the int8 pin on the token-embedding/LM-head table in int4
 	// mode, storing it at int4 too — halving the single largest resident tensor on a
 	// big-vocab small model. Lossy + opt-in (~2.3 pts top-1, mostly on rare tokens);
@@ -471,6 +476,7 @@ func Load(dir string, opts Options) (*Model, error) {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
 		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition, exactPrefill: opts.ExactPrefill}
+		m.bindKnobs(opts.Knobs)
 		m.withBackendNames(opts.Backend, beErr)
 		if opts.StreamWeights {
 			// S4 item 2 (task-never-swap-2026-09.md): resolve an "auto" (0) weight-cache request
@@ -584,6 +590,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		w.Cfg.EOSTokenID = raw
 	}
 	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition, exactPrefill: opts.ExactPrefill}).withBackendNames(opts.Backend, beErr)
+	m.bindKnobs(opts.Knobs)
 	// `resident` is the third phase: weights becoming a device-side runner. Timed here rather than
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user
 	// wondering where nine seconds went is owed that time too.
@@ -1388,7 +1395,7 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 		from = 0 // never skip the seed token, whose logits start decode
 	}
 	suffix := prompt[from:]
-	if os.Getenv("GOINFER_BATCHED_PREFILL") != "0" && len(suffix) >= 8 && !hasAdapter {
+	if m.knobs.get(knobBatchedPrefill) != "0" && len(suffix) >= 8 && !hasAdapter {
 		if pf, ok := m.resident.(Prefiller); ok {
 			embs := make([][]float32, len(suffix))
 			for i, id := range suffix {
@@ -1414,7 +1421,7 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 	// logits seed decode. Byte-identical (same layer chain → same KV → same last-token logits);
 	// GOINFER_NO_KVONLY_PREFILL forces the full-logits prefill (A/B / escape hatch).
 	kvOnly, hasKV := m.resident.(ResidentPrefillKV)
-	useKV := hasKV && os.Getenv("GOINFER_NO_KVONLY_PREFILL") == ""
+	useKV := hasKV && m.knobs.get(knobNoKVOnlyPrefill) == ""
 	var logits []float32
 	var err error
 	for i, id := range prompt {
@@ -1654,7 +1661,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	greedyRF, hasGreedy := m.resident.(ResidentGreedy)
 	fastGreedy := useGPU && hasGreedy && procFree &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
-		os.Getenv("GOINFER_NO_GREEDY_FASTPATH") == ""
+		m.knobs.get(knobNoGreedyFastpath) == ""
 
 	// Optimistic forward: sampled decode's (Temperature>0) sibling of the greedy fast path
 	// above, but overlapping rather than skipping the CPU sampler -- see spec_optfwd.go.
@@ -1662,7 +1669,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// so the two mechanisms never both try to drive the same step. GOINFER_NO_OPTFWD forces
 	// the plain sequential path (escape hatch / A-B check), same convention as
 	// GOINFER_NO_GREEDY_FASTPATH.
-	optFwd := useGPU && !fastGreedy && m.optFwdEligible(sp) && os.Getenv("GOINFER_NO_OPTFWD") == ""
+	optFwd := useGPU && !fastGreedy && m.optFwdEligible(sp) && m.knobs.get(knobNoOptFwd) == ""
 
 	// Device top-K fast path (R7, sampler_topk.go): a FILTERED sampler (top_k / top_p / min_p at
 	// temperature > 0) needs only the K best logits, so the resident reduces the row on-device and reads
@@ -1673,7 +1680,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// (escape hatch / A-B check), same convention as GOINFER_NO_GREEDY_FASTPATH.
 	var topKRF ResidentTopK
 	topKWidth, topKVocab := 0, len(logits)
-	if useGPU && !fastGreedy && !optFwd && procFree && os.Getenv("GOINFER_NO_TOPK_FASTPATH") == "" && sampler.TopKEligible() {
+	if useGPU && !fastGreedy && !optFwd && procFree && m.knobs.get(knobNoTopKFastpath) == "" && sampler.TopKEligible() {
 		if rf, ok := m.resident.(ResidentTopK); ok && rf.TopKAvailable() {
 			if w, wok := sampler.TopKWidth(len(logits)); wok {
 				topKRF, topKWidth = rf, w
@@ -1684,7 +1691,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// Gumbel-max on-device and returns just the id, reusing the greedy fast path's fastNext mechanism. Same
 	// exclusions as the top-K path; GOINFER_NO_SAMPLE_FASTPATH forces the host draw (A/B check, escape hatch).
 	var sampleRF ResidentSample
-	if useGPU && !fastGreedy && !optFwd && procFree && os.Getenv("GOINFER_NO_SAMPLE_FASTPATH") == "" && sampler.SampleEligible() {
+	if useGPU && !fastGreedy && !optFwd && procFree && m.knobs.get(knobNoSampleFastpath) == "" && sampler.SampleEligible() {
 		if rf, ok := m.resident.(ResidentSample); ok && rf.SampleAvailable() {
 			sampleRF = rf
 		}

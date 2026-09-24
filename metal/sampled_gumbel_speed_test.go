@@ -94,10 +94,9 @@ func TestSampledDecodeLadder_speed(t *testing.T) {
 	run := func(a *arm) (tokPerSec float64, deviceSampled int) {
 		t.Helper()
 		if a.disable {
-			os.Setenv("GOINFER_NO_SAMPLE_FASTPATH", "1")
-			defer os.Unsetenv("GOINFER_NO_SAMPLE_FASTPATH")
+			defer decoder.SetKnobForTest(m, "GOINFER_NO_SAMPLE_FASTPATH", "1")()
 		} else {
-			os.Setenv("GOINFER_NO_SAMPLE_FASTPATH", "")
+			defer decoder.SetKnobForTest(m, "GOINFER_NO_SAMPLE_FASTPATH", "")()
 		}
 		ctx := context.Background()
 		ch, g := m.Generate(ctx, prompt, nTok, a.sp)

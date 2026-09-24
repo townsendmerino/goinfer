@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin && goinfer_testhooks
 
 package metal
 
@@ -39,13 +39,12 @@ func TestOptFwd_bitIdenticalStream(t *testing.T) {
 
 	run := func(disable bool) ([]int, []decoder.SampleInfo, *decoder.Generation) {
 		if disable {
-			os.Setenv("GOINFER_NO_OPTFWD", "1")
-			defer os.Unsetenv("GOINFER_NO_OPTFWD")
+			defer decoder.SetKnobForTest(m, "GOINFER_NO_OPTFWD", "1")()
 		}
 		// The shipped optFwd cap is 0.2 (decoder/spec_optfwd.go): above it the overlap is a measured
 		// loss and does not run. This test EXERCISES the overlap, so it must raise the cap — otherwise
 		// it passes with the feature switched off, which is a pass that proves nothing.
-		t.Setenv("GOINFER_OPTFWD_MAX_TEMP", "2.0")
+		decoder.SetKnobEnvForTest(t, m, "GOINFER_OPTFWD_MAX_TEMP", "2.0")
 		sp := decoder.SamplingParams{Temperature: 0.7, TopP: 0.9, Seed: 1234, Logprobs: true}
 		ch, g := m.Generate(ctx, prompt, n, sp)
 		var toks []int

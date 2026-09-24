@@ -9,6 +9,21 @@ This registry curates the **operator-facing** knobs — the ones you might set w
 deployment. The full set (≈130, most of them per-family test-model overrides and diagnostic probes)
 is grep-derivable and enumerated at the bottom.
 
+## Read once per model, at Load (since 2026-09-24)
+
+These fourteen decoder knobs are snapshotted when a model is loaded, not read on every forward:
+`GOINFER_ATTN_GROUPED`, `GOINFER_ATTN_ROW_TILE`, `GOINFER_PREFILL_ATTN_WORKERS`,
+`GOINFER_FUSED_ATTENTION`, `GOINFER_MLA_NAIVE`, `GOINFER_MOE_EXPERT_MAJOR`, `GOINFER_BATCHED_PREFILL`,
+`GOINFER_NO_KVONLY_PREFILL`, `GOINFER_NO_GREEDY_FASTPATH`, `GOINFER_NO_OPTFWD`,
+`GOINFER_NO_SAMPLE_FASTPATH`, `GOINFER_NO_TOPK_FASTPATH`, `GOINFER_OPTFWD_MAX_TEMP`,
+`GOINFER_CPU_FAST_ATTENTION`. Changing one after Load does not affect a model already loaded. A
+library caller can set any of them for one model with `decoder.Options.Knobs` (name → value, which
+overrides the environment for that model only). The backends' own reads of the same name are
+unchanged until their phase: Metal still reads `GOINFER_MOE_EXPERT_MAJOR` itself. See
+`docs/tasks/task-env-config-2026-09.md`. A test that A/Bs a loaded model uses
+`decoder.SetKnobEnvForTest`; in `goinfer_testhooks` builds a post-Load `t.Setenv` of one of these
+panics instead of silently comparing a path with itself.
+
 ## Serving
 
 | Var | Purpose |

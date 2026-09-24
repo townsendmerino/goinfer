@@ -233,9 +233,9 @@ func TestGreedyFastPathIdentical(t *testing.T) {
 		t.Fatal("cuda resident does not implement ResidentGreedy — the fast arm would take the " +
 			"logits path and this gate would compare it to itself")
 	}
-	t.Setenv("GOINFER_NO_GREEDY_FASTPATH", "1")
+	decoder.SetKnobEnvForTest(t, m, "GOINFER_NO_GREEDY_FASTPATH", "1")
 	slow := gen()
-	t.Setenv("GOINFER_NO_GREEDY_FASTPATH", "")
+	decoder.SetKnobEnvForTest(t, m, "GOINFER_NO_GREEDY_FASTPATH", "")
 	fast := gen()
 
 	if len(slow) == 0 {

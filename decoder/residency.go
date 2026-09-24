@@ -1193,7 +1193,7 @@ func (m *Model) PrefillPath() (batched bool, reason string) {
 		return true, "batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — " +
 			"describes weight streaming, not throughput; this path is single-threaded"
 	}
-	if os.Getenv("GOINFER_BATCHED_PREFILL") == "0" {
+	if m.knobs.get(knobBatchedPrefill) == "0" {
 		return false, "sequential — GOINFER_BATCHED_PREFILL=0 forces the per-token loop"
 	}
 	pf, ok := m.resident.(Prefiller)

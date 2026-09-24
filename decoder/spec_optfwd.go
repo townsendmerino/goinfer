@@ -1,9 +1,6 @@
 package decoder
 
-import (
-	"os"
-	"strconv"
-)
+import ()
 
 // optFwdMaxTemp is the temperature at or below which the optimistic-forward overlap is allowed to
 // run. ABOVE IT THE FEATURE IS A MEASURED LOSS, and it used to run unconditionally.
@@ -31,15 +28,6 @@ import (
 // without a ladder behind it is how the original default happened.
 const optFwdMaxTemp = 0.2
 
-func optFwdTempCap() float64 {
-	if v := os.Getenv("GOINFER_OPTFWD_MAX_TEMP"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			return f
-		}
-	}
-	return optFwdMaxTemp
-}
-
 // optFwdEligible reports whether sampled decode may attempt the optimistic-forward overlap:
 // resident GPU decode only (the argmax guess needs a Forward call it can race against the real
 // sampler; the staged CPU path has no such concurrency-safe primitive), Temperature>0 (T<=0
@@ -49,7 +37,7 @@ func optFwdTempCap() float64 {
 // specRollbackSafe (a miss redoes Forward at the same position; recurrent/DeltaNet state and
 // wrapped sliding-window rings can't be corrected that way — see forwardn.go).
 func (m *Model) optFwdEligible(sp SamplingParams) bool {
-	return m.resident != nil && sp.Temperature > 0 && sp.Temperature <= optFwdTempCap() &&
+	return m.resident != nil && sp.Temperature > 0 && sp.Temperature <= m.knobs.optFwdTempCap() &&
 		sp.LogitProcessor == nil && m.specRollbackSafe()
 }
 

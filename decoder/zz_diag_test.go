@@ -51,7 +51,7 @@ func TestZZDiagGroupedFires(t *testing.T) {
 		{"grouped_off", "0"},
 		{"grouped_on", "1"},
 	} {
-		t.Setenv("GOINFER_ATTN_GROUPED", arm.env)
+		setKnob(t, m, knobAttnGrouped, arm.env)
 		runsBefore := atomic.LoadInt64(&attnGroupedRuns)
 		attnBefore := atomic.LoadInt64(&attnElapsedNanos)
 

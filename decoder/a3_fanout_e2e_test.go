@@ -48,7 +48,7 @@ func TestA3FanoutEndToEnd(t *testing.T) {
 	// keeps climbing, or plateaus/reverses at the depth the f32 flag's own headline uses.
 	depths := []int{1024, 2048, 4096, 8192}
 
-	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "1") // this item is about the f32 path only
+	setKnob(t, m, knobCPUFastAttention, "1") // this item is about the f32 path only
 	start := time.Now()
 	fmt.Fprintf(os.Stderr, "A3 e2e: start %s, %d depths x %d pairs x 2 arms\n",
 		start.Format("15:04:05"), len(depths), pairs)
@@ -70,7 +70,7 @@ func TestA3FanoutEndToEnd(t *testing.T) {
 		}
 		run := func(workers string) ([]float32, time.Duration) {
 			t.Helper()
-			t.Setenv("GOINFER_PREFILL_ATTN_WORKERS", workers)
+			setKnob(t, m, knobPrefillWorkers, workers)
 			t0 := time.Now()
 			out, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), true)
 			d := time.Since(t0)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -67,11 +66,13 @@ var (
 // itself false. cpuFastAttention() below reads one env var and has no arch check; 82dda2a
 // removed the guard when 66d0a05's measurement made the exclusion unnecessary. Two comments
 // naming the same list, and both wrong, in opposite directions.
-func cpuFastAttention() bool { return os.Getenv("GOINFER_CPU_FAST_ATTENTION") != "0" }
+// cpuFastAttention is the live-environment reading (a hand-built caller with no Model); a Loaded model reads
+// its own snapshot through (*Model).cpuFastAttention.
+func cpuFastAttention() bool { return (*knobSet)(nil).cpuFastAttention() }
 
 // cpuFastAttention is the per-model form: off when this model was loaded with
 // Options.ExactPrefill, else the env var's answer.
-func (m *Model) cpuFastAttention() bool { return !m.exactPrefill && cpuFastAttention() }
+func (m *Model) cpuFastAttention() bool { return !m.exactPrefill && m.knobs.cpuFastAttention() }
 
 // ExactPrefill reports whether this model was loaded with Options.ExactPrefill — prompt ingestion
 // must take each backend's bit-exact path. Backends consult it next to their own env var.
@@ -140,7 +141,7 @@ const attnGroupedNEONBlock = 8
 // aggressive one.
 const attnGroupedMinKeys = 128
 
-// attnGroupedEnabled reports whether R13's grouped-kernel decode path may
+// knobSet.attnGrouped (knobs.go) reports whether R13's grouped-kernel decode path may
 // run. DEFAULT ON, matching moeExpertMajor's sense (mlp.go). Three earlier
 // wiring attempts (Arm A full-group ownership, Arm B split, Arm B serial)
 // all measured slower once profiled against a real checkpoint — traced,
@@ -152,7 +153,6 @@ const attnGroupedMinKeys = 128
 // 1.32x served speedup at depth 8192 (docs/measurements/
 // r13-served-decode-2026-09-20.md) — matching the depth-dependence R13's
 // own step 0 predicted. GOINFER_ATTN_GROUPED=0 restores the per-head path.
-func attnGroupedEnabled() bool { return os.Getenv("GOINFER_ATTN_GROUPED") != "0" }
 
 // attnGroupedRuns counts attendGroupedHeads calls — R13 Gate (4), the wiring
 // proof. Bit-identity hides dispatch inertness (a grouped path that never
@@ -410,7 +410,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// (attendBatchedHeads: !useAcc64 && cache.treeMask == nil) is the same for every layer too —
 	// exactly the promise newHeadWorkerPool's wantFused needs to safely skip vt/scores.
 	wantFusedPool := !useAcc64 && cache.treeMask == nil
-	attnPool := newHeadWorkerPool(prefillAttnWorkers(K, maxKeys, hd, arch.maxHeads()), K, maxKeys, hd, wantFusedPool)
+	attnPool := newHeadWorkerPoolK(m.knobs, prefillAttnWorkersK(m.knobs, K, maxKeys, hd, arch.maxHeads()), K, maxKeys, hd, wantFusedPool)
 	// f32 scratch for the assembled local window (ring history + new rows) AND for
 	// dequantizing int8 layers into for the f32 attention; ≤ maxKeys rows wide.
 	// Allocated when the model has ring layers or an int8 cache.
@@ -646,7 +646,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			// runs: TestMoEExpertMajor_bitIdentical.
 			emDone := make([]bool, K)
 			var emOut []float32
-			if moeExpertMajor() {
+			if m.knobs.moeExpertMajor() {
 				emOut = make([]float32, K*hidden)
 				for c0 := 0; c0 < K; c0 += moeExpertMajorChunk {
 					c1 := min(c0+moeExpertMajorChunk, K)
@@ -906,8 +906,13 @@ func runSplitAligned(workers, n, align int, fn func(w, lo, hi int)) {
 	wg.Wait()
 }
 
+// attendTileFor is attendTileForK reading the live environment (tests that build scratch by hand).
 func attendTileFor(ws *headWorkerScratch, K, nKeys, hd int) int {
-	tile := attnRowTile(K, nKeys)
+	return attendTileForK(nil, ws, K, nKeys, hd)
+}
+
+func attendTileForK(k *knobSet, ws *headWorkerScratch, K, nKeys, hd int) int {
+	tile := attnRowTileK(k, K, nKeys)
 	if hd < 1 {
 		return max(1, tile)
 	}
@@ -1006,7 +1011,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 		// use `gi` — startPos+gi, treeRowPos[gi], treeMask[gi] — while buffers use `i`.
 		// attendTileFor, not attnRowTile: the slot's capacity binds, and recomputing the tile
 		// from this layer's key count is what panicked a warm windowed session (C-04).
-		tile := attendTileFor(ws, K, nKeys, hd)
+		tile := attendTileForK(arch.knobs, ws, K, nKeys, hd)
 		for t0 := 0; t0 < K; t0 += tile {
 			kt := min(tile, K-t0)
 			for i := range kt { // gather this tile's Q_head [kt,hd]
@@ -1245,7 +1250,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	// per-(row,column) mask attendGroupedHeads does not implement); K != 1
 	// excludes prefill/batched M>1 (not wired yet).
 	attnGroupedOK := useAcc64 && K == 1 && cache.treeMask == nil && attnGroupedKernels &&
-		group == attnGroupedNEONSize && nKeys >= attnGroupedMinKeys && attnGroupedEnabled()
+		group == attnGroupedNEONSize && nKeys >= attnGroupedMinKeys && arch.knobs.attnGrouped()
 	// runHeadRange walks qhead across [h0,h1), taking the grouped path for
 	// any run of attnGroupedNEONSize heads that (a) starts on a kv-group
 	// boundary and (b) fits entirely inside [h0,h1) — i.e. exactly the

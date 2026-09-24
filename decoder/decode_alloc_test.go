@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"os"
 	"runtime"
 	"testing"
 )
@@ -51,23 +50,14 @@ func TestDecode_fusedScheduleCostsNothingPerToken(t *testing.T) {
 		return (b.TotalAlloc - a.TotalAlloc) / uint64(n)
 	}
 
-	prev, had := os.LookupEnv("GOINFER_FUSED_ATTENTION")
-	defer func() {
-		if had {
-			os.Setenv("GOINFER_FUSED_ATTENTION", prev)
-		} else {
-			os.Unsetenv("GOINFER_FUSED_ATTENTION")
-		}
-	}()
-
 	// Warm twice: the first measured window after a prefill pays one-time pool growth (the kh/vt/
 	// scores buffers reaching nKeys), which is not per-token cost and would swamp the comparison.
-	os.Unsetenv("GOINFER_FUSED_ATTENTION")
+	unsetKnob(t, m, knobFusedAttention)
 	perToken(6)
 	perToken(6)
 
 	on := perToken(12)
-	os.Setenv("GOINFER_FUSED_ATTENTION", "0")
+	setKnob(t, m, knobFusedAttention, "0")
 	off := perToken(12)
 
 	t.Logf("decode allocation: fused schedule on %d B/token, off %d B/token", on, off)

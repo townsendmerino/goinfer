@@ -298,7 +298,7 @@ func TestR9_mlpMatmulIsolated(t *testing.T) {
 // TestR9_groupedDepthSweep: R13's grouped attention kernels (GOINFER_ATTN_GROUPED, default on)
 // against the per-head path, on the 1.5B (the 6-heads-per-KV geometry the Linux attribution
 // found paying 11 ms/token at depth 128), across prompt depth, arms interleaved ABBA on one
-// loaded model. attnGroupedEnabled reads the env per call, so the arm flips in-process. The
+// loaded model. setKnob pins the arm on the model, so it flips in-process. The
 // R9 ATTN line's core term is the quantity; forward ms is the token.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_DECODE_TIMING=1 GOINFER_R9_DIAG=1 go test -tags goinfer_testhooks ./decoder/ -run TestR9_groupedDepthSweep -v
@@ -344,7 +344,7 @@ func TestR9_groupedDepthSweep(t *testing.T) {
 			ids = ids[:depth]
 		}
 		for _, arm := range []string{"1", "0", "0", "1"} {
-			os.Setenv("GOINFER_ATTN_GROUPED", arm)
+			setKnob(t, m, knobAttnGrouped, arm)
 			fmt.Printf("R9 GROUPED depth=%d grouped=%s\n", len(ids), arm)
 			out, g := m.Generate(context.Background(), ids, decodeN, SamplingParams{Temperature: 0})
 			for range out {
@@ -354,7 +354,6 @@ func TestR9_groupedDepthSweep(t *testing.T) {
 			}
 		}
 	}
-	os.Unsetenv("GOINFER_ATTN_GROUPED")
 }
 
 // TestR9_cpuTuningAB is the paired gate for the two Linux-attribution fixes

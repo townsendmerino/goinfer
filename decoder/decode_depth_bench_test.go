@@ -85,7 +85,7 @@ func BenchmarkDecodeAtDepth(b *testing.B) {
 		{"grouped_on", "1"},
 	} {
 		b.Run(arm.name, func(b *testing.B) {
-			b.Setenv("GOINFER_ATTN_GROUPED", arm.env)
+			setKnob(b, m, knobAttnGrouped, arm.env)
 			cache := m.NewCache(depth + b.N + 8)
 			if _, err := m.forwardLayersN(context.Background(), ids, cache, false); err != nil {
 				b.Fatalf("batched prefill to depth %d: %v", depth, err)

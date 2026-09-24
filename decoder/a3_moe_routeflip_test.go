@@ -78,7 +78,7 @@ func TestA3MoERouteFlips(t *testing.T) {
 	// trace=true records this arm's routing; replay!=nil forces it instead.
 	run := func(probe, trace bool, replayIdx [][]int, replayWts [][]float32) ([]float32, [][]int, [][]float32) {
 		t.Helper()
-		t.Setenv("GOINFER_CPU_FAST_ATTENTION", map[bool]string{true: "1", false: "0"}[probe])
+		setKnob(t, m, knobCPUFastAttention, map[bool]string{true: "1", false: "0"}[probe])
 		if trace {
 			moeSelTrace = make([][]int, 0, 1<<14)
 			moeWtsTrace = make([][]float32, 0, 1<<14)

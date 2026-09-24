@@ -1,6 +1,6 @@
 # Task: configuration out of the process environment (2026-09)
 
-> **Status 2026-09-24: phase 1 (the ratchet) DONE; phases 2–6 open.** Owner asked for this after a review found
+> **Status 2026-09-24: phase 1 (the ratchet) DONE; phase 2a (the 14 per-call decoder knobs) DONE; 2b and 3–6 open.** Owner asked for this after a review found
 > configuration passed through the process environment. The four concrete defects that review named are already fixed
 > (`a50815ed`: duplicate doc rows, the darwin pager mode set via env, Metal's prefill flag re-read per call, five campaign
 > switches retired); this doc is the general program.
@@ -42,6 +42,50 @@ by the model, read by the backend from the model.
 | **4. Metal operator knobs** | same, on the Metal resident | metal-darwin CI + a Mac run |
 | **5. serve / cmd / gpu / internal** | serve and chat parse flags into `Options`; no `os.Setenv` in app code (`applyExactPrefillEnv` is the last one) | serveapp suite; `serve check` |
 | **6. diagnostics** | retire when the campaign's question is answered, else move to test hooks — case by case, with the owner | per retirement, the record it answered |
+
+### Phase 2a design (decided 2026-09-24, before the code)
+
+The decoder's 14 per-call operator knobs (`ATTN_GROUPED`, `ATTN_ROW_TILE`, `PREFILL_ATTN_WORKERS`, `FUSED_ATTENTION`,
+`MLA_NAIVE`, `MOE_EXPERT_MAJOR`, `BATCHED_PREFILL`, `NO_KVONLY_PREFILL`, `NO_GREEDY_FASTPATH`, `NO_OPTFWD`,
+`NO_SAMPLE_FASTPATH`, `NO_TOPK_FASTPATH`, `OPTFWD_MAX_TEMP`, `CPU_FAST_ATTENTION`) go first: they are the ones that let a
+process-environment change alter an already-loaded model.
+
+- **Snapshot, raw values.** At `Load`, each model captures those 14 variables once (value + whether set) into a knob set
+  hung off `Model` and its per-model `Architecture` (every deep helper already receives one of the two).
+  `Options.Knobs` (a name→value map) overrides the environment per model — the library's way to configure two models
+  differently. Each helper keeps its exact parsing and reads the snapshot instead of `os.Getenv`, so defaults and
+  overrides mean what they meant. Typed `Options` fields are a later, separate step.
+- **Drift tripwire.** ~50 test files (decoder, cuda, gpu, metal) A/B two paths by `t.Setenv`-ing one of these AFTER
+  loading a model. With a snapshot, such a test would silently compare a path with itself — an identity test would pass
+  vacuously. So in `goinfer_testhooks` builds every snapshot read also checks the live environment and panics, naming the
+  variable and the fix, when it differs from the snapshot for a knob not set through `Options.Knobs` or the per-model
+  test setter (`SetKnobForTest`). Production builds read only the snapshot. A stale A/B therefore fails loudly wherever it
+  runs, including the Mac, instead of passing for the wrong reason.
+- **Gate.** Tiny-golden forward parity and the decoder/cuda suites green with default knobs; every test the tripwire
+  catches migrated to the setter; the 14 names leave `testdata/env_reads.txt` (their only reader becomes the snapshot).
+
+### Phase 2a result (2026-09-24)
+
+Built as designed: `decoder/knobs.go` (the snapshot and each knob's parser), `knobs_drift_testhooks.go` (tripwire
++ `SetKnobForTest` / `SetKnobEnvForTest`), `knobs_drift_prod.go` (no-op). What differed from the design, or was
+learned doing it:
+
+- **13 names left `testdata/env_reads.txt`, not 14.** `GOINFER_MOE_EXPERT_MAJOR` is also read by Metal's own prefill
+  (`metal/prefill.go`), so it stays listed until phase 4. `GOINFER_BATCHED_PREFILL` had a second reader the design
+  missed (`Model.PrefillPath`, `decoder/residency.go`); it reads the snapshot too.
+- **A nil snapshot reads the live environment.** Unit tests that build an `Architecture`, scratch or worker pool by
+  hand (no `Model`, no `Load`) keep working unchanged: `attn_grouped_test.go`, the pool tests in
+  `prefillattnpool_test.go`, `spec_optfwd_test.go`'s hand-made model.
+- **Untagged decoder tests cannot see the exported testhooks setter**, and they are exactly where the tripwire does not
+  run. So in-package tests use `setKnob` / `unsetKnob` (`decoder/knob_helpers_test.go`, untagged): same effect,
+  environment plus pin. Cross-module tests use `decoder.SetKnobEnvForTest`. `metal/optfwd_test.go` (a real-model
+  local test CI never ran) moved to `darwin && goinfer_testhooks` to reach it.
+- **Migrated:** 24 post-Load sites in 14 decoder files, 13 in 6 cuda files, 4 in 2 gpu files, 7 in 4 metal files.
+  Metal's `moe_expert_major_prefill_test.go` was left alone: it drives the Metal resident directly, which still reads
+  the environment.
+- **Gate:** `TestKnobs_*` (snapshot at Load, `Options.Knobs` per model, nil snapshot) and
+  `TestKnobDrift_firesOnPostLoadSetenv` (the tripwire goes red on a post-Load `t.Setenv` and stays quiet for both
+  sanctioned routes). Forward goldens 62/62 green on amd64 via `scripts/refresh_parity_hashes.sh`.
 
 Phases 2–5 each shrink `testdata/env_reads.txt`; the task is done when the list holds only diagnostics with a named owner
 and a reason, and the rule-1 guard stays.
