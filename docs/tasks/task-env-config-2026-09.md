@@ -1,0 +1,72 @@
+# Task: configuration out of the process environment (2026-09)
+
+> **Status 2026-09-24: phase 1 (the ratchet) DONE; phases 2–6 open.** Owner asked for this after a review found
+> configuration passed through the process environment. The four concrete defects that review named are already fixed
+> (`a50815ed`: duplicate doc rows, the darwin pager mode set via env, Metal's prefill flag re-read per call, five campaign
+> switches retired); this doc is the general program.
+
+## Why
+
+Production code reads **103** distinct `GOINFER_*` variables. The environment is process-global and mutable, so:
+
+- **A knob read per call changes a loaded model mid-flight.** 55 of the
+  61 operator knobs are read on every generation or prefill, not once.
+- **Two models in one process cannot differ.** serve loads several models; a library caller may too. A knob that is really a
+  per-model choice cannot be set per model when its only channel is `os.Getenv`.
+- **The app edge and the library disagree.** serve translated its flags into env vars (`--exact-prefill`, `--moe-pager` until
+  `a50815ed`), so a library caller silently got different defaults — measured twice in 2026-09 (`ExactPrefill` sticky across
+  loads; darwin pager mmap-vs-pool).
+- **Diagnostics masquerade as configuration.** 41 of the reads are campaign
+  switches; a knob with no owner never gets removed.
+
+`Options.ResidentContext` → `Model.ResidentContextRequest()` is the shape that already works: set once at `Load`, carried
+by the model, read by the backend from the model.
+
+## Rules
+
+1. **No new production `os.Getenv` / `os.LookupEnv` of a `GOINFER_*` variable.** A new operator choice is a field on
+   `decoder.Options` (or the app's own config) with a per-model accessor. A new diagnostic is a test hook
+   (`goinfer_testhooks`) or a package variable a test sets. Enforced by the ratchet (phase 1).
+2. **Migrating a knob keeps its env var working as an override**, read once at the edge (serve/chat flag parsing, or `Load`
+   for library callers that set nothing), never per call. Removing an env var is a separate, announced step.
+3. **Default behaviour is unchanged by a migration** — each phase's gate is bit-identical output on the default path.
+4. `docs/env-vars.md` stays the single list; a migrated knob's row names its `Options` field.
+
+## Phases
+
+| phase | scope | gate |
+|---|---|---|
+| **1. Ratchet** | `testdata/env_reads.txt`: the committed list of every production `GOINFER_*` read. `TestEnvVars_docAndCodeAgree` fails on a production read not in the list (rule 1) and on a listed variable no longer read (so the list only shrinks). | the test is red on a planted new read and on a stale entry |
+| **2. decoder operator knobs** | a `decoder.Knobs` struct snapshotted ONCE per model at `Load` (from `Options.Knobs` when set, else from the environment); every per-call read in `decoder/` reads `m.knobs` | bit-identical greedy + logits on the tiny goldens with default knobs; each knob's env override still works (one test per knob group); list shrinks by the decoder operator set |
+| **3. CUDA operator knobs** | read once at resident build from the model (as `ExactPrefill` already is) | CUDA hardware test: default path bit-identical; overrides honoured |
+| **4. Metal operator knobs** | same, on the Metal resident | metal-darwin CI + a Mac run |
+| **5. serve / cmd / gpu / internal** | serve and chat parse flags into `Options`; no `os.Setenv` in app code (`applyExactPrefillEnv` is the last one) | serveapp suite; `serve check` |
+| **6. diagnostics** | retire when the campaign's question is answered, else move to test hooks — case by case, with the owner | per retirement, the record it answered |
+
+Phases 2–5 each shrink `testdata/env_reads.txt`; the task is done when the list holds only diagnostics with a named owner
+and a reason, and the rule-1 guard stays.
+
+## Inventory (2026-09-24, from the code; tier from the section of `docs/env-vars.md` that documents it)
+
+Every variable read in production is documented. Names below drop the `GOINFER_` prefix.
+
+**operator — `decoder/` (27; 24 read per call)**: `ATTN_GROUPED`, `ATTN_ROW_TILE`, `BATCHED_PREFILL`, `CPU_FAST_ATTENTION`, `CPU_FUSED_GATEUP`, `FUSED_ATTENTION`, `INT4_F16_SCALES`, `MLA_NAIVE`, `MODELS`, `MOE_CACHE_EXPERTS`, `MOE_CACHE_SLOTS`, `MOE_EXPERT_MAJOR`, `NO_FIT_DEFAULT`, `NO_FIT_GUARD`, `NO_GREEDY_FASTPATH`, `NO_KVONLY_PREFILL`, `NO_OPTFWD`, `NO_RESIDENCY`, `NO_RESIDENT_REUSE`, `NO_SAMPLE_FASTPATH`, `NO_TOPK_FASTPATH`, `OPTFWD_MAX_TEMP`, `P13_OFF`, `PREFILL_ATTN_WORKERS`, `SSM_RESIDENT`, `W4A8_BATCH`, `W4A8_SPLITHALF`
+**operator — `cuda/` (11; 11 read per call)**: `CUDA_FAST_PREFILL`, `CUDA_FAST_PREFILL_FLOOR`, `CUDA_FLASH_DECODE`, `CUDA_FLASH_DECODE_MIN_KEYS`, `CUDA_FLASH_DECODE_VERIFY`, `CUDA_NO_FUSE`, `NO_LORA_CACHE`, `PREFILL_CHUNK`, `PREFILL_IMAGE_CHUNK`, `SPLITKV_ATTN`, `SPLITKV_MIN_KEYS`
+**operator — `metal/` (14; 14 read per call)**: `METAL_ALIAS`, `METAL_ATTN_FA`, `METAL_BATCHED_PREFILL`, `METAL_DECODE_LANE`, `METAL_FAST_PREFILL`, `METAL_FAST_PREFILL_FLOOR`, `METAL_FUSED_ATTENTION`, `METAL_MOE_SLOTS`, `MOE_NOCACHE`, `MOE_PREAD`, `MOE_RESIDENCY`, `MOE_RESIDENCY_SCOPE`, `NO_RESIDENT_MEM_GUARD`, `PRECISE_MATH`
+**operator — `internal/` (5; 4 read per call)**: `API_KEY`, `GGUF_DIRECT`, `MODEL_TMP`, `SWAP_GUARD`, `TOOL_UNION`
+**operator — `gpu/` (3; 1 read per call)**: `ATTN_KEYS`, `INT4_SLOWPATH`, `WEBGPU_GEMM`
+**operator — `cmd/` (1; 1 read per call)**: `NVRTC_DIRS`
+**diagnostic — `decoder/` (13; 5 read per call)**: `DECODE_TIMING`, `DELTANET_TIMING`, `FAKEQUANT`, `FAKEQUANT_ACT`, `FAKEQUANT_EXPERTS`, `FAKEQUANT_PERROW`, `MOE_PREAD_CPU`, `NORM_ULP_NOISE`, `ROUTER_CAPTURE`, `SSM_NOMUL`, `SSM_Q8CPU`, `SSM_SKIPFFN`, `TEST_NOTHINK`
+**diagnostic — `cuda/` (14; 13 read per call)**: `A10_PROBE`, `CUDA_ATTN_FUSED_TILE`, `CUDA_GRAPHS`, `CUDA_GRAPHS_ONLY`, `CUDA_GRAPHS_SYNC`, `CUDA_GRAPHS_UNSAFE`, `CUDA_L01_CPU_OFFLOAD`, `CUDA_MOE_EXPERT_MAJOR`, `CUDA_VISION_ATTN`, `G4_CAPTURE`, `MOE_CACHE_PROF`, `MOE_DMA_OVERLAP`, `MOE_PIN_REGISTER`, `SPLITKV_VSUM_SPLIT`
+**diagnostic — `metal/` (2; 2 read per call)**: `ATTNFA_DEBUG`, `MOE_PROF_SPLIT`
+**diagnostic — `gpu/` (3; 3 read per call)**: `GPU_CAPTURE`, `SSM_F16MAMBA`, `SSM_W8A16`
+**diagnostic — `cmd/` (9; 9 read per call)**: `GATE_BACKEND`, `GATE_HEARTBEAT`, `GATE_MODELS`, `GATE_SKIP_HEAVY`, `GATE_SKIP_WEBGPU`, `HEAVY_PKGS`, `HEAVY_RUN`, `HEAVY_TIMEOUT`, `REQUIRE_FIXTURES`
+**ci-gate — `decoder/` (1; 1 read per call)**: `PREFILL_GATE_PROMPTS`
+
+## Not in scope
+
+- Non-`GOINFER_` variables the platform defines (`CUDA_MPS_PIPE_DIRECTORY`). A scan on 2026-09-24 found no other unprefixed
+  reads after `G4DEBUG`'s retirement.
+- Test-only env reads (`_test.go`): those are the test's own interface and stay.
+
+<!-- doc-reviewed: 2026-09-24 -->

@@ -77,6 +77,12 @@ pushes**, because `gofmt` and `go vet` were run and staticcheck was not.
 **Check CI after pushing.** `gh run list --limit 5`. Red does not announce itself, and a break rides
 along under every subsequent push until someone looks.
 
+**No new production env reads.** `testdata/env_reads.txt` lists every `GOINFER_*` variable production code reads
+from the environment, and `TestEnvVars_docAndCodeAgree` fails on a read that is not on it. A new operator choice is a
+`decoder.Options` field with a per-model accessor; a new diagnostic is a test hook. The list only shrinks — see
+`docs/tasks/task-env-config-2026-09.md` for why (per-call reads change a loaded model mid-flight; two models in one
+process cannot differ) and the migration phases.
+
 **Never `git add -A` / `git add .`.** It sweeps generated fixture metadata into git, which makes
 dir-only skip-guards think a fixture exists and flips skips into failures. Stage explicit paths.
 
