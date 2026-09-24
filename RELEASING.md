@@ -48,6 +48,14 @@ survives to a tag unless caught here.
   that drifts, which is the defect this repo keeps finding; the command above has no such failure
   mode. Act only if a module actually disagrees, **never downgrade**, and tidy the root last.
 
+  **Bump the `aikit/gpu` pin in `cuda` and `metal` together**, in one commit. Nothing forces it: `cuda`
+  and `metal` each pin `aikit/gpu` independently, and Go resolves each module's own pin, so bumping one
+  leaves the other's release binary on the older gpu code with no error. Measured 2026-09-24: `cuda` on
+  `v0.33.3`, `metal` still on `v0.33.1` — the Mac `goinfer-serve` built against gpu code from before
+  2026-09-14. `TestAikitPinsAgree/aikit/gpu` (`decoder/aikit_pin_test.go`) now fails on that; it checks
+  agreement only, not that the pin is the latest tag (that needs the network), so choosing the version
+  is still this step's job.
+
   Two things the command will not tell you, so they are stated rather than restated:
   `aikit` and `aikit/gpu` are **separate modules with separate tag series that do not track each
   other** — equal-looking version numbers mean nothing across them, and a nested module must be
