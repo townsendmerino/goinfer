@@ -120,7 +120,7 @@ Readings:
   *anonymous* copy (step 4), plus the file's own page in the cache. The S6 brief's premise — file-backed views the
   OS can reclaim — does not hold for this mapping type. The `alias.go` comment saying the pages are "file-backed and
   never anonymous" is wrong and must be corrected. Whether a `MAP_SHARED` mapping (no `needs_copy`, so no COW at wire)
-  gives the file-backed behaviour the brief wants is the next design question; it is **untested** here.
+  gives the file-backed behaviour the brief wants was the next design question — **answered yes, 2026-09-24**: `s6-alias-2026-09-24.md`, "MAP_SHARED"; `decoder.Load` now maps `.giw` shared on darwin.
 - **The 1.5B footprint headline (1,005 → 354 MB) is an accounting artefact.** The 625 MB moved out of the process's
   ledger, not out of RAM; an honest comparison needs system-wide counters (`vm_stat` anonymous / wired / file-backed)
   around the same events, which no S6 run sampled.
@@ -194,7 +194,7 @@ the alias arms into copy arms — both alias logs carry the `weights aliased …
   persists between tokens was not measured separately — it does not matter for the mechanism, since a command buffer is
   in flight for the whole request.
 - M26 with the fix: not run. The 7B: not run at all. S6's own gates: not run.
-- Whether `MAP_SHARED` avoids the COW copies and restores the file-backed intent of S6.
+- ~~Whether `MAP_SHARED` avoids the COW copies~~ — it does (0 vs 15,131 COW faults for a 16,384-page window; +132 vs +40,430 on the 1.5B served path); adopted on darwin.
 
 ## 9. Method notes (so the next one is faster)
 

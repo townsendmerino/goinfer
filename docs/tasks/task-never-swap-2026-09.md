@@ -1003,8 +1003,8 @@ the Metal pager's command-buffer boundary (M-11, R11); Linux defaults.
 > at its first request, 3 attempts of 3 — ROOT-CAUSED 2026-09-24** (`docs/measurements/m26-alias-fork-collapse-2026-09-24.md`: a
 > `fork()` while Metal has a no-copy page wired copies the whole mapping eagerly — XNU copy-on-wire + `vm_map_fork` — and
 > the swap guard forks every 2 s; reproduced without a model; FIXED (`VM_INHERIT_NONE` on the mapping in `decoder.Load` + the swap guard reads
-> swap with a bare sysctl) and confirmed on M26: 2 of 2 alias arms clean, swap flat). **Also: no-copy over `MAP_PRIVATE` is anonymous+wired on macOS, not file-backed — S6's
-> premise needs `MAP_SHARED` or a rethink**; the depth-128/2048 bench, the memory-hog arm, M26 alias numbers and the parity
+> swap with a bare sysctl) and confirmed on M26: 2 of 2 alias arms clean, swap flat). **No-copy over `MAP_PRIVATE` is anonymous+wired on macOS; `decoder.Load` now maps `.giw`
+> `MAP_SHARED` on darwin, which removes the copies (1.5B served request: +132 COW faults vs +40,430) — S6's premise holds**; the depth-128/2048 bench, the memory-hog arm, M26 alias numbers and the parity
 > fixtures are NOT done, so nothing here ships. Of the brief's Build steps below, 2 (writer — nibbles only, scales still f32) and 3 (reader / Metal build) are partly
 > built; the f16-scale writer, 4 (expert slots) and 5 (banner) are not.
 >

@@ -25,14 +25,12 @@ import (
 // all the kernels' vector loads need). Scales are NOT aliased: the file stores f32 and the kernels read
 // f16, so they are still converted into a small buffer (~1/8 of the nibble bytes).
 //
-// MEASURED CONSEQUENCE, not a free lunch (docs/measurements/m26-alias-fork-collapse-2026-09-24.md): the
-// .giw is mapped PROT_READ|MAP_PRIVATE, and IOKit wires a no-copy buffer's pages by faulting them with write
-// intent — so every page a command buffer reads becomes a wired, ANONYMOUS copy-on-write page in a kernel
-// shadow object (while the file's own page stays in the cache). It is invisible to the process's footprint,
-// RSS and "mapped file" lines, and it is not file-backed or evictable. What aliasing removes is the SECOND
-// MTLBuffer copy and the build-time heap staging, not the memory itself. And while any such page is wired,
-// fork() of this process copied the WHOLE mapping eagerly — decoder.Load now marks the mapping
-// VM_INHERIT_NONE to prevent that (decoder/forkinherit_darwin.go).
+// WHAT THE ALIASED PAGES ARE (measured, docs/measurements/s6-alias-2026-09-24.md, "MAP_SHARED"): IOKit wires a
+// no-copy buffer's pages with write intent. Over a MAP_PRIVATE mapping that makes every GPU-read page a wired
+// ANONYMOUS copy-on-write copy — the 1.5B served one request with +40,430 COW faults for 625 MB aliased — so
+// aliasing saved nothing, and fork() then copied the whole mapping (the M26 collapse). decoder.Load therefore
+// maps a .giw MAP_SHARED on darwin (decoder/giwmap_darwin.go): the GPU reads the file's own page-cache pages
+// (+132 COW faults, background), wired only while a command buffer uses them, and a fork is cheap.
 //
 // Opt-in (GOINFER_METAL_ALIAS=1) until every gate in S6's registered rule passes; off, this type is nil and
 // int4Buf is byte-for-byte what it was.
