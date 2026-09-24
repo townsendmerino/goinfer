@@ -1,0 +1,29 @@
+# TestAliasForkProbe, run 1 (first version of the probe), 2026-09-24 12:06:31, MacBook darwin/arm64 16 GB, after a reboot at 10:05.
+# This version called vm_stat (a fork+exec) immediately after the GPU touch WITHOUT timing it; the timed forks
+# ran >=2 s later. Kept because it is the run that showed the whole-file page-in at the touch step.
+wrote 2048 MiB uncached random to <scratchpad>/forkprobe.bin in 2.5 s
+P0 baseline  @1790276795.740  vm_stat: free=17029 wired=115763 anon=485509 file=305766 compressor=84884 pageins=2971114
+P0 fork+exec, no mapping: 2.51 ms
+P1 mapped + no-copy buffer created (untouched)  @1790276795.964  vm_stat: free=17298 wired=115720 anon=485121 file=305993 compressor=84857 pageins=2971282
+P1 fork+exec, buffer created, no GPU touch: 3.00 ms (wired Δ since P0: +3 pages)
+P2 GPU touched the 16 MiB window in 36.1 ms: wired Δ +125 pages (window = 1024 pages, file = 131072 pages), system pageins Δ +131432
+P2 +2 s  @1790276800.499  vm_stat: free=110095 wired=116474 anon=295183 file=341380 compressor=145827 pageins=3110454
+P3.1 fork start  @1790276800.506  vm_stat: free=109954 wired=116476 anon=295270 file=341431 compressor=145825 pageins=3110495
+P3.1 fork+exec after the GPU touch: 3.21 ms (system pageins Δ +47 pages during it; started 1790276800.506)
+P3.2 fork start  @1790276802.023  vm_stat: free=97616 wired=116242 anon=301471 file=349358 compressor=144312 pageins=3115665
+P3.2 fork+exec after the GPU touch: 2.91 ms (system pageins Δ +177 pages during it; started 1790276802.023)
+P3.3 fork start  @1790276803.537  vm_stat: free=79424 wired=112089 anon=310877 file=362936 compressor=143662 pageins=3124370
+P3.3 fork+exec after the GPU touch: 3.06 ms (system pageins Δ +65 pages during it; started 1790276803.537)
+P4a fork+exec after ReleaseAll (mapping still present): 3.71 ms
+P4b fork+exec after munmap: 3.07 ms
+sampler: 146 samples over 10.1 s (every ~69 ms)
+  anon       baseline    483749  peak    493533 (+9784 pages = +0.15 GB) @1790276796.274   low    277659 (-206090) @1790276798.507
+  wired      baseline    115579  peak    121562 (+5983 pages = +0.09 GB) @1790276804.269   low    111529 (-4050) @1790276801.326
+  file       baseline    305259  peak    370675 (+65416 pages = +1.00 GB) @1790276805.521   low    305259 (+0) @1790276795.468
+  compressor baseline     84916  peak    151599 (+66683 pages = +1.02 GB) @1790276798.507   low     84856 (-60) @1790276796.009
+  free       baseline     19491  peak    135279 (+115788 pages = +1.77 GB) @1790276798.507   low      3258 (-16233) @1790276798.241
+READING: fork before=2.51 ms, after-touch=3.21/2.91/3.06 ms (1x), after-release=3.71 ms, after-unmap=3.07 ms; wired at touch +125 of 131072 file pages
+=> neither: fork stayed fast and wiring stayed window-sized; the collapse needs another explanation.
+# Reading after the fact: the "+131432 system pageins" at P2 were not the 36 ms GPU touch (2 GiB cannot be read from
+# disk in 36 ms); they were the untimed vm_stat fork the probe made right after the touch, while the window was wired.
+# The compressor +1.02 GB / free +1.77 GB / anon -3.1 GB spike at @798.507 is that fork. Run 2 times that fork.

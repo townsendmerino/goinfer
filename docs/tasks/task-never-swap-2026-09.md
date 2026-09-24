@@ -1000,7 +1000,11 @@ the Metal pager's command-buffer boundary (M-11, R11); Linux defaults.
 > whose fused q‖k‖v / gate‖up nibbles are adjacent in the file (`docs/giw-bundles.md`) so the fused buffers alias too. On the 1.5B,
 > logits are byte-identical aliased vs copied on both layouts and the footprint after load falls 1,005 → 354 MB (IOAccelerator
 > 927 → 302). On M26 only ~0.7 GB is aliasable (its dense term is small) and the alias arm **collapsed the machine's memory
-> at its first request, 3 attempts of 3** (the process is paged out wholesale; the copy arm never did) — **mechanism unknown, do not run it on M26/M35**; the depth-128/2048 bench, the memory-hog arm, M26 alias numbers and the parity
+> at its first request, 3 attempts of 3 — ROOT-CAUSED 2026-09-24** (`docs/measurements/m26-alias-fork-collapse-2026-09-24.md`: a
+> `fork()` while Metal has a no-copy page wired copies the whole mapping eagerly — XNU copy-on-wire + `vm_map_fork` — and
+> the swap guard forks every 2 s; reproduced without a model, `VM_INHERIT_NONE` on the mapping verified to remove it; fix
+> NOT yet applied, M26 not re-run). **Also: no-copy over `MAP_PRIVATE` is anonymous+wired on macOS, not file-backed — S6's
+> premise needs `MAP_SHARED` or a rethink**; the depth-128/2048 bench, the memory-hog arm, M26 alias numbers and the parity
 > fixtures are NOT done, so nothing here ships. Of the brief's Build steps below, 2 (writer — nibbles only, scales still f32) and 3 (reader / Metal build) are partly
 > built; the f16-scale writer, 4 (expert slots) and 5 (banner) are not.
 >

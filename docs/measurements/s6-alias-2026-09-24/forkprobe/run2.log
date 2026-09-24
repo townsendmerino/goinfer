@@ -1,0 +1,28 @@
+# TestAliasForkProbe, run 2 (refined probe: the FIRST fork after the touch is timed; a continuous-dispatch arm holds
+# the window wired), 2026-09-24 12:09:04, MacBook darwin/arm64 16 GB. Sampler log: run2-vmstat-samples.log.
+wrote 2048 MiB uncached random to <scratchpad>/forkprobe.bin in 1.3 s
+P0 baseline  @1790276948.250  vm_stat: free=120439 wired=109511 anon=396898 file=261371 compressor=120780 pageins=3142641
+P0 fork+exec, no mapping: 2.82 ms
+P1 mapped + no-copy buffer created (untouched)  @1790276948.303  vm_stat: free=119685 wired=109531 anon=397648 file=261375 compressor=120780 pageins=3142652
+P1 fork+exec, buffer created, no GPU touch: 2.59 ms (wired Δ since P0: +11 pages)
+P2 GPU touched the 16 MiB window in 8.2 ms; FIRST fork+exec right after it (started 1790276948.331): 1131.03 ms; then wired Δ +127 pages (window = 1024, file = 131072), system pageins Δ +131258 since before the touch
+P2 +2 s (idle)  @1790276951.466  vm_stat: free=134018 wired=109775 anon=301559 file=299521 compressor=164120 pageins=3274177
+P2 fork+exec 2 s after the touch, GPU idle: 2.48 ms
+P3.1 fork start, dispatch loop running  @1790276952.028  vm_stat: free=134646 wired=110991 anon=300618 file=298417 compressor=164234 pageins=3274273
+P3.1 fork+exec DURING continuous dispatch: 247.47 ms (system pageins Δ +83 pages; started 1790276952.028)
+P3.2 fork start, dispatch loop running  @1790276954.028  vm_stat: free=136190 wired=117756 anon=291554 file=299165 compressor=164298 pageins=3274636
+P3.2 fork+exec DURING continuous dispatch: 246.01 ms (system pageins Δ +141 pages; started 1790276954.028)
+P3.3 fork start, dispatch loop running  @1790276956.022  vm_stat: free=135953 wired=125818 anon=285258 file=297694 compressor=164258 pageins=3275089
+P3.3 fork+exec DURING continuous dispatch: 252.85 ms (system pageins Δ +133 pages; started 1790276956.022)
+P3 dispatch loop: 16746 dispatches
+P3 fork+exec 2 s after the loop stopped: 2.96 ms
+P4a fork+exec after ReleaseAll (mapping still present): 3.15 ms
+P4b fork+exec after munmap: 3.12 ms
+sampler: 183 samples over 12.3 s (every ~68 ms)
+  anon       baseline    398768  peak    479398 (+80630 pages = +1.23 GB) @1790276948.907   low    285717 (-113051) @1790276956.873
+  wired      baseline    109508  peak    125823 (+16315 pages = +0.25 GB) @1790276956.280   low    109508 (+0) @1790276947.959
+  file       baseline    261369  peak    315715 (+54346 pages = +0.83 GB) @1790276948.700   low    261369 (+0) @1790276947.959
+  compressor baseline    120782  peak    164298 (+43516 pages = +0.66 GB) @1790276954.280   low    120779 (-3) @1790276948.498
+  free       baseline    118568  peak    137602 (+19034 pages = +0.29 GB) @1790276959.395   low      3572 (-114996) @1790276949.176
+READING: fork ms — no mapping 2.82 | buffer untouched 2.59 | FIRST after touch 1131.03 | idle 2 s after touch 2.48 | during continuous dispatch 247.47/246.01/252.85 | idle 2 s after loop 2.96 | after ReleaseAll 3.15 | after munmap 3.12; wired at touch +127 of 131072 file pages; pageins during held forks +83/+141/+133
+=> H1 (refined): a fork made WHILE a no-copy page is wired copies the whole mapping eagerly (seconds, page-ins ≈ the file the first time); forks with the GPU idle are fast because the driver unwires between command buffers. A decode always has a command buffer in flight, so the 2 s swap-guard fork on M26 always pays it: 15 GB per tick.

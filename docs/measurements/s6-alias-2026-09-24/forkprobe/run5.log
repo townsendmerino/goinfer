@@ -1,0 +1,33 @@
+# TestAliasForkProbe, run 5 (final probe: timed first post-touch fork, continuous-dispatch arm, minherit(VM_INHERIT_NONE) arm), 2026-09-24 12:12:49, MacBook darwin/arm64 16 GB. Sampler log: run5-vmstat-samples.log. Runs 3-4 (12:11-12:12) reproduced P0-P3 identically (first post-touch fork 2,487 ms, +131,987 page-ins; held forks 234-250 ms) and crashed in a first draft of P5 that reused buffers ReleaseAll had freed.
+wrote 2048 MiB uncached random to /private/tmp/claude-501/-Users-francistownsend-merino-tmcode-goinfer/118b1a93-e224-4969-a915-4659ad84054e/scratchpad/forkprobe.bin in 1.2 s
+P0 baseline  @1790277172.849  vm_stat: free=181198 wired=226957 anon=249858 file=164291 compressor=186623 pageins=3733288
+P0 fork+exec, no mapping: 2.79 ms
+P1 mapped + no-copy buffer created (untouched)  @1790277172.867  vm_stat: free=181070 wired=226986 anon=250007 file=164327 compressor=186623 pageins=3733292
+P1 fork+exec, buffer created, no GPU touch: 2.55 ms (wired Δ since P0: -15 pages)
+P2 GPU touched the 16 MiB window in 7.5 ms; FIRST fork+exec right after it (started 1790277172.895): 1092.11 ms; then wired Δ +4501 pages (window = 1024, file = 131072), system pageins Δ +131814 since before the touch
+P2 +2 s (idle)  @1790277175.992  vm_stat: free=113700 wired=231600 anon=171104 file=293988 compressor=198593 pageins=3876926
+P2 fork+exec 2 s after the touch, GPU idle: 2.56 ms
+P3.1 fork start, dispatch loop running  @1790277176.598  vm_stat: free=134762 wired=232635 anon=163672 file=276938 compressor=200988 pageins=3881371
+P3.1 fork+exec DURING continuous dispatch: 255.37 ms (system pageins Δ +1069 pages; started 1790277176.598)
+P3.2 fork start, dispatch loop running  @1790277178.669  vm_stat: free=135094 wired=232791 anon=158270 file=280237 compressor=202568 pageins=3886789
+P3.2 fork+exec DURING continuous dispatch: 260.17 ms (system pageins Δ +3963 pages; started 1790277178.669)
+P3.3 fork start, dispatch loop running  @1790277180.712  vm_stat: free=139723 wired=203022 anon=169545 file=295296 compressor=201427 pageins=3890341
+P3.3 fork+exec DURING continuous dispatch: 246.97 ms (system pageins Δ +299 pages; started 1790277180.712)
+P3 dispatch loop: 16645 dispatches
+P3 fork+exec 2 s after the loop stopped: 3.27 ms
+P4a fork+exec after ReleaseAll (mapping still present): 3.78 ms
+P4b fork+exec after munmap: 2.88 ms
+P5 minherit(NONE) mapping: FIRST fork+exec right after the GPU touch: 3.81 ms
+P5 minherit(NONE) mapping: fork+exec DURING continuous dispatch (8117 dispatches): 3.74/3.98/3.73 ms
+=> minherit(VM_INHERIT_NONE) on the mapping removes the eager copy: forks stay ~3.8 ms while the window is wired.
+sampler: 211 samples over 14.2 s (every ~68 ms)
+  anon       baseline    250593  peak    331355 (+80762 pages = +1.23 GB) @1790277173.570   low    160534 (-90059) @1790277179.774
+  wired      baseline    226962  peak    233893 (+6931 pages = +0.11 GB) @1790277177.674   low    114238 (-112724) @1790277185.332
+  file       baseline    163148  peak    355180 (+192032 pages = +2.93 GB) @1790277186.664   low    163148 (+0) @1790277172.558
+  compressor baseline    186726  peak    204508 (+17782 pages = +0.27 GB) @1790277173.942   low    186523 (-203) @1790277173.499
+  free       baseline    181428  peak    182690 (+1262 pages = +0.02 GB) @1790277172.691   low      3020 (-178408) @1790277173.636
+READING: fork ms — no mapping 2.79 | buffer untouched 2.55 | FIRST after touch 1092.11 | idle 2 s after touch 2.56 | during continuous dispatch 255.37/260.17/246.97 | idle 2 s after loop 3.27 | after ReleaseAll 3.78 | after munmap 2.88; wired at touch +4501 of 131072 file pages; pageins during held forks +1069/+3963/+299
+=> H1 (refined): a fork made WHILE a no-copy page is wired copies the whole mapping eagerly (seconds, page-ins ≈ the file the first time); forks with the GPU idle are fast because the driver unwires between command buffers. A decode always has a command buffer in flight, so the 2 s swap-guard fork on M26 always pays it: 15 GB per tick.
+--- PASS: TestAliasForkProbe (15.75s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	16.179s
