@@ -1,0 +1,16 @@
+# TestR9_decodeAttribution/1.5B x3, GOINFER_DECODE_TIMING=1, shipped defaults, nobara-pc 2026-09-23, HEAD ec6fec95 (before the fused path)
+run1: DECODE TIMING (24 tok, gpu=false): forward 54.4 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+run1: DECODE SPLIT: attention 9.82 ms | MLP 35.63 ms | LM head 8.66 ms | residual 0.32 ms /token
+run1: DECODE SPLIT MLP: gate+up matmuls 20.02 ms | activation 3.66 ms | down matmul 11.92 ms /token
+run1: DECODE SPLIT ATTN: q/k/v matmuls 4.84 ms | rope+KV+scores/softmax/AV core 2.58 ms | o matmul 2.39 ms /token
+run1:     r9_decode_attribution_test.go:142: 1.5B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)
+run2: DECODE TIMING (24 tok, gpu=false): forward 54.6 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+run2: DECODE SPLIT: attention 9.92 ms | MLP 35.72 ms | LM head 8.64 ms | residual 0.32 ms /token
+run2: DECODE SPLIT MLP: gate+up matmuls 20.08 ms | activation 3.64 ms | down matmul 11.98 ms /token
+run2: DECODE SPLIT ATTN: q/k/v matmuls 4.86 ms | rope+KV+scores/softmax/AV core 2.62 ms | o matmul 2.44 ms /token
+run2:     r9_decode_attribution_test.go:142: 1.5B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)
+run3: DECODE TIMING (24 tok, gpu=false): forward 54.3 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+run3: DECODE SPLIT: attention 9.77 ms | MLP 35.56 ms | LM head 8.64 ms | residual 0.32 ms /token
+run3: DECODE SPLIT MLP: gate+up matmuls 19.93 ms | activation 3.65 ms | down matmul 11.95 ms /token
+run3: DECODE SPLIT ATTN: q/k/v matmuls 4.80 ms | rope+KV+scores/softmax/AV core 2.57 ms | o matmul 2.39 ms /token
+run3:     r9_decode_attribution_test.go:142: 1.5B: 24 tokens generated (DECODE TIMING line printed above by decoder.decodeTiming)

@@ -1627,12 +1627,20 @@ backend rather than by model).
 > re-anchor record rather than hidden. goinfer still trails Ollama on CPU at every size (0.65×/0.74×/0.82× —
 > closer than the 08-26 fit implied, not parity). The 2026-08-26 fit this column supported ("~13 ms fixed at
 > 22 GB/s") no longer describes the box; see the record for the replacement reading.
+>
+> **UPDATE 2026-09-23 — the CPU cells below are re-measured with the fused gate+up+SwiGLU fork/join**
+> (`measurements/cpu-decode-roofline-2026-09-23.md`; same protocol, same session as Ollama v0.32.5 and the previous build):
+> **0.5B 46.9, 1.5B 19.4, 7B 5.0** against Ollama 57.1 / 23.8 / 6.0 — **0.82× / 0.815× / 0.83×** (the previous build read
+> 37.8 / 17.1 / 4.9 in this same session: 0.66× / 0.72× / 0.82×), a 1.24× / 1.135× / 1.02× served gain that is larger than the
+> in-process A/B predicted on the two small models and not yet explained. Still behind Ollama at every size. The record also shows the
+> remaining gap is achieved memory bandwidth (goinfer 17–23 GB/s streaming *fewer* bytes than Ollama's 26–28, against a measured ~30 GB/s
+> ceiling), not bytes or format. The 2026-09-22 numbers in the callout above are kept as the dated record of the build before this change.
 
 | model | goinfer CPU (tok/s) | Ollama CPU (tok/s) | goinfer CUDA (tok/s) | Ollama CUDA (tok/s) | goinfer WebGPU ⁱ (tok/s) |
 |---|---|---|---|---|---|
-| 0.5B | 37.5 (2026-09-22) | 57.6 ±0.1 | **332.7** ±4.9 | 268.7 ±0.9 | 127.6 ±1.0 |
-| 1.5B | 17.8 (2026-09-22) | 24.1 ±0.0 | **220.8** ±1.0 | 195.8 ±0.1 | 90.1 ±0.4 |
-| 7B | 4.9 (2026-09-22) | 6.0 ±0.0 | 73.1 ±0.0 | 72.8 ±0.1 | 46.1 ±0.0 |
+| 0.5B | **46.9** (2026-09-23) | 57.1 ±0.0 | **332.7** ±4.9 | 268.7 ±0.9 | 127.6 ±1.0 |
+| 1.5B | **19.4** (2026-09-23) | 23.8 ±0.0 | **220.8** ±1.0 | 195.8 ±0.1 | 90.1 ±0.4 |
+| 7B | **5.0** (2026-09-23) | 6.0 ±0.0 | 73.1 ±0.0 | 72.8 ±0.1 | 46.1 ±0.0 |
 
 ⁱ **Cross-backend, not a peer cell.** Ollama has no WebGPU build, so this column has no counterpart
 and must never be presented as a like-for-like comparison. It is here to place goinfer's portable

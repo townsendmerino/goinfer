@@ -1315,6 +1315,21 @@ Table 1's multimodal cell; `docs/multimodal.md` P6.
 > already in use. Remaining under R9 now: S-02 per-worker timestamps, the `bench_peer.py` Linux re-anchor, the S-01
 > tile's own fold (the same identity on the prefill/verify kernel, 1.33× counted), and the 7B split on a quiet box.
 
+> **Linux CPU decode, roofline + fused gate+up+SwiGLU, 2026-09-23** —
+> [`cpu-decode-roofline-2026-09-23.md`](../measurements/cpu-decode-roofline-2026-09-23.md). The ~30 GB/s read ceiling now has an
+> instrument (`scripts/readbw.c`: reached with 2–4 threads, access pattern and prefetch cost nothing). Real bytes per token from the
+> loaded weights (int4 is 0.625 B/param — the f32 scales — so the 2026-09-22 records' "19.5 GB/s, 64% of the ceiling" was ~24 GB/s, ~80%):
+> goinfer streams *fewer* bytes than Ollama (0.73× at 0.5B, 0.94× at 1.5B) but at 17–23 GB/s against Ollama's 26–28, so **the remaining
+> gap is achieved bandwidth, not bytes**. Per component on the 1.5B: gate+up 24.1 GB/s, down 20.1, LM head 27.1 (at the ceiling), o 17.2,
+> q/k/v 11.4, plus 6.6 ms/token that streams nothing (serial SwiGLU 3.65, attention core 2.6). Built and shipped **one fork/join per layer
+> for gate+up with the SwiGLU folded in** (non-arm64, default on, `GOINFER_CPU_FUSED_GATEUP=0` opts out): bit-identical (element-wise
+> test, mutation-checked; ~21.9M full-logit values compared on the real 0.5B/1.5B/7B, 0 differ), paired ABBA 1.066× / 1.113× / 1.029×
+> (1.5B / 0.5B / 7B), served same-session **1.135× / 1.24× / 1.02× → 0.815× / 0.82× / 0.83× of Ollama** (was 0.72× / 0.66× / 0.82×). The
+> decision rule applied is the R9 Linux-fix bar, chosen after the small-model A/Bs were in (disclosed in the record; R-06's ≥15% bar would
+> have parked it). Open: the served gain exceeds the in-process one on the two small models and is unexplained; why `down` streams 17%
+> slower per byte than gate/up; R-06's q/k/v batch (1.053× / 1.039× re-measured, still parked by its own bar) and f16 scales (−82 MB/token,
+> a kernel + `.giw` change) are the next levers; arm64 unmeasured.
+
 **Goal.** Attribute the per-token cost the fits in §2.1 say exists, on both boxes, before building
 anything; then fund the one counted kernel lever.
 

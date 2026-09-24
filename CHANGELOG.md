@@ -15,6 +15,18 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **CPU decode on non-arm64: fused gate+up+SwiGLU fork/join, DEFAULT ON (`GOINFER_CPU_FUSED_GATEUP=0` opts out).** A layer now pays
+  one barrier instead of two for its gate and up projections, and the SwiGLU's scalar float64 `exp` (3.65 ms/token on the 1.5B, serial
+  because fanning it out separately loses) runs in parallel inside that barrier. **Bit-identical**: each output column is a self-contained
+  dot and the activation is elementwise — pinned by a mutation-checked element-wise `!=` test across widths and ragged N, and on the real
+  0.5B/1.5B/7B by comparing the full logits vector at 48 decode steps (~21.9M values, 0 differ). Paired ABBA on the Ryzen 7 3700X:
+  1.5B **1.066×**, 0.5B **1.113×**, 7B **1.029×** in-process; served, same session, interleaved against the previous build:
+  **1.24× / 1.135× / 1.02×** (46.9 / 19.4 / 5.0 tok/s), which is **0.82× / 0.815× / 0.83× of Ollama v0.32.5** (was 0.66× / 0.72× / 0.82×).
+  arm64 stays off (measured on amd64 only). Found by a per-component roofline of the 1.5B token from real weight bytes and measured
+  DECODE SPLIT ms: goinfer streams *fewer* bytes per token than Ollama (0.73× on the 0.5B, 0.94× on the 1.5B) but at 17–23 GB/s against
+  Ollama's 26–28 (a ~30 GB/s ceiling, measured independently) — the gap is achieved bandwidth, and the small projections and the serial
+  activation are where it is lost. Also corrects the earlier record's "19.5 GB/s" (it counted 0.5 B/param and ignored the f32 scales: real
+  traffic was ~24 GB/s). `docs/measurements/cpu-decode-roofline-2026-09-23.md`.
 - **CUDA flash-decode attention lane (R6) is now DEFAULT ON (`GOINFER_CUDA_FLASH_DECODE=0` opts out).** Owner decision,
   2026-09-23. It replaces decode attention's three-launch exact path with a key-split online-softmax kernel once the attended
   span reaches 2048 keys (`GOINFER_CUDA_FLASH_DECODE_MIN_KEYS`), so anything shallower — every short chat turn — is untouched, and

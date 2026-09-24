@@ -1,0 +1,21 @@
+# TestCPUDecode_weightBytesPerToken: REAL stored bytes streamed per decode token, from the loaded models. nobara-pc 2026-09-23, HEAD d88ef960.
+# GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./decoder/ -run TestCPUDecode_weightBytesPerToken -v
+BYTES 0.5B  q/k/v     params     24.8M  packed     12.4 MB  scales    3.1 MB  total     15.5 MB  (0.625 B/param)
+BYTES 0.5B  o         params     19.3M  packed      9.6 MB  scales    2.4 MB  total     12.0 MB  (0.625 B/param)
+BYTES 0.5B  gate+up   params    209.2M  packed    104.6 MB  scales   26.1 MB  total    130.7 MB  (0.625 B/param)
+BYTES 0.5B  down      params    104.6M  packed     52.3 MB  scales   13.1 MB  total     65.4 MB  (0.625 B/param)
+BYTES 0.5B  LM head   params    136.1M  packed    136.1 MB  scales    0.6 MB  total    136.7 MB  (1.004 B/param)
+BYTES 0.5B  TOTAL streamed per token: 360.4 MB   kinds=map[int4:168 int8:1]
+BYTES 1.5B  q/k/v     params     88.1M  packed     44.0 MB  scales   11.0 MB  total     55.1 MB  (0.625 B/param)
+BYTES 1.5B  o         params     66.1M  packed     33.0 MB  scales    8.3 MB  total     41.3 MB  (0.625 B/param)
+BYTES 1.5B  gate+up   params    770.7M  packed    385.4 MB  scales   96.3 MB  total    481.7 MB  (0.625 B/param)
+BYTES 1.5B  down      params    385.4M  packed    192.7 MB  scales   48.2 MB  total    240.8 MB  (0.625 B/param)
+BYTES 1.5B  LM head   params    233.4M  packed    233.4 MB  scales    0.6 MB  total    234.0 MB  (1.003 B/param)
+BYTES 1.5B  TOTAL streamed per token: 1052.9 MB   kinds=map[int4:196 int8:1]
+BYTES 7B    q/k/v     params    462.4M  packed    231.2 MB  scales   57.8 MB  total    289.0 MB  (0.625 B/param)
+BYTES 7B    o         params    359.7M  packed    179.8 MB  scales   45.0 MB  total    224.8 MB  (0.625 B/param)
+BYTES 7B    gate+up   params   3802.1M  packed   1901.1 MB  scales  475.3 MB  total   2376.3 MB  (0.625 B/param)
+BYTES 7B    down      params   1901.1M  packed    950.5 MB  scales  237.6 MB  total   1188.2 MB  (0.625 B/param)
+BYTES 7B    LM head   params    545.0M  packed    545.0 MB  scales    0.6 MB  total    545.6 MB  (1.001 B/param)
+BYTES 7B    TOTAL streamed per token: 4623.9 MB   kinds=map[int4:196 int8:1]
+ok  	github.com/townsendmerino/goinfer/decoder	25.001s

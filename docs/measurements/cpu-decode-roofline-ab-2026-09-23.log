@@ -1,0 +1,60 @@
+# paired ABBA in-process, decoder/cpu_roofline_ab_test.go, nobara-pc 2026-09-23. ON is the arm named; ratios are OFF/ON.
+## R-06 batch (GOINFER_W4A8_BATCH), 1.5B + 0.5B
+    cpu_roofline_ab_test.go:132: w4a8 batch (1.5B) pair 0: ON 52.53 | OFF 55.28 ms/tok | ON is 1.052x faster
+    cpu_roofline_ab_test.go:132: w4a8 batch (1.5B) pair 1: ON 52.58 | OFF 55.36 ms/tok | ON is 1.053x faster
+    cpu_roofline_ab_test.go:132: w4a8 batch (1.5B) pair 2: ON 52.61 | OFF 55.21 ms/tok | ON is 1.049x faster
+    cpu_roofline_ab_test.go:132: w4a8 batch (1.5B) pair 3: ON 52.69 | OFF 55.53 ms/tok | ON is 1.054x faster
+    cpu_roofline_ab_test.go:132: w4a8 batch (1.5B) pair 4: ON 52.57 | OFF 61.13 ms/tok | ON is 1.163x faster
+    cpu_roofline_ab_test.go:132: w4a8 batch (1.5B): mean ON 52.59 OFF 56.50 ms/tok | paired median 1.053x (min 1.049 max 1.163, n=5)
+    cpu_roofline_ab_test.go:132: w4a8 batch (0.5B) pair 0: ON 25.89 | OFF 27.77 ms/tok | ON is 1.072x faster
+    cpu_roofline_ab_test.go:132: w4a8 batch (0.5B) pair 1: ON 26.08 | OFF 26.34 ms/tok | ON is 1.010x faster
+    cpu_roofline_ab_test.go:132: w4a8 batch (0.5B) pair 2: ON 26.36 | OFF 26.99 ms/tok | ON is 1.024x faster
+    cpu_roofline_ab_test.go:132: w4a8 batch (0.5B) pair 3: ON 25.76 | OFF 26.77 ms/tok | ON is 1.039x faster
+    cpu_roofline_ab_test.go:132: w4a8 batch (0.5B) pair 4: ON 25.92 | OFF 27.27 ms/tok | ON is 1.052x faster
+    cpu_roofline_ab_test.go:132: w4a8 batch (0.5B): mean ON 26.00 OFF 27.03 ms/tok | paired median 1.039x (min 1.010 max 1.072, n=5)
+ok  	github.com/townsendmerino/goinfer/decoder	60.745s
+## fused gate+up, 1.5B + 0.5B
+    cpu_roofline_ab_test.go:152: fused gate+up vs plain (1.5B) pair 0: ON 52.94 | OFF 56.20 ms/tok | ON is 1.062x faster
+    cpu_roofline_ab_test.go:152: fused gate+up vs plain (1.5B) pair 1: ON 53.14 | OFF 57.03 ms/tok | ON is 1.073x faster
+    cpu_roofline_ab_test.go:152: fused gate+up vs plain (1.5B) pair 2: ON 52.69 | OFF 56.24 ms/tok | ON is 1.067x faster
+    cpu_roofline_ab_test.go:152: fused gate+up vs plain (1.5B) pair 3: ON 53.22 | OFF 56.70 ms/tok | ON is 1.066x faster
+    cpu_roofline_ab_test.go:152: fused gate+up vs plain (1.5B) pair 4: ON 53.98 | OFF 56.11 ms/tok | ON is 1.039x faster
+    cpu_roofline_ab_test.go:152: fused gate+up vs plain (1.5B): mean ON 53.19 OFF 56.46 ms/tok | paired median 1.066x (min 1.039 max 1.073, n=5)
+    cpu_roofline_ab_test.go:154: fused gate+up on top of batch (1.5B) pair 0: ON 51.33 | OFF 53.61 ms/tok | ON is 1.044x faster
+    cpu_roofline_ab_test.go:154: fused gate+up on top of batch (1.5B) pair 1: ON 51.36 | OFF 53.85 ms/tok | ON is 1.049x faster
+    cpu_roofline_ab_test.go:154: fused gate+up on top of batch (1.5B) pair 2: ON 51.39 | OFF 53.85 ms/tok | ON is 1.048x faster
+    cpu_roofline_ab_test.go:154: fused gate+up on top of batch (1.5B) pair 3: ON 51.32 | OFF 53.95 ms/tok | ON is 1.051x faster
+    cpu_roofline_ab_test.go:154: fused gate+up on top of batch (1.5B) pair 4: ON 51.16 | OFF 53.86 ms/tok | ON is 1.053x faster
+    cpu_roofline_ab_test.go:154: fused gate+up on top of batch (1.5B): mean ON 51.31 OFF 53.82 ms/tok | paired median 1.049x (min 1.044 max 1.053, n=5)
+    cpu_roofline_ab_test.go:152: fused gate+up vs plain (0.5B) pair 0: ON 25.03 | OFF 27.87 ms/tok | ON is 1.113x faster
+    cpu_roofline_ab_test.go:152: fused gate+up vs plain (0.5B) pair 1: ON 25.28 | OFF 27.87 ms/tok | ON is 1.103x faster
+    cpu_roofline_ab_test.go:152: fused gate+up vs plain (0.5B) pair 2: ON 25.55 | OFF 27.83 ms/tok | ON is 1.089x faster
+    cpu_roofline_ab_test.go:152: fused gate+up vs plain (0.5B) pair 3: ON 24.40 | OFF 27.99 ms/tok | ON is 1.147x faster
+    cpu_roofline_ab_test.go:152: fused gate+up vs plain (0.5B) pair 4: ON 25.39 | OFF 28.45 ms/tok | ON is 1.120x faster
+    cpu_roofline_ab_test.go:152: fused gate+up vs plain (0.5B): mean ON 25.13 OFF 28.00 ms/tok | paired median 1.113x (min 1.089 max 1.147, n=5)
+    cpu_roofline_ab_test.go:154: fused gate+up on top of batch (0.5B) pair 0: ON 24.15 | OFF 25.77 ms/tok | ON is 1.067x faster
+    cpu_roofline_ab_test.go:154: fused gate+up on top of batch (0.5B) pair 1: ON 23.12 | OFF 26.79 ms/tok | ON is 1.159x faster
+    cpu_roofline_ab_test.go:154: fused gate+up on top of batch (0.5B) pair 2: ON 24.19 | OFF 26.67 ms/tok | ON is 1.103x faster
+    cpu_roofline_ab_test.go:154: fused gate+up on top of batch (0.5B) pair 3: ON 24.07 | OFF 27.06 ms/tok | ON is 1.124x faster
+    cpu_roofline_ab_test.go:154: fused gate+up on top of batch (0.5B) pair 4: ON 24.14 | OFF 26.55 ms/tok | ON is 1.100x faster
+    cpu_roofline_ab_test.go:154: fused gate+up on top of batch (0.5B): mean ON 23.93 OFF 26.57 ms/tok | paired median 1.103x (min 1.067 max 1.159, n=5)
+ok  	github.com/townsendmerino/goinfer/decoder	112.568s
+## fused gate+up, 7B
+    cpu_roofline_ab_test.go:153: fused gate+up vs plain (7B) pair 0: ON 199.51 | OFF 205.05 ms/tok | ON is 1.028x faster
+    cpu_roofline_ab_test.go:153: fused gate+up vs plain (7B) pair 1: ON 199.47 | OFF 205.20 ms/tok | ON is 1.029x faster
+    cpu_roofline_ab_test.go:153: fused gate+up vs plain (7B) pair 2: ON 199.74 | OFF 205.59 ms/tok | ON is 1.029x faster
+    cpu_roofline_ab_test.go:153: fused gate+up vs plain (7B) pair 3: ON 199.39 | OFF 205.42 ms/tok | ON is 1.030x faster
+    cpu_roofline_ab_test.go:153: fused gate+up vs plain (7B) pair 4: ON 199.53 | OFF 205.34 ms/tok | ON is 1.029x faster
+    cpu_roofline_ab_test.go:153: fused gate+up vs plain (7B): mean ON 199.53 OFF 205.32 ms/tok | paired median 1.029x (min 1.028 max 1.030, n=5)
+    cpu_roofline_ab_test.go:155: fused gate+up on top of batch (7B) pair 0: ON 196.63 | OFF 201.21 ms/tok | ON is 1.023x faster
+    cpu_roofline_ab_test.go:155: fused gate+up on top of batch (7B) pair 1: ON 196.29 | OFF 201.07 ms/tok | ON is 1.024x faster
+    cpu_roofline_ab_test.go:155: fused gate+up on top of batch (7B) pair 2: ON 196.84 | OFF 201.01 ms/tok | ON is 1.021x faster
+    cpu_roofline_ab_test.go:155: fused gate+up on top of batch (7B) pair 3: ON 197.12 | OFF 200.80 ms/tok | ON is 1.019x faster
+    cpu_roofline_ab_test.go:155: fused gate+up on top of batch (7B) pair 4: ON 196.09 | OFF 201.72 ms/tok | ON is 1.029x faster
+    cpu_roofline_ab_test.go:155: fused gate+up on top of batch (7B): mean ON 196.59 OFF 201.16 ms/tok | paired median 1.023x (min 1.019 max 1.029, n=5)
+ok  	github.com/townsendmerino/goinfer/decoder	264.174s
+## fused gate+up, FULL LOGITS compared exactly (48 steps x ~152k logits)
+    cpu_roofline_ab_test.go:206: 0.5B: 48 decode steps x 151936 logits compared, 0 differ
+    cpu_roofline_ab_test.go:206: 1.5B: 48 decode steps x 151936 logits compared, 0 differ
+    cpu_roofline_ab_test.go:206: 7B: 48 decode steps x 152064 logits compared, 0 differ
+ok  	github.com/townsendmerino/goinfer/decoder	67.882s
