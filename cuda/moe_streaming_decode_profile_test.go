@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMoEStreamingDecodeProfile is the "measure before building" step for docs/tasks/task-moe-streaming.md's
+// TestMoEStreamingDecodeProfile is the "measure before building" step for docs/completed/task-moe-streaming.md's
 // two open CUDA items (gocudrv async-H2D overlap of C′ miss DMAs; P20 redirected toward the expert-DMA
 // cost). Both turned out to be already-closed elsewhere this session: item 1 by
 // docs/completed/aikit-subrange-async-upload.md (2026-08-28 — declined as scoped, superseded by the

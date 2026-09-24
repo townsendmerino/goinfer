@@ -111,7 +111,7 @@ grants at most 30 slots for the same request, so that configuration is no longer
 at 30 it measures 16.12. Read the slot count as part of the claim.
 (Current Ollama also runs this 26B on 8 GB, but by offloading 58% to the CPU, at ~24.5 tok/s;
 goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
-[docs/tasks/task-moe-streaming.md](tasks/task-moe-streaming.md).)*
+[docs/completed/task-moe-streaming.md](completed/task-moe-streaming.md).)*
 
 > **Running a model larger than your card is opt-in, and the runtime does the sizing.** Gemma 4
 > residency is on by default; host→VRAM expert streaming is not. Without it the 26B's experts must

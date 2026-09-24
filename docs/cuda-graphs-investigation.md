@@ -39,7 +39,7 @@ This document is the complete record so the investigation can be resumed cold.
 ## 1. Why graphs at all
 
 Resident CUDA decode on the 2070 runs ~59 ms/token. The measured decomposition (see
-`docs/tasks/task-moe-streaming.md` and the memory `gpu-decode-fusion` / `moe-hostvram-streaming`):
+`docs/completed/task-moe-streaming.md` and the memory `gpu-decode-fusion` / `moe-hostvram-streaming`):
 
 | component | ~ms/token | nature |
 |---|---|---|

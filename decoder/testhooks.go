@@ -24,7 +24,7 @@ import (
 // ForwardSubCaptureLogitsForTest is ForwardSubCapture plus the token's logits from the SAME
 // forward — the gpu package's per-layer resident-vs-CPU parity gate needs both, and running the
 // token twice would append it to the KV cache twice. Same arch guard and same byte-identical-
-// output contract as ForwardSubCapture. See docs/tasks/task-webgpu-nogqa-decode-bug.md.
+// output contract as ForwardSubCapture. See docs/completed/task-webgpu-nogqa-decode-bug.md.
 func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits []float32, attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
 	if _, own := a.ownForward(); own {

@@ -140,6 +140,6 @@ one feature or geometry seam). For each, the predicate that declines it and one 
 ## What's not here
 
 Perf levers (int4-expert residency, GPU speculative decode) are a different axis from coverage
-and tracked separately: [gpu-next-levers-assessment.md](gpu-next-levers-assessment.md). The full
+and tracked separately: [gpu-next-levers-assessment.md](completed/gpu-next-levers-assessment.md). The full
 per-family history behind the levers already shipped (C1–C7, the SSM engine) is archived, not
 repeated here: [docs/completed/gpu-residency-coverage-2026-06.md](completed/gpu-residency-coverage-2026-06.md).

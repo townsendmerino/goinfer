@@ -21,7 +21,7 @@ import (
 // prefill and they attack different terms:
 //
 //	f32 attention  (G24, shipped as --cpu-fast-attention)  -> the O(K²) attention term
-//	expert-major batching (docs/tasks/task-moe-streaming.md Lever 4)  -> the O(K) per-row MoE FFN
+//	expert-major batching (docs/completed/task-moe-streaming.md Lever 4)  -> the O(K) per-row MoE FFN
 //
 // Their shares move in OPPOSITE directions as K grows, so "which is binding" has
 // no single answer — it has a crossover, and the crossover is what this measures.

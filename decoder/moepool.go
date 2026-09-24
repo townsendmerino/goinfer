@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// Lever 1b (docs/tasks/task-moe-streaming.md): an owned-buffer pread cache for MoE expert
+// Lever 1b (docs/completed/task-moe-streaming.md): an owned-buffer pread cache for MoE expert
 // weights, replacing expertPager's mmap+madvise mode. Darwin's MADV_DONTNEED is a documented
 // no-op (madvise_darwin.go) -- an mmap-aliased cache can WILLNEED bytes in but can never
 // actually release them, so it gives NO real RAM cap on macOS. Owned buffers the pool itself

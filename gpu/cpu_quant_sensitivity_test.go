@@ -19,7 +19,7 @@ import (
 // step flips a fraction of rounding decisions proportional to its size while each flip is a
 // whole step — a square-root amplifier of tiny numerical differences, compounding per layer.
 // A GPU that reproduces the CPU's f32 arithmetic only to ~1e-7 (reduction order) is such a
-// perturbation. See docs/tasks/task-webgpu-nogqa-decode-bug.md.
+// perturbation. See docs/completed/task-webgpu-nogqa-decode-bug.md.
 func TestCPUQuantSensitivity(t *testing.T) {
 	dirA, dirB := os.Getenv("GOINFER_PARITY_CKPT"), os.Getenv("GOINFER_PARITY_CKPT_B")
 	if dirA == "" {

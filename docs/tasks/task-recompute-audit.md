@@ -459,7 +459,7 @@ positions are inherent, not recompute.
   that already happens" is not available as described; building it would mean adding an entirely
   new copy-and-own fetch path to a pager whose whole design is zero-copy residency bounding.
   **Update 2026-09-21**: that "entirely new copy-and-own fetch path" now exists —
-  `decoder/moepool.go`'s `expertBufferPool` (Lever 1b, `docs/tasks/task-moe-streaming.md`),
+  `decoder/moepool.go`'s `expertBufferPool` (Lever 1b, `docs/completed/task-moe-streaming.md`),
   opt-in via `GOINFER_MOE_PREAD_CPU=1`, default off. It does NOT close this gap, though: it was
   built and measured for a different reason entirely (a real darwin RAM cap, since
   `MADV_DONTNEED` is a no-op there — the CPU pager's zero-copy claim above still holds for the

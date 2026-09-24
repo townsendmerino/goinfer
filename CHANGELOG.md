@@ -284,7 +284,7 @@ any surface may still change.
     clamp exposed a real, still-unexplained resident-decode divergence on no-GQA WebGPU models, so
     `BuildResident` now declines `nKV == nH` outright (scoped around MLA/DeltaNet/Nemotron, whose own
     `nKV`/`nH` can coincide for unrelated reasons) rather than ship a fast-but-wrong path —
-    `docs/tasks/task-webgpu-nogqa-decode-bug.md` has the elimination trail.
+    `docs/completed/task-webgpu-nogqa-decode-bug.md` has the elimination trail.
   - **`--fit`'s default-ON context sizing (shipped in v0.18.0) could starve `-moe-cache-experts`'s
     VRAM budget** — an unpinned load's context growing from the historical 4096 default toward 8192
     ate headroom the expert cache needed on an already-oversubscribed card, costing MoE decode up to
@@ -443,7 +443,7 @@ any surface may still change.
 
 The third cold-user run (macbook-arm64, M1 Pro / 16 GB, run 2b against v0.17.1 — a targeted
 continuation after run 2's own opencode leg tripped the swap-safety stop rule) and the fixes it
-found. [`docs/task-first-hour.md`](docs/task-first-hour.md) "Batch 3".
+found. [`docs/tasks/task-first-hour.md`](docs/tasks/task-first-hour.md) "Batch 3".
 
 The headline is not the memory guard everyone was watching — it is that `Config.MaxPositions` was
 silently unset for 16 of the 18 GGUF architectures this project supports, which had left the
@@ -498,14 +498,14 @@ instead. All three live re-runs are recorded, not smoothed over, in the doc abov
   on two different machines, rather than implying success nothing has measured.
 
 Full findings, gates, and all three live Mac re-runs:
-[`docs/task-first-hour.md`](docs/task-first-hour.md),
+[`docs/tasks/task-first-hour.md`](docs/tasks/task-first-hour.md),
 [`docs/measurements/cold-user-2026-09-07-macbook-arm64.md`](docs/measurements/cold-user-2026-09-07-macbook-arm64.md).
 
 ## [v0.17.1] — 2026-09-07
 
 The second cold-user run (nobara-pc, Ryzen 3700X + RTX 2070 SUPER 8 GB, against v0.17.0) and the
 fixes it found. Same ritual as v0.17.0's: a stranger, a published tag, no access to the tree —
-[`docs/task-first-hour.md`](docs/task-first-hour.md) "Batch 2".
+[`docs/tasks/task-first-hour.md`](docs/tasks/task-first-hour.md) "Batch 2".
 
 Two of the seven findings turned out to need a second look after the first fix shipped internally:
 R9's first pass found CUDA's int4 staged path was CPU-only and wrongly generalized that int8/f32
@@ -576,7 +576,7 @@ release rather than after.
   placement, not per-layer CPU/GPU placement, and that real hybrid layer placement — the gap a peer
   comparison exposed at this same size class — is a separate, larger, unscheduled item.
 
-Full findings, gates and the run report: [`docs/task-first-hour.md`](docs/task-first-hour.md),
+Full findings, gates and the run report: [`docs/tasks/task-first-hour.md`](docs/tasks/task-first-hour.md),
 [`docs/measurements/cold-user-2026-09-06-nobara-pc.md`](docs/measurements/cold-user-2026-09-06-nobara-pc.md).
 
 ## [v0.17.0] — 2026-09-07
@@ -738,7 +738,7 @@ all of this is in the repo and is now part of the release pre-flight.
   well-formed `tool_call` and then choke on the `role:"tool"` message coming back, which a harness
   experiences as a conversation that dies on turn two.
 
-- **`docs/task-first-hour.md`** — a cold-user protocol, now part of `RELEASING.md`'s pre-flight.
+- **`docs/tasks/task-first-hour.md`** — a cold-user protocol, now part of `RELEASING.md`'s pre-flight.
   It is the only gate that reads the product from outside, and v0.16.0 shipped a README naming a
   binary that was not in the release with every internal gate green.
 

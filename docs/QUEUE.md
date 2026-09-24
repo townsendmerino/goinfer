@@ -883,7 +883,7 @@ D3's refresh in the rebase worktree and getting `goldens=7`.)*
 
 | entry | source | description matches? |
 |---|---|---|
-| D3 | branch `flag-pair-moe-cache` + `BRANCH-NOTE.md` | **NO — corrected `2d28358`.** Called a "parked flag-pair" on a workaround premise; it is an API-surface promotion following `KVPrecision` |
+| D3 | branch `flag-pair-moe-cache` + `docs/completed/BRANCH-NOTE.md` | **NO — corrected `2d28358`.** Called a "parked flag-pair" on a workaround premise; it is an API-surface promotion following `KVPrecision` |
 | B4 | a stash that does not exist here | **unverifiable** — the description is all that survives, and it names a file that resolves nowhere |
 | C1 | `588052b` (the drain fix) | matches — Metal-verified, CUDA arm untested |
 | D2 | design recorded in-entry, no branch | matches; no external source to drift from |

@@ -245,9 +245,9 @@ caught only by the logit-cosine floor, which is calibrated to sit between the co
 (0.999906) and the tightest surviving control (0.997687). Read the table before touching
 either threshold.
 
-See [`task-cuda-cgofree-spike.md`](task-cuda-cgofree-spike.md) for the full evidence
+See [`task-cuda-cgofree-spike.md`](completed/task-cuda-cgofree-spike.md) for the full evidence
 (ldd/driver-only proof, the measured executor tax, the kernel tuning), and
-[`task-cuda-b-ship-checklist.md`](task-cuda-b-ship-checklist.md) for the release plan.
+[`task-cuda-b-ship-checklist.md`](completed/task-cuda-b-ship-checklist.md) for the release plan.
 
 ## Running on a GPU — the user-facing summary
 

@@ -902,7 +902,7 @@ prior for what mmap mode does under pressure; the measurement must reproduce it 
 **Read first.** `decoder/moepaging.go` top to bottom — both modes, the two mutexes and why
 (audit C-30, Lever 1b's cross-call requirement), the `MmapByteOffset` pread-staging seam
 (`decoder/model.go`), the Metal pager (already pread-based) for the slot arithmetic;
-aikit's `mmap` package `madvise_darwin` file (cross-repo); `docs/tasks/task-moe-streaming.md` Lever 1b and §C′;
+aikit's `mmap` package `madvise_darwin` file (cross-repo); `docs/completed/task-moe-streaming.md` Lever 1b and §C′;
 `docs/completed/task-w4a8-neon-bandwidth.md` (the pread A/B: 3.23×, faults 98.5→0/stage — the
 pread path is already the measured winner for staging on this Mac; this item asks whether that
 holds as the *pager's* mode); `benchmarks.md` "M35/M26 on the Mac" (the swap/watchdog caution:
@@ -933,7 +933,7 @@ kind-4 saga has never been tested as a variable — note it, do not chase it her
 
 **Decision.** As registered.
 
-**Record.** `docs/measurements/moe-pager-mode-darwin-2026-MM-DD.md`; `docs/tasks/task-moe-streaming.md`
+**Record.** `docs/measurements/moe-pager-mode-darwin-2026-MM-DD.md`; `docs/completed/task-moe-streaming.md`
 Lever 1b closed either way; `benchmarks.md` "M35/M26 on the Mac" replaced by a bounded row with
 the mode named — and `red-october.md` R11 (c) unblocked.
 

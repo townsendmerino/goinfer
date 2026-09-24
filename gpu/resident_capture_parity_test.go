@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestResidentCaptureParityWebGPU runs docs/tasks/task-webgpu-nogqa-decode-bug.md's exact
+// TestResidentCaptureParityWebGPU runs docs/completed/task-webgpu-nogqa-decode-bug.md's exact
 // experiment (resident Forward vs CPU ForwardForTest at the same quant, the 8-token arbitrary
 // prompt, then a greedy continuation) through the PRODUCTION load path — decoder.Load with
 // Backend:"webgpu", so BuildResident's uploadProj fast path, any fused-tensor split the family

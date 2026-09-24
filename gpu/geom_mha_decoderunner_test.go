@@ -11,7 +11,7 @@ import (
 // TestDecodeRunnerW4A8_geometries is TestDecodeRunnerW4A8_parity re-run over attention
 // geometries the resident decode path had never been exercised on by any synthetic test
 // (every one of them used qwen2.5-1.5B's (nH,nKV,hd) = (12,2,128)), against the same CPU
-// oracle. It exists for docs/tasks/task-webgpu-nogqa-decode-bug.md: phi3-mini's resident
+// oracle. It exists for docs/completed/task-webgpu-nogqa-decode-bug.md: phi3-mini's resident
 // decode diverges from CPU, and the doc's open question is whether the kernels are wrong for
 // its shape — no GQA (nH == nKV, group 1) AND head_dim 96 (not a power of two) AND a
 // [3072,3072] Q/K/V/O with a 32064-row LM head — or whether the divergence is numerical.

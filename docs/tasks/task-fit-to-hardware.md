@@ -364,7 +364,7 @@ M-01, M-02, M-31, M-32, N-42, L-01, L-04 · `docs/task-model-pull.md` (phase 1 s
 before this one) · `docs/completed/task-metal-expert-streaming-at-scale.md` (N=64, 2.19 tok/s;
 "default to 64" with no code; N=128 regresses 27.7% despite fitting in bytes — a cap
 `fitplan.go`'s auto-sizer will need once Metal is wired into it) ·
-`docs/tasks/task-moe-streaming.md` §C′ (the CUDA cache and its cap) · `docs/QUEUE.md`
+`docs/completed/task-moe-streaming.md` §C′ (the CUDA cache and its cap) · `docs/QUEUE.md`
 G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residency eligibility, generated) ·
 `internal/serveapp/main.go:509-376` (the flags the plan subsumes) · `decoder/model.go:206-187`
 (`MoECacheSlotsRequest`, `Options`) · `metal/backend.go:118-194` (the guard) ·

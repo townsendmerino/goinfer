@@ -223,7 +223,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 
 	// TRAP, found live 2026-09-18, CLOSED 2026-09-18 (same day — see
-	// docs/tasks/task-webgpu-nogqa-decode-bug.md for the full trail). A decline used to sit here:
+	// docs/completed/task-webgpu-nogqa-decode-bug.md for the full trail). A decline used to sit here:
 	// letting phi3-mini (head_count_kv == head_count == 32, no GQA grouping) reach residency for
 	// the first time ever (the ctxCap clamp two lines below stopped masking it via a VRAM
 	// failure) showed real divergence from CPU — cosine 0.94-0.99 on the prompt, well under this
@@ -261,7 +261,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// COMPARISON's sensitivity, not the kernels', so declining every current and future no-GQA
 	// family on WebGPU bought nothing worth what it cost. The gpu module's own 0.999 fixed-floor
 	// convention (gemma3_resident_parity_test.go and friends) does not transfer to a real,
-	// 32-layer, int4-quantized checkpoint; docs/tasks/task-webgpu-nogqa-decode-bug.md's own
+	// 32-layer, int4-quantized checkpoint; docs/completed/task-webgpu-nogqa-decode-bug.md's own
 	// closing section says what a resident parity gate should measure there instead.
 
 	// decoder.WebGPUCtxCeiling (fitplan.go) is the single source for these three literals — the

@@ -347,7 +347,7 @@ unobserved.
 rebase" months after the work landed (N-40).
 
 **This entry's own description was wrong at the source, not stale.** It read as a "parked flag-pair"
-with a workaround premise. `BRANCH-NOTE.md` says what it is: **an API-surface promotion** of
+with a workaround premise. `docs/completed/BRANCH-NOTE.md` says what it is: **an API-surface promotion** of
 env-var-only controls to CLI flags, wired `decoder.Options` → `Model` accessor → CUDA backend,
 following the `KVPrecision` pattern rather than adding more `os.Getenv` to the backend. The entry was
 mine and it mischaracterised the branch from the beginning — a status sweep would never have caught
@@ -365,7 +365,7 @@ re-verify**, not a merge.
 
 **DESIGN READ DONE 2026-08-12 — the reason SURVIVES, but the entry was resting on a stale premise.**
 
-Read from `BRANCH-NOTE.md`, not the diff. The stated intent is *"the env-var-only expert-cache
+Read from `docs/completed/BRANCH-NOTE.md`, not the diff. The stated intent is *"the env-var-only expert-cache
 controls promoted to real CLI flags, wired `decoder.Options` → `Model` accessor → CUDA backend,
 following the `KVPrecision` pattern rather than adding more `os.Getenv` to the backend"*. That is an
 **API-surface change**, not a workaround.
@@ -381,7 +381,7 @@ to override it.** So the flag pair is the second branch: legitimate explicit ove
 1. **The flag's documented meaning.** Written when the cap could not be trusted, so it read as *how
    you get a working cache*. With A5 it means *request no more than N*, and the cap may still lower
    it — the log line says which.
-2. **`BRANCH-NOTE.md`'s own rebase guidance is stale.** It says to expect one conflict in
+2. **`docs/completed/BRANCH-NOTE.md`'s own rebase guidance is stale.** It says to expect one conflict in
    `cuda/backend.go` and to *"keep `main`'s comment"* — but that hunk has changed three times since
    (`7ccec1e` reverted at `97ee663`, then A5 `6091e7a`, then A9-FIX `0103b49`). The instruction now
    points at text that no longer exists.
@@ -526,7 +526,7 @@ D3 was designed **while the cap computed the wrong value**. A5 fixed the cap. So
 
 `flag-pair-moe-cache` (`bacc04c`) carries `--moe-cache-experts` and `--moe-cache-slots` as CLI
 flags. The `Options` fields and accessors touch `decoder/model.go` and `decoder/gguf.go`, which re-stales 19
-families' `deps_hash`. `BRANCH-NOTE.md` records the pickup steps and the instruction that matters:
+families' `deps_hash`. `docs/completed/BRANCH-NOTE.md` records the pickup steps and the instruction that matters:
 **run the goldens, do not refresh `deps_hash` to quiet the gate**.
 
 Precedent exists for a goldens-gated refresh on exactly this shape: **`ca29d6c`**, where making the
