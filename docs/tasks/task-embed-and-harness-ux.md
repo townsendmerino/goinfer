@@ -296,6 +296,10 @@ by default (the banner says how to turn it on); which of the five routes a given
    exercises the same routes and the same tool round-trip, so what is missing is dsh's harness,
    not the server behaviour.
 
+   > **Correction 2026-09-24: N-18 is closed too** — `required`/`any` with 2+ tools is now constrained
+   > to a call to one of the supplied tools (`docs/tasks/task-tool-grammar-union-2026-09.md`, T3), so
+   > none of G5's three preconditions remains open. The paragraph below is the 2026-09-13 record.
+
    **One of G5's three preconditions is still open** (corrected 2026-09-13 doc-review; this
    paragraph originally said two, written before M-20's fix landed later the same day): N-18
    (`tool_choice` `any`/`required` does not force a call with 2+ tools — `forcedTool` handles

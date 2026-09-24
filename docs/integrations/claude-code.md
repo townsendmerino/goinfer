@@ -56,13 +56,14 @@ message, or a second conversation on the same server — and that turn cold-pref
 reuse is per-model and single-conversation: two interleaved conversations will each cold-prefill
 as they alternate.
 
-**Known-open, so do not debug them as your setup:**
-- `tool_choice: "any"` (or OpenAI `"required"`) with **two or more** tools does not force a
-  call — the model may answer in prose. A *named* tool (`{"type":"tool","name":…}`) and the
-  single-tool case both work, because those are unambiguous and take the constrained path.
-  Audit N-18.
-- Gemma-4's tool rendering disagrees with its own template after the first turn (M-20). Use a
-  ChatML-template model (Qwen2.5 above) for tool work.
+**Tool calls on a ChatML-template model (Qwen2.5 above) cannot be malformed and cannot name a tool
+you did not send**, with any number of tools: `tool_choice: "any"` forces a call to one of them, and
+`auto` constrains a call from the moment the model starts one, while still letting it answer in prose
+(`docs/server.md`, "What `tool_choice` actually constrains"; `docs/tool-call-coverage.md` lists which
+families this holds for). Two items this page used to list as known-open are closed: N-18 (`any` with
+2+ tools did not force a call — closed 2026-09-24) and M-20 (Gemma-4's tool rendering — fixed
+2026-09-02, `0e7a5956`). Gemma 4's own call syntax is parsed, not constrained, so Qwen2.5 remains
+the better choice for tool work.
 
 `thinking`, `cache_control` and `metadata` are accepted and ignored.
 

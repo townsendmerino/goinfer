@@ -1,6 +1,19 @@
 # Task: constrained tool calls when there is more than one tool (T0–T7) — 2026-09
 
-> **Status: SCOPED 2026-09-15, unstarted. T0 is a measurement and gates the rest.**
+> **Status 2026-09-24: T0–T4 and T7 DONE; T5 decided; T6 gates run.** What shipped and where it is recorded:
+> T0 measured the failure ([`tool-call-failure-t0-2026-09-23.md`](../measurements/tool-call-failure-t0-2026-09-23.md)) and found a
+> second one this doc did not anticipate — Qwen2.5-Coder never writes the wrapper — fixed separately by accepting a bare call that
+> names a supplied tool. T1 (`constrain.ToolCallsGrammar`, a parallel-branch union of the single-tool grammars rather than §5's
+> hand-written trie), T2 (`constrain.LazyMasker`, arming on the opener, fail-open; llama3 left unarmed — option b), T3 (`required` /
+> `any` from token 1; N-18 closed) and T5 (repeated wrapper, each call constrained) are default-on; the cost problem the first build
+> had was solved by `SamplingParams.LogitProcessorGate`, which keeps every on-device fast path until the opener. T6's gates:
+> [`tool-union-2026-09-24.md`](../measurements/tool-union-2026-09-24.md). T4: [`tool-call-coverage.md`](../tool-call-coverage.md),
+> which also found and fixed an unread `chat_template.jinja`. T7: `server.md`, `QUEUE.md`, both integration recipes,
+> `task-embed-and-harness-ux.md`, README. **Still open:** llama3 under `auto` (option c; T0 measured 5.7–6.5% unusable calls there);
+> the lazy union on speculative-decoding servers (they keep their drafter and skip the union under `auto`); the MoE cell of T0;
+> a second harness transcript. Everything below is the original scoping, kept as the record.
+>
+> **Original status: SCOPED 2026-09-15, unstarted. T0 is a measurement and gates the rest.**
 >
 > goinfer can already make a tool call structurally impossible to malform — but only when the
 > choice of tool is unambiguous. In the case every agent harness actually produces (a dozen tools,

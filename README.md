@@ -382,7 +382,11 @@ runs the weights itself, in-process. Longer form: [docs/positioning.md](docs/pos
   embeddings: [docs/server.md](docs/server.md). Pointing a real agent (Claude Code, opencode) at
   it: [docs/integrations/](docs/integrations/) — `serve check`'s harness-scale tools row and
   `goinfer-chat models`' `tools:` line say which checkpoints actually hold up under a real
-  agent's tool schema, measured, before you find out the way a cold-user run did.
+  agent's tool schema, measured, before you find out the way a cold-user run did. On the Qwen
+  families (Qwen2 through Qwen3.8), Nemotron-3-Nano and Mellum2, a tool call **cannot be malformed
+  or name a tool you did not send**, with any number of tools — and a turn that answers in prose
+  instead runs exactly as fast as without the constraint:
+  [docs/tool-call-coverage.md](docs/tool-call-coverage.md).
 
 ## Docs
 

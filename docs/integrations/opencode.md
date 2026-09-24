@@ -49,6 +49,10 @@ goinfer-serve -model coder=<path>/qwen2.5-7b-instruct-q4_k_m.gguf -quant int4 -b
   VRAM used** — comfortable margin, not a near-miss.
 - `serve check`: **all 8 checks passed**, including `tools, harness-scale`, for the first time any
   checkpoint in this project has recorded that.
+- Tool calls on this model are grammar-constrained since 2026-09-24 (T1–T3): with opencode's dozen
+  tools under `auto`, a call cannot be malformed or name a tool that was not sent — on the agent
+  transcript measured for it, the 7B's unusable calls went from 14 of 111 to 0
+  (`docs/measurements/tool-union-2026-09-24.md`). The run below predates that and did not need it.
 - opencode's real "build" agent, given *"list the files in this directory using your tool, then
   tell me what's in notes.txt"*: called `Read notes.txt` and `Glob "*.txt"` — real tool calls, not
   prose — and answered correctly, matching the file's actual content. **Two turns, 7,165 and 7,399

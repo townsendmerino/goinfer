@@ -198,10 +198,12 @@ reproduces on a clean `origin/main` checkout. Not investigated.
 is done and `docs/integrations/claude-code.md` is published with measured numbers. Still open:
 - **dsh's 277 s run is un-re-measured** — deliberately parked 2026-09-02 (dsh is not installed and
   `server.md` documents the install as an ordeal). The figure stands unverified, not disproven.
-- **N-18 and M-20**, two of G5's three stated preconditions, are still open: `tool_choice`
-  `required`/`any` forces nothing with 2+ tools (`forcedTool` handles `none` and a named function,
-  and `required` falls through to the single-tool case), and Gemma-4's tool rendering disagrees
-  with its own template. Both are stated in the recipe so nobody debugs them as their own setup.
+- ~~**N-18 and M-20**, two of G5's three stated preconditions, are still open~~ — **both closed.**
+  M-20 (Gemma-4 tool rendering) was fixed 2026-09-02 (`0e7a5956`). N-18 (`tool_choice`
+  `required`/`any` forced nothing with 2+ tools) closed 2026-09-24: a union grammar over the supplied
+  tools now constrains `required`/`any` from the first token, and `auto` from the call opener
+  (`docs/tasks/task-tool-grammar-union-2026-09.md`, `docs/measurements/tool-union-2026-09-24.md`).
+  The recipe's known-open list is updated.
 - **Open-WebUI and Continue recipes** are unwritten, because §3.5's rule is that a recipe with no
   number is not published and neither has one.
 
@@ -1001,6 +1003,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `0103b49` | fix(cuda): pay the deferred reservation before sizing the cache (A9-FIX) |
 | `0221d32` | docs: the developer-role task is NOT a blocker -- it is silent-wrong, which is worse |
 | `0b0f5c9b` | fix(decoder): olmo3 RoPE applies YaRN to every layer, not full-attention only |
+| `0e7a5956` | fix(chat,gpu,cuda,ci): M-20, M-31, M-34, M-35 — dead fixtures, a duplicated cap, a missing gate, an expired label |
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
 | `25a4711` | refactor(cuda): re-point the device layer onto aikit/gpu v0.3.1 (native-GPU Phase 1) |
 | `2aa4540` | fix(decoder): olmo3 RoPE per-layer-type split was wrong, plus a stale golden |
@@ -1268,7 +1271,6 @@ supports.
 | `docs/measurements/demo-chat-tier2-gates-2026-08-22.md|decoder/weights.go:627` | goinfer | `if have["model.language_model.embed_tokens.weight"] {` |
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|decoder/memwatch_darwin.go:18` | goinfer | `out, err := exec.Command("sysctl", "-n", "vm.swapusage").Output()` |
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|decoder/swapwatch.go:103` | goinfer | `t := time.NewTicker(opts.PollInterval)` |
-| `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|gpu/metal.go:472` | aikit | `func (d *Device) NewBufferNoCopy(ptr unsafe.Pointer, nBytes int) Buffer {` |
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|internal/serveapp/swapguard.go:75` | goinfer | `fmt.Fprintf(os.Stderr, "swap guard: armed, threshold +%d MB over baseline\n", thresholdM` |
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|metal/alias.go:97` | goinfer | `func (a *weightAlias) nibbles(d *Device, w *linalg.WeightMat) (Buffer, bool) {` |
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|mmap/mmap_unix.go:46` | aikit | `data, err := syscall.Mmap(int(f.Fd()), 0, int(sz), syscall.PROT_READ, syscall.MAP_PRIVAT` |
