@@ -339,18 +339,7 @@ var ErrLoadAborted = errLoadAborted
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
 // and selects a backend. The forward pass (M3) is implemented; the CPU
 // backend is the default and the only one wired (webgpu falls back to CPU).
-func Load(dir string, opts Options) (m *Model, err error) {
-	// S4 item 4 (task-never-swap-2026-09.md): a SINGLE hook covering every branch below (.giw,
-	// .gguf, safetensors, every backend) rather than one call per return point — Load has many
-	// early returns and a per-branch call would eventually miss one. Named returns so the defer
-	// can see the real outcome; only applies the limit on genuine success (err == nil && m != nil),
-	// re-evaluated fresh on every Load rather than set once at process start, because "available"
-	// changes as other loads/unloads happen.
-	defer func() {
-		if err == nil && m != nil {
-			applyGoMemLimit()
-		}
-	}()
+func Load(dir string, opts Options) (*Model, error) {
 	// M-26 (docs/audit-2026-09-10.md): set before any backend/prefill work below reads these —
 	// only on true, no else branch, so a caller managing the same env vars itself (serve's own
 	// applyExactPrefillEnv, which is more granular than this single bool) is never overridden by
@@ -549,7 +538,7 @@ func Load(dir string, opts Options) (m *Model, err error) {
 	if raw, err := json.Marshal(resolvedEOS); err == nil {
 		w.Cfg.EOSTokenID = raw
 	}
-	m = (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition}).withBackendNames(opts.Backend, beErr)
+	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition}).withBackendNames(opts.Backend, beErr)
 	// `resident` is the third phase: weights becoming a device-side runner. Timed here rather than
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user
 	// wondering where nine seconds went is owed that time too.

@@ -1,0 +1,19 @@
+decoder: expert paging (pread): 10240 experts, 15.6 GB total, 1.5 GB budget
+decoder: predicted paged-MoE decode rate ~2.68 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)
+loaded "qwen3.6-35b-a3b-int4.giw": 40-layer model (vocab 248320) in 17.849s [chat: chatml]
+  decode path: cpu (int4mix)
+  prefill path: sequential — this arch has its own per-token forward (no batched CPU prefill)
+  context: unknown (the model declares no maximum) · KV f32
+  fit: 1024-token cap needs 0.0 GB KV (weights 20.6 GB, budget 2.4 GB, 2.4 GB left for a request's own prefill)
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18097 [chat:[qwen3.6-35b-a3b-int4.giw]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 2.37 GB swap-used
+
+shutting down…
+last gc line: gc 13 @13.309s 0%: 0.20+13+0.019 ms clock, 1.6+3.7/25/53+0.15 ms cpu, 3326->3328->3328 MB, 3331 MB goal, 0 MB stacks, 0 MB globals, 8 P

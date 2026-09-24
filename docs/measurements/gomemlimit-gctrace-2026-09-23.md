@@ -1,5 +1,10 @@
 # S4 item 4 — GOMEMLIMIT GC-CPU check, 2026-09-23
 
+> **SUPERSEDED 2026-09-24: the decision below ("kept as built") was REVERSED.** This 1.5B run was a null
+> because the limit never bound. On M35 it bound hard and cost 52% of decode throughput (GC cycles
+> 14 → ~8,650), so per this item's own registered rule the feature was removed — see
+> `moe-pager-mode-darwin-2026-09-23.md` Result 2. Kept as the record of the null result.
+
 **Provenance.** MacBook (darwin/arm64) · goinfer `1f2010ff` (pre-push; landed in the S4 items 2-5
 commit) · `demo/chat` binary built locally (`go build ./demo/chat`) · CPU backend, `int8int8` ·
 greedy (`--temp 0`) · `GODEBUG=gctrace=1`.

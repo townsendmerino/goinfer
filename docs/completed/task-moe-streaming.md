@@ -106,6 +106,14 @@ Work:
 
 ## Lever 1 — an owned-buffer `pread` miss path (the big one)
 
+> **Lever 1b CLOSED 2026-09-24 (S5, `docs/tasks/task-never-swap-2026-09.md`).** The owned-buffer pool
+> was finally measured against the mmap mode on the Mac at an equal budget, on a real M35 from local
+> disk (`docs/measurements/moe-pager-mode-darwin-2026-09-23.md`): pool/mmap = 1.02× decode rate
+> (n=3 per arm, inside noise), mmap mode held ~4 GB of expert pages against a 1.5 GB budget while
+> pool held its budget (at +1.2–1.4 GB of owned anonymous buffers), swap flat in every run. Per the
+> registered rule the pool is now the darwin default (`--moe-pager`, `internal/serveapp`); Linux keeps
+> mmap mode. Note the caveats there — warm page cache, n=3 — before quoting the ratio.
+
 **Today.** A miss is `Advise(span, WILLNEED)` followed by a synchronous page fault when the
 matmul reads the span. That is one fault at a time on the decode thread — queue depth 1 —
 and the spike's cost model (`NVMe ≈ 20 µs seek + 3 GB/s`) assumed the *bandwidth*, which a

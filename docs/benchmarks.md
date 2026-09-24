@@ -1913,6 +1913,26 @@ N=64, once during/after the first decode token at a hand-picked N=32. Both kille
 either a kernel panic or a served rate. This machine's real, non-idle headroom for M26-class MoE
 paging remains an open, unresolved question, not a cleared one.
 
+**Addendum, 2026-09-23 — M35 now runs on this Mac, bounded, through the CPU expert pager with the
+mode named** (S5, `task-never-swap-2026-09.md`; full record and caveats:
+[`moe-pager-mode-darwin-2026-09-23.md`](measurements/moe-pager-mode-darwin-2026-09-23.md)). The
+2h10min/zero-completion record above is the `-stream-weights` path in **mmap** mode with no enforced
+budget; the same model, same budget, in **pool** mode decodes at a measured rate:
+
+| what | value | provenance |
+|---|---|---|
+| model | Qwen3.6-35B-A3B int4 `.giw` (canonical layout), 10240 experts, 15.6 GB paged | read from local `~/models` (byte-verified against the archive) |
+| pager mode / budget | pool (`expert paging (pread)`) / 1.5 GB, fixed at the live-probe figure | `-stream-weights -weight-cache 1.5`, `GOMEMLIMIT=off` |
+| decode rate | **2.27 tok/s** (n=3: 2.13, 2.32, 2.37); mmap mode 2.22 (n=3: 2.01, 2.29, 2.36) | greedy, depth ≈ 128, 32 tokens, runs interleaved, 2026-09-23, MacBook 16 GB |
+| time to first token | ~29 s (≈110-token sequential prefill) | same runs |
+| swap-used growth | 0 MB in all six runs | S3 tripwire + external kill switch armed |
+
+Read it as bounded, not as a benchmark row: one machine, warm-ish page cache, n=3, and the page cache
+flatters mmap mode; the 2.27 vs 2.22 difference is inside run-to-run noise. **What it does not
+lift:** M26 on Metal (S6's cell) is still off-limits, the memory-hog arm was not run, and the
+headroom on this Mac (2.7 GB live-available during the runs) is the same fragile headroom that
+caused the incidents above — the incidents were not disproved, one mode of one path was measured.
+
 ### Tier-2 goinfer variants, Mac only
 
 | variant | model | tok/s | vs. int4/on baseline |

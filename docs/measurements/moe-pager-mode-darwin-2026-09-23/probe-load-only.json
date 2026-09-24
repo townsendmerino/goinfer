@@ -1,0 +1,38 @@
+{
+ "label": "probe",
+ "mode": "pool",
+ "model": "/Users/francistownsend-merino/models/qwen3.6-35b-a3b-int4.giw",
+ "cmd": [
+  "/tmp/goinfer-serve",
+  "-addr",
+  "127.0.0.1:18097",
+  "-model",
+  "/Users/francistownsend-merino/models/qwen3.6-35b-a3b-int4.giw",
+  "-backend",
+  "cpu",
+  "-stream-weights",
+  "-moe-pager",
+  "pool",
+  "-ctx",
+  "1024"
+ ],
+ "swap_baseline_mb": 692.44,
+ "started": "22:01:32",
+ "gomemlimit": "(server default)",
+ "load_s": 72.1,
+ "banner": {
+  "pager": "pread",
+  "experts": 10240,
+  "total_gb": 15.6,
+  "budget_gb": 1.5
+ },
+ "predicted_tok_s": 2.62,
+ "gc": {
+  "count": 16,
+  "last_cum_gc_cpu_pct": 0
+ },
+ "killed": null,
+ "ended_reason": "load-only",
+ "max_rss_gb": 5.95,
+ "max_swap_delta_mb": 0.0
+}

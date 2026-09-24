@@ -1,0 +1,194 @@
+{
+ "label": "r1-pool",
+ "mode": "pool",
+ "model": "/Users/francistownsend-merino/models/qwen3.6-35b-a3b-int4.giw",
+ "cmd": [
+  "/tmp/goinfer-serve",
+  "-addr",
+  "127.0.0.1:18097",
+  "-model",
+  "/Users/francistownsend-merino/models/qwen3.6-35b-a3b-int4.giw",
+  "-backend",
+  "cpu",
+  "-stream-weights",
+  "-moe-pager",
+  "pool",
+  "-ctx",
+  "1024",
+  "-weight-cache",
+  "1.5"
+ ],
+ "swap_baseline_mb": 2312.06,
+ "started": "22:08:44",
+ "gomemlimit": "off",
+ "load_s": 18.0,
+ "banner": {
+  "pager": "pread",
+  "experts": 10240,
+  "total_gb": 15.6,
+  "budget_gb": 1.5
+ },
+ "predicted_tok_s": 2.68,
+ "served_name": "qwen3.6-35b-a3b-int4.giw",
+ "http_status": 200,
+ "tokens": 32,
+ "raw_head": [
+  ": ping",
+  "",
+  ": ping",
+  "",
+  "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"text\":\" the\"}],\"created\":1790226543,\"id\":\"cmpl-0b5ccf7578aff1914ae27fc18ef3010e\",\"model\":\"qwen3.6-35b-a3b-int4.giw\",\"object\":\"text_completion\"}"
+ ],
+ "text": " the new way is easier.\n\nThe history of computing is a story of abstraction: each generation of engineers hid the complexity of the layer beneath it so that the",
+ "ttft_s": 28.72,
+ "decode_tok_s_1_to_N": 2.3151,
+ "token_times_s": [
+  28.72,
+  29.31,
+  29.64,
+  29.99,
+  30.33,
+  30.65,
+  31.1,
+  31.45,
+  31.82,
+  32.12,
+  32.44,
+  32.91,
+  33.28,
+  33.59,
+  33.95,
+  34.23,
+  34.61,
+  35.07,
+  35.49,
+  35.88,
+  36.37,
+  36.83,
+  37.38,
+  37.92,
+  38.31,
+  38.86,
+  39.46,
+  39.92,
+  40.35,
+  40.89,
+  41.52,
+  42.11
+ ],
+ "prompt_words": 79,
+ "snapshots": {
+  "1": {
+   "t_s": 28.7,
+   "swap_mb": 2312.06,
+   "ps": {
+    "rss_kb": 2724944,
+    "faults": 3012891,
+    "pageins": 474794
+   },
+   "footprint": {
+    "phys_footprint_mb": 6147.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 6130.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 0.125,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 1152.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 6147.0,
+      "clean_mb": 1158.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  "16": {
+   "t_s": 34.2,
+   "swap_mb": 2312.06,
+   "ps": {
+    "rss_kb": 3312352,
+    "faults": 3494147,
+    "pageins": 495773
+   },
+   "footprint": {
+    "phys_footprint_mb": 6147.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 6130.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 0.125,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 1146.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 6147.0,
+      "clean_mb": 1152.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  "32": {
+   "t_s": 42.1,
+   "swap_mb": 2312.06,
+   "ps": {
+    "rss_kb": 3197408,
+    "faults": 4180605,
+    "pageins": 564640
+   },
+   "footprint": {
+    "phys_footprint_mb": 6147.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 6131.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 0.125,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 1129.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 6147.0,
+      "clean_mb": 1135.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  }
+ },
+ "faults_during_request": 3622312,
+ "pageins_during_request": 276884,
+ "gc": {
+  "count": 14,
+  "last_cum_gc_cpu_pct": 0
+ },
+ "killed": null,
+ "ended_reason": "done",
+ "max_rss_gb": 5.25,
+ "max_swap_delta_mb": 0.0
+}

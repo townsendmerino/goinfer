@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -450,42 +449,6 @@ func resolveWeightCacheBudget(requested int64) int64 {
 	}
 	fmt.Fprintln(os.Stderr, "decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)")
 	return 0
-}
-
-// setGoMemLimit is debug.SetMemoryLimit, indirected so a test can observe what would have been
-// set without actually constraining ITS OWN heap (mirrors hostRAMAvailable's own indirection
-// pattern above).
-var setGoMemLimit = debug.SetMemoryLimit
-
-// applyGoMemLimit is S4 item 4 (task-never-swap-2026-09.md): after a successful Load, set a SOFT
-// Go heap ceiling from THIS platform's live-available memory minus guardGIWFit's own 1 GB margin.
-// debug.SetMemoryLimit is a soft limit — the GC works harder as the heap approaches it, it does
-// NOT refuse an allocation the way a hard cap would — so setting it costs GC CPU, never
-// correctness, when it turns out to sit below what the process actually needs. The margin exists
-// because the limit is about SLACK, and slack is what a real load was measured short on: the
-// gpt-oss-20b build that motivated S0 (docs/measurements/cold-user-2026-09-18-nobara-pc.md) had
-// ~9% Go heap slack at its peak, not the headroom a limit set exactly at "available" would assume.
-//
-// GOMEMLIMIT already set in the environment wins outright and this is a no-op — Go's own env-var
-// precedence for debug.SetMemoryLimit, and a caller who set it explicitly gets exactly what they
-// asked for, never silently overridden by a load's own guess.
-//
-// Every unknown proceeds, same discipline as every other guard in this file: no live probe on
-// this platform, or an available figure the margin already consumes, leaves the runtime's own
-// default (no limit, i.e. GC paces off live heap size alone) in place rather than guessing.
-func applyGoMemLimit() {
-	if os.Getenv("GOMEMLIMIT") != "" {
-		return
-	}
-	avail := hostRAMAvailable()
-	if avail <= 0 {
-		return
-	}
-	limit := avail - giwMemMargin
-	if limit <= 0 {
-		return
-	}
-	setGoMemLimit(limit)
 }
 
 // quantBytesPerElem is the resident cost of one weight ELEMENT of a 2-D matmul matrix under each

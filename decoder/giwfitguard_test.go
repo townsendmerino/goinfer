@@ -220,55 +220,6 @@ func TestLoad_giwAutoPinsUnderTightMemory(t *testing.T) {
 	}
 }
 
-// TestLoad_appliesGoMemLimitOnSuccess is S4 item 4's own WIRING gate (task-never-swap-2026-09.md):
-// TestApplyGoMemLimit (fitguard_test.go) proves the arithmetic in isolation; this proves Load
-// itself calls it on a genuine success, through the SAME tiny synthetic-.giw pattern
-// TestLoad_giwAutoPinsUnderTightMemory above already established (no real checkpoint needed — the
-// Go heap limit a real caller relies on this pass having actually applied does not depend on
-// which family loaded).
-func TestLoad_appliesGoMemLimitOnSuccess(t *testing.T) {
-	raw, _, _, _ := tinyNormRopeGGUF("llama")
-	w := loadTinyGGUFWeights(t, raw, "llama")
-
-	out := filepath.Join(t.TempDir(), "memlimit.giw")
-	f, err := os.Create(out)
-	if err != nil {
-		t.Fatalf("create bundle: %v", err)
-	}
-	werr := giw.WriteStream(f, nil, func(dst io.Writer) (int64, error) {
-		return SerializeWeightsToForTarget(dst, w, "memlimit-fixture", GIWTargetNone)
-	})
-	if cerr := f.Close(); werr == nil {
-		werr = cerr
-	}
-	if werr != nil {
-		t.Fatalf("write bundle: %v", werr)
-	}
-
-	orig, wasSet := os.LookupEnv("GOMEMLIMIT")
-	os.Unsetenv("GOMEMLIMIT")
-	t.Cleanup(func() {
-		if wasSet {
-			os.Setenv("GOMEMLIMIT", orig)
-		}
-	})
-	defer injectHostRAM(t, 8<<30)() // ample: this tiny fixture must not hit guardGIWFit's refusal
-
-	var called bool
-	origSet := setGoMemLimit
-	setGoMemLimit = func(n int64) int64 { called = true; return 0 }
-	t.Cleanup(func() { setGoMemLimit = origSet })
-
-	m, err := Load(out, Options{Backend: "cpu"})
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	defer m.Close()
-	if !called {
-		t.Fatal("Load succeeded but never called setGoMemLimit — applyGoMemLimit is not wired into Load")
-	}
-}
-
 func TestGuardGIWFit_scratchBudgetIsPositive(t *testing.T) {
 	// Guards the assumption every other test in this file leans on: a zero or negative scratch
 	// term would make several "needs > budget" comparisons above vacuously true for the wrong

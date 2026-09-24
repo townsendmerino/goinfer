@@ -104,7 +104,7 @@ re-baked by the code it checks (G-04).
 ### A. Prefill: the whole-ladder gap and the short-prompt band
 
 #### M-01 · `ResidentPrefillKV` is not implemented on Metal — every sequential prompt token runs the full int8 LM head and a 608 KB readback for logits nobody reads
-- **Where:** `decoder/model.go:1374` (`kvOnly, hasKV := m.resident.(ResidentPrefillKV)`),
+- **Where:** `decoder/model.go:1363` (`kvOnly, hasKV := m.resident.(ResidentPrefillKV)`),
   `decoder/residency.go:146-109`; `metal/backend.go:437-605` (the complete `metalResident` method
   set — no `ForwardNoLogits`); `metal/model.go:1577-1442` (`encodeLogitsCB`, the only executor job
   shape, always appends `pGemvW8`); `metal/model.go:1443-1328` (`forwardHiddenNoHead` — the
@@ -113,7 +113,7 @@ re-baked by the code it checks (G-04).
 - **Mechanism and bound (counted + record):** `hasKV` is false for `*metalResident`, so
   `residentPrefillSeed` takes `m.resident.Forward(emb, i)` for every prompt token. Which prompts
   are sequential on Metal: every prompt below the 512 floor (M-02), every adapter prompt at any
-  length (`decoder/model.go:1349`, C-01 of the prior audit), every family `prefillOK` rejects
+  length (`decoder/model.go:1338`, C-01 of the prior audit), every family `prefillOK` rejects
   (Gemma 3 — M-06 — every DeltaNet family, gpt-oss, GPT-2, Cohere, Olmo, SmolLM3, Ministral 3,
   Mellum, dense Gemma 4, paged MoE), every `HiddenLast` embedding token. Per prompt token: 1.5B
   V×H int8 = 233 MB (≈24% of the ~0.97 GB the token moves) + 608 KB copy; 0.5B 136 MB of ≈420 MB
@@ -337,7 +337,7 @@ re-baked by the code it checks (G-04).
   true }`), `:440-444` (`repackedOnlyOrCanonical` → `repackW4A8IfEligible(canon)` — both kept),
   `:251-257` ("both ALLOCATE A SECOND BUFFER and keep the canonical nibbles alongside"),
   `metal/model.go:515-472,475-478` (`int4DirectWords` → `NewBufferUint32s` = `newBufferWithBytes`,
-  a third copy); `decoder/fitguard.go:496-260` (the guard prices int4 at ~2× on arm64 because of
+  a third copy); `decoder/fitguard.go:459-260` (the guard prices int4 at ~2× on arm64 because of
   row4); commit `3931ae1` (log: "2365.1 MB (Backend:"cpu") vs 3254.7 MB (unspecified) — 889.6 MB
   saved").
 - **Mechanism and bound (record):** once resident the GPU reads only the MTLBuffer; the host row4
@@ -720,7 +720,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/backend.go:200-159` (`metalMoESlotsRequest`: flag or env only; 0 ⇒ unpaged),
   `metal/moe.go:429-434`, `metal/backend.go:368-255` (guard prices the *unpaged* set when slots are
   unset, declines to CPU; the message names `GOINFER_NO_RESIDENT_MEM_GUARD` but not
-  `--moe-cache-slots`); `internal/serveapp/main.go:542` (`--moe-cache-experts` … "CUDA only"),
+  `--moe-cache-slots`); `internal/serveapp/main.go:554` (`--moe-cache-experts` … "CUDA only"),
   `:488` ("Metal: every expert resident, unpaged"); `docs/benchmarks.md:1686-1696` ("falls back
   automatically to a CPU-staged … path … killed after 2h10min with zero completions");
   `docs/completed/task-metal-expert-streaming-at-scale.md:288-291` (recommendation: default N=64).
@@ -810,7 +810,7 @@ re-baked by the code it checks (G-04).
 ### D. Cross-repo and unassessed
 
 #### M-15 · On a Metal box every image turn runs the vision tower on the CPU, and aikit's Metal tower cannot be wired as a win until three shapes change (aikit M-14/M-09/M-10 Metal halves)
-- **Where:** `internal/serveapp/main.go:1088-992` (`EnableResident` only for `webgpu`; nothing imports
+- **Where:** `internal/serveapp/main.go:1100-992` (`EnableResident` only for `webgpu`; nothing imports
   `visionmetal`/`qwenmetal`); aikit `metal_vit.go:168-221` (attention: one threadgroup per
   (head, query), re-streams K and V per query — no query tile; score lanes 4,608 B apart; PV keeps
   hd=72 of 256 lanes busy), `:397-420` (`gemm_w8a8_tiled`: one output per thread, byte-granular
@@ -1218,7 +1218,7 @@ re-baked by the code it checks (G-04).
 
 #### G-08 · The §3.2 gate never exercises `startPos > 0`, which every resident-prefix-reuse turn uses
 - **Where:** `metal/prefill_gate_ref_test.go:465` (`PrefillLast(ctx, embs, 0)`) vs
-  `decoder/model.go:1357` (`from`); the fused kernel's `startPos`/`uMReal` masking is covered only by
+  `decoder/model.go:1346` (`from`); the fused kernel's `startPos`/`uMReal` masking is covered only by
   a synthetic hd=64 case. The agent-turn shape the peer matrix calls the headline workload is not
   a fidelity cell. **Fix:** one decision cell with `from = K/2` on S. **Confidence:** plausible
   (coverage gap, no defect shown).
@@ -1543,10 +1543,10 @@ re-baked by the code it checks (G-04).
   still green.
 - N-34 `gpu/metal_copy.go`, `metal_upload_batch.go` — unused by goinfer (correct on UMA); note they
   are host-side and unfenced, so a `CopyDevice` during an in-flight command buffer would race.
-- N-35 `decoder/model.go:1318-1091,1134` — `warnPrefillDeclined` is process-lifetime `sync.Once`; on
+- N-35 `decoder/model.go:1307-1091,1134` — `warnPrefillDeclined` is process-lifetime `sync.Once`; on
   Metal the first sub-floor prompt consumes it, so a later real decline (cap, OOM) is silent (N-49).
   **FIXED 2026-09-13**: replaced the single `sync.Once` with a mutex-guarded set keyed on the
-  decline reason with its numbers normalized out (`decoder/model.go:1281,1053-1073`) — every
+  decline reason with its numbers normalized out (`decoder/model.go:1270,1053-1073`) — every
   below-floor prompt has a different `promptLen` in its message but normalizes to the same key, so
   the routine Metal case still logs once, while a later, differently-worded decline (a resident-cap
   refusal, an OOM) now gets its own one-time line instead of being silenced by the first. The old
@@ -1573,7 +1573,7 @@ re-baked by the code it checks (G-04).
 - N-39 `internal/serveapp/openai.go:1267-1086` — comment says adapter requests "drop to the staged
   path"; since G3 they reach the resident path on a `prefillFrom == 0` turn. Later-turn behaviour
   (`decoder/session.go`) not in tree. **FIXED 2026-09-13** — rewrote the three comments describing
-  adapter routing (`internal/serveapp/openai.go:1267-1093,735-739,826-829`) to say what  `decoder/model.go:1497`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
+  adapter routing (`internal/serveapp/openai.go:1267-1093,735-739,826-829`) to say what  `decoder/model.go:1486`'s actual chokepoint (`useGPU := m.resident != nil && prefillFrom == 0 &&
   (commit == nil || (lora != nil && resAdapter != nil))`) does: a session's FIRST turn
   (`prefillFrom==0`) with a bound resident adapter reaches the resident GPU path; a later turn on
   the same session (`prefillFrom>0`, continuing off the reused warm prefix) still drops to CPU,

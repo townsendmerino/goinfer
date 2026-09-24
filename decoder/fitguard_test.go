@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"errors"
-	"os"
 	"strings"
 	"testing"
 )
@@ -711,60 +710,6 @@ func TestQuantBytesPerElem_everyModeIsPlausible(t *testing.T) {
 				map[bool]string{true: "repacked host", false: "encoding only"}[near(repacked)])
 		})
 	}
-}
-
-// TestApplyGoMemLimit is S4 item 4's own gate (task-never-swap-2026-09.md): a live probe resolves
-// to (available - margin) passed to setGoMemLimit; GOMEMLIMIT already set in the environment wins
-// outright (a no-op here); an unavailable probe or a margin that consumes the whole figure also
-// leaves setGoMemLimit uncalled.
-func TestApplyGoMemLimit(t *testing.T) {
-	const gb = int64(1) << 30
-
-	callWith := func(t *testing.T, avail int64, envSet bool) (called bool, got int64) {
-		t.Helper()
-		defer injectHostRAMAvailable(t, avail)()
-		if envSet {
-			t.Setenv("GOMEMLIMIT", "4GiB")
-		} else {
-			orig, wasSet := os.LookupEnv("GOMEMLIMIT")
-			os.Unsetenv("GOMEMLIMIT")
-			t.Cleanup(func() {
-				if wasSet {
-					os.Setenv("GOMEMLIMIT", orig)
-				}
-			})
-		}
-		origSet := setGoMemLimit
-		setGoMemLimit = func(n int64) int64 { called, got = true, n; return 0 }
-		t.Cleanup(func() { setGoMemLimit = origSet })
-		applyGoMemLimit()
-		return called, got
-	}
-
-	t.Run("resolves to available minus margin", func(t *testing.T) {
-		called, got := callWith(t, 8*gb, false)
-		if !called {
-			t.Fatal("setGoMemLimit was not called")
-		}
-		if want := 8*gb - giwMemMargin; got != want {
-			t.Errorf("setGoMemLimit(%d), want %d (8 GB - %d GB margin)", got, want, giwMemMargin/gb)
-		}
-	})
-	t.Run("GOMEMLIMIT already set wins outright", func(t *testing.T) {
-		if called, _ := callWith(t, 8*gb, true); called {
-			t.Error("setGoMemLimit was called even though GOMEMLIMIT was already set in the environment")
-		}
-	})
-	t.Run("no live probe leaves it unset", func(t *testing.T) {
-		if called, _ := callWith(t, 0, false); called {
-			t.Error("setGoMemLimit was called with no live probe available")
-		}
-	})
-	t.Run("margin consumes the whole figure leaves it unset", func(t *testing.T) {
-		if called, _ := callWith(t, giwMemMargin/2, false); called {
-			t.Error("setGoMemLimit was called with a non-positive resolved limit")
-		}
-	})
 }
 
 // TestResolveWeightCacheBudget is S4 item 2's own gate (task-never-swap-2026-09.md): an explicit

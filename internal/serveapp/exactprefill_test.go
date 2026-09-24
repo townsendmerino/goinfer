@@ -81,3 +81,13 @@ func TestApplyMoEPagerEnv_setsExplicitlyEitherWay(t *testing.T) {
 		t.Errorf("--moe-pager=mmap: GOINFER_MOE_PREAD_CPU = %q, want %q", got, "0")
 	}
 }
+
+// TestMoEPagerDefault gates S5's registered default: pool on darwin (where MADV_DONTNEED is a
+// no-op, so mmap mode cannot enforce its budget), mmap everywhere else.
+func TestMoEPagerDefault(t *testing.T) {
+	for goos, want := range map[string]string{"darwin": "pool", "linux": "mmap", "windows": "mmap", "freebsd": "mmap"} {
+		if got := moePagerDefault(goos); got != want {
+			t.Errorf("moePagerDefault(%q) = %q, want %q", goos, got, want)
+		}
+	}
+}
