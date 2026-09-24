@@ -4,10 +4,13 @@ package decoder
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -206,4 +209,104 @@ func TestCPURoofline_fusedGateUp_logitsBitIdentical(t *testing.T) {
 			t.Logf("%s: %d decode steps x %d logits compared, %d differ", mc.name, len(off), len(off[0]), bad)
 		})
 	}
+}
+
+// procStatusMB reads one "Rss*:" line from /proc/self/status in MB (0 if absent, e.g. off linux).
+func procStatusMB(key string) float64 {
+	b, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(line, key+":") {
+			var kb float64
+			fmt.Sscanf(strings.TrimSpace(strings.TrimPrefix(line, key+":")), "%f", &kb)
+			return kb / 1024
+		}
+	}
+	return 0
+}
+
+// TestCPURoofline_giwVsDirect times CPU decode with the weights loaded through a .giw sidecar (zero-copy
+// aliases of a page-cache mapping) against a direct .gguf load (heap copies), with a second direct load as
+// the do-nothing arm. Pre-registered in docs/measurements/cpu-giw-vs-direct-2026-09-24.md.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./decoder/ -run TestCPURoofline_giwVsDirect -v -count=1 -timeout 60m
+func TestCPURoofline_giwVsDirect(t *testing.T) {
+	for _, mc := range []struct{ name, env, def string }{
+		{"1.5B", "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
+		{"7B", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf"},
+	} {
+		t.Run(mc.name, func(t *testing.T) {
+			load := func(label, path string) *cpuDecodeAB {
+				var before runtime.MemStats
+				runtime.GC()
+				runtime.ReadMemStats(&before)
+				anon0, file0 := procStatusMB("RssAnon"), procStatusMB("RssFile")
+				t0 := time.Now()
+				if path == "" {
+					t.Setenv(mc.env, "")
+				} else {
+					t.Setenv(mc.env, path)
+				}
+				h := newCPUDecodeAB(t, mc.env, mc.def, 128)
+				el := time.Since(t0)
+				var after runtime.MemStats
+				runtime.GC()
+				runtime.ReadMemStats(&after)
+				fmt.Fprintf(os.Stderr, "[giw-vs-direct %s] loaded %-7s in %6.2fs | heap-in-use +%.0f MB | RssAnon +%.0f MB | RssFile +%.0f MB\n",
+					mc.name, label, el.Seconds(), float64(after.HeapInuse-before.HeapInuse)/(1<<20),
+					procStatusMB("RssAnon")-anon0, procStatusMB("RssFile")-file0)
+				return h
+			}
+			gguf := os.ExpandEnv(mc.def)
+			giw := strings.TrimSuffix(gguf, ".gguf") + ".int4.cpu-amd64.giw"
+			if _, err := os.Stat(giw); err != nil {
+				t.Skipf("no sidecar at %s (build it with cmd/prequant -quant int4 -target cpu)", giw)
+			}
+			direct := load("direct", gguf)
+			direct2 := load("direct'", gguf)
+			side := load("giw", giw)
+			// the token hard gate is inside pairAB; it compares against direct's stream
+			pairAB(t, mc.name+" A/A direct'/direct", direct, direct2, 7)
+			pairAB(t, mc.name+" giw/direct", direct, side, 7)
+		})
+	}
+}
+
+// pairAB alternates generations between two loaded models ABBA and logs per-pair ratios b_ms/a_ms and
+// their median, min and max. Every generation's greedy stream must equal a's first one.
+func pairAB(t *testing.T, name string, a, b *cpuDecodeAB, pairs int) {
+	t.Helper()
+	a.gen()
+	b.gen() // warm-ups: page in the mapping, settle the scratch
+	_, ref := a.gen()
+	check := func(which string, p int, toks []int) {
+		if len(toks) != len(ref) {
+			t.Fatalf("%s pair %d (%s): %d tokens vs %d", name, p, which, len(toks), len(ref))
+		}
+		for i := range ref {
+			if toks[i] != ref[i] {
+				t.Fatalf("%s pair %d (%s): greedy stream diverged at token %d (%d vs %d) — speed result void", name, p, which, i, toks[i], ref[i])
+			}
+		}
+	}
+	var ratios []float64
+	for p := 0; p < pairs; p++ {
+		var ma, mb float64
+		var ta, tb []int
+		if p%2 == 0 {
+			ma, ta = a.gen()
+			mb, tb = b.gen()
+		} else {
+			mb, tb = b.gen()
+			ma, ta = a.gen()
+		}
+		check("a", p, ta)
+		check("b", p, tb)
+		ratios = append(ratios, mb/ma)
+		fmt.Fprintf(os.Stderr, "[%s] pair %d: a %.2f | b %.2f ms/tok | b/a %.4f\n", name, p, ma, mb, mb/ma)
+	}
+	sort.Float64s(ratios)
+	fmt.Fprintf(os.Stderr, "[%s] median b/a %.4f (min %.4f max %.4f, n=%d)\n", name, ratios[len(ratios)/2], ratios[0], ratios[len(ratios)-1], pairs)
 }
