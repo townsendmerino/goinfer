@@ -128,3 +128,35 @@ T0 matrix has no MoE row. What was learned trying:
 To finish it: free the box's swap (or run on a machine where the 35B fits), then
 `GOINFER_SERVE_CUDA=… python3 scripts/bench_tool_failure.py out.json --model MoE-35B-A3B --quant auto --samples 10 --temp 0.7`.
 The reduced 10-samples-per-turn size would be a disclosed deviation from the pre-registered 30.
+
+## Follow-up A — lenient bare-call parser (chatml/mellum2). Pre-registration, written BEFORE the code
+
+Owner decision 2026-09-24: option 3 (parser first, then T1). This section is the plan and its gates; results are appended below it.
+
+**Change.** For the two wrapper families that stream (chatml, mellum2), an output that yields no `<tool_call>` calls is re-read: if its
+first non-space byte starts a JSON object with a string `name` that is EXACTLY one of the supplied tool names and an object-valued
+`arguments` (or `parameters`), it is one call, with an empty lead. Design choices, made now:
+- **First object only.** The 0.5B was seen emitting LISTS of speculative calls (`read_file`, `write_file`, `edit_file`… one after
+  another). Executing all of them would be worse than the prose it replaces; the wrapper form still accepts every call, unchanged.
+- **Anchored at the start of the output.** Prose followed by a JSON object is NOT re-read. Conservative on purpose; it may leave some
+  calls unparsed, which the live re-measure will show.
+- **The streamer holds any output whose first non-space byte is `{`** (G21's invariant: a streamed byte cannot be unsent, and a bare
+  call's lead is empty, so nothing of it may be emitted as prose). Such an output that is NOT a call is delivered at the end instead, same
+  bytes.
+- Only `ParseToolCallsFor(out, tools)` gains the leniency; `ParseToolCalls(out)` is unchanged. mistral, llama3, gemma4: untouched.
+
+**Gates (pass/fail; fixed now).**
+- **G1 non-forcing / parity.** For every output whose first non-space byte is not `{`, `ParseToolCallsFor` equals `ParseToolCalls`
+  (differential test over generated strings and a fuzz target). Red-before-green: a deliberately over-eager variant must fail it.
+- **G2 no invented calls.** Bare JSON with an unknown name, a non-string name, missing/non-object arguments, an array, or trailing junk
+  that is not a complete object stays prose.
+- **G3 streaming.** The byte-by-byte prefix invariant of `TestProseStreamerMatchesParser` holds for bare-call and bare-JSON-prose outputs
+  including leading whitespace.
+- **G4 live re-measure, same harness, same seeds, same serve build.** (a) **7B int4 and llama3-1B must reproduce their archived class
+  counts EXACTLY** (97/10/3/1/189 and 148/7/2/0/143) — they never emit bare JSON, so any change is a regression, not an effect.
+  (b) **0.5B and 1.5B int4:** `prose` must equal the archived 54 / 77 (every change must come out of `unwrapped`); `parsed` becomes >0; I
+  report parsed, unknown-name, args-invalid and on-intended. If generations do not reproduce bit-for-bit under the same seed, that is
+  stated and (a)/(b) are read with that tolerance, not silently loosened.
+
+**Not claimed.** That the calls it recovers are GOOD. The 0.5B/1.5B's bare calls were seen with placeholder paths (`path/to/file`) and
+irrelevant paths; recovering the form does not recover the judgement. `on_intended` and `args_invalid` are reported so this is visible.
