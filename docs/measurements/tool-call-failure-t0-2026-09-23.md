@@ -129,6 +129,33 @@ To finish it: free the box's swap (or run on a machine where the 35B fits), then
 `GOINFER_SERVE_CUDA=… python3 scripts/bench_tool_failure.py out.json --model MoE-35B-A3B --quant auto --samples 10 --temp 0.7`.
 The reduced 10-samples-per-turn size would be a disclosed deviation from the pre-registered 30.
 
+## Peers: how llama.cpp and Ollama handle the same failure (2026-09-24)
+
+**Read from source.** llama.cpp `427291b` (2026-09-05, `~/mycode/peers/llama.cpp`); Ollama v0.32.5 `tools/tools.go` +
+`tools/template.go` (fetched at the tag).
+- **llama.cpp** — for a Qwen2.5-style template: lazy grammar, trigger word `<tool_call>`, body = choice of supplied tool-name
+  literals + that tool's parameter schema; `required` applies it from token 1. Output before the trigger is content. So it already
+  ships what T1+T2 propose, and it does NOT recover a bare, unwrapped call on this template. For Qwen3-Coder (a different XML call
+  form) it makes the first `<tool_call>` optional because "Qwen3-Coder models may occasionally omit" it, arming on the complete
+  `<function=NAME>` of a supplied tool so the model cannot invent a name there.
+- **Ollama** — no constraint in the tool parser. The tag is the template text before `{` in its ToolCalls block (`<tool_call>` for
+  qwen2.5-coder); after the tag it scans for the longest supplied tool name and then an arguments object, so a slightly malformed body
+  with a real name still parses and an unknown name yields no call. With no tag in the template, the tag is `{` and a call is only
+  parsed if the output's first non-space byte is `{`/`[`. A bare call on a tagged template is returned as content.
+
+**Measured (control, Ollama 0.32.5, its own library templates, T=0.7, seeds 0–19, 12 tools, no history, `auto`):**
+
+| model (Ollama tag) | prompt | parsed | bare JSON | prose |
+|---|---|---|---|---|
+| qwen2.5-coder:1.5b-instruct-q4_K_M | "Read notes.txt" | 0 | 3 | 17 |
+| qwen2.5-coder:1.5b-instruct-q4_K_M | fixture turn 1 | 0 | 6 | 14 |
+| qwen2.5-coder:7b-instruct-q8_0 | "Read notes.txt" | 0 | 19 | 1 |
+| qwen2.5-coder:7b-instruct-q8_0 | fixture turn 1 | 0 | 19 | 1 |
+
+Ollama's template already strengthens the instruction ("… within <tool_call></tool_call> with NO other text") and the Coder models
+still omit the wrapper; so do the Coder **7B** at q8. The Coder family drops the wrapper at every size tested, on both engines — the T0
+7B row is Qwen2.5-7B-*Instruct*, which wraps; that is a different model, not a size effect. 80 requests; a control, not a matrix row.
+
 ## Follow-up A — lenient bare-call parser (chatml/mellum2). Pre-registration, written BEFORE the code
 
 Owner decision 2026-09-24: option 3 (parser first, then T1). This section is the plan and its gates; results are appended below it.

@@ -41,6 +41,15 @@ failure, provable by construction rather than by benchmark, and it holds on a 1.
 as on a 70B one — which is the opposite of every other lever in this repo, where the small-model
 case is where things fall apart. Neither Ollama nor llama.cpp's default path makes it.
 
+> **Correction 2026-09-24 (read from source, not measured):** the last sentence is wrong for llama.cpp. At `427291b`
+> (2026-09-05) its differential autoparser derives `<tool_call>` from a Qwen2.5-style template and, under `tool_choice: auto`,
+> builds a LAZY grammar triggered on that word whose body is a choice over the supplied tool names (literals) followed by each
+> tool's parameter schema (`common/chat-auto-parser-generator.cpp`, `standard_json_tools` in `common/chat-peg-parser.cpp`) —
+> i.e. T1 + T2's wrapper arming, already shipped. T1 is therefore parity with llama.cpp, not a lead. Ollama 0.32.5 does not
+> constrain: `tools/tools.go` parses after the template-derived tag by scanning for a supplied tool name and an arguments
+> object. Neither accepts a call whose wrapper is missing on a Qwen2.5 template; llama.cpp does for Qwen3-Coder's first call
+> (optional `<tool_call>`, triggered on the complete `<function=NAME>` of a supplied tool). See the T0 record's peer section.
+
 ## 2. What exists today, cited
 
 - **The grammar machinery is built and in use.** `constrain.ToolCallGrammar`
