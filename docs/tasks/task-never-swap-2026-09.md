@@ -873,8 +873,20 @@ the pool mode's own accounting (S5).
 > test caught the `newRealMmapPager` test helper bypassing the real baseline-capture path (fixed by
 > making the helper call `processFaultCounts()` too, matching the real constructor).
 >
-> **Unstarted:** the registered rule's real M35 `.giw` mmap-vs-pool A/B (no M35-class checkpoint
-> fits this machine's free disk today), the darwin-default flip (gated on that measurement), and
+> **Real M35 run, correctness + safety only, 2026-09-23** (`docs/measurements/moe-pager-m35-smb-2026-09-23.md`):
+> the checkpoint (22.1 GB) was read from nobara's NVMe over an SMB mount on Wi-Fi (~10 MB/s), because
+> it does not fit this Mac's disk. Every timing from it is VOID by the storage rule, so this does
+> NOT settle the ship rule. What it does show: both modes decode a correct answer through a 1 GB
+> budget against 15.6 GB of experts with byte-identical greedy tokens (`" Paris.\n\n<think>"`), and
+> swap-used never rose above baseline in either run, with the S3 tripwire and an external kill
+> switch (`scripts/swap_killwatch.sh`) armed and silent. Wi-Fi throttling means it could not
+> produce the storm the 2026-09-04/05 panic was about, so the safety result is conditional. Two
+> findings: the `.giw` load reads the whole file up front (27–28 min at 10 MB/s) despite
+> `-stream-weights` being lazy — uninvestigated; and `-moe-pager` overrides an exported
+> `GOINFER_MOE_PREAD_CPU` (caught from the banner).
+>
+> **Still unstarted:** the registered rule's real tok/s A/B (needs the checkpoint on LOCAL disk),
+> the darwin-default flip (gated on that measurement), and
 > the dense pread ring (Build item 3, explicitly optional — "today the 7B fits"). No `--footprint`
 > snapshots, no swap log, no `docs/measurements/moe-pager-mode-darwin-2026-MM-DD.md` — none of
 > those are possible without the measurement this session cannot run.
