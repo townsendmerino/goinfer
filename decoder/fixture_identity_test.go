@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -23,7 +24,9 @@ import (
 // (docs/measurements/tiny-fixture-golden-mismatch-2026-09-24.md).
 //
 // requireFixtureIdentity fails fast, with the actual diagnosis, when a fixture listed in
-// testdata/fixture_identity.json does not hold the weights its goldens were recorded from.
+// testdata/fixture_identity.json does not hold the weights its goldens were recorded from. Since
+// 2026-09-24 the small fixtures are COMMITTED instead (git pins their bytes); the manifest covers only
+// the ones too large to commit, and TestInt4_forwardParity's per-fixture subtest is the caller.
 //
 // The comparison is NUMERIC, not a file hash: the same pin script with the same seed produces
 // byte-different checkpoints on arm64 and amd64 (measured: nemotron3nano-tiny and qwen3next-tiny differ in
@@ -352,9 +355,14 @@ func TestFixtureIdentity_manifestIsComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, n := range []string{"gemma3-vl-tiny", "bailing_hybrid-tiny"} {
-		if _, ok := all[n]; !ok {
-			t.Errorf("%s missing from %s", n, fixtureIdentityPath)
+	if len(all) == 0 {
+		t.Fatalf("%s lists no fixtures: the identity check would pass vacuously", fixtureIdentityPath)
+	}
+	// A committed fixture must NOT also be listed: git pins its bytes, and a stale fingerprint beside a
+	// re-pinned committed checkpoint would fail for no reason.
+	for n := range all {
+		if out, err := exec.Command("git", "ls-files", "--error-unmatch", filepath.Join("..", "testdata", n, "model.safetensors")).CombinedOutput(); err == nil {
+			t.Errorf("%s is committed (git tracks its model.safetensors) but is also in %s — remove the entry (%s)", n, fixtureIdentityPath, strings.TrimSpace(string(out)))
 		}
 	}
 	for n, fi := range all {

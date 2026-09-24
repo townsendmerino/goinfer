@@ -59,6 +59,34 @@ demo/chat/dist/
 # a pre-existing separate gap — see that fixture's own history, not fixed here).
 !testdata/llama-attnfa-tiny/
 !testdata/llama-attnfa-tiny/model.safetensors
+# EXCEPTION: sixteen more tiny fixtures (0.1-1.6 MB each, ~12 MB total), committed 2026-09-24:
+# siglip, gemma4-vision, gemma3-vl, qwen25vl, qwen35, glm, glm-bias, nemotron, nemotron3nano,
+# qwen3next, olmo3, bailing_hybrid, deepseek, phi3, llama4 and gemma4-moe-kv. Same rationale as
+# the v0.17.0 batch below — a gitignored fixture's gate skips in CI and can block nothing — plus
+# one this batch found: the pin scripts do not reproduce the same random weights across
+# torch/transformers versions (bailing_hybrid's not even run to run), so a per-machine checkpoint
+# silently pairs committed goldens with different weights. Five decoder tests were red on the Mac
+# for six days for exactly that reason (docs/measurements/tiny-fixture-golden-mismatch-2026-09-24.md).
+# Committing the bytes the goldens were recorded from removes the class for these sixteen; the
+# larger ones stay out and keep the numeric identity check (testdata/fixture_identity.json).
+# Each was green on the Mac AND on nobara-pc (amd64) before this commit.
+!testdata/gemma4-vision-tiny/model.safetensors
+!testdata/siglip-tiny/model.safetensors
+!testdata/nemotron-tiny/model.safetensors
+!testdata/gemma3-vl-tiny/model.safetensors
+!testdata/phi3-tiny/model.safetensors
+!testdata/nemotron3nano-tiny/model.safetensors
+!testdata/qwen3next-tiny/model.safetensors
+!testdata/qwen25vl-tiny/model.safetensors
+!testdata/glm-tiny/model.safetensors
+!testdata/glm-tiny-bias/model.safetensors
+!testdata/qwen35-tiny/model.safetensors
+!testdata/olmo3-tiny/model.safetensors
+!testdata/deepseek-tiny/model.safetensors
+!testdata/bailing_hybrid-tiny/model.safetensors
+!testdata/llama4-tiny/model.safetensors
+!testdata/gemma4-moe-kv-tiny/model.safetensors
+
 # EXCEPTION: the five v0.17.0 tiny fixtures (0.7-1.2 MB each, deterministic random weights
 # from scripts/pin_{granite_dense,ministral3,smollm3,olmo_hybrid,qwen3moe}_tiny.py). Committed
 # 2026-09-12 for the reason G-03 (docs/audit-2026-09-10.md) gives: while they were gitignored
@@ -126,7 +154,6 @@ testdata/*-sharded
 testdata/*-gptq
 testdata/*-awq
 # generated tiny qwen3_5_moe parity checkpoint (scripts/pin_qwen35_forward.py)
-testdata/qwen35-tiny/
 # generated tiny/scaled parity checkpoints — weights are *.safetensors (ignored above), but the
 # tokenizer/config JSONs are not, so ignore the whole dirs; the *_golden.json in testdata/ stay tracked.
 testdata/tiny-qwen2-moe/
@@ -150,10 +177,6 @@ testdata/mellum2-tokenizer
 testdata/gemma4-dense-scaled-*/
 # generated tiny vision-language parity checkpoints (scripts/pin_siglip_vision.py,
 # scripts/pin_gemma3_vl_tiny.py) — regenerated locally; the *_golden.json stay tracked.
-testdata/siglip-tiny/
-testdata/gemma4-vision-tiny/
-testdata/gemma3-vl-tiny/
-testdata/qwen25vl-tiny/
 testdata/qwen3vl-tiny/
 testdata/gemma4-vl-tiny/
 testdata/gemma4-vl-bidir-tiny/
@@ -205,18 +228,8 @@ docs/internal/
 /prequant
 /spikeembed
 /spikeq6k
-testdata/glm-tiny/
-testdata/glm-tiny-bias/
 testdata/granite-tiny/
-testdata/nemotron-tiny/
-testdata/nemotron3nano-tiny/
-testdata/qwen3next-tiny/
-testdata/olmo3-tiny/
-testdata/bailing_hybrid-tiny/
-testdata/deepseek-tiny/
-testdata/phi3-tiny/
 testdata/kimi-tiny/
-testdata/llama4-tiny/
 # testdata/mixtral-tiny/ is intentionally committed — see the exception near the top
 # of this file and docs/parity-coverage-policy.md (the MoE parity gate must be a real T1).
 
@@ -226,7 +239,6 @@ decoder/testdata/gptoss_20b_golden.json
 # generated tiny gemma4 parity checkpoints (scripts/pin_gemma4_*.py); golden JSON stays tracked
 testdata/gemma4-moe-tiny/
 testdata/gemma4-moe-tiny-k3/
-testdata/gemma4-moe-kv-tiny/
 testdata/gemma4-moe-unified-tiny/
 testdata/gemma4-dense-twogeom-tiny/
 testdata/gemma4-dense-scaled/

@@ -27,7 +27,6 @@ func TestGemma3VL_textParity(t *testing.T) {
 	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no checkpoint at %s — run scripts/pin_gemma3_vl_tiny.py", ckpt)
 	}
-	requireFixtureIdentity(t, ckpt)
 	var g struct {
 		PromptIDs       []int     `json:"prompt_ids"`
 		Argmax          int       `json:"argmax"`
@@ -94,7 +93,6 @@ func TestGemma3VL_imageParity(t *testing.T) {
 	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no checkpoint — run scripts/pin_gemma3_vl_tiny.py")
 	}
-	requireFixtureIdentity(t, ckpt)
 	var g struct {
 		InputIDs        []int     `json:"input_ids"`
 		ImageTokenStart int       `json:"image_token_start"`
