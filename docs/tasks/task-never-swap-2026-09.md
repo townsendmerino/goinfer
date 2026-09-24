@@ -11,8 +11,10 @@
 > `.giw` load's whole-file CRC now runs once per file, not once per load (a 22 GB load: 27 min over a slow
 > link → 72 s the first time, seconds after). **Still open:** S6's Build steps and M26 Step 0 cell (not
 > run — headroom on this Mac is worse than at session start, and it is the R11(c) incident configuration);
-> the rule's 6 GB memory-hog arm (not triggered); and a new finding — ~5 GB of anonymous memory in a
-> "streamed" M35 that is not the pager (see the measurement doc's "Open finding"). Older status text
+> the rule's 6 GB memory-hog arm (not triggered); and a new finding, now DIAGNOSED — ~5 GB of anonymous memory in a
+> "streamed" M35 is mostly the int4 **group scales** of every expert (3.75 GB), which `giwReader.f32` copies to
+> the heap because the format does not align them (75% of them sit at a non-4-byte-aligned offset); fixing it is a
+> writer/format change (pad + version bump), proposed not made — see the measurement doc's "Finding" section. Older status text
 > below is kept as written and is superseded where it disagrees.
 >
 > **Status: S3 BUILT AND MEASURED 2026-09-22 (the watch mechanism, the serving consumer, and the

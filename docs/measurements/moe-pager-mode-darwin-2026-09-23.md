@@ -97,15 +97,47 @@ the bound, not that the hit-rate curve (borrowed from CUDA's C′ cache) is righ
 - **The 6 GB memory-hog arm** (not triggered, above) and **footprint snapshots on a cold page cache**.
 - The rule's **"kind 5" (row4) layout** — canonical int4 was used (deviation, above).
 
-## Open finding — ~5 GB of anonymous memory in a "streamed" M35
+## Finding — the ~5 GB of anonymous memory in a "streamed" M35: DIAGNOSED (2026-09-24)
 
-Both modes carry **~5.0 GB of dirty (anonymous) footprint** (mmap arm, before pool's buffers) and a
-Go heap of ~5.7 GB, for a model whose weights are supposed to be file-backed aliases. The load
-takes the heap to ~3.1 GB and serving a request to ~5.7 GB. Something outside the expert pager
-(candidates: the qwen3.5 hybrid's non-serializable/heap-resident DeltaNet and attention weights,
-the ~248k-vocab embedding/head, per-request scratch) is the dominant anonymous term, larger than
-the pager budget being tuned. **Not investigated.** It is also why any Go memory limit was doomed
-here and it bounds how much the pager budget can matter for swap on this model.
+Both modes carry ~5.0 GB of dirty footprint and a Go heap of ~5.8 GB for a model whose weights are
+supposed to be file-backed. A heap profile (`runtime/pprof`, throwaway test, real M35 `.giw`,
+pool mode, 1.5 GB budget) taken **immediately after `decoder.Load`, before any request**, shows
+HeapInuse **5.82 GB** already (5.90 after the first token, 5.82 after generation — serving adds
+nothing). It is two things:
+
+| in-use heap after load | size | where |
+|---|---|---|
+| `giwReader.f32` via `weightMat` | **4.11 GB (74%)** | `layer()`: `l.Experts[e].Gate/Up/Down = r.weightMat()` = 1.25 GB each; router 80 MB; hybrid (DeltaNet/attn) layers 171 MB; shared experts 5 MB each |
+| `newExpertBufferPool` | 1.43 GB (26%) | the pool's owned buffers — the budget, as designed |
+
+**Cause.** For an int4 (kind 3) tensor the reader aliases the packed nibbles zero-copy
+(`rawAlias`) but calls `r.f32()` for the **per-group scales**, which allocates and copies them
+(`serialize.go`, "f32 copies (the input isn't guaranteed aligned)"). Every routed expert's group
+scales — 1 f32 per 32 weights = 25% of the nibble bytes, 15.6 GB × 0.25 ≈ **3.9 GB**, matching the
+3.75 GB profiled — become permanent anonymous heap, **outside the pager's accounting** (the pager's
+"15.6 GB total / budget" counts only the nibble spans it can evict). They are also read at load
+(part of why the load touches a large fraction of the file even after the CRC fix).
+
+**The alignment is real, measured.** Counting the address alignment of every scale array read from
+the file (temporary instrumentation, since reverted): 31,333 arrays split almost exactly evenly
+across `addr mod 4 = 0/1/2/3` (7,841 / 7,826 / 7,840 / 7,826; ~4.3 GB total). A reader-only "alias
+when aligned" would recover ~25%; an unaligned `unsafe` cast is not acceptable (Go's `checkptr`,
+enabled by `-race`, rejects it, and the pointer rules forbid it). So aliasing needs the **writer to
+pad each f32 array to 4-byte alignment** — an on-disk format change (version bump; newer readers
+keep reading old files by copying, per the format's "each version only adds" rule).
+
+**Consequences, stated plainly:**
+- The pager budget being tuned (1.5 GB) is the *smaller* of two anonymous terms here; the expert
+  scales are ~2.5× larger and cannot be evicted. This bounds how much any pager mode can help swap
+  on this model, and is the real reason a Go memory limit (Result 2) was doomed: the live heap is
+  mostly this.
+- Fixing it would move ~3.75 GB from anonymous heap to file-backed, evictable mapping for M35
+  (~5.8 → ~2.0 GB Go heap incl. the pool). It only helps a **re-transcoded** `.giw`: the existing
+  22 GB file has the unaligned layout baked in, and re-transcoding needs the 22 GB `.gguf` plus a
+  22 GB output on a disk with ~17 GB free.
+- Not done: this is a format change (writer + version + reader + goldens), which is a shipping
+  decision, so it is proposed, not made. It is also the same layout work S6's "metal" kind needs
+  (16-byte-aligned tensors), so the two should be designed together.
 
 ## Harness bugs found and fixed while measuring (so the data can be trusted)
 
