@@ -108,6 +108,23 @@ Greedy (n=10 per cell) is a sanity row only, as pre-registered: 0.5B/1.5B 8–9 
 - **1.5B int8's first attempt was discarded, not re-rolled selectively:** it died with a 503 from the server's swap guard when I ran a
   `-race` build alongside it, produced no data, and was re-run from scratch with the same settings.
 
-### MoE (Qwen3.6-35B-A3B)
+### MoE (Qwen3.6-35B-A3B) — NOT RUN
 
-_In progress at the time of the dense write-up; see the next section when filled._
+The cell was attempted and could not be completed on this box without defeating a safety guard, so **there is no MoE number** and the
+T0 matrix has no MoE row. What was learned trying:
+
+- The q4_k_m GGUF is refused by the load fit guard (51.7 GB peak on a 62 GB box).
+- The canonical int4 `.giw` loads, but WITHOUT `GOINFER_MOE_CACHE_EXPERTS=1` (C′, opt-in) the resident upload OOMs the 8 GB card and
+  serve silently falls back to CPU: one 754-token request took **235 s**, i.e. 20+ hours for the pre-registered 320.
+- With C′ on it runs on the GPU (6.8 GB VRAM; the flash-decode lane correctly stays off for C′, no message) but with no session reuse
+  each request re-prefills: ~26 s at 754 prompt tokens, ~71 s at 1.8K, and the transcript reaches 3–4K. A reduced cell (10 samples per
+  turn, ~2 h) was launched detached.
+- It died at the start: the server's **swap guard tripped** (baseline 18.8 GB swap in use, +0.66 GB over its +512 MB limit once the
+  ~22 GB model was resident) and refused requests, a 503. That guard is a deliberate protection, not a fault, and the box already
+  carries 15–19 GB of swap from other work; I did not raise the threshold or evict anything to get around it.
+- Anecdote, NOT data: three hand-sent turn-1 requests (n=3) returned a `<think>` block followed by a parsed `read_file` call, so this
+  family does wrap its calls under `auto`. Nothing here supports a rate.
+
+To finish it: free the box's swap (or run on a machine where the 35B fits), then
+`GOINFER_SERVE_CUDA=… python3 scripts/bench_tool_failure.py out.json --model MoE-35B-A3B --quant auto --samples 10 --temp 0.7`.
+The reduced 10-samples-per-turn size would be a disclosed deviation from the pre-registered 30.
