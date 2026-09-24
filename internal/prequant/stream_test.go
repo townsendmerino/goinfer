@@ -97,7 +97,24 @@ func giwSplit(t *testing.T, b []byte, at int, wantLabel string) (pre, post []byt
 	if got := string(body[at+4 : at+4+n]); got != wantLabel {
 		t.Fatalf("label at %d = %q, want %q", at, got, wantLabel)
 	}
-	return body[:at], body[at+4+n:]
+	end := at + 4 + n
+	// v12+: the header ends on a 16-byte boundary (giwWriter.alignHead) so that what follows sits at
+	// the SAME offsets whether or not the label is present. The pad is all zeros and its length
+	// depends on the label, so it is checked here and excluded from the "everything else is
+	// byte-identical" comparison rather than counted as a difference.
+	if ver := binary.LittleEndian.Uint32(body[5:9]); ver >= 12 {
+		pad := (-end) & 15
+		if end+pad > len(body) {
+			t.Fatalf("header pad (%d B) runs past the body", pad)
+		}
+		for i, c := range body[end : end+pad] {
+			if c != 0 {
+				t.Fatalf("header alignment pad byte %d is %#x, want zero", end+i, c)
+			}
+		}
+		end += pad
+	}
+	return body[:at], body[end:]
 }
 
 // giwLabelOffset returns the byte offset of the v5 quant-label field by PARSING the .giw header,

@@ -13,7 +13,12 @@
 > Metal path holds ~7.4 GB anonymous; see S6's status note); the rule's 6 GB memory-hog arm (not triggered); and a new finding, now DIAGNOSED — ~5 GB of anonymous memory in a
 > "streamed" M35 is mostly the int4 **group scales** of every expert (3.75 GB), which `giwReader.f32` copies to
 > the heap because the format does not align them (75% of them sit at a non-4-byte-aligned offset); fixing it is a
-> writer/format change (pad + version bump), proposed not made — see the measurement doc's "Finding" section. Older status text
+> writer/format change (pad + version bump), proposed not made — see the measurement doc's "Finding" section.
+> **FIXED 2026-09-24 (weights format v12 / bundle v3, `docs/giw-bundles.md`): M35 Go heap after Load 5.82 → 1.62 GB, dirty
+> footprint at token 32 6.2 → 2.2 GB (pool) and 5.0 → 0.4 GB (mmap); 7B heap 0.615 → 0.003 GB on CPU and Metal;
+> identical greedy tokens aliased vs copied on the real M35 file.** Measured on arm64 darwin only; M26 not re-transcoded;
+> existing sidecars keep the old layout until rebuilt. S6's `NewBufferNoCopy` no longer has to solve the scale copies —
+> the remaining Metal heap term is `metal.int4DirectBytes`. Older status text
 > below is kept as written and is superseded where it disagrees.
 >
 > **Status: S3 BUILT AND MEASURED 2026-09-22 (the watch mechanism, the serving consumer, and the

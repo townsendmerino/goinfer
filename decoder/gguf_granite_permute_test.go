@@ -2,8 +2,6 @@ package decoder
 
 import (
 	"bytes"
-	"encoding/binary"
-	"hash/crc32"
 	"strings"
 	"testing"
 
@@ -192,16 +190,6 @@ func TestGGUF_graniteDenseUnpermutesQK(t *testing.T) { checkUnpermuted(t, "grani
 // that has always been un-permuted. If THIS fails, the harness is wrong, not the loader.
 func TestGGUF_llamaUnpermutesQK(t *testing.T) { checkUnpermuted(t, "llama") }
 
-// giwAtVersion re-stamps a serialized bundle's format version and recomputes its CRC, producing
-// exactly what an older writer would have left on disk for the same weights.
-func giwAtVersion(t *testing.T, b []byte, v uint32) []byte {
-	t.Helper()
-	out := append([]byte(nil), b...)
-	binary.LittleEndian.PutUint32(out[len(giwMagic):], v)
-	binary.LittleEndian.PutUint32(out[len(out)-4:], crc32.ChecksumIEEE(out[:len(out)-4]))
-	return out
-}
-
 // TestGIW_refusesPreFixDenseGraniteBundle closes C-05's breaking-after-tag half. A dense-granite
 // .giw transcoded from a GGUF before the fix is CRC-valid, shape-valid, mtime-fresh and WRONG, so
 // every freshness check passed it. Refusing pre-v10 granite bundles is what makes prequant's
@@ -216,14 +204,25 @@ func TestGIW_refusesPreFixDenseGraniteBundle(t *testing.T) {
 		{"llama", false}, // a version gate for one family must not refuse another's bundles
 	} {
 		raw, _, _, _ := tinyNormRopeGGUF(tc.arch)
-		b, err := SerializeWeights(loadTinyGGUFWeights(t, raw, tc.arch), "c05-test")
+		w := loadTinyGGUFWeights(t, raw, tc.arch)
+		b, err := SerializeWeights(w, "c05-test")
 		if err != nil {
 			t.Fatalf("%s: SerializeWeights: %v", tc.arch, err)
 		}
 		if _, err := LoadSerializedWeights(b); err != nil {
 			t.Fatalf("%s: a current-version bundle must load: %v", tc.arch, err)
 		}
-		_, err = LoadSerializedWeights(giwAtVersion(t, b, lastUnfixedVersion))
+		// A genuinely OLD bundle: written with the pre-v12 layout and a v9 header, not the current
+		// bytes relabelled as v9. Relabelling was valid only while every version shared one layout;
+		// v12 pads arrays, so a padded blob stamped v9 is read without the pad skip and misparses.
+		prevEmit := giwEmitVersion
+		giwEmitVersion = lastUnfixedVersion
+		old, oerr := SerializeWeights(w, "c05-test")
+		giwEmitVersion = prevEmit
+		if oerr != nil {
+			t.Fatalf("%s: SerializeWeights (v%d layout): %v", tc.arch, lastUnfixedVersion, oerr)
+		}
+		_, err = LoadSerializedWeights(old)
 		switch {
 		case tc.wantRefused && err == nil:
 			t.Errorf("%s: a v%d bundle LOADED — a pre-fix sidecar with permuted q/k would be served "+

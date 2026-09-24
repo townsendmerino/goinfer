@@ -84,9 +84,10 @@ import (
 
 const (
 	giwMagic        = "GINFW"
-	giwVersion      = 11 // v11: no layout change to existing kinds — adds kind 5 (row4-only, docs/tasks/task-int4-layout-2026-09.md L2), gated on version so a pre-v11 reader refuses the file via the version guard rather than hitting an unknown kind byte; v10: a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
+	giwVersion      = 12 // v12: NO new kind — every weight-matrix payload array (int8 scales+codes, int4 scales+nibbles, row4 scales+row4 nibbles) is now preceded by zero padding so its bytes start 16-aligned relative to the blob start (giwAlignArray), which lets the reader ALIAS the group scales instead of copying them to the heap (docs/measurements/moe-pager-mode-darwin-2026-09-23.md, "Finding"); needs the v3 bundle header (blob at offset 64) to be aligned in the FILE; a pre-v12 reader refuses the file via the version guard, a v12 reader still reads every older layout; v11: no layout change to existing kinds — adds kind 5 (row4-only, docs/tasks/task-int4-layout-2026-09.md L2), gated on version so a pre-v11 reader refuses the file via the version guard rather than hitting an unknown kind byte; v10: a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
 	giwMinReadV     = 3  // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv, v9 KDA/MLA-gate, v11 kind 5; older bundles stay valid and fall back to inference)
 	giwV4Gemma4     = 4  // the version at/after which the gemma4 tail is present
+	giwVAligned     = 12 // the version from which weight-matrix payload arrays are 16-byte aligned (see giwVersion)
 	giwV10GraniteQK = 10 // the version at/after which a dense-granite bundle's q/k are known un-permuted (audit C-05)
 	giwV6Tail       = 6  // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
 	giwV8ShortConv  = 8  // the version at/after which the LFM2 short-conv tail is present
@@ -265,7 +266,7 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 		return fmt.Errorf("decoder: marshal config: %w", err)
 	}
 	wr.raw([]byte(giwMagic))
-	wr.u32(giwVersion)
+	wr.u32(giwEmitVersion)
 	wr.u32(uint32(w.quantMode()))
 	wr.str(id)
 	wr.bytesField(cfgJSON)
@@ -293,6 +294,7 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 		label = w.quantLabel()
 	}
 	wr.str(label)
+	wr.alignHead() // v12: variable-length header (the label, present or not) must not shift what follows
 
 	wr.weightMat(&w.Embed)
 	wr.weightMat(&w.LMHead)
@@ -358,6 +360,7 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 	if v >= 5 {
 		bakedQuant = r.str()
 	}
+	r.alignHead()
 	if r.err != nil {
 		return nil, &SerializeError{"truncated header"}
 	}
@@ -985,6 +988,53 @@ func (w *giwWriter) raw(b []byte) {
 	w.n += int64(len(b))
 }
 
+// giwEmitVersion is the version the writer stamps and lays out. It is a variable ONLY so a test can
+// write a genuine pre-v12 (unpadded) bundle and prove the reader still loads it; production always
+// leaves it at giwVersion.
+var giwEmitVersion uint32 = giwVersion
+
+// pos is how many bytes have been written since the blob start, in either mode — the quantity the
+// alignment padding is defined over.
+func (w *giwWriter) pos() int64 {
+	if w.sink == nil {
+		return int64(len(w.buf))
+	}
+	return w.n
+}
+
+// giwArrayPad is the number of zero bytes to insert at blob offset off so that an array written as
+// `u32 count | payload` has its PAYLOAD (off+pad+4) on a 16-byte boundary. A pure function of the
+// offset, so writer and reader compute the same answer without recording it.
+func giwArrayPad(off int64) int { return int((-(off + 4)) & 15) }
+
+// alignHead ends the variable-length header on a 16-byte boundary (v12+). The header carries a
+// length-prefixed quant label that the resident writer emits and the streaming writer deliberately
+// does not (B11), so the two paths' offsets differ by the label's length. Every later array's
+// padding is a function of its absolute offset, so without this the two would lay out the SAME
+// weights with DIFFERENT padding and stop being byte-identical
+// (internal/prequant TestStreamTranscodeMatchesResident caught exactly that). With it, everything
+// after the header is at the same offsets in both.
+func (w *giwWriter) alignHead() {
+	if giwEmitVersion < giwVAligned {
+		return
+	}
+	if pad := int((-w.pos()) & 15); pad > 0 {
+		var z [16]byte
+		w.raw(z[:pad])
+	}
+}
+
+// alignArray pads before the next array's count (v12+; a no-op when emitting an older layout).
+func (w *giwWriter) alignArray() {
+	if giwEmitVersion < giwVAligned {
+		return
+	}
+	if pad := giwArrayPad(w.pos()); pad > 0 {
+		var z [16]byte
+		w.raw(z[:pad])
+	}
+}
+
 func (w *giwWriter) u32(v uint32) {
 	var b [4]byte
 	binary.LittleEndian.PutUint32(b[:], v)
@@ -1090,22 +1140,36 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 	} else {
 		w.raw([]byte{0})
 	}
+	// Kind 1 (an f32 matrix) is deliberately NOT aligned: the reader copies it (an aliased f32
+	// matrix would sit in a read-only mapping, and nothing here proves no caller mutates one),
+	// so there is nothing to gain. Every other array below is aliased by the reader and is padded
+	// so the alias is legal (see giwArrayPad).
 	switch kind {
 	case 1:
 		w.f32(f32)
 	case 2:
+		w.alignArray()
 		w.f32(scales)
+		w.alignArray()
 		w.i8(q8)
 	case 3:
+		w.alignArray()
 		w.f32(q4s)
+		w.alignArray()
 		w.bytesField(q4)
 	case 4:
+		w.alignArray()
 		w.f32(q4s)
+		w.alignArray()
 		w.bytesField(q4)
+		w.alignArray()
 		w.f32(q4Row4Scales)
+		w.alignArray()
 		w.bytesField(q4Row4)
 	case 5:
+		w.alignArray()
 		w.f32(q4Row4Scales)
+		w.alignArray()
 		w.bytesField(q4Row4)
 	}
 }
@@ -1395,6 +1459,53 @@ func (r *giwReader) u8() byte {
 	return b
 }
 
+// alignHead skips the padding a v12+ writer put at the end of the header (see giwWriter.alignHead).
+func (r *giwReader) alignHead() {
+	if r.err != nil || r.version < giwVAligned {
+		return
+	}
+	if pad := int((-int64(r.off)) & 15); r.need(pad) {
+		r.off += pad
+	}
+}
+
+// alignArray skips the zero padding a v12+ writer put before an aligned array's count (see
+// giwArrayPad). Older layouts have none.
+func (r *giwReader) alignArray() {
+	if r.err != nil || r.version < giwVAligned {
+		return
+	}
+	if pad := giwArrayPad(int64(r.off)); r.need(pad) {
+		r.off += pad
+	}
+}
+
+// nativeLittleEndian reports whether float32s can be read straight out of the little-endian blob.
+var nativeLittleEndian = func() bool { x := uint16(1); return *(*byte)(unsafe.Pointer(&x)) == 1 }()
+
+// f32Alias reads a padded f32 array as an ALIAS of the mapping when its payload is 4-byte aligned
+// in memory (always true for a v12 bundle inside a v3-bundle mapping; true by luck for a quarter of
+// an older file's arrays), and copies otherwise — so an old or oddly-placed blob still loads, just
+// onto the heap as before. For weight-matrix scale arrays only: the mapping is read-only, and a
+// scale array is read-only by construction (its sibling nibble/int8 arrays are already aliased).
+// The caller must have called alignArray first.
+func (r *giwReader) f32Alias() []float32 {
+	n := int(r.u32())
+	if n == 0 || !r.need(n*4) {
+		return nil
+	}
+	if p := unsafe.Pointer(&r.data[r.off]); nativeLittleEndian && uintptr(p)%4 == 0 {
+		r.off += n * 4
+		return unsafe.Slice((*float32)(p), n)
+	}
+	out := make([]float32, n)
+	for i := range out {
+		out[i] = math.Float32frombits(binary.LittleEndian.Uint32(r.data[r.off:]))
+		r.off += 4
+	}
+	return out
+}
+
 // f32 copies (the input isn't guaranteed aligned). len 0 ⇒ nil, preserving the
 // "absent ⇒ nil" convention the forward pass checks for biases/norms.
 func (r *giwReader) f32() []float32 {
@@ -1466,7 +1577,9 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 		}
 		return linalg.WrapF32(f, rows, cols)
 	case 2:
-		scales := r.f32() // read order matches the writer (scales, then codes)
+		r.alignArray()
+		scales := r.f32Alias() // read order matches the writer (scales, then codes)
+		r.alignArray()
 		q8 := r.i8()
 		if len(q8) != rows*cols || len(scales) != rows {
 			r.fail(fmt.Sprintf("int8 weightMat %d×%d: q8=%d (want %d) scales=%d (want %d)", rows, cols, len(q8), rows*cols, len(scales), rows))
@@ -1474,7 +1587,9 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 		}
 		return linalg.WrapInt8(q8, scales, rows, cols, w8a8)
 	case 3:
-		q4s := r.f32()
+		r.alignArray()
+		q4s := r.f32Alias()
+		r.alignArray()
 		q4 := r.rawAlias() // zero-copy alias into the mmap'd blob (WrapInt4 keeps it)
 		if group <= 0 {
 			r.fail(fmt.Sprintf("int4 weightMat group %d ≤ 0", group))
@@ -1487,7 +1602,9 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 		}
 		return linalg.WrapInt4(q4, q4s, rows, cols, group)
 	case 4:
-		q4s := r.f32()
+		r.alignArray()
+		q4s := r.f32Alias()
+		r.alignArray()
 		q4 := r.rawAlias() // canonical bytes stay authoritative — same as kind 3
 		if group <= 0 {
 			r.fail(fmt.Sprintf("int4-row4 weightMat group %d ≤ 0", group))
@@ -1498,7 +1615,9 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			r.fail(fmt.Sprintf("int4-row4 weightMat %d×%d group=%d: q4=%d (want %d) q4s=%d (want %d)", rows, cols, group, len(q4), wantQ4, len(q4s), wantScales))
 			return linalg.WeightMat{}
 		}
-		q4Row4Scales := r.f32()
+		r.alignArray()
+		q4Row4Scales := r.f32Alias()
+		r.alignArray()
 		q4Row4 := r.rawAlias() // zero-copy — the whole point of kind 4 (WrapInt4Row4 gates on row4Usable() before aliasing it in)
 		// RepackW4A8Row4/RepackW4A8Row4Scales preserve length exactly (a repack,
 		// not a requant), so the row4 arrays share kind 3's own want* values.
@@ -1515,7 +1634,9 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 		// row4 arrays share kind 3/4's own want* values (a repack, not a requant —
 		// RepackW4A8Row4/RepackW4A8Row4Scales preserve length exactly).
 		wantQ4, wantScales := rows*((cols+1)/2), rows*((cols+group-1)/group)
-		q4Row4Scales := r.f32()
+		r.alignArray()
+		q4Row4Scales := r.f32Alias()
+		r.alignArray()
 		q4Row4 := r.rawAlias() // zero-copy — no canonical bytes exist in this file at all
 		if len(q4Row4) != wantQ4 || len(q4Row4Scales) != wantScales {
 			r.fail(fmt.Sprintf("int4-row4-only weightMat %d×%d group=%d: q4Row4=%d (want %d) q4Row4Scales=%d (want %d)", rows, cols, group, len(q4Row4), wantQ4, len(q4Row4Scales), wantScales))

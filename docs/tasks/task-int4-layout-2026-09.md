@@ -345,7 +345,7 @@ its test), `cmd/prequant/main.go`, `internal/serveapp/main.go`, `demo/chat/build
   "mirroring `repackW4A8Row4IfEligible`'s 'deliberately NOT wired into the .giw loader'
   precedent" and that "the existing canonical+row4 both policy isn't wired into `.giw` loading".
   The second claim is false — kind 4 *is* the both policy on disk, loaded at
-  `decoder/serialize.go:1509`. The true precedent is that the **in-RAM** repack is not applied to a
+  `decoder/serialize.go:1628`. The true precedent is that the **in-RAM** repack is not applied to a
   mmap'd `.giw`. Replace both with a pointer to L2.
 - `internal/prequant/prequant.go:41–47` comment: "always emits kind 3" becomes the L2 target
   rule when L2 lands; until then add one line saying the CPU cache is on the canonical kernel.

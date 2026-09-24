@@ -1207,7 +1207,7 @@ Why Go is *strictly better* here, not just same-language — it dissolves the it
 | C-06 unvalidated tensor shapes | **fixed**, break-it-first gate | `decoder/serialize_shapecheck_test.go:15` |
 | C-08 `_ = gpu.Upload` over zeroed weights | **fixed** — `recordUpload` → `setupErr` → graceful decline | `cuda/resident.go:857` |
 | C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
-| C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:114` |
+| C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:127` |
 | C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:26` |
 | C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:852` |
 | C-30 no mutex in the paging paths | **fixed** — both pagers carry an internal mutex, each citing the audit finding | `decoder/layerpaging.go:42` |
@@ -1463,7 +1463,7 @@ needlessly dropping a field the buffered path wrote.
 
 **Fixed by testing the real thing:** `hasPopulatedLayers()` checks whether any body matmul weight
 actually has `Rows() > 0`, and `writeHeadGlobals` gates the label on that instead of on which
-writer is in use. `decoder/serialize.go:841` (`hasPopulatedLayers`).
+writer is in use. `decoder/serialize.go:844` (`hasPopulatedLayers`).
 
 **The other half mattered more than the byte count.** `quantLabel()`'s own "nothing matched" case
 returns `"native"` — a real, valid quant mode, not an empty string. Measured directly on an

@@ -139,6 +139,42 @@ keep reading old files by copying, per the format's "each version only adds" rul
   decision, so it is proposed, not made. It is also the same layout work S6's "metal" kind needs
   (16-byte-aligned tensors), so the two should be designed together.
 
+## The fix — aligned scale arrays (weights format v12 / bundle v3), measured 2026-09-24
+
+The diagnosis above was acted on the same day: every weight-matrix payload array is now padded to a
+16-byte boundary and the bundle header to 64 bytes, so the reader aliases the group scales out of
+the mapping instead of copying them (`docs/giw-bundles.md`, "File layout"). Measured with the same
+tools as the diagnosis:
+
+| | before | after (v12) |
+|---|---|---|
+| **M35 CPU pager: Go heap after `Load`** (pool, 1.5 GB budget) | 5.82 GB | **1.62 GB** (1.43 GB of it the pager pool; `giwReader.f32` 4.11 GB → 0.10 GB) |
+| M35 dirty footprint at token 32, pool mode | 6.1–6.4 GB | **2.2 GB** |
+| M35 dirty footprint at token 32, mmap mode | 4.99 GB | **0.4 GB** (the rest is file-backed: 9.1 GB clean mapped) |
+| 7B, CPU: Go heap after `Load` | 0.615 GB | **0.003 GB** |
+| 7B, Metal: Go heap after `Load` | 0.616 GB | **0.003 GB** |
+| file size (7B / M35) | — | +4.8 KB / +0.8 MB (padding) |
+| M35 re-transcode, local | — | 5 m 50 s, swap flat, no kill-watch action |
+
+**Correctness.** 7B: 24 greedy tokens identical between the old-layout and new-layout files on CPU and on
+Metal. M35: the *same* v12 file loaded with the scales aliased vs with the copy path forced gives identical
+greedy tokens (the test that isolates the layout change). Nine new/changed tests, four mutants caught,
+`-race` clean on the alias path (Go's `checkptr` would reject an unaligned cast).
+
+**What this does NOT show — read before quoting.**
+- **The M35 text differs from the pre-fix runs' text.** Not the layout: the alias-vs-copy test above is
+  identical. The old `.giw` was built Aug 21 and the local Q4_K_M `.gguf` is Sep 4, so they cannot share a
+  source; a different source means different int4 weights. That is strongly supported but not proven (the
+  old file was deleted before this could be checked directly).
+- **The decode rate is not comparable to the earlier A/B.** These runs read 4.5 (pool) and 5.4 (mmap) tok/s
+  against ~2.25 before, but the machine had just been rebooted (~9 GB free vs 2.7 GB), the source file
+  differs, and n=1 per arm. Do not credit the layout for a 2× speed-up; the memory numbers, which are
+  structural, are the result.
+- The M26 Metal file was not re-transcoded (gemma4 cannot stream its transcode on this Mac); its expected
+  drop (3.0 of the 4.4 GB heap) is extrapolated from the same profile, not measured.
+- Only measured on arm64 darwin. The code is architecture-independent; Linux/amd64 numbers are unmeasured.
+- Existing sidecars keep the old layout until rebuilt (nothing rebuilds them automatically).
+
 ## Harness bugs found and fixed while measuring (so the data can be trusted)
 
 - A first attempt returned **0 tokens in both arms**. Cause: my prompt ended "Summarize the trade-off

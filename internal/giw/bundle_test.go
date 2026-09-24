@@ -120,6 +120,88 @@ func TestBundle_v1_compat(t *testing.T) {
 	}
 }
 
+// v2Bundle hand-builds a v2 bundle (u64 length, blob at file offset 17) — the layout every .giw
+// written before v3 has, which must keep loading and keep its tokenizer readable.
+func v2Bundle(weights, tok []byte) []byte {
+	var b []byte
+	b = append(b, bundleMagic...)
+	b = binary.LittleEndian.AppendUint32(b, 2)
+	b = binary.LittleEndian.AppendUint64(b, uint64(len(weights)))
+	b = append(b, weights...)
+	b = binary.LittleEndian.AppendUint32(b, uint32(len(tok)))
+	return append(b, tok...)
+}
+
+// TestBundle_v2_compat: a v2 bundle still loads through both readers after the v3 bump.
+func TestBundle_v2_compat(t *testing.T) {
+	weights, tok := []byte("v2-weights-blob"), []byte("v2-tok")
+	b := v2Bundle(weights, tok)
+	w, tk, err := Read(b)
+	if err != nil || !bytes.Equal(w, weights) || !bytes.Equal(tk, tok) {
+		t.Fatalf("Read v2: %v weights=%q tok=%q", err, w, tk)
+	}
+	path := filepath.Join(t.TempDir(), "v2.giw")
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadTokFile(path)
+	if err != nil || !bytes.Equal(got, tok) {
+		t.Fatalf("ReadTokFile v2: %v %q", err, got)
+	}
+}
+
+// TestBundle_v3_blobStartsAligned pins the property v3 exists for: the weights blob begins at file
+// offset bundleBlobOffsetV3 (a multiple of 16), so a mapping of the file has it 16-byte aligned —
+// through Write AND WriteStream, and both readers agree. Mutating the offset (e.g. back to the 17-byte
+// v2 header) turns this red.
+func TestBundle_v3_blobStartsAligned(t *testing.T) {
+	if bundleBlobOffsetV3%16 != 0 {
+		t.Fatalf("bundleBlobOffsetV3 = %d is not a multiple of 16", bundleBlobOffsetV3)
+	}
+	weights, tok := bytes.Repeat([]byte{0xAB}, 1000), []byte("tok-gguf")
+	b := Write(weights, tok)
+	if got := binary.LittleEndian.Uint32(b[5:9]); got != 3 {
+		t.Fatalf("Write emitted bundle version %d, want 3", got)
+	}
+	if !bytes.Equal(b[bundleBlobOffsetV3:bundleBlobOffsetV3+len(weights)], weights) {
+		t.Fatal("Write: weights blob is not at offset bundleBlobOffsetV3")
+	}
+	for i, c := range b[17:bundleBlobOffsetV3] {
+		if c != 0 {
+			t.Fatalf("header pad byte %d is %#x, want zero", 17+i, c)
+		}
+	}
+	w, tk, err := Read(b)
+	if err != nil || !bytes.Equal(w, weights) || !bytes.Equal(tk, tok) {
+		t.Fatalf("Read v3: %v", err)
+	}
+	// The blob half must ALIAS data at the aligned offset (zero-copy is the point).
+	if &w[0] != &b[bundleBlobOffsetV3] {
+		t.Error("Read v3 did not alias the weights blob at the padded offset")
+	}
+
+	path := filepath.Join(t.TempDir(), "v3.giw")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteStream(f, tok, func(dst io.Writer) (int64, error) {
+		n, err := dst.Write(weights)
+		return int64(n), err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	streamed, _ := os.ReadFile(path)
+	if !bytes.Equal(streamed, b) {
+		t.Fatal("WriteStream is not byte-identical to Write for v3")
+	}
+	got, err := ReadTokFile(path)
+	if err != nil || !bytes.Equal(got, tok) {
+		t.Fatalf("ReadTokFile v3: %v %q", err, got)
+	}
+}
+
 // TestBundle_hostileLength_noPanic is the regression for the cur.take overflow
 // FuzzGIWRead found: a v2 weights length near maxint64 made c.off+n wrap negative,
 // slipping past the bound check and panicking the slice. Read must return a typed

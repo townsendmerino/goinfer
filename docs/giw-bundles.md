@@ -43,3 +43,30 @@ at once (S2, `docs/tasks/task-never-swap-2026-09.md`; measured on a real `gpt-os
 transcode). **gemma4 is the one exception**: its fused PLE/MoE tail cannot be written
 incrementally, so building a gemma4 sidecar still needs the whole model resident first, same as
 every family did before S2.
+
+## File layout: aligned arrays (weights format v12 / bundle v3)
+
+Until v11 a `.giw` did not align the arrays inside it, so the loader could only alias the packed
+int4/int8 **codes** out of the file and had to **copy the per-group scales** to the Go heap on every
+load. Measured 2026-09-24 (`docs/measurements/moe-pager-mode-darwin-2026-09-23.md`, "Finding"):
+that copy was 3.75 GB of a streamed Qwen3.6-35B-A3B's 5.8 GB heap and 3.0 GB of the 4.4 GB heap of
+the M26 Metal load — anonymous memory the pager can neither budget nor evict.
+
+From v12 every weight-matrix payload array (int8 scales + codes, int4 scales + nibbles, and the
+row4 pair) is preceded by zero padding so it starts on a **16-byte boundary relative to the blob**,
+the header ends on one too (so a present-or-absent quant label cannot shift what follows), and the
+bundle header itself is padded to 64 bytes (**bundle v3**) so the blob starts 16-aligned in the
+file. A mapping of the file therefore has every such array aligned, and the loader aliases the
+scales like it already did the codes. f32 *matrices*, norms and biases still copy (small, and the
+mapping is read-only).
+
+Compatibility, both ways:
+
+- A **v12 reader loads every older bundle** unchanged (it aliases a scale array only when its address
+  happens to be 4-byte aligned, and copies otherwise — a quarter of an old file's arrays qualify).
+- A **pre-v12 reader refuses a v12 file** through the format's own version guard; it does not misread it.
+- **Existing sidecars keep their old layout and their heap copies** — nothing rebuilds them
+  automatically (a 20 GB transcode is not something to trigger silently). To get the memory win,
+  delete the sidecar (`<model>.<quant>.<target>.giw`, next to the `.gguf`) and it is rebuilt on the
+  next `--stream-weights` / darwin default load, or re-run `cmd/prequant`.
+- The trailing CRC still covers the padding; a flipped pad byte fails the load.
