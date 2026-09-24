@@ -69,8 +69,12 @@ jobs:
         shell: bash
         run: |
           crashdir="${{ matrix.pkg }}/testdata/fuzz/${{ matrix.fn }}"
+          # Both snapshots tolerate a MISSING crashdir: GitHub runs `shell: bash` as -eo pipefail, so a bare
+          # `ls` of a directory that does not exist exits 2 and kills the step before `go test` ever runs.
+          # Only FuzzJSONSchema had a crashdir when Batch E (094c775) added this, so 13 of 14 targets fuzzed
+          # nothing from 2026-09-16 on and only that one passed.
           before="$(mktemp)"
-          ls -1 "${crashdir}" 2>/dev/null | sort > "${before}"
+          { ls -1 "${crashdir}" 2>/dev/null || true; } | sort > "${before}"
           out="$(mktemp)"
           for attempt in 1 2; do
             echo "::group::fuzz attempt ${attempt}: ${{ matrix.pkg }} ${{ matrix.fn }}"
@@ -90,7 +94,7 @@ jobs:
             fi
             echo "::endgroup::"
             after="$(mktemp)"
-            ls -1 "${crashdir}" 2>/dev/null | sort > "${after}"
+            { ls -1 "${crashdir}" 2>/dev/null || true; } | sort > "${after}"
             new_files="$(comm -13 "${before}" "${after}")"
             if [ -n "${new_files}" ]; then
               echo "NEW reproducer(s) written under ${crashdir}: ${new_files} — real failure, not retrying"
