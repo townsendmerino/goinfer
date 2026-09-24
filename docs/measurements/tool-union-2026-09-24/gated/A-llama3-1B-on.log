@@ -1,0 +1,2 @@
+llama3-1B/int4 T=0.0: n=10 parsed=7 unparsed=0 truncated=0 unknown=0 unwrapped=0 prose=3 | fail/attempted=0/7 = 0.00% [0.00,35.43] | args_invalid=0 on_intended=0
+llama3-1B/int4 T=0.7: n=300 parsed=173 unparsed=2 truncated=1 unknown=9 unwrapped=0 prose=115 | fail/attempted=12/185 = 6.49% [3.75,10.99] | args_invalid=3 on_intended=5

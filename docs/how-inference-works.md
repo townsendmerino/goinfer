@@ -163,19 +163,19 @@ Now we have 100,000 scores. How do we choose one? That's
 [`SampleWithInfo`](../decoder/sampler.go#L246-L296).
 
 - The simplest choice: just take the highest-scoring token. That's **greedy /
-  argmax** ([decoder/sampler.go:268](../decoder/sampler.go#L266)) — deterministic, the
+  argmax** ([decoder/sampler.go:280](../decoder/sampler.go#L266)) — deterministic, the
   model's single best guess.
 - More commonly we add controlled randomness so output isn't robotic.
   **Temperature** flattens or sharpens the scores (high temperature = more
   adventurous, low = more predictable). Then we usually restrict the random draw
   to the top few candidates — **top-k** (only the k best), **top-p / nucleus**
   (the smallest set covering p% of the probability) — to avoid picking something
-  absurd ([decoder/sampler.go:269-269](../decoder/sampler.go#L267-L269)).
+  absurd ([decoder/sampler.go:281-269](../decoder/sampler.go#L267-L269)).
 
 The scores are turned into actual probabilities via **softmax** (exponentiate and
 normalize so they sum to 1), and one token is drawn. There are also **penalties**
 to discourage the model from repeating itself
-([decoder/sampler.go:262-261](../decoder/sampler.go#L260-L261)).
+([decoder/sampler.go:274-261](../decoder/sampler.go#L260-L261)).
 
 The output is a single integer — the next token.
 
@@ -191,7 +191,7 @@ Now zoom back out to [`generateInto`](../decoder/model.go#L931-L1178). We:
 4. Run the forward pass again — now with that new token as input,
 5. Sample the next one,
 6. Repeat until we hit a stop token or a length limit
-   ([decoder/model.go:1700](../decoder/model.go#L1051-L1177)).
+   ([decoder/model.go:1705](../decoder/model.go#L1051-L1177)).
 
 This is called **autoregression** — the model's own outputs become its next
 inputs. The text you see "streaming" out of a chatbot is exactly this loop, one

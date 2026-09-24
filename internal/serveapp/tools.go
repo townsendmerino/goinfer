@@ -294,19 +294,19 @@ func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, nam
 	return nil
 }
 
-// toolUnionEnabled / toolUnionAuto are GOINFER_TOOL_UNION: unset → the union constrains only
-// required / Anthropic any (a call is mandatory there, and it rides the fused-spec path); "1" also
-// arms it lazily under auto; "0" turns both off (decoding exactly as before T1).
+// toolUnionEnabled / toolUnionAuto are GOINFER_TOOL_UNION: on by default for both required /
+// Anthropic any (from token 1) and auto (lazily, on the opener); "0" turns both off (decoding
+// exactly as before T1). docs/measurements/tool-union-2026-09-24.md:
 //
-// auto is OFF by default because of a measured cost, not a correctness problem
-// (docs/measurements/tool-union-2026-09-24.md, gate B): any LogitProcessor disables the decoder's
-// on-device greedy/sampling fast paths for the WHOLE turn, prose included, and a prose `auto` turn
-// decoded 0.978x / 0.807x (1.5B, greedy / T=0.7) and 0.988x / 0.896x (7B) as fast. Making it
-// default-on needs the constraint to cost nothing until the opener — generating to the opener with
-// every fast path intact, then continuing constrained (the two-phase follow-up).
+//   - auto first shipped default-OFF: an UNGATED processor disabled the decoder's on-device
+//     greedy/sampling fast paths for the whole turn, and prose auto turns decoded 0.81-0.99x (gate B).
+//   - the gated build (LazyMasker.Gate → SamplingParams.LogitProcessorGate) keeps those paths until
+//     the opener: prose turns 0.999-1.001x (gate B'), and a turn that never arms is byte-identical to
+//     "=0" at greedy AND T=0.7 (630/630, gate A'). The 7B's T0 turns then produce 0 invented or
+//     broken calls and 0 invalid arguments (gate C).
 var (
 	toolUnionEnabled = os.Getenv("GOINFER_TOOL_UNION") != "0"
-	toolUnionAuto    = os.Getenv("GOINFER_TOOL_UNION") == "1"
+	toolUnionAuto    = toolUnionEnabled
 )
 
 // constrainToolUnion wires the multi-tool union for a request with 2+ tools and no single forced
@@ -314,6 +314,13 @@ var (
 // compile, leaves the request unconstrained — today's behaviour — rather than refusing it.
 func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []chat.Tool) {
 	if !toolUnionEnabled || (mode != "auto" && mode != "required") || (mode == "auto" && !toolUnionAuto) {
+		return
+	}
+	// A server started with speculative decoding keeps its pre-T1 auto behaviour: every speculative
+	// path refuses a LogitProcessor (gated or not), so arming the lazy union would silently cost such
+	// a server its drafter on every multi-tool auto turn — a regression it opted out of by opting in.
+	// required is unaffected: it rides the grammar-fused speculative path.
+	if mode == "auto" && (lm.spec || lm.blockSpec != nil) {
 		return
 	}
 	prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper()

@@ -1,0 +1,14 @@
+11:01:40 gate A (greedy non-forcing) start
+11:01:59 A 1.5B on exit=0
+11:02:32 A 1.5B off exit=0
+11:03:52 A 7B on exit=0
+11:05:11 A 7B off exit=0
+11:06:04 A llama3-1B on exit=0
+11:06:43 A llama3-1B off exit=0
+11:06:43 gate B (prose cost) start
+11:16:34 B exit=0
+11:16:34 gate C (T0 re-measure, union on) start
+11:38:25 C 7B exit=0
+11:42:37 C llama3-1B exit=0
+11:46:19 C 1.5B exit=0
+11:46:19 ALL-DONE

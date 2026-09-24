@@ -66,4 +66,61 @@ Re-run with the gated build, same scripts, same rules:
 
 ## Results
 
-_(appended after the runs)_
+`nobara-pc`, RTX 2070 SUPER, driver 595.91.07, q4_k_m GGUFs from `~/models` (sidecar `.giw` default), idle-gated. Ungated build
+`29e2706a`, gated build `2ede8d77`. Raw per-sample data (full output text kept, `T0_KEEP_RAW=1`), logs and progress timestamps:
+[`tool-union-2026-09-24/ungated/`](tool-union-2026-09-24/ungated/), [`tool-union-2026-09-24/gated/`](tool-union-2026-09-24/gated/).
+Byte-identity checks: `scripts/tool_union_cmp.py` (call ids stripped — they are random per request).
+
+**Gate A — PASS (ungated build).** Greedy, 10 turns each, default vs `=0`: 1.5B 10/10, 7B 10/10, llama3-1B 10/10 byte-identical —
+including the 7B's two armed turns, whose constrained call came out byte-identical to the unconstrained one (T6's parity gate, live).
+
+**Gate B — FAIL (ungated build).** Per-block default / `=0`, 4 ABBA blocks:
+
+| cell | blocks | median |
+|---|---|---|
+| 1.5B greedy | 0.9730, 0.9796, 0.9767, 0.9792 | 0.978 |
+| 1.5B T=0.7 | 0.8028, 0.8066, 0.8079, 0.8063 | 0.807 |
+| 7B greedy | 0.9878, 0.9896, 0.9882, 0.9884 | 0.988 |
+| 7B T=0.7 | 0.8964, 0.8959, 0.8952, 0.8990 | 0.896 |
+
+As pre-registered, the auto union went default-OFF and the gated design was built.
+
+**Gate C — PASS (ungated build; the grammar is unchanged in the gated one).** Qwen2.5-7B, union on, T0 transcript, same seeds:
+
+| class | T0 (no union) | union on |
+|---|---|---|
+| parsed | 97 | **110** |
+| unknown tool name | 10 | **0** |
+| unparsed body | 3 | **0** |
+| args invalid (informational in T0, gated here) | 10 | **0** |
+| truncated at max_tokens | 1 | 1 (the same turn-5 prose that hit 512 tokens; excluded by the rule) |
+| prose | 189 | 189 |
+| greedy | 2 parsed / 8 prose | 2 / 8 |
+
+Every call the 7B attempted reached the harness as a well-formed call to a supplied tool with schema-valid arguments. Not gated,
+reported: llama3-1B 173 / 9 unknown / 2 unparsed / 1 truncated / 115 prose — unchanged, as designed (not armed under auto); its
+failures remain and need the task's option (c). 1.5B 219 parsed / 4 unwrapped / 77 prose — the bare-call parser's numbers; the
+Coder model never writes the opener, so the union never arms.
+
+**Gate A′ — PASS (gated build).** Default vs `=0`, byte-identical: 1.5B **310/310** (10 greedy + 300 at T=0.7), llama3-1B
+**310/310**, 7B greedy **10/10** (two armed turns included). The prose part of a turn is now the unconstrained decode itself, sampled
+turns included.
+
+**Gate B′ — PASS (gated build).** Same harness and rule as B:
+
+| cell | blocks | median | (gate B) |
+|---|---|---|---|
+| 1.5B greedy | 1.0008, 1.0018, 1.0042, 0.9988 | **1.001** | 0.978 |
+| 1.5B T=0.7 | 0.9955, 1.0000, 1.0006, 1.0031 | **1.000** | 0.807 |
+| 7B greedy | 0.9988, 0.9991, 0.9995, 0.9993 | **0.999** | 0.988 |
+| 7B T=0.7 | 1.0004, 1.0000, 0.9974, 1.0002 | **1.000** | 0.896 |
+
+**Decision (pre-registered): the auto union ships default-ON** (`GOINFER_TOOL_UNION=0` opts out).
+
+**Speculative servers.** Every speculative path refuses a LogitProcessor, gated or not, so on a server started with
+`--drafter` / speculation the auto union would cost multi-tool auto turns their drafter. Such servers are therefore left on their
+pre-T1 auto behaviour (not armed; unit-tested); required still gets the union, on the grammar-fused speculative path. Making the lazy
+union speculation-compatible is open.
+
+**Not established.** No MoE, one transcript, CUDA only. The union's cost INSIDE a call (full-logits steps for the tokens of
+the call itself) is not separated out; it is included in gate C's run but was not timed.

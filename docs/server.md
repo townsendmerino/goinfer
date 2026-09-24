@@ -163,14 +163,22 @@ content blocks (`text`, `tool_use`/`tool_result` replay), `tools` (note:
 and streaming (the named-event SSE protocol: `message_start` → `content_block_*`
 → `message_delta` → `message_stop`, no `[DONE]`).
 
-**What `tool_choice` actually constrains** (N-18): a NAMED tool (`{"type":"tool","name":…}`, and
-OpenAI's `{"type":"function",…}`) rides constrained decoding, so its call cannot be malformed —
-and naming a function that is not in `tools` is now a 400 rather than an unconstrained
-generation. `any`/`required` constrain only when there is exactly ONE tool, where the choice is
-unambiguous; with two or more the model decides freely and the output is NOT grammar-constrained.
-Constraining that case needs a union grammar over the tool set, which does not exist yet. This
-paragraph previously said `any` "rides the same constrained decoding, so a malformed tool call is
-impossible", which was true only for the lone-tool case.
+**What `tool_choice` actually constrains** (N-18, closed 2026-09-24): on the families with a JSON call form — chatml and mellum2
+(`<tool_call>`), mistral (`[TOOL_CALLS]`) and llama3 (bare JSON) — a tool call cannot be malformed and cannot name a tool you did not
+supply, with any number of tools:
+- a NAMED tool (`{"type":"tool","name":…}`, OpenAI's `{"type":"function",…}`) is constrained to that tool from the first token, and
+  naming a function that is not in `tools` is a 400;
+- `required` / `any` is constrained from the first token to a call to ONE of the supplied tools, with that tool's argument schema;
+- `auto` is constrained the same way from the moment the model writes its call opener, so it can still answer in prose — and a turn
+  that answers in prose decodes exactly as it would with no constraint (same speed, byte-identical output). llama3 has no opener, so
+  under `auto` its calls are parsed but not constrained; a server started with speculative decoding also leaves `auto` unconstrained,
+  to keep its drafter.
+
+Families without a JSON call form (Gemma 4's own call syntax, and families with no tool template) are parsed only. This constrains the
+call's FORM, not the model's choice of tool. `GOINFER_TOOL_UNION=0` turns the multi-tool constraint off. Measured in
+`docs/measurements/tool-union-2026-09-24.md`: on the Qwen2.5-7B agent transcript that produced 14 unusable calls and 10 calls with
+invalid arguments in 111, it produced none. (This paragraph previously said that with two or more tools the output was not
+grammar-constrained, which was true until T1–T3.)
 
 **An unwrapped call is accepted on the `<tool_call>` families (chatml, mellum2).** Qwen2.5-Coder at every size tested
 practically never writes the `<tool_call>` wrapper under `auto`; it emits the call object alone, which earlier versions

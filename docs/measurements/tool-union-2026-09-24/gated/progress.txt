@@ -1,0 +1,10 @@
+11:46:21 gate A' start
+11:50:27 A' 1.5B on exit=0
+11:54:02 A' 1.5B off exit=0
+11:57:59 A' llama3-1B on exit=0
+12:01:42 A' llama3-1B off exit=0
+12:03:58 A' 7B on exit=0
+12:05:37 A' 7B off exit=0
+12:05:37 gate B' start
+12:16:11 B' exit=0
+12:16:11 ALL-DONE

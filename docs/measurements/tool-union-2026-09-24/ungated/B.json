@@ -1,0 +1,685 @@
+{
+ "serve": "/tmp/claude-1000/-home-francis-mycode-goinfer/abe7fa0a-9afb-4159-b5d8-ee18e3f1f849/scratchpad/serve-union",
+ "cells": {
+  "1.5B@T0.0": [
+   {
+    "on": [
+     {
+      "tok_s": 192.77418207862414,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 198.11359194479712,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 198.43445124589897,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "off": [
+     {
+      "tok_s": 202.87449173794423,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 203.6063399021624,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 203.73946745815167,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   },
+   {
+    "off": [
+     {
+      "tok_s": 201.90161858628193,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 202.64860796183225,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 203.1762035681671,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "on": [
+     {
+      "tok_s": 197.9521656660635,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 198.7831980465866,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 198.52139113504603,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   },
+   {
+    "on": [
+     {
+      "tok_s": 197.02885414476629,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 198.49660687300832,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 199.5947011278333,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "off": [
+     {
+      "tok_s": 202.21445028696883,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 203.7062666687658,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 203.22731114483082,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   },
+   {
+    "off": [
+     {
+      "tok_s": 203.022267334686,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 204.0925318530229,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 202.8593494267141,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "on": [
+     {
+      "tok_s": 198.71605628798665,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 198.90403272759733,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 198.80572708086385,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   }
+  ],
+  "1.5B@T0.7": [
+   {
+    "on": [
+     {
+      "tok_s": 163.79977018292624,
+      "n": 247,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 164.4138482044042,
+      "n": 184,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 165.1055116148221,
+      "n": 233,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "off": [
+     {
+      "tok_s": 203.72259751783508,
+      "n": 247,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 206.93818525854465,
+      "n": 184,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 204.81212768808783,
+      "n": 233,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   },
+   {
+    "off": [
+     {
+      "tok_s": 204.3456445487151,
+      "n": 247,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 206.21696761902712,
+      "n": 184,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 204.2673736548425,
+      "n": 233,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "on": [
+     {
+      "tok_s": 164.22027270598906,
+      "n": 247,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 164.82739307067655,
+      "n": 184,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 164.92275179376767,
+      "n": 233,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   },
+   {
+    "on": [
+     {
+      "tok_s": 164.9158926298718,
+      "n": 247,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 165.01675594391298,
+      "n": 184,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 165.13892131728753,
+      "n": 233,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "off": [
+     {
+      "tok_s": 203.48419503856178,
+      "n": 247,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 206.53823392164162,
+      "n": 184,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 204.24403808434738,
+      "n": 233,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   },
+   {
+    "off": [
+     {
+      "tok_s": 203.52833394253443,
+      "n": 247,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 206.62083753491825,
+      "n": 184,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 204.58866464410616,
+      "n": 233,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "on": [
+     {
+      "tok_s": 164.96836085872127,
+      "n": 247,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 167.34696835349698,
+      "n": 184,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 164.70864637321688,
+      "n": 233,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   }
+  ],
+  "7B@T0.0": [
+   {
+    "on": [
+     {
+      "tok_s": 73.36028146540967,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 73.48594196787917,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 73.52985288778969,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "off": [
+     {
+      "tok_s": 74.40270271358861,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.34965796622325,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.39078602353557,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   },
+   {
+    "off": [
+     {
+      "tok_s": 74.34634655141437,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.318822686631,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.29265596683616,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "on": [
+     {
+      "tok_s": 73.54629050588069,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 73.61006982679108,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 73.47376376643135,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   },
+   {
+    "on": [
+     {
+      "tok_s": 73.49314390570099,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 73.53357757472303,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 73.43064008690156,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "off": [
+     {
+      "tok_s": 74.36957948814687,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.43521824672247,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.30210808208682,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   },
+   {
+    "off": [
+     {
+      "tok_s": 74.32890086166688,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.26450071934651,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.34520805890315,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "on": [
+     {
+      "tok_s": 73.49626519374307,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 73.46771274881694,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 73.45672684502436,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   }
+  ],
+  "7B@T0.7": [
+   {
+    "on": [
+     {
+      "tok_s": 66.65283040735578,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 66.7438660454295,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 66.59698835519197,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "off": [
+     {
+      "tok_s": 74.37051025718908,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.28843080698063,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.35285887125022,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   },
+   {
+    "off": [
+     {
+      "tok_s": 74.39709642740115,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.45100590399412,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.38738275408579,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "on": [
+     {
+      "tok_s": 66.76765164707945,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 66.64918071571797,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 66.59844869673394,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   },
+   {
+    "on": [
+     {
+      "tok_s": 66.69789496677154,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 66.64211413147912,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 66.61803820492987,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "off": [
+     {
+      "tok_s": 74.4451920793516,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.51489437906656,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.3643093441176,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   },
+   {
+    "off": [
+     {
+      "tok_s": 74.3489304965357,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.37158769188619,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 74.31598779592659,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ],
+    "on": [
+     {
+      "tok_s": 66.84189684389025,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 66.91901354550092,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     },
+     {
+      "tok_s": 66.65291368663777,
+      "n": 257,
+      "called": false,
+      "has_opener": false
+     }
+    ]
+   }
+  ]
+ }
+}

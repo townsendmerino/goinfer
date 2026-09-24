@@ -274,7 +274,7 @@ batched path's own 200–270 tok/s makes it 0.75–1.0 s (R3).
 The one row where the peer is the control: on the 0.5B Ollama reads 268.7 greedy and 268.7 / 265.2
 at `temperature 1.0` / `0.8 + top_p 0.95`; goinfer 333–342 greedy, 237.7 and 227.2 sampled
 (§B5.1). That ~30% is D6's cliff ([`ollama-chase.md`](../ollama-chase.md) §D6): any nonzero
-temperature flips `Sampler.ArgmaxEquivalent()` (`decoder/sampler.go:222`), forcing a V-wide logit
+temperature flips `Sampler.ArgmaxEquivalent()` (`decoder/sampler.go:234`), forcing a V-wide logit
 readback and a host softmax over V per token. Understood and scoped: a device-side bounded top-K
 with a host-verified nucleus and a full-readback fallback. Every Mac row on the page is greedy, so
 Metal's version is unmeasured; the counted host cost after the bounded-selection fix (~1.8 ms/token
@@ -1192,7 +1192,7 @@ too small, not that the design is wrong).
 **Read first.** `ollama-chase.md` §D6 in full (the two cliffs — the host sort, fixed 68×, and the
 readback branch, open; the design sketch with the host-verified nucleus; and "the second, larger
 cost", full-vocabulary normalisation on the temperature-only path), `decoder/sampler.go`
-(`ArgmaxEquivalent`, `decoder/sampler.go:222`; `sampleChunked`; the bounded selection), `cuda/argmax.cu`
+(`ArgmaxEquivalent`, `decoder/sampler.go:234`; `sampleChunked`; the bounded selection), `cuda/argmax.cu`
 (the on-device argmax the greedy path uses — the top-K reduction is its sibling), G26/G28 in
 `docs/QUEUE.md` (why the sampled cells must use a realistic prompt and why the anchor's own spread
 was half the reported delta), `benchmarks.md` Methodology (count tokens from `usage`; early EOS at

@@ -98,7 +98,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
   nothing in the system knows the difference.
 - **Backpressure is a number, not a plan.** `-max-queue` defaults to 8
   (`internal/serveapp/main.go:580`); a full queue is a 429 on the OpenAI routes and a 529
-  `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:545`). A global
+  `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:552`). A global
   `-max-inflight` (default 128) bounds the pre-queue stage — JSON and image decode, tokenisation,
   template render — and is deliberately distinct from the per-model 429
   (`internal/serveapp/helpers.go:85`).
@@ -467,7 +467,7 @@ The only throughput item, and it is deliberately last.
 `internal/serveapp/openai.go:94`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
 check, `drive`) · `internal/serveapp/helpers.go:85` (`-max-inflight`, distinct from the per-model
 429) · `internal/serveapp/main.go:572`, `:508` (`-kv-sessions`, `-max-queue`) ·
-`internal/serveapp/anthropic.go:545` (529 on a full queue) · `internal/serveapp/sessions.go:14`
+`internal/serveapp/anthropic.go:552` (529 on a full queue) · `internal/serveapp/sessions.go:14`
 (the session LRU J6 schedules around) · `internal/serveapp/embeddings.go:34` (the one existing bulk
 surface) · `internal/chatapp/main.go:211` (the CLI J5 extends) ·
 [`task-halt-2026-09.md`](task-halt-2026-09.md) K1/K2/K4/K5/K9 ·
