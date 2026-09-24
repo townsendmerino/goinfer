@@ -110,13 +110,6 @@ type expertPool struct {
 	fetchNanos      int64 // time in stage() — mmap-aliased nibble bytes + f32→f16 scales (no reconstruction)
 	copyNanos       int64 // time byte-copying the fetched nibbles/scales into the slot's shared Metal buffers
 
-	// prefetch, when set, issues an MADV_WILLNEED readahead over expert e's mmap-backed nibble spans.
-	// The synchronous paged forward calls prefetchAll for the whole routed top-k BEFORE touching any
-	// of them, converting each expert's ~200 serial 16 KB demand faults into one large sequential read
-	// (and giving the SSD queue depth across the k experts instead of k serial stalls). nil = off.
-	// MEASURED AND DECLINED (see gemma4_moe.go) — kept only so the env flag stays wired.
-	prefetch func(e int)
-
 	// stagePread, when set (GOINFER_MOE_PREAD=1 on a .giw-mmap'd model), REPLACES the mmap byte-copy:
 	// it preads expert e's nibbles straight into slot s's unified-memory buffers — one syscall, one
 	// large sequential read, zero page faults (cold pread measured 3687 MB/s vs the mmap demand-fault's
@@ -171,17 +164,6 @@ func preadRangeIntoU32Buf(fd int, dst Buffer, dstOff int, off int64, n int) erro
 		done += r
 	}
 	return nil
-}
-
-// prefetchAll issues the WILLNEED readahead for every routed expert at once, before staging. No-op
-// when prefetch is nil (readahead disabled — the demand-fault baseline arm).
-func (p *expertPool) prefetchAll(experts []int) {
-	if p.prefetch == nil {
-		return
-	}
-	for _, e := range experts {
-		p.prefetch(e)
-	}
 }
 
 // newExpertPool allocates N slots sized to one expert's W4A8 buffers (nGuW/nGuS gate|up words/scales,

@@ -25,7 +25,7 @@ is grep-derivable and enumerated at the bottom.
 | `GOINFER_NO_RESIDENCY` | Force the staged (non-resident) GPU path — disables whole-model device residency. |
 | `GOINFER_MOE_CACHE_SLOTS` / `GOINFER_MOE_CACHE_EXPERTS` | Size the resident MoE expert-slot cache (VRAM ↔ per-token DMAs trade). |
 | `GOINFER_MOE_NOCACHE` | Disable the MoE expert cache (always stage experts per token). |
-| `GOINFER_MOE_WILLNEED` / `GOINFER_MOE_PREAD` | MoE expert-paging readahead strategy (madvise WILLNEED / pread). |
+| `GOINFER_MOE_PREAD` | MoE expert-paging staging strategy (pread). |
 | `GOINFER_METAL_MOE_SLOTS` | Metal resident MoE slot count. |
 | `GOINFER_METAL_ALIAS` | S6 (`docs/tasks/task-never-swap-2026-09.md`) — `=1` opts a Metal load of a **`.giw`** into aliasing its dense int4 nibbles out of the file mapping (a no-copy MTLBuffer over each tensor's, or each fused q‖k‖v / gate‖up group's, page window) instead of copying them into a second MTLBuffer. Unset/`0` is the shipped copy path, unchanged. **Experimental, opt-in, not yet gated**: logits are byte-identical to the copied path on the checkpoints tested (`metal/alias_test.go`), but the registered rule's depth-128/2048 tok/s bands and memory-hog arm have not been run. Only a v13 `-target metal` sidecar has adjacent fused groups (`docs/giw-bundles.md`); older files alias their unfused tensors and copy the rest. Prints one `[metal] weights aliased …` line at load. No size limit: an earlier M26 collapse (the whole server paged out at the first request, 3 of 3) was `fork()` copying the entire private mapping while Metal had a page of it wired, not aliasing itself — fixed by `decoder.Load` marking the mapping `VM_INHERIT_NONE` and the swap guard no longer forking (`docs/measurements/m26-alias-fork-collapse-2026-09-24.md`). **Aliasing does not save RAM**: every page the GPU reads through a no-copy buffer becomes a wired anonymous copy (the mapping is `MAP_PRIVATE`), invisible to per-process `footprint`; it removes the second MTLBuffer copy and the build-time staging, not the memory. `=force` is accepted as a synonym. |
 | `GOINFER_SPLITKV_MIN_KEYS` | Override the split-KV decode-attention key-count threshold (per-geometry default otherwise). |
@@ -67,9 +67,6 @@ after upgrading needs one place to look.
 | `GOINFER_NO_OPTFWD` | (unset) | `=1` | Disables the optimistic-forward speculation gate. Same convention as `GOINFER_NO_GREEDY_FASTPATH`. `GOINFER_OPTFWD_MAX_TEMP` bounds the temperature at which it engages. |
 | `GOINFER_NO_TOPK_FASTPATH` | (unset) | `=1` | Disables the CUDA device top-K sampling fast path (`top_k` / `top_p` / `min_p` at temperature > 0): the sampler reads the whole logits row instead of the K best. Same convention as `GOINFER_NO_GREEDY_FASTPATH`; for A/B checks and as an escape hatch. Token streams are identical either way at a fixed seed (except, in principle, at a rounding-boundary `top_p` draw). |
 | `GOINFER_NO_SAMPLE_FASTPATH` | (unset) | `=1` | Disables the device temperature-only sampling fast path (`temperature` > 0 with no `top_k` / `top_p` / `min_p`): the sampler reads the whole logits row and draws on the host. The draw is the same Gumbel-max either way, so the token stream is identical except where two candidates' scores are within an f32 rounding (measured ~1e-6 per token); it is an A/B switch and escape hatch, like `GOINFER_NO_GREEDY_FASTPATH`. |
-| `GOINFER_CUDA_FLASH_DECODE` | (unset = off) | `=S` (integer >= 1) | **Opt-in, experimental, NOT bit-identical.** CUDA decode attention runs a flash-decode lane (`cuda/decode_fa.cu`: one CTA per kv-head x S key-splits, online softmax, fixed-order combine) instead of the exact split-KV path, for layers with hd 64/128/256, GQA group <= 8 and no attention sink, once the attended span reaches `GOINFER_CUDA_FLASH_DECODE_MIN_KEYS`. Not fidelity-cleared: gated by `docs/measurements/attn-decode-fa-fidelity-PREREGISTERED.md`. Speculative decoding (`--spec ngram`, `--drafter`, the two-model path) still works with it set: each speculative generation holds an exact-attention scope, so decode and verify both run the exact tree and stay token-identical to plain greedy on that tree; the lane serves non-speculative requests. |
-| `GOINFER_CUDA_FLASH_DECODE_MIN_KEYS` | `2048` | `=<n>` (>= 0) | Attended-span floor for the flash-decode lane above; shorter spans keep the exact path. Only read when `GOINFER_CUDA_FLASH_DECODE` is set. |
-| `GOINFER_CUDA_FLASH_DECODE_VERIFY` | (unset = on) | `=0` | Only read when `GOINFER_CUDA_FLASH_DECODE` is set. Speculative verify rows run on a multi-row version of the flash-decode lane whose output is bit-identical to the single-row lane at each row's position, so speculative output equals plain lane greedy and speculation gets the lane's speed. `=0` disables that and falls back to running speculative generations on the exact attention tree (lane bypassed for their decode and verify). |
 
 ## Operator knobs not in the sections above
 
@@ -99,7 +96,6 @@ after upgrading needs one place to look.
 | `GOINFER_NO_RESIDENT_REUSE` | Disable resident-forward reuse across requests. |
 | `GOINFER_NO_LORA_CACHE` | CUDA: re-upload a LoRA adapter on every bind and free it on every clear (the pre-cache behaviour; audit P-10 A/B switch). |
 | `GOINFER_NVRTC_DIRS` | Extra directories to search for NVRTC when building CUDA kernels. |
-| `GOINFER_CUDA_GRAPHS_SYNC` | Force a synchronize around CUDA graph launches. |
 
 ## Diagnostics and experiment knobs — NOT contract
 
@@ -107,19 +103,20 @@ Listed so the registry is complete and `TestEnvVars_docAndCodeAgree` has somewhe
 that are not operator-facing. These may change or disappear without notice:
 
 `GOINFER_A10_PROBE`, `GOINFER_DELTANET_TIMING`, `GOINFER_ROUTER_CAPTURE`,
-`GOINFER_MOE_PREFILL_SCRATCH`, `GOINFER_MOE_CACHE_PROF`,
+`GOINFER_MOE_CACHE_PROF`,
 `GOINFER_CUDA_L01_CPU_OFFLOAD` (L-01 prototype: hybrid CPU/GPU MoE expert offload,
 docs/tasks/task-l01-hybrid-moe-cpu-gpu.md — synchronous only, no overlap yet, default off),
 `GOINFER_FAKEQUANT_ACT`, `GOINFER_FAKEQUANT_EXPERTS`, `GOINFER_FAKEQUANT_PERROW`,
 `GOINFER_SSM_W8A16`, `GOINFER_SSM_F16MAMBA`, `GOINFER_SSM_NOMUL`, `GOINFER_SSM_Q8CPU`,
-`GOINFER_SSM_SKIPFFN`, `GOINFER_SSM_STOP_LAYER`, `GOINFER_CUDA_L01_CPU_OFFLOAD`,
+`GOINFER_SSM_SKIPFFN`, `GOINFER_CUDA_L01_CPU_OFFLOAD`,
 `GOINFER_GEMMA4_RESIDENT` (M-56, audit-2026-09-10.md: a Gemma-4 bring-up gate that is now a
 no-op — `decoder/gemma4_admission_test.go` pins that admission is unconditional regardless of
 its value; kept only so tests can still force both branches while the code path exists),
-`GOINFER_MOE_PREAD_CPU` (an unpromoted spike: switches the CPU decoder's MoE expert pager from
-mmap+madvise to an owned-buffer pread pool — Lever 1b, docs/completed/task-moe-streaming.md. Bit-exact
-either way (`TestExpertBufferPool_refillIsByteExact`), but performance is not yet established on
-real hardware at scale; default off),
+`GOINFER_MOE_PREAD_CPU` (override for the CPU MoE expert pager's backing mode: `1` = owned-buffer pread pool,
+`0` = mmap+madvise — Lever 1b, docs/completed/task-moe-streaming.md; bit-exact either way,
+`TestExpertBufferPool_refillIsByteExact`. The mode is `decoder.Options.MoEPager` (serve: `--moe-pager`); this var
+applies only when that is unset, and with neither set the platform default applies — pool on darwin since S5,
+mmap elsewhere (`decoder.MoEPagerDefault`). serve no longer sets it),
 `GOINFER_CUDA_ATTN_FUSED_TILE` (CUDA: overrides the attn_fused kernel's tile-size selection —
 `64x64`, `128x64`, `32x64`, or `32x32`; an R5-phase investigation knob, default unchanged, the
 32-row tiles are a measured regression kept only for A/B comparison),
@@ -190,8 +187,14 @@ and `release-assets.yml`), and unset it skips.
 | `GOINFER_GPU_CAPTURE` | Per-layer WebGPU resident-decode capture (attention context, post-attention and post-MLP residuals) into `DecodeRunner.ReadCapture` — the WebGPU twin of `decoder.Model.ForwardSubCapture`, for localising a resident-vs-CPU divergence to one sublayer instead of arguing from final logits (`docs/completed/task-webgpu-nogqa-decode-bug.md`). Nothing allocated or dispatched when unset. |
 | `GOINFER_NORM_ULP_NOISE=<seed>` | Nudges every f32 norm vector a loaded model carries by an independent ±1/0 ULP per element (`decoder/normnoise.go`) — noise of exactly f32-rounding size, the same magnitude two correct implementations that reduce in a different order differ by. Measures a checkpoint's OWN sensitivity to that noise, the floor below which a resident-vs-CPU cosine on a quantized (W4A8/W8A8) forward carries no information about the kernels (`docs/completed/task-webgpu-nogqa-decode-bug.md`). |
 | `GOINFER_ATTNFA_DEBUG=1` | R2 (`docs/tasks/red-october.md`) — prints each `attention_fa` dispatch's parameters (layer, depth, split count, group size, hd) to stderr from `canUseAttnFA`'s call site in `metal/model.go`, kept from the 2026-09-19/20 investigation (see `GOINFER_METAL_ATTN_FA` above) so dispatch parameters can be re-verified without rebuilding the print. No effect if `GOINFER_METAL_ATTN_FA=0` — since the kernel is default-on, this now has effect by default too. |
-| `GOINFER_ATTN_TIMING_DEBUG=1` | R13 (`docs/tasks/red-october.md`) — wraps `attendBatchedHeads` in a `time.Now()`/`atomic.AddInt64` timer (`attnElapsedNanos`, `decoder/forwardn.go`), read out by the fast diagnostic `TestZZDiagGroupedFires` (`decoder/zz_diag_test.go`, `GOINFER_DIAG_STEPS`/`GOINFER_DIAG_CPUPROFILE`/`GOINFER_DIAG_TRACE`). Kept (not reverted like most temporary R-brief instruments) because it's the tool that made R13's served measurement tractable — a full `BenchmarkDecodeAtDepth` run costs 3-44 minutes per shape; this diagnostic costs 15-25 seconds and isolates attention's own wall time from the rest of the forward pass. It is what let R13 discover the wiring never fired before trusting a "no effect" reading, and what let a `go tool trace` per-goroutine breakdown find the real cause of a "slower once wired in" result (an accidentally-serialized softmax, not scheduler contention — a plain CPU pprof pointed at the wrong subsystem first; see `docs/measurements/r13-served-decode-2026-09-20.md`). No effect on output; adds one `time.Now()` call per `attendBatchedHeads` invocation when set. |
 
+
+**Retired 2026-09-24** (campaign switches whose question was answered; named here without their `GOINFER_` prefix so
+this file's doc/code check does not read them as live knobs): `MOE_PREFILL_SCRATCH` (P18 attribution arm),
+`ATTN_TIMING_DEBUG` (R13 attention timer — now a package variable its diagnostic test sets), `SSM_STOP_LAYER`
+(resident-SSM layer sweep — now test hooks in `decoder` and `gpu`), `MOE_WILLNEED` (Metal expert readahead, measured and
+declined — the record stays as a comment in `metal/gemma4_moe.go`), and the unprefixed `G4DEBUG` (Gemma-4 per-layer norm
+print, which nothing here tracked because it lacked the prefix). Setting any of them now does nothing.
 
 ## CI & test gates
 

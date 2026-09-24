@@ -29,6 +29,18 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 	for _, v := range regexp.MustCompile(`GOINFER_[A-Z0-9_]+`).FindAllString(string(doc), -1) {
 		documented[v] = true
 	}
+	// One ROW per variable. The same var documented twice drifts: GOINFER_CUDA_FLASH_DECODE had an
+	// "(unset = off)" row and an "ON (S=16)" row at once after its default flipped, and
+	// GOINFER_CUDA_GRAPHS_SYNC sat in both the operator and the diagnostics sections.
+	rowSeen := map[string]int{}
+	for i, line := range strings.Split(string(doc), "\n") {
+		if m := regexp.MustCompile("^\\|\\s*`(GOINFER_[A-Z0-9_]+)`").FindStringSubmatch(line); m != nil {
+			if prev, dup := rowSeen[m[1]]; dup {
+				t.Errorf("docs/env-vars.md documents %s in two rows (lines %d and %d); keep one", m[1], prev, i+1)
+			}
+			rowSeen[m[1]] = i + 1
+		}
+	}
 	// M-56 (audit-2026-09-10.md): everything ABOVE the first "not contract" heading is an
 	// operator-facing promise (docs/api-tiers.md's Hard tier); a var documented only there but
 	// referenced by nothing except _test.go files is exactly GOINFER_GEMMA4_RESIDENT's shape —

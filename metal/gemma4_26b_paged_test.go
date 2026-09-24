@@ -123,12 +123,11 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 		float64(fetchNanos)/1e6/float64(nTimed), float64(copyNanos)/1e6/float64(nTimed), stages, evict, N)
 	// Fault attribution: MAJOR faults are disk reads (cold page-in); collapsing them is the WILLNEED
 	// mechanism's signature. If ms improves but major/stage doesn't fall, the win is not readahead.
-	willneed := os.Getenv("GOINFER_MOE_WILLNEED") == "1"
 	pread := os.Getenv("GOINFER_MOE_PREAD") != "0" // default-on; =0 opts out
 	nocache := os.Getenv("GOINFER_MOE_NOCACHE") == "1"
 	effMBs := float64(stages) * 3.19 * 1000 / (float64(fetchNanos) / 1e6)
-	t.Logf("  FAULTS over timed decode (WILLNEED=%v PREAD=%v NOCACHE=%v): major %d (%.1f/stage) minor %d | fetch effective %.0f MB/s",
-		willneed, pread, nocache, majFlt, float64(majFlt)/float64(stages), minFlt, effMBs)
+	t.Logf("  FAULTS over timed decode (PREAD=%v NOCACHE=%v): major %d (%.1f/stage) minor %d | fetch effective %.0f MB/s",
+		pread, nocache, majFlt, float64(majFlt)/float64(stages), minFlt, effMBs)
 
 	// DIRECT compute+coord decomposition (Task 2) — GPU-busy per phase vs wall (wall−GPU = host
 	// submit/wait/encode coordination), plus staging cross-check (Task 1: stageWall must ≈ pool

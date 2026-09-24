@@ -810,10 +810,3 @@ func addScaled(dst, src []float32, scale float32) {
 		dst[i] += scale * src[i]
 	}
 }
-
-// moePrefillScratch enables the P18 ATTRIBUTION arm: reuse one scratch across the
-// batched-prefill row loop instead of letting moeMLP allocate per row. It changes
-// no arithmetic — moeMLP with a non-nil scr computes exactly what it computes with
-// nil — so it isolates "stopped allocating" from "batched the matmuls", which the
-// expert-major path does together.
-func moePrefillScratch() bool { return os.Getenv("GOINFER_MOE_PREFILL_SCRATCH") == "1" }

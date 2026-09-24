@@ -54,7 +54,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
   CPU.
 - Paged tensors (MoE experts, layer paging) stay canonical on every target. Paging has no
   load-time repack step and preads canonical spans off the mapping (`metal/moe.go:453`,
-  `metal/gemma4_moe.go:237`, `decoder/moepaging.go`).
+  `metal/gemma4_moe.go:236`, `decoder/moepaging.go`).
 - One doc. Findings from doing the work go into the per-item status line here.
 
 ---
@@ -62,7 +62,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
 ## L1 — Load-time policy: `Backend: "cpu"` is a promise, and it unlocks repacked-only (DONE 2026-09-11)
 
 **Where.** `decoder/weightmat.go:487 wantsCanonicalInt4(backendName, be)`,
-`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:543` (computed once
+`:440 repackedOnlyOrCanonical`, `:524 isBatchedProjTensor`; `decoder/model.go:547` (computed once
 at Load); the `needCanonical bool` threaded through `loadWeights` → `loadGGUFWeights` /
 `buildWeightsFromSafetensors` → `quantizeEmbedWM` / `streamQuantizedEmbed` /
 `quantizeBatchedProjWM` / `streamQuantizedBatchedProj`. Dispatch prerequisite already done:
@@ -150,7 +150,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   comes back zero), so no code change was needed there. Under this gate it is now provably
   unreachable in practice too: `webgpu` is never the literal string `"cpu"`, so
   `wantsCanonicalInt4` always keeps canonical for it regardless.
-- **Item 4: no code change needed.** `internal/serveapp/main.go:498`,
+- **Item 4: no code change needed.** `internal/serveapp/main.go:477`,
   `internal/chatapp/main.go:179`, and `internal/gemmaapp/main.go:47` all already register `--backend` with
   `flag.String(..., "cpu", ...)` — the literal default is already `"cpu"`, not empty. The root
   (no-tags) CPU release binaries already got this saving the moment L1 landed; nothing to wire up.
@@ -280,7 +280,7 @@ are half the disk and page cache per int4 tensor, and row4-by-default for CPU ca
   (`l.Experts[*]`, `mo.expertsGateUp/expertsDown`) is IMPLEMENTED PER THE DOC'S LITERAL TEXT, but
   is more conservative than the inspected code strictly requires — kept as written rather than
   silently loosened, since Metal's OWN expert paging (`metal/moe.go:453`,
-  `metal/gemma4_moe.go:237`, cited by the ground rule, NOT inspected this round) may have a real
+  `metal/gemma4_moe.go:236`, cited by the ground rule, NOT inspected this round) may have a real
   canonical-only requirement the CPU pager does not. (b) The doc's worked example for kind 5 —
   "dense projections" — is EXACTLY what `layerpaging.go` pages for a big dense model that doesn't
   fit resident; reading the ground rule to also exclude THOSE would gut L2's own stated purpose

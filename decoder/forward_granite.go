@@ -1,26 +1,17 @@
 package decoder
 
-import (
-	"os"
-	"strconv"
-)
+import "os"
 
 // SSM forward test/isolation seams, read once at init (the package convention) rather
 // than per layer/token inside the decode loop.
 var (
-	ssmNoMul     = os.Getenv("GOINFER_SSM_NOMUL") != ""
-	ssmSkipFFN   = os.Getenv("GOINFER_SSM_SKIPFFN") != ""
-	ssmStopLayer = ssmStopLayerEnv()
+	ssmNoMul   = os.Getenv("GOINFER_SSM_NOMUL") != ""
+	ssmSkipFFN = os.Getenv("GOINFER_SSM_SKIPFFN") != ""
+	// ssmStopLayer truncates the forward after this layer (-1 = run every layer): the resident-SSM
+	// bring-up's layer-sweep seam. It was the env var GOINFER_SSM_STOP_LAYER until 2026-09-24; only
+	// tests set it now, through SetSSMStopLayerForTest (testhooks.go).
+	ssmStopLayer = -1
 )
-
-func ssmStopLayerEnv() int {
-	if v := os.Getenv("GOINFER_SSM_STOP_LAYER"); v != "" {
-		if n, e := strconv.Atoi(v); e == nil {
-			return n
-		}
-	}
-	return -1
-}
 
 // Granite-4.0-H (granitemoehybrid) forward path — the hybrid: each layer is either a
 // Mamba-2 selective-scan mixer (recurrent state in the cache) or GQA softmax
@@ -54,7 +45,7 @@ func (m *Model) runLayersGranite(id int, cache *KVCache) ([]float32, error) {
 		h[i] *= embMul // embedding_multiplier
 	}
 
-	stopLayer := ssmStopLayer // GOINFER_SSM_STOP_LAYER debug: truncate to localize the resident SSM bug
+	stopLayer := ssmStopLayer // layer-sweep seam: truncate to localize a resident SSM divergence
 	for l := 0; l < arch.NumLayers; l++ {
 		if stopLayer >= 0 && l > stopLayer {
 			break

@@ -38,7 +38,8 @@ func TestZZDiagGroupedFires(t *testing.T) {
 		t.Fatalf("prefill: %v", err)
 	}
 
-	t.Setenv("GOINFER_ATTN_TIMING_DEBUG", "1")
+	attnTiming = true // R13 attention timer (was GOINFER_ATTN_TIMING_DEBUG=1)
+	defer func() { attnTiming = false }()
 	steps := 100
 	if s, err := strconv.Atoi(os.Getenv("GOINFER_DIAG_STEPS")); err == nil {
 		steps = s

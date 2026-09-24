@@ -12,7 +12,7 @@ import (
 
 // Phase-A localization: the mamba path is exonerated (in_proj + mixer correct). The 93.6%→66%
 // gap is the resident attn/MoE (W8A8 GEMVs) vs D3's staged matmuls. This sweeps
-// GOINFER_SSM_STOP_LAYER — rebuilding the resident plan to emit logits from the hidden after
+// the layer-sweep seam (ssmStopLayerForTest / decoder.SetSSMStopLayerForTest) — rebuilding the resident plan to emit logits from the hidden after
 // each layer L — and compares the resident's token-0 logits to the f32 CPU reference per L. The
 // first L where cosine drops names the buggy layer; a gradual drop from every layer ⇒ MoE
 // (every layer), a jump at 5/15/25/35 ⇒ attention.
@@ -35,9 +35,8 @@ func TestMambaResidentLayerSweep(t *testing.T) {
 	ids, _ := tk.Encode("The capital of France is Paris.", true)
 	tok := ids[0]
 
-	// f32 CPU reference, truncated per layer. The decoder reads GOINFER_SSM_STOP_LAYER once at init, so
-	// the truncation is set through the test hook — os.Setenv here used to change nothing, and every
-	// "reference" was the full model.
+	// f32 CPU reference, truncated per layer through the test hook (this used to os.Setenv
+	// GOINFER_SSM_STOP_LAYER, which the decoder read once at init, so every "reference" was the full model).
 	os.Unsetenv("GOINFER_SSM_RESIDENT")
 	mc, err := decoder.Load(path, decoder.Options{Backend: "cpu"})
 	if err != nil {
@@ -69,8 +68,9 @@ func TestMambaResidentLayerSweep(t *testing.T) {
 	emb := m.EmbedResidentForTest(tok)
 
 	prev := 1.0
+	defer func() { ssmStopLayerForTest = -1 }()
 	for L := range nLayers {
-		os.Setenv("GOINFER_SSM_STOP_LAYER", itoa(L))
+		ssmStopLayerForTest = L
 		runner, e := rd.newRunner()
 		if e != nil {
 			t.Fatal(e)
@@ -93,17 +93,4 @@ func TestMambaResidentLayerSweep(t *testing.T) {
 		prev = cos
 		t.Logf("  after layer %2d (%-5s): resident-vs-f32 cosine=%.6f%s", L, kind, cos, mark)
 	}
-	os.Unsetenv("GOINFER_SSM_STOP_LAYER")
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	b := []byte{}
-	for n > 0 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-		n /= 10
-	}
-	return string(b)
 }

@@ -955,8 +955,8 @@ of them:
 |---|---|
 | `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
 | `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
-| `decoder/forwardn.go:1609` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-09-16; previously retargeted 2026-08-24, and 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
-| `decoder/model.go:1168` | unchanged — same freeze |
+| `decoder/forwardn.go:1593` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-09-16; previously retargeted 2026-08-24, and 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
+| `decoder/model.go:1172` | unchanged — same freeze |
 | `metal/model.go:1267` | unchanged — Metal is on hold for core-numerics surfaces |
 
 The three unchanged members are a **deliberate** partial fix, not an oversight, and they are the
@@ -1209,7 +1209,7 @@ Why Go is *strictly better* here, not just same-language — it dissolves the it
 | C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
 | C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:127` |
 | C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:26` |
-| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:852` |
+| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:830` |
 | C-30 no mutex in the paging paths | **fixed** — both pagers carry an internal mutex, each citing the audit finding | `decoder/layerpaging.go:42` |
 
 **These are correctness and security items, so a wrong entry costs more here than in P or B — in both

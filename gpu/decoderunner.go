@@ -7,11 +7,15 @@ import (
 	"math"
 	"os"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
+
+// ssmStopLayerForTest truncates a newly built decode plan after this layer (-1 = every layer): the
+// resident-SSM bring-up's layer-sweep seam, set only by tests in this package
+// (mamba_layersweep_test.go). It was the env var GOINFER_SSM_STOP_LAYER until 2026-09-24.
+var ssmStopLayerForTest = -1
 
 // DecodeRunner is the production one-command-buffer decode forward: it builds every
 // scratch buffer + bind group ONCE (the per-token allocation that made
@@ -415,12 +419,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	if m.mamba != nil && (m.mamba.dConv > 8 || m.mamba.dConv < 1) {
 		return nil, fmt.Errorf("gpu: newDecodeRunner: mamba conv_kernel %d out of range [1,8] for the resident conv kernel; declining to CPU", m.mamba.dConv)
 	}
-	ssmStopLayer := -1 // GOINFER_SSM_STOP_LAYER debug (resident SSM bring-up): truncate the plan
-	if v := os.Getenv("GOINFER_SSM_STOP_LAYER"); v != "" {
-		if n, e := strconv.Atoi(v); e == nil {
-			ssmStopLayer = n
-		}
-	}
+	ssmStopLayer := ssmStopLayerForTest                  // layer-sweep seam (tests only): truncate the plan
 	ssmSkipFFN := os.Getenv("GOINFER_SSM_SKIPFFN") != "" // debug: mixer-only isolation
 	// W8A16 (activation-precision fix, gemv_w8a16.go): int8 weights, f32 activations — no
 	// activation int8 quant, so the granite re-quant cascade can't compound. Off by default.
@@ -1224,7 +1223,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	for i := range m.layers {
 		lw := &m.layers[i]
 		if ssmStopLayer >= 0 && i > ssmStopLayer {
-			break // GOINFER_SSM_STOP_LAYER debug: logits from xd after this layer
+			break // layer-sweep seam: logits from xd after this layer
 		}
 		if lw.nemoKind == nemoKMLP {
 			// Nemotron-H non-gated relu² MLP block (single-op-per-block, no mixer): norm → up →

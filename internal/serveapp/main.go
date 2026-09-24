@@ -184,6 +184,7 @@ func (s modelSpec) options(cfg config) decoder.Options {
 		EmbedInt4:        orBool(s.embedInt4, cfg.embedInt4),
 		ResidentContext:  orInt(s.ctxSize, cfg.ctxSize),
 		DisableFit:       !cfg.fit,
+		MoEPager:         cfg.moePager,
 	}
 }
 
@@ -364,33 +365,11 @@ const cpuExactPrefillHelp = "force BIT-EXACT prompt ingestion on the CPU backend
 
 const cpuFastAttentionHelp = "DEFAULT ON since 2026-08-31 (pass --cpu-exact-prefill to turn it off). Compute PROMPT attention in f32 instead of the f64-accumulating kernel — measured 2.28x faster prefill on an 8k prompt (dense 1.5B, M1 Pro: 602.9s to 264.6s) because attention is ~70% of a long prefill and the f64 path is ~8x slower than f32 at those shapes. NOT bit-identical: measured cosine 0.9976 against the default (stable across 256/1024/2048-token prompts), so a long-prompt response CAN differ from what you would get with this off, even at temperature 0. Decode is unaffected — this changes only how the prompt is ingested. Speculative decoding is never affected (its verify pass always uses the exact kernel, or verify would stop matching greedy). Applies to MoE models too: the old REFUSAL was dropped in 66d0a05 after being measured (1-cosine 2.126e-3 for MoE against 2.400e-3 for the dense case, depth-matched, with a 48/48 identical greedy continuation), and this help text went on claiming it for two days afterwards. FLOORED AT 512 PROMPT TOKENS: below that the exact kernel runs regardless, because the win scales with prompt length and the divergence does not — an 8-token prompt diverged at the third generated token while buying nothing (1.15x at 512, 1.43x at 2048, 2.28x at 8192). CPU backend only"
 
-// moePagerDefault is S5's registered default (task-never-swap-2026-09.md): darwin, where
-// MADV_DONTNEED is a no-op and mmap mode therefore cannot enforce its budget, gets the owned-buffer
-// pool; every other platform keeps mmap mode, where DONTNEED works and the alias is free. A function
-// of goos, not runtime.GOOS directly, so both answers are testable on one machine.
-func moePagerDefault(goos string) string {
-	if goos == "darwin" {
-		return "pool"
-	}
-	return "mmap"
-}
-
-// applyMoEPagerEnv sets GOINFER_MOE_PREAD_CPU from the parsed --moe-pager flag — a pure function
-// (matching applyExactPrefillEnv's shape) so a test can drive it directly. This is the CPU expert
-// pager's backing mode only (decoder/moepaging.go): "mmap" is the existing default (advice-based,
-// zero-copy, but darwin's DONTNEED is a no-op so nothing actually shrinks RSS); "pool" is the
-// owned-buffer pread mode, a firm cap on every platform at the cost of a memcpy per miss
-// (task-never-swap-2026-09.md S5 — a same-session mmap-vs-pool A/B on this Mac is still owed;
-// this flag only exposes the existing env var's choice, it does not change today's default). Set
-// explicitly either way, same reasoning as GOINFER_CPU_FAST_ATTENTION above: the server's own flag
-// must win over whatever the shell happened to export.
-func applyMoEPagerEnv(cfg config) {
-	if cfg.moePager == "pool" {
-		os.Setenv("GOINFER_MOE_PREAD_CPU", "1")
-	} else {
-		os.Setenv("GOINFER_MOE_PREAD_CPU", "0")
-	}
-}
+// moePagerDefault is decoder.MoEPagerDefault — the decoder owns S5's platform default so serve's
+// --moe-pager default and a library Load agree. --moe-pager reaches the decoder through
+// decoder.Options.MoEPager (modelSpec.options), not through GOINFER_MOE_PREAD_CPU: setting the env
+// var here made serve's choice process-global and left library callers on a different default.
+func moePagerDefault(goos string) string { return decoder.MoEPagerDefault(goos) }
 
 // applyExactPrefillEnv sets the per-backend fast-prefill env vars from the parsed flags — a pure
 // function (no os.Args, no process exit, no server) so a test can drive it directly, unlike
@@ -603,7 +582,6 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		fmt.Fprintf(os.Stderr, "error: -moe-pager must be \"mmap\" or \"pool\" (got %q)\n", cfg.moePager)
 		os.Exit(2)
 	}
-	applyMoEPagerEnv(cfg)
 	// Was --quant given, or is cfg.quant the "int4" default? The .giw explicit-quant check (T1-7)
 	// must fire only on an explicit request — the default must not "mismatch" a non-int4 bundle.
 	flag.Visit(func(f *flag.Flag) {

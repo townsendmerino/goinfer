@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/decoder"
 	"golang.org/x/sys/unix"
 )
@@ -304,8 +303,8 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 			return gw, gScaleCache[ei], dw, dScaleCache[ei]
 		}
 		ml.pool = newExpertPool(d, g.slots, len(gw0), len(gs0), len(dw0), len(ds0), stage)
-		// GOINFER_MOE_WILLNEED=1 issues MADV_WILLNEED over the routed experts' nibble spans before
-		// staging. MEASURED AND DECLINED (cold A/B, sudo purge between arms, 2026-08-03): it does NOT
+		// MADV_WILLNEED over the routed experts' nibble spans before staging (was GOINFER_MOE_WILLNEED=1;
+		// the switch was REMOVED 2026-09-24 — this record is what stays). MEASURED AND DECLINED (cold A/B, sudo purge between arms, 2026-08-03): it does NOT
 		// help. major faults/stage ROSE 92.5→147.1 (readahead read MORE from disk, did not batch the
 		// serial faults), and the staging-line drop (−775 ms) was an ATTRIBUTION SHIFT into the residual
 		// compute+coord bucket (+700 ms), for a total move of 1851.8→1776.6 ms/tok (~4%, noise band).
@@ -314,19 +313,10 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 		// the synchronous per-layer Advise→copy path has no lead time to hide it behind (the routed
 		// experts aren't known until phase-1 completes: the value-dependent seam). The extra faults are
 		// consistent with prefetched pages being evicted under memory pressure before use (RSS fell
-		// 3369→2870 MB). Kept OFF by default and wired so nobody re-proposes it without re-reading this.
+		// 3369→2870 MB). It stayed wired, off, for a while so nobody re-proposed it without re-reading this;
+		// the comment now does that job on its own.
 		// Lesson: when you optimize a measured sub-bucket, the TOTAL is the gate — a residual bucket
 		// absorbs displaced cost silently. See [[optimize-sub-bucket-total-is-the-gate]].
-		if os.Getenv("GOINFER_MOE_WILLNEED") == "1" {
-			ml.pool.prefetch = func(ei int) {
-				if q4, _, _, ok := experts[ei].Int4(); ok {
-					_ = mmap.Advise(mmap.PageAlignedInterior(q4), true)
-				}
-				if q4, _, _, ok := down[ei].Int4(); ok {
-					_ = mmap.Advise(mmap.PageAlignedInterior(q4), true)
-				}
-			}
-		}
 		// pread staging (GOINFER_MOE_PREAD=1): resolve each expert's nibble file offset within the .giw
 		// mmap (pure pointer arithmetic, no page touch), then stage by pread'ing straight into the slot's
 		// UMA words — zero mmap faults, one big sequential read per expert. Scales stay f32→f16 from the
@@ -570,7 +560,6 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 			for j := 0; j < g.topK; j++ {
 				ids[j] = int(idx[j])
 			}
-			L.g4moe.pool.prefetchAll(ids) // WILLNEED all routed experts at once (no-op when disabled)
 			p.idxCoordNanos += time.Since(c0).Nanoseconds()
 			s0 := time.Now()
 			// M-12 (audit-metal-2026-09-12.md): stage every miss in this token's top-k concurrently

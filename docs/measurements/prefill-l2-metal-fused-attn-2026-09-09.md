@@ -8,7 +8,7 @@ not deciding) reaches the same SHIPS verdict. D7 failed on the fit guard (12.4 G
 available) — the same outcome and the same acceptance L1's gate made; S is sufficient for the
 pooled decision. **The gate answered whether the kernel is fit to ship; flipping the default
 was then asked of, and approved by, the user separately — `GOINFER_METAL_FUSED_ATTENTION`
-defaults ON as of 2026-09-10** (`metalFusedAttentionEnabled`, `metal/backend.go:636`).
+defaults ON as of 2026-09-10** (`metalFusedAttentionEnabled`, `metal/backend.go:650`).
 
 The rest of this doc (§1–§4) is the 2026-09-09 write-up: `attention_prefill_fused` built,
 correctness-tested (kernel + full-pipeline), and measured end to end (4.23× at S/K=3900) —
@@ -154,4 +154,4 @@ same outcome and same acceptance L1's gate made. S is sufficient for the pooled 
 fit to ship" — yes. Per the standing rule ("ask before: changing a default without its gate
 cell"), the default flip was asked of the user separately rather than made by the gate itself;
 the user said yes, and `metalFusedAttentionEnabled()` defaults ON as of 2026-09-10
-(`metal/backend.go:636`).
+(`metal/backend.go:650`).

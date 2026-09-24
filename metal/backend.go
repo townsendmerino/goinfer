@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -435,6 +436,19 @@ type metalResident struct {
 	r      *resident
 	hidden int
 	exact  bool // the model was loaded with Options.ExactPrefill: fast prefill off for THIS resident
+
+	// fast is the batched-prefill decision, made ONCE per resident on first use: the
+	// GOINFER_METAL_FAST_PREFILL env var used to be re-read on every prefill call, so a change to
+	// the process environment mid-serve silently switched a loaded model's kernels. Lazy (not set at
+	// build) so a resident built as a struct literal in a test gets the same default a real one does.
+	fastOnce sync.Once
+	fast     bool
+}
+
+// fastPrefill reports whether this resident's prefill takes the batched fast path.
+func (a *metalResident) fastPrefill() bool {
+	a.fastOnce.Do(func() { a.fast = !a.exact && metalFastPrefillEnabled() })
+	return a.fast
 }
 
 // ctxCap is this resident's resolved KV capacity — a.r.ctxCap when a real *resident exists, else
@@ -651,7 +665,7 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	if !a.r.prefillOK {
 		return false, "sequential — arch/geometry not supported by f16 MMA prefill kernel"
 	}
-	if a.exact || !metalFastPrefillEnabled() {
+	if !a.fastPrefill() {
 		return false, "sequential — fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill)"
 	}
 	floor := metalFastPrefillFloorFor()
@@ -674,7 +688,7 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	}
 	// DEFAULT ON above metalFastPrefillFloor (256 tokens, M-02) since §3.2 gate passed 2026-09-09
 	// (S cells K=256/512/1024). GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill to opt out.
-	if a.exact || !metalFastPrefillEnabled() {
+	if !a.fastPrefill() {
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
 	}
 	// FLOOR: below metalFastPrefillFloor no decision cell has passed yet. Sequential path there;

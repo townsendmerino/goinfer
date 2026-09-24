@@ -299,6 +299,10 @@ type Options struct {
 	// moeSlowTokPerSecThreshold (decoder/moeworkingset.go) is refused unless this is true. Only
 	// meaningful for a .giw MoE load under StreamWeights; a no-op everywhere else.
 	AcceptSlowMoE bool
+	// MoEPager is the CPU expert pager's backing mode for a .giw-paged MoE model: "mmap" (advice-based,
+	// zero-copy) or "pool" (owned buffers + pread; a firm cap on every platform). "" = the platform
+	// default (MoEPagerDefault: pool on darwin, mmap elsewhere), unless GOINFER_MOE_PREAD_CPU overrides.
+	MoEPager string
 	// EmbedInt4 relaxes the int8 pin on the token-embedding/LM-head table in int4
 	// mode, storing it at int4 too — halving the single largest resident tensor on a
 	// big-vocab small model. Lossy + opt-in (~2.3 pts top-1, mostly on rare tokens);
@@ -475,7 +479,7 @@ func Load(dir string, opts Options) (*Model, error) {
 			opts.WeightCacheBytes = resolveWeightCacheBudget(opts.WeightCacheBytes)
 			// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
 			if w.arch.MoE != nil {
-				if m.pager = newExpertPager(w, data, opts.WeightCacheBytes, dir); m.pager != nil {
+				if m.pager = newExpertPager(w, data, opts.WeightCacheBytes, dir, resolveMoEPagerPool(opts.MoEPager)); m.pager != nil {
 					fmt.Fprintln(os.Stderr, "decoder: "+pagerSummary(m.pager))
 					// S4 item 5: the arithmetic the M35 run needed before it started — predict
 					// the working-set rate and require an explicit acknowledgement below the

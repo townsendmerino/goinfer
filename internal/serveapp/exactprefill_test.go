@@ -64,21 +64,17 @@ func TestApplyExactPrefillEnv_defaultLeavesMetalAndCUDAUnset(t *testing.T) {
 	}
 }
 
-// TestApplyMoEPagerEnv_setsExplicitlyEitherWay gates task-never-swap-2026-09.md S5's Build item
-// 1 — the --moe-pager flag exposes decoder/moepaging.go's existing GOINFER_MOE_PREAD_CPU switch,
-// set explicitly either way (not left unset on "mmap") for the same reason applyExactPrefillEnv
-// does: the flag must win over whatever the shell happened to export.
-func TestApplyMoEPagerEnv_setsExplicitlyEitherWay(t *testing.T) {
+// TestMoEPagerFlag_reachesTheDecoderThroughOptions: --moe-pager is carried to decoder.Load in
+// Options.MoEPager (it used to be applied by setting GOINFER_MOE_PREAD_CPU, process-wide).
+func TestMoEPagerFlag_reachesTheDecoderThroughOptions(t *testing.T) {
 	unsetenvT(t, "GOINFER_MOE_PREAD_CPU")
-
-	applyMoEPagerEnv(config{moePager: "pool"})
-	if got := os.Getenv("GOINFER_MOE_PREAD_CPU"); got != "1" {
-		t.Errorf("--moe-pager=pool: GOINFER_MOE_PREAD_CPU = %q, want %q", got, "1")
+	for _, mode := range []string{"pool", "mmap"} {
+		if got := (modelSpec{}).options(config{moePager: mode}).MoEPager; got != mode {
+			t.Errorf("--moe-pager=%s: Options.MoEPager = %q", mode, got)
+		}
 	}
-
-	applyMoEPagerEnv(config{moePager: "mmap"})
-	if got := os.Getenv("GOINFER_MOE_PREAD_CPU"); got != "0" {
-		t.Errorf("--moe-pager=mmap: GOINFER_MOE_PREAD_CPU = %q, want %q", got, "0")
+	if _, set := os.LookupEnv("GOINFER_MOE_PREAD_CPU"); set {
+		t.Error("building Options wrote GOINFER_MOE_PREAD_CPU")
 	}
 }
 

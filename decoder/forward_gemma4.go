@@ -1,14 +1,10 @@
 package decoder
 
 import (
-	"fmt"
 	"math"
-	"os"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
-
-var g4debug = os.Getenv("G4DEBUG") != "" // env-gated per-layer hidden-norm trace
 
 // g4traceHidden, when non-nil, receives the residual stream after each layer
 // (layer -1 = post-embedding) on every runLayersGemma4 call. Debug/test only:
@@ -237,21 +233,6 @@ func (m *Model) runLayersGemma4FromEmbed(h []float32, pleTokenID int, cache *KVC
 					h[i] *= lw.LayerScalar
 				}
 			}
-		}
-		if g4debug {
-			var ss float64
-			for _, e := range h {
-				ss += float64(e) * float64(e)
-			}
-			kind := "loc"
-			if global {
-				kind = "GLB"
-			}
-			vk := ""
-			if lw.VFromK {
-				vk = " kv=eq"
-			}
-			fmt.Printf("  L%-2d %s hd=%d nkv=%d scale=%.4f ||h||=%.3f%s\n", l, kind, hd, nKV, lw.LayerScalar, math.Sqrt(ss), vk)
 		}
 		if g4traceHidden != nil {
 			g4traceHidden(l, h)

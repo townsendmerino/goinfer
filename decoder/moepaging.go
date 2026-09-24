@@ -3,6 +3,7 @@ package decoder
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"sync"
 	"unsafe"
 
@@ -86,7 +87,38 @@ func (p *expertPager) Unlock() { p.readMu.Unlock() }
 // .giw file the mapping was built from (Model.GiwPath) -- only consulted when the
 // owned-buffer pread mode is requested (GOINFER_MOE_PREAD_CPU=1), to open an
 // independent fd for pread (the mmap's own fd is closed right after mapping).
-func newExpertPager(w *Weights, mapping []byte, budget int64, giwPath string) *expertPager {
+// MoEPagerDefault is S5's registered default (task-never-swap-2026-09.md): darwin, where
+// MADV_DONTNEED is a no-op and mmap mode therefore cannot enforce its budget, gets the owned-buffer
+// pool; every other platform keeps mmap mode, where DONTNEED works and the alias is free. The ONE
+// source for it: serve's --moe-pager default and a library Load with Options.MoEPager unset both
+// resolve here (they used to disagree on darwin — serve set an env var, a library caller got mmap).
+func MoEPagerDefault(goos string) string {
+	if goos == "darwin" {
+		return "pool"
+	}
+	return "mmap"
+}
+
+// resolveMoEPagerPool reports whether the CPU expert pager uses the owned-buffer pool: an explicit
+// Options.MoEPager wins; otherwise GOINFER_MOE_PREAD_CPU ("1"/"0") when set; otherwise the platform
+// default.
+func resolveMoEPagerPool(opt string) bool {
+	switch opt {
+	case "pool":
+		return true
+	case "mmap":
+		return false
+	}
+	switch os.Getenv("GOINFER_MOE_PREAD_CPU") {
+	case "1":
+		return true
+	case "0":
+		return false
+	}
+	return MoEPagerDefault(runtime.GOOS) == "pool"
+}
+
+func newExpertPager(w *Weights, mapping []byte, budget int64, giwPath string, pool bool) *expertPager {
 	if w.arch.MoE == nil || len(mapping) == 0 {
 		return nil
 	}
@@ -177,7 +209,7 @@ func newExpertPager(w *Weights, mapping []byte, budget int64, giwPath string) *e
 		budget = maxExpert // must hold at least one expert
 	}
 	minfltBase, majfltBase, faultsOK := processFaultCounts()
-	if os.Getenv("GOINFER_MOE_PREAD_CPU") == "1" && giwPath != "" && len(poolMembers) == len(members) {
+	if pool && giwPath != "" && len(poolMembers) == len(members) {
 		pool, err := newExpertBufferPool(giwPath, poolMembers, budget, w.arch.MoE.TopK)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "decoder: MoE pread pool init failed (%v), falling back to mmap paging\n", err)

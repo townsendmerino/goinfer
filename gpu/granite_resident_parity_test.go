@@ -21,7 +21,7 @@ func TestGraniteResidentParity(t *testing.T) {
 	// Opt-in: this CHARACTERIZES the resident int8 vs CPU divergence (it does not pass a
 	// 0.999 f32 bar — granite's MoE+SSM are int8-sensitive; the engine is correct at int8,
 	// see TestGraniteResidentSpeedup). Set GOINFER_SSM_PARITY=1 to run, with optional
-	// GOINFER_SSM_CPUQ8=1 (int8 CPU ref → ~0.99) / GOINFER_SSM_NTOK / GOINFER_SSM_STOP_LAYER.
+	// GOINFER_SSM_CPUQ8=1 (int8 CPU ref → ~0.99) / GOINFER_SSM_NTOK.
 	if os.Getenv("GOINFER_SSM_PARITY") == "" {
 		t.Skip("granite resident parity characterization (set GOINFER_SSM_PARITY=1)")
 	}

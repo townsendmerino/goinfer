@@ -270,17 +270,9 @@ func TestMoEExpertMajor_endToEnd(t *testing.T) {
 
 	run := func(on string) time.Duration {
 		t.Helper()
-		// "scr" is the ATTRIBUTION arm: scratch reuse only, no expert-major. It
-		// changes no arithmetic, so any time it buys is allocation/GC cost that
-		// the expert-major arm ALSO removes — which is how the two mechanisms get
-		// separated instead of credited to whichever one was implemented.
-		if on == "scr" {
-			t.Setenv("GOINFER_MOE_EXPERT_MAJOR", "0")
-			t.Setenv("GOINFER_MOE_PREFILL_SCRATCH", "1")
-		} else {
-			t.Setenv("GOINFER_MOE_PREFILL_SCRATCH", "0")
-			t.Setenv("GOINFER_MOE_EXPERT_MAJOR", on)
-		}
+		// The scratch-reuse ATTRIBUTION arm (GOINFER_MOE_PREFILL_SCRATCH) was retired 2026-09-24 after
+		// P18's attribution was recorded; this now times per-row vs expert-major only.
+		t.Setenv("GOINFER_MOE_EXPERT_MAJOR", on)
 		before := atomic.LoadInt64(&moeExpertMajorRuns)
 		t0 := time.Now()
 		if _, err := m.forwardLayersN(ctx, ids, m.NewCache(K+8), true); err != nil {
@@ -297,24 +289,18 @@ func TestMoEExpertMajor_endToEnd(t *testing.T) {
 		return d
 	}
 	run("0") // warm, discarded
-	var onD, offD, scrD []time.Duration
+	var onD, offD []time.Duration
 	for p := range pairs {
-		var dOn, dOff, dScr time.Duration
+		var dOn, dOff time.Duration
 		if p%2 == 0 {
-			dOff, dScr, dOn = run("0"), run("scr"), run("1")
+			dOff, dOn = run("0"), run("1")
 		} else {
-			dOn, dScr, dOff = run("1"), run("scr"), run("0")
+			dOn, dOff = run("1"), run("0")
 		}
-		onD, offD, scrD = append(onD, dOn), append(offD, dOff), append(scrD, dScr)
-		fmt.Fprintf(os.Stderr, "  pair %d/%d  per-row %7.1fs  scratch-only %7.1fs (%.2fx)  expert-major %7.1fs (%.2fx)  [elapsed %s]\n",
-			p+1, pairs, dOff.Seconds(), dScr.Seconds(), float64(dOff)/float64(dScr),
-			dOn.Seconds(), float64(dOff)/float64(dOn), time.Since(start).Round(time.Second))
+		onD, offD = append(onD, dOn), append(offD, dOff)
+		fmt.Fprintf(os.Stderr, "  pair %d/%d  per-row %7.1fs  expert-major %7.1fs (%.2fx)  [elapsed %s]\n",
+			p+1, pairs, dOff.Seconds(), dOn.Seconds(), float64(dOff)/float64(dOn), time.Since(start).Round(time.Second))
 	}
-	rScr := medianDur(offD).Seconds() / medianDur(scrD).Seconds()
-	fmt.Fprintf(os.Stderr, "\n  ATTRIBUTION: scratch-reuse alone %.2fx, expert-major %.2fx — "+
-		"so batching the matmuls contributes %.2fx ON TOP of not allocating per row\n",
-		rScr, medianDur(offD).Seconds()/medianDur(onD).Seconds(),
-		medianDur(scrD).Seconds()/medianDur(onD).Seconds())
 	r := medianDur(offD).Seconds() / medianDur(onD).Seconds()
 	gain := 100 * (r - 1)
 	verdict := "AMBIGUOUS -> parked pending a second mechanism"
