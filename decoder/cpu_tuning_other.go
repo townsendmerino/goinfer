@@ -16,3 +16,9 @@ var attnGroupedKernels = false
 // does per element on this box (goroutine wake stagger dwarfs 9-19k scalar silu calls) — 1.5B
 // 13.5 → 3.9 ms/token, 7B 27.9 → 8.0. Serial.
 var activationFanoutEnabled = false
+
+// fusedGateUpDefault: the fused gate+up+SwiGLU fork/join (cpu_gateup_fused.go) — one barrier per
+// layer instead of two, with the activation folded into it. Paired ABBA on the Ryzen 7 3700X,
+// bit-identical: 1.5B 1.066×, 0.5B 1.113×, 7B 1.029× against the unfused path
+// (docs/measurements/cpu-decode-roofline-2026-09-23.md). On.
+const fusedGateUpDefault = true

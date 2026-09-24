@@ -47,6 +47,7 @@ type decodeScratch struct {
 	gateUpOps [2]linalg.W8A8Op  // reused gate/up batch ops
 	qkvOpsW4  [3]linalg.W4A8Op  // reused q/k/v W4A8 batch ops (audit R-06)
 	guOpsW4   [2]linalg.W4A8Op  // reused gate/up W4A8 batch ops (audit R-06)
+	fusedPair fusedPairScratch  // per-worker serial Workspaces for the fused gate+up+SwiGLU path (cpu_gateup_fused.go)
 
 	loraTmp []float32 // [>=r] compute-time LoRA A·x scratch (#7); nil until an adapter is active
 

@@ -1077,7 +1077,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/layerpaging.go:64` | goinfer | `if _, own := w.arch.ownForward(); own {` |
 | `docs/audit-2026-09-10.md|decoder/lora.go:311` | goinfer | `_, hasOwnForward := arch.ownForward()` |
 | `docs/audit-2026-09-10.md|decoder/mlp.go:153` | goinfer | `for j, e := range idx {` |
-| `docs/audit-2026-09-10.md|decoder/mlp.go:684` | goinfer | `func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend` |
+| `docs/audit-2026-09-10.md|decoder/mlp.go:703` | goinfer | `func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1099` | goinfer | `if f, own := a.ownForward(); own && !f.Captures {` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1411` | goinfer | `if logits, err = mrope.ForwardMRoPE(emb, i, i+mropeDelta); err != nil {` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1435` | goinfer | `func (m *Model) tryClaimResident() bool {` |
@@ -1358,7 +1358,7 @@ supports.
 | `docs/tasks/red-october.md|metal/model.go:1639` | goinfer | `if cur == nil \|\| curNoHead != job.noHead {` |
 | `docs/tasks/red-october.md|metal/model.go:379` | goinfer | `noHead  bool` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/mlp.go:301` | goinfer | `// activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as` |
-| `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:194` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
+| `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:195` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
 | `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:123` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1225` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:229` | goinfer | `type Options struct {` |

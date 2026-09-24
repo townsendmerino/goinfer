@@ -540,7 +540,22 @@ func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) 
 // No biases on any projection.
 func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, lora *loraLayerDelta) error {
 	gate, up := scr.gate, scr.up // [inter] scratch; matmul fully overwrites each
-	if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {
+	fusedAct := false            // set when the fused path already applied the activation
+	if cpuFusedGateUp && lora == nil {
+		var dt0 time.Time
+		if decodeTiming {
+			dt0 = time.Now()
+		}
+		if gatedMLPFusedGateUp(h, lw, arch, scr) {
+			fusedAct = true
+			if decodeTiming {
+				atomic.AddInt64(&dtGU, int64(time.Since(dt0)))
+			}
+		}
+	}
+	if fusedAct {
+		// gate/up + activation already done in one fork/join
+	} else if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {
 		scr.gateUpOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
 		scr.gateUpOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
 		matmulW8A8Batch(be, scr.ws, h, 1, lw.GateProj.Cols(), scr.gateUpOps[:]) // gate/up in one dispatch (GPU: one submit)
@@ -566,6 +581,10 @@ func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend
 	if decodeTiming {
 		dt1 = time.Now()
 		defer func() { atomic.AddInt64(&dtActDown, int64(time.Since(dt1))) }()
+	}
+	if fusedAct {
+		matmulInto(scr.ws, be, &lw.DownProj, gate, out, 1)
+		return nil
 	}
 	if lora != nil { // compute-time LoRA (#7): delta into gate/up before the activation
 		applyLoRA(lora.gate, h, gate, scr)
