@@ -48,6 +48,18 @@ type SamplingParams struct {
 	// the forward pass and before sampling and the stop check, so a constraint
 	// can also gate EOS (mask it until the output is a complete document).
 	LogitProcessor func(generated []int, logits []float32)
+	// LogitProcessorGate, when set together with LogitProcessor, makes the processor LAZY: it is
+	// asked after every emitted token (with the ids generated so far) whether the NEXT step needs
+	// the processor. While it answers false the processor is not called and the step keeps every
+	// on-device fast path (greedy argmax, device sampling, device top-K) exactly as if there were
+	// no processor; a step it answers true for reads the full logits and runs the processor. It
+	// exists for a constraint that only switches on partway through a turn (a tool call under
+	// tool_choice auto, constrain.LazyMasker): an ungated processor costs every token of the turn
+	// its fast path, prose included — measured 0.81x decode at T=0.7 on a 1.5B
+	// (docs/measurements/tool-union-2026-09-24.md). The gate must be a pure function of generated
+	// ids. It is consulted only on the decode loop in model.go; the speculative paths still refuse
+	// any LogitProcessor, gated or not, and callers fall back to Generate as before.
+	LogitProcessorGate func(generated []int) bool
 }
 
 // TokenLogprob is a token id paired with its log-probability.

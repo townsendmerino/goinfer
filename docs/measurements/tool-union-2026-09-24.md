@@ -47,6 +47,23 @@ class counts are reported, not gated (T > 0 draws move with the sampler path, pe
 **Not covered.** Speculative-decode interaction is covered only for the required path, by construction (it reuses the tested
 single-tool fused-spec plumbing with a grammar whose Clone is tested); no live spec run. No MoE. One transcript.
 
+## Gated follow-up — pre-registration (written BEFORE its runs, after gate B failed)
+
+Gate B failed (numbers below). Owner call: build the two-phase design. Built INSIDE the decoder instead of as two generations:
+`SamplingParams.LogitProcessorGate` — the lazy masker is asked after every emitted token whether the next step must be masked; while
+it says no, the decode loop keeps on-device greedy argmax, device Gumbel sampling and device top-K exactly as with no processor, and
+only steps inside a call read full logits. One generation, no re-prefill, no second RNG stream. Unit-gated through the real decode loop
+with a fake resident (`decoder/logit_gate_test.go`; each assertion red under a mutation).
+
+Re-run with the gated build, same scripts, same rules:
+- **Gate A′ — non-forcing, now also at T = 0.7.** Greedy: as gate A. Sampled: every T = 0.7 output of the transcript (300 per
+  model) on Qwen2.5-Coder-1.5B and Llama-3.2-1B — neither ever writes the opener, and llama3 is never armed — must be byte-identical
+  default (union on, gated) vs `=0`. The prose part now runs on the identical path, so there is no RNG argument left: any
+  difference is a defect.
+- **Gate B′ — prose cost, identical rule to B:** per-cell median ≥ 0.98 on all four cells → the auto union ships default-on;
+  otherwise it stays opt-in.
+- Gate C stands from the ungated run: the grammar, masker and wiring are unchanged; only which forward runs outside a call is.
+
 ## Results
 
 _(appended after the runs)_

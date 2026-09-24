@@ -1625,8 +1625,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// later draw's VALUE can depend on the skipped ones, and no emitted token can differ. (The RNG
 	// stream position does advance differently, which is why nothing may depend on it downstream.)
 	fastNext := -1
+	// A GATED processor (SamplingParams.LogitProcessorGate) leaves the fast paths armed: each step
+	// then asks the gate, and only a step it opens takes the full-logits path below (needFull).
+	gated := sp.LogitProcessor != nil && sp.LogitProcessorGate != nil
+	procFree := sp.LogitProcessor == nil || gated
+	needFull := gated && sp.LogitProcessorGate(nil)
 	greedyRF, hasGreedy := m.resident.(ResidentGreedy)
-	fastGreedy := useGPU && hasGreedy && sp.LogitProcessor == nil &&
+	fastGreedy := useGPU && hasGreedy && procFree &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
 		os.Getenv("GOINFER_NO_GREEDY_FASTPATH") == ""
 
@@ -1647,7 +1652,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// (escape hatch / A-B check), same convention as GOINFER_NO_GREEDY_FASTPATH.
 	var topKRF ResidentTopK
 	topKWidth, topKVocab := 0, len(logits)
-	if useGPU && !fastGreedy && !optFwd && sp.LogitProcessor == nil && os.Getenv("GOINFER_NO_TOPK_FASTPATH") == "" && sampler.TopKEligible() {
+	if useGPU && !fastGreedy && !optFwd && procFree && os.Getenv("GOINFER_NO_TOPK_FASTPATH") == "" && sampler.TopKEligible() {
 		if rf, ok := m.resident.(ResidentTopK); ok && rf.TopKAvailable() {
 			if w, wok := sampler.TopKWidth(len(logits)); wok {
 				topKRF, topKWidth = rf, w
@@ -1658,7 +1663,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// Gumbel-max on-device and returns just the id, reusing the greedy fast path's fastNext mechanism. Same
 	// exclusions as the top-K path; GOINFER_NO_SAMPLE_FASTPATH forces the host draw (A/B check, escape hatch).
 	var sampleRF ResidentSample
-	if useGPU && !fastGreedy && !optFwd && sp.LogitProcessor == nil && os.Getenv("GOINFER_NO_SAMPLE_FASTPATH") == "" && sampler.SampleEligible() {
+	if useGPU && !fastGreedy && !optFwd && procFree && os.Getenv("GOINFER_NO_SAMPLE_FASTPATH") == "" && sampler.SampleEligible() {
 		if rf, ok := m.resident.(ResidentSample); ok && rf.SampleAvailable() {
 			sampleRF = rf
 		}
@@ -1772,7 +1777,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			if !drew {
 				// Constrained decoding: let the processor mask this step's logits
 				// (based on what's been generated) before sampling and the stop check.
-				if sp.LogitProcessor != nil {
+				if sp.LogitProcessor != nil && (!gated || needFull) {
 					sp.LogitProcessor(generated, logits)
 				}
 				if decodeTiming {
@@ -1818,6 +1823,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		case out <- next:
 		}
 		generated = append(generated, next)
+		if gated {
+			needFull = sp.LogitProcessorGate(generated)
+		}
 		if optResolved {
 			// optFwdStep already produced (or redid) this position's Forward and its
 			// result logits for gpuPos+1 — nothing left to do but advance the position.
@@ -1834,7 +1842,11 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				emb = m.embedResidentInto(next, embScratch)
 			}
 			embScratch = emb
-			if fastGreedy {
+			fastNext = -1 // set again below only by a path that picks the next token on-device
+			if needFull {
+				// The gated processor needs this position's full logits (it is about to mask them).
+				logits, err = m.resident.Forward(emb, gpuPos)
+			} else if fastGreedy {
 				// Greedy fast path: the resident picks the argmax on-device and returns
 				// just the id, skipping the full-logits readback.
 				fastNext, err = greedyRF.ForwardArgmax(emb, gpuPos)

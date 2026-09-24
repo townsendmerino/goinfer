@@ -131,3 +131,22 @@ func mustUnion(t *testing.T) Grammar {
 	}
 	return g
 }
+
+// Gate and Process agree: Gate reports armed exactly when Process would mask, and calling Gate then
+// Process on the same ids folds each token once (the decoder calls both).
+func TestLazyMasker_gateMatchesProcess(t *testing.T) {
+	l := newLazy(t)
+	gen := []int{}
+	for _, id := range []int{tHello, tTrig, tNL, tOpen, tRead, tArgs, tClose, tWorld} {
+		gen = append(gen, id)
+		armed := l.Gate(gen)
+		legal := step(l, gen)
+		masked := len(legal) != len(lazyVocab)
+		if armed != masked {
+			t.Fatalf("after %v: Gate=%v but Process masked=%v", gen, armed, masked)
+		}
+	}
+	if l.Arms() != 1 || l.Armed() {
+		t.Errorf("arms=%d armed=%v after one complete call and prose; want 1, false", l.Arms(), l.Armed())
+	}
+}

@@ -294,15 +294,26 @@ func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, nam
 	return nil
 }
 
-// toolUnionEnabled is the rollback knob for the multi-tool union (GOINFER_TOOL_UNION=0 turns
-// it off: 2+ tools then decode exactly as before T1 — unconstrained under auto and required).
-var toolUnionEnabled = os.Getenv("GOINFER_TOOL_UNION") != "0"
+// toolUnionEnabled / toolUnionAuto are GOINFER_TOOL_UNION: unset → the union constrains only
+// required / Anthropic any (a call is mandatory there, and it rides the fused-spec path); "1" also
+// arms it lazily under auto; "0" turns both off (decoding exactly as before T1).
+//
+// auto is OFF by default because of a measured cost, not a correctness problem
+// (docs/measurements/tool-union-2026-09-24.md, gate B): any LogitProcessor disables the decoder's
+// on-device greedy/sampling fast paths for the WHOLE turn, prose included, and a prose `auto` turn
+// decoded 0.978x / 0.807x (1.5B, greedy / T=0.7) and 0.988x / 0.896x (7B) as fast. Making it
+// default-on needs the constraint to cost nothing until the opener — generating to the opener with
+// every fast path intact, then continuing constrained (the two-phase follow-up).
+var (
+	toolUnionEnabled = os.Getenv("GOINFER_TOOL_UNION") != "0"
+	toolUnionAuto    = os.Getenv("GOINFER_TOOL_UNION") == "1"
+)
 
 // constrainToolUnion wires the multi-tool union for a request with 2+ tools and no single forced
 // tool. It never errors: a family with no JSON call form, or a tool schema the grammar cannot
 // compile, leaves the request unconstrained — today's behaviour — rather than refusing it.
 func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []chat.Tool) {
-	if !toolUnionEnabled || (mode != "auto" && mode != "required") {
+	if !toolUnionEnabled || (mode != "auto" && mode != "required") || (mode == "auto" && !toolUnionAuto) {
 		return
 	}
 	prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper()
@@ -338,8 +349,11 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 		return
 	}
 	// A LogitProcessor only: gr.masker stays nil, because the grammar-fused speculative path
-	// assumes a grammar live from token 1, which a lazy one is not.
-	gr.sp.LogitProcessor = constrain.NewLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), trigger).Process
+	// assumes a grammar live from token 1, which a lazy one is not. The Gate keeps the decoder's
+	// on-device fast paths until the opener arrives (SamplingParams.LogitProcessorGate).
+	lazy := constrain.NewLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), trigger)
+	gr.sp.LogitProcessor = lazy.Process
+	gr.sp.LogitProcessorGate = lazy.Gate
 }
 
 // toAPICalls renders parsed calls in the OpenAI response shape (arguments is a

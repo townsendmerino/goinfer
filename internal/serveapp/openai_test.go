@@ -676,22 +676,25 @@ func TestConstrainToolUnion_wiring(t *testing.T) {
 		lm         *loadedModel
 		mode       string
 		disabled   bool
+		auto       bool // GOINFER_TOOL_UNION=1
 		wantProc   bool
 		wantMasker bool
 	}{
-		{"chatml auto → lazy", chatml, "auto", false, true, false},
-		{"chatml required → forced union", chatml, "required", false, true, true},
-		{"chatml no union mode → unconstrained", chatml, "", false, false, false},
-		{"llama3 auto → unconstrained (no opener)", llama, "auto", false, false, false},
-		{"llama3 required → forced union", llama, "required", false, true, true},
-		{"GOINFER_TOOL_UNION=0 → unconstrained (auto)", chatml, "auto", true, false, false},
-		{"GOINFER_TOOL_UNION=0 → unconstrained (required)", chatml, "required", true, false, false},
+		{"default: chatml auto → unconstrained (gate B cost)", chatml, "auto", false, false, false, false},
+		{"default: chatml required → forced union", chatml, "required", false, false, true, true},
+		{"=1: chatml auto → lazy", chatml, "auto", false, true, true, false},
+		{"=1: chatml required → forced union", chatml, "required", false, true, true, true},
+		{"chatml no union mode → unconstrained", chatml, "", false, true, false, false},
+		{"=1: llama3 auto → unconstrained (no opener)", llama, "auto", false, true, false, false},
+		{"llama3 required → forced union", llama, "required", false, false, true, true},
+		{"GOINFER_TOOL_UNION=0 → unconstrained (auto)", chatml, "auto", true, false, false, false},
+		{"GOINFER_TOOL_UNION=0 → unconstrained (required)", chatml, "required", true, false, false, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			prev := toolUnionEnabled
-			toolUnionEnabled = !c.disabled
-			t.Cleanup(func() { toolUnionEnabled = prev })
+			prevE, prevA := toolUnionEnabled, toolUnionAuto
+			toolUnionEnabled, toolUnionAuto = !c.disabled, c.auto && !c.disabled
+			t.Cleanup(func() { toolUnionEnabled, toolUnionAuto = prevE, prevA })
 			gr := &genRequest{}
 			if err := constrainForcedTool(c.lm, gr, nil, false, c.mode, tools); err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -706,6 +709,9 @@ func TestConstrainToolUnion_wiring(t *testing.T) {
 	}
 	// Anthropic auto never forces a lone tool, so it reaches here with forced == nil: the lazy
 	// union is the constraint it gets (non-forcing, so safe for Claude Code's loop).
+	prevA := toolUnionAuto
+	toolUnionAuto = true
+	defer func() { toolUnionAuto = prevA }()
 	gr0 := &genRequest{}
 	if err := constrainForcedTool(chatml, gr0, nil, false, "auto", tools[:1]); err != nil || gr0.sp.LogitProcessor == nil || gr0.masker != nil {
 		t.Errorf("Anthropic-auto lone tool: err=%v proc=%v masker=%v — want the lazy union only", err, gr0.sp.LogitProcessor != nil, gr0.masker != nil)

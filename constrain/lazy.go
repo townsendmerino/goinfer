@@ -47,6 +47,17 @@ func NewLazyMasker(m *Masker, triggers ...string) *LazyMasker {
 func (l *LazyMasker) Armed() bool { return l.armed }
 func (l *LazyMasker) Arms() int   { return l.arms }
 
+// Gate is a decoder.SamplingParams.LogitProcessorGate: it folds the generated ids in and reports
+// whether the NEXT step must be masked. With it set, the decoder keeps its on-device fast paths
+// for every step before the opener (and after a completed call) and pays for full logits only
+// while a call is being written — so a prose turn costs what it cost with no constraint at all.
+func (l *LazyMasker) Gate(generated []int) bool {
+	for ; l.scanned < len(generated); l.scanned++ {
+		l.fold(l.m.tokenBytes(generated[l.scanned]))
+	}
+	return l.armed
+}
+
 // Process is a decoder.SamplingParams.LogitProcessor.
 func (l *LazyMasker) Process(generated []int, logits []float32) {
 	for ; l.scanned < len(generated); l.scanned++ {
