@@ -7,6 +7,8 @@ import (
 	"os"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -48,9 +50,42 @@ type weightAlias struct {
 	nonAdjacent int   // fused groups whose members are in the mapping but not back to back (a pre-v13 layout, or a K=V layer's Q|K|K)
 }
 
-// newWeightAlias returns nil unless the opt-in is set AND the model is backed by a .giw mapping.
+// aliasDecision decides whether the opt-in GOINFER_METAL_ALIAS applies to a .giw of fileBytes on a host with
+// ram bytes of memory. mode is the env value: "1" opts in, "force" opts in regardless of size, anything else
+// is off. A mapping over half of RAM is DECLINED under "1": on gemma4-26b (a 15 GB file on a 16 GB Mac) the
+// aliased arm's memory collapsed at its first request 3 times out of 3 — the process paged out wholesale, swap
+// climbing until a watcher killed it — while the copy arm ran clean (docs/measurements/s6-alias-2026-09-24.md,
+// mechanism unknown). ram==0 (unreadable hw.memsize) means "unknown", and unknown does not decline.
+func aliasDecision(mode string, fileBytes int64, ram uint64) (on bool, why string) {
+	switch mode {
+	case "force":
+		return true, ""
+	case "1":
+		if ram > 0 && fileBytes > int64(ram/2) {
+			return false, fmt.Sprintf("the .giw is %.1f GB, over half of this machine's %.1f GB of RAM — on gemma4-26b the aliased arm's memory "+
+				"collapsed at its first request 3 of 3 times (docs/measurements/s6-alias-2026-09-24.md); GOINFER_METAL_ALIAS=force overrides",
+				float64(fileBytes)/(1<<30), float64(ram)/(1<<30))
+		}
+		return true, ""
+	}
+	return false, ""
+}
+
+// newWeightAlias returns nil unless the opt-in is set AND the model is backed by a .giw mapping AND the file
+// is not so large relative to RAM that aliasing is known to be unsafe (aliasDecision).
 func newWeightAlias(m *decoder.Model) *weightAlias {
-	if os.Getenv("GOINFER_METAL_ALIAS") != "1" || m == nil || m.GiwPath() == "" {
+	mode := os.Getenv("GOINFER_METAL_ALIAS")
+	if (mode != "1" && mode != "force") || m == nil || m.GiwPath() == "" {
+		return nil
+	}
+	var size int64
+	if st, err := os.Stat(m.GiwPath()); err == nil {
+		size = st.Size()
+	}
+	ram, _ := unix.SysctlUint64("hw.memsize")
+	on, why := aliasDecision(mode, size, ram)
+	if !on {
+		fmt.Fprintf(os.Stderr, "[metal] GOINFER_METAL_ALIAS=1 ignored (weights copied as before): %s\n", why)
 		return nil
 	}
 	return &weightAlias{m: m, page: os.Getpagesize()}

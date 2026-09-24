@@ -116,3 +116,40 @@ func TestWeightAlias_logitsByteIdentical(t *testing.T) {
 		}
 	}
 }
+
+// The opt-in must decline itself on a mapping that is a large fraction of RAM — the one configuration where
+// aliasing was measured to collapse the machine's memory (gemma4-26b, 3 of 3) — and must not decline the
+// configurations it was measured safe on. "force" overrides for research, and an unreadable RAM size is
+// "unknown", which does not decline.
+func TestAliasDecision(t *testing.T) {
+	const gb = int64(1) << 30
+	for _, tc := range []struct {
+		name  string
+		mode  string
+		file  int64
+		ram   uint64
+		want  bool
+		wantW bool // a reason is given
+	}{
+		{"off by default", "", 1 * gb, uint64(16 * gb), false, false},
+		{"explicitly off", "0", 1 * gb, uint64(16 * gb), false, false},
+		{"1.5B on a 16 GB Mac", "1", 1 * gb, uint64(16 * gb), true, false},
+		{"7B (5 GB) on a 16 GB Mac", "1", 5 * gb, uint64(16 * gb), true, false},
+		{"exactly half of RAM is allowed", "1", 8 * gb, uint64(16 * gb), true, false},
+		{"M26 (15 GB) on a 16 GB Mac is declined", "1", 15 * gb, uint64(16 * gb), false, true},
+		{"M35 (22 GB) on a 16 GB Mac is declined", "1", 22 * gb, uint64(16 * gb), false, true},
+		{"the same 15 GB on a 64 GB Mac is allowed", "1", 15 * gb, uint64(64 * gb), true, false},
+		{"force overrides the size check", "force", 15 * gb, uint64(16 * gb), true, false},
+		{"unreadable RAM is unknown, not a decline", "1", 15 * gb, 0, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			on, why := aliasDecision(tc.mode, tc.file, tc.ram)
+			if on != tc.want {
+				t.Errorf("aliasDecision(%q, %d, %d) on = %v, want %v", tc.mode, tc.file, tc.ram, on, tc.want)
+			}
+			if (why != "") != tc.wantW {
+				t.Errorf("reason %q (want a reason: %v)", why, tc.wantW)
+			}
+		})
+	}
+}

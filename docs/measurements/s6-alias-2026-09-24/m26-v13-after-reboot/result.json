@@ -1,0 +1,119 @@
+{
+ "label": "diag",
+ "mode": "",
+ "model": "/Users/francistownsend-merino/models/gemma4-26b-int4-v13.giw",
+ "cmd": [
+  "/tmp/goinfer-metal-serve-s6",
+  "-addr",
+  "127.0.0.1:18120",
+  "-model",
+  "/Users/francistownsend-merino/models/gemma4-26b-int4-v13.giw",
+  "-backend",
+  "metal",
+  "-ctx",
+  "512",
+  "-moe-cache-experts",
+  "-moe-cache-slots",
+  "8"
+ ],
+ "swap_baseline_mb": 613.75,
+ "started": "10:15:23",
+ "gomemlimit": "(server default)",
+ "footprints_during_load": [
+  {
+   "t_s": 6.1,
+   "swap_mb": 613.75,
+   "ps": {
+    "rss_kb": 3724096,
+    "faults": 263339,
+    "pageins": 135244
+   },
+   "footprint": {
+    "phys_footprint_mb": 1368.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 1218.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 137.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.046875,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 2246.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 1371.0,
+      "clean_mb": 2253.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  }
+ ],
+ "load_s": 10.4,
+ "decode_path": "metal-resident (int4)",
+ "footprint_after_load": {
+  "swap_mb": 613.75,
+  "ps": {
+   "rss_kb": 6712704,
+   "faults": 439199,
+   "pageins": 233081
+  },
+  "footprint": {
+   "phys_footprint_mb": 3255.0,
+   "categories": {
+    "IOAccelerator (graphics)": {
+     "dirty_mb": 1684.0,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 0.0
+    },
+    "untagged (VM_ALLOCATE)": {
+     "dirty_mb": 1553.0,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 125.0
+    },
+    "MALLOC_SMALL": {
+     "dirty_mb": 4.34375,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 0.0
+    },
+    "mapped file": {
+     "dirty_mb": 0.0,
+     "clean_mb": 3937.0,
+     "reclaimable_mb": 0.0
+    },
+    "TOTAL": {
+     "dirty_mb": 3255.0,
+     "clean_mb": 3945.0,
+     "reclaimable_mb": 125.0
+    }
+   }
+  }
+ },
+ "served_name": "gemma4-26b-int4-v13.giw",
+ "request_error": "RemoteDisconnected('Remote end closed connection without response')",
+ "tokens": 0,
+ "raw_head": [],
+ "text": "",
+ "prompt_words": 79,
+ "snapshots": {},
+ "server_exit_before_finish": -9,
+ "gc": {
+  "count": 11,
+  "last_cum_gc_cpu_pct": 0
+ },
+ "killed": "swap delta 758MB > 400MB at t+17s",
+ "ended_reason": "done",
+ "max_rss_gb": 6.4,
+ "max_swap_delta_mb": 0.0
+}

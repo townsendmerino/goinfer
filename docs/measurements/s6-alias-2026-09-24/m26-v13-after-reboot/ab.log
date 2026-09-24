@@ -1,0 +1,4 @@
+== alias1 (GOINFER_METAL_ALIAS=1) 10:13:26 swap=used = 0.00M
+exit=0 killwatch: 10:13:44 killwatch: single-tick swap jump +380.50MB > 320MB -- KILLING 3705
+KILLED — stopping the A/B
+ALLDONE 10:13:45

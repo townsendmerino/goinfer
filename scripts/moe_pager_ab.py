@@ -162,6 +162,10 @@ def main():
 
     def finish(reason=None):
         stop.set()
+        # A server that is already gone when the harness finishes died on its own (or was killed by
+        # something else): record HOW — returncode -9 is SIGKILL (jetsam or a watcher), -10/-11 a bus/segv
+        # fault, 134 an abort — which the request error alone ("RemoteDisconnected") never says.
+        result["server_exit_before_finish"] = proc.poll()
         if proc.poll() is None:
             proc.terminate()
             try:

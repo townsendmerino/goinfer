@@ -999,8 +999,8 @@ the Metal pager's command-buffer boundary (M-11, R11); Linux defaults.
 > Built: per-tensor no-copy buffers over page-aligned windows of the mapping (`metal/alias.go`), and a v13 `-target metal` layout
 > whose fused q‖k‖v / gate‖up nibbles are adjacent in the file (`docs/giw-bundles.md`) so the fused buffers alias too. On the 1.5B,
 > logits are byte-identical aliased vs copied on both layouts and the footprint after load falls 1,005 → 354 MB (IOAccelerator
-> 927 → 302). On M26 only ~0.7 GB is aliasable (its dense term is small) and the alias arm's first run was killed by the swap
-> rate rule — **unresolved, one unpaired event**; the depth-128/2048 bench, the memory-hog arm, M26 alias numbers and the parity
+> 927 → 302). On M26 only ~0.7 GB is aliasable (its dense term is small) and the alias arm **collapsed the machine's memory
+> at its first request, 3 attempts of 3** (the process is paged out wholesale; the copy arm never did) — **mechanism unknown, do not run it on M26/M35**; the depth-128/2048 bench, the memory-hog arm, M26 alias numbers and the parity
 > fixtures are NOT done, so nothing here ships. Of the brief's Build steps below, 2 (writer — nibbles only, scales still f32) and 3 (reader / Metal build) are partly
 > built; the f16-scale writer, 4 (expert slots) and 5 (banner) are not.
 >
