@@ -30,7 +30,12 @@
 > discovering `decoder/moepool_test.go` already covered refill byte-exactness, top-K self-eviction,
 > LRU order and cross-stream lock safety — see S5's own status note below. The registered rule's
 > real M35 `.giw` measurement, the darwin-default flip, and the dense pread ring (item 3) are
-> UNSTARTED — no M35-class checkpoint fits on this machine's free disk today). **S6 unstarted.**
+> UNSTARTED — no M35-class checkpoint fits on this machine's free disk today). **S6 Step 0
+> (measurement only) DONE 2026-09-23 for 1.5B/7B** (real `footprint` on real Metal loads: 75%/83%
+> of total physical footprint is the resident MTLBuffer weight copy S6 aims to eliminate, not KV/
+> scratch — confirms S0's code-only reading at real scale; see S6's own status note below and
+> `docs/measurements/metal-nocopy-2026-09-23.md`). **S6 Build steps 1-4 and the M26 cell of Step 0
+> unstarted** — same disk-space constraint as S5, plus R11(c)'s own incident history at that scale.
 > S2's one remaining family, gemma4, has a genuinely different obstacle (a
 > truly model-level fused PLE/MoE tail) the other five did not. **Correction to an earlier version of
 > this line**: S2 was never actually a
@@ -938,6 +943,33 @@ the Metal pager's command-buffer boundary (M-11, R11); Linux defaults.
 ---
 
 ### S6 · Metal aliases the mapping — `NewBufferNoCopy` over a metal-target `.giw` layout
+
+> **STEP 0 (measurement only) DONE 2026-09-23 for 1.5B/7B; Build steps 1-4 NOT STARTED.**
+> User-scoped this session to Step 0 alone, given this item's size (a new on-disk `.giw` tensor
+> kind, a transcode-time writer, and rewiring `metal/model.go`'s `int4Buf`/`int4Concat` to alias
+> live via `NewBufferNoCopy`) and risk (it touches the Metal decode path that ships today, and its
+> own Gates section requires byte-identical logits across every resident-parity fixture before it
+> can land at all) — see `docs/measurements/metal-nocopy-2026-09-23.md` for the full record.
+>
+> Real `footprint <pid>` captures on `--backend metal --quant int4` loads of `qwen2.5-coder-1.5b`
+> and `qwen2.5-7b` (both real checkpoints already on disk, no transcode needed for 7B — its metal
+> sidecar already existed): **75% (1.5B) and 83% (7B) of the process's total physical footprint is
+> the `IOAccelerator (graphics)` dirty term** — the resident MTLBuffer copy `int4Buf`/`int4Concat`
+> build today, not KV or scratch. The `.giw` sidecar's own mapping is already `mapped file` (clean,
+> file-backed, reclaimable for free) at both sizes — confirming what S6 removes is specifically the
+> SECOND copy (mapping → heap `[]uint32` → `StorageModeShared` MTLBuffer), not the mapping itself.
+> This directly confirms S0's own reading (which was code-only, never measured) at a real, if
+> smaller-than-M26, scale, and gives the registered ship-rule's "before" a real number to check
+> against once the writer/reader land.
+>
+> **Not measured: the M26 (N=8) cell the registered rule actually names.** No M26-class checkpoint
+> fits this machine's free disk (the identical constraint blocking S5's own real measurement), and
+> R11(c)'s three swap-spiral/kernel-panic incidents happened at exactly that scale — a scale this
+> session is not attempting without the external kill script the brief's own Step 0 calls for.
+> Decode-time footprint, the 6 GB memory-hog arm, and the depth-128/2048 tok/s bench are also
+> unmeasured (Step 0 is a post-load snapshot only). Build steps 1-4 (the writer, the reader wiring,
+> expert-slot handling, the banner) remain entirely unstarted — this session did not touch
+> `metal/model.go`, `decoder/serialize.go`, or the `.giw` format at all.
 
 **Goal.** Dense weights on Metal become file-backed views of the `.giw` mapping instead of
 MTLBuffer copies, so a Metal load's anonymous footprint is KV + expert slots + scratch and nothing
