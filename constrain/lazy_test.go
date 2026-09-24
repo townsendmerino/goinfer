@@ -150,3 +150,124 @@ func TestLazyMasker_gateMatchesProcess(t *testing.T) {
 		t.Errorf("arms=%d armed=%v after one complete call and prose; want 1, false", l.Arms(), l.Armed())
 	}
 }
+
+// llama3 (option c): no opener, so the anchored masker arms on the output beginning `{"name": "`.
+var llamaVocab = [][]byte{
+	[]byte("Sure"), []byte(" here"), []byte("{"), []byte(`"name"`), []byte(": "), []byte(`"`), []byte("read"),
+	[]byte("git_commit"), []byte(`", "parameters": {"x": "1"}}`), []byte("<|python_tag|>"), []byte(`{"answer": 42}`),
+	[]byte(`{"name": "init 5.1.2`), []byte(" "), []byte("\n"), []byte(`{"na`), []byte(`me": "`), nil,
+}
+
+const (
+	lSure, lHere, lBrace, lNameKey, lColon, lQuote, lRead, lGitCommit, lArgs, lPyTag, lJSONProse, lGarbageInOne, lSpace, lNL, lSplitA, lSplitB, lEOS = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+)
+
+func newLlamaLazy(t *testing.T) *LazyMasker {
+	t.Helper()
+	g, err := ToolCallsGrammar("", "", "parameters", false, unionTools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewCallKeyLazyMasker(NewMasker(g, llamaVocab, []int{lEOS}), "<|python_tag|>")
+}
+
+func llamaStep(l *LazyMasker, gen []int) (legal map[int]bool, masked bool) {
+	logits := make([]float32, len(llamaVocab))
+	l.Process(gen, logits)
+	legal = map[int]bool{}
+	for id, v := range logits {
+		if !math.IsInf(float64(v), -1) {
+			legal[id] = true
+		}
+	}
+	return legal, len(legal) != len(llamaVocab)
+}
+
+// Non-forcing: prose, a JSON answer that is not a named call, and prose-then-JSON never mask.
+func TestCallKeyLazyMasker_neverMasksNonCalls(t *testing.T) {
+	for name, gen := range map[string][]int{
+		"prose":              {lSure, lHere, lBrace, lNameKey, lColon, lQuote}, // the key appears, but not at the start
+		"json, other key":    {lJSONProse, lSpace, lBrace},
+		"leading ws + prose": {lSpace, lNL, lSure},
+	} {
+		t.Run(name, func(t *testing.T) {
+			l := newLlamaLazy(t)
+			for i := 1; i <= len(gen); i++ {
+				if _, masked := llamaStep(l, gen[:i]); masked {
+					t.Fatalf("masked after %v", gen[:i])
+				}
+			}
+			if l.Arms() != 0 {
+				t.Errorf("armed on %s", name)
+			}
+		})
+	}
+}
+
+// A named call object arms at the name, and the name is then constrained to supplied tools.
+func TestCallKeyLazyMasker_armsOnNameKey(t *testing.T) {
+	for name, gen := range map[string][]int{
+		"plain":        {lBrace, lNameKey, lColon, lQuote},
+		"leading ws":   {lNL, lSpace, lBrace, lNameKey, lColon, lQuote},
+		"python_tag":   {lPyTag, lBrace, lNameKey, lColon, lQuote},
+		"split tokens": {lSplitA, lSplitB},
+	} {
+		t.Run(name, func(t *testing.T) {
+			l := newLlamaLazy(t)
+			for i := 1; i < len(gen); i++ {
+				if _, masked := llamaStep(l, gen[:i]); masked {
+					t.Fatalf("masked before the name key was complete, after %v", gen[:i])
+				}
+			}
+			legal, masked := llamaStep(l, gen)
+			if !l.Armed() || !masked {
+				t.Fatalf("armed=%v masked=%v after the name key", l.Armed(), masked)
+			}
+			if !legal[lRead] || legal[lGitCommit] || legal[lEOS] {
+				t.Errorf("at the name: read=%v git_commit=%v eos=%v; want true,false,false", legal[lRead], legal[lGitCommit], legal[lEOS])
+			}
+		})
+	}
+	// completing the call disarms, and it never re-arms (one call per turn for this form)
+	l := newLlamaLazy(t)
+	gen := []int{lBrace, lNameKey, lColon, lQuote, lRead, lArgs}
+	if _, masked := llamaStep(l, gen); masked || l.Armed() {
+		t.Errorf("after a complete call: masked=%v armed=%v", masked, l.Armed())
+	}
+	gen = append(gen, lNL, lBrace, lNameKey, lColon, lQuote)
+	if _, masked := llamaStep(l, gen); masked || l.Arms() != 1 {
+		t.Errorf("re-armed on a second object: masked=%v arms=%d", masked, l.Arms())
+	}
+}
+
+// A token that carries the key AND a name no tool has fails open (it cannot be taken back).
+func TestCallKeyLazyMasker_failsOpenOnImpossibleName(t *testing.T) {
+	l := newLlamaLazy(t)
+	if _, masked := llamaStep(l, []int{lGarbageInOne}); masked || l.Armed() {
+		t.Errorf("masked=%v armed=%v on %q", masked, l.Armed(), llamaVocab[lGarbageInOne])
+	}
+}
+
+func TestMatchCallKey(t *testing.T) {
+	skip := []byte("<|python_tag|>")
+	for _, c := range []struct {
+		in    string
+		start int
+		st    anchor
+	}{
+		{`{"name": "`, 0, anchorArm},
+		{`  {"name":"`, 2, anchorArm},
+		{"<|python_tag|>{\"name\" : \"", 14, anchorArm},
+		{"<|pyth", 0, anchorMore},
+		{`{"na`, 0, anchorMore},
+		{`{"name": `, 0, anchorMore},
+		{`{"type":`, 0, anchorNever},
+		{`Sure`, 0, anchorNever},
+		{`[{"name": "`, 0, anchorNever},
+	} {
+		start, st := matchCallKey([]byte(c.in), skip)
+		if st != c.st || (st == anchorArm && start != c.start) {
+			t.Errorf("matchCallKey(%q) = %d,%v; want %d,%v", c.in, start, st, c.start, c.st)
+		}
+	}
+}

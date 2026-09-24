@@ -344,11 +344,19 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 		gr.masker = m
 		return
 	}
-	// T2, auto: arm on the opener. A family whose call has no opener (llama3's bare JSON) is
-	// left unconstrained under auto — nothing distinguishes the start of a call from prose that
-	// begins with '{' (the task's option b).
+	// T2, auto: arm on the opener. A family whose call has no opener (llama3's bare JSON) arms
+	// instead on the output beginning with a call object's name key — the task's option (c):
+	// nothing is masked before the model has written `{"name": "`, so a prose answer (or JSON
+	// with another first key) is never touched and there is nothing to back out of.
 	trigger := strings.TrimRight(prefix, " \t\r\n")
 	if trigger == "" {
+		g, err := constrain.ToolCallsGrammar("", suffix, argsKey, array, specs)
+		if err != nil {
+			return
+		}
+		lazy := constrain.NewCallKeyLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), "<|python_tag|>")
+		gr.sp.LogitProcessor = lazy.Process
+		gr.sp.LogitProcessorGate = lazy.Gate
 		return
 	}
 	g, err := constrain.ToolCallsGrammar(trigger, suffix, argsKey, array, specs)

@@ -170,9 +170,10 @@ supply, with any number of tools:
   naming a function that is not in `tools` is a 400;
 - `required` / `any` is constrained from the first token to a call to ONE of the supplied tools, with that tool's argument schema;
 - `auto` is constrained the same way from the moment the model writes its call opener, so it can still answer in prose — and a turn
-  that answers in prose decodes exactly as it would with no constraint (same speed, byte-identical output). llama3 has no opener, so
-  under `auto` its calls are parsed but not constrained; a server started with speculative decoding also leaves `auto` unconstrained,
-  to keep its drafter.
+  that answers in prose decodes exactly as it would with no constraint (same speed, byte-identical output). llama3 has no opener:
+  under `auto` its call is constrained when the reply BEGINS as one (`{"name": "`, optionally after `<|python_tag|>`); a call that
+  follows prose in the same reply is still only parsed. A server started with speculative decoding leaves `auto` unconstrained, to
+  keep its drafter.
 
 Families without a JSON call form (Gemma 4's own call syntax, and families with no tool template) are parsed only. This constrains the
 call's FORM, not the model's choice of tool. `GOINFER_TOOL_UNION=0` turns the multi-tool constraint off. Measured in

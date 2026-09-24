@@ -9,8 +9,8 @@
 > had was solved by `SamplingParams.LogitProcessorGate`, which keeps every on-device fast path until the opener. T6's gates:
 > [`tool-union-2026-09-24.md`](../measurements/tool-union-2026-09-24.md). T4: [`tool-call-coverage.md`](../tool-call-coverage.md),
 > which also found and fixed an unread `chat_template.jinja`. T7: `server.md`, `QUEUE.md`, both integration recipes,
-> `task-embed-and-harness-ux.md`, README. **Still open:** llama3 under `auto` (option c; T0 measured 5.7–6.5% unusable calls there);
-> the lazy union on speculative-decoding servers (they keep their drafter and skip the union under `auto`); the MoE cell of T0;
+> `task-embed-and-harness-ux.md`, README. llama3 under `auto`: option (c) built 2026-09-24 (arm when the reply begins `{"name": "`;
+> unusable 6.5% → 2.2%, 0 among armed calls). **Still open:** llama3 calls that follow prose in the same reply; the lazy union on speculative-decoding servers (they keep their drafter and skip the union under `auto`); the MoE cell of T0;
 > a second harness transcript. Everything below is the original scoping, kept as the record.
 >
 > **Original status: SCOPED 2026-09-15, unstarted. T0 is a measurement and gates the rest.**

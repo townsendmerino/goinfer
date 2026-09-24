@@ -14,7 +14,7 @@ into one of eight renderers, and the renderer decides tools:
 |---|---|---|---|---|
 | chatml, mellum2 | yes | `<tool_call>{…}</tool_call>` | constrained from token 1 | constrained from the opener |
 | mistral (v0.3) | yes | `[TOOL_CALLS] [{…}]` | constrained from token 1 | constrained from the opener |
-| llama3 | yes | bare `{…}` | constrained from token 1 | parsed only (no opener to arm on) |
+| llama3 | yes | bare `{…}` | constrained from token 1 | constrained when the reply begins `{"name": "`; a call after prose is parsed only |
 | gemma4 | yes | its own call syntax | parsed only | parsed only |
 | gemma3, harmony (gpt-oss), ministral | no | — | 400 on a named choice | — |
 | none recognised | no | — | raw completion | — |
@@ -41,7 +41,7 @@ pruned copies without their released template, the row says so instead of guessi
 | Qwen3.8 | qwen3.5-0.8b, qwen3.8-27b, Qwen3.8-27B GGUF | chatml | **constrained** | |
 | Nemotron-H | Nemotron-3-Nano-30B (bf16, GGUF) | chatml | **constrained** | Nemotron-Nano-9B-v2 (HF and Q8_0): not recognised → none |
 | Mellum2 | mellum2-unq | mellum2 | **constrained** | template is only in `chat_template.jinja`; resolved as generic chatml until finding 1 was fixed (same call form) |
-| Llama (3.x) | llama-3.2-1b-instruct Q4_K_M | llama3 | constrained under `required`; **parsed only under `auto`** | T0: 5.7–6.5% of auto calls unusable, unchanged |
+| Llama (3.x) | llama-3.2-1b-instruct Q4_K_M | llama3 | **constrained** under `required`; under `auto` **when the reply begins as a call** | option (c), 2026-09-24: of the calls that armed, 0 invented names / broken bodies / invalid arguments; unusable calls 12/185 → 4/185 overall, the rest are prose-then-JSON or a non-`name`-first shape |
 | Gemma 4 | E2B, 12B, 26B-A4B (HF and GGUF) | gemma4 | **parsed only** | bespoke call syntax, no JSON form |
 | Gemma 3 | gemma-3-4b-it, gemma3-1b | gemma3 | none | template has no tool form in goinfer |
 | gpt-oss | gpt-oss-20b (HF, MXFP4 GGUF), 120b partial | harmony | none | harmony has no tool support in goinfer |
@@ -63,7 +63,8 @@ pruned copies without their released template, the row says so instead of guessi
 
 **What can be claimed.** A tool call cannot be malformed or name an unsupplied tool on the **Qwen families** (Qwen2 through Qwen3.8,
 MoE and VL variants), **Nemotron-3-Nano**, **Mellum2** and **Granite 4.2**, under `required` and under `auto`; on **Llama 3.x** under
-`required`/named choice only. That is the scope any README or recipe line should use, and no wider.
+`required`/named choice, and under `auto` when the reply begins as a call. That is the scope any README or recipe line should use,
+and no wider.
 
 ## Findings
 

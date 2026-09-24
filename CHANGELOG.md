@@ -15,13 +15,17 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **llama3 tool calls are constrained under `auto` too, when the reply begins as a call.** llama3's call is bare JSON with no opener,
+  so the multi-tool union now arms when the output begins `{"name": "` (optionally after `<|python_tag|>`); nothing is masked before
+  that, so prose and other JSON are untouched (119/119 outputs byte-identical to `GOINFER_TOOL_UNION=0`). On Llama-3.2-1B: unusable
+  `auto` calls 12/185 → 4/185, invalid-argument calls 3 → 0; the remaining four are prose followed by JSON, which is still only parsed.
 - **Tool calls can no longer be malformed or name an unsupplied tool with 2+ tools (T1–T3; closes N-18), default on
   (`GOINFER_TOOL_UNION=0` opts out).** A union grammar over the supplied tools constrains `required` / Anthropic `any` from the first
   token and `auto` from the model's call opener (`<tool_call>` / `[TOOL_CALLS]`), each call in a turn independently. A new
   `SamplingParams.LogitProcessorGate` keeps every on-device fast path until the opener, so a prose `auto` turn is unchanged: 630/630
   outputs byte-identical to `=0` at greedy and T=0.7, decode 0.999–1.001× (an ungated first build cost 0.81–0.99× and was not shipped
   default-on). On the Qwen2.5-7B agent transcript: 14 unusable calls and 10 invalid-argument calls of 111 → 0 and 0. llama3 (no
-  opener) is not armed under `auto`; a server running speculative decoding keeps its drafter on `auto` turns. Form, not judgement.
+  opener) is armed differently — see the llama3 entry above; a server running speculative decoding keeps its drafter on `auto` turns. Form, not judgement.
   `docs/measurements/tool-union-2026-09-24.md`.
 - **linux: a `.gguf` now loads through its sidecar `.giw` by default, as on darwin (`-direct-load` / `GOINFER_GGUF_DIRECT=1`
   opts out).** Owner decision. Measured first: CPU decode 1.0007× / 1.0016× (1.5B / 7B, inside the do-nothing arm), CUDA

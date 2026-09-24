@@ -683,7 +683,7 @@ func TestConstrainToolUnion_wiring(t *testing.T) {
 		{"default: chatml auto → lazy", chatml, "auto", false, true, true, false},
 		{"default: chatml required → forced union", chatml, "required", false, true, true, true},
 		{"chatml no union mode → unconstrained", chatml, "", false, true, false, false},
-		{"llama3 auto → unconstrained (no opener)", llama, "auto", false, true, false, false},
+		{"llama3 auto → lazy, anchored on the name key (option c)", llama, "auto", false, true, true, false},
 		{"llama3 required → forced union", llama, "required", false, true, true, true},
 		{"GOINFER_TOOL_UNION=0 → unconstrained (auto)", chatml, "auto", true, false, false, false},
 		{"GOINFER_TOOL_UNION=0 → unconstrained (required)", chatml, "required", true, false, false, false},

@@ -28,6 +28,70 @@ type LazyMasker struct {
 	window   []byte // unarmed output not yet ruled out as the start of a trigger
 	armed    bool
 	arms     int // how many times it armed (a call started)
+
+	// Anchored mode (NewCallKeyLazyMasker): instead of a literal opener, arm when the OUTPUT ITSELF
+	// begins as a named call object. head holds the output until that is decided; decided stops the
+	// scan for good (armed once, or ruled out).
+	anchored bool
+	skip     []byte
+	head     []byte
+	decided  bool
+}
+
+// NewCallKeyLazyMasker is the lazy masker for a family whose call has NO opener (llama3: the call is a
+// bare JSON object — task option c). It arms only when the output begins, after whitespace and an
+// optional skip marker (llama3's "<|python_tag|>"), with `{` + `"name"` + `:` + `"` (JSON whitespace
+// allowed between them): by then the model has written the name key of a call object, the same
+// commitment an opener signals. The grammar is fed from the `{`, so build it with an EMPTY prefix.
+// An output that begins any other way is never masked at all, so there is nothing to back out of.
+// It arms at most once per generation.
+func NewCallKeyLazyMasker(m *Masker, skip string) *LazyMasker {
+	return &LazyMasker{m: m, anchored: true, skip: []byte(skip)}
+}
+
+type anchor int
+
+const (
+	anchorMore  anchor = iota // not enough output to decide
+	anchorArm                 // arm, feeding the grammar from the returned index
+	anchorNever               // this output is not a named call object; never arm
+)
+
+// matchCallKey decides whether out begins as `{"name": "` after whitespace and an optional skip marker.
+func matchCallKey(out, skip []byte) (int, anchor) {
+	isWS := func(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
+	i := 0
+	for i < len(out) && isWS(out[i]) {
+		i++
+	}
+	if len(skip) > 0 {
+		rest := out[i:]
+		switch {
+		case bytes.HasPrefix(rest, skip):
+			i += len(skip)
+			for i < len(out) && isWS(out[i]) {
+				i++
+			}
+		case len(rest) < len(skip) && bytes.HasPrefix(skip, rest):
+			return 0, anchorMore
+		}
+	}
+	start := i
+	for _, lit := range []string{"{", `"name"`, ":", `"`} {
+		for i < len(out) && isWS(out[i]) && lit != "{" {
+			i++
+		}
+		for k := 0; k < len(lit); k++ {
+			if i >= len(out) {
+				return 0, anchorMore
+			}
+			if out[i] != lit[k] {
+				return 0, anchorNever
+			}
+			i++
+		}
+	}
+	return start, anchorArm
 }
 
 // NewLazyMasker wraps m (whose grammar begins with a trigger's bytes) to arm on any of triggers.
@@ -82,6 +146,10 @@ func (l *LazyMasker) fold(b []byte) {
 		}
 		return
 	}
+	if l.anchored {
+		l.foldAnchored(b)
+		return
+	}
 	l.window = append(l.window, b...)
 	for {
 		i, ok := l.firstTrigger()
@@ -104,6 +172,34 @@ func (l *LazyMasker) fold(b []byte) {
 	// Keep only a tail that could still begin a trigger split across tokens.
 	if keep := l.maxTrig - 1; len(l.window) > keep {
 		l.window = append(l.window[:0], l.window[len(l.window)-keep:]...)
+	}
+}
+
+func (l *LazyMasker) foldAnchored(b []byte) {
+	if l.decided {
+		return
+	}
+	l.head = append(l.head, b...)
+	start, st := matchCallKey(l.head, l.skip)
+	switch st {
+	case anchorMore:
+		return
+	case anchorNever:
+		l.decided, l.head = true, nil
+		return
+	}
+	l.decided = true
+	pending := l.head[start:]
+	l.head = nil
+	l.m.g.Reset()
+	if !l.m.g.TryBytes(pending) {
+		return // fail open: the bytes after the key cannot be a call to a supplied tool's grammar prefix
+	}
+	l.m.g.Commit(pending)
+	l.armed = true
+	l.arms++
+	if l.m.g.CanEnd() {
+		l.disarm()
 	}
 }
 

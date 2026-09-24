@@ -124,3 +124,36 @@ union speculation-compatible is open.
 
 **Not established.** No MoE, one transcript, CUDA only. The union's cost INSIDE a call (full-logits steps for the tokens of
 the call itself) is not separated out; it is included in gate C's run but was not timed.
+
+## llama3 under `auto` (the task's option c) — pre-registration, written BEFORE the code
+
+llama3's call is bare JSON with no opener, so it was left unarmed under `auto` (option b) and T0 measured 5.7–6.5% of its attempted
+calls unusable (garbage names, broken bodies). Option (c): arm on the call itself.
+
+**Design, decided now.** Arm only when the output BEGINS — after leading whitespace and an optional `<|python_tag|>` — with the key
+prefix `{"name": "` (whitespace per JSON allowed). From the `{` on, the union grammar (llama3 wrapper: no prefix/suffix, `parameters`)
+constrains the rest of the call; it disarms when the object closes. An output that begins any other way never arms, so nothing is
+ever masked and there is nothing to back out of — the exactness the task asked for comes from never masking before the model has
+written the name key. Consequence, stated: a prose answer that literally begins `{"name": "` is treated as a call; so does the parser.
+Not covered by construction: call shapes whose first key is not `name` (T0 saw `{"function": {…}, "type": "function"}`) — those stay
+as today.
+
+**Gates.**
+- **L-A — non-forcing (hard).** llama3-1B, T0 transcript, 10 greedy + 300 at T=0.7: every output that does not begin with the key
+  prefix must be byte-identical between default and `GOINFER_TOOL_UNION=0`.
+- **L-C — what it removes (hard).** Same cell, union on: among calls that ARMED, `unknown_name` = 0, `unparsed` = 0 (length stops
+  reported separately), `args_invalid` = 0. Reported, not gated: the overall rate including unarmed shapes, against T0's 12/185.
+- **L-B — cost.** Not re-measured: the arming path is the same gated LazyMasker whose prose cost gate B′ measured at 0.999–1.001×;
+  the anchored matcher adds a prefix check on the first few bytes only. Stated as an inference, not a measurement.
+
+### llama3 option (c) — results
+
+Build: the commit that adds `constrain.NewCallKeyLazyMasker` and its wiring; llama3-1B int4 Q4_K_M, CUDA, same T0 transcript and seeds,
+default vs `GOINFER_TOOL_UNION=0`, 10 greedy + 300 at T=0.7. Raw data: [`tool-union-2026-09-24/llama3-option-c/`](tool-union-2026-09-24/llama3-option-c/).
+
+- **L-A — PASS.** Every output whose unconstrained version does not begin as a named call: **119/119** byte-identical between the arms.
+- **L-C — PASS.** Calls that armed: **188** parsed, **0** unknown name, **0** unparsed, **0** invalid arguments.
+- Reported: T=0.7 classes, `=0` → default: parsed 173 → 181, unknown name 9 → 3, unparsed 2 → 0, truncated 1 → 1, invalid arguments
+  3 → 0, prose 115 → 115; unusable calls **12/185 (6.5%) → 4/185 (2.2%)**. The 4 left are the shapes the design excludes: three
+  replies that are prose followed by JSON with an invented name (the llama3 parser takes the first `{` anywhere; arming is anchored to
+  the start of the reply), and one `{"function": {…}, "type": "function"}` echo that hit the length limit.
