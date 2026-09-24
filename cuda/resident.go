@@ -627,10 +627,10 @@ type cudaResident struct {
 	skVsumPartial, skVsumCombine                 Pipeline // flash-decode V-sum SPIKE (opt-in, NOT bit-identical) — scoping-decode-tree-recanon.md §6
 	skPartialBuf                                 Buffer   // [nH·maxHd·nSplit] partial folds for the spike
 	skVsumSplit                                  int      // GOINFER_SPLITKV_VSUM_SPLIT; 0 = off (the shipped path)
-	// Flash-decode lane (decode_fa.cu, R6): opt-in via GOINFER_CUDA_FLASH_DECODE=S, NOT bit-identical.
+	// Flash-decode lane (decode_fa.cu, R6): DEFAULT ON since 2026-09-23 (GOINFER_CUDA_FLASH_DECODE=0 turns it off), NOT bit-identical.
 	faPartial     [3]Pipeline // fa_partial_{64,128,256}
 	faCombine     Pipeline
-	faSplit       int            // S key splits per kv head; 0 = lane off (the shipped path)
+	faSplit       int            // S key splits per kv head; 0 = lane off (the exact path)
 	faMinKeys     int            // attended-span floor below which the exact path runs (GOINFER_CUDA_FLASH_DECODE_MIN_KEYS)
 	faBuf         Buffer         // partials [nH][S*8][hd+4]
 	faLaunches    int            // launches of fa_partial, so a test can prove the lane ran
@@ -3612,7 +3612,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 					map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
 			}
 			if r.faSplit > 0 && r.faExactScope.Load() == 0 && nWin >= r.faMinKeys && r.faEligible(l) {
-				// Opt-in flash-decode lane (GOINFER_CUDA_FLASH_DECODE, R6): NOT bit-identical, fidelity-gated.
+				// Flash-decode lane (default ON, GOINFER_CUDA_FLASH_DECODE=0 to disable; R6): NOT bit-identical, fidelity-gated.
 				// Checked first because it replaces the exact path's three launches outright when eligible.
 				if err := r.flashDecodeAttn(l, pos); err != nil {
 					return err

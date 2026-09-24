@@ -40,6 +40,8 @@ def run_arm(model, chars, arm, ntok, reps):
     env = dict(os.environ)
     for k in ("GOINFER_CUDA_FLASH_DECODE", "GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "GOINFER_CUDA_FLASH_DECODE_VERIFY"):
         env.pop(k, None)
+    # Default ON since 2026-09-23: the "exact" arms (A, AA, P0) must say so explicitly, or they would run the lane too.
+    env["GOINFER_CUDA_FLASH_DECODE"] = "0"
     aenv, extra = ARMS[arm]
     env.update(aenv)
     ctx = 8192

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -24,11 +25,44 @@ const faMaxRows = 16
 // gemma3-1b lose 3-9% up to 1024 keys and win from 2048, so 2048 is the lowest floor with no measured regression.
 const flashDecodeDefaultMinKeys = 2048
 
-// loadFlashDecode wires the opt-in flash-decode lane when GOINFER_CUDA_FLASH_DECODE=S (S >= 1) is set. A stock
-// binary loads nothing and allocates nothing. Any failure leaves the lane OFF (faSplit 0), never half-on.
+// flashDecodeDefaultSplit is S, the key-split count per kv head, when GOINFER_CUDA_FLASH_DECODE is unset. 16 is the S the
+// fidelity gate was pre-registered and passed at (docs/measurements/attn-decode-fa-fidelity-2026-09-20.md).
+const flashDecodeDefaultSplit = 16
+
+// flashDecodeSplit resolves GOINFER_CUDA_FLASH_DECODE to S. DEFAULT ON since 2026-09-23 (owner decision, R6): unset means
+// flashDecodeDefaultSplit; "0", "off" and "false" turn the lane off (the exact attention path, bit-identical to what shipped
+// before the lane existed); a positive integer picks S; anything else that is not a positive integer is also off, as it always
+// was — a typo must not silently enable a non-exact path at some other S.
+func flashDecodeSplit() int {
+	v, set := os.LookupEnv("GOINFER_CUDA_FLASH_DECODE")
+	if !set || v == "" {
+		return flashDecodeDefaultSplit
+	}
+	switch strings.ToLower(v) {
+	case "off", "false":
+		return 0
+	}
+	if s, err := strconv.Atoi(v); err == nil && s >= 1 {
+		return s
+	}
+	return 0
+}
+
+// loadFlashDecode wires the flash-decode lane. Default ON (flashDecodeSplit); GOINFER_CUDA_FLASH_DECODE=0 keeps the exact
+// path. It only ever acts once a layer's attended span reaches faMinKeys (2048 by default), so shallower decode is untouched.
+// Any failure leaves the lane OFF (faSplit 0), never half-on.
+//
+// The DEFAULT does not reach a C′ expert-cache model (cacheExperts): those configurations are sized to the byte from free
+// VRAM (the 26B's 10-slot cache, docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md), and the lane's
+// partial buffer (faMaxRows*nH*S*faWarps*(hd+4) f32 — ~34 MB at the 26B's geometry, the same order as a cache slot) would
+// come out of that budget, and none of the lane's fidelity evidence covers a MoE. Setting the variable explicitly still turns
+// it on there, exactly as before.
 func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
-	s, err := strconv.Atoi(os.Getenv("GOINFER_CUDA_FLASH_DECODE"))
-	if err != nil || s < 1 {
+	s := flashDecodeSplit()
+	if _, explicit := os.LookupEnv("GOINFER_CUDA_FLASH_DECODE"); !explicit && r.cacheExperts {
+		return
+	}
+	if s < 1 {
 		return
 	}
 	maxHd := 0
@@ -38,23 +72,23 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 		}
 	}
 	if maxHd <= 0 {
-		fmt.Fprintf(os.Stderr, "[cuda] GOINFER_CUDA_FLASH_DECODE ignored: no positive head dim\n")
+		fmt.Fprintf(os.Stderr, "[cuda] flash-decode lane unavailable (exact decode attention used): no positive head dim\n")
 		return
 	}
 	mod, e := r.dev.CompileLibrary(decodeFAPTX)
 	if e != nil {
-		fmt.Fprintf(os.Stderr, "[cuda] GOINFER_CUDA_FLASH_DECODE ignored: %v\n", e)
+		fmt.Fprintf(os.Stderr, "[cuda] flash-decode lane unavailable (exact decode attention used): %v\n", e)
 		return
 	}
 	var pipes [3]Pipeline
 	for i, name := range []string{"fa_partial_64", "fa_partial_128", "fa_partial_256"} {
 		if pipes[i], e = r.dev.NewComputePipeline(mod, name); e != nil {
-			fmt.Fprintf(os.Stderr, "[cuda] GOINFER_CUDA_FLASH_DECODE ignored: %v\n", e)
+			fmt.Fprintf(os.Stderr, "[cuda] flash-decode lane unavailable (exact decode attention used): %v\n", e)
 			return
 		}
 	}
 	if r.faCombine, e = r.dev.NewComputePipeline(mod, "fa_combine"); e != nil {
-		fmt.Fprintf(os.Stderr, "[cuda] GOINFER_CUDA_FLASH_DECODE ignored: %v\n", e)
+		fmt.Fprintf(os.Stderr, "[cuda] flash-decode lane unavailable (exact decode attention used): %v\n", e)
 		return
 	}
 	r.faPartial = pipes

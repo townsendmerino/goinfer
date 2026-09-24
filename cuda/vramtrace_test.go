@@ -30,6 +30,14 @@ import (
 //
 // Off unless GOINFER_VRAM_TRACE=1, so no ordinary run pays the context or the polling.
 func TestMain(m *testing.M) {
+	// The flash-decode lane is DEFAULT ON since 2026-09-23 (R6). It is checked before split-KV in the decode dispatch and is not
+	// bit-identical to the exact path, so a test that loads a resident with the variable unset would silently exercise the lane
+	// at >= 2048 keys — and a split-KV or exact-path comparison would compare the lane against itself. Pin it OFF for the suite;
+	// the flash-decode tests set the variable themselves (t.Setenv overrides this), and a test of the DEFAULT must unset it
+	// explicitly (see flash_decode_default_test.go's unsetenv).
+	if _, set := os.LookupEnv("GOINFER_CUDA_FLASH_DECODE"); !set {
+		os.Setenv("GOINFER_CUDA_FLASH_DECODE", "0")
+	}
 	stop := func() {}
 	if os.Getenv("GOINFER_VRAM_TRACE") != "" {
 		stop = startVRAMTrace()

@@ -88,6 +88,9 @@ MODES = {
     # The lane at its SHIPPED default floor (GOINFER_CUDA_FLASH_DECODE=16 only): below the floor both arms run the
     # exact path, so ~1.000 there is the PASS (no shallow regression), and the win must survive above it.
     "flash-gate": {"on": {"GOINFER_CUDA_FLASH_DECODE": "16"}, "off": {}},
+    # What a user gets with NO configuration since the lane became default ON (2026-09-23): the variable genuinely UNSET (None = pop it)
+    # against =0. ~1.000 below the 2048-key floor and on geometries the lane declines is the PASS; the win must appear above it.
+    "flash-default": {"on": {"GOINFER_CUDA_FLASH_DECODE": None}, "off": {"GOINFER_CUDA_FLASH_DECODE": "0"}},
     # A/A floor for the flash arm: BOTH arms the exact path, through the same fresh-serve-per-arm path.
     "aa-flash": {"on": {}, "off": {}},
 }
@@ -102,9 +105,16 @@ def run_arm(path, prompt, arm_env, backend, quant):
     # Clear both knobs first: inheriting one from the caller would silently redefine the arm.
     env.pop("GOINFER_SPLITKV_ATTN", None)
     env.pop("GOINFER_SPLITKV_MIN_KEYS", None)
-    env.pop("GOINFER_CUDA_FLASH_DECODE", None)
     env.pop("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", None)
-    env.update(arm_env)
+    # The flash-decode lane is DEFAULT ON since 2026-09-23 and is checked BEFORE split-KV in the decode dispatch, so an arm that
+    # says nothing about it would run the lane at >= 2048 keys and every split-KV arm below would measure the lane instead. Every arm
+    # is the exact path unless it opts in ("16" in the flash arms overrides this via arm_env).
+    env["GOINFER_CUDA_FLASH_DECODE"] = "0"
+    for k, v in arm_env.items():
+        if v is None:
+            env.pop(k, None)   # genuinely unset: the default is what is being measured
+        else:
+            env[k] = v
     proc = subprocess.Popen(
         [bp.SERVE[backend], "-model", f"bench={path}", "-backend", backend,
          "-addr", f"127.0.0.1:{bp.GPORT}", "-quant", quant],
@@ -220,6 +230,7 @@ def main():
                        "cells": cells}, open(args.out, "w"), indent=1, sort_keys=True)
 
     label = ("split-KV forced on / off" if args.mode == "force" else "flash-decode lane (S=16) on / off, forced at every depth" if args.mode == "flash" else "A/A floor: both arms the exact path" if args.mode == "aa-flash"
+             else "the shipped DEFAULT (variable unset) / =0 — ~1.000 below the floor is the PASS" if args.mode == "flash-default"
              else "shipped gate / off — ~1.000 is the PASS, not a null result")
     print(f"\n# ratios ({label})  [{(time.time()-t0)/60:.1f} min]")
     hdr = "| geometry | " + " | ".join(str(d) for d in depths) + " |"

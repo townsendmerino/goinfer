@@ -15,6 +15,21 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **CUDA flash-decode attention lane (R6) is now DEFAULT ON (`GOINFER_CUDA_FLASH_DECODE=0` opts out).** Owner decision,
+  2026-09-23. It replaces decode attention's three-launch exact path with a key-split online-softmax kernel once the attended
+  span reaches 2048 keys (`GOINFER_CUDA_FLASH_DECODE_MIN_KEYS`), so anything shallower — every short chat turn — is untouched, and
+  unsupported geometries (head dim outside 64/128/256, GQA > 8, attention sinks, phi3-mini's 96) stay on the exact path. **It is
+  not bit-identical to the exact path**, so decode output at depth can differ from earlier releases in the last bits and, on a
+  near-tie, in the token; it passed its pre-registered fidelity gate on held-out prompts (D7 KL 0.986×, S 1.02×,
+  `docs/measurements/attn-decode-fa-fidelity-2026-09-20.md`), which is evidence for Qwen2.5 dense only — other families ride on
+  that gate plus the geometry rules above, and the residual unexplained D7 prompt is recorded there. Served, greedy, paired: 1.5B at
+  3900 124.7 → 194.1 tok/s, qwen2.5-7b at 8000 39.6 → 61.1, both inside R6's registered ships band (≥170 / ≥50).
+  Speculative decoding works with it on (verify runs on a multi-row lane bit-identical to the single-row lane). Default-vs-`=0`
+  served A/B at 3900 keys: 1.5B 1.609×, gemma3-1b 1.022×, phi3-mini 1.001× (declines, head dim 96); 1.002× at 128 keys (lane not entered)
+  — `docs/measurements/attn-decode-fa-default-2026-09-23.md`.
+  **C′ expert-cache MoE models are excluded from the default** (their VRAM budget is sized to the byte and the lane's partial buffer,
+  ~34 MB at the 26B's geometry, would come out of it); setting the variable explicitly still turns it on there. Both `serve` and the
+  library load path pick this up; nothing else changed.
 - **CUDA C′: expert-stack DMA source pinned in place, DEFAULT ON (`GOINFER_MOE_PIN_REGISTER=0` opts out).**
   The C′ expert-stack staging buffer used to allocate pinned host memory first and copy into it —
   `cuMemAllocHost` has to find that many bytes of lockable physical RAM right then, which on a box with a

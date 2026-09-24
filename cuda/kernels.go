@@ -134,7 +134,7 @@ var topkPTX []byte
 //go:embed testdata/gumbel.ptx
 var gumbelPTX []byte
 
-// decodeFAPTX: fa_partial_{64,128,256} / fa_combine — the opt-in flash-decode lane (R6, GOINFER_CUDA_FLASH_DECODE).
+// decodeFAPTX: fa_partial_{64,128,256} / fa_combine — the flash-decode lane (R6, default ON since 2026-09-23; GOINFER_CUDA_FLASH_DECODE=0 turns it off).
 // Its own module, loaded only when the lane is requested. Built at the ambient NVRTC (12.9.86). See cuda/decode_fa.cu.
 //
 //go:embed testdata/decode_fa.ptx
