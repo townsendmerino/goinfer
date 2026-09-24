@@ -110,21 +110,23 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 		werr = cerr
 	}
 	if werr != nil {
-		_ = os.Remove(tmp)
+		removeTempGIW(tmp)
 		return fmt.Errorf("write bundle: %w", werr)
 	}
 
-	// 3) Verify the bundle round-trips through the real (mmap) load path — cheap
-	// (lazy faults), confirms the streamed weights deserialize. On the TEMP file, so a
+	// 3) Verify the bundle round-trips through the real (mmap) load path — low RAM (file-backed
+	// pages) but a full read of the file for its CRC, which is what makes it a real integrity
+	// check and records the verified-marker carryVerifiedMarker carries over. On the TEMP file, so a
 	// bundle that fails it never becomes the sidecar even for an instant.
 	if err := selfCheck(tmp); err != nil {
-		_ = os.Remove(tmp)
+		removeTempGIW(tmp)
 		return fmt.Errorf("self-check: %w", err)
 	}
 	if err := os.Rename(tmp, out); err != nil {
-		_ = os.Remove(tmp)
+		removeTempGIW(tmp)
 		return fmt.Errorf("publish %s: %w", out, err)
 	}
+	carryVerifiedMarker(tmp, out)
 	return nil
 }
 
@@ -177,17 +179,18 @@ func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool, t
 		werr = cerr
 	}
 	if werr != nil {
-		_ = os.Remove(tmp)
+		removeTempGIW(tmp)
 		return fmt.Errorf("write bundle: %w", werr)
 	}
 	if err := selfCheck(tmp); err != nil {
-		_ = os.Remove(tmp)
+		removeTempGIW(tmp)
 		return fmt.Errorf("self-check: %w", err)
 	}
 	if err := os.Rename(tmp, out); err != nil {
-		_ = os.Remove(tmp)
+		removeTempGIW(tmp)
 		return fmt.Errorf("publish %s: %w", out, err)
 	}
+	carryVerifiedMarker(tmp, out)
 	return nil
 }
 
@@ -283,9 +286,11 @@ func streamCachePath(ggufPath, quant string, target decoder.GIWTarget) string {
 // is "fresh" by mtime, passes validateShapes, and panics at the first forward.
 //
 // So freshness ends with the question that actually matters — does it load? — using the same
-// mmap probe selfCheck uses, which is lazy and cheap (it faults pages it never reads). A
-// bundle that does not load is not fresh, and the caller rebuilds it instead of failing at
-// boot with an error that names the .giw rather than the cause.
+// mmap load selfCheck uses. That load runs the bundle's whole-payload CRC, which reads every byte
+// of the file; it used to be described here as lazy and cheap, and was not. It is now done once
+// per (size, mtime) (decoder/giwverify.go), so this check costs a full pass only the first time a
+// sidecar is seen. A bundle that does not load is not fresh, and the caller rebuilds it instead of
+// failing at boot with an error that names the .giw rather than the cause.
 func cacheFresh(cache, src string) bool {
 	if !cacheNewer(cache, src) {
 		return false
@@ -314,8 +319,9 @@ func quantLabel(q string) string {
 	return q
 }
 
-// selfCheck verifies a freshly written bundle loads through the real mmap path
-// (lazy, low RAM) — the streamed weights deserialize.
+// selfCheck verifies a freshly written bundle loads through the real mmap path — the streamed
+// weights deserialize, and the whole-payload CRC passes (a full read of the file; the pass is
+// recorded so it is not repeated for an unchanged file — decoder/giwverify.go).
 //
 // Backend:"cpu", not Options{} (found writing L2, docs/tasks/task-int4-layout-2026-09.md):
 // an EMPTY Backend means "needs canonical" (wantsCanonicalInt4's own literal-"cpu"-
@@ -331,6 +337,24 @@ func selfCheck(path string) error {
 		return err
 	}
 	return m.Close()
+}
+
+// removeTempGIW deletes a temp bundle and the verified-marker its self-check may have written.
+func removeTempGIW(tmp string) {
+	_ = os.Remove(tmp)
+	_ = os.Remove(decoder.GIWVerifiedMarkerPath(tmp))
+}
+
+// carryVerifiedMarker moves a temp bundle's verified-marker to the bundle's final name, after the
+// caller has os.Renamed tmp onto out (the rename stays at the call site because
+// TestTranscode_writesViaTempThenRenames asserts it structurally). selfCheck ran the full CRC on
+// tmp and recorded (size, mtime); a rename preserves both, so the marker is still true of out —
+// moving it means the first real load of a fresh sidecar does not read the whole file a second
+// time. Best-effort: a marker that fails to move only costs one pass, and none is left behind.
+func carryVerifiedMarker(tmp, out string) {
+	if err := os.Rename(decoder.GIWVerifiedMarkerPath(tmp), decoder.GIWVerifiedMarkerPath(out)); err != nil {
+		_ = os.Remove(decoder.GIWVerifiedMarkerPath(tmp))
+	}
 }
 
 // readHead reads up to capBytes from the front of path (a GGUF's metadata + tensor

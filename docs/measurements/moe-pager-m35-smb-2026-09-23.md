@@ -56,11 +56,21 @@ Raw logs: `moe-pager-m35-smb-2026-09-23-{mmap,pool}-{load,killwatch}.log`.
 
 ## Two findings from the run
 
-1. **The load reads the whole file.** 27–28 min at ~10 MB/s ≈ the full 22 GB, even though
-   `-stream-weights` is meant to page lazily. Something in the `.giw` load path touches every byte
-   up front (candidate: full-blob validation/checksum in `giw.Read`/`LoadSerializedWeights`, or
-   the tokenizer/metadata split). On local NVMe this is invisible; on any slow read path it is the
-   entire load time, and it defeats the point of a lazy pager. Not investigated.
+1. **The load reads the whole file — RESOLVED same day.** Cause: `LoadSerializedWeights` computes a
+   CRC-32 over the entire payload on every load (`decoder/serialize.go`), which reads every byte of
+   the mapping. On a 5.17 GB local `.giw` a warm CRC-only pass took 928 ms against 895 ms for the
+   complete `LoadSerializedWeights` — the CRC was ~100% of it; the header parse (`giw.Read`) and the
+   rest are noise. The sidecar path paid it TWICE per start (`cacheFresh` → `selfCheck` is a full
+   `decoder.Load`, then the real load), and its comment calling that probe "lazy and cheap" had been
+   false since the CRC went in. Fix: the CRC is a property of the file, so it now runs once per
+   (size, mtime) — a `<file>.giw.verified` marker (`decoder/giwverify.go`), moved with the file when
+   prequant renames a temp bundle into place, forced back on with `GOINFER_GIW_VERIFY=always`.
+   Measured after, real 7B `.giw`, local SSD, warm: first load 13.6 s (cold copy, CRC runs, marker
+   written) → later loads **0.35 s** vs 2.1 s with `always`. On this 10 MB/s link the difference is
+   the whole file. Trade-off, stated: silent bit-rot inside an unchanged-size, unchanged-mtime file
+   is no longer re-detected on every start (truncation still is — the header records lengths).
+   The M35 load over SMB was NOT re-run after the fix; its first load would still pay the one CRC
+   pass, and the marker cannot be written to a read-only mount.
 2. **`-moe-pager` overrides an exported `GOINFER_MOE_PREAD_CPU`.** `applyMoEPagerEnv` sets the env var
    explicitly from the flag (default `mmap`), by design, so the first attempt here ran mmap mode
    despite `GOINFER_MOE_PREAD_CPU=1` in the environment. Caught from the banner, not assumed.

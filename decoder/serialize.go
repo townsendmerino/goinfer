@@ -333,6 +333,13 @@ func (wr *giwWriter) writeHeadGlobals(w *Weights, id string) error {
 // (it distinguishes a corrupt bundle from an I/O failure); the fallback it promised was never
 // built.
 func LoadSerializedWeights(data []byte) (*Weights, error) {
+	return loadSerializedWeights(data, false)
+}
+
+// loadSerializedWeights is LoadSerializedWeights with the whole-payload CRC optionally skipped —
+// only for a caller that already holds proof THIS file passed it (see giwverify.go). Everything
+// else (magic, version, header, bounds, arch, per-tensor validation) still runs.
+func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, error) {
 	r := &giwReader{data: data}
 	if got := r.rawN(len(giwMagic)); string(got) != giwMagic {
 		return nil, &SerializeError{fmt.Sprintf("bad magic %q (want %q)", got, giwMagic)}
@@ -360,9 +367,11 @@ func LoadSerializedWeights(data []byte) (*Weights, error) {
 	if len(data) < 4 {
 		return nil, &SerializeError{"too short"}
 	}
-	body, want := data[:len(data)-4], binary.LittleEndian.Uint32(data[len(data)-4:])
-	if got := crc32.ChecksumIEEE(body); got != want {
-		return nil, &SerializeError{fmt.Sprintf("CRC mismatch (got %08x want %08x) — corrupt or truncated", got, want)}
+	if !crcAlreadyVerified {
+		body, want := data[:len(data)-4], binary.LittleEndian.Uint32(data[len(data)-4:])
+		if got := crc32.ChecksumIEEE(body); got != want {
+			return nil, &SerializeError{fmt.Sprintf("CRC mismatch (got %08x want %08x) — corrupt or truncated", got, want)}
+		}
 	}
 
 	var cfg Config

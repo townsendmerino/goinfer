@@ -388,11 +388,20 @@ func Load(dir string, opts Options) (m *Model, err error) {
 			closeBackend(be)
 			return nil, fmt.Errorf("decoder: parse .giw bundle: %w", gerr)
 		}
-		w, lerr := LoadSerializedWeights(weightsBlob)
+		// The trailing CRC reads every byte of the mapping, which is the whole load time of a large
+		// streamed .giw (27-28 min for a 22 GB file over a slow link). It is a property of the file,
+		// so check it once per (size, mtime) and skip it on later loads — see giwverify.go. The stat
+		// is taken BEFORE the load so a file replaced mid-load cannot inherit the marker.
+		gfi, statErr := os.Stat(dir)
+		crcDone := statErr == nil && giwVerified(dir, gfi)
+		w, lerr := loadSerializedWeights(weightsBlob, crcDone)
 		if lerr != nil {
 			_ = mmap.Unmap(data)
 			closeBackend(be)
 			return nil, lerr
+		}
+		if statErr == nil && !crcDone {
+			markGIWVerified(dir, gfi)
 		}
 		// S4 (task-never-swap-2026-09.md), item 1: a .giw's weights are file-backed (no
 		// fitCheckFor call here at all, by design — see fitguard.go's own srcFileBytes doc

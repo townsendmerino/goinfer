@@ -103,7 +103,7 @@ that trips watchdogd. The record does not attribute the panic beyond that; S5's 
 where it gets attributed.
 
 **Two guards exist and neither sees the `.giw` path.** `guardFit(fitCheckFor(...))`
-(`decoder/model.go:495`) prices weights + KV + `srcFileBytes` for a `.gguf`, but the `.giw` branch
+(`decoder/model.go:504`) prices weights + KV + `srcFileBytes` for a `.gguf`, but the `.giw` branch
 (`decoder/model.go:379`) returns before it — by design, since a mapped load has no allocation
 peak to price; it also therefore prices none of the anonymous remainder (KV, scratch, Metal
 buffers). Metal's own guard is a static 70% of `hw.memsize` (`metal/backend.go:139`,
@@ -211,7 +211,7 @@ transcoded once to its sidecar `.giw` and mapped, so the resident weights are fi
 
 **Standing and the registered rule.** Today the sidecar is built only under `-stream-weights`
 (`internal/serveapp/main.go`, `ensureGIW` → `prequant.EnsureCachedGIW`,
-`internal/prequant/prequant.go:203`) or by the dense fit-guard auto-retry
+`internal/prequant/prequant.go:206`) or by the dense fit-guard auto-retry
 (`internal/serveapp/main.go:1328`); `chat` (`internal/chatapp/main.go:389`) and `fit`
 (`internal/fitcmd/fit.go:97`) load direct and have no streaming flag at all. **Rule (Mac, 1.5B and
 gpt-oss-20b, `footprint`/`vmmap -summary` on the serving process after the first completion):
@@ -226,7 +226,7 @@ reason — "MoE CPU weight streaming is a documented, MEASURED failure mode"); `
 `Transcode` (temp + rename, the V-01 `.tmp.giw` suffix trap, `cacheFresh`'s load-probe freshness —
 M-12/M-11); `decoder/gguf.go` `StreamTranscodeGGUF` and `needsResidentSerialize`
 (`decoder/gguf.go:1495` — read S2 before promising anything about those families);
-`decoder/model.go` `.giw` branch (`decoder/model.go:379`) and what it skips (`decoder/model.go:495`);
+`decoder/model.go` `.giw` branch (`decoder/model.go:379`) and what it skips (`decoder/model.go:504`);
 `decoder/weightmat.go` `GIWTargetForBackend` and the kind-5 policy in `docs/tasks/task-int4-layout-2026-09.md`
 L2 (a cpu-arm64 sidecar is row4-only — about the model's int4 size; a kind-4 dual-representation
 bundle is ~2× that and is what "we shouldn't be building bigger files" refers to — check which
@@ -789,7 +789,7 @@ and a measured pread rate, and requires an explicit acknowledgement (`--stream-w
 
 **Read first.** `decoder/fitguard.go` in full (the `fitCheck` struct, `srcFileBytes`,
 `cudaBuildBytes`, `smallerFittingContext`, the R13 re-pricing); `decoder/model.go` around
-`decoder/model.go:379`–`decoder/model.go:495`; `decoder/hostram_darwin.go` (the approximation it
+`decoder/model.go:379`–`decoder/model.go:504`; `decoder/hostram_darwin.go` (the approximation it
 states: free + inactive + speculative + purgeable, 16 KB pages read from `vm_stat`'s header);
 `decoder/backend.go` `RegisterMemoryProbe` and `metal/backend.go` `residentMemFraction` (the
 reason the Metal probe is static — keep it as the *ceiling* and add the live figure as a second
@@ -881,8 +881,10 @@ the pool mode's own accounting (S5).
 > swap-used never rose above baseline in either run, with the S3 tripwire and an external kill
 > switch (`scripts/swap_killwatch.sh`) armed and silent. Wi-Fi throttling means it could not
 > produce the storm the 2026-09-04/05 panic was about, so the safety result is conditional. Two
-> findings: the `.giw` load reads the whole file up front (27–28 min at 10 MB/s) despite
-> `-stream-weights` being lazy — uninvestigated; and `-moe-pager` overrides an exported
+> findings: the `.giw` load read the whole file up front (27–28 min at 10 MB/s) despite
+> `-stream-weights` being lazy — **found and fixed 2026-09-24**: the whole-payload CRC ran on every
+> load (twice on the sidecar path); it is now once per (size, mtime) via a `.giw.verified` marker,
+> `GOINFER_GIW_VERIFY=always` restores it (see the measurement doc); and `-moe-pager` overrides an exported
 > `GOINFER_MOE_PREAD_CPU` (caught from the banner).
 >
 > **Still unstarted:** the registered rule's real tok/s A/B (needs the checkpoint on LOCAL disk),
