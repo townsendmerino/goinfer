@@ -227,6 +227,49 @@ class TestContentGoneRefused(unittest.TestCase):
         self.assertNotIn("a_totally_different_unrelated_name", queue_text)
 
 
+    # 2026-09-24, owner decision: a cited line that MOVED but did not CHANGE is accepted.
+    def test_moved_unchanged_line_is_accepted_and_update_repoints_the_prose(self):
+        # Two lines inserted above the cited one: same text, now at line 4 instead of 2. The doc
+        # also cites it as a range, whose end must move with it.
+        with open(self.scratch, "w") as f:
+            f.write("see `pkg.py:2` for details, and `pkg.py:2-3` for the body\n")
+        _git(self.repo, "add", "docs/task-scratch.md")
+        _git(self.repo, "commit", "-q", "-m", "range")
+        code, out = self._run(["--update"])
+        self.assertEqual(code, 0, out)
+        with open(self.pkg, "w") as f:
+            f.write("x = 1\ndef an_inserted_helper_function_one():\ndef an_inserted_helper_function_two():\n"
+                    "def a_real_distinctive_function_name():\n    pass\n")
+
+        code, out = self._run([])
+        self.assertEqual(code, 0, out)  # accepted in check mode…
+        self.assertIn("MOVED but are unchanged", out)  # …and reported, not silent
+        self.assertIn("-> :4", out)
+
+        code, out = self._run(["--update"])
+        self.assertEqual(code, 0, out)
+        doc = pathlib.Path(self.scratch).read_text()
+        self.assertIn("`pkg.py:4`", doc)
+        self.assertIn("`pkg.py:4-5`", doc)  # the range keeps its length
+        self.assertNotIn("pkg.py:2", doc)
+        self.assertIn("pkg.py:4", qcl.index_path().read_text())
+        code, out = self._run([])
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("MOVED but are unchanged", out)
+
+    def test_moved_line_that_now_appears_twice_is_red(self):
+        with open(self.pkg, "w") as f:
+            f.write("x = 1\ndef an_inserted_helper_function_one():\ndef a_real_distinctive_function_name():\n"
+                    "def a_real_distinctive_function_name():\n    pass\n")
+        code, out = self._run([])
+        self.assertNotEqual(code, 0, out)
+        self.assertIn("AMBIGUOUS", out)
+        code, out = self._run(["--update"])
+        self.assertNotEqual(code, 0, out)
+        self.assertIn("AMBIGUOUS", out)
+        self.assertIn("pkg.py:2", pathlib.Path(self.scratch).read_text())  # prose untouched on a guess
+
+
 def _git_commit_all(repo, msg):
     """Commit whatever is currently staged/tracked and return the resulting short SHA — used
     where a test needs a real, resolving commit to cite before the file it commits exists yet."""

@@ -526,6 +526,40 @@ def resolve_base(rel: str):
     return None, None
 
 
+def moved_to(rel: str, want: str):
+    """Where the recorded content `want` sits now in the RESOLVING copy of rel: (line, count).
+
+    ACCEPTED SINCE 2026-09-24 (owner decision): a cited line that MOVED but did not CHANGE is not a
+    broken citation, it is a stale line number — the claim the prose makes still holds, word for
+    word. It was red, and every edit above a cited line forced hand-rewrites across unrelated docs
+    (~70 in one bug-fix commit). Only an EXACTLY-ONE match is accepted: count 0 is CONTENT ABSENT /
+    GONE (still red — the file no longer supports the claim) and count > 1 is AMBIGUOUS (red —
+    picking one would be a guess). Scoped to the resolving base, never another repo or version."""
+    _rn, rbase = resolve_base(rel)
+    if rbase is None or not want:
+        return None, 0
+    hits = [i for i, l in enumerate((rbase / rel).read_text(errors="replace").split("\n"), 1)
+            if l.strip()[:88] == want]
+    return (hits[0] if len(hits) == 1 else None), len(hits)
+
+
+def repoint_citation(doc: pathlib.Path, rel: str, old: int, new: int) -> int:
+    """Rewrite `rel:old` (and a range `rel:old-end`, keeping its length) to the new line IN THE
+    DOCUMENT'S PROSE — the part --update used to be unable to fix, which is why it refused. Returns
+    the number of occurrences rewritten."""
+    text = doc.read_text()
+    pat = re.compile(re.escape(rel) + ":" + str(old) + r"(?:-(\d+))?(?!\d)")
+
+    def sub(m):
+        if m.group(1):
+            return f"{rel}:{new}-{int(m.group(1)) + new - old}"
+        return f"{rel}:{new}"
+    out, n = pat.subn(sub, text)
+    if n:
+        doc.write_text(out)
+    return n
+
+
 def resolve_path(rel: str, line: int):
     """Return (repo, content) for a cited path:line, or ("", None) when the file exists nowhere.
 
@@ -655,6 +689,9 @@ def gitignored_destinations():
         for doc in cands.get(path, []):
             hits.append((doc, path))
     return hits
+
+
+_REPOINT_PASSES = 0
 
 
 def main() -> int:
@@ -808,7 +845,7 @@ def main() -> int:
         # --update CANNOT fix this: the line number lives in the prose, and this tool rewrites only
         # the generated index. So it refuses, names the new line, and makes the author edit the
         # sentence. Weakening a key is a decision, never a side effect of regenerating an index.
-        launder = []
+        launder, repointed = [], []
         for key in sorted(presolved):
             repo, content = presolved[key]
             oldrec = pindex_prior.get(key)
@@ -820,14 +857,22 @@ def main() -> int:
             _rn, rbase = resolve_base(rel)
             if rbase is None:
                 continue
-            at = next((i for i, l in enumerate((rbase / rel).read_text(errors="replace").split("\n"), 1)
-                       if l.strip()[:88] == oldrec), None)
+            at, count = moved_to(rel, oldrec)
             if at is not None:
-                launder.append(f"  {key}  SHIFTED to line {at}. --update would re-key this to "
-                               f"`{content[:48]}` — whatever now sits at the STALE line — and go "
-                               f"green with the prose still citing a line that no longer holds what "
-                               f"the sentence claims. Fix the citation to :{at} in the document, "
-                               f"then re-run --update.")
+                # Moved, unchanged, found exactly once: fix the PROSE (so it no longer cites the stale
+                # line) and rebuild the index on a second pass below. The refusal this replaces
+                # existed only because the prose was out of reach.
+                doc = ROOT / key.split("|", 1)[0]
+                old = int(key.rsplit(":", 1)[1])
+                if doc.is_file() and repoint_citation(doc, rel, old, at):
+                    repointed.append(f"  {key} -> :{at}")
+                    continue
+                launder.append(f"  {key}  SHIFTED to line {at}, but the citation could not be found "
+                               f"in {doc} to re-point. Fix it by hand, then re-run --update.")
+            elif count > 1:
+                launder.append(f"  {key}  AMBIGUOUS — the recorded content `{oldrec[:48]}` now appears "
+                               f"{count} times in {rel}; re-pointing would be a guess. Cite the "
+                               f"intended line by hand, then re-run --update.")
             else:
                 # N-51 (docs/audit-2026-09-10.md): CONTENT-ABSENT, not just shifted. The old
                 # content isn't a shift victim — it does not exist ANYWHERE in the current file
@@ -845,6 +890,16 @@ def main() -> int:
         if launder:
             sys.stderr.write("queue_citation_lint --update: refusing to weaken shifted citation(s):\n")
             sys.stderr.write("\n".join(launder) + "\n")
+            return 1
+        if repointed:
+            global _REPOINT_PASSES
+            print(f"queue_citation_lint --update: re-pointed {len(repointed)} moved-but-unchanged "
+                  f"citation(s) in the prose:")
+            print("\n".join(repointed))
+            if _REPOINT_PASSES < 3:
+                _REPOINT_PASSES += 1
+                return main()  # rebuild the index from the corrected documents
+            sys.stderr.write("queue_citation_lint --update: citations still shifting after 3 passes\n")
             return 1
         lines = [MARK_BEGIN, "", "## SHA index", "",
                  "Generated. Every commit id cited above, with the subject it resolved to at the time",
@@ -919,6 +974,7 @@ def main() -> int:
             index[m.group(1)] = m.group(2)
 
     bad = []
+    shifted_ok = []  # moved-but-unchanged, found exactly once: accepted, reported below
     unkeyable = []
     skipped_foreign = []
     for sha in unresolved:
@@ -998,16 +1054,11 @@ def main() -> int:
         # line in a DIFFERENT VERSION of the file, which would then verify green against the wrong
         # root. A search that crosses repositories cannot report a line number.
         rname, rbase = resolve_base(rel)
-        found_at = None
-        if want and rbase is not None:
-            for i, l in enumerate((rbase / rel).read_text(errors="replace").split("\n"), 1):
-                if l.strip()[:88] == want:
-                    found_at = i
-                    break
+        found_at, found_n = moved_to(rel, want)
         # Absent HERE, present in another root, is a different diagnosis: the citation is keyed to a
         # version other than the one goinfer requires. Named, never converted into a line number.
         elsewhere = []
-        if found_at is None and want:
+        if found_at is None and found_n == 0 and want:
             for name, base in path_repos():
                 if base == rbase:
                     continue
@@ -1022,8 +1073,12 @@ def main() -> int:
         # pass whatever future bug produced it -- better that "now at line {ln}" show up as the
         # visible absurdity it would be.
         if found_at:
-            bad.append(f"  {key}  SHIFTED — the cited content is now at line {found_at} (in {rname}). "
-                       f"Update the citation to {rel}:{found_at} and re-run --update.")
+            # Accepted (see moved_to): the claim still holds; only the number is stale.
+            shifted_ok.append(f"  {key} -> :{found_at}")
+        elif found_n > 1:
+            bad.append(f"  {key}  AMBIGUOUS — the recorded content now appears {found_n} times in "
+                       f"{rel}; which one the prose means is a guess. Cite the intended line and re-run "
+                       f"--update.")
         elif elsewhere:
             bad.append(f"  {key}  VERSION MISMATCH — the recorded content is NOT in the {rname} copy "
                        f"this repo resolves against, but IS in: {', '.join(elsewhere)}. The citation "
@@ -1051,6 +1106,10 @@ def main() -> int:
         bad.append(f"  {rel}  bare reference resolves in NO repository "
                    f"({', '.join(n for n, _ in path_repos())}) — moved package, deleted, or a typo")
 
+    if shifted_ok:
+        print(f"queue_citation_lint: {len(shifted_ok)} cited line(s) MOVED but are unchanged — accepted; "
+              f"`--update` re-points the prose to the new line numbers:")
+        print("\n".join(shifted_ok[:20]) + (f"\n  … and {len(shifted_ok) - 20} more" if len(shifted_ok) > 20 else ""))
     if bad:
         sys.stderr.write("queue_citation_lint: docs/QUEUE.md citations are not sound:\n")
         sys.stderr.write("\n".join(bad) + "\n")

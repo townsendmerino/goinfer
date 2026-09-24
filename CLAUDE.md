@@ -210,13 +210,17 @@ Prefer committed increments that survive interruption over one big commit at the
 
 ## Citations and the pre-push hook
 
-`scripts/queue_citation_lint.py` runs **as a pre-push hook and REFUSES the push** on a red. Four
+`scripts/queue_citation_lint.py` runs **as a pre-push hook and REFUSES the push** on a red. Its generated index
+lives in `docs/citation-index.md` (moved out of `docs/QUEUE.md` 2026-09-24). Four
 traps worth knowing before you hit them:
 
 - A backtick-quoted concrete path under a **gitignored** directory (`docs/internal/…`) is a
   FORBIDDEN DESTINATION — *including in another repo*, since nobody else can resolve it.
   Describe the record in prose instead; that is what `c494c62` did.
-- A stale `path:line` index is fixed with `--update`, not by deleting the citation.
+- A stale `path:line` index is fixed with `--update`, not by deleting the citation. **A cited line that
+  MOVED but is textually unchanged is accepted** (owner decision 2026-09-24): the check passes with a note, and
+  `--update` rewrites the line number in the doc's prose. Still red: content edited or deleted, content now at
+  more than one line (AMBIGUOUS), or found only in another repo/version.
 - **A missing MODULE reads as a broken lint but is a missing download.** The lint validates
   citations that point into `aikit`, and treats an unresolvable module as a hard failure on
   purpose — calling it a skip "would make the green cover nothing". So when `go.mod`'s pinned
