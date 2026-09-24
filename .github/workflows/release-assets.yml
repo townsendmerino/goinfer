@@ -28,11 +28,11 @@ permissions:
 jobs:
   plain:
     name: runtime binaries
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with: { go-version-file: 'go.mod' }
       # A pending gate's failure reads as an item, not a blocker, so one that rides through two
       # releases unconfirmed is a required gate that could block neither (audit-2026-09-10 G-03,
@@ -276,7 +276,7 @@ jobs:
 
   embedded:
     name: model-in-binary (${{ matrix.tier }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -295,7 +295,7 @@ jobs:
             sha256: cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046
             bytes: 1117320768
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
       - name: skip 1.5B unless asked
         id: gate
@@ -310,7 +310,7 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         if: steps.gate.outputs.skip == 'false'
         with: { go-version-file: 'go.mod' }
       - name: fetch the model + verify the pinned digest
@@ -421,9 +421,9 @@ jobs:
     # reports 'skipped' from a job-level if:, which this job doesn't have). No `|| == 'skipped'`
     # needed here.
     if: always() && needs.plain.result == 'success' && needs.embedded.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with: { ref: '${{ github.event.inputs.tag || github.ref }}' }
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { path: staged }
