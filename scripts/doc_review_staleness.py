@@ -14,7 +14,7 @@ doc sitting untouched while the CODE it describes drifts out from under it. So t
 things per doc, not one:
 
   1. the doc file itself — did someone edit it without updating the footer?
-  2. every file docs/QUEUE.md's citation index says the doc cites — did any of THOSE change?
+  2. every file the citation index (docs/citation-index.md) says the doc cites — did any of THOSE change?
 
 The citation index already exists (scripts/queue_citation_lint.py maintains it as a pre-push gate)
 and already maps every doc to every path:line it points at. Reusing it here means this script asks
@@ -103,10 +103,14 @@ def last_commit_date(relpath: str):
 
 
 def parse_citation_index():
-    """doc relpath -> [(cited_path, repo), ...], read from docs/QUEUE.md's generated index."""
-    if not QUEUE.exists():
+    """doc relpath -> [(cited_path, repo), ...], read from the generated citation index —
+    docs/citation-index.md since 2026-09-24, or the legacy block inside docs/QUEUE.md before that."""
+    src = QUEUE.parent / "citation-index.md"
+    if not src.exists():
+        src = QUEUE
+    if not src.exists():
         return {}
-    text = QUEUE.read_text()
+    text = src.read_text()
     if MARK_BEGIN not in text:
         return {}
     idx = {}

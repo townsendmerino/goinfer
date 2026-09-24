@@ -30,7 +30,7 @@ Repo: `~/tmcode/goinfer` on the Mac (`aikit` is the sibling). In Cowork it is mo
 ```
 git log -5 --format='%h %ad %s' --date=short -- <doc>
 grep -rn '<basename>' --include='*.md' docs README.md CLAUDE.md | grep -v '^docs/completed'   # live refs
-grep -c '<doc path>|' docs/QUEUE.md                                                       # citation-index rows keyed to it
+grep -c '<doc path>|' docs/citation-index.md                                              # citation-index rows keyed to it
 python3 scripts/doc_review_staleness.py                                                   # is this doc even due for a look?
 ```
 

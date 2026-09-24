@@ -27,6 +27,7 @@ These are the pages to trust, and to update when reality moves.
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | modules, packages, the forward pass, where cgo is quarantined |
 | [capability-matrix.md](capability-matrix.md) | **generated** from the `decoder` registry — 36 model families as of 2026-09-12. The registry is the source of truth; do not hand-edit |
+| [citation-index.md](citation-index.md) | **generated** by `scripts/queue_citation_lint.py --update` — every `path:line`, SHA and bare-file citation in the live docs with the content it was keyed to. The lint's state, not reading material; do not edit or cite |
 | [tool-call-coverage.md](tool-call-coverage.md) | per family: tool calls **constrained**, parsed only, or none — from a census of real checkpoints through `chat.Detect` (2026-09-24). What "tools: yes" does and does not promise |
 | [benchmarks.md](benchmarks.md) | **current claims only**, provenance-gated: machine, checkpoint, quant, date, thermal note. Section IDs are stable; a *Retired section IDs* index maps the ones that moved |
 | [legacy-benchmarks.md](legacy-benchmarks.md) | the retired, superseded and historical rows `benchmarks.md` used to carry — moved verbatim 2026-08-31 and 2026-09-05 (was `benchmarks-archive.md`). **Never a current claim**; kept so a retraction can be audited |

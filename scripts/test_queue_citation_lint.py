@@ -68,7 +68,7 @@ class TestUntrackedDocsSkipped(unittest.TestCase):
         # one-time --update a freshly-filed queue entry would get before anyone runs the lint bare.
         code, out = self._run(["--update"])
         assert code == 0, out
-        _git(self.repo, "add", "docs/QUEUE.md")
+        _git(self.repo, "add", "docs/QUEUE.md", "docs/citation-index.md")
         _git(self.repo, "commit", "-q", "-m", "index")
 
     def tearDown(self):
@@ -107,7 +107,7 @@ class TestUntrackedDocsSkipped(unittest.TestCase):
         # Step 5 (first half): --update must NOT index the untracked file's citation.
         code, out = self._run(["--update"])
         self.assertEqual(code, 0, out)
-        queue_text = qcl.QUEUE.read_text()
+        queue_text = qcl.index_path().read_text()
         self.assertNotIn("task-scratch.md", queue_text)
 
         # Step 3/4: git add (no commit) -> now tracked; must red, naming that citation.
@@ -124,7 +124,7 @@ class TestUntrackedDocsSkipped(unittest.TestCase):
         qcl._tracked_cache = qcl._TRACKED_SENTINEL
         code, out = self._run(["--update"])
         self.assertEqual(code, 0, out)
-        queue_text = qcl.QUEUE.read_text()
+        queue_text = qcl.index_path().read_text()
         self.assertIn("task-scratch.md", queue_text)
 
     def test_no_git_degrades_to_lint_everything_and_says_so(self):
@@ -185,8 +185,8 @@ class TestContentGoneRefused(unittest.TestCase):
         # Bootstrap the index: pkg.py:2 gets keyed to its real, current, discriminating content.
         code, out = self._run(["--update"])
         assert code == 0, out
-        self.assertIn("a_real_distinctive_function_name", qcl.QUEUE.read_text())
-        _git(self.repo, "add", "docs/QUEUE.md")
+        self.assertIn("a_real_distinctive_function_name", qcl.index_path().read_text())
+        _git(self.repo, "add", "docs/QUEUE.md", "docs/citation-index.md")
         _git(self.repo, "commit", "-q", "-m", "index")
 
     def tearDown(self):
@@ -222,7 +222,7 @@ class TestContentGoneRefused(unittest.TestCase):
 
         # Confirm --update genuinely did NOT rewrite the index out from under the refusal: the
         # stale content-key must still be what's on disk, not the new function's name.
-        queue_text = qcl.QUEUE.read_text()
+        queue_text = qcl.index_path().read_text()
         self.assertIn("a_real_distinctive_function_name", queue_text)
         self.assertNotIn("a_totally_different_unrelated_name", queue_text)
 
