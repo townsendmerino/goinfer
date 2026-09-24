@@ -37,11 +37,18 @@ on the Mac together with its checkpoint — matched at cosine 0.99999999999994 t
    are kept in the session scratchpad. All five pass, at the numbers the regeneration commits recorded: gemma3 text
    cosine 1.000000, image 0.994641; Bailing max sample Δ 0.00000, cosine 0.99999999999991. `refresh_parity_hashes.sh`'s
    forward goldens: **38 passed / 0 failed** (was 35 / 3 with three exclusions).
-2. `testdata/fixture_identity.json` (tracked) records the sha256 of the checkpoint each committed golden was recorded
-   from; `requireFixtureIdentity` (`decoder/fixture_identity_test.go`) runs first in the six tests that use these
-   fixtures and fails with "FIXTURE mismatch, not a forward-pass regression: copy that box's checkpoint, or re-pin and
-   commit goldens + hash together". Verified by putting the Mac's old gemma3 checkpoint back: both affected tests fail
-   with that message instead of a cosine. CI has no fixtures, so these tests still skip there, before the check.
+2. `testdata/fixture_identity.json` (tracked) records, for every gitignored fixture a committed golden is compared
+   against (20: the 19 in the int4 goldens plus Bailing), a per-tensor fingerprint of the checkpoint the goldens came
+   from — `[sum, sum|x|]` in float64, one line per fixture. `requireFixtureIdentity` (`decoder/fixture_identity_test.go`)
+   runs first in the gemma3-VL, GenerateVL and Bailing tests and in every `TestInt4_forwardParity` subtest, and fails
+   with "FIXTURE mismatch, not a forward-pass regression: copy the checkpoint or re-pin and commit goldens + manifest
+   together". `GOINFER_FIXTURE_IDENTITY_UPDATE=1 go test ./decoder/ -run TestFixtureIdentity_update` regenerates it.
+   **Numeric, not a file hash**, because of a second finding: `nemotron3nano-tiny` and `qwen3next-tiny` are
+   byte-different between the Mac and nobara in 33–36% of elements, by at most 2.4e-7 — float32 ULP noise from the same
+   seeded `torch.normal_` on arm64 vs amd64 — and both copies pass every golden. A different random draw moves a
+   tensor's sum by ~sum|x|/√n; ULP noise by ~1e-7 of sum|x|; the 1e-4 relative tolerance sits three orders from each.
+   Verified on real data both ways: nobara's ULP-different copies pass the check; the Mac's stale gemma3 and Bailing
+   copies fail it with the diagnosis. CI has no gitignored fixtures, so these tests still skip there, before the check.
 3. The three `KNOWN_UNRELATED_FAILURES` entries are removed, per that array's own rule.
 
 ## What this does not fix
@@ -49,7 +56,8 @@ on the Mac together with its checkpoint — matched at cosine 0.99999999999994 t
 - The pin scripts are still non-deterministic. The durable fixes are either committing the checkpoints (0.5 MB and
   1.4 MB) or initialising weights with a version-independent RNG (e.g. numpy `default_rng(0)` written into the state
   dict) — neither done. Until then, whoever re-pins must update `fixture_identity.json` in the same commit.
-- Only these two fixtures are in the manifest. The other 20 tiny fixtures `TestInt4_forwardParity` compares have the
-  same exposure; they pass on this box today, so their current hashes could be added the same way.
+- The manifest covers the 20 gitignored fixtures with committed goldens. The 13 already-committed fixtures need no
+  entry (git pins their bytes). Family parity tests other than the ones named above do not call the check themselves;
+  for those fixtures the int4 subtest reports the diagnosis alongside whatever the family test says.
 - The exclusion-list entries were "confirmed pre-existing" by `git stash`, which is true and says nothing about cause.
   A pre-existing red is still a red; this one cost six days of a red decoder suite on the development box.
