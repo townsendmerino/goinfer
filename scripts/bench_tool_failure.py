@@ -51,7 +51,10 @@ MODELS = {
     "1.5B": (M + "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "<tool_call>"),
     "7B": (M + "qwen2.5-7b-instruct-q4_k_m.gguf", "<tool_call>"),
     "llama3-1B": (M + "llama-3.2-1b-instruct-q4_k_m.gguf", None),
-    "MoE-35B-A3B": (M + "qwen3.6-35b-a3b-q4_k_m.gguf", "<tool_call>"),
+    # The q4_k_m GGUF is refused by the fit guard on this 62 GB box (51.7 GB peak); the canonical int4 .giw
+    # loads, and the 8 GB card only holds it through C' (GOINFER_MOE_CACHE_EXPERTS=1, set in Server below).
+    # Without C' the resident upload OOMs and serve silently falls back to CPU (~235 s per request).
+    "MoE-35B-A3B": (M + "qwen3.6-35b-a3b-int4.giw", "<tool_call>"),
 }
 
 
@@ -72,8 +75,15 @@ class Server:
         self.quant = quant
 
     def __enter__(self):
-        argv = [SERVE, "-model", f"t0={self.path}", "-backend", "cuda", "-addr", f"127.0.0.1:{PORT}", "-quant", self.quant]
-        self.proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
+        argv = [SERVE, "-model", f"t0={self.path}", "-backend", "cuda", "-addr", f"127.0.0.1:{PORT}"]
+        if self.quant != "auto":  # a .giw carries its own quantization
+            argv += ["-quant", self.quant]
+        env = dict(os.environ)
+        if self.path.endswith(".giw") and "35b" in self.path:
+            env["GOINFER_MOE_CACHE_EXPERTS"] = "1"
+        # server output is kept next to the results so a failed load is diagnosable, not a bare timeout
+        log = open(os.environ.get("T0_SERVER_LOG", os.devnull), "ab")
+        self.proc = subprocess.Popen(argv, stdout=log, stderr=log, preexec_fn=os.setsid, env=env)
         if not wait_port(PORT):
             raise RuntimeError("server did not come up")
         self.url = f"http://127.0.0.1:{PORT}/v1/chat/completions"

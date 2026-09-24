@@ -1,0 +1,2690 @@
+{
+ "model": "llama3-1B",
+ "quant": "int4",
+ "turns": [
+  {
+   "n": 1,
+   "intended": "read_file",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "stop",
+      "completion_tokens": 501,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Rate limiter.\",\"name\":\"rate_limiter\",\"parameters\":{\"type\":\"object\",\"properties"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 320,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Check if it's a burst load, and return the allowed rate limit if so.\",\"name\":\""
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 507,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 119,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Check if ratelimiting can be used.\",\"name\":\"ratelimiting_check\",\"parameters\":{"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 484,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 389,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Check if rate limiter is enabled.\",\"name\":\"check_rate_limit\",\"parameters\":{\"ty"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Check if rate limit has been reached.\",\"name\":\"check_rate_limit\",\"parameters\":"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 115,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Rate Limiter\",\"name\":\"rate_limiter\",\"parameters\":{\"type\":\"object\",\"properties\""
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 285,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Check if rate limiter has been reached.\",\"name\":\"rate_limiter\",\"parameters\":{\""
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 162,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Rate limiter issues fix.\",\"name\":\"ratelimiter\",\"parameters\":{\"type\":\"object\",\""
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\\u0027s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\""
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 249,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Rate limiter bug fix.\",\"name\":\"rate_limiter\",\"parameters\":{\"type\":\"object\",\"pr"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 143,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Rate limiter bug fix\",\"name\":\"internal/ratelimit/limiter.go\",\"parameters\":{\"ty"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 203,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Rate limiter bug fix.\",\"name\":\"rate_limiter\",\"parameters\":{\"type\":\"object\",\"pr"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\",\"pro"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Rate Limiter bug fix.\", \"name\":\"rate_limiter\", \"parameters\":{\"type\":\"object\", "
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "<|python_tag|>{\"function\":{\"description\":\"Read a file\\u0027s contents.\",\"name\":\"read_file\",\"parameters\":{\"type\":\"object\""
+     }
+    ]
+   }
+  },
+  {
+   "n": 2,
+   "intended": "grep",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "stop",
+      "completion_tokens": 233,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to use the `rate_limit` package from the `ratelimit` package. However, the `rate_limit` pack"
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "stop",
+      "completion_tokens": 35,
+      "cls": "unparsed",
+      "raw_head": "{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"path\":\"internal/ratelimit/limiter.go\",}},\"type\":\"function\"}}"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 303,
+      "cls": "prose",
+      "content_head": "Please note that the provided function is quite complex and may not be directly related to the given prompt.\n\nHowever, I"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to use the `rate_limit` package, which is not a standard Go package. The code snippet you pr"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "Please provide the following function with its proper arguments that best answers the given prompt.\n\n```go\n{\"function\":{"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It seems like the issue might be due to the `Allow` function being called with an incorrect argument. Here is a possible"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 116,
+      "cls": "prose",
+      "content_head": "Please provide the correct function to be used with its proper arguments, and I'll do the following:\n\n1. Check if the pr"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 60,
+      "cls": "prose",
+      "content_head": "Please provide the function you are trying to debug, and I'll do my best to help you identify the issue.\n\nAlso, please p"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 351,
+      "cls": "prose",
+      "content_head": "The bug in the rate limiter is that it does not correctly throttle requests under a burst load. Here's why:\n\n- The `toke"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 98,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 90,
+      "cls": "prose",
+      "content_head": "A well-structured function is given to you. Here's the formatted code:\n\n```go\n{\"function\":{\"description\":\"Read a file\u2019s "
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to use the `rate_limit` package from the `internal/ratelimit/limiter.go` file. However, the "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 220,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to understand the implementation of the rate limiter in the `internal/ratelimit/limiter.go` "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 259,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to use the `rate.limiter` package from the `ratelimit` package. However, without more contex"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "The issue with the rate limiter is in the `Allow()` function where it is not correctly calculating the number of tokens "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 236,
+      "cls": "prose",
+      "content_head": "It seems like the issue is with the `Allow()` method in the `rate_limiter/limiter.go` file. The method is attempting to "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 234,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to understand the internal logic of the rate limiter in the ratelimit package. The provided "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 224,
+      "cls": "prose",
+      "content_head": "As for the bug in the rate limiter, it appears to be a concurrency issue. The `Allow()` method is not thread-safe, which"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 478,
+      "cls": "prose",
+      "content_head": "You've posted a bug description for a ratelimiter object in the ratelimit package. \n\nThis function is meant to be used w"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 286,
+      "cls": "prose",
+      "content_head": "It seems like there's a bug in the rate limiter function. Here's a possible explanation:\n\nThe bug might be in the way th"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 67,
+      "cls": "prose",
+      "content_head": "It seems like there's no bug in the ratelimit package, it's actually a robust and well-designed library for rate limitin"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to understand the `Allow()` method in the `rate_limiter` package, which is part of the `rate"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 168,
+      "cls": "prose",
+      "content_head": "The issue with the rate limiter is due to the incorrect calculation of the tokens per second. The `refillRate` is used t"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "A single function is not suitable for debugging a rate limiter due to its complexity. However, we can identify the probl"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": true
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 42,
+      "cls": "unknown_name",
+      "names": [
+       "allow"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "The issue with the `read_file` function lies in the calculation of the `tokens` variable, which doesn't account for the "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 268,
+      "cls": "prose",
+      "content_head": "This is a rate limiter function that is part of the `ratelimit` module. It's a simple function that allows multiple requ"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 37,
+      "cls": "prose",
+      "content_head": "A buffer \"rate_limiter\" that is currently being refilled with a certain amount of traffic to \"internal/ratelimit/limiter"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 223,
+      "cls": "prose",
+      "content_head": "It looks like the issue is with the way the token limit is being enforced in the `read_file` function. The bug is that t"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "Please note that the provided code snippet is not a complete function due to its length and the presence of a ratelimita"
+     }
+    ]
+   }
+  },
+  {
+   "n": 3,
+   "intended": "read_file",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "stop",
+      "completion_tokens": 264,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the rate limiter is due to the fact that the `Allow()` function is not correctly throttling"
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the rate limiter is due to the fact that it's not correctly throttling requests under a bur"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 341,
+      "cls": "prose",
+      "content_head": "It looks like the issue is with the internal/ratelimit/limiter.go file, specifically the Allow() function. The function "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 334,
+      "cls": "prose",
+      "content_head": "It looks like the internal/ratelimit/limiter.go file is not being updated correctly, which is causing the limiter to not"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 170,
+      "cls": "unknown_name",
+      "names": [
+       "rate_limiter/Burst"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 144,
+      "cls": "prose",
+      "content_head": "It looks like the internal/ratelimit/limiter.go file is correctly implemented. The function allows for multiple tokens t"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 25,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to test the ratelimiter's burst handling functionality. Can I help you with that?"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 367,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the rate limiter is that the `Allow` method is not correctly handling the burst load scenar"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the rate limiter is due to the fact that the `allow` method is not correctly implementing t"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 464,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the rate limiter is due to the fact that the `Allow` function is not properly throttling re"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the rate limiter is related to the burst load, which is causing the tokens to be exceeded t"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 438,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the rate limiter is related to the fact that it's not correctly throttling requests under a"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 198,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to test the rate limiter with a burst load, but there's an issue with the internal/ratelimit"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 387,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to test the `Limiter` class's ability to handle bursts in the `rate_limiter/limiter.go` file"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 90,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to test the rate limiter implementation in your code. However, the provided code snippet is "
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It looks like you're testing the `Limiter` struct, specifically the `Allow` method which is responsible for throttling r"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 254,
+      "cls": "prose",
+      "content_head": "It looks like the bug is in the `read_file` function, where the `limit` parameter is not being properly throttled under "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 301,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the rate limiter is related to the `allow()` method being called too frequently, potentiall"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 406,
+      "cls": "prose",
+      "content_head": "It looks like the bug in the rate limiter is due to the fact that when the burst load exceeds the limit, the tokens are "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 321,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the rate limiter is related to your internal/ratelimit/limiter.go file. The bug is that you"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 39,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to test the burst load handling in the rate limiter. The test you provided seems to be corre"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 132,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the rate limiter is due to the fact that the tokens are not being throttled correctly under"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the rate limiter is related to the burst load, which is not properly handled in the provide"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 365,
+      "cls": "prose",
+      "content_head": "It looks like the bug in the rate limiter is related to the burst load issue. The code is attempting to calculate the nu"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 85,
+      "cls": "prose",
+      "content_head": "It seems like you've provided a test case for the `Limiter` class, which is perfect for a bug check. The code snippet yo"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 470,
+      "cls": "prose",
+      "content_head": "It seems like there's a bug in the rate limiter function, which is causing issues under burst load. The exact nature of "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 430,
+      "cls": "prose",
+      "content_head": "It looks like the `Allow()` method in your `Limiter` struct is causing the rate limiter bug. This method is not throttli"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 206,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to test the rate limiter function. However, the provided function `read_file` seems unrelate"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 188,
+      "cls": "prose",
+      "content_head": "It looks like the issue might be related to the internal ratelimiter package. The code snippet you provided doesn't cont"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 386,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the rate limiter is related to the \"burst load\" condition, which is not properly implemente"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 221,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     }
+    ]
+   }
+  },
+  {
+   "n": 4,
+   "intended": "edit_file",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 46,
+      "cls": "prose",
+      "content_head": "A function called `read_file` with the following arguments:\n\n{\"function\":{\"name\":\"read_file\",\"parameters\":{\"path\":\"inter"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 54,
+      "cls": "prose",
+      "content_head": "You've exceeded the allowed response length. Here's the correct JSON format for the function call with its proper argume"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 30,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 67,
+      "cls": "prose",
+      "content_head": "You've exceeded the allowed response length. Here is a JSON representation of the function call with its proper argument"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 24,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": true
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 30,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 30,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": true
+     }
+    ]
+   }
+  },
+  {
+   "n": 5,
+   "intended": "run_shell",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 28,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 33,
+      "cls": "unknown_name",
+      "names": [
+       "limit_the_refill_rate"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 24,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ]
+   }
+  },
+  {
+   "n": 6,
+   "intended": "git_status",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "Unfortunately, it seems like the errors and warnings are not related to the specific issue you were asking about. \n\nHowe"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 33,
+      "cls": "prose",
+      "content_head": "It looks like the bug in the rate limiter is that it's not correctly throttling requests under a burst load, leading to "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 194,
+      "cls": "prose",
+      "content_head": "({\"name\": \"create_task\", \"parameters\": {\"title\": \"run_shell\", \"subtasks\": [{\"title\": \"read_file\", \"parameters\": {\"path\":"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 234,
+      "cls": "prose",
+      "content_head": "It looks like the issue is with the Burst load in the rate limiter. The Burst load is meant to prevent the rate limiter "
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 512,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 42,
+      "cls": "parsed",
+      "names": [
+       "grep"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 82,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": true
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 32,
+      "cls": "prose",
+      "content_head": "Please provide the correct function call with its proper arguments that best answers the given prompt.\n\nThe function `re"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 52,
+      "cls": "unparsed",
+      "raw_head": "{\"name\": \"create_task\", \"parameters\": {\"title\": \"Internal/Ratelimit/Limiter/Task\", \"subtasks\": \"[\\\"Internal/Ratelimit/Limiter/Task/A\", \" \\\"Internal/Ratelimit/Limiter/Task/B\\\"]}}"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": true
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 50,
+      "cls": "prose",
+      "content_head": "Please note that the above response is based on the provided code snippet, which is a test for the `Limiter` class in th"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 60,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": true
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": true
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 295,
+      "cls": "prose",
+      "content_head": "It looks like the bug in the rate limiter is not explicitly stated in the provided code snippet. However, based on the e"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 324,
+      "cls": "prose",
+      "content_head": "Please note that the provided code snippet is a mix of code and a comment. The comment is likely a debug comment and the"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 106,
+      "cls": "prose",
+      "content_head": "It looks like you've successfully run a shell command as specified in the prompt. The `read_file` function was called wi"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 57,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": true
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 145,
+      "cls": "prose",
+      "content_head": "Please provide the correct code and name according to the given prompt.\n\nThe code you provided earlier was:\n\n```\n{\"funct"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "list_dir"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 63,
+      "cls": "unknown_name",
+      "names": [
+       "let internal/ratelimit/limiter.go"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ]
+   }
+  },
+  {
+   "n": 7,
+   "intended": "run_shell",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "stop",
+      "completion_tokens": 166,
+      "cls": "prose",
+      "content_head": "Unfortunately, it seems like the issue you're facing is not related to the provided code snippet. The code snippet you p"
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "stop",
+      "completion_tokens": 412,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to debug the `ratelimiter/limiter.go` file, which is expected to be in the `internal/ratelim"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 201,
+      "cls": "unknown_name",
+      "names": [
+       "TestLimiter_Burst"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 111,
+      "cls": "prose",
+      "content_head": "It seems like there's a bug in the rate limiter \u2014 requests aren't being throttled correctly under burst load. Here's a J"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 381,
+      "cls": "prose",
+      "content_head": "You've reached the end of the prompt. The issue with the rate limiter seems to be related to the burst load functionalit"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 119,
+      "cls": "prose",
+      "content_head": "It seems like you are trying to debug the `read_file` function in the `internal/ratelimit/limiter.go` file, but the prov"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "```python\nimport unittest\nfrom ratelimit import limiter\n\nclass TestLimiter(unittest.TestCase):\n    def test_allow(self):"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 29,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 51,
+      "cls": "prose",
+      "content_head": "You've pushed your changes to the remote repository.  You can use the following command to rebase your branch:\n\n```bash\n"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 51,
+      "cls": "prose",
+      "content_head": "It seems you've tried to use the `read_file` function with a file path that is not a valid file path. The error message "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 74,
+      "cls": "prose",
+      "content_head": "It seems like the error in the rate limiter is due to the burst load not allowing requests to be throttled correctly. Ad"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 412,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 76,
+      "cls": "prose",
+      "content_head": "Unfortunately, it seems like you haven't provided the correct prompt for the given problem. The problem statement seems "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 438,
+      "cls": "prose",
+      "content_head": "It seems like you want to know about the internal implementation of the Rate Limiter utility, which is a part of the rat"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 444,
+      "cls": "prose",
+      "content_head": "You've reached the end of the code snippet. Let's break it down:\n\nYou provided a function call with its proper arguments"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 96,
+      "cls": "prose",
+      "content_head": "It seems like the given code is not related to the bug in the rate limiter. The code snippet you provided earlier is a t"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 187,
+      "cls": "prose",
+      "content_head": "It looks like the function `read_file` is not being used correctly in your rate limit test. The function is called with "
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 258,
+      "cls": "prose",
+      "content_head": "It looks like you attempted to use the `read_file` function to call `internal/ratelimit/limiter.go`, but it appears that"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "Unfortunately, it seems I don't have the capability to run your code snippet. The code snippet itself is a ratelimiting "
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 116,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 105,
+      "cls": "prose",
+      "content_head": "Unfortunately, it looks like there was a misunderstanding in our conversation. You initially asked me to write a functio"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 41,
+      "cls": "unknown_name",
+      "names": [
+       "filler"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 96,
+      "cls": "prose",
+      "content_head": "Unfortunately, it seems like I need to clarify a few things:\n\n1. The provided code snippet might not be a real function "
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 30,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It looks like the issue with the burst load in the rate limiter is due to the way the rate limiter is implemented in the"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 101,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 57,
+      "cls": "prose",
+      "content_head": "You're very close, but the exact commit message might vary depending on the commit hash and the Git version you are usin"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 27,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 104,
+      "cls": "prose",
+      "content_head": "It seems like you're trying to debug a bug in the rate limiter, but the provided code doesn't include any specific infor"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 27,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 90,
+      "cls": "prose",
+      "content_head": "It seems like you want me to respond with a JSON that represents a function call with its proper arguments that best ans"
+     }
+    ]
+   }
+  },
+  {
+   "n": 8,
+   "intended": "write_file",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 30,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "stop",
+      "completion_tokens": 41,
+      "cls": "prose",
+      "content_head": "It seems like you want to know that the rate limiter in the `internal/ratelimit/limiter.go` file is being updated to all"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 111,
+      "cls": "prose",
+      "content_head": "It looks like you had a lot of questions about the `read_file` and `grep` functions in the `ratelimit/limiter.go` file.\n"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 108,
+      "cls": "prose",
+      "content_head": "It looks like you've reached the end of the prompt! Let's summarize what we've discussed:\n\n* We looked at the internal/r"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 264,
+      "cls": "prose",
+      "content_head": "Based on the provided code snippet, it appears that the function `read_file` is being throttled correctly, as the test c"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 54,
+      "cls": "prose",
+      "content_head": "I can't assist you with this. It's possible that the issue you're experiencing is not related to the rate limiter or the"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 392,
+      "cls": "prose",
+      "content_head": "Your rate limiter was not properly implemented, leading to incorrect behavior under burst load. Here's a corrected versi"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 402,
+      "cls": "prose",
+      "content_head": "It looks like the `read_file` function is being called with the `internal/ratelimit/limiter.go` file as its `path` argum"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 68,
+      "cls": "prose",
+      "content_head": "It looks like you had a bug in the rate limiter, which was not properly throttling requests under burst load. However, I"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 178,
+      "cls": "prose",
+      "content_head": "Please note that the above response involves significant changes to the original prompt, including additional context an"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 304,
+      "cls": "prose",
+      "content_head": "It looks like you've provided a stack trace for the `read_file` function, which is a part of the ratelimiter package. Th"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 94,
+      "cls": "prose",
+      "content_head": "It looks like you tried to use the `read_file` function from the `internal/ratelimit/limiter.go` file, but the file is n"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It looks like the code is trying to update the rate limiter, but there's a bug in the code itself. The bug is that the c"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 167,
+      "cls": "prose",
+      "content_head": "According to the commit message, the following changes were made to the `limiter.go` file:\n\n1. `modified: internal/ratel"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 321,
+      "cls": "prose",
+      "content_head": "It looks like the function `edit_file` is causing some issues with the rate limiter. I've tried to modify the code to be"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 350,
+      "cls": "prose",
+      "content_head": "Based on the given code snippet, it seems that the bug is in the `read_file` function, which is not properly throttling "
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It looks like you forgot to include the function call with its proper arguments that best answers the given prompt.\n\nHer"
+     },
+     {
+      "finish": "length",
+      "completion_tokens": 512,
+      "cls": "prose",
+      "content_head": "It looks like you've tried to edit the internal ratelimit/limiter.go file, but the changes you made resulted in the foll"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 221,
+      "cls": "prose",
+      "content_head": "It looks like you're trying to test the `read_file` function in the `internal/ratelimit/limiter.go` file. The code you p"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 30,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 190,
+      "cls": "prose",
+      "content_head": "It looks like you tried to run a command in the Ratelimit/limiter.py module, but the code snippet I have is from a diffe"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 41,
+      "cls": "prose",
+      "content_head": "I can't assist you with the bug in the rate limiter. If you can provide more context or details about the bug you're exp"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 45,
+      "cls": "prose",
+      "content_head": "It looks like you're trying to modify the `read_file` function, but there's no code provided for that. Can you provide t"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 120,
+      "cls": "prose",
+      "content_head": "You've requested a refund for a single request, but the rate limiter in your ratelimit/limiter.go file is not throttling"
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 27,
+      "cls": "prose",
+      "content_head": "Your internal/ratelimit/limiter.go has been refactored to implement the correct throttling logic for the burst load scen"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 72,
+      "cls": "prose",
+      "content_head": "A private function\n\n```python\n{\"function\":{\"description\":\"Read a file\u2019s contents.\",\"name\":\"read_file\",\"parameters\":{\"pat"
+     },
+     {
+      "finish": "stop",
+      "completion_tokens": 342,
+      "cls": "prose",
+      "content_head": "It looks like you're trying to test the `read_file` function, which is a ratelimiter. The test you provided checks if th"
+     }
+    ]
+   }
+  },
+  {
+   "n": 9,
+   "intended": "create_task",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 41,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 25,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 25,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 46,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 46,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 41,
+      "cls": "unknown_name",
+      "names": [
+       "init 5.1.2"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 50,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": true,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 46,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 41,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 41,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 41,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 46,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 32,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 46,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 25,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 46,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 30,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 25,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 36,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 41,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ]
+   }
+  },
+  {
+   "n": 10,
+   "intended": "list_dir",
+   "cells": {
+    "0.0": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ],
+    "0.7": [
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "fetch_url"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 30,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 38,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": true
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 26,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 23,
+      "cls": "parsed",
+      "names": [
+       "git_status"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 34,
+      "cls": "parsed",
+      "names": [
+       "create_task"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 30,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 31,
+      "cls": "parsed",
+      "names": [
+       "write_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 30,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 35,
+      "cls": "parsed",
+      "names": [
+       "read_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 29,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 30,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 30,
+      "cls": "parsed",
+      "names": [
+       "run_shell"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 51,
+      "cls": "parsed",
+      "names": [
+       "edit_file"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     },
+     {
+      "finish": "tool_calls",
+      "completion_tokens": 29,
+      "cls": "parsed",
+      "names": [
+       "web_search"
+      ],
+      "on_intended": false,
+      "args_invalid": false
+     }
+    ]
+   }
+  }
+ ],
+ "header": {
+  "utc": "2026-09-24T04:35:02Z",
+  "host": "nobara-pc",
+  "driver": "595.91.07",
+  "commit": "cfb76654",
+  "dirty": false,
+  "serve": "/tmp/claude-1000/-home-francis-mycode-goinfer/abe7fa0a-9afb-4159-b5d8-ee18e3f1f849/scratchpad/served/serve-cuda-flip",
+  "serve_mtime": "2026-09-23 21:15:23.458979150 -0700",
+  "loadavg": "3.11 2.34 2.39 1/1020 4110273",
+  "model_path": "/home/francis/models/llama-3.2-1b-instruct-q4_k_m.gguf",
+  "fixture": "w4_transcript_base.json",
+  "samples": 30,
+  "temps": [
+   0.0,
+   0.7
+  ],
+  "max_tokens": 512
+ },
+ "summary": {
+  "0.0": {
+   "n": 10,
+   "parsed": 6,
+   "unknown_name": 0,
+   "unparsed": 0,
+   "truncated": 0,
+   "unwrapped": 0,
+   "prose": 4,
+   "attempted": 6,
+   "failures": 0,
+   "any_unusable": 0,
+   "any_unusable_rate": 0.0,
+   "any_unusable_ci95": [
+    0.0,
+    0.3903430336530645
+   ],
+   "fail_rate_of_attempted": 0.0,
+   "ci95_of_attempted": [
+    0.0,
+    0.3903430336530645
+   ],
+   "fail_rate_of_all": 0.0,
+   "ci95_of_all": [
+    -2.0052288475052677e-17,
+    0.2775401687666165
+   ],
+   "args_invalid": 0,
+   "on_intended": 0,
+   "prose_rate": 0.4
+  },
+  "0.7": {
+   "n": 300,
+   "parsed": 148,
+   "unknown_name": 7,
+   "unparsed": 2,
+   "truncated": 0,
+   "unwrapped": 0,
+   "prose": 143,
+   "attempted": 157,
+   "failures": 9,
+   "any_unusable": 9,
+   "any_unusable_rate": 0.05732484076433121,
+   "any_unusable_ci95": [
+    0.030448304960363395,
+    0.10534740958114827
+   ],
+   "fail_rate_of_attempted": 0.05732484076433121,
+   "ci95_of_attempted": [
+    0.030448304960363395,
+    0.10534740958114827
+   ],
+   "fail_rate_of_all": 0.03,
+   "ci95_of_all": [
+    0.01586167320596457,
+    0.05602315099190695
+   ],
+   "args_invalid": 9,
+   "on_intended": 3,
+   "prose_rate": 0.4766666666666667
+  }
+ }
+}

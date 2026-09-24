@@ -48,4 +48,66 @@ R6 flash-decode lane is active on the deeper turns (it is not bit-identical to e
 
 ## Results
 
-_(filled in after the runs)_
+Machine `nobara-pc` (RTX 2070 SUPER, driver 595.91.07). Every cell used ONE `serve` binary, built 2026-09-23 21:15 from the tree
+carrying the R6 flash-decode default (so the lane is active on the deeper turns) — the per-cell `header.commit` differs
+(`cfb76654` / `7e642e22`) only because the harness was launched at different commits; the binary did not change. Raw cells,
+per-sample classification and the run summaries: [`tool-call-failure-t0-2026-09-23/`](tool-call-failure-t0-2026-09-23/).
+Serving quant is int4 (the GGUF's q4_k_m weights through the W4A8 path) unless the row says int8. 10 greedy + 300 sampled
+(T=0.7, seeds `1000*turn+i`) requests per cell; the MoE row is smaller (below).
+
+| cell | attempted | parsed | unknown name | unparsed | truncated | **unwrapped** | prose | failures / attempted (95% Wilson) | verdict (pre-reg) |
+|---|---|---|---|---|---|---|---|---|---|
+| Qwen2.5-Coder 0.5B int4 | 0 | 0 | 0 | 0 | 0 | **246** | 54 | 0 / 0 | UNRESOLVED |
+| Qwen2.5-Coder 0.5B int8 | 0 | 0 | 0 | 0 | 0 | **254** | 46 | 0 / 0 | UNRESOLVED |
+| Qwen2.5-Coder 1.5B int4 | 0 | 0 | 0 | 0 | 0 | **223** | 77 | 0 / 0 | UNRESOLVED |
+| Qwen2.5-Coder 1.5B int8 | 0 | 0 | 0 | 0 | 0 | **237** | 63 | 0 / 0 | UNRESOLVED |
+| Llama-3.2 1B int4 | 157 | 148 | 7 | 2 | 0 | 0 | 143 | 9 / 157 = 5.7% (3.0–10.5%) | AMBIGUOUS |
+| Qwen2.5 7B int4 | 111 | 97 | 10 | 3 | 1 | 0 | 189 | **14 / 111 = 12.6% (7.7–20.1%)** | **RED** |
+
+Greedy (n=10 per cell) is a sanity row only, as pre-registered: 0.5B/1.5B 8–9 unwrapped; llama3-1B 6 parsed / 4 prose; 7B 2 parsed /
+8 prose. Nothing is resolvable at n=10.
+
+### What the pre-registered rules say
+
+1. **"Documentation fix only" — NOT met.** It needed every small-model cell GREEN; none is (four UNRESOLVED, one AMBIGUOUS).
+2. **"T1 ships without further argument" — MET, by the 7B.** Point estimate 12.6% > 10% on a size a harness would realistically use.
+   Read it with the two caveats below before leaning on the number.
+3. **The second, independent rule — applies by its intent, not its letter.** It was written for "headline < 2% but
+   `any_unusable` ≥ 10%". The four Qwen2.5-Coder cells have a headline that is *undefined* (0 attempted calls), not < 2%, so the literal
+   condition does not hold; but every intended call in them was `unwrapped` (any_unusable = 100% of intended calls). I apply the rule as
+   written for: **T1 as scoped is insufficient for those models** — a union grammar armed on `<tool_call>` never arms, because the
+   model never emits it. Owner can dispute the application; the counts are above.
+
+### What the failures are (this changes what T1 would buy)
+
+- **The Qwen2.5-Coder 0.5B and 1.5B never wrap their calls.** 0 wrapped calls in 1,200 sampled requests across four cells; they emit
+  bare `{"name": "read_file", "arguments": {...}}` and goinfer's chatml parser (`chat/tools.go`, `parseChatMLTools`) only recognises the
+  `<tool_call>` wrapper, so the harness receives prose. It is not the server: the same server with the 7B wraps and parses, and it is
+  not the prompt length or history — **control (inline one-off, 1.5B int4, T=0.7, seeds 0–19, no history): 2 tools + "Read notes.txt"
+  → 0 wrapped / 13 bare / 7 prose; 2 tools + the fixture's turn-1 task → 0 / 12 / 8; 12 tools + "Read notes.txt" → 0 / 11 / 9; 12 tools +
+  turn-1 task → 0 / 8 / 12** (0 of 80). The chatml renderer matches Qwen's published tool prompt and renders history calls with the
+  wrapper. Different fix from T1: a parser that also accepts bare call JSON naming a supplied tool, or forcing the wrapper.
+- **The 7B's failures are mostly invented tool names, not malformed JSON.** 10 of 14 are `unknown_name` (8× `git_commit`, plus
+  `git_add`/`git_checkout`/`git_merge`); 3 unparsed + 1 truncated. That is exactly what T1's name trie prevents by construction. A
+  further 10 of its 97 parsed calls carry arguments that miss a required key or have a wrong top-level type (informational column) —
+  T1's per-tool schema would prevent those too: 24 of 111 attempted calls (21.6%) are not clean calls to a real tool with valid args.
+- **llama3-1B's failures are garbage tool names** (`init 5.1.2`, `let internal/ratelimit/limiter.go`, `TestLimiter_Burst`) and 2 broken
+  bodies, spread across turns; 18 of 157 (11.5%) are not clean calls once the 9 bad-args parses are counted.
+- **Prose is common and legitimate** (7B 63%, llama3 48%, at steps where the tool result already answers the task). These are the
+  baseline for the non-forcing gate in T6.
+
+### Caveats that bear on the decision
+
+- **The 7B's 12.6% is one prompt.** 9 of its 14 failures are on turn 9 (6 unknown-name + 3 unparsed), 3 on turn 10, 1 on turn 7, 1 on
+  turn 5. The 30 samples of a turn share a prompt, so they are not independent evidence about "turns in general", and the Wilson
+  interval above (which treats them as independent) is narrower than the real uncertainty. What is established: there exist ordinary agent
+  turns on which a 7B invents a tool roughly one time in three. What is not: a population failure rate.
+- **No system prompt was sent.** Real harnesses send their own; Qwen's published template injects a default one when none is given and
+  goinfer's renderer does not. Not tested whether that changes the Coder models' wrapper behaviour.
+- **First-order failures only** (blind spot in the harness docstring). One transcript, one tool schema, one backend (CUDA).
+- **1.5B int8's first attempt was discarded, not re-rolled selectively:** it died with a 503 from the server's swap guard when I ran a
+  `-race` build alongside it, produced no data, and was re-run from scratch with the same settings.
+
+### MoE (Qwen3.6-35B-A3B)
+
+_In progress at the time of the dense write-up; see the next section when filled._

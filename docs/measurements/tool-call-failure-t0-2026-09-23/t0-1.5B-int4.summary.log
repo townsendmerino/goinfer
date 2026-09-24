@@ -1,0 +1,2 @@
+1.5B/int4 T=0.0: n=10 parsed=0 unparsed=0 truncated=0 unknown=0 unwrapped=8 prose=2 | fail/attempted=0/0 | args_invalid=0 on_intended=0
+1.5B/int4 T=0.7: n=300 parsed=0 unparsed=0 truncated=0 unknown=0 unwrapped=223 prose=77 | fail/attempted=0/0 | args_invalid=0 on_intended=0
