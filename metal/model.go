@@ -306,6 +306,7 @@ type resident struct {
 	logitsHost                                                 []float32
 	gpuStart, gpuEnd, kernStart, kernEnd                       float64      // last-Forward GPU timing (Step 0)
 	prof                                                       pagedProfile // per-phase paging decomposition (accumulates; snapshot+diff over a timed window)
+	alias                                                      *weightAlias // S6: nil unless GOINFER_METAL_ALIAS=1 on a .giw-mapped model; test/banner introspection
 	residency                                                  ResidencySet // pinned working set (GOINFER_MOE_RESIDENCY, paged path); zero value if unused
 	residencyBufs                                              []Buffer     // exactly the buffers added to `residency` (for the teardown-consistency gate)
 
@@ -510,13 +511,26 @@ func maxThreadgroupStageBytes(hidden, qWidth, moeInter, g4moeInter, dnValueDim i
 	return 2 * max(max(max(hidden, qWidth), max(moeInter, g4moeInter)), dnValueDim)
 }
 
-func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
+func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) { return int4BufA(d, nil, w) }
+
+// int4BufA is int4Buf with an optional weightAlias (S6): when a is non-nil and w's nibbles live in the
+// .giw mapping, the nibbles are bound in place instead of copied; the f16 scales are built exactly as the
+// copy path builds them.
+func int4BufA(d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, error) {
 	// The W4A8 layout and every GEMV kernel hard-assume K is a multiple of the group (32): rows are
 	// packed K/8 words + K/32 scales with no partial-group handling. A K%32 != 0 weight would pack a
 	// truncated last group (trailing nibbles decode as −8) with a per-row stride the kernel disagrees
 	// with — silently wrong, or a panic at K<32. Decline so BuildResident falls back to CPU (M-10).
 	if k := w.Cols(); k%32 != 0 {
 		return Buffer{}, Buffer{}, fmt.Errorf("metal: W4A8 pack needs K%%32==0 (group=32), got K=%d — declining to CPU (audit M-10)", k)
+	}
+	if nib, ok := a.nibbles(d, w); ok {
+		_, q4s, _, _ := w.Int4()
+		scales := make([]uint16, len(q4s))
+		for i, s := range q4s {
+			scales[i] = f32ToF16(s) // the same conversion int4DirectWords applies
+		}
+		return nib, NewBufferU16s(d, scales), nil
 	}
 	if words, scales, ok := int4DirectWords(w); ok {
 		return NewBufferUint32s(d, words), NewBufferU16s(d, scales), nil
@@ -803,8 +817,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	} else {
 		r.uLNHasBias = NewBufferU32(d, 0)
 	}
+	alias := newWeightAlias(m) // nil unless GOINFER_METAL_ALIAS=1 on a .giw-mapped model (S6)
 	mk := func(wm *linalg.WeightMat) (Buffer, Buffer) {
-		q, s, e := int4Buf(d, wm)
+		q, s, e := int4BufA(d, alias, wm)
 		if e != nil {
 			panic(e)
 		}
@@ -1296,6 +1311,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		}
 	}
 
+	r.alias = alias
+	if line := alias.summary(); line != "" {
+		fmt.Fprint(os.Stderr, line)
+	}
 	ok = true // construction complete — the resident owns everything; Close (not the defer) frees it
 	return r, nil
 }

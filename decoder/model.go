@@ -144,6 +144,38 @@ func (m *Model) MmapByteOffset(b []byte) (int64, bool) {
 	return int64(p - base), true
 }
 
+// MmapAliasWindow returns the page-aligned window of this model's .giw mapping that encloses b, for
+// a consumer that wants to wrap those pages without copying them (Metal's newBufferWithBytesNoCopy
+// needs a page-aligned base and a page-multiple length): base is the pointer to the window's first
+// byte, n its length (a multiple of pageSize), and off b's offset inside it. ok=false when b does
+// not alias the mapping (a heap-backed weight, or no .giw mapping), or pageSize is not a power of two.
+//
+// The window can extend past b at both ends, and past len(mmap) by up to the rest of the last page —
+// the OS maps whole pages, so those bytes are readable (zero-filled past the file's end). The window
+// only NAMES pages; nothing here touches them (no fault). The caller must keep the model — and so
+// the mapping — alive for as long as anything it built over the window is (Model.Close unmaps after
+// the resident closes).
+func (m *Model) MmapAliasWindow(b []byte, pageSize int) (base unsafe.Pointer, n, off int, ok bool) {
+	if pageSize <= 0 || pageSize&(pageSize-1) != 0 {
+		return nil, 0, 0, false
+	}
+	o, in := m.MmapByteOffset(b)
+	if !in {
+		return nil, 0, 0, false
+	}
+	mapBase := uintptr(unsafe.Pointer(&m.mmap[0]))
+	if mapBase&uintptr(pageSize-1) != 0 { // the mapping is not page-aligned at this page size
+		return nil, 0, 0, false
+	}
+	ps := int64(pageSize)
+	lo := o &^ (ps - 1)
+	hi := (o + int64(len(b)) + ps - 1) &^ (ps - 1)
+	if limit := (int64(len(m.mmap)) + ps - 1) &^ (ps - 1); hi > limit {
+		return nil, 0, 0, false
+	}
+	return unsafe.Add(unsafe.Pointer(&m.mmap[0]), lo), int(hi - lo), int(o - lo), true
+}
+
 // KVCacheF16 reports whether the GPU residency path should use an f16 KV cache
 // (Options.KVPrecision == "f16"): 2× context (32k) on the same VRAM, lossy. The
 // residency builder reads it; off the residency path it has no effect.
