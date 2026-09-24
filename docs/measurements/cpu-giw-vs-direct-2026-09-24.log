@@ -1,0 +1,43 @@
+[giw-vs-direct 1.5B] loaded direct  in   5.61s | heap-in-use +1262 MB | RssAnon +1339 MB | RssFile +0 MB
+[giw-vs-direct 1.5B] loaded direct' in   5.46s | heap-in-use +1262 MB | RssAnon +1232 MB | RssFile +0 MB
+[giw-vs-direct 1.5B] loaded giw     in   0.00s | heap-in-use +0 MB | RssAnon +0 MB | RssFile +24 MB
+[1.5B A/A direct'/direct] pair 0: a 53.97 | b 53.92 ms/tok | b/a 0.9991
+[1.5B A/A direct'/direct] pair 1: a 53.91 | b 54.22 ms/tok | b/a 1.0058
+[1.5B A/A direct'/direct] pair 2: a 53.89 | b 54.12 ms/tok | b/a 1.0043
+[1.5B A/A direct'/direct] pair 3: a 54.17 | b 53.95 ms/tok | b/a 0.9960
+[1.5B A/A direct'/direct] pair 4: a 54.31 | b 54.28 ms/tok | b/a 0.9995
+[1.5B A/A direct'/direct] pair 5: a 53.82 | b 54.21 ms/tok | b/a 1.0073
+[1.5B A/A direct'/direct] pair 6: a 53.98 | b 53.81 ms/tok | b/a 0.9969
+[1.5B A/A direct'/direct] median b/a 0.9995 (min 0.9960 max 1.0073, n=7)
+[1.5B giw/direct] pair 0: a 51.27 | b 51.53 ms/tok | b/a 1.0051
+[1.5B giw/direct] pair 1: a 51.38 | b 51.40 ms/tok | b/a 1.0005
+[1.5B giw/direct] pair 2: a 51.34 | b 51.42 ms/tok | b/a 1.0016
+[1.5B giw/direct] pair 3: a 51.39 | b 51.42 ms/tok | b/a 1.0007
+[1.5B giw/direct] pair 4: a 51.35 | b 51.35 ms/tok | b/a 0.9999
+[1.5B giw/direct] pair 5: a 51.37 | b 51.35 ms/tok | b/a 0.9996
+[1.5B giw/direct] pair 6: a 51.35 | b 51.54 ms/tok | b/a 1.0037
+[1.5B giw/direct] median b/a 1.0007 (min 0.9996 max 1.0051, n=7)
+[giw-vs-direct 7B] loaded direct  in  16.49s | heap-in-use +4961 MB | RssAnon +2545 MB | RssFile +0 MB
+[giw-vs-direct 7B] loaded direct' in  16.74s | heap-in-use +4948 MB | RssAnon +4847 MB | RssFile +0 MB
+[giw-vs-direct 7B] loaded giw     in   0.01s | heap-in-use +1 MB | RssAnon +-1 MB | RssFile +26 MB
+[7B A/A direct'/direct] pair 0: a 269.91 | b 266.64 ms/tok | b/a 0.9879
+[7B A/A direct'/direct] pair 1: a 264.59 | b 265.86 ms/tok | b/a 1.0048
+[7B A/A direct'/direct] pair 2: a 270.69 | b 269.77 ms/tok | b/a 0.9966
+[7B A/A direct'/direct] pair 3: a 271.04 | b 271.99 ms/tok | b/a 1.0035
+[7B A/A direct'/direct] pair 4: a 265.06 | b 266.16 ms/tok | b/a 1.0041
+[7B A/A direct'/direct] pair 5: a 265.72 | b 265.45 ms/tok | b/a 0.9990
+[7B A/A direct'/direct] pair 6: a 264.41 | b 265.91 ms/tok | b/a 1.0057
+[7B A/A direct'/direct] median b/a 1.0035 (min 0.9879 max 1.0057, n=7)
+[7B giw/direct] pair 0: a 266.72 | b 267.15 ms/tok | b/a 1.0016
+[7B giw/direct] pair 1: a 266.22 | b 267.50 ms/tok | b/a 1.0048
+[7B giw/direct] pair 2: a 266.48 | b 266.35 ms/tok | b/a 0.9995
+[7B giw/direct] pair 3: a 267.24 | b 267.19 ms/tok | b/a 0.9998
+[7B giw/direct] pair 4: a 266.68 | b 267.31 ms/tok | b/a 1.0023
+[7B giw/direct] pair 5: a 265.48 | b 265.72 ms/tok | b/a 1.0009
+[7B giw/direct] pair 6: a 265.08 | b 266.35 ms/tok | b/a 1.0048
+[7B giw/direct] median b/a 1.0016 (min 0.9995 max 1.0048, n=7)
+--- PASS: TestCPURoofline_giwVsDirect (572.16s)
+    --- PASS: TestCPURoofline_giwVsDirect/1.5B (106.82s)
+    --- PASS: TestCPURoofline_giwVsDirect/7B (465.35s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	572.235s

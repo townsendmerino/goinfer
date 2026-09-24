@@ -43,4 +43,38 @@ model above 7B; darwin.
 
 ## Results
 
-_(appended after the run)_
+Run 2026-09-24 08:52–09:02 on `nobara-pc` (Ryzen 7 3700X), idle-gated (load < 0.6), nothing else running; harness at
+`3792b6e9` plus a harness fix (a `.giw` carries its own tokenizer, so the `.giw` arm now decodes the direct arm's token ids —
+which also guarantees identical prompts). A first launch failed at that tokenizer load before timing anything; its load lines
+are the same as below. `.giw` files: v12 weights / v3 bundle, 1.29 GB and 5.18 GB, transcoded in 20.9 s and 102.1 s. Log:
+[`cpu-giw-vs-direct-2026-09-24.log`](cpu-giw-vs-direct-2026-09-24.log).
+
+**Hard gate: PASS** — every generation's greedy stream was identical across `direct`, `direct'` and `giw`, on both models.
+
+| model | `giw` / `direct` median (7 pairs) | min–max | A/A `direct'` / `direct` median | A/A min–max | verdict |
+|---|---|---|---|---|---|
+| Qwen2.5-Coder 1.5B | **1.0007** | 0.9996–1.0051 | 0.9995 | 0.9960–1.0073 | NO COST |
+| Qwen2.5 7B | **1.0016** | 0.9995–1.0048 | 1.0035 | 0.9879–1.0057 | NO COST |
+
+**Decision (pre-registered rule): NO COST on both models** — decode speed does not block a `.giw`-sidecar default on linux.
+The effect, if any, is inside the do-nothing arm's own spread. The page-cache-mapping vs THP-heap mechanism that motivated
+the question did not show up at this resolution. Absolute ms/token here (≈51–54 / ≈265) is the in-process harness's
+forward time with three copies of the model resident, as in the 2026-09-23 roofline record, not a served tok/s.
+
+**Reported, not decided on (one process, deltas per load):**
+
+| model | arm | load wall | Go heap in use | RssAnon | RssFile |
+|---|---|---|---|---|---|
+| 1.5B | direct | 5.61 s | +1262 MB | +1339 MB | +0 |
+| 1.5B | giw | 0.00 s | +0 MB | +0 MB | +24 MB |
+| 7B | direct | 16.49 s | +4961 MB | +2545 MB | +0 |
+| 7B | giw | 0.01 s | +1 MB | ≈0 | +26 MB |
+
+A `.giw` load maps and does no work up front (the weight pages fault in on first use, from the page cache — the files were
+written minutes earlier, so this is a WARM cache; a cold first load reads from NVMe and is not measured). Heap after load goes
+from the whole weight set to ~0, as on darwin.
+
+**What still stands between this and a linux default** — not measured here, and not decided by this record: disk (a sidecar
+per model beside it in `~/models`; `/home` ran at 98–100% during this session), the one-time transcode on first load
+(21 s / 102 s here), and that a pending weights format bump (v13, in progress elsewhere) would invalidate every sidecar
+already written. CUDA was not measured (weights end up in VRAM either way).

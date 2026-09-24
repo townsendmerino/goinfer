@@ -238,18 +238,30 @@ func TestCPURoofline_giwVsDirect(t *testing.T) {
 		{"7B", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf"},
 	} {
 		t.Run(mc.name, func(t *testing.T) {
+			var promptIDs []int // every arm decodes the SAME ids, tokenized once from the .gguf
 			load := func(label, path string) *cpuDecodeAB {
 				var before runtime.MemStats
 				runtime.GC()
 				runtime.ReadMemStats(&before)
 				anon0, file0 := procStatusMB("RssAnon"), procStatusMB("RssFile")
 				t0 := time.Now()
-				if path == "" {
-					t.Setenv(mc.env, "")
+				var h *cpuDecodeAB
+				if strings.HasSuffix(path, ".giw") {
+					// a .giw bundle carries its own tokenizer, not a GGUF one, so it cannot go through
+					// newCPUDecodeAB's tokenizer.LoadGGUF; load the weights directly and reuse the ids
+					m, err := Load(path, Options{Backend: "cpu", Quant: "int4"})
+					if err != nil {
+						t.Fatalf("load %s: %v", path, err)
+					}
+					t.Cleanup(func() { m.Close() })
+					h = &cpuDecodeAB{t: t, m: m, ids: promptIDs}
 				} else {
 					t.Setenv(mc.env, path)
+					h = newCPUDecodeAB(t, mc.env, mc.def, 128)
+					if promptIDs == nil {
+						promptIDs = h.ids
+					}
 				}
-				h := newCPUDecodeAB(t, mc.env, mc.def, 128)
 				el := time.Since(t0)
 				var after runtime.MemStats
 				runtime.GC()
