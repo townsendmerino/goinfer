@@ -15,7 +15,7 @@ func TestKnobs_snapshotAtLoad_overridePerModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer env.Close()
-	over, err := Load(tinyFixture(t), Options{Backend: "cpu", Knobs: map[string]string{
+	over, err := Load(tinyFixture(t), Options{Backend: "cpu", Knobs: &Knobs{
 		knobFusedAttention:   "1",
 		"GOINFER_NOT_A_KNOB": "x", // ignored: knobs.go is the list
 	}})

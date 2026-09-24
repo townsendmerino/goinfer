@@ -306,8 +306,9 @@ type Options struct {
 	MoEPager string
 	// Knobs sets per-model operator knobs by environment-variable name (knobs.go's list, e.g.
 	// "GOINFER_FUSED_ATTENTION": "0"), overriding the process environment for THIS model only. Unset names
-	// take the environment's value, read once at Load. Unknown names are ignored.
-	Knobs map[string]string
+	// take the environment's value, read once at Load. Unknown names are ignored. A pointer, so Options
+	// stays comparable (a hard-tier API property, docs/api-tiers.md): Knobs: &decoder.Knobs{...}.
+	Knobs *Knobs
 	// EmbedInt4 relaxes the int8 pin on the token-embedding/LM-head table in int4
 	// mode, storing it at int4 too — halving the single largest resident tensor on a
 	// big-vocab small model. Lossy + opt-in (~2.3 pts top-1, mostly on rare tokens);
@@ -476,7 +477,7 @@ func Load(dir string, opts Options) (*Model, error) {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
 		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition, exactPrefill: opts.ExactPrefill}
-		m.bindKnobs(opts.Knobs)
+		m.bindKnobs(opts.Knobs.values())
 		m.withBackendNames(opts.Backend, beErr)
 		if opts.StreamWeights {
 			// S4 item 2 (task-never-swap-2026-09.md): resolve an "auto" (0) weight-cache request
@@ -590,7 +591,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		w.Cfg.EOSTokenID = raw
 	}
 	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition, exactPrefill: opts.ExactPrefill}).withBackendNames(opts.Backend, beErr)
-	m.bindKnobs(opts.Knobs)
+	m.bindKnobs(opts.Knobs.values())
 	// `resident` is the third phase: weights becoming a device-side runner. Timed here rather than
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user
 	// wondering where nine seconds went is owed that time too.

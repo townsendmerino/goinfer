@@ -17,7 +17,7 @@ These fourteen decoder knobs are snapshotted when a model is loaded, not read on
 `GOINFER_NO_KVONLY_PREFILL`, `GOINFER_NO_GREEDY_FASTPATH`, `GOINFER_NO_OPTFWD`,
 `GOINFER_NO_SAMPLE_FASTPATH`, `GOINFER_NO_TOPK_FASTPATH`, `GOINFER_OPTFWD_MAX_TEMP`,
 `GOINFER_CPU_FAST_ATTENTION`. Changing one after Load does not affect a model already loaded. A
-library caller can set any of them for one model with `decoder.Options.Knobs` (name → value, which
+library caller can set any of them for one model with `decoder.Options{Knobs: &decoder.Knobs{name: value}}` (which
 overrides the environment for that model only). The backends' own reads of the same name are
 unchanged until their phase: Metal still reads `GOINFER_MOE_EXPERT_MAJOR` itself. See
 `docs/tasks/task-env-config-2026-09.md`. A test that A/Bs a loaded model uses

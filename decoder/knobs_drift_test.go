@@ -11,7 +11,7 @@ import (
 // the two sanctioned routes (Options.Knobs, SetKnobForTest). A tripwire nobody has seen go red proves nothing.
 func TestKnobDrift_firesOnPostLoadSetenv(t *testing.T) {
 	t.Setenv(knobNoOptFwd, "")
-	m, err := Load(tinyFixture(t), Options{Backend: "cpu", Knobs: map[string]string{knobFusedAttention: "0"}})
+	m, err := Load(tinyFixture(t), Options{Backend: "cpu", Knobs: &Knobs{knobFusedAttention: "0"}})
 	if err != nil {
 		t.Fatal(err)
 	}

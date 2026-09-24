@@ -36,6 +36,16 @@ var knobNames = []string{
 	knobNoTopKFastpath, knobOptFwdMaxTemp, knobCPUFastAttention,
 }
 
+// Knobs is Options.Knobs: per-model knob values by environment-variable name.
+type Knobs map[string]string
+
+func (k *Knobs) values() map[string]string {
+	if k == nil {
+		return nil
+	}
+	return *k
+}
+
 // knobSet is one model's snapshot. A nil *knobSet reads the live environment — the old behaviour — for the
 // structures tests build by hand without a Model (a hand-made Architecture, scratch or worker pool).
 type knobSet struct {
