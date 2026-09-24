@@ -1,0 +1,15 @@
+{
+  "_doc": "sha256 of the gitignored tiny checkpoint each committed golden was recorded from. The pin scripts random-initialise these checkpoints and do NOT reproduce the same weights across torch/transformers versions (bailing_hybrid's not even run to run), so a checkpoint regenerated on another box silently pairs a committed golden with different weights and the parity test fails with a meaningless cosine. Tests check this first (decoder/fixture_identity_test.go). When you re-pin a fixture, commit its golden(s) AND update its hash here in the same commit. See docs/measurements/tiny-fixture-golden-mismatch-2026-09-24.md.",
+  "gemma3-vl-tiny": {
+    "model.safetensors": "639dcf85cb29e9836b82fdd0c083641db29b7d9d9b2a6283d57bec3de31e03cc",
+    "goldens": ["testdata/gemma3_vl_tiny_text_golden.json", "testdata/gemma3_vl_tiny_image_golden.json", "testdata/int4_forward_goldens.json#gemma3-vl-tiny"],
+    "recorded": "2026-09-18 on nobara-pc (commit 2dca08c4), torch 2.12.0+cpu / transformers 5.10.2",
+    "pin": "scripts/pin_gemma3_vl_tiny.py + scripts/pin_gemma3_vl_image.py"
+  },
+  "bailing_hybrid-tiny": {
+    "model.safetensors": "db6c9ad4a74bb4043dc0f920d17d9fcc072e6878e413e1b31bec60c35d9fd442",
+    "goldens": ["testdata/bailing_hybrid_forward_golden.json", "testdata/bailing_hybrid_forward_full.json (gitignored)"],
+    "recorded": "2026-09-18 on nobara-pc (commit 83f4c64b)",
+    "pin": "scripts/pin_bailing_hybrid_tiny.py (not deterministic even run to run)"
+  }
+}

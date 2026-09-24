@@ -52,6 +52,7 @@ func TestBailingHybrid_forwardParity(t *testing.T) {
 	if _, err := os.Stat(bailingHybridModelDir + "/model.safetensors"); errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no BailingHybrid checkpoint at %s — regenerate with scripts/pin_bailing_hybrid_tiny.py", bailingHybridModelDir)
 	}
+	requireFixtureIdentity(t, bailingHybridModelDir)
 
 	m, err := Load(bailingHybridModelDir, Options{})
 	if err != nil {

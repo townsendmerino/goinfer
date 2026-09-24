@@ -264,6 +264,7 @@ func TestInt4_forwardParity(t *testing.T) {
 			continue // a fixture with no recorded golden yet; the census below reports it
 		}
 		t.Run(name, func(t *testing.T) {
+			requireFixtureIdentity(t, d) // a re-pinned tiny fixture reads as an int4 regression otherwise
 			g, ok := int4RunOne(t, d)
 			if !ok {
 				t.Skipf("%s no longer loads at int4", name)

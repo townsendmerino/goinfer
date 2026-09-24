@@ -35,6 +35,7 @@ func loadGemma3VLTiny(t *testing.T) (*Model, gemma3VLGolden) {
 	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
 		t.Skip("no checkpoint — run scripts/pin_gemma3_vl_tiny.py")
 	}
+	requireFixtureIdentity(t, ckpt)
 	var g gemma3VLGolden
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatalf("parse golden: %v", err)
@@ -235,6 +236,7 @@ func loadQwen25VLTiny(t *testing.T) (*Model, qwen25vlGolden) {
 	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
 		t.Skip("no checkpoint")
 	}
+	requireFixtureIdentity(t, ckpt)
 	var g qwen25vlGolden
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatalf("parse golden: %v", err)

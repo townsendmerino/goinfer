@@ -92,17 +92,12 @@ KNOWN_UNRELATED_FAILURES=(
 	# TestOlmo3_forwardParity's rope_parameters regression: FIXED 2026-09-12, see
 	# docs/audit-2026-09-10.md's G-03/G-04 dispositions. Removed per this array's own rule above.
 
-	# R13's decode-attention change (forwardn.go/scratch.go, GOINFER_ATTN_GROUPED) touches
-	# neither Bailing Hybrid, Gemma 3 VL, nor int4's gemma3-vl-tiny fixture, and gates its new
-	# code path on useAcc64 && K==1 && no tree mask && group==attnGroupedNEONSize(6) && nKeys>=128
-	# && GOINFER_ATTN_GROUPED!=0 — none of which any of these three fixtures' forward calls are
-	# shaped to hit. Traced by `git stash`-ing this change and re-running all three: identical
-	# failures (same argmax/cosine/logit deltas) on the untouched tree at e638706e, so these are
-	# pre-existing and independent of this change, not investigated further as out of scope for
-	# R13. Remove once someone roots-causes and fixes the underlying regression.
-	"TestBailingHybrid_forwardParity|2026-09-20|pre-existing on e638706e (git-stash confirmed), unrelated to R13's attention change"
-	"TestGemma3VL_textParity|2026-09-20|pre-existing on e638706e (git-stash confirmed), unrelated to R13's attention change"
-	"TestInt4_forwardParity|2026-09-20|gemma3-vl-tiny subtest pre-existing on e638706e (git-stash confirmed), unrelated to R13's attention change"
+	# TestBailingHybrid_forwardParity, TestGemma3VL_textParity and TestInt4_forwardParity/gemma3-vl-tiny
+	# (added 2026-09-20 as "pre-existing, unrelated to R13"): ROOT-CAUSED and removed 2026-09-24 per this
+	# array's own rule. Not a forward regression: the gitignored tiny checkpoints on the Mac were not the
+	# ones the committed goldens were recorded from (the pin scripts do not reproduce the same random
+	# weights across torch/transformers versions). testdata/fixture_identity.json now fails those tests
+	# with that diagnosis instead. Record: docs/measurements/tiny-fixture-golden-mismatch-2026-09-24.md.
 )
 # Fail LOUDLY on a malformed entry rather than silently matching nothing (or everything) —
 # each entry must split into exactly three '|'-separated fields.

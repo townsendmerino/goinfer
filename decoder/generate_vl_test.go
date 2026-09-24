@@ -28,6 +28,7 @@ func TestGenerateVL_streams(t *testing.T) {
 	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
 		t.Skip("no checkpoint — run scripts/pin_gemma3_vl_tiny.py")
 	}
+	requireFixtureIdentity(t, ckpt)
 	var g struct {
 		InputIDs        []int     `json:"input_ids"`
 		ImageTokenStart int       `json:"image_token_start"`
