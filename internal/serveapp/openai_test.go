@@ -538,29 +538,29 @@ func TestConstrainForcedTool_M05(t *testing.T) {
 	// gemma4: SupportsTools true, ToolCallWrapper ok=false → unconstrainable.
 	lmG := &loadedModel{tmpl: chat.Gemma4(), vocab: 32, tk: nil}
 	// named force on an unconstrainable family → error (becomes 400).
-	if err := constrainForcedTool(lmG, &genRequest{}, tool, true, []chat.Tool{*tool}); err == nil {
+	if err := constrainForcedTool(lmG, &genRequest{}, tool, true, "", []chat.Tool{*tool}); err == nil {
 		t.Error("named tool_choice on gemma4 (no constrainable form) should error, got nil (M-05)")
 	}
 	// lone-tool convenience on the same family → no error (optimization only).
-	if err := constrainForcedTool(lmG, &genRequest{}, tool, false, []chat.Tool{*tool}); err != nil {
+	if err := constrainForcedTool(lmG, &genRequest{}, tool, false, "", []chat.Tool{*tool}); err != nil {
 		t.Errorf("lone-tool on gemma4 should not error, got %v", err)
 	}
 	// N-18: forced == nil now depends on WHY. With namedForce, the caller named a function that
 	// is not in tools — a typo or a stale tool list — and generating unconstrained answers a
 	// different question than the one asked, so it is a 400. This case previously asserted the
 	// opposite ("nil forced tool should not error"), which is the defect N-18 describes.
-	if err := constrainForcedTool(lmG, &genRequest{}, nil, true, []chat.Tool{*tool}); err == nil {
+	if err := constrainForcedTool(lmG, &genRequest{}, nil, true, "", []chat.Tool{*tool}); err == nil {
 		t.Error("a named tool_choice matching no tool returned nil: the request generates " +
 			"completely unconstrained after asking for one specific function (N-18)")
 	}
 	// Without namedForce it is just "no lone-tool convenience available" — not an error.
-	if err := constrainForcedTool(lmG, &genRequest{}, nil, false, []chat.Tool{*tool}); err != nil {
+	if err := constrainForcedTool(lmG, &genRequest{}, nil, false, "", []chat.Tool{*tool}); err != nil {
 		t.Errorf("nil forced tool without a named choice should not error, got %v", err)
 	}
 	// constrainable family (chatml): wires the masker, returns nil.
 	lmC := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
 	gr := &genRequest{}
-	if err := constrainForcedTool(lmC, gr, tool, true, []chat.Tool{*tool}); err != nil {
+	if err := constrainForcedTool(lmC, gr, tool, true, "", []chat.Tool{*tool}); err != nil {
 		t.Fatalf("chatml named force should succeed, got %v", err)
 	}
 	if gr.masker == nil || gr.sp.LogitProcessor == nil {
@@ -656,5 +656,63 @@ func TestLimitInflight_M01(t *testing.T) {
 	limitInflight(sem, func(http.ResponseWriter, *http.Request) { ok = true })(httptest.NewRecorder(), httptest.NewRequest("POST", "/x", nil))
 	if !ok {
 		t.Error("freed slot must admit the next request")
+	}
+}
+
+// TestConstrainToolUnion_wiring pins T1-T3's routing decisions (docs/tasks/task-tool-grammar-union-2026-09.md):
+// 2+ tools under auto arm the union LAZILY (a LogitProcessor, never the fused-spec masker, which
+// assumes a grammar live from token 1); required forces it from token 1 (masker set, so fused
+// spec applies); a family with no opener (llama3) stays unconstrained under auto but is still
+// constrained under required; GOINFER_TOOL_UNION=0 restores the pre-T1 behaviour exactly.
+func TestConstrainToolUnion_wiring(t *testing.T) {
+	tools := []chat.Tool{
+		{Name: "get_weather", Parameters: []byte(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`)},
+		{Name: "get_time"},
+	}
+	chatml := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
+	llama := &loadedModel{tmpl: chat.Llama3(), vocab: 32, tk: &tokenizer.Tokenizer{}}
+	cases := []struct {
+		name       string
+		lm         *loadedModel
+		mode       string
+		disabled   bool
+		wantProc   bool
+		wantMasker bool
+	}{
+		{"chatml auto → lazy", chatml, "auto", false, true, false},
+		{"chatml required → forced union", chatml, "required", false, true, true},
+		{"chatml no union mode → unconstrained", chatml, "", false, false, false},
+		{"llama3 auto → unconstrained (no opener)", llama, "auto", false, false, false},
+		{"llama3 required → forced union", llama, "required", false, true, true},
+		{"GOINFER_TOOL_UNION=0 → unconstrained (auto)", chatml, "auto", true, false, false},
+		{"GOINFER_TOOL_UNION=0 → unconstrained (required)", chatml, "required", true, false, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prev := toolUnionEnabled
+			toolUnionEnabled = !c.disabled
+			t.Cleanup(func() { toolUnionEnabled = prev })
+			gr := &genRequest{}
+			if err := constrainForcedTool(c.lm, gr, nil, false, c.mode, tools); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := gr.sp.LogitProcessor != nil; got != c.wantProc {
+				t.Errorf("LogitProcessor set = %v, want %v", got, c.wantProc)
+			}
+			if got := gr.masker != nil; got != c.wantMasker {
+				t.Errorf("fused-spec masker set = %v, want %v", got, c.wantMasker)
+			}
+		})
+	}
+	// Anthropic auto never forces a lone tool, so it reaches here with forced == nil: the lazy
+	// union is the constraint it gets (non-forcing, so safe for Claude Code's loop).
+	gr0 := &genRequest{}
+	if err := constrainForcedTool(chatml, gr0, nil, false, "auto", tools[:1]); err != nil || gr0.sp.LogitProcessor == nil || gr0.masker != nil {
+		t.Errorf("Anthropic-auto lone tool: err=%v proc=%v masker=%v — want the lazy union only", err, gr0.sp.LogitProcessor != nil, gr0.masker != nil)
+	}
+	// a lone tool keeps the existing single-tool path, not the union
+	gr := &genRequest{}
+	if err := constrainForcedTool(chatml, gr, &tools[0], false, "auto", tools[:1]); err != nil || gr.masker == nil {
+		t.Errorf("lone tool: err=%v masker=%v — the single-tool path must be unchanged", err, gr.masker != nil)
 	}
 }

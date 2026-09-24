@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -57,7 +58,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	// decode (audit M-05).
 	forced := forcedTool(req.ToolChoice, tools)
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"
-	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, tools); cerr != nil {
+	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, openAIUnionMode(req.ToolChoice), tools); cerr != nil {
 		writeErr(w, http.StatusBadRequest, cerr.Error())
 		return
 	}
@@ -236,7 +237,18 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 // lone-tool convenience (namedForce=false) never errors — it is only an optimization, and
 // the model is still free to answer in prose. Shared by /v1/chat/completions, /v1/responses,
 // and the Anthropic Messages surface so all three degrade identically.
-func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, namedForce bool, tools []chat.Tool) error {
+//
+// union ("", "auto" or "required") says what to do when no single tool is forced (usually two or
+// more tools; also Anthropic auto's lone tool) (T1-T3, docs/tasks/task-tool-grammar-union-2026-09.md): "required" (OpenAI
+// required, Anthropic any) constrains the call to ANY supplied tool from token 1; "auto" arms the
+// same union lazily, on the family's call opener, so a prose answer stays legal (ground rule 1).
+func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, namedForce bool, union string, tools []chat.Tool) error {
+	// len >= 1, not 2: Anthropic auto never forces a lone tool (anthropicForcedTool), and the lazy
+	// union cannot force anything either, so it is the constraint that path was missing.
+	if forced == nil && !namedForce && len(tools) >= 1 {
+		constrainToolUnion(lm, gr, union, tools)
+		return nil
+	}
 	if forced == nil {
 		// N-18: a NAMED tool_choice that matched no tool used to land here and return nil —
 		// the request then generated completely unconstrained, having asked for one specific
@@ -282,6 +294,54 @@ func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, nam
 	return nil
 }
 
+// toolUnionEnabled is the rollback knob for the multi-tool union (GOINFER_TOOL_UNION=0 turns
+// it off: 2+ tools then decode exactly as before T1 — unconstrained under auto and required).
+var toolUnionEnabled = os.Getenv("GOINFER_TOOL_UNION") != "0"
+
+// constrainToolUnion wires the multi-tool union for a request with 2+ tools and no single forced
+// tool. It never errors: a family with no JSON call form, or a tool schema the grammar cannot
+// compile, leaves the request unconstrained — today's behaviour — rather than refusing it.
+func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []chat.Tool) {
+	if !toolUnionEnabled || (mode != "auto" && mode != "required") {
+		return
+	}
+	prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper()
+	if !ok {
+		return
+	}
+	specs := make([]constrain.ToolSpec, len(tools))
+	for i, t := range tools {
+		specs[i] = constrain.ToolSpec{Name: t.Name, Parameters: t.Parameters}
+	}
+	eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
+	if mode == "required" {
+		// T3: the model must call something, and cannot call it badly. Forced from token 1
+		// exactly like a named tool, so grammar-fused speculative decode applies.
+		g, err := constrain.ToolCallsGrammar(prefix, suffix, argsKey, array, specs)
+		if err != nil {
+			return
+		}
+		m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()
+		gr.sp.LogitProcessor = m.Process
+		gr.masker = m
+		return
+	}
+	// T2, auto: arm on the opener. A family whose call has no opener (llama3's bare JSON) is
+	// left unconstrained under auto — nothing distinguishes the start of a call from prose that
+	// begins with '{' (the task's option b).
+	trigger := strings.TrimRight(prefix, " \t\r\n")
+	if trigger == "" {
+		return
+	}
+	g, err := constrain.ToolCallsGrammar(trigger, suffix, argsKey, array, specs)
+	if err != nil {
+		return
+	}
+	// A LogitProcessor only: gr.masker stays nil, because the grammar-fused speculative path
+	// assumes a grammar live from token 1, which a lazy one is not.
+	gr.sp.LogitProcessor = constrain.NewLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), trigger).Process
+}
+
 // toAPICalls renders parsed calls in the OpenAI response shape (arguments is a
 // JSON string).
 func toAPICalls(calls []chat.ToolCall) []map[string]any {
@@ -321,6 +381,17 @@ func toolChoiceMode(raw json.RawMessage) string {
 		return s // "auto" | "none" | "required"
 	}
 	return "function" // an object → a specific function is named
+}
+
+// openAIUnionMode maps an OpenAI tool_choice to constrainForcedTool's union mode.
+func openAIUnionMode(toolChoice json.RawMessage) string {
+	switch toolChoiceMode(toolChoice) {
+	case "auto":
+		return "auto"
+	case "required":
+		return "required"
+	}
+	return ""
 }
 
 // forcedTool returns the single tool the call must be (a forced function, or the

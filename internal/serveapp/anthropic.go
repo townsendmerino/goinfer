@@ -415,7 +415,14 @@ func anthropicForcedTool(mode, name string, tools []chat.Tool) *chat.Tool {
 // produces that call, so silent unconstrained decoding is a violation (audit M-05).
 func applyToolConstraint(lm *loadedModel, gr *genRequest, mode, name string, tools []chat.Tool) error {
 	forced := anthropicForcedTool(mode, name, tools)
-	return constrainForcedTool(lm, gr, forced, mode == "tool", tools)
+	union := ""
+	switch mode {
+	case "auto":
+		union = "auto"
+	case "any":
+		union = "required"
+	}
+	return constrainForcedTool(lm, gr, forced, mode == "tool", union, tools)
 }
 
 // --- response blocks + stop reason ---

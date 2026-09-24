@@ -562,7 +562,7 @@ func TestConstrainForcedTool_namedButNonexistentIs400(t *testing.T) {
 	tools := []chat.Tool{{Name: "get_weather"}, {Name: "get_time"}}
 	lm := &loadedModel{tmpl: chat.ChatML(), vocab: 32, tk: &tokenizer.Tokenizer{}}
 
-	err := constrainForcedTool(lm, &genRequest{}, nil, true, tools)
+	err := constrainForcedTool(lm, &genRequest{}, nil, true, "", tools)
 	if err == nil {
 		t.Fatal("a named tool_choice matching no tool returned nil (N-18)")
 	}
@@ -574,7 +574,7 @@ func TestConstrainForcedTool_namedButNonexistentIs400(t *testing.T) {
 		}
 	}
 	// Not an error when no specific function was named — that is just "no lone-tool shortcut".
-	if err := constrainForcedTool(lm, &genRequest{}, nil, false, tools); err != nil {
+	if err := constrainForcedTool(lm, &genRequest{}, nil, false, "", tools); err != nil {
 		t.Errorf("unnamed choice with no forced tool errored: %v", err)
 	}
 }

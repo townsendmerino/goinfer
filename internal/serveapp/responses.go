@@ -238,7 +238,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	gr.id = id // K1: registers this generation for cancel-by-id
 	forced := forcedTool(req.ToolChoice, tools)
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"
-	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, tools); cerr != nil {
+	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, openAIUnionMode(req.ToolChoice), tools); cerr != nil {
 		writeErr(w, http.StatusBadRequest, cerr.Error()) // named tool_choice unconstrainable → 400 (M-05)
 		return
 	}
