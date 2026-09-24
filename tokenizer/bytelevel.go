@@ -552,6 +552,22 @@ type tokenizerConfig struct {
 }
 
 func readTokenizerConfig(dir string) tokenizerConfig {
+	cfg := readTokenizerConfigJSON(dir)
+	// Recent transformers save the chat template as its own file beside tokenizer_config.json
+	// (and drop the key from it). Without this fallback such a checkpoint reached chat.Detect with
+	// no template at all: it fell through to the vocab heuristic (mellum2 → generic chatml) or to
+	// raw completion (Granite-4.0-H, Laguna XS.2), and a released SmolLM3/Olmo 3 shipped that way
+	// would bypass the M-36 fingerprints and render as plain chatml (docs/tool-call-coverage.md,
+	// finding 1). The JSON key still wins when both are present, as transformers resolves it.
+	if cfg.ChatTemplate == "" {
+		if b, err := os.ReadFile(filepath.Join(dir, "chat_template.jinja")); err == nil {
+			cfg.ChatTemplate = string(b)
+		}
+	}
+	return cfg
+}
+
+func readTokenizerConfigJSON(dir string) tokenizerConfig {
 	var cfg tokenizerConfig
 	raw, err := os.ReadFile(filepath.Join(dir, "tokenizer_config.json"))
 	if err != nil {
