@@ -1,0 +1,16 @@
+=== 2026-09-25T18:21:22Z START 1 dense greedy: cuda+cpu @128 (a, e), cuda @2048/3900 (a)
+REFUSED: 1-min load average 4.56 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+=== 2026-09-25T18:21:22Z END 1 rc=1 (0s)
+=== 2026-09-25T18:21:22Z START 2 dense greedy @8000, BENCH_CTX=8192 (a)
+REFUSED: 1-min load average 4.56 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+=== 2026-09-25T18:21:22Z END 2 rc=1 (0s)
+=== 2026-09-25T18:21:22Z START 3 controls gemma3-1b, phi3-mini @128/3900 (b)
+REFUSED: 1-min load average 4.56 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+=== 2026-09-25T18:21:22Z END 3 rc=1 (0s)
+=== 2026-09-25T18:21:22Z START 4 sampled 0.5B, phi3-mini @128 (f)
+REFUSED: 1-min load average 4.56 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+=== 2026-09-25T18:21:22Z END 4 rc=1 (0s)
+=== 2026-09-25T18:21:22Z START 5 26B MoE @128, BENCH_CTX=2048 (c)
+REFUSED: 1-min load average 4.56 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+=== 2026-09-25T18:21:22Z END 5 rc=1 (0s)
+=== 2026-09-25T18:21:22Z START 6 prefill TTFT 1.5B K=512/3900 (d)

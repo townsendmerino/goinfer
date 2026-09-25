@@ -1,0 +1,20 @@
+== q05 vs qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+
+VERDICT: SAME WEIGHTS (repacked container)
+== q15 vs qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+
+VERDICT: SAME WEIGHTS (repacked container)
+== q7b vs qwen2.5-7b-instruct-q4_k_m.gguf
+
+VERDICT: SAME WEIGHTS (repacked container)
+== p3m vs phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf
+
+VERDICT: WEIGHTS DIFFER
+== g31b vs gemma3-1b-q4_k_m.gguf
+
+VERDICT: SAME WEIGHTS (repacked container)
+== m26q4km vs gemma4-26b-q4_k_m.gguf
+
+VERDICT: SAME WEIGHTS (repacked container)
+identical tensors : 195/195
+VERDICT: SAME WEIGHTS (repacked container)

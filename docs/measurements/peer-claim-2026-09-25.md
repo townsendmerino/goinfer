@@ -170,15 +170,160 @@ them.
 
 | cell | points | outcome | median r (pairs) | peer tok/s or ms | llama.cpp r |
 |---|---|---|---|---|---|
-| a | | | | | |
-| b | | | | | |
-| c | | | | | |
-| d | | | | | — |
-| e | | | | | |
-| f | | | | | |
+| a | CUDA greedy, 0.5B / 1.5B / 7B × depth 128 / 2048 / 3900 / 8000 (12) | **9 AHEAD · 1 LEVEL** (7B @8000) · **2 VOID** (0.5B @2048, 7B @128: Ollama ended its reply early) · **0 BEHIND** | @128 1.272 / 1.297 / *void 1.098*; @2048 *void 1.131* / 1.269 / 1.076; @3900 1.167 / 1.229 / 1.052; @8000 1.153 / 1.130 / 0.986 (0.5B / 1.5B / 7B; 3 pairs each) | per point below | 1.5B AHEAD @128 / 2048 (1.114 / 1.044), LEVEL @3900; 7B LEVEL @2048 / 3900; BEHIND on the 0.5B @128 / 2048 / 8000 (0.83–0.92) and at 8000 on 1.5B / 7B (0.948 / 0.939); 2 VOID |
+| b | CUDA controls, gemma3-1b / phi3-mini × depth 128 / 3900 (4) | gemma3-1b @3900 **AHEAD** · @128 **VOID** (goinfer ended at 34 of 64 tokens) · phi3-mini @128 **AHEAD** · @3900 **VOID** (Ollama reported no tokens) | gemma3-1b 1.262 (@3900), *void 1.266* (@128); phi3-mini 1.138 (@128), *void 0.799* (@3900) | per point below | gemma3-1b @3900 BEHIND (0.922); phi3-mini @128 AHEAD (1.121), @3900 BEHIND (0.794); 1 VOID |
+| c | Gemma 4 26B-A4B on 8 GB, ctx 2048 (1) — **architecture comparison** | **AHEAD** (not like-for-like; never in a family claim) | 1.815 (3 pairs) | Ollama 22.2 vs goinfer 40.2 tok/s | AHEAD (1.453; llama.cpp 27.6) |
+| d | CUDA TTFT, 1.5B, K = 512 / 3900 (2) | **AMBIGUOUS-HIGH** at both (spread cap from Ollama's own spread, 21.6% / 5.3%; all 12 pairs above 1.0) | 4.994 / 1.019 (6 pairs each) | Ollama 445 / 972 ms vs goinfer 88 / 955 ms (medians) | — |
+| e | CPU amd64, 0.5B / 1.5B / 7B @128 (3) | 0.5B **BEHIND** · 1.5B **VOID** (goinfer ended at 54 of 64) · 7B **VOID** (Ollama ended at 56 of 64) | 0.797; *void 0.802*; *void 0.841* | Ollama 57.6 / 24.2 / 6.1 vs goinfer 45.9 / 19.4 / 5.1 | 0.5B BEHIND (0.734); 2 VOID (raw 0.712 / 0.776) |
+| f | CUDA sampled @128, 0.5B / phi3-mini × temp 1.0 / temp 0.8 + top_p 0.95 (4) | 0.5B t0.8/p0.95 **AHEAD** · 0.5B t1.0 **VOID** (goinfer 1326 of 1536 tokens) · phi3-mini t1.0 **AHEAD** · phi3-mini t0.8/p0.95 **AMBIGUOUS-HIGH** | 1.194; *void 1.265*; 1.138; 1.027 | per point below | phi3-mini t1.0 AHEAD (1.118), t0.8/p0.95 LEVEL (1.015); 0.5B both VOID (raw 0.854 / 0.909) |
 | g | Metal, 0.5B/1.5B/7B × depth 128/2048/3900 (9) | **1 AHEAD** (0.5B @128) · **6 BEHIND** (every 2048/3900 cell) · **2 VOID** (1.5B, 7B @128) | 0.5B @128 1.183; @2048 0.753 / 0.701 / 0.707; @3900 0.582 / 0.609 / 0.612 (0.5B / 1.5B / 7B; 3 pairs each) | per point below | 0.5B @128 AHEAD (1.094); BEHIND 0.536–0.700 at every 2048/3900 cell; 2 VOID |
 | h | Metal TTFT, 1.5B, K = 512 / 3900 (2) | **AMBIGUOUS-LOW** at 512 (spread cap; all 6 pairs behind) · **BEHIND** at 3900 | 0.377 / 0.239 (6 pairs each) | Ollama 591 / 4184 ms vs goinfer 1580 / 17510 ms (medians) | — |
 | i | CPU arm64, 0.5B / 1.5B @128 (2) | 0.5B **AMBIGUOUS-LOW** (peer spread cap) · 1.5B **VOID** | 0.5B 1.166 (pairs 0.874, 1.166, 1.168); 1.5B 0.804, void | Ollama 0.5B 125.2 / 93.7 / 93.1; 1.5B 61.8 / 60.3 / 62.0 | 0.5B BEHIND (0.842); 1.5B VOID |
+
+
+### Cells a–f in detail (nobara-pc, 2026-09-25)
+
+**Provenance.** RTX 2070 SUPER 8 GB, driver **`595.91.07`** in every results header (the anchor; no re-anchor),
+Ryzen 7 3700X (16 threads), Nobara 44, kernel 7.2.0. goinfer built from this pre-registration's commit `411e7fc4`:
+`~/bench-peer-claim/serve-cuda-411e7fc4` (`cuda/cmd/serve`, `-tags cuda`, `CGO_ENABLED=0`) and
+`serve-cpu-411e7fc4` (root `cmd/serve`), both built 17:50Z. Ollama v0.32.5 at `~/ollama-0325` with its defaults (flash
+attention on, f16 KV). llama-server `0.4.0-dev (build 1, commit 427291b)`. Every checkpoint read from `~/models` on NVMe;
+the Ollama store is `~/ollama-0325/models`. Timed runs, UTC: step 1 (a @128/2048/3900 and e) 18:23–19:10, a @8000
+19:11–19:20, b 19:20–19:28, f 19:28–19:36, c 19:36–19:44, d 19:46–19:47. Raw files, the runner, every log (including
+the void attempts) and the grader: [`peer-claim-2026-09-25/`](peer-claim-2026-09-25/) (`python3 grade.py` reproduces
+every outcome here; it is the Mac's grader with the cell key widened to include file, backend and config).
+
+Four things in the headers to read correctly:
+- **`goinfer_tree_dirty: true`** in every file. The only untracked paths were `test.json` and this results directory
+  being written; no tracked file was modified.
+- **`d-prefill.json` says commit `558c6cad`.** The checkout was fast-forwarded to pull the Mac's results while step 6
+  ran, and the prefill harness reads `HEAD`. The binary it drove is the `411e7fc4` build (`serve_mtime` 10:50:23 −0700
+  = 17:50:23Z), and `411e7fc4..558c6cad` changes no `.go`, `go.mod` or `go.sum`. Its `peer_version` line reads "could
+  not connect": the harness probes `ollama -v` with no server up. The binary is the same v0.32.5.
+- **`a-e-dense.json`'s header time, 19:11:23Z, is a resume, not the measurement.** The runner was restarted after step
+  2 was refused at load 1.00, and step 1 re-opened its file, found 36 of 36 cells done, ran nothing and rewrote the
+  header. Each cell's own `machine` record carries its load and GPU state.
+- **Two void attempts precede this run and nothing from them is used.** Attempt 1 exported Ollama's library directory
+  in `LD_LIBRARY_PATH`, so llama-server loaded Ollama's bundled libllama and never came up; its partial file is kept as
+  `void-attempt1-a-e-dense.json`. Attempt 2 was refused by the harness preflight at load 4.56. The runner now waits for
+  load1 < 0.8 before every step and aborts the sweep on any failed step.
+
+**Protocol.** `BENCH_RUNS=3` (3 pairs per decode cell), `BENCH_ENGINES=goinfer,ollama,llamacpp`, interleaved cell by
+cell with a server restart between cells (the harness's own protocol), its preflight idle gate before every cell, and 6
+unique-prefix requests per prefill cell. Depth 8000 used `BENCH_CTX=8192` on all three engines, and the 26B
+`BENCH_CTX=2048`, as registered.
+
+**Same weights:** Part 1's table, checked before timing (`same-weights.log`). Every phi3-mini peer row here used
+`p3m-local`, the re-import of the `~/models` file.
+
+**Cell a — depths 128 / 2048 / 3900, harness default context (a-e-dense.json)**
+
+| model | depth | goinfer tok/s | Ollama tok/s | r pairs vs Ollama | outcome (median r) | llama.cpp tok/s | vs llama.cpp (median r) | tokens returned (goinfer / Ollama / llama.cpp, of 1536) |
+|---|---|---|---|---|---|---|---|---|
+| 0.5B | 128 | 341.9 / 337.4 / 342.1 | 268.8 / 269.3 / 268.6 | 1.272 1.253 1.274 | **AHEAD** (1.272) | 367.6 / 365.5 / 370.1 | BEHIND (0.924) | 1536 / 1536 / 1536 |
+| 0.5B | 2048 | 306.5 / 307.6 / 305.0 | 270.9 / 270.3 / 270.5 | 1.131 1.138 1.127 | **VOID** (1.131) | 366.4 / 369.2 / 367.8 | BEHIND (0.833) | 1536 / 1392 / 1536 |
+| 0.5B | 3900 | 301.9 / 302.4 / 306.7 | 259.2 / 259.1 / 259.2 | 1.164 1.167 1.184 | **AHEAD** (1.167) | 471.4 / 479.3 / 477.2 | VOID (0.640) | 1536 / 1536 / 120 |
+| 1.5B | 128 | 253.1 / 252.9 / 252.9 | 195.1 / 195.1 / 195.0 | 1.297 1.296 1.297 | **AHEAD** (1.297) | 223.2 / 228.4 / 226.9 | AHEAD (1.114) | 1536 / 1536 / 1536 |
+| 1.5B | 2048 | 227.4 / 228.4 / 228.3 | 179.8 / 179.6 / 179.8 | 1.264 1.272 1.269 | **AHEAD** (1.269) | 219.3 / 218.8 / 217.2 | AHEAD (1.044) | 1536 / 1536 / 1536 |
+| 1.5B | 3900 | 215.0 / 214.9 / 215.6 | 175.0 / 174.9 / 174.9 | 1.228 1.229 1.232 | **AHEAD** (1.229) | 212.0 / 211.5 / 212.2 | LEVEL (1.016) | 1536 / 1536 / 1536 |
+| 7B | 128 | 81.4 / 81.4 / 81.4 | 74.2 / 74.1 / 74.1 | 1.098 1.098 1.099 | **VOID** (1.098) | 80.5 / 80.4 / 80.4 | VOID (1.012) | 1536 / 1248 / 888 |
+| 7B | 2048 | 76.3 / 76.3 / 76.3 | 71.0 / 71.0 / 70.9 | 1.075 1.076 1.076 | **AHEAD** (1.076) | 76.1 / 76.0 / 75.9 | LEVEL (1.004) | 1536 / 1536 / 1536 |
+| 7B | 3900 | 73.3 / 73.3 / 73.2 | 69.6 / 69.6 / 69.6 | 1.052 1.052 1.052 | **AHEAD** (1.052) | 74.4 / 74.4 / 74.3 | LEVEL (0.985) | 1536 / 1536 / 1536 |
+
+**Cell a — depth 8000, BENCH_CTX=8192 (a-depth8000.json; its depth-128 rows are a same-context reference, not graded cells)**
+
+| model | depth | goinfer tok/s | Ollama tok/s | r pairs vs Ollama | outcome (median r) | llama.cpp tok/s | vs llama.cpp (median r) | tokens returned (goinfer / Ollama / llama.cpp, of 1536) |
+|---|---|---|---|---|---|---|---|---|
+| 0.5B | 128 | 333.3 / 333.3 / 331.4 | 267.8 / 267.9 / 267.8 | 1.245 1.244 1.237 | **AHEAD** (1.244) | 376.4 / 375.1 / 377.6 | BEHIND (0.886) | 1536 / 1536 / 1536 |
+| 0.5B | 8000 | 300.1 / 301.1 / 299.2 | 260.3 / 260.3 / 259.7 | 1.153 1.157 1.152 | **AHEAD** (1.153) | 328.2 / 329.0 / 329.4 | BEHIND (0.914) | 1536 / 1536 / 1536 |
+| 1.5B | 128 | 251.6 / 250.9 / 251.5 | 194.7 / 194.1 / 194.3 | 1.293 1.293 1.294 | **AHEAD** (1.293) | 228.7 / 224.9 / 225.9 | AHEAD (1.113) | 1536 / 1536 / 1536 |
+| 1.5B | 8000 | 186.0 / 186.0 / 185.8 | 164.4 / 164.6 / 164.6 | 1.131 1.130 1.128 | **AHEAD** (1.130) | 195.5 / 197.0 / 195.9 | BEHIND (0.948) | 1536 / 1536 / 1536 |
+| 7B | 128 | 81.4 / 81.4 / 81.4 | 74.2 / 74.0 / 74.1 | 1.096 1.099 1.099 | **VOID** (1.099) | 80.4 / 80.4 / 80.2 | VOID (1.013) | 1536 / 1248 / 888 |
+| 7B | 8000 | 67.0 / 67.1 / 67.1 | 68.1 / 68.0 / 68.0 | 0.985 0.986 0.988 | **LEVEL** (0.986) | 71.3 / 71.6 / 71.5 | BEHIND (0.939) | 1536 / 1536 / 1536 |
+
+**Cell b (b-controls.json)**
+
+| model | depth | goinfer tok/s | Ollama tok/s | r pairs vs Ollama | outcome (median r) | llama.cpp tok/s | vs llama.cpp (median r) | tokens returned (goinfer / Ollama / llama.cpp, of 1536) |
+|---|---|---|---|---|---|---|---|---|
+| gemma3-1b | 128 | 186.2 / 190.5 / 188.5 | 149.4 / 149.4 / 148.9 | 1.247 1.275 1.266 | **VOID** (1.266) | 214.3 / 210.7 / 215.0 | VOID (0.877) | 816 / 1536 / 1536 |
+| gemma3-1b | 3900 | 187.4 / 187.8 / 186.4 | 148.6 / 148.8 / 148.7 | 1.262 1.262 1.254 | **AHEAD** (1.262) | 202.1 / 203.7 / 204.1 | BEHIND (0.922) | 1536 / 1536 / 1536 |
+| phi3-mini | 128 | 143.1 / 143.2 / 143.3 | 126.0 / 125.9 / 125.8 | 1.135 1.138 1.139 | **AHEAD** (1.138) | 127.7 / 127.8 / 126.6 | AHEAD (1.121) | 1536 / 1536 / 1536 |
+| phi3-mini | 3900 | 59.7 / 59.7 / 59.7 | 74.8 / 74.7 / 74.7 | 0.799 0.799 0.799 | **VOID** (0.799) | 75.3 / 75.2 / 75.1 | BEHIND (0.794) | 1536 / 0 / 1536 |
+
+**Cell c — Gemma 4 26B-A4B, BENCH_CTX=2048 (c-26b.json)**
+
+| model | depth | goinfer tok/s | Ollama tok/s | r pairs vs Ollama | outcome (median r) | llama.cpp tok/s | vs llama.cpp (median r) | tokens returned (goinfer / Ollama / llama.cpp, of 1536) |
+|---|---|---|---|---|---|---|---|---|
+| M26 | 128 | 40.2 / 40.2 / 40.1 | 22.2 / 22.2 / 22.2 | 1.815 1.815 1.810 | **AHEAD** (1.815) | 27.6 / 27.7 / 27.6 | AHEAD (1.453) | 1536 / 1536 / 1536 |
+
+**Cell e — CPU, 16 threads (a-e-dense.json)**
+
+| model | depth | goinfer tok/s | Ollama tok/s | r pairs vs Ollama | outcome (median r) | llama.cpp tok/s | vs llama.cpp (median r) | tokens returned (goinfer / Ollama / llama.cpp, of 1536) |
+|---|---|---|---|---|---|---|---|---|
+| 0.5B | 128 | 46.5 / 45.9 / 44.6 | 57.7 / 57.6 / 57.6 | 0.806 0.797 0.774 | **BEHIND** (0.797) | 62.8 / 62.5 / 62.2 | BEHIND (0.734) | 1536 / 1536 / 1536 |
+| 1.5B | 128 | 19.3 / 19.4 / 19.4 | 24.2 / 24.2 / 24.1 | 0.800 0.802 0.804 | **VOID** (0.802) | 27.1 / 27.2 / 27.3 | VOID (0.712) | 1296 / 1536 / 1536 |
+| 7B | 128 | 5.1 / 5.1 / 5.1 | 6.1 / 6.1 / 6.1 | 0.842 0.841 0.840 | **VOID** (0.841) | 6.6 / 6.6 / 6.6 | VOID (0.776) | 1536 / 1344 / 720 |
+
+**Cell f — depth 128 (f-sampled.json; the greedy rows are the file's same-session control, not graded cells)**
+
+| model | depth | config | goinfer tok/s | Ollama tok/s | r pairs vs Ollama | outcome (median r) | llama.cpp tok/s | vs llama.cpp (median r) | tokens returned (goinfer / Ollama / llama.cpp, of 1536) |
+|---|---|---|---|---|---|---|---|---|---|
+| 0.5B | 128 | greedy | 337.7 / 333.3 / 336.6 | 268.2 / 268.1 / 267.8 | 1.259 1.243 1.257 | **AHEAD** (1.257) | 372.1 / 371.0 / 372.9 | BEHIND (0.903) | 1536 / 1536 / 1536 |
+| 0.5B | 128 | temp0.8_topp0.95 | 318.4 / 318.5 / 318.5 | 266.6 / 266.0 / 266.6 | 1.194 1.198 1.194 | **AHEAD** (1.194) | 372.7 / 365.3 / 375.8 | VOID (0.854) | 1536 / 1536 / 1368 |
+| 0.5B | 128 | temp1.0_notrunc | 338.3 / 338.0 / 337.4 | 267.2 / 267.2 / 267.2 | 1.266 1.265 1.263 | **VOID** (1.265) | 374.7 / 359.6 / 371.1 | VOID (0.909) | 1326 / 1536 / 1490 |
+| phi3-mini | 128 | greedy | 143.4 / 143.1 / 143.0 | 125.8 / 125.7 / 125.6 | 1.140 1.139 1.138 | **AHEAD** (1.139) | 127.3 / 127.8 / 127.3 | AHEAD (1.123) | 1536 / 1536 / 1536 |
+| phi3-mini | 128 | temp0.8_topp0.95 | 129.3 / 128.9 / 129.7 | 125.9 / 125.8 / 125.8 | 1.027 1.024 1.031 | **AMBIGUOUS-HIGH** (1.027) | 127.3 / 127.5 / 127.8 | LEVEL (1.015) | 1536 / 1536 / 1536 |
+| phi3-mini | 128 | temp1.0_notrunc | 142.9 / 142.9 / 143.0 | 125.8 / 125.6 / 125.6 | 1.136 1.138 1.139 | **AHEAD** (1.138) | 127.9 / 128.6 / 127.4 | AHEAD (1.118) | 1536 / 1536 / 1463 |
+
+**Cell d** (TTFT; r = Ollama TTFT ÷ goinfer TTFT, one pair per unique-prefix request)
+
+| K | goinfer TTFT ms (6 requests) | Ollama TTFT ms | r pairs | outcome (median r) | spread goinfer / Ollama |
+|---|---|---|---|---|---|
+| 512 | 96 88 89 87 89 88 | 453 471 441 376 448 442 | 4.717 5.384 4.979 4.307 5.062 5.010 | **AMBIGUOUS-HIGH** (4.994) | 9.6% / 21.6% |
+| 3900 | 955 952 956 947 955 958 | 992 960 1012 965 974 970 | 1.039 1.009 1.058 1.019 1.019 1.012 | **AMBIGUOUS-HIGH** (1.019) | 1.1% / 5.3% |
+
+**The VOID cells are early stops, and they are reported, not re-run.** Validity gate 2 needs ≥ 95% of the requested
+tokens (1536 = 3 runs × 8 completions × 64). Seven of the 24 graded decode cells miss it against Ollama:
+
+| cell | who stopped early | tokens | reading |
+|---|---|---|---|
+| a 0.5B @2048 | Ollama | 1392 = 24 × 58 | deterministic at temperature 0 |
+| a 7B @128 | Ollama (and llama.cpp) | 1248 = 24 × 52 (888 = 24 × 37) | deterministic, and the same in the ctx-8192 reference row. The Mac's 7B @128 stopped at the same 52 and 37 |
+| b gemma3-1b @128 | **goinfer** | 816 = 24 × 34 | deterministic. Both peers ran all 64 tokens on the same weights. goinfer ending its reply 30 tokens early is a lead worth a look, not investigated here |
+| b phi3-mini @3900 | Ollama | 0 reported, 1200 chunks = 24 × 50 | Ollama's `usage` reported no tokens at all on this cell, and it streamed 50 chunks per completion. Either reading misses the gate |
+| e 1.5B @128 | **goinfer** | 1296 = 24 × 54 | deterministic. The Mac's goinfer 1.5B stopped at 58 |
+| e 7B @128 | Ollama (and llama.cpp) | 1344 = 24 × 56 (720 = 24 × 30) | deterministic |
+| f 0.5B temp 1.0 | **goinfer** | 1326 | a sampled end-of-sequence. goinfer's sampled requests carry no seed, so a re-run might pass by chance, and re-running until one does would be choosing the result |
+
+A re-run under the same protocol reproduces every temperature-0 stop, so none were re-run, as on the Mac. Their ratios
+are recorded and not graded. Nothing in Part 1 was changed for them. **The token gate is read per cell** (≥ 1460 of
+1536), as the Mac's grader reads it. Part 1's wording, "every completion", would be stricter. The only graded pair it
+could change is llama.cpp's phi3-mini at temperature 1.0 (1463 of 1536, AHEAD 1.118), a second-column reading.
+
+**What the depth curve says now.** This is the first peer measurement with flash-decode on by default. Here is what
+each engine gives up from depth 128 to depth 3900, and from 128 to 8000 at context 8192:
+
+| model | goinfer 128→3900 | Ollama 128→3900 | goinfer 128→8000 | Ollama 128→8000 |
+|---|---|---|---|---|
+| 0.5B | −11.6% | −3.6% | −10.0% | −2.8% |
+| 1.5B | −15.0% | −10.4% | −26.0% | −15.3% |
+| 7B | −10.0% | −6.1% | −17.6% | −8.2% |
+
+goinfer still loses more per token of depth than Ollama. It now starts far enough ahead that it stays ahead through
+3900 on all three models, and through 8000 on the 0.5B and 1.5B; the 7B meets Ollama at 8000 (LEVEL, 0.986).
+**phi3-mini @3900 is the exception,** and it was registered as one: there flash-decode declines, and goinfer runs
+59.7 tok/s against 74.7 (Ollama, void) and 75.2 (llama.cpp, BEHIND 0.794). This is the one CUDA decode point where
+goinfer reads behind both peers.
+
+**Cell c, read with care.** goinfer's 40.2 tok/s is this release's C′ path (the DMA overlap, `5ccba8de`, measured
+30.4 → 38.7 on the same checkpoint), not the 16.1 / 17.6 in `benchmarks.md` §B4.1, which predate it. The peers offload to
+CPU and run the Q4_K_M GGUF, while goinfer runs the int4 `.giw`. Two more cautions:
+- Every completion repeats the same greedy prompt, so goinfer's expert cache sees the same routing each time. The flat
+  per-completion rates (41.1, then 39.8–40.4) show no warm-up inside the timed runs, but a benefit carried over from
+  the discarded warm-up completion cannot be excluded by this data.
+- goinfer's peak RSS was 25.5 GB, against 17.2 GB for Ollama and 17.0 GB for llama.cpp.
+
+**Cell e confirms the expected ~0.82×.** The one graded cell is 0.797. The two void cells read 0.802 and 0.841 raw.
 
 
 ### Cells g–i in detail (MacBook, 2026-09-25)
