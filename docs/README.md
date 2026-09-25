@@ -51,7 +51,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (36: 31 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (37: 32 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
