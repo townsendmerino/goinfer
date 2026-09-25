@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -21,11 +22,18 @@ import (
 // K/V/q are synthetic random f32 (attention cost does not depend on values; the softmax path is data-independent
 // apart from exp).
 //
-//	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_FLASH_DECODE=16 GOINFER_LADDER_MODEL=<gguf> GOINFER_LADDER_DEPTHS=2048,3900,8000 \
+//	GOINFER_HEAVY_TESTS=1 [GOINFER_CUDA_FLASH_DECODE=<max S>] GOINFER_LADDER_MODEL=<gguf> GOINFER_LADDER_DEPTHS=2048,3900,8000 \
 //	  go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestFlashDecodeKernelLadder -v
 func TestFlashDecodeKernelLadder(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1")
+	}
+	// The ladder's top S. The suite's TestMain pins GOINFER_CUDA_FLASH_DECODE=0 (vramtrace_test.go) so that other tests
+	// never exercise the lane by accident — which left this test, the one that exists to time the lane, unable to run
+	// without a hand-set variable: it failed with faSplit=0 on every clean invocation. A caller's positive S is kept;
+	// "0" (the pin, or an explicit off, meaningless for a lane ladder) becomes the registered default S.
+	if v, _ := os.LookupEnv("GOINFER_CUDA_FLASH_DECODE"); flashDecodeSplit(v, true) < 1 {
+		t.Setenv("GOINFER_CUDA_FLASH_DECODE", strconv.Itoa(flashDecodeDefaultSplit))
 	}
 	path := os.Getenv("GOINFER_LADDER_MODEL")
 	if path == "" {
@@ -52,7 +60,7 @@ func TestFlashDecodeKernelLadder(t *testing.T) {
 		t.Skip("resident path declined")
 	}
 	if rf.faSplit < 1 || rf.skScores == (Pipeline{}) {
-		t.Fatalf("need GOINFER_CUDA_FLASH_DECODE=<max S> and split-KV loaded (faSplit=%d)", rf.faSplit)
+		t.Fatalf("flash-decode lane or split-KV not loaded (faSplit=%d, split-KV scores loaded=%v)", rf.faSplit, rf.skScores != (Pipeline{}))
 	}
 	maxS := rf.faSplit
 	Ly := &rf.layers[0]

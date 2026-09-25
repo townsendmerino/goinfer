@@ -108,7 +108,17 @@ func bisectModel(t *testing.T, path string) {
 	// Fork 1 setup: the target sign-flipped channels (bisect prompt). Track, per layer depth,
 	// Metal's signed value vs CPU-int4's on each — the first layer where a target flips sign names
 	// where the bug ENTERS, and that layer is where the attention-vs-MLP split then runs.
-	targets := []int{1698, 1723, 227}
+	// These are gemma3-4b's channels (hidden 2560). The control model's hidden state is narrower
+	// (qwen2.5-1.5b: 1536), and indexing 1698/1723 there panicked the whole test — probe only the
+	// targets this model has, and say which were dropped.
+	var targets []int
+	for _, ch := range []int{1698, 1723, 227} {
+		if ch < len(hidden[0]) {
+			targets = append(targets, ch)
+		} else {
+			t.Logf("target channel %d is outside this model's hidden size %d; not tracked", ch, len(hidden[0]))
+		}
+	}
 	flippedAt := map[int]int{}
 	// Re-run the probe position at each truncation depth. Metal's KV for pos already holds this
 	// token's K/V from the walk above, so re-encoding it is idempotent.
