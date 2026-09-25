@@ -923,10 +923,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		}
 		r.loraT = r.af(loraRMax)
 		// Batched prefill kernels (weight-stationary M=len path). Own module; the audited PTX is
-		// untouched. bGemv comes from gemv_w4a8_batched.ptx, the rest from prefill_batched.ptx.
-		// gemvBatchedPTX is NO LONGER COMPILED HERE: its only entry, gemv_w4a8_batched, was bound
-		// and never launched, so an entire PTX module was JIT-compiled on every model load to feed
-		// a dead field. bGemvB dispatches int4 to bRN (gemv_w4a8_rn) unconditionally.
+		// untouched; the kernels come from prefill_batched.ptx. gemv_w4a8_batched's PTX is gone: its
+		// only entry was bound and never launched, so an entire module was JIT-compiled on every model
+		// load to feed a dead field (then left go:embed-ed but unused, until removed 2026-09-24). bGemvB
+		// dispatches int4 to bRN (gemv_w4a8_rn) unconditionally.
 		{
 			if pbmod, e3 := r.dev.CompileLibrary(prefillBatchedPTX); e3 == nil {
 				ok := true

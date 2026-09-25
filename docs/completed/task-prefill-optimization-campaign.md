@@ -84,7 +84,11 @@ the point. Each wrong attribution read like a measurement:
    was 92% unused.
 3. *"activation-L2-bandwidth-bound"* — this one **became code**: the shared-staging kernel
    (`gemv_w4a8_staged`) cut global traffic 8× and moved wall time **1.2×**. It is kept, gated
-   bit-identical, **unwired**, as the reproducible refutation. The specific error: a *demanded* read
+   bit-identical, **unwired**, as the reproducible refutation. *(Removed 2026-09-24 by owner decision — `go:embed`-ed
+   in `cuda/kernels.go` but loaded only by tests, so the linker already kept it out of shipped binaries; what went was
+   ~222 KB of dead source and PTX. The refutation stays reproducible from `e1aecfbb`:
+   `cuda/gemv_w4a8_staged.cu`, `cuda/testdata/gemv_w4a8_staged.ptx`, `cuda/gemv_staged_test.go`. The unlaunched
+   `gemv_w4a8_batched` went with it.)* The specific error: a *demanded* read
    rate exceeding DRAM proves the reads are cache-served, **not** that the cache is saturated.
 4. *"issue-bound on a fat SASS instruction mix"* — refuted by ncu (22.78% issue slots). The distinct
    lesson: an instruction-mix histogram bounds throughput **from above**; it cannot establish you are

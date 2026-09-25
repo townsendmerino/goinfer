@@ -9,7 +9,7 @@
 //
 //   - Layer B (the compute) — the production kernel set in cuda/*.cu, each compiled to PTX by
 //     `go generate` (nvcc on the dev box) and go:embed'd for driver-side JIT (cuModuleLoadDataEx):
-//     GEMV/GEMM decode (gemv_fwd, gemv_w4a8_batched, gemv_w8a8_batched, gemv_w4a8_staged,
+//     GEMV/GEMM decode (gemv_fwd, gemv_w8a8_batched,
 //     gemv_w4a8_rn, gemm_w4a8_mma), prefill and attention (prefill_batched, decode_splitkv,
 //     attn_block, attn_img_prefill, attn_fused, rope_mrope_prefill), MoE routing (moe,
 //     router_f32), other families (deltanet, gptoss_act), and fused/misc (fused_qkv, glue,

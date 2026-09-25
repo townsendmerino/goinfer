@@ -28,14 +28,6 @@ import (
 //go:embed testdata/gemv_fwd.ptx
 var gemvFwdPTX []byte
 
-// gemvBatchedPTX: gemv_w4a8_batched — the weight-stationary batched GEMV for M=len prefill.
-// Bit-identical to aikit's gemv_w4a8_fwd per output element (same per-word float scale-accumulate
-// order), evaluated for M activation columns per weight-row load. Its own file (gemv_w4a8_batched.cu);
-// the audited PTX (moe.ptx, gemv_fwd/glue) is untouched.
-//
-//go:embed testdata/gemv_w4a8_batched.ptx
-var gemvBatchedPTX []byte
-
 // gemvW8BatchedPTX: gemv_w8a8_batched — the weight-stationary batched GEMV for M=len prefill on int8
 // bundles. Bit-identical to aikit's gemv_w8a8_fwd per output element BY CONSTRUCTION: int8 is per-row
 // symmetric, so the dot is an exact int32 __dp4a sum (reorder-independent) and the scales apply once
@@ -85,14 +77,6 @@ var deltaNetPTX []byte
 //
 //go:embed testdata/gptoss_act.ptx
 var gptOssActPTX []byte
-
-// gemvStagedPTX: gemv_w4a8_staged — the activation-staged batched GEMV. Bit-identical to
-// gemv_w4a8_fwd (facc live in registers across all K-chunks, single warp-reduce), but stages the
-// [MT,KC] activation tile in shared memory so it is read once per block instead of once per output
-// row — the fix for the profiled activation-L2-read bound. Own file (gemv_w4a8_staged.cu).
-//
-//go:embed testdata/gemv_w4a8_staged.ptx
-var gemvStagedPTX []byte
 
 // gemvRNPTX: gemv_w4a8_rn — register-blocked batched GEMV (RN output rows per warp), so each coalesced
 // activation load is reused across RN rows: RN× fewer L1TEX loads, the profile-justified latency fix.
