@@ -419,6 +419,7 @@ Status table, kept current as briefs move:
 | R14 | CUDA speculative-decode drafter — full-logits download, host argmax, no overlap | Linux | S (measure) + S–M (port on-device argmax if real) | **MEASURED AND SHIPPED 2026-09-22** ([`r14-drafter-argmax-2026-09-22.md`](../measurements/r14-drafter-argmax-2026-09-22.md)): the tail is at TWO sites (drafter head AND the verify's `batchedHeadArgmax`, same shape) and cost **14.9–16.0% of a spec round** (D2H at 4.7 GB/s pageable + serial host argmax); `argmax_rows` on the device at both sites: row-for-row identical on 582 calls, lossless, **1.234× spec wall** (6/6 pairs 1.22–1.25×, Qwen3-4B + DFlash, w=7) |
 | R15 | CPU sampler filter scans (`topFilterLogits`) — max-scan vs `parallelMax` | Mac | S (measure; build only if a future component wins) | **max-scan sub-item CLOSED 2026-09-22, clean negative result**: parallel LOSES at every vocab size tested (1.39-3.78× SLOWER; `decoder/sampler_filter_bench_test.go`) — goroutine overhead exceeds savings for a plain float comparison, unlike softcap's exp/tanh. `topKByLogit` (~247-262 µs) and the min-p scan (~167 µs) at gemma vocab are sized but not measured for parallel benefit — open, unfunded |
 | R16 | Metal prefill GEMM redesign (S2 of the R4 follow-on scoping) | Mac | M–L (read + prototype + wiring) | **SHIPPED 2026-09-25** (prototype 4 = 3.22×, bit-identical; wired, 3.23× in production): in-sequence GEMM category at K=512 (1.5B) ship ≥ 2.85× / park 1.8–2.85× / kill < 1.8×; fidelity gate and sustained-load timing are preconditions. S0/S1 put the int4-class ceiling here at ≥ 2.96 TFLOPS vs the current 0.75 |
+| R17 | Metal decode attention at depth — a peer-shaped kernel | Mac | M–L (step 0 is S) | **PRE-REGISTERED 2026-09-25, not started**: in-sequence attention at 3900 keys (1.5B) ship ≥ 2.5× / park 1.5–2.5× / kill < 1.5×; teacher-forced fidelity gate, ≤ 3% at 128, confirmation run. S0: attention is 41% of the 1.5B token at 3900, 2.11 ms per 1k keys vs the peer's 0.37 |
 
 Every brief below has the same shape: goal, the standing and the band registered here, what to read
 first (prior art and the negatives not to re-propose), what to build, the gates, the measurement
@@ -2132,6 +2133,74 @@ never after a prototype has been timed against it without one.
 
 **Out of scope.** Attention at depth (the K=3900 gap is GEMM and attention in similar measure — its own item), MoE
 prefill (R11), the short-prompt floor (R3).
+
+### R17 · Metal decode attention at depth — a peer-shaped kernel, pre-registered 2026-09-25
+
+**Goal.** Take the Metal decode attention depth term from ~2.1 ms per 1,000 keys (1.5B) toward the peer's ~0.37,
+by changing the kernel's shape — the axis R2's `attention_fa` did not reach. This is R2's own open question
+("take the depth term toward the peer's"), re-priced from an in-sequence measurement.
+
+**Standing (all 2026-09-25, M1 Pro, sustained).**
+- S0 ([`metal-decode-decomp-2026-09-25.md`](../measurements/metal-decode-decomp-2026-09-25.md)): in-sequence
+  attention work at 3900 keys is **8.62 ms of a 20.91 ms token on the 1.5B** (41%), 24.55 of 68.65 on the 7B (36%),
+  7.61 of 12.40 on the 0.5B (61%, the old per-query-head kernel — head dim 64 never reaches `attention_fa`); per
+  1,000 keys 2.11 / 6.30 / 1.89 ms, reading KV at ~6–13 GB/s. The pure dispatch floor is 0.65–1.1 ms/token.
+- The peer: Ollama v0.32.5's whole-token depth slope on the 1.5B is 0.37 ms per 1,000 keys; its token at 3900 is
+  13.06 ms (`peer-claim-2026-09-25.md` cell g). llama.cpp's 0.36.
+- The kernel read (recorded in S0's scoping, subagent-assisted, spot-checked): at 3900 `attention_fa` runs 28
+  threadgroups / 112 simdgroups on the 1.5B (`attnFASplitFor`: S = 14 for nKV = 2), each walking ~70 keys in a
+  dependent online-softmax chain; llama.cpp's `flash_attn_ext_vec` scores 32-key blocks with a lane-per-key
+  softmax step per block and far more loads and threadgroups in flight. goinfer already reads the least KV (shared
+  across the GQA group), so the reading is **latency-bound, not bandwidth-bound**.
+
+**Registered band — committed before any prototype is written or timed.** The metric is the **in-sequence
+attention work at 3900 keys on the 1.5B**, measured by `TestMetalDecodeDecomp`'s method (the production decode
+token with the attention pipelines swapped for a no-op, full − full-with-attention-no-op'd), current ÷ candidate,
+median of ≥ 5 paired reps, both arms in the same session:
+
+| outcome | in-sequence attention speedup at 3900 keys, 1.5B |
+|---|---|
+| **ship** | **≥ 2.5×** (8.62 → ≤ 3.45 ms: projected token ~15.7 ms, ≈ 0.83× Ollama's 13.06) |
+| **park** | 1.5–2.5× |
+| **kill** | < 1.5× |
+
+(Ship is the owner's bar; the park/kill split is this pre-registration's, mirroring R16.)
+
+**Preconditions for "ship"** (a candidate that misses one is not graded on speed):
+1. **Fidelity.** The candidate cannot be bit-identical — a key-splitting online softmax reassociates, as
+   `attention_fa` already does. It passes R2's teacher-forced gate construction (`TestR2_decodeFidelityGate`: S at
+   K=3900, the S-K3900 CPU reference, pooled §3.2 criteria) with the candidate as the candidate arm and the shipped
+   exact `attention` kernel as the exact arm.
+2. **No short-context regression.** Full-token time at 128 keys within 3% of the current path (R2's own criterion;
+   a candidate that engages below `attnFADepthFloor` has to earn it there too).
+3. **Sustained timing, burst checked.** Graded on the interleaved, back-to-back timing; the candidate's attention is
+   also timed right after 2 s idle, and a win that exists only after idle does not ship.
+4. **Confirmation run.** Exploratory runs select; the grade is a fresh run of the selected candidate alone, its own
+   session, the current kernel as the do-nothing arm, ≥ 5 paired reps fixed beforehand (R16's amendment, adopted
+   here from the start).
+
+**Also reported, not deciding:** 2048 keys; the 7B (head dim 128, GQA 7) and the 0.5B (head dim 64 — the kernel's
+reach there is a scope choice, recorded either way); end-to-end decode tok/s against Ollama through
+`scripts/bench_peer.py` if the band is met.
+
+**Steps, in order.**
+0. **The cheapest test first:** `attention_fa` with a larger split count (S from 14 toward 32–64 — `attnFASplitFor`'s
+   2×-core-count rule counts threadgroups, not simdgroups in flight). If the latency-bound reading is right this
+   alone moves the metric; it changes the reduction order, so it is graded exactly like a new kernel.
+1. **Prior art is already read** (`flash_attn_ext_vec` from the exact ggml 0.22.0 build, MLX's `sdpa_vector`); record
+   the details that decide the design in the R17 measurement doc before writing the kernel.
+2. **Prototype, test-only:** 32-key blocks, 32 unrolled coalesced K loads, lane-per-key softmax step per block,
+   unrolled V accumulation, many workgroups plus a reduce kernel; GQA read-sharing kept or not (measure both if
+   register pressure allows). goinfer's KV layout (`[pos][nKV][hd]` f16) is already the peer's view.
+3. **Production wiring only after ship**, like R16.
+
+**Record.** `docs/measurements/metal-decode-attn-r17-2026-MM-DD.md`; S0 and R2 point to it.
+
+**Amendments.** A band or precondition changes only by a dated amendment below this line that gives the mechanism,
+never after a candidate has been timed against it without one.
+
+**Out of scope.** The GEMV fixed cost (the short-context and MLX gap — its own item, S0's other finding), paged MoE
+decode, sliding-window and sink attention variants, the int8 KV path.
 
 ---
 
