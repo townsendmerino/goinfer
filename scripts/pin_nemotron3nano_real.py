@@ -13,15 +13,15 @@ WHY A PINNED GOLDEN RATHER THAN A LIVE COMPARISON. The bf16 checkpoint is 63 GB 
 a file lets each run alone — the same reason every other real-oracle golden here is a file.
 
     ~/.venv-vl/bin/python scripts/pin_nemotron3nano_real.py
-    -> testdata/nemotron3nano_real_golden.json   (committed; weights are NOT)
+    -> testdata/nemotron3nano_real_golden.json.gz   (committed; weights are NOT)
 """
 
-import json, os, torch
+import gzip, json, os, torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 CKPT = os.path.expanduser("~/models/nemotron3nano-30b-bf16")
 HERE = os.path.dirname(__file__)
-OUT = os.path.join(HERE, "..", "testdata", "nemotron3nano_real_golden.json")
+OUT = os.path.join(HERE, "..", "testdata", "nemotron3nano_real_golden.json.gz")
 PROMPT = "The capital of France is"
 N_NEW = 6
 
@@ -52,7 +52,7 @@ def main():
         "n_new": N_NEW,
         "continuation_ids": cont,
     }
-    with open(OUT, "w") as f:
+    with gzip.open(OUT, "wt") as f:
         json.dump(g, f)
     print("argmax", g["argmax"], tok.decode([g["argmax"]]))
     print("continuation", cont, tok.decode(cont))

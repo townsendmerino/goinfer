@@ -183,7 +183,7 @@ The **CPU MLA path is the oracle** — V2/V3/K2 all run there, gated by
   works, MLA decode attention inherits `TestAttnBatched_bitIdentical` and should get its own
   MLA-shaped byte-identical assertion. If a bespoke kernel is written instead, the doc must state
   which contract it holds *before* it is written.
-- **Real-model gate:** `deepseek_v2lite_golden.json` and `deepseek_moonlight_golden.json` exist as CPU
+- **Real-model gate:** `deepseek_v2lite_golden.json` and `deepseek_moonlight_golden.json(.gz)` exist as CPU
   references; a resident run against either is the T3 target **if the weights fit the box** (§5).
 - **Explicitly OUT OF SCOPE:** batched prefill and split-KV for MLA. **Decode residency first;
   prefill stays staged**, consistent with the C1 table. Adding prefill would drag in the query-tiling

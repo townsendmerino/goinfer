@@ -18,6 +18,6 @@ import "testing"
 func TestQwen2MoeReal_oracle(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_QWEN2MOE_HF")
-	realLogitOracleQuant(t, ckpt, "../testdata/qwen2moe_real_golden.json", "qwen2_moe", "qwen2_moe",
+	realLogitOracleQuant(t, ckpt, "../testdata/qwen2moe_real_golden.json.gz", "qwen2_moe", "qwen2_moe",
 		"HF bf16 (Qwen/Qwen1.5-MoE-A2.7B; int8 weights, f32 activations)", "int8")
 }

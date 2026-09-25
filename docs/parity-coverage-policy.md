@@ -1645,7 +1645,7 @@ correct, versus whatever the corrupted-RoPE run produced.
 the correct formula right after `from_pretrained`, before capturing the reference (a
 no-op, harmlessly re-assigning the same value, if a future transformers fixes the
 underlying bug — logged rather than asserted, since that's not worth failing golden
-generation over). `testdata/internlm2_real_golden.json` was regenerated with the fix.
+generation over). `testdata/internlm2_real_golden.json` was regenerated with the fix (now `testdata/internlm2_real_golden.json.gz`, compressed 2026-09-25).
 `TestInternLM2_1_8bReal_gate` now passes: argmax exact, logit cosine 1.000000, greedy
 continuation exact. Promoted in `testdata/parity_manifest.json`
 (`full-forward-oracle`, cosine 1.00000) and `docs/capability-matrix.{json,md}`.

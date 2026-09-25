@@ -40,7 +40,7 @@ func deepseekRealGate(t *testing.T, ckpt, golden, wantArch, reference string, wa
 	if _, err := os.Stat(ckpt); err != nil {
 		t.Skipf("no checkpoint at %s: %v", ckpt, err)
 	}
-	raw, err := os.ReadFile(golden)
+	raw, err := readGolden(golden)
 	if err != nil {
 		t.Skipf("no golden (%v) — run the pin script", err)
 	}
@@ -174,7 +174,7 @@ func TestMLAAbsorb_speed(t *testing.T) {
 func TestDeepseekMoonlightReal_gate(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_DEEPSEEK_MOONLIGHT")
-	deepseekRealGate(t, ckpt, "../testdata/deepseek_moonlight_golden.json", "deepseek_v3", "HF bf16 (Moonlight-16B-A3B; int8 resident)", true)
+	deepseekRealGate(t, ckpt, "../testdata/deepseek_moonlight_golden.json.gz", "deepseek_v3", "HF bf16 (Moonlight-16B-A3B; int8 resident)", true)
 }
 
 // TestDeepseekGGUFReal_gate exercises the llama.cpp deepseek2 GGUF loader on a real

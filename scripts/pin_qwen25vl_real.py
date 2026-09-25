@@ -15,12 +15,13 @@ resize/bicubic parity is a SEPARATE, already-pinned concern
 the same discipline mistral3/ministral3's own gates use to keep one gate testing one thing.
 
     ~/.venv-vl/bin/python scripts/pin_qwen25vl_real.py
-    -> testdata/qwen25vl_real_golden.json   (committed; the ~7 GB weights are NOT)
+    -> testdata/qwen25vl_real_golden.json.gz   (committed; the ~7 GB weights are NOT)
 
 Put the checkpoint at ~/models/qwen25vl-3b-instruct (Qwen/Qwen2.5-VL-3B-Instruct), or set
 GOINFER_QWEN25VL_3B to its path.
 """
 import io
+import gzip
 import json
 import os
 
@@ -30,7 +31,7 @@ from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 CKPT = os.environ.get("GOINFER_QWEN25VL_3B", os.path.expanduser("~/models/qwen25vl-3b-instruct"))
 HERE = os.path.dirname(__file__)
 IMG = os.path.join(HERE, "..", "testdata", "qwen25vl_preprocess_image.png")
-OUT = os.path.join(HERE, "..", "testdata", "qwen25vl_real_golden.json")
+OUT = os.path.join(HERE, "..", "testdata", "qwen25vl_real_golden.json.gz")
 N_NEW = 8
 
 
@@ -87,7 +88,7 @@ def main():
         n_new=N_NEW,
         continuation_ids=cont,
     )
-    with open(OUT, "w") as f:
+    with gzip.open(OUT, "wt") as f:
         json.dump(golden, f)
     print("argmax", golden["argmax"], "cont", cont, "->", repr(tok.decode(cont)))
     print("wrote", OUT)

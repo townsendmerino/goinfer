@@ -28,8 +28,8 @@ func TestQwen2Real_gate(t *testing.T) {
 	if _, err := os.Stat(ckpt); err != nil {
 		t.Skipf("no Qwen2.5-0.5B at %s: %v", ckpt, err)
 	}
-	const golden = "../testdata/qwen2_real_golden.json"
-	raw, err := os.ReadFile(golden)
+	const golden = "../testdata/qwen2_real_golden.json.gz"
+	raw, err := readGolden(golden)
 	if err != nil {
 		t.Skipf("no golden (%v) — run scripts/pin_qwen2_real.py", err)
 	}

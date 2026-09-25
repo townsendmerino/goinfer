@@ -20,11 +20,12 @@ prompt; the goinfer side (granite_dense_real_test.go, build tag realckpt) loads 
 safetensors at f32 and matches argmax + continuation + cosine >= 0.9999.
 
     ~/.venv-vl/bin/python scripts/pin_granite_dense_real.py
-    -> testdata/granite_dense_real_golden.json   (committed; the ~6 GB weights are NOT)
+    -> testdata/granite_dense_real_golden.json.gz   (committed; the ~6 GB weights are NOT)
 
 Put the checkpoint at ~/models/granite-4.2-3b (ibm-granite/granite-4.2-3b), or set
 GOINFER_GRANITE_DENSE_3B to its path.
 """
+import gzip
 import json
 import os
 
@@ -33,7 +34,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 CKPT = os.environ.get("GOINFER_GRANITE_DENSE_3B", os.path.expanduser("~/models/granite-4.2-3b"))
 HERE = os.path.dirname(__file__)
-OUT = os.path.join(HERE, "..", "testdata", "granite_dense_real_golden.json")
+OUT = os.path.join(HERE, "..", "testdata", "granite_dense_real_golden.json.gz")
 PROMPT = "The capital of France is"
 N_NEW = 8
 
@@ -69,7 +70,7 @@ def main():
         n_new=N_NEW,
         continuation_ids=cont,
     )
-    with open(OUT, "w") as f:
+    with gzip.open(OUT, "wt") as f:
         json.dump(golden, f)
     print("wrote", os.path.relpath(OUT))
     print("prompt_ids", prompt_ids, "argmax", argmax, "cont", cont)

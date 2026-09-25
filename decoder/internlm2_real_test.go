@@ -12,15 +12,14 @@ package decoder
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
 )
 
 func TestInternLM2_1_8bReal_gate(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_INTERNLM2_1_8B")
-	const golden = "../testdata/internlm2_real_golden.json"
-	raw, err := os.ReadFile(golden)
+	const golden = "../testdata/internlm2_real_golden.json.gz"
+	raw, err := readGolden(golden)
 	if err != nil {
 		t.Skipf("no golden (%v) — run scripts/pin_internlm2_real.py", err)
 	}

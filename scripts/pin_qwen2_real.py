@@ -7,14 +7,14 @@ last-token logits + argmax + greedy continuation; qwen3_real_test.go (build tag 
 loads the same safetensors and matches.
 
     ~/.venv-vl/bin/python scripts/pin_qwen3_real.py
-    -> testdata/qwen2_real_golden.json   (committed; weights are NOT)
+    -> testdata/qwen2_real_golden.json.gz   (committed; weights are NOT)
 """
-import json, os, torch
+import gzip, json, os, torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 CKPT = os.path.expanduser("~/models/qwen2.5-0.5b-instruct")
 HERE = os.path.dirname(__file__)
-OUT = os.path.join(HERE, "..", "testdata", "qwen2_real_golden.json")
+OUT = os.path.join(HERE, "..", "testdata", "qwen2_real_golden.json.gz")
 PROMPT = "The capital of France is"
 N_NEW = 6
 
@@ -35,7 +35,9 @@ def main():
              prompt_ids=ids[0].tolist(), argmax=int(torch.tensor(last).argmax()),
              last_logits=last, n_new=N_NEW, continuation_ids=cont,
              continuation_text=tok.decode(cont))
-    os.makedirs(os.path.dirname(OUT), exist_ok=True); json.dump(g, open(OUT, "w"))
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    with gzip.open(OUT, "wt") as f:
+        json.dump(g, f)
     print(f"argmax={g['argmax']} cont={cont!r} -> {g['continuation_text']!r}")
     print("saved", OUT)
 

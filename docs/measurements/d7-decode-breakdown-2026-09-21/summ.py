@@ -1,5 +1,5 @@
-import csv,collections,sys,statistics
-rows=list(csv.reader(open(sys.argv[1])))
+import csv,collections,gzip,sys,statistics
+rows=list(csv.reader(gzip.open(sys.argv[1],"rt") if sys.argv[1].endswith(".gz") else open(sys.argv[1])))
 hs=[i for i,r in enumerate(rows) if 'Kernel Name' in r]
 if not hs: print("no data"); sys.exit()
 h=rows[hs[0]]; kn=h.index('Kernel Name'); dc=h.index('gpu__time_duration.sum')

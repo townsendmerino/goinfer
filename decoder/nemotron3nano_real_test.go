@@ -38,6 +38,6 @@ func TestNemotron3NanoReal_oracle(t *testing.T) {
 	//
 	// So this is a deployment fact worth carrying, not a threshold dodge: DO NOT run this
 	// family's MoE variant with int8 activations.
-	realLogitOracleQuant(t, ckpt, "../testdata/nemotron3nano_real_golden.json", "nemotron_h", "nemotron_h",
+	realLogitOracleQuant(t, ckpt, "../testdata/nemotron3nano_real_golden.json.gz", "nemotron_h", "nemotron_h",
 		"HF bf16 (NVIDIA-Nemotron-3-Nano-30B-A3B-BF16; int8 weights, f32 activations)", "int8")
 }

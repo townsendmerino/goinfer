@@ -36,12 +36,12 @@ import (
 
 func TestQwen3NextSlice_realWeightOracle(t *testing.T) {
 	requireHeavyModel(t)
-	const golden = "testdata/qwen3next_q3next_slice_golden.json"
+	const golden = "testdata/qwen3next_q3next_slice_golden.json.gz"
 	const ckpt = "testdata/qwen3next-q3next-slice"
 
-	raw, err := os.ReadFile(golden)
+	raw, err := readGolden(golden)
 	if errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no golden — run scripts/pin_slice_oracle.py (SLICE_TAG=q3next SLICE_PREFIX=qwen3next)")
+		t.Skipf("no golden — run scripts/pin_slice_oracle.py (SLICE_TAG=q3next SLICE_PREFIX=qwen3next SLICE_GZIP=1)")
 	}
 	if err != nil {
 		t.Fatalf("read golden: %v", err)

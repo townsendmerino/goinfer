@@ -15,15 +15,14 @@ package decoder
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
 )
 
 func TestMinistral3Real_gate(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_MINISTRAL3_3B")
-	const golden = "../testdata/ministral3_real_golden.json"
-	raw, err := os.ReadFile(golden)
+	const golden = "../testdata/ministral3_real_golden.json.gz"
+	raw, err := readGolden(golden)
 	if err != nil {
 		t.Skipf("no golden (%v) — run scripts/pin_ministral3_real.py", err)
 	}

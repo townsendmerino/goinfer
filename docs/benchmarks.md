@@ -857,7 +857,7 @@ kernel (`cuda/rope_mrope_prefill.cu`, `rope_kv_mrope_batched`) — `decoder.Resi
 CUDA only, chunkable (no cross-row attention coupling, unlike Gemma-3's bidirectional block).
 
 **Measured: real checkpoint (`Qwen2.5-VL-3B-Instruct`), real image
-(`testdata/qwen25vl_real_golden.json`'s fixture, 14 tokens, image run `[5,11)`), int4, PREFILL ONLY
+(`testdata/qwen25vl_real_golden.json.gz`'s fixture, 14 tokens, image run `[5,11)`), int4, PREFILL ONLY
 (vision tower excluded, computed once), 1 discarded warm-up + 5 measured, both arms on the SAME
 resident instance (each fully overwrites `[0,len(ids))`). RTX 2070 SUPER, driver `595.91.07`,
 Nobara 44. Harness: a throwaway timing driver (`cuda/zztmp_qwen_mrope_timing_test.go`, matching

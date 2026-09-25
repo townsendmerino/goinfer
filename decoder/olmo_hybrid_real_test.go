@@ -15,15 +15,14 @@ package decoder
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
 )
 
 func TestOlmoHybridReal_gate(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_OLMO_HYBRID_7B")
-	const golden = "../testdata/olmo_hybrid_real_golden.json"
-	raw, err := os.ReadFile(golden)
+	const golden = "../testdata/olmo_hybrid_real_golden.json.gz"
+	raw, err := readGolden(golden)
 	if err != nil {
 		t.Skipf("no golden (%v) — run scripts/pin_olmo_hybrid_real.py", err)
 	}

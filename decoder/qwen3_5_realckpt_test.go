@@ -245,6 +245,6 @@ func TestQwen38Real_gate(t *testing.T) {
 func TestQwen38Real_oracle(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_QWEN38")
-	realLogitOracleQuant(t, ckpt, "../testdata/qwen3_5_real_golden.json", "qwen3_5", "qwen3_5",
+	realLogitOracleQuant(t, ckpt, "../testdata/qwen3_5_real_golden.json.gz", "qwen3_5", "qwen3_5",
 		"HF bf16 (Qwen/Qwen3.8-27B, Qwen3_5ForConditionalGeneration text path; full model via accelerate disk offload; int8 weights, f32 activations)", "int8")
 }

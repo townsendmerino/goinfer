@@ -40,7 +40,7 @@ func TestQwen3NextReal_oracle(t *testing.T) {
 	// int4 WEIGHTS, f32 ACTIVATIONS. Activations are deliberately NOT quantized: at 10/512
 	// routing, perturbing the router is the one thing measured to break this model class, and
 	// nemotron3nano already paid for that lesson at four times the density.
-	realLogitOracleQuant(t, ckpt, "../testdata/qwen3next_real_golden.json", "qwen3_next", "qwen3_next",
+	realLogitOracleQuant(t, ckpt, "../testdata/qwen3next_real_golden.json.gz", "qwen3_next", "qwen3_next",
 		"HF bf16 (Qwen/Qwen3-Next-80B-A3B-Instruct, full model via accelerate disk offload; "+
 			"int4 weights, f32 activations)", "int4")
 }

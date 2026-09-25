@@ -19,6 +19,6 @@ func TestQwen3MoeReal_oracle(t *testing.T) {
 	// a real router-flip cliff at int8 activations (cosine 0.978086 int8int8 vs 0.997668 int8) —
 	// docs/completed/queue-correctness.md G4. Starting from the safer quant and measuring int8int8
 	// separately (if this passes) avoids re-deriving that same finding the hard way.
-	realLogitOracleQuant(t, ckpt, "../testdata/qwen3moe_real_golden.json", "qwen3_moe", "qwen3_moe",
+	realLogitOracleQuant(t, ckpt, "../testdata/qwen3moe_real_golden.json.gz", "qwen3_moe", "qwen3_moe",
 		"HF bf16 (Qwen/Qwen3-30B-A3B; int8 weights, f32 activations)", "int8")
 }

@@ -113,6 +113,6 @@ func TestNemotronReal_gate(t *testing.T) {
 func TestNemotronReal_oracle(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_NEMOTRON_HF")
-	realLogitOracle(t, ckpt, "../testdata/nemotron_real_golden.json", "nemotron_h", "nemotron_h",
+	realLogitOracle(t, ckpt, "../testdata/nemotron_real_golden.json.gz", "nemotron_h", "nemotron_h",
 		"HF bf16 (NVIDIA-Nemotron-Nano-9B-v2; int8 resident)")
 }

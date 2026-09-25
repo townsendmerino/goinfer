@@ -14,7 +14,6 @@ package decoder
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 
@@ -118,7 +117,7 @@ func TestGraniteReal_gate(t *testing.T) {
 // GGUF gate above reuses its own load rather than quantizing the model a second time.
 func graniteGGUFvsOracle(t *testing.T, m *Model) {
 	t.Helper()
-	raw, err := os.ReadFile("../testdata/granite_real_golden.json")
+	raw, err := readGolden("../testdata/granite_real_golden.json.gz")
 	if err != nil {
 		t.Skipf("no golden (%v) — run scripts/pin_granite_real.py", err)
 	}
@@ -172,6 +171,6 @@ func graniteGGUFvsOracle(t *testing.T, m *Model) {
 func TestGraniteReal_oracle(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := assetPath(t, "GOINFER_GRANITE_HF")
-	realLogitOracle(t, ckpt, "../testdata/granite_real_golden.json", "granitemoehybrid", "granitemoehybrid",
+	realLogitOracle(t, ckpt, "../testdata/granite_real_golden.json.gz", "granitemoehybrid", "granitemoehybrid",
 		"HF bf16 (Granite-4.0-H-Tiny 7B-A1B; int8 resident)")
 }

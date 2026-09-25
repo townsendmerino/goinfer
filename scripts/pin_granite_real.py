@@ -14,14 +14,14 @@ argmax + continuation + cosine.
 
     huggingface-cli download ibm-granite/granite-4.0-h-tiny --local-dir ~/models/granite-hf
     ~/.venv-vl/bin/python scripts/pin_granite_real.py
-    -> testdata/granite_real_golden.json   (committed; weights are NOT)
+    -> testdata/granite_real_golden.json.gz   (committed; weights are NOT)
 """
-import json, os, torch
+import gzip, json, os, torch
 from transformers import AutoTokenizer, GraniteMoeHybridForCausalLM
 
 CKPT = os.path.expanduser("~/models/granite-hf")
 HERE = os.path.dirname(__file__)
-OUT = os.path.join(HERE, "..", "testdata", "granite_real_golden.json")
+OUT = os.path.join(HERE, "..", "testdata", "granite_real_golden.json.gz")
 PROMPT = "The capital of France is"
 N_NEW = 6
 
@@ -45,7 +45,8 @@ def main():
              last_logits=last, n_new=N_NEW, continuation_ids=cont,
              continuation_text=tok.decode(cont))
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    json.dump(g, open(OUT, "w"))
+    with gzip.open(OUT, "wt") as f:
+        json.dump(g, f)
     print(f"argmax={g['argmax']} cont={cont!r} -> {g['continuation_text']!r}")
     print("saved", OUT)
 

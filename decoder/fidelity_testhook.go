@@ -32,8 +32,8 @@ import (
 // this repetitive (a `pixel_values` float array dominates the file) routinely gets 5-10×, the
 // difference between "fits comfortably in git" and "GitHub warns about it": measured,
 // testdata/gemma3_real_golden.json was 52.72 MB uncompressed, over GitHub's 50 MB recommendation.
-// Existing small (`.json`, no `.gz`) goldens are NOT force-migrated — this is for new goldens
-// where the size actually matters, not a blanket rewrite. Callers keep their own existing
+// Every golden over 1 MB was migrated to `.json.gz` 2026-09-25; small `.json` goldens stay
+// uncompressed, which this reads unchanged. Callers keep their own existing
 // skip-if-missing handling (os.Open's error, not this function, carries that signal).
 func ReadGoldenJSONForTest(path string, v any) error {
 	f, err := os.Open(path)

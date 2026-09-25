@@ -14,7 +14,6 @@ package decoder
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
 )
 
@@ -23,8 +22,8 @@ func TestCohereAyaReal_gate(t *testing.T) {
 	// assetPath, not a hand-rolled env+fallback. os.Stat on the DIRECTORY was the weaker check the
 	// registry exists to replace: a directory that exists but holds no shards satisfied it.
 	ckpt := assetPath(t, "GOINFER_COHERE_AYA")
-	const golden = "../testdata/cohere_aya_golden.json"
-	raw, err := os.ReadFile(golden)
+	const golden = "../testdata/cohere_aya_golden.json.gz"
+	raw, err := readGolden(golden)
 	if err != nil {
 		t.Skipf("no golden (%v) — run scripts/pin_cohere_aya.py", err)
 	}

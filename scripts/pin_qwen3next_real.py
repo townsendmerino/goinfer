@@ -20,12 +20,12 @@ one story.
 
     models-pull / hf download Qwen/Qwen3-Next-80B-A3B-Instruct --local-dir ~/models/...
     ~/.venv-vl/bin/python scripts/pin_qwen3next_real.py
-    -> testdata/qwen3next_real_golden.json   (committed; weights are NOT)
+    -> testdata/qwen3next_real_golden.json.gz   (committed; weights are NOT)
 
 NEVER point CKPT at /srv/models: the archive is a 5400 rpm SMR disk and is a bench surface for
 neither machine. See docs/benchmarks.md, "Model storage".
 """
-import json, os, sys, time
+import gzip, json, os, sys, time
 
 # Hide the GPU before torch initialises it. See the docstring.
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
@@ -36,7 +36,7 @@ from transformers import AutoTokenizer, Qwen3NextForCausalLM
 CKPT = os.path.expanduser(os.environ.get("QWEN3NEXT_CKPT", "~/models/qwen3next-80b-partial"))
 OFFLOAD = os.path.expanduser(os.environ.get("QWEN3NEXT_OFFLOAD", "~/qwen3next-t3/offload"))
 HERE = os.path.dirname(__file__)
-OUT = os.path.join(HERE, "..", "testdata", "qwen3next_real_golden.json")
+OUT = os.path.join(HERE, "..", "testdata", "qwen3next_real_golden.json.gz")
 PROMPT = "The capital of France is"
 N_NEW = 6
 # Headroom below the box's 62 GB so the offloader has somewhere to work and the machine stays
@@ -98,7 +98,8 @@ def main():
              last_logits=last, n_new=N_NEW, continuation_ids=cont,
              continuation_text=tok.decode(cont))
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    json.dump(g, open(OUT, "w"))
+    with gzip.open(OUT, "wt") as f:
+        json.dump(g, f)
     print(f"argmax={g['argmax']} cont={cont!r} -> {g['continuation_text']!r}")
 
 

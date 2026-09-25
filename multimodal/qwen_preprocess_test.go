@@ -20,7 +20,7 @@ import (
 func TestQwenPreprocess_exact(t *testing.T) {
 	const golden = "../testdata/qwen25vl_preprocess_golden.json"
 	const imgPath = "../testdata/qwen25vl_preprocess_image.png"
-	raw, err := os.ReadFile(golden)
+	raw, err := readGolden(golden)
 	if errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no golden — run scripts/pin_qwen25vl_preprocess.py")
 	}
@@ -73,9 +73,9 @@ func TestQwenPreprocess_exact(t *testing.T) {
 // — float coefficients vs PIL's fixed-point aren't bit-exact, but pixel_values
 // cosine must be ~1 (the downstream ViT is robust to the last-ULP resize diff).
 func TestQwenPreprocess_resize(t *testing.T) {
-	const golden = "../testdata/qwen25vl_preprocess_resize_golden.json"
+	const golden = "../testdata/qwen25vl_preprocess_resize_golden.json.gz"
 	const imgPath = "../testdata/qwen25vl_preprocess_image_resize.png"
-	raw, err := os.ReadFile(golden)
+	raw, err := readGolden(golden)
 	if errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no golden — run scripts/pin_qwen25vl_preprocess.py")
 	}

@@ -11,18 +11,18 @@ too tight alongside goinfer's own later int8 load and everything else resident. 
 directly (same convention as pin_qwen3moe_real.py) instead.
 
     ~/.venv-vl/bin/python scripts/pin_qwen2moe_real.py
-    -> testdata/qwen2moe_real_golden.json   (committed; the ~28.6 GB weights are NOT)
+    -> testdata/qwen2moe_real_golden.json.gz   (committed; the ~28.6 GB weights are NOT)
 
 Put the checkpoint at ~/models/qwen15-moe-a27b (Qwen/Qwen1.5-MoE-A2.7B), or set
 GOINFER_QWEN2MOE_HF to its path.
 """
 
-import json, os, torch
+import gzip, json, os, torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 CKPT = os.environ.get("GOINFER_QWEN2MOE_HF", os.path.expanduser("~/models/qwen15-moe-a27b"))
 HERE = os.path.dirname(__file__)
-OUT = os.path.join(HERE, "..", "testdata", "qwen2moe_real_golden.json")
+OUT = os.path.join(HERE, "..", "testdata", "qwen2moe_real_golden.json.gz")
 PROMPT = "The capital of France is"
 N_NEW = 8
 
@@ -52,7 +52,7 @@ def main():
         "n_new": N_NEW,
         "continuation_ids": cont,
     }
-    with open(OUT, "w") as f:
+    with gzip.open(OUT, "wt") as f:
         json.dump(g, f)
     print("argmax", g["argmax"], tok.decode([g["argmax"]]))
     print("continuation", cont, tok.decode(cont))

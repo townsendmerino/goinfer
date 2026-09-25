@@ -13,15 +13,16 @@ disk and a single 4B CPU forward (a few minutes); run it when the box is idle (N
 alongside the 8h fuzz soak — fuzzing pegs all cores). Set GEMMA3_4B to the path.
 
     GEMMA3_4B=~/models/gemma-3-4b-it ~/g4venv/bin/python scripts/pin_gemma3_4b_text.py
-    -> testdata/gemma3_4b_text_golden.json
+    -> testdata/gemma3_4b_text_golden.json.gz
 """
+import gzip
 import json
 import os
 
 import torch
 from transformers import AutoConfig, AutoModelForCausalLM
 
-OUT = os.path.join(os.path.dirname(__file__), "..", "testdata", "gemma3_4b_text_golden.json")
+OUT = os.path.join(os.path.dirname(__file__), "..", "testdata", "gemma3_4b_text_golden.json.gz")
 PATH = os.environ.get("GEMMA3_4B", os.path.expanduser("~/models/gemma-3-4b-it"))
 
 # Fixed text-only prompt ids (no <image> tokens). Short — this is a decoder-scale
@@ -72,7 +73,7 @@ def main():
         "continuation_ids": cont,
     }
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    with open(OUT, "w") as f:
+    with gzip.open(OUT, "wt") as f:
         json.dump(golden, f)
     print(f"wrote {OUT}\n  argmax={golden['argmax']}  continuation={cont}")
 

@@ -324,7 +324,7 @@
       "used_by": [
         "TestQwen3NextReal_oracle"
       ],
-      "note": "Qwen/Qwen3-Next-80B-A3B-Instruct (41 shards / 162.6 GB bf16) \u2014 the family's T3 oracle. The FULL checkpoint, not the 6-shard slice pulled 2026-08-17: a slice proves real weights at real distributions but not depth, and the T3 claim is about the whole model. goinfer loads it at int4 (~40 GB); int8 would be ~80 GB against 62 GB of RAM, so the quant is forced by capacity rather than chosen. The bf16 reference is NOT co-resident \u2014 scripts/pin_qwen3next_real.py pins it to testdata/qwen3next_real_golden.json first, through accelerate disk offload."
+      "note": "Qwen/Qwen3-Next-80B-A3B-Instruct (41 shards / 162.6 GB bf16) \u2014 the family's T3 oracle. The FULL checkpoint, not the 6-shard slice pulled 2026-08-17: a slice proves real weights at real distributions but not depth, and the T3 claim is about the whole model. goinfer loads it at int4 (~40 GB); int8 would be ~80 GB against 62 GB of RAM, so the quant is forced by capacity rather than chosen. The bf16 reference is NOT co-resident \u2014 scripts/pin_qwen3next_real.py pins it to testdata/qwen3next_real_golden.json.gz first, through accelerate disk offload."
     },
     {
       "env": "GOINFER_QWEN3MOE_HF",
@@ -552,7 +552,7 @@
       "members_any": ["model.safetensors.index.json", "model.safetensors"],
       "candidates": ["$MODELS/aya-expanse-8b"],
       "used_by": ["TestCohereAyaReal_gate"],
-      "note": "CohereLabs Aya-Expanse-8B (CohereForCausalLM), 4 bf16 shards / ~16 GB. Loaded with Options{} so the gate is a TIGHT f32 cosine against the HF golden. No tokenizer member: the gate replays prompt_ids out of testdata/cohere_aya_golden.json rather than re-tokenizing, which is the pinning rule every oracle here follows."
+      "note": "CohereLabs Aya-Expanse-8B (CohereForCausalLM), 4 bf16 shards / ~16 GB. Loaded with Options{} so the gate is a TIGHT f32 cosine against the HF golden. No tokenizer member: the gate replays prompt_ids out of testdata/cohere_aya_golden.json.gz rather than re-tokenizing, which is the pinning rule every oracle here follows."
     },
     {
       "env": "GOINFER_COHERE2_R7B",

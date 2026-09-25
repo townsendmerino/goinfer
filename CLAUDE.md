@@ -103,13 +103,14 @@ dynamic resolution) produces a golden dominated by one giant `pixel_values` floa
 recommendation; gzip took it to 2.58 MB (~20×, JSON float-array text compresses hard). Convention:
 write it `.json.gz` (Python: `gzip.open(OUT, "wt")` instead of `open(OUT, "w")`), read it via
 `decoder.ReadGoldenJSONForTest` (gunzips transparently on a `.gz` suffix, reads a bare `.json`
-unchanged) rather than a raw `os.ReadFile`+`json.Unmarshal`. Existing small `.json` goldens are
-NOT force-migrated — this is for new goldens where the size actually matters.
+unchanged) rather than a raw `os.ReadFile`+`json.Unmarshal` (in-package tests that want the bytes use
+the `readGolden` test helper, same rule). Every golden that was over 1 MB was migrated 2026-09-25
+(24 files, 56.5 → 20.3 MB); small `.json` goldens stay as they are.
 
-**THE SAME GOES FOR NEW LARGE MEASUREMENT RAW DATA (ncu CSVs, sweep dumps): commit it `.gz`.** Nine
-`ncu_*.csv` files under `docs/measurements/` are ~6.5–9.8 MB each uncompressed (~60 MB); they are
-already in history, so compressing them now would shrink a checkout but not a clone. The fix is
-forward-only: anything over ~2 MB of text goes in as `.gz`, and the record names the `.gz` path.
+**THE SAME GOES FOR LARGE MEASUREMENT RAW DATA (ncu CSVs, sweep dumps): commit it `.gz`.** The eleven
+`docs/measurements/` CSVs over 1 MB were compressed 2026-09-25 (64.2 → 0.8 MB; ncu output is extremely
+repetitive). The originals are still in history, so that shrank a checkout, not a clone — which is why
+anything over ~1 MB of text goes in as `.gz` from the start, and the record names the `.gz` path.
 
 **A UNIT TEST THAT SUPPLIES ITS OWN CALLING CONVENTION PROVES THE UNIT WORKS WHEN CALLED THAT WAY —
 NOT THAT ANYTHING CALLS IT THAT WAY.** It is the microbenchmark trap one level up: same failure, in

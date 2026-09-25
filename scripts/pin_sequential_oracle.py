@@ -32,6 +32,7 @@ NEVER point CKPT at /srv/models: the archive is a 5400 rpm SMR disk and is a ben
 neither machine. See docs/benchmarks.md, "Model storage".
 """
 import argparse
+import gzip
 import json
 import os
 import sys
@@ -56,7 +57,7 @@ FAMILIES = {
     ),
     "qwen3_5": dict(
         ckpt_env="QWEN35_CKPT", ckpt_default="~/models/qwen3.8-27b",
-        out="qwen3_5_real_golden.json", trust_remote_code=False, wrapper=True,
+        out="qwen3_5_real_golden.json.gz", trust_remote_code=False, wrapper=True,
         max_cpu_env="QWEN35_MAX_CPU", max_cpu_default="40GiB",
     ),
 }
@@ -133,7 +134,8 @@ def main():
         continuation_text=tok.decode(cont),
     )
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    json.dump(g, open(out, "w"))
+    with (gzip.open(out, "wt") if out.endswith(".gz") else open(out, "w")) as f:
+        json.dump(g, f)
     print(f"argmax={g['argmax']} cont={cont!r} -> {g['continuation_text']!r}")
     print("wrote", out)
 

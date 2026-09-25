@@ -20,9 +20,10 @@ read, which for Qwen3-Next-80B is 6 of 41 shards (~24GB instead of 163GB).
 
     SLICE_TAG=laguna-xs2 SLICE_SRC=~/models/laguna-xs2 SLICE_LAYERS=4 \
       ~/.venv-vl/bin/python scripts/pin_slice_oracle.py
-    -> decoder/testdata/<tag>_slice_golden.json   (tracked)
+    -> decoder/testdata/<tag>_slice_golden.json   (tracked; .json.gz with SLICE_GZIP=1)
     -> decoder/testdata/<tag>-slice/              (gitignored, several GB)
 """
+import gzip
 import json
 import os
 import shutil
@@ -43,6 +44,10 @@ TESTDATA = os.path.join(HERE, "..", "decoder", "testdata")
 PREFIX = os.environ.get("SLICE_PREFIX", "laguna")   # fixture naming; historical default
 OUT_CKPT = os.path.join(TESTDATA, f"{PREFIX}-{TAG}-slice")
 OUT_GOLDEN = os.path.join(TESTDATA, f"{PREFIX}_{TAG}_slice_golden.json")
+# A large-vocab slice (Qwen3-Next: 152k logits) is written gzip-compressed; its test reads the
+# .json.gz name. The small slices (laguna, mellum) stay plain .json, as their tests expect.
+if os.environ.get("SLICE_GZIP") == "1":
+    OUT_GOLDEN += ".gz"
 
 # How many leading layers to keep. The floor is family-specific and is about COVERAGE, not
 # size: the slice must span every layer KIND the family interleaves, or it gates half the
@@ -126,7 +131,8 @@ def main():
         "last_logits": [round(x, 5) for x in last.tolist()],
         "continuation_ids": cont, "g_proj_rows_layer0": g0,
     }
-    json.dump(golden, open(OUT_GOLDEN, "w"))
+    with (gzip.open(OUT_GOLDEN, "wt") if OUT_GOLDEN.endswith(".gz") else open(OUT_GOLDEN, "w")) as f:
+        json.dump(golden, f)
     print(f"  argmax={golden['argmax']} cont={cont} g_proj0={g0}")
     print(f"  -> {OUT_GOLDEN}")
 

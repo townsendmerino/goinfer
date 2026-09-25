@@ -17,6 +17,7 @@ Writes the deterministic input PNG + the reference pixel_values/grid_thw.
     -> testdata/qwen25vl_preprocess_image.png
     -> testdata/qwen25vl_preprocess_golden.json
 """
+import gzip
 import io
 import json
 import os
@@ -96,8 +97,8 @@ def main():
         "pixel_values_shape": list(pv2.shape),
         "pixel_values": pv2.reshape(-1).astype(float).tolist(),
     }
-    rout = os.path.join(HERE, "..", "testdata", "qwen25vl_preprocess_resize_golden.json")
-    with open(rout, "w") as f:
+    rout = os.path.join(HERE, "..", "testdata", "qwen25vl_preprocess_resize_golden.json.gz")
+    with gzip.open(rout, "wt") as f:
         json.dump(rgolden, f)
     print(f"wrote {img2_path}\nwrote {rout}")
     print(f"  resize grid_thw={grid2.tolist()}  pixel_values_shape={list(pv2.shape)}")

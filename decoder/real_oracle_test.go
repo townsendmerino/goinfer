@@ -19,7 +19,6 @@ package decoder
 import (
 	"encoding/json"
 	"errors"
-	"os"
 	"testing"
 )
 
@@ -39,7 +38,7 @@ func realLogitOracle(t *testing.T, ckpt, golden, wantArch, family, reference str
 // with f32 activations, on a forward that is otherwise correct.
 func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, reference, quant string) {
 	t.Helper()
-	raw, err := os.ReadFile(golden)
+	raw, err := readGolden(golden)
 	if err != nil {
 		t.Skipf("no golden (%v) — run the pin script", err)
 	}

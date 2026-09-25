@@ -11,11 +11,12 @@ fixture, tie_word_embeddings=True on the REAL checkpoint cannot be worked around
 False — this run needs the exact pinned version, not a workaround.
 
     ~/.venv-spark25/bin/python scripts/pin_spark2_5_real.py
-    -> testdata/spark2_5_real_golden.json   (committed; the ~3.2 GB weights are NOT)
+    -> testdata/spark2_5_real_golden.json.gz   (committed; the ~3.2 GB weights are NOT)
 
 Put the checkpoint at ~/models/spark25-1.7b (XHToken/Spark-X2.5-1.7B), or set
 GOINFER_SPARK25_1_7B to its path.
 """
+import gzip
 import json
 import os
 
@@ -24,7 +25,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 CKPT = os.environ.get("GOINFER_SPARK25_1_7B", os.path.expanduser("~/models/spark25-1.7b"))
 HERE = os.path.dirname(__file__)
-OUT = os.path.join(HERE, "..", "testdata", "spark2_5_real_golden.json")
+OUT = os.path.join(HERE, "..", "testdata", "spark2_5_real_golden.json.gz")
 PROMPT = "The capital of France is"
 N_NEW = 8
 
@@ -59,7 +60,7 @@ def main():
         n_new=N_NEW,
         continuation_ids=cont,
     )
-    with open(OUT, "w") as f:
+    with gzip.open(OUT, "wt") as f:
         json.dump(golden, f)
     print("wrote", os.path.relpath(OUT))
     print("prompt_ids", prompt_ids, "argmax", argmax, "cont", cont)

@@ -5,7 +5,6 @@ package cuda
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -20,7 +19,7 @@ import (
 // PREFILL through the m-RoPE batched-rotation kernel instead of Gemma-3's bidirectional-attention
 // one.
 //
-// Reuses the EXISTING real golden (testdata/qwen25vl_real_golden.json) — no new pin script. That
+// Reuses the EXISTING real golden (testdata/qwen25vl_real_golden.json.gz) — no new pin script. That
 // golden's own image grid already compresses post-image text positions (confirmed by
 // TestQwen25VLResidentReal_gate's own mropeDelta!=0 assertion on this same fixture), so this gate
 // exercises the genuinely-divergent-rotation path, not just the degenerate scalar-equivalent one.
@@ -32,8 +31,8 @@ import (
 func TestQwen25VLMRoPEPrefillResidentReal_gate(t *testing.T) {
 	requireHeavyModel(t)
 	ckpt := decoder.AssetPathForTest(t, "GOINFER_QWEN25VL_3B")
-	const golden = "../testdata/qwen25vl_real_golden.json"
-	raw, err := os.ReadFile(golden)
+	const golden = "../testdata/qwen25vl_real_golden.json.gz"
+	raw, err := readGolden(golden)
 	if err != nil {
 		t.Skipf("no golden (%v) — run scripts/pin_qwen25vl_real.py", err)
 	}

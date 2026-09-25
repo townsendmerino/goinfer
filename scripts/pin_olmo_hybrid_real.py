@@ -16,11 +16,12 @@ prompt; the goinfer side (olmo_hybrid_real_test.go, build tag realckpt) loads th
 safetensors at f32 and matches argmax + continuation + cosine >= 0.9999.
 
     ~/.venv-vl/bin/python scripts/pin_olmo_hybrid_real.py
-    -> testdata/olmo_hybrid_real_golden.json   (committed; the ~14 GB weights are NOT)
+    -> testdata/olmo_hybrid_real_golden.json.gz   (committed; the ~14 GB weights are NOT)
 
 Put the checkpoint at ~/models/olmo-hybrid-7b (allenai/Olmo-Hybrid-7B), or set
 GOINFER_OLMO_HYBRID_7B to its path.
 """
+import gzip
 import json
 import os
 
@@ -29,7 +30,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 CKPT = os.environ.get("GOINFER_OLMO_HYBRID_7B", os.path.expanduser("~/models/olmo-hybrid-7b"))
 HERE = os.path.dirname(__file__)
-OUT = os.path.join(HERE, "..", "testdata", "olmo_hybrid_real_golden.json")
+OUT = os.path.join(HERE, "..", "testdata", "olmo_hybrid_real_golden.json.gz")
 PROMPT = "The capital of France is"
 N_NEW = 8
 
@@ -67,7 +68,7 @@ def main():
         n_new=N_NEW,
         continuation_ids=cont,
     )
-    with open(OUT, "w") as f:
+    with gzip.open(OUT, "wt") as f:
         json.dump(golden, f)
     print("wrote", os.path.relpath(OUT))
     print("prompt_ids", prompt_ids, "argmax", argmax, "cont", cont)

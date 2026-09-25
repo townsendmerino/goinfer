@@ -92,7 +92,7 @@ near-miss leaves no manifest trace at all. That is right for a failing gate and 
 
 `qwen3next-t3-reference-pin_2026-08-26.log` (progress bars stripped) ·
 `qwen3next-t3-oracle-int4_2026-08-26_FAIL-0.9899.log` · `qwen3next-t3-run-status_2026-08-26.txt` ·
-golden at `testdata/qwen3next_real_golden.json` (1.6 MB, committed; weights are not).
+golden at `testdata/qwen3next_real_golden.json.gz` (1.6 MB as the plain `.json` it was committed as; gzip-compressed 2026-09-25; weights are not).
 
 ## Independently reproduced, and the gate could not have run
 

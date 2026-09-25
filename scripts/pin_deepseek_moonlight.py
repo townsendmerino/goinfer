@@ -8,16 +8,16 @@ continuation; deepseek_real_test.go (build tag realckpt) loads the same safetens
 and matches argmax + continuation + cosine.
 
     ~/.venv-vl/bin/python scripts/pin_deepseek_moonlight.py
-    -> testdata/deepseek_moonlight_golden.json   (committed; weights are NOT)
+    -> testdata/deepseek_moonlight_golden.json.gz   (committed; weights are NOT)
 """
-import json, os, torch
+import gzip, json, os, torch
 # Native transformers DeepseekV3 (NOT trust_remote_code — the repo's auto_map points at an
 # old custom modeling_deepseek.py incompatible with transformers 5.12's rope machinery).
 from transformers import DeepseekV3Config, DeepseekV3ForCausalLM, AutoTokenizer
 
 CKPT = os.path.expanduser("~/models/moonlight-16b")
 HERE = os.path.dirname(__file__)
-OUT = os.path.join(HERE, "..", "testdata", "deepseek_moonlight_golden.json")
+OUT = os.path.join(HERE, "..", "testdata", "deepseek_moonlight_golden.json.gz")
 PROMPT = "The capital of France is"
 N_NEW = 6
 
@@ -42,7 +42,8 @@ def main():
              last_logits=last, n_new=N_NEW, continuation_ids=cont,
              continuation_text=tok.decode(cont))
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    json.dump(g, open(OUT, "w"))
+    with gzip.open(OUT, "wt") as f:
+        json.dump(g, f)
     print(f"argmax={g['argmax']} cont={cont!r} -> {g['continuation_text']!r}")
     print("saved", OUT)
 
