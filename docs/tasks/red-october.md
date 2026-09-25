@@ -770,6 +770,12 @@ R2's Build phase is closed.
 prefill attention (R4), the paged families' attention (their term is the command-buffer boundary,
 M-11).
 
+
+**Follow-on scoping, S0 measured 2026-09-25** ([`metal-decode-decomp-2026-09-25.md`](../measurements/metal-decode-decomp-2026-09-25.md)):
+with `attention_fa` as the default, decode attention still costs 2.11 ms per 1,000 keys on the 1.5B (6.30 on the 7B, 1.89
+on the 0.5B, which runs the old kernel) — 36–61% of the token at 3900 — reading KV at ~6–13 GB/s. Matching Ollama's
+per-key cost would put the 1.5B at ~0.95× Ollama at 3900 (projected); the 7B also needs its GEMVs (41.8 ms/token).
+
 ---
 
 ### R3 · Metal short-prompt floor, and what stays sequential

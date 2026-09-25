@@ -1,0 +1,189 @@
+16:43:47 start commit 78503526 dirty(tracked)=metal/prefill_gate_ref_test.go 
+16:43:47 idle load1=1.26
+16:43:47 ##### qwen2.5-coder-1.5b-instruct-q4_k_m.gguf; System-wide memory free percentage: 76%
+=== RUN   TestMetalDecodeDecomp
+[ddecomp    2.5s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: H=1536 I=8960 nL=28 nH=12 V=151936, ctx 4096, attention_fa on: true (floor 1536), aliased: false
+[ddecomp    5.2s] depth 128 rep 1/5: full 12.878 ms/token, dispatch floor 0.828
+[ddecomp    7.5s] depth 128 rep 2/5: full 12.897 ms/token, dispatch floor 0.862
+[ddecomp    9.8s] depth 128 rep 3/5: full 12.874 ms/token, dispatch floor 0.835
+[ddecomp   12.1s] depth 128 rep 4/5: full 12.900 ms/token, dispatch floor 0.860
+[ddecomp   14.3s] depth 128 rep 5/5: full 12.903 ms/token, dispatch floor 0.864
+
+=== Metal decode decomposition, depth 128 (129 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   0.666 ms    5.2% of token   paired 0.7 0.7 0.7 0.7 0.7
+  GEMV qkv (+bias)                       work   0.694 ms    5.4% of token   paired 0.7 0.7 0.7 0.7 0.7
+  GEMV o (+residual)                     work   0.546 ms    4.2% of token   paired 0.5 0.5 0.5 0.5 0.6
+  GEMV gate/up                           work   4.656 ms   36.1% of token   paired 4.6 4.7 4.4 4.7 4.7
+  GEMV down (+residual)                  work   3.058 ms   23.7% of token   paired 3.0 3.1 2.8 3.1 3.1
+  LM head (int8)                         work   1.328 ms   10.3% of token   paired 1.4 1.3 1.3 1.3 1.3
+  norm+quant (rms)                       work   0.490 ms    3.8% of token   paired 0.5 0.1 0.5 0.5 0.4
+  rope, kv store, act-quant, ctx-quant   work   0.630 ms    4.9% of token   paired 0.7 0.7 0.6 0.6 0.6
+  dispatch floor (every pipeline no-op)         0.860 ms    6.7% of token   spread 4.3%
+  full token 12.897 ms (77.5 tok/s), spread 0.2%; categories' work + floor = 12.928 ms (100.2% of full)
+
+[ddecomp   20.6s] depth 2048 rep 1/5: full 17.210 ms/token, dispatch floor 0.910
+[ddecomp   23.6s] depth 2048 rep 2/5: full 17.199 ms/token, dispatch floor 0.916
+[ddecomp   26.5s] depth 2048 rep 3/5: full 17.187 ms/token, dispatch floor 0.886
+[ddecomp   29.5s] depth 2048 rep 4/5: full 17.278 ms/token, dispatch floor 0.889
+[ddecomp   32.5s] depth 2048 rep 5/5: full 17.279 ms/token, dispatch floor 0.875
+
+=== Metal decode decomposition, depth 2048 (2049 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   4.980 ms   28.9% of token   paired 4.9 4.9 5.1 5.0 5.0
+  GEMV qkv (+bias)                       work   0.686 ms    4.0% of token   paired 0.6 0.6 0.8 0.7 0.7
+  GEMV o (+residual)                     work   0.549 ms    3.2% of token   paired 0.5 0.5 0.6 0.6 0.5
+  GEMV gate/up                           work   4.683 ms   27.2% of token   paired 4.6 4.6 4.8 4.7 4.7
+  GEMV down (+residual)                  work   3.152 ms   18.3% of token   paired 3.1 3.1 3.2 3.2 3.2
+  LM head (int8)                         work   1.322 ms    7.7% of token   paired 1.3 1.3 1.4 1.3 1.5
+  norm+quant (rms)                       work   0.511 ms    3.0% of token   paired 0.5 0.4 0.5 0.5 0.6
+  rope, kv store, act-quant, ctx-quant   work   0.623 ms    3.6% of token   paired 0.6 0.6 0.6 0.6 0.7
+  dispatch floor (every pipeline no-op)         0.889 ms    5.2% of token   spread 4.5%
+  full token 17.210 ms (58.1 tok/s), spread 0.5%; categories' work + floor = 17.395 ms (101.1% of full)
+
+[ddecomp   44.2s] depth 3900 rep 1/5: full 20.924 ms/token, dispatch floor 0.884
+[ddecomp   47.8s] depth 3900 rep 2/5: full 20.879 ms/token, dispatch floor 0.869
+[ddecomp   51.3s] depth 3900 rep 3/5: full 20.912 ms/token, dispatch floor 0.811
+[ddecomp   54.9s] depth 3900 rep 4/5: full 20.935 ms/token, dispatch floor 0.823
+[ddecomp   58.4s] depth 3900 rep 5/5: full 20.866 ms/token, dispatch floor 0.852
+
+=== Metal decode decomposition, depth 3900 (3901 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   8.619 ms   41.2% of token   paired 8.7 8.6 8.6 8.6 8.6
+  GEMV qkv (+bias)                       work   0.673 ms    3.2% of token   paired 0.7 0.6 0.7 0.7 0.6
+  GEMV o (+residual)                     work   0.574 ms    2.7% of token   paired 0.6 0.5 0.5 0.7 0.7
+  GEMV gate/up                           work   4.702 ms   22.5% of token   paired 4.7 4.6 4.7 4.7 4.7
+  GEMV down (+residual)                  work   3.143 ms   15.0% of token   paired 3.2 3.1 3.1 3.1 3.2
+  LM head (int8)                         work   1.339 ms    6.4% of token   paired 1.4 1.3 1.3 1.3 1.3
+  norm+quant (rms)                       work   0.491 ms    2.3% of token   paired 0.6 0.4 0.5 0.5 0.5
+  rope, kv store, act-quant, ctx-quant   work   0.712 ms    3.4% of token   paired 0.7 0.9 0.6 0.7 0.9
+  dispatch floor (every pipeline no-op)         0.852 ms    4.1% of token   spread 8.5%
+  full token 20.912 ms (47.8 tok/s), spread 0.3%; categories' work + floor = 21.105 ms (100.9% of full)
+
+--- PASS: TestMetalDecodeDecomp (58.47s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	58.850s
+16:44:46 ##### qwen2.5-coder-1.5b-instruct-q4_k_m.gguf exit=0
+16:44:46 idle load1=1.21
+16:44:46 ##### qwen2.5-7b-instruct-q4_k_m.int4.metal.giw; System-wide memory free percentage: 76%
+=== RUN   TestMetalDecodeDecomp
+[metal] weights aliased from qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4020 MB bound in place, 1 MB copied (anonymous) — 3112 MB int4 nibbles (56 single tensors + 56 fused groups = 2034 MB) + 520 MB int8 codes (1 matrices) + 389 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[ddecomp    0.1s] loaded qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: H=3584 I=18944 nL=28 nH=28 V=152064, ctx 4096, attention_fa on: true (floor 1536), aliased: true
+[ddecomp   11.0s] depth 128 rep 1/5: full 45.489 ms/token, dispatch floor 1.096
+[ddecomp   18.5s] depth 128 rep 2/5: full 45.567 ms/token, dispatch floor 1.070
+[ddecomp   26.1s] depth 128 rep 3/5: full 45.529 ms/token, dispatch floor 1.017
+[ddecomp   33.7s] depth 128 rep 4/5: full 45.513 ms/token, dispatch floor 1.031
+[ddecomp   41.2s] depth 128 rep 5/5: full 45.226 ms/token, dispatch floor 1.057
+
+=== Metal decode decomposition, depth 128 (129 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   0.780 ms    1.7% of token   paired 0.8 0.8 -0.2 0.8 0.7
+  GEMV qkv (+bias)                       work   2.716 ms    6.0% of token   paired 2.8 2.7 2.6 2.7 2.4
+  GEMV o (+residual)                     work   2.159 ms    4.7% of token   paired 2.2 2.2 2.2 2.2 1.9
+  GEMV gate/up                           work  19.423 ms   42.7% of token   paired 19.4 19.6 19.6 19.4 19.2
+  GEMV down (+residual)                  work  14.193 ms   31.2% of token   paired 14.2 14.4 13.9 14.2 14.1
+  LM head (int8)                         work   3.205 ms    7.0% of token   paired 3.1 3.2 3.2 3.8 2.8
+  norm+quant (rms)                       work   0.756 ms    1.7% of token   paired 0.8 -0.8 0.8 1.4 0.6
+  rope, kv store, act-quant, ctx-quant   work   1.006 ms    2.2% of token   paired 0.9 1.1 1.0 1.6 0.6
+  dispatch floor (every pipeline no-op)         1.057 ms    2.3% of token   spread 7.5%
+  full token 45.513 ms (22.0 tok/s), spread 0.7%; categories' work + floor = 45.295 ms (99.5% of full)
+
+[ddecomp   63.3s] depth 2048 rep 1/5: full 57.590 ms/token, dispatch floor 1.073
+[ddecomp   72.9s] depth 2048 rep 2/5: full 58.175 ms/token, dispatch floor 1.150
+[ddecomp   82.5s] depth 2048 rep 3/5: full 58.217 ms/token, dispatch floor 1.105
+[ddecomp   92.0s] depth 2048 rep 4/5: full 58.227 ms/token, dispatch floor 0.985
+[ddecomp  101.5s] depth 2048 rep 5/5: full 57.455 ms/token, dispatch floor 1.130
+
+=== Metal decode decomposition, depth 2048 (2049 keys), medians of 5 reps × 20 tokens ===
+  attention                              work  13.469 ms   23.2% of token   paired 13.1 13.5 13.5 13.5 13.4
+  GEMV qkv (+bias)                       work   2.731 ms    4.7% of token   paired 2.3 2.7 2.8 2.8 2.7
+  GEMV o (+residual)                     work   2.167 ms    3.7% of token   paired 1.6 2.2 2.2 2.2 2.2
+  GEMV gate/up                           work  19.411 ms   33.4% of token   paired 18.9 19.4 19.5 19.5 19.1
+  GEMV down (+residual)                  work  14.207 ms   24.4% of token   paired 13.7 14.2 14.2 14.2 14.2
+  LM head (int8)                         work   3.252 ms    5.6% of token   paired 2.7 3.2 3.3 3.3 3.3
+  norm+quant (rms)                       work   0.844 ms    1.5% of token   paired 0.2 0.8 0.9 1.5 0.8
+  rope, kv store, act-quant, ctx-quant   work   0.947 ms    1.6% of token   paired 0.3 0.9 0.9 1.7 1.0
+  dispatch floor (every pipeline no-op)         1.105 ms    1.9% of token   spread 14.9%
+  full token 58.175 ms (17.2 tok/s), spread 1.3%; categories' work + floor = 58.132 ms (99.9% of full)
+
+[ddecomp  141.1s] depth 3900 rep 1/5: full 68.506 ms/token, dispatch floor 1.104
+[ddecomp  152.4s] depth 3900 rep 2/5: full 69.388 ms/token, dispatch floor 1.119
+[ddecomp  163.7s] depth 3900 rep 3/5: full 68.654 ms/token, dispatch floor 1.119
+[ddecomp  174.9s] depth 3900 rep 4/5: full 68.611 ms/token, dispatch floor 1.139
+[ddecomp  186.2s] depth 3900 rep 5/5: full 69.469 ms/token, dispatch floor 1.119
+
+=== Metal decode decomposition, depth 3900 (3901 keys), medians of 5 reps × 20 tokens ===
+  attention                              work  24.547 ms   35.8% of token   paired 24.4 24.7 24.5 24.5 24.8
+  GEMV qkv (+bias)                       work   2.735 ms    4.0% of token   paired 2.0 2.7 2.9 2.7 3.0
+  GEMV o (+residual)                     work   2.278 ms    3.3% of token   paired 1.5 2.3 2.2 2.3 2.4
+  GEMV gate/up                           work  19.221 ms   28.0% of token   paired 18.7 19.6 19.2 19.2 19.7
+  GEMV down (+residual)                  work  14.353 ms   20.9% of token   paired 13.5 14.4 14.4 14.3 14.4
+  LM head (int8)                         work   3.377 ms    4.9% of token   paired 2.4 4.2 3.4 3.3 4.2
+  norm+quant (rms)                       work   0.882 ms    1.3% of token   paired -0.1 1.7 0.9 0.8 1.7
+  rope, kv store, act-quant, ctx-quant   work   1.178 ms    1.7% of token   paired 0.1 1.8 1.2 0.4 2.0
+  dispatch floor (every pipeline no-op)         1.119 ms    1.6% of token   spread 3.2%
+  full token 68.654 ms (14.6 tok/s), spread 1.4%; categories' work + floor = 69.691 ms (101.5% of full)
+
+--- PASS: TestMetalDecodeDecomp (186.33s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	186.776s
+16:47:54 ##### qwen2.5-7b-instruct-q4_k_m.int4.metal.giw exit=0
+16:47:54 idle load1=1.47
+16:47:54 ##### qwen2.5-coder-0.5b-instruct-q4_k_m.gguf; System-wide memory free percentage: 77%
+=== RUN   TestMetalDecodeDecomp
+[ddecomp    1.4s] loaded qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: H=896 I=4864 nL=24 nH=14 V=151936, ctx 4096, attention_fa on: true (floor 1536), aliased: false
+[ddecomp    2.6s] depth 128 rep 1/5: full 5.240 ms/token, dispatch floor 0.654
+[ddecomp    3.6s] depth 128 rep 2/5: full 5.183 ms/token, dispatch floor 0.572
+[ddecomp    4.6s] depth 128 rep 3/5: full 5.216 ms/token, dispatch floor 0.651
+[ddecomp    5.6s] depth 128 rep 4/5: full 5.182 ms/token, dispatch floor 0.651
+[ddecomp    6.6s] depth 128 rep 5/5: full 5.228 ms/token, dispatch floor 0.686
+
+=== Metal decode decomposition, depth 128 (129 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   0.479 ms    9.2% of token   paired 0.5 0.5 0.5 0.5 0.5
+  GEMV qkv (+bias)                       work   0.225 ms    4.3% of token   paired 0.2 0.2 0.3 0.2 0.1
+  GEMV o (+residual)                     work   0.198 ms    3.8% of token   paired 0.2 0.2 0.2 0.2 -0.0
+  GEMV gate/up                           work   1.245 ms   23.9% of token   paired 1.2 1.4 1.3 1.2 1.2
+  GEMV down (+residual)                  work   0.867 ms   16.6% of token   paired 0.9 0.9 1.0 0.8 0.8
+  LM head (int8)                         work   0.752 ms   14.4% of token   paired 0.8 0.8 0.8 0.7 0.6
+  norm+quant (rms)                       work   0.291 ms    5.6% of token   paired 0.4 0.3 0.4 0.3 0.2
+  rope, kv store, act-quant, ctx-quant   work   0.419 ms    8.0% of token   paired 0.5 0.4 0.5 0.4 0.3
+  dispatch floor (every pipeline no-op)         0.651 ms   12.5% of token   spread 17.5%
+  full token 5.216 ms (191.7 tok/s), spread 1.1%; categories' work + floor = 5.127 ms (98.3% of full)
+
+[ddecomp    9.5s] depth 2048 rep 1/5: full 8.873 ms/token, dispatch floor 0.641
+[ddecomp   11.1s] depth 2048 rep 2/5: full 8.874 ms/token, dispatch floor 0.651
+[ddecomp   12.7s] depth 2048 rep 3/5: full 8.860 ms/token, dispatch floor 0.629
+[ddecomp   14.3s] depth 2048 rep 4/5: full 8.883 ms/token, dispatch floor 0.573
+[ddecomp   16.0s] depth 2048 rep 5/5: full 8.829 ms/token, dispatch floor 0.593
+
+=== Metal decode decomposition, depth 2048 (2049 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   4.091 ms   46.1% of token   paired 4.2 4.1 4.1 4.1 4.2
+  GEMV qkv (+bias)                       work   0.226 ms    2.5% of token   paired 0.2 0.2 0.2 0.2 0.2
+  GEMV o (+residual)                     work   0.154 ms    1.7% of token   paired 0.2 0.2 0.1 0.2 0.1
+  GEMV gate/up                           work   1.374 ms   15.5% of token   paired 1.4 1.4 1.3 1.4 1.4
+  GEMV down (+residual)                  work   0.872 ms    9.8% of token   paired 0.9 0.9 0.9 0.9 0.8
+  LM head (int8)                         work   0.630 ms    7.1% of token   paired 0.6 0.6 0.7 0.7 0.6
+  norm+quant (rms)                       work   0.330 ms    3.7% of token   paired 0.3 0.3 0.3 0.4 0.3
+  rope, kv store, act-quant, ctx-quant   work   0.385 ms    4.3% of token   paired 0.4 0.4 0.3 0.4 0.4
+  dispatch floor (every pipeline no-op)         0.629 ms    7.1% of token   spread 12.5%
+  full token 8.873 ms (112.7 tok/s), spread 0.6%; categories' work + floor = 8.692 ms (98.0% of full)
+
+[ddecomp   21.8s] depth 3900 rep 1/5: full 12.357 ms/token, dispatch floor 0.644
+[ddecomp   24.0s] depth 3900 rep 2/5: full 12.402 ms/token, dispatch floor 0.638
+[ddecomp   26.1s] depth 3900 rep 3/5: full 12.386 ms/token, dispatch floor 0.656
+[ddecomp   28.3s] depth 3900 rep 4/5: full 12.410 ms/token, dispatch floor 0.600
+[ddecomp   30.4s] depth 3900 rep 5/5: full 12.400 ms/token, dispatch floor 0.651
+
+=== Metal decode decomposition, depth 3900 (3901 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   7.613 ms   61.4% of token   paired 7.6 7.8 7.6 7.6 7.6
+  GEMV qkv (+bias)                       work   0.236 ms    1.9% of token   paired 0.2 0.2 0.2 0.3 0.2
+  GEMV o (+residual)                     work   0.189 ms    1.5% of token   paired 0.2 0.2 0.2 0.2 0.2
+  GEMV gate/up                           work   1.421 ms   11.5% of token   paired 1.5 1.5 1.4 1.4 1.4
+  GEMV down (+residual)                  work   0.934 ms    7.5% of token   paired 1.0 0.9 0.9 0.9 1.0
+  LM head (int8)                         work   0.688 ms    5.5% of token   paired 0.7 0.7 0.7 0.7 0.8
+  norm+quant (rms)                       work   0.338 ms    2.7% of token   paired 0.3 0.4 0.3 0.4 0.3
+  rope, kv store, act-quant, ctx-quant   work   0.406 ms    3.3% of token   paired 0.4 0.4 0.4 0.4 0.4
+  dispatch floor (every pipeline no-op)         0.644 ms    5.2% of token   spread 8.7%
+  full token 12.400 ms (80.6 tok/s), spread 0.4%; categories' work + floor = 12.469 ms (100.6% of full)
+
+--- PASS: TestMetalDecodeDecomp (30.45s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	30.893s
+16:48:25 ##### qwen2.5-coder-0.5b-instruct-q4_k_m.gguf exit=0
+16:48:25 DONE
