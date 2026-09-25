@@ -1091,7 +1091,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// why the decoder PINS the embedding/LM-head at int8 even in int4 mode. Metal was
 	// int4-quantizing it anyway, violating that pin. Worst for Gemma: a TIED head, 262k x 2560,
 	// so every one of 262k logits is dotted against int4-mangled embedding rows.
-	if r.lmW, r.lmS, err = int8Buf(d, lm); err != nil {
+	if r.lmW, r.lmS, err = int8BufA(d, alias, lm); err != nil {
 		return nil, err
 	}
 

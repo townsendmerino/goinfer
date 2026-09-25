@@ -38,11 +38,14 @@ type weightAlias struct {
 	m    *decoder.Model
 	page int
 
-	tensors  int   // tensors wrapped in place
-	aliased  int64 // nibble bytes served from the mapping
-	copied   int   // eligible int4 tensors that were not in the mapping (heap-backed) and took the copy path
-	copiedB  int64
-	declined int // in the mapping but not 16-byte-aligned (an older .giw layout), so copied
+	tensors int   // int4 tensors wrapped in place
+	aliased int64 // int4 nibble bytes served from the mapping
+
+	int8Tensors int   // int8 matrices (the LM head) whose codes are wrapped in place
+	int8Bytes   int64 // int8 code bytes served from the mapping
+	copied      int   // eligible int4 tensors that were not in the mapping (heap-backed) and took the copy path
+	copiedB     int64
+	declined    int // in the mapping but not 16-byte-aligned (an older .giw layout), so copied
 
 	groups      int   // fused groups (q|k|v, gate|up) wrapped as ONE buffer over their contiguous nibbles
 	groupBytes  int64 // nibble bytes those groups cover
@@ -77,10 +80,38 @@ func (a *weightAlias) nibbles(d *Device, w *linalg.WeightMat) (Buffer, bool) {
 	if !ok || group != 32 || len(q4) == 0 {
 		return Buffer{}, false
 	}
-	base, n, off, ok := a.m.MmapAliasWindow(q4, a.page)
+	return a.window(d, q4)
+}
+
+// int8Codes is nibbles for an int8 (W8A8) matrix: its codes are one contiguous array in the .giw, 16-byte
+// aligned since weights format v12, and the kernels read them as the same signed bytes, so they can be bound
+// in place exactly like int4 nibbles. On the 7B this is the LM head: 519.8 MB of the 911 MB the Metal build
+// still copied after int4 aliasing (measured with a per-caller buffer ledger, 2026-09-24).
+func (a *weightAlias) int8Codes(d *Device, w *linalg.WeightMat) (Buffer, bool) {
+	if a == nil {
+		return Buffer{}, false
+	}
+	q8, _, _, ok := w.Int8()
+	if !ok || len(q8) == 0 {
+		return Buffer{}, false
+	}
+	buf, ok := a.window(d, unsafe.Slice((*byte)(unsafe.Pointer(&q8[0])), len(q8)))
+	if ok {
+		a.int8Tensors++
+		a.int8Bytes += int64(len(q8))
+		a.tensors-- // counted separately from the int4 singles
+		a.aliased -= int64(len(q8))
+	}
+	return buf, ok
+}
+
+// window binds b in place: ONE no-copy buffer over b's page-aligned window of the mapping, bound at b's
+// offset in it. ok=false (and the caller copies) when b is not in the mapping or not 16-byte aligned.
+func (a *weightAlias) window(d *Device, b []byte) (Buffer, bool) {
+	base, n, off, ok := a.m.MmapAliasWindow(b, a.page)
 	if !ok {
 		a.copied++
-		a.copiedB += int64(len(q4))
+		a.copiedB += int64(len(b))
 		return Buffer{}, false
 	}
 	if off%16 != 0 {
@@ -88,8 +119,18 @@ func (a *weightAlias) nibbles(d *Device, w *linalg.WeightMat) (Buffer, bool) {
 		return Buffer{}, false
 	}
 	a.tensors++
-	a.aliased += int64(len(q4))
+	a.aliased += int64(len(b))
 	return d.NewBufferNoCopy(base, n).At(off), true
+}
+
+// int8BufA is int8Buf with the alias: the int8 codes bound in place when they are in the mapping, the
+// per-row f32 scales (a few hundred KB) copied as before.
+func int8BufA(d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, error) {
+	if codes, ok := a.int8Codes(d, w); ok {
+		_, sc, _, _ := w.Int8()
+		return codes, NewBufferFloats(d, sc), nil
+	}
+	return int8Buf(d, w)
 }
 
 // concatNibbles is nibbles for a FUSED group: it returns ONE buffer bound over the members' nibble bytes
@@ -178,6 +219,8 @@ func (a *weightAlias) summary() string {
 		return ""
 	}
 	return fmt.Sprintf("[metal] weights aliased from the .giw mapping (GOINFER_METAL_ALIAS=1): %.0f MB of int4 nibbles not copied "+
-		"(%d single tensors + %d fused groups = %.0f MB); copied as before: %d heap-backed, %d unaligned, %d fused groups not adjacent\n",
-		float64(a.aliased)/(1<<20), a.tensors, a.groups, float64(a.groupBytes)/(1<<20), a.copied, a.declined, a.nonAdjacent)
+		"(%d single tensors + %d fused groups = %.0f MB) + %.0f MB of int8 codes (%d matrices); copied as before: %d heap-backed, "+
+		"%d unaligned, %d fused groups not adjacent\n",
+		float64(a.aliased)/(1<<20), a.tensors, a.groups, float64(a.groupBytes)/(1<<20), float64(a.int8Bytes)/(1<<20), a.int8Tensors,
+		a.copied, a.declined, a.nonAdjacent)
 }
