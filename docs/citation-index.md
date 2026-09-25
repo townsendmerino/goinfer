@@ -113,9 +113,9 @@ supports.
 | `docs/audit-2026-09-10.md|internal/servecheck/cmd.go:21` | goinfer | `Exits non-zero if any row fails, so it works as a smoke test in a script.` |
 | `docs/audit-2026-09-10.md|metal/moe.go:719` | goinfer | `for j := 0; j < mo.k; j++ {` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:926` | goinfer | `for m := 0; m < M; m++ {` |
-| `docs/audit-2026-09-10.md|tokenizer/sentencepiece.go:822` | goinfer | `// TokenText returns the raw surface bytes a single token id contributes when` |
+| `docs/audit-2026-09-10.md|tokenizer/sentencepiece.go:900` | goinfer | `// TokenText returns the raw surface bytes a single token id contributes when` |
 | `docs/audit-metal-2026-09-12.md|decoder/features.go:154` | goinfer | `add(!a.ropeUniform(), FeatPerLayerRoPE)` |
-| `docs/audit-metal-2026-09-12.md|decoder/features.go:359` | goinfer | `"metal":  {experts: 256, groups: 64}, // metal/moe.go: float score[256]/sel[256], gscore` |
+| `docs/audit-metal-2026-09-12.md|decoder/features.go:366` | goinfer | `"metal":  {experts: 256, groups: 64}, // metal/moe.go: float score[256]/sel[256], gscore` |
 | `docs/audit-metal-2026-09-12.md|decoder/fitguard.go:460` | goinfer | `// 0.625") is right about the encoding and wrong about the FOOTPRINT, because the loader` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1372` | goinfer | `var prefillDeclineDigitsRE = regexp.MustCompile(`\d+`)` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1409` | goinfer | `func warnPrefillDeclined(n int, err error) {` |
@@ -235,17 +235,17 @@ supports.
 | `docs/book/09-guessing-ahead.md|decoder/speculative.go:89` | goinfer | `// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged` |
 | `docs/gpu-residency-coverage.md|decoder/features.go:100` | goinfer | `FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B shape: per-la` |
 | `docs/gpu-residency-coverage.md|decoder/features.go:134` | goinfer | `FeatKDA ResidentFeature = "kda"` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:430` | goinfer | `var residentPerLayerGeomBackends = map[string]bool{"cuda": true, "metal": true, "webgpu"` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:448` | goinfer | `func residentGemma4MoEOK(a *Architecture, backend string) bool {` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:437` | goinfer | `var residentPerLayerGeomBackends = map[string]bool{"cuda": true, "metal": true, "webgpu"` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:455` | goinfer | `func residentGemma4MoEOK(a *Architecture, backend string) bool {` |
 | `docs/gpu-residency-coverage.md|decoder/features.go:54` | goinfer | `// FeatDeltaNet bundles the TWO departures of the Gated-DeltaNet hybrids (qwen3_5_moe,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:617` | goinfer | `FeatNoPE: true,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:625` | goinfer | `FeatAttnTemp: true,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:631` | goinfer | `FeatPostOnlyNorm: true,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:636` | goinfer | `FeatQKNormWhole: true,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:648` | goinfer | `FeatLayerNorm:     true,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:664` | goinfer | `FeatSSM:            true, // Mamba-2 engine (Granite-4.0-H, Nemotron-H)` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:743` | goinfer | `FeatLayerNorm:         true, // layernorm_quant — mean-centered norm+quant (GPT-2, gener` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:753` | goinfer | `FeatQKNormWhole:       true, // qk_norm's grid collapsed to one Q block + one K block (n` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:624` | goinfer | `FeatNoPE: true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:632` | goinfer | `FeatAttnTemp: true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:638` | goinfer | `FeatPostOnlyNorm: true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:643` | goinfer | `FeatQKNormWhole: true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:655` | goinfer | `FeatLayerNorm:     true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:671` | goinfer | `FeatSSM:            true, // Mamba-2 engine (Granite-4.0-H, Nemotron-H)` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:750` | goinfer | `FeatLayerNorm:         true, // layernorm_quant — mean-centered norm+quant (GPT-2, gener` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:760` | goinfer | `FeatQKNormWhole:       true, // qk_norm's grid collapsed to one Q block + one K block (n` |
 | `docs/gpu-residency-coverage.md|decoder/hardware_matrix_test.go:41` | goinfer | `t.Setenv("GOINFER_SSM_RESIDENT", "")` |
 | `docs/gpu-residency-coverage.md|decoder/residency.go:484` | goinfer | `return false // own forward, not yet bridged` |
 | `docs/gpu-residency-coverage.md|decoder/residency.go:485` | goinfer | `case a.lfm2 != nil:` |
@@ -280,6 +280,7 @@ supports.
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|internal/serveapp/swapguard.go:73` | goinfer | `fmt.Fprintf(os.Stderr, "swap guard: armed, threshold +%d MB over baseline\n", thresholdM` |
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|metal/alias.go:100` | goinfer | `func (a *weightAlias) nibbles(d *Device, w *linalg.WeightMat) (Buffer, bool) {` |
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|mmap/mmap_unix.go:46` | aikit | `data, err := syscall.Mmap(int(f.Fd()), 0, int(sz), syscall.PROT_READ, syscall.MAP_PRIVAT` |
+| `docs/measurements/metal-prefill-gemm-s2-2026-09-25.md|metal/prefill.go:37` | goinfer | `kernel void gemm_w4f16_store(device const half* A[[buffer(0)]], device const uint* W[[bu` |
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/forwardn.go:663` | goinfer | `ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, nil, m.pager)` |
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/mlp.go:421` | goinfer | `matmul(be, &ex.Gate, h, gate, 1)` |
 | `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md|metal/backend.go:635` | goinfer | `func metalFusedAttentionEnabled(v string) bool {` |
@@ -345,7 +346,7 @@ supports.
 | `docs/queue-engineering.md|internal/serveapp/main.go:659` | goinfer | `// so the shutdown handler just below can close it alongside stopDemote.` |
 | `docs/queue-engineering.md|linalg/quant.go:214` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1275` | goinfer | `r.ensureBatchCap(16)` |
-| `docs/queue-engineering.md|scripts/bench_peer.py:782` | goinfer | `def gate_cell_idle():` |
+| `docs/queue-engineering.md|scripts/bench_peer.py:820` | goinfer | `def gate_cell_idle():` |
 | `docs/queue-performance.md|cuda/resident.go:1284` | goinfer | `wOff, wLen := e*w.perExpertW*4, w.perExpertW*4` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:2941` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:51` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,        // the text-only checkpoint's model_type` |
@@ -406,8 +407,8 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:329` | goinfer | `tail := tailKVOnly` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/embed.go:36` | goinfer | `// guard, as ForwardCapture.` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:131` | goinfer | `// single scalar per head — verified against fla-org/flash-linear-attention's actual sou` |
-| `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:432` | goinfer | `// residentPerLayerGeomOK reports whether backend implements the per-layer geometry a's ` |
-| `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:513` | goinfer | `// story: the nGroup/topkGroup argument order was unverified for a real mismatch until t` |
+| `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:439` | goinfer | `// residentPerLayerGeomOK reports whether backend implements the per-layer geometry a's ` |
+| `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:520` | goinfer | `// story: the nGroup/topkGroup argument order was unverified for a real mismatch until t` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/generate_vl.go:18` | goinfer | `anchor: func (m *Model) vlDecodeLoop(ctx context.Context, out chan<- int, g *Generation,` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/model.go:1307` | goinfer | `return logits` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/model.go:1476` | goinfer | `if err = ctx.Err(); err != nil {` |
@@ -466,7 +467,7 @@ supports.
 | `docs/tasks/task-never-swap-2026-09.md|decoder/moepaging.go:204` | goinfer | `budget = mmap.AutoBudget()` |
 | `docs/tasks/task-never-swap-2026-09.md|decoder/moepaging.go:213` | goinfer | `if pool && giwPath != "" && len(poolMembers) == len(members) {` |
 | `docs/tasks/task-never-swap-2026-09.md|internal/fitcmd/fit.go:103` | goinfer | `m, err := decoder.Load(loadPath, decoder.Options{Quant: *quant, Backend: loadBackend})` |
-| `docs/tasks/task-never-swap-2026-09.md|internal/modelload/modelload.go:163` | goinfer | `opts.StreamWeights = true` |
+| `docs/tasks/task-never-swap-2026-09.md|internal/modelload/modelload.go:168` | goinfer | `opts.StreamWeights = true` |
 | `docs/tasks/task-never-swap-2026-09.md|internal/prequant/prequant.go:206` | goinfer | `func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (string, erro` |
 | `docs/tasks/task-never-swap-2026-09.md|metal/backend.go:138` | goinfer | `const residentMemFraction = decoder.WeightsMemFraction` |
 | `docs/tasks/task-recompute-audit.md|cuda/resident.go:395` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
@@ -488,7 +489,7 @@ supports.
 | `docs/tasks/task-recompute-audit.md|decoder/session.go:98` | goinfer | `if rolledBack && s.cache.hasRecurrentState() {` |
 | `docs/tasks/task-recompute-audit.md|decoder/speculative.go:135` | goinfer | `if atomic.CompareAndSwapInt32(&target.resBusy, 0, 1) {` |
 | `docs/tasks/task-recompute-audit.md|internal/serveapp/openai.go:1324` | goinfer | `sess := lm.sessions.acquire(gr.promptIDs)` |
-| `docs/tasks/task-recompute-audit.md|tokenizer/sentencepiece.go:800` | goinfer | `// Decoding prompt+generation together gives the right answer too, by re-decoding the` |
+| `docs/tasks/task-recompute-audit.md|tokenizer/sentencepiece.go:878` | goinfer | `// Decoding prompt+generation together gives the right answer too, by re-decoding the` |
 | `docs/tasks/task-spark-x2-5.md|decoder/arch.go:288` | goinfer | `// sigmoid-activated where Laguna's is softplus (verified against source, not assumed). ` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:78` | goinfer | `func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok bool) {` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:93` | goinfer | `func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {` |

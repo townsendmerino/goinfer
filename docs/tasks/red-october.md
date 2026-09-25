@@ -2093,6 +2093,12 @@ is what separates 0.75 from ~3 TFLOPS is what the read has to establish. Record 
 
 **Build.** A test-only prototype kernel first, wired only in the benchmark; production wiring only after ship.
 
+**Prior-art read done 2026-09-25** ([`metal-prefill-gemm-s2-2026-09-25.md`](../measurements/metal-prefill-gemm-s2-2026-09-25.md)):
+llama.cpp's classic `kernel_mul_mm` (the path that ran in S1b — this M1 Pro has no Metal tensor API) and MLX's `qmm_t` both
+stage both operands once per 32-K slab in threadgroup memory, shared by 4 simdgroups, with the device loads out of the
+MMA loop; goinfer's kernel stages nothing across simdgroups and loads activations from device inside it. The proposed
+prototype adapts the classic tile (64×32, K slab 32 = one scale group) and may be bit-identical to today's kernel.
+
 **Record.** `docs/measurements/metal-prefill-gemm-s2-2026-MM-DD.md`; the S0/S1 records and R4 point to it.
 
 **Amendments.** A band or precondition changes only by a dated amendment below this line that gives the mechanism,

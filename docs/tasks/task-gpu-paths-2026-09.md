@@ -149,7 +149,7 @@ after (it drives the shared positional KV).
 
 ### G5 — families CPU-only on CUDA and Metal for one or two small features
 
-**Where.** `decoder/features.go:432–541` (the three backend tables) against
+**Where.** `decoder/features.go:439–541` (the three backend tables) against
 `decoder/features.go:131–221` (`residentFeatures`). Everything below declines to the staged path,
 which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole model's speed.
 
@@ -161,7 +161,7 @@ which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole
 | Olmo Hybrid | the two above + `FeatNoPE` | same | its Gated-DeltaNet half is already declared on both backends |
 | Command-R / R7B | `FeatLayerNorm`, `FeatParallelBlock`, `FeatLogitScale` | `FeatParallelBlock`, `FeatLogitScale` | parallel attn‖MLP from one normed input, summed; logits scale is a host-side multiply; Metal already has the LayerNorm (generalized for Cohere, `features.go` note) |
 | Nemotron-H | `FeatSSM`, `FeatNonGatedMLP`, `FeatLogitScale`… | `FeatSSM`, `FeatLogitScale` | the Mamba-2 engine exists on WebGPU (`gpu/`); a port, not a design |
-| DeepSeek-V2/V3, Kimi K2 | ~~`FeatMLA`~~ done 2026-09-17 (`decoder/features.go:513`, `cuda/mla.cu`) | `FeatMLA` | CUDA shipped: latent-cache attention + absorbed W_UK/W_UV, real parity gate against `testdata/deepseek-tiny`; the nGroup/topkGroup mapping this row used to flag as ungated is now covered by `TestMLAResidentParityCUDA`'s full-sequence check. WebGPU already had it; Metal still doesn't |
+| DeepSeek-V2/V3, Kimi K2 | ~~`FeatMLA`~~ done 2026-09-17 (`decoder/features.go:520`, `cuda/mla.cu`) | `FeatMLA` | CUDA shipped: latent-cache attention + absorbed W_UK/W_UV, real parity gate against `testdata/deepseek-tiny`; the nGroup/topkGroup mapping this row used to flag as ungated is now covered by `TestMLAResidentParityCUDA`'s full-sequence check. WebGPU already had it; Metal still doesn't |
 | Laguna | `FeatAttnOutputGate` | same | not on any backend; WebGPU's DeltaNet has a fused output gate to crib from |
 | LFM2.5 | `FeatShortConv` + "own forward, not bridged" | same | `decoder/residency.go:260` declines it before features are consulted |
 | Llama 4 | own forward, not bridged | same | `decoder/residency.go:258` |
