@@ -1,5 +1,12 @@
 # Metal prefill decomposition — where the fast path's time goes (S0, 2026-09-25)
 
+> **Amended the same day (see *Addendum: isolated time is not in-sequence cost*, below).** Two follow-up runs
+> showed that a kernel category timed in its own command buffer does not give its cost inside production: the MLP
+> GEMMs cost **~1.9× more in the sequence than alone**, at both K. The shares below still describe production (the
+> first run's medians happened to sit in the slow mode, which is why they summed to ~100%), but the TFLOPS column is
+> the sustained rate, and run 4 shows that is the right baseline: gate/up's ~1.45 TFLOPS alone is a burst right after
+> the GPU has been idle, and any sustained GPU work — production included — runs it at ~0.75.
+
 **Question.** The Metal prefill GEMM is the item "biggest gap on the Mac": TTFT 0.377× Ollama's at K=512 and 0.239×
 at K=3900 (`peer-claim-2026-09-25.md` cell h, 1.5B, Ollama v0.32.5 at its defaults). R4 killed the tile-tuning
 approach and the audit priced parity at "≈3.5× on the GEMM" (`audit-metal-2026-09-12.md` §6) — arithmetic from
@@ -103,6 +110,74 @@ The TTFT target is Ollama's: r = 0.377 at K=512, 0.239 at K=3900 (TTFT ≈ `Pref
 - **What this does not say:** what the M1 Pro can actually reach at these shapes. That is S1 — a plain f16
   simdgroup-matrix GEMM (no dequant) as the attainable ceiling, llama.cpp's own `mul_mm` at the same shapes, and the
   per-rep values the >50% spreads need.
+
+## Addendum: isolated time is not in-sequence cost (2026-09-25, runs 2 and 3)
+
+**Run 2** (K=3900 only, every rep printed, page-in / swap-in deltas and `pmset -g therm` around each command
+buffer; 13:29–13:34 local; raw: [`run2-k3900-perrep.log`](metal-prefill-decomp-2026-09-25/run2-k3900-perrep.log)).
+Every category was stable (spreads ≤ 1.2%), but the isolated MLP GEMMs ran **~2× faster than in run 1**: gate/up
+4151 ms (run 1 median 8109), down 2131 (4397); attention 4169 (4419). The categories then summed to only **64.6%** of
+the full replay, which held at 17.5 s, like `PrefillLast`. So each isolated GEMM runs in one of two modes about 2×
+apart, and run 1's 52–55% spreads were a mix of both. **Neither hypothesis for the spread is supported**: no swap-ins,
+page-ins small and steady (~850 per 4 s system-wide, i.e. not the GPU re-reading evicted weights), no thermal warning
+recorded, 80–82% memory free.
+
+**Run 3** (both K, leave-one-out; 13:39–13:52 local; raw: [`run3-leave-one-out.log`](metal-prefill-decomp-2026-09-25/run3-leave-one-out.log)).
+A category's in-sequence cost = the full replay minus the same replay with that category removed, 5 paired reps.
+Kernel timing does not depend on the values read, so removing a category changes only the cache and memory state the
+rest see. The in-sequence costs are additive — **92.4% (K=512) and 100.2% (K=3900) of the full replay** — where the
+isolated ones summed to 65%.
+
+| K | category | alone (ms) | in sequence (ms) | share of full | in-seq ÷ alone | TFLOPS alone → in sequence |
+|---|---|---:|---:|---:|---:|---|
+| 512 | GEMM gate/up | 551.9 | **1050.5** | 62.9% | **1.90×** | 1.43 → 0.75 |
+| 512 | GEMM down | 292.3 | 378.6 | 22.7% | 1.30× | 1.35 → 1.04 |
+| 512 | attention | 108.2 | 114.8 | 6.9% | 1.06× | |
+| 3900 | GEMM gate/up | 4134.9 | **8032.5** | 46.1% | **1.94×** | 1.46 → 0.75 |
+| 3900 | GEMM down | 2126.4 | **4037.3** | 23.2% | **1.90×** | 1.41 → 0.75 |
+| 3900 | attention | 4181.2 | 4428.1 | 25.4% | 1.06× | |
+| 3900 | GEMM qkv | 443.7 | 578.2 | 3.3% | 1.30× | 1.55 → 1.19 |
+| 3900 | GEMM o | 333.7 | 394.2 | 2.3% | 1.18× | 1.55 → 1.31 |
+
+Paired deltas are tight (gate/up at K=3900: 7987–8197 ms). What this changes:
+
+- **The MLP GEMMs run at about half the rate inside production that they reach alone** — 0.75 TFLOPS against
+  ~1.45, at both K. The ratio sits near 2× and the isolated runs flip between the same two levels, which reads more
+  like a discrete state than graded cache pressure; attention, the memory-bound kernel, barely moves (1.06×). The
+  mechanism is not identified here.
+- **The GEMM-share conclusions above stand** (they are in-sequence shares). Run 4 below shows the in-sequence rate is
+  the GPU's steady state, not an interaction to recover.
+- **Any kernel benchmark timed alone (S1 as scoped) would read the fast mode** and overstate what the same kernel
+  delivers in production: a microbenchmark that reproduces the shape but not the conditions around it exonerates the
+  kernel by leaving out the thing that slows it. S1 has to measure in sequence.
+
+## Run 4: the 2× follows the GPU's recent workload (2026-09-25, stopped after round 1 of 3)
+
+K=512, two processes (`GOINFER_METAL_ALIAS` unset, then `=0`; separate processes because knobs are snapshotted per
+model at `decoder.Load`), each with leave-one-out and a **prior-state** phase: GEMM gate/up timed alone, interleaved
+per rep, after four different things. 13:58:54–14:02:14 local; the remaining two rounds waited on a busy box
+(load1 2.3–3.4 from UI processes, not the benchmark) and were stopped by owner decision at 14:10. Raw:
+[`run4-alias-ab-prior-state-partial.log`](metal-prefill-decomp-2026-09-25/run4-alias-ab-prior-state-partial.log).
+
+| what ran just before gate/up | default arm (ms, median of 5) | `ALIAS=0` arm | spreads |
+|---|---:|---:|---|
+| 2 s of idle | **552.5** | **558.7** | 1.7–1.8% |
+| a full replay | 1042.6 | 1039.3 | ≤ 1.0% |
+| an attention-only command buffer | 1040.8 | 1038.8 | ≤ 2.1% |
+| itself, back-to-back (second of two) | 1039.0 | 1040.2 | ≤ 0.7% |
+
+- **The fast mode is a burst after idle; the slow mode is the steady state.** gate/up run back-to-back on identical
+  data with warm caches is already slow, so the 2× is not cache state or anything a preceding kernel leaves behind.
+  It follows whether the GPU has just been working: after idle this kernel reaches ~1.45 TFLOPS, under any sustained
+  GPU work ~0.75. Production prefill is sustained work, so **~0.75 TFLOPS is the kernel's real rate there, and the
+  in-sequence costs above are the right baseline** — there is no interaction to recover. Clock, power or memory
+  frequency cannot be told apart without `powermetrics` (root); no thermal warning was recorded.
+- **Aliasing is not the cause, on one round each and with one caveat.** gate/up in sequence 1046.8 (default) vs
+  1043.4 ms (`ALIAS=0`); `PrefillLast` wall 1682 vs 1653 ms. The test did not print whether the aliaser was active in
+  each process (it should have been off in the second — the knob is read at `decoder.Load` from the environment the
+  runner exported), so the A/B is unverified; the test now prints it.
+- **For S1:** any kernel timing on this GPU has to be taken under sustained load, with no idle gap before the timed
+  run, or it measures the burst. That applies to a peer's kernel timed the same way, too.
 
 ## Scope of this record
 

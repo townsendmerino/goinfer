@@ -916,9 +916,10 @@ updated in the same commit; audit M-03's closure note updated.
 **Follow-on scoping, S0 measured 2026-09-25** ([`metal-prefill-decomp-2026-09-25.md`](../measurements/metal-prefill-decomp-2026-09-25.md)):
 the mechanism profile the kill asked for. On the 1.5B, the GEMM is 92.7% of prefill GPU time at K=512 (gate/up alone
 62.6%) and 76.0% at K=3900. Parity at K=512 needs the GEMM category ≈2.85× faster (not the audit's 3.5×); at K=3900
-the non-GEMM remainder already equals the parity target, so the GEMM alone cannot reach it. The kernel runs qkv/o at
-1.26–1.42 TFLOPS but gate/up at 0.74–0.76 — shape-dependent, on one kernel. Next: S1 (the M1 Pro's attainable f16
-MMA ceiling at these shapes and llama.cpp's `mul_mm` at the same shapes), then a pre-registered prototype.
+the non-GEMM remainder already equals the parity target, so the GEMM alone cannot reach it. Under sustained GPU work
+(production) the MLP GEMMs run at ~0.75 TFLOPS; the ~1.45 they reach timed alone is a burst right after idle, so kernel
+benchmarks here must be taken under sustained load (the record's addendum and run 4). Next: S1 (the M1 Pro's sustained
+f16 MMA ceiling at these shapes and llama.cpp's `mul_mm` at the same shapes), then a pre-registered prototype.
 
 ---
 

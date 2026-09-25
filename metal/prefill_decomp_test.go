@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -35,7 +36,9 @@ import (
 //	GOINFER_METAL_DECOMP=1 go test -tags goinfer_testhooks -run TestMetalPrefillDecomp -v -timeout 40m ./metal/
 //
 // GOINFER_METAL_DECOMP_MODEL overrides the checkpoint, GOINFER_METAL_DECOMP_K the lengths
-// (comma-separated), GOINFER_METAL_DECOMP_REPS the repetitions per measurement (default 5).
+// (comma-separated), GOINFER_METAL_DECOMP_REPS the repetitions per measurement (default 5), and
+// GOINFER_METAL_DECOMP_LOO=1 adds the leave-one-out in-sequence costs and GOINFER_METAL_DECOMP_STATE=1 the
+// prior-state test (both below).
 func TestMetalPrefillDecomp(t *testing.T) {
 	if os.Getenv("GOINFER_METAL_DECOMP") != "1" {
 		t.Skip("set GOINFER_METAL_DECOMP=1 (loads a real checkpoint; minutes of GPU time)")
@@ -83,7 +86,7 @@ func TestMetalPrefillDecomp(t *testing.T) {
 	if r.moe != nil || r.sandwich || r.postOnly || r.qkNorm {
 		t.Skip("decomposition covers the plain dense layer shape only")
 	}
-	hb("loaded %s: H=%d I=%d nL=%d nH=%d V=%d", filepath.Base(path), r.H, r.I, r.nL, r.nH, r.V)
+	hb("loaded %s: H=%d I=%d nL=%d nH=%d V=%d, weights aliased from the file: %v", filepath.Base(path), r.H, r.I, r.nL, r.nH, r.V, r.alias != nil)
 	vocab := r.V
 
 	for _, K := range ks {
@@ -278,9 +281,13 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 	catMs := make([][]float64, len(cats))
 	for rep := 0; rep < reps; rep++ {
 		resetX()
+		pi0, si0 := vmPageCounts()
 		fullMs = append(fullMs, gpuMs(full))
+		pi1, si1 := vmPageCounts()
+		hb("K=%d rep %d/%d: full replay %.1f ms GPU  pageins +%d swapins +%d  %s", M, rep+1, reps, fullMs[rep], pi1-pi0, si1-si0, thermalNote())
 		for ci, c := range cats {
 			resetX()
+			pa, sa := vmPageCounts()
 			v := gpuMs(func(e *Encoder) {
 				if c.once {
 					c.enc(e, 0)
@@ -290,9 +297,121 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 					c.enc(e, l)
 				}
 			})
+			pb, sb := vmPageCounts()
 			catMs[ci] = append(catMs[ci], v)
+			// Every repeat of every category that matters, so a wide spread can be traced to its reps
+			// (S0's first run printed medians only, and its two >50% spreads could not be read back).
+			if v >= 100 {
+				hb("K=%d rep %d/%d:   %-22s %9.1f ms GPU  pageins +%d swapins +%d", M, rep+1, reps, c.name, v, pb-pa, sb-sa)
+			}
 		}
-		hb("K=%d rep %d/%d: full replay %.1f ms GPU", M, rep+1, reps, fullMs[rep])
+	}
+
+	// Leave-one-out (GOINFER_METAL_DECOMP_LOO=1): a category timed in its own command buffer ran in two
+	// modes ~2x apart on the MLP GEMMs at K=3900 (S0's first run, 52-55% spreads), and in a stable
+	// all-fast run the categories summed to only 64.6% of the full replay — so an isolated time is not
+	// that kernel's cost inside production. Here each large category's IN-SEQUENCE cost is the full
+	// replay's time minus the time of the same replay with that category's dispatches removed, rep by
+	// rep interleaved. Kernel timing does not depend on the values it reads (no data-dependent
+	// branches), so the stale inputs a removed category leaves behind change no downstream kernel's
+	// work — only the cache and memory state it sees, which is the effect being measured.
+	if os.Getenv("GOINFER_METAL_DECOMP_LOO") == "1" {
+		fullWithout := func(skip int) func(e *Encoder) {
+			return func(e *Encoder) {
+				for l := 0; l < r.nL; l++ {
+					for ci, c := range cats {
+						if !c.once && ci != skip {
+							c.enc(e, l)
+						}
+					}
+				}
+				for ci, c := range cats {
+					if c.once && ci != skip {
+						c.enc(e, 0)
+					}
+				}
+			}
+		}
+		var big []int
+		for ci := range cats {
+			if median(catMs[ci]) >= 100 {
+				big = append(big, ci)
+			}
+		}
+		looFull := []float64{}
+		looWithout := make(map[int][]float64)
+		for rep := 0; rep < reps; rep++ {
+			resetX()
+			looFull = append(looFull, gpuMs(full))
+			for _, ci := range big {
+				resetX()
+				v := gpuMs(fullWithout(ci))
+				looWithout[ci] = append(looWithout[ci], v)
+				hb("K=%d LOO rep %d/%d: full %.1f ms, without %-22s %.1f ms → in-sequence %.1f ms", M, rep+1, reps, looFull[rep], cats[ci].name, v, looFull[rep]-v)
+			}
+		}
+		fm := median(looFull)
+		fmt.Fprintf(os.Stderr, "\n=== leave-one-out, K=%d: in-sequence cost = full − full-without (medians of %d paired reps) ===\n", M, reps)
+		var sumIn float64
+		for _, ci := range big {
+			var d []float64
+			for i := range looFull {
+				d = append(d, looFull[i]-looWithout[ci][i])
+			}
+			in := median(d)
+			sumIn += in
+			tf := ""
+			if cats[ci].flops != nil {
+				tf = fmt.Sprintf("  %.2f TFLOPS in sequence", cats[ci].flops(Mpad)*float64(r.nL)/(in*1e-3)/1e12)
+			}
+			fmt.Fprintf(os.Stderr, "  %-22s isolated %9.1f ms   in-sequence %9.1f ms (%5.1f%% of full)  ratio %.2fx  paired deltas %s%s\n",
+				cats[ci].name, median(catMs[ci]), in, 100*in/fm, in/median(catMs[ci]), fmtMs(d), tf)
+		}
+		fmt.Fprintf(os.Stderr, "  in-sequence sum %.1f ms = %.1f%% of the full replay (%.1f ms, spread %.1f%%)\n\n", sumIn, 100*sumIn/fm, fm, 100*spreadOf(looFull))
+	}
+
+	// Prior-state test (GOINFER_METAL_DECOMP_STATE=1): the MLP GEMMs run ~1.9x slower inside the sequence
+	// than alone, at both K, and alone they flip between two levels ~2x apart. If that tracks the GPU's
+	// RECENT WORKLOAD (a clock/power state) rather than the kernel's inputs, gate/up timed alone should
+	// be slow straight after heavy work and fast after an idle gap. Four conditions, interleaved per rep.
+	if os.Getenv("GOINFER_METAL_DECOMP_STATE") == "1" {
+		gu, att := -1, -1
+		for ci, c := range cats {
+			switch c.name {
+			case "GEMM gate/up":
+				gu = ci
+			case "attention":
+				att = ci
+			}
+		}
+		only := func(ci int) func(e *Encoder) {
+			return func(e *Encoder) {
+				for l := 0; l < r.nL; l++ {
+					cats[ci].enc(e, l)
+				}
+			}
+		}
+		conds := []string{"after 2 s idle", "right after a full replay", "right after attention-only", "back-to-back (2nd of 2)"}
+		res := make([][]float64, len(conds))
+		for rep := 0; rep < reps; rep++ {
+			time.Sleep(2 * time.Second)
+			resetX()
+			res[0] = append(res[0], gpuMs(only(gu)))
+			resetX()
+			gpuMs(full)
+			res[1] = append(res[1], gpuMs(only(gu)))
+			gpuMs(only(att))
+			res[2] = append(res[2], gpuMs(only(gu)))
+			gpuMs(only(gu))
+			res[3] = append(res[3], gpuMs(only(gu)))
+			hb("K=%d STATE rep %d/%d: gate/up alone — idle %.1f · after full %.1f · after attention %.1f · back-to-back %.1f ms",
+				M, rep+1, reps, res[0][rep], res[1][rep], res[2][rep], res[3][rep])
+		}
+		fmt.Fprintf(os.Stderr, "\n=== prior-state, K=%d: GEMM gate/up alone, by what ran just before (medians of %d) ===\n", M, reps)
+		for i, c := range conds {
+			fmt.Fprintf(os.Stderr, "  %-28s %9.1f ms  spread %5.1f%%  reps %s\n", c, median(res[i]), 100*spreadOf(res[i]), fmtMs(res[i]))
+		}
+		fmt.Fprintln(os.Stderr)
 	}
 
 	// Report.
@@ -324,6 +443,51 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 	fmt.Fprintf(os.Stderr, "  %-22s %9.2f ms  spread %4.1f%%  → host/other %.1f ms (%.1f%%)\n", "PrefillLast (wall)", wallMed, 100*spreadOf(wall), wallMed-fullMed, 100*(wallMed-fullMed)/wallMed)
 	fmt.Fprintf(os.Stderr, "  GEMM share: %.1f%% of GPU, %.1f%% of PrefillLast wall\n\n", 100*gemm/fullMed, 100*gemm/wallMed)
 	t.Logf("K=%d: GEMM %.1f ms of %.1f ms GPU (%.1f%%), PrefillLast wall %.1f ms", M, gemm, fullMed, 100*gemm/fullMed, wallMed)
+}
+
+// vmPageCounts reads the system-wide page-in and swap-in counters from vm_stat. A delta across one
+// command buffer that is nonzero while the GPU reads mapped weights means pages were faulted back in
+// during the kernel — Metal binds .giw weights from the file mapping (S6 aliasing), so under memory
+// pressure a kernel's timing can include re-reading evicted weight pages. System-wide, so another
+// process's paging also counts; a zero delta is the informative reading.
+func vmPageCounts() (pageins, swapins int64) {
+	out, err := exec.Command("vm_stat").Output()
+	if err != nil {
+		return -1, -1
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(strings.TrimSuffix(strings.TrimSpace(line), "."))
+		if len(f) < 2 {
+			continue
+		}
+		n, err := strconv.ParseInt(f[len(f)-1], 10, 64)
+		if err != nil {
+			continue
+		}
+		switch f[0] {
+		case "Pageins:":
+			pageins = n
+		case "Swapins:":
+			swapins = n
+		}
+	}
+	return pageins, swapins
+}
+
+// thermalNote condenses `pmset -g therm` to "thermal: none" or the first warning it reports.
+func thermalNote() string {
+	out, err := exec.Command("pmset", "-g", "therm").Output()
+	if err != nil {
+		return "thermal: ?"
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		l := strings.TrimSpace(line)
+		if l == "" || strings.Contains(l, "No thermal warning") || strings.Contains(l, "No performance warning") || strings.Contains(l, "No CPU power status") {
+			continue
+		}
+		return "thermal: " + l
+	}
+	return "thermal: none"
 }
 
 func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1e3 }
