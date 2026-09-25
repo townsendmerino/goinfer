@@ -590,7 +590,7 @@ chatapp/prequant.go`'s `loadEmbedded` never reads `opts.Quant` at all — while 
 1. *`goinfer-chat --version`.* New `internal/chatapp/version.go` (`isVersionArg`,
    `versionReport`), dispatched in `Main()` before `flag.Parse` and registered as a `-version`
    flag, mirroring `internal/serveapp`'s existing pattern deliberately kept as a separate,
-   unshared implementation (`internal/chatapp/version.go:87-93`) rather than shared, so a change
+   unshared implementation (`internal/chatapp/version.go:71-77`) rather than shared, so a change
    to one binary's dispatch cannot silently reach the other.
 2. *Unrecognized positionals now error.* Both `internal/chatapp/main.go` and `internal/serveapp/
    main.go` check `flag.Args()` after `flag.Parse()` and exit 2 naming the real subcommands —

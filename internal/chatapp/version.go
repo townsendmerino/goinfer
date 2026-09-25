@@ -3,10 +3,10 @@ package chatapp
 import (
 	"fmt"
 	"runtime"
-	"runtime/debug"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/cliutil"
 )
 
 // injectedVersion is set via `-ldflags -X` on a release-built binary, where a plain
@@ -16,7 +16,7 @@ import (
 // that uncommitted go.mod edit is enough for the VCS stamp to read "modified" even though the
 // tree is exactly the tagged release. A binary built with `go install .../cmd/chat@v0.17.0`
 // (no replace, no ephemeral checkout) is unaffected and continues to report its real tag via
-// buildIdent alone — this only overrides what that path would otherwise get wrong.
+// cliutil.BuildIdent alone — this only overrides what that path would otherwise get wrong.
 var injectedVersion string
 
 // embeddedTier and embeddedQuant are set via `-ldflags -X` by build-embed.sh (empty in a plain
@@ -38,7 +38,7 @@ var embeddedTier, embeddedQuant string
 // model instead of erroring or printing anything.
 func versionReport(prog string) string {
 	var b strings.Builder
-	version, revision := buildIdent()
+	version, revision := cliutil.BuildIdent(injectedVersion)
 	fmt.Fprintf(&b, "%s %s", prog, version)
 	if revision != "" && !strings.Contains(version, strings.TrimSuffix(revision, "-dirty")) {
 		fmt.Fprintf(&b, " (%s)", revision)
@@ -63,38 +63,6 @@ func versionReport(prog string) string {
 		}
 	}
 	return b.String()
-}
-
-// buildIdent prefers the version build-embed.sh / the release workflow injected; falling back to
-// the toolchain's own VCS stamp is what makes `go install …@v0.17.0` (never touched by this
-// binary's own release automation) report correctly with no injection at all.
-func buildIdent() (version, revision string) {
-	version = "(unknown)"
-	info, ok := debug.ReadBuildInfo()
-	dirty := false
-	if ok {
-		for _, s := range info.Settings {
-			switch s.Key {
-			case "vcs.revision":
-				if len(s.Value) > 12 {
-					revision = s.Value[:12]
-				} else {
-					revision = s.Value
-				}
-			case "vcs.modified":
-				dirty = s.Value == "true"
-			}
-		}
-	}
-	if injectedVersion != "" {
-		version = injectedVersion
-	} else if ok && info.Main.Version != "" {
-		version = info.Main.Version
-	}
-	if dirty && revision != "" {
-		revision += "-dirty"
-	}
-	return version, revision
 }
 
 // isVersionArg matches the forms a user actually types — see internal/serveapp/version.go's

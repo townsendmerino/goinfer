@@ -8,48 +8,12 @@ import (
 	"testing"
 )
 
-// TestFitFlag_acceptsOnOff is M-14 (audit-2026-09-10): chatapp had no --fit flag at all, and
-// serve's own --fit rejected the "on"/"off" spelling its help and tasks/task-fit-to-hardware.md
-// promise (a plain flag.Bool only understands strconv.ParseBool's spellings). This drives
-// fitFlag.Set directly, the same way internal/serveapp's own test does.
-func TestFitFlag_acceptsOnOff(t *testing.T) {
-	cases := []struct {
-		in   string
-		want bool
-	}{
-		{"on", true}, {"off", false},
-		{"true", true}, {"false", false},
-		{"1", true}, {"0", false},
-	}
-	for _, c := range cases {
-		var f fitFlag = true // start opposite of most expected results, so a no-op Set is caught
-		if err := f.Set(c.in); err != nil {
-			t.Errorf("Set(%q): unexpected error: %v", c.in, err)
-			continue
-		}
-		if bool(f) != c.want {
-			t.Errorf("Set(%q) = %v, want %v", c.in, bool(f), c.want)
-		}
-	}
-}
-
-func TestFitFlag_rejectsGarbage(t *testing.T) {
-	var f fitFlag
-	if err := f.Set("maybe"); err == nil {
-		t.Error("Set(\"maybe\"): expected an error, got none")
-	}
-}
-
-// TestFitFlag_isBoolFlag: a bare `--fit` (no `=value`) must still work.
-func TestFitFlag_isBoolFlag(t *testing.T) {
-	var f fitFlag
-	if !f.IsBoolFlag() {
-		t.Fatal("fitFlag.IsBoolFlag() = false, want true — a bare --fit would require a value")
-	}
-}
+// The --fit value parser itself (on/off spellings, rejection, IsBoolFlag) is cliutil.OnOff,
+// shared with the other binary and unit-tested in internal/cliutil. What stays here is the part
+// that is per-binary: that THIS binary registers --fit with it.
 
 // TestFitFlag_realBinaryAcceptsOff proves the fix through the FULL registered flag.CommandLine,
-// not just fitFlag.Set in isolation — --version exits before touching a model, so this is a
+// not just cliutil.OnOff.Set in isolation — --version exits before touching a model, so this is a
 // cheap way to prove "--fit=off" (the spelling tasks/task-fit-to-hardware.md promises) parses cleanly
 // end to end, where a plain flag.BoolVar would exit 2 with "invalid boolean value".
 func TestFitFlag_realBinaryAcceptsOff(t *testing.T) {

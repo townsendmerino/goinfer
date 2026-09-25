@@ -4,10 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"runtime"
-	"runtime/debug"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/cliutil"
 )
 
 // versionReport is what `serve --version` prints. Its load-bearing line is `backends:` — the
@@ -26,13 +26,13 @@ import (
 // `go mod edit -replace` on the ephemeral submodule checkout is an uncommitted go.mod edit, and
 // that alone is enough for the VCS stamp to read "modified". A binary built the ordinary way
 // (`go install .../cmd/serve@v0.17.0`, no replace, no ephemeral checkout) is unaffected and
-// keeps reporting its real tag from buildIdent with no injection at all — this only overrides
+// keeps reporting its real tag from cliutil.BuildIdent with no injection at all — this only overrides
 // the release workflow's own path.
 var injectedVersion string
 
 func versionReport(prog string) string {
 	var b strings.Builder
-	version, revision := buildIdent()
+	version, revision := cliutil.BuildIdent(injectedVersion)
 	fmt.Fprintf(&b, "%s %s", prog, version)
 	// A pseudo-version already carries the commit ("v0.16.1-0.2026…-e57fef116b97"), so the
 	// parenthetical would just repeat it back.
@@ -44,40 +44,6 @@ func versionReport(prog string) string {
 	fmt.Fprintf(&b, "backends: %s\n", strings.Join(decoder.CompiledBackends(), " "))
 	fmt.Fprintf(&b, "go: %s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	return b.String()
-}
-
-// buildIdent reads the module version and VCS revision the toolchain stamped in. A binary from
-// `go install …@v0.16.0` reports that tag; one built from a working tree reports "(devel)" plus
-// the commit, which is the honest answer rather than a version constant someone forgot to bump.
-func buildIdent() (version, revision string) {
-	version = "(unknown)"
-	info, ok := debug.ReadBuildInfo()
-	// Collected independently of Settings ORDER: vcs.modified is emitted after vcs.revision
-	// today, but appending "-dirty" as we go would silently lose it if that ever flipped.
-	dirty := false
-	if ok {
-		for _, s := range info.Settings {
-			switch s.Key {
-			case "vcs.revision":
-				if len(s.Value) > 12 {
-					revision = s.Value[:12]
-				} else {
-					revision = s.Value
-				}
-			case "vcs.modified":
-				dirty = s.Value == "true"
-			}
-		}
-	}
-	if injectedVersion != "" {
-		version = injectedVersion
-	} else if ok && info.Main.Version != "" {
-		version = info.Main.Version
-	}
-	if dirty && revision != "" {
-		revision += "-dirty"
-	}
-	return version, revision
 }
 
 // isVersionArg matches the forms a user actually types. `version` (no dashes) is included

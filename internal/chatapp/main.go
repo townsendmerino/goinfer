@@ -40,6 +40,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/cliutil"
 	"github.com/townsendmerino/goinfer/internal/fitcmd"
 	"github.com/townsendmerino/goinfer/internal/modelload"
 	"github.com/townsendmerino/goinfer/internal/prequant"
@@ -88,34 +89,6 @@ type session struct {
 	specK int            // speculative draft length per verify pass
 	ngram bool           // --spec ngram: lossless n-gram (prompt-lookup) drafting, adaptive depth
 }
-
-// fitFlag is a lenient bool flag.Value: plain flag.Bool only accepts strconv.ParseBool's
-// spellings (1/t/T/TRUE/true/True/0/f/F/FALSE/false/False), not "on"/"off" — the spelling
-// serve's own --fit help and tasks/task-fit-to-hardware.md use. chatapp had no --fit flag at all until
-// this (M-14, audit-2026-09-10); mirrors internal/serveapp's fitFlag.
-type fitFlag bool
-
-func (f *fitFlag) String() string {
-	if f == nil {
-		return "true"
-	}
-	return strconv.FormatBool(bool(*f))
-}
-
-func (f *fitFlag) Set(v string) error {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "on", "1", "t", "true":
-		*f = true
-	case "off", "0", "f", "false":
-		*f = false
-	default:
-		return fmt.Errorf("invalid value %q for -fit (want on|off|true|false)", v)
-	}
-	return nil
-}
-
-// IsBoolFlag lets a bare `--fit` (no `=value`) mean `--fit=true`, matching flag.Bool's own UX.
-func (f *fitFlag) IsBoolFlag() bool { return true }
 
 func Main() {
 	// Subcommand dispatch, before flag.Parse so `pull` gets its own flag set.
@@ -238,7 +211,7 @@ All flags:
 		showVersion  = flag.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
 		directLoad   = flag.Bool("direct-load", os.Getenv("GOINFER_GGUF_DIRECT") != "", "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin (since S1, task-never-swap-2026-09.md) and linux (since 2026-09-24) a .gguf resolves to its sidecar by default — this opts back out to the direct-heap-dequant load, which is still the default on other platforms. Also via GOINFER_GGUF_DIRECT=1")
 	)
-	fit := fitFlag(true)
+	fit := cliutil.OnOff(true)
 	flag.Var(&fit, "fit", "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/tasks/task-fit-to-hardware.md). --fit=off restores the pre-fit-by-default behavior")
 	flag.Parse()
 	if *showVersion {

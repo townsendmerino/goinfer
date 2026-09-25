@@ -126,8 +126,8 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/residentneed.go:61` | goinfer | `for l := range nLayers {` |
 | `docs/audit-metal-2026-09-12.md|decoder/spec_optfwd.go:202` | goinfer | `anchor: func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate ` |
 | `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:473` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
-| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:1052` | goinfer | `anchor: func (s *server) loadVisionTower(cfg config) error {` |
-| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:508` | goinfer | `"            (4-bit weights). NOT the smallest on Apple Silicon or non-VNNI amd64: the l` |
+| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:1025` | goinfer | `anchor: func (s *server) loadVisionTower(cfg config) error {` |
+| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:481` | goinfer | `"            (4-bit weights). NOT the smallest on Apple Silicon or non-VNNI amd64: the l` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1267` | goinfer | `// DecodeRunner when there is no session commit and no prefix reuse (model.go:` |
 | `docs/audit-metal-2026-09-12.md|metal.go:396` | gpu | `func (d *Device) ReleaseAll() {` |
 | `docs/audit-metal-2026-09-12.md|metal.go:438` | gpu | `return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "l` |
@@ -342,7 +342,7 @@ supports.
 | `docs/queue-engineering.md|internal/giw/bundle.go:127` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
 | `docs/queue-engineering.md|internal/serveapp/haltsignal_unix.go:21` | goinfer | `signal.Notify(haltSig, syscall.SIGUSR1, syscall.SIGUSR2)` |
-| `docs/queue-engineering.md|internal/serveapp/main.go:802` | goinfer | `// so the shutdown handler just below can close it alongside stopDemote.` |
+| `docs/queue-engineering.md|internal/serveapp/main.go:775` | goinfer | `// so the shutdown handler just below can close it alongside stopDemote.` |
 | `docs/queue-engineering.md|linalg/quant.go:214` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1275` | goinfer | `r.ensureBatchCap(16)` |
 | `docs/queue-engineering.md|scripts/bench_peer.py:763` | goinfer | `def gate_cell_idle():` |
@@ -378,17 +378,18 @@ supports.
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1300` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:284` | goinfer | `type Options struct {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:406` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1274` | goinfer | `if cfg.maxQueue > 0 {` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:391` | goinfer | `anchor: func (cfg config) prefillKnobs() *decoder.Knobs {` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1264` | goinfer | `batched, why := lm.model.PrefillPath()` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1308` | goinfer | `name, cfg.backend, reason, lm.model.DecodePath())` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:364` | goinfer | `anchor: func (cfg config) prefillKnobs() *decoder.Knobs {` |
 | `docs/tasks/task-first-hour.md|gpu/matrix_bench_test.go:142` | goinfer | `row("GPU staged (int8)", gguf, decoder.Options{Backend: "webgpu", Quant: "int8int8"}, tr` |
-| `docs/tasks/task-first-hour.md|internal/chatapp/version.go:87` | goinfer | `anchor: func buildIdent() (version, revision string) {` |
+| `docs/tasks/task-first-hour.md|internal/chatapp/version.go:71` | goinfer | `func isVersionArg(a string) bool {` |
 | `docs/tasks/task-first-hour.md|linalg/weightmat_row4_arm64.go:23` | aikit | `func (w *WeightMat) RepackInt4Row4() bool {` |
 | `docs/tasks/task-first-hour.md|tokenizer/bytelevel.go:258` | goinfer | `//	(?i:'s\|'t\|'re\|'ve\|'m\|'ll\|'d)\|[^\r\n\p{L}\p{N}]?\p{L}+\|\p{N}\|` |
 | `docs/tasks/task-fit-to-hardware.md|decoder/model.go:261` | goinfer | `// MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as ` |
 | `docs/tasks/task-fit-to-hardware.md|decoder/weightbytes.go:94` | goinfer | `func (m *Model) ResidentWeightBytes() int64 { return m.ResidentWeightBytesPaged(0) }` |
-| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:475` | goinfer | `addr    = flag.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; u` |
-| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:499` | goinfer | `"entrypoint (goinfer/metal/cmd/serve) is darwin-gated and needs no build tag of its own.` |
-| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:542` | goinfer | `flag.Float64Var(&cfg.weightCacheGB, "weight-cache", 0, "resident expert-weight budget in` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:448` | goinfer | `addr    = flag.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; u` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:472` | goinfer | `"entrypoint (goinfer/metal/cmd/serve) is darwin-gated and needs no build tag of its own.` |
+| `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:515` | goinfer | `flag.Float64Var(&cfg.weightCacheGB, "weight-cache", 0, "resident expert-weight budget in` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:117` | goinfer | `if why := residentMemoryDecline(m); why != "" {` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:137` | goinfer | `const residentMemFraction = decoder.WeightsMemFraction` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:404` | goinfer | `"exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machi` |
@@ -399,7 +400,7 @@ supports.
 | `docs/tasks/task-fp4-formats.md|decoder/gguf.go:861` | goinfer | `if err != nil {` |
 | `docs/tasks/task-fp4-formats.md|decoder/gptoss_safetensors.go:17` | goinfer | `//  1. MXFP4 nibbles are SEQUENTIAL here (byte j holds elements 2j and 2j+1), where GGML` |
 | `docs/tasks/task-freetoken-techniques.md|decoder/model.go:301` | goinfer | `MoECacheSlots int` |
-| `docs/tasks/task-freetoken-techniques.md|internal/serveapp/main.go:309` | goinfer | `anchor: func addrIsLoopback(addr string) bool {` |
+| `docs/tasks/task-freetoken-techniques.md|internal/serveapp/main.go:282` | goinfer | `anchor: func addrIsLoopback(addr string) bool {` |
 | `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:302` | goinfer | `chunk = learned // a previous prompt already found the default too wide for this card` |
 | `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:329` | goinfer | `tail := tailKVOnly` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/embed.go:36` | goinfer | `// guard, as ForwardCapture.` |
@@ -415,8 +416,8 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:296` | goinfer | `// resident-capability-gap discipline as every other optional extension here) — Generate` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1136` | goinfer | `rl.hasSink = true` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:578` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:176` | goinfer | `MoECacheSlots:    cfg.moeCacheSlots,` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:992` | goinfer | `return fmt.Errorf("--adapter %q: name collides with a loaded model", spec.name)` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:177` | goinfer | `MoECacheSlots:    cfg.moeCacheSlots,` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:965` | goinfer | `return fmt.Errorf("--adapter %q: name collides with a loaded model", spec.name)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1264` | goinfer | `var gen *decoder.Generation` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1294` | goinfer | `if lm.model.ResidentActive() && lm.adapter == "" {` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1386` | goinfer | `// reuse when the SAME image is resent (P9a); vi.features is then never invoked at` |
@@ -432,9 +433,9 @@ supports.
 | `docs/tasks/task-halt-2026-09.md|decoder/model.go:1394` | goinfer | `"the per-token path (slower TTFT; each distinct reason is reported once): %v\n", n, err)` |
 | `docs/tasks/task-halt-2026-09.md|demo/agent/agent/kenclient.go:42` | goinfer | `Name: "search",` |
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/helpers.go:528` | goinfer | `for i := 0; i < len(s); {` |
-| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:525` | goinfer | `flag.StringVar(&cfg.moePager, "moe-pager", moePagerDefault(runtime.GOOS), "CPU backing m` |
-| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:693` | goinfer | `mux.HandleFunc("POST /v1/batches/{id}/cancel", auth(srv.handleCancelBatch))` |
-| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:727` | goinfer | `// The page's own CSS and JS (task-web-ui-2026-09.md §6.1). Unauthenticated for the same` |
+| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:498` | goinfer | `flag.StringVar(&cfg.moePager, "moe-pager", moePagerDefault(runtime.GOOS), "CPU backing m` |
+| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:666` | goinfer | `mux.HandleFunc("POST /v1/batches/{id}/cancel", auth(srv.handleCancelBatch))` |
+| `docs/tasks/task-halt-2026-09.md|internal/serveapp/main.go:700` | goinfer | `// The page's own CSS and JS (task-web-ui-2026-09.md §6.1). Unauthenticated for the same` |
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:1261` | goinfer | `ctx, cancel := context.WithCancel(parent)` |
 | `docs/tasks/task-halt-2026-09.md|internal/serveapp/openai.go:539` | goinfer | `ToolCalls  []apiToolCall   `json:"tool_calls,omitempty"`   // assistant messages` |
 | `docs/tasks/task-int4-layout-2026-09.md|cuda/resident.go:3679` | goinfer | `p := make([]uint32, N*(K/4))` |
@@ -446,7 +447,7 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:657` | goinfer | `type GIWTarget string` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/chatapp/main.go:179` | goinfer | `anchor: func Main() {` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/prequant/prequant.go:41` | goinfer | `// output. A cancelled ctx aborts a long streaming transcode at the next layer boundary` |
-| `docs/tasks/task-int4-layout-2026-09.md|internal/serveapp/main.go:452` | goinfer | `--ctx        KV capacity in positions` |
+| `docs/tasks/task-int4-layout-2026-09.md|internal/serveapp/main.go:425` | goinfer | `--ctx        KV capacity in positions` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/gemma4_moe.go:236` | goinfer | `if p := m.GiwPath(); p != "" {` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/model.go:565` | goinfer | `return Buffer{}, Buffer{}, fmt.Errorf("metal: weight kind %q is not int8 or int4", w.Kin` |
 | `docs/tasks/task-int4-layout-2026-09.md|metal/moe.go:452` | goinfer | `if p := m.GiwPath(); p != "" {` |
@@ -493,8 +494,8 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:243` | goinfer | `func (s *server) unloadByName(name string, wait time.Duration) (status int, body map[str` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/anthropic.go:35` | goinfer | `// dropped by the decoder); stop_reason is therefore never "thinking" in v1.` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/jobs_http.go:114` | goinfer | `// W28: a waiting job's place in line — its own request's state, the only queue informat` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:484` | goinfer | `flag.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present` |
-| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:733` | goinfer | `// multi-gigabyte download. See sameOrigin's own doc comment in webui.go.` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:457` | goinfer | `flag.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present` |
+| `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/main.go:706` | goinfer | `// multi-gigabyte download. See sameOrigin's own doc comment in webui.go.` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:275` | goinfer | `func (lm *loadedModel) queueFullMsg() string {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:458` | goinfer | `"quant":          lm.model.Quant(),` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/openai.go:483` | goinfer | `names = append(names, s.embedID)` |
@@ -511,14 +512,14 @@ supports.
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:181` | goinfer | `Size   int64` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:328` | goinfer | `func Search(ctx context.Context, q, kind string, limit int) ([]SearchResult, error) {` |
 | `docs/tasks/task-web-ui-2026-09.md|pull/pull.go:98` | goinfer | `func Curated() map[string]CuratedTier {` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/chatapp/main.go:212` | goinfer | `anchor: func Main() {` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/chatapp/main.go:185` | goinfer | `anchor: func Main() {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/anthropic.go:552` | goinfer | `// A full queue is honest backpressure: 529 overloaded_error (the kind` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/embeddings.go:34` | goinfer | `maxEmbedInputs     = 2048` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/helpers.go:85` | goinfer | `// distinct from the per-model 429. sem == nil disables it (-max-inflight 0). The slot i` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/liveness.go:69` | goinfer | `func (s *server) resolveAndLock(name string) (*loadedModel, func()) {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/liveness.go:94` | goinfer | `func (s *server) withModel(w http.ResponseWriter, name string, fn func(*loadedModel)) {` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:524` | goinfer | `flag.IntVar(&cfg.moeCacheSlots, "moe-cache-slots", 0, "per-layer expert slots to keep re` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:532` | goinfer | `flag.Var(&cfg.adapters, "adapter", "compute-time LoRA adapter sharing a base model's res` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:497` | goinfer | `flag.IntVar(&cfg.moeCacheSlots, "moe-cache-slots", 0, "per-layer expert slots to keep re` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/main.go:505` | goinfer | `flag.Var(&cfg.adapters, "adapter", "compute-time LoRA adapter sharing a base model's res` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:1205` | goinfer | `// not a client disconnect or shutdown — ended the turn), and any terminal` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:230` | goinfer | `if !lm.turns.enter(ctx, rec) {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:241` | goinfer | `if hi := haltState(); hi != nil {` |
