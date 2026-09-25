@@ -441,6 +441,11 @@ unless a tail needs a field — if it does, v12 with the usual reader guard).
 
 ### S3 · Swap tripwire in the binary
 
+> **S3 COMPLETE AS REGISTERED 2026-09-24**, with its one recorded limit: both negative controls pass (100/100 each, 0 trips,
+> swap flat) and `chat` has the load-time guard; the 2026-09-22 positive control tripped inside +1 GB but a burst carried
+> swap to +1.69 GB before the external kill — a poll-interval limit, recorded, not fixed. Optional and open: a per-worker
+> allocation trace to confirm the in-flight-drain explanation.
+>
 > **BUILT 2026-09-22: the watch mechanism and the serving consumer. The load-time consumer is
 > explicitly deferred, not built — read why before picking this up.**
 >
@@ -568,10 +573,12 @@ unless a tail needs a field — if it does, v12 with the usual reader guard).
 >   chase a fix under further real-hardware risk this pass — `Options.LoadAbort` and its unit tests
 >   stand as built (they are correct on the narrow, already-proven contract; the gap is what a real
 >   burst can do to a coarse-grained, poll-based backstop, not a bug in the dispatch logic itself).
-> - **Still not done.** The two negative controls (sidecar 1.5B, 7B Metal, 100 completions each
->   never tripping); a direct per-worker allocation trace to confirm the in-flight-drain theory
->   rather than infer it from timing; `chat` (item 3 of Build, below) has no load-time guard wired
->   at all — only `internal/serveapp`. A real fix, if picked up later, would need either bounding
+> - **DONE 2026-09-24: both negative controls PASS** (`docs/measurements/swap-tripwire-negative-controls-2026-09-24.md`):
+>   sidecar 1.5B (CPU) and 7B Metal, 100/100 completions each, 0 trips, swap-used flat at 1,346.12 MB across 467 external
+>   1 s samples. **And `chat` now has the load-time half** (`internal/swapguard`, shared with serve; `6b14c19e`). The
+>   serving 503 is in `docs/server.md` and the banner swap line in `task-first-hour.md`'s protocol.
+> - **Still not done.** A direct per-worker allocation trace to confirm the in-flight-drain theory
+>   rather than infer it from timing. A real fix, if picked up later, would need either bounding
 >   worker concurrency once armed or a finer-grained abort check inside a huge-tensor family's own
 >   layer build — neither designed here.
 

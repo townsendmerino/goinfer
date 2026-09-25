@@ -53,6 +53,15 @@ streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
 output the model cannot violate (the same grammar as above). The chat template is
 auto-detected per model.
 
+**The server refuses new work before the machine swaps.** At startup it prints `swap guard: armed,
+threshold +512 MB over baseline` and the baseline swap-used it measured; if swap-used then grows past
+that threshold while serving, every generation route answers **503** with
+`{"error":"halted","reason":"swap guard tripped: …"}` (the same shape as an admin halt) until swap has
+stayed back within the threshold for 30 s — requests already running are left to finish, nothing is
+cancelled. A `.gguf` loaded directly (not through its sidecar) is guarded during the load too: the load
+aborts with a message naming the swap growth and the model's priced memory terms. `GOINFER_SWAP_GUARD`
+sets the threshold in MB or `off` (`docs/env-vars.md`); `goinfer-chat` has the load-time half only.
+
 On the OpenAI-compatible routes, **`role: "developer"` is accepted as an alias for
 `role: "system"`** — same position, and the same last-one-wins precedence two `system`
 messages already have. OpenAI's newer APIs send the system prompt under that role for

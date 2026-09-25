@@ -1,0 +1,17 @@
+== s15b-sidecar-cpu start 21:49:20
+   ready 21:49:43
+   s15b-sidecar-cpu 20/100 ok=20 bad=0 21:50:09 used = 1346.12M
+   s15b-sidecar-cpu 40/100 ok=40 bad=0 21:50:35 used = 1346.12M
+   s15b-sidecar-cpu 60/100 ok=60 bad=0 21:51:01 used = 1346.12M
+   s15b-sidecar-cpu 80/100 ok=80 bad=0 21:51:27 used = 1346.12M
+   s15b-sidecar-cpu 100/100 ok=100 bad=0 21:51:53 used = 1346.12M
+== s15b-sidecar-cpu done 21:51:53 ok=100 bad=0 trips=0 guard-lines: swap guard: armed, threshold +512 MB over baseline|swap guard: baseline 1.41 GB swap-used|
+== s7b-metal start 21:51:53
+   ready 21:51:54
+   s7b-metal 20/100 ok=20 bad=0 21:53:03 used = 1346.12M
+   s7b-metal 40/100 ok=40 bad=0 21:54:10 used = 1346.12M
+   s7b-metal 60/100 ok=60 bad=0 21:55:18 used = 1346.12M
+   s7b-metal 80/100 ok=80 bad=0 21:56:25 used = 1346.12M
+   s7b-metal 100/100 ok=100 bad=0 21:57:30 used = 1346.12M
+== s7b-metal done 21:57:30 ok=100 bad=0 trips=0 guard-lines: swap guard: armed, threshold +512 MB over baseline|swap guard: baseline 1.41 GB swap-used|
+ALLDONE 21:57:30

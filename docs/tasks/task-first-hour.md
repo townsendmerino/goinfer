@@ -97,7 +97,10 @@ the source's comments — the 2026-09-06 run flagged this itself rather than let
 1. Two attempts per obstacle, then stop and record a dead end. A dead end is a finding, not a
    failure of the run.
 2. **The swap-safety rule: stop at the first pageouts.** Scenario D obeyed it and the run survived;
-   without it the machine does, and there is no report.
+   without it the machine does, and there is no report. **Watch the banner's swap line too**: serve
+   prints `swap guard: baseline N GB swap-used` at start (and chat/serve arm a load-time guard for a
+   direct `.gguf` load) — record the baseline it printed, and whether the guard or the tester noticed
+   swap growth first (S3, `docs/tasks/task-never-swap-2026-09.md`).
 3. Record a friction log with **timestamps**, tagged `Guessed` / `Wanted and absent` / `Error`,
    plus a numbers table per scenario. The timestamps are what make "half the time if…" checkable.
 4. Record `--version` output for every binary used. (This exists *because* of R2; the 2026-09-06
