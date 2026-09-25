@@ -222,9 +222,9 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	// silently skipped by a resident runner, so the whole family is CPU-only for now.
 	// Spark-X2.5's sigmoid gate (arch.AttnGate == GateSigmoid) is the SAME structural
 	// situation — a generic (non-MLA) attention-output gate with no resident implementation —
-	// so it derives the same feature through the same OR, matching applyAttnGate's own
-	// dispatch condition in attention.go/forwardn.go exactly (must not drift from it).
-	add(a.laguna != nil || a.AttnGate == GateSigmoid, FeatAttnOutputGate)
+	// so it derives the same feature from the same predicate the forward dispatches on
+	// (Architecture.hasAttnOutputGate — attention.go/forwardn.go call it too, so it cannot drift).
+	add(a.hasAttnOutputGate(), FeatAttnOutputGate)
 	// Gemma-4 E-model (E2B/E4B) shape: PLE, cross-layer shared-KV, variable per-layer FFN — all
 	// co-present and NONE ported to the resident bridges (built/validated on the PLE-free dense 12B and
 	// 26B-A4B). Without this, an E-model needs no feature CUDA lacks ⇒ admitted-but-mis-run (the PLE

@@ -564,7 +564,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		// recomputed for the MLP until after the o_proj below), which is exactly the tensor the
 		// gate reads. Laguna (softplus) keys off arch.laguna != nil, unchanged; Spark-X2.5
 		// (sigmoid) keys off arch.AttnGate == GateSigmoid.
-		if arch.laguna != nil || arch.AttnGate == GateSigmoid {
+		if arch.hasAttnOutputGate() {
 			gRows := lw.GProj.Rows()
 			if cap(gbuf) < K*gRows {
 				gbuf = make([]float32, K*gRows)

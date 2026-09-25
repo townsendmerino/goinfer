@@ -777,8 +777,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// hands it to attendQueryI8, which indexes past it on the first decode step. LFM2 was
 	// missing and panicked (TestLFM2_kvQuantI8_generates); llama4 was excluded only through
 	// a.MoE, so it is named too.
-	if m.kvI8 && a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.MoE == nil &&
-		a.lfm2 == nil && a.llama4 == nil {
+	if m.kvI8 && a.kvInt8OK() {
 		c.setQuant(kvI8, capHint)
 	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most
@@ -787,7 +786,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// gemma4 (per-layer widths + KV-sharing) and qwen3_5_moe (linear attention)
 	// have their own forward and keep append-forever for now (a later increment).
 	// See docs/completed/task-kv-ring-eviction.md.
-	if a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.gptoss == nil {
+	if a.kvRingsOK() {
 		c.enableRings(a.SlidingWindow, a.isGlobalLayer)
 	}
 	if a.gemma4 != nil {

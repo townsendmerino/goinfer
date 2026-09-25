@@ -921,6 +921,14 @@ type ownForwardFamily struct {
 	// arch-side view of KVCache.hasRecurrentState(): the cache knows once it exists, this knows
 	// from the descriptor, and speculative rollback has to decide before either is built.
 	Recurrent bool
+	// KVInt8 is true when this family's loop reads K/V through the int8-aware attention path, so
+	// NewCache may store them as int8 (Options.KVQuant == "i8"). KVRings is true when it can read a
+	// ring-buffered sliding-window layer. Both default to false: a family with its own loop has its
+	// own cache handling, and a loop that sizes its scores from len(cache.Keys(layer)) indexes past
+	// an int8 cache's empty f32 store on the first decode step (LFM2 did — TestLFM2_kvQuantI8_generates).
+	// See kvInt8OK / kvRingsOK: these REPLACE two hand-written family lists in NewCache that had
+	// already drifted apart, each right only by coincidence.
+	KVInt8, KVRings bool
 }
 
 // ownForwards is THE list of families that do not use the generic layer loop — one table, so that
@@ -939,27 +947,61 @@ type ownForwardFamily struct {
 // added to this table is excluded from the batched path by construction, and
 // TestOwnForward_tableNamesEveryFamilyForward fails if a runLayersXxx is written that is not here.
 var ownForwards = []ownForwardFamily{
+	// Fields: Name, is, run, Captures, Recurrent, KVInt8, KVRings.
 	// Gemma 4: per-layer head_dim, KV-sharing, PLE.
-	{"gemma4", func(a *Architecture) bool { return a.gemma4 != nil }, (*Model).runLayersGemma4, true, false},
+	{"gemma4", func(a *Architecture) bool { return a.gemma4 != nil }, (*Model).runLayersGemma4, true, false, false, false},
 	// qwen3_5_moe: Gated DeltaNet / softmax hybrid.
-	{"qwen3_5_moe", func(a *Architecture) bool { return a.qwen35 != nil }, (*Model).runLayersQwen35, true, true},
+	{"qwen3_5_moe", func(a *Architecture) bool { return a.qwen35 != nil }, (*Model).runLayersQwen35, true, true, false, false},
 	// lfm2: gated short-conv / softmax hybrid.
-	{"lfm2", func(a *Architecture) bool { return a.lfm2 != nil }, (*Model).runLayersLFM2, false, true},
+	{"lfm2", func(a *Architecture) bool { return a.lfm2 != nil }, (*Model).runLayersLFM2, false, true, false, false},
 	// granitemoehybrid: Mamba-2 / softmax hybrid.
-	{"granitemoehybrid", func(a *Architecture) bool { return a.granite != nil }, (*Model).runLayersGranite, false, true},
+	{"granitemoehybrid", func(a *Architecture) bool { return a.granite != nil }, (*Model).runLayersGranite, false, true, false, false},
 	// nemotron_h: single-op-per-block hybrid.
-	{"nemotron_h", func(a *Architecture) bool { return a.nemotron != nil }, (*Model).runLayersNemotron, false, true},
+	{"nemotron_h", func(a *Architecture) bool { return a.nemotron != nil }, (*Model).runLayersNemotron, false, true, false, false},
 	// bailing_hybrid: MLA / KDA hybrid (Ling 3.0). MUST precede deepseek_v2/v3 below —
 	// bailingHybridArchitecture sets BOTH kda and mla (its MLA layers reuse mlaAttention
 	// directly), so a.mla != nil alone would also match it and misroute to runLayersDeepseek,
 	// which has no KDA branch at all.
-	{"bailing_hybrid", func(a *Architecture) bool { return a.kda != nil }, (*Model).runLayersBailingHybrid, false, true}, // Recurrent: KDA state mutates in place per token (audit C-03)
+	{"bailing_hybrid", func(a *Architecture) bool { return a.kda != nil }, (*Model).runLayersBailingHybrid, false, true, false, false}, // Recurrent: KDA state mutates in place per token (audit C-03)
 	// deepseek_v2/v3: Multi-head Latent Attention.
-	{"deepseek_v2/v3", func(a *Architecture) bool { return a.mla != nil }, (*Model).runLayersDeepseek, false, false},
+	{"deepseek_v2/v3", func(a *Architecture) bool { return a.mla != nil }, (*Model).runLayersDeepseek, false, false, false, false},
 	// llama4_text: iRoPE (per-layer RoPE/NoPE + L2 QK-norm + attn-temp).
-	{"llama4_text", func(a *Architecture) bool { return a.llama4 != nil }, (*Model).runLayersLlama4, false, false},
+	{"llama4_text", func(a *Architecture) bool { return a.llama4 != nil }, (*Model).runLayersLlama4, false, false, false, false},
 	// gpt-oss: per-head attention sinks + clamped-SwiGLU MoE.
-	{"gpt-oss", func(a *Architecture) bool { return a.gptoss != nil }, (*Model).runLayersGptOss, true, false},
+	{"gpt-oss", func(a *Architecture) bool { return a.gptoss != nil }, (*Model).runLayersGptOss, true, false, false, false},
+}
+
+// hasAttnOutputGate reports whether this architecture gates the attention context before o_proj:
+// Laguna's softplus gate, or any family with AttnGate == GateSigmoid (Spark-X2.5). One predicate for
+// the forward's two dispatch sites (attention.go, forwardn.go) and the resident feature it derives
+// (features.go's FeatAttnOutputGate) — it was the same OR written three times.
+func (a *Architecture) hasAttnOutputGate() bool { return a.laguna != nil || a.AttnGate == GateSigmoid }
+
+// kvInt8OK reports whether NewCache may store this architecture's K/V as int8. A family with its own
+// layer loop only when its ownForwards entry says KVInt8; the generic loop always reads K/V through the
+// int8-aware attention path, except for MoE, where attention runs the acc64 kernel so expert routing
+// stays bit-stable, and a quantized cache would reopen that.
+//
+// It replaces a hand-written list (gemma4, qwen35, granite, nemotron, lfm2, llama4, and MoE) that a
+// second list — the ring-buffer one, kvRingsOK — contradicted on lfm2, llama4 and gpt-oss. Neither
+// contradiction was live: lfm2 and llama4 have no sliding window, so rings were a no-op for them, and
+// gpt-oss is MoE, so int8 was already off. Two guards that are right by coincidence are how the next
+// family breaks; this is one rule, in the table.
+func (a *Architecture) kvInt8OK() bool {
+	if f, own := a.ownForward(); own {
+		return f.KVInt8
+	}
+	return a.MoE == nil
+}
+
+// kvRingsOK reports whether NewCache may ring-buffer this architecture's sliding-window (local) layers
+// — keep only the W most recent positions. The generic loop reads rings through attendQuery /
+// attendBatchedHeads; a family with its own loop only when its ownForwards entry says KVRings.
+func (a *Architecture) kvRingsOK() bool {
+	if f, own := a.ownForward(); own {
+		return f.KVRings
+	}
+	return true
 }
 
 // ownForward returns this architecture's own layer loop, if it has one.

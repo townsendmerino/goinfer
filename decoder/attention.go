@@ -218,7 +218,7 @@ func causalAttention(
 	// projected from, so no extra tap is needed. Laguna (softplus) keys off arch.laguna != nil,
 	// unchanged; Spark-X2.5 (sigmoid) keys off arch.AttnGate == GateSigmoid — applyAttnGate itself
 	// dispatches the activation. No-op for every other family.
-	if arch.laguna != nil || arch.AttnGate == GateSigmoid {
+	if arch.hasAttnOutputGate() {
 		applyAttnGate(scr, be, lw, arch, h, ctx, nH, hd)
 	}
 
