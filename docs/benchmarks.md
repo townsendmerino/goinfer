@@ -376,7 +376,7 @@ weights mapped from the binary's read-only image) · ᵉ `README.md` + `CHANGELO
 (forward-pass numerics parity-gated vs HF; per-family logit-parity tests) ·
 ᶠ `README.md` (`GrammarFromStruct` — grammar derived from a Go struct) · ᵍ `README.md` /
 `cmd/serve` (OpenAI-compatible server in pure stdlib) · ʰ `README.md` (LoRA PEFT,
-merged at load) · ⁱ `ARCHITECTURE.md` §2 + `docs/completed/gpu-assessment.md` (WebGPU full
+merged at load) · ⁱ `ARCHITECTURE.md` §3 + `docs/completed/gpu-assessment.md` (WebGPU full
 residency; cgo quarantined behind `-tags gpu`) + §B2/§B3 below (`cuda/`, `metal/`:
 driver-JIT / MSL, **CGO_ENABLED=0**, admission-gated by
 `decoder/features.go`) ·

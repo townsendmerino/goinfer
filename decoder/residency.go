@@ -27,20 +27,23 @@ import (
 // papered over with another exact-match string.
 func isWebGPUBackend(name string) bool { return strings.HasPrefix(name, "webgpu") }
 
-// GPU full-residency decode support. When the backend is webgpu AND the arch is
-// DecodeRunner-eligible (dense Qwen2/Llama shape), the per-token forward can run
-// entirely on the GPU (the gpu package's DecodeRunner) instead of the per-matmul
-// staged path. This file is the decoder-side seam: the interfaces the gpu backend
-// implements, the eligibility gate, and (in Generate) the routing. Sampler /
-// constrain / Session all stay CPU-side — they consume the logits that come back.
+// GPU full-residency decode support. When a backend implements ResidencyBackend (cuda, metal,
+// webgpu) and admits the model — withResidency → residentAdmission: the runner-shape gate
+// (DecodeRunnerEligible), then every gate ResidentEligible applies (features.go) — the whole
+// per-token forward runs on the device through the backend's ResidentForward, instead of on the
+// CPU (or, on webgpu only, the per-matmul staged path). This file is the decoder-side seam: the
+// interfaces the backends implement, the admission gates, and (in generateInto) the routing.
+// Sampler / constrain / Session bookkeeping stay CPU-side — they consume the logits (or the
+// device-sampled ids) that come back.
 //
-// v1 scope (documented limitations):
-//   - stateless Model.Generate only. Session prefix-reuse and GenerateSpeculative
-//     drive a CPU-resident KVCache that the GPU-resident KV can't transparently
-//     share, so those requests fall back to the staged path (serve warm-sessions
-//     and GPU residency are mutually exclusive in v1).
-//   - prompt prefill runs on the CPU (batched forwardLayersN) and its post-RoPE
-//     K/V is uploaded into the GPU caches; only decode runs on the GPU.
+// Scope:
+//   - the stateless Model.Generate path runs resident (so does an adapter Session's first turn,
+//     G3). It reuses the prefix already committed to the resident KV (resident_reuse.go) and
+//     prefills the rest with the backend's batched Prefiller where it has one. A plain Session
+//     drives a CPU-side KVCache the resident KV cannot share, so its turns stay on the CPU/staged
+//     path — which is why serve sends resident models down the stateless path (internal/serveapp,
+//     loadedModel.drive).
+//   - speculative verify on a resident model runs through ForwardN (below).
 
 // ResidentForward is one token's GPU forward: embedding[hidden] in, logits[vocab]
 // out, with the model + KV resident on the device. Implemented by the gpu package.
@@ -55,14 +58,15 @@ type ResidentForward interface {
 	// no implementation may change numerics to batch. nil/empty embeddings ⇒ no-op.
 	//
 	// "Batched" is an amortization OPPORTUNITY, not a structural guarantee every
-	// backend takes: CUDA's prefillReady path runs the whole batch in one
-	// weight-stationary pass (one command submission) when the arch supports it,
-	// falling back to a per-token sequential loop otherwise (MoE, DeltaNet, and
-	// other geometries prefillCore declines); Metal's ForwardN is ALWAYS the
-	// per-token sequential loop (N-26, audit-metal-2026-09-12.md — Theta≈1.02 on
-	// Metal means the speculative-decode caller that drives this path already
-	// declines there, so no batched Metal path has been built). Callers should not
-	// assume "K rows in" implies "one command buffer out" for every backend.
+	// backend takes; each backend reports at load which it took (VerifyPathReporter).
+	// CUDA's prefillReady path runs the whole batch in one weight-stationary pass (one
+	// command submission) when prefillCore admits the arch, falling back to a per-token
+	// sequential loop otherwise (DeltaNet, non-int4 projections, and the geometries
+	// prefillCore declines). Metal's ForwardBatch encodes the whole batch layer-major into
+	// ONE command buffer (since a1640a6a, 2026-09-16 — it was the per-token loop before,
+	// N-26), falling back to the per-token loop only for paged MoE. webgpu runs the K steps
+	// in one submit. Callers should not assume "K rows in" implies "one command buffer
+	// out" for every backend.
 	ForwardN(embeddings [][]float32, startPos int) (logits [][]float32, err error)
 	// UploadKV writes a layer's post-RoPE K and raw V (each [n*kvDim]) into the resident GPU
 	// caches at absolute positions base..base+n-1 — the prefill bridge. base is normally 0
@@ -184,7 +188,8 @@ type Prefiller interface {
 // reuse), but the parameter mirrors Prefiller's so a backend can share its prefill-chunking
 // scaffolding. Bit-identical to the CPU path is the bar (embed.go's own doc comment); a backend
 // whose batched forward is NOT bit-identical to its own sequential one (Metal was, pre-gate —
-// see metal/backend.go's metalFastPrefillEnabled; default-on above 512 tokens since 2026-09-09) must implement this some other way (a
+// see metal/backend.go's metalFastPrefillEnabled; default-on since 2026-09-09, above
+// metalFastPrefillFloor = 64 tokens since 2026-09-20) must implement this some other way (a
 // per-token sequential forward that stops before the head) rather than reuse a declining
 // Prefiller, or must not implement this interface at all.
 type ResidentHiddenLast interface {
@@ -264,9 +269,10 @@ func residentAdapterLayers(rt *loraRuntime) []ResidentAdapterLayer {
 // v1 (CUDA only) REQUIRES the whole prompt — the image block included — to fit in ONE
 // weight-stationary pass; a longer prompt, or any other decline (kernel unavailable, invalid
 // range), returns an error rather than chunking, because a bidirectional block split across a
-// chunk boundary is unverified. Backends may skip implementing it (Metal has no UploadKV either;
-// WebGPU declines Gemma 3 residency on some boxes for an unrelated reason) — GenerateVL's
-// image-prefill fast path then never engages, same as any other optional resident capability gap.
+// chunk boundary is unverified. Backends may skip implementing it — only cuda implements it today;
+// metal and webgpu image turns take the CPU-prefill + UploadKV bridge (residentUploadPrefill)
+// instead — and GenerateVL's image-prefill fast path then never engages, same as any other
+// optional resident capability gap.
 type ResidentImagePrefill interface {
 	PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) (logits []float32, err error)
 }
@@ -325,8 +331,9 @@ type ResidentCapped interface {
 }
 
 // ResidencyBackend is the optional capability a Backend advertises to build a
-// ResidentForward from a loaded Model. The webgpu backend implements it; ok is
-// false when the arch is not DecodeRunner-eligible.
+// ResidentForward from a loaded Model. The cuda, metal and webgpu backends implement it.
+// withResidency applies residentAdmission's gates BEFORE calling it; the backend's own build can
+// still decline (memory, or a runtime check of its own).
 //
 // To DECLINE — this model does not run resident here — return ok=false with a *ResidentDeclineError
 // (DeclineResident) naming the reason: the load path records it as the model's ResidentDecline, which
@@ -353,11 +360,14 @@ func IsResidentDecline(err error) bool {
 	return errors.As(err, &d)
 }
 
-// DecodeRunnerEligible reports whether this model's arch is a dense Qwen2/Llama
-// shape the GPU DecodeRunner supports: no MoE/Gemma4/qwen3_5 special path, gated
-// SwiGLU MLP, pre-2 RMSNorm, full RoPE, standard GQA, no QK-norm / learned-pos /
-// sliding-window / logit-softcap / output-bias. q/k/v bias (Qwen2) and the (1+w)
-// RMS offset are handled, so they're allowed. Anything else → staged fallback.
+// DecodeRunnerEligible reports whether this model passes the FIRST resident-admission gate:
+// its arch is a shape the uniform-layer resident runners can express (decodeRunnerEligible
+// below — own-forward families only once bridged, Granite-4.0-H behind GOINFER_SSM_RESIDENT,
+// Nemotron-H's MoE block only on webgpu) and the load-time precision policy admits it
+// (Nemotron-H is int4-only by default). It is not the whole answer: the per-backend gates —
+// implemented features, MoE router capacity, per-layer geometry, Gemma 4 MoE — are
+// residentGateReason's (features.go), and residentAdmission runs both. A decline → CPU (or
+// webgpu's staged path).
 func (m *Model) DecodeRunnerEligible() bool { return m.decodeRunnerDecline() == "" }
 
 // decodeRunnerDecline is DecodeRunnerEligible with its reason: "" when the arch is a shape the resident
