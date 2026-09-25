@@ -543,7 +543,6 @@ than papered over.
 | `decoder/deltanet.go` | goinfer |
 | `decoder/forwardn.go` | goinfer |
 | `decoder/g26_sampler_bench_test.go` | goinfer |
-| `decoder/mtp_head_test.go` | goinfer |
 | `decoder/real_oracle_test.go` | goinfer |
 | `decoder/registry.go` | goinfer |
 | `decoder/resident_reuse.go` | goinfer |
@@ -564,5 +563,6 @@ than papered over.
 | `scripts/gate_ledger.py` | goinfer |
 | `scripts/pin_olmo3_tiny.py` | goinfer |
 | `scripts/refresh_parity_hashes.sh` | goinfer |
+| `decoder/mtp_head_test.go` | **RESOLVES NOWHERE** |
 
 <!-- /CITATION-INDEX -->

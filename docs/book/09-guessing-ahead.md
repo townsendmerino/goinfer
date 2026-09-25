@@ -191,5 +191,5 @@ they operate under.
 
 *Sources: `docs/spec/00-core.md`, [`docs/spec/02-cache-ngram.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/spec/02-cache-ngram.md), [`docs/spec/05-eagle3-head.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/spec/05-eagle3-head.md),
 [`docs/spec/09-mtp-heads.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/spec/09-mtp-heads.md) §"Gate 1 result" (the MTP numbers, their pre-registered reading, and
-the precision caveats), [`decoder/mtp_head_test.go`](https://github.com/townsendmerino/goinfer/blob/main/decoder/mtp_head_test.go) (`TestMTP_acceptedLength`),
+the precision caveats), [`decoder/mtp_head_test.go`](https://github.com/townsendmerino/goinfer/blob/972d2ed5/decoder/mtp_head_test.go) (`TestMTP_acceptedLength`; the adapter was removed 2026-09-25, this is its last version),
 `decoder/speculative.go:89-93`, `decoder/deltanet.go:145-153`, [`CLAUDE.md`](https://github.com/townsendmerino/goinfer/blob/main/CLAUDE.md) (do-nothing arm).*

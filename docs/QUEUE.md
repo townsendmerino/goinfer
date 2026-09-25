@@ -133,7 +133,7 @@ of being rediscovered independently later.
 
 **The decoder suite's runtime depends on whether the developer has `~/models`, and CI cannot see
 it** *(observed 2026-09-02)*. Nine test files — the seven EAGLE test files (removed 2026-09-24 with EAGLE's code),
-`decoder/mtp_head_test.go` and `decoder/tree_verify_test.go` — read `~/models` with no
+the MTP adapter's test (removed 2026-09-25 with the adapter) and `decoder/tree_verify_test.go` — read `~/models` with no
 `GOINFER_HEAVY_TESTS` or `realckpt` gate. On CI there are no checkpoints so they skip and the job
 lands at ~10 min; on a box with a populated `~/models` they run. The measured local figure was
 **1366 s (22.8 min)** against CI's ~10 min, and `-timeout 25m` in `.github/workflows/ci.yml` is already sized for the

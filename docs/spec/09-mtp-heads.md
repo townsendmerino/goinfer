@@ -314,6 +314,11 @@ stable to ±0.001 across the three runs. Per the pre-registration this is record
 embedding, and it will not resemble a 424M head against a 27B dense trunk. It is not an input to
 Gate 2, which needs `c_capture` and `c_verify` measured on the pairing an actual build would use.
 
+> **The adapter was removed 2026-09-25** (no caller; the track stopped under its own rule — see "Verdict" below — and a
+> resumption on GLM-4.5, the family without the DeltaNet rollback problem, needs a different head layout, so it would be a
+> rewrite). It is recoverable: `git show 972d2ed5:decoder/mtp.go` and `git show 972d2ed5:decoder/mtp_head_test.go`. The loader
+> hazards it hit are recorded below and do not need rediscovering.
+
 **What was built to get here**, kept to the minimum the probe needed: `decoder/mtp.go` — a
 load-time read plus a single-block forward (`LoadMTPHead`, `MTPPrefill`, `MTPStep`,
 `MTPDraftFrom`), reusing the target's own `qwen35Attention` and `gatedMLP`. `numLayers` and every

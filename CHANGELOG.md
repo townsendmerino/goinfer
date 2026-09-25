@@ -15,6 +15,10 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Removed the MTP self-draft measurement adapter** (`decoder/mtp.go`: `MTPHead`, `LoadMTPHead`, `HasMTPHead`, `MTPStep`,
+  `MTPPrefill`, `MTPDraftFrom`, `NewMTPState`). It was the Gate 1 probe for `docs/spec/09-mtp-heads.md` and had no caller;
+  the track stopped under its own pre-registered rule, and the spec says where to recover the code if it resumes.
+
 - **When a GPU backend declines to run a model resident, `serve check` and the load banner now say why.** Before,
   every decline was recorded as "arch is not eligible for the resident decode runner" or "backend declined to build a
   resident path", and the backend's real reason went only to stderr. Now it is, for example, "metal does not implement
