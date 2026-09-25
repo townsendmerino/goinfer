@@ -30,33 +30,36 @@ func TestBanner_sessionReuseMatchesTheDecodePath(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		resident   bool
+		reuseOff   bool // GOINFER_NO_RESIDENT_REUSE
 		kvSessions int
 		wantReuse  bool
 	}{
-		{"resident, sessions configured", true, 4, false}, // residency wins: stateless
-		{"resident, sessions off", true, 0, false},
-		{"staged, sessions configured", false, 4, true},
-		{"staged, sessions off", false, 0, false},
+		// A resident model reuses the most recent conversation's prefix on the device (resident_reuse.go);
+		// the CPU session LRU does not apply to it, so --kv-sessions does not change the answer.
+		{"resident, sessions configured", true, false, 4, true},
+		{"resident, sessions off", true, false, 0, true},
+		{"resident, resident reuse switched off", true, true, 4, false},
+		{"staged, sessions configured", false, false, 4, true},
+		{"staged, sessions off", false, false, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			lines := modelBannerFrom(bannerFacts{resident: tc.resident, hasTemplate: true}, config{kvSessions: tc.kvSessions})
+			lines := modelBannerFrom(bannerFacts{resident: tc.resident, residentReuseOff: tc.reuseOff, hasTemplate: true}, config{kvSessions: tc.kvSessions})
 			line := bannerLine(lines, "session reuse:")
 			if line == "" {
 				t.Fatal("no session-reuse line in the banner")
 			}
-			// The server reuses a prefix iff it is NOT resident and sessions are configured.
-			serverWouldReuse := !tc.resident && tc.kvSessions > 0
-			if serverWouldReuse != tc.wantReuse {
-				t.Fatalf("test table is wrong about the server's own rule")
-			}
 			saysOn := !strings.Contains(line, "OFF")
-			if saysOn != serverWouldReuse {
-				t.Errorf("banner says %q but the server would reuse=%v", line, serverWouldReuse)
+			if saysOn != tc.wantReuse {
+				t.Errorf("banner says %q, want reuse=%v", line, tc.wantReuse)
 			}
-			// When it is off for a reason the user did not choose, the banner must say WHY —
-			// an unexplained OFF sends someone to the flag they already set.
-			if tc.resident && !strings.Contains(line, "re-prefills") {
-				t.Errorf("resident OFF must explain the cost, got %q", line)
+			// On the resident path reuse is ONE conversation; the line must say so, or an operator
+			// running several agents expects the LRU's behaviour and gets full re-prefills.
+			if tc.resident && tc.wantReuse && (!strings.Contains(line, "one conversation") || !strings.Contains(line, "re-prefills")) {
+				t.Errorf("resident reuse must say it covers one conversation and what switching costs, got %q", line)
+			}
+			// Off for a reason the user did not type as a flag: the line must name it.
+			if tc.resident && tc.reuseOff && !strings.Contains(line, "GOINFER_NO_RESIDENT_REUSE") {
+				t.Errorf("resident reuse OFF must name why, got %q", line)
 			}
 		})
 	}
@@ -186,9 +189,13 @@ func TestServerBanner_routesMatchRegistration(t *testing.T) {
 	if !strings.Contains(without, "-web enables") {
 		t.Error("without -web, say how to turn it on")
 	}
-	// With no generative model loaded, the chat routes are not registered and must not be listed.
+	// With no generative model loaded, the chat routes ARE registered (a model can be loaded later —
+	// TestServe_generationRoutesExistWithoutAStartupModel), so they are listed, with the condition.
 	empty := strings.Join(serverBanner(&server{}, config{}), "\n")
-	if strings.Contains(empty, "/v1/chat/completions") {
-		t.Error("no model ⇒ the chat routes are not registered, so they must not be advertised")
+	if !strings.Contains(empty, "/v1/chat/completions") || !strings.Contains(empty, "after a model is loaded") {
+		t.Errorf("no model yet: the chat routes are registered and answer once a model loads — list them with that condition:\n%s", empty)
+	}
+	if strings.Contains(withWeb, "after a model is loaded") {
+		t.Error("with a model loaded, the routes line must not carry the not-yet-loaded condition")
 	}
 }

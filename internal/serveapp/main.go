@@ -515,40 +515,44 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// during a halt) and BEFORE inf (a halt must not wait for an inflight slot — "a halt that
 	// has to wait for a slot is not a halt", the doc's own words). /admin/* and /health are
 	// deliberately NOT wrapped in this — an operator must always be able to resume/check status.
-	if len(srv.models) > 0 {
-		mux.HandleFunc("POST /v1/chat/completions", auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleChat)))))
-		mux.HandleFunc("POST /v1/completions", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCompletions)))))
-		mux.HandleFunc("POST /v1/responses", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses)))))
-		mux.HandleFunc("POST /v1/messages", auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleMessages)))))
-		mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
-		// J3 (task-work-queue-2026-09.md): submitting a job starts new admission, so it gets the
-		// same haltGate/inf/maxBytes stack as every other POST above. Polling state (GET), reading
-		// the event stream (GET .../events), and cancelling (DELETE) are NOT new inference work —
-		// haltGate'ing them would 503 a client just trying to learn that its job was halted, and
-		// inf's inflight cap exists to bound pre-queue JSON/image decode + tokenization, none of
-		// which these three do — so they get auth only.
-		mux.HandleFunc("POST /v1/jobs", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateJob)))))
-		mux.HandleFunc("GET /v1/jobs/{id}", auth(srv.handleGetJob))
-		mux.HandleFunc("GET /v1/jobs/{id}/events", auth(srv.handleJobEvents))
-		mux.HandleFunc("DELETE /v1/jobs/{id}", auth(srv.handleCancelJob))
-		// J4 (task-work-queue-2026-09.md): the two batch APIs, over the same job store. POST
-		// /v1/files is an upload, not inference — it carries no generation work by itself, so it
-		// follows /web/models/pull's own precedent (main.go, below) rather than /v1/jobs': auth +
-		// maxBytes only, no haltGate/inf (those bound decode concurrency/backpressure, not upload
-		// I/O). POST /v1/batches and POST /v1/messages/batches DO queue real generation work (one
-		// job per line, same pipeline as /v1/jobs), so they get the full stack. Every GET and every
-		// .../cancel gets auth only, same reasoning as /v1/jobs' own GET/DELETE routes above.
-		mux.HandleFunc("POST /v1/files", auth(maxBytes(fileCap, srv.handleCreateFile)))
-		mux.HandleFunc("GET /v1/files/{id}", auth(srv.handleGetFile))
-		mux.HandleFunc("GET /v1/files/{id}/content", auth(srv.handleGetFileContent))
-		mux.HandleFunc("POST /v1/batches", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateBatch)))))
-		mux.HandleFunc("GET /v1/batches/{id}", auth(srv.handleGetBatch))
-		mux.HandleFunc("POST /v1/batches/{id}/cancel", auth(srv.handleCancelBatch))
-		mux.HandleFunc("POST /v1/messages/batches", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateMessageBatch)))))
-		mux.HandleFunc("GET /v1/messages/batches/{id}", auth(srv.handleGetMessageBatch))
-		mux.HandleFunc("GET /v1/messages/batches/{id}/results", auth(srv.handleGetMessageBatchResults))
-		mux.HandleFunc("POST /v1/messages/batches/{id}/cancel", auth(srv.handleCancelMessageBatch))
-	}
+	// Registered whether or not a model is loaded at startup. A server started with only --web,
+	// --allow-admin or --admin-socket loads its model later (the web UI's Models tab, /admin/models/load);
+	// the mux is built once, so these routes registered only when a model existed at startup left that
+	// server with no /v1/chat/completions and no /v1/jobs for its whole life, and the web UI's own chat
+	// got a 404. Every handler resolves its model through resolveAndLock, which answers an unknown or
+	// absent model with the OpenAI-shaped 404 "model not found (served: …)".
+	mux.HandleFunc("POST /v1/chat/completions", auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleChat)))))
+	mux.HandleFunc("POST /v1/completions", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCompletions)))))
+	mux.HandleFunc("POST /v1/responses", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses)))))
+	mux.HandleFunc("POST /v1/messages", auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleMessages)))))
+	mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
+	// J3 (task-work-queue-2026-09.md): submitting a job starts new admission, so it gets the
+	// same haltGate/inf/maxBytes stack as every other POST above. Polling state (GET), reading
+	// the event stream (GET .../events), and cancelling (DELETE) are NOT new inference work —
+	// haltGate'ing them would 503 a client just trying to learn that its job was halted, and
+	// inf's inflight cap exists to bound pre-queue JSON/image decode + tokenization, none of
+	// which these three do — so they get auth only.
+	mux.HandleFunc("POST /v1/jobs", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateJob)))))
+	mux.HandleFunc("GET /v1/jobs/{id}", auth(srv.handleGetJob))
+	mux.HandleFunc("GET /v1/jobs/{id}/events", auth(srv.handleJobEvents))
+	mux.HandleFunc("DELETE /v1/jobs/{id}", auth(srv.handleCancelJob))
+	// J4 (task-work-queue-2026-09.md): the two batch APIs, over the same job store. POST
+	// /v1/files is an upload, not inference — it carries no generation work by itself, so it
+	// follows /web/models/pull's own precedent (main.go, below) rather than /v1/jobs': auth +
+	// maxBytes only, no haltGate/inf (those bound decode concurrency/backpressure, not upload
+	// I/O). POST /v1/batches and POST /v1/messages/batches DO queue real generation work (one
+	// job per line, same pipeline as /v1/jobs), so they get the full stack. Every GET and every
+	// .../cancel gets auth only, same reasoning as /v1/jobs' own GET/DELETE routes above.
+	mux.HandleFunc("POST /v1/files", auth(maxBytes(fileCap, srv.handleCreateFile)))
+	mux.HandleFunc("GET /v1/files/{id}", auth(srv.handleGetFile))
+	mux.HandleFunc("GET /v1/files/{id}/content", auth(srv.handleGetFileContent))
+	mux.HandleFunc("POST /v1/batches", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateBatch)))))
+	mux.HandleFunc("GET /v1/batches/{id}", auth(srv.handleGetBatch))
+	mux.HandleFunc("POST /v1/batches/{id}/cancel", auth(srv.handleCancelBatch))
+	mux.HandleFunc("POST /v1/messages/batches", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateMessageBatch)))))
+	mux.HandleFunc("GET /v1/messages/batches/{id}", auth(srv.handleGetMessageBatch))
+	mux.HandleFunc("GET /v1/messages/batches/{id}/results", auth(srv.handleGetMessageBatchResults))
+	mux.HandleFunc("POST /v1/messages/batches/{id}/cancel", auth(srv.handleCancelMessageBatch))
 	// Registered unconditionally (G7): with no embedding model, handleEmbeddings returns a JSON
 	// error naming -embed-model rather than a bare 404, so an SDK sees "unconfigured" not "wrong URL".
 	mux.HandleFunc("POST /v1/embeddings", auth(srv.haltGate(inf(maxBytes(embedCap, srv.handleEmbeddings,

@@ -49,6 +49,9 @@ type bannerFacts struct {
 	// kvPrec is the KV precision the resident runner actually allocates (decoder.Model.ResidentKVPrecision),
 	// "" off the resident path — where the requested -kv is what applies.
 	kvPrec string
+
+	// residentReuseOff: the resident path's own prefix reuse is switched off (GOINFER_NO_RESIDENT_REUSE).
+	residentReuseOff bool
 }
 
 func factsOf(lm *loadedModel) bannerFacts {
@@ -68,6 +71,9 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.ctxWindow = lm.contextWindow(lm.adapter == "")
 	f.maxPositions = lm.model.Config().MaxPositions
 	f.kvPrec = lm.model.ResidentKVPrecision()
+	if v, _ := lm.model.Knob("GOINFER_NO_RESIDENT_REUSE"); v != "" {
+		f.residentReuseOff = true
+	}
 	return f
 }
 
@@ -141,15 +147,19 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 			float64(f.fitBudgetBytes)/(1<<30), float64(remaining)/(1<<30)))
 	}
 
-	// Session reuse, and WHY when it is off. This is the line that makes an agent loop's
-	// per-turn re-prefill visible before it is paid for: decoder.Generate engages the resident
-	// DecodeRunner only when there is no session commit and no prefix reuse, because the
-	// resident KV lives on the GPU while a session's prefix cache is CPU-side and the two
-	// cannot both be the source of truth (see loadedModel.drive). Resident decode is the much
-	// larger win, so the trade is deliberate — but it should not be a surprise.
+	// Prefix reuse, and WHY when it is off or narrower than it sounds. This is the line that makes
+	// an agent loop's per-turn re-prefill visible before it is paid for. A resident model does not
+	// use the CPU-side session LRU (its KV lives on the device; see loadedModel.drive), but its own
+	// cache reuses the prefix committed by the last generation (decoder/resident_reuse.go) — so a
+	// continuing conversation prefills only its new suffix, and a DIFFERENT conversation re-prefills
+	// in full. This line used to say every resident turn re-prefilled everything, which stopped being
+	// true when resident reuse shipped (2026-09-03).
 	switch {
+	case f.resident && f.residentReuseOff:
+		out = append(out, "session reuse: OFF — GOINFER_NO_RESIDENT_REUSE is set, so every turn re-prefills its whole prompt")
 	case f.resident:
-		out = append(out, "session reuse: OFF — resident decode is stateless, so every turn re-prefills its whole prompt")
+		out = append(out, "session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; "+
+			"switching to another conversation re-prefills its whole prompt (--kv-sessions applies to the CPU path only)")
 	case cfg.kvSessions > 0:
 		out = append(out, fmt.Sprintf("session reuse: on (%d conversations kept prefilled)", cfg.kvSessions))
 	default:
@@ -181,11 +191,13 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 // A harness speaks exactly one of these families, and "which URL do I point it at" is the
 // first question every integration recipe has to answer.
 func serverBanner(s *server, cfg config) []string {
-	var routes []string
-	if len(s.models) > 0 {
-		routes = append(routes, "/v1/chat/completions", "/v1/completions", "/v1/responses", "/v1/messages")
+	// The generation routes are always registered (a model can be loaded after startup); with none
+	// loaded yet they answer 404 "model not found", and the line says so.
+	gen := "/v1/chat/completions /v1/completions /v1/responses /v1/messages"
+	if len(s.models) == 0 {
+		gen += " (after a model is loaded)"
 	}
-	routes = append(routes, "/v1/embeddings")
+	routes := []string{gen, "/v1/embeddings"}
 	if cfg.web {
 		routes = append(routes, "/ (web UI)")
 	}
