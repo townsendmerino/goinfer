@@ -1,0 +1,206 @@
+=== RUN   TestWeightAlias_fixturesByteIdentical
+=== RUN   TestWeightAlias_fixturesByteIdentical/bailing_hybrid-tiny
+prequant: note: no tokenizer.json in ../testdata/bailing_hybrid-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] declined — unimplemented features: [kda mla]
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/cohere-tiny
+prequant: note: no tokenizer.json in ../testdata/cohere-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from cohere-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.07 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/cohere2-tiny
+prequant: note: no tokenizer.json in ../testdata/cohere2-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from cohere2-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.07 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/deepseek-tiny
+prequant: note: no tokenizer.json in ../testdata/deepseek-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] declined — unimplemented features: [mla]
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma3-vl-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma3-vl-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from gemma3-vl-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (4 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.04 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma4-dense-scaled
+prequant: note: no tokenizer.json in ../testdata/gemma4-dense-scaled — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from gemma4-dense-scaled.int4.metal.giw (GOINFER_METAL_ALIAS=1): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 24 int4 tensors (22 fused groups, 53.00 MB nibbles), 6.62 MB f16 scales, 1 int8 (0.25 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma4-dense-twogeom-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-dense-twogeom-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from gemma4-dense-twogeom-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 1 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (4 single tensors + 3 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (3 fused groups, 0.46 MB nibbles), 0.06 MB f16 scales, 1 int8 (0.06 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma4-moe-kv-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-moe-kv-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] BuildResident declined: metal gemma4 MoE int4 needs hidden(64), moeInter(16), denseInter(48) all multiples of 32
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma4-moe-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-moe-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from gemma4-moe-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 1 MB bound in place, 0 MB copied (anonymous) — 1 MB int4 nibbles (4 single tensors + 4 fused groups = 1 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.96 MB nibbles), 0.12 MB f16 scales, 1 int8 (0.06 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma4-moe-unified-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-moe-unified-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from gemma4-moe-unified-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 1 MB bound in place, 0 MB copied (anonymous) — 1 MB int4 nibbles (4 single tensors + 4 fused groups = 1 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.96 MB nibbles), 0.12 MB f16 scales, 1 int8 (0.06 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma4-vision-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-vision-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:45: transcode: load ../testdata/gemma4-vision-tiny (int4): decoder: unsupported model_type "gemma4_vision" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_moe, qwen3_next, qwen3_vl, smollm3, spark2_5)
+=== RUN   TestWeightAlias_fixturesByteIdentical/glm-tiny
+prequant: note: no tokenizer.json in ../testdata/glm-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from glm-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (6 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 2 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 6 int4 tensors (4 fused groups, 0.03 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 2
+=== RUN   TestWeightAlias_fixturesByteIdentical/glm-tiny-bias
+prequant: note: no tokenizer.json in ../testdata/glm-tiny-bias — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from glm-tiny-bias.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (6 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 2 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 6 int4 tensors (4 fused groups, 0.03 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 2
+=== RUN   TestWeightAlias_fixturesByteIdentical/gpt2
+[metal] weights aliased from gpt2.int4.metal.giw (GOINFER_METAL_ALIAS=1): 82 MB bound in place, 0 MB copied (anonymous) — 40 MB int4 nibbles (36 single tensors + 12 fused groups = 10 MB) + 37 MB int8 codes (1 matrices) + 5 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 36 int4 tensors (12 fused groups, 40.50 MB nibbles), 5.06 MB f16 scales, 1 int8 (36.81 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/granite-dense-tiny
+prequant: note: no tokenizer.json in ../testdata/granite-dense-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from granite-dense-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.07 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/granite-tiny
+prequant: note: no tokenizer.json in ../testdata/granite-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/kimi-tiny
+prequant: note: no tokenizer.json in ../testdata/kimi-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] declined — unimplemented features: [mla]
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/lfm2-tiny
+prequant: note: no tokenizer.json in ../testdata/lfm2-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/llama-attnfa-tiny
+prequant: note: no tokenizer.json in ../testdata/llama-attnfa-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from llama-attnfa-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 1 MB bound in place, 0 MB copied (anonymous) — 1 MB int4 nibbles (4 single tensors + 4 fused groups = 1 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 1.12 MB nibbles), 0.14 MB f16 scales, 1 int8 (0.12 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/llama-tiny
+prequant: note: no tokenizer.json in ../testdata/llama-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from llama-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.07 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/llama4-tiny
+prequant: note: no tokenizer.json in ../testdata/llama4-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/ministral3-tiny
+prequant: note: no tokenizer.json in ../testdata/ministral3-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from ministral3-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.07 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/mixtral-tiny
+prequant: note: no tokenizer.json in ../testdata/mixtral-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from mixtral-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (4 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.03 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/nemotron-tiny
+prequant: note: no tokenizer.json in ../testdata/nemotron-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] declined — unimplemented features: [ssm]
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/nemotron3nano-tiny
+prequant: note: no tokenizer.json in ../testdata/nemotron3nano-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/olmo3-tiny
+prequant: note: no tokenizer.json in ../testdata/olmo3-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from olmo3-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.08 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/olmo_hybrid-tiny
+prequant: note: no tokenizer.json in ../testdata/olmo_hybrid-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from olmo_hybrid-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (14 single tensors + 5 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 9 scale sets converted
+    alias_fixtures_test.go:57: aliased: 14 int4 tensors (5 fused groups, 0.08 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/phi3-tiny
+prequant: note: no tokenizer.json in ../testdata/phi3-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from phi3-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (6 single tensors + 6 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 6 int4 tensors (6 fused groups, 0.05 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.01 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/qwen25vl-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen25vl-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from qwen25vl-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (4 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.04 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/qwen35-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen35-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from qwen35-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (15 single tensors + 0 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 5 fused groups not adjacent, 11 scale sets converted
+    alias_fixtures_test.go:57: aliased: 15 int4 tensors (0 fused groups, 0.03 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 5
+=== RUN   TestWeightAlias_fixturesByteIdentical/qwen3moe-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen3moe-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from qwen3moe-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (4 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.02 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/qwen3moe-tiny-k3
+prequant: note: no tokenizer.json in ../testdata/qwen3moe-tiny-k3 — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from qwen3moe-tiny-k3.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (4 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.02 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/qwen3next-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen3next-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] BuildResident declined: metal: BuildResident panicked: metal: W4A8 concat needs K%32==0 (group=32), got K=16 (audit M-10)
+[resident] BuildResident declined (ok=false err=<nil>) — continuing on the CPU/staged path
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/siglip-tiny
+prequant: note: no tokenizer.json in ../testdata/siglip-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:45: transcode: load ../testdata/siglip-tiny (int4): decoder: unsupported model_type "siglip_vision_model" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_moe, qwen3_next, qwen3_vl, smollm3, spark2_5)
+=== RUN   TestWeightAlias_fixturesByteIdentical/smollm3-tiny
+prequant: note: no tokenizer.json in ../testdata/smollm3-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from smollm3-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.07 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/tiny-qwen2-moe
+prequant: note: no tokenizer.json in ../testdata/tiny-qwen2-moe — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:45: transcode: load ../testdata/tiny-qwen2-moe (int4): decoder: read config.json: open config.json: no such file or directory
+=== NAME  TestWeightAlias_fixturesByteIdentical
+    alias_fixtures_test.go:70: compared 23 fixtures: cohere-tiny cohere2-tiny gemma3-vl-tiny gemma4-dense-scaled gemma4-dense-twogeom-tiny gemma4-moe-tiny gemma4-moe-unified-tiny glm-tiny glm-tiny-bias gpt2 granite-dense-tiny llama-attnfa-tiny llama-tiny ministral3-tiny mixtral-tiny olmo3-tiny olmo_hybrid-tiny phi3-tiny qwen25vl-tiny qwen35-tiny qwen3moe-tiny qwen3moe-tiny-k3 smollm3-tiny
+    alias_fixtures_test.go:71: skipped 13: bailing_hybrid-tiny (not resident on Metal); deepseek-tiny (not resident on Metal); gemma4-moe-kv-tiny (not resident on Metal); gemma4-vision-tiny (transcode: load ../testdata/gemma4-vision-tiny (int4): decoder: unsupported model_type "gemma4_vision" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_moe, qwen3_next, qwen3_vl, smollm3, spark2_5)); granite-tiny (not resident on Metal); kimi-tiny (not resident on Metal); lfm2-tiny (not resident on Metal); llama4-tiny (not resident on Metal); nemotron-tiny (not resident on Metal); nemotron3nano-tiny (not resident on Metal); qwen3next-tiny (not resident on Metal); siglip-tiny (transcode: load ../testdata/siglip-tiny (int4): decoder: unsupported model_type "siglip_vision_model" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_moe, qwen3_next, qwen3_vl, smollm3, spark2_5)); tiny-qwen2-moe (transcode: load ../testdata/tiny-qwen2-moe (int4): decoder: read config.json: open config.json: no such file or directory)
+--- PASS: TestWeightAlias_fixturesByteIdentical (3.12s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/bailing_hybrid-tiny (0.02s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/cohere-tiny (0.06s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/cohere2-tiny (0.06s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/deepseek-tiny (0.01s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/gemma3-vl-tiny (0.05s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/gemma4-dense-scaled (0.38s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/gemma4-dense-twogeom-tiny (0.06s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/gemma4-moe-kv-tiny (0.02s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/gemma4-moe-tiny (0.09s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/gemma4-moe-unified-tiny (0.09s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/gemma4-vision-tiny (0.00s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/glm-tiny (0.07s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/glm-tiny-bias (0.07s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/gpt2 (1.07s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/granite-dense-tiny (0.05s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/granite-tiny (0.02s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/kimi-tiny (0.03s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/lfm2-tiny (0.01s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/llama-attnfa-tiny (0.06s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/llama-tiny (0.05s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/llama4-tiny (0.02s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/ministral3-tiny (0.05s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/mixtral-tiny (0.09s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/nemotron-tiny (0.01s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/nemotron3nano-tiny (0.01s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/olmo3-tiny (0.08s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/olmo_hybrid-tiny (0.06s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/phi3-tiny (0.06s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/qwen25vl-tiny (0.05s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/qwen35-tiny (0.08s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/qwen3moe-tiny (0.08s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/qwen3moe-tiny-k3 (0.08s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/qwen3next-tiny (0.02s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/siglip-tiny (0.00s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/smollm3-tiny (0.06s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/tiny-qwen2-moe (0.00s)
+=== RUN   TestWeightAlias_closeCycles
+prequant: note: no tokenizer.json in ../testdata/gemma4-dense-scaled — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from alias-cycles.int4.metal.giw (GOINFER_METAL_ALIAS=1): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:157: device CurrentAllocatedSize: idle 655360, with the model open 204439552, after its Close 655360 bytes
+[metal] weights aliased from alias-cycles.int4.metal.giw (GOINFER_METAL_ALIAS=1): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[metal] weights aliased from alias-cycles.int4.metal.giw (GOINFER_METAL_ALIAS=1): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[metal] weights aliased from alias-cycles.int4.metal.giw (GOINFER_METAL_ALIAS=1): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[metal] weights aliased from alias-cycles.int4.metal.giw (GOINFER_METAL_ALIAS=1): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[metal] weights aliased from alias-cycles.int4.metal.giw (GOINFER_METAL_ALIAS=1): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:166: device CurrentAllocatedSize 655360 → 655360 bytes over 5 aliasing-on load/Close cycles
+--- PASS: TestWeightAlias_closeCycles (5.26s)
+=== RUN   TestWeightAlias_olderBundleTakesCopyPath
+prequant: note: no tokenizer.json in ../testdata/llama-tiny — weights-only bundle (serve needs a separate tokenizer)
+prequant: note: no tokenizer.json in ../testdata/llama-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from llama-tiny.int4.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 0 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 8 fused groups not adjacent, 8 scale sets converted
+[metal] note: llama-tiny.int4.giw carries no f16 scales (written before weights format v14, or not with -target metal), so they were converted at load — rebuild it with prequant -target metal to alias them too
+    alias_fixtures_test.go:268: v12 file: [metal] weights aliased from llama-tiny.int4.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 0 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 8 fused groups not adjacent, 8 scale sets converted
+        [metal] note: llama-tiny.int4.giw carries no f16 scales (written before weights format v14, or not with -target metal), so they were converted at load — rebuild it with prequant -target metal to alias them too
+[metal] weights aliased from llama-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:283: v14 file: [metal] weights aliased from llama-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=1): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+--- PASS: TestWeightAlias_olderBundleTakesCopyPath (0.09s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	8.940s

@@ -995,6 +995,13 @@ the Metal pager's command-buffer boundary (M-11, R11); Linux defaults.
 
 ### S6 · Metal aliases the mapping — `NewBufferNoCopy` over a metal-target `.giw` layout
 
+> **BUILD STEP 5 AND THE REMAINING GATES DONE 2026-09-24** (`docs/measurements/s6-alias-2026-09-24.md`, "Build step 5"):
+> byte-identical aliased vs copied on all 23 fixtures Metal builds resident (mutation-checked); `Close` ordering clean over
+> load/Close cycles (mapping gone, device size flat; mutation-checked); an older bundle takes the copy path with a rebuild
+> note; the whole Metal suite green with aliasing on, paged-MoE tests and the snapshot golden included; the banner states
+> the anonymous remainder (1.5B/7B: **1 MB copied**). Step 4 needs no build (slots stay). Open: M26 re-transcode to v14, two
+> writer gaps (shared-expert gate|up, qwen35 K‖V — ~50 MB on M35, needs v15), and **the decision to make aliasing the default**.
+>
 > **BUILD STEP 2 DONE 2026-09-24 — all four gates now pass for the dense models** (`docs/measurements/s6-alias-2026-09-24.md`,
 > "Build step 2"): the int8 LM head's codes and (weights format v14) the f16 scales are aliased too. Footprint at token 32,
 > aliasing on vs off: 1.5B 90 vs 1,013 MB, 7B **105 vs 4,134 MB** — the GPU side is KV + scratch only (17 / 32 MB); the

@@ -838,7 +838,7 @@ item closed above: `a1640a6a` (2026-09-16, three days after M-01's own synchrono
 and — worth naming plainly — four days *before* this very brief's SHIPPED note above was first
 written, on 2026-09-20) shipped the full async version: `execJob.noHead`
 (`metal/model.go:380`), `execLoop` branching on it to pre-encode the next command buffer while the
-current one is still on the GPU (`metal/model.go:1667-1694`), and `ForwardEmbNoLogitsPipe`
+current one is still on the GPU (`metal/model.go:1672-1694`), and `ForwardEmbNoLogitsPipe`
 (`metal/backend.go:558`) as the entry point — matching M-01's own Fix-section sketch almost
 verbatim. Paged MoE is declined, not pipelined (`metal/backend.go:548-492`): its per-layer
 route/stage/submit loop needs a host readback mid-token before the next dispatch can even be

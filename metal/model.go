@@ -550,9 +550,14 @@ func int4BufA(d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, e
 		for i, s := range q4s {
 			scales[i] = f32ToF16(s) // the same conversion int4DirectWords applies
 		}
+		a.addCopy(int64(2 * len(scales)))
+		if a != nil {
+			a.f16Converted++
+		}
 		return nib, NewBufferU16s(d, scales), nil
 	}
 	if words, scales, ok := int4DirectWords(w); ok {
+		a.addCopy(int64(4*len(words) + 2*len(scales)))
 		return NewBufferUint32s(d, words), NewBufferU16s(d, scales), nil
 	}
 	q8, sc, _, ok := w.Int8()

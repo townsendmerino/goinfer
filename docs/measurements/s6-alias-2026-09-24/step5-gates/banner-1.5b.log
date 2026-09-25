@@ -1,0 +1,6 @@
+=== RUN   TestWeightAlias_logitsByteIdentical
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=1): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_test.go:97: alias arm: 56 tensors, 624.8 MB of nibbles not copied
+--- PASS: TestWeightAlias_logitsByteIdentical (2.56s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	2.843s

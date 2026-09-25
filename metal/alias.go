@@ -5,6 +5,7 @@ package metal
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -51,6 +52,26 @@ type weightAlias struct {
 	groups      int   // fused groups (q|k|v, gate|up) wrapped as ONE buffer over their contiguous nibbles
 	groupBytes  int64 // nibble bytes those groups cover
 	nonAdjacent int   // fused groups whose members are in the mapping but not back to back (a pre-v13 layout, or a K=V layer's Q|K|K)
+
+	copyB        int64 // weight bytes (nibbles/codes + scales) the build still COPIED into new buffers with aliasing on: the anonymous part
+	f16Converted int   // tensors/groups whose f16 scales were converted at load because the file carries none (pre-v14, or not -target metal)
+}
+
+// addCopy records n weight bytes built on the copy path while aliasing was on (nil-safe: aliasing off counts nothing).
+func (a *weightAlias) addCopy(n int64) {
+	if a != nil {
+		a.copyB += n
+	}
+}
+
+// int4ConcatBytes is what int4Concat allocates for wms: N*K/2 nibble bytes plus N*K/32 f16 scales per member.
+func int4ConcatBytes(wms []*linalg.WeightMat) int64 {
+	var b int64
+	for _, w := range wms {
+		n, k := int64(w.Rows()), int64(w.Cols())
+		b += n*k/2 + 2*(n*k/32)
+	}
+	return b
 }
 
 // newWeightAlias returns nil unless the opt-in is set (GOINFER_METAL_ALIAS=1; "force" is accepted as a
@@ -129,7 +150,11 @@ func (a *weightAlias) window(d *Device, b []byte) (Buffer, bool) {
 func int8BufA(d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, error) {
 	if codes, ok := a.int8Codes(d, w); ok {
 		_, sc, _, _ := w.Int8()
+		a.addCopy(int64(4 * len(sc))) // the per-row f32 scales are still built
 		return codes, NewBufferFloats(d, sc), nil
+	}
+	if q8, sc, _, ok := w.Int8(); ok {
+		a.addCopy(int64(len(q8) + 4*len(sc)))
 	}
 	return int8Buf(d, w)
 }
@@ -231,6 +256,7 @@ func int4ConcatA(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, B
 	}
 	nib, ok := a.concatNibbles(d, wms)
 	if !ok {
+		a.addCopy(int4ConcatBytes(wms))
 		return int4Concat(d, wms...)
 	}
 	if sc, ok := a.scales16(d, wms); ok { // v14 metal-target file: the members' f16 scales are one run too
@@ -248,17 +274,27 @@ func int4ConcatA(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, B
 			scales = append(scales, f32ToF16(s))
 		}
 	}
+	a.addCopy(int64(2 * len(scales)))
+	a.f16Converted++
 	return nib, NewBufferU16s(d, scales)
 }
 
-// summary is the banner line S6 asks for: the number a user would otherwise never see.
+// summary is the banner line S6 asks for: the number a user would otherwise never see — how much of the
+// weights is served from the file and how much the build still copied into anonymous memory — plus, for a
+// file that carries no f16 scales, what to do about it.
 func (a *weightAlias) summary() string {
 	if a == nil {
 		return ""
 	}
-	return fmt.Sprintf("[metal] weights aliased from the .giw mapping (GOINFER_METAL_ALIAS=1): %.0f MB of int4 nibbles not copied "+
-		"(%d single tensors + %d fused groups = %.0f MB) + %.0f MB of int8 codes (%d matrices) + %.0f MB of f16 scales; copied as before: %d heap-backed, "+
-		"%d unaligned, %d fused groups not adjacent\n",
+	line := fmt.Sprintf("[metal] weights aliased from %s (GOINFER_METAL_ALIAS=1): %.0f MB bound in place, %.0f MB copied (anonymous) — "+
+		"%.0f MB int4 nibbles (%d single tensors + %d fused groups = %.0f MB) + %.0f MB int8 codes (%d matrices) + %.0f MB f16 scales; "+
+		"copied: %d heap-backed, %d unaligned, %d fused groups not adjacent, %d scale sets converted\n",
+		filepath.Base(a.m.GiwPath()), float64(a.aliased+a.int8Bytes+a.scaleBytes)/(1<<20), float64(a.copyB)/(1<<20),
 		float64(a.aliased)/(1<<20), a.tensors, a.groups, float64(a.groupBytes)/(1<<20), float64(a.int8Bytes)/(1<<20), a.int8Tensors,
-		float64(a.scaleBytes)/(1<<20), a.copied, a.declined, a.nonAdjacent)
+		float64(a.scaleBytes)/(1<<20), a.copied, a.declined, a.nonAdjacent, a.f16Converted)
+	if a.f16Converted > 0 && a.scaleBytes == 0 {
+		line += fmt.Sprintf("[metal] note: %s carries no f16 scales (written before weights format v14, or not with -target metal), "+
+			"so they were converted at load — rebuild it with prequant -target metal to alias them too\n", filepath.Base(a.m.GiwPath()))
+	}
+	return line
 }
