@@ -995,6 +995,13 @@ the Metal pager's command-buffer boundary (M-11, R11); Linux defaults.
 
 ### S6 · Metal aliases the mapping — `NewBufferNoCopy` over a metal-target `.giw` layout
 
+> **GATES MEASURED 2026-09-24, with `.giw` mapped `MAP_SHARED` on darwin** (`docs/measurements/s6-alias-2026-09-24.md`,
+> "S6's registered gates"): logits byte-identical (1.5B, 7B) — PASS; decode within 3% at depth 128 and 2048 (1.5B, 7B,
+> worst −0.35%; M26 −1.5%) — PASS; anonymous footprint ≤ KV + slots + scratch + 15% — **NOT MET** (the dense weights'
+> copies are gone: 1.5B −62%, 7B −76%, M26 −724 MB; what remains is Build step 2's f16 scales and int8 LM head, and on M26
+> step 4's slots); memory-hog arm 7B only — alias 0 MB swap / 6.4 s load vs copy +56 MB / 21.3 s, tok/s equal. **Does not
+> ship yet** (gate 1). Next: Build step 2 (f16 scales on disk, int8 requantized at transcode), then gate 1 again.
+>
 > **BUILD STARTED 2026-09-24 (opt-in `GOINFER_METAL_ALIAS=1`, off by default; record: `docs/measurements/s6-alias-2026-09-24.md`).**
 > Built: per-tensor no-copy buffers over page-aligned windows of the mapping (`metal/alias.go`), and a v13 `-target metal` layout
 > whose fused q‖k‖v / gate‖up nibbles are adjacent in the file (`docs/giw-bundles.md`) so the fused buffers alias too. On the 1.5B,

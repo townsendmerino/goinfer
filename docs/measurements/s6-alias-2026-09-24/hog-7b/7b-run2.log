@@ -1,0 +1,9 @@
+== 7b-run2 alias 17:47:02 swap=used = 2210.12M
+   hog RSS 6.1 GiB
+   hog up 17:47:29, free 86% swap=used = 2210.12M
+   exit=0 killwatch: 17:47:43 t+13s swap_used=2210.12MB delta=+0MB tick=0MB rss=1264096KB free_disk=2G
+== 7b-run2 copy 17:47:54 swap=used = 2202.12M
+   hog RSS 6.1 GiB
+   hog up 17:48:23, free 85% swap=used = 2202.12M
+   exit=0 killwatch: 17:48:51 t+27s swap_used=2257.69MB delta=+55.57MB tick=0MB rss=1274480KB free_disk=2G
+ALLDONE 17:49:01

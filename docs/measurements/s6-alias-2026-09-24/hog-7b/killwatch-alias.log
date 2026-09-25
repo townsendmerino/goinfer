@@ -1,0 +1,15 @@
+17:47:30 killwatch: baseline swap-used 2210.12MB; kill at +600MB, tick rule 80MB x2 (0=off), poll 1s, pid 92647
+17:47:30 t+0s swap_used=2210.12MB delta=+0MB tick=0MB rss=433712KB free_disk=2G
+17:47:32 t+2s swap_used=2210.12MB delta=+0MB tick=0MB rss=910880KB free_disk=2G
+17:47:33 t+3s swap_used=2210.12MB delta=+0MB tick=0MB rss=1291632KB free_disk=2G
+17:47:34 t+4s swap_used=2210.12MB delta=+0MB tick=0MB rss=2055600KB free_disk=2G
+17:47:35 t+5s swap_used=2210.12MB delta=+0MB tick=0MB rss=2388432KB free_disk=2G
+17:47:36 t+6s swap_used=2210.12MB delta=+0MB tick=0MB rss=2388432KB free_disk=2G
+17:47:37 t+7s swap_used=2210.12MB delta=+0MB tick=0MB rss=2406400KB free_disk=2G
+17:47:38 t+8s swap_used=2210.12MB delta=+0MB tick=0MB rss=1551632KB free_disk=2G
+17:47:39 t+9s swap_used=2210.12MB delta=+0MB tick=0MB rss=1550464KB free_disk=2G
+17:47:40 t+10s swap_used=2210.12MB delta=+0MB tick=0MB rss=1381760KB free_disk=2G
+17:47:41 t+11s swap_used=2210.12MB delta=+0MB tick=0MB rss=1231120KB free_disk=2G
+17:47:42 t+12s swap_used=2210.12MB delta=+0MB tick=0MB rss=1231904KB free_disk=2G
+17:47:43 t+13s swap_used=2210.12MB delta=+0MB tick=0MB rss=1264096KB free_disk=2G
+17:47:44 killwatch: pid 92647 exited on its own, stopping watch

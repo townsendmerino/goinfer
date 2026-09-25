@@ -1,0 +1,280 @@
+{
+ "label": "7b-off",
+ "mode": "",
+ "model": "/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+ "cmd": [
+  "/tmp/serve-alias-off.sh",
+  "-addr",
+  "127.0.0.1:18160",
+  "-model",
+  "/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+  "-backend",
+  "metal",
+  "-ctx",
+  "512",
+  "-quant",
+  "int4"
+ ],
+ "swap_baseline_mb": 561.56,
+ "started": "17:39:19",
+ "gomemlimit": "(server default)",
+ "footprints_during_load": [
+  {
+   "t_s": 6.1,
+   "swap_mb": 561.56,
+   "ps": {
+    "rss_kb": 3764128,
+    "faults": 563311,
+    "pageins": 28107
+   },
+   "footprint": {
+    "phys_footprint_mb": 4082.0,
+    "categories": {
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 4023.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 47.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 77.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 3.953125,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 3153.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 4082.0,
+      "clean_mb": 3160.0,
+      "reclaimable_mb": 77.0
+     }
+    }
+   }
+  }
+ ],
+ "load_s": 6.4,
+ "decode_path": "metal-resident (int4)",
+ "footprint_after_load": {
+  "swap_mb": 561.56,
+  "ps": {
+   "rss_kb": 3764176,
+   "faults": 563311,
+   "pageins": 28107
+  },
+  "footprint": {
+   "phys_footprint_mb": 4082.0,
+   "categories": {
+    "IOAccelerator (graphics)": {
+     "dirty_mb": 4023.0,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 0.0
+    },
+    "untagged (VM_ALLOCATE)": {
+     "dirty_mb": 47.0,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 77.0
+    },
+    "MALLOC_SMALL": {
+     "dirty_mb": 3.953125,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 0.0
+    },
+    "mapped file": {
+     "dirty_mb": 0.0,
+     "clean_mb": 3153.0,
+     "reclaimable_mb": 0.0
+    },
+    "TOTAL": {
+     "dirty_mb": 4082.0,
+     "clean_mb": 3160.0,
+     "reclaimable_mb": 77.0
+    }
+   }
+  }
+ },
+ "served_name": "qwen2.5-7b-instruct-q4_k_m",
+ "http_status": 200,
+ "tokens": 32,
+ "raw_head": [
+  "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"text\":\" between\"}],\"created\":1790296766,\"id\":\"cmpl-9d7a13cea2a8c19f06bd991b6f014f3a\",\"model\":\"qwen2.5-7b-instruct-q4_k_m\",\"object\":\"text_completion\"}",
+  "",
+  "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"text\":\" performance\"}],\"created\":1790296766,\"id\":\"cmpl-9d7a13cea2a8c19f06bd991b6f014f3a\",\"model\":\"qwen2.5-7b-instruct-q4_k_m\",\"object\":\"text_completion\"}",
+  "",
+  "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"text\":\" and\"}],\"created\":1790296766,\"id\":\"cmpl-9d7a13cea2a8c19f06bd991b6f014f3a\",\"model\":\"qwen2.5-7b-instruct-q4_k_m\",\"object\":\"text_completion\"}"
+ ],
+ "text": " between performance and productivity. \n\nIn the 1960s, the cost of computing was dominated by the cost of the hardware, and the productivity of",
+ "ttft_s": 2.03,
+ "decode_tok_s_1_to_N": 22.0907,
+ "token_times_s": [
+  2.03,
+  2.08,
+  2.12,
+  2.17,
+  2.21,
+  2.26,
+  2.3,
+  2.35,
+  2.39,
+  2.44,
+  2.49,
+  2.53,
+  2.58,
+  2.62,
+  2.67,
+  2.71,
+  2.76,
+  2.8,
+  2.85,
+  2.89,
+  2.94,
+  2.98,
+  3.03,
+  3.07,
+  3.12,
+  3.16,
+  3.21,
+  3.25,
+  3.3,
+  3.34,
+  3.39,
+  3.44
+ ],
+ "prompt_words": 79,
+ "snapshots": {
+  "1": {
+   "t_s": 2.0,
+   "swap_mb": 561.56,
+   "ps": {
+    "rss_kb": 3712800,
+    "faults": 566428,
+    "pageins": 28109
+   },
+   "footprint": {
+    "phys_footprint_mb": 4125.0,
+    "categories": {
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 4053.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 60.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 75.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.578125,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 3088.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 4126.0,
+      "clean_mb": 3096.0,
+      "reclaimable_mb": 75.0
+     }
+    }
+   }
+  },
+  "16": {
+   "t_s": 2.7,
+   "swap_mb": 561.56,
+   "ps": {
+    "rss_kb": 3717376,
+    "faults": 567094,
+    "pageins": 28109
+   },
+   "footprint": {
+    "phys_footprint_mb": 4129.0,
+    "categories": {
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 4053.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 63.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 74.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.609375,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 3086.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 4129.0,
+      "clean_mb": 3094.0,
+      "reclaimable_mb": 74.0
+     }
+    }
+   }
+  },
+  "32": {
+   "t_s": 3.4,
+   "swap_mb": 561.56,
+   "ps": {
+    "rss_kb": 3705440,
+    "faults": 567104,
+    "pageins": 28109
+   },
+   "footprint": {
+    "phys_footprint_mb": 4129.0,
+    "categories": {
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 4053.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 63.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 74.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.625,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 3076.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 4129.0,
+      "clean_mb": 3084.0,
+      "reclaimable_mb": 74.0
+     }
+    }
+   }
+  }
+ },
+ "faults_during_request": 3793,
+ "pageins_during_request": 2,
+ "server_exit_before_finish": null,
+ "gc": {
+  "count": 65,
+  "last_cum_gc_cpu_pct": 0
+ },
+ "killed": null,
+ "ended_reason": "done",
+ "max_rss_gb": 4.09,
+ "max_swap_delta_mb": 0.0
+}
