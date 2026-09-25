@@ -1,0 +1,33 @@
+16:01:06 waiting load1=2.87
+16:02:06 waiting load1=2.86
+16:03:07 waiting load1=2.62
+16:04:07 waiting load1=2.02
+16:04:17 idle load1=1.94
+16:04:17 start commit 1fd9d95e; System-wide memory free percentage: 76%
+{
+  "utc": "2026-09-25T23:04:17Z",
+  "host": "macbookpro.lan",
+  "driver": "26.6.2",
+  "gpu": "",
+  "kernel": "25.6.0",
+  "distro": "",
+  "goinfer_commit": "1fd9d95e",
+  "goinfer_dirty": true,
+  "peer_version": "ollama version is 0.32.5",
+  "serve_mtime": "",
+  "loadavg": ""
+}
+  [cache-check] goinfer_exact 1.5B:512 repeat/fresh=0.00  caches; fresh prompts miss it (healthy)
+  [cache-check] goinfer      1.5B:512 repeat/fresh=0.03  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:512 repeat/fresh=0.24  caches; fresh prompts miss it (healthy)
+1.5B   K=512     goinfer_exact      83.4 tok/s   goinfer     848.0 tok/s   ollama     926.7 tok/s   ratio(ollama/goinfer) 1.09
+  [cache-check] goinfer_exact 1.5B:3900 repeat/fresh=0.00  caches; fresh prompts miss it (healthy)
+  [cache-check] goinfer      1.5B:3900 repeat/fresh=0.00  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:3900 repeat/fresh=0.04  caches; fresh prompts miss it (healthy)
+1.5B   K=3900    goinfer_exact      62.3 tok/s   goinfer     475.7 tok/s   ollama     937.1 tok/s   ratio(ollama/goinfer) 1.97
+  [scaling] goinfer_exact:1.5B 512->3900 tok  6235->63237 ms  (10.14x over 7.62x depth)
+  [scaling] goinfer:1.5B     512->3900 tok  613->8278 ms  (13.5x over 7.62x depth)
+  [scaling] ollama:1.5B      512->3900 tok  584->4225 ms  (7.24x over 7.62x depth)
+
+wrote /Users/francistownsend-merino/goinfer-bench/metal-prefill-ttft-2026-09-25/h-metal-prefill-r16.json
+16:19:57 exit=0

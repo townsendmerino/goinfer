@@ -256,6 +256,27 @@ MoE prefill is not measured** (this Mac's MoE checkpoints either do not fit or d
    verdict cannot differ from the one the retired kernel would get; generating the missing K=512 reference needs a CPU
    f32 load of the 1.5B (~7.7 GB), which last time required an owner-approved fit-guard bypass.
 
+## Measured through serve — TTFT against Ollama after wiring (2026-09-25)
+
+`scripts/bench_peer_prefill.py --backend metal --models 1.5B --depths 512,3900 --n 6`, the protocol of
+`peer-claim-2026-09-25.md` cell h, with `metal/cmd/serve` built at `1fd9d95e` (the pushed wiring; the binary reports
+`+dirty` only because of untracked files in the tree — another session's untracked prompt, `vendor/`, `_to_delete/` —
+the tracked content is the commit). Ollama v0.32.5 at its defaults; M1 Pro; idle at start (load1 1.94);
+16:04:17–16:19:57 local. Cache checks healthy on all arms (fresh prompts miss each engine's cache). Raw:
+[`ttft-after-wiring-h-metal-prefill.json`](metal-prefill-gemm-s2-2026-09-25/ttft-after-wiring-h-metal-prefill.json).
+
+| K | goinfer TTFT (median, 6 requests) | Ollama | r = Ollama ÷ goinfer (per-request pairs) | this morning (cell h) |
+|---:|---:|---:|---|---|
+| 512 | **613 ms** (spread 7.6%) | 584 ms | **0.950** (0.926–0.958) → **1.05× behind** | 0.377 (2.65× behind) |
+| 3900 | **8278 ms** (6.2%) | 4225 ms | **0.511** (0.483–0.552) → **1.96× behind** | 0.239 (4.18× behind) |
+
+- **K=512 went from 2.65× behind to 1.05× behind** — measured, not projected (the projection from GPU time was
+  ≈ 1.04×). By the peer-claim bars every pair is below 0.97, so the cell grades BEHIND, by a margin of 2–4%. In TTFT
+  tok/s: 328.4 → 848.0 (Ollama 926.7).
+- **K=3900 went from 4.18× to 1.96× behind.** What remains is attention, which R16 did not touch: goinfer's TTFT
+  grows 13.5× from K=512 to 3900 (7.6× the tokens), Ollama's 7.2×.
+- `--exact-prefill` is unchanged (83.4 / 62.3 TTFT tok/s): that path does not use this GEMM.
+
 ## Not settled by the read
 
 - Whether 64 × 32 is the right threadgroup tile for goinfer's shapes, where gate/up's N = 17,920 gives 280 tiles
