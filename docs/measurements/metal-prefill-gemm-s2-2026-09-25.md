@@ -135,6 +135,28 @@ Sent the two kernels, shapes and measurements to Gemini for criticism. Checked a
 All of the adopted changes are layout, vector-width or addressing only: operands, accumulation order and epilogue
 are unchanged, so prototype 2 must also be bit-identical, and the harness checks it.
 
+## Prototype 2 — measured 2026-09-25: bit-identical, 2.80×, no gain over prototype 1
+
+`gemm_w4f16_tg2` (the review's staging fixes on prototype 1), same protocol and build (`e32ffa8d`, clean tree),
+K=512, 5 paired reps, 14:54:03–14:56:00 local, idle at start (load1 1.95). Raw:
+[`run2-prototype2-k512.log`](metal-prefill-gemm-s2-2026-09-25/run2-prototype2-k512.log).
+
+- **Bit-identical** — 0 differing elements on all four GEMMs; full-replay logits exact (0 / 151,936).
+- **GEMM category 1537.2 → 551.4 ms: 2.80×** (per rep 2.59 · 2.84 · 2.80 · 2.77 · 2.83) — PARK, and within noise of
+  prototype 1's 2.78×. Per GEMM it is prototype 1 to within 0.5%: gate/up 322.4 ms (2.45 TFLOPS; prototype 1 322.1),
+  down 165.6 (2.38; 166.1), qkv 37.8 (2.39; 37.6), o 30.2 (2.24; 28.6). gate/up alone: 326.9 ms after idle, 320.1
+  sustained.
+- **So the adopted fixes bought nothing measurable.** Whatever the banking model, the weight-staging store pattern,
+  the scalar activation staging and the address arithmetic are not what holds this kernel at ~2.4 TFLOPS. The review
+  predicted ~2.65–2.75 TFLOPS from them; that prediction did not hold. **A negative result, recorded as one.**
+- The current kernel again showed no burst in this process (gate/up alone 550.3 after idle, 546.6 back-to-back; in
+  sequence 1041.0).
+
+What is left to test, in the order the evidence suggests: the staging phase is not the limit, so the time is in the
+MMA phase itself or in the barrier-separated alternation between the two — **double-buffered slabs** (the review's
+step 2, and the design doc's), and **more work per simdgroup** (a 32×32 simdgroup tile, 16 accumulators: 8 loads per
+16 MMAs instead of 6 per 8).
+
 ## Not settled by the read
 
 - Whether 64 × 32 is the right threadgroup tile for goinfer's shapes, where gate/up's N = 17,920 gives 280 tiles

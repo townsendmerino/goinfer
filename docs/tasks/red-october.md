@@ -2113,6 +2113,8 @@ never after a prototype has been timed against it without one.
 - **2026-09-25 — prototype 1 result:** 2.78× (PARK), bit-identical
   ([`metal-prefill-gemm-s2-2026-09-25.md`](../measurements/metal-prefill-gemm-s2-2026-09-25.md)). Per the design
   doc, a second prototype follows; an external review (recorded there) added staging fixes to try first.
+- **2026-09-25 — prototype 2 result** (exploratory): 2.80× (PARK), bit-identical — the review's staging fixes bought
+  nothing measurable over prototype 1 (per GEMM within 0.5%). Next: double-buffered slabs, then a larger simdgroup tile.
 
 **Out of scope.** Attention at depth (the K=3900 gap is GEMM and attention in similar measure — its own item), MoE
 prefill (R11), the short-prompt floor (R3).

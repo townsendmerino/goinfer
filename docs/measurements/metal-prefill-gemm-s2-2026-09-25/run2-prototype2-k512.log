@@ -1,0 +1,77 @@
+14:52:42 waiting load1=2.86
+14:53:42 waiting load1=2.31
+14:54:03 idle load1=1.95
+14:54:03 start commit e32ffa8d dirty=0; System-wide memory free percentage: 81%
+=== RUN   TestMetalPrefillDecomp
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.9 GB; this machine currently has 9.2 GB of memory available (budget 6.5 GB = 70% of that) (75% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+[decomp    5.4s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: H=1536 I=8960 nL=28 nH=12 V=151936, weights aliased from the file: false
+[decomp    7.5s] K=512 warm-up PrefillLast 2033.8 ms
+[decomp   15.7s] K=512 PrefillLast wall ms 1628.3 1642.7 1625.9 1649.3 1643.6
+[decomp   17.2s] K=512 replica logits bit-identical to PrefillLast (151936 values)
+[decomp   18.9s] K=512 rep 1/5: full replay 1612.7 ms GPU  pageins +329 swapins +0  thermal: none
+[decomp   19.1s] K=512 rep 1/5:   attention                  106.8 ms GPU  pageins +23 swapins +0
+[decomp   19.7s] K=512 rep 1/5:   GEMM gate/up               545.4 ms GPU  pageins +100 swapins +0
+[decomp   20.0s] K=512 rep 1/5:   GEMM down (+residual)      290.4 ms GPU  pageins +57 swapins +0
+[decomp   21.6s] K=512 rep 2/5: full replay 1561.1 ms GPU  pageins +316 swapins +0  thermal: none
+[decomp   21.8s] K=512 rep 2/5:   attention                  107.9 ms GPU  pageins +29 swapins +0
+[decomp   22.4s] K=512 rep 2/5:   GEMM gate/up               546.0 ms GPU  pageins +111 swapins +0
+[decomp   22.8s] K=512 rep 2/5:   GEMM down (+residual)      289.8 ms GPU  pageins +57 swapins +0
+[decomp   24.4s] K=512 rep 3/5: full replay 1615.1 ms GPU  pageins +892 swapins +0  thermal: none
+[decomp   24.6s] K=512 rep 3/5:   attention                  107.4 ms GPU  pageins +19 swapins +0
+[decomp   25.2s] K=512 rep 3/5:   GEMM gate/up               544.9 ms GPU  pageins +117 swapins +0
+[decomp   25.5s] K=512 rep 3/5:   GEMM down (+residual)      290.5 ms GPU  pageins +57 swapins +0
+[decomp   27.2s] K=512 rep 4/5: full replay 1630.0 ms GPU  pageins +372 swapins +0  thermal: none
+[decomp   27.4s] K=512 rep 4/5:   attention                  107.4 ms GPU  pageins +15 swapins +0
+[decomp   28.0s] K=512 rep 4/5:   GEMM gate/up               546.5 ms GPU  pageins +114 swapins +0
+[decomp   28.3s] K=512 rep 4/5:   GEMM down (+residual)      290.2 ms GPU  pageins +57 swapins +0
+[decomp   30.0s] K=512 rep 5/5: full replay 1639.1 ms GPU  pageins +325 swapins +0  thermal: none
+[decomp   30.2s] K=512 rep 5/5:   attention                  106.6 ms GPU  pageins +15 swapins +0
+[decomp   30.8s] K=512 rep 5/5:   GEMM gate/up               548.3 ms GPU  pageins +105 swapins +0
+[decomp   31.1s] K=512 rep 5/5:   GEMM down (+residual)      292.6 ms GPU  pageins +60 swapins +0
+[decomp   31.2s] K=512 S2 prototype kernel: gemm_w4f16_tg2
+[decomp   32.9s] K=512 S2 bitwise GEMM qkv               0 / 1048576 elements differ (max |diff| 0)
+[decomp   32.9s] K=512 S2 bitwise GEMM o (+residual)     0 / 786432 elements differ (max |diff| 0)
+[decomp   33.0s] K=512 S2 bitwise GEMM gate/up           0 / 9175040 elements differ (max |diff| 0)
+[decomp   33.0s] K=512 S2 bitwise GEMM down (+residual)  0 / 786432 elements differ (max |diff| 0)
+[decomp   33.7s] K=512 S2 full-replay logits with the prototype: 0 / 151936 differ from PrefillLast (cosine 1.000000000, argmax 261 vs 261); per-GEMM bitwise identical: true
+[decomp   43.5s] K=512 S2 rep 1/5: GEMM category in sequence — current 1507.5 ms, prototype 582.4 ms → 2.59x (full replay 1658.1 vs 682.6 ms)
+[decomp   53.4s] K=512 S2 rep 2/5: GEMM category in sequence — current 1564.0 ms, prototype 551.4 ms → 2.84x (full replay 1668.3 vs 676.0 ms)
+[decomp   63.3s] K=512 S2 rep 3/5: GEMM category in sequence — current 1562.2 ms, prototype 557.7 ms → 2.80x (full replay 1664.3 vs 677.4 ms)
+[decomp   73.1s] K=512 S2 rep 4/5: GEMM category in sequence — current 1521.6 ms, prototype 549.5 ms → 2.77x (full replay 1662.4 vs 674.6 ms)
+[decomp   83.0s] K=512 S2 rep 5/5: GEMM category in sequence — current 1537.2 ms, prototype 543.0 ms → 2.83x (full replay 1659.2 vs 674.7 ms)
+
+=== R16 / S2, K=512: prototype vs current (medians of 5 paired reps, arms alternating) ===
+  GEMM qkv               current     59.3 ms (1.52 TFLOPS)  prototype     37.8 ms (2.39 TFLOPS)  1.57x
+  GEMM o (+residual)     current     48.3 ms (1.40 TFLOPS)  prototype     30.2 ms (2.24 TFLOPS)  1.60x
+  GEMM gate/up           current   1041.0 ms (0.76 TFLOPS)  prototype    322.4 ms (2.45 TFLOPS)  3.23x
+  GEMM down (+residual)  current    388.6 ms (1.02 TFLOPS)  prototype    165.6 ms (2.38 TFLOPS)  2.35x
+  current   GEMM category (sum of marginals)   1537.2 ms spread  3.7% · all-GEMMs-out cross-check   1542.2 ms · full replay   1662.4 ms
+  prototype GEMM category (sum of marginals)    551.4 ms spread  7.1% · all-GEMMs-out cross-check    554.0 ms · full replay    676.0 ms
+  current   gate/up alone: after 2 s idle    550.3 ms · sustained    546.6 ms  (idle/sustained 1.01)
+  prototype gate/up alone: after 2 s idle    326.9 ms · sustained    320.1 ms  (idle/sustained 1.02)
+  GEMM category speedup, paired: median 2.80x, reps 2.6 2.8 2.8 2.8 2.8 → PARK band (1.8-2.85x)
+  preconditions: fidelity — per-GEMM bitwise identical true, full-replay logits differ in 0 values; graded on the sustained timing
+
+
+=== Metal prefill decomposition, K=512 (Mpad=512), 5 reps, medians ===
+  rmsnorm (pre-attn)          0.83 ms    0.1% of full  spread 30.8%
+  GEMM qkv                   62.26 ms    3.9% of full  spread  2.9%  1.45 TFLOPS
+  rope q+k                    1.36 ms    0.1% of full  spread  6.1%
+  kv store                    0.34 ms    0.0% of full  spread  8.4%
+  attention                 107.42 ms    6.7% of full  spread  1.2%
+  GEMM o (+residual)         49.30 ms    3.1% of full  spread  1.1%  1.37 TFLOPS
+  rmsnorm (pre-MLP)           0.82 ms    0.1% of full  spread  9.3%
+  GEMM gate/up              545.99 ms   33.8% of full  spread  0.6%  1.45 TFLOPS
+  swiglu                      5.79 ms    0.4% of full  spread  0.8%
+  GEMM down (+residual)     290.36 ms   18.0% of full  spread  1.0%  1.36 TFLOPS
+  LM head (last row)          1.59 ms    0.1% of full  spread  7.2%
+  sum of categories        1066.05 ms  (66.0% of the full replay — non-additivity)
+  full replay (GPU)        1615.07 ms  spread  4.8%
+  PrefillLast (wall)       1642.65 ms  spread  1.4%  → host/other 27.6 ms (1.7%)
+  GEMM share: 58.7% of GPU, 57.7% of PrefillLast wall
+
+    prefill_decomp_test.go:662: K=512: GEMM 947.9 ms of 1615.1 ms GPU (58.7%), PrefillLast wall 1642.7 ms
+--- PASS: TestMetalPrefillDecomp (116.46s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	117.108s
+14:56:00 exit=0; System-wide memory free percentage: 81%
