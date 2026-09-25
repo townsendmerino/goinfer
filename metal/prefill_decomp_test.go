@@ -193,9 +193,10 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 	// false unless GOINFER_METAL_S2=1 compiled the prototype, so every other phase is unchanged.
 	var protoPipe Pipeline
 	protoOn := false
+	protoRows := 32 // tokens per threadgroup: 32 for prototypes 1-3, 64 for gemm_w4f16_tg4
 	dispatchGemm := func(e *Encoder, N int, bufs ...Buffer) {
 		if protoOn {
-			e.Dispatch2D(protoPipe, (N+63)/64, (Mpad+31)/32, 128, 1, bufs...)
+			e.Dispatch2D(protoPipe, (N+63)/64, (Mpad+protoRows-1)/protoRows, 128, 1, bufs...)
 			return
 		}
 		n, tg := gg(N)
@@ -438,12 +439,15 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 			if err != nil {
 				t.Fatalf("compile S2 prototype: %v", err)
 			}
-			// GOINFER_METAL_S2_KERNEL picks the prototype: gemm_w4f16_tg (prototype 1, the default) or gemm_w4f16_tg2.
+			// GOINFER_METAL_S2_KERNEL picks the prototype: gemm_w4f16_tg (prototype 1, the default), _tg2, _tg3 or _tg4.
 			kname := "gemm_w4f16_tg"
 			if v := os.Getenv("GOINFER_METAL_S2_KERNEL"); v != "" {
 				kname = v
 			}
-			hb("K=%d S2 prototype kernel: %s", M, kname)
+			if kname == "gemm_w4f16_tg4" {
+				protoRows = 64
+			}
+			hb("K=%d S2 prototype kernel: %s (%d tokens per threadgroup)", M, kname, protoRows)
 			if protoPipe, err = r.d.NewComputePipeline(lib, kname); err != nil {
 				t.Fatalf("S2 pipeline: %v", err)
 			}
