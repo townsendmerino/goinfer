@@ -349,7 +349,7 @@
         "scripts/pin_laguna_tiny.py",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:19ff630855409055da89167cafbb3ccbf4e6e5f89b326717190ef4411a89d5a8",
+      "deps_hash": "sha256:cd28cbddf081a781198a6ad29cae5ac977ac3a9323dc21aca27b8708a9b1b17d",
       "status": "validated",
       "validated_at": "0b74e671",
       "date": "2026-09-18",
@@ -438,7 +438,7 @@
         "decoder/mellum_slice_test.go",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:7bc4f7d3cd8582f3cbbe81ecb0eb08601e185386e0f574842e4603524732207e",
+      "deps_hash": "sha256:540db6f7b51263535c01b23090f408bfb4e9487c935a2f8af9782397a7aebbe2",
       "status": "validated",
       "validated_at": "0b74e671",
       "date": "2026-09-18",
@@ -569,7 +569,7 @@
         "scripts/pin_olmo_hybrid_real.py",
         "scripts/pin_olmo_hybrid_tiny.py"
       ],
-      "deps_hash": "sha256:171c0956555e15ab3a8bfc6e1a76a9b68db35dee0183c878e4d71bf3420e3ba1",
+      "deps_hash": "sha256:f556c03f0bc90cdefadcf798677c695eef9bbad45f89e128c3d10392135b26bf",
       "status": "validated",
       "validated_at": "0b74e671",
       "date": "2026-09-18",
@@ -771,7 +771,7 @@
         "scripts/pin_qwen3next_tiny.py",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:45bcb18e51a8410f1d42ce42301a1bf437c47d4359c63f909a54c6a057b62fb7",
+      "deps_hash": "sha256:8d5afc60673e3ac43425fe9bc7415b5ff807ece4af5d8b7e5a3f5f90cc6c3a13",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -836,7 +836,7 @@
         "scripts/pin_spark2_5_tiny.py",
         "scripts/pin_spark2_5_real.py"
       ],
-      "deps_hash": "sha256:1fb456ed85c1d1c6a56ace35be68b6876c01116d06f13d28f88a5ac58edd42ca",
+      "deps_hash": "sha256:469116ef27dbbdd0ce98e497314db5e214d8e2bd7f91d26433b5842753f5b8be",
       "status": "validated",
       "validated_at": null,
       "date": "2026-09-21",
