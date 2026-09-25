@@ -1,6 +1,12 @@
 # Task: one memory-accounting path per backend (2026-09)
 
-> **Status 2026-09-24: written up, not started.** Investigated and sized on Linux; owner chose a task doc over
+> **Status 2026-09-25: the METAL half is DONE (`504a0410`, `docs/measurements/memory-accounting-metal-2026-09-25.md`);
+> the CUDA half (item 3, and item 1's `kvBytesForCap` agreement test) is OPEN and needs the Linux box.** `fit`'s `Plan("metal")`
+> and Metal's resident guard now compute the same number, from one function (`decoder.Model.ResidentNeedBytes`); re-measured
+> on the Mac before changing anything, the disagreement was larger than stated below AND had a second cause — `Plan` priced
+> Metal's KV at f32 when Metal allocates f16. Item 1 was also corrected in the doing: see its note.
+>
+> **Original status 2026-09-24: written up, not started.** Investigated and sized on Linux; owner chose a task doc over
 > starting now because the Metal half overlaps the in-flight never-swap work (`task-never-swap-2026-09.md`, S4/S6).
 > Whoever picks up S4/S6 next should do this first: it is the accounting those steps change.
 
@@ -51,13 +57,34 @@ Not independently verified: the originating review's "12 places" total. The item
    (`Plan`'s ctx search), give it the same function evaluated at ctx, so the sliding-window cap comes along instead of
    being approximated. CUDA's `kvBytesForCap` stays; add a test that it agrees with the shared function on dense
    geometries (within the driver's rounding).
+
+   > **Metal: DONE, with a correction to this item's plan.** Metal allocates the FULL padded context on every attention
+   > layer — its sliding window is a mask, not a ring buffer — so reusing `kvBytesForCtx` (which caps local layers at the
+   > window, modelling the CPU ring buffer) would have made Metal's guard under-count Gemma-style models. The shared
+   > function is instead `decoder.Model.ResidentKVBytes(backend, ctx, f16, i8)`, carrying each backend's allocation layout:
+   > on `"metal"` it is exact to `buildResident`'s buffers (f16 or int8 + per-head scales, padded to 8, none on a DeltaNet
+   > layer — `TestResidentKVBytes_matchesMetalAllocation`, 5/5 exact); every other backend keeps `Plan`'s existing
+   > per-position formula, unchanged. **OPEN (Linux): CUDA** — test `kvBytesForCap` against `ResidentKVBytes("cuda", …)` on
+   > dense geometries, and settle whether CUDA's allocation has a sliding-window cap (if it does, `Plan("cuda")` over-counts
+   > those models and should get CUDA's layout the way Metal got its own). The `fitguard` pre-model formulas were not
+   > touched: they run from `Config` before a backend is chosen.
 2. **One "bytes needed" function per backend**, with a unified-memory host-copy term for Metal (aliasing-aware, via
    `ResidentHostCopyBytes`). `Plan`, the Metal guard (`residentNeedBytes`) and Metal's auto-slots (`autoMoESlotsFor`'s
    `needFixed`) all call it, so `fit`'s verdict and the guard's decision are the same number by construction. Pin that
    with a test: for a model where they used to disagree, `Plan("metal")` and the guard agree.
+
+   > **DONE.** `decoder.Model.ResidentNeedBytes(backend, slots, ctx, …)` = weights + (Metal) host copy + KV; Metal's
+   > `residentNeedBytes` and `residentKVBytes` call it (auto-slots' `needFixed` gets the shared KV term through
+   > `residentKVBytes`), and `Plan` builds from the same pieces with a new `HostCopyBytes` field.
+   > `TestPlan_metalAgreesWithResidentNeedBytes` (resident + expert-cached) and `TestPlan_metalDeclinesWhereTheGuardWould`,
+   > both mutation-checked. Serve's banner also reports the KV precision that runs (`ResidentKVPrecision`: `KV f16` on Metal).
 3. **Keep CUDA's search-based slot sizing.** The driver rounds allocations up in 2 MiB steps, so dividing a budget by a
    per-slot size cannot invert it. Pin the search with a test at a boundary where division would over-admit.
+
+   > **OPEN (Linux).**
 4. **One 0.70 constant**, owned by decoder, used by Metal.
+
+   > **DONE.** `decoder.WeightsMemFraction`; `fitMemFraction` and Metal's `residentMemFraction` both read it.
 
 ## Where it runs, and the gate
 
@@ -69,4 +96,4 @@ Not independently verified: the originating review's "12 places" total. The item
 - Default behaviour changes only where the old numbers disagreed: `fit` may now say "decline" or "expert-cached"
   for GGUF-loaded models on Metal where it said "resident". That is the fix, and it should be stated in the commit.
 
-<!-- doc-reviewed: 2026-09-24 -->
+<!-- doc-reviewed: 2026-09-25 -->
