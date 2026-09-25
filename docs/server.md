@@ -376,5 +376,8 @@ an older build, set that flag to `false`.)
 
 **What to expect.** Agent turns are prefill-heavy and mostly silent while the model decides on a
 tool call — goinfer streams SSE keep-alives during that window so harness idle timeouts do not fire,
-and abandons the work if the client disconnects. Deep context slows decode (see the benchmarks
+and abandons the work if the client disconnects. On families whose tool syntax allows it (ChatML/Qwen,
+Mellum, Gemma 4), any prose the model writes before the call streams as it is generated, on all three
+routes — `/v1/messages` (a text block, then the `tool_use` blocks), `/v1/chat/completions` and
+`/v1/responses` — rather than arriving in one piece at the end. Deep context slows decode (see the benchmarks
 below). If a turn hangs and no keep-alives arrive, you are on a pre-v0.15.0 build.

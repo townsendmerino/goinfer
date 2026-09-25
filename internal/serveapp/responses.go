@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -258,41 +259,56 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 			return
 		}
 	}
-	var sb strings.Builder
-	var stopBeat func()
+	// The shared tool turn (tool_turn.go). Streaming: response.created goes out first, as on the
+	// plain-text path, and prose streams as output_text.delta while the model writes it where the
+	// family allows (G21) — before, this path sent nothing but heartbeats until the generation ended.
+	var onProse func(string)
 	if ss != nil {
-		stopBeat = sseHeartbeat(ss)
+		sseEvent(ss, "response.created", map[string]any{"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
+		onProse = func(out string) {
+			sseEvent(ss, "response.output_text.delta", map[string]any{
+				"type": "response.output_text.delta", "item_id": id + "-msg", "output_index": 0, "content_index": 0, "delta": out,
+			})
+		}
 	}
-	finish, nComp, _, _, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
-	if stopBeat != nil {
-		stopBeat() // joins the ticker goroutine before anything else writes to w
-	}
+	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, onProse)
 	if gerr != nil {
 		if ss != nil {
-			sseErr(ss, "generation failed: "+gerr.Error())
+			msg := gerr.Error()
+			if !errors.Is(gerr, errProseDiverged) {
+				msg = "generation failed: " + msg
+			}
+			sseErr(ss, msg)
 			sseDone(ss)
 			return
 		}
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
 	}
-	if cancelReason != "" {
-		// K1: cancelled mid-generation — sb holds a partial buffer, do not attempt to parse a
-		// tool call out of it; report it as a plain (partial) text message instead, same as the
-		// "model produced nothing parseable" fallback below, so a client still gets a
-		// well-formed response object with real usage rather than a bare event.
-		resp := responseObject(id, lm.name, created, respStatus(finish), []any{outputMessage(id+"-msg", sb.String())}, inTok, nComp)
+	finish, nComp := t.finish, t.nComp
+	if t.cancelReason != "" {
+		// K1: cancelled mid-generation — a partial buffer, no tool call is parsed out of it; report it
+		// as a plain (partial) text message instead, same as the "model produced nothing parseable"
+		// fallback below, so a client still gets a well-formed response object with real usage.
+		resp := responseObject(id, lm.name, created, respStatus(finish), []any{outputMessage(id+"-msg", t.raw)}, inTok, nComp)
 		if ss != nil {
-			sseEvent(ss, "response.created", map[string]any{"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 			sseEvent(ss, "response.completed", map[string]any{"type": "response.completed", "response": resp})
-			sseEvent(ss, "response.cancelled", map[string]any{"type": "response.cancelled", "reason": cancelReason})
+			sseEvent(ss, "response.cancelled", map[string]any{"type": "response.cancelled", "reason": t.cancelReason})
 			sseDone(ss)
 			return
 		}
-		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
+		writeErr(w, statusCancelled, "generation cancelled: "+t.cancelReason)
 		return
 	}
-	calls, lead := lm.tmpl.ParseToolCallsFor(sb.String(), tools)
+	calls, lead := t.calls, ""
+	if len(calls) > 0 {
+		lead = t.lead
+	}
+	if ss != nil && t.rest != "" {
+		// The prose still held back when the call opened (or all of it, on a family that cannot
+		// stream prose safely): delivered as a delta too, so the deltas always add up to the message.
+		onProse(t.rest)
+	}
 
 	var out []any
 	var toolCalls []apiToolCall // V-18 (docs/review-2026-09-04.md): stored for previous_response_id continuity below
@@ -314,13 +330,12 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		toolCalls = append(toolCalls, tc)
 	}
 	if len(out) == 0 { // model produced nothing parseable → empty message
-		out = append(out, outputMessage(id+"-msg", sb.String()))
+		out = append(out, outputMessage(id+"-msg", t.raw))
 	}
 	// Reflect the real finish, like the non-tools paths: a tool turn cut off by max_output_tokens is
 	// "incomplete", not "completed" (audit R-16 — the N-15 residual in the tools branch).
 	resp := responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp)
 	if req.Stream {
-		sseEvent(ss, "response.created", map[string]any{"type": "response.created", "response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
 		sseEvent(ss, "response.completed", map[string]any{"type": "response.completed", "response": resp})
 		sseDone(ss)
 	} else {

@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -94,47 +95,43 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
 }
 
-// streamMessagesTools buffers the generation (a tool decision needs the whole
-// output), then emits an optional leading text block and one tool_use block per
-// call. When no call is parsed it degrades to a single text block.
+// streamMessagesTools runs a tool-bearing turn on /v1/messages: prose streams as a text content block
+// while the model writes it (G21, where the family can stream prose safely — the shared tool turn,
+// tool_turn.go), then one tool_use block per parsed call. With no call it is one text block.
+//
+// Before this, the route Claude Code uses buffered the WHOLE generation and sent only heartbeats
+// (audit-2026-09-02 M-19 added those: the single `ping` at message_start was the only byte for the
+// entire generation, measured elsewhere at 1682.6s against a 300s idle timeout) — only the OpenAI
+// route streamed prose during a tool call.
 func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss *sseWriter, lm *loadedModel, gr genRequest, tools []chat.Tool) {
-	var sb strings.Builder
-	// THE THIRD BUFFER-THEN-STREAM SITE. G19 gave the OpenAI tool path and /v1/responses a
-	// heartbeat and left this one emitting nothing after the single `ping` at message_start until
-	// the entire generation finished — measured elsewhere at 1682.6s against a client whose idle
-	// timeout was 300s. /v1/messages is the surface docs/server.md markets for Claude Code, where
-	// tool-bearing requests are the NORM, so this was the worst of the three to have missed
-	// (audit-2026-09-02 M-19). Safe to add only now: before sseWriter, a ticker writing here would
-	// have raced the handler on the same ResponseWriter (C-06).
-	stopBeat := sseHeartbeat(ss)
-	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
-	stopBeat()
-	if gerr != nil {
+	ts := &anthropicTextStream{ss: ss}
+	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, ts.push)
+	if gerr != nil && !errors.Is(gerr, errProseDiverged) {
 		anthropicStreamErr(ss, "generation failed: "+gerr.Error())
 		return
 	}
-	if cancelReason != "" {
-		// K1: cancelled mid-generation — sb holds a partial buffer, do not attempt to parse a
-		// tool call out of it.
-		reason, seq := anthropicStopReason(finish, stopSeq)
-		anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
+	if gerr != nil {
+		anthropicStreamErr(ss, gerr.Error())
 		return
 	}
-	calls, lead := lm.tmpl.ParseToolCallsFor(sb.String(), tools)
-
-	if len(calls) == 0 { // model declined to call: one text block with the output
-		streamTextBlock(ss, 0, sb.String())
-		reason, seq := anthropicStopReason(finish, stopSeq)
-		anthropicMessageEnd(ss, reason, seq, nComp, "")
+	if t.cancelReason != "" {
+		// K1: cancelled mid-generation — a partial buffer, no tool call is parsed out of it. Close any
+		// open prose block so the stream stays well-formed.
+		ts.close()
+		reason, seq := anthropicStopReason(t.finish, t.stopSeq)
+		anthropicMessageEnd(ss, reason, seq, t.nComp, t.cancelReason)
 		return
 	}
 
-	idx := 0
-	if strings.TrimSpace(lead) != "" {
-		streamTextBlock(ss, idx, lead)
-		idx++
+	if len(t.calls) == 0 { // model declined to call: one text block with the output
+		ts.finish(t.rest, true)
+		reason, seq := anthropicStopReason(t.finish, t.stopSeq)
+		anthropicMessageEnd(ss, reason, seq, t.nComp, "")
+		return
 	}
-	for _, c := range calls {
+
+	idx := ts.finish(t.rest, false)
+	for _, c := range t.calls {
 		tu := toolUseBlock(c)
 		anthropicEvent(ss, "content_block_start", map[string]any{
 			"type": "content_block_start", "index": idx,
@@ -151,7 +148,63 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": idx})
 		idx++
 	}
-	anthropicMessageEnd(ss, "tool_use", nil, nComp, "")
+	anthropicMessageEnd(ss, "tool_use", nil, t.nComp, "")
+}
+
+// anthropicTextStream is the prose half of a streamed tool turn: text content block 0, opened lazily.
+// Whitespace-only prose before a call has never produced a text block on this route (the buffered
+// version dropped a lead that was only whitespace), so leading whitespace is held until real text
+// arrives; if a call comes first, it is dropped exactly as before.
+type anthropicTextStream struct {
+	ss      *sseWriter
+	open    bool
+	pending strings.Builder // prose received but not yet sent: whitespace before the block opens
+}
+
+func (a *anthropicTextStream) push(text string) {
+	if !a.open {
+		a.pending.WriteString(text)
+		if strings.TrimSpace(a.pending.String()) == "" {
+			return
+		}
+		anthropicEvent(a.ss, "content_block_start", map[string]any{
+			"type": "content_block_start", "index": 0,
+			"content_block": map[string]any{"type": "text", "text": ""},
+		})
+		a.open = true
+		text = a.pending.String()
+		a.pending.Reset()
+	}
+	anthropicEvent(a.ss, "content_block_delta", map[string]any{
+		"type": "content_block_delta", "index": 0,
+		"delta": map[string]any{"type": "text_delta", "text": text},
+	})
+}
+
+// finish sends the prose the turn still held back and closes the text block, returning the index the
+// next content block takes. always forces a text block even for empty or whitespace-only prose (the
+// no-call turn is always one text block); otherwise whitespace-only prose yields no block.
+func (a *anthropicTextStream) finish(rest string, always bool) int {
+	if a.open {
+		if rest != "" {
+			a.push(rest)
+		}
+		a.close()
+		return 1
+	}
+	text := a.pending.String() + rest
+	if always || strings.TrimSpace(text) != "" {
+		streamTextBlock(a.ss, 0, text)
+		return 1
+	}
+	return 0
+}
+
+func (a *anthropicTextStream) close() {
+	if a.open {
+		anthropicEvent(a.ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
+		a.open = false
+	}
 }
 
 // streamTextBlock emits a complete text content block (start, one delta, stop) —

@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -91,53 +92,17 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 			return
 		}
 	}
-	var sb strings.Builder
-
-	// G21: stream prose INCREMENTALLY where the family allows it, instead of
-	// holding the whole generation. Only families whose ParseToolCalls computes
-	// lead as a raw untrimmed prefix qualify (Template.ToolCallOpener); the rest
-	// keep the G19 behavior exactly — buffered, with heartbeats.
-	//
-	// The invariant: every byte emitted here must be a prefix of the lead the
-	// parser computes below. StreamableLen guarantees it by holding back any
-	// suffix that could still grow into the opener, and `toolStarted` stops the
-	// stream for good once the opener appears — everything after it belongs to a
-	// call, not to prose.
-	opener, incremental := "", false
-	if ss != nil && lm.tmpl != nil {
-		opener, incremental = lm.tmpl.ToolCallOpener()
-	}
-	var streamed strings.Builder // exactly what left as content deltas
-	var prose *chat.ProseStreamer
-	if incremental {
-		// A family that also accepts a bare call must not stream an output that opens
-		// with '{' — it may yet parse as a call with an empty lead (ParseToolCallsFor).
-		if lm.tmpl.AcceptsBareToolCall() {
-			prose = chat.NewBareAwareProseStreamer(opener)
-		} else {
-			prose = chat.NewProseStreamer(opener)
-		}
-	}
-
-	var stopBeat func()
+	// The shared tool turn (tool_turn.go): heartbeats while streaming (G19), prose streamed as content
+	// deltas as the model writes it where the family allows (G21), then the parse.
+	var onProse func(string)
 	if ss != nil {
-		// Heartbeats still run: on an incremental family they cover the silence
-		// before the first token and inside a tool call, and on the others they
-		// cover the whole generation as before.
-		stopBeat = sseHeartbeat(ss)
+		onProse = func(out string) { sseSend(ss, chatChunk(id, created, lm.name, delta{Content: out}, nil)) }
 	}
-	finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
-		sb.WriteString(t)
-		if prose == nil {
-			return
-		}
-		if out := prose.Push(t); out != "" {
-			streamed.WriteString(out)
-			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: out}, nil))
-		}
-	})
-	if stopBeat != nil {
-		stopBeat() // joins the ticker goroutine before anything else writes to w
+	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, onProse)
+	if errors.Is(gerr, errProseDiverged) {
+		sseErr(ss, gerr.Error())
+		sseDone(ss)
+		return
 	}
 	if gerr != nil {
 		if ss != nil {
@@ -148,71 +113,49 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
 	}
-	if cancelReason != "" {
-		// K1: cancelled mid-generation, so sb holds a partial buffer — do not attempt to
-		// parse a tool call out of it. Reported the same way a generation error is: an SSE
-		// error frame if streaming (already flushed headers, see G19's note above), a
-		// statusCancelled JSON error otherwise. sendUsage still runs — real tokens were
-		// generated before the cancel landed, and a client counting cost wants that count
-		// regardless of how the stream ended (M-26's own reasoning, applied to this exit too).
+	finish, nComp, reused := t.finish, t.nComp, t.reused
+	if t.cancelReason != "" {
+		// K1: cancelled mid-generation, so the buffer is partial — no tool call is parsed out of it.
+		// Reported the same way a generation error is: an SSE error frame if streaming (already
+		// flushed headers, see G19's note above), a statusCancelled JSON error otherwise. sendUsage
+		// still runs — real tokens were generated before the cancel landed (M-26's reasoning).
 		if ss != nil {
-			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
+			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": t.cancelReason}})
 			sendUsage(ss, req.StreamOptions, id, created, lm.name,
 				usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
 			sseDone(ss)
 			return
 		}
-		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
+		writeErr(w, statusCancelled, "generation cancelled: "+t.cancelReason)
 		return
 	}
-	calls, lead := lm.tmpl.ParseToolCallsFor(sb.String(), tools)
 
 	msg := map[string]any{"role": "assistant"}
-	if len(calls) > 0 {
+	if len(t.calls) > 0 {
 		msg["content"] = nil
-		if lead != "" {
-			msg["content"] = lead
+		if t.lead != "" {
+			msg["content"] = t.lead
 		}
-		msg["tool_calls"] = toAPICalls(calls)
+		msg["tool_calls"] = toAPICalls(t.calls)
 		finish = "tool_calls"
 	} else {
-		msg["content"] = sb.String()
+		msg["content"] = t.raw
 	}
 	choice := map[string]any{"index": 0, "message": msg, "finish_reason": finish}
 	usagev := usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused}
 
 	if req.Stream {
-		// Whatever prose already left as deltas (G21) must not be sent twice, and
-		// the parser's view is authoritative: emit only the REMAINDER of it here.
-		// On a non-incremental family `already` is empty and this is exactly the
-		// G19 behavior — one delta carrying the whole message.
-		already := streamed.String()
-		full := ""
-		if c, ok := msg["content"].(string); ok {
-			full = c
-		} else if lead != "" {
-			full = lead // tool-call case: content is nil, the prose is the lead
-		}
-		if !strings.HasPrefix(full, already) {
-			// Unreachable by construction — StreamableLen only releases bytes that
-			// precede the opener, and lead is the raw prefix before it. If it ever
-			// fires, bytes were sent that the parser does not agree are prose, and
-			// they cannot be recalled: say so loudly rather than emit a stream that
-			// silently disagrees with itself.
-			sseErr(ss, "internal: streamed prose diverged from the parsed lead; the tool-call "+
-				"stream for this family is not prefix-safe (G21)")
-			sseDone(ss)
-			return
-		}
+		// Whatever prose already left as deltas (G21) is not sent twice: only t.rest, the part of
+		// the parsed prose still held back. On a non-incremental family that is the whole message —
+		// exactly the G19 behavior.
 		d := map[string]any{"role": "assistant"}
-		if _, ok := msg["tool_calls"]; ok {
-			d["tool_calls"] = streamToolCalls(calls)
-			if rest := full[len(already):]; rest != "" {
-				// Prose that preceded the call and was still held back.
-				sseSend(ss, chatChunk(id, created, lm.name, delta{Content: rest}, nil))
+		if len(t.calls) > 0 {
+			d["tool_calls"] = streamToolCalls(t.calls)
+			if t.rest != "" {
+				sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t.rest}, nil))
 			}
 		} else {
-			d["content"] = full[len(already):]
+			d["content"] = t.rest
 		}
 		sseSend(ss, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
 			"choices": []any{map[string]any{"index": 0, "delta": d, "finish_reason": nil}}})

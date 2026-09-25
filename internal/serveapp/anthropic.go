@@ -572,8 +572,24 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 
 	id := "msg_" + reqID()
 	gr.id = id
-	var sb strings.Builder
-	finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	var (
+		text                          string
+		calls                         []chat.ToolCall
+		lead                          string
+		finish, stopSeq, cancelReason string
+		nComp                         int
+		gerr                          error
+	)
+	if toolsActive {
+		// The shared tool turn (tool_turn.go) — buffered here: nothing to stream on this path.
+		var t toolTurn
+		t, gerr = s.runToolTurn(r.Context(), lm, gr, tools, nil, nil)
+		text, calls, lead, finish, stopSeq, cancelReason, nComp = t.raw, t.calls, t.lead, t.finish, t.stopSeq, t.cancelReason, t.nComp
+	} else {
+		var sb strings.Builder
+		finish, nComp, _, stopSeq, _, cancelReason, gerr = lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+		text = sb.String()
+	}
 	if gerr != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())
 		return
@@ -586,20 +602,17 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	var content []map[string]any
 	reason := ""
 	var seq any
-	if toolsActive {
-		calls, lead := lm.tmpl.ParseToolCallsFor(sb.String(), tools)
-		if len(calls) > 0 {
-			if strings.TrimSpace(lead) != "" {
-				content = append(content, textBlock(lead))
-			}
-			for _, c := range calls {
-				content = append(content, toolUseBlock(c))
-			}
-			reason = "tool_use"
+	if len(calls) > 0 {
+		if strings.TrimSpace(lead) != "" {
+			content = append(content, textBlock(lead))
 		}
+		for _, c := range calls {
+			content = append(content, toolUseBlock(c))
+		}
+		reason = "tool_use"
 	}
 	if reason == "" { // plain text turn (no tools, or the model declined to call)
-		content = []map[string]any{textBlock(sb.String())}
+		content = []map[string]any{textBlock(text)}
 		reason, seq = anthropicStopReason(finish, stopSeq)
 	}
 
