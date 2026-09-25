@@ -1,0 +1,8 @@
+== head start 21:08:26
+== head done 21:09:42 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:15.64 	Maximum resident set size (kbytes): 34836292 	Exit status: 0 
+== stream start 21:09:42
+== stream done 21:15:49 	Elapsed (wall clock) time (h:mm:ss or m:ss): 6:07.16 	Maximum resident set size (kbytes): 17206516 	Exit status: 0 
+ALLDONE 21:15:49
+== stream2 start 21:20:41
+== stream2 done 21:22:31 	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:49.60 	Maximum resident set size (kbytes): 14736228 	Exit status: 0 
+ALLDONE 21:22:31

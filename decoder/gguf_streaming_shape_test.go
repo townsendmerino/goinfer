@@ -44,7 +44,7 @@ func TestStreamableFamilyClosures_onlyReadPerLayerTensors(t *testing.T) {
 	// (loadLaguna := func(i int) error { ... }), found by scanning for that assignment anywhere
 	// in the file — independent of which enclosing "if arch.X != nil" block it sits in, so a
 	// future reordering of the file doesn't silently stop covering a family.
-	families := []string{"loadLaguna", "loadGranite", "loadNemo", "loadL4", "loadGptOss", "loadQ35"}
+	families := []string{"loadLaguna", "loadGranite", "loadNemo", "loadL4", "loadGptOss", "loadQ35", "loadG4"}
 
 	found := map[string]bool{}
 	for _, want := range families {
@@ -107,7 +107,7 @@ func TestStreamableFamilyClosures_onlyReadPerLayerTensors(t *testing.T) {
 				"a non-per-layer read inside a streaming closure means that data is either missing "+
 				"from every layer but the one that happened to read it, or silently duplicated into "+
 				"every layer — either way a streamed bundle would NOT match the resident build, and "+
-				"this family must not be removed from needsResidentSerialize without fixing this first",
+				"this family's streaming branch must not ship until this is fixed",
 				want, badReads)
 		}
 	}

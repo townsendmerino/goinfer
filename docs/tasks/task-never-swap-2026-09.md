@@ -111,7 +111,7 @@ per load path by what ends up on the heap:
 | Metal resident, `.giw` source (`metal/model.go` `int4Buf` / `int4Concat`, paged experts via pread) | dense projections **copied twice** — `int4DirectWords` reinterprets the mapped nibbles into a fresh heap slice, `NewBufferUint32s` copies that into a `StorageModeShared` MTLBuffer, f32 scales converted to f16 on the way; routed experts stream by `pread` into N fixed device slots per layer | every dense projection as an MTLBuffer (~3–4 GB on M26) + the transient heap copy until GC + N × layers × per-expert slot bytes as they fill + f16 KV (~1 GB at ctx 4096 on M26) + scratch | the mapping (touched once at build, then reclaimable) | R11(c), 2026-09-20/22: swap 2.3 → 12 GB in ~16 s during build at N=64, 3.2 → 7.9 GB right after the first token at N=32, +341 MB before the 1 s kill at N=8, on a box with 55–210 MB free — while the test's own RSS read "7 MB → 892 MB after build" |
 | `.gguf` direct (`loadGGUFWeights`) | **fresh heap copies** — every tensor dequantized out of the mapping and re-quantized into goinfer's own int4/int8 layout | the whole resident weight set (+ KV, scratch) | the source file, which stays mapped and fully touched for the entire parallel build | measured 2026-09-18/19 on gpt-oss-20b: **peak RSS ~24.5 GB = 12.58 GB new weights + 12.11 GB source**, dropping to ~13.0 GB after `Load` returns |
 | safetensors dir (`openCheckpointMmap`) | f32 tensors may alias; quantized/converted tensors (MXFP4 experts, bf16→int4) are heap copies | most of the model for a quantized load | the mapping | `decoder/weights.go`, `mmapAliasRisk` |
-| `.gguf` → sidecar `.giw` transcode (`prequant.Transcode`) | written to disk one layer at a time (`StreamTranscodeGGUF`) | ~one layer — **except** the `needsResidentSerialize` families (gemma4, gpt-oss, laguna, granite, nemotron, llama4), which build the whole model resident and serialize it once | the source | `decoder/gguf.go:1495`; the README's own gpt-oss `-stream-weights` example runs through this fallback |
+| `.gguf` → sidecar `.giw` transcode (`prequant.Transcode`) | written to disk one layer at a time (`StreamTranscodeGGUF`) | ~one layer — every family since S2 (2026-09-24). Before it, the resident-serialize families (gemma4, gpt-oss, laguna, granite, nemotron, llama4) built the whole model resident and serialized it once | the source | `StreamTranscodeGGUF` in `decoder/gguf.go`; the list that routed them (`needsResidentSerialize`) was deleted with its last entry |
 
 **Why the M35/M26 streaming run did not swap but still killed the machine.** With the model
 mapped, the pager's RAM budget on darwin is bookkeeping only: aikit's `mmap` package (`madvise_darwin`, cross-repo — described, not cited)
@@ -251,8 +251,7 @@ cold and warm TTFT anyway so a regression is visible.
 on the safetensors no-op; the embed-int4 note; the `DenseStreamable` exclusion and its cited
 reason — "MoE CPU weight streaming is a documented, MEASURED failure mode"); `internal/prequant/prequant.go`
 `Transcode` (temp + rename, the V-01 `.tmp.giw` suffix trap, `cacheFresh`'s load-probe freshness —
-M-12/M-11); `decoder/gguf.go` `StreamTranscodeGGUF` and `needsResidentSerialize`
-(`decoder/gguf.go:1495` — read S2 before promising anything about those families);
+M-12/M-11); `decoder/gguf.go` `StreamTranscodeGGUF` (and, until 2026-09-24, `needsResidentSerialize` — deleted when S2 finished; read S2 for the history);
 `decoder/model.go` `.giw` branch (`decoder/model.go:430`) and what it skips (`decoder/model.go:562`);
 `decoder/weightmat.go` `GIWTargetForBackend` and the kind-5 policy in `docs/tasks/task-int4-layout-2026-09.md`
 L2 (a cpu-arm64 sidecar is row4-only — about the model's int4 size; a kind-4 dual-representation
@@ -325,6 +324,18 @@ if a safetensors-only model ever matters on the Mac); Linux defaults; anything a
 
 ### S2 · Streaming transcode sink for the six resident-serialize families
 
+> **ALL SIX DONE 2026-09-24 — gemma4 streams too, and `needsResidentSerialize` is deleted**
+> (`docs/measurements/transcode-streaming-gemma4-2026-09-24.md`). The "fused PLE/MoE tail" was not real in this format:
+> gemma4's model-level PLE inputs are in the HEAD and everything else is per-layer. Registered rule, both halves MET on the
+> real 26B-A4B `.gguf` (nobara): peak anonymous RSS **1.61 GB, +1.41 GB** over baseline against the ≤ 1.5 GB bar (resident:
+> 18.1 GB anonymous, 34.8 GB RSS), and the bundle **byte-identical** to the resident path's — every one of 16,190,667,177
+> weight bytes past the label, header and tokenizer too; synthetic gemma4 GGUF fixtures (26B-like MoE + K=V, E2B-like PLE +
+> KV-shared) byte-identical at int4/int8int8/f32 × default/metal target, mutation-checked twice. Getting under the bar took
+> releasing the head globals after they are written, and parallel expert builds (sequential streaming ran 6:07 at 93% CPU);
+> wall time is now 1:50 vs the resident 1:16 — **45% slower**, which the brief's Measure section said it should not be.
+> S1's greedy-match gate could not be taken: the DIRECT CPU load of the 26B `.gguf` emits 16 `<pad>` tokens — on HEAD before this
+> change too — while the streamed sidecar generates text. A separate, open bug.
+>
 > **FIVE OF SIX FAMILIES DONE 2026-09-23 — only gemma4 remains.** `needsResidentSerialize` now
 > names gemma4 alone. gpt-oss, laguna, granite (the Mamba-2+MoE hybrid, `arch.granite` — not the
 > plain dense Granite family `gguf_granite_permute_test.go` covers), nemotron and llama4 all
@@ -375,7 +386,7 @@ if a safetensors-only model ever matters on the Mac); Linux defaults; anything a
 nemotron and llama4, the way it already does for every other family, so S1 holds on the models
 that actually exceed the Mac.
 
-**Standing and the registered rule.** `needsResidentSerialize` (`decoder/gguf.go:1495`) routes
+**Standing and the registered rule.** `needsResidentSerialize` (in `decoder/gguf.go` until S2 deleted it, 2026-09-24) routed
 those six through `buildWeightsFromGGUF(..., needCanonical=true, ...)` then
 `SerializeWeightsToForTarget` — the whole model resident, then one serialize. For gpt-oss-20b that
 is the same ~12.6 GB heap the direct load builds, on the box where that meant 22.9 GB of swap. The
@@ -389,7 +400,7 @@ byte-identical to the resident-serialize path's output on the family fixtures (t
 `TestStreamTranscodeMatchesResident` shape, extended per family).**
 
 **Read first.** `decoder/gguf.go` — the qwen35 branch (`loadQ35`, the `sink != nil` streaming
-loop near `decoder/gguf.go:1775`), then each of the six loaders and *why* it was excluded: gemma4's
+loop near `decoder/gguf.go:1759`), then each of the six loaders and *why* it was excluded: gemma4's
 "fused PLE/MoE tail can't stream incrementally" (a model-level tail written after the layers —
 the head/tail split `writeHeadGlobals` already supports: `decoder/serialize.go`'s "streaming
 transcode can emit the head, then produce-write-free each layer" note), gpt-oss's stacked experts

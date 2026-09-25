@@ -1346,9 +1346,8 @@ func buildGGUFWeights(g *embed.GGUFFile, quant quantMode, embedInt4, needCanonic
 // to out (the GINFW serialization + trailing CRC), loading ONE layer at a time so
 // peak RAM is ~one layer rather than the whole model — the streaming analogue of
 // Load + SerializeWeightsTo, for models too large to hold resident (the build-time
-// hump that otherwise blocks running a >RAM MoE). Generic-loader families stream;
-// the qwen35/gemma4 dedicated loaders fall back to a resident build + serialize
-// (those models fit). Returns the bytes written. Typically invoked inside
+// hump that otherwise blocks running a >RAM MoE). Every family streams, dedicated
+// loaders included (S2). Returns the bytes written. Typically invoked inside
 // giw.WriteStream as the weights half of a .giw bundle.
 func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant string, embedInt4 bool, target GIWTarget, id string) (int64, error) {
 	if err := ctx.Err(); err != nil {
@@ -1400,31 +1399,19 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	if serr := canSerialize(arch); serr != nil {
 		return 0, serr
 	}
-	// gemma4's fused PLE/MoE tail can't stream incrementally; it falls back to a
-	// resident build + one-shot serialize. qwen35 no longer needs this fallback
-	// (2026-08-24, docs/completed/task-zeno-compare.md): its own loadQ35 already builds one
-	// layer at a time internally, so buildWeightsFromGGUF's sink!=nil branch below
-	// streams it like every other family — a control-flow fix (write + release
-	// each layer instead of holding all of them until one final serialize), not a
-	// numerics one. A 35B-A3B MoE OOM'd at 40.5GB resident on a 16GB Mac under the
-	// old resident-then-serialize path; this bounds peak RSS to ~one layer.
-	if needsResidentSerialize(arch) {
-		// needCanonical=true unconditionally, regardless of target: the writer needs
-		// canonical bytes IN RAM to choose what to write (repackRow4ForEmit computes
-		// row4 from canonical), even on a cpu-arm64 target that will write kind 5
-		// (canonical-absent) to DISK. See docs/tasks/task-int4-layout-2026-09.md's L2 — the
-		// in-RAM construction policy (wantsCanonicalInt4) and the on-disk kind policy
-		// (target) are independent decisions.
-		// abort=nil: this is the cmd/prequant transcode path, which already observes ctx
-		// per-layer via M-21's ctxWriter — a different, already-covered cancellation
-		// granularity, not decoder.Load's own resident direct-build (S3 scopes the swap
-		// tripwire's load-time consumer to that path only — see Options.LoadAbort).
-		w, berr := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, nil, "", nil)
-		if berr != nil {
-			return 0, berr
-		}
-		return SerializeWeightsToForTarget(out, w, id, target)
-	}
+	// Every family streams (S2, task-never-swap-2026-09.md): buildWeightsFromGGUF's sink != nil branch
+	// builds, writes and releases one layer at a time, so peak RSS is ~one layer rather than the whole
+	// model. qwen35 got there first (2026-08-24, docs/completed/task-zeno-compare.md: a 35B-A3B MoE had
+	// OOM'd at 40.5 GB resident on a 16 GB Mac under the old resident-then-serialize path); gpt-oss,
+	// laguna, granite, nemotron and llama4 on 2026-09-23; gemma4, the last, on 2026-09-24. The
+	// needsResidentSerialize list that routed families around this path is gone with its last entry.
+	//
+	// needCanonical=true unconditionally, regardless of target: the writer needs canonical bytes IN RAM
+	// to choose what to write (repackRow4ForEmit computes row4 from canonical), even on a cpu-arm64
+	// target that will write kind 5 (canonical-absent) to DISK — per layer, that is one layer's
+	// canonical bytes. See docs/tasks/task-int4-layout-2026-09.md's L2. abort=nil: this is the
+	// cmd/prequant transcode path, which observes ctx per layer via M-21's ctxWriter (S3 scopes the
+	// swap tripwire's load-time consumer to decoder.Load's resident build only — see Options.LoadAbort).
 	wr := &giwWriter{sink: out, target: target}
 	if _, err := buildWeightsFromGGUF(cfg, arch, g, q, embedInt4, true, false, wr, id, nil); err != nil {
 		return wr.n, err
@@ -1478,32 +1465,6 @@ const (
 // family builder has already run — a hostile count would makeslice a multi-TB array
 // (a fatal OOM, unrecoverable) or, wrapped negative, panic, before that. Call this
 // right after reading block_count in any builder that allocates from it (M16).
-// needsResidentSerialize names the families whose dedicated GGUF branch builds every layer and
-// returns, WITHOUT driving the per-layer sink. For them the streaming writer would emit a header
-// declaring N layers followed by zero layers — a bundle whose CRC is valid and whose body ends
-// early, so cmd/prequant and `serve --stream-weights` load the whole model resident (defeating
-// the one-layer-peak-RAM contract this path exists for) and then fail minutes later with
-// "truncated body: unexpected end of data" (M-09).
-//
-// gemma4 was already routed this way because its fused PLE/MoE tail cannot stream. The other
-// five are here because their branches never call sink.layer either — a fact the old comment
-// above canSerialize actively hid by claiming they were refused before the load.
-//
-// This is a LIST, so it will go stale. The refusal inside buildWeightsFromGGUF is the backstop:
-// a family that reaches a non-streaming return with a live sink errors loudly instead of writing
-// a header-only bundle.
-func needsResidentSerialize(a *Architecture) bool {
-	// gpt-oss, laguna, granite (the Mamba-2+MoE hybrid), nemotron and llama4 removed 2026-09-23
-	// (S2, task-never-swap-2026-09.md): every one of their per-layer closures already builds one
-	// layer independently of every other (see each family's own streaming branch, right at its
-	// parallelLayers call site) — the M-09 lesson applies here too, the comment moves with the
-	// code, not just stays behind as a stale warning. decoder/gguf_streaming_shape_test.go proves
-	// the "independently of every other" half from source and keeps it true.
-	//
-	// gemma4 alone remains: its fused PLE/MoE tail is a genuinely different obstacle (a
-	// model-level dependency, not per-layer data spread across the wrong place) — not attempted.
-	return a.gemma4 != nil
-}
 
 func ggufLayerCount(n int) (int, error) {
 	if n <= 0 || n > maxGGUFLayers {
@@ -1576,9 +1537,12 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 // is supported for the generic per-layer loader (llama/qwen2/qwen3/mellum/glm4_moe) and for
 // qwen35's own dedicated branch, which streams per layer too (N-64, docs/audit-2026-09-10.md:
 // this used to say qwen35 rejected streaming — loadQ35 builds each layer independently, so a
-// sequential build-then-write-then-release loop bounds peak RSS the same way). gemma4 (whose
-// fused PLE/MoE tail genuinely cannot stream) and five other families are instead routed through
-// the resident-build fallback — see needsResidentSerialize's own doc comment for the list and why.
+// sequential build-then-write-then-release loop bounds peak RSS the same way). Every other family's
+// dedicated branch streams the same way (S2, task-never-swap-2026-09.md: gpt-oss, laguna, granite,
+// nemotron and llama4 on 2026-09-23, gemma4 on 2026-09-24). A branch that returns without driving
+// the sink would write a header declaring N layers and then none — the M-09 failure — so any new
+// family branch must stream too; decoder/gguf_streaming_shape_test.go checks its closure reads only
+// per-layer tensors, and TestGemma4GGUF_streamedMatchesResident-style byte identity is the gate.
 func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, sink *giwWriter, id string, abort <-chan struct{}) (*Weights, error) {
 	hidden, hd := arch.HiddenDim, arch.HeadDim
 	w := &Weights{Cfg: *cfg, arch: arch, Layers: make([]LayerWeights, arch.NumLayers)}
@@ -1716,7 +1680,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		// Each expert occupies a contiguous [out, in] row-major slice; stream its
 		// rows directly into a per-expert quantized linalg.WeightMat (no whole-tensor f32).
 		res := make([]linalg.WeightMat, nExpert)
-		for e := range nExpert {
+		one := func(e int) error {
 			rowInto := func(r int, dst []float32) error { return into((e*out+r)*in, dst) }
 			var m linalg.WeightMat
 			var err error
@@ -1727,9 +1691,29 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				m, err = streamQuantized(out, in, matmulQuant(quant, name), rowInto)
 			}
 			if err != nil {
-				return nil, err
+				return err
 			}
 			res[e] = m
+			return nil
+		}
+		// A streaming transcode builds one layer at a time (S2), so the across-layer parallelism the
+		// resident build gets from parallelLayers is gone — and the experts ARE the layer (the 26B-A4B:
+		// ~95% of each layer's bytes). Build them in parallel instead: the dequantizer is a pure function
+		// of the mapped tensor bytes and streamQuantized allocates its own scratch, so concurrent experts
+		// share nothing, and each lands in its own res[e] — byte-identical to the sequential order.
+		// Measured on the 26B-A4B (nobara, 2026-09-24): sequential streaming ran at 93% CPU and took
+		// 4.9x the resident build's wall time. The resident path (sink == nil) is left exactly as it was;
+		// it already runs one layer per core.
+		if sink != nil {
+			if err := parallelLayers(nExpert, nil, one); err != nil {
+				return nil, err
+			}
+			return res, nil
+		}
+		for e := range nExpert {
+			if err := one(e); err != nil {
+				return nil, err
+			}
 		}
 		return res, nil
 	}
@@ -1773,11 +1757,16 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// Streaming transcode: emit the header + globals now; each layer is written and
 	// freed as it loads (below), so the whole model never sits resident.
 	if sink != nil {
-		if arch.gemma4 != nil {
-			return nil, fmt.Errorf("decoder(gguf): streaming transcode unsupported for %s (load resident + prequant instead)", arch.Name)
-		}
-		if err := sink.writeHeadGlobals(w, id); err != nil {
-			return nil, err
+		// The writer gates gemma4's head extras and per-layer tail on arch, exactly as writeBundle does
+		// for the resident path (it sets wr.arch = w.arch); a streaming writer built without it would
+		// silently drop both.
+		sink.arch = arch
+		// gemma4's head carries its model-level PLE inputs, which load in its own branch below — so
+		// it writes the head there, once they exist. Every other family's head is complete here.
+		if arch.gemma4 == nil {
+			if err := sink.writeHeadGlobals(w, id); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -2707,6 +2696,38 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				l.LayerScalar = sc[0]
 			}
 			return nil
+		}
+		// S2 (task-never-swap-2026-09.md), 2026-09-24: gemma4 streams like every other family. The
+		// "fused PLE/MoE tail" that kept it on a resident build turned out not to exist in this format:
+		// the model-level PLE inputs (per_layer_token_embd / per_layer_model_proj / per_layer_proj_norm,
+		// plus FFNPerLayer) are written in the HEAD (writeHeadGlobals), before any layer, and loaded above
+		// before loadG4 runs; everything else gemma4-specific — PLE gate/proj/norm, the layer scalar,
+		// KV-shared / K=V flags and the whole 26B-A4B MoE branch — lives in each layer's own record
+		// (giwWriter.gemma4Layer) and is read from blk.{i}.* only (decoder/gguf_streaming_shape_test.go
+		// keeps that true). So: head once the PLE globals exist, then build → write → release per layer.
+		// The 26B-A4B's resident transcode peaked at 34.7 GB RSS (nobara, 2026-09-24), which no 16 GB
+		// Mac can build; this bounds it to ~one layer. Non-streaming (sink == nil): unchanged, parallel.
+		if sink != nil {
+			if err := sink.writeHeadGlobals(w, id); err != nil {
+				return nil, err
+			}
+			// The head is on disk; nothing below reads these again (the returned *Weights of a
+			// streaming build is discarded — see this function's doc). Holding them was the flat
+			// ~1.4 GB under the whole 26B-A4B stream (its 262k-vocab int8 embedding table alone is
+			// ~0.74 GB), so let them go before the layers.
+			w.Embed, w.LMHead, w.PosEmbed = linalg.WeightMat{}, linalg.WeightMat{}, linalg.WeightMat{}
+			w.PerLayerTokenEmbed, w.PerLayerModelProj = linalg.WeightMat{}, linalg.WeightMat{}
+			for i := range arch.NumLayers {
+				if err := loadG4(i); err != nil {
+					return nil, err
+				}
+				sink.layer(&w.Layers[i])
+				if sink.err != nil {
+					return nil, sink.err
+				}
+				w.Layers[i] = LayerWeights{} // release before the next layer
+			}
+			return w, nil
 		}
 		if err = parallelLayers(arch.NumLayers, abort, loadG4); err != nil {
 			return nil, err

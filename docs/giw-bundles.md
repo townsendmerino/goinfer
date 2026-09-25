@@ -36,13 +36,15 @@ Then serve it like any other model:
 `serve --stream-weights` also produces these on demand — a plain `.gguf` is transcoded to a
 sidecar `.giw` cache on first use, so the one-time cost is paid once rather than per launch.
 
-**Peak RAM during that one-time build** bounds to roughly one layer for most families — the
+**Peak RAM during that one-time build** bounds to roughly one layer for every family — the
 weights are read, quantized, written and freed one layer at a time rather than all held resident
 at once (S2, `docs/tasks/task-never-swap-2026-09.md`; measured on a real `gpt-oss-20b` GGUF,
 `docs/measurements/transcode-streaming-2026-09-23.md`: swap-used stayed flat through the whole
-transcode). **gemma4 is the one exception**: its fused PLE/MoE tail cannot be written
-incrementally, so building a gemma4 sidecar still needs the whole model resident first, same as
-every family did before S2.
+transcode). gemma4 was the last family to get there (2026-09-24,
+`docs/measurements/transcode-streaming-gemma4-2026-09-24.md`): the 26B-A4B's transcode went from
+18.1 GB of anonymous memory (34.8 GB RSS) resident to a 1.61 GB peak streamed, byte-identical output.
+A transcode *from safetensors* (`prequant` given an HF directory) is a different path and still builds
+resident.
 
 ## File layout: aligned arrays (weights format v12 / bundle v3)
 

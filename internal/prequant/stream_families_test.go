@@ -78,7 +78,8 @@ func TestStreamTranscode_perFamilyBodiesCarryTheirLayers(t *testing.T) {
 }
 
 // TestGptOss_streamedMatchesResident is S2's own registered gate for the first family moved off
-// needsResidentSerialize: the streamed bundle must be byte-identical to the resident-build-then-
+// the resident-serialize fallback (needsResidentSerialize, deleted 2026-09-24 when gemma4 — the last
+// family on it — began streaming too): the streamed bundle must be byte-identical to the resident-build-then-
 // serialize path's output, same shape as stream_test.go's TestStreamTranscodeMatchesResident (glm)
 // — extended here per family rather than widening that one, since a failure on one fixture should
 // name which family broke, not force a reader to guess from a shared table's row count.

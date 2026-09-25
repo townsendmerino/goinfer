@@ -159,7 +159,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   default, since gemma-web was out of this item's named list.
 
 **Out of scope, unchanged:** down-proj / router / experts; amd64 split-half (L5); the
-`.giw` path (L2, and its scope note in `decoder/gguf.go:1414` is corrected under L3).
+`.giw` path (L2, and its scope note in `decoder/gguf.go:1410` is corrected under L3).
 
 **Size.** Small — the branch already had the mechanism; this was the gate's final shape plus
 reporting and the error.
@@ -341,7 +341,7 @@ its test), `cmd/prequant/main.go`, `internal/serveapp/main.go`, `demo/chat/build
 
 ## L3 — Doc corrections (do with L1) (DONE 2026-09-11)
 
-- `decoder/gguf.go:1414` and the branch's scope notes say the `.giw` path is out of scope
+- `decoder/gguf.go:1410` and the branch's scope notes say the `.giw` path is out of scope
   "mirroring `repackW4A8Row4IfEligible`'s 'deliberately NOT wired into the .giw loader'
   precedent" and that "the existing canonical+row4 both policy isn't wired into `.giw` loading".
   The second claim is false — kind 4 *is* the both policy on disk, loaded at
@@ -353,7 +353,7 @@ its test), `cmd/prequant/main.go`, `internal/serveapp/main.go`, `demo/chat/build
 **Findings.** The false "isn't wired into .giw loading" claim was mine — introduced this same
 session while writing L1 (`quantizeEmbedWM`'s original doc comment, since rewritten). It existed
 in exactly one place by the time this item ran (`decoder/gguf.go`'s two `buildWeightsFromGGUF`
-call-site comments, `needsResidentSerialize` branch and the `giwWriter` branch just below it) —
+call-site comments, the `needsResidentSerialize` branch — deleted by S2 on 2026-09-24 — and the `giwWriter` branch just below it) —
 both now point at L2 instead of repeating the false generalization. The ORIGINAL, pre-existing
 `repackW4A8Row4IfEligible` comment (`decoder/weightmat.go:~234`, "Deliberately NOT wired into the
 .giw loader") was re-read against this item's claim and found accurate as written — it is

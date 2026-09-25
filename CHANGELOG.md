@@ -15,6 +15,10 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **A gemma4 `.gguf` now transcodes to a `.giw` one layer at a time (S2), like every other family.** The 26B-A4B's
+  transcode drops from 18.1 GB of anonymous memory (34.8 GB RSS) to a 1.61 GB peak, with byte-identical output, so its
+  sidecar can be built on a machine smaller than the model. It is 45% slower than the old in-memory build (1:50 vs 1:16).
+
 - **Metal serves a `.giw`'s weights straight from the file, by default (S6).** A Metal load of a `.giw` now binds its int4
   nibbles, the int8 LM head and (weights format v14, `-target metal`, new) the f16 group scales in place from the file mapping
   instead of copying them into GPU buffers, so they are page cache the OS can reclaim rather than memory that swaps. Memory

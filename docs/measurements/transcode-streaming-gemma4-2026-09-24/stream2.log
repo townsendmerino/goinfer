@@ -1,0 +1,24 @@
+wrote /home/francis/models/s2-stream2.int4.metal.giw: 15456 MB (int4)
+	Command being timed: "/tmp/prequant-s2-stream2 -quant int4 -target metal -o /home/francis/models/s2-stream2.int4.metal.giw /home/francis/models/gemma4-26b-q4_k_m.gguf"
+	User time (seconds): 408.41
+	System time (seconds): 40.30
+	Percent of CPU this job got: 409%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:49.60
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 14736228
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 10827
+	Minor (reclaiming a frame) page faults: 350016
+	Voluntary context switches: 65579
+	Involuntary context switches: 71200
+	Swaps: 0
+	File system inputs: 61875496
+	File system outputs: 31653568
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
