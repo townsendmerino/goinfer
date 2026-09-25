@@ -103,7 +103,12 @@ MODELS = {
     # gemma3-1b's GGUF is the ollama blob copied into ~/models under a real name. It was in neither
     # ~/models nor the archive: the geometry is not optional -- its sliding window is the case that
     # exposed the split-KV gate testing nKeys instead of the window-clamped nWin.
-    "phi3-mini":  (os.path.expanduser("~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"), "p3m"),
+    # p3m-local, not p3m (2026-09-25, docs/tasks/task-peer-claim-2026-09.md): the old p3m tag is a
+    # DIFFERENT phi3-mini revision -- gguf_same_weights.py found 0/195 tensors identical against this
+    # file, f32 norms included -- so every phi3-mini peer row before this date compared different
+    # weights. p3m-local is this file imported with `ollama create` (FROM <this path>): 195/195
+    # identical, and its template closes turns with <|end|>, where p3m used </s>.
+    "phi3-mini":  (os.path.expanduser("~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"), "p3m-local"),
     "gemma3-1b":  (os.path.expanduser("~/models/gemma3-1b-q4_k_m.gguf"), "g31b"),
     # M35/M26 added 2026-09-04 (docs/tasks/task-peer-benchmarks.md §2, tier 1). The GGUF path here is
     # what ollama and llama-server load -- Q4_K_M, same quant family as every other row. Neither
@@ -210,6 +215,17 @@ GPORT, OPORT, LPORT, MPORT = 8099, 11499, 8098, 8097
 # measured, so deep cells deliberately use FEWER requests with MORE decode tokens each — the same
 # protocol difference §B7 recorded, not a shortcut.
 DEEP_CTX = int(os.environ.get("BENCH_DEEP_CTX", "0"))
+# CONTEXT PIN (added 2026-09-25, docs/tasks/task-peer-claim-2026-09.md). BENCH_CTX pins the context
+# on all three engines -- goinfer -ctx, Ollama num_ctx, llama-server --ctx-size -- and changes
+# NOTHING else: gen_params stay the standard 64 x 8 x runs, and each peer keeps its own shipped
+# flash-attention setting. BENCH_DEEP_CTX does more than pin a context: it switches to the deep
+# gen protocol AND forces flash attention OFF on both peers (§B7's anchor configuration). Ollama
+# v0.32.5's default on this card is flash_attn=auto -> enabled (its own log), so a claim made
+# against the peer "as shipped" cannot use DEEP_CTX. The two are mutually exclusive.
+CTX_PIN = int(os.environ.get("BENCH_CTX", "0"))
+if DEEP_CTX and CTX_PIN:
+    sys.exit("BENCH_DEEP_CTX and BENCH_CTX are mutually exclusive: DEEP_CTX is the §B7 anchor "
+             "protocol (deep gen params, peer flash attention OFF); CTX_PIN only pins the context")
 # STREAM WEIGHTS, added 2026-09-04 for M35/M26 on a 16 GB Mac: their plain GGUFs (20-22 GB) OOM a
 # normal load (SIGKILLed, exit 137, no server-side error -- reads as "server never came up").
 # -stream-weights pages MoE experts out of an mmap'd .giw cache under a RAM budget instead; a
@@ -501,6 +517,9 @@ def provenance():
         "loadavg_at_start": _loadavg(),
         "gpu_compute_apps_at_start": _gpu_compute_apps(),
         "sampling": "sent explicitly per cell; see each record's `sent`",
+        # Context protocol: 0 = unset. deep_ctx is §B7's (peer FA forced off); ctx_pin is BENCH_CTX.
+        "deep_ctx": DEEP_CTX,
+        "ctx_pin": CTX_PIN,
     }
 
 def machine_state():
@@ -666,7 +685,7 @@ def goinfer_payload(model_path, prompt, cfg):
 def ollama_payload(tag, prompt, cfg, backend="cuda"):
     p = {"model": tag, "stream": True,
          "messages": [{"role": "user", "content": prompt}],
-         "options": {"num_predict": gen_params()[0], "num_ctx": DEEP_CTX or 4096}}
+         "options": {"num_predict": gen_params()[0], "num_ctx": DEEP_CTX or CTX_PIN or 4096}}
     if backend == "cpu":
         p["options"]["num_gpu"] = 0     # force CPU; ollama defaults to CUDA when present
     p["options"].update(cfg.get("ollama", {}))
@@ -832,7 +851,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             proc = subprocess.Popen(
                 [serve_map[backend], "-model", f"bench={gpath}", "-backend", backend,
                  "-addr", f"127.0.0.1:{GPORT}"] + quant_args + moe_args
-                + (["-ctx", str(DEEP_CTX)] if DEEP_CTX else [])
+                + (["-ctx", str(DEEP_CTX or CTX_PIN)] if (DEEP_CTX or CTX_PIN) else [])
                 + (["-stream-weights"] if model_key in STREAM_WEIGHTS_MODELS else []),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid)
@@ -877,7 +896,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 ngl_args = ["-ngl", "99"]
             proc = subprocess.Popen(
                 [LLAMACPP, "--model", path, "--port", str(LPORT), "--host", "127.0.0.1",
-                 "--ctx-size", str(DEEP_CTX or 4096)] + ngl_args
+                 "--ctx-size", str(DEEP_CTX or CTX_PIN or 4096)] + ngl_args
                 + (["-fa", "off"] if DEEP_CTX else []),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid)
