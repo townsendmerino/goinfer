@@ -34,7 +34,7 @@ file (or the binary's own image) into RAM and onto a GPU. Three diagrams: the
 >
 > - **Gated DeltaNet hybrids** (`qwen3_5_moe` → Qwen 3.5/3.6-MoE, Qwen3.8 dense,
 >   Qwen3-Next; `olmo_hybrid`): most layers are **Gated DeltaNet** (linear attention with a
->   recurrent matrix state) — `deltanet.go` / `deltanet_chunked.go`, state `deltaState`,
+>   recurrent matrix state) — `deltanet.go`, state `deltaState`,
 >   forward `forward_qwen35.go`.
 > - **Latent-KV / MLA** (`deepseek_v2`, `deepseek_v3`, Kimi K2, Ling 3.0): **Multi-head
 >   Latent Attention** — K/V compress to a shared low-rank latent (`kv_lora_rank`) which is
@@ -46,7 +46,7 @@ file (or the binary's own image) into RAM and onto a GPU. Three diagrams: the
 > - **Mamba-2 state-space hybrids**: **Granite-4.0-H** (`granitemoehybrid`: Mamba-2 layers +
 >   softmax attention, MoE on every layer, four Granite scalar multipliers) and
 >   **Nemotron-H** (`nemotron_h`: single-op-per-block Mamba-2 / NoPE-GQA / squared-ReLU MLP)
->   — `mamba2.go` (sequential scan + an equivalent chunked scan), state `mamba2State`
+>   — `mamba2.go` (sequential scan), state `mamba2State`
 >   (`{conv window, SSM state}`), `forward_granite.go` / `forward_nemotron.go`.
 > - Within softmax-GQA, a few families still carry their own layer loop for a non-mixer
 >   reason: **LFM2** (short-conv layers, `forward_lfm2.go`), **Gemma 4** (per-layer attention

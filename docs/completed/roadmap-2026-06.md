@@ -153,6 +153,12 @@ battlegrounds now:
         forward is still single-token streaming (`runLayersQwen35`), so the scan
         kernel isn't yet on the hot path; this + batched projections (+ quantized)
         is the perf win, to be validated end-to-end against the checkpoint.
+        > **Never wired; code removed 2026-09-24.** Both chunked scans (`deltanet_chunked.go`,
+        > `mamba2_chunked.go`, their tests, and the N-01 decay tests) stayed unused from June, and the
+        > DeltaNet one drifted from the recurrence that runs — it lacked Olmo-Hybrid's `NegEigval` β
+        > doubling and `ONormEps` override (N-09, `docs/completed/audit-2026-09-10.md`), which its
+        > Qwen-shape-only test could not see. Removed in the owner's clean-up; last present at `8f452a7e`.
+        > Wiring a chunked prefill would start from the live `gatedDeltaNetStep`, not from it.
   - [x] **Hybrid models opt out of prefix-reuse and speculative** — the
         recurrent deltaState isn't position-truncatable; fall back to the
         staged path, documented. (A deltaState snapshot-at-position scheme is
