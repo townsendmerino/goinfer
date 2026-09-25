@@ -19,11 +19,15 @@
   KDA (Ling 3.0) — plus dense and sparse MoE; vision-in for Gemma 3 and the Qwen VL pair, no
   audio. Resident on 27 / 26 / 23 families (Metal / CUDA / WebGPU). Loaders: safetensors, GGUF,
   GPTQ, AWQ, `.giw`; fp8 e4m3 reads (blockwise f32 scales).
-- **Standings vs Ollama** (dated rows in `benchmarks.md`'s TL;DR): CUDA decode **ahead** on small
-  models at short context (1.13× on the 1.5B), **behind at depth** (0.71× by 3900); CUDA prefill
-  **1.9–3.2× behind** at depth since the 2026-09-05 tensor-core landing (was 12–15×); Mac CPU
-  prefill at parity-to-ahead, Mac CPU decode **0.57–0.77× behind**; **Mac Metal prefill 3.3–8.8×
-  behind on TTFT** — the largest remaining gap, and it is on the main development machine.
+- **Standings vs Ollama** (the pre-registered sweep of 2026-09-25, `measurements/peer-claim-2026-09-25.md`;
+  dated rows in `benchmarks.md`'s TL;DR): CUDA greedy decode **level or ahead at 10 of 12 cells**
+  (0.5B / 1.5B / 7B, 128 to 8000 tokens; 1.05–1.30× where ahead, 0.99× on the 7B at 8000), behind at none, two void; CUDA TTFT on the 1.5B level at K=512
+  and 3900; CPU amd64 decode **behind** (0.80×); **Mac Metal decode behind at every depth ≥ 2048
+  (0.58–0.75×)**; **Mac Metal TTFT 2.65× / 4.18× behind** at K=512 / 3900 — the largest remaining gap, and
+  it is on the main development machine; Mac CPU decode unresolved (0.5B AMBIGUOUS-LOW, 1.5B void). Mac CPU
+  prefill at parity-to-ahead (2026-09 row, not re-measured). *(Until 2026-09-25 this line read "ahead on
+  small models at short context (1.13×), behind at depth (0.71× by 3900)" and "Mac CPU decode 0.57–0.77×
+  behind"; both are superseded.)*
 - **Serving.** Single-request by design: one decode worker per model behind a bounded queue.
   Resident prefix reuse since 2026-09-02 (exact-extension only for recurrent families);
   speculative decoding still off for hybrids pending the state snapshot

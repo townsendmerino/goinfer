@@ -193,15 +193,20 @@ backend, which is the standing tax of owning the forward pass rather than inheri
 ## How it stands against the peers
 
 Against current Ollama, this repo's own summary in [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) is that goinfer is at
-parity or slower almost everywhere. The cgo-free CUDA backend holds a real edge only on
-small-model dense 4-bit decode at short context (≤512 tokens) — 0.5B **1.24×**, 1.5B **1.13×**,
-where launch overhead dominates and Go's cheaper dispatch shows — and reaches parity at 7B
-(1.00×). *(An earlier draft of this paragraph said "about 1.7× at 0.5B... parity at 1.5B," from a
+parity or slower on most surfaces. The cgo-free CUDA backend is the exception. On a pre-registered
+sweep of 2026-09-25, the first with flash-decode on by default, it was level with or ahead of Ollama on
+dense 4-bit greedy decode at 10 of 12 cells across the 0.5B, 1.5B and 7B from 128 to 8,000 tokens
+(1.05–1.30× where ahead, 0.99× on the 7B at 8,000), and behind at none; two cells could not be graded
+([`docs/measurements/peer-claim-2026-09-25.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/peer-claim-2026-09-25.md)).
+On Apple Silicon and on CPU it is still behind. Before flash-decode the CUDA edge held only at short
+context — 0.5B **1.24×**, 1.5B **1.13×**, parity at 7B — where launch overhead dominates and Go's
+cheaper dispatch shows. *(An earlier draft of this paragraph said "about 1.7× at 0.5B... parity at 1.5B," from a
 pairing whose goinfer half was later retired as a methodology mismatch; both figures are
-withdrawn — see `docs/benchmarks.md`'s own note on it.)* The edge inverts at deeper context —
-Ollama wins, and the gap widens with depth — and it still loses on prefill, though far less than
-it used to: 1.9–3.2× behind now, down from 12–15× before the CUDA tensor-core prefill kernel
-landed, as Chapter 8 covered.
+withdrawn — see `docs/benchmarks.md`'s own note on it.)* Until that sweep, the edge inverted at
+deeper context, with Ollama winning and the gap widening with depth; flash-decode is what closed it.
+On prefill throughput it still loses, though far less than it used to: 1.9–3.2× behind, down from
+12–15× before the CUDA tensor-core prefill kernel landed, as Chapter 8 covered. Time to first token,
+the number a user feels, measured level with Ollama's on the 1.5B at 512 and 3,900 prompt tokens.
 
 That is the trade stated plainly. A years-tuned CUDA kernel written by people who do only
 that will beat a portable one. Owning the forward pass in Go costs throughput.

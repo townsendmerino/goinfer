@@ -409,4 +409,71 @@ Two sessions, so the attribution is a reading, not a paired result.
 
 ## Part 3 — the claim
 
-*(STEP 3, written by nobara-pc after both halves are in main.)*
+*(STEP 3, written by nobara-pc on 2026-09-25 after both halves were in main: g–i at `558c6cad`, a–f at `02d86285`.
+Every sentence below uses the wording Part 1 fixed for its outcome.)*
+
+### The claim
+
+**The unqualified claim, "goinfer is as fast as Ollama or faster", is not earned.** Part 1 allowed it only if every
+graded cell in a, b, d, e, f, g, h and i came out AHEAD, LEVEL or AMBIGUOUS-HIGH, and e, g, h and i did not. Only one
+family holds in full, D, so under Part 1's rule it is the headline: **on an RTX 2070 SUPER, goinfer's time to first
+token on qwen2.5-coder 1.5B is 4.99× / 1.02× Ollama v0.32.5's at 512 / 3900 prompt tokens (>1 = goinfer faster), and
+both cells are AMBIGUOUS-HIGH: level, never "ahead", because Ollama's own run-to-run spread caps them.** This is not a
+prefill-throughput claim. Next to it, family A holds in its partial form. On the same card, goinfer's greedy decode is
+level with or ahead of Ollama v0.32.5 on:
+- qwen2.5-coder 0.5B at depth 128, 3900 and 8000;
+- qwen2.5-coder 1.5B at 128, 2048, 3900 and 8000;
+- qwen2.5-7B at 2048, 3900 and 8000.
+
+It is 1.05–1.30× where ahead, and 0.99× (level) on the 7B at 8000. It is behind at none of the twelve cells, and two
+are void, because Ollama ended its reply early: 0.5B @2048 and 7B @128, raw 1.13× and 1.10×. The CUDA controls (B)
+are ahead on gemma3-1b at 3900 (1.26×) and on phi3-mini at 128 (1.14×). gemma3-1b at 128 and phi3-mini at 3900 are
+void. phi3-mini at 3900 is where flash-decode declines: it reads 0.80× raw against Ollama and is BEHIND llama.cpp
+(0.79×). Neither control widens A to "windowed models" or to "models where flash-decode declines". For sampled decode
+(F) at depth 128:
+- temperature 0.8 with top_p 0.95: ahead on the 0.5B (1.19×) and level on phi3-mini (1.03×, AMBIGUOUS-HIGH);
+- temperature 1.0: ahead on phi3-mini (1.14×); the 0.5B cell is void.
+
+Gemma 4 26B-A4B on an 8 GB card (C): goinfer, keeping every expert on the GPU (host↔VRAM streaming), decodes at
+1.82× Ollama's rate with its CPU offload (AHEAD). The checkpoints differ (int4 `.giw` against Q4_K_M), so this is an
+architecture comparison. Where the claim does not hold:
+- **CPU, Ryzen 7 3700X (E):** goinfer's greedy decode is behind Ollama v0.32.5's, 0.80× at 0.5B; the 1.5B and 7B are
+  void (raw 0.80× / 0.84×).
+- **M1 Pro with Metal (G):** goinfer is ahead at 0.5B depth 128 (1.18×) and behind at every 2048 and 3900 cell
+  (0.58–0.75× across 0.5B / 1.5B / 7B); 1.5B and 7B at 128 are void.
+- **M1 Pro Metal time to first token (H), 1.5B:** 0.38× at K=512 (AMBIGUOUS-LOW) and 0.24× at K=3900 (BEHIND).
+- **M1 Pro CPU decode (I):** AMBIGUOUS-LOW on the 0.5B and void on the 1.5B.
+
+Against llama.cpp, read by its own pairs:
+- **RTX 2070 SUPER:** goinfer is ahead on the 1.5B at 128 and 2048 (1.11× / 1.04×) and level at 3900. It is level on
+  the 7B at 2048 and 3900. It is behind on the 0.5B at every graded depth (0.83–0.92×) and at 8000 on the 1.5B and 7B
+  (0.95× / 0.94×).
+- **M1 Pro:** goinfer is ahead only on the 0.5B at depth 128.
+- **CPU, both machines:** goinfer is behind.
+
+Each sentence covers only the cells it names: these models at q4_K_M (int4 on goinfer's side of the 26B), these
+depths, Ollama v0.32.5, llama.cpp `427291b` on nobara-pc and `c1d0e7a00` on the Mac, driver `595.91.07`, macOS 26.6.2.
+Nothing is extrapolated to other sizes, families, quantizations, hardware or peer versions.
+
+### Features: where each has what the other lacks
+
+Peer cells are from `benchmarks.md` Table 1, whose Ollama column was verified against Ollama's repo and docs on
+2026-06-10 and not re-verified for this page; goinfer cells are from the tree at `411e7fc4`.
+
+| area | goinfer has, Ollama lacks | Ollama has, goinfer lacks |
+|---|---|---|
+| **Model library and registry** | — | `ollama pull <name>` from Ollama's own library of models that are already quantized and templated. goinfer's `pull` fetches `hf:owner/repo[:quant\|:file.gguf]` references and a few curated `demo:` tiers, sha256-checked, and has no registry of its own |
+| **Concurrent models and parallel requests** | — | parallel request slots through `llama-server` (Table 1: "~ parallel slots"), and several loaded models. goinfer is batch-1 by design: one decode worker per model behind a bounded queue, and no continuous batching |
+| **AMD GPUs (ROCm) and GPU breadth** | a WebGPU backend, which Ollama has no build of (§B8 ⁱ) | CUDA, **ROCm**, Vulkan and Metal. goinfer has CUDA, Metal and WebGPU, and no ROCm backend. WebGPU is its only route to an AMD GPU, and no AMD GPU has been measured |
+| **Model coverage** | — | broad coverage, against goinfer's 36 architectures |
+| **Multimodal** | — | broad vision support. goinfer has vision input only (Gemma 3, Qwen2.5-VL) and no audio |
+| **Native dependencies** | pure Go, `CGO_ENABLED=0`, one static binary. Ollama spawns a native `llama-server` alongside its own binary (Table 1 ᵇ) | — |
+| **Model inside the binary** | a `.giw` mapped from the executable image | — |
+| **Correctness contract** | a Hugging Face logit-parity gate per family, and bit-identical decode | — |
+| **Checkpoint formats** | loads safetensors, GPTQ, AWQ, GGUF and `.giw` directly. Ollama's runner reads GGUF (plus MLX); its importers are not checked here | — |
+| **A MoE larger than VRAM** | runs every expert on the GPU, streamed host↔VRAM (the architecture behind cell c's 1.82×) | offloads layers to the CPU instead. Different, not missing: both run the 26B on 8 GB |
+| **Cold start** | download, pull and first reply in 25 s against Ollama's 33 s on the M1 Pro, with no daemon (`cold-user-2026-09-06.md`, scenario E) | — |
+
+The two rows the brief named as Ollama's strengths are its real advantages: the model library, and serving several
+models and parallel requests. goinfer has no answer to either, by design (single-user, batch-1). The ROCm row is a
+plain gap.

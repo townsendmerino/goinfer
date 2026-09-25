@@ -109,9 +109,12 @@ driver stack; re-anchored on `595.91.07` / Nobara 44 on 2026-08-27, `benchmarks.
 count. **16.98 tok/s at 38 slots** stands as a record rather than a current claim — the card now
 grants at most 30 slots for the same request, so that configuration is no longer available here;
 at 30 it measures 16.12. Read the slot count as part of the claim.
-(Current Ollama also runs this 26B on 8 GB, but by offloading 58% to the CPU, at ~24.5 tok/s;
-goinfer's distinction is all-experts-on-GPU, not that peers can't run it —
-[docs/completed/task-moe-streaming.md](completed/task-moe-streaming.md).)*
+(Current Ollama also runs this 26B on 8 GB, by offloading 58% to the CPU; goinfer's distinction is
+all-experts-on-GPU, not that peers can't run it —
+[docs/completed/task-moe-streaming.md](completed/task-moe-streaming.md). Ollama was the faster of the two
+at ~24.5 tok/s until this release's DMA overlap; the pre-registered sweep of 2026-09-25 measured goinfer
+40.2 tok/s against Ollama 22.2 at ctx 2048, an architecture comparison on different checkpoints —
+[docs/measurements/peer-claim-2026-09-25.md](measurements/peer-claim-2026-09-25.md), cell c.)*
 
 > **Running a model larger than your card is opt-in, and the runtime does the sizing.** Gemma 4
 > residency is on by default; host→VRAM expert streaming is not. Without it the 26B's experts must

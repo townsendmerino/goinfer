@@ -84,8 +84,10 @@ last: goinfer **192.8 tok/s** vs Ollama **183.6 tok/s**, ~5% ahead
 ([`docs/measurements/cold-user-2026-09-06-nobara-pc.md`](docs/measurements/cold-user-2026-09-06-nobara-pc.md),
 scenario E) — consistent with `docs/benchmarks.md` §B8's own formally-provenanced anchor table,
 whose shallow-KV-depth cells (this was a short completion, effectively depth ≈128) show goinfer
-ahead of Ollama on the same quant class; §B8's deeper cells show Ollama pulling ahead as context
-grows, which this short run does not contradict. Measure it yourself rather than trust either
+ahead of Ollama on the same quant class. §B8's deeper cells showed Ollama pulling ahead as context
+grew; since flash-decode, the pre-registered sweep of 2026-09-25 has goinfer level or ahead at 10 of
+12 cells from 128 to 8,000 tokens and behind at none, with two void
+([`docs/measurements/peer-claim-2026-09-25.md`](docs/measurements/peer-claim-2026-09-25.md)). Measure it yourself rather than trust either
 number: `scripts/bench_peer.py` is the committed harness both of the above used underneath —
 same weights both sides, decode-only, interleaved, server-restarted per cell, provenance
 stamped into the output file.

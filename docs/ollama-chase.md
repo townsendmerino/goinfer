@@ -1155,7 +1155,10 @@ why its rate stays flat where our 12-block-per-head kernel starves.
 ### D5. Hybrid GPU/CPU **layer split** — the right shape for an oversized model — **scoped, not built**
 
 Ollama runs Gemma-4 **26B-A4B** at **24.5 tok/s** on the same 8 GB card that goinfer's expert
-paging gets **16.98** (both measured, §B4). The difference is architectural, and it is worth
+paging gets **16.98** (both measured, §B4). *(Superseded 2026-09-25: with the C′ DMA overlap, goinfer
+decodes it at 40.2 tok/s against Ollama's 22.2 at ctx 2048, in the pre-registered sweep
+`docs/measurements/peer-claim-2026-09-25.md` cell c. The mechanism below still describes the two
+architectures; the speed ordering it was written against no longer holds.)* The difference is architectural, and it is worth
 stating as a mechanism, not a number:
 
 - **Layer split (Ollama):** partition *layers* between GPU and CPU. The only thing that crosses
