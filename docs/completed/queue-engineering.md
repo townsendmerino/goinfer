@@ -260,8 +260,9 @@ capacity question to answer and no leak to hunt. **Confirmed empirically, not ju
 commit's own claim:** the archived GREEN CUDA gate for `v0.14.0` at `c6760d7`
 (`docs/measurements/gpu_gate_cuda_v0.14.0_c6760d7_PASS.log`) shows the full heavy tier passing
 clean — `TestB2DenseFlagship` PASS, `TestRealForwardParity` PASS, "heavy tier (real models) — 2325s"
-PASS — and the suite now includes `cuda/zz_a12_baseline_test.go`'s `TestZZ_A12ContextBaseline`, the
-per-context-reservation bound `e682eb2` added as this investigation's lasting instrument.
+PASS — and the suite then included `TestZZ_A12ContextBaseline` (cuda's zz_a12 baseline test), the
+per-context-reservation bound `e682eb2` added as this investigation's lasting instrument — an env-gated
+probe, "not a gate" by its own skip text, deleted 2026-09-25.
 
 **Below is the investigation as it happened, kept for the reasoning** (the "STILL OPEN" candidate
 list, the retraction, the later "declining ceiling" re-measurement, and the three-option decision

@@ -145,8 +145,8 @@ f32-scratch handicap) and answers where the real per-token cost goes. Method: th
 this repo's env-gated component-stub/timing approach (piggybacked on the existing
 `GOINFER_DECODE_TIMING` flag), plus a static weight-kind inspection and an `iostat` cross-check.
 All instrumentation was added, used to record the numbers below, then reverted — the working tree
-carries only the permanent, env-gated `decoder/qwen35_paged_diag_probe_test.go` (a static inspector,
-no hot-path cost, same disposition as the existing `*_probe_test.go` files).
+carried only the env-gated qwen35 paged-diag probe test in decoder (a static inspector,
+no hot-path cost, same disposition as the existing `*_probe_test.go` files; deleted 2026-09-25).
 
 **Headline number corrected first.** Part A's "~0.86 tok/s" divided wall-clock by completion tokens
 alone. This architecture's prefill is NOT batched — "prefill path: sequential... this arch has its

@@ -15,9 +15,10 @@
 > `__fmaf_rn` ordering regardless of what the compiler would otherwise choose. The real
 > MoE-resident-parity gate (`moe_parity_test.go`) measures the EXACT SAME `min cosine 0.997829`
 > before and after — not just passing, byte-for-byte the same number, on the box's real GPU.
-> `TestMoEPTX_versionMatchesItsDocumentation` is green now that the claim and the artifact agree
-> again; it stays as a standing drift guard rather than being deleted, since nothing prevents a
-> fourth ambient regen.
+> `TestMoEPTX_versionMatchesItsDocumentation` went green once the claim and the artifact agreed
+> again. It was kept for a while as a drift guard and deleted 2026-09-25 by owner decision; nothing
+> now checks this file's version claim against `moe.ptx`'s NVRTC banner, so a fourth ambient
+> regen has to be caught by reading that banner (`head` of `moe.ptx`), not by a test.
 
 `moe.ptx` is an **audited artifact**: it ships built at CUDA **NVRTC 12.6.85**, while this dev box
 runs 12.9.86. The standing rule is often paraphrased as "never regenerate moe.ptx". That is not

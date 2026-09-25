@@ -25,8 +25,8 @@ design against:
    (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, `~/models`), real prefill to depth, `-benchtime=30x
    -count=3`. Costs 3-44 minutes per run (prefill to depth is O(depth) and re-run per rep) — the
    tool that surfaced the problem, too slow to debug it with.
-2. **`TestZZDiagGroupedFires`** (`decoder/zz_diag_test.go`, a temporary diagnostic kept rather
-   than reverted — see its own doc comment and the `GOINFER_ATTN_TIMING_DEBUG` entry in
+2. **`TestZZDiagGroupedFires`** (decoder's zz_diag test file, a temporary diagnostic kept rather
+   than reverted, deleted 2026-09-25 with the `attnElapsedNanos` timer it drove — see its own doc comment in history and the `GOINFER_ATTN_TIMING_DEBUG` entry in
    `docs/env-vars.md`). Prefills ONCE, times both arms within one process, reports total tok/s, a
    temporary `attnElapsedNanos` atomic (wall time inside `attendBatchedHeads` specifically,
    `GOINFER_ATTN_TIMING_DEBUG=1`), and the `attnGroupedRuns` wiring-proof counter. Costs 15-25s at

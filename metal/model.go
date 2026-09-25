@@ -2306,7 +2306,7 @@ func (r *resident) canUseF16Lane(l int) bool {
 const attnFACoreCount = 14
 
 // attnFADepthFloor is where attention_fa (at a properly-sized split count) starts beating the
-// shipped kernel — measured directly (metal/attn_fa_speed_test.go, tight-interleaved min-of-40,
+// shipped kernel — measured directly (TestAttentionFA_speedProbe, since deleted; tight-interleaved min-of-40,
 // S sized to attnFACoreCount*2): 0.98x at K=1024 (not yet a win), 1.07x at K=1536, climbing to
 // 1.26x at K=3900. S=1 (no split) is NOT a shallow-depth fallback within this kernel — it measured
 // UNIFORMLY worse than shipped at every depth tried (0.38-0.53x even at K=1024), so below this

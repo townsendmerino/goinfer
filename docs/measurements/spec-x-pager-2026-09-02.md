@@ -15,7 +15,7 @@ Four independent gates produce that, and no two are the same mechanism:
 | gate | where | refuses |
 |---|---|---|
 | batched verify declines for MoE | `cuda/prefill.go:304` (`r.moe \|\| r.gemma4Moe`) | **every** MoE, block-drafted spec |
-| rollback unsafe: recurrent | `decoder/forwardn.go:219` (`Recurrent`) | Gated-DeltaNet / Mamba-2, n-gram spec |
+| rollback unsafe: recurrent | `decoder/forwardn.go:209` (`Recurrent`) | Gated-DeltaNet / Mamba-2, n-gram spec |
 | rollback unsafe: windowed | same (`SlidingWindow > 0`) | Gemma-3/4, Mistral, Phi-3, n-gram spec |
 | MLA not resident on CUDA | `cuda/backend.go:119` | DeepSeek-V2/V3, Moonlight, Kimi — never reach the pager at all |
 

@@ -24,8 +24,8 @@ import (
 // numeric drift from the three ambient-NVRTC regens either — see REGEN.md for the full record.
 //
 // moe.cu's bare MACs remain unconverted (option (b) from the original M-35 finding), so this
-// exemption stays. TestMoEPTX_versionMatchesItsDocumentation below still runs as a standing
-// guard against a FOURTH ambient regen quietly drifting the pin again.
+// exemption stays. (TestMoEPTX_versionMatchesItsDocumentation, which held REGEN.md and this
+// exemption to moe.ptx's banner, was deleted 2026-09-25; the pin is now kept by reading the banner.)
 //
 // router_f32.cu was added AFTER this lint and never joined the list (audit C-16), so the pure-f32
 // Gemma-4 router projection — on the production decode path, and the one path the repo calls "the

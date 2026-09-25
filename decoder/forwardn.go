@@ -6,18 +6,8 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
-)
-
-// R13's attention timer: total wall time spent inside attendBatchedHeads, to isolate attention's
-// own cost from the rest of the forward pass. Off unless a test in this package turns attnTiming on
-// (decoder/zz_diag_test.go). It was an env var, GOINFER_ATTN_TIMING_DEBUG, labelled TEMPORARY;
-// retired 2026-09-24 — a diagnostic has no business being a process-wide production knob.
-var (
-	attnElapsedNanos int64
-	attnTiming       bool
 )
 
 // cpuFastAttention reports whether the operator opted into A3's f32 prefill
@@ -949,10 +939,6 @@ func attendTileForK(k *knobSet, ws *headWorkerScratch, K, nKeys, hd int) int {
 // masking stays in absolute positions (WindowStart/attendHi) and maps to physical
 // columns s-base.
 func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, global bool, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
-	if attnTiming {
-		t0 := time.Now()
-		defer func() { atomic.AddInt64(&attnElapsedNanos, time.Since(t0).Nanoseconds()) }()
-	}
 	// headsAt, not NumHeads: Laguna varies the QUERY head count per layer (its KV
 	// heads stay uniform, so `group` below is per-layer too). Every other family's
 	// headsAt returns NumHeads, leaving this identical.

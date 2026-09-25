@@ -19,8 +19,9 @@
 > its real call site, and pager hit rate vs gemma4 (79.0-83.6% vs 81.6%) all landed there per this
 > brief's own "Deliverable" section. Percentages sum to ~100% as required ("Sum ≈ 766 ms/token vs
 > the framework's own independently-measured... 764 ms/token"). The one permanent artifact this
-> diagnostic left behind, the env-gated `decoder/qwen35_paged_diag_probe_test.go` (a static
-> inspector, no hot-path cost), is still in the tree and still references this prompt by name. The
+> diagnostic left behind, the env-gated qwen35 paged-diag probe test in decoder (a static
+> inspector, no hot-path cost), referenced this prompt by name until it was deleted 2026-09-25 as a
+> self-described throwaway. The
 > diagnostic's own "closing recommendation" was later superseded by direct instrumentation
 > (recorded in the same section of `task-zeno-compare.md`) — that supersession is part of the
 > record this brief asked for, not evidence the brief went unmet. Nothing here is open work; the

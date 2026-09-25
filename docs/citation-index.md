@@ -78,12 +78,12 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/fitguard.go:278` | goinfer | `_, own := arch.ownForward()` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4.go:29` | goinfer | `func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4_batched.go:198` | goinfer | `// All K rows must be appended before ANY row's attention is read this` |
-| `docs/audit-2026-09-10.md|decoder/forwardn.go:1055` | goinfer | `// dotF32Acc64 leaves idle (each key's own d-order fold is unchanged, so` |
-| `docs/audit-2026-09-10.md|decoder/forwardn.go:1587` | goinfer | `func (m *Model) lmHeadN(h []float32, M int) []float32 {` |
-| `docs/audit-2026-09-10.md|decoder/forwardn.go:1640` | goinfer | `if cache.treeMask != nil && !m.canBatchN(K) {` |
-| `docs/audit-2026-09-10.md|decoder/forwardn.go:177` | goinfer | `if _, own := a.ownForward(); own {` |
-| `docs/audit-2026-09-10.md|decoder/forwardn.go:219` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
-| `docs/audit-2026-09-10.md|decoder/forwardn.go:792` | goinfer | `// constraint, so the slot is what gets to decide. Every other slot buffer follows from ` |
+| `docs/audit-2026-09-10.md|decoder/forwardn.go:1041` | goinfer | `// dotF32Acc64 leaves idle (each key's own d-order fold is unchanged, so` |
+| `docs/audit-2026-09-10.md|decoder/forwardn.go:1573` | goinfer | `func (m *Model) lmHeadN(h []float32, M int) []float32 {` |
+| `docs/audit-2026-09-10.md|decoder/forwardn.go:1626` | goinfer | `if cache.treeMask != nil && !m.canBatchN(K) {` |
+| `docs/audit-2026-09-10.md|decoder/forwardn.go:167` | goinfer | `if _, own := a.ownForward(); own {` |
+| `docs/audit-2026-09-10.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
+| `docs/audit-2026-09-10.md|decoder/forwardn.go:782` | goinfer | `// constraint, so the slot is what gets to decide. Every other slot buffer follows from ` |
 | `docs/audit-2026-09-10.md|decoder/generate_vl.go:103` | goinfer | `logits, err := m.residentPrefillSeed(ctx, ids, reuseFrom, false) // no adapter path here` |
 | `docs/audit-2026-09-10.md|decoder/generate_vl.go:16` | goinfer | `func (m *Model) vlDecodeLoop(ctx context.Context, out chan<- int, g *Generation, sampler` |
 | `docs/audit-2026-09-10.md|decoder/generate_vl_resident.go:20` | goinfer | `func (m *Model) residentUploadPrefill(cache *KVCache) error {` |
@@ -280,7 +280,7 @@ supports.
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|internal/serveapp/swapguard.go:73` | goinfer | `fmt.Fprintf(os.Stderr, "swap guard: armed, threshold +%d MB over baseline\n", thresholdM` |
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|metal/alias.go:100` | goinfer | `func (a *weightAlias) nibbles(d *Device, w *linalg.WeightMat) (Buffer, bool) {` |
 | `docs/measurements/m26-alias-fork-collapse-2026-09-24.md|mmap/mmap_unix.go:46` | aikit | `data, err := syscall.Mmap(int(f.Fd()), 0, int(sz), syscall.PROT_READ, syscall.MAP_PRIVAT` |
-| `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/forwardn.go:675` | goinfer | `ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, nil, m.pager)` |
+| `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/forwardn.go:665` | goinfer | `ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, nil, m.pager)` |
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/mlp.go:421` | goinfer | `matmul(be, &ex.Gate, h, gate, 1)` |
 | `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md|metal/backend.go:634` | goinfer | `func metalFusedAttentionEnabled(v string) bool {` |
 | `docs/measurements/prefill-l2l3-phase0-2026-09-05.md|cuda/prefill.go:1394` | goinfer | `if e := r.bGemvB(r.lmW, aqB, aScB, ArgNull(), r.logitsB, M, 0); e != nil {` |
@@ -294,7 +294,7 @@ supports.
 | `docs/measurements/reduction-tree-accuracy-2026-09-12.md|cuda/prefill.go:693` | goinfer | `//	S  K=1024, K=3900 SHIP — fast is CLOSER to the reference than exact on all three crit` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|cuda/backend.go:119` | goinfer | `return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|cuda/prefill.go:304` | goinfer | `if e := r.prefillStaticDecline(); e != nil {` |
-| `docs/measurements/spec-x-pager-2026-09-02.md|decoder/forwardn.go:219` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
+| `docs/measurements/spec-x-pager-2026-09-02.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|decoder/spec_adaptive.go:182` | goinfer | `case "cuda":` |
 | `docs/measurements/spec-x-pager-2026-09-02.md|internal/serveapp/blockdrafter.go:20` | goinfer | `// IT FAILS STARTUP RATHER THAN DEGRADING SILENTLY. An operator who passed --drafter wan` |
 | `docs/measurements/spec-x-pager-prereg-2026-09-02.md|cuda/prefill.go:180` | goinfer | `return nil, e` |
@@ -332,7 +332,7 @@ supports.
 | `docs/queue-engineering.md|cuda/prefill.go:830` | goinfer | `defer func() {` |
 | `docs/queue-engineering.md|cuda/resident.go:443` | goinfer | `// backend.go locals; the per-layer KV cache and UploadKV read r.layers[l].kvDim.` |
 | `docs/queue-engineering.md|cuda/resident.go:862` | goinfer | `// decodes garbage. The setup job's last statement returns r.setupErr, which BuildReside` |
-| `docs/queue-engineering.md|decoder/forwardn.go:1598` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
+| `docs/queue-engineering.md|decoder/forwardn.go:1584` | goinfer | `logits[j] = sc * float32(math.Tanh(float64(val/sc)))` |
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
 | `docs/queue-engineering.md|decoder/model.go:1196` | goinfer | `// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own` |
@@ -355,14 +355,14 @@ supports.
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:147` | goinfer | `// head). Fixed size — independent of sequence length, and NOT position-` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:150` | goinfer | `type deltaState struct {` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:188` | goinfer | `win := st.convWin` |
-| `docs/spec/09-mtp-heads.md|decoder/forwardn.go:219` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
+| `docs/spec/09-mtp-heads.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/spec/09-mtp-heads.md|decoder/gguf.go:754` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
 | `docs/spec/09-mtp-heads.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/spec/09-mtp-heads.md|decoder/model.go:1170` | goinfer | `// Derived from the dispatch table's Captures bit rather than re-listed: the families wh` |
 | `docs/spec/09-mtp-heads.md|decoder/registry.go:1724` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/spec/09-mtp-heads.md|decoder/speculative.go:92` | goinfer | `if !target.specRollbackSafe() {` |
 | `docs/spec/09-mtp-heads.md|decoder/weights.go:623` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
-| `docs/spec/README.md|decoder/forwardn.go:219` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
+| `docs/spec/README.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/tasks/red-october.md|cuda/resident.go:249` | goinfer | `case nKV*hd >= splitkvNeverKVFloats:` |
 | `docs/tasks/red-october.md|cuda/resident.go:3642` | goinfer | `func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) {` |
 | `docs/tasks/red-october.md|decoder/sampler.go:234` | goinfer | `func (s *Sampler) ArgmaxEquivalent() bool {` |
@@ -465,8 +465,8 @@ supports.
 | `docs/tasks/task-recompute-audit.md|decoder/attention.go:98` | goinfer | `if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {` |
 | `docs/tasks/task-recompute-audit.md|decoder/blockspec.go:201` | goinfer | `func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int) bool) ` |
 | `docs/tasks/task-recompute-audit.md|decoder/blockspec.go:239` | goinfer | `if m.resDrafterSynced != s {` |
-| `docs/tasks/task-recompute-audit.md|decoder/forwardn.go:207` | goinfer | `func (m *Model) hasRecurrentState() bool {` |
-| `docs/tasks/task-recompute-audit.md|decoder/forwardn.go:219` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
+| `docs/tasks/task-recompute-audit.md|decoder/forwardn.go:197` | goinfer | `func (m *Model) hasRecurrentState() bool {` |
+| `docs/tasks/task-recompute-audit.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/tasks/task-recompute-audit.md|decoder/kvcache.go:539` | goinfer | `func (c *KVCache) TruncateTo(pos int) (exact bool) {` |
 | `docs/tasks/task-recompute-audit.md|decoder/model.go:1567` | goinfer | `// Claim it non-blockingly — a loser falls back to the staged CPU path, which uses` |
 | `docs/tasks/task-recompute-audit.md|decoder/model.go:1636` | goinfer | `reuseFrom := m.residentReuseLen(prompt, nil, lora)` |

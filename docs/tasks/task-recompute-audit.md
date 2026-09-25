@@ -134,7 +134,7 @@ positions are inherent, not recompute.
 
 - **Where:** `decoder/resident_reuse.go:118` — `if m.hasRecurrentState() {`, added
   2026-09-02 after repeated identical greedy prompts on qwen3.6-35B-A3B decoded from the previous
-  generation's tail state. `decoder/forwardn.go:207-144` is the shared predicate;
+  generation's tail state. `decoder/forwardn.go:197-134` is the shared predicate;
   `cuda/resident.go:395` holds the per-layer `dnWin`/`dnState` that are mutated in place and
   re-zeroed only at pos 0.
 - **What the staged path already does, and the resident path should copy:** the CPU `Session`
@@ -203,7 +203,7 @@ positions are inherent, not recompute.
 
   Sizes from spec/09's own record: 62.8 MiB for the 35B-A3B, 149.6 MiB for the 27B. Consumers:
   Qwen3.8-27B's native MTP head (spec/09), DFlash pairings on hybrid targets, and R-03's
-  commit-after-speculation for recurrent families. `specRollbackSafe` is `decoder/forwardn.go:219`
+  commit-after-speculation for recurrent families. `specRollbackSafe` is `decoder/forwardn.go:209`
   exactly.
 
   Three design notes from spec/09's own pricing record, carried forward so they aren't re-derived
