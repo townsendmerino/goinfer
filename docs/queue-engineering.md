@@ -498,8 +498,14 @@ coherent ("The history of the printing press is a fascinating journey…"), runn
 covered by model type (also `phi3`) without having been measured. `bench_peer.py` defaults phi3-mini to
 `-quant int8`, so it times what a user gets.
 
-**Next, in order:** (1) a max/rms sweep of projection inputs across every family with a local
-checkpoint, to size the problem before touching kernels; (2) per-group activation scales in the W4A8/W8A8
+**Step 1 done (2026-09-25):** the sweep of goinfer's quants against its own f32 across 12 families
+(`docs/tasks/task-actquant-pergroup-2026-09.md` § Blast radius; raw data in
+`docs/measurements/actquant-sweep-2026-09-25/`). Activation damage is general and mostly confined to the
+first token; it is widespread for phi3-mini and **qwen2.5-7b** (int8int8 p10 0.83, int4 p10 0.15 on
+filler). A separate int4 WEIGHT-quality problem shows on llama3.2-1b, which per-group activation scales
+will not fix.
+
+**Next, in order:** (1) done, above; (2) per-group activation scales in the W4A8/W8A8
 kernels (below); (3) lift the guard once Phi-3's int4 output passes a long-prompt quality gate.
 
 **Fix options considered** (the owner chose the first, preceded by the guard):
