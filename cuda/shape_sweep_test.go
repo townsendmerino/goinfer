@@ -286,3 +286,15 @@ func TestGemvShapeSweep_coversTheOOBGeometry(t *testing.T) {
 // func32Poison is a non-zero packed-int8 sentinel (4 x 0x5A) for the activation guard band: an
 // out-of-bounds __dp4a against it yields a large wrong contribution rather than a silent zero.
 const func32Poison int32 = 0x5A5A5A5A
+
+// f16tof32 expands an IEEE half for the test references (the f32→f16 direction, f32tof16, lives in
+// kernels.go with the production packer).
+func f16tof32(h uint16) float32 {
+	s := uint32(h&0x8000) << 16
+	e := uint32((h >> 10) & 0x1f)
+	m := uint32(h & 0x3ff)
+	if e == 0 {
+		return math.Float32frombits(s)
+	}
+	return math.Float32frombits(s | (e-15+127)<<23 | m<<13)
+}

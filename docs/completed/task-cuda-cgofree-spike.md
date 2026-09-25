@@ -591,6 +591,11 @@ needs more loads in flight to saturate bandwidth. Extended ladder:
 2× is the sweet spot: clean for K=1536 (192÷64=3 exact) and near-clean for K=8960; 4× sends
 half the K=1536 work through the slow 32-stride remainder. COAL3 wired into `gemv_w4a8_fwd`.
 
+> **Variant code removed 2026-09-24.** The seven comparison kernels above were never on a production path (the
+> winner lives on in aikit's `gpu.QuantGEMVPTX`): `cuda/gemv_w4a8{,_fast,_coal,_coal2,_coal3,_coal4,_v4}.cu`, their
+> `cuda/testdata/*.ptx` (~79 KB) and the tests that loaded them (`w4a8_test.go`, `w4a8_fast_test.go`,
+> `realweight_test.go`, `e2e_int4_test.go`) were deleted in the owner's clean-up; last present at `8f452a7e`.
+
 Real q4_k_m e2e: 210.6 → **218.6 tok/s** = **1.47× Ollama / 1.96× WebGPU**. Parity re-run
 IMPROVED: **9/10 exact** (the 2×-unroll float order aligns better with CPU), worst near-tie
 0.087%, 0 hard fails.

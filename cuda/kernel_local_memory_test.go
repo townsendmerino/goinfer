@@ -151,8 +151,9 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 	// AUDITED 2026-09-12 against the embeds (docs/completed/cuda-megakernel-closeout.md): 31 .ptx
 	// blobs are go:embed-ed across cuda/*.go today, 22 of them in kernels.go — exactly what
 	// ptxModules() reports, since G-13(b) made it read that same file. The other 9
-	// (gemv_w4a8{,_coal,_coal2,_coal3,_coal4,_fast,_v4}.ptx, gemv_w8a8.ptx, addone.ptx) are
-	// referenced only from _test.go — variant-comparison blobs, no production path; megakernel.ptx
+	// (gemv_w4a8{,_coal,_coal2,_coal3,_coal4,_fast,_v4}.ptx, gemv_w8a8.ptx, addone.ptx) were
+	// referenced only from _test.go — variant-comparison blobs, no production path; the seven
+	// gemv_w4a8 variants were removed 2026-09-24 (last at 8f452a7e), leaving two; megakernel.ptx
 	// (the tenth such blob as of the prior audit) was deleted in this closeout along with the rest
 	// of the dead scaffold. Re-run this count (`grep -n go:embed cuda/*.go`, then which vars
 	// non-test files use) if kernels.go's own embed list ever needs independent confirmation —
