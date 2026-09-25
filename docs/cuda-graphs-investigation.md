@@ -313,6 +313,30 @@ processes and can destabilize the session — use exact PIDs or a specific patte
    against the ~1.4–1.7× prediction. Bit-exact gate that must pass first:
    `TestGemma4Graphs_bitExact_{tiny,scaled}` under churn on the target GPU.
 
+## 8b. The 26B measurement (2026-09-24) — graphs pay on the C′ MoE path
+
+Asked for by the owner before deciding whether graphs stay (they block compute-time LoRA and force the C′ DMA
+overlap off). `TestGraphsDecode26B` (`cuda/graphs_speed_test.go`): real `gemma4-26b-int4.giw`, C′ expert cache
+(29 slots), RTX 2070 SUPER, DEFAULT compute mode so graphs via `GOINFER_CUDA_GRAPHS_UNSAFE=1` (the self-test
+passed), greedy decode feeding each argmax back, 32 teacher-forced + 128 measured steps, four separate loads ABBA.
+Pre-registered rule: >= 1.05x keep, <= 1.00x remove, between → owner.
+
+| arm | tok/s | overlap |
+|---|---|---|
+| default (graphs off) | 39.71, 40.05 | on |
+| graphs on | 53.97, 52.86 | off (forced) |
+
+**graphs/default = 1.339x, token streams identical → KEEP.** On the dense 1.5B graphs bought 1.01x; on the 26B
+the per-token launch count is several times larger (per-layer MoE segments), and removing it outweighs losing the
+DMA overlap, in this regime.
+
+**What this does NOT establish.** 40 tok/s is well above the 26B C′ figures on record (~16–17 tok/s), so the
+continuation from a pseudo-random prompt is most likely a repetitive loop with an expert cache near 100% hits —
+the launch-bound regime graphs are best at, and the one where losing the overlap costs least. On real prompts
+(more misses, more DMA) the overlap matters more. So: graphs stay; making them a default (or a C′ default) needs
+the same A/B on real prompts, with the hit rate reported, plus the tenancy/Ampere+ questions in §8.
+Log: `~/goinfer-logs/env-config/graphs26b.log`.
+
 ## 9. File / commit map
 
 - `aikit/gpu/cuda.go` — `Queue.Capture`, `Graph.Replay/Close` (`gpu/v0.21.0`, `b4fb5c1`);

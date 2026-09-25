@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -79,4 +80,103 @@ func TestGraphsDecodeSpeedup(t *testing.T) {
 		t.Fatal("graphs did not enable under the UNSAFE override")
 	}
 	t.Logf("decode tok/s (1.5B, greedy): live %.1f  |  graphs %.1f  →  %.2f×", base, g, g/base)
+}
+
+// TestGraphsDecode26B is the one measurement CUDA graphs were owed before deciding their fate
+// (docs/cuda-graphs-investigation.md: ~1.01x on the dense 1.5B; the 26B MoE was never measured). On
+// the C′ path graphs are not free to turn on: they force the DMA overlap off (a captured segment
+// cannot wait per miss) and block compute-time LoRA. So the comparison is the trade itself —
+// today's default (graphs off, overlap on) against graphs on (overlap off) — not graphs vs a
+// strawman. Greedy decode feeds each argmax back, so MoE routing and the expert cache see a real
+// continuation. Arms are separate loads (two 26B residents do not fit 8 GB), interleaved ABBA.
+//
+// Pre-registered decision rule (2026-09-24, before running): graphs >= 1.05x default → worth
+// keeping; <= 1.00x → remove graphs; between → ambiguous, back to the owner.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -run TestGraphsDecode26B -v -timeout 30m
+func TestGraphsDecode26B(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads the real 26B four times)")
+	}
+	path := os.Getenv("GOINFER_GEMMA4_26B_GIW")
+	if path == "" {
+		path = modelPath("gemma4-26b-int4.giw")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no 26B .giw at %s: %v", path, err)
+	}
+	t.Setenv("GOINFER_MOE_CACHE_EXPERTS", "1")
+	start := time.Now()
+
+	const warm, steps = 32, 128
+	run := func(graphs bool, arm int) (float64, []int) {
+		if graphs {
+			t.Setenv("GOINFER_CUDA_GRAPHS", "1")
+			t.Setenv("GOINFER_CUDA_GRAPHS_UNSAFE", "1")
+		} else {
+			t.Setenv("GOINFER_CUDA_GRAPHS", "")
+			t.Setenv("GOINFER_CUDA_GRAPHS_UNSAFE", "")
+		}
+		fmt.Fprintf(os.Stderr, "[graphs26b %s] arm %d/4 graphs=%v: loading (elapsed %s)\n",
+			time.Now().Format("15:04:05"), arm, graphs, time.Since(start).Round(time.Second))
+		m, err := decoder.Load(path, decoder.Options{Backend: "cuda"})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		defer m.Close()
+		rf, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok || rf == nil {
+			t.Fatalf("cuda resident declined the 26B: %s", m.ResidentDecline())
+		}
+		if rf.graphs != graphs {
+			t.Fatalf("graphs=%v requested, resident has %v", graphs, rf.graphs)
+		}
+		if graphs && rf.overlap {
+			t.Fatal("graphs on but the DMA overlap is still on — the trade this measures is not in effect")
+		}
+		_, _, _, _, _, _, vocab := m.Dims()
+		id := 2
+		for i := range warm { // a fixed pseudo-random prompt, teacher-forced
+			next, err := rf.ForwardArgmax(m.EmbedResidentForTest((i*2654435761+7)%(vocab-1)), i)
+			if err != nil {
+				t.Fatalf("warm: %v", err)
+			}
+			id = next
+		}
+		out := make([]int, steps)
+		t0 := time.Now()
+		for i := range steps { // greedy continuation: routing follows the model's own output
+			next, err := rf.ForwardArgmax(m.EmbedResidentForTest(id), warm+i)
+			if err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			out[i], id = next, next
+		}
+		tps := float64(steps) / time.Since(t0).Seconds()
+		fmt.Fprintf(os.Stderr, "[graphs26b %s] arm %d/4 graphs=%v overlap=%v slots=%d: %.2f tok/s\n",
+			time.Now().Format("15:04:05"), arm, graphs, rf.overlap, rf.cacheSlots, tps)
+		return tps, out
+	}
+
+	d1, outD := run(false, 1)
+	g1, outG := run(true, 2)
+	g2, _ := run(true, 3)
+	d2, _ := run(false, 4)
+	def, gr := (d1+d2)/2, (g1+g2)/2
+	same := len(outD) == len(outG)
+	for i := range outD {
+		if outD[i] != outG[i] {
+			same = false
+			break
+		}
+	}
+	verdict := "AMBIGUOUS — back to the owner"
+	switch {
+	case gr >= 1.05*def:
+		verdict = "KEEP (>= 1.05x)"
+	case gr <= def:
+		verdict = "REMOVE (<= 1.00x)"
+	}
+	t.Logf("26B C′ decode tok/s, ABBA: default(overlap on) %.2f / %.2f, graphs(overlap off) %.2f / %.2f → graphs/default %.3fx; token streams identical=%v; rule: %s",
+		d1, d2, g1, g2, gr/def, same, verdict)
 }
