@@ -534,7 +534,7 @@
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
     "modality": "text",
-    "gpu_residency_eligible": true,
+    "gpu_residency_eligible": false,
     "parity": "full-oracle 100.0%/1.00000",
     "checkpoint": {
       "name": "phi3-mini-4k",
