@@ -20,15 +20,15 @@ func TestResidencySet_pinsExactlyTheLiveSlots(t *testing.T) {
 		t.Skip("no MTLResidencySet (needs macOS 15+)")
 	}
 	const ckpt = "../testdata/gemma4-moe-tiny"
+	// Before Load: the model snapshots its knobs there, and buildResident reads the snapshot.
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
+	t.Setenv("GOINFER_METAL_MOE_SLOTS", strconv.Itoa(3)) // < nE (4) → paged
+	t.Setenv("GOINFER_MOE_RESIDENCY", "1")               // default-on anyway; explicit for the gate
 	m, err := decoder.Load(ckpt, decoder.Options{Quant: "int4"})
 	if err != nil {
 		t.Skipf("no fixture: %v", err)
 	}
 	defer m.Close()
-
-	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
-	t.Setenv("GOINFER_METAL_MOE_SLOTS", strconv.Itoa(3)) // < nE (4) → paged
-	t.Setenv("GOINFER_MOE_RESIDENCY", "1")               // default-on anyway; explicit for the gate
 
 	r, err := buildResident(m)
 	if err != nil {

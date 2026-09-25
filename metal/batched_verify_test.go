@@ -452,7 +452,8 @@ func TestBatchedVerifyE2ECurve(t *testing.T) {
 	// spec_verify_curve_test.go itself, warmup uses the (non-bit-identical, but irrelevant for
 	// warmup — only the TIMED calls below need to be the real thing) f16-MMA PrefillLast to reach
 	// depth fast, forced on via the same env var that test uses.
-	t.Setenv("GOINFER_METAL_BATCHED_PREFILL", "1")
+	setResidentKnob(t, seq.(*metalResident).r, "GOINFER_METAL_BATCHED_PREFILL", "1")
+	setResidentKnob(t, r, "GOINFER_METAL_BATCHED_PREFILL", "1")
 	seqPF, ok := seq.(decoder.Prefiller)
 	if !ok {
 		t.Fatal("sequential resident does not implement decoder.Prefiller — cannot fast-warm")

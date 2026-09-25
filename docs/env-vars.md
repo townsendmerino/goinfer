@@ -11,7 +11,7 @@ is grep-derivable and enumerated at the bottom.
 
 ## Read once per model, at Load (since 2026-09-24)
 
-These thirty-two knobs are snapshotted when a model is loaded, not read on every forward:
+These forty-six knobs are snapshotted when a model is loaded, not read on every forward:
 `GOINFER_ATTN_GROUPED`, `GOINFER_ATTN_ROW_TILE`, `GOINFER_PREFILL_ATTN_WORKERS`,
 `GOINFER_FUSED_ATTENTION`, `GOINFER_MLA_NAIVE`, `GOINFER_MOE_EXPERT_MAJOR`, `GOINFER_BATCHED_PREFILL`,
 `GOINFER_NO_KVONLY_PREFILL`, `GOINFER_NO_GREEDY_FASTPATH`, `GOINFER_NO_OPTFWD`,
@@ -21,10 +21,14 @@ These thirty-two knobs are snapshotted when a model is loaded, not read on every
 `GOINFER_SSM_RESIDENT`, and (phase 3, the CUDA backend's) `GOINFER_CUDA_FAST_PREFILL`, `GOINFER_CUDA_FAST_PREFILL_FLOOR`,
 `GOINFER_CUDA_FLASH_DECODE`, `GOINFER_CUDA_FLASH_DECODE_MIN_KEYS`, `GOINFER_CUDA_FLASH_DECODE_VERIFY`,
 `GOINFER_CUDA_NO_FUSE`, `GOINFER_NO_LORA_CACHE`, `GOINFER_PREFILL_CHUNK`, `GOINFER_PREFILL_IMAGE_CHUNK`,
-`GOINFER_SPLITKV_ATTN`, `GOINFER_SPLITKV_MIN_KEYS`. Changing one after Load does not affect a model already loaded. A
+`GOINFER_SPLITKV_ATTN`, `GOINFER_SPLITKV_MIN_KEYS`, and (phase 4, the Metal backend's) `GOINFER_METAL_ALIAS`,
+`GOINFER_METAL_ATTN_FA`, `GOINFER_METAL_BATCHED_PREFILL`, `GOINFER_METAL_DECODE_LANE`, `GOINFER_METAL_FAST_PREFILL`,
+`GOINFER_METAL_FAST_PREFILL_FLOOR`, `GOINFER_METAL_FUSED_ATTENTION`, `GOINFER_METAL_MOE_SLOTS`, `GOINFER_MOE_NOCACHE`,
+`GOINFER_MOE_PREAD`, `GOINFER_MOE_RESIDENCY`, `GOINFER_MOE_RESIDENCY_SCOPE`, `GOINFER_NO_RESIDENT_MEM_GUARD`,
+`GOINFER_PRECISE_MATH`. Changing one after Load does not affect a model already loaded. A
 library caller can set any of them for one model with `decoder.Options{Knobs: &decoder.Knobs{name: value}}` (which
-overrides the environment for that model only). The backends' own reads of the same name are
-unchanged until their phase: Metal still reads `GOINFER_MOE_EXPERT_MAJOR` itself. See
+overrides the environment for that model only).  The CPU, CUDA and Metal paths
+all read them from the model's snapshot (`decoder.Model.Knob`). See
 `docs/tasks/task-env-config-2026-09.md`. A test that A/Bs a loaded model uses
 `decoder.SetKnobEnvForTest`; in `goinfer_testhooks` builds a post-Load `t.Setenv` of one of these
 panics instead of silently comparing a path with itself.

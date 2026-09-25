@@ -1,6 +1,6 @@
 # Task: configuration out of the process environment (2026-09)
 
-> **Status 2026-09-24: phase 1 (the ratchet) DONE; phases 2a/2b (21 decoder knobs) and 3 (11 CUDA knobs) DONE; 4–6 open.** Owner asked for this after a review found
+> **Status 2026-09-24: phase 1 (the ratchet) DONE; phases 2a/2b (21 decoder knobs) and 3 (11 CUDA knobs) DONE; phase 4 (Metal) BUILT, awaiting a Mac run; 5–6 open.** Owner asked for this after a review found
 > configuration passed through the process environment. The four concrete defects that review named are already fixed
 > (`a50815ed`: duplicate doc rows, the darwin pager mode set via env, Metal's prefill flag re-read per call, five campaign
 > switches retired); this doc is the general program.
@@ -130,6 +130,29 @@ All eleven CUDA operator knobs (`CUDA_FAST_PREFILL`, `CUDA_FAST_PREFILL_FLOOR`, 
   (`faSplit=0` on the 1.5B at the ladder's context) on the pre-phase-3 tree too; it passes with
   `GOINFER_CUDA_FLASH_DECODE` set, as its own message asks. And `go vet -tags cuda ./cuda/` (without
   `goinfer_testhooks`) fails on `ptx_modules_cover_test.go` since `a55841f4` — CI always adds the tag.
+
+### Phase 4 result (2026-09-24) — built on Linux, NOT YET RUN ON A MAC
+
+The fourteen Metal operator knobs (`METAL_ALIAS`, `METAL_ATTN_FA`, `METAL_BATCHED_PREFILL`, `METAL_DECODE_LANE`,
+`METAL_FAST_PREFILL`, `METAL_FAST_PREFILL_FLOOR`, `METAL_FUSED_ATTENTION`, `METAL_MOE_SLOTS`, `MOE_NOCACHE`,
+`MOE_PREAD`, `MOE_RESIDENCY`, `MOE_RESIDENCY_SCOPE`, `NO_RESIDENT_MEM_GUARD`, `PRECISE_MATH`) join the snapshot
+(`metalKnobs`, `decoder/knobs.go`), and Metal's own read of `MOE_EXPERT_MAJOR` moves to it — fifteen names leave
+`testdata/env_reads.txt`. Same arrangement as phase 3: build-time reads through `modelKnob(m, name)`, per-call reads
+(`PrefillLast`'s expert-major and fused-attention switches, the fast-prefill floor, the lazy fast-prefill decision)
+through `resident.knob`; a hand-built test resident reads the live environment.
+
+- **The trap specific to Metal's tests:** many load a CPU model (`decoder.Load` without `Backend: "metal"`), set a
+  variable, and only then call `buildResident(m)`. That used to work — the build read the environment — and now the
+  build reads the snapshot taken at Load, so the setting would be silently ignored in an untagged darwin run (where
+  the drift check does not exist). Every such site was found and moved before its Load
+  (`attention_prefill_fused_cachepad`, `residency_consistency`); per-call A/Bs on a built resident use a new untagged
+  helper, `setResidentKnob` (`metal/knob_helpers_test.go`: `moe_expert_major_prefill` ×8, `prefill_startpos`,
+  `batched_verify`); `olmo3`/`smollm3` use `decoder.SetKnobEnvForTest`; `resident_memguard` now loads one model per
+  slot request through `Options.Knobs`.
+- **Verified here:** `GOOS=darwin` vet (untagged, testhooks, realckpt) and staticcheck (testhooks) clean. **Not
+  verified: any Metal test.** The gate is a Mac run of `go test -tags goinfer_testhooks ./metal/` and the untagged
+  `go test ./metal/`, both `-v`, reading for `--- FAIL` and for any `decoder: ... changed after this model was loaded`
+  panic.
 
 Phases 2–5 each shrink `testdata/env_reads.txt`; the task is done when the list holds only diagnostics with a named owner
 and a reason, and the rule-1 guard stays.

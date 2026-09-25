@@ -449,7 +449,7 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	// GOINFER_MOE_NOCACHE is deliberately NOT wired here: gemma4 measured it and DECLINED (no effect,
 	// and its motivating evidence was an ordering confound — see buildGemma4MoEResident). Porting a
 	// declined flag would re-open a settled question.
-	if mo.paged && os.Getenv("GOINFER_MOE_PREAD") != "0" {
+	if mo.paged && modelKnob(m, "GOINFER_MOE_PREAD") != "0" {
 		if p := m.GiwPath(); p != "" {
 			if f, err := os.Open(p); err == nil {
 				mo.giwFile = f

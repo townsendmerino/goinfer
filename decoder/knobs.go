@@ -57,7 +57,16 @@ var knobNames = []string{
 	knobNoResidentReuse, knobSSMResident,
 }
 
-func init() { knobNames = append(knobNames, cudaKnobs...) }
+// metalKnobs are phase 4's: the Metal backend's operator knobs, same arrangement as cudaKnobs (read through
+// Model.Knob by the Metal resident). GOINFER_MOE_EXPERT_MAJOR is shared with the CPU path and already listed.
+var metalKnobs = []string{
+	"GOINFER_METAL_ALIAS", "GOINFER_METAL_ATTN_FA", "GOINFER_METAL_BATCHED_PREFILL", "GOINFER_METAL_DECODE_LANE",
+	"GOINFER_METAL_FAST_PREFILL", "GOINFER_METAL_FAST_PREFILL_FLOOR", "GOINFER_METAL_FUSED_ATTENTION",
+	"GOINFER_METAL_MOE_SLOTS", "GOINFER_MOE_NOCACHE", "GOINFER_MOE_PREAD", "GOINFER_MOE_RESIDENCY",
+	"GOINFER_MOE_RESIDENCY_SCOPE", "GOINFER_NO_RESIDENT_MEM_GUARD", "GOINFER_PRECISE_MATH",
+}
+
+func init() { knobNames = append(append(knobNames, cudaKnobs...), metalKnobs...) }
 
 // Knobs is Options.Knobs: per-model knob values by environment-variable name.
 type Knobs map[string]string

@@ -63,7 +63,7 @@ type weightAlias struct {
 // the guard reads swap with a bare sysctl; with both, four interleaved M26 arms (two aliased) ran clean with
 // swap flat (docs/measurements/m26-alias-fork-collapse-2026-09-24.md).
 func newWeightAlias(m *decoder.Model) *weightAlias {
-	mode := os.Getenv("GOINFER_METAL_ALIAS")
+	mode := modelKnob(m, "GOINFER_METAL_ALIAS")
 	if (mode != "1" && mode != "force") || m == nil || m.GiwPath() == "" {
 		return nil
 	}

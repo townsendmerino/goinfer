@@ -212,28 +212,32 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 	unpaged := m.ResidentWeightBytes()
 	kv := residentKVBytes(m)
 
+	// The slot request is a per-model knob, read at Load (docs/tasks/task-env-config-2026-09.md, phase 4), so
+	// each arm prices its own model loaded with that request, not one model with the environment changed under it.
+	needWith := func(t *testing.T, slots string) int64 {
+		t.Helper()
+		mk, err := decoder.Load(ckpt, decoder.Options{Quant: "f32", Knobs: &decoder.Knobs{"GOINFER_METAL_MOE_SLOTS": slots}})
+		if err != nil {
+			t.Fatalf("Load (slots %q): %v", slots, err)
+		}
+		defer mk.Close()
+		return residentNeedBytes(mk)
+	}
+
 	t.Run("unset env == unpaged", func(t *testing.T) {
-		orig, wasSet := os.LookupEnv("GOINFER_METAL_MOE_SLOTS")
-		os.Unsetenv("GOINFER_METAL_MOE_SLOTS")
-		t.Cleanup(func() {
-			if wasSet {
-				os.Setenv("GOINFER_METAL_MOE_SLOTS", orig)
-			}
-		})
 		want := unpaged + m.ResidentHostCopyBytes(0) + kv
-		if got := residentNeedBytes(m); got != want {
+		if got := needWith(t, ""); got != want {
 			t.Errorf("residentNeedBytes() with no slots env = %d, want unpaged+hostcopy+kv %d", got, want)
 		}
 	})
 
 	t.Run("slots=1 matches ResidentWeightBytesPaged and is strictly smaller", func(t *testing.T) {
-		t.Setenv("GOINFER_METAL_MOE_SLOTS", "1")
 		wantWeights := m.ResidentWeightBytesPaged(1)
 		if wantWeights >= unpaged {
 			t.Fatalf("test fixture has too few experts to make this case meaningful (paged(1)=%d, unpaged=%d)", wantWeights, unpaged)
 		}
 		want := wantWeights + m.ResidentHostCopyBytes(1) + kv
-		if got := residentNeedBytes(m); got != want {
+		if got := needWith(t, "1"); got != want {
 			t.Errorf("residentNeedBytes() with GOINFER_METAL_MOE_SLOTS=1 = %d, want %d (paged weights+hostcopy+kv) — "+
 				"the guard is not asking for the paged estimate", got, want)
 		}

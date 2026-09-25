@@ -232,7 +232,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 	// (offsets are into that file); re-open it once, shared across layers. GOINFER_MOE_PREAD=0 opts out
 	// (the mmap byte-copy baseline, kept for the A/B). If open fails or the model isn't .giw-backed,
 	// buildGemma4MoELayer falls back to the byte-copy.
-	if g.paged && os.Getenv("GOINFER_MOE_PREAD") != "0" {
+	if g.paged && modelKnob(m, "GOINFER_MOE_PREAD") != "0" {
 		if p := m.GiwPath(); p != "" {
 			if f, err := os.Open(p); err == nil {
 				g.giwFile = f
@@ -244,7 +244,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 				// SECOND, and RSS-after-build is sampled BEFORE the timed decode, so the pread cache flag
 				// cannot cause it (ordering artifact). The pread win's +365 ms compute+coord displacement
 				// remains UNEXPLAINED. Kept off by default, wired, so it isn't re-proposed.
-				if os.Getenv("GOINFER_MOE_NOCACHE") == "1" {
+				if modelKnob(m, "GOINFER_MOE_NOCACHE") == "1" {
 					if _, err := unix.FcntlInt(f.Fd(), unix.F_NOCACHE, 1); err != nil {
 						fmt.Fprintf(os.Stderr, "metal gemma4 MoE: F_NOCACHE failed (%v) — pread stays buffered\n", err)
 					}
