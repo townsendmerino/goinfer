@@ -14,7 +14,7 @@ import (
 // DFlashDrafter is an imported z-lab DFlash block drafter (P10 / docs/spec/08): a small
 // non-causal transformer trunk that reads the target's hidden states (the ForwardCapture
 // seam) and proposes a whole BLOCK of tokens in one pass, instead of one token per head
-// forward the way 05's EAGLE head does. That is the draft-side economics the spec
+// forward the way 05's EAGLE head did (removed 2026-09-24). That is the draft-side economics the spec
 // program's scorecard said was the lever.
 //
 // It is deliberately smaller than it looks. The checkpoint ships ONLY the trunk —
@@ -48,9 +48,8 @@ type DFlashDrafter struct {
 	//
 	//	target_id = i + d2t[i]   for draft index i
 	//
-	// That is the same scheme EagleHead already implements; the mapping table is
-	// identical in meaning, so the arithmetic is kept identical too rather than
-	// re-derived. embed is the drafter's own token embedding over the TARGET vocab
+	// That is the same scheme the EAGLE head used (removed 2026-09-24, be9aeea8); the
+	// arithmetic was kept identical to it rather than re-derived. embed is the drafter's own token embedding over the TARGET vocab
 	// (it is fed target ids and produces the trunk's block input).
 	lmHead     linalg.WeightMat // [draftVocab, hidden]; zero-valued when the drafter borrows the target's
 	embed      linalg.WeightMat // [vocab, hidden]; zero-valued when it borrows the target's

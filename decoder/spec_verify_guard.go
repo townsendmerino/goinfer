@@ -68,11 +68,11 @@ func (m *Model) enterExactAttention() func() {
 // ngram treats a per-request spec error as "fall back to plain decode", which would leave an
 // operator who asked for speculation serving at 1x with no signal; it checks this once at load.
 //
-// The RESIDENT half is NOT consulted by the staged speculative paths (EAGLE, grammar-fused, and
-// any Session-driven n-gram run): those verify on a CPU cache, never touch the resident, and so
+// The RESIDENT half is NOT consulted by the staged speculative paths (grammar-fused, and any
+// Session-driven n-gram run): those verify on a CPU cache, never touch the resident, and so
 // cannot see a resident divergence. The STAGED (M-09) half above applies to them too in principle
-// — a staged webgpu-int4 model's decode/verify split is the same regardless of caller — but none
-// of those three entry points call this function at all today, matching this function's own
+// — a staged webgpu-int4 model's decode/verify split is the same regardless of caller — but neither
+// of those entry points calls this function today, matching this function's own
 // "exported for callers that must refuse at startup" scope; they are unaffected either way.
 func (m *Model) SpecDecodeConflict() error {
 	if m == nil {

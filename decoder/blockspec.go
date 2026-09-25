@@ -514,9 +514,9 @@ func blockSpecRoundWidth(width, maxTokens, emitted, pos, ctxCap int) int {
 }
 
 // GenerateStream is the serving-shaped entry point: greedy block-drafting speculation as a token
-// channel, matching GenerateEagleSpeculative's signature so a server can swap one for the other.
+// channel, the same shape as the n-gram entry points so a server can swap one for the other.
 //
-// GREEDY ONLY, and the guards are the same ones the EAGLE path carries for the same reason. The
+// GREEDY ONLY, and the guards are the same ones the draft-model path (GenerateSpeculative) carries. The
 // verify compares the drafted token against the target's ARGMAX; a temperature, a logit processor
 // or any history-dependent penalty makes "what the target would have produced" depend on state
 // the batched verify does not have, so acceptance would no longer imply losslessness. Refusing is

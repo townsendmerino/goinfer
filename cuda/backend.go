@@ -56,11 +56,10 @@ type cudaBackend struct {
 
 func (b *cudaBackend) Name() string { return "cuda" }
 
-// MatmulBT is the staged (non-resident) path: dst[M,N] = a[M,K]·b[N,K]ᵀ. CUDA residency
-// is decode-only and dense-only, so anything off that path (prefill matmuls, non-dense
-// families, or a no-driver fallback) lands here — dispatched to the shared SIMD linalg
-// kernels (same as the CPU backend), so `--backend cuda` is correct and reasonably fast
-// even when the resident GPU path declines.
+// MatmulBT is the CPU fallback: dst[M,N] = a[M,K]·b[N,K]ᵀ on the shared SIMD linalg kernels,
+// the same as the CPU backend. CUDA has no partial (staged) GPU path — a model the resident
+// runner does not admit, or a box with no driver, runs entirely on the CPU, and DecodePath says
+// so — so this keeps `--backend cuda` correct in that case, not fast.
 func (b *cudaBackend) MatmulBT(a, bmat, dst []float32, M, K, N int) {
 	linalg.MatmulBT(a, bmat, dst, M, K, N)
 }
@@ -1011,9 +1010,9 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				}
 			}
 		}
-		// L2 fused prefill attention (docs/completed/task-prefill-gap.md §4 L2). OPT-IN: the fast path becomes
-		// a default only when §3's reference gate passes on CUDA (Phase 3), so until then this loads
-		// only when asked. Own module — prefill_batched.ptx is untouched, the isolation pattern
+		// L2 fused prefill attention (docs/completed/task-prefill-gap.md §4 L2). DEFAULT ON above
+		// fastPrefillFloor (512 prompt tokens) since 2026-09-05, when §3's reference gate passed on
+		// CUDA; GOINFER_CUDA_FAST_PREFILL=0 or Options.ExactPrefill keeps the exact path. Own module — prefill_batched.ptx is untouched, the isolation pattern
 		// attn_block.cu established. A load failure is not fatal: it leaves bAttnFused* zero and
 		// every selection site falls back to attn_batched, which is the exact path anyway.
 		r.fastAttn, r.fastGemm = fastPrefillEnabled(r.knobValue("GOINFER_CUDA_FAST_PREFILL"))

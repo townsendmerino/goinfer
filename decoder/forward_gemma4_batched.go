@@ -286,7 +286,7 @@ func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, i
 				}
 			}
 		}
-		// cache.captureResidual (EAGLE-drafter seam) is deliberately not wired here —
+		// cache.captureResidual (the draft-head hidden-state seam) is deliberately not wired here —
 		// a decode-time concern; post-prefill decode resumes via the unchanged
 		// per-token runLayersGemma4 path, which already carries it.
 	}

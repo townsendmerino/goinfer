@@ -95,23 +95,23 @@ func Run(args []string) int {
 	// exists — a mapped load, lazy faults, nearly free next to the resident build below. Never
 	// forces a transcode itself (that would trade one expensive one-time cost for another, not
 	// buy "nearly free" as the brief asks) — a missing or stale sidecar just falls through to
-	// today's direct load, unchanged. Canonical target (backend ""): fit has no -backend flag of
-	// its own (it reports every compiled backend), so this can only ever match a canonically
-	// built cache, never a backend-specific one a `serve -backend metal` load might have written.
-	loadPath := path
-	if strings.HasSuffix(path, ".gguf") {
-		if cached, ok := prequant.SidecarPathIfFresh(path, *quant, ""); ok {
-			loadPath = cached
-		}
+	// today's direct load, unchanged.
+	loadPath, loadBackend := path, ""
+	if cached, be, ok := freshSidecar(path, *quant); ok {
+		loadPath, loadBackend = cached, be
 	}
-	m, err := decoder.Load(loadPath, decoder.Options{Quant: *quant})
+	m, err := decoder.Load(loadPath, decoder.Options{Quant: *quant, Backend: loadBackend})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load %s: %v\n", loadPath, err)
 		return 1
 	}
 
 	req := decoder.PlanRequest{Ctx: *ctx, CtxPinned: ctxPinned, KVF16: *kvF16, KVI8: *kvI8, Slots: *slots}
-	fmt.Printf("%s @ %s, ctx=%d%s\n\n", path, quantLabel(*quant), *ctx, pinnedNote(ctxPinned))
+	via := ""
+	if loadPath != path {
+		via = " (read through its sidecar " + filepath.Base(loadPath) + ")"
+	}
+	fmt.Printf("%s @ %s, ctx=%d%s%s\n\n", path, quantLabel(*quant), *ctx, pinnedNote(ctxPinned), via)
 
 	var admitted []string // in CompiledBackends() order; "cpu" always eligible, sorted last
 	for _, backend := range decoder.CompiledBackends() {
@@ -161,7 +161,11 @@ func selfMeasure(path, quant string, admitted []string) {
 		}
 	}
 
-	pm, err := decoder.Load(path, decoder.Options{Backend: backend, Quant: quant})
+	measurePath := path
+	if cached, ok := prequant.SidecarPathIfFresh(path, quant, backend); ok && strings.HasSuffix(path, ".gguf") {
+		measurePath = cached // the sidecar a `--backend <this>` load built: mapped, not rebuilt
+	}
+	pm, err := decoder.Load(measurePath, decoder.Options{Backend: backend, Quant: quant})
 	if err != nil {
 		fmt.Printf("\n(measure) %s: load failed, skipping probe: %v\n", backend, err)
 		return
@@ -245,4 +249,27 @@ func self() string {
 		return filepath.Base(os.Args[0])
 	}
 	return "goinfer-chat"
+}
+
+// freshSidecar finds an already-fresh sidecar .giw that a chat or serve load built for this .gguf, and
+// the Backend to load it with. fit has no --backend of its own (it reports every compiled backend), and
+// it used to look only for the canonical target — but a default chat or serve run (--backend cpu)
+// writes this host's cpu target, cpu-amd64 or cpu-arm64, so fit never found the sidecar they had
+// already paid for and did a full direct load instead. Tried in the order a user is likely to have
+// built them: this host's cpu target (loaded with Backend "cpu": an arm64 cpu sidecar is row4-only,
+// which only the literal cpu backend reads), then cuda's and the canonical one (canonical bytes, any
+// backend). A metal sidecar is not used: its fused kinds are Metal's alone.
+func freshSidecar(path, quant string) (giw, backend string, ok bool) {
+	if !strings.HasSuffix(path, ".gguf") {
+		return "", "", false
+	}
+	for _, be := range []string{"cpu", "cuda", ""} {
+		if p, fresh := prequant.SidecarPathIfFresh(path, quant, be); fresh {
+			if be == "cuda" {
+				be = ""
+			}
+			return p, be, true
+		}
+	}
+	return "", "", false
 }

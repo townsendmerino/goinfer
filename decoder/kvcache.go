@@ -126,8 +126,8 @@ type KVCache struct {
 
 	// captureLayers, when non-nil, requests that runLayersFromEmbed copy the residual
 	// stream (the layer OUTPUT) after each listed layer index into captured[i] — the
-	// read-only hidden-state seam an EAGLE-style draft head consumes (05; the head
-	// fuses low/mid/high target hidden states). nil = no capture, zero overhead. The
+	// read-only hidden-state seam a draft head reads (05's EAGLE-3 head fused low/mid/high
+	// target states until its removal on 2026-09-24; block drafters read it now). nil = no capture, zero overhead. The
 	// copies never feed back into the forward, so the token output is byte-identical.
 	captureLayers []int
 	captured      [][]float32
@@ -145,7 +145,8 @@ type KVCache struct {
 	subCtx     [][]float32 // [layer][qDim] attention CONTEXT, pre-o-proj (attendBatchedHeads out)
 
 	// treeRowPos / treeMask, when non-nil, switch the batched verify (forwardN) from a
-	// linear causal chain to TREE attention (05 EAGLE tree drafting): row i takes its
+	// linear causal chain to TREE attention (05 EAGLE tree drafting; nothing sets these since that
+	// head was removed on 2026-09-24 — kept as tested plumbing): row i takes its
 	// RoPE position from treeRowPos[i] (its depth) instead of startPos+i, and among the
 	// K new batch keys it attends only to columns j with treeMask[i][j] true (its
 	// ancestor path, including itself) plus the whole committed prefix. nil = the

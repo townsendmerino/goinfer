@@ -216,13 +216,11 @@ func (m *Model) specRollbackSafe() bool {
 	// the verify reads stale history and diverges — the "lossless" guarantee broken for the families
 	// rings serve (Gemma-3 local / Mistral / Phi-3). The earlier exemption keyed on m.resident==nil,
 	// assuming a resident backend means the positional resident path is taken — but three of four
-	// speculative loops (EAGLE, grammar always; n-gram whenever a Session drives the staged cache)
+	// speculative loops at the time (EAGLE, since removed; grammar always; n-gram whenever a Session drives the staged cache)
 	// use the staged ring EVEN when m.resident!=nil, and a resident CAS loss also falls back to
 	// staged mid-flight. That misjudged path made the predicate return "safe" for a cache that wraps.
 	// Refuse windowed models for speculation unconditionally: the resident positional path is itself
-	// safe, but it is not a shipping speculative combo (CUDA declines windowing; Metal has no
-	// speculation), so conservative refusal (→ plain decode) costs no real throughput and closes the
-	// hole at the source. With windowed models refused here, the staged rollback sites
+	// safe, but refusing costs little (→ plain decode) and closes the hole at the source. With windowed models refused here, the staged rollback sites
 	// (KVCache.TruncateTo) only ever run on ring-free caches, where TruncateTo is always exact — so
 	// no inexact case reaches them; re-enabling windowed speculation later must consume that exact
 	// bool at each rollback site (audit C-04).
@@ -676,7 +674,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 				}
 			}
 			// Hidden-state seam (05), same as the dense path below: MoE layers must also
-			// record captured[ci], or GenerateEagleSpeculative against a sparse-MoE target
+			// record captured[ci], or a capture against a sparse-MoE target (the since-removed EAGLE path)
 			// (Mixtral/Mellum) leaves captured all-nil and fuseAt slices a nil slice → panic
 			// (audit C-07). The `continue` used to skip this.
 			if cache.captureLayers != nil {
@@ -1610,7 +1608,7 @@ func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][
 //
 // M-07: the two callers want DIFFERENT answers and shared one. Speculative verify must run the
 // exact kernel on both arms or its equality argument collapses — that is what `false` is for,
-// and it is unchanged. But EAGLE also PREFILLED the prompt through here, while Generate's
+// and it is unchanged. But EAGLE (removed 2026-09-24) also PREFILLED the prompt through here, while Generate's
 // prefillLogits prefills with cpuFastAttention() (default ON, floored at 512 tokens). So the
 // two produced different KV for the same prompt, and "token-identical to plain greedy" — which
 // EAGLE's whole contract rests on — stopped holding at temperature 0 for any prompt over the

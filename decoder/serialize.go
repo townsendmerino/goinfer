@@ -22,15 +22,16 @@ import (
 // 4-byte aligned, and unaligned float reads are UB).
 //
 // Discipline mirrors ken's index_serialize.go: magic + version + a config/quant
-// guard + CRC, and a LAZY FALLBACK — any mismatch returns a typed error and never
-// panics, so the caller can rebuild from the GGUF.
+// guard + CRC — any mismatch returns a typed error and never panics. There is no automatic
+// fallback to the GGUF: a sidecar that fails its freshness check is rebuilt (internal/prequant),
+// and an embedded or explicitly named bundle refuses to load.
 //
 // Format (little-endian throughout):
 //
 //	magic   [5]byte = "GINFW"
 //	version uint32
 //	quant   uint32   (quantMode enum: first-weight kind — the legacy tag, validated on read)
-//	id      str      (model identity — source name/hash, for tooling)
+//	id      str      (model identity — the source's basename; not validated on read)
 //	config  str      (Config as JSON; arch is re-derived from it on load)
 //	quantLabel str   (v5+: the resolved quant label — int4|int4mix|int8int8|int8|native — or "" to
 //	                  fall back to inference; the reader PREFERS this over re-deriving from kinds)
@@ -832,10 +833,20 @@ func (m *Model) CheckGiwQuantMatch(requested string) error {
 	if requested == "" || path == "" {
 		return nil
 	}
-	if baked := m.Quant(); requested != baked {
+	if baked := flagQuant(m.Quant()); flagQuant(requested) != baked {
 		return fmt.Errorf("decoder: --quant %q cannot apply to the prequantized .giw bundle %s — it is baked at %q, and a .giw carries its own quant; pass --quant %s or omit --quant", requested, path, baked, baked)
 	}
 	return nil
+}
+
+// flagQuant spells a quant the way --quant does. Quant() reports an unquantized model as "native", a
+// word --quant does not accept; the flag says "f32". Compared raw, an explicit --quant f32 was refused
+// against an unquantized .giw, and the refusal told the user to pass --quant native.
+func flagQuant(q string) string {
+	if q == "" || q == "native" {
+		return "f32"
+	}
+	return q
 }
 
 // hasPopulatedLayers reports whether w's body matmul weights actually hold data, as opposed to a

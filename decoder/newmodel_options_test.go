@@ -3,6 +3,7 @@ package decoder
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/giw"
@@ -92,5 +93,61 @@ func TestNewModelWithOptions_refusesStreamWeights(t *testing.T) {
 	if m, err := NewModelWithOptions(w, Options{Backend: "cpu", StreamWeights: true}); err == nil {
 		m.Close()
 		t.Fatal("NewModelWithOptions accepted StreamWeights for in-memory weights")
+	}
+}
+
+// TestLoad_giwRefusesLoRA: a .giw is prequantized, with no base to merge an adapter into. Load used to
+// ignore Options.LoRA on this path without a word — and since the sidecar default, every .gguf a
+// binary loads takes it.
+func TestLoad_giwRefusesLoRA(t *testing.T) {
+	raw, _, _, _ := tinyNormRopeGGUF("llama")
+	blob, err := SerializeWeights(loadTinyGGUFWeights(t, raw, "llama"), "tiny")
+	if err != nil {
+		t.Fatal(err)
+	}
+	giwPath := filepath.Join(t.TempDir(), "tiny.giw")
+	if err := os.WriteFile(giwPath, giw.Write(blob, nil), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if m, err := Load(giwPath, Options{Backend: "cpu", LoRA: "/some/adapter"}); err == nil {
+		m.Close()
+		t.Fatal("Load(.giw) accepted a LoRA adapter it cannot apply")
+	}
+}
+
+// TestCheckGiwQuantMatch_f32IsNative: --quant f32 is the flag's own spelling of "no quantization", and a
+// .giw baked unquantized reports its quant as "native". The check compared the strings, so an explicit
+// --quant f32 was refused against an f32 bundle — and since the sidecar default, `--model x.gguf --quant
+// f32` built exactly such a bundle and then refused to start on it, telling the user to pass --quant
+// native, which the flag does not accept.
+func TestCheckGiwQuantMatch_f32IsNative(t *testing.T) {
+	raw, _, _, _ := tinyNormRopeGGUF("llama")
+	blob, err := SerializeWeights(loadTinyGGUFWeights(t, raw, "llama"), "tiny")
+	if err != nil {
+		t.Fatal(err)
+	}
+	giwPath := filepath.Join(t.TempDir(), "tiny.f32.canonical.giw")
+	if err := os.WriteFile(giwPath, giw.Write(blob, nil), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(giwPath, Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if q := m.Quant(); q != "native" {
+		t.Skipf("fixture bundle is %q, not unquantized — cannot test the f32 spelling", q)
+	}
+	for _, req := range []string{"f32", ""} {
+		if err := m.CheckGiwQuantMatch(req); err != nil {
+			t.Errorf("CheckGiwQuantMatch(%q) on an unquantized bundle: %v", req, err)
+		}
+	}
+	err = m.CheckGiwQuantMatch("int4")
+	if err == nil {
+		t.Fatal("an explicit int4 against an unquantized bundle was not refused")
+	}
+	if strings.Contains(err.Error(), "native") {
+		t.Errorf("the refusal tells the user to pass a value --quant does not accept: %v", err)
 	}
 }

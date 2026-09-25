@@ -76,9 +76,10 @@ func (a *AdaptiveDepth) Depth(proposedLen int) int {
 	// so no acceptance rate can pay for it: alpha < 1 always, and the test below
 	// would return 0 for every alpha. Skip the periodic probe too -- it exists to
 	// refresh a STALE ALPHA, and here the decision does not depend on alpha, so a
-	// probe cannot change the answer and is pure wasted draft work. This is the
-	// live case on Metal, whose ForwardN is a loop of single-token Forwards
-	// (measured Theta 1.006-1.048).
+	// probe cannot change the answer and is pure wasted draft work. This was the
+	// live case on Metal while its ForwardN was a loop of single-token Forwards
+	// (measured Theta 1.006-1.048); its batched ForwardBatch (2026-09-16) re-measured
+	// 0.96 (thetaFor).
 	if a.Theta >= 1 {
 		return 0
 	}

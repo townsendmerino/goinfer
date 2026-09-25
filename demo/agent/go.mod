@@ -29,5 +29,3 @@ require (
 	golang.org/x/text v0.40.0 // indirect
 )
 
-// Develop against the checkout; drop this once goinfer tags a release
-// that the demo pins.

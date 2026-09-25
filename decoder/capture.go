@@ -4,7 +4,7 @@ package decoder
 // can offer it without each reimplementing the copy-on-match loop.
 //
 // WHY A HELPER RATHER THAN SEVEN COPIES. The generic path (runLayersFromEmbed) grew this
-// inline for EAGLE-3 (05). P10's block drafters need the same residuals from families that
+// inline for EAGLE-3 (05; that head was removed on 2026-09-24, be9aeea8). P10's block drafters need the same residuals from families that
 // never routed through it — qwen3_5_moe, gemma4, gpt-oss are the three whose targets we hold
 // locally with a licensed drafter. Copying seven lines four times is how the two halves drift
 // apart: the generic one copies AFTER the MLP add, and a copy placed a few lines earlier would

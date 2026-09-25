@@ -4,8 +4,9 @@ package metal
 
 // Metal decoder backend — plugs the cgo-free native-Metal resident decoder into the goinfer
 // decode loop via decoder.RegisterBackend, mirroring the cuda backend. Blank-import this
-// package (under a build tag) from a main to enable `--backend metal`. Dense residency only
-// (Qwen2/Llama, DecodeRunnerEligible); declines gracefully to the staged/CPU path otherwise.
+// package from a main (darwin only; no build tag) to enable `--backend metal`. Dense and MoE
+// residency, per docs/hardware-matrix.md; a model it does not admit runs entirely on the CPU
+// (Metal has no partial staged path).
 
 import (
 	"context"
@@ -58,9 +59,9 @@ type metalBackend struct {
 
 func (b *metalBackend) Name() string { return "metal" }
 
-// MatmulBT is the staged (non-resident) path — prefill matmuls, non-dense families, or a
-// no-GPU fallback — dispatched to the shared SIMD linalg kernels (same as the CPU backend),
-// so `--backend metal` stays correct even when the resident GPU path declines.
+// MatmulBT is the CPU fallback on the shared SIMD linalg kernels (same as the CPU backend).
+// Metal has no partial (staged) GPU path: a model the resident runner does not admit runs
+// entirely on the CPU, and this keeps `--backend metal` correct in that case.
 func (b *metalBackend) MatmulBT(a, bmat, dst []float32, M, K, N int) {
 	linalg.MatmulBT(a, bmat, dst, M, K, N)
 }
@@ -831,8 +832,6 @@ func (a *metalResident) VerifyPath() (bool, string) {
 	return true, "batched layer-major single-command-buffer"
 }
 
-// UploadKV (prefix-reuse bridge) is not supported: the resident decoder owns its KV writes
-// per Forward, and the stateless Generate path re-runs the prompt through Forward instead.
 // SetAdapter implements decoder.ResidentAdapter (G3, docs/tasks/task-gpu-paths-2026-09.md) —
 // generateInto calls this to bind/clear a compute-time LoRA adapter for an admitted session.
 func (a *metalResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {

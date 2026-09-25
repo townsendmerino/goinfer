@@ -282,7 +282,7 @@ func (m *Model) MoECacheSlotsRequest() int {
 
 // Options configures Load.
 type Options struct {
-	Backend string // "cpu" (default) or "webgpu"
+	Backend string // "cpu" (default), "webgpu", "cuda" or "metal"; a name not compiled into the binary falls back to cpu
 	Quant   string // "" (f32), "int8" (weight-only per-row), "int8int8" (full int8×int8 W8A8), or "int4" (group-wise) (M8)
 	LoRA    string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.
 	// KVPrecision selects the GPU residency KV cache precision: "" / "f32"
@@ -293,7 +293,8 @@ type Options struct {
 	// MoECacheExperts streams routed MoE experts host→VRAM per token instead of holding the whole
 	// expert stack resident — the path to running a model whose experts exceed VRAM with every
 	// expert still executing on the GPU. Off by default; bit-identical to fully-resident when on
-	// (cuda.TestGemma4MoE_cacheExpertsBitExact_*). CUDA residency only.
+	// (cuda.TestGemma4MoE_cacheExpertsBitExact_*). CUDA and Metal residency; the CPU's expert
+	// paging is StreamWeights.
 	MoECacheExperts bool
 	// MoECacheSlots is the per-layer expert-slot count for MoECacheExperts (0 = ask for all and
 	// auto-cap to measured free VRAM). More slots ⇒ higher LRU hit rate ⇒ fewer per-token DMAs,
@@ -341,7 +342,7 @@ type Options struct {
 	// to its pre-Phase-2 default exactly. Currently: CUDA's unpinned resident context stays the
 	// flat historical constant instead of asking Plan for more when there's room —
 	// cuda/resident.go's resolveCtxCapFit; and (decoder/fitguard.go's guardFit, read by
-	// internal/serveapp's loadDecoder, not by Load itself) a dense .gguf that will not fit
+	// internal/modelload's Load, not by Load itself) a dense .gguf that will not fit
 	// resident RAM stays a plain refusal instead of getting an automatic -stream-weights retry.
 	// Does NOT affect a genuine bug fix shipped alongside Phase 2 work (Metal now honoring an
 	// explicit -ctx at all, docs/tasks/task-gpu-paths-2026-09.md's G6 entry) — that is correctness, not
@@ -444,6 +445,10 @@ func Load(dir string, opts Options) (*Model, error) {
 	// build on. giw.Read splits the weight blob from the metadata-GGUF tokenizer; the
 	// mapping is held on the Model and released by Close.
 	if strings.HasSuffix(dir, ".giw") {
+		if opts.LoRA != "" {
+			closeBackend(be)
+			return nil, fmt.Errorf("decoder: LoRA merge needs a safetensors base; %s is a prequantized .giw with no base to merge into", dir)
+		}
 		data, rerr := mapGIW(dir) // MAP_SHARED on darwin, aikit's MAP_PRIVATE elsewhere (giwmap_*.go)
 		if rerr != nil {
 			closeBackend(be)
@@ -1173,7 +1178,8 @@ func (m *Model) forward(id int, cache *KVCache) ([]float32, error) {
 
 // ForwardCapture runs one forward for token id and returns the next-token logits
 // PLUS the residual stream after each layer in `layers` (cloned) — the read-only
-// hidden-state seam an EAGLE-3 draft head fuses (05). The forward is byte-identical
+// hidden-state seam a draft head reads (05's EAGLE-3 head fused it until its removal on
+// 2026-09-24; block drafters read it now). The forward is byte-identical
 // to forward(id): the captures are copies that never feed back. Layer indices are
 // 0-based into [0, NumLayers); out[i] corresponds to layers[i].
 //
@@ -1189,7 +1195,7 @@ func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []f
 	// Derived from the dispatch table's Captures bit rather than re-listed: the families whose own
 	// loop calls captureResidual are wired, every other own-forward family is not. LFM2 was in
 	// neither list, so runLayersLFM2 — which never captures — returned nil rows through a seam
-	// documented to fail loudly instead (audit-2026-09-02 C-02; EAGLE's fuseAt would panic on them).
+	// documented to fail loudly instead (audit-2026-09-02 C-02; the since-removed EAGLE head's fuseAt panicked on them).
 	if f, own := a.ownForward(); own && !f.Captures {
 		return nil, nil, fmt.Errorf("decoder.ForwardCapture: hidden-state seam not wired for arch %q (own runLayers)", a.Name)
 	}
@@ -1678,7 +1684,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// routing decision is the ONLY behaviour that changes.
 	//
 	// SCOPE — the speculative paths are deliberately NOT affected. They gate on `sp.Temperature <= 0`
-	// directly (speculative.go, spec_grammar.go, spec_eagle.go, spec_ngram.go), never on these
+	// directly (speculative.go, spec_grammar.go, spec_ngram.go), never on these
 	// predicates, so `top_k=1` with a temperature stays speculative-INELIGIBLE exactly as before.
 	// That is the conservative half of P1: making it eligible would be correct (argmax verification
 	// reproduces greedy, which top_k=1 equals) but is a second behaviour change, and it does not

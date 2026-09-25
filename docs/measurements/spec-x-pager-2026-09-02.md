@@ -17,7 +17,7 @@ Four independent gates produce that, and no two are the same mechanism:
 | batched verify declines for MoE | `cuda/prefill.go:304` (`r.moe \|\| r.gemma4Moe`) | **every** MoE, block-drafted spec |
 | rollback unsafe: recurrent | `decoder/forwardn.go:209` (`Recurrent`) | Gated-DeltaNet / Mamba-2, n-gram spec |
 | rollback unsafe: windowed | same (`SlidingWindow > 0`) | Gemma-3/4, Mistral, Phi-3, n-gram spec |
-| MLA not resident on CUDA | `cuda/backend.go:119` | DeepSeek-V2/V3, Moonlight, Kimi — never reach the pager at all |
+| MLA not resident on CUDA | `cuda/backend.go:118` | DeepSeek-V2/V3, Moonlight, Kimi — never reach the pager at all |
 
 Measured, per venue:
 
@@ -160,7 +160,7 @@ mismatch as the ONLY intended per-request exception. An arch-level property is n
 The operator pays the drafter's VRAM and gets no drafting, with nothing said.
 
 **2. `thetaFor` keys the adaptive controller's cost constant on BACKEND NAME, not on whether the
-verify is actually batched.** `decoder/spec_adaptive.go:182` returns 0.251 for "cuda", measured by
+verify is actually batched.** `decoder/spec_adaptive.go:183` returns 0.251 for "cuda", measured by
 `cuda/theta_probe_test.go` on qwen2.5-coder 0.5B and 1.5B — both DENSE, where `ForwardN` runs
 `prefillCore` and one weight stream covers the block. A MoE gets the same 0.251 while its `ForwardN`
 is a per-token loop, which is precisely the condition under which the Metal constant was measured

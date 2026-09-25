@@ -361,8 +361,8 @@ func (s *server) handleWebPull(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 
-	// r.Context() dies when the browser tab closes, which cancels the transfer and lets
-	// Download clean up its .part file — no orphaned multi-GB write after a closed tab. Wrapped
+	// r.Context() dies when the browser tab closes, which cancels the transfer. Download KEEPS
+	// the .part on a cancel, deliberately — the next pull of the same file resumes from it. Wrapped
 	// in our own cancel (N-23, docs/audit-2026-09-10.md) so a STALLED-but-open connection —
 	// caught by sseWriter's write deadline below, not by r.Context() — stops the download the
 	// same way.
@@ -528,8 +528,8 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 	}
 	send("start", map[string]any{"name": name})
 
-	// DETACHED FROM THE REQUEST, unlike the pull. A cancelled pull leaves nothing behind (Download
-	// removes its .part), but a load cancelled part-way has already spent its minutes, and the user
+	// DETACHED FROM THE REQUEST, unlike the pull. A cancelled pull keeps its .part so the next pull
+	// resumes, and costs nothing more; but a load cancelled part-way has already spent its minutes, and the user
 	// asked for the model — so closing the tab does not undo the request. The load finishes, is
 	// published, and the next /v1/models shows it. The handler still waits for it, so the
 	// single-flight above stays held for the whole load rather than just for the request.

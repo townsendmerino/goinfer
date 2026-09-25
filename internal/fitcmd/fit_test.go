@@ -7,8 +7,13 @@ import (
 	"go/printer"
 	"go/token"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
 // captureStdout swaps os.Stdout for the duration of fn and returns what was written — Run prints
@@ -232,5 +237,55 @@ func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 		t.Errorf("m.Close() (statement %d) does not precede the selfMeasure call (statement %d) — "+
 			"selfMeasure's own fresh Load can run while the first copy is still resident (M-20)",
 			closeCallIdx, measureIfIdx)
+	}
+}
+
+// TestFreshSidecar_findsTheOneChatAndServeBuild: a default chat or serve load (--backend cpu) writes this
+// host's cpu target, <base>.int4.cpu-amd64.giw or .cpu-arm64.giw. fit used to look only for the canonical
+// target, so it never found that sidecar and did a full direct load of the .gguf instead (measured on the
+// 0.5B: 2.98 s and 1.0 GB RSS, against a mapped read through the sidecar).
+func TestFreshSidecar_findsTheOneChatAndServeBuild(t *testing.T) {
+	raw, err := os.ReadFile("../../testdata/glm-tiny.gguf")
+	if err != nil {
+		t.Skipf("tiny fixture: %v", err)
+	}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "tiny.gguf")
+	if err := os.WriteFile(src, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(src, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := freshSidecar(src, "int4"); ok {
+		t.Fatal("found a sidecar before one was built")
+	}
+	m, err := decoder.Load(src, decoder.Options{Quant: "int4", Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := decoder.GIWTargetForBackend("cpu")
+	blob, err := decoder.SerializeWeightsForTarget(m.Weights(), "tiny", target)
+	m.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cpuSidecar := filepath.Join(dir, "tiny.int4."+string(target)+".giw")
+	if target == decoder.GIWTargetNone {
+		cpuSidecar = filepath.Join(dir, "tiny.int4.canonical.giw") // a GOARCH with no cpu-specific target
+	}
+	if err := os.WriteFile(cpuSidecar, giw.Write(blob, nil), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, be, ok := freshSidecar(src, "int4")
+	if !ok || got != cpuSidecar {
+		t.Fatalf("freshSidecar = %q, %v; want the cpu-target sidecar %s a default chat/serve load builds", got, ok, filepath.Base(cpuSidecar))
+	}
+	if target != decoder.GIWTargetNone && be != "cpu" {
+		t.Errorf("backend = %q, want cpu: a cpu-target sidecar can be row4-only, which only the literal cpu backend reads", be)
+	}
+	if _, err := decoder.Load(got, decoder.Options{Quant: "int4", Backend: be}); err != nil {
+		t.Errorf("the found sidecar does not load with the backend freshSidecar chose: %v", err)
 	}
 }

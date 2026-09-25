@@ -14,7 +14,7 @@ import (
 //     and instead scale the query by an attention "temperature"
 //     (log1p(floor((pos+1)/floor_scale))·attn_scale + 1) for length generalization.
 //   - FFN: dense layers vs MoE layers (moe_layers) — handled by the shared mlp() dispatch
-//     (dense ⇒ gatedMLP; MoE ⇒ moeMLP with top-1 sigmoid routing + an ungated shared expert).
+//     (dense ⇒ gatedMLP; MoE ⇒ llama4MoE, below: top-1 sigmoid routing + an ungated shared expert).
 //
 // Chunked (local) attention on the RoPE layers: a query at position p attends only within its
 // own chunk, [(p/C)*C, p], where C is attention_chunk_size (8192 on Scout/Maverick). Below C

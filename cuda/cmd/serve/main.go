@@ -3,8 +3,9 @@
 // Command serve is the CUDA-accelerated (cgo-free) build of goinfer's inference server.
 //
 // Identical to the pure-Go root binary except it blank-imports the opt-in CUDA module first,
-// whose init() registers the "cuda" decoder backend (decoder.RegisterBackend). Dense residency
-// only; declines gracefully to the staged/CPU path when no NVIDIA driver is present. Living in
+// whose init() registers the "cuda" decoder backend (decoder.RegisterBackend). Dense and MoE
+// residency (docs/hardware-matrix.md); a model it does not admit, or a box with no NVIDIA driver,
+// runs on the CPU. Living in
 // the ./cuda submodule keeps gocudrv/libcuda OUT of the pure-Go root module graph (audit M-19).
 // Run with `--backend cuda`.
 package main

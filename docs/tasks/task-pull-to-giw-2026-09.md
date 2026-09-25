@@ -1,6 +1,6 @@
 # Proposal: `pull` converts to `.giw` right after the download, and keeps the `.gguf` only on request (2026-09)
 
-> **Status 2026-09-25: proposal, not started.** Written at the owner's request after the question "when goinfer downloads a
+> **Status 2026-09-25: proposal; P0 done, the rest not started.** Written at the owner's request after the question "when goinfer downloads a
 > model, can we convert it to `.giw` as it downloads, still verify it's a good file, and have a flag to keep the original
 > format?" The facts below were checked against `main` at `fe970d7c`. Four decisions are the owner's (§ Decisions).
 
@@ -122,16 +122,16 @@ the download could only be committed after the final check, which is exactly wha
      treated as it is today (download again).
 6. **A load that needs a different quant or target** than any `.giw` on disk has no `.gguf` to convert from. What it
    does then is Decision 2.
-7. **`fit`** uses the same resolution, which also fixes today's gap: `fit` looks only for a `canonical` `.giw`, while
-   chat and serve build `cpu-amd64`/`cpu-arm64` ones.
+7. **`fit`** uses the same resolution. (Its narrower gap, that it looked only for a `canonical` `.giw` while chat and
+   serve build `cpu-amd64`/`cpu-arm64` ones, was fixed on 2026-09-25: it now tries the sidecars those loads write.)
 
 ### Disk
 
 - **At rest:** about 1.0–1.16× the download size for int4, down from about 2.0–2.2×.
 - **While converting:** unchanged at `.gguf` plus `.tmp.giw`.
-- **The pre-check has to be fixed first.** It refuses a conversion only when free space is below the source's size,
-  which assumes the `.giw` is never bigger than its source. That is false: int4 runs up to 1.16×, and int8int8 about
-  1.6×. It should price the output: source size × a per-quant ratio, plus a margin.
+- **The pre-check had to be fixed first, and is (P0).** It refused a conversion only when free space was below the
+  source's size, which assumed the `.giw` is never bigger than its source. That is false: int4 runs up to 1.16×, and
+  int8int8 about 1.6×. It now prices the output.
 
 ## Decisions (owner)
 
@@ -151,8 +151,8 @@ the download could only be committed after the final check, which is exactly wha
 
 ## Work, in order
 
-- **P0 — fix the disk pre-check** to price the `.giw`, not the source. Independent, and a live bug under today's
-  default.
+- **P0 — fix the disk pre-check** to price the `.giw`, not the source. **Done 2026-09-25:** `projectedSidecarBytes`
+  prices the output from the GGUF header's tensor shapes, 1.03–1.14× the actual size on six real sidecars.
 - **P1 — provenance and `.gguf`-free resolution**:
   - write provenance when any sidecar is built;
   - resolve an `hf:`/`demo:` reference or a missing `.gguf` to its `.giw`;

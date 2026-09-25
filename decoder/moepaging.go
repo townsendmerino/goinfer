@@ -29,10 +29,11 @@ import (
 // heap-backed weights (a GGUF load) and the always-on shared expert are left alone.
 //
 // Two backing modes, chosen once at build time (newExpertPager):
-//   - mmap+madvise (default): cache aliases the read-only mapping directly, WILLNEED faults it
+//   - mmap+madvise (the default except on darwin): cache aliases the read-only mapping directly, WILLNEED faults it
 //     in, DONTNEED releases it. Zero-copy, but on darwin DONTNEED is a no-op (madvise_darwin.go)
 //     -- there is no real RAM cap on macOS with this mode.
-//   - owned-buffer pread (opt-in, GOINFER_MOE_PREAD_CPU=1; Lever 1b, task-moe-streaming.md):
+//   - owned-buffer pread (the darwin default since S5, 2026-09-24; Options.MoEPager / --moe-pager
+//     elsewhere; Lever 1b, task-moe-streaming.md):
 //     pool holds a fixed set of owned buffers it fills via pread, giving a firm cap on every
 //     platform at the cost of a memcpy per miss and losing .giw zero-copy aliasing.
 //

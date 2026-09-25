@@ -754,7 +754,7 @@ func wmW4A8Op(w *linalg.WeightMat, dst []float32) (op linalg.W4A8Op, group int) 
 }
 
 // matmulWSPool recycles the Workspace matmul() falls back to when the caller has no
-// decodeScratch to hand in (dflash/dspark/eagle, and every forward_*.go family that
+// decodeScratch to hand in (dflash/dspark, and every forward_*.go family that
 // hasn't been threaded onto matmulInto). A fresh `var ws linalg.Workspace` per call
 // starts with nil i8/f32 scratch, so Into() reallocates BOTH the Workspace and its
 // internal quant buffers on every single matmul (P8-class allocation, same shape as

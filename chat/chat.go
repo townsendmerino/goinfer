@@ -77,7 +77,8 @@ type Template struct {
 	stops  []string
 }
 
-// Name is the family identifier ("gemma3", "gemma4", "chatml", "llama3", "mistral").
+// Name is the family identifier ("chatml", "mellum2", "gemma3", "gemma4", "harmony", "llama3",
+// "mistral", "ministral").
 func (t *Template) Name() string { return t.name }
 
 // Render builds the complete prompt string (including any leading BOS marker the

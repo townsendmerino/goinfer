@@ -11,8 +11,8 @@ import (
 // Mamba-2 selective state-space sequence mixer (Granite-4.0 hybrid). Like Gated
 // DeltaNet (deltanet.go) it is an inherently sequential recurrence driven one token
 // at a time by both prefill and decode, with a small per-token causal conv before
-// the scan. This is the parity-first SEQUENTIAL form — the algebraic oracle a
-// chunked/segsum scan (a later prefill optimization) is proven equivalent to. It
+// the scan. This is the parity-first SEQUENTIAL form, and the only one: a chunked/segsum
+// scan was built against it as an oracle and removed unused on 2026-09-24 (4f8da77a). It
 // mirrors the HF GraniteMoeHybridMambaLayer single-token (cache) path exactly.
 //
 // Shapes: nHeads heads of headDim (P), an SSM state of dState (N) per head-channel,

@@ -75,8 +75,8 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 	// 2) Weights half: transcode the GGUF straight into the bundle, ONE LAYER at a
 	// time (decoder.StreamTranscodeGGUF), so peak RAM is ~one layer rather than the
 	// whole resident model — this is what lets a model larger than RAM be prequant'd
-	// (e.g. a 106B-A12B int4 on a 62 GB box). The dedicated qwen35/gemma4 loaders fall
-	// back to a resident build inside StreamTranscodeGGUF (those models fit).
+	// (e.g. a 106B-A12B int4 on a 62 GB box). Every family streams now (S2): the resident
+	// build some families used to fall back to is gone.
 	// TEMP + RENAME, not os.Create(out) directly (M-12). giw.WriteStream patches the body
 	// length placeholder at the END, so a bundle whose write was interrupted has a ZERO length
 	// in its header — and the error paths below cannot help, because the interruptions that
@@ -210,17 +210,22 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (stri
 		return cache, nil
 	}
 	// S1 (task-never-swap-2026-09.md): a half-written sidecar on a full disk is a failure this
-	// repo has already had once (M-12's own history). The source .gguf's own size is a
-	// deliberately simple, conservative proxy for the sidecar's projected size — a sidecar at
-	// any real quant is never bigger than the f32 source, so this only ever refuses when it
-	// truly would not have fit, never the reverse. freeDiskBytes returning !ok (no portable
-	// probe, or the statfs itself failed) proceeds unguarded, same as every other unknown
-	// quantity in this codebase (fitguard.go's own rule) — a missing probe must never be the
-	// reason a load that would have worked gets refused.
+	// repo has already had once (M-12's own history), so refuse up front when the sidecar will not
+	// fit. The size is projected from the source's tensor shapes at this quant
+	// (projectedSidecarBytes); it used to be the source's own size, on the argument that a sidecar is
+	// never bigger than an f32 source — but sources are quantized, and real int4 sidecars measured
+	// 1.02–1.16× their q4_k_m source, int8int8 ~1.6×, so the check passed and the disk could still
+	// fill. freeDiskBytes returning !ok (no portable probe, or the statfs itself failed) proceeds
+	// unguarded, same as every other unknown quantity in this codebase (fitguard.go's own rule) — a
+	// missing probe must never be the reason a load that would have worked gets refused.
 	if fi, serr := os.Stat(ggufPath); serr == nil {
-		if free, ok := freeDiskBytes(filepath.Dir(cache)); ok && free < fi.Size() {
+		need, ok := projectedSidecarBytes(ggufPath, quant)
+		if !ok {
+			need = fi.Size() // header unreadable: the old proxy, better than none
+		}
+		if free, ok := freeDiskBytes(filepath.Dir(cache)); ok && free < need {
 			return "", fmt.Errorf("stream-weights: refusing to transcode %s — projected sidecar size ~%.1f GB exceeds %.1f GB free on this disk (a half-written sidecar on a full disk is worse than refusing up front); free some space and retry, or pass -direct-load to skip the sidecar entirely",
-				filepath.Base(ggufPath), float64(fi.Size())/1e9, float64(free)/1e9)
+				filepath.Base(ggufPath), float64(need)/1e9, float64(free)/1e9)
 		}
 	}
 	fmt.Fprintf(os.Stderr, "stream-weights: transcoding %s → %s (%s, one-time — minutes + ~model-size on disk)…\n",

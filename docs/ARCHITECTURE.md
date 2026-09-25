@@ -378,7 +378,7 @@ references. `modelload.Load` runs these steps:
 
 A few loads stay outside it: the baked-in model, chat's `--draft` model, serve's `--embed-model` and
 `--drafter`, and `cmd/prequant`. `fit` resolves through `modelload` and then loads by itself,
-through a fresh canonical sidecar when one exists. It never transcodes.
+through a fresh sidecar that chat or serve already built, when one exists. It never transcodes.
 
 ### `.giw`: prequantized, mapped, aliased
 

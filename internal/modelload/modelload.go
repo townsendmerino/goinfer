@@ -107,6 +107,12 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 		return nil, err
 	}
 	opts := req.Opts
+	// A merged LoRA needs a safetensors base (PEFT targets HF module names). A .gguf used to reach
+	// decoder.Load's own refusal, but with the sidecar default it becomes a .giw first, and a .giw has
+	// no base to merge into — the adapter was dropped without a word. Refuse before any transcode.
+	if opts.LoRA != "" && (strings.HasSuffix(src, ".gguf") || strings.HasSuffix(src, ".giw")) {
+		return nil, fmt.Errorf("--lora %s: a LoRA adapter is merged into a safetensors base at load, and %q is not one (a .gguf or .giw is already quantized) — pass the base model's safetensors directory, or use serve's --adapter", opts.LoRA, src)
+	}
 	ensureGIW := func() (string, error) {
 		if opts.EmbedInt4 {
 			fmt.Fprintln(os.Stderr, "note: embed-int4 is ignored with stream-weights (the cached .giw keeps the int8 pin); prequant the model with embed-int4 to bake it")

@@ -15,6 +15,27 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Fixes found while rewriting the architecture doc:**
+  - **`goinfer-serve` started without a model can serve one loaded later.** The `/v1` generation, job and batch routes
+    were registered only when a model existed at startup, so a server started with only `--web`, `--allow-admin` or
+    `--admin-socket` answered 404 on `/v1/chat/completions` for its whole life, including the web UI's own chat. They
+    are always registered now, and answer "model not found" until a model is loaded.
+  - **`--lora` with a `.gguf` or `.giw` is refused.** Since the sidecar default, a `.gguf` became a `.giw` before
+    loading, and the adapter was dropped without a word. A merged LoRA needs a safetensors base; the refusal says so,
+    before any transcode.
+  - **`fit` reuses the sidecar chat and serve build.** It looked only for a `canonical` `.giw`, and a default load
+    writes `cpu-amd64`/`cpu-arm64`. On the 0.5B it now reads the sidecar in under 0.01 s instead of a 3 s, 1 GB direct
+    load.
+  - **An explicit `--quant f32` against an unquantized `.giw` is accepted.** It was refused, and the error said to
+    pass `--quant native`, which the flag does not accept.
+  - **The sidecar disk check prices the sidecar, not the source.** An int4 sidecar is up to 1.16× its q4 source and
+    int8int8 ~1.6×, so the old check could pass and the transcode still fill the disk.
+  - **`pull` refuses an exact split-GGUF shard filename**, as it already refused a quant that resolves to one. No loader
+    can assemble a split checkpoint.
+  - **Serve's banner** no longer says every resident turn re-prefills its whole prompt: the GPU cache reuses the most
+    recent conversation's prefix. On CUDA it reports KV as f32, which is what CUDA allocates, whatever `--kv` asks.
+  - **CI and govulncheck no longer install X11/GL packages** for the WebGPU build. The current binding links neither.
+
 - **`goinfer-chat` has every model-loading flag `goinfer-serve` has**: `--ctx`, `--stream-weights`,
   `--weight-cache`, `--moe-cache-experts`, `--moe-cache-slots`, `--moe-pager`, `--accept-slow`, `--embed-int4` and
   `--cpu-exact-prefill` are new to chat. A cold-user run reached for `--moe-cache-experts` in chat and got

@@ -23,9 +23,9 @@ import (
 // the packed nibble/code payload bytes ever alias the mmap -- decoder/serialize.go's
 // giwReader.weightMat), and a WeightMat can be rebuilt from those plus a freshly pread payload.
 //
-// Opt-in only (GOINFER_MOE_PREAD_CPU=1) pending a same-session measurement against the mmap
-// path on real hardware -- see task-moe-streaming.md's Lever 1a for why "should be faster"
-// alone was not trusted here without a same-machine A/B.
+// The default on darwin since S5 (2026-09-24), where mmap mode cannot enforce its budget;
+// measured at 1.02x the mmap decode rate (docs/measurements/moe-pager-mode-darwin-2026-09-23.md).
+// Elsewhere --moe-pager=pool (Options.MoEPager) selects it.
 
 // expertFieldKind selects which WeightMat representation a paged field holds, and therefore
 // which Wrap* constructor rebuilds it after a pread refill.

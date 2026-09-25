@@ -8,14 +8,14 @@
 //     stream/event calls are here. gocudrv covers this EXCEPT cooperative launch.
 //
 //   - Layer B (the compute) — the production kernel set in cuda/*.cu, each compiled to PTX by
-//     `go generate` (nvcc on the dev box) and go:embed'd for driver-side JIT (cuModuleLoadDataEx):
+//     `go generate` (build_ptx.sh: NVRTC, not nvcc — see that script for why; audited modules are
+//     pinned to NVRTC 12.6.85) and go:embed'd for driver-side JIT (cuModuleLoadDataEx):
 //     GEMV/GEMM decode (gemv_fwd, gemv_w8a8_batched,
 //     gemv_w4a8_rn, gemm_w4a8_mma), prefill and attention (prefill_batched, decode_splitkv,
 //     attn_block, attn_img_prefill, attn_fused, rope_mrope_prefill), MoE routing (moe,
 //     router_f32), other families (deltanet, gptoss_act), and fused/misc (fused_qkv, glue,
-//     argmax, lora, layernorm_quant, gelu_quant) — 22 modules today, straight off kernels.go's
-//     own //go:embed list (cuda/kernel_local_memory_test.go's ptxModules() derives its census
-//     from that same file, so this count cannot drift out of sync with it silently).
+//     argmax, lora, layernorm_quant, gelu_quant, and more). kernels.go's //go:embed list is the
+//     census (28 modules on 2026-09-25; this comment said 22 and drifted — count there, not here).
 //
 // This backend grew out of a 2026-07 spike into a single fused decode-layer megakernel, scoped
 // in docs/completed/cuda-megakernel-spec.md; the go/no-go read is
