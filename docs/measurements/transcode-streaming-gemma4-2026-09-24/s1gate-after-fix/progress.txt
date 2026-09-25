@@ -1,0 +1,7 @@
+start 22:01:44
+sidecar done 22:03:11
+direct done 22:04:13
+prompt 1: identical=True  tokens=22  sidecar=' Theer.\n\n<|channel>thought\n<channel|>The statement is **incorrect**. T'
+prompt 2: identical=True  tokens=64  sidecar='\n    # Base case: if the array has 0 or 1 element, it is already sorte'
+prompt 3: identical=True  tokens=64  sidecar='\n Three facts about the Moon:\n Three facts about the Moon:\n Three fact'
+ALLDONE

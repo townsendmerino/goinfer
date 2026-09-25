@@ -48,17 +48,30 @@ layer scalar, the KV-shared and K=V flags, the whole 26B-A4B MoE branch — is i
   all of it. Recorded, not chased: this is a one-time transcode, and the resident path is not available on the machine
   that needs streaming.
 
-## S1's gate — the sidecar vs the direct load — could not be taken, because the direct load is broken
+## S1's gate — the sidecar vs the direct load — blocked by a direct-load bug, then FIXED and PASSED
 
 On nobara (CPU), 16 greedy tokens of "The capital of France is", `-quant int4 -ctx 1024` (the default ctx's KV made the
 fit guard refuse the direct load; it was not bypassed): the streamed sidecar generates
 `' Theer.\n\n<|channel>thought\n<channel|>The statement is **incorrect**. The capital'`; the **direct** `.gguf` load
 generates **16 `<pad>` tokens** — and so does a serve built from HEAD `8f452a7e`, before any of this change (the direct
 load never passes through the streaming path). So a direct CPU load of the gemma4-26B GGUF is broken on `main`
-independently of S2; the sidecar path (needCanonical build) is not. **Open, separate bug** — not triaged further here
-(an int8int8 direct load did not fit nobara's live budget at the time).
+independently of S2; the sidecar path is not.
+
+**Cause and fix (same day).** `loadG4` built each layer's `gemma4MoEWeights` — which copies `l.LayerScalar` into its
+own `layerScalar` — *before* it assigned `l.LayerScalar` (1, or `blk.{i}.layer_output_scale.weight`). The MoE forward
+multiplies the whole layer's output by that copy (`out = (h + comb) * layerScalar`), so every MoE layer of a
+directly loaded 26B-A4B was scaled by 0 and the argmax fell to token 0, `<pad>`. The `.giw` reader and the safetensors
+loader already read the scalar first, which is why the sidecar was fine; Metal's resident build copies the same field,
+so a direct GGUF load there was broken the same way (rarely hit: darwin defaults to the sidecar). Fixed by reading the
+scalar before the MoE branch. `TestGemma4GGUF_moeLayerScalarMatchesLayer` pins it on the synthetic 26B-shaped GGUF —
+red on the old code (every layer's MoE copy 0 against a layer scalar of 34–99), green after. Existing sidecars are
+unaffected (the writer serializes `l.LayerScalar`, never the copy) and need no rebuild.
+
+**S1's gate, run after the fix** (`s1gate-after-fix/`, nobara, `-quant int4 -ctx 1024`): serve's default path — the
+`.gguf` transcoded to its `cpu-amd64` sidecar on first use, **streamed** (S2), 1:00 — against `-direct-load`, 3 prompts ×
+64 tokens greedy: **3/3 byte-identical** (prompt 1 stops at its own EOS after 22 tokens). **PASS.**
 
 ## Not done
 
 A transcode on the Mac itself (the source `.gguf` is 16.8 GB and the Mac has ~19 GB free, so source + output does not fit
-until something moves); three-run RSS averaging (n=1 per arm); the direct-load `<pad>` bug above.
+until something moves); three-run RSS averaging (n=1 per arm).

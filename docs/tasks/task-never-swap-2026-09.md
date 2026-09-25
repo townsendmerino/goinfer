@@ -333,8 +333,9 @@ if a safetensors-only model ever matters on the Mac); Linux defaults; anything a
 > KV-shared) byte-identical at int4/int8int8/f32 × default/metal target, mutation-checked twice. Getting under the bar took
 > releasing the head globals after they are written, and parallel expert builds (sequential streaming ran 6:07 at 93% CPU);
 > wall time is now 1:50 vs the resident 1:16 — **45% slower**, which the brief's Measure section said it should not be.
-> S1's greedy-match gate could not be taken: the DIRECT CPU load of the 26B `.gguf` emits 16 `<pad>` tokens — on HEAD before this
-> change too — while the streamed sidecar generates text. A separate, open bug.
+> S1's greedy-match gate then PASSED on the 26B (3 prompts × 64 tokens, sidecar vs direct, byte-identical) once a separate
+> bug it exposed was fixed: the direct GGUF load scaled every MoE layer by 0 (`loadG4` copied `LayerScalar` into the MoE
+> branch before assigning it), so it emitted only `<pad>` — on `main` before S2 too.
 >
 > **FIVE OF SIX FAMILIES DONE 2026-09-23 — only gemma4 remains.** `needsResidentSerialize` now
 > names gemma4 alone. gpt-oss, laguna, granite (the Mamba-2+MoE hybrid, `arch.granite` — not the

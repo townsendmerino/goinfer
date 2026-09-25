@@ -15,6 +15,9 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Fixed: a gemma4-26B `.gguf` loaded directly (`-direct-load`, or any platform without the sidecar default) generated only
+  `<pad>`.** Every MoE layer's output was scaled by 0 — the loader copied the per-layer output scale into the MoE branch
+  before reading it. The sidecar path was unaffected. Direct and sidecar loads now produce byte-identical greedy text.
 - **A gemma4 `.gguf` now transcodes to a `.giw` one layer at a time (S2), like every other family.** The 26B-A4B's
   transcode drops from 18.1 GB of anonymous memory (34.8 GB RSS) to a 1.61 GB peak, with byte-identical output, so its
   sidecar can be built on a machine smaller than the model. It is 45% slower than the old in-memory build (1:50 vs 1:16).

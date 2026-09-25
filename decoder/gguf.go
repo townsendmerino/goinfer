@@ -2629,6 +2629,16 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			if l.DownProj, e = mat(p+"ffn_down.weight", hidden, ffn); e != nil {
 				return e
 			}
+			// The per-layer output scalar is read BEFORE the MoE branch below, which copies it into
+			// gemma4MoEWeights.layerScalar — the value the MoE forward multiplies the whole layer's output by
+			// (forward_gemma4_moe.go). Until 2026-09-24 this assignment sat at the end of loadG4, after that
+			// copy, so every MoE layer of a DIRECTLY loaded gemma4-26B GGUF was scaled by 0 and the model
+			// emitted only <pad> (token 0); the .giw reader and the safetensors loader already read it first,
+			// which is why the sidecar was fine (TestGemma4GGUF_moeLayerScalarMatchesLayer).
+			l.LayerScalar = 1
+			if sc, se := vec(p+"layer_output_scale.weight", 1); se == nil {
+				l.LayerScalar = sc[0]
+			}
 			// 26B-A4B's parallel MoE branch (enable_moe_block; nil arch.MoE ⇒ the dense
 			// E2B/E4B/12B GGUFs, byte-unchanged). llama.cpp's converter fuses gate‖up per
 			// expert exactly like the safetensors path (ffn_gate_up_exps.weight is a 3-D
@@ -2690,10 +2700,6 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				if l.PostPLENorm, e = vnorm(p+"post_norm.weight", hidden); e != nil {
 					return e
 				}
-			}
-			l.LayerScalar = 1
-			if sc, se := vec(p+"layer_output_scale.weight", 1); se == nil {
-				l.LayerScalar = sc[0]
 			}
 			return nil
 		}
