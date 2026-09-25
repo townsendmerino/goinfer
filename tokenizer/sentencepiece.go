@@ -344,6 +344,14 @@ func parseTokenizerJSON(raw []byte, jsonPath, siblingDir string) (*Tokenizer, er
 		if err := t.initGemma(&tj); err != nil {
 			return nil, err
 		}
+		// The chat template lives in tokenizer_config.json (or chat_template.jinja) beside
+		// tokenizer.json, as for the byte-level families. This path never read it, so every
+		// SentencePiece checkpoint loaded from a directory reached chat.Detect with no template:
+		// Gemma survived on the vocab heuristic, but Phi-3 and Mistral fell to raw completion
+		// (found 2026-09-25). siblingDir == "" is the blob load, which reads no siblings (M-14).
+		if siblingDir != "" {
+			t.chatTemplate = readTokenizerConfig(siblingDir).ChatTemplate
+		}
 	case modeByteLevel:
 		if err := t.initByteLevel(&tj, siblingDir); err != nil {
 			return nil, err
@@ -401,17 +409,30 @@ func (t *Tokenizer) initGemma(tj *tokenizerJSON) error {
 	if t.unkID, err = mustID(t.unkPiece); err != nil {
 		return err
 	}
+	// BOS/EOS are required under either SentencePiece spelling: Gemma's "<bos>"/"<eos>", or
+	// Llama-2's "<s>"/"</s>", which Phi-3 and Mistral use. Requiring the Gemma names alone made
+	// every Llama-style tokenizer.json unloadable (Phi-3 safetensors could not tokenize at all,
+	// found 2026-09-25). Pad is optional: Llama-style vocabs have none (-1).
 	for _, r := range []struct {
-		piece string
-		dst   *int
+		pieces   []string
+		dst      *int
+		required bool
 	}{
-		{"<bos>", &t.special.BOS}, {"<eos>", &t.special.EOS}, {"<pad>", &t.special.Pad},
+		{[]string{"<bos>", "<s>"}, &t.special.BOS, true},
+		{[]string{"<eos>", "</s>"}, &t.special.EOS, true},
+		{[]string{"<pad>"}, &t.special.Pad, false},
 	} {
-		id, err := mustID(r.piece)
-		if err != nil {
-			return err
+		*r.dst = -1
+		for _, p := range r.pieces {
+			if id, ok := t.vocab[p]; ok {
+				*r.dst = int(id)
+				break
+			}
 		}
-		*r.dst = int(id)
+		if *r.dst < 0 && r.required {
+			_, err := mustID(r.pieces[0])
+			return fmt.Errorf("%w (nor %q)", err, r.pieces[1:])
+		}
 	}
 	// Chat turn markers are OPTIONAL and family-specific — Gemma 3 uses
 	// <start_of_turn>/<end_of_turn>, Gemma 4 renamed them to <|turn>/<turn|>, Qwen uses
