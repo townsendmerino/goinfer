@@ -625,7 +625,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		cacheProf:    os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
 		// L-01 (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE, synchronous only, requires
 		// cacheExperts (nothing to offload without the slot cache's own miss classification).
-		l01Enabled: os.Getenv("GOINFER_CUDA_L01_CPU_OFFLOAD") != "" && m.MoECacheExperts(),
+		l01Enabled: knobSet(m, "GOINFER_CUDA_L01_CPU_OFFLOAD") && m.MoECacheExperts(),
 		dnet:       dnetP,
 		isMLA:      mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
 		mlaQKHead: qkNope + qkRope, mlaQKNope: qkNope, mlaQKRope: qkRope,
@@ -1038,7 +1038,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					loadF2(&r.bAttnBM32x32hd128, "attn_fused_bm32n32_hd128")
 					loadF2(&r.bAttnBM128hd64, "attn_fused_bm128_hd64")
 					loadF2(&r.bAttnBM128hd128, "attn_fused_bm128_hd128")
-					if v := os.Getenv("GOINFER_CUDA_ATTN_FUSED_TILE"); v == "64x64" {
+					if v := r.knobValue("GOINFER_CUDA_ATTN_FUSED_TILE"); v == "64x64" {
 						r.attnTile = -1
 					} else if v == "128x64" {
 						r.attnTile = 3
@@ -1772,7 +1772,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// C′ compute/DMA overlap (see the overlap field). Not under graphs: a captured segB cannot record
 	// the router event mid-segment and a captured segC cannot wait per miss. Not with L-01: its
 	// CPU-routed ranks have no slot to wait on.
-	r.overlap = r.cacheExperts && !r.graphs && !r.l01Enabled && os.Getenv("GOINFER_MOE_DMA_OVERLAP") != "0"
+	r.overlap = r.cacheExperts && !r.graphs && !r.l01Enabled && r.knobValue("GOINFER_MOE_DMA_OVERLAP") != "0"
 	if r.overlap {
 		if e := r.initOverlap(); e != nil {
 			r.Close()

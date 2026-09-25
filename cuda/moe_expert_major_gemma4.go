@@ -32,7 +32,7 @@ import (
 // prefillGemma4ExpertMajorEligible mirrors prefillMoEExpertMajorEligible's shape for g4moe layers.
 // No shared-expert / gpt-oss-bias exclusion needed here — gemma4's join has neither.
 func (r *cudaResident) prefillGemma4ExpertMajorEligible(Ly *cudaLayer) bool {
-	return prefillExpertMajorEnabled() && Ly.g4moe && r.cacheExperts && Ly.expCache != nil
+	return r.prefillExpertMajorEnabled() && Ly.g4moe && r.cacheExperts && Ly.expCache != nil
 }
 
 // prefillGemma4ExpertMajorRun replaces the per-row `for m := range M { segBFFN; layerTail }` loop

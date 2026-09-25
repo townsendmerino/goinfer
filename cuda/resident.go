@@ -423,6 +423,10 @@ func (r *cudaResident) lookupKnob(name string) (string, bool) {
 	return r.knob(name)
 }
 
+// knobSet reports whether one of m's operator knobs is set to a non-empty value, for reads inside the
+// resident's own struct literal, before r.knob exists.
+func knobSet(m *decoder.Model, name string) bool { v, _ := m.Knob(name); return v != "" }
+
 // knobValue is lookupKnob's value, "" when unset.
 func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name); return v }
 
@@ -1120,43 +1124,10 @@ func (r *cudaResident) allocSlots() error {
 			r.cacheSlots = fit
 		}
 	}
-	// A10 instrument, recording only. Read at CALL time, not package-init time, so a test's
-	// t.Setenv reaches it — the opposite mistake cost a full 26B run once already.
-	//
-	// The question it answers: allocSlots can fail mid-sequence on an individual buffer while the
-	// closed form says the TOTAL fits with room to spare (observed at 34 slots: a 67,403,776 B
-	// request refused with 61,014,016 B of predicted total slack, and 182,648,832 B predicted free
-	// at that point). Recording free before every allocation separates "free was genuinely below the
-	// request", which would mean the form is wrong near the boundary, from "free was ample and the
-	// allocation failed anyway", which is servability rather than capacity.
-	a10 := os.Getenv("GOINFER_A10_PROBE") != ""
-	allocN := 0
-	probe := func(nBytes int, alloc func()) {
-		if !a10 {
-			alloc()
-			allocN++
-			return
-		}
-		var freeNow uint64
-		if f, _, e := r.dev.Context().MemInfo(); e == nil {
-			freeNow = f
-		}
-		// The failure arrives as a panic from gpu's MustBuf, and the resident is discarded on
-		// decline — so the diagnostic has to be emitted HERE, before the panic propagates, or the
-		// run reports only that something declined.
-		defer func() {
-			if p := recover(); p != nil {
-				fmt.Fprintf(os.Stderr, "[a10] alloc #%d FAILED: requested %d B, free immediately "+
-					"before = %d B (%.1f MiB), ratio free/request = %.2f — %v\n",
-					allocN, nBytes, freeNow, float64(freeNow)/(1<<20),
-					float64(freeNow)/float64(nBytes), p)
-				panic(p)
-			}
-		}()
-		fmt.Fprintf(os.Stderr, "[a10] alloc #%3d: %10d B, free before %13d B\n", allocN, nBytes, freeNow)
-		alloc()
-		allocN++
-	}
+	// A10's per-allocation recording (GOINFER_A10_PROBE) was retired 2026-09-24, phase 6 of
+	// docs/tasks/task-env-config-2026-09.md: its question — capacity or servability — is answered in
+	// the account below.
+	probe := func(_ int, alloc func()) { alloc() }
 	// Issue LARGEST FIRST across all layers, rather than group-by-group. Total is identical either
 	// way — capSlots and the granularity form are untouched, only the order moves.
 	//
@@ -1828,7 +1799,8 @@ func u16bytes(v []uint16) []byte {
 	return unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*2)
 }
 
-// mapBytesRegisterInPlace: Lead 3 (docs/tasks/task-freetoken-techniques.md), measured
+// Register in place (GOINFER_MOE_PIN_REGISTER, read from the model's knob snapshot in mapBytes below): Lead 3
+// (docs/tasks/task-freetoken-techniques.md), measured
 // 2026-09-22 (docs/measurements/lead3-pin-order-2026-09-22.md) — populate-then-pin beat
 // allocate-then-copy 1.33x-4.46x in a standalone microbenchmark at this scale, and never lost a
 // single real-load trial (5/5) in the follow-up decision measurement. That measurement's own
@@ -1838,7 +1810,6 @@ func u16bytes(v []uint16) []byte {
 // pins the caller's own already-populated bytes; the DMA source content is byte-for-byte the same
 // either way, gated correctness tests unaffected). `GOINFER_MOE_PIN_REGISTER=0` restores the
 // allocate-then-copy order the pre-registered measurement called the do-nothing arm.
-var mapBytesRegisterInPlace = os.Getenv("GOINFER_MOE_PIN_REGISTER") != "0"
 
 // mapBytes stages src as the C′ DMA source: pinned (device-mapped) host memory holding exactly
 // src's bytes. src is caller-owned and already fully populated (the merged expert-stack slice
@@ -1848,7 +1819,7 @@ var mapBytesRegisterInPlace = os.Getenv("GOINFER_MOE_PIN_REGISTER") != "0"
 // Panics on the UVA guard failing: eligibility already asserted a UVA device, so a failure here is
 // a broken invariant, not a runtime condition.
 func (r *cudaResident) mapBytes(src []byte) *gpu.MappedHostBuffer {
-	if mapBytesRegisterInPlace {
+	if r.knobValue("GOINFER_MOE_PIN_REGISTER") != "0" { // register in place, above
 		mb, err := r.dev.RegisterMappedHostBuffer(src)
 		if err != nil {
 			panic(fmt.Sprintf("cacheWQ: RegisterMappedHostBuffer(%d): %v", len(src), err))

@@ -100,16 +100,16 @@ func MoEPagerDefault(goos string) string {
 }
 
 // resolveMoEPagerPool reports whether the CPU expert pager uses the owned-buffer pool: an explicit
-// Options.MoEPager wins; otherwise GOINFER_MOE_PREAD_CPU ("1"/"0") when set; otherwise the platform
-// default.
-func resolveMoEPagerPool(opt string) bool {
+// Options.MoEPager wins; otherwise GOINFER_MOE_PREAD_CPU ("1"/"0") when set — preadCPU, read once at Load
+// (loadKnob), so Options.Knobs can set it per model; otherwise the platform default.
+func resolveMoEPagerPool(opt, preadCPU string) bool {
 	switch opt {
 	case "pool":
 		return true
 	case "mmap":
 		return false
 	}
-	switch os.Getenv("GOINFER_MOE_PREAD_CPU") {
+	switch preadCPU {
 	case "1":
 		return true
 	case "0":

@@ -196,7 +196,7 @@ func (b *webgpuBackend) residentW4A8For(bQ4 []byte, bScales []float32, N, K int)
 	}
 	var rm *ResidentW4A8
 	var err error
-	if K%w4a8GroupSize == 0 && !int4SlowPath {
+	if K%w4a8GroupSize == 0 {
 		// Fast path: decoder's 2-nibble/byte int4 is byte-identical to the GPU packed
 		// layout when K%32==0 (TestInt4LayoutMatch) — upload the bytes straight, mirroring
 		// uploadProj's own fast path.

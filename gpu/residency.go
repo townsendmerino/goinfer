@@ -24,10 +24,10 @@ import (
 // the bridge pulls a projection's resident arrays via its exported accessors
 // (Kind/Rows/Cols/Int4/Int8) directly — no goinfer-local interface needed.
 
-// int4SlowPath forces the unpack+packNibbles resident upload over the direct byte upload
-// (GOINFER_INT4_SLOWPATH set) — for isolating the fast-path delta on the same
-// checkpoint+cache. The fast path (decoder int4 bytes == GPU layout, K%32==0) is the default.
-var int4SlowPath = os.Getenv("GOINFER_INT4_SLOWPATH") != ""
+// The int4 resident upload takes the direct byte path whenever K%32==0 (decoder int4 bytes == GPU
+// layout), else unpack+packNibbles. GOINFER_INT4_SLOWPATH, which forced the latter to isolate the
+// fast path's delta, was retired 2026-09-24 (docs/tasks/task-env-config-2026-09.md, phase 6); the
+// measurement is in docs/completed/mellum2-resident.md.
 
 // uploadProj uploads one projection to the device at its native precision,
 // returning a decodeWeight the DecodeRunner can GEMV. int4 and int8 only (the
@@ -43,7 +43,7 @@ func (c *Context) uploadProj(w *linalg.WeightMat) (decodeWeight, error) {
 		// Fast path: when K%32==0 the decoder's 2-nibble/byte int4 is byte-identical to the
 		// GPU packed layout (TestInt4LayoutMatch), so upload the bytes straight — no
 		// per-element unpack + packNibbles re-pack (the ~30s/12B-param resident-load tax).
-		if K%w4a8GroupSize == 0 && !int4SlowPath {
+		if K%w4a8GroupSize == 0 {
 			return c.UploadW4A8Packed(q4, q4s, N, K)
 		}
 		// Fallback (K not a multiple of 32 → row padding differs): unpack 2-nibble/byte to
@@ -571,7 +571,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 			// Fast path (K%32==0): the decoder's 2-nibble/byte int4 is byte-identical to the
 			// GPU packed layout, so pass the decoder bytes straight to the Packed upload —
 			// one memcpy/expert to concatenate, no per-element unpack+repack (the ~30s tax).
-			if K%w4a8GroupSize == 0 && !int4SlowPath {
+			if K%w4a8GroupSize == 0 {
 				q4s := make([][]byte, nE)
 				scs := make([][]float32, nE)
 				for e := range nE {

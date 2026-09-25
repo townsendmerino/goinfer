@@ -13,14 +13,12 @@ import (
 	"github.com/townsendmerino/goinfer/gpu"
 )
 
-// TestGIWInt4_loadtime times JUST the int4 .giw resident load (no direct cross-load), so
-// the fast int4 upload (direct decoder bytes) can be compared against the old unpack+repack
-// path (GOINFER_INT4_SLOWPATH=1) on the SAME bundle + warm page cache — isolating the
-// fast-path delta from the bf16-read / quantize noise of a direct load. Run both modes
-// back-to-back; the first warms the mmap.
+// TestGIWInt4_loadtime times JUST the int4 .giw resident load (no direct cross-load), isolating
+// the upload from the bf16-read / quantize noise of a direct load. (Its old comparison arm,
+// GOINFER_INT4_SLOWPATH, was retired 2026-09-24; the fast-vs-slow result is in
+// docs/completed/mellum2-resident.md.)
 //
 //	GOINFER_GIW_INT4=/tmp/mellum2.int4.giw go test -tags gpu ./gpu/ -run TestGIWInt4_loadtime -v
-//	GOINFER_GIW_INT4=/tmp/mellum2.int4.giw GOINFER_INT4_SLOWPATH=1 go test -tags gpu ./gpu/ -run TestGIWInt4_loadtime -v
 func TestGIWInt4_loadtime(t *testing.T) {
 	if _, err := gpu.New(); err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)
@@ -39,11 +37,7 @@ func TestGIWInt4_loadtime(t *testing.T) {
 	}
 	defer m.Close()
 	load := time.Since(t0)
-	mode := "fast (direct int4 upload)"
-	if os.Getenv("GOINFER_INT4_SLOWPATH") != "" {
-		mode = "slow (unpack+packNibbles)"
-	}
-	t.Logf("int4 .giw resident load: %v  [%s]  resident=%v", load.Round(time.Millisecond), mode, m.ResidentActive())
+	t.Logf("int4 .giw resident load: %v  resident=%v", load.Round(time.Millisecond), m.ResidentActive())
 }
 
 // TestGIWInt4_resident gates the int4 `.giw` → GPU-resident seam (docs/task-mellum2-fast-load.md

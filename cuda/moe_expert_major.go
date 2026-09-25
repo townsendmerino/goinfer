@@ -3,7 +3,6 @@
 package cuda
 
 import (
-	"os"
 	"sort"
 
 	"github.com/townsendmerino/aikit/gpu"
@@ -52,8 +51,8 @@ import (
 // default because it is bit-identical and never measured a regression, not because it was the case
 // this default was chosen for.
 // GOINFER_CUDA_MOE_EXPERT_MAJOR=0 restores the per-row path.
-func prefillExpertMajorEnabled() bool {
-	return os.Getenv("GOINFER_CUDA_MOE_EXPERT_MAJOR") != "0"
+func (r *cudaResident) prefillExpertMajorEnabled() bool {
+	return r.knobValue("GOINFER_CUDA_MOE_EXPERT_MAJOR") != "0"
 }
 
 // moeExpertMajorRuns counts chunks/layers that actually took this path — a non-vacuity counter, the same
@@ -77,7 +76,7 @@ type moeExpertMajorState struct {
 // prefillMoEExpertMajorEligible reports whether layer Ly can take the expert-major path at all — checked ONCE
 // per layer before the chunk's row loop starts, so a decline costs nothing (no state is built).
 func (r *cudaResident) prefillMoEExpertMajorEligible(Ly *cudaLayer) bool {
-	if !prefillExpertMajorEnabled() || !Ly.isMoE || Ly.g4moe || Ly.hasShared || r.gptOssRoute != (Pipeline{}) {
+	if !r.prefillExpertMajorEnabled() || !Ly.isMoE || Ly.g4moe || Ly.hasShared || r.gptOssRoute != (Pipeline{}) {
 		return false
 	}
 	if r.expBiasArg(Ly) != (Buffer{}) || r.expDownBiasArg(Ly) != (Buffer{}) {

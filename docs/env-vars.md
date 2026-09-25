@@ -11,7 +11,7 @@ is grep-derivable and enumerated at the bottom.
 
 ## Read once per model, at Load (since 2026-09-24)
 
-These forty-six knobs are snapshotted when a model is loaded, not read on every forward:
+These fifty-two knobs are snapshotted when a model is loaded, not read on every forward:
 `GOINFER_ATTN_GROUPED`, `GOINFER_ATTN_ROW_TILE`, `GOINFER_PREFILL_ATTN_WORKERS`,
 `GOINFER_FUSED_ATTENTION`, `GOINFER_MLA_NAIVE`, `GOINFER_MOE_EXPERT_MAJOR`, `GOINFER_BATCHED_PREFILL`,
 `GOINFER_NO_KVONLY_PREFILL`, `GOINFER_NO_GREEDY_FASTPATH`, `GOINFER_NO_OPTFWD`,
@@ -25,7 +25,9 @@ These forty-six knobs are snapshotted when a model is loaded, not read on every 
 `GOINFER_METAL_ATTN_FA`, `GOINFER_METAL_BATCHED_PREFILL`, `GOINFER_METAL_DECODE_LANE`, `GOINFER_METAL_FAST_PREFILL`,
 `GOINFER_METAL_FAST_PREFILL_FLOOR`, `GOINFER_METAL_FUSED_ATTENTION`, `GOINFER_METAL_MOE_SLOTS`, `GOINFER_MOE_NOCACHE`,
 `GOINFER_MOE_PREAD`, `GOINFER_MOE_RESIDENCY`, `GOINFER_MOE_RESIDENCY_SCOPE`, `GOINFER_NO_RESIDENT_MEM_GUARD`,
-`GOINFER_PRECISE_MATH`. Changing one after Load does not affect a model already loaded. A
+`GOINFER_PRECISE_MATH`, and (phase 6, rollback switches for default-on paths) `GOINFER_CUDA_MOE_EXPERT_MAJOR`,
+`GOINFER_CUDA_ATTN_FUSED_TILE`, `GOINFER_MOE_DMA_OVERLAP`, `GOINFER_MOE_PIN_REGISTER`,
+`GOINFER_CUDA_L01_CPU_OFFLOAD`, `GOINFER_MOE_PREAD_CPU`. Changing one after Load does not affect a model already loaded. A
 library caller can set any of them for one model with `decoder.Options{Knobs: &decoder.Knobs{name: value}}` (which
 overrides the environment for that model only).  The CPU, CUDA and Metal paths
 all read them from the model's snapshot (`decoder.Model.Knob`). See
@@ -69,7 +71,7 @@ panics instead of silently comparing a path with itself.
 | `GOINFER_METAL_FUSED_ATTENTION` | Toggle `attention_prefill_fused` (the simdgroup_matrix flash-attention twin of `attention_prefill`, L2-Metal, `docs/completed/task-prefill-gap.md` §4), used inside the batched path above. Default ON since §3 gate passed (2026-09-10, `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md` §5). `=0`/`false`/`off` falls back to the exact scalar kernel; `=1`/`true`/`on` forces it on. Requires hd%8==0 && hd<=128 (`ATTN_MAXHD`) regardless of this flag. Server flag: `--exact-prefill` covers it transitively (disables the whole batched path, so this kernel never dispatches). |
 | `GOINFER_METAL_DECODE_LANE` | R1 (`docs/tasks/red-october.md`) — `=w4f16` opts a dense (non-MoE, non-paged, non-sandwich/postOnly/parallelBlock/qGate/outBias/layerNorm, no compute-time LoRA) layer's QKV/o-proj/gate-up decode GEMVs into the f16-activation lane instead of the shipped W4A8 (int8-activation) path; unset is the default and unaffected. **Experimental, opt-in, not yet gated**: the 2026-09-19 "catastrophic divergence at layer 26" that first parked this lane was an instrument error — the shipped W4A8 path was used as ground truth at the attention-sink position, where its per-tensor int8 activation scale is the coarse arm; against an f64 reference the f16 lane is exact and against a CPU reference it is at least as faithful as W4A8 (see [`r1-layer26-rootcause-2026-09-20.md`](measurements/r1-layer26-rootcause-2026-09-20.md), superseding [`w4f16-decode-investigation-2026-09-19.md`](measurements/w4f16-decode-investigation-2026-09-19.md)). It stays off by default because R1's real gates — the pooled teacher-forced fidelity gate and the served-tok/s band — have not been run on it; `metal/r1_gu_reference_test.go` and `metal/r1_lane_vs_cpu_test.go` are its keeper tests. |
 | `GOINFER_METAL_ATTN_FA` | R2 (`docs/tasks/red-october.md`) — decode attention on Metal, `attention_fa`/`attention_fa_combine` (a kernel gridded by kvHead×split, cooperatively coalescing a GQA group's K/V reads) for dense-GQA, hd=128, window/sink-free layers past `attnFADepthFloor` (1536 keys); the shipped `attention` kernel runs below the floor or when this is off. **DEFAULT ON since 2026-09-21.** The kernel is correctness-proven in isolation and against a real CPU f32 reference (gate (3) PASSES — [`r2-attn-fa-rootcause-2026-09-21.md`](measurements/r2-attn-fa-rootcause-2026-09-21.md)); a 2026-09-19/20 "divergence at the 3rd decode token" that parked the Build attempt was an end-to-end-logits instrument crossing one int8 rounding boundary, not a kernel defect — see that record. It is a real, deterministic 1.11–1.19× at depth ([`r2-attn-fa-speed-2026-09-21.md`](measurements/r2-attn-fa-speed-2026-09-21.md)) — **below the brief's own peer-parity band** (needed ≥60 tok/s at depth 4000, measured 44.9), **shipped anyway by owner decision** as an incremental win despite missing that bar. NOT bit-identical to the shipped kernel (reduction/combine order differs by design — moves argmax at the margin on some inputs; `TestMetalSnapshotGolden` now covers this kernel via `llama-attnfa-tiny` — closed 2026-09-21, checkpoints straddling the 1536 floor exactly); also a second source of decode/`ForwardN` divergence on top of the pre-existing one `docs/spec/08-dspark-dflash.md` already names, on a Metal spec-decode verify path that was already not a legal oracle for that other reason (P10 — "not a build target" independent of this). `0`/`false`/`off` opts out to the shipped kernel unconditionally; `1`/`true`/`on` is explicit and harmless (matches the default). |
-| `GOINFER_INT4_SLOWPATH` / `GOINFER_INT4_F16_SCALES` | int4 unpack path selectors. |
+| `GOINFER_INT4_F16_SCALES` | int4 unpack path selector. |
 | `GOINFER_CUDA_NO_FUSE` | Disable CUDA kernel fusion (debug/A-B). |
 | `GOINFER_MLA_NAIVE` | Use the naive (un-optimized) MLA attention path. |
 
@@ -126,11 +128,11 @@ after upgrading needs one place to look.
 Listed so the registry is complete and `TestEnvVars_docAndCodeAgree` has somewhere to put things
 that are not operator-facing. These may change or disappear without notice:
 
-`GOINFER_A10_PROBE`, `GOINFER_DELTANET_TIMING`, `GOINFER_ROUTER_CAPTURE`,
+`GOINFER_DELTANET_TIMING`,
 `GOINFER_MOE_CACHE_PROF`,
 `GOINFER_CUDA_L01_CPU_OFFLOAD` (L-01 prototype: hybrid CPU/GPU MoE expert offload,
 docs/tasks/task-l01-hybrid-moe-cpu-gpu.md — synchronous only, no overlap yet, default off),
-`GOINFER_FAKEQUANT_ACT`, `GOINFER_FAKEQUANT_EXPERTS`, `GOINFER_FAKEQUANT_PERROW`,
+`GOINFER_FAKEQUANT_ACT`, `GOINFER_FAKEQUANT_EXPERTS`,
 `GOINFER_SSM_W8A16`, `GOINFER_SSM_F16MAMBA`, `GOINFER_SSM_NOMUL`, `GOINFER_SSM_Q8CPU`,
 `GOINFER_SSM_SKIPFFN`, `GOINFER_CUDA_L01_CPU_OFFLOAD`,
 `GOINFER_GEMMA4_RESIDENT` (M-56, audit-2026-09-10.md: a Gemma-4 bring-up gate that is now a
@@ -218,7 +220,12 @@ this file's doc/code check does not read them as live knobs): `MOE_PREFILL_SCRAT
 `ATTN_TIMING_DEBUG` (R13 attention timer — now a package variable its diagnostic test sets), `SSM_STOP_LAYER`
 (resident-SSM layer sweep — now test hooks in `decoder` and `gpu`), `MOE_WILLNEED` (Metal expert readahead, measured and
 declined — the record stays as a comment in `metal/gemma4_moe.go`), and the unprefixed `G4DEBUG` (Gemma-4 per-layer norm
-print, which nothing here tracked because it lacked the prefix). Setting any of them now does nothing.
+print, which nothing here tracked because it lacked the prefix). Phase 6 of docs/tasks/task-env-config-2026-09.md
+(same day, owner-approved) retired `A10_PROBE` (C′ per-allocation VRAM recording — its capacity-vs-servability answer
+is recorded beside `allocSlots` in `cuda/resident.go`) and `INT4_SLOWPATH` (forced WebGPU's slow int4 upload to
+isolate the fast path; result in docs/completed/mellum2-resident.md), and turned `ROUTER_CAPTURE` and
+`FAKEQUANT_PERROW` into test seams (package variables their tests set; no env read). Setting any of them now does
+nothing.
 
 ## CI & test gates
 

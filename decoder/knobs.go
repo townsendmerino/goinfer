@@ -37,6 +37,9 @@ const (
 	knobNoResidency     = "GOINFER_NO_RESIDENCY"
 	knobNoResidentReuse = "GOINFER_NO_RESIDENT_REUSE"
 	knobSSMResident     = "GOINFER_SSM_RESIDENT"
+
+	// Phase 6: a rollback switch that had been filed as a diagnostic.
+	knobMoEPreadCPU = "GOINFER_MOE_PREAD_CPU"
 )
 
 // cudaKnobs are phase 3's: the CUDA backend's operator knobs, snapshotted here with the rest so one mechanism
@@ -47,6 +50,9 @@ var cudaKnobs = []string{
 	"GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "GOINFER_CUDA_FLASH_DECODE_VERIFY", "GOINFER_CUDA_NO_FUSE",
 	"GOINFER_NO_LORA_CACHE", "GOINFER_PREFILL_CHUNK", "GOINFER_PREFILL_IMAGE_CHUNK", "GOINFER_SPLITKV_ATTN",
 	"GOINFER_SPLITKV_MIN_KEYS",
+	// Phase 6: rollback switches for default-on paths, filed as diagnostics until then.
+	"GOINFER_CUDA_MOE_EXPERT_MAJOR", "GOINFER_CUDA_ATTN_FUSED_TILE", "GOINFER_MOE_DMA_OVERLAP",
+	"GOINFER_MOE_PIN_REGISTER", "GOINFER_CUDA_L01_CPU_OFFLOAD",
 }
 
 var knobNames = []string{
@@ -54,7 +60,7 @@ var knobNames = []string{
 	knobBatchedPrefill, knobNoKVOnlyPrefill, knobNoGreedyFastpath, knobNoOptFwd, knobNoSampleFastpath,
 	knobNoTopKFastpath, knobOptFwdMaxTemp, knobCPUFastAttention,
 	knobMoECacheExperts, knobMoECacheSlots, knobNoFitDefault, knobNoFitGuard, knobNoResidency,
-	knobNoResidentReuse, knobSSMResident,
+	knobNoResidentReuse, knobSSMResident, knobMoEPreadCPU,
 }
 
 // metalKnobs are phase 4's: the Metal backend's operator knobs, same arrangement as cudaKnobs (read through

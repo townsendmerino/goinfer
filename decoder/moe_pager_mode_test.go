@@ -12,21 +12,21 @@ import (
 func TestResolveMoEPagerPool(t *testing.T) {
 	t.Setenv("GOINFER_MOE_PREAD_CPU", "")
 	os.Unsetenv("GOINFER_MOE_PREAD_CPU")
-	if got, want := resolveMoEPagerPool(""), MoEPagerDefault(runtime.GOOS) == "pool"; got != want {
+	if got, want := resolveMoEPagerPool("", os.Getenv("GOINFER_MOE_PREAD_CPU")), MoEPagerDefault(runtime.GOOS) == "pool"; got != want {
 		t.Errorf("unset everything: pool=%v, want the platform default %v", got, want)
 	}
-	if !resolveMoEPagerPool("pool") || resolveMoEPagerPool("mmap") {
+	if !resolveMoEPagerPool("pool", os.Getenv("GOINFER_MOE_PREAD_CPU")) || resolveMoEPagerPool("mmap", os.Getenv("GOINFER_MOE_PREAD_CPU")) {
 		t.Error("an explicit Options.MoEPager must win")
 	}
 	t.Setenv("GOINFER_MOE_PREAD_CPU", "1")
-	if !resolveMoEPagerPool("") {
+	if !resolveMoEPagerPool("", os.Getenv("GOINFER_MOE_PREAD_CPU")) {
 		t.Error("GOINFER_MOE_PREAD_CPU=1 with no option: want pool")
 	}
-	if resolveMoEPagerPool("mmap") {
+	if resolveMoEPagerPool("mmap", os.Getenv("GOINFER_MOE_PREAD_CPU")) {
 		t.Error("an explicit option must beat the env var")
 	}
 	t.Setenv("GOINFER_MOE_PREAD_CPU", "0")
-	if resolveMoEPagerPool("") {
+	if resolveMoEPagerPool("", os.Getenv("GOINFER_MOE_PREAD_CPU")) {
 		t.Error("GOINFER_MOE_PREAD_CPU=0 with no option: want mmap")
 	}
 	for goos, want := range map[string]string{"darwin": "pool", "linux": "mmap", "windows": "mmap"} {

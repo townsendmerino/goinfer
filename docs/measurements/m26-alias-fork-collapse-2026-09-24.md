@@ -64,7 +64,7 @@ closed component is Apple's GPU driver, whose behaviour is established by the ex
 | step | what | where |
 |---|---|---|
 | 1 | `decoder.Load` maps the whole `.giw` `PROT_READ`, `MAP_PRIVATE` — one VM map entry over a copy-delayed object with `needs_copy` | aikit `mmap/mmap_unix.go:46`; `kern_mman.c:928-935`; `vm_object.c:4061-4067` |
-| 2 | `weightAlias` creates one `newBufferWithBytesNoCopy` per tensor/fused group over its page-aligned window; creation wires nothing | `metal/alias.go:97-193`; aikit gpu module's `Device.NewBufferNoCopy`; TestNoCopyWiring (+40 pages at creation) |
+| 2 | `weightAlias` creates one `newBufferWithBytesNoCopy` per tensor/fused group over its page-aligned window; creation wires nothing | `metal/alias.go:100-196`; aikit gpu module's `Device.NewBufferNoCopy`; TestNoCopyWiring (+40 pages at creation) |
 | 3 | At the first command buffer that references such a buffer, the driver prepares it: `IOMemoryDescriptor::prepare → wireVirtual → vm_object_iopl_request`, which **faults every page with `prot \| VM_PROT_WRITE`** even for a read-only UPL, and marks the object `true_share`, `COPY_DELAY` | `IOMemoryDescriptor.cpp:4173-4245`; `vm_pageout.c:8404-8422, 8585-8586` |
 | 4 | A write-intent fault on a `needs_copy` private file page **copies it** into a fresh anonymous page of the top (shadow) object — wired, and not in the process's pmap, so invisible to RSS/footprint | `vm_fault.c:2203-2246, 2289-2291` |
 | 5 | `vm_map_fork` sends any entry whose object is `true_share` (or map-wired) to `slow_vm_map_fork_copy`, which copies **the whole entry** | `vm_map.c:13954-13957, 13649-13672` |

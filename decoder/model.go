@@ -503,7 +503,7 @@ func Load(dir string, opts Options) (*Model, error) {
 			opts.WeightCacheBytes = resolveWeightCacheBudget(opts.WeightCacheBytes)
 			// MoE → expert demand-paging (#2); dense → per-layer streaming (#4).
 			if w.arch.MoE != nil {
-				if m.pager = newExpertPager(w, data, opts.WeightCacheBytes, dir, resolveMoEPagerPool(opts.MoEPager)); m.pager != nil {
+				if m.pager = newExpertPager(w, data, opts.WeightCacheBytes, dir, resolveMoEPagerPool(opts.MoEPager, loadKnob(opts, knobMoEPreadCPU))); m.pager != nil {
 					fmt.Fprintln(os.Stderr, "decoder: "+pagerSummary(m.pager))
 					// S4 item 5: the arithmetic the M35 run needed before it started — predict
 					// the working-set rate and require an explicit acknowledgement below the

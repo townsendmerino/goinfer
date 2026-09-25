@@ -1,6 +1,6 @@
 # Task: configuration out of the process environment (2026-09)
 
-> **Status 2026-09-24: phase 1 (the ratchet) DONE; phases 2a/2b (21 decoder knobs) and 3 (11 CUDA knobs) DONE; phase 4 (15 Metal knobs) DONE; phase 5 (app code sets no env vars) DONE; 6 open, plus one owner decision (below).** Owner asked for this after a review found
+> **Status 2026-09-24: phase 1 (the ratchet) DONE; phases 2a/2b (21 decoder knobs) and 3 (11 CUDA knobs) DONE; phase 4 (15 Metal knobs) DONE; phase 5 (app code sets no env vars) DONE; phase 6 (diagnostics triaged, owner-approved) DONE — the task is complete.** Owner asked for this after a review found
 > configuration passed through the process environment. The four concrete defects that review named are already fixed
 > (`a50815ed`: duplicate doc rows, the darwin pager mode set via env, Metal's prefill flag re-read per call, five campaign
 > switches retired); this doc is the general program.
@@ -184,12 +184,37 @@ through `resident.knob`; a hand-built test resident reads the live environment.
   an A/B arm for a kernel choice (`tiled16` is the GEMM R10's rb64 replaced; `INT4_SLOWPATH` isolates the fast-upload
   delta; `ATTN_KEYS=0` the pre-key-split kernel). Threading a model through device-level code for them buys nothing.
 
-**Owner decision pending — the done criterion.** The criterion below ("the list holds only diagnostics") cannot be met
-by the startup-configuration group above without moving `API_KEY` out of the environment, which would be a regression.
-Proposed: amend it to "diagnostics with a named owner, plus documented startup configuration read once".
+**Owner decision 2026-09-24 — the done criterion is amended.** The original ("the list holds only diagnostics") could
+not be met by the startup-configuration group above without moving `API_KEY` out of the environment, a regression. It
+now reads: the list holds only diagnostics with a named owner and a reason, plus documented startup configuration read
+once.
+
+### Phase 6 result (2026-09-24) — owner-approved triage
+
+41 diagnostics triaged with the owner, in four groups:
+
+1. **Rollback switches for default-on paths → the per-model snapshot:** `CUDA_MOE_EXPERT_MAJOR`,
+   `CUDA_ATTN_FUSED_TILE`, `MOE_DMA_OVERLAP`, `MOE_PIN_REGISTER`, `CUDA_L01_CPU_OFFLOAD` (all `cudaKnobs`), and
+   `MOE_PREAD_CPU` (decoder; read through `loadKnob` at Load, so `Options.Knobs` can set it). `CUDA_VISION_ATTN` was
+   in this group but stays a documented diagnostic: `NewVisionEncoder` builds from vision weights with no
+   `decoder.Model` behind it, and already reads it once per encoder.
+2. **Retired:** `A10_PROBE` (its capacity-vs-servability answer is recorded beside `allocSlots`) and `INT4_SLOWPATH`
+   (the slow upload stays for K%32≠0; only the forcing switch went). `ROUTER_CAPTURE` and `FAKEQUANT_PERROW` lost
+   their env read but stay as test seams — tests set them directly (the MoE noise-floor, Gemma-4 router-capture and
+   §7 Phase 0b tests).
+3. **Kept as diagnostics with an owner** — including `SSM_F16MAMBA` and `SSM_W8A16`, which the owner did not choose to
+   retire.
+4. **Test-hook reads:** `TEST_NOTHINK` and `PREFILL_GATE_PROMPTS` are read only in `goinfer_testhooks`-tagged files,
+   which no shipped binary contains; the ratchet scan no longer counts such files as production.
+
+**The done criterion is now enforced, not described.** `testdata/env_reads.txt` lines are
+`NAME<TAB>startup: <who> — <why>` or `NAME<TAB>diagnostic: <owning doc> — <why>`; `TestEnvVars_docAndCodeAgree`
+fails on an entry with neither (proven red by stripping one), and `-update` keeps the annotations. 45 entries: 16
+startup, 29 diagnostic. Down from 103 production reads when this task began.
 
 Phases 2–5 each shrink `testdata/env_reads.txt`; the task is done when the list holds only diagnostics with a named owner
-and a reason, and the rule-1 guard stays.
+and a reason, plus documented startup configuration read once (amended 2026-09-24, owner decision), and the rule-1
+guard stays.
 
 ## Inventory (2026-09-24, from the code; tier from the section of `docs/env-vars.md` that documents it)
 
