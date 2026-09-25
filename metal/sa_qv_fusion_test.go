@@ -27,8 +27,7 @@ import (
 // model.go on the strength of the dispatch-count argument alone; the wall-clock number doesn't
 // back it up here.
 //
-// Real dims (K=1536, N=1536): qwen2.5-coder-1.5b's o-proj (batched_verify_test.go:599 —
-// hidden=1536, 12 heads, headDim=128, nH*hd=1536=K; o-proj output=hidden=1536=N).
+// Real dims (K=1536, N=1536): qwen2.5-coder-1.5b's o-proj (hidden=1536, 12 heads, headDim=128, nH*hd=1536=K; o-proj output=hidden=1536=N).
 func TestSAQVFusion_correctnessAndThroughput(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {

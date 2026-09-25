@@ -6,6 +6,10 @@
 > the doc-closeout rule in `docs/parity-coverage-policy.md`, and move it to live policy or strike
 > it.
 >
+> **Code removed 2026-09-24** (owner clean-up of code whose record says it didn't pay): the NO-GO
+> kernels and their tests were deleted; last present at `8f452a7e` (`metal/batched_verify_kernels.go`,
+> `metal/batched_verify_test.go`). Everything below describes them as they were.
+>
 > **Status (2026-09-13, doc review): COMPLETE.** All five phases ran to completion, verified
 > against real weights on two model families, and the doc's own Outcome section already states the
 > final call. Deliverables (`metal/batched_verify_kernels.go`, `metal/batched_verify_test.go`) are

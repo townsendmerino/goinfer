@@ -33,7 +33,7 @@ package metal
 // CUDA reference explicitly fuses (__fmaf_rn); every site the CUDA reference deliberately leaves
 // unfused (__fmul_rn followed by a separate __fadd_rn) is written here as two separate
 // expressions, mirroring the CUDA source's literal shape rather than a mathematically-equivalent
-// rewrite — see metal/batched_verify_kernels.go's note on why literal source form, not just
+// rewrite — see docs/completed/task-metal-batched-verify-kernel.md on why literal source form, not just
 // arithmetic equivalence, is what fast-math contraction keys off.
 const deltaNetKernels = `
 inline float dn_silu(float x) { return x / (1.0f + exp(-x)); }
