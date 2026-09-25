@@ -1,6 +1,14 @@
 # 05 — EAGLE-3 feature head
 
-> Status: **proposal**. Depends on [00-core](./00-core.md). Highest effort, but it is
+> **Status 2026-09-24: built, measured, KILLED on CPU wall-clock, code removed.** The pipeline below was built
+> end-to-end and gated lossless, then the CPU kill-gate measured it a wall-clock LOSS (greedy 6.52 tok/s →
+> linear spec 2.70, 0.41× → tree spec 1.07, 0.16×; [experiments](./experiments.md)); the GPU route stayed
+> parked. It never had a production caller. `decoder/eagle.go`, `decoder/spec_eagle.go`, their eight test files
+> and `tools/eagle_parity_ref.py` were removed in the owner's clean-up of code whose record says it didn't pay;
+> last present at `8f452a7e`. The tree-attention plumbing in `forwardN` (`KVCache.treeMask`) stays: it is a
+> separately gated substrate, nil on every live path. Everything below is the record.
+>
+> Original status: **proposal**. Depends on [00-core](./00-core.md). Highest effort, but it is
 > the general-purpose SOTA and the strongest moat. Tackle after the cheap wins
 > ([01](./01-grammar-fused.md), [02](./02-cache-ngram.md), [04](./04-adaptive-depth.md)).
 

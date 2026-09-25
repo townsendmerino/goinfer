@@ -3,7 +3,6 @@ package decoder
 import (
 	"context"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -84,51 +83,4 @@ func TestSessionFastAttnDivergence(t *testing.T) {
 				"forwardn.go's NOT-SPLIT-INVARIANT note should say so", len(long))
 		}
 	})
-}
-
-// M-07, the EAGLE half. EAGLE's contract is that it is token-identical to plain greedy, and
-// that rests on both paths building the SAME KV for the same prompt. They did not: EAGLE
-// prefilled through forwardN, which is hard-wired to the exact kernel because speculative
-// VERIFY needs it, while Generate's prefillLogits uses cpuFastAttention(). Above the 512-token
-// floor the two KVs differ, so the emitted streams can diverge at temperature 0.
-// TestEagleSpecParity uses a ~25-token prompt — comfortably under the floor, so it could not
-// see this.
-//
-// Asserted on the source: the divergence needs a real EAGLE head and a >512-token prompt to
-// show up end-to-end, and what actually has to hold is the narrow structural claim that
-// prefill and verify make DIFFERENT choices, with prefill matching prefillLogits.
-func TestEagle_prefillsWithTheSameKernelAsGenerate(t *testing.T) {
-	src, err := os.ReadFile("spec_eagle.go")
-	if err != nil {
-		t.Fatalf("read spec_eagle.go: %v", err)
-	}
-	var prefill, exact int
-	for ln := range strings.SplitSeq(string(src), "\n") {
-		s := strings.TrimSpace(ln)
-		if strings.HasPrefix(s, "//") || !strings.Contains(s, "captureN(") {
-			continue
-		}
-		switch {
-		// The PER-MODEL form, the one prefillLogits uses since Options.ExactPrefill became a model
-		// property: the package-level cpuFastAttention() ignores it, so an ExactPrefill model would
-		// prefill EAGLE on the fast kernel and Generate on the exact one — M-07's divergence again.
-		case strings.Contains(s, "captureN(prompt, m.cpuFastAttention())"):
-			prefill++
-		case strings.Contains(s, ", false)"):
-			exact++
-		default:
-			t.Errorf("a captureN call makes neither choice explicitly: %s", s)
-		}
-	}
-	// Two prefill sites (the two EAGLE loops), four verify/commit/correction sites.
-	if prefill != 2 {
-		t.Errorf("%d EAGLE prefill(s) use m.cpuFastAttention(), want 2 — a prefill on the exact "+
-			"kernel builds different KV from Generate's, and EAGLE's token-identical-to-greedy "+
-			"claim depends on them matching (M-07)", prefill)
-	}
-	if exact != 4 {
-		t.Errorf("%d captureN call(s) pin the exact kernel, want 4 — speculative verify must run "+
-			"acc64 on both arms or its equality argument collapses; only PREFILL should follow "+
-			"the operator's flag", exact)
-	}
 }

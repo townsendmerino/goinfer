@@ -51,25 +51,3 @@ func TestValidateNgramSpec_rejectsGreedyPenalties(t *testing.T) {
 		t.Error("sampled + penalties is still history-dependent (threaded, not rejected)")
 	}
 }
-
-// TestEagleTreeNodes gates M15: DraftTree builds a FULL b-ary tree, so a round has
-// Σ_{i=1}^{d} b^i nodes — not b*d. This is what sizes the cache and what
-// stats.Drafted must count. The b=2,d=5 → 62 case matches the tree-shape comment in
-// eagle_accept_test.go.
-func TestEagleTreeNodes(t *testing.T) {
-	for _, c := range []struct {
-		b, d, want int
-	}{
-		{2, 4, 30}, // 2+4+8+16
-		{2, 5, 62}, // 2+4+8+16+32 — the accept test's "full binary tree to depth 5"
-		{1, 4, 4},  // a single chain
-		{3, 2, 12}, // 3+9
-		{2, 1, 2},  // just the root's children
-		{4, 0, 0},  // no depth ⇒ no nodes
-	} {
-		if got := eagleTreeNodes(c.b, c.d); got != c.want {
-			t.Errorf("eagleTreeNodes(%d,%d) = %d, want %d (b*d=%d shows the old undercount)",
-				c.b, c.d, got, c.want, c.b*c.d)
-		}
-	}
-}
