@@ -86,6 +86,7 @@ type session struct {
 
 	draft *decoder.Model // optional speculative-decoding draft model (--draft)
 	specK int            // speculative draft length per verify pass
+	ngram bool           // --spec ngram: lossless n-gram (prompt-lookup) drafting, adaptive depth
 }
 
 // fitFlag is a lenient bool flag.Value: plain flag.Bool only accepts strconv.ParseBool's
@@ -231,7 +232,8 @@ All flags:
 		schema       = flag.String("schema", "", "constrain output to a JSON Schema file (implies JSON mode); the model cannot emit non-conforming JSON")
 		seed         = flag.Int64("seed", 0, "sampling RNG seed")
 		modelTmp     = flag.Bool("model-tmp", false, "embed build: stream the baked-in model to a temp file + mmap instead of loading it into memory. Lower peak RAM for big models, but needs a writable temp dir. Also via GOINFER_MODEL_TMP=1. (If your temp dir is a tmpfs / RAM-backed, this saves no RAM.)")
-		draft        = flag.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab.")
+		draft        = flag.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab. chat-only; goinfer-serve offers --spec ngram and --drafter instead")
+		spec         = flag.String("spec", "", "speculative decoding without a second model: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth, as goinfer-serve's --spec. Wins on copy-heavy turns (code edits, quoting the conversation back); output is identical to plain decode (greedy bit-exact, sampled in-distribution). Falls back to plain decode per turn when it cannot apply (e.g. with --schema). Not combinable with --draft")
 		specK        = flag.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
 		showVersion  = flag.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
 		directLoad   = flag.Bool("direct-load", os.Getenv("GOINFER_GGUF_DIRECT") != "", "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin (since S1, task-never-swap-2026-09.md) and linux (since 2026-09-24) a .gguf resolves to its sidecar by default — this opts back out to the direct-heap-dequant load, which is still the default on other platforms. Also via GOINFER_GGUF_DIRECT=1")
@@ -328,6 +330,19 @@ All flags:
 		fmt.Fprintf(os.Stderr, "constraining output to JSON Schema %s\n", *schema)
 	}
 
+	switch *spec {
+	case "":
+	case "ngram":
+		if *draft != "" {
+			fmt.Fprintln(os.Stderr, "error: --spec ngram and --draft are two ways to speculate; pick one")
+			os.Exit(2)
+		}
+		s.ngram = true
+		fmt.Fprintln(os.Stderr, "speculative decoding on (n-gram prompt lookup, adaptive depth) — output identical to plain decode")
+	default:
+		fmt.Fprintf(os.Stderr, "error: --spec must be \"\" or \"ngram\" (got %q)\n", *spec)
+		os.Exit(2)
+	}
 	if *draft != "" {
 		progress("loading draft model…")
 		dm, derr := decoder.Load(*draft, opts)
@@ -493,6 +508,15 @@ func (s *session) generate() string {
 		if serr != nil {
 			fmt.Fprintf(os.Stderr, "(speculative unavailable: %v; using plain decode)\n", serr)
 			useSpec = false
+		}
+	}
+	if !useSpec && s.ngram {
+		// Same try/fallback shape as goinfer-serve's --spec ngram: the call validates the request
+		// (e.g. a --schema logit processor) and returns an error BEFORE touching any state, so a
+		// turn it cannot take falls back to plain decode exactly.
+		var serr error
+		if stream, gen, serr = s.model.GenerateNgramSpeculativeAdaptive(ctx, ids, s.maxTok, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, sp); serr == nil {
+			useSpec = true
 		}
 	}
 	if !useSpec {
