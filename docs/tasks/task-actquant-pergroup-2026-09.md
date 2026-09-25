@@ -1,6 +1,6 @@
 # Per-group activation scales for W4A8 / W8A8 (2026-09)
 
-> **Status 2026-09-25: planned, not started.** Owner decision 2026-09-25: this is the fix for
+> **Status 2026-09-25: in progress — Go reference built in aikit (`linalg/actgroup.go`), quality gate pre-registered below.** Owner decision 2026-09-25: this is the fix for
 > `queue-engineering.md` H2. The guard shipped first (`dcbbaa91`); this lifts it.
 
 ## Why
@@ -107,6 +107,24 @@ precision.
    - aikit's quant/tile tests.
 
    Re-baselining is only legitimate with the mechanism written down, which this doc is.
+
+## Pre-registered quality gate for the Go reference (2026-09-25, before the run)
+
+The reference (aikit `linalg/actgroup.go`, `SetActQuantGroup(32)`) re-runs the H2 step-1 sweep: same 12
+families, same two prompts, same f32 baseline. Only `int8int8` and `int4` change under it, since
+weight-only `int8` and f32 never quantize activations. The metric is the 10th-percentile per-position
+logit cosine against f32 (p10), as in the table above.
+
+- **PASS:** phi3-mini and qwen2.5-7b reach grouped `int8int8` p10 ≥ 0.95 on both prompts, and grouped
+  `int4` p10 ≥ 0.90 on both. No family's grouped p10 falls more than 0.005 below its per-row p10 at the
+  same quant.
+- **AMBIGUOUS → parked, investigate before any kernel work:** phi3-mini or qwen2.5-7b grouped `int8int8`
+  p10 in [0.90, 0.95), or grouped `int4` p10 in [0.80, 0.90).
+- **FAIL:** grouped `int8int8` p10 < 0.90 for either model. Per-32 is then not enough, and the plan
+  changes (finer groups, or smoothing) before any SIMD/PTX is written.
+
+`int4` is judged at a lower bar on purpose: its weights carry their own error (llama3.2-1b shows int4
+weight damage even where `int8int8` is clean), and this change does not touch weights.
 
 ## Order of work
 
