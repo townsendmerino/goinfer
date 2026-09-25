@@ -1,6 +1,6 @@
 # Task: configuration out of the process environment (2026-09)
 
-> **Status 2026-09-24: phase 1 (the ratchet) DONE; phases 2a/2b (21 decoder knobs) and 3 (11 CUDA knobs) DONE; phase 4 (Metal) BUILT, awaiting a Mac run; 5–6 open.** Owner asked for this after a review found
+> **Status 2026-09-24: phase 1 (the ratchet) DONE; phases 2a/2b (21 decoder knobs) and 3 (11 CUDA knobs) DONE; phase 4 (15 Metal knobs) DONE; phase 5 (app code sets no env vars) DONE; 6 open, plus one owner decision (below).** Owner asked for this after a review found
 > configuration passed through the process environment. The four concrete defects that review named are already fixed
 > (`a50815ed`: duplicate doc rows, the darwin pager mode set via env, Metal's prefill flag re-read per call, five campaign
 > switches retired); this doc is the general program.
@@ -131,7 +131,7 @@ All eleven CUDA operator knobs (`CUDA_FAST_PREFILL`, `CUDA_FAST_PREFILL_FLOOR`, 
   `GOINFER_CUDA_FLASH_DECODE` set, as its own message asks. And `go vet -tags cuda ./cuda/` (without
   `goinfer_testhooks`) fails on `ptx_modules_cover_test.go` since `a55841f4` — CI always adds the tag.
 
-### Phase 4 result (2026-09-24) — built on Linux, NOT YET RUN ON A MAC
+### Phase 4 result (2026-09-24) — built on Linux, gated on the Mac, landed as `1cfb99db`
 
 The fourteen Metal operator knobs (`METAL_ALIAS`, `METAL_ATTN_FA`, `METAL_BATCHED_PREFILL`, `METAL_DECODE_LANE`,
 `METAL_FAST_PREFILL`, `METAL_FAST_PREFILL_FLOOR`, `METAL_FUSED_ATTENTION`, `METAL_MOE_SLOTS`, `MOE_NOCACHE`,
@@ -149,10 +149,44 @@ through `resident.knob`; a hand-built test resident reads the live environment.
   helper, `setResidentKnob` (`metal/knob_helpers_test.go`: `moe_expert_major_prefill` ×8, `prefill_startpos`,
   `batched_verify`); `olmo3`/`smollm3` use `decoder.SetKnobEnvForTest`; `resident_memguard` now loads one model per
   slot request through `Options.Knobs`.
-- **Verified here:** `GOOS=darwin` vet (untagged, testhooks, realckpt) and staticcheck (testhooks) clean. **Not
-  verified: any Metal test.** The gate is a Mac run of `go test -tags goinfer_testhooks ./metal/` and the untagged
-  `go test ./metal/`, both `-v`, reading for `--- FAIL` and for any `decoder: ... changed after this model was loaded`
-  panic.
+- **Verified on Linux:** `GOOS=darwin` vet (untagged, testhooks, realckpt) and staticcheck (testhooks).
+- **Verified on the Mac (the gate), rebased onto v14:** `go test -tags goinfer_testhooks ./metal/` 168 top-level
+  pass / 74 skip / 0 fail, untagged 105 / 27 / 0, no drift panic in either. Heavy tests one process each: batched-verify
+  E2E curve and kernel parity, the R1 and R2 decode fidelity gates, both spec tests and `TestPrefillTTFT` (batched
+  prefill still 5.33× / 4.50× / 3.91× over sequential, so the knob reaches the resident) pass. A code read over all
+  40 knob-setting test sites found none set after its model loads. The one weakening it found — the batched resident
+  in `TestBatchedVerifyE2ECurve` no longer forced to fast prefill — was fixed before merge. A fit-guard refusal in the
+  full heavy suite was memory pressure (one process, two 1.5B loads); run alone, the test loads and passes on `main`
+  and the branch alike (26.57 s / 26.44 s). Not covered: the 26B/35B knob tests (their `.giw` files are not on the
+  Mac) and `TestAttentionFA_endToEndReproduction` (needs `GOINFER_TEST_MODEL`). Logs on the Mac under
+  `~/goinfer-logs/env-config/`.
+- **Met on the way, not phase 4:** `TestGemmaBisect_PerLayer` probes channel 1698 on the 1.5B control model (hidden
+  1536) and panics with an index out of range — a test bug, unfixed.
+
+### Phase 5 result (2026-09-24)
+
+- **No `os.Setenv` in app code.** `applyExactPrefillEnv` (serve) is gone: `--exact-prefill` travels as
+  `Options.ExactPrefill`, which every backend already consulted per model, and `--cpu-fast-attention` /
+  `--cpu-exact-prefill` as `Options.Knobs{GOINFER_CPU_FAST_ATTENTION}` — still set explicitly either way, so serve's
+  flags beat an inherited env var exactly as before. Both chat models (`modelSpec.options`) and the decoder embedder
+  get them; before, the process-wide env var reached the embedder too, so it keeps doing so.
+  `TestPrefillFlags_reachTheDecoderThroughOptions` replaces the two env tests and asserts no env var is written.
+- **Checked end to end with `serve check`** (0.5B, CPU), new build vs the pre-phase-5 build: identical rows, including
+  the same two failures, which are the 0.5B model's own (tool re-ask; never reaches the stop sequence). Long-prompt
+  TTFT with `--exact-prefill` 20.56 s (new) vs 20.26 s (old); without it 13.29 s — both directions of the flag take
+  effect through `Options`.
+- **Left as startup configuration, read once in `Main` or at package init, never per request:** `API_KEY` (a secret
+  belongs in the environment, not in argv where `ps` shows it), `MODEL_TMP`, `GGUF_DIRECT`, `SWAP_GUARD`, `TOOL_UNION`
+  (serve/chat), `NVRTC_DIRS` (the gate). None is a model property or can change a loaded model.
+- **Reclassified as diagnostics (phase 6 candidates), not migrated:** WebGPU's `ATTN_KEYS`, `WEBGPU_GEMM`,
+  `INT4_SLOWPATH` and the decoder's `CPU_FUSED_GATEUP`, `W4A8_BATCH`, `W4A8_SPLITHALF`. All six are read once per
+  process (package init, or onto the process-wide WebGPU `Context`), so they cannot change a loaded model, and each is
+  an A/B arm for a kernel choice (`tiled16` is the GEMM R10's rb64 replaced; `INT4_SLOWPATH` isolates the fast-upload
+  delta; `ATTN_KEYS=0` the pre-key-split kernel). Threading a model through device-level code for them buys nothing.
+
+**Owner decision pending — the done criterion.** The criterion below ("the list holds only diagnostics") cannot be met
+by the startup-configuration group above without moving `API_KEY` out of the environment, which would be a regression.
+Proposed: amend it to "diagnostics with a named owner, plus documented startup configuration read once".
 
 Phases 2–5 each shrink `testdata/env_reads.txt`; the task is done when the list holds only diagnostics with a named owner
 and a reason, and the rule-1 guard stays.

@@ -97,7 +97,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
   20-token request that arrived last can go after a 4,000-token one that arrived first, and
   nothing in the system knows the difference.
 - **Backpressure is a number, not a plan.** `-max-queue` defaults to 8
-  (`internal/serveapp/main.go:559`); a full queue is a 429 on the OpenAI routes and a 529
+  (`internal/serveapp/main.go:544`); a full queue is a 429 on the OpenAI routes and a 529
   `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:552`). A global
   `-max-inflight` (default 128) bounds the pre-queue stage — JSON and image decode, tokenisation,
   template render — and is deliberately distinct from the per-model 429
@@ -107,7 +107,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
 - **There is warm state worth scheduling around.** The session LRU keeps prefilled KV and hands a
   request the session that already holds its prompt as a prefix
   (`internal/serveapp/sessions.go:14`), `-kv-sessions` 4 by default
-  (`internal/serveapp/main.go:551`). Admission order therefore has a measurable cost today that
+  (`internal/serveapp/main.go:536`). Admission order therefore has a measurable cost today that
   admission does not know about.
 - **One route already takes a batch.** `/v1/embeddings` accepts up to 2,048 inputs in a request
   (`internal/serveapp/embeddings.go:34`) — the only bulk surface in the product, and the shape J4
@@ -466,7 +466,7 @@ The only throughput item, and it is deliberately last.
 
 `internal/serveapp/openai.go:94`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
 check, `drive`) · `internal/serveapp/helpers.go:85` (`-max-inflight`, distinct from the per-model
-429) · `internal/serveapp/main.go:551`, `:508` (`-kv-sessions`, `-max-queue`) ·
+429) · `internal/serveapp/main.go:536`, `:508` (`-kv-sessions`, `-max-queue`) ·
 `internal/serveapp/anthropic.go:552` (529 on a full queue) · `internal/serveapp/sessions.go:14`
 (the session LRU J6 schedules around) · `internal/serveapp/embeddings.go:34` (the one existing bulk
 surface) · `internal/chatapp/main.go:212` (the CLI J5 extends) ·

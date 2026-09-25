@@ -47,11 +47,9 @@ func TestLoad_exactPrefillOptionIsAModelProperty(t *testing.T) {
 }
 
 // TestLoad_exactPrefillFalseLeavesEnvUntouched confirms the negative: Options.ExactPrefill's
-// zero value must not touch these env vars at all (not even to reset them to "1"/unset), unlike
-// serve's own applyExactPrefillEnv which explicitly reasserts GOINFER_CPU_FAST_ATTENTION either
-// way — Load is called by every library consumer, including ones managing these same env vars
-// themselves (serve calls applyExactPrefillEnv once at startup, independently of any particular
-// Load call), so a false value must be a true no-op, not "reset to default."
+// zero value must not touch these env vars at all (not even to reset them to "1"/unset) — Load is
+// called by every library consumer, including ones managing these same env vars themselves, so a
+// false value must be a true no-op, not "reset to default."
 func TestLoad_exactPrefillFalseLeavesEnvUntouched(t *testing.T) {
 	unsetenvT(t, "GOINFER_METAL_FAST_PREFILL")
 	unsetenvT(t, "GOINFER_CUDA_FAST_PREFILL")

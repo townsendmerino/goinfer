@@ -408,9 +408,9 @@ func Load(dir string, opts Options) (*Model, error) {
 	// BEFORE withResidency, because CUDA reads it while building its resident) and consulted by
 	// each backend's fast-prefill switch alongside its env var. It used to be applied by
 	// os.Setenv here (M-26), which is process-global and never undone: every model loaded later
-	// in the same process inherited exact prefill whether it asked for it or not. The env vars
-	// themselves are unchanged — serve's applyExactPrefillEnv still sets them from its flags,
-	// which are process-wide by design.
+	// in the same process inherited exact prefill whether it asked for it or not. Serve no longer
+	// sets the env vars either: its flags travel as this field and Options.Knobs (phase 5,
+	// docs/tasks/task-env-config-2026-09.md).
 	be, beErr := NewBackend(opts.Backend)
 	// A nil backend means the name was genuinely unknown (not a registered/fallback backend) —
 	// abort rather than proceed and panic at the first matmul (M14). A non-nil be with a

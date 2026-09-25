@@ -185,6 +185,8 @@ func (s modelSpec) options(cfg config) decoder.Options {
 		ResidentContext:  orInt(s.ctxSize, cfg.ctxSize),
 		DisableFit:       !cfg.fit,
 		MoEPager:         cfg.moePager,
+		ExactPrefill:     cfg.exactPrefill,
+		Knobs:            cfg.prefillKnobs(),
 	}
 }
 
@@ -371,40 +373,23 @@ const cpuFastAttentionHelp = "DEFAULT ON since 2026-08-31 (pass --cpu-exact-pref
 // var here made serve's choice process-global and left library callers on a different default.
 func moePagerDefault(goos string) string { return decoder.MoEPagerDefault(goos) }
 
-// applyExactPrefillEnv sets the per-backend fast-prefill env vars from the parsed flags — a pure
-// function (no os.Args, no process exit, no server) so a test can drive it directly, unlike
-// Main() itself. Called once from Main() right after flag.Parse().
-func applyExactPrefillEnv(cfg config) {
-	// --metal-fast-prefill is DEPRECATED (fast prefill is default-on since §3.2 gate passed 2026-09-09).
-	// --exact-prefill sets GOINFER_METAL_FAST_PREFILL=0 to suppress it on all backends.
-	if cfg.exactPrefill {
-		os.Setenv("GOINFER_METAL_FAST_PREFILL", "0")
-	}
-	// M-48 (docs/audit-2026-09-10.md): --exact-prefill promised "ALL backends" but never touched
-	// CUDA's default-ON tensor-core prefill (GOINFER_CUDA_FAST_PREFILL, cuda/prefill.go) — the
-	// help text described only CPU and Metal while claiming universal coverage. Same reasoning as
-	// the Metal line above: --exact-prefill is the universal opt-out, so it must set every
-	// backend's own knob, not just the two that existed when it was first wired up.
-	if cfg.exactPrefill {
-		os.Setenv("GOINFER_CUDA_FAST_PREFILL", "0")
-	}
-	// Same disclosure argument: the decoder reads GOINFER_CPU_FAST_ATTENTION,
-	// and a divergence a user opts into should be spelled out in --help rather than
-	// discoverable only by reading the source. The MoE refusal and the
-	// speculative-verify exclusion are enforced in the decoder, not here, so they
-	// hold however the env var arrives.
-	// DEFAULT ON, so the env is set EXPLICITLY either way rather than left unset. The decoder
-	// treats unset as on, but an inherited GOINFER_CPU_FAST_ATTENTION from the caller's
-	// environment would otherwise outrank the flags — the server's own flags must win over
-	// whatever the shell happened to export.
-	//
-	// --exact-prefill and --cpu-exact-prefill both disable the CPU fast attention; between a
-	// speed request and a correctness request, the correctness one is the safe resolution.
+// prefillKnobs carries the prompt-ingestion flags to each model's decoder.Options (phase 5,
+// docs/tasks/task-env-config-2026-09.md). It replaces applyExactPrefillEnv, which set the three backends'
+// fast-prefill env vars process-wide; --exact-prefill itself now travels as Options.ExactPrefill, which
+// every backend already consults per model (CPU Model.cpuFastAttention, CUDA at resident build, Metal on
+// its resident), so only the CPU-specific flags need a knob here.
+//
+// The CPU knob is set EXPLICITLY either way rather than left unset. The decoder treats unset as on, but an
+// inherited GOINFER_CPU_FAST_ATTENTION in the caller's environment would otherwise outrank the flags — the
+// server's own flags must win over whatever the shell happened to export, and Options.Knobs does win.
+// --exact-prefill and --cpu-exact-prefill both disable it; between a speed request and a correctness request,
+// the correctness one is the safe resolution.
+func (cfg config) prefillKnobs() *decoder.Knobs {
+	fast := "1"
 	if cfg.exactPrefill || cfg.cpuExactPrefill || !cfg.cpuFastAttention {
-		os.Setenv("GOINFER_CPU_FAST_ATTENTION", "0")
-	} else {
-		os.Setenv("GOINFER_CPU_FAST_ATTENTION", "1")
+		fast = "0"
 	}
+	return &decoder.Knobs{"GOINFER_CPU_FAST_ATTENTION": fast}
 }
 
 func Main() {
@@ -577,7 +562,6 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 			filepath.Base(os.Args[0]), args[0])
 		os.Exit(2)
 	}
-	applyExactPrefillEnv(cfg)
 	if cfg.moePager != "mmap" && cfg.moePager != "pool" {
 		fmt.Fprintf(os.Stderr, "error: -moe-pager must be \"mmap\" or \"pool\" (got %q)\n", cfg.moePager)
 		os.Exit(2)
