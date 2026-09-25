@@ -113,6 +113,11 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 	if opts.LoRA != "" && (strings.HasSuffix(src, ".gguf") || strings.HasSuffix(src, ".giw")) {
 		return nil, fmt.Errorf("--lora %s: a LoRA adapter is merged into a safetensors base at load, and %q is not one (a .gguf or .giw is already quantized) — pass the base model's safetensors directory, or use serve's --adapter", opts.LoRA, src)
 	}
+	// Before a sidecar is chosen: a .giw bakes its quant, so this cannot be fixed after the transcode.
+	var msg string
+	if opts.Quant, msg = activationSafeQuant(src, opts.Quant, req.ExplicitQuant); msg != "" {
+		fmt.Fprintln(os.Stderr, msg)
+	}
 	ensureGIW := func() (string, error) {
 		if opts.EmbedInt4 {
 			fmt.Fprintln(os.Stderr, "note: embed-int4 is ignored with stream-weights (the cached .giw keeps the int8 pin); prequant the model with embed-int4 to bake it")
@@ -178,6 +183,20 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 		return nil, fmt.Errorf("--model %q: %w", req.Spec, err)
 	}
 	return &Result{Source: src, LoadPath: loadPath, Tokenizer: tk, Model: model, Opts: opts, LoadTime: loadTime}, nil
+}
+
+// activationSafeQuant is the precision a load should use for src: a family that int8 activations break
+// (decoder.ActivationQuantHazard) gets weight-only int8 instead of an activation-quantizing DEFAULT, with
+// a note; an explicit --quant is honoured, with a warning. msg is "" when nothing applies.
+func activationSafeQuant(src, quant, explicitQuant string) (string, string) {
+	why := decoder.ActivationQuantHazard(decoder.PeekModelType(src))
+	if why == "" || !decoder.QuantizesActivations(quant) {
+		return quant, ""
+	}
+	if explicitQuant == "" {
+		return "int8", fmt.Sprintf("note: loading at --quant int8 (weight-only, f32 activations) instead of the default %s: %s. Pass --quant to override.", quant, why)
+	}
+	return quant, fmt.Sprintf("warning: --quant %s quantizes activations to int8, and %s; expect degraded output (--quant int8 or f32 avoids it).", quant, why)
 }
 
 // loadGuarded is decoder.Load under S3's load-time swap tripwire (docs/tasks/task-never-swap-2026-09.md).

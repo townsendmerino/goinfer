@@ -454,36 +454,70 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
-**H2 · Phi-3-mini's output degrades into junk tokens past ~150 prompt tokens, on every backend and
-precision** — `linux` (found and reproduced on nobara-pc), **filed 2026-09-25**
+**H2 · Phi-3-mini's quantized output is junk past ~16 prompt tokens: per-row int8 ACTIVATION scales
+cannot hold its activation outliers** — `linux` (found and reproduced on nobara-pc), **filed 2026-09-25,
+diagnosed the same day. GUARD SHIPPED; per-group activation scales are the chosen fix (owner decision
+2026-09-25), after an outlier sweep across families**
 
 Found while validating the essay-v2 bench prompt, right after `bb04019e` gave Phi-3 its chat template
-and rstrip tokenization (before that commit every Phi-3 chat request was a raw completion, which hid
-this). Same GGUF (`~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf`), same ~150-token prompt
-(`prompts.json` `phi3-mini:128`, essay-v2), temperature 0, all three engines counting 130 prompt
-tokens:
+and rstrip tokenization (before that every Phi-3 chat request was a raw completion, which hid this). On
+`prompts.json` `phi3-mini:128` (129 tokens, essay-v2) llama.cpp and Ollama at Q4 write coherent essays;
+goinfer int4 / int8int8 / int4mix write `…canRESSay:RESS isRESSayed…` on CPU and CUDA alike.
 
-| engine | reply |
-|---|---|
-| llama.cpp `427291b`, Q4 | "The history of the printing press is a fascinaton that can be traced …" |
-| Ollama v0.32.5, Q4 | "The history of the printing press can be traced back to its origins i…" |
-| goinfer CUDA int4 | "The evolution of the printing press throughout history canRESSay:RESS isRESSayed…" |
-| goinfer CPU int4 / CUDA int8int8 | "Title:RESSA,RESSARESSERVES TheASSERVES…" |
-| goinfer CPU f32 | "The history of the printing press is a rich and complex tale that spanss over several centuries,, marking…" |
+**It is NOT the forward pass.** goinfer f32 on the safetensors checkpoint matches HF f32 at every one of
+the 129 positions (logit cosine 1.000000, argmax 129/129, identical 24-token greedy continuation). HF's
+own f32 reply to that degenerate filler is odd too ("To print the string "Hello, World!""," …"), so
+some weirdness is the model; the junk is not.
 
-A 16-token prompt stays coherent on every goinfer precision. `-direct-load` gives the same output, so
-the `.giw` sidecar is not the cause. `ggufPhi3Config` reads correctly: rope base defaults to 10000
-(the GGUF omits the key), full rotary (96 = 3072/32), no sliding window in the GGUF (HF's 2047 cannot
-bind at 150). So it is in the forward pass, and f32 showing it faintly while int4/int8 blow up points at
-something the quantized paths amplify rather than at quantization itself. **Next step:** the per-layer
-differencing CLAUDE.md prescribes, against HF `output_hidden_states=True` on the safetensors checkpoint
-(`~/models/phi3-mini-4k`) at ≥150 tokens. The real f32 oracle's cosine 1.0 was a short prompt, which is
-the "minimal in exactly the dimension that hides the bug" trap. Note that goinfer cannot load that
-checkpoint's `tokenizer.json` (its SentencePiece JSON path requires Gemma-style `<bos>`/`<eos>`/`<pad>`
-pieces; Phi-3 has `<s>`/`</s>`), so feed the reference token ids directly.
+**It is the activation quantizer.** Every W4A8/W8A8 path (aikit `QuantizeActivationsInto`, and every
+CUDA projection, since CUDA has no f32-activation GEMV) scales each activation ROW by one max/127.
+Phi-3's projection inputs carry massive outliers: at a filler position the `down_proj` input has
+max/rms ≈ 80–90 in most layers (layer 4: max 563), so one per-row scale rounds **99.9%** of that row to
+zero, and the median qkv / gate_up input loses ~96%. Per-32-element scales (llama.cpp's Q8 activation
+granularity, and goinfer's own int4 weight group size) round only 5–10% to zero. Simulated on HF
+(fake-quant, 129 positions, vs f32):
+
+| activations / weights | logit cosine median / min | greedy continuation |
+|---|---|---|
+| int8 per-row / f32 | 0.096 / −0.139 | junk |
+| **int8 per-32 / f32** | **0.9998 / 0.980** | coherent |
+| int8 per-row / int4 g32 | 0.048 / −0.443 | degraded |
+| int8 per-32 / int4 g32 | 0.975 / 0.084 | coherent, rough (crude sim int4; a lower bound) |
+
+goinfer measured directly on the safetensors checkpoint agrees: weight-only `int8` (f32 activations)
+holds cosine ≥ 0.95 at every position; `int4` and `int8int8` fall to ≈ 0 by position 16.
+
+**Guard (shipped 2026-09-25).** `decoder.ActivationQuantHazard("phi3")` drives two things:
+- `residentGateReason` declines every GPU backend for the family, so the generated `hardware-matrix.md`
+  and the runtime agree: Phi-3 / Phi-4 show CPU everywhere.
+- `modelload` turns a *default* activation-quantizing `--quant` into weight-only `int8` before a
+  sidecar is chosen. An explicit `--quant` is honoured with a warning.
+
+Measured on the real GGUF with `--backend cuda` and no `--quant`: the reply to the essay-v2 prompt is
+coherent ("The history of the printing press is a fascinating journey…"), running on CPU. Phi-4 is
+covered by model type (also `phi3`) without having been measured. `bench_peer.py` defaults phi3-mini to
+`-quant int8`, so it times what a user gets.
+
+**Next, in order:** (1) a max/rms sweep of projection inputs across every family with a local
+checkpoint, to size the problem before touching kernels; (2) per-group activation scales in the W4A8/W8A8
+kernels (below); (3) lift the guard once Phi-3's int4 output passes a long-prompt quality gate.
+
+**Fix options considered** (the owner chose the first, preceded by the guard):
+- **Per-group activation scales in the W4A8/W8A8 kernels**: CPU (aikit amd64/arm64), CUDA PTX, Metal,
+  WebGPU. It is the principled fix and what llama.cpp does; the int4 kernel already sums per weight group,
+  so it is one more scale multiply per group. But it changes every model's numerics: re-gate all families
+  and re-benchmark. Cross-repo (aikit release).
+- **Smoothing folded into the weights at load** (SmoothQuant: divide outlier channels into the preceding
+  RMSNorm weight / `up` rows, multiply into the next weight's columns). Zero runtime cost and no kernel
+  change, but it needs per-channel activation statistics (a calibration pass at load), and
+  quality has to be validated per family.
+- **Guard now**: flag the family, and make Phi-3 load at a precision with f32 activations (weight-only
+  `int8` on CPU), declining CUDA residency with a message rather than producing junk.
 
 **What it touches:** every phi3-mini peer row (§B5.1, and cells b and f of the 2026-09-25 sweep) timed a
-reply of this kind, so those rows are marked provisional in `benchmarks.md`.
+reply of this kind; `benchmarks.md` marks them provisional. Any other family with comparable activation
+outliers is exposed the same way. None measured yet, but a sweep of max/rms per projection input is a
+cheap check to run before choosing among the options above.
 
 **H1 · A release that attaches ZERO assets currently publishes anyway — the gate that should
 catch this doesn't exist** — `linux` (the workflow runs on GitHub-hosted runners; the fix is

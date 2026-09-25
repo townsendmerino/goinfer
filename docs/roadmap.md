@@ -17,7 +17,7 @@
   for `goinfer-chat` and `goinfer-serve`, plus model-embedded chat builds at 0.5B and 1.5B.
 - **Coverage.** 36 families; five sequence mixers — softmax GQA, Gated DeltaNet, Mamba-2, MLA,
   KDA (Ling 3.0) — plus dense and sparse MoE; vision-in for Gemma 3 and the Qwen VL pair, no
-  audio. Resident on 27 / 26 / 23 families (Metal / CUDA / WebGPU). Loaders: safetensors, GGUF,
+  audio. Resident on 26 / 28 / 23 families (Metal / CUDA / WebGPU; `hardware-matrix.md`, 2026-09-25 — Phi-3 / Phi-4 now decline every GPU backend, queue-engineering.md H2). Loaders: safetensors, GGUF,
   GPTQ, AWQ, `.giw`; fp8 e4m3 reads (blockwise f32 scales).
 - **Standings vs Ollama** (the pre-registered sweep of 2026-09-25, `measurements/peer-claim-2026-09-25.md`;
   dated rows in `benchmarks.md`'s TL;DR): CUDA greedy decode **level or ahead at 10 of 12 cells**

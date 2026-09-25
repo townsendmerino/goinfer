@@ -324,6 +324,13 @@ func residentGateReason(a *Architecture, backend string) string {
 	if !ok {
 		return fmt.Sprintf("backend %q declares no resident feature set", backend)
 	}
+	// No resident GPU backend has an f32-activation projection (CUDA builds even f32 weights as
+	// W8A8), so a family whose output int8 activations destroy runs on the CPU at a weight-only
+	// precision instead of fast and wrong. Here rather than in decodeRunnerDecline so the generated
+	// hardware matrix shows it too.
+	if why := ActivationQuantHazard(a.Name); why != "" {
+		return "every resident " + backend + " projection quantizes activations to int8, and " + why
+	}
 	if missing := missingFeatures(a.residentFeatures(), impl); len(missing) > 0 {
 		return fmt.Sprintf("%s does not implement %v, which this model needs", backend, missing)
 	}

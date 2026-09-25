@@ -428,8 +428,10 @@ anything, because Part 1's outcomes stand as registered.
    prompts differed by the template tokens, and goinfer's replies were newline runs. Fixed in
    `bb04019e`, together with the tokenizer's missing added-token rstrip, which Phi-3's turn markers
    need.
-3. **goinfer's phi3-mini output degrades into junk tokens past about 150 prompt tokens** on every
-   backend and precision, even with the template (open: `queue-engineering.md` H2).
+3. **goinfer's quantized phi3-mini output is junk** (int4, int8int8, int4mix, on CPU and CUDA), even
+   with the template. goinfer's f32 forward matches Hugging Face exactly (cosine 1.000000 at every
+   position). The cause is the per-row int8 activation scale, which Phi-3's activation outliers
+   (max/rms ≈ 90) flush to zero (open: `queue-engineering.md` H2).
 
 Together, 2 and 3 mean **the phi3-mini rows in b and f are not like-for-like**, even though each
 passed every Part 1 gate. Per-token decode cost does not depend on which tokens are generated, so

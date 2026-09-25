@@ -243,8 +243,13 @@ STREAM_WEIGHTS_MODELS = {m.strip() for m in os.environ.get("BENCH_STREAM_WEIGHTS
 # the prequantized .giw bundle ... baked at int4mix"). M26's GGUF happened to bake to plain
 # "int4" and needed no override -- this is per-model, not something -stream-weights implies
 # uniformly, so it is its own dict rather than folded into STREAM_WEIGHTS_MODELS.
+# phi3-mini=int8: goinfer loads Phi-3 at weight-only int8 by default, because int8 ACTIVATIONS (int4,
+# int8int8, int4mix) round its activation outliers to zero and the output is junk (queue-engineering.md
+# H2), and it declines every resident GPU path for the same reason. This harness always passes an
+# explicit -quant, which goinfer honours over that default, so without this entry it would time the
+# junk path a user never gets by default.
 GOINFER_QUANT_OVERRIDE = {}
-for _kv in os.environ.get("BENCH_QUANT_OVERRIDE", "M35=int4mix").split(","):
+for _kv in os.environ.get("BENCH_QUANT_OVERRIDE", "M35=int4mix,phi3-mini=int8").split(","):
     if "=" in _kv:
         _k, _v = _kv.split("=", 1)
         GOINFER_QUANT_OVERRIDE[_k.strip()] = _v.strip()
