@@ -64,7 +64,7 @@ jobs:
           cache-dependency-path: gpu/go.sum
       - name: install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
-      # cogentcore/webgpu (wgpu-native) cgo build deps for Linux — same package list ci.yml's
+      # cgo build deps for Linux (oliverbestmann/webgpu; see ci.yml's gpu job) — same package list ci.yml's
       # gpu job installs, since govulncheck has to build the package graph the same way `go
       # build`/`go vet` do to analyze it.
       - name: install GPU build deps

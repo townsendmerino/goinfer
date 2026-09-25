@@ -60,7 +60,7 @@ Third-party Go dependencies
 The optional WebGPU backend (./gpu submodule, built only under `-tags gpu`)
 additionally links:
 
-    github.com/cogentcore/webgpu
+    github.com/oliverbestmann/webgpu
     Licensed under the Apache License, Version 2.0.
 
 The optional cgo-free CUDA backend (./cuda module, built only under `-tags cuda`)

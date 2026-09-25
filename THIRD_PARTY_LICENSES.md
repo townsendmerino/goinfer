@@ -27,7 +27,7 @@ Copyright 2024 Alibaba Cloud
 
 Both repositories ship a byte-identical `LICENSE` (sha256 `832dd9e0…`): the stock Apache-2.0 text
 with the copyright line above. It is **not** reproduced a third time here — it is byte-identical to
-the Apache-2.0 text already in this file (under `github.com/cogentcore/webgpu` and
+the Apache-2.0 text already in this file (under `github.com/oliverbestmann/webgpu` and
 `github.com/ebitengine/purego`), and the copy that discharges §4(a) for a recipient of the binaries
 travels with the release itself as the `QWEN2.5-CODER-LICENSE.txt` asset. Neither model repository
 contains a NOTICE file, so §4(d) does not attach.
@@ -137,7 +137,7 @@ SOFTWARE.
 
 ## Optional WebGPU backend (`-tags gpu`, ./gpu)
 
-### github.com/cogentcore/webgpu — Apache-2.0
+### github.com/oliverbestmann/webgpu — Apache-2.0
 
 ```
                                  Apache License

@@ -16,7 +16,7 @@ import (
 // The default "cpu" backend is always registered. A WebGPU backend lives in
 // the opt-in github.com/townsendmerino/goinfer/gpu module: importing it under
 // `-tags gpu` calls RegisterBackend("webgpu", …) on init, so the decoder gains
-// GPU acceleration WITHOUT pulling github.com/cogentcore/webgpu (cgo) into
+// GPU acceleration WITHOUT pulling github.com/oliverbestmann/webgpu (cgo) into
 // goinfer's core dependency graph.
 type Backend interface {
 	// Name identifies the backend ("cpu", "webgpu").

@@ -223,9 +223,12 @@ jobs:
       #      clean, so a pure-Go `go install .../cmd/serve` used to pull webgpu/purego/
       #      gocudrv. This second check is the one that regresses if a root package
       #      blank-imports a submodule again.
+      # `webgpu`, not one binding's module path: the pattern named cogentcore/webgpu for two weeks
+      # after gpu/ moved to oliverbestmann/webgpu (a16a537d), so the guard could no longer see the
+      # binding it exists to keep out. Any WebGPU binding in the root is a leak, whoever wrote it.
       - name: cleanliness guard (no webgpu / cuda / metal in root)
         run: |
-          leak='cogentcore/webgpu|eitamring/gocudrv|ebitengine/purego|townsendmerino/aikit/gpu|townsendmerino/goinfer/(gpu|cuda|metal)'
+          leak='webgpu|eitamring/gocudrv|ebitengine/purego|townsendmerino/aikit/gpu|townsendmerino/goinfer/(gpu|cuda|metal)'
           if go list -deps ./... | grep -Eiq "$leak"; then
             echo "::error::an opt-in backend dep leaked into the compiled root package set"
             go list -deps ./... | grep -Ei "$leak"
@@ -571,7 +574,9 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: gpu/go.sum
 
-      # cogentcore/webgpu (wgpu-native) cgo build deps for Linux.
+      # cgo build deps for Linux, installed since the cogentcore/webgpu era. The current binding,
+      # oliverbestmann/webgpu (a16a537d), links only its bundled wgpu_native plus -lm -ldl, so these
+      # may no longer be needed; drop them only with a green run that proves it.
       - name: install GPU build deps
         run: |
           sudo apt-get update
