@@ -219,9 +219,9 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	// it coordinated with before this fix. A loser returns before touching state, so the caller's
 	// existing fallback to plain Generate is exact (M9's "concurrent distinct sequences still
 	// complete correctly, only resident speed is lost"). Gated on m.resident != nil, mirroring
-	// model.go's useGPU check: NewCPUBlockSpec's host never touches the resident device KV (it
-	// has its own CPU cache — decoder/blockspec_cpu.go), so it must not contend for resBusy or
-	// forget a resIDs commit it never wrote.
+	// model.go's useGPU check: a host without a resident keeps its KV in its own CPU cache and
+	// never touches the resident device KV (the removed CPU BlockSpec was one such host), so it
+	// must not contend for resBusy or forget a resIDs commit it never wrote.
 	var reuseFrom int
 	if m.resident != nil {
 		if !atomic.CompareAndSwapInt32(&m.resBusy, 0, 1) {
@@ -362,8 +362,8 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		//
 		// MaxTokens: the loop condition is checked per ROUND while a round commits up to `width`
 		// tokens at once, so max_tokens=2 could return 9 and usage.completion_tokens could exceed
-		// the request's own cap. Neither losslessness gate could see it — the CPU one compares only
-		// the common prefix, and the CUDA one asks the reference for exactly len(got) tokens.
+		// the request's own cap. The losslessness gates could not see it — the (since removed) CPU one
+		// compared only the common prefix, and the CUDA one asks the reference for exactly len(got) tokens.
 		//
 		// The context cap: verifying `width` rows at `pos` with no clamp makes checkCap refuse the
 		// WHOLE round near the end of the window, so a nearly complete response ends in a
@@ -499,8 +499,8 @@ func blockSpecStopSet(m *Model, opt BlockSpecOptions) map[int]bool {
 // window, so a nearly complete response ended in a generation error — where plain Generate and the
 // server both clamp instead, and a max-length turn finishes cleanly with "length".
 //
-// Neither losslessness gate could see either one: the CPU gate compares only the common prefix, and
-// the CUDA gate asks the reference for exactly len(got) tokens.
+// The losslessness gates could not see either one: the (since removed) CPU gate compared only the
+// common prefix, and the CUDA gate asks the reference for exactly len(got) tokens.
 func blockSpecRoundWidth(width, maxTokens, emitted, pos, ctxCap int) int {
 	if maxTokens > 0 {
 		if left := maxTokens - emitted; left < width {

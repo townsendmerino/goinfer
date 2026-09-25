@@ -264,7 +264,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
 - Constrained/tool requests keep the plain resident `Generate` (`internal/serveapp/openai.go:1294`).- The n-gram and block drafters claim `resBusy` and verify on the resident batched `ForwardN`;
-  the CPU block drafter is measured-negative and deliberately not wired (`blockspec_cpu.go`).
+  the CPU block drafter was measured negative and its code removed 2026-09-24 (record: `docs/completed/task-laguna.md`).
 - Sampling, argmax readback, grammar masking and tokenization are per-token host work by design.
 
 ## Status log

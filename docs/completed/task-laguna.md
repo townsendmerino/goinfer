@@ -472,3 +472,13 @@ The CPU BlockSpec itself is still worth having: it is the first non-CUDA impleme
 those interfaces, it is gated lossless (6.67 tok/round on Qwen3-4B, token-identical), and it
 makes block drafting available to CPU-only families whose economics may differ — a DENSE
 CPU-only target is precisely the case where batched verify should amortize.
+
+> **Superseded, and the code removed 2026-09-24.** The dense measurement this paragraph hoped for was
+> taken and killed it: Qwen3-4B (DENSE) 6.67 tok/round -> **0.75x**. The arithmetic is terminal, not
+> discouraging: break-even at 0.75x needs 6.67/0.75 = **8.89 tok/round**, and the ceiling at block_size 8
+> is **8.00** (the anchor plus 7 drafts) — no drafter, however good, can make it pay on that target.
+> Speculation pays when verifying N rows costs far less than N decodes, a GPU (bandwidth-bound) property;
+> on CPU the batched verify costs close to N decode steps, so the VERIFY is the wall too (P10 found the
+> DRAFT was the wall on GPU). `decoder/blockspec_cpu.go` (`NewCPUBlockSpec`, unwired by design),
+> `decoder/blockspec_cpu_test.go` and `TestLagunaDFlash_cpuBlockSpec` were deleted in the owner's clean-up
+> of code whose record says it didn't pay; last present at `8f452a7e`.
