@@ -525,6 +525,9 @@ func int4BufA(d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, e
 		return Buffer{}, Buffer{}, fmt.Errorf("metal: W4A8 pack needs K%%32==0 (group=32), got K=%d — declining to CPU (audit M-10)", k)
 	}
 	if nib, ok := a.nibbles(d, w); ok {
+		if sc, ok := a.scales16(d, []*linalg.WeightMat{w}); ok { // v14 metal-target file: f16 scales in place too
+			return nib, sc, nil
+		}
 		_, q4s, _, _ := w.Int4()
 		scales := make([]uint16, len(q4s))
 		for i, s := range q4s {

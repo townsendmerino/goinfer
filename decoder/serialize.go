@@ -84,11 +84,12 @@ import (
 
 const (
 	giwMagic        = "GINFW"
-	giwVersion      = 13 // v13: adds kind 6 — an int4 tensor whose nibbles live in a shared GROUP BLOCK after the group's headers, so the members' nibbles are ADJACENT in the file (a Metal fused QKV / gate|up buffer can then alias them, S6); written only for GIWTargetMetal, which is the only writer that emits version 13 (every other target still emits 12, so a pre-v13 reader keeps reading them); a pre-v13 reader refuses a v13 file via the version guard, a v13 reader still reads every older layout; v12: NO new kind — every weight-matrix payload array (int8 scales+codes, int4 scales+nibbles, row4 scales+row4 nibbles) is now preceded by zero padding so its bytes start 16-aligned relative to the blob start (giwAlignArray), which lets the reader ALIAS the group scales instead of copying them to the heap (docs/measurements/moe-pager-mode-darwin-2026-09-23.md, "Finding"); needs the v3 bundle header (blob at offset 64) to be aligned in the FILE; a pre-v12 reader refuses the file via the version guard, a v12 reader still reads every older layout; v11: no layout change to existing kinds — adds kind 5 (row4-only, docs/tasks/task-int4-layout-2026-09.md L2), gated on version so a pre-v11 reader refuses the file via the version guard rather than hitting an unknown kind byte; v10: a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
+	giwVersion      = 14 // v14: metal target only — every canonical group-32 int4 tensor also carries its group scales pre-converted to f16 (decoder.F16Bits, the kernels' own conversion), so a Metal no-copy buffer can alias them too: a kind-6 group gains an f16 block after its nibbles (members' scales back to back), and an eligible SINGLE int4 tensor is written as kind 7 (f32 scales, nibbles, f16 scales, each 16-aligned) — a distinct kind so a group's per-member fallback records can never be mistaken for group members; other targets still emit v12; v13: adds kind 6 — an int4 tensor whose nibbles live in a shared GROUP BLOCK after the group's headers, so the members' nibbles are ADJACENT in the file (a Metal fused QKV / gate|up buffer can then alias them, S6); written only for GIWTargetMetal, which is the only writer that emits version 13 (every other target still emits 12, so a pre-v13 reader keeps reading them); a pre-v13 reader refuses a v13 file via the version guard, a v13 reader still reads every older layout; v12: NO new kind — every weight-matrix payload array (int8 scales+codes, int4 scales+nibbles, row4 scales+row4 nibbles) is now preceded by zero padding so its bytes start 16-aligned relative to the blob start (giwAlignArray), which lets the reader ALIAS the group scales instead of copying them to the heap (docs/measurements/moe-pager-mode-darwin-2026-09-23.md, "Finding"); needs the v3 bundle header (blob at offset 64) to be aligned in the FILE; a pre-v12 reader refuses the file via the version guard, a v12 reader still reads every older layout; v11: no layout change to existing kinds — adds kind 5 (row4-only, docs/tasks/task-int4-layout-2026-09.md L2), gated on version so a pre-v11 reader refuses the file via the version guard rather than hitting an unknown kind byte; v10: a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
 	giwMinReadV     = 3  // read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv, v9 KDA/MLA-gate, v11 kind 5; older bundles stay valid and fall back to inference)
 	giwV4Gemma4     = 4  // the version at/after which the gemma4 tail is present
 	giwVAligned     = 12 // the version from which weight-matrix payload arrays are 16-byte aligned (see giwVersion)
 	giwVFused       = 13 // the version from which int4 fused-group blocks (kind 6) exist (see giwVersion)
+	giwVF16         = 14 // the version from which metal-target int4 tensors carry f16 scales (kind 7, kind-6 f16 block)
 	giwV10GraniteQK = 10 // the version at/after which a dense-granite bundle's q/k are known un-permuted (audit C-05)
 	giwV6Tail       = 6  // the version at/after which the completeness tail is present (GProj / AttnSinks / expert biases / MLA / Mamba-2)
 	giwV8ShortConv  = 8  // the version at/after which the LFM2 short-conv tail is present
@@ -450,6 +451,7 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 	if err := validateShapes(w, arch); err != nil {
 		return nil, err
 	}
+	w.int4F16 = r.f16
 	return w, nil
 }
 
@@ -1055,6 +1057,16 @@ func (w *giwWriter) str(s string) { w.u32(uint32(len(s))); w.raw([]byte(s)) }
 
 func (w *giwWriter) bytesField(b []byte) { w.u32(uint32(len(b))); w.raw(b) }
 
+// f16Scales writes q4s converted by F16Bits as a u32 count + little-endian uint16 payload.
+func (w *giwWriter) f16Scales(q4s []float32) {
+	w.u32(uint32(len(q4s)))
+	b := make([]byte, 2*len(q4s))
+	for i, v := range q4s {
+		binary.LittleEndian.PutUint16(b[2*i:], F16Bits(v))
+	}
+	w.raw(b)
+}
+
 // f32 batches into one raw write (a per-tensor temp), not 4 bytes at a time — the
 // stream path would otherwise do millions of tiny writes.
 func (w *giwWriter) f32(s []float32) {
@@ -1106,6 +1118,22 @@ func (w *giwWriter) weightMatKind3Only(m *linalg.WeightMat) { w.weightMatKind(m,
 func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 	if m.Rows() == 0 {
 		w.raw([]byte{0}) // empty
+		return
+	}
+	if eligible && w.f16SingleEligible(m) {
+		// kind 7 (v14, metal target): canonical int4 + its f16 scales for a no-copy Metal buffer.
+		q4, q4s, group, _ := m.Int4()
+		w.raw([]byte{7})
+		w.u32(uint32(m.Rows()))
+		w.u32(uint32(m.Cols()))
+		w.u32(uint32(group))
+		w.raw([]byte{0})
+		w.alignArray()
+		w.f32(q4s)
+		w.alignArray()
+		w.bytesField(q4)
+		w.alignArray()
+		w.f16Scales(q4s)
 		return
 	}
 	q4, q4s, group, isQ4 := m.Int4()
@@ -1190,6 +1218,16 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 // (K%32==0, so every member's nibble bytes are a multiple of 16 and the members stay 16-aligned
 // back to back). Anything else — an absent V on a K=V layer, an int8 tensor, a mixed K — is
 // written the ordinary way, one record at a time.
+// f16SingleEligible reports whether m is written as kind 7 (v14, metal target): a canonical group-32 int4
+// tensor with K%32==0 — the same member rule as a fused group, for a tensor written on its own.
+func (w *giwWriter) f16SingleEligible(m *linalg.WeightMat) bool {
+	if w.target != GIWTargetMetal || w.emitVersion() < giwVF16 || m.Rows() == 0 || m.Cols()%32 != 0 {
+		return false
+	}
+	_, _, group, ok := m.Int4()
+	return ok && group == 32
+}
+
 func (w *giwWriter) fusedEligible(ms []*linalg.WeightMat) bool {
 	if w.target != GIWTargetMetal || w.emitVersion() < giwVFused || len(ms) < 2 {
 		return false
@@ -1240,6 +1278,22 @@ func (w *giwWriter) fusedGroup(ms ...*linalg.WeightMat) {
 	for _, m := range ms {
 		q4, _, _, _ := m.Int4()
 		w.raw(q4)
+	}
+	if w.emitVersion() >= giwVF16 {
+		// v14: the members' f16 scales, back to back in member order and starting 16-aligned — the same
+		// adjacency the nibbles have, so a fused buffer's scales can be aliased as one run too.
+		if pad := int((-w.pos()) & 15); pad > 0 {
+			var z [16]byte
+			w.raw(z[:pad])
+		}
+		for _, m := range ms {
+			_, q4s, _, _ := m.Int4()
+			b := make([]byte, 2*len(q4s))
+			for i, v := range q4s {
+				binary.LittleEndian.PutUint16(b[2*i:], F16Bits(v))
+			}
+			w.raw(b)
+		}
 	}
 }
 
@@ -1476,6 +1530,9 @@ type giwReader struct {
 	err     error
 	version uint32        // parsed file version; gemma4 v4 fields are read only when ≥4
 	arch    *Architecture // resolved from the serialized config; gates the gemma4 tail
+	// f16 holds, per int4 tensor (keyed by its nibbles' address), the f16 scales a v14 metal-target file
+	// stores for it — aliased from the blob when aligned. Moved onto the Weights at the end of the load.
+	f16 map[uintptr][]uint16
 }
 
 func (r *giwReader) fail(msg string) {
@@ -1599,6 +1656,34 @@ func (r *giwReader) i8() []int8 {
 }
 
 // rawAlias ALIASES a []byte (int4 packed nibbles) — a plain subslice of data.
+// u16View returns n little-endian uint16s at the cursor as an ALIAS of the blob when 2-byte aligned on a
+// little-endian host, else a copy — f32Alias's rule for f16 scales.
+func (r *giwReader) u16View(n int) []uint16 {
+	if n == 0 || !r.need(2*n) {
+		return nil
+	}
+	if p := unsafe.Pointer(&r.data[r.off]); nativeLittleEndian && uintptr(p)%2 == 0 {
+		r.off += 2 * n
+		return unsafe.Slice((*uint16)(p), n)
+	}
+	out := make([]uint16, n)
+	for i := range out {
+		out[i] = binary.LittleEndian.Uint16(r.data[r.off:])
+		r.off += 2
+	}
+	return out
+}
+
+func (r *giwReader) recordF16(q4 []byte, f16 []uint16) {
+	if len(q4) == 0 || len(f16) == 0 {
+		return
+	}
+	if r.f16 == nil {
+		r.f16 = map[uintptr][]uint16{}
+	}
+	r.f16[uintptr(unsafe.Pointer(&q4[0]))] = f16
+}
+
 func (r *giwReader) rawAlias() []byte {
 	n := int(r.u32())
 	if n == 0 || !r.need(n) {
@@ -1719,6 +1804,28 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			return linalg.WeightMat{}
 		}
 		return wm
+	case 7:
+		if r.version < giwVF16 {
+			r.fail(fmt.Sprintf("weightMat kind 7 in a v%d blob (kind 7 exists from v%d)", r.version, giwVF16))
+			return linalg.WeightMat{}
+		}
+		if group <= 0 {
+			r.fail(fmt.Sprintf("int4-f16 weightMat group %d ≤ 0", group))
+			return linalg.WeightMat{}
+		}
+		r.alignArray()
+		q4s := r.f32Alias()
+		r.alignArray()
+		q4 := r.rawAlias()
+		r.alignArray()
+		f16 := r.u16View(int(r.u32()))
+		wantQ4, wantScales := rows*((cols+1)/2), rows*((cols+group-1)/group)
+		if len(q4) != wantQ4 || len(q4s) != wantScales || len(f16) != wantScales {
+			r.fail(fmt.Sprintf("int4-f16 weightMat %d×%d group=%d: q4=%d (want %d) q4s=%d f16=%d (want %d)", rows, cols, group, len(q4), wantQ4, len(q4s), len(f16), wantScales))
+			return linalg.WeightMat{}
+		}
+		r.recordF16(q4, f16)
+		return linalg.WrapInt4(q4, q4s, rows, cols, group)
 	default:
 		r.fail(fmt.Sprintf("unknown weightMat kind %d", kind))
 		return linalg.WeightMat{}
@@ -1778,6 +1885,20 @@ func (r *giwReader) fusedGroup(dst ...*linalg.WeightMat) {
 			return
 		}
 		*p.dst = linalg.WrapInt4(q4, p.scales, p.rows, p.cols, p.group)
+	}
+	if r.version >= giwVF16 {
+		// v14: the members' f16 scales, back to back, starting 16-aligned (see the writer).
+		if pad := int((-int64(r.off)) & 15); r.need(pad) {
+			r.off += pad
+		}
+		for _, p := range pend {
+			f16 := r.u16View(len(p.scales))
+			if r.err != nil {
+				return
+			}
+			q4, _, _, _ := p.dst.Int4()
+			r.recordF16(q4, f16)
+		}
 	}
 }
 

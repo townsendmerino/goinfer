@@ -42,6 +42,7 @@ type weightAlias struct {
 	aliased int64 // int4 nibble bytes served from the mapping
 
 	int8Tensors int   // int8 matrices (the LM head) whose codes are wrapped in place
+	scaleBytes  int64 // f16 group-scale bytes served from the mapping (v14 metal-target files)
 	int8Bytes   int64 // int8 code bytes served from the mapping
 	copied      int   // eligible int4 tensors that were not in the mapping (heap-backed) and took the copy path
 	copiedB     int64
@@ -185,6 +186,40 @@ func (a *weightAlias) concatNibbles(d *Device, wms []*linalg.WeightMat) (Buffer,
 	return d.NewBufferNoCopy(base, n).At(off), true
 }
 
+// scales16 binds the f16 group scales of wms (one tensor, or a fused group in member order) in place, when the
+// model was loaded from a v14 metal-target .giw that stores them (decoder.Model.Int4ScalesF16) AND they form
+// one contiguous run in the mapping — which the file guarantees for a group and for a single tensor. The file
+// stores exactly F16Bits of each f32 scale, the conversion this package applies at load (f32ToF16 IS
+// F16Bits), so the kernels read the same bits either way. ok=false (and the caller converts) otherwise.
+func (a *weightAlias) scales16(d *Device, wms []*linalg.WeightMat) (Buffer, bool) {
+	if a == nil || len(wms) == 0 {
+		return Buffer{}, false
+	}
+	parts := make([][]uint16, len(wms))
+	total := 0
+	for i, w := range wms {
+		f, ok := a.m.Int4ScalesF16(w)
+		if !ok || len(f) == 0 {
+			return Buffer{}, false
+		}
+		if i > 0 {
+			prev := parts[i-1]
+			if uintptr(unsafe.Pointer(&prev[0]))+uintptr(2*len(prev)) != uintptr(unsafe.Pointer(&f[0])) {
+				return Buffer{}, false
+			}
+		}
+		parts[i] = f
+		total += len(f)
+	}
+	run := unsafe.Slice((*byte)(unsafe.Pointer(&parts[0][0])), 2*total)
+	base, n, off, ok := a.m.MmapAliasWindow(run, a.page)
+	if !ok || off%16 != 0 {
+		return Buffer{}, false
+	}
+	a.scaleBytes += int64(2 * total)
+	return d.NewBufferNoCopy(base, n).At(off), true
+}
+
 // int4ConcatA is int4Concat with the fused-group alias: when the members' nibbles are one contiguous run in
 // the mapping the nibbles are bound in place and only the f16 scales (concatenated in member order, converted
 // exactly as int4Concat converts them) are built; otherwise it is int4Concat unchanged.
@@ -197,6 +232,9 @@ func int4ConcatA(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, B
 	nib, ok := a.concatNibbles(d, wms)
 	if !ok {
 		return int4Concat(d, wms...)
+	}
+	if sc, ok := a.scales16(d, wms); ok { // v14 metal-target file: the members' f16 scales are one run too
+		return nib, sc
 	}
 	nScales := 0
 	for _, w := range wms {
@@ -219,8 +257,8 @@ func (a *weightAlias) summary() string {
 		return ""
 	}
 	return fmt.Sprintf("[metal] weights aliased from the .giw mapping (GOINFER_METAL_ALIAS=1): %.0f MB of int4 nibbles not copied "+
-		"(%d single tensors + %d fused groups = %.0f MB) + %.0f MB of int8 codes (%d matrices); copied as before: %d heap-backed, "+
+		"(%d single tensors + %d fused groups = %.0f MB) + %.0f MB of int8 codes (%d matrices) + %.0f MB of f16 scales; copied as before: %d heap-backed, "+
 		"%d unaligned, %d fused groups not adjacent\n",
 		float64(a.aliased)/(1<<20), a.tensors, a.groups, float64(a.groupBytes)/(1<<20), float64(a.int8Bytes)/(1<<20), a.int8Tensors,
-		a.copied, a.declined, a.nonAdjacent)
+		float64(a.scaleBytes)/(1<<20), a.copied, a.declined, a.nonAdjacent)
 }

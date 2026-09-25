@@ -105,3 +105,24 @@ Compatibility:
   group block layout exists for Metal's benefit.
 - Existing metal-target sidecars keep their layout; the Metal aliasing simply does not apply to their
   fused tuples (it logs `N fused groups not adjacent`). Rebuild to get it.
+
+## File layout: f16 scales for Metal (weights format v14, kind 7)
+
+v13 made a Metal fused buffer's NIBBLES aliasable; the group SCALES still had to be converted f32 → f16
+into a new buffer at every load, because the file stored f32 (the CPU path's format) and the kernels read
+f16 — about ⅛ of the nibble bytes (389 MB on a 7B). For **`-target metal` only**, v14 additionally stores
+each canonical group-32 int4 tensor's scales already converted by `decoder.F16Bits` — the one definition of
+that conversion, which the Metal build itself now calls — so the bits the kernels read are identical whether
+they came from the file or were converted at load:
+
+- a kind-6 group gains an **f16 block** after its nibbles: 16-byte pad, then the members' f16 scales back to
+  back in member order (the same adjacency the nibbles have);
+- an eligible **single** int4 tensor is written as **kind 7**: header, f32 scales, nibbles, f16 scales, each
+  16-aligned. (A distinct kind, not a "group of one": a group whose members fall back to single records must
+  never look like group members to the reader.)
+
+f32 scales stay in the file, so the CPU path is untouched; the cost is the f16 copy (+5–8% file size: 7B
+5.18 → 5.58 GB). The reader records each tensor's f16 view (`Model.Int4ScalesF16`); the Metal build binds it
+in place when present and converts as before when not. Compatibility follows the earlier rule: only a
+metal-target file is v14, every other target still writes v12, a pre-v14 reader refuses a v14 file, and a v14
+reader loads every older layout (a v13 metal-target file simply has no f16 scales to alias).

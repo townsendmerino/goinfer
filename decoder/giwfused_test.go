@@ -51,8 +51,8 @@ func TestGIWFused_roundTripAndAdjacency(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v := binary.LittleEndian.Uint32(blob[len(giwMagic):]); v != giwVFused {
-		t.Fatalf("a metal-target blob is version %d, want %d", v, giwVFused)
+	if v := binary.LittleEndian.Uint32(blob[len(giwMagic):]); v != giwVersion {
+		t.Fatalf("a metal-target blob is version %d, want %d", v, giwVersion)
 	}
 	if !bytes.Contains(blob, []byte{6, 8, 0, 0, 0, 64, 0, 0, 0, 32, 0, 0, 0}) { // kind 6, rows 8 (Q), cols 64, group 32
 		t.Fatal("no kind-6 record in a metal-target blob — the fused path did not engage")
@@ -186,7 +186,7 @@ func TestGIWFused_blockPaddingAtEveryAlignment(t *testing.T) {
 			w.fusedGroup(ptrs...)
 			w.raw([]byte{0xAB, 0xCD}) // a trailer: the reader must stop exactly at the group's end
 
-			r := &giwReader{data: w.buf, off: lead, version: giwVFused}
+			r := &giwReader{data: w.buf, off: lead, version: w.emitVersion()}
 			got := make([]linalg.WeightMat, len(shape))
 			gp := make([]*linalg.WeightMat, len(shape))
 			for i := range got {
@@ -210,6 +210,29 @@ func TestGIWFused_blockPaddingAtEveryAlignment(t *testing.T) {
 					prev := int4Bytes(t, &got[i-1])
 					if uintptr(unsafe.Pointer(&prev[0]))+uintptr(len(prev)) != uintptr(unsafe.Pointer(&q4[0])) {
 						t.Errorf("shape %v lead %d: members %d and %d are not adjacent", shape, lead, i-1, i)
+					}
+				}
+				// v14: the member's f16 scales, recorded against its nibbles, equal F16Bits of its f32 scales,
+				// and the members' f16 arrays are one contiguous run starting 16-aligned.
+				f16 := r.f16[uintptr(unsafe.Pointer(&q4[0]))]
+				_, q4s, _, _ := ms[i].Int4()
+				if len(f16) != len(q4s) {
+					t.Fatalf("shape %v lead %d member %d: %d f16 scales recorded, want %d", shape, lead, i, len(f16), len(q4s))
+				}
+				for j := range q4s {
+					if f16[j] != F16Bits(q4s[j]) {
+						t.Fatalf("shape %v lead %d member %d: f16[%d] = %#x, want F16Bits = %#x", shape, lead, i, j, f16[j], F16Bits(q4s[j]))
+					}
+				}
+				at16 := int(uintptr(unsafe.Pointer(&f16[0])) - uintptr(unsafe.Pointer(&w.buf[0])))
+				if i == 0 && at16%16 != 0 {
+					t.Errorf("shape %v lead %d: f16 block at blob offset %d, not 16-aligned", shape, lead, at16)
+				}
+				if i > 0 {
+					pq, _, _, _ := got[i-1].Int4()
+					pf := r.f16[uintptr(unsafe.Pointer(&pq[0]))]
+					if uintptr(unsafe.Pointer(&pf[0]))+uintptr(2*len(pf)) != uintptr(unsafe.Pointer(&f16[0])) {
+						t.Errorf("shape %v lead %d: f16 scales of members %d and %d are not adjacent", shape, lead, i-1, i)
 					}
 				}
 			}

@@ -17,6 +17,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
@@ -144,6 +145,22 @@ func (m *Model) MmapByteOffset(b []byte) (int64, bool) {
 		return 0, false
 	}
 	return int64(p - base), true
+}
+
+// Int4ScalesF16 returns w's group scales as f16 bit patterns (F16Bits) when this model was loaded from a v14
+// metal-target .giw that stores them — aliased from the mapping, so a Metal no-copy buffer can bind them in
+// place instead of converting the f32 scales into a new buffer — or ok=false (any other load, or a tensor the
+// file did not give f16 scales to). Keyed by the nibbles' address: pass the WeightMat the model itself holds.
+func (m *Model) Int4ScalesF16(w *linalg.WeightMat) ([]uint16, bool) {
+	if m == nil || m.w == nil || m.w.int4F16 == nil || w == nil {
+		return nil, false
+	}
+	q4, _, _, ok := w.Int4()
+	if !ok || len(q4) == 0 {
+		return nil, false
+	}
+	f, ok := m.w.int4F16[uintptr(unsafe.Pointer(&q4[0]))]
+	return f, ok
 }
 
 // protectGIWMapping is applied to every .giw mapping Load creates (excludeFromFork). A variable only so a
