@@ -182,6 +182,64 @@ func ChatML() *Template {
 	}}
 }
 
+// Phi3 — microsoft/Phi-3-mini-4k-instruct's current template: per turn
+// "<|{role}|>\n{content}<|end|>\n", a leading system turn when given, generation prompt
+// "<|assistant|>\n". No BOS in the template, and the HF tokenizer adds none
+// (add_bos_token false).
+//
+// Before this renderer existed Detect matched no Phi-3 template, so chat and serve fed Phi-3
+// a raw completion with no turn markers at all: the model wrote its own "<|assistant|>" and
+// answered the benchmark's filler prompt with newlines (found 2026-09-25,
+// docs/measurements/peer-claim-2026-09-25.md).
+func Phi3() *Template {
+	return &Template{name: "phi3", stops: []string{"<|end|>", "<|endoftext|>"}, render: func(system string, turns []Turn) []Segment {
+		var b segBuf
+		if system != "" {
+			b.sp("<|system|>")
+			b.ct("\n" + system)
+			b.sp("<|end|>")
+			b.ct("\n")
+		}
+		for _, t := range turns {
+			b.sp("<|" + t.Role + "|>")
+			b.ct("\n" + t.Content)
+			b.sp("<|end|>")
+			b.ct("\n")
+		}
+		b.sp("<|assistant|>")
+		b.ct("\n")
+		return b.segs
+	}}
+}
+
+// Phi3Orig — the template Phi-3-mini-4k-instruct shipped with in its first release, and the
+// one its q4 GGUF still carries: "<s>", then per user turn
+// "<|user|>\n{content}<|end|>\n<|assistant|>\n" (the generation prompt is part of every user
+// turn) and per assistant turn "{content}<|end|>\n". It has NO system branch, so a system
+// prompt is dropped, as it is by HF and llama.cpp rendering the same template. Emits the BOS
+// itself: encode with addBOS=false.
+func Phi3Orig() *Template {
+	return &Template{name: "phi3_orig", stops: []string{"<|end|>", "<|endoftext|>"}, render: func(system string, turns []Turn) []Segment {
+		var b segBuf
+		b.sp("<s>")
+		for _, t := range turns {
+			if t.Role == "assistant" {
+				b.ct(t.Content)
+				b.sp("<|end|>")
+				b.ct("\n")
+				continue
+			}
+			b.sp("<|user|>")
+			b.ct("\n" + t.Content)
+			b.sp("<|end|>")
+			b.ct("\n")
+			b.sp("<|assistant|>")
+			b.ct("\n")
+		}
+		return b.segs
+	}}
+}
+
 // Mellum2 (JetBrains Mellum2) renders ChatML — its chat template is ChatML
 // byte-for-byte (<|im_start|>/<|im_end|> turns, stop <|im_end|>, Hermes
 // <tool_call> tools), verified vs HF apply_chat_template

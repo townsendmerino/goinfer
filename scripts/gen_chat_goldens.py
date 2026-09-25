@@ -3,9 +3,11 @@
 file per family, for the goinfer `chat` package's renderer tests. Small tokenizer
 configs only (no model weights).
 
-    ~/g4venv/bin/python scripts/gen_chat_goldens.py
+    ~/g4venv/bin/python scripts/gen_chat_goldens.py [family ...]
+
+Naming families regenerates only those files; with none, every family is regenerated.
 """
-import json, os, datetime
+import json, os, sys, datetime
 from transformers import AutoTokenizer
 
 OUT = os.path.expanduser("~/mycode/goinfer/testdata/chat_goldens")
@@ -24,12 +26,25 @@ FAMILIES = {
     "chatml": "Qwen/Qwen2.5-Coder-0.5B-Instruct",
     "llama3": "unsloth/Llama-3.2-1B-Instruct",
     "mistral": "mistralai/Mistral-7B-Instruct-v0.3",
+    "phi3": "microsoft/Phi-3-mini-4k-instruct",
+    "phi3_orig": "microsoft/Phi-3-mini-4k-instruct",
+}
+
+# A family whose template is not its repo's current one: rendered by the same tokenizer through
+# apply_chat_template(chat_template=...). phi3_orig is the template Phi-3-mini-4k-instruct first
+# shipped with, byte-for-byte as embedded in Phi-3-mini-4k-instruct-q4.gguf (tokenizer.chat_template)
+# — the GGUF the peer benchmarks run, which still carries it. No system branch; opens with bos_token.
+TEMPLATE_OVERRIDE = {
+    "phi3_orig": "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'user') %}"
+                 "{{'<|user|>' + '\n' + message['content'] + '<|end|>' + '\n' + '<|assistant|>' + '\n'}}"
+                 "{% elif (message['role'] == 'assistant') %}{{message['content'] + '<|end|>' + '\n'}}{% endif %}{% endfor %}",
 }
 
 # N-22: pin each repo to the commit SHA the committed goldens were built from, so an upstream
 # chat_template edit can't silently change a byte-exact fixture on regeneration. None = track the
 # repo's main branch (the drift-prone default) — the loop warns loudly when a repo is unpinned.
 REVISIONS = {repo: None for repo in FAMILIES.values()}
+REVISIONS["microsoft/Phi-3-mini-4k-instruct"] = "f39ac1d28e925b323eae81227eaba4464caced4e"  # main, 2026-09-25
 
 # Every case carries an EXPLICIT system message so no family injects its own
 # default (e.g. Qwen's "You are Qwen…") — the renderer takes system from the
@@ -48,7 +63,10 @@ CASES = [
     ]),
 ]
 
+ONLY = set(sys.argv[1:])
 for fam, repo in FAMILIES.items():
+    if ONLY and fam not in ONLY:
+        continue
     rev = REVISIONS.get(repo)
     if rev is None:
         print(f"WARNING {fam} ({repo}): unpinned revision — goldens may drift; set REVISIONS[{repo!r}] to a commit SHA")
@@ -57,10 +75,11 @@ for fam, repo in FAMILIES.items():
     except Exception as e:
         print(f"SKIP {fam} ({repo}): {e}")
         continue
-    out = {"family": fam, "repo": repo, "revision": rev, "chat_template": (tok.chat_template or ""), "cases": []}
+    tmpl = TEMPLATE_OVERRIDE.get(fam)
+    out = {"family": fam, "repo": repo, "revision": rev, "chat_template": tmpl or (tok.chat_template or ""), "cases": []}
     for name, msgs in CASES:
         try:
-            rendered = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+            rendered = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True, chat_template=tmpl)
             rendered = rendered.replace(TODAY, PINNED_DATE) # stabilize Llama-3's dynamic date
             out["cases"].append({"name": name, "messages": msgs, "rendered": rendered})
         except Exception as e:

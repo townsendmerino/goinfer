@@ -50,8 +50,23 @@ def prompt_tokens(text):
 
 # " the" is a single common token in every tokenizer here, so repetition gives ~1 token/word and the
 # search converges in a couple of steps.
+#
+# THE INSTRUCTION COMES AFTER THE FILLER AND ASKS FOR A LONG REPLY ("essay-v2", 2026-09-25). The
+# first shape, "Continue this text. the the the ...", let every model answer briefly and stop: the
+# 2026-09-25 peer sweep lost 7 of 24 decode cells to replies that ended at 34-58 of the 64 requested
+# tokens, on every engine, and which cell stopped depended on prompt-cache state and near-tie
+# numerics rather than on anything being measured. None of the three engines can be told to ignore
+# end-of-sequence symmetrically (Ollama rejects ignore_eos as an invalid option), so the prompt has
+# to make a long reply the natural one. This shape ran to 64 tokens on goinfer, Ollama and
+# llama.cpp, cold and warm, at every depth tried on the 0.5B/1.5B/7B, gemma3-1b and phi3-mini.
+# "Ignore the words above" was tried first and failed once: gemma3-1b at depth 128 on llama.cpp
+# asked for the words instead (53 tokens).
+FORMAT = "essay-v2"
+INSTRUCTION = "\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press."
+
+
 def make(n):
-    return "Continue this text. " + " ".join(["the"] * n)
+    return " ".join(["the"] * n) + INSTRUCTION
 
 
 def calibrate(depths, tolerance_pct=1.0):
@@ -76,7 +91,10 @@ def main():
                     help="repeatable; KEY is the prompts.json key prefix")
     ap.add_argument("--depth", action="append", type=int, required=True, help="repeatable")
     ap.add_argument("--backend", default="cuda")
-    ap.add_argument("--quant", default="int4")
+    ap.add_argument("--quant", default="int4",
+                    help='"none" omits -quant, for a .giw bundle that bakes its own (M26/M35)')
+    ap.add_argument("--serve-arg", action="append", default=[], metavar="ARG",
+                    help="repeatable; passed to serve as-is (e.g. --serve-arg=-moe-cache-experts)")
     ap.add_argument("--ctx", type=int, default=0,
                     help="pass -ctx to serve; required to calibrate depths past the default cap")
     ap.add_argument("--stream-weights", action="store_true",
@@ -104,8 +122,10 @@ def main():
             sys.exit(f"calibrate: {path} is under the archive — copy it to ~/models first")
         proc = subprocess.Popen(
             [args.serve, "-model", f"bench={path}", "-backend", args.backend,
-             "-addr", f"127.0.0.1:{PORT}", "-quant", args.quant]
+             "-addr", f"127.0.0.1:{PORT}"]
+            + (["-quant", args.quant] if args.quant != "none" else [])
             + (["-ctx", str(args.ctx)] if args.ctx else [])
+            + args.serve_arg
             + (["-stream-weights"] if args.stream_weights else []),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
         try:
@@ -123,7 +143,7 @@ def main():
                 print(f"  warmup for {key} failed ({e}) — continuing", flush=True)
             for target, (words, tokens) in calibrate(args.depth).items():
                 existing[f"{key}:{target}"] = {"words": words, "tokens": tokens,
-                                               "text": make(words)}
+                                               "text": make(words), "format": FORMAT}
                 added += 1
                 print(f"  {key} depth={target}: {tokens} tokens ({words} words)", flush=True)
         finally:

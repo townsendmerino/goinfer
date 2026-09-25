@@ -144,7 +144,7 @@ func (t *Tokenizer) encodeByteLevel(text string, addBOS, parseSpecial bool) ([]i
 				return nil, err
 			}
 			out = append(out, id)
-			i += n
+			i = t.afterAdded(text, id, i+n)
 			gapStart = i
 			continue
 		}

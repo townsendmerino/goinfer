@@ -674,6 +674,39 @@ def prompt_for_depth(depth, model_key):
 def prompt_tokens(depth, model_key):
     return _PROMPTS[f"{model_key}:{depth}"]["tokens"]
 
+def prompt_format(depth, model_key):
+    """Which prompt shape a calibrated entry is. "continue-v1" ("Continue this text. the the ...") is
+    every entry written before 2026-09-25; "essay-v2" is bench_prompts_calibrate.py's current shape."""
+    return _PROMPTS[f"{model_key}:{depth}"].get("format", "continue-v1")
+
+# THE TOKEN GATE, stamped on every decode cell. A completion that ends early is not a slow one: an
+# engine stops at its own end-of-turn, and at temperature 0 it stops at the same token every time,
+# so a re-run reproduces it. The 2026-09-25 peer sweep's pre-registered gate voided a cell at < 95%
+# of the requested tokens and lost 7 of 24 cells to replies that ended at 34-58 of 64 tokens, whose
+# rates were in line with their neighbours. The rate is per token either way; what a short reply
+# changes is only the decode window, so this gate voids only a window too short to time.
+TOKEN_GATE_FRACTION = 0.5   # void below half the requested tokens ...
+TOKEN_GATE_FLOOR = 10       # ... or below this many, whichever is larger
+
+def token_gate(comp_tokens, ngen):
+    """{"verdict": "ok" | "short" | "void", ...} for one cell's timed completions.
+
+    ok    — every completion returned all ngen tokens.
+    short — every completion returned at least the threshold, some fewer than ngen. Graded; the
+            counts are reported beside it.
+    void  — some completion returned fewer than the threshold, or the engine reported no count
+            (Ollama's phi3-mini @3900 on 2026-09-25 reported 0 across 1200 streamed chunks)."""
+    threshold = max(TOKEN_GATE_FLOOR, int(ngen * TOKEN_GATE_FRACTION))
+    rule = f"void if any completion < {threshold} of {ngen} tokens or unreported"
+    if not comp_tokens:
+        return {"verdict": "void", "reason": "no completions", "threshold": threshold, "rule": rule}
+    if any(not c for c in comp_tokens):
+        return {"verdict": "void", "reason": "engine reported no token count", "threshold": threshold,
+                "rule": rule}
+    lo = min(comp_tokens)
+    verdict = "ok" if lo >= ngen else "short" if lo >= threshold else "void"
+    return {"verdict": verdict, "min": lo, "threshold": threshold, "rule": rule}
+
 def goinfer_payload(model_path, prompt, cfg):
     ngen, _, _ = gen_params()
     p = {"model": "bench", "stream": True, "max_tokens": ngen,
@@ -930,14 +963,18 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
         # was a LOAD-time footprint, not just a decode-time one). Stopped just before teardown below,
         # so the peak covers load + warmup + every measured completion.
         rss = RSSSampler(proc.pid).start()
-        # warm: one discarded completion (model load + first-run outlier)
+        # warm: one discarded completion (model load + first-run outlier). Its token count is kept:
+        # it is the only COLD request in the cell, and a prompt cache can change the reply between
+        # a cold request and the warm ones that are timed (llama-server's gemma3-1b: 51 cold, 64
+        # warm, measured 2026-09-25).
         try:
-            post_stream(url, mk(), parse)
+            warm = post_stream(url, mk(), parse)
         except Exception as e:
             return None, f"warmup failed: {e}", None
 
         _, ncomp, nruns = gen_params()
         run_rates, comp_rates, tok_total, chunk_total = [], [], 0, 0
+        comp_tokens = []  # the engine's own count per timed completion; None where it reported none
         for _ in range(nruns):
             rates = []
             for _ in range(ncomp):
@@ -952,6 +989,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 n = n - 1 if reported else n
                 rates.append(n / (tl - tf))
                 tok_total += (reported or 0)
+                comp_tokens.append(reported)
                 chunk_total += chunks
             if rates:
                 run_rates.append(statistics.mean(rates))
@@ -961,8 +999,11 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 comp_rates.extend(rates)
         ratio = (tok_total / chunk_total) if chunk_total else None
         rss_peak_kb = rss.stop()
+        ngen = gen_params()[0]
         return run_rates, None, {"tokens": tok_total, "chunks": chunk_total, "tokens_per_chunk": ratio,
-                                 "completion_rates": comp_rates, "ngen": gen_params()[0],
+                                 "completion_rates": comp_rates, "ngen": ngen,
+                                 "completion_tokens": comp_tokens, "warmup_tokens": warm[4],
+                                 "token_gate": token_gate(comp_tokens, ngen),
                                  "rss_peak_kb": rss_peak_kb}
     except Exception as e:
         return None, str(e), None
@@ -1420,6 +1461,7 @@ def main():
         ptoks = prompt_tokens(depth, mk) if phase in ("A", "B", "C") else None
         rec = {"phase": phase, "engine": engine, "backend": backend, "model": mk,
                "depth": depth, "prompt_tokens": ptoks,
+               "prompt_format": prompt_format(depth, mk) if phase in ("A", "B", "C") else None,
                "config": cfg, "sent": CONFIGS[cfg].get(engine, {}),
                "note": CONFIGS[cfg]["note"], "runs": rates, "error": err,
                "machine": machine,
@@ -1433,6 +1475,10 @@ def main():
             if r:
                 print(f"#   tokens/chunks = {r:.4f}  ({counts['tokens']} tok / {counts['chunks']} chunks)",
                       flush=True)
+            tg = counts.get("token_gate")
+            if tg:
+                print(f"#   token gate = {tg['verdict']}  (min {tg.get('min')} / threshold {tg['threshold']}, "
+                      f"warm-up {counts.get('warmup_tokens')})", flush=True)
             rss = counts.get("rss_peak_kb")
             if rss:
                 print(f"#   rss_peak = {rss / (1<<20):.3f} GiB ({rss} KiB)", flush=True)

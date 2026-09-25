@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
@@ -111,6 +112,10 @@ type Tokenizer struct {
 	splitDigits  bool          // a Digits{individual_digits} pretokenizer runs before the byte-level regex (Mellum2): isolate each digit, so a leading space never attaches to one
 
 	added *addedTrie // added/special token surface forms → id
+	// rstrip marks added tokens that swallow the whitespace to their right (HF AddedToken.rstrip).
+	// Phi-3's turn markers do, so "<|user|>\nHi" encodes as <|user|> ▁Hi, not <|user|> ▁ \n Hi.
+	// nil for every family that has none.
+	rstrip map[int32]bool
 
 	// isAdded[id] marks an ADDED/special token, whose surface is stored VERBATIM rather than
 	// byte-level-encoded (N-24). decodeByteLevel must emit those runes as-is: pushing them
@@ -164,6 +169,7 @@ type tokenizerJSON struct {
 	AddedTokens []struct {
 		ID      int32  `json:"id"`
 		Content string `json:"content"`
+		RStrip  bool   `json:"rstrip"`
 	} `json:"added_tokens"`
 	Model struct {
 		Type         string           `json:"type"`
@@ -350,6 +356,9 @@ func parseTokenizerJSON(raw []byte, jsonPath, siblingDir string) (*Tokenizer, er
 	for _, a := range tj.AddedTokens {
 		t.added.add(a.Content, a.ID)
 		t.markAdded(int(a.ID))
+		if a.RStrip {
+			t.setRstrip(a.ID, true)
+		}
 	}
 
 	return t, nil
@@ -482,7 +491,7 @@ func (t *Tokenizer) encode(text string, addBOS, parseSpecial bool) ([]int, error
 		if id, n := t.added.match(text, i); n > 0 {
 			flushGap(i)
 			out = append(out, id)
-			i += n
+			i = t.afterAdded(text, id, i+n)
 			gapStart = i
 			continue
 		}
@@ -515,14 +524,62 @@ func (t *Tokenizer) EncodeSegments(segs []Segment, addBOS bool) ([]int, error) {
 	if addBOS && t.special.BOS >= 0 {
 		out = append(out, int(t.special.BOS))
 	}
+	stripNext := false
 	for _, s := range segs {
-		ids, err := t.encode(s.Text, false, s.Special)
+		text := s.Text
+		if stripNext {
+			// The previous segment ended in an rstrip token, whose whitespace-swallowing crosses
+			// the segment boundary exactly as it would inside one string.
+			text = strings.TrimLeftFunc(text, unicode.IsSpace)
+		}
+		ids, err := t.encode(text, false, s.Special)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, ids...)
+		stripNext = s.Special && t.endsInRstrip(text) || stripNext && text == ""
 	}
 	return out, nil
+}
+
+// setRstrip records whether added token id swallows the whitespace to its right.
+func (t *Tokenizer) setRstrip(id int32, on bool) {
+	if t.rstrip == nil {
+		t.rstrip = map[int32]bool{}
+	}
+	t.rstrip[id] = on
+}
+
+// afterAdded returns where encoding resumes after added token id matched text up to end: past
+// any whitespace the token swallows (rstrip), else end itself.
+func (t *Tokenizer) afterAdded(text string, id int32, end int) int {
+	if !t.rstrip[id] {
+		return end
+	}
+	return len(text) - len(strings.TrimLeftFunc(text[end:], unicode.IsSpace))
+}
+
+// endsInRstrip reports whether a special-parsed text's last match is an rstrip added token that
+// reaches the end of the text, scanning exactly as encode does.
+func (t *Tokenizer) endsInRstrip(text string) bool {
+	if len(t.rstrip) == 0 {
+		return false
+	}
+	last := false
+	for i := 0; i < len(text); {
+		if id, n := t.added.match(text, i); n > 0 {
+			i = t.afterAdded(text, id, i+n)
+			last = t.rstrip[id] && i == len(text)
+			continue
+		}
+		_, sz := utf8.DecodeRuneInString(text[i:])
+		if sz == 0 {
+			sz = 1
+		}
+		i += sz
+		last = false
+	}
+	return last
 }
 
 // normalize applies the SentencePiece space normalizer: replace every ASCII

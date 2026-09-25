@@ -1,0 +1,44 @@
+{
+ "family": "phi3",
+ "repo": "microsoft/Phi-3-mini-4k-instruct",
+ "revision": "f39ac1d28e925b323eae81227eaba4464caced4e",
+ "chat_template": "{% for message in messages %}{% if message['role'] == 'system' %}{{'<|system|>\n' + message['content'] + '<|end|>\n'}}{% elif message['role'] == 'user' %}{{'<|user|>\n' + message['content'] + '<|end|>\n'}}{% elif message['role'] == 'assistant' %}{{'<|assistant|>\n' + message['content'] + '<|end|>\n'}}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ '<|assistant|>\n' }}{% else %}{{ eos_token }}{% endif %}",
+ "cases": [
+  {
+   "name": "sys_user",
+   "messages": [
+    {
+     "role": "system",
+     "content": "You are a terse assistant."
+    },
+    {
+     "role": "user",
+     "content": "What is the capital of France?"
+    }
+   ],
+   "rendered": "<|system|>\nYou are a terse assistant.<|end|>\n<|user|>\nWhat is the capital of France?<|end|>\n<|assistant|>\n"
+  },
+  {
+   "name": "sys_multi",
+   "messages": [
+    {
+     "role": "system",
+     "content": "You are a terse assistant."
+    },
+    {
+     "role": "user",
+     "content": "Hi"
+    },
+    {
+     "role": "assistant",
+     "content": "Hello! How can I help?"
+    },
+    {
+     "role": "user",
+     "content": "Name a primary color."
+    }
+   ],
+   "rendered": "<|system|>\nYou are a terse assistant.<|end|>\n<|user|>\nHi<|end|>\n<|assistant|>\nHello! How can I help?<|end|>\n<|user|>\nName a primary color.<|end|>\n<|assistant|>\n"
+  }
+ ]
+}

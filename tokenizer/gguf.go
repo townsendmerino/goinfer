@@ -210,6 +210,7 @@ func fromGGUF(g *embed.GGUFFile) (*Tokenizer, error) {
 			}
 		}
 	}
+	setGGUFRstrip(t, g, tokens, types)
 
 	return t, nil
 }
@@ -422,4 +423,33 @@ func ggufTokenID(g *embed.GGUFFile, key string, nTokens int) int {
 		}
 	}
 	return -1
+}
+
+// setGGUFRstrip restores the AddedToken.rstrip flags GGUF does not carry. HF's Phi-3
+// tokenizer.json sets rstrip on its special tokens, so "<|user|>\nHi" encodes without the
+// newline; a GGUF has no per-token flag for it. llama.cpp recovers it by model name
+// (llama-vocab.cpp: a general.name containing "phi-3" or "phi3" gets RSTRIP on every special
+// token and on "</s>", but not on "<unk>", "<s>" or "<|endoftext|>"), and this applies the same
+// rule so both engines tokenize a Phi-3 GGUF alike. Keyed on the name, not the architecture,
+// because Phi-4 GGUFs also declare general.architecture "phi3" and their ChatML-style markers
+// do not strip.
+func setGGUFRstrip(t *Tokenizer, g *embed.GGUFFile, tokens []string, types []int) {
+	name, _ := g.Str("general.name")
+	name = strings.ToLower(name)
+	if !strings.Contains(name, "phi-3") && !strings.Contains(name, "phi3") {
+		return
+	}
+	for i, ty := range types {
+		if i < len(tokens) && (ty == ggufTokUnknown || ty == ggufTokControl || ty == ggufTokUserDefined) {
+			t.setRstrip(int32(i), true)
+		}
+	}
+	for _, s := range []struct {
+		piece string
+		on    bool
+	}{{"</s>", true}, {"<unk>", false}, {"<s>", false}, {"<|endoftext|>", false}} {
+		if id, ok := t.vocab[s.piece]; ok {
+			t.setRstrip(id, s.on)
+		}
+	}
 }

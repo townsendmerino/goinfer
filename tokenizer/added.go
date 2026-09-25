@@ -4,7 +4,9 @@ package tokenizer
 // AddedVocabulary splits the input on these surface forms *before* the
 // normalizer and BPE run; since all of Gemma's added tokens are
 // non-normalized and neither lstrip nor rstrip, this reduces to a plain
-// leftmost-longest substring match at each byte position.
+// leftmost-longest substring match at each byte position. rstrip (Phi-3's turn
+// markers) is applied by the caller after a match (Tokenizer.afterAdded); lstrip
+// is not implemented, as no supported family has been measured to need it.
 //
 // The trie is keyed by byte (not rune) so matching never has to decode UTF-8;
 // a node carries id≥0 when some added token ends there. At a given position we

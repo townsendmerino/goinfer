@@ -1,0 +1,44 @@
+{
+ "family": "phi3_orig",
+ "repo": "microsoft/Phi-3-mini-4k-instruct",
+ "revision": "f39ac1d28e925b323eae81227eaba4464caced4e",
+ "chat_template": "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'user') %}{{'<|user|>' + '\n' + message['content'] + '<|end|>' + '\n' + '<|assistant|>' + '\n'}}{% elif (message['role'] == 'assistant') %}{{message['content'] + '<|end|>' + '\n'}}{% endif %}{% endfor %}",
+ "cases": [
+  {
+   "name": "sys_user",
+   "messages": [
+    {
+     "role": "system",
+     "content": "You are a terse assistant."
+    },
+    {
+     "role": "user",
+     "content": "What is the capital of France?"
+    }
+   ],
+   "rendered": "<s><|user|>\nWhat is the capital of France?<|end|>\n<|assistant|>\n"
+  },
+  {
+   "name": "sys_multi",
+   "messages": [
+    {
+     "role": "system",
+     "content": "You are a terse assistant."
+    },
+    {
+     "role": "user",
+     "content": "Hi"
+    },
+    {
+     "role": "assistant",
+     "content": "Hello! How can I help?"
+    },
+    {
+     "role": "user",
+     "content": "Name a primary color."
+    }
+   ],
+   "rendered": "<s><|user|>\nHi<|end|>\n<|assistant|>\nHello! How can I help?<|end|>\n<|user|>\nName a primary color.<|end|>\n<|assistant|>\n"
+  }
+ ]
+}

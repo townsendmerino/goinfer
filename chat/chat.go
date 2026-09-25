@@ -78,7 +78,7 @@ type Template struct {
 }
 
 // Name is the family identifier ("chatml", "mellum2", "gemma3", "gemma4", "harmony", "llama3",
-// "mistral", "ministral").
+// "mistral", "ministral", "phi3", "phi3_orig").
 func (t *Template) Name() string { return t.name }
 
 // Render builds the complete prompt string (including any leading BOS marker the
@@ -165,6 +165,12 @@ func Detect(meta Meta) (*Template, error) {
 			return nil, ErrUnknownTemplate
 		case strings.Contains(t, "[SYSTEM_PROMPT]"):
 			return Ministral(), nil
+		// Phi-3: "<|user|>" / "<|end|>" markers. Its current template has a system branch; the
+		// first release's (still in its q4 GGUF) has none and opens with bos_token instead.
+		case strings.Contains(t, "<|user|>") && strings.Contains(t, "<|end|>") && strings.Contains(t, "<|system|>"):
+			return Phi3(), nil
+		case strings.Contains(t, "<|user|>") && strings.Contains(t, "<|end|>") && strings.Contains(t, "bos_token"):
+			return Phi3Orig(), nil
 		case strings.Contains(t, "<|im_start|>"):
 			return ChatML(), nil
 		case strings.Contains(t, "[INST]"):
