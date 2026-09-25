@@ -996,8 +996,10 @@ the Metal pager's command-buffer boundary (M-11, R11); Linux defaults.
 ### S6 · Metal aliases the mapping — `NewBufferNoCopy` over a metal-target `.giw` layout
 
 > **S6 SHIPPED — ALIASING IS THE DEFAULT ON METAL SINCE 2026-09-24** (owner decision after every registered gate passed;
-> `GOINFER_METAL_ALIAS=0` turns it off; `TestWeightAlias_onByDefault` pins it). Still open, none blocking: M26 on v14, the
-> two writer gaps below, and the M26 memory-hog arm (skipped by owner choice).
+> `GOINFER_METAL_ALIAS=0` turns it off; `TestWeightAlias_onByDefault` pins it). **M26 on v14 measured the same day**: 2,967 vs
+> 4,485 MB at token 32 aliased vs copied (GPU side 1,001 MB = slots + KV + scratch), output identical to v13, swap flat; decode
+> not resolvable at n=4 (±13% spread). Still open, none blocking: the two writer gaps below, and the M26 memory-hog arm
+> (skipped by owner choice).
 >
 > **BUILD STEP 5 AND THE REMAINING GATES DONE 2026-09-24** (`docs/measurements/s6-alias-2026-09-24.md`, "Build step 5"):
 > byte-identical aliased vs copied on all 23 fixtures Metal builds resident (mutation-checked); `Close` ordering clean over

@@ -1,0 +1,553 @@
+{
+ "label": "alias1",
+ "mode": "",
+ "model": "/Users/francistownsend-merino/models/gemma4-26b-int4-v14st.metal.giw",
+ "cmd": [
+  "/tmp/serve-s6gate",
+  "-addr",
+  "127.0.0.1:18111",
+  "-model",
+  "/Users/francistownsend-merino/models/gemma4-26b-int4-v14st.metal.giw",
+  "-backend",
+  "metal",
+  "-ctx",
+  "512",
+  "-moe-cache-experts",
+  "-moe-cache-slots",
+  "8"
+ ],
+ "swap_baseline_mb": 1570.25,
+ "started": "20:45:24",
+ "gomemlimit": "(server default)",
+ "footprints_during_load": [
+  {
+   "t_s": 6.3,
+   "swap_mb": 1570.25,
+   "ps": {
+    "rss_kb": 3265920,
+    "faults": 215790,
+    "pageins": 205369
+   },
+   "footprint": {
+    "phys_footprint_mb": 151.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 146.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 0.109375,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 3024.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 151.0,
+      "clean_mb": 3029.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  {
+   "t_s": 13.1,
+   "swap_mb": 1570.25,
+   "ps": {
+    "rss_kb": 6557440,
+    "faults": 417129,
+    "pageins": 406643
+   },
+   "footprint": {
+    "phys_footprint_mb": 153.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 146.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 0.109375,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 6227.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 152.0,
+      "clean_mb": 6232.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  {
+   "t_s": 19.7,
+   "swap_mb": 1570.25,
+   "ps": {
+    "rss_kb": 7515120,
+    "faults": 549877,
+    "pageins": 539259
+   },
+   "footprint": {
+    "phys_footprint_mb": 154.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 146.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 0.109375,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 7271.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 153.0,
+      "clean_mb": 7276.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  {
+   "t_s": 26.3,
+   "swap_mb": 1570.25,
+   "ps": {
+    "rss_kb": 7545392,
+    "faults": 679947,
+    "pageins": 669219
+   },
+   "footprint": {
+    "phys_footprint_mb": 155.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 146.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 0.109375,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 7306.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 154.0,
+      "clean_mb": 7311.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  {
+   "t_s": 32.9,
+   "swap_mb": 1570.25,
+   "ps": {
+    "rss_kb": 7509648,
+    "faults": 808851,
+    "pageins": 798017
+   },
+   "footprint": {
+    "phys_footprint_mb": 155.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 146.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 0.109375,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 7286.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 155.0,
+      "clean_mb": 7291.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  {
+   "t_s": 39.4,
+   "swap_mb": 1570.25,
+   "ps": {
+    "rss_kb": 7489968,
+    "faults": 931635,
+    "pageins": 920681
+   },
+   "footprint": {
+    "phys_footprint_mb": 156.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 146.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 0.109375,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 7243.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 156.0,
+      "clean_mb": 7248.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  {
+   "t_s": 46.1,
+   "swap_mb": 1570.25,
+   "ps": {
+    "rss_kb": 7059824,
+    "faults": 984862,
+    "pageins": 973743
+   },
+   "footprint": {
+    "phys_footprint_mb": 157.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 146.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 0.109375,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 6827.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 157.0,
+      "clean_mb": 6832.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  {
+   "t_s": 52.8,
+   "swap_mb": 1562.25,
+   "ps": {
+    "rss_kb": 4905680,
+    "faults": 1008335,
+    "pageins": 995590
+   },
+   "footprint": {
+    "phys_footprint_mb": 165.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 155.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 0.109375,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 4708.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 165.0,
+      "clean_mb": 4713.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  {
+   "t_s": 59.4,
+   "swap_mb": 1562.25,
+   "ps": {
+    "rss_kb": 5198368,
+    "faults": 1256233,
+    "pageins": 1140877
+   },
+   "footprint": {
+    "phys_footprint_mb": 1425.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 1310.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 98.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.140625,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 4560.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 1425.0,
+      "clean_mb": 4567.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  }
+ ],
+ "load_s": 61.9,
+ "decode_path": "metal-resident (int4)",
+ "footprint_after_load": {
+  "swap_mb": 1562.25,
+  "ps": {
+   "rss_kb": 4433152,
+   "faults": 1289596,
+   "pageins": 1152171
+  },
+  "footprint": {
+   "phys_footprint_mb": 2460.0,
+   "categories": {
+    "untagged (VM_ALLOCATE)": {
+     "dirty_mb": 1553.0,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 60.0
+    },
+    "IOAccelerator (graphics)": {
+     "dirty_mb": 889.0,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 0.0
+    },
+    "MALLOC_SMALL": {
+     "dirty_mb": 4.34375,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 0.0
+    },
+    "mapped file": {
+     "dirty_mb": 0.0,
+     "clean_mb": 3929.0,
+     "reclaimable_mb": 0.0
+    },
+    "TOTAL": {
+     "dirty_mb": 2460.0,
+     "clean_mb": 3936.0,
+     "reclaimable_mb": 60.0
+    }
+   }
+  }
+ },
+ "served_name": "gemma4-26b-int4-v14st.metal.giw",
+ "http_status": 200,
+ "tokens": 32,
+ "raw_head": [
+  ": ping",
+  "",
+  "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"text\":\" complexity\"}],\"created\":1790307987,\"id\":\"cmpl-7c2331e598b3480dcef17d5473aea87b\",\"model\":\"gemma4-26b-int4-v14st.metal.giw\",\"object\":\"text_completion\"}",
+  "",
+  "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"text\":\" is\"}],\"created\":1790307987,\"id\":\"cmpl-7c2331e598b3480dcef17d5473aea87b\",\"model\":\"gemma4-26b-int4-v14st.metal.giw\",\"object\":\"text_completion\"}"
+ ],
+ "text": " complexity is a- (\n\uba74- (\n\uba74- ( ) )\n- ( ) )\n- ( ) )\n- (Lost in the0",
+ "ttft_s": 14.38,
+ "decode_tok_s_1_to_N": 6.7961,
+ "token_times_s": [
+  14.38,
+  14.56,
+  14.74,
+  15.05,
+  15.24,
+  15.41,
+  15.53,
+  15.7,
+  15.82,
+  15.94,
+  16.14,
+  16.27,
+  16.38,
+  16.53,
+  16.66,
+  16.77,
+  16.92,
+  17.06,
+  17.2,
+  17.36,
+  17.47,
+  17.6,
+  17.74,
+  17.88,
+  17.98,
+  18.06,
+  18.17,
+  18.3,
+  18.43,
+  18.57,
+  18.76,
+  18.94
+ ],
+ "prompt_words": 79,
+ "snapshots": {
+  "1": {
+   "t_s": 14.4,
+   "swap_mb": 1562.25,
+   "ps": {
+    "rss_kb": 1829296,
+    "faults": 1413223,
+    "pageins": 1153945
+   },
+   "footprint": {
+    "phys_footprint_mb": 2878.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 1859.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 1001.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.640625,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 33.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 2878.0,
+      "clean_mb": 41.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  "16": {
+   "t_s": 16.8,
+   "swap_mb": 1562.25,
+   "ps": {
+    "rss_kb": 1896016,
+    "faults": 1422605,
+    "pageins": 1153945
+   },
+   "footprint": {
+    "phys_footprint_mb": 2926.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 1907.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 1001.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.640625,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 33.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 2926.0,
+      "clean_mb": 41.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  "32": {
+   "t_s": 18.9,
+   "swap_mb": 1562.25,
+   "ps": {
+    "rss_kb": 1952192,
+    "faults": 1427422,
+    "pageins": 1153948
+   },
+   "footprint": {
+    "phys_footprint_mb": 2967.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 1948.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 1001.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.640625,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 33.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 2967.0,
+      "clean_mb": 41.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  }
+ },
+ "faults_during_request": 137825,
+ "pageins_during_request": 1777,
+ "server_exit_before_finish": null,
+ "gc": {
+  "count": 11,
+  "last_cum_gc_cpu_pct": 0
+ },
+ "killed": null,
+ "ended_reason": "done",
+ "max_rss_gb": 7.2,
+ "max_swap_delta_mb": 0.0
+}

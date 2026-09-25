@@ -1,0 +1,28 @@
+20:29:16 killwatch: baseline swap-used 1578.25MB; kill at +600MB, tick rule 80MB x2 (0=off), poll 1s, pid 3777
+20:29:16 t+0s swap_used=1578.25MB delta=+0MB tick=0MB rss=319760KB free_disk=19G
+20:29:17 t+1s swap_used=1578.25MB delta=+0MB tick=0MB rss=512512KB free_disk=19G
+20:29:18 t+2s swap_used=1578.25MB delta=+0MB tick=0MB rss=1436064KB free_disk=19G
+20:29:19 t+3s swap_used=1578.25MB delta=+0MB tick=0MB rss=2486384KB free_disk=19G
+20:29:20 t+4s swap_used=1578.25MB delta=+0MB tick=0MB rss=3586224KB free_disk=19G
+20:29:21 t+5s swap_used=1578.25MB delta=+0MB tick=0MB rss=4496752KB free_disk=19G
+20:29:22 t+6s swap_used=1578.25MB delta=+0MB tick=0MB rss=3455776KB free_disk=19G
+20:29:23 t+7s swap_used=1578.25MB delta=+0MB tick=0MB rss=3455776KB free_disk=19G
+20:29:24 t+8s swap_used=1578.25MB delta=+0MB tick=0MB rss=3544304KB free_disk=19G
+20:29:26 t+10s swap_used=1578.25MB delta=+0MB tick=0MB rss=4228480KB free_disk=19G
+20:29:27 t+11s swap_used=1578.25MB delta=+0MB tick=0MB rss=4123952KB free_disk=19G
+20:29:28 t+12s swap_used=1578.25MB delta=+0MB tick=0MB rss=3523136KB free_disk=19G
+20:29:29 t+13s swap_used=1578.25MB delta=+0MB tick=0MB rss=2764448KB free_disk=19G
+20:29:30 t+14s swap_used=1578.25MB delta=+0MB tick=0MB rss=2662688KB free_disk=19G
+20:29:31 t+15s swap_used=1578.25MB delta=+0MB tick=0MB rss=2510944KB free_disk=19G
+20:29:32 t+16s swap_used=1578.25MB delta=+0MB tick=0MB rss=2440080KB free_disk=19G
+20:29:33 t+17s swap_used=1578.25MB delta=+0MB tick=0MB rss=2393600KB free_disk=19G
+20:29:34 t+18s swap_used=1578.25MB delta=+0MB tick=0MB rss=2196400KB free_disk=19G
+20:29:35 t+19s swap_used=1578.25MB delta=+0MB tick=0MB rss=2081760KB free_disk=19G
+20:29:36 t+20s swap_used=1578.25MB delta=+0MB tick=0MB rss=2091296KB free_disk=19G
+20:29:37 t+21s swap_used=1578.25MB delta=+0MB tick=0MB rss=2128224KB free_disk=19G
+20:29:38 t+22s swap_used=1578.25MB delta=+0MB tick=0MB rss=2164624KB free_disk=19G
+20:29:40 t+24s swap_used=1578.25MB delta=+0MB tick=0MB rss=2212544KB free_disk=19G
+20:29:41 t+25s swap_used=1578.25MB delta=+0MB tick=0MB rss=2262496KB free_disk=19G
+20:29:42 t+26s swap_used=1578.25MB delta=+0MB tick=0MB rss=2314704KB free_disk=19G
+20:29:43 t+27s swap_used=1578.25MB delta=+0MB tick=0MB rss=2331424KB free_disk=19G
+20:29:44 killwatch: pid 3777 exited on its own, stopping watch

@@ -1,0 +1,281 @@
+{
+ "label": "copy4",
+ "mode": "",
+ "model": "/Users/francistownsend-merino/models/gemma4-26b-int4-v14.metal.giw",
+ "cmd": [
+  "/tmp/serve-s6gate",
+  "-addr",
+  "127.0.0.1:18114",
+  "-model",
+  "/Users/francistownsend-merino/models/gemma4-26b-int4-v14.metal.giw",
+  "-backend",
+  "metal",
+  "-ctx",
+  "512",
+  "-moe-cache-experts",
+  "-moe-cache-slots",
+  "8"
+ ],
+ "swap_baseline_mb": 1578.25,
+ "started": "20:29:51",
+ "gomemlimit": "(server default)",
+ "footprints_during_load": [
+  {
+   "t_s": 6.2,
+   "swap_mb": 1578.25,
+   "ps": {
+    "rss_kb": 2860320,
+    "faults": 318364,
+    "pageins": 132269
+   },
+   "footprint": {
+    "phys_footprint_mb": 1805.0,
+    "categories": {
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 1236.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 552.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.15625,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 2230.0,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 1805.0,
+      "clean_mb": 2244.0,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  }
+ ],
+ "load_s": 10.7,
+ "decode_path": "metal-resident (int4)",
+ "footprint_after_load": {
+  "swap_mb": 1578.25,
+  "ps": {
+   "rss_kb": 5900368,
+   "faults": 569218,
+   "pageins": 202566
+  },
+  "footprint": {
+   "phys_footprint_mb": 3978.0,
+   "categories": {
+    "IOAccelerator (graphics)": {
+     "dirty_mb": 2407.0,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 0.0
+    },
+    "untagged (VM_ALLOCATE)": {
+     "dirty_mb": 1553.0,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 262.0
+    },
+    "MALLOC_SMALL": {
+     "dirty_mb": 4.484375,
+     "clean_mb": 0.0,
+     "reclaimable_mb": 0.0
+    },
+    "mapped file": {
+     "dirty_mb": 0.0,
+     "clean_mb": 4486.0,
+     "reclaimable_mb": 0.0
+    },
+    "TOTAL": {
+     "dirty_mb": 3978.0,
+     "clean_mb": 4494.0,
+     "reclaimable_mb": 262.0
+    }
+   }
+  }
+ },
+ "served_name": "gemma4-26b-int4-v14.metal.giw",
+ "http_status": 200,
+ "tokens": 32,
+ "raw_head": [
+  ": ping",
+  "",
+  "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"text\":\" we\"}],\"created\":1790307003,\"id\":\"cmpl-71732d8ada2f4746fee0ee98112f4fb7\",\"model\":\"gemma4-26b-int4-v14.metal.giw\",\"object\":\"text_completion\"}",
+  "",
+  "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"text\":\"thought\"}],\"created\":1790307003,\"id\":\"cmpl-71732d8ada2f4746fee0ee98112f4fb7\",\"model\":\"gemma4-26b-int4-v14.metal.giw\",\"object\":\"text_completion\"}"
+ ],
+ "text": " wethought's we'thought'sthought-thought-thought-thought-thought-thought-thought-thought-thought-thought-thought-thought",
+ "ttft_s": 14.26,
+ "decode_tok_s_1_to_N": 7.7278,
+ "token_times_s": [
+  14.26,
+  14.41,
+  14.57,
+  14.76,
+  14.92,
+  15.03,
+  15.14,
+  15.25,
+  15.36,
+  15.47,
+  15.64,
+  15.79,
+  15.93,
+  16.06,
+  16.15,
+  16.25,
+  16.4,
+  16.56,
+  16.71,
+  16.87,
+  16.99,
+  17.1,
+  17.22,
+  17.33,
+  17.43,
+  17.54,
+  17.65,
+  17.76,
+  17.86,
+  17.99,
+  18.13,
+  18.27
+ ],
+ "prompt_words": 79,
+ "snapshots": {
+  "1": {
+   "t_s": 14.3,
+   "swap_mb": 1578.25,
+   "ps": {
+    "rss_kb": 2028704,
+    "faults": 693173,
+    "pageins": 202663
+   },
+   "footprint": {
+    "phys_footprint_mb": 4402.0,
+    "categories": {
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 2519.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 1865.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.703125,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 1.515625,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 4403.0,
+      "clean_mb": 9.4375,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  "16": {
+   "t_s": 16.3,
+   "swap_mb": 1578.25,
+   "ps": {
+    "rss_kb": 2122880,
+    "faults": 699395,
+    "pageins": 202664
+   },
+   "footprint": {
+    "phys_footprint_mb": 4450.0,
+    "categories": {
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 2519.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 1912.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.703125,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 1.40625,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 4450.0,
+      "clean_mb": 9.328125,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  },
+  "32": {
+   "t_s": 18.3,
+   "swap_mb": 1578.25,
+   "ps": {
+    "rss_kb": 2213696,
+    "faults": 704533,
+    "pageins": 202664
+   },
+   "footprint": {
+    "phys_footprint_mb": 4497.0,
+    "categories": {
+     "IOAccelerator (graphics)": {
+      "dirty_mb": 2519.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "untagged (VM_ALLOCATE)": {
+      "dirty_mb": 1959.0,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "MALLOC_SMALL": {
+      "dirty_mb": 4.703125,
+      "clean_mb": 0.0,
+      "reclaimable_mb": 0.0
+     },
+     "mapped file": {
+      "dirty_mb": 0.0,
+      "clean_mb": 1.3125,
+      "reclaimable_mb": 0.0
+     },
+     "TOTAL": {
+      "dirty_mb": 4497.0,
+      "clean_mb": 9.234375,
+      "reclaimable_mb": 0.0
+     }
+    }
+   }
+  }
+ },
+ "faults_during_request": 135315,
+ "pageins_during_request": 98,
+ "server_exit_before_finish": null,
+ "gc": {
+  "count": 15,
+  "last_cum_gc_cpu_pct": 0
+ },
+ "killed": null,
+ "ended_reason": "done",
+ "max_rss_gb": 5.7,
+ "max_swap_delta_mb": 0.0
+}

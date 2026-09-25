@@ -1,0 +1,9 @@
+== alias1 (GOINFER_METAL_ALIAS=1) 20:45:24 swap=used = 1570.25M
+exit=0 killwatch: 20:46:46 t+81s swap_used=1562.25MB delta=+-8.00MB tick=0MB rss=1960400KB free_disk=19G
+== copy2 (GOINFER_METAL_ALIAS=0) 20:46:55 swap=used = 1562.25M
+exit=0 killwatch: 20:47:30 t+34s swap_used=1562.25MB delta=+0MB tick=0MB rss=1415216KB free_disk=19G
+== alias3 (GOINFER_METAL_ALIAS=1) 20:47:39 swap=used = 1562.25M
+exit=0 killwatch: 20:48:09 t+29s swap_used=1562.25MB delta=+0MB tick=0MB rss=1525744KB free_disk=19G
+== copy4 (GOINFER_METAL_ALIAS=0) 20:48:18 swap=used = 1562.25M
+exit=0 killwatch: 20:48:53 t+34s swap_used=1562.25MB delta=+0MB tick=0MB rss=1744048KB free_disk=19G
+ALLDONE 20:49:02
