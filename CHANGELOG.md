@@ -15,6 +15,16 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Removed two dead `serve` flags.** `--metal-fast-prefill` had been a no-op since Metal's fast prefill became the
+  default (2026-09-09). `--cpu-fast-attention` defaulted to `true`, so the only thing it could do, `=false`, was
+  `--cpu-exact-prefill` under another name. **A script that still passes either now fails at startup** with
+  `flag provided but not defined`; delete the flag. `--cpu-exact-prefill` (CPU) and `--exact-prefill` (all backends)
+  are the opt-outs, and `--cpu-exact-prefill`'s help now carries the default's full disclosure (not bit-identical,
+  cosine 0.9976, 2.28× faster, 512-token floor). `--exact-prefill`'s help gave Metal's fast-prefill floor as 512 tokens;
+  it is 64.
+- **Removed the never-released gemma demos**: `internal/gemmaapp`, `demo/gemma`, `metal/cmd/gemma`, `demo/gemma-web`
+  (~710 lines, stale help text, no release ever shipped them). `goinfer-chat` and `goinfer-serve` cover what they did.
+
 - **`fit` and Metal's resident memory guard now compute the same number.** `fit` left out Metal's host copy of the weights
   (2.1 GB on a directly loaded 1.5B) and counted Metal's KV cache at f32 when Metal allocates f16. So it could report
   *resident* for a direct `.gguf` load that Metal then refused, and over-state KV for an aliased `.giw`. Both now use one

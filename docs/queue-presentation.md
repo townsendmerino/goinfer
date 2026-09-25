@@ -71,8 +71,8 @@ a new capability.
 **U4 · Browser demo — blocked, and the actual blocker is a withdrawn plan, not unstarted work**
 — web UI, **PARKED, filed 2026-09-15**
 
-`demo/gemma-web` is a local server today, not a WASM build — there is no in-page, install-free
-demo the way a competing browser's own demo leads with. The blocker is not merely "not started
+There is no browser demo — the local-server `demo/gemma-web` was removed 2026-09-25 (never released), and
+there is no WASM build: no in-page, install-free demo the way a competing browser's own demo leads with. The blocker is not merely "not started
 yet": [`docs/tasks/parked/task-bindings.md`](tasks/parked/task-bindings.md) records that an
 earlier WASM-based plan for reaching browsers/mobile was **evaluated and withdrawn** —
 `GOARCH=wasm` has no SIMD (falls onto `linalg/dot_other.go`'s `dotGeneric` path), cannot reach the

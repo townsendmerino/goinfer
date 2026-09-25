@@ -111,7 +111,8 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
   `MoECacheExperts`, `MoECacheSlots`, `StreamWeights`, `WeightCacheBytes` and their `serve` flag
   twins (`--backend`'s non-cpu values, `--kv` — one KV-precision flag for every backend since 2026-09-25,
   `--kv-quant` its deprecated CPU-only override — `--moe-cache-*`,
-  `--stream-weights`, `--drafter`, `--spec`, `--adapter`, `--vision-*`, `--metal-fast-prefill`,
+  `--stream-weights`, `--drafter`, `--spec`, `--adapter`, `--vision-*`, `--exact-prefill` / `--cpu-exact-prefill`
+  (`--metal-fast-prefill` and `--cpu-fast-attention` were removed 2026-09-25 — a no-op and a duplicate),
   `--embed-*`, `--require-backend`, `--allow-admin` bodies). `Options.Quant` and `Options.LoRA` are
   Hard and listed above.
 - **Checkpoint fetching.** The `pull` package — `Resolve`, `IsRef`, `ParseRef`, `Ref`, `File`,

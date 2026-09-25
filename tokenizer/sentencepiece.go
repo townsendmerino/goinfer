@@ -797,8 +797,8 @@ func (t *Tokenizer) decode(ids []int, stripLeading bool) (string, error) {
 // M-25: the serving loop decoded generated ids with Decode, which strips. On a
 // dummy-prefix family (Llama-2/Mistral) a generation whose first token is `▁Paris`
 // reached the client as "Paris" where OpenAI and llama.cpp both return " Paris".
-// internal/gemmaapp decodes prompt+generation together for exactly this reason;
-// this is the same correction without re-decoding the prompt every token.
+// Decoding prompt+generation together gives the right answer too, by re-decoding the
+// prompt every token; this is the same correction without that cost.
 //
 // Byte-level tokenizers never strip, so this is identical to Decode for them.
 func (t *Tokenizer) DecodeContinuation(ids []int) (string, error) {

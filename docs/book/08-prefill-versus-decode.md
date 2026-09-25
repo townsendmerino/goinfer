@@ -128,10 +128,10 @@ That left a live product question rather than a technical one: a third off prefi
 common agentic shape is a large saving, and the path is not bit-identical, so should the
 bit-exactness contract be opt-in or opt-out?
 
-It was settled in favour of speed. `--cpu-fast-attention` is now **on by default**, and
-`--cpu-exact-prefill` is the way back to the bit-identical kernel — it wins if both are passed,
-because between a speed request and a correctness request the correctness one is the safe way to
-read a contradiction the user did not know they had expressed.
+It was settled in favour of speed. The f32 path is now **the default**, and `--cpu-exact-prefill`
+is the way back to the bit-identical kernel. Once the default flipped, `--cpu-fast-attention` could
+only ever be passed as `=false` — the opt-out under a second name — so it was removed (2026-09-25),
+leaving one flag per direction: nothing to type for speed, `--cpu-exact-prefill` for exactness.
 
 Two things made that defensible rather than merely faster.
 

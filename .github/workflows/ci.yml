@@ -791,13 +791,13 @@ jobs:
       - name: build (metal module)
         run: go build ./metal/...
 
-      # Compile the WIRED serve + demo entrypoints (metal/cmd/{serve,chat,gemma}): the
+      # Compile the WIRED serve + chat entrypoints (metal/cmd/{serve,chat}): the
       # RegisterBackend blank-imports live in the metal submodule cmd/ mains since audit M-19
       # (darwin-gated; the metal module registers on plain darwin, so no `metal` tag needed).
       # A backend signature drift must fail CI here — it once broke the shipped metal binary
       # while CI stayed green (audit M-18). Covered by ./metal/... above, but kept explicit.
-      - name: build metal (wired serve + demo entrypoints)
-        run: go build ./metal/cmd/serve ./metal/cmd/chat ./metal/cmd/gemma
+      - name: build metal (wired serve + chat entrypoints)
+        run: go build ./metal/cmd/serve ./metal/cmd/chat
 
       - name: vet (metal module)
         run: go vet ./metal/...

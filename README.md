@@ -410,7 +410,7 @@ to read if you only read one.
 | [docs/api-tiers.md](docs/api-tiers.md) | which surfaces v1.0 will semver-bind |
 
 Demos: `demo/chat` (single-binary local chat), `demo/agent` (fully-local stdlib RAG coding
-agent), `demo/gemma` (minimal CLI: tokenizer → decoder → streamed tokens).
+agent).
 
 Built on [`aikit`](https://github.com/townsendmerino/aikit)'s embedding and tensor primitives.
 

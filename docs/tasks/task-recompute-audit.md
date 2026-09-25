@@ -636,8 +636,8 @@ positions are inherent, not recompute.
   **`gemmaapp` genuinely was untouched, and is now fixed too (2026-09-23, this pass).** Unlike
   chatapp/agent, `internal/gemmaapp/main.go`'s loop ALSO decodes the prompt (through the same call
   that renders the generation), specifically to make the SentencePiece leading-space strip land
-  once at the true sequence start (`tokenizer/sentencepiece.go:800`'s own comment names this
-  design). The fix keeps that one-time whole-sequence `Decode` call for the prompt exactly as
+  once at the true sequence start (`tokenizer/sentencepiece.go:800`'s own comment describes this
+  design; the gemma demo itself was removed 2026-09-25 as never-released dead surface). The fix keeps that one-time whole-sequence `Decode` call for the prompt exactly as
   before (it already ran once per request, not once per token, so it was never the O(n²) source)
   and only replaces the GENERATION loop's repeated whole-sequence re-decode with `DecodePiece`
   appended to a `strings.Builder` seeded from the prompt's own decoded text — the same

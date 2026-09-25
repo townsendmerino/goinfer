@@ -315,67 +315,61 @@ type config struct {
 	backend  string
 	// quant + the per-model knobs below are server-global DEFAULTS; a --model spec
 	// can override each one (see modelSpec / modelFlag.Set).
-	quant            string
-	quantSet         bool   // was --quant given on the CLI? (vs the "int4" default) — for the .giw explicit-quant check (T1-7)
-	kvPrec           string // -kv: KV cache precision for whichever backend serves: f32 | f16 | i8
-	moeCacheExperts  bool   // stream routed MoE experts host→VRAM (--moe-cache-experts)
-	moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper bound, 0 = built-in default
-	moePager         string // CPU expert pager backing mode: "mmap" (default) | "pool" (--moe-pager, task-never-swap-2026-09.md S5)
-	fit              bool   // tasks/task-fit-to-hardware.md's "fit by default" (--fit, default true); false ⇒ decoder.Options.DisableFit
-	metalFastPrefill bool   // DEPRECATED — fast prefill is default-on since §3.2 gate passed 2026-09-09; kept for backward compat (--metal-fast-prefill is now a no-op; use --exact-prefill to opt out)
-	exactPrefill     bool   // force sequential (exact) prefill on all backends — CPU + Metal (--exact-prefill)
-	cpuFastAttention bool   // CPU f32 prefill attention, DEFAULT ON (non-bit-identical) (--cpu-fast-attention)
-	cpuExactPrefill  bool   // opt OUT of cpu fast attention: bit-exact CPU prefill (--cpu-exact-prefill)
-	ctxSize          int    // -ctx: requested GPU-resident KV capacity in positions (0 = backend default). Effective cap = min(model context window, this)
-	kvQuant          string // DEPRECATED -kv-quant: CPU KV cache override, "" = follow -kv
-	lora             string
-	name             string // -served-model-name (applies only to a single unnamed --model)
-	kvSessions       int
-	sessionDir       string        // -session-dir (also where /admin unload snapshots warm KV)
-	kvIdleDemote     time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
-	kvDemotedMax     int           // -kv-demoted-max: cap on the on-disk cold tier
-	streamWeights    bool          // -stream-weights: page MoE expert weights out of an mmap'd .giw under a RAM budget
-	directLoad       bool          // -direct-load (task-never-swap-2026-09.md S1): opt out of the darwin/linux sidecar-by-default and load a .gguf straight into the heap, as every platform did before S1
-	weightCacheGB    float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
-	acceptSlow       bool          // -accept-slow: acknowledge a paged-MoE load predicted below decoder's own tok/s floor (S4 item 5, task-never-swap-2026-09.md)
-	embedInt4        bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
-	maxQueue         int           // -max-queue: bounded per-model queue depth (0 = unbounded)
-	jobDir           string        // -job-dir (J2, task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
-	maxInflight      int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
-	maxBodyBytes     int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
-	unloadDrainWait  time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
-	spec             string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
-	drafter          string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
-	allowAdmin       bool          // -allow-admin: enable POST /admin/models/{load,unload}
-	haltFile         string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed (K2)
-	haltExitCode     int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence (K2); 0 = stay up
-	adminSocket      string        // -admin-socket: serve /admin/* on this Unix socket instead of the TCP listener (K5); "" = off
-	web              bool          // -web: serve the local browser UI + its model-pull routes
-	requireBE        bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
-	visionPath       string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
-	visionQuant      string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
+	quant           string
+	quantSet        bool   // was --quant given on the CLI? (vs the "int4" default) — for the .giw explicit-quant check (T1-7)
+	kvPrec          string // -kv: KV cache precision for whichever backend serves: f32 | f16 | i8
+	moeCacheExperts bool   // stream routed MoE experts host→VRAM (--moe-cache-experts)
+	moeCacheSlots   int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper bound, 0 = built-in default
+	moePager        string // CPU expert pager backing mode: "mmap" (default) | "pool" (--moe-pager, task-never-swap-2026-09.md S5)
+	fit             bool   // tasks/task-fit-to-hardware.md's "fit by default" (--fit, default true); false ⇒ decoder.Options.DisableFit
+	exactPrefill    bool   // force sequential (exact) prefill on all backends — CPU + Metal (--exact-prefill)
+	cpuExactPrefill bool   // opt OUT of the CPU's default f32 prompt attention: bit-exact CPU prefill (--cpu-exact-prefill)
+	ctxSize         int    // -ctx: requested GPU-resident KV capacity in positions (0 = backend default). Effective cap = min(model context window, this)
+	kvQuant         string // DEPRECATED -kv-quant: CPU KV cache override, "" = follow -kv
+	lora            string
+	name            string // -served-model-name (applies only to a single unnamed --model)
+	kvSessions      int
+	sessionDir      string        // -session-dir (also where /admin unload snapshots warm KV)
+	kvIdleDemote    time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
+	kvDemotedMax    int           // -kv-demoted-max: cap on the on-disk cold tier
+	streamWeights   bool          // -stream-weights: page MoE expert weights out of an mmap'd .giw under a RAM budget
+	directLoad      bool          // -direct-load (task-never-swap-2026-09.md S1): opt out of the darwin/linux sidecar-by-default and load a .gguf straight into the heap, as every platform did before S1
+	weightCacheGB   float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
+	acceptSlow      bool          // -accept-slow: acknowledge a paged-MoE load predicted below decoder's own tok/s floor (S4 item 5, task-never-swap-2026-09.md)
+	embedInt4       bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
+	maxQueue        int           // -max-queue: bounded per-model queue depth (0 = unbounded)
+	jobDir          string        // -job-dir (J2, task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
+	maxInflight     int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
+	maxBodyBytes    int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
+	unloadDrainWait time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
+	spec            string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
+	drafter         string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
+	allowAdmin      bool          // -allow-admin: enable POST /admin/models/{load,unload}
+	haltFile        string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed (K2)
+	haltExitCode    int           // -halt-exit-code: nonzero ⇒ halt exits the process with this code after quiescence (K2); 0 = stay up
+	adminSocket     string        // -admin-socket: serve /admin/* on this Unix socket instead of the TCP listener (K5); "" = off
+	web             bool          // -web: serve the local browser UI + its model-pull routes
+	requireBE       bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
+	visionPath      string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
+	visionQuant     string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
 	embedName  string // -embed-served-model-name
 }
 
-// cpuFastAttentionHelp is --cpu-fast-attention's usage text, held as a const so a
-// test can assert that the trade is actually disclosed. The precedent
-// (--metal-fast-prefill) exists precisely so a divergence is "disclosed in
-// --help, not something a user has to already know to type" — and a help string
-// nothing checks is one edit away from quietly losing the disclosure.
 // exactPrefillHelp is --exact-prefill's usage text, held as a const so the disclosure can be
 // asserted by test. It is the universal opt-out: one flag that disables fast prefill on EVERY
 // backend that has one (currently CPU f32 attention + Metal f16-MMA batched prefill).
-const exactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — disables the CPU f32-attention fast path (--cpu-fast-attention), Metal's f16-MMA batched prefill (default-on since 2026-09-09 above 512 tokens), AND CUDA's tensor-core batched prefill (GOINFER_CUDA_FAST_PREFILL, default-on above 512 tokens). Use when diffing outputs across versions, reproducing a bug report, or whenever decode==prefill bit-identity matters more than time-to-first-token. Wins over --cpu-fast-attention and --metal-fast-prefill if any are combined. CPU and Metal's fast paths are fidelity-gated before becoming the default (CPU: §3.1; Metal: §3.2, pooled form) — the exact path is a regression reference, not a correctness emergency"
+const exactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — disables the CPU's default f32 prompt attention (above 512 prompt tokens), Metal's f16-MMA batched prefill (default-on since 2026-09-09, above 64 prompt tokens), AND CUDA's tensor-core batched prefill (GOINFER_CUDA_FAST_PREFILL, default-on above 512 prompt tokens). Use when diffing outputs across versions, reproducing a bug report, or whenever decode==prefill bit-identity matters more than time-to-first-token. CPU and Metal's fast paths are fidelity-gated before becoming the default (CPU: §3.1; Metal: §3.2, pooled form) — the exact path is a regression reference, not a correctness emergency"
 
-// cpuExactPrefillHelp is the opt-OUT half (CPU only). Held as a const for the same reason as
-// cpuFastAttentionHelp: the test asserts on the text, so the disclosure cannot silently drift
-// away from the behaviour.
-const cpuExactPrefillHelp = "force BIT-EXACT prompt ingestion on the CPU backend: use the f64-accumulating attention kernel for prefill instead of the f32 one that is now the default. Costs the speed --cpu-fast-attention buys (measured 2.28x slower prefill on an 8k prompt, dense 1.5B) and buys back decode==prefill bit-identity, so a long-prompt response is reproducible against a build from before f32 prefill became the default. Use it when you are diffing outputs across versions, reproducing a bug report, or anything where 'same prompt, same tokens' matters more than time-to-first-token. Wins over --cpu-fast-attention if both are given. CPU backend only — use --exact-prefill to disable fast prefill on all backends at once. MoE models take the same f32 path as dense ones — the exclusion was measured and dropped in 66d0a05, so this is the only way to get bit-exact prefill for them too"
-
-const cpuFastAttentionHelp = "DEFAULT ON since 2026-08-31 (pass --cpu-exact-prefill to turn it off). Compute PROMPT attention in f32 instead of the f64-accumulating kernel — measured 2.28x faster prefill on an 8k prompt (dense 1.5B, M1 Pro: 602.9s to 264.6s) because attention is ~70% of a long prefill and the f64 path is ~8x slower than f32 at those shapes. NOT bit-identical: measured cosine 0.9976 against the default (stable across 256/1024/2048-token prompts), so a long-prompt response CAN differ from what you would get with this off, even at temperature 0. Decode is unaffected — this changes only how the prompt is ingested. Speculative decoding is never affected (its verify pass always uses the exact kernel, or verify would stop matching greedy). Applies to MoE models too: the old REFUSAL was dropped in 66d0a05 after being measured (1-cosine 2.126e-3 for MoE against 2.400e-3 for the dense case, depth-matched, with a 48/48 identical greedy continuation), and this help text went on claiming it for two days afterwards. FLOORED AT 512 PROMPT TOKENS: below that the exact kernel runs regardless, because the win scales with prompt length and the divergence does not — an 8-token prompt diverged at the third generated token while buying nothing (1.15x at 512, 1.43x at 2048, 2.28x at 8192). CPU backend only"
+// cpuExactPrefillHelp is --cpu-exact-prefill's usage text — the only CPU-specific prefill flag since
+// --cpu-fast-attention was removed (it defaulted to true, so its only reachable use, =false, was this
+// flag under another name). The DEFAULT it opts out of is a documented divergence, so this help carries
+// that disclosure too: a divergence must be "disclosed in --help, not something a user has to already
+// know to type". Held as a const so TestCPUExactPrefillDisclosesTheDefaultsTrade asserts on the text and
+// the disclosure cannot silently drift away from the behaviour.
+const cpuExactPrefillHelp = "force BIT-EXACT prompt ingestion on the CPU backend: use the f64-accumulating attention kernel for prefill instead of the f32 one that is the DEFAULT (since 2026-08-31). The default is measured 2.28x faster prefill on an 8k prompt (dense 1.5B, M1 Pro: 602.9s to 264.6s — attention is ~70% of a long prefill and the f64 path is ~8x slower at those shapes) and NOT bit-identical: cosine 0.9976 against the exact kernel, stable across 256/1024/2048-token prompts, so a long-prompt response CAN differ from a build before the default changed, even at temperature 0. The default is FLOORED AT 512 PROMPT TOKENS (below that the exact kernel runs anyway: the win scales with prompt length, the divergence does not). Decode is unaffected, and speculative decoding's verify pass always uses the exact kernel. MoE models take the same f32 path as dense ones — the exclusion was measured and dropped in 66d0a05 — so this is the only way to get bit-exact prefill for them too. Use it when diffing outputs across versions, reproducing a bug report, or anything where 'same prompt, same tokens' matters more than time-to-first-token. CPU backend only — use --exact-prefill to disable fast prefill on all backends at once"
 
 // moePagerDefault is decoder.MoEPagerDefault — the decoder owns S5's platform default so serve's
 // --moe-pager default and a library Load agree. --moe-pager reaches the decoder through
@@ -392,11 +386,10 @@ func moePagerDefault(goos string) string { return decoder.MoEPagerDefault(goos) 
 // The CPU knob is set EXPLICITLY either way rather than left unset. The decoder treats unset as on, but an
 // inherited GOINFER_CPU_FAST_ATTENTION in the caller's environment would otherwise outrank the flags — the
 // server's own flags must win over whatever the shell happened to export, and Options.Knobs does win.
-// --exact-prefill and --cpu-exact-prefill both disable it; between a speed request and a correctness request,
-// the correctness one is the safe resolution.
+// --exact-prefill and --cpu-exact-prefill both disable it.
 func (cfg config) prefillKnobs() *decoder.Knobs {
 	fast := "1"
-	if cfg.exactPrefill || cfg.cpuExactPrefill || !cfg.cpuFastAttention {
+	if cfg.exactPrefill || cfg.cpuExactPrefill {
 		fast = "0"
 	}
 	return &decoder.Knobs{"GOINFER_CPU_FAST_ATTENTION": fast}
@@ -526,9 +519,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		"falls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant.")
 	flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. native f32 on cuda, ~9x slower TTFT — N-35, docs/audit-2026-09-10.md: every quantized mode gets batched CUDA prefill, see -quant's own help above; only f32 falls back). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
 	flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose experts EXCEED VRAM/RAM: routed experts stream host→device per token instead of being held resident, so every expert still executes on the GPU (no CPU offload). Costs a per-token transfer; bit-identical to fully-resident. Off by default — with it off, a model that doesn't fit declines to the CPU path and says why. CUDA and Metal (with no --moe-cache-slots, Metal auto-sizes the slot count from free RAM — audit-metal-2026-09-12.md M-13)")
-	flag.BoolVar(&cfg.metalFastPrefill, "metal-fast-prefill", false, "DEPRECATED — Metal's f16-MMA batched prefill is now DEFAULT ON above 256 tokens (floor lowered from 512, audit-metal-2026-09-12.md M-02; §3.2 gate passed 2026-09-09, S model K=256/512/1024; see docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md). This flag is a no-op. Use --exact-prefill to opt out of fast prefill on all backends. Metal backend only")
 	flag.BoolVar(&cfg.exactPrefill, "exact-prefill", false, exactPrefillHelp)
-	flag.BoolVar(&cfg.cpuFastAttention, "cpu-fast-attention", true, cpuFastAttentionHelp)
 	flag.BoolVar(&cfg.cpuExactPrefill, "cpu-exact-prefill", false, cpuExactPrefillHelp)
 	flag.IntVar(&cfg.moeCacheSlots, "moe-cache-slots", 0, "per-layer expert slots to keep resident for a paged MoE model (CUDA: --moe-cache-experts; Metal: the GOINFER_METAL_MOE_SLOTS env var's replacement, docs/tasks/task-gpu-paths-2026-09.md Phase 2). On CUDA this is an UPPER BOUND: the runtime measures free VRAM and lowers it if the request does not fit, logging what it chose (\"C′ cache: … capping to N\"). On Metal an EXPLICIT value here is NOT auto-lowered — the request is used as given, and a model that does not fit at that count declines to the CPU path instead (the load-time memory guard, metal/backend.go). 0 keeps the built-in default: CUDA asks for all and auto-caps; Metal auto-sizes from free RAM ONLY when --moe-cache-experts is also set (audit-metal-2026-09-12.md M-13), else every expert stays resident, unpaged. More slots ⇒ higher LRU hit rate ⇒ fewer per-token transfers, at more memory cost")
 	flag.StringVar(&cfg.moePager, "moe-pager", moePagerDefault(runtime.GOOS), "CPU backing mode for a .giw-paged MoE model's expert pager: mmap (advice-based, zero-copy, but on darwin MADV_DONTNEED is a no-op so the budget is NOT enforced — measured 2026-09-23 on M35: ~4 GB of expert pages resident against a 1.5 GB budget) | pool (owned-buffer pread — a firm cap on every platform, costs ~1.4 GB of owned anonymous buffers at that budget, measured 1.02x the mmap decode rate). Default: pool on darwin, mmap elsewhere (docs/measurements/moe-pager-mode-darwin-2026-09-23.md; task-never-swap-2026-09.md S5). CPU decode of a paged MoE model only — CUDA/Metal experts use --moe-cache-experts/--moe-cache-slots instead")

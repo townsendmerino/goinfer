@@ -51,7 +51,7 @@ between the two output vectors:
              |a| |b|        sqrt(sum a[i]²) * sqrt(sum b[i]²)
 
   cos = 1.0      the two vectors point the same way  (identical)
-  cos = 0.9976   the shipped divergence for --cpu-fast-attention, dense path
+  cos = 0.9976   the shipped divergence of the CPU's default f32 prompt attention, dense path
 ```
 
 Cosine similarity ignores length and measures only direction, which is what you want when

@@ -31,10 +31,9 @@ func TestPrefillFlags_reachTheDecoderThroughOptions(t *testing.T) {
 		exact   bool
 		cpuFast string
 	}{
-		{"default", config{cpuFastAttention: true}, false, "1"},
-		{"--exact-prefill", config{exactPrefill: true, cpuFastAttention: true}, true, "0"},
-		{"--cpu-exact-prefill", config{cpuExactPrefill: true, cpuFastAttention: true}, false, "0"},
-		{"--cpu-fast-attention=false", config{}, false, "0"},
+		{"default", config{}, false, "1"},
+		{"--exact-prefill", config{exactPrefill: true}, true, "0"},
+		{"--cpu-exact-prefill", config{cpuExactPrefill: true}, false, "0"},
 	} {
 		opts := (modelSpec{}).options(c.cfg)
 		if opts.ExactPrefill != c.exact {

@@ -118,8 +118,9 @@ into "runs on my GPU" — or doesn't, hence the runtime capability probe.
   `device.CreateShaderModule`, `CreateComputePipeline`, `Queue.Submit`, buffer
   allocation, etc. It uses cgo — but the cgo is *inside this dependency*, sealed
   behind goinfer's `-tags gpu` submodule, so the default goinfer build is pure Go.
-  It can also target **browser WebGPU under wasm without cgo**, which is what makes
-  the `demo/gemma-web` client-side story possible. Migrated from
+  It can also target **browser WebGPU under wasm without cgo**, which is what would make
+  a client-side browser demo possible (none ships: the local-server `demo/gemma-web` was removed
+  2026-09-25, never released). Migrated from
   **[cogentcore/webgpu](https://github.com/cogentcore/webgpu)** (`a16a537d`):
   cogentcore's fork was unmaintained and pinned an untagged `wgpu-native` snapshot of
   unknown revision (`docs/completed/audit-2026-09-10.md` M-46); this fork tracks a

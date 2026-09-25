@@ -671,7 +671,7 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	// DEFAULT ON above metalFastPrefillFloor (256 tokens, M-02) since §3.2 gate passed 2026-09-09
+	// DEFAULT ON above metalFastPrefillFloor (64 tokens since R3; 256 under M-02 before that) since §3.2 gate passed 2026-09-09
 	// (S cells K=256/512/1024). GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill to opt out.
 	if !a.fastPrefill() {
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
