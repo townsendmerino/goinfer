@@ -50,11 +50,7 @@ jobs:
       # metal/ is darwin-only and cuda/ is linux-only for its cgo-free dlopen path; both still
       # COMPILE cross-target with GOOS set, which is what this gate needs — it is asking whether
       # the module resolves without a workspace, not whether it runs here.
-      - name: install GPU build deps
-        if: matrix.module == 'gpu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+      # No X11/GL packages for the gpu module's cgo build: see ci.yml's gpu job (removed 2026-09-25).
 
       # NO `go work init`. That is the whole point: this must resolve the goinfer root from the
       # proxy, the way `go install github.com/townsendmerino/goinfer/<module>@<tag>` does for a

@@ -574,13 +574,8 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: gpu/go.sum
 
-      # cgo build deps for Linux, installed since the cogentcore/webgpu era. The current binding,
-      # oliverbestmann/webgpu (a16a537d), links only its bundled wgpu_native plus -lm -ldl, so these
-      # may no longer be needed; drop them only with a green run that proves it.
-      - name: install GPU build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+      # No X11/GL packages: cogentcore/webgpu needed them; oliverbestmann/webgpu (a16a537d) links only
+      # its bundled wgpu_native plus -lm -ldl, and nothing here imports its wgpuglfw. Removed 2026-09-25.
 
       # Stitch root + gpu into an ephemeral workspace so `./gpu/...` resolves
       # the unpublished goinfer root from this checkout. The workspace's `use .`

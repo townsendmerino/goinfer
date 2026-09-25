@@ -64,13 +64,7 @@ jobs:
           cache-dependency-path: gpu/go.sum
       - name: install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
-      # cgo build deps for Linux (oliverbestmann/webgpu; see ci.yml's gpu job) — same package list ci.yml's
-      # gpu job installs, since govulncheck has to build the package graph the same way `go
-      # build`/`go vet` do to analyze it.
-      - name: install GPU build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+      # No X11/GL packages for the gpu module's cgo build: see ci.yml's gpu job (removed 2026-09-25).
       # Stitch root + gpu + demo/agent into an ephemeral workspace so they resolve the
       # UNPUBLISHED goinfer root/gpu from this checkout, not whatever demo/agent/go.mod's
       # pinned (published) versions say — verified 2026-09-11: `GOWORK=off go build ./...`
