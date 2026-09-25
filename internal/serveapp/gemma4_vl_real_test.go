@@ -13,6 +13,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/modelload"
 )
 
 // distinctTrigramRatioServeapp is decoder/gemma4_26b_real_test.go's distinctTrigramRatio,
@@ -66,7 +67,7 @@ func loadGemma4VLReal(t *testing.T, modelPath, visionDir string, opts decoder.Op
 	if _, err := os.Stat(filepath.Join(visionDir, "config.json")); err != nil {
 		t.Skipf("no vision checkpoint dir at %s: %v", visionDir, err)
 	}
-	tk, err := loadDecoderTokenizer(modelPath)
+	tk, err := modelload.Tokenizer(modelPath)
 	if err != nil {
 		t.Fatalf("load tokenizer (%s): %v", modelPath, err)
 	}

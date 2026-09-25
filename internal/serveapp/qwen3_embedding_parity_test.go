@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/modelload"
 )
 
 // Qwen3-Embedding parity gates (docs/completed/task-decoder-as-embedder.md §5).
@@ -101,7 +102,7 @@ func newQwen3Embedder(t *testing.T, g *embedGolden) *decoderEmbedder {
 	t.Helper()
 	requireHeavyModel(t)
 	path := qwen3EmbeddingCheckpoint(t)
-	tk, err := loadDecoderTokenizer(path)
+	tk, err := modelload.Tokenizer(path)
 	if err != nil {
 		t.Fatalf("tokenizer: %v", err)
 	}

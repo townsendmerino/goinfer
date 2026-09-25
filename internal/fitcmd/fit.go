@@ -21,12 +21,14 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/modelload"
 	"github.com/townsendmerino/goinfer/internal/prequant"
 )
 
 const fitUsage = `%[1]s fit <path> — show how this checkpoint would be placed on this machine, per backend
 
   fit <file.gguf|dir>            report at the default quant/context
+  fit hf:owner/repo[:quant]      the same, for a reference serve --model accepts (demo:<name> too)
   fit <file.gguf|dir> -ctx 32768 report at a specific context (refused if it doesn't fit, not
                                   silently shrunk — pass a smaller -ctx to see what DOES fit)
   fit <file.gguf|dir> -quant int8int8
@@ -66,6 +68,14 @@ func Run(args []string) int {
 		fs.Usage()
 		return 2
 	}
+	// An hf:/demo: reference resolves exactly as serve's and chat's --model does (internal/modelload):
+	// fetched, or found in the cache, before anything is measured. A plain path is untouched.
+	resolved, rerr := modelload.Resolve(context.Background(), path)
+	if rerr != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", self(), rerr)
+		return 1
+	}
+	path = resolved
 	// An explicit -ctx pins it (declines rather than auto-shrinks); the default is NOT pinned.
 	ctxPinned := false
 	fs.Visit(func(f *flag.Flag) {

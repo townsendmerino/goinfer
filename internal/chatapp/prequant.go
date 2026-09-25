@@ -9,7 +9,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/giw"
-	"github.com/townsendmerino/goinfer/tokenizer"
+	"github.com/townsendmerino/goinfer/internal/modelload"
 )
 
 // modelGIW is the prequant bundle baked into the binary: serialized int8
@@ -58,14 +58,9 @@ func loadEmbedded(_ bool, opts decoder.Options) (*session, error) {
 	// for a safetensors-sourced one. This path tried only the GGUF form, so an embedded build
 	// made from a safetensors checkpoint produced a binary that exited at startup — the same
 	// fallback loadFromPath has always had, missing from the baked-in twin.
-	tk, gerr := tokenizer.LoadGGUFBytes(tokGGUF)
-	if gerr != nil {
-		var jerr error
-		if tk, jerr = tokenizer.LoadJSONBytes(tokGGUF); jerr != nil {
-			// BOTH errors, not just the last: with only the JSON one, a corrupt GGUF-sourced
-			// bundle reports "invalid JSON" and sends the reader down the wrong path.
-			return nil, fmt.Errorf("prequant tokenizer: not a GGUF (%v) and not tokenizer.json (%v)", gerr, jerr)
-		}
+	tk, err := modelload.TokenizerFromTok(tokGGUF) // GGUF or raw tokenizer.json; both errors on failure
+	if err != nil {
+		return nil, fmt.Errorf("prequant tokenizer: %w", err)
 	}
 	model, err := decoder.NewModel(w, opts.Backend)
 	if err != nil {

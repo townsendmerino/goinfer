@@ -45,14 +45,10 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/giw"
-	"github.com/townsendmerino/goinfer/internal/prequant"
+	"github.com/townsendmerino/goinfer/internal/modelload"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
 	"github.com/townsendmerino/goinfer/internal/servecheck"
-	"github.com/townsendmerino/goinfer/internal/swapguard"
 	"github.com/townsendmerino/goinfer/multimodal"
-	"github.com/townsendmerino/goinfer/pull"
-	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // modelSpec is one --model entry: a served name (optional, from name=path), the
@@ -933,17 +929,10 @@ func newServer(cfg config) (*server, error) {
 		batches: newBatchStore(256),
 	}
 	for _, spec := range cfg.models {
-		// An `hf:`/`demo:` spec is fetched (or found in the cache) BEFORE the load, so the
-		// served name is derived from the real filename and everything downstream sees an
-		// ordinary path. A plain path is returned untouched, so no existing --model changes
-		// meaning — the property that lets a reference form be added to a Hard-tier flag.
-		if pull.IsRef(spec.path) {
-			resolved, err := pull.ResolveVerbose(context.Background(), spec.path)
-			if err != nil {
-				return nil, fmt.Errorf("resolving %s: %w", spec.path, err)
-			}
-			spec.path = resolved
-		}
+		// An `hf:`/`demo:` spec is fetched (or found in the cache) inside loadDecoder
+		// (modelload.Resolve), before anything else, so the served name derives from the real
+		// filename. A plain path is returned untouched, so no existing --model changes meaning —
+		// the property that lets a reference form be added to a Hard-tier flag.
 		// Startup load: a transparent .gguf→.giw transcode here isn't request-scoped, so
 		// context.Background() (a Ctrl-C during startup already ends the process). The admin
 		// load path below passes the request context so a disconnect cancels it (M-21).
@@ -1225,108 +1214,20 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		opts.ExtraResidentKVPerPosition = decoder.DrafterKVBytesPerPosition(drafter)
 	}
 
-	// Weight streaming needs the read-only mmap that only .giw provides. For a plain
-	// .gguf, transparently transcode to a sidecar .giw cache once (idea #1 "D") and
-	// load that — so --stream-weights "just works" without a manual prequant step.
-	// The served name still derives from the original --model spec, not the cache.
-	// Shared with the auto-retry below (tasks/task-fit-to-hardware.md's CPU placement piece), so the
-	// embed-int4 note and the transcode call have exactly one implementation between them.
-	ensureGIW := func() (string, error) {
-		if opts.EmbedInt4 {
-			fmt.Fprintln(os.Stderr, "note: embed-int4 is ignored with stream-weights (the cached .giw keeps the int8 pin); prequant the model with embed-int4 to bake it")
-		}
-		return prequant.EnsureCachedGIW(ctx, spec.path, opts.Quant, opts.Backend)
-	}
-
-	loadPath := spec.path
-	if opts.StreamWeights {
-		if strings.HasSuffix(spec.path, ".gguf") {
-			giwPath, err := ensureGIW()
-			if err != nil {
-				return nil, fmt.Errorf("stream-weights cache (%s): %w", spec.path, err)
-			}
-			loadPath = giwPath
-		} else if fi, serr := os.Stat(spec.path); serr == nil && fi.IsDir() {
-			// M-30 (docs/audit-2026-09-10.md): -stream-weights is a genuine no-op for a
-			// safetensors directory (decoder.Load ignores it for anything but a .giw), so a load
-			// that then refuses on the fit guard produced an identical refusal AFTER the user did
-			// what they were told — named here instead of left silent, so it reads as "did
-			// nothing" rather than "should have worked."
-			fmt.Fprintf(os.Stderr, "note: -stream-weights only applies to a .gguf source; %q is a "+
-				"safetensors directory — see cmd/prequant to build a streamable .giw from it\n", spec.path)
-		}
-	} else if strings.HasSuffix(spec.path, ".gguf") && !opts.EmbedInt4 && prequant.DefaultToSidecar(cfg.directLoad) {
-		// S1 (task-never-swap-2026-09.md): on darwin and linux, a plain .gguf resolves to its sidecar .giw
-		// by default now, even without -stream-weights — the resident weights end up as
-		// zero-copy mmap aliases (S0's own table) instead of fresh heap copies, with no active
-		// demand-paging engaged (opts.StreamWeights stays false here, so no pager is built, and
-		// -adapter's own refusal — keyed on StreamWeights, not on the source being a .giw — is
-		// unaffected). --embed-int4 implies -direct-load for this default path rather than
-		// silently losing the int4 embed pin (the S1 brief's own "pick one"; the EXPLICIT
-		// -stream-weights + -embed-int4 combination above keeps its existing, documented,
-		// ignore-and-note behavior — this branch never reaches it).
-		giwPath, err := ensureGIW()
-		if err != nil {
-			return nil, fmt.Errorf("sidecar cache (%s): %w — pass -direct-load (or GOINFER_GGUF_DIRECT=1) to load this .gguf straight into the heap instead", spec.path, err)
-		}
-		loadPath = giwPath
-	}
-
-	tk, err := loadDecoderTokenizer(loadPath)
+	// Resolve, sidecar / streaming transcode, tokenizer, swap-guarded load, the one automatic
+	// streaming retry on a dense fit decline, and the .giw quant check: the path chat and fit share
+	// (internal/modelload). The served name and fingerprint derive from the resolved SOURCE, never
+	// the cache it may have loaded through.
+	res, err := modelload.Load(ctx, modelload.Request{
+		Spec: spec.path, Opts: opts, DirectLoad: cfg.directLoad,
+		ExplicitQuant: spec.explicitQuant(cfg), GuardAdvice: "use -stream-weights or a smaller quant",
+	})
 	if err != nil {
-		return nil, fmt.Errorf("load tokenizer (%s): %w", loadPath, err)
+		return nil, err
 	}
-	t0 := time.Now()
-	// S3 (docs/tasks/task-never-swap-2026-09.md): only the GGUF direct-build resident path checks
-	// Options.LoadAbort today (see the field's own doc comment) — arming the watch for a
-	// .giw/streaming load would start a goroutine that nothing ever observes, so it is scoped to
-	// exactly the case this exists for.
-	loadOpts := opts
-	wrapLoadErr := func(err error) error { return err }
-	stopLoadGuard := func() {}
-	if !opts.StreamWeights && strings.HasSuffix(loadPath, ".gguf") {
-		loadOpts.LoadAbort, wrapLoadErr, stopLoadGuard = swapguard.StartLoad(loadPath, opts, "use -stream-weights or a smaller quant")
-	}
-	model, err := decoder.Load(loadPath, loadOpts)
-	stopLoadGuard() // done with this attempt either way — never left running through a retry's transcode+reload below
-	if err != nil {
-		err = wrapLoadErr(err)
-		// tasks/task-fit-to-hardware.md's CPU placement piece: a plain .gguf that does not fit resident
-		// RAM gets ONE automatic retry with weight streaming instead of just refusing — UNLESS the
-		// model is MoE or an "own-forward" family (decoder.FitDeclineError.DenseStreamable's own
-		// doc: CPU MoE expert-paging is a documented, MEASURED failure — docs/benchmarks.md
-		// "M35/M26 on the Mac" ran a real 20 GB checkpoint through it for 2h10min with ZERO
-		// completions), or the operator already asked for --stream-weights (nothing to retry, it
-		// already ran), or opted out with --fit=off (which restores every fit-by-default behavior,
-		// this one included — decoder.Options.DisableFit's own doc comment).
-		var fde *decoder.FitDeclineError
-		if !opts.StreamWeights && !opts.DisableFit && strings.HasSuffix(spec.path, ".gguf") &&
-			errors.As(err, &fde) && fde.DenseStreamable {
-			fmt.Fprintf(os.Stderr, "note: %q does not fit resident RAM; automatically retrying with weight streaming (pass --fit=off to keep today's refusal instead)\n", spec.path)
-			declineErr := err
-			opts.StreamWeights = true
-			giwPath, gerr := ensureGIW()
-			if gerr != nil {
-				return nil, fmt.Errorf("load model (%s): %w (auto weight-streaming retry also failed: %v)", spec.path, declineErr, gerr)
-			}
-			loadPath = giwPath
-			if tk, err = loadDecoderTokenizer(loadPath); err != nil {
-				return nil, fmt.Errorf("load tokenizer (%s): %w", loadPath, err)
-			}
-			if model, err = decoder.Load(loadPath, opts); err != nil {
-				return nil, fmt.Errorf("load model (%s): %w (auto weight-streaming retry also failed after transcode: %v)", spec.path, declineErr, err)
-			}
-		} else {
-			return nil, fmt.Errorf("load model (%s): %w", loadPath, err)
-		}
-	}
-	// A prequant .giw carries its own quant, so --quant cannot re-quantize it. If the user
-	// explicitly asked for a different one, fail here (before binding) rather than silently
-	// serving the baked precision (T1-7). A bare default never conflicts (explicitQuant == "").
-	if err := model.CheckGiwQuantMatch(spec.explicitQuant(cfg)); err != nil {
-		model.Close()
-		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
-	}
+	spec.path, opts = res.Source, res.Opts
+	tk, model := res.Tokenizer, res.Model
+	t0 := time.Now().Add(-res.LoadTime) // the banner's "in X": the model load plus the setup below, as before
 	mcfg := model.Config()
 	name := spec.name
 	if name == "" {
@@ -1433,30 +1334,6 @@ func requireFastPaths(name string, cfg config, lm *loadedModel, batched bool, wh
 		return fmt.Errorf("--require-backend: model %q declined the batched prefill: %s", name, why)
 	}
 	return nil
-}
-
-// loadDecoderTokenizer loads the tokenizer for a decoder model, picking the loader
-// by extension: a prequant .giw carries its tokenizer as an embedded metadata-GGUF
-// (read just that half — the weights are tens of GB and mmap'd by decoder.Load), a
-// .gguf reads its own metadata, and anything else is a SentencePiece/HF dir.
-func loadDecoderTokenizer(path string) (*tokenizer.Tokenizer, error) {
-	switch {
-	case strings.HasSuffix(path, ".giw"):
-		tokBytes, err := giw.ReadTokFile(path)
-		if err != nil {
-			return nil, err
-		}
-		// The tok half is GGUF metadata for a GGUF-sourced bundle, or the raw
-		// tokenizer.json for a safetensors-sourced one (prequant transcodeDir).
-		if tk, err := tokenizer.LoadGGUFBytes(tokBytes); err == nil {
-			return tk, nil
-		}
-		return tokenizer.LoadJSONBytes(tokBytes)
-	case strings.HasSuffix(path, ".gguf"):
-		return tokenizer.LoadGGUF(path)
-	default:
-		return tokenizer.Load(path)
-	}
 }
 
 // loadEncoder loads the embedding model (f32 or int8) plus its tokenizer (used

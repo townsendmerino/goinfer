@@ -20,7 +20,7 @@ func loadEmbedded(useTmp bool, opts decoder.Options) (*session, error) {
 			return nil, err
 		}
 		defer cleanup()
-		return loadFromPath(path, opts)
+		return loadFromPath(path, opts, true, "")
 	}
 	raw, err := embeddedModelBytes()
 	if err != nil {

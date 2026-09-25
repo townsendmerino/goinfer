@@ -8,6 +8,7 @@ import (
 
 	"github.com/townsendmerino/aikit/encoder"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/modelload"
 )
 
 // Decoder-as-embedder gates (docs/completed/task-decoder-as-embedder.md).
@@ -30,7 +31,7 @@ func newTestDecoderEmbedder(t *testing.T) *decoderEmbedder {
 	if _, err := os.Stat(p); err != nil {
 		t.Skipf("no checkpoint at %s", p)
 	}
-	tk, err := loadDecoderTokenizer(p)
+	tk, err := modelload.Tokenizer(p)
 	if err != nil {
 		t.Fatalf("tokenizer: %v", err)
 	}

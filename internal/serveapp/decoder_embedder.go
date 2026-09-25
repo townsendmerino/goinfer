@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/modelload"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -104,7 +105,7 @@ func newDecoderEmbedder(m *decoder.Model, tk *tokenizer.Tokenizer, queryPrompt, 
 // through embedTokenCounter, since an aikit embed.Tokenizer cannot tokenize for a decoder.
 func (s *server) loadDecoderEmbedder(cfg config) error {
 	t0 := time.Now()
-	tk, err := loadDecoderTokenizer(cfg.embedPath)
+	tk, err := modelload.Tokenizer(cfg.embedPath)
 	if err != nil {
 		return fmt.Errorf("load embedding tokenizer (%s): %w", cfg.embedPath, err)
 	}
