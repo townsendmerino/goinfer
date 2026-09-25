@@ -157,6 +157,63 @@ MMA phase itself or in the barrier-separated alternation between the two — **d
 step 2, and the design doc's), and **more work per simdgroup** (a 32×32 simdgroup tile, 16 accumulators: 8 loads per
 16 MMAs instead of 6 per 8).
 
+## Prototypes 3 and 4 — exploratory, 2026-09-25 (select, do not grade)
+
+Both on prototype 2, one variable each, same protocol (K=512, 1.5B, 5 paired reps, clean tree `4ca23125`), run back
+to back with an idle wait before each: prototype 3 15:02:07–15:04:04, prototype 4 15:04:04–15:05:56 local
+(load1 1.79 / 1.70). Raw: [`run34-prototypes3-4-k512.log`](metal-prefill-gemm-s2-2026-09-25/run34-prototypes3-4-k512.log).
+**Per R16's amendment these runs select a candidate; the grade is the confirmation run below.**
+
+| | GEMM category speedup (median; per rep) | gate/up | down | qkv | o | full replay (GPU) |
+|---|---|---|---|---|---|---|
+| prototype 2 (both are built on it) | 2.80× | 322 ms, 2.45 TFLOPS | 166, 2.38 | 38, 2.39 | 30, 2.24 | 676 ms |
+| **3 — register-prefetch double buffering** | **2.45×** (2.39 · 2.45 · 2.44 · 2.48 · 2.48) | 366, 2.16 | 186, 2.12 | 43, 2.11 | 33, 2.08 | 749 ms |
+| **4 — 32×32 simdgroup tile** | **3.25×** (3.29 · 3.04 · 3.26 · 3.25 · 3.00) | **275, 2.87** | **146, 2.70** | 35, 2.59 | 26, 2.61 | **599 ms** |
+
+- **Both bit-identical**: 0 differing elements on all four GEMMs, full-replay logits exact (0 / 151,936), for each.
+- **Double buffering is a loss here** — ~12% slower than prototype 2 on every shape. It doubles the staged tiles
+  (~14 KB of threadgroup memory per threadgroup against ~7 KB) and keeps a slab's worth of prefetched values live
+  in registers through the MMAs; fewer resident threadgroups per core is the likely cost. A reading, not measured.
+  The review's step-2 prediction ("3.0–3.2 TFLOPS") did not hold either.
+- **The larger simdgroup tile is the lever**: 8 matrix loads per 16 MMAs (prototype 2: 6 per 8) takes gate/up to 2.87
+  TFLOPS, near llama.cpp's ≥ 2.96 lower bound on this machine. Every one of its five pairs is above 2.85×.
+- No burst in any prototype: gate/up alone after 2 s idle is within 1–3% of its sustained time (prototype 3: 372.9 vs
+  364.4 ms; prototype 4: 280.8 vs 272.9).
+- **Selected for confirmation: prototype 4.**
+
+## Confirmation run — prototype 4, 2026-09-25: **SHIP**, 3.22×, bit-identical
+
+Per R16's amendment: prototype 4 alone, a fresh session, the current kernel as the do-nothing arm, K=512, 1.5B,
+**7 paired reps** (fixed before the run, above the ≥ 5 minimum). Clean tree `4ca23125`; idle at start (load1 1.55);
+15:06:45–15:09:20 local (22:06–22:09 UTC). Raw: [`confirm-prototype4-k512.log`](metal-prefill-gemm-s2-2026-09-25/confirm-prototype4-k512.log).
+
+| | current | prototype 4 | speedup |
+|---|---:|---:|---:|
+| **GEMM category in sequence** (median of 7; spread) | 1548.6 ms (4.3%) | **476.6 ms** (9.6%) | **3.22×** |
+| per-rep paired ratios | | | 3.34 · 3.22 · 3.20 · 3.02 · 3.25 · 3.37 · 3.15 |
+| cross-check: all four GEMMs removed at once | 1540.9 ms | 478.4 ms | |
+| gate/up | 1045.5 ms, 0.75 TFLOPS | 275.1 ms, **2.87 TFLOPS** | 3.80× |
+| down | 387.6 ms, 1.02 | 144.9 ms, 2.72 | 2.67× |
+| qkv | 68.6 ms, 1.32 | 33.6 ms, 2.69 | 2.04× |
+| o | 53.2 ms, 1.27 | 25.7 ms, 2.63 | 2.07× |
+| full prefill replay (GPU) | 1662.6 ms | **599.4 ms** | 2.77× |
+
+**Outcome against R16's band: SHIP (≥ 2.85×)** — median 3.22×, all seven pairs above the line, reproducing the
+exploratory 3.25×. Preconditions:
+
+1. **Fidelity — bit-identical.** 0 differing elements on all four GEMMs on real inputs; a full replay with it
+   reproduces `PrefillLast`'s logits exactly (0 / 151,936, argmax 261 = 261). Bit-identity is structural (same
+   operands, same ordered 8-wide K accumulation, same epilogue), so it holds for any K; the §3.2 pooled gate R16
+   names runs once the kernel is wired into production, where it must reproduce today's gate result exactly.
+2. **Sustained, no burst.** Graded on the in-sequence timing; gate/up alone after 2 s idle is 280.0 ms against 272.9
+   sustained (1.03).
+3. **Do-nothing arm in-session.** The current kernel measured 1548.6 ms here, against 1537–1540 in the earlier runs.
+
+**What it means, projected from GPU time, not measured through serve:** the prefill replay falls from 1662.6 to
+599.4 ms, so K=512 TTFT goes from 0.377× Ollama's (peer-claim cell h) to roughly **1.04×**. The measured claim needs
+`scripts/bench_peer_prefill.py` against Ollama after production wiring. Still to report, not deciding: the 7B's
+shapes and K=3900 (where attention remains, per S0).
+
 ## Not settled by the read
 
 - Whether 64 × 32 is the right threadgroup tile for goinfer's shapes, where gate/up's N = 17,920 gives 280 tiles
