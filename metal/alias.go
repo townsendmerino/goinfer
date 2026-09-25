@@ -23,8 +23,9 @@ import (
 // One buffer per tensor, over the page-aligned window that encloses it (Model.MmapAliasWindow), rather
 // than one over the whole mapping: a 16 GB .giw exceeds a 16 GB Mac's MTLBuffer size limit, and a
 // window per tensor needs no page padding in the file (v12 already 16-byte-aligns every array, which is
-// all the kernels' vector loads need). Scales are NOT aliased: the file stores f32 and the kernels read
-// f16, so they are still converted into a small buffer (~1/8 of the nibble bytes).
+// all the kernels' vector loads need). Scales alias too when the file carries them as f16 (weights format
+// v14, -target metal); an older file stores only f32, so its scales are converted into a small buffer
+// (~1/8 of the nibble bytes) and the banner says so.
 //
 // WHAT THE ALIASED PAGES ARE (measured, docs/measurements/s6-alias-2026-09-24.md, "MAP_SHARED"): IOKit wires a
 // no-copy buffer's pages with write intent. Over a MAP_PRIVATE mapping that makes every GPU-read page a wired
@@ -33,8 +34,10 @@ import (
 // maps a .giw MAP_SHARED on darwin (decoder/giwmap_darwin.go): the GPU reads the file's own page-cache pages
 // (+132 COW faults, background), wired only while a command buffer uses them, and a fork is cheap.
 //
-// Opt-in (GOINFER_METAL_ALIAS=1) until every gate in S6's registered rule passes; off, this type is nil and
-// int4Buf is byte-for-byte what it was.
+// ON BY DEFAULT since 2026-09-24, when every gate in S6's registered rule had passed (logits byte-identical
+// on the 1.5B/7B and all 23 resident fixtures, decode within 3% at depth 128 and 2048, footprint met, the
+// memory-hog arm, Close ordering — docs/measurements/s6-alias-2026-09-24.md). GOINFER_METAL_ALIAS=0 turns it
+// off: this type is then nil and int4Buf is byte-for-byte the copy path.
 type weightAlias struct {
 	m    *decoder.Model
 	page int
@@ -74,8 +77,9 @@ func int4ConcatBytes(wms []*linalg.WeightMat) int64 {
 	return b
 }
 
-// newWeightAlias returns nil unless the opt-in is set (GOINFER_METAL_ALIAS=1; "force" is accepted as a
-// synonym for scripts written while a size guard existed) AND the model is backed by a .giw mapping.
+// newWeightAlias returns an aliaser for any model backed by a .giw mapping unless GOINFER_METAL_ALIAS=0.
+// Any other value — unset, "1", or "force" (from scripts written while it was opt-in, and while a size
+// guard existed) — leaves it on. A .gguf or safetensors load has no .giw mapping and never aliases.
 //
 // There is deliberately no size limit. One existed from 2026-09-24 until the same day: on gemma4-26b the
 // aliased arm paged the whole server out at its first request, 3 of 3 times. The cause was not aliasing's
@@ -84,8 +88,7 @@ func int4ConcatBytes(wms []*linalg.WeightMat) int64 {
 // the guard reads swap with a bare sysctl; with both, four interleaved M26 arms (two aliased) ran clean with
 // swap flat (docs/measurements/m26-alias-fork-collapse-2026-09-24.md).
 func newWeightAlias(m *decoder.Model) *weightAlias {
-	mode := modelKnob(m, "GOINFER_METAL_ALIAS")
-	if (mode != "1" && mode != "force") || m == nil || m.GiwPath() == "" {
+	if m == nil || m.GiwPath() == "" || modelKnob(m, "GOINFER_METAL_ALIAS") == "0" {
 		return nil
 	}
 	return &weightAlias{m: m, page: os.Getpagesize()}
@@ -286,7 +289,7 @@ func (a *weightAlias) summary() string {
 	if a == nil {
 		return ""
 	}
-	line := fmt.Sprintf("[metal] weights aliased from %s (GOINFER_METAL_ALIAS=1): %.0f MB bound in place, %.0f MB copied (anonymous) — "+
+	line := fmt.Sprintf("[metal] weights aliased from %s (GOINFER_METAL_ALIAS=0 to copy instead): %.0f MB bound in place, %.0f MB copied (anonymous) — "+
 		"%.0f MB int4 nibbles (%d single tensors + %d fused groups = %.0f MB) + %.0f MB int8 codes (%d matrices) + %.0f MB f16 scales; "+
 		"copied: %d heap-backed, %d unaligned, %d fused groups not adjacent, %d scale sets converted\n",
 		filepath.Base(a.m.GiwPath()), float64(a.aliased+a.int8Bytes+a.scaleBytes)/(1<<20), float64(a.copyB)/(1<<20),

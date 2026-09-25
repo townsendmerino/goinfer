@@ -143,7 +143,7 @@ type gemma4MoeResident struct {
 	// path. Shared read-only fd across every layer's pool; closed by resident.Close.
 	giwFile *os.File
 
-	// alias is the S6 weight aliaser (nil unless GOINFER_METAL_ALIAS=1); buildResident sets it before the layer loop.
+	// alias is the S6 weight aliaser (nil when GOINFER_METAL_ALIAS=0 or the model is not .giw-mapped); buildResident sets it before the layer loop.
 	alias *weightAlias
 }
 

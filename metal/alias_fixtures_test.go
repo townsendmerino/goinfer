@@ -290,6 +290,46 @@ func TestWeightAlias_olderBundleTakesCopyPath(t *testing.T) {
 	}
 }
 
+// Aliasing is ON BY DEFAULT for a .giw-mapped model (S6 shipped 2026-09-24): with the knob unset the build
+// aliases, =0 turns it off, and a load that has no .giw mapping (safetensors here) never aliases.
+func TestWeightAlias_onByDefault(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	const fixture = "../testdata/llama-tiny"
+	if _, err := os.Stat(filepath.Join(fixture, "model.safetensors")); err != nil {
+		t.Skipf("no fixture at %s", fixture)
+	}
+	t.Setenv("GOINFER_METAL_ALIAS", "") // neutralize the shell; the snapshot then sees no setting
+	os.Unsetenv("GOINFER_METAL_ALIAS")
+	giw := filepath.Join(t.TempDir(), "llama-tiny.int4.metal.giw")
+	if err := prequant.Transcode(context.Background(), fixture, giw, "int4", false, decoder.GIWTargetMetal); err != nil {
+		t.Fatalf("transcode: %v", err)
+	}
+	aliasOf := func(path string, knobs *decoder.Knobs) *weightAlias {
+		t.Helper()
+		m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", Knobs: knobs})
+		if err != nil {
+			t.Fatalf("load %s: %v", path, err)
+		}
+		defer m.Close()
+		rf := m.ResidentForwardForTest()
+		if rf == nil {
+			t.Skipf("not resident on Metal: %s", m.ResidentDecline())
+		}
+		return rf.(*metalResident).r.alias
+	}
+	if a := aliasOf(giw, nil); a == nil || a.tensors == 0 {
+		t.Errorf("knob unset: .giw load did not alias (alias=%v) — the default is supposed to be on", a)
+	}
+	if a := aliasOf(giw, &decoder.Knobs{"GOINFER_METAL_ALIAS": "0"}); a != nil {
+		t.Errorf("GOINFER_METAL_ALIAS=0: the build still aliased %d tensors", a.tensors)
+	}
+	if a := aliasOf(fixture, nil); a != nil {
+		t.Errorf("a safetensors load (no .giw mapping) built an aliaser")
+	}
+}
+
 func mb(b int64) float64 { return float64(b) / (1 << 20) }
 
 func firstLine(err error) string {

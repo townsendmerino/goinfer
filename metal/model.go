@@ -323,7 +323,7 @@ type resident struct {
 	logitsHost                                                 []float32
 	gpuStart, gpuEnd, kernStart, kernEnd                       float64      // last-Forward GPU timing (Step 0)
 	prof                                                       pagedProfile // per-phase paging decomposition (accumulates; snapshot+diff over a timed window)
-	alias                                                      *weightAlias // S6: nil unless GOINFER_METAL_ALIAS=1 on a .giw-mapped model; test/banner introspection
+	alias                                                      *weightAlias // S6: set on a .giw-mapped model unless GOINFER_METAL_ALIAS=0; test/banner introspection
 	residency                                                  ResidencySet // pinned working set (GOINFER_MOE_RESIDENCY, paged path); zero value if unused
 	residencyBufs                                              []Buffer     // exactly the buffers added to `residency` (for the teardown-consistency gate)
 
@@ -842,7 +842,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	} else {
 		r.uLNHasBias = NewBufferU32(d, 0)
 	}
-	alias := newWeightAlias(m) // nil unless GOINFER_METAL_ALIAS=1 on a .giw-mapped model (S6)
+	alias := newWeightAlias(m) // on for a .giw-mapped model unless GOINFER_METAL_ALIAS=0 (S6)
 	if r.g4moe != nil {
 		r.g4moe.alias = alias
 	}

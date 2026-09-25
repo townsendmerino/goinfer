@@ -995,12 +995,16 @@ the Metal pager's command-buffer boundary (M-11, R11); Linux defaults.
 
 ### S6 · Metal aliases the mapping — `NewBufferNoCopy` over a metal-target `.giw` layout
 
+> **S6 SHIPPED — ALIASING IS THE DEFAULT ON METAL SINCE 2026-09-24** (owner decision after every registered gate passed;
+> `GOINFER_METAL_ALIAS=0` turns it off; `TestWeightAlias_onByDefault` pins it). Still open, none blocking: M26 on v14, the
+> two writer gaps below, and the M26 memory-hog arm (skipped by owner choice).
+>
 > **BUILD STEP 5 AND THE REMAINING GATES DONE 2026-09-24** (`docs/measurements/s6-alias-2026-09-24.md`, "Build step 5"):
 > byte-identical aliased vs copied on all 23 fixtures Metal builds resident (mutation-checked); `Close` ordering clean over
 > load/Close cycles (mapping gone, device size flat; mutation-checked); an older bundle takes the copy path with a rebuild
 > note; the whole Metal suite green with aliasing on, paged-MoE tests and the snapshot golden included; the banner states
 > the anonymous remainder (1.5B/7B: **1 MB copied**). Step 4 needs no build (slots stay). Open: M26 re-transcode to v14, two
-> writer gaps (shared-expert gate|up, qwen35 K‖V — ~50 MB on M35, needs v15), and **the decision to make aliasing the default**.
+> writer gaps (shared-expert gate|up, qwen35 K‖V — ~50 MB on M35, needs v15), and the decision to make aliasing the default (since taken — above).
 >
 > **BUILD STEP 2 DONE 2026-09-24 — all four gates now pass for the dense models** (`docs/measurements/s6-alias-2026-09-24.md`,
 > "Build step 2"): the int8 LM head's codes and (weights format v14) the f16 scales are aliased too. Footprint at token 32,

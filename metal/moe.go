@@ -351,7 +351,7 @@ type moeResident struct {
 	// the same mechanism generalized.
 	giwFile *os.File
 
-	// alias is the S6 weight aliaser (nil unless GOINFER_METAL_ALIAS=1); buildResident sets it before the layer loop.
+	// alias is the S6 weight aliaser (nil when GOINFER_METAL_ALIAS=0 or the model is not .giw-mapped); buildResident sets it before the layer loop.
 	alias *weightAlias
 }
 

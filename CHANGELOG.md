@@ -15,6 +15,13 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Metal serves a `.giw`'s weights straight from the file, by default (S6).** A Metal load of a `.giw` now binds its int4
+  nibbles, the int8 LM head and (weights format v14, `-target metal`, new) the f16 group scales in place from the file mapping
+  instead of copying them into GPU buffers, so they are page cache the OS can reclaim rather than memory that swaps. Memory
+  held after 32 tokens: 7B 4,134 → 105 MB, 1.5B 1,013 → 90 MB; logits byte-identical to the copy path; decode within 3%
+  (worst −1.49%). `GOINFER_METAL_ALIAS=0` restores the copy path. A sidecar written before v14 still loads and aliases less,
+  and the load banner says to rebuild it. The `.giw` is now mapped shared on darwin and excluded from `fork()`.
+
 - **llama3 tool calls are constrained under `auto` too, when the reply begins as a call.** llama3's call is bare JSON with no opener,
   so the multi-tool union now arms when the output begins `{"name": "` (optionally after `<|python_tag|>`); nothing is masked before
   that, so prose and other JSON are untouched (119/119 outputs byte-identical to `GOINFER_TOOL_UNION=0`). On Llama-3.2-1B: unusable

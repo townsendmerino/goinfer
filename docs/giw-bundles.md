@@ -88,11 +88,11 @@ would be exactly the gap this removes). Members are canonical group-32 int4 with
 K=V layer has no V), or a mixed K is written as ordinary consecutive records — no kind 6.
 
 The reader takes the nibbles out of the mapping as before (`WrapInt4` keeps the alias); the Metal
-build (`GOINFER_METAL_ALIAS=1`, opt-in) checks whether a fused tuple's nibbles are **one contiguous
+build (aliasing is on by default since 2026-09-24; `GOINFER_METAL_ALIAS=0` turns it off) checks whether a fused tuple's nibbles are **one contiguous
 run** in the mapping and, if so, binds one no-copy buffer over them (`metal/alias.go`). It is detected,
 not assumed, so a pre-v13 file, a layer whose members are not adjacent, or a heap-backed weight all
-take the old copy path unchanged. Scales are still converted f32→f16 into a small buffer (about ⅛ of
-the nibble bytes); storing them as f16 is a possible later step.
+take the old copy path unchanged. In a v13 file the scales are still converted f32→f16 into a small buffer (about ⅛ of
+the nibble bytes); v14, below, stores them as f16 so they alias too.
 
 Compatibility:
 
