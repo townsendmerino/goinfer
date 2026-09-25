@@ -86,15 +86,20 @@ func TestBanner_contextAndKV(t *testing.T) {
 		kv          string
 		want        []string
 		notWant     []string
+		resKV       string // the resident runner's own KV precision ("" = not resident)
 	}{
-		{"no -ctx, resident cap below the model maximum", 8192, 40960, 0, "", []string{"context: 8192 tokens (backend default; model maximum 40960 — raise with --ctx)", "KV f32"}, []string{"backend default ·"}},
-		{"no -ctx, model maximum binds", 32768, 32768, 0, "", []string{"context: 32768 tokens (model maximum)"}, []string{"backend default"}},
-		{"-ctx below the model maximum", 4096, 40960, 4096, "f32", []string{"context: 4096 tokens (--ctx; model maximum 40960)", "KV f32"}, nil},
-		{"-ctx above the model maximum", 8192, 8192, 100000, "f16", []string{"context: 8192 tokens (model maximum; --ctx 100000 is above it)", "KV f16", "lossy"}, []string{"100000 tokens"}},
-		{"-ctx equal to the model maximum", 65536, 65536, 65536, "i8", []string{"context: 65536 tokens (model maximum)", "KV i8", "lossy"}, nil},
-		{"unknown", 0, 0, 0, "", []string{"context: unknown"}, nil},
+		{"no -ctx, resident cap below the model maximum", 8192, 40960, 0, "", []string{"context: 8192 tokens (backend default; model maximum 40960 — raise with --ctx)", "KV f32"}, []string{"backend default ·"}, ""},
+		{"no -ctx, model maximum binds", 32768, 32768, 0, "", []string{"context: 32768 tokens (model maximum)"}, []string{"backend default"}, ""},
+		{"-ctx below the model maximum", 4096, 40960, 4096, "f32", []string{"context: 4096 tokens (--ctx; model maximum 40960)", "KV f32"}, nil, ""},
+		{"-ctx above the model maximum", 8192, 8192, 100000, "f16", []string{"context: 8192 tokens (model maximum; --ctx 100000 is above it)", "KV f16", "lossy"}, []string{"100000 tokens"}, ""},
+		{"-ctx equal to the model maximum", 65536, 65536, 65536, "i8", []string{"context: 65536 tokens (model maximum)", "KV i8", "lossy"}, nil, ""},
+		{"unknown", 0, 0, 0, "", []string{"context: unknown"}, nil, ""},
+		// Metal allocates f16 KV whatever -kv says: the banner reports what runs, not the request.
+		{"metal resident, no -kv", 4096, 32768, 0, "", []string{"KV f16"}, []string{"KV f32", "lossy"}, "f16"},
+		{"metal resident, -kv f32 requested", 4096, 32768, 0, "f32", []string{"KV f16"}, []string{"KV f32"}, "f16"},
+		{"resident, -kv i8 requested and applied", 4096, 32768, 0, "i8", []string{"KV i8", "lossy"}, nil, "i8"},
 	} {
-		lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: tc.window, maxPositions: tc.max}, config{ctxSize: tc.ctx, kvPrec: tc.kv})
+		lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: tc.window, maxPositions: tc.max, kvPrec: tc.resKV}, config{ctxSize: tc.ctx, kvPrec: tc.kv})
 		got := bannerLine(lines, "context:")
 		for _, want := range tc.want {
 			if !strings.Contains(got, want) {

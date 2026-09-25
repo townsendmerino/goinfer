@@ -15,6 +15,11 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **`fit` and Metal's resident memory guard now compute the same number.** `fit` left out Metal's host copy of the weights
+  (2.1 GB on a directly loaded 1.5B) and counted Metal's KV cache at f32 when Metal allocates f16. So it could report
+  *resident* for a direct `.gguf` load that Metal then refused, and over-state KV for an aliased `.giw`. Both now use one
+  accounting function. Serve's banner reports the KV precision that actually runs (`KV f16` on Metal, not `KV f32`).
+
 - **Fixed: a gemma4-26B `.gguf` loaded directly (`-direct-load`, or any platform without the sidecar default) generated only
   `<pad>`.** Every MoE layer's output was scaled by 0 — the loader copied the per-layer output scale into the MoE branch
   before reading it. The sidecar path was unaffected. Direct and sidecar loads now produce byte-identical greedy text.

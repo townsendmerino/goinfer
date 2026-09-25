@@ -84,7 +84,8 @@ type Plan struct {
 	DenseBytes      int64 // decoder.Model.ResidentDenseWeightBytes() — the fixed, never-shrinks term
 	ExpertBytesFull int64 // every routed expert, unpaged — reported even when Slots caps what's actually resident
 	ExpertBytesUsed int64 // what Slots actually keeps resident (equals ExpertBytesFull when Slots==0/unpaged/dense)
-	KVBytes         int64 // at Ctx, this backend's KV precision
+	KVBytes         int64 // at Ctx, as this backend allocates it (ResidentKVBytes)
+	HostCopyBytes   int64 // Metal only: the host copy of the resident weights unified memory also holds (ResidentHostCopyBytes; 0 when aliased from a .giw)
 	ExtraBytes      int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
 
 	FreeBytes int64  // what Plan was told is available on this backend/device
@@ -92,10 +93,12 @@ type Plan struct {
 }
 
 // NeedBytes is the total this Plan actually asks the device to hold — DenseBytes + whatever the
-// chosen Slots keeps of the experts + KV at the chosen Ctx + the caller's own extra terms. Never
-// ExpertBytesFull: that field exists for reporting what was capped, not what is resident.
+// chosen Slots keeps of the experts + KV at the chosen Ctx + (Metal) the host copy + the caller's own
+// extra terms. Never ExpertBytesFull: that field exists for reporting what was capped, not what is
+// resident. Without ExtraBytes it equals Model.ResidentNeedBytes at the same Slots and Ctx — the
+// number Metal's resident guard judges — which TestPlan_metalAgreesWithResidentNeedBytes pins.
 func (p Plan) NeedBytes() int64 {
-	return p.DenseBytes + p.ExpertBytesUsed + p.KVBytes + p.ExtraBytes
+	return p.DenseBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes
 }
 
 // kvBytesPerPositionAllLayers is Plan's own KV-cost formula: per-layer (a per-layer-varying
@@ -246,9 +249,13 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 	// no experts, or one whose experts are being ignored by THIS attempt) fits — AND, on webgpu,
 	// whether ctx is within WebGPUCtxCeiling: bytes fitting is not enough there, since the fixed
 	// per-precision cap refuses positions past it regardless of free VRAM (M-32).
+	// hostFixed is the host copy that stays whatever the expert cache does: the dense weights' (paged
+	// experts stream and hold no host copy, so slots=1 prices exactly that). Zero off Metal.
+	hostFixed := m.residentHostCopyFor(backend, 1)
+	kvAt := func(ctx int) int64 { return m.ResidentKVBytes(backend, ctx, req.KVF16, req.KVI8) }
 	tryCtx := func(ctx int) (kv int64, fits bool) {
-		kv = m.kvBytesPerPositionAllLayers(req.KVF16, req.KVI8) * int64(ctx)
-		fits = p.DenseBytes+kv+req.ExtraBytes <= freeBytes
+		kv = kvAt(ctx)
+		fits = p.DenseBytes+hostFixed+kv+req.ExtraBytes <= freeBytes
 		if ctxCeiling > 0 && ctx > ctxCeiling {
 			fits = false
 		}
@@ -268,22 +275,28 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 			kv, _ := tryCtx(req.Ctx)
 			return req.Ctx, kv, false
 		}
-		perPos := m.kvBytesPerPositionAllLayers(req.KVF16, req.KVI8)
+		// Metal allocates KV in 8-position steps, so evaluate the rate over one step and keep the
+		// shrunk ctx on that grid: then kvAt(fitCtx) is exactly perPos*fitCtx, what Metal allocates.
+		step := 1
+		if backend == "metal" {
+			step = metalKVPad
+		}
+		perPos := kvAt(step) / int64(step)
 		if perPos <= 0 {
 			return req.Ctx, 0, false
 		}
-		budget := freeBytes - p.DenseBytes - req.ExtraBytes
-		fitCtx := int(budget / perPos)
+		budget := freeBytes - p.DenseBytes - hostFixed - req.ExtraBytes
+		fitCtx := int(budget/perPos) / step * step
 		if ctxCeiling > 0 && fitCtx > ctxCeiling {
 			fitCtx = ctxCeiling // the fixed per-precision cap, not a byte budget — never grow past it either
 		}
 		if fitCtx < ctxPlanFloor {
-			return req.Ctx, perPos * int64(req.Ctx), false
+			return req.Ctx, kvAt(req.Ctx), false
 		}
 		if fitCtx > req.Ctx {
 			fitCtx = req.Ctx // never GROW past what was asked
 		}
-		return fitCtx, perPos * int64(fitCtx), true
+		return fitCtx, kvAt(fitCtx), true
 	}
 
 	ctx, kv, ctxOK := chooseCtx()
@@ -294,32 +307,35 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 			return p.decline(backend, "context %d exceeds webgpu's fixed %d-position ceiling at this KV precision (M-32) — pass a smaller -ctx or drop --kv-f16/--kv-i8",
 				req.Ctx, ctxCeiling)
 		}
-		return p.decline(backend, "context %d does not fit even at the %d-position floor: dense %.2f GB + KV %.2f GB exceeds %.2f GB free",
-			req.Ctx, ctxPlanFloor, gb(p.DenseBytes), gb(kv), gb(freeBytes))
+		return p.decline(backend, "context %d does not fit even at the %d-position floor: dense %.2f GB%s + KV %.2f GB exceeds %.2f GB free",
+			req.Ctx, ctxPlanFloor, gb(p.DenseBytes), hostCopyNote(hostFixed), gb(kv), gb(freeBytes))
 	}
 
 	if !isMoE {
 		p.Placement = PlacementResident
-		p.Reason = fmt.Sprintf("dense %.2f GB + KV@%d %.2f GB fits %.2f GB free", gb(p.DenseBytes), ctx, gb(kv), gb(freeBytes))
+		p.HostCopyBytes = hostFixed
+		p.Reason = fmt.Sprintf("dense %.2f GB%s + KV@%d %.2f GB fits %.2f GB free", gb(p.DenseBytes), hostCopyNote(hostFixed), ctx, gb(kv), gb(freeBytes))
 		return p
 	}
 
-	// MoE: try fully resident first (every expert, unpaged) at the ctx just chosen.
-	if p.DenseBytes+p.ExpertBytesFull+kv+req.ExtraBytes <= freeBytes {
+	// MoE: try fully resident first (every expert, unpaged) at the ctx just chosen. Unpaged experts
+	// carry a host copy too on Metal (slots=0 prices it).
+	if hostAll := m.residentHostCopyFor(backend, 0); p.DenseBytes+p.ExpertBytesFull+hostAll+kv+req.ExtraBytes <= freeBytes {
 		p.Placement = PlacementResident
 		p.ExpertBytesUsed = p.ExpertBytesFull
-		p.Reason = fmt.Sprintf("dense %.2f GB + experts %.2f GB + KV@%d %.2f GB fits %.2f GB free",
-			gb(p.DenseBytes), gb(p.ExpertBytesFull), ctx, gb(kv), gb(freeBytes))
+		p.HostCopyBytes = hostAll
+		p.Reason = fmt.Sprintf("dense %.2f GB + experts %.2f GB%s + KV@%d %.2f GB fits %.2f GB free",
+			gb(p.DenseBytes), gb(p.ExpertBytesFull), hostCopyNote(hostAll), ctx, gb(kv), gb(freeBytes))
 		return p
 	}
 
 	// Cache the routed experts: the largest slot count whose bytes fit beside the fixed terms.
 	// A layer's experts are uniform in shape (same assumption ResidentWeightBytesPaged makes), so
 	// per-expert bytes = full/nExperts exactly and the slot count is arithmetic, not a search.
-	remaining := freeBytes - p.DenseBytes - kv - req.ExtraBytes
+	remaining := freeBytes - p.DenseBytes - hostFixed - kv - req.ExtraBytes
 	if remaining <= 0 {
-		return p.decline(backend, "dense %.2f GB + KV@%d %.2f GB alone exceeds %.2f GB free — no room left for any expert cache",
-			gb(p.DenseBytes), ctx, gb(kv), gb(freeBytes))
+		return p.decline(backend, "dense %.2f GB%s + KV@%d %.2f GB alone exceeds %.2f GB free — no room left for any expert cache",
+			gb(p.DenseBytes), hostCopyNote(hostFixed), ctx, gb(kv), gb(freeBytes))
 	}
 	perExpert := p.ExpertBytesFull / int64(nExperts)
 	slots := int(remaining / perExpert)
@@ -337,9 +353,18 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 	p.Placement = PlacementExpertCached
 	p.Slots = slots
 	p.ExpertBytesUsed = int64(slots) * perExpert
-	p.Reason = fmt.Sprintf("dense %.2f GB + %d/%d experts %.2f GB + KV@%d %.2f GB fits %.2f GB free",
-		gb(p.DenseBytes), slots, nExperts, gb(p.ExpertBytesUsed), ctx, gb(kv), gb(freeBytes))
+	p.HostCopyBytes = hostFixed
+	p.Reason = fmt.Sprintf("dense %.2f GB%s + %d/%d experts %.2f GB + KV@%d %.2f GB fits %.2f GB free",
+		gb(p.DenseBytes), hostCopyNote(hostFixed), slots, nExperts, gb(p.ExpertBytesUsed), ctx, gb(kv), gb(freeBytes))
 	return p
+}
+
+// hostCopyNote names Metal's host-copy term in a Plan reason when there is one.
+func hostCopyNote(b int64) string {
+	if b <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" + host copy %.2f GB", gb(b))
 }
 
 // decline finishes Plan on the non-fitting path: CPU alone never declines outright — its whole

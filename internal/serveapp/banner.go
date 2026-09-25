@@ -45,6 +45,10 @@ type bannerFacts struct {
 	// the two bound it. 0 = unknown.
 	ctxWindow    int
 	maxPositions int
+
+	// kvPrec is the KV precision the resident runner actually allocates (decoder.Model.ResidentKVPrecision),
+	// "" off the resident path — where the requested -kv is what applies.
+	kvPrec string
 }
 
 func factsOf(lm *loadedModel) bannerFacts {
@@ -63,6 +67,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.fitCtx, f.fitKVBytes, f.fitWeightBytes, f.fitBudgetBytes, f.fitKnown = lm.model.FitBudgetSummary()
 	f.ctxWindow = lm.contextWindow(lm.adapter == "")
 	f.maxPositions = lm.model.Config().MaxPositions
+	f.kvPrec = lm.model.ResidentKVPrecision()
 	return f
 }
 
@@ -104,9 +109,17 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	default:
 		ctxLine += fmt.Sprintf("%d tokens (model maximum)", f.ctxWindow)
 	}
-	if p := cfg.kvPrec; p != "" && p != "f32" {
-		ctxLine += " · KV " + p + " (lossy)"
-	} else {
+	// The precision that RUNS: a resident runner reports its own (Metal allocates f16 KV whatever -kv
+	// says); off it, the requested -kv applies. "(lossy)" marks a precision the operator chose below f32.
+	switch req := cfg.kvPrec; {
+	case f.kvPrec != "":
+		ctxLine += " · KV " + f.kvPrec
+		if f.kvPrec != "f32" && f.kvPrec == req {
+			ctxLine += " (lossy)"
+		}
+	case req != "" && req != "f32":
+		ctxLine += " · KV " + req + " (lossy)"
+	default:
 		ctxLine += " · KV f32"
 	}
 	out = append(out, ctxLine)

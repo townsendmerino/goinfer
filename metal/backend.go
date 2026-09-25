@@ -137,7 +137,7 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 // would in fact have fit can override with GOINFER_NO_RESIDENT_MEM_GUARD=1 rather than be told
 // no by a number nobody has swept. What it must not do is silently pass the case it was written
 // for, which is why the bar sits just below that measurement rather than at a rounder 0.75.
-const residentMemFraction = 0.70
+const residentMemFraction = decoder.WeightsMemFraction
 
 // metalLiveAvailable is decoder.HostRAMAvailableBytes, indirected so a test can inject a
 // machine's live-available figure instead of reading the real one — mirrors decoder/fitguard.go's
@@ -328,32 +328,10 @@ func residentKVBytes(m *decoder.Model) int64 {
 	if err != nil {
 		ctxCap = metalCtxCapMax
 	}
-	_, nLayers, _, _, _, _, _ := m.Dims()
-	bytesPerElem := int64(2) // f16; see comment above
-	if m.KVCacheI8() {
-		bytesPerElem = 1 // int8 KV: 1 byte/elem + per-head scales
-	}
-	// N-36 (audit-metal-2026-09-12.md): a Gated-DeltaNet layer (qwen3_5/qwen3_5_moe/qwen3_next's
-	// linear-attention layers) has no attention geometry at all — no q/k/v/o, no KV cache;
-	// metal/model.go's own buildResident comment is explicit that r.kc[l]/r.vc[l] stay zero-value
-	// for these layers. Charging them the model's default kvDim anyway overstates this guard's
-	// estimate on every DeltaNet-hybrid model (qwen3_5_moe is 3:1 linear:softmax), in the
-	// conservative direction (a guard that overcounts can only decline early, never admit a model
-	// that doesn't fit) but still wrong — the same chokepoint metal/model.go's own layer-build loop
-	// skips past.
-	_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
-	var total int64
-	for l := 0; l < nLayers; l++ {
-		if dnetOK && m.Qwen35LinearLayer(l) {
-			continue
-		}
-		kvDim := int64(m.KVHeadsAtResident(l)) * int64(m.HeadDimAtResident(l))
-		total += 2 * int64(ctxCap) * kvDim * bytesPerElem // ×2 for K and V
-		if m.KVCacheI8() {
-			total += 2 * int64(ctxCap) * int64(m.KVHeadsAtResident(l)) * 4 // ×2 for K scale and V scale (f32)
-		}
-	}
-	return total
+	// The one definition, shared with decoder.Model.Plan("metal") so `fit` and this guard price KV
+	// identically (docs/tasks/task-memory-accounting-2026-09.md): f16 (or int8 + per-head scales),
+	// every attention layer at the full ctx padded to 8, no Gated-DeltaNet layer.
+	return m.ResidentKVBytes("metal", ctxCap, false, false)
 }
 
 // residentNeedBytes is the byte count residentFitsMemory judges against — split out from
@@ -375,8 +353,13 @@ func residentKVBytes(m *decoder.Model) int64 {
 // asks for the host-copy addend at the SAME slot count rather than assuming it doubles the whole
 // weight term. KV was entirely absent; residentKVBytes above closes that.
 func residentNeedBytes(m *decoder.Model) int64 {
-	slots := metalMoESlotsFromEnv(m)
-	return m.ResidentWeightBytesPaged(slots) + m.ResidentHostCopyBytes(slots) + residentKVBytes(m)
+	ctxCap, err := resolveMetalCtxCap(m)
+	if err != nil {
+		ctxCap = metalCtxCapMax
+	}
+	// decoder.Model.ResidentNeedBytes is also what Plan("metal").NeedBytes() is built from, so `fit`'s
+	// verdict and this guard's decision are the same number by construction.
+	return m.ResidentNeedBytes("metal", metalMoESlotsFromEnv(m), ctxCap, false, false)
 }
 
 // residentFitsMemory reports whether this model's weights fit the machine, declining loudly when

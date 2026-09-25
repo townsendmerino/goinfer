@@ -38,7 +38,7 @@ import (
 // too. Originally fractioned against TOTAL physical RAM; fitCheckFor now fractions it against
 // CURRENTLY AVAILABLE memory instead (R13-follow-on) — the threshold itself is unchanged, only
 // what it is a fraction OF.
-const fitMemFraction = 0.70
+const fitMemFraction = WeightsMemFraction
 
 // fitWarnRatio is how close to the budget the load has to come before the banner prints the
 // arithmetic unasked. At 0.75 the message appears within 25% of the refusal, so the user sees the

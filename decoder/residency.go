@@ -1061,6 +1061,24 @@ func (m *Model) ResidentContextCap() int {
 	return 0
 }
 
+// ResidentKVPrecision is the KV-cache precision the resident runner actually allocates — "f32", "f16" or
+// "i8" — or "" when no resident runner is active. It reports what runs, not what was requested: Metal
+// ships f16 (or int8) KV only, its f32 KV kernels being compiled out (metal/model.go's r.kvF32), so a
+// Metal resident model runs f16 KV even when nothing asked for it (docs/tasks/task-memory-accounting-2026-09.md
+// found serve's banner printing "KV f32" there).
+func (m *Model) ResidentKVPrecision() string {
+	if m.resident == nil || m.be == nil {
+		return ""
+	}
+	switch {
+	case m.kvPrecI8:
+		return "i8"
+	case m.be.Name() == "metal", m.kvF16:
+		return "f16"
+	}
+	return "f32"
+}
+
 // DecodePath names the decode path this model actually resolved to — "<backend>-resident" when the
 // full-residency runner built, "<backend>-staged" when the backend runs per-matmul under the CPU
 // forward, "cpu" otherwise — with the resident weight quant in parens. A staged GPU path also names
