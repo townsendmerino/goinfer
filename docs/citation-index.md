@@ -123,7 +123,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1441` | goinfer | `kvOnly, hasKV := m.resident.(ResidentPrefillKV)` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1564` | goinfer | `useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil \|\| (lora != nil && res` |
 | `docs/audit-metal-2026-09-12.md|decoder/residency.go:146` | goinfer | `// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to ` |
-| `docs/audit-metal-2026-09-12.md|decoder/residentneed.go:48` | goinfer | `for l := range nLayers {` |
+| `docs/audit-metal-2026-09-12.md|decoder/residentneed.go:61` | goinfer | `for l := range nLayers {` |
 | `docs/audit-metal-2026-09-12.md|decoder/spec_optfwd.go:202` | goinfer | `anchor: func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate ` |
 | `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:473` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:1052` | goinfer | `anchor: func (s *server) loadVisionTower(cfg config) error {` |
@@ -525,7 +525,7 @@ supports.
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:230` | goinfer | `if !lm.turns.enter(ctx, rec) {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:241` | goinfer | `if hi := haltState(); hi != nil {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:94` | goinfer | `// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue` |
-| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/responses.go:49` | goinfer | `type responseStore struct {` |
+| `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/responses.go:50` | goinfer | `type responseStore struct {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/sessions.go:14` | goinfer | `// sessionLRU keeps up to size prefilled KV sessions and hands each request the` |
 
 ## Bare file index

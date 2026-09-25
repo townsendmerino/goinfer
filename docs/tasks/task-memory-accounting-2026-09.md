@@ -1,6 +1,11 @@
 # Task: one memory-accounting path per backend (2026-09)
 
-> **Status 2026-09-25: the METAL half is DONE (`504a0410`, `docs/measurements/memory-accounting-metal-2026-09-25.md`);
+> **Status 2026-09-25: DONE.** Metal half `504a0410` (`docs/measurements/memory-accounting-metal-2026-09-25.md`);
+> CUDA half measured and closed on the Linux box (`docs/measurements/memory-accounting-cuda-2026-09-25.md`): CUDA's KV
+> layout differed from Plan's formula in kind — f32 whatever precision is requested, one latent buffer on MLA — so
+> `ResidentKVBytes` got a `"cuda"` branch exact to `kvBytesForCap`; item 3 was already pinned.
+>
+> **Earlier status 2026-09-25: the METAL half is DONE (`504a0410`, `docs/measurements/memory-accounting-metal-2026-09-25.md`);
 > the CUDA half (item 3, and item 1's `kvBytesForCap` agreement test) is OPEN and needs the Linux box.** `fit`'s `Plan("metal")`
 > and Metal's resident guard now compute the same number, from one function (`decoder.Model.ResidentNeedBytes`); re-measured
 > on the Mac before changing anything, the disagreement was larger than stated below AND had a second cause — `Plan` priced
@@ -64,10 +69,17 @@ Not independently verified: the originating review's "12 places" total. The item
    > function is instead `decoder.Model.ResidentKVBytes(backend, ctx, f16, i8)`, carrying each backend's allocation layout:
    > on `"metal"` it is exact to `buildResident`'s buffers (f16 or int8 + per-head scales, padded to 8, none on a DeltaNet
    > layer — `TestResidentKVBytes_matchesMetalAllocation`, 5/5 exact); every other backend keeps `Plan`'s existing
-   > per-position formula, unchanged. **OPEN (Linux): CUDA** — test `kvBytesForCap` against `ResidentKVBytes("cuda", …)` on
-   > dense geometries, and settle whether CUDA's allocation has a sliding-window cap (if it does, `Plan("cuda")` over-counts
-   > those models and should get CUDA's layout the way Metal got its own). The `fitguard` pre-model formulas were not
-   > touched: they run from `Config` before a backend is chosen.
+   > per-position formula, unchanged. The `fitguard` pre-model formulas were not touched: they run from `Config` before
+   > a backend is chosen.
+   >
+   > **CUDA: DONE (2026-09-25, `docs/measurements/memory-accounting-cuda-2026-09-25.md`).** Measured on ten real CUDA
+   > residents (dense, sliding-window, per-layer geometry, DeltaNet hybrid, MLA) before changing anything: CUDA has **no**
+   > sliding-window cap (full context on local layers, like Metal) and no cache on DeltaNet layers — there the old formula
+   > was already exact — but it differs in kind twice: it allocates **f32 whatever KV precision is requested** (Plan
+   > priced f16 at 0.50×, i8 at 0.28×), and an **MLA layer holds one latent buffer** (Plan doubled it at f32, which reached
+   > CUDA's default context sizing). `ResidentKVBytes` got a `"cuda"` branch exact to `kvBytesForCap`:
+   > `TestResidentKVBytes_matchesCUDAAllocation` (GPU, 10/10 exact, mutation-checked) and `TestResidentKVBytes_cudaLayout`
+   > (decoder, CI). Per-buffer 2 MiB rounding stays out of both, as in the resident's own fit check.
 2. **One "bytes needed" function per backend**, with a unified-memory host-copy term for Metal (aliasing-aware, via
    `ResidentHostCopyBytes`). `Plan`, the Metal guard (`residentNeedBytes`) and Metal's auto-slots (`autoMoESlotsFor`'s
    `needFixed`) all call it, so `fit`'s verdict and the guard's decision are the same number by construction. Pin that
@@ -81,7 +93,10 @@ Not independently verified: the originating review's "12 places" total. The item
 3. **Keep CUDA's search-based slot sizing.** The driver rounds allocations up in 2 MiB steps, so dividing a budget by a
    per-slot size cannot invert it. Pin the search with a test at a boundary where division would over-admit.
 
-   > **OPEN (Linux).**
+   > **Already pinned — nothing added (checked 2026-09-25).** `cuda/slotcap_test.go`'s `TestSlotCapArithmetic_search`
+   > asserts, on the real 26B's figures, that plain division returns 34 where the search returns 33 (the 33→34 step is 4
+   > quanta × 30 layers, the requirement 203,816,960 B over free), plus monotonicity and "largest count that fits";
+   > `TestSlotCapArithmetic_mutation` proves it red with the rounding removed.
 4. **One 0.70 constant**, owned by decoder, used by Metal.
 
    > **DONE.** `decoder.WeightsMemFraction`; `fitMemFraction` and Metal's `residentMemFraction` both read it.

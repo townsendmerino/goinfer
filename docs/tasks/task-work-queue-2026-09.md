@@ -236,7 +236,7 @@ to `runJob` to defer over the job's whole life instead of the handler's. Everyth
 admission (`lm.tryEnter`, no `http.ResponseWriter` required), cancel-by-id (`drive`/`driveVL`
 already register `gr.id` in K1's registry once running) — was already reusable as-is.
 
-`jobStore` (J2) gained a `responseStore`-style FIFO cap (`internal/serveapp/responses.go:49`'s pattern), skipping
+`jobStore` (J2) gained a `responseStore`-style FIFO cap (`internal/serveapp/responses.go:50`'s pattern), skipping
 over any still-pending/running job rather than evicting it; and two creation paths — `create`
 (unchanged, both transitions at once, for every synchronous handler) and `createPending` +
 `getOrCreate` (the async path: pre-create pending BEFORE admission is even attempted, so

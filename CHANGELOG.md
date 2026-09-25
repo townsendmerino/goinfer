@@ -15,6 +15,11 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **`fit` and CUDA's own context sizing now price CUDA's KV cache as CUDA allocates it.** CUDA holds f32 K/V whatever
+  precision is requested, and one latent buffer per layer on an MLA model (DeepSeek, Kimi). `fit` priced a requested
+  f16 / i8 KV at half / ~0.28× of that, and every CUDA plan counted MLA models' KV twice — so CUDA's default context for
+  an MLA model was sized to fit twice its real KV. Dense, sliding-window, Gemma 4 and DeltaNet-hybrid models were already
+  priced exactly. `docs/measurements/memory-accounting-cuda-2026-09-25.md`.
 - **Removed two dead `serve` flags.** `--metal-fast-prefill` had been a no-op since Metal's fast prefill became the
   default (2026-09-09). `--cpu-fast-attention` defaulted to `true`, so the only thing it could do, `=false`, was
   `--cpu-exact-prefill` under another name. **A script that still passes either now fails at startup** with

@@ -17,7 +17,14 @@ package decoder
 // formula" has to be one function with a per-backend layout, not one flat formula (Metal allocates
 // the full context for every attention layer, sliding-window ones included, padded to 8 positions;
 // kvBytesForCtx's sliding-window cap models the CPU ring buffer and would under-count Metal).
-// Backends other than Metal keep Plan's existing per-position formula unchanged.
+//
+// CUDA got its own layout on 2026-09-25 (docs/measurements/memory-accounting-cuda-2026-09-25.md), after
+// measuring real CUDA residents against Plan's per-position formula: CUDA allocates f32 K/V whatever
+// KV precision was asked for (it reads no KV-precision option), so a requested f16 / i8 halved or
+// quartered Plan's figure below what CUDA builds; and an MLA layer holds ONE latent buffer, not K and
+// V, so Plan doubled a DeepSeek-class model's KV. Dense, sliding-window (full context, no ring buffer),
+// per-layer-geometry and DeltaNet-hybrid models already agreed. Other backends (webgpu, cpu) keep Plan's
+// existing per-position formula unchanged.
 
 // WeightsMemFraction is the share of a memory figure the weights (and the rest of a resident build)
 // may occupy before a load is refused — the load-time fit guard applies it to available host memory,
@@ -31,11 +38,17 @@ const metalKVPad = 8
 // ResidentKVBytes is the KV cache a resident build on backend allocates for ctx positions. On "metal"
 // it is exact to the allocation: f16 (int8 with per-head f32 scales when the model was loaded with an
 // int8 KV cache), the full padded context on every attention layer, nothing for a Gated-DeltaNet
-// linear layer. On any other backend it is Plan's long-standing per-position formula at the precision
-// requested (kvF16 / kvI8), multiplied by ctx.
+// linear layer. On "cuda" it is exact to the resident's K/V buffers (cuda/resident.go's kvBytesForCap:
+// f32 always, the full context on every attention layer, one latent buffer on an MLA layer, none on a
+// layer with no attention KV) — before the driver's per-buffer 2 MiB rounding, which the CUDA resident's
+// own fit check does not add either. On any other backend it is Plan's long-standing per-position formula
+// at the precision requested (kvF16 / kvI8), multiplied by ctx.
 func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64 {
 	if ctx <= 0 {
 		return 0
+	}
+	if backend == "cuda" {
+		return m.cudaKVBytes(ctx)
 	}
 	if backend != "metal" {
 		return m.kvBytesPerPositionAllLayers(kvF16, kvI8) * int64(ctx)
@@ -79,4 +92,24 @@ func (m *Model) residentHostCopyFor(backend string, slots int) int64 {
 		return 0
 	}
 	return m.ResidentHostCopyBytes(slots)
+}
+
+// cudaKVBytes is ResidentKVBytes("cuda", ctx, …): what cuda/backend.go allocates for the K/V caches —
+// r.af(ctx*kvDim) (f32) for K and for V on every attention layer, a single latent buffer of
+// ctx*latDim on an MLA layer (the V head is reconstructed from the latent), nothing on a layer that
+// holds no attention K/V (DeltaNet and the other recurrent mixers). The requested KV precision is
+// ignored because CUDA ignores it.
+func (m *Model) cudaKVBytes(ctx int) int64 {
+	a := m.w.arch
+	_, nLayers, _, _, _, _, _ := m.Dims()
+	var perPos int64
+	for l := range nLayers {
+		kvDim := int64(a.kvDimAt(l)) // 0 for a no-attention-KV layer; the latent width on MLA
+		if a.mla != nil {
+			perPos += kvDim * 4 // one latent row per position
+			continue
+		}
+		perPos += 2 * kvDim * 4 // K and V, f32
+	}
+	return perPos * int64(ctx)
 }

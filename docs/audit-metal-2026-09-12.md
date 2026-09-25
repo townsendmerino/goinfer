@@ -1557,7 +1557,7 @@ re-baked by the code it checks (G-04).
   `TestParityManifest_fresh` re-stale on `core` (this file is on that dependency list); resolved via
   `scripts/refresh_parity_hashes.sh` (37 forward goldens green at this commit, 0 failed) — a
   non-numeric diagnostic-logging change, not a forward-numerics one.
-- N-36 `decoder/residentneed.go:48` (the loop moved there 2026-09-25 from `metal/backend.go`'s `residentKVBytes`, which now calls it — `docs/measurements/memory-accounting-metal-2026-09-25.md`) — `residentKVBytes` charged KV for DeltaNet layers that allocate
+- N-36 `decoder/residentneed.go:61` (the loop moved there 2026-09-25 from `metal/backend.go`'s `residentKVBytes`, which now calls it — `docs/measurements/memory-accounting-metal-2026-09-25.md`) — `residentKVBytes` charged KV for DeltaNet layers that allocate
   none. **FIXED 2026-09-13** — skips a layer when `Qwen35ResidentParams`'s `ok` and
   `Qwen35LinearLayer(l)` are both true, the SAME chokepoint `metal/model.go`'s own layer-build loop
   uses to decide "does this layer get a DeltaNet mixer" (not a second, potentially-disagreeing
