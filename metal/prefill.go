@@ -19,90 +19,122 @@ using namespace metal;
 
 // gemm_w4f16_store: blocked int4→f16 MMA GEMM with a fused epilogue (mode 0 = plain store, 1 =
 // +bias for fused QKV, 2 = +residual for o-proj/down) — C[M×N] = A[M×K](f16) · Wᵀ, W = resident
-// int4/W4A8 (packed nibbles + f16 group scales), dequanted in-kernel. N-17 (audit-
-// metal-2026-09-12.md): this used to be two separate steps, a plain gemm_w4f16 (no epilogue) plus
-// hand-written bias/residual variants — gemm_w4f16 itself was fully replaced by this kernel but
-// its source stayed in the compiled library with no pipeline ever created from it. Deleted rather
-// than left as dead compiled source.
+// int4/W4A8 (packed nibbles + f16 group scales), dequanted in-kernel. Dispatched as a 2-D grid of
+// threadgroups, (ceil(N/64), ceil(M/64)) × 128 threads — see gemmGrid in PrefillLast.
 //
-// CPS (audit-metal-2026-09-12.md M-03): each simdgroup owns a 32(M, RPS)×32(N, CPS) output block
-// instead of 32×8 — all 32 lanes dequant CPS=4 weight tiles per k-step (was 8 of 32 lanes doing
-// one tile, 24 idle), and each of the RPS A-row tiles is loaded ONCE from device memory per
-// k-step and reused across all CPS column tiles (16 MMAs per barrier pair instead of 4; 4x fewer
-// simdgroups stream the same A rows redundantly). N is only guaranteed %8==0 (audit C-10), not
-// %32==0, so the last column super-tile is masked per 8-wide sub-tile exactly like the existing
-// M-dimension tail (the break idiom below) — never an OOB read of W/WS, never a bogus MMA/store.
-#define RPS 4
-#define CPS 4
+// R16 (docs/tasks/red-october.md; docs/measurements/metal-prefill-gemm-s2-2026-09-25.md): restructured
+// 2026-09-25 in the shape of llama.cpp's classic kernel_mul_mm. The previous kernel (each simdgroup an
+// island that fetched its own activations from device memory inside the MMA loop, K stepped by 8) ran
+// the MLP projections at ~0.75 TFLOPS under sustained load; this one runs them at ~2.7–2.9, measured
+// 3.22× on the 1.5B's GEMM category at K=512 in a pre-registered confirmation run. Structure:
+//   - a threadgroup of 4 simdgroups owns a 64-feature × 64-token output tile; simdgroup sg computes
+//     features 32*(sg&1).. × tokens 32*(sg>>1).. — 16 accumulators, 8 matrix loads per 16 MMAs;
+//   - K advances 32 per slab (exactly one scale group), and both operand tiles are staged into
+//     threadgroup memory ONCE per slab, cooperatively, and shared by all four simdgroups — the MMA
+//     loop reads threadgroup memory only;
+//   - weight blocks are padded to a 72-half stride (spreads one store's lanes across banks).
+// Rows past M (the last token tile, and MoE expert GEMMs, which run on few rows) stage zeros and
+// are never stored; their MMAs still run — skipping them measured slower (see the MMA loop). What
+// that costs a few-row MoE expert GEMM is NOT measured.
+// BIT-IDENTICAL to the kernel it replaced, by construction and by measurement: each output still
+// accumulates K in ordered 8-wide chunks into an f32 simdgroup_float8x8 via
+// simdgroup_multiply_accumulate(acc, a, b, acc), from the same f16 activations and weights
+// dequantized by the same expression, with the same epilogue. The retired kernel is kept in
+// prefill_gemm_s2_test.go for A/B re-runs.
+//
+// Alignment it relies on (all held by construction here): K % 32 == 0 (one f16 scale per 32
+// weights), so each W row is a multiple of 16 bytes and the two words a thread reads form an
+// aligned uint2; activation rows are 64-byte multiples, so the half4 loads are aligned. N % 8 == 0
+// (audit C-10); features past N stage zeros and are never stored.
+inline void gemm_stage_w(threadgroup half* sa, uint2 wv, float sc, bool wok, ushort fb, ushort kh, ushort nl) {
+    for (ushort w = 0; w < 2; w++) {
+        uint word = wv[w];
+        threadgroup half* p = sa + (fb*4 + kh*2 + w)*72 + nl;
+        for (ushort kl = 0; kl < 8; kl++) {
+            *p = wok ? half(float(int((word >> (4u*kl)) & 0xFu) - 8) * sc) : 0.0h;
+            p += 8;
+        }
+    }
+}
+
+inline void gemm_epilogue(threadgroup float* myc, simdgroup_float8x8 acc, uint mb, uint nb, uint M, uint N,
+    device half* C, device const float* bias, uint mode, ushort lane) {
+    simdgroup_store(acc, myc, 8);
+    simdgroup_barrier(mem_flags::mem_threadgroup);
+    for (ushort e = lane; e < 64; e += 32) {
+        const uint m = mb + e/8, n = nb + e%8;
+        if (m < M && n < N) {
+            float v = myc[e];
+            if (mode == 1u) v += bias[n];                 // fused bias (QKV)
+            if (mode == 2u) v += float(C[m*N + n]);       // residual (o / down)
+            C[m*N + n] = half(v);
+        }
+    }
+    simdgroup_barrier(mem_flags::mem_threadgroup);
+}
+
 kernel void gemm_w4f16_store(device const half* A[[buffer(0)]], device const uint* W[[buffer(1)]],
     device const half* WS[[buffer(2)]], device half* C[[buffer(3)]],
     constant uint& M[[buffer(4)]], constant uint& N[[buffer(5)]], constant uint& K[[buffer(6)]],
     device const float* bias[[buffer(7)]], constant uint& mode[[buffer(8)]],
-    uint tgid[[threadgroup_position_in_grid]], uint sgid[[simdgroup_index_in_threadgroup]],
-    uint sgpt[[simdgroups_per_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
-    threadgroup half wscr[8*(CPS*64)];
-    threadgroup float cscr[8*(CPS*64)];
-    uint sg = tgid*sgpt + sgid;
-    uint tilesN = (N + 31u)/32u; // ceil — the last super-tile may be ragged (N%32 != 0)
-    uint rblk = sg / tilesN, tc = sg % tilesN;
-    uint r0 = rblk*RPS;
-    if (r0*8u >= M) return;
-    uint n0 = tc*32u;
-    threadgroup half* scr = wscr + sgid*(CPS*64u);
-    threadgroup float* cs = cscr + sgid*(CPS*64u);
-    uint wpr = K/8u, gpr = K/32u;
-    simdgroup_float8x8 acc[RPS*CPS];
-    for (uint i=0;i<RPS*CPS;i++) acc[i]=make_filled_simdgroup_matrix<float,8,8>(0.0);
-    for (uint k=0; k<K; k+=8u) {
-        if (lane < 32u) {
-            uint c = lane/8u, nl = lane%8u;
-            uint ncol = n0 + c*8u + nl;
-            if (ncol < N) {
-                uint word = W[ncol*wpr + k/8u];
-                float sc = float(WS[ncol*gpr + k/32u]);
-                for (uint kl=0; kl<8u; kl++)
-                    scr[c*64u + kl*8u + nl] = half(float(int((word >> (4u*kl)) & 0xF) - 8) * sc);
+    uint2 tgp[[threadgroup_position_in_grid]], ushort tid[[thread_index_in_threadgroup]],
+    ushort sg[[simdgroup_index_in_threadgroup]], ushort lane[[thread_index_in_simdgroup]]) {
+    threadgroup half sa[32*72];   // weights:     [feature block 0..7][k block 0..3] of 8x8 [k][feature], padded
+    threadgroup half sb[64*32];   // activations: [token block 0..7][k block 0..3] of 8x8 [token][k]
+    threadgroup float cs[4*64];   // per-simdgroup epilogue scratch
+
+    const uint n0 = tgp.x*64u, m0 = tgp.y*64u;
+    const uint wpr = K/8u, gpr = K/32u;
+    const ushort fh = sg & 1, th = sg >> 1;
+    simdgroup_float8x8 acc[16];
+    for (ushort i = 0; i < 16; i++) acc[i] = make_filled_simdgroup_matrix<float,8,8>(0.0f);
+
+    const ushort fr = tid >> 1, kh = tid & 1;     // weight row 0..63, k half (two 8-wide k blocks)
+    const ushort fb = fr >> 3, nl = fr & 7;
+    const uint ncol = n0 + fr;
+    const bool wok = ncol < N;
+    const ushort tr = tid >> 1, kh2 = tid & 1;    // token row 0..63, k half
+    const ushort tb = tr >> 3, rl = tr & 7;
+    const uint mrow = m0 + tr;
+    const bool aok = mrow < M;
+
+    for (uint k0 = 0; k0 < K; k0 += 32u) {
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        uint2 wv = uint2(0u); float sc = 0.0f;
+        if (wok) { wv = *(device const uint2*)(W + ncol*wpr + k0/8u + kh*2u); sc = float(WS[ncol*gpr + k0/32u]); }
+        gemm_stage_w(sa, wv, sc, wok, fb, kh, nl);
+        for (ushort j = 0; j < 2; j++) {
+            const ushort kb = kh2*2 + j;
+            threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kb)*64 + rl*8);
+            if (aok) {
+                device const half4* s4 = (device const half4*)(A + mrow*K + k0 + kb*8u);
+                d4[0] = s4[0]; d4[1] = s4[1];
             } else {
-                for (uint kl=0; kl<8u; kl++)
-                    scr[c*64u + kl*8u + nl] = 0.0h; // ragged tail padding lane — never stored
+                d4[0] = half4(0.0h); d4[1] = half4(0.0h);
             }
         }
-        simdgroup_barrier(mem_flags::mem_threadgroup);
-        simdgroup_half8x8 bT[CPS];
-        for (uint c=0;c<CPS;c++) simdgroup_load(bT[c], scr + c*64u, 8);
-        for (uint r=0;r<RPS;r++) {
-            if ((r0+r)*8u >= M) break;
-            simdgroup_half8x8 a; simdgroup_load(a, A + ((r0+r)*8u)*K + k, K);
-            for (uint c=0;c<CPS;c++) {
-                if (n0 + c*8u >= N) break;
-                simdgroup_multiply_accumulate(acc[r*CPS+c], a, bT[c], acc[r*CPS+c]);
-            }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (ushort ik = 0; ik < 4; ik++) {
+            simdgroup_half8x8 a[4], b[4];
+            // Constant trip counts and NO per-block predicate — prototype 4's loop exactly. Two attempts
+            // to skip the MMAs of token blocks wholly past M (for few-row MoE expert GEMMs) were measured
+            // on the 1.5B during wiring (R16, 2026-09-25), both bit-identical and both slower: a runtime
+            // loop bound 't < tlive' (no full unroll, acc[] dynamically indexed and spilled) was 5.6x
+            // slower than this loop; the same skip as a uniform predicate inside constant loops was
+            // still ~37% slower (GEMM category 650.6 vs 476.6 ms).
+            for (ushort t = 0; t < 4; t++) simdgroup_load(a[t], sb + ((th*4 + t)*4 + ik)*64, 8);
+            for (ushort f = 0; f < 4; f++) simdgroup_load(b[f], sa + ((fh*4 + f)*4 + ik)*72, 8);
+            for (ushort t = 0; t < 4; t++)
+                for (ushort f = 0; f < 4; f++)
+                    simdgroup_multiply_accumulate(acc[t*4 + f], a[t], b[f], acc[t*4 + f]);
         }
-        simdgroup_barrier(mem_flags::mem_threadgroup);
     }
-    // epilogue: store via threadgroup scratch so lanes can apply bias/residual per element.
-    for (uint r=0;r<RPS;r++) {
-        uint mrow = r0*8u + r*8u;
-        if (mrow >= M) break;
-        for (uint c=0;c<CPS;c++) {
-            if (n0+c*8u >= N) break;
-            simdgroup_store(acc[r*CPS+c], cs + c*64u, 8);
-        }
-        simdgroup_barrier(mem_flags::mem_threadgroup);
-        if (lane < 32u) {
-            uint c = lane/8u, nl = lane%8u;
-            if (n0 + c*8u < N) {
-                for (uint ml=0; ml<8u; ml++) {
-                    uint m = mrow + ml, n = n0 + c*8u + nl;
-                    float v = cs[c*64u + ml*8u + nl];
-                    if (mode == 1u) v += bias[n];                 // fused bias (QKV)
-                    if (mode == 2u) v += float(C[m*N + n]);       // residual (o / down)
-                    C[m*N + n] = half(v);
-                }
-            }
-        }
-        simdgroup_barrier(mem_flags::mem_threadgroup);
-    }
+
+    threadgroup float* myc = cs + sg*64;
+    for (ushort t = 0; t < 4; t++)
+        for (ushort f = 0; f < 4; f++)
+            gemm_epilogue(myc, acc[t*4 + f], m0 + (th*4 + t)*8u, n0 + (fh*4 + f)*8u, M, N, C, bias, mode, lane);
 }
 
 // rmsnorm_quant_f16: RMSNorm a single f16 row and fused-quantize it to int8 + f32 scale — the
@@ -845,15 +877,11 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		return b
 	}
 
-	// gemm grid helper: numRblk×(N/8) simdgroups, rounded up to a full tg (256 threads).
-	ggM := func(mPad, N int) (int, int) {
-		numRblk := (mPad/8 + 3) / 4 // RPS=4 (32 M-rows/simdgroup)
-		tilesN := (N + 31) / 32     // CPS=4 (32 N-cols/simdgroup, M-03) — ceil: N is only %8, not %32
-		total := numRblk * tilesN * 32
-		total = (total + 255) / 256 * 256
-		return total, 256
+	// gemm: one gemm_w4f16_store dispatch over rows×N — a 2-D grid of (ceil(N/64), ceil(rows/64))
+	// threadgroups of 128 threads, each owning a 64-feature × 64-token tile (R16, prefill.go's kernel).
+	gemm := func(e *Encoder, rows, N int, bufs ...Buffer) {
+		e.Dispatch2D(pf.pGemmStore, (N+63)/64, (rows+63)/64, 128, 1, bufs...)
 	}
-	gg := func(N int) (int, int) { return ggM(Mpad, N) }
 	// L2-Metal: attention_prefill_fused's grid — nH×ceil(M/8) simdgroups (ATTN_SGPT=4/threadgroup,
 	// prefill.go's own #define, matched here). Real M (unpadded): the tail row-tile's out-of-range
 	// rows are masked in-kernel via buffer(11), not dropped from the grid.
@@ -878,8 +906,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, r.uEps, r.uAddOne)
 		}
 		// fused QKV (+bias)
-		t, tg := gg(qkvDim)
-		e.Dispatch(pf.pGemmStore, t, tg, inAttn, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
+		gemm(e, Mpad, qkvDim, inAttn, L.qkvW, L.qkvS, qkvF, uM, uQkv, uH, L.qkvBias, m1)
 		if r.qkNorm { // Qwen3 / Olmo 3: per-head Q/K RMSNorm before RoPE
 			qkNH, qkNKV, qkHD, qkNHhd := r.uNH, g0.uNKV, uHd, g0.uNHhd
 			tgCount := r.nH + g0.nKV
@@ -912,13 +939,12 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 		// write pass touches the same buffer), then a separate residual add. Non-sandwich
 		// families skip straight to the fused mode-2 residual epilogue, byte-identical to before
 		// this row.
-		t, tg = gg(H)
 		if r.sandwich || r.postOnly {
-			e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, normF, uM, uH, uQDim, dummyBias, m0)
+			gemm(e, Mpad, H, ctxF, L.oW, L.oS, normF, uM, uH, uQDim, dummyBias, m0)
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postAttnNorm, normF, uH, r.uEps, r.uAddOne)
 			e.Dispatch(pf.pRes, M*H, 256, xF, normF)
 		} else {
-			e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
+			gemm(e, Mpad, H, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
 		}
 		if L.moe != nil {
 			if r.knobValue("GOINFER_MOE_EXPERT_MAJOR") == "0" {
@@ -1018,8 +1044,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 				// B. Expert Gate/Up GEMM
 				guWOff := eIdx * rowsPerExpertGu * wprGu * 4
 				guSOff := eIdx * rowsPerExpertGu * gprGu * 2
-				tGu, tgGu := ggM(CePad, rowsPerExpertGu)
-				e.Dispatch(pf.pGemmStore, tGu, tgGu, expertIn, L.moe.expGuW.At(guWOff), L.moe.expGuS.At(guSOff), guF, uCePad, u2MoeI, uH, dummyBias, m0)
+				gemm(e, CePad, rowsPerExpertGu, expertIn, L.moe.expGuW.At(guWOff), L.moe.expGuS.At(guSOff), guF, uCePad, u2MoeI, uH, dummyBias, m0)
 
 				// C. SwiGLU
 				e.Dispatch(pf.pSw, CePad*moeInter, 256, guF, dqF, uMoeI, r.uAct)
@@ -1027,8 +1052,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 				// D. Expert Down GEMM
 				dOff := eIdx * rowsPerExpertD * wprD * 4
 				dSOff := eIdx * rowsPerExpertD * gprD * 2
-				tD, tgD := ggM(CePad, rowsPerExpertD)
-				e.Dispatch(pf.pGemmStore, tD, tgD, dqF, L.moe.expDW.At(dOff), L.moe.expDS.At(dSOff), expertDown, uCePad, uH, uMoeI, dummyBias, m0)
+				gemm(e, CePad, rowsPerExpertD, dqF, L.moe.expDW.At(dOff), L.moe.expDS.At(dSOff), expertDown, uCePad, uH, uMoeI, dummyBias, m0)
 
 				// E. Scatter-add weighted output into residual xF
 				scatterTotal := (Ce*H + 255) / 256 * 256
@@ -1043,17 +1067,15 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 				u2ShI := getU32(2 * shI)
 				uShI := getU32(shI)
 
-				tShGu, tgShGu := ggM(Mpad, 2*shI)
-				e.Dispatch(pf.pGemmStore, tShGu, tgShGu, normF, L.moe.shGuW, L.moe.shGuS, guF, uM, u2ShI, uH, dummyBias, m0)
+				gemm(e, Mpad, 2*shI, normF, L.moe.shGuW, L.moe.shGuS, guF, uM, u2ShI, uH, dummyBias, m0)
 				e.Dispatch(pf.pSw, Mpad*shI, 256, guF, dqF, uShI, r.uAct)
 
-				tShD, tgShD := ggM(Mpad, H)
 				if r.moe.sharedUngated {
 					// dst += down directly into xF
-					e.Dispatch(pf.pGemmStore, tShD, tgShD, dqF, L.moe.shDW, L.moe.shDS, xF, uM, uH, uShI, dummyBias, m2)
+					gemm(e, Mpad, H, dqF, L.moe.shDW, L.moe.shDS, xF, uM, uH, uShI, dummyBias, m2)
 				} else {
 					// gated variant (Qwen2-MoE): compute sigmoid(gate)*down
-					e.Dispatch(pf.pGemmStore, tShD, tgShD, dqF, L.moe.shDW, L.moe.shDS, expertDown, uM, uH, uShI, dummyBias, m0)
+					gemm(e, Mpad, H, dqF, L.moe.shDW, L.moe.shDS, expertDown, uM, uH, uShI, dummyBias, m0)
 					// Gate logit for all M rows
 					gateLogitsTotal := (M*32 + 255) / 256 * 256
 					e.Dispatch(pf.pRouterGemm, gateLogitsTotal, 256, normF, L.moe.shGateW, moeLogits, uH, getU32(1), uMReal)
@@ -1071,18 +1093,16 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, r.uEps, r.uAddOne)
 		}
 		// gate/up
-		t, tg = gg(2 * I)
-		e.Dispatch(pf.pGemmStore, t, tg, inFFN, L.guW, L.guS, guF, uM, u2I, uH, dummyBias, m0)
+		gemm(e, Mpad, 2*I, inFFN, L.guW, L.guS, guF, uM, u2I, uH, dummyBias, m0)
 		// swiglu/geglu (G8: r.uAct selects — 0 for every family without FeatGatedGELU)
 		e.Dispatch(pf.pSw, M*I, 256, guF, dqF, uI, r.uAct)
 		// down-proj, same plain-vs-sandwich split as o-proj above.
-		t, tg = gg(H)
 		if r.sandwich || r.postOnly {
-			e.Dispatch(pf.pGemmStore, t, tg, dqF, L.dW, L.dS, normF, uM, uH, uI, dummyBias, m0)
+			gemm(e, Mpad, H, dqF, L.dW, L.dS, normF, uM, uH, uI, dummyBias, m0)
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postMLPNorm, normF, uH, r.uEps, r.uAddOne)
 			e.Dispatch(pf.pRes, M*H, 256, xF, normF)
 		} else {
-			e.Dispatch(pf.pGemmStore, t, tg, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
+			gemm(e, Mpad, H, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
 		}
 	}
 	// final norm + LM head for the LAST token only, through the SAME int8-pinned head the decode

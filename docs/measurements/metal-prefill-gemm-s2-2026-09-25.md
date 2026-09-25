@@ -14,7 +14,8 @@ read, followed by the prototypes' measurements (from *Prototype 1* on).
   = false". So the ≥ 2.96 TFLOPS S1b measured comes from the classic kernel, and that is the one compared below.
 - **MLX 0.32.0**, `qmm_t_impl` + `QuantizedBlockLoader` (`mlx/backend/metal/kernels/quantized.h`, Homebrew). Not
   measured in S1; read for its structure.
-- **goinfer**, `gemm_w4f16_store` (`metal/prefill.go:37-106`) at `4d1083b1`.
+- **goinfer**, `gemm_w4f16_store` at `4d1083b1` — since R16 replaced it, kept verbatim as `gemm_w4f16_store_r15`
+  (`metal/prefill_gemm_s2_test.go:413-482`).
 
 ## The three kernels side by side
 
@@ -213,6 +214,47 @@ exploratory 3.25×. Preconditions:
 599.4 ms, so K=512 TTFT goes from 0.377× Ollama's (peer-claim cell h) to roughly **1.04×**. The measured claim needs
 `scripts/bench_peer_prefill.py` against Ollama after production wiring. Still to report, not deciding: the 7B's
 shapes and K=3900 (where attention remains, per S0).
+
+## Production wiring — 2026-09-25
+
+Prototype 4 replaced `gemm_w4f16_store` in `metal/prefill.go` under the same name (same pipeline, same buffer list at
+every caller), dispatched as a 2-D grid of (ceil(N/64), ceil(rows/64)) × 128-thread threadgroups through one `gemm()`
+helper at all 11 call sites: dense qkv, o, gate/up and down; the MoE expert gate/up and down; the shared expert's.
+The retired kernel is kept verbatim in `metal/prefill_gemm_s2_test.go` as `gemm_w4f16_store_r15`, selectable in the
+harness for old-vs-new A/B runs.
+
+**A regression introduced during wiring, caught by the harness, and removed.** The first wiring added one thing
+prototype 4 did not have: skipping the MMAs of token blocks wholly past M, for few-row MoE expert GEMMs. Both forms of
+that were bit-identical and both were slower, measured on the real 1.5B against the retired kernel:
+
+| production kernel variant | GEMM category at K=512 | vs retired kernel |
+|---|---:|---|
+| runtime loop bound `t < tlive` | 8457.0 ms | **5.6× slower** — no full unroll; `acc[t*4+f]` dynamically indexed, the 16 accumulators spill |
+| uniform predicate inside constant loops | 650.6 ms | 2.41× faster, but ~37% slower than prototype 4 |
+| **prototype 4 exactly (shipped)** | **475.6 ms** | **3.23× faster** |
+
+So production is prototype 4's code exactly: its kernel body and both helpers were checked to match the prototype's
+source with names stripped. The cost: a few-row MoE expert GEMM now runs MMAs on empty token blocks. **What that costs
+MoE prefill is not measured** (this Mac's MoE checkpoints either do not fit or decline batched prefill, as paged MoE).
+
+**Gates on the final wiring** (uncommitted tree on `b4e1f2c0`, 2026-09-25; raw: `wiring-gates2.log`, `metal-suite2.log`):
+
+1. **Bit-identity on the real 1.5B, production vs retired kernel:** 0 differing elements on all four GEMMs; a full
+   replay with the retired kernel reproduces production's `PrefillLast` logits exactly (0 / 151,936). Production's
+   GEMM category 475.6 ms against 1534.2 — **3.23× faster**, matching the confirmation run's 476.6 ms.
+2. **Full Metal suite** (`-tags goinfer_testhooks`, non-heavy): **174 pass, 0 fail**, 72 skip.
+3. **Tiny-fixture prefill tests** (MoE expert-major vs row-by-row, MoE vs dense, Gemma, MoE, startPos > 0, SmolLM3,
+   Olmo 3): all pass, and every cosine and argmax they print is **identical** to the same tests run on the tree with
+   the old kernel (the old `metal/prefill.go` restored by `git stash`, the rest unchanged).
+4. **The §3.2 pooled gate (`TestPrefillGateVsReference/S`) produced no verdict**, and not because of the kernel: this
+   Mac's CPU reference set for S has K = 64 / 128 / 256 / 1024 / 3900 but **no K=512**, which the standing decision set
+   {256, 512, 1024} needs, and the gate correctly refuses to pool a partial set. (A first attempt was also refused by
+   the fit guard at 6.8 GB available; not bypassed; the second attempt was admitted.) Its per-cell results, reported
+   without a veto: K=256 fast 93.8% agreement / 3 hard flips / mean KL 0.0340 against exact 92.8% / 4 / 0.0375;
+   K=1024 fast 80.3% / 72 / 0.5644 against exact 81.7% / 71 / 0.5641; K=3900 (confirm) fast 80.5% / 69 / 0.4852
+   against exact 80.5% / 70 / 0.4904. Since production's output is bit-identical to the retired kernel's, the gate's
+   verdict cannot differ from the one the retired kernel would get; generating the missing K=512 reference needs a CPU
+   f32 load of the 1.5B (~7.7 GB), which last time required an owner-approved fit-guard bypass.
 
 ## Not settled by the read
 

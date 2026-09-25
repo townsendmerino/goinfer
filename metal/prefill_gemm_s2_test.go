@@ -23,14 +23,15 @@ func TestS2KernelsCompile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	for _, k := range []string{"gemm_w4f16_tg", "gemm_w4f16_tg2", "gemm_w4f16_tg3", "gemm_w4f16_tg4"} {
+	for _, k := range []string{"gemm_w4f16_tg", "gemm_w4f16_tg2", "gemm_w4f16_tg3", "gemm_w4f16_tg4", "gemm_w4f16_store_r15"} {
 		if _, err := d.NewComputePipeline(lib, k); err != nil {
 			t.Errorf("%s: %v", k, err)
 		}
 	}
 }
 
-// gemmS2Kernels is R16's first prototype (docs/tasks/red-october.md; design in
+// gemmS2Kernels holds R16's prototypes (1-4; prototype 4 became production 2026-09-25) and the retired production
+// kernel gemm_w4f16_store_r15. It began as R16's first prototype (docs/tasks/red-october.md; design in
 // docs/measurements/metal-prefill-gemm-s2-2026-09-25.md): the int4 prefill GEMM restructured in the shape of
 // llama.cpp's classic kernel_mul_mm, which S1b measured at >= 2.96 TFLOPS on this machine against the current
 // gemm_w4f16_store's ~0.75 under sustained load. TEST-ONLY until R16's band is met — nothing in production
@@ -388,5 +389,95 @@ kernel void gemm_w4f16_tg4(device const half* A[[buffer(0)]], device const uint*
     for (ushort t = 0; t < 4; t++)
         for (ushort f = 0; f < 4; f++)
             s2_epilogue(myc, acc[t*4 + f], m0 + (th*4 + t)*8u, n0 + (fh*4 + f)*8u, M, N, C, bias, mode, lane);
+}
+
+// gemm_w4f16_store_r15 — THE RETIRED PRODUCTION KERNEL, kept verbatim (renamed) for A/B re-runs after R16
+// replaced it on 2026-09-25. Dispatched as the old 1-D grid (see prefill_decomp_test.go's oldGemm).
+// Original comment: gemm_w4f16_store: blocked int4→f16 MMA GEMM with a fused epilogue (mode 0 = plain store, 1 =
+// +bias for fused QKV, 2 = +residual for o-proj/down) — C[M×N] = A[M×K](f16) · Wᵀ, W = resident
+// int4/W4A8 (packed nibbles + f16 group scales), dequanted in-kernel. N-17 (audit-
+// metal-2026-09-12.md): this used to be two separate steps, a plain gemm_w4f16 (no epilogue) plus
+// hand-written bias/residual variants — gemm_w4f16 itself was fully replaced by this kernel but
+// its source stayed in the compiled library with no pipeline ever created from it. Deleted rather
+// than left as dead compiled source.
+//
+// CPS (audit-metal-2026-09-12.md M-03): each simdgroup owns a 32(M, RPS)×32(N, CPS) output block
+// instead of 32×8 — all 32 lanes dequant CPS=4 weight tiles per k-step (was 8 of 32 lanes doing
+// one tile, 24 idle), and each of the RPS A-row tiles is loaded ONCE from device memory per
+// k-step and reused across all CPS column tiles (16 MMAs per barrier pair instead of 4; 4x fewer
+// simdgroups stream the same A rows redundantly). N is only guaranteed %8==0 (audit C-10), not
+// %32==0, so the last column super-tile is masked per 8-wide sub-tile exactly like the existing
+// M-dimension tail (the break idiom below) — never an OOB read of W/WS, never a bogus MMA/store.
+#define RPS 4
+#define CPS 4
+kernel void gemm_w4f16_store_r15(device const half* A[[buffer(0)]], device const uint* W[[buffer(1)]],
+    device const half* WS[[buffer(2)]], device half* C[[buffer(3)]],
+    constant uint& M[[buffer(4)]], constant uint& N[[buffer(5)]], constant uint& K[[buffer(6)]],
+    device const float* bias[[buffer(7)]], constant uint& mode[[buffer(8)]],
+    uint tgid[[threadgroup_position_in_grid]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint sgpt[[simdgroups_per_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    threadgroup half wscr[8*(CPS*64)];
+    threadgroup float cscr[8*(CPS*64)];
+    uint sg = tgid*sgpt + sgid;
+    uint tilesN = (N + 31u)/32u; // ceil — the last super-tile may be ragged (N%32 != 0)
+    uint rblk = sg / tilesN, tc = sg % tilesN;
+    uint r0 = rblk*RPS;
+    if (r0*8u >= M) return;
+    uint n0 = tc*32u;
+    threadgroup half* scr = wscr + sgid*(CPS*64u);
+    threadgroup float* cs = cscr + sgid*(CPS*64u);
+    uint wpr = K/8u, gpr = K/32u;
+    simdgroup_float8x8 acc[RPS*CPS];
+    for (uint i=0;i<RPS*CPS;i++) acc[i]=make_filled_simdgroup_matrix<float,8,8>(0.0);
+    for (uint k=0; k<K; k+=8u) {
+        if (lane < 32u) {
+            uint c = lane/8u, nl = lane%8u;
+            uint ncol = n0 + c*8u + nl;
+            if (ncol < N) {
+                uint word = W[ncol*wpr + k/8u];
+                float sc = float(WS[ncol*gpr + k/32u]);
+                for (uint kl=0; kl<8u; kl++)
+                    scr[c*64u + kl*8u + nl] = half(float(int((word >> (4u*kl)) & 0xF) - 8) * sc);
+            } else {
+                for (uint kl=0; kl<8u; kl++)
+                    scr[c*64u + kl*8u + nl] = 0.0h; // ragged tail padding lane — never stored
+            }
+        }
+        simdgroup_barrier(mem_flags::mem_threadgroup);
+        simdgroup_half8x8 bT[CPS];
+        for (uint c=0;c<CPS;c++) simdgroup_load(bT[c], scr + c*64u, 8);
+        for (uint r=0;r<RPS;r++) {
+            if ((r0+r)*8u >= M) break;
+            simdgroup_half8x8 a; simdgroup_load(a, A + ((r0+r)*8u)*K + k, K);
+            for (uint c=0;c<CPS;c++) {
+                if (n0 + c*8u >= N) break;
+                simdgroup_multiply_accumulate(acc[r*CPS+c], a, bT[c], acc[r*CPS+c]);
+            }
+        }
+        simdgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    // epilogue: store via threadgroup scratch so lanes can apply bias/residual per element.
+    for (uint r=0;r<RPS;r++) {
+        uint mrow = r0*8u + r*8u;
+        if (mrow >= M) break;
+        for (uint c=0;c<CPS;c++) {
+            if (n0+c*8u >= N) break;
+            simdgroup_store(acc[r*CPS+c], cs + c*64u, 8);
+        }
+        simdgroup_barrier(mem_flags::mem_threadgroup);
+        if (lane < 32u) {
+            uint c = lane/8u, nl = lane%8u;
+            if (n0 + c*8u < N) {
+                for (uint ml=0; ml<8u; ml++) {
+                    uint m = mrow + ml, n = n0 + c*8u + nl;
+                    float v = cs[c*64u + ml*8u + nl];
+                    if (mode == 1u) v += bias[n];                 // fused bias (QKV)
+                    if (mode == 2u) v += float(C[m*N + n]);       // residual (o / down)
+                    C[m*N + n] = half(v);
+                }
+            }
+        }
+        simdgroup_barrier(mem_flags::mem_threadgroup);
+    }
 }
 `

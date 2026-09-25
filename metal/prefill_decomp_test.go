@@ -176,7 +176,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 	dummyBias := nb(NewBufferFloats(d, make([]float32, 1)))
 	uMReal := nb(NewBufferU32(d, uint32(M)))
 
-	gg := func(N int) (int, int) { // PrefillLast's ggM(Mpad, N)
+	gg := func(N int) (int, int) { // the retired kernel's 1-D grid (PrefillLast's ggM before R16)
 		total := ((Mpad/8 + 3) / 4) * ((N + 31) / 32) * 32
 		return (total + 255) / 256 * 256, 256
 	}
@@ -188,19 +188,25 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		return func(mp int) float64 { return 2 * float64(mp) * float64(N) * float64(Kd) }
 	}
 
-	// R16 (S2): the GEMM categories dispatch through dispatchGemm(), which runs either production's gemm_w4f16_store or,
+	// R16 (S2): the GEMM categories dispatch through dispatchGemm(), which runs either production's gemm_w4f16_store (the
+	// R16 kernel since 2026-09-25) or,
 	// when protoOn, the test-only prototype (prefill_gemm_s2_test.go) with the same buffer list. protoOn stays
 	// false unless GOINFER_METAL_S2=1 compiled the prototype, so every other phase is unchanged.
 	var protoPipe Pipeline
 	protoOn := false
-	protoRows := 32 // tokens per threadgroup: 32 for prototypes 1-3, 64 for gemm_w4f16_tg4
+	protoRows := 32 // tokens per threadgroup: 32 for prototypes 1-3, 64 for gemm_w4f16_tg4; 0 = the retired 1-D kernel
 	dispatchGemm := func(e *Encoder, N int, bufs ...Buffer) {
 		if protoOn {
+			if protoRows == 0 { // gemm_w4f16_store_r15, the kernel R16 retired: its original 1-D grid
+				n, tg := gg(N)
+				e.Dispatch(protoPipe, n, tg, bufs...)
+				return
+			}
 			e.Dispatch2D(protoPipe, (N+63)/64, (Mpad+protoRows-1)/protoRows, 128, 1, bufs...)
 			return
 		}
-		n, tg := gg(N)
-		e.Dispatch(pf.pGemmStore, n, tg, bufs...)
+		// production: PrefillLast's gemm() grid since R16 (64×64 tiles, 128 threads)
+		e.Dispatch2D(pf.pGemmStore, (N+63)/64, (Mpad+63)/64, 128, 1, bufs...)
 	}
 
 	cats := []decompCat{
@@ -439,13 +445,17 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 			if err != nil {
 				t.Fatalf("compile S2 prototype: %v", err)
 			}
-			// GOINFER_METAL_S2_KERNEL picks the prototype: gemm_w4f16_tg (prototype 1, the default), _tg2, _tg3 or _tg4.
+			// GOINFER_METAL_S2_KERNEL picks the comparison arm: gemm_w4f16_tg (prototype 1, the default), _tg2, _tg3, _tg4,
+			// or gemm_w4f16_store_r15 — the retired production kernel, for an old-vs-new A/B.
 			kname := "gemm_w4f16_tg"
 			if v := os.Getenv("GOINFER_METAL_S2_KERNEL"); v != "" {
 				kname = v
 			}
-			if kname == "gemm_w4f16_tg4" {
+			switch kname {
+			case "gemm_w4f16_tg4":
 				protoRows = 64
+			case "gemm_w4f16_store_r15":
+				protoRows = 0
 			}
 			hb("K=%d S2 prototype kernel: %s (%d tokens per threadgroup)", M, kname, protoRows)
 			if protoPipe, err = r.d.NewComputePipeline(lib, kname); err != nil {
@@ -513,7 +523,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 				bm = i
 			}
 		}
-		hb("K=%d S2 full-replay logits with the prototype: %d / %d differ from PrefillLast (cosine %.9f, argmax %d vs %d); per-GEMM bitwise identical: %v",
+		hb("K=%d S2 full-replay logits with the comparison kernel: %d / %d differ from PrefillLast (cosine %.9f, argmax %d vs %d); per-GEMM bitwise identical: %v",
 			M, nd, len(pl), dot/math.Sqrt(na*nb2), am, bm, allSame)
 
 		// (3) The registered metric: per arm, the sum of the four GEMM marginals (full − full-without-that-GEMM).
@@ -565,7 +575,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 				arms[arm].allAtOnce = append(arms[arm].allAtOnce, f-ng)
 			}
 			ratios = append(ratios, arms[false].sum[rep]/arms[true].sum[rep])
-			hb("K=%d S2 rep %d/%d: GEMM category in sequence — current %.1f ms, prototype %.1f ms → %.2fx (full replay %.1f vs %.1f ms)",
+			hb("K=%d S2 rep %d/%d: GEMM category in sequence — production %.1f ms, comparison %.1f ms → %.2fx (full replay %.1f vs %.1f ms)",
 				M, rep+1, reps, arms[false].sum[rep], arms[true].sum[rep], ratios[rep], arms[false].full[rep], arms[true].full[rep])
 		}
 
@@ -599,17 +609,19 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 
 		// Report and grade against R16's band (ship >= 2.85x, park 1.8-2.85x, kill < 1.8x on the sustained,
 		// in-sequence GEMM category at K=512; only K=512 on the 1.5B decides — other runs are reported).
+		// Arms are named by kernel: false = production's gemm_w4f16_store, true = the comparison kernel. Since R16
+		// wired prototype 4 in, "production" is the new kernel and gemm_w4f16_store_r15 the retired one.
 		name := func(a bool) string {
 			if a {
-				return "prototype"
+				return "comparison"
 			}
-			return "current"
+			return "production"
 		}
 		fmt.Fprintf(os.Stderr, "\n=== R16 / S2, K=%d: prototype vs current (medians of %d paired reps, arms alternating) ===\n", M, reps)
 		for _, ci := range gemmCats {
 			c := cats[ci]
 			mc, mp := median(perCat[false][ci]), median(perCat[true][ci])
-			fmt.Fprintf(os.Stderr, "  %-22s current %8.1f ms (%.2f TFLOPS)  prototype %8.1f ms (%.2f TFLOPS)  %.2fx\n", c.name,
+			fmt.Fprintf(os.Stderr, "  %-22s production %8.1f ms (%.2f TFLOPS)  comparison %8.1f ms (%.2f TFLOPS)  production/comparison %.2fx\n", c.name,
 				mc, c.flops(Mpad)*float64(r.nL)/(mc*1e-3)/1e12, mp, c.flops(Mpad)*float64(r.nL)/(mp*1e-3)/1e12, mc/mp)
 		}
 		for _, a := range []bool{false, true} {
@@ -628,7 +640,14 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		case rm >= 1.8:
 			band = "PARK band (1.8-2.85x)"
 		}
-		fmt.Fprintf(os.Stderr, "  GEMM category speedup, paired: median %.2fx, reps %s → %s", rm, fmtMs(ratios), band)
+		// The band reads "how much faster the comparison kernel is than production" — R16's grade when production was
+		// the old kernel. Against the retired kernel (production is now the new one) a ratio BELOW 1 is the good
+		// outcome, and a band would be meaningless, so none is printed.
+		if protoRows == 0 {
+			fmt.Fprintf(os.Stderr, "  production is %.2fx FASTER than the retired kernel (median; reps %s)", 1/rm, fmtMs(ratios))
+		} else {
+			fmt.Fprintf(os.Stderr, "  GEMM category speedup (comparison over production), paired: median %.2fx, reps %s → %s", rm, fmtMs(ratios), band)
+		}
 		if M != 512 {
 			fmt.Fprintf(os.Stderr, "  [K=%d: reported, not deciding — R16 decides at K=512 on the 1.5B]", M)
 		}

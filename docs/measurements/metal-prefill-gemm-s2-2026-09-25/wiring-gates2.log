@@ -1,0 +1,158 @@
+15:33:21 start commit b4e1f2c0 dirty=3 (metal/prefill.go metal/prefill_decomp_test.go metal/prefill_gemm_s2_test.go )
+15:33:21 waiting load1=2.27
+15:34:22 idle load1=1.80
+15:34:22 ##### GATE 1: §3.2 pooled fidelity gate, S
+=== RUN   TestPrefillGateVsReference
+=== RUN   TestPrefillGateVsReference/S
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.9 GB; this machine currently has 7.8 GB of memory available (budget 5.5 GB = 70% of that) (88% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+--- S prompt set "a" (DECIDING) ---
+[ref-gate] S set "a" K=256 prompt  1/10 exact(agree=89.1% HF=0/64 KL=0.0309) fast(agree=92.2% HF=0/64 KL=0.0274) diff(agree=+3.1pt KL=-0.0036) elapsed=6s
+[ref-gate] S set "a" K=256 prompt  2/10 exact(agree=100.0% HF=0/64 KL=0.0105) fast(agree=100.0% HF=0/64 KL=0.0087) diff(agree=+0.0pt KL=-0.0018) elapsed=12s
+[ref-gate] S set "a" K=256 prompt  3/10 exact(agree=85.9% HF=0/64 KL=0.0513) fast(agree=90.6% HF=0/64 KL=0.0495) diff(agree=+4.7pt KL=-0.0019) elapsed=19s
+[ref-gate] S set "a" K=256 prompt  4/10 exact(agree=89.1% HF=0/64 KL=0.0509) fast(agree=90.6% HF=0/64 KL=0.0509) diff(agree=+1.6pt KL=-0.0001) elapsed=25s
+[ref-gate] S set "a" K=256 prompt  5/10 exact(agree=89.1% HF=1/64 KL=0.0453) fast(agree=87.5% HF=1/64 KL=0.0421) diff(agree=-1.6pt KL=-0.0032) elapsed=31s
+[ref-gate] S set "a" K=256 prompt  6/10 exact(agree=92.2% HF=3/64 KL=0.0872) fast(agree=92.2% HF=2/64 KL=0.0737) diff(agree=+0.0pt KL=-0.0135) elapsed=37s
+[ref-gate] S set "a" K=256 prompt  7/10 exact(agree=95.3% HF=0/64 KL=0.0227) fast(agree=95.3% HF=0/64 KL=0.0187) diff(agree=+0.0pt KL=-0.0040) elapsed=43s
+[ref-gate] S set "a" K=256 prompt  8/10 exact(agree=95.3% HF=0/64 KL=0.0305) fast(agree=95.3% HF=0/64 KL=0.0258) diff(agree=+0.0pt KL=-0.0047) elapsed=50s
+[ref-gate] S set "a" K=256 prompt  9/10 exact(agree=95.3% HF=0/64 KL=0.0320) fast(agree=95.3% HF=0/64 KL=0.0295) diff(agree=+0.0pt KL=-0.0025) elapsed=56s
+[ref-gate] S set "a" K=256 prompt 10/10 exact(agree=96.9% HF=0/64 KL=0.0140) fast(agree=98.4% HF=0/64 KL=0.0134) diff(agree=+1.6pt KL=-0.0006) elapsed=1m2s
+=== S set "a" K=256 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=92.8% HF=4 meanKL=0.0375 worstGap=5.811%) fast(agree=93.8% HF=3 meanKL=0.0340 worstGap=5.811%) — reported, no per-cell veto
+    prefill_gate_ref_test.go:160: S set "a" K=512: reference file missing (/Users/francistownsend-merino/goinfer-logs/prefill-ref/S-K512-p0.bin) — SKIPPING this cell; no fallback to the withdrawn exact-as-oracle scoring. Run TestPrefillGateReference (decoder package, GOINFER_PREFILL_GATE_PROMPTS=a) first.
+[ref-gate] S set "a" K=1024 prompt  1/10 exact(agree=89.1% HF=0/64 KL=0.0488) fast(agree=87.5% HF=1/64 KL=0.0525) diff(agree=-1.6pt KL=+0.0037) elapsed=19s
+[ref-gate] S set "a" K=1024 prompt  2/10 exact(agree=20.3% HF=49/64 KL=4.2414) fast(agree=21.9% HF=48/64 KL=4.2733) diff(agree=+1.6pt KL=+0.0320) elapsed=38s
+[ref-gate] S set "a" K=1024 prompt  3/10 exact(agree=90.6% HF=0/64 KL=0.0587) fast(agree=90.6% HF=0/64 KL=0.0526) diff(agree=+0.0pt KL=-0.0061) elapsed=56s
+[ref-gate] S set "a" K=1024 prompt  4/10 exact(agree=87.5% HF=0/64 KL=0.0637) fast(agree=84.4% HF=0/64 KL=0.0576) diff(agree=-3.1pt KL=-0.0061) elapsed=1m15s
+[ref-gate] S set "a" K=1024 prompt  5/10 exact(agree=65.6% HF=19/64 KL=0.7971) fast(agree=64.1% HF=18/64 KL=0.7871) diff(agree=-1.6pt KL=-0.0100) elapsed=1m34s
+[ref-gate] S set "a" K=1024 prompt  6/10 exact(agree=92.2% HF=0/64 KL=0.0382) fast(agree=92.2% HF=0/64 KL=0.0375) diff(agree=+0.0pt KL=-0.0007) elapsed=1m53s
+[ref-gate] S set "a" K=1024 prompt  7/10 exact(agree=100.0% HF=0/64 KL=0.0182) fast(agree=98.4% HF=0/64 KL=0.0152) diff(agree=-1.6pt KL=-0.0030) elapsed=2m11s
+[ref-gate] S set "a" K=1024 prompt  8/10 exact(agree=96.9% HF=1/64 KL=0.2617) fast(agree=96.9% HF=1/64 KL=0.2606) diff(agree=+0.0pt KL=-0.0011) elapsed=2m30s
+[ref-gate] S set "a" K=1024 prompt  9/10 exact(agree=82.8% HF=2/64 KL=0.0669) fast(agree=78.1% HF=1/64 KL=0.0630) diff(agree=-4.7pt KL=-0.0039) elapsed=2m49s
+[ref-gate] S set "a" K=1024 prompt 10/10 exact(agree=92.2% HF=0/64 KL=0.0463) fast(agree=89.1% HF=3/64 KL=0.0451) diff(agree=-3.1pt KL=-0.0012) elapsed=3m8s
+=== S set "a" K=1024 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=81.7% HF=71 meanKL=0.5641 worstGap=51.235%) fast(agree=80.3% HF=72 meanKL=0.5644 worstGap=53.676%) — reported, no per-cell veto
+[ref-gate]   ... exact prefill K=3900 pos 1341/3900
+[ref-gate]   ... exact prefill K=3900 pos 2394/3900
+[ref-gate]   ... exact prefill K=3900 pos 3295/3900
+[ref-gate] S set "a" K=3900 prompt  1/10 exact(agree=90.6% HF=6/64 KL=0.2374) fast(agree=90.6% HF=5/64 KL=0.2374) diff(agree=+0.0pt KL=-0.0000) elapsed=1m27s
+[ref-gate]   ... exact prefill K=3900 pos 1343/3900
+[ref-gate]   ... exact prefill K=3900 pos 2396/3900
+[ref-gate]   ... exact prefill K=3900 pos 3292/3900
+[ref-gate] S set "a" K=3900 prompt  2/10 exact(agree=54.7% HF=23/64 KL=1.6401) fast(agree=53.1% HF=23/64 KL=1.6347) diff(agree=-1.6pt KL=-0.0054) elapsed=2m54s
+[ref-gate]   ... exact prefill K=3900 pos 1340/3900
+[ref-gate]   ... exact prefill K=3900 pos 2392/3900
+[ref-gate]   ... exact prefill K=3900 pos 3296/3900
+[ref-gate] S set "a" K=3900 prompt  3/10 exact(agree=84.4% HF=3/64 KL=0.0755) fast(agree=84.4% HF=2/64 KL=0.0724) diff(agree=+0.0pt KL=-0.0031) elapsed=4m21s
+[ref-gate]   ... exact prefill K=3900 pos 1340/3900
+[ref-gate]   ... exact prefill K=3900 pos 2393/3900
+[ref-gate]   ... exact prefill K=3900 pos 3296/3900
+[ref-gate] S set "a" K=3900 prompt  4/10 exact(agree=95.3% HF=0/64 KL=0.0381) fast(agree=96.9% HF=0/64 KL=0.0326) diff(agree=+1.6pt KL=-0.0056) elapsed=5m48s
+[ref-gate]   ... exact prefill K=3900 pos 1345/3900
+[ref-gate]   ... exact prefill K=3900 pos 2398/3900
+[ref-gate]   ... exact prefill K=3900 pos 3300/3900
+[ref-gate] S set "a" K=3900 prompt  5/10 exact(agree=59.4% HF=15/64 KL=0.9600) fast(agree=60.9% HF=14/64 KL=0.9456) diff(agree=+1.6pt KL=-0.0144) elapsed=7m15s
+[ref-gate]   ... exact prefill K=3900 pos 1340/3900
+[ref-gate]   ... exact prefill K=3900 pos 2393/3900
+[ref-gate]   ... exact prefill K=3900 pos 3296/3900
+[ref-gate] S set "a" K=3900 prompt  6/10 exact(agree=87.5% HF=0/64 KL=0.0676) fast(agree=85.9% HF=1/64 KL=0.0689) diff(agree=-1.6pt KL=+0.0014) elapsed=8m42s
+[ref-gate]   ... exact prefill K=3900 pos 1345/3900
+[ref-gate]   ... exact prefill K=3900 pos 2398/3900
+[ref-gate]   ... exact prefill K=3900 pos 3300/3900
+[ref-gate] S set "a" K=3900 prompt  7/10 exact(agree=93.8% HF=0/64 KL=0.0440) fast(agree=95.3% HF=0/64 KL=0.0379) diff(agree=+1.6pt KL=-0.0061) elapsed=10m8s
+[ref-gate]   ... exact prefill K=3900 pos 1342/3900
+[ref-gate]   ... exact prefill K=3900 pos 2394/3900
+[ref-gate]   ... exact prefill K=3900 pos 3282/3900
+[ref-gate] S set "a" K=3900 prompt  8/10 exact(agree=54.7% HF=20/64 KL=1.7257) fast(agree=53.1% HF=21/64 KL=1.7227) diff(agree=-1.6pt KL=-0.0029) elapsed=11m36s
+[ref-gate]   ... exact prefill K=3900 pos 1338/3900
+[ref-gate]   ... exact prefill K=3900 pos 2393/3900
+[ref-gate]   ... exact prefill K=3900 pos 3295/3900
+[ref-gate] S set "a" K=3900 prompt  9/10 exact(agree=95.3% HF=0/64 KL=0.0459) fast(agree=98.4% HF=0/64 KL=0.0407) diff(agree=+3.1pt KL=-0.0052) elapsed=13m2s
+[ref-gate]   ... exact prefill K=3900 pos 1339/3900
+[ref-gate]   ... exact prefill K=3900 pos 2389/3900
+[ref-gate]   ... exact prefill K=3900 pos 3292/3900
+[ref-gate] S set "a" K=3900 prompt 10/10 exact(agree=89.1% HF=3/64 KL=0.0700) fast(agree=85.9% HF=3/64 KL=0.0588) diff(agree=-3.1pt KL=-0.0112) elapsed=14m30s
+=== S set "a" K=3900 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=80.5% HF=70 meanKL=0.4904 worstGap=60.488%) fast(agree=80.5% HF=69 meanKL=0.4852 worstGap=60.488%) — reported, no per-cell veto
+    prefill_gate_ref_test.go:160: S (DECIDING, set "a"): only 2 of 3 decision-set cells have reference data (got K=[256 1024], want K=[256 512 1024]) — a pooled verdict over a PARTIAL decision set is not a decision; run TestPrefillGateReference (decoder package) to generate the missing reference file(s) under /Users/francistownsend-merino/goinfer-logs/prefill-ref before trusting this gate
+--- FAIL: TestPrefillGateVsReference (1122.23s)
+    --- FAIL: TestPrefillGateVsReference/S (1122.23s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	1122.744s
+FAIL
+15:53:05 ##### GATE 1 exit=0
+15:53:05 idle load1=1.19
+15:53:05 ##### GATE 2: real 1.5B, retired kernel (r15) vs production, K=512, 5 reps
+=== RUN   TestMetalPrefillDecomp
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.9 GB; this machine currently has 8.3 GB of memory available (budget 5.8 GB = 70% of that) (83% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+[decomp    5.7s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: H=1536 I=8960 nL=28 nH=12 V=151936, weights aliased from the file: false
+[decomp    6.5s] K=512 warm-up PrefillLast 763.3 ms
+[decomp    9.8s] K=512 PrefillLast wall ms 797.6 695.1 626.0 603.3 601.6
+[decomp   10.4s] K=512 replica logits bit-identical to PrefillLast (151936 values)
+[decomp   11.1s] K=512 rep 1/5: full replay 596.0 ms GPU  pageins +117 swapins +0  thermal: none
+[decomp   11.2s] K=512 rep 1/5:   attention                  106.4 ms GPU  pageins +16 swapins +0
+[decomp   11.6s] K=512 rep 1/5:   GEMM gate/up               271.2 ms GPU  pageins +52 swapins +0
+[decomp   11.7s] K=512 rep 1/5:   GEMM down (+residual)      141.9 ms GPU  pageins +29 swapins +0
+[decomp   12.3s] K=512 rep 2/5: full replay 593.1 ms GPU  pageins +114 swapins +0  thermal: none
+[decomp   12.5s] K=512 rep 2/5:   attention                  108.0 ms GPU  pageins +16 swapins +0
+[decomp   12.8s] K=512 rep 2/5:   GEMM gate/up               270.4 ms GPU  pageins +52 swapins +0
+[decomp   13.0s] K=512 rep 2/5:   GEMM down (+residual)      142.6 ms GPU  pageins +29 swapins +0
+[decomp   13.6s] K=512 rep 3/5: full replay 591.7 ms GPU  pageins +113 swapins +0  thermal: none
+[decomp   13.8s] K=512 rep 3/5:   attention                  107.9 ms GPU  pageins +29 swapins +0
+[decomp   14.1s] K=512 rep 3/5:   GEMM gate/up               271.3 ms GPU  pageins +57 swapins +0
+[decomp   14.3s] K=512 rep 3/5:   GEMM down (+residual)      141.9 ms GPU  pageins +41 swapins +0
+[decomp   14.9s] K=512 rep 4/5: full replay 593.6 ms GPU  pageins +114 swapins +0  thermal: none
+[decomp   15.1s] K=512 rep 4/5:   attention                  106.3 ms GPU  pageins +29 swapins +0
+[decomp   15.4s] K=512 rep 4/5:   GEMM gate/up               270.3 ms GPU  pageins +43 swapins +0
+[decomp   15.6s] K=512 rep 4/5:   GEMM down (+residual)      142.7 ms GPU  pageins +30 swapins +0
+[decomp   16.2s] K=512 rep 5/5: full replay 591.7 ms GPU  pageins +115 swapins +0  thermal: none
+[decomp   16.4s] K=512 rep 5/5:   attention                  106.7 ms GPU  pageins +15 swapins +0
+[decomp   16.7s] K=512 rep 5/5:   GEMM gate/up               271.2 ms GPU  pageins +57 swapins +0
+[decomp   16.9s] K=512 rep 5/5:   GEMM down (+residual)      141.9 ms GPU  pageins +29 swapins +0
+[decomp   16.9s] K=512 S2 prototype kernel: gemm_w4f16_store_r15 (0 tokens per threadgroup)
+[decomp   17.5s] K=512 S2 bitwise GEMM qkv               0 / 1048576 elements differ (max |diff| 0)
+[decomp   17.5s] K=512 S2 bitwise GEMM o (+residual)     0 / 786432 elements differ (max |diff| 0)
+[decomp   17.5s] K=512 S2 bitwise GEMM gate/up           0 / 9175040 elements differ (max |diff| 0)
+[decomp   17.5s] K=512 S2 bitwise GEMM down (+residual)  0 / 786432 elements differ (max |diff| 0)
+[decomp   18.9s] K=512 S2 full-replay logits with the comparison kernel: 0 / 151936 differ from PrefillLast (cosine 1.000000000, argmax 261 vs 261); per-GEMM bitwise identical: true
+[decomp   28.4s] K=512 S2 rep 1/5: GEMM category in sequence — production 475.6 ms, comparison 1532.9 ms → 0.31x (full replay 595.3 vs 1651.8 ms)
+[decomp   37.9s] K=512 S2 rep 2/5: GEMM category in sequence — production 476.3 ms, comparison 1536.8 ms → 0.31x (full replay 595.4 vs 1650.4 ms)
+[decomp   47.4s] K=512 S2 rep 3/5: GEMM category in sequence — production 478.9 ms, comparison 1531.2 ms → 0.31x (full replay 596.2 vs 1649.2 ms)
+[decomp   56.8s] K=512 S2 rep 4/5: GEMM category in sequence — production 473.4 ms, comparison 1534.2 ms → 0.31x (full replay 594.9 vs 1650.0 ms)
+[decomp   66.3s] K=512 S2 rep 5/5: GEMM category in sequence — production 474.9 ms, comparison 1584.5 ms → 0.30x (full replay 595.2 vs 1663.6 ms)
+
+=== R16 / S2, K=512: prototype vs current (medians of 5 paired reps, arms alternating) ===
+  GEMM qkv               production     33.7 ms (2.68 TFLOPS)  comparison     66.3 ms (1.36 TFLOPS)  production/comparison 0.51x
+  GEMM o (+residual)     production     24.9 ms (2.71 TFLOPS)  comparison     51.0 ms (1.33 TFLOPS)  production/comparison 0.49x
+  GEMM gate/up           production    272.6 ms (2.89 TFLOPS)  comparison   1036.2 ms (0.76 TFLOPS)  production/comparison 0.26x
+  GEMM down (+residual)  production    144.4 ms (2.73 TFLOPS)  comparison    383.8 ms (1.03 TFLOPS)  production/comparison 0.38x
+  production GEMM category (sum of marginals)    475.6 ms spread  1.2% · all-GEMMs-out cross-check    475.1 ms · full replay    595.3 ms
+  comparison GEMM category (sum of marginals)   1534.2 ms spread  3.5% · all-GEMMs-out cross-check   1530.4 ms · full replay   1650.4 ms
+  production gate/up alone: after 2 s idle    277.4 ms · sustained    270.4 ms  (idle/sustained 1.03)
+  comparison gate/up alone: after 2 s idle    549.3 ms · sustained    543.9 ms  (idle/sustained 1.01)
+  production is 3.23x FASTER than the retired kernel (median; reps 0.3 0.3 0.3 0.3 0.3)
+  preconditions: fidelity — per-GEMM bitwise identical true, full-replay logits differ in 0 values; graded on the sustained timing
+
+
+=== Metal prefill decomposition, K=512 (Mpad=512), 5 reps, medians ===
+  rmsnorm (pre-attn)          0.85 ms    0.1% of full  spread  3.6%
+  GEMM qkv                   33.57 ms    5.7% of full  spread  0.2%  2.69 TFLOPS
+  rope q+k                    1.42 ms    0.2% of full  spread  5.0%
+  kv store                    0.32 ms    0.1% of full  spread 17.2%
+  attention                 106.68 ms   18.0% of full  spread  1.6%
+  GEMM o (+residual)         25.28 ms    4.3% of full  spread  0.3%  2.68 TFLOPS
+  rmsnorm (pre-MLP)           0.86 ms    0.1% of full  spread  3.5%
+  GEMM gate/up              271.17 ms   45.7% of full  spread  0.3%  2.91 TFLOPS
+  swiglu                      5.82 ms    1.0% of full  spread  0.6%
+  GEMM down (+residual)     141.95 ms   23.9% of full  spread  0.6%  2.78 TFLOPS
+  LM head (last row)          1.52 ms    0.3% of full  spread  1.7%
+  sum of categories         589.42 ms  (99.4% of the full replay — non-additivity)
+  full replay (GPU)         593.14 ms  spread  0.7%
+  PrefillLast (wall)        625.98 ms  spread 31.3%  → host/other 32.8 ms (5.2%)
+  GEMM share: 79.6% of GPU, 75.4% of PrefillLast wall
+
+    prefill_decomp_test.go:685: K=512: GEMM 472.0 ms of 593.1 ms GPU (79.6%), PrefillLast wall 626.0 ms
+--- PASS: TestMetalPrefillDecomp (99.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	99.684s
+15:54:45 ##### GATE 2 exit=0
+15:54:45 idle load1=1.96
+15:54:45 ##### GATE 3: full metal suite (non-heavy)
+15:57:09 ##### GATE 3 exit=0 pass=174 skip=72 fail=0
+15:57:09 DONE

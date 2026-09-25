@@ -418,7 +418,7 @@ Status table, kept current as briefs move:
 | R13 | CPU decode attention, group-major acc64 kernels (bit-identical) | both (aikit + goinfer) | S (measure) + M (two kernels ×2 ISAs, wiring) | **step 0 complete 2026-09-19**: (i) peer depth row done but not benchmarks.md-quality (thermal drift, re-run needed); (ii) softmax caps the QK+AV grouping ceiling to ~1.39-1.54× overall, not 1.8-1.85×; (iii) the cache-dedup gap is depth-dependent — nil below ~K=1024, 2-5× above K=2048, reinforcing (ii)'s decision depth. **SHIPPED 2026-09-20** — aikit kernel A/B real (1.53-2.39×); goinfer wiring found a real bug (softmax accidentally serialized, not the scheduler-contention red herring a first CPU profile suggested — `go tool trace`'s per-goroutine breakdown found the actual cause). Fixed: parity at depth 2048, **1.32× served at depth 8192**. `GOINFER_ATTN_GROUPED` defaults on. Three-arm/both-box/all-model sweep still not done |
 | R14 | CUDA speculative-decode drafter — full-logits download, host argmax, no overlap | Linux | S (measure) + S–M (port on-device argmax if real) | **MEASURED AND SHIPPED 2026-09-22** ([`r14-drafter-argmax-2026-09-22.md`](../measurements/r14-drafter-argmax-2026-09-22.md)): the tail is at TWO sites (drafter head AND the verify's `batchedHeadArgmax`, same shape) and cost **14.9–16.0% of a spec round** (D2H at 4.7 GB/s pageable + serial host argmax); `argmax_rows` on the device at both sites: row-for-row identical on 582 calls, lossless, **1.234× spec wall** (6/6 pairs 1.22–1.25×, Qwen3-4B + DFlash, w=7) |
 | R15 | CPU sampler filter scans (`topFilterLogits`) — max-scan vs `parallelMax` | Mac | S (measure; build only if a future component wins) | **max-scan sub-item CLOSED 2026-09-22, clean negative result**: parallel LOSES at every vocab size tested (1.39-3.78× SLOWER; `decoder/sampler_filter_bench_test.go`) — goroutine overhead exceeds savings for a plain float comparison, unlike softcap's exp/tanh. `topKByLogit` (~247-262 µs) and the min-p scan (~167 µs) at gemma vocab are sized but not measured for parallel benefit — open, unfunded |
-| R16 | Metal prefill GEMM redesign (S2 of the R4 follow-on scoping) | Mac | M–L (read + prototype + wiring) | **SHIP band met 2026-09-25** (confirmation: prototype 4 = 3.22×, bit-identical; production wiring next): in-sequence GEMM category at K=512 (1.5B) ship ≥ 2.85× / park 1.8–2.85× / kill < 1.8×; fidelity gate and sustained-load timing are preconditions. S0/S1 put the int4-class ceiling here at ≥ 2.96 TFLOPS vs the current 0.75 |
+| R16 | Metal prefill GEMM redesign (S2 of the R4 follow-on scoping) | Mac | M–L (read + prototype + wiring) | **SHIPPED 2026-09-25** (prototype 4 = 3.22×, bit-identical; wired, 3.23× in production): in-sequence GEMM category at K=512 (1.5B) ship ≥ 2.85× / park 1.8–2.85× / kill < 1.8×; fidelity gate and sustained-load timing are preconditions. S0/S1 put the int4-class ceiling here at ≥ 2.96 TFLOPS vs the current 0.75 |
 
 Every brief below has the same shape: goal, the standing and the band registered here, what to read
 first (prior art and the negatives not to re-propose), what to build, the gates, the measurement
@@ -2087,8 +2087,8 @@ S0), and end-to-end TTFT against Ollama through `scripts/bench_peer_prefill.py` 
 
 **Read first (prior art, before any kernel is written).** llama.cpp's Metal `kernel_mul_mm` (the kernel S1b's ≥ 2.96
 TFLOPS comes from) and MLX's quantized GEMM: their threadgroup tile, K-slab, how A and the dequantized weights are
-staged and shared across simdgroups, and how many simdgroups share a tile. The current kernel shares nothing between
-simdgroups (`metal/prefill.go:43-52`) and steps K by 8 with two barriers per step; whether that — or something else —
+staged and shared across simdgroups, and how many simdgroups share a tile. The kernel it replaced shared nothing between
+simdgroups (`metal/prefill_gemm_s2_test.go:419-428`, kept verbatim as `gemm_w4f16_store_r15`) and stepped K by 8 with two barriers per step; whether that — or something else —
 is what separates 0.75 from ~3 TFLOPS is what the read has to establish. Record the read in the S2 measurement doc.
 
 **Build.** A test-only prototype kernel first, wired only in the benchmark; production wiring only after ship.
@@ -2119,6 +2119,10 @@ never after a prototype has been timed against it without one.
   Prototype 4 selected.
 - **2026-09-25 — CONFIRMATION: prototype 4 = 3.22× (7 paired reps, all ≥ 2.85×) → SHIP**, bit-identical, no burst.
   Next: production wiring, then the §3.2 gate and `bench_peer_prefill.py` against Ollama.
+- **2026-09-25 — WIRED into production** (prototype 4 exactly, as `gemm_w4f16_store`): bit-identical on the real
+  1.5B, 3.23× on the GEMM category, Metal suite 174/0. A predicated variant tried during wiring was bit-identical but
+  slower (5.6× slower as a runtime bound, 37% as a predicate) and was removed. The §3.2 gate could not decide: this
+  Mac has no K=512 reference (see the S2 record).
 
 **Out of scope.** Attention at depth (the K=3900 gap is GEMM and attention in similar measure — its own item), MoE
 prefill (R11), the short-prompt floor (R3).

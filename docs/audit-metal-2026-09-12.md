@@ -175,7 +175,8 @@ re-baked by the code it checks (G-04).
   [`metal-prefill-floor-2026-09-20.md`](measurements/metal-prefill-floor-2026-09-20.md).
 
 #### M-03 · `gemm_w4f16_store` dequants each weight tile with 8 of 32 lanes, runs 4 MMAs per barrier pair, and stages neither operand — the flat 3.3–3.6× GEMM term at every K
-- **Where:** `metal/prefill.go:64-119` (kernel; `if (lane < 8u)` dequant at `:87-92`, `RPS 4` at
+- **Where:** `metal/prefill_gemm_s2_test.go:440-482` (the kernel as it stood after M-03, kept verbatim as
+  `gemm_w4f16_store_r15` since R16 replaced it on 2026-09-25; original kernel; `if (lane < 8u)` dequant at `:87-92`, `RPS 4` at
   `:23`, per-k-step barrier pair), `:590-596` (grid), `docs/completed/task-prefill-gap.md:159-162` ("Metal's
   GEMM is already simdgroup_matrix f16 MMA" — and stops there).
 - **Mechanism and bound (counted + record):** one simdgroup owns a 32(M)×8(N) block and walks K in
@@ -210,7 +211,7 @@ re-baked by the code it checks (G-04).
   on this run (an environmental memory gap on this Mac at the time, unrelated to the change).
 
 #### M-04 · `attention_prefill_fused` keeps O in threadgroup memory and rescales it with 8 scalar lanes — ~34 barrier-separated phases per 8-key tile, the residual O(K²) term
-- **Where:** `metal/prefill.go:288-329` (`threadgroup float oScr[ATTN_SGPT][8*ATTN_MAXHD]`),
+- **Where:** `metal/prefill.go:320-361` (`threadgroup float oScr[ATTN_SGPT][8*ATTN_MAXHD]`),
   `:342-400` (tile loop; `if (lane < 8u)` softmax at `:352-380`, per-`cc` `pTile` reload + store +
   barrier + 8-lane rescale at `:383-399`), `:601-604` (grid = nH × ⌈M/8⌉ simdgroups).
 - **Mechanism and bound (counted + record):** Σ tiles ≈ nH·M²/128 iterations per layer (1.43 M at
@@ -306,11 +307,11 @@ re-baked by the code it checks (G-04).
 #### M-06 · Gemma 3 never reaches the batched prefill — `prefillFeatures` still lacks `FeatPerLayerRoPE` (prior audit M-23, open)
 - **Where:** `metal/model.go:92-122` (the map: no `FeatPerLayerRoPE`), `decoder/features.go:154`
   (`add(!a.ropeUniform(), FeatPerLayerRoPE)` — every shipped Gemma 3, 5:1 local/global, derives it),
-  `metal/prefill.go:820-627` (the dispatch already binds `L.invf`/`L.uWindow` per layer; the comment
+  `metal/prefill.go:852-659` (the dispatch already binds `L.invf`/`L.uWindow` per layer; the comment
   at `:624-625` says the feature "is not claimed").
 - **Mechanism and bound:** every real Gemma 3 prompt is sequential: M-01's 671 MB head per token on
   4B, at 13.5 ms/token. Note admitting it would still route Gemma 3 (hd=256) to the *exact*
-  `attention_prefill` (`ATTN_MAXHD 128`, `metal/prefill.go:786`) — the 46 GB/layer re-read shape — so the
+  `attention_prefill` (`ATTN_MAXHD 128`, `metal/prefill.go:818`) — the 46 GB/layer re-read shape — so the
   fused kernel needs an hd=256 variant for the full win.
 - **Fix:** `decoder.FeatPerLayerRoPE: true` in `prefillFeatures` (safe: `FeatRopeMscale` stays
   undeclared so per-layer *mscale* families still decline); give `testdata/gemma3-vl-tiny` a global
@@ -921,7 +922,7 @@ re-baked by the code it checks (G-04).
 ## 2. Correctness
 
 #### C-01 · `attention_prefill_fused` reads K/V rows past `nKeysMax` on a ragged last tile — past the cache end when `ctxCap % 8 ≠ 0` (prior audit N-46, open)
-- **Where:** `metal/prefill.go:301-346` (`for (uint j0=j0start; j0<nKeysMax; j0+=8u)` with
+- **Where:** `metal/prefill.go:333-378` (`for (uint j0=j0start; j0<nKeysMax; j0+=8u)` with
   `simdgroup_load(kT, kBase + j0*kvDim …)` — full 8-row tiles, mask applied after the load at
   `:352-363`), `metal/model.go:1063-965` (`kc/vc` sized `ctxCap*kvDim*2`), `:57-74` (`ctxCap` = the
   user's request, unrounded), `metal/attention_prefill_fused_test.go:39,63-65` (M=37, exactly
@@ -1330,7 +1331,7 @@ re-baked by the code it checks (G-04).
   CI on real cross-machine/quantization variance.
 
 **Cold-path waste and small levers:**
-- N-15 `metal/prefill.go:754-601` (`PrefillLast`) — 26 per-request scratch buffers built from
+- N-15 `metal/prefill.go:818-665` (`PrefillLast`) — 26 per-request scratch buffers built from
   `make`d, zero-filled Go slices then copied (`guF` alone 140 MB at M=3900; ≈262 MB memset + ≈262 MB
   memcpy per long prompt); `gpu.NewBufferLenOf` exists and goinfer never calls it; only `xF` needs
   zeroed pad rows. A high-water-mark cache across calls removes the allocation entirely. Tens of ms
@@ -1350,7 +1351,7 @@ re-baked by the code it checks (G-04).
   actual cross-call high-water-mark cache design (which buffers can safely persist across calls of
   different M, and which need re-zeroing on every call regardless), is a dedicated task on its own,
   not attempted in this sitting — same treatment as M-05/N-25's larger kernel-composition items.
-- N-16 `metal/prefill.go:402-468` — the 13-kernel prefill library + 12 pipelines compile lazily inside
+- N-16 `metal/prefill.go:434-500` — the 13-kernel prefill library + 12 pipelines compile lazily inside
   the first `PrefillLast` (the first request's TTFT); `buildResident` could do it. Also N-47: a failed
   `ensurePrefill` re-panics per call (no latch). **N-47 half FIXED 2026-09-13** (see N-47's own entry,
   audit-2026-09-10.md). The eager-compile half (moving the compile from first-`PrefillLast` into
@@ -1365,15 +1366,16 @@ re-baked by the code it checks (G-04).
 - N-17 (originally the unfused `gemm_w4f16` kernel, now deleted from `metal/prefill.go`) —
   `gemm_w4f16` "Removed" but still compiled; `allKernels` compiles seven kernels no pipeline uses.
   **FIXED 2026-09-13**: `gemm_w4f16` deleted outright (the `#define RPS 4` it shared with
-  `gemm_w4f16_store` moved down to stay defined, see `metal/prefill.go:36`); the other six were
+  `gemm_w4f16_store` moved down to stay defined — that kernel was itself replaced by R16 on 2026-09-25 and survives
+  verbatim as `gemm_w4f16_store_r15`, see `metal/prefill_gemm_s2_test.go:412`); the other six were
   verified to each back a real, still-useful micro-benchmark or recorded-negative regression test
   (`gemv_w4a8_bias`, `gemv_w4a8_sa_bk`, `gemv_w4a8_sa_qv`, `gemv_w8a8`, `rope2_kv`) except
   `gemv_w4a8_sa_amax`, which is now genuinely unreferenced anywhere — kept as-is rather than
   deleted alongside `gemm_w4f16` (documented in place instead, see `metal/kernels.go:5`) so its
   history stays visible next to the others' rather than singled out. Verified `TestPrefillGemmW4`
   (direct `gemm_w4f16_store` parity, cos=1.0) plus the full prefill suite still pass.
-- N-18 `metal/prefill.go:349` — `pTile` reloaded from `pScr` per `cc` (16×/tile); subsumed by M-04.
-- N-19 `metal/prefill.go:192` (`rope_f16`) — computes cos/sin per (row, pair) with no table; a
+- N-18 `metal/prefill.go:381` — `pTile` reloaded from `pScr` per `cc` (16×/tile); subsumed by M-04.
+- N-19 `metal/prefill.go:224` (`rope_f16`) — computes cos/sin per (row, pair) with no table; a
   second reason to fuse RoPE-K into `kv_store_f16`. **NOT ATTEMPTED**: a genuine kernel-fusion
   design task (write a new fused kernel, verify parity at the S-cell bar `PrefillLast`'s own batched
   path was held to), not a bug fix — the audit's own framing ("a second reason", "speculative
