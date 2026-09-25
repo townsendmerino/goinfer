@@ -1,0 +1,8 @@
+11:16:24 == cell g (Metal decode 0.5B/1.5B/7B @ 128/2048/3900) start
+REFUSED: 1-min load average 2.35 exceeds 2.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+11:16:24 == cell g exit=0
+11:16:24 == cell i (CPU decode 0.5B/1.5B @ 128) start
+REFUSED: 1-min load average 2.35 exceeds 2.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+11:16:24 == cell i exit=0
+11:16:24 == cell h (Metal prefill TTFT 1.5B @ K=512/3900, 6 prompts) start
+11:16:24 waiting for idle: load1=2.35 (0s)

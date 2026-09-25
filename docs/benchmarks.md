@@ -39,11 +39,11 @@ not re-anchored against a peer (no vision peer harness exists either).
 | **Prefill** | **RE-MEASURED 2026-09-21 (`measurements/peer-prefill-cuda-2026-09-21.md`, supersedes the ratios in this row): TTFT vs Ollama v0.32.5 — 1.5B 88 vs 444 ms at K=512, parity (955 vs 951 ms) at K=3900; 0.5B 377 vs 592 ms at K=3900. Throughput (per-interval marginal, the fit is invalid for goinfer) — Ollama still 1.4–2.2× ahead.** Between 2026-09-10 and 2026-09-21 every prompt over 512 tokens ran on the slow kernels (chunk-demotion bug, 3.5× slower at K=3900, fixed same day) and a 128-row attention tile added 1.5× at K=3900 (`measurements/prefill-chunk-demotion-2026-09-21.md`, `measurements/attn-fused-tile128-default-2026-09-21.md`); the text that follows is the 2026-09-05 record. **Was 12–15× behind on overhead-free throughput at depth; now 1.9–3.2× after the CUDA tensor-core prefill landed 2026-09-05.** `attn_fused` + `gemm_w4a8_mma` are **default ON above a 512-token prompt floor** (`GOINFER_CUDA_FAST_PREFILL=0` opts out; short prompts stay exact because the §3 fidelity gate fails at K=256 and passes at 512/1024/3900). End-to-end prefill **3.91× faster at K=3900** (5.451 s → 1.393 s, 1.5B int4). Marginal cost per token vs Ollama: **12.1× → 3.16× behind (1.5B)**, **14.5× → 1.89× (0.5B)**. On TTFT the crossover moves from ~K=600 to past K=2048 (1.5B) and off the ladder entirely on 0.5B. goinfer's marginal still RISES with K where Ollama's is flat — the residual O(K²) term, with the fused kernel at 1.72% of tensor peak, so it is headroom not a floor. Pre-2026-09-05 rows measured the exact path; set `=0` to reproduce them | §B2, `measurements/prefill-l2l3-phase{1,2,3,4}-2026-09-05.md` |
 | **Total request time** | **not re-derived** since the 2026-09-01 prefill re-anchor. The pre-re-anchor crossover (~320-token prompts at 1.5B) is a legacy figure and is not quoted here | legacy §B2 |
 | **26B MoE on an 8 GB card** | **both engines run it.** goinfer keeps **every expert on the GPU** (host↔VRAM streaming) at 16.1 tok/s, 17.6 at ctx 2048; Ollama is **faster (~24.5)** by offloading 58% to CPU. An architecture distinction, not a capability peers lack | §B4.1 |
-| **Apple Silicon Metal prefill** | **Re-measured 2026-09-18, post M-03/M-04 (R4 step 0): 2.54× behind Ollama on TTFT at K=512 (was 3.33× pre-fix), 3.47× at K=3900 (was 8.81× TTFT / ~4.3× L2-record pre-fix)** — improved, but short of the audit's ≤1.8×-ships projection; R4 step 2 (a further GEMM-tile change) is **KILLED** on this result, past the registered >2.4×-kill line. Fast path's internal speedup over sequential now holds flat ~3.8–4.3× at every depth (was shrinking 3.75×→2.04× pre-fix) | §A |
+| **Apple Silicon Metal prefill** | **Pre-registered peer sweep 2026-09-25 (cell h, 1.5B, 6 unique-prefix requests per cell, Ollama v0.32.5 at its defaults): goinfer's TTFT is 0.377× Ollama's at K=512 (1580 vs 591 ms median; AMBIGUOUS-LOW only because goinfer's own spread was 15%, all six pairs behind) and 0.239× at K=3900 (17.5 s vs 4.18 s; BEHIND)** — i.e. 2.65× and 4.18× behind. Supersedes the 2026-09-18 2.54×/3.47×, and the wider 3900 gap is the PEER, not goinfer: goinfer's fast path read 225.0 → 223.8 TTFT tok/s across the two sessions, while that run pinned Ollama's KV to `q8_0` and this one uses its f16 default (781.8 → 941.7). R4 step 2 stays KILLED | [`measurements/peer-claim-2026-09-25.md`](measurements/peer-claim-2026-09-25.md) cell h; §A |
 | **Apple Silicon CPU prefill** | **vs Ollama: 1.54× behind at K=512, reaching 0.91× (AHEAD) at K=3900; whole-curve marginal ratio 0.86×, goinfer faster** — aikit v1.34.0's S-01 int4 tile roughly doubled it (67.6→141.7 tok/s at K=512, measured pre/post on one box). Supersedes the 2026-09-01 row of 2.98×/1.80×, which the pre-tile arm reproduced to within 4% | §A |
 | ↳ *and against our own past* | **8.61× faster than the pre-2026-09-01 record at 3020 tokens** (334.9 s → 38.9 s); the rate no longer falls with length (78.4 → 77.7 tok/s where it used to collapse 51.5 → 9.0) | §A |
-| **Apple Silicon CPU decode** | **goinfer is behind** — 0.67× (0.5B) and 0.65× (1.5B) of Ollama CPU on an M1 Pro as of 2026-09-17 (was 0.75–0.77×/0.57–0.60× on 2026-08-24; both engines got faster since, ratio moved opposite directions per model, unresolved — see the re-run). `int4` is the right default there | §A, "Re-run 2026-09-17 — MacBook" |
-| **Apple Silicon Metal decode** | **goinfer is behind on 1.5B/7B/phi3-mini (0.86×/0.86×/0.94×), narrowly ahead on 0.5B (1.08×, still n=2, unconfirmed)** — 1.5B/7B unchanged from the 2026-09-04/05 anchor. **At depth (R2 step 0, 2026-09-18): the gap grows with K (1.17×→1.96× behind, 128→3900) but has genuinely narrowed since the last matched comparison** — goinfer more than doubled at 4000 (18.5→39.1 tok/s) over six weeks while Ollama held flat (±4%), a real gain on a held-constant peer. **2026-09-21: Metal decode attention defaults to `attention_fa` past depth 1536** (R2 Build, shipped by owner decision despite missing this repo's own peer-parity band) — 1.11×/1.19× on the cell at 2048/4000, narrowing the 3900 gap from 1.96× to **1.64× behind** (46.4 vs 76.2 tok/s); shallow depths (≤512) unaffected, same kernel | "Re-run 2026-09-17 — MacBook"; depth curve §B3 |
+| **Apple Silicon CPU decode** | **Pre-registered peer sweep 2026-09-25 (cell i, depth 128, 3 pairs): 0.5B AMBIGUOUS-LOW against Ollama — goinfer 109 tok/s steady, Ollama 125 then 94 and 93 (30.8% spread caps the cell; pairs 0.874 / 1.166 / 1.168) — and BEHIND llama.cpp 0.3.0 (0.84×); 1.5B VOID** (goinfer ended its reply at 58 of 64 tokens, under the 95% gate; raw 0.80× Ollama, ungraded). Supersedes the 2026-09-17 0.67×/0.65×. `int4` is the right default there | [`measurements/peer-claim-2026-09-25.md`](measurements/peer-claim-2026-09-25.md) cell i; §A, "Re-run 2026-09-17 — MacBook" |
+| **Apple Silicon Metal decode** | **Pre-registered peer sweep 2026-09-25 (cell g, Ollama v0.32.5 at its defaults, 3 pairs per cell): AHEAD only at 0.5B, depth 128 (1.18×); BEHIND at every 2048 and 3900 cell — 0.75× / 0.70× / 0.71× at 2048 and 0.58× / 0.61× / 0.61× at 3900 (0.5B / 1.5B / 7B); 1.5B and 7B at depth 128 VOID** (an engine ended its reply under 95% of the tokens; raw 0.85× / 0.86×, ungraded). llama.cpp 0.3.0 reads the same way: ahead 1.09× at 0.5B @128, behind 0.54–0.70× at depth. Supersedes the short-context 0.86×/0.86×/1.08× and the depth-curve readings below (the 1.5B @3900 gap is unchanged at 0.61×, i.e. the 1.64× behind after `attention_fa`). phi3-mini's 0.94× (2026-09-17) is not re-measured; the Mac's `p3m` tag is the same weights, so that row stands | [`measurements/peer-claim-2026-09-25.md`](measurements/peer-claim-2026-09-25.md) cell g; depth curve §B3 |
 | **Cold start & footprint** | **goinfer alone** — first token in **0.48 s**, **77 MB** resident, model compiled *into* the binary | §A, Table 1 |
 | **Peer-independent** | pure Go, `CGO_ENABLED=0` (no libcuda/libnvrtc linked), **bit-identical** decode, HF logit-parity gate as a contract | Table 1 |
 | **goinfer does not have** | continuous batching · GPU breadth · broad multimodal (vision-in only, no audio) · 36 architectures ʲ vs peers' dozens | Table 1 |
@@ -542,6 +542,10 @@ marked stale. The SigLIP vision-prefill row below it **is** current as of 2026-0
 
 #### Metal prefill (fast f16-MMA path, default ON) — re-measured 2026-09-18, post M-03/M-04
 
+> **Superseded 2026-09-25 ([`measurements/peer-claim-2026-09-25.md`](measurements/peer-claim-2026-09-25.md), cell h):** TTFT 0.377× Ollama at K=512 (AMBIGUOUS-LOW, spread cap) and 0.239× at
+> K=3900 (BEHIND). goinfer's fast path is unchanged (225.0 → 223.8 TTFT tok/s at 3900); the ratio moved because this
+> run uses Ollama's default f16 KV where this row pinned `OLLAMA_KV_CACHE_TYPE=q8_0`.
+
 **R4 step 0** (`docs/tasks/red-october.md`) — same-session re-run against the current kernels,
 superseding the 2026-09-09 pre-fix row (now in `legacy-benchmarks.md` §A) per N-01's flag. Full
 record: [`metal-prefill-ladder-2026-09-18.md`](measurements/metal-prefill-ladder-2026-09-18.md).
@@ -988,6 +992,10 @@ as a bound.*
 
 ### B3. cgo-free Metal (darwin, `--backend metal`) vs Ollama-Metal — 4-bit both sides
 
+> **Superseded 2026-09-25 by the pre-registered peer sweep ([`measurements/peer-claim-2026-09-25.md`](measurements/peer-claim-2026-09-25.md), cell g):** Metal greedy decode against Ollama
+> v0.32.5 at its defaults is AHEAD only at 0.5B depth 128 (1.18×) and BEHIND at every 2048/3900 cell (0.58–0.75×);
+> 1.5B and 7B at depth 128 are VOID. The rows below are kept as the earlier record.
+
 > **A newer, less rigorous datapoint exists — recorded here rather than folded into the table
 > below, because its method is not the same.** Run 2b's cold-user report
 > ([`docs/measurements/cold-user-2026-09-07-macbook-arm64.md`](measurements/cold-user-2026-09-07-macbook-arm64.md),
@@ -1090,6 +1098,9 @@ it registers via `decoder.RegisterBackend` and must be blank-imported by the bin
 > (0.958-0.964× across three runs) via a completely different instrument.
 
 #### Metal greedy decode by KV depth — qwen2.5-coder-1.5b (the depth axis, peer-paired 2026-09-18)
+
+> **Superseded 2026-09-25 ([`measurements/peer-claim-2026-09-25.md`](measurements/peer-claim-2026-09-25.md), cell g):** 1.5B at 2048 / 3900 now reads 0.701× / 0.609× (goinfer 56.3 / 46.6
+> vs Ollama 80.3 / 76.6 tok/s, 3 pairs each, BEHIND), with the 0.5B and 7B at the same depths beside it.
 
 The §B3 rows above are a single short-prompt point; this is the depth curve, the Metal analogue of
 the CUDA §B6/§B7 sweep. **Split-KV was never enabled on Metal** (built, measured a regression,
@@ -2161,6 +2172,9 @@ isolated single-commit checks to within noise. **Lesson for next time this harne
 `BENCH_DEEP_CTX`: scope it to a `BENCH_DEPTHS=8000`-restricted invocation, never the whole step.**
 
 ### Re-run 2026-09-17 — MacBook (Apple Silicon), Metal + CPU dense matrix
+
+> **Superseded 2026-09-25 for Metal and CPU decode at 0.5B / 1.5B / 7B ([`measurements/peer-claim-2026-09-25.md`](measurements/peer-claim-2026-09-25.md), cells g and i).** phi3-mini is not
+> re-measured; the Mac's `p3m` tag was checked the same day and is the same weights as the `~/models` file.
 
 Companion to the nobara re-run directly above — run as part of the same "coordinated re-run across
 both boxes" request. **Scope: dense models only** (0.5B, 1.5B, 7B, phi3-mini), goinfer vs Ollama,

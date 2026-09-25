@@ -1,0 +1,16 @@
+== q05  ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf  vs  blobs/sha256-ccda000984c743c2d99fadea9785068ab9158ee62a419d7ffa7b7f5281db3390
+size mismatches   : 0
+
+VERDICT: SAME WEIGHTS (repacked container)
+== q15  ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf  vs  blobs/sha256-b9a2f9f354d0d12c282353129961a4327d4774493bde2ec59c9236cb62bb5eaf
+size mismatches   : 0
+
+VERDICT: SAME WEIGHTS (repacked container)
+== q7b  ~/models/qwen2.5-7b-instruct-q4_k_m.gguf  vs  blobs/sha256-7ba5258043dd615c1967c62be1208b42719675255dcc47bcab877220fcedff95
+size mismatches   : 0
+
+VERDICT: SAME WEIGHTS (repacked container)
+== p3m (Mac store, checked 2026-09-25 for the Part 2 note; phi3-mini is not a Mac cell)  ~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf  vs  blobs/sha256-01ec9e677f563f59d5bd37c53e67d2ec0ce6d0860cd8e01e28176ac8eeacc29b
+size mismatches   : 0
+
+VERDICT: SAME WEIGHTS (repacked container)

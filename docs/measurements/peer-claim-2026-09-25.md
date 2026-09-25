@@ -176,9 +176,91 @@ them.
 | d | | | | | — |
 | e | | | | | |
 | f | | | | | |
-| g | *(Mac)* | | | | |
-| h | *(Mac)* | | | | |
-| i | *(Mac)* | | | | |
+| g | Metal, 0.5B/1.5B/7B × depth 128/2048/3900 (9) | **1 AHEAD** (0.5B @128) · **6 BEHIND** (every 2048/3900 cell) · **2 VOID** (1.5B, 7B @128) | 0.5B @128 1.183; @2048 0.753 / 0.701 / 0.707; @3900 0.582 / 0.609 / 0.612 (0.5B / 1.5B / 7B; 3 pairs each) | per point below | 0.5B @128 AHEAD (1.094); BEHIND 0.536–0.700 at every 2048/3900 cell; 2 VOID |
+| h | Metal TTFT, 1.5B, K = 512 / 3900 (2) | **AMBIGUOUS-LOW** at 512 (spread cap; all 6 pairs behind) · **BEHIND** at 3900 | 0.377 / 0.239 (6 pairs each) | Ollama 591 / 4184 ms vs goinfer 1580 / 17510 ms (medians) | — |
+| i | CPU arm64, 0.5B / 1.5B @128 (2) | 0.5B **AMBIGUOUS-LOW** (peer spread cap) · 1.5B **VOID** | 0.5B 1.166 (pairs 0.874, 1.166, 1.168); 1.5B 0.804, void | Ollama 0.5B 125.2 / 93.7 / 93.1; 1.5B 61.8 / 60.3 / 62.0 | 0.5B BEHIND (0.842); 1.5B VOID |
+
+
+### Cells g–i in detail (MacBook, 2026-09-25)
+
+**Provenance.** Apple M1 Pro, 16 GB (8 CPU cores: 6 performance + 2 efficiency), macOS 26.6.2 (kernel 25.6.0).
+goinfer `9c592095`, tree clean: `metal/cmd/serve` for g and h, root `cmd/serve` for i. `9c592095` has **no Go,
+`go.mod` or `go.sum` difference from this pre-registration's commit `411e7fc4`**; the one commit between them is the
+release-asset guard (a workflow, a script, docs). Ollama v0.32.5 (the Homebrew build, its own defaults, models in
+`~/.ollama/models`). llama-server **`0.3.0 (build 10621, commit c1d0e7a00)`**, the Homebrew build — **not** nobara-pc's
+`0.4.0-dev 427291b`, so the llama.cpp column here and nobara-pc's are different builds. Every checkpoint read from
+`~/models` on the internal SSD. The Homebrew Ollama LaunchAgent (`:11434`) stayed up but idle with no model loaded;
+the harnesses ran their own servers on their own ports. Raw files, the runner and the grader:
+[`peer-claim-2026-09-25-mac/`](peer-claim-2026-09-25-mac/) (`python3 grade.py` reproduces every outcome here).
+
+**Protocol.** `BENCH_RUNS=3` (3 decode pairs per cell) and 6 unique-prefix requests per prefill cell, as
+pre-registered. `BENCH_MAX_LOADAVG=2.0`, which `bench_peer.py` applies before the sweep and before every cell. On macOS
+its preflight **refuses** a busy box instead of waiting, and `bench_peer_prefill.py` has no macOS load reading, so the
+runner waits for load1 ≤ 2.0 before each harness call (the first launch at 11:16 local was refused at load1 2.35 and
+restarted; nothing had been timed). Timed runs, local (UTC−7): g 11:19–11:48, i 11:48–12:12, h 12:12–12:33. Before
+any timing, every model × backend was loaded once, untimed, so no cell paid for a sidecar transcode (the 0.5B's Metal
+and CPU sidecars were written then; the 1.5B/7B Metal sidecars are v14 from 2026-09-24, and all three Metal loads
+aliased the file with 1 MB anonymous).
+
+**Same weights** (`scripts/gguf_same_weights.py`, each `~/models` GGUF against the Ollama blob the harness loads):
+`q05`, `q15` and `q7b` all **SAME WEIGHTS (repacked container)**. llama-server reads the same `~/models` files goinfer
+does.
+
+**phi3-mini's `p3m` tag is the same weights on the Mac.** It is not a Mac cell, but Part 1's finding bears on older Mac
+rows, so it was checked: the Mac's `~/.ollama/models` `p3m` blob against `~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf`
+is **SAME WEIGHTS, 0 differing tensors**. The "`p3m` compared different weights" result in Part 1 is a property of
+nobara-pc's Ollama store, so it does not void the Mac's earlier phi3-mini rows.
+
+**Depth "4000".** `prompts.json` has no 4000-token calibration. The rows use each model's `:3900` prompt (3912 tokens,
+the §B3 Metal depth curve's deep point), so they say **3900**, as the pre-registration requires.
+
+**Cell g.**
+
+| model | depth | goinfer tok/s | Ollama tok/s | r pairs vs Ollama | outcome (median r) | llama.cpp tok/s | vs llama.cpp (median r) | tokens returned (goinfer / Ollama / llama.cpp, of 1536) |
+|---|---|---|---|---|---|---|---|---|
+| 0.5B | 128 | 172.7 / 171.2 / 167.7 | 144.5 / 144.7 / 144.4 | 1.195 1.183 1.161 | **AHEAD** (1.183) | 155.4 / 156.5 / 156.9 | AHEAD (1.094) | 1536 / 1536 / 1536 |
+| 0.5B | 2048 | 104.3 / 104.4 / 104.0 | 138.4 / 138.7 / 138.8 | 0.754 0.753 0.749 | **BEHIND** (0.753) | 149.1 / 150.2 / 149.6 | BEHIND (0.695) | 1536 / 1536 / 1536 |
+| 0.5B | 3900 | 77.1 / 77.0 / 75.7 | 131.2 / 132.3 / 132.6 | 0.588 0.582 0.571 | **BEHIND** (0.582) | 142.9 / 143.7 / 142.8 | BEHIND (0.536) | 1536 / 1536 / 1536 |
+| 1.5B | 128 | 74.1 / 73.4 / 72.6 | 85.2 / 85.9 / 85.8 | 0.870 0.854 0.846 | **VOID** (0.854) | 89.0 / 88.4 / 88.8 | VOID (0.830) | 1392 / 1536 / 1536 |
+| 1.5B | 2048 | 56.4 / 56.2 / 56.4 | 80.3 / 80.3 / 80.4 | 0.702 0.700 0.701 | **BEHIND** (0.701) | 82.0 / 83.7 / 83.4 | BEHIND (0.677) | 1536 / 1536 / 1536 |
+| 1.5B | 3900 | 46.7 / 46.6 / 46.6 | 76.6 / 76.6 / 76.5 | 0.609 0.609 0.609 | **BEHIND** (0.609) | 79.4 / 79.3 / 79.6 | BEHIND (0.588) | 1536 / 1536 / 1536 |
+| 7B | 128 | 22.0 / 21.9 / 21.9 | 25.5 / 25.5 / 25.5 | 0.861 0.857 0.858 | **VOID** (0.858) | 25.9 / 25.7 / 25.9 | VOID (0.846) | 1536 / 1248 / 888 |
+| 7B | 2048 | 17.1 / 17.1 / 17.1 | 24.2 / 24.1 / 24.2 | 0.706 0.708 0.707 | **BEHIND** (0.707) | 24.4 / 24.5 / 24.4 | BEHIND (0.700) | 1536 / 1536 / 1536 |
+| 7B | 3900 | 14.3 / 14.4 / 14.3 | 23.4 / 23.4 / 23.4 | 0.612 0.613 0.611 | **BEHIND** (0.612) | 23.7 / 23.7 / 23.8 | BEHIND (0.604) | 1536 / 1536 / 1536 |
+
+**Cell i.**
+
+| model | depth | goinfer tok/s | Ollama tok/s | r pairs vs Ollama | outcome (median r) | llama.cpp tok/s | vs llama.cpp (median r) | tokens returned (goinfer / Ollama / llama.cpp, of 1536) |
+|---|---|---|---|---|---|---|---|---|
+| 0.5B | 128 | 109.4 / 109.2 / 108.7 | 125.2 / 93.7 / 93.1 | 0.874 1.166 1.168 | **AMBIGUOUS-LOW** (1.166) | 129.9 / 129.9 / 128.8 | BEHIND (0.842) | 1536 / 1536 / 1536 |
+| 1.5B | 128 | 49.5 / 49.9 / 49.8 | 61.8 / 60.3 / 62.0 | 0.801 0.826 0.804 | **VOID** (0.804) | 57.4 / 61.1 / 62.8 | VOID (0.815) | 1392 / 1536 / 1536 |
+
+**Cell h** (TTFT; r = Ollama TTFT ÷ goinfer TTFT, one pair per unique-prefix request).
+
+| K | goinfer TTFT ms (6 requests) | Ollama TTFT ms | r pairs | outcome (median r) | spread goinfer / Ollama | goinfer `--exact-prefill` median |
+|---|---|---|---|---|---|---|
+| 512 | 1581 1579 1639 1444 1417 1654 | 599 592 586 591 591 586 | 0.379 0.375 0.358 0.409 0.417 0.354 | **AMBIGUOUS-LOW** (0.377) | 15.2% / 2.1% | 6212 ms |
+| 3900 | 17695 17515 17504 17424 17524 17441 | 4188 4180 4183 4184 4202 4182 | 0.237 0.239 0.239 0.240 0.240 0.240 | **BEHIND** (0.239) | 1.6% / 0.5% | 62574 ms |
+
+**The four VOID cells are early stops, and a re-run would reproduce them.** Validity gate 2 needs ≥ 95% of the
+requested tokens (1536 = 3 runs × 8 completions × 64). At temperature 0 an engine that ends its answer before 64 tokens
+does so at the same token every time: goinfer's 1.5B returned 1392 = 24 × **58** tokens on both Metal and CPU, and at
+7B Ollama returned 1248 = 24 × 52 and llama.cpp 888 = 24 × 37. Each engine ends the reply at a slightly different
+point on the same weights; each is under the bar. Re-running the same protocol would give the same counts, so these
+cells are **reported as VOID, not re-run**, and their ratios above are recorded but not graded. Nothing in Part 1 was
+changed for them.
+
+**Two spread caps.** At h K=512, goinfer's six TTFTs span 1417–1654 ms (15.2%), so the cell is capped at AMBIGUOUS
+although every pair is below 0.97 (0.354–0.417). At i 0.5B, Ollama's CPU runs fell from 125.2 to 93.7 and 93.1 tok/s
+(30.8%), which caps the cell at AMBIGUOUS-LOW and is why one pair reads 0.874 and two read 1.17.
+
+**Reading h against the 2026-09-18 row.** That row (`benchmarks.md` §A, "Metal prefill … re-measured 2026-09-18") put
+Ollama 3.47× ahead at K=3900; here r = 0.239, i.e. 4.18×. **goinfer did not move** — its fast path read 225.0 TTFT
+tok/s then and 223.8 now — **the peer did**: the 2026-09-18 run set `OLLAMA_KV_CACHE_TYPE=q8_0`, and this
+pre-registered run uses Ollama's defaults (f16 KV), under which its TTFT rate at K=3900 is 941.7 tok/s against 781.8.
+Two sessions, so the attribution is a reading, not a paired result.
+
+*STEP 3 is nobara-pc's; nothing above is the claim.*
 
 ## Part 3 — the claim
 

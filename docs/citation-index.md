@@ -345,7 +345,7 @@ supports.
 | `docs/queue-engineering.md|internal/serveapp/main.go:659` | goinfer | `// so the shutdown handler just below can close it alongside stopDemote.` |
 | `docs/queue-engineering.md|linalg/quant.go:214` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1275` | goinfer | `r.ensureBatchCap(16)` |
-| `docs/queue-engineering.md|scripts/bench_peer.py:763` | goinfer | `def gate_cell_idle():` |
+| `docs/queue-engineering.md|scripts/bench_peer.py:782` | goinfer | `def gate_cell_idle():` |
 | `docs/queue-performance.md|cuda/resident.go:1284` | goinfer | `wOff, wLen := e*w.perExpertW*4, w.perExpertW*4` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:2941` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:51` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,        // the text-only checkpoint's model_type` |

@@ -73,6 +73,14 @@ Mac CPU rows are the M1 Pro; CUDA, WebGPU and Linux CPU rows are the RTX box.
 
 ## 1. The matrix
 
+> **Mac rows re-measured 2026-09-25** by the pre-registered peer sweep ([`../measurements/peer-claim-2026-09-25.md`](../measurements/peer-claim-2026-09-25.md),
+> cells g–i). The figures in this matrix and in each item's standing are the baselines its bands were registered
+> against, so they are left as written. What moved: Metal decode is AHEAD only at 0.5B @128 (1.18×) and BEHIND at every
+> 2048/3900 cell (0.58–0.75×); Metal prefill TTFT is 0.377× / 0.239× Ollama at K=512 / 3900 (the 3900 change is the
+> peer's f16 KV default, not goinfer); CPU 0.5B @128 is AMBIGUOUS-LOW on a 30.8% peer spread. The short-context
+> baseline R1 cites (1.5B 73.9 vs 85.8, 7B 21.9 vs 25.5 tok/s) reproduced within 1% (73.4 vs 85.6; 21.9 vs 25.5), though
+> both 128-depth cells are VOID in that sweep on the 95%-tokens gate.
+
 | Area | CPU | WebGPU | CUDA | Metal |
 |---|---|---|---|---|
 | **Decode, ≤512 ctx, dense** | Mac 0.65–0.67× (0.5B/1.5B), 0.81–0.83× (phi3/7B); Linux 0.41× (0.5B), 0.73× (1.5B), 0.82× (7B) → Mac **0.85–1.0×**; Linux **1.4–2.4× on the cell** (P) | 0.37 / 0.60 / 0.63× of goinfer's own CUDA (no peer) → **0.8–0.86× of CUDA** (P) | 1.27 / 1.16 / 0.98×; vs llama.cpp 0.90 / 1.00 / 0.91× → **≤1.1×**, at ceiling (K) | 1.08× (0.5B, n=2) / 0.86× / 0.86×; vs MLX 0.66× (1.5B), 0.58× (7B) → **KILLED**: W4F16 measured 75.2 vs W4A8 73.1 tok/s (1.03×) at the 1.5B decision cell, below the 1.10× floor; fidelity passed but speed did not (K) — R1 |
