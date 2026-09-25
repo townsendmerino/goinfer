@@ -51,7 +51,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (37: 32 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (42: 37 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -80,6 +80,11 @@ briefs for file-backed weights by default, a swap tripwire in the binary, the fi
 `.giw` path, Metal aliasing the mapping instead of copying it, and a firm cap for the MoE pager
 where darwin allows one.
 
+[`task-minimax-code-compat-2026-09.md`](tasks/task-minimax-code-compat-2026-09.md) (M0–M7, filed
+2026-09-25) scopes goinfer as a backend for MiniMax's `mcode` coding agent: what already works by
+reading both codebases, the measured run that gates the rest, and the fixes — a context default an
+agent fits in, a thinking switch, and reasoning emitted separately.
+
 One is the outside view rather than a design: [`task-first-hour.md`](tasks/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running
 it again — `RELEASING.md`'s pre-flight now calls for one before each release.
@@ -87,7 +92,7 @@ it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (172)
+## Evidence — `measurements/` (176)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world
@@ -110,7 +115,7 @@ separate sweep because this step kept being skipped at move time.
   remaining are each genuinely still open (drafted-by-decision, blocked, or unshipped, per their
   own status). Newest: `prompts/cuda-r6-flash-decode.md` (2026-09-19), the Linux kickoff for
   `red-october.md`'s R6.
-- `releases/` (9) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
+- `releases/` (10) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
 - `scoping-*.md`, `plan-*.md` — pre-build scoping, some superseded; check the status header.
 - [`what-parity-gated-means.md`](what-parity-gated-means.md) — the reader-facing explanation of
   what a parity claim covers and does not; `parity-coverage-policy.md` and `parity-hunt-playbook.md`
