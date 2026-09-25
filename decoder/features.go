@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 )
@@ -306,15 +307,39 @@ func missingFeatures(required []ResidentFeature, implemented map[ResidentFeature
 // run it, but because this specific arch-level gate is still parity-bring-up-guarded off by
 // default. See docs/hardware-matrix.md's own footnote on this.
 func ResidentEligible(a *Architecture, backend string) bool {
-	impl, ok := residentBackendFeatures[backend]
-	if !ok {
+	if _, ok := residentBackendFeatures[backend]; !ok {
 		return false
 	}
-	return a.decodeRunnerEligible() &&
-		len(missingFeatures(a.residentFeatures(), impl)) == 0 &&
-		residentMoECapacityOK(a, backend) &&
-		residentPerLayerGeomOK(a, backend) &&
-		residentGemma4MoEOK(a, backend)
+	return a.decodeRunnerEligible() && residentGateReason(a, backend) == ""
+}
+
+// residentGateReason is ResidentEligible's gates after the runner-shape one — the backend implements
+// every feature the arch needs, its MoE router is big enough, and it has the per-layer geometry and
+// Gemma 4 MoE seams the arch uses — each returning WHY it declines, "" when all admit. One
+// implementation for the model-free predicate above (the hardware matrix) and for the load path
+// (Model.residentAdmission), so the published table and the runtime cannot disagree, and a decline
+// reaches `serve check` / DecodePath with its real cause instead of "arch is not eligible".
+func residentGateReason(a *Architecture, backend string) string {
+	impl, ok := residentBackendFeatures[backend]
+	if !ok {
+		return fmt.Sprintf("backend %q declares no resident feature set", backend)
+	}
+	if missing := missingFeatures(a.residentFeatures(), impl); len(missing) > 0 {
+		return fmt.Sprintf("%s does not implement %v, which this model needs", backend, missing)
+	}
+	if !residentMoECapacityOK(a, backend) {
+		c := residentBackendMoECap[backend]
+		return fmt.Sprintf("MoE with %d experts / %d expert groups exceeds %s's router capacity (%d / %d)",
+			a.MoE.NumExperts, a.MoE.NGroup, backend, c.experts, c.groups)
+	}
+	if !residentPerLayerGeomOK(a, backend) {
+		return fmt.Sprintf("per-layer attention geometry (head_dim %d on local layers, %d on global) is not implemented on %s",
+			a.HeadDim, a.gemma4.GlobalHeadDim, backend)
+	}
+	if !residentGemma4MoEOK(a, backend) {
+		return fmt.Sprintf("Gemma 4's parallel dense+MoE FFN is not implemented on %s", backend)
+	}
+	return ""
 }
 
 // residentBackendMoECap is the router-kernel capacity of each backend whose MoE scoreboard is a

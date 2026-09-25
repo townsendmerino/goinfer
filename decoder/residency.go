@@ -335,7 +335,11 @@ type ResidencyBackend interface {
 // SwiGLU MLP, pre-2 RMSNorm, full RoPE, standard GQA, no QK-norm / learned-pos /
 // sliding-window / logit-softcap / output-bias. q/k/v bias (Qwen2) and the (1+w)
 // RMS offset are handled, so they're allowed. Anything else → staged fallback.
-func (m *Model) DecodeRunnerEligible() bool {
+func (m *Model) DecodeRunnerEligible() bool { return m.decodeRunnerDecline() == "" }
+
+// decodeRunnerDecline is DecodeRunnerEligible with its reason: "" when the arch is a shape the resident
+// runner supports and the load-time precision policy admits it.
+func (m *Model) decodeRunnerDecline() string {
 	a := m.w.arch
 	eligible := a.decodeRunnerEligible()
 	if !eligible && a.nemotron != nil && a.MoE != nil && m.be != nil && isWebGPUBackend(m.be.Name()) {
@@ -349,17 +353,37 @@ func (m *Model) DecodeRunnerEligible() bool {
 		eligible = true
 	}
 	if !eligible {
-		return false
+		return "arch is not eligible for the resident decode runner"
 	}
 	// Nemotron-H resident is DEFAULT-on at int4 — characterized benign vs f32 (92.5% greedy /
 	// 99.6% top-2 agreement, perplexity 1.677≈1.695, KL 0.058; the ~7.5% disagreements are all
 	// at near-tied positions, int4 picking f32's #2, zero confident-token errors — see
 	// docs/completed/nemotron-resident.md). int8 (unmeasured on 8 GB; fits ≥12 GB) stays OPT-IN behind
 	// GOINFER_SSM_RESIDENT. Other resident families are unchanged.
-	if m.w.arch.nemotron != nil && m.knobs.get(knobSSMResident) == "" {
-		return m.residentProjsInt4()
+	if m.w.arch.nemotron != nil && m.knobs.get(knobSSMResident) == "" && !m.residentProjsInt4() {
+		return "Nemotron-H runs resident with int4 projections only by default (load with Quant int4, or set GOINFER_SSM_RESIDENT to allow int8)"
 	}
-	return true
+	return ""
+}
+
+// residentAdmission is the whole resident-admission check the load path runs before asking the backend
+// to build: the runner shape and precision policy (decodeRunnerDecline), then — for a backend that
+// declares its resident capabilities (cuda, metal, webgpu) — every gate ResidentEligible applies, so the
+// runtime admits exactly what the hardware matrix publishes and a decline names the gate that refused
+// it. A backend that declares no capability set (an out-of-tree or test backend) keeps the old contract:
+// past the runner-shape check, its own BuildResident decides. Returns "" when the build may proceed.
+func (m *Model) residentAdmission() string {
+	if why := m.decodeRunnerDecline(); why != "" {
+		return why
+	}
+	key := m.be.Name()
+	if isWebGPUBackend(key) {
+		key = "webgpu"
+	}
+	if _, declared := residentBackendFeatures[key]; !declared {
+		return ""
+	}
+	return residentGateReason(m.w.arch, key)
 }
 
 // residentProjsInt4 reports whether the loaded projection weights are int4 (W4A8) — the gate for
@@ -951,8 +975,8 @@ func (m *Model) withResidency() *Model {
 		m.resDecline = "Nemotron-H MoE FFN block has no GPU resident implementation on cuda/metal (dense Nemotron-H/Nano-9B-v2 is unaffected; webgpu implements it)"
 		return m
 	}
-	if !m.DecodeRunnerEligible() {
-		m.resDecline = "arch is not eligible for the resident decode runner"
+	if why := m.residentAdmission(); why != "" {
+		m.resDecline = why
 		return m
 	}
 	rf, ok, err := rb.BuildResident(m)

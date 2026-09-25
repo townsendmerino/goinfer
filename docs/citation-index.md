@@ -114,8 +114,8 @@ supports.
 | `docs/audit-2026-09-10.md|metal/moe.go:720` | goinfer | `for j := 0; j < mo.k; j++ {` |
 | `docs/audit-2026-09-10.md|metal/prefill.go:926` | goinfer | `for m := 0; m < M; m++ {` |
 | `docs/audit-2026-09-10.md|tokenizer/sentencepiece.go:822` | goinfer | `// TokenText returns the raw surface bytes a single token id contributes when` |
-| `docs/audit-metal-2026-09-12.md|decoder/features.go:153` | goinfer | `add(!a.ropeUniform(), FeatPerLayerRoPE)` |
-| `docs/audit-metal-2026-09-12.md|decoder/features.go:334` | goinfer | `"metal":  {experts: 256, groups: 64}, // metal/moe.go: float score[256]/sel[256], gscore` |
+| `docs/audit-metal-2026-09-12.md|decoder/features.go:154` | goinfer | `add(!a.ropeUniform(), FeatPerLayerRoPE)` |
+| `docs/audit-metal-2026-09-12.md|decoder/features.go:359` | goinfer | `"metal":  {experts: 256, groups: 64}, // metal/moe.go: float score[256]/sel[256], gscore` |
 | `docs/audit-metal-2026-09-12.md|decoder/fitguard.go:460` | goinfer | `// 0.625") is right about the encoding and wrong about the FOOTPRINT, because the loader` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1347` | goinfer | `var prefillDeclineDigitsRE = regexp.MustCompile(`\d+`)` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1384` | goinfer | `func warnPrefillDeclined(n int, err error) {` |
@@ -234,24 +234,23 @@ supports.
 | `docs/book/04-the-loop-and-the-kv-cache.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/deltanet.go:145` | goinfer | `// last K-1 conv inputs (so the causal conv has its left context at decode) and` |
 | `docs/book/09-guessing-ahead.md|decoder/speculative.go:89` | goinfer | `// rolls back the rejected tail. A recurrent (Mamba-2 / Gated DeltaNet) or staged` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:133` | goinfer | `FeatKDA ResidentFeature = "kda"` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:405` | goinfer | `var residentPerLayerGeomBackends = map[string]bool{"cuda": true, "metal": true, "webgpu"` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:423` | goinfer | `func residentGemma4MoEOK(a *Architecture, backend string) bool {` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:53` | goinfer | `// FeatDeltaNet bundles the TWO departures of the Gated-DeltaNet hybrids (qwen3_5_moe,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:586` | goinfer | `FeatOutBias:  true,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:592` | goinfer | `FeatNoPE: true,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:600` | goinfer | `FeatAttnTemp: true,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:606` | goinfer | `FeatPostOnlyNorm: true,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:611` | goinfer | `FeatQKNormWhole: true,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:623` | goinfer | `FeatLayerNorm:     true,` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:639` | goinfer | `FeatSSM:            true, // Mamba-2 engine (Granite-4.0-H, Nemotron-H)` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:718` | goinfer | `FeatLayerNorm:         true, // layernorm_quant — mean-centered norm+quant (GPT-2, gener` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:728` | goinfer | `FeatQKNormWhole:       true, // qk_norm's grid collapsed to one Q block + one K block (n` |
-| `docs/gpu-residency-coverage.md|decoder/features.go:99` | goinfer | `FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B shape: per-la` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:100` | goinfer | `FeatGemma4EModel   ResidentFeature = "gemma4-e-model"   // Gemma-4 E2B/E4B shape: per-la` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:134` | goinfer | `FeatKDA ResidentFeature = "kda"` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:430` | goinfer | `var residentPerLayerGeomBackends = map[string]bool{"cuda": true, "metal": true, "webgpu"` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:448` | goinfer | `func residentGemma4MoEOK(a *Architecture, backend string) bool {` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:54` | goinfer | `// FeatDeltaNet bundles the TWO departures of the Gated-DeltaNet hybrids (qwen3_5_moe,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:617` | goinfer | `FeatNoPE: true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:625` | goinfer | `FeatAttnTemp: true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:631` | goinfer | `FeatPostOnlyNorm: true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:636` | goinfer | `FeatQKNormWhole: true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:648` | goinfer | `FeatLayerNorm:     true,` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:664` | goinfer | `FeatSSM:            true, // Mamba-2 engine (Granite-4.0-H, Nemotron-H)` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:743` | goinfer | `FeatLayerNorm:         true, // layernorm_quant — mean-centered norm+quant (GPT-2, gener` |
+| `docs/gpu-residency-coverage.md|decoder/features.go:753` | goinfer | `FeatQKNormWhole:       true, // qk_norm's grid collapsed to one Q block + one K block (n` |
 | `docs/gpu-residency-coverage.md|decoder/hardware_matrix_test.go:41` | goinfer | `t.Setenv("GOINFER_SSM_RESIDENT", "")` |
-| `docs/gpu-residency-coverage.md|decoder/residency.go:427` | goinfer | `return false // own forward, not yet bridged` |
-| `docs/gpu-residency-coverage.md|decoder/residency.go:428` | goinfer | `case a.lfm2 != nil:` |
-| `docs/gpu-residency-coverage.md|decoder/residency.go:448` | goinfer | `if a.granite != nil {` |
+| `docs/gpu-residency-coverage.md|decoder/residency.go:451` | goinfer | `return false // own forward, not yet bridged` |
+| `docs/gpu-residency-coverage.md|decoder/residency.go:452` | goinfer | `case a.lfm2 != nil:` |
+| `docs/gpu-residency-coverage.md|decoder/residency.go:472` | goinfer | `if a.granite != nil {` |
 | `docs/how-inference-works.md|decoder/attention.go:152` | goinfer | `if !arch.LearnedPosEmbed && !arch.isNoPELayer(layer) {` |
 | `docs/how-inference-works.md|decoder/attention.go:203` | goinfer | `cache.Append(layer, k, v)` |
 | `docs/how-inference-works.md|decoder/attention.go:79` | goinfer | `nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim` |
@@ -270,7 +269,7 @@ supports.
 | `docs/measurements/c3-metal-consumer-window-v0.18.0.md|cmd/gate/parity.go:849` | goinfer | `// line counts, and only before `package` — decoder/int4_golden_test.go discusses `//go:` |
 | `docs/measurements/c3-metal-consumer-window-v0.18.0.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/model.go:636` | goinfer | `switch o.Backend {` |
-| `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:928` | goinfer | `func (m *Model) withResidency() *Model {` |
+| `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:952` | goinfer | `func (m *Model) withResidency() *Model {` |
 | `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/config.go:311` | goinfer | `SharedKVLayers          int   `json:"num_kv_shared_layers"`` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/gguf.go:2576` | goinfer | `firstShared := arch.NumLayers - g4.SharedKVLayers` |
@@ -321,7 +320,7 @@ supports.
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
 | `docs/ollama-chase.md|decoder/model.go:1883` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
 | `docs/ollama-chase.md|decoder/registry.go:1724` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
-| `docs/ollama-chase.md|decoder/residency.go:1240` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
+| `docs/ollama-chase.md|decoder/residency.go:1264` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/ollama-chase.md|decoder/weightmat.go:764` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:623` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:1893` | goinfer | `free, _, err := r.dev.Context().MemInfo()` |
@@ -405,9 +404,9 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:302` | goinfer | `chunk = learned // a previous prompt already found the default too wide for this card` |
 | `docs/tasks/task-gpu-paths-2026-09.md|cuda/prefill.go:329` | goinfer | `tail := tailKVOnly` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/embed.go:36` | goinfer | `// guard, as ForwardCapture.` |
-| `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:130` | goinfer | `// single scalar per head — verified against fla-org/flash-linear-attention's actual sou` |
-| `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:407` | goinfer | `// residentPerLayerGeomOK reports whether backend implements the per-layer geometry a's ` |
-| `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:488` | goinfer | `// story: the nGroup/topkGroup argument order was unverified for a real mismatch until t` |
+| `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:131` | goinfer | `// single scalar per head — verified against fla-org/flash-linear-attention's actual sou` |
+| `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:432` | goinfer | `// residentPerLayerGeomOK reports whether backend implements the per-layer geometry a's ` |
+| `docs/tasks/task-gpu-paths-2026-09.md|decoder/features.go:513` | goinfer | `// story: the nGroup/topkGroup argument order was unverified for a real mismatch until t` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/generate_vl.go:18` | goinfer | `anchor: func (m *Model) vlDecodeLoop(ctx context.Context, out chan<- int, g *Generation,` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/model.go:1282` | goinfer | `return logits` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/model.go:1451` | goinfer | `if err = ctx.Err(); err != nil {` |
