@@ -72,7 +72,7 @@ func TestParity_noPendingGateOutlivesARelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	remedy := "Run each and promote it (scripts/gate_ledger.py promote --gate <gate> --value PASS --by <you>), " +
+	remedy := "Run each and promote it (go run ./cmd/gate ledger promote --gate <gate> --value PASS --by <you>), " +
 		"or move it to neverConfirmed with the reason it will never be confirmed."
 	if releasing == "" {
 		if len(blockers) == 0 {

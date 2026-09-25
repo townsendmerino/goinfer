@@ -187,7 +187,7 @@ grep with the same shape under different naming would not have been caught.
 **Not a v0.18.0 finding — v0.18.0 itself is clean here, confirmed directly below.** While
 characterizing §4's `TestDenseResidentParity` intermittent, `TestBatchedVerifyKernelParity` — *"the
 Metal decode==verify bit-identity gate,"* built specifically to catch a recurrence of the G-08
-incident class (`cmd/gate/parity.go:849`) — failed on current `main`, deterministically:
+incident class (`cmd/gate/parity.go:846`) — failed on current `main`, deterministically:
 
 ```
 pos 1: hidden state NOT bit-identical (first diff [0] want=0.27330953 got=-1.5859575)

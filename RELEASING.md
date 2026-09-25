@@ -81,7 +81,7 @@ survives to a tag unless caught here.
    failure in a pending gate reads as an item, not a blocker. The previous release is the newest
    dated CHANGELOG header that is not vX.Y.Z, so it gives the same answer before or after the
    `[Unreleased]` move. A red names each gate. Run it and promote it
-   (`scripts/gate_ledger.py promote --gate <gate> --value PASS --by <you>`), or move it to
+   (`go run ./cmd/gate ledger promote --gate <gate> --value PASS --by <you>`), or move it to
    `neverConfirmed` in `cmd/gate/parity.go` with the reason it will never be confirmed. Between
    releases nothing is enforced, and `release-assets.yml` runs the same check as a backstop.
 
@@ -288,11 +288,11 @@ path, gemma4_text merges) and the audit fixes touched hashed-core files. Before 
     **§C1 HAS A THIRD OBLIGATION: PROMOTE WHAT THE SWEEP CONFIRMED.** A gate with no entry in
     `testdata/gate_ledger.json` is FIRST-RUN, so its failure is reported as an ITEM and **cannot
     block the next tag**. The sweep never writes that record itself — auto-promotion would turn
-    "never checked" into "expected" in one silent step — and `gate_ledger.py reconcile` only
+    "never checked" into "expected" in one silent step — and `gate ledger reconcile` only
     *prints* the first-run list. So after a green sweep, promote each gate the sweep confirmed:
 
     ```
-    python3 scripts/gate_ledger.py promote --gate <G> --value PASS --by <you> \
+    go run ./cmd/gate ledger promote --gate <G> --value PASS --by <you> \
         --commit <sweep SHA> --note "<the sweep log this came from>"
     ```
 

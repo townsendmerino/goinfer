@@ -1323,7 +1323,7 @@ value can see **which confirmations have outlived the code they confirmed** — 
 want in front of you at the moment you are deciding what is correct, and one nobody can assemble
 after the fact.
 
-**IMPLEMENTED 2026-08-14** — `scripts/gate_ledger.py` + the `FAIL` branch of `parity_sweep.sh`.
+**IMPLEMENTED 2026-08-14** — `scripts/gate_ledger.py` + the `FAIL` branch of `parity_sweep.sh`. (Both since moved into Go: the sweep is `go run ./cmd/gate parity`, and the ledger `go run ./cmd/gate ledger`, 2026-09-25.)
 
 | behaviour | verified |
 |---|---|

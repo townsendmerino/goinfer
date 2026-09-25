@@ -64,6 +64,10 @@ usage:
   gate selector                                    tests that EXIST vs tests a selector RUNS
   gate gpu                                         the pre-tag GPU correctness gate (cuda | metal)
   gate mutation <name> <file> <sed-expr> <cmd...>  prove a gate can FAIL: green -> mutate -> red -> restore -> green
+  gate ledger promote --gate G --value V --by YOU  record a person's confirmation of a gate's value (B14)
+  gate ledger classify --gate G                    CONFIRMED | FIRST-RUN | SOURCE-CHANGED | UNKNOWN-GATE
+  gate ledger reconcile [--gates a,b]              the ledger's three checks, as the parity sweep prints them
+  gate ledger seed --log FILE --by YOU             bulk-seed PASSing gates from a sweep log (marked BULK-SEEDED)
 
 census env:
   GOINFER_REQUIRE_FIXTURES=1   exit 1 if any missing-fixture skip (release ritual)
@@ -103,6 +107,10 @@ func run(argv []string, w io.Writer) int {
 	// and must not be parsed as ours. Handled before the flagset sees anything.
 	if name == "mutation" {
 		return runMutation(rest, w)
+	}
+	// `ledger` has its own subcommands and flags (ported from scripts/gate_ledger.py).
+	if name == "ledger" {
+		return runLedger(rest, w)
 	}
 
 	// Split at `--`: everything after it is verbatim `go test` args, not our flags.

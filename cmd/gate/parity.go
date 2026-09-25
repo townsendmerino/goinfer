@@ -344,14 +344,11 @@ func parseExports(path string) map[string]string {
 // Unreachable ledger → CONFIRMED, i.e. treat the failure as a blocker: the fail-SAFE direction, since
 // the alternative would let a broken ledger silently downgrade every regression to an item.
 func ledgerClassify(name string) string {
-	out, err := exec.Command("python3", "scripts/gate_ledger.py", "classify", "--gate", name).Output()
+	root, err := repoRoot()
 	if err != nil {
 		return "CONFIRMED"
 	}
-	if c := strings.TrimSpace(string(out)); c != "" {
-		return c
-	}
-	return "CONFIRMED"
+	return classifyGate(root, name)
 }
 
 // runParity is the sweep's decision. Returns the process exit code.
@@ -438,11 +435,11 @@ func runParity(w io.Writer, logDir string) int {
 		fmt.Fprintf(w, "== %d FIRST-RUN: failed with no confirmed prior result ==\n", firstRuns)
 		fmt.Fprintf(w, "   Reported, NOT counted as blockers -- there is no second point to compute a delta from.\n")
 		fmt.Fprintf(w, "   NOT a claim they are harmless: each is an ITEM. Confirm a value deliberately with\n")
-		fmt.Fprintf(w, "   scripts/gate_ledger.py promote --gate <G> --value <V> --by <you>.\n")
+		fmt.Fprintf(w, "   go run ./cmd/gate ledger promote --gate <G> --value <V> --by <you>.\n")
 	}
-	rec := exec.Command("python3", "scripts/gate_ledger.py", "reconcile", "--gates", strings.Join(checked, ","))
-	rec.Stdout, rec.Stderr = w, w
-	_ = rec.Run() // advisory, exactly as the shell had it
+	if root, err := repoRoot(); err == nil {
+		reconcileLedger(w, root, checked) // advisory, exactly as the shell had it
+	}
 	if gaps > 0 {
 		fmt.Fprintf(w, "== %d COVERAGE GAP(S): required gates whose asset has never been built ==\n", gaps)
 		fmt.Fprintf(w, "   Reported, not counted as blockers. No invocation can clear them -- only building the\n")
@@ -501,7 +498,7 @@ func classifyChecks(res *results, checks []gateCheck, ledger func(string) string
 			// DELTA IT HAS NO SECOND POINT TO COMPUTE, so it is an ITEM, not a blocker — the change
 			// that made a failure visible is the one change that provably did not cause it. This is
 			// about ATTRIBUTION, not harmlessness: the first observed value must not be banked as a
-			// baseline without a person deciding it is correct (gate_ledger.py promote).
+			// baseline without a person deciding it is correct (`gate ledger promote`).
 			switch ledger(g.Test) {
 			case "FIRST-RUN":
 				mark = "FIRST-RUN - failed, no confirmed prior result (ITEM, not a blocker)"
@@ -751,7 +748,7 @@ var neverConfirmed = map[string]string{
 //
 // COLLAPSING THIS INTO EITHER NEIGHBOUR WOULD BE A LIE IN A DIFFERENT DIRECTION. Promoting these
 // from "it did not appear in the sweep's SKIP list, so it must have passed" would bank an inferred
-// value as a baseline — exactly the auto-promotion gate_ledger.py refuses to do — and the inference
+// value as a baseline — exactly the auto-promotion `gate ledger` refuses to do — and the inference
 // is not even sound, since the sweep that ran them discarded unlisted FAIL counts (G-05). Filing
 // them under neverConfirmed would assert a decision to leave them non-blocking forever, which is
 // the opposite of the intent: they were made required BECAUSE their families need cover.

@@ -393,7 +393,7 @@ rediscovered:
   throughout). Evidence: `goinfer-logs/qwen38-weightdiff-20260912-104137.log`, plus a mutation run
   proving the loosened gate can still redden. Promotion is deliberately NOT a session's to make:
   `promoted_by` means a person checked the gate's value, and the assertion itself just changed.
-  `scripts/gate_ledger.py promote --gate TestQwen38GGUF_weightDiff --value PASS --by francis`.
+  `go run ./cmd/gate ledger promote --gate TestQwen38GGUF_weightDiff --value PASS --by francis`.
 
 - **olmo3 is FIXED (`2aa4540`) and the gate is green — nobara-pc CONFIRMED FIXED 2026-09-18 by
   following this entry's own remedy.** `~/g4venv` had drifted to transformers 5.10.2 (not even the

@@ -428,7 +428,7 @@ func rowFor(t *testing.T, rows []checkRow, test string) string {
 // by 2026-09-02 five required gates were still first-run INCLUDING TestInt4_forwardParity, which
 // the gate list itself calls "the broadest quant check here". Each of the five had a PASS sitting
 // in the v0.15.0 sweep log the whole time; `reconcile` printed them every run and never exits
-// non-zero (deliberately — see gate_ledger.py), and nothing else looked. So the assertion lives
+// non-zero (deliberately — see ledger.go's reconcileLedger), and nothing else looked. So the assertion lives
 // here, where CI already runs it.
 //
 // A missing entry is a red test with one of two fixes, both deliberate: promote the gate from a
@@ -458,7 +458,7 @@ func TestParity_everyRequiredGateIsConfirmed(t *testing.T) {
 	}
 	confirmed := map[string]bool{}
 	for _, e := range led.Entries {
-		// An entry missing a required field is a NOTE, NOT A CONFIRMATION (gate_ledger.py's five
+		// An entry missing a required field is a NOTE, NOT A CONFIRMATION (ledger.go's five
 		// required fields). Counting it here would let a blank row satisfy this assertion, which is
 		// the same false-green one level down.
 		if e.Gate == "" || e.Value == "" || e.PromotedBy == "" || e.Date == "" || e.Commit == "" {
@@ -501,7 +501,7 @@ func TestParity_everyRequiredGateIsConfirmed(t *testing.T) {
 		default:
 			t.Errorf("required gate %s (%s) has no ledger entry, so it is FIRST-RUN: a failure is "+
 				"reported as an ITEM and cannot block a tag. Promote it from a sweep log "+
-				"(scripts/gate_ledger.py promote --gate %s --value PASS --by <you>), or — if it has "+
+				"(go run ./cmd/gate ledger promote --gate %s --value PASS --by <you>), or — if it has "+
 				"never run — add it to awaitingFirstConfirmation with the date, or to neverConfirmed "+
 				"with a reason.", g.Test, g.Family, g.Test)
 		}
