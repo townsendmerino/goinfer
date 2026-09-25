@@ -400,6 +400,22 @@ type Options struct {
 // sees it.
 var ErrLoadAborted = errLoadAborted
 
+// modelFromOptions is a Model over w carrying every per-model field Options sets — the one place the
+// constructors (Load's .giw and direct paths, LoadGGUFBytes, NewModelWithOptions) read them. They
+// used to be three struct literals, and they had drifted: LoadGGUFBytes never read the drafter's
+// ExtraResident* reservation, and NewModel read no option but the backend, so a baked-in chat model
+// silently ignored --kv, --fit and --exact-prefill. Callers set what is specific to their path (the
+// requested quant, the resolved EOS ids, the file mapping), then apply backend names, knobs,
+// streaming and residency in the order their path needs.
+func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
+	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(),
+		kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
+		resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit,
+		moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
+		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
+		exactPrefill: opts.ExactPrefill}
+}
+
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
 // and selects a backend. The forward pass (M3) is implemented; the CPU
 // backend is the default and the only one wired (webgpu falls back to CPU).
@@ -493,7 +509,8 @@ func Load(dir string, opts Options) (*Model, error) {
 		if beErr != nil {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
-		m := &Model{w: w, be: be, mmap: data, srcPath: dir, eosIDs: w.Cfg.EOSIDs(), kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition, exactPrefill: opts.ExactPrefill}
+		m := modelFromOptions(w, be, opts)
+		m.mmap, m.srcPath = data, dir
 		m.bindKnobs(opts.Knobs.values())
 		m.withBackendNames(opts.Backend, beErr)
 		if opts.StreamWeights {
@@ -607,7 +624,9 @@ func Load(dir string, opts Options) (*Model, error) {
 	if raw, err := json.Marshal(resolvedEOS); err == nil {
 		w.Cfg.EOSTokenID = raw
 	}
-	m := (&Model{w: w, be: be, quant: opts.Quant, eosIDs: resolvedEOS, kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit, moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition, exactPrefill: opts.ExactPrefill}).withBackendNames(opts.Backend, beErr)
+	m := modelFromOptions(w, be, opts)
+	m.quant, m.eosIDs = opts.Quant, resolvedEOS
+	m = m.withBackendNames(opts.Backend, beErr)
 	m.bindKnobs(opts.Knobs.values())
 	// `resident` is the third phase: weights becoming a device-side runner. Timed here rather than
 	// inside withResidency because a backend that DECLINES still costs its probe, and a user

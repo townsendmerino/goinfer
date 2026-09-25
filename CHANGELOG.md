@@ -15,6 +15,14 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **A baked-in chat model now honours `--kv`, `--fit` and `--exact-prefill`.** The
+  prequant build (`-tags prequant`, the release binaries with a model inside) built its model through
+  `decoder.NewModel`, which read nothing but the backend, so those flags were accepted and did nothing. New
+  `decoder.NewModelWithOptions(w, opts)` applies the same per-model options a `.giw` load through `Load` does;
+  `NewModel` is now that with only the backend set. All four model constructors build from one helper: the raw-GGUF
+  build (`LoadGGUFBytes`) had also dropped a drafter's `ExtraResidentBytes` / `ExtraResidentKVPerPosition`
+  reservation.
+
 - **Removed the MTP self-draft measurement adapter** (`decoder/mtp.go`: `MTPHead`, `LoadMTPHead`, `HasMTPHead`, `MTPStep`,
   `MTPPrefill`, `MTPDraftFrom`, `NewMTPState`). It was the Gate 1 probe for `docs/spec/09-mtp-heads.md` and had no caller;
   the track stopped under its own pre-registered rule, and the spec says where to recover the code if it resumes.

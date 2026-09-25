@@ -908,11 +908,24 @@ func (w *Weights) quantLabel() string {
 // into a runnable *Model: it attaches a compute backend and resolves the EOS
 // ids from the config. The weights are used as-is — their quantization is fixed.
 func NewModel(w *Weights, backend string) (*Model, error) {
-	be, beErr := NewBackend(backend)
+	return NewModelWithOptions(w, Options{Backend: backend})
+}
+
+// NewModelWithOptions is NewModel with load options: the per-model ones a .giw load through Load
+// honours — KV precision, resident context, fit, MoE expert caching, exact prefill, knobs — applied
+// the same way (modelFromOptions). Options that say how to BUILD weights do not apply to weights
+// already built, exactly as for a .giw: Quant is inert (CheckGiwQuantMatch reports an explicit one
+// that disagrees) and LoRA has no base to merge into (refuse it before calling). StreamWeights is
+// refused, not ignored: paging reads a .giw's file mapping, and in-memory weights have none.
+func NewModelWithOptions(w *Weights, opts Options) (*Model, error) {
+	if opts.StreamWeights {
+		return nil, fmt.Errorf("decoder: StreamWeights pages weights out of a .giw file mapping, and prequantized weights held in memory have none — load the .giw file with Load to stream it")
+	}
+	be, beErr := NewBackend(opts.Backend)
 	if beErr != nil {
 		fmt.Fprintln(os.Stderr, beErr) // webgpu/cuda requested but fell back — not fatal.
 	}
-	return (&Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs()}).withBackendNames(backend, beErr).bindKnobs(nil).withResidency(), nil
+	return modelFromOptions(w, be, opts).withBackendNames(opts.Backend, beErr).bindKnobs(opts.Knobs.values()).withResidency(), nil
 }
 
 // quantMode reports the precision the bundle's matmul weights are in, derived

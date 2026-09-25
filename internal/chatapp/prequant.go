@@ -62,7 +62,9 @@ func loadEmbedded(_ bool, opts decoder.Options) (*session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("prequant tokenizer: %w", err)
 	}
-	model, err := decoder.NewModel(w, opts.Backend)
+	// NewModelWithOptions, not NewModel: the latter reads only the backend, so --kv, --fit and
+	// --exact-prefill were accepted here and did nothing (the N-78 shape again, one option wider).
+	model, err := decoder.NewModelWithOptions(w, opts)
 	if err != nil {
 		return nil, err
 	}
