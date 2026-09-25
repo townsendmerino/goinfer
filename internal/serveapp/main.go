@@ -174,7 +174,7 @@ func (s modelSpec) options(cfg config) decoder.Options {
 		KVPrecision:      orStr(s.kvPrec, cfg.kvPrec),
 		MoECacheExperts:  cfg.moeCacheExperts,
 		MoECacheSlots:    cfg.moeCacheSlots,
-		KVQuant:          orStr(s.kvQuant, cfg.kvQuant),
+		KVQuant:          cpuKV(orStr(s.kvQuant, cfg.kvQuant), orStr(s.kvPrec, cfg.kvPrec)),
 		StreamWeights:    orBool(s.stream, cfg.streamWeights),
 		WeightCacheBytes: int64(orFloat(s.weightCache, cfg.weightCacheGB) * 1e9),
 		AcceptSlowMoE:    cfg.acceptSlow,
@@ -185,6 +185,19 @@ func (s modelSpec) options(cfg config) decoder.Options {
 		ExactPrefill:     cfg.exactPrefill,
 		Knobs:            cfg.prefillKnobs(),
 	}
+}
+
+// cpuKV is the CPU KV cache precision for one model: the deprecated --kv-quant (or kv-quant=) when
+// given, else the unified --kv mapped onto the CPU cache, which has no f16 form — so f16 stays f32
+// there and i8 selects the per-head int8 cache. (Both Options fields remain; only the CLI unified.)
+func cpuKV(kvQuant, kv string) string {
+	if kvQuant != "" {
+		return kvQuant
+	}
+	if kv == "i8" {
+		return "i8"
+	}
+	return "f32"
 }
 
 // adapterSpec is one --adapter entry (#7): a served name, the --model it attaches
@@ -304,7 +317,7 @@ type config struct {
 	// can override each one (see modelSpec / modelFlag.Set).
 	quant            string
 	quantSet         bool   // was --quant given on the CLI? (vs the "int4" default) — for the .giw explicit-quant check (T1-7)
-	kvPrec           string // GPU residency KV cache precision: "" | f32 | f16 (-kv)
+	kvPrec           string // -kv: KV cache precision for whichever backend serves: f32 | f16 | i8
 	moeCacheExperts  bool   // stream routed MoE experts host→VRAM (--moe-cache-experts)
 	moeCacheSlots    int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper bound, 0 = built-in default
 	moePager         string // CPU expert pager backing mode: "mmap" (default) | "pool" (--moe-pager, task-never-swap-2026-09.md S5)
@@ -314,7 +327,7 @@ type config struct {
 	cpuFastAttention bool   // CPU f32 prefill attention, DEFAULT ON (non-bit-identical) (--cpu-fast-attention)
 	cpuExactPrefill  bool   // opt OUT of cpu fast attention: bit-exact CPU prefill (--cpu-exact-prefill)
 	ctxSize          int    // -ctx: requested GPU-resident KV capacity in positions (0 = backend default). Effective cap = min(model context window, this)
-	kvQuant          string // CPU KV cache storage precision: "" | f32 | i8 (-kv-quant)
+	kvQuant          string // DEPRECATED -kv-quant: CPU KV cache override, "" = follow -kv
 	lora             string
 	name             string // -served-model-name (applies only to a single unnamed --model)
 	kvSessions       int
@@ -521,9 +534,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.StringVar(&cfg.moePager, "moe-pager", moePagerDefault(runtime.GOOS), "CPU backing mode for a .giw-paged MoE model's expert pager: mmap (advice-based, zero-copy, but on darwin MADV_DONTNEED is a no-op so the budget is NOT enforced — measured 2026-09-23 on M35: ~4 GB of expert pages resident against a 1.5 GB budget) | pool (owned-buffer pread — a firm cap on every platform, costs ~1.4 GB of owned anonymous buffers at that budget, measured 1.02x the mmap decode rate). Default: pool on darwin, mmap elsewhere (docs/measurements/moe-pager-mode-darwin-2026-09-23.md; task-never-swap-2026-09.md S5). CPU decode of a paged MoE model only — CUDA/Metal experts use --moe-cache-experts/--moe-cache-slots instead")
 	cfg.fit = true // fitFlag has no BoolVar-style default parameter; set it before registering
 	flag.Var((*fitFlag)(&cfg.fit), "fit", "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/tasks/task-gpu-paths-2026-09.md, tasks/task-fit-to-hardware.md Phase 2). CUDA: an unpinned resident context gets more than the historical 4096 positions when the card has the free VRAM for it (cudaCtxCapDefault's own measurement found the real per-card ceiling is often 5-6x that). CPU: a plain .gguf that will not fit resident RAM gets one automatic retry with weight streaming (a dense model only — see --stream-weights) instead of just refusing. Never touches an EXPLICITLY set -ctx/-quant/--moe-cache-slots/--stream-weights — those are always honoured or refused as asked, with or without this flag. --fit=off restores every pre-Phase-2 default exactly; does not affect bug fixes shipped alongside this work (e.g. Metal now honouring an explicit -ctx at all)")
-	flag.StringVar(&cfg.kvPrec, "kv", "f32", "GPU residency KV cache precision: f32 (bit-exact, 16k ctx) | f16 (lossy, 32k ctx) | i8 (lossy, ~64k ctx) — webgpu backend only")
+	flag.StringVar(&cfg.kvPrec, "kv", "f32", "KV cache precision, for whichever backend serves the model: f32 (bit-exact) | f16 (lossy; GPU residency only — the CPU cache has no f16 form and stays f32) | i8 (lossy: the GPU residency cache, ~64k ctx on 8 GB; the CPU cache as per-head int8, ~4× smaller, argmax ~90%+, excluding MoE/gemma4/qwen3.5 which keep f32)")
 	flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model override: --model name=path,ctx=…). 0 (default) keeps the backend default — on CUDA, 4096 with -fit=off, or 8192 (cuda/resident.go's fitDefaultCtx, whatever the card's free VRAM actually admits) with -fit at its default of ON — a round, conservative DEFAULT that has never been tuned against real VRAM headroom (raising it further would multiply every resident model's KV footprint for callers who never asked); the real per-card ceiling is typically far higher still and worth measuring for your model/quant (docs/tasks/parked/task-kv-cache-streaming.md: an RTX 2070 SUPER 8GB ran a dense 7B at int4 fine at -ctx 20000, refused at 24576). When set, the effective cap is min(model context window, this) and the KV it implies is VRAM-checked AT LOAD; if the whole model then can't build resident (either an unfit configured -ctx or the unconfigured default not fitting), it silently loads on the CPU-staged path instead for every request — measured ~15x slower decode, same model/quant — unless -require-backend is set, which refuses to start the server and names the GB shortfall instead. That is a WHOLE-MODEL decision made once at load; a single request whose PROMPT exceeds the active cap is a separate, per-request case and is rejected with a clean 400 context_length_exceeded — there is no per-request fallback to the staged path (an earlier version of this text said there was; a later audit, R-10, replaced that fallback with the clean 400 because it produced a 500 leaking an internal hint). On webgpu this LOWERS the backend cap when smaller (the load-time VRAM check described here is CUDA's); a request LARGER than the backend cap is ignored rather than honoured, since those caps are proven-fit ceilings")
-	flag.StringVar(&cfg.kvQuant, "kv-quant", "f32", "CPU KV cache storage: f32 (default, bit-exact) | i8 (per-head int8, ~4× smaller, lossy — argmax ~90%+; excludes MoE/gemma4/qwen3.5)")
+	flag.StringVar(&cfg.kvQuant, "kv-quant", "", "DEPRECATED — use --kv, which now covers the CPU cache too. When given, overrides the CPU KV cache alone: f32 | i8")
 	flag.StringVar(&cfg.lora, "lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load")
 	flag.Var(&cfg.adapters, "adapter", "compute-time LoRA adapter sharing a base model's resident weights: `serveName=baseName=dir`.\n"+
 		"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost ~base + N\n"+

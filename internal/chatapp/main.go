@@ -218,6 +218,7 @@ All flags:
 		quant        = flag.String("quant", "int4", "weight quant: int4 (smallest, fastest, and the default on Metal too — Metal consumes int4 directly) | int4mix (attn int8+FFN int4, GGUF only) | int8int8 (W8A8, higher accuracy + more RAM) | int8 | \"\" (native f32). CUDA and Metal both batch-prefill quantized modes by default (see --exact-prefill to force the bit-exact path instead); native f32 falls back to sequential. Default int4")
 		lora         = flag.String("lora", "", "optional PEFT LoRA adapter dir, merged into the safetensors base at load")
 		exactPrefill = flag.Bool("exact-prefill", false, exactPrefillHelp)
+		kv           = flag.String("kv", "f32", "KV cache precision, same as goinfer-serve's --kv: f32 (bit-exact) | f16 (lossy; GPU residency only, the CPU cache stays f32) | i8 (lossy; GPU residency cache, or the CPU per-head int8 cache — MoE/gemma4/qwen3.5 keep f32 on CPU)")
 		maxTok       = flag.Int("max", 512, "max tokens per reply")
 		temp         = flag.Float64("temp", 0.7, "sampling temperature (0 = greedy)")
 		topK         = flag.Int("top-k", 20, "top-k filter (0 = off)")
@@ -254,7 +255,16 @@ All flags:
 		os.Exit(2)
 	}
 
-	opts := decoder.Options{Backend: *backend, Quant: *quant, LoRA: *lora, DisableFit: !bool(fit), ExactPrefill: *exactPrefill}
+	cpuKV := "f32" // the CPU cache has no f16 form; i8 selects its per-head int8 storage
+	if *kv == "i8" {
+		cpuKV = "i8"
+	}
+	opts := decoder.Options{Backend: *backend, Quant: *quant, LoRA: *lora, DisableFit: !bool(fit), ExactPrefill: *exactPrefill,
+		KVPrecision: *kv, KVQuant: cpuKV}
+	if err := opts.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(2)
+	}
 	// The quant the user EXPLICITLY chose (vs the "int4" default) — for the .giw mismatch check
 	// (T1-7); a bare default must not conflict with an already-baked bundle.
 	explicitQuant := ""

@@ -93,10 +93,10 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
   `MoEConfig`, `ActKind`, `NormKind`, `NormPlacement`, and the `qwen35Params`-class internals they
   carry. A new family routinely adds fields here.
 - **Speculative decoding and drafters.** `Drafter`, `NgramDrafter`, `GrammarDrafter`,
-  `RouterDrafter`, `DFlashDrafter`, `DSparkDrafter`, `ConfidentDrafter`, `EagleHead`,
-  `EagleState`, `AdaptiveDepth`, `BlockSpec`, `BlockSpecOptions`, `BlockDrafterWeights`,
+  `RouterDrafter`, `DFlashDrafter`, `DSparkDrafter`, `ConfidentDrafter`, `AdaptiveDepth`, `BlockSpec`, `BlockSpecOptions`, `BlockDrafterWeights`,
   `DrafterGeometry`, `DrafterLayerWeights`, `SpecStats`, `SpecTrace`, `DraftInfo`,
-  `OutcomeRecorder`, and every `Model.Generate*Speculative*` entry point.
+  `OutcomeRecorder`, and every `Model.Generate*Speculative*` entry point. (`EagleHead` / `EagleState` and the
+  EAGLE entry points were removed 2026-09-24 — killed on CPU wall-clock, see `docs/spec/05-eagle3-head.md`.)
 - **Multimodal.** `Model.GenerateVL`, `GenerateQwenVL`, and the `multimodal` package.
 - **Adapters at compute time.** `Model.LoadAdapter`, `HasAdapter`, `Session.UseAdapter`,
   `Session.ClearAdapter`, and `Options.LoRA`'s multi-adapter behaviour.
@@ -109,7 +109,8 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
   `ErrBlockSpecUnsupported`.
 - **`Options` fields that reach the above**: `Backend`, `KVPrecision`, `KVQuant`,
   `MoECacheExperts`, `MoECacheSlots`, `StreamWeights`, `WeightCacheBytes` and their `serve` flag
-  twins (`--backend`'s non-cpu values, `--kv`, `--kv-quant`, `--moe-cache-*`,
+  twins (`--backend`'s non-cpu values, `--kv` — one KV-precision flag for every backend since 2026-09-25,
+  `--kv-quant` its deprecated CPU-only override — `--moe-cache-*`,
   `--stream-weights`, `--drafter`, `--spec`, `--adapter`, `--vision-*`, `--metal-fast-prefill`,
   `--embed-*`, `--require-backend`, `--allow-admin` bodies). `Options.Quant` and `Options.LoRA` are
   Hard and listed above.
