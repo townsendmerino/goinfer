@@ -4,7 +4,6 @@ package metal
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 	"sync"
 )
@@ -864,7 +863,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	attnFusedTotal = (attnFusedTotal + attnFusedSGPT - 1) / attnFusedSGPT * attnFusedSGPT * 32
 	attnFusedTg := attnFusedSGPT * 32
 	// hd%8==0 && hd<=128 (ATTN_MAXHD) — attention_prefill_fused's compile-time cap.
-	useFusedAttn := metalFusedAttentionEnabled() && g0.hd%8 == 0 && g0.hd <= 128
+	useFusedAttn := metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION")) && g0.hd%8 == 0 && g0.hd <= 128
 
 	e := r.q.Begin()
 	for l := 0; l < r.nL; l++ {
@@ -922,7 +921,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 			e.Dispatch(pf.pGemmStore, t, tg, ctxF, L.oW, L.oS, xF, uM, uH, uQDim, dummyBias, m2)
 		}
 		if L.moe != nil {
-			if os.Getenv("GOINFER_MOE_EXPERT_MAJOR") == "0" {
+			if r.knobValue("GOINFER_MOE_EXPERT_MAJOR") == "0" {
 				// Fallback to row-by-row path for A/B testing
 				for m := 0; m < M; m++ {
 					row := xF.At(m * H * 2)

@@ -74,7 +74,7 @@ func TestPrefillLast_startPosGreaterThanZero(t *testing.T) {
 			t.Fatalf("fast prefix Forward(%d): %v", i, err)
 		}
 	}
-	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0") // K-from=24 is far below any real floor
+	setResidentKnob(t, fast.r, "GOINFER_METAL_FAST_PREFILL_FLOOR", "0") // K-from=24 is far below any real floor
 	fastLogits, err := fast.PrefillLast(context.Background(), embs[from:], from)
 	if err != nil {
 		t.Fatalf("PrefillLast(startPos=%d): %v", from, err)

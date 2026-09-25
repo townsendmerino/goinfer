@@ -36,7 +36,8 @@ func TestAttentionPrefillFused_ctxCapNotMultipleOf8(t *testing.T) {
 	dir := t.TempDir()
 	writeDense(t, dir, w)
 
-	const ctxCap = 37 // NOT a multiple of 8 — the exact shape C-01 describes
+	const ctxCap = 37                                 // NOT a multiple of 8 — the exact shape C-01 describes
+	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0") // ctxCap=37 is far below any real floor; read at Load
 	m, err := decoder.Load(dir, decoder.Options{Quant: "int8int8", ResidentContext: ctxCap})
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -71,7 +72,6 @@ func TestAttentionPrefillFused_ctxCapNotMultipleOf8(t *testing.T) {
 			embs[i][j] = float32(i*7+j) * 0.01
 		}
 	}
-	t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0") // ctxCap=37 is far below any real floor
 	pre, err := rf.PrefillLast(context.Background(), embs, 0)
 	if err != nil {
 		t.Fatalf("PrefillLast at the ctxCap boundary: %v", err)

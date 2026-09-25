@@ -211,7 +211,7 @@ func metalMoESlotsRequest(m *decoder.Model) string {
 	if m.MoECacheExperts() {
 		return strconv.Itoa(autoMoESlots(m))
 	}
-	return os.Getenv("GOINFER_METAL_MOE_SLOTS")
+	return modelKnob(m, "GOINFER_METAL_MOE_SLOTS")
 }
 
 // moeTopK is this model's own top-k routed-experts-per-token count — the floor autoMoESlots must
@@ -383,7 +383,7 @@ func residentNeedBytes(m *decoder.Model) int64 {
 // they do not. True (proceed) whenever the answer is unknown — an unreadable hw.memsize or a
 // model reporting zero bytes must not silently disable residency for everyone.
 func residentFitsMemory(m *decoder.Model) bool {
-	if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
+	if modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
 		return true
 	}
 	need := residentNeedBytes(m)
@@ -447,7 +447,9 @@ type metalResident struct {
 
 // fastPrefill reports whether this resident's prefill takes the batched fast path.
 func (a *metalResident) fastPrefill() bool {
-	a.fastOnce.Do(func() { a.fast = !a.exact && metalFastPrefillEnabled() })
+	a.fastOnce.Do(func() {
+		a.fast = !a.exact && metalFastPrefillEnabled(a.r.knobValue("GOINFER_METAL_FAST_PREFILL"), a.r.knobValue("GOINFER_METAL_BATCHED_PREFILL"))
+	})
 	return a.fast
 }
 
@@ -583,15 +585,15 @@ const metalFastPrefillFloor = 64
 //	                            0 | false | off  off (explicit opt-out; use --exact-prefill on the server)
 //
 // The old GOINFER_METAL_BATCHED_PREFILL continues to work: =1 forces on, =0 forces off, unset defers to the default.
-func metalFastPrefillEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_FAST_PREFILL"))) {
+func metalFastPrefillEnabled(fast, batched string) bool {
+	switch strings.ToLower(strings.TrimSpace(fast)) {
 	case "0", "false", "off":
 		return false
 	case "1", "true", "on":
 		return true
 	}
 	// Unset: honour the old var for backward compat (=1 on, =0 off, unset → new default).
-	if v := strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_BATCHED_PREFILL"))); v != "" {
+	if v := strings.ToLower(strings.TrimSpace(batched)); v != "" {
 		return v == "1"
 	}
 	return true // §3.2 gate passed 2026-09-09 (S cells K=256/512/1024); floor lowered to 64 2026-09-20 (R3)
@@ -615,8 +617,8 @@ func metalFastPrefillEnabled() bool {
 //
 //	GOINFER_METAL_ATTN_FA  1 | true | on    on (explicit; harmless, matches the default)
 //	                       0 | false | off  off (opt out; the shipped `attention` kernel only)
-func metalAttnFAEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_ATTN_FA"))) {
+func metalAttnFAEnabled(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "0", "false", "off":
 		return false
 	case "1", "true", "on":
@@ -627,8 +629,8 @@ func metalAttnFAEnabled() bool {
 
 // metalFastPrefillFloorFor returns the prompt-length floor, allowing experiment or escape.
 // Set GOINFER_METAL_FAST_PREFILL_FLOOR to override; 0 disables the floor entirely.
-func metalFastPrefillFloorFor() int {
-	if v := os.Getenv("GOINFER_METAL_FAST_PREFILL_FLOOR"); v != "" {
+func metalFastPrefillFloorFor(v string) int {
+	if v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			return n
 		}
@@ -647,8 +649,8 @@ func metalFastPrefillFloorFor() int {
 //
 //	GOINFER_METAL_FUSED_ATTENTION  1 | true | on   on
 //	                               0 | false | off  off (explicit opt-out; use --exact-prefill on the server)
-func metalFusedAttentionEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_METAL_FUSED_ATTENTION"))) {
+func metalFusedAttentionEnabled(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "0", "false", "off":
 		return false
 	case "1", "true", "on":
@@ -668,7 +670,7 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	if !a.fastPrefill() {
 		return false, "sequential — fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill)"
 	}
-	floor := metalFastPrefillFloorFor()
+	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
 	if floor > 0 {
 		return true, fmt.Sprintf("batched f16-MMA above %d prompt tokens; sequential below (§3 floor)", floor)
 	}
@@ -695,7 +697,7 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	// fast path only where the gate cleared (K=256 itself passed §3.2 on Metal — see the floor's
 	// own doc comment).
 	promptLen := startPos + len(embeddings)
-	if floor := metalFastPrefillFloorFor(); floor > 0 && promptLen < floor {
+	if floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR")); floor > 0 && promptLen < floor {
 		return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; §3 floor); using sequential path", promptLen, floor)
 	}
 	// The f16 MMA prefill kernels implement a dense gated FFN (SiLU or GeGLU, G8) out of

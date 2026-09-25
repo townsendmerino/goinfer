@@ -91,7 +91,7 @@ func testOlmoFamilyResidentSmoke(t *testing.T, ckpt string) {
 		}
 		t.Logf("Olmo 3 prefill path: %s", reason)
 
-		t.Setenv("GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
+		decoder.SetKnobEnvForTest(t, mRes, "GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
 		pf, ok := rf.(decoder.Prefiller)
 		if !ok {
 			t.Fatalf("rf does not implement decoder.Prefiller")

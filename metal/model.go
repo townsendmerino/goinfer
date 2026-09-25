@@ -147,7 +147,24 @@ type residLayer struct {
 
 // resident is a Metal-resident dense decoder. Weights uploaded once in BuildResident;
 // per token only the embedding + pos uniforms change.
+// modelKnob is one of m's operator knobs (decoder.Model.Knob): the Load-time snapshot with Options.Knobs
+// applied, never the live environment (docs/tasks/task-env-config-2026-09.md, phase 4). "" when unset.
+func modelKnob(m *decoder.Model, name string) string { v, _ := m.Knob(name); return v }
+
+// knobValue reads one operator knob from the model this resident was built from. A resident built by hand in a
+// test, with no model behind it, reads the live environment instead — decoder's nil-snapshot rule.
+func (r *resident) knobValue(name string) string {
+	if r.knob == nil {
+		return os.Getenv(name)
+	}
+	v, _ := r.knob(name)
+	return v
+}
+
 type resident struct {
+	// knob is the model's decoder.Model.Knob, for the knobs read per call (PrefillLast, the fast-prefill floor).
+	knob func(name string) (string, bool)
+
 	d                                                                  *Device
 	q                                                                  Queue
 	pRms, pQv, pGemv, pGemvResid, pRope, pRope2, pKv, pAttn, pSw, pRes Pipeline
@@ -656,7 +673,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// bits robust to an OS-toolchain update at that cost; the snapshot golden otherwise DETECTS such
 	// drift, which is the cheaper path we chose.
 	compile := d.CompileLibrary
-	if preciseMathCompile || os.Getenv("GOINFER_PRECISE_MATH") != "" {
+	if preciseMathCompile || modelKnob(m, "GOINFER_PRECISE_MATH") != "" {
 		compile = d.CompileLibraryPrecise
 	}
 	lib, err := compile(allKernels, MSL3_1)
@@ -671,7 +688,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return p
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
-	r := &resident{d: d, H: H, nL: nL, nH: nH, I: I, V: V}
+	r := &resident{knob: m.Knob, d: d, H: H, nL: nL, nH: nH, I: I, V: V}
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
 		return nil, err
 	}
@@ -681,9 +698,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pRmsF16 = pipe("rmsnorm_f16_act")
 	r.pF32ToF16 = pipe("f32_to_f16")
 	r.pSAf16, r.pSAf16Bias, r.pSAf16Resid = pipe("gemv_w4f16_sa"), pipe("gemv_w4f16_sa_bias"), pipe("gemv_w4f16_sa_resid")
-	r.decodeLaneW4F16 = os.Getenv("GOINFER_METAL_DECODE_LANE") == "w4f16"
+	r.decodeLaneW4F16 = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16"
 	r.pAttnFA, r.pAttnFACombine = pipe("attention_fa"), pipe("attention_fa_combine")
-	r.decodeAttnFA = metalAttnFAEnabled()
+	r.decodeAttnFA = metalAttnFAEnabled(modelKnob(m, "GOINFER_METAL_ATTN_FA"))
 	r.pArgFinish = pipe("argmax_finish")
 	// N-09: the gemv_w4a8_bias and gemv_w4a8_sa_amax pipelines were created here but never dispatched
 	// (ForwardArgmax uses the int8 pGemvW8Amax head; the profiler builds gemv_w4a8_bias locally).
@@ -1264,7 +1281,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// per-commit re-validation cost, same pread-invalidated slot buffers) never got a residency set
 	// built at all, regardless of what slotBuffers() enumerated.
 	paged := (r.g4moe != nil && r.g4moe.paged) || (r.moe != nil && r.moe.paged)
-	if paged && os.Getenv("GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {
+	if paged && modelKnob(m, "GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {
 		rs, rerr := d.NewResidencySet()
 		if rerr != nil {
 			fmt.Fprintf(os.Stderr, "metal: residency set unavailable (%v) — per-submit validation stands\n", rerr)
@@ -1284,7 +1301,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 					pinned = append(pinned, b)
 				}
 			}
-			switch os.Getenv("GOINFER_MOE_RESIDENCY_SCOPE") {
+			switch modelKnob(m, "GOINFER_MOE_RESIDENCY_SCOPE") {
 			case "slots":
 				addAll(slots)
 			case "slots+kv": // bisect: does the KV cache cause the phase-1 regression?

@@ -61,12 +61,12 @@ func TestMoEExpertMajor_ParityVsRowByRow(t *testing.T) {
 			seqArg := argmaxF(seq)
 
 			// 1. Run with expert-major prefill (GOINFER_MOE_EXPERT_MAJOR=1)
-			t.Setenv("GOINFER_MOE_EXPERT_MAJOR", "1")
+			setResidentKnob(t, r, "GOINFER_MOE_EXPERT_MAJOR", "1")
 			embs1 := getEmbs(r, prompt)
 			outMajor := r.PrefillLast(embs1, 0)
 
 			// 2. Run with row-by-row prefill (GOINFER_MOE_EXPERT_MAJOR=0)
-			t.Setenv("GOINFER_MOE_EXPERT_MAJOR", "0")
+			setResidentKnob(t, r, "GOINFER_MOE_EXPERT_MAJOR", "0")
 			embs2 := getEmbs(r, prompt)
 			outRow := r.PrefillLast(embs2, 0)
 
@@ -115,7 +115,7 @@ func BenchmarkMoEExpertMajor_VsRowByRow(b *testing.B) {
 		embs := getEmbs(r, prompt)
 
 		b.Run(fmt.Sprintf("RowByRow_M=%d", M), func(b *testing.B) {
-			b.Setenv("GOINFER_MOE_EXPERT_MAJOR", "0")
+			setResidentKnob(b, r, "GOINFER_MOE_EXPERT_MAJOR", "0")
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				r.PrefillLast(embs, 0)
@@ -123,7 +123,7 @@ func BenchmarkMoEExpertMajor_VsRowByRow(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprintf("ExpertMajor_M=%d", M), func(b *testing.B) {
-			b.Setenv("GOINFER_MOE_EXPERT_MAJOR", "1")
+			setResidentKnob(b, r, "GOINFER_MOE_EXPERT_MAJOR", "1")
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				r.PrefillLast(embs, 0)
@@ -155,21 +155,21 @@ func TestMoEPrefillSpeedupDirect(t *testing.T) {
 		embs := getEmbs(r, prompt)
 
 		// Warmup
-		t.Setenv("GOINFER_MOE_EXPERT_MAJOR", "0")
+		setResidentKnob(t, r, "GOINFER_MOE_EXPERT_MAJOR", "0")
 		r.PrefillLast(embs, 0)
-		t.Setenv("GOINFER_MOE_EXPERT_MAJOR", "1")
+		setResidentKnob(t, r, "GOINFER_MOE_EXPERT_MAJOR", "1")
 		r.PrefillLast(embs, 0)
 
 		const iters = 10
 
-		t.Setenv("GOINFER_MOE_EXPERT_MAJOR", "0")
+		setResidentKnob(t, r, "GOINFER_MOE_EXPERT_MAJOR", "0")
 		t0 := time.Now()
 		for range iters {
 			r.PrefillLast(embs, 0)
 		}
 		dtRow := time.Since(t0)
 
-		t.Setenv("GOINFER_MOE_EXPERT_MAJOR", "1")
+		setResidentKnob(t, r, "GOINFER_MOE_EXPERT_MAJOR", "1")
 		t1 := time.Now()
 		for range iters {
 			r.PrefillLast(embs, 0)
