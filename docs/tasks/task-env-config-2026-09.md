@@ -194,7 +194,7 @@ once.
 41 diagnostics triaged with the owner, in four groups:
 
 1. **Rollback switches for default-on paths → the per-model snapshot:** `CUDA_MOE_EXPERT_MAJOR`,
-   `CUDA_ATTN_FUSED_TILE`, `MOE_DMA_OVERLAP`, `MOE_PIN_REGISTER`, `CUDA_L01_CPU_OFFLOAD` (all `cudaKnobs`), and
+   `CUDA_ATTN_FUSED_TILE`, `MOE_DMA_OVERLAP`, `MOE_PIN_REGISTER`, `CUDA_L01_CPU_OFFLOAD` (since removed with the L-01 code; all `cudaKnobs`), and
    `MOE_PREAD_CPU` (decoder; read through `loadKnob` at Load, so `Options.Knobs` can set it). `CUDA_VISION_ATTN` was
    in this group but stays a documented diagnostic: `NewVisionEncoder` builds from vision weights with no
    `decoder.Model` behind it, and already reads it once per encoder.

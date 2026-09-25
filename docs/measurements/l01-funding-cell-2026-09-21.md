@@ -54,6 +54,13 @@ slices on every single call, 320+ times per token here) — **not measured or at
 (already true; no user-facing exposure). The goroutine-per-expert parallelization landed this session (`cuda/l01_cpu_offload.go`) is still correct and bit-identical on its own terms — it is a real fix to §9's
 "sequential, not parallel" gap — but it cannot rescue a design that sends 100% of every layer's experts to CPU, forever, by construction.
 
+> **Code removed 2026-09-24** (owner clean-up of code whose record says it didn't pay): `cuda/l01_cpu_offload.go`, its
+> wiring in `cuda/backend.go` / `cuda/resident.go` (the `l01Enabled` fields, scratch, miss hook and merge), its three tests
+> including the funding-cell driver named below, `decoder/l01_export.go` (`F16BitsToF32`, `CPUExpertWeights`,
+> `ComputeExpertMLP` — exported only for it) and `decoder/l01_expert_bench_test.go`, and the `GOINFER_CUDA_L01_CPU_OFFLOAD`
+> knob. Last present at `8f452a7e`: a re-attempt starts from that tree, and "re-run the same committed driver" below
+> means `git show 8f452a7e:cuda/l01_funding_cell_test.go`.
+
 ## What a real re-attempt needs (not attempted here — a redesign, not a re-roll)
 
 The audit's own q* design (`docs/tasks/task-l01-hybrid-moe-cpu-gpu.md` §0: "q* ~ m*(B_PCIe/B_host) fetched into slots and run on the GPU, **the rest** computed on CPU") explicitly keeps a bounded fraction on the

@@ -623,11 +623,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
 		cacheExperts: m.MoECacheExperts(),
 		cacheProf:    os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
-		// L-01 (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md) — PROTOTYPE, synchronous only, requires
-		// cacheExperts (nothing to offload without the slot cache's own miss classification).
-		l01Enabled: knobSet(m, "GOINFER_CUDA_L01_CPU_OFFLOAD") && m.MoECacheExperts(),
-		dnet:       dnetP,
-		isMLA:      mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
+		dnet:         dnetP,
+		isMLA:        mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
 		mlaQKHead: qkNope + qkRope, mlaQKNope: qkNope, mlaQKRope: qkRope,
 		mlaVHead: vHead, mlaQLoRA: qLoRA, mlaInterleave: interleave,
 		mlaRopeScale: float32(mlaRopeScale),
@@ -1605,14 +1602,6 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				} else {
 					r.slotIdxHost = hb
 				}
-				if r.l01Enabled { // L-01 prototype scratch (docs/tasks/task-l01-hybrid-moe-cpu-gpu.md)
-					r.hostWgt = make([]float32, topK)
-					r.hostMQ = make([]byte, H)
-					r.hostMSc = make([]float32, 1)
-					r.l01CPUMask = make([]bool, topK)
-					r.l01Sum = make([]float32, H)
-					r.l01MergeBuf = r.af(H)
-				}
 			}
 			r.moeGU = r.af(2 * moeInter)
 			r.moeSc, r.moeScr, r.moeQ = r.af(1), r.af(moeInter), r.ai(moeInter/4)
@@ -1770,9 +1759,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		return declined(fmt.Errorf("cuda: %w", e))
 	}
 	// C′ compute/DMA overlap (see the overlap field). Not under graphs: a captured segB cannot record
-	// the router event mid-segment and a captured segC cannot wait per miss. Not with L-01: its
-	// CPU-routed ranks have no slot to wait on.
-	r.overlap = r.cacheExperts && !r.graphs && !r.l01Enabled && r.knobValue("GOINFER_MOE_DMA_OVERLAP") != "0"
+	// the router event mid-segment and a captured segC cannot wait per miss.
+	r.overlap = r.cacheExperts && !r.graphs && r.knobValue("GOINFER_MOE_DMA_OVERLAP") != "0"
 	if r.overlap {
 		if e := r.initOverlap(); e != nil {
 			r.Close()

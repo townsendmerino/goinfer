@@ -27,7 +27,7 @@ These fifty-two knobs are snapshotted when a model is loaded, not read on every 
 `GOINFER_MOE_PREAD`, `GOINFER_MOE_RESIDENCY`, `GOINFER_MOE_RESIDENCY_SCOPE`, `GOINFER_NO_RESIDENT_MEM_GUARD`,
 `GOINFER_PRECISE_MATH`, and (phase 6, rollback switches for default-on paths) `GOINFER_CUDA_MOE_EXPERT_MAJOR`,
 `GOINFER_CUDA_ATTN_FUSED_TILE`, `GOINFER_MOE_DMA_OVERLAP`, `GOINFER_MOE_PIN_REGISTER`,
-`GOINFER_CUDA_L01_CPU_OFFLOAD`, `GOINFER_MOE_PREAD_CPU`. Changing one after Load does not affect a model already loaded. A
+`GOINFER_MOE_PREAD_CPU`. Changing one after Load does not affect a model already loaded. A
 library caller can set any of them for one model with `decoder.Options{Knobs: &decoder.Knobs{name: value}}` (which
 overrides the environment for that model only).  The CPU, CUDA and Metal paths
 all read them from the model's snapshot (`decoder.Model.Knob`). See
@@ -130,11 +130,9 @@ that are not operator-facing. These may change or disappear without notice:
 
 `GOINFER_DELTANET_TIMING`,
 `GOINFER_MOE_CACHE_PROF`,
-`GOINFER_CUDA_L01_CPU_OFFLOAD` (L-01 prototype: hybrid CPU/GPU MoE expert offload,
-docs/tasks/task-l01-hybrid-moe-cpu-gpu.md — synchronous only, no overlap yet, default off),
 `GOINFER_FAKEQUANT_ACT`, `GOINFER_FAKEQUANT_EXPERTS`,
 `GOINFER_SSM_NOMUL`, `GOINFER_SSM_Q8CPU`,
-`GOINFER_SSM_SKIPFFN`, `GOINFER_CUDA_L01_CPU_OFFLOAD`,
+`GOINFER_SSM_SKIPFFN`,
 `GOINFER_GEMMA4_RESIDENT` (M-56, audit-2026-09-10.md: a Gemma-4 bring-up gate that is now a
 no-op — `decoder/gemma4_admission_test.go` pins that admission is unconditional regardless of
 its value; kept only so tests can still force both branches while the code path exists),
@@ -161,7 +159,7 @@ the draining path. The routing readback waits on an event recorded after the rou
 draining the stream; cache misses are DMA'd on a second stream while the kernels issued after the
 router (Gemma-4's dense branch, then the hit-expert ranks of segC) execute; each MoE rank waits
 device-side only if it missed. Launch order and arithmetic are unchanged, so it is bit-identical to
-the draining path. Off under `GOINFER_CUDA_GRAPHS` and `GOINFER_CUDA_L01_CPU_OFFLOAD`. Ceiling, decision
+the draining path. Off under `GOINFER_CUDA_GRAPHS`. Ceiling, decision
 rule and A/B: `docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md`),
 `GOINFER_CUDA_MOE_EXPERT_MAJOR` (CUDA: DEFAULT ON since 2026-09-21 — expert-major restructuring of
 the batched prefill MoE FFN, both the generic path (`cuda/moe_expert_major.go`) and Gemma-4's own
@@ -226,7 +224,8 @@ is recorded beside `allocSlots` in `cuda/resident.go`) and `INT4_SLOWPATH` (forc
 isolate the fast path; result in docs/completed/mellum2-resident.md), and turned `ROUTER_CAPTURE` and
 `FAKEQUANT_PERROW` into test seams (package variables their tests set; no env read). The later clean-up of code whose
 record says it didn't pay removed `SSM_W8A16` and `SSM_F16MAMBA` with the WebGPU paths they selected
-(docs/ssm-int8-quality.md). Setting any of them now does nothing.
+(docs/ssm-int8-quality.md), and `CUDA_L01_CPU_OFFLOAD` with the L-01 prototype
+(docs/measurements/l01-funding-cell-2026-09-21.md). Setting any of them now does nothing.
 
 ## CI & test gates
 

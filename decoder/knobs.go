@@ -52,7 +52,7 @@ var cudaKnobs = []string{
 	"GOINFER_SPLITKV_MIN_KEYS",
 	// Phase 6: rollback switches for default-on paths, filed as diagnostics until then.
 	"GOINFER_CUDA_MOE_EXPERT_MAJOR", "GOINFER_CUDA_ATTN_FUSED_TILE", "GOINFER_MOE_DMA_OVERLAP",
-	"GOINFER_MOE_PIN_REGISTER", "GOINFER_CUDA_L01_CPU_OFFLOAD",
+	"GOINFER_MOE_PIN_REGISTER",
 }
 
 var knobNames = []string{

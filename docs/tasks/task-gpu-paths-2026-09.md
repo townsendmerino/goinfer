@@ -227,7 +227,7 @@ dense (`docs/ollama-chase.md`), and the Mac's remaining gap to Ollama is mostly 
 
 ### G9 — WebGPU has no batched prefill at all
 
-**Where.** `decoder/model.go:1283`: "WebGPU implements no Prefiller"; `gpu/residency.go:1158`
+**Where.** `decoder/model.go:1283`: "WebGPU implements no Prefiller"; `gpu/residency.go:1142`
 seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit per token.
 
 **Fix.** A `Prefiller` on the WebGPU runner, dense first, following the CUDA shape
