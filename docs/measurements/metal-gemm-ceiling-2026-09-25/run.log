@@ -1,0 +1,24 @@
+14:15:05 waiting load1=2.13
+14:15:15 idle load1=1.95
+14:15:15 start; macOS 26.6.2; System-wide memory free percentage: 80%
+device: Apple M1 Pro  reps: 5  layers/cb: 28  distinct weights: 4
+warm-up: 3.1 s of back-to-back gate/up
+rep 1/5 done  (gate/up M=512: after idle 242.5 ms, right after 237.1 ms)
+rep 2/5 done  (gate/up M=512: after idle 238.8 ms, right after 231.5 ms)
+rep 3/5 done  (gate/up M=512: after idle 241.7 ms, right after 232.5 ms)
+rep 4/5 done  (gate/up M=512: after idle 242.1 ms, right after 231.6 ms)
+rep 5/5 done  (gate/up M=512: after idle 242.2 ms, right after 237.5 ms)
+
+=== MPSMatrixMultiplication f16, sustained, 28 GEMMs per command buffer, medians of 5 ===
+   M   shape      N      K    GPU ms (28x)  spread   TFLOPS   reps (ms)
+  512  qkv   2048   1536         27.8     2.8%     3.25   27.8 27.8 28.5 27.8 27.8
+  512  o   1536   1536         20.8     4.0%     3.25   20.8 20.8 21.6 20.8 20.8
+  512  gate/up  17920   1536        232.5     4.9%     3.39   242.9 232.7 231.7 232.5 231.5
+  512  down   1536   8960        121.8     4.1%     3.24   126.4 121.6 121.8 122.2 121.4
+ 3904  qkv   2048   1536        200.6     6.2%     3.43   211.7 199.5 199.2 200.6 200.8
+ 3904  o   1536   1536        151.8     3.4%     3.40   156.3 151.8 151.2 151.5 152.5
+ 3904  gate/up  17920   1536       1768.4     1.5%     3.40   1778.4 1765.6 1764.0 1768.4 1791.1
+ 3904  down   1536   8960        887.6     0.6%     3.39   887.3 886.9 891.9 887.6 889.7
+
+burst check, gate/up M=512: after 2 s idle 242.1 ms (3.26 TFLOPS, spread 1.5%) · immediately after 232.5 ms (3.39 TFLOPS, spread 2.6%)
+14:16:16 exit=0

@@ -170,14 +170,17 @@ per rep, after four different things. 13:58:54–14:02:14 local; the remaining t
   data with warm caches is already slow, so the 2× is not cache state or anything a preceding kernel leaves behind.
   It follows whether the GPU has just been working: after idle this kernel reaches ~1.45 TFLOPS, under any sustained
   GPU work ~0.75. Production prefill is sustained work, so **~0.75 TFLOPS is the kernel's real rate there, and the
-  in-sequence costs above are the right baseline** — there is no interaction to recover. Clock, power or memory
-  frequency cannot be told apart without `powermetrics` (root); no thermal warning was recorded.
+  in-sequence costs above are the right baseline** — there is no interaction to recover. *Corrected by S1a the same day* ([`metal-gemm-ceiling-2026-09-25.md`](metal-gemm-ceiling-2026-09-25.md)):
+  this is **not a GPU-wide clock or power state** — Apple's MPS GEMM runs the same shape at the same rate after idle
+  and under sustained load (242 vs 232 ms). The burst is specific to how goinfer's kernel uses the GPU; its mechanism
+  is not identified. No thermal warning was recorded.
 - **Aliasing is not the cause, on one round each and with one caveat.** gate/up in sequence 1046.8 (default) vs
   1043.4 ms (`ALIAS=0`); `PrefillLast` wall 1682 vs 1653 ms. The test did not print whether the aliaser was active in
   each process (it should have been off in the second — the knob is read at `decoder.Load` from the environment the
   runner exported), so the A/B is unverified; the test now prints it.
-- **For S1:** any kernel timing on this GPU has to be taken under sustained load, with no idle gap before the timed
-  run, or it measures the burst. That applies to a peer's kernel timed the same way, too.
+- **For S1:** time any kernel under sustained load, with no idle gap before the timed run, or it may read a burst.
+  S1a found MPS has no burst, so the rule protects against goinfer-kernel behaviour, and a replacement kernel should be
+  shown both sustained and after idle.
 
 ## Scope of this record
 

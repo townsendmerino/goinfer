@@ -920,6 +920,10 @@ the non-GEMM remainder already equals the parity target, so the GEMM alone canno
 (production) the MLP GEMMs run at ~0.75 TFLOPS; the ~1.45 they reach timed alone is a burst right after idle, so kernel
 benchmarks here must be taken under sustained load (the record's addendum and run 4). Next: S1 (the M1 Pro's sustained
 f16 MMA ceiling at these shapes and llama.cpp's `mul_mm` at the same shapes), then a pre-registered prototype.
+**S1a measured 2026-09-25** ([`metal-gemm-ceiling-2026-09-25.md`](../measurements/metal-gemm-ceiling-2026-09-25.md)):
+Apple's MPS f16 GEMM sustains 3.24–3.43 TFLOPS on all four shapes (4.5× goinfer on gate/up), with no post-idle
+burst — so the burst is goinfer's kernel, not the GPU. At that rate the GEMM category is 3.83× faster at K=512, past
+the ≈2.85× parity needs (an f16 bound: no dequant, 4× the weight bytes). S1b: llama.cpp's int4 `mul_mm` at the same shapes.
 
 ---
 
