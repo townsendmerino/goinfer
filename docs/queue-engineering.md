@@ -459,7 +459,7 @@ cannot hold its activation outliers** — `linux` (found and reproduced on nobar
 diagnosed the same day. GUARD SHIPPED; per-group activation scales are the chosen fix (owner decision
 2026-09-25), after an outlier sweep across families**
 
-Found while validating the essay-v2 bench prompt, right after `bb04019e` gave Phi-3 its chat template
+Found while validating the essay-v2 bench prompt, right after `ff196886` gave Phi-3 its chat template
 and rstrip tokenization (before that every Phi-3 chat request was a raw completion, which hid this). On
 `prompts.json` `phi3-mini:128` (129 tokens, essay-v2) llama.cpp and Ollama at Q4 write coherent essays;
 goinfer int4 / int8int8 / int4mix write `…canRESSay:RESS isRESSayed…` on CPU and CUDA alike.

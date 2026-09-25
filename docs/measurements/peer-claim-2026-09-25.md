@@ -421,12 +421,12 @@ anything, because Part 1's outcomes stand as registered.
 
    So **the gemma3-1b lead in cell b is closed: not a goinfer template or stop-token bug.** The
    harness now uses a prompt that runs to 64 tokens on all three engines, cold and warm, and applies
-   a proportional token gate (`bb04019e`; `benchmarks.md` Methodology, "A reply that ends early").
+   a proportional token gate (`ff196886`; `benchmarks.md` Methodology, "A reply that ends early").
    The next pre-registration should adopt that gate in place of this one's 95%.
 2. **goinfer had no Phi-3 chat template.** Every goinfer phi3-mini cell here (b @128 and @3900, and
    both f cells) decoded a **raw completion**, while Ollama and llama.cpp decoded a chat prompt. The
    prompts differed by the template tokens, and goinfer's replies were newline runs. Fixed in
-   `bb04019e`, together with the tokenizer's missing added-token rstrip, which Phi-3's turn markers
+   `ff196886`, together with the tokenizer's missing added-token rstrip, which Phi-3's turn markers
    need.
 3. **goinfer's quantized phi3-mini output is junk** (int4, int8int8, int4mix, on CPU and CUDA), even
    with the template. goinfer's f32 forward matches Hugging Face exactly (cosine 1.000000 at every
