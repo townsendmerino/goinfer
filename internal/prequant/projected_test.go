@@ -19,7 +19,7 @@ func TestProjectedSidecarBytes_neverUnderCounts(t *testing.T) {
 		t.Skipf("tiny fixture: %v", err)
 	}
 	for _, q := range []string{"int4", "int8int8", "int8", ""} {
-		m, err := decoder.Load(src, decoder.Options{Quant: q, Backend: "cpu"})
+		m, err := decoder.Load(src, decoder.Options{Quant: q}) // canonical bytes, as the writer needs
 		if err != nil {
 			t.Fatalf("load at %q: %v", q, err)
 		}

@@ -261,7 +261,9 @@ func TestFreshSidecar_findsTheOneChatAndServeBuild(t *testing.T) {
 	if _, _, ok := freshSidecar(src, "int4"); ok {
 		t.Fatal("found a sidecar before one was built")
 	}
-	m, err := decoder.Load(src, decoder.Options{Quant: "int4", Backend: "cpu"})
+	// Backend "" keeps canonical int4 bytes in RAM, which the .giw writer needs to emit any target (the
+	// production transcode does the same); a Backend "cpu" load on arm64 keeps only the row4 repack.
+	m, err := decoder.Load(src, decoder.Options{Quant: "int4"})
 	if err != nil {
 		t.Fatal(err)
 	}
