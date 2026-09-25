@@ -571,8 +571,12 @@ func TestServe_anthropic_tools(t *testing.T) {
 	}
 	t.Logf("tool_use: %s(location=%q) id=%s", call.name, call.location, call.id)
 
-	// Replay the call + a result → expect a grounded text answer (end_turn).
-	replay := `{"model":"test-model","max_tokens":80,"temperature":0,` + tools + `,
+	// Replay the call + a result → expect a grounded text answer (end_turn). tool_choice "none" on the
+	// replay: what this checks is the SERVER — the tool_use/tool_result history renders and the model can
+	// answer from it. Under "auto" the next move is the model's own choice, and the 0.5B fixture re-calls
+	// get_weather (its prompt still ends in "Use the tool."; the rendering matches Qwen's template, checked
+	// 2026-09-25), which failed this test for a reason no server change could fix.
+	replay := `{"model":"test-model","max_tokens":80,"temperature":0,` + tools + `,"tool_choice":{"type":"none"},
 		"messages":[
 			{"role":"user","content":"What is the weather in Paris? Use the tool."},
 			{"role":"assistant","content":[{"type":"tool_use","id":"` + call.id + `","name":"get_weather","input":{"location":"Paris"}}]},
@@ -586,7 +590,11 @@ func TestServe_anthropic_tools(t *testing.T) {
 	var out2 anthropicResp
 	json.NewDecoder(r2.Body).Decode(&out2)
 	if len(out2.Content) == 0 || out2.Content[0].Type != "text" || out2.Content[0].Text == "" {
-		t.Errorf("grounded answer missing: %+v", out2.Content)
+		t.Fatalf("grounded answer missing: %+v", out2.Content)
+	}
+	// Grounded means it used the RESULT: "18" is only in the tool_result, never in the question.
+	if !strings.Contains(out2.Content[0].Text, "18") {
+		t.Errorf("answer does not use the tool result (no \"18\"): %q", out2.Content[0].Text)
 	}
 	t.Logf("grounded answer: %q (stop=%s)", out2.Content[0].Text, out2.StopReason)
 }
