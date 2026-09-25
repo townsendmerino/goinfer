@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"slices"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -135,7 +134,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	_, _, _, _, _, _, _, _, _, granOK := m.GraniteResidentParams()
 	_, _, _, _, _, _, _, nemoOK := m.NemotronResidentParams()
 	if !m.DecodeRunnerEligible() && !granOK && !nemoOK {
-		return nil, false, nil
+		return nil, false, decoder.DeclineResident("arch is not eligible for the webgpu resident decode runner")
 	}
 	// Admission: refuse any arch needing a feature this runner does not implement, rather
 	// than dropping it silently and emitting wrong logits (the bug class documented in
@@ -145,8 +144,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// job is future arches: one that lands with a feature nobody implemented declines here
 	// instead of mis-running.
 	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("webgpu")); len(missing) > 0 {
-		fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: arch needs unimplemented feature(s) %v\n", missing)
-		return nil, false, nil
+		return nil, false, decoder.DeclineResident("webgpu does not implement %v, which this model needs", missing)
 	}
 	// Per-layer attention geometry (decoder.Model.PerLayerGeomOK): dense Gemma 4's local/global
 	// head_dim split (256 vs gemma4.GlobalHeadDim 512) needs a per-layer geometry seam this
@@ -157,8 +155,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// exists to prevent (found 2026-09-08 when G6's Gemma-set work satisfied every OTHER
 	// requirement dense Gemma 4 has).
 	if !m.PerLayerGeomOK("webgpu") {
-		fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: arch needs per-layer attention geometry this backend does not implement\n")
-		return nil, false, nil
+		return nil, false, decoder.DeclineResident("per-layer attention geometry is not implemented on webgpu")
 	}
 	// Router-kernel capacity (gpu/moe.go): score/sel are array<f32,256> with nE clamped to
 	// min(nE,256), and the group-limited path uses array<f32,32>/array<bool,32> indexed by
@@ -174,14 +171,12 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	if capE, capG, capOK := decoder.ResidentBackendMoECap("webgpu"); capOK {
 		if nE, _, _, _, _, _, _, _, nGroup, _, moeOK := m.MoEResidentParams(); moeOK &&
 			((capE > 0 && nE > capE) || (capG > 0 && nGroup > capG)) {
-			fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: MoE nE=%d/nGroup=%d exceeds "+
-				"router-kernel cap (%d experts / %d groups)\n", nE, nGroup, capE, capG)
-			return nil, false, nil
+			return nil, false, decoder.DeclineResident("MoE nE=%d/nGroup=%d exceeds webgpu's router-kernel cap (%d experts / %d groups)",
+				nE, nGroup, capE, capG)
 		}
 	}
 	if m.HasGemma4MoEResident() {
-		fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: Gemma 4 MoE (parallel dense+MoE FFN) is not implemented on WebGPU\n")
-		return nil, false, nil
+		return nil, false, decoder.DeclineResident("Gemma 4's parallel dense+MoE FFN is not implemented on webgpu")
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -216,9 +211,8 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK] +
 			map[bool]string{true: "mla"}[mlaOK]; family != "" {
 			flag := map[bool]string{true: "--kv i8"}[kvI8] + map[bool]string{true: "--kv f16"}[kvF16]
-			fmt.Fprintf(os.Stderr, "[gpu] BuildResident declined: %s does not implement %s KV "+
-				"(only the generic GQA path does); drop the flag to use the resident path\n", family, flag)
-			return nil, false, nil
+			return nil, false, decoder.DeclineResident("%s does not implement %s KV on webgpu (only the generic GQA path does); "+
+				"drop the flag to use the resident path", family, flag)
 		}
 	}
 

@@ -52,7 +52,7 @@ func TestSpecVerifyCurveMetal(t *testing.T) {
 	defer m.Close()
 	rf, ok := m.ResidentForwardForTest().(*metalResident)
 	if !ok {
-		t.Skip("metal resident not built for this model (declined — see stderr)")
+		t.Skipf("metal resident not built for this model: %s", m.ResidentDecline())
 	}
 	_, _, _, _, _, _, vocab := m.Dims()
 	emb := func(i int) []float32 { return m.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1)) }

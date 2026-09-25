@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -94,5 +95,51 @@ func TestResidentAdmission_declinesBeforeBuildAndNamesTheGate(t *testing.T) {
 	_, be3 := loadWithNamedBackend(t, needsMore, "some-out-of-tree-backend")
 	if be3.built.Load() != 1 {
 		t.Errorf("an undeclared backend was not asked to build (built=%d) — only declared backends take the full gate", be3.built.Load())
+	}
+}
+
+// A backend's own decline reason reaches the model's ResidentDecline — what DecodePath and `serve check`
+// print — instead of the generic string the load path used to substitute for every decline.
+type decliningBackend struct {
+	Backend
+	err error
+}
+
+func (b *decliningBackend) BuildResident(*Model) (ResidentForward, bool, error) {
+	return nil, false, b.err
+}
+func (b *decliningBackend) Close() error { return nil }
+
+func TestResidentDecline_backendReasonReachesTheModel(t *testing.T) {
+	dir := filepath.Join("..", "testdata", "llama-tiny")
+	for i, c := range []struct {
+		err  error
+		want string
+	}{
+		{DeclineResident("the experts need %d GB of VRAM and %d GB is free", 9, 7), "the experts need 9 GB of VRAM and 7 GB is free"},
+		{errors.New("no usable device"), "backend failed to build a resident path: no usable device"},
+		{nil, "backend declined to build a resident path (no reason given)"},
+	} {
+		be := &decliningBackend{err: c.err}
+		reg := "fake-declining-" + string(rune('a'+i))
+		RegisterBackend(reg, func() (Backend, error) {
+			cpu, err := NewBackend("cpu")
+			if err != nil {
+				return nil, err
+			}
+			be.Backend = cpu
+			return be, nil
+		})
+		m, err := Load(dir, Options{Backend: reg, Quant: "int4"})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		if got := m.ResidentDecline(); got != c.want {
+			t.Errorf("BuildResident err %v: ResidentDecline() = %q, want %q", c.err, got, c.want)
+		}
+		m.Close()
+	}
+	if !IsResidentDecline(DeclineResident("x")) || IsResidentDecline(errors.New("x")) || IsResidentDecline(nil) {
+		t.Error("IsResidentDecline does not tell a decline from a failure")
 	}
 }

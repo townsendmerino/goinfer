@@ -94,14 +94,17 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// learn "the experts do not fit VRAM", which the runtime knew at the moment it declined. One
 	// line at load, not a debug stream: it is the same "zero means either" shape as a skip census
 	// that prints nothing — a silent decline and a successful build look identical from outside.
+	//
+	// Since 2026-09-25 the reason travels as a typed decline (decoder.DeclineResident): decoder's load path
+	// prints it once and records it as the model's ResidentDecline, which DecodePath and `serve check`
+	// report — before, it reached stderr only, and the model's recorded reason was a generic string.
 	declined := func(e error) (decoder.ResidentForward, bool, error) {
-		fmt.Fprintf(os.Stderr, "[cuda] resident path DECLINED (falling back to the staged/CPU path): %v\n", e)
-		return nil, false, nil
+		return nil, false, decoder.DeclineResident("cuda: %v", e)
 	}
 
 	w := m.Weights()
 	if w == nil || len(w.Layers) == 0 {
-		return nil, false, nil
+		return declined(fmt.Errorf("the model has no loaded layer weights"))
 	}
 
 	// Admission: DecodeRunnerEligible was scoped to the RICHER WebGPU runner (QK-norm,
@@ -140,11 +143,14 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// admission check above already declines it before this switch runs. Duplicating that
 		// decline here would be a hand-coded copy that could drift from the taxonomy (the exact
 		// class the hardware-matrix generator caught) — single source of truth instead.
+		// moe_route's MOE_MAX_E / MOE_MAX_G — decoder's declaration of them (ResidentBackendMoECap), which the
+		// load path's admission gate already applied; restating the numbers here is the M-31 class.
+		capE, capG, _ := decoder.ResidentBackendMoECap("cuda")
 		switch {
-		case nE > 512:
-			return declined(fmt.Errorf("MoE nE=%d exceeds moe_route's MOE_MAX_E=512", nE))
-		case nGroup > 64:
-			return declined(fmt.Errorf("MoE nGroup=%d exceeds moe_route's MOE_MAX_G=64", nGroup))
+		case nE > capE:
+			return declined(fmt.Errorf("MoE nE=%d exceeds moe_route's MOE_MAX_E=%d", nE, capE))
+		case nGroup > capG:
+			return declined(fmt.Errorf("MoE nGroup=%d exceeds moe_route's MOE_MAX_G=%d", nGroup, capG))
 		case m.GatedActResident() != 1: // decoder.ActSiLU — decoder/mlp.go errors on any other
 			return declined(fmt.Errorf("MoE experts are SwiGLU-only, arch act=%d", m.GatedActResident()))
 		case m.SandwichNormResident():
@@ -162,8 +168,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if moeInter%32 != 0 || H%32 != 0 {
 			return declined(fmt.Errorf("gemma4 MoE int4 needs moeInter(%d) and hidden(%d) both multiples of 32", moeInter, H))
 		}
-		if nE > 512 {
-			return declined(fmt.Errorf("gemma4 MoE nE=%d exceeds moe_route's MOE_MAX_E=512", nE))
+		if capE, _, _ := decoder.ResidentBackendMoECap("cuda"); nE > capE {
+			return declined(fmt.Errorf("gemma4 MoE nE=%d exceeds moe_route's MOE_MAX_E=%d", nE, capE))
 		}
 	}
 

@@ -15,6 +15,12 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **When a GPU backend declines to run a model resident, `serve check` and the load banner now say why.** Before,
+  every decline was recorded as "arch is not eligible for the resident decode runner" or "backend declined to build a
+  resident path", and the backend's real reason went only to stderr. Now it is, for example, "metal does not implement
+  [kda mla], which this model needs", or the memory guard's own figures. The load path also runs every admission gate
+  the published hardware matrix is built from, so what the matrix shows is what the runtime does.
+
 - **`fit` and CUDA's own context sizing now price CUDA's KV cache as CUDA allocates it.** CUDA holds f32 K/V whatever
   precision is requested, and one latent buffer per layer on an MLA model (DeepSeek, Kimi). `fit` priced a requested
   f16 / i8 KV at half / ~0.28× of that, and every CUDA plan counted MLA models' KV twice — so CUDA's default context for

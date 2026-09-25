@@ -379,11 +379,10 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 		// nil and BuildResident builds r.g4moe instead; the per-layer loop routes on the bundle.
 		return nil, nil
 	}
-	if nE > 256 {
-		return nil, fmt.Errorf("metal MoE: nE=%d exceeds router cap 256", nE)
-	}
-	if nGroup > 64 {
-		return nil, fmt.Errorf("metal MoE: nGroup=%d exceeds cap 64", nGroup)
+	// The router's fixed-size score/group arrays (moe_route); the cap is decoder's declaration, which the
+	// load path's admission gate already applied — this is the build's own backstop, not a second copy.
+	if capE, capG, _ := decoder.ResidentBackendMoECap("metal"); nE > capE || nGroup > capG {
+		return nil, fmt.Errorf("metal MoE: nE=%d / nGroup=%d exceeds the router cap (%d / %d)", nE, nGroup, capE, capG)
 	}
 	_, _, isGptOss := m.GptOssActResident()
 	mo := &moeResident{

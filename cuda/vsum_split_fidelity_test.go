@@ -55,7 +55,7 @@ func TestVsumSplitFidelity(t *testing.T) {
 	// assertion below (the same trap splitkv_bitident_test.go records).
 	rfAny := mc.ResidentForwardForTest()
 	if rfAny == nil {
-		t.Skip("could not evaluate: the resident path DECLINED — nothing here says anything about fidelity")
+		t.Skipf("could not evaluate: the resident path DECLINED (%s) — nothing here says anything about fidelity", mc.ResidentDecline())
 	}
 	rf := rfAny.(*cudaResident)
 	if rf.skVsumSplit == 0 {

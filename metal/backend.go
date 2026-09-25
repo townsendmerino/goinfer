@@ -78,8 +78,7 @@ func (b *metalBackend) MatmulBT(a, bmat, dst []float32, M, K, N int) {
 func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForward, ok bool, err error) {
 	defer func() {
 		if p := recover(); p != nil {
-			fmt.Fprintf(os.Stderr, "[metal] BuildResident declined: %v\n", p)
-			rf, ok, err = nil, false, nil
+			rf, ok, err = nil, false, decoder.DeclineResident("metal build panicked: %v", p)
 		}
 	}()
 	// Admission check: DecodeRunnerEligible was scoped to the richer WebGPU/CUDA runner, which
@@ -88,8 +87,7 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 	// DECLINE (→ correct CPU fallback) rather than run with the feature silently dropped. The
 	// subset check uses the shared taxonomy (one source of truth; a new arch classifies itself).
 	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("metal")); len(missing) > 0 {
-		fmt.Fprintf(os.Stderr, "[metal] declined — unimplemented features: %v\n", missing)
-		return nil, false, nil
+		return nil, false, decoder.DeclineResident("metal does not implement %v, which this model needs", missing)
 	}
 	// FITS-IN-MEMORY GUARD. Metal's unified memory IS host RAM, and it WIRES the mmap pages a
 	// command buffer touches, so a model whose weights exceed RAM does not merely run slowly —
@@ -116,13 +114,12 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		fmt.Fprintf(os.Stderr, "[metal] %v\n", cerr)
 		return nil, false, cerr
 	}
-	if !residentFitsMemory(m) {
-		return nil, false, nil
+	if why := residentMemoryDecline(m); why != "" {
+		return nil, false, decoder.DeclineResident("%s", why)
 	}
 	res, e := buildResident(m)
 	if e != nil {
-		fmt.Fprintf(os.Stderr, "[metal] BuildResident declined: %v\n", e)
-		return nil, false, nil
+		return nil, false, decoder.DeclineResident("metal: %v", e)
 	}
 	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill()}
 	return b.resident, true, nil
@@ -365,23 +362,27 @@ func residentNeedBytes(m *decoder.Model) int64 {
 // residentFitsMemory reports whether this model's weights fit the machine, declining loudly when
 // they do not. True (proceed) whenever the answer is unknown — an unreadable hw.memsize or a
 // model reporting zero bytes must not silently disable residency for everyone.
-func residentFitsMemory(m *decoder.Model) bool {
+func residentFitsMemory(m *decoder.Model) bool { return residentMemoryDecline(m) == "" }
+
+// residentMemoryDecline is residentFitsMemory with its reason — "" when the build fits — so BuildResident
+// can hand it to the load path as a typed decline (decoder.DeclineResident) instead of printing it.
+func residentMemoryDecline(m *decoder.Model) string {
 	if modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
-		return true
+		return ""
 	}
 	need := residentNeedBytes(m)
 	if need <= 0 {
-		return true // nothing to compare against; not a reason to refuse
+		return "" // nothing to compare against; not a reason to refuse
 	}
 	ram, err := unix.SysctlUint64("hw.memsize")
 	if err != nil || ram == 0 {
-		return true
+		return ""
 	}
 	// S4 item 3: the SAME combined ceiling the registered "metal" memory probe reports to
 	// decoder.Model.Plan, so the two can never disagree.
 	budget := metalMemoryCeiling(ram)
 	if need <= budget {
-		return true
+		return ""
 	}
 	const gb = 1 << 30
 	// M-13: name the actual escape hatch for an MoE model, not just the guard override — a model
@@ -398,12 +399,10 @@ func residentFitsMemory(m *decoder.Model) bool {
 		tightened = fmt.Sprintf(" (this machine's live-available memory tightened the static %.0f%%/%.2f GB ceiling further)",
 			residentMemFraction*100, float64(staticCeiling)/gb)
 	}
-	fmt.Fprintf(os.Stderr, "[metal] declined — weights %.2f GB exceed %.0f%% of %.1f GB RAM "+
+	return fmt.Sprintf("the resident build needs %.2f GB (weights, host copy and KV), over %.0f%% of %.1f GB RAM "+
 		"(budget %.2f GB%s). Metal wires the pages it touches, so loading this would page to swap "+
-		"exhaustion rather than run; continuing on the CPU/staged path. Override with "+
-		"GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.%s\n",
+		"exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.%s",
 		float64(need)/gb, residentMemFraction*100, float64(ram)/gb, float64(budget)/gb, tightened, moeHint)
-	return false
 }
 
 func (b *metalBackend) Close() error {

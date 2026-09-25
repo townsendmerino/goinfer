@@ -46,9 +46,8 @@ func TestSplitKV_bitIdentical(t *testing.T) {
 	// so; it does not panic, and it does not pass either.
 	rfAny := mc.ResidentForwardForTest()
 	if rfAny == nil {
-		t.Skip("could not evaluate: the resident path DECLINED (see the [cuda] decline line above " +
-			"for the KV-vs-free figures) — the split-KV kernels were never built, so this run says " +
-			"nothing about bit-identity")
+		t.Skipf("could not evaluate: the resident path DECLINED (%s) — the split-KV kernels were never "+
+			"built, so this run says nothing about bit-identity", mc.ResidentDecline())
 	}
 	rf := rfAny.(*cudaResident)
 	if rf.skScores == (Pipeline{}) || rf.skVsum == (Pipeline{}) {
@@ -150,9 +149,8 @@ func TestSplitKV_bitIdentical_gemma3(t *testing.T) {
 	// so; it does not panic, and it does not pass either.
 	rfAny := mc.ResidentForwardForTest()
 	if rfAny == nil {
-		t.Skip("could not evaluate: the resident path DECLINED (see the [cuda] decline line above " +
-			"for the KV-vs-free figures) — the split-KV kernels were never built, so this run says " +
-			"nothing about bit-identity")
+		t.Skipf("could not evaluate: the resident path DECLINED (%s) — the split-KV kernels were never "+
+			"built, so this run says nothing about bit-identity", mc.ResidentDecline())
 	}
 	rf := rfAny.(*cudaResident)
 	if rf.skScores == (Pipeline{}) {

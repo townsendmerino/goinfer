@@ -52,7 +52,7 @@ staging) against Ollama's ~1.0 ms/token on the same weights.** That is M-03, and
 single lever on the Mac.
 
 **Below the 512-token floor — the common chat turn — the fast path never runs at all, and the floor
-is set on a premise the repo's own gate record contradicts.** `metal/backend.go:512-347` says "K=256
+is set on a premise the repo's own gate record contradicts.** `metal/backend.go:511-347` says "K=256
 is expected to fail §3.2"; `prefill-gate-l1-ref-b-2026-09-09.md:23` records K=256 **PASS** as a
 decision cell, and the fused-kernel gate passed it again. Every prompt in [8, 512) runs the decode
 kernel per token at 74–77 tok/s where the batched path's own record is 272 tok/s at P=256 (M-02).
@@ -105,7 +105,7 @@ re-baked by the code it checks (G-04).
 
 #### M-01 · `ResidentPrefillKV` is not implemented on Metal — every sequential prompt token runs the full int8 LM head and a 608 KB readback for logits nobody reads
 - **Where:** `decoder/model.go:1440` (`kvOnly, hasKV := m.resident.(ResidentPrefillKV)`),
-  `decoder/residency.go:146-109`; `metal/backend.go:443-602` (the complete `metalResident` method
+  `decoder/residency.go:147-110`; `metal/backend.go:442-601` (the complete `metalResident` method
   set — no `ForwardNoLogits`); `metal/model.go:1610-1450` (`encodeLogitsCB`, the only executor job
   shape, always appends `pGemvW8`); `metal/model.go:1476-1331` (`forwardHiddenNoHead` — the
   trunk-only encode already exists, used only by `HiddenLast`); `metal/model.go:1535`
@@ -148,7 +148,7 @@ re-baked by the code it checks (G-04).
   full `go test ./metal/...` and `-tags goinfer_testhooks` both green.
 
 #### M-02 · The 512-token floor keeps every prompt under 512 tokens sequential, on a stated reason the repo's own gate record contradicts
-- **Where:** `metal/backend.go:512-347` (`const metalFastPrefillFloor = 512` — "K=256 is expected to
+- **Where:** `metal/backend.go:511-347` (`const metalFastPrefillFloor = 512` — "K=256 is expected to
   fail §3.2"), `:426-431` (the decline), `:340,358` (the same file: "gate passed 2026-09-09 (S
   model, K=256/512/1024)"); `docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md:23` ("S K=256 …
   94.2% / 4 / 0.0328 vs exact 93.0% / 4 / 0.0347 **PASS**"), `prefill-l2-metal-fused-attn-2026-09-09.md:138`
@@ -246,8 +246,8 @@ re-baked by the code it checks (G-04).
 
 #### M-05 · MoE batched prefill runs the FFN half as M sequential rows; paged/DeltaNet families prefill as M decode tokens — bounded by M × active-expert bytes, undocumented
 - **Where:** `metal/prefill.go:867-674` (`for m := 0; m < M; m++ { … r.encodeMoEExperts(e, L, moeDst) }`),
-  `metal/moe.go:712-682`; `metal/model.go:803-728` (paged/g4moe/DeltaNet → `prefillOK=false`);
-  `metal/backend.go:647-455` (`PrefillPath` reports "batched f16-MMA" for it);
+  `metal/moe.go:711-681`; `metal/model.go:803-728` (paged/g4moe/DeltaNet → `prefillOK=false`);
+  `metal/backend.go:646-454` (`PrefillPath` reports "batched f16-MMA" for it);
   `docs/tasks/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").
 - **Mechanism and bound (counted):** non-paged: per row per MoE layer (5 + 3k [+3–5 shared])
   dispatches and a full read of the k routed experts — bytes ≈ M × L × k·3·H·I/2: Qwen1.5-MoE-class
@@ -566,7 +566,7 @@ re-baked by the code it checks (G-04).
 
 #### M-11 · Paged decode pays a ~14 ms command-buffer boundary 61–81× per token; the one design that removes it was rejected on a measurement taken where the boundary costs 0.2 ms
 - **Where:** `metal/gemma4_moe.go:490-528` (`begin()`/`end()` per phase; `end` = commit +
-  `waitUntilCompleted`; two per MoE layer), `metal/moe.go:839-802` (same, generic);
+  `waitUntilCompleted`; two per MoE layer), `metal/moe.go:838-801` (same, generic);
   `metal/residency_probe_test.go:11-12` ("~15 ms/boundary of GPU-idle-in-wait, 72× Step-0's 0.213
   ms"); `metal/pagecost_sharedevent_test.go:47-64` (verdict "recovers ~0%" — measured on
   qwen2.5-coder-1.5b, dense); `metal/model.go:1305-1199` (residency-set comment: p1 still carries
@@ -640,7 +640,7 @@ re-baked by the code it checks (G-04).
   the number of command-buffer boundaries per token, so it carries no expected perf effect and no
   new risk to a running paged decode; the actual single-CB rework and its measurement remain
   explicitly owed, gated on the same real-hardware caution as M-05.
-- **Where:** `metal/moe.go:860` (was a serial `ensureResident` loop — see this finding's own
+- **Where:** `metal/moe.go:859` (was a serial `ensureResident` loop — see this finding's own
   closure note), `:535-553` (three sequential
   `preadRangeIntoU32Buf` per expert + `int4DirectBytes` scale narrowing on the host),
   `metal/expertpool.go:212-185`; `docs/completed/task-metal-expert-streaming-at-scale.md:236-242`.
@@ -717,8 +717,8 @@ re-baked by the code it checks (G-04).
   real 26B/35B cold-read latency this session had no checkpoint for.
 
 #### M-13 · The Metal expert pager engages only with an explicit `--moe-cache-slots N`; the default declines the 26B/35B/gpt-oss-20b to the CPU-staged path, and the peer-matrix row that "parked" them on the Mac measured that fallback
-- **Where:** `metal/backend.go:201-160` (`metalMoESlotsRequest`: flag or env only; 0 ⇒ unpaged),
-  `metal/moe.go:432-434`, `metal/backend.go:355-234` (guard prices the *unpaged* set when slots are
+- **Where:** `metal/backend.go:198-157` (`metalMoESlotsRequest`: flag or env only; 0 ⇒ unpaged),
+  `metal/moe.go:431-433`, `metal/backend.go:352-231` (guard prices the *unpaged* set when slots are
   unset, declines to CPU; the message names `GOINFER_NO_RESIDENT_MEM_GUARD` but not
   `--moe-cache-slots`); `internal/serveapp/main.go:508` (`--moe-cache-experts` … "CUDA only"),
   `:488` ("Metal: every expert resident, unpaged"); `docs/benchmarks.md:1686-1696` ("falls back
@@ -1316,7 +1316,7 @@ re-baked by the code it checks (G-04).
 - N-11 `metal/cmd/serve/main.go` said "Dense residency only … int8": MoE is resident; int8 is the
   re-quantised case. `decoder/features.go:359` cited `metal/moe.go:207-211`; it is `:375`. **FIXED
   2026-09-13** — `metal/cmd/serve/main.go:5-10` now names both corrections inline; the
-  `decoder/features.go:359` citation repointed to `metal/moe.go:382-376`.
+  `decoder/features.go:359` citation repointed to `metal/moe.go:384-376`.
 - N-12 `docs/measurements/prefill-gate-l1-ref-b-2026-09-09.md:14` names `qwen2.5-1.5b-instruct`;
   test default and L2 record say `qwen2.5-coder-1.5b-instruct` — methodology wants the exact file.
   **FIXED 2026-09-13.**
@@ -1411,9 +1411,9 @@ re-baked by the code it checks (G-04).
   `TestExpertPoolBatch_matchesSequential/_pread`, and the real paged-forward parity tests
   (`TestGemma4Paging_bitExact`, `TestMoEPaging_matchesNonPaged`) all still pass — if uninitialized
   memory leaked through anywhere, the staged-content checks in these would have caught it.
-- N-22 `metal/moe.go:867-790`, `metal/gemma4_moe.go:577-528` — phase 2 of layer l and phase 1 of l+1 have no
+- N-22 `metal/moe.go:866-789`, `metal/gemma4_moe.go:577-528` — phase 2 of layer l and phase 1 of l+1 have no
   host dependency and could share one command buffer (2L+1 → L+1); superseded by M-11.
-- N-23 `metal/moe.go:805` — a hybrid's dense layers each get their own `Begin/End` in
+- N-23 `metal/moe.go:804` — a hybrid's dense layers each get their own `Begin/End` in
   `forwardLogitsMoEPaged`. **FIXED 2026-09-13**: consecutive dense layers now share ONE command
   buffer (`Begin()` on first use, closed only when the next MoE-paged layer's router readback needs
   a real value-dependent seam, or at the loop's end) instead of a submit+wait per dense layer —
@@ -1719,10 +1719,10 @@ Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line a
    shipped three days later — `execJob.noHead` (`metal/model.go:380`), `execLoop` branching on it
    to pre-encode the next command buffer while the current one is still executing
    (`metal/model.go:1672-1694`), and `ForwardEmbNoLogitsPipe`
-   (`metal/backend.go:541`) as the entry point. Paged MoE (`g4moe`/`moe` paged) is declined, not
+   (`metal/backend.go:540`) as the entry point. Paged MoE (`g4moe`/`moe` paged) is declined, not
    pipelined — its per-layer route/stage/submit loop needs a host readback mid-token, which is a
    structural incompatibility with pre-encoding, not a small extension
-   (`metal/backend.go:531-475`). Gated by three byte-identical tests
+   (`metal/backend.go:530-474`). Gated by three byte-identical tests
    (`metal/kvonly_prefill_test.go`: `TestForwardNoLogits_byteIdenticalKV`,
    `TestForwardNoLogits_pagedMoEFallback`, `TestForwardNoLogits_pipelineTransitionParity`). The
    claimed ~0.9 ms/token overlap has **no real-model measurement** — only a synthetic-fixture

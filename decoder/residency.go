@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -326,8 +327,30 @@ type ResidentCapped interface {
 // ResidencyBackend is the optional capability a Backend advertises to build a
 // ResidentForward from a loaded Model. The webgpu backend implements it; ok is
 // false when the arch is not DecodeRunner-eligible.
+//
+// To DECLINE — this model does not run resident here — return ok=false with a *ResidentDeclineError
+// (DeclineResident) naming the reason: the load path records it as the model's ResidentDecline, which
+// DecodePath and `serve check` print. Any other non-nil err is a FAILURE (no usable device, a driver
+// error). (nil, false, nil) still means "declined, no reason given" for backends written before this.
 type ResidencyBackend interface {
 	BuildResident(m *Model) (rf ResidentForward, ok bool, err error)
+}
+
+// ResidentDeclineError is a backend's reason for not building a resident path: an ordinary decline
+// (unsupported shape, too big for the router, doesn't fit memory), not a device failure.
+type ResidentDeclineError struct{ Reason string }
+
+func (e *ResidentDeclineError) Error() string { return "resident path declined: " + e.Reason }
+
+// DeclineResident is the error a BuildResident returns to decline with a reason.
+func DeclineResident(format string, args ...any) error {
+	return &ResidentDeclineError{Reason: fmt.Sprintf(format, args...)}
+}
+
+// IsResidentDecline reports whether err is a decline (DeclineResident) rather than a failure.
+func IsResidentDecline(err error) bool {
+	var d *ResidentDeclineError
+	return errors.As(err, &d)
 }
 
 // DecodeRunnerEligible reports whether this model's arch is a dense Qwen2/Llama
@@ -986,13 +1009,18 @@ func (m *Model) withResidency() *Model {
 		fmt.Fprintf(os.Stderr, "[resident] BuildResident declined (ok=%v err=%v) — continuing on the CPU/staged path\n", ok, err)
 		// Falls back silently for correctness (a decline must never be fatal mid-load), but the
 		// REASON is kept: on a GPU backend this is the whole forward moving to CPU, which is the
-		// same silent-regression class as the prefill decline one layer down. err is nil for an
-		// ordinary decline (BuildResident reports those via ok=false); a non-nil err is a driver
-		// or device failure — `--backend cuda` on a box with no usable GPU lands here, since the
-		// cuda factory always succeeds and the device is only touched at build time.
-		m.resDecline = "backend declined to build a resident path (no usable device, or an unsupported model shape)"
-		if err != nil {
+		// same silent-regression class as the prefill decline one layer down. A decline carries its
+		// reason as a *ResidentDeclineError; any other non-nil err is a driver or device failure —
+		// `--backend cuda` on a box with no usable GPU lands here, since the cuda factory always
+		// succeeds and the device is only touched at build time.
+		var d *ResidentDeclineError
+		switch {
+		case errors.As(err, &d):
+			m.resDecline = d.Reason // the backend's own reason, kept for DecodePath / `serve check`
+		case err != nil:
 			m.resDecline = "backend failed to build a resident path: " + err.Error()
+		default:
+			m.resDecline = "backend declined to build a resident path (no reason given)"
 		}
 		return m
 	}

@@ -131,7 +131,7 @@ where it gets attributed.
 (`decoder/model.go:562`) prices weights + KV + `srcFileBytes` for a `.gguf`, but the `.giw` branch
 (`decoder/model.go:430`) returns before it — by design, since a mapped load has no allocation
 peak to price; it also therefore prices none of the anonymous remainder (KV, scratch, Metal
-buffers). Metal's own guard is a static 70% of `hw.memsize` (`metal/backend.go:140`,
+buffers). Metal's own guard is a static 70% of `hw.memsize` (`metal/backend.go:137`,
 `residentMemFraction`, set from one measured failure), deliberately not a live query because the
 UBC makes "available" report what survived rather than what can be asked for — a stated reason S4
 keeps rather than overrides.

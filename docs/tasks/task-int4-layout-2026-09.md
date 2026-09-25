@@ -53,7 +53,7 @@ from an omission.** "Both" survives only as the legacy read path for existing ki
   slower path. The failure mode we are designing against is a Metal box quietly decoding on the
   CPU.
 - Paged tensors (MoE experts, layer paging) stay canonical on every target. Paging has no
-  load-time repack step and preads canonical spans off the mapping (`metal/moe.go:453`,
+  load-time repack step and preads canonical spans off the mapping (`metal/moe.go:452`,
   `metal/gemma4_moe.go:236`, `decoder/moepaging.go`).
 - One doc. Findings from doing the work go into the per-item status line here.
 
@@ -279,7 +279,7 @@ are half the disk and page cache per int4 tensor, and row4-by-default for CPU ca
   bytes to be present at all for this to work. So: (a) `weightMatKind3Only`'s MoE-expert exclusion
   (`l.Experts[*]`, `mo.expertsGateUp/expertsDown`) is IMPLEMENTED PER THE DOC'S LITERAL TEXT, but
   is more conservative than the inspected code strictly requires — kept as written rather than
-  silently loosened, since Metal's OWN expert paging (`metal/moe.go:453`,
+  silently loosened, since Metal's OWN expert paging (`metal/moe.go:452`,
   `metal/gemma4_moe.go:236`, cited by the ground rule, NOT inspected this round) may have a real
   canonical-only requirement the CPU pager does not. (b) The doc's worked example for kind 5 —
   "dense projections" — is EXACTLY what `layerpaging.go` pages for a big dense model that doesn't

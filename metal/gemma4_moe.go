@@ -183,8 +183,8 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 	if H%32 != 0 || b.MoeInter%32 != 0 || b.DenseInter%32 != 0 {
 		return nil, fmt.Errorf("metal gemma4 MoE int4 needs hidden(%d), moeInter(%d), denseInter(%d) all multiples of 32", H, b.MoeInter, b.DenseInter)
 	}
-	if b.NE > 256 {
-		return nil, fmt.Errorf("metal gemma4 MoE nE=%d exceeds moe_route cap 256", b.NE)
+	if capE, _, _ := decoder.ResidentBackendMoECap("metal"); b.NE > capE {
+		return nil, fmt.Errorf("metal gemma4 MoE nE=%d exceeds moe_route cap %d", b.NE, capE)
 	}
 	g := &gemma4MoeResident{
 		pRouterF32: pipe("gemv_f32_f32"), pRoute: pipe("moe_route"),

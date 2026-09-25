@@ -65,7 +65,7 @@ func TestDecode_dispatchProfile(t *testing.T) {
 	defer b.Close()
 
 	rf, ok, err := b.BuildResident(m)
-	if err != nil {
+	if err != nil && !decoder.IsResidentDecline(err) {
 		t.Fatalf("BuildResident: %v", err)
 	}
 	if !ok {
