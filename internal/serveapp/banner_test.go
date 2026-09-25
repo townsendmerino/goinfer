@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"os"
 	"strings"
 	"testing"
@@ -66,7 +67,7 @@ func TestBanner_sessionReuseMatchesTheDecodePath(t *testing.T) {
 // reason they are printed.
 func TestBanner_reportsResolvedNotRequested(t *testing.T) {
 	f := bannerFacts{decodePath: "cpu (int4)", prefillPath: "sequential — no batched prefill", hasTemplate: true}
-	lines := modelBannerFrom(f, config{backend: "cuda"}) // asked for cuda, resolved to cpu
+	lines := modelBannerFrom(f, config{load: loadflags.Flags{Backend: "cuda"}}) // asked for cuda, resolved to cpu
 	if got := bannerLine(lines, "decode path:"); !strings.Contains(got, "cpu (int4)") {
 		t.Errorf("decode line must report the RESOLVED path, got %q", got)
 	}
@@ -99,7 +100,7 @@ func TestBanner_contextAndKV(t *testing.T) {
 		{"metal resident, -kv f32 requested", 4096, 32768, 0, "f32", []string{"KV f16"}, []string{"KV f32"}, "f16"},
 		{"resident, -kv i8 requested and applied", 4096, 32768, 0, "i8", []string{"KV i8", "lossy"}, nil, "i8"},
 	} {
-		lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: tc.window, maxPositions: tc.max, kvPrec: tc.resKV}, config{ctxSize: tc.ctx, kvPrec: tc.kv})
+		lines := modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: tc.window, maxPositions: tc.max, kvPrec: tc.resKV}, config{load: loadflags.Flags{Ctx: tc.ctx, KV: tc.kv}})
 		got := bannerLine(lines, "context:")
 		for _, want := range tc.want {
 			if !strings.Contains(got, want) {
@@ -144,7 +145,7 @@ func TestBanner_contextIsTheEnforcedWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(mainSrc), "bannerCfg.ctxSize = opts.ResidentContext") {
+	if !strings.Contains(string(mainSrc), "bannerCfg.load.Ctx = opts.ResidentContext") {
 		t.Error("the load path no longer passes the model's resolved -ctx to the banner — a per-model ctx= would be misreported")
 	}
 }

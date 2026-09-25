@@ -47,7 +47,7 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	}
 	resp := map[string]any{
 		"status":   "ok",
-		"backend":  s.cfg.backend,
+		"backend":  s.cfg.load.Backend,
 		"models":   models,
 		"draining": draining,
 	}

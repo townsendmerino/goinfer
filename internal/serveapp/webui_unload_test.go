@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -32,7 +33,7 @@ func TestWebUnload_publishesRemoval(t *testing.T) {
 	_, root := fakeCache(t)
 	p := pulledModel(t, root, "gone.gguf")
 	fakeLoads(t, nil)
-	s, err := newServer(config{web: true, backend: "cpu"})
+	s, err := newServer(config{web: true, load: loadflags.Flags{Backend: "cpu"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +72,7 @@ func TestWebUnload_publishesRemoval(t *testing.T) {
 // is that the name must already be in the registry GET /v1/models already publishes. A name never
 // loaded is exactly the same shape of refusal as one already gone.
 func TestWebUnload_unknownNameIs404(t *testing.T) {
-	s, err := newServer(config{web: true, backend: "cpu"})
+	s, err := newServer(config{web: true, load: loadflags.Flags{Backend: "cpu"}})
 	if err != nil {
 		t.Fatal(err)
 	}

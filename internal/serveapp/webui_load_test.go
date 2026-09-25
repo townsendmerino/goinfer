@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -206,7 +207,7 @@ func TestWebLoad_publishesAndStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := fakeLoads(t, nil)
-	s, err := newServer(config{web: true, backend: "cpu"})
+	s, err := newServer(config{web: true, load: loadflags.Flags{Backend: "cpu"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +252,7 @@ func TestWebLoad_whileRunning(t *testing.T) {
 	_, root := fakeCache(t)
 	p := pulledModel(t, root, "first.gguf")
 	other := pulledModel(t, root, "second.gguf")
-	s, err := newServer(config{web: true, backend: "cpu"})
+	s, err := newServer(config{web: true, load: loadflags.Flags{Backend: "cpu"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +362,7 @@ func TestWebLoad_realModel(t *testing.T) {
 		}
 	}
 
-	s, err := newServer(config{web: true, backend: "cpu", quant: "int8int8", kvSessions: 2})
+	s, err := newServer(config{web: true, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

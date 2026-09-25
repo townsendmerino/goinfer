@@ -340,7 +340,7 @@ flowchart TB
   GUARD["fit guard, inside decoder.Load<br/>pins the context to what fits, or FitDeclineError"] -. "sizes" .-> W
   W --> CPUK["CPU forward<br/>integer SIMD kernels"]
   W --> RESD["OR resident on a GPU (§3)"]
-  W --> PAGE["OR --stream-weights (serve)<br/>experts or layers paged from the .giw mapping"]
+  W --> PAGE["OR --stream-weights<br/>experts or layers paged from the .giw mapping"]
 ```
 
 ### Sources
@@ -485,7 +485,7 @@ A resident backend keeps its own cache on the device, laid out its own way:
 | WebGPU | f32, f16 or int8 (`--kv`) | resident | a ceiling of 16k / 32k / 64k by precision |
 
 On sliding-window layers, CUDA and Metal allocate the full context and mask it, where the CPU keeps
-a ring. serve's `--ctx` pins the resident context.
+a ring. `--ctx` pins the resident context.
 
 ### Fitting to the machine
 
@@ -526,10 +526,11 @@ serve also admits each request's KV and scratch before its prefill (`AdmitPrefil
 
 ### Running bigger than RAM
 
-`--stream-weights`, serve only. Instead of holding every weight resident, serve pages weights on demand from the
-read-only `.giw` mapping, under a `--weight-cache` budget (0 means half of available RAM). A `.gguf`
-is transcoded to its sidecar first. Streaming is bit-exact, because a fault re-reads the same bytes;
-the cost is fault latency.
+`--stream-weights`, in chat and serve. Instead of holding every weight resident, the model pages
+weights on demand from the read-only `.giw` mapping, under a `--weight-cache` budget (0 means half
+of available RAM). A `.gguf` is transcoded to its sidecar first; a baked-in chat model cannot be
+streamed and says so. Streaming is bit-exact, because a fault re-reads the same bytes; the cost is
+fault latency.
 
 **MoE expert paging** (`expertPager`, `decoder/moepaging.go`) touches only the experts the router
 picks. `--moe-pager` chooses between two modes:
@@ -790,8 +791,8 @@ A single-user REPL with no daemon. Optionally, the model is baked into the binar
 - **Generation.** Each turn generates from the whole conversation, because the REPL keeps no
   `Session`. On the CPU, every turn therefore prefills it again.
 - **Subcommands:** `pull`, `fit`, `models`, `version`.
-- **Shared with serve:** the load path, templates, constrained decoding (`--schema`), and
-  speculative decoding (`--spec ngram`, `--draft`).
+- **Shared with serve:** the load path and its flags (`internal/loadflags`), templates, constrained
+  decoding (`--schema`), and speculative decoding (`--spec ngram`; `--draft` is chat's own).
 - **Serve-only flags** are refused, with a pointer to `goinfer-serve`.
 
 ## 5. Configuration
@@ -803,7 +804,10 @@ LoRA, streaming and its budget, MoE caching, exact prefill, and knob overrides. 
 Hard-tier in [api-tiers.md](api-tiers.md). It must also stay comparable, which a CI apidiff gate
 checks. A map, slice or func field therefore goes behind a pointer, as `Knobs *Knobs` does.
 
-**Flags** are the apps' spelling of `Options`, plus serve's per-model overrides.
+**Flags** are the apps' spelling of `Options`. The model-loading ones (`--backend`, `--quant`, `--kv`, `--ctx`,
+`--stream-weights`, `--moe-cache-experts`, `--fit`, …) are registered once, in `internal/loadflags`, for both
+binaries, which build their `Options` from its `Options()`. They used to be registered twice, and chat fell behind:
+it had no `--ctx`, `--stream-weights` or MoE cache flags. Serve layers its per-model overrides on top.
 
 **Knobs** are operator switches. Most are rollbacks for a default-on fast path; a few are tuning
 (`GOINFER_CUDA_FAST_PREFILL`, `GOINFER_METAL_FAST_PREFILL_FLOOR`, `GOINFER_MOE_CACHE_SLOTS`, …).
@@ -837,7 +841,7 @@ and, since the M-19 split, none of the backend modules.
 flowchart TB
   subgraph ROOT["github.com/townsendmerino/goinfer  (pure Go, CGO_ENABLED=0)"]
     direction TB
-    APPS["goinfer-chat · goinfer-serve  (demo/chat, cmd/serve → internal/chatapp, internal/serveapp)<br/>internal/modelload · prequant · giw · fitcmd · pullcmd · servecheck · swapguard<br/>cmd/prequant · cmd/gate · examples/embed"]
+    APPS["goinfer-chat · goinfer-serve  (demo/chat, cmd/serve → internal/chatapp, internal/serveapp)<br/>internal/modelload · loadflags · prequant · giw · fitcmd · pullcmd · servecheck · swapguard<br/>cmd/prequant · cmd/gate · examples/embed"]
     DEC["decoder<br/>families · forward · quantized weights · KV cache · samplers<br/>speculative · LoRA · loaders · paging · fit · residency seam"]
     TKN["tokenizer"]
     CHT["chat<br/>templates · tool calling"]
@@ -949,6 +953,7 @@ proxy resolves a submodule. Bare `vX.Y.Z` tags are the root's. The
 | `constrain` | constrained decoding: a streaming JSON grammar compiled from JSON Schema or a Go struct, applied as a logit mask | — |
 | `multimodal` | projectors, image-token blocks, preprocessing (Qwen dynamic resolution, Gemma 4), image hashing; the towers themselves are in `aikit/vision` | `aikit/embed`, `aikit/linalg` |
 | `pull` | `hf:` and `demo:` references, and the curated sha256-pinned tiers | — |
+| `internal/loadflags` | the model-loading flags both binaries register, and the `decoder.Options` they build (§5) | `goinfer/decoder` |
 | `internal/modelload` | the one load path (§2) | `goinfer/decoder`, `goinfer/pull`, `goinfer/tokenizer`, `internal/giw`, `internal/prequant`, `internal/swapguard` |
 | `internal/prequant`, `internal/giw` | building `.giw` bundles and the sidecar cache; the bundle frame | |
 | `internal/chatapp`, `internal/serveapp` | the logic of the two binaries | the packages above; serve adds `aikit/encoder` and `aikit/vision` |

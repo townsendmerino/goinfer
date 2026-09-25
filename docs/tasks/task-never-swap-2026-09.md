@@ -128,8 +128,8 @@ that trips watchdogd. The record does not attribute the panic beyond that; S5's 
 where it gets attributed.
 
 **Two guards exist and neither sees the `.giw` path.** `guardFit(fitCheckFor(...))`
-(`decoder/model.go:562`) prices weights + KV + `srcFileBytes` for a `.gguf`, but the `.giw` branch
-(`decoder/model.go:430`) returns before it — by design, since a mapped load has no allocation
+(`decoder/model.go:579`) prices weights + KV + `srcFileBytes` for a `.gguf`, but the `.giw` branch
+(`decoder/model.go:446`) returns before it — by design, since a mapped load has no allocation
 peak to price; it also therefore prices none of the anonymous remainder (KV, scratch, Metal
 buffers). Metal's own guard is a static 70% of `hw.memsize` (`metal/backend.go:137`,
 `residentMemFraction`, set from one measured failure), deliberately not a live query because the
@@ -253,7 +253,7 @@ on the safetensors no-op; the embed-int4 note; the `DenseStreamable` exclusion a
 reason — "MoE CPU weight streaming is a documented, MEASURED failure mode"); `internal/prequant/prequant.go`
 `Transcode` (temp + rename, the V-01 `.tmp.giw` suffix trap, `cacheFresh`'s load-probe freshness —
 M-12/M-11); `decoder/gguf.go` `StreamTranscodeGGUF` (and, until 2026-09-24, `needsResidentSerialize` — deleted when S2 finished; read S2 for the history);
-`decoder/model.go` `.giw` branch (`decoder/model.go:430`) and what it skips (`decoder/model.go:562`);
+`decoder/model.go` `.giw` branch (`decoder/model.go:446`) and what it skips (`decoder/model.go:579`);
 `decoder/weightmat.go` `GIWTargetForBackend` and the kind-5 policy in `docs/tasks/task-int4-layout-2026-09.md`
 L2 (a cpu-arm64 sidecar is row4-only — about the model's int4 size; a kind-4 dual-representation
 bundle is ~2× that and is what "we shouldn't be building bigger files" refers to — check which
@@ -402,7 +402,7 @@ byte-identical to the resident-serialize path's output on the family fixtures (t
 `TestStreamTranscodeMatchesResident` shape, extended per family).**
 
 **Read first.** `decoder/gguf.go` — the qwen35 branch (`loadQ35`, the `sink != nil` streaming
-loop near `decoder/gguf.go:1759`), then each of the six loaders and *why* it was excluded: gemma4's
+loop near `decoder/gguf.go:1761`), then each of the six loaders and *why* it was excluded: gemma4's
 "fused PLE/MoE tail can't stream incrementally" (a model-level tail written after the layers —
 the head/tail split `writeHeadGlobals` already supports: `decoder/serialize.go`'s "streaming
 transcode can emit the head, then produce-write-free each layer" note), gpt-oss's stacked experts
@@ -838,7 +838,7 @@ and a measured pread rate, and requires an explicit acknowledgement (`--stream-w
 
 **Read first.** `decoder/fitguard.go` in full (the `fitCheck` struct, `srcFileBytes`,
 `cudaBuildBytes`, `smallerFittingContext`, the R13 re-pricing); `decoder/model.go` around
-`decoder/model.go:430`–`decoder/model.go:562`; `decoder/hostram_darwin.go` (the approximation it
+`decoder/model.go:446`–`decoder/model.go:579`; `decoder/hostram_darwin.go` (the approximation it
 states: free + inactive + speculative + purgeable, 16 KB pages read from `vm_stat`'s header);
 `decoder/backend.go` `RegisterMemoryProbe` and `metal/backend.go` `residentMemFraction` (the
 reason the Metal probe is static — keep it as the *ceiling* and add the live figure as a second

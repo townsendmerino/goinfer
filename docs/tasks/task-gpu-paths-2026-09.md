@@ -114,7 +114,7 @@ record it there as P6a and do it with the tower move rather than after.
 ### G3 — LoRA adapter requests drop to the staged path (100% CPU on CUDA/Metal)
 
 **Where.** `internal/serveapp/openai.go:1294`: `if lm.model.ResidentActive() && lm.adapter == ""` —
-adapter models take the session path below it, and `decoder/model.go:1451` makes a session
+adapter models take the session path below it, and `decoder/model.go:1470` makes a session
 generation ineligible for the resident KV (`useGPU = resident != nil && prefillFrom == 0 &&
 commit == nil`). The comment at `internal/serveapp/openai.go:1264–967` records the cost: 13 tok/s vs ~460 resident ona 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
 
@@ -124,7 +124,7 @@ runners need one extra GEMV pair per adapted projection per token, with the delt
 at `bindAdapter` time. Alternative that is cheaper and may be enough: merge the adapter into the
 resident weights at bind time (re-pack the affected projections) and treat "switch adapter" as a
 re-pack; one adapter per loaded model at a time, which is what `lm.sessions.adapter` already
-assumes (`internal/serveapp/main.go:965`).
+assumes (`internal/serveapp/main.go:845`).
 
 **Gate.** An adapter-vs-merged parity test on the tiny fixture, then the R-01 measurement
 re-run on the 0.5B.
@@ -227,7 +227,7 @@ dense (`docs/ollama-chase.md`), and the Mac's remaining gap to Ollama is mostly 
 
 ### G9 — WebGPU has no batched prefill at all
 
-**Where.** `decoder/model.go:1282`: "WebGPU implements no Prefiller"; `gpu/residency.go:1136`
+**Where.** `decoder/model.go:1301`: "WebGPU implements no Prefiller"; `gpu/residency.go:1136`
 seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit per token.
 
 **Fix.** A `Prefiller` on the WebGPU runner, dense first, following the CUDA shape
@@ -259,7 +259,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
 
 ## Things checked and found fine
 
-- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1591`), but serve
+- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1610`), but serve
   serializes each model's generations (`internal/serveapp/openai.go:63` `turns`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
@@ -1657,7 +1657,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **The slots piece, by contrast, was already 90% there**: `decoder.Options.MoECacheSlots` /
     `Model.MoECacheSlotsRequest()` — the SAME field and accessor CUDA's `--moe-cache-slots` already
     reads — were already backend-agnostic and already wired from the CLI flag
-    (`internal/serveapp/main.go:177`, unchanged, predates this entry); Metal's own code simply
+    (`internal/loadflags/loadflags.go:91`, unchanged, predates this entry); Metal's own code simply
     never READ them, checking only `os.Getenv("GOINFER_METAL_MOE_SLOTS")` directly at its three
     real call sites (the guard's estimate, `metal/moe.go`'s and `metal/gemma4_moe.go`'s actual
     paging-engagement checks).

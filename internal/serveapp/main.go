@@ -32,7 +32,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,7 +44,7 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/cliutil"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/internal/modelload"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
 	"github.com/townsendmerino/goinfer/internal/servecheck"
@@ -159,46 +158,22 @@ func (s modelSpec) explicitQuant(cfg config) string {
 	if s.quant != nil {
 		return *s.quant
 	}
-	if cfg.quantSet {
-		return cfg.quant
-	}
-	return ""
+	return cfg.load.ExplicitQuant()
 }
 
-// options resolves this spec's overrides over the server-global defaults in cfg
-// into a decoder.Options. Backend is process-wide (GPU device init), never per-model.
+// options resolves this spec's overrides over the server-global defaults (cfg.load, the flags chat
+// shares) into a decoder.Options. Backend is process-wide (GPU device init), never per-model.
 func (s modelSpec) options(cfg config) decoder.Options {
-	return decoder.Options{
-		Backend:          cfg.backend,
-		Quant:            orStr(s.quant, cfg.quant),
-		LoRA:             orStr(s.lora, cfg.lora),
-		KVPrecision:      orStr(s.kvPrec, cfg.kvPrec),
-		MoECacheExperts:  cfg.moeCacheExperts,
-		MoECacheSlots:    cfg.moeCacheSlots,
-		KVQuant:          cpuKV(orStr(s.kvQuant, cfg.kvQuant), orStr(s.kvPrec, cfg.kvPrec)),
-		StreamWeights:    orBool(s.stream, cfg.streamWeights),
-		WeightCacheBytes: int64(orFloat(s.weightCache, cfg.weightCacheGB) * 1e9),
-		AcceptSlowMoE:    cfg.acceptSlow,
-		EmbedInt4:        orBool(s.embedInt4, cfg.embedInt4),
-		ResidentContext:  orInt(s.ctxSize, cfg.ctxSize),
-		DisableFit:       !cfg.fit,
-		MoEPager:         cfg.moePager,
-		ExactPrefill:     cfg.exactPrefill,
-		Knobs:            cfg.prefillKnobs(),
-	}
-}
-
-// cpuKV is the CPU KV cache precision for one model: the deprecated --kv-quant (or kv-quant=) when
-// given, else the unified --kv mapped onto the CPU cache, which has no f16 form — so f16 stays f32
-// there and i8 selects the per-head int8 cache. (Both Options fields remain; only the CLI unified.)
-func cpuKV(kvQuant, kv string) string {
-	if kvQuant != "" {
-		return kvQuant
-	}
-	if kv == "i8" {
-		return "i8"
-	}
-	return "f32"
+	o := cfg.load.Options()
+	o.Quant = orStr(s.quant, o.Quant)
+	o.LoRA = orStr(s.lora, o.LoRA)
+	o.KVPrecision = orStr(s.kvPrec, cfg.load.KV)
+	o.KVQuant = loadflags.CPUKV(orStr(s.kvQuant, cfg.kvQuant), o.KVPrecision)
+	o.StreamWeights = orBool(s.stream, o.StreamWeights)
+	o.WeightCacheBytes = int64(orFloat(s.weightCache, cfg.load.WeightCacheGB) * 1e9)
+	o.EmbedInt4 = orBool(s.embedInt4, o.EmbedInt4)
+	o.ResidentContext = orInt(s.ctxSize, o.ResidentContext)
+	return o
 }
 
 // adapterSpec is one --adapter entry (#7): a served name, the --model it attaches
@@ -285,31 +260,15 @@ func addrIsLoopback(addr string) bool {
 type config struct {
 	models   modelFlag   // decoder(s) (-model, repeatable); empty = no generative endpoints
 	adapters adapterFlag // compute-time LoRA adapters (-adapter, repeatable); each shares a base model's resident weights (#7)
-	backend  string
-	// quant + the per-model knobs below are server-global DEFAULTS; a --model spec
-	// can override each one (see modelSpec / modelFlag.Set).
-	quant           string
-	quantSet        bool   // was --quant given on the CLI? (vs the "int4" default) — for the .giw explicit-quant check (T1-7)
-	kvPrec          string // -kv: KV cache precision for whichever backend serves: f32 | f16 | i8
-	moeCacheExperts bool   // stream routed MoE experts host→VRAM (--moe-cache-experts)
-	moeCacheSlots   int    // per-layer expert slot REQUEST (--moe-cache-slots); an upper bound, 0 = built-in default
-	moePager        string // CPU expert pager backing mode: "mmap" (default) | "pool" (--moe-pager, task-never-swap-2026-09.md S5)
-	fit             bool   // tasks/task-fit-to-hardware.md's "fit by default" (--fit, default true); false ⇒ decoder.Options.DisableFit
-	exactPrefill    bool   // force sequential (exact) prefill on all backends — CPU + Metal (--exact-prefill)
-	cpuExactPrefill bool   // opt OUT of the CPU's default f32 prompt attention: bit-exact CPU prefill (--cpu-exact-prefill)
-	ctxSize         int    // -ctx: requested GPU-resident KV capacity in positions (0 = backend default). Effective cap = min(model context window, this)
+	// load is the model-loading flags goinfer-chat shares (internal/loadflags): server-global
+	// DEFAULTS, each of which a --model spec can override (see modelSpec / modelFlag.Set).
+	load            loadflags.Flags
 	kvQuant         string // DEPRECATED -kv-quant: CPU KV cache override, "" = follow -kv
-	lora            string
 	name            string // -served-model-name (applies only to a single unnamed --model)
 	kvSessions      int
 	sessionDir      string        // -session-dir (also where /admin unload snapshots warm KV)
 	kvIdleDemote    time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
 	kvDemotedMax    int           // -kv-demoted-max: cap on the on-disk cold tier
-	streamWeights   bool          // -stream-weights: page MoE expert weights out of an mmap'd .giw under a RAM budget
-	directLoad      bool          // -direct-load (task-never-swap-2026-09.md S1): opt out of the darwin/linux sidecar-by-default and load a .gguf straight into the heap, as every platform did before S1
-	weightCacheGB   float64       // -weight-cache: resident expert-weight budget in GB (0 = auto)
-	acceptSlow      bool          // -accept-slow: acknowledge a paged-MoE load predicted below decoder's own tok/s floor (S4 item 5, task-never-swap-2026-09.md)
-	embedInt4       bool          // -embed-int4: relax the int8 embed/head pin to int4 (lossy, big-vocab small models)
 	maxQueue        int           // -max-queue: bounded per-model queue depth (0 = unbounded)
 	jobDir          string        // -job-dir (J2, task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
 	maxInflight     int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
@@ -329,43 +288,6 @@ type config struct {
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
 	embedName  string // -embed-served-model-name
-}
-
-// exactPrefillHelp is --exact-prefill's usage text, held as a const so the disclosure can be
-// asserted by test. It is the universal opt-out: one flag that disables fast prefill on EVERY
-// backend that has one (currently CPU f32 attention + Metal f16-MMA batched prefill).
-const exactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — disables the CPU's default f32 prompt attention (above 512 prompt tokens), Metal's f16-MMA batched prefill (default-on since 2026-09-09, above 64 prompt tokens), AND CUDA's tensor-core batched prefill (GOINFER_CUDA_FAST_PREFILL, default-on above 512 prompt tokens). Use when diffing outputs across versions, reproducing a bug report, or whenever decode==prefill bit-identity matters more than time-to-first-token. CPU and Metal's fast paths are fidelity-gated before becoming the default (CPU: §3.1; Metal: §3.2, pooled form) — the exact path is a regression reference, not a correctness emergency"
-
-// cpuExactPrefillHelp is --cpu-exact-prefill's usage text — the only CPU-specific prefill flag since
-// --cpu-fast-attention was removed (it defaulted to true, so its only reachable use, =false, was this
-// flag under another name). The DEFAULT it opts out of is a documented divergence, so this help carries
-// that disclosure too: a divergence must be "disclosed in --help, not something a user has to already
-// know to type". Held as a const so TestCPUExactPrefillDisclosesTheDefaultsTrade asserts on the text and
-// the disclosure cannot silently drift away from the behaviour.
-const cpuExactPrefillHelp = "force BIT-EXACT prompt ingestion on the CPU backend: use the f64-accumulating attention kernel for prefill instead of the f32 one that is the DEFAULT (since 2026-08-31). The default is measured 2.28x faster prefill on an 8k prompt (dense 1.5B, M1 Pro: 602.9s to 264.6s — attention is ~70% of a long prefill and the f64 path is ~8x slower at those shapes) and NOT bit-identical: cosine 0.9976 against the exact kernel, stable across 256/1024/2048-token prompts, so a long-prompt response CAN differ from a build before the default changed, even at temperature 0. The default is FLOORED AT 512 PROMPT TOKENS (below that the exact kernel runs anyway: the win scales with prompt length, the divergence does not). Decode is unaffected, and speculative decoding's verify pass always uses the exact kernel. MoE models take the same f32 path as dense ones — the exclusion was measured and dropped in 66d0a05 — so this is the only way to get bit-exact prefill for them too. Use it when diffing outputs across versions, reproducing a bug report, or anything where 'same prompt, same tokens' matters more than time-to-first-token. CPU backend only — use --exact-prefill to disable fast prefill on all backends at once"
-
-// moePagerDefault is decoder.MoEPagerDefault — the decoder owns S5's platform default so serve's
-// --moe-pager default and a library Load agree. --moe-pager reaches the decoder through
-// decoder.Options.MoEPager (modelSpec.options), not through GOINFER_MOE_PREAD_CPU: setting the env
-// var here made serve's choice process-global and left library callers on a different default.
-func moePagerDefault(goos string) string { return decoder.MoEPagerDefault(goos) }
-
-// prefillKnobs carries the prompt-ingestion flags to each model's decoder.Options (phase 5,
-// docs/tasks/task-env-config-2026-09.md). It replaces applyExactPrefillEnv, which set the three backends'
-// fast-prefill env vars process-wide; --exact-prefill itself now travels as Options.ExactPrefill, which
-// every backend already consults per model (CPU Model.cpuFastAttention, CUDA at resident build, Metal on
-// its resident), so only the CPU-specific flags need a knob here.
-//
-// The CPU knob is set EXPLICITLY either way rather than left unset. The decoder treats unset as on, but an
-// inherited GOINFER_CPU_FAST_ATTENTION in the caller's environment would otherwise outrank the flags — the
-// server's own flags must win over whatever the shell happened to export, and Options.Knobs does win.
-// --exact-prefill and --cpu-exact-prefill both disable it.
-func (cfg config) prefillKnobs() *decoder.Knobs {
-	fast := "1"
-	if cfg.exactPrefill || cfg.cpuExactPrefill {
-		fast = "0"
-	}
-	return &decoder.Knobs{"GOINFER_CPU_FAST_ATTENTION": fast}
 }
 
 func Main() {
@@ -467,41 +389,10 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		"(Paths may not contain commas.)")
 	flag.StringVar(&cfg.drafter, "drafter", "", "directory of a pretrained BLOCK drafter (z-lab DFlash) paired with --model: the drafter proposes a whole block of tokens per round and the target verifies them in ONE batched pass, measured 1.6-1.8x on code/math and ~0.96x on open chat (docs/spec/08). LOSSLESS — every emitted token is one the target's own argmax produced, so output is identical to plain greedy. Greedy only: a request with temperature, penalties or logit bias falls back to normal decoding automatically. Requires a resident GPU backend (--backend cuda); declines with a reason otherwise serve-only; goinfer-chat offers --spec ngram and --draft instead.")
 	showVersion := flag.Bool("version", false, "print version, the backends COMPILED INTO this binary, and the Go toolchain, then exit. `backends:` is the compiled-in truth — --backend accepts names this build cannot run and falls back to cpu")
-	flag.StringVar(&cfg.backend, "backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (process-wide, cgo-free native). "+
-		"cuda/metal support both dense and MoE architectures resident. cuda needs `-tags cuda`; metal's own submodule "+
-		"entrypoint (goinfer/metal/cmd/serve) is darwin-gated and needs no build tag of its own. "+
-		"On cuda/metal, GPU means fully resident, full stop — a model/arch that does not build the resident runner declines straight to CPU; neither backend has a partial \"staged\" GPU path (R9, docs/measurements/cold-user-2026-09-06-nobara-pc.md). "+
-		"The only bigger-than-the-card story on cuda is MoE expert streaming (-moe-cache-experts); webgpu is the one backend with a real staged (non-resident) path, for f32/int8/int8int8, plus int4 decode only (M=1; prefill still declines to CPU).")
-	flag.StringVar(&cfg.quant, "quant", "int4", "default decoder weight quant — the accuracy/speed/RAM tradeoff (per-model override: --model name=path,quant=…):\n"+
-		"  int4      W4A8 (int4 weights, int8 activations): fastest on every backend including\n"+
-		"            Apple Silicon CPU (measured M1 Pro, goinfer a11c56b 2026-08-24, docs/benchmarks.md: at or\n"+
-		"            above int8int8's decode rate -- an earlier reading had int8int8 ~60%\n"+
-		"            faster on Apple Silicon CPU, which was correct at the time but diagnosed a since-fixed LM\n"+
-		"            head, not the W4A8 kernel; see docs/completed/task-w4a8-neon-bandwidth.md). Lossier than int8\n"+
-		"            (4-bit weights). NOT the smallest on Apple Silicon or non-VNNI amd64: the loader keeps a\n"+
-		"            repacked second copy of the nibbles beside the canonical ones there, so it measures ~1.25\n"+
-		"            bytes/element against int8int8's ~1.02 -- more resident RAM, not less. THE DEFAULT anyway,\n"+
-		"            for speed, not for RAM.\n"+
-		"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n"+
-		"  int8int8  W8A8 (int8 weights + int8 activations, native SDOT): higher accuracy; on Apple Silicon and\n"+
-		"            non-VNNI amd64 it is actually the SMALLER option (see int4's note above), not larger.\n"+
-		"            Metal itself consumes int4 directly (no re-pack to int8int8 needed to run resident there).\n"+
-		"  int8      int8 weights with wider activations: between int8int8 and native.\n"+
-		"  \"\"        native (no quantization, f32): most accurate, largest, slowest.\n"+
-		"All quantized modes (int4/int4mix/int8/int8int8) get batched CUDA prefill (fast TTFT); only native f32\n"+
-		"falls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant.")
+	// The model-loading flags goinfer-chat shares — one registration, so the two binaries cannot drift.
+	lf := loadflags.Register(flag.CommandLine, loadflags.Serve)
 	flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. native f32 on cuda, ~9x slower TTFT — N-35, docs/audit-2026-09-10.md: every quantized mode gets batched CUDA prefill, see -quant's own help above; only f32 falls back). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
-	flag.BoolVar(&cfg.moeCacheExperts, "moe-cache-experts", false, "run a MoE model whose experts EXCEED VRAM/RAM: routed experts stream host→device per token instead of being held resident, so every expert still executes on the GPU (no CPU offload). Costs a per-token transfer; bit-identical to fully-resident. Off by default — with it off, a model that doesn't fit declines to the CPU path and says why. CUDA and Metal (with no --moe-cache-slots, Metal auto-sizes the slot count from free RAM — audit-metal-2026-09-12.md M-13)")
-	flag.BoolVar(&cfg.exactPrefill, "exact-prefill", false, exactPrefillHelp)
-	flag.BoolVar(&cfg.cpuExactPrefill, "cpu-exact-prefill", false, cpuExactPrefillHelp)
-	flag.IntVar(&cfg.moeCacheSlots, "moe-cache-slots", 0, "per-layer expert slots to keep resident for a paged MoE model (CUDA: --moe-cache-experts; Metal: the GOINFER_METAL_MOE_SLOTS env var's replacement, docs/tasks/task-gpu-paths-2026-09.md Phase 2). On CUDA this is an UPPER BOUND: the runtime measures free VRAM and lowers it if the request does not fit, logging what it chose (\"C′ cache: … capping to N\"). On Metal an EXPLICIT value here is NOT auto-lowered — the request is used as given, and a model that does not fit at that count declines to the CPU path instead (the load-time memory guard, metal/backend.go). 0 keeps the built-in default: CUDA asks for all and auto-caps; Metal auto-sizes from free RAM ONLY when --moe-cache-experts is also set (audit-metal-2026-09-12.md M-13), else every expert stays resident, unpaged. More slots ⇒ higher LRU hit rate ⇒ fewer per-token transfers, at more memory cost")
-	flag.StringVar(&cfg.moePager, "moe-pager", moePagerDefault(runtime.GOOS), "CPU backing mode for a .giw-paged MoE model's expert pager: mmap (advice-based, zero-copy, but on darwin MADV_DONTNEED is a no-op so the budget is NOT enforced — measured 2026-09-23 on M35: ~4 GB of expert pages resident against a 1.5 GB budget) | pool (owned-buffer pread — a firm cap on every platform, costs ~1.4 GB of owned anonymous buffers at that budget, measured 1.02x the mmap decode rate). Default: pool on darwin, mmap elsewhere (docs/measurements/moe-pager-mode-darwin-2026-09-23.md; task-never-swap-2026-09.md S5). CPU decode of a paged MoE model only — CUDA/Metal experts use --moe-cache-experts/--moe-cache-slots instead")
-	cfg.fit = true // cliutil.OnOff has no BoolVar-style default parameter; set it before registering
-	flag.Var((*cliutil.OnOff)(&cfg.fit), "fit", "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/tasks/task-gpu-paths-2026-09.md, tasks/task-fit-to-hardware.md Phase 2). CUDA: an unpinned resident context gets more than the historical 4096 positions when the card has the free VRAM for it (cudaCtxCapDefault's own measurement found the real per-card ceiling is often 5-6x that). CPU: a plain .gguf that will not fit resident RAM gets one automatic retry with weight streaming (a dense model only — see --stream-weights) instead of just refusing. Never touches an EXPLICITLY set -ctx/-quant/--moe-cache-slots/--stream-weights — those are always honoured or refused as asked, with or without this flag. --fit=off restores every pre-Phase-2 default exactly; does not affect bug fixes shipped alongside this work (e.g. Metal now honouring an explicit -ctx at all)")
-	flag.StringVar(&cfg.kvPrec, "kv", "f32", "KV cache precision, for whichever backend serves the model: f32 (bit-exact) | f16 (lossy; GPU residency only — the CPU cache has no f16 form and stays f32) | i8 (lossy: the GPU residency cache, ~64k ctx on 8 GB; the CPU cache as per-head int8, ~4× smaller, argmax ~90%+, excluding MoE/gemma4/qwen3.5 which keep f32)")
-	flag.IntVar(&cfg.ctxSize, "ctx", 0, "GPU-resident KV capacity in positions (per-model override: --model name=path,ctx=…). 0 (default) keeps the backend default — on CUDA, 4096 with -fit=off, or 8192 (cuda/resident.go's fitDefaultCtx, whatever the card's free VRAM actually admits) with -fit at its default of ON — a round, conservative DEFAULT that has never been tuned against real VRAM headroom (raising it further would multiply every resident model's KV footprint for callers who never asked); the real per-card ceiling is typically far higher still and worth measuring for your model/quant (docs/tasks/parked/task-kv-cache-streaming.md: an RTX 2070 SUPER 8GB ran a dense 7B at int4 fine at -ctx 20000, refused at 24576). When set, the effective cap is min(model context window, this) and the KV it implies is VRAM-checked AT LOAD; if the whole model then can't build resident (either an unfit configured -ctx or the unconfigured default not fitting), it silently loads on the CPU-staged path instead for every request — measured ~15x slower decode, same model/quant — unless -require-backend is set, which refuses to start the server and names the GB shortfall instead. That is a WHOLE-MODEL decision made once at load; a single request whose PROMPT exceeds the active cap is a separate, per-request case and is rejected with a clean 400 context_length_exceeded — there is no per-request fallback to the staged path (an earlier version of this text said there was; a later audit, R-10, replaced that fallback with the clean 400 because it produced a 500 leaking an internal hint). On webgpu this LOWERS the backend cap when smaller (the load-time VRAM check described here is CUDA's); a request LARGER than the backend cap is ignored rather than honoured, since those caps are proven-fit ceilings")
 	flag.StringVar(&cfg.kvQuant, "kv-quant", "", "DEPRECATED — use --kv, which now covers the CPU cache too. When given, overrides the CPU KV cache alone: f32 | i8")
-	flag.StringVar(&cfg.lora, "lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load")
 	flag.Var(&cfg.adapters, "adapter", "compute-time LoRA adapter sharing a base model's resident weights: `serveName=baseName=dir`.\n"+
 		"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost ~base + N\n"+
 		"low-rank deltas — request the fine-tune via the OpenAI `model` field. Base must be a safetensors\n"+
@@ -510,11 +401,6 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled in RAM for prompt-prefix KV reuse (0 disables)")
 	flag.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm session's KV to -session-dir once it's been idle this long, faulting it back on the next matching request (e.g. 10m; 0 = off). Lets a small-RAM box serve many intermittent chats. Needs -session-dir and -kv-sessions > 0")
 	flag.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
-	flag.BoolVar(&cfg.streamWeights, "stream-weights", false, "page model weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all weights: MoE expert demand-paging (run a 35B-A3B on ~16-20 GB) or dense per-layer streaming (run a model bigger than RAM). Bit-exact; trades RAM for fault latency. A plain .gguf is transparently transcoded to a sidecar .giw cache on first use (one-time). Also triggered automatically, without this flag, for a dense .gguf that does not fit resident RAM (--fit, default on) -- MoE is deliberately excluded from the automatic path (see --fit's help)")
-	flag.BoolVar(&cfg.directLoad, "direct-load", os.Getenv("GOINFER_GGUF_DIRECT") != "", "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin (since S1, task-never-swap-2026-09.md) and linux (since 2026-09-24) a .gguf resolves to its sidecar by default — this opts back out to the direct-heap-dequant load, which is still the default on other platforms. Also via GOINFER_GGUF_DIRECT=1. Ignored with -stream-weights, which always needs the sidecar's mmap regardless of platform")
-	flag.Float64Var(&cfg.weightCacheGB, "weight-cache", 0, "resident expert-weight budget in GB for -stream-weights (0 = auto, ~half of available RAM)")
-	flag.BoolVar(&cfg.acceptSlow, "accept-slow", false, "acknowledge a -stream-weights paged-MoE load whose predicted working-set rate falls below decoder's own floor (2 tok/s) and load it anyway. Without this, such a load is refused with the predicted rate named, rather than run for hours with zero completions the way an unacknowledged M35/M26-class load did before this flag existed (task-never-swap-2026-09.md S4). The prediction is a PRIOR borrowed from an unrelated CUDA cache curve, not a measurement of this pager — raising -weight-cache to shrink the predicted miss rate is usually the better fix")
-	flag.BoolVar(&cfg.embedInt4, "embed-int4", false, "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model. Lossy (~2.3 pts top-1, mostly rare tokens); GGUF direct load only (not the -stream-weights .giw cache)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
 	flag.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")
 	flag.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")
@@ -536,17 +422,11 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 			filepath.Base(os.Args[0]), args[0])
 		os.Exit(2)
 	}
-	if cfg.moePager != "mmap" && cfg.moePager != "pool" {
-		fmt.Fprintf(os.Stderr, "error: -moe-pager must be \"mmap\" or \"pool\" (got %q)\n", cfg.moePager)
+	cfg.load = *lf
+	if err := cfg.load.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
-	// Was --quant given, or is cfg.quant the "int4" default? The .giw explicit-quant check (T1-7)
-	// must fire only on an explicit request — the default must not "mismatch" a non-int4 bundle.
-	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "quant" {
-			cfg.quantSet = true
-		}
-	})
 	// -web counts as a reason to start with no model: fetching one is the whole point of
 	// the UI's Models tab, and requiring a model in order to go and get a model is a
 	// bootstrap the user cannot satisfy.
@@ -951,7 +831,7 @@ func newServer(cfg config) (*server, error) {
 // (mutable per-layer paging on the shared model) is rejected.
 func (s *server) loadAdapters(cfg config) error {
 	for _, spec := range cfg.adapters {
-		if cfg.streamWeights {
+		if cfg.load.StreamWeights {
 			return fmt.Errorf("--adapter %q: compute-time LoRA is incompatible with --stream-weights", spec.name)
 		}
 		base, ok := s.models[spec.base]
@@ -1025,7 +905,7 @@ func (s *server) loadVisionTower(cfg config) error {
 	}
 	// The resident GPU encoder needs int8 (W8A8) matmul weights, so --backend
 	// webgpu/cuda implies an int8 tower even if --vision-quant wasn't set.
-	int8Tower := cfg.visionQuant == "int8" || cfg.backend == "webgpu" || cfg.backend == "cuda"
+	int8Tower := cfg.visionQuant == "int8" || cfg.load.Backend == "webgpu" || cfg.load.Backend == "cuda"
 	if visionModelType(dir) == "qwen2_5_vl" {
 		return s.loadQwenVisionTower(dir, int8Tower)
 	}
@@ -1040,7 +920,7 @@ func (s *server) loadVisionTower(cfg config) error {
 	// tower's own leak/threading bugs are fixed (cuda/vision_encoder.go) — cuda/vision_register.go
 	// already registered its factory with vision.RegisterResident via cuda/cmd/serve's blank
 	// import; this gate was the only thing that never called EnableResident() for it.
-	if cfg.backend == "webgpu" || cfg.backend == "cuda" {
+	if cfg.load.Backend == "webgpu" || cfg.load.Backend == "cuda" {
 		if err := enc.EnableResident(); err != nil {
 			return fmt.Errorf("enable resident GPU vision encoder: %w", err)
 		}
@@ -1062,10 +942,10 @@ func (s *server) loadVisionTower(cfg config) error {
 		if int8Tower {
 			vq = "int8"
 		}
-		if cfg.backend == "webgpu" {
+		if cfg.load.Backend == "webgpu" {
 			vq = "int8/webgpu-resident"
 		}
-		if cfg.backend == "cuda" {
+		if cfg.load.Backend == "cuda" {
 			vq = "int8/cuda-resident"
 		}
 		fmt.Fprintf(os.Stderr, "loaded vision tower for %q (%d image tokens/image, soft-token id %d, encoder %s) from %s\n", lm.name, proj.MMTokens(), lm.vimgTok, vq, dir)
@@ -1196,7 +1076,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// (internal/modelload). The served name and fingerprint derive from the resolved SOURCE, never
 	// the cache it may have loaded through.
 	res, err := modelload.Load(ctx, modelload.Request{
-		Spec: spec.path, Opts: opts, DirectLoad: cfg.directLoad,
+		Spec: spec.path, Opts: opts, DirectLoad: cfg.load.DirectLoad,
 		ExplicitQuant: spec.explicitQuant(cfg), GuardAdvice: "use -stream-weights or a smaller quant",
 	})
 	if err != nil {
@@ -1266,7 +1146,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// it is off), and the features a harness asks about — comes from modelBanner so a test can
 	// hold it to the runtime's own state rather than trusting a run of Fprintf calls.
 	bannerCfg := cfg
-	bannerCfg.ctxSize = opts.ResidentContext // the -ctx this model actually asked for (a per-model ctx= wins)
+	bannerCfg.load.Ctx = opts.ResidentContext // the -ctx this model actually asked for (a per-model ctx= wins)
 	for _, line := range modelBanner(lm, bannerCfg) {
 		fmt.Fprintf(os.Stderr, "  %s\n", line)
 	}
@@ -1295,7 +1175,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 // prefill that declined to the sequential per-token loop. The CPU backend has no resident path by
 // definition, so only the prefill half applies there.
 func requireFastPaths(name string, cfg config, lm *loadedModel, batched bool, why string) error {
-	if cfg.backend != "cpu" && !lm.model.ResidentActive() {
+	if cfg.load.Backend != "cpu" && !lm.model.ResidentActive() {
 		// Covers the whole ladder, not just an ineligible arch: an untagged build (`--backend cuda`
 		// without `-tags cuda` resolves to the CPU backend), a box with no usable device (the cuda
 		// factory always succeeds — the driver is only touched at BuildResident), and a model shape
@@ -1305,7 +1185,7 @@ func requireFastPaths(name string, cfg config, lm *loadedModel, batched bool, wh
 			reason = "no reason recorded"
 		}
 		return fmt.Errorf("--require-backend: model %q did not build a resident decode path on backend %q: %s (resolved: %s)",
-			name, cfg.backend, reason, lm.model.DecodePath())
+			name, cfg.load.Backend, reason, lm.model.DecodePath())
 	}
 	if !batched {
 		return fmt.Errorf("--require-backend: model %q declined the batched prefill: %s", name, why)

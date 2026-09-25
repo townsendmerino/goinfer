@@ -40,8 +40,8 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/cliutil"
 	"github.com/townsendmerino/goinfer/internal/fitcmd"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/internal/modelload"
 	"github.com/townsendmerino/goinfer/internal/prequant"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
@@ -52,14 +52,6 @@ import (
 // defaultSystem is a code-flavored system prompt — on-brand for the Coder model
 // and a sane starting point you can override with --system or /system.
 const defaultSystem = "You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations."
-
-// exactPrefillHelp is --exact-prefill's usage text (M-26, audit-2026-09-10): serve has had this
-// flag since G6/M-48; this REPL never did, despite docs/completed/task-prefill-gap.md documenting
-// an Options.ExactPrefill "(library)" half that decoder.Options only just gained. One flag,
-// decoder.Options.ExactPrefill puts THIS model's prefill on the bit-exact path on every backend (CPU
-// f32-attention, Metal f16-MMA batched prefill, CUDA tensor-core batched prefill) — a model property
-// since 2026-09-24, not the process env vars it used to set.
-const exactPrefillHelp = "force BIT-EXACT prompt ingestion on every backend that has a faster, non-exact default (CPU f32-attention, Metal's f16-MMA batched prefill, CUDA's tensor-core batched prefill — all default ON above their own length thresholds). Use when diffing outputs across versions, reproducing a bug report, or whenever decode==prefill bit-identity matters more than time-to-first-token."
 
 // msg is one conversation turn kept in history.
 type msg struct{ role, content string }
@@ -88,6 +80,43 @@ type session struct {
 	draft *decoder.Model // optional speculative-decoding draft model (--draft)
 	specK int            // speculative draft length per verify pass
 	ngram bool           // --spec ngram: lossless n-gram (prompt-lookup) drafting, adaptive depth
+}
+
+// chatFlags is goinfer-chat's command line: the model-loading flags it shares with goinfer-serve
+// (internal/loadflags — one registration, so the binaries cannot drift apart again: chat had no --ctx,
+// --stream-weights or --moe-cache-* until they shared it) and its own sampling and REPL flags.
+type chatFlags struct {
+	load                                       *loadflags.Flags
+	model, system, schema, draft, spec         *string
+	maxTok, topK, repLastN, specK              *int
+	temp, topP, minP, repPen, presPen, freqPen *float64
+	seed                                       *int64
+	modelTmp, showVersion                      *bool
+}
+
+// registerFlags puts chat's whole command line on fs. Main passes flag.CommandLine; a test passes a fresh
+// set, so it checks the real list rather than a copy of it (serveOnlyInvocation reads it the same way).
+func registerFlags(fs *flag.FlagSet) *chatFlags {
+	c := &chatFlags{load: loadflags.Register(fs, loadflags.Chat)}
+	c.model = fs.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference fetched on first use — hf:<owner>/<repo>:<quant> or demo:<tier> (omit in the -tags embed build to use the baked-in model)")
+	c.system = fs.String("system", defaultSystem, "system prompt that steers the model")
+	c.maxTok = fs.Int("max", 512, "max tokens per reply")
+	c.temp = fs.Float64("temp", 0.7, "sampling temperature (0 = greedy)")
+	c.topK = fs.Int("top-k", 20, "top-k filter (0 = off)")
+	c.topP = fs.Float64("top-p", 0.8, "top-p / nucleus (0 = off)")
+	c.minP = fs.Float64("min-p", 0, "min-p: keep tokens with prob ≥ min-p×max-prob (0 = off)")
+	c.repPen = fs.Float64("repeat-penalty", 0, "repetition penalty over the last --repeat-last-n tokens (1 or 0 = off)")
+	c.presPen = fs.Float64("presence-penalty", 0, "presence penalty: flat logit drop for tokens already seen (0 = off)")
+	c.freqPen = fs.Float64("frequency-penalty", 0, "frequency penalty: logit drop ∝ token count (0 = off)")
+	c.repLastN = fs.Int("repeat-last-n", 64, "window (in tokens) the repetition penalties consider (≤0 = whole context)")
+	c.schema = fs.String("schema", "", "constrain output to a JSON Schema file (implies JSON mode); the model cannot emit non-conforming JSON")
+	c.seed = fs.Int64("seed", 0, "sampling RNG seed")
+	c.modelTmp = fs.Bool("model-tmp", false, "embed build: stream the baked-in model to a temp file + mmap instead of loading it into memory. Lower peak RAM for big models, but needs a writable temp dir. Also via GOINFER_MODEL_TMP=1. (If your temp dir is a tmpfs / RAM-backed, this saves no RAM.)")
+	c.draft = fs.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab. chat-only; goinfer-serve offers --spec ngram and --drafter instead")
+	c.spec = fs.String("spec", "", "speculative decoding without a second model: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth, as goinfer-serve's --spec. Wins on copy-heavy turns (code edits, quoting the conversation back); output is identical to plain decode (greedy bit-exact, sampled in-distribution). Falls back to plain decode per turn when it cannot apply (e.g. with --schema). Not combinable with --draft")
+	c.specK = fs.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
+	c.showVersion = fs.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
+	return c
 }
 
 func Main() {
@@ -144,7 +173,8 @@ func Main() {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
 		return
 	}
-	if serveOnly := serveOnlyInvocation(os.Args[1:]); serveOnly != "" {
+	cf := registerFlags(flag.CommandLine)
+	if serveOnly := serveOnlyInvocation(os.Args[1:], flag.CommandLine); serveOnly != "" {
 		fmt.Fprintf(os.Stderr, `%s: %q belongs to goinfer-serve, not this binary.
 
 goinfer-chat is the single-shot chat runtime; the server (OpenAI/Anthropic routes, -web, model
@@ -182,39 +212,8 @@ All flags:
 		flag.PrintDefaults()
 	}
 
-	var (
-		model   = flag.String("model", "", "a .gguf file, an HF checkpoint dir, or a reference fetched on first use — hf:<owner>/<repo>:<quant> or demo:<tier> (omit in the -tags embed build to use the baked-in model)")
-		system  = flag.String("system", defaultSystem, "system prompt that steers the model")
-		backend = flag.String("backend", "cpu", "compute backend: cpu | webgpu | cuda | metal (cgo-free native). cuda/metal support both dense "+
-			"and MoE architectures resident; cuda needs -tags cuda, metal's own submodule entrypoint is darwin-gated and needs no "+
-			"tag of its own. On cuda/metal, GPU means fully resident — a model/arch that does not fit or is not resident-eligible "+
-			"declines straight to CPU; neither has a partial \"staged\" GPU path.")
-		quant        = flag.String("quant", "int4", "weight quant: int4 (smallest, fastest, and the default on Metal too — Metal consumes int4 directly) | int4mix (attn int8+FFN int4, GGUF only) | int8int8 (W8A8, higher accuracy + more RAM) | int8 | \"\" (native f32). CUDA and Metal both batch-prefill quantized modes by default (see --exact-prefill to force the bit-exact path instead); native f32 falls back to sequential. Default int4")
-		lora         = flag.String("lora", "", "optional PEFT LoRA adapter dir, merged into the safetensors base at load")
-		exactPrefill = flag.Bool("exact-prefill", false, exactPrefillHelp)
-		kv           = flag.String("kv", "f32", "KV cache precision, same as goinfer-serve's --kv: f32 (bit-exact) | f16 (lossy; GPU residency only, the CPU cache stays f32) | i8 (lossy; GPU residency cache, or the CPU per-head int8 cache — MoE/gemma4/qwen3.5 keep f32 on CPU)")
-		maxTok       = flag.Int("max", 512, "max tokens per reply")
-		temp         = flag.Float64("temp", 0.7, "sampling temperature (0 = greedy)")
-		topK         = flag.Int("top-k", 20, "top-k filter (0 = off)")
-		topP         = flag.Float64("top-p", 0.8, "top-p / nucleus (0 = off)")
-		minP         = flag.Float64("min-p", 0, "min-p: keep tokens with prob ≥ min-p×max-prob (0 = off)")
-		repPen       = flag.Float64("repeat-penalty", 0, "repetition penalty over the last --repeat-last-n tokens (1 or 0 = off)")
-		presPen      = flag.Float64("presence-penalty", 0, "presence penalty: flat logit drop for tokens already seen (0 = off)")
-		freqPen      = flag.Float64("frequency-penalty", 0, "frequency penalty: logit drop ∝ token count (0 = off)")
-		repLastN     = flag.Int("repeat-last-n", 64, "window (in tokens) the repetition penalties consider (≤0 = whole context)")
-		schema       = flag.String("schema", "", "constrain output to a JSON Schema file (implies JSON mode); the model cannot emit non-conforming JSON")
-		seed         = flag.Int64("seed", 0, "sampling RNG seed")
-		modelTmp     = flag.Bool("model-tmp", false, "embed build: stream the baked-in model to a temp file + mmap instead of loading it into memory. Lower peak RAM for big models, but needs a writable temp dir. Also via GOINFER_MODEL_TMP=1. (If your temp dir is a tmpfs / RAM-backed, this saves no RAM.)")
-		draft        = flag.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab. chat-only; goinfer-serve offers --spec ngram and --drafter instead")
-		spec         = flag.String("spec", "", "speculative decoding without a second model: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth, as goinfer-serve's --spec. Wins on copy-heavy turns (code edits, quoting the conversation back); output is identical to plain decode (greedy bit-exact, sampled in-distribution). Falls back to plain decode per turn when it cannot apply (e.g. with --schema). Not combinable with --draft")
-		specK        = flag.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
-		showVersion  = flag.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
-		directLoad   = flag.Bool("direct-load", os.Getenv("GOINFER_GGUF_DIRECT") != "", "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin (since S1, task-never-swap-2026-09.md) and linux (since 2026-09-24) a .gguf resolves to its sidecar by default — this opts back out to the direct-heap-dequant load, which is still the default on other platforms. Also via GOINFER_GGUF_DIRECT=1")
-	)
-	fit := cliutil.OnOff(true)
-	flag.Var(&fit, "fit", "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/tasks/task-fit-to-hardware.md). --fit=off restores the pre-fit-by-default behavior")
 	flag.Parse()
-	if *showVersion {
+	if *cf.showVersion {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
 		return
 	}
@@ -230,25 +229,19 @@ All flags:
 		os.Exit(2)
 	}
 
-	cpuKV := "f32" // the CPU cache has no f16 form; i8 selects its per-head int8 storage
-	if *kv == "i8" {
-		cpuKV = "i8"
+	if err := cf.load.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
 	}
-	opts := decoder.Options{Backend: *backend, Quant: *quant, LoRA: *lora, DisableFit: !bool(fit), ExactPrefill: *exactPrefill,
-		KVPrecision: *kv, KVQuant: cpuKV}
+	opts := cf.load.Options()
 	if err := opts.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(2)
 	}
 	// The quant the user EXPLICITLY chose (vs the "int4" default) — for the .giw mismatch check
 	// (T1-7); a bare default must not conflict with an already-baked bundle.
-	explicitQuant := ""
-	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "quant" {
-			explicitQuant = *quant
-		}
-	})
-	useTmp := *modelTmp || os.Getenv("GOINFER_MODEL_TMP") != ""
+	explicitQuant := cf.load.ExplicitQuant()
+	useTmp := *cf.modelTmp || os.Getenv("GOINFER_MODEL_TMP") != ""
 
 	// (Decode-parallelism tuning is now automatic per-Workspace inside decoder — the
 	// old SetDecodeParallelThreshold call here is redundant and was removed.)
@@ -256,12 +249,16 @@ All flags:
 	var s *session
 	var err error
 	switch {
-	case *model != "":
+	case *cf.model != "":
 		// Explicit checkpoint: a .gguf file, an HF dir, a .giw, or an hf:/demo: reference fetched on
 		// first use. The same path serve and fit take (internal/modelload): reference resolution, the
 		// S1 sidecar .giw default for a .gguf, the tokenizer, the swap-guarded load and the one
 		// automatic streaming retry on a dense fit decline.
-		s, err = loadFromPath(*model, opts, *directLoad, explicitQuant)
+		s, err = loadFromPath(*cf.model, opts, cf.load.DirectLoad, explicitQuant)
+	case hasEmbeddedModel && opts.StreamWeights:
+		// Refused, not ignored: paging reads a .giw FILE's mapping, and the baked-in model is in this
+		// binary's own image (the prequant build would refuse it anyway, less helpfully).
+		err = fmt.Errorf("--stream-weights pages a model out of a .giw file, and the baked-in model lives in this binary's own image — pass --model <file> to stream a model")
 	case hasEmbeddedModel:
 		// Baked-in model (-tags embed): in-memory by default — no temp file, so
 		// the binary runs on a read-only filesystem. --model-tmp opts into the
@@ -282,14 +279,14 @@ All flags:
 		fmt.Fprintf(os.Stderr, "%v\n", qerr)
 		os.Exit(1)
 	}
-	s.system = *system
-	s.maxTok = *maxTok
+	s.system = *cf.system
+	s.maxTok = *cf.maxTok
 	s.sp = decoder.SamplingParams{
-		Temperature: *temp, TopK: *topK, TopP: *topP, MinP: *minP, Seed: *seed,
-		RepeatPenalty: *repPen, PresencePenalty: *presPen, FrequencyPenalty: *freqPen, RepeatLastN: *repLastN,
+		Temperature: *cf.temp, TopK: *cf.topK, TopP: *cf.topP, MinP: *cf.minP, Seed: *cf.seed,
+		RepeatPenalty: *cf.repPen, PresencePenalty: *cf.presPen, FrequencyPenalty: *cf.freqPen, RepeatLastN: *cf.repLastN,
 	}
-	if *schema != "" {
-		raw, rerr := os.ReadFile(*schema)
+	if *cf.schema != "" {
+		raw, rerr := os.ReadFile(*cf.schema)
 		if rerr != nil {
 			fmt.Fprintf(os.Stderr, "read schema: %v\n", rerr)
 			os.Exit(1)
@@ -300,34 +297,38 @@ All flags:
 		}
 		s.schema = raw
 		s.jsonOut = true
-		fmt.Fprintf(os.Stderr, "constraining output to JSON Schema %s\n", *schema)
+		fmt.Fprintf(os.Stderr, "constraining output to JSON Schema %s\n", *cf.schema)
 	}
 
-	switch *spec {
+	switch *cf.spec {
 	case "":
 	case "ngram":
-		if *draft != "" {
+		if *cf.draft != "" {
 			fmt.Fprintln(os.Stderr, "error: --spec ngram and --draft are two ways to speculate; pick one")
 			os.Exit(2)
 		}
 		s.ngram = true
 		fmt.Fprintln(os.Stderr, "speculative decoding on (n-gram prompt lookup, adaptive depth) — output identical to plain decode")
 	default:
-		fmt.Fprintf(os.Stderr, "error: --spec must be \"\" or \"ngram\" (got %q)\n", *spec)
+		fmt.Fprintf(os.Stderr, "error: --spec must be \"\" or \"ngram\" (got %q)\n", *cf.spec)
 		os.Exit(2)
 	}
-	if *draft != "" {
+	if *cf.draft != "" {
 		progress("loading draft model…")
-		dm, derr := decoder.Load(*draft, opts)
+		// The draft loads directly, not through modelload, so it has no sidecar .giw to page from:
+		// --stream-weights (and its budget) is the target's, never the draft's.
+		dopts := opts
+		dopts.StreamWeights, dopts.WeightCacheBytes = false, 0
+		dm, derr := decoder.Load(*cf.draft, dopts)
 		if derr != nil {
 			fmt.Fprintf(os.Stderr, "load draft model: %v\n", derr)
 			os.Exit(1)
 		}
 		s.draft = dm
-		s.specK = *specK
-		fmt.Fprintf(os.Stderr, "speculative decoding on (draft=%s, K=%d) — greedy only\n", *draft, *specK)
-		if *temp != 0 {
-			fmt.Fprintf(os.Stderr, "  note: --temp %.2g is not greedy; set --temp 0 to use the draft (else plain decode)\n", *temp)
+		s.specK = *cf.specK
+		fmt.Fprintf(os.Stderr, "speculative decoding on (draft=%s, K=%d) — greedy only\n", *cf.draft, *cf.specK)
+		if *cf.temp != 0 {
+			fmt.Fprintf(os.Stderr, "  note: --temp %.2g is not greedy; set --temp 0 to use the draft (else plain decode)\n", *cf.temp)
 		}
 	}
 

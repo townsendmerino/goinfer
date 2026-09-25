@@ -3,6 +3,7 @@ package serveapp
 import (
 	"bufio"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -47,7 +48,7 @@ func TestServe_responses(t *testing.T) {
 	if path == "" {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the responses test")
 	}
-	srv, err := newServer(config{models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 2})
+	srv, err := newServer(config{models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 2})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}

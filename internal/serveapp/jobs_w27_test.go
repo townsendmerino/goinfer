@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -150,7 +151,7 @@ func TestJobs_realModelEventsQueueAndRefusal(t *testing.T) {
 	if path == "" {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the jobs events/queue test")
 	}
-	srv, err := newServer(config{models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 0, maxQueue: 1})
+	srv, err := newServer(config{models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 0, maxQueue: 1})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}

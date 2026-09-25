@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"math"
 	"os"
 	"sync"
@@ -280,7 +281,7 @@ func TestLoadDecoderEmbedder_requestedBackendReachesTheLoad(t *testing.T) {
 		t.Skipf("no checkpoint at %s", p)
 	}
 	s := &server{}
-	if err := s.loadDecoderEmbedder(config{embedPath: p, backend: "metal"}); err != nil {
+	if err := s.loadDecoderEmbedder(config{embedPath: p, load: loadflags.Flags{Backend: "metal"}}); err != nil {
 		t.Fatalf("loadDecoderEmbedder: %v", err)
 	}
 	de, ok := s.embed.(*decoderEmbedder)

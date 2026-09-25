@@ -21,7 +21,7 @@ GOINFER_GATE_HEARTBEAT	startup: cmd/gate — gate runner heartbeat interval
 GOINFER_GATE_MODELS	startup: cmd/gate — gate runner model directory
 GOINFER_GATE_SKIP_HEAVY	startup: cmd/gate — gate runner scope
 GOINFER_GATE_SKIP_WEBGPU	startup: cmd/gate — gate runner scope
-GOINFER_GGUF_DIRECT	startup: chat — load a .gguf directly instead of via its .giw sidecar
+GOINFER_GGUF_DIRECT	startup: chat, serve (internal/loadflags, --direct-load's default) — load a .gguf directly instead of via its .giw sidecar
 GOINFER_GPU_CAPTURE	diagnostic: docs/completed/task-webgpu-nogqa-decode-bug.md — WebGPU per-layer capture
 GOINFER_HEAVY_PKGS	startup: cmd/gate — heavy tier package list
 GOINFER_HEAVY_RUN	startup: cmd/gate — heavy tier test selector

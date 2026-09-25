@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -68,7 +69,7 @@ func TestJobs_submitPollReattachMatchesSyncRun(t *testing.T) {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the jobs re-attach test")
 	}
 	srv, err := newServer(config{
-		models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 0,
+		models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 0,
 	})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
@@ -203,8 +204,7 @@ func TestJobs_deleteCancelsAQueuedJob(t *testing.T) {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the jobs cancel test")
 	}
 	srv, err := newServer(config{
-		models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8",
-		kvSessions: 0, maxQueue: 4,
+		models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 0, maxQueue: 4,
 	})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)

@@ -1,14 +1,18 @@
 package chatapp
 
-import "strings"
+import (
+	"flag"
+	"strings"
+)
 
 // serveOnlyInvocation reports the first argument that belongs to goinfer-serve rather than to the
 // chat runtime, or "" if none does. It is deliberately a SMALL list — the flags and subcommands a
 // person is most likely to carry over from a README, a blog post, or their own shell history.
 //
 // It matches only what serve has and chat does not. A flag both binaries share (--model, --backend,
-// --quant) must never appear here, or a legitimate chat invocation gets redirected.
-func serveOnlyInvocation(args []string) string {
+// --quant, and every internal/loadflags flag) must never appear here, or a legitimate chat invocation
+// gets redirected. fs is chat's registered flag set: it says which chat flags take a value.
+func serveOnlyInvocation(args []string, fs *flag.FlagSet) string {
 	serveOnly := map[string]bool{
 		// The subcommand the cold-user tester actually typed.
 		"serve": true,
@@ -16,7 +20,6 @@ func serveOnlyInvocation(args []string) string {
 		"-web": true, "--web": true,
 		"-addr": true, "--addr": true,
 		"-api-key": true, "--api-key": true,
-		"-stream-weights": true, "--stream-weights": true,
 		"-allow-admin": true, "--allow-admin": true,
 		"-embed-model": true, "--embed-model": true,
 		"-require-backend": true, "--require-backend": true,
@@ -26,26 +29,15 @@ func serveOnlyInvocation(args []string) string {
 	// literal word "serve" and got redirected to goinfer-serve as if "serve" were a subcommand.
 	// Chat's own value-taking flags (the space-separated `--flag value` form only — `--flag=value`
 	// is already one token and never ambiguous) consume the next token; skip checking it here the
-	// same way a real flag parser would consume it, rather than matching it against serveOnly.
-	chatValueFlags := map[string]bool{
-		"-model": true, "--model": true,
-		"-system": true, "--system": true,
-		"-backend": true, "--backend": true,
-		"-quant": true, "--quant": true,
-		"-lora": true, "--lora": true,
-		"-max": true, "--max": true,
-		"-temp": true, "--temp": true,
-		"-top-k": true, "--top-k": true,
-		"-top-p": true, "--top-p": true,
-		"-min-p": true, "--min-p": true,
-		"-repeat-penalty": true, "--repeat-penalty": true,
-		"-presence-penalty": true, "--presence-penalty": true,
-		"-frequency-penalty": true, "--frequency-penalty": true,
-		"-repeat-last-n": true, "--repeat-last-n": true,
-		"-schema": true, "--schema": true,
-		"-draft": true, "--draft": true,
-		"-spec-k": true, "--spec-k": true,
-	}
+	// same way a real flag parser would consume it. The set comes from the REGISTERED flags, not a
+	// list kept beside them: a hand-kept copy missed --kv, --spec and the model-loading flags.
+	chatValueFlags := map[string]bool{}
+	fs.VisitAll(func(f *flag.Flag) {
+		if b, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && b.IsBoolFlag() {
+			return
+		}
+		chatValueFlags["-"+f.Name], chatValueFlags["--"+f.Name] = true, true
+	})
 	skipNext := false
 	for _, a := range args {
 		if skipNext {

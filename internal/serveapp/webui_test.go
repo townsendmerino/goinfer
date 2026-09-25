@@ -3,6 +3,7 @@ package serveapp
 import (
 	"context"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -77,13 +78,13 @@ func TestFitEstimate(t *testing.T) {
 // still correctly reports unknown, through the registry path unchanged.
 func TestWebUI_freeBytesForActiveBackend(t *testing.T) {
 	for _, backend := range []string{"", "cpu"} {
-		s := &server{cfg: config{backend: backend}}
+		s := &server{cfg: config{load: loadflags.Flags{Backend: backend}}}
 		free, ok := s.freeBytesForActiveBackend()
 		if !ok || free <= 0 {
 			t.Errorf("backend %q: freeBytesForActiveBackend() = %d, %v — want a positive value and ok on any machine running this test", backend, free, ok)
 		}
 	}
-	s := &server{cfg: config{backend: "not-a-real-backend"}}
+	s := &server{cfg: config{load: loadflags.Flags{Backend: "not-a-real-backend"}}}
 	if free, ok := s.freeBytesForActiveBackend(); ok {
 		t.Errorf("an unregistered backend name reported ok=true (free=%d) — should be unknown, not guessed", free)
 	}

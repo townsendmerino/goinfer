@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -69,8 +70,7 @@ func okStatus(code int) bool {
 func TestServe_soakChaos(t *testing.T) {
 	models := chaosModels(t) // skips without the env model
 	srv, err := newServer(config{
-		models: models, backend: "cpu", quant: "int8int8",
-		kvSessions: 2, maxQueue: 4, allowAdmin: true,
+		models: models, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 2, maxQueue: 4, allowAdmin: true,
 	})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
@@ -288,7 +288,7 @@ func TestServe_warmKVRestore(t *testing.T) {
 
 	// Round 1 on a session-backed server: generates the assistant reply and warms
 	// a KV session for the conversation, then snapshot to disk.
-	srvA, err := newServer(config{models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 2, sessionDir: dir})
+	srvA, err := newServer(config{models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 2, sessionDir: dir})
 	if err != nil {
 		t.Fatalf("newServer A: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestServe_warmKVRestore(t *testing.T) {
 	follow := fmt.Sprintf(`[{"role":"user","content":"Name three primary colors."},{"role":"assistant","content":%q},{"role":"user","content":"Now name three more."}]`, a1)
 
 	// Restarted server: same session-dir, restore from disk.
-	srvB, err := newServer(config{models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 2, sessionDir: dir})
+	srvB, err := newServer(config{models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 2, sessionDir: dir})
 	if err != nil {
 		t.Fatalf("newServer B: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestServe_warmKVRestore(t *testing.T) {
 	}
 
 	// Cold reference: a fresh server with NO session reuse, same follow-up.
-	srvC, err := newServer(config{models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 0})
+	srvC, err := newServer(config{models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 0})
 	if err != nil {
 		t.Fatalf("newServer C: %v", err)
 	}
@@ -377,7 +377,7 @@ func TestServe_tieredKVDemoteFaultBack(t *testing.T) {
 	}
 
 	// One RAM session + tiering on, with an injected clock so we control idleness.
-	srv, err := newServer(config{models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 1, sessionDir: dir})
+	srv, err := newServer(config{models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 1, sessionDir: dir})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}
@@ -434,7 +434,7 @@ func TestServe_tieredKVDemoteFaultBack(t *testing.T) {
 	}
 
 	// Cold reference: a fresh server with no reuse at all, same follow-up.
-	srvC, err := newServer(config{models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 0})
+	srvC, err := newServer(config{models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 0})
 	if err != nil {
 		t.Fatalf("newServer cold: %v", err)
 	}

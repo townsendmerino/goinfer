@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"math"
 	"os"
 	"path/filepath"
@@ -39,7 +40,7 @@ func TestAdapterFlag_parse(t *testing.T) {
 func TestLoadAdapters_errors(t *testing.T) {
 	mk := func(adapters adapterFlag, models map[string]*loadedModel, stream bool) error {
 		s := &server{models: models, cfg: config{}}
-		return s.loadAdapters(config{adapters: adapters, streamWeights: stream})
+		return s.loadAdapters(config{adapters: adapters, load: loadflags.Flags{StreamWeights: stream}})
 	}
 	if err := mk(adapterFlag{{"a", "missing", "/d"}}, map[string]*loadedModel{}, false); err == nil {
 		t.Error("expected base-not-found error")

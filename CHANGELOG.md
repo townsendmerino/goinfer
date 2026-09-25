@@ -15,6 +15,20 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **`goinfer-chat` has every model-loading flag `goinfer-serve` has**: `--ctx`, `--stream-weights`,
+  `--weight-cache`, `--moe-cache-experts`, `--moe-cache-slots`, `--moe-pager`, `--accept-slow`, `--embed-int4` and
+  `--cpu-exact-prefill` are new to chat. A cold-user run reached for `--moe-cache-experts` in chat and got
+  "flag provided but not defined". Both binaries now register these flags from one place (`internal/loadflags`) and
+  build their `decoder.Options` from it, so they cannot drift apart again. The help texts are serve's; serve's also
+  names its per-model overrides.
+  - `--stream-weights` is no longer redirected to `goinfer-serve`.
+  - On the baked-in model, `--stream-weights` is refused with a reason, because that model lives in the binary's own
+    image.
+  - A `--draft` model never inherits `--stream-weights`.
+  - As in serve, chat's flags now decide the CPU prefill attention: an exported `GOINFER_CPU_FAST_ATTENTION` no
+    longer overrides them. Use `--cpu-exact-prefill` or `--exact-prefill`.
+  - Both binaries now refuse a negative `--ctx`, `--moe-cache-slots` or `--weight-cache` at startup.
+
 - **A baked-in chat model now honours `--kv`, `--fit` and `--exact-prefill`.** The
   prequant build (`-tags prequant`, the release binaries with a model inside) built its model through
   `decoder.NewModel`, which read nothing but the backend, so those flags were accepted and did nothing. New

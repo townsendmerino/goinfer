@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -46,7 +47,7 @@ func TestServe_admin(t *testing.T) {
 	tsNo.Close()
 
 	// Admin-enabled, starts empty.
-	srv, err := newServer(config{allowAdmin: true, backend: "cpu", quant: "int8int8", kvSessions: 2})
+	srv, err := newServer(config{allowAdmin: true, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 2})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}

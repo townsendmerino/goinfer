@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -31,11 +32,9 @@ func TestServe_goroutineLeakCheck(t *testing.T) {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the serve goroutine-leak check")
 	}
 	srv, err := newServer(config{
-		models:     modelFlag{{name: "m", path: ckpt}},
-		backend:    "cpu",
-		quant:      "int8int8",
-		kvSessions: 2, // exercise warm-KV session goroutines/state
-		maxQueue:   4, // exercise the backpressure queue
+		models: modelFlag{{name: "m", path: ckpt}},
+		load:   loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 2, // exercise warm-KV session goroutines/state
+		maxQueue: 4, // exercise the backpressure queue
 	})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)

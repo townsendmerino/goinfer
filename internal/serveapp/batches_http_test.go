@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -89,7 +90,7 @@ func TestBatches_openAIRoundTrip(t *testing.T) {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the batches round-trip test")
 	}
 	srv, err := newServer(config{
-		models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 0,
+		models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 0,
 	})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
@@ -238,7 +239,7 @@ func TestBatches_anthropicRoundTrip(t *testing.T) {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the batches round-trip test")
 	}
 	srv, err := newServer(config{
-		models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 0,
+		models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 0,
 	})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
@@ -365,8 +366,7 @@ func TestBatches_cancelStopsQueuedLines(t *testing.T) {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the batches cancel test")
 	}
 	srv, err := newServer(config{
-		models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8",
-		kvSessions: 0, maxQueue: 8,
+		models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 0, maxQueue: 8,
 	})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)

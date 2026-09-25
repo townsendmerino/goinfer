@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -171,8 +172,8 @@ func TestServe_multiModel(t *testing.T) {
 		t.Skip("set GOINFER_SERVE_MODEL + GOINFER_SERVE_MODEL2 (two .gguf) for the multi-model test")
 	}
 	srv, err := newServer(config{
-		models:  modelFlag{{name: "m1", path: p1}, {name: "m2", path: p2}},
-		backend: "cpu", quant: "int8int8", kvSessions: 2,
+		models: modelFlag{{name: "m1", path: p1}, {name: "m2", path: p2}},
+		load:   loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 2,
 	})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
@@ -251,7 +252,7 @@ func TestServe_integration(t *testing.T) {
 	if path == "" {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> to run the serve integration test")
 	}
-	srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 4})
+	srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 4})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}
@@ -341,7 +342,7 @@ func TestServe_tools_integration(t *testing.T) {
 	if path == "" {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> to run the serve tool test")
 	}
-	srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 4})
+	srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 4})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}
@@ -410,7 +411,7 @@ func TestServe_grammarSpecLossless(t *testing.T) {
 			 "required":["name","age"]}}}}`
 
 	run := func(spec string) string {
-		srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 4, spec: spec})
+		srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 4, spec: spec})
 		if err != nil {
 			t.Fatalf("newServer(spec=%q): %v", spec, err)
 		}

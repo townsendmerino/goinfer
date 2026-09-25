@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -215,7 +216,7 @@ func newAnthropicTestServer(t *testing.T) *httptest.Server {
 	if path == "" {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the Anthropic integration tests")
 	}
-	srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 4})
+	srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 4})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}
@@ -404,7 +405,7 @@ func TestServe_anthropic_streamAbort(t *testing.T) {
 	if path == "" {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the Anthropic abort test")
 	}
-	srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, backend: "cpu", quant: "int8int8", kvSessions: 4})
+	srv, err := newServer(config{models: modelFlag{{name: "test-model", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 4})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)
 	}

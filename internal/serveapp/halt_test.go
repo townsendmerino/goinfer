@@ -3,6 +3,7 @@ package serveapp
 import (
 	"bufio"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -39,8 +40,7 @@ func TestServe_haltUnderLoad(t *testing.T) {
 	}
 	const n = 32
 	srv, err := newServer(config{
-		models: modelFlag{{name: "t", path: path}}, backend: "cpu", quant: "int8int8",
-		allowAdmin: true, maxInflight: n, maxQueue: n, // queue capacity 1+maxQueue must cover all n
+		models: modelFlag{{name: "t", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, allowAdmin: true, maxInflight: n, maxQueue: n, // queue capacity 1+maxQueue must cover all n
 	})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)

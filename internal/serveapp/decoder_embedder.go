@@ -130,8 +130,8 @@ func (s *server) loadDecoderEmbedder(cfg config) error {
 	if strings.EqualFold(cfg.embedQuant, "q8") {
 		quant = "int8"
 	}
-	m, err := decoder.Load(cfg.embedPath, decoder.Options{Backend: cfg.backend, Quant: quant,
-		ExactPrefill: cfg.exactPrefill, Knobs: cfg.prefillKnobs()}) // the same prompt-ingestion flags as chat models
+	m, err := decoder.Load(cfg.embedPath, decoder.Options{Backend: cfg.load.Backend, Quant: quant,
+		ExactPrefill: cfg.load.ExactPrefill, Knobs: cfg.load.Knobs()}) // the same prompt-ingestion flags as chat models
 	if err != nil {
 		return fmt.Errorf("load embedding model (%s): %w", cfg.embedPath, err)
 	}

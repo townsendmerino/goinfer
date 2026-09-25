@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"os"
 	"testing"
 )
@@ -32,8 +33,8 @@ func TestPrefillFlags_reachTheDecoderThroughOptions(t *testing.T) {
 		cpuFast string
 	}{
 		{"default", config{}, false, "1"},
-		{"--exact-prefill", config{exactPrefill: true}, true, "0"},
-		{"--cpu-exact-prefill", config{cpuExactPrefill: true}, false, "0"},
+		{"--exact-prefill", config{load: loadflags.Flags{ExactPrefill: true}}, true, "0"},
+		{"--cpu-exact-prefill", config{load: loadflags.Flags{CPUExactPrefill: true}}, false, "0"},
 	} {
 		opts := (modelSpec{}).options(c.cfg)
 		if opts.ExactPrefill != c.exact {
@@ -56,21 +57,11 @@ func TestPrefillFlags_reachTheDecoderThroughOptions(t *testing.T) {
 func TestMoEPagerFlag_reachesTheDecoderThroughOptions(t *testing.T) {
 	unsetenvT(t, "GOINFER_MOE_PREAD_CPU")
 	for _, mode := range []string{"pool", "mmap"} {
-		if got := (modelSpec{}).options(config{moePager: mode}).MoEPager; got != mode {
+		if got := (modelSpec{}).options(config{load: loadflags.Flags{MoEPager: mode}}).MoEPager; got != mode {
 			t.Errorf("--moe-pager=%s: Options.MoEPager = %q", mode, got)
 		}
 	}
 	if _, set := os.LookupEnv("GOINFER_MOE_PREAD_CPU"); set {
 		t.Error("building Options wrote GOINFER_MOE_PREAD_CPU")
-	}
-}
-
-// TestMoEPagerDefault gates S5's registered default: pool on darwin (where MADV_DONTNEED is a
-// no-op, so mmap mode cannot enforce its budget), mmap everywhere else.
-func TestMoEPagerDefault(t *testing.T) {
-	for goos, want := range map[string]string{"darwin": "pool", "linux": "mmap", "windows": "mmap", "freebsd": "mmap"} {
-		if got := moePagerDefault(goos); got != want {
-			t.Errorf("moePagerDefault(%q) = %q, want %q", goos, got, want)
-		}
 	}
 }

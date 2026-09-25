@@ -1,6 +1,17 @@
 package chatapp
 
-import "testing"
+import (
+	"flag"
+	"testing"
+)
+
+// chatFlagSet is chat's real command line on a fresh flag set (registerFlags), so these tests read the
+// same list serveOnlyInvocation does at run time.
+func chatFlagSet() *flag.FlagSet {
+	fs := flag.NewFlagSet("goinfer-chat", flag.ContinueOnError)
+	registerFlags(fs)
+	return fs
+}
 
 // Cold-user run 2026-09-06, scenario B, 06:37:23 — the tester's FIRST error of that leg, and the
 // reason it started badly. `goinfer-chat serve` ignored the subcommand and complained about
@@ -18,7 +29,10 @@ func TestServeOnlyInvocation(t *testing.T) {
 		{"double dash", []string{"--web"}, "--web"},
 		{"flag with an = value", []string{"--addr=0.0.0.0:8080"}, "--addr"},
 		{"serve-only flag after a shared one", []string{"--model", "m.gguf", "--api-key", "x"}, "--api-key"},
-		{"the flag whose absence cost the run its worst dead end", []string{"-stream-weights"}, "-stream-weights"},
+		// --stream-weights was serve-only and redirected here; since internal/loadflags it is chat's own
+		// flag too, so it must now fall through to chat (the cold-user run's dead end, closed the other way).
+		{"a model-loading flag chat now shares", []string{"-stream-weights"}, ""},
+		{"and one that takes a value, with its value", []string{"--moe-cache-slots", "8", "--ctx", "16384"}, ""},
 
 		// The other direction matters more: a legitimate chat invocation must NEVER be redirected.
 		// Every flag both binaries share has to fall through, or this "help" breaks the tool.
@@ -37,7 +51,7 @@ func TestServeOnlyInvocation(t *testing.T) {
 			[]string{"--model", "m.gguf", "serve"}, "serve"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := serveOnlyInvocation(tc.args); got != tc.want {
+			if got := serveOnlyInvocation(tc.args, chatFlagSet()); got != tc.want {
 				t.Errorf("serveOnlyInvocation(%q) = %q, want %q", tc.args, got, tc.want)
 			}
 		})
@@ -45,16 +59,21 @@ func TestServeOnlyInvocation(t *testing.T) {
 }
 
 // The redirect list must not overlap with flags chat actually has, or a working invocation gets
-// turned away. Checked against the list rather than by eye, because the failure is silent: the
-// binary simply stops accepting something it used to.
+// turned away. Checked against chat's REGISTERED flags — every one, in both spellings — rather than a
+// list typed out here, because the failure is silent: the binary simply stops accepting something it
+// used to, and a typed-out list goes stale the day a flag is added.
 func TestServeOnlyInvocation_neverClaimsAChatFlag(t *testing.T) {
-	// Flags chat defines itself; every one must fall through untouched.
-	for _, f := range []string{
-		"--model", "-model", "--backend", "-backend", "--quant", "-quant", "--lora", "-lora",
-		"--system", "-system", "--max", "-max", "--temp", "-temp", "--top-k", "--top-p", "--seed",
-	} {
-		if got := serveOnlyInvocation([]string{f, "x"}); got != "" {
-			t.Errorf("%s is a chat flag but was redirected to serve as %q", f, got)
+	fs := chatFlagSet()
+	n := 0
+	fs.VisitAll(func(f *flag.Flag) {
+		for _, spelling := range []string{"-" + f.Name, "--" + f.Name} {
+			n++
+			if got := serveOnlyInvocation([]string{spelling, "x"}, fs); got != "" {
+				t.Errorf("%s is a chat flag but was redirected to serve as %q", spelling, got)
+			}
 		}
+	})
+	if n < 40 {
+		t.Fatalf("only %d flag spellings checked — registerFlags registered fewer flags than chat has", n)
 	}
 }

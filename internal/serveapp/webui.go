@@ -170,11 +170,11 @@ type webPullReq struct {
 // so: it predates the registry and is used by decoder/fitguard.go directly — so that one case is
 // special-cased here rather than silently reporting "unknown" for the single most common backend.
 func (s *server) freeBytesForActiveBackend() (int64, bool) {
-	if s.cfg.backend == "" || s.cfg.backend == "cpu" {
+	if s.cfg.load.Backend == "" || s.cfg.load.Backend == "cpu" {
 		b := decoder.HostRAMAvailableBytes()
 		return b, b > 0
 	}
-	return decoder.FreeBytesFor(s.cfg.backend)
+	return decoder.FreeBytesFor(s.cfg.load.Backend)
 }
 
 // fitEstimate is a COARSE per-file verdict for the file listing, using only the file's own
@@ -240,7 +240,7 @@ func (s *server) handleWebList(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := map[string]any{"repo": ref.Repo, "files": out}
 	if freeOK {
-		backend := s.cfg.backend
+		backend := s.cfg.load.Backend
 		if backend == "" {
 			backend = "cpu" // the flag's own default (main.go) — never shown blank to the page
 		}

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -31,7 +32,7 @@ func TestServe_cancelByID(t *testing.T) {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the cancel-by-id test")
 	}
 	srv, err := newServer(config{
-		models: modelFlag{{name: "t", path: path}}, backend: "cpu", quant: "int8int8", allowAdmin: true,
+		models: modelFlag{{name: "t", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, allowAdmin: true,
 	})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)

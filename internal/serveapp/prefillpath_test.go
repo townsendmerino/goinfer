@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -89,7 +90,7 @@ func TestServe_modelsReportsResolvedPaths(t *testing.T) {
 // LOAD (serve exits before binding a port), not be discovered 14 minutes into a batch run.
 func TestServe_requireBackendRejectsDecline(t *testing.T) {
 	_, lm := tinyServed(t)
-	cfg := config{backend: "cpu", requireBE: true}
+	cfg := config{load: loadflags.Flags{Backend: "cpu"}, requireBE: true}
 
 	if err := requireFastPaths("tiny", cfg, lm, false, "sequential — batched prefill requires int4 projections"); err == nil {
 		t.Fatal("--require-backend accepted a model that declined the batched prefill")
@@ -101,7 +102,7 @@ func TestServe_requireBackendRejectsDecline(t *testing.T) {
 	}
 	// A GPU backend with no resident decode path is the other silent fallback — the whole forward
 	// runs staged/CPU while the flags still say cuda.
-	if err := requireFastPaths("tiny", config{backend: "cuda", requireBE: true}, lm, true, "batched"); err == nil {
+	if err := requireFastPaths("tiny", config{load: loadflags.Flags{Backend: "cuda"}, requireBE: true}, lm, true, "batched"); err == nil {
 		t.Fatal("--require-backend accepted a cuda model with no resident decode path")
 	}
 }
@@ -157,7 +158,7 @@ func TestServe_requireBackendNamesTheResidencyDecline(t *testing.T) {
 	if decline == "" {
 		t.Fatal("no residency decline recorded for a cpu-backend load — the reason is being discarded again")
 	}
-	err := requireFastPaths("tiny", config{backend: "cuda", requireBE: true}, lm, true, "batched")
+	err := requireFastPaths("tiny", config{load: loadflags.Flags{Backend: "cuda"}, requireBE: true}, lm, true, "batched")
 	if err == nil {
 		t.Fatal("--require-backend accepted a cuda model with no resident decode path")
 	}

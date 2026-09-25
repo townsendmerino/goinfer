@@ -94,24 +94,24 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	// unset, and the -ctx value when it was set — neither of which is the limit. The limit is
 	// min(model maximum, resident KV cap), and an invisible default found out by degradation is the
 	// exact complaint users make about other local servers. It now prints ctxWindow (what prepare
-	// enforces and /v1/models publishes), and says what set it. cfg.ctxSize is the REQUESTED -ctx for
+	// enforces and /v1/models publishes), and says what set it. cfg.load.Ctx is the REQUESTED -ctx for
 	// this model (the caller passes the per-model ctx= override when there is one).
 	ctxLine := "context: "
 	switch {
 	case f.ctxWindow <= 0:
 		ctxLine += "unknown (the model declares no maximum)"
-	case f.maxPositions > 0 && f.ctxWindow < f.maxPositions && cfg.ctxSize > 0:
+	case f.maxPositions > 0 && f.ctxWindow < f.maxPositions && cfg.load.Ctx > 0:
 		ctxLine += fmt.Sprintf("%d tokens (--ctx; model maximum %d)", f.ctxWindow, f.maxPositions)
 	case f.maxPositions > 0 && f.ctxWindow < f.maxPositions:
 		ctxLine += fmt.Sprintf("%d tokens (backend default; model maximum %d — raise with --ctx)", f.ctxWindow, f.maxPositions)
-	case cfg.ctxSize > f.ctxWindow:
-		ctxLine += fmt.Sprintf("%d tokens (model maximum; --ctx %d is above it)", f.ctxWindow, cfg.ctxSize)
+	case cfg.load.Ctx > f.ctxWindow:
+		ctxLine += fmt.Sprintf("%d tokens (model maximum; --ctx %d is above it)", f.ctxWindow, cfg.load.Ctx)
 	default:
 		ctxLine += fmt.Sprintf("%d tokens (model maximum)", f.ctxWindow)
 	}
 	// The precision that RUNS: a resident runner reports its own (Metal allocates f16 KV whatever -kv
 	// says); off it, the requested -kv applies. "(lossy)" marks a precision the operator chose below f32.
-	switch req := cfg.kvPrec; {
+	switch req := cfg.load.KV; {
 	case f.kvPrec != "":
 		ctxLine += " · KV " + f.kvPrec
 		if f.kvPrec != "f32" && f.kvPrec == req {

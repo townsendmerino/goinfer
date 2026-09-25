@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,8 +20,7 @@ func TestServe_backpressure(t *testing.T) {
 		t.Skip("set GOINFER_SERVE_MODEL=<.gguf> for the backpressure test")
 	}
 	srv, err := newServer(config{
-		models: modelFlag{{name: "m", path: path}}, backend: "cpu", quant: "int8int8",
-		kvSessions: 0, maxQueue: 2, // cap = 1 running + 2 waiting
+		models: modelFlag{{name: "m", path: path}}, load: loadflags.Flags{Backend: "cpu", Quant: "int8int8"}, kvSessions: 0, maxQueue: 2, // cap = 1 running + 2 waiting
 	})
 	if err != nil {
 		t.Fatalf("newServer: %v", err)

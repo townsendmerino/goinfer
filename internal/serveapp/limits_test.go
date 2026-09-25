@@ -3,6 +3,7 @@ package serveapp
 import (
 	"context"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -527,12 +528,12 @@ func TestAdminLoad_requestQuantIsTheExplicitOne(t *testing.T) {
 		"request names nothing, no CLI either":  {"", false, "", ""},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c := config{quant: tc.cliQuant, quantSet: tc.cliQuantSet}
+			c := config{load: loadflags.Flags{Quant: tc.cliQuant, QuantSet: tc.cliQuantSet}}
 			// The admin handler's resolution, verbatim.
 			if tc.reqQuant != "" {
-				c.quant, c.quantSet = tc.reqQuant, true
+				c.load.Quant, c.load.QuantSet = tc.reqQuant, true
 			} else {
-				c.quantSet = false
+				c.load.QuantSet = false
 			}
 			if got := (modelSpec{}).explicitQuant(c); got != tc.want {
 				t.Errorf("explicitQuant = %q, want %q — the .giw mismatch check keys on this, so "+
@@ -548,8 +549,8 @@ func TestAdminLoad_requestQuantIsTheExplicitOne(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read admin.go: %v", err)
 	}
-	if !strings.Contains(string(src), "c.quant, c.quantSet = req.Quant, true") {
-		t.Error("admin.go does not set quantSet from the request: c.quant moves and quantSet " +
+	if !strings.Contains(string(src), "c.load.Quant, c.load.QuantSet = req.Quant, true") {
+		t.Error("admin.go does not set QuantSet from the request: c.load.Quant moves and QuantSet " +
 			"stays inherited from the CLI, which is N-19 exactly")
 	}
 }
