@@ -2,15 +2,13 @@ package serveapp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"strconv"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/swapguard"
 )
 
 // S3 (docs/tasks/task-never-swap-2026-09.md): both halves of the swap tripwire.
@@ -25,7 +23,7 @@ import (
 // the swap guard does NOT cancel anything already running, only refuses new admissions — the
 // brief's own "lets in-flight generations finish".
 //
-// The LOAD-TIME half (armLoadSwapGuard, armed and torn down around exactly one decoder.Load
+// The LOAD-TIME half (internal/swapguard's ArmLoad, shared with goinfer-chat; armed and torn down around exactly one decoder.Load
 // call): "the callback cancels the load's context... the direct build needs a check between
 // layers in parallelLayers" — that plumbing lives in decoder (Options.LoadAbort, checked by
 // parallelLayers), this file only arms/tears down the watch around loadDecoder's decoder.Load
@@ -35,7 +33,7 @@ import (
 // see Options.LoadAbort's own doc comment for why the .giw/streaming path is unaffected (the
 // abort channel is a genuine no-op there today, not specially handled here).
 //
-// Both halves share swapGuardThresholdBytes so GOINFER_SWAP_GUARD can't quote two different
+// Both halves share swapguard.ThresholdBytes so GOINFER_SWAP_GUARD can't quote two different
 // numbers for the same env var.
 
 // startSwapGuard arms the swap watch, if enabled, and returns once the goroutine is running (it
@@ -67,7 +65,7 @@ func (s *server) startSwapGuard() {
 // probe (decoder/swapwatch_test.go's own scriptedReader tests the watch's decision logic in
 // isolation already; this is the integration seam one level up).
 func (s *server) armSwapGuard(read decoder.SwapReader) {
-	threshold, thresholdMB, on := swapGuardThresholdBytes()
+	threshold, thresholdMB, on := swapguard.ThresholdBytes()
 	if !on {
 		fmt.Fprintln(os.Stderr, "swap guard: disabled (GOINFER_SWAP_GUARD=off)")
 		return
@@ -110,114 +108,4 @@ func (s *server) armSwapGuard(read decoder.SwapReader) {
 			fmt.Fprintln(os.Stderr, "swap guard: recovered — swap-used back within threshold of baseline for 30s; admitting new requests again")
 		},
 	})
-}
-
-// swapGuardThresholdBytes parses GOINFER_SWAP_GUARD once, shared by both halves of the guard so
-// they cannot drift apart on what the same env var means. ok is false for "off" (the byte/MB
-// values are meaningless then and must not be used). An unparseable non-"off" value falls back to
-// the 512 MB default and says so, rather than silently guarding at 0 (which would trip on the
-// first tick) or not guarding at all.
-func swapGuardThresholdBytes() (thresholdBytes, thresholdMB int64, ok bool) {
-	const defaultMB = 512
-	mb := int64(defaultMB)
-	switch v := os.Getenv("GOINFER_SWAP_GUARD"); v {
-	case "":
-		// default
-	case "off":
-		return 0, 0, false
-	default:
-		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil && parsed > 0 {
-			mb = parsed
-		} else {
-			fmt.Fprintf(os.Stderr, "swap guard: GOINFER_SWAP_GUARD=%q is neither \"off\" nor a positive integer (MB) — using the %d MB default\n", v, defaultMB)
-		}
-	}
-	return mb * 1024 * 1024, mb, true
-}
-
-// startLoadSwapGuard is armLoadSwapGuard with the same `go test` suppression startSwapGuard
-// applies to armSwapGuard: the real background watch is not started under `go test` unless a
-// test explicitly opts in via GOINFER_SWAP_GUARD (loadDecoder is exercised by many tests that
-// have nothing to do with this guard). Call sites use this one; tests call armLoadSwapGuard
-// directly with a scripted reader, bypassing the suppression as an explicit opt-in.
-func startLoadSwapGuard(loadPath string, opts decoder.Options) (abort <-chan struct{}, wrapErr func(error) error, stop func()) {
-	if testing.Testing() && os.Getenv("GOINFER_SWAP_GUARD") == "" {
-		return nil, func(err error) error { return err }, func() {}
-	}
-	return armLoadSwapGuard(loadPath, opts, decoder.SwapUsedBytes)
-}
-
-// armLoadSwapGuard arms a watch scoped to exactly one decoder.Load call — S3's load-time half.
-// Unlike armSwapGuard (armed once for the process's life, after startup, so its baseline is
-// "steady state"), a fresh baseline every load is correct here: the question is "did loading THIS
-// model grow swap," not "is the machine's swap elevated in general." ResumeAfter is 0 (no
-// OnResume) because a load either finishes or is aborted — there is no "resume mid-load"
-// (SwapWatchOptions.ResumeAfter's own doc comment anticipates exactly this consumer).
-//
-// read is injectable so a test can drive this against a scripted reader instead of the real OS
-// probe (decoder/swapwatch_test.go's own scriptedReader tests the watch's decision logic in
-// isolation already; this is the integration seam one level up, same split as armSwapGuard/
-// startSwapGuard). Returns a nil abort channel — the documented Options.LoadAbort no-op — when
-// the guard is off (GOINFER_SWAP_GUARD=off). The returned stop func must be called once the load
-// call it guards has returned, by any outcome — it also drains the watch goroutine (SwapWatch.Stop
-// blocks until it has exited), so there is never a watch left running past the load it was armed
-// for.
-func armLoadSwapGuard(loadPath string, opts decoder.Options, read decoder.SwapReader) (abort <-chan struct{}, wrapErr func(error) error, stop func()) {
-	noop := func(err error) error { return err }
-	threshold, thresholdMB, on := swapGuardThresholdBytes()
-	if !on {
-		return nil, noop, func() {}
-	}
-
-	abortCh := make(chan struct{})
-	var mu sync.Mutex
-	var tripped bool
-	var trippedUsed, trippedDelta int64
-
-	fmt.Fprintf(os.Stderr, "swap guard (load): armed for %s, threshold +%d MB over baseline\n", loadPath, thresholdMB)
-	bannerPrinted := false
-	bannerOnce := func() (int64, bool) {
-		used, ok := read()
-		if !bannerPrinted {
-			bannerPrinted = true
-			if ok {
-				fmt.Fprintf(os.Stderr, "swap guard (load): baseline %.2f GB swap-used\n", float64(used)/1e9)
-			}
-		}
-		return used, ok
-	}
-
-	watch := decoder.StartSwapWatch(context.Background(), decoder.SwapWatchOptions{
-		Read:         bannerOnce,
-		PollInterval: 2 * time.Second,
-		Threshold:    threshold,
-		OnTrip: func(used, delta int64) {
-			mu.Lock()
-			first := !tripped
-			if first {
-				tripped, trippedUsed, trippedDelta = true, used, delta
-			}
-			mu.Unlock()
-			if first {
-				close(abortCh) // the actual signal parallelLayers' abort select observes
-			}
-			fmt.Fprintf(os.Stderr, "swap guard (load): TRIPPED — swap grew %.2f GB over baseline (%.2f GB used now); aborting the load of %s\n", float64(delta)/1e9, float64(used)/1e9, loadPath)
-		},
-	})
-
-	wrap := func(err error) error {
-		if err == nil || !errors.Is(err, decoder.ErrLoadAborted) {
-			return err
-		}
-		mu.Lock()
-		used, delta := trippedUsed, trippedDelta
-		mu.Unlock()
-		reason := fmt.Sprintf("swap grew %.2f GB over baseline during load (%.2f GB swap-used now)", float64(delta)/1e9, float64(used)/1e9)
-		if desc, derr := decoder.FitDescribe(loadPath, opts); derr == nil {
-			return fmt.Errorf("load aborted: %s — %s; use -stream-weights or a smaller quant: %w", reason, desc, err)
-		}
-		return fmt.Errorf("load aborted: %s: %w", reason, err)
-	}
-
-	return abortCh, wrap, watch.Stop
 }

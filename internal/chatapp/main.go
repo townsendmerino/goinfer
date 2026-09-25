@@ -44,6 +44,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/internal/prequant"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
+	"github.com/townsendmerino/goinfer/internal/swapguard"
 	"github.com/townsendmerino/goinfer/pull"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -387,12 +388,38 @@ func loadFromPath(path string, opts decoder.Options) (*session, error) {
 		return nil, fmt.Errorf("load tokenizer: %w", err)
 	}
 	progress("loading + quantizing…")
-	model, err := decoder.Load(path, opts)
+	model, err := loadModel(path, opts)
 	if err != nil {
 		return nil, fmt.Errorf("load model: %w", err)
 	}
 	return newSession(tk, model, opts, time.Since(t0)), nil
 }
+
+// loadModel is decoder.Load under S3's load-time swap tripwire (docs/tasks/task-never-swap-2026-09.md,
+// Build item 4): chat gets the load-time half only — it has no admission gate to flip. Same scope as
+// serve's: only a .gguf direct build observes Options.LoadAbort, so a .giw / HF-dir / streamed load arms
+// nothing.
+func loadModel(path string, opts decoder.Options) (*decoder.Model, error) {
+	loadOpts := opts
+	wrapLoadErr := func(err error) error { return err }
+	stopLoadGuard := func() {}
+	if !opts.StreamWeights && strings.HasSuffix(path, ".gguf") {
+		advice := "use a smaller -quant"
+		if prequant.DefaultToSidecar(false) {
+			// Here a .gguf only builds directly when -direct-load / GOINFER_GGUF_DIRECT asked for it.
+			advice = "drop -direct-load (and GOINFER_GGUF_DIRECT) so the .gguf loads through its sidecar .giw, or use a smaller -quant"
+		}
+		loadOpts.LoadAbort, wrapLoadErr, stopLoadGuard = startLoadGuard(path, opts, advice)
+	}
+	model, err := decoder.Load(path, loadOpts)
+	stopLoadGuard()
+	return model, wrapLoadErr(err)
+}
+
+// startLoadGuard is swapguard.StartLoad, as a variable so a test can hand loadFromPath an
+// already-tripped guard and check the abort really reaches decoder.Load (a guard armed but never
+// passed through would be silent in every other test).
+var startLoadGuard = swapguard.StartLoad
 
 // loadFromBytes loads the tokenizer + model from an in-memory GGUF slice — the
 // no-filesystem path used by the embedded binary. The default (download-a-path)

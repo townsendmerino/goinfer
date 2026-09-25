@@ -49,6 +49,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/prequant"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
 	"github.com/townsendmerino/goinfer/internal/servecheck"
+	"github.com/townsendmerino/goinfer/internal/swapguard"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/pull"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -1284,7 +1285,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	wrapLoadErr := func(err error) error { return err }
 	stopLoadGuard := func() {}
 	if !opts.StreamWeights && strings.HasSuffix(loadPath, ".gguf") {
-		loadOpts.LoadAbort, wrapLoadErr, stopLoadGuard = startLoadSwapGuard(loadPath, opts)
+		loadOpts.LoadAbort, wrapLoadErr, stopLoadGuard = swapguard.StartLoad(loadPath, opts, "use -stream-weights or a smaller quant")
 	}
 	model, err := decoder.Load(loadPath, loadOpts)
 	stopLoadGuard() // done with this attempt either way — never left running through a retry's transcode+reload below

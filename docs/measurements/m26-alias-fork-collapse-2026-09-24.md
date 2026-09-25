@@ -70,7 +70,7 @@ closed component is Apple's GPU driver, whose behaviour is established by the ex
 | 5 | `vm_map_fork` sends any entry whose object is `true_share` (or map-wired) to `slow_vm_map_fork_copy`, which copies **the whole entry** | `vm_map.c:13954-13957, 13649-13672` |
 | 6 | The copy is strategised; `vm_object_copy_delayed` **refuses** an object with wired resident pages ("we can't safely take write permission away from wired pages"), so it falls through to `vm_object_copy_slowly` — every page of the entry faulted in (from disk if not cached) and copied, on the forking thread, `THREAD_ABORTSAFE` | `vm_map.c:12742-12814`; `vm_object.c:3641-3981, 4010-4074` |
 | 7 | The forking thread is the server's; `task->pageins` counts each page it reads; no user fault is taken (flat `faults`); other threads block on the map lock (they stop faulting too) | `vm_fault.c:4544`; `vm_page_internal.h:1016-1022` |
-| 8 | The swap guard forks every 2 s; the harness's own `top`/`footprint` run in other processes and do not fork the server | `internal/serveapp/swapguard.go:75,101`; `decoder/swapwatch.go:103-117`; `decoder/memwatch_darwin.go` as of `9c43f016` (line 18) |
+| 8 | The swap guard forks every 2 s; the harness's own `top`/`footprint` run in other processes and do not fork the server | `internal/serveapp/swapguard.go:73,101`; `decoder/swapwatch.go:103-117`; `decoder/memwatch_darwin.go` as of `9c43f016` (line 18) |
 
 Consequences that the records confirm: the copy is 15.4 GB on M26 (cannot fit: everything else is compressed and
 swapped, RSS falls to nothing, the 3.2 GiB of page-ins is the part read before the machine ran out); the guard's

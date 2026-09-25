@@ -39,7 +39,7 @@ GOINFER_SPLITKV_VSUM_SPLIT	diagnostic: docs/tasks/task-decode-splitkv-attention.
 GOINFER_SSM_NOMUL	diagnostic: docs/completed/ssm-residency-build.md — SSM isolation seam
 GOINFER_SSM_Q8CPU	diagnostic: docs/completed/ssm-residency-build.md — SSM int8 confirmation seam
 GOINFER_SSM_SKIPFFN	diagnostic: docs/completed/ssm-residency-build.md — SSM mixer-only isolation
-GOINFER_SWAP_GUARD	startup: serve — swap-guard threshold
+GOINFER_SWAP_GUARD	startup: serve, chat — swap-guard threshold
 GOINFER_TOOL_UNION	startup: serve — tool-call union policy, read once at init
 GOINFER_W4A8_BATCH	diagnostic: docs/measurements/w4a8-batch-7b-2026-09-20.md — re-openable decision's arm
 GOINFER_W4A8_SPLITHALF	diagnostic: docs/tasks/task-int4-layout-2026-09.md — re-openable decision's arm
