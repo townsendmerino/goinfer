@@ -375,6 +375,12 @@ func Select(files []File, ref Ref) (File, error) {
 	case ref.File != "":
 		for _, f := range files {
 			if strings.EqualFold(f.Path, ref.File) {
+				// An exact shard name used to slip past the split refusal the quant path has: it
+				// downloaded one piece of a checkpoint no goinfer loader can assemble (there is no
+				// split-GGUF loader), and a cancelled one left a multi-GB .part behind.
+				if multiPart.MatchString(f.Path) {
+					return File{}, shardedError(f, files, ref)
+				}
 				if err := checkPin(f, ref); err != nil {
 					return File{}, err
 				}

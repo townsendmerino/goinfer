@@ -178,6 +178,25 @@ func TestSelect_splitCheckpoint_namesTheShardsAndOffersAnAlternative(t *testing.
 	}
 }
 
+// An EXACT shard filename took a different branch from the quant selector above and skipped its split
+// refusal: `pull owner/repo:big-Q4_K_M-00001-of-00003.gguf` downloaded one piece of a checkpoint no loader
+// can assemble (a cancelled one left a 4.7 GB .part in the cache). Same refusal, same shard list.
+func TestSelect_exactShardFilenameIsRefusedToo(t *testing.T) {
+	files := []File{
+		{Path: "big-Q4_K_M-00001-of-00003.gguf", Size: 4 << 30},
+		{Path: "big-Q4_K_M-00002-of-00003.gguf", Size: 4 << 30},
+		{Path: "big-Q4_K_M-00003-of-00003.gguf", Size: 2 << 30},
+		{Path: "big-Q4_K_S.gguf", Size: 8 << 30},
+	}
+	_, err := Select(files, Ref{Repo: "a/b", File: "big-Q4_K_M-00001-of-00003.gguf"})
+	if err == nil || !strings.Contains(err.Error(), "split GGUF") || !strings.Contains(err.Error(), "00003-of-00003") {
+		t.Fatalf("an exact shard name must be refused with the shard list, got: %v", err)
+	}
+	if f, err := Select(files, Ref{Repo: "a/b", File: "big-Q4_K_S.gguf"}); err != nil || f.Path != "big-Q4_K_S.gguf" {
+		t.Errorf("an exact single-file name must still select it, got %v, %v", f, err)
+	}
+}
+
 func TestHumanBytes(t *testing.T) {
 	for _, tc := range []struct {
 		in   int64
