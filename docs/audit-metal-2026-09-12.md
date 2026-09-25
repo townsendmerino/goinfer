@@ -1092,7 +1092,7 @@ re-baked by the code it checks (G-04).
   `prefill_ttft_test.go` already used, since this test is about MoE arch admission, not the floor.
 
 #### G-02 · The §3.2 pooled gate still drops missing cells silently and turns a fit-guard decline into a SKIP that "SHIPS" (prior audit G-08, open)
-- **Where:** `metal/prefill_gate_ref_test.go:222-238` (`if cs != nil { … }` — a missing reference
+- **Where:** `metal/prefill_gate_ref_test.go:224-240` (`if cs != nil { … }` — a missing reference
   file is dropped; only zero cells fails; the header prints the full K set), `:114-117` (D7 that
   fails to build → `Skipf`). Both records say D7 was decided-around by fit-guard: the floor and both
   default-ON flips that govern 7B-class Mac users rest on the 1.5B alone (and M-07 is why D7 does
@@ -1218,7 +1218,7 @@ re-baked by the code it checks (G-04).
   passing end to end is what both bugs actually blocked.
 
 #### G-08 · The §3.2 gate never exercises `startPos > 0`, which every resident-prefix-reuse turn uses
-- **Where:** `metal/prefill_gate_ref_test.go:465` (`PrefillLast(ctx, embs, 0)`) vs
+- **Where:** `metal/prefill_gate_ref_test.go:467` (`PrefillLast(ctx, embs, 0)`) vs
   `decoder/model.go:1465` (`from`); the fused kernel's `startPos`/`uMReal` masking is covered only by
   a synthetic hd=64 case. The agent-turn shape the peer matrix calls the headline workload is not
   a fidelity cell. **Fix:** one decision cell with `from = K/2` on S. **Confidence:** plausible
