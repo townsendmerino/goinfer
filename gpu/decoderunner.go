@@ -248,8 +248,7 @@ type runLayer struct {
 	// Nemotron-H single-op-per-block: each layer is exactly ONE op (no mixer+FFN pairing).
 	// nemoKind ∈ {nemoNone, nemoKMamba, nemoKAttn, nemoKMLP}; nemoNone ⇒ standard mixer+FFN.
 	nemoKind                                       uint8
-	mambaInProj, mambaOutProj                      decodeWeight // int8 path (nil when f16)
-	mambaInProjF16, mambaOutProjF16                *wgpu.Buffer // f16 path (default); nil ⇒ int8
+	mambaInProj, mambaOutProj                      decodeWeight
 	mambaConvW, mambaConvB, mambaHeadP, mambaNormW *wgpu.Buffer
 	mambaWin, mambaSSM                             *wgpu.Buffer
 
@@ -421,34 +420,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	}
 	ssmStopLayer := ssmStopLayerForTest                  // layer-sweep seam (tests only): truncate the plan
 	ssmSkipFFN := os.Getenv("GOINFER_SSM_SKIPFFN") != "" // debug: mixer-only isolation
-	// W8A16 (activation-precision fix, gemv_w8a16.go): int8 weights, f32 activations — no
-	// activation int8 quant, so the granite re-quant cascade can't compound. Off by default.
-	w8a16 := os.Getenv("GOINFER_SSM_W8A16") != ""
-	// N-13: the W8A16 path binds the INT8-weight kernel (gemv_w8a16.go: one byte per weight,
-	// f32 per-row scales). A *ResidentW4A8 projection stores two 4-bit nibbles per byte with f16
-	// GROUP scales, so dispatching it here reads nibble pairs as int8 weights and group scales
-	// as row scales — silent garbage, not an error. Decline instead: the flag is an opt-in
-	// experiment and running it against int4 weights answers nothing.
-	if w8a16 {
-		for i := range m.layers {
-			for _, w := range []decodeWeight{m.layers[i].up, m.layers[i].down} {
-				if _, isW4 := w.(*ResidentW4A8); isW4 {
-					fmt.Fprintf(os.Stderr, "[gpu] GOINFER_SSM_W8A16 ignored: layer %d has int4 "+
-						"(W4A8) projections, and the W8A16 kernel would read nibble pairs as "+
-						"int8 weights (N-13)\n", i)
-					w8a16 = false
-					break
-				}
-			}
-			if !w8a16 {
-				break
-			}
-		}
-	}
 	ensures := []func() error{c.ensureGEMV, c.ensureGEMVBias, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm, c.ensureLora}
-	if w8a16 {
-		ensures = append(ensures, c.ensureGEMVW8A16)
-	}
 	if m.moe != nil {
 		ensures = append(ensures, c.ensureMoERoute, c.ensureMoEExpert, c.ensureMoEExpertW4)
 		if m.moe.sharedInter > 0 && !m.moe.sharedUngated {
@@ -462,7 +434,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		ensures = append(ensures, c.ensureMLAStore, c.ensureMLAHeadMV, c.ensureMLAQRope, c.ensureMLAAttn)
 	}
 	if m.mamba != nil {
-		ensures = append(ensures, c.ensureMambaConv, c.ensureMambaSSM, c.ensureMambaGNorm, c.ensureMambaF16, c.ensureRelu2)
+		ensures = append(ensures, c.ensureMambaConv, c.ensureMambaSSM, c.ensureMambaGNorm, c.ensureRelu2)
 	}
 	if hd > attnWG || slices.ContainsFunc(m.layers, func(l runLayer) bool { return l.ghd > attnWG }) {
 		// Only now, and only for a plan that needs it. A device that cannot do 256-invocation
@@ -490,7 +462,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	}
 	r := &DecodeRunner{c: c, vocab: m.lmHead.nRows(), logitsHost: make([]float32, m.lmHead.nRows()), nLayers: len(m.layers), lmHead: m.lmHead}
 	// buildErr accumulates the FIRST device-allocation/bind failure (M21): the storF/uni/
-	// storFZ/bind helpers short-circuit once it's set and the constructor returns it, so VRAM
+	// bind helpers short-circuit once it's set and the constructor returns it, so VRAM
 	// exhaustion is an error the caller can fall back on — never a panic in library code.
 	var buildErr error
 	keepBuf := func(b *wgpu.Buffer) *wgpu.Buffer {
@@ -548,28 +520,7 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// op builders (record a step against persistent buffers):
 	// rmsQuant fuses RMSNorm→quantize: one dispatch, no xn round-trip, one fewer
 	// link on the serialized decode spine (§2). Bit-exact with rms→quant.
-	// storFZ: a zeroed storage buffer (CopyDst) — W8A16 f32 activations are kp-padded and the
-	// tail must be 0 (the int8 weight is zero-padded to kp, so 0·act keeps the dot exact; a NaN
-	// in an uninit pad would poison it). Zeroed once at build; producers only write [0,K).
-	storFZ := func(n int) *wgpu.Buffer {
-		if buildErr != nil {
-			return nil
-		}
-		b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
-		if e != nil {
-			buildErr = e
-			return nil
-		}
-		c.queue.TryWriteBuffer(b, 0, make([]byte, n*4))
-		return keepBuf(b)
-	}
 	rmsQuant := func(in, w *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
-		if w8a16 { // W8A16: f32 normed activation (kp-padded), nil scale signals the W8A16 GEMV
-			out := storFZ(padK(K))
-			p := uni([]uint32{uint32(K), f32bits(eps), boolU32(addOne), 0})
-			add(c.rmsnormPipeline, bind(c.rmsnormLayout, in, w, out, p), 1, 1)
-			return out, nil
-		}
 		kp := padK32(K) // int8 activation for a W4A8/W8A8 gemv that reads to the weight's kPad==padK32;
 		// padK (mult-16) under-sizes it when K%32 ∈ [1,16] → OOB read + int4 zero-pad nibbles decode
 		// to −8 (audit R-18 / N-05). Latent since real dims are mult-32; matches the siblings below.
@@ -595,16 +546,6 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	// other family (m.gatedAct==1, SiLU) is byte-identical to before this branch existed.
 	gelu := m.gatedGELU
 	swigluQuant := func(gate, up *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
-		if w8a16 { // W8A16: f32 swiglu/geglu (kp-padded), nil scale
-			out := storFZ(padK(K))
-			p := uni([]uint32{uint32(K), 0, 0, 0})
-			pl, ly := c.swigluPipeline, c.swigluLayout
-			if gelu {
-				pl, ly = c.gegluPipeline, c.gegluLayout
-			}
-			add(pl, bind(ly, gate, up, out, p), uint32(K+63)/64, 1)
-			return out, nil
-		}
 		kp := padK32(K) // int8 activation for a W4A8/W8A8 down-proj gemv, which reads to the weight's
 		// kPad == padK32; padK (mult-16) under-sizes it when K%32 != 0 (N-08→N-05: OOB read; latent
 		// since real dims are mult-32). padK32 also zeroes the tail, matching the zero-padded weight.
@@ -627,10 +568,6 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		return q, s
 	}
 	quant := func(in *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
-		if w8a16 { // W8A16: the input is already f32 — pass it through (K is mult-16 for the
-			// only granite caller, the mamba out_proj gated[dInner]); nil scale.
-			return in, nil
-		}
 		kp := padK32(K) // int8 activation for a W4A8/W8A8 gemv reading to padK32 — see swigluQuant (N-05)
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{1, uint32(K), uint32(kp), 0})
@@ -643,10 +580,6 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		out := storF(w.nRows())
 		p := uni([]uint32{1, uint32(w.kPad()), uint32(w.nRows()), 0})
 		gx, gy := gemvGrid(w.nRows())
-		if as == nil { // W8A16: aq is the f32 activation; int8 weight, no activation scale
-			add(c.gemvW8A16Pipeline, bind(c.gemvW8A16Layout, aq, w.wbuf(), w.sbuf(), out, p), gx, gy)
-			return out
-		}
 		add(w.gPipe(c), bind(w.gLayout(c), aq, w.wbuf(), as, w.sbuf(), out, p), gx, gy)
 		return out
 	}
@@ -655,10 +588,6 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 	gemvAdd := func(aq, as *wgpu.Buffer, w decodeWeight, dst *wgpu.Buffer) {
 		p := uni([]uint32{1, uint32(w.kPad()), uint32(w.nRows()), 1})
 		gx, gy := gemvGrid(w.nRows())
-		if as == nil { // W8A16 + residual
-			add(c.gemvW8A16Pipeline, bind(c.gemvW8A16Layout, aq, w.wbuf(), w.sbuf(), dst, p), gx, gy)
-			return
-		}
 		add(w.gPipe(c), bind(w.gLayout(c), aq, w.wbuf(), as, w.sbuf(), dst, p), gx, gy)
 	}
 	// gemvBias is gemv with a per-output bias folded into the epilogue (dst[n] =
@@ -769,25 +698,11 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 		p := uni([]uint32{uint32(n), 0, 0, 0})
 		add(c.deltaAttnGatePipeline, bind(c.deltaAttnGateLayout, ctxv, gate, p), uint32(n+63)/64, 1)
 	}
-	// f16 mamba projections (quality fix): plain f32 rmsnorm activation + f16 weight GEMV.
+	// rmsnormF32: plain f32 RMSNorm (no quantize) — the post-attention / post-MLP norms.
 	rmsnormF32 := func(in, weight *wgpu.Buffer, n int) *wgpu.Buffer {
 		out := storF(n)
 		p := uni([]uint32{uint32(n), f32bits(eps), boolU32(addOne), 0})
 		add(c.rmsnormPipeline, bind(c.rmsnormLayout, in, weight, out, p), 1, 1)
-		return out
-	}
-	mambaF16Gemv := func(act, wf16 *wgpu.Buffer, N, K int, residual bool, dst *wgpu.Buffer) *wgpu.Buffer {
-		out := dst
-		if out == nil {
-			out = storF(N)
-		}
-		res := uint32(0)
-		if residual {
-			res = 1
-		}
-		p := uni([]uint32{uint32(K), uint32(N), res, 0})
-		gx, gy := gemvGrid(N)
-		add(c.mambaF16Pipeline, bind(c.mambaF16Layout, act, wf16, out, p), gx, gy)
 		return out
 	}
 	// §4: the per-token uniforms (rope-q, rope-store-k, v-store, attn) depend only
@@ -1063,10 +978,6 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 				add(c.moeExpertW4Pipeline, bind(c.moeExpertW4Layout, aq, s.bq, as, s.bScales, dst, idx, wgt, d), gx, gy)
 				return
 			}
-			if as == nil { // W8A16: f32 activation, int8 stacked weight
-				add(c.moeExpertW8A16Pipeline, bind(c.moeExpertW8A16Layout, aq, s.bq, s.bScales, dst, idx, wgt, d), gx, gy)
-				return
-			}
 			add(c.moeExpertPipeline, bind(c.moeExpertLayout, aq, s.bq, as, s.bScales, dst, idx, wgt, d), gx, gy)
 		}
 	}
@@ -1270,14 +1181,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			// → out_proj+residual. State {win, ssm} persists in lw, updated in place per token.
 			// ResidMul folded into the out_proj weights. The FFN sub-block below is shared.
 			mp := m.mamba
-			var proj *wgpu.Buffer
-			if lw.mambaInProjF16 != nil { // f16 path (quality): f32 rmsnorm activation + f16 GEMV
-				normed := rmsnormF32(r.xd, lw.attnNorm, hidden)
-				proj = mambaF16Gemv(normed, lw.mambaInProjF16, mp.projDim, hidden, false, nil)
-			} else { // int8 path (flag)
-				aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
-				proj = gemv(aq, as, lw.mambaInProj)
-			}
+			aq, as := rmsQuant(r.xd, lw.attnNorm, hidden)
+			proj := gemv(aq, as, lw.mambaInProj)
 			conv := storF(mp.convDim)
 			mambaConvOp(proj, lw.mambaConvW, lw.mambaConvB, lw.mambaWin, conv)
 			y := storF(mp.dInner)
@@ -1287,12 +1192,8 @@ func (c *Context) newDecodeRunner(m runModel, hidden, nH, nKV, hd, inter, start 
 			if r.mcapProj == nil { // debug: capture the FIRST mamba layer for the wiring diff
 				r.mcapProj, r.mcapConv, r.mcapY, r.mcapGated = proj, conv, y, gated
 			}
-			if lw.mambaOutProjF16 != nil { // f16 out_proj + residual (ResidMul folded into weights)
-				mambaF16Gemv(gated, lw.mambaOutProjF16, hidden, mp.dInner, true, r.xd)
-			} else {
-				gq, gs := quant(gated, mp.dInner)
-				gemvAdd(gq, gs, lw.mambaOutProj, r.xd)
-			}
+			gq, gs := quant(gated, mp.dInner)
+			gemvAdd(gq, gs, lw.mambaOutProj, r.xd)
 		} else if lw.isDeltaNet {
 			// Gated-DeltaNet mixer: norm → in_proj_qkv → conv(ring) → l2norm(q,k) → delta rule
 			// (state) → gated RMSNorm × silu(z) → out_proj + residual. The {win, dnState} pair

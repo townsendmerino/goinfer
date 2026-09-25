@@ -65,21 +65,6 @@ func TestNemotronBlockKind_hasADefault(t *testing.T) {
 	}
 }
 
-// N-13: GOINFER_SSM_W8A16 binds the INT8-weight kernel (one byte per weight, f32 row scales). A
-// *ResidentW4A8 projection packs two 4-bit nibbles per byte with f16 GROUP scales, so
-// dispatching it there reads nibble pairs as int8 weights — silent garbage, not an error.
-func TestSSMW8A16_declinesInt4Projections(t *testing.T) {
-	src := srcOf(t, "decoderunner.go")
-	if !strings.Contains(src, "ResidentW4A8") || !strings.Contains(src, "GOINFER_SSM_W8A16") {
-		t.Fatal("the W8A16 flag or the W4A8 type moved; this guard is watching nothing")
-	}
-	// The flag must be cleared when an int4 projection is present, not merely warned about.
-	if !strings.Contains(src, "w8a16 = false") {
-		t.Error("GOINFER_SSM_W8A16 is not cleared when a projection is *ResidentW4A8: the int8 " +
-			"kernel would read nibble pairs as int8 weights (N-13)")
-	}
-}
-
 // N-14: ensureAttnWide compiles THREE variants (f32, f16 KV, int8 KV) and returned early when
 // the FIRST existed — so a failure on the second or third left those nil while the next call
 // reported success, and a kvF16/kvI8 plan then bound a nil pipeline. The R-30 class, in the file

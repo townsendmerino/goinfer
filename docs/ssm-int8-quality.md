@@ -137,6 +137,12 @@ kernels**, and *that alone* drops agreement 93.6% → 66%. So:
 
 ## f16 mixed-precision attempt (built + measured) — does NOT recover quality
 
+> **Code removed 2026-09-24** with the W8A16 control below (owner clean-up of code whose record says it
+> didn't pay): `gpu/mamba_f16.go` and `gpu/gemv_w8a16.go` and their branches in `gpu/decoderunner.go` /
+> `gpu/residency.go` are gone, and `GOINFER_SSM_F16MAMBA` / `GOINFER_SSM_W8A16` no longer exist; last present
+> at `8f452a7e`. The package's shared `f32ToF16` and `buildCompute` moved to `gpu/f16.go` / `gpu/gpu.go`. This
+> section and the next describe the code as it was.
+
 Acting on the R2 localization, I raised the mamba `in/out_proj` to **f16** (f16 weights ×
 f32 activation; experts/attention/MoE stay int8) — `gpu/mamba_f16.go`, default-guarded to
 granite-resident. It **fails Gate 1**, essentially unchanged from int8:
@@ -185,8 +191,8 @@ f32-reduction-ORDER differences** between the all-GPU resident path and the f64-
 reference — invariant to operand precision because it lives in the *order* of f32 adds across
 granite's deep all-MoE stack + the recurrent mamba state, not in the operands. The GPU has no f64
 and can't match the reference's reduction order, so there is **no precision/accumulation fix**.
-**Bank the opt-in int8 (29.6 ms, 10× CPU, greedy-only) and close.** (W8A16 kept behind
-`GOINFER_SSM_W8A16` for the record; it's slower and no better.)
+**Bank the opt-in int8 (29.6 ms, 10× CPU, greedy-only) and close.** (W8A16 was slower and no better;
+its code was removed 2026-09-24.)
 
 ## Recommendation
 
@@ -198,8 +204,7 @@ and can't match the reference's reduction order, so there is **no precision/accu
    worse than the already-degraded greedy.
 3. **Do NOT fund a router-precision island, and do NOT fund more f16/weight-precision work** —
    the experiments refute both premises (router robust at 97% with 22% benign flips; int8/f16
-   projections cost only ~3%). The default stays int8; f16 stays behind `GOINFER_SSM_F16MAMBA`
-   for the record only.
+   projections cost only ~3%). The default stays int8; the f16 path was removed 2026-09-24.
 4. **Do NOT fund a "GPU mamba kernel" debug — Phase A proved the kernels are bit-correct**
    (`gpu/mamba_realinput_test.go`, `mamba_resident_capture_test.go`: cosine 1.000000 on real
    inputs, in isolation and in-plan). The 93.6% (D3) vs 66.2% (resident) delta is the resident's

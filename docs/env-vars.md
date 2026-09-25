@@ -133,7 +133,7 @@ that are not operator-facing. These may change or disappear without notice:
 `GOINFER_CUDA_L01_CPU_OFFLOAD` (L-01 prototype: hybrid CPU/GPU MoE expert offload,
 docs/tasks/task-l01-hybrid-moe-cpu-gpu.md — synchronous only, no overlap yet, default off),
 `GOINFER_FAKEQUANT_ACT`, `GOINFER_FAKEQUANT_EXPERTS`,
-`GOINFER_SSM_W8A16`, `GOINFER_SSM_F16MAMBA`, `GOINFER_SSM_NOMUL`, `GOINFER_SSM_Q8CPU`,
+`GOINFER_SSM_NOMUL`, `GOINFER_SSM_Q8CPU`,
 `GOINFER_SSM_SKIPFFN`, `GOINFER_CUDA_L01_CPU_OFFLOAD`,
 `GOINFER_GEMMA4_RESIDENT` (M-56, audit-2026-09-10.md: a Gemma-4 bring-up gate that is now a
 no-op — `decoder/gemma4_admission_test.go` pins that admission is unconditional regardless of
@@ -224,8 +224,9 @@ print, which nothing here tracked because it lacked the prefix). Phase 6 of docs
 (same day, owner-approved) retired `A10_PROBE` (C′ per-allocation VRAM recording — its capacity-vs-servability answer
 is recorded beside `allocSlots` in `cuda/resident.go`) and `INT4_SLOWPATH` (forced WebGPU's slow int4 upload to
 isolate the fast path; result in docs/completed/mellum2-resident.md), and turned `ROUTER_CAPTURE` and
-`FAKEQUANT_PERROW` into test seams (package variables their tests set; no env read). Setting any of them now does
-nothing.
+`FAKEQUANT_PERROW` into test seams (package variables their tests set; no env read). The later clean-up of code whose
+record says it didn't pay removed `SSM_W8A16` and `SSM_F16MAMBA` with the WebGPU paths they selected
+(docs/ssm-int8-quality.md). Setting any of them now does nothing.
 
 ## CI & test gates
 

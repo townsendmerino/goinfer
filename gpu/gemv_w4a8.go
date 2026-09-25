@@ -116,7 +116,7 @@ func (rm *ResidentW4A8) Close() error {
 
 func padK32(k int) int { return (k + 31) &^ 31 }
 
-// f32to16 is an alias for the ONE converter this package uses; see f32ToF16 in mamba_f16.go.
+// f32to16 is an alias for the ONE converter this package uses; see f32ToF16 in f16.go.
 //
 // N-04: there used to be two different float32→half converters in this package, and this was the
 // load-bearing one — every W4A8 group-scale upload and NewKVCacheF16 go through it. It FLUSHED

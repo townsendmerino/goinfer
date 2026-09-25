@@ -104,7 +104,7 @@ func (c *Context) ensureLayer() error {
 	// Guard EACH pipeline independently, not just the first: a mid-build failure (transient OOM)
 	// used to leave rmsnormPipeline set but swiglu/residual nil, and the next call saw the first-field
 	// guard satisfied and dispatched a nil pipeline (audit R-30). Per-field guards retry only what's
-	// missing — the ensureGEMVW8A16 shape. Shared tracked constructor (gpu.go) registers for release (C-26).
+	// missing. Shared tracked constructor (gpu.go) registers for release (C-26).
 	mk := c.mkPipeline
 	var err error
 	if c.rmsnormPipeline == nil {

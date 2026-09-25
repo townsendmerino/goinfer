@@ -158,7 +158,7 @@ type Context struct {
 	swigluPipeline         *wgpu.ComputePipeline
 	swigluLayout           *wgpu.BindGroupLayout
 	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatGatedGELU (Gemma) — swiglu's GELU-tanh-gated
-	// twin, plain (W8A16) variant.
+	// twin, plain (un-quantized-output) variant.
 	gegluShader      *wgpu.ShaderModule
 	gegluPipeline    *wgpu.ComputePipeline
 	gegluLayout      *wgpu.BindGroupLayout
@@ -343,19 +343,6 @@ type Context struct {
 	mambaGNormShader      *wgpu.ShaderModule
 	mambaGNormPipeline    *wgpu.ComputePipeline
 	mambaGNormLayout      *wgpu.BindGroupLayout
-	// f16 Mamba in/out_proj GEMV (mamba_f16.go): f16 weight × f32 activation — the
-	// mixed-precision quality fix (granite int8 loss localized to the SSM projections).
-	mambaF16Shader   *wgpu.ShaderModule
-	mambaF16Pipeline *wgpu.ComputePipeline
-	mambaF16Layout   *wgpu.BindGroupLayout
-	// W8A16 GEMVs (gemv_w8a16.go): int8 weight × f32 activation — the granite-resident
-	// activation-precision fix (stops the int8 re-quant cascade across the deep stack).
-	gemvW8A16Shader        *wgpu.ShaderModule
-	gemvW8A16Pipeline      *wgpu.ComputePipeline
-	gemvW8A16Layout        *wgpu.BindGroupLayout
-	moeExpertW8A16Shader   *wgpu.ShaderModule
-	moeExpertW8A16Pipeline *wgpu.ComputePipeline
-	moeExpertW8A16Layout   *wgpu.BindGroupLayout
 	// Nemotron-H squared-ReLU FFN (relu2.go): fused relu²(up)→int8 for the non-gated MLP block.
 	relu2Shader   *wgpu.ShaderModule
 	relu2Pipeline *wgpu.ComputePipeline
@@ -824,4 +811,23 @@ func (c *Context) run(aBuf, bBuf *wgpu.Buffer, M, K, N int) ([]float32, error) {
 		return nil, fmt.Errorf("gpu: unmap staging: %w", err)
 	}
 	return out, nil
+}
+
+// buildCompute compiles a WGSL compute shader → (module, pipeline, group-0 layout).
+func (c *Context) buildCompute(label, code string) (*wgpu.ShaderModule, *wgpu.ComputePipeline, *wgpu.BindGroupLayout, error) {
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label: label, WGSLSource: &wgpu.ShaderSourceWGSL{Code: code},
+	})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("gpu: compile %s: %w", label, err)
+	}
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label: label, Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+	})
+	if err != nil {
+		sh.Release()
+		return nil, nil, nil, fmt.Errorf("gpu: pipeline %s: %w", label, err)
+	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	return sh, pl, c.bgl(pl), nil
 }
