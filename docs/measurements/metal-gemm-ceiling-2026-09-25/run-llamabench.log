@@ -1,0 +1,134 @@
+14:18:55 waiting load1=3.17
+14:19:55 waiting load1=2.52
+14:20:56 idle load1=1.92
+14:20:56 start; load_backend: loaded BLAS backend from /opt/homebrew/Cellar/ggml/0.22.0/libexec/libggml-blas.so; System-wide memory free percentage: 80%
+load_backend: loaded BLAS backend from /opt/homebrew/Cellar/ggml/0.22.0/libexec/libggml-blas.so
+ggml_metal_device_init: tensor API disabled for pre-M5 and pre-A19 devices
+ggml_metal_library_init: using embedded metal library
+ggml_metal_library_compile_all: compiled 'fa' library in 0.010 sec
+ggml_metal_library_compile_all: compiled 'mul_mv' library in 0.011 sec
+ggml_metal_library_compile_all: compiled 'mul_mm' library in 0.012 sec
+ggml_metal_library_compile_all: compiled 'quantize' library in 0.011 sec
+ggml_metal_library_compile_all: compiled 'softmax' library in 0.001 sec
+ggml_metal_library_compile_all: compiled 'norm' library in 0.001 sec
+ggml_metal_library_compile_all: compiled 'unary' library in 0.001 sec
+ggml_metal_library_compile_all: compiled 'binbcast' library in 0.009 sec
+ggml_metal_library_compile_all: compiled 'reduce' library in 0.009 sec
+ggml_metal_library_compile_all: compiled 'tri' library in 0.009 sec
+ggml_metal_library_compile_all: compiled 'ssm' library in 0.011 sec
+ggml_metal_library_compile_all: compiled 'wkv' library in 0.009 sec
+ggml_metal_library_compile_all: compiled 'gated_delta_net' library in 0.012 sec
+ggml_metal_library_compile_all: compiled 'solve_tri' library in 0.012 sec
+ggml_metal_library_compile_all: compiled 'rope' library in 0.012 sec
+ggml_metal_library_compile_all: compiled 'conv' library in 0.012 sec
+ggml_metal_library_compile_all: compiled 'upscale' library in 0.010 sec
+ggml_metal_library_compile_all: compiled 'argsort' library in 0.010 sec
+ggml_metal_library_compile_all: compiled 'pool' library in 0.011 sec
+ggml_metal_library_compile_all: compiled 'misc' library in 0.010 sec
+ggml_metal_library_compile_all: loaded 20 libraries from embedded data in 0.013 sec (max single = 0.012 sec)
+ggml_metal_rsets_init: creating a residency set collection (keep_alive = 180 s)
+ggml_metal_device_init: GPU name:   MTL0 (Apple M1 Pro)
+ggml_metal_device_init: GPU family: MTLGPUFamilyApple7  (1007)
+ggml_metal_device_init: GPU family: MTLGPUFamilyCommon3 (3003)
+ggml_metal_device_init: GPU family: MTLGPUFamilyMetal4  (5002)
+ggml_metal_device_init: simdgroup reduction   = true
+ggml_metal_device_init: simdgroup matrix mul. = true
+ggml_metal_device_init: has unified memory    = true
+ggml_metal_device_init: has bfloat            = true
+ggml_metal_device_init: has tensor            = false
+ggml_metal_device_init: use residency sets    = true
+ggml_metal_device_init: use shared buffers    = true
+ggml_metal_device_init: recommendedMaxWorkingSetSize  = 12713.12 MB
+load_backend: loaded MTL backend from /opt/homebrew/Cellar/ggml/0.22.0/libexec/libggml-metal.so
+load_backend: loaded CPU backend from /opt/homebrew/Cellar/ggml/0.22.0/libexec/libggml-cpu-apple_m1.so
+[
+  {
+    "build_commit": "c1d0e7a00",
+    "build_number": 10621,
+    "cpu_info": "Accelerate, Apple M1 Pro",
+    "gpu_info": "Apple M1 Pro",
+    "backends": "BLAS,MTL",
+    "model_filename": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+    "model_type": "qwen2 1.5B Q4_K - Medium",
+    "model_size": 1111370240,
+    "model_n_params": 1777088000,
+    "n_batch": 2048,
+    "n_ubatch": 512,
+    "n_threads": 6,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 99,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": -1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "none",
+    "load_mode": "auto",
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_prompt": 512,
+    "n_gen": 0,
+    "n_depth": 0,
+    "test_time": "2026-09-25T21:21:00Z",
+    "avg_ns": 453941041,
+    "stddev_ns": 1686666,
+    "avg_ts": 1127.912213,
+    "stddev_ts": 4.184050,
+    "samples_ns": [ 452263667, 452871542, 453169875, 455136041, 456264083 ],
+    "samples_ts": [ 1132.08, 1130.56, 1129.82, 1124.94, 1122.16 ]
+  },
+  {
+    "build_commit": "c1d0e7a00",
+    "build_number": 10621,
+    "cpu_info": "Accelerate, Apple M1 Pro",
+    "gpu_info": "Apple M1 Pro",
+    "backends": "BLAS,MTL",
+    "model_filename": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+    "model_type": "qwen2 1.5B Q4_K - Medium",
+    "model_size": 1111370240,
+    "model_n_params": 1777088000,
+    "n_batch": 2048,
+    "n_ubatch": 512,
+    "n_threads": 6,
+    "cpu_mask": "0x0",
+    "cpu_strict": false,
+    "poll": 50,
+    "type_k": "f16",
+    "type_v": "f16",
+    "n_gpu_layers": 99,
+    "n_cpu_moe": 0,
+    "split_mode": "layer",
+    "main_gpu": 0,
+    "no_kv_offload": false,
+    "flash_attn": -1,
+    "devices": "auto",
+    "tensor_split": "0.00",
+    "tensor_buft_overrides": "none",
+    "load_mode": "auto",
+    "embeddings": false,
+    "no_op_offload": 0,
+    "no_host": false,
+    "fit_target": 0,
+    "fit_min_ctx": 0,
+    "n_prompt": 3904,
+    "n_gen": 0,
+    "n_depth": 0,
+    "test_time": "2026-09-25T21:21:03Z",
+    "avg_ns": 4009212283,
+    "stddev_ns": 4427187,
+    "avg_ts": 973.758318,
+    "stddev_ts": 1.076113,
+    "samples_ns": [ 4011957541, 4013627833, 4009444834, 4008977791, 4002053417 ],
+    "samples_ts": [ 973.091, 972.686, 973.701, 973.814, 975.499 ]
+  }
+]
+14:21:27 exit=0

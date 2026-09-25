@@ -57,13 +57,38 @@ K=3900). With goinfer's GEMM category at MPS's sustained rate:
 - **Parity at K=512 is inside what the hardware sustains.** The ≈2.85× S0 derived is below the 3.83× an MPS-rate GEMM
   would deliver. This is an **optimistic bound** in one direction and a conservative one in another: MPS's f16
   weights need no dequantization, but they read 4× the bytes int4 does. It does not say what an int4 kernel reaches;
-  that is S1b (llama.cpp's `mul_mm` at the same shapes, which dequantizes Q4_K in-kernel).
+  that is S1b below.
 - **At K=3900 the GEMM cannot close the gap alone**, as S0 found: even at MPS's rate TTFT reaches ~0.58× Ollama's,
   with attention (25% today) left.
 - **The burst is goinfer's kernel, not the GPU.** A global clock or power drop under sustained load would slow MPS
   too, and it does not. So something in how `gemm_w4f16_store` uses the GPU makes it fast only right after idle. The
   current kernel's ~0.75 TFLOPS is still its production rate; the mechanism is not identified, and a replacement
   kernel should be measured sustained and after idle, so it is shown not to inherit it.
+
+## S1b: what an int4 kernel sustains here — llama.cpp on the same file (same day)
+
+`llama-bench` (llama.cpp `c1d0e7a00`, build 10621, Homebrew, ggml 0.22.0; Metal, `-ngl 99`, flash attention at its
+default `auto`, f16 KV, `n_ubatch` 512) on **the same `~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`**, `-p 512,3904
+-n 0 -r 5`. It repeats back to back after its own warm-up, so it is sustained. 14:21:00–14:21:27 local. Raw:
+[`run-llamabench.log`](metal-gemm-ceiling-2026-09-25/run-llamabench.log).
+
+| prompt | llama.cpp prefill (5 samples) | GEMM FLOPs (4 projections × 28) | implied GEMM rate | goinfer `PrefillLast` |
+|---:|---|---:|---|---:|
+| 512 | **453.9 ms** (sd 1.7; 452.3–456.3) | 1.342 T | **≥ 2.96 TFLOPS** | 1608 ms |
+| 3904 | **4009.2 ms** (sd 4.4; 4002.1–4013.6) | 10.230 T | **≥ 2.55 TFLOPS** | 17,618 ms |
+
+The implied rate is a **lower bound** on llama.cpp's GEMM throughput: the time also covers its attention, norms and
+everything else. Q4_K_M is not pure 4-bit (some tensors are Q6_K), and the kernel dequantizes in-kernel as goinfer's
+does, so this is the int4-class reference S1a's f16 number is not.
+
+- **In-kernel dequantization costs little of the ceiling.** An int4-class kernel sustains ≥ 2.96 TFLOPS here, within
+  ~13% of MPS's f16 3.39 and ~4× goinfer's gate/up. The gap is the kernel's structure, not the weight format.
+- **Parity at K=512 is inside what a known kernel does on this machine.** goinfer's GEMM category at llama.cpp's
+  lower-bound rate is ~453 ms against 1544 (s ≈ 3.4×), giving a TTFT of ~0.32 of today's — ~1.17× Ollama's rate at
+  K=512, against the ≈2.85× parity needs.
+- **At K=3904, llama.cpp's whole prefill (4.0 s) is shorter than goinfer's attention alone (4.4 s, S0).** The deep
+  gap is GEMM and attention in similar measure. llama.cpp also prefills in 512-token micro-batches (`n_ubatch`
+  512), so its GEMMs run at M=512 however long the prompt is.
 
 ## Scope
 

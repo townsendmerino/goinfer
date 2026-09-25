@@ -923,7 +923,9 @@ f16 MMA ceiling at these shapes and llama.cpp's `mul_mm` at the same shapes), th
 **S1a measured 2026-09-25** ([`metal-gemm-ceiling-2026-09-25.md`](../measurements/metal-gemm-ceiling-2026-09-25.md)):
 Apple's MPS f16 GEMM sustains 3.24–3.43 TFLOPS on all four shapes (4.5× goinfer on gate/up), with no post-idle
 burst — so the burst is goinfer's kernel, not the GPU. At that rate the GEMM category is 3.83× faster at K=512, past
-the ≈2.85× parity needs (an f16 bound: no dequant, 4× the weight bytes). S1b: llama.cpp's int4 `mul_mm` at the same shapes.
+the ≈2.85× parity needs (an f16 bound: no dequant, 4× the weight bytes). **S1b:** llama.cpp on the same Q4_K_M file
+prefills K=512 in 453.9 ms, so an int4-class kernel sustains ≥ 2.96 TFLOPS here (~4× goinfer's gate/up); at that rate
+TTFT would be ~1.17× Ollama's at K=512. At K=3904 its whole prefill (4.0 s) is shorter than goinfer's attention alone.
 
 ---
 
