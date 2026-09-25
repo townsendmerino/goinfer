@@ -1,0 +1,65 @@
+13:16:47 waiting load1=3.82
+13:17:47 waiting load1=2.73
+13:18:48 idle load1=1.89
+13:18:48 start commit 558c6cad dirty=1
+=== RUN   TestMetalPrefillDecomp
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.9 GB; this machine currently has 7.2 GB of memory available (budget 5.0 GB = 70% of that) (97% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+[decomp    6.6s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: H=1536 I=8960 nL=28 nH=12 V=151936
+[decomp    8.4s] K=512 warm-up PrefillLast 1846.8 ms
+[decomp   16.2s] K=512 PrefillLast wall ms 1427.8 1687.6 1414.4 1608.0 1634.1
+[decomp   17.8s] K=512 replica logits bit-identical to PrefillLast (151936 values)
+[decomp   21.1s] K=512 rep 1/5: full replay 1657.6 ms GPU
+[decomp   24.5s] K=512 rep 2/5: full replay 1665.7 ms GPU
+[decomp   27.9s] K=512 rep 3/5: full replay 1665.9 ms GPU
+[decomp   31.2s] K=512 rep 4/5: full replay 1666.1 ms GPU
+[decomp   34.6s] K=512 rep 5/5: full replay 1663.0 ms GPU
+
+=== Metal prefill decomposition, K=512 (Mpad=512), 5 reps, medians ===
+  rmsnorm (pre-attn)          0.78 ms    0.0% of full  spread  2.0%
+  GEMM qkv                   66.75 ms    4.0% of full  spread  5.0%  1.35 TFLOPS
+  rope q+k                    1.35 ms    0.1% of full  spread  8.4%
+  kv store                    0.28 ms    0.0% of full  spread  8.4%
+  attention                 109.86 ms    6.6% of full  spread  1.7%
+  GEMM o (+residual)         49.20 ms    3.0% of full  spread  1.1%  1.38 TFLOPS
+  rmsnorm (pre-MLP)           0.78 ms    0.0% of full  spread  3.8%
+  GEMM gate/up             1042.38 ms   62.6% of full  spread  0.7%  0.76 TFLOPS
+  swiglu                      5.81 ms    0.3% of full  spread  0.2%
+  GEMM down (+residual)     386.00 ms   23.2% of full  spread  1.6%  1.02 TFLOPS
+  LM head (last row)          1.55 ms    0.1% of full  spread  5.4%
+  sum of categories        1664.72 ms  (99.9% of the full replay — non-additivity)
+  full replay (GPU)        1665.73 ms  spread  0.5%
+  PrefillLast (wall)       1607.97 ms  spread 17.0%  → host/other -57.8 ms (-3.6%)
+  GEMM share: 92.7% of GPU, 96.0% of PrefillLast wall
+
+    prefill_decomp_test.go:326: K=512: GEMM 1544.3 ms of 1665.7 ms GPU (92.7%), PrefillLast wall 1608.0 ms
+[decomp   52.2s] K=3900 warm-up PrefillLast 17581.0 ms
+[decomp  140.3s] K=3900 PrefillLast wall ms 17618.1 17601.1 17712.7 17640.4 17602.0
+[decomp  158.0s] K=3900 replica logits bit-identical to PrefillLast (151936 values)
+[decomp  187.2s] K=3900 rep 1/5: full replay 17555.9 ms GPU
+[decomp  222.5s] K=3900 rep 2/5: full replay 17574.6 ms GPU
+[decomp  258.1s] K=3900 rep 3/5: full replay 17652.6 ms GPU
+[decomp  294.1s] K=3900 rep 4/5: full replay 17786.6 ms GPU
+[decomp  330.5s] K=3900 rep 5/5: full replay 18003.1 ms GPU
+
+=== Metal prefill decomposition, K=3900 (Mpad=3904), 5 reps, medians ===
+  rmsnorm (pre-attn)          3.84 ms    0.0% of full  spread 24.0%
+  GEMM qkv                  544.32 ms    3.1% of full  spread  3.0%  1.26 TFLOPS
+  rope q+k                    8.09 ms    0.0% of full  spread  1.2%
+  kv store                    1.43 ms    0.0% of full  spread  6.3%
+  attention                4419.04 ms   25.0% of full  spread  0.5%
+  GEMM o (+residual)        362.61 ms    2.1% of full  spread  0.8%  1.42 TFLOPS
+  rmsnorm (pre-MLP)           3.80 ms    0.0% of full  spread  2.0%
+  GEMM gate/up             8109.02 ms   45.9% of full  spread 51.9%  0.74 TFLOPS
+  swiglu                     43.17 ms    0.2% of full  spread  4.5%
+  GEMM down (+residual)    4397.04 ms   24.9% of full  spread 54.7%  0.68 TFLOPS
+  LM head (last row)          1.53 ms    0.0% of full  spread  7.0%
+  sum of categories       17893.89 ms  (101.4% of the full replay — non-additivity)
+  full replay (GPU)       17652.60 ms  spread  2.5%
+  PrefillLast (wall)      17618.09 ms  spread  0.6%  → host/other -34.5 ms (-0.2%)
+  GEMM share: 76.0% of GPU, 76.1% of PrefillLast wall
+
+    prefill_decomp_test.go:326: K=3900: GEMM 13413.0 ms of 17652.6 ms GPU (76.0%), PrefillLast wall 17618.1 ms
+--- PASS: TestMetalPrefillDecomp (330.51s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	331.091s
+13:24:20 exit=0
