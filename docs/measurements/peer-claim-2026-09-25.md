@@ -407,6 +407,34 @@ Two sessions, so the attribution is a reading, not a paired result.
 
 *STEP 3 is nobara-pc's; nothing above is the claim.*
 
+### Post-run findings (2026-09-25, after STEP 3) — no grade above is changed
+
+Chasing the early-stop voids turned up three things. They are recorded here instead of re-grading
+anything, because Part 1's outcomes stand as registered.
+
+1. **The early stops are noise, not engine behaviour.** On the `"Continue this text. the the …"` prompt,
+   a reply's length depends on a near-tie and on prompt-cache state:
+   - goinfer's gemma3-1b @128 stopped at 34 tokens on int4 and at 54 on f32, where f32 writes the same
+     reply llama.cpp does.
+   - llama-server's gemma3-1b stopped at 51 tokens cold and ran to 64 on every warm repeat. This
+     sweep times only warm repeats, which is why llama.cpp showed 64 there.
+
+   So **the gemma3-1b lead in cell b is closed: not a goinfer template or stop-token bug.** The
+   harness now uses a prompt that runs to 64 tokens on all three engines, cold and warm, and applies
+   a proportional token gate (`bb04019e`; `benchmarks.md` Methodology, "A reply that ends early").
+   The next pre-registration should adopt that gate in place of this one's 95%.
+2. **goinfer had no Phi-3 chat template.** Every goinfer phi3-mini cell here (b @128 and @3900, and
+   both f cells) decoded a **raw completion**, while Ollama and llama.cpp decoded a chat prompt. The
+   prompts differed by the template tokens, and goinfer's replies were newline runs. Fixed in
+   `bb04019e`, together with the tokenizer's missing added-token rstrip, which Phi-3's turn markers
+   need.
+3. **goinfer's phi3-mini output degrades into junk tokens past about 150 prompt tokens** on every
+   backend and precision, even with the template (open: `queue-engineering.md` H2).
+
+Together, 2 and 3 mean **the phi3-mini rows in b and f are not like-for-like**, even though each
+passed every Part 1 gate. Per-token decode cost does not depend on which tokens are generated, so
+the ratios may well hold, but no claim should rest on them until they are re-measured after H2.
+
 ## Part 3 — the claim
 
 *(STEP 3, written by nobara-pc on 2026-09-25 after both halves were in main: g–i at `558c6cad`, a–f at `02d86285`.
@@ -429,7 +457,8 @@ It is 1.05–1.30× where ahead, and 0.99× (level) on the 7B at 8000. It is beh
 are void, because Ollama ended its reply early: 0.5B @2048 and 7B @128, raw 1.13× and 1.10×. The CUDA controls (B)
 are ahead on gemma3-1b at 3900 (1.26×) and on phi3-mini at 128 (1.14×). gemma3-1b at 128 and phi3-mini at 3900 are
 void. phi3-mini at 3900 is where flash-decode declines: it reads 0.80× raw against Ollama and is BEHIND llama.cpp
-(0.79×). Neither control widens A to "windowed models" or to "models where flash-decode declines". For sampled decode
+(0.79×). Neither control widens A to "windowed models" or to "models where flash-decode declines". *(Every phi3-mini
+reading in this paragraph is provisional: see "Post-run findings" above.)* For sampled decode
 (F) at depth 128:
 - temperature 0.8 with top_p 0.95: ahead on the 0.5B (1.19×) and level on phi3-mini (1.03×, AMBIGUOUS-HIGH);
 - temperature 1.0: ahead on phi3-mini (1.14×); the 0.5B cell is void.

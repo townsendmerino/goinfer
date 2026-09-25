@@ -454,6 +454,37 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**H2 · Phi-3-mini's output degrades into junk tokens past ~150 prompt tokens, on every backend and
+precision** — `linux` (found and reproduced on nobara-pc), **filed 2026-09-25**
+
+Found while validating the essay-v2 bench prompt, right after `bb04019e` gave Phi-3 its chat template
+and rstrip tokenization (before that commit every Phi-3 chat request was a raw completion, which hid
+this). Same GGUF (`~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf`), same ~150-token prompt
+(`prompts.json` `phi3-mini:128`, essay-v2), temperature 0, all three engines counting 130 prompt
+tokens:
+
+| engine | reply |
+|---|---|
+| llama.cpp `427291b`, Q4 | "The history of the printing press is a fascinaton that can be traced …" |
+| Ollama v0.32.5, Q4 | "The history of the printing press can be traced back to its origins i…" |
+| goinfer CUDA int4 | "The evolution of the printing press throughout history canRESSay:RESS isRESSayed…" |
+| goinfer CPU int4 / CUDA int8int8 | "Title:RESSA,RESSARESSERVES TheASSERVES…" |
+| goinfer CPU f32 | "The history of the printing press is a rich and complex tale that spanss over several centuries,, marking…" |
+
+A 16-token prompt stays coherent on every goinfer precision. `-direct-load` gives the same output, so
+the `.giw` sidecar is not the cause. `ggufPhi3Config` reads correctly: rope base defaults to 10000
+(the GGUF omits the key), full rotary (96 = 3072/32), no sliding window in the GGUF (HF's 2047 cannot
+bind at 150). So it is in the forward pass, and f32 showing it faintly while int4/int8 blow up points at
+something the quantized paths amplify rather than at quantization itself. **Next step:** the per-layer
+differencing CLAUDE.md prescribes, against HF `output_hidden_states=True` on the safetensors checkpoint
+(`~/models/phi3-mini-4k`) at ≥150 tokens. The real f32 oracle's cosine 1.0 was a short prompt, which is
+the "minimal in exactly the dimension that hides the bug" trap. Note that goinfer cannot load that
+checkpoint's `tokenizer.json` (its SentencePiece JSON path requires Gemma-style `<bos>`/`<eos>`/`<pad>`
+pieces; Phi-3 has `<s>`/`</s>`), so feed the reference token ids directly.
+
+**What it touches:** every phi3-mini peer row (§B5.1, and cells b and f of the 2026-09-25 sweep) timed a
+reply of this kind, so those rows are marked provisional in `benchmarks.md`.
+
 **H1 · A release that attaches ZERO assets currently publishes anyway — the gate that should
 catch this doesn't exist** — `linux` (the workflow runs on GitHub-hosted runners; the fix is
 CI-only), **filed 2026-09-15**
