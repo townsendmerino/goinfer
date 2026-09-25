@@ -1,9 +1,8 @@
-# Metal prefill GEMM redesign — S2 (R16): prior-art read (2026-09-25)
+# Metal prefill GEMM redesign — S2 (R16): prior-art read and prototypes (2026-09-25)
 
 `docs/tasks/red-october.md` R16 pre-registers this item (ship ≥ 2.85× / park 1.8–2.85× / kill < 1.8× on the
 in-sequence GEMM category at K=512, 1.5B) and requires the prior-art read before any kernel is written. This is that
-read. **No prototype exists yet; nothing here is a measurement.** The design section is a proposal the prototype will
-be measured against R16's band.
+read, followed by the prototypes' measurements (from *Prototype 1* on).
 
 ## Sources read, and which of them ran
 
@@ -76,6 +75,65 @@ A classic-`kernel_mul_mm`-shaped kernel adapted to goinfer's data, test-only unt
 - **Arms, per R16.** Current kernel (the do-nothing arm) and the prototype, same session, in sequence (leave-one-out),
   sustained and after 2 s idle, 1.5B and 7B shapes, K=512 deciding; then double-buffered staging as a second
   prototype if the first lands in the park band.
+
+## Prototype 1 — measured 2026-09-25: bit-identical, 2.78×, PARK band
+
+`gemm_w4f16_tg` (`metal/prefill_gemm_s2_test.go`), the design above, swapped into `TestMetalPrefillDecomp`'s
+production-faithful replay by `GOINFER_METAL_S2=1`. M1 Pro, 1.5B q4_k_m (`~/models`, v14 sidecar), goinfer
+`7d9a1048` + the two uncommitted test files; K=512; 5 paired reps, arms alternating; idle at start (load1 1.87);
+14:41:35–14:43:32 local. Raw: [`run1-prototype1-k512.log`](metal-prefill-gemm-s2-2026-09-25/run1-prototype1-k512.log).
+
+**Fidelity — met, bit for bit.** On real layer inputs, 0 differing elements on all four GEMMs (1,048,576 / 786,432 /
+9,175,040 / 786,432). A full prefill replay with the prototype as every GEMM reproduces `PrefillLast`'s logits
+exactly: 0 of 151,936 differ, cosine 1.000000000, argmax 261 = 261.
+
+**The registered metric** (sum of the four GEMM marginals by leave-one-out, per arm, same session):
+
+| | current | prototype 1 | speedup |
+|---|---:|---:|---:|
+| **GEMM category in sequence** (median, spread) | 1539.7 ms (6.8%) | **553.6 ms** (4.6%) | **2.78×** |
+| per-rep paired ratios | | | 2.74 · 3.00 · 2.74 · 2.80 · 2.78 |
+| cross-check: all four GEMMs removed at once | 1540.6 ms | 555.4 ms | |
+| gate/up (N=17920, K=1536) | 1042.1 ms, 0.76 TFLOPS | 322.1 ms, **2.45 TFLOPS** | 3.23× |
+| down (N=1536, K=8960) | 388.4 ms, 1.02 | 166.1 ms, 2.38 | 2.34× |
+| qkv (N=2048, K=1536) | 67.4 ms, 1.34 | 37.6 ms, 2.40 | 1.79× |
+| o (N=1536, K=1536) | 50.3 ms, 1.35 | 28.6 ms, 2.37 | 1.76× |
+| full prefill replay (GPU) | 1660.9 ms | **675.5 ms** | 2.46× |
+
+**Outcome: PARK (1.8–2.85×)** — median 2.78×, below the 2.85× ship line; one rep reached 3.00× but the band is graded
+on the median. Preconditions held (bit-identical; graded on the sustained, in-sequence timing). What it would mean,
+**projected from GPU time, not measured through serve**: TTFT at K=512 from 0.377× to ≈ 0.93× Ollama's. The
+prototype plateaus at ~2.4 TFLOPS on every shape — against ≥ 2.96 (llama.cpp, lower bound) and 3.24–3.43 (MPS f16).
+
+**The "burst" — corrected again.** In this run the CURRENT kernel timed alone showed no burst at all: gate/up 548.5 ms
+after 2 s idle and 544.2 ms back-to-back, and 544 ms in every decomposition rep — while in sequence it is 1042 ms, as
+in every run. That contradicts S0's run 4, where back-to-back on itself was ~1040. What holds across all runs: the
+current kernel **in sequence is always ~1040–1050 ms; timed alone it lands at ~550 or ~1040 ms, with the trigger not
+identified**. So S0's "fast after idle, slow sustained" reading is not a stable description either. **Prototype 1 has no
+second state**: gate/up 319.7–325.4 ms alone, after idle, back-to-back and in sequence alike. One candidate, not
+shown: the current kernel re-reads each activation row block once per 32-wide column tile — ~560× for gate/up — where
+the prototype stages it once per 64-wide tile, 32× less activation traffic, so the prototype no longer depends on the
+activations surviving in cache.
+
+## External review of prototype 1 (Gemini), and what was taken from it
+
+Sent the two kernels, shapes and measurements to Gemini for criticism. Checked against the code before acting:
+
+- **Taken — weight-staging bank conflict.** The store index `(fb*4 + kb)*64 + kl*8 + nl` makes every 8×8 block start
+  at the same bank; for one store instruction the 32 lanes' addresses reduce to banks `kl*4 + nl/2`, i.e. **4 of 32
+  banks**, 8 lanes each (two per 32-bit word, four words per bank). Padding blocks to a 72-half stride spreads them
+  over 16 banks while leaving each block contiguous for `simdgroup_load`. Apple does not document its threadgroup
+  banking; the 32 × 4-byte model is plausible, not verified — the measurement decides.
+- **Taken — vectorized staging.** Activations as two `half4` (offsets are multiples of 8 halves: 16-byte aligned);
+  weights as one `uint2` (`wpr = K/8` is even: 8-byte aligned); the store pointer hoisted out of the dequant loop.
+- **Taken as the next step — double-buffered slabs,** after the above.
+- **Not taken as stated — its explanation of the two-state current kernel** (activations held in a ~4 MB L2 when
+  isolated, flushed in sequence): it does not fit S0 run 4, where back-to-back runs of the kernel itself, with
+  nothing between them to flush the cache, were slow, nor does it say why isolated timings differ between processes.
+  Its cycle estimates (~300 vs ~180 cycles per slab; "3.0–3.2 TFLOPS") are predictions, not derivations.
+
+All of the adopted changes are layout, vector-width or addressing only: operands, accumulation order and epilogue
+are unchanged, so prototype 2 must also be bit-identical, and the harness checks it.
 
 ## Not settled by the read
 

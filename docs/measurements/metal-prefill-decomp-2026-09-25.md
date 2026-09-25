@@ -166,6 +166,10 @@ per rep, after four different things. 13:58:54–14:02:14 local; the remaining t
 | an attention-only command buffer | 1040.8 | 1038.8 | ≤ 2.1% |
 | itself, back-to-back (second of two) | 1039.0 | 1040.2 | ≤ 0.7% |
 
+- *Superseded by R16's prototype-1 run the same day* ([`metal-prefill-gemm-s2-2026-09-25.md`](metal-prefill-gemm-s2-2026-09-25.md)):
+  there the current kernel timed alone was ~544 ms both after idle AND back-to-back, so "fast after idle, slow
+  sustained" does not hold either; what holds is that its isolated time lands at ~550 or ~1040 ms with the trigger
+  unidentified, while in sequence it is always ~1040. The original bullet, as first written:
 - **The fast mode is a burst after idle; the slow mode is the steady state.** gate/up run back-to-back on identical
   data with warm caches is already slow, so the 2× is not cache state or anything a preceding kernel leaves behind.
   It follows whether the GPU has just been working: after idle this kernel reaches ~1.45 TFLOPS, under any sustained

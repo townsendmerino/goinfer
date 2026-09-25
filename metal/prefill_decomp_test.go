@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -38,7 +39,7 @@ import (
 // GOINFER_METAL_DECOMP_MODEL overrides the checkpoint, GOINFER_METAL_DECOMP_K the lengths
 // (comma-separated), GOINFER_METAL_DECOMP_REPS the repetitions per measurement (default 5), and
 // GOINFER_METAL_DECOMP_LOO=1 adds the leave-one-out in-sequence costs and GOINFER_METAL_DECOMP_STATE=1 the
-// prior-state test (both below).
+// prior-state test, and GOINFER_METAL_S2=1 the R16 prototype comparison (all below).
 func TestMetalPrefillDecomp(t *testing.T) {
 	if os.Getenv("GOINFER_METAL_DECOMP") != "1" {
 		t.Skip("set GOINFER_METAL_DECOMP=1 (loads a real checkpoint; minutes of GPU time)")
@@ -187,6 +188,20 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		return func(mp int) float64 { return 2 * float64(mp) * float64(N) * float64(Kd) }
 	}
 
+	// R16 (S2): the GEMM categories dispatch through dispatchGemm(), which runs either production's gemm_w4f16_store or,
+	// when protoOn, the test-only prototype (prefill_gemm_s2_test.go) with the same buffer list. protoOn stays
+	// false unless GOINFER_METAL_S2=1 compiled the prototype, so every other phase is unchanged.
+	var protoPipe Pipeline
+	protoOn := false
+	dispatchGemm := func(e *Encoder, N int, bufs ...Buffer) {
+		if protoOn {
+			e.Dispatch2D(protoPipe, (N+63)/64, (Mpad+31)/32, 128, 1, bufs...)
+			return
+		}
+		n, tg := gg(N)
+		e.Dispatch(pf.pGemmStore, n, tg, bufs...)
+	}
+
 	cats := []decompCat{
 		{name: "rmsnorm (pre-attn)", enc: func(e *Encoder, l int) {
 			L := &r.layers[l]
@@ -194,8 +209,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		}},
 		{name: "GEMM qkv", flops: gemmFlops(qkvDim, H), enc: func(e *Encoder, l int) {
 			L := &r.layers[l]
-			n, tg := gg(qkvDim)
-			e.Dispatch(pf.pGemmStore, n, tg, normF, L.qkvW, L.qkvS, qkvF, uM, uQkv, r.uH, L.qkvBias, m1)
+			dispatchGemm(e, qkvDim, normF, L.qkvW, L.qkvS, qkvF, uM, uQkv, r.uH, L.qkvBias, m1)
 		}},
 		{name: "rope q+k", enc: func(e *Encoder, l int) {
 			L := &r.layers[l]
@@ -215,8 +229,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		}},
 		{name: "GEMM o (+residual)", flops: gemmFlops(H, qDim), enc: func(e *Encoder, l int) {
 			L := &r.layers[l]
-			n, tg := gg(H)
-			e.Dispatch(pf.pGemmStore, n, tg, ctxF, L.oW, L.oS, xF, uM, r.uH, uQDim, dummyBias, m2)
+			dispatchGemm(e, H, ctxF, L.oW, L.oS, xF, uM, r.uH, uQDim, dummyBias, m2)
 		}},
 		{name: "rmsnorm (pre-MLP)", enc: func(e *Encoder, l int) {
 			L := &r.layers[l]
@@ -224,16 +237,14 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		}},
 		{name: "GEMM gate/up", flops: gemmFlops(2*I, H), enc: func(e *Encoder, l int) {
 			L := &r.layers[l]
-			n, tg := gg(2 * I)
-			e.Dispatch(pf.pGemmStore, n, tg, normF, L.guW, L.guS, guF, uM, u2I, r.uH, dummyBias, m0)
+			dispatchGemm(e, 2*I, normF, L.guW, L.guS, guF, uM, u2I, r.uH, dummyBias, m0)
 		}},
 		{name: "swiglu", enc: func(e *Encoder, l int) {
 			e.Dispatch(pf.pSw, M*I, 256, guF, dqF, uI, r.uAct)
 		}},
 		{name: "GEMM down (+residual)", flops: gemmFlops(H, I), enc: func(e *Encoder, l int) {
 			L := &r.layers[l]
-			n, tg := gg(H)
-			e.Dispatch(pf.pGemmStore, n, tg, dqF, L.dW, L.dS, xF, uM, r.uH, uI, dummyBias, m2)
+			dispatchGemm(e, H, dqF, L.dW, L.dS, xF, uM, r.uH, uI, dummyBias, m2)
 		}},
 		{name: "LM head (last row)", once: true, enc: func(e *Encoder, _ int) {
 			e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, r.uH, r.uEps, r.uAddOne)
@@ -412,6 +423,212 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 			fmt.Fprintf(os.Stderr, "  %-28s %9.1f ms  spread %5.1f%%  reps %s\n", c, median(res[i]), 100*spreadOf(res[i]), fmtMs(res[i]))
 		}
 		fmt.Fprintln(os.Stderr)
+	}
+
+	// R16 / S2 (GOINFER_METAL_S2=1): the prototype against the current kernel, per the pre-registration in
+	// docs/tasks/red-october.md R16 — bitwise per GEMM on real inputs, full-replay logits, the registered metric
+	// (sum of the four GEMM marginals by leave-one-out, both arms in the same session), and burst vs sustained.
+	if os.Getenv("GOINFER_METAL_S2") == "1" {
+		func() {
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+			pool := NewARPool()
+			defer pool.Drain()
+			lib, err := r.d.CompileLibrary(gemmS2Kernels, MSL3_1)
+			if err != nil {
+				t.Fatalf("compile S2 prototype: %v", err)
+			}
+			// GOINFER_METAL_S2_KERNEL picks the prototype: gemm_w4f16_tg (prototype 1, the default) or gemm_w4f16_tg2.
+			kname := "gemm_w4f16_tg"
+			if v := os.Getenv("GOINFER_METAL_S2_KERNEL"); v != "" {
+				kname = v
+			}
+			hb("K=%d S2 prototype kernel: %s", M, kname)
+			if protoPipe, err = r.d.NewComputePipeline(lib, kname); err != nil {
+				t.Fatalf("S2 pipeline: %v", err)
+			}
+		}()
+		var gemmCats []int
+		for ci, c := range cats {
+			if c.flops != nil {
+				gemmCats = append(gemmCats, ci)
+			}
+		}
+		outOf := map[string]Buffer{"GEMM qkv": qkvF, "GEMM o (+residual)": xF, "GEMM gate/up": guF, "GEMM down (+residual)": xF}
+
+		// (1) Bitwise, per GEMM, layer 0, on the activations a real prefill left in the buffers.
+		protoOn = false
+		resetX()
+		gpuMs(full)
+		allSame := true
+		for _, ci := range gemmCats {
+			c := cats[ci]
+			out := outOf[c.name]
+			before := append([]uint16(nil), out.U16s()...)
+			runOne := func(proto bool) []uint16 {
+				copy(out.U16s(), before)
+				protoOn = proto
+				gpuMs(func(e *Encoder) { c.enc(e, 0) })
+				protoOn = false
+				return append([]uint16(nil), out.U16s()...)
+			}
+			cur, pro := runOne(false), runOne(true)
+			copy(out.U16s(), before)
+			diff, maxAbs := 0, 0.0
+			for i := range cur {
+				if cur[i] != pro[i] {
+					diff++
+					maxAbs = math.Max(maxAbs, math.Abs(float64(f16ToF32(cur[i]))-float64(f16ToF32(pro[i]))))
+				}
+			}
+			if diff != 0 {
+				allSame = false
+			}
+			hb("K=%d S2 bitwise %-22s %d / %d elements differ (max |diff| %.3g)", M, c.name, diff, len(cur), maxAbs)
+		}
+
+		// (2) Full replay with the prototype as every GEMM: logits against PrefillLast's.
+		protoOn = true
+		resetX()
+		gpuMs(full)
+		protoOn = false
+		pl := r.logits.Floats()[:r.V]
+		nd, dot, na, nb2 := 0, 0.0, 0.0, 0.0
+		am, bm := 0, 0
+		for i := range pl {
+			if math.Float32bits(pl[i]) != math.Float32bits(ref[i]) {
+				nd++
+			}
+			dot += float64(pl[i]) * float64(ref[i])
+			na += float64(pl[i]) * float64(pl[i])
+			nb2 += float64(ref[i]) * float64(ref[i])
+			if pl[i] > pl[am] {
+				am = i
+			}
+			if ref[i] > ref[bm] {
+				bm = i
+			}
+		}
+		hb("K=%d S2 full-replay logits with the prototype: %d / %d differ from PrefillLast (cosine %.9f, argmax %d vs %d); per-GEMM bitwise identical: %v",
+			M, nd, len(pl), dot/math.Sqrt(na*nb2), am, bm, allSame)
+
+		// (3) The registered metric: per arm, the sum of the four GEMM marginals (full − full-without-that-GEMM).
+		without := func(skip map[int]bool) func(e *Encoder) {
+			return func(e *Encoder) {
+				for l := 0; l < r.nL; l++ {
+					for ci, c := range cats {
+						if !c.once && !skip[ci] {
+							c.enc(e, l)
+						}
+					}
+				}
+				for ci, c := range cats {
+					if c.once && !skip[ci] {
+						c.enc(e, 0)
+					}
+				}
+			}
+		}
+		allG := map[int]bool{}
+		for _, ci := range gemmCats {
+			allG[ci] = true
+		}
+		type armRes struct{ full, sum, allAtOnce []float64 }
+		arms := map[bool]*armRes{false: {}, true: {}}
+		perCat := map[bool]map[int][]float64{false: {}, true: {}}
+		var ratios []float64
+		for rep := 0; rep < reps; rep++ {
+			order := []bool{false, true}
+			if rep%2 == 1 {
+				order = []bool{true, false}
+			}
+			for _, arm := range order {
+				protoOn = arm
+				resetX()
+				f := gpuMs(full)
+				sum := 0.0
+				for _, ci := range gemmCats {
+					resetX()
+					w := gpuMs(without(map[int]bool{ci: true}))
+					perCat[arm][ci] = append(perCat[arm][ci], f-w)
+					sum += f - w
+				}
+				resetX()
+				ng := gpuMs(without(allG))
+				protoOn = false
+				arms[arm].full = append(arms[arm].full, f)
+				arms[arm].sum = append(arms[arm].sum, sum)
+				arms[arm].allAtOnce = append(arms[arm].allAtOnce, f-ng)
+			}
+			ratios = append(ratios, arms[false].sum[rep]/arms[true].sum[rep])
+			hb("K=%d S2 rep %d/%d: GEMM category in sequence — current %.1f ms, prototype %.1f ms → %.2fx (full replay %.1f vs %.1f ms)",
+				M, rep+1, reps, arms[false].sum[rep], arms[true].sum[rep], ratios[rep], arms[false].full[rep], arms[true].full[rep])
+		}
+
+		// (4) Burst vs sustained, gate/up alone, both kernels (R16 precondition 2 grades the sustained number).
+		gu := -1
+		for ci, c := range cats {
+			if c.name == "GEMM gate/up" {
+				gu = ci
+			}
+		}
+		only := func(ci int) func(e *Encoder) {
+			return func(e *Encoder) {
+				for l := 0; l < r.nL; l++ {
+					cats[ci].enc(e, l)
+				}
+			}
+		}
+		idle := map[bool][]float64{}
+		sus := map[bool][]float64{}
+		for rep := 0; rep < reps; rep++ {
+			for _, arm := range []bool{false, true} {
+				protoOn = arm
+				time.Sleep(2 * time.Second)
+				resetX()
+				idle[arm] = append(idle[arm], gpuMs(only(gu)))
+				gpuMs(only(gu))
+				sus[arm] = append(sus[arm], gpuMs(only(gu)))
+				protoOn = false
+			}
+		}
+
+		// Report and grade against R16's band (ship >= 2.85x, park 1.8-2.85x, kill < 1.8x on the sustained,
+		// in-sequence GEMM category at K=512; only K=512 on the 1.5B decides — other runs are reported).
+		name := func(a bool) string {
+			if a {
+				return "prototype"
+			}
+			return "current"
+		}
+		fmt.Fprintf(os.Stderr, "\n=== R16 / S2, K=%d: prototype vs current (medians of %d paired reps, arms alternating) ===\n", M, reps)
+		for _, ci := range gemmCats {
+			c := cats[ci]
+			mc, mp := median(perCat[false][ci]), median(perCat[true][ci])
+			fmt.Fprintf(os.Stderr, "  %-22s current %8.1f ms (%.2f TFLOPS)  prototype %8.1f ms (%.2f TFLOPS)  %.2fx\n", c.name,
+				mc, c.flops(Mpad)*float64(r.nL)/(mc*1e-3)/1e12, mp, c.flops(Mpad)*float64(r.nL)/(mp*1e-3)/1e12, mc/mp)
+		}
+		for _, a := range []bool{false, true} {
+			fmt.Fprintf(os.Stderr, "  %-9s GEMM category (sum of marginals) %8.1f ms spread %4.1f%% · all-GEMMs-out cross-check %8.1f ms · full replay %8.1f ms\n",
+				name(a), median(arms[a].sum), 100*spreadOf(arms[a].sum), median(arms[a].allAtOnce), median(arms[a].full))
+		}
+		for _, a := range []bool{false, true} {
+			fmt.Fprintf(os.Stderr, "  %-9s gate/up alone: after 2 s idle %8.1f ms · sustained %8.1f ms  (idle/sustained %.2f)\n",
+				name(a), median(idle[a]), median(sus[a]), median(idle[a])/median(sus[a]))
+		}
+		rm := median(ratios)
+		band := "KILL (< 1.8x)"
+		switch {
+		case rm >= 2.85:
+			band = "SHIP band (>= 2.85x)"
+		case rm >= 1.8:
+			band = "PARK band (1.8-2.85x)"
+		}
+		fmt.Fprintf(os.Stderr, "  GEMM category speedup, paired: median %.2fx, reps %s → %s", rm, fmtMs(ratios), band)
+		if M != 512 {
+			fmt.Fprintf(os.Stderr, "  [K=%d: reported, not deciding — R16 decides at K=512 on the 1.5B]", M)
+		}
+		fmt.Fprintf(os.Stderr, "\n  preconditions: fidelity — per-GEMM bitwise identical %v, full-replay logits differ in %d values; graded on the sustained timing\n\n", allSame, nd)
 	}
 
 	// Report.
