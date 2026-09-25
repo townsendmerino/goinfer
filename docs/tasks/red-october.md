@@ -418,6 +418,7 @@ Status table, kept current as briefs move:
 | R13 | CPU decode attention, group-major acc64 kernels (bit-identical) | both (aikit + goinfer) | S (measure) + M (two kernels ×2 ISAs, wiring) | **step 0 complete 2026-09-19**: (i) peer depth row done but not benchmarks.md-quality (thermal drift, re-run needed); (ii) softmax caps the QK+AV grouping ceiling to ~1.39-1.54× overall, not 1.8-1.85×; (iii) the cache-dedup gap is depth-dependent — nil below ~K=1024, 2-5× above K=2048, reinforcing (ii)'s decision depth. **SHIPPED 2026-09-20** — aikit kernel A/B real (1.53-2.39×); goinfer wiring found a real bug (softmax accidentally serialized, not the scheduler-contention red herring a first CPU profile suggested — `go tool trace`'s per-goroutine breakdown found the actual cause). Fixed: parity at depth 2048, **1.32× served at depth 8192**. `GOINFER_ATTN_GROUPED` defaults on. Three-arm/both-box/all-model sweep still not done |
 | R14 | CUDA speculative-decode drafter — full-logits download, host argmax, no overlap | Linux | S (measure) + S–M (port on-device argmax if real) | **MEASURED AND SHIPPED 2026-09-22** ([`r14-drafter-argmax-2026-09-22.md`](../measurements/r14-drafter-argmax-2026-09-22.md)): the tail is at TWO sites (drafter head AND the verify's `batchedHeadArgmax`, same shape) and cost **14.9–16.0% of a spec round** (D2H at 4.7 GB/s pageable + serial host argmax); `argmax_rows` on the device at both sites: row-for-row identical on 582 calls, lossless, **1.234× spec wall** (6/6 pairs 1.22–1.25×, Qwen3-4B + DFlash, w=7) |
 | R15 | CPU sampler filter scans (`topFilterLogits`) — max-scan vs `parallelMax` | Mac | S (measure; build only if a future component wins) | **max-scan sub-item CLOSED 2026-09-22, clean negative result**: parallel LOSES at every vocab size tested (1.39-3.78× SLOWER; `decoder/sampler_filter_bench_test.go`) — goroutine overhead exceeds savings for a plain float comparison, unlike softcap's exp/tanh. `topKByLogit` (~247-262 µs) and the min-p scan (~167 µs) at gemma vocab are sized but not measured for parallel benefit — open, unfunded |
+| R16 | Metal prefill GEMM redesign (S2 of the R4 follow-on scoping) | Mac | M–L (read + prototype + wiring) | **PRE-REGISTERED 2026-09-25, not started**: in-sequence GEMM category at K=512 (1.5B) ship ≥ 2.85× / park 1.8–2.85× / kill < 1.8×; fidelity gate and sustained-load timing are preconditions. S0/S1 put the int4-class ceiling here at ≥ 2.96 TFLOPS vs the current 0.75 |
 
 Every brief below has the same shape: goal, the standing and the band registered here, what to read
 first (prior art and the negatives not to re-propose), what to build, the gates, the measurement
@@ -923,7 +924,7 @@ f16 MMA ceiling at these shapes and llama.cpp's `mul_mm` at the same shapes), th
 **S1a measured 2026-09-25** ([`metal-gemm-ceiling-2026-09-25.md`](../measurements/metal-gemm-ceiling-2026-09-25.md)):
 Apple's MPS f16 GEMM sustains 3.24–3.43 TFLOPS on all four shapes (4.5× goinfer on gate/up), with no post-idle
 burst — so the burst is goinfer's kernel, not the GPU. At that rate the GEMM category is 3.83× faster at K=512, past
-the ≈2.85× parity needs (an f16 bound: no dequant, 4× the weight bytes). **S1b:** llama.cpp on the same Q4_K_M file
+the ≈2.85× parity needs (an f16 bound: no dequant, 4× the weight bytes). **S2 is pre-registered as R16.** **S1b:** llama.cpp on the same Q4_K_M file
 prefills K=512 in 453.9 ms, so an int4-class kernel sustains ≥ 2.96 TFLOPS here (~4× goinfer's gate/up); at that rate
 TTFT would be ~1.17× Ollama's at K=512. At K=3904 its whole prefill (4.0 s) is shorter than goinfer's attention alone.
 
@@ -2045,6 +2046,60 @@ numbers on a different machine or after any change to `sampler.go`'s filter logi
 **Out of scope.** `topPCandidates`'s own internal cost (the top-p path's 849 µs end-to-end figure
 was not decomposed further this pass). Any change to the selection ALGORITHM (e.g. a different
 top-k data structure) — this brief is about parallelizing the existing one, not replacing it.
+
+### R16 · Metal prefill GEMM redesign — S2 of the scoping, pre-registered 2026-09-25
+
+**Goal.** Replace `gemm_w4f16_store` (`metal/prefill.go`) with a kernel whose structure reaches the int4-class rate
+this GPU is shown to sustain, and so reach TTFT parity with Ollama at K=512 on the 1.5B. This is the build R4's kill
+pointed at ("a different kernel design"), priced from measurement rather than from the audit's pre-M-03 arithmetic.
+
+**Standing (all 2026-09-25, M1 Pro, 1.5B q4_k_m, sustained load).**
+- S0 ([`metal-prefill-decomp-2026-09-25.md`](../measurements/metal-prefill-decomp-2026-09-25.md)): the GEMM is 92.7%
+  of prefill GPU time at K=512 (gate/up 62.9% alone, measured in sequence); parity at K=512 needs the GEMM category
+  **≈2.85×** faster. Under sustained load the current kernel runs gate/up and down at ~0.75 TFLOPS, qkv and o at
+  ~1.2–1.4. It runs ~2× faster right after the GPU has idled — a burst specific to this kernel.
+- S1a/S1b ([`metal-gemm-ceiling-2026-09-25.md`](../measurements/metal-gemm-ceiling-2026-09-25.md)): Apple's MPS f16
+  GEMM sustains 3.24–3.43 TFLOPS on all four shapes; llama.cpp on the same Q4_K_M file implies an int4-class GEMM of
+  **≥ 2.96 TFLOPS** at K=512 (a lower bound: whole-prefill time). At that rate TTFT would be ~1.17× Ollama's.
+- The peer target: TTFT 0.377× Ollama v0.32.5's at K=512 (`peer-claim-2026-09-25.md` cell h, Ollama at its defaults).
+
+**Registered band — committed before any prototype is written or timed.** The metric is the **in-sequence GEMM
+category time at K=512 on the 1.5B**: the sum of the qkv, o, gate/up and down marginal costs measured by leave-one-out
+inside a full prefill replay (`TestMetalPrefillDecomp`'s method), median of ≥ 5 paired reps, current kernel ÷
+prototype, both arms in the same session:
+
+| outcome | in-sequence GEMM category speedup at K=512 |
+|---|---|
+| **ship** | **≥ 2.85×** (the speedup S0 prices as TTFT parity) |
+| **park** | 1.8–2.85× |
+| **kill** | < 1.8× |
+
+**Preconditions for "ship"** (a prototype that misses one is not graded on speed):
+1. **Fidelity.** The §3.2 pooled gate (`TestPrefillGateVsReference`) passes with the prototype as the prefill GEMM.
+   Bit-identity is not the bar: a different tiling reorders the accumulation, as the current kernel's f16 path
+   already does against the exact path.
+2. **No burst dependence.** The prototype is timed both under sustained load and right after 2 s of idle, and the
+   band is graded on the **sustained** number. A prototype that only clears the band after idle does not ship.
+3. **The do-nothing arm is the current kernel, re-measured in the same session**, not S0's number.
+
+**Also reported, not deciding:** the 7B's shapes (H=3584, I=18944), K=3900 (where the GEMM cannot reach parity alone —
+S0), and end-to-end TTFT against Ollama through `scripts/bench_peer_prefill.py` if the band is met.
+
+**Read first (prior art, before any kernel is written).** llama.cpp's Metal `kernel_mul_mm` (the kernel S1b's ≥ 2.96
+TFLOPS comes from) and MLX's quantized GEMM: their threadgroup tile, K-slab, how A and the dequantized weights are
+staged and shared across simdgroups, and how many simdgroups share a tile. The current kernel shares nothing between
+simdgroups (`metal/prefill.go:43-52`) and steps K by 8 with two barriers per step; whether that — or something else —
+is what separates 0.75 from ~3 TFLOPS is what the read has to establish. Record the read in the S2 measurement doc.
+
+**Build.** A test-only prototype kernel first, wired only in the benchmark; production wiring only after ship.
+
+**Record.** `docs/measurements/metal-prefill-gemm-s2-2026-MM-DD.md`; the S0/S1 records and R4 point to it.
+
+**Amendments.** A band or precondition changes only by a dated amendment below this line that gives the mechanism,
+never after a prototype has been timed against it without one.
+
+**Out of scope.** Attention at depth (the K=3900 gap is GEMM and attention in similar measure — its own item), MoE
+prefill (R11), the short-prompt floor (R3).
 
 ---
 
