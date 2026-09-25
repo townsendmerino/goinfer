@@ -541,3 +541,28 @@ jobs:
             echo "attached to this release, or the README names a file that is not built."
             exit 1
           }
+
+  # THE PUBLISHED COUNT, CHECKED EVEN WHEN THE BUILD FAILED. v0.18.0 went out with 0 assets (v0.17.x
+  # had 27): a Windows cross-compile break failed `plain`, so `publish` — which needs it — never ran,
+  # and the Release was created by RELEASING.md's final step anyway. The run was red; the releases
+  # page looked normal. Checks inside `publish` cannot see that case, so this is a separate job with
+  # `if: always()`. It reads the symptom (the Release's asset count against the nearest earlier
+  # release that has any), not any one cause. No Release yet → nothing published → it passes; the
+  # same script runs again in RELEASING.md when a human publishes. scripts/check_release_assets.sh.
+  assets-guard:
+    name: published release carries its assets
+    needs: [plain, embedded, publish]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      # The workflow's own ref, NOT the tag being checked: a dispatch that re-attaches assets to an
+      # older tag (e.g. v0.18.0) would check out a tree that predates this script.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: asset count is nonzero and not below the previous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          # A dispatch with the 1.5B tier opted out drops 12 assets on purpose; zero is never accepted.
+          ALLOW_FEWER_ASSETS: ${{ github.event.inputs.tier_1_5b == 'false' && '1' || '' }}
+        run: scripts/check_release_assets.sh "$TAG"

@@ -167,6 +167,18 @@ gh release create v0.10.1 \
   --notes-file <notes-from-changelog> \
   --latest
 ```
+**Then check what the Release carries** — this is the moment it becomes something users see:
+```
+scripts/check_release_assets.sh v0.10.1
+```
+It fails if the Release has zero assets, or fewer than the nearest earlier release that has any.
+v0.18.0 is why: its asset run failed, `publish` never ran, and the Release was created here anyway
+with 0 assets against v0.17.x's 27 — a normal-looking releases page with nothing to download. The
+same script runs as `release-assets.yml`'s last job (`if: always()`, so it runs even when the build
+failed). A red result means: fix the cause, re-run the workflow (`workflow_dispatch` with the tag),
+and check again. A deliberate drop (the 1.5B tier opted out) passes with `ALLOW_FEWER_ASSETS=1`;
+zero never does.
+
 Notes come from the CHANGELOG section for that version (Added/Changed/Fixed); keep any BREAKING
 marker honest even on a patch bump. `go get` resolves from the git tag via the proxy and needs no
 Release object — this step is for the rendered notes + the watcher notification.
