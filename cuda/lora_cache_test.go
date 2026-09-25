@@ -122,7 +122,7 @@ func TestLoRAAdapterCacheCUDA(t *testing.T) {
 	stats("bind a after b (single-entry cache: b evicted a)", 3, 1)
 	same("a after b", gotA, run())
 
-	t.Setenv("GOINFER_NO_LORA_CACHE", "1")
+	decoder.SetKnobEnvForTest(t, mRes, "GOINFER_NO_LORA_CACHE", "1")
 	bind("")
 	bind("a")
 	stats("GOINFER_NO_LORA_CACHE=1: every bind uploads", 4, 1)

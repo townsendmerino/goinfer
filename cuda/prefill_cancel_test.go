@@ -182,7 +182,7 @@ func TestPrefillCancel_dense(t *testing.T) {
 	// only the check at function entry can. Measured, not assumed: removing that entry check leaves
 	// every other case in this file green, which is how the hole was found in the first place.
 	t.Run("single-pass", func(t *testing.T) {
-		t.Setenv("GOINFER_PREFILL_CHUNK", "4096") // wider than M ⇒ one pass, loop skipped
+		decoder.SetKnobEnvForTest(t, mc, "GOINFER_PREFILL_CHUNK", "4096") // wider than M ⇒ one pass, loop skipped
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		rf.Reset()

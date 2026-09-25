@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 )
 
@@ -23,7 +24,7 @@ import (
 func TestPrefillImageLast_declinesOverChunk(t *testing.T) {
 	r := declineFixture(1, "int4")
 	t.Setenv("GOINFER_PREFILL_IMAGE_CHUNK", "8")
-	chunk := prefillImageChunkRows()
+	chunk := prefillImageChunkRows(r.knobValue("GOINFER_PREFILL_IMAGE_CHUNK"))
 	if chunk != 8 {
 		t.Fatalf("test setup: prefillImageChunkRows() = %d, want 8 (env override didn't take)", chunk)
 	}
@@ -47,17 +48,17 @@ func TestPrefillImageLast_declinesOverChunk(t *testing.T) {
 // prefillChunkRows's own env-var behavior (an unparseable/non-positive value is ignored, not fatal
 // — a typo in a tuning knob must not take a model off the fast path).
 func TestPrefillImageChunkRows_defaultAndOverride(t *testing.T) {
-	if got := prefillImageChunkRows(); got != prefillImageDefaultChunk {
+	if got := prefillImageChunkRows(os.Getenv("GOINFER_PREFILL_IMAGE_CHUNK")); got != prefillImageDefaultChunk {
 		t.Errorf("prefillImageChunkRows() with no override = %d, want the default %d", got, prefillImageDefaultChunk)
 	}
 	t.Setenv("GOINFER_PREFILL_IMAGE_CHUNK", "1024")
-	if got := prefillImageChunkRows(); got != 1024 {
+	if got := prefillImageChunkRows(os.Getenv("GOINFER_PREFILL_IMAGE_CHUNK")); got != 1024 {
 		t.Errorf("prefillImageChunkRows() with GOINFER_PREFILL_IMAGE_CHUNK=1024 = %d, want 1024", got)
 	}
 	for _, bad := range []string{"0", "-5", "not-a-number", ""} {
 		t.Run("ignores "+bad, func(t *testing.T) {
 			t.Setenv("GOINFER_PREFILL_IMAGE_CHUNK", bad)
-			if got := prefillImageChunkRows(); got != prefillImageDefaultChunk {
+			if got := prefillImageChunkRows(os.Getenv("GOINFER_PREFILL_IMAGE_CHUNK")); got != prefillImageDefaultChunk {
 				t.Errorf("prefillImageChunkRows() with GOINFER_PREFILL_IMAGE_CHUNK=%q = %d, want the default %d (bad override must be ignored, not fatal)",
 					bad, got, prefillImageDefaultChunk)
 			}

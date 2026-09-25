@@ -49,7 +49,7 @@ func TestFlashDecodeSplit_default(t *testing.T) {
 				t.Setenv("GOINFER_CUDA_FLASH_DECODE", "x")
 				unsetenv(t, "GOINFER_CUDA_FLASH_DECODE")
 			}
-			if got := flashDecodeSplit(); got != c.want {
+			if got := flashDecodeSplit(os.LookupEnv("GOINFER_CUDA_FLASH_DECODE")); got != c.want {
 				t.Fatalf("flashDecodeSplit() with %q (set=%v) = %d, want %d", c.value, c.set, got, c.want)
 			}
 		})

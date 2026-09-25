@@ -39,6 +39,16 @@ const (
 	knobSSMResident     = "GOINFER_SSM_RESIDENT"
 )
 
+// cudaKnobs are phase 3's: the CUDA backend's operator knobs, snapshotted here with the rest so one mechanism
+// (Load-time read, Options.Knobs override, the testhooks drift check) covers every backend. The CUDA resident
+// reads them through Model.Knob; decoder itself never interprets them.
+var cudaKnobs = []string{
+	"GOINFER_CUDA_FAST_PREFILL", "GOINFER_CUDA_FAST_PREFILL_FLOOR", "GOINFER_CUDA_FLASH_DECODE",
+	"GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "GOINFER_CUDA_FLASH_DECODE_VERIFY", "GOINFER_CUDA_NO_FUSE",
+	"GOINFER_NO_LORA_CACHE", "GOINFER_PREFILL_CHUNK", "GOINFER_PREFILL_IMAGE_CHUNK", "GOINFER_SPLITKV_ATTN",
+	"GOINFER_SPLITKV_MIN_KEYS",
+}
+
 var knobNames = []string{
 	knobAttnGrouped, knobAttnRowTile, knobPrefillWorkers, knobFusedAttention, knobMLANaive, knobMoEExpertMajor,
 	knobBatchedPrefill, knobNoKVOnlyPrefill, knobNoGreedyFastpath, knobNoOptFwd, knobNoSampleFastpath,
@@ -46,6 +56,8 @@ var knobNames = []string{
 	knobMoECacheExperts, knobMoECacheSlots, knobNoFitDefault, knobNoFitGuard, knobNoResidency,
 	knobNoResidentReuse, knobSSMResident,
 }
+
+func init() { knobNames = append(knobNames, cudaKnobs...) }
 
 // Knobs is Options.Knobs: per-model knob values by environment-variable name.
 type Knobs map[string]string
@@ -99,6 +111,19 @@ func (k *knobSet) pin(name, value string, set bool) (restore func()) {
 	pv, ps, pp := k.val[name], k.set[name], k.pinned[name]
 	k.val[name], k.set[name], k.pinned[name] = value, set, true
 	return func() { k.val[name], k.set[name], k.pinned[name] = pv, ps, pp }
+}
+
+// Knob returns this model's value for one per-model knob and whether it is set: the snapshot taken at Load, with
+// Options.Knobs applied. It is how a backend reads its own operator knobs (phase 3: CUDA), so they are read once
+// per model and can differ between two models in one process. name must be on knobs.go's list — an unknown name
+// panics rather than silently reading "unset", which is what a typo would otherwise do.
+func (m *Model) Knob(name string) (string, bool) {
+	if m.knobs != nil {
+		if _, known := m.knobs.set[name]; !known {
+			panic("decoder: Model.Knob(" + name + "): not a per-model knob (decoder/knobs.go)")
+		}
+	}
+	return m.knobs.lookup(name)
 }
 
 // loadKnob is a knob read during Load BEFORE the model (and its snapshot) exists — the fit guards. Same

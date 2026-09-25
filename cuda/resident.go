@@ -414,9 +414,25 @@ type cudaLayer struct {
 	gSegA, gSegB, gSegC *gpu.Graph
 }
 
+// lookupKnob reads one operator knob from the model's snapshot. A resident built by hand in a test, with no
+// model behind it, reads the live environment instead — decoder's nil-snapshot rule.
+func (r *cudaResident) lookupKnob(name string) (string, bool) {
+	if r.knob == nil {
+		return os.LookupEnv(name)
+	}
+	return r.knob(name)
+}
+
+// knobValue is lookupKnob's value, "" when unset.
+func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name); return v }
+
 type cudaResident struct {
 	reqCh chan func() error
 	ackCh chan error
+
+	// knob reads this model's operator knobs (decoder.Model.Knob): the snapshot taken at Load, with
+	// Options.Knobs applied — never the live environment (docs/tasks/task-env-config-2026-09.md, phase 3).
+	knob func(name string) (string, bool)
 
 	hidden, nLayers, inter, vocab int
 	// nH (query-head count) is the ONE model-level attention dimension — constant across a

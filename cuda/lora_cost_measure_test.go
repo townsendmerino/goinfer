@@ -104,9 +104,9 @@ func TestLoRACostMeasure(t *testing.T) {
 	}
 	uncached := func(on bool) {
 		if on {
-			os.Setenv("GOINFER_NO_LORA_CACHE", "1")
+			decoder.SetKnobForTest(m, "GOINFER_NO_LORA_CACHE", "1")
 		} else {
-			os.Unsetenv("GOINFER_NO_LORA_CACHE")
+			decoder.UnsetKnobForTest(m, "GOINFER_NO_LORA_CACHE")
 		}
 	}
 	defer uncached(false)

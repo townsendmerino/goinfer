@@ -57,4 +57,28 @@ func TestFlashDecode_defaultOnRealResident(t *testing.T) {
 			t.Fatalf("GOINFER_CUDA_FLASH_DECODE=0 left the lane on: faSplit=%d", rf.faSplit)
 		}
 	})
+	// Phase 3 (docs/tasks/task-env-config-2026-09.md): the knob is a property of the MODEL, read at build from its
+	// Load-time snapshot. Two models in one process, one with Options.Knobs turning the lane off, must each get
+	// their own — the environment (unset, the default-ON arm) must not leak into the overridden one, nor it into the other.
+	t.Run("Options.Knobs is per model", func(t *testing.T) {
+		t.Setenv("GOINFER_CUDA_FLASH_DECODE", "x")
+		unsetenv(t, "GOINFER_CUDA_FLASH_DECODE")
+		off, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4",
+			Knobs: &decoder.Knobs{"GOINFER_CUDA_FLASH_DECODE": "0"}})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		t.Cleanup(func() { off.Close() })
+		rOff, ok := off.ResidentForwardForTest().(*cudaResident)
+		if !ok || rOff == nil {
+			t.Skipf("not CUDA-resident (%s)", off.ResidentDecline())
+		}
+		rOn := load(t)
+		if rOff.faSplit != 0 {
+			t.Errorf("Options.Knobs GOINFER_CUDA_FLASH_DECODE=0 left this model's lane on: faSplit=%d", rOff.faSplit)
+		}
+		if rOn.faSplit != flashDecodeDefaultSplit {
+			t.Errorf("the other model, with no override, must keep the default: faSplit=%d want %d", rOn.faSplit, flashDecodeDefaultSplit)
+		}
+	})
 }

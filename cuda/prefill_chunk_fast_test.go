@@ -48,7 +48,7 @@ func TestPrefillChunked_fastKernelsOnEveryChunk(t *testing.T) {
 	layers := len(rf.layers)
 
 	count := func(chunk string, hidden bool) (attn, gemm int) {
-		t.Setenv("GOINFER_PREFILL_CHUNK", chunk)
+		decoder.SetKnobEnvForTest(t, m, "GOINFER_PREFILL_CHUNK", chunk)
 		rf.fastAttnLaunches, rf.fastGemmLaunches = 0, 0
 		var e error
 		if hidden {

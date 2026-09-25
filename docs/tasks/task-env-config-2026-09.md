@@ -1,6 +1,6 @@
 # Task: configuration out of the process environment (2026-09)
 
-> **Status 2026-09-24: phase 1 (the ratchet) DONE; phase 2a (the 14 per-call decoder knobs) and 2b (7 more) DONE; 3–6 open.** Owner asked for this after a review found
+> **Status 2026-09-24: phase 1 (the ratchet) DONE; phases 2a/2b (21 decoder knobs) and 3 (11 CUDA knobs) DONE; 4–6 open.** Owner asked for this after a review found
 > configuration passed through the process environment. The four concrete defects that review named are already fixed
 > (`a50815ed`: duplicate doc rows, the darwin pager mode set via env, Metal's prefill flag re-read per call, five campaign
 > switches retired); this doc is the general program.
@@ -106,6 +106,30 @@ module reads them directly; CUDA reaches them through the model's accessors).
 - **Left for later:** `CPU_FUSED_GATEUP`, `W4A8_BATCH`, `W4A8_SPLITHALF` are read once at package init (process-wide,
   so they cannot change a loaded model, but two models cannot differ); `MODELS` is the test-asset search path, not a
   model property; `P13_OFF` and `INT4_F16_SCALES` are load-time diagnostics by their own documentation — phase 6.
+
+### Phase 3 result (2026-09-24)
+
+All eleven CUDA operator knobs (`CUDA_FAST_PREFILL`, `CUDA_FAST_PREFILL_FLOOR`, `CUDA_FLASH_DECODE`,
+`CUDA_FLASH_DECODE_MIN_KEYS`, `CUDA_FLASH_DECODE_VERIFY`, `CUDA_NO_FUSE`, `NO_LORA_CACHE`, `PREFILL_CHUNK`,
+`PREFILL_IMAGE_CHUNK`, `SPLITKV_ATTN`, `SPLITKV_MIN_KEYS`) leave `testdata/env_reads.txt`.
+
+- **One mechanism, not a second one in `cuda/`.** The names are registered in decoder's snapshot (`cudaKnobs`,
+  `decoder/knobs.go`) and the resident reads them through a new exported `Model.Knob(name)`, so `Options.Knobs`, the
+  Load-time read and the testhooks drift check all apply unchanged. `Model.Knob` panics on a name not on the list —
+  a typo would otherwise read as "unset".
+- **Build-time reads** (flash-decode lane, split-KV, `CUDA_NO_FUSE`, the fast-prefill levers) read `m.Knob` in
+  `BuildResident`; **per-call reads** (prefill chunk widths, the fast-prefill floor, the LoRA cache switch) go through
+  `cudaResident.knob`, the same snapshot, so a test that pins a knob on a live model still works. A resident built by
+  hand in a test (no model) reads the live environment — decoder's nil-snapshot rule. The pure parse helpers now take
+  the raw value; their unit tests pass it from `os.LookupEnv`.
+- **Gate:** `TestFlashDecode_defaultOnRealResident/Options.Knobs_is_per_model` — two CUDA models in one process, one
+  with `Options.Knobs` turning the lane off; each builds its own (lane off / default S=16). Test migration: five
+  post-build sites (`lora_cache_test`, `lora_cost_measure_test`, `prefill_cancel_test`, `prefill_chunk_fast_test`,
+  `prefill_chunked_test`).
+- Not a phase-3 finding but met on the way: `TestFlashDecodeKernelLadder` fails with the lane at its default
+  (`faSplit=0` on the 1.5B at the ladder's context) on the pre-phase-3 tree too; it passes with
+  `GOINFER_CUDA_FLASH_DECODE` set, as its own message asks. And `go vet -tags cuda ./cuda/` (without
+  `goinfer_testhooks`) fails on `ptx_modules_cover_test.go` since `a55841f4` — CI always adds the tag.
 
 Phases 2–5 each shrink `testdata/env_reads.txt`; the task is done when the list holds only diagnostics with a named owner
 and a reason, and the rule-1 guard stays.

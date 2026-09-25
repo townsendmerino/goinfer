@@ -67,7 +67,7 @@ func TestPrefillChunked_bitIdentical(t *testing.T) {
 	// eight greedy decode steps taken from the resulting cache state.
 	run := func(chunk string) ([]float32, []int) {
 		t.Helper()
-		t.Setenv("GOINFER_PREFILL_CHUNK", chunk)
+		decoder.SetKnobEnvForTest(t, mc, "GOINFER_PREFILL_CHUNK", chunk)
 		rf.Reset()
 		start := time.Now()
 		lg, e := rf.PrefillLast(context.Background(), embs, 0)

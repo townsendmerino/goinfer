@@ -17,7 +17,7 @@ an accuracy *improvement* that happens to buy occupancy. If false, it is a trade
 
 **It does not decide the fork.** It is one V-sum in isolation, on synthetic inputs, in Go. §4 lists
 every limitation; the end-to-end question has separate, corroborating evidence in the L2 fidelity
-gate (`cuda/prefill.go:694`).
+gate (`cuda/prefill.go:693`).
 
 ## 2. Result
 

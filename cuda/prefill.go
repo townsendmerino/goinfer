@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -83,8 +82,8 @@ const prefillImageDefaultChunk = 2048
 // prefillImageChunkRows is PrefillImageLast's row budget — prefillImageDefaultChunk unless
 // GOINFER_PREFILL_IMAGE_CHUNK says otherwise. Same "an unparseable/non-positive override is
 // ignored, not fatal" reasoning as prefillChunkRows.
-func prefillImageChunkRows() int {
-	if n, err := strconv.Atoi(os.Getenv("GOINFER_PREFILL_IMAGE_CHUNK")); err == nil && n > 0 {
+func prefillImageChunkRows(v string) int {
+	if n, err := strconv.Atoi(v); err == nil && n > 0 {
 		return n
 	}
 	return prefillImageDefaultChunk
@@ -180,7 +179,7 @@ func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]floa
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	chunk := prefillImageChunkRows()
+	chunk := prefillImageChunkRows(r.knobValue("GOINFER_PREFILL_IMAGE_CHUNK"))
 	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {
 		chunk = learned
 	}
@@ -243,8 +242,8 @@ func (r *cudaResident) PrefillMRoPELast(ctx context.Context, embeddings [][]floa
 // GOINFER_PREFILL_CHUNK says otherwise. An unparseable or non-positive value is ignored rather than
 // failing the request: this is a tuning knob on a path that has a correct fallback, so a typo in it
 // must not be the thing that takes a model off the fast path.
-func prefillChunkRows() int {
-	if n, err := strconv.Atoi(os.Getenv("GOINFER_PREFILL_CHUNK")); err == nil && n > 0 {
+func prefillChunkRows(v string) int {
+	if n, err := strconv.Atoi(v); err == nil && n > 0 {
 		return n
 	}
 	return prefillDefaultChunk
@@ -298,7 +297,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	chunk := prefillChunkRows()
+	chunk := prefillChunkRows(r.knobValue("GOINFER_PREFILL_CHUNK"))
 	if learned := int(r.prefillChunkCap.Load()); learned > 0 && learned < chunk {
 		chunk = learned // a previous prompt already found the default too wide for this card
 	}
@@ -646,7 +645,7 @@ func (r *cudaResident) PrefillPath() (bool, string) {
 		// scratch. Claiming "one pass" was what let the O(M·inter) OOM decline hide behind a green
 		// startup line for every prompt long enough to matter.
 		return true, fmt.Sprintf("batched (weight-stationary CUDA passes of up to %d rows)%s",
-			prefillChunkRows(), r.fusedAttnNote())
+			prefillChunkRows(r.knobValue("GOINFER_PREFILL_CHUNK")), r.fusedAttnNote())
 	}
 	// Detail without the wrapped sentinel, which says nothing a user can act on.
 	detail := strings.TrimPrefix(strings.TrimSuffix(err.Error(), ": "+errPrefillDeclined.Error()), "cuda prefill: ")
@@ -714,8 +713,8 @@ func (r *cudaResident) fusedAttnNote() string {
 //	                           0 | false | off    neither: the exact path everywhere (complete undo)
 //	                           attn                L2 only (fused attention; exact GEMV)
 //	                           gemm                L3 only (tensor-core GEMM; exact attention)
-func fastPrefillEnabled() (attn, gemm bool) {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOINFER_CUDA_FAST_PREFILL"))) {
+func fastPrefillEnabled(v string) (attn, gemm bool) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "0", "false", "off":
 		return false, false
 	case "attn":
@@ -1514,8 +1513,8 @@ const fastPrefillFloor = 512
 // fastPrefillFloorFor returns the floor, allowing an experiment to move it. Set
 // GOINFER_CUDA_FAST_PREFILL_FLOOR to override; 0 disables the floor entirely (both levers engage
 // at any length), which is how the sub-floor cells are measured at all.
-func fastPrefillFloorFor() int {
-	if v := os.Getenv("GOINFER_CUDA_FAST_PREFILL_FLOOR"); v != "" {
+func fastPrefillFloorFor(v string) int {
+	if v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			return n
 		}
@@ -1526,7 +1525,7 @@ func fastPrefillFloorFor() int {
 // aboveFastPrefillFloor reports whether THIS PROMPT is long enough for the fast levers. It reads
 // passPromptLen (the whole prompt) rather than M (this chunk) — see the field's note.
 func (r *cudaResident) aboveFastPrefillFloor() bool {
-	return r.passPromptLen >= fastPrefillFloorFor()
+	return r.passPromptLen >= fastPrefillFloorFor(r.knobValue("GOINFER_CUDA_FAST_PREFILL_FLOOR"))
 }
 
 // attnFusedShmem is the dynamic shared memory attn_fused needs: Ksh[BN][hd+KPAD] plus

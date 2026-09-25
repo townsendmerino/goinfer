@@ -608,6 +608,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// sibling field being set in the same literal).
 	residentCtxCap := resolveCtxCapFit(m, m.ResidentContextRequest(), m.Config().MaxPositions)
 	r := &cudaResident{
+		knob:   m.Knob,
 		hidden: H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
 		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(),
 		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
@@ -1012,7 +1013,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// only when asked. Own module — prefill_batched.ptx is untouched, the isolation pattern
 		// attn_block.cu established. A load failure is not fatal: it leaves bAttnFused* zero and
 		// every selection site falls back to attn_batched, which is the exact path anyway.
-		r.fastAttn, r.fastGemm = fastPrefillEnabled()
+		r.fastAttn, r.fastGemm = fastPrefillEnabled(r.knobValue("GOINFER_CUDA_FAST_PREFILL"))
 		if m.ExactPrefill() { // Options.ExactPrefill: this model's prefill stays on the exact path
 			r.fastAttn, r.fastGemm = false, false
 		}
@@ -1144,8 +1145,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 					// GOINFER_SPLITKV_ATTN=0 force-disables it (A/B / rollback); GOINFER_SPLITKV_MIN_KEYS
 					// overrides the per-geometry threshold so the crossover is re-measurable without a
 					// rebuild (0 ⇒ always split — the force-on arm).
-					r.splitkvAttn = os.Getenv("GOINFER_SPLITKV_ATTN") != "0"
-					if v, err := strconv.Atoi(os.Getenv("GOINFER_SPLITKV_MIN_KEYS")); err == nil && v >= 0 {
+					r.splitkvAttn = r.knobValue("GOINFER_SPLITKV_ATTN") != "0"
+					if v, err := strconv.Atoi(r.knobValue("GOINFER_SPLITKV_MIN_KEYS")); err == nil && v >= 0 {
 						r.skMinKeys = v
 					}
 				}
@@ -1735,7 +1736,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			break
 		}
 	}
-	if os.Getenv("GOINFER_CUDA_NO_FUSE") != "" {
+	if r.knobValue("GOINFER_CUDA_NO_FUSE") != "" {
 		r.fuseQKV = false
 	}
 	if postOnly {

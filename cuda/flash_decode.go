@@ -33,8 +33,7 @@ const flashDecodeDefaultSplit = 16
 // flashDecodeDefaultSplit; "0", "off" and "false" turn the lane off (the exact attention path, bit-identical to what shipped
 // before the lane existed); a positive integer picks S; anything else that is not a positive integer is also off, as it always
 // was — a typo must not silently enable a non-exact path at some other S.
-func flashDecodeSplit() int {
-	v, set := os.LookupEnv("GOINFER_CUDA_FLASH_DECODE")
+func flashDecodeSplit(v string, set bool) int {
 	if !set || v == "" {
 		return flashDecodeDefaultSplit
 	}
@@ -58,8 +57,9 @@ func flashDecodeSplit() int {
 // come out of that budget, and none of the lane's fidelity evidence covers a MoE. Setting the variable explicitly still turns
 // it on there, exactly as before.
 func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
-	s := flashDecodeSplit()
-	if _, explicit := os.LookupEnv("GOINFER_CUDA_FLASH_DECODE"); !explicit && r.cacheExperts {
+	v, explicit := r.lookupKnob("GOINFER_CUDA_FLASH_DECODE")
+	s := flashDecodeSplit(v, explicit)
+	if !explicit && r.cacheExperts {
 		return
 	}
 	if s < 1 {
@@ -117,9 +117,9 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 	}
 	// The partial buffer holds faMaxRows rows so a verify batch fits; row 0 of the rows layout is the M=1 layout.
 	r.faBuf = r.af(faMaxRows * r.nH * s * faWarps * (maxHd + 4))
-	r.faVerify = r.faCombineRows != (Pipeline{}) && os.Getenv("GOINFER_CUDA_FLASH_DECODE_VERIFY") != "0"
+	r.faVerify = r.faCombineRows != (Pipeline{}) && r.knobValue("GOINFER_CUDA_FLASH_DECODE_VERIFY") != "0"
 	r.faMinKeys = flashDecodeDefaultMinKeys
-	if v, err := strconv.Atoi(os.Getenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS")); err == nil && v >= 0 {
+	if v, err := strconv.Atoi(r.knobValue("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS")); err == nil && v >= 0 {
 		r.faMinKeys = v
 	}
 	r.faSplit = s

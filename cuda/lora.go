@@ -4,7 +4,6 @@ package cuda
 
 import (
 	"fmt"
-	"os"
 	"unsafe"
 
 	gpu "github.com/townsendmerino/aikit/gpu"
@@ -72,7 +71,7 @@ func (r *cudaResident) releaseLoraLayers(layers []cudaLoraLayer) {
 // loraCacheDisabled is the escape hatch / A-B switch for the adapter device cache (audit P-10),
 // same convention as GOINFER_NO_RESIDENT_REUSE: with it set, every bind uploads and every clear
 // frees, which is exactly the pre-cache behaviour.
-func loraCacheDisabled() bool { return os.Getenv("GOINFER_NO_LORA_CACHE") != "" }
+func (r *cudaResident) loraCacheDisabled() bool { return r.knobValue("GOINFER_NO_LORA_CACHE") != "" }
 
 // loraKeyOf records what a bind would upload, projection by projection.
 func loraKeyOf(layers []decoder.ResidentAdapterLayer) [][7]loraProjKey {
@@ -120,7 +119,7 @@ func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 	return r.do(func() error {
 		r.loraLayers = nil // unbind first: every error below leaves NO adapter bound
 		if layers == nil {
-			if loraCacheDisabled() {
+			if r.loraCacheDisabled() {
 				r.releaseLoraLayers(r.lora.cache)
 				r.lora.cache, r.lora.key = nil, nil
 			}
@@ -136,7 +135,7 @@ func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 			return fmt.Errorf("cuda: SetAdapter got %d layers, model has %d", len(layers), len(r.layers))
 		}
 		key := loraKeyOf(layers)
-		if r.lora.cache != nil && !loraCacheDisabled() && sameLoraKey(key, r.lora.key) {
+		if r.lora.cache != nil && !r.loraCacheDisabled() && sameLoraKey(key, r.lora.key) {
 			r.lora.hits++
 			r.loraLayers = r.lora.cache
 			return nil
