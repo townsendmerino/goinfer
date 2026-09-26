@@ -243,13 +243,16 @@ STREAM_WEIGHTS_MODELS = {m.strip() for m in os.environ.get("BENCH_STREAM_WEIGHTS
 # the prequantized .giw bundle ... baked at int4mix"). M26's GGUF happened to bake to plain
 # "int4" and needed no override -- this is per-model, not something -stream-weights implies
 # uniformly, so it is its own dict rather than folded into STREAM_WEIGHTS_MODELS.
-# phi3-mini=int8: goinfer loads Phi-3 at weight-only int8 by default, because int8 ACTIVATIONS (int4,
-# int8int8, int4mix) round its activation outliers to zero and the output is junk (queue-engineering.md
-# H2), and it declines every resident GPU path for the same reason. This harness always passes an
-# explicit -quant, which goinfer honours over that default, so without this entry it would time the
-# junk path a user never gets by default.
+# phi3-mini=int8int8: goinfer loads Phi-3 at int8int8 with per-32 activation scales by default
+# (queue-engineering.md H2; docs/tasks/task-actquant-pergroup-2026-09.md). Per-row int8 activations
+# round its outliers to zero and the output is junk. This harness always passes an explicit -quant,
+# and an explicit int8int8 gets per-32 added for Phi-3 (an explicit int4 does not), so this entry
+# times the path a user gets by default. CAVEAT, measured 2026-09-26: on the 8 GB card the CUDA
+# resident fit check declines the default 4096-position context for int8 Phi-3 (3.6 GB of weights;
+# the check counts f32 KV even under -kv f16), so a CUDA cell without BENCH_CTX <= 2048 silently
+# times the CPU path. Read the "decode path" line in the serve log.
 GOINFER_QUANT_OVERRIDE = {}
-for _kv in os.environ.get("BENCH_QUANT_OVERRIDE", "M35=int4mix,phi3-mini=int8").split(","):
+for _kv in os.environ.get("BENCH_QUANT_OVERRIDE", "M35=int4mix,phi3-mini=int8int8").split(","):
     if "=" in _kv:
         _k, _v = _kv.split("=", 1)
         GOINFER_QUANT_OVERRIDE[_k.strip()] = _v.strip()
