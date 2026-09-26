@@ -201,6 +201,11 @@ type resident struct {
 	// one function both the dispatch grid and setPos's uAttnFANSplit use — and both for the same key count
 	// (the grid's comes from planNKeys) — so the two cannot disagree.
 	attnFASplitOverride int
+	// r18Rows (test hook, R18 — docs/tasks/red-october.md): rows per simdgroup for the plain dense decode layer's
+	// four int4 GEMVs, so a test can grade candidate kernels in sequence. When a field is > 0 that GEMV dispatches
+	// rows·32/R threads, and down goes through DispatchTG (256 threads, K bytes of staged activations); the test swaps
+	// in the matching pipelines and flushes the executor (stopExec). ZERO in production: every grid is unchanged.
+	r18Rows struct{ qkv, o, gu, down int }
 	// attnFABlkSplit > 0: pAttnFA is the R17 block kernel (attention_fa_blk_g<G>), which runs at this fixed split
 	// count instead of attention_fa's core-count rule — see attnFABlkSplit's const and the selection in
 	// buildResident.
@@ -2278,7 +2283,7 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 		if f16Lane {
 			e.DispatchTG(r.pSAf16, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mxF16, r.gu, r.uH) // fused gate|up
 		} else {
-			e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
+			e.DispatchTG(r.pSA, r18Grid(2*r.I, r.r18Rows.gu), 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
 		}
 		if r.loraLayers != nil {
 			// G3: added into r.gu BEFORE the activation (r.pSw) below — matching applyLoRA's CPU
@@ -2304,12 +2309,25 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 			}
 			e.Dispatch(r.pRes, r.H, 256, x, r.dO)
 		} else {
-			e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, x, r.uI) // down + residual
+			if R := r.r18Rows.down; R > 0 { // test hook (R18), zero in production
+				e.DispatchTG(r.pGemvResid, r.H*32/R, 256, r.I, L.dW, L.dS, r.dq, r.dSc, x, r.uI)
+			} else {
+				e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, x, r.uI) // down + residual
+			}
 			if r.loraLayers != nil {
 				r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, x)
 			}
 		}
 	}
+}
+
+// r18Grid is an SA-family GEMV's grid for `rows` output rows at R rows per simdgroup: rows·32 threads when R is 0 (the
+// shipped one row per simdgroup), rows·32/R otherwise. See resident.r18Rows.
+func r18Grid(rows, R int) int {
+	if R > 0 {
+		return rows * 32 / R
+	}
+	return rows * 32
 }
 
 // canUseF16Lane reports whether layer l's attention block and FFN gate/up can use the R1 W4F16
@@ -2491,7 +2509,7 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 	} else if f16Lane {
 		e.DispatchTG(r.pSAf16Bias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.axF16, L.qkvBias, r.qkv, r.uH)
 	} else {
-		e.DispatchTG(r.pSABias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+		e.DispatchTG(r.pSABias, r18Grid(qkvRows, r.r18Rows.qkv), 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		if r.loraLayers != nil {
 			// G3: compute-time LoRA — added on top of the base q/k/v projection, into the SAME
 			// r.qkv slots it just wrote, before anything downstream (qk_norm/RoPE) reads them.
@@ -2599,7 +2617,7 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 	} else if f16Lane {
 		e.DispatchTG(r.pSAf16Resid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cxF16, x, g.uNHhd) // o-proj + residual
 	} else {
-		e.DispatchTG(r.pSAResid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, x, g.uNHhd) // o-proj + residual
+		e.DispatchTG(r.pSAResid, r18Grid(r.H, r.r18Rows.o), 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, x, g.uNHhd) // o-proj + residual
 		if r.loraLayers != nil {
 			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, x)
 		}

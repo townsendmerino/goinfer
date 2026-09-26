@@ -2311,6 +2311,28 @@ end-to-end decode tok/s against Ollama through `scripts/bench_peer.py`, with MLX
 **Amendments.** A band or precondition changes only by a dated amendment below this line that gives the mechanism,
 never after a candidate has been timed against it without one.
 
+*Measurement note, 2026-09-26, before any grading run (changes neither the band nor a precondition).* The instrument is
+`TestR18InSequence` (`metal/gemv_r18_seq_test.go`). Each category's full − no-op'd difference is taken over **adjacent
+step pairs**: a full token, then the same token with that category no-op'd, 20 pairs, median. Block timing, the
+decomposition's 20 steps per side, failed its own control on the 1.5B. The `i1110` arm is the candidate template at the
+shipped grid, so it must read 1.00×. Under block timing its per-rep ratio ran **0.47–1.25**, and one rep's summed work
+read 4.2 ms against 8–9 in the others; that is one block shifting wholesale. Step-paired, the same control reads
+**0.984–1.002**.
+
+*Confirmation run, fixed before it runs.*
+- Candidate: **`i2244`**. That is step 0's integer math unchanged, 2 rows per simdgroup for qkv and o, 4 for gate/up,
+  and step 2's staged down projection at 4 rows.
+- Both models (the 1.5B `.gguf`, the 7B `.int4.metal.giw`), each in its own process, with the shipped kernels as the
+  only other arm.
+- 7 paired reps, 20 step pairs per category.
+- Depths 128 (graded), 2048 and 3900 (reported, with precondition 2).
+- Identity: 16 teacher-forced positions at each depth through the executor.
+- 3 after-idle samples per arm.
+
+Exploratory results (in sequence, bit-identical, *not* grades):
+- 1.5B: `i2244` 1.194×, `f4444` 1.192×.
+- 7B: `i2244` 1.334×, `f4444` 1.242×.
+
 **Out of scope.** The int8 LM head (already at ~90% of the ceiling), attention (R17), the W4F16 lane (R1), speculation
 (its July negative stands on the int-MAC structure; it is worth re-asking only after a ship here), and paged MoE decode.
 
