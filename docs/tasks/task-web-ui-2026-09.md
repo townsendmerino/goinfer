@@ -793,7 +793,7 @@ checks that the list is laid out below its heading at full width (found by W15's
   **What's actually buildable now, checked against the tree rather than assumed:**
   - **A coarse per-file tag in "List files" — DONE 2026-09-17.** `fitEstimate`
     (`internal/serveapp/webui.go:195`) bands a file's own size against
-    `freeBytesForActiveBackend` (`:172` — `decoder.FreeBytesFor`, `decoder/backend.go:151`, for every
+    `freeBytesForActiveBackend` (`:172` — `decoder.FreeBytesFor`, `decoder/backend.go:155`, for every
     GPU backend; `decoder.HostRAMAvailableBytes` special-cased for `cpu`/the empty default, which the
     registry has never covered) into *fits / tight / won't fit*, returned per file from
     `handleWebList` (`:208`) alongside the backend name and free amount — omitted entirely, not

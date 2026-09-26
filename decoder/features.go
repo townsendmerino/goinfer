@@ -320,6 +320,15 @@ func ResidentEligible(a *Architecture, backend string) bool {
 // (Model.residentAdmission), so the published table and the runtime cannot disagree, and a decline
 // reaches `serve check` / DecodePath with its real cause instead of "arch is not eligible".
 func residentGateReason(a *Architecture, backend string) string {
+	return residentGateReasonAct(a, backend, false)
+}
+
+// residentGateReasonAct is residentGateReason for a model whose resident projections run W8A8 with
+// per-32 activation scales (actSafe): that configuration clears ActivationQuantHazard on a backend
+// that implements it (cuda, actgroup.cu), since the hazard IS the per-vector activation scale. The
+// hardware matrix passes false (it describes the default configuration); residentAdmission passes
+// the model's own.
+func residentGateReasonAct(a *Architecture, backend string, actSafe bool) string {
 	impl, ok := residentBackendFeatures[backend]
 	if !ok {
 		return fmt.Sprintf("backend %q declares no resident feature set", backend)
@@ -328,7 +337,7 @@ func residentGateReason(a *Architecture, backend string) string {
 	// W8A8), so a family whose output int8 activations destroy runs on the CPU at a weight-only
 	// precision instead of fast and wrong. Here rather than in decodeRunnerDecline so the generated
 	// hardware matrix shows it too.
-	if why := ActivationQuantHazard(a.Name); why != "" {
+	if why := ActivationQuantHazard(a.Name); why != "" && !(actSafe && backend == "cuda") {
 		return "every resident " + backend + " projection quantizes activations to int8, and " + why
 	}
 	if missing := missingFeatures(a.residentFeatures(), impl); len(missing) > 0 {

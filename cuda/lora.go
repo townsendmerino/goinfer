@@ -116,6 +116,9 @@ func sameLoraKey(x, y [][7]loraProjKey) bool {
 // cache holds one adapter — the most recently uploaded — so it adds no VRAM beyond what a bound
 // adapter already costs, and adapters that alternate still upload each time, as before.
 func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
+	if r.actG32 && layers != nil {
+		return fmt.Errorf("cuda: compute-time LoRA reads per-vector activation scales; not implemented for a per-32 activation model")
+	}
 	return r.do(func() error {
 		r.loraLayers = nil // unbind first: every error below leaves NO adapter bound
 		if layers == nil {

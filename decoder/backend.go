@@ -65,10 +65,13 @@ type QuantBatchBackend interface {
 
 // matmulW8A8Batch routes a shared-activation W8A8 batch through a
 // QuantBatchBackend (one GPU submit) when available, else the CPU batch kernel.
-func matmulW8A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K int, ops []linalg.W8A8Op) {
-	if qb, ok := be.(QuantBatchBackend); ok && qb.MatmulW8A8Batch(a, M, K, ops) {
+// actGroup is the ops' weights' activation group (they share one activation); a per-group batch
+// skips the staged GPU consult, which reads per-vector activation scales only.
+func matmulW8A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K int, ops []linalg.W8A8Op, actGroup int) {
+	if qb, ok := be.(QuantBatchBackend); ok && actGroup == 0 && qb.MatmulW8A8Batch(a, M, K, ops) {
 		return
 	}
+	ws.SetActQuantGroup(actGroup)
 	linalg.MatmulBTW8A8Batch(ws, a, M, K, ops)
 }
 
@@ -83,10 +86,11 @@ type QuantBatchBackend4 interface {
 
 // matmulW4A8Batch routes a shared-activation W4A8 batch through a QuantBatchBackend4 (one GPU
 // submit) when available, else the CPU batch kernel — the int4 twin of matmulW8A8Batch above.
-func matmulW4A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K, group int, ops []linalg.W4A8Op) {
-	if qb, ok := be.(QuantBatchBackend4); ok && qb.MatmulW4A8Batch(a, M, K, group, ops) {
+func matmulW4A8Batch(be Backend, ws *linalg.Workspace, a []float32, M, K, group int, ops []linalg.W4A8Op, actGroup int) {
+	if qb, ok := be.(QuantBatchBackend4); ok && actGroup == 0 && qb.MatmulW4A8Batch(a, M, K, group, ops) {
 		return
 	}
+	ws.SetActQuantGroup(actGroup)
 	linalg.MatmulBTW4A8Batch(ws, a, M, K, group, ops)
 }
 

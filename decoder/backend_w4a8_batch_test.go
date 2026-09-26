@@ -43,7 +43,7 @@ func TestMatmulW4A8Batch_routesThroughQuantBatchBackend4(t *testing.T) {
 			op.Dst[i] = -999
 		}
 		var ws linalg.Workspace
-		matmulW4A8Batch(be, &ws, a, 1, K, group, []linalg.W4A8Op{op})
+		matmulW4A8Batch(be, &ws, a, 1, K, group, []linalg.W4A8Op{op}, 0)
 		if !be.called {
 			t.Fatal("QuantBatchBackend4.MatmulW4A8Batch was never called — matmulW4A8Batch did not " +
 				"check the interface at all")
@@ -62,7 +62,7 @@ func TestMatmulW4A8Batch_routesThroughQuantBatchBackend4(t *testing.T) {
 			op.Dst[i] = -999
 		}
 		var ws linalg.Workspace
-		matmulW4A8Batch(be, &ws, a, 1, K, group, []linalg.W4A8Op{op})
+		matmulW4A8Batch(be, &ws, a, 1, K, group, []linalg.W4A8Op{op}, 0)
 		if !be.called {
 			t.Fatal("QuantBatchBackend4.MatmulW4A8Batch was never called")
 		}
@@ -83,7 +83,7 @@ func TestMatmulW4A8Batch_routesThroughQuantBatchBackend4(t *testing.T) {
 			op.Dst[i] = -999
 		}
 		var ws linalg.Workspace
-		matmulW4A8Batch(be, &ws, a, 1, K, group, []linalg.W4A8Op{op})
+		matmulW4A8Batch(be, &ws, a, 1, K, group, []linalg.W4A8Op{op}, 0)
 		allSentinel := true
 		for _, v := range op.Dst {
 			if v != -999 {

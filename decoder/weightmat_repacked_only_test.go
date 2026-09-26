@@ -316,7 +316,7 @@ func TestMatmulW4A8Batch_repackedOnlyMatchesCanonical(t *testing.T) {
 			ops[i], group = wmW4A8Op(&wms[i], dst[i*rows:(i+1)*rows])
 		}
 		var ws linalg.Workspace
-		matmulW4A8Batch(be, &ws, a, 1, cols, group, ops)
+		matmulW4A8Batch(be, &ws, a, 1, cols, group, ops, 0)
 		return dst
 	}
 

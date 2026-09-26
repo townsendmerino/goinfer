@@ -429,6 +429,11 @@ func (r *cudaResident) prefillStaticDecline() error {
 	if !r.prefillReady {
 		return fmt.Errorf("cuda prefill: batched kernels unavailable: %w", errPrefillDeclined)
 	}
+	if r.actG32 {
+		// The batched quantizers and GEMMs read one activation scale per row; per-32 prompts take
+		// the sequential decode path, which runs the per-32 kernels.
+		return fmt.Errorf("cuda prefill: per-32 activation quantization has no batched kernels yet: %w", errPrefillDeclined)
+	}
 	// MoE is no longer a categorical refusal: a MoE layer's FFN runs ROW BY ROW off the batched
 	// residual (prefillCore), so the attention half batches and the routed experts keep the exact
 	// per-token sequence decode uses. What must still decline are the PER-TOKEN DEBUG SEAMS, which

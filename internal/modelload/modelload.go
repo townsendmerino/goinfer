@@ -115,7 +115,7 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 	}
 	// Before a sidecar is chosen: a .giw bakes its quant, so this cannot be fixed after the transcode.
 	var msg string
-	if opts.Quant, msg = activationSafeQuant(src, opts.Quant, req.ExplicitQuant); msg != "" {
+	if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQuantGroup, req.ExplicitQuant); msg != "" {
 		fmt.Fprintln(os.Stderr, msg)
 	}
 	ensureGIW := func() (string, error) {
@@ -185,18 +185,24 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 	return &Result{Source: src, LoadPath: loadPath, Tokenizer: tk, Model: model, Opts: opts, LoadTime: loadTime}, nil
 }
 
-// activationSafeQuant is the precision a load should use for src: a family that int8 activations break
-// (decoder.ActivationQuantHazard) gets weight-only int8 instead of an activation-quantizing DEFAULT, with
-// a note; an explicit --quant is honoured, with a warning. msg is "" when nothing applies.
-func activationSafeQuant(src, quant, explicitQuant string) (string, string) {
+// activationSafeQuant is the precision and activation group a load should use for src. For a family
+// that per-vector int8 activations break (decoder.ActivationQuantHazard): the default becomes
+// int8int8 with per-32 activation scales, the configuration that passed
+// docs/tasks/task-actquant-pergroup-2026-09.md's quality gate and that CUDA runs resident; an
+// explicit int8int8 gets per-32 too; an explicit int4/int4mix is honoured with a warning (per-32 does
+// not yet clear int4's weight error). msg is "" when nothing applies.
+func activationSafeQuant(src, quant string, group int, explicitQuant string) (string, int, string) {
 	why := decoder.ActivationQuantHazard(decoder.PeekModelType(src))
-	if why == "" || !decoder.QuantizesActivations(quant) {
-		return quant, ""
+	if why == "" || !decoder.QuantizesActivations(quant) || group == 32 && quant == "int8int8" {
+		return quant, group, ""
 	}
-	if explicitQuant == "" {
-		return "int8", fmt.Sprintf("note: loading at --quant int8 (weight-only, f32 activations) instead of the default %s: %s. Pass --quant to override.", quant, why)
+	switch {
+	case explicitQuant == "":
+		return "int8int8", 32, fmt.Sprintf("note: loading at --quant int8int8 with per-32 activation scales instead of the default %s: %s.", quant, why)
+	case quant == "int8int8":
+		return quant, 32, fmt.Sprintf("note: using per-32 activation scales for --quant int8int8: %s.", why)
 	}
-	return quant, fmt.Sprintf("warning: --quant %s quantizes activations to int8, and %s; expect degraded output (--quant int8 or f32 avoids it).", quant, why)
+	return quant, group, fmt.Sprintf("warning: --quant %s quantizes activations to int8, and %s; expect degraded output (--quant int8int8 runs it with per-32 activation scales).", quant, why)
 }
 
 // loadGuarded is decoder.Load under S3's load-time swap tripwire (docs/tasks/task-never-swap-2026-09.md).

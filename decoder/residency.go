@@ -416,7 +416,9 @@ func (m *Model) residentAdmission() string {
 	if _, declared := residentBackendFeatures[key]; !declared {
 		return ""
 	}
-	return residentGateReason(m.w.arch, key)
+	// Per-32 activations over int8 resident projections (W8A8) is the configuration that clears the
+	// activation-quantization hazard (task-actquant-pergroup's gate passed it); int4 does not yet.
+	return residentGateReasonAct(m.w.arch, key, m.actGroup == 32 && !m.residentProjsInt4())
 }
 
 // residentProjsInt4 reports whether the loaded projection weights are int4 (W4A8) — the gate for

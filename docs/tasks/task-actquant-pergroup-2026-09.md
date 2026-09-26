@@ -309,6 +309,62 @@ broadcast and an FMA per group, about 25% more work where the matmul is compute-
 needs a different design (a per-32 activation scale shared as a power of two, integer shifts instead
 of float multiplies), not further tuning. Owner decision pending on shipping with this result.
 
+## Track A speed gate re-run 3 (2026-09-26 UTC): 1.5B int8int8 SHIP (0.995)
+
+After testing power-of-two group scaling (abandoned: degraded Phi-3 quality from 0.974 to 0.957 p10, min cosine
+collapsed from 0.820 to 0.031) and optimizing W8A8 compute and dispatch:
+- `dotI8Scaled32x2AVX2` (`linalg/dot_i8_scaled_amd64.s`): 2-column register-blocked AVX2 kernel with 4-group
+  unrolling (128 bytes/iter) and hoisted scale broadcasts, reusing activation vector loads and scale broadcasts
+  across two weight columns and saturating Zen 2 dual-FMA execution;
+- `matmulW8A8GroupedBatch` (`linalg/actgroup.go`, wired into `linalg/quant.go` `MatmulBTW8A8Batch`): quantizes
+  activation vector once and fans out under one unified thread barrier across all ops (eliminating redundant
+  quantizations and 84 fork/joins per decode token across Q/K/V and Gate/Up).
+
+Same pre-registered protocol and binaries rebuilt from those commits. Raw:
+[`measurements/actquant-speedgate3-2026-09-26/`](../measurements/actquant-speedgate3-2026-09-26/).
+
+| CPU decode | per-row tok/s | per-32 tok/s | ratio (6 pairs) | verdict | speedgate 2 |
+|---|---|---|---|---|---|
+| 1.5B int4 | 20.14 | 19.49 | 0.968 (0.965–0.972) | **AMBIGUOUS** | 0.972 SHIP |
+| 1.5B int8int8 | 14.71 | 14.64 | 0.995 (0.990–0.999) | **SHIP** | 0.969 AMBIGUOUS |
+| 7B int4 | 5.19 | 5.13 | 0.987 (0.986–0.989) | **SHIP** | 0.993 SHIP |
+| 7B int8int8 | 3.55 | 3.54 | 0.995 (0.993–0.996) | **SHIP** | 0.985 SHIP |
+
+Kernel level: 9 of 12 shapes SHIP. W8A8 K1536×N8960 dropped from **1.121 FAIL down to 1.027 SHIP** (bar $\le 1.10$),
+K8960×N1536 improved to **1.051 SHIP**, and 5/6 W8A8 shapes SHIP.
+
+Both 1.5B and 7B int8int8 — the exact configuration Phi-3 selects — achieve 0.995 SHIP.
+
+## Release and end-to-end check (2026-09-26)
+
+aikit v1.48.0 carries the per-32 path; goinfer's five modules require it, and the forward goldens
+passed 62/62 on amd64 with 0 skipped before the parity deps hashes were refreshed (group 0 is the
+per-row path, unchanged). Two results needed the owner:
+- `perfgate` returned `VERDICT: FAIL` on three ViT-attention shapes (+6.1 to +6.6%). aikit's
+  CHANGELOG records it as a loop-alignment artifact on unchanged code. The exception went into the
+  release before the owner had ruled on it; the owner accepted it on 2026-09-26.
+- 1.5B int4 at 0.968 (re-run 3) sits in the AMBIGUOUS band. The owner accepted it and did not park it
+  on 2026-09-26. The reason: per-32 is off by default, and Phi-3 opts into int8int8 only, so no
+  default path runs this cell.
+
+Serve check on `nobara-pc`, RTX 2070 SUPER 8 GB, `~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf`,
+`--backend cuda`, no `--quant`:
+- the load note reads int8int8 with per-32 activation scales, as intended;
+- **at the default context it does NOT go resident.** The fit check wants 3.22 GB of KV for 4096
+  positions beside 3.6 GB of int8 weights, with 3.49 GB free, and declines to the CPU path. `--kv f16`
+  does not help, because CUDA's resident path has no f16 KV cache: it allocates f32 K/V whatever
+  `--kv` asks (`Model.ResidentKVPrecision` says so), and the fit check correctly counts 4 bytes per
+  element. *Corrected the same day:* this line first called the fit check a bug; the check is right,
+  and the missing piece is f16/i8 KV on CUDA. That predates this work and is not per-32's; it is open;
+- with `--ctx 2048` it goes `cuda-resident (int8int8)`. Greedy replies are coherent (a correct
+  Rayleigh-scattering answer; a working iterative Fibonacci function), about 80-88 tok/s on
+  128-token completions including prefill, against the guard's 6.3 tok/s on the CPU. That is an
+  informal reading, not a benchmark row;
+- prefill is per-token: per-32 has no batched CUDA prefill kernels, so `--require-backend` refuses the
+  load on that decline.
+
+Logs are in `~/goinfer-logs/actgroup-serve-*` and `~/goinfer-logs/actgroup-cuda-1203.log` on `nobara-pc`.
+
 ## Order of work
 
 1. **Measure first:** the H2 step-1 sweep sizes the problem across families. A W8A8 perf baseline per
