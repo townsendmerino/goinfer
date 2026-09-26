@@ -1,6 +1,6 @@
 # Per-group activation scales for W4A8 / W8A8 (2026-09)
 
-> **Status 2026-09-25: gate NOT PASSED (see "Gate result"): per-32 activation scales fix int8int8 on every family, but int4 on phi3-mini / qwen2.5-7b is limited by int4 WEIGHT error. Next step is an owner decision.** Owner decision 2026-09-25: this is the fix for
+> **Status 2026-09-25: gate NOT PASSED; owner chose both tracks (see Amendment). Track A (per-group kernels) proceeds; Track B (int4 weight quality) pre-registered.** Owner decision 2026-09-25: this is the fix for
 > `queue-engineering.md` H2. The guard shipped first (`dcbbaa91`); this lifts it.
 
 ## Why
@@ -163,6 +163,45 @@ the separate lever step 1 named, and it is not only double quantization: olmo3-7
 quantize bf16 safetensors to int4 directly and still sit at 0.77–0.86 on some prompts. The two int4
 regressions are on the degenerate filler prompt, where near-ties dominate, which fits rounding noise but
 has not been shown to be.
+
+## Amendment 2026-09-25 (owner decision after the gate): both tracks
+
+The gate above did not pass, so this is a dated change of plan with its mechanism, not a re-reading of
+the bar. **Mechanism:** the int8int8 criterion, which isolates activation quantization, was met on every
+family. The int4 shortfall is int4 *weight* error, which per-group activation scales were never meant to
+touch. So:
+
+- **Track A, per-group activation scales, proceeds** to the kernels (Order of work, steps 3–6). The
+  Phi-3 guard lifts only to `int8int8` with per-32 activations, which passed; `int4` stays guarded for
+  Phi-3 until Track B clears it.
+- **Track B, int4 weight quality**, with its own bar, pre-registered below before any run.
+
+### Track B — why int4 weights, and the first candidates
+
+goinfer's int4 quantizer (aikit `QuantizeGroupInt4Row`) sets `scale = max|w|/7` and clamps codes to
+[−7, 7]. It uses **15 of the 16 levels** the nibble holds (−8 is never produced) and does no scale
+search. llama.cpp's Q4_0 maps the signed extreme to −8 (all 16 levels); its k-quants search the scale.
+Both candidates keep goinfer's format exactly (decode `(nibble−8)·scale`, group 32), so neither touches
+a kernel:
+
+- **C1 full range:** scale = (signed element of largest magnitude) / −8. That element becomes code −8,
+  the rest round into [−8, 7]. The scale may be negative, which the decode handles as-is.
+- **C2 MSE scale:** per group, try scales max|w|/d for d over a small grid in [6.5, 8.5], both signs,
+  round and clamp to [−8, 7], and keep the lowest squared error.
+
+### Track B pre-registered gate (2026-09-25, before the run)
+
+Same sweep, same 12 families, both prompts, per-32 activations ON (the state Track A ships), `int4`
+only, one run per candidate. Metric: p10 logit cosine against f32. Every band is defined this time:
+
+- **PASS:** phi3-mini and qwen2.5-7b int4 p10 ≥ 0.90 on both prompts, AND no family's int4 p10 more
+  than 0.005 below its current per-32 int4 p10 (the Gate result table above).
+- **AMBIGUOUS → parked:** the lower of the two models' filler p10 in [0.80, 0.90), with no regression
+  beyond 0.005.
+- **FAIL:** below 0.80, or any family regressing beyond 0.005. A failed candidate is not shipped.
+
+If both candidates pass, the one with the higher minimum over (phi3-mini, qwen2.5-7b) × (filler, prose)
+wins. If neither passes, int4 does not serve these families; they default to `int8int8` once Track A lands.
 
 ## Order of work
 
