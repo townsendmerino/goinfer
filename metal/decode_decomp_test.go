@@ -121,10 +121,11 @@ func TestMetalDecodeDecomp(t *testing.T) {
 	}
 	cats := []cat{
 		{"attention", []*Pipeline{&r.pAttn, &r.pAttnFA, &r.pAttnFACombine}},
-		{"GEMV qkv (+bias)", []*Pipeline{&r.pSABias}},
-		{"GEMV o (+residual)", []*Pipeline{&r.pSAResid}},
-		{"GEMV gate/up", []*Pipeline{&r.pSA}},
-		{"GEMV down (+residual)", []*Pipeline{&r.pGemvResid}},
+		// each GEMV category no-ops both its shipped kernel and its R18 rows kernel (resident.gemvRows picks one)
+		{"GEMV qkv (+bias)", []*Pipeline{&r.pSABias, &r.pSABiasRows}},
+		{"GEMV o (+residual)", []*Pipeline{&r.pSAResid, &r.pSAResidRows}},
+		{"GEMV gate/up", []*Pipeline{&r.pSA, &r.pSARows}},
+		{"GEMV down (+residual)", []*Pipeline{&r.pGemvResid, &r.pGemvResidStaged}},
 		{"LM head (int8)", []*Pipeline{&r.pGemvW8}},
 		{"norm+quant (rms)", []*Pipeline{&r.pRms}},
 		{"rope, kv store, act-quant, ctx-quant", []*Pipeline{&r.pRope2, &r.pKv, &r.pSw, &r.pQv}},

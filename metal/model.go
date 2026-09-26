@@ -201,11 +201,14 @@ type resident struct {
 	// one function both the dispatch grid and setPos's uAttnFANSplit use — and both for the same key count
 	// (the grid's comes from planNKeys) — so the two cannot disagree.
 	attnFASplitOverride int
-	// r18Rows (test hook, R18 — docs/tasks/red-october.md): rows per simdgroup for the plain dense decode layer's
-	// four int4 GEMVs, so a test can grade candidate kernels in sequence. When a field is > 0 that GEMV dispatches
-	// rows·32/R threads, and down goes through DispatchTG (256 threads, K bytes of staged activations); the test swaps
-	// in the matching pipelines and flushes the executor (stopExec). ZERO in production: every grid is unchanged.
-	r18Rows struct{ qkv, o, gu, down int }
+	// gemvRows (R18, docs/measurements/metal-decode-gemv-r18-2026-09-26.md): rows per simdgroup for the dense decode
+	// layer's four int4 GEMVs — qkv, o, fused gate/up and down — set by buildResident through gemvRowsFor. When a field
+	// is > 0 that GEMV dispatches its rows kernel (pSABiasRows / pSAResidRows / pSARows / pGemvResidStaged, grid
+	// rows·32/R, tg 256; down stages its activations in K bytes of threadgroup memory); 0 keeps the shipped kernel.
+	// The rows kernels are bit-identical to the shipped ones. Tests zero it to time or compare against the shipped
+	// kernels (then flush the executor, stopExec).
+	gemvRows                                             struct{ qkv, o, gu, down int }
+	pSABiasRows, pSAResidRows, pSARows, pGemvResidStaged Pipeline
 	// attnFABlkSplit > 0: pAttnFA is the R17 block kernel (attention_fa_blk_g<G>), which runs at this fixed split
 	// count instead of attention_fa's core-count rule — see attnFABlkSplit's const and the selection in
 	// buildResident.
@@ -1224,6 +1227,32 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	if tg, lim := maxThreadgroupStageBytes(H, maxNHhd, moeInter, g4Inter, dnValueDim), d.MaxThreadgroupMemoryLength(); tg > lim {
 		return nil, fmt.Errorf("metal: threadgroup staging needs %d B (2×K) > device tile-memory max %d B — declining to CPU (audit M-11)", tg, lim)
+	}
+	// R18: the dense decode GEMVs at R rows per simdgroup — 2 for qkv and o, 4 for gate/up and down, the confirmed
+	// configuration (docs/measurements/metal-decode-gemv-r18-2026-09-26.md). Each is taken only where every layer's row
+	// count fills whole threadgroups (gemvRowsFor), and down only where its K = I bytes of staged activations fit the
+	// threadgroup memory; anything else keeps the shipped kernel.
+	{
+		qkvR := 2
+		for _, L := range r.layers {
+			if L.geom != nil { // a DeltaNet layer has no attention geometry (and no qkv GEMV)
+				qkvR = min(qkvR, gemvRowsFor(nH*L.geom.hd+2*L.geom.kvDim, 2))
+			}
+		}
+		r.gemvRows.qkv, r.gemvRows.o, r.gemvRows.gu = qkvR, gemvRowsFor(H, 2), gemvRowsFor(2*I, 4)
+		if I <= d.MaxThreadgroupMemoryLength() && I%4 == 0 {
+			r.gemvRows.down = gemvRowsFor(H, 4)
+		}
+		rowsPipe := func(base string, R int) Pipeline {
+			if R == 0 {
+				return Pipeline{}
+			}
+			return pipe(fmt.Sprintf("%s%d", base, R))
+		}
+		r.pSABiasRows = rowsPipe("gemv_w4a8_sa_bias_rows", r.gemvRows.qkv)
+		r.pSAResidRows = rowsPipe("gemv_w4a8_sa_resid_rows", r.gemvRows.o)
+		r.pSARows = rowsPipe("gemv_w4a8_sa_rows", r.gemvRows.gu)
+		r.pGemvResidStaged = rowsPipe("gemv_w4a8_resid_staged", r.gemvRows.down)
 	}
 	r.x = d.NewBufferLen(H)
 	r.aq, r.aSc = byteBuf(d, H), d.NewBufferLen(1)
@@ -2283,7 +2312,8 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 		if f16Lane {
 			e.DispatchTG(r.pSAf16, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mxF16, r.gu, r.uH) // fused gate|up
 		} else {
-			e.DispatchTG(r.pSA, r18Grid(2*r.I, r.r18Rows.gu), 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
+			p, n := saRowsPick(r.pSA, r.pSARows, 2*r.I, r.gemvRows.gu)
+			e.DispatchTG(p, n, 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
 		}
 		if r.loraLayers != nil {
 			// G3: added into r.gu BEFORE the activation (r.pSw) below — matching applyLoRA's CPU
@@ -2309,8 +2339,8 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 			}
 			e.Dispatch(r.pRes, r.H, 256, x, r.dO)
 		} else {
-			if R := r.r18Rows.down; R > 0 { // test hook (R18), zero in production
-				e.DispatchTG(r.pGemvResid, r.H*32/R, 256, r.I, L.dW, L.dS, r.dq, r.dSc, x, r.uI)
+			if R := r.gemvRows.down; R > 0 { // R18: staged activations, R rows per simdgroup
+				e.DispatchTG(r.pGemvResidStaged, r.H*32/R, 256, r.I, L.dW, L.dS, r.dq, r.dSc, x, r.uI) // down + residual
 			} else {
 				e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, x, r.uI) // down + residual
 			}
@@ -2321,13 +2351,26 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	}
 }
 
-// r18Grid is an SA-family GEMV's grid for `rows` output rows at R rows per simdgroup: rows·32 threads when R is 0 (the
-// shipped one row per simdgroup), rows·32/R otherwise. See resident.r18Rows.
-func r18Grid(rows, R int) int {
-	if R > 0 {
-		return rows * 32 / R
+// gemvRowsFor is the rows-per-simdgroup count for an R18 GEMV of `rows` outputs: the largest of want, want/2, ..., 2
+// whose threadgroups of 8·R rows (tg 256 = 8 simdgroups) tile rows exactly, or 0 (keep the shipped kernel). The rows
+// kernels index rows from full threadgroups — a partial last one under dispatchThreads reports a smaller
+// threads_per_threadgroup — so an inexact tiling must not reach them.
+func gemvRowsFor(rows, want int) int {
+	for R := want; R >= 2; R /= 2 {
+		if rows%(8*R) == 0 {
+			return R
+		}
 	}
-	return rows * 32
+	return 0
+}
+
+// saRowsPick returns the SA-family pipeline and grid for `rows` outputs: the R-rows kernel at rows·32/R threads when R
+// is set (resident.gemvRows), else the shipped one-row-per-simdgroup kernel at rows·32.
+func saRowsPick(shipped, rowsKernel Pipeline, rows, R int) (Pipeline, int) {
+	if R > 0 {
+		return rowsKernel, rows * 32 / R
+	}
+	return shipped, rows * 32
 }
 
 // canUseF16Lane reports whether layer l's attention block and FFN gate/up can use the R1 W4F16
@@ -2509,7 +2552,8 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 	} else if f16Lane {
 		e.DispatchTG(r.pSAf16Bias, qkvRows*32, 256, r.H*2, L.qkvW, L.qkvS, r.axF16, L.qkvBias, r.qkv, r.uH)
 	} else {
-		e.DispatchTG(r.pSABias, r18Grid(qkvRows, r.r18Rows.qkv), 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
+		p, n := saRowsPick(r.pSABias, r.pSABiasRows, qkvRows, r.gemvRows.qkv)
+		e.DispatchTG(p, n, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		if r.loraLayers != nil {
 			// G3: compute-time LoRA — added on top of the base q/k/v projection, into the SAME
 			// r.qkv slots it just wrote, before anything downstream (qk_norm/RoPE) reads them.
@@ -2617,7 +2661,8 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 	} else if f16Lane {
 		e.DispatchTG(r.pSAf16Resid, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cxF16, x, g.uNHhd) // o-proj + residual
 	} else {
-		e.DispatchTG(r.pSAResid, r18Grid(r.H, r.r18Rows.o), 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, x, g.uNHhd) // o-proj + residual
+		p, n := saRowsPick(r.pSAResid, r.pSAResidRows, r.H, r.gemvRows.o)
+		e.DispatchTG(p, n, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, x, g.uNHhd) // o-proj + residual
 		if r.loraLayers != nil {
 			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, x)
 		}

@@ -17,24 +17,27 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestR18InSequence is R18's grading instrument (docs/tasks/red-october.md R18). On a real checkpoint it puts each
-// candidate into the production decode token through resident.r18Rows and the four GEMV pipelines, and measures:
+// TestR18InSequence is R18's grading instrument (docs/tasks/red-october.md R18; graded 2026-09-26, then wired). On a real
+// checkpoint it times the production decode token against the SHIPPED kernels (resident.gemvRows zeroed, so every GEMV
+// takes its one-row-per-simdgroup kernel), plus any prototype arms, through resident.gemvRows and the four rows-kernel
+// pipelines, and measures:
 //
 //  1. precondition 1, bit-identity: a teacher-forced sequence of decode tokens after a prefill to each depth, through
 //     the production executor (ForwardEmbPipe), every logit compared bit for bit with the shipped kernels';
 //  2. the registered metric: in-sequence int4-GEMV work per token — TestMetalDecodeDecomp's no-op method, per
 //     category (qkv, o, gate/up, down), full − full-with-that-category-no-op'd at the arm's own grid, summed —
-//     current ÷ candidate per paired rep, median over reps. Each category's difference is the median over matched
+//     shipped ÷ arm per paired rep, median over reps. Each category's difference is the median over matched
 //     step pairs (a full token, then the no-op'd one, adjacent), and arm order rotates rep by rep;
 //  3. precondition 2's full-token times, and precondition 3's full token after 2 s idle.
 //
-// A candidate is "<F><qkvR><oR><guR><downR>": F is i (step 0, integer math) or f (step 1, shift-free f32); each digit is
-// rows per simdgroup for that GEMV, and downR 0 keeps the shipped coal down projection (else gemv_w4a8_resid_st<R>).
-// "i1110" is the harness control: the candidate template at the shipped grid, which must time like the shipped arm.
+// A prototype arm (GOINFER_METAL_R18_CANDS) is "<F><qkvR><oR><guR><downR>": F is i (step 0, integer math) or f (step 1,
+// shift-free f32); each digit is rows per simdgroup for that GEMV, and downR 0 keeps the shipped coal down projection
+// (else gemv_w4a8_resid_st<R>). "i1110" is the harness control: the prototype template at the shipped grid, which must
+// time like the shipped arm. The graded candidate was "i2244", which is what production now runs.
 //
 //	GOINFER_METAL_R18_SEQ=1 go test -tags goinfer_testhooks -count=1 -timeout 60m -v -run '^TestR18InSequence$' ./metal/
 //
-// Env: GOINFER_METAL_R18_MODEL (default the 1.5B q4_k_m), _DEPTHS (default 128), _CANDS (default i1110,i4444,f4444),
+// Env: GOINFER_METAL_R18_MODEL (default the 1.5B q4_k_m), _DEPTHS (default 128), _CANDS (prototype arms, default none),
 // _REPS (default 5), _TOKENS (decode steps per measurement, default 20), _IDTOKENS (identity sequence length, default
 // 16), _IDLE (after-idle samples per arm, default 3; 0 skips).
 func TestR18InSequence(t *testing.T) {
@@ -72,7 +75,7 @@ func TestR18InSequence(t *testing.T) {
 	steps := ints("GOINFER_METAL_R18_TOKENS", []int{20})[0]
 	idTokens := ints("GOINFER_METAL_R18_IDTOKENS", []int{16})[0]
 	idle := ints("GOINFER_METAL_R18_IDLE", []int{3})[0]
-	candSpecs := strings.Split("i1110,i4444,f4444", ",")
+	var candSpecs []string
 	if v := os.Getenv("GOINFER_METAL_R18_CANDS"); v != "" {
 		candSpecs = strings.Split(v, ",")
 	}
@@ -150,23 +153,26 @@ func TestR18InSequence(t *testing.T) {
 		}
 	}()
 
+	// An arm is what runs at the four rows-kernel slots plus resident.gemvRows. The baseline, "shipped", zeroes
+	// gemvRows, so every GEMV takes its shipped kernel; "production" is what buildResident selected.
 	type arm struct {
-		name                 string
-		qkv, o, gu, down     Pipeline
-		rQkv, rO, rGu, rDown int
+		name             string
+		qkv, o, gu, down Pipeline
+		rows             struct{ qkv, o, gu, down int }
 	}
-	current := arm{name: "current", qkv: r.pSABias, o: r.pSAResid, gu: r.pSA, down: r.pGemvResid}
-	arms := []arm{current}
+	prod := arm{name: "production", qkv: r.pSABiasRows, o: r.pSAResidRows, gu: r.pSARows, down: r.pGemvResidStaged, rows: r.gemvRows}
+	shippedPipes := [4]Pipeline{r.pSABias, r.pSAResid, r.pSA, r.pGemvResid}
+	arms := []arm{{name: "shipped"}, prod}
 	for _, c := range candSpecs {
 		d := func(i int) int { return int(c[i] - '0') }
-		a := arm{name: c, rQkv: d(1), rO: d(2), rGu: d(3), rDown: d(4),
-			qkv: pipes["r18_sa_bias_"+c[0:1]+c[1:2]], o: pipes["r18_sa_resid_"+c[0:1]+c[2:3]], gu: pipes["r18_sa_"+c[0:1]+c[3:4]],
-			down: r.pGemvResid}
-		if a.rDown > 0 {
+		a := arm{name: c, qkv: pipes["r18_sa_bias_"+c[0:1]+c[1:2]], o: pipes["r18_sa_resid_"+c[0:1]+c[2:3]],
+			gu: pipes["r18_sa_"+c[0:1]+c[3:4]]}
+		a.rows.qkv, a.rows.o, a.rows.gu, a.rows.down = d(1), d(2), d(3), d(4)
+		if a.rows.down > 0 {
 			a.down = pipes["gemv_w4a8_resid_st"+c[4:5]]
 		}
 		// TG 256 = 8 simdgroups x R rows: every GEMV's row count must divide (the prototypes carry no bounds guard)
-		for _, chk := range []struct{ rows, R int }{{qkvRows, a.rQkv}, {r.H, a.rO}, {2 * r.I, a.rGu}, {r.H, a.rDown}} {
+		for _, chk := range []struct{ rows, R int }{{qkvRows, a.rows.qkv}, {r.H, a.rows.o}, {2 * r.I, a.rows.gu}, {r.H, a.rows.down}} {
 			if chk.R > 0 && chk.rows%(8*chk.R) != 0 {
 				t.Fatalf("candidate %s: %d rows do not divide into threadgroups of 8x%d", c, chk.rows, chk.R)
 			}
@@ -176,29 +182,26 @@ func TestR18InSequence(t *testing.T) {
 	// category order: qkv, o, gate/up, down
 	catNames := []string{"qkv", "o", "gate/up", "down"}
 	set := func(a arm, noopCat int) (restore func()) {
-		r.pSABias, r.pSAResid, r.pSA, r.pGemvResid = a.qkv, a.o, a.gu, a.down
-		r.r18Rows.qkv, r.r18Rows.o, r.r18Rows.gu, r.r18Rows.down = a.rQkv, a.rO, a.rGu, a.rDown
-		switch noopCat {
-		case 0:
-			r.pSABias = noop
-		case 1:
-			r.pSAResid = noop
-		case 2:
-			r.pSA = noop
-		case 3:
-			r.pGemvResid = noop
-		case 4:
-			r.pSABias, r.pSAResid, r.pSA, r.pGemvResid = noop, noop, noop, noop
+		r.pSABiasRows, r.pSAResidRows, r.pSARows, r.pGemvResidStaged = a.qkv, a.o, a.gu, a.down
+		r.gemvRows = a.rows
+		// a no-op'd category no-ops both of its kernels, whichever the arm dispatches
+		slots := [4][2]*Pipeline{{&r.pSABias, &r.pSABiasRows}, {&r.pSAResid, &r.pSAResidRows}, {&r.pSA, &r.pSARows},
+			{&r.pGemvResid, &r.pGemvResidStaged}}
+		for c := range slots {
+			if noopCat == c || noopCat == 4 {
+				*slots[c][0], *slots[c][1] = noop, noop
+			}
 		}
 		r.stopExec() // drop any command buffer pre-encoded under the previous arm (see runR2GateCell)
 		return func() {
-			r.pSABias, r.pSAResid, r.pSA, r.pGemvResid = current.qkv, current.o, current.gu, current.down
-			r.r18Rows.qkv, r.r18Rows.o, r.r18Rows.gu, r.r18Rows.down = 0, 0, 0, 0
+			r.pSABias, r.pSAResid, r.pSA, r.pGemvResid = shippedPipes[0], shippedPipes[1], shippedPipes[2], shippedPipes[3]
+			r.pSABiasRows, r.pSAResidRows, r.pSARows, r.pGemvResidStaged = prod.qkv, prod.o, prod.gu, prod.down
+			r.gemvRows = prod.rows
 			r.stopExec()
 		}
 	}
-	hb("loaded %s: H=%d I=%d nL=%d nH=%d hd=%d kvDim=%d V=%d, ctx %d, attention_fa %v; qkv rows %d; arms %v",
-		filepath.Base(path), r.H, r.I, r.nL, r.nH, g0.hd, g0.kvDim, r.V, r.ctxCap, r.decodeAttnFA, qkvRows, candSpecs)
+	hb("loaded %s: H=%d I=%d nL=%d nH=%d hd=%d kvDim=%d V=%d, ctx %d, attention_fa %v; qkv rows %d; production gemvRows %+v; prototype arms %v",
+		filepath.Base(path), r.H, r.I, r.nL, r.nH, g0.hd, g0.kvDim, r.V, r.ctxCap, r.decodeAttnFA, qkvRows, r.gemvRows, candSpecs)
 
 	vocab := r.V
 	for _, D := range depths {
@@ -248,7 +251,7 @@ func TestR18InSequence(t *testing.T) {
 				}
 				worst = max(worst, diff)
 			}
-			hb("depth %d identity: %s vs current over %d teacher-forced positions (%d..%d, executor): %d positions differ, worst %d of %d logits",
+			hb("depth %d identity: %s vs shipped over %d teacher-forced positions (%d..%d, executor): %d positions differ, worst %d of %d logits",
 				D, a.name, len(seq), D, D+len(seq)-1, badPos, worst, vocab)
 			if badPos > 0 {
 				t.Errorf("depth %d: candidate %s is not bit-identical (%d of %d positions differ) — not an R18 candidate", D, a.name, badPos, len(seq))
@@ -344,7 +347,7 @@ func TestR18InSequence(t *testing.T) {
 			line := fmt.Sprintf("  %-8s work %.3f ms [%s ] all-4-no-op'd %.3f; full token %.3f ms", a.name, median(rs[ai].work), cats,
 				median(rs[ai].all4), median(rs[ai].full))
 			if ai > 0 {
-				line += fmt.Sprintf(" (%+.3f); METRIC current/candidate = %.3fx (per-rep sorted %v)", median(rs[ai].full)-median(rs[0].full),
+				line += fmt.Sprintf(" (%+.3f); METRIC shipped/arm = %.3fx (per-rep sorted %v)", median(rs[ai].full)-median(rs[0].full),
 					ratios[len(ratios)/2], fmtRatios(ratios))
 			}
 			if idle > 0 {

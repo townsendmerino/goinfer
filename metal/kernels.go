@@ -448,6 +448,105 @@ kernel void gemv_w4a8_sa_resid(device const uint4* wq[[buffer(0)]], device const
     SA_BODY
     if (lane==0) out[row] += acc*asc[0];
 }
+
+// R18 (docs/measurements/metal-decode-gemv-r18-2026-09-26.md): the SA family at R rows per simdgroup. Each lane reads its
+// group's 32 staged activations ONCE into registers and reuses them for R rows. Per row, the lane-to-group order, the
+// UNP8V integer sum and the float(gi)*scale accumulation are SA_BODY's, so the output is bit-identical to
+// gemv_w4a8_sa / _bias / _resid (the integer sums are exact; only their order of accumulation could differ, and it
+// does not). Grid rows*32/R, tg 256. row0 assumes FULL threadgroups (a partial last one reports a smaller
+// threads_per_threadgroup), so the host takes this path only when rows % (8R) == 0 (gemvRowsFor).
+#define SA_ROWS_UNROLL _Pragma("clang loop unroll(full)")
+template <uint R>
+inline void sa_rows_acc(device const uint4* wq, device const half* sct, device const char* aq, uint K,
+    threadgroup short* As, uint tgid, uint tid, uint tgs, uint sgid, uint lane, thread float* acc, thread uint& row0) {
+    for (uint i=tid;i<K;i+=tgs) As[i]=short(aq[i]);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint G = K>>5u;
+    row0 = (tgid*(tgs>>5u) + sgid)*R;
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
+    for (uint g=lane; g<G; g+=32u) {
+        threadgroup const short4* a4s = reinterpret_cast<threadgroup const short4*>(As + g*32u);
+        short4 a[8];
+        SA_ROWS_UNROLL for (uint j=0;j<8u;j++) a[j]=a4s[j];
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+            uint4 w = wq[(row0+r)*G + g];
+            int gi = UNP8V(w.x,a) + UNP8V(w.y,a+2) + UNP8V(w.z,a+4) + UNP8V(w.w,a+6);
+            acc[r] += float(gi) * float(sct[(row0+r)*G + g]);
+        }
+    }
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r] = simd_sum(acc[r]);
+}
+template <uint R>
+kernel void gemv_w4a8_sa_rows(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup short* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float acc[R]; uint row0;
+    sa_rows_acc<R>(wq, sct, aq, K, As, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = acc[r]*asc[0]; }
+}
+template <uint R>
+kernel void gemv_w4a8_sa_bias_rows(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], threadgroup short* As [[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float acc[R]; uint row0;
+    sa_rows_acc<R>(wq, sct, aq, K, As, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = acc[r]*asc[0] + bias[row0+r]; }
+}
+template <uint R>
+kernel void gemv_w4a8_sa_resid_rows(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup short* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float acc[R]; uint row0;
+    sa_rows_acc<R>(wq, sct, aq, K, As, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] += acc[r]*asc[0]; }
+}
+template [[host_name("gemv_w4a8_sa_rows2")]] kernel decltype(gemv_w4a8_sa_rows<2>) gemv_w4a8_sa_rows<2>;
+template [[host_name("gemv_w4a8_sa_rows4")]] kernel decltype(gemv_w4a8_sa_rows<4>) gemv_w4a8_sa_rows<4>;
+template [[host_name("gemv_w4a8_sa_bias_rows2")]] kernel decltype(gemv_w4a8_sa_bias_rows<2>) gemv_w4a8_sa_bias_rows<2>;
+template [[host_name("gemv_w4a8_sa_bias_rows4")]] kernel decltype(gemv_w4a8_sa_bias_rows<4>) gemv_w4a8_sa_bias_rows<4>;
+template [[host_name("gemv_w4a8_sa_resid_rows2")]] kernel decltype(gemv_w4a8_sa_resid_rows<2>) gemv_w4a8_sa_resid_rows<2>;
+template [[host_name("gemv_w4a8_sa_resid_rows4")]] kernel decltype(gemv_w4a8_sa_resid_rows<4>) gemv_w4a8_sa_resid_rows<4>;
+
+// R18: gemv_w4a8_resid (the coal down projection) with its int8 activations staged ONCE per threadgroup (K bytes of
+// threadgroup memory; the host checks it fits) and R rows per simdgroup. Lane l still owns words l, l+32, ... of each
+// row, in order, with W4A8_BODY's per-word integer sum and float(gi)*scale accumulation -> bit-identical to
+// gemv_w4a8_resid. Grid rows*32/R, tg 256, rows % (8R) == 0 (gemvRowsFor), as for gemv_w4a8_sa_rows.
+template <uint R>
+kernel void gemv_w4a8_resid_staged(device const uint* bq[[buffer(0)]], device const half* bsc[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup char* As [[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    device const uint* aq4 = reinterpret_cast<device const uint*>(aq);
+    threadgroup uint* As4 = reinterpret_cast<threadgroup uint*>(As);
+    for (uint i=tid;i<(K>>2u);i+=tgs) As4[i]=aq4[i];
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint wpr = K/8u, spr = K/32u;
+    uint row0 = (tgid*(tgs>>5u) + sgid)*R;
+    float acc[R];
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
+    threadgroup const char4* A = reinterpret_cast<threadgroup const char4*>(As);
+    for (uint wi = lane; wi < wpr; wi += 32u) {
+        char4 a0 = A[wi*2u], a1 = A[wi*2u+1u];
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+            uint x = bq[(row0+r)*wpr + wi];
+            int gi = (int((x)&0xF)-8)*int(a0.x) + (int((x>>4)&0xF)-8)*int(a0.y)
+                   + (int((x>>8)&0xF)-8)*int(a0.z) + (int((x>>12)&0xF)-8)*int(a0.w)
+                   + (int((x>>16)&0xF)-8)*int(a1.x) + (int((x>>20)&0xF)-8)*int(a1.y)
+                   + (int((x>>24)&0xF)-8)*int(a1.z) + (int((x>>28)&0xF)-8)*int(a1.w);
+            acc[r] += float(gi) * float(bsc[(row0+r)*spr + (wi>>2u)]);
+        }
+    }
+    SA_ROWS_UNROLL for (uint r=0;r<R;r++) { float s = simd_sum(acc[r]); if (lane==0) out[row0+r] += s*asc[0]; }
+}
+template [[host_name("gemv_w4a8_resid_staged2")]] kernel decltype(gemv_w4a8_resid_staged<2>) gemv_w4a8_resid_staged<2>;
+template [[host_name("gemv_w4a8_resid_staged4")]] kernel decltype(gemv_w4a8_resid_staged<4>) gemv_w4a8_resid_staged<4>;
 // gemv_w4a8_sa_bias_resid: FeatOutBias's kernel — the o-proj GEMV needs BOTH an additive
 // per-row bias AND direct residual accumulation (gemv_w4a8_sa_resid has no bias epilogue,
 // gemv_w4a8_sa_bias overwrites instead of accumulating; neither alone is o-proj's shape for a
