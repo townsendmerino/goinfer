@@ -380,3 +380,7 @@ func SetSSMStopLayerForTest(n int) (restore func()) {
 	ssmStopLayer = n
 	return func() { ssmStopLayer = prev }
 }
+
+// SetGGUFRowFilterForTest installs f as the GGUF loader's per-row filter over layer-matmul weights
+// (ggufRowFilter); nil removes it. Not safe to change while a load is in flight.
+func SetGGUFRowFilterForTest(f func(name string, row []float32)) { ggufRowFilter = f }

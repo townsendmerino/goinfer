@@ -1524,6 +1524,23 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 	return m.withBackendNames(opts.Backend, beErr).bindKnobs(opts.Knobs.values()).withResidency(), nil
 }
 
+// ggufRowFilter, when non-nil, rewrites each dequantized layer-matmul row (streamMat,
+// streamMatBatched and Phi-3's fusedSplit) before it is quantized. A test seam only: set by SetGGUFRowFilterForTest under
+// goinfer_testhooks, nil in every production build. docs/tasks/task-int4-weight-quality-2026-09.md
+// Phase 0 uses it to fake-quantize rows by their source GGUF type.
+var ggufRowFilter func(name string, row []float32)
+
+// ggufRowFiltered reads one row through the dequantizer and applies ggufRowFilter.
+func ggufRowFiltered(name string, into func(start int, dst []float32) error, start int, dst []float32) error {
+	if err := into(start, dst); err != nil {
+		return err
+	}
+	if f := ggufRowFilter; f != nil {
+		f(name, dst)
+	}
+	return nil
+}
+
 // buildWeightsFromGGUF dequantizes the GGUF tensors into the weight bundle.
 // When quant is set, each matmul tensor is re-quantized (per-row int8 or
 // group-wise int4) right after it is dequantized (and un-permuted) and its f32
@@ -1562,7 +1579,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if len(dims) != 2 || dims[0] != in || dims[1] != out {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 		}
-		rowInto := func(r int, dst []float32) error { return into(rowSrc(r), dst) }
+		rowInto := func(r int, dst []float32) error { return ggufRowFiltered(name, into, rowSrc(r), dst) }
 		// M-07 (audit-metal-2026-09-12.md): streamMat covers everything mat/permMat don't route
 		// to streamMatBatched — o_proj, down_proj, router, and any other non-batched, non-embedding
 		// layer tensor — so skipRow4 applies here exactly as it does in quantizeWMSkipRow4's
@@ -1585,7 +1602,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 		}
 		return streamQuantizedBatchedProj(out, in, mode, needCanonical, skipRow4, func(r int, dst []float32) error {
-			return into(rowSrc(r), dst)
+			return ggufRowFiltered(name, into, rowSrc(r), dst)
 		})
 	}
 	// mat loads a tensor as a [out, in] linalg.WeightMat, shape-checked, quantized when
@@ -1730,7 +1747,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if len(dims) != 2 || dims[0] != in || dims[1] != outTotal {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf-phi3): %q dims %v, want [in=%d, out=%d]", name, dims, in, outTotal)
 		}
-		rowInto := func(r int, dst []float32) error { return into((rowStart+r)*in, dst) }
+		rowInto := func(r int, dst []float32) error { return ggufRowFiltered(name, into, (rowStart+r)*in, dst) }
 		// M-07 (audit-metal-2026-09-12.md): Phi-3's fused qkv/gate_up split, same skip-row4-only
 		// scope as streamMat — not routed through the isBatchedProjTensor naming convention (this
 		// is GGUF's own fused-tensor special case), so no needCanonical/repacked-only branch here.
