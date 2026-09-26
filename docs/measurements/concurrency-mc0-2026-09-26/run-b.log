@@ -1,0 +1,24 @@
+14:55:37 idle: load1=1.75
+14:55:37 == MC0b start; commit 36a8db24 + uncommitted LRU fix; serve /Users/francistownsend-merino/goinfer-bench/mc0-2026-09-26/serve-metal-lrufix
+[w7-plain] goinfer_cpu clients=1 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 366 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 354 MB)
+[w7-plain] goinfer_cpu clients=1: wall=17.818s aggregate=43.1 tok/s; prefill_reused per client per turn [[0, 170, 324, 479, 631, 779]]
+[w7-plain] goinfer_cpu clients=2 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 238 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 503 MB)
+[w7-plain] goinfer_cpu clients=2: wall=35.486s aggregate=43.28 tok/s; prefill_reused per client per turn [[0, 171, 325, 480, 632, 780], [0, 171, 325, 480, 632, 780]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc0-2026-09-26/mc0b.json
+15:00:36 == cpu exit=0
+[w7-plain] resuming: 2 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc0-2026-09-26/mc0b.json
+[w7-plain] goinfer clients=1 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 497 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 503 MB)
+[w7-plain] goinfer clients=1: wall=11.718s aggregate=65.54 tok/s; prefill_reused per client per turn [[0, 170, 324, 479, 631, 779]]
+[w7-plain] goinfer clients=2 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 488 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 682 MB)
+[w7-plain] goinfer clients=2: wall=26.613s aggregate=57.72 tok/s; prefill_reused per client per turn [[0, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc0-2026-09-26/mc0b.json
+15:05:19 == metal exit=0
+15:05:19 == DONE

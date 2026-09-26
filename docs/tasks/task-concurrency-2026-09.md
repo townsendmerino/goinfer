@@ -1,7 +1,8 @@
 # Task: concurrency — stop the resident-KV thrash, then earn batched multi-request decode (MC0–MC5) — 2026-09
 
-> **Status: FILED 2026-09-23; owner decisions taken 2026-09-26 (1: yes, 2: fold); nothing built.** MC0
-> (measurement only) and MC1 (multi-slot resident KV) are unblocked. MC2 is the kill-or-earn
+> **Status: FILED 2026-09-23; owner decisions taken 2026-09-26 (1: yes, 2: fold). MC0 DONE 2026-09-26: the
+> thrash is confirmed on Metal, and a CPU session-LRU bug it uncovered is fixed.** MC1 (multi-slot resident KV) is
+> next. MC2 is the kill-or-earn
 > measurement `roadmap.md` requires before any batched decode work, and now carries J8's cell. MC3
 > is in the niche (decision 1) but must not start until MC2 earns. MC4 and MC5 are parked with
 > triggers. The speed bars were loosened 2026-09-26, before any measurement, per the owner's
@@ -20,7 +21,8 @@
 >    the next turn re-prefills its whole history — on Metal, where prefill is still ~2.5× behind
 >    Ollama at K=512 (red-october R4). The plateau at 2 and 4 clients fits: once turns alternate,
 >    every turn misses regardless of N. The CPU path does not have this problem —
->    `sessionLRU` keeps `-kv-sessions` (default 4) conversations warm — but `Session.Generate`'s
+>    `sessionLRU` keeps `-kv-sessions` (default 4) conversations warm (**wrong when filed; see MC0: an LRU bug from
+>    `e1c867f6` made it thrash too, fixed 2026-09-26**) — but `Session.Generate`'s
 >    own comment in `decoder/session.go` records that the resident/GPU path takes
 >    `prefillFrom == 0` and relies on the resident's single KV for reuse. **This is read from the
 >    code, not measured; MC0 measures it.**
@@ -72,6 +74,15 @@ J8 is not built as a feature.
 ---
 
 ## MC0 — confirm the diagnosis (measurement only)
+
+**Result, 2026-09-26: CONFIRMED** ([`concurrency-mc0-2026-09-26.md`](../measurements/concurrency-mc0-2026-09-26.md)).
+- Metal at 2 clients reuses 7 tokens per turn (the template lead) against the full history at 1 client, and runs at
+  0.88× the 1-client aggregate (65.5 → 57.7 tok/s).
+- The CPU control thrashed as well, at 0.69×. The cause was a session-LRU bug from `e1c867f6`: with one resident
+  session, the shared preamble counted as reuse.
+- MC0 fixed it (`pickSession`). With the fix the CPU control holds 1.00× with full reuse, and 2-client CPU serving is
+  1.58× faster.
+- MC1's prize on this short workload is ~12% at 2 clients; it grows with history length.
 
 **Why first.** MC1 is only worth building if the thrash is real. The API already reports the
 evidence: `usage.prefill_reused_tokens` on every response.

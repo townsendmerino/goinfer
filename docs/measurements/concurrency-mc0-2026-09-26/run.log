@@ -1,0 +1,28 @@
+14:12:48 MC0 armed; waiting for the R18 e2e to finish (/Users/francistownsend-merino/goinfer-bench/r18-e2e-2026-09-26/run.log)
+14:40:57 e2e finished: 14:40:29 NOT IDLE after 1800s (load1=2.55) — stopping
+14:40:57 waiting for idle: load1=2.44 (0s)
+14:41:58 waiting for idle: load1=2.50 (60s)
+14:42:28 idle: load1=1.98
+14:42:28 == MC0 start; commit 36a8db24; serve /Users/francistownsend-merino/goinfer-bench/r18-e2e-2026-09-26/serve-metal-622b1f9b
+[w7-plain] goinfer clients=1 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 114 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 638 MB)
+[w7-plain] goinfer clients=1: wall=11.881s aggregate=64.64 tok/s; prefill_reused per client per turn [[0, 170, 324, 479, 631, 779]]
+[w7-plain] goinfer clients=2 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 613 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 613 MB)
+[w7-plain] goinfer clients=2: wall=26.795s aggregate=57.32 tok/s; prefill_reused per client per turn [[7, 7, 7, 7, 7, 7], [0, 7, 7, 7, 7, 7]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc0-2026-09-26/mc0.json
+14:47:12 == metal exit=0
+[w7-plain] resuming: 2 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc0-2026-09-26/mc0.json
+[w7-plain] goinfer_cpu clients=1 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 273 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 335 MB)
+[w7-plain] goinfer_cpu clients=1: wall=19.243s aggregate=39.91 tok/s; prefill_reused per client per turn [[0, 170, 324, 479, 631, 779]]
+[w7-plain] goinfer_cpu clients=2 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 380 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 542 MB)
+[w7-plain] goinfer_cpu clients=2: wall=56.021s aggregate=27.42 tok/s; prefill_reused per client per turn [[0, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc0-2026-09-26/mc0.json
+14:52:31 == cpu exit=0
+14:52:31 == DONE

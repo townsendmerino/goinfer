@@ -146,7 +146,7 @@ func (l *sessionLRU) acquire(prompt []int) *decoder.Session {
 	for i, s := range l.order {
 		lists[i] = s.Tokens()
 	}
-	if i := bestExtend(lists, prompt); i >= 0 {
+	if i := pickSession(lists, prompt, len(l.order) < l.size); i >= 0 {
 		moveToFront(l.order, i)
 		l.mark(l.order[0])
 		return l.order[0]
@@ -462,4 +462,23 @@ func sessionDirOK(dir string) error {
 		return fmt.Errorf("-session-dir %q is not a directory", dir)
 	}
 	return nil
+}
+
+// pickSession is acquire's choice: bestExtend's candidate, unless the LRU has room for a fresh session (spare) and
+// reusing the candidate would throw away more of it than it keeps. bestExtend's floor learns the shared preamble only
+// from OTHER resident sessions, so with a single one it cannot tell a chat-template preamble from a continuation: two
+// interleaved conversations then took each other's session on every turn, each truncating the other to the preamble,
+// and the LRU never grew past one session (MC0, docs/tasks/task-concurrency-2026-09.md, 2026-09-26: 7 tokens reused per
+// turn at 2 clients, 0.69x the 1-client aggregate on CPU). A fresh session costs only re-prefilling the shared lead;
+// the truncation costs the other conversation its history. P-18's partial matches (a stop-string tail, an edited last
+// message) keep most of their session and still reuse. With no room, reusing the candidate IS the eviction, so it
+// stands. -1 means take a fresh session.
+func pickSession(sessions [][]int, prompt []int, spare bool) int {
+	i := bestExtend(sessions, prompt)
+	if i >= 0 && spare {
+		if keep := commonPrefix(sessions[i], prompt); keep < len(sessions[i])-keep {
+			return -1
+		}
+	}
+	return i
 }

@@ -1,0 +1,377 @@
+{
+  "header": {
+    "utc": "2026-09-26T21:47:12Z",
+    "host": "macbookpro.lan",
+    "model": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+    "goinfer_commit": "36a8db24",
+    "goinfer_dirty": true,
+    "goinfer_serve_mtime": "Sep 26 14:09:57 2026",
+    "llama_server_version": "/bin/sh: llama-server: command not found",
+    "uptime": "14:47  up 2 days,  4:42, 1 user, load averages: 1.05 1.73 2.48"
+  },
+  "clients": [
+    1,
+    2
+  ],
+  "max_tokens": 128,
+  "temperature": 0.0,
+  "results": {
+    "goinfer": {
+      "1": {
+        "n_clients": 1,
+        "wall_s": 11.881,
+        "total_completion_tokens": 768,
+        "aggregate_tok_s": 64.64,
+        "per_client_latency_ms": [
+          [
+            2964.5,
+            1693.2,
+            1731.1,
+            1762.0,
+            1856.0,
+            1872.8
+          ]
+        ],
+        "per_client": [
+          [
+            {
+              "n": 1,
+              "latency_ms": 2964.5,
+              "prompt_tokens": 42,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 0
+            },
+            {
+              "n": 2,
+              "latency_ms": 1693.2,
+              "prompt_tokens": 196,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 170
+            },
+            {
+              "n": 3,
+              "latency_ms": 1731.1,
+              "prompt_tokens": 351,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 324
+            },
+            {
+              "n": 4,
+              "latency_ms": 1762.0,
+              "prompt_tokens": 503,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 479
+            },
+            {
+              "n": 5,
+              "latency_ms": 1856.0,
+              "prompt_tokens": 651,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 631
+            },
+            {
+              "n": 6,
+              "latency_ms": 1872.8,
+              "prompt_tokens": 806,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 779
+            }
+          ]
+        ]
+      },
+      "2": {
+        "n_clients": 2,
+        "wall_s": 26.795,
+        "total_completion_tokens": 1536,
+        "aggregate_tok_s": 57.32,
+        "per_client_latency_ms": [
+          [
+            4134.9,
+            3600.6,
+            4017.5,
+            4480.5,
+            5030.6,
+            5528.6
+          ],
+          [
+            2152.3,
+            3797.7,
+            3791.2,
+            4258.2,
+            4739.8,
+            5289.5
+          ]
+        ],
+        "per_client": [
+          [
+            {
+              "n": 1,
+              "latency_ms": 4134.9,
+              "prompt_tokens": 43,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 2,
+              "latency_ms": 3600.6,
+              "prompt_tokens": 197,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 3,
+              "latency_ms": 4017.5,
+              "prompt_tokens": 352,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 4,
+              "latency_ms": 4480.5,
+              "prompt_tokens": 504,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 5,
+              "latency_ms": 5030.6,
+              "prompt_tokens": 652,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 6,
+              "latency_ms": 5528.6,
+              "prompt_tokens": 807,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            }
+          ],
+          [
+            {
+              "n": 1,
+              "latency_ms": 2152.3,
+              "prompt_tokens": 43,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 0
+            },
+            {
+              "n": 2,
+              "latency_ms": 3797.7,
+              "prompt_tokens": 197,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 3,
+              "latency_ms": 3791.2,
+              "prompt_tokens": 352,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 4,
+              "latency_ms": 4258.2,
+              "prompt_tokens": 504,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 5,
+              "latency_ms": 4739.8,
+              "prompt_tokens": 652,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 6,
+              "latency_ms": 5289.5,
+              "prompt_tokens": 807,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            }
+          ]
+        ]
+      }
+    },
+    "llamacpp": {},
+    "goinfer_cpu": {
+      "1": {
+        "n_clients": 1,
+        "wall_s": 19.243,
+        "total_completion_tokens": 768,
+        "aggregate_tok_s": 39.91,
+        "per_client_latency_ms": [
+          [
+            4105.6,
+            2761.0,
+            2923.2,
+            3067.8,
+            3121.8,
+            3259.9
+          ]
+        ],
+        "per_client": [
+          [
+            {
+              "n": 1,
+              "latency_ms": 4105.6,
+              "prompt_tokens": 42,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 0
+            },
+            {
+              "n": 2,
+              "latency_ms": 2761.0,
+              "prompt_tokens": 196,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 170
+            },
+            {
+              "n": 3,
+              "latency_ms": 2923.2,
+              "prompt_tokens": 351,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 324
+            },
+            {
+              "n": 4,
+              "latency_ms": 3067.8,
+              "prompt_tokens": 503,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 479
+            },
+            {
+              "n": 5,
+              "latency_ms": 3121.8,
+              "prompt_tokens": 651,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 631
+            },
+            {
+              "n": 6,
+              "latency_ms": 3259.9,
+              "prompt_tokens": 806,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 779
+            }
+          ]
+        ]
+      },
+      "2": {
+        "n_clients": 2,
+        "wall_s": 56.021,
+        "total_completion_tokens": 1536,
+        "aggregate_tok_s": 27.42,
+        "per_client_latency_ms": [
+          [
+            2721.7,
+            6059.8,
+            7703.4,
+            9516.0,
+            10934.2,
+            12401.6
+          ],
+          [
+            5358.5,
+            6835.5,
+            8598.1,
+            10397.2,
+            11479.2,
+            13349.8
+          ]
+        ],
+        "per_client": [
+          [
+            {
+              "n": 1,
+              "latency_ms": 2721.7,
+              "prompt_tokens": 43,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 0
+            },
+            {
+              "n": 2,
+              "latency_ms": 6059.8,
+              "prompt_tokens": 197,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 3,
+              "latency_ms": 7703.4,
+              "prompt_tokens": 352,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 4,
+              "latency_ms": 9516.0,
+              "prompt_tokens": 504,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 5,
+              "latency_ms": 10934.2,
+              "prompt_tokens": 652,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 6,
+              "latency_ms": 12401.6,
+              "prompt_tokens": 807,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            }
+          ],
+          [
+            {
+              "n": 1,
+              "latency_ms": 5358.5,
+              "prompt_tokens": 43,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 2,
+              "latency_ms": 6835.5,
+              "prompt_tokens": 197,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 3,
+              "latency_ms": 8598.1,
+              "prompt_tokens": 352,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 4,
+              "latency_ms": 10397.2,
+              "prompt_tokens": 504,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 5,
+              "latency_ms": 11479.2,
+              "prompt_tokens": 652,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            },
+            {
+              "n": 6,
+              "latency_ms": 13349.8,
+              "prompt_tokens": 807,
+              "completion_tokens": 128,
+              "prefill_reused_tokens": 7
+            }
+          ]
+        ]
+      }
+    }
+  }
+}

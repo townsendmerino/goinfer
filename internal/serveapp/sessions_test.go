@@ -168,3 +168,49 @@ func TestBestExtend_editedLastMessageReuse(t *testing.T) {
 		t.Errorf("bestExtend = %d, want 0 — everything before the edit should still be reused", got)
 	}
 }
+
+// TestPickSession_sparePreambleGoesFresh is the bug MC0 found (docs/tasks/task-concurrency-2026-09.md, 2026-09-26):
+// with one resident session, bestExtend's floor (what a candidate shares with every OTHER session) is 0, so the shared
+// chat-template preamble alone qualified. Two interleaved conversations then took each other's single session, each
+// truncating the other to the 7-token preamble, and the LRU never grew past one session despite -kv-sessions 4. On the
+// CPU W7 workload that read prefill_reused_tokens = 7 on every turn at 2 clients, and 0.69x the 1-client aggregate.
+func TestPickSession_sparePreambleGoesFresh(t *testing.T) {
+	pre := []int{1, 2, 3, 4, 5, 6, 7}                          // the chat template's shared lead
+	convA := append(append([]int(nil), pre...), 100, 101, 102) // conversation A's turn 1 + reply ...
+	for i := 0; i < 160; i++ {
+		convA = append(convA, 200+i)
+	}
+	sessions := [][]int{convA}
+	convB := append(append([]int(nil), pre...), 900, 901) // conversation B's first turn: shares only the preamble
+
+	if got := pickSession(sessions, convB, true); got != -1 {
+		t.Errorf("spare capacity, preamble-only match: pickSession = %d, want -1 (fresh) — reusing would truncate A's %d tokens to %d", got, len(convA), len(pre))
+	}
+	// A full LRU has no room for a fresh session anyway: reusing the only candidate is the eviction.
+	if got := pickSession(sessions, convB, false); got != 0 {
+		t.Errorf("no spare capacity: pickSession = %d, want 0", got)
+	}
+	// A's own continuation still reuses, with room or without.
+	nextA := append(append([]int(nil), convA...), 300, 301)
+	for _, spare := range []bool{true, false} {
+		if got := pickSession(sessions, nextA, spare); got != 0 {
+			t.Errorf("continuing A (spare=%v): pickSession = %d, want 0", spare, got)
+		}
+	}
+}
+
+// TestPickSession_keepsP18Reuse pins that the spare-capacity rule leaves P-18's partial matches reusing: a stop-string
+// tail or an edited last message keeps most of the session, so it is still the session's own continuation.
+func TestPickSession_keepsP18Reuse(t *testing.T) {
+	turn1 := []int{1, 2, 3, 4}
+	visible := append(append([]int(nil), turn1...), 10, 11, 12)
+	stored := append(append([]int(nil), visible...), 13, 14)
+	if got := pickSession([][]int{stored}, append(append([]int(nil), visible...), 20, 21), true); got != 0 {
+		t.Errorf("stop-string tail: pickSession = %d, want 0", got)
+	}
+	shared := []int{1, 2, 3, 4, 10, 11, 12}
+	original := append(append([]int(nil), shared...), 20, 21, 22)
+	if got := pickSession([][]int{original}, append(append([]int(nil), shared...), 30, 31), true); got != 0 {
+		t.Errorf("edited last message: pickSession = %d, want 0", got)
+	}
+}

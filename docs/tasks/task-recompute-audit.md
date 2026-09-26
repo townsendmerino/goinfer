@@ -416,7 +416,7 @@ positions are inherent, not recompute.
   the floor that same candidate shares with every OTHER known session (computed the same way,
   pairwise, inside the same pool) — a session that's nothing but the shared system-prompt preamble
   never clears its own floor, so two distinct conversations still can't hijack each other, exactly
-  as `TestBestExtend`'s existing `fresh` case requires. An exact continuation's match is its own
+  as `TestBestExtend`'s existing `fresh` case requires. **Corrected 2026-09-26 (concurrency MC0):** the floor exists only with ≥ 2 resident sessions. With one, it is 0, the preamble cleared it, and two interleaved conversations evicted each other on every turn (CPU 2-client aggregate 0.69×). Fixed by `pickSession`; see `docs/measurements/concurrency-mc0-2026-09-26.md`. An exact continuation's match is its own
   full length, which always clears that floor, so the old whole-containment cases are unchanged;
   the new part is that a session whose STORED tokens are no longer fully contained in the prompt —
   a stop-string hit's invisible tail, a `max_tokens` cut, or an edited last message — now still
@@ -670,7 +670,8 @@ listed so the inventory is complete.
    doc's own prior text here missed that verdict. Re-entry condition: a resident 27B+ trunk, not
    available on any CUDA box this repo currently has.
 3. ~~**R-04, L-15/P-18 half**~~ — **FIXED 2026-09-23**: `bestExtend` longest-common-prefix
-   selection, guarded against system-prompt-preamble hijacking. **R-01 phase 2** (resident-GPU
+   selection, guarded against system-prompt-preamble hijacking (the guard had a one-session hole, fixed 2026-09-26:
+   concurrency MC0, `pickSession`). **R-01 phase 2** (resident-GPU
    state parking) stays open — its economics are NOT the ones phase 1 killed (it pays once per
    commit/conversation-switch, amortized over a whole turn's tokens, not once per speculative
    verify round), but the honest baseline it has to beat is now the L-15-fixed staged CPU path,
