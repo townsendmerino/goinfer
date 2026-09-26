@@ -1,0 +1,300 @@
+=== 2026-09-26T14:51:50Z START kernel benches
+=== 2026-09-26T14:52:36Z END kernel benches rc=0
+=== waiting for idle: loadavg 8.24
+=== waiting for idle: loadavg 5.90
+=== waiting for idle: loadavg 4.22
+=== waiting for idle: loadavg 3.02
+=== waiting for idle: loadavg 2.16
+=== waiting for idle: loadavg 1.55
+=== waiting for idle: loadavg 1.11
+=== 2026-09-26T14:54:56Z 1.5B int8int8 round 1/6 group 0
+=== waiting for idle: loadavg 3.23
+=== waiting for idle: loadavg 2.31
+=== waiting for idle: loadavg 1.65
+=== waiting for idle: loadavg 1.25
+=== waiting for idle: loadavg 0.89
+=== 2026-09-26T14:56:49Z 1.5B int8int8 round 1/6 group 32
+=== waiting for idle: loadavg 2.52
+=== waiting for idle: loadavg 1.81
+=== waiting for idle: loadavg 1.29
+=== waiting for idle: loadavg 0.92
+=== 2026-09-26T14:58:23Z 1.5B int8int8 round 2/6 group 32
+=== waiting for idle: loadavg 1.28
+=== waiting for idle: loadavg 0.91
+=== 2026-09-26T14:59:17Z 1.5B int8int8 round 2/6 group 0
+=== waiting for idle: loadavg 1.98
+=== waiting for idle: loadavg 1.42
+=== waiting for idle: loadavg 1.01
+=== 2026-09-26T15:00:31Z 1.5B int8int8 round 3/6 group 0
+=== waiting for idle: loadavg 2.86
+=== waiting for idle: loadavg 2.05
+=== waiting for idle: loadavg 1.47
+=== waiting for idle: loadavg 1.05
+=== 2026-09-26T15:02:04Z 1.5B int8int8 round 3/6 group 32
+=== waiting for idle: loadavg 2.48
+=== waiting for idle: loadavg 1.77
+=== waiting for idle: loadavg 1.27
+=== waiting for idle: loadavg 0.91
+=== 2026-09-26T15:03:38Z 1.5B int8int8 round 4/6 group 32
+=== waiting for idle: loadavg 3.03
+=== waiting for idle: loadavg 2.17
+=== waiting for idle: loadavg 1.55
+=== waiting for idle: loadavg 1.11
+=== waiting for idle: loadavg 0.86
+=== 2026-09-26T15:05:32Z 1.5B int8int8 round 4/6 group 0
+=== waiting for idle: loadavg 1.14
+=== waiting for idle: loadavg 0.81
+=== 2026-09-26T15:06:25Z 1.5B int8int8 round 5/6 group 0
+=== waiting for idle: loadavg 1.85
+=== waiting for idle: loadavg 1.32
+=== waiting for idle: loadavg 1.03
+=== waiting for idle: loadavg 0.80
+=== 2026-09-26T15:07:59Z 1.5B int8int8 round 5/6 group 32
+=== waiting for idle: loadavg 2.25
+=== waiting for idle: loadavg 1.61
+=== waiting for idle: loadavg 1.16
+=== waiting for idle: loadavg 0.89
+=== 2026-09-26T15:09:33Z 1.5B int8int8 round 6/6 group 32
+=== waiting for idle: loadavg 2.65
+=== waiting for idle: loadavg 1.90
+=== waiting for idle: loadavg 1.36
+=== waiting for idle: loadavg 0.97
+=== 2026-09-26T15:11:06Z 1.5B int8int8 round 6/6 group 0
+=== waiting for idle: loadavg 1.48
+=== waiting for idle: loadavg 1.06
+=== 2026-09-26T15:12:00Z 1.5B int4 round 1/6 group 0
+=== waiting for idle: loadavg 1.90
+=== waiting for idle: loadavg 1.44
+=== waiting for idle: loadavg 1.03
+=== 2026-09-26T15:13:12Z 1.5B int4 round 1/6 group 32
+=== waiting for idle: loadavg 1.82
+=== waiting for idle: loadavg 1.30
+=== waiting for idle: loadavg 0.93
+=== 2026-09-26T15:14:24Z 1.5B int4 round 2/6 group 32
+=== waiting for idle: loadavg 0.81
+=== 2026-09-26T15:14:56Z 1.5B int4 round 2/6 group 0
+=== waiting for idle: loadavg 1.37
+=== waiting for idle: loadavg 0.98
+=== 2026-09-26T15:15:47Z 1.5B int4 round 3/6 group 0
+=== waiting for idle: loadavg 1.79
+=== waiting for idle: loadavg 1.28
+=== waiting for idle: loadavg 0.92
+=== 2026-09-26T15:16:59Z 1.5B int4 round 3/6 group 32
+=== waiting for idle: loadavg 1.54
+=== waiting for idle: loadavg 1.10
+=== 2026-09-26T15:17:51Z 1.5B int4 round 4/6 group 32
+=== waiting for idle: loadavg 1.94
+=== waiting for idle: loadavg 1.46
+=== waiting for idle: loadavg 1.05
+=== 2026-09-26T15:19:03Z 1.5B int4 round 4/6 group 0
+=== waiting for idle: loadavg 3.03
+=== waiting for idle: loadavg 2.24
+=== waiting for idle: loadavg 1.61
+=== waiting for idle: loadavg 1.23
+=== waiting for idle: loadavg 1.03
+=== waiting for idle: loadavg 0.88
+=== 2026-09-26T15:21:15Z 1.5B int4 round 5/6 group 0
+=== waiting for idle: loadavg 1.79
+=== waiting for idle: loadavg 1.28
+=== waiting for idle: loadavg 0.92
+=== 2026-09-26T15:22:26Z 1.5B int4 round 5/6 group 32
+=== waiting for idle: loadavg 1.43
+=== waiting for idle: loadavg 1.02
+=== waiting for idle: loadavg 0.81
+=== 2026-09-26T15:23:38Z 1.5B int4 round 6/6 group 32
+=== waiting for idle: loadavg 2.98
+=== waiting for idle: loadavg 2.21
+=== waiting for idle: loadavg 1.58
+=== waiting for idle: loadavg 1.13
+=== waiting for idle: loadavg 0.81
+=== 2026-09-26T15:25:30Z 1.5B int4 round 6/6 group 0
+=== waiting for idle: loadavg 1.69
+=== waiting for idle: loadavg 1.21
+=== waiting for idle: loadavg 0.86
+=== 2026-09-26T15:26:42Z 7B int8int8 round 1/6 group 0
+=== waiting for idle: loadavg 6.92
+=== waiting for idle: loadavg 4.96
+=== waiting for idle: loadavg 3.55
+=== waiting for idle: loadavg 3.06
+=== waiting for idle: loadavg 2.68
+=== waiting for idle: loadavg 2.20
+=== waiting for idle: loadavg 1.65
+=== waiting for idle: loadavg 1.18
+=== waiting for idle: loadavg 0.85
+=== 2026-09-26T15:30:32Z 7B int8int8 round 1/6 group 32
+=== waiting for idle: loadavg 7.02
+=== waiting for idle: loadavg 5.09
+=== waiting for idle: loadavg 3.65
+=== waiting for idle: loadavg 2.61
+=== waiting for idle: loadavg 1.87
+=== waiting for idle: loadavg 1.40
+=== waiting for idle: loadavg 1.00
+=== 2026-09-26T15:33:43Z 7B int8int8 round 2/6 group 32
+=== waiting for idle: loadavg 7.85
+=== waiting for idle: loadavg 5.62
+=== waiting for idle: loadavg 4.10
+=== waiting for idle: loadavg 2.93
+=== waiting for idle: loadavg 2.10
+=== waiting for idle: loadavg 1.58
+=== waiting for idle: loadavg 1.19
+=== waiting for idle: loadavg 0.85
+=== 2026-09-26T15:37:14Z 7B int8int8 round 2/6 group 0
+=== waiting for idle: loadavg 7.08
+=== waiting for idle: loadavg 5.07
+=== waiting for idle: loadavg 3.69
+=== waiting for idle: loadavg 2.64
+=== waiting for idle: loadavg 1.96
+=== waiting for idle: loadavg 1.47
+=== waiting for idle: loadavg 1.05
+=== 2026-09-26T15:40:24Z 7B int8int8 round 3/6 group 0
+=== waiting for idle: loadavg 8.13
+=== waiting for idle: loadavg 5.82
+=== waiting for idle: loadavg 4.17
+=== waiting for idle: loadavg 2.98
+=== waiting for idle: loadavg 2.14
+=== waiting for idle: loadavg 2.01
+=== waiting for idle: loadavg 1.44
+=== waiting for idle: loadavg 1.03
+=== 2026-09-26T15:43:54Z 7B int8int8 round 3/6 group 32
+=== waiting for idle: loadavg 7.30
+=== waiting for idle: loadavg 5.23
+=== waiting for idle: loadavg 3.74
+=== waiting for idle: loadavg 2.75
+=== waiting for idle: loadavg 2.04
+=== waiting for idle: loadavg 1.46
+=== waiting for idle: loadavg 1.05
+=== 2026-09-26T15:47:05Z 7B int8int8 round 4/6 group 32
+=== waiting for idle: loadavg 7.22
+=== waiting for idle: loadavg 5.17
+=== waiting for idle: loadavg 3.70
+=== waiting for idle: loadavg 2.65
+=== waiting for idle: loadavg 1.96
+=== waiting for idle: loadavg 1.40
+=== waiting for idle: loadavg 1.07
+=== 2026-09-26T15:50:15Z 7B int8int8 round 4/6 group 0
+=== waiting for idle: loadavg 7.10
+=== waiting for idle: loadavg 5.08
+=== waiting for idle: loadavg 3.64
+=== waiting for idle: loadavg 2.67
+=== waiting for idle: loadavg 1.91
+=== waiting for idle: loadavg 1.37
+=== waiting for idle: loadavg 0.98
+=== 2026-09-26T15:53:26Z 7B int8int8 round 5/6 group 0
+=== waiting for idle: loadavg 6.64
+=== waiting for idle: loadavg 4.75
+=== waiting for idle: loadavg 3.40
+=== waiting for idle: loadavg 2.44
+=== waiting for idle: loadavg 1.90
+=== waiting for idle: loadavg 1.36
+=== waiting for idle: loadavg 0.97
+=== 2026-09-26T15:56:36Z 7B int8int8 round 5/6 group 32
+=== waiting for idle: loadavg 8.01
+=== waiting for idle: loadavg 5.74
+=== waiting for idle: loadavg 4.11
+=== waiting for idle: loadavg 2.94
+=== waiting for idle: loadavg 2.10
+=== waiting for idle: loadavg 1.51
+=== waiting for idle: loadavg 1.08
+=== waiting for idle: loadavg 1.01
+=== 2026-09-26T16:00:07Z 7B int8int8 round 6/6 group 32
+=== waiting for idle: loadavg 7.20
+=== waiting for idle: loadavg 5.22
+=== waiting for idle: loadavg 3.98
+=== waiting for idle: loadavg 2.85
+=== waiting for idle: loadavg 2.04
+=== waiting for idle: loadavg 1.46
+=== waiting for idle: loadavg 1.04
+=== 2026-09-26T16:03:17Z 7B int8int8 round 6/6 group 0
+=== waiting for idle: loadavg 7.09
+=== waiting for idle: loadavg 5.08
+=== waiting for idle: loadavg 3.64
+=== waiting for idle: loadavg 2.60
+=== waiting for idle: loadavg 1.86
+=== waiting for idle: loadavg 1.41
+=== waiting for idle: loadavg 1.01
+=== 2026-09-26T16:06:28Z 7B int4 round 1/6 group 0
+=== waiting for idle: loadavg 5.68
+=== waiting for idle: loadavg 4.06
+=== waiting for idle: loadavg 2.91
+=== waiting for idle: loadavg 2.08
+=== waiting for idle: loadavg 1.49
+=== waiting for idle: loadavg 1.07
+=== 2026-09-26T16:09:09Z 7B int4 round 1/6 group 32
+=== waiting for idle: loadavg 6.56
+=== waiting for idle: loadavg 4.76
+=== waiting for idle: loadavg 3.41
+=== waiting for idle: loadavg 2.24
+=== waiting for idle: loadavg 1.61
+=== waiting for idle: loadavg 1.15
+=== waiting for idle: loadavg 0.82
+=== 2026-09-26T16:12:10Z 7B int4 round 2/6 group 32
+=== waiting for idle: loadavg 5.63
+=== waiting for idle: loadavg 4.03
+=== waiting for idle: loadavg 2.89
+=== waiting for idle: loadavg 2.07
+=== waiting for idle: loadavg 1.55
+=== waiting for idle: loadavg 1.19
+=== waiting for idle: loadavg 0.85
+=== 2026-09-26T16:15:11Z 7B int4 round 2/6 group 0
+=== waiting for idle: loadavg 5.26
+=== waiting for idle: loadavg 3.77
+=== waiting for idle: loadavg 2.70
+=== waiting for idle: loadavg 1.93
+=== waiting for idle: loadavg 1.38
+=== waiting for idle: loadavg 0.99
+=== 2026-09-26T16:17:52Z 7B int4 round 3/6 group 0
+=== waiting for idle: loadavg 4.27
+=== waiting for idle: loadavg 3.06
+=== waiting for idle: loadavg 2.19
+=== waiting for idle: loadavg 1.57
+=== waiting for idle: loadavg 1.12
+=== waiting for idle: loadavg 0.80
+=== 2026-09-26T16:20:33Z 7B int4 round 3/6 group 32
+=== waiting for idle: loadavg 6.65
+=== waiting for idle: loadavg 4.76
+=== waiting for idle: loadavg 3.41
+=== waiting for idle: loadavg 2.44
+=== waiting for idle: loadavg 1.75
+=== waiting for idle: loadavg 1.25
+=== waiting for idle: loadavg 0.89
+=== 2026-09-26T16:23:34Z 7B int4 round 4/6 group 32
+=== waiting for idle: loadavg 5.95
+=== waiting for idle: loadavg 4.26
+=== waiting for idle: loadavg 3.05
+=== waiting for idle: loadavg 2.18
+=== waiting for idle: loadavg 1.63
+=== waiting for idle: loadavg 1.17
+=== waiting for idle: loadavg 0.83
+=== 2026-09-26T16:26:35Z 7B int4 round 4/6 group 0
+=== waiting for idle: loadavg 6.20
+=== waiting for idle: loadavg 4.50
+=== waiting for idle: loadavg 3.22
+=== waiting for idle: loadavg 2.31
+=== waiting for idle: loadavg 1.65
+=== waiting for idle: loadavg 1.18
+=== waiting for idle: loadavg 0.85
+=== 2026-09-26T16:29:36Z 7B int4 round 5/6 group 0
+=== waiting for idle: loadavg 5.70
+=== waiting for idle: loadavg 4.08
+=== waiting for idle: loadavg 3.00
+=== waiting for idle: loadavg 2.14
+=== waiting for idle: loadavg 1.67
+=== waiting for idle: loadavg 1.19
+=== waiting for idle: loadavg 0.85
+=== 2026-09-26T16:32:37Z 7B int4 round 5/6 group 32
+=== waiting for idle: loadavg 4.77
+=== waiting for idle: loadavg 3.42
+=== waiting for idle: loadavg 2.45
+=== waiting for idle: loadavg 1.75
+=== waiting for idle: loadavg 1.25
+=== waiting for idle: loadavg 0.90
+=== 2026-09-26T16:35:19Z 7B int4 round 6/6 group 32
+=== waiting for idle: loadavg 6.27
+=== waiting for idle: loadavg 4.49
+=== waiting for idle: loadavg 3.21
+=== waiting for idle: loadavg 2.30
+=== waiting for idle: loadavg 1.65
+=== waiting for idle: loadavg 1.18
+=== waiting for idle: loadavg 0.92
+=== 2026-09-26T16:38:20Z 7B int4 round 6/6 group 0
+=== 2026-09-26T16:39:01Z ALL DONE
