@@ -325,3 +325,54 @@ belongs on set B under a bar registered first.
   1600 keys, not on real prompts at 3900. It is superseded by the float64 measurement above.
 - The strict critC is the owner's explicit 2026-09-18 policy for R1/R2/R6 (`red-october.md`), not a copying slip.
   Changing it is the owner's decision.
+
+## Production fix: the executor encodes each command buffer for its own job's key count (2026-09-25)
+
+**Defect** (see "Mechanism" under Step 2). `execLoop` (`metal/model.go`) encoded token t+1's command buffer
+right after committing token t. The two attention decisions an encode bakes in, attention_fa's depth gate and its
+split grid, read the key count *at that moment*, which was the previous job's. Nothing dropped a pre-encoded buffer
+when a new request began, because `PrefillLast` does not go through the executor. Production consequences:
+
+- the first decode step at 1536 keys ran the shipped kernel instead of attention_fa;
+- the first decode step of every request ran the plan of wherever the previous request stopped. After a long
+  request that meant attention_fa below its floor, with a split grid sized for the old depth and a split uniform
+  sized for the new one, so extra threadgroups read past `q` whenever the new request had fewer than 32·S keys;
+- the first decode step after a `ForwardBatch` declined attention_fa at any depth.
+
+So output depended on the previous request.
+
+**Fix.**
+- `attnPlan` holds everything an encode bakes in that depends on the key count or on a runtime toggle:
+  attention_fa on or off, its split count, and the f16 lane.
+- The executor encodes each buffer for a known key count through `encNKeys` / `planNKeys`: the job's own
+  count when it encodes fresh, and pos+2 when it pre-encodes for the predicted next job.
+- Before committing, it compares the buffer's plan with `attnPlanFor(job.pos+1)`. On a mismatch it drops the buffer
+  uncommitted and re-encodes, the same path a head-mode switch already took.
+- The dispatch grid and `setPos`'s split uniform are both `attnFASplitFor` of the same key count, so they agree by
+  construction.
+- Steady decode never mismatches, and costs one struct comparison per token.
+
+**Test** (`TestExecutorAttnPlan`, `metal/exec_plan_test.go`, committed fixture `testdata/llama-attnfa-tiny`, about
+6 s). A sequence of requests runs through the production adapter (`metalResident.Forward` → executor), never
+flushed, and each is compared bit for bit with the same request run synchronously:
+- a floor crossing;
+- 400-, 700- and 1400-key prefilled requests, each after a long one;
+- long prefilled requests, each after a short one;
+- decode after `ForwardBatch`.
+
+**All 7 cases failed on the unfixed executor, each at exactly its first stale step** (positions 1535, 400, 1600, 700,
+1600, 1400, 1556), and all 7 pass with the fix. Two sizes were discarded as insensitive, because the stale plan ran
+and the output coincided on this fixture: a request decoded from position 0 (one key, where softmax is 1.0) and
+prefilled requests of 101 and 1001 keys.
+
+**Cost: none measurable.** Setup:
+- `TestEncodeAhead` on the 1.5B (int8int8, positions 30–98), best of 60 tokens per arm;
+- the unfixed and fixed test binaries alternated old/new three times;
+- 20:49–20:50 local, load1 1.5–2.0.
+
+Pipelined decode is **12.83 ms/token with the fix against 12.86 without** (medians of 3). The fix is equal or faster
+in every pair, by 0.01–0.03 ms, which is noise. Encode-ahead parity is 10/10 in all six runs. Raw:
+[`exec-fix-ab.log`](metal-decode-attn-r17-2026-09-25/exec-fix-ab.log). The Metal suite is green both ways:
+- untagged: [`exec-fix-suite-untagged.log`](metal-decode-attn-r17-2026-09-25/exec-fix-suite-untagged.log);
+- `goinfer_testhooks`: 316 passes, 79 skips, 0 failures,
+  [`exec-fix-suite-tagged.log`](metal-decode-attn-r17-2026-09-25/exec-fix-suite-tagged.log).

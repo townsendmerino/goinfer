@@ -584,7 +584,7 @@ func metalFastPrefillEnabled(fast, batched string) bool {
 
 // metalAttnFAEnabled reports whether decode attention defaults to attention_fa (R2,
 // docs/tasks/red-october.md) — the kvHead×split-gridded kernel, gated per layer by
-// canUseAttnFA (dense-GQA, hd=128, curNKeys >= attnFADepthFloor). DEFAULT ON since
+// canUseAttnFA (dense-GQA, hd=128, key count >= attnFADepthFloor). DEFAULT ON since
 // 2026-09-21: gate (3) PASSES (docs/measurements/r2-attn-fa-rootcause-2026-09-21.md — the
 // kernel is exact on real data; the divergence that parked the Build attempt was an
 // end-to-end-logits instrument crossing one int8 rounding boundary, not a kernel defect),

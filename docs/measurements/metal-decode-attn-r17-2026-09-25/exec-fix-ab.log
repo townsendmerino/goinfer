@@ -1,0 +1,56 @@
+20:49:42 start load1=1.49
+##### old rep 1 20:49:42 load1=1.49
+=== RUN   TestEncodeAhead
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.7 GB resident at quant int8int8 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.5 GB; this machine currently has 7.7 GB of memory available (budget 5.4 GB = 70% of that) (83% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    pipe_test.go:53: encode-ahead parity: 10/10 argmax identical to synchronous path
+    pipe_test.go:76: synchronous ForwardEmb : 13.46 ms/token (74.3 tok/s)
+    pipe_test.go:77: pipelined  ForwardEmbPipe: 12.86 ms/token (77.8 tok/s)
+    pipe_test.go:78: GPU-busy floor: 13.18 ms/token (75.9 tok/s)  | encode-ahead recovered 0.60 ms
+--- PASS: TestEncodeAhead (10.56s)
+PASS
+##### new rep 1 20:49:53 load1=1.71
+=== RUN   TestEncodeAhead
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.7 GB resident at quant int8int8 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.5 GB; this machine currently has 7.8 GB of memory available (budget 5.5 GB = 70% of that) (81% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    pipe_test.go:53: encode-ahead parity: 10/10 argmax identical to synchronous path
+    pipe_test.go:76: synchronous ForwardEmb : 13.31 ms/token (75.1 tok/s)
+    pipe_test.go:77: pipelined  ForwardEmbPipe: 12.83 ms/token (77.9 tok/s)
+    pipe_test.go:78: GPU-busy floor: 12.64 ms/token (79.1 tok/s)  | encode-ahead recovered 0.48 ms
+--- PASS: TestEncodeAhead (8.09s)
+PASS
+##### old rep 2 20:50:02 load1=1.81
+=== RUN   TestEncodeAhead
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.7 GB resident at quant int8int8 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.5 GB; this machine currently has 7.8 GB of memory available (budget 5.5 GB = 70% of that) (82% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    pipe_test.go:53: encode-ahead parity: 10/10 argmax identical to synchronous path
+    pipe_test.go:76: synchronous ForwardEmb : 13.34 ms/token (75.0 tok/s)
+    pipe_test.go:77: pipelined  ForwardEmbPipe: 12.87 ms/token (77.7 tok/s)
+    pipe_test.go:78: GPU-busy floor: 12.46 ms/token (80.3 tok/s)  | encode-ahead recovered 0.47 ms
+--- PASS: TestEncodeAhead (8.09s)
+PASS
+##### new rep 2 20:50:10 load1=1.85
+=== RUN   TestEncodeAhead
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.7 GB resident at quant int8int8 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.5 GB; this machine currently has 7.8 GB of memory available (budget 5.5 GB = 70% of that) (81% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    pipe_test.go:53: encode-ahead parity: 10/10 argmax identical to synchronous path
+    pipe_test.go:76: synchronous ForwardEmb : 13.46 ms/token (74.3 tok/s)
+    pipe_test.go:77: pipelined  ForwardEmbPipe: 12.85 ms/token (77.8 tok/s)
+    pipe_test.go:78: GPU-busy floor: 12.75 ms/token (78.4 tok/s)  | encode-ahead recovered 0.61 ms
+--- PASS: TestEncodeAhead (8.10s)
+PASS
+##### old rep 3 20:50:18 load1=2.02
+=== RUN   TestEncodeAhead
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.7 GB resident at quant int8int8 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.5 GB; this machine currently has 7.9 GB of memory available (budget 5.5 GB = 70% of that) (81% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    pipe_test.go:53: encode-ahead parity: 10/10 argmax identical to synchronous path
+    pipe_test.go:76: synchronous ForwardEmb : 13.26 ms/token (75.4 tok/s)
+    pipe_test.go:77: pipelined  ForwardEmbPipe: 12.82 ms/token (78.0 tok/s)
+    pipe_test.go:78: GPU-busy floor: 12.73 ms/token (78.6 tok/s)  | encode-ahead recovered 0.44 ms
+--- PASS: TestEncodeAhead (8.12s)
+PASS
+##### new rep 3 20:50:27 load1=1.94
+=== RUN   TestEncodeAhead
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.7 GB resident at quant int8int8 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.5 GB; this machine currently has 7.8 GB of memory available (budget 5.5 GB = 70% of that) (81% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    pipe_test.go:53: encode-ahead parity: 10/10 argmax identical to synchronous path
+    pipe_test.go:76: synchronous ForwardEmb : 13.45 ms/token (74.4 tok/s)
+    pipe_test.go:77: pipelined  ForwardEmbPipe: 12.81 ms/token (78.1 tok/s)
+    pipe_test.go:78: GPU-busy floor: 12.79 ms/token (78.2 tok/s)  | encode-ahead recovered 0.64 ms
+--- PASS: TestEncodeAhead (8.12s)
+PASS
+20:50:35 done

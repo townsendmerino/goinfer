@@ -1,0 +1,1376 @@
+=== RUN   TestActQuant_cpuParity
+    act_quant_bench_test.go:88: act_quant I=3072 vs CPU: cosine=1.000000000, int8 exact=3072/3072
+--- PASS: TestActQuant_cpuParity (0.05s)
+=== RUN   TestWeightAlias_fixturesByteIdentical
+=== RUN   TestWeightAlias_fixturesByteIdentical/bailing_hybrid-tiny
+prequant: note: no tokenizer.json in ../testdata/bailing_hybrid-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/cohere-tiny
+prequant: note: no tokenizer.json in ../testdata/cohere-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from cohere-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.07 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/cohere2-tiny
+prequant: note: no tokenizer.json in ../testdata/cohere2-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from cohere2-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.07 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/deepseek-tiny
+prequant: note: no tokenizer.json in ../testdata/deepseek-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma3-vl-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma3-vl-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from gemma3-vl-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (4 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.04 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma4-dense-scaled
+prequant: note: no tokenizer.json in ../testdata/gemma4-dense-scaled — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from gemma4-dense-scaled.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 24 int4 tensors (22 fused groups, 53.00 MB nibbles), 6.62 MB f16 scales, 1 int8 (0.25 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma4-dense-twogeom-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-dense-twogeom-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from gemma4-dense-twogeom-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (4 single tensors + 3 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (3 fused groups, 0.46 MB nibbles), 0.06 MB f16 scales, 1 int8 (0.06 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma4-moe-kv-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-moe-kv-tiny — weights-only bundle (serve needs a separate tokenizer)
+[resident] BuildResident declined (ok=false err=resident path declined: metal: metal gemma4 MoE int4 needs hidden(64), moeInter(16), denseInter(48) all multiples of 32) — continuing on the CPU/staged path
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma4-moe-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-moe-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from gemma4-moe-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1 MB bound in place, 0 MB copied (anonymous) — 1 MB int4 nibbles (4 single tensors + 4 fused groups = 1 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.96 MB nibbles), 0.12 MB f16 scales, 1 int8 (0.06 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma4-moe-unified-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-moe-unified-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from gemma4-moe-unified-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1 MB bound in place, 0 MB copied (anonymous) — 1 MB int4 nibbles (4 single tensors + 4 fused groups = 1 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.96 MB nibbles), 0.12 MB f16 scales, 1 int8 (0.06 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/gemma4-vision-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-vision-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:45: transcode: load ../testdata/gemma4-vision-tiny (int4): decoder: unsupported model_type "gemma4_vision" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_moe, qwen3_next, qwen3_vl, smollm3, spark2_5)
+=== RUN   TestWeightAlias_fixturesByteIdentical/glm-tiny
+prequant: note: no tokenizer.json in ../testdata/glm-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from glm-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (6 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 2 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 6 int4 tensors (4 fused groups, 0.03 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 2
+=== RUN   TestWeightAlias_fixturesByteIdentical/glm-tiny-bias
+prequant: note: no tokenizer.json in ../testdata/glm-tiny-bias — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from glm-tiny-bias.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (6 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 2 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 6 int4 tensors (4 fused groups, 0.03 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 2
+=== RUN   TestWeightAlias_fixturesByteIdentical/gpt2
+[metal] weights aliased from gpt2.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 82 MB bound in place, 0 MB copied (anonymous) — 40 MB int4 nibbles (36 single tensors + 12 fused groups = 10 MB) + 37 MB int8 codes (1 matrices) + 5 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 36 int4 tensors (12 fused groups, 40.50 MB nibbles), 5.06 MB f16 scales, 1 int8 (36.81 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/granite-dense-tiny
+prequant: note: no tokenizer.json in ../testdata/granite-dense-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from granite-dense-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.07 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/granite-tiny
+prequant: note: no tokenizer.json in ../testdata/granite-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/kimi-tiny
+prequant: note: no tokenizer.json in ../testdata/kimi-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/lfm2-tiny
+prequant: note: no tokenizer.json in ../testdata/lfm2-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/llama-attnfa-tiny
+prequant: note: no tokenizer.json in ../testdata/llama-attnfa-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from llama-attnfa-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1 MB bound in place, 0 MB copied (anonymous) — 1 MB int4 nibbles (4 single tensors + 4 fused groups = 1 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 1.12 MB nibbles), 0.14 MB f16 scales, 1 int8 (0.12 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/llama-tiny
+prequant: note: no tokenizer.json in ../testdata/llama-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from llama-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.07 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/llama4-tiny
+prequant: note: no tokenizer.json in ../testdata/llama4-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/ministral3-tiny
+prequant: note: no tokenizer.json in ../testdata/ministral3-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from ministral3-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.07 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/mixtral-tiny
+prequant: note: no tokenizer.json in ../testdata/mixtral-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from mixtral-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (4 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.03 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/nemotron-tiny
+prequant: note: no tokenizer.json in ../testdata/nemotron-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/nemotron3nano-tiny
+prequant: note: no tokenizer.json in ../testdata/nemotron3nano-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/olmo3-tiny
+prequant: note: no tokenizer.json in ../testdata/olmo3-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from olmo3-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.08 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/olmo_hybrid-tiny
+prequant: note: no tokenizer.json in ../testdata/olmo_hybrid-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from olmo_hybrid-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (14 single tensors + 5 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 9 scale sets converted
+    alias_fixtures_test.go:57: aliased: 14 int4 tensors (5 fused groups, 0.08 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/phi3-tiny
+prequant: note: no tokenizer.json in ../testdata/phi3-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/qwen25vl-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen25vl-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from qwen25vl-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (4 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.04 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/qwen35-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen35-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from qwen35-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (15 single tensors + 0 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 5 fused groups not adjacent, 11 scale sets converted
+    alias_fixtures_test.go:57: aliased: 15 int4 tensors (0 fused groups, 0.03 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.02 MB); copied 0, declined 0, non-adjacent groups 5
+=== RUN   TestWeightAlias_fixturesByteIdentical/qwen3moe-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen3moe-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from qwen3moe-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (4 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.02 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/qwen3moe-tiny-k3
+prequant: note: no tokenizer.json in ../testdata/qwen3moe-tiny-k3 — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from qwen3moe-tiny-k3.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (4 single tensors + 4 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 4 int4 tensors (4 fused groups, 0.02 MB nibbles), 0.00 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/qwen3next-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen3next-tiny — weights-only bundle (serve needs a separate tokenizer)
+[resident] BuildResident declined (ok=false err=resident path declined: metal: metal: BuildResident panicked: metal: W4A8 concat needs K%32==0 (group=32), got K=16 (audit M-10)) — continuing on the CPU/staged path
+    alias_fixtures_test.go:50: Metal does not build this fixture resident
+=== RUN   TestWeightAlias_fixturesByteIdentical/siglip-tiny
+prequant: note: no tokenizer.json in ../testdata/siglip-tiny — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:45: transcode: load ../testdata/siglip-tiny (int4): decoder: unsupported model_type "siglip_vision_model" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_moe, qwen3_next, qwen3_vl, smollm3, spark2_5)
+=== RUN   TestWeightAlias_fixturesByteIdentical/smollm3-tiny
+prequant: note: no tokenizer.json in ../testdata/smollm3-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from smollm3-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:57: aliased: 8 int4 tensors (8 fused groups, 0.07 MB nibbles), 0.01 MB f16 scales, 1 int8 (0.03 MB); copied 0, declined 0, non-adjacent groups 0
+=== RUN   TestWeightAlias_fixturesByteIdentical/tiny-qwen2-moe
+prequant: note: no tokenizer.json in ../testdata/tiny-qwen2-moe — weights-only bundle (serve needs a separate tokenizer)
+    alias_fixtures_test.go:45: transcode: load ../testdata/tiny-qwen2-moe (int4): decoder: read config.json: open config.json: no such file or directory
+=== NAME  TestWeightAlias_fixturesByteIdentical
+    alias_fixtures_test.go:70: compared 22 fixtures: cohere-tiny cohere2-tiny gemma3-vl-tiny gemma4-dense-scaled gemma4-dense-twogeom-tiny gemma4-moe-tiny gemma4-moe-unified-tiny glm-tiny glm-tiny-bias gpt2 granite-dense-tiny llama-attnfa-tiny llama-tiny ministral3-tiny mixtral-tiny olmo3-tiny olmo_hybrid-tiny qwen25vl-tiny qwen35-tiny qwen3moe-tiny qwen3moe-tiny-k3 smollm3-tiny
+    alias_fixtures_test.go:71: skipped 14: bailing_hybrid-tiny (not resident on Metal); deepseek-tiny (not resident on Metal); gemma4-moe-kv-tiny (not resident on Metal); gemma4-vision-tiny (transcode: load ../testdata/gemma4-vision-tiny (int4): decoder: unsupported model_type "gemma4_vision" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_moe, qwen3_next, qwen3_vl, smollm3, spark2_5)); granite-tiny (not resident on Metal); kimi-tiny (not resident on Metal); lfm2-tiny (not resident on Metal); llama4-tiny (not resident on Metal); nemotron-tiny (not resident on Metal); nemotron3nano-tiny (not resident on Metal); phi3-tiny (not resident on Metal); qwen3next-tiny (not resident on Metal); siglip-tiny (transcode: load ../testdata/siglip-tiny (int4): decoder: unsupported model_type "siglip_vision_model" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_moe, qwen3_next, qwen3_vl, smollm3, spark2_5)); tiny-qwen2-moe (transcode: load ../testdata/tiny-qwen2-moe (int4): decoder: read config.json: open config.json: no such file or directory)
+--- PASS: TestWeightAlias_fixturesByteIdentical (3.87s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/bailing_hybrid-tiny (0.02s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/cohere-tiny (0.05s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/cohere2-tiny (0.05s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/deepseek-tiny (0.02s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/gemma3-vl-tiny (0.05s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/gemma4-dense-scaled (0.43s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/gemma4-dense-twogeom-tiny (0.06s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/gemma4-moe-kv-tiny (0.03s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/gemma4-moe-tiny (0.09s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/gemma4-moe-unified-tiny (0.12s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/gemma4-vision-tiny (0.01s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/glm-tiny (0.08s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/glm-tiny-bias (0.08s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/gpt2 (1.80s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/granite-dense-tiny (0.05s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/granite-tiny (0.02s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/kimi-tiny (0.04s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/lfm2-tiny (0.01s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/llama-attnfa-tiny (0.06s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/llama-tiny (0.06s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/llama4-tiny (0.02s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/ministral3-tiny (0.05s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/mixtral-tiny (0.08s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/nemotron-tiny (0.02s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/nemotron3nano-tiny (0.01s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/olmo3-tiny (0.06s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/olmo_hybrid-tiny (0.06s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/phi3-tiny (0.01s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/qwen25vl-tiny (0.05s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/qwen35-tiny (0.09s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/qwen3moe-tiny (0.08s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/qwen3moe-tiny-k3 (0.09s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/qwen3next-tiny (0.02s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/siglip-tiny (0.00s)
+    --- PASS: TestWeightAlias_fixturesByteIdentical/smollm3-tiny (0.06s)
+    --- SKIP: TestWeightAlias_fixturesByteIdentical/tiny-qwen2-moe (0.01s)
+=== RUN   TestWeightAlias_closeCycles
+prequant: note: no tokenizer.json in ../testdata/gemma4-dense-scaled — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from alias-cycles.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:157: device CurrentAllocatedSize: idle 655360, with the model open 187662336, after its Close 655360 bytes
+[metal] weights aliased from alias-cycles.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[metal] weights aliased from alias-cycles.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[metal] weights aliased from alias-cycles.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[metal] weights aliased from alias-cycles.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[metal] weights aliased from alias-cycles.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 60 MB bound in place, 0 MB copied (anonymous) — 53 MB int4 nibbles (24 single tensors + 22 fused groups = 34 MB) + 0 MB int8 codes (1 matrices) + 7 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:166: device CurrentAllocatedSize 655360 → 655360 bytes over 5 aliasing-on load/Close cycles
+--- PASS: TestWeightAlias_closeCycles (6.09s)
+=== RUN   TestWeightAlias_olderBundleTakesCopyPath
+prequant: note: no tokenizer.json in ../testdata/llama-tiny — weights-only bundle (serve needs a separate tokenizer)
+prequant: note: no tokenizer.json in ../testdata/llama-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from llama-tiny.int4.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 0 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 8 fused groups not adjacent, 8 scale sets converted
+[metal] note: llama-tiny.int4.giw carries no f16 scales (written before weights format v14, or not with -target metal), so they were converted at load — rebuild it with prequant -target metal to alias them too
+    alias_fixtures_test.go:268: v12 file: [metal] weights aliased from llama-tiny.int4.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 0 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 8 fused groups not adjacent, 8 scale sets converted
+        [metal] note: llama-tiny.int4.giw carries no f16 scales (written before weights format v14, or not with -target metal), so they were converted at load — rebuild it with prequant -target metal to alias them too
+[metal] weights aliased from llama-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+    alias_fixtures_test.go:283: v14 file: [metal] weights aliased from llama-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+--- PASS: TestWeightAlias_olderBundleTakesCopyPath (0.08s)
+=== RUN   TestWeightAlias_onByDefault
+prequant: note: no tokenizer.json in ../testdata/llama-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from llama-tiny.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (8 single tensors + 8 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+--- PASS: TestWeightAlias_onByDefault (0.04s)
+=== RUN   TestAliasForkProbe
+    alias_forkprobe_test.go:48: set GOINFER_ALIAS_FORK_PROBE=1 (writes a 2 GiB scratch file, maps it, makes a ~2 GiB transient copy during a fork)
+--- SKIP: TestAliasForkProbe (0.00s)
+=== RUN   TestAliasSharedMappingProbe
+    alias_sharedprobe_test.go:44: set GOINFER_ALIAS_SHARED_PROBE=1 (writes a 2 GiB scratch file; wires up to 256 MiB twice)
+--- SKIP: TestAliasSharedMappingProbe (0.00s)
+=== RUN   TestWeightAlias_logitsByteIdentical
+    alias_test.go:26: set GOINFER_HEAVY_TESTS=1 (loads a real .giw twice)
+--- SKIP: TestWeightAlias_logitsByteIdentical (0.00s)
+=== RUN   TestAttentionPrefillFused_ctxCapNotMultipleOf8
+--- PASS: TestAttentionPrefillFused_ctxCapNotMultipleOf8 (0.02s)
+=== RUN   TestAttentionPrefillFused
+=== RUN   TestAttentionPrefillFused/gqa-ragged-tail
+    attention_prefill_fused_test.go:107: gqa-ragged-tail: cosine=1.000000 maxAbsDiff=0.000488
+=== RUN   TestAttentionPrefillFused/no-gqa-hd64-offset
+    attention_prefill_fused_test.go:107: no-gqa-hd64-offset: cosine=1.000000 maxAbsDiff=0.000122
+=== RUN   TestAttentionPrefillFused/gqa-window-midctx
+    attention_prefill_fused_test.go:107: gqa-window-midctx: cosine=1.000000 maxAbsDiff=0.000244
+=== RUN   TestAttentionPrefillFused/single-tile-hd8
+    attention_prefill_fused_test.go:107: single-tile-hd8: cosine=1.000000 maxAbsDiff=0.000488
+=== RUN   TestAttentionPrefillFused/exact-multiple-of-8
+    attention_prefill_fused_test.go:107: exact-multiple-of-8: cosine=1.000000 maxAbsDiff=0.000488
+--- PASS: TestAttentionPrefillFused (0.03s)
+    --- PASS: TestAttentionPrefillFused/gqa-ragged-tail (0.01s)
+    --- PASS: TestAttentionPrefillFused/no-gqa-hd64-offset (0.00s)
+    --- PASS: TestAttentionPrefillFused/gqa-window-midctx (0.01s)
+    --- PASS: TestAttentionPrefillFused/single-tile-hd8 (0.00s)
+    --- PASS: TestAttentionPrefillFused/exact-multiple-of-8 (0.01s)
+=== RUN   TestLayerB_attentionParity
+    attention_test.go:132: GQA online-softmax attention nH=12 nKV=2 hd=128 nKeys=96 on Metal GPU (cgo-free) vs CPU: cosine=1.0000000 maxAbs=8.94e-08 — PARITY
+--- PASS: TestLayerB_attentionParity (0.01s)
+=== RUN   TestAttentionFA_positionSweep
+    attn_fa_confound_test.go:44: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint twice per depth)
+--- SKIP: TestAttentionFA_positionSweep (0.00s)
+=== RUN   TestAttentionFA_ulpPerturbationControl
+    attn_fa_confound_test.go:175: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint twice)
+--- SKIP: TestAttentionFA_ulpPerturbationControl (0.00s)
+=== RUN   TestAttentionFA_endToEndReproductionDepth2200
+    attn_fa_e2e_depth_test.go:48: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint twice)
+--- SKIP: TestAttentionFA_endToEndReproductionDepth2200 (0.00s)
+=== RUN   TestAttentionFA_endToEndReproduction
+    attn_fa_e2e_test.go:53: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint twice)
+--- SKIP: TestAttentionFA_endToEndReproduction (0.00s)
+=== RUN   TestAttentionFA_pipelinedEncodeRace
+    attn_fa_pipeline_race_test.go:31: set GOINFER_HEAVY_TESTS=1 (deliberately provokes an unsynchronized raw CPU write racing a concurrently-running GPU read on shared uniform buffers -- the finding is already recorded in docs/measurements/r2-attn-fa-followup-2026-09-20.md; observed to SIGSEGV the test binary itself, not just produce a wrong-answer failure, since Metal's own internal state is not guaranteed to survive the hazard either)
+--- SKIP: TestAttentionFA_pipelinedEncodeRace (0.00s)
+=== RUN   TestAttentionFA_vsReference
+=== RUN   TestAttentionFA_vsReference/K=24_S=1
+    attn_fa_test.go:73: K=24 S=1: cosine=1.0000000 maxAbs=3.58e-07
+=== RUN   TestAttentionFA_vsReference/K=24_S=2
+    attn_fa_test.go:73: K=24 S=2: cosine=1.0000000 maxAbs=4.77e-07
+=== RUN   TestAttentionFA_vsReference/K=128_S=1
+    attn_fa_test.go:73: K=128 S=1: cosine=1.0000000 maxAbs=5.36e-07
+=== RUN   TestAttentionFA_vsReference/K=128_S=4
+    attn_fa_test.go:73: K=128 S=4: cosine=1.0000000 maxAbs=5.96e-07
+=== RUN   TestAttentionFA_vsReference/K=2048_S=1
+    attn_fa_test.go:73: K=2048 S=1: cosine=1.0000000 maxAbs=2.03e-06
+=== RUN   TestAttentionFA_vsReference/K=2048_S=8
+    attn_fa_test.go:73: K=2048 S=8: cosine=1.0000000 maxAbs=3.58e-06
+=== RUN   TestAttentionFA_vsReference/K=3900_S=14
+    attn_fa_test.go:73: K=3900 S=14: cosine=1.0000000 maxAbs=5.36e-07
+=== RUN   TestAttentionFA_vsReference/K=600_windowed_S=4
+    attn_fa_test.go:73: K=600 windowed S=4: cosine=1.0000000 maxAbs=2.15e-06
+=== RUN   TestAttentionFA_vsReference/K=2048_S=8_hotKey=first_split
+    attn_fa_test.go:73: K=2048 S=8 hotKey=first split: cosine=1.0000000 maxAbs=2.05e-07
+=== RUN   TestAttentionFA_vsReference/K=2048_S=8_hotKey=last_split
+    attn_fa_test.go:73: K=2048 S=8 hotKey=last split: cosine=1.0000000 maxAbs=8.34e-07
+=== RUN   TestAttentionFA_vsReference/K=2048_S=8_hotKey=split_boundary-1
+    attn_fa_test.go:73: K=2048 S=8 hotKey=split boundary-1: cosine=1.0000000 maxAbs=4.05e-06
+=== RUN   TestAttentionFA_vsReference/K=2048_S=8_hotKey=split_boundary
+    attn_fa_test.go:73: K=2048 S=8 hotKey=split boundary: cosine=1.0000000 maxAbs=4.23e-06
+=== RUN   TestAttentionFA_vsReference/K=2048_S=4_hotKey=split_boundary-1
+    attn_fa_test.go:73: K=2048 S=4 hotKey=split boundary-1: cosine=1.0000000 maxAbs=1.61e-06
+=== RUN   TestAttentionFA_vsReference/K=2048_S=4_hotKey=split_boundary
+    attn_fa_test.go:73: K=2048 S=4 hotKey=split boundary: cosine=1.0000000 maxAbs=2.50e-06
+=== RUN   TestAttentionFA_vsReference/K=2048_S=1_rising_ramp
+    attn_fa_test.go:73: K=2048 S=1 rising ramp: cosine=1.0000000 maxAbs=1.01e-06
+=== RUN   TestAttentionFA_vsReference/K=2048_S=2_rising_ramp
+    attn_fa_test.go:73: K=2048 S=2 rising ramp: cosine=1.0000000 maxAbs=1.49e-06
+=== RUN   TestAttentionFA_vsReference/K=2048_S=4_rising_ramp
+    attn_fa_test.go:73: K=2048 S=4 rising ramp: cosine=1.0000000 maxAbs=1.91e-06
+--- PASS: TestAttentionFA_vsReference (0.26s)
+    --- PASS: TestAttentionFA_vsReference/K=24_S=1 (0.00s)
+    --- PASS: TestAttentionFA_vsReference/K=24_S=2 (0.00s)
+    --- PASS: TestAttentionFA_vsReference/K=128_S=1 (0.00s)
+    --- PASS: TestAttentionFA_vsReference/K=128_S=4 (0.00s)
+    --- PASS: TestAttentionFA_vsReference/K=2048_S=1 (0.02s)
+    --- PASS: TestAttentionFA_vsReference/K=2048_S=8 (0.02s)
+    --- PASS: TestAttentionFA_vsReference/K=3900_S=14 (0.03s)
+    --- PASS: TestAttentionFA_vsReference/K=600_windowed_S=4 (0.01s)
+    --- PASS: TestAttentionFA_vsReference/K=2048_S=8_hotKey=first_split (0.02s)
+    --- PASS: TestAttentionFA_vsReference/K=2048_S=8_hotKey=last_split (0.02s)
+    --- PASS: TestAttentionFA_vsReference/K=2048_S=8_hotKey=split_boundary-1 (0.02s)
+    --- PASS: TestAttentionFA_vsReference/K=2048_S=8_hotKey=split_boundary (0.02s)
+    --- PASS: TestAttentionFA_vsReference/K=2048_S=4_hotKey=split_boundary-1 (0.02s)
+    --- PASS: TestAttentionFA_vsReference/K=2048_S=4_hotKey=split_boundary (0.02s)
+    --- PASS: TestAttentionFA_vsReference/K=2048_S=1_rising_ramp (0.02s)
+    --- PASS: TestAttentionFA_vsReference/K=2048_S=2_rising_ramp (0.02s)
+    --- PASS: TestAttentionFA_vsReference/K=2048_S=4_rising_ramp (0.02s)
+=== RUN   TestZZ_attnKReadStagedProbe
+    attn_kread_staged_probe_test.go:37: M-09 discriminating probe (timing diagnostic, not a gate); set GOINFER_ATTN_KREAD_STAGED_PROBE=1
+--- SKIP: TestZZ_attnKReadStagedProbe (0.00s)
+=== RUN   TestZZ_attnKVWidthProbe
+    attn_kvwidth_probe_test.go:31: P4 deciding probe (timing diagnostic, not a gate); set GOINFER_ATTN_KVWIDTH_PROBE=1
+--- SKIP: TestZZ_attnKVWidthProbe (0.00s)
+=== RUN   TestZZ_attnM3ThreadWidth
+    attn_m3_probe_test.go:25: plan §M3 Metal go/no-go probe (timing diagnostic, not a gate); set GOINFER_ATTN_M3_PROBE=1
+--- SKIP: TestZZ_attnM3ThreadWidth (0.00s)
+=== RUN   TestAttention_ShippedKernelShapes
+=== RUN   TestAttention_ShippedKernelShapes/control_qwen2.5-1.5b_(hd=128)
+    attn_shape_test.go:84: control qwen2.5-1.5b (hd=128): cosine=1.0000000 maxAbs=2.38e-07 |gpu|=17.7412 |cpu|=17.7412
+=== RUN   TestAttention_ShippedKernelShapes/gemma3-4b_global_(hd=256)
+    attn_shape_test.go:84: gemma3-4b global (hd=256): cosine=1.0000000 maxAbs=3.58e-07 |gpu|=20.8394 |cpu|=20.8394
+=== RUN   TestAttention_ShippedKernelShapes/gemma3-4b_local_(hd=256,_win=1024)
+    attn_shape_test.go:84: gemma3-4b local (hd=256, win=1024): cosine=1.0000000 maxAbs=3.58e-07 |gpu|=20.8394 |cpu|=20.8394
+=== RUN   TestAttention_ShippedKernelShapes/gemma3-4b_global,_long_ctx
+    attn_shape_test.go:84: gemma3-4b global, long ctx: cosine=1.0000000 maxAbs=1.19e-06 |gpu|=15.7440 |cpu|=15.7440
+=== RUN   TestAttention_ShippedKernelShapes/gemma3-4b_local,_window_ENGAGED
+    attn_shape_test.go:84: gemma3-4b local, window ENGAGED: cosine=1.0000000 maxAbs=1.07e-06 |gpu|=15.7587 |cpu|=15.7587
+=== RUN   TestAttention_ShippedKernelShapes/gemma4_global_(hd=512),_hd-only_mutation_off_gemma3
+    attn_shape_test.go:84: gemma4 global (hd=512), hd-only mutation off gemma3: cosine=1.0000000 maxAbs=8.34e-07 |gpu|=31.0567 |cpu|=31.0567
+=== RUN   TestAttention_ShippedKernelShapes/gemma4_global_(hd=512,_nKV=2),_real_geom
+    attn_shape_test.go:84: gemma4 global (hd=512, nKV=2), real geom: cosine=1.0000000 maxAbs=4.77e-07 |gpu|=26.0476 |cpu|=26.0476
+=== RUN   TestAttention_ShippedKernelShapes/gemma4_global_(hd=512,_nKV=2),_long_ctx
+    attn_shape_test.go:84: gemma4 global (hd=512, nKV=2), long ctx: cosine=1.0000000 maxAbs=1.68e-05 |gpu|=15.6821 |cpu|=15.6822
+=== RUN   TestAttention_ShippedKernelShapes/gemma4_global_(hd=512,_nKV=2),_nKeys=cap_4096
+    attn_shape_test.go:84: gemma4 global (hd=512, nKV=2), nKeys=cap 4096: cosine=1.0000000 maxAbs=7.65e-05 |gpu|=15.6260 |cpu|=15.6265
+=== RUN   TestAttention_ShippedKernelShapes/control_qwen2.5-1.5b_(hd=128),_deep_ctx_nKeys=8192
+    attn_shape_test.go:84: control qwen2.5-1.5b (hd=128), deep ctx nKeys=8192: cosine=1.0000000 maxAbs=2.32e-06 |gpu|=4.4354 |cpu|=4.4353
+=== RUN   TestAttention_ShippedKernelShapes/gemma4_global_(hd=512,_nKV=2),_deep_ctx_nKeys=8192
+    attn_shape_test.go:84: gemma4 global (hd=512, nKV=2), deep ctx nKeys=8192: cosine=1.0000000 maxAbs=1.99e-04 |gpu|=15.7322 |cpu|=15.7334
+=== RUN   TestAttention_ShippedKernelShapes/control_qwen2.5-1.5b_(hd=128),_deep_ctx_nKeys=16384
+    attn_shape_test.go:84: control qwen2.5-1.5b (hd=128), deep ctx nKeys=16384: cosine=1.0000000 maxAbs=2.24e-07 |gpu|=1.7399 |cpu|=1.7399
+=== RUN   TestAttention_ShippedKernelShapes/control_qwen2.5-1.5b_(hd=128),_deep_ctx_nKeys=32768
+    attn_shape_test.go:84: control qwen2.5-1.5b (hd=128), deep ctx nKeys=32768: cosine=1.0000000 maxAbs=2.98e-07 |gpu|=1.0147 |cpu|=1.0147
+--- PASS: TestAttention_ShippedKernelShapes (1.07s)
+    --- PASS: TestAttention_ShippedKernelShapes/control_qwen2.5-1.5b_(hd=128) (0.00s)
+    --- PASS: TestAttention_ShippedKernelShapes/gemma3-4b_global_(hd=256) (0.00s)
+    --- PASS: TestAttention_ShippedKernelShapes/gemma3-4b_local_(hd=256,_win=1024) (0.00s)
+    --- PASS: TestAttention_ShippedKernelShapes/gemma3-4b_global,_long_ctx (0.01s)
+    --- PASS: TestAttention_ShippedKernelShapes/gemma3-4b_local,_window_ENGAGED (0.01s)
+    --- PASS: TestAttention_ShippedKernelShapes/gemma4_global_(hd=512),_hd-only_mutation_off_gemma3 (0.00s)
+    --- PASS: TestAttention_ShippedKernelShapes/gemma4_global_(hd=512,_nKV=2),_real_geom (0.00s)
+    --- PASS: TestAttention_ShippedKernelShapes/gemma4_global_(hd=512,_nKV=2),_long_ctx (0.02s)
+    --- PASS: TestAttention_ShippedKernelShapes/gemma4_global_(hd=512,_nKV=2),_nKeys=cap_4096 (0.15s)
+    --- PASS: TestAttention_ShippedKernelShapes/control_qwen2.5-1.5b_(hd=128),_deep_ctx_nKeys=8192 (0.07s)
+    --- PASS: TestAttention_ShippedKernelShapes/gemma4_global_(hd=512,_nKV=2),_deep_ctx_nKeys=8192 (0.30s)
+    --- PASS: TestAttention_ShippedKernelShapes/control_qwen2.5-1.5b_(hd=128),_deep_ctx_nKeys=16384 (0.17s)
+    --- PASS: TestAttention_ShippedKernelShapes/control_qwen2.5-1.5b_(hd=128),_deep_ctx_nKeys=32768 (0.32s)
+=== RUN   TestBatchKAmortization
+    batchk_test.go:62: single-token Stage A gate/up: 166.0 us
+    batchk_test.go:69: k=1: batch-k 226.0 us  vs  k×single 166.0 us  =>  0.74x speedup, 226.00 us/token (135.8% of single)
+    batchk_test.go:69: k=2: batch-k 370.0 us  vs  k×single 332.0 us  =>  0.90x speedup, 185.00 us/token (111.4% of single)
+    batchk_test.go:69: k=4: batch-k 663.0 us  vs  k×single 665.0 us  =>  1.00x speedup, 165.75 us/token (99.6% of single)
+    batchk_test.go:69: k=8: batch-k 1552.0 us  vs  k×single 1331.0 us  =>  0.86x speedup, 194.00 us/token (116.6% of single)
+--- PASS: TestBatchKAmortization (14.38s)
+=== RUN   TestGemmaBisect_PerLayer
+    bisect_test.go:45: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemmaBisect_PerLayer (0.00s)
+=== RUN   TestGemmaBisect_Head
+    bisect_test.go:218: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemmaBisect_Head (0.00s)
+=== RUN   TestGemmaTraceDims
+    bisect_test.go:389: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemmaTraceDims (0.00s)
+=== RUN   TestBytesToU32_matchesManualLE
+--- PASS: TestBytesToU32_matchesManualLE (0.00s)
+=== RUN   TestPagedMoE_forwardEntryPointsDecline
+--- PASS: TestPagedMoE_forwardEntryPointsDecline (0.03s)
+=== RUN   TestMetal_CloseFreesMemory
+    close_leak_test.go:45: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMetal_CloseFreesMemory (0.00s)
+=== RUN   TestMetal_PrefillScratchDoesNotLeak
+    close_leak_test.go:106: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMetal_PrefillScratchDoesNotLeak (0.00s)
+=== RUN   TestMetal_CloseWithSecondModelAlive
+    close_leak_test.go:196: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMetal_CloseWithSecondModelAlive (0.00s)
+=== RUN   TestMetalResident_C09_execErrSurfaces
+--- PASS: TestMetalResident_C09_execErrSurfaces (0.01s)
+=== RUN   TestMetalResident_C11_argmaxEqualsFullLogits
+--- PASS: TestMetalResident_C11_argmaxEqualsFullLogits (0.02s)
+=== RUN   TestCohereResidentSmokeMetal
+    cohere_resident_smoke_test.go:34: resident decode path: metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+--- PASS: TestCohereResidentSmokeMetal (0.03s)
+=== RUN   TestCohere2ResidentSmokeMetal
+    cohere_resident_smoke_test.go:38: resident decode path: metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+--- PASS: TestCohere2ResidentSmokeMetal (0.03s)
+=== RUN   TestCopyBytesToU32Buf_oversizedSrcPanics
+--- PASS: TestCopyBytesToU32Buf_oversizedSrcPanics (0.00s)
+=== RUN   TestCopyBytesToU32Buf_exactFitStillWorks
+--- PASS: TestCopyBytesToU32Buf_exactFitStillWorks (0.00s)
+=== RUN   TestR17KernelsCompile
+--- PASS: TestR17KernelsCompile (0.00s)
+=== RUN   TestR17_decodeFidelityGate
+    decode_attn_r17_test.go:261: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint; needs the S-K3900 prefill-gate reference)
+--- SKIP: TestR17_decodeFidelityGate (0.00s)
+=== RUN   TestR17AttentionProto
+    decode_attn_r17_test.go:491: set GOINFER_METAL_R17=1 (loads a real checkpoint; minutes of GPU time)
+--- SKIP: TestR17AttentionProto (0.00s)
+=== RUN   TestR17StateLeak
+    decode_attn_r17_test.go:743: set GOINFER_METAL_R17=1 (loads a real checkpoint)
+--- SKIP: TestR17StateLeak (0.00s)
+=== RUN   TestR17StateLeakBisect
+    decode_attn_r17_test.go:847: set GOINFER_METAL_R17=1 (loads a real checkpoint)
+--- SKIP: TestR17StateLeakBisect (0.00s)
+=== RUN   TestR17StateLeakAllBuffers
+    decode_attn_r17_test.go:1046: set GOINFER_METAL_R17=1 (loads a real checkpoint)
+--- SKIP: TestR17StateLeakAllBuffers (0.00s)
+=== RUN   TestR17KernelAccuracy
+    decode_attn_r17_test.go:1196: set GOINFER_METAL_R17=1 (loads a real checkpoint)
+--- SKIP: TestR17KernelAccuracy (0.00s)
+=== RUN   TestMetalDecodeDecomp
+    decode_decomp_test.go:40: set GOINFER_METAL_DDECOMP=1 (loads a real checkpoint; minutes of GPU time)
+--- SKIP: TestMetalDecodeDecomp (0.00s)
+=== RUN   TestDeltaNetKernels_cpuParity
+    deltanet_test.go:170: DeltaNet mixer chain vs CPU on Metal, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:34:   delta_conv  worst cosine=1.000000000 worst maxAbs/rms=1.18e-06
+    deltanet_test.go:34:   delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.44e-07
+    deltanet_test.go:34:   delta_rule  worst cosine=1.000000000 worst maxAbs/rms=8.16e-06
+    deltanet_test.go:34:   delta_gnorm worst cosine=1.000000000 worst maxAbs/rms=2.24e-05
+--- PASS: TestDeltaNetKernels_cpuParity (0.14s)
+=== RUN   TestDeltaNorm_zeroHead
+    deltanet_test.go:287: delta_norm vs l2normScaled over 16 heads incl. a zero head and a 1e-7 head: clean
+--- PASS: TestDeltaNorm_zeroHead (0.00s)
+=== RUN   TestDeltaNetKernels_mutations
+=== RUN   TestDeltaNetKernels_mutations/invert_GVA_head_map_(headV/rep_->_headV%rep)
+    deltanet_test.go:170: DeltaNet mixer chain vs CPU on Metal, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:360:   delta_conv  worst cosine=1.000000000 worst maxAbs/rms=1.18e-06
+    deltanet_test.go:360:   delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.44e-07
+    deltanet_test.go:360:   delta_rule  worst cosine=-0.165485708 worst maxAbs/rms=28
+    deltanet_test.go:360:   delta_gnorm worst cosine=-0.314855468 worst maxAbs/rms=96
+=== RUN   TestDeltaNetKernels_mutations/drop_the_v-slice_offset_(vBase_dropped_from_the_v_read)
+    deltanet_test.go:170: DeltaNet mixer chain vs CPU on Metal, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:360:   delta_conv  worst cosine=1.000000000 worst maxAbs/rms=1.18e-06
+    deltanet_test.go:360:   delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.44e-07
+    deltanet_test.go:360:   delta_rule  worst cosine=-0.013528387 worst maxAbs/rms=24.4
+    deltanet_test.go:360:   delta_gnorm worst cosine=-0.126773633 worst maxAbs/rms=48.2
+=== RUN   TestDeltaNetKernels_mutations/collapse_the_state_row_(vd_dropped_from_the_address,_threads_alias)
+    deltanet_test.go:170: DeltaNet mixer chain vs CPU on Metal, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:360:   delta_conv  worst cosine=1.000000000 worst maxAbs/rms=1.18e-06
+    deltanet_test.go:360:   delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.44e-07
+    deltanet_test.go:360:   delta_rule  worst cosine=0.504443240 worst maxAbs/rms=18.4
+    deltanet_test.go:360:   delta_gnorm worst cosine=0.444500230 worst maxAbs/rms=43.1
+=== RUN   TestDeltaNetKernels_mutations/drop_the_conv_ring_slide_(win_never_advances)
+    deltanet_test.go:170: DeltaNet mixer chain vs CPU on Metal, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:360:   delta_conv  worst cosine=0.407758688 worst maxAbs/rms=13.9
+    deltanet_test.go:360:   delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.44e-07
+    deltanet_test.go:360:   delta_rule  worst cosine=-0.054657690 worst maxAbs/rms=18.4
+    deltanet_test.go:360:   delta_gnorm worst cosine=-0.105821601 worst maxAbs/rms=50
+--- PASS: TestDeltaNetKernels_mutations (0.55s)
+    --- PASS: TestDeltaNetKernels_mutations/invert_GVA_head_map_(headV/rep_->_headV%rep) (0.14s)
+    --- PASS: TestDeltaNetKernels_mutations/drop_the_v-slice_offset_(vBase_dropped_from_the_v_read) (0.14s)
+    --- PASS: TestDeltaNetKernels_mutations/collapse_the_state_row_(vd_dropped_from_the_address,_threads_alias) (0.13s)
+    --- PASS: TestDeltaNetKernels_mutations/drop_the_conv_ring_slide_(win_never_advances) (0.15s)
+=== RUN   TestZZ_metalDepthBench
+    depth_bench_test.go:28: Metal depth A/B (timing diagnostic, not a gate); set GOINFER_METAL_DEPTH_BENCH=1
+--- SKIP: TestZZ_metalDepthBench (0.00s)
+=== RUN   TestEnsurePrefill_latchesFailure
+--- PASS: TestEnsurePrefill_latchesFailure (0.00s)
+=== RUN   TestExecutorAttnPlan
+=== RUN   TestExecutorAttnPlan/floor_crossing_in_steady_decode
+=== RUN   TestExecutorAttnPlan/400-key_request_after_a_long_one
+=== RUN   TestExecutorAttnPlan/long_prefilled_request_after_a_short_one
+=== RUN   TestExecutorAttnPlan/700-key_request_after_a_long_one
+=== RUN   TestExecutorAttnPlan/long_prefilled_request_again
+=== RUN   TestExecutorAttnPlan/1400-key_request_after_a_long_one
+=== RUN   TestExecutorAttnPlan/decode_after_ForwardBatch_at_depth
+--- PASS: TestExecutorAttnPlan (5.19s)
+    --- PASS: TestExecutorAttnPlan/floor_crossing_in_steady_decode (1.65s)
+    --- PASS: TestExecutorAttnPlan/400-key_request_after_a_long_one (0.03s)
+    --- PASS: TestExecutorAttnPlan/long_prefilled_request_after_a_short_one (0.05s)
+    --- PASS: TestExecutorAttnPlan/700-key_request_after_a_long_one (0.02s)
+    --- PASS: TestExecutorAttnPlan/long_prefilled_request_again (0.04s)
+    --- PASS: TestExecutorAttnPlan/1400-key_request_after_a_long_one (0.03s)
+    --- PASS: TestExecutorAttnPlan/decode_after_ForwardBatch_at_depth (0.04s)
+=== RUN   TestExpertPoolBatch_matchesSequential
+    expertpool_batch_test.go:130: expert pool batch vs sequential: 4 requests, 6 total stages, agree throughout
+--- PASS: TestExpertPoolBatch_matchesSequential (0.00s)
+=== RUN   TestExpertPoolBatch_overCapacityPanics
+--- PASS: TestExpertPoolBatch_overCapacityPanics (0.00s)
+=== RUN   TestExpertPoolBatch_pread
+--- PASS: TestExpertPoolBatch_pread (0.00s)
+=== RUN   TestExpertPool_lruAndStaging
+    expertpool_test.go:106: expert pool: 4 slots, 7 stages over the sequence — LRU eviction + staging correct
+--- PASS: TestExpertPool_lruAndStaging (0.00s)
+=== RUN   TestForwardMRoPE_constantShiftInvariance
+=== RUN   TestForwardMRoPE_constantShiftInvariance/positive
+    forwardmrope_parity_test.go:116: delta=17: cosine(ordinary, constant-shifted) = 1.00000000 maxAbs=0
+=== RUN   TestForwardMRoPE_constantShiftInvariance/negative
+    forwardmrope_parity_test.go:116: delta=-13: cosine(ordinary, constant-shifted) = 1.00000000 maxAbs=0
+--- PASS: TestForwardMRoPE_constantShiftInvariance (0.08s)
+    --- PASS: TestForwardMRoPE_constantShiftInvariance/positive (0.04s)
+    --- PASS: TestForwardMRoPE_constantShiftInvariance/negative (0.04s)
+=== RUN   TestForwardMRoPE_equalArgsMatchesForward
+--- PASS: TestForwardMRoPE_equalArgsMatchesForward (0.02s)
+=== RUN   TestForwardN_BitIdenticalParity
+=== RUN   TestForwardN_BitIdenticalParity/N=1_startPos=0
+    forwardn_batch_test.go:119: PASS: N=1, startPos=0: 64 logits bit-identical
+=== RUN   TestForwardN_BitIdenticalParity/N=2_startPos=0
+    forwardn_batch_test.go:119: PASS: N=2, startPos=0: 128 logits bit-identical
+=== RUN   TestForwardN_BitIdenticalParity/N=4_startPos=0
+    forwardn_batch_test.go:119: PASS: N=4, startPos=0: 256 logits bit-identical
+=== RUN   TestForwardN_BitIdenticalParity/N=8_startPos=0
+    forwardn_batch_test.go:119: PASS: N=8, startPos=0: 512 logits bit-identical
+=== RUN   TestForwardN_BitIdenticalParity/N=12_startPos=0
+    forwardn_batch_test.go:119: PASS: N=12, startPos=0: 768 logits bit-identical
+=== RUN   TestForwardN_BitIdenticalParity/N=4_startPos=6
+    forwardn_batch_test.go:119: PASS: N=4, startPos=6: 256 logits bit-identical
+=== RUN   TestForwardN_BitIdenticalParity/N=8_startPos=4
+    forwardn_batch_test.go:119: PASS: N=8, startPos=4: 512 logits bit-identical
+--- PASS: TestForwardN_BitIdenticalParity (0.17s)
+    --- PASS: TestForwardN_BitIdenticalParity/N=1_startPos=0 (0.02s)
+    --- PASS: TestForwardN_BitIdenticalParity/N=2_startPos=0 (0.02s)
+    --- PASS: TestForwardN_BitIdenticalParity/N=4_startPos=0 (0.02s)
+    --- PASS: TestForwardN_BitIdenticalParity/N=8_startPos=0 (0.03s)
+    --- PASS: TestForwardN_BitIdenticalParity/N=12_startPos=0 (0.03s)
+    --- PASS: TestForwardN_BitIdenticalParity/N=4_startPos=6 (0.03s)
+    --- PASS: TestForwardN_BitIdenticalParity/N=8_startPos=4 (0.03s)
+=== RUN   TestPrefillGemmW4
+    gemm_w4_test.go:140: prefill int4-dequant MMA GEMM 32x128x40 vs CPU: cos=1.0000000 maxAbs=0.0043 — PARITY ✓
+    gemm_w4_test.go:170: baseline single-token int4 GEMV gate/up: 168 us/token
+    gemm_w4_test.go:178: M= 64: prefill GEMM 66.3 us/row vs GEMV 168 => 2.5x faster
+    gemm_w4_test.go:178: M=256: prefill GEMM 65.6 us/row vs GEMV 168 => 2.6x faster
+    gemm_w4_test.go:178: M=512: prefill GEMM 65.6 us/row vs GEMV 168 => 2.6x faster
+--- PASS: TestPrefillGemmW4 (21.16s)
+=== RUN   TestGemma4_26B_autoPagedRuns
+    gemma4_26b_autopaged_test.go:45: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_26B_autoPagedRuns (0.00s)
+=== RUN   TestGemma4_26B_localize
+    gemma4_26b_localize_test.go:53: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_26B_localize (0.00s)
+=== RUN   TestGemma4_26B_pagedRuns
+    gemma4_26b_paged_test.go:26: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_26B_pagedRuns (0.00s)
+=== RUN   TestGemma4_26B_posSweep
+    gemma4_26b_possweep_test.go:24: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_26B_posSweep (0.00s)
+=== RUN   TestGemma4_26B_routingAgreement
+    gemma4_26b_routing_test.go:57: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_26B_routingAgreement (0.00s)
+=== RUN   TestGemma4_26B_pagingWidthConsistency
+    gemma4_26b_widthconsistency_test.go:21: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4_26B_pagingWidthConsistency (0.00s)
+=== RUN   TestGemma4DenseScaled_metalParity
+    gemma4_dense_scaled_test.go:95:   pos  0  Metal-vs-CPUint4 0.982087 | CPUint4-vs-f32 0.937372  argmax metal=1 cpu4=1
+    gemma4_dense_scaled_test.go:95:   pos  1  Metal-vs-CPUint4 0.906563 | CPUint4-vs-f32 0.888420  argmax metal=7 cpu4=7
+    gemma4_dense_scaled_test.go:95:   pos  2  Metal-vs-CPUint4 0.931000 | CPUint4-vs-f32 0.706356  argmax metal=42 cpu4=42
+    gemma4_dense_scaled_test.go:95:   pos  3  Metal-vs-CPUint4 0.937596 | CPUint4-vs-f32 0.790510  argmax metal=100 cpu4=100
+    gemma4_dense_scaled_test.go:95:   pos  4  Metal-vs-CPUint4 0.931175 | CPUint4-vs-f32 0.763437  argmax metal=5 cpu4=5
+    gemma4_dense_scaled_test.go:95:   pos  5  Metal-vs-CPUint4 0.861910 | CPUint4-vs-f32 0.678512  argmax metal=200 cpu4=200
+    gemma4_dense_scaled_test.go:95:   pos  6  Metal-vs-CPUint4 0.778039 | CPUint4-vs-f32 0.459816  argmax metal=154 cpu4=13
+    gemma4_dense_scaled_test.go:95:   pos  7  Metal-vs-CPUint4 0.889235 | CPUint4-vs-f32 0.583232  argmax metal=88 cpu4=88
+    gemma4_dense_scaled_test.go:95:   pos  8  Metal-vs-CPUint4 0.850306 | CPUint4-vs-f32 0.753655  argmax metal=3 cpu4=3
+    gemma4_dense_scaled_test.go:95:   pos  9  Metal-vs-CPUint4 0.853599 | CPUint4-vs-f32 0.604847  argmax metal=71 cpu4=71
+    gemma4_dense_scaled_test.go:95:   pos 10  Metal-vs-CPUint4 0.831065 | CPUint4-vs-f32 0.596285  argmax metal=128 cpu4=128
+    gemma4_dense_scaled_test.go:95:   pos 11  Metal-vs-CPUint4 0.826253 | CPUint4-vs-f32 0.615335  argmax metal=9 cpu4=9
+    gemma4_dense_scaled_test.go:95:   pos 12  Metal-vs-CPUint4 0.852107 | CPUint4-vs-f32 0.475815  argmax metal=250 cpu4=250
+    gemma4_dense_scaled_test.go:95:   pos 13  Metal-vs-CPUint4 0.862730 | CPUint4-vs-f32 0.509950  argmax metal=17 cpu4=17
+    gemma4_dense_scaled_test.go:95:   pos 14  Metal-vs-CPUint4 0.752345 | CPUint4-vs-f32 0.430155  argmax metal=60 cpu4=60
+    gemma4_dense_scaled_test.go:95:   pos 15  Metal-vs-CPUint4 0.679507 | CPUint4-vs-f32 0.499336  argmax metal=200 cpu4=200
+    gemma4_dense_scaled_test.go:99: scaled dense (256-local, 12 layers): pos0=0.982087 exact-argmax 15/16 | mean Metal-vs-CPUint4=0.857845  CPUint4-vs-f32=0.643314 (min floor 0.4302)
+--- PASS: TestGemma4DenseScaled_metalParity (0.81s)
+=== RUN   TestGemma4_depthSweep
+    gemma4_depth_sweep_test.go:23: set GOINFER_DEPTH_SWEEP=1 (loads 12/24/48/64-layer f32 checkpoints)
+--- SKIP: TestGemma4_depthSweep (0.00s)
+=== RUN   TestGemma4Expert_geluTanhChain
+    gemma4_expert_chain_test.go:115: single-expert gelu-tanh chain vs CPU: cosine=0.999997 | SiLU control=0.996271
+--- PASS: TestGemma4Expert_geluTanhChain (0.02s)
+=== RUN   TestGemma4MoE_noiseFloor
+=== RUN   TestGemma4MoE_noiseFloor/gemma4-moe-tiny
+    gemma4_moe_noisefloor_test.go:103: gemma4-moe-tiny noise floor: CPU-int4-vs-f32 minCosine=0.793088 argmax 6/8 | routing agree 16/16 (100.0%) minMargin=0.2679
+=== RUN   TestGemma4MoE_noiseFloor/gemma4-moe-kv-tiny
+    gemma4_moe_noisefloor_test.go:103: gemma4-moe-kv-tiny noise floor: CPU-int4-vs-f32 minCosine=0.705708 argmax 5/8 | routing agree 8/16 (50.0%) minMargin=0.0001
+    gemma4_moe_noisefloor_test.go:124: gemma4-moe-kv-tiny routing is degenerate (agree 50.0%, margin 0.0001) — NOT a gating fixture: CUDA gates the MoE delta on moe-tiny and the MoE+K=V composition via the real 26B, not this toy. Informational only.
+--- PASS: TestGemma4MoE_noiseFloor (0.04s)
+    --- PASS: TestGemma4MoE_noiseFloor/gemma4-moe-tiny (0.03s)
+    --- SKIP: TestGemma4MoE_noiseFloor/gemma4-moe-kv-tiny (0.01s)
+=== RUN   TestGemma4MoE_localize
+    gemma4_moe_parity_test.go:73: after layer 0: cosine 0.999734 maxAbs 1.2701e-01
+    gemma4_moe_parity_test.go:73: after layer 1: cosine 0.999616 maxAbs 2.5262e-01
+    gemma4_moe_parity_test.go:78: gemma4 MoE localize: worst layer 1 cosine 0.999616 over 2 layers
+--- PASS: TestGemma4MoE_localize (0.05s)
+=== RUN   TestGemma4MoE_residentParity
+    gemma4_moe_parity_test.go:126:   pos  0 cosine 0.999554 maxAbs 3.0536e-02 argmax cpu=216 metal=216
+    gemma4_moe_parity_test.go:126:   pos  1 cosine 0.997235 maxAbs 7.2685e-02 argmax cpu=53 metal=53
+    gemma4_moe_parity_test.go:126:   pos  2 cosine 0.971912 maxAbs 2.1827e-01 argmax cpu=42 metal=200
+    gemma4_moe_parity_test.go:126:   pos  3 cosine 0.958311 maxAbs 2.7575e-01 argmax cpu=100 metal=100
+    gemma4_moe_parity_test.go:126:   pos  4 cosine 0.969807 maxAbs 2.4232e-01 argmax cpu=42 metal=42
+    gemma4_moe_parity_test.go:126:   pos  5 cosine 0.940001 maxAbs 2.9424e-01 argmax cpu=200 metal=200
+    gemma4_moe_parity_test.go:126:   pos  6 cosine 0.982381 maxAbs 2.2174e-01 argmax cpu=111 metal=111
+    gemma4_moe_parity_test.go:126:   pos  7 cosine 0.869371 maxAbs 5.0043e-01 argmax cpu=88 metal=88
+    gemma4_moe_parity_test.go:128: gemma4 dense‖MoE resident parity: exact-argmax 7/8 gaps>3%=0 worstNearTie=0.90% minCosine=0.869371 maxAbs=5.0043e-01
+--- PASS: TestGemma4MoE_residentParity (0.06s)
+=== RUN   TestGemma4Kernels_libraryCompiles
+--- PASS: TestGemma4Kernels_libraryCompiles (0.00s)
+=== RUN   TestGemma4Kernels_rmsnormNW
+    gemma4_moekernels_test.go:78: rmsnorm_nw vs CPU: maxRelErr=0.00e+00, input preserved
+--- PASS: TestGemma4Kernels_rmsnormNW (0.00s)
+=== RUN   TestGemma4Kernels_scaleWgtByExpert
+    gemma4_moekernels_test.go:119: per-expert-scale fold: [0.6 0.4] * scale[[2 0]] = [1.2 0.6] (matches CPU)
+--- PASS: TestGemma4Kernels_scaleWgtByExpert (0.00s)
+=== RUN   TestGemma4Kernels_scaleVec_zeroVec
+    gemma4_moekernels_test.go:173: scale_vec (x*0.375) and zero_vec (NaN→0) match CPU
+--- PASS: TestGemma4Kernels_scaleVec_zeroVec (0.00s)
+=== RUN   TestGemma4Paging_bitExact
+    gemma4_paging_parity_test.go:100: paged≡non-paged on gemma4-moe-tiny: N=3/4 slots, topK=2, 8 positions — 0 logit mismatches
+    gemma4_paging_parity_test.go:102: pool activity: coldStarts=6 evictions=12 sameExpertReuse(hits)=14
+--- PASS: TestGemma4Paging_bitExact (0.12s)
+=== RUN   TestGemma4Router_residentIdxParity
+    gemma4_router_parity_test.go:127: router idx parity: 16/16 decisions bit-equal (CPU f32 router vs resident gemv_f32_f32, pure f32, no activation quant) — routing retired from the Metal resident suspect list at any expert count
+--- PASS: TestGemma4Router_residentIdxParity (0.04s)
+=== RUN   TestGemma4TwoGeom_localize
+    gemma4_twogeom_test.go:92: layer 0 (LOCAL hd=16, real V — geometry seam): cosine 0.987820 maxAbs 1.0637e+00
+    gemma4_twogeom_test.go:93: layer 1 (GLOBAL hd=512, K=V — v_norm(raw k)) : cosine 0.980915 maxAbs 1.3611e+00
+--- PASS: TestGemma4TwoGeom_localize (0.04s)
+=== RUN   TestGemma4TwoGeom_f16ScaleConfound
+    gemma4_twogeom_test.go:164:   pos  0 cosine 0.982504 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  1 cosine 0.981251 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  2 cosine 0.991256 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  3 cosine 0.993403 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  4 cosine 0.989408 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  5 cosine 0.990362 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  6 cosine 0.986775 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:164:   pos  7 cosine 0.988997 (vs f16-scale CPU)
+    gemma4_twogeom_test.go:166: f16-scale-matched minCosine = 0.981251 — vs ~0.9806 against the f32-scale CPU: the group-scale representation is ~0 of the gap; the residual is the broader resident quant path (f16 KV / int8 act)
+--- PASS: TestGemma4TwoGeom_f16ScaleConfound (0.05s)
+=== RUN   TestGemma4TwoGeom_residentParity
+    gemma4_twogeom_test.go:216:   pos  0 cosine 0.982773 maxAbs 1.8692e-01 argmax cpu=183 metal=183
+    gemma4_twogeom_test.go:216:   pos  1 cosine 0.980557 maxAbs 2.1389e-01 argmax cpu=7 metal=7
+    gemma4_twogeom_test.go:216:   pos  2 cosine 0.991390 maxAbs 1.4924e-01 argmax cpu=42 metal=42
+    gemma4_twogeom_test.go:216:   pos  3 cosine 0.993272 maxAbs 1.1092e-01 argmax cpu=107 metal=107
+    gemma4_twogeom_test.go:216:   pos  4 cosine 0.989700 maxAbs 1.2578e-01 argmax cpu=5 metal=5
+    gemma4_twogeom_test.go:216:   pos  5 cosine 0.990314 maxAbs 1.2574e-01 argmax cpu=179 metal=179
+    gemma4_twogeom_test.go:216:   pos  6 cosine 0.986816 maxAbs 1.6056e-01 argmax cpu=13 metal=13
+    gemma4_twogeom_test.go:216:   pos  7 cosine 0.988931 maxAbs 1.5121e-01 argmax cpu=67 metal=67
+    gemma4_twogeom_test.go:218: two-geometry K=V resident parity: exact-argmax 8/8 gaps>3%=0 worstNearTie=0.00% minCosine=0.980557 maxAbs=2.1389e-01
+--- PASS: TestGemma4TwoGeom_residentParity (0.05s)
+=== RUN   TestGemmaConfirmer_MatchedInput
+    gemma_confirmer_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemmaConfirmer_MatchedInput (0.00s)
+=== RUN   TestDenseResidentParity
+    gemma_parity_test.go:154: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDenseResidentParity (0.00s)
+=== RUN   TestGemma3ResidentParity
+    gemma_parity_test.go:163: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma3ResidentParity (0.00s)
+=== RUN   TestGemmaSublayer_MetalContribution
+    gemma_sublayer_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemmaSublayer_MetalContribution (0.00s)
+=== RUN   TestGemma_rmsnormF32
+=== RUN   TestGemma_rmsnormF32/plain_w
+=== RUN   TestGemma_rmsnormF32/add_one
+--- PASS: TestGemma_rmsnormF32 (0.00s)
+    --- PASS: TestGemma_rmsnormF32/plain_w (0.00s)
+    --- PASS: TestGemma_rmsnormF32/add_one (0.00s)
+=== RUN   TestGemma_gluAct
+=== RUN   TestGemma_gluAct/gelu_tanh
+=== RUN   TestGemma_gluAct/silu
+--- PASS: TestGemma_gluAct (0.00s)
+    --- PASS: TestGemma_gluAct/gelu_tanh (0.00s)
+    --- PASS: TestGemma_gluAct/silu (0.00s)
+=== RUN   TestGemma_rmsnormQuantAddOne
+=== RUN   TestGemma_rmsnormQuantAddOne/plain_w
+=== RUN   TestGemma_rmsnormQuantAddOne/add_one
+--- PASS: TestGemma_rmsnormQuantAddOne (0.00s)
+    --- PASS: TestGemma_rmsnormQuantAddOne/plain_w (0.00s)
+    --- PASS: TestGemma_rmsnormQuantAddOne/add_one (0.00s)
+=== RUN   TestLayerB_gemvW8A8Parity
+    gemv_test.go:135: W8A8 GEMV 256x1536 on Metal GPU (cgo-free) vs CPU: cosine=1.0000000 maxrel=0.00e+00 — PARITY
+--- PASS: TestLayerB_gemvW8A8Parity (0.00s)
+=== RUN   TestGemvW4A8Coal_cpuParity
+    gemv_w4a8_coal_bench_test.go:23: gemv_w4a8_coal 512x4096 vs CPU: cosine=1.000000000 maxrel=3.07e-05
+--- PASS: TestGemvW4A8Coal_cpuParity (0.02s)
+=== RUN   TestSAGemvBiasResid
+    gemv_w4a8_sa_bias_resid_test.go:105: gemv_w4a8_sa_bias_resid N=128 K=512 vs CPU: cos=1.0000000 maxRel=0.0000 — PARITY ✓
+--- PASS: TestSAGemvBiasResid (0.00s)
+=== RUN   TestCoalGemvBiasResid
+    gemv_w4a8_sa_bias_resid_test.go:215: gemv_w4a8_resid_bias N=64 K=3072 vs CPU: cos=1.0000000 maxRel=0.0000 — PARITY ✓
+--- PASS: TestCoalGemvBiasResid (0.00s)
+=== RUN   TestLayerB_gemvW4A8Parity
+    gemv_w4a8_test.go:145: W4A8 GEMV 256x1536 (int4, target quant) on Metal GPU (cgo-free) vs CPU: cosine=1.0000000 maxrel=0.00e+00 — PARITY
+--- PASS: TestLayerB_gemvW4A8Parity (0.00s)
+=== RUN   TestNib2HalfAllValues
+--- PASS: TestNib2HalfAllValues (0.00s)
+=== RUN   TestGemvW4F16_vsScalarReference
+=== RUN   TestGemvW4F16_vsScalarReference/K1536_qkv_gateup
+    gemv_w4f16_test.go:182: K=1536 N=64: maxAbs=9.53674e-07 cosine=1.00000000
+=== RUN   TestGemvW4F16_vsScalarReference/K8960_intermediate
+    gemv_w4f16_test.go:182: K=8960 N=64: maxAbs=3.8147e-06 cosine=1.00000000
+--- PASS: TestGemvW4F16_vsScalarReference (0.01s)
+    --- PASS: TestGemvW4F16_vsScalarReference/K1536_qkv_gateup (0.00s)
+    --- PASS: TestGemvW4F16_vsScalarReference/K8960_intermediate (0.01s)
+=== RUN   TestGemvW4F16_epilogues
+=== RUN   TestGemvW4F16_epilogues/bias
+=== NAME  TestGemvW4F16_epilogues
+    gemv_w4f16_test.go:305: bias: maxAbs=1.19209e-06
+=== RUN   TestGemvW4F16_epilogues/resid
+=== NAME  TestGemvW4F16_epilogues
+    gemv_w4f16_test.go:326: resid: maxAbs=9.53674e-07
+--- PASS: TestGemvW4F16_epilogues (0.00s)
+    --- PASS: TestGemvW4F16_epilogues/bias (0.00s)
+    --- PASS: TestGemvW4F16_epilogues/resid (0.00s)
+=== RUN   TestGemvW8A8Amax_cpuParity
+    gemv_w8a8_amax_bench_test.go:136: gemv_w8a8_amax 64 tiles vs CPU: 0 mismatches, maxAbsErr=0
+--- PASS: TestGemvW8A8Amax_cpuParity (0.02s)
+=== RUN   TestGemvW8A8Coal_cpuParity
+    gemv_w8a8_coal_bench_test.go:25: gemv_w8a8_coal 512x4096 vs CPU: cosine=1.000000000 maxrel=0.00e+00
+--- PASS: TestGemvW8A8Coal_cpuParity (0.02s)
+=== RUN   TestGemma3_GeneratesCoherently
+    gen_test.go:20: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma3_GeneratesCoherently (0.00s)
+=== RUN   TestGeometryPortIsLive
+    geometry_port_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGeometryPortIsLive (0.00s)
+=== RUN   TestBuildResident_glmMoE_routerNotDeclined
+--- PASS: TestBuildResident_glmMoE_routerNotDeclined (0.01s)
+=== RUN   TestLayerNormQuant
+    gpt2_kernels_test.go:102: LayerNorm with bias (GPT-2): cosine 0.9999882
+    gpt2_kernels_test.go:102: LayerNorm bias-free (Cohere): cosine 0.9999887
+--- PASS: TestLayerNormQuant (0.00s)
+=== RUN   TestActQuant
+    gpt2_kernels_test.go:171: act_quant GELU-tanh I=3072 vs CPU: cosine=1.0000000 — PARITY
+--- PASS: TestActQuant (0.00s)
+=== RUN   TestGPT2ResidentParity
+    gpt2_real_test.go:44: prompt "The capital of France is" -> [464 3139 286 4881 318] -> decodes to "The capital of France is"
+    gpt2_real_test.go:46: ../testdata/gpt2: 17/24 argmax-exact, worst near-tie 9.470%, 3 gaps >3%, min cosine 0.999094
+--- PASS: TestGPT2ResidentParity (1.23s)
+=== RUN   TestGPT2ForwardArgmax_matchesFullLogits
+--- PASS: TestGPT2ForwardArgmax_matchesFullLogits (1.15s)
+=== RUN   TestGPT2ResidentParityMetal
+    gpt2_resident_parity_test.go:34: resident decode path: metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+    gpt2_resident_parity_test.go:74:   tok   1: cosine=0.999476 maxAbs=17.36 argmax_match=false
+    gpt2_resident_parity_test.go:74:   tok   2: cosine=0.999862 maxAbs=16.16 argmax_match=false
+    gpt2_resident_parity_test.go:74:   tok   4: cosine=0.999912 maxAbs=16.67 argmax_match=false
+    gpt2_resident_parity_test.go:74:   tok   8: cosine=0.999911 maxAbs=7.563 argmax_match=false
+    gpt2_resident_parity_test.go:74:   tok  16: cosine=0.999926 maxAbs=15.28 argmax_match=false
+    gpt2_resident_parity_test.go:74:   tok  32: cosine=0.999933 maxAbs=10.26 argmax_match=false
+    gpt2_resident_parity_test.go:74:   tok  64: cosine=0.999875 maxAbs=6.45 argmax_match=false
+    gpt2_resident_parity_test.go:77:   worst cosine over 64 tokens: 0.999476 (tok1 0.999476, drift 0.0000); argmax agree 10/64
+    gpt2_resident_parity_test.go:99:   replay of the first 16 tokens after Reset: worst self-cosine 1.000000000
+--- PASS: TestGPT2ResidentParityMetal (2.70s)
+=== RUN   TestGptOssAttnSink_metal
+    gptoss_kernels_test.go:143: no sink: max|diff| = 5.215e-08
+    gptoss_kernels_test.go:143: small sink: max|diff| = 5.960e-08
+    gptoss_kernels_test.go:143: sink dominates: max|diff| = 5.329e-14
+    gptoss_kernels_test.go:143: negligible sink ≈ no sink: max|diff| = 5.215e-08
+--- PASS: TestGptOssAttnSink_metal (0.00s)
+=== RUN   TestGptOssSwigluQuant_metal
+    gptoss_kernels_test.go:228: clamp coverage: 75 elements over +limit, 74 under -limit
+    gptoss_kernels_test.go:277: clamped-SwiGLU: scale 0.440942, max|diff| 2.177e-01 (one int8 step = 4.409e-01)
+--- PASS: TestGptOssSwigluQuant_metal (0.00s)
+=== RUN   TestGptOssRoute_metal
+    gptoss_kernels_test.go:357: route_gptoss: idx [30 31 2 9] (bias promoted expert 30/31), weights [0.8333302 0.15508647 0.0058146054 0.005768763]
+--- PASS: TestGptOssRoute_metal (0.01s)
+=== RUN   TestGptOssMoEDownBias_metal
+    gptoss_kernels_test.go:493: gemv_w4a8_moe_wacc_bias N=64 K=512 vs CPU: cos=1.0000000 maxRel=0.0000 — PARITY ✓
+--- PASS: TestGptOssMoEDownBias_metal (0.00s)
+=== RUN   TestGptOssMoEDownBias_pagedIndexesBiasByExpert
+    gptoss_kernels_test.go:609: paged: weights at slot row 0, bias at expert 2 — cos=1.0000000 maxRel=0.0000 ✓
+--- PASS: TestGptOssMoEDownBias_pagedIndexesBiasByExpert (0.00s)
+=== RUN   TestGptOssBiasDispatches_alwaysIndexedByRealExpert
+--- PASS: TestGptOssBiasDispatches_alwaysIndexedByRealExpert (0.00s)
+=== RUN   TestGptOssResidentParityReal20B
+    gptoss_real20b_test.go:40: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 (loads a 12 GB model from ~/models)
+--- SKIP: TestGptOssResidentParityReal20B (0.00s)
+=== RUN   TestGptOssResidentMemGuardDeclines
+    gptoss_real20b_test.go:158: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestGptOssResidentMemGuardDeclines (0.00s)
+=== RUN   TestGptOssResidentParity
+    gptoss_real_test.go:42: ../decoder/testdata/gptoss_tiny.gguf: 8/8 argmax-exact, worst near-tie 0.000%, 0 gaps >3%, min cosine 0.998901
+--- PASS: TestGptOssResidentParity (0.07s)
+=== RUN   TestGptOssPaging_matchesNonPaged
+=== RUN   TestGptOssPaging_matchesNonPaged/slots=2
+    gptoss_real_test.go:137: slots=2: 24 positions bit-identical to the non-paged build
+=== RUN   TestGptOssPaging_matchesNonPaged/slots=3
+    gptoss_real_test.go:137: slots=3: 24 positions bit-identical to the non-paged build
+--- PASS: TestGptOssPaging_matchesNonPaged (0.25s)
+    --- PASS: TestGptOssPaging_matchesNonPaged/slots=2 (0.09s)
+    --- PASS: TestGptOssPaging_matchesNonPaged/slots=3 (0.09s)
+=== RUN   TestGPUStep0
+    gpustep0_test.go:19: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGPUStep0 (0.00s)
+=== RUN   TestGumbelMSL_philoxKnownAnswers
+--- PASS: TestGumbelMSL_philoxKnownAnswers (0.00s)
+=== RUN   TestGumbelDeviceAgreesWithHost
+    gumbel_test.go:87: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint for the compiled gumbel kernels)
+--- SKIP: TestGumbelDeviceAgreesWithHost (0.00s)
+=== RUN   TestPhiloxGumbelMSL_mutationDetectsAConstantChange
+    gumbel_test.go:191: set GOINFER_HEAVY_TESTS=1 (compiles a mutated kernel library)
+--- SKIP: TestPhiloxGumbelMSL_mutationDetectsAConstantChange (0.00s)
+=== RUN   TestHiddenLastResidentParityMetal
+    hiddenlast_resident_parity_test.go:85: HiddenLast over 24 tokens: cosine=0.99927615 maxAbs=11.0381
+    hiddenlast_resident_parity_test.go:104: HiddenLast over 8 tokens (2nd, after Reset): cosine=0.99911894 maxAbs=9.90779
+--- PASS: TestHiddenLastResidentParityMetal (1.19s)
+=== RUN   TestBuildResident_declinesWithLoudReasonForRepackedOnlyInt4
+    int4_repacked_only_decline_test.go:47: decline error: metal: BuildResident panicked: metal: int4 tensor has no canonical bytes (layout row4-only): model was loaded for a CPU-only backend; load with Options.Backend set to "metal" to keep canonical bytes for residency
+--- PASS: TestBuildResident_declinesWithLoudReasonForRepackedOnlyInt4 (0.18s)
+=== RUN   TestGemma_Int4DirectContext
+    int4direct_test.go:25: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma_Int4DirectContext (0.00s)
+=== RUN   TestMetalKVI8_PipelineBuild
+--- PASS: TestMetalKVI8_PipelineBuild (0.00s)
+=== RUN   TestMetalKVI8_KVStoreAndAttentionParity
+    kv_i8_test.go:196: attention_i8 vs CPU ref: cosine=1.0000000 maxAbs=5.96e-08
+--- PASS: TestMetalKVI8_KVStoreAndAttentionParity (0.04s)
+=== RUN   TestMetalKVI8_DeepContext
+    kv_i8_test.go:260: attention_i8 deep context (nKeys=8192) completed with finite values (got[0]=-0.0000)
+--- PASS: TestMetalKVI8_DeepContext (0.02s)
+=== RUN   TestMetalBuildResident_KVI8
+    kv_i8_test.go:326: pos 0: INT8 KV vs FP16 KV logits cosine = 0.9999983
+    kv_i8_test.go:326: pos 1: INT8 KV vs FP16 KV logits cosine = 1.0000000
+    kv_i8_test.go:326: pos 2: INT8 KV vs FP16 KV logits cosine = 0.9999940
+    kv_i8_test.go:326: pos 3: INT8 KV vs FP16 KV logits cosine = 0.9999972
+    kv_i8_test.go:326: pos 4: INT8 KV vs FP16 KV logits cosine = 0.9999963
+--- PASS: TestMetalBuildResident_KVI8 (0.04s)
+=== RUN   TestResidentPrefillSeed_metalKVOnly_byteIdentical
+goinfer: batched prefill declined for a 16-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): metal: prompt too short (16 tokens) for fast prefill (floor=64; §3 floor); using sequential path
+    kvonly_prefill_generate_test.go:69: KV-only prefill == full-logits prefill: 16 tokens byte-identical
+--- PASS: TestResidentPrefillSeed_metalKVOnly_byteIdentical (0.08s)
+=== RUN   TestForwardNoLogits_byteIdenticalKV
+    kvonly_prefill_test.go:80: ForwardNoLogits == full-logits Forward: 64 logits byte-identical
+--- PASS: TestForwardNoLogits_byteIdenticalKV (0.03s)
+=== RUN   TestForwardNoLogits_pagedMoEFallback
+    kvonly_prefill_test.go:149: paged-MoE ForwardNoLogits fallback == full-logits Forward: 256 logits byte-identical
+--- PASS: TestForwardNoLogits_pagedMoEFallback (0.09s)
+=== RUN   TestForwardNoLogits_pipelineTransitionParity
+    kvonly_prefill_test.go:242: pipeline transition parity: all turns and decode steps 100% byte-identical
+--- PASS: TestForwardNoLogits_pipelineTransitionParity (0.04s)
+=== RUN   TestLayerB_fullLayerForward
+    layer_test.go:175: FULL dense decode layer (H=256 nH=4/2 hd=64 I=512, 17 dispatches in ONE command buffer) on Metal GPU (cgo-free) vs CPU: cosine=1.0000000 maxAbs=4.70e-03 — PARITY
+--- PASS: TestLayerB_fullLayerForward (0.02s)
+=== RUN   TestLayernormQuant_cpuParity
+    layernorm_quant_bench_test.go:103: layernorm_quant H=4096 vs CPU: cosine=1.000000000, int8 exact=4096/4096
+--- PASS: TestLayernormQuant_cpuParity (0.00s)
+=== RUN   TestDumpLogitsForBisect
+    logit_dump_test.go:21: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDumpLogitsForBisect (0.00s)
+=== RUN   TestSetAdapter_partialBindErrorReleasesBuffers
+--- PASS: TestSetAdapter_partialBindErrorReleasesBuffers (0.01s)
+=== RUN   TestLoRADelta_multiThreadgroupMatchesReference
+    lora_delta_multitg_test.go:113: Out=600 (3 threadgroups, last ragged): maxAbs=0.000008
+--- PASS: TestLoRADelta_multiThreadgroupMatchesReference (0.00s)
+=== RUN   TestLoRAResidentParityMetal
+    lora_resident_parity_test.go:102: resident-with-adapter vs CPU-with-adapter: cosine=0.999969 maxAbs=0.004099 argmax_match=true
+--- PASS: TestLoRAResidentParityMetal (0.05s)
+=== RUN   TestLoRAResidentParityMetal_armedExecutorThenBind
+    lora_resident_parity_test.go:199: armed-then-bound resident vs CPU-with-adapter: cosine=0.998835 maxAbs=0.02235 argmax_match=true
+--- PASS: TestLoRAResidentParityMetal_armedExecutorThenBind (0.03s)
+=== RUN   TestSetAdapter_cachesDeviceBuffersAcrossRebind
+--- PASS: TestSetAdapter_cachesDeviceBuffersAcrossRebind (0.02s)
+=== RUN   TestMellumResidentParity
+    mellum_real_test.go:22: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMellumResidentParity (0.00s)
+=== RUN   TestLayerA_deviceAndCompiler
+    metal_test.go:17: Metal device (cgo-free, purego): "Apple M1 Pro"
+    metal_test.go:32: compiled bfloat MSL kernel at 3.1 — landmine defused (risk #7)
+--- PASS: TestLayerA_deviceAndCompiler (0.00s)
+=== RUN   TestLayerA_vectorAddDispatch
+    metal_test.go:82: vector-add 4096 elems on Metal GPU (cgo-free): out[0]=0 out[4095]=12285 — CORRECT
+--- PASS: TestLayerA_vectorAddDispatch (0.00s)
+=== RUN   TestMinistral3ResidentSmokeMetal
+    ministral3_resident_parity_test.go:56: resident decode path: metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+--- PASS: TestMinistral3ResidentSmokeMetal (0.05s)
+=== RUN   TestMMAPrefill
+    mma_test.go:84: simdgroup_matrix compiles + pipelines cgo-free at MSL 3.1 ✓
+    mma_test.go:123: MMA GEMM correctness: maxErr=0.00000 vs CPU (f16 inputs) ✓
+    mma_test.go:157: single-token int4 GEMV gate/up: 168.0 us
+    mma_test.go:173: M=  8: naive  65.0 us/row | blocked  89.9 us/row | GEMV 168 us/row => blocked 1.9x faster than the loop
+    mma_test.go:173: M= 64: naive  79.2 us/row | blocked  47.8 us/row | GEMV 168 us/row => blocked 3.5x faster than the loop
+    mma_test.go:173: M=256: naive  88.9 us/row | blocked  47.3 us/row | GEMV 168 us/row => blocked 3.5x faster than the loop
+    mma_test.go:173: M=512: naive  93.6 us/row | blocked  47.3 us/row | GEMV 168 us/row => blocked 3.6x faster than the loop
+--- PASS: TestMMAPrefill (67.87s)
+=== RUN   TestRealModel_parityAndThroughput
+    model_test.go:18: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestRealModel_parityAndThroughput (0.00s)
+=== RUN   TestAutoMoESlotsFor
+=== RUN   TestAutoMoESlotsFor/ample_RAM_clamps_to_the_ceiling
+=== RUN   TestAutoMoESlotsFor/tight_RAM_produces_a_small_N_above_topK
+=== RUN   TestAutoMoESlotsFor/clamped_up_to_topK_when_the_raw_quotient_undershoots_it
+=== RUN   TestAutoMoESlotsFor/the_fixed_part_alone_doesn't_fit:_still_returns_topK,_not_zero_or_negative
+=== RUN   TestAutoMoESlotsFor/degenerate_perSlot<=0_falls_back_to_the_ceiling,_not_a_divide-by-zero
+--- PASS: TestAutoMoESlotsFor (0.00s)
+    --- PASS: TestAutoMoESlotsFor/ample_RAM_clamps_to_the_ceiling (0.00s)
+    --- PASS: TestAutoMoESlotsFor/tight_RAM_produces_a_small_N_above_topK (0.00s)
+    --- PASS: TestAutoMoESlotsFor/clamped_up_to_topK_when_the_raw_quotient_undershoots_it (0.00s)
+    --- PASS: TestAutoMoESlotsFor/the_fixed_part_alone_doesn't_fit:_still_returns_topK,_not_zero_or_negative (0.00s)
+    --- PASS: TestAutoMoESlotsFor/degenerate_perSlot<=0_falls_back_to_the_ceiling,_not_a_divide-by-zero (0.00s)
+=== RUN   TestMoeTopK_realFixtures
+--- PASS: TestMoeTopK_realFixtures (0.04s)
+=== RUN   TestMetalMoESlotsRequest_autoOnlyWithCacheExperts
+    moe_auto_slots_test.go:128: auto-derived slot request on mixtral-tiny: "64"
+--- PASS: TestMetalMoESlotsRequest_autoOnlyWithCacheExperts (0.02s)
+=== RUN   TestAutoMoESlots_fitsTheGuardsBudget
+--- PASS: TestAutoMoESlots_fitsTheGuardsBudget (0.00s)
+=== RUN   TestMoEExpertMajor_ParityVsRowByRow
+=== RUN   TestMoEExpertMajor_ParityVsRowByRow/M=8
+    moe_expert_major_prefill_test.go:80: M=8: seqArg=94 argMajor=94 argRow=94 | cos(major,seq)=0.99994 cos(row,seq)=0.99993 cos(major,row)=0.99999
+=== RUN   TestMoEExpertMajor_ParityVsRowByRow/M=16
+    moe_expert_major_prefill_test.go:80: M=16: seqArg=94 argMajor=94 argRow=94 | cos(major,seq)=0.99996 cos(row,seq)=0.99996 cos(major,row)=0.99999
+=== RUN   TestMoEExpertMajor_ParityVsRowByRow/M=32
+    moe_expert_major_prefill_test.go:80: M=32: seqArg=336 argMajor=336 argRow=336 | cos(major,seq)=0.99997 cos(row,seq)=0.99995 cos(major,row)=0.99997
+=== RUN   TestMoEExpertMajor_ParityVsRowByRow/M=64
+    moe_expert_major_prefill_test.go:80: M=64: seqArg=474 argMajor=474 argRow=474 | cos(major,seq)=0.99993 cos(row,seq)=0.99993 cos(major,row)=0.99998
+--- PASS: TestMoEExpertMajor_ParityVsRowByRow (0.19s)
+    --- PASS: TestMoEExpertMajor_ParityVsRowByRow/M=8 (0.03s)
+    --- PASS: TestMoEExpertMajor_ParityVsRowByRow/M=16 (0.03s)
+    --- PASS: TestMoEExpertMajor_ParityVsRowByRow/M=32 (0.04s)
+    --- PASS: TestMoEExpertMajor_ParityVsRowByRow/M=64 (0.07s)
+=== RUN   TestMoEPrefillSpeedupDirect
+    moe_expert_major_prefill_test.go:180: M=16: RowByRow=56.546542ms (5.65 ms/run), ExpertMajor=36.803125ms (3.68 ms/run) => 1.54x speedup
+    moe_expert_major_prefill_test.go:180: M=32: RowByRow=108.056917ms (10.81 ms/run), ExpertMajor=37.785ms (3.78 ms/run) => 2.86x speedup
+    moe_expert_major_prefill_test.go:180: M=64: RowByRow=197.579084ms (19.76 ms/run), ExpertMajor=44.4835ms (4.45 ms/run) => 4.44x speedup
+--- PASS: TestMoEPrefillSpeedupDirect (0.55s)
+=== RUN   TestMoEExpertReuseProbe
+    moe_expert_reuse_probe_test.go:40: GOINFER_MOE_REUSE_PROBE_CKPT not set — this is a manual measurement, not a CI gate
+--- SKIP: TestMoEExpertReuseProbe (0.00s)
+=== RUN   TestMoE_assemblyVsDense
+    moe_model_test.go:96: MoE-vs-dense (identical experts, same GPU int4 quant): cosine min=1.000000, argmax 16/16 match
+--- PASS: TestMoE_assemblyVsDense (0.05s)
+=== RUN   TestMoE_declinesPrefill
+Context leak detected, CoreAnalytics returned false
+    moe_model_test.go:336: MoE-vs-dense prefill (identical experts): cosine=1.000000
+--- PASS: TestMoE_declinesPrefill (0.04s)
+=== RUN   TestMoEPaging_matchesNonPaged
+=== RUN   TestMoEPaging_matchesNonPaged/slots=2
+    moe_paging_test.go:70: slots=2: 32 tokens, exact logit match against the non-paged (all-experts-resident) run
+=== RUN   TestMoEPaging_matchesNonPaged/slots=3
+    moe_paging_test.go:70: slots=3: 32 tokens, exact logit match against the non-paged (all-experts-resident) run
+--- PASS: TestMoEPaging_matchesNonPaged (0.38s)
+    --- PASS: TestMoEPaging_matchesNonPaged/slots=2 (0.17s)
+    --- PASS: TestMoEPaging_matchesNonPaged/slots=3 (0.15s)
+=== RUN   TestMoEPagingPread_matchesByteCopy
+prequant: note: no tokenizer.json in ../decoder/testdata/qwen3_5_moe-tiny — weights-only bundle (serve needs a separate tokenizer)
+[metal] weights aliased from qwen3_5_moe-tiny.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (15 single tensors + 0 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 5 fused groups not adjacent, 15 scale sets converted
+[metal] note: qwen3_5_moe-tiny.giw carries no f16 scales (written before weights format v14, or not with -target metal), so they were converted at load — rebuild it with prequant -target metal to alias them too
+=== RUN   TestMoEPagingPread_matchesByteCopy/slots=2/bytecopy
+[metal] weights aliased from qwen3_5_moe-tiny.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (15 single tensors + 0 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 5 fused groups not adjacent, 15 scale sets converted
+[metal] note: qwen3_5_moe-tiny.giw carries no f16 scales (written before weights format v14, or not with -target metal), so they were converted at load — rebuild it with prequant -target metal to alias them too
+    moe_pread_test.go:104: slots=2 byte-copy: 32 tokens exact vs non-paged
+=== RUN   TestMoEPagingPread_matchesByteCopy/slots=2/pread
+[metal] weights aliased from qwen3_5_moe-tiny.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (15 single tensors + 0 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 5 fused groups not adjacent, 15 scale sets converted
+[metal] note: qwen3_5_moe-tiny.giw carries no f16 scales (written before weights format v14, or not with -target metal), so they were converted at load — rebuild it with prequant -target metal to alias them too
+    moe_pread_test.go:113: slots=2 pread: 32 tokens exact vs non-paged, 142 expert stages served by pread
+=== RUN   TestMoEPagingPread_matchesByteCopy/slots=3/bytecopy
+[metal] weights aliased from qwen3_5_moe-tiny.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (15 single tensors + 0 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 5 fused groups not adjacent, 15 scale sets converted
+[metal] note: qwen3_5_moe-tiny.giw carries no f16 scales (written before weights format v14, or not with -target metal), so they were converted at load — rebuild it with prequant -target metal to alias them too
+    moe_pread_test.go:104: slots=3 byte-copy: 32 tokens exact vs non-paged
+=== RUN   TestMoEPagingPread_matchesByteCopy/slots=3/pread
+[metal] weights aliased from qwen3_5_moe-tiny.giw (GOINFER_METAL_ALIAS=0 to copy instead): 0 MB bound in place, 0 MB copied (anonymous) — 0 MB int4 nibbles (15 single tensors + 0 fused groups = 0 MB) + 0 MB int8 codes (1 matrices) + 0 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 5 fused groups not adjacent, 15 scale sets converted
+[metal] note: qwen3_5_moe-tiny.giw carries no f16 scales (written before weights format v14, or not with -target metal), so they were converted at load — rebuild it with prequant -target metal to alias them too
+    moe_pread_test.go:113: slots=3 pread: 32 tokens exact vs non-paged, 85 expert stages served by pread
+--- PASS: TestMoEPagingPread_matchesByteCopy (0.58s)
+    --- PASS: TestMoEPagingPread_matchesByteCopy/slots=2/bytecopy (0.13s)
+    --- PASS: TestMoEPagingPread_matchesByteCopy/slots=2/pread (0.13s)
+    --- PASS: TestMoEPagingPread_matchesByteCopy/slots=3/bytecopy (0.12s)
+    --- PASS: TestMoEPagingPread_matchesByteCopy/slots=3/pread (0.13s)
+=== RUN   TestMoEPrefillMeasure_batchedVsSequential
+    moe_prefill_measure_test.go:33: GOINFER_MOE_PREFILL_CKPT not set — this is a manual measurement, not a CI gate
+--- SKIP: TestMoEPrefillMeasure_batchedVsSequential (0.00s)
+=== RUN   TestMoESlotsViaOptions_engagesPaging
+--- PASS: TestMoESlotsViaOptions_engagesPaging (0.04s)
+=== RUN   TestMoESlotsViaOptions_engagesPaging_genericMoE
+--- PASS: TestMoESlotsViaOptions_engagesPaging_genericMoE (0.02s)
+=== RUN   TestMoESlotsViaOptions_belowTopKRefusesWithNumbers
+--- PASS: TestMoESlotsViaOptions_belowTopKRefusesWithNumbers (0.02s)
+=== RUN   TestMoE_libraryCompiles
+--- PASS: TestMoE_libraryCompiles (0.00s)
+=== RUN   TestMoE_routerGEMV
+--- PASS: TestMoE_routerGEMV (0.00s)
+=== RUN   TestMoE_sharedGateCombine
+--- PASS: TestMoE_sharedGateCombine (0.00s)
+=== RUN   TestMoE_route
+=== RUN   TestMoE_route/softmax_norm
+=== RUN   TestMoE_route/softmax_nonorm_scale
+=== RUN   TestMoE_route/sigmoid_bias
+=== RUN   TestMoE_route/group_limit
+--- PASS: TestMoE_route (0.03s)
+    --- PASS: TestMoE_route/softmax_norm (0.01s)
+    --- PASS: TestMoE_route/softmax_nonorm_scale (0.01s)
+    --- PASS: TestMoE_route/sigmoid_bias (0.01s)
+    --- PASS: TestMoE_route/group_limit (0.01s)
+=== RUN   TestMoE_indexedExpertGEMV
+--- PASS: TestMoE_indexedExpertGEMV (0.00s)
+=== RUN   TestOlmo3ResidentSmokeMetal
+    olmo3_resident_smoke_test.go:26: required feats: [per-layer-rope post-only-norm qk-norm-whole sliding-window yarn-mscale], missing from prefill: []
+    olmo3_resident_smoke_test.go:26: resident decode path: metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+    olmo3_resident_smoke_test.go:26: Olmo 3 prefill path: batched f16-MMA above 64 prompt tokens; sequential below (§3 floor)
+    olmo3_resident_smoke_test.go:26: Olmo 3 batched prefill succeeded with 24 tokens
+--- PASS: TestOlmo3ResidentSmokeMetal (0.05s)
+=== RUN   TestOlmoHybridResidentSmokeMetal
+    olmo3_resident_smoke_test.go:30: required feats: [deltanet nope post-only-norm qk-norm-whole], missing from prefill: [deltanet]
+    olmo3_resident_smoke_test.go:30: resident decode path: metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+    olmo3_resident_smoke_test.go:30: Olmo Hybrid properly declined batched prefill: sequential — arch/geometry not supported by f16 MMA prefill kernel
+--- PASS: TestOlmoHybridResidentSmokeMetal (0.04s)
+=== RUN   TestOptFwd_bitIdenticalStream
+    optfwd_test.go:78: stream identical (40 tokens); OptFwd: guessed=6 hit=1 rate=16.7%
+--- PASS: TestOptFwd_bitIdenticalStream (2.18s)
+=== RUN   TestOptFwd_lowTempHighHitRate
+    optfwd_test.go:113: hit rate: T=0.2 -> 94.0%, T=1.0 -> 0.0%
+--- PASS: TestOptFwd_lowTempHighHitRate (2.23s)
+=== RUN   TestInt4Pack_declinesNonMultipleOf32K
+--- PASS: TestInt4Pack_declinesNonMultipleOf32K (0.00s)
+=== RUN   TestPageCost_submissionStructure
+    pagecost_measure_test.go:58: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestPageCost_submissionStructure (0.00s)
+=== RUN   TestPageCost_sharedEventReal
+    pagecost_sharedevent_test.go:59: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestPageCost_sharedEventReal (0.00s)
+=== RUN   TestPagingBudget
+    paging_budget_test.go:17: set GOINFER_BUDGET_PROBE=1
+--- SKIP: TestPagingBudget (0.00s)
+=== RUN   TestParallelEmbedsF32ToF16_matchesSerial
+--- PASS: TestParallelEmbedsF32ToF16_matchesSerial (0.06s)
+=== RUN   TestParity_NaNCosineFailsTheGate
+--- PASS: TestParity_NaNCosineFailsTheGate (0.00s)
+=== RUN   TestEncodeAhead
+    pipe_test.go:18: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestEncodeAhead (0.00s)
+=== RUN   TestMetalPrefillDecomp
+    prefill_decomp_test.go:45: set GOINFER_METAL_DECOMP=1 (loads a real checkpoint; minutes of GPU time)
+--- SKIP: TestMetalPrefillDecomp (0.00s)
+=== RUN   TestPoolCells
+--- PASS: TestPoolCells (0.00s)
+=== RUN   TestPoolCells_ceilingVetoesEvenWhenPooledMeanIsFine
+--- PASS: TestPoolCells_ceilingVetoesEvenWhenPooledMeanIsFine (0.00s)
+=== RUN   TestPrefillGateVsReference
+    prefill_gate_ref_test.go:96: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints; needs Phase A's reference files)
+--- SKIP: TestPrefillGateVsReference (0.00s)
+=== RUN   TestPrefillGate
+    prefill_gate_test.go:61: set GOINFER_HEAVY_TESTS=1 (loads two real checkpoints, S and D7)
+--- SKIP: TestPrefillGate (0.00s)
+=== RUN   TestS2KernelsCompile
+--- PASS: TestS2KernelsCompile (0.00s)
+=== RUN   TestPrefillParityGemma
+    prefill_gemma_test.go:81: gemma prefill vs sequential last-token: argmax pre=64 seq=64, cosine=0.99982
+    prefill_gemma_test.go:91: gemma prefill last-token argmax matches sequential ✓ (cosine 0.9998)
+--- PASS: TestPrefillParityGemma (0.03s)
+=== RUN   TestPrefillDeclinesGemma4PerLayerGeom
+--- PASS: TestPrefillDeclinesGemma4PerLayerGeom (0.03s)
+=== RUN   TestPrefillLast_declinesPagedGenericMoE
+--- PASS: TestPrefillLast_declinesPagedGenericMoE (0.01s)
+=== RUN   TestPrefillLast_admitsNonPagedGenericMoE
+--- PASS: TestPrefillLast_admitsNonPagedGenericMoE (0.01s)
+=== RUN   TestPrefillParityMoE
+    prefill_moe_parity_test.go:30: moe prefill vs sequential last-token: argmax pre=149 seq=149, cosine=0.99993
+    prefill_moe_parity_test.go:30: moe prefill last-token argmax matches sequential ✓ (cosine 0.9999)
+--- PASS: TestPrefillParityMoE (0.06s)
+=== RUN   TestPrefillParityMoEGatedShared
+    prefill_moe_parity_test.go:38: no fixture (../testdata/tiny-qwen2-moe/config.json)
+--- SKIP: TestPrefillParityMoEGatedShared (0.00s)
+=== RUN   TestPrefillNoNaN
+    prefill_nan_test.go:20: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestPrefillNoNaN (0.00s)
+=== RUN   TestPrefillParity
+    prefill_parity_test.go:20: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestPrefillParity (0.00s)
+=== RUN   TestPrefillLast_startPosGreaterThanZero
+    prefill_startpos_test.go:85: startPos=24 (K=48): argmax ref=21 fast=21, cosine=0.999941
+--- PASS: TestPrefillLast_startPosGreaterThanZero (0.06s)
+=== RUN   TestPrefillTTFT
+    prefill_ttft_test.go:32: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+--- SKIP: TestPrefillTTFT (0.00s)
+=== RUN   TestProfileKernels
+    profile_test.go:67: qkv gemv (2048xK1536)     29.0 us/dispatch
+    profile_test.go:67: gate/up gemv (17920xK1536)   210.3 us/dispatch
+    profile_test.go:67: gate/up SA (17920xK1536)   166.8 us/dispatch
+    profile_test.go:67: down gemv (1536xK8960)   114.9 us/dispatch
+    profile_test.go:67: o gemv (1536xK1536)       24.1 us/dispatch
+    profile_test.go:67: lm head gemv (151936xK1536)  1734.6 us/dispatch
+    profile_test.go:67: rmsnorm_quant (H1536)      9.3 us/dispatch
+    profile_test.go:67: swiglu_quant (I8960)      12.1 us/dispatch
+    profile_test.go:67: attention (nH12,nKeys32)    12.2 us/dispatch
+    profile_test.go:90: ---- per-token estimate: 28×421us + lm 1734us = 13.5 ms/token (74 tok/s) ----
+    profile_test.go:92:   gemv share/layer: qkv 29 + gate/up 210 + down 114 + o 24 us (of 421)
+--- PASS: TestProfileKernels (5.62s)
+=== RUN   TestQKNorm
+    qknorm_test.go:84: qk_norm(addOne=false) vs CPU: maxAbs=1.19e-07 — PARITY ✓
+    qknorm_test.go:84: qk_norm(addOne=true) vs CPU: maxAbs=2.38e-07 — PARITY ✓
+--- PASS: TestQKNorm (0.00s)
+=== RUN   TestQKNorm_wholeVector
+    qknorm_whole_test.go:95: qk_norm whole-vector geometry (addOne=false) vs CPU: maxAbs=1.19e-07 — PARITY ✓
+    qknorm_whole_test.go:95: qk_norm whole-vector geometry (addOne=true) vs CPU: maxAbs=2.38e-07 — PARITY ✓
+--- PASS: TestQKNorm_wholeVector (0.00s)
+=== RUN   TestQuantVec_cpuParity
+    quant_vec_bench_test.go:81: quant_vec H=4096 vs CPU: cosine=1.000000000, int8 exact=4096/4096
+--- PASS: TestQuantVec_cpuParity (0.00s)
+=== RUN   TestQuantBar_CPUInt4VsInt8
+    quantbar_test.go:40: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestQuantBar_CPUInt4VsInt8 (0.00s)
+=== RUN   TestQwen35_35B_pagedRuns
+    qwen35_35b_paged_test.go:45: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestQwen35_35B_pagedRuns (0.00s)
+=== RUN   TestQwen35_35B_cpuPagedBaseline
+    qwen35_35b_paged_test.go:217: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestQwen35_35B_cpuPagedBaseline (0.00s)
+=== RUN   TestQwen35ResidentParityMetal
+=== RUN   TestQwen35ResidentParityMetal/qwen3_5-tiny
+    qwen35_resident_parity_test.go:56: resident decode path: metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+    qwen35_resident_parity_test.go:104:   tok    1: cosine=0.996729 maxAbs=0.03506 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok    2: cosine=0.988601 maxAbs=0.06276 argmax_match=false
+    qwen35_resident_parity_test.go:104:   tok    4: cosine=0.995256 maxAbs=0.0431 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok    8: cosine=0.993529 maxAbs=0.06296 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok   16: cosine=0.998251 maxAbs=0.02965 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok   64: cosine=0.997340 maxAbs=0.03273 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok  128: cosine=0.997958 maxAbs=0.03238 argmax_match=true
+    qwen35_resident_parity_test.go:107:   worst cosine over 128 tokens: 0.988601 (tok1 0.996729, drift 0.0081); argmax agree 111/128
+    qwen35_resident_parity_test.go:139:   replay of the first 16 tokens after Reset: worst self-cosine 1.000000000
+=== RUN   TestQwen35ResidentParityMetal/qwen3_5_moe-tiny
+    qwen35_resident_parity_test.go:56: resident decode path: metal-resident (int4)
+    qwen35_resident_parity_test.go:104:   tok    1: cosine=0.999960 maxAbs=0.004658 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok    2: cosine=0.993913 maxAbs=0.06023 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok    4: cosine=0.999695 maxAbs=0.01424 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok    8: cosine=0.999785 maxAbs=0.01145 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok   16: cosine=0.999938 maxAbs=0.004877 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok   64: cosine=0.999961 maxAbs=0.004791 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok  128: cosine=0.999979 maxAbs=0.00299 argmax_match=true
+    qwen35_resident_parity_test.go:107:   worst cosine over 128 tokens: 0.991074 (tok1 0.999960, drift 0.0089); argmax agree 127/128
+    qwen35_resident_parity_test.go:139:   replay of the first 16 tokens after Reset: worst self-cosine 1.000000000
+--- PASS: TestQwen35ResidentParityMetal (0.51s)
+    --- PASS: TestQwen35ResidentParityMetal/qwen3_5-tiny (0.22s)
+    --- PASS: TestQwen35ResidentParityMetal/qwen3_5_moe-tiny (0.30s)
+=== RUN   TestQwen35ResidentDecodeRateMetal
+=== RUN   TestQwen35ResidentDecodeRateMetal/qwen3_5-tiny
+    qwen35_resident_speed_test.go:91: qwen3_5-tiny @ int8int8 (hidden=64 hd=32 inter=128, 4 layers, vocab=256):
+    qwen35_resident_speed_test.go:93:   resident 906.9 tok/s (1.10 ms/tok, 0.276 ms/layer) | cpu 15888.8 tok/s (0.06 ms/tok, 0.016 ms/layer) | 0.06x
+    qwen35_resident_speed_test.go:102:   NOTE: resident is SLOWER here. Expected on a fixture this small — many dispatches per DeltaNet layer against microseconds of arithmetic. Re-measure at real width (GOINFER_DNET_SPEED_METAL_CKPT) before drawing any conclusion about a released model.
+=== RUN   TestQwen35ResidentDecodeRateMetal/qwen3_5_moe-tiny
+    qwen35_resident_speed_test.go:91: qwen3_5_moe-tiny @ int8int8 (hidden=64 hd=32 inter=128, 4 layers, vocab=256):
+    qwen35_resident_speed_test.go:93:   resident 834.2 tok/s (1.20 ms/tok, 0.300 ms/layer) | cpu 13177.7 tok/s (0.08 ms/tok, 0.019 ms/layer) | 0.06x
+    qwen35_resident_speed_test.go:102:   NOTE: resident is SLOWER here. Expected on a fixture this small — many dispatches per DeltaNet layer against microseconds of arithmetic. Re-measure at real width (GOINFER_DNET_SPEED_METAL_CKPT) before drawing any conclusion about a released model.
+--- PASS: TestQwen35ResidentDecodeRateMetal (0.25s)
+    --- PASS: TestQwen35ResidentDecodeRateMetal/qwen3_5-tiny (0.12s)
+    --- PASS: TestQwen35ResidentDecodeRateMetal/qwen3_5_moe-tiny (0.13s)
+=== RUN   TestR1_decodeFidelityGate
+    r1_gate3_test.go:31: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint; needs the S-K64 prefill-gate reference)
+--- SKIP: TestR1_decodeFidelityGate (0.00s)
+=== RUN   TestR1_guReference
+    r1_gu_reference_test.go:30: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint)
+--- SKIP: TestR1_guReference (0.00s)
+=== RUN   TestR1_laneVsCPU
+    r1_lane_vs_cpu_test.go:44: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint twice, sequentially)
+--- SKIP: TestR1_laneVsCPU (0.00s)
+=== RUN   TestR2_perLayerCtxDiff
+    r2_ctx_diff_test.go:48: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint)
+--- SKIP: TestR2_perLayerCtxDiff (0.00s)
+=== RUN   TestR2_replayDump
+    r2_ctx_diff_test.go:457: set GOINFER_R2_DUMP to a dump written by TestR2_perLayerCtxDiff
+--- SKIP: TestR2_replayDump (0.00s)
+=== RUN   TestR2_decodeFidelityGate
+    r2_gate_test.go:32: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint; needs the S-K3900 prefill-gate reference)
+--- SKIP: TestR2_decodeFidelityGate (0.00s)
+=== RUN   TestR3_startPosSpeed
+    r3_startpos_speed_test.go:38: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint)
+--- SKIP: TestR3_startPosSpeed (0.00s)
+=== RUN   TestResidencySet_pinsExactlyTheLiveSlots
+    residency_consistency_test.go:61: residency set pins exactly the 8 live slot buffers
+--- PASS: TestResidencySet_pinsExactlyTheLiveSlots (0.04s)
+=== RUN   TestZZ_residencyProbe
+    residency_probe_test.go:39: residency-cost diagnostic, not a gate; set GOINFER_RESIDENCY_PROBE=1 to run. Opt-in (not a permanent -skip) because its deferred arp.Drain() runs on an UNPINNED goroutine — an autorelease-pool drain without runtime.LockOSThread, the documented purego-objc hazard — so at the tail of a long metal run it can trip the spurious `fault 0x10` teardown crash, which aborts the whole test binary. Production never hits this: every serve-path ARPool.Drain runs on a LockOSThread'd executor/prefill goroutine
+--- SKIP: TestZZ_residencyProbe (0.00s)
+=== RUN   TestMetalResidentCheckCap
+--- PASS: TestMetalResidentCheckCap (0.00s)
+=== RUN   TestMetalCtxCapWithinKernelBound
+--- PASS: TestMetalCtxCapWithinKernelBound (0.00s)
+=== RUN   TestResolveMetalCtxCap
+=== RUN   TestResolveMetalCtxCap/unset_⇒_metalCtxCapDefault,_unchanged_historical_default
+=== RUN   TestResolveMetalCtxCap/explicit,_fits_both_the_kernel_ceiling_and_the_model_window_⇒_honoured_exactly
+=== RUN   TestResolveMetalCtxCap/explicit,_exceeds_the_model's_own_window_⇒_clamped_to_the_window,_not_refused
+=== RUN   TestResolveMetalCtxCap/explicit,_exceeds_the_kernel's_hard_ceiling_⇒_REFUSED_with_the_numbers,_never_silently_clamped
+--- PASS: TestResolveMetalCtxCap (0.02s)
+    --- PASS: TestResolveMetalCtxCap/unset_⇒_metalCtxCapDefault,_unchanged_historical_default (0.01s)
+    --- PASS: TestResolveMetalCtxCap/explicit,_fits_both_the_kernel_ceiling_and_the_model_window_⇒_honoured_exactly (0.00s)
+    --- PASS: TestResolveMetalCtxCap/explicit,_exceeds_the_model's_own_window_⇒_clamped_to_the_window,_not_refused (0.00s)
+    --- PASS: TestResolveMetalCtxCap/explicit,_exceeds_the_kernel's_hard_ceiling_⇒_REFUSED_with_the_numbers,_never_silently_clamped (0.00s)
+=== RUN   TestMetalBuildResident_explicitCtxTooLargeRefusesNotDecline
+[metal] metal: resident context 32769 positions exceeds this backend's hard ceiling of 32768 (kernel score tile capacity 4096 with deep-context online softmax) — use the staged/CPU path for a longer context, or request 32768 or fewer
+--- PASS: TestMetalBuildResident_explicitCtxTooLargeRefusesNotDecline (0.01s)
+=== RUN   TestMetalBuildResident_explicitCtxHonoured
+--- PASS: TestMetalBuildResident_explicitCtxHonoured (0.02s)
+=== RUN   TestResidentMemGuard
+--- PASS: TestResidentMemGuard (0.00s)
+=== RUN   TestMetalMemoryCeiling_takesTheStricterBound
+=== RUN   TestMetalMemoryCeiling_takesTheStricterBound/live_unknown_(0)_leaves_the_static_ceiling_untouched
+=== RUN   TestMetalMemoryCeiling_takesTheStricterBound/live_negative_(unknown)_leaves_the_static_ceiling_untouched
+=== RUN   TestMetalMemoryCeiling_takesTheStricterBound/live_LOOSER_than_static_does_not_widen_the_ceiling
+=== RUN   TestMetalMemoryCeiling_takesTheStricterBound/live_equal_to_static_does_not_widen_the_ceiling
+=== RUN   TestMetalMemoryCeiling_takesTheStricterBound/live_TIGHTER_than_static_wins
+=== RUN   TestMetalMemoryCeiling_takesTheStricterBound/live_tighter_by_a_small_margin_still_wins
+=== RUN   TestMetalMemoryCeiling_takesTheStricterBound/ram=0_is_unknown_regardless_of_the_live_probe
+--- PASS: TestMetalMemoryCeiling_takesTheStricterBound (0.00s)
+    --- PASS: TestMetalMemoryCeiling_takesTheStricterBound/live_unknown_(0)_leaves_the_static_ceiling_untouched (0.00s)
+    --- PASS: TestMetalMemoryCeiling_takesTheStricterBound/live_negative_(unknown)_leaves_the_static_ceiling_untouched (0.00s)
+    --- PASS: TestMetalMemoryCeiling_takesTheStricterBound/live_LOOSER_than_static_does_not_widen_the_ceiling (0.00s)
+    --- PASS: TestMetalMemoryCeiling_takesTheStricterBound/live_equal_to_static_does_not_widen_the_ceiling (0.00s)
+    --- PASS: TestMetalMemoryCeiling_takesTheStricterBound/live_TIGHTER_than_static_wins (0.00s)
+    --- PASS: TestMetalMemoryCeiling_takesTheStricterBound/live_tighter_by_a_small_margin_still_wins (0.00s)
+    --- PASS: TestMetalMemoryCeiling_takesTheStricterBound/ram=0_is_unknown_regardless_of_the_live_probe (0.00s)
+=== RUN   TestResidentFitsMemory_honorsLiveCeiling
+--- PASS: TestResidentFitsMemory_honorsLiveCeiling (0.01s)
+=== RUN   TestMetalMoESlotsFromEnv
+=== RUN   TestMetalMoESlotsFromEnv/unset
+=== RUN   TestMetalMoESlotsFromEnv/valid
+=== RUN   TestMetalMoESlotsFromEnv/zero
+=== RUN   TestMetalMoESlotsFromEnv/negative
+=== RUN   TestMetalMoESlotsFromEnv/not_a_number
+=== RUN   TestMetalMoESlotsFromEnv/Options_wins_over_a_conflicting_env_var
+=== RUN   TestMetalMoESlotsFromEnv/Options_alone,_no_env_var
+--- PASS: TestMetalMoESlotsFromEnv (0.05s)
+    --- PASS: TestMetalMoESlotsFromEnv/unset (0.01s)
+    --- PASS: TestMetalMoESlotsFromEnv/valid (0.01s)
+    --- PASS: TestMetalMoESlotsFromEnv/zero (0.01s)
+    --- PASS: TestMetalMoESlotsFromEnv/negative (0.01s)
+    --- PASS: TestMetalMoESlotsFromEnv/not_a_number (0.01s)
+    --- PASS: TestMetalMoESlotsFromEnv/Options_wins_over_a_conflicting_env_var (0.01s)
+    --- PASS: TestMetalMoESlotsFromEnv/Options_alone,_no_env_var (0.01s)
+=== RUN   TestResidentNeedBytes_honorsPagingSlots
+=== RUN   TestResidentNeedBytes_honorsPagingSlots/unset_env_==_unpaged
+=== RUN   TestResidentNeedBytes_honorsPagingSlots/slots=1_matches_ResidentWeightBytesPaged_and_is_strictly_smaller
+--- PASS: TestResidentNeedBytes_honorsPagingSlots (0.01s)
+    --- PASS: TestResidentNeedBytes_honorsPagingSlots/unset_env_==_unpaged (0.00s)
+    --- PASS: TestResidentNeedBytes_honorsPagingSlots/slots=1_matches_ResidentWeightBytesPaged_and_is_strictly_smaller (0.00s)
+=== RUN   TestResidentKVBytes_matchesMetalAllocation
+=== RUN   TestResidentKVBytes_matchesMetalAllocation/llama-tiny/kv=
+    residentkv_alloc_test.go:56: ctxCap 100: allocated 53248 B, ResidentKVBytes 53248 B
+=== RUN   TestResidentKVBytes_matchesMetalAllocation/llama-tiny/kv=i8
+    residentkv_alloc_test.go:56: ctxCap 100: allocated 33280 B, ResidentKVBytes 33280 B
+=== RUN   TestResidentKVBytes_matchesMetalAllocation/gemma4-dense-twogeom-tiny/kv=
+    residentkv_alloc_test.go:56: ctxCap 100: allocated 439296 B, ResidentKVBytes 439296 B
+=== RUN   TestResidentKVBytes_matchesMetalAllocation/gemma3-vl-tiny/kv=
+    residentkv_alloc_test.go:56: ctxCap 64: allocated 16384 B, ResidentKVBytes 16384 B
+=== RUN   TestResidentKVBytes_matchesMetalAllocation/qwen35-tiny/kv=
+    residentkv_alloc_test.go:56: ctxCap 64: allocated 8192 B, ResidentKVBytes 8192 B
+--- PASS: TestResidentKVBytes_matchesMetalAllocation (0.06s)
+    --- PASS: TestResidentKVBytes_matchesMetalAllocation/llama-tiny/kv= (0.01s)
+    --- PASS: TestResidentKVBytes_matchesMetalAllocation/llama-tiny/kv=i8 (0.01s)
+    --- PASS: TestResidentKVBytes_matchesMetalAllocation/gemma4-dense-twogeom-tiny/kv= (0.02s)
+    --- PASS: TestResidentKVBytes_matchesMetalAllocation/gemma3-vl-tiny/kv= (0.01s)
+    --- PASS: TestResidentKVBytes_matchesMetalAllocation/qwen35-tiny/kv= (0.01s)
+=== RUN   TestResidentKVPrecision_metalReportsWhatRuns
+--- PASS: TestResidentKVPrecision_metalReportsWhatRuns (0.05s)
+=== RUN   TestResidentKVBytes_excludesDeltaNetLayers
+    residentkvbytes_deltanet_test.go:44: qwen35-tiny: 4 layers, 3 linear-attention (no KV), 1 full-attention (KV)
+--- PASS: TestResidentKVBytes_excludesDeltaNetLayers (0.01s)
+=== RUN   TestRmsnormF32_cpuParity
+    rmsnorm_f32_bench_test.go:74: rmsnorm_f32 H=4096 vs CPU: cosine=1.000000000 maxAbs=4.768e-07
+--- PASS: TestRmsnormF32_cpuParity (0.00s)
+=== RUN   TestRmsnormQuant_cpuParity
+    rmsnorm_quant_bench_test.go:97: rmsnorm_quant H=4096 vs CPU: cosine=1.000000000, int8 exact=4096/4096
+--- PASS: TestRmsnormQuant_cpuParity (0.00s)
+=== RUN   TestRmsnormQuantF16_cpuParity
+    rmsnorm_quant_f16_bench_test.go:100: rmsnorm_quant_f16 H=4096 vs CPU: cosine=1.000000000, int8 exact=4096/4096
+--- PASS: TestRmsnormQuantF16_cpuParity (0.00s)
+=== RUN   TestLayerB_rmsnormQuantParity
+    rmsnorm_test.go:141: RMSNorm+quant H=1536 on Metal GPU (cgo-free) vs CPU: cosine=1.0000000, int8 exact=1536/1536, scale rel=0.00e+00 — PARITY
+--- PASS: TestLayerB_rmsnormQuantParity (0.00s)
+=== RUN   TestRope2Kv_matchesRope2ThenKv
+    rope2_kv_test.go:123: rope2_kv (1 dispatch) vs rope2+kv_store (2 dispatches), nH=12 nKV=2 hd=128: qkv max|diff|=0.000e+00, kc/vc exact match
+--- PASS: TestRope2Kv_matchesRope2ThenKv (0.00s)
+=== RUN   TestRope2_matchesTwoRope
+    rope2_test.go:97: rope2 (1 dispatch) vs rope×2 (2 dispatches), nH=12 nKV=2 hd=128: max|diff|=0.000e+00 over Q+K
+--- PASS: TestRope2_matchesTwoRope (0.00s)
+=== RUN   TestRopePartial
+    rope_partial_test.go:75: partial rope (rotaryDim=96/hd=128): maxAbs=2.16e-06, tail [96,128) untouched — PARITY ✓
+--- PASS: TestRopePartial (0.00s)
+=== RUN   TestLayerB_ropeParity
+    rope_test.go:92: RoPE nH=12 hd=128 pos=37 on Metal GPU (cgo-free) vs CPU: cosine=1.000000000 — PARITY
+--- PASS: TestLayerB_ropeParity (0.00s)
+=== RUN   TestRope_mscale
+    rope_test.go:162: scale=1 (no-op): max|diff| = 5.662e-07
+    rope_test.go:162: scale=0.85: max|diff| = 5.066e-07
+--- PASS: TestRope_mscale (0.00s)
+=== RUN   TestSAGemvLargeK
+    sa_largek_test.go:94: Stage A GEMV (dynamic As) K=4096 vs CPU: cos=1.0000000 maxRel=0.0000 — PARITY ✓ (As-cap fix at 4096)
+--- PASS: TestSAGemvLargeK (0.01s)
+=== RUN   TestSAGemv_OutlierRegime
+    sa_outlier_test.go:68: outlier regime: aSc=551.18, 1894/2048 channels crushed to int8 0 (the near-zero regime)
+    sa_outlier_test.go:112: Metal gemv_w4a8_sa vs bit-faithful CPU W4A8 (outlier regime, K=2048): worst |Δ|=0, worst rel=0 at row 0 (metal=-5.972e+04 cpu=-5.972e+04)
+    sa_outlier_test.go:119: KERNEL FAITHFUL: Metal == CPU W4A8 even in the outlier regime — the o-proj GEMV arithmetic is correct, so the Metal-vs-CUDA divergence is upstream (attention context) or quant policy, not this kernel
+--- PASS: TestSAGemv_OutlierRegime (0.01s)
+=== RUN   TestSAQVFusion_correctnessAndThroughput
+    sa_qv_fusion_test.go:122: correctness: fused vs two-dispatch max|diff|=0.000e+00 over N=1536
+    sa_qv_fusion_test.go:186: K=1536 N=1536 (interleaved): two-dispatch (quant_vec+gemv_w4a8_sa) 34.912µs/op, fused (gemv_w4a8_sa_qv) 37.941µs/op, speedup=0.920x
+    sa_qv_fusion_test.go:189: VERDICT: fusion is a NET LOSS at these dims (0.920x) — the redundant per-threadgroup amax reduction (~N/8=192 redundant O(K) passes) outweighs the removed dispatch + memory round-trip
+--- PASS: TestSAQVFusion_correctnessAndThroughput (0.06s)
+=== RUN   TestSampledGumbelStreamIdentity
+    sampled_gumbel_identity_test.go:31: heavy-checkpoint measurement: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestSampledGumbelStreamIdentity (0.00s)
+=== RUN   TestSampledDecodeLadder_speed
+    sampled_gumbel_speed_test.go:42: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint and runs a real decode ladder)
+--- SKIP: TestSampledDecodeLadder_speed (0.00s)
+=== RUN   TestSink_NormsNotCosines
+    sink_test.go:44: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSink_NormsNotCosines (0.00s)
+=== RUN   TestSmolLM3ResidentSmokeMetal
+    smollm3_resident_parity_test.go:56: resident decode path: metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+    smollm3_resident_parity_test.go:81: SmolLM3 prefill path: batched f16-MMA above 64 prompt tokens; sequential below (§3 floor)
+    smollm3_resident_parity_test.go:103: SmolLM3 batched prefill succeeded (32 tokens)
+    smollm3_resident_parity_test.go:105: SmolLM3 sequential vs batched prefill cosine: 0.99994
+--- PASS: TestSmolLM3ResidentSmokeMetal (0.05s)
+=== RUN   TestMetalEmbedScale_forwardMatchesForwardEmb
+--- PASS: TestMetalEmbedScale_forwardMatchesForwardEmb (0.74s)
+=== RUN   TestMetalSnapshotGolden
+    snapshot_golden_test.go:292: Metal snapshot: 10/10 checkpoints byte-identical to golden on Apple M1 Pro / macOS 26.6.2 (25G83) (3 model(s) run, 0 skipped)
+--- PASS: TestMetalSnapshotGolden (3.61s)
+=== RUN   TestZZ_metalSoftcapTokenShare
+    softcap_ab_test.go:20: Metal softcap token-share (timing diagnostic); set GOINFER_METAL_SOFTCAP_AB=1
+--- SKIP: TestZZ_metalSoftcapTokenShare (0.00s)
+=== RUN   TestMetalSoftcapParallel_bitIdentical
+--- PASS: TestMetalSoftcapParallel_bitIdentical (0.01s)
+=== RUN   TestMetalSpecPrefillRegression
+    spec_prefill_regression_test.go:63: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMetalSpecPrefillRegression (0.00s)
+=== RUN   TestSpecVerifyCurveMetal
+    spec_verify_curve_test.go:37: set GOINFER_HEAVY_TESTS=1 (loads a 1.5B model)
+--- SKIP: TestSpecVerifyCurveMetal (0.00s)
+=== RUN   TestSwigluQuant_MassiveChannel
+    swiglu_massive_test.go:63: act=GELU_TANH: scale=1.767 (absmax=224.469) | ch7027 int8-rt=-224.469  ref=-224.469
+    swiglu_massive_test.go:63: act=SILU: scale=1.767 (absmax=224.467) | ch7027 int8-rt=-224.467  ref=-224.467
+--- PASS: TestSwigluQuant_MassiveChannel (0.00s)
+=== RUN   TestSwigluQuant_cpuParity
+    swiglu_quant_bench_test.go:91: swiglu_quant I=4096 vs CPU: cosine=1.000000000, int8 exact=4096/4096
+--- PASS: TestSwigluQuant_cpuParity (0.00s)
+=== RUN   TestLayerB_swigluQuantParity
+    swiglu_test.go:111: SwiGLU+quant I=8960 on Metal GPU (cgo-free) vs CPU: cosine=1.0000000, int8 exact=8960/8960 — PARITY
+--- PASS: TestLayerB_swigluQuantParity (0.00s)
+=== RUN   TestLayerA_bindingTax
+    tax_test.go:56: per-command-buffer round-trip (1 dispatch, commit+wait): 166.5 µs
+    tax_test.go:57: 64 dispatches in one command buffer:                    417.5 µs
+    tax_test.go:58: marginal per-encoded-dispatch (msgSend):                3.98 µs
+    tax_test.go:59: => a token = 1 command buffer, 1 commit+wait (~167 µs fixed) + N dispatches (~4.0 µs each) — the commit/wait is amortized over the whole token, not per layer
+--- PASS: TestLayerA_bindingTax (0.04s)
+=== RUN   TestMaxThreadgroupStageBytes
+--- PASS: TestMaxThreadgroupStageBytes (0.00s)
+=== RUN   TestMetalThetaAB
+    theta_ab_test.go:43: set GOINFER_HEAVY_TESTS=1 GOINFER_THETA_AB=1
+--- SKIP: TestMetalThetaAB (0.00s)
+=== RUN   TestThetaProbe_Metal
+    theta_probe_test.go:42: set GOINFER_HEAVY_TESTS=1 GOINFER_THETA_PROBE=1
+--- SKIP: TestThetaProbe_Metal (0.00s)
+=== RUN   TestUploadKV_matchesSequentialForward
+=== RUN   TestUploadKV_matchesSequentialForward/prompt_16
+    uploadkv_parity_test.go:131: decode step 0: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:131: decode step 1: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:131: decode step 2: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:131: decode step 3: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+=== RUN   TestUploadKV_matchesSequentialForward/prompt_32
+    uploadkv_parity_test.go:131: decode step 0: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:131: decode step 1: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:131: decode step 2: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:131: decode step 3: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+--- PASS: TestUploadKV_matchesSequentialForward (0.14s)
+    --- PASS: TestUploadKV_matchesSequentialForward/prompt_16 (0.08s)
+    --- PASS: TestUploadKV_matchesSequentialForward/prompt_32 (0.06s)
+=== RUN   TestUploadKV_offsetBase
+    uploadkv_parity_test.go:228: offsetBase decode step 0: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:228: offsetBase decode step 1: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:228: offsetBase decode step 2: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+    uploadkv_parity_test.go:228: offsetBase decode step 3: cosine(ground-truth, hybrid) = 1.00000000 maxAbs=0
+--- PASS: TestUploadKV_offsetBase (0.06s)
+=== RUN   TestUploadKV_matchesSequentialForward_KVI8
+    uploadkv_parity_test.go:312: INT8 KV UploadKV decode step 0: cosine = 1.0000000 maxAbs=0
+    uploadkv_parity_test.go:312: INT8 KV UploadKV decode step 1: cosine = 1.0000000 maxAbs=0
+    uploadkv_parity_test.go:312: INT8 KV UploadKV decode step 2: cosine = 1.0000000 maxAbs=0
+    uploadkv_parity_test.go:312: INT8 KV UploadKV decode step 3: cosine = 1.0000000 maxAbs=0
+--- PASS: TestUploadKV_matchesSequentialForward_KVI8 (0.04s)
+=== RUN   TestVNorm_scaleless
+    vnorm_test.go:86: v_norm(unit, addOne=0) matches CPU scale-less RMSNorm: maxAbs=2.38e-07
+    vnorm_test.go:104: convention pinned: unit weight + addOne=1 gives 2× (so v_norm MUST use addOne=0)
+--- PASS: TestVNorm_scaleless (0.00s)
+=== RUN   TestSlidingWindow
+    window_test.go:68: sliding-window: windowed over 50 keys == full over last 16: maxAbs=0.00e+00 — PARITY ✓
+--- PASS: TestSlidingWindow (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	148.623s
+tagged exit=0

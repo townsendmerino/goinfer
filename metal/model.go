@@ -198,9 +198,16 @@ type resident struct {
 	// attnFASplitOverride, when > 0, replaces attnFASplitFor's split-count rule (the nKeys/32 and
 	// attnFAMaxSplit caps still apply). ZERO in production — set only by tests (R17 step 0 sweeps S to test
 	// whether attention_fa is latency-bound on too few simdgroups in flight). Read inside attnFASplitFor, the
-	// one function both the dispatch grid and setPos's uAttnFANSplit use, so the two cannot disagree.
-	attnFASplitOverride     int
-	curNKeys                int    // CPU-side twin of uNKeys' value, set by setPos — canUseAttnFA's depth gate
+	// one function both the dispatch grid and setPos's uAttnFANSplit use — and both for the same key count
+	// (the grid's comes from planNKeys) — so the two cannot disagree.
+	attnFASplitOverride int
+	curNKeys            int // CPU-side twin of uNKeys' value, set by setPos
+	// encNKeys, when > 0, is the key count of the command buffer being ENCODED: the pipelined executor sets it
+	// around each encode, because it encodes before the job's setPos (and ahead, for the predicted next job).
+	// 0 = the buffer runs at the position setPos last set — every synchronous path sets the position, then
+	// encodes. Read through planNKeys by the two encode-time attention decisions (canUseAttnFA's depth gate,
+	// attention_fa's split grid). See execLoop and attnPlan.
+	encNKeys                int
 	attnFANKV               int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
 	uAttnFAG, uAttnFANSplit Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
 	// per-layer dispatch site: a prior version SetU32'd these once per LAYER, i.e. during encodeTrunkCB's
@@ -1681,6 +1688,13 @@ func (r *resident) encodeLogitsCB() *Encoder {
 // execLoop is the pinned executor: pipeline commit(t) → pre-encode(t+1) → wait(t). One shared
 // autorelease pool, drained every drainEvery tokens (with a one-token non-overlapped hiccup so
 // no un-committed command buffer is live across the drain — keeps the pool LIFO-safe).
+//
+// A buffer is encoded for a KEY COUNT, not just a head mode: the attention plan (attnPlan) is baked in at
+// encode time. Each buffer is encoded for the job it will run — the current job's own key count when
+// encoded fresh, pos+2 when pre-encoded for the predicted next job (the same request, one position on) —
+// and a pre-encoded buffer whose plan is not the arriving job's is dropped uncommitted and re-encoded. So a
+// new request, the attnFADepthFloor crossing, or a toggle can never run another position's plan (found
+// 2026-09-25, R17: docs/measurements/metal-decode-attn-r17-2026-09-25.md; TestExecutorAttnPlan).
 func (r *resident) execLoop() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -1689,22 +1703,28 @@ func (r *resident) execLoop() {
 	pool := NewARPool()
 	var cur *Encoder
 	var curNoHead bool
+	var curPlan attnPlan
 	count := 0
+	encodeFor := func(noHead bool, nKeys int) *Encoder {
+		r.encNKeys = nKeys
+		defer func() { r.encNKeys = 0 }()
+		if noHead {
+			return r.encodeTrunkCB()
+		}
+		return r.encodeLogitsCB()
+	}
 	for job := range r.execReq {
-		if cur == nil || curNoHead != job.noHead {
-			if cur != nil {
-				pool.Drain()
-				pool = NewARPool()
-				cur = nil
-				count = 0
-			}
-			if job.noHead {
-				cur = r.encodeTrunkCB()
-				curNoHead = true
-			} else {
-				cur = r.encodeLogitsCB()
-				curNoHead = false
-			}
+		want := r.attnPlanFor(job.pos + 1)
+		if cur != nil && (curNoHead != job.noHead || curPlan != want) {
+			// Pre-encoded for a different head mode or attention plan than this job needs: drop it
+			// uncommitted, with the pool it was encoded into.
+			pool.Drain()
+			pool = NewARPool()
+			cur = nil
+			count = 0
+		}
+		if cur == nil {
+			cur, curNoHead, curPlan = encodeFor(job.noHead, job.pos+1), job.noHead, want
 		}
 		copy(r.x.Floats(), job.emb) // this token's embedding + pos (set at commit time, not encode)
 		r.addLearnedPos(job.pos)    // GPT-2: += wpe[pos], same commit-time placement as the copy above
@@ -1715,14 +1735,9 @@ func (r *resident) execLoop() {
 		drain := count%drainEvery == 0
 		var next *Encoder
 		var nextNoHead bool
+		var nextPlan attnPlan
 		if !drain {
-			if job.noHead {
-				next = r.encodeTrunkCB()
-				nextNoHead = true
-			} else {
-				next = r.encodeLogitsCB()
-				nextNoHead = false
-			}
+			next, nextNoHead, nextPlan = encodeFor(job.noHead, job.pos+2), job.noHead, r.attnPlanFor(job.pos+2)
 		}
 		cur.WaitDone()
 		r.recordExecErr(cur.Err()) // C-09: set BEFORE the execAck send so the adapter's read is ordered
@@ -1736,8 +1751,7 @@ func (r *resident) execLoop() {
 			pool = NewARPool()
 			cur = nil
 		} else {
-			cur = next
-			curNoHead = nextNoHead
+			cur, curNoHead, curPlan = next, nextNoHead, nextPlan
 		}
 		if job.noHead {
 			r.execAck <- nil
@@ -2163,7 +2177,9 @@ func (r *resident) encodeTrunkWith(e *Encoder, uPos, uNKeys, uQTempScale Buffer,
 // final hidden state in r.aq/r.aSc ready for an lm head. It ONLY records dispatches (referencing
 // the shared buffers) — it does NOT set uPos/uNKeys or fill r.x; the caller sets those before
 // commit. This value-independence is what lets the executor pre-encode token t+1 while token t
-// runs (encode-ahead).
+// runs (encode-ahead) — with one exception, the attention plan (attnPlan: attention_fa on or off
+// and its split grid depend on the key count), which is encoded for planNKeys and which the
+// executor checks against each job before committing.
 func (r *resident) encodeTrunkInto(e *Encoder) {
 	r.encodeTrunkWith(e, r.uPos, r.uNKeys, r.uQTempScale, r.uRopePos)
 }
@@ -2320,8 +2336,39 @@ const attnFACoreCount = 14
 // speed probe surfaced, recorded here rather than silently overriding the brief's own text.
 const attnFADepthFloor = 1536
 
-// canUseAttnFA reports whether attention_fa may replace the shipped kernel for layer l's CURRENT
-// dispatch (r.curNKeys, set by setPos). R2 (docs/tasks/red-october.md): dense-GQA only, hd==128
+// planNKeys is the key count the command buffer being encoded will run at: the executor's encNKeys while
+// it encodes, otherwise the position setPos last set.
+func (r *resident) planNKeys() int {
+	if r.encNKeys > 0 {
+		return r.encNKeys
+	}
+	return r.curNKeys
+}
+
+// attnPlan is the part of an encoded decode command buffer that depends on its key count or on a runtime
+// toggle: whether attention_fa is dispatched (the depth gate), its split grid, and the f16 lane. Everything
+// else an encode bakes in is fixed for the resident's life, and the per-token values (position, key count,
+// the split uniform) are written at commit time by setPos. The pipelined executor compares a pre-encoded
+// buffer's plan with the arriving job's and re-encodes on a mismatch (execLoop). nSplit is 0 when
+// attention_fa is not dispatched, so the key count's effect on the cap below the floor never forces a
+// re-encode. Pipeline swaps (tests) are not part of it: a test that swaps a pipeline flushes (stopExec).
+type attnPlan struct {
+	fa      bool
+	nSplit  int
+	f16Lane bool
+}
+
+// attnPlanFor is the plan a decode command buffer running at nKeys keys needs.
+func (r *resident) attnPlanFor(nKeys int) attnPlan {
+	p := attnPlan{f16Lane: r.decodeLaneW4F16}
+	if r.decodeAttnFA && r.attnFAPartial != (Buffer{}) && r.attnFANKV > 0 && nKeys >= attnFADepthFloor {
+		p.fa, p.nSplit = true, r.attnFASplitFor(nKeys, r.attnFANKV)
+	}
+	return p
+}
+
+// canUseAttnFA reports whether attention_fa may replace the shipped kernel for layer l in the command
+// buffer being encoded (at planNKeys keys). R2 (docs/tasks/red-october.md): dense-GQA only, hd==128
 // only (the kernel's own cooperative-load tiling is fixed to 32 lanes x half4) — sinks, windows,
 // and the f32-KV twin are explicitly out of scope until the dense-GQA kernel clears the band (the
 // brief's own text), same reasoning as canUseF16Lane's family exclusions above it.
@@ -2340,7 +2387,7 @@ func (r *resident) canUseAttnFA(l int) bool {
 		return false
 	}
 	g := L.geom
-	return g != nil && g.hd == 128 && g.nKV > 0 && r.curNKeys >= attnFADepthFloor
+	return g != nil && g.hd == 128 && g.nKV > 0 && r.planNKeys() >= attnFADepthFloor
 }
 
 // attnFASplitFor picks S so kvHead*S clears 2x attnFACoreCount (R2's own registered rule),
@@ -2475,16 +2522,17 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 			// into r.uAttnFANSplit here; that happens once per decode step from
 			// setPos, before THIS buffer commits (see uAttnFAG/uAttnFANSplit's own
 			// field comment for why the old per-layer SetU32 here was a real race).
-			// The two stay consistent in the only regime attention_fa ever runs in:
-			// canUseAttnFA gates on curNKeys >= attnFADepthFloor (1536), and
-			// attnFASplitFor's nKeys/32 cap (>=48 at that floor) never binds below
-			// its nKV-only want (~14 for nKV=2) — so nSplit is a depth-INDEPENDENT
-			// constant for the entire regime this kernel engages in, regardless of
-			// which decode step's curNKeys computes it.
-			nSplit := r.attnFASplitFor(r.curNKeys, g.nKV)
+			// The two agree by construction: both are attnFASplitFor of the key count
+			// this buffer runs at — planNKeys here, the job's own position in setPos —
+			// and the executor re-encodes a pre-encoded buffer whose plan does not match
+			// the arriving job (execLoop). (This used to read the key count at ENCODE
+			// time, the previous job's: one token late at the floor, and the previous
+			// request's depth on a new request's first step — with a grid sized for the
+			// old depth and a uniform for the new one below 32·S keys.)
+			nSplit := r.attnFASplitFor(r.planNKeys(), g.nKV)
 			if os.Getenv("GOINFER_ATTNFA_DEBUG") == "1" {
-				fmt.Fprintf(os.Stderr, "[ATTNFA] l=%d curNKeys=%d nSplit=%d nKV=%d G=%d hd=%d partialLen=%d\n",
-					l, r.curNKeys, nSplit, g.nKV, r.nH/g.nKV, g.hd, r.attnFAPartial.Len())
+				fmt.Fprintf(os.Stderr, "[ATTNFA] l=%d nKeys=%d nSplit=%d nKV=%d G=%d hd=%d partialLen=%d\n",
+					l, r.planNKeys(), nSplit, g.nKV, r.nH/g.nKV, g.hd, r.attnFAPartial.Len())
 			}
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
 			e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, r.qkv, r.kc[l], r.vc[l], r.attnFAPartial,
@@ -2547,11 +2595,12 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 	}
 
 	// R2: this path drives encodeAttentionResidualWith with ITS OWN per-token r.batchUNKeys[m]
-	// buffers, never through setPos — so r.curNKeys (canUseAttnFA's depth gate) would otherwise
-	// stay stale from whatever a PRIOR single-token call last set it to. Force it off for the
-	// whole batch rather than dispatch attention_fa off a stale depth reading: R2's kernel targets
-	// decode (M=1) specifically, so declining here (shipped kernel) is also the intended choice,
-	// not just a safe fallback.
+	// buffers, never through setPos — so r.curNKeys (planNKeys, canUseAttnFA's depth gate here)
+	// would otherwise stay stale from whatever a PRIOR single-token call last set it to. Force it off
+	// for the whole batch rather than dispatch attention_fa off a stale depth reading: R2's kernel
+	// targets decode (M=1) specifically, so declining here (shipped kernel) is also the intended
+	// choice, not just a safe fallback. The executor does not read this zero: it encodes each job
+	// for that job's own key count (execLoop).
 	r.curNKeys = 0
 
 	// Drain and stop the pipelined executor so we have exclusive, synchronous access to the queue
