@@ -1,0 +1,135 @@
+// actsweep: per family, the logit damage each goinfer quant does against goinfer's own f32, per position,
+// on two ~130-token chat prompts. int8 (weight-only) vs int8int8 differ ONLY in activation quantization.
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"os"
+	"sort"
+	"strings"
+
+	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+const essay = "\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press."
+const prose = "Rivers shape the land they cross. Over thousands of years a river carves valleys, deposits silt on its floodplain, and builds deltas where it meets the sea. Early farming communities settled along rivers because the soil was fertile and the water reliable, and many of the first cities grew from those settlements. Trade followed the water as well: boats could carry heavy goods far more cheaply than carts on unpaved roads. Explain, in a few paragraphs, how rivers influenced the growth of early civilizations, and give two concrete historical examples."
+
+func cosine(a, b []float32) float64 {
+	var ab, aa, bb float64
+	for i := range a {
+		ab += float64(a[i]) * float64(b[i])
+		aa += float64(a[i]) * float64(a[i])
+		bb += float64(b[i]) * float64(b[i])
+	}
+	return ab / math.Sqrt(aa*bb)
+}
+
+func argmax(v []float32) int {
+	best := 0
+	for i := range v {
+		if v[i] > v[best] {
+			best = i
+		}
+	}
+	return best
+}
+
+func run(path, quant string, prompts [][]int) ([][][]float32, error) {
+	m, err := decoder.Load(path, decoder.Options{Quant: quant, Backend: "cpu"})
+	if err != nil {
+		return nil, err
+	}
+	defer m.Close()
+	all := make([][][]float32, len(prompts))
+	for i, ids := range prompts {
+		cache := m.NewCache(len(ids) + 8)
+		out := make([][]float32, len(ids))
+		for p, id := range ids {
+			lg, _, err := m.ForwardCapture(id, cache, nil)
+			if err != nil {
+				return nil, err
+			}
+			out[p] = append([]float32(nil), lg...)
+		}
+		all[i] = out
+	}
+	return all, nil
+}
+
+func main() {
+	name, path := os.Args[1], os.Args[2]
+	var tk *tokenizer.Tokenizer
+	var err error
+	if strings.HasSuffix(path, ".gguf") {
+		tk, err = tokenizer.LoadGGUF(path)
+	} else {
+		tk, err = tokenizer.Load(path)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, name, "tokenizer:", err)
+		os.Exit(1)
+	}
+	tmpl, _ := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	enc := func(text string) []int {
+		if tmpl != nil {
+			ids, _ := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: text}}), false)
+			return ids
+		}
+		ids, _ := tk.Encode(text, true)
+		return ids
+	}
+	names := []string{"filler", "prose"}
+	prompts := [][]int{enc(strings.Repeat("the ", 110) + strings.TrimSpace(essay)), enc(prose)}
+	res := map[string]any{"model": name, "template": fmt.Sprint(tmpl != nil)}
+	ref, err := run(path, "", prompts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, name, "f32:", err)
+		os.Exit(1)
+	}
+	quants := []string{"int8", "int8int8", "int4"}
+	if v := os.Getenv("QUANTS"); v != "" {
+		quants = strings.Split(v, ",")
+	}
+	if v := os.Getenv("ACT_GROUP"); v != "" {
+		var g int
+		fmt.Sscan(v, &g)
+		res["act_group"] = g
+		defer linalg.SetActQuantGroup(0)
+	}
+	for _, q := range quants {
+		if v := os.Getenv("ACT_GROUP"); v != "" {
+			var g int
+			fmt.Sscan(v, &g)
+			linalg.SetActQuantGroup(g)
+		}
+		got, err := run(path, q, prompts)
+		if err != nil {
+			res[q] = "error: " + err.Error()
+			continue
+		}
+		for i, ids := range prompts {
+			var cs []float64
+			agree, first := 0, -1
+			for p := range ids {
+				c := cosine(got[i][p], ref[i][p])
+				cs = append(cs, c)
+				if argmax(got[i][p]) == argmax(ref[i][p]) {
+					agree++
+				}
+				if first < 0 && c < 0.9 {
+					first = p
+				}
+			}
+			sort.Float64s(cs)
+			res[names[i]+"/"+q] = map[string]any{"T": len(ids), "cos_min": cs[0], "cos_p10": cs[len(cs)/10], "cos_median": cs[len(cs)/2],
+				"argmax_agree": float64(agree) / float64(len(ids)), "first_pos_below_0.9": first}
+		}
+	}
+	b, _ := json.Marshal(res)
+	fmt.Println(string(b))
+}
