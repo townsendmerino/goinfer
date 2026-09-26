@@ -83,6 +83,26 @@ filler p10 in [0.80, 0.90) with no such regression. Everything else FAILs.
 
 A arm that crashes or errors is reported void, not guessed.
 
+### Amendment 2026-09-26, 1:45 pm PDT, before A5 has run: arm A5 added
+
+**What prompted it:** a partial result. phi3-mini came back with A2/A3/A4 below the bar (0.675, 0.758
+and 0.762 on filler) and A0 at 0.973 / 0.998. That shows squeezing the file's 5–6-bit tensors is
+damaging. It does not show whether re-quantizing the **Q4_K** tensors to today's symmetric int4 is,
+and no arm isolates that. If it is not, the fix needs no new format: `int4mix` already mixes int4 and
+int8 per tensor through every existing kernel and residency path.
+
+- **A5**: Q4_K rows → goinfer's symmetric int4 (`max/7`, f16 scale, the same rule as A3); every other
+  row unchanged (the int8 carrier). Bytes are identical to A0 built natively: Q4_K tensors at
+  4.5 bpw, the rest at int8.
+- **Same bar, same families, same session as a re-run of A0 and C0** (A0 and C0 are repeated beside A5
+  so it is compared within one session).
+- **Rule, added ahead of the original rule's step 3:** if A5 passes, the build is a **loader policy
+  only**: int4 (today's format) for tensors the GGUF stores at Q4_K, int8 for everything else. No
+  new format, no kernels. A0's native Q4_K layout is built only if A5 fails. The A0−A5 gap is
+  recorded either way, as information for a later quality decision, not as a gate.
+- The original rule's other steps stand. A2, A3 and A4 are already failed on phi3-mini, a result that
+  later families cannot change.
+
 ## Phase 1+ (after Phase 0's record; not yet scoped)
 
 Format and kernels per the decision: aikit `WeightMat`, the CPU W4A8 kernels (amd64/arm64), CUDA
