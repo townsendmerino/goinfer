@@ -1,0 +1,32 @@
+22:33:44 start commit 39545bd6; tree: ?? docs/measurements/metal-decode-attn-r17-2026-09-25/run-setb-decision.sh ?? docs/measurements/metal-decode-attn-r17-2026-09-25/setb-decision.log ?? docs/prompts/metal-verify-curve-remeasure-2026-09.md 
+22:33:44 waiting for idle, load1=2.34
+22:34:14 waiting for idle, load1=2.56
+22:34:44 waiting for idle, load1=2.34
+22:35:14 waiting for idle, load1=2.38
+22:35:44 waiting for idle, load1=2.21
+22:36:14 idle: load1=1.81
+=== RUN   TestR17AttentionProto
+[r17    6.0s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: nH=12 nKV=2 G=6; prototype attention_fa_blk_g6; prototype split counts [16]
+[r17   14.8s] depth 3900 exact kernel (again)       logits vs exact kernel: cosine 1.000000000 max|diff| 0 (argmax 8 vs 8); vs attention_fa: cosine 0.996572113 max|diff| 0.7529 (argmax 8)
+[r17   14.8s] depth 3900 current (attention_fa)     logits vs exact kernel: cosine 0.996572113 max|diff| 0.7529 (argmax 8 vs 8); vs attention_fa: cosine 1.000000000 max|diff| 0 (argmax 8)
+[r17   14.8s] depth 3900 current (attention_fa) (again) logits vs exact kernel: cosine 0.996572113 max|diff| 0.7529 (argmax 8 vs 8); vs attention_fa: cosine 1.000000000 max|diff| 0 (argmax 8)
+[r17   14.8s] depth 3900 prototype S=16             logits vs exact kernel: cosine 0.996572113 max|diff| 0.7529 (argmax 8 vs 8); vs attention_fa: cosine 1.000000000 max|diff| 3.338e-06 (argmax 8)
+[r17   14.8s] depth 3900 attention_fa S=16          logits vs exact kernel: cosine 0.996315223 max|diff| 0.717 (argmax 8 vs 8); vs attention_fa: cosine 0.997424894 max|diff| 0.6418 (argmax 8)
+[r17   22.1s] depth 3900 rep 1/7: current (attention_fa) 20.785 (idle 26.012)  prototype S=16 14.631 (idle 21.201)  no-op attention 12.261 (idle 19.935)  
+[r17   29.4s] depth 3900 rep 2/7: current (attention_fa) 20.726 (idle 29.374)  prototype S=16 14.637 (idle 24.689)  no-op attention 12.201 (idle 25.605)  
+[r17   36.7s] depth 3900 rep 3/7: current (attention_fa) 20.852 (idle 28.320)  prototype S=16 14.820 (idle 22.636)  no-op attention 12.263 (idle 15.434)  
+[r17   44.0s] depth 3900 rep 4/7: current (attention_fa) 20.786 (idle 26.371)  prototype S=16 14.713 (idle 16.825)  no-op attention 12.269 (idle 19.624)  
+[r17   51.3s] depth 3900 rep 5/7: current (attention_fa) 20.783 (idle 24.698)  prototype S=16 14.671 (idle 21.867)  no-op attention 12.263 (idle 19.699)  
+[r17   58.6s] depth 3900 rep 6/7: current (attention_fa) 20.768 (idle 24.215)  prototype S=16 14.769 (idle 23.282)  no-op attention 12.269 (idle 24.656)  
+[r17   65.9s] depth 3900 rep 7/7: current (attention_fa) 21.682 (idle 23.696)  prototype S=16 14.765 (idle 21.806)  no-op attention 12.248 (idle 17.137)  
+
+=== R17 step 2, depth 3900: in-sequence attention work, current vs prototype (medians of 7 reps × 20 tokens) ===
+  current (attention_fa)     attention   8.524 ms  full token  20.785 ms  reps 8.5 8.5 8.6 8.5 8.5 8.5 9.4 | after 2 s idle: attention   6.077 full  26.012
+  prototype S=16             attention   2.443 ms  full token  14.713 ms  speedup 3.50x (reps 3.6 3.5 3.4 3.5 3.5 3.4 3.7) → SHIP band (>= 2.5x) — exploratory; a confirmation run grades | after 2 s idle: attention   1.267 full  21.867 speedup 1.40x (reps 4.8 -4.1 1.8 -2.4 2.3 0.3 1.4)
+  no-op attention            full token  12.263 ms, after 2 s idle  19.699 (the attention-free baseline)
+
+--- PASS: TestR17AttentionProto (65.93s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	66.507s
+##### exit=0
+22:37:21 DONE

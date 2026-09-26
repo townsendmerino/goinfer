@@ -376,3 +376,78 @@ in every pair, by 0.01–0.03 ms, which is noise. Encode-ahead parity is 10/10 i
 - untagged: [`exec-fix-suite-untagged.log`](metal-decode-attn-r17-2026-09-25/exec-fix-suite-untagged.log);
 - `goinfer_testhooks`: 316 passes, 79 skips, 0 failures,
   [`exec-fix-suite-tagged.log`](metal-decode-attn-r17-2026-09-25/exec-fix-suite-tagged.log).
+
+## Decision run on set B: both candidates PASS (2026-09-25, 22:11–22:33)
+
+The run follows [`metal-decode-attn-fidelity-setb-PREREGISTERED.md`](metal-decode-attn-fidelity-setb-PREREGISTERED.md),
+built from its commit `39545bd6` with a clean tree. Raw log:
+[`setb-decision.log`](metal-decode-attn-r17-2026-09-25/setb-decision.log). Script:
+[`run-setb-decision.sh`](metal-decode-attn-r17-2026-09-25/run-setb-decision.sh). Every measurement is deterministic
+and was run once. Load was recorded, not gated (1.7–2.8).
+
+**P1: kernel accuracy vs float64.** Set-B prompts, 10 prompts × depths 2048 and 3900, one decode step each, all 28
+layers. Capture sanity was 560/560 layers bit-identical on each model.
+
+| per-head relative L2 error | 1.5B median | p99 | max (reported) | 7B median | p99 | max (reported) | P1 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| shipped exact `attention` | 5.41e-7 | 5.26e-6 | 2.89e-4 | 7.37e-7 | 7.89e-6 | 2.72e-5 | — |
+| `attention_fa` (production S) | 1.65e-7 | 1.99e-6 | 2.19e-4 | 2.59e-7 | 2.26e-6 | 2.07e-5 | **PASS** |
+| **prototype S=16** | **1.64e-7** | **1.72e-6** | **8.36e-5** | **2.32e-7** | **2.04e-6** | **2.66e-5** | **PASS** |
+
+On set B the maximum is also lower than the exact kernel's for both candidates on both models. The worst-head
+exception seen on set A's 1.5B does not recur.
+
+**P2: end-to-end gate.** Set B, the 1.5B, K=3900, 10 prompts × 64 positions, the executor flushed per arm. The
+identity check passed on **10/10** prompts (every seed-row KL ≤ 1.0), and the exact arm's mean KL is 0.0519.
+
+| candidate | mean KL | KL ratio | lower on | critA | critB | critC (R6) | strict critC | verdict |
+|---|---:|---:|---:|---|---|---|---|---|
+| `attention_fa` | 0.0506 | 0.974 | 7/10 | ✓ | ✓ | ≤ 1.05 ✓ | ✓ | **PASSES** |
+| **prototype S=16** | 0.0502 | 0.967 | 8/10 | ✓ | ✓ | ≤ 1.05 ✓ | ✓ | **PASSES** |
+| `exact-null` (reported only) | 0.0495 | 0.954 | 10/10 | ✓ | ✓ | ≤ 1.05 ✓ | ✓ | passes |
+
+**Reading.**
+
+- Both candidates meet the registered decision rule (P1 on both models and P2 PASSES). They also pass the *strict*
+  critC on set B. The set-A failures were dominated by that set's mismatched references.
+- **The candidates' ratios below 1.0 are not an improvement end to end.** The shipped kernel with only its q·k
+  order reversed (`exact-null`) scores 0.954× and is lower on all 10 prompts. On set B the unmodified exact arm
+  is a high draw, where on set A's valid prompts it was a low one. What this run establishes is non-inferiority, and a
+  ±5% end-to-end spread is what rounding order alone produces at 10 prompts. The accuracy evidence is P1.
+
+**Consequences, as registered.**
+- `attention_fa`: the default stays on, now re-gated. Its 2026-09-21 PASS remains void as a record.
+- Prototype S=16: R17 precondition 1 is met. The confirmation run (preconditions 3 and 4) follows, with the parameters
+  fixed in the registration.
+
+## R17 confirmation run: SHIP (2026-09-25, 22:36–22:37)
+
+This is precondition 4, with the parameters fixed in the registration. Setup:
+- the harness: `TestR17AttentionProto`, 1.5B `.gguf` from `~/models`, depth 3900;
+- the prototype at S=16 against the current `attention_fa` as the do-nothing arm, plus the no-op attention arm;
+- 7 paired reps × 20 tokens, arms interleaved and the executor flushed at each switch;
+- its own process, idle-gated (it started at 22:36:14, load1 1.81), commit `39545bd6`.
+
+Raw: [`r17-confirmation.log`](metal-decode-attn-r17-2026-09-25/r17-confirmation.log).
+
+| | in-sequence attention | full token | after 2 s idle: full token |
+|---|---:|---:|---:|
+| current `attention_fa` (S=14) | 8.524 ms | 20.785 ms | 26.012 ms |
+| **prototype S=16** | **2.443 ms** | **14.713 ms** | **21.867 ms** |
+| no-op attention (baseline) | — | 12.263 ms | 19.699 ms |
+
+**Speedup: 3.50×** (the median of the paired per-rep ratios; reps 3.6 3.5 3.4 3.5 3.5 3.4 3.7). This is **inside the ship
+band (≥ 2.5×)**, and it agrees with the exploratory 3.37×. (The harness's own line prints "exploratory; a confirmation
+run grades" for every run; that label is hard-coded, and this run is the registered confirmation.)
+
+**Precondition 3** (after idle, amended instrument): the prototype's full token is 21.87 ms against the current
+kernel's 26.01 ms, so it **passes**.
+
+**Precondition 2** (≤ 3% at 128 keys) is structural. The prototype replaces `attention_fa` only where `attention_fa`
+engages (≥ `attnFADepthFloor` = 1536 keys), so the path at 128 keys is unchanged. The production wiring must keep that.
+
+**R17: SHIP.** Every precondition is met, and speed is in the ship band. Next is step 3, production wiring:
+- restrict it to the instantiated head-group sizes (G ∈ {6, 7}) and to the depths `attention_fa` engages at;
+- keep the current path elsewhere;
+- re-bake the snapshot golden for `llama-attnfa-tiny` with the mechanism stated;
+- measure end to end through `bench_peer.py` against Ollama.

@@ -1,0 +1,246 @@
+22:11:56 start commit 39545bd6; tree: ?? docs/prompts/metal-verify-curve-remeasure-2026-09.md 
+##### P1 qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw 22:11:56 load1=2.80
+=== RUN   TestR17KernelAccuracy
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[r17-acc] prompt 1/10 depth 2048 done (decode token 17 at pos 2048)
+[r17-acc] prompt 1/10 depth 3900 done (decode token 17 at pos 3900)
+[r17-acc] prompt 2/10 depth 2048 done (decode token 82 at pos 2048)
+[r17-acc] prompt 2/10 depth 3900 done (decode token 4835 at pos 3900)
+[r17-acc] prompt 3/10 depth 2048 done (decode token 32 at pos 2048)
+[r17-acc] prompt 3/10 depth 3900 done (decode token 3084 at pos 3900)
+[r17-acc] prompt 4/10 depth 2048 done (decode token 8 at pos 2048)
+[r17-acc] prompt 4/10 depth 3900 done (decode token 64789 at pos 3900)
+[r17-acc] prompt 5/10 depth 2048 done (decode token 525 at pos 2048)
+[r17-acc] prompt 5/10 depth 3900 done (decode token 24 at pos 3900)
+[r17-acc] prompt 6/10 depth 2048 done (decode token 594 at pos 2048)
+[r17-acc] prompt 6/10 depth 3900 done (decode token 13 at pos 3900)
+[r17-acc] prompt 7/10 depth 2048 done (decode token 6193 at pos 2048)
+[r17-acc] prompt 7/10 depth 3900 done (decode token 1184 at pos 3900)
+[r17-acc] prompt 8/10 depth 2048 done (decode token 13 at pos 2048)
+[r17-acc] prompt 8/10 depth 3900 done (decode token 63 at pos 3900)
+[r17-acc] prompt 9/10 depth 2048 done (decode token 22670 at pos 2048)
+[r17-acc] prompt 9/10 depth 3900 done (decode token 279 at pos 3900)
+[r17-acc] prompt 10/10 depth 2048 done (decode token 220 at pos 2048)
+[r17-acc] prompt 10/10 depth 3900 done (decode token 17 at pos 3900)
+
+=== R17 kernel accuracy vs float64, qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw, prompt set "b", depths [2048 3900], 10 prompts × 28 layers × 12 heads; capture sanity 560/560 layers bit-identical ===
+  kernel                     relL2 median         mean          p99          max     max|abs|  closer than exact / ties (of heads)   | moved from exact: median
+  exact (shipped attention)     5.412e-07    9.032e-07    5.262e-06    2.885e-04    1.635e-04  —                                    | 0.000e+00
+  attention_fa S=prod           1.654e-07    3.504e-07    1.993e-06    2.187e-04    1.053e-04  6266 / 4 of 6720                     | 5.726e-07
+  prototype S=16                1.644e-07    2.907e-07    1.715e-06    8.363e-05    4.987e-05  6264 / 6 of 6720                     | 5.760e-07
+
+  shared-bias check vs an emulation of the CPU reference's attention (f64 softmax, serial f32 V sum): the emulation's own relL2 vs f64 median 3.086e-07 fused / 3.085e-07 unfused
+  kernel                         cos(err, cpuFused err) cos(err, cpuUnfused err) closer to cpuFused than exact
+  exact (shipped attention)       median +0.050 (  56% >0)  median +0.054          —
+  attention_fa S=prod             median +0.009 (  51% >0)  median +0.011          5628 of 6720
+  prototype S=16                  median +0.008 (  51% >0)  median +0.009          5613 of 6720
+
+  worst head per kernel:
+  exact (shipped attention)  relL2 2.885e-04 at prompt 5 depth 3900 layer 0 head 1 (||ref|| 2.27)
+  attention_fa S=prod        relL2 2.187e-04 at prompt 10 depth 3900 layer 0 head 1 (||ref|| 2.27)
+  prototype S=16             relL2 8.363e-05 at prompt 4 depth 2048 layer 0 head 1 (||ref|| 2.31)
+
+  per layer, relL2 median / max over prompts × heads:
+  layer  exact (shipped attention)      attention_fa S=prod            prototype S=16               
+      0     1.582e-06 /    2.885e-04         7.824e-07 /    2.187e-04         7.596e-07 /    8.363e-05    
+      1     1.196e-06 /    5.051e-06         4.280e-07 /    5.891e-06         4.048e-07 /    3.648e-06    
+      2     5.966e-07 /    2.318e-06         2.118e-07 /    9.126e-07         1.988e-07 /    9.147e-07    
+      3     5.788e-07 /    3.841e-06         1.969e-07 /    1.178e-06         1.855e-07 /    1.175e-06    
+      4     6.179e-07 /    2.845e-06         1.745e-07 /    1.045e-06         1.794e-07 /    7.198e-07    
+      5     5.751e-07 /    1.737e-05         1.407e-07 /    9.006e-07         1.487e-07 /    1.268e-06    
+      6     4.756e-07 /    5.189e-06         1.932e-07 /    1.662e-06         1.976e-07 /    9.737e-07    
+      7     7.549e-07 /    4.164e-06         2.334e-07 /    1.417e-06         2.389e-07 /    1.332e-06    
+      8     5.604e-07 /    5.877e-06         2.120e-07 /    1.036e-06         2.126e-07 /    9.023e-07    
+      9     4.660e-07 /    3.979e-06         1.831e-07 /    6.419e-07         1.937e-07 /    8.613e-07    
+     10     3.506e-07 /    2.812e-06         1.273e-07 /    4.594e-07         1.258e-07 /    5.326e-07    
+     11     3.850e-07 /    3.287e-06         1.186e-07 /    5.278e-07         1.207e-07 /    9.075e-07    
+     12     5.417e-07 /    8.326e-06         1.481e-07 /    9.526e-07         1.543e-07 /    7.056e-07    
+     13     6.927e-07 /    2.555e-06         2.266e-07 /    7.697e-07         2.129e-07 /    1.115e-06    
+     14     6.085e-07 /    1.041e-05         2.412e-07 /    1.347e-06         2.363e-07 /    8.400e-07    
+     15     4.154e-07 /    3.505e-06         1.470e-07 /    7.022e-07         1.394e-07 /    7.264e-07    
+     16     4.985e-07 /    2.427e-06         1.323e-07 /    5.487e-07         1.401e-07 /    4.344e-07    
+     17     4.810e-07 /    1.729e-06         1.544e-07 /    6.793e-07         1.565e-07 /    7.617e-07    
+     18     3.911e-07 /    2.127e-06         1.384e-07 /    1.116e-06         1.427e-07 /    7.337e-07    
+     19     6.330e-07 /    1.879e-06         1.633e-07 /    7.532e-07         1.646e-07 /    7.539e-07    
+     20     4.645e-07 /    1.653e-06         1.402e-07 /    4.705e-07         1.478e-07 /    4.850e-07    
+     21     3.920e-07 /    1.038e-05         1.215e-07 /    8.164e-07         1.228e-07 /    5.236e-07    
+     22     5.265e-07 /    1.679e-06         2.030e-07 /    8.480e-07         1.847e-07 /    1.195e-06    
+     23     5.649e-07 /    4.542e-06         1.895e-07 /    8.171e-07         1.754e-07 /    9.968e-07    
+     24     4.813e-07 /    5.858e-06         1.805e-07 /    5.786e-07         1.701e-07 /    1.080e-06    
+     25     5.624e-07 /    2.185e-06         1.441e-07 /    1.098e-06         1.407e-07 /    1.052e-06    
+     26     5.953e-07 /    1.584e-06         1.247e-07 /    4.755e-07         1.320e-07 /    9.235e-07    
+     27     6.477e-07 /    1.535e-06         1.397e-07 /    5.762e-07         1.361e-07 /    6.083e-07    
+=== P1 kernel accuracy (pre-registered), qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw, set "b": attention_fa S=prod median 1.654e-07 vs exact 5.412e-07, p99 1.993e-06 vs exact 5.262e-06 (max 2.187e-04 vs exact 2.885e-04, reported) — PASS ===
+=== P1 kernel accuracy (pre-registered), qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw, set "b": prototype S=16 median 1.644e-07 vs exact 5.412e-07, p99 1.715e-06 vs exact 5.262e-06 (max 8.363e-05 vs exact 2.885e-04, reported) — PASS ===
+--- PASS: TestR17KernelAccuracy (159.62s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	159.999s
+##### exit=0
+##### P1 qwen2.5-7b-instruct-q4_k_m.int4.metal.giw 22:14:37 load1=2.21
+=== RUN   TestR17KernelAccuracy
+[metal] weights aliased from qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4020 MB bound in place, 1 MB copied (anonymous) — 3112 MB int4 nibbles (56 single tensors + 56 fused groups = 2034 MB) + 520 MB int8 codes (1 matrices) + 389 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[r17-acc] prompt 1/10 depth 2048 done (decode token 17 at pos 2048)
+[r17-acc] prompt 1/10 depth 3900 done (decode token 17 at pos 3900)
+[r17-acc] prompt 2/10 depth 2048 done (decode token 82 at pos 2048)
+[r17-acc] prompt 2/10 depth 3900 done (decode token 4835 at pos 3900)
+[r17-acc] prompt 3/10 depth 2048 done (decode token 785 at pos 2048)
+[r17-acc] prompt 3/10 depth 3900 done (decode token 3084 at pos 3900)
+[r17-acc] prompt 4/10 depth 2048 done (decode token 11 at pos 2048)
+[r17-acc] prompt 4/10 depth 3900 done (decode token 72262 at pos 3900)
+[r17-acc] prompt 5/10 depth 2048 done (decode token 525 at pos 2048)
+[r17-acc] prompt 5/10 depth 3900 done (decode token 24 at pos 3900)
+[r17-acc] prompt 6/10 depth 2048 done (decode token 594 at pos 2048)
+[r17-acc] prompt 6/10 depth 3900 done (decode token 518 at pos 3900)
+[r17-acc] prompt 7/10 depth 2048 done (decode token 990 at pos 2048)
+[r17-acc] prompt 7/10 depth 3900 done (decode token 568 at pos 3900)
+[r17-acc] prompt 8/10 depth 2048 done (decode token 13 at pos 2048)
+[r17-acc] prompt 8/10 depth 3900 done (decode token 396 at pos 3900)
+[r17-acc] prompt 9/10 depth 2048 done (decode token 12155 at pos 2048)
+[r17-acc] prompt 9/10 depth 3900 done (decode token 817 at pos 3900)
+[r17-acc] prompt 10/10 depth 2048 done (decode token 220 at pos 2048)
+[r17-acc] prompt 10/10 depth 3900 done (decode token 17 at pos 3900)
+
+=== R17 kernel accuracy vs float64, qwen2.5-7b-instruct-q4_k_m.int4.metal.giw, prompt set "b", depths [2048 3900], 10 prompts × 28 layers × 28 heads; capture sanity 560/560 layers bit-identical ===
+  kernel                     relL2 median         mean          p99          max     max|abs|  closer than exact / ties (of heads)   | moved from exact: median
+  exact (shipped attention)     7.367e-07    1.118e-06    7.885e-06    2.722e-05    1.854e-04  —                                    | 0.000e+00
+  attention_fa S=prod           2.590e-07    3.824e-07    2.258e-06    2.074e-05    5.673e-05  14554 / 44 of 15680                  | 7.791e-07
+  prototype S=16                2.320e-07    3.451e-07    2.043e-06    2.659e-05    8.596e-05  14621 / 42 of 15680                  | 7.774e-07
+
+  shared-bias check vs an emulation of the CPU reference's attention (f64 softmax, serial f32 V sum): the emulation's own relL2 vs f64 median 4.235e-07 fused / 4.231e-07 unfused
+  kernel                         cos(err, cpuFused err) cos(err, cpuUnfused err) closer to cpuFused than exact
+  exact (shipped attention)       median +0.066 (  58% >0)  median +0.068          —
+  attention_fa S=prod             median +0.017 (  53% >0)  median +0.015          12683 of 15680
+  prototype S=16                  median +0.010 (  51% >0)  median +0.010          12777 of 15680
+
+  worst head per kernel:
+  exact (shipped attention)  relL2 2.722e-05 at prompt 1 depth 3900 layer 0 head 10 (||ref|| 0.342)
+  attention_fa S=prod        relL2 2.074e-05 at prompt 3 depth 2048 layer 0 head 10 (||ref|| 0.386)
+  prototype S=16             relL2 2.659e-05 at prompt 3 depth 2048 layer 0 head 10 (||ref|| 0.386)
+
+  per layer, relL2 median / max over prompts × heads:
+  layer  exact (shipped attention)      attention_fa S=prod            prototype S=16               
+      0     2.293e-06 /    2.722e-05         1.056e-06 /    2.074e-05         9.829e-07 /    2.659e-05    
+      1     9.625e-07 /    6.373e-06         3.128e-07 /    1.996e-06         2.791e-07 /    1.697e-06    
+      2     7.907e-07 /    8.308e-06         2.407e-07 /    2.270e-06         2.236e-07 /    1.917e-06    
+      3     8.576e-07 /    5.232e-06         3.114e-07 /    1.824e-06         2.935e-07 /    2.013e-06    
+      4     7.664e-07 /    1.241e-05         3.044e-07 /    1.574e-06         2.372e-07 /    1.667e-06    
+      5     6.951e-07 /    9.680e-06         2.366e-07 /    1.607e-06         2.114e-07 /    1.211e-06    
+      6     8.420e-07 /    7.742e-06         3.368e-07 /    2.639e-06         2.877e-07 /    1.810e-06    
+      7     6.454e-07 /    6.496e-06         2.408e-07 /    1.207e-06         2.149e-07 /    1.119e-06    
+      8     6.630e-07 /    1.488e-05         2.308e-07 /    1.143e-06         2.174e-07 /    1.100e-06    
+      9     5.913e-07 /    4.827e-06         1.879e-07 /    1.409e-06         1.664e-07 /    7.962e-07    
+     10     6.965e-07 /    1.189e-05         2.792e-07 /    1.986e-06         2.350e-07 /    1.909e-06    
+     11     5.866e-07 /    9.698e-06         2.163e-07 /    1.764e-06         2.029e-07 /    1.888e-06    
+     12     6.038e-07 /    8.978e-06         2.225e-07 /    1.595e-06         1.986e-07 /    3.379e-06    
+     13     7.186e-07 /    7.103e-06         3.099e-07 /    1.775e-06         2.838e-07 /    1.984e-06    
+     14     7.848e-07 /    1.356e-05         2.814e-07 /    4.688e-06         2.315e-07 /    3.382e-06    
+     15     6.742e-07 /    6.271e-06         3.005e-07 /    2.811e-06         2.707e-07 /    2.566e-06    
+     16     8.931e-07 /    1.373e-05         3.672e-07 /    2.173e-06         3.396e-07 /    1.936e-06    
+     17     8.255e-07 /    1.249e-05         3.485e-07 /    3.232e-06         3.082e-07 /    2.796e-06    
+     18     6.333e-07 /    6.752e-06         1.999e-07 /    9.420e-07         1.862e-07 /    1.447e-06    
+     19     9.505e-07 /    7.133e-06         3.057e-07 /    2.337e-06         2.775e-07 /    2.904e-06    
+     20     6.624e-07 /    5.154e-06         1.972e-07 /    1.094e-06         1.839e-07 /    1.123e-06    
+     21     5.446e-07 /    8.644e-06         1.988e-07 /    1.168e-06         1.864e-07 /    9.073e-07    
+     22     6.989e-07 /    7.362e-06         2.172e-07 /    1.113e-06         1.889e-07 /    1.183e-06    
+     23     7.446e-07 /    1.250e-05         2.495e-07 /    1.554e-06         2.166e-07 /    1.344e-06    
+     24     6.551e-07 /    9.781e-06         2.241e-07 /    1.901e-06         1.949e-07 /    1.741e-06    
+     25     6.778e-07 /    8.236e-06         2.407e-07 /    2.005e-06         2.156e-07 /    1.773e-06    
+     26     7.619e-07 /    1.311e-05         2.197e-07 /    1.327e-06         2.018e-07 /    2.294e-06    
+     27     7.424e-07 /    2.553e-05         2.168e-07 /    1.313e-05         1.968e-07 /    1.180e-05    
+=== P1 kernel accuracy (pre-registered), qwen2.5-7b-instruct-q4_k_m.int4.metal.giw, set "b": attention_fa S=prod median 2.590e-07 vs exact 7.367e-07, p99 2.258e-06 vs exact 7.885e-06 (max 2.074e-05 vs exact 2.722e-05, reported) — PASS ===
+=== P1 kernel accuracy (pre-registered), qwen2.5-7b-instruct-q4_k_m.int4.metal.giw, set "b": prototype S=16 median 2.320e-07 vs exact 7.367e-07, p99 2.043e-06 vs exact 7.885e-06 (max 2.659e-05 vs exact 2.722e-05, reported) — PASS ===
+--- PASS: TestR17KernelAccuracy (512.13s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	512.571s
+##### exit=0
+##### P2 cand=attention_fa S=0 22:23:09 load1=2.29
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate attention_fa(S=0) installed (G=6)
+[r17-gate] prompt  1 seed-row KL(ref || prefill) = 0.0001
+[r17-gate] set "b" K=3900 prompt  1/10 shipped(agree=89.1% HF=2/64 KL=0.0519) attention_fa(S=0)(agree=90.6% HF=2/64 KL=0.0488) diff(agree=+1.6pt KL=-0.0031) elapsed=20s
+[r17-gate] prompt  2 seed-row KL(ref || prefill) = 0.0003
+[r17-gate] set "b" K=3900 prompt  2/10 shipped(agree=100.0% HF=0/64 KL=0.0214) attention_fa(S=0)(agree=100.0% HF=0/64 KL=0.0221) diff(agree=+0.0pt KL=+0.0007) elapsed=40s
+[r17-gate] prompt  3 seed-row KL(ref || prefill) = 0.0095
+[r17-gate] set "b" K=3900 prompt  3/10 shipped(agree=84.4% HF=1/64 KL=0.0766) attention_fa(S=0)(agree=87.5% HF=1/64 KL=0.0714) diff(agree=+3.1pt KL=-0.0052) elapsed=59s
+[r17-gate] prompt  4 seed-row KL(ref || prefill) = 0.0654
+[r17-gate] set "b" K=3900 prompt  4/10 shipped(agree=96.9% HF=1/64 KL=0.0465) attention_fa(S=0)(agree=98.4% HF=0/64 KL=0.0451) diff(agree=+1.6pt KL=-0.0014) elapsed=1m19s
+[r17-gate] prompt  5 seed-row KL(ref || prefill) = 0.0012
+[r17-gate] set "b" K=3900 prompt  5/10 shipped(agree=85.9% HF=1/64 KL=0.0422) attention_fa(S=0)(agree=87.5% HF=0/64 KL=0.0407) diff(agree=+1.6pt KL=-0.0015) elapsed=1m39s
+[r17-gate] prompt  6 seed-row KL(ref || prefill) = 0.0338
+[r17-gate] set "b" K=3900 prompt  6/10 shipped(agree=87.5% HF=2/64 KL=0.0526) attention_fa(S=0)(agree=85.9% HF=2/64 KL=0.0518) diff(agree=-1.6pt KL=-0.0009) elapsed=1m58s
+[r17-gate] prompt  7 seed-row KL(ref || prefill) = 0.1166
+[r17-gate] set "b" K=3900 prompt  7/10 shipped(agree=84.4% HF=0/64 KL=0.0662) attention_fa(S=0)(agree=84.4% HF=0/64 KL=0.0667) diff(agree=+0.0pt KL=+0.0005) elapsed=2m18s
+[r17-gate] prompt  8 seed-row KL(ref || prefill) = 0.8026
+[r17-gate] set "b" K=3900 prompt  8/10 shipped(agree=92.2% HF=1/64 KL=0.0568) attention_fa(S=0)(agree=92.2% HF=1/64 KL=0.0565) diff(agree=+0.0pt KL=-0.0003) elapsed=2m38s
+[r17-gate] prompt  9 seed-row KL(ref || prefill) = 0.0427
+[r17-gate] set "b" K=3900 prompt  9/10 shipped(agree=90.6% HF=1/64 KL=0.0641) attention_fa(S=0)(agree=90.6% HF=1/64 KL=0.0657) diff(agree=+0.0pt KL=+0.0016) elapsed=2m58s
+[r17-gate] prompt 10 seed-row KL(ref || prefill) = 0.0000
+[r17-gate] set "b" K=3900 prompt 10/10 shipped(agree=96.9% HF=1/64 KL=0.0409) attention_fa(S=0)(agree=96.9% HF=1/64 KL=0.0370) diff(agree=+0.0pt KL=-0.0039) elapsed=3m17s
+=== r17-gate (candidate attention_fa(S=0)), S, set "b", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=10 fa=8) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=90.78% faAgree=91.41% d=14 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.0519 faMeanKL=0.0506 faLowerPrompts=7/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:261: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+=== r17-gate decode-attention verdict (2026-09-25 amendment), candidate attention_fa(S=0), set "b", K=3900: critA=true critB=true ceilingOK=true KLratio=0.9743 -> critC(R6)=<=1.05 (pass); strict critC=true (not deciding); identity 10/10 prompts OK — PASSES ===
+--- PASS: TestR17_decodeFidelityGate (203.70s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	204.208s
+##### exit=0
+##### P2 cand=proto S=16 22:26:35 load1=1.67
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate proto(S=16) installed (G=6)
+[r17-gate] prompt  1 seed-row KL(ref || prefill) = 0.0001
+[r17-gate] set "b" K=3900 prompt  1/10 shipped(agree=89.1% HF=2/64 KL=0.0519) proto(S=16)(agree=90.6% HF=2/64 KL=0.0482) diff(agree=+1.6pt KL=-0.0036) elapsed=19s
+[r17-gate] prompt  2 seed-row KL(ref || prefill) = 0.0003
+[r17-gate] set "b" K=3900 prompt  2/10 shipped(agree=100.0% HF=0/64 KL=0.0214) proto(S=16)(agree=100.0% HF=0/64 KL=0.0204) diff(agree=+0.0pt KL=-0.0010) elapsed=39s
+[r17-gate] prompt  3 seed-row KL(ref || prefill) = 0.0095
+[r17-gate] set "b" K=3900 prompt  3/10 shipped(agree=84.4% HF=1/64 KL=0.0766) proto(S=16)(agree=85.9% HF=1/64 KL=0.0747) diff(agree=+1.6pt KL=-0.0018) elapsed=58s
+[r17-gate] prompt  4 seed-row KL(ref || prefill) = 0.0654
+[r17-gate] set "b" K=3900 prompt  4/10 shipped(agree=96.9% HF=1/64 KL=0.0465) proto(S=16)(agree=98.4% HF=0/64 KL=0.0459) diff(agree=+1.6pt KL=-0.0006) elapsed=1m17s
+[r17-gate] prompt  5 seed-row KL(ref || prefill) = 0.0012
+[r17-gate] set "b" K=3900 prompt  5/10 shipped(agree=85.9% HF=1/64 KL=0.0422) proto(S=16)(agree=87.5% HF=0/64 KL=0.0404) diff(agree=+1.6pt KL=-0.0018) elapsed=1m37s
+[r17-gate] prompt  6 seed-row KL(ref || prefill) = 0.0338
+[r17-gate] set "b" K=3900 prompt  6/10 shipped(agree=87.5% HF=2/64 KL=0.0526) proto(S=16)(agree=90.6% HF=2/64 KL=0.0499) diff(agree=+3.1pt KL=-0.0027) elapsed=1m56s
+[r17-gate] prompt  7 seed-row KL(ref || prefill) = 0.1166
+[r17-gate] set "b" K=3900 prompt  7/10 shipped(agree=84.4% HF=0/64 KL=0.0662) proto(S=16)(agree=85.9% HF=0/64 KL=0.0667) diff(agree=+1.6pt KL=+0.0005) elapsed=2m15s
+[r17-gate] prompt  8 seed-row KL(ref || prefill) = 0.8026
+[r17-gate] set "b" K=3900 prompt  8/10 shipped(agree=92.2% HF=1/64 KL=0.0568) proto(S=16)(agree=90.6% HF=1/64 KL=0.0553) diff(agree=-1.6pt KL=-0.0015) elapsed=2m35s
+[r17-gate] prompt  9 seed-row KL(ref || prefill) = 0.0427
+[r17-gate] set "b" K=3900 prompt  9/10 shipped(agree=90.6% HF=1/64 KL=0.0641) proto(S=16)(agree=93.8% HF=1/64 KL=0.0652) diff(agree=+3.1pt KL=+0.0012) elapsed=2m54s
+[r17-gate] prompt 10 seed-row KL(ref || prefill) = 0.0000
+[r17-gate] set "b" K=3900 prompt 10/10 shipped(agree=96.9% HF=1/64 KL=0.0409) proto(S=16)(agree=95.3% HF=1/64 KL=0.0353) diff(agree=-1.6pt KL=-0.0055) elapsed=3m13s
+=== r17-gate (candidate proto(S=16)), S, set "b", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=10 fa=8) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=90.78% faAgree=91.88% d=19 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.0519 faMeanKL=0.0502 faLowerPrompts=8/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:261: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+=== r17-gate decode-attention verdict (2026-09-25 amendment), candidate proto(S=16), set "b", K=3900: critA=true critB=true ceilingOK=true KLratio=0.9674 -> critC(R6)=<=1.05 (pass); strict critC=true (not deciding); identity 10/10 prompts OK — PASSES ===
+--- PASS: TestR17_decodeFidelityGate (198.36s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	198.829s
+##### exit=0
+##### P2 cand=exact-null S=0 22:29:54 load1=1.89
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-null(S=0) installed (G=6)
+[r17-gate] prompt  1 seed-row KL(ref || prefill) = 0.0001
+[r17-gate] set "b" K=3900 prompt  1/10 shipped(agree=89.1% HF=2/64 KL=0.0519) exact-null(S=0)(agree=90.6% HF=2/64 KL=0.0506) diff(agree=+1.6pt KL=-0.0013) elapsed=20s
+[r17-gate] prompt  2 seed-row KL(ref || prefill) = 0.0003
+[r17-gate] set "b" K=3900 prompt  2/10 shipped(agree=100.0% HF=0/64 KL=0.0214) exact-null(S=0)(agree=100.0% HF=0/64 KL=0.0202) diff(agree=+0.0pt KL=-0.0012) elapsed=40s
+[r17-gate] prompt  3 seed-row KL(ref || prefill) = 0.0095
+[r17-gate] set "b" K=3900 prompt  3/10 shipped(agree=84.4% HF=1/64 KL=0.0766) exact-null(S=0)(agree=85.9% HF=1/64 KL=0.0732) diff(agree=+1.6pt KL=-0.0033) elapsed=1m0s
+[r17-gate] prompt  4 seed-row KL(ref || prefill) = 0.0654
+[r17-gate] set "b" K=3900 prompt  4/10 shipped(agree=96.9% HF=1/64 KL=0.0465) exact-null(S=0)(agree=98.4% HF=0/64 KL=0.0437) diff(agree=+1.6pt KL=-0.0028) elapsed=1m20s
+[r17-gate] prompt  5 seed-row KL(ref || prefill) = 0.0012
+[r17-gate] set "b" K=3900 prompt  5/10 shipped(agree=85.9% HF=1/64 KL=0.0422) exact-null(S=0)(agree=90.6% HF=0/64 KL=0.0396) diff(agree=+4.7pt KL=-0.0027) elapsed=1m40s
+[r17-gate] prompt  6 seed-row KL(ref || prefill) = 0.0338
+[r17-gate] set "b" K=3900 prompt  6/10 shipped(agree=87.5% HF=2/64 KL=0.0526) exact-null(S=0)(agree=87.5% HF=2/64 KL=0.0498) diff(agree=+0.0pt KL=-0.0028) elapsed=2m0s
+[r17-gate] prompt  7 seed-row KL(ref || prefill) = 0.1166
+[r17-gate] set "b" K=3900 prompt  7/10 shipped(agree=84.4% HF=0/64 KL=0.0662) exact-null(S=0)(agree=85.9% HF=1/64 KL=0.0654) diff(agree=+1.6pt KL=-0.0008) elapsed=2m20s
+[r17-gate] prompt  8 seed-row KL(ref || prefill) = 0.8026
+[r17-gate] set "b" K=3900 prompt  8/10 shipped(agree=92.2% HF=1/64 KL=0.0568) exact-null(S=0)(agree=93.8% HF=1/64 KL=0.0545) diff(agree=+1.6pt KL=-0.0024) elapsed=2m40s
+[r17-gate] prompt  9 seed-row KL(ref || prefill) = 0.0427
+[r17-gate] set "b" K=3900 prompt  9/10 shipped(agree=90.6% HF=1/64 KL=0.0641) exact-null(S=0)(agree=90.6% HF=1/64 KL=0.0605) diff(agree=+0.0pt KL=-0.0036) elapsed=3m0s
+[r17-gate] prompt 10 seed-row KL(ref || prefill) = 0.0000
+[r17-gate] set "b" K=3900 prompt 10/10 shipped(agree=96.9% HF=1/64 KL=0.0409) exact-null(S=0)(agree=96.9% HF=1/64 KL=0.0376) diff(agree=+0.0pt KL=-0.0032) elapsed=3m20s
+=== r17-gate (candidate exact-null(S=0)), S, set "b", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=10 fa=9) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=90.78% faAgree=92.03% d=14 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.0519 faMeanKL=0.0495 faLowerPrompts=10/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:261: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+=== r17-gate decode-attention verdict (2026-09-25 amendment), candidate exact-null(S=0), set "b", K=3900: critA=true critB=true ceilingOK=true KLratio=0.9536 -> critC(R6)=<=1.05 (pass); strict critC=true (not deciding); identity 10/10 prompts OK — PASSES ===
+--- PASS: TestR17_decodeFidelityGate (204.17s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	204.705s
+##### exit=0
+22:33:20 DONE
