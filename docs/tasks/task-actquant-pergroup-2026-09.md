@@ -335,6 +335,32 @@ K8960×N1536 improved to **1.051 SHIP**, and 5/6 W8A8 shapes SHIP.
 
 Both 1.5B and 7B int8int8 — the exact configuration Phi-3 selects — achieve 0.995 SHIP.
 
+## Release and end-to-end check (2026-09-26)
+
+aikit v1.48.0 carries the per-32 path; goinfer's five modules require it, and the forward goldens
+passed 62/62 on amd64 with 0 skipped before the parity deps hashes were refreshed (group 0 is the
+per-row path, unchanged). Two things were left for the owner in the release: `perfgate` returned
+`VERDICT: FAIL` on three ViT-attention shapes (+6.1 to +6.6%), recorded in aikit's CHANGELOG as a
+loop-alignment artifact on unchanged code (an exception taken without an owner decision), and 1.5B
+int4 at 0.968 (re-run 3) sits in the AMBIGUOUS band. Phi-3 only opts into int8int8, so the int4 cell
+does not gate anything that ships by default.
+
+Serve check on `nobara-pc`, RTX 2070 SUPER 8 GB, `~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf`,
+`--backend cuda`, no `--quant`:
+- the load note reads int8int8 with per-32 activation scales, as intended;
+- **at the default context it does NOT go resident.** The fit check wants 3.22 GB of KV for 4096
+  positions beside 3.6 GB of int8 weights, with 3.49 GB free, and declines to the CPU path. `--kv f16`
+  does not help: `kvBytesForCap` (`cuda/resident.go`) counts 4 bytes per element whatever the KV
+  precision. That predates this work and is not per-32's; it is open;
+- with `--ctx 2048` it goes `cuda-resident (int8int8)`. Greedy replies are coherent (a correct
+  Rayleigh-scattering answer; a working iterative Fibonacci function), about 80-88 tok/s on
+  128-token completions including prefill, against the guard's 6.3 tok/s on the CPU. That is an
+  informal reading, not a benchmark row;
+- prefill is per-token: per-32 has no batched CUDA prefill kernels, so `--require-backend` refuses the
+  load on that decline.
+
+Logs are in `~/goinfer-logs/actgroup-serve-*` and `~/goinfer-logs/actgroup-cuda-1203.log` on `nobara-pc`.
+
 ## Order of work
 
 1. **Measure first:** the H2 step-1 sweep sizes the problem across families. A W8A8 perf baseline per
