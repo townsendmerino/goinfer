@@ -428,6 +428,7 @@ Status table, kept current as briefs move:
 | R15 | CPU sampler filter scans (`topFilterLogits`) — max-scan vs `parallelMax` | Mac | S (measure; build only if a future component wins) | **max-scan sub-item CLOSED 2026-09-22, clean negative result**: parallel LOSES at every vocab size tested (1.39-3.78× SLOWER; `decoder/sampler_filter_bench_test.go`) — goroutine overhead exceeds savings for a plain float comparison, unlike softcap's exp/tanh. `topKByLogit` (~247-262 µs) and the min-p scan (~167 µs) at gemma vocab are sized but not measured for parallel benefit — open, unfunded |
 | R16 | Metal prefill GEMM redesign (S2 of the R4 follow-on scoping) | Mac | M–L (read + prototype + wiring) | **SHIPPED 2026-09-25** (prototype 4 = 3.22×, bit-identical; wired, 3.23× in production): in-sequence GEMM category at K=512 (1.5B) ship ≥ 2.85× / park 1.8–2.85× / kill < 1.8×; fidelity gate and sustained-load timing are preconditions. S0/S1 put the int4-class ceiling here at ≥ 2.96 TFLOPS vs the current 0.75 |
 | R17 | Metal decode attention at depth — a peer-shaped kernel | Mac | M–L (step 0 is S) | **SHIPPED 2026-09-25**: the default for GQA group sizes 6 and 7 (Qwen2.5-1.5B/-7B), pinned to the graded source; other group sizes keep `attention_fa`. End to end (same-session A/B against Ollama): 1.5B 0.61× → **0.87×** Ollama at 3900 keys, 7B 0.61× → **0.81×**; the new build is 1.18–1.41× the previous one at depth. Fidelity and speed confirmed: Confirmation run: in-sequence attention at 3900 keys (1.5B) 8.52 → 2.44 ms, **3.50×** (7 reps, 3.4–3.7; band ship ≥ 2.5×); full token 20.79 → 14.71 ms (Ollama 13.06). After idle, full token 21.87 vs 26.01 ms. Fidelity on set B under the 2026-09-25 amendment ([registration](../measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md)): kernel error vs float64 about 3× below the shipped kernel's on both models, end-to-end KL 0.967×, PASSES. Step 0 (more splits) = 1.20×, KILL band. Record: [`metal-decode-attn-r17-2026-09-25.md`](../measurements/metal-decode-attn-r17-2026-09-25.md) |
+| R18 | Metal decode GEMV — MLX-shaped, bit-identical int4 GEMV | Mac | M–L (step 0 is S–M) | **PRE-REGISTERED 2026-09-26**: in-sequence int4-GEMV work per token at depth 128 (qkv + o + gate/up + down), graded on the weaker of the 1.5B and 7B: ship ≥ 1.35× / park 1.15–1.35× / kill < 1.15× (loads-only bound ≈ 1.68×); bit-identical to the shipped path, so no fidelity gate. S0: GEMVs 80–92% of a depth-128 token at 64–111 GB/s vs loads-only 97–187, int8 head 161, ceiling ~180 ([S0](../measurements/metal-decode-gemv-s0-2026-09-26.md)); 0.66× / 0.57× MLX at 128 |
 
 Every brief below has the same shape: goal, the standing and the band registered here, what to read
 first (prior art and the negatives not to re-propose), what to build, the gates, the measurement
@@ -2234,6 +2235,84 @@ never after a candidate has been timed against it without one.
 
 **Out of scope.** The GEMV fixed cost (the short-context and MLX gap — its own item, S0's other finding), paged MoE
 decode, sliding-window and sink attention variants, the int8 KV path.
+
+---
+
+### R18 · Metal decode GEMV — an MLX-shaped, bit-identical int4 GEMV, pre-registered 2026-09-26
+
+**Goal.** Take Metal decode's fixed per-token cost, the int4 GEMVs, toward the bandwidth bound. This is the gap left
+after R17, and it is the same size at short and long context: at depth 128 goinfer is 0.86× Ollama on the 1.5B and
+0.87× on the 7B, and **0.66× / 0.57× MLX**.
+
+**Standing (M1 Pro, 2026-09-25/26).**
+- S0 of decode (`metal-decode-decomp-2026-09-25.md`): at depth 128 the GEMVs are **10.3 of 12.9 ms** on the 1.5B and
+  **41.7 of 45.5 ms** on the 7B. The pure dispatch floor is 0.65–1.1 ms.
+- S0 of the GEMVs ([`metal-decode-gemv-s0-2026-09-26.md`](../measurements/metal-decode-gemv-s0-2026-09-26.md)):
+  - At real shapes, the int4 kernels run at **64–111 GB/s**, where a loads-only twin reading the same bytes the same
+    way runs at **97–187**. The int8 LM head runs at 161–163, and the streaming-read ceiling is ~180.
+  - The coal down projection's own access pattern tops out at 108–127 GB/s.
+  - Standalone × 28 layers reproduces the in-sequence category times within ~5%.
+- The prior art this answers, read in full in that record:
+  - July's "int-MAC wall / ~71–77 tok/s practical ceiling" (`completed/task-metal-cgofree-spike.md`), refuted by
+    MLX's 109.8 tok/s on the same machine.
+  - Stage B's win in isolation only (164 → 118 µs, zero end to end), which is why this is graded in sequence.
+  - R1's float FMA alone, +2–4%.
+
+**The thesis.** MLX's 4-bit `qmv` shape has not been tried here:
+- activations held **in registers**, loaded once per group and reused across **several rows per simdgroup**;
+- weights **masked in place, never shifted**, against pre-scaled activations;
+- **f32 FMAs**, with the −8 offset folded into one per-group correction.
+
+It can be **bit-identical** to the shipped path. Every per-group (and, for coal, per-word) integer sum is exact, and
+all its products and partial sums are integers below 2²⁴, so they are exact in f32. So a kernel whose lanes own the
+same groups in the same order, and which accumulates `float(sum) × scale` in that order, reproduces today's output
+bit for bit.
+
+**Registered band.** Committed before any prototype is written or timed.
+
+The metric is the **in-sequence int4-GEMV work per token at depth 128**: the qkv, o, gate/up and down categories
+summed, measured by `TestMetalDecodeDecomp`'s no-op method on the production decode token. It is current ÷
+candidate, the median of ≥ 5 paired reps, both arms in the same session, on **both the 1.5B and the 7B**, and
+**graded on the weaker of the two**.
+
+| outcome | int4-GEMV speedup at depth 128, weaker of 1.5B / 7B |
+|---|---|
+| **ship** | **≥ 1.35×** (projected: 1.5B token 13.8 → ~11.5 ms ≈ 1.03× Ollama; 7B 46.3 → ~36.3 ms ≈ 1.10× Ollama) |
+| **park** | 1.15–1.35× |
+| **kill** | < 1.15× |
+
+(The loads-only bound is ≈ 1.68× on both models. Ship at 1.35× captures about 64% of the removable time.)
+
+**Preconditions for "ship"** (a candidate that misses one is not graded on speed):
+1. **Bit-identical.** Logits identical bit for bit to the shipped path at every decode position of a teacher-forced
+   sequence, on both models, at depths 128 and 3900, through the production executor. `TestMetalSnapshotGolden` is
+   unchanged. A candidate that is not bit-identical is not an R18 candidate; it would need its own fidelity
+   registration.
+2. **No regression anywhere.** The full-token time at depths 128, 2048 and 3900 is not worse on either model.
+3. **Sustained timing, burst checked.** It is graded on interleaved back-to-back timing. The full token right after
+   2 s idle is also reported, and a win that exists only after idle does not ship.
+4. **Confirmation run.** Exploratory runs select. The grade is a fresh run of the selected candidate alone, in its own
+   process, with the shipped kernels as the do-nothing arm, and 7 paired reps fixed beforehand.
+
+**Also reported, not deciding:** depths 2048 and 3900; per-category speedups; the standalone S0 bench's GB/s;
+end-to-end decode tok/s against Ollama through `scripts/bench_peer.py`, with MLX's recorded row as the reference.
+
+**Steps, in order.**
+0. **The cheapest test first.** R rows per simdgroup (R = 2, 4), the group's activations read once into registers and
+   reused across the R rows, and **the integer math unchanged**. This isolates the activation-load amortisation from
+   the arithmetic change.
+1. Add the shift-free masked f32 FMA, with −8·Σa folded per group.
+2. The down projection: stage its activations (int8, K ≤ ~32 K fits threadgroup memory) and apply the same
+   treatment, keeping coal's per-word accumulation order.
+3. **Production wiring only after ship**, as R16 and R17 did.
+
+**Record.** `docs/measurements/metal-decode-gemv-r18-2026-MM-DD.md`; S0 points to it.
+
+**Amendments.** A band or precondition changes only by a dated amendment below this line that gives the mechanism,
+never after a candidate has been timed against it without one.
+
+**Out of scope.** The int8 LM head (already at ~90% of the ceiling), attention (R17), the W4F16 lane (R1), speculation
+(its July negative stands on the int-MAC structure; it is worth re-asking only after a ship here), and paged MoE decode.
 
 ---
 
