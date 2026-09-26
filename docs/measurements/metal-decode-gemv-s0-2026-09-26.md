@@ -6,6 +6,12 @@ it is 0.86× / 0.87×. Against MLX it is **0.66× on the 1.5B and 0.57× on the 
 per-token cost. S0 of decode (`metal-decode-decomp-2026-09-25.md`) put that cost in the GEMVs: 10.3 ms of a 12.9 ms
 1.5B token and 41.7 of a 45.5 ms 7B token. **Why are they slow: bandwidth, or arithmetic?**
 
+**Follow-up (2026-09-26):** R18 ([`metal-decode-gemv-r18-2026-09-26.md`](metal-decode-gemv-r18-2026-09-26.md)) shipped
+a bit-identical rows-per-simdgroup GEMV: 1.17× (1.5B) and 1.32× (7B) on the in-sequence GEMV work at depth 128. It
+also qualifies the reading below. Removing every integer multiply (f32 forms) and every per-weight activation read
+from threadgroup memory (device-read activations) does **not** close the gap to the loads-only twin on gate/up. So
+the arithmetic form is not the limit: what the twin avoids is the dependent chain behind each load.
+
 **Answer: per-weight work, not memory traffic.** On real shapes, each int4 GEMV runs 1.5–2.0× slower than a twin that
 reads exactly the same weight bytes in the same pattern. The twin drops the per-weight unpack and multiply-accumulate,
 and also the per-weight activation reads from threadgroup memory. The int8 LM head, a GEMV on the same machine, runs at ~90% of the

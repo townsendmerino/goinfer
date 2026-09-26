@@ -1,0 +1,13 @@
+13:06:09 start d16a04a5 + uncommitted gemv_r18_test.go; load1=2.62
+=== RUN   TestR18Step0Standalone
+[r18-s0    0.3s] 1.5B qkv      N=2048   K=1536     1.8 MB:  sa 0.025 ms (71 GB/s, 1.00x)  sa_r2 0.023 ms (77 GB/s, 1.08x)  sa_r4 0.023 ms (76 GB/s, 1.06x)  sa_ib2 0.024 ms (75 GB/s, 1.05x)  sa_ib4 0.022 ms (79 GB/s, 1.11x)  sa_fr2 0.025 ms (71 GB/s, 1.00x)  sa_fr4 0.023 ms (77 GB/s, 1.08x)
+[r18-s0    0.6s] 1.5B o        N=1536   K=1536     1.3 MB:  sa 0.021 ms (65 GB/s, 1.00x)  sa_r2 0.018 ms (72 GB/s, 1.11x)  sa_r4 0.020 ms (65 GB/s, 1.01x)  sa_ib2 0.018 ms (72 GB/s, 1.11x)  sa_ib4 0.020 ms (65 GB/s, 1.01x)  sa_fr2 0.019 ms (71 GB/s, 1.09x)  sa_fr4 0.018 ms (76 GB/s, 1.17x)
+[r18-s0    1.1s] 1.5B gate/up  N=17920  K=1536    15.5 MB:  sa 0.172 ms (90 GB/s, 1.00x)  sa_r2 0.145 ms (107 GB/s, 1.18x)  sa_r4 0.143 ms (108 GB/s, 1.20x)  sa_ib2 0.152 ms (102 GB/s, 1.13x)  sa_ib4 0.142 ms (109 GB/s, 1.21x)  sa_fr2 0.167 ms (93 GB/s, 1.03x)  sa_fr4 0.134 ms (116 GB/s, 1.28x)
+[r18-s0    1.7s] 7B   qkv      N=4608   K=3584     9.3 MB:  sa 0.096 ms (97 GB/s, 1.00x)  sa_r2 0.079 ms (117 GB/s, 1.22x)  sa_r4 0.080 ms (116 GB/s, 1.20x)  sa_ib2 0.083 ms (112 GB/s, 1.16x)  sa_ib4 0.079 ms (117 GB/s, 1.21x)  sa_fr2 0.092 ms (101 GB/s, 1.04x)  sa_fr4 0.086 ms (108 GB/s, 1.12x)
+[r18-s0    2.3s] 7B   o        N=3584   K=3584     7.2 MB:  sa 0.074 ms (98 GB/s, 1.00x)  sa_r2 0.065 ms (112 GB/s, 1.14x)  sa_r4 0.062 ms (117 GB/s, 1.20x)  sa_ib2 0.065 ms (111 GB/s, 1.14x)  sa_ib4 0.061 ms (118 GB/s, 1.21x)  sa_fr2 0.071 ms (102 GB/s, 1.05x)  sa_fr4 0.064 ms (113 GB/s, 1.16x)
+[r18-s0    2.8s] 7B   gate/up  N=37888  K=3584    76.4 MB:  sa 0.690 ms (111 GB/s, 1.00x)  sa_r2 0.577 ms (132 GB/s, 1.20x)  sa_r4 0.545 ms (140 GB/s, 1.26x)  sa_ib2 0.611 ms (125 GB/s, 1.13x)  sa_ib4 0.545 ms (140 GB/s, 1.26x)  sa_fr2 0.650 ms (117 GB/s, 1.06x)  sa_fr4 0.555 ms (138 GB/s, 1.24x)
+[r18-s0    3.4s] 1.5B down     N=1536   K=8960     7.7 MB:  resid 0.114 ms (68 GB/s, 1.00x)  resid_st1 0.120 ms (64 GB/s, 0.95x)  resid_st2 0.094 ms (83 GB/s, 1.22x)  resid_st4 0.089 ms (87 GB/s, 1.28x)
+[r18-s0    3.9s] 7B   down     N=3584   K=18944   38.2 MB:  resid 0.517 ms (74 GB/s, 1.00x)  resid_st1 0.570 ms (67 GB/s, 0.91x)  resid_st2 0.426 ms (90 GB/s, 1.21x)  resid_st4 0.344 ms (111 GB/s, 1.50x)
+--- PASS: TestR18Step0Standalone (4.35s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	4.812s

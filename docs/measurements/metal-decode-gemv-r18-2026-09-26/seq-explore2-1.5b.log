@@ -1,0 +1,24 @@
+13:21:03 start d16a04a5 + uncommitted R18 hook/tests (step-paired); load1=3.16; EXPLORATORY 1.5b
+=== RUN   TestR18InSequence
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 0.2 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 3.3 GB; this machine currently has 5.9 GB of memory available (budget 4.1 GB = 70% of that) (80% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+[r18-seq    3.5s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: H=1536 I=8960 nL=28 nH=12 hd=128 kvDim=256 V=151936, ctx 4096, attention_fa true; qkv rows 2048; arms [i1110 f4444 f2244 i2244 i4444]
+[r18-seq    4.3s] depth 128 identity: i1110 vs current over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 151936 logits
+[r18-seq    4.7s] depth 128 identity: f4444 vs current over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 151936 logits
+[r18-seq    5.0s] depth 128 identity: f2244 vs current over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 151936 logits
+[r18-seq    5.4s] depth 128 identity: i2244 vs current over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 151936 logits
+[r18-seq    5.7s] depth 128 identity: i4444 vs current over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 151936 logits
+[r18-seq   19.4s] depth 128 rep 1/5:  current full 12.960 work 9.086  i1110 full 13.036 work 9.172 (0.991x)  f4444 full 11.295 work 7.753 (1.172x)  f2244 full 11.337 work 8.019 (1.133x)  i2244 full 11.387 work 7.883 (1.153x)  i4444 full 11.609 work 8.006 (1.135x)
+[r18-seq   32.9s] depth 128 rep 2/5:  current full 12.985 work 9.085  i1110 full 13.079 work 9.151 (0.993x)  f4444 full 11.266 work 7.619 (1.192x)  f2244 full 11.324 work 7.726 (1.176x)  i2244 full 11.389 work 7.760 (1.171x)  i4444 full 11.603 work 7.877 (1.153x)
+[r18-seq   46.3s] depth 128 rep 3/5:  current full 12.937 work 9.286  i1110 full 12.976 work 9.265 (1.002x)  f4444 full 11.299 work 7.694 (1.207x)  f2244 full 11.266 work 7.648 (1.214x)  i2244 full 11.381 work 7.720 (1.203x)  i4444 full 11.545 work 7.941 (1.169x)
+[r18-seq   59.8s] depth 128 rep 4/5:  current full 12.996 work 9.101  i1110 full 12.971 work 9.192 (0.990x)  f4444 full 11.219 work 7.669 (1.187x)  f2244 full 11.271 work 7.748 (1.175x)  i2244 full 11.342 work 7.579 (1.201x)  i4444 full 11.542 work 7.651 (1.190x)
+[r18-seq   73.3s] depth 128 rep 5/5:  current full 12.987 work 9.160  i1110 full 13.035 work 9.305 (0.984x)  f4444 full 11.231 work 7.652 (1.197x)  f2244 full 11.314 work 8.012 (1.143x)  i2244 full 11.294 work 7.675 (1.194x)  i4444 full 11.574 work 7.951 (1.152x)
+[r18-seq   73.3s] depth 128 — int4-GEMV work per token (qkv+o+gate/up+down, each the median of 20 step-paired full − that-category-no-op'd, summed), median of 5 paired reps:
+[r18-seq   73.3s]   current  work 9.101 ms [ qkv 0.707 o 0.541 gate/up 4.710 down 3.140 ] all-4-no-op'd 9.020; full token 12.985 ms
+[r18-seq   73.3s]   i1110    work 9.192 ms [ qkv 0.713 (0.99x) o 0.588 (0.92x) gate/up 4.767 (0.99x) down 3.153 (1.00x) ] all-4-no-op'd 9.071; full token 13.035 ms (+0.050); METRIC current/candidate = 0.991x (per-rep sorted [0.984 0.990 0.991 0.993 1.002])
+[r18-seq   73.3s]   f4444    work 7.669 ms [ qkv 0.766 (0.92x) o 0.677 (0.80x) gate/up 3.689 (1.28x) down 2.571 (1.22x) ] all-4-no-op'd 7.461; full token 11.266 ms (-1.718); METRIC current/candidate = 1.192x (per-rep sorted [1.172 1.187 1.192 1.197 1.207])
+[r18-seq   73.3s]   f2244    work 7.748 ms [ qkv 0.820 (0.86x) o 0.649 (0.83x) gate/up 3.716 (1.27x) down 2.577 (1.22x) ] all-4-no-op'd 7.473; full token 11.314 ms (-1.670); METRIC current/candidate = 1.175x (per-rep sorted [1.133 1.143 1.175 1.176 1.214])
+[r18-seq   73.3s]   i2244    work 7.720 ms [ qkv 0.708 (1.00x) o 0.543 (1.00x) gate/up 3.919 (1.20x) down 2.544 (1.23x) ] all-4-no-op'd 7.477; full token 11.381 ms (-1.603); METRIC current/candidate = 1.194x (per-rep sorted [1.153 1.171 1.194 1.201 1.203])
+[r18-seq   73.3s]   i4444    work 7.941 ms [ qkv 0.784 (0.90x) o 0.665 (0.81x) gate/up 3.943 (1.19x) down 2.559 (1.23x) ] all-4-no-op'd 7.700; full token 11.574 ms (-1.410); METRIC current/candidate = 1.153x (per-rep sorted [1.135 1.152 1.153 1.169 1.190])
+--- PASS: TestR18InSequence (73.26s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	73.825s

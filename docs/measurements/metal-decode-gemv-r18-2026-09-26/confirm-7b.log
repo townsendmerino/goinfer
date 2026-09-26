@@ -1,0 +1,41 @@
+2026-09-26 13:29:50 PDT start afd77749 (tree: ); load1=1.68; CONFIRMATION 7b: i2244, 7 reps, depths 128,2048,3900
+=== RUN   TestR18InSequence
+[metal] weights aliased from qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4020 MB bound in place, 1 MB copied (anonymous) — 3112 MB int4 nibbles (56 single tensors + 56 fused groups = 2034 MB) + 520 MB int8 codes (1 matrices) + 389 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[r18-seq    0.6s] loaded qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: H=3584 I=18944 nL=28 nH=28 hd=128 kvDim=512 V=152064, ctx 4096, attention_fa true; qkv rows 4608; arms [i2244]
+[r18-seq    5.7s] depth 128 identity: i2244 vs current over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq   20.6s] depth 128 rep 1/7:  current full 45.609 work 39.049  i2244 full 35.966 work 29.415 (1.328x)
+[r18-seq   34.6s] depth 128 rep 2/7:  current full 45.624 work 38.495  i2244 full 35.984 work 29.504 (1.305x)
+[r18-seq   48.6s] depth 128 rep 3/7:  current full 45.454 work 38.494  i2244 full 35.934 work 29.466 (1.306x)
+[r18-seq   62.6s] depth 128 rep 4/7:  current full 45.647 work 38.980  i2244 full 35.798 work 29.334 (1.329x)
+[r18-seq   76.6s] depth 128 rep 5/7:  current full 45.640 work 39.160  i2244 full 35.953 work 29.489 (1.328x)
+[r18-seq   90.6s] depth 128 rep 6/7:  current full 45.606 work 38.924  i2244 full 35.943 work 29.565 (1.317x)
+[r18-seq  104.6s] depth 128 rep 7/7:  current full 45.627 work 38.554  i2244 full 35.812 work 29.416 (1.311x)
+[r18-seq  117.7s] depth 128 — int4-GEMV work per token (qkv+o+gate/up+down, each the median of 20 step-paired full − that-category-no-op'd, summed), median of 7 paired reps:
+[r18-seq  117.7s]   current  work 38.924 ms [ qkv 2.862 o 2.128 gate/up 19.542 down 14.275 ] all-4-no-op'd 38.722; full token 45.624 ms; after 2 s idle [52.156 47.672 47.706]
+[r18-seq  117.7s]   i2244    work 29.466 ms [ qkv 2.479 (1.15x) o 1.977 (1.08x) gate/up 15.287 (1.28x) down 9.719 (1.47x) ] all-4-no-op'd 29.396; full token 35.943 ms (-9.682); METRIC current/candidate = 1.317x (per-rep sorted [1.305 1.306 1.311 1.317 1.328 1.328 1.329]); after 2 s idle [44.090 40.632 41.523]
+[r18-seq  143.3s] depth 2048 identity: i2244 vs current over 16 teacher-forced positions (2048..2063, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq  171.0s] depth 2048 rep 1/7:  current full 49.461 work 39.075  i2244 full 39.620 work 29.222 (1.337x)
+[r18-seq  186.6s] depth 2048 rep 2/7:  current full 49.438 work 39.031  i2244 full 39.644 work 29.179 (1.338x)
+[r18-seq  202.1s] depth 2048 rep 3/7:  current full 49.346 work 38.651  i2244 full 39.605 work 28.820 (1.341x)
+[r18-seq  217.6s] depth 2048 rep 4/7:  current full 49.416 work 38.576  i2244 full 39.616 work 29.141 (1.324x)
+[r18-seq  233.0s] depth 2048 rep 5/7:  current full 49.402 work 38.917  i2244 full 39.441 work 28.979 (1.343x)
+[r18-seq  248.2s] depth 2048 rep 6/7:  current full 48.180 work 38.506  i2244 full 38.652 work 28.925 (1.331x)
+[r18-seq  263.7s] depth 2048 rep 7/7:  current full 49.383 work 39.014  i2244 full 39.635 work 29.509 (1.322x)
+[r18-seq  276.8s] depth 2048 — int4-GEMV work per token (qkv+o+gate/up+down, each the median of 20 step-paired full − that-category-no-op'd, summed), median of 7 paired reps:
+[r18-seq  276.8s]   current  work 38.917 ms [ qkv 2.806 o 2.132 gate/up 19.714 down 14.220 ] all-4-no-op'd 38.754; full token 49.402 ms; after 2 s idle [52.366 51.125 51.828]
+[r18-seq  276.8s]   i2244    work 29.141 ms [ qkv 2.443 (1.15x) o 1.714 (1.24x) gate/up 15.257 (1.29x) down 9.610 (1.48x) ] all-4-no-op'd 29.347; full token 39.616 ms (-9.786); METRIC current/candidate = 1.337x (per-rep sorted [1.322 1.324 1.331 1.337 1.338 1.341 1.343]); after 2 s idle [45.116 42.266 44.181]
+[r18-seq  333.5s] depth 3900 identity: i2244 vs current over 16 teacher-forced positions (3900..3915, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq  377.9s] depth 3900 rep 1/7:  current full 52.042 work 38.679  i2244 full 42.161 work 29.212 (1.324x)
+[r18-seq  394.1s] depth 3900 rep 2/7:  current full 51.852 work 38.494  i2244 full 40.773 work 28.514 (1.350x)
+[r18-seq  410.6s] depth 3900 rep 3/7:  current full 52.014 work 38.384  i2244 full 42.259 work 29.354 (1.308x)
+[r18-seq  426.6s] depth 3900 rep 4/7:  current full 50.415 work 38.553  i2244 full 40.859 work 28.933 (1.332x)
+[r18-seq  442.9s] depth 3900 rep 5/7:  current full 50.447 work 38.345  i2244 full 42.250 work 29.495 (1.300x)
+[r18-seq  459.7s] depth 3900 rep 6/7:  current full 52.901 work 40.033  i2244 full 42.289 work 28.957 (1.383x)
+[r18-seq  476.5s] depth 3900 rep 7/7:  current full 52.909 work 39.945  i2244 full 42.264 work 29.306 (1.363x)
+[r18-seq  489.7s] depth 3900 — int4-GEMV work per token (qkv+o+gate/up+down, each the median of 20 step-paired full − that-category-no-op'd, summed), median of 7 paired reps:
+[r18-seq  489.7s]   current  work 38.553 ms [ qkv 2.729 o 2.129 gate/up 19.441 down 14.456 ] all-4-no-op'd 38.893; full token 52.014 ms; after 2 s idle [58.240 55.487 55.855]
+[r18-seq  489.7s]   i2244    work 29.212 ms [ qkv 2.430 (1.12x) o 1.934 (1.10x) gate/up 15.223 (1.28x) down 9.555 (1.51x) ] all-4-no-op'd 29.580; full token 42.250 ms (-9.764); METRIC current/candidate = 1.332x (per-rep sorted [1.300 1.308 1.324 1.332 1.350 1.363 1.383]); after 2 s idle [44.479 46.375 46.040]
+--- PASS: TestR18InSequence (489.73s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	490.184s
+2026-09-26 13:38:01 PDT end 7b exit 0
