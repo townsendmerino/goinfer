@@ -202,6 +202,7 @@ func runCUDARefGateCell(t *testing.T, rf *cudaResident, m *decoder.Model, model 
 		worstEGap, worstFGap         float64
 	)
 	t0 := time.Now()
+	var identityFail []int
 	for pi, ids := range prompts {
 		seedRef, refTokens, refLogits, err := decoder.ReadPrefillReferenceForTest(
 			filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", model, K, pi)))
@@ -222,11 +223,16 @@ func runCUDARefGateCell(t *testing.T, rf *cudaResident, m *decoder.Model, model 
 		if r.fastAgree >= r.exactAgree {
 			fWins++
 		}
+		mismatch := ""
+		if r.seedKL > 1.0 {
+			identityFail = append(identityFail, pi+1)
+			mismatch = "  <-- REFERENCE/PROMPT MISMATCH"
+		}
 		fmt.Printf("[cuda-gate] %s K=%d prompt %2d/%2d exact(agree=%.1f%% HF=%d/%d KL=%.4f) "+
-			"fast(agree=%.1f%% HF=%d/%d KL=%.4f) diff(agree=%+.1fpt KL=%+.4f) elapsed=%s\n",
+			"fast(agree=%.1f%% HF=%d/%d KL=%.4f) diff(agree=%+.1fpt KL=%+.4f) seedKL=%.4f%s elapsed=%s\n",
 			model, K, pi+1, len(prompts), r.exactAgree*100, r.exactHF, contN, r.exactKL,
 			r.fastAgree*100, r.fastHF, contN, r.fastKL,
-			(r.fastAgree-r.exactAgree)*100, r.fastKL-r.exactKL, time.Since(t0).Round(time.Second))
+			(r.fastAgree-r.exactAgree)*100, r.fastKL-r.exactKL, r.seedKL, mismatch, time.Since(t0).Round(time.Second))
 	}
 	mEA, mFA := sumEA/float64(n)*100, sumFA/float64(n)*100
 	mEKL, mFKL := sumEKL/float64(n), sumFKL/float64(n)
@@ -234,16 +240,25 @@ func runCUDARefGateCell(t *testing.T, rf *cudaResident, m *decoder.Model, model 
 	critB := mFA >= mEA-1.0 && fWins*2 >= n
 	critC := mFKL <= 1.1*mEKL
 	cell := critA && critB && critC
+	verdict := map[bool]string{true: "SHIPS", false: "DOES NOT SHIP"}[cell]
+	// Prompt identity (2026-09-26, docs/measurements/prefill-ref-identity-2026-09-26.md): the reference files carry no
+	// prompt ids, and set A's 2026-09-05 files at K = 512/1024/3900 predate the 2026-09-09 prompt snapshot — 1 to 4 of
+	// their 10 prompts are scored against logits for different text. A cell whose exact-arm prompt-final logits sit
+	// above KL 1.0 from the reference's (valid prompts: <= 0.8) is VOID, not a verdict.
+	if len(identityFail) > 0 {
+		cell = false
+		verdict = fmt.Sprintf("VOID (reference identity check failed for prompts %v)", identityFail)
+		t.Errorf("CUDA %s K=%d: reference files do not match prompts %v — regenerate them from the snapshot "+
+			"(TestPrefillGateReference) before trusting this cell", model, K, identityFail)
+	}
 	fmt.Printf("=== CUDA %s K=%d SUMMARY (n=%d prompts x %d positions): "+
 		"exact(meanAgree=%.2f%% HF=%d/%d worstGap=%.3f%% meanKL=%.5f) "+
 		"fast(meanAgree=%.2f%% HF=%d/%d worstGap=%.3f%% meanKL=%.5f) "+
 		"critA(HF fast<=exact)=%v critB(agree>=exact-1pt & >=half)=%v critC(KL<=1.1x)=%v — CELL %s\n",
 		model, K, n, contN, mEA, eHF, n*contN, worstEGap*100, mEKL,
-		mFA, fHF, n*contN, worstFGap*100, mFKL, critA, critB, critC,
-		map[bool]string{true: "SHIPS", false: "DOES NOT SHIP"}[cell])
+		mFA, fHF, n*contN, worstFGap*100, mFKL, critA, critB, critC, verdict)
 	t.Logf("CUDA %s K=%d: exact(agree=%.2f%% HF=%d KL=%.5f) fast(agree=%.2f%% HF=%d KL=%.5f) "+
-		"A=%v B=%v C=%v cell=%s", model, K, mEA, eHF, mEKL, mFA, fHF, mFKL, critA, critB, critC,
-		map[bool]string{true: "SHIPS", false: "DOES NOT SHIP"}[cell])
+		"A=%v B=%v C=%v cell=%s", model, K, mEA, eHF, mEKL, mFA, fHF, mFKL, critA, critB, critC, verdict)
 	return &cell
 }
 
@@ -252,6 +267,7 @@ type cudaRefCellResult struct {
 	exactHF, fastHF             int
 	exactWorstGap, fastWorstGap float64
 	exactKL, fastKL             float64
+	seedKL                      float64 // KL(reference prompt-final logits || exact arm's): the prompt-identity check
 }
 
 // runCUDARefCell runs both arms over one K-token prompt and scores each against the reference.
@@ -291,7 +307,7 @@ func runCUDARefCell(t *testing.T, rf *cudaResident, m *decoder.Model, ids []int,
 	}
 	// EXACT first, then FAST: each PrefillLast(…, 0) rewrites positions 0..K-1 and the
 	// continuation rewrites K.., so nothing from one arm survives into the other's reads.
-	_, exactCont := arm(false, false)
+	exactSeed, exactCont := arm(false, false)
 	useAttn, useGemm := gateFastLevers()
 	_, fastCont := arm(useAttn, useGemm)
 
@@ -299,8 +315,8 @@ func runCUDARefCell(t *testing.T, rf *cudaResident, m *decoder.Model, ids []int,
 	fastAgree, _ := decoder.TeacherForcedTop1AgreementForTest(fastCont, refTokens)
 	eHF, eGap, eKL := scoreCUDAContVsRef(refLogits, exactCont)
 	fHF, fGap, fKL := scoreCUDAContVsRef(refLogits, fastCont)
-	_ = seedRef
-	return cudaRefCellResult{exactAgree, fastAgree, eHF, fHF, eGap, fGap, eKL, fKL}
+	return cudaRefCellResult{exactAgree, fastAgree, eHF, fHF, eGap, fGap, eKL, fKL,
+		decoder.KLDivergenceForTest(seedRef, exactSeed)}
 }
 
 // gateFastLevers selects WHICH levers the "fast" arm uses, so the L2-only and L3-only arms §3.1

@@ -263,6 +263,18 @@ func runPrefillGateSet(t *testing.T, rf *metalResident, m *decoder.Model, tk *to
 	pooled := poolCells(decisionCells)
 	ships := pooled.critA && pooled.critB && pooled.critC
 	verdict := map[bool]string{true: "SHIPS", false: "DOES NOT SHIP"}[ships]
+	var void []string
+	for _, cs := range decisionCells {
+		if len(cs.identityFail) > 0 {
+			void = append(void, fmt.Sprintf("K=%d prompts %v", cs.K, cs.identityFail))
+		}
+	}
+	if len(void) > 0 {
+		ships = false
+		verdict = fmt.Sprintf("VOID (reference identity check failed: %s)", strings.Join(void, "; "))
+		t.Errorf("%s (set %q, %s): reference files do not match their prompts (%s) — regenerate them from the snapshot "+
+			"(TestPrefillGateReference) before trusting this gate", modelName, setLabel, role, strings.Join(void, "; "))
+	}
 
 	fmt.Printf("=== %s (set %q, %s) POOLED decision-set verdict (K=%v, %d cells, %d positions): "+
 		"critA(hardFlips fast<=exact+2*sqrt(exact))=%v (exact=%d fast=%d) "+
@@ -278,9 +290,13 @@ func runPrefillGateSet(t *testing.T, rf *metalResident, m *decoder.Model, tk *to
 		modelName, setLabel, role, verdict, pooled.critA, pooled.critB, pooled.critC)
 
 	for _, cs := range confirmCells {
-		fmt.Printf("[confirm, not gating] %s set %q K=%d: exact(agree=%.1f%% HF=%d/%d meanKL=%.4f) fast(agree=%.1f%% HF=%d/%d meanKL=%.4f)\n",
+		idn := ""
+		if len(cs.identityFail) > 0 {
+			idn = fmt.Sprintf(" — VOID: reference identity check failed for prompts %v", cs.identityFail)
+		}
+		fmt.Printf("[confirm, not gating] %s set %q K=%d: exact(agree=%.1f%% HF=%d/%d meanKL=%.4f) fast(agree=%.1f%% HF=%d/%d meanKL=%.4f)%s\n",
 			modelName, setLabel, cs.K, cs.exactAgreeRate*100, cs.exactHF, cs.n*cs.contN, cs.exactMeanKL,
-			cs.fastAgreeRate*100, cs.fastHF, cs.n*cs.contN, cs.fastMeanKL)
+			cs.fastAgreeRate*100, cs.fastHF, cs.n*cs.contN, cs.fastMeanKL, idn)
 	}
 
 	return ships
@@ -306,6 +322,11 @@ type cellSummary struct {
 	promptsCounted    int // = n, named separately so pooling reads "prompts", not "cells"
 	worstExactGap     float64
 	worstFastGap      float64
+	// identityFail lists the prompts (1-based) whose reference fails the prompt-identity check: KL(reference
+	// prompt-final logits || the exact arm's) > 1.0, i.e. the reference was generated from different text (found
+	// 2026-09-26: set A's 2026-09-05 files at K = 512/1024/3900 predate the 2026-09-09 prompt snapshot —
+	// docs/measurements/prefill-ref-identity-2026-09-26.md). A cell with any is VOID, not scored.
+	identityFail []int
 }
 
 // runPrefillRefGateCellK runs one (model, set, K) cell over every prompt, printing per-prompt
@@ -353,12 +374,18 @@ func runPrefillRefGateCellK(t *testing.T, rf *metalResident, m *decoder.Model, m
 		if res.fastWorstGap > cs.worstFastGap {
 			cs.worstFastGap = res.fastWorstGap
 		}
+		mismatch := ""
+		if res.seedKL > 1.0 {
+			cs.identityFail = append(cs.identityFail, pi+1)
+			mismatch = "  <-- REFERENCE/PROMPT MISMATCH"
+		}
 		fmt.Printf("[ref-gate] %s set %q K=%d prompt %2d/%2d exact(agree=%.1f%% HF=%d/%d KL=%.4f) "+
-			"fast(agree=%.1f%% HF=%d/%d KL=%.4f) diff(agree=%+.1fpt KL=%+.4f) elapsed=%s\n",
+			"fast(agree=%.1f%% HF=%d/%d KL=%.4f) diff(agree=%+.1fpt KL=%+.4f) seedKL=%.4f%s elapsed=%s\n",
 			modelName, setLabel, K, pi+1, len(prompts),
 			res.exactMatchRate()*100, res.exactHF, res.contN, res.exactMeanKL,
 			res.fastMatchRate()*100, res.fastHF, res.contN, res.fastMeanKL,
-			(res.fastMatchRate()-res.exactMatchRate())*100, res.fastMeanKL-res.exactMeanKL, time.Since(t0).Round(time.Second))
+			(res.fastMatchRate()-res.exactMatchRate())*100, res.fastMeanKL-res.exactMeanKL, res.seedKL, mismatch,
+			time.Since(t0).Round(time.Second))
 	}
 	total := float64(cs.n * cs.contN)
 	cs.exactMeanKL = cs.exactKLsum / total
@@ -515,6 +542,7 @@ func runPrefillRefCell(t *testing.T, rf *metalResident, m *decoder.Model, ids []
 	}
 
 	return prefillRefCellResult{
+		seedKL:        decoder.KLDivergenceForTest(refLogitsRef[0], exactSeed),
 		contN:         len(exactCont),
 		exactHF:       exactHF,
 		fastHF:        fastHF,
