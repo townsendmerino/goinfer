@@ -164,6 +164,43 @@ llama.cpp's `bsums` are. The unsigned × signed byte dot is AVX2's `vpmaddubsw`,
 where it strictly beats today's int8int8 on bytes; every Q4_K GGUF, trading +12% bytes on K_M files
 for the quality above; or opt-in only.
 
+**Owner decision 2026-09-26: build Phase 1**, opt-in first. Order: aikit format and Go reference, then
+the amd64 AVX2 kernel and the goinfer loader mode (step 1a); then the CUDA kernel (1b); then arm64,
+Metal and WebGPU (later, each scoped separately). The default scope is decided after the speed gate.
+
+### Phase 1 design (step 1a)
+
+- **Mode `--quant q4k`:** tensors the GGUF stores as Q4_K keep their super-block bytes verbatim in a
+  new aikit `WeightMat` kind. Every other layer matmul is int8 W8A8. Activations are per-32 int8
+  everywhere; the Q4_K kind is per-32 by construction, because its 32-weight sub-blocks are the
+  activation groups. Embeddings and the LM head follow the existing embedding policy.
+- **GGUF sources only**, and only from the GGUF directly. `.giw` serialization and the sidecar cache
+  decline `q4k` until a later step adds a `.giw` kind, so a `q4k` load never goes through the
+  transcode cache.
+- **GPU backends decline `q4k`** until their kernels exist (1b: CUDA), with the reason reported.
+
+### Phase 1a gates, PRE-REGISTERED 2026-09-26 before any build or run
+
+**Correctness (unit tests, aikit):** the Go reference and the AVX2 kernel both match an f64
+evaluation of `Σ (d·sc·q − dmin·m)·a` over dequantized-then-requantized activations: relative error
+≤ 1e-6 on random and saturated blocks, at M = 1 and M > 1, single- and multi-op batch, odd N.
+
+**Quality (real path, CPU amd64):** the Phase 0 tool's metric and prompts, with the new mode loaded
+for real (no row filter). **PASS:** every one of the six families' p10 on both prompts is ≥ its Phase
+0 A0 value − 0.01. Anything lower is a defect to find, not a result to band.
+
+**Speed (CPU amd64, end to end, goinfer against goinfer):** `BenchmarkDecode`, 6 paired rounds,
+alternating order, separate processes, idle box, the speed-gate protocol of
+`task-actquant-pergroup-2026-09.md`:
+- **qwen2.5-7b, `q4k` ÷ today's `int4`** (+12% bytes projected): **≥ 0.85 SHIP; [0.78, 0.85)
+  AMBIGUOUS; < 0.78 FAIL.**
+- **phi3-mini, `q4k` ÷ `int8int8` with per-32** (−28% bytes projected): **≥ 1.15 SHIP; [1.05, 1.15)
+  AMBIGUOUS; < 1.05 FAIL.**
+
+The CPU W4A8 kernels are not purely bandwidth-bound (the amd64 split-half kernel is shuffle-port
+bound), so these bands are set below the byte projections on purpose. The CUDA peer gate is 1b's,
+registered before 1b is built.
+
 Format and kernels per the decision: aikit `WeightMat`, the CPU W4A8 kernels (amd64/arm64), CUDA
 `gemv_w4a8`, then Metal/WebGPU. Then the quality gate on the real path, and the speed gate against
 peers on the Phi-3 and 7B cells.
