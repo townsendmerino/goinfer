@@ -220,4 +220,35 @@ Gates, all on the wired tree:
 
 The wired timings reproduce the confirmation's to within noise.
 
-End to end against Ollama (`scripts/bench_peer.py`, reported, not deciding): see below once run.
+### End to end against Ollama (reported, not deciding)
+
+The setup was `scripts/bench_peer.py`, following R17's end-to-end protocol:
+- three engines interleaved cell by cell in one session, with a server restart between cells;
+- greedy decoding, 3 runs × 8 requests × 64 tokens, same weights;
+- idle-gated, per cell, at load1 ≤ 2.0;
+- the R18 build `serve-metal-622b1f9b` against its parent `serve-metal-65ffe328` (the shipped one-row kernels, the
+  same tree otherwise; `strings` finds the rows kernels in one binary and not the other) against Ollama v0.32.5.
+
+The run was 2026-09-26 15:06–15:35 PDT. A first attempt at 14:10 waited its whole idle window and never ran: load
+stayed at 2.5–4.6, held there by two orphaned sampler loops of this session's own (see
+[`e2e/run-attempt1-not-idle.log`](metal-decode-gemv-r18-2026-09-26/e2e/run-attempt1-not-idle.log)). Raw:
+[`e2e/r18-e2e-metal-decode.json`](metal-decode-gemv-r18-2026-09-26/e2e/r18-e2e-metal-decode.json) and
+[`e2e/run.log`](metal-decode-gemv-r18-2026-09-26/e2e/run.log). Decode tok/s is the mean of 3 runs, and every
+spread is ≤ 0.5.
+
+| model | depth | R18 | previous build | Ollama | R18 ÷ previous | **R18 ÷ Ollama** | previous ÷ Ollama |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1.5B | 128 | 83.9 | 73.9 | 84.9 | 1.135× | **0.988×** | 0.870× |
+| 1.5B | 2048 | 77.7 | 68.6 | 80.1 | 1.133× | **0.970×** | 0.856× |
+| 1.5B | 3900 | 73.2 | 65.1 | 76.0 | 1.124× | **0.963×** | 0.857× |
+| 7B | 128 | 27.7 | 21.9 | 25.0 | 1.265× | **1.108×** | 0.876× |
+| 7B | 2048 | 25.3 | 20.4 | 24.2 | 1.240× | **1.045×** | 0.843× |
+| 7B | 3900 | 23.9 | 19.5 | 23.4 | 1.226× | **1.021×** | 0.833× |
+
+- The end-to-end gains (1.12–1.14× on the 1.5B, 1.23–1.27× on the 7B) are what the GPU-time token predicted: 12.99
+  → 11.30 ms is 1.15×, and 45.67 → 35.96 ms is 1.27×.
+- **The 7B is now ahead of Ollama at every depth, and the 1.5B is within 1–4%.** The previous build reproduces R17's
+  own end-to-end row to within 1% at 2048 and 3900 (68.6 / 65.1 today against 68.6 / 65.4).
+- MLX, as a reference only: its recorded 109.8 / 37.9 tok/s at depth 128 (`benchmarks.md` W1, a different session,
+  in which Ollama read 84.3 / 25.5, within 2% of today) puts goinfer at about **0.76× / 0.73× MLX**. It was 0.66× /
+  0.57×.
