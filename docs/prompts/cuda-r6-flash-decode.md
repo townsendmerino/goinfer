@@ -123,6 +123,13 @@ boundary; a rising score ramp; a dominating sink and a non-dominating one; a win
 
 ## Phase 3 — f16 resident KV. Its own pre-registration; not before phase 2's record is written.
 
+> **2026-09-26 — this band's premise no longer holds; owner decision pending before any f16 run.**
+> Phi-3 now loads at int8int8 with per-32 activations (H2). Its int4 cell is declined on CUDA by
+> design, and at int8 with f32 KV, depth 3900 does not fit on the 8 GB card. The re-measured baseline
+> and an f16 projection (~64 tok/s at 3900, ~1.19× at 2048) are in
+> `docs/measurements/f16kv-baseline-2026-09-26.md`. The band below is left as registered; a
+> replacement is the owner's to set.
+
 phi3-mini is the geometry R6 expects the lane to decline on, which leaves it with no depth lever
 from phase 2 at all. It does not need one: it is already byte-bound (`splitkv-mechanism-ncu-2026-09-12.md`
 measured 67.83% DRAM on `attn_batched`; the fit independently gives 302 GB/s = 67.5%), and its 1.8×
