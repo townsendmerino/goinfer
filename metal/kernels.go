@@ -1058,6 +1058,134 @@ kernel void attention_fa_combine(
     }
     out[qh*hd + d] = acc / l;
 }
+
+// ---- attention_fa_blk begin (R17; see TestAttnFABlkIsTheGradedKernel) ----
+// R17 (docs/tasks/red-october.md; docs/measurements/metal-decode-attn-r17-2026-09-25.md): attention_fa's first
+// pass in the shape of llama.cpp's flash_attn_ext_vec — keys in blocks of 32 (32 coalesced K-row loads, per head 32
+// independent simd_sums landing one score per lane), ONE online-softmax step per block per head, V weighted by
+// simd_shuffle(p, j), G a template parameter so every per-head loop has a constant bound. Same signature, grid and
+// partial layout as attention_fa; attention_fa_combine merges it unchanged. Graded 2026-09-25 at G = 6 and 7 with a
+// fixed split count of 16 (attnFABlkSplit): 3.50x in-sequence at 3900 keys on the 1.5B, ~3x closer to float64 than
+// the shipped per-query-head kernel, fidelity gate PASSES on set B. Instantiated only for the graded group sizes.
+#define ATTN_FA_BLK_UNROLL _Pragma("clang loop unroll(full)")
+
+template <uint G>
+kernel void attention_fa_blk(
+    device const float* q[[buffer(0)]], device const half* kc[[buffer(1)]],
+    device const half* vc[[buffer(2)]], device float* partial[[buffer(3)]],
+    constant uint& nKV[[buffer(4)]], constant uint& Gu[[buffer(5)]],
+    constant uint& nKeys[[buffer(6)]], constant float& scale[[buffer(7)]],
+    constant uint& window[[buffer(8)]], constant uint& nSplit[[buffer(9)]],
+    threadgroup float* shm[[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
+    uint lane[[thread_index_in_simdgroup]]) {
+    (void)Gu;
+    const uint hd = 128u;
+    const uint kvDim = nKV * hd;
+    const uint kvh = tgid / nSplit, split = tgid % nSplit;
+    const uint winStart = (window > 0u && nKeys > window) ? nKeys - window : 0u;
+    const uint nWin = nKeys - winStart;
+    const uint chunkLen = (nWin + nSplit - 1u) / nSplit;
+    const uint chunkStart = winStart + split * chunkLen;
+    const uint chunkEnd = min(chunkStart + chunkLen, nKeys);
+
+    device const float* qr = q + kvh * G * hd;
+    device const half*  kb = kc + kvh * hd + lane*4u;
+    device const half*  vb = vc + kvh * hd + lane*4u;
+
+    float4 qs[G];
+    float m[G], l[G];
+    float4 acc[G];
+    ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+        qs[g] = *((device const float4*)(qr + g*hd + lane*4u)) * scale;
+        m[g] = -INFINITY; l[g] = 0.0f; acc[g] = float4(0.0f);
+    }
+
+    // simdgroup sgid takes blocks sgid, sgid+4, sgid+8, ... of 32 consecutive keys
+    for (uint b0 = chunkStart + sgid*32u; b0 < chunkEnd; b0 += 128u) {
+        const uint nb = min(32u, chunkEnd - b0);
+        float s[G];
+        ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) s[g] = -INFINITY;
+        if (nb == 32u) {
+            ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
+                float4 k4 = float4(*((device const half4*)(kb + (b0 + j)*kvDim)));
+                ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+                    float d = simd_sum(dot(qs[g], k4));
+                    s[g] = (lane == j) ? d : s[g];
+                }
+            }
+        } else {
+            for (uint j = 0; j < nb; j++) {
+                float4 k4 = float4(*((device const half4*)(kb + (b0 + j)*kvDim)));
+                ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+                    float d = simd_sum(dot(qs[g], k4));
+                    s[g] = (lane == j) ? d : s[g];
+                }
+            }
+        }
+        float p[G];
+        ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+            float mb = simd_max(s[g]);
+            float mn = max(m[g], mb);
+            float alpha = (m[g] == -INFINITY) ? 0.0f : exp(m[g] - mn);
+            p[g] = (s[g] == -INFINITY) ? 0.0f : exp(s[g] - mn);
+            l[g] = l[g]*alpha + simd_sum(p[g]);
+            acc[g] *= alpha;
+            m[g] = mn;
+        }
+        if (nb == 32u) {
+            ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
+                float4 v4 = float4(*((device const half4*)(vb + (b0 + j)*kvDim)));
+                ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v4;
+            }
+        } else {
+            for (uint j = 0; j < nb; j++) {
+                float4 v4 = float4(*((device const half4*)(vb + (b0 + j)*kvDim)));
+                ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v4;
+            }
+        }
+    }
+
+    // merge the 4 simdgroups and write the partial — attention_fa's exact layout, so attention_fa_combine is unchanged
+    const uint stride = 6u*G;
+    threadgroup float* row = shm + tid*stride;
+    ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+        row[g] = m[g]; row[G+g] = l[g];
+        row[2u*G + g*4u+0u] = acc[g].x; row[2u*G + g*4u+1u] = acc[g].y;
+        row[2u*G + g*4u+2u] = acc[g].z; row[2u*G + g*4u+3u] = acc[g].w;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (sgid == 0u) {
+        float fm[G], fl[G]; float4 fa[G];
+        ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) { fm[g] = -INFINITY; fl[g] = 0.0f; fa[g] = float4(0.0f); }
+        for (uint sg = 0; sg < 4u; sg++) {
+            threadgroup float* r = shm + (sg*32u + lane)*stride;
+            ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+                float m2 = r[g], l2 = r[G+g];
+                float mn = max(fm[g], m2);
+                float a1 = (fm[g] == -INFINITY) ? 0.0f : exp(fm[g] - mn);
+                float a2 = (m2 == -INFINITY) ? 0.0f : exp(m2 - mn);
+                fl[g] = fl[g]*a1 + l2*a2;
+                fa[g] = fa[g]*a1 + float4(r[2u*G+g*4u+0u], r[2u*G+g*4u+1u], r[2u*G+g*4u+2u], r[2u*G+g*4u+3u])*a2;
+                fm[g] = mn;
+            }
+        }
+        const uint pStride = G * (hd + 2u);
+        device float* pout = partial + (kvh*nSplit + split) * pStride;
+        ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
+            device float* og = pout + g*(hd+2u);
+            og[0] = fm[g]; og[1] = fl[g];
+            og[2u+lane*4u+0u] = fa[g].x; og[2u+lane*4u+1u] = fa[g].y;
+            og[2u+lane*4u+2u] = fa[g].z; og[2u+lane*4u+3u] = fa[g].w;
+        }
+    }
+}
+
+typedef decltype(attention_fa_blk<6>) attention_fa_blk_t;
+template [[host_name("attention_fa_blk_g6")]] kernel attention_fa_blk_t attention_fa_blk<6>;
+template [[host_name("attention_fa_blk_g7")]] kernel attention_fa_blk_t attention_fa_blk<7>;
+// ---- attention_fa_blk end ----
 // attention_f32 — identical to attention but reads an f32 KV cache (Gemma sandwich path). Same
 // math (the f16 version already accumulated in f32); only the cache element type changes.
 kernel void attention_f32(device const float* q[[buffer(0)]], device const float* kc[[buffer(1)]],

@@ -585,9 +585,13 @@ func metalFastPrefillEnabled(fast, batched string) bool {
 // metalAttnFAEnabled reports whether decode attention defaults to attention_fa (R2,
 // docs/tasks/red-october.md) — the kvHead×split-gridded kernel, gated per layer by
 // canUseAttnFA (dense-GQA, hd=128, key count >= attnFADepthFloor). DEFAULT ON since
-// 2026-09-21: gate (3) PASSES (docs/measurements/r2-attn-fa-rootcause-2026-09-21.md — the
-// kernel is exact on real data; the divergence that parked the Build attempt was an
-// end-to-end-logits instrument crossing one int8 rounding boundary, not a kernel defect),
+// 2026-09-21. The fidelity pass that admitted it (gate (3), docs/measurements/r2-attn-fa-rootcause-2026-09-21.md)
+// is VOID: its arms were contaminated by the executor's stale pre-encoded buffer and 4 of its 10 set-A references
+// did not match their prompts. Re-gated 2026-09-25 on set B under the owner's amendment
+// (docs/measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md): PASSES, with kernel error vs float64 ~3x below
+// the shipped kernel's (docs/measurements/metal-decode-attn-r17-2026-09-25.md). Since 2026-09-25 the first pass is the
+// R17 block kernel attention_fa_blk for GQA group sizes 6 and 7 (buildResident). The divergence that parked the Build
+// attempt was an end-to-end-logits instrument crossing one int8 rounding boundary, not a kernel defect,
 // and it is a real, deterministic 1.11-1.19x at depth (docs/measurements/r2-attn-fa-
 // speed-2026-09-21.md) — KILLED on the brief's own peer-parity band (needs >=60 tok/s at
 // depth 4000, measured 44.9), shipped anyway by owner decision as an incremental win. NOT

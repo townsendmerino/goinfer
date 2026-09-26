@@ -201,7 +201,11 @@ type resident struct {
 	// one function both the dispatch grid and setPos's uAttnFANSplit use — and both for the same key count
 	// (the grid's comes from planNKeys) — so the two cannot disagree.
 	attnFASplitOverride int
-	curNKeys            int // CPU-side twin of uNKeys' value, set by setPos
+	// attnFABlkSplit > 0: pAttnFA is the R17 block kernel (attention_fa_blk_g<G>), which runs at this fixed split
+	// count instead of attention_fa's core-count rule — see attnFABlkSplit's const and the selection in
+	// buildResident.
+	attnFABlkSplit int
+	curNKeys       int // CPU-side twin of uNKeys' value, set by setPos
 	// encNKeys, when > 0, is the key count of the command buffer being ENCODED: the pipelined executor sets it
 	// around each encode, because it encodes before the job's setPos (and ahead, for the predicted next job).
 	// 0 = the buffer runs at the position setPos last set — every synchronous path sets the position, then
@@ -1226,6 +1230,17 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// hd==128 layer) on a model this kernel can never engage for — canUseAttnFA's own hd guard
 	// then always declines, so the zero buffer is never dispatched into.
 	r.attnFAMaxSplit = 32
+	// R17: for the GQA group sizes it was graded at (G = 6, Qwen2.5-1.5B; G = 7, Qwen2.5-7B), attention_fa's first
+	// pass is the block-of-32 kernel attention_fa_blk at a fixed split count of 16 (same grid shape, partial layout
+	// and combine). Every other group size keeps attention_fa and its core-count rule — the block kernel is
+	// instantiated, measured and fidelity-gated only for these two.
+	if r.attnFANKV > 0 {
+		switch g := r.nH / r.attnFANKV; g {
+		case 6, 7:
+			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk_g%d", g))
+			r.attnFABlkSplit = attnFABlkSplit
+		}
+	}
 	if maxAttnFAPartialElems > 0 {
 		r.attnFAPartial = d.NewBufferLen(maxAttnFAPartialElems * r.attnFAMaxSplit)
 		r.uAttnFAG, r.uAttnFANSplit = NewBufferU32(d, 0), NewBufferU32(d, 0)
@@ -2326,6 +2341,13 @@ func (r *resident) canUseF16Lane(l int) bool {
 // GPU core counts) would need this read from the device, not assumed.
 const attnFACoreCount = 14
 
+// attnFABlkSplit is the split count the R17 block kernel (attention_fa_blk) runs at. Its split response is not
+// monotone and not the legacy kernel's: measured 2026-09-25 on the 1.5B at 3900 keys, S = 8/14/16/24/32/48 gave
+// 2.61/2.82/3.37/2.15/2.90/2.36x in-sequence attention, and S = 16 was also best or near-best at 2048 keys and on the
+// 7B. The confirmation run and the fidelity decision were both at S = 16
+// (docs/measurements/metal-decode-attn-r17-2026-09-25.md). The nKeys/32 cap never binds above attnFADepthFloor.
+const attnFABlkSplit = 16
+
 // attnFADepthFloor is where attention_fa (at a properly-sized split count) starts beating the
 // shipped kernel — measured directly (TestAttentionFA_speedProbe, since deleted; tight-interleaved min-of-40,
 // S sized to attnFACoreCount*2): 0.98x at K=1024 (not yet a win), 1.07x at K=1536, climbing to
@@ -2396,6 +2418,9 @@ func (r *resident) canUseAttnFA(l int) bool {
 // combine pass for no parallelism gain).
 func (r *resident) attnFASplitFor(nKeys, nKV int) int {
 	want := (2*attnFACoreCount + nKV - 1) / nKV
+	if r.attnFABlkSplit > 0 {
+		want = r.attnFABlkSplit
+	}
 	if r.attnFASplitOverride > 0 {
 		want = r.attnFASplitOverride
 	}

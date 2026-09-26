@@ -326,7 +326,7 @@ exp > attention MACs at so400m) and the S-06 NEON transcendentals unwired (R9).
 
 ### 2.9 Speculative decode and concurrency
 
-Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:790` — a loop of
+Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:794` — a loop of
 `Forward`s, one command buffer each); CUDA's 0.25 with the same drafter is the existence proof that
 batching the verify into one command buffer turns speculation from "declines" into 1.2–1.8× on agent
 output (R12). Concurrency has no row on any backend; it is the axis a serving deployment buys, and
@@ -427,7 +427,7 @@ Status table, kept current as briefs move:
 | R14 | CUDA speculative-decode drafter — full-logits download, host argmax, no overlap | Linux | S (measure) + S–M (port on-device argmax if real) | **MEASURED AND SHIPPED 2026-09-22** ([`r14-drafter-argmax-2026-09-22.md`](../measurements/r14-drafter-argmax-2026-09-22.md)): the tail is at TWO sites (drafter head AND the verify's `batchedHeadArgmax`, same shape) and cost **14.9–16.0% of a spec round** (D2H at 4.7 GB/s pageable + serial host argmax); `argmax_rows` on the device at both sites: row-for-row identical on 582 calls, lossless, **1.234× spec wall** (6/6 pairs 1.22–1.25×, Qwen3-4B + DFlash, w=7) |
 | R15 | CPU sampler filter scans (`topFilterLogits`) — max-scan vs `parallelMax` | Mac | S (measure; build only if a future component wins) | **max-scan sub-item CLOSED 2026-09-22, clean negative result**: parallel LOSES at every vocab size tested (1.39-3.78× SLOWER; `decoder/sampler_filter_bench_test.go`) — goroutine overhead exceeds savings for a plain float comparison, unlike softcap's exp/tanh. `topKByLogit` (~247-262 µs) and the min-p scan (~167 µs) at gemma vocab are sized but not measured for parallel benefit — open, unfunded |
 | R16 | Metal prefill GEMM redesign (S2 of the R4 follow-on scoping) | Mac | M–L (read + prototype + wiring) | **SHIPPED 2026-09-25** (prototype 4 = 3.22×, bit-identical; wired, 3.23× in production): in-sequence GEMM category at K=512 (1.5B) ship ≥ 2.85× / park 1.8–2.85× / kill < 1.8×; fidelity gate and sustained-load timing are preconditions. S0/S1 put the int4-class ceiling here at ≥ 2.96 TFLOPS vs the current 0.75 |
-| R17 | Metal decode attention at depth — a peer-shaped kernel | Mac | M–L (step 0 is S) | **SHIP 2026-09-25 (fidelity and speed confirmed); production wiring is next.** Confirmation run: in-sequence attention at 3900 keys (1.5B) 8.52 → 2.44 ms, **3.50×** (7 reps, 3.4–3.7; band ship ≥ 2.5×); full token 20.79 → 14.71 ms (Ollama 13.06). After idle, full token 21.87 vs 26.01 ms. Fidelity on set B under the 2026-09-25 amendment ([registration](../measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md)): kernel error vs float64 about 3× below the shipped kernel's on both models, end-to-end KL 0.967×, PASSES. Step 0 (more splits) = 1.20×, KILL band. Record: [`metal-decode-attn-r17-2026-09-25.md`](../measurements/metal-decode-attn-r17-2026-09-25.md) |
+| R17 | Metal decode attention at depth — a peer-shaped kernel | Mac | M–L (step 0 is S) | **SHIPPED 2026-09-25**: the default for GQA group sizes 6 and 7 (Qwen2.5-1.5B/-7B), pinned to the graded source; other group sizes keep `attention_fa`. Fidelity and speed confirmed: Confirmation run: in-sequence attention at 3900 keys (1.5B) 8.52 → 2.44 ms, **3.50×** (7 reps, 3.4–3.7; band ship ≥ 2.5×); full token 20.79 → 14.71 ms (Ollama 13.06). After idle, full token 21.87 vs 26.01 ms. Fidelity on set B under the 2026-09-25 amendment ([registration](../measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md)): kernel error vs float64 about 3× below the shipped kernel's on both models, end-to-end KL 0.967×, PASSES. Step 0 (more splits) = 1.20×, KILL band. Record: [`metal-decode-attn-r17-2026-09-25.md`](../measurements/metal-decode-attn-r17-2026-09-25.md) |
 
 Every brief below has the same shape: goal, the standing and the band registered here, what to read
 first (prior art and the negatives not to re-propose), what to build, the gates, the measurement
@@ -549,7 +549,12 @@ replace it.
 
 **Final decision, 2026-09-21 — gate (3) PASSED, speed KILLED**
 ([`w4f16-decode-fidelity-PREREGISTERED.md`](../measurements/w4f16-decode-fidelity-PREREGISTERED.md),
-[`w4f16-decode-speed-2026-09-21.md`](../measurements/w4f16-decode-speed-2026-09-21.md)). Gate (3)
+[`w4f16-decode-speed-2026-09-21.md`](../measurements/w4f16-decode-speed-2026-09-21.md)).
+**[2026-09-25: the gate (3) PASS is void as a record.** `r1_gate3_test.go` toggles `decodeLaneW4F16` between arms and
+decodes, including its prefill, through the pipelined executor. That executor pre-encoded each token with the previous
+state (fixed in `8fe54414`), so every arm after the first ran position 0 (the sink row every later position reads) with
+the other lane's command buffer. Set A's S-K3900 references are also mismatched to 4 of 10 prompts. The decision itself
+stands, because R1 was killed on speed. See `metal-decode-attn-r17-2026-09-25.md`.**]** Gate (3)
 ran, pre-registered before any cell, reusing the S-K64 CPU f32-weight/f32-activation reference
 already built for R6's own gate (10 prompts × 64 teacher-forced decode positions) and the same
 §3.2 pooled implementation (`poolCells`) two other gates in this repo already use: all three
@@ -699,7 +704,10 @@ R1. Kept, not shipped: `TestAttentionFA_endToEndReproduction` (heavy-gated) is t
 for whoever picks this up. End-to-end served tok/s against the registered band was never reached.
 
 **Root cause, 2026-09-21 — the divergence was the instrument; gate (3) PASSES; R2 UN-PARKED**
-([`r2-attn-fa-rootcause-2026-09-21.md`](../measurements/r2-attn-fa-rootcause-2026-09-21.md)). Both
+([`r2-attn-fa-rootcause-2026-09-21.md`](../measurements/r2-attn-fa-rootcause-2026-09-21.md)).
+**[2026-09-25: the gate (3) PASS below is void.** The arms were contaminated by the executor's stale pre-encoded buffer,
+and set-A references are mismatched to 4 of 10 prompts. Re-gated on set B under the owner's 2026-09-25 amendment, it
+**PASSES** (KL 0.974×). See `metal-decode-attn-r17-2026-09-25.md`.**]** Both
 prior records compared **end-to-end logits** of a kernel that is non-bit-identical *by design*
 against the shipped path, on Gaussian-noise embeddings, through goinfer's per-tensor int8
 activation quantization — a discontinuous map — and neither measured the kernel's own output on
@@ -799,7 +807,7 @@ moves to the smallest K in {64, 128} at which the §3.2 pooled gate ships; at th
 must beat sequential by ≥2× on TTFT (ships), 1.3–2× parked, below 1.3× the floor stays.**
 
 **Read first.** Audit `M-01`, `M-02` and their closure notes (`6cc862a0` — the floor is 256 today,
-`GOINFER_METAL_FAST_PREFILL_FLOOR` read in `metal/backend.go:614`; `ForwardNoLogits` shipped
+`GOINFER_METAL_FAST_PREFILL_FLOOR` read in `metal/backend.go:618`; `ForwardNoLogits` shipped
 synchronous, the `noHead` executor-job version with ~0.9 ms/token of encode-ahead overlap still
 open), `G-02`/`G-08` (the pooled gate drops missing cells silently and never exercises
 `startPos > 0`, which every prefix-reuse turn uses — fix G-08 as part of this brief, since a
@@ -861,8 +869,8 @@ new decision.
 item closed above: `a1640a6a` (2026-09-16, three days after M-01's own synchronous-only closure,
 and — worth naming plainly — four days *before* this very brief's SHIPPED note above was first
 written, on 2026-09-20) shipped the full async version: `execJob.noHead`
-(`metal/model.go:392`), `execLoop` branching on it to pre-encode the next command buffer while the
-current one is still on the GPU (`metal/model.go:1684-1718`), and `ForwardEmbNoLogitsPipe`
+(`metal/model.go:396`), `execLoop` branching on it to pre-encode the next command buffer while the
+current one is still on the GPU (`metal/model.go:1699-1733`), and `ForwardEmbNoLogitsPipe`
 (`metal/backend.go:541`) as the entry point — matching M-01's own Fix-section sketch almost
 verbatim. Paged MoE is declined, not pipelined (`metal/backend.go:531-475`): its per-layer
 route/stage/submit loop needs a host readback mid-token before the next dispatch can even be
@@ -1666,7 +1674,7 @@ verify cost, and the Metal small-M GEMM is the reason — record it beside P10's
 `docs/spec/00-core.md` and `10-optfwd-gate.md` (the lossless contract and the prompt-form caveat),
 `completed/task-metal-batched-verify-kernel.md` and `completed/metal-batched-verify.md` (the small-M
 verify kernel that measured ~1.13× and was not adopted — P21 is about the command-buffer boundary,
-not that kernel), `metal/backend.go:790` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
+not that kernel), `metal/backend.go:794` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
 (`decoder/residency.go` — the interface that now reports whether the verify is batched; wire it
 truthfully), `task-peer-benchmarks.md` (W7's definition; the MLX quant caveat), `scripts/bench_peer.py`
 (the `mlx` engine branch; `BENCH_VISION=1`; `scripts/bench_peer_transcript.py` for W4/W7).

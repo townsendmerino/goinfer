@@ -443,7 +443,10 @@ sidestepping the co-location-vs-occupancy trap above entirely (no group co-locat
 per-key dispatches — the split axis adds threadgroups, not dispatches). Measured, not projected:
 **1.11× at depth 2048, 1.19× at depth 4000** end to end
 (`docs/measurements/r2-attn-fa-speed-2026-09-21.md`), fidelity-clean against a CPU f32 reference
-on real prompts (`r2-attn-fa-rootcause-2026-09-21.md`). Still **below this repo's own registered
+on real prompts (`r2-attn-fa-rootcause-2026-09-21.md`) [2026-09-25: that verdict is void — contaminated arms and
+set-A references mismatched to 4 of 10 prompts; re-gated on set B, it PASSES. The sixth attempt, R17's block-of-32
+kernel, then took in-sequence attention at 3900 keys a further 3.50× (8.52 → 2.44 ms on the 1.5B) and shipped for GQA
+group sizes 6 and 7 — `metal-decode-attn-r17-2026-09-25.md`]. Still **below this repo's own registered
 peer-parity band** (needed ≥60 tok/s at depth 4000; got 44.9) — the M1's dispatch/occupancy floor
 this section already named wins again, just less completely than the four dedup attempts did.
 Shipped as Metal's default decode attention anyway, by owner decision, as an incremental win

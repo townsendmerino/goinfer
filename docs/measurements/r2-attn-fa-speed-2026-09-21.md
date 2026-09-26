@@ -9,7 +9,7 @@ kill line, and 54.9 is below the 2048 ship bar. Verdict per the registered rule:
 served harness agrees independently (goinfer 39.1 → 46.4 tok/s at the 3900-token calibrated
 prompt, the same 1.19×; Ollama 76.6 / 76.2 as the drift control, flat). This is the M1's
 dispatch/occupancy floor winning a fifth time, as the brief said it would be worth writing down
-firmly — with the difference that this attempt is fidelity-clean (gate (3) PASSES,
+firmly — with the difference that this attempt is fidelity-clean (gate (3) PASSES — void as of 2026-09-25, re-gated on set B and PASSES, see `metal-decode-attn-r17-2026-09-25.md` —,
 `r2-attn-fa-rootcause-2026-09-21.md`) and strictly faster than shipped at every depth where it
 engages, so whether a fidelity-gated 1.19× that misses the peer-parity band is worth enabling
 anyway is a separate owner decision, recorded below as open, not taken here.**
@@ -102,7 +102,7 @@ it did achieve is measured rather than inferred.
 ## What this does not establish
 
 - **Whether to enable it anyway.** The band was written for the peer-parity goal and it decides that
-  question: no. It does not decide whether a lane that is fidelity-clean (gate (3) passes with the
+  question: no. It does not decide whether a lane that is fidelity-clean (gate (3) passes [void as of 2026-09-25; re-gated on set B, PASSES] with the
   candidate marginally ahead on every pooled measure), strictly faster at every depth ≥1536
   (1.11–1.19×), identical below, and deterministic is worth turning on as an incremental
   improvement outside that goal. That is an owner decision with a real trade — every

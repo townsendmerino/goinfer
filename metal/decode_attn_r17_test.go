@@ -24,148 +24,6 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// r17Kernels is R17's step-2 prototype (docs/tasks/red-october.md; docs/measurements/metal-decode-attn-r17-2026-09-25.md):
-// attention_fa's first pass restructured in the shape of llama.cpp's flash_attn_ext_vec. TEST-ONLY — production
-// never compiles it; the benchmark swaps it in as r.pAttnFA, so the grid, the partial-buffer format and
-// attention_fa_combine are unchanged and the kernel's inner shape is the only variable.
-//
-// What changes, per simdgroup, against attention_fa (which walks keys one at a time: per key and head a simd_sum,
-// two exps and a rescale, each depending on the last):
-//   - keys go in BLOCKS of 32: 32 coalesced K-row loads, and per head 32 INDEPENDENT simd_sums whose results land
-//     one per lane (lane j holds key j's score) — no dependency between keys inside a block;
-//   - one online-softmax step per block per head: simd_max / simd_sum over the lanes, one rescale of the
-//     accumulator, one exp per lane;
-//   - V accumulation weights each of the block's 32 V rows by simd_shuffle(p, j);
-//   - G (query heads per KV head) is a TEMPLATE parameter, instantiated for 6 and 7, so every per-head loop has a
-//     constant bound and the accumulators stay in registers (attention_fa loops over a runtime G into MAXG=8
-//     arrays — the pattern that spilled accumulators in the R16 wiring);
-//   - full blocks take a guard-free path; only a chunk's tail block checks bounds.
-//
-// NOT bit-identical to attention_fa or to the exact kernel (block-wise online softmax reassociates the sums); R17
-// grades it with R2's teacher-forced fidelity gate.
-const r17Kernels = `
-#include <metal_stdlib>
-using namespace metal;
-#define R17_UNROLL _Pragma("clang loop unroll(full)")
-
-template <uint G>
-kernel void attention_fa_blk(
-    device const float* q[[buffer(0)]], device const half* kc[[buffer(1)]],
-    device const half* vc[[buffer(2)]], device float* partial[[buffer(3)]],
-    constant uint& nKV[[buffer(4)]], constant uint& Gu[[buffer(5)]],
-    constant uint& nKeys[[buffer(6)]], constant float& scale[[buffer(7)]],
-    constant uint& window[[buffer(8)]], constant uint& nSplit[[buffer(9)]],
-    threadgroup float* shm[[threadgroup(0)]],
-    uint tgid[[threadgroup_position_in_grid]],
-    uint tid[[thread_index_in_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
-    uint lane[[thread_index_in_simdgroup]]) {
-    (void)Gu;
-    const uint hd = 128u;
-    const uint kvDim = nKV * hd;
-    const uint kvh = tgid / nSplit, split = tgid % nSplit;
-    const uint winStart = (window > 0u && nKeys > window) ? nKeys - window : 0u;
-    const uint nWin = nKeys - winStart;
-    const uint chunkLen = (nWin + nSplit - 1u) / nSplit;
-    const uint chunkStart = winStart + split * chunkLen;
-    const uint chunkEnd = min(chunkStart + chunkLen, nKeys);
-
-    device const float* qr = q + kvh * G * hd;
-    device const half*  kb = kc + kvh * hd + lane*4u;
-    device const half*  vb = vc + kvh * hd + lane*4u;
-
-    float4 qs[G];
-    float m[G], l[G];
-    float4 acc[G];
-    R17_UNROLL for (uint g = 0; g < G; g++) {
-        qs[g] = *((device const float4*)(qr + g*hd + lane*4u)) * scale;
-        m[g] = -INFINITY; l[g] = 0.0f; acc[g] = float4(0.0f);
-    }
-
-    // simdgroup sgid takes blocks sgid, sgid+4, sgid+8, ... of 32 consecutive keys
-    for (uint b0 = chunkStart + sgid*32u; b0 < chunkEnd; b0 += 128u) {
-        const uint nb = min(32u, chunkEnd - b0);
-        float s[G];
-        R17_UNROLL for (uint g = 0; g < G; g++) s[g] = -INFINITY;
-        if (nb == 32u) {
-            R17_UNROLL for (uint j = 0; j < 32u; j++) {
-                float4 k4 = float4(*((device const half4*)(kb + (b0 + j)*kvDim)));
-                R17_UNROLL for (uint g = 0; g < G; g++) {
-                    float d = simd_sum(dot(qs[g], k4));
-                    s[g] = (lane == j) ? d : s[g];
-                }
-            }
-        } else {
-            for (uint j = 0; j < nb; j++) {
-                float4 k4 = float4(*((device const half4*)(kb + (b0 + j)*kvDim)));
-                R17_UNROLL for (uint g = 0; g < G; g++) {
-                    float d = simd_sum(dot(qs[g], k4));
-                    s[g] = (lane == j) ? d : s[g];
-                }
-            }
-        }
-        float p[G];
-        R17_UNROLL for (uint g = 0; g < G; g++) {
-            float mb = simd_max(s[g]);
-            float mn = max(m[g], mb);
-            float alpha = (m[g] == -INFINITY) ? 0.0f : exp(m[g] - mn);
-            p[g] = (s[g] == -INFINITY) ? 0.0f : exp(s[g] - mn);
-            l[g] = l[g]*alpha + simd_sum(p[g]);
-            acc[g] *= alpha;
-            m[g] = mn;
-        }
-        if (nb == 32u) {
-            R17_UNROLL for (uint j = 0; j < 32u; j++) {
-                float4 v4 = float4(*((device const half4*)(vb + (b0 + j)*kvDim)));
-                R17_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v4;
-            }
-        } else {
-            for (uint j = 0; j < nb; j++) {
-                float4 v4 = float4(*((device const half4*)(vb + (b0 + j)*kvDim)));
-                R17_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v4;
-            }
-        }
-    }
-
-    // merge the 4 simdgroups and write the partial — attention_fa's exact layout, so attention_fa_combine is unchanged
-    const uint stride = 6u*G;
-    threadgroup float* row = shm + tid*stride;
-    R17_UNROLL for (uint g = 0; g < G; g++) {
-        row[g] = m[g]; row[G+g] = l[g];
-        row[2u*G + g*4u+0u] = acc[g].x; row[2u*G + g*4u+1u] = acc[g].y;
-        row[2u*G + g*4u+2u] = acc[g].z; row[2u*G + g*4u+3u] = acc[g].w;
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (sgid == 0u) {
-        float fm[G], fl[G]; float4 fa[G];
-        R17_UNROLL for (uint g = 0; g < G; g++) { fm[g] = -INFINITY; fl[g] = 0.0f; fa[g] = float4(0.0f); }
-        for (uint sg = 0; sg < 4u; sg++) {
-            threadgroup float* r = shm + (sg*32u + lane)*stride;
-            R17_UNROLL for (uint g = 0; g < G; g++) {
-                float m2 = r[g], l2 = r[G+g];
-                float mn = max(fm[g], m2);
-                float a1 = (fm[g] == -INFINITY) ? 0.0f : exp(fm[g] - mn);
-                float a2 = (m2 == -INFINITY) ? 0.0f : exp(m2 - mn);
-                fl[g] = fl[g]*a1 + l2*a2;
-                fa[g] = fa[g]*a1 + float4(r[2u*G+g*4u+0u], r[2u*G+g*4u+1u], r[2u*G+g*4u+2u], r[2u*G+g*4u+3u])*a2;
-                fm[g] = mn;
-            }
-        }
-        const uint pStride = G * (hd + 2u);
-        device float* pout = partial + (kvh*nSplit + split) * pStride;
-        R17_UNROLL for (uint g = 0; g < G; g++) {
-            device float* og = pout + g*(hd+2u);
-            og[0] = fm[g]; og[1] = fl[g];
-            og[2u+lane*4u+0u] = fa[g].x; og[2u+lane*4u+1u] = fa[g].y;
-            og[2u+lane*4u+2u] = fa[g].z; og[2u+lane*4u+3u] = fa[g].w;
-        }
-    }
-}
-
-typedef decltype(attention_fa_blk<6>) attention_fa_blk_t;
-template [[host_name("attention_fa_blk_g6")]] kernel attention_fa_blk_t attention_fa_blk<6>;
-template [[host_name("attention_fa_blk_g7")]] kernel attention_fa_blk_t attention_fa_blk<7>;
-`
-
 // TestR17KernelsCompile builds the prototype's pipelines — seconds, no checkpoint.
 func TestR17KernelsCompile(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
@@ -264,8 +122,15 @@ func TestR17_decodeFidelityGate(t *testing.T) {
 			proto, _ := r17Install(t, r, split)
 			r.pAttnFA = proto
 			r.attnFASplitOverride = split
-		case "attention_fa":
+		case "attention_fa": // the PRODUCTION attention_fa path: since 2026-09-25 the block kernel on G = 6/7
 			r.attnFASplitOverride = split
+		case "attention_fa-legacy": // the R2 kernel, whatever production dispatches
+			legacy, legacySplit := r17Legacy(t, r)
+			r.pAttnFA = legacy
+			r.attnFASplitOverride = legacySplit
+			if split > 0 {
+				r.attnFASplitOverride = split
+			}
 		case "exact-vchunk", "exact-vrev8":
 			chunk := 0
 			if cand == "exact-vchunk" {
@@ -307,7 +172,7 @@ func TestR17_decodeFidelityGate(t *testing.T) {
 			}
 			t.Cleanup(func() { r2GateArmHook = nil })
 		default:
-			t.Fatalf("GOINFER_METAL_R17_CAND=%q: want proto, attention_fa, exact-null, exact-nudge, exact-vchunk or exact-vrev8", cand)
+			t.Fatalf("GOINFER_METAL_R17_CAND=%q: want proto, attention_fa, attention_fa-legacy, exact-null, exact-nudge, exact-vchunk or exact-vrev8", cand)
 		}
 		fmt.Fprintf(os.Stderr, "[r17-gate] candidate %s installed (G=%d)\n", name, r.nH/r.attnFANKV)
 	})
@@ -387,6 +252,15 @@ func r17PatchKernel(t *testing.T, r *resident, kernel, name string, edit func(st
 
 // r17PreciseExp rewrites every exp( in a kernel's text to precise::exp( (Metal's fast-math exp is the default).
 func r17PreciseExp(src string) string { return strings.ReplaceAll(src, "exp(", "precise::exp(") }
+
+// r17Legacy returns the legacy attention_fa first pass (the R2 kernel; production dispatches the R17 block kernel
+// instead for G = 6 and 7 since 2026-09-25) compiled under its own name, and the split count its core-count rule
+// gives on r — so an arm that means "attention_fa" keeps meaning that kernel whatever r.pAttnFA is.
+func r17Legacy(t *testing.T, r *resident) (Pipeline, int) {
+	t.Helper()
+	return r17PatchKernel(t, r, "attention_fa", "attention_fa_legacy", func(s string) string { return s }),
+		(2*attnFACoreCount + r.attnFANKV - 1) / r.attnFANKV
+}
 
 // r17ProtoPrecise compiles the prototype with precise::exp in place of the fast-math exp.
 func r17ProtoPrecise(t *testing.T, r *resident) Pipeline {
@@ -577,7 +451,7 @@ func TestR17AttentionProto(t *testing.T) {
 			split int      // attnFASplitOverride (0 = production rule)
 			noAtt bool     // all attention pipelines no-op'd
 		}
-		arms := []armSpec{{name: "current (attention_fa)", first: current}}
+		arms := []armSpec{{name: "current (production)", first: current}}
 		for _, sv := range splits {
 			arms = append(arms, armSpec{name: fmt.Sprintf("prototype S=%d", sv), first: proto, split: sv})
 		}
@@ -646,7 +520,7 @@ func TestR17AttentionProto(t *testing.T) {
 		fidArms := append([]armSpec(nil), arms[1:len(arms)-1]...)
 		for _, sv := range splits { // the control: the CURRENT kernel at the same split counts
 			if sv != 0 {
-				fidArms = append(fidArms, armSpec{name: fmt.Sprintf("attention_fa S=%d", sv), first: current, split: sv})
+				fidArms = append(fidArms, armSpec{name: fmt.Sprintf("production S=%d", sv), first: current, split: sv})
 			}
 		}
 		for _, a := range fidArms {
@@ -818,7 +692,7 @@ func TestR17StateLeak(t *testing.T) {
 		p     Pipeline
 		split int
 		fa    bool
-	}{{"exact (no candidate — the null control)", current, 0, false}, {"attention_fa (control)", current, 0, true},
+	}{{"exact (no candidate — the null control)", current, 0, false}, {"production attention_fa path (control)", current, 0, true},
 		{fmt.Sprintf("prototype S=%d", split), proto, split, true}, {"exact (null control, again)", current, 0, false}} {
 		a := run(false)
 		r.pAttnFA, r.attnFASplitOverride = c.p, c.split
@@ -1260,16 +1134,21 @@ func TestR17KernelAccuracy(t *testing.T) {
 	faPx := r17PatchKernel(t, r, "attention_fa", "attention_fa_px", r17PreciseExp)
 	combPx := r17PatchKernel(t, r, "attention_fa_combine", "attention_fa_combine_px", r17PreciseExp)
 	protoPx := r17ProtoPrecise(t, r)
+	// "attention_fa" arms are the LEGACY kernel at its own split rule (r17Legacy); "production" is whatever
+	// r.pAttnFA is at the production split (since 2026-09-25 the block kernel on G = 6/7 — identical to
+	// "prototype S=16" there).
+	legacy, legacySplit := r17Legacy(t, r)
 	arms := []arm{
 		{name: "exact (shipped attention)"},
-		{name: "attention_fa S=prod", fa: true, p: current},
-		{name: "attention_fa S=16", fa: true, p: current, split: 16},
-		{name: "attention_fa S=32", fa: true, p: current, split: 32},
+		{name: "attention_fa S=prod", fa: true, p: legacy, split: legacySplit},
+		{name: "attention_fa S=16", fa: true, p: legacy, split: 16},
+		{name: "attention_fa S=32", fa: true, p: legacy, split: 32},
+		{name: "production (r.pAttnFA)", fa: true, p: current},
 		{name: "prototype S=prod", fa: true, p: proto},
 		{name: "prototype S=16", fa: true, p: proto, split: 16},
 		{name: "prototype S=32", fa: true, p: proto, split: 32},
 		{name: "exact, precise exp", p: exactPx},
-		{name: "attention_fa S=prod, precise", fa: true, p: faPx, comb: combPx},
+		{name: "attention_fa S=prod, precise", fa: true, p: faPx, comb: combPx, split: legacySplit},
 		{name: "prototype S=16, precise exp", fa: true, p: protoPx, comb: combPx, split: 16},
 		{name: "exact-null (reversed q·k)", p: r17ExactNull(t, r)},
 		{name: "exact-nudge k=+1", p: r17ExactNudge(t, r, 1)},

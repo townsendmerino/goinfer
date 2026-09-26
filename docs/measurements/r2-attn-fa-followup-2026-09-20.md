@@ -254,7 +254,7 @@ calls and the third. Nothing was found. Specifically checked and ruled out:
   and `attention_fa_combine`'s read region use the same uniform-derived `nSplit`, so they cannot
   disagree with each other.
 - **`uAttnFAG`/`uAttnFANSplit` aliasing.** Independently allocated (`NewBufferU32(d, 0)` twice at
-  `BuildResident`, metal/model.go:1233) — no shared storage with any other uniform buffer that a
+  `BuildResident`, metal/model.go:1248) — no shared storage with any other uniform buffer that a
   copy-paste field-omission bug could explain.
 - **Threadgroup memory (`shm`) staleness.** All 128 threads unconditionally write their own row
   (`shm + tid*stride`) before the barrier and before any thread reads a different row back — the

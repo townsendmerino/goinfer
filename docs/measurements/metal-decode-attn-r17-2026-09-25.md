@@ -451,3 +451,41 @@ engages (≥ `attnFADepthFloor` = 1536 keys), so the path at 128 keys is unchang
 - keep the current path elsewhere;
 - re-bake the snapshot golden for `llama-attnfa-tiny` with the mechanism stated;
 - measure end to end through `bench_peer.py` against Ollama.
+
+## R17 step 3: production wiring (2026-09-25)
+
+**What shipped.**
+- The graded kernel moved into `allKernels` (`metal/kernels.go`) as `attention_fa_blk`, instantiated for G = 6 and 7,
+  between explicit begin/end markers. The move was mechanical, extracted from the test file, with only the unroll macro
+  renamed.
+- In `buildResident`, once the attention_fa-eligible `nKV` is known, a resident whose GQA group size is 6 or 7
+  dispatches `attention_fa_blk_g<G>` as attention_fa's first pass.
+- That resident runs at a fixed split count of 16 (`attnFABlkSplit`, read inside `attnFASplitFor`, so the grid, the
+  split uniform and the executor's plan all agree).
+- The combine kernel, the partial layout, the depth floor (1536) and every eligibility guard are unchanged. Every
+  other group size keeps the legacy `attention_fa` and its core-count rule. `GOINFER_METAL_ATTN_FA=0` still turns
+  both off. No new environment reads.
+
+**What pins it.**
+- `TestAttnFABlkIsTheGradedKernel`: the shipped text, rebuilt into the prototype's standalone form, hashes to the
+  SHA-256 of the source graded in `39545bd6`. An edit to the kernel fails the test until it is re-graded.
+- `TestAttnFABlkMatchesFloat64` (no checkpoint, CI):
+  - both instantiations at the production split against float64 on synthetic inputs: near-uniform and sink-peaked
+    weights, 1536/1537/3900/4100 keys;
+  - worst per-head error 4.9e-7, against a 1e-4 correctness bound;
+  - with one key dropped from the kernel's view, it fails at 0.618.
+- `TestAttnFABlkSelection`:
+  - `llama-attnfa-tiny` (G=2) keeps the legacy kernel;
+  - with `GOINFER_HEAVY_TESTS=1`, the 1.5B (G=6) and 7B (G=7) residents' own `pAttnFA` output is bit-identical to the
+    graded source compiled on its own.
+- The R17 harnesses now name the kernel they mean: `attention_fa` arms use the legacy kernel explicitly
+  (`r17Legacy`), and "production" arms use whatever `r.pAttnFA` is.
+
+**Verification** ([`wiring-verify.log`](metal-decode-attn-r17-2026-09-25/wiring-verify.log), 22:59–23:07):
+- The selection test passes on the fixture and on both checkpoints.
+- **R2's own gate through the production path on set B reproduces the pre-registered prototype run per prompt,
+  in both arms** (KL ratio 0.9674, PASSES).
+- The Metal suite is green untagged and with `goinfer_testhooks`
+  ([`wiring-suite-tagged.log`](metal-decode-attn-r17-2026-09-25/wiring-suite-tagged.log)). Against the previous run's
+  pass list, only the four new tests were added, and nothing was lost.
+- `TestMetalSnapshotGolden` is unchanged, because its attention_fa fixture has G=2.

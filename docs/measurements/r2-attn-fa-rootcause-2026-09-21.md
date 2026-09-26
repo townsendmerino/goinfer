@@ -170,6 +170,16 @@ here, which rests on the per-layer tables above.
 
 ## Gate (3) — the real fidelity gate on real prompts: PASSES
 
+> **2026-09-25: this verdict is VOID** ([`metal-decode-attn-r17-2026-09-25.md`](metal-decode-attn-r17-2026-09-25.md)).
+> - The pipelined executor pre-encoded each token's command buffer with the previous state, so every arm after the
+>   first ran its first continuation step with the other arm's kernel.
+> - Set A's S-K3900 references (2026-09-05) predate the prompt snapshot (2026-09-09), and 4 of the 10 prompts
+>   below are scored against logits for different text.
+>
+> Run clean, the gate did not pass on set A either, which was just as void. `attention_fa` was re-gated on set B
+> under the owner's 2026-09-25 amendment and **PASSES** (KL ratio 0.974; kernel error vs float64 ~3× below the
+> shipped kernel's). The numbers below are kept as the historical record.
+
 R2's brief names it: "the same teacher-forced fidelity gate R1 uses, S at depth 3900 as the
 decision cell, W4A8 + shipped attention as the exact arm". `metal/r2_gate_test.go`
 (`TestR2_decodeFidelityGate`) — `metal/r1_gate3_test.go`'s construction with the toggle swapped to
