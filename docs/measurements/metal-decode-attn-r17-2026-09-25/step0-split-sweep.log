@@ -1,0 +1,71 @@
+16:59:15 idle load1=1.98
+16:59:15 start commit 143314c1 dirty(tracked)=metal/decode_decomp_test.go metal/model.go 
+=== RUN   TestMetalDecodeDecomp
+[ddecomp    2.6s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: H=1536 I=8960 nL=28 nH=12 V=151936, ctx 4096, attention_fa on: true (floor 1536), aliased: false
+[ddecomp    2.6s] R17 step 0: split counts [0 20 28 32 48 64] (0 = production rule, S=14 for nKV=2 at 3900 keys), partial buffer for S<=64
+[ddecomp    8.9s] depth 2048 rep 1/5: full 17.293 ms/token, dispatch floor 0.917
+[ddecomp   11.9s] depth 2048 rep 2/5: full 17.293 ms/token, dispatch floor 0.910
+[ddecomp   14.9s] depth 2048 rep 3/5: full 17.392 ms/token, dispatch floor 0.919
+[ddecomp   17.9s] depth 2048 rep 4/5: full 17.323 ms/token, dispatch floor 0.900
+[ddecomp   20.9s] depth 2048 rep 5/5: full 17.269 ms/token, dispatch floor 0.866
+
+=== Metal decode decomposition, depth 2048 (2049 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   4.986 ms   28.8% of token   paired 5.0 5.0 5.1 5.0 4.9
+  GEMV qkv (+bias)                       work   0.655 ms    3.8% of token   paired 0.6 0.7 0.8 0.7 0.6
+  GEMV o (+residual)                     work   0.525 ms    3.0% of token   paired 0.5 0.5 0.6 0.6 0.5
+  GEMV gate/up                           work   4.693 ms   27.1% of token   paired 4.7 4.7 4.8 4.7 4.7
+  GEMV down (+residual)                  work   3.125 ms   18.1% of token   paired 3.1 3.1 3.2 3.1 3.1
+  LM head (int8)                         work   1.312 ms    7.6% of token   paired 1.3 1.3 1.4 1.3 1.3
+  norm+quant (rms)                       work   0.486 ms    2.8% of token   paired 0.5 0.5 0.6 0.5 0.5
+  rope, kv store, act-quant, ctx-quant   work   0.669 ms    3.9% of token   paired 0.7 0.6 0.7 0.7 0.6
+  dispatch floor (every pipeline no-op)         0.910 ms    5.3% of token   spread 5.8%
+  full token 17.293 ms (57.8 tok/s), spread 0.7%; categories' work + floor = 17.359 ms (100.4% of full)
+
+[ddecomp   24.7s] depth 2048 split sweep rep 1/5 done
+[ddecomp   28.5s] depth 2048 split sweep rep 2/5 done
+[ddecomp   32.3s] depth 2048 split sweep rep 3/5 done
+[ddecomp   36.1s] depth 2048 split sweep rep 4/5 done
+[ddecomp   39.9s] depth 2048 split sweep rep 5/5 done
+=== R17 step 0, depth 2048: attention_fa in-sequence attention work by split count (medians of 5 reps × 20 tokens) ===
+  S=14  (asked 0  )  attention   4.984 ms  vs first arm 1.00x  full token  17.315 ms  attention reps 5.0 5.0 5.0 5.0 5.0
+  S=20  (asked 20 )  attention   5.462 ms  vs first arm 0.91x  full token  17.785 ms  attention reps 5.5 5.5 5.5 5.5 5.8
+  S=28  (asked 28 )  attention   4.918 ms  vs first arm 1.01x  full token  17.227 ms  attention reps 4.9 4.9 4.9 4.9 4.9
+  S=32  (asked 32 )  attention   4.598 ms  vs first arm 1.08x  full token  16.914 ms  attention reps 4.6 4.5 4.6 4.6 4.6
+  S=48  (asked 48 )  attention   4.855 ms  vs first arm 1.03x  full token  17.173 ms  attention reps 4.8 4.8 4.9 4.9 4.9
+  S=64  (asked 64 )  attention   5.554 ms  vs first arm 0.90x  full token  17.883 ms  attention reps 5.6 5.5 5.7 5.6 5.3
+
+[ddecomp   51.7s] depth 3900 rep 1/5: full 20.990 ms/token, dispatch floor 0.927
+[ddecomp   55.3s] depth 3900 rep 2/5: full 21.283 ms/token, dispatch floor 0.846
+[ddecomp   58.9s] depth 3900 rep 3/5: full 20.841 ms/token, dispatch floor 0.825
+[ddecomp   62.5s] depth 3900 rep 4/5: full 20.986 ms/token, dispatch floor 0.857
+[ddecomp   66.1s] depth 3900 rep 5/5: full 20.977 ms/token, dispatch floor 0.837
+
+=== Metal decode decomposition, depth 3900 (3901 keys), medians of 5 reps × 20 tokens ===
+  attention                              work   8.682 ms   41.4% of token   paired 8.7 9.0 8.6 8.7 8.7
+  GEMV qkv (+bias)                       work   0.690 ms    3.3% of token   paired 0.7 1.0 0.6 0.7 0.8
+  GEMV o (+residual)                     work   0.539 ms    2.6% of token   paired 0.5 0.9 0.5 0.5 0.5
+  GEMV gate/up                           work   4.692 ms   22.4% of token   paired 4.8 5.0 4.5 4.7 4.7
+  GEMV down (+residual)                  work   3.139 ms   15.0% of token   paired 3.1 3.5 3.0 3.1 3.1
+  LM head (int8)                         work   1.317 ms    6.3% of token   paired 1.3 1.8 1.3 1.3 1.3
+  norm+quant (rms)                       work   0.502 ms    2.4% of token   paired 0.5 0.9 0.4 0.1 0.5
+  rope, kv store, act-quant, ctx-quant   work   0.663 ms    3.2% of token   paired 0.7 1.2 0.5 0.7 0.7
+  dispatch floor (every pipeline no-op)         0.846 ms    4.0% of token   spread 12.0%
+  full token 20.986 ms (47.7 tok/s), spread 2.1%; categories' work + floor = 21.070 ms (100.4% of full)
+
+[ddecomp   70.3s] depth 3900 split sweep rep 1/5 done
+[ddecomp   74.5s] depth 3900 split sweep rep 2/5 done
+[ddecomp   78.6s] depth 3900 split sweep rep 3/5 done
+[ddecomp   82.8s] depth 3900 split sweep rep 4/5 done
+[ddecomp   87.0s] depth 3900 split sweep rep 5/5 done
+=== R17 step 0, depth 3900: attention_fa in-sequence attention work by split count (medians of 5 reps × 20 tokens) ===
+  S=14  (asked 0  )  attention   8.649 ms  vs first arm 1.00x  full token  20.982 ms  attention reps 8.6 8.7 8.6 8.6 8.7
+  S=20  (asked 20 )  attention   9.221 ms  vs first arm 0.94x  full token  21.560 ms  attention reps 9.5 9.2 9.2 9.2 9.2
+  S=28  (asked 28 )  attention   8.076 ms  vs first arm 1.07x  full token  20.419 ms  attention reps 8.1 8.5 8.1 8.1 8.1
+  S=32  (asked 32 )  attention   7.235 ms  vs first arm 1.20x  full token  19.588 ms  attention reps 7.2 7.2 7.6 7.2 7.3
+  S=48  (asked 48 )  attention   7.277 ms  vs first arm 1.19x  full token  19.622 ms  attention reps 7.3 7.3 7.3 7.1 7.2
+  S=64  (asked 64 )  attention   8.006 ms  vs first arm 1.08x  full token  20.330 ms  attention reps 8.1 8.0 8.0 8.0 7.9
+
+--- PASS: TestMetalDecodeDecomp (86.98s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	87.330s
+17:00:43 exit=0

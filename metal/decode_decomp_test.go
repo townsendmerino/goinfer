@@ -146,6 +146,25 @@ func TestMetalDecodeDecomp(t *testing.T) {
 		}
 	}
 
+	// R17 step 0 (GOINFER_METAL_DDECOMP_SPLITS, e.g. "0,28,32,48,64"; 0 = production's rule): attention_fa's
+	// in-sequence attention work at each split count, arms interleaved rep by rep, at every depth where it engages
+	// (>= attnFADepthFloor). Tests the latency-bound reading — the 2x-core-count rule counts threadgroups, not
+	// simdgroups in flight. The partial buffer is re-allocated for the largest S.
+	splits := intList("GOINFER_METAL_DDECOMP_SPLITS", nil)
+	if len(splits) > 0 {
+		maxS := r.attnFAMaxSplit
+		for _, sv := range splits {
+			maxS = max(maxS, sv)
+		}
+		if maxS > r.attnFAMaxSplit {
+			per := r.attnFAPartial.Len() / r.attnFAMaxSplit
+			r.attnFAMaxSplit = maxS
+			r.attnFAPartial = r.d.NewBufferLen(per * maxS)
+		}
+		hb("R17 step 0: split counts %v (0 = production rule, S=%d for nKV=%d at 3900 keys), partial buffer for S<=%d",
+			splits, r.attnFASplitFor(3901, r.attnFANKV), r.attnFANKV, r.attnFAMaxSplit)
+	}
+
 	vocab := r.V
 	for _, D := range depths {
 		embs := make([][]float32, D)
@@ -218,5 +237,35 @@ func TestMetalDecodeDecomp(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "  %-38s      %7.3f ms  %5.1f%% of token   spread %.1f%%\n", "dispatch floor (every pipeline no-op)", fl, 100*fl/fm, 100*spreadOf(floor))
 		fmt.Fprintf(os.Stderr, "  full token %.3f ms (%.1f tok/s), spread %.1f%%; categories' work + floor = %.3f ms (%.1f%% of full)\n\n",
 			fm, 1000/fm, 100*spreadOf(full), sum+fl, 100*(sum+fl)/fm)
+
+		if len(splits) > 0 && D+1 >= attnFADepthFloor {
+			attnPipes := cats[0].pipes // "attention"
+			type sres struct{ full, attn []float64 }
+			res := make([]sres, len(splits))
+			for rep := 0; rep < reps; rep++ {
+				for si, sv := range splits {
+					r.attnFASplitOverride = sv
+					r.setPos(D) // setPos writes uAttnFANSplit from attnFASplitFor, like every decode step
+					f := arm(nil)
+					w := arm(attnPipes)
+					res[si].full = append(res[si].full, f)
+					res[si].attn = append(res[si].attn, f-w)
+				}
+				r.attnFASplitOverride = 0
+				hb("depth %d split sweep rep %d/%d done", D, rep+1, reps)
+			}
+			r.attnFASplitOverride = 0
+			base := median(res[0].attn)
+			fmt.Fprintf(os.Stderr, "=== R17 step 0, depth %d: attention_fa in-sequence attention work by split count (medians of %d reps × %d tokens) ===\n", D, reps, steps)
+			for si, sv := range splits {
+				r.attnFASplitOverride = sv
+				eff := r.attnFASplitFor(D+1, r.attnFANKV)
+				r.attnFASplitOverride = 0
+				a := median(res[si].attn)
+				fmt.Fprintf(os.Stderr, "  S=%-3d (asked %-3d)  attention %7.3f ms  vs first arm %.2fx  full token %7.3f ms  attention reps %s\n",
+					eff, sv, a, base/a, median(res[si].full), fmtMs(res[si].attn))
+			}
+			fmt.Fprintln(os.Stderr)
+		}
 	}
 }

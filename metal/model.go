@@ -195,6 +195,11 @@ type resident struct {
 	decodeAttnFA            bool
 	attnFAPartial           Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
 	attnFAMaxSplit          int
+	// attnFASplitOverride, when > 0, replaces attnFASplitFor's split-count rule (the nKeys/32 and
+	// attnFAMaxSplit caps still apply). ZERO in production — set only by tests (R17 step 0 sweeps S to test
+	// whether attention_fa is latency-bound on too few simdgroups in flight). Read inside attnFASplitFor, the
+	// one function both the dispatch grid and setPos's uAttnFANSplit use, so the two cannot disagree.
+	attnFASplitOverride     int
 	curNKeys                int    // CPU-side twin of uNKeys' value, set by setPos — canUseAttnFA's depth gate
 	attnFANKV               int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
 	uAttnFAG, uAttnFANSplit Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
@@ -2344,6 +2349,9 @@ func (r *resident) canUseAttnFA(l int) bool {
 // combine pass for no parallelism gain).
 func (r *resident) attnFASplitFor(nKeys, nKV int) int {
 	want := (2*attnFACoreCount + nKV - 1) / nKV
+	if r.attnFASplitOverride > 0 {
+		want = r.attnFASplitOverride
+	}
 	if splitCap := max(nKeys/32, 1); want > splitCap {
 		want = splitCap
 	}

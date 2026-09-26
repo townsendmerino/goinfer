@@ -419,7 +419,7 @@ Status table, kept current as briefs move:
 | R14 | CUDA speculative-decode drafter — full-logits download, host argmax, no overlap | Linux | S (measure) + S–M (port on-device argmax if real) | **MEASURED AND SHIPPED 2026-09-22** ([`r14-drafter-argmax-2026-09-22.md`](../measurements/r14-drafter-argmax-2026-09-22.md)): the tail is at TWO sites (drafter head AND the verify's `batchedHeadArgmax`, same shape) and cost **14.9–16.0% of a spec round** (D2H at 4.7 GB/s pageable + serial host argmax); `argmax_rows` on the device at both sites: row-for-row identical on 582 calls, lossless, **1.234× spec wall** (6/6 pairs 1.22–1.25×, Qwen3-4B + DFlash, w=7) |
 | R15 | CPU sampler filter scans (`topFilterLogits`) — max-scan vs `parallelMax` | Mac | S (measure; build only if a future component wins) | **max-scan sub-item CLOSED 2026-09-22, clean negative result**: parallel LOSES at every vocab size tested (1.39-3.78× SLOWER; `decoder/sampler_filter_bench_test.go`) — goroutine overhead exceeds savings for a plain float comparison, unlike softcap's exp/tanh. `topKByLogit` (~247-262 µs) and the min-p scan (~167 µs) at gemma vocab are sized but not measured for parallel benefit — open, unfunded |
 | R16 | Metal prefill GEMM redesign (S2 of the R4 follow-on scoping) | Mac | M–L (read + prototype + wiring) | **SHIPPED 2026-09-25** (prototype 4 = 3.22×, bit-identical; wired, 3.23× in production): in-sequence GEMM category at K=512 (1.5B) ship ≥ 2.85× / park 1.8–2.85× / kill < 1.8×; fidelity gate and sustained-load timing are preconditions. S0/S1 put the int4-class ceiling here at ≥ 2.96 TFLOPS vs the current 0.75 |
-| R17 | Metal decode attention at depth — a peer-shaped kernel | Mac | M–L (step 0 is S) | **PRE-REGISTERED 2026-09-25, not started**: in-sequence attention at 3900 keys (1.5B) ship ≥ 2.5× / park 1.5–2.5× / kill < 1.5×; teacher-forced fidelity gate, ≤ 3% at 128, confirmation run. S0: attention is 41% of the 1.5B token at 3900, 2.11 ms per 1k keys vs the peer's 0.37 |
+| R17 | Metal decode attention at depth — a peer-shaped kernel | Mac | M–L (step 0 is S) | **PRE-REGISTERED 2026-09-25; step 0 (more splits) = 1.20×, KILL band**: in-sequence attention at 3900 keys (1.5B) ship ≥ 2.5× / park 1.5–2.5× / kill < 1.5×; teacher-forced fidelity gate, ≤ 3% at 128, confirmation run. S0: attention is 41% of the 1.5B token at 3900, 2.11 ms per 1k keys vs the peer's 0.37 |
 
 Every brief below has the same shape: goal, the standing and the band registered here, what to read
 first (prior art and the negatives not to re-propose), what to build, the gates, the measurement
@@ -853,8 +853,8 @@ new decision.
 item closed above: `a1640a6a` (2026-09-16, three days after M-01's own synchronous-only closure,
 and — worth naming plainly — four days *before* this very brief's SHIPPED note above was first
 written, on 2026-09-20) shipped the full async version: `execJob.noHead`
-(`metal/model.go:380`), `execLoop` branching on it to pre-encode the next command buffer while the
-current one is still on the GPU (`metal/model.go:1672-1694`), and `ForwardEmbNoLogitsPipe`
+(`metal/model.go:385`), `execLoop` branching on it to pre-encode the next command buffer while the
+current one is still on the GPU (`metal/model.go:1677-1694`), and `ForwardEmbNoLogitsPipe`
 (`metal/backend.go:541`) as the entry point — matching M-01's own Fix-section sketch almost
 verbatim. Paged MoE is declined, not pipelined (`metal/backend.go:531-475`): its per-layer
 route/stage/submit loop needs a host readback mid-token before the next dispatch can even be
@@ -2198,6 +2198,11 @@ reach there is a scope choice, recorded either way); end-to-end decode tok/s aga
 
 **Amendments.** A band or precondition changes only by a dated amendment below this line that gives the mechanism,
 never after a candidate has been timed against it without one.
+
+- **2026-09-25 — step 0 result** ([`metal-decode-attn-r17-2026-09-25.md`](../measurements/metal-decode-attn-r17-2026-09-25.md)):
+  a larger `attention_fa` split count gives 1.20× at best (S=32; S=14 is production), non-monotonic — KILL band as a
+  candidate. The threadgroups-in-flight reading is largely refuted; the per-key chain inside each simdgroup is the
+  cost, which is what step 2's block-of-32 shape changes. Bands unchanged.
 
 **Out of scope.** The GEMV fixed cost (the short-context and MLX gap — its own item, S0's other finding), paged MoE
 decode, sliding-window and sink attention variants, the int8 KV path.
