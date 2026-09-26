@@ -3,8 +3,10 @@
 > **Status: FILED 2026-09-23; owner decisions taken 2026-09-26 (1: yes, 2: fold). MC0 DONE 2026-09-26: the
 > thrash is confirmed on Metal, and a CPU session-LRU bug it uncovered is fixed. MC1 SHIPPED 2026-09-26 on Metal**
 > (`c2f1532e`): 4 resident KV slots hold the 1-client aggregate at 2 and 4 clients (0.99× / 1.01×), and the 4-client
-> aggregate is 1.22–1.24× the previous build's. CUDA and WebGPU are not converted. **MC2 (kill or earn: batched decode
-> on CPU, with J8's cell) is next.** MC2 is the kill-or-earn
+> aggregate is 1.22–1.24× the previous build's. CUDA and WebGPU are not converted. **MC2 EARNS on the Mac CPU**
+> (1.69–2.04× at B = 4, bit-identical; J8's 4 independent workers reach 2.00–2.48×). The Linux cells are owed. **MC3
+> needs an owner decision before it starts:** bit-identical small-M kernels barely amortise on Metal (≤ 1.30× on
+> gate/up at M = 4), so a paying MC3 likely means the matrix units and a fidelity gate. MC2 is the kill-or-earn
 > measurement `roadmap.md` requires before any batched decode work, and now carries J8's cell. MC3
 > is in the niche (decision 1) but must not start until MC2 earns. MC4 and MC5 are parked with
 > triggers. The speed bars were loosened 2026-09-26, before any measurement, per the owner's
@@ -156,6 +158,14 @@ Re-run J6's measurement once after MC1 ships; its 1.024× was taken against a si
 
 ## MC2 — kill or earn: batched decode on CPU
 
+**Result on the Mac, 2026-09-26: EARN** ([`concurrency-mc2-2026-09-26.md`](../measurements/concurrency-mc2-2026-09-26.md)).
+- Batched B = 4 against the production single-token forward: 1.945× / 1.690× on the 0.5B (depth 128 / 512) and 2.042× /
+  1.798× on the 1.5B, every rep above 1.25×.
+- The prototype `decodeMultiStep` is bit-identical to single-sequence decode (the tiny fixture and the 0.5B at int4 and
+  int8int8), and costs 0.97–1.00× at B = 1.
+- J8's cell, 4 independent workers, reaches 2.00–2.48× aggregate. Its per-request latency is not measured.
+- The Linux CPU cells (`nobara`) are owed.
+
 **S0, 2026-09-26** ([`concurrency-mc2-s0-2026-09-26.md`](../measurements/concurrency-mc2-s0-2026-09-26.md)): on the
 Mac's CPU, one existing forward carrying n rows (`forwardN`, bit-identical to n sequential forwards) costs 1.77–1.93×
 a one-row forward at n = 4 (int4, 0.5B and 1.5B, depth 128 and 512). Batching's ceiling at B = 4 is therefore ≈ 2.1–2.3×,
@@ -193,6 +203,15 @@ fails it is a kill.
 **Estimate.** One to two weeks.
 
 ## MC3 — batched decode on Metal (only if MC2 earns and decision 1 is yes)
+
+**S0, 2026-09-26: an owner decision is needed before this starts**
+([`concurrency-mc2-2026-09-26.md`](../measurements/concurrency-mc2-2026-09-26.md), MC3 S0).
+- A bit-identical small-M W4A8 kernel on Metal (R18's rows kernel extended to M activation rows) amortises little. On
+  the dominant gate/up shape M = 4 gains 1.30× (1.5B) and 1.15× (7B), because these kernels are bound by per-weight
+  work. MLX's masked form shares the unpack but spills registers.
+- A paying MC3 likely needs the matrix units (`simdgroup_matrix`, f16 products). That means registering a
+  **fidelity gate** here in place of the identity gate MC2 chose.
+- The alternative is to put the batching effort on the CPU path, where MC2 earns bit-identically.
 
 **Scope.** Dense families, one backend, one adapter per batch. Everything else declines to the
 serialized MC1 path, the same shape fast prefill used.

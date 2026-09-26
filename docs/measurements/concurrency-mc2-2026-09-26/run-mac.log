@@ -1,0 +1,79 @@
+16:51:24 idle: load1=1.87
+16:51:24 == MC2 Mac CPU start; commit 4786d879 + uncommitted decoder/batchdecode_mc2_test.go
+== 16:51:24 0.5b depth 128 int4
+[mc2    2.5s] loaded qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (int4): depth 128, 16 steps per sequence, 5 reps, 8 arms
+[mc2    7.3s] rep 1/5:  serial x1 106.0  serial x4 102.7  batched B=1 107.0  batched B=2 141.0  batched B=4 198.1  batched B=8 246.3  J8 workers N=2 196.2  J8 workers N=4 242.6 tok/s
+[mc2    9.6s] rep 2/5:  serial x1 108.9  serial x4 109.5  batched B=1 109.3  batched B=2 143.7  batched B=4 216.5  batched B=8 252.7  J8 workers N=2 197.7  J8 workers N=4 275.7 tok/s
+[mc2   11.9s] rep 3/5:  serial x1 111.0  serial x4 111.0  batched B=1 108.4  batched B=2 141.9  batched B=4 212.1  batched B=8 250.1  J8 workers N=2 196.0  J8 workers N=4 271.5 tok/s
+[mc2   14.2s] rep 4/5:  serial x1 108.2  serial x4 109.5  batched B=1 110.4  batched B=2 143.8  batched B=4 216.0  batched B=8 231.2  J8 workers N=2 194.4  J8 workers N=4 269.5 tok/s
+[mc2   16.5s] rep 5/5:  serial x1 110.0  serial x4 110.5  batched B=1 109.6  batched B=2 138.1  batched B=4 213.9  batched B=8 254.8  J8 workers N=2 190.6  J8 workers N=4 269.9 tok/s
+[mc2   16.5s] aggregate decode tok/s, median of 5 reps (qwen2.5-coder-0.5b-instruct-q4_k_m.gguf int4, depth 128):
+[mc2   16.5s]   serial x1          108.9 tok/s  1.000x serial x1
+[mc2   16.5s]   serial x4          109.5 tok/s  1.006x serial x1
+[mc2   16.5s]   batched B=1        109.3 tok/s  1.004x serial x1
+[mc2   16.5s]   batched B=2        141.9 tok/s  1.303x serial x1
+[mc2   16.5s]   batched B=4        213.9 tok/s  1.964x serial x1
+[mc2   16.5s]   batched B=8        250.1 tok/s  2.296x serial x1
+[mc2   16.5s]   J8 workers N=2     196.0 tok/s  1.799x serial x1
+[mc2   16.5s]   J8 workers N=4     269.9 tok/s  2.478x serial x1
+[mc2   16.5s] MC2 METRIC batched B=4 / serial x1 = 1.945x (per-rep sorted [1.8693175879245294 1.9116275119349195 1.944852434296675 1.9874399439761976 1.9967868666549664]); J8 N=4 / serial x1 = 2.478x
+--- PASS: TestMC2_batchedDecodeThroughput (16.55s)
+PASS
+== 16:51:41 0.5b depth 512 int4
+[mc2    7.4s] loaded qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (int4): depth 512, 16 steps per sequence, 5 reps, 8 arms
+[mc2   13.3s] rep 1/5:  serial x1 94.1  serial x4 90.1  batched B=1 90.4  batched B=2 114.8  batched B=4 153.2  batched B=8 177.0  J8 workers N=2 163.4  J8 workers N=4 226.1 tok/s
+[mc2   16.2s] rep 2/5:  serial x1 95.4  serial x4 92.6  batched B=1 90.9  batched B=2 119.4  batched B=4 161.3  batched B=8 181.4  J8 workers N=2 169.3  J8 workers N=4 237.1 tok/s
+[mc2   19.2s] rep 3/5:  serial x1 94.5  serial x4 91.9  batched B=1 92.1  batched B=2 121.8  batched B=4 152.7  batched B=8 166.2  J8 workers N=2 164.9  J8 workers N=4 231.1 tok/s
+[mc2   22.0s] rep 4/5:  serial x1 95.8  serial x4 94.5  batched B=1 91.4  batched B=2 119.7  batched B=4 164.0  batched B=8 186.6  J8 workers N=2 170.0  J8 workers N=4 238.4 tok/s
+[mc2   24.8s] rep 5/5:  serial x1 93.8  serial x4 95.4  batched B=1 93.3  batched B=2 121.0  batched B=4 168.3  batched B=8 188.8  J8 workers N=2 166.3  J8 workers N=4 201.9 tok/s
+[mc2   24.8s] aggregate decode tok/s, median of 5 reps (qwen2.5-coder-0.5b-instruct-q4_k_m.gguf int4, depth 512):
+[mc2   24.8s]   serial x1           94.5 tok/s  1.000x serial x1
+[mc2   24.8s]   serial x4           92.6 tok/s  0.980x serial x1
+[mc2   24.8s]   batched B=1         91.4 tok/s  0.967x serial x1
+[mc2   24.8s]   batched B=2        119.7 tok/s  1.267x serial x1
+[mc2   24.8s]   batched B=4        161.3 tok/s  1.707x serial x1
+[mc2   24.8s]   batched B=8        181.4 tok/s  1.920x serial x1
+[mc2   24.8s]   J8 workers N=2     166.3 tok/s  1.760x serial x1
+[mc2   24.8s]   J8 workers N=4     231.1 tok/s  2.445x serial x1
+[mc2   24.8s] MC2 METRIC batched B=4 / serial x1 = 1.690x (per-rep sorted [1.6164533100701786 1.627899644170524 1.6902810610750136 1.7120419881310869 1.7953075897687243]); J8 N=4 / serial x1 = 2.445x
+--- PASS: TestMC2_batchedDecodeThroughput (24.83s)
+PASS
+== 16:52:06 1.5b depth 128 int4
+[mc2    6.4s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (int4): depth 128, 16 steps per sequence, 5 reps, 8 arms
+[mc2   16.3s] rep 1/5:  serial x1 52.8  serial x4 52.5  batched B=1 52.1  batched B=2 67.5  batched B=4 107.8  batched B=8 128.1  J8 workers N=2 81.3  J8 workers N=4 103.3 tok/s
+[mc2   21.2s] rep 2/5:  serial x1 52.9  serial x4 52.6  batched B=1 52.3  batched B=2 67.3  batched B=4 108.1  batched B=8 125.7  J8 workers N=2 79.4  J8 workers N=4 105.9 tok/s
+[mc2   26.1s] rep 3/5:  serial x1 53.1  serial x4 51.4  batched B=1 52.2  batched B=2 67.3  batched B=4 107.6  batched B=8 126.7  J8 workers N=2 82.0  J8 workers N=4 106.1 tok/s
+[mc2   31.0s] rep 4/5:  serial x1 52.7  serial x4 52.9  batched B=1 48.4  batched B=2 67.3  batched B=4 108.4  batched B=8 128.2  J8 workers N=2 83.4  J8 workers N=4 105.8 tok/s
+[mc2   35.9s] rep 5/5:  serial x1 52.8  serial x4 52.6  batched B=1 52.1  batched B=2 67.4  batched B=4 108.0  batched B=8 128.4  J8 workers N=2 83.2  J8 workers N=4 105.5 tok/s
+[mc2   35.9s] aggregate decode tok/s, median of 5 reps (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf int4, depth 128):
+[mc2   35.9s]   serial x1           52.8 tok/s  1.000x serial x1
+[mc2   35.9s]   serial x4           52.6 tok/s  0.995x serial x1
+[mc2   35.9s]   batched B=1         52.1 tok/s  0.987x serial x1
+[mc2   35.9s]   batched B=2         67.3 tok/s  1.274x serial x1
+[mc2   35.9s]   batched B=4        108.0 tok/s  2.044x serial x1
+[mc2   35.9s]   batched B=8        128.1 tok/s  2.424x serial x1
+[mc2   35.9s]   J8 workers N=2      82.0 tok/s  1.551x serial x1
+[mc2   35.9s]   J8 workers N=4     105.8 tok/s  2.002x serial x1
+[mc2   35.9s] MC2 METRIC batched B=4 / serial x1 = 2.042x (per-rep sorted [2.025827532698907 2.0398420529733063 2.041963935416674 2.0444516900911216 2.055723831626564]); J8 N=4 / serial x1 = 2.002x
+--- PASS: TestMC2_batchedDecodeThroughput (35.88s)
+PASS
+== 16:52:43 1.5b depth 512 int4
+[mc2   19.1s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (int4): depth 512, 16 steps per sequence, 5 reps, 8 arms
+[mc2   30.8s] rep 1/5:  serial x1 45.9  serial x4 46.4  batched B=1 46.0  batched B=2 56.8  batched B=4 83.5  batched B=8 96.2  J8 workers N=2 75.0  J8 workers N=4 100.1 tok/s
+[mc2   36.6s] rep 2/5:  serial x1 46.3  serial x4 46.1  batched B=1 46.2  batched B=2 56.8  batched B=4 83.3  batched B=8 96.4  J8 workers N=2 75.5  J8 workers N=4 98.8 tok/s
+[mc2   42.4s] rep 3/5:  serial x1 46.4  serial x4 46.2  batched B=1 46.1  batched B=2 57.3  batched B=4 83.0  batched B=8 96.4  J8 workers N=2 75.7  J8 workers N=4 100.4 tok/s
+[mc2   48.2s] rep 4/5:  serial x1 45.9  serial x4 45.7  batched B=1 46.0  batched B=2 57.0  batched B=4 83.7  batched B=8 93.1  J8 workers N=2 76.9  J8 workers N=4 99.9 tok/s
+[mc2   54.1s] rep 5/5:  serial x1 46.4  serial x4 46.0  batched B=1 46.2  batched B=2 57.1  batched B=4 83.4  batched B=8 94.4  J8 workers N=2 76.4  J8 workers N=4 99.4 tok/s
+[mc2   54.1s] aggregate decode tok/s, median of 5 reps (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf int4, depth 512):
+[mc2   54.1s]   serial x1           46.3 tok/s  1.000x serial x1
+[mc2   54.1s]   serial x4           46.1 tok/s  0.995x serial x1
+[mc2   54.1s]   batched B=1         46.1 tok/s  0.995x serial x1
+[mc2   54.1s]   batched B=2         57.0 tok/s  1.229x serial x1
+[mc2   54.1s]   batched B=4         83.4 tok/s  1.800x serial x1
+[mc2   54.1s]   batched B=8         96.2 tok/s  2.076x serial x1
+[mc2   54.1s]   J8 workers N=2      75.7 tok/s  1.633x serial x1
+[mc2   54.1s]   J8 workers N=4      99.9 tok/s  2.155x serial x1
+[mc2   54.1s] MC2 METRIC batched B=4 / serial x1 = 1.798x (per-rep sorted [1.7863446905647793 1.7963740585046064 1.7978992899993114 1.8208212301171172 1.823249623933566]); J8 N=4 / serial x1 = 2.155x
+--- PASS: TestMC2_batchedDecodeThroughput (54.07s)
+PASS
+16:53:38 == DONE

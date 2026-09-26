@@ -1,0 +1,9 @@
+16:49:16 waiting for idle: load1=2.79 (0s)
+16:50:16 waiting for idle: load1=2.57 (60s)
+16:50:57 idle: load1=1.82
+16:50:57 == MC2 Mac CPU start; commit 4786d879 + uncommitted decoder/batchdecode_mc2_test.go
+== 16:50:57 0.5b depth 128 int4
+== 16:50:57 0.5b depth 512 int4
+== 16:50:57 1.5b depth 128 int4
+== 16:50:57 1.5b depth 512 int4
+16:50:57 == DONE
