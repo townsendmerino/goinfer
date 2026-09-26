@@ -114,7 +114,7 @@ record it there as P6a and do it with the tower move rather than after.
 ### G3 — LoRA adapter requests drop to the staged path (100% CPU on CUDA/Metal)
 
 **Where.** `internal/serveapp/openai.go:1294`: `if lm.model.ResidentActive() && lm.adapter == ""` —
-adapter models take the session path below it, and `decoder/model.go:1476` makes a session
+adapter models take the session path below it, and `decoder/model.go:1497` makes a session
 generation ineligible for the resident KV (`useGPU = resident != nil && prefillFrom == 0 &&
 commit == nil`). The comment at `internal/serveapp/openai.go:1264–967` records the cost: 13 tok/s vs ~460 resident ona 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
 
@@ -149,7 +149,7 @@ after (it drives the shared positional KV).
 
 ### G5 — families CPU-only on CUDA and Metal for one or two small features
 
-**Where.** `decoder/features.go:439–541` (the three backend tables) against
+**Where.** `decoder/features.go:448–541` (the three backend tables) against
 `decoder/features.go:131–221` (`residentFeatures`). Everything below declines to the staged path,
 which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole model's speed.
 
@@ -161,7 +161,7 @@ which on CUDA/Metal is entirely CPU (R9), so each missing kernel costs the whole
 | Olmo Hybrid | the two above + `FeatNoPE` | same | its Gated-DeltaNet half is already declared on both backends |
 | Command-R / R7B | `FeatLayerNorm`, `FeatParallelBlock`, `FeatLogitScale` | `FeatParallelBlock`, `FeatLogitScale` | parallel attn‖MLP from one normed input, summed; logits scale is a host-side multiply; Metal already has the LayerNorm (generalized for Cohere, `features.go` note) |
 | Nemotron-H | `FeatSSM`, `FeatNonGatedMLP`, `FeatLogitScale`… | `FeatSSM`, `FeatLogitScale` | the Mamba-2 engine exists on WebGPU (`gpu/`); a port, not a design |
-| DeepSeek-V2/V3, Kimi K2 | ~~`FeatMLA`~~ done 2026-09-17 (`decoder/features.go:520`, `cuda/mla.cu`) | `FeatMLA` | CUDA shipped: latent-cache attention + absorbed W_UK/W_UV, real parity gate against `testdata/deepseek-tiny`; the nGroup/topkGroup mapping this row used to flag as ungated is now covered by `TestMLAResidentParityCUDA`'s full-sequence check. WebGPU already had it; Metal still doesn't |
+| DeepSeek-V2/V3, Kimi K2 | ~~`FeatMLA`~~ done 2026-09-17 (`decoder/features.go:529`, `cuda/mla.cu`) | `FeatMLA` | CUDA shipped: latent-cache attention + absorbed W_UK/W_UV, real parity gate against `testdata/deepseek-tiny`; the nGroup/topkGroup mapping this row used to flag as ungated is now covered by `TestMLAResidentParityCUDA`'s full-sequence check. WebGPU already had it; Metal still doesn't |
 | Laguna | `FeatAttnOutputGate` | same | not on any backend; WebGPU's DeltaNet has a fused output gate to crib from |
 | LFM2.5 | `FeatShortConv` + "own forward, not bridged" | same | `decoder/residency.go:260` declines it before features are consulted |
 | Llama 4 | own forward, not bridged | same | `decoder/residency.go:258` |
@@ -227,7 +227,7 @@ dense (`docs/ollama-chase.md`), and the Mac's remaining gap to Ollama is mostly 
 
 ### G9 — WebGPU has no batched prefill at all
 
-**Where.** `decoder/model.go:1307`: "WebGPU implements no Prefiller"; `gpu/residency.go:1136`
+**Where.** `decoder/model.go:1328`: "WebGPU implements no Prefiller"; `gpu/residency.go:1136`
 seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit per token.
 
 **Fix.** A `Prefiller` on the WebGPU runner, dense first, following the CUDA shape
@@ -259,7 +259,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
 
 ## Things checked and found fine
 
-- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1616`), but serve
+- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1637`), but serve
   serializes each model's generations (`internal/serveapp/openai.go:63` `turns`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
