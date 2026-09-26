@@ -1,8 +1,10 @@
 # Task: concurrency — stop the resident-KV thrash, then earn batched multi-request decode (MC0–MC5) — 2026-09
 
 > **Status: FILED 2026-09-23; owner decisions taken 2026-09-26 (1: yes, 2: fold). MC0 DONE 2026-09-26: the
-> thrash is confirmed on Metal, and a CPU session-LRU bug it uncovered is fixed.** MC1 (multi-slot resident KV) is
-> next. MC2 is the kill-or-earn
+> thrash is confirmed on Metal, and a CPU session-LRU bug it uncovered is fixed. MC1 SHIPPED 2026-09-26 on Metal**
+> (`c2f1532e`): 4 resident KV slots hold the 1-client aggregate at 2 and 4 clients (0.99× / 1.01×), and the 4-client
+> aggregate is 1.22–1.24× the previous build's. CUDA and WebGPU are not converted. **MC2 (kill or earn: batched decode
+> on CPU, with J8's cell) is next.** MC2 is the kill-or-earn
 > measurement `roadmap.md` requires before any batched decode work, and now carries J8's cell. MC3
 > is in the niche (decision 1) but must not start until MC2 earns. MC4 and MC5 are parked with
 > triggers. The speed bars were loosened 2026-09-26, before any measurement, per the owner's
@@ -104,6 +106,15 @@ conversations.
 
 ## MC1 — multi-slot resident KV
 
+**Result, 2026-09-26: SHIPPED on Metal**
+([`concurrency-mc1-2026-09-26.md`](../measurements/concurrency-mc1-2026-09-26.md)).
+- On the W7 workload with 4 slots, the aggregate at 2 and 4 clients is 0.989× / 1.007× the 1-client figure.
+- The 4-client aggregate is 70.9 against the previous build's 57.0 tok/s (1.24×; the repeat reads 1.22×).
+- Each turn prefills only its new user turn at every client count.
+- Outputs are bit-identical to each conversation served alone, on the tiny fixture and on qwen2.5-coder-1.5b.
+- Not converted: CUDA and WebGPU (one slot); recurrent families keep one; VL turns use the bound slot.
+- The fit guard's clamp is implemented, but no clamping load was run.
+
 **Goal.** N conversations' KV stay resident on the GPU at once, so interleaved turns reuse their
 own prefix instead of evicting each other. Still one generation at a time; no batching.
 
@@ -138,7 +149,7 @@ own prefix instead of evicting each other. Still one generation at a time; no ba
 - Per-turn `prefill_reused_tokens` at 2 and 4 clients equals the 1-client run's, turn for turn.
 - The fit guard declines a slot count that does not fit, with a message naming the count it chose.
 
-**Follow-on.** With more than one slot, J6's prefix-aware scheduling has something to exploit.
+**Follow-on.** With more than one slot, J6's prefix-aware scheduling has something to exploit (now true on Metal).
 Re-run J6's measurement once after MC1 ships; its 1.024× was taken against a single slot.
 
 **Estimate.** One to two weeks across the three backends, mostly bookkeeping and the fit guard.

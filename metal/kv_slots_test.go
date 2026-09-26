@@ -5,6 +5,7 @@ package metal
 import (
 	"context"
 	"math/rand"
+	"os"
 	"slices"
 	"testing"
 
@@ -16,20 +17,26 @@ import (
 // must each emit exactly the token ids they emit when served alone, and reuse exactly as much of their own history
 // on every turn. A control — the same interleaving on one slot — must thrash, so this test can see the failure it
 // guards against.
+//
+// GOINFER_METAL_KVSLOTS_MODEL=<checkpoint> runs the same scenario on a real checkpoint (int4, 48 tokens per turn)
+// instead of the synthetic tiny model; its prompts are ids from a fixed range, not text.
 func TestMetalKVSlots_interleavedMatchesAlone(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	w := genTinyWeights(rand.New(rand.NewSource(21)))
-	dir := t.TempDir()
-	writeDense(t, dir, w)
-
-	lead := []int{1, 2, 3} // the shared "chat template" lead
-	first := map[string][]int{
-		"A": append(slices.Clone(lead), 10, 11, 12, 13),
-		"B": append(slices.Clone(lead), 20, 21, 22, 23),
+	dir, quant, maxTok, base := os.Getenv("GOINFER_METAL_KVSLOTS_MODEL"), "int4", 48, 1000
+	if dir == "" {
+		w := genTinyWeights(rand.New(rand.NewSource(21)))
+		dir = t.TempDir()
+		writeDense(t, dir, w)
+		quant, maxTok, base = "int8int8", 12, 0
 	}
-	const maxTok = 12
+
+	lead := []int{base + 1, base + 2, base + 3} // the shared "chat template" lead
+	first := map[string][]int{
+		"A": append(slices.Clone(lead), base+10, base+11, base+12, base+13),
+		"B": append(slices.Clone(lead), base+20, base+21, base+22, base+23),
+	}
 	type turn = kvSlotTurn
 	run := func(m *decoder.Model, order []string) map[string][]turn {
 		prompts := map[string][]int{"A": slices.Clone(first["A"]), "B": slices.Clone(first["B"])}
@@ -45,12 +52,12 @@ func TestMetalKVSlots_interleavedMatchesAlone(t *testing.T) {
 			}
 			out[c] = append(out[c], turn{ids, gen.PrefillReused})
 			// the next user turn extends the conversation with its reply and two new ids
-			prompts[c] = append(append(slices.Clone(prompts[c]), ids...), 30+len(out[c]), 40+len(out[c]))
+			prompts[c] = append(append(slices.Clone(prompts[c]), ids...), base+30+len(out[c]), base+40+len(out[c]))
 		}
 		return out
 	}
 	load := func(slots int) *decoder.Model {
-		m, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int8int8", ResidentKVSlots: slots})
+		m, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: quant, ResidentKVSlots: slots})
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}

@@ -1,0 +1,42 @@
+16:10:02 idle: load1=1.84
+16:10:02 == MC1 start; commit c4791671; old /Users/francistownsend-merino/goinfer-bench/mc0-2026-09-26/serve-metal-lrufix; new /Users/francistownsend-merino/goinfer-bench/mc1-2026-09-26/serve-metal-mc1
+[w7-plain] old clients=1 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 2851 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1871 MB)
+[w7-plain] old clients=1: wall=11.756s aggregate=65.33 tok/s; prefill_reused per client per turn [[0, 170, 324, 479, 631, 779]]
+[w7-plain] old clients=2 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1868 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1847 MB)
+[w7-plain] old clients=2: wall=26.973s aggregate=56.95 tok/s; prefill_reused per client per turn [[7, 7, 7, 7, 7, 7], [0, 7, 7, 7, 7, 7]]
+[w7-plain] old clients=4 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1841 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1798 MB)
+[w7-plain] old clients=4: wall=53.899s aggregate=57.0 tok/s; prefill_reused per client per turn [[0, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-2026-09-26/mc1.json
+[w7-plain] resuming: 3 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-2026-09-26/mc1.json
+[w7-plain] new clients=1 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1607 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1711 MB)
+[w7-plain] new clients=1: wall=10.919s aggregate=70.34 tok/s; prefill_reused per client per turn [[0, 168, 322, 477, 629, 777]]
+[w7-plain] new clients=2 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1707 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1690 MB)
+[w7-plain] new clients=2: wall=22.087s aggregate=69.54 tok/s; prefill_reused per client per turn [[0, 171, 325, 480, 632, 780], [0, 171, 325, 480, 632, 780]]
+[w7-plain] new clients=4 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1660 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1662 MB)
+[w7-plain] new clients=4: wall=43.359s aggregate=70.85 tok/s; prefill_reused per client per turn [[0, 171, 325, 480, 632, 780], [0, 171, 325, 480, 632, 780], [0, 171, 325, 480, 632, 780], [0, 171, 325, 480, 632, 780]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-2026-09-26/mc1.json
+[w7-plain] resuming: 6 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-2026-09-26/mc1.json
+[w7-plain] new_rep clients=4 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1663 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1605 MB)
+[w7-plain] new_rep clients=4: wall=43.765s aggregate=70.19 tok/s; prefill_reused per client per turn [[0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-2026-09-26/mc1.json
+[w7-plain] resuming: 7 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-2026-09-26/mc1.json
+[w7-plain] old_rep clients=4 starting fresh server
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1574 MB)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1571 MB)
+[w7-plain] old_rep clients=4: wall=53.263s aggregate=57.68 tok/s; prefill_reused per client per turn [[0, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-2026-09-26/mc1.json
+16:30:39 == DONE
