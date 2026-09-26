@@ -83,7 +83,7 @@ filler p10 in [0.80, 0.90) with no such regression. Everything else FAILs.
 
 A arm that crashes or errors is reported void, not guessed.
 
-### Amendment 2026-09-26, 1:45 pm PDT, before A5 has run: arm A5 added
+### Amendment 2026-09-26, 1:40 pm PDT, before A5 has run: arm A5 added
 
 **What prompted it:** a partial result. phi3-mini came back with A2/A3/A4 below the bar (0.675, 0.758
 and 0.762 on filler) and A0 at 0.973 / 0.998. That shows squeezing the file's 5–6-bit tensors is
