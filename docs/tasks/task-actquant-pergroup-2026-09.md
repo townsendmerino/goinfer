@@ -203,6 +203,30 @@ only, one run per candidate. Metric: p10 logit cosine against f32. Every band is
 If both candidates pass, the one with the higher minimum over (phi3-mini, qwen2.5-7b) × (filler, prose)
 wins. If neither passes, int4 does not serve these families; they default to `int8int8` once Track A lands.
 
+### Track A — decode W4A8 without new assembly (2026-09-25)
+
+The M=1 W4A8 kernels on both arches return Σ_g int32dot_g · scale[g] and apply the per-row activation
+scale afterwards, in Go. Fed the combined scale `wS[j,g]·aS[g]` per group, with no final multiply, the
+**unchanged** kernel computes the per-group product exactly (float multiply is commutative, so
+`aS·wS` = `wS·aS` bit-for-bit). The cost is one f32 multiply per 32 weights. Built in aikit for the
+amd64 split-half AVX2 kernel and the arm64 row4 kernels (S-05 fold on and off); both match the Go
+reference to accumulation order (tests on amd64, and on arm64 under qemu). What it cannot cover:
+- the M>1 tiles (prefill), where four activation rows share one scale stream;
+- W8A8, whose kernels accumulate the whole row in one int32.
+
+Those still fall back to the reference and need real kernel work.
+
+### Track A pre-registered speed gate (2026-09-25, before any timing)
+
+Measured when the box is idle (not during a sweep), same process, per-row and per-32 interleaved:
+
+- **Kernel level** (an aikit Go benchmark at goinfer's decode shapes: qwen2.5-coder-1.5b and qwen2.5-7b
+  projection K×N, M=1), per-32 time ÷ per-row time: **≤ 1.05 SHIP; (1.05, 1.10] AMBIGUOUS → optimize
+  before shipping** (e.g. hoist the combined scales); **> 1.10 FAIL** for that kernel, which then gets a
+  real assembly variant.
+- **End to end** (goinfer CPU int4 decode, 1.5B and 7B, `bench_compare.sh`, goinfer against goinfer):
+  per-32 ÷ per-row tok/s **≥ 0.97 SHIP; [0.93, 0.97) AMBIGUOUS; < 0.93 FAIL.**
+
 ## Order of work
 
 1. **Measure first:** the H2 step-1 sweep sizes the problem across families. A W8A8 perf baseline per
