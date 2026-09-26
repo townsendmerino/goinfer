@@ -154,6 +154,31 @@ func runDecodeFidelityGate(t *testing.T, tag, candName string, prep func(t *test
 		pooled.critC, pooled.exactMeanKL, pooled.fastMeanKL, pooled.promptFastLowerKL, pooled.promptsCounted, pooled.klCeilingOK,
 		verdict)
 	t.Logf("%s: pooled verdict = %s (critA=%v critB=%v critC=%v)", tag, verdict, pooled.critA, pooled.critB, pooled.critC)
+
+	// The decode-attention verdict under the owner's 2026-09-25 amendment
+	// (docs/measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md), for kernels that change only the
+	// reduction order: critA, critB and the 1.1x ceiling as above; critC is CUDA R6's KL-ratio form — pooled
+	// candidate/exact mean KL <= 1.05 passes, 1.05-1.10 is PARKED, > 1.10 fails. The strict critC above is printed
+	// beside it and does not decide. A failed reference-identity check makes the verdict VOID.
+	ratio := pooled.fastMeanKL / pooled.exactMeanKL
+	c6 := map[bool]string{true: "<=1.05 (pass)", false: "1.05-1.10 (parked)"}[ratio <= 1.05]
+	if ratio > 1.10 {
+		c6 = ">1.10 (fail)"
+	}
+	base := pooled.critA && pooled.critB && pooled.klCeilingOK
+	amended := "DOES NOT PASS"
+	switch {
+	case len(suspect) > 0:
+		amended = "VOID (reference identity check failed)"
+	case base && ratio <= 1.05:
+		amended = "PASSES"
+	case base && ratio <= 1.10:
+		amended = "PARKED"
+	}
+	fmt.Printf("=== %s decode-attention verdict (2026-09-25 amendment), candidate %s, set %q, K=%d: critA=%v critB=%v ceilingOK=%v "+
+		"KLratio=%.4f -> critC(R6)=%s; strict critC=%v (not deciding); identity %d/%d prompts OK — %s ===\n",
+		tag, candName, label, K, pooled.critA, pooled.critB, pooled.klCeilingOK, ratio, c6, pooled.critC,
+		cs.n-len(suspect), cs.n, amended)
 	if len(suspect) > 0 {
 		t.Errorf("%s: prompts %v fail the reference-identity check (seed-row KL > 1.0): the verdict above is not valid for this reference set", tag, suspect)
 	}

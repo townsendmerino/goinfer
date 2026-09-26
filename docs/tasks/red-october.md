@@ -395,6 +395,14 @@ own text (R1 and R2 both name S at depth 3900 as a decision/confirmation cell; R
 own served-throughput band separately and inherits this fidelity mechanism alongside it, not
 instead of it).
 
+**Amended 2026-09-25 (owner), for decode-attention kernels that change only the reduction order**
+(`attention_fa`, R17's prototype). The strict critC is replaced by CUDA R6's KL-ratio form: ≤ 1.05× passes,
+1.05–1.10× is parked. critA, critB and the 1.1× ceiling are unchanged, strict critC is printed beside it, and a
+kernel-accuracy-vs-float64 precondition is added. The mechanism: this gate fails the shipped kernel's own
+rounding-level variants 8–12 of 18 times. Registration and scope:
+[`metal-decode-attn-fidelity-setb-PREREGISTERED.md`](../measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md).
+Every other lane keeps the strict form.
+
 ---
 
 ## 5. The briefs
@@ -2203,6 +2211,18 @@ never after a candidate has been timed against it without one.
   a larger `attention_fa` split count gives 1.20× at best (S=32; S=14 is production), non-monotonic — KILL band as a
   candidate. The threadgroups-in-flight reading is largely refuted; the per-key chain inside each simdgroup is the
   cost, which is what step 2's block-of-32 shape changes. Bands unchanged.
+- **2026-09-25 — step 2, and precondition 1's gate amended** ([`metal-decode-attn-r17-2026-09-25.md`](../measurements/metal-decode-attn-r17-2026-09-25.md)).
+  - *Exploratory speed:* the prototype gives 3.37× at S=16 (7B 3.49×).
+  - *The gate itself was broken three ways:* an executor leak between arms (now fixed in production), set-A
+    references mismatched to 4 of 10 prompts, and a strict critC that fails the shipped kernel's own rounding
+    variants.
+  - *Kernel accuracy:* the prototype is about 3× closer to float64 than the shipped kernel.
+  - *Precondition 1 amended (owner):* it is now graded by
+    [`metal-decode-attn-fidelity-setb-PREREGISTERED.md`](../measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md),
+    which pairs a kernel-level P1 with the R6-form end-to-end P2 on set B and fixes the confirmation-run parameters.
+  - *Precondition 3's instrument amended:* the after-idle check compares full-token times. Differencing single
+    post-idle tokens is not resolvable.
+  - Speed bands unchanged.
 
 **Out of scope.** The GEMV fixed cost (the short-context and MLX gap — its own item, S0's other finding), paged MoE
 decode, sliding-window and sink attention variants, the int8 KV path.

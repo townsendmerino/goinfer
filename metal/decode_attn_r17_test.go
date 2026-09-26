@@ -1209,9 +1209,23 @@ func TestR17KernelAccuracy(t *testing.T) {
 	if v := os.Getenv("GOINFER_METAL_R17_PROMPTS"); v != "" {
 		nPrompts, _ = strconv.Atoi(v)
 	}
-	const K = 3900
+	depths := []int{3900}
+	if v := os.Getenv("GOINFER_METAL_R17_DEPTHS"); v != "" {
+		depths = depths[:0]
+		for _, f := range strings.Split(v, ",") {
+			d, err := strconv.Atoi(strings.TrimSpace(f))
+			if err != nil || d < 2 {
+				t.Fatalf("GOINFER_METAL_R17_DEPTHS: bad depth %q", f)
+			}
+			depths = append(depths, d)
+		}
+	}
+	maxD := 0
+	for _, d := range depths {
+		maxD = max(maxD, d)
+	}
 	t.Setenv("GOINFER_METAL_ATTN_FA", "0")
-	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: K + 72})
+	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: maxD + 72})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -1231,7 +1245,7 @@ func TestR17KernelAccuracy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tokenizer: %v", err)
 	}
-	_, files := decoder.PrefillGatePromptSet()
+	setLabel, files := decoder.PrefillGatePromptSet()
 	if nPrompts > len(files) {
 		nPrompts = len(files)
 	}
@@ -1267,7 +1281,22 @@ func TestR17KernelAccuracy(t *testing.T) {
 		{name: "exact-vchunk C=32", p: r17PatchKernel(t, r, "attention", "attention_vc32", r17VSumEdit(t, 32))},
 		{name: "exact-vchunk C=64", p: r17PatchKernel(t, r, "attention", "attention_vc64", r17VSumEdit(t, 64))},
 		{name: "exact-vchunk C=256", p: r17PatchKernel(t, r, "attention", "attention_vc256", r17VSumEdit(t, 256))},
+	} // GOINFER_METAL_R17_ACC_ARMS=decision keeps only the arms the pre-registered decision grades
+	// (docs/measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md): the exact kernel and the two candidates.
+	if os.Getenv("GOINFER_METAL_R17_ACC_ARMS") == "decision" {
+		keep := map[string]bool{"exact (shipped attention)": true, "attention_fa S=prod": true, "prototype S=16": true}
+		var kept []arm
+		for _, a := range arms {
+			if keep[a.name] {
+				kept = append(kept, a)
+			}
+		}
+		arms = kept
 	}
+	if arms[0].name != "exact (shipped attention)" {
+		t.Fatalf("arm 0 must be the exact kernel (every comparison is against it)")
+	}
+
 	nHhdMax := r.nH * 256
 	outBuf := r.d.NewBufferLen(nHhdMax)
 	rel := make([][]float64, len(arms))    // per (prompt, layer, head): ||out-ref|| / ||ref||
@@ -1297,219 +1326,221 @@ func TestR17KernelAccuracy(t *testing.T) {
 	defer runtime.UnlockOSThread()
 	scale := float64(r.uScale.Floats()[0])
 	for pi := 0; pi < nPrompts; pi++ {
-		ids := decoder.PrefillGateProseIDsForTest(t, tk, files[pi], K)[:K]
-		embs := make([][]float32, K)
-		for i, id := range ids {
-			embs[i] = m.EmbedResidentForTest(id)
-		}
-		r.decodeAttnFA = false
-		seed, err := rf.PrefillLast(ctx, embs, 0)
-		if err != nil {
-			t.Fatalf("PrefillLast: %v", err)
-		}
-		tok := argmaxF(seed)
-		r.stopExec()
-		copy(r.x.Floats(), m.EmbedResidentForTest(tok))
-		r.addLearnedPos(K)
-		r.setPos(K)
-		nKeys := K + 1
-		for l := 0; l < r.nL; l++ {
-			e := r.q.Begin()
-			r.encodeLayer(e, l)
-			e.End()
-			if err := e.Err(); err != nil {
-				t.Fatalf("layer %d: %v", l, err)
+		for _, K := range depths {
+			ids := decoder.PrefillGateProseIDsForTest(t, tk, files[pi], K)[:K]
+			embs := make([][]float32, K)
+			for i, id := range ids {
+				embs[i] = m.EmbedResidentForTest(id)
 			}
-			L := &r.layers[l]
-			g := L.geom
-			if g == nil || g.hd != 128 || L.window != 0 {
-				continue
+			r.decodeAttnFA = false
+			seed, err := rf.PrefillLast(ctx, embs, 0)
+			if err != nil {
+				t.Fatalf("PrefillLast: %v", err)
 			}
-			nHhd := r.nH * g.hd
-			G := r.nH / g.nKV
-			q := append([]float32(nil), r.qkv.Floats()[:nHhd]...)
-			inLayer := append([]float32(nil), r.ctx.Floats()[:nHhd]...)
-			kh := r.kc[l].U16s()[:r.kc[l].Len()/2]
-			vh := r.vc[l].U16s()[:r.vc[l].Len()/2]
-			// float64 reference
-			ref := make([]float64, nHhd)
-			sc := make([]float64, nKeys)
-			for h := 0; h < r.nH; h++ {
-				kvh := h / G
-				mx := math.Inf(-1)
-				for j := 0; j < nKeys; j++ {
-					var a float64
-					base := j*g.kvDim + kvh*g.hd
-					for d := 0; d < g.hd; d++ {
-						a += float64(q[h*g.hd+d]) * float64(f16ToF32(kh[base+d]))
-					}
-					sc[j] = a * scale
-					mx = math.Max(mx, sc[j])
-				}
-				var sum float64
-				for j := range sc {
-					sc[j] = math.Exp(sc[j] - mx)
-					sum += sc[j]
-				}
-				for d := 0; d < g.hd; d++ {
-					var a float64
-					for j := 0; j < nKeys; j++ {
-						a += sc[j] * float64(f16ToF32(vh[j*g.kvDim+kvh*g.hd+d]))
-					}
-					ref[h*g.hd+d] = a / sum
-				}
-			}
-			cpuF := make([]float64, nHhd) // stored as the f32 values the reference would hold
-			cpuU := make([]float64, nHhd)
-			{
-				sc32 := make([]float32, nKeys)
-				for h := 0; h < r.nH; h++ {
-					kvh := h / G
-					maxS := math.Inf(-1)
-					for j := 0; j < nKeys; j++ {
-						var dot float64
-						base := j*g.kvDim + kvh*g.hd
-						for d := 0; d < g.hd; d++ {
-							dot += float64(q[h*g.hd+d]) * float64(f16ToF32(kh[base+d]))
-						}
-						x := dot * scale
-						sc32[j] = float32(x)
-						maxS = math.Max(maxS, x)
-					}
-					var sum float64
-					for j := range sc32 {
-						e := math.Exp(float64(sc32[j]) - maxS)
-						sc32[j] = float32(e)
-						sum += e
-					}
-					inv := 1.0 / sum
-					accF := make([]float32, g.hd)
-					accU := make([]float32, g.hd)
-					for j := 0; j < nKeys; j++ {
-						w := float32(float64(sc32[j]) * inv)
-						base := j*g.kvDim + kvh*g.hd
-						for d := 0; d < g.hd; d++ {
-							v := f16ToF32(vh[base+d])
-							accF[d] = float32(math.FMA(float64(w), float64(v), float64(accF[d])))
-							accU[d] += float32(w * v) // the explicit conversion forbids fusion (Go spec)
-						}
-					}
-					var nf, nu, dn float64
-					for d := 0; d < g.hd; d++ {
-						cpuF[h*g.hd+d], cpuU[h*g.hd+d] = float64(accF[d]), float64(accU[d])
-						x, y, rr := float64(accF[d])-ref[h*g.hd+d], float64(accU[d])-ref[h*g.hd+d], ref[h*g.hd+d]
-						nf, nu, dn = nf+x*x, nu+y*y, dn+rr*rr
-					}
-					cpuRelF, cpuRelU = append(cpuRelF, math.Sqrt(nf/dn)), append(cpuRelU, math.Sqrt(nu/dn))
-				}
-			}
-			cosine := func(a, b []float64) float64 {
-				var ab, aa, bb float64
-				for i := range a {
-					ab, aa, bb = ab+a[i]*b[i], aa+a[i]*a[i], bb+b[i]*b[i]
-				}
-				if aa == 0 || bb == 0 {
-					return 0
-				}
-				return ab / math.Sqrt(aa*bb)
-			}
-			var exactDistF []float64
-			var exactErr []float64
-			for ai, a := range arms {
+			tok := argmaxF(seed)
+			r.stopExec()
+			copy(r.x.Floats(), m.EmbedResidentForTest(tok))
+			r.addLearnedPos(K)
+			r.setPos(K)
+			nKeys := K + 1
+			for l := 0; l < r.nL; l++ {
 				e := r.q.Begin()
-				if !a.fa {
-					pa := r.pAttn
-					if a.p != (Pipeline{}) {
-						pa = a.p
-					}
-					e.Dispatch(pa, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], outBuf, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
-				} else {
-					r.attnFASplitOverride = a.split
-					nSplit := r.attnFASplitFor(nKeys, g.nKV)
-					r.attnFASplitOverride = 0
-					r.uAttnFAG.SetU32(uint32(G))
-					r.uAttnFANSplit.SetU32(uint32(nSplit))
-					e.DispatchTG(a.p, g.nKV*nSplit*128, 128, 128*6*G*4, r.qkv, r.kc[l], r.vc[l], r.attnFAPartial,
-						g.uNKV, r.uAttnFAG, r.uNKeys, r.uScale, L.uWindow, r.uAttnFANSplit)
-					pc := r.pAttnFACombine
-					if a.comb != (Pipeline{}) {
-						pc = a.comb
-					}
-					e.Dispatch(pc, r.nH*g.hd, g.hd, r.attnFAPartial, outBuf, r.uAttnFAG, g.uHd, r.uAttnFANSplit)
-				}
+				r.encodeLayer(e, l)
 				e.End()
 				if err := e.Err(); err != nil {
-					t.Fatalf("layer %d arm %s: %v", l, a.name, err)
+					t.Fatalf("layer %d: %v", l, err)
 				}
-				out := outBuf.Floats()[:nHhd]
-				if ai == 0 {
-					exactOut = append(exactOut[:0], out...)
+				L := &r.layers[l]
+				g := L.geom
+				if g == nil || g.hd != 128 || L.window != 0 {
+					continue
 				}
+				nHhd := r.nH * g.hd
+				G := r.nH / g.nKV
+				q := append([]float32(nil), r.qkv.Floats()[:nHhd]...)
+				inLayer := append([]float32(nil), r.ctx.Floats()[:nHhd]...)
+				kh := r.kc[l].U16s()[:r.kc[l].Len()/2]
+				vh := r.vc[l].U16s()[:r.vc[l].Len()/2]
+				// float64 reference
+				ref := make([]float64, nHhd)
+				sc := make([]float64, nKeys)
 				for h := 0; h < r.nH; h++ {
-					var num, den float64
-					for d := 0; d < g.hd; d++ {
-						x := float64(out[h*g.hd+d]) - float64(exactOut[h*g.hd+d])
-						num, den = num+x*x, den+ref[h*g.hd+d]*ref[h*g.hd+d]
-					}
-					vsExact[ai] = append(vsExact[ai], math.Sqrt(num/den))
-				}
-				if ai == 0 {
-					sanityN++
-					same := true
-					for i := range out {
-						if math.Float32bits(out[i]) != math.Float32bits(inLayer[i]) {
-							same = false
-							break
+					kvh := h / G
+					mx := math.Inf(-1)
+					for j := 0; j < nKeys; j++ {
+						var a float64
+						base := j*g.kvDim + kvh*g.hd
+						for d := 0; d < g.hd; d++ {
+							a += float64(q[h*g.hd+d]) * float64(f16ToF32(kh[base+d]))
 						}
+						sc[j] = a * scale
+						mx = math.Max(mx, sc[j])
 					}
-					if same {
-						sanityOK++
+					var sum float64
+					for j := range sc {
+						sc[j] = math.Exp(sc[j] - mx)
+						sum += sc[j]
+					}
+					for d := 0; d < g.hd; d++ {
+						var a float64
+						for j := 0; j < nKeys; j++ {
+							a += sc[j] * float64(f16ToF32(vh[j*g.kvDim+kvh*g.hd+d]))
+						}
+						ref[h*g.hd+d] = a / sum
 					}
 				}
-				for h := 0; h < r.nH; h++ {
-					var num, den float64
-					for d := 0; d < g.hd; d++ {
-						x := float64(out[h*g.hd+d]) - ref[h*g.hd+d]
-						num += x * x
-						den += ref[h*g.hd+d] * ref[h*g.hd+d]
-						maxAbs[ai] = math.Max(maxAbs[ai], math.Abs(x))
+				cpuF := make([]float64, nHhd) // stored as the f32 values the reference would hold
+				cpuU := make([]float64, nHhd)
+				{
+					sc32 := make([]float32, nKeys)
+					for h := 0; h < r.nH; h++ {
+						kvh := h / G
+						maxS := math.Inf(-1)
+						for j := 0; j < nKeys; j++ {
+							var dot float64
+							base := j*g.kvDim + kvh*g.hd
+							for d := 0; d < g.hd; d++ {
+								dot += float64(q[h*g.hd+d]) * float64(f16ToF32(kh[base+d]))
+							}
+							x := dot * scale
+							sc32[j] = float32(x)
+							maxS = math.Max(maxS, x)
+						}
+						var sum float64
+						for j := range sc32 {
+							e := math.Exp(float64(sc32[j]) - maxS)
+							sc32[j] = float32(e)
+							sum += e
+						}
+						inv := 1.0 / sum
+						accF := make([]float32, g.hd)
+						accU := make([]float32, g.hd)
+						for j := 0; j < nKeys; j++ {
+							w := float32(float64(sc32[j]) * inv)
+							base := j*g.kvDim + kvh*g.hd
+							for d := 0; d < g.hd; d++ {
+								v := f16ToF32(vh[base+d])
+								accF[d] = float32(math.FMA(float64(w), float64(v), float64(accF[d])))
+								accU[d] += float32(w * v) // the explicit conversion forbids fusion (Go spec)
+							}
+						}
+						var nf, nu, dn float64
+						for d := 0; d < g.hd; d++ {
+							cpuF[h*g.hd+d], cpuU[h*g.hd+d] = float64(accF[d]), float64(accU[d])
+							x, y, rr := float64(accF[d])-ref[h*g.hd+d], float64(accU[d])-ref[h*g.hd+d], ref[h*g.hd+d]
+							nf, nu, dn = nf+x*x, nu+y*y, dn+rr*rr
+						}
+						cpuRelF, cpuRelU = append(cpuRelF, math.Sqrt(nf/dn)), append(cpuRelU, math.Sqrt(nu/dn))
 					}
-					ek, ef, eu := make([]float64, g.hd), make([]float64, g.hd), make([]float64, g.hd)
-					var distF float64
-					for d := 0; d < g.hd; d++ {
-						o := float64(out[h*g.hd+d])
-						ek[d], ef[d], eu[d] = o-ref[h*g.hd+d], cpuF[h*g.hd+d]-ref[h*g.hd+d], cpuU[h*g.hd+d]-ref[h*g.hd+d]
-						distF += (o - cpuF[h*g.hd+d]) * (o - cpuF[h*g.hd+d])
+				}
+				cosine := func(a, b []float64) float64 {
+					var ab, aa, bb float64
+					for i := range a {
+						ab, aa, bb = ab+a[i]*b[i], aa+a[i]*a[i], bb+b[i]*b[i]
 					}
-					cosF[ai] = append(cosF[ai], cosine(ek, ef))
-					cosU[ai] = append(cosU[ai], cosine(ek, eu))
-					if ai == 0 {
-						exactDistF = append(exactDistF, distF)
-					} else if distF < exactDistF[h] {
-						nearF[ai]++
+					if aa == 0 || bb == 0 {
+						return 0
 					}
-					e := math.Sqrt(num / den)
-					rel[ai] = append(rel[ai], e)
-					relL[ai][l] = append(relL[ai][l], e)
-					if e > worstV[ai] {
-						worstV[ai] = e
-						worst[ai] = fmt.Sprintf("prompt %d layer %d head %d (||ref|| %.3g)", pi+1, l, h, math.Sqrt(den))
-					}
-					if ai == 0 {
-						exactErr = append(exactErr, e)
+					return ab / math.Sqrt(aa*bb)
+				}
+				var exactDistF []float64
+				var exactErr []float64
+				for ai, a := range arms {
+					e := r.q.Begin()
+					if !a.fa {
+						pa := r.pAttn
+						if a.p != (Pipeline{}) {
+							pa = a.p
+						}
+						e.Dispatch(pa, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l], r.vc[l], outBuf, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
 					} else {
-						switch {
-						case e < exactErr[h]:
-							win[ai]++
-						case e == exactErr[h]:
-							tie[ai]++
+						r.attnFASplitOverride = a.split
+						nSplit := r.attnFASplitFor(nKeys, g.nKV)
+						r.attnFASplitOverride = 0
+						r.uAttnFAG.SetU32(uint32(G))
+						r.uAttnFANSplit.SetU32(uint32(nSplit))
+						e.DispatchTG(a.p, g.nKV*nSplit*128, 128, 128*6*G*4, r.qkv, r.kc[l], r.vc[l], r.attnFAPartial,
+							g.uNKV, r.uAttnFAG, r.uNKeys, r.uScale, L.uWindow, r.uAttnFANSplit)
+						pc := r.pAttnFACombine
+						if a.comb != (Pipeline{}) {
+							pc = a.comb
+						}
+						e.Dispatch(pc, r.nH*g.hd, g.hd, r.attnFAPartial, outBuf, r.uAttnFAG, g.uHd, r.uAttnFANSplit)
+					}
+					e.End()
+					if err := e.Err(); err != nil {
+						t.Fatalf("layer %d arm %s: %v", l, a.name, err)
+					}
+					out := outBuf.Floats()[:nHhd]
+					if ai == 0 {
+						exactOut = append(exactOut[:0], out...)
+					}
+					for h := 0; h < r.nH; h++ {
+						var num, den float64
+						for d := 0; d < g.hd; d++ {
+							x := float64(out[h*g.hd+d]) - float64(exactOut[h*g.hd+d])
+							num, den = num+x*x, den+ref[h*g.hd+d]*ref[h*g.hd+d]
+						}
+						vsExact[ai] = append(vsExact[ai], math.Sqrt(num/den))
+					}
+					if ai == 0 {
+						sanityN++
+						same := true
+						for i := range out {
+							if math.Float32bits(out[i]) != math.Float32bits(inLayer[i]) {
+								same = false
+								break
+							}
+						}
+						if same {
+							sanityOK++
+						}
+					}
+					for h := 0; h < r.nH; h++ {
+						var num, den float64
+						for d := 0; d < g.hd; d++ {
+							x := float64(out[h*g.hd+d]) - ref[h*g.hd+d]
+							num += x * x
+							den += ref[h*g.hd+d] * ref[h*g.hd+d]
+							maxAbs[ai] = math.Max(maxAbs[ai], math.Abs(x))
+						}
+						ek, ef, eu := make([]float64, g.hd), make([]float64, g.hd), make([]float64, g.hd)
+						var distF float64
+						for d := 0; d < g.hd; d++ {
+							o := float64(out[h*g.hd+d])
+							ek[d], ef[d], eu[d] = o-ref[h*g.hd+d], cpuF[h*g.hd+d]-ref[h*g.hd+d], cpuU[h*g.hd+d]-ref[h*g.hd+d]
+							distF += (o - cpuF[h*g.hd+d]) * (o - cpuF[h*g.hd+d])
+						}
+						cosF[ai] = append(cosF[ai], cosine(ek, ef))
+						cosU[ai] = append(cosU[ai], cosine(ek, eu))
+						if ai == 0 {
+							exactDistF = append(exactDistF, distF)
+						} else if distF < exactDistF[h] {
+							nearF[ai]++
+						}
+						e := math.Sqrt(num / den)
+						rel[ai] = append(rel[ai], e)
+						relL[ai][l] = append(relL[ai][l], e)
+						if e > worstV[ai] {
+							worstV[ai] = e
+							worst[ai] = fmt.Sprintf("prompt %d depth %d layer %d head %d (||ref|| %.3g)", pi+1, K, l, h, math.Sqrt(den))
+						}
+						if ai == 0 {
+							exactErr = append(exactErr, e)
+						} else {
+							switch {
+							case e < exactErr[h]:
+								win[ai]++
+							case e == exactErr[h]:
+								tie[ai]++
+							}
 						}
 					}
 				}
+				r.setPos(K) // restore the production split uniform for the next layer's encode
 			}
-			r.setPos(K) // restore the production split uniform for the next layer's encode
+			fmt.Fprintf(os.Stderr, "[r17-acc] prompt %d/%d depth %d done (decode token %d at pos %d)\n", pi+1, nPrompts, K, tok, K)
 		}
-		fmt.Fprintf(os.Stderr, "[r17-acc] prompt %d/%d done (decode token %d at pos %d)\n", pi+1, nPrompts, tok, K)
 	}
 	if sanityOK != sanityN {
 		t.Errorf("capture sanity: the standalone exact dispatch matched the in-layer output in only %d of %d layers", sanityOK, sanityN)
@@ -1519,8 +1550,8 @@ func TestR17KernelAccuracy(t *testing.T) {
 		sort.Float64s(s)
 		return s[min(len(s)-1, int(p*float64(len(s))))]
 	}
-	fmt.Fprintf(os.Stderr, "\n=== R17 kernel accuracy vs float64, %s, K=%d, %d prompts × %d layers × %d heads; capture sanity %d/%d layers bit-identical ===\n",
-		filepath.Base(path), K, nPrompts, r.nL, r.nH, sanityOK, sanityN)
+	fmt.Fprintf(os.Stderr, "\n=== R17 kernel accuracy vs float64, %s, prompt set %q, depths %v, %d prompts × %d layers × %d heads; capture sanity %d/%d layers bit-identical ===\n",
+		filepath.Base(path), setLabel, depths, nPrompts, r.nL, r.nH, sanityOK, sanityN)
 	fmt.Fprintf(os.Stderr, "  %-26s %12s %12s %12s %12s %12s  %s\n", "kernel", "relL2 median", "mean", "p99", "max", "max|abs|", "closer than exact / ties (of heads)   | moved from exact: median")
 	for ai, a := range arms {
 		var mean float64
@@ -1554,7 +1585,14 @@ func TestR17KernelAccuracy(t *testing.T) {
 	for ai, a := range arms {
 		fmt.Fprintf(os.Stderr, "  %-26s relL2 %.3e at %s\n", a.name, worstV[ai], worst[ai])
 	}
-	show := []int{0, 1, 5, 7, 9} // exact, attention_fa at the production split, prototype S=16, and precise-exp exact / prototype
+	var show []int // exact, attention_fa at the production split, prototype S=16, and precise-exp exact / prototype
+	for _, want := range []string{"exact (shipped attention)", "attention_fa S=prod", "prototype S=16", "exact, precise exp", "prototype S=16, precise exp"} {
+		for ai, a := range arms {
+			if a.name == want {
+				show = append(show, ai)
+			}
+		}
+	}
 	fmt.Fprintf(os.Stderr, "\n  per layer, relL2 median / max over prompts × heads:\n  %5s", "layer")
 	for _, ai := range show {
 		fmt.Fprintf(os.Stderr, "  %-29s", arms[ai].name)
@@ -1569,5 +1607,17 @@ func TestR17KernelAccuracy(t *testing.T) {
 			fmt.Fprintf(os.Stderr, "  %12.3e / %12.3e    ", pct(relL[ai][l], 0.5), pct(relL[ai][l], 1))
 		}
 		fmt.Fprintln(os.Stderr)
+	}
+	// P1 of docs/measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md: a candidate passes if its median
+	// AND its p99 per-head relative L2 error vs float64 are each <= the exact kernel's. The max is reported, not gated.
+	exMed, exP99, exMax := pct(rel[0], 0.5), pct(rel[0], 0.99), pct(rel[0], 1)
+	for ai, a := range arms {
+		if a.name != "attention_fa S=prod" && a.name != "prototype S=16" {
+			continue
+		}
+		med, p99 := pct(rel[ai], 0.5), pct(rel[ai], 0.99)
+		v := map[bool]string{true: "PASS", false: "FAIL"}[med <= exMed && p99 <= exP99 && sanityOK == sanityN]
+		fmt.Fprintf(os.Stderr, "=== P1 kernel accuracy (pre-registered), %s, set %q: %s median %.3e vs exact %.3e, p99 %.3e vs exact %.3e (max %.3e vs exact %.3e, reported) — %s ===\n",
+			filepath.Base(path), setLabel, a.name, med, exMed, p99, exP99, pct(rel[ai], 1), exMax, v)
 	}
 }
