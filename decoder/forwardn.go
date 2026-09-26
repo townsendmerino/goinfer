@@ -476,7 +476,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 			qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
 			qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
 			qkvOps[2] = linalg.W8A8Op{BQ: wmInt8(&lw.VProj), Scales: wmScales(&lw.VProj), Dst: v, N: lw.VProj.Rows()}
-			matmulW8A8Batch(be, &ws, norm, K, lw.QProj.Cols(), qkvOps[:])
+			matmulW8A8Batch(be, &ws, norm, K, lw.QProj.Cols(), qkvOps[:], lw.QProj.ActQuantGroup())
 		} else {
 			matmul(be, &lw.QProj, norm, q, K)
 			matmul(be, &lw.KProj, norm, k, K)
@@ -689,7 +689,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 		if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {
 			guOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
 			guOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
-			matmulW8A8Batch(be, &ws, norm, K, lw.GateProj.Cols(), guOps[:])
+			matmulW8A8Batch(be, &ws, norm, K, lw.GateProj.Cols(), guOps[:], lw.GateProj.ActQuantGroup())
 		} else {
 			matmul(be, &lw.GateProj, norm, gate, K)
 			matmul(be, &lw.UpProj, norm, up, K)

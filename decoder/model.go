@@ -75,6 +75,7 @@ type Model struct {
 	disableFit       bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache         bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
 	moeSlots         int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
+	actGroup         int          // activation quantization group (Options.ActQuantGroup); 0 = per-vector
 	extraBytes       int64        // Options.ExtraResidentBytes — see that field's own doc comment
 	extraKVPerPos    int64        // Options.ExtraResidentKVPerPosition — see that field's own doc comment
 	mmap             []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
@@ -375,6 +376,14 @@ type Options struct {
 	// this is the library-level chokepoint docs/completed/task-prefill-gap.md already
 	// documented as existing; chatapp/gemmaapp's own --exact-prefill flag sets it.
 	ExactPrefill bool
+	// ActQuantGroup selects per-group ACTIVATION quantization for the int8-activation projections
+	// (int4 = W4A8, int8int8 = W8A8, int4mix): 0 (the default) scales each activation vector by one
+	// max/127, 32 gives every 32 inputs their own scale. A family with massive activation outliers
+	// (Phi-3: max/rms ~80-90) loses nearly the whole vector under one scale; per-32 keeps an outlier's
+	// damage inside its group (docs/tasks/task-actquant-pergroup-2026-09.md). Per model: two models in
+	// one process may differ. Honoured on the CPU and by CUDA residency; other resident backends
+	// decline to the CPU path when it is set.
+	ActQuantGroup int
 
 	// LoadAbort, if non-nil, is checked BETWEEN LAYERS during a direct (non-.giw) GGUF weight
 	// build — S3 (docs/tasks/task-never-swap-2026-09.md): the swap tripwire's LOAD-TIME
@@ -409,12 +418,19 @@ var ErrLoadAborted = errLoadAborted
 // requested quant, the resolved EOS ids, the file mapping), then apply backend names, knobs,
 // streaming and residency in the order their path needs.
 func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
+	// Stamp the activation group on every quantizable weight: the CPU matmul helpers read it from
+	// the weight they hold, whichever backend object they run under.
+	if opts.ActQuantGroup > 0 {
+		for _, wm := range w.matmulWeights() {
+			wm.SetActQuantGroup(opts.ActQuantGroup)
+		}
+	}
 	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(),
 		kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
 		resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit,
 		moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
-		exactPrefill: opts.ExactPrefill}
+		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup}
 }
 
 // Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
@@ -666,6 +682,11 @@ func (o Options) Validate() error {
 		// is ever consulted.
 	default:
 		return fmt.Errorf("decoder: invalid backend %q (cpu | webgpu | cuda | metal)", o.Backend)
+	}
+	switch o.ActQuantGroup {
+	case 0, 32:
+	default:
+		return fmt.Errorf("decoder: invalid ActQuantGroup %d (0 | 32)", o.ActQuantGroup)
 	}
 	switch o.KVPrecision {
 	case "", "f32", "f16", "i8":

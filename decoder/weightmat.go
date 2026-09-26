@@ -780,7 +780,9 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		// allocation per token, the wrong shape for a per-call path. It falls through to
 		// w.MatmulBTW4A8Into below instead, which dispatches on whichever layout is actually
 		// present (canonical, row4, or split-half) via aikit's own per-arch method.
-		if q4, q4s, group, ok := w.Int4(); ok {
+		// A per-group activation weight (ActQuantGroup) skips the staged consult: no staged GPU
+		// kernel reads per-group activation scales.
+		if q4, q4s, group, ok := w.Int4(); ok && w.ActQuantGroup() == 0 {
 			if qb, ok := be.(QuantBackend4); ok && qb.MatmulW4A8(a, q4, q4s, group, dst, M, w.Cols(), w.Rows()) {
 				return
 			}
@@ -819,12 +821,13 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		ws := matmulWSPool.Get().(*linalg.Workspace)
 		defer matmulWSPool.Put(ws)
 		ws.SetThreshold(int4ParThreshold)
+		ws.SetActQuantGroup(w.ActQuantGroup()) // pooled: always set, so a previous model's group never leaks
 		w.MatmulBTW4A8Into(ws, a, dst, M)
 		return
 	}
 	if q8, scales, w8a8, ok := w.Int8(); ok {
 		if w8a8 {
-			if qb, ok := be.(QuantBackend); ok && qb.MatmulW8A8(a, q8, scales, dst, M, w.Cols(), w.Rows()) {
+			if qb, ok := be.(QuantBackend); ok && w.ActQuantGroup() == 0 && qb.MatmulW8A8(a, q8, scales, dst, M, w.Cols(), w.Rows()) {
 				return
 			}
 			// Pooled Workspace with the int8 decode threshold — the free-matmul path
@@ -837,6 +840,7 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 			ws := matmulWSPool.Get().(*linalg.Workspace)
 			defer matmulWSPool.Put(ws)
 			ws.SetThreshold(DefaultDecodeParallelThreshold)
+			ws.SetActQuantGroup(w.ActQuantGroup())
 			linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 			return
 		}
@@ -873,9 +877,10 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 	if isW8A8(w) {
 		q8, scales, _, _ := w.Int8()
-		if qb, ok := be.(QuantBackend); ok && qb.MatmulW8A8(a, q8, scales, dst, M, w.Cols(), w.Rows()) {
+		if qb, ok := be.(QuantBackend); ok && w.ActQuantGroup() == 0 && qb.MatmulW8A8(a, q8, scales, dst, M, w.Cols(), w.Rows()) {
 			return
 		}
+		ws.SetActQuantGroup(w.ActQuantGroup())
 		linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 		return
 	}
@@ -894,11 +899,12 @@ func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []
 		//
 		// Nested under Int4()'s ok, not the outer IsInt4() — see matmul()'s own comment on
 		// this same shape for why a repacked-only tensor cannot serve the staged consult.
-		if q4, q4s, group, ok := w.Int4(); ok {
+		if q4, q4s, group, ok := w.Int4(); ok && w.ActQuantGroup() == 0 {
 			if qb, ok := be.(QuantBackend4); ok && qb.MatmulW4A8(a, q4, q4s, group, dst, M, w.Cols(), w.Rows()) {
 				return
 			}
 		}
+		ws.SetActQuantGroup(w.ActQuantGroup())
 		// Same threshold matmul's fresh Workspace sets — the point of the reuse is to stop
 		// allocating one per projection per token, not to change how the work is fanned out.
 		// w.MatmulBTW4A8Into, not the raw free function — see matmul's own comment above.

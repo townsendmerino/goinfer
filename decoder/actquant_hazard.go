@@ -63,3 +63,7 @@ func PeekModelType(path string) string {
 	}
 	return c.ModelType
 }
+
+// ActQuantGroup is the activation quantization group this model was loaded with
+// (Options.ActQuantGroup): 0 = one scale per activation vector, 32 = one per 32 inputs.
+func (m *Model) ActQuantGroup() int { return m.actGroup }
