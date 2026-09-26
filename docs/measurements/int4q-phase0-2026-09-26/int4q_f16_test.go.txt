@@ -1,0 +1,27 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"testing"
+)
+
+func TestF16MatchesNumpy(t *testing.T) {
+	var g [][2]float64
+	b, _ := os.ReadFile("f16_golden.json")
+	if err := json.Unmarshal(b, &g); err != nil || len(g) == 0 {
+		t.Fatalf("golden: %v", err)
+	}
+	bad := 0
+	for _, p := range g {
+		if got := f16(float32(p[0])); float64(got) != p[1] {
+			if bad++; bad <= 5 {
+				t.Errorf("f16(%g) = %g, numpy %g", p[0], got, p[1])
+			}
+		}
+	}
+	if bad > 0 {
+		t.Errorf("%d of %d mismatched", bad, len(g))
+	}
+	t.Logf("%d values checked", len(g))
+}

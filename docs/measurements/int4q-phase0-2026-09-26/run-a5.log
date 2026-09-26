@@ -1,0 +1,13 @@
+=== 2026-09-26T20:53:53Z START llama3.2-1b
+=== 2026-09-26T20:55:51Z END llama3.2-1b rc=0 (118s)
+=== 2026-09-26T20:55:51Z START gemma3-1b
+=== 2026-09-26T20:57:22Z END gemma3-1b rc=0 (91s)
+=== 2026-09-26T20:57:22Z START qwen2.5-coder-1.5b
+=== 2026-09-26T20:59:40Z END qwen2.5-coder-1.5b rc=0 (138s)
+=== 2026-09-26T20:59:40Z START phi3-mini
+=== 2026-09-26T21:04:26Z END phi3-mini rc=0 (286s)
+=== 2026-09-26T21:04:26Z START mistral-7b
+=== 2026-09-26T21:13:03Z END mistral-7b rc=0 (517s)
+=== 2026-09-26T21:13:03Z START qwen2.5-7b
+=== 2026-09-26T21:22:02Z END qwen2.5-7b rc=0 (539s)
+=== 2026-09-26T21:22:02Z ALL DONE
