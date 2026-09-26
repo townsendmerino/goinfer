@@ -249,7 +249,7 @@ STREAM_WEIGHTS_MODELS = {m.strip() for m in os.environ.get("BENCH_STREAM_WEIGHTS
 # and an explicit int8int8 gets per-32 added for Phi-3 (an explicit int4 does not), so this entry
 # times the path a user gets by default. CAVEAT, measured 2026-09-26: on the 8 GB card the CUDA
 # resident fit check declines the default 4096-position context for int8 Phi-3 (3.6 GB of weights;
-# the check counts f32 KV even under -kv f16), so a CUDA cell without BENCH_CTX <= 2048 silently
+# CUDA allocates f32 KV whatever -kv says), so a CUDA cell without BENCH_CTX <= 2048 silently
 # times the CPU path. Read the "decode path" line in the serve log.
 GOINFER_QUANT_OVERRIDE = {}
 for _kv in os.environ.get("BENCH_QUANT_OVERRIDE", "M35=int4mix,phi3-mini=int8int8").split(","):
