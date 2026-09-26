@@ -78,6 +78,14 @@ var deltaNetPTX []byte
 //go:embed testdata/gptoss_act.ptx
 var gptOssActPTX []byte
 
+// actGroupPTX: per-32 ACTIVATION quantization for the resident decode path — rmsnorm_quant_g32,
+// quant_vec_g32, glu_quant_g32 and the gemv_w4a8_g32 / gemv_w8a8_g32 GEMVs that read one activation
+// scale per 32 elements (actgroup.cu; docs/tasks/task-actquant-pergroup-2026-09.md). Own module, as
+// gptoss_act and decode_splitkv: the audited glue.ptx is untouched, and a per-row model never loads it.
+//
+//go:embed testdata/actgroup.ptx
+var actGroupPTX []byte
+
 // gemvRNPTX: gemv_w4a8_rn — register-blocked batched GEMV (RN output rows per warp), so each coalesced
 // activation load is reused across RN rows: RN× fewer L1TEX loads, the profile-justified latency fix.
 // Bit-identical (per-row facc, one reduce each). Own file (gemv_w4a8_rn.cu).

@@ -37,6 +37,7 @@ var lintedKernels = []string{
 	"router_f32.cu", "argmax.cu", "attn_block.cu", "gptoss_act.cu", "deltanet.cu",
 	"attn_fused.cu", "attn_fused_bm.cu", "attn_fused_vit.cu", "gemm_w4a8_mma.cu", "lora.cu", "attn_img_prefill.cu", "rope_mrope_prefill.cu",
 	"layernorm_quant.cu", "gelu_quant.cu", "mla.cu", "topk.cu", "gumbel.cu", "decode_fa.cu", "fused_qkv_rows.cu", "fused_gu_rows.cu",
+	"actgroup.cu",
 }
 
 // fmaLintExempt lists embedded PTX deliberately outside the lint, with the reason. Anything else
