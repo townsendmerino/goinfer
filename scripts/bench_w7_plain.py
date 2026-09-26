@@ -247,9 +247,11 @@ def main():
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--engines", default="goinfer,llamacpp", help="comma list: goinfer, llamacpp")
     ap.add_argument("--backend", default="metal", help="goinfer's -backend (cpu records as goinfer_cpu)")
+    ap.add_argument("--key", default="", help="results key for this goinfer run (default goinfer / goinfer_<backend>) — "
+                    "lets two serve builds share one results file")
     a = ap.parse_args()
     engines = [e.strip() for e in a.engines.split(",") if e.strip()]
-    gkey = "goinfer" if a.backend == "metal" else f"goinfer_{a.backend}"
+    gkey = a.key or ("goinfer" if a.backend == "metal" else f"goinfer_{a.backend}")
 
     levels = [int(x) for x in a.clients.split(",")]
     hdr = machine_header()

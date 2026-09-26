@@ -33,17 +33,20 @@ func TestBanner_sessionReuseMatchesTheDecodePath(t *testing.T) {
 		reuseOff   bool // GOINFER_NO_RESIDENT_REUSE
 		kvSessions int
 		wantReuse  bool
+		kvSlots    int // resident KV slots allocated (MC1); 0/1 = one conversation
 	}{
 		// A resident model reuses the most recent conversation's prefix on the device (resident_reuse.go);
 		// the CPU session LRU does not apply to it, so --kv-sessions does not change the answer.
-		{"resident, sessions configured", true, false, 4, true},
-		{"resident, sessions off", true, false, 0, true},
-		{"resident, resident reuse switched off", true, true, 4, false},
-		{"staged, sessions configured", false, false, 4, true},
-		{"staged, sessions off", false, false, 0, false},
+		{"resident, sessions configured", true, false, 4, true, 0},
+		{"resident, sessions off", true, false, 0, true, 0},
+		{"resident, resident reuse switched off", true, true, 4, false, 0},
+		{"staged, sessions configured", false, false, 4, true, 0},
+		{"staged, sessions off", false, false, 0, false, 0},
+		{"resident, 4 KV slots", true, false, 4, true, 4},
+		{"resident, 4 asked, guard allowed 2", true, false, 4, true, 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			lines := modelBannerFrom(bannerFacts{resident: tc.resident, residentReuseOff: tc.reuseOff, hasTemplate: true}, config{kvSessions: tc.kvSessions})
+			lines := modelBannerFrom(bannerFacts{resident: tc.resident, residentReuseOff: tc.reuseOff, hasTemplate: true, kvSlots: tc.kvSlots}, config{kvSessions: tc.kvSessions})
 			line := bannerLine(lines, "session reuse:")
 			if line == "" {
 				t.Fatal("no session-reuse line in the banner")
@@ -54,8 +57,17 @@ func TestBanner_sessionReuseMatchesTheDecodePath(t *testing.T) {
 			}
 			// On the resident path reuse is ONE conversation; the line must say so, or an operator
 			// running several agents expects the LRU's behaviour and gets full re-prefills.
-			if tc.resident && tc.wantReuse && (!strings.Contains(line, "one conversation") || !strings.Contains(line, "re-prefills")) {
+			if tc.resident && tc.wantReuse && tc.kvSlots <= 1 && (!strings.Contains(line, "one conversation") || !strings.Contains(line, "re-prefills")) {
 				t.Errorf("resident reuse must say it covers one conversation and what switching costs, got %q", line)
+			}
+			// With several resident KV slots (MC1) it must say how many, and name the clamp when the guard allowed fewer.
+			if tc.resident && tc.kvSlots > 1 {
+				if !strings.Contains(line, fmt.Sprintf("%d conversations", tc.kvSlots)) {
+					t.Errorf("resident with %d KV slots must say so, got %q", tc.kvSlots, line)
+				}
+				if tc.kvSessions > tc.kvSlots && !strings.Contains(line, fmt.Sprintf("allowed %d", tc.kvSlots)) {
+					t.Errorf("a clamped slot count must be named, got %q", line)
+				}
 			}
 			// Off for a reason the user did not type as a flag: the line must name it.
 			if tc.resident && tc.reuseOff && !strings.Contains(line, "GOINFER_NO_RESIDENT_REUSE") {

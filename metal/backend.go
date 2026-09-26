@@ -365,6 +365,30 @@ func residentNeedBytes(m *decoder.Model) int64 {
 // model reporting zero bytes must not silently disable residency for everyone.
 func residentFitsMemory(m *decoder.Model) bool { return residentMemoryDecline(m) == "" }
 
+// metalKVSlots is how many resident KV slots buildResident allocates for m (MC1, docs/tasks/task-concurrency-2026-09.md):
+// the model's request (decoder.Model.ResidentKVSlotsRequest, which is already 1 for a family with recurrent state),
+// reduced while the extra slots would take the build over the memory guard's budget. The first slot is the build's own
+// KV, which residentMemoryDecline prices; each further one costs another residentKVBytes. The guard's own override
+// (GOINFER_NO_RESIDENT_MEM_GUARD) allocates the request as asked; an unreadable RAM size allocates one.
+func metalKVSlots(m *decoder.Model) int {
+	n := m.ResidentKVSlotsRequest()
+	if n <= 1 {
+		return 1
+	}
+	if modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
+		return n
+	}
+	ram, err := unix.SysctlUint64("hw.memsize")
+	if err != nil || ram == 0 {
+		return 1
+	}
+	budget, base, per := metalMemoryCeiling(ram), residentNeedBytes(m), residentKVBytes(m)
+	for n > 1 && base+int64(n-1)*per > budget {
+		n--
+	}
+	return n
+}
+
 // residentMemoryDecline is residentFitsMemory with its reason — "" when the build fits — so BuildResident
 // can hand it to the load path as a typed decline (decoder.DeclineResident) instead of printing it.
 func residentMemoryDecline(m *decoder.Model) string {
@@ -927,6 +951,10 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 
 // TruncateTo is a no-op: KV positions are overwritten on write, and attention only reads
 // keys[0..pos], so stale positions past the current one are never observed.
+// KVSlots / UseKVSlot implement decoder.ResidentKVSlotter (MC1): the slots metalKVSlots allocated, and binding one.
+func (a *metalResident) KVSlots() int          { return a.r.kvSlotCount() }
+func (a *metalResident) UseKVSlot(i int) error { return a.r.useKVSlot(i) }
+
 func (a *metalResident) TruncateTo(pos int) {}
 
 // Reset zeroes every Gated-DeltaNet layer's causal-conv ring and recurrent matrix state (no-op

@@ -86,6 +86,17 @@ type ResidentForward interface {
 	Close() error
 }
 
+// ResidentKVSlotter is an OPTIONAL ResidentForward extension (MC1, docs/tasks/task-concurrency-2026-09.md): a resident
+// that holds several independent KV caches ("slots") and binds exactly one at a time. Every ResidentForward method —
+// Forward, ForwardN, UploadKV, TruncateTo, Reset — reads and writes the BOUND slot only, so a slot switch is the whole
+// interface: the decoder keeps each slot's reuse bookkeeping and binds the slot a generation will use before it
+// prefills. KVSlots is the count actually allocated (>= 1, after the backend's fit guard); UseKVSlot(i) binds slot i
+// and must leave nothing encoded against the previous one. A resident without it has one slot.
+type ResidentKVSlotter interface {
+	KVSlots() int
+	UseKVSlot(i int) error
+}
+
 // ResidentMRoPE is an OPTIONAL ResidentForward extension: a resident backend whose rotation
 // kernel can take a rope-angle position (ropePos) separate from the KV-cache/attention position
 // (pos). Forward(embedding, pos) alone cannot serve Qwen2.5-VL decode past an image block,

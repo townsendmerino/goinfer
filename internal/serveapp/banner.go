@@ -52,6 +52,10 @@ type bannerFacts struct {
 
 	// residentReuseOff: the resident path's own prefix reuse is switched off (GOINFER_NO_RESIDENT_REUSE).
 	residentReuseOff bool
+
+	// kvSlots: how many resident KV slots the model's generations choose among (decoder.Model.ResidentKVSlots; MC1,
+	// docs/tasks/task-concurrency-2026-09.md) — 1 for a backend or family without them, 0 off the resident path.
+	kvSlots int
 }
 
 func factsOf(lm *loadedModel) bannerFacts {
@@ -71,6 +75,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.ctxWindow = lm.contextWindow(lm.adapter == "")
 	f.maxPositions = lm.model.Config().MaxPositions
 	f.kvPrec = lm.model.ResidentKVPrecision()
+	f.kvSlots = lm.model.ResidentKVSlots()
 	if v, _ := lm.model.Knob("GOINFER_NO_RESIDENT_REUSE"); v != "" {
 		f.residentReuseOff = true
 	}
@@ -157,9 +162,21 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	switch {
 	case f.resident && f.residentReuseOff:
 		out = append(out, "session reuse: OFF — GOINFER_NO_RESIDENT_REUSE is set, so every turn re-prefills its whole prompt")
+	case f.resident && f.kvSlots > 1:
+		line := fmt.Sprintf("session reuse: on the GPU cache, %d conversations kept resident — each reuses its own prefix; "+
+			"a further one takes the least recently used slot and re-prefills", f.kvSlots)
+		if cfg.kvSessions > f.kvSlots {
+			line += fmt.Sprintf(" (--kv-sessions %d; the memory guard allowed %d)", cfg.kvSessions, f.kvSlots)
+		}
+		out = append(out, line)
 	case f.resident:
+		why := "--kv-sessions applies to the CPU path only"
+		if cfg.kvSessions > 1 {
+			why = fmt.Sprintf("--kv-sessions %d asked for more, but this backend or model family keeps one GPU KV slot, "+
+				"or the memory guard allowed only one", cfg.kvSessions)
+		}
 		out = append(out, "session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; "+
-			"switching to another conversation re-prefills its whole prompt (--kv-sessions applies to the CPU path only)")
+			"switching to another conversation re-prefills its whole prompt ("+why+")")
 	case cfg.kvSessions > 0:
 		out = append(out, fmt.Sprintf("session reuse: on (%d conversations kept prefilled)", cfg.kvSessions))
 	default:

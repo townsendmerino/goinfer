@@ -231,7 +231,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		// P-05 (audit-2026-09-10), the deferred drafter-reuse half: compute reuse BEFORE
 		// forgetting — forgetting clears the very state residentReuseLen reads. BlockSpec never
 		// binds an adapter (nil lora, matching residentCommitIDs' own nil below).
-		reuseFrom = m.residentReuseLen(prompt, nil, nil)
+		reuseFrom = m.residentAcquire(prompt, nil, nil) // MC1: binds the KV slot (clearing resDrafterSynced on a switch)
 		// resIDs matching is NOT enough on its own: a plain Generate or n-gram-speculative turn
 		// can commit resIDs without ever touching THIS drafter's own context, so the token
 		// prefix can match while rd's state does not reflect it at all. Only trust reuseFrom

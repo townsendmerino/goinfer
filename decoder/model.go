@@ -66,23 +66,29 @@ type Model struct {
 	// resident write invalidates it) and set only by BlockSpec.generate's own fully-completed
 	// exit — the one path that keeps resIDs and the drafter's context advancing together.
 	resDrafterSynced *BlockSpec
-	kvF16            bool         // residency KV cache precision request (Options.KVPrecision == "f16")
-	kvPrecI8         bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
-	kvI8             bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
-	exactPrefill     bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
-	knobs            *knobSet     // per-model operator knobs, snapshotted once at Load (knobs.go)
-	resCtxReq        int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
-	disableFit       bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
-	moeCache         bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
-	moeSlots         int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
-	actGroup         int          // activation quantization group (Options.ActQuantGroup); 0 = per-vector
-	extraBytes       int64        // Options.ExtraResidentBytes — see that field's own doc comment
-	extraKVPerPos    int64        // Options.ExtraResidentKVPerPosition — see that field's own doc comment
-	mmap             []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
-	srcPath          string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
-	pager            *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
-	layerPager       *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
-	quant            string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
+	// resSlots / resCur / resTick: MC1's resident KV slots (resident_reuse.go residentAcquire). nil / 0 / 0 with one
+	// slot; the bound slot's bookkeeping lives in the resIDs fields above, the others' is parked in resSlots.
+	resSlots      []residentSlot
+	resCur        int
+	resTick       uint64
+	kvF16         bool         // residency KV cache precision request (Options.KVPrecision == "f16")
+	kvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
+	kvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	exactPrefill  bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
+	knobs         *knobSet     // per-model operator knobs, snapshotted once at Load (knobs.go)
+	resCtxReq     int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
+	resSlotsReq   int          // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
+	disableFit    bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
+	moeCache      bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
+	moeSlots      int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
+	actGroup      int          // activation quantization group (Options.ActQuantGroup); 0 = per-vector
+	extraBytes    int64        // Options.ExtraResidentBytes — see that field's own doc comment
+	extraKVPerPos int64        // Options.ExtraResidentKVPerPosition — see that field's own doc comment
+	mmap          []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
+	srcPath       string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
+	pager         *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
+	layerPager    *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
+	quant         string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
 	// resDecline records WHY resident is nil on a non-CPU backend — the reason withResidency
 	// would otherwise discard. Empty when residency was built, or when it was never attempted
 	// (CPU backend). DecodePath / -require-backend read it; see withResidency.
@@ -215,6 +221,25 @@ func (m *Model) KVCacheI8() bool { return m.kvPrecI8 }
 // effective cap as min(model context window, this) and VRAM-checks it at load; off the residency
 // path it has no effect. See cuda.resolveCtxCap.
 func (m *Model) ResidentContextRequest() int { return m.resCtxReq }
+
+// ResidentKVSlotsRequest returns the requested number of resident KV slots (Options.ResidentKVSlots), at least 1, and 1
+// for a family with recurrent state. A residency builder that supports slots (ResidentKVSlotter) allocates up to this
+// many, clamped by its fit guard.
+func (m *Model) ResidentKVSlotsRequest() int {
+	if m.hasRecurrentState() {
+		return 1 // its state is not part of a KV slot (resident_reuse.go residentSlotCount)
+	}
+	return max(1, m.resSlotsReq)
+}
+
+// ResidentKVSlots reports how many resident KV slots this model's generations choose among — what the resident
+// allocated (ResidentKVSlotter), 1 for a resident without slots, 0 off the resident path.
+func (m *Model) ResidentKVSlots() int {
+	if m.resident == nil {
+		return 0
+	}
+	return m.residentSlotCount()
+}
 
 // ExtraResidentBytes returns Options.ExtraResidentBytes — VRAM a companion allocation will claim
 // on the SAME device AFTER this model's own residency is built (a --drafter's weights today; a
@@ -376,6 +401,13 @@ type Options struct {
 	// this is the library-level chokepoint docs/completed/task-prefill-gap.md already
 	// documented as existing; chatapp/gemmaapp's own --exact-prefill flag sets it.
 	ExactPrefill bool
+	// ResidentKVSlots asks a GPU-resident backend for this many independent KV caches ("slots"), so several
+	// interleaved conversations each keep their own prefix resident instead of evicting one another's
+	// (docs/tasks/task-concurrency-2026-09.md MC1). Still one generation at a time: a slot is bound per generation,
+	// never batched. 0 or 1 = one slot (the behaviour before MC1). A backend clamps it to what its fit guard allows
+	// and says so; a backend that does not implement ResidentKVSlotter, and every family with recurrent state, keep
+	// one slot. serve sets it from -kv-sessions.
+	ResidentKVSlots int
 	// ActQuantGroup selects per-group ACTIVATION quantization for the int8-activation projections
 	// (int4 = W4A8, int8int8 = W8A8, int4mix): 0 (the default) scales each activation vector by one
 	// max/127, 32 gives every 32 inputs their own scale. A family with massive activation outliers
@@ -427,7 +459,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	}
 	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(),
 		kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
-		resCtxReq: opts.ResidentContext, disableFit: opts.DisableFit,
+		resCtxReq: opts.ResidentContext, resSlotsReq: opts.ResidentKVSlots, disableFit: opts.DisableFit,
 		moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
 		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup}
@@ -1679,7 +1711,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// KV and prefill only the divergent suffix. Forget FIRST — from here until the
 		// generation completes the cache is mid-write, and any early return must leave the
 		// next turn cold rather than trusting a half-written cache (resident_reuse.go).
-		reuseFrom := m.residentReuseLen(prompt, nil, lora)
+		reuseFrom := m.residentAcquire(prompt, nil, lora) // MC1: binds the KV slot this prompt will use
 		m.residentForgetIDs()
 		if logits, err = m.residentPrefillSeed(ctx, prompt, reuseFrom, lora != nil); err != nil {
 			g.err = err

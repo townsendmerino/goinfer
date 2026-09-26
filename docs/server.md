@@ -269,6 +269,14 @@ ordinary cold prefill uses, so it inherits that path's own exactness knob, not
 (`GOINFER_METAL_FAST_PREFILL=0`/`GOINFER_CUDA_FAST_PREFILL=0`). **WebGPU** — no
 fast/exact split exists on this backend, so there is nothing to opt out of.
 
+**On Metal, several conversations stay resident** (2026-09-26, MC1 of
+`docs/tasks/task-concurrency-2026-09.md`). `--kv-sessions N` also asks the resident for N GPU KV slots, one
+conversation each. Each generation binds the slot that already holds its prompt's prefix; a new conversation
+takes an empty slot, else the least recently used one. A slot that shares only a chat template's lead with the
+prompt is never truncated to serve it. Still one generation at a time. The memory guard clamps N to what fits
+(each slot is the full KV at the resident context, e.g. ~117 MB for Qwen2.5-1.5B at 4k), and the banner says what
+it allocated. CUDA, WebGPU and the recurrent families (Gated DeltaNet, Mamba-2, LFM2) keep one slot.
+
 **Embeddings.** Point `--embed-model` at a [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)
 HF snapshot to serve `/v1/embeddings` (`--embed-quant f32|q8`). `--model` and
 `--embed-model` are each optional and can run together — generation and

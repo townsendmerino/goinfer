@@ -89,10 +89,17 @@ type residentImageClaim struct {
 // lora is the adapter bound for THIS generation (nil = base weights); rule 4 refuses any reuse
 // of KV that was built under a different one.
 func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
-	if m.residentReuseDisabled() || len(m.resIDs) == 0 || len(prompt) == 0 {
+	return m.reuseLenOf(m.resIDs, m.resIDsLora, m.resImgBlocks, prompt, imgs, lora)
+}
+
+// reuseLenOf is residentReuseLen over one slot's bookkeeping (ids, the adapter that built it, its image blocks) — the
+// bound slot's (residentReuseLen) or a parked one's (residentAcquire, MC1).
+func (m *Model) reuseLenOf(resIDs []int, resLora *loraRuntime, resImgBlocks []residentImageBlock,
+	prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
+	if m.residentReuseDisabled() || len(resIDs) == 0 || len(prompt) == 0 {
 		return 0
 	}
-	if lora != m.resIDsLora {
+	if lora != resLora {
 		return 0 // rule 4: same ids, different weights — the KV is not this generation's
 	}
 	// RECURRENT FAMILIES CAN ONLY REUSE AN EXACT, STRICT EXTENSION. The three rules below (LCP
@@ -122,25 +129,25 @@ func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim, lora *
 		if len(imgs) > 0 {
 			return 0
 		}
-		n := len(m.resIDs)
+		n := len(resIDs)
 		if len(prompt) <= n {
 			return 0
 		}
 		for i := range n {
-			if m.resIDs[i] != prompt[i] {
+			if resIDs[i] != prompt[i] {
 				return 0
 			}
 		}
 		return n
 	}
-	n := min(len(prompt)-1, len(m.resIDs))
+	n := min(len(prompt)-1, len(resIDs))
 	i, bi := 0, 0 // bi: next candidate index into m.resImgBlocks (stored ascending by start)
 	for i < n {
-		for bi < len(m.resImgBlocks) && m.resImgBlocks[bi].end <= i {
+		for bi < len(resImgBlocks) && resImgBlocks[bi].end <= i {
 			bi++ // fully behind us
 		}
-		if bi < len(m.resImgBlocks) && m.resImgBlocks[bi].start == i {
-			blk := m.resImgBlocks[bi]
+		if bi < len(resImgBlocks) && resImgBlocks[bi].start == i {
+			blk := resImgBlocks[bi]
 			if claim, ok := findImageClaim(imgs, blk.start); ok &&
 				claim.Len == blk.end-blk.start && blk.hash != 0 && claim.Hash == blk.hash && blk.end <= n {
 				// Whole block verified byte-identical: jump straight past it, atomically —
@@ -155,12 +162,110 @@ func (m *Model) residentReuseLen(prompt []int, imgs []residentImageClaim, lora *
 			// match for no reason).
 			return i
 		}
-		if m.resIDs[i] != prompt[i] {
+		if resIDs[i] != prompt[i] {
 			return i
 		}
 		i++
 	}
 	return i
+}
+
+// residentSlot is one resident KV slot's reuse bookkeeping (MC1, docs/tasks/task-concurrency-2026-09.md). The BOUND
+// slot's ids / adapter / image blocks live in the Model's own resIDs, resIDsLora and resImgBlocks, so every commit and
+// forget site in this file and its callers is unchanged; the other slots' are parked in Model.resSlots and swapped in
+// by residentAcquire. lastUse is kept for every slot, the bound one included.
+type residentSlot struct {
+	ids       []int
+	lora      *loraRuntime
+	imgBlocks []residentImageBlock
+	lastUse   uint64
+}
+
+// residentSlotCount is how many resident KV slots a generation may choose among: what the resident allocated
+// (ResidentKVSlotter), else 1. A family with recurrent state keeps one — its state is mutated in place and is not
+// part of a KV slot, so two conversations could not both keep theirs (the conservative choice MC1 registers).
+func (m *Model) residentSlotCount() int {
+	sl, ok := m.resident.(ResidentKVSlotter)
+	if !ok || m.hasRecurrentState() {
+		return 1
+	}
+	return max(1, sl.KVSlots())
+}
+
+// residentAcquire binds the resident KV slot a generation over prompt will use and returns how many leading tokens of
+// prompt that slot already holds (residentReuseLen's contract, for the slot it bound). With one slot it IS
+// residentReuseLen. With several it scores every slot and binds pickResidentSlot's choice, parking the previously bound
+// slot's bookkeeping. Call it where residentReuseLen was called — under the resident claim, before the forget.
+//
+// Switching slots also clears resDrafterSynced: a block drafter's own context follows ONE conversation, and it is the
+// one the previous slot was serving.
+func (m *Model) residentAcquire(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
+	n := m.residentSlotCount()
+	if n <= 1 {
+		return m.residentReuseLen(prompt, imgs, lora)
+	}
+	sl := m.resident.(ResidentKVSlotter) // residentSlotCount > 1 implies it
+	if len(m.resSlots) != n {
+		m.resSlots, m.resCur = make([]residentSlot, n), 0
+	}
+	scores, lens, uses := make([]int, n), make([]int, n), make([]uint64, n)
+	for i := range n {
+		if i == m.resCur {
+			scores[i], lens[i] = m.residentReuseLen(prompt, imgs, lora), len(m.resIDs)
+		} else {
+			st := &m.resSlots[i]
+			scores[i], lens[i] = m.reuseLenOf(st.ids, st.lora, st.imgBlocks, prompt, imgs, lora), len(st.ids)
+		}
+		uses[i] = m.resSlots[i].lastUse
+	}
+	pick := pickResidentSlot(scores, lens, uses)
+	if pick != m.resCur {
+		if err := sl.UseKVSlot(pick); err != nil {
+			// The resident keeps its previous binding; with its bookkeeping unknown, go cold on it.
+			m.residentForgetIDs()
+			return 0
+		}
+		cur := &m.resSlots[m.resCur]
+		cur.ids, cur.lora, cur.imgBlocks = m.resIDs, m.resIDsLora, m.resImgBlocks
+		in := &m.resSlots[pick]
+		m.resIDs, m.resIDsLora, m.resImgBlocks = in.ids, in.lora, in.imgBlocks
+		in.ids, in.lora, in.imgBlocks = nil, nil, nil // live in the Model's fields while bound
+		m.resDrafterSynced = nil
+		m.resCur = pick
+	}
+	m.resTick++
+	m.resSlots[pick].lastUse = m.resTick
+	return scores[pick]
+}
+
+// pickResidentSlot chooses a slot for a prompt from each slot's reuse score (tokens of the prompt it holds), its
+// committed length, and its last-use tick. The best-scoring slot wins when reusing it keeps at least as much of it as
+// the new suffix will overwrite — a continuation of that slot's own conversation. A match shorter than what it would
+// discard is a shared lead (a chat template's preamble), not a continuation: taking it would truncate another
+// conversation's history to save re-prefilling a few tokens, the same trap serve's session LRU fell into
+// (internal/serveapp pickSession, 2026-09-26). Such a prompt takes an empty slot, else the least recently used one.
+func pickResidentSlot(scores, lens []int, uses []uint64) int {
+	best := -1
+	for i, s := range scores {
+		if s > 0 && (best < 0 || s > scores[best]) {
+			best = i
+		}
+	}
+	if best >= 0 && scores[best] >= lens[best]-scores[best] {
+		return best
+	}
+	for i, l := range lens {
+		if l == 0 {
+			return i
+		}
+	}
+	lru := 0
+	for i := range uses {
+		if uses[i] < uses[lru] {
+			lru = i
+		}
+	}
+	return lru
 }
 
 // findImageClaim returns the claim starting at pos, if any.

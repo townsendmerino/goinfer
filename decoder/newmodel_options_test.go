@@ -13,7 +13,7 @@ import (
 // constructor that drops one shows up as a field that differs.
 type modelOptionFields struct {
 	kvF16, kvPrecI8, kvI8, disableFit, moeCache, exactPrefill bool
-	resCtxReq, moeSlots                                       int
+	resCtxReq, resSlotsReq, moeSlots                          int
 	extraBytes, extraKVPerPos                                 int64
 	cpuFastAttn                                               string
 }
@@ -21,7 +21,7 @@ type modelOptionFields struct {
 func optionFieldsOf(m *Model) modelOptionFields {
 	v, _ := m.Knob(knobCPUFastAttention)
 	return modelOptionFields{m.kvF16, m.kvPrecI8, m.kvI8, m.disableFit, m.moeCache, m.exactPrefill,
-		m.resCtxReq, m.moeSlots, m.extraBytes, m.extraKVPerPos, v}
+		m.resCtxReq, m.resSlotsReq, m.moeSlots, m.extraBytes, m.extraKVPerPos, v}
 }
 
 // TestConstructors_carryTheSameLoadOptions: every way to build a Model honours the per-model load
@@ -46,11 +46,11 @@ func TestConstructors_carryTheSameLoadOptions(t *testing.T) {
 	}
 
 	for _, kv := range []string{"f16", "i8"} {
-		opts := Options{Backend: "cpu", KVPrecision: kv, KVQuant: kv, ResidentContext: 1234, DisableFit: true,
+		opts := Options{Backend: "cpu", KVPrecision: kv, KVQuant: kv, ResidentContext: 1234, ResidentKVSlots: 3, DisableFit: true,
 			MoECacheExperts: true, MoECacheSlots: 7, ExtraResidentBytes: 99, ExtraResidentKVPerPosition: 5,
 			ExactPrefill: true, Knobs: &Knobs{knobCPUFastAttention: "0"}}
 		want := modelOptionFields{kvF16: kv == "f16", kvPrecI8: kv == "i8", kvI8: kv == "i8", disableFit: true,
-			moeCache: true, exactPrefill: true, resCtxReq: 1234, moeSlots: 7, extraBytes: 99, extraKVPerPos: 5,
+			moeCache: true, exactPrefill: true, resCtxReq: 1234, resSlotsReq: 3, moeSlots: 7, extraBytes: 99, extraKVPerPos: 5,
 			cpuFastAttn: "0"}
 
 		build := map[string]func() (*Model, error){

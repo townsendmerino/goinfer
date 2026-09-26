@@ -326,11 +326,16 @@ type resident struct {
 	finalNorm, finalNormBias Buffer // finalNormBias: GPT-2 ln_f's LayerNorm bias (unused for RMS families)
 	lmW, lmS                 Buffer
 	kc, vc                   []Buffer
-	ks, vs                   []Buffer           // int8 KV scales (paddedCtxCap * nKV floats)
-	kvI8                     bool               // m.KVCacheI8() (CLI flag --kv i8)
-	pKvI8, pAttnI8           Pipeline           // int8 KV store and attention pipelines
-	moe                      *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
-	g4moe                    *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
+	ks, vs                   []Buffer // int8 KV scales (paddedCtxCap * nKV floats)
+	// kvSlotBufs: MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md), each a full copy of the per-layer
+	// kc/vc (and int8 ks/vs) buffers; kc/vc/ks/vs above are the BOUND slot's, and useKVSlot rebinds them. nil with one
+	// slot. kvSlot is the bound index.
+	kvSlotBufs     []kvSlotBuf
+	kvSlot         int
+	kvI8           bool               // m.KVCacheI8() (CLI flag --kv i8)
+	pKvI8, pAttnI8 Pipeline           // int8 KV store and attention pipelines
+	moe            *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
+	g4moe          *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
 
 	// prefillOK reports whether the f16 MMA prefill kernels (prefill.go) actually implement
 	// this model's shape. They run a DENSE FFN out of L.guW/L.dW with a model-level rope +
@@ -1127,6 +1132,27 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		}
 		r.layers[l] = L
 	}
+	// MC1: further resident KV slots, each a copy of the per-layer buffers just allocated (metalKVSlots: the model's
+	// request, clamped to what the memory guard allows; 1 for a family with recurrent state).
+	if n := metalKVSlots(m); n > 1 {
+		r.kvSlotBufs = make([]kvSlotBuf, n)
+		r.kvSlotBufs[0] = kvSlotBuf{r.kc, r.vc, r.ks, r.vs}
+		for s := 1; s < n; s++ {
+			b := kvSlotBuf{kc: make([]Buffer, nL), vc: make([]Buffer, nL)}
+			if r.ks != nil {
+				b.ks, b.vs = make([]Buffer, nL), make([]Buffer, nL)
+			}
+			for l := range nL {
+				if r.kc[l] != (Buffer{}) {
+					b.kc[l], b.vc[l] = byteBuf(d, r.kc[l].Len()), byteBuf(d, r.vc[l].Len())
+				}
+				if r.ks != nil && r.ks[l] != (Buffer{}) {
+					b.ks[l], b.vs[l] = d.NewBufferLen(r.ks[l].Len()), d.NewBufferLen(r.vs[l].Len())
+				}
+			}
+			r.kvSlotBufs[s] = b
+		}
+	}
 	r.finalNorm = NewBufferFloats(d, w.FinalNorm)
 	if r.layerNorm && r.layerNormBias {
 		r.finalNormBias = NewBufferFloats(d, w.FinalNormBias)
@@ -1897,6 +1923,29 @@ func (r *resident) writtenBuffers() []Buffer {
 // turns a bounded leak into a use-after-free — on CUDA, a driver SIGSEGV that kills the server.
 // The blocker is serve's drain, not this teardown. Full account: internal/serveapp/admin.go,
 // handleAdminUnload. Close itself is correct and stays correct; it just has no safe caller yet.
+// kvSlotBuf is one resident KV slot's per-layer buffers (MC1).
+type kvSlotBuf struct{ kc, vc, ks, vs []Buffer }
+
+// kvSlotCount is how many resident KV slots were allocated (at least 1).
+func (r *resident) kvSlotCount() int { return max(1, len(r.kvSlotBufs)) }
+
+// useKVSlot binds resident KV slot i: every later encode reads and writes its buffers. The executor is stopped first,
+// because a command buffer it pre-encoded for the next token baked in the previous slot's buffers (execLoop encodes
+// token t+1 while t runs).
+func (r *resident) useKVSlot(i int) error {
+	if i < 0 || i >= r.kvSlotCount() {
+		return fmt.Errorf("metal: KV slot %d out of range (%d allocated)", i, r.kvSlotCount())
+	}
+	if len(r.kvSlotBufs) == 0 || i == r.kvSlot {
+		return nil
+	}
+	r.stopExec()
+	b := r.kvSlotBufs[i]
+	r.kc, r.vc, r.ks, r.vs = b.kc, b.vc, b.ks, b.vs
+	r.kvSlot = i
+	return nil
+}
+
 func (r *resident) Close() error {
 	r.stopExec()
 	if r.g4moe != nil && r.g4moe.giwFile != nil {
