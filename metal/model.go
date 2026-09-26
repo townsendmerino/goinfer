@@ -1212,8 +1212,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// (nH·hd), or — for MoE — the expert intermediate (the expert down-proj stages `inter`). A
 	// dispatch whose threadgroup memory exceeds the device tile limit ABORTS the command buffer,
 	// and per C-09 the host would otherwise read stale logits. Decline here so the caller falls back
-	// to CPU. (Mixtral's inter=14336 → 28672 B is already 87% of a 32 KiB budget; inter≥16384
-	// exceeds it. Dense down-proj uses the non-staging pGemv, so I is NOT counted.)
+	// to CPU. (Mixtral's inter=14336 → 28672 B is already 87% of a 32 KiB budget; inter≥16384 exceeds it.
+	// Dense down-proj is NOT counted: R18's staged kernel checks its own I-byte fit below, else coal.)
 	moeInter, g4Inter := 0, 0
 	if r.moe != nil {
 		moeInter = r.moe.inter

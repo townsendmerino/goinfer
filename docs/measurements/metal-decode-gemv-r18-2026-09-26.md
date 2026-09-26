@@ -198,4 +198,26 @@ exists only after idle.
 
 ## Production wiring
 
-In progress (step 3). This section records the wiring commit and its gates.
+Wired in `8b04964a`. `buildResident` picks rows per simdgroup through `gemvRowsFor`: 2 for qkv and o, 4 for the fused
+gate/up and for down. Each GEMV takes its rows kernel only where every layer's row count tiles whole 256-thread
+threadgroups, and down only where its K = I bytes of staged activations fit threadgroup memory. Anything else keeps
+the shipped kernel. The kernels live in `metal/kernels.go`:
+- `gemv_w4a8_sa_rows`, `_bias_rows` and `_resid_rows<R>`;
+- `gemv_w4a8_resid_staged<R>`.
+
+The dispatch sites are the dense decode layer's four GEMVs. That covers every family that reaches them, including the
+FFN half of DeltaNet layers and MoE models' attention.
+
+Gates, all on the wired tree:
+
+| gate | result |
+|---|---|
+| bit-identity vs the shipped kernels, through the executor (`TestR18InSequence`, 16 teacher-forced positions) | **0 differ** at 128/2048/3900 on both models ([`wired-1.5b.log`](metal-decode-gemv-r18-2026-09-26/wired-1.5b.log), [`wired-7b.log`](metal-decode-gemv-r18-2026-09-26/wired-7b.log)) |
+| `TestMetalSnapshotGolden` (mixtral-tiny, llama-attnfa-tiny, gemma4-dense-scaled) | 10/10 byte-identical |
+| tagged Metal suite (`-tags goinfer_testhooks ./metal/`) | 179 pass, 0 fail ([`metal-suite-tagged.log`](metal-decode-gemv-r18-2026-09-26/metal-suite-tagged.log)). Its first run caught a nil dereference: a DeltaNet layer has no attention geometry, so it is now skipped in the qkv row rule. |
+| production vs shipped, GEMV work (5 reps) | 1.5B 1.169× / 1.232× / 1.249×; 7B 1.318× / 1.330× / 1.323× at 128 / 2048 / 3900 |
+| production vs shipped, full token (GPU ms) | 1.5B 12.99 → 11.30 at 128, 14.06 → 12.37 at 2048, 14.85 → 13.05 at 3900; 7B 45.67 → 35.96, 49.50 → 39.68, 52.19 → 42.37 |
+
+The wired timings reproduce the confirmation's to within noise.
+
+End to end against Ollama (`scripts/bench_peer.py`, reported, not deciding): see below once run.
