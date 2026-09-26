@@ -164,6 +164,16 @@ quantize bf16 safetensors to int4 directly and still sit at 0.77–0.86 on some 
 regressions are on the degenerate filler prompt, where near-ties dominate, which fits rounding noise but
 has not been shown to be.
 
+### Note (2026-09-25, after the gate): the int8int8 pass is prompt-sensitive on Phi-3
+
+The gate's int8int8 criterion passed on its registered filler prompt (phi3-mini p10 0.973). The same
+prompt with a `"\n\n"` before the instruction (141 tokens, as the CUDA resident test builds it) gives
+**p10 0.930 for the CPU per-32 path itself** against f32 (min 0.126). That is below the 0.95 bar, on a
+prompt the gate did not register. The verdict stands as graded, but this is not a clearance for every
+input: lifting the Phi-3 guard to int8int8 + per-32 should cite both numbers. CUDA's per-32 resident
+path matches the CPU per-32 path on that prompt (agreement median 0.99983; quality p10 0.934 vs
+0.930), so this is the configuration's, not a backend's.
+
 ## Amendment 2026-09-25 (owner decision after the gate): both tracks
 
 The gate above did not pass, so this is a dated change of plan with its mechanism, not a re-reading of
