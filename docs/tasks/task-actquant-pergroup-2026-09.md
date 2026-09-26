@@ -1,6 +1,6 @@
 # Per-group activation scales for W4A8 / W8A8 (2026-09)
 
-> **Status 2026-09-25: Track A quality gate NOT PASSED as registered (int8int8 met; int4 limited by weights) → both tracks. Track B: both candidates FAIL. Track A speed gate: 7B SHIP, 1.5B FAIL/AMBIGUOUS (fixed per-call costs). CUDA per-32 decode built (branch `actgroup-wiring`). Next: remove the small-shape overhead, re-gate, release aikit.** Owner decision 2026-09-25: this is the fix for
+> **Status 2026-09-25: Track A quality gate NOT PASSED as registered (int8int8 met; int4 limited by weights) → both tracks. Track B: both candidates FAIL. Track A speed gate re-run: end to end 1.5B int4 / 7B int4 / 7B int8int8 SHIP, 1.5B int8int8 AMBIGUOUS (0.969); 3 small kernel shapes FAIL. CUDA per-32 decode built (branch `actgroup-wiring`). Next: owner decision, then the aikit release.** Owner decision 2026-09-25: this is the fix for
 > `queue-engineering.md` H2. The guard shipped first (`dcbbaa91`); this lifts it.
 
 ## Why
@@ -284,6 +284,30 @@ end-to-end 1.5B result.
 
 These costs vanish against a 7B matmul's weight stream and dominate a 1.5B one.
 **Next:** fix those three, re-run the same gate, and cut the aikit release after it passes.
+
+## Track A speed gate re-run (2026-09-26 UTC): end to end 3 SHIP, 1 AMBIGUOUS
+
+After the round-2/3 kernels (aikit `9f25c1d`, `b8f3d63`):
+- split-half W4A8 multiplies the activation's group scale in register, with two accumulators;
+- the per-32 W8A8 kernel runs four accumulators;
+- both per-32 paths fan out through `Workspace.parallelCols`.
+
+Same pre-registered protocol and binaries rebuilt from those commits. Raw:
+[`measurements/actquant-speedgate2-2026-09-26/`](../measurements/actquant-speedgate2-2026-09-26/).
+
+| CPU decode | per-row tok/s | per-32 tok/s | ratio (6 pairs) | verdict | first run |
+|---|---|---|---|---|---|
+| 1.5B int4 | 20.13 | 19.57 | 0.972 (0.970–0.975) | **SHIP** | 0.912 FAIL |
+| 1.5B int8int8 | 14.68 | 14.23 | 0.969 (0.967–0.970) | **AMBIGUOUS** | 0.968 |
+| 7B int4 | 5.18 | 5.14 | 0.993 (0.984–0.994) | **SHIP** | 0.974 |
+| 7B int8int8 | 3.55 | 3.50 | 0.985 (0.985–0.986) | **SHIP** | 0.984 |
+
+Kernel level: 8 of 12 shapes SHIP. Three small K=1536 shapes FAIL: split-half 1.147 (K1536×N1536) and
+1.125 (×N8960), and W8A8 1.121 (K1536×N8960). One is in OPTIMIZE: W8A8 K8960×N1536, 1.098. The 1.5B
+int8int8 gap is structural: per-row W8A8 accumulates purely in integers, and per-32 adds a convert, a
+broadcast and an FMA per group, about 25% more work where the matmul is compute-bound. Closing it
+needs a different design (a per-32 activation scale shared as a power of two, integer shifts instead
+of float multiplies), not further tuning. Owner decision pending on shipping with this result.
 
 ## Order of work
 
