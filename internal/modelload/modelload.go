@@ -130,7 +130,13 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 	// task-never-swap-2026-09.md) so resident weights are zero-copy mmap aliases rather than heap
 	// copies; -embed-int4 implies a direct load there rather than silently losing its int4 embed pin.
 	loadPath := src
-	if opts.StreamWeights {
+	if opts.Quant == "q4k" && strings.HasSuffix(src, ".gguf") {
+		// q4k has no .giw form yet (docs/tasks/task-int4-weight-quality-2026-09.md): load the .gguf
+		// directly, never through the sidecar cache.
+		if opts.StreamWeights {
+			return nil, fmt.Errorf("--quant q4k cannot stream weights yet (it has no .giw form); drop -stream-weights")
+		}
+	} else if opts.StreamWeights {
 		if strings.HasSuffix(src, ".gguf") {
 			if loadPath, err = ensureGIW(); err != nil {
 				return nil, fmt.Errorf("stream-weights cache (%s): %w", src, err)
@@ -193,7 +199,8 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 // not yet clear int4's weight error). msg is "" when nothing applies.
 func activationSafeQuant(src, quant string, group int, explicitQuant string) (string, int, string) {
 	why := decoder.ActivationQuantHazard(decoder.PeekModelType(src))
-	if why == "" || !decoder.QuantizesActivations(quant) || group == 32 && quant == "int8int8" {
+	if why == "" || !decoder.QuantizesActivations(quant) || group == 32 && quant == "int8int8" || quant == "q4k" {
+		// q4k is per-32 throughout by construction (decoder.modelFromOptions stamps it).
 		return quant, group, ""
 	}
 	switch {

@@ -803,7 +803,7 @@ func (m *Model) Quant() string {
 	// fingerprint (so int4 / int4mix / int8 don't collide on the same file). A
 	// prequant .giw leaves it empty and derives from the resident weight kinds.
 	switch m.quant {
-	case "int8", "int8int8", "int4", "int4mix":
+	case "int8", "int8int8", "int4", "int4mix", "q4k":
 		return m.quant
 	}
 	// A v5 .giw records the resolved label at bake time — prefer it over re-inferring. Empty for
@@ -1140,6 +1140,14 @@ func (w *giwWriter) weightMat(m *linalg.WeightMat) { w.weightMatKind(m, true) }
 func (w *giwWriter) weightMatKind3Only(m *linalg.WeightMat) { w.weightMatKind(m, false) }
 
 func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
+	if m.Kind() == "q4k" {
+		// quantQ4K has no .giw kind yet (docs/tasks/task-int4-weight-quality-2026-09.md): refuse
+		// rather than write a tensor with no payload. Every serialize/stream entry returns w.err.
+		if w.err == nil {
+			w.err = fmt.Errorf("decoder: --quant q4k has no .giw form yet; load the .gguf directly")
+		}
+		return
+	}
 	if m.Rows() == 0 {
 		w.raw([]byte{0}) // empty
 		return

@@ -1541,6 +1541,33 @@ func ggufRowFiltered(name string, into func(start int, dst []float32) error, sta
 	return nil
 }
 
+// q4kMat builds the native Q4_K WeightMat for quantQ4K: output rows [0, out) of tensor name, where
+// rowSrc(r) is destination row r's element offset in the tensor (a permutation for RoPE-permuted
+// q/k, an offset for a fused split). ok is false, with a nil error, when the tensor is not stored as
+// Q4_K; the caller then loads it at int8 W8A8. The super-blocks are COPIED: loadGGUFWeights closes
+// the mapping once the load returns.
+func q4kMat(g *embed.GGUFFile, name string, out, in int, rowSrc func(r int) int) (linalg.WeightMat, bool, error) {
+	dims, raw, ok, err := g.Q4KRaw(name)
+	if err != nil || !ok {
+		return linalg.WeightMat{}, false, err
+	}
+	if len(dims) != 2 || dims[0] != in || in%256 != 0 {
+		return linalg.WeightMat{}, false, fmt.Errorf("decoder(gguf): %q dims %v for a q4k load of [%d, %d]", name, dims, out, in)
+	}
+	rb := linalg.Q4KRowBytes(in)
+	buf := make([]byte, out*rb)
+	for r := range out {
+		off := rowSrc(r)
+		if off%in != 0 || off/in >= dims[1] {
+			return linalg.WeightMat{}, false, fmt.Errorf("decoder(gguf): %q row offset %d outside [%d, %d]", name, off, in, dims[1])
+		}
+		src := off / in
+		copy(buf[r*rb:(r+1)*rb], raw[src*rb:(src+1)*rb])
+	}
+	wm, err := linalg.WrapQ4K(buf, out, in)
+	return wm, err == nil, err
+}
+
 // buildWeightsFromGGUF dequantizes the GGUF tensors into the weight bundle.
 // When quant is set, each matmul tensor is re-quantized (per-row int8 or
 // group-wise int4) right after it is dequantized (and un-permuted) and its f32
@@ -1579,6 +1606,12 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if len(dims) != 2 || dims[0] != in || dims[1] != out {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 		}
+		if mode == quantQ4K {
+			if wm, ok, err := q4kMat(g, name, out, in, rowSrc); ok || err != nil {
+				return wm, err
+			}
+			mode = quantInt8I8
+		}
 		rowInto := func(r int, dst []float32) error { return ggufRowFiltered(name, into, rowSrc(r), dst) }
 		// M-07 (audit-metal-2026-09-12.md): streamMat covers everything mat/permMat don't route
 		// to streamMatBatched — o_proj, down_proj, router, and any other non-batched, non-embedding
@@ -1600,6 +1633,12 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		if len(dims) != 2 || dims[0] != in || dims[1] != out {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
+		}
+		if mode == quantQ4K {
+			if wm, ok, err := q4kMat(g, name, out, in, rowSrc); ok || err != nil {
+				return wm, err
+			}
+			mode = quantInt8I8
 		}
 		return streamQuantizedBatchedProj(out, in, mode, needCanonical, skipRow4, func(r int, dst []float32) error {
 			return ggufRowFiltered(name, into, rowSrc(r), dst)
@@ -1747,14 +1786,21 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		if len(dims) != 2 || dims[0] != in || dims[1] != outTotal {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf-phi3): %q dims %v, want [in=%d, out=%d]", name, dims, in, outTotal)
 		}
+		mode := matmulQuant(quant, name)
+		if mode == quantQ4K {
+			if wm, ok, err := q4kMat(g, name, rows, in, func(r int) int { return (rowStart + r) * in }); ok || err != nil {
+				return wm, err
+			}
+			mode = quantInt8I8
+		}
 		rowInto := func(r int, dst []float32) error { return ggufRowFiltered(name, into, (rowStart+r)*in, dst) }
 		// M-07 (audit-metal-2026-09-12.md): Phi-3's fused qkv/gate_up split, same skip-row4-only
 		// scope as streamMat — not routed through the isBatchedProjTensor naming convention (this
 		// is GGUF's own fused-tensor special case), so no needCanonical/repacked-only branch here.
 		if skipRow4 {
-			return streamQuantizedSkipRow4(rows, in, matmulQuant(quant, name), rowInto)
+			return streamQuantizedSkipRow4(rows, in, mode, rowInto)
 		}
-		return streamQuantized(rows, in, matmulQuant(quant, name), rowInto)
+		return streamQuantized(rows, in, mode, rowInto)
 	}
 
 	var err error

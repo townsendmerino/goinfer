@@ -32,7 +32,7 @@ func ActivationQuantHazard(modelType string) string {
 // "int8" (weight-only) and f32 keep activations in f32 on the CPU.
 func QuantizesActivations(quant string) bool {
 	switch quant {
-	case "int4", "int8int8", "int4mix":
+	case "int4", "int8int8", "int4mix", "q4k":
 		return true
 	}
 	return false

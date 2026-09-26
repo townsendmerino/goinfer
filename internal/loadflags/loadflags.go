@@ -205,6 +205,8 @@ const quantHelp = "  int4      W4A8 (int4 weights, int8 activations): fastest on
 	"            bytes/element against int8int8's ~1.02 -- more resident RAM, not less. THE DEFAULT anyway,\n" +
 	"            for speed, not for RAM.\n" +
 	"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n" +
+	"  q4k       EXPERIMENTAL (GGUF only, CPU only for now): the file's Q4_K tensors kept exactly as stored,\n" +
+	"            every other tensor int8, per-32 activations. int4's size with int8-class quality on Q4_K_M files.\n" +
 	"  int8int8  W8A8 (int8 weights + int8 activations, native SDOT): higher accuracy; on Apple Silicon and\n" +
 	"            non-VNNI amd64 it is actually the SMALLER option (see int4's note above), not larger.\n" +
 	"            Metal itself consumes int4 directly (no re-pack to int8int8 needed to run resident there).\n" +
