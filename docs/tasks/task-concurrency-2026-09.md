@@ -1,9 +1,11 @@
 # Task: concurrency — stop the resident-KV thrash, then earn batched multi-request decode (MC0–MC5) — 2026-09
 
-> **Status: FILED 2026-09-23, nothing built.** MC0 (measurement only) and MC1 (multi-slot resident
-> KV) are unblocked. MC2 is the kill-or-earn measurement `roadmap.md` requires before any batched
-> decode work; MC3 is written but must not start until MC2 earns. MC4 and MC5 are parked with
-> triggers. Two owner decisions are flagged below; neither blocks MC0 or MC1.
+> **Status: FILED 2026-09-23; owner decisions taken 2026-09-26 (1: yes, 2: fold); nothing built.** MC0
+> (measurement only) and MC1 (multi-slot resident KV) are unblocked. MC2 is the kill-or-earn
+> measurement `roadmap.md` requires before any batched decode work, and now carries J8's cell. MC3
+> is in the niche (decision 1) but must not start until MC2 earns. MC4 and MC5 are parked with
+> triggers. The speed bars were loosened 2026-09-26, before any measurement, per the owner's
+> standing guidance; see "Amendments".
 >
 > **What this is.** R12's W7 measurement (`docs/measurements/w7-plain-concurrency-2026-09-19.md`,
 > Metal, qwen2.5-coder-1.5b q4_k_m, plain 6-turn conversations) recorded goinfer's aggregate
@@ -54,6 +56,10 @@
   amendment is owner decision 1.
 
 ## Owner decisions
+
+**Decided 2026-09-26: 1 is yes, 2 is fold.** One user's parallel agents are in the niche, so MC3 fits and
+`positioning.md` gains its sentence (added the same day). J8's N-independent-workers cell runs inside MC2's session;
+J8 is not built as a feature.
 
 1. **Does "single-user" include one user's parallel agents?** An agent harness that fans out
    subagents is one user on one machine, but it is not batch-1. If yes, MC3 fits the niche and
@@ -207,6 +213,23 @@ Unchanged from `roadmap.md`: not this engine's weight class. **Trigger:** the ow
 positioning, not a benchmark result.
 
 ---
+
+## Amendments
+
+*2026-09-26, before any measurement: speed bars loosened per the owner's standing guidance.* In the owner's words:
+"i'm happy to park stuff if it's a couple percent above current code, but giving up gains seems stupid … in the
+future let's be a lot more permissive". That came after R18, which parked a bit-identical 1.17× on a ship line derived
+from a theoretical bound.
+
+Hard gates are unchanged: bit-identity or the registered reference gate, reuse equal turn for turn, the fit guard's
+decline, and p99 latency. Only the speed thresholds move:
+
+| stage | as filed 2026-09-23 | now |
+|---|---|---|
+| MC1 aggregate at 2/4 clients | ship within 0.90–1.0× of 1 client; below 0.85× at 4 clients is "a finding, not a ship" | **Ships** if the hard gates hold and the 4-client aggregate beats today's by more than noise (W7: 36.39 tok/s). The 0.90–1.0× band stays as the *expected* reading and is reported; a result below it is explained in the record, not grounds to hold the fix back. |
+| MC2 (B=4 vs B=1) | earn ≥ 1.6×, kill < 1.3×, owner between | **earn ≥ 1.25×, kill < 1.1×**, owner between. Still an investment gate for MC3's 4–8 weeks, so the gray zone goes to the owner with the numbers. |
+| MC3 (4 clients vs MC1's 4-client aggregate) | ≥ 1.5× | **≥ 1.2×**, with the p99 latency bar (≤ 1.5× MC1's 1-client figure) kept as a hard gate |
+| J8's cell (folded into MC2) | ≥ 1.25× at 4 requests, p99 ≤ 1.5× | unchanged. It is reported beside MC2 and is not built as a feature either way. |
 
 ## Not in scope, stated
 

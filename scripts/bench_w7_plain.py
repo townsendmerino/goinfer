@@ -22,6 +22,14 @@ a warmer cache than clients=1 saw, and a nonce prefixed onto each client's first
 replaying the same fixture don't share cache credit.
 
   python3 scripts/bench_w7_plain.py out.json --clients 1,2,4
+
+MC0 of docs/tasks/task-concurrency-2026-09.md (added 2026-09-26): every turn now records
+usage.prefill_reused_tokens (goinfer's vendor extension; absent from llama-server), and
+--engines / --backend select goinfer-only runs and the CPU control. `--backend cpu` records under
+the engine key "goinfer_cpu", so a Metal and a CPU sweep can share one results file.
+
+  python3 scripts/bench_w7_plain.py mc0.json --clients 1,2 --engines goinfer --backend metal
+  python3 scripts/bench_w7_plain.py mc0.json --clients 1,2 --engines goinfer --backend cpu
 """
 import argparse, json, os, platform, signal, socket, subprocess, sys, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -98,9 +106,12 @@ def wait_llama_health(port, timeout=240):
 
 
 class GoinferServer:
+    def __init__(self, backend="metal"):
+        self.backend = backend
+
     def __enter__(self):
         wait_free_memory_mb(MIN_FREE_MB_BEFORE_NEXT_SERVER, timeout=60)
-        argv = [SERVE_CPU_METAL, "-model", f"bench={MODEL_PATH}", "-backend", "metal",
+        argv = [SERVE_CPU_METAL, "-model", f"bench={MODEL_PATH}", "-backend", self.backend,
                 "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"]
         self.proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                       preexec_fn=os.setsid)
@@ -186,6 +197,7 @@ def run_transcript(url, max_tokens, temperature, nonce):
             "latency_ms": round(t * 1000, 1),
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
+            "prefill_reused_tokens": usage.get("prefill_reused_tokens"),
         })
         messages.append({"role": "assistant", "content": content})
     return out
@@ -233,15 +245,22 @@ def main():
     ap.add_argument("--clients", default="1,2,4")
     ap.add_argument("--max-tokens", type=int, default=128)
     ap.add_argument("--temperature", type=float, default=0.0)
+    ap.add_argument("--engines", default="goinfer,llamacpp", help="comma list: goinfer, llamacpp")
+    ap.add_argument("--backend", default="metal", help="goinfer's -backend (cpu records as goinfer_cpu)")
     a = ap.parse_args()
+    engines = [e.strip() for e in a.engines.split(",") if e.strip()]
+    gkey = "goinfer" if a.backend == "metal" else f"goinfer_{a.backend}"
 
     levels = [int(x) for x in a.clients.split(",")]
     hdr = machine_header()
     results = {"goinfer": {}, "llamacpp": {}}
+    results.setdefault(gkey, {})
     if os.path.exists(a.out):
         try:
             prev = json.load(open(a.out))
             results = prev.get("results", results)
+            results.setdefault(gkey, {})
+            results.setdefault("llamacpp", {})
             print(f"[w7-plain] resuming: {sum(len(v) for v in results.values())} cell(s) already in {a.out}",
                   file=sys.stderr)
         except Exception:
@@ -253,19 +272,20 @@ def main():
         with open(a.out, "w") as f:
             json.dump(out, f, indent=2)
 
-    for n in levels:
-        if str(n) in results["goinfer"]:
-            print(f"[w7-plain] goinfer clients={n}: already done, skipping", file=sys.stderr)
+    for n in levels if "goinfer" in engines else []:
+        if str(n) in results[gkey]:
+            print(f"[w7-plain] {gkey} clients={n}: already done, skipping", file=sys.stderr)
             continue
-        print(f"[w7-plain] goinfer clients={n} starting fresh server", file=sys.stderr)
-        with GoinferServer() as srv:
+        print(f"[w7-plain] {gkey} clients={n} starting fresh server", file=sys.stderr)
+        with GoinferServer(a.backend) as srv:
             r = run_concurrent(srv.url, a.max_tokens, a.temperature, n)
-        results["goinfer"][str(n)] = r
+        results[gkey][str(n)] = r
         save()
-        print(f"[w7-plain] goinfer clients={n}: wall={r['wall_s']}s aggregate={r['aggregate_tok_s']} tok/s",
-              file=sys.stderr)
+        reuse = [[t.get("prefill_reused_tokens") for t in c] for c in r["per_client"]]
+        print(f"[w7-plain] {gkey} clients={n}: wall={r['wall_s']}s aggregate={r['aggregate_tok_s']} tok/s; "
+              f"prefill_reused per client per turn {reuse}", file=sys.stderr)
 
-    for n in levels:
+    for n in levels if "llamacpp" in engines else []:
         if str(n) in results["llamacpp"]:
             print(f"[w7-plain] llamacpp clients={n}: already done, skipping", file=sys.stderr)
             continue

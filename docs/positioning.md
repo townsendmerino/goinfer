@@ -51,7 +51,9 @@ and runs them **in-process**. What makes it different — you don't have to choo
 ### What it's for — and what it isn't
 
 goinfer targets **single-user local inference**: one process, one machine, batch-1 decode,
-deployed by copying a file. That is the axis it optimizes — `go build` with **no toolchain of
+deployed by copying a file. Single-user includes one user's parallel agents: a harness on one machine that fans out
+subagents is in the niche even though it is not batch-1 (decided 2026-09-26; batched decode for it is being measured
+in [`task-concurrency-2026-09.md`](tasks/task-concurrency-2026-09.md), not shipped). That is the axis it optimizes — `go build` with **no toolchain of
 any kind** (no CUDA toolkit, no C++ compiler, no CMake, no Python), cross-compiling like any
 other Go program, and every GPU fast path is gated bit-identical against its own reference path,
 with all backends parity-gated against the pure-Go CPU implementation — which is itself

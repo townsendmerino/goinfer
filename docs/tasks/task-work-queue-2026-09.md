@@ -1,7 +1,8 @@
 # Task: goinfer as a work queue — admission, jobs, batch APIs (J1–J9) — 2026-09
 
 > **Status: J0/J1/J2/J3/J4 DONE 2026-09-15 (J3/J4 text-chat scope only); J6 KILLED 2026-09-15
-> (measured 1.024× against a 1.3–2.0× pass band, not shipped); J5/J7/J8/J9 unstarted.** This doc
+> (measured 1.024× against a 1.3–2.0× pass band, not shipped); J8 FOLDED 2026-09-26 into
+> `task-concurrency-2026-09.md` MC2 (owner decision); J5/J7/J9 unstarted.** This doc
 > was first written 2026-09-12 and was never committed. It was deleted the next morning by a
 > workaround, not by a decision — see "How this doc was lost" below, which is kept because the
 > failure is structural and the fix was J0. The rebuild is faithful to the J1–J9 scope as filed,
@@ -425,6 +426,10 @@ would plausibly turn a clean 1.024× into 1.3×, so not chased further).
 - Default when nothing is configured: every request is interactive, and the behaviour is J1's.
 
 ## J8 — N decode workers per model: kill or earn
+
+**Folded 2026-09-26 into [`task-concurrency-2026-09.md`](task-concurrency-2026-09.md) MC2 (owner decision 2).** J8's
+N-independent-workers cell is measured there, in the same session as batched decode, so the two answers land side by
+side. Its band below is kept. It is not built as a feature either way.
 
 The only throughput item, and it is deliberately last.
 
