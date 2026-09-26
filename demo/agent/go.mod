@@ -8,7 +8,7 @@ go 1.27.0
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
-	github.com/townsendmerino/aikit v1.47.1
+	github.com/townsendmerino/aikit v1.48.0
 	github.com/townsendmerino/goinfer v0.19.0
 	github.com/townsendmerino/goinfer/gpu v0.19.0
 )
@@ -28,4 +28,3 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 )
-
