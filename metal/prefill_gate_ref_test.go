@@ -431,6 +431,7 @@ func poolCells(cells []*cellSummary) pooledStats {
 }
 
 type prefillRefCellResult struct {
+	seedKL                      float64 // KL(reference row 0 || prefill seed): the decode gate's prompt-identity check
 	contN                       int
 	exactHF, fastHF             int
 	exactMatch, fastMatch       int // TOP-1 match count (argmax == reference token), not near-tie hard-flip

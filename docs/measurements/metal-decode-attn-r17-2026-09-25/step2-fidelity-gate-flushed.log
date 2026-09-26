@@ -1,0 +1,44 @@
+18:02:09 start commit 3391eade (+ uncommitted metal/decode_attn_r17_test.go, metal/r2_gate_test.go)
+18:02:09 waiting for idle, load1=2.29
+18:02:39 waiting for idle, load1=2.06
+18:03:10 idle: load1=1.75
+##### GATE R17 candidate S=16
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate r17-proto(S=16) installed as r.pAttnFA (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) r17-proto(S=16)(agree=90.6% HF=5/64 KL=0.2408) diff(agree=+0.0pt KL=+0.0034) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) r17-proto(S=16)(agree=53.1% HF=23/64 KL=1.6319) diff(agree=+0.0pt KL=-0.0028) elapsed=39s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) r17-proto(S=16)(agree=78.1% HF=4/64 KL=0.0740) diff(agree=-6.2pt KL=+0.0016) elapsed=58s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) r17-proto(S=16)(agree=96.9% HF=1/64 KL=0.0365) diff(agree=+0.0pt KL=+0.0039) elapsed=1m18s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) r17-proto(S=16)(agree=62.5% HF=13/64 KL=0.9411) diff(agree=+1.6pt KL=-0.0045) elapsed=1m37s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) r17-proto(S=16)(agree=84.4% HF=1/64 KL=0.0693) diff(agree=-1.6pt KL=+0.0003) elapsed=1m57s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) r17-proto(S=16)(agree=93.8% HF=0/64 KL=0.0378) diff(agree=-1.6pt KL=-0.0001) elapsed=2m16s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) r17-proto(S=16)(agree=54.7% HF=20/64 KL=1.7368) diff(agree=+1.6pt KL=+0.0140) elapsed=2m36s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) r17-proto(S=16)(agree=96.9% HF=0/64 KL=0.0371) diff(agree=-1.6pt KL=-0.0036) elapsed=2m55s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) r17-proto(S=16)(agree=89.1% HF=2/64 KL=0.0658) diff(agree=+3.1pt KL=+0.0070) elapsed=3m15s
+=== r17-gate (candidate r17-proto(S=16)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=69) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.00% d=23 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.4852 faMeanKL=0.4871 faLowerPrompts=4/10 ceilingOK=true) — DOES NOT PASS ===
+    decode_attn_r17_test.go:244: r17-gate: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+--- PASS: TestR17_decodeFidelityGate (198.63s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	199.139s
+##### exit=0
+18:06:29 waiting for idle, load1=2.48
+18:06:59 idle: load1=1.92
+##### GATE R2 (attention_fa, via the refactored helper)
+=== RUN   TestR2_decodeFidelityGate
+[r2-gate3] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) attention_fa(agree=90.6% HF=5/64 KL=0.2383) diff(agree=+0.0pt KL=+0.0009) elapsed=20s
+[r2-gate3] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) attention_fa(agree=51.6% HF=25/64 KL=1.6455) diff(agree=-1.6pt KL=+0.0108) elapsed=40s
+[r2-gate3] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) attention_fa(agree=84.4% HF=3/64 KL=0.0717) diff(agree=+0.0pt KL=-0.0007) elapsed=1m0s
+[r2-gate3] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) attention_fa(agree=95.3% HF=1/64 KL=0.0381) diff(agree=-1.6pt KL=+0.0055) elapsed=1m20s
+[r2-gate3] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) attention_fa(agree=60.9% HF=14/64 KL=0.9426) diff(agree=+0.0pt KL=-0.0029) elapsed=1m40s
+[r2-gate3] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) attention_fa(agree=85.9% HF=0/64 KL=0.0681) diff(agree=+0.0pt KL=-0.0008) elapsed=2m0s
+[r2-gate3] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) attention_fa(agree=95.3% HF=0/64 KL=0.0372) diff(agree=+0.0pt KL=-0.0008) elapsed=2m19s
+[r2-gate3] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) attention_fa(agree=53.1% HF=22/64 KL=1.7286) diff(agree=+0.0pt KL=+0.0059) elapsed=2m39s
+[r2-gate3] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) attention_fa(agree=96.9% HF=0/64 KL=0.0408) diff(agree=-1.6pt KL=+0.0001) elapsed=2m59s
+[r2-gate3] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) attention_fa(agree=87.5% HF=3/64 KL=0.0609) diff(agree=+1.6pt KL=+0.0021) elapsed=3m19s
+=== r2-gate3 (candidate attention_fa), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=73) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.16% d=16 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.4852 faMeanKL=0.4872 faLowerPrompts=4/10 ceilingOK=true) — DOES NOT PASS ===
+    r2_gate_test.go:32: r2-gate3: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+--- PASS: TestR2_decodeFidelityGate (204.31s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	204.849s
+##### exit=0
+18:10:25 DONE

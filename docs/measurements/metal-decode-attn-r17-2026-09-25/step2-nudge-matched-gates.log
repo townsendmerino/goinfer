@@ -1,0 +1,116 @@
+19:36:03 start commit 3391eade (+ uncommitted metal/decode_attn_r17_test.go, metal/r2_gate_test.go)
+##### MATCHED NUDGE 1/6 k=5 19:36:03 load1=2.60
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-nudge(k=5) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-nudge(k=5)(agree=90.6% HF=5/64 KL=0.2410) diff(agree=+0.0pt KL=+0.0036) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-nudge(k=5)(agree=53.1% HF=23/64 KL=1.6310) diff(agree=+0.0pt KL=-0.0037) elapsed=40s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-nudge(k=5)(agree=81.2% HF=4/64 KL=0.0760) diff(agree=-3.1pt KL=+0.0036) elapsed=1m0s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-nudge(k=5)(agree=93.8% HF=1/64 KL=0.0378) diff(agree=-3.1pt KL=+0.0052) elapsed=1m21s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-nudge(k=5)(agree=60.9% HF=14/64 KL=0.9445) diff(agree=+0.0pt KL=-0.0011) elapsed=1m41s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-nudge(k=5)(agree=87.5% HF=1/64 KL=0.0642) diff(agree=+1.6pt KL=-0.0047) elapsed=2m1s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-nudge(k=5)(agree=95.3% HF=0/64 KL=0.0391) diff(agree=+0.0pt KL=+0.0011) elapsed=2m21s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-nudge(k=5)(agree=54.7% HF=20/64 KL=1.7143) diff(agree=+1.6pt KL=-0.0085) elapsed=2m41s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-nudge(k=5)(agree=95.3% HF=0/64 KL=0.0441) diff(agree=-3.1pt KL=+0.0034) elapsed=3m1s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-nudge(k=5)(agree=89.1% HF=1/64 KL=0.0568) diff(agree=+3.1pt KL=-0.0020) elapsed=3m21s
+=== r17-gate (candidate exact-nudge(k=5)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=69) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.16% d=14 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.4852 faMeanKL=0.4849 faLowerPrompts=5/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:256: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+--- PASS: TestR17_decodeFidelityGate (207.78s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	208.139s
+##### exit=0
+##### MATCHED NUDGE 2/6 k=-5 19:39:32 load1=2.44
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-nudge(k=-5) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-nudge(k=-5)(agree=90.6% HF=5/64 KL=0.2416) diff(agree=+0.0pt KL=+0.0042) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-nudge(k=-5)(agree=54.7% HF=23/64 KL=1.6356) diff(agree=+1.6pt KL=+0.0009) elapsed=40s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-nudge(k=-5)(agree=81.2% HF=2/64 KL=0.0754) diff(agree=-3.1pt KL=+0.0031) elapsed=1m0s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-nudge(k=-5)(agree=95.3% HF=0/64 KL=0.0348) diff(agree=-1.6pt KL=+0.0023) elapsed=1m21s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-nudge(k=-5)(agree=62.5% HF=13/64 KL=0.9347) diff(agree=+1.6pt KL=-0.0109) elapsed=1m41s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-nudge(k=-5)(agree=87.5% HF=1/64 KL=0.0644) diff(agree=+1.6pt KL=-0.0045) elapsed=2m1s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-nudge(k=-5)(agree=96.9% HF=0/64 KL=0.0365) diff(agree=+1.6pt KL=-0.0015) elapsed=2m21s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-nudge(k=-5)(agree=54.7% HF=20/64 KL=1.7308) diff(agree=+1.6pt KL=+0.0081) elapsed=2m41s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-nudge(k=-5)(agree=96.9% HF=0/64 KL=0.0410) diff(agree=-1.6pt KL=+0.0003) elapsed=3m1s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-nudge(k=-5)(agree=89.1% HF=1/64 KL=0.0594) diff(agree=+3.1pt KL=+0.0006) elapsed=3m21s
+=== r17-gate (candidate exact-nudge(k=-5)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=65) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.94% d=11 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.4852 faMeanKL=0.4854 faLowerPrompts=3/10 ceilingOK=true) — DOES NOT PASS ===
+    decode_attn_r17_test.go:256: r17-gate: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+--- PASS: TestR17_decodeFidelityGate (207.47s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	207.948s
+##### exit=0
+##### MATCHED NUDGE 3/6 k=6 19:43:00 load1=1.82
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-nudge(k=6) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-nudge(k=6)(agree=90.6% HF=5/64 KL=0.2360) diff(agree=+0.0pt KL=-0.0013) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-nudge(k=6)(agree=53.1% HF=24/64 KL=1.6351) diff(agree=+0.0pt KL=+0.0004) elapsed=40s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-nudge(k=6)(agree=82.8% HF=3/64 KL=0.0742) diff(agree=-1.6pt KL=+0.0019) elapsed=1m0s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-nudge(k=6)(agree=93.8% HF=1/64 KL=0.0369) diff(agree=-3.1pt KL=+0.0043) elapsed=1m20s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-nudge(k=6)(agree=60.9% HF=14/64 KL=0.9367) diff(agree=+0.0pt KL=-0.0089) elapsed=1m40s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-nudge(k=6)(agree=87.5% HF=1/64 KL=0.0636) diff(agree=+1.6pt KL=-0.0053) elapsed=2m1s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-nudge(k=6)(agree=95.3% HF=0/64 KL=0.0401) diff(agree=+0.0pt KL=+0.0021) elapsed=2m21s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-nudge(k=6)(agree=54.7% HF=20/64 KL=1.7224) diff(agree=+1.6pt KL=-0.0004) elapsed=2m41s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-nudge(k=6)(agree=95.3% HF=0/64 KL=0.0372) diff(agree=-3.1pt KL=-0.0035) elapsed=3m1s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-nudge(k=6)(agree=87.5% HF=3/64 KL=0.0595) diff(agree=+1.6pt KL=+0.0006) elapsed=3m21s
+=== r17-gate (candidate exact-nudge(k=6)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=71) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.16% d=16 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.4852 faMeanKL=0.4842 faLowerPrompts=5/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:256: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+--- PASS: TestR17_decodeFidelityGate (207.26s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	207.793s
+##### exit=0
+##### MATCHED NUDGE 4/6 k=-6 19:46:29 load1=1.13
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-nudge(k=-6) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-nudge(k=-6)(agree=90.6% HF=5/64 KL=0.2376) diff(agree=+0.0pt KL=+0.0003) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-nudge(k=-6)(agree=50.0% HF=25/64 KL=1.6395) diff(agree=-3.1pt KL=+0.0048) elapsed=40s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-nudge(k=-6)(agree=79.7% HF=3/64 KL=0.0727) diff(agree=-4.7pt KL=+0.0003) elapsed=1m0s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-nudge(k=-6)(agree=92.2% HF=1/64 KL=0.0381) diff(agree=-4.7pt KL=+0.0055) elapsed=1m21s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-nudge(k=-6)(agree=60.9% HF=14/64 KL=0.9433) diff(agree=+0.0pt KL=-0.0022) elapsed=1m41s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-nudge(k=-6)(agree=84.4% HF=2/64 KL=0.0701) diff(agree=-1.6pt KL=+0.0012) elapsed=2m1s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-nudge(k=-6)(agree=96.9% HF=0/64 KL=0.0388) diff(agree=+1.6pt KL=+0.0008) elapsed=2m21s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-nudge(k=-6)(agree=54.7% HF=20/64 KL=1.7300) diff(agree=+1.6pt KL=+0.0072) elapsed=2m41s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-nudge(k=-6)(agree=95.3% HF=0/64 KL=0.0412) diff(agree=-3.1pt KL=+0.0005) elapsed=3m1s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-nudge(k=-6)(agree=87.5% HF=2/64 KL=0.0588) diff(agree=+1.6pt KL=+0.0000) elapsed=3m21s
+=== r17-gate (candidate exact-nudge(k=-6)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=72) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=79.22% d=18 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.4852 faMeanKL=0.4870 faLowerPrompts=1/10 ceilingOK=true) — DOES NOT PASS ===
+    decode_attn_r17_test.go:256: r17-gate: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+--- PASS: TestR17_decodeFidelityGate (207.83s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	208.278s
+##### exit=0
+##### MATCHED NUDGE 5/6 k=7 19:49:58 load1=1.48
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-nudge(k=7) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-nudge(k=7)(agree=90.6% HF=5/64 KL=0.2325) diff(agree=+0.0pt KL=-0.0049) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-nudge(k=7)(agree=53.1% HF=23/64 KL=1.6346) diff(agree=+0.0pt KL=-0.0001) elapsed=40s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-nudge(k=7)(agree=85.9% HF=1/64 KL=0.0703) diff(agree=+1.6pt KL=-0.0021) elapsed=1m0s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-nudge(k=7)(agree=93.8% HF=1/64 KL=0.0357) diff(agree=-3.1pt KL=+0.0032) elapsed=1m20s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-nudge(k=7)(agree=59.4% HF=15/64 KL=0.9519) diff(agree=-1.6pt KL=+0.0063) elapsed=1m41s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-nudge(k=7)(agree=85.9% HF=1/64 KL=0.0659) diff(agree=+0.0pt KL=-0.0030) elapsed=2m1s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-nudge(k=7)(agree=96.9% HF=0/64 KL=0.0390) diff(agree=+1.6pt KL=+0.0011) elapsed=2m21s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-nudge(k=7)(agree=53.1% HF=21/64 KL=1.7167) diff(agree=+0.0pt KL=-0.0061) elapsed=2m41s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-nudge(k=7)(agree=93.8% HF=0/64 KL=0.0393) diff(agree=-4.7pt KL=-0.0014) elapsed=3m1s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-nudge(k=7)(agree=85.9% HF=3/64 KL=0.0586) diff(agree=+0.0pt KL=-0.0002) elapsed=3m21s
+=== r17-gate (candidate exact-nudge(k=7)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=70) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=79.84% d=18 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.4852 faMeanKL=0.4844 faLowerPrompts=7/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:256: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+--- PASS: TestR17_decodeFidelityGate (207.48s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	208.028s
+##### exit=0
+##### MATCHED NUDGE 6/6 k=-7 19:53:27 load1=1.07
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-nudge(k=-7) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-nudge(k=-7)(agree=90.6% HF=5/64 KL=0.2387) diff(agree=+0.0pt KL=+0.0013) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-nudge(k=-7)(agree=54.7% HF=23/64 KL=1.6240) diff(agree=+1.6pt KL=-0.0107) elapsed=40s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-nudge(k=-7)(agree=85.9% HF=2/64 KL=0.0700) diff(agree=+1.6pt KL=-0.0024) elapsed=1m0s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-nudge(k=-7)(agree=95.3% HF=0/64 KL=0.0351) diff(agree=-1.6pt KL=+0.0025) elapsed=1m20s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-nudge(k=-7)(agree=62.5% HF=13/64 KL=0.9490) diff(agree=+1.6pt KL=+0.0035) elapsed=1m41s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-nudge(k=-7)(agree=85.9% HF=1/64 KL=0.0691) diff(agree=+0.0pt KL=+0.0002) elapsed=2m1s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-nudge(k=-7)(agree=95.3% HF=0/64 KL=0.0378) diff(agree=+0.0pt KL=-0.0002) elapsed=2m21s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-nudge(k=-7)(agree=54.7% HF=20/64 KL=1.7269) diff(agree=+1.6pt KL=+0.0042) elapsed=2m41s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-nudge(k=-7)(agree=93.8% HF=0/64 KL=0.0377) diff(agree=-4.7pt KL=-0.0030) elapsed=3m1s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-nudge(k=-7)(agree=90.6% HF=1/64 KL=0.0611) diff(agree=+4.7pt KL=+0.0023) elapsed=3m21s
+=== r17-gate (candidate exact-nudge(k=-7)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=65) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.94% d=19 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.4852 faMeanKL=0.4849 faLowerPrompts=4/10 ceilingOK=true) — DOES NOT PASS ===
+    decode_attn_r17_test.go:256: r17-gate: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+--- PASS: TestR17_decodeFidelityGate (207.63s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	208.111s
+##### exit=0
+19:56:56 DONE

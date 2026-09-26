@@ -1,0 +1,9 @@
+17:56:49 start 3391eade + uncommitted
+=== RUN   TestR17StateLeakAllBuffers
+[r17-all] 614 distinct buffers reachable, 614 snapshotted (1095.1 MB)
+[r17-all] buffers changed by the attention_fa run: 64: [r.aSc r.aq r.attnFAPartial r.cSc r.cq r.ctx r.dSc r.dq r.gu r.kc[10] r.kc[11] r.kc[12] r.kc[13] r.kc[14] r.kc[15] r.kc[16] r.kc[17] r.kc[18] r.kc[19] r.kc[20] r.kc[21] r.kc[22] r.kc[23] r.kc[24] r.kc[25] r.kc[26] r.kc[27] r.kc[2] r.kc[3] r.kc[5] r.kc[6] r.kc[7] r.kc[8] r.kc[9] r.logits r.mSc r.mq r.qkv r.vc[10] r.vc[11] r.vc[12] r.vc[13] r.vc[14] r.vc[15] r.vc[16] r.vc[17] r.vc[18] r.vc[19] r.vc[1] r.vc[20] r.vc[21] r.vc[22] r.vc[23] r.vc[24] r.vc[25] r.vc[26] r.vc[27] r.vc[3] r.vc[4] r.vc[6] r.vc[7] r.vc[8] r.vc[9] r.x]
+[r17-all] restore 64 buffer(s) [r.aSc r.aq r.attnFAPartial r.cSc r.cq r.ctx r.dSc r.dq r.gu r.kc[10] r.kc[11] r.kc[12] r.kc[13] r.kc[14] r.kc[15] r.kc[16] r.kc[17] r.kc[18] r.kc[19] r.kc[20] r.kc[21] r.kc[22] r.kc[23] r.kc[24] r.kc[25] r.kc[26] r.kc[27] r.kc[2] r.kc[3] r.kc[5] r.kc[6] r.kc[7] r.kc[8] r.kc[9] r.logits r.mSc r.mq r.qkv r.vc[10] r.vc[11] r.vc[12] r.vc[13] r.vc[14] r.vc[15] r.vc[16] r.vc[17] r.vc[18] r.vc[19] r.vc[1] r.vc[20] r.vc[21] r.vc[22] r.vc[23] r.vc[24] r.vc[25] r.vc[26] r.vc[27] r.vc[3] r.vc[4] r.vc[6] r.vc[7] r.vc[8] r.vc[9] r.x] → next exact run matches the first: false
+[r17-all] restoring every changed buffer does NOT remove the difference — the state is outside these buffers
+--- PASS: TestR17StateLeakAllBuffers (36.97s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	37.515s

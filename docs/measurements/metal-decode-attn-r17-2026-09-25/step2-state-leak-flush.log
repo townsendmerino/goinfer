@@ -1,0 +1,9 @@
+17:58:46 start 3391eade + uncommitted
+=== RUN   TestR17StateLeak
+[r17-leak flush=true] exact → exact (no candidate — the null control) → exact: 0 of 16 logit rows differ (0 elements); a second exact run after it differs from the first exact run in 0 rows, from the one before it in 0
+[r17-leak flush=true] exact → attention_fa (control) → exact: 0 of 16 logit rows differ (0 elements); a second exact run after it differs from the first exact run in 0 rows, from the one before it in 0
+[r17-leak flush=true] exact → prototype S=16 → exact: 0 of 16 logit rows differ (0 elements); a second exact run after it differs from the first exact run in 0 rows, from the one before it in 0
+[r17-leak flush=true] exact → exact (null control, again) → exact: 0 of 16 logit rows differ (0 elements); a second exact run after it differs from the first exact run in 0 rows, from the one before it in 0
+--- PASS: TestR17StateLeak (139.84s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	140.304s

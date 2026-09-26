@@ -213,7 +213,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:852` | goinfer | `// at end of call. (r.uH / r.uKvDim / r.uHd are resident-owned and reused — deliberately` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:867` | goinfer | `anchor: func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:224` | goinfer | `for _, K := range decisionKs {` |
-| `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:467` | goinfer | `// refLogitsRef — no separate refTokens value is needed here (see readNote for why).` |
+| `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:468` | goinfer | `// refLogitsRef — no separate refTokens value is needed here (see readNote for why).` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gate_test.go:65` | goinfer | `anchor: func TestPrefillGate(t *testing.T) {` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gemm_s2_test.go:412` | goinfer | `#define CPS 4` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gemm_s2_test.go:440` | goinfer | `scr[c*64u + kl*8u + nl] = half(float(int((word >> (4u*kl)) & 0xF) - 8) * sc);` |

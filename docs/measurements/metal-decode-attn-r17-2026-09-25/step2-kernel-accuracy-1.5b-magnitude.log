@@ -1,0 +1,93 @@
+19:35:06 start 3391eade + uncommitted
+=== RUN   TestR17KernelAccuracy
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[r17-acc] prompt 1/3 done (decode token 22 at pos 3900)
+[r17-acc] prompt 2/3 done (decode token 38 at pos 3900)
+[r17-acc] prompt 3/3 done (decode token 15 at pos 3900)
+
+=== R17 kernel accuracy vs float64, qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw, K=3900, 3 prompts × 28 layers × 12 heads; capture sanity 84/84 layers bit-identical ===
+  kernel                     relL2 median         mean          p99          max     max|abs|  closer than exact / ties (of heads)   | moved from exact: median
+  exact (shipped attention)     5.661e-07    8.379e-07    5.775e-06    1.366e-05    2.084e-05  —                                    | 0.000e+00
+  attention_fa S=prod           1.770e-07    2.937e-07    1.539e-06    4.173e-05    2.186e-05  943 / 2 of 1008                      | 6.039e-07
+  attention_fa S=16             1.803e-07    2.927e-07    1.543e-06    4.173e-05    2.186e-05  949 / 2 of 1008                      | 5.997e-07
+  attention_fa S=32             1.718e-07    2.859e-07    1.537e-06    4.173e-05    2.186e-05  954 / 3 of 1008                      | 6.051e-07
+  prototype S=prod              1.737e-07    2.821e-07    1.471e-06    3.525e-05    1.729e-05  941 / 2 of 1008                      | 5.925e-07
+  prototype S=16                1.719e-07    2.797e-07    1.432e-06    3.525e-05    1.729e-05  939 / 2 of 1008                      | 6.042e-07
+  prototype S=32                1.730e-07    2.825e-07    1.447e-06    3.525e-05    1.729e-05  940 / 2 of 1008                      | 6.090e-07
+  exact, precise exp            5.614e-07    8.367e-07    5.777e-06    1.367e-05    2.108e-05  530 / 10 of 1008                     | 8.858e-08
+  attention_fa S=prod, precise    1.679e-07    2.887e-07    1.539e-06    4.173e-05    2.186e-05  940 / 2 of 1008                      | 5.992e-07
+  prototype S=16, precise exp    1.664e-07    2.756e-07    1.432e-06    3.525e-05    1.729e-05  946 / 2 of 1008                      | 6.000e-07
+  exact-null (reversed q·k)     5.611e-07    9.115e-07    5.906e-06    8.702e-05    4.336e-05  517 / 6 of 1008                      | 2.256e-07
+  exact-nudge k=+1              5.783e-07    8.516e-07    6.156e-06    1.108e-05    2.155e-05  423 / 9 of 1008                      | 1.588e-07
+  exact-nudge k=-3              6.771e-07    9.944e-07    5.199e-06    7.039e-05    3.456e-05  289 / 6 of 1008                      | 3.710e-07
+  exact-nudge k=+16             1.897e-06    2.585e-06    1.203e-05    7.001e-05    3.432e-05  48 / 4 of 1008                       | 1.721e-06
+  exact-nudge k=+64             6.707e-06    8.999e-06    4.101e-05    7.036e-05    8.171e-05  13 / 3 of 1008                       | 6.576e-06
+
+  shared-bias check vs an emulation of the CPU reference's attention (f64 softmax, serial f32 V sum): the emulation's own relL2 vs f64 median 3.508e-07 fused / 3.448e-07 unfused
+  kernel                         cos(err, cpuFused err) cos(err, cpuUnfused err) closer to cpuFused than exact
+  exact (shipped attention)       median +0.065 (  58% >0)  median +0.073          —
+  attention_fa S=prod             median +0.001 (  50% >0)  median +0.001          835 of 1008
+  attention_fa S=16               median -0.006 (  49% >0)  median -0.006          843 of 1008
+  attention_fa S=32               median -0.010 (  49% >0)  median -0.005          845 of 1008
+  prototype S=prod                median +0.005 (  50% >0)  median +0.005          836 of 1008
+  prototype S=16                  median +0.013 (  52% >0)  median +0.015          846 of 1008
+  prototype S=32                  median +0.014 (  52% >0)  median +0.011          843 of 1008
+  exact, precise exp              median +0.068 (  58% >0)  median +0.078          511 of 1008
+  attention_fa S=prod, precise    median -0.015 (  47% >0)  median -0.015          833 of 1008
+  prototype S=16, precise exp     median +0.014 (  52% >0)  median +0.011          851 of 1008
+  exact-null (reversed q·k)       median +0.068 (  60% >0)  median +0.073          508 of 1008
+  exact-nudge k=+1                median +0.079 (  59% >0)  median +0.082          444 of 1008
+  exact-nudge k=-3                median +0.055 (  57% >0)  median +0.063          280 of 1008
+  exact-nudge k=+16               median +0.047 (  57% >0)  median +0.045          47 of 1008
+  exact-nudge k=+64               median +0.032 (  55% >0)  median +0.025          12 of 1008
+
+  worst head per kernel:
+  exact (shipped attention)  relL2 1.366e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  attention_fa S=prod        relL2 4.173e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  attention_fa S=16          relL2 4.173e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  attention_fa S=32          relL2 4.173e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  prototype S=prod           relL2 3.525e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  prototype S=16             relL2 3.525e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  prototype S=32             relL2 3.525e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  exact, precise exp         relL2 1.367e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  attention_fa S=prod, precise relL2 4.173e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  prototype S=16, precise exp relL2 3.525e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  exact-null (reversed q·k)  relL2 8.702e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  exact-nudge k=+1           relL2 1.108e-05 at prompt 1 layer 5 head 10 (||ref|| 0.894)
+  exact-nudge k=-3           relL2 7.039e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  exact-nudge k=+16          relL2 7.001e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+  exact-nudge k=+64          relL2 7.036e-05 at prompt 3 layer 0 head 1 (||ref|| 2.33)
+
+  per layer, relL2 median / max over prompts × heads:
+  layer  exact (shipped attention)      attention_fa S=prod            prototype S=16                 exact, precise exp             prototype S=16, precise exp  
+      0     1.202e-06 /    1.366e-05         6.082e-07 /    4.173e-05         6.263e-07 /    3.525e-05         1.202e-06 /    1.367e-05         5.921e-07 /    3.525e-05    
+      1     1.068e-06 /    4.211e-06         5.514e-07 /    2.454e-06         4.892e-07 /    6.457e-06         1.066e-06 /    4.216e-06         5.550e-07 /    6.417e-06    
+      2     7.113e-07 /    2.438e-06         2.385e-07 /    8.207e-07         1.609e-07 /    5.998e-07         7.107e-07 /    2.390e-06         1.753e-07 /    5.273e-07    
+      3     6.287e-07 /    2.079e-06         2.234e-07 /    5.980e-07         1.748e-07 /    4.498e-07         6.488e-07 /    2.149e-06         1.789e-07 /    5.403e-07    
+      4     6.613e-07 /    1.455e-06         1.856e-07 /    7.251e-07         1.980e-07 /    5.869e-07         6.593e-07 /    1.474e-06         1.704e-07 /    6.404e-07    
+      5     6.496e-07 /    1.096e-05         1.871e-07 /    9.282e-07         1.849e-07 /    1.077e-06         6.494e-07 /    1.096e-05         1.947e-07 /    1.215e-06    
+      6     6.217e-07 /    4.360e-06         2.310e-07 /    9.743e-07         2.141e-07 /    5.654e-07         6.326e-07 /    4.362e-06         2.219e-07 /    5.788e-07    
+      7     9.057e-07 /    3.597e-06         2.417e-07 /    5.007e-07         2.431e-07 /    5.832e-07         9.103e-07 /    3.605e-06         2.109e-07 /    5.865e-07    
+      8     6.398e-07 /    2.511e-06         2.138e-07 /    8.929e-07         2.244e-07 /    8.163e-07         6.274e-07 /    2.543e-06         2.226e-07 /    8.081e-07    
+      9     5.228e-07 /    1.522e-06         1.912e-07 /    5.036e-07         2.367e-07 /    5.563e-07         4.940e-07 /    1.512e-06         2.279e-07 /    5.081e-07    
+     10     3.816e-07 /    1.418e-06         1.367e-07 /    3.036e-07         1.269e-07 /    4.956e-07         3.745e-07 /    1.393e-06         1.260e-07 /    3.932e-07    
+     11     4.316e-07 /    1.264e-06         1.157e-07 /    5.065e-07         1.126e-07 /    3.197e-07         4.324e-07 /    1.256e-06         1.166e-07 /    2.989e-07    
+     12     6.837e-07 /    4.786e-06         1.845e-07 /    7.157e-07         1.781e-07 /    8.752e-07         6.710e-07 /    4.732e-06         1.524e-07 /    7.094e-07    
+     13     6.359e-07 /    2.012e-06         2.280e-07 /    5.773e-07         2.045e-07 /    5.422e-07         6.115e-07 /    2.053e-06         2.003e-07 /    5.414e-07    
+     14     7.973e-07 /    8.222e-06         3.077e-07 /    7.904e-07         2.997e-07 /    8.145e-07         7.966e-07 /    8.243e-06         2.708e-07 /    6.884e-07    
+     15     4.218e-07 /    1.997e-06         1.298e-07 /    5.740e-07         1.349e-07 /    4.212e-07         4.200e-07 /    1.988e-06         1.237e-07 /    4.543e-07    
+     16     4.014e-07 /    2.910e-06         1.307e-07 /    2.381e-07         1.512e-07 /    2.650e-07         3.752e-07 /    2.906e-06         1.368e-07 /    2.979e-07    
+     17     4.793e-07 /    2.359e-06         1.584e-07 /    2.952e-07         1.767e-07 /    5.074e-07         4.764e-07 /    2.337e-06         1.900e-07 /    5.117e-07    
+     18     3.732e-07 /    1.995e-06         1.515e-07 /    8.269e-07         1.515e-07 /    6.916e-07         3.740e-07 /    1.980e-06         1.320e-07 /    8.693e-07    
+     19     6.883e-07 /    1.433e-06         1.615e-07 /    6.175e-07         1.518e-07 /    4.452e-07         6.867e-07 /    1.450e-06         1.582e-07 /    5.552e-07    
+     20     5.849e-07 /    1.355e-06         1.535e-07 /    2.854e-07         1.507e-07 /    3.521e-07         5.708e-07 /    1.297e-06         1.400e-07 /    3.097e-07    
+     21     4.596e-07 /    2.408e-06         1.423e-07 /    3.967e-07         1.488e-07 /    4.336e-07         4.391e-07 /    2.408e-06         1.239e-07 /    4.297e-07    
+     22     5.215e-07 /    1.362e-06         1.859e-07 /    4.966e-07         1.868e-07 /    4.350e-07         5.211e-07 /    1.453e-06         1.889e-07 /    4.580e-07    
+     23     6.321e-07 /    3.234e-06         2.318e-07 /    4.716e-07         2.121e-07 /    5.835e-07         6.430e-07 /    3.229e-06         2.056e-07 /    5.868e-07    
+     24     4.716e-07 /    4.811e-06         1.703e-07 /    9.171e-07         1.915e-07 /    6.058e-07         4.576e-07 /    4.811e-06         1.870e-07 /    5.645e-07    
+     25     6.004e-07 /    2.183e-06         1.675e-07 /    6.413e-07         1.856e-07 /    1.014e-06         6.030e-07 /    2.181e-06         1.719e-07 /    9.193e-07    
+     26     6.003e-07 /    2.544e-06         1.582e-07 /    4.229e-07         1.386e-07 /    7.800e-07         5.709e-07 /    2.519e-06         1.236e-07 /    7.859e-07    
+     27     6.209e-07 /    2.350e-06         1.634e-07 /    3.579e-07         1.335e-07 /    6.635e-07         6.472e-07 /    2.354e-06         1.346e-07 /    4.935e-07    
+--- PASS: TestR17KernelAccuracy (35.04s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	35.466s

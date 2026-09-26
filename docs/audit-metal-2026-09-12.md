@@ -1218,7 +1218,7 @@ re-baked by the code it checks (G-04).
   passing end to end is what both bugs actually blocked.
 
 #### G-08 · The §3.2 gate never exercises `startPos > 0`, which every resident-prefix-reuse turn uses
-- **Where:** `metal/prefill_gate_ref_test.go:467` (`PrefillLast(ctx, embs, 0)`) vs
+- **Where:** `metal/prefill_gate_ref_test.go:468` (`PrefillLast(ctx, embs, 0)`) vs
   `decoder/model.go:1465` (`from`); the fused kernel's `startPos`/`uMReal` masking is covered only by
   a synthetic hd=64 case. The agent-turn shape the peer matrix calls the headline workload is not
   a fidelity cell. **Fix:** one decision cell with `from = K/2` on S. **Confidence:** plausible

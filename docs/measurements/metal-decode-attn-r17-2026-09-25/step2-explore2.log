@@ -1,0 +1,95 @@
+17:18:50 start commit 3391eade (+ uncommitted metal/decode_attn_r17_test.go)
+17:18:50 idle: load1=1.77
+##### MODEL qwen2.5-coder-1.5b-instruct-q4_k_m.gguf splits 0,8,16,24,32,48
+=== RUN   TestR17AttentionProto
+[r17    3.4s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: nH=12 nKV=2 G=6; prototype attention_fa_blk_g6; prototype split counts [0 8 16 24 32 48]
+[r17    6.8s] depth 2048 prototype S=0: logits vs attention_fa cosine 1.000000000, argmax 271 vs 271
+[r17    6.9s] depth 2048 prototype S=8: logits vs attention_fa cosine 1.000000000, argmax 271 vs 271
+[r17    6.9s] depth 2048 prototype S=16: logits vs attention_fa cosine 1.000000000, argmax 271 vs 271
+[r17    6.9s] depth 2048 prototype S=24: logits vs attention_fa cosine 1.000000000, argmax 271 vs 271
+[r17    7.0s] depth 2048 prototype S=32: logits vs attention_fa cosine 1.000000000, argmax 271 vs 271
+[r17    7.0s] depth 2048 prototype S=48: logits vs attention_fa cosine 0.998409951, argmax 271 vs 271
+[r17   26.3s] depth 2048 rep 1/5: current (attention_fa) 17.792 (idle 24.221)  prototype S=0 14.439 (idle 23.734)  prototype S=8 14.511 (idle 19.563)  prototype S=16 14.053 (idle 20.766)  prototype S=24 14.710 (idle 21.348)  prototype S=32 14.801 (idle 18.076)  prototype S=48 15.825 (idle 22.861)  no-op attention 12.283 (idle 15.796)  
+[r17   45.6s] depth 2048 rep 2/5: current (attention_fa) 17.129 (idle 29.980)  prototype S=0 14.318 (idle 20.789)  prototype S=8 14.401 (idle 26.193)  prototype S=16 14.391 (idle 20.220)  prototype S=24 14.690 (idle 20.491)  prototype S=32 14.805 (idle 18.935)  prototype S=48 15.812 (idle 18.825)  no-op attention 12.437 (idle 18.151)  
+[r17   64.9s] depth 2048 rep 3/5: current (attention_fa) 17.162 (idle 31.002)  prototype S=0 14.410 (idle 21.795)  prototype S=8 14.967 (idle 19.706)  prototype S=16 14.046 (idle 21.101)  prototype S=24 14.655 (idle 21.109)  prototype S=32 14.799 (idle 20.072)  prototype S=48 15.824 (idle 22.811)  no-op attention 12.288 (idle 25.109)  
+[r17   84.2s] depth 2048 rep 4/5: current (attention_fa) 17.061 (idle 29.432)  prototype S=0 14.600 (idle 22.731)  prototype S=8 14.423 (idle 23.198)  prototype S=16 13.778 (idle 22.893)  prototype S=24 14.606 (idle 23.231)  prototype S=32 14.756 (idle 22.039)  prototype S=48 15.745 (idle 20.985)  no-op attention 12.363 (idle 23.725)  
+[r17  103.5s] depth 2048 rep 5/5: current (attention_fa) 17.076 (idle 20.150)  prototype S=0 14.352 (idle 20.096)  prototype S=8 14.466 (idle 17.817)  prototype S=16 14.043 (idle 20.981)  prototype S=24 14.691 (idle 23.918)  prototype S=32 14.639 (idle 25.901)  prototype S=48 15.630 (idle 27.113)  no-op attention 12.142 (idle 16.407)  
+
+=== R17 step 2, depth 2048: in-sequence attention work, current vs prototype (medians of 5 reps × 20 tokens) ===
+  current (attention_fa)     attention   4.874 ms  full token  17.129 ms  reps 5.5 4.7 4.9 4.7 4.9 | after 2 s idle: attention   5.892 full  29.432
+  prototype S=0              attention   2.156 ms  full token  14.410 ms  speedup 2.30x (reps 2.6 2.5 2.3 2.1 2.2) → PARK band (1.5-2.5x) | after 2 s idle: attention   2.638 full  21.795 speedup 1.01x (reps 1.1 4.5 -1.8 -5.7 1.0)
+  prototype S=8              attention   2.228 ms  full token  14.466 ms  speedup 2.28x (reps 2.5 2.4 1.8 2.3 2.1) → PARK band (1.5-2.5x) | after 2 s idle: attention   1.410 full  19.706 speedup 1.47x (reps 2.2 1.5 -1.1 -10.8 2.7)
+  prototype S=16             attention   1.770 ms  full token  14.046 ms  speedup 2.77x (reps 3.1 2.4 2.8 3.3 2.6) → SHIP band (>= 2.5x) — exploratory; a confirmation run grades | after 2 s idle: attention   2.069 full  20.981 speedup 0.82x (reps 1.7 5.7 -1.5 -6.9 0.8)
+  prototype S=24             attention   2.367 ms  full token  14.690 ms  speedup 2.08x (reps 2.3 2.1 2.1 2.1 1.9) → PARK band (1.5-2.5x) | after 2 s idle: attention   2.340 full  21.348 speedup 0.50x (reps 1.5 5.1 -1.5 -11.6 0.5)
+  prototype S=32             attention   2.497 ms  full token  14.799 ms  speedup 1.98x (reps 2.2 2.0 1.9 2.0 2.0) → PARK band (1.5-2.5x) | after 2 s idle: attention   0.784 full  20.072 speedup 0.39x (reps 3.7 15.1 -1.2 -3.4 0.4)
+  prototype S=48             attention   3.488 ms  full token  15.812 ms  speedup 1.39x (reps 1.6 1.4 1.4 1.4 1.4) → KILL (< 1.5x) | after 2 s idle: attention   0.674 full  22.811 speedup 0.35x (reps 1.2 17.5 -2.6 -2.1 0.3)
+  no-op attention            full token  12.288 ms, after 2 s idle  18.151 (the attention-free baseline)
+
+[r17  111.7s] depth 3900 prototype S=0: logits vs attention_fa cosine 1.000000000, argmax 8 vs 8
+[r17  111.7s] depth 3900 prototype S=8: logits vs attention_fa cosine 1.000000000, argmax 8 vs 8
+[r17  111.8s] depth 3900 prototype S=16: logits vs attention_fa cosine 1.000000000, argmax 8 vs 8
+[r17  111.8s] depth 3900 prototype S=24: logits vs attention_fa cosine 1.000000000, argmax 8 vs 8
+[r17  111.9s] depth 3900 prototype S=32: logits vs attention_fa cosine 1.000000000, argmax 8 vs 8
+[r17  111.9s] depth 3900 prototype S=48: logits vs attention_fa cosine 1.000000000, argmax 8 vs 8
+[r17  131.4s] depth 3900 rep 1/5: current (attention_fa) 20.953 (idle 28.514)  prototype S=0 15.416 (idle 21.938)  prototype S=8 15.537 (idle 24.738)  prototype S=16 14.843 (idle 19.937)  prototype S=24 16.298 (idle 19.461)  prototype S=32 15.284 (idle 20.245)  prototype S=48 15.942 (idle 21.818)  no-op attention 12.268 (idle 22.996)  
+[r17  150.8s] depth 3900 rep 2/5: current (attention_fa) 20.803 (idle 29.980)  prototype S=0 15.377 (idle 21.664)  prototype S=8 15.596 (idle 26.769)  prototype S=16 14.824 (idle 20.249)  prototype S=24 16.259 (idle 22.223)  prototype S=32 15.228 (idle 17.359)  prototype S=48 15.905 (idle 23.963)  no-op attention 12.287 (idle 21.380)  
+[r17  170.3s] depth 3900 rep 3/5: current (attention_fa) 20.862 (idle 32.500)  prototype S=0 15.298 (idle 27.014)  prototype S=8 15.602 (idle 18.906)  prototype S=16 14.796 (idle 19.995)  prototype S=24 16.300 (idle 24.094)  prototype S=32 15.215 (idle 19.276)  prototype S=48 15.863 (idle 26.498)  no-op attention 12.284 (idle 24.720)  
+[r17  189.7s] depth 3900 rep 4/5: current (attention_fa) 20.833 (idle 23.557)  prototype S=0 15.299 (idle 22.867)  prototype S=8 15.515 (idle 28.101)  prototype S=16 14.824 (idle 19.616)  prototype S=24 16.247 (idle 21.876)  prototype S=32 15.223 (idle 20.471)  prototype S=48 15.910 (idle 19.130)  no-op attention 12.259 (idle 20.401)  
+[r17  209.1s] depth 3900 rep 5/5: current (attention_fa) 20.867 (idle 30.938)  prototype S=0 15.339 (idle 22.662)  prototype S=8 15.581 (idle 27.563)  prototype S=16 14.797 (idle 21.011)  prototype S=24 16.291 (idle 23.715)  prototype S=32 15.192 (idle 19.821)  prototype S=48 15.888 (idle 19.525)  no-op attention 12.301 (idle 18.107)  
+
+=== R17 step 2, depth 3900: in-sequence attention work, current vs prototype (medians of 5 reps × 20 tokens) ===
+  current (attention_fa)     attention   8.574 ms  full token  20.862 ms  reps 8.7 8.5 8.6 8.6 8.6 | after 2 s idle: attention   7.780 full  29.980
+  prototype S=0              attention   3.040 ms  full token  15.339 ms  speedup 2.82x (reps 2.8 2.8 2.8 2.8 2.8) → SHIP band (>= 2.5x) — exploratory; a confirmation run grades | after 2 s idle: attention   2.294 full  22.662 speedup 2.82x (reps -5.2 30.2 3.4 1.3 2.8)
+  prototype S=8              attention   3.281 ms  full token  15.581 ms  speedup 2.61x (reps 2.7 2.6 2.6 2.6 2.6) → SHIP band (>= 2.5x) — exploratory; a confirmation run grades | after 2 s idle: attention   5.390 full  26.769 speedup 1.36x (reps 3.2 1.6 -1.3 0.4 1.4)
+  prototype S=16             attention   2.537 ms  full token  14.824 ms  speedup 3.37x (reps 3.4 3.4 3.4 3.3 3.4) → SHIP band (>= 2.5x) — exploratory; a confirmation run grades | after 2 s idle: attention  -1.131 full  19.995 speedup -1.80x (reps -1.8 -7.6 -1.6 -4.0 4.4)
+  prototype S=24             attention   3.990 ms  full token  16.291 ms  speedup 2.15x (reps 2.2 2.1 2.1 2.1 2.1) → PARK band (1.5-2.5x) | after 2 s idle: attention   0.844 full  22.223 speedup 2.14x (reps -1.6 10.2 -12.4 2.1 2.3)
+  prototype S=32             attention   2.941 ms  full token  15.223 ms  speedup 2.90x (reps 2.9 2.9 2.9 2.9 3.0) → SHIP band (>= 2.5x) — exploratory; a confirmation run grades | after 2 s idle: attention  -2.750 full  19.821 speedup -1.43x (reps -2.0 -2.1 -1.4 44.9 7.5)
+  prototype S=48             attention   3.618 ms  full token  15.905 ms  speedup 2.36x (reps 2.4 2.4 2.4 2.3 2.4) → PARK band (1.5-2.5x) | after 2 s idle: attention   1.418 full  21.818 speedup 3.33x (reps -4.7 3.3 4.4 -2.5 9.0)
+  no-op attention            full token  12.284 ms, after 2 s idle  21.380 (the attention-free baseline)
+
+--- PASS: TestR17AttentionProto (209.16s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	209.621s
+##### MODEL qwen2.5-coder-1.5b-instruct-q4_k_m.gguf exit=0
+17:22:20 idle: load1=1.13
+##### MODEL qwen2.5-7b-instruct-q4_k_m.int4.metal.giw splits 0,16,32
+=== RUN   TestR17AttentionProto
+[metal] weights aliased from qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4020 MB bound in place, 1 MB copied (anonymous) — 3112 MB int4 nibbles (56 single tensors + 56 fused groups = 2034 MB) + 520 MB int8 codes (1 matrices) + 389 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[r17    0.1s] loaded qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: nH=28 nKV=4 G=7; prototype attention_fa_blk_g7; prototype split counts [0 16 32]
+[r17   15.2s] depth 2048 prototype S=0: logits vs attention_fa cosine 0.990975231, argmax 82224 vs 82224
+[r17   15.4s] depth 2048 prototype S=16: logits vs attention_fa cosine 1.000000000, argmax 82224 vs 82224
+[r17   15.5s] depth 2048 prototype S=32: logits vs attention_fa cosine 1.000000000, argmax 82224 vs 82224
+[r17   31.7s] depth 2048 rep 1/5: current (attention_fa) 58.296 (idle 65.121)  prototype S=0 50.601 (idle 55.929)  prototype S=16 49.920 (idle 55.786)  prototype S=32 51.380 (idle 53.294)  no-op attention 44.694 (idle 60.913)  
+[r17   48.3s] depth 2048 rep 2/5: current (attention_fa) 60.676 (idle 60.051)  prototype S=0 53.057 (idle 63.584)  prototype S=16 55.598 (idle 54.378)  prototype S=32 51.334 (idle 69.455)  no-op attention 51.069 (idle 64.844)  
+[r17   64.8s] depth 2048 rep 3/5: current (attention_fa) 62.211 (idle 69.454)  prototype S=0 57.325 (idle 53.682)  prototype S=16 50.431 (idle 52.674)  prototype S=32 54.866 (idle 53.115)  no-op attention 45.533 (idle 49.647)  
+[r17   81.0s] depth 2048 rep 4/5: current (attention_fa) 58.211 (idle 65.532)  prototype S=0 50.366 (idle 54.871)  prototype S=16 49.434 (idle 56.069)  prototype S=32 52.248 (idle 62.622)  no-op attention 45.073 (idle 54.830)  
+[r17   97.2s] depth 2048 rep 5/5: current (attention_fa) 58.871 (idle 67.298)  prototype S=0 51.241 (idle 58.913)  prototype S=16 50.162 (idle 56.768)  prototype S=32 51.277 (idle 56.540)  no-op attention 44.902 (idle 48.928)  
+
+=== R17 step 2, depth 2048: in-sequence attention work, current vs prototype (medians of 5 reps × 20 tokens) ===
+  current (attention_fa)     attention  13.601 ms  full token  58.871 ms  reps 13.6 9.6 16.7 13.1 14.0 | after 2 s idle: attention  10.702 full  65.532
+  prototype S=0              attention   5.907 ms  full token  51.241 ms  speedup 2.30x (reps 2.3 4.8 1.4 2.5 2.2) → PARK band (1.5-2.5x) | after 2 s idle: attention   0.042 full  55.929 speedup 3.80x (reps -0.8 3.8 4.9 257.4 1.8)
+  prototype S=16             attention   4.898 ms  full token  50.162 ms  speedup 2.66x (reps 2.6 2.1 3.4 3.0 2.7) → SHIP band (>= 2.5x) — exploratory; a confirmation run grades | after 2 s idle: attention   1.239 full  55.786 speedup 2.34x (reps -0.8 0.5 6.5 8.6 2.3)
+  prototype S=32             attention   6.686 ms  full token  51.380 ms  speedup 2.03x (reps 2.0 36.2 1.8 1.8 2.2) → PARK band (1.5-2.5x) | after 2 s idle: attention   4.611 full  56.540 speedup 1.37x (reps -0.6 -1.0 5.7 1.4 2.4)
+  no-op attention            full token  45.073 ms, after 2 s idle  54.830 (the attention-free baseline)
+
+[r17  126.0s] depth 3900 prototype S=0: logits vs attention_fa cosine 0.992498575, argmax 198 vs 69
+[r17  126.2s] depth 3900 prototype S=16: logits vs attention_fa cosine 0.992498575, argmax 198 vs 69
+[r17  126.3s] depth 3900 prototype S=32: logits vs attention_fa cosine 0.992498575, argmax 198 vs 69
+[r17  142.9s] depth 3900 rep 1/5: current (attention_fa) 69.841 (idle 75.590)  prototype S=0 54.574 (idle 58.863)  prototype S=16 52.244 (idle 65.820)  prototype S=32 52.175 (idle 56.085)  no-op attention 45.172 (idle 53.053)  
+[r17  159.6s] depth 3900 rep 2/5: current (attention_fa) 70.335 (idle 73.564)  prototype S=0 54.067 (idle 65.609)  prototype S=16 52.224 (idle 57.021)  prototype S=32 51.867 (idle 59.508)  no-op attention 45.484 (idle 56.599)  
+[r17  176.2s] depth 3900 rep 3/5: current (attention_fa) 69.527 (idle 80.219)  prototype S=0 53.991 (idle 55.830)  prototype S=16 52.749 (idle 54.471)  prototype S=32 52.297 (idle 64.452)  no-op attention 44.899 (idle 50.124)  
+[r17  192.8s] depth 3900 rep 4/5: current (attention_fa) 69.853 (idle 73.209)  prototype S=0 54.985 (idle 65.695)  prototype S=16 52.303 (idle 55.607)  prototype S=32 52.030 (idle 55.835)  no-op attention 44.826 (idle 54.760)  
+[r17  209.4s] depth 3900 rep 5/5: current (attention_fa) 70.364 (idle 74.776)  prototype S=0 53.834 (idle 58.236)  prototype S=16 52.541 (idle 55.401)  prototype S=32 51.914 (idle 58.878)  no-op attention 45.875 (idle 52.443)  
+
+=== R17 step 2, depth 3900: in-sequence attention work, current vs prototype (medians of 5 reps × 20 tokens) ===
+  current (attention_fa)     attention  24.670 ms  full token  69.853 ms  reps 24.7 24.9 24.6 25.0 24.5 | after 2 s idle: attention  22.332 full  74.776
+  prototype S=0              attention   9.092 ms  full token  54.067 ms  speedup 2.71x (reps 2.6 2.9 2.7 2.5 3.1) → SHIP band (>= 2.5x) — exploratory; a confirmation run grades | after 2 s idle: attention   5.810 full  58.863 speedup 3.85x (reps 3.9 1.9 5.3 1.7 3.9)
+  prototype S=16             attention   7.072 ms  full token  52.303 ms  speedup 3.49x (reps 3.5 3.7 3.1 3.3 3.7) → SHIP band (>= 2.5x) — exploratory; a confirmation run grades | after 2 s idle: attention   2.957 full  55.607 speedup 7.55x (reps 1.8 40.2 6.9 21.8 7.6)
+  prototype S=32             attention   7.004 ms  full token  52.030 ms  speedup 3.52x (reps 3.5 3.9 3.3 3.5 4.1) → SHIP band (>= 2.5x) — exploratory; a confirmation run grades | after 2 s idle: attention   3.032 full  58.878 speedup 5.83x (reps 7.4 5.8 2.1 17.2 3.5)
+  no-op attention            full token  45.172 ms, after 2 s idle  53.053 (the attention-free baseline)
+
+--- PASS: TestR17AttentionProto (209.47s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	209.990s
+##### MODEL qwen2.5-7b-instruct-q4_k_m.int4.metal.giw exit=0
+17:25:51 DONE

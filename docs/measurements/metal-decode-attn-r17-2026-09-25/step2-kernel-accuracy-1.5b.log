@@ -1,0 +1,19 @@
+18:38:36 start 3391eade + uncommitted
+=== RUN   TestR17KernelAccuracy
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[r17-acc] prompt 1/3 done (decode token 22 at pos 3900)
+[r17-acc] prompt 2/3 done (decode token 38 at pos 3900)
+[r17-acc] prompt 3/3 done (decode token 15 at pos 3900)
+
+=== R17 kernel accuracy vs float64, qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw, K=3900, 3 prompts × 28 layers × 12 heads; capture sanity 84/84 layers bit-identical ===
+  kernel                     relL2 median         mean          p99          max     max|abs|  closer than exact / ties (of heads)
+  exact (shipped attention)     5.661e-07    8.379e-07    5.775e-06    1.366e-05    2.084e-05  —
+  attention_fa S=prod           1.770e-07    2.937e-07    1.539e-06    4.173e-05    2.186e-05  943 / 2 of 1008
+  attention_fa S=16             1.803e-07    2.927e-07    1.543e-06    4.173e-05    2.186e-05  949 / 2 of 1008
+  attention_fa S=32             1.718e-07    2.859e-07    1.537e-06    4.173e-05    2.186e-05  954 / 3 of 1008
+  prototype S=prod              1.737e-07    2.821e-07    1.471e-06    3.525e-05    1.729e-05  941 / 2 of 1008
+  prototype S=16                1.719e-07    2.797e-07    1.432e-06    3.525e-05    1.729e-05  939 / 2 of 1008
+  prototype S=32                1.730e-07    2.825e-07    1.447e-06    3.525e-05    1.729e-05  940 / 2 of 1008
+--- PASS: TestR17KernelAccuracy (49.37s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	49.646s

@@ -1,0 +1,145 @@
+19:59:51 start commit 3391eade (+ uncommitted metal/decode_attn_r17_test.go, metal/r2_gate_test.go)
+##### VSUM 1/5 cand=exact-vchunk C=32 19:59:51 load1=1.47
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-vchunk(C=32) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-vchunk(C=32)(agree=90.6% HF=5/64 KL=0.2358) diff(agree=+0.0pt KL=-0.0016) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-vchunk(C=32)(agree=53.1% HF=23/64 KL=1.6263) diff(agree=+0.0pt KL=-0.0084) elapsed=41s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-vchunk(C=32)(agree=79.7% HF=2/64 KL=0.0753) diff(agree=-4.7pt KL=+0.0030) elapsed=1m1s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-vchunk(C=32)(agree=95.3% HF=0/64 KL=0.0370) diff(agree=-1.6pt KL=+0.0044) elapsed=1m21s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-vchunk(C=32)(agree=59.4% HF=15/64 KL=0.9451) diff(agree=-1.6pt KL=-0.0004) elapsed=1m41s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-vchunk(C=32)(agree=82.8% HF=1/64 KL=0.0681) diff(agree=-3.1pt KL=-0.0009) elapsed=2m1s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-vchunk(C=32)(agree=96.9% HF=0/64 KL=0.0374) diff(agree=+1.6pt KL=-0.0006) elapsed=2m21s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-vchunk(C=32)(agree=54.7% HF=20/64 KL=1.7148) diff(agree=+1.6pt KL=-0.0079) elapsed=2m42s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-vchunk(C=32)(agree=96.9% HF=0/64 KL=0.0378) diff(agree=-1.6pt KL=-0.0029) elapsed=3m2s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-vchunk(C=32)(agree=89.1% HF=1/64 KL=0.0574) diff(agree=+3.1pt KL=-0.0014) elapsed=3m22s
+=== r17-gate (candidate exact-vchunk(C=32)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=67) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=79.84% d=20 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.4852 faMeanKL=0.4835 faLowerPrompts=8/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:261: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+--- PASS: TestR17_decodeFidelityGate (208.27s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	208.632s
+##### exit=0
+##### VSUM 2/5 cand=exact-vchunk C=64 20:03:20 load1=1.40
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-vchunk(C=64) installed (G=6)
+[r17-gate] prompt  1 seed-row KL(ref || prefill) = 4.8417  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-vchunk(C=64)(agree=90.6% HF=5/64 KL=0.2369) diff(agree=+0.0pt KL=-0.0005) elapsed=20s
+[r17-gate] prompt  2 seed-row KL(ref || prefill) = 3.1123  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-vchunk(C=64)(agree=51.6% HF=24/64 KL=1.6249) diff(agree=-1.6pt KL=-0.0098) elapsed=40s
+[r17-gate] prompt  3 seed-row KL(ref || prefill) = 0.0258
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-vchunk(C=64)(agree=81.2% HF=4/64 KL=0.0724) diff(agree=-3.1pt KL=+0.0000) elapsed=1m1s
+[r17-gate] prompt  4 seed-row KL(ref || prefill) = 0.0307
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-vchunk(C=64)(agree=92.2% HF=1/64 KL=0.0363) diff(agree=-4.7pt KL=+0.0037) elapsed=1m21s
+[r17-gate] prompt  5 seed-row KL(ref || prefill) = 18.0753  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-vchunk(C=64)(agree=62.5% HF=14/64 KL=0.9399) diff(agree=+1.6pt KL=-0.0057) elapsed=1m41s
+[r17-gate] prompt  6 seed-row KL(ref || prefill) = 0.0710
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-vchunk(C=64)(agree=87.5% HF=0/64 KL=0.0668) diff(agree=+1.6pt KL=-0.0022) elapsed=2m1s
+[r17-gate] prompt  7 seed-row KL(ref || prefill) = 0.0717
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-vchunk(C=64)(agree=96.9% HF=0/64 KL=0.0390) diff(agree=+1.6pt KL=+0.0010) elapsed=2m21s
+[r17-gate] prompt  8 seed-row KL(ref || prefill) = 6.4559  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-vchunk(C=64)(agree=54.7% HF=21/64 KL=1.7186) diff(agree=+1.6pt KL=-0.0041) elapsed=2m41s
+[r17-gate] prompt  9 seed-row KL(ref || prefill) = 0.0015
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-vchunk(C=64)(agree=98.4% HF=0/64 KL=0.0390) diff(agree=+0.0pt KL=-0.0017) elapsed=3m1s
+[r17-gate] prompt 10 seed-row KL(ref || prefill) = 0.0717
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-vchunk(C=64)(agree=89.1% HF=1/64 KL=0.0572) diff(agree=+3.1pt KL=-0.0016) elapsed=3m21s
+=== r17-gate (candidate exact-vchunk(C=64)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=70) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.47% d=16 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.4852 faMeanKL=0.4831 faLowerPrompts=7/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:261: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+    decode_attn_r17_test.go:261: r17-gate: prompts [1 2 5 8] fail the reference-identity check (seed-row KL > 1.0): the verdict above is not valid for this reference set
+--- FAIL: TestR17_decodeFidelityGate (207.38s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	207.924s
+FAIL
+##### exit=1
+##### VSUM 3/5 cand=exact-vchunk C=128 20:06:49 load1=0.78
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-vchunk(C=128) installed (G=6)
+[r17-gate] prompt  1 seed-row KL(ref || prefill) = 4.8417  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-vchunk(C=128)(agree=90.6% HF=5/64 KL=0.2390) diff(agree=+0.0pt KL=+0.0016) elapsed=20s
+[r17-gate] prompt  2 seed-row KL(ref || prefill) = 3.1123  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-vchunk(C=128)(agree=53.1% HF=23/64 KL=1.6342) diff(agree=+0.0pt KL=-0.0005) elapsed=40s
+[r17-gate] prompt  3 seed-row KL(ref || prefill) = 0.0258
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-vchunk(C=128)(agree=79.7% HF=2/64 KL=0.0717) diff(agree=-4.7pt KL=-0.0006) elapsed=1m0s
+[r17-gate] prompt  4 seed-row KL(ref || prefill) = 0.0307
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-vchunk(C=128)(agree=92.2% HF=1/64 KL=0.0363) diff(agree=-4.7pt KL=+0.0038) elapsed=1m20s
+[r17-gate] prompt  5 seed-row KL(ref || prefill) = 18.0753  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-vchunk(C=128)(agree=62.5% HF=14/64 KL=0.9400) diff(agree=+1.6pt KL=-0.0055) elapsed=1m41s
+[r17-gate] prompt  6 seed-row KL(ref || prefill) = 0.0710
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-vchunk(C=128)(agree=87.5% HF=1/64 KL=0.0656) diff(agree=+1.6pt KL=-0.0034) elapsed=2m1s
+[r17-gate] prompt  7 seed-row KL(ref || prefill) = 0.0717
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-vchunk(C=128)(agree=93.8% HF=0/64 KL=0.0392) diff(agree=-1.6pt KL=+0.0013) elapsed=2m21s
+[r17-gate] prompt  8 seed-row KL(ref || prefill) = 6.4559  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-vchunk(C=128)(agree=56.2% HF=20/64 KL=1.7262) diff(agree=+3.1pt KL=+0.0034) elapsed=2m41s
+[r17-gate] prompt  9 seed-row KL(ref || prefill) = 0.0015
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-vchunk(C=128)(agree=98.4% HF=0/64 KL=0.0377) diff(agree=+0.0pt KL=-0.0030) elapsed=3m1s
+[r17-gate] prompt 10 seed-row KL(ref || prefill) = 0.0717
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-vchunk(C=128)(agree=85.9% HF=2/64 KL=0.0624) diff(agree=+0.0pt KL=+0.0036) elapsed=3m21s
+=== r17-gate (candidate exact-vchunk(C=128)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=68) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.00% d=17 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.4852 faMeanKL=0.4852 faLowerPrompts=5/10 ceilingOK=true) — DOES NOT PASS ===
+    decode_attn_r17_test.go:261: r17-gate: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+    decode_attn_r17_test.go:261: r17-gate: prompts [1 2 5 8] fail the reference-identity check (seed-row KL > 1.0): the verdict above is not valid for this reference set
+--- FAIL: TestR17_decodeFidelityGate (207.39s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	207.859s
+FAIL
+##### exit=1
+##### VSUM 4/5 cand=exact-vchunk C=256 20:10:18 load1=1.33
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-vchunk(C=256) installed (G=6)
+[r17-gate] prompt  1 seed-row KL(ref || prefill) = 4.8417  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-vchunk(C=256)(agree=90.6% HF=5/64 KL=0.2366) diff(agree=+0.0pt KL=-0.0008) elapsed=20s
+[r17-gate] prompt  2 seed-row KL(ref || prefill) = 3.1123  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-vchunk(C=256)(agree=54.7% HF=23/64 KL=1.6225) diff(agree=+1.6pt KL=-0.0122) elapsed=40s
+[r17-gate] prompt  3 seed-row KL(ref || prefill) = 0.0258
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-vchunk(C=256)(agree=82.8% HF=3/64 KL=0.0746) diff(agree=-1.6pt KL=+0.0022) elapsed=1m0s
+[r17-gate] prompt  4 seed-row KL(ref || prefill) = 0.0307
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-vchunk(C=256)(agree=92.2% HF=1/64 KL=0.0359) diff(agree=-4.7pt KL=+0.0033) elapsed=1m21s
+[r17-gate] prompt  5 seed-row KL(ref || prefill) = 18.0753  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-vchunk(C=256)(agree=60.9% HF=14/64 KL=0.9494) diff(agree=+0.0pt KL=+0.0039) elapsed=1m41s
+[r17-gate] prompt  6 seed-row KL(ref || prefill) = 0.0710
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-vchunk(C=256)(agree=87.5% HF=0/64 KL=0.0655) diff(agree=+1.6pt KL=-0.0034) elapsed=2m1s
+[r17-gate] prompt  7 seed-row KL(ref || prefill) = 0.0717
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-vchunk(C=256)(agree=96.9% HF=0/64 KL=0.0380) diff(agree=+1.6pt KL=+0.0001) elapsed=2m21s
+[r17-gate] prompt  8 seed-row KL(ref || prefill) = 6.4559  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-vchunk(C=256)(agree=53.1% HF=21/64 KL=1.7171) diff(agree=+0.0pt KL=-0.0056) elapsed=2m41s
+[r17-gate] prompt  9 seed-row KL(ref || prefill) = 0.0015
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-vchunk(C=256)(agree=98.4% HF=0/64 KL=0.0377) diff(agree=+0.0pt KL=-0.0030) elapsed=3m1s
+[r17-gate] prompt 10 seed-row KL(ref || prefill) = 0.0717
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-vchunk(C=256)(agree=87.5% HF=1/64 KL=0.0623) diff(agree=+1.6pt KL=+0.0035) elapsed=3m21s
+=== r17-gate (candidate exact-vchunk(C=256)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=68) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.47% d=12 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.4852 faMeanKL=0.4840 faLowerPrompts=5/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:261: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+    decode_attn_r17_test.go:261: r17-gate: prompts [1 2 5 8] fail the reference-identity check (seed-row KL > 1.0): the verdict above is not valid for this reference set
+--- FAIL: TestR17_decodeFidelityGate (208.01s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	208.579s
+FAIL
+##### exit=1
+##### VSUM 5/5 cand=exact-vrev8 C=0 20:13:47 load1=2.90
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-vrev8 installed (G=6)
+[r17-gate] prompt  1 seed-row KL(ref || prefill) = 4.8417  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-vrev8(agree=90.6% HF=5/64 KL=0.2373) diff(agree=+0.0pt KL=-0.0001) elapsed=20s
+[r17-gate] prompt  2 seed-row KL(ref || prefill) = 3.1123  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-vrev8(agree=53.1% HF=24/64 KL=1.6231) diff(agree=+0.0pt KL=-0.0116) elapsed=40s
+[r17-gate] prompt  3 seed-row KL(ref || prefill) = 0.0258
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-vrev8(agree=81.2% HF=3/64 KL=0.0744) diff(agree=-3.1pt KL=+0.0020) elapsed=1m1s
+[r17-gate] prompt  4 seed-row KL(ref || prefill) = 0.0307
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-vrev8(agree=95.3% HF=0/64 KL=0.0325) diff(agree=-1.6pt KL=-0.0001) elapsed=1m21s
+[r17-gate] prompt  5 seed-row KL(ref || prefill) = 18.0753  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-vrev8(agree=60.9% HF=14/64 KL=0.9484) diff(agree=+0.0pt KL=+0.0028) elapsed=1m41s
+[r17-gate] prompt  6 seed-row KL(ref || prefill) = 0.0710
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-vrev8(agree=84.4% HF=1/64 KL=0.0660) diff(agree=-1.6pt KL=-0.0029) elapsed=2m1s
+[r17-gate] prompt  7 seed-row KL(ref || prefill) = 0.0717
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-vrev8(agree=95.3% HF=0/64 KL=0.0377) diff(agree=+0.0pt KL=-0.0002) elapsed=2m21s
+[r17-gate] prompt  8 seed-row KL(ref || prefill) = 6.4559  <-- REFERENCE/PROMPT MISMATCH SUSPECTED
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-vrev8(agree=53.1% HF=21/64 KL=1.7352) diff(agree=+0.0pt KL=+0.0124) elapsed=2m41s
+[r17-gate] prompt  9 seed-row KL(ref || prefill) = 0.0015
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-vrev8(agree=96.9% HF=0/64 KL=0.0390) diff(agree=-1.6pt KL=-0.0017) elapsed=3m1s
+[r17-gate] prompt 10 seed-row KL(ref || prefill) = 0.0717
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-vrev8(agree=89.1% HF=1/64 KL=0.0584) diff(agree=+3.1pt KL=-0.0004) elapsed=3m21s
+=== r17-gate (candidate exact-vrev8), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=69) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.00% d=11 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.4852 faMeanKL=0.4852 faLowerPrompts=7/10 ceilingOK=true) — DOES NOT PASS ===
+    decode_attn_r17_test.go:261: r17-gate: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+    decode_attn_r17_test.go:261: r17-gate: prompts [1 2 5 8] fail the reference-identity check (seed-row KL > 1.0): the verdict above is not valid for this reference set
+--- FAIL: TestR17_decodeFidelityGate (208.06s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	208.577s
+FAIL
+##### exit=1
+20:17:16 DONE

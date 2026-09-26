@@ -1,0 +1,8 @@
+17:53:27 start 3391eade + uncommitted
+=== RUN   TestR17StateLeakBisect
+[r17-bisect] no restore              : KV after the attention_fa run differs from after the exact run in 134366 halves, slots 3901..3914 (K=3900, continuation K..K+14); next exact run differs from the first in 15 of 16 rows
+[r17-bisect] restore KV cache        : KV after the attention_fa run differs from after the exact run in 134366 halves, slots 3901..3914 (K=3900, continuation K..K+14); next exact run differs from the first in 15 of 16 rows
+[r17-bisect] restore r.ctx + partial : KV after the attention_fa run differs from after the exact run in 134366 halves, slots 3901..3914 (K=3900, continuation K..K+14); next exact run differs from the first in 15 of 16 rows
+--- PASS: TestR17StateLeakBisect (103.84s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	104.304s

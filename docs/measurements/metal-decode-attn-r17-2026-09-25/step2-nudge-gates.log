@@ -1,0 +1,182 @@
+19:08:00 start commit 3391eade (+ uncommitted metal/decode_attn_r17_test.go, metal/r2_gate_test.go)
+##### NUDGE 1/6 k=1 19:08:00 load1=1.92
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-nudge(k=+1) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-nudge(S=0)(agree=92.2% HF=5/64 KL=0.2341) diff(agree=+1.6pt KL=-0.0033) elapsed=35s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-nudge(S=0)(agree=53.1% HF=23/64 KL=1.6258) diff(agree=+0.0pt KL=-0.0089) elapsed=1m1s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-nudge(S=0)(agree=79.7% HF=3/64 KL=0.0748) diff(agree=-4.7pt KL=+0.0024) elapsed=1m22s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-nudge(S=0)(agree=96.9% HF=0/64 KL=0.0362) diff(agree=+0.0pt KL=+0.0037) elapsed=1m42s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-nudge(S=0)(agree=59.4% HF=15/64 KL=0.9481) diff(agree=-1.6pt KL=+0.0025) elapsed=2m2s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-nudge(S=0)(agree=84.4% HF=1/64 KL=0.0647) diff(agree=-1.6pt KL=-0.0042) elapsed=2m31s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-nudge(S=0)(agree=96.9% HF=0/64 KL=0.0375) diff(agree=+1.6pt KL=-0.0005) elapsed=3m7s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-nudge(S=0)(agree=54.7% HF=20/64 KL=1.7109) diff(agree=+1.6pt KL=-0.0119) elapsed=3m27s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-nudge(S=0)(agree=96.9% HF=0/64 KL=0.0366) diff(agree=-1.6pt KL=-0.0041) elapsed=3m47s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-nudge(S=0)(agree=90.6% HF=0/64 KL=0.0601) diff(agree=+4.7pt KL=+0.0013) elapsed=4m7s
+=== r17-gate (candidate exact-nudge(S=0)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=67) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.47% d=16 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.4852 faMeanKL=0.4829 faLowerPrompts=6/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:253: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+--- PASS: TestR17_decodeFidelityGate (253.74s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	254.258s
+##### exit=0
+##### NUDGE 2/6 k=-1 19:12:15 load1=1.49
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-nudge(k=-1) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-nudge(S=0)(agree=92.2% HF=5/64 KL=0.2359) diff(agree=+1.6pt KL=-0.0015) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-nudge(S=0)(agree=53.1% HF=24/64 KL=1.6341) diff(agree=+0.0pt KL=-0.0006) elapsed=40s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-nudge(S=0)(agree=81.2% HF=3/64 KL=0.0732) diff(agree=-3.1pt KL=+0.0008) elapsed=1m0s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-nudge(S=0)(agree=90.6% HF=1/64 KL=0.0368) diff(agree=-6.2pt KL=+0.0043) elapsed=1m20s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-nudge(S=0)(agree=62.5% HF=13/64 KL=0.9535) diff(agree=+1.6pt KL=+0.0079) elapsed=1m40s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-nudge(S=0)(agree=82.8% HF=2/64 KL=0.0682) diff(agree=-3.1pt KL=-0.0007) elapsed=2m0s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-nudge(S=0)(agree=93.8% HF=0/64 KL=0.0382) diff(agree=-1.6pt KL=+0.0002) elapsed=2m20s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-nudge(S=0)(agree=54.7% HF=20/64 KL=1.7226) diff(agree=+1.6pt KL=-0.0001) elapsed=2m40s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-nudge(S=0)(agree=96.9% HF=0/64 KL=0.0375) diff(agree=-1.6pt KL=-0.0032) elapsed=3m0s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-nudge(S=0)(agree=87.5% HF=2/64 KL=0.0595) diff(agree=+1.6pt KL=+0.0007) elapsed=3m20s
+=== r17-gate (candidate exact-nudge(S=0)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=70) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=79.53% d=16 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.4852 faMeanKL=0.4859 faLowerPrompts=5/10 ceilingOK=true) — DOES NOT PASS ===
+    decode_attn_r17_test.go:253: r17-gate: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+--- PASS: TestR17_decodeFidelityGate (207.06s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	207.483s
+##### exit=0
+##### NUDGE 3/6 k=2 19:15:44 load1=1.39
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-nudge(k=+2) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-nudge(S=0)(agree=92.2% HF=5/64 KL=0.2365) diff(agree=+1.6pt KL=-0.0009) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-nudge(S=0)(agree=51.6% HF=25/64 KL=1.6320) diff(agree=-1.6pt KL=-0.0027) elapsed=40s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-nudge(S=0)(agree=82.8% HF=2/64 KL=0.0720) diff(agree=-1.6pt KL=-0.0004) elapsed=1m0s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-nudge(S=0)(agree=96.9% HF=0/64 KL=0.0331) diff(agree=+0.0pt KL=+0.0005) elapsed=1m20s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-nudge(S=0)(agree=60.9% HF=14/64 KL=0.9512) diff(agree=+0.0pt KL=+0.0056) elapsed=1m40s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-nudge(S=0)(agree=84.4% HF=1/64 KL=0.0671) diff(agree=-1.6pt KL=-0.0018) elapsed=2m0s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-nudge(S=0)(agree=96.9% HF=0/64 KL=0.0385) diff(agree=+1.6pt KL=+0.0005) elapsed=2m20s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-nudge(S=0)(agree=54.7% HF=20/64 KL=1.7061) diff(agree=+1.6pt KL=-0.0166) elapsed=2m40s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-nudge(S=0)(agree=96.9% HF=0/64 KL=0.0404) diff(agree=-1.6pt KL=-0.0003) elapsed=3m0s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-nudge(S=0)(agree=89.1% HF=1/64 KL=0.0605) diff(agree=+3.1pt KL=+0.0017) elapsed=3m20s
+=== r17-gate (candidate exact-nudge(S=0)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=68) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.62% d=17 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.4852 faMeanKL=0.4837 faLowerPrompts=6/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:253: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+--- PASS: TestR17_decodeFidelityGate (205.85s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	206.510s
+##### exit=0
+##### NUDGE 4/6 k=-2 19:19:11 load1=1.88
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-nudge(k=-2) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-nudge(S=0)(agree=90.6% HF=5/64 KL=0.2386) diff(agree=+0.0pt KL=+0.0012) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-nudge(S=0)(agree=54.7% HF=22/64 KL=1.6300) diff(agree=+1.6pt KL=-0.0047) elapsed=40s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-nudge(S=0)(agree=79.7% HF=3/64 KL=0.0748) diff(agree=-4.7pt KL=+0.0025) elapsed=1m0s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-nudge(S=0)(agree=96.9% HF=0/64 KL=0.0354) diff(agree=+0.0pt KL=+0.0029) elapsed=1m20s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-nudge(S=0)(agree=60.9% HF=14/64 KL=0.9564) diff(agree=+0.0pt KL=+0.0108) elapsed=1m40s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-nudge(S=0)(agree=84.4% HF=1/64 KL=0.0673) diff(agree=-1.6pt KL=-0.0016) elapsed=2m0s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-nudge(S=0)(agree=95.3% HF=0/64 KL=0.0383) diff(agree=+0.0pt KL=+0.0003) elapsed=2m20s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-nudge(S=0)(agree=54.7% HF=21/64 KL=1.7265) diff(agree=+1.6pt KL=+0.0037) elapsed=2m40s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-nudge(S=0)(agree=93.8% HF=0/64 KL=0.0375) diff(agree=-4.7pt KL=-0.0032) elapsed=3m0s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-nudge(S=0)(agree=87.5% HF=3/64 KL=0.0620) diff(agree=+1.6pt KL=+0.0031) elapsed=3m20s
+=== r17-gate (candidate exact-nudge(S=0)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=69) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=79.84% d=18 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=false (shippedMeanKL=0.4852 faMeanKL=0.4867 faLowerPrompts=3/10 ceilingOK=true) — DOES NOT PASS ===
+    decode_attn_r17_test.go:253: r17-gate: pooled verdict = DOES NOT PASS (critA=true critB=true critC=false)
+--- PASS: TestR17_decodeFidelityGate (204.52s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	205.038s
+##### exit=0
+##### NUDGE 5/6 k=3 19:22:37 load1=1.23
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-nudge(k=+3) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-nudge(S=0)(agree=92.2% HF=5/64 KL=0.2360) diff(agree=+1.6pt KL=-0.0014) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-nudge(S=0)(agree=54.7% HF=23/64 KL=1.6325) diff(agree=+1.6pt KL=-0.0022) elapsed=40s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-nudge(S=0)(agree=78.1% HF=4/64 KL=0.0753) diff(agree=-6.2pt KL=+0.0029) elapsed=1m0s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-nudge(S=0)(agree=95.3% HF=0/64 KL=0.0342) diff(agree=-1.6pt KL=+0.0016) elapsed=1m20s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-nudge(S=0)(agree=60.9% HF=14/64 KL=0.9494) diff(agree=+0.0pt KL=+0.0038) elapsed=1m40s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-nudge(S=0)(agree=87.5% HF=0/64 KL=0.0678) diff(agree=+1.6pt KL=-0.0011) elapsed=2m0s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-nudge(S=0)(agree=95.3% HF=0/64 KL=0.0374) diff(agree=+0.0pt KL=-0.0005) elapsed=2m20s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-nudge(S=0)(agree=53.1% HF=21/64 KL=1.7172) diff(agree=+0.0pt KL=-0.0056) elapsed=2m41s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-nudge(S=0)(agree=95.3% HF=0/64 KL=0.0395) diff(agree=-3.1pt KL=-0.0012) elapsed=3m1s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-nudge(S=0)(agree=87.5% HF=2/64 KL=0.0572) diff(agree=+1.6pt KL=-0.0016) elapsed=3m21s
+=== r17-gate (candidate exact-nudge(S=0)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=69) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.00% d=13 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.4852 faMeanKL=0.4846 faLowerPrompts=7/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:253: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+--- PASS: TestR17_decodeFidelityGate (205.57s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	206.116s
+##### exit=0
+##### NUDGE 6/6 k=-3 19:26:04 load1=0.83
+=== RUN   TestR17_decodeFidelityGate
+[r17-gate] candidate exact-nudge(k=-3) installed (G=6)
+[r17-gate] set "a" K=3900 prompt  1/10 shipped(agree=90.6% HF=5/64 KL=0.2374) exact-nudge(k=-3)(agree=90.6% HF=5/64 KL=0.2375) diff(agree=+0.0pt KL=+0.0001) elapsed=20s
+[r17-gate] set "a" K=3900 prompt  2/10 shipped(agree=53.1% HF=23/64 KL=1.6347) exact-nudge(k=-3)(agree=54.7% HF=23/64 KL=1.6352) diff(agree=+1.6pt KL=+0.0005) elapsed=40s
+[r17-gate] set "a" K=3900 prompt  3/10 shipped(agree=84.4% HF=2/64 KL=0.0724) exact-nudge(k=-3)(agree=82.8% HF=2/64 KL=0.0753) diff(agree=-1.6pt KL=+0.0029) elapsed=1m0s
+[r17-gate] set "a" K=3900 prompt  4/10 shipped(agree=96.9% HF=0/64 KL=0.0326) exact-nudge(k=-3)(agree=93.8% HF=1/64 KL=0.0361) diff(agree=-3.1pt KL=+0.0036) elapsed=1m20s
+[r17-gate] set "a" K=3900 prompt  5/10 shipped(agree=60.9% HF=14/64 KL=0.9456) exact-nudge(k=-3)(agree=60.9% HF=14/64 KL=0.9363) diff(agree=+0.0pt KL=-0.0093) elapsed=1m40s
+[r17-gate] set "a" K=3900 prompt  6/10 shipped(agree=85.9% HF=1/64 KL=0.0689) exact-nudge(k=-3)(agree=87.5% HF=0/64 KL=0.0654) diff(agree=+1.6pt KL=-0.0035) elapsed=2m0s
+[r17-gate] set "a" K=3900 prompt  7/10 shipped(agree=95.3% HF=0/64 KL=0.0379) exact-nudge(k=-3)(agree=98.4% HF=0/64 KL=0.0369) diff(agree=+3.1pt KL=-0.0010) elapsed=2m20s
+[r17-gate] set "a" K=3900 prompt  8/10 shipped(agree=53.1% HF=21/64 KL=1.7227) exact-nudge(k=-3)(agree=54.7% HF=20/64 KL=1.7219) diff(agree=+1.6pt KL=-0.0009) elapsed=2m40s
+[r17-gate] set "a" K=3900 prompt  9/10 shipped(agree=98.4% HF=0/64 KL=0.0407) exact-nudge(k=-3)(agree=93.8% HF=0/64 KL=0.0373) diff(agree=-4.7pt KL=-0.0034) elapsed=3m0s
+[r17-gate] set "a" K=3900 prompt 10/10 shipped(agree=85.9% HF=3/64 KL=0.0588) exact-nudge(k=-3)(agree=87.5% HF=2/64 KL=0.0588) diff(agree=+1.6pt KL=-0.0000) elapsed=3m20s
+=== r17-gate (candidate exact-nudge(k=-3)), S, set "a", K=3900, 10 prompts, 64 positions: critA(HF fa<=shipped+2*sqrt(shipped))=true (shipped=69 fa=67) critB(agree fa>=shipped-2*sqrt(d)/N)=true (shippedAgree=80.47% faAgree=80.47% d=16 N=640) critC(KL pooled fa<=shipped & fa lower on >=half prompts & cell<=1.1x)=true (shippedMeanKL=0.4852 faMeanKL=0.4841 faLowerPrompts=6/10 ceilingOK=true) — PASSES ===
+    decode_attn_r17_test.go:256: r17-gate: pooled verdict = PASSES (critA=true critB=true critC=true)
+--- PASS: TestR17_decodeFidelityGate (206.54s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	207.063s
+##### exit=0
+##### ACCURACY 7B 19:29:33
+=== RUN   TestR17KernelAccuracy
+[metal] weights aliased from qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4020 MB bound in place, 1 MB copied (anonymous) — 3112 MB int4 nibbles (56 single tensors + 56 fused groups = 2034 MB) + 520 MB int8 codes (1 matrices) + 389 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[r17-acc] prompt 1/3 done (decode token 22 at pos 3900)
+[r17-acc] prompt 2/3 done (decode token 38 at pos 3900)
+[r17-acc] prompt 3/3 done (decode token 20 at pos 3900)
+
+=== R17 kernel accuracy vs float64, qwen2.5-7b-instruct-q4_k_m.int4.metal.giw, K=3900, 3 prompts × 28 layers × 28 heads; capture sanity 84/84 layers bit-identical ===
+  kernel                     relL2 median         mean          p99          max     max|abs|  closer than exact / ties (of heads)
+  exact (shipped attention)     7.487e-07    1.200e-06    9.337e-06    2.232e-05    1.278e-04  —
+  attention_fa S=prod           2.766e-07    4.060e-07    2.446e-06    1.281e-05    5.829e-05  2203 / 6 of 2352
+  attention_fa S=16             2.587e-07    3.793e-07    2.328e-06    1.279e-05    5.847e-05  2214 / 6 of 2352
+  attention_fa S=32             2.501e-07    3.741e-07    2.362e-06    1.280e-05    5.847e-05  2214 / 7 of 2352
+  prototype S=prod              2.544e-07    3.712e-07    2.239e-06    1.679e-05    5.241e-05  2214 / 7 of 2352
+  prototype S=16                2.421e-07    3.572e-07    2.215e-06    1.679e-05    5.193e-05  2212 / 7 of 2352
+  prototype S=32                2.430e-07    3.574e-07    2.163e-06    1.678e-05    5.241e-05  2213 / 6 of 2352
+  exact, precise exp            7.475e-07    1.199e-06    9.337e-06    2.231e-05    1.280e-04  1217 / 19 of 2352
+  attention_fa S=prod, precise    2.631e-07    3.955e-07    2.348e-06    1.278e-05    5.841e-05  2204 / 6 of 2352
+  prototype S=16, precise exp    2.364e-07    3.515e-07    2.091e-06    1.677e-05    5.193e-05  2224 / 7 of 2352
+
+  worst head per kernel:
+  exact (shipped attention)  relL2 2.232e-05 at prompt 1 layer 0 head 10 (||ref|| 0.327)
+  attention_fa S=prod        relL2 1.281e-05 at prompt 3 layer 0 head 10 (||ref|| 0.338)
+  attention_fa S=16          relL2 1.279e-05 at prompt 3 layer 0 head 10 (||ref|| 0.338)
+  attention_fa S=32          relL2 1.280e-05 at prompt 3 layer 0 head 10 (||ref|| 0.338)
+  prototype S=prod           relL2 1.679e-05 at prompt 3 layer 0 head 10 (||ref|| 0.338)
+  prototype S=16             relL2 1.679e-05 at prompt 3 layer 0 head 10 (||ref|| 0.338)
+  prototype S=32             relL2 1.678e-05 at prompt 3 layer 0 head 10 (||ref|| 0.338)
+  exact, precise exp         relL2 2.231e-05 at prompt 1 layer 0 head 10 (||ref|| 0.327)
+  attention_fa S=prod, precise relL2 1.278e-05 at prompt 3 layer 0 head 10 (||ref|| 0.338)
+  prototype S=16, precise exp relL2 1.677e-05 at prompt 3 layer 0 head 10 (||ref|| 0.338)
+
+  per layer, relL2 median / max over prompts × heads:
+  layer  exact (shipped attention)      attention_fa S=prod            prototype S=16                 exact, precise exp             prototype S=16, precise exp  
+      0     2.303e-06 /    2.232e-05         1.064e-06 /    1.281e-05         9.208e-07 /    1.679e-05         2.336e-06 /    2.231e-05         9.503e-07 /    1.677e-05    
+      1     8.949e-07 /    4.992e-06         3.189e-07 /    2.539e-06         3.068e-07 /    1.315e-06         8.933e-07 /    5.018e-06         2.898e-07 /    1.252e-06    
+      2     8.578e-07 /    3.986e-06         2.530e-07 /    1.431e-06         2.008e-07 /    1.187e-06         8.382e-07 /    4.011e-06         1.912e-07 /    1.084e-06    
+      3     8.756e-07 /    4.826e-06         3.082e-07 /    1.549e-06         2.891e-07 /    1.334e-06         8.984e-07 /    4.818e-06         2.783e-07 /    1.417e-06    
+      4     8.602e-07 /    1.467e-05         3.095e-07 /    1.427e-06         2.734e-07 /    1.422e-06         8.831e-07 /    1.461e-05         2.934e-07 /    1.155e-06    
+      5     7.215e-07 /    7.968e-06         2.192e-07 /    1.087e-06         1.990e-07 /    9.472e-07         7.263e-07 /    7.967e-06         1.844e-07 /    8.391e-07    
+      6     8.081e-07 /    6.833e-06         4.153e-07 /    1.268e-06         2.907e-07 /    1.524e-06         8.142e-07 /    6.800e-06         2.791e-07 /    1.439e-06    
+      7     6.978e-07 /    3.025e-06         2.697e-07 /    8.651e-07         2.156e-07 /    7.242e-07         7.017e-07 /    3.036e-06         2.088e-07 /    8.236e-07    
+      8     7.273e-07 /    1.239e-05         2.819e-07 /    1.187e-06         2.161e-07 /    8.727e-07         7.183e-07 /    1.238e-05         2.441e-07 /    8.474e-07    
+      9     6.143e-07 /    4.113e-06         1.892e-07 /    8.583e-07         2.014e-07 /    9.891e-07         5.961e-07 /    4.114e-06         1.789e-07 /    9.298e-07    
+     10     8.072e-07 /    5.478e-06         3.233e-07 /    1.394e-06         2.736e-07 /    2.218e-06         7.876e-07 /    5.420e-06         2.331e-07 /    2.102e-06    
+     11     5.546e-07 /    5.939e-06         2.368e-07 /    1.197e-06         2.194e-07 /    1.239e-06         5.652e-07 /    5.940e-06         1.976e-07 /    1.213e-06    
+     12     7.694e-07 /    3.603e-06         2.380e-07 /    1.430e-06         2.137e-07 /    1.844e-06         7.664e-07 /    3.682e-06         2.016e-07 /    1.719e-06    
+     13     6.326e-07 /    5.045e-06         3.092e-07 /    1.618e-06         2.851e-07 /    1.374e-06         6.296e-07 /    5.018e-06         2.686e-07 /    1.378e-06    
+     14     7.917e-07 /    1.241e-05         2.782e-07 /    2.587e-06         2.287e-07 /    2.215e-06         7.923e-07 /    1.241e-05         2.177e-07 /    2.091e-06    
+     15     6.866e-07 /    8.150e-06         3.291e-07 /    1.132e-06         2.846e-07 /    1.438e-06         7.013e-07 /    8.143e-06         2.588e-07 /    1.231e-06    
+     16     8.519e-07 /    6.729e-06         3.510e-07 /    4.746e-06         3.276e-07 /    1.618e-06         8.428e-07 /    6.691e-06         3.382e-07 /    1.692e-06    
+     17     8.720e-07 /    5.249e-06         3.427e-07 /    2.820e-06         3.373e-07 /    3.022e-06         8.470e-07 /    5.264e-06         3.240e-07 /    2.844e-06    
+     18     6.812e-07 /    7.366e-06         2.334e-07 /    9.105e-07         1.990e-07 /    1.135e-06         6.711e-07 /    7.367e-06         1.884e-07 /    1.017e-06    
+     19     9.289e-07 /    6.273e-06         3.236e-07 /    1.726e-06         2.816e-07 /    2.047e-06         9.331e-07 /    6.254e-06         2.889e-07 /    1.942e-06    
+     20     5.981e-07 /    4.968e-06         2.008e-07 /    1.045e-06         1.768e-07 /    1.389e-06         5.934e-07 /    4.963e-06         1.804e-07 /    1.509e-06    
+     21     5.250e-07 /    2.613e-06         2.053e-07 /    8.256e-07         1.849e-07 /    5.110e-07         5.259e-07 /    2.613e-06         1.849e-07 /    4.668e-07    
+     22     7.110e-07 /    2.800e-06         2.411e-07 /    6.735e-07         2.176e-07 /    6.962e-07         7.055e-07 /    2.851e-06         2.221e-07 /    6.520e-07    
+     23     8.261e-07 /    9.319e-06         3.207e-07 /    1.188e-06         2.846e-07 /    9.408e-07         8.152e-07 /    9.318e-06         2.719e-07 /    9.886e-07    
+     24     7.982e-07 /    9.550e-06         2.642e-07 /    1.244e-06         2.155e-07 /    1.374e-06         7.982e-07 /    9.490e-06         2.259e-07 /    1.416e-06    
+     25     8.054e-07 /    4.082e-06         2.554e-07 /    9.924e-07         2.283e-07 /    9.975e-07         8.228e-07 /    4.081e-06         2.257e-07 /    9.624e-07    
+     26     7.333e-07 /    1.058e-05         2.374e-07 /    1.018e-06         2.181e-07 /    1.109e-06         7.297e-07 /    1.058e-05         2.164e-07 /    1.231e-06    
+     27     7.022e-07 /    1.846e-05         2.405e-07 /    8.470e-06         1.978e-07 /    7.191e-06         7.070e-07 /    1.848e-05         2.056e-07 /    7.190e-06    
+--- PASS: TestR17KernelAccuracy (98.40s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	98.836s
+##### exit=0
+19:31:12 DONE
