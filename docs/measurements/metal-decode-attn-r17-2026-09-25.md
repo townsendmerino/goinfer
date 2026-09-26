@@ -489,3 +489,46 @@ engages (≥ `attnFADepthFloor` = 1536 keys), so the path at 128 keys is unchang
   ([`wiring-suite-tagged.log`](metal-decode-attn-r17-2026-09-25/wiring-suite-tagged.log)). Against the previous run's
   pass list, only the four new tests were added, and nothing was lost.
 - `TestMetalSnapshotGolden` is unchanged, because its attention_fa fixture has G=2.
+
+## End to end against Ollama (reported, not deciding; 2026-09-25, 23:11–23:38)
+
+This measurement follows R17's "also reported: end-to-end decode tok/s against Ollama through `scripts/bench_peer.py`".
+It is **not** the pre-registered peer sweep (`peer-claim-2026-09-25.md`), and its outcomes are not graded against
+that sweep's bands. It is a same-session, interleaved, three-engine A/B.
+
+**Setup.**
+- Machine: M1 Pro, `BENCH_MAX_LOADAVG=2.0` idle gate (load1 1.96 at start), `BENCH_RUNS=3`.
+- Engines: goinfer **new** `7df881f5` (`attention_fa_blk`) and **old** `dde11d93` (its parent: executor fix and legacy
+  `attention_fa`), both `metal/cmd/serve`. The old binary was built with `GOWORK` set to its own worktree, and the two
+  were checked to differ in content: `attention_fa_blk` appears in the new binary and not in the old. Ollama v0.32.5
+  at its defaults.
+- Workload: greedy (temperature 0), 1536 tokens per cell (3 runs × 8 completions × 64), `essay-v2` prompts.
+- Models: qwen2.5-coder-1.5b and qwen2.5-7b q4_k_m from `~/models`. Ollama serves the same weights
+  (`peer-claim-2026-09-25-mac/same-weights.txt`).
+- The harness records `goinfer_tree_dirty: true`, which means untracked docs and logs only; no Go source differed
+  from `7df881f5`.
+- Swap in use afterwards: 0.95 GB.
+
+Raw: [`e2e/r17-e2e-metal-decode.json`](metal-decode-attn-r17-2026-09-25/e2e/r17-e2e-metal-decode.json),
+[`e2e/run.log`](metal-decode-attn-r17-2026-09-25/e2e/run.log). Every cell passed the token gate (1536/1536).
+
+| model @ depth | goinfer new tok/s | old | Ollama | new ÷ old | new ÷ Ollama | old ÷ Ollama | cell g this morning (goinfer ÷ Ollama) |
+|---|---|---|---|---:|---:|---:|---:|
+| 1.5B @128 | 72.5 (72.0 / 72.7 / 72.8) | 73.8 | 84.8 | 0.98 | 0.86 | 0.87 | VOID (0.85 raw) |
+| 7B @128 | 21.6 | 21.5 | 24.9 | 1.00 | 0.87 | 0.86 | VOID (0.86 raw) |
+| 1.5B @2048 | 68.6 (68.1 / 68.6 / 69.0) | 56.2 | 80.0 | **1.22** | **0.86** | 0.70 | 0.70 |
+| 1.5B @3900 | 65.4 (65.6 / 65.2 / 65.3) | 46.4 | 75.6 | **1.41** | **0.87** | 0.61 | 0.61 |
+| 7B @2048 | 19.9 | 16.9 | 19.4 (19.0 / 19.5 / 19.8) | **1.18** | *not graded* | — | 0.71 |
+| 7B @3900 | 18.9 | 14.2 | 23.3 | **1.33** | **0.81** | 0.61 | 0.61 |
+
+**Reading.**
+
+- **Depth 128 is the control.** The block kernel engages only at ≥ 1536 keys, so new and old should tie there.
+  They measure 0.98× and 1.00×, which puts this run's noise floor at about ±2%.
+- **At depth the shipped kernel is 1.18–1.41× end to end.** Against Ollama the 1.5B goes from 0.61× to 0.87× at 3900
+  keys (from 1.64× behind to 1.15× behind), and the 7B goes from 0.61× to 0.81×.
+- The old arm reproduces this morning's goinfer numbers (1.5B @3900: 46.4 vs cell g's 46.6 tok/s).
+- **The 7B @2048 comparison with Ollama is not graded.** Ollama read 19.4 tok/s there, 20% below its own cell-g
+  value (24.2), with its runs rising (19.0 → 19.8). Its 7B @3900 matches the morning exactly (23.3 vs 23.4), so that
+  one cell looks like memory pressure or thermal state late in the session, not an Ollama number to divide by. The
+  new ÷ old ratio for that cell (1.18×) is unaffected, because both goinfer arms ran interleaved in the same session.
