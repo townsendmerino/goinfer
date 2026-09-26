@@ -87,6 +87,9 @@ type drafterLayer struct {
 // and the failure mode is a drafter that runs and drafts noise. docs/spec/08 records that exact
 // shape of bug costing a full measurement round.
 func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDrafter, error) {
+	if r.actG32 {
+		return nil, fmt.Errorf("cuda drafter: the target uses per-32 activation quantization, which the drafter's batched kernels do not implement")
+	}
 	geo := w.DrafterGeometry()
 	if geo.Hidden != r.hidden {
 		return nil, fmt.Errorf("cuda drafter: hidden %d != target hidden %d — wrong pairing", geo.Hidden, r.hidden)

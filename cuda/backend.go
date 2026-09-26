@@ -243,6 +243,26 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	layerNorm := m.LayerNormResident()
 	parallelBlock := m.ParallelBlockResident()
 	logitScale, _ := m.LogitScaleResident() // ok=false ⇒ 1, already the applyLogitScale no-op value
+	// Per-32 ACTIVATION quantization (decoder.Options.ActQuantGroup, actgroup.cu): implemented for the
+	// plain dense RMSNorm decode path. Every path whose kernels read ONE activation scale per vector
+	// declines by name rather than reading a per-group buffer as a per-vector one.
+	actG32 := m.ActQuantGroup() == 32
+	if actG32 {
+		switch {
+		case isMoE:
+			return declined(fmt.Errorf("per-32 activations: the MoE expert/router kernels read per-vector activation scales"))
+		case mlaOK:
+			return declined(fmt.Errorf("per-32 activations: the MLA path is not implemented"))
+		case isGemma4:
+			return declined(fmt.Errorf("per-32 activations: the Gemma 4 path is not implemented"))
+		case dnetOK:
+			return declined(fmt.Errorf("per-32 activations: the Gated DeltaNet path is not implemented"))
+		case layerNorm, postOnly, parallelBlock:
+			return declined(fmt.Errorf("per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented"))
+		case H%32 != 0 || I%32 != 0:
+			return declined(fmt.Errorf("per-32 activations need hidden (%d) and FFN width (%d) to be multiples of 32", H, I))
+		}
+	}
 	hls := make([]hlayer, nLayers)
 	for l := range nLayers {
 		lw := &w.Layers[l]
@@ -619,7 +639,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
 		qkNorm: m.HasQKNorm(), qkNormWhole: qkNormWhole, rmsAddOne: m.RMSAddOne(),
 		act: int32(m.GatedActResident()), sandwich: m.SandwichNormResident(), postOnly: postOnly,
-		layerNorm: layerNorm, parallelBlock: parallelBlock, logitScale: logitScale,
+		layerNorm: layerNorm, parallelBlock: parallelBlock, logitScale: logitScale, actG32: actG32,
 		moe: isMoE, nE: nE, topK: topK, moeInter: moeInter,
 		moeScale: float32(moeScale), nGroup: nGroup, topkGroup: topkGroup,
 		sharedInter: sharedInter,
@@ -876,6 +896,27 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		for _, f := range fns {
 			if *f.dst, e = r.dev.NewComputePipeline(glmod, f.name); e != nil {
 				return e
+			}
+		}
+		// Per-32 activations: bind actgroup.cu's kernels INTO the per-vector pipeline fields. Each has
+		// its per-vector sibling's exact argument list and launch shape, so every launch site runs the
+		// per-32 kernel unedited; the paths that would still read a per-vector scale declined above,
+		// fusion is off, and batched prefill declines (prefillStaticDecline).
+		if r.actG32 {
+			agmod, e3 := r.dev.CompileLibrary(actGroupPTX)
+			if e3 != nil {
+				return fmt.Errorf("actgroup module: %w", e3)
+			}
+			for _, f := range []struct {
+				dst  *Pipeline
+				name string
+			}{
+				{&r.fRms, "rmsnorm_quant_g32"}, {&r.fQ, "quant_vec_g32"}, {&r.fSw, "glu_quant_g32"},
+				{&r.gemvW4, "gemv_w4a8_g32"}, {&r.gemvW8, "gemv_w8a8_g32"},
+			} {
+				if *f.dst, e = r.dev.NewComputePipeline(agmod, f.name); e != nil {
+					return fmt.Errorf("actgroup %s: %w", f.name, e)
+				}
 			}
 		}
 		// argmax_reduce lives in its own module (argmax.ptx), off glue.ptx, so the C-14 index tie-break
@@ -1518,7 +1559,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		if !r.isMLA && maxQDim != nH*maxHd {
 			return fmt.Errorf("cuda: scratch maxQDim=%d != nH*maxHd=%d*%d=%d — per-layer geometry inconsistent with the accessors", maxQDim, nH, maxHd, nH*maxHd)
 		}
-		r.x, r.aSc, r.aq = r.af(H), r.af(1), r.ai(H/4)
+		r.x, r.aSc, r.aq = r.af(H), r.af(r.actScaleLen(H)), r.ai(H/4)
 		qBufDim := maxQDim
 		if r.isMLA {
 			qBufDim = nH * r.mlaQKHead
@@ -1556,7 +1597,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 			r.kc[l], r.vc[l] = r.af(r.ctxCap*r.layers[l].kvDim), r.af(r.ctxCap*r.layers[l].kvDim)
 		}
-		r.cctx, r.cSc, r.cq = r.af(maxQDim), r.af(1), r.ai(maxQDim/4)
+		if r.actG32 && maxQDim%32 != 0 {
+			return fmt.Errorf("per-32 activations need the attention width (%d) to be a multiple of 32", maxQDim)
+		}
+		r.cctx, r.cSc, r.cq = r.af(maxQDim), r.af(r.actScaleLen(maxQDim)), r.ai(maxQDim/4)
 		// K=V (attention_k_eq_v) layers derive V = v_norm(k) by reusing qk_norm with a UNIT weight
 		// [maxHd] (so x*inv*w = x*inv, scale-less; addOne=0). Allocate it only when needed.
 		for l := range r.layers {
@@ -1570,7 +1614,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 		}
 		r.oO = r.af(H)
-		r.mSc, r.mq = r.af(1), r.ai(H/4)
+		r.mSc, r.mq = r.af(r.actScaleLen(H)), r.ai(H/4)
 		if r.layerNorm {
 			r.zeroBias = r.af(H)
 			if err := gpu.Upload(r.zeroBias, make([]float32, H)); err != nil {
@@ -1590,7 +1634,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// stands for. That is a fixture-fidelity gap, recorded rather than silently fixed here.
 		if I > 0 {
 			r.gO, r.uO = r.af(I), r.af(I)
-			r.dSc, r.dScr, r.dq = r.af(1), r.af(I), r.ai(I/4)
+			r.dSc, r.dScr, r.dq = r.af(r.actScaleLen(I)), r.af(I), r.ai(I/4)
 		} else if !isMoE {
 			return fmt.Errorf("cuda: intermediate_size is 0 on a DENSE model — no FFN to run")
 		}
@@ -1748,6 +1792,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		r.fuseQKV = false
 	}
 	if r.isMLA {
+		r.fuseQKV = false
+	}
+	if r.actG32 {
+		// fused_rms_qkv / fused_rms_gu quantize per vector internally.
 		r.fuseQKV = false
 	}
 	// CUDA graphs (GOINFER_CUDA_GRAPHS): capture each layer's static launch segments now that fuseQKV

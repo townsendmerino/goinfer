@@ -463,6 +463,7 @@ type cudaResident struct {
 	sandwich     bool   // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
 	postOnly     bool   // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — segA quantizes the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
 	// G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+	actG32        bool    // decoder.Options.ActQuantGroup == 32: actgroup.cu's per-32 kernels are bound into fRms/fQ/fSw/gemvW4/gemvW8, and every activation scale buffer holds K/32 floats (actScaleLen)
 	layerNorm     bool    // arch.Norm==NormLayer — layernorm_quant (mean-centered, bias-free) instead of rmsnorm_quant at every norm site that feeds a GEMV; see the r.norm dispatcher
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — segBFFN reuses segA's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in step(); 0 ⇒ none (FeatLogitScale)
@@ -3987,4 +3988,13 @@ func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool, x Buffer) error 
 		r.layerCapBuf = append(r.layerCapBuf, h)
 	}
 	return nil
+}
+
+// actScaleLen is how many f32 activation scales a K-wide int8 activation carries: 1 per vector, or
+// K/32 under per-32 activation quantization (actG32).
+func (r *cudaResident) actScaleLen(k int) int {
+	if r.actG32 {
+		return k / 32
+	}
+	return 1
 }
