@@ -156,6 +156,14 @@ Re-run J6's measurement once after MC1 ships; its 1.024× was taken against a si
 
 ## MC2 — kill or earn: batched decode on CPU
 
+**S0, 2026-09-26** ([`concurrency-mc2-s0-2026-09-26.md`](../measurements/concurrency-mc2-s0-2026-09-26.md)): on the
+Mac's CPU, one existing forward carrying n rows (`forwardN`, bit-identical to n sequential forwards) costs 1.77–1.93×
+a one-row forward at n = 4 (int4, 0.5B and 1.5B, depth 128 and 512). Batching's ceiling at B = 4 is therefore ≈ 2.1–2.3×,
+far above the earn line. It is an upper bound: B separate sequences do not share attention the way one sequence's
+rows do. The registered grade still needs the multi-sequence prototype below. On the identity question below:
+`forwardN`'s own contract already shows the M = B projection kernels are bit-identical to M = 1 row for row, so the
+identity gate applies.
+
 **Question.** Does one forward carrying B sequences beat B sequential forwards by enough to be
 worth MC3's cost? Asked on CPU first because the batched matmul already exists in aikit
 (`MatmulBTW4A8Batch`), each `decoder.Session` already owns a separate KV cache, and the result can

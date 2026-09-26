@@ -1,0 +1,23 @@
+2026-09-26 16:41:11 PDT commit a3b30f49 quant=int4 load1=1.62
+=== RUN   TestThetaProbe_CPU
+    theta_probe_test.go:93: CPU depth= 128  T(1)=    8956 µs  slope=    2055 µs/node  THETA=0.229
+    theta_probe_test.go:95:     n= 1  T=     8956 µs  (T(n)/T(1)= 1.00)
+    theta_probe_test.go:95:     n= 2  T=    12743 µs  (T(n)/T(1)= 1.42)
+    theta_probe_test.go:95:     n= 3  T=    17570 µs  (T(n)/T(1)= 1.96)
+    theta_probe_test.go:95:     n= 4  T=    15965 µs  (T(n)/T(1)= 1.78)
+    theta_probe_test.go:95:     n= 6  T=    24368 µs  (T(n)/T(1)= 2.72)
+    theta_probe_test.go:95:     n= 8  T=    25259 µs  (T(n)/T(1)= 2.82)
+    theta_probe_test.go:95:     n=12  T=    33938 µs  (T(n)/T(1)= 3.79)
+    theta_probe_test.go:95:     n=16  T=    41074 µs  (T(n)/T(1)= 4.59)
+    theta_probe_test.go:93: CPU depth= 512  T(1)=   10844 µs  slope=    2702 µs/node  THETA=0.249
+    theta_probe_test.go:95:     n= 1  T=    10844 µs  (T(n)/T(1)= 1.00)
+    theta_probe_test.go:95:     n= 2  T=    15217 µs  (T(n)/T(1)= 1.40)
+    theta_probe_test.go:95:     n= 3  T=    20170 µs  (T(n)/T(1)= 1.86)
+    theta_probe_test.go:95:     n= 4  T=    19248 µs  (T(n)/T(1)= 1.77)
+    theta_probe_test.go:95:     n= 6  T=    28536 µs  (T(n)/T(1)= 2.63)
+    theta_probe_test.go:95:     n= 8  T=    31183 µs  (T(n)/T(1)= 2.88)
+    theta_probe_test.go:95:     n=12  T=    42806 µs  (T(n)/T(1)= 3.95)
+    theta_probe_test.go:95:     n=16  T=    52385 µs  (T(n)/T(1)= 4.83)
+--- PASS: TestThetaProbe_CPU (5.40s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	5.912s

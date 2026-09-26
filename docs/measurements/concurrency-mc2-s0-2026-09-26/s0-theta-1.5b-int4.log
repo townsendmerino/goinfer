@@ -1,0 +1,24 @@
+2026-09-26 16:41:50 PDT commit a3b30f49 model=1.5B quant=int4 load1=1.58
+=== RUN   TestThetaProbe_CPU
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.9 GB; this machine currently has 7.2 GB of memory available (budget 5.1 GB = 70% of that) (96% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    theta_probe_test.go:93: CPU depth= 128  T(1)=   18667 µs  slope=    4850 µs/node  THETA=0.260
+    theta_probe_test.go:95:     n= 1  T=    18667 µs  (T(n)/T(1)= 1.00)
+    theta_probe_test.go:95:     n= 2  T=    29680 µs  (T(n)/T(1)= 1.59)
+    theta_probe_test.go:95:     n= 3  T=    40862 µs  (T(n)/T(1)= 2.19)
+    theta_probe_test.go:95:     n= 4  T=    36064 µs  (T(n)/T(1)= 1.93)
+    theta_probe_test.go:95:     n= 6  T=    54448 µs  (T(n)/T(1)= 2.92)
+    theta_probe_test.go:95:     n= 8  T=    57106 µs  (T(n)/T(1)= 3.06)
+    theta_probe_test.go:95:     n=12  T=    79366 µs  (T(n)/T(1)= 4.25)
+    theta_probe_test.go:95:     n=16  T=    95332 µs  (T(n)/T(1)= 5.11)
+    theta_probe_test.go:93: CPU depth= 512  T(1)=   22013 µs  slope=    5289 µs/node  THETA=0.240
+    theta_probe_test.go:95:     n= 1  T=    22013 µs  (T(n)/T(1)= 1.00)
+    theta_probe_test.go:95:     n= 2  T=    34400 µs  (T(n)/T(1)= 1.56)
+    theta_probe_test.go:95:     n= 3  T=    44507 µs  (T(n)/T(1)= 2.02)
+    theta_probe_test.go:95:     n= 4  T=    42126 µs  (T(n)/T(1)= 1.91)
+    theta_probe_test.go:95:     n= 6  T=    62493 µs  (T(n)/T(1)= 2.84)
+    theta_probe_test.go:95:     n= 8  T=    63953 µs  (T(n)/T(1)= 2.91)
+    theta_probe_test.go:95:     n=12  T=    84536 µs  (T(n)/T(1)= 3.84)
+    theta_probe_test.go:95:     n=16  T=   107671 µs  (T(n)/T(1)= 4.89)
+--- PASS: TestThetaProbe_CPU (11.77s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	12.162s

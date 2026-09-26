@@ -1,0 +1,24 @@
+2026-09-26 16:42:02 PDT commit a3b30f49 model=1.5B quant=int8int8 load1=1.73
+=== RUN   TestThetaProbe_CPU
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.7 GB resident at quant int8int8 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.5 GB; this machine currently has 7.2 GB of memory available (budget 5.1 GB = 70% of that) (88% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    theta_probe_test.go:93: CPU depth= 128  T(1)=   23441 µs  slope=    2342 µs/node  THETA=0.100
+    theta_probe_test.go:95:     n= 1  T=    23441 µs  (T(n)/T(1)= 1.00)
+    theta_probe_test.go:95:     n= 2  T=    28152 µs  (T(n)/T(1)= 1.20)
+    theta_probe_test.go:95:     n= 3  T=    36305 µs  (T(n)/T(1)= 1.55)
+    theta_probe_test.go:95:     n= 4  T=    29410 µs  (T(n)/T(1)= 1.25)
+    theta_probe_test.go:95:     n= 6  T=    45043 µs  (T(n)/T(1)= 1.92)
+    theta_probe_test.go:95:     n= 8  T=    39215 µs  (T(n)/T(1)= 1.67)
+    theta_probe_test.go:95:     n=12  T=    50729 µs  (T(n)/T(1)= 2.16)
+    theta_probe_test.go:95:     n=16  T=    62161 µs  (T(n)/T(1)= 2.65)
+    theta_probe_test.go:93: CPU depth= 512  T(1)=   24246 µs  slope=    3136 µs/node  THETA=0.129
+    theta_probe_test.go:95:     n= 1  T=    24246 µs  (T(n)/T(1)= 1.00)
+    theta_probe_test.go:95:     n= 2  T=    30691 µs  (T(n)/T(1)= 1.27)
+    theta_probe_test.go:95:     n= 3  T=    40693 µs  (T(n)/T(1)= 1.68)
+    theta_probe_test.go:95:     n= 4  T=    35502 µs  (T(n)/T(1)= 1.46)
+    theta_probe_test.go:95:     n= 6  T=    51616 µs  (T(n)/T(1)= 2.13)
+    theta_probe_test.go:95:     n= 8  T=    47658 µs  (T(n)/T(1)= 1.97)
+    theta_probe_test.go:95:     n=12  T=    61751 µs  (T(n)/T(1)= 2.55)
+    theta_probe_test.go:95:     n=16  T=    75731 µs  (T(n)/T(1)= 3.12)
+--- PASS: TestThetaProbe_CPU (7.86s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	8.183s
