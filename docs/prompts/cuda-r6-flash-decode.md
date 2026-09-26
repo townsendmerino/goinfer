@@ -129,6 +129,12 @@ boundary; a rising score ramp; a dominating sink and a non-dominating one; a win
 > and an f16 projection (~64 tok/s at 3900, ~1.19× at 2048) are in
 > `docs/measurements/f16kv-baseline-2026-09-26.md`. The band below is left as registered; a
 > replacement is the owner's to set.
+>
+> **Owner decision 2026-09-26: phase 3 is PARKED.** The projected f16 win is real but narrow:
+> ~1.19× at 2048 on Phi-3, and ~1.05× on a GQA model such as Qwen2.5-7B at 3900. Phi-3's gap at every
+> depth is its int8 weights, so int4 weight quality goes first. Re-open on either trigger: a non-GQA
+> model becomes a headline peer cell, or Phi-3 at depth ≥3900 on an 8 GB card is asked for. On
+> re-open, register a new band on a cell that exists, such as the same-session f16/f32 ratio at 2048.
 
 phi3-mini is the geometry R6 expects the lane to decline on, which leaves it with no depth lever
 from phase 2 at all. It does not need one: it is already byte-bound (`splitkv-mechanism-ncu-2026-09-12.md`
