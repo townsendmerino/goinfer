@@ -1,0 +1,13 @@
+=== RUN   TestActGroup_phi3ResidentMatchesCPU
+    actgroup_phi3_resident_test.go:99: cuda per-32 vs cpu per-32: 141 positions, cosine min 0.867648 p10 0.993694 median 0.999844
+    actgroup_phi3_resident_test.go:99: cuda per-32 vs cpu f32: 141 positions, cosine min 0.695102 p10 0.942460 median 0.984243
+    actgroup_phi3_resident_test.go:99: cpu per-32 vs cpu f32 (same prompt, the baseline): 141 positions, cosine min 0.305582 p10 0.936039 median 0.983845
+--- PASS: TestActGroup_phi3ResidentMatchesCPU (362.15s)
+=== RUN   TestQ4K_phi3ResidentMatchesCPU
+    q4k_phi3_resident_test.go:65: resident: context 4096 positions, 112 projections on gemv_q4k_g32
+    q4k_phi3_resident_test.go:98: cuda q4k vs cpu q4k: 141 positions, cosine min 0.918161 p10 0.996067 median 0.999820
+    q4k_phi3_resident_test.go:98: cuda q4k vs cpu f32: 141 positions, cosine min 0.639528 p10 0.954917 median 0.982710
+    q4k_phi3_resident_test.go:98: cpu q4k vs cpu f32 (same prompt, the baseline): 141 positions, cosine min 0.435308 p10 0.926208 median 0.982052
+--- PASS: TestQ4K_phi3ResidentMatchesCPU (996.66s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	1360.701s

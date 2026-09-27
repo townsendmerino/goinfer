@@ -1,0 +1,10 @@
+=== RUN   TestQ4K_phi3ResidentMatchesCPU
+    q4k_phi3_resident_test.go:65: resident: context 4096 positions, 112 projections on gemv_q4k_g32
+    q4k_phi3_resident_test.go:98: cuda q4k vs cpu q4k: 141 positions, cosine min 0.863248 p10 0.981240 median 0.997750
+    q4k_phi3_resident_test.go:98: cuda q4k vs cpu f32: 141 positions, cosine min 0.646399 p10 0.960644 median 0.979181
+    q4k_phi3_resident_test.go:98: cpu q4k vs cpu f32 (same prompt, the baseline): 141 positions, cosine min 0.435308 p10 0.926208 median 0.982052
+    q4k_phi3_resident_test.go:106: CUDA q4k vs CPU q4k: median cosine 0.997750, want >= 0.999
+--- FAIL: TestQ4K_phi3ResidentMatchesCPU (371.71s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	372.946s
+FAIL

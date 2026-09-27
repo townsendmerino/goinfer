@@ -1,0 +1,12 @@
+=== 2026-09-27T01:50:14Z waiting for idle: 0% cpu idle, 79.8C
+=== 2026-09-27T01:51:15Z waiting for idle: 0% cpu idle, 71.5C
+=== 2026-09-27T01:52:15Z waiting for idle: 0% cpu idle, 68.8C
+=== 2026-09-27T01:53:16Z waiting for idle: 0% cpu idle, 69.5C
+=== idle: 99% cpu idle, 69.5C
+=== 2026-09-27T01:54:16Z phi3-mini int8int8 g32 depth 128 round 1/6
+=== idle: 99% cpu idle, 70.0C
+=== 2026-09-27T01:54:52Z phi3-mini q4k g0 depth 128 round 1/6
+=== idle: 99% cpu idle, 66.6C
+=== 2026-09-27T01:55:23Z phi3-mini int8int8 g32 depth 2048 round 1/6
+=== idle: 98% cpu idle, 70.5C
+=== 2026-09-27T01:57:43Z phi3-mini q4k g0 depth 2048 round 1/6

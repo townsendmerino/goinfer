@@ -1,0 +1,6 @@
+phi3-mini int8int8 g32 d128 1 BenchmarkResidentDecode-16    	      64	  13787813 ns/op	        89.90 tok/s
+phi3-mini int8int8 g32 d128 1 BenchmarkResidentDecode-16    	      64	  13828845 ns/op	        89.76 tok/s
+phi3-mini q4k g0 d128 1 BenchmarkResidentDecode-16    	      64	  16018412 ns/op	        73.69 tok/s
+phi3-mini q4k g0 d128 1 BenchmarkResidentDecode-16    	      64	  16075595 ns/op	        73.68 tok/s
+phi3-mini int8int8 g32 d2048 1 BenchmarkResidentDecode-16    	      64	  19092042 ns/op	        62.85 tok/s
+phi3-mini int8int8 g32 d2048 1 BenchmarkResidentDecode-16    	      64	  19055005 ns/op	        62.95 tok/s
