@@ -537,3 +537,40 @@ largest measured win. Phi-3 (3072) and qwen2.5-7b (3584) keep today's unfused pa
 BEHIND), and the 7B is unchanged (~0.93× llama.cpp). By the byte accounting, lever 2 (native Q6_K for the
 layer tensors and the output head, llama.cpp's bytes) projects both to about level at depth 128. The
 deeper cells stay the open question.
+
+## Lever 2 (native Q6_K) PARKED, owner decision 2026-09-27; the q4k track stops here
+
+**Why park.** Projected from the measured ~340 GB/s weight bandwidth (the method that predicted the 7B's
+q4k ÷ int4 of 0.90 exactly), with each depth's f32 KV bytes added (qwen2.5-7b ≈ 115 KB/position,
+qwen2.5-coder-1.5b ≈ 57 KB/position). Lever 2 means native Q6_K for the layer tensors and the output
+head: llama.cpp's bytes.
+
+| cell | q4k today | with lever 2 | llama.cpp | ratio | vs the peer rule |
+|---|---|---|---|---|---|
+| 7B d128 | 72.6 | ~77.1 | 78.2 | ~0.99 | LEVEL |
+| 7B d2048 | 68.6 | ~72.7 | 76.1 | ~0.95 | still BEHIND |
+| 7B d3900 | 66.0 | ~69.8 | 74.4 | ~0.94 | still BEHIND |
+| 1.5B d128 | ~215 (projected, lever 3) | ~232 | 228.5 | ~1.02 | LEVEL |
+| 1.5B d2048 / d3900 | ~194 / ~189 (projected) | ~208 / ~201 | 218.5 / 210.8 | ~0.95 | still BEHIND |
+
+The maximum gain is ~6–8%, which levels the depth-128 cells. The deeper cells stay at ~0.94–0.95, so the
+pre-registered default rule (every cell level or ahead under int4 stays so) **would still fail**.
+
+**The binding constraint at depth is decode attention, not the weight format.** Today's int4 reads *fewer*
+weight bytes than llama.cpp and is still only 0.985× at 7B/3900 and 1.019× at 1.5B/3900. Every weight
+format rides on that.
+
+**Re-open trigger:** goinfer's CUDA decode at depth 2048/3900 reaches llama.cpp parity with int4 on the
+headline cells, with enough margin that weight bytes, not attention, decide the cell. Lever 2 is then
+the last step, and it projects to a q4k default that is level everywhere. Re-open with its own
+pre-registration: a Q6_K CUDA GEMV, a CPU path or int8 for Q6_K on the CPU, and a re-run of the
+pre-registered peer comparison unchanged.
+
+**Where the track stands (all on `main`):**
+- `--quant q4k` on CPU and CUDA, exact Q4_K. Quality: qwen2.5-7b filler p10 0.306 → 0.992 against int4.
+- Phi-3 defaults to q4k on CPU and CUDA: 1.31× / 1.26× its previous default, resident at the full
+  4096 context on the 8 GB card.
+- Fused per-32 kernels for H ≤ 1536: small-model q4k +11%.
+- Other Q4_K GGUFs keep the int4 default by the peer rule; q4k is opt-in for them.
+- Open elsewhere: the Mac arm64 check of the Phi-3 CPU default (prompt handed off 2026-09-26), and
+  `TestMC3_stepErrorFailsTheGeneration` flaking on the macOS runner (the MC3 owner's to fix).
