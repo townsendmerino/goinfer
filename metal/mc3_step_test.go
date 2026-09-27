@@ -125,10 +125,16 @@ func TestMC3Step_bitIdenticalDeep(t *testing.T) {
 	mc3Identity(t, []int{attnFADepthFloor + 400, attnFADepthFloor - 6, 100, attnFADepthFloor + 64}, 2048)
 }
 
-func mc3Identity(t *testing.T, depths []int, ctx int) {
+func mc3Identity(t *testing.T, depths []int, ctx int) { mc3IdentityWith(t, depths, ctx, nil) }
+
+// mc3IdentityWith is mc3Identity with setup run on the resident before any step (to force a path).
+func mc3IdentityWith(t *testing.T, depths []int, ctx int, setup func(r *resident)) {
 	const steps = 12
 	B := len(depths)
 	_, r := mc3Resident(t, 2*B, ctx)
+	if setup != nil {
+		setup(r)
+	}
 	seed := uint32(1234567)
 	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
 	for m, D := range depths {
@@ -166,6 +172,24 @@ func mc3Identity(t *testing.T, depths []int, ctx int) {
 		}
 	}
 	t.Logf("%d sequences x %d steps at depths %v: %d logits differ from production's single-token forward", B, steps, depths, totalDiff)
+}
+
+// TestMC3Step_rowsPathBitIdentical is S4's identity check: with qkv and gate|up forced onto per-row production GEMVs
+// at every batch size, and then forced onto the fragment at every size, a batched step at B = 2, 3 and 4 matches
+// production's single-token forward on every logit. Which one calibrateRows picks changes speed only.
+//
+//	GOINFER_METAL_MC3=1 go test -tags goinfer_testhooks -count=1 -run '^TestMC3Step_rowsPathBitIdentical$' -v ./metal/
+func TestMC3Step_rowsPathBitIdentical(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		rows int
+	}{{"per-row", batchMaxSeqs}, {"fragment", 0}} {
+		for _, depths := range [][]int{{5, 300}, {23, 40, 300}, {5, 23, 40, 300}} {
+			t.Run(fmt.Sprintf("%s/B=%d", c.name, len(depths)), func(t *testing.T) {
+				mc3IdentityWith(t, depths, 1024, func(r *resident) { r.batch.rowsQKV, r.batch.rowsGU = c.rows, c.rows })
+			})
+		}
+	}
 }
 
 // TestMC3Step_throughput is S1's in-sequence cost (exploratory): one batched step of B = 1, 2, 4, 8 sequences, each on

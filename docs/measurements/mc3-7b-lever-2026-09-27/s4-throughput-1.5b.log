@@ -1,0 +1,10 @@
+=== RUN   TestMC3Step_throughput
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.039 ms), gate|up at B <= 2 (0.110, 0.253); 0 = always the fragment
+[mc3-s1   12.8s] depth 128: 9 slots filled
+[mc3-s1   20.1s] depth 128: production 10.602 ms/token  | B=1 step 13.184 ms (1.24x a token), aggregate 0.805x [0.767-0.823]  | B=2 step 16.869 ms (1.59x a token), aggregate 1.255x [1.236-1.297]  | B=4 step 18.171 ms (1.71x a token), aggregate 2.330x [2.140-2.395]  | B=8 step 19.243 ms (1.82x a token), aggregate 4.403x [4.003-4.472]
+[mc3-s1   72.1s] depth 512: 9 slots filled
+[mc3-s1   80.4s] depth 512: production 11.579 ms/token  | B=1 step 13.971 ms (1.21x a token), aggregate 0.826x [0.822-0.837]  | B=2 step 18.792 ms (1.62x a token), aggregate 1.229x [1.223-1.247]  | B=4 step 21.065 ms (1.82x a token), aggregate 2.195x [2.158-2.215]  | B=8 step 24.477 ms (2.11x a token), aggregate 3.789x [3.655-3.798]
+--- PASS: TestMC3Step_throughput (80.66s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	81.183s

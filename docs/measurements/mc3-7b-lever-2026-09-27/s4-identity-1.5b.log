@@ -1,0 +1,63 @@
+=== RUN   TestMC3_concurrentMatchesAloneOnMetal
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.051 ms, fragment 0.116 ms), gate|up at B <= 2 (0.110, 0.252); 0 = always the fragment
+goinfer: batched prefill declined for a 20-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): metal: prompt too short (20 tokens) for fast prefill (floor=64; §3 floor); using sequential path
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.038 ms), gate|up at B <= 2 (0.110, 0.252); 0 = always the fragment
+    mc3_concurrent_test.go:132: batched steps 96 serving 371 tokens, largest 4
+    mc3_concurrent_test.go:146: conversation 0: reused per turn [0 52 99]; turn 0 32 tokens
+    mc3_concurrent_test.go:146: conversation 1: reused per turn [0 52 99]; turn 0 32 tokens
+    mc3_concurrent_test.go:146: conversation 2: reused per turn [0 50 97]; turn 0 32 tokens
+    mc3_concurrent_test.go:146: conversation 3: reused per turn [0 51 98]; turn 0 32 tokens
+--- PASS: TestMC3_concurrentMatchesAloneOnMetal (9.92s)
+=== RUN   TestMC3_concurrentSampledMatchesAloneOnMetal
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.021 ms, fragment 0.037 ms), gate|up at B <= 2 (0.110, 0.251); 0 = always the fragment
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.018 ms, fragment 0.039 ms), gate|up at B <= 2 (0.110, 0.252); 0 = always the fragment
+    mc3_concurrent_test.go:222: steps 48 serving 163 tokens, sizes [0 0 0 29 19 0], solo 0
+--- PASS: TestMC3_concurrentSampledMatchesAloneOnMetal (4.16s)
+=== RUN   TestMC3Step_bitIdentical
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.018 ms, fragment 0.039 ms), gate|up at B <= 2 (0.110, 0.251); 0 = always the fragment
+    mc3_step_test.go:174: 4 sequences x 12 steps at depths [5 23 40 300]: 0 logits differ from production's single-token forward
+--- PASS: TestMC3Step_bitIdentical (9.20s)
+=== RUN   TestMC3Step_rowsPathBitIdentical
+=== RUN   TestMC3Step_rowsPathBitIdentical/per-row/B=2
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.018 ms, fragment 0.038 ms), gate|up at B <= 2 (0.110, 0.251); 0 = always the fragment
+    mc3_step_test.go:174: 2 sequences x 12 steps at depths [5 300]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_rowsPathBitIdentical/per-row/B=3
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.037 ms), gate|up at B <= 2 (0.110, 0.250); 0 = always the fragment
+    mc3_step_test.go:174: 3 sequences x 12 steps at depths [23 40 300]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_rowsPathBitIdentical/per-row/B=4
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.018 ms, fragment 0.038 ms), gate|up at B <= 2 (0.110, 0.251); 0 = always the fragment
+    mc3_step_test.go:174: 4 sequences x 12 steps at depths [5 23 40 300]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_rowsPathBitIdentical/fragment/B=2
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.018 ms, fragment 0.038 ms), gate|up at B <= 2 (0.109, 0.251); 0 = always the fragment
+    mc3_step_test.go:174: 2 sequences x 12 steps at depths [5 300]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_rowsPathBitIdentical/fragment/B=3
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.038 ms), gate|up at B <= 2 (0.111, 0.250); 0 = always the fragment
+    mc3_step_test.go:174: 3 sequences x 12 steps at depths [23 40 300]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_rowsPathBitIdentical/fragment/B=4
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.018 ms, fragment 0.038 ms), gate|up at B <= 2 (0.110, 0.252); 0 = always the fragment
+    mc3_step_test.go:174: 4 sequences x 12 steps at depths [5 23 40 300]: 0 logits differ from production's single-token forward
+--- PASS: TestMC3Step_rowsPathBitIdentical (49.71s)
+    --- PASS: TestMC3Step_rowsPathBitIdentical/per-row/B=2 (7.23s)
+    --- PASS: TestMC3Step_rowsPathBitIdentical/per-row/B=3 (8.70s)
+    --- PASS: TestMC3Step_rowsPathBitIdentical/per-row/B=4 (8.92s)
+    --- PASS: TestMC3Step_rowsPathBitIdentical/fragment/B=2 (7.45s)
+    --- PASS: TestMC3Step_rowsPathBitIdentical/fragment/B=3 (8.53s)
+    --- PASS: TestMC3Step_rowsPathBitIdentical/fragment/B=4 (8.87s)
+=== RUN   TestMC3Step_drawsMatchForwardSample
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.039 ms), gate|up at B <= 2 (0.110, 0.250); 0 = always the fragment
+    mc3_step_test.go:339: 12 steps: 24 device draws and 24 logits rows checked, 0 differ
+--- PASS: TestMC3Step_drawsMatchForwardSample (7.37s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	80.843s

@@ -280,6 +280,9 @@ type batchState struct {
 	uCount                    []Buffer // uCount[k] holds k (0..batchMaxSeqs): a row count for a dispatch
 	noBias                    Buffer
 	qkvRows, nHhd, kOff, vOff int
+	// S4: qkv / gate|up run as per-row production GEMVs at B <= rowsQKV / rowsGU, and as the fragment above that (0:
+	// always the fragment). Set by calibrateRows at build; tests set them to force either path.
+	rowsQKV, rowsGU int
 	// steps / seqs / maxSeqs count completed batched steps, the sequences they served, and the largest batch — read by
 	// tests to confirm a concurrent run really batched. Written only inside forwardMulti, which the decoder serialises.
 	steps, seqs, maxSeqs int
@@ -384,6 +387,66 @@ func (r *resident) buildBatch() {
 		b.uCount = append(b.uCount, NewBufferU32(d, uint32(k)))
 	}
 	r.batch = b
+	r.calibrateRows()
+}
+
+// batchTGBytes is mc3_bt's / mc3_btd's threadgroup memory at FB = 2: the Q exchange.
+const batchTGBytes = 4 * 2 * 32 * 8
+
+// calibrateRows decides, once, at which batch sizes qkv and gate|up are cheaper as B per-row production GEMVs than as
+// one fragment dispatch (MC3 S4, docs/tasks/task-concurrency-2026-09.md). The fragment's cost is fixed for any B up to
+// 8, and a GEMV's is per row. On the 7B's large shapes the GEMV is bandwidth-bound and the fragment ALU-bound, so two
+// GEMVs beat one fragment (gate|up 0.87 against 1.17 ms). Both run on the real weights of the first layers, one layer's
+// weights per dispatch so the cache does not serve them, median of 7 command buffers after 2 warm-ups. The choice
+// changes speed only: the per-row path is production's own kernel on each row.
+func (r *resident) calibrateRows() {
+	b := r.batch
+	n := min(8, r.nL)
+	b.uM.SetU32(batchMaxSeqs)
+	pq, nq := saRowsPick(r.pSABias, r.pSABiasRows, b.qkvRows, r.gemvRows.qkv)
+	pg, ng := saRowsPick(r.pSA, r.pSARows, 2*r.I, r.gemvRows.gu)
+	arms := []func(e *Encoder, L *residLayer){
+		func(e *Encoder, L *residLayer) { // qkv, fragment
+			e.DispatchTG(b.bt, b.qkvRows/16*128, 128, batchTGBytes, L.qkvW, L.qkvS, b.aT, b.aScB, b.qkvB, r.uH, b.uQKV, b.uM, L.qkvBias, b.uMode[1])
+		},
+		func(e *Encoder, L *residLayer) { // qkv, one production GEMV
+			e.DispatchTG(pq, nq, 256, r.H*2, L.qkvW, L.qkvS, b.aqB, b.aScB, b.qkvB, L.qkvBias, r.uH)
+		},
+		func(e *Encoder, L *residLayer) { // gate|up, fragment
+			e.DispatchTG(b.bt, 2*r.I/16*128, 128, batchTGBytes, L.guW, L.guS, b.aT, b.mScB, b.guB, r.uH, b.uGU, b.uM, b.noBias, b.uMode[0])
+		},
+		func(e *Encoder, L *residLayer) { // gate|up, one production GEMV
+			e.DispatchTG(pg, ng, 256, r.H*2, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH)
+		},
+	}
+	// The arms interleave rep by rep, so both of a pair see the same GPU state, and each keeps its fastest command
+	// buffer after 3 warm-ups: a first use of a pipeline, or a clock still ramping, only ever makes a buffer slower.
+	best := make([]float64, len(arms))
+	for rep := range 10 {
+		for a, enc := range arms {
+			e := r.q.Begin()
+			for l := range n {
+				enc(e, &r.layers[l])
+			}
+			e.End()
+			if e.Err() != nil {
+				return // keep the fragment everywhere (rowsQKV = rowsGU = 0)
+			}
+			if t := (e.GPUEnd() - e.GPUStart()) / float64(n); rep >= 3 && (best[a] == 0 || t < best[a]) {
+				best[a] = t
+			}
+		}
+	}
+	rows := func(frag, gemv float64) int {
+		k := 0
+		for B := batchMinSeqs; B <= batchMaxSeqs && frag > 0 && gemv > 0 && float64(B)*gemv < frag; B++ {
+			k = B
+		}
+		return k
+	}
+	b.rowsQKV, b.rowsGU = rows(best[0], best[1]), rows(best[2], best[3])
+	fmt.Fprintf(os.Stderr, "metal: batched step: qkv as per-row GEMVs at B <= %d (GEMV %.3f ms, fragment %.3f ms), gate|up at B <= %d (%.3f, %.3f); 0 = always the fragment\n",
+		b.rowsQKV, best[1]*1e3, best[0]*1e3, b.rowsGU, best[3]*1e3, best[2]*1e3)
 }
 
 // batchSimdSumTreeOK runs mc3_sstree over random vectors spanning 24 binades (where different addition trees round
@@ -497,7 +560,12 @@ func (r *resident) forwardMulti(seqs []batchSeq) (logits [][]float32, ids []int,
 	// sub-row offset is always computed whole (row*n + off), never as row.At(off).
 	f32 := func(buf Buffer, m, n int) Buffer { return buf.At(4 * m * n) }
 	pack := func(e *Encoder, aq Buffer, K int, uK Buffer) { e.Dispatch(b.pack, K*8, 256, aq, b.aT, b.uM, uK) }
-	const tgb = 4 * 2 * 32 * 8 // mc3_bt / mc3_btd at FB = 2: the Q exchange
+	const tgb = batchTGBytes
+	// S4: below the calibrated sizes, qkv and gate|up run production's GEMV once per row (the row's int8 activations
+	// and scale in, its output row out), which is production's arithmetic by definition.
+	rowsQKV, rowsGU := B <= b.rowsQKV, B <= b.rowsGU
+	pq, nq := saRowsPick(r.pSABias, r.pSABiasRows, b.qkvRows, r.gemvRows.qkv)
+	pg, ng := saRowsPick(r.pSA, r.pSARows, 2*I, r.gemvRows.gu)
 	// Each row's attention plan, once per step: batchIneligible admits only uniform layers without a window, so a row's
 	// plan depends on its depth alone. Rows on the per-head kernel run in one dispatch (rowmapB); a row at attention_fa
 	// depth keeps its own two dispatches.
@@ -517,8 +585,14 @@ func (r *resident) forwardMulti(seqs []batchSeq) (logits [][]float32, ids []int,
 		// the per-row kernels run as one dispatch over all B rows (S3; batch_rows.go): norm+quant, RoPE, ctx quant,
 		// SwiGLU+quant. The KV store and attention address each sequence's own slot, so they stay per sequence.
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.preNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
-		pack(e, b.aqB, H, r.uH)
-		e.DispatchTG(b.bt, b.qkvRows/16*128, 128, tgb, L.qkvW, L.qkvS, b.aT, b.aScB, b.qkvB, r.uH, b.uQKV, b.uM, L.qkvBias, b.uMode[1])
+		if rowsQKV {
+			for m := range B {
+				e.DispatchTG(pq, nq, 256, H*2, L.qkvW, L.qkvS, b.aqB.At(m*H), b.aScB.At(4*m), f32(b.qkvB, m, b.qkvRows), L.qkvBias, r.uH)
+			}
+		} else {
+			pack(e, b.aqB, H, r.uH)
+			e.DispatchTG(b.bt, b.qkvRows/16*128, 128, tgb, L.qkvW, L.qkvS, b.aT, b.aScB, b.qkvB, r.uH, b.uQKV, b.uM, L.qkvBias, b.uMode[1])
+		}
 		e.Dispatch(r.pRope2Rows, B*(r.nH*g.half+g.nKV*g.half), 64, b.qkvB, L.invf, g.uHd, b.posB, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, b.qtB, b.uQKV, b.uM)
 		// KV store and attention, each row over its OWN slot: a layer's slots are one allocation (kvContig), reached
 		// as the slot-0 base (kvSlotBufs[0], offset 0) plus the row's element offset (slotOffB). One dispatch stores
@@ -544,8 +618,14 @@ func (r *resident) forwardMulti(seqs []batchSeq) (logits [][]float32, ids []int,
 		pack(e, b.cqB, nHhd, g.uNHhd)
 		e.DispatchTG(b.bt, H/16*128, 128, tgb, L.oW, L.oS, b.aT, b.cScB, b.xB, g.uNHhd, r.uH, b.uM, b.noBias, b.uMode[2])
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
-		pack(e, b.mqB, H, r.uH)
-		e.DispatchTG(b.bt, 2*I/16*128, 128, tgb, L.guW, L.guS, b.aT, b.mScB, b.guB, r.uH, b.uGU, b.uM, b.noBias, b.uMode[0])
+		if rowsGU {
+			for m := range B {
+				e.DispatchTG(pg, ng, 256, H*2, L.guW, L.guS, b.mqB.At(m*H), b.mScB.At(4*m), f32(b.guB, m, 2*I), r.uH)
+			}
+		} else {
+			pack(e, b.mqB, H, r.uH)
+			e.DispatchTG(b.bt, 2*I/16*128, 128, tgb, L.guW, L.guS, b.aT, b.mScB, b.guB, r.uH, b.uGU, b.uM, b.noBias, b.uMode[0])
+		}
 		e.Dispatch(r.pSwRows, B*256, 256, b.guB, b.guB, b.dqB, b.dScB, r.uI, r.uAct)
 		pack(e, b.dqB, I, r.uI)
 		e.DispatchTG(b.btd, H/16*128, 128, tgb, L.dW, L.dS, b.aT, b.dScB, b.xB, r.uI, r.uH, b.uM)
