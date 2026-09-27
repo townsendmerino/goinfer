@@ -90,3 +90,31 @@ Gates, all on the wired tree:
 | full token (GPU ms) | 1.5B 12.93 → **10.46** at 128, 13.89 → 11.30, 14.89 → 12.27; 7B 45.78 → **33.12**, 49.67 → 36.82, 52.33 → 39.42 |
 
 R18 alone had given 1.17× / 1.32× at depth 128. R18 plus R18b reads 1.38× / 1.46×.
+
+### End to end against Ollama (reported, not deciding)
+
+The setup was `scripts/bench_peer.py`, R17's and R18's protocol:
+- three engines interleaved cell by cell in one session, with a server restart between cells;
+- greedy decoding, 3 runs × 8 requests × 64 tokens, same weights;
+- idle-gated per cell;
+- the R18b build `serve-metal-c5d7e310` against its parent `serve-metal-9bafd1f3` (R18's integer rows kernels, the same
+  tree otherwise; `strings` finds the half-staged form in one binary and not the other) against Ollama v0.32.5.
+
+The run was 2026-09-26 18:57–19:06 PDT. Raw: [`e2e/`](metal-decode-gemv-r18b-2026-09-26/e2e/). Decode tok/s is the mean
+of 3 runs, and every spread is ≤ 1.0.
+
+| model | depth | R18b | R18 | Ollama | R18b ÷ R18 | **R18b ÷ Ollama** | R18 ÷ Ollama |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1.5B | 128 | 89.3 | 83.2 | 84.3 | 1.073× | **1.059×** | 0.987× |
+| 1.5B | 2048 | 83.2 | 77.7 | 80.1 | 1.071× | **1.039×** | 0.970× |
+| 1.5B | 3900 | 78.4 | 73.7 | 76.0 | 1.064× | **1.032×** | 0.970× |
+| 7B | 128 | 29.4 | 27.1 | 24.8 | 1.085× | **1.185×** | 1.093× |
+| 7B | 2048 | 26.6 | 24.7 | 23.9 | 1.077× | **1.113×** | 1.033× |
+| 7B | 3900 | 24.9 | 23.3 | 23.4 | 1.069× | **1.064×** | 0.996× |
+
+- **goinfer's Metal decode is now ahead of Ollama in every cell.** The 1.5B, which was 0.97–0.99× with R18, reads
+  1.03–1.06×.
+- The R18 build reproduces R18's own end-to-end row to within ~2% (83.2 / 77.7 / 73.7 / 27.1 / 24.7 here, against
+  83.9 / 77.7 / 73.2 / 27.7 / 25.3 on 2026-09-26 15:06–15:35 PDT).
+- The end-to-end gain, 1.06–1.09×, is what the GPU-time token predicted (10.58 vs 11.33 ms on the 1.5B at depth 128 is
+  1.07×).
