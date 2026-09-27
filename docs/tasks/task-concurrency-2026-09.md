@@ -134,6 +134,16 @@ conversations.
 - Outputs are bit-identical to each conversation served alone, on the tiny fixture and on qwen2.5-coder-1.5b.
 - Not converted: CUDA and WebGPU (one slot); recurrent families keep one; VL turns use the bound slot.
 - The fit guard's clamp is implemented, but no clamping load was run.
+- **Fixed 2026-09-26 (found by MC3 S1): the clamp was priced after the build had allocated its own buffers.**
+  - Its budget reads live available memory, and the base it compares against (`residentNeedBytes`) already includes
+    the weights, so the weights were counted twice.
+  - Measured on the 1.5B at a 1024 context: 2 of 8 slots granted (28 MB each) against a 4,044 MB base and 5,531 MB
+    live before the build, where 8 fit.
+  - `buildResident` now prices the slots first. `TestMetalKVSlots_pricedBeforeTheBuild` stubs the live figure to
+    fall by what the device allocates: it grants 2 of 4 before the fix and 4 of 4 after.
+  - This errs only toward fewer slots. MC1's logs do not record the count granted, but its W7 cells show every
+    turn prefilling only its new user turn at 4 clients, which fewer than 4 slots would have made thrash. So its
+    numbers ran at 4 and stand.
 
 **Goal.** N conversations' KV stay resident on the GPU at once, so interleaved turns reuse their
 own prefix instead of evicting each other. Still one generation at a time; no batching.

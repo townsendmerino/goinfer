@@ -687,6 +687,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	defer runtime.UnlockOSThread()
 	pool := NewARPool()
 	defer pool.Drain()
+	// MC1's slot count is priced BEFORE any buffer below exists. Its budget, metalMemoryCeiling, reads the live
+	// available memory; asked after the weights were allocated (as it once was, at the slot-allocation site), that
+	// reading already excluded the resident's own buffers while the base it is compared with (residentNeedBytes)
+	// still counts them — the weights counted twice. Measured 2026-09-26 on the 1.5B at a 1024 context: 2 slots of 8
+	// granted (28 MB each) with a base of 4,044 MB against 5,531 MB live before the build, where 8 fit.
+	kvSlots := metalKVSlots(m)
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		return nil, err
@@ -1132,9 +1138,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		}
 		r.layers[l] = L
 	}
-	// MC1: further resident KV slots, each a copy of the per-layer buffers just allocated (metalKVSlots: the model's
-	// request, clamped to what the memory guard allows; 1 for a family with recurrent state).
-	if n := metalKVSlots(m); n > 1 {
+	// MC1: further resident KV slots, each a copy of the per-layer buffers just allocated (kvSlots: the model's
+	// request, clamped to what the memory guard allows, priced at the top of this build; 1 for a family with
+	// recurrent state).
+	if n := kvSlots; n > 1 {
 		r.kvSlotBufs = make([]kvSlotBuf, n)
 		r.kvSlotBufs[0] = kvSlotBuf{r.kc, r.vc, r.ks, r.vs}
 		for s := 1; s < n; s++ {

@@ -139,3 +139,47 @@ func TestKVSlotsWithin(t *testing.T) {
 		}
 	}
 }
+
+// TestMetalKVSlots_pricedBeforeTheBuild pins where buildResident prices MC1's slots. metalKVSlots' budget reads the
+// live available memory, and the base it compares against already includes the resident's weights, so it must be
+// asked BEFORE those are allocated. Here the live probe is stubbed to fall by exactly what this device allocates
+// (MTLDevice.currentAllocatedSize, one device per process), from a starting figure where precisely `want` slots fit:
+// priced before the build, all of them are granted; priced after, the resident's own buffers eat the margin.
+func TestMetalKVSlots_pricedBeforeTheBuild(t *testing.T) {
+	if os.Getenv("GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
+		t.Skip("GOINFER_NO_RESIDENT_MEM_GUARD is set — the guard is disabled, nothing to price")
+	}
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	const want = 4
+	dir := t.TempDir()
+	writeDense(t, dir, genTinyWeights(rand.New(rand.NewSource(21))))
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int8int8", ResidentKVSlots: want})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	base, perSlot := residentNeedBytes(m), residentKVBytes(m)
+	if base <= 0 || perSlot <= 0 {
+		t.Skip("tiny fixture prices nothing")
+	}
+	live0 := base + int64(want-1)*perSlot + perSlot/2 // want slots fit, want+1 would not
+	alloc0 := int64(dev.CurrentAllocatedSize())
+	orig := metalLiveAvailable
+	metalLiveAvailable = func() int64 { return live0 - (int64(dev.CurrentAllocatedSize()) - alloc0) }
+	t.Cleanup(func() { metalLiveAvailable = orig })
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatalf("build resident: %v", err)
+	}
+	defer r.Close()
+	if grew := int64(dev.CurrentAllocatedSize()) - alloc0; grew < perSlot {
+		t.Skipf("the resident's allocations (%d bytes) are not visible through this device handle, or smaller than one "+
+			"slot (%d bytes): the stub cannot show the double count", grew, perSlot)
+	}
+	if got := len(r.kvSlotBufs); got != want {
+		t.Errorf("resident allocated %d KV slots, want %d: the slot count was priced after the build's own buffers "+
+			"had already come out of the live figure", got, want)
+	}
+}

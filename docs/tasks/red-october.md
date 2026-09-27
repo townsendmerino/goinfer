@@ -326,7 +326,7 @@ exp > attention MACs at so400m) and the S-06 NEON transcendentals unwired (R9).
 
 ### 2.9 Speculative decode and concurrency
 
-Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:818` — a loop of
+Metal's Θ=0.96 is an accurate report of an unbatched `ForwardN` (`metal/backend.go:830` — a loop of
 `Forward`s, one command buffer each); CUDA's 0.25 with the same drafter is the existence proof that
 batching the verify into one command buffer turns speculation from "declines" into 1.2–1.8× on agent
 output (R12). Concurrency has no row on any backend; it is the axis a serving deployment buys, and
@@ -809,7 +809,7 @@ moves to the smallest K in {64, 128} at which the §3.2 pooled gate ships; at th
 must beat sequential by ≥2× on TTFT (ships), 1.3–2× parked, below 1.3× the floor stays.**
 
 **Read first.** Audit `M-01`, `M-02` and their closure notes (`6cc862a0` — the floor is 256 today,
-`GOINFER_METAL_FAST_PREFILL_FLOOR` read in `metal/backend.go:642`; `ForwardNoLogits` shipped
+`GOINFER_METAL_FAST_PREFILL_FLOOR` read in `metal/backend.go:654`; `ForwardNoLogits` shipped
 synchronous, the `noHead` executor-job version with ~0.9 ms/token of encode-ahead overlap still
 open), `G-02`/`G-08` (the pooled gate drops missing cells silently and never exercises
 `startPos > 0`, which every prefix-reuse turn uses — fix G-08 as part of this brief, since a
@@ -872,9 +872,9 @@ item closed above: `a1640a6a` (2026-09-16, three days after M-01's own synchrono
 and — worth naming plainly — four days *before* this very brief's SHIPPED note above was first
 written, on 2026-09-20) shipped the full async version: `execJob.noHead`
 (`metal/model.go:409`), `execLoop` branching on it to pre-encode the next command buffer while the
-current one is still on the GPU (`metal/model.go:1760-1760`), and `ForwardEmbNoLogitsPipe`
-(`metal/backend.go:565`) as the entry point — matching M-01's own Fix-section sketch almost
-verbatim. Paged MoE is declined, not pipelined (`metal/backend.go:555-499`): its per-layer
+current one is still on the GPU (`metal/model.go:1767-1767`), and `ForwardEmbNoLogitsPipe`
+(`metal/backend.go:577`) as the entry point — matching M-01's own Fix-section sketch almost
+verbatim. Paged MoE is declined, not pipelined (`metal/backend.go:567-511`): its per-layer
 route/stage/submit loop needs a host readback mid-token before the next dispatch can even be
 built, which is a structural incompatibility with pre-encoding, not a small extension — genuinely
 pipelining paged MoE would be a separate, larger redesign, not scoped here. Gated by three
@@ -1676,7 +1676,7 @@ verify cost, and the Metal small-M GEMM is the reason — record it beside P10's
 `docs/spec/00-core.md` and `10-optfwd-gate.md` (the lossless contract and the prompt-form caveat),
 `completed/task-metal-batched-verify-kernel.md` and `completed/metal-batched-verify.md` (the small-M
 verify kernel that measured ~1.13× and was not adopted — P21 is about the command-buffer boundary,
-not that kernel), `metal/backend.go:818` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
+not that kernel), `metal/backend.go:830` (`ForwardN` today), the 2026-09-17 note on `VerifyPathReporter`
 (`decoder/residency.go` — the interface that now reports whether the verify is batched; wire it
 truthfully), `task-peer-benchmarks.md` (W7's definition; the MLX quant caveat), `scripts/bench_peer.py`
 (the `mlx` engine branch; `BENCH_VISION=1`; `scripts/bench_peer_transcript.py` for W4/W7).
