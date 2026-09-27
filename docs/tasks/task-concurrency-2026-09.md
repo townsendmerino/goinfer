@@ -3,7 +3,9 @@
 > **Status: FILED 2026-09-23; owner decisions taken 2026-09-26 (1: yes, 2: fold). MC0 DONE 2026-09-26: the
 > thrash is confirmed on Metal, and a CPU session-LRU bug it uncovered is fixed. MC1 SHIPPED 2026-09-26 on Metal**
 > (`c2f1532e`): 4 resident KV slots hold the 1-client aggregate at 2 and 4 clients (0.99× / 1.01×), and the 4-client
-> aggregate is 1.22–1.24× the previous build's. CUDA and WebGPU are not converted. **MC2 EARNS on the Mac CPU**
+> aggregate is 1.22–1.24× the previous build's. **MC1 SHIPPED on CUDA 2026-09-27** (`9fddaf7e`,
+> [`concurrency-mc1-cuda-2026-09-27.md`](../measurements/concurrency-mc1-cuda-2026-09-27.md)): on the 1.5B, 4 clients
+> reach 1.250× the one-slot build, and a lone request is unchanged. WebGPU is not converted. **MC2 EARNS on the Mac CPU**
 > (1.69–2.04× at B = 4, bit-identical; J8's 4 independent workers reach 2.00–2.48×). The Linux cells are owed. **MC3
 > SHIPPED 2026-09-26 on Metal** (`d4b708b5` + fixes `2b1cc280`, `d2225ec4`;
 > [`concurrency-mc3-2026-09-26.md`](../measurements/concurrency-mc3-2026-09-26.md)). All five pre-registered W7 gates
@@ -24,7 +26,12 @@
 >   executor for steps, and CUDA (only on its own measurement);
 > - ~~the 7B end to end~~ — done 2026-09-27: all five W7 gates pass, 4 clients at 1.785× the serialized build, p99 turn
 >   0.592× ([`concurrency-mc3-7b-w7-2026-09-27.md`](../measurements/concurrency-mc3-7b-w7-2026-09-27.md));
-> - MC1 on CUDA and WebGPU;
+> - ~~MC1 on CUDA~~ — shipped 2026-09-27: 4 clients at 1.250× the one-slot build, every hard gate passes
+>   ([`concurrency-mc1-cuda-2026-09-27.md`](../measurements/concurrency-mc1-cuda-2026-09-27.md)); MC1 on WebGPU;
+> - ~~context against slots, owner's call~~ — decided 2026-09-27: a slot request shrinks the unpinned default
+>   context (`947e06ce`). The 7B now starts at 4096 with 4 slots and reads 1.34–1.35× at its default, where it
+>   thrashed on 2 slots at 8192. `Plan`'s conservative weight estimate (4930 against ~4476 MB on the 7B) makes the
+>   shrink land at the floor where ~4,870 would fit; tightening it is its own item;
 > - ~~one MC2 Linux cell to re-run clean~~ — done 2026-09-27: the 0.5B depth-128 cell reads 1.185× clean (was 1.230×
 >   overlapping an rsync), still in the owner band.
 >
@@ -150,7 +157,8 @@ conversations.
 - The 4-client aggregate is 70.9 against the previous build's 57.0 tok/s (1.24×; the repeat reads 1.22×).
 - Each turn prefills only its new user turn at every client count.
 - Outputs are bit-identical to each conversation served alone, on the tiny fixture and on qwen2.5-coder-1.5b.
-- Not converted: CUDA and WebGPU (one slot); recurrent families keep one; VL turns use the bound slot.
+- Not converted: WebGPU (one slot); recurrent families keep one; VL turns use the bound slot. CUDA shipped
+  2026-09-27; see "MC1 on CUDA" below.
 - The fit guard's clamp is implemented, but no clamping load was run.
 - **Fixed 2026-09-26 (found by MC3 S1): the clamp was priced after the build had allocated its own buffers.**
   - Its budget reads live available memory, and the base it compares against (`residentNeedBytes`) already includes
@@ -211,6 +219,22 @@ Re-run J6's measurement once after MC1 ships; its 1.024× was taken against a si
 
 ### MC1 on CUDA (nobara-pc) — built 2026-09-27, W7 grading pre-registered below before any timing
 
+**Result, 2026-09-27: SHIPPED** ([`concurrency-mc1-cuda-2026-09-27.md`](../measurements/concurrency-mc1-cuda-2026-09-27.md)).
+- Every hard gate passes.
+  - Identity: every compared turn matches.
+  - Reuse: every client prefills only its new user turn.
+  - Ship: the 4-client aggregate reads **1.250×** the one-slot build (174.2 → 217.9 tok/s; pairs 1.250 / 1.255 /
+    1.249).
+  - Solo guard: p50 1.007×, p99 1.002×.
+- The expected band read 1.008× / 1.014×, just above its top edge.
+- **The 7B clamp binds:** 2 of 4 slots at the fit-by-default 8192 context, so 4 round-robin clients still thrash
+  (1.006×). An exploratory pair at `-ctx 4096` fits 4 slots and reads 1.33×.
+- **Owner decision, 2026-09-27: a slot request shrinks the unpinned default context** (`947e06ce`, `ctxForSlots`).
+  - The 7B now starts at 4096 with 4 slots and reads 74.7 against 55.6 tok/s (1.34–1.35×, two interleaved pairs).
+  - The 1.5B is unchanged: 8192 tokens and 4 slots.
+  - An explicit `-ctx` is never shrunk.
+- The decoder suite was stopped before timing and re-run after it, by owner decision; no `decoder/` file changed.
+
 **What was built** (`9fddaf7e`; prompt `docs/prompts/nobara-mc1-cuda-2026-09.md`). The CUDA resident implements
 `decoder.ResidentKVSlotter`; the decoder half is Metal's, unchanged. Each CUDA specific the prompt named was checked in
 the code:
@@ -222,8 +246,9 @@ the code:
   384 MiB margin). Both sides of that comparison exclude the weights, so it cannot count them twice.
   `TestCUDAKVSlots_pricedAgainstWhatIsLeft` stubs the probe to fall by what the device really allocates from a figure
   where exactly 2 fit, and asks for 3. A double count would grant fewer, and pricing before the weights would grant 3.
-  On the 1.5B (1.105 GB before KV, 470 MB per slot) it grants 2. The context is resolved first, as before (fit by
-  default still picks up to 8192), and the slots are clamped after it. A clamp logs its numbers, and the banner names
+  On the 1.5B (1.105 GB before KV, 470 MB per slot) it grants 2. At `9fddaf7e` the context was resolved first, as
+  before (fit by default picks up to 8192), and the slots were clamped after it. Since `947e06ce` (owner decision,
+  same day), a slot request shrinks the unpinned context first; see the result above. A clamp logs its numbers, and the banner names
   it. `TestCUDAKVSlots_clampedBuild` is a real clamping build: 2 of 4 granted, both usable.
 - **Graphs.** No change is needed, and none was made: the captured segments (segA/B/C) touch no KV. rope_kv and every
   attention kernel run live in the gap and bind `r.kc[l]`/`r.vc[l]` when issued, so a slot switch is a pointer swap

@@ -12,17 +12,18 @@ OUT7=$B/w7-7b.json
 M15=$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 M7=$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf
 ts() { date '+%H:%M:%S'; }
-# Idle gate: CPU load1 <= 2.0 (/proc/loadavg), and the GPU back to its desktop baseline — no compute process left and
-# memory used within 256 MiB of what it was at the start — so a server's free-VRAM-derived context and slot count never
-# see a predecessor's leftovers.
+# Idle gate: CPU load1 <= 2.0 (/proc/loadavg), and the GPU back to its desktop baseline — no compute process beyond
+# those present at the start (kwin_wayland, the compositor, is always one) and memory used within 256 MiB of what it
+# was at the start — so a server's free-VRAM-derived context and slot count never see a predecessor's leftovers.
 BASE_MIB=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+BASE_PROCS=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader | wc -l)
 gate() {
   waited=0
   while :; do
     l1=$(awk '{print $1}' /proc/loadavg)
     used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
     procs=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader | wc -l)
-    if awk -v l="$l1" 'BEGIN{exit !(l <= 2.0)}' && [ "$procs" -eq 0 ] && [ "$used" -le $((BASE_MIB + 256)) ]; then
+    if awk -v l="$l1" 'BEGIN{exit !(l <= 2.0)}' && [ "$procs" -le "$BASE_PROCS" ] && [ "$used" -le $((BASE_MIB + 256)) ]; then
       echo "$(ts) idle: load1=$l1 gpu_used=${used}MiB compute_procs=$procs"; return 0
     fi
     [ "$waited" -ge 1800 ] && { echo "$(ts) NOT IDLE after 1800s (load1=$l1 gpu_used=${used}MiB procs=$procs) — stopping"; exit 1; }
@@ -43,7 +44,7 @@ for m in "$M15" "$M7"; do
   case "$m" in /srv/models/*|/Volumes/*) echo "model $m is on the archive, not the bench set"; exit 1;; esac
   [ -f "$m" ] || { echo "no model at $m"; exit 1; }
 done
-echo "$(ts) == MC1-CUDA W7 start; tree $(git rev-parse --short HEAD); old $OLD new $NEW; driver $(nvidia-smi --query-gpu=driver_version --format=csv,noheader); gpu baseline ${BASE_MIB}MiB; $(cat /proc/loadavg)"
+echo "$(ts) == MC1-CUDA W7 start; tree $(git rev-parse --short HEAD); old $OLD new $NEW; driver $(nvidia-smi --query-gpu=driver_version --format=csv,noheader); gpu baseline ${BASE_MIB}MiB, ${BASE_PROCS} compute proc(s) ($(nvidia-smi --query-compute-apps=process_name --format=csv,noheader | tr '\n' ' ')); $(cat /proc/loadavg)"
 for n in 1 2 4; do
   for k in old${n}_1 new${n}_1 new${n}_2 old${n}_2 old${n}_3 new${n}_3; do cell $k $n "$M15" "$OUT"; done
 done

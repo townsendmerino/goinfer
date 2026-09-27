@@ -1,0 +1,810 @@
+=== RUN   TestAdapterFlag_parse
+--- PASS: TestAdapterFlag_parse (0.00s)
+=== RUN   TestLoadAdapters_errors
+--- PASS: TestLoadAdapters_errors (0.00s)
+=== RUN   TestServe_multiAdapter
+loaded adapter "a1" on base "base" in 0s
+loaded adapter "a2" on base "base" in 0s
+    adapter_test.go:100: base=[7 13 13 13 13 13 13 13] a1=[3 0 0 0 0 0 0 0] a2=[15 4 15 15 15 10 4 7]; adapters: a1=true a2=true
+--- PASS: TestServe_multiAdapter (0.00s)
+=== RUN   TestLoadVisionTower_countsCfgModelsNotSMap
+loaded adapter "ft" on base "base" in 0s
+--- PASS: TestLoadVisionTower_countsCfgModelsNotSMap (0.00s)
+=== RUN   TestServe_adminSocket
+halt: admin (trigger=admin reason="k5 test", cancelled 0 generation(s), quiesced in 390ns)
+resume: trigger=admin
+--- PASS: TestServe_adminSocket (0.00s)
+=== RUN   TestServe_admin
+    admin_test.go:19: set GOINFER_SERVE_MODEL=<.gguf> for the admin test
+--- SKIP: TestServe_admin (0.00s)
+=== RUN   TestAdmission_waiterLeavesOnContextCancelWithoutWaitingForHolder
+--- PASS: TestAdmission_waiterLeavesOnContextCancelWithoutWaitingForHolder (0.02s)
+=== RUN   TestAdmission_mutexWouldFailThisGate
+--- PASS: TestAdmission_mutexWouldFailThisGate (0.22s)
+=== RUN   TestAdmission_fifoOrderPreserved
+--- PASS: TestAdmission_fifoOrderPreserved (0.03s)
+=== RUN   TestAdmission_immediateAdmitFastPath
+--- PASS: TestAdmission_immediateAdmitFastPath (0.00s)
+=== RUN   TestAnthropicText
+--- PASS: TestAnthropicText (0.00s)
+=== RUN   TestAnthropicTurns_systemArrayAndMerge
+--- PASS: TestAnthropicTurns_systemArrayAndMerge (0.00s)
+=== RUN   TestAnthropicTurns_cacheControlAndUnknownIgnored
+--- PASS: TestAnthropicTurns_cacheControlAndUnknownIgnored (0.00s)
+=== RUN   TestAnthropicTurns_imageSkipped
+--- PASS: TestAnthropicTurns_imageSkipped (0.00s)
+=== RUN   TestAnthropicImages
+--- PASS: TestAnthropicImages (0.00s)
+=== RUN   TestAnthropicTurns_toolReplay
+--- PASS: TestAnthropicTurns_toolReplay (0.00s)
+=== RUN   TestAnthropicToSampling
+--- PASS: TestAnthropicToSampling (0.00s)
+=== RUN   TestAnthropicStopReason
+--- PASS: TestAnthropicStopReason (0.00s)
+=== RUN   TestAnthropicForcedTool
+--- PASS: TestAnthropicForcedTool (0.00s)
+=== RUN   TestAnthropicHandler_errors
+--- PASS: TestAnthropicHandler_errors (0.00s)
+=== RUN   TestServe_anthropic_integration
+    anthropic_test.go:251: set GOINFER_SERVE_MODEL=<.gguf> for the Anthropic integration tests
+--- SKIP: TestServe_anthropic_integration (0.00s)
+=== RUN   TestServe_anthropic_streaming
+    anthropic_test.go:329: set GOINFER_SERVE_MODEL=<.gguf> for the Anthropic integration tests
+--- SKIP: TestServe_anthropic_streaming (0.00s)
+=== RUN   TestServe_anthropic_streamAbort
+    anthropic_test.go:406: set GOINFER_SERVE_MODEL=<.gguf> for the Anthropic abort test
+--- SKIP: TestServe_anthropic_streamAbort (0.00s)
+=== RUN   TestServe_anthropic_toolStreaming
+    anthropic_test.go:460: set GOINFER_SERVE_MODEL=<.gguf> for the Anthropic integration tests
+--- SKIP: TestServe_anthropic_toolStreaming (0.00s)
+=== RUN   TestServe_anthropic_tools
+    anthropic_test.go:529: set GOINFER_SERVE_MODEL=<.gguf> for the Anthropic integration tests
+--- SKIP: TestServe_anthropic_tools (0.00s)
+=== RUN   TestServe_backpressure
+    backpressure_test.go:20: set GOINFER_SERVE_MODEL=<.gguf> for the backpressure test
+--- SKIP: TestServe_backpressure (0.00s)
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/resident,_sessions_configured
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/resident,_sessions_off
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/resident,_resident_reuse_switched_off
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/staged,_sessions_configured
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/staged,_sessions_off
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/resident,_4_KV_slots
+=== RUN   TestBanner_sessionReuseMatchesTheDecodePath/resident,_4_asked,_guard_allowed_2
+--- PASS: TestBanner_sessionReuseMatchesTheDecodePath (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/resident,_sessions_configured (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/resident,_sessions_off (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/resident,_resident_reuse_switched_off (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/staged,_sessions_configured (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/staged,_sessions_off (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/resident,_4_KV_slots (0.00s)
+    --- PASS: TestBanner_sessionReuseMatchesTheDecodePath/resident,_4_asked,_guard_allowed_2 (0.00s)
+=== RUN   TestBanner_reportsResolvedNotRequested
+--- PASS: TestBanner_reportsResolvedNotRequested (0.00s)
+=== RUN   TestBanner_contextAndKV
+--- PASS: TestBanner_contextAndKV (0.00s)
+=== RUN   TestBanner_contextIsTheEnforcedWindow
+--- PASS: TestBanner_contextIsTheEnforcedWindow (0.00s)
+=== RUN   TestBanner_toolSupportIsNotAssumed
+--- PASS: TestBanner_toolSupportIsNotAssumed (0.00s)
+=== RUN   TestServerBanner_routesMatchRegistration
+--- PASS: TestServerBanner_routesMatchRegistration (0.00s)
+=== RUN   TestBanner_concurrency
+=== RUN   TestBanner_concurrency/default
+=== RUN   TestBanner_concurrency/four
+=== RUN   TestBanner_concurrency/capped
+=== RUN   TestBanner_concurrency/asked,_not_eligible
+=== RUN   TestBanner_concurrency/resident,_batched
+=== RUN   TestBanner_concurrency/resident,_batched,_chunked_prefill
+=== RUN   TestBanner_concurrency/resident,_capped_by_slots
+=== RUN   TestBanner_concurrency/resident,_cannot_batch
+--- PASS: TestBanner_concurrency (0.00s)
+    --- PASS: TestBanner_concurrency/default (0.00s)
+    --- PASS: TestBanner_concurrency/four (0.00s)
+    --- PASS: TestBanner_concurrency/capped (0.00s)
+    --- PASS: TestBanner_concurrency/asked,_not_eligible (0.00s)
+    --- PASS: TestBanner_concurrency/resident,_batched (0.00s)
+    --- PASS: TestBanner_concurrency/resident,_batched,_chunked_prefill (0.00s)
+    --- PASS: TestBanner_concurrency/resident,_capped_by_slots (0.00s)
+    --- PASS: TestBanner_concurrency/resident,_cannot_batch (0.00s)
+=== RUN   TestAssembleOpenAIOutput_splitsSuccessAndErrorPreservingOrder
+--- PASS: TestAssembleOpenAIOutput_splitsSuccessAndErrorPreservingOrder (0.00s)
+=== RUN   TestBatches_openAIRoundTrip
+    batches_http_test.go:90: set GOINFER_SERVE_MODEL=<.gguf> for the batches round-trip test
+--- SKIP: TestBatches_openAIRoundTrip (0.00s)
+=== RUN   TestBatches_anthropicRoundTrip
+    batches_http_test.go:239: set GOINFER_SERVE_MODEL=<.gguf> for the batches round-trip test
+--- SKIP: TestBatches_anthropicRoundTrip (0.00s)
+=== RUN   TestBatches_cancelStopsQueuedLines
+    batches_http_test.go:366: set GOINFER_SERVE_MODEL=<.gguf> for the batches cancel test
+--- SKIP: TestBatches_cancelStopsQueuedLines (0.00s)
+=== RUN   TestBatchStore_createAndGet
+--- PASS: TestBatchStore_createAndGet (0.00s)
+=== RUN   TestBatchStore_getUnknownReturnsNil
+--- PASS: TestBatchStore_getUnknownReturnsNil (0.00s)
+=== RUN   TestBatchStore_evictionNeverDropsALiveBatch
+--- PASS: TestBatchStore_evictionNeverDropsALiveBatch (0.00s)
+=== RUN   TestBatchStore_unboundedWhenCapIsZero
+--- PASS: TestBatchStore_unboundedWhenCapIsZero (0.00s)
+=== RUN   TestBatchRecord_requestCancel_marksCancellingAndCancelsJobs
+--- PASS: TestBatchRecord_requestCancel_marksCancellingAndCancelsJobs (0.00s)
+=== RUN   TestBatchRecord_requestCancel_noOpOnceTerminal
+--- PASS: TestBatchRecord_requestCancel_noOpOnceTerminal (0.00s)
+=== RUN   TestAttachBlockDrafter_declinesWithoutResident
+--- PASS: TestAttachBlockDrafter_declinesWithoutResident (0.00s)
+=== RUN   TestWarnThinkingTemplate_noTokenizer
+--- PASS: TestWarnThinkingTemplate_noTokenizer (0.00s)
+=== RUN   TestBodyCaps_embeddingsIsIndependentOfDecoderContext
+--- PASS: TestBodyCaps_embeddingsIsIndependentOfDecoderContext (0.00s)
+=== RUN   TestBodyCaps_explicitOverrideGovernsEveryRoute
+--- PASS: TestBodyCaps_explicitOverrideGovernsEveryRoute (0.00s)
+=== RUN   TestPromptGuard_ignoresImageBytes
+--- PASS: TestPromptGuard_ignoresImageBytes (0.02s)
+=== RUN   TestAnthropicInputBytes_excludesImages
+--- PASS: TestAnthropicInputBytes_excludesImages (0.03s)
+=== RUN   TestAnthropicInputBytes_countsToolUseAndSchemas
+--- PASS: TestAnthropicInputBytes_countsToolUseAndSchemas (0.00s)
+=== RUN   TestEmbeddings413_namesTheRoutesOwnBounds
+--- PASS: TestEmbeddings413_namesTheRoutesOwnBounds (0.00s)
+=== RUN   TestOversizeBody_ContentLengthRejectedCheaply
+    bodylimit_test.go:56: declared  1 MB → status 413 in 44.461µs, heap Δ 8848 B
+    bodylimit_test.go:56: declared 20 MB → status 413 in 26.82µs, heap Δ 10136 B
+    bodylimit_test.go:56: declared 40 MB → status 413 in 43.941µs, heap Δ 10136 B
+--- PASS: TestOversizeBody_ContentLengthRejectedCheaply (0.00s)
+=== RUN   TestOversizeBody_BackstopBounded
+--- PASS: TestOversizeBody_BackstopBounded (0.04s)
+=== RUN   TestPromptByteBudget
+--- PASS: TestPromptByteBudget (0.00s)
+=== RUN   TestServe_cancelByID
+    cancel_test.go:32: set GOINFER_SERVE_MODEL=<.gguf> for the cancel-by-id test
+--- SKIP: TestServe_cancelByID (0.00s)
+=== RUN   TestServe_soakChaos
+    chaos_test.go:71: set GOINFER_SERVE_MODEL=<.gguf> (and optionally GOINFER_SERVE_MODEL2) for the chaos test
+--- SKIP: TestServe_soakChaos (0.00s)
+=== RUN   TestServe_warmKVRestore
+    chaos_test.go:259: set GOINFER_SERVE_MODEL=<.gguf> for the warm-KV restore test
+--- SKIP: TestServe_warmKVRestore (0.00s)
+=== RUN   TestServe_tieredKVDemoteFaultBack
+    chaos_test.go:353: set GOINFER_SERVE_MODEL=<.gguf> for the tiered-KV test
+--- SKIP: TestServe_tieredKVDemoteFaultBack (0.00s)
+=== RUN   TestAdmission_capN
+--- PASS: TestAdmission_capN (0.09s)
+=== RUN   TestSessionLRU_checkout
+saved 1 KV session(s) to /tmp/TestSessionLRU_checkout564613457/002
+--- PASS: TestSessionLRU_checkout (0.00s)
+=== RUN   TestServe_maxConcurrentMatchesAlone
+    concurrent_test.go:121: set GOINFER_MC3C_MODEL to a .gguf checkpoint
+--- SKIP: TestServe_maxConcurrentMatchesAlone (0.00s)
+=== RUN   TestAdmission_load
+--- PASS: TestAdmission_load (0.00s)
+=== RUN   TestSetConcurrency_reportsTheDecidedValue
+--- PASS: TestSetConcurrency_reportsTheDecidedValue (0.00s)
+=== RUN   TestDecoderEmbedder_queryPrefix
+    decoder_embedder_test.go:51: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDecoderEmbedder_queryPrefix (0.00s)
+=== RUN   TestDecoderEmbedder_batchMatchesSequential
+    decoder_embedder_test.go:113: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDecoderEmbedder_batchMatchesSequential (0.00s)
+=== RUN   TestDecoderEmbedder_encodeBatchCountedMatchesSeparateCalls
+    decoder_embedder_test.go:152: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDecoderEmbedder_encodeBatchCountedMatchesSeparateCalls (0.00s)
+=== RUN   TestDecoderEmbedder_concurrentEncode
+    decoder_embedder_test.go:197: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDecoderEmbedder_concurrentEncode (0.00s)
+=== RUN   TestDecoderEmbedder_usageTokens
+    decoder_embedder_test.go:234: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDecoderEmbedder_usageTokens (0.00s)
+=== RUN   TestDecoderEmbedder_emptyInput
+    decoder_embedder_test.go:256: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDecoderEmbedder_emptyInput (0.00s)
+=== RUN   TestLoadDecoderEmbedder_requestedBackendReachesTheLoad
+    decoder_embedder_test.go:278: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLoadDecoderEmbedder_requestedBackendReachesTheLoad (0.00s)
+=== RUN   TestLoadDecoderEmbedder_noBackendConfiguredStaysCPU
+    decoder_embedder_test.go:302: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLoadDecoderEmbedder_noBackendConfiguredStaysCPU (0.00s)
+=== RUN   TestLoadDecoderEmbedder_embedQuantQ8MapsToInt8
+    decoder_embedder_test.go:324: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLoadDecoderEmbedder_embedQuantQ8MapsToInt8 (0.00s)
+=== RUN   TestDeveloperRoleAliasesSystem
+=== RUN   TestDeveloperRoleAliasesSystem/developer_only
+=== RUN   TestDeveloperRoleAliasesSystem/system_then_developer_—_last_wins
+=== RUN   TestDeveloperRoleAliasesSystem/developer_then_system_—_last_wins
+=== RUN   TestDeveloperRoleAliasesSystem/developer_mid-conversation
+=== RUN   TestDeveloperRoleAliasesSystem/developer_with_array_content_parts
+--- PASS: TestDeveloperRoleAliasesSystem (0.00s)
+    --- PASS: TestDeveloperRoleAliasesSystem/developer_only (0.00s)
+    --- PASS: TestDeveloperRoleAliasesSystem/system_then_developer_—_last_wins (0.00s)
+    --- PASS: TestDeveloperRoleAliasesSystem/developer_then_system_—_last_wins (0.00s)
+    --- PASS: TestDeveloperRoleAliasesSystem/developer_mid-conversation (0.00s)
+    --- PASS: TestDeveloperRoleAliasesSystem/developer_with_array_content_parts (0.00s)
+=== RUN   TestDeveloperRoleResponsesInput
+--- PASS: TestDeveloperRoleResponsesInput (0.00s)
+=== RUN   TestDeveloperRoleResponsesInstructions
+--- PASS: TestDeveloperRoleResponsesInstructions (0.00s)
+=== RUN   TestDeveloperRoleIsNotGeneralRoleTolerance
+--- PASS: TestDeveloperRoleIsNotGeneralRoleTolerance (0.00s)
+=== RUN   TestAnthropicRejectsIllegalRoles
+--- PASS: TestAnthropicRejectsIllegalRoles (0.00s)
+=== RUN   TestAnthropicAcceptsLegalRoles
+--- PASS: TestAnthropicAcceptsLegalRoles (0.00s)
+=== RUN   TestAnthropicIllegalRoleIsHTTP400
+    developerrole_test.go:259: set GOINFER_SERVE_MODEL=<.gguf> for the Anthropic integration tests
+--- SKIP: TestAnthropicIllegalRoleIsHTTP400 (0.00s)
+=== RUN   TestParseEmbedInput
+--- PASS: TestParseEmbedInput (0.00s)
+=== RUN   TestParseInputType
+--- PASS: TestParseInputType (0.00s)
+=== RUN   TestResolveDimensions
+=== RUN   TestResolveDimensions/non-MRL_unset
+=== RUN   TestResolveDimensions/non-MRL_zero
+=== RUN   TestResolveDimensions/non-MRL_native_width
+=== RUN   TestResolveDimensions/MRL_unset
+=== RUN   TestResolveDimensions/MRL_native_width
+=== RUN   TestResolveDimensions/non-MRL_truncation_refused
+=== RUN   TestResolveDimensions/non-MRL_truncation_refused_(1_dim)
+=== RUN   TestResolveDimensions/MRL_at_floor
+=== RUN   TestResolveDimensions/MRL_above_floor
+=== RUN   TestResolveDimensions/MRL_below_floor_refused
+=== RUN   TestResolveDimensions/MRL_far_below_floor_refused
+=== RUN   TestResolveDimensions/over_native_width
+=== RUN   TestResolveDimensions/negative
+=== RUN   TestResolveDimensions/over_native_width,_non-MRL
+--- PASS: TestResolveDimensions (0.00s)
+    --- PASS: TestResolveDimensions/non-MRL_unset (0.00s)
+    --- PASS: TestResolveDimensions/non-MRL_zero (0.00s)
+    --- PASS: TestResolveDimensions/non-MRL_native_width (0.00s)
+    --- PASS: TestResolveDimensions/MRL_unset (0.00s)
+    --- PASS: TestResolveDimensions/MRL_native_width (0.00s)
+    --- PASS: TestResolveDimensions/non-MRL_truncation_refused (0.00s)
+    --- PASS: TestResolveDimensions/non-MRL_truncation_refused_(1_dim) (0.00s)
+    --- PASS: TestResolveDimensions/MRL_at_floor (0.00s)
+    --- PASS: TestResolveDimensions/MRL_above_floor (0.00s)
+    --- PASS: TestResolveDimensions/MRL_below_floor_refused (0.00s)
+    --- PASS: TestResolveDimensions/MRL_far_below_floor_refused (0.00s)
+    --- PASS: TestResolveDimensions/over_native_width (0.00s)
+    --- PASS: TestResolveDimensions/negative (0.00s)
+    --- PASS: TestResolveDimensions/over_native_width,_non-MRL (0.00s)
+=== RUN   TestWantsBase64
+--- PASS: TestWantsBase64 (0.00s)
+=== RUN   TestPostprocess
+--- PASS: TestPostprocess (0.00s)
+=== RUN   TestFloat32sToBase64_roundTrip
+--- PASS: TestFloat32sToBase64_roundTrip (0.00s)
+=== RUN   TestHandleEmbeddings_prefersEncodeBatchCounted
+--- PASS: TestHandleEmbeddings_prefersEncodeBatchCounted (0.00s)
+=== RUN   TestHandleEmbeddings_floatAndShape
+--- PASS: TestHandleEmbeddings_floatAndShape (0.00s)
+=== RUN   TestHandleEmbeddings_dimensionsAndBase64
+--- PASS: TestHandleEmbeddings_dimensionsAndBase64 (0.00s)
+=== RUN   TestHandleEmbeddings_badRequests
+--- PASS: TestHandleEmbeddings_badRequests (0.00s)
+=== RUN   TestServe_embedIntegration
+    embeddings_test.go:391: set GOINFER_EMBED_MODEL=<CodeRankEmbed dir> to run the embeddings integration test
+--- SKIP: TestServe_embedIntegration (0.00s)
+=== RUN   TestHandleEmbeddings_dimensionsRequiresMatryoshka
+=== RUN   TestHandleEmbeddings_dimensionsRequiresMatryoshka/non-MRL_model_rejects_any_truncation
+=== RUN   TestHandleEmbeddings_dimensionsRequiresMatryoshka/non-MRL_model_still_allows_native_width
+=== RUN   TestHandleEmbeddings_dimensionsRequiresMatryoshka/MRL_model_accepts_down_to_its_floor_and_no_further
+--- PASS: TestHandleEmbeddings_dimensionsRequiresMatryoshka (0.00s)
+    --- PASS: TestHandleEmbeddings_dimensionsRequiresMatryoshka/non-MRL_model_rejects_any_truncation (0.00s)
+    --- PASS: TestHandleEmbeddings_dimensionsRequiresMatryoshka/non-MRL_model_still_allows_native_width (0.00s)
+    --- PASS: TestHandleEmbeddings_dimensionsRequiresMatryoshka/MRL_model_accepts_down_to_its_floor_and_no_further (0.00s)
+=== RUN   TestMatryoshkaFloor_contract
+--- PASS: TestMatryoshkaFloor_contract (0.00s)
+=== RUN   TestCheckEmbedInputBounds
+--- PASS: TestCheckEmbedInputBounds (0.00s)
+=== RUN   TestPrefillFlags_reachTheDecoderThroughOptions
+--- PASS: TestPrefillFlags_reachTheDecoderThroughOptions (0.00s)
+=== RUN   TestMoEPagerFlag_reachesTheDecoderThroughOptions
+--- PASS: TestMoEPagerFlag_reachesTheDecoderThroughOptions (0.00s)
+=== RUN   TestFileStore_putAndGet
+--- PASS: TestFileStore_putAndGet (0.00s)
+=== RUN   TestFileStore_getUnknownReturnsNil
+--- PASS: TestFileStore_getUnknownReturnsNil (0.00s)
+=== RUN   TestFileStore_evictionDropsOldestFirst
+--- PASS: TestFileStore_evictionDropsOldestFirst (0.00s)
+=== RUN   TestFileStore_unboundedWhenCapIsZero
+--- PASS: TestFileStore_unboundedWhenCapIsZero (0.00s)
+=== RUN   TestFitFlag_realBinaryAcceptsOff
+--- PASS: TestFitFlag_realBinaryAcceptsOff (0.47s)
+=== RUN   TestGemma4VLReal_E2B
+    gemma4_vl_real_test.go:141: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4VLReal_E2B (0.00s)
+=== RUN   TestGemma4VLReal_26BA4B
+    gemma4_vl_real_test.go:171: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGemma4VLReal_26BA4B (0.00s)
+=== RUN   TestGenErr
+--- PASS: TestGenErr (0.00s)
+=== RUN   TestServe_haltUnderLoad
+    halt_test.go:39: set GOINFER_SERVE_MODEL=<.gguf> for the halt-under-load test
+--- SKIP: TestServe_haltUnderLoad (0.00s)
+=== RUN   TestToolStreamHeartbeatsBeforeAnyContent
+    heartbeat_test.go:55: set GOINFER_SERVE_MODEL=<.gguf> for the tool-path streaming tests
+--- SKIP: TestToolStreamHeartbeatsBeforeAnyContent (0.00s)
+=== RUN   TestToolStreamStillEmitsToolCall
+    heartbeat_test.go:110: set GOINFER_SERVE_MODEL=<.gguf> for the tool-path streaming tests
+--- SKIP: TestToolStreamStillEmitsToolCall (0.00s)
+=== RUN   TestNonStreamingToolPathKeepsStatusCodes
+    heartbeat_test.go:145: set GOINFER_SERVE_MODEL=<.gguf> for the tool-path streaming tests
+--- SKIP: TestNonStreamingToolPathKeepsStatusCodes (0.00s)
+=== RUN   TestToolStreamNeverLeaksCallAsProse
+    heartbeat_test.go:174: set GOINFER_SERVE_MODEL=<.gguf> for the tool-path streaming tests
+--- SKIP: TestToolStreamNeverLeaksCallAsProse (0.00s)
+=== RUN   TestContentPartsText
+--- PASS: TestContentPartsText (0.00s)
+=== RUN   TestContentPartsImages
+--- PASS: TestContentPartsImages (0.00s)
+=== RUN   TestDecodeDataURI
+--- PASS: TestDecodeDataURI (0.00s)
+=== RUN   TestLastUserTurn
+--- PASS: TestLastUserTurn (0.00s)
+=== RUN   TestJobStore_inMemoryWithoutJobDir
+--- PASS: TestJobStore_inMemoryWithoutJobDir (0.00s)
+=== RUN   TestJobJournal_roundTrip
+--- PASS: TestJobJournal_roundTrip (0.00s)
+=== RUN   TestJobJournal_crashedJobReconstructsAsInterrupted
+--- PASS: TestJobJournal_crashedJobReconstructsAsInterrupted (0.00s)
+=== RUN   TestJobJournal_reopenCompletesTheInterruptedRecord
+--- PASS: TestJobJournal_reopenCompletesTheInterruptedRecord (0.00s)
+=== RUN   TestJobJournal_permissions
+--- PASS: TestJobJournal_permissions (0.00s)
+=== RUN   TestJobJournal_missingFileIsNotAnError
+--- PASS: TestJobJournal_missingFileIsNotAnError (0.00s)
+=== RUN   TestJobEventLog_replayFromStart
+--- PASS: TestJobEventLog_replayFromStart (0.00s)
+=== RUN   TestJobEventLog_partialReplayThenLive
+--- PASS: TestJobEventLog_partialReplayThenLive (0.00s)
+=== RUN   TestJobEventLog_waiterUnblocksOnAppend
+--- PASS: TestJobEventLog_waiterUnblocksOnAppend (0.02s)
+=== RUN   TestJobEventLog_waiterUnblocksOnMarkDone
+--- PASS: TestJobEventLog_waiterUnblocksOnMarkDone (0.00s)
+=== RUN   TestJobEventLog_noMissedAppendBetweenSnapshotAndWait
+--- PASS: TestJobEventLog_noMissedAppendBetweenSnapshotAndWait (0.00s)
+=== RUN   TestJobs_submitPollReattachMatchesSyncRun
+    jobs_http_test.go:69: set GOINFER_SERVE_MODEL=<.gguf> for the jobs re-attach test
+--- SKIP: TestJobs_submitPollReattachMatchesSyncRun (0.00s)
+=== RUN   TestJobs_deleteCancelsAQueuedJob
+    jobs_http_test.go:204: set GOINFER_SERVE_MODEL=<.gguf> for the jobs cancel test
+--- SKIP: TestJobs_deleteCancelsAQueuedJob (0.00s)
+=== RUN   TestJobStore_evictionNeverDropsALiveJob
+--- PASS: TestJobStore_evictionNeverDropsALiveJob (0.00s)
+=== RUN   TestJobStore_evictionDropsOldestFinishedFirst
+--- PASS: TestJobStore_evictionDropsOldestFinishedFirst (0.00s)
+=== RUN   TestJobStore_unboundedWhenCapIsZero
+--- PASS: TestJobStore_unboundedWhenCapIsZero (0.00s)
+=== RUN   TestJobStore_getOrCreatePreCreatedJobTransitionsToRunning
+--- PASS: TestJobStore_getOrCreatePreCreatedJobTransitionsToRunning (0.00s)
+=== RUN   TestJobStore_cancelUnknownIDIsNotAnError
+--- PASS: TestJobStore_cancelUnknownIDIsNotAnError (0.00s)
+=== RUN   TestJobStore_eventLogAttachAndFetch
+--- PASS: TestJobStore_eventLogAttachAndFetch (0.00s)
+=== RUN   TestAdmission_positionIsArrivalOrder
+--- PASS: TestAdmission_positionIsArrivalOrder (0.00s)
+=== RUN   TestNotAdmitted_queueFullIsAFailureNotACancellation
+--- PASS: TestNotAdmitted_queueFullIsAFailureNotACancellation (0.00s)
+=== RUN   TestJobTerminalEvents
+--- PASS: TestJobTerminalEvents (0.00s)
+=== RUN   TestJobs_realModelEventsQueueAndRefusal
+    jobs_w27_test.go:152: set GOINFER_SERVE_MODEL=<.gguf> for the jobs events/queue test
+--- SKIP: TestJobs_realModelEventsQueueAndRefusal (0.00s)
+=== RUN   TestKVFlag_drivesBothCachesUnlessKVQuantOverrides
+--- PASS: TestKVFlag_drivesBothCachesUnlessKVQuantOverrides (0.00s)
+=== RUN   TestPrepare_rejectsUnboundedTopLogprobs
+--- PASS: TestPrepare_rejectsUnboundedTopLogprobs (0.00s)
+=== RUN   TestStreamTokens_externallyCancelledIsTruncatedNotClean
+--- PASS: TestStreamTokens_externallyCancelledIsTruncatedNotClean (0.00s)
+=== RUN   TestServe_everyTokenizingRouteGuardsItsInputSize
+    limits_test.go:176: 10 tokenizing route(s), all guarded (1 by a caller)
+--- PASS: TestServe_everyTokenizingRouteGuardsItsInputSize (0.02s)
+=== RUN   TestDecoderEmbedder_truncatesToTheContextWindow
+--- PASS: TestDecoderEmbedder_truncatesToTheContextWindow (0.00s)
+=== RUN   TestDecoderEmbedder_boundComesFromTheModelNotZero
+--- PASS: TestDecoderEmbedder_boundComesFromTheModelNotZero (0.00s)
+=== RUN   TestJSONDecodeMessage_neverLeaksGoTypeNames
+--- PASS: TestJSONDecodeMessage_neverLeaksGoTypeNames (0.00s)
+=== RUN   TestAnthropic_decodeUsesTheSharedShaping
+--- PASS: TestAnthropic_decodeUsesTheSharedShaping (0.00s)
+=== RUN   TestSessions_persistedStateIsOwnerOnly
+--- PASS: TestSessions_persistedStateIsOwnerOnly (0.00s)
+=== RUN   TestAdminLoad_racedDuplicateIsClosed
+--- PASS: TestAdminLoad_racedDuplicateIsClosed (0.00s)
+=== RUN   TestReqID_isNotGuessable
+--- PASS: TestReqID_isNotGuessable (0.00s)
+=== RUN   TestStartDrain_savesSessionsUnderTheLRULock
+--- PASS: TestStartDrain_savesSessionsUnderTheLRULock (0.00s)
+=== RUN   TestAdminLoad_requestQuantIsTheExplicitOne
+=== RUN   TestAdminLoad_requestQuantIsTheExplicitOne/request_names_a_quant,_no_CLI_default
+=== RUN   TestAdminLoad_requestQuantIsTheExplicitOne/request_names_a_quant,_CLI_differs
+=== RUN   TestAdminLoad_requestQuantIsTheExplicitOne/request_names_nothing,_CLI_was_passed
+=== RUN   TestAdminLoad_requestQuantIsTheExplicitOne/request_names_nothing,_no_CLI_either
+--- PASS: TestAdminLoad_requestQuantIsTheExplicitOne (0.00s)
+    --- PASS: TestAdminLoad_requestQuantIsTheExplicitOne/request_names_a_quant,_no_CLI_default (0.00s)
+    --- PASS: TestAdminLoad_requestQuantIsTheExplicitOne/request_names_a_quant,_CLI_differs (0.00s)
+    --- PASS: TestAdminLoad_requestQuantIsTheExplicitOne/request_names_nothing,_CLI_was_passed (0.00s)
+    --- PASS: TestAdminLoad_requestQuantIsTheExplicitOne/request_names_nothing,_no_CLI_either (0.00s)
+=== RUN   TestConstrainForcedTool_namedButNonexistentIs400
+--- PASS: TestConstrainForcedTool_namedButNonexistentIs400 (0.00s)
+=== RUN   TestChatInputBytes_countsReplayedToolCallArguments
+--- PASS: TestChatInputBytes_countsReplayedToolCallArguments (0.00s)
+=== RUN   TestToolSchemaBytes_countsFunctionFields
+--- PASS: TestToolSchemaBytes_countsFunctionFields (0.00s)
+=== RUN   TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage
+--- PASS: TestGuardComposition_hugeToolSchemaTripsTheBudgetAloneOnATinyMessage (0.00s)
+=== RUN   TestLookupLockedOnlyViaResolve
+--- PASS: TestLookupLockedOnlyViaResolve (0.00s)
+=== RUN   TestRetainRelease
+--- PASS: TestRetainRelease (0.00s)
+=== RUN   TestCloseEntryNatives_dropsGemma4Enc
+--- PASS: TestCloseEntryNatives_dropsGemma4Enc (0.00s)
+=== RUN   TestAddrIsLoopback
+--- PASS: TestAddrIsLoopback (0.00s)
+=== RUN   TestRequireAuth
+--- PASS: TestRequireAuth (0.00s)
+=== RUN   TestMaxBytesAndDecode
+--- PASS: TestMaxBytesAndDecode (0.00s)
+=== RUN   TestModelFlag_parse
+=== RUN   TestModelFlag_parse/name+path_only_(back-compat)
+=== RUN   TestModelFlag_parse/bare_path
+=== RUN   TestModelFlag_parse/overrides
+=== RUN   TestModelFlag_parse/errors
+--- PASS: TestModelFlag_parse (0.00s)
+    --- PASS: TestModelFlag_parse/name+path_only_(back-compat) (0.00s)
+    --- PASS: TestModelFlag_parse/bare_path (0.00s)
+    --- PASS: TestModelFlag_parse/overrides (0.00s)
+    --- PASS: TestModelFlag_parse/errors (0.00s)
+=== RUN   TestModelSpec_options
+--- PASS: TestModelSpec_options (0.00s)
+=== RUN   TestOptionsValidate
+--- PASS: TestOptionsValidate (0.00s)
+=== RUN   TestStreamOptions_includeUsageShape
+--- PASS: TestStreamOptions_includeUsageShape (0.00s)
+=== RUN   TestStreamOptions_parsing
+--- PASS: TestStreamOptions_parsing (0.00s)
+=== RUN   TestStreamSurfaces_allSendUsageBeforeDone
+--- PASS: TestStreamSurfaces_allSendUsageBeforeDone (0.00s)
+=== RUN   TestSendUsage_onlyWhenRequested
+=== RUN   TestSendUsage_onlyWhenRequested/absent
+=== RUN   TestSendUsage_onlyWhenRequested/present_but_false
+=== RUN   TestSendUsage_onlyWhenRequested/requested
+--- PASS: TestSendUsage_onlyWhenRequested (0.00s)
+    --- PASS: TestSendUsage_onlyWhenRequested/absent (0.00s)
+    --- PASS: TestSendUsage_onlyWhenRequested/present_but_false (0.00s)
+    --- PASS: TestSendUsage_onlyWhenRequested/requested (0.00s)
+=== RUN   TestStreamTokens_decodesAsAContinuation
+--- PASS: TestStreamTokens_decodesAsAContinuation (0.00s)
+=== RUN   TestParseStop
+--- PASS: TestParseStop (0.00s)
+=== RUN   TestFirstStop
+--- PASS: TestFirstStop (0.00s)
+=== RUN   TestCompleteUTF8
+--- PASS: TestCompleteUTF8 (0.00s)
+=== RUN   TestGrammarFor
+--- PASS: TestGrammarFor (0.00s)
+=== RUN   TestPrepare_sampling
+--- PASS: TestPrepare_sampling (0.00s)
+=== RUN   TestPrepare_maxTokensBounds
+--- PASS: TestPrepare_maxTokensBounds (0.00s)
+=== RUN   TestChatChunkShape
+--- PASS: TestChatChunkShape (0.00s)
+=== RUN   TestServe_multiModel
+    openai_test.go:172: set GOINFER_SERVE_MODEL + GOINFER_SERVE_MODEL2 (two .gguf) for the multi-model test
+--- SKIP: TestServe_multiModel (0.00s)
+=== RUN   TestServe_integration
+    openai_test.go:253: set GOINFER_SERVE_MODEL=<.gguf> to run the serve integration test
+--- SKIP: TestServe_integration (0.00s)
+=== RUN   TestServe_tools_integration
+    openai_test.go:343: set GOINFER_SERVE_MODEL=<.gguf> to run the serve tool test
+--- SKIP: TestServe_tools_integration (0.00s)
+=== RUN   TestServe_grammarSpecLossless
+    openai_test.go:404: set GOINFER_SERVE_MODEL=<.gguf> to run the grammar-spec losslessness test
+--- SKIP: TestServe_grammarSpecLossless (0.00s)
+=== RUN   TestClampMaxTokens_contextWindow
+--- PASS: TestClampMaxTokens_contextWindow (0.00s)
+=== RUN   TestContextLengthError
+--- PASS: TestContextLengthError (0.00s)
+=== RUN   TestPrepare_topPAndSeed
+--- PASS: TestPrepare_topPAndSeed (0.00s)
+=== RUN   TestConstrainForcedTool_M05
+--- PASS: TestConstrainForcedTool_M05 (0.00s)
+=== RUN   TestCompletionReqLogprobs_M06
+--- PASS: TestCompletionReqLogprobs_M06 (0.00s)
+=== RUN   TestEffectiveBudget_M04
+--- PASS: TestEffectiveBudget_M04 (0.00s)
+=== RUN   TestLimitInflight_M01
+--- PASS: TestLimitInflight_M01 (0.00s)
+=== RUN   TestConstrainToolUnion_wiring
+=== RUN   TestConstrainToolUnion_wiring/default:_chatml_auto_→_lazy
+=== RUN   TestConstrainToolUnion_wiring/default:_chatml_required_→_forced_union
+=== RUN   TestConstrainToolUnion_wiring/chatml_no_union_mode_→_unconstrained
+=== RUN   TestConstrainToolUnion_wiring/llama3_auto_→_lazy,_anchored_on_the_name_key_(option_c)
+=== RUN   TestConstrainToolUnion_wiring/llama3_required_→_forced_union
+=== RUN   TestConstrainToolUnion_wiring/GOINFER_TOOL_UNION=0_→_unconstrained_(auto)
+=== RUN   TestConstrainToolUnion_wiring/GOINFER_TOOL_UNION=0_→_unconstrained_(required)
+--- PASS: TestConstrainToolUnion_wiring (0.00s)
+    --- PASS: TestConstrainToolUnion_wiring/default:_chatml_auto_→_lazy (0.00s)
+    --- PASS: TestConstrainToolUnion_wiring/default:_chatml_required_→_forced_union (0.00s)
+    --- PASS: TestConstrainToolUnion_wiring/chatml_no_union_mode_→_unconstrained (0.00s)
+    --- PASS: TestConstrainToolUnion_wiring/llama3_auto_→_lazy,_anchored_on_the_name_key_(option_c) (0.00s)
+    --- PASS: TestConstrainToolUnion_wiring/llama3_required_→_forced_union (0.00s)
+    --- PASS: TestConstrainToolUnion_wiring/GOINFER_TOOL_UNION=0_→_unconstrained_(auto) (0.00s)
+    --- PASS: TestConstrainToolUnion_wiring/GOINFER_TOOL_UNION=0_→_unconstrained_(required) (0.00s)
+=== RUN   TestServe_modelsReportsResolvedPaths
+--- PASS: TestServe_modelsReportsResolvedPaths (0.00s)
+=== RUN   TestServe_requireBackendRejectsDecline
+--- PASS: TestServe_requireBackendRejectsDecline (0.00s)
+=== RUN   TestServe_healthMirrorsModels
+--- PASS: TestServe_healthMirrorsModels (0.00s)
+=== RUN   TestServe_requireBackendNamesTheResidencyDecline
+--- PASS: TestServe_requireBackendNamesTheResidencyDecline (0.00s)
+=== RUN   TestServe_requireBackendOffIsTheDefault
+--- PASS: TestServe_requireBackendOffIsTheDefault (0.00s)
+=== RUN   TestServe_contextWindowIsTheEnforcedOne
+--- PASS: TestServe_contextWindowIsTheEnforcedOne (0.00s)
+=== RUN   TestServe_prepareEnforcesThePublishedWindow
+--- PASS: TestServe_prepareEnforcesThePublishedWindow (0.00s)
+=== RUN   TestServe_modelsReportsVision
+--- PASS: TestServe_modelsReportsVision (0.00s)
+=== RUN   TestQwen3Embedding_vectorParity
+    qwen3_embedding_parity_test.go:133: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestQwen3Embedding_vectorParity (0.00s)
+=== RUN   TestQwen3Embedding_retrievalParity
+    qwen3_embedding_parity_test.go:151: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestQwen3Embedding_retrievalParity (0.00s)
+=== RUN   TestQwen3Embedding_tokenizerAgreement
+    qwen3_embedding_parity_test.go:190: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestQwen3Embedding_tokenizerAgreement (0.00s)
+=== RUN   TestQwen3Embedding_breakItFirst
+    qwen3_embedding_parity_test.go:221: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestQwen3Embedding_breakItFirst (0.00s)
+=== RUN   TestQwen3Embedding_gatesAreWired
+    qwen3_embedding_parity_test.go:278: no Qwen3-Embedding checkpoint present — parity gates skip (certified at pin time; the committed golden is the record)
+--- SKIP: TestQwen3Embedding_gatesAreWired (0.00s)
+=== RUN   TestDriveUsesRequestContext
+--- PASS: TestDriveUsesRequestContext (0.01s)
+=== RUN   TestLoadedModel_residentPathTrueForAdapterWhenResidentActive
+--- PASS: TestLoadedModel_residentPathTrueForAdapterWhenResidentActive (0.00s)
+=== RUN   TestLoadedModel_residentPathNilModel
+--- PASS: TestLoadedModel_residentPathNilModel (0.00s)
+=== RUN   TestServe_prepareEnforcesResidentCapForAdapter
+--- PASS: TestServe_prepareEnforcesResidentCapForAdapter (0.00s)
+=== RUN   TestServe_responses
+    responses_test.go:49: set GOINFER_SERVE_MODEL=<.gguf> for the responses test
+--- SKIP: TestServe_responses (0.00s)
+=== RUN   TestMaybeStore_preservesToolCallsForPreviousResponseID
+--- PASS: TestMaybeStore_preservesToolCallsForPreviousResponseID (0.00s)
+=== RUN   TestRespondTools_callsMaybeStoreWithTheToolCalls
+--- PASS: TestRespondTools_callsMaybeStoreWithTheToolCalls (0.00s)
+=== RUN   TestResponses_toolLoopItemsSurviveDecoding
+--- PASS: TestResponses_toolLoopItemsSurviveDecoding (0.00s)
+=== RUN   TestResponses_toolOutputNeverDecodesToNothing
+--- PASS: TestResponses_toolOutputNeverDecodesToNothing (0.00s)
+=== RUN   TestServeResponsesWith_toolsOnUnsupportedTemplateReturns400
+--- PASS: TestServeResponsesWith_toolsOnUnsupportedTemplateReturns400 (0.00s)
+=== RUN   TestServe_generationRoutesExistWithoutAStartupModel
+--- PASS: TestServe_generationRoutesExistWithoutAStartupModel (0.55s)
+=== RUN   TestCommonPrefix
+--- PASS: TestCommonPrefix (0.00s)
+=== RUN   TestBestExtend
+--- PASS: TestBestExtend (0.00s)
+=== RUN   TestColdTierOverflow
+--- PASS: TestColdTierOverflow (0.00s)
+=== RUN   TestMoveToFront
+--- PASS: TestMoveToFront (0.00s)
+=== RUN   TestBestExtend_stopStringTokensReuse
+--- PASS: TestBestExtend_stopStringTokensReuse (0.00s)
+=== RUN   TestBestExtend_editedLastMessageReuse
+--- PASS: TestBestExtend_editedLastMessageReuse (0.00s)
+=== RUN   TestPickSession_sparePreambleGoesFresh
+--- PASS: TestPickSession_sparePreambleGoesFresh (0.00s)
+=== RUN   TestPickSession_keepsP18Reuse
+--- PASS: TestPickSession_keepsP18Reuse (0.00s)
+=== RUN   TestTryLockUntil
+--- PASS: TestTryLockUntil (0.11s)
+=== RUN   TestSSEWriter_heartbeatAndHandlerDoNotRace
+--- PASS: TestSSEWriter_heartbeatAndHandlerDoNotRace (0.02s)
+=== RUN   TestSSEWriter_stalledClientFailsTheWriteInsteadOfBlocking
+--- PASS: TestSSEWriter_stalledClientFailsTheWriteInsteadOfBlocking (0.00s)
+=== RUN   TestSSEJSONSender_cancelsOnWriteFailure
+--- PASS: TestSSEJSONSender_cancelsOnWriteFailure (0.00s)
+=== RUN   TestSSEWriter_setsAWriteDeadlineOnARealConnection
+--- PASS: TestSSEWriter_setsAWriteDeadlineOnARealConnection (0.04s)
+=== RUN   TestSSE_everyStreamingDriveSiteHeartbeats
+--- PASS: TestSSE_everyStreamingDriveSiteHeartbeats (0.02s)
+=== RUN   TestSSE_everyBufferedStreamSiteHeartbeats
+    sse_writer_test.go:326: 10 drive site(s), 1 buffer-then-stream: tool_turn.go:runToolTurn
+--- PASS: TestSSE_everyBufferedStreamSiteHeartbeats (0.03s)
+=== RUN   TestStopTailHold
+--- PASS: TestStopTailHold (0.00s)
+=== RUN   TestStreamTokens_windowedScanMatchesFullRescan
+--- PASS: TestStreamTokens_windowedScanMatchesFullRescan (0.00s)
+=== RUN   TestSwapGuard_tripsAndResumesThroughHaltGate
+swap guard: armed, threshold +500 MB over baseline
+swap guard: baseline 1.00 GB swap-used
+swap guard: TRIPPED — swap grew 0.60 GB over baseline (1.60 GB used now); refusing new requests until it recovers
+--- PASS: TestSwapGuard_tripsAndResumesThroughHaltGate (6.00s)
+=== RUN   TestSwapGuard_off
+swap guard: disabled (GOINFER_SWAP_GUARD=off)
+--- PASS: TestSwapGuard_off (0.02s)
+=== RUN   TestSwapGuard_neverCancelsInFlight
+swap guard: armed, threshold +100 MB over baseline
+swap guard: baseline 1.00 GB swap-used
+swap guard: TRIPPED — swap grew 0.20 GB over baseline (1.20 GB used now); refusing new requests until it recovers
+--- PASS: TestSwapGuard_neverCancelsInFlight (4.00s)
+=== RUN   TestReconcileProse_streamedPlusRestIsTheProse
+--- PASS: TestReconcileProse_streamedPlusRestIsTheProse (0.00s)
+=== RUN   TestReconcileProse_divergenceIsReported
+--- PASS: TestReconcileProse_divergenceIsReported (0.00s)
+=== RUN   TestPrepare_temperatureValidation
+--- PASS: TestPrepare_temperatureValidation (0.00s)
+=== RUN   TestPick_modelValidation
+--- PASS: TestPick_modelValidation (0.00s)
+=== RUN   TestHandleChat_emptyMessages
+--- PASS: TestHandleChat_emptyMessages (0.00s)
+=== RUN   TestHandleChat_nRejected
+--- PASS: TestHandleChat_nRejected (0.00s)
+=== RUN   TestEmbeddings_unconfigured
+--- PASS: TestEmbeddings_unconfigured (0.00s)
+=== RUN   TestVersionReport_backendsLineIsDerived
+--- PASS: TestVersionReport_backendsLineIsDerived (0.00s)
+=== RUN   TestServeVersionFlag_reportsOnlyCPUForTheRootBinary
+--- PASS: TestServeVersionFlag_reportsOnlyCPUForTheRootBinary (0.55s)
+=== RUN   TestServeUnknownPositional_namesTheSubcommands
+--- PASS: TestServeUnknownPositional_namesTheSubcommands (0.53s)
+=== RUN   TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered
+--- PASS: TestHelpHeader_isSkimmableAndNamesTheFlagThatMattered (0.54s)
+=== RUN   TestVision_userTextIsNotSpecialButTheImageBlockIs
+--- PASS: TestVision_userTextIsNotSpecialButTheImageBlockIs (0.00s)
+=== RUN   TestVision_missingImageBlockIsAnErrorNotAPlainPrompt
+--- PASS: TestVision_missingImageBlockIsAnErrorNotAPlainPrompt (0.00s)
+=== RUN   TestVision_spliceUsesTheLastOccurrenceNotTheFirst
+--- PASS: TestVision_spliceUsesTheLastOccurrenceNotTheFirst (0.00s)
+=== RUN   TestServe_noRouteEncodesARenderedPrompt
+    vision_hardening_test.go:189: 40 file(s) scanned for Encode-over-Render
+--- PASS: TestServe_noRouteEncodesARenderedPrompt (0.01s)
+=== RUN   TestVision_imageBlockNewlinesMatchTheRealProcessors
+--- PASS: TestVision_imageBlockNewlinesMatchTheRealProcessors (0.00s)
+=== RUN   TestWebLoadPath_confinement
+=== RUN   TestWebLoadPath_confinement/a_pulled_gguf
+=== RUN   TestWebLoadPath_confinement/a_symlink_to_a_pulled_gguf,_inside_the_cache_(loads_the_target)
+=== RUN   TestWebLoadPath_confinement/empty
+=== RUN   TestWebLoadPath_confinement/relative
+=== RUN   TestWebLoadPath_confinement/dot-dot_out_of_the_cache
+=== RUN   TestWebLoadPath_confinement/a_file_outside_the_cache
+=== RUN   TestWebLoadPath_confinement/a_sibling_directory_sharing_the_root's_prefix
+=== RUN   TestWebLoadPath_confinement/a_symlink_inside_the_cache_pointing_out_of_it
+=== RUN   TestWebLoadPath_confinement/an_in-progress_download
+=== RUN   TestWebLoadPath_confinement/not_a_gguf
+=== RUN   TestWebLoadPath_confinement/a_directory_named_.gguf
+=== RUN   TestWebLoadPath_confinement/a_missing_file
+=== RUN   TestWebLoadPath_confinement/the_cache_root_itself
+--- PASS: TestWebLoadPath_confinement (0.00s)
+    --- PASS: TestWebLoadPath_confinement/a_pulled_gguf (0.00s)
+    --- PASS: TestWebLoadPath_confinement/a_symlink_to_a_pulled_gguf,_inside_the_cache_(loads_the_target) (0.00s)
+    --- PASS: TestWebLoadPath_confinement/empty (0.00s)
+    --- PASS: TestWebLoadPath_confinement/relative (0.00s)
+    --- PASS: TestWebLoadPath_confinement/dot-dot_out_of_the_cache (0.00s)
+    --- PASS: TestWebLoadPath_confinement/a_file_outside_the_cache (0.00s)
+    --- PASS: TestWebLoadPath_confinement/a_sibling_directory_sharing_the_root's_prefix (0.00s)
+    --- PASS: TestWebLoadPath_confinement/a_symlink_inside_the_cache_pointing_out_of_it (0.00s)
+    --- PASS: TestWebLoadPath_confinement/an_in-progress_download (0.00s)
+    --- PASS: TestWebLoadPath_confinement/not_a_gguf (0.00s)
+    --- PASS: TestWebLoadPath_confinement/a_directory_named_.gguf (0.00s)
+    --- PASS: TestWebLoadPath_confinement/a_missing_file (0.00s)
+    --- PASS: TestWebLoadPath_confinement/the_cache_root_itself (0.00s)
+=== RUN   TestWebLoadPath_cacheRootBehindSymlink
+--- PASS: TestWebLoadPath_cacheRootBehindSymlink (0.00s)
+=== RUN   TestWebLoad_publishesAndStreams
+--- PASS: TestWebLoad_publishesAndStreams (0.00s)
+=== RUN   TestWebLoad_whileRunning
+--- PASS: TestWebLoad_whileRunning (0.05s)
+=== RUN   TestWebLoad_realModel
+    webui_load_test.go:337: set GOINFER_SERVE_MODEL=<.gguf with a tokenizer> for the real web-load test
+--- SKIP: TestWebLoad_realModel (0.00s)
+=== RUN   TestWebUI_disabledByDefault
+--- PASS: TestWebUI_disabledByDefault (0.00s)
+=== RUN   TestFitEstimate
+--- PASS: TestFitEstimate (0.00s)
+=== RUN   TestWebUI_freeBytesForActiveBackend
+--- PASS: TestWebUI_freeBytesForActiveBackend (0.00s)
+=== RUN   TestWebUI_rejectsBadRepo
+--- PASS: TestWebUI_rejectsBadRepo (0.00s)
+=== RUN   TestWebUI_pullRefReplacesSelector
+--- PASS: TestWebUI_pullRefReplacesSelector (0.00s)
+=== RUN   TestWebUI_pageIsSelfContained
+--- PASS: TestWebUI_pageIsSelfContained (0.00s)
+=== RUN   TestWebUI_assetRoute
+--- PASS: TestWebUI_assetRoute (0.00s)
+=== RUN   TestWebUI_noHTMLStringSinks
+--- PASS: TestWebUI_noHTMLStringSinks (0.01s)
+=== RUN   TestWebUI_markdownGateInBrowser
+    webui_test.go:364: webui markdown gate: 64 passed, 0 failed
+--- PASS: TestWebUI_markdownGateInBrowser (3.24s)
+=== RUN   TestWebUI_appGateInBrowser
+    webui_test.go:372: webui app gate: 543 passed, 0 failed
+--- PASS: TestWebUI_appGateInBrowser (105.53s)
+=== RUN   TestPullState_singleFlight
+--- PASS: TestPullState_singleFlight (0.00s)
+=== RUN   TestWebUI_rootRouteIsUnauthenticated
+--- PASS: TestWebUI_rootRouteIsUnauthenticated (0.00s)
+=== RUN   TestWebUI_pageRoutesExistOnlyUnderWebFlag
+--- PASS: TestWebUI_pageRoutesExistOnlyUnderWebFlag (0.00s)
+=== RUN   TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone
+=== RUN   TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone/no_Origin_header_(curl,_a_same-origin_form_post_outside_a_browser)
+=== RUN   TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone/matching_Origin
+=== RUN   TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone/foreign_Origin_(the_CSRF-style_attack)
+--- PASS: TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone (0.00s)
+    --- PASS: TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone/no_Origin_header_(curl,_a_same-origin_form_post_outside_a_browser) (0.00s)
+    --- PASS: TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone/matching_Origin (0.00s)
+    --- PASS: TestSameOrigin_refusesForeignOriginAllowsMatchingOrNone/foreign_Origin_(the_CSRF-style_attack) (0.00s)
+=== RUN   TestWebUI_listAndPullAreWrappedInSameOrigin
+--- PASS: TestWebUI_listAndPullAreWrappedInSameOrigin (0.00s)
+=== RUN   TestWebUnload_publishesRemoval
+--- PASS: TestWebUnload_publishesRemoval (0.00s)
+=== RUN   TestWebUnload_unknownNameIs404
+--- PASS: TestWebUnload_unknownNameIs404 (0.00s)
+=== RUN   TestWebUnload_freedTrueForARealModel
+--- PASS: TestWebUnload_freedTrueForARealModel (0.00s)
+=== RUN   TestUnloadSuggestion
+--- PASS: TestUnloadSuggestion (0.00s)
+=== RUN   TestWriteJSON_stalledClientFailsTheWriteInsteadOfBlocking
+--- PASS: TestWriteJSON_stalledClientFailsTheWriteInsteadOfBlocking (0.06s)
+=== RUN   TestServe_goroutineLeakCheck
+    zz_goroutineleak_test.go:32: set GOINFER_SERVE_MODEL=<.gguf> for the serve goroutine-leak check
+--- SKIP: TestServe_goroutineLeakCheck (0.00s)
+=== RUN   FuzzServeChatRequest
+=== RUN   FuzzServeChatRequest/seed#0
+=== RUN   FuzzServeChatRequest/seed#1
+=== RUN   FuzzServeChatRequest/seed#2
+=== RUN   FuzzServeChatRequest/seed#3
+=== RUN   FuzzServeChatRequest/seed#4
+=== RUN   FuzzServeChatRequest/seed#5
+--- PASS: FuzzServeChatRequest (0.00s)
+    --- PASS: FuzzServeChatRequest/seed#0 (0.00s)
+    --- PASS: FuzzServeChatRequest/seed#1 (0.00s)
+    --- PASS: FuzzServeChatRequest/seed#2 (0.00s)
+    --- PASS: FuzzServeChatRequest/seed#3 (0.00s)
+    --- PASS: FuzzServeChatRequest/seed#4 (0.00s)
+    --- PASS: FuzzServeChatRequest/seed#5 (0.00s)
+=== RUN   FuzzServeMessagesRequest
+=== RUN   FuzzServeMessagesRequest/seed#0
+=== RUN   FuzzServeMessagesRequest/seed#1
+=== RUN   FuzzServeMessagesRequest/seed#2
+=== RUN   FuzzServeMessagesRequest/seed#3
+=== RUN   FuzzServeMessagesRequest/seed#4
+--- PASS: FuzzServeMessagesRequest (0.00s)
+    --- PASS: FuzzServeMessagesRequest/seed#0 (0.00s)
+    --- PASS: FuzzServeMessagesRequest/seed#1 (0.00s)
+    --- PASS: FuzzServeMessagesRequest/seed#2 (0.00s)
+    --- PASS: FuzzServeMessagesRequest/seed#3 (0.00s)
+    --- PASS: FuzzServeMessagesRequest/seed#4 (0.00s)
+=== RUN   FuzzServeImageParts
+=== RUN   FuzzServeImageParts/seed#0
+=== RUN   FuzzServeImageParts/seed#1
+=== RUN   FuzzServeImageParts/seed#2
+=== RUN   FuzzServeImageParts/seed#3
+=== RUN   FuzzServeImageParts/seed#4
+=== RUN   FuzzServeImageParts/seed#5
+=== RUN   FuzzServeImageParts/seed#6
+=== RUN   FuzzServeImageParts/seed#7
+--- PASS: FuzzServeImageParts (0.00s)
+    --- PASS: FuzzServeImageParts/seed#0 (0.00s)
+    --- PASS: FuzzServeImageParts/seed#1 (0.00s)
+    --- PASS: FuzzServeImageParts/seed#2 (0.00s)
+    --- PASS: FuzzServeImageParts/seed#3 (0.00s)
+    --- PASS: FuzzServeImageParts/seed#4 (0.00s)
+    --- PASS: FuzzServeImageParts/seed#5 (0.00s)
+    --- PASS: FuzzServeImageParts/seed#6 (0.00s)
+    --- PASS: FuzzServeImageParts/seed#7 (0.00s)
+=== RUN   FuzzServeResponsesInput
+=== RUN   FuzzServeResponsesInput/seed#0
+=== RUN   FuzzServeResponsesInput/seed#1
+=== RUN   FuzzServeResponsesInput/seed#2
+=== RUN   FuzzServeResponsesInput/seed#3
+--- PASS: FuzzServeResponsesInput (0.00s)
+    --- PASS: FuzzServeResponsesInput/seed#0 (0.00s)
+    --- PASS: FuzzServeResponsesInput/seed#1 (0.00s)
+    --- PASS: FuzzServeResponsesInput/seed#2 (0.00s)
+    --- PASS: FuzzServeResponsesInput/seed#3 (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	122.374s

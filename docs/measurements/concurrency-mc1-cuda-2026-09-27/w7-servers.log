@@ -1,0 +1,361 @@
+==== 2026-09-27 09:25:54 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-b2168bdc -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.9s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.2 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:26:02 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-9fddaf7e -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.591s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.2 GB, 38.4 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:26:09 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-9fddaf7e -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.718s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.2 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:26:16 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-b2168bdc -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.614s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.2 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:26:23 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-b2168bdc -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.578s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.3 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:26:30 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-9fddaf7e -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.635s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.2 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:26:37 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-b2168bdc -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.682s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.2 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:26:50 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-9fddaf7e -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.624s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.2 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:27:05 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-9fddaf7e -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.64s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.3 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:27:21 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-b2168bdc -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.656s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.2 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:27:33 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-b2168bdc -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.623s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.2 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:27:46 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-9fddaf7e -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.672s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.2 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:27:56 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-b2168bdc -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.674s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.2 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:28:17 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-9fddaf7e -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.56s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.3 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:28:35 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-9fddaf7e -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.684s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.3 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:28:52 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-b2168bdc -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.713s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.2 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:29:24 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-b2168bdc -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.69s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.3 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:29:50 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-9fddaf7e -model bench=/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 151936) in 2.664s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.2 GB, budget 40.3 GB, 38.5 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:30:07 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-b2168bdc -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+loaded "bench": 28-layer model (vocab 152064) in 11.343s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 3.5 GB KV (weights 4.8 GB, budget 40.2 GB, 36.7 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…
+==== 2026-09-27 09:31:16 /home/francis/goinfer-bench/mc1-cuda-2026-09-27/serve-cuda-9fddaf7e -model bench=/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend cuda -addr 127.0.0.1:8098 -quant int4
+cuda: 2 resident KV slots of 4 requested — each costs 896 MB of KV at the resident context 8192, and free VRAM beside the weights (2565 MB, less 384 MB reserved) allows 2
+loaded "bench": 28-layer model (vocab 152064) in 10.466s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 8192 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 3.5 GB KV (weights 4.8 GB, budget 40.3 GB, 36.8 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 2 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills (--kv-sessions 4; the memory guard allowed 2)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 5.60 GB swap-used
+
+shutting down…

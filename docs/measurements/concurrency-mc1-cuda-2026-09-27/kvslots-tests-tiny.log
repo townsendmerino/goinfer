@@ -1,0 +1,36 @@
+=== RUN   TestCUDAKVSlots_interleavedMatchesAlone
+=== RUN   TestCUDAKVSlots_interleavedMatchesAlone/llama-tiny
+    kv_slots_test.go:146: A: ids per turn alone [[73 48 73 73 96 96 96 96] [96 96 96 96 96 96 96 96] [96 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:146: B: ids per turn alone [[191 253 73 253 73 253 73 253] [73 253 73 253 73 253 73 96] [238 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+=== RUN   TestCUDAKVSlots_interleavedMatchesAlone/mistral-tiny-window
+    kv_slots_test.go:146: A: ids per turn alone [[113 113 113 113 113 117 91 117] [117 91 91 93 91 93 93 93] [32 32 88 11 30 11 11 11]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:146: B: ids per turn alone [[40 40 40 123 113 40 123 125] [123 7 123 94 7 82 82 82] [82 40 40 40 40 40 40 15]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+=== RUN   TestCUDAKVSlots_interleavedMatchesAlone/deepseek-tiny
+goinfer: batched prefill declined for a 14-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: absent/unquantized weight at layer 0 needs the sequential path: cuda prefill: batched path declined (arch/geometry)
+    kv_slots_test.go:146: A: ids per turn alone [[106 69 89 120 34 51 95 42] [120 34 51 105 45 28 79 51] [58 89 120 35 52 95 42 58]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:146: B: ids per turn alone [[81 4 40 32 82 115 17 90] [54 52 95 108 52 95 108 52] [58 88 36 38 18 90 13 106]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+--- PASS: TestCUDAKVSlots_interleavedMatchesAlone (3.68s)
+    --- PASS: TestCUDAKVSlots_interleavedMatchesAlone/llama-tiny (1.26s)
+    --- PASS: TestCUDAKVSlots_interleavedMatchesAlone/mistral-tiny-window (1.09s)
+    --- PASS: TestCUDAKVSlots_interleavedMatchesAlone/deepseek-tiny (1.33s)
+=== RUN   TestCUDAKVSlots_graphs
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+    kv_slots_test.go:161: A: ids per turn alone [[113 113 113 113 113 117 91 117] [117 91 91 93 91 93 93 93] [32 32 88 11 30 11 11 11]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:161: B: ids per turn alone [[40 40 40 123 113 40 123 125] [123 7 123 94 7 82 82 82] [82 40 40 40 40 40 40 15]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+--- PASS: TestCUDAKVSlots_graphs (0.93s)
+=== RUN   TestCUDAKVSlots_recurrentKeepsOne
+--- PASS: TestCUDAKVSlots_recurrentKeepsOne (0.22s)
+=== RUN   TestKVSlotsFit
+--- PASS: TestKVSlotsFit (0.00s)
+=== RUN   TestCUDAKVSlots_clampedBuild
+cuda: 2 resident KV slots of 4 requested — each costs 4 MB of KV at the resident context 4096, and free VRAM beside the weights (394 MB, less 384 MB reserved) allows 2
+--- PASS: TestCUDAKVSlots_clampedBuild (0.24s)
+=== RUN   TestCUDAKVSlots_pricedAgainstWhatIsLeft
+cuda: 2 resident KV slots of 3 requested — each costs 4 MB of KV at the resident context 4096, and free VRAM beside the weights (394 MB, less 384 MB reserved) allows 2
+    kv_slots_test.go:355: pre-KV bytes 4194304 (calibration) / 4194304 (this build), one slot 4194304 B, probe returned 413138944 B: 2 of 3 slots granted
+--- PASS: TestCUDAKVSlots_pricedAgainstWhatIsLeft (0.19s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	5.371s

@@ -31,6 +31,14 @@ ran exact while its later chunks ran fast — mixed numerics inside one prompt, 
   all `TestPrefillPath_*`: green.
 - **Fidelity gate for the fast path in its production (chunked, default 512) shape** (`TestPrefillGateVsReferenceCUDA`, S = qwen2.5-coder-1.5b, K=3900, prompt set A, the existing CPU f32/f64 references; log `prefill-chunk-demotion-gate-S-K3900-2026-09-21.log`):
   exact meanAgree 79.69% HF 73/640 meanKL 0.48806; **fast 80.16%, HF 69/640, meanKL 0.49021 (1.004x)**; (a)(b)(c) all met — CELL SHIPS. (This is the confirmation cell, on set A, which has been scored before; the D7 K=3900 cell has no reference on disk and was skipped.)
+  **Re-scored 2026-09-27 on the regenerated set-A references.** This cell's 09-21 score is void: set A's S-K3900
+  references did not match prompts 1, 2, 5 and 8 (`prefill-ref-identity-2026-09-26.md`).
+  - It was re-run on the regenerated files, with the same test and criteria, at `8c8db0fe` on `nobara`, driver
+    595.91.07. Log: `prefill-chunk-demotion-gate-S-K3900-rescore-2026-09-27.log`.
+  - Exact: meanAgree 92.81%, HF 9/640, meanKL 0.04692. **Fast: 92.81%, HF 7/640, meanKL 0.04594 (0.98x).**
+  - (a), (b) and (c) are all met: **CELL SHIPS**. The four previously mismatched prompts now read KL 0.009–0.085.
+  - The decision's outcome is unchanged, and it now stands on a valid cell as well as on the bit-identity result.
+    D7 K=3900 still has no set-A reference and was skipped.
 
 ## Effect (`TestPrefillDecomp`, best of 3, default chunk 512)
 

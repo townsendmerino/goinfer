@@ -1,0 +1,26 @@
+reported: old vs new at 2 clients pair 1: 3 of 12 turns differ in content
+reported: old vs new at 2 clients pair 2: 3 of 12 turns differ in content
+reported: old vs new at 2 clients pair 3: 3 of 12 turns differ in content
+reported: old vs new at 4 clients pair 1: 7 of 24 turns differ in content
+reported: old vs new at 4 clients pair 2: 7 of 24 turns differ in content
+reported: old vs new at 4 clients pair 3: 7 of 24 turns differ in content
+GATE 1 identity: PASS
+GATE 2 reuse: PASS
+BAND 3 new 2 clients / new 1 client: 1.006, 1.008, 1.017; median 1.008x — outside band
+reported: old 2 clients / old 1 client: 0.836, 0.805, 0.803; median 0.805x
+BAND 3 new 4 clients / new 1 client: 1.011, 1.014, 1.019; median 1.014x — outside band
+reported: old 4 clients / old 1 client: 0.844, 0.808, 0.808; median 0.808x
+pair 1 4 clients: aggregate old 174.64 new 218.30 tok/s = 1.250x; p50 turn old 2.99 new 2.26 s; p99 turn old 3.72 new 2.67 s
+pair 2 4 clients: aggregate old 173.80 new 218.11 tok/s = 1.255x; p50 turn old 3.00 new 2.26 s; p99 turn old 3.74 new 2.67 s
+pair 3 4 clients: aggregate old 174.07 new 217.41 tok/s = 1.249x; p50 turn old 3.00 new 2.28 s; p99 turn old 3.73 new 2.68 s
+GATE 4 ship: 4-client aggregate new/old median 1.250x (bar >= 1.03x): PASS
+pair 1 2 clients: aggregate old 172.92 new 217.36 tok/s = 1.257x; p50 turn old 1.48 new 1.13 s; p99 turn old 1.86 new 1.34 s
+pair 2 2 clients: aggregate old 173.14 new 216.85 tok/s = 1.252x; p50 turn old 1.49 new 1.14 s; p99 turn old 1.86 new 1.33 s
+pair 3 2 clients: aggregate old 173.01 new 217.02 tok/s = 1.254x; p50 turn old 1.48 new 1.13 s; p99 turn old 1.87 new 1.34 s
+reported: 2-client aggregate new/old median 1.254x
+pair 1 1 client: p50 old 0.610 new 0.568 s = 0.931x; p99 old 0.670 new 0.674 s = 1.005x; aggregate old 206.90 new 215.99
+pair 2 1 client: p50 old 0.566 new 0.569 s = 1.007x; p99 old 0.671 new 0.671 s = 1.000x; aggregate old 215.17 new 215.06
+pair 3 1 client: p50 old 0.568 new 0.584 s = 1.029x; p99 old 0.672 new 0.674 s = 1.002x; aggregate old 215.42 new 213.36
+GATE 5 solo guard: p50 median 1.007x, p99 median 1.002x (bar <= 1.05 each): PASS
+reported, 7B 4 clients: aggregate old 55.47 new 55.79 tok/s = 1.006x; new prefilled per client [[22, 176, 331, 483, 631, 785], [29, 176, 331, 483, 631, 786], [29, 176, 331, 483, 631, 786], [22, 176, 331, 483, 631, 786]]
+ALL HARD GATES: PASS

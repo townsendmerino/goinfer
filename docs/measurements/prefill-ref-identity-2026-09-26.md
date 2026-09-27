@@ -60,7 +60,7 @@ respectively, which matches the K each first appears at.
 | R2 gate (3), 2026-09-21 (`r2-attn-fa-rootcause-2026-09-21.md`) | Mac set A S-K3900 | **void**. Re-gated on set B 2026-09-25: PASSES. Retraction done. |
 | R1 gate (3), 2026-09-21 (red-october R1) | Mac set A S-K3900 | **void** as a record (also contaminated by the executor leak); moot, R1 was killed on speed. |
 | R17 set-A runs, 2026-09-25 | Mac set A S-K3900 | calibration only; the decision ran on set B. |
-| CUDA chunk demotion, 2026-09-21 (`prefill-chunk-demotion-2026-09-21.md`) | `nobara` set A S-K3900 (confirmation cell) | **that cell is void**. The decision stands on its own bit-identity result (chunked fast == single-pass fast, 0 of 151,936 logits differ), which inherits the single-pass fast path's gate. |
+| CUDA chunk demotion, 2026-09-21 (`prefill-chunk-demotion-2026-09-21.md`) | `nobara` set A S-K3900 (confirmation cell) | **that cell is void**. The decision stands on its own bit-identity result (chunked fast == single-pass fast, 0 of 151,936 logits differ), which inherits the single-pass fast path's gate. **Re-scored 2026-09-27 on the regenerated files: SHIPS** (fast 92.81% / HF 7 / KL 0.0459 against exact 92.81% / 9 / 0.0469). |
 | R16 §3.2 gate (2026-09-25) | Mac set A S-K256/1024 | gave no verdict (K=512 missing). S-K1024 is also invalid, so set A cannot decide it as is. |
 | CUDA §3 (L2/L3 Phase 3), 2026-09-05 | `nobara` set A K=512/1024 | self-consistent: generated and scored in one run from the same docs. |
 | CUDA vsum (2026-09-13), R6 flash-decode (2026-09-20) | K=8000 (set A), S-K3900 / D7-K8000 (set B) | valid. |
@@ -116,9 +116,12 @@ copied to the Mac and set A was audited whole: **0 (cell, prompt) pairs above KL
 Every set A cell now reads at the W4A8-vs-CPU level (KL 0.60 at most across all 90 pairs, S-K64 prompt 9), so **set A can decide again**:
 S-K64..K3900 and D7-K256..K1024. The 2026-09-05 files stay set aside in `~/goinfer-logs/prefill-ref-stale-2026-09-05/`.
 The two runs set A had blocked — R16's §3.2 set-A prefill gate and the CUDA chunk-demotion S-K3900 re-score — can now
-run. Neither is started.
+run. The CUDA chunk-demotion S-K3900 re-score ran 2026-09-27 and **SHIPS** (fast 92.81% / HF 7/640 / KL 0.0459
+against exact 92.81% / 9 / 0.0469; `prefill-chunk-demotion-2026-09-21.md`). R16's §3.2 set-A prefill gate is not
+started.
 
 ## Open
 
 ~~Set A's invalid cells should be regenerated from the snapshot~~ — done 2026-09-26/27 (both updates above). Left
-open: R16's §3.2 set-A prefill gate and the CUDA chunk-demotion S-K3900 re-score, both blocked until now on these cells.
+open: R16's §3.2 set-A prefill gate, blocked until now on these cells. ~~The CUDA chunk-demotion S-K3900
+re-score~~ — done 2026-09-27: SHIPS.

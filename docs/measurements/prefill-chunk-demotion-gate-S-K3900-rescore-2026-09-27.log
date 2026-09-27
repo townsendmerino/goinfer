@@ -1,0 +1,27 @@
+=== RUN   TestPrefillGateVsReferenceCUDA
+    prefill_gate_ref_test.go:101: GOINFER_CUDA_GATE_KS override: cells [3900] (NOT the pre-registered decision set)
+=== RUN   TestPrefillGateVsReferenceCUDA/S
+    prefill_gate_ref_test.go:151: prompt set "a" (10 snapshot files)
+[cuda-gate] S K=3900 prompt  1/10 exact(agree=100.0% HF=0/64 KL=0.0115) fast(agree=100.0% HF=0/64 KL=0.0110) diff(agree=+0.0pt KL=-0.0004) seedKL=0.0415 elapsed=8s
+[cuda-gate] S K=3900 prompt  2/10 exact(agree=100.0% HF=0/64 KL=0.0221) fast(agree=100.0% HF=0/64 KL=0.0209) diff(agree=+0.0pt KL=-0.0012) seedKL=0.0525 elapsed=17s
+[cuda-gate] S K=3900 prompt  3/10 exact(agree=79.7% HF=5/64 KL=0.0785) fast(agree=81.2% HF=4/64 KL=0.0788) diff(agree=+1.6pt KL=+0.0004) seedKL=0.0319 elapsed=25s
+[cuda-gate] S K=3900 prompt  4/10 exact(agree=93.8% HF=0/64 KL=0.0418) fast(agree=93.8% HF=0/64 KL=0.0384) diff(agree=+0.0pt KL=-0.0034) seedKL=0.0288 elapsed=33s
+[cuda-gate] S K=3900 prompt  5/10 exact(agree=95.3% HF=0/64 KL=0.0094) fast(agree=93.8% HF=0/64 KL=0.0109) diff(agree=-1.6pt KL=+0.0015) seedKL=0.0000 elapsed=42s
+[cuda-gate] S K=3900 prompt  6/10 exact(agree=84.4% HF=1/64 KL=0.0737) fast(agree=87.5% HF=0/64 KL=0.0727) diff(agree=+3.1pt KL=-0.0011) seedKL=0.0905 elapsed=50s
+[cuda-gate] S K=3900 prompt  7/10 exact(agree=95.3% HF=0/64 KL=0.0420) fast(agree=95.3% HF=0/64 KL=0.0435) diff(agree=+0.0pt KL=+0.0015) seedKL=0.1030 elapsed=59s
+[cuda-gate] S K=3900 prompt  8/10 exact(agree=93.8% HF=1/64 KL=0.0852) fast(agree=90.6% HF=2/64 KL=0.0802) diff(agree=-3.1pt KL=-0.0050) seedKL=0.0155 elapsed=1m7s
+[cuda-gate] S K=3900 prompt  9/10 exact(agree=95.3% HF=0/64 KL=0.0423) fast(agree=96.9% HF=0/64 KL=0.0412) diff(agree=+1.6pt KL=-0.0011) seedKL=0.0007 elapsed=1m15s
+[cuda-gate] S K=3900 prompt 10/10 exact(agree=90.6% HF=2/64 KL=0.0627) fast(agree=89.1% HF=1/64 KL=0.0617) diff(agree=-1.6pt KL=-0.0010) seedKL=0.0841 elapsed=1m24s
+=== CUDA S K=3900 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=92.81% HF=9/640 worstGap=6.571% meanKL=0.04692) fast(meanAgree=92.81% HF=7/640 worstGap=6.930% meanKL=0.04594) critA(HF fast<=exact)=true critB(agree>=exact-1pt & >=half)=true critC(KL<=1.1x)=true — CELL SHIPS
+    prefill_gate_ref_test.go:159: CUDA S K=3900: exact(agree=92.81% HF=9 KL=0.04692) fast(agree=92.81% HF=7 KL=0.04594) A=true B=true C=true cell=SHIPS
+=== CUDA S: §3 DECISION-SET VERDICT = SHIPS ===
+    prefill_gate_ref_test.go:176: CUDA S: §3 decision-set verdict = SHIPS
+=== RUN   TestPrefillGateVsReferenceCUDA/D7
+    prefill_gate_ref_test.go:151: prompt set "a" (10 snapshot files)
+    prefill_gate_ref_test.go:159: D7 K=3900: reference file missing (/home/francis/goinfer-logs/prefill-ref/D7-K3900-p0.bin) — SKIPPING the cell; there is no fallback to the withdrawn exact-as-oracle scoring (§3.1)
+    prefill_gate_ref_test.go:171: no decision-set reference cells under /home/francis/goinfer-logs/prefill-ref — run TestPrefillGateReference (decoder package) first
+--- PASS: TestPrefillGateVsReferenceCUDA (128.64s)
+    --- PASS: TestPrefillGateVsReferenceCUDA/S (92.34s)
+    --- SKIP: TestPrefillGateVsReferenceCUDA/D7 (36.30s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	128.741s

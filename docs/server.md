@@ -300,14 +300,23 @@ ordinary cold prefill uses, so it inherits that path's own exactness knob, not
 (`GOINFER_METAL_FAST_PREFILL=0`/`GOINFER_CUDA_FAST_PREFILL=0`). **WebGPU** — no
 fast/exact split exists on this backend, so there is nothing to opt out of.
 
-**On Metal, several conversations stay resident** (2026-09-26, MC1 of
-`docs/tasks/task-concurrency-2026-09.md`). `--kv-sessions N` also asks the resident for N GPU KV slots, one
+**On Metal and CUDA, several conversations stay resident** (MC1 of `docs/tasks/task-concurrency-2026-09.md`:
+Metal 2026-09-26, CUDA 2026-09-27). `--kv-sessions N` also asks the resident for N GPU KV slots, one
 conversation each. Each generation binds the slot that already holds its prompt's prefix; a new conversation
 takes an empty slot, else the least recently used one. A slot that shares only a chat template's lead with the
 prompt is never truncated to serve it. With `--max-concurrent` above 1, a dense model's generations also run at once,
 one per slot (MC3, above). The memory guard clamps N to what fits
-(each slot is the full KV at the resident context, e.g. ~117 MB for Qwen2.5-1.5B at 4k), and the banner says what
-it allocated. CUDA, WebGPU and the recurrent families (Gated DeltaNet, Mamba-2, LFM2) keep one slot.
+(each slot is the full KV at the resident context, e.g. ~117 MB for Qwen2.5-1.5B at 4k on Metal, 448 MB at 8k in
+CUDA's f32 KV), and the banner says what it allocated. On CUDA the generations still run one at a time; the slots only
+stop interleaved conversations from evicting each other (qwen2.5-coder-1.5b, 4 clients: 1.25× the one-slot build,
+`measurements/concurrency-mc1-cuda-2026-09-27.md`).
+- **On CUDA, slots come before context** (owner decision 2026-09-27). When `--ctx` is not set, fit by default gives up
+  context, down to 4096, until every requested slot fits, and it logs the shrink. Below 4096 the slots are clamped
+  instead.
+  - On an 8 GB card the 7B starts at 4096 with 4 slots (1.35× at 4 clients against 2 slots at 8192).
+  - An explicit `--ctx` is never shrunk: it keeps that context and the slots that fit beside it.
+- **One slot:** WebGPU, the recurrent families (Gated DeltaNet, Mamba-2, LFM2), and a CUDA load with expert streaming
+  on.
 
 **Embeddings.** Point `--embed-model` at a [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)
 HF snapshot to serve `/v1/embeddings` (`--embed-quant f32|q8`). `--model` and

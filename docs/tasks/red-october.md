@@ -1036,7 +1036,7 @@ order — `splitkv-8000-reanchor`, `splitkv-mechanism-ncu` (the gate's stated re
 `splitkv-q-staging`, `vsum-split-spike`, `vsum-split-fidelity` (and its PREREGISTERED twin —
 the rule that a re-run needs a mechanism, never a re-roll), `reduction-tree-accuracy-2026-09-12.md`,
 `splitkv-d7-fthreshold` and `splitkv-f-depth-invariance` (the gate is now keyed on nKV·hd,
-`cuda/resident.go:249`); `ollama-chase.md` §A2, §D4 (Ollama's `flash_attn_ext`: tiled, parallel
+`cuda/resident.go:324`); `ollama-chase.md` §A2, §D4 (Ollama's `flash_attn_ext`: tiled, parallel
 over keys, online softmax, *not* bit-exact — which is what this lane accepts), §7 (the strategic
 fork, now partly superseded by L3 on the prefill side — read for the trap paragraph on
 tolerance-gated defaults); `cuda/decode_splitkv.cu`, `cuda/attn_block.cu`.
@@ -1971,7 +1971,7 @@ cross-backend decode-path review (docs/completed/task-moe-streaming.md's own clo
 not yet measured. `cuda/drafter.go`'s `DraftTokens` (~653-718), `FuseContext` (~230-240), and the
 block-forward path (~597-608) all: sync the stream, download the ENTIRE `M×vocab` logits block to
 host, then run a hand-written serial host argmax loop per row — where the main decode path already
-has an on-device fused-argmax kernel (`ForwardArgmax`, `cuda/resident.go:3690`, `r.fArg`, a 4-byte
+has an on-device fused-argmax kernel (`ForwardArgmax`, `cuda/resident.go:3812`, `r.fArg`, a 4-byte
 readback) for exactly this reduction. `M` here is the speculative block size (small — single-digit
 to low tens of tokens), so the absolute cost is plausibly minor; unlike R11's MoE case, nothing here
 has been measured, so **no band is registered — step 0 is the measurement, same discipline as R4/R10
