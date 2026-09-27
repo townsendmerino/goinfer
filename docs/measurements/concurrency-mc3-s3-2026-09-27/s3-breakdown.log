@@ -1,0 +1,10 @@
+=== RUN   TestMC3StepBreakdown
+[mc3-s3] depth 128 B=2: step 18.85 ms GPU | matmul 14.39 | attention 1.34 | per-row 2.29 | dispatch overhead (all empty) 0.98
+[mc3-s3] depth 128 B=4: step 22.59 ms GPU | matmul 14.42 | attention 2.56 | per-row 4.21 | dispatch overhead (all empty) 1.59
+[mc3-s3] depth 128 B=8: step 30.06 ms GPU | matmul 14.52 | attention 4.99 | per-row 8.09 | dispatch overhead (all empty) 2.96
+[mc3-s3] depth 512 B=2: step 20.85 ms GPU | matmul 14.32 | attention 3.31 | per-row 2.40 | dispatch overhead (all empty) 0.81
+[mc3-s3] depth 512 B=4: step 26.58 ms GPU | matmul 14.23 | attention 6.47 | per-row 4.41 | dispatch overhead (all empty) 1.48
+[mc3-s3] depth 512 B=8: step 37.75 ms GPU | matmul 14.23 | attention 12.68 | per-row 8.04 | dispatch overhead (all empty) 2.92
+--- PASS: TestMC3StepBreakdown (68.53s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	68.986s

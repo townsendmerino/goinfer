@@ -337,6 +337,53 @@ different adapters.
 - A lone request: p50 1.002×, p99 1.004×.
 - Identity and reuse equal on every turn of all 14 cells. 2 clients read 1.071× (reported).
 
+**MC3 S3 — step polish (2026-09-27).** An exploratory breakdown (`TestMC3StepBreakdown`, in sequence, each category
+no-op'd in turn) showed the batched matmuls already amortised (14.4 ms at any B). What grew with B was the per-row
+work, run one sequence after another:
+- the small per-row kernels, ~1 ms per sequence (4.2 of a B = 4 step's 22.6 ms at depth 128);
+- attention, 2.6 ms at B = 4 and 12.7 at B = 8 depth 512.
+
+**The build.**
+- **S3a:** multi-row forms of rmsnorm_quant, quant_vec, swiglu_quant and rope2 (`metal/batch_rows.go`). Their bodies
+  are production's byte for byte, derived at init by renaming the signature and adding a per-row prologue; nothing is
+  retyped, because these kernels round differently when their code shape changes.
+- **S3b:** multi-row kv_store and attention, the per-head kernel. A row map selects the rows below
+  attnFADepthFloor; attention_fa rows keep their own dispatches.
+  - This needs every row's KV slot reachable from one dispatch, and aikit binds at most 16 buffers. So with several
+    slots a layer's KV slots are now **one allocation**, slot views at fixed offsets.
+  - aikit's host views ignore a view's offset, so the host KV writes (`UploadKV`, a test hook) add the bound slot's
+    offset (`kvHostOff`).
+
+GPU step time, before → after (`s3b-breakdown.log`):
+
+| depth, B | before | after |
+|---|---:|---:|
+| 128, 4 | 22.59 ms | 17.69 ms |
+| 128, 8 | 30.06 ms | 18.72 ms |
+| 512, 4 | 26.58 ms | 20.24 ms |
+| 512, 8 | 37.75 ms | 23.36 ms |
+| 128, 2 | 18.85 ms | 17.20 ms |
+
+**Correctness before any timing:**
+- `TestMC3Step_bitIdentical`, `_Deep` (mixed attention_fa and per-head rows in one step) and
+  `_drawsMatchForwardSample`: 0 differ.
+- Both end-to-end concurrent identity tests (greedy and sampled) pass.
+- MC1's slot tests and the tagged Metal suite (182 / 0) pass.
+
+**Grading, pre-registered 2026-09-27 before any W7 timing of the S3 build.**
+- *old* = `serve-metal` at `4954f978` (S2); *new* = the S3 commit.
+- The MC3 W7 workload, greedy, `--fixed-nonce`, serve defaults.
+- Cells: 4 clients old/new × 3 pairs (old new new old old new); 2 clients the same; 1 client the same.
+- Gates:
+  1. identity: `content_sha` equal, new vs old, every cell (hard);
+  2. reuse equal (hard);
+  3. 4-client aggregate new ÷ old, median of 3 ≥ 1.03× (a polish bar under the owner's guidance: a clean win beyond
+     noise ships);
+  4. 4-client p99 turn new ÷ old ≤ 1.0 (hard);
+  5. lone request p50 and p99 ≤ 1.05× (hard).
+- Reported: the 2-client aggregate and p99.
+- Decision: all pass ships; aggregate below 1.03× parks.
+
 **MC3 S2 SHIPPED 2026-09-27: all five W7 gates pass** ([`concurrency-mc3-s2-2026-09-27.md`](../measurements/concurrency-mc3-s2-2026-09-27.md)).
 - 4 sampled clients (T = 0.8, fixed seeds) at **1.623×** the shipped MC3, with p99 turn 0.635×.
 - A lone request 1.002× / 1.005×; every reply identical, the pre-MC3 reference included.
