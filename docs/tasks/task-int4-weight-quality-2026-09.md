@@ -267,3 +267,41 @@ unused (`run-loadavg-aborted.log`).
 - aikit release, then goinfer's bump, the parity refresh and the merge of `q4k-phase1`;
 - the owner decides the default scope;
 - 1b, the CUDA kernel, registered before it is built.
+
+## Phase 1b: the CUDA resident kernel, PRE-REGISTERED 2026-09-26 before any build or run
+
+**Design.** A Q4_K tensor is uploaded as its raw super-blocks (36 uint32 words per 256 weights). A new
+`gemv_q4k_g32` matvec uses one warp per output row: its 32 lanes map onto a block's 32 code words
+(coalesced), and each lane runs two `dp4a` (low and high nibbles) against per-32 int8 activations.
+The kernel unpacks each block's f16 `d`/`dmin` and 6-bit sub-block scales and minimums.
+
+The minimum term needs `aS_g · Σaq_g` per group. The per-32 quantizers (`actgroup.cu`'s `quantG32`)
+write it into the second half of the activation-scale buffer they already fill, whose length goes
+from K/32 to 2·K/32. Kernel signatures and the pipeline-field swap are unchanged, and the existing
+per-32 matvecs read only the first half. Only `doG` gains a case; fusion, batched prefill and MoE
+already decline under per-32. Residency stops declining `q4k` on CUDA, and keeps declining it on
+Metal and WebGPU.
+
+**Correctness (unit tests, RTX 2070 SUPER):**
+- the quantizers' new sums equal the host twin exactly, and their scales and codes are unchanged;
+- `gemv_q4k_g32` matches a host sum over the same codes, scales and minimums within relative error
+  1e-5: random and saturated blocks, bias, accumulate.
+
+**Agreement and quality:** Phi-3 on the 141-token filler prompt (the H2 resident test's), CUDA `q4k`
+resident against CPU `q4k`:
+- per-position logit cosine median ≥ 0.999;
+- quality against f32: p10 within 0.01 of CPU `q4k`'s on the same prompt.
+
+**Capacity:** Phi-3 `q4k` builds resident at the default context on the 8 GB card, which int8int8
+cannot. Pass or fail.
+
+**Speed.** Resident greedy decode, goinfer against goinfer, a new `BenchmarkResidentDecode` (cuda
+module), 6 paired rounds, alternating order, separate processes, the 1a idle check:
+- **phi3-mini, `q4k` ÷ int8int8 + per-32, at depths 128 and 2048** (−25% weight bytes projected):
+  **≥ 1.15 SHIP; [1.05, 1.15) AMBIGUOUS; < 1.05 FAIL**, per depth; the cell's verdict is the worse
+  of the two;
+- **qwen2.5-7b, `q4k` ÷ today's int4, at depth 128** (+12% bytes projected): **≥ 0.85 SHIP;
+  [0.78, 0.85) AMBIGUOUS; < 0.78 FAIL.**
+
+A peer comparison against Ollama and llama.cpp (`scripts/bench_peer.py`) follows a SHIP as
+information, not as a gate. If the Phi-3 cells SHIP, the owner decides the CUDA default.
