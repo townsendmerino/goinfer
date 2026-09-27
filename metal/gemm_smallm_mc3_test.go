@@ -305,3 +305,120 @@ func TestMC3SmallMProbe(t *testing.T) {
 		d.ReleaseAll()
 	}
 }
+
+// TestMC3S0PrefillGEMMSmallM: MC3's matrix-unit S0 (docs/tasks/task-concurrency-2026-09.md). The existing prefill GEMM
+// (gemm_w4f16_store, the f16 simdgroup_matrix kernel fast prefill uses) timed at M = 1..64 rows on decode shapes,
+// against the production decode GEMV (gemv_w4a8_sa_rows, R18b) run M times — what M sequences cost today, one GEMV
+// each. Its 64x64 tile runs every token row's MMAs whether or not the row exists (the kernel's own comment), so its
+// time should be ~flat up to M = 64: the question is where that flat line sits against M GEMVs, i.e. from which M a
+// matrix-unit batched decode pays even before a small-M tile is written. f16 activations: NOT bit-identical to the
+// W4A8 decode path (it is fast prefill's numerics) — this measures cost only.
+//
+//	GOINFER_METAL_MC3=1 go test -count=1 -run '^TestMC3S0PrefillGEMMSmallM$' -v ./metal/
+func TestMC3S0PrefillGEMMSmallM(t *testing.T) {
+	if os.Getenv("GOINFER_METAL_MC3") != "1" {
+		t.Skip("set GOINFER_METAL_MC3=1 (allocates ~0.5 GB of GPU buffers)")
+	}
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	defer d.ReleaseAll()
+	libD, err := d.CompileLibrary(allKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile decode: %v", err)
+	}
+	libP, err := d.CompileLibrary(prefillKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile prefill: %v", err)
+	}
+	gemm, err := d.NewComputePipeline(libP, "gemm_w4f16_store")
+	if err != nil {
+		t.Fatalf("pipeline gemm_w4f16_store: %v", err)
+	}
+	cq := d.NewCommandQueue()
+	t0 := time.Now()
+	hb := func(format string, a ...any) {
+		fmt.Fprintf(os.Stderr, "[mc3-s0mma %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
+	}
+	seed := uint32(97531)
+	rnd := func() uint32 { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed }
+	const reps = 7
+	med := func(xs []float64) float64 { s := append([]float64(nil), xs...); sort.Float64s(s); return s[len(s)/2] }
+	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
+		var ms []float64
+		for r := 0; r < reps+1; r++ {
+			e := cq.Begin()
+			for i := 0; i < per; i++ {
+				enc(e, i)
+			}
+			e.End()
+			if err := e.Err(); err != nil {
+				t.Fatalf("dispatch: %v", err)
+			}
+			if r > 0 {
+				ms = append(ms, (e.GPUEnd()-e.GPUStart())*1e3/float64(per))
+			}
+		}
+		return med(ms)
+	}
+	type shape struct {
+		model, cat string
+		N, K, R    int
+	}
+	for _, s := range []shape{
+		{"1.5B", "qkv", 2048, 1536, 4}, {"1.5B", "o", 1536, 1536, 2}, {"1.5B", "gate/up", 17920, 1536, 4},
+		{"7B", "qkv", 4608, 3584, 4}, {"7B", "o", 3584, 3584, 2}, {"7B", "gate/up", 37888, 3584, 4},
+	} {
+		bytes := s.N*s.K/2 + s.N*(s.K/32)*2
+		copies := min(64, max(1, int(math.Ceil(float64(256<<20)/float64(bytes)))))
+		const maxM = 64
+		aq := d.NewBufferBytes(s.K)
+		for i := range aq.Int8s()[:s.K] {
+			aq.Int8s()[i] = int8(rnd()%255) - 127
+		}
+		asc := NewBufferFloats(d, []float32{0.01})
+		ah := make([]uint16, maxM*s.K)
+		for i := range ah {
+			ah[i] = f32ToF16(float32(int(rnd()%255)-127) * 0.01)
+		}
+		A := NewBufferU16s(d, ah)
+		C := d.NewBufferLen(maxM * s.N) // half output needs maxM*N*2 bytes; floats give room to spare
+		out := d.NewBufferLen(s.N)
+		bias := d.NewBufferLen(s.N)
+		uK, uN, uMode := NewBufferU32(d, uint32(s.K)), NewBufferU32(d, uint32(s.N)), NewBufferU32(d, 0)
+		var ws, ss []Buffer
+		for c := 0; c < copies; c++ {
+			nw := s.N * s.K / 8
+			wb := d.NewBufferLen(nw)
+			v := wb.U32s()[:nw]
+			for i := range v {
+				v[i] = rnd()
+			}
+			sc := make([]uint16, s.N*(s.K/32))
+			for i := range sc {
+				sc[i] = f32ToF16(float32(rnd()%1000+1) * 1e-5)
+			}
+			ws, ss = append(ws, wb), append(ss, NewBufferU16s(d, sc))
+		}
+		per := max(8, 2*copies)
+		gemv, err := d.NewComputePipeline(libD, fmt.Sprintf("gemv_w4a8_sa_rows%d", s.R))
+		if err != nil {
+			t.Fatalf("pipeline: %v", err)
+		}
+		t1 := timeIt(per, func(e *Encoder, i int) {
+			e.DispatchTG(gemv, s.N*32/s.R, 256, s.K*2, ws[i%copies], ss[i%copies], aq, asc, out, uK)
+		})
+		line := fmt.Sprintf("%-4s %-8s N=%-6d K=%-5d  decode GEMV %.3f ms:", s.model, s.cat, s.N, s.K, t1)
+		for _, M := range []int{1, 2, 4, 8, 16, 32, 64} {
+			uM := NewBufferU32(d, uint32(M))
+			gx, gy := (s.N+63)/64, (M+63)/64
+			tm := timeIt(per, func(e *Encoder, i int) {
+				e.Dispatch2D(gemm, gx, gy, 128, 1, A, ws[i%copies], ss[i%copies], C, uM, uN, uK, bias, uMode)
+			})
+			line += fmt.Sprintf("  M=%d %.3f (%.2fx M GEMVs)", M, tm, float64(M)*t1/tm)
+		}
+		hb("%s", line)
+		d.ReleaseAll()
+	}
+}

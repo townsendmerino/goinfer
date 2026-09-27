@@ -110,6 +110,10 @@ Best gain against M sequential dispatches:
   that could pay is the matrix units (`simdgroup_matrix`, as fast prefill uses), with M padded to 8. That means f16
   products, so **MC3 would need a registered fidelity gate instead of bit-identity.** That design decision belongs to
   the owner before MC3 starts.
+- *Superseded the same day (the fidelity-gate conclusion only).*
+  [`concurrency-mc3-s0-2026-09-26.md`](concurrency-mc3-s0-2026-09-26.md) built the matrix-unit kernels with exact
+  integer operands and production's reduction order. They are bit-identical, at 2.9–8.0× 8 sequential GEMVs, so no
+  fidelity gate is needed.
 - **A side finding worth its own brief.** At M = 1, H beats the shipped R18 kernel standalone, bit-identically:
   - gate/up 0.117 against 0.137 ms (1.17×, 1.5B) and 0.452 against 0.556 ms (1.23×, 7B);
   - qkv 1.32× (1.5B).

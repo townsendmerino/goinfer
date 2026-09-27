@@ -1,0 +1,10 @@
+=== RUN   TestMC3S0PrefillGEMMSmallM
+[mc3-s0mma    1.9s] 1.5B qkv      N=2048   K=1536   decode GEMV 0.020 ms:  M=1 0.240 (0.08x M GEMVs)  M=2 0.241 (0.17x M GEMVs)  M=4 0.240 (0.34x M GEMVs)  M=8 0.243 (0.67x M GEMVs)  M=16 0.246 (1.32x M GEMVs)  M=32 0.252 (2.58x M GEMVs)  M=64 0.252 (5.15x M GEMVs)
+[mc3-s0mma    4.0s] 1.5B o        N=1536   K=1536   decode GEMV 0.017 ms:  M=1 0.240 (0.07x M GEMVs)  M=2 0.240 (0.14x M GEMVs)  M=4 0.239 (0.29x M GEMVs)  M=8 0.240 (0.57x M GEMVs)  M=16 0.242 (1.14x M GEMVs)  M=32 0.248 (2.22x M GEMVs)  M=64 0.251 (4.38x M GEMVs)
+[mc3-s0mma    7.0s] 1.5B gate/up  N=17920  K=1536   decode GEMV 0.108 ms:  M=1 1.309 (0.08x M GEMVs)  M=2 1.294 (0.17x M GEMVs)  M=4 1.292 (0.33x M GEMVs)  M=8 1.294 (0.67x M GEMVs)  M=16 1.315 (1.31x M GEMVs)  M=32 1.343 (2.57x M GEMVs)  M=64 1.328 (5.20x M GEMVs)
+[mc3-s0mma   10.2s] 7B   qkv      N=4608   K=3584   decode GEMV 0.068 ms:  M=1 0.898 (0.08x M GEMVs)  M=2 0.898 (0.15x M GEMVs)  M=4 0.890 (0.30x M GEMVs)  M=8 0.897 (0.60x M GEMVs)  M=16 0.893 (1.21x M GEMVs)  M=32 0.904 (2.39x M GEMVs)  M=64 0.911 (4.75x M GEMVs)
+[mc3-s0mma   13.8s] 7B   o        N=3584   K=3584   decode GEMV 0.061 ms:  M=1 0.767 (0.08x M GEMVs)  M=2 0.763 (0.16x M GEMVs)  M=4 0.767 (0.32x M GEMVs)  M=8 0.764 (0.64x M GEMVs)  M=16 0.766 (1.28x M GEMVs)  M=32 0.774 (2.53x M GEMVs)  M=64 0.780 (5.02x M GEMVs)
+[mc3-s0mma   16.9s] 7B   gate/up  N=37888  K=3584   decode GEMV 0.430 ms:  M=1 6.032 (0.07x M GEMVs)  M=2 6.043 (0.14x M GEMVs)  M=4 6.231 (0.28x M GEMVs)  M=8 6.109 (0.56x M GEMVs)  M=16 6.081 (1.13x M GEMVs)  M=32 6.164 (2.23x M GEMVs)  M=64 6.062 (4.54x M GEMVs)
+--- PASS: TestMC3S0PrefillGEMMSmallM (16.94s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	17.451s

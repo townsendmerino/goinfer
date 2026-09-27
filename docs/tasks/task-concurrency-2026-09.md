@@ -5,15 +5,17 @@
 > (`c2f1532e`): 4 resident KV slots hold the 1-client aggregate at 2 and 4 clients (0.99× / 1.01×), and the 4-client
 > aggregate is 1.22–1.24× the previous build's. CUDA and WebGPU are not converted. **MC2 EARNS on the Mac CPU**
 > (1.69–2.04× at B = 4, bit-identical; J8's 4 independent workers reach 2.00–2.48×). The Linux cells are owed. **MC3
-> needs an owner decision before it starts:** bit-identical small-M kernels barely amortise on Metal (≤ 1.30× on
-> gate/up at M = 4), so a paying MC3 likely means the matrix units and a fidelity gate. The owner chose "cpu first":
+> S0 is done, 2026-09-26: no fidelity gate is needed.** Test-only `simdgroup_matrix` kernels carry 8 sequences for
+> 1.0–2.7 GEMVs on every decode matmul (qkv, o, gate/up, down, int8 LM head). Every output is bit-identical to
+> production's GEMV ([`concurrency-mc3-s0-2026-09-26.md`](../measurements/concurrency-mc3-s0-2026-09-26.md)). One
+> owner question is open before the build: the reading of the p99 bar. The owner chose "cpu first":
 > **MC3c step 1 SHIPPED** (`serve -max-concurrent N`, CPU models): 1.86–1.97× at 4 clients, p99 halved,
 > byte-identical, **default 4** (owner, 2026-09-26). The MC2 Linux cells are in: the 1.5B earns, and there batching beats
 > the workers; the 0.5B is in the owner band.
 >
 > **Open, 2026-09-26:**
 > - MC3c step 2 (batching behind the same admission; the Linux 1.5B data argues for it on larger models);
-> - MC3 (Metal batched decode: needs a fidelity-gate decision first);
+> - MC3 (Metal batched decode): S0 done, bit-identical; the p99 bar's reading is the owner's before the build;
 > - MC1 on CUDA and WebGPU;
 > - one MC2 Linux cell to re-run clean.
 >
@@ -233,13 +235,28 @@ fails it is a kill.
 
 ## MC3 — batched decode on Metal (only if MC2 earns and decision 1 is yes)
 
-**S0, 2026-09-26: an owner decision is needed before this starts**
+**S0, second pass, 2026-09-26: the matrix units pay AND stay bit-identical, so MC3 keeps the identity gate**
+([`concurrency-mc3-s0-2026-09-26.md`](../measurements/concurrency-mc3-s0-2026-09-26.md)).
+- The kernels have an 8-token fragment column, weights built in registers through `thread_elements()`, and exact
+  integer group sums in the f32 fragments.
+- Production's reduction order is reproduced: residue-ordered partials, then `simd_sum`'s own xor-butterfly tree,
+  which was measured on the M1 Pro.
+- They carry 8 sequences for 1.0–2.7× one production GEMV. That is 2.9–8.0× faster than 8 sequential GEMVs, with 0
+  differing outputs on every 1.5B and 7B shape. The int8 LM head is integer-exact in any order.
+- The tree form needs a build-time self-check, with a robust `simd_sum`-per-output fallback (2.1–3.0×).
+- A fragment costs the same at M = 2 as at M = 8, so M = 2 is about a wash.
+- Projected (not measured) for the 1.5B at depth 128: B = 4 ≈ 1.9× one stream's aggregate, with the step ≈ 2.1× a
+  single step. That projects to clearing the W7 aggregate gate and **failing the p99 bar as written** (≤ 1.5× a lone
+  request). At the same 4-client load it projects to ~0.5× MC1's p99.
+
+**S0, first pass, 2026-09-26 (superseded in its conclusion above)**
 ([`concurrency-mc2-2026-09-26.md`](../measurements/concurrency-mc2-2026-09-26.md), MC3 S0).
 - A bit-identical small-M W4A8 kernel on Metal (R18's rows kernel extended to M activation rows) amortises little. On
   the dominant gate/up shape M = 4 gains 1.30× (1.5B) and 1.15× (7B), because these kernels are bound by per-weight
   work. MLX's masked form shares the unpack but spills registers.
-- A paying MC3 likely needs the matrix units (`simdgroup_matrix`, f16 products). That means registering a
-  **fidelity gate** here in place of the identity gate MC2 chose.
+- It concluded that a paying MC3 likely needed the matrix units with f16 products, and so a fidelity gate. The second
+  pass keeps the matrix units and drops the fidelity gate: int4 and int8 operands are exact in half, and the order
+  is reproduced.
 - The alternative is to put the batching effort on the CPU path, where MC2 earns bit-identically.
 
 **Scope.** Dense families, one backend, one adapter per batch. Everything else declines to the
@@ -285,8 +302,8 @@ different adapters.
   whole margin. Step 2 (batching) is not started.
 
 **Why this, before MC3.** MC2 earned on the CPU with batching (1.69–2.04× at B = 4), and J8's cell, 4 independent
-decode workers, matched or beat it (2.00–2.48×) at a fraction of the build. MC3 on Metal needs a fidelity-gated
-matrix-unit kernel (MC3 S0). The owner chose the CPU first. **Step 1 is the workers**: N CPU generations of one model
+decode workers, matched or beat it (2.00–2.48×) at a fraction of the build. MC3 on Metal needed a matrix-unit kernel,
+and at the time (MC3 S0, first pass) a fidelity gate, which the second pass removed. The owner chose the CPU first. **Step 1 is the workers**: N CPU generations of one model
 run at once, each on its own session KV. **Step 2 is batched decode behind the same admission**, registered here and
 started only if the `nobara` cells or larger client counts show it beating the workers.
 

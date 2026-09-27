@@ -1,0 +1,6 @@
+=== RUN   TestMC3MMA8Down
+[mc3-mma8d    0.6s] 1.5B down N=1536  K=8960  production staged4 0.090 ms, x8 = 0.719:  BTD fb1 0.159 (4.51x 8 GEMVs, =1.8 GEMVs, 0 differ)  BTD fb2 0.138 (5.23x 8 GEMVs, =1.5 GEMVs, 0 differ)  BTD fb4 0.160 (4.49x 8 GEMVs, =1.8 GEMVs, 0 differ)
+[mc3-mma8d    1.2s] 7B   down N=3584  K=18944 production staged4 0.345 ms, x8 = 2.760:  BTD fb1 0.758 (3.64x 8 GEMVs, =2.2 GEMVs, 0 differ)  BTD fb2 0.616 (4.48x 8 GEMVs, =1.8 GEMVs, 0 differ)  BTD fb4 0.579 (4.77x 8 GEMVs, =1.7 GEMVs, 0 differ)
+--- PASS: TestMC3MMA8Down (1.69s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	2.150s

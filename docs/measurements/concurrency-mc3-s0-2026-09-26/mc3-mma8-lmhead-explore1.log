@@ -1,0 +1,6 @@
+=== RUN   TestMC3MMA8LMHead
+[mc3-mma8lm    0.9s] 1.5B LM head V=151936 H=1536 production gemv_w8a8_coal 1.457 ms, x8 = 11.658:  LM fb1 2.251 (5.18x 8 GEMVs, =1.5 GEMVs, 0 differ)  LM fb2 1.781 (6.55x 8 GEMVs, =1.2 GEMVs, 0 differ)  LM fb4 1.517 (7.68x 8 GEMVs, =1.0 GEMVs, 0 differ)
+[mc3-mma8lm    2.7s] 7B   LM head V=152064 H=3584 production gemv_w8a8_coal 3.542 ms, x8 = 28.340:  LM fb1 5.368 (5.28x 8 GEMVs, =1.5 GEMVs, 0 differ)  LM fb2 4.299 (6.59x 8 GEMVs, =1.2 GEMVs, 0 differ)  LM fb4 3.533 (8.02x 8 GEMVs, =1.0 GEMVs, 0 differ)
+--- PASS: TestMC3MMA8LMHead (3.17s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	3.613s

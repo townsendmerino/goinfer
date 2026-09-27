@@ -1,0 +1,5 @@
+=== RUN   TestMC3SimdSumTree
+    simdsum_tree_mc3_test.go:83: 65536 simdgroups: simd_sum differs from sequential 48020, from xor(16..1) 40755, from xor(1..16) 0; the two xor trees differ from each other on 40755
+--- PASS: TestMC3SimdSumTree (0.08s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	0.446s
