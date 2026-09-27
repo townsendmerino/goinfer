@@ -670,6 +670,14 @@ production's decode kernels run layer-major in one command buffer, so an extra v
   - S > 1.05 on a workload, with L < 1.0 → "speculate when alone, batch under load" has value there. It is
     registered as an MC4 candidate, and the owner decides.
   - L ≥ 1.0 on a workload → spec beats batching even at 4 clients, and MC4's spec trigger is met there.
+- **Measured 2026-09-27: S ≤ 1.05 on both, so the spec item stays parked for Metal**
+  ([`spec-vs-batching-metal-2026-09-27.md`](../measurements/spec-vs-batching-metal-2026-09-27.md)).
+  - S: copy 0.979×, chat 0.928×. Spec gives a lone Metal request nothing.
+  - L: copy 0.610×, chat 0.489×. Under 4-client load it forfeits MC3's batching.
+  - Found on the way, both open:
+    - with `--spec ngram`, chat turns after the first differ from plain decode (turn 0 equal in every conversation);
+    - on the 7B, serve's prefill-memory share 413'd MC3 batch cells, because it divides the margin as if prefills ran
+      concurrently.
 
 ## MC5 — continuous batching, paged KV, chunked prefill (parked)
 
