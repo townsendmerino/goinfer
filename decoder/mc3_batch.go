@@ -164,6 +164,38 @@ func (b *residentBatcher) exclusive(fn func()) {
 	fn()
 }
 
+// prefillChunkTokens and prefillChunkMin are chunked prefill's rule (docs/tasks/task-concurrency-2026-09.md, chunked
+// prefill, unparked by the owner 2026-09-27): a newcomer whose prompt suffix is at least prefillChunkMin tokens
+// prefills it in chunks of prefillChunkTokens while other generations are decoding, yielding one decode step between
+// chunks, instead of in one pass that stalls every decoding conversation for the whole prompt. With nobody decoding it
+// prefills the rest in one pass. Sound only where the resident's prefill is chunk-invariant — the same bits whole or in
+// chunks (TestMC5_prefillChunkInvariance on Metal) — so a reply never depends on whether others were decoding.
+const (
+	prefillChunkTokens = 256
+	prefillChunkMin    = 2 * prefillChunkTokens
+)
+
+// decoding reports how many holders are inside their decode loop.
+func (b *residentBatcher) decoding() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.decoders
+}
+
+// yieldToDecode lets the decoding generations run one step before a prefilling generation takes the resident for its
+// next chunk: it returns once a run has started (or when nobody is decoding, or after a bounded wait — a decoder whose
+// consumer has stalled must not hold the prefill up indefinitely).
+func (b *residentBatcher) yieldToDecode() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	start := b.stats.Runs
+	deadline := time.Now().Add(50 * time.Millisecond)
+	for b.stats.Runs == start && b.decoders > 0 && time.Now().Before(deadline) {
+		b.armLocked(deadline)
+		b.cond.Wait()
+	}
+}
+
 // enterDecode / exitDecode bracket a holder's decode loop: a run waits for tokens from exactly the holders inside one.
 func (b *residentBatcher) enterDecode() {
 	b.mu.Lock()

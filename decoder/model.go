@@ -1577,6 +1577,55 @@ func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, mrope ResidentMRoP
 	return logits, nil
 }
 
+// mc3Prefill prefills prompt[from:] into an MC3 generation's slot and returns the seed logits. A long suffix is taken
+// in chunks while other generations are decoding (prefillChunkTokens; mc3_batch.go), each chunk in its own exclusive
+// section with one decode step yielded between them; otherwise — a short suffix, nobody decoding, or a resident whose
+// batched prefill declines — the rest goes through residentPrefillSeed in one section, exactly as before.
+func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, prompt []int, from int) ([]float32, error) {
+	if from < 0 || from >= len(prompt) {
+		from = 0 // never skip the seed token (residentPrefillSeed's own rule)
+	}
+	pf, ok := m.resident.(Prefiller)
+	chunk := ok && m.knobs.get(knobBatchedPrefill) != "0" && len(prompt)-from >= prefillChunkMin
+	var logits []float32
+	var err error
+	// Cut a chunk only while at least two chunks' worth remains, so the pass that ends the prefill always has >=
+	// prefillChunkTokens tokens: residentPrefillSeed sends a suffix under 8 tokens down the sequential path, whose
+	// numerics are not the batched prefill's, and a 1-token tail would make the reply depend on the chunking.
+	for chunk && len(prompt)-from >= prefillChunkMin && mc3.decoding() > 0 {
+		if err = ctx.Err(); err != nil {
+			return nil, err
+		}
+		end := from + prefillChunkTokens
+		embs := make([][]float32, end-from)
+		for i, id := range prompt[from:end] {
+			embs[i] = m.embedResident(id)
+		}
+		mc3.exclusive(func() {
+			if err = m.residentBind(slot); err == nil {
+				_, err = pf.PrefillLast(ctx, embs, from)
+			}
+		})
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
+			// The batched prefill declined (or failed) on this chunk: everything before `from` is already written,
+			// so the remainder, this chunk included, goes through the ordinary path below.
+			break
+		}
+		from = end
+		mc3.yieldToDecode()
+	}
+	err = nil
+	mc3.exclusive(func() {
+		if err = m.residentBind(slot); err == nil {
+			logits, err = m.residentPrefillSeed(ctx, prompt, from, false)
+		}
+	})
+	return logits, err
+}
+
 // generateInto is the shared prefill+decode loop behind Model.Generate and
 // Session.Generate. It assumes cache already holds prompt[:prefillFrom] (0 for a
 // fresh generation), prefills prompt[prefillFrom:] (always ≥1 token — the seed,
@@ -1741,10 +1790,12 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				}
 				mc3.markSlot(mc3Slot, true)
 				m.residentForgetIDs()
-				logits, err = m.residentPrefillSeed(ctx, prompt, reuseFrom, false)
 			})
 			if mc3Slot >= 0 {
 				defer mc3.markSlot(mc3Slot, false) // after the commit below: the slot is free again once it holds our ids
+			}
+			if err == nil {
+				logits, err = m.mc3Prefill(ctx, mc3, mc3Slot, prompt, reuseFrom)
 			}
 			if err != nil {
 				g.err = err

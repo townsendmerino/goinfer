@@ -1,0 +1,9 @@
+=== RUN   TestMC5_prefillChunkInvariance
+[mc5-chunk] C=64: KV 0 of 14336000 elements differ (first at position -1); last logits 0 of 151936 differ (max |diff| 0)
+[mc5-chunk] C=128: KV 0 of 14336000 elements differ (first at position -1); last logits 0 of 151936 differ (max |diff| 0)
+[mc5-chunk] C=256: KV 0 of 14336000 elements differ (first at position -1); last logits 0 of 151936 differ (max |diff| 0)
+[mc5-chunk] C=384: KV 0 of 14336000 elements differ (first at position -1); last logits 0 of 151936 differ (max |diff| 0)
+[mc5-chunk] control (token 700 changed): 0 KV elements differ before position 700, 3746400 from it on
+--- PASS: TestMC5_prefillChunkInvariance (11.46s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	11.915s

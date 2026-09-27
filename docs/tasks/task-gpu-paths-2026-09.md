@@ -259,7 +259,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
 
 ## Things checked and found fine
 
-- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1687`), but serve
+- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1736`), but serve
   serializes each model's generations (`internal/serveapp/openai.go:63` `turns`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.

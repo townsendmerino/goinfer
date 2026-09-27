@@ -97,8 +97,8 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/mlp.go:701` | goinfer | `func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1261` | goinfer | `if f, own := a.ownForward(); own && !f.Captures {` |
 | `docs/audit-2026-09-10.md|decoder/model.go:1573` | goinfer | `if logits, err = mrope.ForwardMRoPE(emb, i, i+mropeDelta); err != nil {` |
-| `docs/audit-2026-09-10.md|decoder/model.go:1597` | goinfer | `func (m *Model) tryClaimResident() bool {` |
-| `docs/audit-2026-09-10.md|decoder/model.go:1755` | goinfer | `m.residentForgetIDs()` |
+| `docs/audit-2026-09-10.md|decoder/model.go:1646` | goinfer | `func (m *Model) tryClaimResident() bool {` |
+| `docs/audit-2026-09-10.md|decoder/model.go:1806` | goinfer | `m.residentForgetIDs()` |
 | `docs/audit-2026-09-10.md|decoder/resident_reuse.go:125` | goinfer | `if m.hasRecurrentState() {` |
 | `docs/audit-2026-09-10.md|decoder/rope.go:168` | goinfer | `func mropeDelta(pos [][3]int, seqLen int) int {` |
 | `docs/audit-2026-09-10.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
@@ -121,7 +121,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1471` | goinfer | `func warnPrefillDeclined(n int, err error) {` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1502` | goinfer | `if m.knobs.get(knobBatchedPrefill) != "0" && len(suffix) >= 8 && !hasAdapter {` |
 | `docs/audit-metal-2026-09-12.md|decoder/model.go:1527` | goinfer | `kvOnly, hasKV := m.resident.(ResidentPrefillKV)` |
-| `docs/audit-metal-2026-09-12.md|decoder/model.go:1653` | goinfer | `useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil \|\| (lora != nil && res` |
+| `docs/audit-metal-2026-09-12.md|decoder/model.go:1702` | goinfer | `useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil \|\| (lora != nil && res` |
 | `docs/audit-metal-2026-09-12.md|decoder/residency.go:194` | goinfer | `// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to ` |
 | `docs/audit-metal-2026-09-12.md|decoder/residentneed.go:61` | goinfer | `for l := range nLayers {` |
 | `docs/audit-metal-2026-09-12.md|decoder/spec_optfwd.go:202` | goinfer | `anchor: func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate ` |
@@ -253,8 +253,8 @@ supports.
 | `docs/how-inference-works.md|decoder/attention.go:79` | goinfer | `nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim` |
 | `docs/how-inference-works.md|decoder/kvcache.go:141` | goinfer | `subCapture bool` |
 | `docs/how-inference-works.md|decoder/kvcache.go:20` | goinfer | `func quantizeHeads(src []float32, q []int8, scales []float32, nKV, headDim int) {` |
-| `docs/how-inference-works.md|decoder/model.go:1607` | goinfer | `func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *` |
-| `docs/how-inference-works.md|decoder/model.go:1899` | goinfer | `for range maxTokens {` |
+| `docs/how-inference-works.md|decoder/model.go:1656` | goinfer | `func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *` |
+| `docs/how-inference-works.md|decoder/model.go:1950` | goinfer | `for range maxTokens {` |
 | `docs/how-inference-works.md|decoder/registry.go:19` | goinfer | `var registry = map[string]archAdapter{` |
 | `docs/how-inference-works.md|decoder/sampler.go:274` | goinfer | `s.applyLogitBias(work)` |
 | `docs/how-inference-works.md|decoder/sampler.go:280` | goinfer | `info.ID = argmax(work)` |
@@ -316,7 +316,7 @@ supports.
 | `docs/ollama-chase.md|cuda/resident.go:801` | goinfer | `// expert-sum branch, rn = the router's weightless-normed raw-h input. Kept SEPARATE fro` |
 | `docs/ollama-chase.md|decoder/gguf.go:754` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
 | `docs/ollama-chase.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |
-| `docs/ollama-chase.md|decoder/model.go:2032` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
+| `docs/ollama-chase.md|decoder/model.go:2083` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
 | `docs/ollama-chase.md|decoder/registry.go:1724` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/ollama-chase.md|decoder/residency.go:1355` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
 | `docs/ollama-chase.md|decoder/weightmat.go:781` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
@@ -410,7 +410,7 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/generate_vl.go:18` | goinfer | `anchor: func (m *Model) vlDecodeLoop(ctx context.Context, out chan<- int, g *Generation,` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/model.go:1369` | goinfer | `return logits` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/model.go:1538` | goinfer | `if err = ctx.Err(); err != nil {` |
-| `docs/tasks/task-gpu-paths-2026-09.md|decoder/model.go:1687` | goinfer | `// and fall back to CPU, which applies the adapter correctly on its own` |
+| `docs/tasks/task-gpu-paths-2026-09.md|decoder/model.go:1736` | goinfer | `// and fall back to CPU, which applies the adapter correctly on its own` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:301` | goinfer | `// SetImageBlocks/attendHi), the resident twin of prefillLogitsVL's CPU forward` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:303` | goinfer | `// paying for the CPU prefill; without it — or on any decline from it — that turn falls ` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:339` | goinfer | `// resident-capability-gap discipline as every other optional extension here) — Generate` |
@@ -475,11 +475,11 @@ supports.
 | `docs/tasks/task-recompute-audit.md|decoder/forwardn.go:197` | goinfer | `func (m *Model) hasRecurrentState() bool {` |
 | `docs/tasks/task-recompute-audit.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/tasks/task-recompute-audit.md|decoder/kvcache.go:540` | goinfer | `func (c *KVCache) TruncateTo(pos int) (exact bool) {` |
-| `docs/tasks/task-recompute-audit.md|decoder/model.go:1659` | goinfer | `// Claim it non-blockingly — a loser falls back to the staged CPU path, which uses` |
-| `docs/tasks/task-recompute-audit.md|decoder/model.go:1754` | goinfer | `reuseFrom = m.residentAcquire(prompt, nil, lora) // MC1: binds the KV slot this prompt w` |
-| `docs/tasks/task-recompute-audit.md|decoder/model.go:1764` | goinfer | `if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {` |
-| `docs/tasks/task-recompute-audit.md|decoder/model.go:1901` | goinfer | `case <-ctx.Done():` |
-| `docs/tasks/task-recompute-audit.md|decoder/model.go:2116` | goinfer | `// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.` |
+| `docs/tasks/task-recompute-audit.md|decoder/model.go:1708` | goinfer | `// Claim it non-blockingly — a loser falls back to the staged CPU path, which uses` |
+| `docs/tasks/task-recompute-audit.md|decoder/model.go:1805` | goinfer | `reuseFrom = m.residentAcquire(prompt, nil, lora) // MC1: binds the KV slot this prompt w` |
+| `docs/tasks/task-recompute-audit.md|decoder/model.go:1815` | goinfer | `if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {` |
+| `docs/tasks/task-recompute-audit.md|decoder/model.go:1952` | goinfer | `case <-ctx.Done():` |
+| `docs/tasks/task-recompute-audit.md|decoder/model.go:2167` | goinfer | `// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.` |
 | `docs/tasks/task-recompute-audit.md|decoder/model.go:64` | goinfer | `// resDrafterSynced identifies which *BlockSpec's own drafter context is currently in sy` |
 | `docs/tasks/task-recompute-audit.md|decoder/moepaging.go:141` | goinfer | `// A kind-4 tensor carries TWO on-disk representations (canonical + row4,` |
 | `docs/tasks/task-recompute-audit.md|decoder/resident_reuse.go:125` | goinfer | `if m.hasRecurrentState() {` |

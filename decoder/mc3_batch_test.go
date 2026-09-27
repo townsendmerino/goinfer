@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -28,7 +29,22 @@ type mc3Fake struct {
 	lo, hi    int
 	stepErr   error
 	delay     time.Duration
-	stepDraws int // rows a StepBatch drew on-device
+	stepDraws int    // rows a StepBatch drew on-device
+	events    []byte // P: a PrefillLast call, S: a StepBatch, F: a single-sequence Forward
+}
+
+// PrefillLast makes mc3Fake a batched prefiller (Prefiller): the positions from startPos on, in order, as Forward would
+// write them — chunk-invariant by construction, as a real prefill must be for chunking to be sound.
+func (f *mc3Fake) PrefillLast(ctx context.Context, embs [][]float32, startPos int) ([]float32, error) {
+	f.enter()
+	defer f.leave()
+	f.events = append(f.events, 'P')
+	f.wait()
+	var lg []float32
+	for i, e := range embs {
+		lg = f.fwd(f.bound, e, startPos+i)
+	}
+	return lg, nil
 }
 
 // delay, when set, is how long a StepBatch or Forward takes (a GPU's step time) — long against the batcher's straggler
@@ -73,6 +89,7 @@ func (f *mc3Fake) Forward(emb []float32, pos int) ([]float32, error) {
 	f.enter()
 	defer f.leave()
 	f.soloFwds++
+	f.events = append(f.events, 'F')
 	f.wait()
 	return f.fwd(f.bound, emb, pos), nil
 }
@@ -91,6 +108,7 @@ func (f *mc3Fake) StepBatch(seqs []ResidentBatchSeq) ([]ResidentBatchOut, error)
 		return nil, f.stepErr
 	}
 	f.steps++
+	f.events = append(f.events, 'S')
 	f.wait()
 	f.stepSeqs += len(seqs)
 	f.maxStep = max(f.maxStep, len(seqs))
@@ -388,4 +406,71 @@ func TestMC3_sampledConcurrentMatchesAlone(t *testing.T) {
 		t.Error("no row was drawn inside a batched step: sampled tokens still run solo")
 	}
 	t.Logf("steps %d, rows drawn in steps %d, solo calls %d", rf.steps, rf.stepDraws, rf.soloFwds)
+}
+
+// TestMC3_longPrefillChunksWhileOthersDecode: a newcomer with a long prompt arrives while two generations decode. Its
+// prefill must come in chunks (prefillChunkTokens) with decode steps between them, so the decoders keep producing,
+// and every reply — the newcomer's included — must equal the same conversation served alone, where the newcomer's
+// prompt is prefilled in one pass.
+func TestMC3_longPrefillChunksWhileOthersDecode(t *testing.T) {
+	vocabPrompt := func(m *Model, n, salt int) []int {
+		v := m.w.arch.VocabSize
+		p := make([]int, n)
+		for i := range p {
+			p[i] = (i*7 + salt) % v
+		}
+		return p
+	}
+	gen := func(m *Model, prompt []int, maxTok int) []int {
+		ch, g := m.Generate(context.Background(), prompt, maxTok, SamplingParams{})
+		var ids []int
+		for id := range ch {
+			ids = append(ids, id)
+		}
+		if err := g.Err(); err != nil {
+			t.Errorf("generate: %v", err)
+		}
+		return ids
+	}
+	mAlone, _ := loadWithMC3Fake(t, 4)
+	d0, d1 := []int{1, 2, 3, 40}, []int{1, 2, 3, 50}
+	aloneD0, aloneD1 := gen(mAlone, d0, 60), gen(mAlone, d1, 60)
+	aloneNew := gen(mAlone, vocabPrompt(mAlone, 1200, 3), 4)
+
+	m, rf := loadWithMC3Fake(t, 4)
+	rf.delay = 3 * time.Millisecond
+	m.EnableResidentConcurrency(4)
+	var got0, got1, gotNew []int
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() { defer wg.Done(); got0 = gen(m, d0, 60) }()
+	go func() { defer wg.Done(); got1 = gen(m, d1, 60) }()
+	go func() {
+		defer wg.Done()
+		time.Sleep(40 * time.Millisecond) // the two are decoding by now
+		gotNew = gen(m, vocabPrompt(m, 1200, 3), 4)
+	}()
+	wg.Wait()
+	for _, c := range []struct {
+		name      string
+		got, want []int
+	}{{"decoder 0", got0, aloneD0}, {"decoder 1", got1, aloneD1}, {"newcomer", gotNew, aloneNew}} {
+		if !slices.Equal(c.got, c.want) {
+			t.Errorf("%s: concurrent %v, alone %v", c.name, c.got, c.want)
+		}
+	}
+	ev := string(rf.events)
+	chunks := strings.Count(ev, "P")
+	i, j := strings.Index(ev, "P"), strings.LastIndex(ev, "P")
+	between := 0
+	if i >= 0 && j > i {
+		between = strings.Count(ev[i:j], "S")
+	}
+	t.Logf("resident events: %d prefill calls, %d steps between the first and last of them", chunks, between)
+	if chunks < 4 { // 1200 = 256 + 256 + 256 + 432 (the last pass is never shorter than a chunk)
+		t.Errorf("the newcomer's 1200-token prompt went in %d prefill calls: it was not chunked", chunks)
+	}
+	if between < chunks-1 {
+		t.Errorf("only %d decode steps ran between the %d prefill chunks: the decoders were stalled for the prefill", between, chunks)
+	}
 }
