@@ -384,3 +384,30 @@ beside it, because its `usage` sometimes reports no token count and voids its ce
 - A VOID cell on the llama.cpp side is re-run once, then reported as void.
 
 The CPU default is not decided here.
+
+## Peer comparison result (2026-09-26): int4 stays the default for other Q4_K GGUFs; q4k stays opt-in
+
+Raw data: [`measurements/q4k-peer-2026-09-26/`](../measurements/q4k-peer-2026-09-26/). The two sessions are
+comparable: llama.cpp's own tok/s moved at most 0.3% between them. S2's first attempt was refused at
+startup (load average 1.03 left over from S1's servers). `bench_peer.py` exits 0 on a refusal, so the
+script reported success with no results file; S2 was re-run after an idle wait (`run-s2.sh`,
+`sweep-s2.log`).
+
+| cell (CUDA decode, tok/s) | int4 | q4k | llama.cpp | int4 vs llama.cpp | q4k vs llama.cpp | q4k ÷ int4 |
+|---|---|---|---|---|---|---|
+| qwen2.5-coder-1.5b, depth 128 | 253.1 | 193.8 | 228.5 | AHEAD (1.108) | BEHIND (0.851) | 0.77 |
+| qwen2.5-coder-1.5b, depth 2048 | 227.7 | 178.2 | 218.5 | AHEAD (1.042) | BEHIND (0.814) | 0.78 |
+| qwen2.5-coder-1.5b, depth 3900 | 214.9 | 174.4 | 210.8 | LEVEL (1.019) | BEHIND (0.829) | 0.81 |
+| qwen2.5-7b, depth 128 | 81.3 | 72.6 | 78.2 | AHEAD (1.040) | BEHIND (0.928) | 0.89 |
+| qwen2.5-7b, depth 2048 | 76.3 | 68.6 | 76.1 | LEVEL (1.003) | BEHIND (0.901) | 0.90 |
+| qwen2.5-7b, depth 3900 | 73.2 | 66.0 | 74.3 | LEVEL (0.985) | BEHIND (0.887) | 0.90 |
+
+**Verdict, by the registered rule:** every cell that is level or ahead under int4 turns BEHIND under
+q4k, with all pairs agreeing. **int4 stays the CUDA default for Q4_K GGUFs; q4k stays opt-in.**
+Against Ollama, q4k reads level or ahead on 4 of 6 cells; that column does not decide anything here.
+
+**New finding: q4k costs the 1.5B more than the 7B on CUDA** (0.77–0.81× int4, against 0.89–0.90×).
+Phase 1b's speed gate measured only the 7B. A likely mechanism, not yet measured: the 1.5B's
+1536-wide projections are only 6 Q4_K blocks, and `gemv_q4k_g32` covers 8 blocks per warp pass, so a
+quarter of the lanes idle on every such row. Narrow-row geometry for `gemv_q4k_g32` is the kernel
+follow-up if a q4k default is revisited, re-graded on these same cells.
