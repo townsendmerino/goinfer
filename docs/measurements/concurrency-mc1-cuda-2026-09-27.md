@@ -146,7 +146,33 @@ Checked on the 7B, 4 clients, default context, interleaved old new new old, idle
 4476 MB before its KV (7041 MB free before the load, 2565 MB beside the weights). So `Plan` says 4 slots do not fit
 even at 4096, and `ctxForSlots` takes the floor. The build, pricing against real free VRAM, grants all 4 there, and by
 its own arithmetic would have held them to about 4,870 positions. The result is 4 slots at 4096 rather than at about
-4,870. Tightening `Plan`'s weight estimate is its own item.
+4,870.
+
+## The weight estimate, fixed (`4e230601`)
+
+The ~450 MB was the token-embedding table. CUDA uploads the LM head (the embedding table only when tied) and every
+per-layer matrix. It keeps token embeddings, learned positions and Gemma 4's per-layer tables on the host. `Plan` and
+`checkWeightsFit` priced all of them as device memory. `decoder.Model.ResidentDenseWeightBytesFor("cuda")` now leaves
+the host-side tables out; other backends are unchanged. Measured against what the build puts on the device before its
+KV (weights plus scratch and modules; `TestResidentDenseBytes_matchesCUDADevice`):
+
+| model | priced before | on the device | priced now | now short by (margin 384 MB) |
+|---|---:|---:|---:|---:|
+| qwen2.5-coder-0.5b | 474 MB | 464 MB | 344 MB | 120 MB |
+| qwen2.5-coder-1.5b | 1227 MB | 1054 MB | 1004 MB | 50 MB |
+| qwen2.5-7b | 4930 MB | 4444 MB | 4410 MB | 34 MB |
+
+`Plan` still cannot see the build's scratch and modules. So `checkKVFits` now applies slots-before-context at the build
+too: with the context unpinned and fewer slots granted than requested, it trims the context, never below 4096, against
+the real free VRAM before any KV exists. An explicit `-ctx` is never trimmed
+(`TestCUDAKVSlots_buildTrimsTheContext`).
+
+The 7B at its default, 4 clients, interleaved against `947e06ce` (`w7-7b-densefix.json`, `w7-servers-densefix.log`):
+- `Plan` picks 5135 and the build trims it to **4984 tokens with 4 slots**, where `947e06ce` had 4096 with 4 slots.
+  That is about 890 more positions per conversation.
+- Throughput is unchanged: 74.69 / 74.70 against 74.72 / 74.69 tok/s, with full reuse on every client in both builds.
+  The larger context is headroom this workload does not use.
+- The tagged CUDA suite at `4e230601` has 174 pass and 0 fail (`cuda-suite-tagged-densefix.log`).
 
 ## Scope, stated
 

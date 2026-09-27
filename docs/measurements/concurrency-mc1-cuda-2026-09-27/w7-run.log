@@ -141,3 +141,12 @@ wrote /home/francis/goinfer-bench/mc1-cuda-2026-09-27/w7-7b.json
 [w7-plain] new7b4_2 clients=4: wall=41.099s aggregate=74.75 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
 09:59:47 idle 1.50 2.86 3.45 1/919 1454592
 [w7-plain] old7b4_2 clients=4: wall=55.058s aggregate=55.8 tok/s; prefill_reused per client per turn [[0, 7, 7, 7, 7, 7], [0, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7]]
+10:25:34 == dense-bytes fix check (4e230601 vs 947e06ce), 7B 4 clients default ctx
+10:25:49 idle 1.99 1.59 1.54 1/925 1464303
+[w7-plain] old7b4_1 clients=4: wall=41.114s aggregate=74.72 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+10:26:41 idle 1.70 1.56 1.53 2/923 1464425
+[w7-plain] new7b4_1 clients=4: wall=41.129s aggregate=74.69 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+10:27:34 idle 1.28 1.47 1.50 1/923 1464558
+[w7-plain] new7b4_2 clients=4: wall=41.127s aggregate=74.7 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+10:28:26 idle 1.74 1.55 1.52 2/915 1464663
+[w7-plain] old7b4_2 clients=4: wall=41.131s aggregate=74.69 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]

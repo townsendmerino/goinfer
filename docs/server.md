@@ -313,7 +313,8 @@ stop interleaved conversations from evicting each other (qwen2.5-coder-1.5b, 4 c
 - **On CUDA, slots come before context** (owner decision 2026-09-27). When `--ctx` is not set, fit by default gives up
   context, down to 4096, until every requested slot fits, and it logs the shrink. Below 4096 the slots are clamped
   instead.
-  - On an 8 GB card the 7B starts at 4096 with 4 slots (1.35× at 4 clients against 2 slots at 8192).
+  - On an 8 GB card the 7B starts at about 4,980 tokens with 4 slots (1.35× at 4 clients against 2 slots at 8192).
+  - The build makes the final trim against real free VRAM, and it logs both steps.
   - An explicit `--ctx` is never shrunk: it keeps that context and the slots that fit beside it.
 - **One slot:** WebGPU, the recurrent families (Gated DeltaNet, Mamba-2, LFM2), and a CUDA load with expert streaming
   on.

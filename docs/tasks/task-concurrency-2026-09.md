@@ -30,8 +30,9 @@
 >   ([`concurrency-mc1-cuda-2026-09-27.md`](../measurements/concurrency-mc1-cuda-2026-09-27.md)); MC1 on WebGPU;
 > - ~~context against slots, owner's call~~ — decided 2026-09-27: a slot request shrinks the unpinned default
 >   context (`947e06ce`). The 7B now starts at 4096 with 4 slots and reads 1.34–1.35× at its default, where it
->   thrashed on 2 slots at 8192. `Plan`'s conservative weight estimate (4930 against ~4476 MB on the 7B) makes the
->   shrink land at the floor where ~4,870 would fit; tightening it is its own item;
+>   thrashed on 2 slots at 8192. ~~`Plan`'s conservative weight estimate~~ — fixed 2026-09-27 (`4e230601`): it
+>   priced an untied model's host-side embedding table as device memory (4930 against 4444 MB on the 7B). The build
+>   now trims an unpinned context to fit every slot, and the 7B starts at 4984 tokens with 4 slots;
 > - ~~one MC2 Linux cell to re-run clean~~ — done 2026-09-27: the 0.5B depth-128 cell reads 1.185× clean (was 1.230×
 >   overlapping an rsync), still in the owner band.
 >
