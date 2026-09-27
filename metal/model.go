@@ -330,8 +330,12 @@ type resident struct {
 	// kvSlotBufs: MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md), each a full copy of the per-layer
 	// kc/vc (and int8 ks/vs) buffers; kc/vc/ks/vs above are the BOUND slot's, and useKVSlot rebinds them. nil with one
 	// slot. kvSlot is the bound index.
-	kvSlotBufs     []kvSlotBuf
-	kvSlot         int
+	kvSlotBufs []kvSlotBuf
+	kvSlot     int
+	// batch: MC3's batched decode step over those slots (batch.go); nil when this resident cannot batch. preciseMath
+	// is the build's fast-math choice, which the batched kernels must share to round like the kernels they reproduce.
+	batch          *batchState
+	preciseMath    bool
 	kvI8           bool               // m.KVCacheI8() (CLI flag --kv i8)
 	pKvI8, pAttnI8 Pipeline           // int8 KV store and attention pipelines
 	moe            *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
@@ -716,7 +720,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// bits robust to an OS-toolchain update at that cost; the snapshot golden otherwise DETECTS such
 	// drift, which is the cheaper path we chose.
 	compile := d.CompileLibrary
-	if preciseMathCompile || modelKnob(m, "GOINFER_PRECISE_MATH") != "" {
+	preciseMath := preciseMathCompile || modelKnob(m, "GOINFER_PRECISE_MATH") != ""
+	if preciseMath {
 		compile = d.CompileLibraryPrecise
 	}
 	lib, err := compile(allKernels, MSL3_1)
@@ -731,7 +736,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return p
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
-	r := &resident{knob: m.Knob, d: d, H: H, nL: nL, nH: nH, I: I, V: V}
+	r := &resident{knob: m.Knob, d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath}
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
 		return nil, err
 	}
@@ -1441,7 +1446,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if line := alias.summary(); line != "" {
 		fmt.Fprint(os.Stderr, line)
 	}
-	ok = true // construction complete — the resident owns everything; Close (not the defer) frees it
+	r.buildBatch() // MC3: the batched decode step, when this resident can run one (batch.go)
+	ok = true      // construction complete — the resident owns everything; Close (not the defer) frees it
 	return r, nil
 }
 

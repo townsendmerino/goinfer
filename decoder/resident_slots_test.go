@@ -42,8 +42,32 @@ func TestPickResidentSlot(t *testing.T) {
 		{"keep == discard reuses", []int{5, 0}, []int{10, 0}, []uint64{1, 0}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := pickResidentSlot(tc.scores, tc.lens, tc.uses); got != tc.want {
+			if got := pickResidentSlot(tc.scores, tc.lens, tc.uses, nil); got != tc.want {
 				t.Errorf("pickResidentSlot(%v, %v, %v) = %d, want %d", tc.scores, tc.lens, tc.uses, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPickResidentSlot_skipsBusy pins MC3's rule: a slot another running generation holds is never picked, whichever
+// rule would have chosen it, and with every slot busy there is no pick.
+func TestPickResidentSlot_skipsBusy(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		scores []int
+		lens   []int
+		uses   []uint64
+		busy   []bool
+		want   int
+	}{
+		{"the continuation's slot is busy: the empty one", []int{3, 170, 0}, []int{170, 172, 0}, []uint64{1, 2, 0}, []bool{false, true, false}, 2},
+		{"the empty slot is busy: LRU among the free", []int{0, 0, 0}, []int{50, 0, 40}, []uint64{3, 0, 1}, []bool{false, true, false}, 2},
+		{"the LRU slot is busy: the next least recent", []int{0, 0, 0}, []int{10, 20, 30}, []uint64{8, 4, 6}, []bool{false, true, false}, 2},
+		{"all busy", []int{5, 5}, []int{10, 10}, []uint64{1, 2}, []bool{true, true}, -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pickResidentSlot(tc.scores, tc.lens, tc.uses, tc.busy); got != tc.want {
+				t.Errorf("pickResidentSlot(%v, %v, %v, %v) = %d, want %d", tc.scores, tc.lens, tc.uses, tc.busy, got, tc.want)
 			}
 		})
 	}

@@ -97,6 +97,23 @@ type ResidentKVSlotter interface {
 	UseKVSlot(i int) error
 }
 
+// ResidentBatchStepper is an OPTIONAL ResidentKVSlotter extension (MC3, docs/tasks/task-concurrency-2026-09.md): one
+// decode token for several sequences at once, each on its own KV slot at its own position, in one step. It reads and
+// writes only the named slots — never the bound one's binding — and each returned row must equal what Forward would
+// return for that sequence on its slot, bit for bit (the identity gate MC3 keeps). BatchStepRange is the batch sizes
+// the step serves better than per-sequence Forwards; hi == 0 means the resident cannot batch at all.
+type ResidentBatchStepper interface {
+	BatchStepRange() (lo, hi int)
+	StepBatch(seqs []ResidentBatchSeq) ([][]float32, error)
+}
+
+// ResidentBatchSeq is one sequence of a ResidentBatchStepper step: its KV slot, the position it decodes, and its input
+// embedding (embedResident's).
+type ResidentBatchSeq struct {
+	Slot, Pos int
+	Emb       []float32
+}
+
 // ResidentMRoPE is an OPTIONAL ResidentForward extension: a resident backend whose rotation
 // kernel can take a rope-angle position (ropePos) separate from the KV-cache/attention position
 // (pos). Forward(embedding, pos) alone cannot serve Qwen2.5-VL decode past an image block,

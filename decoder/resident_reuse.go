@@ -200,11 +200,17 @@ func (m *Model) residentSlotCount() int {
 // Switching slots also clears resDrafterSynced: a block drafter's own context follows ONE conversation, and it is the
 // one the previous slot was serving.
 func (m *Model) residentAcquire(prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
+	reuse, _ := m.residentAcquireSlot(prompt, imgs, lora, nil)
+	return reuse
+}
+
+// residentAcquireSlot is residentAcquire that also returns the slot it bound, and never picks a slot busy marks (MC3:
+// another running generation's). With every slot busy it binds nothing and returns slot -1.
+func (m *Model) residentAcquireSlot(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool) (reuse, slot int) {
 	n := m.residentSlotCount()
 	if n <= 1 {
-		return m.residentReuseLen(prompt, imgs, lora)
+		return m.residentReuseLen(prompt, imgs, lora), 0
 	}
-	sl := m.resident.(ResidentKVSlotter) // residentSlotCount > 1 implies it
 	if len(m.resSlots) != n {
 		m.resSlots, m.resCur = make([]residentSlot, n), 0
 	}
@@ -218,24 +224,44 @@ func (m *Model) residentAcquire(prompt []int, imgs []residentImageClaim, lora *l
 		}
 		uses[i] = m.resSlots[i].lastUse
 	}
-	pick := pickResidentSlot(scores, lens, uses)
-	if pick != m.resCur {
-		if err := sl.UseKVSlot(pick); err != nil {
-			// The resident keeps its previous binding; with its bookkeeping unknown, go cold on it.
-			m.residentForgetIDs()
-			return 0
-		}
-		cur := &m.resSlots[m.resCur]
-		cur.ids, cur.lora, cur.imgBlocks = m.resIDs, m.resIDsLora, m.resImgBlocks
-		in := &m.resSlots[pick]
-		m.resIDs, m.resIDsLora, m.resImgBlocks = in.ids, in.lora, in.imgBlocks
-		in.ids, in.lora, in.imgBlocks = nil, nil, nil // live in the Model's fields while bound
-		m.resDrafterSynced = nil
-		m.resCur = pick
+	pick := pickResidentSlot(scores, lens, uses, busy)
+	if pick < 0 {
+		return 0, -1
+	}
+	if err := m.residentBind(pick); err != nil {
+		// The resident keeps its previous binding; with its bookkeeping unknown, go cold on it. Slot -1: an MC3 caller
+		// must not decode on a binding it did not choose (it may be another generation's slot); residentAcquire's
+		// callers carry on cold on the previous binding, as they always have.
+		m.residentForgetIDs()
+		return 0, -1
 	}
 	m.resTick++
 	m.resSlots[pick].lastUse = m.resTick
-	return scores[pick]
+	return scores[pick], pick
+}
+
+// residentBind binds resident KV slot `slot` and swaps its reuse bookkeeping into the Model's bound-slot fields,
+// parking the previously bound slot's. A no-op when it is already bound. Switching slots also clears
+// resDrafterSynced: a block drafter's own context follows ONE conversation, the one the previous slot was serving.
+func (m *Model) residentBind(slot int) error {
+	if slot == m.resCur || m.residentSlotCount() <= 1 {
+		return nil
+	}
+	sl := m.resident.(ResidentKVSlotter) // residentSlotCount > 1 implies it
+	if err := sl.UseKVSlot(slot); err != nil {
+		return err
+	}
+	if len(m.resSlots) != m.residentSlotCount() {
+		m.resSlots = make([]residentSlot, m.residentSlotCount())
+	}
+	cur := &m.resSlots[m.resCur]
+	cur.ids, cur.lora, cur.imgBlocks = m.resIDs, m.resIDsLora, m.resImgBlocks
+	in := &m.resSlots[slot]
+	m.resIDs, m.resIDsLora, m.resImgBlocks = in.ids, in.lora, in.imgBlocks
+	in.ids, in.lora, in.imgBlocks = nil, nil, nil // live in the Model's fields while bound
+	m.resDrafterSynced = nil
+	m.resCur = slot
+	return nil
 }
 
 // pickResidentSlot chooses a slot for a prompt from each slot's reuse score (tokens of the prompt it holds), its
@@ -244,10 +270,13 @@ func (m *Model) residentAcquire(prompt []int, imgs []residentImageClaim, lora *l
 // discard is a shared lead (a chat template's preamble), not a continuation: taking it would truncate another
 // conversation's history to save re-prefilling a few tokens, the same trap serve's session LRU fell into
 // (internal/serveapp pickSession, 2026-09-26). Such a prompt takes an empty slot, else the least recently used one.
-func pickResidentSlot(scores, lens []int, uses []uint64) int {
+//
+// busy (nil: none) marks slots another running generation holds (MC3); they are never picked. -1 when all are busy.
+func pickResidentSlot(scores, lens []int, uses []uint64, busy []bool) int {
+	free := func(i int) bool { return i >= len(busy) || !busy[i] }
 	best := -1
 	for i, s := range scores {
-		if s > 0 && (best < 0 || s > scores[best]) {
+		if free(i) && s > 0 && (best < 0 || s > scores[best]) {
 			best = i
 		}
 	}
@@ -255,13 +284,13 @@ func pickResidentSlot(scores, lens []int, uses []uint64) int {
 		return best
 	}
 	for i, l := range lens {
-		if l == 0 {
+		if free(i) && l == 0 {
 			return i
 		}
 	}
-	lru := 0
+	lru := -1
 	for i := range uses {
-		if uses[i] < uses[lru] {
+		if free(i) && (lru < 0 || uses[i] < uses[lru]) {
 			lru = i
 		}
 	}

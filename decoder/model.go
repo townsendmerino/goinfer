@@ -49,6 +49,9 @@ type Model struct {
 	eosIDs   []int           // end-of-sequence ids from config (generation stops on these)
 	resident ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
 	resBusy  int32           // atomic: claims the single shared resident KV for one in-flight generation (M9). Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
+	// batcher: MC3's coordinator (mc3_batch.go) — several generations on the resident at once, each on its own KV
+	// slot, their decode tokens joined into shared steps. nil unless EnableResidentConcurrency enabled it.
+	batcher *residentBatcher
 	// resIDs is the token sequence currently committed to the resident positional KV, or nil
 	// when its contents are unknown. Guarded by the same resBusy claim that serialises writes
 	// to that cache; see resident_reuse.go for why nil is the safe default.
@@ -1595,6 +1598,9 @@ func (m *Model) tryClaimResident() bool {
 	if m.resident == nil {
 		return false
 	}
+	if m.batcher != nil { // MC3: the exclusive claim waits out no one — it simply fails while a holder has a slot
+		return m.batcher.claimExclusive(&m.resBusy)
+	}
 	return atomic.CompareAndSwapInt32(&m.resBusy, 0, 1)
 }
 
@@ -1645,6 +1651,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		resAdapter, _ = m.resident.(ResidentAdapter)
 	}
 	useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil || (lora != nil && resAdapter != nil))
+	var mc3 *residentBatcher // non-nil: this generation holds an MC3 place and, after prefill, the KV slot mc3Slot
+	mc3Slot := -1
 	if useGPU {
 		// The resident path drives the model's ONE shared positional KV; two concurrent
 		// generations would interleave writes at overlapping positions and corrupt it.
@@ -1668,6 +1676,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// M-01 fix) — this is the decoder-seam half, defense in depth for any caller that
 			// doesn't.
 			useGPU = false
+		} else if bt := m.batcher; bt != nil && lora == nil && bt.claim(&m.resBusy) {
+			// MC3: one of several concurrent generations on the resident, on its own KV slot (mc3_batch.go).
+			mc3 = bt
+			defer bt.release()
 		} else if m.tryClaimResident() {
 			if resAdapter != nil {
 				if err := resAdapter.SetAdapter(residentAdapterLayers(lora)); err != nil {
@@ -1717,11 +1729,34 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// KV and prefill only the divergent suffix. Forget FIRST — from here until the
 		// generation completes the cache is mid-write, and any early return must leave the
 		// next turn cold rather than trusting a half-written cache (resident_reuse.go).
-		reuseFrom := m.residentAcquire(prompt, nil, lora) // MC1: binds the KV slot this prompt will use
-		m.residentForgetIDs()
-		if logits, err = m.residentPrefillSeed(ctx, prompt, reuseFrom, lora != nil); err != nil {
-			g.err = err
-			return
+		var reuseFrom int
+		if mc3 != nil {
+			// MC3: choose a slot no other running generation holds, and prefill into it, with the resident to
+			// ourselves (between the other generations' steps).
+			mc3.exclusive(func() {
+				reuseFrom, mc3Slot = m.residentAcquireSlot(prompt, nil, lora, mc3.busySlots())
+				if mc3Slot < 0 {
+					err = fmt.Errorf("decoder: no free resident KV slot for a concurrent generation")
+					return
+				}
+				mc3.markSlot(mc3Slot, true)
+				m.residentForgetIDs()
+				logits, err = m.residentPrefillSeed(ctx, prompt, reuseFrom, false)
+			})
+			if mc3Slot >= 0 {
+				defer mc3.markSlot(mc3Slot, false) // after the commit below: the slot is free again once it holds our ids
+			}
+			if err != nil {
+				g.err = err
+				return
+			}
+		} else {
+			reuseFrom = m.residentAcquire(prompt, nil, lora) // MC1: binds the KV slot this prompt will use
+			m.residentForgetIDs()
+			if logits, err = m.residentPrefillSeed(ctx, prompt, reuseFrom, lora != nil); err != nil {
+				g.err = err
+				return
+			}
 		}
 		g.PrefillReused = reuseFrom
 		gpuPos = len(prompt)
@@ -1770,7 +1805,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// so the two mechanisms never both try to drive the same step. GOINFER_NO_OPTFWD forces
 	// the plain sequential path (escape hatch / A-B check), same convention as
 	// GOINFER_NO_GREEDY_FASTPATH.
-	optFwd := useGPU && !fastGreedy && m.optFwdEligible(sp) && m.knobs.get(knobNoOptFwd) == ""
+	// MC3 (mc3 != nil): off — optFwdStep drives the resident itself, outside the batcher's exclusive section.
+	optFwd := useGPU && mc3 == nil && !fastGreedy && m.optFwdEligible(sp) && m.knobs.get(knobNoOptFwd) == ""
 
 	// Device top-K fast path (R7, sampler_topk.go): a FILTERED sampler (top_k / top_p / min_p at
 	// temperature > 0) needs only the K best logits, so the resident reduces the row on-device and reads
@@ -1781,7 +1817,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// (escape hatch / A-B check), same convention as GOINFER_NO_GREEDY_FASTPATH.
 	var topKRF ResidentTopK
 	topKWidth, topKVocab := 0, len(logits)
-	if useGPU && !fastGreedy && !optFwd && procFree && m.knobs.get(knobNoTopKFastpath) == "" && sampler.TopKEligible() {
+	// MC3: off — a TopKRow's Full() reads the resident's logits a token later, after another generation's step may have
+	// overwritten them.
+	if useGPU && mc3 == nil && !fastGreedy && !optFwd && procFree && m.knobs.get(knobNoTopKFastpath) == "" && sampler.TopKEligible() {
 		if rf, ok := m.resident.(ResidentTopK); ok && rf.TopKAvailable() {
 			if w, wok := sampler.TopKWidth(len(logits)); wok {
 				topKRF, topKWidth = rf, w
@@ -1831,6 +1869,33 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// consumed synchronously by Forward/ForwardArgmax below before the next one is requested, so
 	// one buffer for the whole loop replaces a fresh [hidden]float32 allocation every token.
 	var embScratch []float32
+	// commitResident records what the resident KV now holds for this generation (residentCommitIDs). Under MC3 it binds
+	// this generation's slot first, with the resident to itself, and stops counting it as decoding (so no run waits for
+	// its token while it commits).
+	decoding := false
+	exitDecode := func() {
+		if decoding {
+			decoding = false
+			mc3.exitDecode()
+		}
+	}
+	commitResident := func() {
+		if mc3 == nil {
+			m.residentCommitIDs(prompt, generated, nil, lora)
+			return
+		}
+		exitDecode()
+		mc3.exclusive(func() {
+			if m.residentBind(mc3Slot) == nil {
+				m.residentCommitIDs(prompt, generated, nil, lora)
+			}
+		})
+	}
+	if mc3 != nil {
+		mc3.enterDecode()
+		decoding = true
+		defer exitDecode()
+	}
 	for range maxTokens {
 		select {
 		case <-ctx.Done():
@@ -1846,7 +1911,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// ORIGINAL R-02 fix's blind spot: it only committed at the send-select exit, which
 			// is the rarer of the two cancel-observation points, not the common one.
 			if useGPU {
-				m.residentCommitIDs(prompt, generated, nil, lora)
+				commitResident()
 			}
 			return
 		default:
@@ -1946,7 +2011,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// that left nothing inconsistent behind. Agent harnesses cancel constantly
 			// (interrupts, timeouts, disconnects), so today every one of them pays this cost.
 			if useGPU {
-				m.residentCommitIDs(prompt, generated, nil, lora)
+				commitResident()
 			}
 			return
 		case out <- next:
@@ -1972,27 +2037,53 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			}
 			embScratch = emb
 			fastNext = -1 // set again below only by a path that picks the next token on-device
-			if needFull {
-				// The gated processor needs this position's full logits (it is about to mask them).
-				logits, err = m.resident.Forward(emb, gpuPos)
-			} else if fastGreedy {
-				// Greedy fast path: the resident picks the argmax on-device and returns
-				// just the id, skipping the full-logits readback.
-				fastNext, err = greedyRF.ForwardArgmax(emb, gpuPos)
-			} else if sampleRF != nil {
-				seed, draw := sampler.NextDraw()
-				fastNext, err = sampleRF.ForwardSample(emb, gpuPos, sp.Temperature, seed, draw)
-				if err == nil {
-					g.DeviceSampled++
+			pos := gpuPos
+			// residentCall is this token's production resident call.
+			residentCall := func() error {
+				var ferr error
+				if needFull {
+					// The gated processor needs this position's full logits (it is about to mask them).
+					logits, ferr = m.resident.Forward(emb, pos)
+				} else if fastGreedy {
+					// Greedy fast path: the resident picks the argmax on-device and returns
+					// just the id, skipping the full-logits readback.
+					fastNext, ferr = greedyRF.ForwardArgmax(emb, pos)
+				} else if sampleRF != nil {
+					seed, draw := sampler.NextDraw()
+					fastNext, ferr = sampleRF.ForwardSample(emb, pos, sp.Temperature, seed, draw)
+					if ferr == nil {
+						g.DeviceSampled++
+					}
+				} else if topKRF != nil {
+					var row TopKRow
+					row, ferr = topKRF.ForwardTopK(emb, pos, topKWidth, sp.Temperature, sampler.topPActive())
+					if ferr == nil {
+						topKRow = &row
+					}
+				} else {
+					logits, ferr = m.resident.Forward(emb, pos)
 				}
-			} else if topKRF != nil {
-				var row TopKRow
-				row, err = topKRF.ForwardTopK(emb, gpuPos, topKWidth, sp.Temperature, sampler.topPActive())
-				if err == nil {
-					topKRow = &row
+				return ferr
+			}
+			if mc3 != nil {
+				// MC3: submit the token; it runs in a shared step with the other generations' tokens, or — alone, or
+				// when it needs a device sampler — as residentCall on our own slot. A step's row is bit-identical to
+				// Forward's, and a greedy token served by one continues on the full-logits path, which production's
+				// fast path equals by its own contract (ArgmaxEquivalent/GreedyEquivalent above).
+				q := &batchReq{seq: ResidentBatchSeq{Slot: mc3Slot, Pos: pos, Emb: emb},
+					batchable: needFull || fastGreedy || sampleRF == nil,
+					solo: func() error {
+						if berr := m.residentBind(mc3Slot); berr != nil {
+							return berr
+						}
+						return residentCall()
+					}}
+				err = mc3.forward(q)
+				if err == nil && q.logits != nil {
+					logits, fastNext = q.logits, -1
 				}
 			} else {
-				logits, err = m.resident.Forward(emb, gpuPos)
+				err = residentCall()
 			}
 			gpuPos++
 		} else {
@@ -2013,7 +2104,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// The ONLY place the resident cache's contents are recorded: a generation that ran to
 	// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.
 	if useGPU {
-		m.residentCommitIDs(prompt, generated, nil, lora)
+		commitResident()
 	}
 	if decodeTiming && nFwd > 0 {
 		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(nFwd) }

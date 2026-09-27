@@ -204,7 +204,20 @@ func toolSchemaBytes(tools []toolSpec) int {
 // or room. The queue holds the running generations plus -max-queue waiting ones.
 func (lm *loadedModel) setConcurrency(cfg config) {
 	n := max(1, cfg.maxConcurrent)
-	if n > 1 && (lm.model == nil || !lm.model.CPUConcurrentSafe() || lm.visionCapable()) {
+	switch {
+	case n <= 1 || lm.model == nil || lm.visionCapable():
+		n = 1
+	case lm.model.ResidentActive():
+		// MC3: a GPU-resident model runs n generations at once only when its resident can batch their decode tokens
+		// (decoder.Model.EnableResidentConcurrency — a dense family on at least two resident KV slots; capped by the
+		// slot count, which --kv-sessions sets). Speculative decode and adapters take the resident exclusively, so a
+		// model serving them keeps one generation at a time.
+		if lm.spec || lm.blockSpec != nil || lm.adapter != "" {
+			n = 1
+		} else {
+			n = lm.model.EnableResidentConcurrency(n)
+		}
+	case !lm.model.CPUConcurrentSafe():
 		n = 1
 	}
 	if cfg.kvSessions > 0 {

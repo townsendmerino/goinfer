@@ -189,15 +189,24 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 
 	// How many generations run at once (MC3c, -max-concurrent), and why fewer than asked when that happens.
 	switch {
+	case f.concurrent > 1 && f.resident:
+		line := fmt.Sprintf("concurrency: %d generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent)", f.concurrent)
+		if cfg.maxConcurrent > f.concurrent {
+			line += fmt.Sprintf("; %d asked, capped by the %d resident KV slots (--kv-sessions)", cfg.maxConcurrent, f.kvSlots)
+		}
+		out = append(out, line)
 	case f.concurrent > 1:
 		line := fmt.Sprintf("concurrency: %d generations at once, each on its own session KV (-max-concurrent)", f.concurrent)
 		if cfg.maxConcurrent > f.concurrent {
 			line += fmt.Sprintf("; %d asked, capped by --kv-sessions %d", cfg.maxConcurrent, cfg.kvSessions)
 		}
 		out = append(out, line)
+	case cfg.maxConcurrent > 1 && f.resident:
+		out = append(out, fmt.Sprintf("concurrency: one generation at a time — -max-concurrent %d needs a resident that "+
+			"batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)", cfg.maxConcurrent))
 	case cfg.maxConcurrent > 1:
 		out = append(out, fmt.Sprintf("concurrency: one generation at a time — -max-concurrent %d applies to CPU models "+
-			"only (a GPU-resident, weight-streaming or vision model runs one)", cfg.maxConcurrent))
+			"and to GPU-resident models that batch decode (a weight-streaming or vision model runs one)", cfg.maxConcurrent))
 	}
 
 	// What it can do, in the terms a harness asks about.

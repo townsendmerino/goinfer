@@ -224,10 +224,15 @@ func TestBanner_concurrency(t *testing.T) {
 		{"default", 1, config{}, ""},
 		{"four", 4, config{maxConcurrent: 4, kvSessions: 4}, "4 generations at once"},
 		{"capped", 2, config{maxConcurrent: 4, kvSessions: 2}, "capped by --kv-sessions 2"},
-		{"asked, not eligible", 1, config{maxConcurrent: 4, kvSessions: 4}, "applies to CPU models only"},
+		{"asked, not eligible", 1, config{maxConcurrent: 4, kvSessions: 4}, "applies to CPU models"},
+		{"resident, batched", 4, config{maxConcurrent: 4, kvSessions: 4}, "resident KV slot, decode tokens batched"},
+		{"resident, capped by slots", 2, config{maxConcurrent: 4, kvSessions: 2}, "capped by the 2 resident KV slots"},
+		{"resident, cannot batch", 1, config{maxConcurrent: 4, kvSessions: 4}, "needs a resident that batches decode"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			line := bannerLine(modelBannerFrom(bannerFacts{hasTemplate: true, concurrent: tc.concurrent}, tc.cfg), "concurrency:")
+			resident := strings.HasPrefix(tc.name, "resident")
+			f := bannerFacts{hasTemplate: true, concurrent: tc.concurrent, resident: resident, kvSlots: tc.cfg.kvSessions}
+			line := bannerLine(modelBannerFrom(f, tc.cfg), "concurrency:")
 			if tc.want == "" {
 				if line != "" {
 					t.Errorf("unexpected concurrency line %q", line)

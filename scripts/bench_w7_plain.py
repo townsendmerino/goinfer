@@ -31,7 +31,7 @@ the engine key "goinfer_cpu", so a Metal and a CPU sweep can share one results f
   python3 scripts/bench_w7_plain.py mc0.json --clients 1,2 --engines goinfer --backend metal
   python3 scripts/bench_w7_plain.py mc0.json --clients 1,2 --engines goinfer --backend cpu
 """
-import argparse, json, os, platform, shlex, signal, socket, subprocess, sys, time, urllib.request
+import argparse, hashlib, json, os, platform, shlex, signal, socket, subprocess, sys, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -199,15 +199,19 @@ def run_transcript(url, max_tokens, temperature, nonce):
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
             "prefill_reused_tokens": usage.get("prefill_reused_tokens"),
+            # a hash of the reply, so two arms' transcripts can be compared turn by turn (an identity gate) without
+            # storing the text; comparable only under --fixed-nonce, since the nonce is part of the first prompt
+            "content_sha": hashlib.sha256(content.encode()).hexdigest()[:16],
         })
         messages.append({"role": "assistant", "content": content})
     return out
 
 
-def run_concurrent(url, max_tokens, temperature, n_clients):
+def run_concurrent(url, max_tokens, temperature, n_clients, fixed_nonce=False):
     t0 = time.perf_counter()
     with ThreadPoolExecutor(max_workers=n_clients) as ex:
-        futures = [ex.submit(run_transcript, url, max_tokens, temperature, f"w7p-c{i}-{t0}")
+        futures = [ex.submit(run_transcript, url, max_tokens, temperature,
+                             f"w7p-c{i}" if fixed_nonce else f"w7p-c{i}-{t0}")
                    for i in range(n_clients)]
         per_client = [f.result() for f in futures]
     wall_s = time.perf_counter() - t0
@@ -249,6 +253,9 @@ def main():
     ap.add_argument("--engines", default="goinfer,llamacpp", help="comma list: goinfer, llamacpp")
     ap.add_argument("--backend", default="metal", help="goinfer's -backend (cpu records as goinfer_cpu)")
     ap.add_argument("--serve-args", default="", help="extra goinfer serve flags, e.g. '-max-concurrent 4'")
+    ap.add_argument("--fixed-nonce", action="store_true",
+                    help="use a per-client nonce that does not change between runs, so two runs' transcripts (content_sha) "
+                         "can be compared turn by turn — e.g. an identity gate between two builds")
     ap.add_argument("--key", default="", help="results key for this goinfer run (default goinfer / goinfer_<backend>) — "
                     "lets two serve builds share one results file")
     a = ap.parse_args()
@@ -282,7 +289,7 @@ def main():
             continue
         print(f"[w7-plain] {gkey} clients={n} starting fresh server", file=sys.stderr)
         with GoinferServer(a.backend, a.serve_args) as srv:
-            r = run_concurrent(srv.url, a.max_tokens, a.temperature, n)
+            r = run_concurrent(srv.url, a.max_tokens, a.temperature, n, a.fixed_nonce)
         results[gkey][str(n)] = r
         save()
         reuse = [[t.get("prefill_reused_tokens") for t in c] for c in r["per_client"]]
@@ -295,7 +302,7 @@ def main():
             continue
         print(f"[w7-plain] llamacpp clients={n} starting fresh server (np={n})", file=sys.stderr)
         with LlamaServer(n_slots=n) as srv:
-            r = run_concurrent(srv.url, a.max_tokens, a.temperature, n)
+            r = run_concurrent(srv.url, a.max_tokens, a.temperature, n, a.fixed_nonce)
         results["llamacpp"][str(n)] = r
         save()
         print(f"[w7-plain] llamacpp clients={n}: wall={r['wall_s']}s aggregate={r['aggregate_tok_s']} tok/s",
