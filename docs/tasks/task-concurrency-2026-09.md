@@ -166,7 +166,11 @@ Re-run J6's measurement once after MC1 ships; its 1.024× was taken against a si
 - The prototype `decodeMultiStep` is bit-identical to single-sequence decode (the tiny fixture and the 0.5B at int4 and
   int8int8), and costs 0.97–1.00× at B = 1.
 - J8's cell, 4 independent workers, reaches 2.00–2.48× aggregate. Its per-request latency is not measured.
-- The Linux CPU cells (`nobara`) are owed.
+- **Linux CPU (`nobara`, 2026-09-26 evening):**
+  - the 1.5B earns (1.40–1.48×, where batching beats the workers' 1.33–1.36×);
+  - the 0.5B falls in the owner band (1.11–1.23×, where the workers win at 1.64–1.73×);
+  - no cell kills;
+  - the prototype's M = 1 path is 0.76–0.93× production decode on amd64, so a tuned small-M kernel would lift batching.
 
 **S0, 2026-09-26** ([`concurrency-mc2-s0-2026-09-26.md`](../measurements/concurrency-mc2-s0-2026-09-26.md)): on the
 Mac's CPU, one existing forward carrying n rows (`forwardN`, bit-identical to n sequential forwards) costs 1.77–1.93×

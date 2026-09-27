@@ -82,6 +82,25 @@ Every gate now checks prompt identity per prompt and refuses a mismatched refere
 
 The check is KL(reference prompt-final logits ‖ exact arm's) > 1.0.
 
+## Update 2026-09-26 evening: set A's S cells regenerated and verified; D7 in progress
+
+S-K512 / 1024 / 3900 were regenerated on `nobara` from the snapshot at `ebe0593c`: `TestPrefillGateReference/S`, set
+A, `GOINFER_CPU_REF_KS=512,1024,3900`, 17:54–18:21 PDT. The 2026-09-05 files were moved aside, not deleted, to
+`~/goinfer-logs/prefill-ref-stale-2026-09-05/` on both machines. The new files were copied to the Mac and audited:
+**0 (cell, prompt) pairs above KL 1.0** ([`ref-identity-setA-S-regen-2026-09-26.log`](metal-decode-attn-r17-2026-09-25/ref-identity-setA-S-regen-2026-09-26.log)).
+
+The previously mismatched prompts now read at the W4A8-vs-CPU level:
+
+| cell | prompt | before | after |
+|---|---:|---:|---:|
+| S-K512 | 5 | 8.91 | 0.017 |
+| S-K1024 | 2, 8 | 14.97, 13.22 | 0.081, 0.002 |
+| S-K3900 | 1, 2, 5, 8 | 4.84, 3.11, 18.08, 6.46 | 0.058, 0.053, 0.000, 0.020 |
+
+**Set A's S cells can decide again.** D7-K512 / 1024 did not finish in the first `nobara` window, which was stopped on
+request. It was re-run from 20:38 PDT, and until it completes set A's D7-K512/1024 cells are empty on both machines.
+The stale files are set aside.
+
 ## Open
 
 Set A's invalid cells should be regenerated from the snapshot (`TestPrefillGateReference`, `GOINFER_PREFILL_GATE_PROMPTS=a`,

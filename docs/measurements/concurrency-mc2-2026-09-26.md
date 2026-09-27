@@ -118,9 +118,36 @@ Best gain against M sequential dispatches:
   half-staged, pre-scaled activations and 16-bit masks. This is standalone only, and R18 showed standalone gains need
   in-sequence grading.
 
-## Owed
+## Linux CPU cells (`nobara`, added 2026-09-26 evening)
 
-- The Linux CPU cells (`nobara`: amd64, VNNI and split-half kernels) at the same four configurations. They wait for the
-  set-A reference regeneration, which is already queued for that box.
+Setup: amd64 with VNNI and split-half kernels, the same test at `1fce456b`, 2026-09-26 20:38–20:45 PDT, load 0.34 at
+start. Raw: [`run-linux.log`](concurrency-mc2-2026-09-26/run-linux.log), [`run-linux.sh`](concurrency-mc2-2026-09-26/run-linux.sh).
+The identity gate passes on amd64 too: every logit is bit-identical, on llama-tiny and on the 0.5B at int4 and int8int8.
+
+| model | depth | serial x1 | batched B=1 | B=2 | **B=4 (metric, paired)** | B=8 | J8 N=2 | **J8 N=4** |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.5B | 128 | 46.1 | 0.814× | 1.103× | **1.230×** (1.18–1.24)* | 1.344× | 1.374× | **1.638×** |
+| 0.5B | 512 | 42.6 | 0.763× | 1.010× | **1.113×** (1.10–1.13) | 1.232× | 1.374× | **1.728×** |
+| 1.5B | 128 | 19.6 | 0.925× | 1.351× | **1.475×** (1.45–1.49) | 1.504× | 1.235× | **1.329×** |
+| 1.5B | 512 | 18.3 | 0.933× | 1.264× | **1.396×** (1.36–1.40) | 1.410× | 1.245× | **1.364×** |
+
+\* This cell overlapped a 1.2 GB rsync from this box (the set-A reference copy). Its reps 4–5 dip in every arm, so the
+paired ratio holds, but it is the least clean cell here.
+
+Against the registered band (earn ≥ 1.25×, kill < 1.1×, the owner decides in between):
+- **The 1.5B earns on Linux** (1.40–1.48×).
+- **The 0.5B falls in the owner band** (1.11–1.23×).
+- No cell kills. Over both machines, 6 of 8 cells earn and 2 go to the owner.
+
+On amd64 the picture differs from the Mac:
+- **The prototype's own M = 1 path costs 0.76–0.93×** production decode. amd64's decode kernels (split-half/VNNI GEMV)
+  are tuned for M = 1, and `forwardN`'s M = B path is not. A tuned small-M kernel would lift every batched cell.
+- **Workers win on the small model** (J8 1.64–1.73× against batching's 1.11–1.23× on the 0.5B). **Batching wins on the
+  larger one** (1.40–1.48× against 1.33–1.36× on the 1.5B), where one sequence's decode already keeps the cores busier.
+- That is the case for MC3c step 2 (batching behind the same admission) on larger models, next to the workers MC3c
+  step 1 shipped. The two combined are not measured.
+
+## Owed
 - J8's latency half, per request.
+- A re-run of the Linux 0.5B depth-128 cell without the concurrent rsync.
 - The H kernel at M = 1, graded in sequence as an R18 follow-on.

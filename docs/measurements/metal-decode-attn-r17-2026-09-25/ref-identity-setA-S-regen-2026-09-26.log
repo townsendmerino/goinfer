@@ -1,0 +1,84 @@
+2026-09-26 20:40:03 PDT ref identity audit, set A, after the 2026-09-26 S regeneration
+=== RUN   TestPrefillRefIdentity
+[ref-identity]   S-K64 prompt 1 (1 of 10) KL=0.1568 — cell elapsed 0s
+[ref-identity]   S-K64 prompt 2 (2 of 10) KL=0.0005 — cell elapsed 0s
+[ref-identity]   S-K64 prompt 3 (3 of 10) KL=0.0465 — cell elapsed 1s
+[ref-identity]   S-K64 prompt 4 (4 of 10) KL=0.0346 — cell elapsed 1s
+[ref-identity]   S-K64 prompt 5 (5 of 10) KL=0.0954 — cell elapsed 1s
+[ref-identity]   S-K64 prompt 6 (6 of 10) KL=0.0976 — cell elapsed 1s
+[ref-identity]   S-K64 prompt 7 (7 of 10) KL=0.0261 — cell elapsed 1s
+[ref-identity]   S-K64 prompt 8 (8 of 10) KL=0.1201 — cell elapsed 1s
+[ref-identity]   S-K64 prompt 9 (9 of 10) KL=0.6022 — cell elapsed 1s
+[ref-identity]   S-K64 prompt 10 (10 of 10) KL=0.0799 — cell elapsed 2s
+[ref-identity] set "a" S-K64     p1=0.1568  p2=0.0005  p3=0.0465  p4=0.0346  p5=0.0954  p6=0.0976  p7=0.0261  p8=0.1201  p9=0.6022  p10=0.0799
+[ref-identity]   S-K128 prompt 1 (1 of 10) KL=0.1076 — cell elapsed 0s
+[ref-identity]   S-K128 prompt 2 (2 of 10) KL=0.1201 — cell elapsed 0s
+[ref-identity]   S-K128 prompt 3 (3 of 10) KL=0.0075 — cell elapsed 1s
+[ref-identity]   S-K128 prompt 4 (4 of 10) KL=0.0395 — cell elapsed 1s
+[ref-identity]   S-K128 prompt 5 (5 of 10) KL=0.0637 — cell elapsed 1s
+[ref-identity]   S-K128 prompt 6 (6 of 10) KL=0.0681 — cell elapsed 1s
+[ref-identity]   S-K128 prompt 7 (7 of 10) KL=0.0689 — cell elapsed 1s
+[ref-identity]   S-K128 prompt 8 (8 of 10) KL=0.0003 — cell elapsed 2s
+[ref-identity]   S-K128 prompt 9 (9 of 10) KL=0.0597 — cell elapsed 2s
+[ref-identity]   S-K128 prompt 10 (10 of 10) KL=0.0140 — cell elapsed 2s
+[ref-identity] set "a" S-K128    p1=0.1076  p2=0.1201  p3=0.0075  p4=0.0395  p5=0.0637  p6=0.0681  p7=0.0689  p8=0.0003  p9=0.0597  p10=0.0140
+[ref-identity]   S-K256 prompt 1 (1 of 10) KL=0.0857 — cell elapsed 0s
+[ref-identity]   S-K256 prompt 2 (2 of 10) KL=0.0715 — cell elapsed 1s
+[ref-identity]   S-K256 prompt 3 (3 of 10) KL=0.0595 — cell elapsed 1s
+[ref-identity]   S-K256 prompt 4 (4 of 10) KL=0.0984 — cell elapsed 1s
+[ref-identity]   S-K256 prompt 5 (5 of 10) KL=0.0837 — cell elapsed 2s
+[ref-identity]   S-K256 prompt 6 (6 of 10) KL=0.0808 — cell elapsed 2s
+[ref-identity]   S-K256 prompt 7 (7 of 10) KL=0.0565 — cell elapsed 2s
+[ref-identity]   S-K256 prompt 8 (8 of 10) KL=0.1361 — cell elapsed 3s
+[ref-identity]   S-K256 prompt 9 (9 of 10) KL=0.0113 — cell elapsed 3s
+[ref-identity]   S-K256 prompt 10 (10 of 10) KL=0.0994 — cell elapsed 3s
+[ref-identity] set "a" S-K256    p1=0.0857  p2=0.0715  p3=0.0595  p4=0.0984  p5=0.0837  p6=0.0808  p7=0.0565  p8=0.1361  p9=0.0113  p10=0.0994
+[ref-identity]   S-K512 prompt 1 (1 of 10) KL=0.0637 — cell elapsed 1s
+[ref-identity]   S-K512 prompt 2 (2 of 10) KL=0.0034 — cell elapsed 1s
+[ref-identity]   S-K512 prompt 3 (3 of 10) KL=0.0736 — cell elapsed 2s
+[ref-identity]   S-K512 prompt 4 (4 of 10) KL=0.0003 — cell elapsed 3s
+[ref-identity]   S-K512 prompt 5 (5 of 10) KL=0.0168 — cell elapsed 3s
+[ref-identity]   S-K512 prompt 6 (6 of 10) KL=0.0665 — cell elapsed 4s
+[ref-identity]   S-K512 prompt 7 (7 of 10) KL=0.0086 — cell elapsed 5s
+[ref-identity]   S-K512 prompt 8 (8 of 10) KL=0.0012 — cell elapsed 5s
+[ref-identity]   S-K512 prompt 9 (9 of 10) KL=0.0822 — cell elapsed 6s
+[ref-identity]   S-K512 prompt 10 (10 of 10) KL=0.1212 — cell elapsed 7s
+[ref-identity] set "a" S-K512    p1=0.0637  p2=0.0034  p3=0.0736  p4=0.0003  p5=0.0168  p6=0.0665  p7=0.0086  p8=0.0012  p9=0.0822  p10=0.1212
+[ref-identity]   S-K1024 prompt 1 (1 of 10) KL=0.0996 — cell elapsed 1s
+[ref-identity]   S-K1024 prompt 2 (2 of 10) KL=0.0809 — cell elapsed 3s
+[ref-identity]   S-K1024 prompt 3 (3 of 10) KL=0.0527 — cell elapsed 4s
+[ref-identity]   S-K1024 prompt 4 (4 of 10) KL=0.0951 — cell elapsed 6s
+[ref-identity]   S-K1024 prompt 5 (5 of 10) KL=0.0126 — cell elapsed 7s
+[ref-identity]   S-K1024 prompt 6 (6 of 10) KL=0.0000 — cell elapsed 8s
+[ref-identity]   S-K1024 prompt 7 (7 of 10) KL=0.0495 — cell elapsed 10s
+[ref-identity]   S-K1024 prompt 8 (8 of 10) KL=0.0021 — cell elapsed 11s
+[ref-identity]   S-K1024 prompt 9 (9 of 10) KL=0.1050 — cell elapsed 12s
+[ref-identity]   S-K1024 prompt 10 (10 of 10) KL=0.0559 — cell elapsed 14s
+[ref-identity] set "a" S-K1024   p1=0.0996  p2=0.0809  p3=0.0527  p4=0.0951  p5=0.0126  p6=0.0000  p7=0.0495  p8=0.0021  p9=0.1050  p10=0.0559
+[ref-identity]   S-K3900 prompt 1 (1 of 10) KL=0.0579 — cell elapsed 8s
+[ref-identity]   S-K3900 prompt 2 (2 of 10) KL=0.0534 — cell elapsed 16s
+[ref-identity]   S-K3900 prompt 3 (3 of 10) KL=0.0258 — cell elapsed 24s
+[ref-identity]   S-K3900 prompt 4 (4 of 10) KL=0.0307 — cell elapsed 33s
+[ref-identity]   S-K3900 prompt 5 (5 of 10) KL=0.0000 — cell elapsed 41s
+[ref-identity]   S-K3900 prompt 6 (6 of 10) KL=0.0710 — cell elapsed 49s
+[ref-identity]   S-K3900 prompt 7 (7 of 10) KL=0.0717 — cell elapsed 57s
+[ref-identity]   S-K3900 prompt 8 (8 of 10) KL=0.0195 — cell elapsed 1m5s
+[ref-identity]   S-K3900 prompt 9 (9 of 10) KL=0.0015 — cell elapsed 1m13s
+[ref-identity]   S-K3900 prompt 10 (10 of 10) KL=0.0717 — cell elapsed 1m21s
+[ref-identity] set "a" S-K3900   p1=0.0579  p2=0.0534  p3=0.0258  p4=0.0307  p5=0.0000  p6=0.0710  p7=0.0717  p8=0.0195  p9=0.0015  p10=0.0717
+[metal] weights aliased from qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4020 MB bound in place, 1 MB copied (anonymous) — 3112 MB int4 nibbles (56 single tensors + 56 fused groups = 2034 MB) + 520 MB int8 codes (1 matrices) + 389 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[ref-identity]   D7-K256 prompt 1 (1 of 10) KL=0.1499 — cell elapsed 3s
+[ref-identity]   D7-K256 prompt 2 (2 of 10) KL=0.2235 — cell elapsed 4s
+[ref-identity]   D7-K256 prompt 3 (3 of 10) KL=0.0766 — cell elapsed 6s
+[ref-identity]   D7-K256 prompt 4 (4 of 10) KL=0.0671 — cell elapsed 7s
+[ref-identity]   D7-K256 prompt 5 (5 of 10) KL=0.0108 — cell elapsed 8s
+[ref-identity]   D7-K256 prompt 6 (6 of 10) KL=0.0937 — cell elapsed 10s
+[ref-identity]   D7-K256 prompt 7 (7 of 10) KL=0.3354 — cell elapsed 11s
+[ref-identity]   D7-K256 prompt 8 (8 of 10) KL=0.0111 — cell elapsed 12s
+[ref-identity]   D7-K256 prompt 9 (9 of 10) KL=0.0831 — cell elapsed 13s
+[ref-identity]   D7-K256 prompt 10 (10 of 10) KL=0.1156 — cell elapsed 15s
+[ref-identity] set "a" D7-K256    p1=0.1499  p2=0.2235  p3=0.0766  p4=0.0671  p5=0.0108  p6=0.0937  p7=0.3354  p8=0.0111  p9=0.0831  p10=0.1156
+[ref-identity] set "a": 0 (cell, prompt) pairs above KL 1.0 (marked !) — prompts numbered 1–10
+--- PASS: TestPrefillRefIdentity (128.82s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	129.511s
