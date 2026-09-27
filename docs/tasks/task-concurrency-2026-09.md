@@ -24,7 +24,7 @@
 > - **MC3c step 2 (batching behind the same admission): BUILD, by the pre-registered trigger** (2026-09-27, `nobara`
 >   CPU, 7B). Batched B = 4 ÷ J8 N = 4 is 2.41× at depth 128 and 2.25× at 512, against a 1.15× bar. On the 7B the
 >   workers barely scale (1.13–1.15×) and batching reaches 2.59–2.73× ([`concurrency-mc2-2026-09-26.md`](../measurements/concurrency-mc2-2026-09-26.md),
->   "Linux 7B cell"). Not started;
+>   "Linux 7B cell"). Design, correctness gates and W7 grading pre-registered 2026-09-27 (MC3c, "step 2"); not built;
 > - MC3 follow-ons, none registered: a hybrid B = 2 (it reads 1.07× on the 1.5B, ~1.0× on the 7B), an encode-ahead
 >   executor for steps, and CUDA (only on its own measurement);
 > - ~~the 7B end to end~~ — done 2026-09-27: all five W7 gates pass, 4 clients at 1.785× the serialized build, p99 turn
@@ -665,7 +665,124 @@ because it trades per-request latency for throughput.
   - Batching reads each weight once per step and reaches 2.59–2.73× at B = 4 (3.1–3.3× at B = 8).
   - The batched numbers are a floor: the prototype's M = 1 path runs at 0.965× production decode on the 7B.
 - Across model sizes, batching's lead over the workers grows 0.64–0.75× (0.5B) → 1.02–1.11× (1.5B) → 2.25–2.41× (7B).
-- Step 2 is not started. Its design, gates and pre-registration come next.
+- Step 2 is not started. Its design, gates and pre-registration follow.
+
+### MC3c step 2 — batched CPU decode behind the same admission (design and grading pre-registered 2026-09-27, before any code)
+
+**Goal.** When several CPU generations of one model are decoding, their decode tokens run as one batched forward
+instead of N independent forwards. Each reply stays bit-identical to the same conversation served alone. The step-1
+admission, session check-out and prefill are unchanged; only what runs at a decode token changes.
+
+**Where it plugs in.** `generateInto`'s CPU path decodes with `logits, err = m.forward(next, cache)`, once per token, on
+its own session's cache. Step 1 runs N of those concurrently. Step 2 routes that call through a CPU coordinator when
+batching is enabled for the model and the cache is eligible:
+- a run of ≥ 2 tokens goes through one batched step;
+- a single token goes through `m.forward` unchanged, so a lone request takes exactly today's path.
+
+**New pieces.**
+1. **The batched step, promoted from the MC2 prototype.** `decodeMultiStep` (`decoder/batchdecode_mc2_test.go`, test-only
+   today) moves into production.
+   - Projections, o-proj, MLP and LM head run as M = B matmuls through `forwardN`'s kernels, which are bit-identical to
+     M = 1 row for row.
+   - Attention runs per sequence over its own cache.
+   - `TestMC2_decodeMultiStepBitIdentical` is already its identity gate. It passes on llama-tiny and the 0.5B (int4 and
+     int8int8) on both arm64 and amd64, and on the 7B (int4 and int8int8) on amd64.
+   - Its scope is `mc2Eligible`: the generic forward, plain pre-norm, dense MLP, no attention output gate, no learned
+     positions, no weight streaming; f32 append-forever caches with no adapter, tree mask or manual position.
+2. **The coordinator.** It shares MC3's token coalescing rather than copying it, factored out of `residentBatcher`:
+   - pending tokens; the straggler window, opened when a run could start (the phase-lock lesson measured 2026-09-26);
+   - decode-loop enter/exit, so a run waits only for generations inside their decode loop;
+   - the stats counters (runs, steps, step sizes, solo tokens, straggler runs).
+
+   What it does not share is exclusivity. A CPU model has no single device to own, so prefill and non-batched work run
+   outside it, as in step 1.
+3. **Per-sequence state stays per sequence.** The step returns each row's logits, and each generation samples with its
+   own sampler. That covers repetition penalties, logit processors, grammar masks and stop tokens, on the host exactly
+   as today. Nothing is drawn inside the step.
+4. **The operator choice** is `decoder.Options.CPUBatchDecode` (an int, so `Options` stays comparable), with a
+   per-model accessor. There is no environment read. serve gets the flag `-cpu-batch auto|on|off`, and the banner's
+   concurrency line says which mode runs:
+   - `off` is step 1 exactly: independent workers;
+   - `on` batches every eligible model;
+   - `auto`, the default, batches an eligible model whose `ResidentDenseWeightBytes()` is at least **2 GiB**, and runs
+     workers below that.
+   - Why 2 GiB: the measured cells put batching's lead over the workers at 0.64–0.75× on the 0.5B (0.47 GB) and
+     1.02–1.11× on the 1.5B (1.23 GB) on `nobara`. On the Mac the 1.5B workers lead. On the 7B (4.93 GB) batching
+     leads by 2.25–2.41×.
+   - So `auto` leaves the small and marginal models on the workers, where they are no worse off, and batches where
+     the lead is large.
+   - The 2–4.9 GB range is unmeasured, and `auto` batches it; recorded, not tested.
+   - **darwin:** `auto` means `off` until a Mac 7B MC2 cell shows batched B = 4 ÷ J8 N = 4 ≥ 1.15×. Batching loses on the
+     Mac's 0.5B and 1.5B, and its 7B has not been measured.
+
+**Declines, per token, to production's own `m.forward` (the step-1 worker path):**
+- a cache that fails `mc2Eligible`: `--kv i8`, a sliding-window ring, an adapter session, a tree mask;
+- MoE, recurrent, hybrid and own-forward families, and weight streaming (`layerPager`);
+- speculative decode, which drives its own verify;
+- vision turns.
+
+A run mixing eligible and ineligible tokens batches the eligible ones and runs the rest solo.
+
+**Correctness, before any timing (hard; a failure is a bug):**
+1. **Through the production path:** N concurrent `Session.Generate` calls routed through the coordinator emit exactly
+   the ids each conversation emits alone, turn for turn, with the same `PrefillReused`.
+   - Fixtures: llama-tiny (CI) and qwen2.5-coder-1.5b with `on`; the 7B with `auto` (heavy).
+   - A control asserts from the stats that steps of ≥ 2 actually ran, so the test cannot pass on solo tokens.
+2. **Sampled:** the same with temperature and a fixed seed per conversation, since each sampler draws from identical
+   logits.
+3. **Declines:** an `--kv i8` session and an adapter session interleaved with eligible ones still match alone. The
+   stats show their tokens ran solo.
+4. **`-race` clean:** concurrent generations through the coordinator, plus step 1's session check-out.
+5. **The prototype's gate stays:** `TestMC2_decodeMultiStepBitIdentical` is kept, pointed at the production step.
+
+**W7 grading, pre-registered.**
+- *Builds:* *old* = `serve` (CPU) at the commit before step 2, which is step 1 (workers, `-max-concurrent` 4); *new* =
+  the step-2 commit, where `auto` batches the 7B. Both are built once, from clean worktrees, and named by hash.
+- *Machine:* `nobara`, CPU backend. `-backend cpu`; it must not touch the GPU.
+- *Workload:* `scripts/bench_w7_plain.py --engines goinfer --backend cpu --fixed-nonce --server-log`, on
+  qwen2.5-7b-instruct q4_k_m from `~/models` (never `/srv/models`) at int4.
+  - 6 turns × 128 greedy tokens per client, a fresh server per cell, serve defaults otherwise.
+- *Idle gate, every cell:* load1 ≤ 1.0 (this is CPU timing), and no other `go`, test-binary or serve process.
+- *Cells:*
+  - 4 clients: old/new × 3 pairs, in the order old new new old old new;
+  - 1 client: the same, 3 pairs;
+  - 2 clients: one pair, reported only.
+- *Expected duration:* ~1–1.5 h. A 4-client old cell is ~3,100 tokens at ~5.7 tok/s.
+- *Gates* (1, 2, 4 and 5 are hard):
+  1. **Identity:** every turn's `content_sha` is equal between old and new at the same client count and client index,
+     in every cell. Both builds are bit-identical to a conversation served alone.
+  2. **Reuse:** every turn's prompt − `prefill_reused_tokens` is equal between old and new.
+  3. **Aggregate:** 4-client aggregate tok/s, new ÷ old paired per pair, with a median of 3 ≥ **1.2×**.
+  4. **p99 under load:** new's 4-client per-turn p99 ÷ old's, paired, with a median of 3 ≤ **1.0**.
+  5. **Solo guard:** 1-client per-turn p50 and p99, new ÷ old, paired, with a median of 3 ≤ **1.05×** each.
+- *Reported, not gated:*
+  - the 2-client pair;
+  - the coordinator's stats per cell (step sizes and solo tokens);
+  - one 4-client pair on the 0.5B with `-cpu-batch on` against `off`, to show why `auto` leaves it on the workers.
+- *Decision:*
+  - All hard gates pass and the aggregate is ≥ 1.2×: it ships with `auto` as the default.
+  - Gate 1 or 2 fails: it is a bug, not shipped.
+  - Aggregate 1.03–1.2× with 1, 2, 4 and 5 passing: it goes to the owner with a ship recommendation.
+  - Aggregate below 1.03×: parked, with `-cpu-batch on` kept only if the owner asks.
+  - Gate 4 or 5 fails: not on by default; the owner decides.
+- *Record:* `docs/measurements/concurrency-mc3c-step2-<date>.md`, with raw JSON and logs beside it. The NVIDIA driver is
+  irrelevant here (CPU); the CPU governor and kernel version are recorded instead.
+
+**Not in scope:**
+- A small-M amd64 kernel. The batched path's M = 1 costs 0.76–0.97× production, so every batched number above is a
+  floor, and a tuned kernel is a follow-on on its own measurement.
+- Mixing workers and batches, for example two batches of 4 at 8 clients.
+- Batched prefill across generations.
+- CUDA/Metal: MC3 and MC1 cover those.
+
+**Docs that change when it ships:**
+- `docs/server.md` (the `-max-concurrent` paragraph, and the new `-cpu-batch`);
+- the banner's concurrency line;
+- this section and the status header;
+- `docs/README.md`'s measurement count.
+
+**Estimate.** A few days. The step and the coalescing exist, and the work is promotion, a shared coalescer, the
+option and the tests.
 
 ## MC4 — broadening (parked)
 
