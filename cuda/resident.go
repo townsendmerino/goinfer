@@ -31,6 +31,7 @@ var (
 	_ decoder.ResidentGreedy     = (*cudaResident)(nil)
 	_ decoder.ResidentMRoPE      = (*cudaResident)(nil)
 	_ decoder.VerifyPathReporter = (*cudaResident)(nil)
+	_ decoder.ResidentKVSlotter  = (*cudaResident)(nil)
 )
 
 // cudaCtxCapDefault is the resident KV capacity in positions when nothing asks for more; the staged
@@ -163,6 +164,31 @@ func kvBytesForCap(cap int, layers []cudaLayer) int64 {
 		}
 	}
 	return perPos * int64(cap)
+}
+
+// kvSlotsFit is MC1's slot arithmetic on CUDA (docs/tasks/task-concurrency-2026-09.md): the largest n in [1, want]
+// whose n resident KV slots, perSlot bytes each, fit free VRAM beside reserve (a companion attach plus
+// ctxCapMarginBytes). Never below 1: the first slot is checkKVFits' own and is refused there, not clamped here.
+//
+// free is read AFTER the weights are on the device, and perSlot counts KV only — the two sides price the same
+// thing. Metal's first version compared a weights-inclusive base with a live figure the weights had already left,
+// counting them twice (6807ab95); pricing KV against what is left for KV cannot.
+func kvSlotsFit(want int, free, perSlot, reserve int64) int {
+	n := max(1, want)
+	for n > 1 && int64(n)*perSlot+reserve > free {
+		n--
+	}
+	return n
+}
+
+// cudaKVSlot is one resident KV slot's per-layer buffers (MC1). A DeltaNet layer has none; an MLA layer has only kc.
+type cudaKVSlot struct{ kc, vc []Buffer }
+
+// cudaFreeVRAM is the free-VRAM probe checkKVFits prices the resident KV (every slot) against. A variable so
+// TestCUDAKVSlots_pricedAgainstWhatIsLeft can stub it.
+var cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
+	free, _, err := r.dev.Context().MemInfo()
+	return free, err
 }
 
 // splitkvNever disables the split-KV decode attention for a geometry (no depth within the resident's
@@ -777,6 +803,15 @@ type cudaResident struct {
 	topkOut                                                               Buffer // topk_select output: ids, logit bits, Z hi/lo bits
 	gbKey, gbIdx, gbOut                                                   Buffer // gumbel_stage1 per-block winners, and the drawn id (R7b)
 	kc, vc                                                                []Buffer
+
+	// MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md). kvSlotsReq is the model's request
+	// (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvSlotBufs each
+	// slot's per-layer K/V (nil with one slot), kvSlot the bound index. kc/vc above are the BOUND slot's buffers —
+	// every kernel launch and UploadKV reads them at call time — and UseKVSlot rebinds them.
+	kvSlotsReq int
+	kvSlotsN   int // what checkKVFits granted (>= 1)
+	kvSlot     int
+	kvSlotBufs []cudaKVSlot
 
 	// MoE per-token scratch (allocated only when moe). Sized to the MoE expert width, which is
 	// NOT the dense one — Mellum's moe_intermediate_size differs from intermediate_size, so
@@ -1838,6 +1873,9 @@ func runJob(j func() error) (err error) {
 // under load — after the server reported ready. Naming the number at startup turns a production
 // incident into a config error, so the message states what was asked for, what it costs, and what is
 // actually free.
+//
+// It also sets r.kvSlotsN, MC1's slot count: the request, clamped (kvSlotsFit) to the slots whose KV fits the
+// same budget, and logged when clamped. The first slot is the one this check refuses; further ones only shrink.
 // errKVWontFit marks the one setup failure that must NOT degrade quietly to the staged path: an
 // explicitly configured resident context whose KV does not fit. BuildResident turns it into a hard
 // startup error instead of a decline. An UNCONFIGURED (default-cap) miss stays a decline, because
@@ -1925,16 +1963,26 @@ func (r *cudaResident) checkWeightsFit(m *decoder.Model) error {
 
 func (r *cudaResident) checkKVFits() error {
 	need := kvBytesForCap(r.ctxCap, r.layers)
-	free, _, err := r.dev.Context().MemInfo()
+	r.kvSlotsN = 1
+	free, err := cudaFreeVRAM(r)
 	if err != nil {
 		// No MemInfo ⇒ no fit check possible. Do not fail the load on that: the default cap has
 		// always been allocated without one, and a hard failure here would regress every driver
 		// that does not report memory. The allocation itself still errors if it truly cannot fit.
+		// MC1's further slots are not allocated blind: one slot, as before.
 		return nil
 	}
 	// r.extraBytes reserves room for a companion attach (--drafter) coming after this build —
 	// see the field's own doc comment. 0 for every load without one, so this is unchanged then.
 	if need+r.extraBytes+ctxCapMarginBytes <= int64(free) {
+		// MC1: as many of the requested KV slots as fit the same budget, each another `need`.
+		r.kvSlotsN = kvSlotsFit(r.kvSlotsReq, int64(free), need, r.extraBytes+ctxCapMarginBytes)
+		if r.kvSlotsN < r.kvSlotsReq {
+			fmt.Fprintf(os.Stderr, "cuda: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident "+
+				"context %d, and free VRAM beside the weights (%.0f MB, less %.0f MB reserved) allows %d\n",
+				r.kvSlotsN, r.kvSlotsReq, float64(need)/(1<<20), r.ctxCap, float64(free)/(1<<20),
+				float64(r.extraBytes+ctxCapMarginBytes)/(1<<20), r.kvSlotsN)
+		}
 		return nil
 	}
 	perPos := float64(need) / float64(max(r.ctxCap, 1)) / 1024
@@ -2142,6 +2190,31 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 // TruncateTo is a no-op: KV is positional and Forward sets nKeys=pos+1, so entries past pos
 // are never read and get overwritten (matches the WebGPU path).
 func (r *cudaResident) TruncateTo(pos int) {}
+
+// KVSlots / UseKVSlot implement decoder.ResidentKVSlotter (MC1, docs/tasks/task-concurrency-2026-09.md): how many
+// resident KV slots the build allocated, and binding one.
+//
+// Binding is a pointer swap of kc/vc, done on the executor so it is ordered after every job already posted. That is
+// the whole switch because nothing holds a slot's buffers across calls: every launch that reads or writes KV
+// (rope_kv, the attention kernels, the batched prefill, the MLA latent store, UploadKV) binds r.kc[l] / r.vc[l] when
+// it is issued, and the CUDA graphs (GOINFER_CUDA_GRAPHS) capture only segA/B/C, which touch no KV — rope_kv and
+// attention run live in the gap between them. Metal had to stop a pre-encoded executor here; CUDA has none.
+// A recurrent family's state is not part of a slot, which is why it is allocated one (kvSlotsReq).
+func (r *cudaResident) KVSlots() int { return max(1, len(r.kvSlotBufs)) }
+
+func (r *cudaResident) UseKVSlot(i int) error {
+	if i < 0 || i >= r.KVSlots() {
+		return fmt.Errorf("cuda: KV slot %d out of range (%d allocated)", i, r.KVSlots())
+	}
+	if len(r.kvSlotBufs) == 0 || i == r.kvSlot {
+		return nil
+	}
+	return r.do(func() error {
+		b := r.kvSlotBufs[i]
+		r.kc, r.vc, r.kvSlot = b.kc, b.vc, i
+		return nil
+	})
+}
 
 // Reset clears resident KV for a fresh generation (positions are overwritten on write).
 // Reset re-zeroes the compounding recurrent state for a fresh generation. A KV cache needs no

@@ -665,6 +665,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// did not ask allocates exactly what they always did.
 		ctxCap:      residentCtxCap,
 		ctxExplicit: m.ResidentContextRequest() > 0,
+		kvSlotsReq:  cudaKVSlotsRequest(m, dnetP != nil),
 		// M-22 (docs/audit-2026-09-10.md): a drafter's device K/V is priced here at the FINAL,
 		// actually-chosen ctxCap — resolveCtxCapFit's own ExtraBytes consult (above, feeding
 		// residentCtxCap) already priced it at candidate, the widest ctx that call considered; this
@@ -1603,6 +1604,24 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}
 			r.kc[l], r.vc[l] = r.af(r.ctxCap*r.layers[l].kvDim), r.af(r.ctxCap*r.layers[l].kvDim)
 		}
+		// MC1: further resident KV slots, each a copy of the per-layer buffers just allocated (checkKVFits granted
+		// r.kvSlotsN of the request). Slot 0 is the set above; UseKVSlot rebinds r.kc/r.vc.
+		if n := r.kvSlotsN; n > 1 {
+			r.kvSlotBufs = make([]cudaKVSlot, n)
+			r.kvSlotBufs[0] = cudaKVSlot{r.kc, r.vc}
+			for s := 1; s < n; s++ {
+				b := cudaKVSlot{kc: make([]Buffer, nLayers), vc: make([]Buffer, nLayers)}
+				for l := range nLayers {
+					if r.kc[l].Len() > 0 {
+						b.kc[l] = r.af(r.kc[l].Len())
+					}
+					if r.vc[l].Len() > 0 {
+						b.vc[l] = r.af(r.vc[l].Len())
+					}
+				}
+				r.kvSlotBufs[s] = b
+			}
+		}
 		if r.actG32 && maxQDim%32 != 0 {
 			return fmt.Errorf("per-32 activations need the attention width (%d) to be a multiple of 32", maxQDim)
 		}
@@ -1844,6 +1863,21 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	}
 	b.resident = r
 	return r, true, nil
+}
+
+// cudaKVSlotsRequest is how many resident KV slots a build asks checkKVFits for (MC1,
+// docs/tasks/task-concurrency-2026-09.md): the model's request (decoder.Model.ResidentKVSlotsRequest, already 1 for a
+// family with recurrent state), and 1 in two cases the decoder cannot see:
+//   - a Gated-DeltaNet resident (recurrent): its state is mutated in place and is not part of a slot. The decoder's
+//     hasRecurrentState already keeps these at one; this refuses to allocate for a second slot anyway;
+//   - expert streaming (MoECacheExperts): that cache takes whatever VRAM is left after everything pinned, so every
+//     extra KV slot is expert-cache slots lost — the trade resolveCtxCapFit already declines to make with the context
+//     (48% decode lost on gemma4-26b when KV grew into the cache's share).
+func cudaKVSlotsRequest(m *decoder.Model, recurrent bool) int {
+	if recurrent || m.MoECacheExperts() {
+		return 1
+	}
+	return m.ResidentKVSlotsRequest()
 }
 
 // cudaBackend and cudaResident standardize teardown on Close() error and satisfy io.Closer, matching

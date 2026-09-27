@@ -26,6 +26,10 @@ import (
 // and the f16 / i8 rows fail without the branch. Three links are checked, so a drift anywhere shows:
 // the buffers' bytes == kvBytesForCap (the resident's own fit figure) == ResidentKVBytes("cuda"), and each
 // buffer's driver allocation stays within one allocQuantumBytes (2 MiB) of its bytes.
+//
+// Every fixture is built with 2 resident KV slots (MC1, docs/tasks/task-concurrency-2026-09.md), and every slot is
+// checked: each holds exactly kvBytesForCap, so the device holds slots × ResidentKVBytes("cuda"). The DeltaNet hybrid
+// must build one slot (recurrent state is not part of a slot); every other layout, 2.
 func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	fixtures := []string{
@@ -42,7 +46,7 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 			if _, err := os.Stat(p); err != nil {
 				t.Skipf("no fixture at %s", p)
 			}
-			m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: "int4"})
+			m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2})
 			if err != nil {
 				t.Skipf("load: %v", err)
 			}
@@ -52,19 +56,32 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 				t.Skipf("not CUDA-resident: %s", m.ResidentDecline())
 			}
 			ran++
-			var bytes int64
-			for l := range r.kc {
-				for _, b := range []Buffer{r.kc[l], r.vc[l]} {
-					n := int64(b.Len()) * 4 // Len is in f32 elements (r.af)
-					bytes += n
-					if alloc := (n + allocQuantumBytes - 1) / allocQuantumBytes * allocQuantumBytes; alloc-n >= allocQuantumBytes {
-						t.Errorf("layer %d: a buffer of %d B rounds to %d B — more than one allocation quantum", l, n, alloc)
-					}
-				}
+			wantSlots := 2
+			if r.dnet != nil {
+				wantSlots = 1
+			}
+			slots := r.kvSlotBufs
+			if slots == nil {
+				slots = []cudaKVSlot{{r.kc, r.vc}}
+			}
+			if len(slots) != wantSlots || r.KVSlots() != wantSlots {
+				t.Fatalf("built %d KV slots (KVSlots %d) with 2 requested, want %d", len(slots), r.KVSlots(), wantSlots)
 			}
 			forCap := kvBytesForCap(r.ctxCap, r.layers)
-			if bytes != forCap {
-				t.Fatalf("allocated K/V buffers hold %d B, kvBytesForCap says %d B at ctx %d — the resident's own fit figure no longer matches its allocation", bytes, forCap, r.ctxCap)
+			for s, sl := range slots {
+				var bytes int64
+				for l := range sl.kc {
+					for _, b := range []Buffer{sl.kc[l], sl.vc[l]} {
+						n := int64(b.Len()) * 4 // Len is in f32 elements (r.af)
+						bytes += n
+						if alloc := (n + allocQuantumBytes - 1) / allocQuantumBytes * allocQuantumBytes; alloc-n >= allocQuantumBytes {
+							t.Errorf("slot %d layer %d: a buffer of %d B rounds to %d B — more than one allocation quantum", s, l, n, alloc)
+						}
+					}
+				}
+				if bytes != forCap {
+					t.Fatalf("slot %d: allocated K/V buffers hold %d B, kvBytesForCap says %d B at ctx %d — the resident's own fit figure no longer matches its allocation", s, bytes, forCap, r.ctxCap)
+				}
 			}
 			for _, c := range []struct {
 				name     string
