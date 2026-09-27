@@ -127,7 +127,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/spec_optfwd.go:202` | goinfer | `anchor: func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate ` |
 | `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:490` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
 | `docs/audit-metal-2026-09-12.md|internal/loadflags/loadflags.go:203` | goinfer | `"            (4-bit weights). NOT the smallest on Apple Silicon or non-VNNI amd64: the l` |
-| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:912` | goinfer | `func (s *server) loadVisionTower(cfg config) error {` |
+| `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:921` | goinfer | `func (s *server) loadVisionTower(cfg config) error {` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1311` | goinfer | `// DecodeRunner when there is no session commit and no prefix reuse (model.go:` |
 | `docs/audit-metal-2026-09-12.md|metal.go:396` | gpu | `func (d *Device) ReleaseAll() {` |
 | `docs/audit-metal-2026-09-12.md|metal.go:438` | gpu | `return d.MustBuf(d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "l` |
@@ -350,7 +350,7 @@ supports.
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:51` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,        // the text-only checkpoint's model_type` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:463` | goinfer | `// owns a contiguous row. dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND,` |
 | `docs/spec/09-mtp-heads.md|cuda/resident.go:470` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
-| `docs/spec/09-mtp-heads.md|decoder/blockspec.go:594` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
+| `docs/spec/09-mtp-heads.md|decoder/blockspec.go:622` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:147` | goinfer | `// head). Fixed size — independent of sequence length, and NOT position-` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:150` | goinfer | `type deltaState struct {` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:188` | goinfer | `win := st.convWin` |
@@ -372,14 +372,30 @@ supports.
 | `docs/tasks/red-october.md|metal/model.go:1796` | goinfer | `e.FinishEncoding()` |
 | `docs/tasks/red-october.md|metal/model.go:420` | goinfer | `if err != nil && r.execErr == nil {` |
 | `docs/tasks/red-october.md|metal/prefill_gemm_s2_test.go:419` | goinfer | `threadgroup half wscr[8*(CPS*64)];` |
+| `docs/tasks/task-constrained-confidence.md|constrain/constrain.go:147` | goinfer | `func (m *Masker) MaskAt(g Grammar, logits []float32) {` |
+| `docs/tasks/task-constrained-confidence.md|constrain/constrain.go:97` | goinfer | `func (m *Masker) ForcedRun(max int) []int {` |
+| `docs/tasks/task-constrained-confidence.md|decoder/arch.go:368` | goinfer | `// FusedDeltaNetProj: qwen3_5_moe's checkpoint stores in_proj_qkv/in_proj_z/` |
+| `docs/tasks/task-constrained-confidence.md|decoder/arch.go:954` | goinfer | `{"qwen3_5_moe", func(a *Architecture) bool { return a.qwen35 != nil }, (*Model).runLayer` |
+| `docs/tasks/task-constrained-confidence.md|decoder/capture.go:14` | goinfer | `// THE CONTRACT, stated once because the drafters depend on it: captureResidual(l, h) is` |
+| `docs/tasks/task-constrained-confidence.md|decoder/kvcache.go:540` | goinfer | `func (c *KVCache) TruncateTo(pos int) (exact bool) {` |
+| `docs/tasks/task-constrained-confidence.md|decoder/kvsnapshot.go:62` | goinfer | `// Some families carry recurrent / latent state this format does not persist: qwen3_5_mo` |
+| `docs/tasks/task-constrained-confidence.md|decoder/lora.go:137` | goinfer | `func (a *loraAdapter) validateTargets(numLayers int, s *tensorSchema, name func(layer in` |
+| `docs/tasks/task-constrained-confidence.md|decoder/lora.go:309` | goinfer | `func (m *Model) LoadAdapter(name, dir string) error {` |
+| `docs/tasks/task-constrained-confidence.md|decoder/model.go:1273` | goinfer | `func (m *Model) ForwardCapture(id int, cache *KVCache, layers []int) (logits []float32, ` |
+| `docs/tasks/task-constrained-confidence.md|decoder/weights.go:682` | goinfer | `if err := lora.validateTargets(cfg.NumLayers, s, tn); err != nil {` |
+| `docs/tasks/task-constrained-confidence.md|decoder/weights.go:744` | goinfer | `if derr = lora.merge(name, data, out, in); derr != nil {` |
+| `docs/tasks/task-constrained-confidence.md|internal/serveapp/main.go:548` | goinfer | `mux.HandleFunc("POST /v1/chat/completions", auth(srv.haltGate(inf(maxBytes(visionCap, sr` |
+| `docs/tasks/task-constrained-confidence.md|internal/serveapp/openai.go:33` | goinfer | `const maxTopLogprobs = 20` |
+| `docs/tasks/task-constrained-confidence.md|internal/serveapp/openai.go:536` | goinfer | `Logprobs            bool            `json:"logprobs"`` |
+| `docs/tasks/task-constrained-confidence.md|internal/serveapp/openai.go:538` | goinfer | `ResponseFormat      *respFormat     `json:"response_format"`` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/mlp.go:300` | goinfer | `// activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:194` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
 | `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:124` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1405` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:318` | goinfer | `type Options struct {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:496` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1179` | goinfer | `batched, why := lm.model.PrefillPath()` |
-| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1223` | goinfer | `name, cfg.load.Backend, reason, lm.model.DecodePath())` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1188` | goinfer | `batched, why := lm.model.PrefillPath()` |
+| `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:1232` | goinfer | `name, cfg.load.Backend, reason, lm.model.DecodePath())` |
 | `docs/tasks/task-embed-and-harness-ux.md|internal/serveapp/main.go:386` | goinfer | `flag.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the load` |
 | `docs/tasks/task-first-hour.md|gpu/matrix_bench_test.go:142` | goinfer | `row("GPU staged (int8)", gguf, decoder.Options{Backend: "webgpu", Quant: "int8int8"}, tr` |
 | `docs/tasks/task-first-hour.md|internal/chatapp/version.go:71` | goinfer | `func isVersionArg(a string) bool {` |
@@ -417,7 +433,7 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1136` | goinfer | `rl.hasSink = true` |
 | `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:578` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/loadflags/loadflags.go:91` | goinfer | `MoECacheSlots:    f.MoECacheSlots,` |
-| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:880` | goinfer | `return fmt.Errorf("--adapter %q: name collides with a loaded model", spec.name)` |
+| `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:889` | goinfer | `return fmt.Errorf("--adapter %q: name collides with a loaded model", spec.name)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1308` | goinfer | `var gen *decoder.Generation` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1338` | goinfer | `if lm.model.ResidentActive() && lm.adapter == "" {` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1440` | goinfer | `// reuse when the SAME image is resent (P9a); vi.features is then never invoked at` |
@@ -492,7 +508,7 @@ supports.
 | `docs/tasks/task-tool-grammar-union-2026-09.md|chat/tools.go:93` | goinfer | `func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|constrain/constrain.go:23` | goinfer | `type Grammar interface {` |
 | `docs/tasks/task-tool-grammar-union-2026-09.md|constrain/tool_grammar.go:30` | goinfer | `func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, paramSchema [` |
-| `docs/tasks/task-verification-surface-audit.md|decoder/blockspec.go:594` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
+| `docs/tasks/task-verification-surface-audit.md|decoder/blockspec.go:622` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
 | `docs/tasks/task-web-ui-2026-09.md|decoder/backend.go:155` | goinfer | `func FreeBytesFor(name string) (freeBytes int64, ok bool) {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:113` | goinfer | `func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {` |
 | `docs/tasks/task-web-ui-2026-09.md|internal/serveapp/admin.go:171` | goinfer | `func (s *server) publishLoaded(lm *loadedModel) bool {` |
