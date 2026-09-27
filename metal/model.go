@@ -1254,15 +1254,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if tg, lim := maxThreadgroupStageBytes(H, maxNHhd, moeInter, g4Inter, dnValueDim), d.MaxThreadgroupMemoryLength(); tg > lim {
 		return nil, fmt.Errorf("metal: threadgroup staging needs %d B (2×K) > device tile-memory max %d B — declining to CPU (audit M-11)", tg, lim)
 	}
-	// R18: the dense decode GEMVs at R rows per simdgroup — 2 for qkv and o, 4 for gate/up and down, the confirmed
-	// configuration (docs/measurements/metal-decode-gemv-r18-2026-09-26.md). Each is taken only where every layer's row
+	// R18: the dense decode GEMVs at R rows per simdgroup — 4 for qkv, gate/up and down, 2 for o: R18's confirmed
+	// configuration (docs/measurements/metal-decode-gemv-r18-2026-09-26.md) with qkv moved to 4 by R18b's
+	// (metal-decode-gemv-r18b-2026-09-26.md), whose kernel form changed what the best qkv width is. Each is taken only where every layer's row
 	// count fills whole threadgroups (gemvRowsFor), and down only where its K = I bytes of staged activations fit the
 	// threadgroup memory; anything else keeps the shipped kernel.
 	{
-		qkvR := 2
+		qkvR := 4
 		for _, L := range r.layers {
 			if L.geom != nil { // a DeltaNet layer has no attention geometry (and no qkv GEMV)
-				qkvR = min(qkvR, gemvRowsFor(nH*L.geom.hd+2*L.geom.kvDim, 2))
+				qkvR = min(qkvR, gemvRowsFor(nH*L.geom.hd+2*L.geom.kvDim, 4))
 			}
 		}
 		r.gemvRows.qkv, r.gemvRows.o, r.gemvRows.gu = qkvR, gemvRowsFor(H, 2), gemvRowsFor(2*I, 4)

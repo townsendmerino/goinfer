@@ -1,0 +1,50 @@
+2026-09-26 18:17:01 PDT start 9bafd1f3; load1=4.07; R18b CONFIRMATION 7b: h4244, 7 reps, depths 128,2048,3900
+=== RUN   TestR18InSequence
+[metal] weights aliased from qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4020 MB bound in place, 1 MB copied (anonymous) — 3112 MB int4 nibbles (56 single tensors + 56 fused groups = 2034 MB) + 520 MB int8 codes (1 matrices) + 389 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[r18-seq    0.1s] loaded qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: H=3584 I=18944 nL=28 nH=28 hd=128 kvDim=512 V=152064, ctx 4096, attention_fa true; qkv rows 4608; production gemvRows {qkv:2 o:2 gu:4 down:4}; prototype arms [h4244]
+[r18-seq    5.4s] depth 128 identity: production vs shipped over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq    6.5s] depth 128 identity: h4244 vs shipped over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq   27.2s] depth 128 rep 1/7:  shipped full 45.714 work 38.840  production full 36.056 work 29.556 (1.314x)  h4244 full 33.196 work 26.727 (1.453x)
+[r18-seq   47.0s] depth 128 rep 2/7:  shipped full 45.783 work 38.836  production full 36.051 work 29.448 (1.319x)  h4244 full 33.215 work 26.885 (1.444x)
+[r18-seq   67.1s] depth 128 rep 3/7:  shipped full 45.695 work 39.052  production full 36.011 work 29.484 (1.325x)  h4244 full 33.699 work 28.389 (1.376x)
+[r18-seq   86.9s] depth 128 rep 4/7:  shipped full 45.712 work 38.903  production full 36.003 work 29.420 (1.322x)  h4244 full 33.142 work 26.607 (1.462x)
+[r18-seq  106.9s] depth 128 rep 5/7:  shipped full 45.766 work 39.035  production full 36.018 work 29.528 (1.322x)  h4244 full 33.184 work 26.839 (1.454x)
+[r18-seq  126.6s] depth 128 rep 6/7:  shipped full 45.703 work 38.724  production full 36.042 work 29.460 (1.314x)  h4244 full 33.186 work 26.721 (1.449x)
+[r18-seq  146.4s] depth 128 rep 7/7:  shipped full 45.715 work 38.818  production full 36.036 work 29.592 (1.312x)  h4244 full 33.236 work 26.844 (1.446x)
+[r18-seq  166.1s] depth 128 — int4-GEMV work per token (qkv+o+gate/up+down, each the median of 20 step-paired full − that-category-no-op'd, summed), median of 7 paired reps:
+[r18-seq  166.1s]   shipped  work 38.840 ms [ qkv 2.812 o 2.206 gate/up 19.559 down 14.321 ] all-4-no-op'd 38.884; full token 45.714 ms; after 2 s idle [48.435 51.610 56.875]
+[r18-seq  166.1s]   production work 29.484 ms [ qkv 2.497 (1.13x) o 1.978 (1.12x) gate/up 15.336 (1.28x) down 9.694 (1.48x) ] all-4-no-op'd 29.527; full token 36.036 ms (-9.677); METRIC shipped/arm = 1.319x (per-rep sorted [1.312 1.314 1.314 1.319 1.322 1.322 1.325]); after 2 s idle [41.593 47.987 49.438]
+[r18-seq  166.1s]   h4244    work 26.839 ms [ qkv 2.227 (1.26x) o 1.982 (1.11x) gate/up 12.849 (1.52x) down 9.739 (1.47x) ] all-4-no-op'd 26.650; full token 33.196 ms (-12.517); METRIC shipped/arm = 1.449x (per-rep sorted [1.376 1.444 1.446 1.449 1.453 1.454 1.462]); after 2 s idle [39.648 36.997 41.095]
+[r18-seq  166.1s]   h4244    METRIC production/arm = 1.102x (per-rep sorted [1.039 1.095 1.100 1.102 1.102 1.106 1.106]); full token -2.840 ms vs production
+[r18-seq  196.3s] depth 2048 identity: production vs shipped over 16 teacher-forced positions (2048..2063, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq  211.1s] depth 2048 identity: h4244 vs shipped over 16 teacher-forced positions (2048..2063, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq  250.0s] depth 2048 rep 1/7:  shipped full 54.046 work 42.140  production full 43.792 work 32.321 (1.304x)  h4244 full 41.039 work 28.759 (1.465x)
+[r18-seq  273.8s] depth 2048 rep 2/7:  shipped full 51.878 work 40.961  production full 42.928 work 31.438 (1.303x)  h4244 full 40.575 work 28.765 (1.424x)
+[r18-seq  296.9s] depth 2048 rep 3/7:  shipped full 50.582 work 39.757  production full 40.248 work 29.663 (1.340x)  h4244 full 40.231 work 28.410 (1.399x)
+[r18-seq  319.4s] depth 2048 rep 4/7:  shipped full 52.068 work 40.489  production full 39.767 work 29.164 (1.388x)  h4244 full 36.857 work 26.520 (1.527x)
+[r18-seq  341.6s] depth 2048 rep 5/7:  shipped full 49.670 work 39.008  production full 39.749 work 29.034 (1.344x)  h4244 full 36.855 work 26.260 (1.485x)
+[r18-seq  363.8s] depth 2048 rep 6/7:  shipped full 49.711 work 39.531  production full 39.763 work 29.312 (1.349x)  h4244 full 36.849 work 26.369 (1.499x)
+[r18-seq  385.9s] depth 2048 rep 7/7:  shipped full 49.779 work 38.946  production full 39.727 work 29.269 (1.331x)  h4244 full 36.842 work 26.307 (1.480x)
+[r18-seq  405.6s] depth 2048 — int4-GEMV work per token (qkv+o+gate/up+down, each the median of 20 step-paired full − that-category-no-op'd, summed), median of 7 paired reps:
+[r18-seq  405.6s]   shipped  work 39.757 ms [ qkv 2.959 o 2.307 gate/up 20.112 down 14.362 ] all-4-no-op'd 38.895; full token 50.582 ms; after 2 s idle [55.533 57.992 52.778]
+[r18-seq  405.6s]   production work 29.312 ms [ qkv 2.424 (1.22x) o 1.901 (1.21x) gate/up 15.279 (1.32x) down 9.761 (1.47x) ] all-4-no-op'd 29.457; full token 39.767 ms (-10.815); METRIC shipped/arm = 1.340x (per-rep sorted [1.303 1.304 1.331 1.340 1.344 1.349 1.388]); after 2 s idle [41.912 54.516 43.786]
+[r18-seq  405.6s]   h4244    work 26.520 ms [ qkv 2.119 (1.40x) o 1.891 (1.22x) gate/up 12.668 (1.59x) down 9.892 (1.45x) ] all-4-no-op'd 26.811; full token 36.857 ms (-13.725); METRIC shipped/arm = 1.480x (per-rep sorted [1.399 1.424 1.465 1.480 1.485 1.499 1.527]); after 2 s idle [41.292 38.577 38.302]
+[r18-seq  405.6s]   h4244    METRIC production/arm = 1.106x (per-rep sorted [1.044 1.093 1.100 1.106 1.112 1.113 1.124]); full token -2.910 ms vs production
+[r18-seq  463.6s] depth 3900 identity: production vs shipped over 16 teacher-forced positions (3900..3915, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq  492.3s] depth 3900 identity: h4244 vs shipped over 16 teacher-forced positions (3900..3915, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq  544.3s] depth 3900 rep 1/7:  shipped full 52.460 work 38.958  production full 42.444 work 29.204 (1.334x)  h4244 full 39.600 work 26.340 (1.479x)
+[r18-seq  568.0s] depth 3900 rep 2/7:  shipped full 52.535 work 39.180  production full 42.402 work 29.339 (1.335x)  h4244 full 39.499 work 26.161 (1.498x)
+[r18-seq  591.8s] depth 3900 rep 3/7:  shipped full 52.415 work 39.031  production full 42.733 work 29.153 (1.339x)  h4244 full 39.588 work 26.471 (1.475x)
+[r18-seq  615.7s] depth 3900 rep 4/7:  shipped full 52.447 work 39.013  production full 42.434 work 29.110 (1.340x)  h4244 full 39.561 work 26.186 (1.490x)
+[r18-seq  639.5s] depth 3900 rep 5/7:  shipped full 52.527 work 39.036  production full 42.451 work 29.079 (1.342x)  h4244 full 39.557 work 26.162 (1.492x)
+[r18-seq  663.3s] depth 3900 rep 6/7:  shipped full 52.408 work 38.775  production full 42.508 work 29.240 (1.326x)  h4244 full 39.585 work 26.244 (1.477x)
+[r18-seq  687.1s] depth 3900 rep 7/7:  shipped full 52.524 work 39.489  production full 42.465 work 29.201 (1.352x)  h4244 full 39.543 work 26.205 (1.507x)
+[r18-seq  706.9s] depth 3900 — int4-GEMV work per token (qkv+o+gate/up+down, each the median of 20 step-paired full − that-category-no-op'd, summed), median of 7 paired reps:
+[r18-seq  706.9s]   shipped  work 39.031 ms [ qkv 2.709 o 2.243 gate/up 19.661 down 14.338 ] all-4-no-op'd 39.104; full token 52.460 ms; after 2 s idle [56.268 58.674 60.922]
+[r18-seq  706.9s]   production work 29.201 ms [ qkv 2.392 (1.13x) o 1.906 (1.18x) gate/up 15.270 (1.29x) down 9.601 (1.49x) ] all-4-no-op'd 29.694; full token 42.451 ms (-10.008); METRIC shipped/arm = 1.339x (per-rep sorted [1.326 1.334 1.335 1.339 1.340 1.342 1.352]); after 2 s idle [47.322 50.639 47.090]
+[r18-seq  706.9s]   h4244    work 26.205 ms [ qkv 2.082 (1.30x) o 1.861 (1.20x) gate/up 12.650 (1.55x) down 9.586 (1.50x) ] all-4-no-op'd 26.621; full token 39.561 ms (-12.899); METRIC shipped/arm = 1.490x (per-rep sorted [1.475 1.477 1.479 1.490 1.492 1.498 1.507]); after 2 s idle [46.497 48.828 42.813]
+[r18-seq  706.9s]   h4244    METRIC production/arm = 1.112x (per-rep sorted [1.101 1.109 1.111 1.112 1.114 1.114 1.121]); full token -2.890 ms vs production
+--- PASS: TestR18InSequence (706.89s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	707.376s
+2026-09-26 18:28:49 PDT end 7b exit 0

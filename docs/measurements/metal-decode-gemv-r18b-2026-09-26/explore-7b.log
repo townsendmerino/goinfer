@@ -1,0 +1,26 @@
+2026-09-26 18:03:15 PDT start e1f2c8a4 + uncommitted R18b prototypes; load1=1.89; EXPLORATORY 7b
+=== RUN   TestR18InSequence
+[metal] weights aliased from qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4020 MB bound in place, 1 MB copied (anonymous) — 3112 MB int4 nibbles (56 single tensors + 56 fused groups = 2034 MB) + 520 MB int8 codes (1 matrices) + 389 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[r18-seq    0.1s] loaded qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: H=3584 I=18944 nL=28 nH=28 hd=128 kvDim=512 V=152064, ctx 4096, attention_fa true; qkv rows 4608; production gemvRows {qkv:2 o:2 gu:4 down:4}; prototype arms [h2244 h4444 h1144 h2444 h4244]
+[r18-seq    4.3s] depth 128 identity: production vs shipped over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq    5.5s] depth 128 identity: h2244 vs shipped over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq    6.7s] depth 128 identity: h4444 vs shipped over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq    8.0s] depth 128 identity: h1144 vs shipped over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq    9.3s] depth 128 identity: h2444 vs shipped over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq   10.5s] depth 128 identity: h4244 vs shipped over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 152064 logits
+[r18-seq   58.8s] depth 128 rep 1/5:  shipped full 45.725 work 38.888  production full 36.058 work 29.607 (1.313x)  h2244 full 37.763 work 31.322 (1.242x)  h4444 full 36.825 work 30.270 (1.285x)  h1144 full 39.768 work 33.259 (1.169x)  h2444 full 37.490 work 30.999 (1.254x)  h4244 full 37.485 work 31.161 (1.248x)
+[r18-seq  105.6s] depth 128 rep 2/5:  shipped full 45.843 work 39.086  production full 36.059 work 29.553 (1.323x)  h2244 full 37.789 work 31.321 (1.248x)  h4444 full 36.858 work 30.311 (1.290x)  h1144 full 39.885 work 33.390 (1.171x)  h2444 full 37.371 work 30.756 (1.271x)  h4244 full 37.333 work 30.884 (1.266x)
+[r18-seq  152.8s] depth 128 rep 3/5:  shipped full 46.342 work 39.373  production full 36.247 work 29.972 (1.314x)  h2244 full 38.024 work 31.653 (1.244x)  h4444 full 36.881 work 30.221 (1.303x)  h1144 full 39.840 work 33.179 (1.187x)  h2444 full 37.557 work 31.454 (1.252x)  h4244 full 37.336 work 30.852 (1.276x)
+[r18-seq  199.8s] depth 128 rep 4/5:  shipped full 45.825 work 38.884  production full 36.184 work 29.564 (1.315x)  h2244 full 37.797 work 31.158 (1.248x)  h4444 full 37.386 work 30.783 (1.263x)  h1144 full 40.340 work 33.851 (1.149x)  h2444 full 37.424 work 30.773 (1.264x)  h4244 full 37.318 work 30.696 (1.267x)
+[r18-seq  246.9s] depth 128 rep 5/5:  shipped full 45.811 work 38.987  production full 36.024 work 29.629 (1.316x)  h2244 full 37.791 work 31.209 (1.249x)  h4444 full 36.846 work 30.366 (1.284x)  h1144 full 39.794 work 33.263 (1.172x)  h2444 full 37.672 work 31.048 (1.256x)  h4244 full 37.537 work 30.950 (1.260x)
+[r18-seq  246.9s] depth 128 — int4-GEMV work per token (qkv+o+gate/up+down, each the median of 20 step-paired full − that-category-no-op'd, summed), median of 5 paired reps:
+[r18-seq  246.9s]   shipped  work 38.987 ms [ qkv 2.817 o 2.210 gate/up 19.636 down 14.360 ] all-4-no-op'd 38.966; full token 45.825 ms
+[r18-seq  246.9s]   production work 29.607 ms [ qkv 2.488 (1.13x) o 1.974 (1.12x) gate/up 15.375 (1.28x) down 9.764 (1.47x) ] all-4-no-op'd 29.430; full token 36.059 ms (-9.766); METRIC shipped/arm = 1.315x (per-rep sorted [1.313 1.314 1.315 1.316 1.323])
+[r18-seq  246.9s]   h2244    work 31.321 ms [ qkv 3.051 (0.92x) o 2.416 (0.91x) gate/up 16.072 (1.22x) down 9.683 (1.48x) ] all-4-no-op'd 31.180; full token 37.791 ms (-8.035); METRIC shipped/arm = 1.248x (per-rep sorted [1.242 1.244 1.248 1.248 1.249])
+[r18-seq  246.9s]   h4444    work 30.311 ms [ qkv 2.568 (1.10x) o 2.020 (1.09x) gate/up 16.045 (1.22x) down 9.679 (1.48x) ] all-4-no-op'd 30.382; full token 36.858 ms (-8.967); METRIC shipped/arm = 1.285x (per-rep sorted [1.263 1.284 1.285 1.290 1.303])
+[r18-seq  246.9s]   h1144    work 33.263 ms [ qkv 4.224 (0.67x) o 3.283 (0.67x) gate/up 16.052 (1.22x) down 9.738 (1.47x) ] all-4-no-op'd 33.161; full token 39.840 ms (-5.985); METRIC shipped/arm = 1.171x (per-rep sorted [1.149 1.169 1.171 1.172 1.187])
+[r18-seq  246.9s]   h2444    work 30.999 ms [ qkv 3.063 (0.92x) o 2.044 (1.08x) gate/up 16.088 (1.22x) down 9.689 (1.48x) ] all-4-no-op'd 30.782; full token 37.490 ms (-8.336); METRIC shipped/arm = 1.256x (per-rep sorted [1.252 1.254 1.256 1.264 1.271])
+[r18-seq  246.9s]   h4244    work 30.884 ms [ qkv 2.582 (1.09x) o 2.457 (0.90x) gate/up 16.212 (1.21x) down 9.660 (1.49x) ] all-4-no-op'd 30.844; full token 37.336 ms (-8.489); METRIC shipped/arm = 1.266x (per-rep sorted [1.248 1.260 1.266 1.267 1.276])
+--- PASS: TestR18InSequence (246.93s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	247.323s

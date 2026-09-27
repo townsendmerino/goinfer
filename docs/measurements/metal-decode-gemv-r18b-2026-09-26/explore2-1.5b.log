@@ -1,0 +1,22 @@
+2026-09-26 18:07:58 PDT start e1f2c8a4 + R18b H2 (sum from staged halves); load1=1.35; EXPLORATORY 1.5b
+=== RUN   TestR18InSequence
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 0.2 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 3.3 GB; this machine currently has 6.0 GB of memory available (budget 4.2 GB = 70% of that) (79% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+[r18-seq    6.4s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: H=1536 I=8960 nL=28 nH=12 hd=128 kvDim=256 V=151936, ctx 4096, attention_fa true; qkv rows 2048; production gemvRows {qkv:2 o:2 gu:4 down:4}; prototype arms [h2244 h4444 h4244]
+[r18-seq    7.2s] depth 128 identity: production vs shipped over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 151936 logits
+[r18-seq    7.6s] depth 128 identity: h2244 vs shipped over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 151936 logits
+[r18-seq    7.9s] depth 128 identity: h4444 vs shipped over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 151936 logits
+[r18-seq    8.2s] depth 128 identity: h4244 vs shipped over 16 teacher-forced positions (128..143, executor): 0 positions differ, worst 0 of 151936 logits
+[r18-seq   19.1s] depth 128 rep 1/5:  shipped full 12.881 work 9.089  production full 11.254 work 7.730 (1.176x)  h2244 full 10.355 work 6.778 (1.341x)  h4444 full 10.532 work 6.685 (1.360x)  h4244 full 10.484 work 6.655 (1.366x)
+[r18-seq   29.7s] depth 128 rep 2/5:  shipped full 13.011 work 9.132  production full 11.359 work 7.640 (1.195x)  h2244 full 10.516 work 6.935 (1.317x)  h4444 full 10.647 work 7.088 (1.288x)  h4244 full 10.575 work 6.989 (1.307x)
+[r18-seq   40.3s] depth 128 rep 3/5:  shipped full 12.932 work 9.015  production full 11.348 work 7.792 (1.157x)  h2244 full 10.531 work 6.935 (1.300x)  h4444 full 10.666 work 7.057 (1.277x)  h4244 full 10.498 work 6.898 (1.307x)
+[r18-seq   50.9s] depth 128 rep 4/5:  shipped full 12.969 work 9.109  production full 11.409 work 7.807 (1.167x)  h2244 full 10.514 work 6.916 (1.317x)  h4444 full 10.651 work 7.003 (1.301x)  h4244 full 10.510 work 6.863 (1.327x)
+[r18-seq   61.5s] depth 128 rep 5/5:  shipped full 12.989 work 9.146  production full 11.353 work 7.498 (1.220x)  h2244 full 10.478 work 6.784 (1.348x)  h4444 full 10.655 work 7.010 (1.305x)  h4244 full 10.581 work 7.001 (1.306x)
+[r18-seq   61.5s] depth 128 — int4-GEMV work per token (qkv+o+gate/up+down, each the median of 20 step-paired full − that-category-no-op'd, summed), median of 5 paired reps:
+[r18-seq   61.5s]   shipped  work 9.109 ms [ qkv 0.720 o 0.565 gate/up 4.693 down 3.149 ] all-4-no-op'd 8.992; full token 12.969 ms
+[r18-seq   61.5s]   production work 7.730 ms [ qkv 0.701 (1.03x) o 0.547 (1.03x) gate/up 3.937 (1.19x) down 2.545 (1.24x) ] all-4-no-op'd 7.497; full token 11.353 ms (-1.616); METRIC shipped/arm = 1.176x (per-rep sorted [1.157 1.167 1.176 1.195 1.220])
+[r18-seq   61.5s]   h2244    work 6.916 ms [ qkv 0.620 (1.16x) o 0.513 (1.10x) gate/up 3.161 (1.48x) down 2.590 (1.22x) ] all-4-no-op'd 6.650; full token 10.514 ms (-2.455); METRIC shipped/arm = 1.317x (per-rep sorted [1.300 1.317 1.317 1.341 1.348])
+[r18-seq   61.5s]   h4444    work 7.010 ms [ qkv 0.685 (1.05x) o 0.572 (0.99x) gate/up 3.183 (1.47x) down 2.579 (1.22x) ] all-4-no-op'd 6.791; full token 10.651 ms (-2.318); METRIC shipped/arm = 1.301x (per-rep sorted [1.277 1.288 1.301 1.305 1.360])
+[r18-seq   61.5s]   h4244    work 6.898 ms [ qkv 0.690 (1.04x) o 0.520 (1.09x) gate/up 3.191 (1.47x) down 2.505 (1.26x) ] all-4-no-op'd 6.695; full token 10.510 ms (-2.459); METRIC shipped/arm = 1.307x (per-rep sorted [1.306 1.307 1.307 1.327 1.366])
+--- PASS: TestR18InSequence (61.51s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	62.118s

@@ -449,61 +449,74 @@ kernel void gemv_w4a8_sa_resid(device const uint4* wq[[buffer(0)]], device const
     if (lane==0) out[row] += acc*asc[0];
 }
 
-// R18 (docs/measurements/metal-decode-gemv-r18-2026-09-26.md): the SA family at R rows per simdgroup. Each lane reads its
-// group's 32 staged activations ONCE into registers and reuses them for R rows. Per row, the lane-to-group order, the
-// UNP8V integer sum and the float(gi)*scale accumulation are SA_BODY's, so the output is bit-identical to
-// gemv_w4a8_sa / _bias / _resid (the integer sums are exact; only their order of accumulation could differ, and it
-// does not). Grid rows*32/R, tg 256. row0 assumes FULL threadgroups (a partial last one reports a smaller
-// threads_per_threadgroup), so the host takes this path only when rows % (8R) == 0 (gemvRowsFor).
+// R18 (docs/measurements/metal-decode-gemv-r18-2026-09-26.md): the SA family at R rows per simdgroup, each lane reusing
+// its group's activations for R rows. R18b (docs/measurements/metal-decode-gemv-r18b-2026-09-26.md) changed the inner
+// arithmetic to MLX's masked form: activations are staged as HALF pre-scaled by 16^-(k mod 4) — exact, |a| <= 127 and
+// 127*2^-12 is a normal half — in the same K*2 bytes the short staging used. Weight nibbles are masked in place per
+// 16-bit half-word, converted once per (row, half-word), and dotted with the four pre-scaled activations; the group's
+// sum(a), for the -8 fold, comes from the same staged halves (one exact dot per half-word). Every product and partial
+// sum is an integer below 2^24, so each group sum equals SA_BODY's integer gi exactly, and float(gi)*scale accumulates
+// per row in SA_BODY's lane order -> bit-identical to gemv_w4a8_sa / _bias / _resid. Grid rows*32/R, tg 256. row0
+// assumes FULL threadgroups (a partial last one reports a smaller threads_per_threadgroup), so the host takes this path
+// only when rows % (8R) == 0 (gemvRowsFor).
 #define SA_ROWS_UNROLL _Pragma("clang loop unroll(full)")
 template <uint R>
 inline void sa_rows_acc(device const uint4* wq, device const half* sct, device const char* aq, uint K,
-    threadgroup short* As, uint tgid, uint tid, uint tgs, uint sgid, uint lane, thread float* acc, thread uint& row0) {
-    for (uint i=tid;i<K;i+=tgs) As[i]=short(aq[i]);
+    threadgroup half* Ah, uint tgid, uint tid, uint tgs, uint sgid, uint lane, thread float* acc, thread uint& row0) {
+    constexpr float P4[4] = {1.0f, 0.0625f, 0.00390625f, 0.000244140625f};
+    constexpr float4 U4 = float4(1.0f, 16.0f, 256.0f, 4096.0f); // undoes the pre-scale, exactly
+    for (uint i=tid;i<K;i+=tgs) Ah[i] = half(float(aq[i]) * P4[i & 3u]);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     uint G = K>>5u;
     row0 = (tgid*(tgs>>5u) + sgid)*R;
     SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
     for (uint g=lane; g<G; g+=32u) {
-        threadgroup const short4* a4s = reinterpret_cast<threadgroup const short4*>(As + g*32u);
-        short4 a[8];
-        SA_ROWS_UNROLL for (uint j=0;j<8u;j++) a[j]=a4s[j];
-        SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
-            uint4 w = wq[(row0+r)*G + g];
-            int gi = UNP8V(w.x,a) + UNP8V(w.y,a+2) + UNP8V(w.z,a+4) + UNP8V(w.w,a+6);
-            acc[r] += float(gi) * float(sct[(row0+r)*G + g]);
+        float gf[R];
+        uint4 w[R];
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) { gf[r] = 0.0f; w[r] = wq[(row0+r)*G + g]; }
+        threadgroup const half4* a4 = reinterpret_cast<threadgroup const half4*>(Ah + g*32u);
+        float sa = 0.0f;
+        SA_ROWS_UNROLL for (uint t=0;t<8u;t++) {
+            float4 x = float4(a4[t]);
+            sa += dot(x, U4);
+            SA_ROWS_UNROLL for (uint r=0;r<R;r++) {
+                uint word = (t < 2u) ? w[r].x : (t < 4u) ? w[r].y : (t < 6u) ? w[r].z : w[r].w;
+                uint u = (t & 1u) ? (word >> 16) : (word & 0xFFFFu);
+                gf[r] += dot(float4(float(u & 0xFu), float(u & 0xF0u), float(u & 0xF00u), float(u & 0xF000u)), x);
+            }
         }
+        SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r] += (gf[r] - 8.0f*sa) * float(sct[(row0+r)*G + g]);
     }
     SA_ROWS_UNROLL for (uint r=0;r<R;r++) acc[r] = simd_sum(acc[r]);
 }
 template <uint R>
 kernel void gemv_w4a8_sa_rows(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
-    constant uint& K[[buffer(5)]], threadgroup short* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    constant uint& K[[buffer(5)]], threadgroup half* Ah [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
     uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
     float acc[R]; uint row0;
-    sa_rows_acc<R>(wq, sct, aq, K, As, tgid, tid, tgs, sgid, lane, acc, row0);
+    sa_rows_acc<R>(wq, sct, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
     if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = acc[r]*asc[0]; }
 }
 template <uint R>
 kernel void gemv_w4a8_sa_bias_rows(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
-    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], threadgroup short* As [[threadgroup(0)]],
+    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], threadgroup half* Ah [[threadgroup(0)]],
     uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
     uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
     float acc[R]; uint row0;
-    sa_rows_acc<R>(wq, sct, aq, K, As, tgid, tid, tgs, sgid, lane, acc, row0);
+    sa_rows_acc<R>(wq, sct, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
     if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] = acc[r]*asc[0] + bias[row0+r]; }
 }
 template <uint R>
 kernel void gemv_w4a8_sa_resid_rows(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
     device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
-    constant uint& K[[buffer(5)]], threadgroup short* As [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    constant uint& K[[buffer(5)]], threadgroup half* Ah [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
     uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
     float acc[R]; uint row0;
-    sa_rows_acc<R>(wq, sct, aq, K, As, tgid, tid, tgs, sgid, lane, acc, row0);
+    sa_rows_acc<R>(wq, sct, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
     if (lane==0) { SA_ROWS_UNROLL for (uint r=0;r<R;r++) out[row0+r] += acc[r]*asc[0]; }
 }
 template [[host_name("gemv_w4a8_sa_rows2")]] kernel decltype(gemv_w4a8_sa_rows<2>) gemv_w4a8_sa_rows<2>;
