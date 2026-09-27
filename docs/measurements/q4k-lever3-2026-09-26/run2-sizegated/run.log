@@ -1,0 +1,73 @@
+=== idle: 99% cpu idle, 60.8C
+=== 2026-09-27T05:55:32Z 1.5B-int4 round 1/6
+=== idle: 99% cpu idle, 67.1C
+=== 2026-09-27T05:56:09Z 1.5B-q4k-fused round 1/6
+=== idle: 99% cpu idle, 60.5C
+=== 2026-09-27T05:56:35Z 7B-q4k-unfused round 1/6
+=== idle: 99% cpu idle, 65.0C
+=== 2026-09-27T05:57:39Z 7B-q4k-fused round 1/6
+=== idle: 99% cpu idle, 65.1C
+=== 2026-09-27T05:58:42Z phi3-q4k-unfused round 1/6
+=== idle: 99% cpu idle, 68.4C
+=== 2026-09-27T05:59:10Z phi3-q4k-fused round 1/6
+=== idle: 99% cpu idle, 66.9C
+=== 2026-09-27T05:59:38Z 1.5B-q4k-fused round 2/6
+=== idle: 99% cpu idle, 64.1C
+=== 2026-09-27T06:00:04Z 1.5B-int4 round 2/6
+=== idle: 99% cpu idle, 69.0C
+=== 2026-09-27T06:00:41Z 7B-q4k-fused round 2/6
+=== idle: 99% cpu idle, 65.5C
+=== 2026-09-27T06:01:44Z 7B-q4k-unfused round 2/6
+=== idle: 99% cpu idle, 64.8C
+=== 2026-09-27T06:02:48Z phi3-q4k-fused round 2/6
+=== idle: 99% cpu idle, 70.2C
+=== 2026-09-27T06:03:16Z phi3-q4k-unfused round 2/6
+=== idle: 99% cpu idle, 67.2C
+=== 2026-09-27T06:03:43Z 1.5B-int4 round 3/6
+=== idle: 99% cpu idle, 69.9C
+=== 2026-09-27T06:04:20Z 1.5B-q4k-fused round 3/6
+=== idle: 99% cpu idle, 63.8C
+=== 2026-09-27T06:04:47Z 7B-q4k-unfused round 3/6
+=== idle: 99% cpu idle, 64.0C
+=== 2026-09-27T06:05:50Z 7B-q4k-fused round 3/6
+=== idle: 99% cpu idle, 64.9C
+=== 2026-09-27T06:06:54Z phi3-q4k-unfused round 3/6
+=== idle: 99% cpu idle, 67.1C
+=== 2026-09-27T06:07:22Z phi3-q4k-fused round 3/6
+=== idle: 99% cpu idle, 66.8C
+=== 2026-09-27T06:07:49Z 1.5B-q4k-fused round 4/6
+=== idle: 99% cpu idle, 70.1C
+=== 2026-09-27T06:08:16Z 1.5B-int4 round 4/6
+=== idle: 99% cpu idle, 69.8C
+=== 2026-09-27T06:08:52Z 7B-q4k-fused round 4/6
+=== idle: 99% cpu idle, 64.4C
+=== 2026-09-27T06:09:56Z 7B-q4k-unfused round 4/6
+=== idle: 99% cpu idle, 65.4C
+=== 2026-09-27T06:11:00Z phi3-q4k-fused round 4/6
+=== idle: 99% cpu idle, 66.5C
+=== 2026-09-27T06:11:27Z phi3-q4k-unfused round 4/6
+=== idle: 99% cpu idle, 67.5C
+=== 2026-09-27T06:11:55Z 1.5B-int4 round 5/6
+=== idle: 99% cpu idle, 69.6C
+=== 2026-09-27T06:12:32Z 1.5B-q4k-fused round 5/6
+=== idle: 99% cpu idle, 64.2C
+=== 2026-09-27T06:12:58Z 7B-q4k-unfused round 5/6
+=== idle: 99% cpu idle, 64.6C
+=== 2026-09-27T06:14:02Z 7B-q4k-fused round 5/6
+=== idle: 99% cpu idle, 64.8C
+=== 2026-09-27T06:15:05Z phi3-q4k-unfused round 5/6
+=== idle: 99% cpu idle, 66.5C
+=== 2026-09-27T06:15:33Z phi3-q4k-fused round 5/6
+=== idle: 99% cpu idle, 67.0C
+=== 2026-09-27T06:16:01Z 1.5B-q4k-fused round 6/6
+=== idle: 99% cpu idle, 70.6C
+=== 2026-09-27T06:16:28Z 1.5B-int4 round 6/6
+=== idle: 99% cpu idle, 70.6C
+=== 2026-09-27T06:17:04Z 7B-q4k-fused round 6/6
+=== idle: 99% cpu idle, 67.4C
+=== 2026-09-27T06:18:08Z 7B-q4k-unfused round 6/6
+=== idle: 99% cpu idle, 64.5C
+=== 2026-09-27T06:19:12Z phi3-q4k-fused round 6/6
+=== idle: 99% cpu idle, 67.0C
+=== 2026-09-27T06:19:39Z phi3-q4k-unfused round 6/6
+=== 2026-09-27T06:20:04Z ALL DONE
