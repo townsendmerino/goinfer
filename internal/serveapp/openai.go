@@ -65,18 +65,13 @@ type loadedModel struct {
 	// so a waiting request could not notice its own client disconnecting (or a K2 halt) without
 	// first being granted the lock. Zero value ready to use, same as the mutex it replaces.
 	//
-	// sessMu is the OTHER thing the old lm.mu did, unrelated to admission: sessionLRU is not
-	// goroutine-safe (sessions.go's own doc comment), and a background goroutine (admin.go's
-	// load-time restore, liveness.go's idle-close save, main.go's graceful-shutdown save, its
-	// idle-demote ticker) must be excluded not just from the single sessions.acquire call inside
-	// drive/driveVL, but from the WHOLE generation that follows it — the acquired *decoder.Session
-	// keeps being read and written (its KV grows) for as long as the generation runs, and
-	// demoteIdle() evicting/demoting that same session mid-generation would free or move memory
-	// out from under it. The old lm.mu got this "for free" by being held for the entire
-	// tryEnter..exit span; sessMu is taken and released at exactly those same two points (see
-	// tryEnter/exit below) so this safety property is unchanged — only the WAIT for a turn (now
-	// `turns`, above) gained context-awareness. `admission` cannot itself serve this role: it is a
-	// FIFO queue, not a lockable mutex a background goroutine can take on a whim.
+	// sessMu guards the sessionLRU, which is not goroutine-safe (sessions.go): drive's acquire and checkin, and the
+	// background goroutines (admin.go's load-time restore, liveness.go's idle-close save, main.go's graceful-shutdown
+	// save and idle-demote ticker). It is held around those operations only, NOT across a generation (MC3c,
+	// docs/tasks/task-concurrency-2026-09.md): the session a generation is using is CHECKED OUT instead
+	// (sessionLRU.busy), and the LRU never hands out, evicts, demotes, saves or even reads a busy session. That is
+	// what lets several generations of one CPU model run at once (-max-concurrent), and it keeps the old safety
+	// property — nothing frees or moves memory out from under a running generation — for one generation too.
 	sessMu sync.Mutex
 
 	// tokenBytes is the constraint masker's token→bytes table (one entry per vocab id, up to
@@ -95,6 +90,8 @@ type loadedModel struct {
 	// waiting); a request claims a slot before mu. nil = unbounded. Honest
 	// backpressure, not continuous batching — queue-full returns 429 Retry-After.
 	queue chan struct{}
+	// concurrent is how many generations of this model may run at once (setConcurrency; MC3c). 1 = serialized.
+	concurrent int
 
 	// Vision tower (--vision): nil unless a multimodal model is loaded. When
 	// present the model is "vision-capable" — serve accepts image content parts,
@@ -200,6 +197,26 @@ func toolSchemaBytes(tools []toolSpec) int {
 	return n
 }
 
+// setConcurrency decides how many generations of this model run at once (MC3c, docs/tasks/task-concurrency-2026-09.md)
+// and sizes the admission and queue to match: -max-concurrent, but 1 unless the model is safe to run concurrently on
+// the CPU (decoder.Model.CPUConcurrentSafe: not GPU-resident, not weight-streaming) and has no vision tower, and never
+// more than -kv-sessions keeps — each running generation holds a session, and the LRU must always have an idle one
+// or room. The queue holds the running generations plus -max-queue waiting ones.
+func (lm *loadedModel) setConcurrency(cfg config) {
+	n := max(1, cfg.maxConcurrent)
+	if n > 1 && (lm.model == nil || !lm.model.CPUConcurrentSafe() || lm.visionCapable()) {
+		n = 1
+	}
+	if cfg.kvSessions > 0 {
+		n = min(n, cfg.kvSessions)
+	}
+	lm.concurrent = n
+	lm.turns.setCap(n)
+	if cfg.maxQueue > 0 {
+		lm.queue = make(chan struct{}, n+cfg.maxQueue)
+	}
+}
+
 // visionCapable reports whether this model has a loaded vision tower.
 func (lm *loadedModel) visionCapable() bool {
 	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil || lm.gemma4Enc != nil
@@ -233,10 +250,6 @@ func (lm *loadedModel) tryEnter(ctx context.Context, rec admissionRecord, haltSt
 		}
 		return false, ""
 	}
-	// Held from here through exit() — the same span the old lm.mu covered — so a background
-	// goroutine (demoteLoop et al.) cannot evict or mutate the session this generation is about to
-	// acquire and then keep using for its whole duration. See sessMu's own doc comment.
-	lm.sessMu.Lock()
 	if haltState != nil {
 		if hi := haltState(); hi != nil {
 			lm.exit()
@@ -274,17 +287,15 @@ func (lm *loadedModel) enter(w http.ResponseWriter, r *http.Request, rec admissi
 // with no number, rather than a bogus one, is the safe fallback if that ever changes.
 func (lm *loadedModel) queueFullMsg() string {
 	if lm.queue != nil {
-		return fmt.Sprintf("model %q queue full (max %d queued); retry", lm.name, cap(lm.queue)-1)
+		return fmt.Sprintf("model %q queue full (max %d queued); retry", lm.name, cap(lm.queue)-max(1, lm.concurrent))
 	}
 	return fmt.Sprintf("model %q queue full; retry", lm.name)
 }
 
-// exit releases sessMu, then the turn, then the queue slot (paired with enter — reverse order of
-// acquisition). Unconditional for whichever request currently holds the turn: admission.release()
-// needs no per-caller identity, since only one holder exists at a time by construction (see
-// admission.go), and sessMu is likewise always held by exactly the current turn-holder.
+// exit releases the turn, then the queue slot (paired with enter — reverse order of acquisition). Unconditional for
+// whichever request holds a turn: turns are interchangeable, so admission.release() needs no per-caller identity. The
+// session this generation used is checked back in by drive itself (sessMu is no longer held across a generation).
 func (lm *loadedModel) exit() {
-	lm.sessMu.Unlock()
 	lm.turns.release()
 	if lm.queue != nil {
 		<-lm.queue
@@ -1022,7 +1033,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	// (including the C-18 clamp above), so the numbers in a refusal are the real ones, and every
 	// prepare() caller gets this for free rather than needing its own copy of the check.
 	if lm.model != nil {
-		if aerr := lm.model.AdmitPrefillMemory(len(gr.promptIDs), gr.maxTokens, residentPath); aerr != nil {
+		if aerr := lm.model.AdmitPrefillMemoryShare(len(gr.promptIDs), gr.maxTokens, residentPath, lm.concurrent); aerr != nil {
 			return genRequest{}, &prefillMemoryError{aerr}
 		}
 	}
@@ -1320,8 +1331,18 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	}
 
 	// Reuse the KV of whichever cached session already holds this prompt as a
-	// prefix (continuing chat / agent loop): only the new suffix is prefilled.
+	// prefix (continuing chat / agent loop): only the new suffix is prefilled. The session is CHECKED OUT for this
+	// generation (MC3c): sessMu covers the LRU operation only, and checkin runs once streamTokens has drained the
+	// stream — the generation goroutine reconciles the session before closing it — so the next acquire, or a
+	// background demote/save, sees a consistent session.
+	lm.sessMu.Lock()
 	sess := lm.sessions.acquire(gr.promptIDs)
+	lm.sessMu.Unlock()
+	defer func() {
+		lm.sessMu.Lock()
+		lm.sessions.checkin(sess)
+		lm.sessMu.Unlock()
+	}()
 	switch {
 	case lm.spec && gr.masker != nil && gr.sp.Temperature == 0:
 		// Constrained request (response_format / tool grammar), greedy: grammar-fused

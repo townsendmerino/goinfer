@@ -211,3 +211,32 @@ func TestServerBanner_routesMatchRegistration(t *testing.T) {
 		t.Error("with a model loaded, the routes line must not carry the not-yet-loaded condition")
 	}
 }
+
+// TestBanner_concurrency: the banner says how many generations run at once, names a -kv-sessions cap, and says why a
+// model runs one when -max-concurrent asked for more (MC3c).
+func TestBanner_concurrency(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		concurrent int
+		cfg        config
+		want       string // substring; "" = no concurrency line
+	}{
+		{"default", 1, config{}, ""},
+		{"four", 4, config{maxConcurrent: 4, kvSessions: 4}, "4 generations at once"},
+		{"capped", 2, config{maxConcurrent: 4, kvSessions: 2}, "capped by --kv-sessions 2"},
+		{"asked, not eligible", 1, config{maxConcurrent: 4, kvSessions: 4}, "applies to CPU models only"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			line := bannerLine(modelBannerFrom(bannerFacts{hasTemplate: true, concurrent: tc.concurrent}, tc.cfg), "concurrency:")
+			if tc.want == "" {
+				if line != "" {
+					t.Errorf("unexpected concurrency line %q", line)
+				}
+				return
+			}
+			if !strings.Contains(line, tc.want) {
+				t.Errorf("concurrency line %q, want it to contain %q", line, tc.want)
+			}
+		})
+	}
+}

@@ -1,0 +1,6 @@
+2026-09-26 17:14:10 PDT start
+=== RUN   TestServe_maxConcurrentMatchesAlone
+--- PASS: TestServe_maxConcurrentMatchesAlone (18.27s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	19.698s
+17:14:31 end

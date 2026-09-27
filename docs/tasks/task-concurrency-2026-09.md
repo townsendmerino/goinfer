@@ -6,7 +6,9 @@
 > aggregate is 1.22–1.24× the previous build's. CUDA and WebGPU are not converted. **MC2 EARNS on the Mac CPU**
 > (1.69–2.04× at B = 4, bit-identical; J8's 4 independent workers reach 2.00–2.48×). The Linux cells are owed. **MC3
 > needs an owner decision before it starts:** bit-identical small-M kernels barely amortise on Metal (≤ 1.30× on
-> gate/up at M = 4), so a paying MC3 likely means the matrix units and a fidelity gate. MC2 is the kill-or-earn
+> gate/up at M = 4), so a paying MC3 likely means the matrix units and a fidelity gate. The owner chose "cpu first":
+> **MC3c step 1 SHIPPED** (`serve -max-concurrent N`, CPU models): 1.86–1.97× at 4 clients, p99 halved,
+> byte-identical, default 1 pending a decision. MC2 is the kill-or-earn
 > measurement `roadmap.md` requires before any batched decode work, and now carries J8's cell. MC3
 > is in the niche (decision 1) but must not start until MC2 earns. MC4 and MC5 are parked with
 > triggers. The speed bars were loosened 2026-09-26, before any measurement, per the owner's
@@ -245,6 +247,13 @@ different adapters.
 `roadmap.md` §"Decided and parked," `docs/server.md`, red-october R12's row, `QUEUE.md`.
 
 ## MC3c — concurrent decode on CPU (owner: "cpu first", 2026-09-26)
+
+**Step 1 result, 2026-09-26: all five gates pass**
+([`concurrency-mc3c-2026-09-26.md`](../measurements/concurrency-mc3c-2026-09-26.md)).
+- `serve -max-concurrent 4` on the W7 CPU workload gives 1.97× the serialized 4-client aggregate (repeats 1.86× and
+  1.91×), and p99 per-turn latency falls from 12.8–13.4 s to 6.5–7.0 s.
+- Output is byte-identical to each conversation served alone, and the concurrency tests pass under `-race`.
+- It ships default 1. **A CPU default > 1 is the open owner decision.** Step 2 (batching) is not started.
 
 **Why this, before MC3.** MC2 earned on the CPU with batching (1.69–2.04× at B = 4), and J8's cell, 4 independent
 decode workers, matched or beat it (2.00–2.48×) at a fraction of the build. MC3 on Metal needs a fidelity-gated

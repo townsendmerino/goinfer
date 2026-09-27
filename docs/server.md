@@ -97,7 +97,16 @@ expensive — prequant `.giw` maps weights zero-copy for a cheap zoo. With
 model unroutable immediately and frees its device memory once in-flight requests
 finish, returning `200` if that completes within `--unload-drain-wait` (default 5s)
 and `202` otherwise. `--max-queue N` (default 8) bounds each model's queue: a full queue
-returns 429 + Retry-After (single decode worker per model; no continuous batching).
+returns 429 + Retry-After (no continuous batching).
+
+**`--max-concurrent N` (default 1) lets one CPU model run N generations at once** (Experimental; MC3c of
+`docs/tasks/task-concurrency-2026-09.md`, 2026-09-26). Each generation runs on its own session KV, so each
+conversation's output is byte-identical to serving it alone, and admission stays FIFO. N is capped by `--kv-sessions`
+(each running generation holds a session). A GPU-resident, weight-streaming or vision model always runs one, and the
+banner says which applies. Each request's prefill must fit in 1/N of the memory safety margin, since concurrent
+prefills share it. The trade: aggregate throughput rises (4 decode workers measured 2.0–2.5× on an M1 Pro's CPU,
+`measurements/concurrency-mc2-2026-09-26.md`), while each request, sharing the cores, takes longer than it would
+alone.
 
 **`top_k` + `top_p` together are not HF/llama.cpp semantics** (N-03). When both are set, the
 nucleus mass is computed over the FULL distribution and the result is then intersected with the

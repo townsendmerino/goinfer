@@ -169,6 +169,7 @@ func (s *server) handleAdminLoad(w http.ResponseWriter, r *http.Request) {
 // published first — closes it and reports false. Shared by the admin load and the web UI's load
 // (webui.go) so the M-24 close-on-race and the session restore live in one place.
 func (s *server) publishLoaded(lm *loadedModel) bool {
+	lm.setConcurrency(s.cfg) // MC3c: before the model is routable
 	s.regMu.Lock()
 	if _, dup := s.models[lm.name]; dup { // raced another load of the same name
 		s.regMu.Unlock()

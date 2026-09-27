@@ -40,6 +40,13 @@ type sessionLRU struct {
 	touched     map[*decoder.Session]time.Time // last-acquire time per resident session
 	seq         int                            // monotonic counter for unique cold-blob filenames
 	now         func() time.Time               // clock seam (tests override); defaults to time.Now
+
+	// busy holds the sessions an in-flight generation has checked out (MC3c, docs/tasks/task-concurrency-2026-09.md:
+	// -max-concurrent lets several generations of one CPU model run at once). A busy session is never handed out,
+	// evicted, demoted or saved, and its tokens are never read here — its generation is writing them — until
+	// checkin. Every access to the LRU, this included, is still under the caller's lock (loadedModel.sessMu); what
+	// changed is that the lock is no longer held across the generation itself.
+	busy map[*decoder.Session]bool
 }
 
 // coldSession is a demoted session: its KV lives in a .giw-kv blob on disk and its
@@ -144,21 +151,56 @@ func (l *sessionLRU) acquire(prompt []int) *decoder.Session {
 	}
 	lists := make([][]int, len(l.order))
 	for i, s := range l.order {
-		lists[i] = s.Tokens()
+		if !l.busy[s] { // a busy session's tokens are being written by its own generation: never read them
+			lists[i] = s.Tokens()
+		}
 	}
+	var s *decoder.Session
 	if i := pickSession(lists, prompt, len(l.order) < l.size); i >= 0 {
 		moveToFront(l.order, i)
 		l.mark(l.order[0])
-		return l.order[0]
+		s = l.order[0]
+	} else if l.tiering() {
+		// No resident match. With tiered KV, the continuation may belong to a session
+		// we demoted to disk — fault it back rather than re-prefilling from cold.
+		s = l.faultBack(prompt)
 	}
-	// No resident match. With tiered KV, the continuation may belong to a session
-	// we demoted to disk — fault it back rather than re-prefilling from cold.
-	if l.tiering() {
-		if s := l.faultBack(prompt); s != nil {
-			return s
+	if s == nil {
+		s = l.fresh()
+	}
+	l.checkout(s)
+	return s
+}
+
+// checkout marks s as held by an in-flight generation (see busy).
+func (l *sessionLRU) checkout(s *decoder.Session) {
+	if l.busy == nil {
+		l.busy = map[*decoder.Session]bool{}
+	}
+	l.busy[s] = true
+}
+
+// checkin returns a session acquire handed out, once its generation has finished with it (the generation's stream
+// has closed, so the session is reconciled). Its idle clock restarts now. A transient session (fresh, with every
+// resident one busy) was never in the LRU and is simply dropped.
+func (l *sessionLRU) checkin(s *decoder.Session) {
+	if s == nil {
+		return
+	}
+	delete(l.busy, s)
+	if slices.Contains(l.order, s) {
+		l.mark(s)
+	}
+}
+
+// coldestIdle is the index of the least recently used session no generation holds, or -1 when every one is busy.
+func (l *sessionLRU) coldestIdle() int {
+	for i := len(l.order) - 1; i >= 0; i-- {
+		if !l.busy[l.order[i]] {
+			return i
 		}
 	}
-	return l.fresh()
+	return -1
 }
 
 // bestExtend returns the index of the session whose common prefix with prompt is
@@ -207,19 +249,26 @@ func (l *sessionLRU) fresh() *decoder.Session {
 		l.mark(s)
 		return s
 	}
+	c := l.coldestIdle()
+	if c < 0 {
+		// Every resident session is held by a running generation (reachable only when more generations run at once
+		// than -kv-sessions keeps; serve caps -max-concurrent there). Serve this one from a transient session that
+		// never joins the LRU, rather than take a session out from under a generation.
+		return l.newSession()
+	}
 	if l.tiering() {
-		if s, ok := l.tierOut(len(l.order) - 1); ok {
+		if s, ok := l.tierOut(c); ok {
 			s.Reset() // reuse the demoted session's backing arrays for the fresh slot
 			l.order = append([]*decoder.Session{s}, l.order...)
 			l.mark(s)
 			return s
 		}
-		// coldest couldn't be tiered (non-persistable cache / IO error): fall
+		// coldest idle couldn't be tiered (non-persistable cache / IO error): fall
 		// through to the original in-place reset eviction below.
 	}
-	s := l.order[len(l.order)-1] // coldest
+	s := l.order[c] // coldest idle
 	s.Reset()
-	moveToFront(l.order, len(l.order)-1)
+	moveToFront(l.order, c)
 	l.mark(s)
 	return s
 }
@@ -240,6 +289,9 @@ func (l *sessionLRU) demoteIdle() int {
 	// Walk coldest→newest and remove in place; tierOut deletes index i, leaving
 	// the lower indices we haven't visited yet unchanged.
 	for i, v := range slices.Backward(l.order) {
+		if l.busy[v] {
+			continue // held by a running generation: never idle, never touched here
+		}
 		t, ok := l.touched[v]
 		if ok && t.After(cutoff) {
 			continue // still warm
@@ -329,12 +381,15 @@ func (l *sessionLRU) makeRoom() {
 	if len(l.order) < l.size {
 		return
 	}
-	if _, ok := l.tierOut(len(l.order) - 1); ok {
+	i := l.coldestIdle()
+	if i < 0 {
+		return // every resident session is busy: the LRU runs one over size until one is checked in and evicted
+	}
+	if _, ok := l.tierOut(i); ok {
 		return
 	}
-	i := len(l.order) - 1 // couldn't tier: drop the coldest to free the slot
-	delete(l.touched, l.order[i])
-	l.order = l.order[:i]
+	delete(l.touched, l.order[i]) // couldn't tier: drop the coldest idle session to free the slot
+	l.order = append(l.order[:i], l.order[i+1:]...)
 }
 
 // dropCold removes cold[i] from the index and deletes its blob.
@@ -400,8 +455,8 @@ func (l *sessionLRU) save(dir string) error {
 	}
 	saved := 0
 	for i, s := range l.order {
-		if len(s.Tokens()) == 0 {
-			continue
+		if l.busy[s] || len(s.Tokens()) == 0 {
+			continue // a busy session is mid-generation (a drained shutdown has none)
 		}
 		blob := s.Snapshot(l.fp)
 		if blob == nil {

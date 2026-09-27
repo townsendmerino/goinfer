@@ -56,6 +56,9 @@ type bannerFacts struct {
 	// kvSlots: how many resident KV slots the model's generations choose among (decoder.Model.ResidentKVSlots; MC1,
 	// docs/tasks/task-concurrency-2026-09.md) — 1 for a backend or family without them, 0 off the resident path.
 	kvSlots int
+
+	// concurrent: how many generations of this model run at once (loadedModel.concurrent; MC3c).
+	concurrent int
 }
 
 func factsOf(lm *loadedModel) bannerFacts {
@@ -76,6 +79,7 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.maxPositions = lm.model.Config().MaxPositions
 	f.kvPrec = lm.model.ResidentKVPrecision()
 	f.kvSlots = lm.model.ResidentKVSlots()
+	f.concurrent = lm.concurrent
 	if v, _ := lm.model.Knob("GOINFER_NO_RESIDENT_REUSE"); v != "" {
 		f.residentReuseOff = true
 	}
@@ -181,6 +185,19 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		out = append(out, fmt.Sprintf("session reuse: on (%d conversations kept prefilled)", cfg.kvSessions))
 	default:
 		out = append(out, "session reuse: OFF (--kv-sessions 0)")
+	}
+
+	// How many generations run at once (MC3c, -max-concurrent), and why fewer than asked when that happens.
+	switch {
+	case f.concurrent > 1:
+		line := fmt.Sprintf("concurrency: %d generations at once, each on its own session KV (-max-concurrent)", f.concurrent)
+		if cfg.maxConcurrent > f.concurrent {
+			line += fmt.Sprintf("; %d asked, capped by --kv-sessions %d", cfg.maxConcurrent, cfg.kvSessions)
+		}
+		out = append(out, line)
+	case cfg.maxConcurrent > 1:
+		out = append(out, fmt.Sprintf("concurrency: one generation at a time — -max-concurrent %d applies to CPU models "+
+			"only (a GPU-resident, weight-streaming or vision model runs one)", cfg.maxConcurrent))
 	}
 
 	// What it can do, in the terms a harness asks about.

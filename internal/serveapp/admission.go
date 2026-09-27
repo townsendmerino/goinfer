@@ -43,22 +43,33 @@ type turnWaiter struct {
 // specialized case would be the wrong trade for a three-method primitive this repo can own and
 // test directly (task-work-queue-2026-09.md's own ground rule 4: "no new root module dependency").
 //
-// Zero value is ready to use — no constructor needed.
+// Zero value is ready to use — no constructor needed — and admits ONE holder. setCap widens it (MC3c,
+// docs/tasks/task-concurrency-2026-09.md: -max-concurrent on a CPU model): up to cap holders at once, still strict FIFO
+// for everyone waiting.
 type admission struct {
 	mu      sync.Mutex
-	held    bool
+	held    int       // turns currently granted
+	cap     int       // max concurrent holders; 0 ⇒ 1
 	waiters list.List // of *turnWaiter, oldest (next in line) at the front
 }
 
-// enter blocks until this waiter holds the turn or ctx ends first. The immediate-admit fast path
-// (nothing held, nobody else waiting) never allocates or blocks. release() must be called exactly
-// once by whoever gets ok=true, when done running — see loadedModel.exit(), which calls it
-// unconditionally for the request that currently holds the turn (there is only ever one, by
-// construction, so no per-request closure is needed here).
+// setCap sets how many holders may run at once (at least 1). Call it before the model serves requests.
+func (a *admission) setCap(n int) {
+	a.mu.Lock()
+	a.cap = max(1, n)
+	a.mu.Unlock()
+}
+
+func (a *admission) capacity() int { return max(1, a.cap) }
+
+// enter blocks until this waiter holds a turn or ctx ends first. The immediate-admit fast path
+// (a turn free, nobody else waiting) never allocates or blocks. release() must be called exactly
+// once by whoever gets ok=true, when done running — see loadedModel.exit(). Turns are
+// interchangeable, so no per-request closure is needed here.
 func (a *admission) enter(ctx context.Context, rec admissionRecord) (ok bool) {
 	a.mu.Lock()
-	if !a.held && a.waiters.Len() == 0 {
-		a.held = true
+	if a.held < a.capacity() && a.waiters.Len() == 0 {
+		a.held++
 		a.mu.Unlock()
 		return true
 	}
@@ -105,12 +116,12 @@ func (a *admission) position(id string) (place, waiting int, running, ok bool) {
 			place, ok = i, true
 		}
 	}
-	return place, i, a.held, ok
+	return place, i, a.held > 0, ok
 }
 
-// release hands the turn to the next waiter (if any) or clears held. Held stays true across a
+// release hands the turn to the next waiter (if any) or gives it back. The held count is unchanged across a
 // direct hand-off (remove the front waiter, close its ready channel, done) rather than being
-// cleared and re-set, so a concurrent enter() can never observe (not held, no waiters) in the gap
+// decremented and re-incremented, so a concurrent enter() can never observe a free turn with no waiters in the gap
 // and admit itself out of FIFO order ahead of an already-queued waiter.
 func (a *admission) release() {
 	a.mu.Lock()
@@ -121,6 +132,6 @@ func (a *admission) release() {
 		close(w.ready)
 		return
 	}
-	a.held = false
+	a.held--
 	a.mu.Unlock()
 }

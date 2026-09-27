@@ -90,6 +90,14 @@ func resetAvailProbeCache() {
 // against host RAM (Metal's unified memory IS host RAM), and has no per-request check at all — this
 // is additive to it, not a replacement.
 func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int, residentPath bool) error {
+	return m.AdmitPrefillMemoryShare(promptTokens, maxTokens, residentPath, 1)
+}
+
+// AdmitPrefillMemoryShare is AdmitPrefillMemory for a server running up to share generations of this model at once
+// (MC3c, serve -max-concurrent): each request must fit in 1/share of the safety margin, because the concurrent
+// prefills all draw on the same available memory, which each one's own check reads before any has allocated.
+// share <= 1 is AdmitPrefillMemory exactly.
+func (m *Model) AdmitPrefillMemoryShare(promptTokens, maxTokens int, residentPath bool, share int) error {
 	if m == nil || m.w == nil || m.knobs.get(knobNoFitGuard) != "" {
 		return nil
 	}
@@ -97,7 +105,7 @@ func (m *Model) AdmitPrefillMemory(promptTokens, maxTokens int, residentPath boo
 	if avail <= 0 {
 		return nil // unknown ⇒ proceed, the same principle the load-time guard uses
 	}
-	remaining := int64(float64(avail) * prefillAvailFraction)
+	remaining := int64(float64(avail) * prefillAvailFraction / float64(max(1, share)))
 
 	cfg := m.Config()
 	positions := promptTokens + maxTokens

@@ -31,7 +31,7 @@ the engine key "goinfer_cpu", so a Metal and a CPU sweep can share one results f
   python3 scripts/bench_w7_plain.py mc0.json --clients 1,2 --engines goinfer --backend metal
   python3 scripts/bench_w7_plain.py mc0.json --clients 1,2 --engines goinfer --backend cpu
 """
-import argparse, json, os, platform, signal, socket, subprocess, sys, time, urllib.request
+import argparse, json, os, platform, shlex, signal, socket, subprocess, sys, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -106,13 +106,14 @@ def wait_llama_health(port, timeout=240):
 
 
 class GoinferServer:
-    def __init__(self, backend="metal"):
+    def __init__(self, backend="metal", extra=""):
         self.backend = backend
+        self.extra = shlex.split(extra)
 
     def __enter__(self):
         wait_free_memory_mb(MIN_FREE_MB_BEFORE_NEXT_SERVER, timeout=60)
         argv = [SERVE_CPU_METAL, "-model", f"bench={MODEL_PATH}", "-backend", self.backend,
-                "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"]
+                "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"] + self.extra
         self.proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                       preexec_fn=os.setsid)
         if not wait_port(GPORT):
@@ -247,6 +248,7 @@ def main():
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--engines", default="goinfer,llamacpp", help="comma list: goinfer, llamacpp")
     ap.add_argument("--backend", default="metal", help="goinfer's -backend (cpu records as goinfer_cpu)")
+    ap.add_argument("--serve-args", default="", help="extra goinfer serve flags, e.g. '-max-concurrent 4'")
     ap.add_argument("--key", default="", help="results key for this goinfer run (default goinfer / goinfer_<backend>) — "
                     "lets two serve builds share one results file")
     a = ap.parse_args()
@@ -279,7 +281,7 @@ def main():
             print(f"[w7-plain] {gkey} clients={n}: already done, skipping", file=sys.stderr)
             continue
         print(f"[w7-plain] {gkey} clients={n} starting fresh server", file=sys.stderr)
-        with GoinferServer(a.backend) as srv:
+        with GoinferServer(a.backend, a.serve_args) as srv:
             r = run_concurrent(srv.url, a.max_tokens, a.temperature, n)
         results[gkey][str(n)] = r
         save()

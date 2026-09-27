@@ -113,6 +113,7 @@ func TestServe_multiAdapter(t *testing.T) {
 func genGreedy(t *testing.T, lm *loadedModel, ids []int, n int) []int {
 	t.Helper()
 	sess := lm.sessions.acquire(ids)
+	defer lm.sessions.checkin(sess) // as drive does, once the stream has drained (MC3c check-out)
 	ch, gen := sess.Generate(context.Background(), ids, n, decoder.SamplingParams{})
 	var out []int
 	for tok := range ch {

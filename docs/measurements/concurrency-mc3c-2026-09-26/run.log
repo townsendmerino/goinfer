@@ -1,0 +1,35 @@
+17:16:27 waiting for idle: load1=2.58 (0s)
+17:17:18 idle: load1=1.99
+17:17:18 == MC3c start; commit df731ea6 + uncommitted MC3c
+[w7-plain] old clients=1 starting fresh server
+[w7-plain] old clients=1: wall=19.029s aggregate=40.36 tok/s; prefill_reused per client per turn [[0, 169, 323, 478, 630, 778]]
+[w7-plain] old clients=2 starting fresh server
+[w7-plain] old clients=2: wall=35.526s aggregate=43.24 tok/s; prefill_reused per client per turn [[0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779]]
+[w7-plain] old clients=4 starting fresh server
+[w7-plain] old clients=4: wall=71.002s aggregate=43.27 tok/s; prefill_reused per client per turn [[0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3c-2026-09-26/mc3c.json
+[w7-plain] resuming: 3 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3c-2026-09-26/mc3c.json
+[w7-plain] n1 clients=1 starting fresh server
+[w7-plain] n1 clients=1: wall=17.575s aggregate=43.7 tok/s; prefill_reused per client per turn [[0, 169, 323, 478, 630, 778]]
+[w7-plain] n1 clients=2 starting fresh server
+[w7-plain] n1 clients=2: wall=34.976s aggregate=43.92 tok/s; prefill_reused per client per turn [[0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779]]
+[w7-plain] n1 clients=4 starting fresh server
+[w7-plain] n1 clients=4: wall=70.008s aggregate=43.88 tok/s; prefill_reused per client per turn [[0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3c-2026-09-26/mc3c.json
+[w7-plain] resuming: 6 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3c-2026-09-26/mc3c.json
+[w7-plain] n4 clients=1 starting fresh server
+[w7-plain] n4 clients=1: wall=17.765s aggregate=43.23 tok/s; prefill_reused per client per turn [[0, 169, 323, 478, 630, 778]]
+[w7-plain] n4 clients=2 starting fresh server
+[w7-plain] n4 clients=2: wall=22.15s aggregate=69.34 tok/s; prefill_reused per client per turn [[0, 168, 322, 477, 629, 777], [0, 168, 322, 477, 629, 777]]
+[w7-plain] n4 clients=4 starting fresh server
+[w7-plain] n4 clients=4: wall=35.578s aggregate=86.35 tok/s; prefill_reused per client per turn [[0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779], [0, 170, 324, 479, 631, 779]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3c-2026-09-26/mc3c.json
+[w7-plain] resuming: 9 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3c-2026-09-26/mc3c.json
+[w7-plain] n4_rep clients=4 starting fresh server
+[w7-plain] n4_rep clients=4: wall=59.501s aggregate=49.12 tok/s; prefill_reused per client per turn [[0, 169, 323, 478, 630, 778], [0, 115, 218, 373, 525, 673], [0, 169, 323, 478, 630, 778], [0, 169, 323, 478, 630, 778]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3c-2026-09-26/mc3c.json
+[w7-plain] resuming: 10 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3c-2026-09-26/mc3c.json
+[w7-plain] n1_rep clients=4 starting fresh server
+[w7-plain] n1_rep clients=4: wall=99.118s aggregate=30.99 tok/s; prefill_reused per client per turn [[0, 169, 323, 478, 630, 778], [0, 169, 323, 478, 630, 778], [0, 169, 323, 478, 630, 778], [0, 169, 323, 478, 630, 778]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3c-2026-09-26/mc3c.json
+17:25:27 == DONE
