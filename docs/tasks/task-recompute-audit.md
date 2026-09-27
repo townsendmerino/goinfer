@@ -93,7 +93,7 @@ positions are inherent, not recompute.
   `resident_reuse.go`, `spec_eagle.go`, `spec_ngram.go`. `blockspec.go` does not claim `resBusy`
   either.
 - **Mechanism:** `resIDs` is written only by `residentCommitIDs` at the end of a completed plain
-  generation (`decoder/model.go:2105`) and read by `residentReuseLen` (through `residentAcquire` since MC1) at the start of the next
+  generation (`decoder/model.go:2116`) and read by `residentReuseLen` (through `residentAcquire` since MC1) at the start of the next
   (`decoder/model.go:1754`). `serve` routes a greedy request to `BlockSpec.GenerateStream` and a
   sampled one to `Model.Generate` on the **same** `*Model` (`internal/serveapp/openai.go`, the
   `--drafter` branch). So: plain turn A commits A's ids → greedy turn B prefills B over the same

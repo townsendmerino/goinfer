@@ -950,9 +950,11 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 			}
 		}
 	} else if a.r.kvF32 {
+		off += a.r.kvHostOff(layer, 4) // the bound slot's start, when the slots are one allocation (MC3 S3)
 		copy(a.r.kc[layer].Floats()[off:off+len(keys)], keys)
 		copy(a.r.vc[layer].Floats()[off:off+len(vals)], vals)
 	} else {
+		off += a.r.kvHostOff(layer, 2)
 		kc := a.r.kc[layer].U16s()[off : off+len(keys)]
 		vc := a.r.vc[layer].U16s()[off : off+len(vals)]
 		parallelF32ToF16(kc, keys)

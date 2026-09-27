@@ -314,3 +314,95 @@ func TestMC3Step_drawsMatchForwardSample(t *testing.T) {
 	}
 	t.Logf("%d steps: %d device draws and %d logits rows checked, %d differ", steps, draws, steps*B-draws, differ)
 }
+
+// TestMC3StepBreakdown: EXPLORATORY, for MC3 S3 (step polish). Where a batched step's GPU time goes, in sequence: the
+// step is timed whole, then with one category's kernels replaced by an empty kernel (so its dispatches still launch
+// but do no work), and with every kernel empty (what is left is dispatch overhead alone). Categories: the batched
+// matmuls (mc3_bt / mc3_btd / mc3_lm), attention, and the small per-row kernels (norm+quant, RoPE, KV store, ctx
+// quant, SwiGLU, the packers). Median of 15 steps per arm, arms interleaved.
+//
+//	GOINFER_METAL_MC3=1 [GOINFER_METAL_MC3_DEPTHS=128,512] go test -count=1 -run '^TestMC3StepBreakdown$' -v ./metal/
+func TestMC3StepBreakdown(t *testing.T) {
+	_, r := mc3Resident(t, 9, 1024)
+	b := r.batch
+	lib, err := r.d.CompileLibrary("kernel void mc3_noop() {}", MSL3_1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noop, err := r.d.NewComputePipeline(lib, "mc3_noop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cats := map[string][]*Pipeline{
+		"matmul":    {&b.bt, &b.btd, &b.lm},
+		"attention": {&r.pAttn, &r.pAttnFA, &r.pAttnFACombine, &r.pAttnRows},
+		"per-row":   {&r.pRms, &r.pRope2, &r.pKv, &r.pQv, &r.pSw, &b.pack, &b.packLM, &r.pRmsRows, &r.pQvRows, &r.pSwRows, &r.pRope2Rows, &r.pKvRows},
+	}
+	orig := map[*Pipeline]Pipeline{}
+	for _, ps := range cats {
+		for _, p := range ps {
+			orig[p] = *p
+		}
+	}
+	set := func(names ...string) {
+		for p, o := range orig {
+			*p = o
+		}
+		for _, n := range names {
+			for _, p := range cats[n] {
+				*p = noop
+			}
+		}
+	}
+	defer set()
+	depths := []int{128}
+	if v := os.Getenv("GOINFER_METAL_MC3_DEPTHS"); v != "" {
+		depths = nil
+		for _, f := range strings.Split(v, ",") {
+			var n int
+			fmt.Sscan(strings.TrimSpace(f), &n)
+			depths = append(depths, n)
+		}
+	}
+	med := func(xs []float64) float64 { v := append([]float64(nil), xs...); sort.Float64s(v); return v[len(v)/2] }
+	arms := []struct {
+		name string
+		off  []string
+	}{{"full", nil}, {"-matmul", []string{"matmul"}}, {"-attention", []string{"attention"}}, {"-per-row", []string{"per-row"}},
+		{"all empty", []string{"matmul", "attention", "per-row"}}}
+	for _, D := range depths {
+		for sl := 0; sl < 8; sl++ {
+			ids := make([]int, D)
+			for i := range ids {
+				ids[i] = 1000 + 7*i + sl
+			}
+			set()
+			mc3Fill(t, r, sl, ids)
+		}
+		for _, B := range []int{2, 4, 8} {
+			ms := map[string][]float64{}
+			for rep := 0; rep < 15; rep++ {
+				for k := range arms {
+					a := arms[(k+rep)%len(arms)]
+					set(a.off...)
+					seqs := make([]batchSeq, B)
+					for m := range B {
+						seqs[m] = batchSeq{slot: m, pos: D, emb: mc3Emb(r, 300+rep)}
+					}
+					if _, _, err := r.forwardMulti(seqs); err != nil {
+						t.Fatal(err)
+					}
+					ms[a.name] = append(ms[a.name], (r.gpuEnd-r.gpuStart)*1e3)
+				}
+			}
+			full := med(ms["full"])
+			line := fmt.Sprintf("depth %d B=%d: step %.2f ms GPU", D, B, full)
+			for _, a := range arms[1:4] {
+				line += fmt.Sprintf(" | %s %.2f", a.name[1:], full-med(ms[a.name]))
+			}
+			line += fmt.Sprintf(" | dispatch overhead (all empty) %.2f", med(ms["all empty"]))
+			fmt.Fprintf(os.Stderr, "[mc3-s3] %s\n", line)
+		}
+	}
+	set()
+}

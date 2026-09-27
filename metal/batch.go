@@ -273,8 +273,13 @@ type batchState struct {
 	// per-row uniforms and outputs of a device draw (ForwardSample's gumbel dispatches, run on a row of logitsB)
 	uGInvT, uGK0, uGK1, uGD0, uGD1 []Buffer
 	gOut                           Buffer // [batchMaxSeqs] int32 ids
-	noBias                         Buffer
-	qkvRows, nHhd, kOff, vOff      int
+	// S3: per-row positions and Q temperature scales for mc3_rope2_rows, and per-row attention outputs, so the ctx
+	// quantisation runs over every row at once
+	posB, qtB, ctxB           Buffer
+	nKeysB, rowmapB, slotOffB Buffer   // per-row key counts; the rows mc3_attention_rows serves; each row's slot offset
+	uCount                    []Buffer // uCount[k] holds k (0..batchMaxSeqs): a row count for a dispatch
+	noBias                    Buffer
+	qkvRows, nHhd, kOff, vOff int
 	// steps / seqs / maxSeqs count completed batched steps, the sequences they served, and the largest batch — read by
 	// tests to confirm a concurrent run really batched. Written only inside forwardMulti, which the decoder serialises.
 	steps, seqs, maxSeqs int
@@ -293,6 +298,8 @@ func (r *resident) batchIneligible() string {
 	switch {
 	case len(r.kvSlotBufs) < 2:
 		return "one resident KV slot"
+	case !r.kvContig || r.kvF32:
+		return "KV slots that are not one f16 allocation per layer"
 	case r.moe != nil || r.g4moe != nil:
 		return "MoE"
 	case r.sandwich || r.postOnly || r.parallelBlock || r.kvI8 || r.layerNorm || r.decodeLaneW4F16 || r.nonGatedMLP ||
@@ -371,6 +378,11 @@ func (r *resident) buildBatch() {
 		b.uGD0, b.uGD1 = append(b.uGD0, NewBufferU32(d, 0)), append(b.uGD1, NewBufferU32(d, 0))
 	}
 	b.gOut = d.NewBufferLen(B)
+	b.posB, b.qtB, b.ctxB = d.NewBufferLen(B), NewBufferFloats(d, make([]float32, B)), d.NewBufferLen(B*b.nHhd)
+	b.nKeysB, b.rowmapB, b.slotOffB = d.NewBufferLen(B), d.NewBufferLen(B), d.NewBufferLen(B)
+	for k := 0; k <= B; k++ {
+		b.uCount = append(b.uCount, NewBufferU32(d, uint32(k)))
+	}
 	r.batch = b
 }
 
@@ -472,6 +484,10 @@ func (r *resident) forwardMulti(seqs []batchSeq) (logits [][]float32, ids []int,
 			scale = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(q.pos)/r.attnTempOrigMaxPos)))
 		}
 		b.uQTemp[m].Floats()[0] = scale
+		b.posB.U32s()[m] = uint32(q.pos)
+		b.nKeysB.U32s()[m] = uint32(q.pos + 1)
+		b.slotOffB.U32s()[m] = uint32(q.slot * r.kvSlotBytes[0] / 2) // f16 elements; batchIneligible: uniform layers
+		b.qtB.Floats()[m] = scale
 		if r.attnFANKV > 0 {
 			b.uFANSplit[m].SetU32(uint32(r.attnFASplitFor(q.pos+1, r.attnFANKV)))
 		}
@@ -480,51 +496,61 @@ func (r *resident) forwardMulti(seqs []batchSeq) (logits [][]float32, ids []int,
 	// Buffer.At SETS the byte offset from the allocation's start — it does not add to one a view already carries — so a
 	// sub-row offset is always computed whole (row*n + off), never as row.At(off).
 	f32 := func(buf Buffer, m, n int) Buffer { return buf.At(4 * m * n) }
-	i8 := func(buf Buffer, m, n int) Buffer { return buf.At(m * n) }
 	pack := func(e *Encoder, aq Buffer, K int, uK Buffer) { e.Dispatch(b.pack, K*8, 256, aq, b.aT, b.uM, uK) }
 	const tgb = 4 * 2 * 32 * 8 // mc3_bt / mc3_btd at FB = 2: the Q exchange
+	// Each row's attention plan, once per step: batchIneligible admits only uniform layers without a window, so a row's
+	// plan depends on its depth alone. Rows on the per-head kernel run in one dispatch (rowmapB); a row at attention_fa
+	// depth keeps its own two dispatches.
+	faRow := make([]bool, B)
+	nPlain := 0
+	for m, q := range seqs {
+		faRow[m] = r.canUseAttnFAAt(0, q.pos+1)
+		if !faRow[m] {
+			b.rowmapB.U32s()[nPlain] = uint32(m)
+			nPlain++
+		}
+	}
 	e := r.q.Begin()
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		g := L.geom
-		for m := range B {
-			r.encodeNorm(e, f32(b.xB, m, H), L.preNorm, L.preNormBias, i8(b.aqB, m, H), f32(b.aScB, m, 1))
-		}
+		// the per-row kernels run as one dispatch over all B rows (S3; batch_rows.go): norm+quant, RoPE, ctx quant,
+		// SwiGLU+quant. The KV store and attention address each sequence's own slot, so they stay per sequence.
+		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.preNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
 		pack(e, b.aqB, H, r.uH)
 		e.DispatchTG(b.bt, b.qkvRows/16*128, 128, tgb, L.qkvW, L.qkvS, b.aT, b.aScB, b.qkvB, r.uH, b.uQKV, b.uM, L.qkvBias, b.uMode[1])
+		e.Dispatch(r.pRope2Rows, B*(r.nH*g.half+g.nKV*g.half), 64, b.qkvB, L.invf, g.uHd, b.posB, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, b.qtB, b.uQKV, b.uM)
+		// KV store and attention, each row over its OWN slot: a layer's slots are one allocation (kvContig), reached
+		// as the slot-0 base (kvSlotBufs[0], offset 0) plus the row's element offset (slotOffB). One dispatch stores
+		// every row's K/V; one runs every per-head-kernel row's attention.
+		kcAll, vcAll := r.kvSlotBufs[0].kc[l], r.kvSlotBufs[0].vc[l]
+		e.Dispatch(r.pKvRows, B*g.kvDim, 64, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcAll, vcAll, g.uKvDim, b.posB, b.uQKV, b.uM, b.slotOffB)
 		for m, q := range seqs {
-			sb := r.kvSlotBufs[q.slot]
-			row := 4 * m * b.qkvRows
-			qkv := b.qkvB.At(row)
-			e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, qkv, L.invf, g.uHd, b.uPos[m], g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, b.uQTemp[m])
-			e.Dispatch(r.pKv, g.kvDim, 64, b.qkvB.At(row+b.kOff), b.qkvB.At(row+b.vOff), sb.kc[l], sb.vc[l], g.uKvDim, b.uPos[m])
-			if r.canUseAttnFAAt(l, q.pos+1) {
-				nSplit := r.attnFASplitFor(q.pos+1, g.nKV)
-				shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
-				e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, qkv, sb.kc[l], sb.vc[l], r.attnFAPartial,
-					g.uNKV, r.uAttnFAG, b.uNKeys[m], r.uScale, L.uWindow, b.uFANSplit[m])
-				e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, r.ctx, r.uAttnFAG, g.uHd, b.uFANSplit[m])
-			} else {
-				e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, qkv, sb.kc[l], sb.vc[l], r.ctx, r.uNH, g.uNKV, g.uHd, b.uNKeys[m], r.uScale, L.uWindow, L.attnSinks, L.uHasSink)
+			if !faRow[m] {
+				continue
 			}
-			e.Dispatch(r.pQv, 256, 256, r.ctx, i8(b.cqB, m, nHhd), f32(b.cScB, m, 1), g.uNHhd)
+			sb := r.kvSlotBufs[q.slot]
+			nSplit := r.attnFASplitFor(q.pos+1, g.nKV)
+			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
+			e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, b.qkvB.At(4*m*b.qkvRows), sb.kc[l], sb.vc[l], r.attnFAPartial,
+				g.uNKV, r.uAttnFAG, b.uNKeys[m], r.uScale, L.uWindow, b.uFANSplit[m])
+			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, f32(b.ctxB, m, nHhd), r.uAttnFAG, g.uHd, b.uFANSplit[m])
 		}
+		if nPlain > 0 {
+			e.Dispatch(r.pAttnRows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcAll, vcAll, b.ctxB, r.uNH, g.uNKV, g.uHd,
+				b.nKeysB, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, b.uCount[nPlain], b.rowmapB, b.slotOffB)
+		}
+		e.Dispatch(r.pQvRows, B*256, 256, b.ctxB, b.cqB, b.cScB, g.uNHhd)
 		pack(e, b.cqB, nHhd, g.uNHhd)
 		e.DispatchTG(b.bt, H/16*128, 128, tgb, L.oW, L.oS, b.aT, b.cScB, b.xB, g.uNHhd, r.uH, b.uM, b.noBias, b.uMode[2])
-		for m := range B {
-			r.encodeNorm(e, f32(b.xB, m, H), L.postNorm, L.postNormBias, i8(b.mqB, m, H), f32(b.mScB, m, 1))
-		}
+		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
 		pack(e, b.mqB, H, r.uH)
 		e.DispatchTG(b.bt, 2*I/16*128, 128, tgb, L.guW, L.guS, b.aT, b.mScB, b.guB, r.uH, b.uGU, b.uM, b.noBias, b.uMode[0])
-		for m := range B {
-			e.Dispatch(r.pSw, 256, 256, f32(b.guB, m, 2*I), b.guB.At(4*(m*2*I+I)), i8(b.dqB, m, I), f32(b.dScB, m, 1), r.uI, r.uAct)
-		}
+		e.Dispatch(r.pSwRows, B*256, 256, b.guB, b.guB, b.dqB, b.dScB, r.uI, r.uAct)
 		pack(e, b.dqB, I, r.uI)
 		e.DispatchTG(b.btd, H/16*128, 128, tgb, L.dW, L.dS, b.aT, b.dScB, b.xB, r.uI, r.uH, b.uM)
 	}
-	for m := range B {
-		r.encodeNorm(e, f32(b.xB, m, H), r.finalNorm, r.finalNormBias, i8(b.aqB, m, H), f32(b.aScB, m, 1))
-	}
+	e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, r.finalNorm, b.aqB, b.aScB, r.uH, r.uEps, r.uAddOne)
 	e.Dispatch(b.packLM, H*8, 256, b.aqB, b.aTp, b.uM, r.uH)
 	e.DispatchTG(b.lm, r.V/128*128, 128, 0, r.lmW, r.lmS, b.aTp, b.aScB, b.logitsB, r.uH, b.uV, b.uM)
 	// Device draws: ForwardSample's two gumbel dispatches, exactly, on each drawing row of logitsB (the same bits as

@@ -332,14 +332,21 @@ type resident struct {
 	// slot. kvSlot is the bound index.
 	kvSlotBufs []kvSlotBuf
 	kvSlot     int
+	// kvContig: the slots of each layer are one allocation (kc/vc are views into it at kvSlot*kvSlotBytes[l]) — MC3
+	// S3. Host code indexing a KV buffer's contents must add kvHostOff: aikit's Floats/U16s views ignore a view's
+	// offset and start at the allocation.
+	kvContig    bool
+	kvSlotBytes []int
 	// batch: MC3's batched decode step over those slots (batch.go); nil when this resident cannot batch. preciseMath
 	// is the build's fast-math choice, which the batched kernels must share to round like the kernels they reproduce.
-	batch          *batchState
-	preciseMath    bool
-	kvI8           bool               // m.KVCacheI8() (CLI flag --kv i8)
-	pKvI8, pAttnI8 Pipeline           // int8 KV store and attention pipelines
-	moe            *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
-	g4moe          *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
+	batch       *batchState
+	preciseMath bool
+	// MC3 S3's multi-row forms of the per-row kernels (batch_rows.go), for the batched step
+	pRmsRows, pQvRows, pSwRows, pRope2Rows, pKvRows, pAttnRows Pipeline
+	kvI8                                                       bool               // m.KVCacheI8() (CLI flag --kv i8)
+	pKvI8, pAttnI8                                             Pipeline           // int8 KV store and attention pipelines
+	moe                                                        *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
+	g4moe                                                      *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
 
 	// prefillOK reports whether the f16 MMA prefill kernels (prefill.go) actually implement
 	// this model's shape. They run a DENSE FFN out of L.guW/L.dW with a model-level rope +
@@ -724,7 +731,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if preciseMath {
 		compile = d.CompileLibraryPrecise
 	}
-	lib, err := compile(allKernels, MSL3_1)
+	lib, err := compile(allKernels+mc3RowsKernels, MSL3_1) // + MC3 S3's multi-row forms, derived from allKernels (batch_rows.go)
 	if err != nil {
 		return nil, err
 	}
@@ -756,6 +763,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// kernel in kernels.go (it's a reduction, so mask the logit to -INF, don't early-return past the barrier).
 	r.pRope, r.pRope2, r.pKv, r.pAttn = pipe("rope"), pipe("rope2"), pipe("kv_store"), pipe("attention")
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
+	r.pRmsRows, r.pQvRows = pipe("mc3_rmsnorm_quant_rows"), pipe("mc3_quant_vec_rows")
+	r.pSwRows, r.pRope2Rows = pipe("mc3_swiglu_quant_rows"), pipe("mc3_rope2_rows")
+	r.pKvRows, r.pAttnRows = pipe("mc3_kv_store_rows"), pipe("mc3_attention_rows")
 	r.pGemvW8, r.pGemvW8Amax = pipe("gemv_w8a8_coal"), pipe("gemv_w8a8_amax")
 	r.pCopyVec = pipe("copy_f32")
 	// R7b Mac half: device Gumbel-max sampler over r.logits (the same buffer pGemvW8 writes for
@@ -898,6 +908,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	r.layers = make([]residLayer, nL)
 	r.kc, r.vc = make([]Buffer, nL), make([]Buffer, nL)
+	r.kvSlotBytes = make([]int, nL)
 	if r.kvI8 {
 		r.ks, r.vs = make([]Buffer, nL), make([]Buffer, nL)
 	}
@@ -1138,8 +1149,18 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			} else if r.kvF32 {
 				kvBytes = paddedCtxCap * L.geom.kvDim * 4 // Gemma: f32 KV — see r.kvF32
 			}
-			r.kc[l] = byteBuf(d, kvBytes)
-			r.vc[l] = byteBuf(d, kvBytes)
+			// MC3 S3: with several resident KV slots (and not int8 KV), a layer's slots are ONE allocation, slot s at
+			// byte s*kvBytes (views: Buffer.At), so a batched step's single dispatch can reach every row's slot through
+			// one buffer plus a per-row offset — aikit binds at most 16 buffers per dispatch, too few to pass 8 slots'
+			// K and V separately. Each slot keeps its own padded region, so C-01's over-read stays inside it.
+			allocSlots := 1
+			if kvSlots > 1 && !r.kvI8 {
+				allocSlots = kvSlots
+				r.kvContig = true
+			}
+			r.kvSlotBytes[l] = kvBytes
+			r.kc[l] = byteBuf(d, kvBytes*allocSlots)
+			r.vc[l] = byteBuf(d, kvBytes*allocSlots)
 		}
 		r.layers[l] = L
 	}
@@ -1155,7 +1176,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				b.ks, b.vs = make([]Buffer, nL), make([]Buffer, nL)
 			}
 			for l := range nL {
-				if r.kc[l] != (Buffer{}) {
+				if r.kc[l] != (Buffer{}) && r.kvContig {
+					b.kc[l], b.vc[l] = r.kc[l].At(s*r.kvSlotBytes[l]), r.vc[l].At(s*r.kvSlotBytes[l])
+				} else if r.kc[l] != (Buffer{}) {
 					b.kc[l], b.vc[l] = byteBuf(d, r.kc[l].Len()), byteBuf(d, r.vc[l].Len())
 				}
 				if r.ks != nil && r.ks[l] != (Buffer{}) {
@@ -1940,6 +1963,15 @@ func (r *resident) writtenBuffers() []Buffer {
 // kvSlotBuf is one resident KV slot's per-layer buffers (MC1).
 type kvSlotBuf struct{ kc, vc, ks, vs []Buffer }
 
+// kvHostOff is where the bound slot's KV starts, in elements of elemBytes, within layer l's buffer contents as the host
+// sees them (Floats/U16s start at the allocation, not at a view's offset). 0 unless the slots are one allocation.
+func (r *resident) kvHostOff(l, elemBytes int) int {
+	if !r.kvContig {
+		return 0
+	}
+	return r.kvSlot * r.kvSlotBytes[l] / elemBytes
+}
+
 // kvSlotCount is how many resident KV slots were allocated (at least 1).
 func (r *resident) kvSlotCount() int { return max(1, len(r.kvSlotBufs)) }
 
@@ -2209,11 +2241,13 @@ func (r *resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 		// values verbatim; the f16 cache narrows them (still cos 1.0 for the CORRECT values — the
 		// crater is walked-value drift, not storage of the right ones).
 		if r.kvF32 {
-			kc, vc := r.kc[layer].Floats(), r.vc[layer].Floats()
+			o := r.kvHostOff(layer, 4)
+			kc, vc := r.kc[layer].Floats()[o:], r.vc[layer].Floats()[o:]
 			copy(kc[:len(kHist)], kHist)
 			copy(vc[:len(vHist)], vHist)
 		} else {
-			kc, vc := r.kc[layer].U16s(), r.vc[layer].U16s()
+			o := r.kvHostOff(layer, 2)
+			kc, vc := r.kc[layer].U16s()[o:], r.vc[layer].U16s()[o:]
 			for i := range kHist {
 				kc[i] = f32ToF16(kHist[i])
 			}
