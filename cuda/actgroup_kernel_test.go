@@ -112,6 +112,21 @@ func outlierVec(rng *rand.Rand, n int) []float32 {
 	return v
 }
 
+// checkSums: a per-32 quantizer's second half of the scale buffer is aS[g]·Σ codes of group g, the
+// same f32 product the kernel forms (quantG32), so it must match exactly.
+func checkSums(t *testing.T, name string, codes []int8, scales []float32, nG int) {
+	t.Helper()
+	for g := range nG {
+		var s int32
+		for _, c := range codes[32*g : 32*g+32] {
+			s += int32(c)
+		}
+		if want := scales[g] * float32(s); scales[nG+g] != want {
+			t.Fatalf("%s sum[%d] = %v, want exactly %v (scale %v, Σcodes %d)", name, g, scales[nG+g], want, scales[g], s)
+		}
+	}
+}
+
 // TestActGroupKernels_quantizers: quant_vec_g32 matches the host twin EXACTLY (max is exact and the
 // rest is one f32 multiply and a round), and rmsnorm_quant_g32 / glu_quant_g32 dequantize to their
 // f32 math within half a quantization step per element (their __expf / rsqrtf are not Go's).
@@ -122,15 +137,16 @@ func TestActGroupKernels_quantizers(t *testing.T) {
 	x := outlierVec(rng, H)
 	one := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 
-	dx, dq, ds := upload(t, ctx, x), mustAlloc[int32](t, ctx, H/4), mustAlloc[float32](t, ctx, H/32)
+	dx, dq, ds := upload(t, ctx, x), mustAlloc[int32](t, ctx, H/4), mustAlloc[float32](t, ctx, 2*H/32) // scales, then sums
 	launch("quant_vec_g32", one, gc.Arg(dx), gc.ArgValue(int32(H)), gc.Arg(dq), gc.Arg(ds))
 	wantC, wantS := quantG32Go(x)
-	gotC, gotS := unpackI8(download(t, dq, H/4), H), download(t, ds, H/32)
+	gotC, gotS := unpackI8(download(t, dq, H/4), H), download(t, ds, 2*H/32)
 	for g := range wantS {
 		if gotS[g] != wantS[g] {
 			t.Fatalf("quant_vec_g32 scale[%d] = %v, want exactly %v", g, gotS[g], wantS[g])
 		}
 	}
+	checkSums(t, "quant_vec_g32", gotC, gotS, H/32)
 	for i := range wantC {
 		if gotC[i] != wantC[i] {
 			t.Fatalf("quant_vec_g32 code[%d] = %d, want %d", i, gotC[i], wantC[i])
@@ -152,7 +168,8 @@ func TestActGroupKernels_quantizers(t *testing.T) {
 	shared.SharedMemBytes = uint32((H + 256) * 4)
 	launch("rmsnorm_quant_g32", shared, gc.Arg(dx), gc.Arg(dw), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)),
 		gc.ArgValue(int32(0)), gc.Arg(dq), gc.Arg(ds))
-	gotC, gotS = unpackI8(download(t, dq, H/4), H), download(t, ds, H/32)
+	gotC, gotS = unpackI8(download(t, dq, H/4), H), download(t, ds, 2*H/32)
+	checkSums(t, "rmsnorm_quant_g32", gotC, gotS, H/32)
 	for i := range H {
 		want := float64(x[i]) * float64(w[i]) * rnorm
 		got := float64(gotC[i]) * float64(gotS[i/32])
@@ -165,10 +182,11 @@ func TestActGroupKernels_quantizers(t *testing.T) {
 	const I = 8960
 	gv, uv := outlierVec(rng, I), outlierVec(rng, I)
 	dg, du := upload(t, ctx, gv), upload(t, ctx, uv)
-	dqI, dsI, dscr := mustAlloc[int32](t, ctx, I/4), mustAlloc[float32](t, ctx, I/32), mustAlloc[float32](t, ctx, I)
+	dqI, dsI, dscr := mustAlloc[int32](t, ctx, I/4), mustAlloc[float32](t, ctx, 2*I/32), mustAlloc[float32](t, ctx, I)
 	launch("glu_quant_g32", one, gc.Arg(dg), gc.Arg(du), gc.ArgValue(int32(0)), gc.ArgValue(int32(0)), gc.ArgValue(int32(I)),
 		gc.ArgValue(int32(1)), gc.Arg(dqI), gc.Arg(dsI), gc.Arg(dscr))
-	gotC, gotS = unpackI8(download(t, dqI, I/4), I), download(t, dsI, I/32)
+	gotC, gotS = unpackI8(download(t, dqI, I/4), I), download(t, dsI, 2*I/32)
+	checkSums(t, "glu_quant_g32", gotC, gotS, I/32)
 	for i := range I {
 		g := float64(gv[i])
 		want := g / (1 + math.Exp(-g)) * float64(uv[i])
@@ -251,4 +269,88 @@ func TestActGroupKernels_gemv(t *testing.T) {
 	launch("gemv_w8a8_g32", cfg, gc.Arg(dw8), gc.Arg(da), gc.Arg(ds8), gc.Arg(das), gc.Arg(db),
 		gc.ArgValue(int32(N)), gc.ArgValue(int32(K/4)), gc.Arg(dd8), gc.ArgValue(int32(1)))
 	check("gemv_w8a8_g32", download(t, dd8, N), want)
+}
+
+// q4kHostRows builds rows×cols of valid Q4_K super-blocks (normal f16 d/dmin in [2^-6, 2^1), random
+// scale/min/code bytes; sat: every code 15 and every 6-bit scale/min 63).
+func q4kHostRows(rng *rand.Rand, rows, cols int, sat bool) []byte {
+	raw := make([]byte, rows*cols/256*144)
+	for b := 0; b < len(raw); b += 144 {
+		for _, off := range []int{0, 2} {
+			h := uint16(9+rng.Intn(7))<<10 | uint16(rng.Intn(1024))
+			raw[b+off], raw[b+off+1] = byte(h), byte(h>>8)
+		}
+		for i := 4; i < 144; i++ {
+			raw[b+i] = byte(rng.Intn(256))
+			if sat {
+				raw[b+i] = 0xFF
+			}
+		}
+	}
+	return raw
+}
+
+// TestActGroupKernels_gemvQ4K: gemv_q4k_g32 against a host float64 sum Σ_k w[n,k]·aq[k]·aS[k/32] over
+// the same super-blocks (w from aikit's WrapQ4K Row, the exact f32 d·sc·q − dmin·m) and the same
+// codes and scales, with bias and accumulate, at a decode shape with a massive activation outlier,
+// random and saturated blocks. The activation buffer carries scales then sums, as quantG32 writes it.
+func TestActGroupKernels_gemvQ4K(t *testing.T) {
+	ctx, _, launch := actGroupHarness(t)
+	rng := rand.New(rand.NewSource(13))
+	const K, N = 3072, 200
+	for _, sat := range []bool{false, true} {
+		a := outlierVec(rng, K)
+		if sat {
+			for i := range a {
+				a[i] = -1
+			}
+		}
+		aC, aS := quantG32Go(a)
+		nG := K / 32
+		aBuf := make([]float32, 2*nG)
+		copy(aBuf, aS)
+		for g := range nG {
+			var s int32
+			for _, c := range aC[32*g : 32*g+32] {
+				s += int32(c)
+			}
+			aBuf[nG+g] = aS[g] * float32(s)
+		}
+		raw := q4kHostRows(rng, N, K, sat)
+		wm, err := linalg.WrapQ4K(raw, N, K)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bias, dst0 := make([]float32, N), make([]float32, N)
+		for i := range bias {
+			bias[i], dst0[i] = float32(rng.NormFloat64()), float32(rng.NormFloat64())
+		}
+		want := make([]float64, N)
+		row := make([]float32, K)
+		for n := range N {
+			wm.Row(n, row)
+			acc := float64(dst0[n]) + float64(bias[n])
+			for k := range K {
+				acc += float64(row[k]) * float64(aC[k]) * float64(aS[k/32])
+			}
+			want[n] = acc
+		}
+		words := make([]uint32, len(raw)/4)
+		for i := range words {
+			words[i] = uint32(raw[4*i]) | uint32(raw[4*i+1])<<8 | uint32(raw[4*i+2])<<16 | uint32(raw[4*i+3])<<24
+		}
+		dw, da, das, db, dd := upload(t, ctx, words), upload(t, ctx, packActI8(aC)), upload(t, ctx, aBuf), upload(t, ctx, bias), upload(t, ctx, dst0)
+		cfg := gc.LaunchConfig{GridX: uint32((N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+		launch("gemv_q4k_g32", cfg, gc.Arg(dw), gc.Arg(da), gc.Arg(das), gc.Arg(db),
+			gc.ArgValue(int32(N)), gc.ArgValue(int32(K/256)), gc.Arg(dd), gc.ArgValue(int32(1)))
+		got := download(t, dd, N)
+		var num, den float64
+		for i := range want {
+			d := float64(got[i]) - want[i]
+			num, den = num+d*d, den+want[i]*want[i]
+		}
+		if e := math.Sqrt(num / den); e > 1e-5 || math.IsNaN(e) {
+			t.Errorf("sat=%v gemv_q4k_g32: rel err %.3g vs host sum", sat, e)
+		}
+	}
 }

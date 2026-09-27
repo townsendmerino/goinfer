@@ -1,0 +1,98 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"math"
+	"math/rand"
+	"os"
+	"testing"
+
+	gc "github.com/eitamring/gocudrv/cuda"
+	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// DIAGNOSTIC (temporary): real Phi-3 Q4_K tensors, one activation vector quantized ONCE on the host
+// (CPU's own quantizer), then: CPU q4k matmul (AVX2), CUDA gemv_q4k_g32, and an f64 truth over the
+// same codes. Isolates the two matvecs from each side's activation quantizer.
+func TestZZQ4KIsolate(t *testing.T) {
+	path := os.Getenv("GOINFER_PHI3_MINI_GGUF")
+	if path == "" {
+		t.Skip("set GOINFER_PHI3_MINI_GGUF")
+	}
+	m, err := decoder.Load(path, decoder.Options{Quant: "q4k"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	ctx, _, launch := actGroupHarness(t)
+	rng := rand.New(rand.NewSource(5))
+	w := m.Weights()
+	for li, l := range []int{0, 15, 31} {
+		lw := &w.Layers[l]
+		for name, wm := range map[string]*linalg.WeightMat{"q": &lw.QProj, "gate": &lw.GateProj, "down": &lw.DownProj, "o": &lw.OProj} {
+			raw, ok := wm.Q4K()
+			if !ok {
+				t.Logf("layer %d %s: kind %s (not q4k)", l, name, wm.Kind())
+				continue
+			}
+			N, K := wm.Rows(), wm.Cols()
+			a := make([]float32, K)
+			for i := range a {
+				a[i] = float32(rng.NormFloat64())
+			}
+			a[K/3+li] = 300
+			nG := K / 32
+			aq, aS := make([]int8, K), make([]float32, nG)
+			linalg.QuantizeActivationsGroupedInto(aq, aS, a, 1, K, 32)
+			// f64 truth over the same codes
+			row := make([]float32, K)
+			truth := make([]float64, N)
+			for n := range N {
+				wm.Row(n, row)
+				var s float64
+				for k := range K {
+					s += float64(row[k]) * float64(aq[k]) * float64(aS[k/32])
+				}
+				truth[n] = s
+			}
+			// CPU: the WeightMat matmul quantizes a itself; feed it the DEQUANTIZED codes so its own
+			// re-quantization reproduces aq/aS (max|v| of a group of codes·scale is 127·scale).
+			deq := make([]float32, K)
+			for k := range K {
+				deq[k] = float32(aq[k]) * aS[k/32]
+			}
+			cpu := make([]float32, N)
+			wm.MatmulBTInto(new(linalg.Workspace), deq, cpu, 1)
+			// CUDA
+			aBuf := make([]float32, 2*nG)
+			copy(aBuf, aS)
+			for g := range nG {
+				var s int32
+				for _, c := range aq[32*g : 32*g+32] {
+					s += int32(c)
+				}
+				aBuf[nG+g] = aS[g] * float32(s)
+			}
+			words := make([]uint32, len(raw)/4)
+			for i := range words {
+				words[i] = uint32(raw[4*i]) | uint32(raw[4*i+1])<<8 | uint32(raw[4*i+2])<<16 | uint32(raw[4*i+3])<<24
+			}
+			dw, da, das, dd, db := upload(t, ctx, words), upload(t, ctx, packActI8(aq)), upload(t, ctx, aBuf), mustAlloc[float32](t, ctx, N), upload(t, ctx, make([]float32, N))
+			cfg := gc.LaunchConfig{GridX: uint32((N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+			launch("gemv_q4k_g32", cfg, gc.Arg(dw), gc.Arg(da), gc.Arg(das), gc.Arg(db),
+				gc.ArgValue(int32(N)), gc.ArgValue(int32(K/256)), gc.Arg(dd), gc.ArgValue(int32(0)))
+			gpu := download(t, dd, N)
+			rel := func(x []float32) float64 {
+				var num, den float64
+				for i := range truth {
+					d := float64(x[i]) - truth[i]
+					num, den = num+d*d, den+truth[i]*truth[i]
+				}
+				return math.Sqrt(num / den)
+			}
+			t.Logf("layer %2d %-4s %5dx%5d: cpu rel %.3g   cuda rel %.3g", l, name, N, K, rel(cpu), rel(gpu))
+		}
+	}
+}

@@ -1007,8 +1007,10 @@ func (m *Model) withResidency() *Model {
 		m.resDecline = "backend does not implement residency (not built in, or the CPU backend)"
 		return m
 	}
-	if m.quant == "q4k" {
-		m.resDecline = "--quant q4k (native Q4_K) has no resident kernel on " + m.be.Name() + " yet (docs/tasks/task-int4-weight-quality-2026-09.md, Phase 1b)"
+	if m.quant == "q4k" && m.be.Name() != "cuda" {
+		// CUDA has gemv_q4k_g32 (Phase 1b of docs/tasks/task-int4-weight-quality-2026-09.md); Metal and
+		// WebGPU have no Q4_K kernel yet.
+		m.resDecline = "--quant q4k (native Q4_K) has no resident kernel on " + m.be.Name() + " yet (docs/tasks/task-int4-weight-quality-2026-09.md)"
 		return m
 	}
 	if a := m.w.arch; a.nemotron != nil && a.MoE != nil && !isWebGPUBackend(m.be.Name()) {

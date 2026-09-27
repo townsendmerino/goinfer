@@ -1,0 +1,73 @@
+=== idle: 99% cpu idle, 56.2C
+=== 2026-09-27T02:04:20Z phi3-mini int8int8 g32 depth 128 round 1/6
+=== idle: 99% cpu idle, 69.8C
+=== 2026-09-27T02:04:57Z phi3-mini q4k g0 depth 128 round 1/6
+=== idle: 99% cpu idle, 68.0C
+=== 2026-09-27T02:05:24Z phi3-mini int8int8 g32 depth 2048 round 1/6
+=== idle: 99% cpu idle, 57.6C
+=== 2026-09-27T02:07:44Z phi3-mini q4k g0 depth 2048 round 1/6
+=== idle: 99% cpu idle, 56.6C
+=== 2026-09-27T02:09:38Z qwen2.5-7b int4 g0 depth 128 round 1/6
+=== idle: 99% cpu idle, 63.4C
+=== 2026-09-27T02:11:38Z qwen2.5-7b q4k g0 depth 128 round 1/6
+=== idle: 99% cpu idle, 67.4C
+=== 2026-09-27T02:12:42Z phi3-mini q4k g0 depth 128 round 2/6
+=== idle: 99% cpu idle, 69.5C
+=== 2026-09-27T02:13:10Z phi3-mini int8int8 g32 depth 128 round 2/6
+=== idle: 99% cpu idle, 72.4C
+=== 2026-09-27T02:13:46Z phi3-mini q4k g0 depth 2048 round 2/6
+=== idle: 99% cpu idle, 56.9C
+=== 2026-09-27T02:15:40Z phi3-mini int8int8 g32 depth 2048 round 2/6
+=== idle: 99% cpu idle, 61.8C
+=== 2026-09-27T02:18:00Z qwen2.5-7b q4k g0 depth 128 round 2/6
+=== idle: 99% cpu idle, 71.9C
+=== 2026-09-27T02:19:04Z qwen2.5-7b int4 g0 depth 128 round 2/6
+=== idle: 99% cpu idle, 62.5C
+=== 2026-09-27T02:21:03Z phi3-mini int8int8 g32 depth 128 round 3/6
+=== idle: 99% cpu idle, 73.4C
+=== 2026-09-27T02:21:39Z phi3-mini q4k g0 depth 128 round 3/6
+=== idle: 99% cpu idle, 70.8C
+=== 2026-09-27T02:22:07Z phi3-mini int8int8 g32 depth 2048 round 3/6
+=== idle: 99% cpu idle, 55.6C
+=== 2026-09-27T02:24:27Z phi3-mini q4k g0 depth 2048 round 3/6
+=== idle: 99% cpu idle, 57.9C
+=== 2026-09-27T02:26:21Z qwen2.5-7b int4 g0 depth 128 round 3/6
+=== idle: 99% cpu idle, 64.1C
+=== 2026-09-27T02:28:20Z qwen2.5-7b q4k g0 depth 128 round 3/6
+=== idle: 99% cpu idle, 67.8C
+=== 2026-09-27T02:29:24Z phi3-mini q4k g0 depth 128 round 4/6
+=== idle: 99% cpu idle, 72.2C
+=== 2026-09-27T02:29:52Z phi3-mini int8int8 g32 depth 128 round 4/6
+=== idle: 99% cpu idle, 76.9C
+=== 2026-09-27T02:30:28Z phi3-mini q4k g0 depth 2048 round 4/6
+=== idle: 99% cpu idle, 55.9C
+=== 2026-09-27T02:32:22Z phi3-mini int8int8 g32 depth 2048 round 4/6
+=== idle: 99% cpu idle, 53.9C
+=== 2026-09-27T02:34:42Z qwen2.5-7b q4k g0 depth 128 round 4/6
+=== idle: 99% cpu idle, 71.1C
+=== 2026-09-27T02:35:47Z qwen2.5-7b int4 g0 depth 128 round 4/6
+=== idle: 99% cpu idle, 63.8C
+=== 2026-09-27T02:37:46Z phi3-mini int8int8 g32 depth 128 round 5/6
+=== idle: 99% cpu idle, 74.0C
+=== 2026-09-27T02:38:23Z phi3-mini q4k g0 depth 128 round 5/6
+=== idle: 99% cpu idle, 73.2C
+=== 2026-09-27T02:38:51Z phi3-mini int8int8 g32 depth 2048 round 5/6
+=== idle: 99% cpu idle, 60.5C
+=== 2026-09-27T02:41:10Z phi3-mini q4k g0 depth 2048 round 5/6
+=== idle: 99% cpu idle, 59.0C
+=== 2026-09-27T02:43:04Z qwen2.5-7b int4 g0 depth 128 round 5/6
+=== idle: 99% cpu idle, 64.5C
+=== 2026-09-27T02:45:04Z qwen2.5-7b q4k g0 depth 128 round 5/6
+=== idle: 99% cpu idle, 68.2C
+=== 2026-09-27T02:46:08Z phi3-mini q4k g0 depth 128 round 6/6
+=== idle: 99% cpu idle, 70.2C
+=== 2026-09-27T02:46:36Z phi3-mini int8int8 g32 depth 128 round 6/6
+=== idle: 99% cpu idle, 76.2C
+=== 2026-09-27T02:47:12Z phi3-mini q4k g0 depth 2048 round 6/6
+=== idle: 99% cpu idle, 58.6C
+=== 2026-09-27T02:49:06Z phi3-mini int8int8 g32 depth 2048 round 6/6
+=== idle: 99% cpu idle, 63.2C
+=== 2026-09-27T02:51:26Z qwen2.5-7b q4k g0 depth 128 round 6/6
+=== idle: 99% cpu idle, 69.6C
+=== 2026-09-27T02:52:30Z qwen2.5-7b int4 g0 depth 128 round 6/6
+=== 2026-09-27T02:54:26Z ALL DONE

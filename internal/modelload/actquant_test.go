@@ -34,9 +34,9 @@ func TestActivationSafeQuant(t *testing.T) {
 	}
 }
 
-// TestActivationSafeQuant_ggufBackend: a Phi-3 .gguf defaults to q4k on the CPU backend (Phase 1a of
-// docs/tasks/task-int4-weight-quality-2026-09.md) and to int8int8 + per-32 on a GPU backend, where
-// q4k has no kernel yet and int8int8 runs resident. An explicit quant is never replaced by q4k. Needs
+// TestActivationSafeQuant_ggufBackend: a Phi-3 .gguf defaults to q4k on the CPU and CUDA backends
+// (Phases 1a and 1b of docs/tasks/task-int4-weight-quality-2026-09.md) and to int8int8 + per-32 on
+// Metal and WebGPU, which have no Q4_K kernel yet and run int8int8 resident. An explicit quant is never replaced by q4k. Needs
 // the real Phi-3 GGUF for PeekModelType; skips without it (a skip is not a pass).
 func TestActivationSafeQuant_ggufBackend(t *testing.T) {
 	home, err := os.UserHomeDir()
@@ -53,7 +53,8 @@ func TestActivationSafeQuant_ggufBackend(t *testing.T) {
 	}{
 		{"cpu", "", "q4k", 0},
 		{"", "", "q4k", 0},
-		{"cuda", "", "int8int8", 32},
+		{"cuda", "", "q4k", 0},
+		{"webgpu", "", "int8int8", 32},
 		{"metal", "", "int8int8", 32},
 		{"cpu", "int8int8", "int8int8", 32},
 		{"cpu", "int4", "int4", 0},

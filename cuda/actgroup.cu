@@ -24,8 +24,11 @@
 #define ACT_SILU      1
 
 // quantG32 quantizes vals[0 .. 32*nG) group by group: one thread per group of 32, max/127 scale into
-// aScale[g], 8 packed ints into q[8g .. 8g+8). Called by all threads of the block after vals is
-// complete and visible.
+// aScale[g], 8 packed ints into q[8g .. 8g+8). It also writes aScale[nG + g] = aScale[g] · Σ codes,
+// the group's dequantized activation sum, which gemv_q4k_g32's per-sub-block minimum multiplies
+// (docs/tasks/task-int4-weight-quality-2026-09.md Phase 1b). So aScale holds 2·nG floats (the
+// resident runner's actScaleLen), and every other kernel reads only the first nG. Called by all
+// threads of the block after vals is complete and visible.
 __device__ __forceinline__ void quantG32(const float* __restrict__ vals, int nG,
                                          int* __restrict__ q, float* __restrict__ aScale) {
     for (int g = threadIdx.x; g < nG; g += blockDim.x) {
@@ -35,15 +38,39 @@ __device__ __forceinline__ void quantG32(const float* __restrict__ vals, int nG,
         float sc = ma / 127.f;
         float inv = sc > 0.f ? 1.f / sc : 0.f;
         aScale[g] = sc;
+        int sum = 0;
         for (int j = 0; j < 8; j++) {
             int packed = 0;
             for (int b = 0; b < 4; b++) {
                 int x = __float2int_rn(v[4 * j + b] * inv);
                 x = max(-127, min(127, x));
+                sum += x;
                 packed |= (x & 0xff) << (8 * b);
             }
             q[8 * g + j] = packed;
         }
+        aScale[nG + g] = __fmul_rn(sc, (float)sum);
+    }
+}
+
+// q4kByte is byte k (0..11) of a Q4_K block's 12 scale bytes, held as three words. Selects and
+// shifts only: an indexed byte array here compiled to a per-block local-memory spill (a 48-byte
+// __local_depot) that made gemv_q4k_g32 slower than the int8 GEMV it replaces.
+__device__ __forceinline__ unsigned int q4kByte(int k, unsigned int s0, unsigned int s1, unsigned int s2) {
+    unsigned int w = k < 4 ? s0 : (k < 8 ? s1 : s2);
+    return (w >> ((k & 3) << 3)) & 0xffu;
+}
+
+// q4kScaleMin is ggml's get_scale_min_k4 for sub-block j (0..7) of one Q4_K block.
+__device__ __forceinline__ void q4kScaleMin(int j, unsigned int s0, unsigned int s1, unsigned int s2,
+                                            int* sc, int* m) {
+    if (j < 4) {
+        *sc = (int)(q4kByte(j, s0, s1, s2) & 63u);
+        *m = (int)(q4kByte(j + 4, s0, s1, s2) & 63u);
+    } else {
+        unsigned int hi = q4kByte(j + 4, s0, s1, s2);
+        *sc = (int)((hi & 0x0Fu) | ((q4kByte(j - 4, s0, s1, s2) >> 6) << 4));
+        *m = (int)((hi >> 4) | ((q4kByte(j, s0, s1, s2) >> 6) << 4));
     }
 }
 
@@ -61,7 +88,7 @@ __global__ void rmsnorm_quant_g32(const float* __restrict__ x, const float* __re
     for (int k = t; k < H; k += nt) ss = __fmaf_rn(x[k], x[k], ss);
     red[t] = ss; __syncthreads();
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
-    float rnorm = rsqrtf(red[0] / H + eps); __syncthreads();
+    float rnorm = 1.f / sqrtf(red[0] / H + eps); __syncthreads();
     for (int k = t; k < H; k += nt) { float g = addOne ? (1.f + w[k]) : w[k]; normed[k] = x[k] * g * rnorm; }
     __syncthreads();
     quantG32(normed, H / 32, aq, aScale);
@@ -81,7 +108,7 @@ __global__ void glu_quant_g32(const float* __restrict__ g, const float* __restri
     for (int k = t; k < I; k += nt) {
         float x = g[gOff + k], a;
         if (act == ACT_SILU) {
-            a = x / (1.f + __expf(-x));
+            a = x / (1.f + expf(-x));
         } else {
             a = 0.5f * x * (1.f + tanhf(0.7978845608028654f * (__fmaf_rn(0.044715f, __fmul_rn(__fmul_rn(x, x), x), x))));
         }
@@ -155,6 +182,78 @@ __global__ void gemv_w8a8_g32(
     for (int o = 16; o > 0; o >>= 1) facc += __shfl_down_sync(0xffffffff, facc, o);
     if (lane == 0) {
         float val = __fmaf_rn(facc, wScale[n], (bias ? bias[n] : 0.f));
+        dst[n] = accum ? dst[n] + val : val;
+    }
+}
+
+
+// gemv_q4k_g32: GGUF Q4_K weights, the raw super-blocks (36 words per 256 weights: d|dmin, three
+// words of packed 6-bit scales and minimums, 32 words of codes), × per-32 int8 activations.
+// aS holds 2·Kgroups floats: per-group activation scales, then aS·Σaq per group (quantG32).
+// One warp per output row, 8 rows per 256-thread block (the per-row GEMVs' geometry).
+//
+// LANE MAPPING: lane l owns sub-block pair j = l & 3 of block b0 + (l >> 2), so a warp covers 8
+// blocks per iteration and a lane 64 weights: one 16-byte header load, one scale/min unpack, two
+// 16-byte code loads, four 16-byte activation loads and 16 dp4a. The first mapping (a lane per code
+// word, 8 weights) paid the header decode per 8 weights and was compute-bound: ~0.97× the int8 GEMV
+// it replaces despite reading 25% fewer bytes. Code word t of pair j holds elements 64j+4t..+3 (low
+// nibbles, sub-block 2j) and 64j+32+4t..+3 (high, 2j+1); their activation words are 64b+16j+t and
+// +8. Alignment: a block is 144 = 9·16 bytes and its codes start at byte 16, so every vector load is
+// 16-byte aligned. Per block and group:
+//   facc += aS_g·d·sc_g · idot_g − dmin·m_g · (aS·Σaq)_g
+__global__ void gemv_q4k_g32(
+    const unsigned int* __restrict__ W, const int* __restrict__ a, const float* __restrict__ aS,
+    const float* __restrict__ bias, int N, int nSB, float* __restrict__ dst, int accum)
+{
+    int n = blockIdx.x * (blockDim.x / 32) + (threadIdx.x / 32);
+    int lane = threadIdx.x & 31;
+    if (n >= N) return;
+    const unsigned int* wr = W + (long)n * nSB * 36;
+    const float* asum = aS + nSB * 8;
+    int j = lane & 3, sub = lane >> 2;
+    float facc = 0.f;
+    for (int b0 = 0; b0 < nSB; b0 += 8) {
+        int b = b0 + sub;
+        if (b < nSB) {
+            const unsigned int* blk = wr + b * 36;
+            uint4 hdr = *reinterpret_cast<const uint4*>(blk);
+            float d = __half2float(__ushort_as_half((unsigned short)(hdr.x & 0xffffu)));
+            float dmin = __half2float(__ushort_as_half((unsigned short)(hdr.x >> 16)));
+            int scLo, mLo, scHi, mHi;
+            q4kScaleMin(j << 1, hdr.y, hdr.z, hdr.w, &scLo, &mLo);
+            q4kScaleMin((j << 1) | 1, hdr.y, hdr.z, hdr.w, &scHi, &mHi);
+            const uint4* qv = reinterpret_cast<const uint4*>(blk + 4 + (j << 3));
+            uint4 q0 = qv[0], q1 = qv[1];
+            const int4* av = reinterpret_cast<const int4*>(a + (b << 6) + (j << 4));
+            int4 l0 = av[0], l1 = av[1], h0 = av[2], h1 = av[3];
+            int pLo = 0, pHi = 0;
+            pLo = __dp4a((int)(q0.x & 0x0F0F0F0Fu), l0.x, pLo);
+            pLo = __dp4a((int)(q0.y & 0x0F0F0F0Fu), l0.y, pLo);
+            pLo = __dp4a((int)(q0.z & 0x0F0F0F0Fu), l0.z, pLo);
+            pLo = __dp4a((int)(q0.w & 0x0F0F0F0Fu), l0.w, pLo);
+            pLo = __dp4a((int)(q1.x & 0x0F0F0F0Fu), l1.x, pLo);
+            pLo = __dp4a((int)(q1.y & 0x0F0F0F0Fu), l1.y, pLo);
+            pLo = __dp4a((int)(q1.z & 0x0F0F0F0Fu), l1.z, pLo);
+            pLo = __dp4a((int)(q1.w & 0x0F0F0F0Fu), l1.w, pLo);
+            pHi = __dp4a((int)((q0.x >> 4) & 0x0F0F0F0Fu), h0.x, pHi);
+            pHi = __dp4a((int)((q0.y >> 4) & 0x0F0F0F0Fu), h0.y, pHi);
+            pHi = __dp4a((int)((q0.z >> 4) & 0x0F0F0F0Fu), h0.z, pHi);
+            pHi = __dp4a((int)((q0.w >> 4) & 0x0F0F0F0Fu), h0.w, pHi);
+            pHi = __dp4a((int)((q1.x >> 4) & 0x0F0F0F0Fu), h1.x, pHi);
+            pHi = __dp4a((int)((q1.y >> 4) & 0x0F0F0F0Fu), h1.y, pHi);
+            pHi = __dp4a((int)((q1.z >> 4) & 0x0F0F0F0Fu), h1.z, pHi);
+            pHi = __dp4a((int)((q1.w >> 4) & 0x0F0F0F0Fu), h1.w, pHi);
+            int g = (b << 3) + (j << 1);
+            facc = __fmaf_rn((float)pLo, __fmul_rn(__fmul_rn(d, (float)scLo), aS[g]), facc);
+            facc = __fmaf_rn((float)pHi, __fmul_rn(__fmul_rn(d, (float)scHi), aS[g + 1]), facc);
+            facc = __fmaf_rn(-__fmul_rn(dmin, (float)mLo), asum[g], facc);
+            facc = __fmaf_rn(-__fmul_rn(dmin, (float)mHi), asum[g + 1], facc);
+        }
+    }
+    #pragma unroll
+    for (int off = 16; off > 0; off >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, off);
+    if (lane == 0) {
+        float val = __fadd_rn(facc, (bias ? bias[n] : 0.f));
         dst[n] = accum ? dst[n] + val : val;
     }
 }

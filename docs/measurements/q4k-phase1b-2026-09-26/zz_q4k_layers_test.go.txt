@@ -1,0 +1,95 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"fmt"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// DIAGNOSTIC (temporary): per-layer output cosine, CUDA resident vs CPU, same quant, over the H2 prompt's
+// first P positions; q4k and the int8int8+per-32 control side by side.
+func TestZZQ4KLayers(t *testing.T) {
+	path := os.Getenv("GOINFER_PHI3_MINI_GGUF")
+	if path == "" {
+		t.Skip("set GOINFER_PHI3_MINI_GGUF")
+	}
+	tk, _ := tokenizer.LoadGGUF(path)
+	tmpl, _ := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	text := strings.Repeat("the ", 110) + "\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press."
+	ids, _ := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: text}}), false)
+	const P = 60
+	ids = ids[:P]
+	taps := make([]int, 32)
+	for i := range taps {
+		taps[i] = i
+	}
+	run := func(opts decoder.Options) (gpuH, cpuH [][][]float32) {
+		g := opts
+		g.Backend, g.ResidentContext = "cuda", 512
+		gm, err := decoder.Load(path, g)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rf := gm.ResidentForwardForTest()
+		r := rf.(*cudaResident)
+		if err := r.SetHiddenCapture(taps); err != nil {
+			t.Fatal(err)
+		}
+		for p, id := range ids {
+			if _, err := rf.Forward(gm.EmbedResidentForTest(id), p); err != nil {
+				t.Fatal(err)
+			}
+			hc := r.HiddenCapture()
+			cp := make([][]float32, len(hc))
+			for i := range hc {
+				cp[i] = append([]float32(nil), hc[i]...)
+			}
+			gpuH = append(gpuH, cp)
+		}
+		gm.Close()
+		cm, err := decoder.Load(path, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cm.Close()
+		c := cm.NewCache(P + 1)
+		for _, id := range ids {
+			_, h, err := cm.ForwardCapture(id, c, taps)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cp := make([][]float32, len(h))
+			for i := range h {
+				cp[i] = append([]float32(nil), h[i]...)
+			}
+			cpuH = append(cpuH, cp)
+		}
+		return
+	}
+	qg, qc := run(decoder.Options{Quant: "q4k"})
+	ig, ic := run(decoder.Options{Quant: "int8int8", ActQuantGroup: 32})
+	var b strings.Builder
+	fmt.Fprintf(&b, "layer  q4k(min over pos, mean)      int8int8+g32(min, mean)\n")
+	for l := range 32 {
+		stat := func(g, c [][][]float32) (mn, mean float64) {
+			mn = 1
+			for p := range P {
+				cs := cosine64(g[p][l], c[p][l])
+				mn = min(mn, cs)
+				mean += cs
+			}
+			return mn, mean / P
+		}
+		a1, a2 := stat(qg, qc)
+		b1, b2 := stat(ig, ic)
+		fmt.Fprintf(&b, "%3d    %.6f %.6f        %.6f %.6f\n", l, a1, a2, b1, b2)
+	}
+	t.Log("\n" + b.String())
+}

@@ -1,0 +1,35 @@
+Per-layer output cosine, CUDA resident vs CPU, same quant, Phi-3-mini (~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf),
+the H2 resident prompt's first 60 positions, ResidentContext 512. Tool: zz_q4k_layers_test.go.txt. nobara-pc, RTX 2070 SUPER, 2026-09-26.
+Columns: q4k (min over positions, mean) | int8int8+per-32 (min, mean).
+
+RUN 1 — actgroup.cu quantizers with fast-math __expf (SiLU, glu_quant_g32) and rsqrtf (rmsnorm_quant_g32):
+layer  q4k(min, mean)          int8int8+g32(min, mean)
+  0    0.999999 1.000000        0.999999 1.000000
+  1    0.999968 0.999998        0.999971 0.999998
+  2    0.998753 0.999969        0.999771 0.999993
+  3    0.999233 0.999965        0.999757 0.999990
+  4    0.833891 0.996943        0.976961 0.999586
+  5    0.824870 0.996753        0.974997 0.999544
+  6    0.816720 0.996640        0.972395 0.999494
+  7    0.664048 0.994077        0.966549 0.999393
+ ...
+ 30    0.928874 0.997152        0.992654 0.999601
+ 31    0.894576 0.991139        0.973450 0.997584
+
+RUN 2 — the same with precise expf and 1/sqrtf:
+layer  q4k(min, mean)          int8int8+g32(min, mean)
+  0    1.000000 1.000000        1.000000 1.000000
+  1    0.999993 0.999999        0.999999 1.000000
+  2    0.999895 0.999997        0.999992 0.999999
+  3    0.999913 0.999996        0.999972 0.999998
+  4    0.998265 0.999962        0.999917 0.999996
+  5    0.997994 0.999952        0.999905 0.999993
+  6    0.997736 0.999945        0.999878 0.999990
+ ...
+ 28    0.997871 0.999838        0.996294 0.999863
+ 29    0.997715 0.999857        0.996105 0.999854
+ 30    0.997382 0.999828        0.995555 0.999823
+ 31    0.995144 0.999110        0.987407 0.999197
+
+Isolation (zz_q4k_isolate_test.go.txt): on real Phi-3 Q4_K tensors with one host-quantized activation, the CPU q4k
+matmul and CUDA gemv_q4k_g32 both match a float64 truth to rel 1.6e-7 .. 7.1e-7. The matvecs were never the source.

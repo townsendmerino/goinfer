@@ -305,3 +305,55 @@ module), 6 paired rounds, alternating order, separate processes, the 1a idle che
 
 A peer comparison against Ollama and llama.cpp (`scripts/bench_peer.py`) follows a SHIP as
 information, not as a gate. If the Phi-3 cells SHIP, the owner decides the CUDA default.
+
+## Phase 1b results (2026-09-26): all gates PASS on the second kernel; the first failed two ways, on record
+
+Raw data, logs and the two diagnostic tools are in
+[`measurements/q4k-phase1b-2026-09-26/`](../measurements/q4k-phase1b-2026-09-26/). The code is on branch
+`q4k-cuda`.
+
+**Correctness: PASS.** The quantizers' new per-group sums equal the host twin exactly. `gemv_q4k_g32`
+is within relative error 1e-5 of a host float64 sum, random and saturated, with bias and accumulate.
+Dropping the minimum term turns the test red, on both kernels.
+
+**Agreement, run 1: FAIL**, median 0.99775 (bar 0.999), while quality against f32 was *better* than
+the CPU's (0.961 vs 0.926). Diagnosis:
+- **Isolation.** On real Phi-3 Q4_K tensors with one host-quantized activation, both the CPU and the
+  CUDA matvec are within relative error ≤ 7.1e-7 of a float64 truth, so the kernel was not the source.
+- **Per-layer differencing** (`layer-diff.txt`). The CUDA-vs-CPU divergence starts at **layer 4**,
+  Phi-3's known outlier layer, in `q4k` (per-position minimum 0.834) and in the int8int8 control
+  (0.977) alike.
+- **Mechanism.** The CUDA per-32 quantizers used fast-math `__expf` (SiLU) and `rsqrtf` (RMSNorm). With
+  precise `expf` and `1/sqrtf`, layer 4 recovers to 0.998 (`q4k`) and 0.9999 (control).
+
+That was a new mechanism, so the gate was re-run.
+
+**Agreement, run 3 (second kernel, precise math): PASS.** Median **0.99980**; quality p10 **0.940**
+against CPU `q4k`'s 0.926. H2's int8int8 per-32 CUDA-vs-CPU agreement also rises, 0.99957 → 0.99984.
+
+**Capacity: PASS.** Phi-3 `q4k` builds resident at the default **4096**-position context on the 8 GB
+card, where int8int8 declines to the CPU.
+
+**Speed, run 1 (first kernel): FAIL, stopped after one round** (`speed-run1-localmem/`). Phi-3 at depth
+128 read 0.82× int8int8 + per-32. Under the "worse depth decides" rule nothing later could change
+that, so the run stopped. Two causes:
+- the scale-unpack helper's indexed byte array compiled to a 48-byte `__local_depot`, spilled per
+  block (fixed: 73.7 → 84.7 tok/s);
+- a lane per code word paid the block-header decode per 8 weights, which is compute-bound. The second
+  kernel gives a lane one sub-block pair (64 weights) with 16-byte vector loads.
+
+**Speed, run 2 (second kernel): SHIP on every cell** (`speed-run2/`), 6 paired rounds, CPU 54–77 °C:
+
+| cell | baseline | q4k | ratio (range) | band | verdict |
+|---|---|---|---|---|---|
+| phi3-mini, depth 128, ÷ int8int8 + per-32 | 89.8 tok/s | 112.9 tok/s | **1.257** (1.255–1.257) | ≥ 1.15 | SHIP |
+| phi3-mini, depth 2048, ÷ int8int8 + per-32 | 62.9 tok/s | 73.3 tok/s | **1.166** (1.164–1.166) | ≥ 1.15 | SHIP |
+| qwen2.5-7b, depth 128, ÷ today's int4 | 81.6 tok/s | 72.6 tok/s | **0.890** (0.888–0.893) | ≥ 0.85 | SHIP |
+
+**Owner decisions 2026-09-26:**
+- Phi-3 from a `.gguf` defaults to `q4k` on CUDA as well as the CPU. Metal and WebGPU keep int8int8 +
+  per-32 until they have a Q4_K kernel. Serve check: no flags → `decode path: cuda-resident (q4k)`
+  at the full 4096 context, with a coherent answer.
+- Every other Q4_K GGUF keeps the int4 default for now. A peer comparison of `q4k` against Ollama and
+  llama.cpp decides first: `q4k` is 0.890× today's int4 on CUDA for qwen2.5-7b, which lands on the
+  headline peer cells.
