@@ -23,7 +23,8 @@
 > - MC3 follow-ons, none registered: a hybrid B = 2 (it reads 1.07×), an encode-ahead executor for steps, the 7B end to
 >   end, and CUDA (only on its own measurement);
 > - MC1 on CUDA and WebGPU;
-> - one MC2 Linux cell to re-run clean.
+> - ~~one MC2 Linux cell to re-run clean~~ — done 2026-09-27: the 0.5B depth-128 cell reads 1.185× clean (was 1.230×
+>   overlapping an rsync), still in the owner band.
 >
 > Closed 2026-09-26:
 > - MC1's clamp is pinned by `TestKVSlotsWithin` and logs when it clamps;

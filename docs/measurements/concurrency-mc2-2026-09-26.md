@@ -136,7 +136,10 @@ The identity gate passes on amd64 too: every logit is bit-identical, on llama-ti
 | 1.5B | 512 | 18.3 | 0.933× | 1.264× | **1.396×** (1.36–1.40) | 1.410× | 1.245× | **1.364×** |
 
 \* This cell overlapped a 1.2 GB rsync from this box (the set-A reference copy). Its reps 4–5 dip in every arm, so the
-paired ratio holds, but it is the least clean cell here.
+paired ratio holds, but it is the least clean cell here. **Re-run clean 2026-09-27 06:27 PDT** at `35feb843`, with load1
+0.94 and nothing else running: batched B = 4 **1.185×** (1.16–1.20, paired), J8 N = 4 1.613×, serial ×1 47.7 tok/s
+([`run-linux-0.5b-d128-clean-2026-09-27.log`](concurrency-mc2-2026-09-26/run-linux-0.5b-d128-clean-2026-09-27.log)).
+The reading does not change: the 0.5B at depth 128 stays in the owner band on Linux, and the workers still win there.
 
 Against the registered band (earn ≥ 1.25×, kill < 1.1×, the owner decides in between):
 - **The 1.5B earns on Linux** (1.40–1.48×).
@@ -153,5 +156,5 @@ On amd64 the picture differs from the Mac:
 
 ## Owed
 - J8's latency half, per request.
-- A re-run of the Linux 0.5B depth-128 cell without the concurrent rsync.
+- ~~A re-run of the Linux 0.5B depth-128 cell without the concurrent rsync.~~ Done 2026-09-27: 1.185×.
 - The H kernel at M = 1, graded in sequence as an R18 follow-on.

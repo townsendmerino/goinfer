@@ -101,9 +101,24 @@ The previously mismatched prompts now read at the W4A8-vs-CPU level:
 request. It was re-run from 20:38 PDT, and until it completes set A's D7-K512/1024 cells are empty on both machines.
 The stale files are set aside.
 
+## Update 2026-09-27: set A's D7 cells regenerated and verified — SET A IS WHOLE AGAIN
+
+D7-K512 / 1024 were regenerated on `nobara` at `35feb843` (`origin/main`): `TestPrefillGateReference/D7`, set A,
+`GOINFER_CPU_REF_KS=512,1024`, 03:36–06:24 PDT (10,079 s; the K=1024 half alone took about two hours). They were
+copied to the Mac and set A was audited whole: **0 (cell, prompt) pairs above KL 1.0**
+([`ref-identity-setA-D7-regen-2026-09-27.log`](metal-decode-attn-r17-2026-09-25/ref-identity-setA-D7-regen-2026-09-27.log)).
+
+| cell | prompt | before | after |
+|---|---:|---:|---:|
+| D7-K512 | 5 | 8.79 | 0.072 |
+| D7-K1024 | 2, 8 | 12.39, 11.67 | 0.034, 0.027 |
+
+Every set A cell now reads at the W4A8-vs-CPU level (KL 0.60 at most across all 90 pairs, S-K64 prompt 9), so **set A can decide again**:
+S-K64..K3900 and D7-K256..K1024. The 2026-09-05 files stay set aside in `~/goinfer-logs/prefill-ref-stale-2026-09-05/`.
+The two runs set A had blocked — R16's §3.2 set-A prefill gate and the CUDA chunk-demotion S-K3900 re-score — can now
+run. Neither is started.
+
 ## Open
 
-Set A's invalid cells should be regenerated from the snapshot (`TestPrefillGateReference`, `GOINFER_PREFILL_GATE_PROMPTS=a`,
-`GOINFER_CPU_REF_KS=512,1024,3900`), keeping the 2026-09-05 files aside for provenance, before set A is used as a
-decision set again. On this 16 GB Mac an f32 S build needs a fit-guard bypass, so `nobara` is the place to do it and
-copy from.
+~~Set A's invalid cells should be regenerated from the snapshot~~ — done 2026-09-26/27 (both updates above). Left
+open: R16's §3.2 set-A prefill gate and the CUDA chunk-demotion S-K3900 re-score, both blocked until now on these cells.

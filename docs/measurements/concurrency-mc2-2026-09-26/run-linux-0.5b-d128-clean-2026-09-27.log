@@ -1,0 +1,49 @@
+2026-09-27 03:36:16 PDT start 35feb843;  03:36:16 up 12 days, 20:56,  6 users,  load average: 0.04, 0.03, 0.00
+== 2026-09-27 03:36:16 PDT D7 regen (set A, K=512,1024)
+=== RUN   TestPrefillGateReference
+    prefill_ref_gen_test.go:86: prompt set "a" (10 files) -> /home/francis/goinfer-logs/prefill-ref
+=== RUN   TestPrefillGateReference/D7
+[ref] concurrency preflight OK: 8 parallel workers, identical prompt, bit-identical seed logits
+[ref] D7 K=512 prompt  8 done (1/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K512-p7.bin elapsed=41m13s
+[ref] D7 K=512 prompt  7 done (2/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K512-p6.bin elapsed=41m16s
+[ref] D7 K=512 prompt  5 done (3/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K512-p4.bin elapsed=41m16s
+[ref] D7 K=512 prompt  6 done (4/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K512-p5.bin elapsed=41m17s
+[ref] D7 K=512 prompt  2 done (5/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K512-p1.bin elapsed=41m19s
+[ref] D7 K=512 prompt  1 done (6/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K512-p0.bin elapsed=41m21s
+[ref] D7 K=512 prompt  4 done (7/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K512-p3.bin elapsed=41m21s
+[ref] D7 K=512 prompt  3 done (8/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K512-p2.bin elapsed=41m25s
+[ref] D7 K=512 prompt  9 done (9/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K512-p8.bin elapsed=44m33s
+[ref] D7 K=512 prompt 10 done (10/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K512-p9.bin elapsed=44m33s
+[ref] D7 K=1024 prompt  2 done (1/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K1024-p1.bin elapsed=1h47m9s
+[ref] D7 K=1024 prompt  8 done (2/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K1024-p7.bin elapsed=1h47m9s
+[ref] D7 K=1024 prompt  1 done (3/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K1024-p0.bin elapsed=1h47m12s
+[ref] D7 K=1024 prompt  6 done (4/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K1024-p5.bin elapsed=1h47m12s
+[ref] D7 K=1024 prompt  5 done (5/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K1024-p4.bin elapsed=1h47m13s
+[ref] D7 K=1024 prompt  4 done (6/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K1024-p3.bin elapsed=1h47m14s
+[ref] D7 K=1024 prompt  3 done (7/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K1024-p2.bin elapsed=1h47m15s
+[ref] D7 K=1024 prompt  7 done (8/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K1024-p6.bin elapsed=1h47m20s
+[ref] D7 K=1024 prompt 10 done (9/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K1024-p9.bin elapsed=2h2m37s
+[ref] D7 K=1024 prompt  9 done (10/10) -> /home/francis/goinfer-logs/prefill-ref/D7-K1024-p8.bin elapsed=2h2m37s
+--- PASS: TestPrefillGateReference (10079.47s)
+    --- PASS: TestPrefillGateReference/D7 (10079.47s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	10079.520s
+2026-09-27 06:24:20 PDT D7 exit 0
+== 2026-09-27 06:27:10 PDT MC2 throughput 0.5b depth 128 int4 (clean re-run); 0.94 8.94 13.29 1/1037 1420265
+[mc2   10.3s] loaded qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (int4): depth 128, 16 steps per sequence, 5 reps, 8 arms
+[mc2   25.1s] rep 1/5:  serial x1 47.6  serial x4 45.5  batched B=1 38.2  batched B=2 49.9  batched B=4 57.0  batched B=8 61.7  J8 workers N=2 63.7  J8 workers N=4 75.2 tok/s
+[mc2   32.4s] rep 2/5:  serial x1 47.7  serial x4 46.2  batched B=1 39.9  batched B=2 52.4  batched B=4 56.5  batched B=8 61.5  J8 workers N=2 62.0  J8 workers N=4 78.1 tok/s
+[mc2   39.7s] rep 3/5:  serial x1 48.2  serial x4 45.6  batched B=1 38.9  batched B=2 51.2  batched B=4 56.0  batched B=8 62.0  J8 workers N=2 64.9  J8 workers N=4 76.9 tok/s
+[mc2   47.1s] rep 4/5:  serial x1 47.3  serial x4 43.9  batched B=1 37.1  batched B=2 51.6  batched B=4 55.4  batched B=8 61.8  J8 workers N=2 64.3  J8 workers N=4 73.5 tok/s
+[mc2   54.4s] rep 5/5:  serial x1 47.9  serial x4 46.8  batched B=1 38.1  batched B=2 51.4  batched B=4 56.9  batched B=8 62.2  J8 workers N=2 64.2  J8 workers N=4 78.9 tok/s
+[mc2   54.4s] aggregate decode tok/s, median of 5 reps (qwen2.5-coder-0.5b-instruct-q4_k_m.gguf int4, depth 128):
+[mc2   54.4s]   serial x1           47.7 tok/s  1.000x serial x1
+[mc2   54.4s]   serial x4           45.6 tok/s  0.957x serial x1
+[mc2   54.4s]   batched B=1         38.2 tok/s  0.800x serial x1
+[mc2   54.4s]   batched B=2         51.4 tok/s  1.078x serial x1
+[mc2   54.4s]   batched B=4         56.5 tok/s  1.185x serial x1
+[mc2   54.4s]   batched B=8         61.8 tok/s  1.296x serial x1
+[mc2   54.4s]   J8 workers N=2      64.2 tok/s  1.345x serial x1
+[mc2   54.4s]   J8 workers N=4      76.9 tok/s  1.613x serial x1
+[mc2   54.4s] MC2 METRIC batched B=4 / serial x1 = 1.185x (per-rep sorted [1.1616145787482552 1.1718378730361265 1.1852465851049192 1.1861107240430169 1.1972636500285436]); J8 N=4 / serial x1 = 1.613x
+2026-09-27 06:28:04 PDT DONE
