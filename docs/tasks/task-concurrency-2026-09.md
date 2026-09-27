@@ -209,6 +209,70 @@ own prefix instead of evicting each other. Still one generation at a time; no ba
 or more on one model.
 Re-run J6's measurement once after MC1 ships; its 1.024× was taken against a single slot.
 
+### MC1 on CUDA (nobara-pc) — built 2026-09-27, W7 grading pre-registered below before any timing
+
+**What was built** (`9fddaf7e`; prompt `docs/prompts/nobara-mc1-cuda-2026-09.md`). The CUDA resident implements
+`decoder.ResidentKVSlotter`; the decoder half is Metal's, unchanged. Each CUDA specific the prompt named was checked in
+the code:
+- **Storage.** A slot is a full copy of the per-layer f32 `kc`/`vc` set (one latent buffer for an MLA layer, nothing
+  for a DeltaNet layer), `kvBytesForCap` each. `TestResidentKVBytes_matchesCUDAAllocation` now builds every fixture
+  with 2 slots and checks each one.
+- **Pricing.** CUDA's `checkKVFits` already runs after the weights are on the device and prices KV alone against
+  what is left, so the slots are priced there too (`kvSlotsFit`: as many as fit beside the companion reserve and the
+  384 MiB margin). Both sides of that comparison exclude the weights, so it cannot count them twice.
+  `TestCUDAKVSlots_pricedAgainstWhatIsLeft` stubs the probe to fall by what the device really allocates from a figure
+  where exactly 2 fit, and asks for 3. A double count would grant fewer, and pricing before the weights would grant 3.
+  On the 1.5B (1.105 GB before KV, 470 MB per slot) it grants 2. The context is resolved first, as before (fit by
+  default still picks up to 8192), and the slots are clamped after it. A clamp logs its numbers, and the banner names
+  it. `TestCUDAKVSlots_clampedBuild` is a real clamping build: 2 of 4 granted, both usable.
+- **Graphs.** No change is needed, and none was made: the captured segments (segA/B/C) touch no KV. rope_kv and every
+  attention kernel run live in the gap and bind `r.kc[l]`/`r.vc[l]` when issued, so a slot switch is a pointer swap
+  on the executor. `TestCUDAKVSlots_graphs` runs the identity scenario with graphs forced on (this box is in the
+  Default compute mode) and requires that they stayed on.
+- **Host KV writers.** `UploadKV`, the batched prefill, the MLA latent store and the flash-decode/split-KV lanes all
+  index the bound slot's slices at call time. Nothing caches a KV buffer across calls.
+- **Other per-sequence state.**
+  - A block drafter's own KV follows one conversation; the decoder already clears `resDrafterSynced` on a switch.
+  - The C′ expert cache is keyed by expert, not by history.
+  - Prefill pass lengths and captures are per call.
+  - A DeltaNet resident is held to one slot on CUDA as well as by the decoder (`TestCUDAKVSlots_recurrentKeepsOne`).
+  - Expert streaming (`MoECacheExperts`) also keeps one slot: that cache takes whatever VRAM is left, so a KV slot
+    would cost it expert slots. That is the same trade `resolveCtxCapFit` declines to make with the context.
+- **CUDA does not batch.** It has no `ResidentBatchStepper`, so generations still run one at a time; the slots only
+  stop the thrash.
+
+**Identity (before timing), all pass.** `TestCUDAKVSlots_interleavedMatchesAlone` covers dense (llama-tiny), sliding
+window (mistral-tiny-window) and MLA (deepseek-tiny), plus qwen2.5-coder-1.5b int4 with 48 tokens × 3 turns × 2
+conversations. The interleaved ids equal the ids alone. Reuse per turn is 0 / 55 / 105 on the 1.5B, and the one-slot
+control thrashes (3 / 3). The tagged CUDA suite: 171 pass, 0 fail.
+
+**W7 grading, pre-registered.**
+- *old* = `serve-cuda` @ `b2168bdc` (one slot); *new* = `serve-cuda` @ `9fddaf7e`. Each is built once with
+  `CGO_ENABLED=0 go -C cuda build -tags cuda`, and the binary is named by its hash.
+- Machine: nobara-pc, RTX 2070 SUPER 8 GB, NVIDIA driver 595.91.07, compute mode Default.
+- Workload: `scripts/bench_w7_plain.py --engines goinfer --backend cuda --fixed-nonce`, with
+  qwen2.5-coder-1.5b-instruct q4_k_m from `~/models` (NVMe), `-quant int4` and serve defaults. `-kv-sessions` 4 means
+  new asks for 4 slots. 6 turns × 128 greedy tokens per client, and a fresh server per cell.
+- Cells: 1, then 2, then 4 clients. Each is old/new × 3 pairs, in the order old new new old old new.
+- Every cell is idle-gated: load1 ≤ 2.0 from `/proc/loadavg`, no CUDA compute process, and GPU memory within 256 MiB
+  of the run's starting baseline.
+- Gates (hard unless marked):
+  1. Identity:
+     - at 1 client, `content_sha` old == new on every turn of every pair;
+     - at 2 and 4 clients, new's client 0 == new's 1-client run on every turn;
+     - old vs new at 2 and 4 clients is reported only.
+  2. Reuse: at 2 and 4 clients, every new client's turn 1 reuses what the 1-client run's turn 1 reuses (0, cold), and
+     its turns 2–6 prefill exactly what the 1-client run's do.
+  3. *(Expected band, not a gate.)* new's 2- and 4-client aggregate is 0.90–1.0× its own 1-client aggregate. Below
+     0.85× at 4 clients is a finding to explain.
+  4. Ship: 4-client aggregate new ÷ old, median of 3 pairs, ≥ 1.03×.
+  5. Solo guard: 1-client p50 and p99 turn (nearest rank over the cell's 6 turns), new ÷ old, median of 3 pairs,
+     ≤ 1.05× each.
+- It ships if 1, 2, 4 and 5 hold. A hard-gate miss is recorded as a negative result and not shipped.
+- Also reported: one 4-client pair (old, then new) on qwen2.5-7b-instruct q4_k_m. Where the clamp should bind:
+  the banner's slot count, and the aggregate.
+- Gates are computed by `gates.py`, archived with the raw JSON in `docs/measurements/concurrency-mc1-cuda-2026-09-27/`.
+
 **Estimate.** One to two weeks across the three backends, mostly bookkeeping and the fit guard.
 
 ## MC2 — kill or earn: batched decode on CPU
