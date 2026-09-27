@@ -87,6 +87,15 @@
 
 ## Owner decisions
 
+**Decided 2026-09-27, after MC3 shipped: the next three, in order** (owner: "start 1, then Metal step polish then
+Chunked prefill"):
+1. **MC3 S2: sampled tokens in steps.** A temperature-only token is drawn on-device and so ran as its own call, never
+   in a step.
+2. **MC3 S3: Metal step polish.** B = 2 reads 1.07×; the step's host time is 2.7 of 25 ms.
+3. **Chunked prefill, UNPARKED from MC5** by this decision. Continuous batching and paged KV stay parked. A
+   newcomer's prefill is the remaining stall MC3 leaves: it runs whole between steps, pausing every other
+   conversation's decode.
+
 **Decided 2026-09-26: 1 is yes, 2 is fold.** One user's parallel agents are in the niche, so MC3 fits and
 `positioning.md` gains its sentence (added the same day). J8's N-independent-workers cell runs inside MC2's session;
 J8 is not built as a feature.
@@ -328,6 +337,35 @@ different adapters.
 - A lone request: p50 1.002×, p99 1.004×.
 - Identity and reuse equal on every turn of all 14 cells. 2 clients read 1.071× (reported).
 
+**MC3 S2 — sampled tokens in steps (2026-09-27).** Under MC3, a temperature-only request's tokens are drawn on the
+device (ResidentSample), and each such token ran as its own per-sequence call. So a plain `temperature > 0` chat
+request, the default shape of most chat clients, got no batching at all.
+- **The build.** A step row can carry the draw: `ResidentBatchSeq.Draw`. The Metal step runs ForwardSample's two
+  gumbel dispatches on that row of the batch logits, with the row's own (temperature, seed, draw).
+  `generateInto` takes the sampler's draw once per token before submitting, in both modes, so the RNG stream
+  advances as it always has.
+- **Correctness, run before any timing:**
+  - `TestMC3Step_drawsMatchForwardSample`: 24 batched draws against ForwardSample on twin slots, mixed with 24 logits
+    rows; 0 differ.
+  - `TestMC3_concurrentSampledMatchesAloneOnMetal`: 4 conversations at temperature 0.8 with fixed seeds, concurrent
+    against alone; ids identical, 163 tokens served in steps.
+  - On the fake: `TestMC3_sampledConcurrentMatchesAlone`, which goes red when the batched draw uses the wrong
+    counter.
+- **Grading, pre-registered 2026-09-27 before any W7 timing of the S2 build.**
+  - *old* = `serve-metal` at `d2225ec4`, the shipped MC3: sampled tokens run solo.
+  - *new* = the S2 commit.
+  - *ref*, reported only = `9efc3185`, pre-MC3.
+  - The W7 workload as for MC3, at `--temperature 0.8 --seed 1000 --fixed-nonce`.
+  - Cells: 4 clients old/new × 3 pairs, interleaved old new new old old new; 1 client the same; one ref cell at 4
+    clients.
+  - Gates:
+    1. every turn's `content_sha` equal between new and old at the same client count and index (hard);
+    2. reuse equal (hard);
+    3. 4-client aggregate new ÷ old, median of 3 ≥ 1.2×;
+    4. 4-client p99 turn new ÷ old, median ≤ 1.0 (hard);
+    5. lone request p50 and p99, new ÷ old, median ≤ 1.05× each (hard).
+  - Decision as for MC3: ship when all pass; aggregate 1.03–1.2× goes to the owner; below 1.03× parks.
+
 **The W7 grading, pre-registered 2026-09-26 before any W7 timing of the MC3 build.**
 
 *Builds.*
@@ -425,6 +463,9 @@ Each item waits on MC3 shipping and on a measured request for it:
 
 Unchanged from `roadmap.md`: not this engine's weight class. **Trigger:** the owner reverses the
 positioning, not a benchmark result.
+
+**Chunked prefill unparked by the owner, 2026-09-27** ("Owner decisions" above). Continuous batching and paged KV
+stay parked. Its registration goes here before its build.
 
 ---
 
