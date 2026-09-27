@@ -350,4 +350,10 @@ that, so the run stopped. Two causes:
 | phi3-mini, depth 2048, ÷ int8int8 + per-32 | 62.9 tok/s | 73.3 tok/s | **1.166** (1.164–1.166) | ≥ 1.15 | SHIP |
 | qwen2.5-7b, depth 128, ÷ today's int4 | 81.6 tok/s | 72.6 tok/s | **0.890** (0.888–0.893) | ≥ 0.85 | SHIP |
 
-**Owner decision pending:** the CUDA default. Phi-3 currently loads int8int8 + per-32 on a GPU backend.
+**Owner decisions 2026-09-26:**
+- Phi-3 from a `.gguf` defaults to `q4k` on CUDA as well as the CPU. Metal and WebGPU keep int8int8 +
+  per-32 until they have a Q4_K kernel. Serve check: no flags → `decode path: cuda-resident (q4k)`
+  at the full 4096 context, with a coherent answer.
+- Every other Q4_K GGUF keeps the int4 default for now. A peer comparison of `q4k` against Ollama and
+  llama.cpp decides first: `q4k` is 0.890× today's int4 on CUDA for qwen2.5-7b, which lands on the
+  headline peer cells.
