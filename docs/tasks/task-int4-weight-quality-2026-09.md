@@ -357,3 +357,30 @@ that, so the run stopped. Two causes:
 - Every other Q4_K GGUF keeps the int4 default for now. A peer comparison of `q4k` against Ollama and
   llama.cpp decides first: `q4k` is 0.890× today's int4 on CUDA for qwen2.5-7b, which lands on the
   headline peer cells.
+
+## Default for other Q4_K GGUFs on CUDA: the peer comparison, PRE-REGISTERED 2026-09-26 before any run
+
+The owner held a `q4k` default for Q4_K GGUFs other than Phi-3 pending this comparison, because `q4k`
+is 0.890× today's int4 on CUDA (qwen2.5-7b).
+
+**Instrument.** `scripts/bench_peer.py`, CUDA, greedy, essay-v2 prompts, `BENCH_RUNS=3`. Engines: goinfer,
+Ollama and llama.cpp, same weights as `peer-claim-2026-09-25.md`. Models: qwen2.5-coder-1.5b and
+qwen2.5-7b (the headline dense cells). Depths 128, 2048 and 3900. Two sessions, back to back:
+- **S1:** goinfer at `q4k` (`BENCH_QUANT_OVERRIDE=1.5B=q4k,7B=q4k`);
+- **S2:** goinfer at today's default int4.
+
+Each session carries its own peers, so its ratios are in-session. goinfer is served from `main` at
+`210e7307` or later.
+
+**Decision column:** goinfer ÷ llama.cpp, graded with `peer-claim-2026-09-25.md`'s bands and all-pairs
+rule (LEVEL [0.97, 1.03], AHEAD > 1.03, the AMBIGUOUS variants, BEHIND < 0.97). Ollama is reported
+beside it, because its `usage` sometimes reports no token count and voids its cells.
+
+**Rule:**
+- If every cell that is "level or ahead" (AHEAD, LEVEL, AMBIGUOUS-HIGH) against llama.cpp in S2 stays
+  "level or ahead" in S1, `q4k` becomes the CUDA default for Q4_K GGUFs.
+- If any such cell turns BEHIND in S1, int4 stays the default and `q4k` stays opt-in.
+- If any turns only AMBIGUOUS-LOW, it is parked and the owner decides.
+- A VOID cell on the llama.cpp side is re-run once, then reported as void.
+
+The CPU default is not decided here.
