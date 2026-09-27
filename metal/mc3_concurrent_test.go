@@ -136,3 +136,76 @@ func TestMC3_concurrentMatchesAloneOnMetal(t *testing.T) {
 		}(), len(concurrent[c][0].ids))
 	}
 }
+
+// TestMC3_concurrentSampledMatchesAloneOnMetal: the same scenario at temperature 0.8, each conversation with its own
+// seed. Temperature-only tokens are drawn on-device (ForwardSample alone; a batched step's per-row draw concurrently),
+// so each conversation must emit exactly the ids it emits alone — and some draws must really have been made in steps.
+//
+//	GOINFER_METAL_MC3=1 go test -tags goinfer_testhooks -count=1 -run '^TestMC3_concurrentSampledMatchesAloneOnMetal$' -v ./metal/
+func TestMC3_concurrentSampledMatchesAloneOnMetal(t *testing.T) {
+	if os.Getenv("GOINFER_METAL_MC3") != "1" {
+		t.Skip("set GOINFER_METAL_MC3=1 (loads a real checkpoint twice)")
+	}
+	home, _ := os.UserHomeDir()
+	path := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no checkpoint at %s: %v", path, err)
+	}
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Skipf("tokenizer: %v", err)
+	}
+	const nConv, maxTok = 4, 48
+	load := func() *decoder.Model {
+		m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024, ResidentKVSlots: nConv})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		return m
+	}
+	asks := []string{"a haiku about rivers", "a limerick about a cat", "two sentences about Mars", "a riddle about time"}
+	run := func(m *decoder.Model, c int) []int {
+		ids, _ := tk.Encode("<|im_start|>user\nWrite "+asks[c]+".<|im_end|>\n<|im_start|>assistant\n", false)
+		ch, gen := m.Generate(context.Background(), ids, maxTok, decoder.SamplingParams{Temperature: 0.8, Seed: int64(7 + c)})
+		var out []int
+		for id := range ch {
+			out = append(out, id)
+		}
+		if err := gen.Err(); err != nil {
+			t.Errorf("conversation %d: %v", c, err)
+		}
+		if gen.DeviceSampled == 0 {
+			t.Errorf("conversation %d drew nothing on-device: not the path under test", c)
+		}
+		return out
+	}
+	mAlone := load()
+	alone := make([][]int, nConv)
+	for c := range nConv {
+		alone[c] = run(mAlone, c)
+	}
+	mAlone.Close()
+	debug.FreeOSMemory()
+	m := load()
+	defer m.Close()
+	if got := m.EnableResidentConcurrency(nConv); got != nConv {
+		t.Fatalf("EnableResidentConcurrency(%d) = %d", nConv, got)
+	}
+	together := make([][]int, nConv)
+	var wg sync.WaitGroup
+	for c := range nConv {
+		wg.Add(1)
+		go func(c int) { defer wg.Done(); together[c] = run(m, c) }(c)
+	}
+	wg.Wait()
+	for c := range nConv {
+		if !slices.Equal(alone[c], together[c]) {
+			t.Errorf("conversation %d: concurrent %v, alone %v", c, together[c], alone[c])
+		}
+	}
+	st := m.ResidentBatchStats()
+	if st.Steps == 0 {
+		t.Error("no batched step ran: the sampled tokens never joined one")
+	}
+	t.Logf("steps %d serving %d tokens, sizes %v, solo %d", st.Steps, st.StepTokens, st.StepSizes[:6], st.SoloTokens)
+}

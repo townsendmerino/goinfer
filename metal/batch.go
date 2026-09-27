@@ -270,8 +270,11 @@ type batchState struct {
 	uMode                     [3]Buffer
 	uPos, uNKeys, uQTemp      []Buffer
 	uFANSplit                 []Buffer
-	noBias                    Buffer
-	qkvRows, nHhd, kOff, vOff int
+	// per-row uniforms and outputs of a device draw (ForwardSample's gumbel dispatches, run on a row of logitsB)
+	uGInvT, uGK0, uGK1, uGD0, uGD1 []Buffer
+	gOut                           Buffer // [batchMaxSeqs] int32 ids
+	noBias                         Buffer
+	qkvRows, nHhd, kOff, vOff      int
 	// steps / seqs / maxSeqs count completed batched steps, the sequences they served, and the largest batch — read by
 	// tests to confirm a concurrent run really batched. Written only inside forwardMulti, which the decoder serialises.
 	steps, seqs, maxSeqs int
@@ -281,6 +284,7 @@ type batchState struct {
 type batchSeq struct {
 	slot, pos int
 	emb       []float32
+	draw      *decoder.ResidentBatchDraw // non-nil: draw this row's next token on-device (ForwardSample's draw)
 }
 
 // batchIneligible is why this resident cannot run a batched step ("" if it can): MC3 covers the plain dense W4A8 decode
@@ -362,7 +366,11 @@ func (r *resident) buildBatch() {
 		b.uNKeys = append(b.uNKeys, NewBufferU32(d, 1))
 		b.uQTemp = append(b.uQTemp, NewBufferFloats(d, []float32{1}))
 		b.uFANSplit = append(b.uFANSplit, NewBufferU32(d, 1))
+		b.uGInvT = append(b.uGInvT, NewBufferFloats(d, []float32{1}))
+		b.uGK0, b.uGK1 = append(b.uGK0, NewBufferU32(d, 0)), append(b.uGK1, NewBufferU32(d, 0))
+		b.uGD0, b.uGD1 = append(b.uGD0, NewBufferU32(d, 0)), append(b.uGD1, NewBufferU32(d, 0))
 	}
+	b.gOut = d.NewBufferLen(B)
 	r.batch = b
 }
 
@@ -415,32 +423,36 @@ func (r *resident) canUseAttnFAAt(l, nKeys int) bool {
 }
 
 // forwardMulti runs one decode token for each of seqs — 1..batchMaxSeqs sequences, each on its own resident KV slot at
-// its own position — in one command buffer, and returns each one's logits (fresh slices). It never touches the bound
-// slot (r.kc/r.vc); every sequence's KV is addressed through kvSlotBufs. The pipelined executor is stopped first: a
-// command buffer it pre-encoded would otherwise run after this one's writes with its own stale plan.
-func (r *resident) forwardMulti(seqs []batchSeq) ([][]float32, error) {
+// its own position — in one command buffer. It returns each row's logits (fresh slices), or, for a row that carries a
+// draw, the id ForwardSample would have drawn (ids[m] >= 0, logits[m] nil); ids[m] is -1 for a logits row. It never
+// touches the bound slot (r.kc/r.vc); every sequence's KV is addressed through kvSlotBufs. The pipelined executor is
+// stopped first: a command buffer it pre-encoded would otherwise run after this one's writes with its own stale plan.
+func (r *resident) forwardMulti(seqs []batchSeq) (logits [][]float32, ids []int, err error) {
 	b := r.batch
 	if b == nil {
-		return nil, fmt.Errorf("metal: batched decode unavailable")
+		return nil, nil, fmt.Errorf("metal: batched decode unavailable")
 	}
 	B := len(seqs)
 	if B < 1 || B > batchMaxSeqs {
-		return nil, fmt.Errorf("metal: batched step of %d sequences (1..%d)", B, batchMaxSeqs)
+		return nil, nil, fmt.Errorf("metal: batched step of %d sequences (1..%d)", B, batchMaxSeqs)
 	}
 	if r.loraLayers != nil {
-		return nil, fmt.Errorf("metal: batched step with an adapter bound")
+		return nil, nil, fmt.Errorf("metal: batched step with an adapter bound")
 	}
 	seen := map[int]bool{}
 	for _, q := range seqs {
 		if q.slot < 0 || q.slot >= len(r.kvSlotBufs) || seen[q.slot] {
-			return nil, fmt.Errorf("metal: batched step: slot %d out of range or repeated", q.slot)
+			return nil, nil, fmt.Errorf("metal: batched step: slot %d out of range or repeated", q.slot)
 		}
 		seen[q.slot] = true
 		if q.pos < 0 || q.pos >= r.ctxCap {
-			return nil, fmt.Errorf("metal: batched step: position %d outside the resident context %d", q.pos, r.ctxCap)
+			return nil, nil, fmt.Errorf("metal: batched step: position %d outside the resident context %d", q.pos, r.ctxCap)
 		}
 		if len(q.emb) != r.H {
-			return nil, fmt.Errorf("metal: batched step: embedding length %d != hidden %d", len(q.emb), r.H)
+			return nil, nil, fmt.Errorf("metal: batched step: embedding length %d != hidden %d", len(q.emb), r.H)
+		}
+		if q.draw != nil && !r.SampleAvailable() {
+			return nil, nil, fmt.Errorf("metal: batched step: a device draw on a resident that cannot sample on-device")
 		}
 	}
 	runtime.LockOSThread()
@@ -515,16 +527,52 @@ func (r *resident) forwardMulti(seqs []batchSeq) ([][]float32, error) {
 	}
 	e.Dispatch(b.packLM, H*8, 256, b.aqB, b.aTp, b.uM, r.uH)
 	e.DispatchTG(b.lm, r.V/128*128, 128, 0, r.lmW, r.lmS, b.aTp, b.aScB, b.logitsB, r.uH, b.uV, b.uM)
+	// Device draws: ForwardSample's two gumbel dispatches, exactly, on each drawing row of logitsB (the same bits as
+	// r.logits would hold) with that row's uniforms. The partial buffers are reused row after row — dispatches in one
+	// encoder run in order.
+	greedyDraw := make([]bool, B)
+	for m, q := range seqs {
+		if q.draw == nil {
+			continue
+		}
+		invT := float32(1 / q.draw.Temperature)
+		if math.IsInf(float64(invT), 0) { // ForwardSample's own shortcut: the argmax, as greedy
+			greedyDraw[m] = true
+			continue
+		}
+		b.uGInvT[m].Floats()[0] = invT
+		b.uGK0[m].SetU32(uint32(q.draw.Seed))
+		b.uGK1[m].SetU32(uint32(q.draw.Seed >> 32))
+		b.uGD0[m].SetU32(uint32(q.draw.Draw))
+		b.uGD1[m].SetU32(uint32(q.draw.Draw >> 32))
+		const gbThreads = 256
+		const gbShmBytes = gbThreads * 2 * 4
+		e.DispatchTG(r.pGumbel1, r.gumbelNB*gbThreads, gbThreads, gbShmBytes,
+			b.logitsB.At(4*m*r.V), r.uGumbelV, b.uGInvT[m], b.uGK0[m], b.uGK1[m], b.uGD0[m], b.uGD1[m],
+			r.gumbelBKey, r.gumbelBIdx)
+		e.DispatchTG(r.pGumbel2, gbThreads, gbThreads, gbShmBytes,
+			r.gumbelBKey, r.gumbelBIdx, r.uGumbelNB, b.gOut.At(4*m))
+	}
 	e.End()
 	r.recordExecErr(e.Err())
 	if err := r.takeExecErr(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = e.GPUStart(), e.GPUEnd(), e.KernStart(), e.KernEnd()
 	b.steps, b.seqs, b.maxSeqs = b.steps+1, b.seqs+B, max(b.maxSeqs, B)
-	out := make([][]float32, B)
+	logits, ids = make([][]float32, B), make([]int, B)
 	lg := b.logitsB.Floats()
-	for m := range B {
+	gid := b.gOut.U32s()
+	for m, q := range seqs {
+		ids[m] = -1
+		if q.draw != nil {
+			id := int32(gid[m])
+			if greedyDraw[m] || id < 0 { // ForwardSample's fallbacks: the argmax of the raw row
+				id = int32(argmaxF32(lg[m*r.V : (m+1)*r.V]))
+			}
+			ids[m] = int(id)
+			continue
+		}
 		row := make([]float32, r.V)
 		copy(row, lg[m*r.V:(m+1)*r.V])
 		if r.finalSoftcap > 0 {
@@ -535,9 +583,9 @@ func (r *resident) forwardMulti(seqs []batchSeq) ([][]float32, error) {
 				row[i] *= r.logitScale
 			}
 		}
-		out[m] = row
+		logits[m] = row
 	}
-	return out, nil
+	return logits, ids, nil
 }
 
 // BatchStepRange is decoder.ResidentBatchStepper's: the batch sizes StepBatch serves well (batchMinSeqs..the smaller
@@ -550,10 +598,18 @@ func (a *metalResident) BatchStepRange() (lo, hi int) {
 }
 
 // StepBatch is decoder.ResidentBatchStepper's: one decode token for each sequence, each on its own KV slot.
-func (a *metalResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([][]float32, error) {
+func (a *metalResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.ResidentBatchOut, error) {
 	bs := make([]batchSeq, len(seqs))
 	for i, q := range seqs {
-		bs[i] = batchSeq{slot: q.Slot, pos: q.Pos, emb: q.Emb}
+		bs[i] = batchSeq{slot: q.Slot, pos: q.Pos, emb: q.Emb, draw: q.Draw}
 	}
-	return a.r.forwardMulti(bs)
+	logits, ids, err := a.r.forwardMulti(bs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]decoder.ResidentBatchOut, len(seqs))
+	for i := range out {
+		out[i] = decoder.ResidentBatchOut{Logits: logits[i], ID: ids[i]}
+	}
+	return out, nil
 }

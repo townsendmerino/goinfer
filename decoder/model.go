@@ -2038,6 +2038,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			embScratch = emb
 			fastNext = -1 // set again below only by a path that picks the next token on-device
 			pos := gpuPos
+			// A device-drawn token takes its draw HERE, once, whichever path then serves it — the sampler's RNG
+			// stream advances exactly as it always has.
+			var draw *ResidentBatchDraw
+			if !needFull && !fastGreedy && sampleRF != nil {
+				seed, d := sampler.NextDraw()
+				draw = &ResidentBatchDraw{Temperature: sp.Temperature, Seed: seed, Draw: d}
+			}
 			// residentCall is this token's production resident call.
 			residentCall := func() error {
 				var ferr error
@@ -2049,8 +2056,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 					// just the id, skipping the full-logits readback.
 					fastNext, ferr = greedyRF.ForwardArgmax(emb, pos)
 				} else if sampleRF != nil {
-					seed, draw := sampler.NextDraw()
-					fastNext, ferr = sampleRF.ForwardSample(emb, pos, sp.Temperature, seed, draw)
+					fastNext, ferr = sampleRF.ForwardSample(emb, pos, draw.Temperature, draw.Seed, draw.Draw)
 					if ferr == nil {
 						g.DeviceSampled++
 					}
@@ -2066,12 +2072,12 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				return ferr
 			}
 			if mc3 != nil {
-				// MC3: submit the token; it runs in a shared step with the other generations' tokens, or — alone, or
-				// when it needs a device sampler — as residentCall on our own slot. A step's row is bit-identical to
-				// Forward's, and a greedy token served by one continues on the full-logits path, which production's
-				// fast path equals by its own contract (ArgmaxEquivalent/GreedyEquivalent above).
-				q := &batchReq{seq: ResidentBatchSeq{Slot: mc3Slot, Pos: pos, Emb: emb},
-					batchable: needFull || fastGreedy || sampleRF == nil,
+				// MC3: submit the token; it runs in a shared step with the other generations' tokens, or — alone — as
+				// residentCall on our own slot. A step's row is bit-identical to this token's own call: Forward's
+				// logits, or ForwardSample's id for a device-drawn token (the same draw). A greedy token served by a
+				// step continues on the full-logits path, which production's fast path equals by its own contract
+				// (ArgmaxEquivalent/GreedyEquivalent above).
+				q := &batchReq{seq: ResidentBatchSeq{Slot: mc3Slot, Pos: pos, Emb: emb, Draw: draw},
 					solo: func() error {
 						if berr := m.residentBind(mc3Slot); berr != nil {
 							return berr
@@ -2079,8 +2085,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 						return residentCall()
 					}}
 				err = mc3.forward(q)
-				if err == nil && q.logits != nil {
-					logits, fastNext = q.logits, -1
+				if err == nil && q.out != nil {
+					if draw != nil {
+						fastNext = q.out.ID
+						g.DeviceSampled++
+					} else {
+						logits, fastNext = q.out.Logits, -1
+					}
 				}
 			} else {
 				err = residentCall()

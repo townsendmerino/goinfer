@@ -99,19 +99,34 @@ type ResidentKVSlotter interface {
 
 // ResidentBatchStepper is an OPTIONAL ResidentKVSlotter extension (MC3, docs/tasks/task-concurrency-2026-09.md): one
 // decode token for several sequences at once, each on its own KV slot at its own position, in one step. It reads and
-// writes only the named slots — never the bound one's binding — and each returned row must equal what Forward would
-// return for that sequence on its slot, bit for bit (the identity gate MC3 keeps). BatchStepRange is the batch sizes
-// the step serves better than per-sequence Forwards; hi == 0 means the resident cannot batch at all.
+// writes only the named slots — never the bound one's binding — and each returned row must equal what that sequence's
+// own call would return on its slot, bit for bit (the identity gate MC3 keeps): Forward's logits, or, for a sequence
+// that carries a Draw, ResidentSample.ForwardSample's id. BatchStepRange is the batch sizes the step serves better than
+// per-sequence calls; hi == 0 means the resident cannot batch at all.
 type ResidentBatchStepper interface {
 	BatchStepRange() (lo, hi int)
-	StepBatch(seqs []ResidentBatchSeq) ([][]float32, error)
+	StepBatch(seqs []ResidentBatchSeq) ([]ResidentBatchOut, error)
 }
 
-// ResidentBatchSeq is one sequence of a ResidentBatchStepper step: its KV slot, the position it decodes, and its input
-// embedding (embedResident's).
+// ResidentBatchSeq is one sequence of a ResidentBatchStepper step: its KV slot, the position it decodes, its input
+// embedding (embedResident's), and, when its token is drawn on-device, that draw.
 type ResidentBatchSeq struct {
 	Slot, Pos int
 	Emb       []float32
+	Draw      *ResidentBatchDraw // nil: return the row's logits
+}
+
+// ResidentBatchDraw is a temperature-only draw a batched step makes on-device for its row: ForwardSample's
+// arguments, from the sequence's own Sampler.NextDraw.
+type ResidentBatchDraw struct {
+	Temperature float64
+	Seed, Draw  uint64
+}
+
+// ResidentBatchOut is one row of a StepBatch: the drawn id (>= 0) for a sequence that carried a Draw, else its logits.
+type ResidentBatchOut struct {
+	Logits []float32
+	ID     int
 }
 
 // ResidentMRoPE is an OPTIONAL ResidentForward extension: a resident backend whose rotation

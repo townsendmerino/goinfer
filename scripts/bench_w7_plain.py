@@ -190,7 +190,7 @@ TURNS = [
 ]
 
 
-def run_transcript(url, max_tokens, temperature, nonce):
+def run_transcript(url, max_tokens, temperature, nonce, seed=None):
     messages = []
     out = []
     for i, turn in enumerate(TURNS):
@@ -198,6 +198,8 @@ def run_transcript(url, max_tokens, temperature, nonce):
         messages.append({"role": "user", "content": text})
         body = {"model": "bench", "messages": messages, "max_tokens": max_tokens,
                 "temperature": temperature, "stream": False}
+        if seed is not None:
+            body["seed"] = seed + i  # a fixed seed per client per turn: sampled replies compare across runs
         t, resp = post(url, body)
         choices = resp.get("choices") or [{}]
         content = (choices[0].get("message") or {}).get("content") or ""
@@ -216,11 +218,12 @@ def run_transcript(url, max_tokens, temperature, nonce):
     return out
 
 
-def run_concurrent(url, max_tokens, temperature, n_clients, fixed_nonce=False):
+def run_concurrent(url, max_tokens, temperature, n_clients, fixed_nonce=False, seed=None):
     t0 = time.perf_counter()
     with ThreadPoolExecutor(max_workers=n_clients) as ex:
         futures = [ex.submit(run_transcript, url, max_tokens, temperature,
-                             f"w7p-c{i}" if fixed_nonce else f"w7p-c{i}-{t0}")
+                             f"w7p-c{i}" if fixed_nonce else f"w7p-c{i}-{t0}",
+                             None if seed is None else seed + 100 * i)
                    for i in range(n_clients)]
         per_client = [f.result() for f in futures]
     wall_s = time.perf_counter() - t0
@@ -263,6 +266,9 @@ def main():
     ap.add_argument("--backend", default="metal", help="goinfer's -backend (cpu records as goinfer_cpu)")
     ap.add_argument("--serve-args", default="", help="extra goinfer serve flags, e.g. '-max-concurrent 4'")
     ap.add_argument("--server-log", default="", help="append goinfer serve's stdout/stderr (its banner) to this file")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="send seed = SEED + 100*client + turn on every request (serve draws a random seed otherwise), so "
+                         "sampled (--temperature > 0) replies compare across runs; use with --fixed-nonce")
     ap.add_argument("--fixed-nonce", action="store_true",
                     help="use a per-client nonce that does not change between runs, so two runs' transcripts (content_sha) "
                          "can be compared turn by turn — e.g. an identity gate between two builds")
@@ -299,7 +305,7 @@ def main():
             continue
         print(f"[w7-plain] {gkey} clients={n} starting fresh server", file=sys.stderr)
         with GoinferServer(a.backend, a.serve_args, a.server_log) as srv:
-            r = run_concurrent(srv.url, a.max_tokens, a.temperature, n, a.fixed_nonce)
+            r = run_concurrent(srv.url, a.max_tokens, a.temperature, n, a.fixed_nonce, a.seed)
         results[gkey][str(n)] = r
         save()
         reuse = [[t.get("prefill_reused_tokens") for t in c] for c in r["per_client"]]
@@ -312,7 +318,7 @@ def main():
             continue
         print(f"[w7-plain] llamacpp clients={n} starting fresh server (np={n})", file=sys.stderr)
         with LlamaServer(n_slots=n) as srv:
-            r = run_concurrent(srv.url, a.max_tokens, a.temperature, n, a.fixed_nonce)
+            r = run_concurrent(srv.url, a.max_tokens, a.temperature, n, a.fixed_nonce, a.seed)
         results["llamacpp"][str(n)] = r
         save()
         print(f"[w7-plain] llamacpp clients={n}: wall={r['wall_s']}s aggregate={r['aggregate_tok_s']} tok/s",

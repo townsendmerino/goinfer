@@ -104,7 +104,7 @@ func mc3Fill(t *testing.T, r *resident, slot int, ids []int) {
 // mc3Step runs production's batched step (forwardMulti) and fails the test on an error.
 func mc3Step(t *testing.T, r *resident, seqs []batchSeq) [][]float32 {
 	t.Helper()
-	out, err := r.forwardMulti(seqs)
+	out, _, err := r.forwardMulti(seqs)
 	if err != nil {
 		t.Fatalf("forwardMulti: %v", err)
 	}
@@ -239,4 +239,78 @@ func TestMC3Step_throughput(t *testing.T) {
 		}
 		hb("%s", line)
 	}
+}
+
+// TestMC3Step_drawsMatchForwardSample: rows that carry a device draw return exactly the id production's ForwardSample
+// draws on a twin slot for the same (temperature, seed, draw), in steps that mix drawing rows with logits rows — two
+// temperatures, and a draw counter that advances every step, teacher-forced 12 steps.
+//
+//	GOINFER_METAL_MC3=1 go test -count=1 -run '^TestMC3Step_drawsMatchForwardSample$' -v ./metal/
+func TestMC3Step_drawsMatchForwardSample(t *testing.T) {
+	const steps = 12
+	depths := []int{7, 31, 64, 200}
+	temps := []float64{0.8, 0, 1.3, 0} // 0: a logits row
+	B := len(depths)
+	_, r := mc3Resident(t, 2*B, 1024)
+	if !r.SampleAvailable() {
+		t.Skip("this resident cannot draw on-device")
+	}
+	seed := uint32(24681357)
+	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
+	for m, D := range depths {
+		ids := make([]int, D)
+		for i := range ids {
+			ids[i] = rnd()
+		}
+		mc3Fill(t, r, m, ids)
+		mc3Fill(t, r, B+m, ids)
+	}
+	differ, draws := 0, 0
+	for st := 0; st < steps; st++ {
+		seqs := make([]batchSeq, B)
+		wantID := make([]int, B)
+		wantLogits := make([][]float32, B)
+		for m := range B {
+			seqs[m] = batchSeq{slot: m, pos: depths[m] + st, emb: mc3Emb(r, rnd())}
+			if err := r.useKVSlot(B + m); err != nil {
+				t.Fatal(err)
+			}
+			if temps[m] > 0 {
+				d := &decoder.ResidentBatchDraw{Temperature: temps[m], Seed: uint64(9000 + m), Draw: uint64(st)}
+				seqs[m].draw = d
+				id, err := r.ForwardSample(seqs[m].emb, seqs[m].pos, d.Temperature, d.Seed, d.Draw)
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantID[m] = id
+			} else {
+				wantLogits[m] = append([]float32(nil), r.ForwardEmb(seqs[m].emb, seqs[m].pos)...)
+			}
+		}
+		logits, ids, err := r.forwardMulti(seqs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for m := range B {
+			if temps[m] > 0 {
+				draws++
+				if ids[m] != wantID[m] || logits[m] != nil {
+					t.Errorf("step %d row %d: drew %d (logits %v), ForwardSample drew %d", st, m, ids[m], logits[m] != nil, wantID[m])
+					differ++
+				}
+				continue
+			}
+			for i := range logits[m] {
+				if math.Float32bits(logits[m][i]) != math.Float32bits(wantLogits[m][i]) {
+					t.Errorf("step %d row %d: logits differ from ForwardEmb at %d", st, m, i)
+					differ++
+					break
+				}
+			}
+			if ids[m] != -1 {
+				t.Errorf("step %d row %d: a logits row reported id %d", st, m, ids[m])
+			}
+		}
+	}
+	t.Logf("%d steps: %d device draws and %d logits rows checked, %d differ", steps, draws, steps*B-draws, differ)
 }

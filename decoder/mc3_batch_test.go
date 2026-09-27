@@ -18,16 +18,17 @@ import (
 // real resident must come from inside the batcher's exclusive section.
 type mc3Fake struct {
 	*fakeResident
-	inUse    int32
-	n, bound int
-	hist     [][]uint64
-	steps    int // StepBatch calls
-	stepSeqs int // sequences served by them
-	maxStep  int
-	soloFwds int
-	lo, hi   int
-	stepErr  error
-	delay    time.Duration
+	inUse     int32
+	n, bound  int
+	hist      [][]uint64
+	steps     int // StepBatch calls
+	stepSeqs  int // sequences served by them
+	maxStep   int
+	soloFwds  int
+	lo, hi    int
+	stepErr   error
+	delay     time.Duration
+	stepDraws int // rows a StepBatch drew on-device
 }
 
 // delay, when set, is how long a StepBatch or Forward takes (a GPU's step time) — long against the batcher's straggler
@@ -83,7 +84,7 @@ func (f *mc3Fake) UseKVSlot(i int) error {
 	return nil
 }
 func (f *mc3Fake) BatchStepRange() (int, int) { return f.lo, f.hi }
-func (f *mc3Fake) StepBatch(seqs []ResidentBatchSeq) ([][]float32, error) {
+func (f *mc3Fake) StepBatch(seqs []ResidentBatchSeq) ([]ResidentBatchOut, error) {
 	f.enter()
 	defer f.leave()
 	if f.stepErr != nil {
@@ -93,11 +94,38 @@ func (f *mc3Fake) StepBatch(seqs []ResidentBatchSeq) ([][]float32, error) {
 	f.wait()
 	f.stepSeqs += len(seqs)
 	f.maxStep = max(f.maxStep, len(seqs))
-	out := make([][]float32, len(seqs))
+	out := make([]ResidentBatchOut, len(seqs))
 	for i, q := range seqs {
-		out[i] = f.fwd(q.Slot, q.Emb, q.Pos)
+		lg := f.fwd(q.Slot, q.Emb, q.Pos)
+		if q.Draw != nil {
+			f.stepDraws++
+			out[i] = ResidentBatchOut{ID: fakeDraw(lg, q.Draw.Seed, q.Draw.Draw)}
+		} else {
+			out[i] = ResidentBatchOut{Logits: lg, ID: -1}
+		}
 	}
 	return out, nil
+}
+
+// SampleAvailable / ForwardSample make mc3Fake a device sampler (ResidentSample), so temperature-only generations take
+// the device-draw path; fakeDraw is its draw, a function of the row and (seed, draw) only, as the real one is.
+func (f *mc3Fake) SampleAvailable() bool { return true }
+func (f *mc3Fake) ForwardSample(emb []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
+	f.enter()
+	defer f.leave()
+	f.soloFwds++
+	f.wait()
+	return fakeDraw(f.fwd(f.bound, emb, pos), seed, draw), nil
+}
+
+func fakeDraw(logits []float32, seed, draw uint64) int {
+	h := (seed*0x9E3779B97F4A7C15 ^ draw*0xBF58476D1CE4E5B9) + 0x94D049BB133111EB
+	for i, x := range logits {
+		if x != 0 {
+			h ^= uint64(i) * 0xD6E8FEB86659FD93
+		}
+	}
+	return int(h % uint64(len(logits)))
 }
 
 // mc3FakeBackend builds an mc3Fake as the model's resident.
@@ -315,4 +343,49 @@ func TestMC3_concurrentGenerationsFillSteps(t *testing.T) {
 	if st.StragglerRuns*10 > st.Runs {
 		t.Errorf("%d of %d runs started on the straggler timeout: the window is firing on generations that were not late", st.StragglerRuns, st.Runs)
 	}
+}
+
+// TestMC3_sampledConcurrentMatchesAlone: temperature-only generations, each with its own seed, draw their tokens
+// on-device. Concurrently they join shared steps, where each row's draw is the one its own ForwardSample would have
+// made (same seed and draw counter), so each conversation emits exactly the ids it emits alone — and the draws really
+// were made in steps.
+func TestMC3_sampledConcurrentMatchesAlone(t *testing.T) {
+	const nConv, maxTok = 4, 32
+	run := func(m *Model, c int) []int {
+		ch, gen := m.Generate(context.Background(), []int{1, 2, 3, 10 + c}, maxTok, SamplingParams{Temperature: 0.8, Seed: int64(100 + c)})
+		var ids []int
+		for id := range ch {
+			ids = append(ids, id)
+		}
+		if err := gen.Err(); err != nil {
+			t.Errorf("conversation %d: %v", c, err)
+		}
+		if gen.DeviceSampled == 0 {
+			t.Errorf("conversation %d: no token was drawn on-device — the test is not exercising the device-draw path", c)
+		}
+		return ids
+	}
+	mAlone, _ := loadWithMC3Fake(t, nConv)
+	alone := make([][]int, nConv)
+	for c := range nConv {
+		alone[c] = run(mAlone, c)
+	}
+	m, rf := loadWithMC3Fake(t, nConv)
+	m.EnableResidentConcurrency(nConv)
+	together := make([][]int, nConv)
+	var wg sync.WaitGroup
+	for c := range nConv {
+		wg.Add(1)
+		go func(c int) { defer wg.Done(); together[c] = run(m, c) }(c)
+	}
+	wg.Wait()
+	for c := range nConv {
+		if !slices.Equal(alone[c], together[c]) {
+			t.Errorf("conversation %d: concurrent %v, alone %v", c, together[c], alone[c])
+		}
+	}
+	if rf.stepDraws == 0 {
+		t.Error("no row was drawn inside a batched step: sampled tokens still run solo")
+	}
+	t.Logf("steps %d, rows drawn in steps %d, solo calls %d", rf.steps, rf.stepDraws, rf.soloFwds)
 }

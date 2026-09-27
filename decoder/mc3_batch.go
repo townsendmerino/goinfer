@@ -69,13 +69,12 @@ func (m *Model) ResidentBatchStats() ResidentBatchStats {
 
 // batchReq is one generation's decode token.
 type batchReq struct {
-	seq       ResidentBatchSeq
-	batchable bool         // the token's production call returns full logits or a greedy argmax
-	solo      func() error // production's own call for this token; binds the generation's slot first
-	logits    []float32    // set when a batched step served it
-	err       error
-	done      bool
-	at        time.Time
+	seq  ResidentBatchSeq
+	solo func() error      // production's own call for this token; binds the generation's slot first
+	out  *ResidentBatchOut // set when a batched step served it
+	err  error
+	done bool
+	at   time.Time
 }
 
 // EnableResidentConcurrency lets up to n generations use this model's resident at once (MC3), and returns the n it
@@ -195,7 +194,7 @@ func (b *residentBatcher) busySlots() []bool {
 	return append([]bool(nil), b.slotBusy...)
 }
 
-// forward submits one decode token and returns once a run has served it: q.logits is set when a batched step did, and
+// forward submits one decode token and returns once a run has served it: q.out is set when a batched step did, and
 // otherwise q.solo ran (production's own call, with its own results).
 func (b *residentBatcher) forward(q *batchReq) error {
 	b.mu.Lock()
@@ -257,44 +256,33 @@ func (b *residentBatcher) armLocked(deadline time.Time) {
 	})
 }
 
-// runTokens serves one run, with the resident held: the batch-eligible tokens in one StepBatch when there are at least
-// lo of them, every other token through its own production call.
+// runTokens serves one run, with the resident held: in one StepBatch when it has at least lo tokens, else every token
+// through its own production call.
 func (b *residentBatcher) runTokens(run []*batchReq) {
-	var bat []*batchReq
-	for _, r := range run {
-		if r.batchable {
-			bat = append(bat, r)
-		}
-	}
-	if len(bat) < b.lo {
-		bat = nil
-	}
-	if bat != nil {
-		seqs := make([]ResidentBatchSeq, len(bat))
-		for i, r := range bat {
+	if len(run) >= b.lo {
+		seqs := make([]ResidentBatchSeq, len(run))
+		for i, r := range run {
 			seqs[i] = r.seq
 		}
 		out, err := b.stepper.StepBatch(seqs)
-		if err == nil && len(out) != len(bat) {
-			err = fmt.Errorf("decoder: StepBatch returned %d rows for %d sequences", len(out), len(bat))
+		if err == nil && len(out) != len(run) {
+			err = fmt.Errorf("decoder: StepBatch returned %d rows for %d sequences", len(out), len(run))
 		}
-		for i, r := range bat {
+		for i, r := range run {
 			if err != nil {
 				r.err = err
 			} else {
-				r.logits = out[i]
+				r.out = &out[i]
 			}
 		}
 		b.mu.Lock()
 		b.stats.Steps++
-		b.stats.StepTokens += len(bat)
-		b.stats.StepSizes[min(len(bat), batchStatsSizes-1)]++
+		b.stats.StepTokens += len(run)
+		b.stats.StepSizes[min(len(run), batchStatsSizes-1)]++
 		b.mu.Unlock()
+		return
 	}
 	for _, r := range run {
-		if bat != nil && r.batchable {
-			continue
-		}
 		r.err = runSolo(r.solo)
 		b.mu.Lock()
 		b.stats.SoloTokens++
