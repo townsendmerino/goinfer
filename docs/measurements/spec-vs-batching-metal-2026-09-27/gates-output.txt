@@ -1,0 +1,23 @@
+copy-1.5B 4 clients pair 1: aggregate batch 81.6 spec 50.2 = 0.615x; p99 request spec/batch 1.637x
+copy-1.5B 4 clients pair 2: aggregate batch 83.5 spec 50.7 = 0.607x; p99 request spec/batch 1.640x
+copy-1.5B 4 clients pair 3: aggregate batch 83.6 spec 51.0 = 0.610x; p99 request spec/batch 1.641x
+copy-1.5B L (4 clients) median 0.610x; p99 median 1.640x; identity 24/24 replies equal; prefilled-token count differs on 0
+copy-1.5B 1 clients pair 1: aggregate batch 53.2 spec 51.8 = 0.973x; p99 request spec/batch 1.037x
+copy-1.5B 1 clients pair 2: aggregate batch 53.1 spec 52.0 = 0.979x; p99 request spec/batch 1.027x
+copy-1.5B 1 clients pair 3: aggregate batch 53.0 spec 51.8 = 0.979x; p99 request spec/batch 1.029x
+copy-1.5B S (1 clients) median 0.979x; p99 median 1.029x; identity 6/6 replies equal; prefilled-token count differs on 0
+chat-1.5B 4 clients pair 1: aggregate batch 148.7 spec 72.7 = 0.489x; p99 request spec/batch 1.983x
+chat-1.5B 4 clients pair 2: aggregate batch 148.1 spec 72.8 = 0.491x; p99 request spec/batch 1.989x
+chat-1.5B 4 clients pair 3: aggregate batch 143.8 spec 69.8 = 0.485x; p99 request spec/batch 1.923x
+chat-1.5B L (4 clients) median 0.489x; p99 median 1.983x; identity 15/72 replies equal; prefilled-token count differs on 60
+chat-1.5B 1 clients pair 1: aggregate batch 73.9 spec 67.6 = 0.915x; p99 request spec/batch 1.140x
+chat-1.5B 1 clients pair 2: aggregate batch 74.7 spec 71.3 = 0.954x; p99 request spec/batch 1.062x
+chat-1.5B 1 clients pair 3: aggregate batch 74.5 spec 69.2 = 0.928x; p99 request spec/batch 1.250x
+chat-1.5B S (1 clients) median 0.928x; p99 median 1.140x; identity 3/18 replies equal; prefilled-token count differs on 15
+copy-7B 4 clients pair 1: missing (batch)
+copy-7B 4 clients pair 2: aggregate batch 23.2 spec 16.1 = 0.695x; p99 request spec/batch 1.452x
+copy-7B 4 clients pair 3: missing (batch)
+copy-7B L (4 clients) median 0.695x; p99 median 1.452x; identity 8/8 replies equal; prefilled-token count differs on 0
+copy-7B 1 clients pair 1: missing (batch)
+copy-7B 1 clients pair 2: missing (batch)
+copy-7B 1 clients pair 3: missing (batch)

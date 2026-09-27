@@ -1,0 +1,250 @@
+09:25:56 == spec vs batching start; tree b11bcfc3; bin serve-metal-new-cc5f8c2c; { 1.63 2.08 2.11 }
+09:25:56 idle: load1=1.63
+09:25:56 copy copy-15b.json batch4_1 clients=4
+[spec-copy] batch4_1: clients=4 wall=25.09s aggregate=81.627 tok/s (2048 tokens)
+09:26:22 idle: load1=1.25
+09:26:22 copy copy-15b.json spec4_1 clients=4
+[spec-copy] spec4_1: clients=4 wall=40.802s aggregate=50.194 tok/s (2048 tokens)
+09:27:04 idle: load1=1.86
+09:27:04 copy copy-15b.json spec4_2 clients=4
+[spec-copy] spec4_2: clients=4 wall=40.418s aggregate=50.671 tok/s (2048 tokens)
+09:27:45 waiting for idle: load1=2.79 (0s)
+09:28:46 waiting for idle: load1=3.45 (60s)
+09:29:46 idle: load1=2.00
+09:29:46 copy copy-15b.json batch4_2 clients=4
+[w7-plain] waiting for memory: 69 MB free, want >= 100 MB (0s/60s)
+[w7-plain] waiting for memory: 77 MB free, want >= 100 MB (2s/60s)
+[spec-copy] batch4_2: clients=4 wall=24.523s aggregate=83.512 tok/s (2048 tokens)
+09:30:16 idle: load1=1.69
+09:30:16 copy copy-15b.json batch4_3 clients=4
+[spec-copy] batch4_3: clients=4 wall=24.505s aggregate=83.574 tok/s (2048 tokens)
+09:30:42 idle: load1=1.67
+09:30:42 copy copy-15b.json spec4_3 clients=4
+[spec-copy] spec4_3: clients=4 wall=40.152s aggregate=51.006 tok/s (2048 tokens)
+09:31:23 idle: load1=0.93
+09:31:23 copy copy-15b.json batch1_1 clients=1
+[spec-copy] batch1_1: clients=1 wall=9.619s aggregate=53.229 tok/s (512 tokens)
+09:31:34 idle: load1=0.79
+09:31:34 copy copy-15b.json spec1_1 clients=1
+[spec-copy] spec1_1: clients=1 wall=9.885s aggregate=51.796 tok/s (512 tokens)
+09:31:45 idle: load1=0.91
+09:31:45 copy copy-15b.json spec1_2 clients=1
+[spec-copy] spec1_2: clients=1 wall=9.849s aggregate=51.986 tok/s (512 tokens)
+09:31:55 idle: load1=1.21
+09:31:55 copy copy-15b.json batch1_2 clients=1
+[spec-copy] batch1_2: clients=1 wall=9.643s aggregate=53.096 tok/s (512 tokens)
+09:32:06 idle: load1=1.10
+09:32:06 copy copy-15b.json batch1_3 clients=1
+[spec-copy] batch1_3: clients=1 wall=9.665s aggregate=52.973 tok/s (512 tokens)
+09:32:17 idle: load1=1.00
+09:32:17 copy copy-15b.json spec1_3 clients=1
+[spec-copy] spec1_3: clients=1 wall=9.876s aggregate=51.842 tok/s (512 tokens)
+09:32:28 idle: load1=1.22
+09:32:28 chat batch4_1 clients=4
+[w7-plain] batch4_1 clients=4 starting fresh server
+[w7-plain] batch4_1 clients=4: wall=20.656s aggregate=148.72 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+09:32:49 idle: load1=0.95
+09:32:49 chat spec4_1 clients=4
+[w7-plain] resuming: 1 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+[w7-plain] spec4_1 clients=4 starting fresh server
+[w7-plain] spec4_1 clients=4: wall=42.25s aggregate=72.71 tok/s; prefill_reused per client per turn [[0, 156, 310, 465, 617, 765], [0, 156, 310, 465, 617, 765], [0, 156, 310, 465, 617, 765], [0, 156, 310, 465, 617, 765]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+09:33:32 idle: load1=1.28
+09:33:32 chat spec4_2 clients=4
+[w7-plain] resuming: 2 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+[w7-plain] spec4_2 clients=4 starting fresh server
+[w7-plain] spec4_2 clients=4: wall=42.222s aggregate=72.76 tok/s; prefill_reused per client per turn [[0, 156, 310, 465, 617, 765], [0, 156, 310, 465, 617, 765], [0, 156, 310, 465, 617, 765], [0, 156, 310, 465, 617, 765]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+09:34:15 idle: load1=0.95
+09:34:15 chat batch4_2 clients=4
+[w7-plain] resuming: 3 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+[w7-plain] batch4_2 clients=4 starting fresh server
+[w7-plain] batch4_2 clients=4: wall=20.741s aggregate=148.11 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+09:34:36 idle: load1=1.62
+09:34:36 chat batch4_3 clients=4
+[w7-plain] resuming: 4 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+[w7-plain] batch4_3 clients=4 starting fresh server
+[w7-plain] batch4_3 clients=4: wall=21.358s aggregate=143.84 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+09:34:59 waiting for idle: load1=2.13 (0s)
+09:35:09 idle: load1=1.95
+09:35:09 chat spec4_3 clients=4
+[w7-plain] resuming: 5 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+[w7-plain] spec4_3 clients=4 starting fresh server
+[w7-plain] spec4_3 clients=4: wall=43.996s aggregate=69.82 tok/s; prefill_reused per client per turn [[0, 156, 310, 465, 617, 765], [0, 156, 310, 465, 617, 765], [0, 156, 310, 465, 617, 765], [0, 156, 310, 465, 617, 765]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+09:35:54 idle: load1=1.54
+09:35:54 chat batch1_1 clients=1
+[w7-plain] resuming: 6 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+[w7-plain] batch1_1 clients=1 starting fresh server
+[w7-plain] batch1_1 clients=1: wall=10.398s aggregate=73.86 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+09:36:05 waiting for idle: load1=2.19 (0s)
+09:36:25 idle: load1=1.84
+09:36:25 chat spec1_1 clients=1
+[w7-plain] resuming: 7 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+[w7-plain] spec1_1 clients=1 starting fresh server
+[w7-plain] spec1_1 clients=1: wall=11.363s aggregate=67.59 tok/s; prefill_reused per client per turn [[0, 156, 310, 465, 617, 765]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+09:36:37 waiting for idle: load1=2.11 (0s)
+09:36:47 idle: load1=1.87
+09:36:47 chat spec1_2 clients=1
+[w7-plain] resuming: 8 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+[w7-plain] spec1_2 clients=1 starting fresh server
+[w7-plain] spec1_2 clients=1: wall=10.774s aggregate=71.28 tok/s; prefill_reused per client per turn [[0, 156, 310, 465, 617, 765]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+09:36:59 waiting for idle: load1=2.03 (0s)
+09:37:29 idle: load1=1.98
+09:37:29 chat batch1_2 clients=1
+[w7-plain] resuming: 9 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+[w7-plain] batch1_2 clients=1 starting fresh server
+[w7-plain] batch1_2 clients=1: wall=10.28s aggregate=74.71 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+09:37:40 idle: load1=1.98
+09:37:40 chat batch1_3 clients=1
+[w7-plain] resuming: 10 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+[w7-plain] batch1_3 clients=1 starting fresh server
+[w7-plain] batch1_3 clients=1: wall=10.302s aggregate=74.55 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+09:37:51 waiting for idle: load1=2.07 (0s)
+09:38:11 idle: load1=1.90
+09:38:11 chat spec1_3 clients=1
+[w7-plain] resuming: 11 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+[w7-plain] spec1_3 clients=1 starting fresh server
+[w7-plain] spec1_3 clients=1: wall=11.096s aggregate=69.21 tok/s; prefill_reused per client per turn [[0, 156, 310, 465, 617, 765]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-vs-batching-2026-09-27/chat-15b.json
+09:38:23 waiting for idle: load1=2.04 (0s)
+09:39:24 waiting for idle: load1=2.10 (60s)
+09:39:44 idle: load1=1.75
+09:39:44 copy copy-7b.json batch4_1 clients=4
+[w7-plain] waiting for memory: 71 MB free, want >= 100 MB (0s/60s)
+[w7-plain] waiting for memory: 63 MB free, want >= 100 MB (2s/60s)
+Exception in thread Thread-3 (client):
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_spec_copy.py", line 48, in client
+    lat, resp = w7.post(url, body, timeout=600)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_w7_plain.py", line 176, in post
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 413: Request Entity Too Large
+Traceback (most recent call last):
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_spec_copy.py", line 94, in <module>
+    main()
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_spec_copy.py", line 86, in main
+    r = cell(srv.url, a, secs)
+        ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_spec_copy.py", line 62, in cell
+    toks = sum(x["completion_tokens"] or 0 for c in res for x in c)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_spec_copy.py", line 62, in <genexpr>
+    toks = sum(x["completion_tokens"] or 0 for c in res for x in c)
+               ~^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'NoneType' object is not subscriptable
+09:41:13 waiting for idle: load1=2.08 (0s)
+09:41:33 idle: load1=1.90
+09:41:33 copy copy-7b.json spec4_1 clients=4
+[spec-copy] spec4_1: clients=4 wall=126.737s aggregate=16.159 tok/s (2048 tokens)
+09:43:42 waiting for idle: load1=2.20 (0s)
+09:44:42 waiting for idle: load1=2.41 (60s)
+09:45:43 waiting for idle: load1=2.53 (120s)
+09:46:43 waiting for idle: load1=3.61 (180s)
+09:47:44 waiting for idle: load1=3.17 (240s)
+09:48:44 waiting for idle: load1=2.92 (300s)
+09:49:45 waiting for idle: load1=2.50 (360s)
+09:50:45 waiting for idle: load1=3.22 (420s)
+09:51:46 waiting for idle: load1=2.71 (480s)
+09:52:26 idle: load1=1.99
+09:52:26 copy copy-7b.json spec4_2 clients=4
+[spec-copy] spec4_2: clients=4 wall=127.162s aggregate=16.105 tok/s (2048 tokens)
+09:54:37 idle: load1=1.66
+09:54:37 copy copy-7b.json batch4_2 clients=4
+[spec-copy] batch4_2: clients=4 wall=88.334s aggregate=23.185 tok/s (2048 tokens)
+09:56:07 waiting for idle: load1=2.21 (0s)
+09:57:07 waiting for idle: load1=3.00 (60s)
+09:58:08 waiting for idle: load1=2.51 (120s)
+09:59:08 waiting for idle: load1=2.56 (180s)
+10:00:09 waiting for idle: load1=2.63 (240s)
+10:01:09 idle: load1=1.86
+10:01:09 copy copy-7b.json batch4_3 clients=4
+Exception in thread Thread-4 (client):
+Traceback (most recent call last):
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_spec_copy.py", line 48, in client
+    lat, resp = w7.post(url, body, timeout=600)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_w7_plain.py", line 176, in post
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 413: Request Entity Too Large
+Traceback (most recent call last):
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_spec_copy.py", line 94, in <module>
+    main()
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_spec_copy.py", line 86, in main
+    r = cell(srv.url, a, secs)
+        ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_spec_copy.py", line 62, in cell
+    toks = sum(x["completion_tokens"] or 0 for c in res for x in c)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_spec_copy.py", line 62, in <genexpr>
+    toks = sum(x["completion_tokens"] or 0 for c in res for x in c)
+               ~^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'NoneType' object is not subscriptable
+10:02:36 waiting for idle: load1=2.03 (0s)
+10:03:36 idle: load1=1.86
+10:03:36 copy copy-7b.json spec4_3 clients=4
+[spec-copy] spec4_3: clients=4 wall=128.519s aggregate=15.935 tok/s (2048 tokens)
+10:05:49 waiting for idle: load1=10.29 (0s)
+10:06:49 waiting for idle: load1=5.65 (60s)
+10:07:50 waiting for idle: load1=3.60 (120s)
+10:08:51 waiting for idle: load1=3.97 (180s)
+10:09:51 waiting for idle: load1=3.55 (240s)
+10:10:52 waiting for idle: load1=3.50 (300s)
+10:11:52 waiting for idle: load1=4.52 (360s)
+10:12:53 waiting for idle: load1=2.62 (420s)
+10:13:53 waiting for idle: load1=2.68 (480s)
+10:14:54 waiting for idle: load1=3.59 (540s)
+10:15:41 == STOPPED by hand: the idle gate had waited since 10:05 (load1 2.6-10, interactive VS Code); the 6 reported-only 7B 1-client cells were not run
