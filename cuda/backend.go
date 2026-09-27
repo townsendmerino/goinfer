@@ -407,6 +407,11 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			if e != nil {
 				return declined(e)
 			}
+			if hw.kind == "q4k" && !actG32 {
+				// gemv_q4k_g32's minimum term reads the per-group activation sums only the per-32
+				// quantizers write; --quant q4k always stamps per-32, so this is defence in depth.
+				return declined(fmt.Errorf("layer %d: a Q4_K weight needs per-32 activations (ActQuantGroup 32)", l))
+			}
 			*p.dst = hw
 		}
 		if hl.g4moe {
@@ -912,7 +917,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 				name string
 			}{
 				{&r.fRms, "rmsnorm_quant_g32"}, {&r.fQ, "quant_vec_g32"}, {&r.fSw, "glu_quant_g32"},
-				{&r.gemvW4, "gemv_w4a8_g32"}, {&r.gemvW8, "gemv_w8a8_g32"},
+				{&r.gemvW4, "gemv_w4a8_g32"}, {&r.gemvW8, "gemv_w8a8_g32"}, {&r.gemvQ4K, "gemv_q4k_g32"},
 			} {
 				if *f.dst, e = r.dev.NewComputePipeline(agmod, f.name); e != nil {
 					return fmt.Errorf("actgroup %s: %w", f.name, e)

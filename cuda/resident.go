@@ -463,7 +463,7 @@ type cudaResident struct {
 	sandwich     bool   // Gemma 4-norm sandwich: extra post-attn / post-MLP norms
 	postOnly     bool   // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — segA quantizes the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
 	// G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
-	actG32        bool    // decoder.Options.ActQuantGroup == 32: actgroup.cu's per-32 kernels are bound into fRms/fQ/fSw/gemvW4/gemvW8, and every activation scale buffer holds K/32 floats (actScaleLen)
+	actG32        bool    // decoder.Options.ActQuantGroup == 32: actgroup.cu's per-32 kernels are bound into fRms/fQ/fSw/gemvW4/gemvW8, and every activation scale buffer holds 2·K/32 floats (actScaleLen: scales, then per-group sums for gemv_q4k_g32)
 	layerNorm     bool    // arch.Norm==NormLayer — layernorm_quant (mean-centered, bias-free) instead of rmsnorm_quant at every norm site that feeds a GEMV; see the r.norm dispatcher
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — segBFFN reuses segA's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in step(); 0 ⇒ none (FeatLogitScale)
@@ -615,6 +615,9 @@ type cudaResident struct {
 	fGURows                                                                                 Pipeline // fused_rms_gu_rows: fused_rms_gu with rows-per-warp (zero when its module did not load)
 	smCount, smThreads, smSmem                                                              int      // device shape for wave-sized fused-projection grids (zero when unread): SM count, max threads per SM, max shared memory per SM
 	fGumbel1, fGumbel2                                                                      Pipeline // gumbel_stage1/2 (R7b)
+	// gemvQ4K is actgroup.cu's gemv_q4k_g32: native GGUF Q4_K weights (--quant q4k), bound only
+	// under per-32 activations, the only mode that carries the per-group activation sums it needs.
+	gemvQ4K Pipeline
 	// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md — cuda/lora.go). Own module
 	// (lora.ptx), loaded unconditionally like every other glue pipeline — cheap, and whether a
 	// model will ever receive an adapter isn't known at BuildResident time.
@@ -885,9 +888,12 @@ func (r *cudaResident) upu16(v []uint16) Buffer {
 }
 func (r *cudaResident) upW(h hostW) cudaWQ {
 	w := cudaWQ{kind: h.kind, W: r.upu32(h.wpk), N: h.N, K: h.K}
-	if h.kind == "int4" {
+	switch h.kind {
+	case "int4":
 		w.ws16 = r.upu16(h.ws16)
-	} else {
+	case "q4k":
+		// scales and minimums live inside the super-blocks
+	default:
 		w.ws = r.up32(h.ws)
 	}
 	return w
@@ -2510,6 +2516,11 @@ func (r *cudaResident) normF32(x, w Buffer) error {
 // race-free.
 func (r *cudaResident) doG(wt cudaWQ, a Buffer, as Buffer, bias KernelArg, dst Buffer, accum int32) error {
 	cfg := LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+	if wt.kind == "q4k" {
+		// BuildResident admits q4k only with actG32 (the per-group sums in as[K/32:] come from quantG32).
+		return r.launch(r.gemvQ4K, cfg, Arg(wt.W), Arg(a), Arg(as), bias,
+			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/256)), Arg(dst), gpu.ArgValue(accum))
+	}
 	if wt.kind == "int4" {
 		return r.launch(r.gemvW4, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
 			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/8)), gpu.ArgValue(int32(wt.K/32)), Arg(dst), gpu.ArgValue(accum))
@@ -3724,6 +3735,17 @@ func packWeight(w *linalg.WeightMat) (hostW, error) {
 	case "int8":
 		q8, sc, _, _ := w.Int8()
 		return hostW{kind: "int8", wpk: packI8(q8, N, K), ws: sc, N: N, K: K}, nil
+	case "q4k":
+		// GGUF Q4_K super-blocks verbatim (--quant q4k), as little-endian words: 36 per 256 weights.
+		raw, _ := w.Q4K()
+		if K%256 != 0 || len(raw) != N*K/256*144 {
+			return hostW{}, fmt.Errorf("cuda: q4k tensor %dx%d with %d bytes", N, K, len(raw))
+		}
+		wpk := make([]uint32, len(raw)/4)
+		for i := range wpk {
+			wpk[i] = uint32(raw[4*i]) | uint32(raw[4*i+1])<<8 | uint32(raw[4*i+2])<<16 | uint32(raw[4*i+3])<<24
+		}
+		return hostW{kind: "q4k", wpk: wpk, N: N, K: K}, nil
 	case "f32":
 		f32, _ := w.F32()
 		q8, sc := linalg.QuantizeRowsInt8(f32, N, K)
@@ -3994,7 +4016,7 @@ func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool, x Buffer) error 
 // K/32 under per-32 activation quantization (actG32).
 func (r *cudaResident) actScaleLen(k int) int {
 	if r.actG32 {
-		return k / 32
+		return 2 * k / 32 // scales, then aS·Σaq per group (quantG32; read by gemv_q4k_g32)
 	}
 	return 1
 }
