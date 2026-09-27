@@ -1,0 +1,161 @@
+{
+ "header": {
+  "utc": "2026-09-27T17:44:16Z",
+  "host": "macbookpro.lan",
+  "model": "/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+  "goinfer_commit": "ba044c75",
+  "goinfer_dirty": true,
+  "goinfer_serve_mtime": "Sep 27 10:35:41 2026",
+  "llama_server_version": "version: 0.3.0 (build 10621, commit c1d0e7a00)",
+  "uptime": "10:44  up 3 days, 39 mins, 1 user, load averages: 18.95 9.60 5.93"
+ },
+ "args": {
+  "out": "/Users/francistownsend-merino/goinfer-bench/fix413-2026-09-27/fix413.json",
+  "key": "new4",
+  "clients": 4,
+  "rounds": 2,
+  "chars": 3500,
+  "max_tokens": 256,
+  "rev": "cc5f8c2c",
+  "serve_args": "",
+  "server_log": "/Users/francistownsend-merino/goinfer-bench/fix413-2026-09-27/servers.log"
+ },
+ "results": {
+  "old4": {
+   "clients": 4,
+   "wall_s": 0.003,
+   "completion_tokens": 0,
+   "http_errors": [
+    503,
+    503,
+    503,
+    503,
+    503,
+    503,
+    503,
+    503
+   ],
+   "aggregate_tok_s": 0.0,
+   "per_client": [
+    [
+     {
+      "section": 0,
+      "http_error": 503,
+      "completion_tokens": 0
+     },
+     {
+      "section": 1,
+      "http_error": 503,
+      "completion_tokens": 0
+     }
+    ],
+    [
+     {
+      "section": 2,
+      "http_error": 503,
+      "completion_tokens": 0
+     },
+     {
+      "section": 3,
+      "http_error": 503,
+      "completion_tokens": 0
+     }
+    ],
+    [
+     {
+      "section": 4,
+      "http_error": 503,
+      "completion_tokens": 0
+     },
+     {
+      "section": 5,
+      "http_error": 503,
+      "completion_tokens": 0
+     }
+    ],
+    [
+     {
+      "section": 6,
+      "http_error": 503,
+      "completion_tokens": 0
+     },
+     {
+      "section": 7,
+      "http_error": 503,
+      "completion_tokens": 0
+     }
+    ]
+   ]
+  },
+  "new4": {
+   "clients": 4,
+   "wall_s": 377.523,
+   "completion_tokens": 1024,
+   "http_errors": [
+    503,
+    503,
+    503,
+    503
+   ],
+   "aggregate_tok_s": 2.712,
+   "per_client": [
+    [
+     {
+      "section": 0,
+      "latency_s": 377.415,
+      "prompt_tokens": 967,
+      "completion_tokens": 256,
+      "content_sha": "92b3bcfc04be7d94"
+     },
+     {
+      "section": 1,
+      "http_error": 503,
+      "completion_tokens": 0
+     }
+    ],
+    [
+     {
+      "section": 2,
+      "latency_s": 377.521,
+      "prompt_tokens": 1031,
+      "completion_tokens": 256,
+      "content_sha": "720f91c0de461b1f"
+     },
+     {
+      "section": 3,
+      "http_error": 503,
+      "completion_tokens": 0
+     }
+    ],
+    [
+     {
+      "section": 4,
+      "latency_s": 377.319,
+      "prompt_tokens": 933,
+      "completion_tokens": 256,
+      "content_sha": "f6dabaa6c50f4bc0"
+     },
+     {
+      "section": 5,
+      "http_error": 503,
+      "completion_tokens": 0
+     }
+    ],
+    [
+     {
+      "section": 6,
+      "latency_s": 377.46,
+      "prompt_tokens": 975,
+      "completion_tokens": 256,
+      "content_sha": "f01b0d233fbb5e80"
+     },
+     {
+      "section": 7,
+      "http_error": 503,
+      "completion_tokens": 0
+     }
+    ]
+   ]
+  }
+ }
+}

@@ -111,3 +111,29 @@ The spec cells never did.
 - So the 413 refused requests that would most likely have fit. Whether they would fit was not measured.
 - Pair 2's batch cell passed, so whether a request is refused depends on the machine's live memory at that moment.
 - It does not touch this record's graded cells (the 1.5B never hit it), or W7 on the 7B (short suffixes).
+
+## Update 2026-09-27: §5's 413 fixed; the end-to-end check could not be run
+
+**The fix.** `prepare` no longer divides the prefill-memory margin for a request that prefills on a GPU resident.
+- CPU workers (MC3c) keep the division, because they prefill at the same time.
+- On a resident, prefill passes run one at a time, and each pass's scratch is released when it ends (`metal/prefill.go`,
+  fix C5, after the command buffer completes). So nothing accumulates across them. The margin is live memory, which
+  already excludes what the other generations hold.
+- `TestPrepare_prefillShare` (`internal/serveapp`, `goinfer_testhooks`) drives `prepare` with 3 generations ahead at
+  concurrency 4 and twice a lone request's need. It found that need by bisection through the real check.
+  - A CPU model is refused: the split is kept.
+  - A resident model is admitted. This case was red before the fix: 0.25 GB needed, priced against 0.13 GB.
+  - A lone resident request with half its need is still refused.
+
+**The end-to-end check was attempted and does not answer.** The 7B's 4-client copy cell was run on both builds, 10:36–10:43
+([`fix413-check-run.log`](spec-vs-batching-metal-2026-09-27/fix413-check-run.log),
+[`fix413-check-servers.log`](spec-vs-batching-metal-2026-09-27/fix413-check-servers.log),
+[`fix413-check.json`](spec-vs-batching-metal-2026-09-27/fix413-check.json)).
+- The Mac was already short of memory: 34–37% free, and 617 MB of swap in use before the first server. The morning's
+  cells had had more room.
+- Swap reached 3.77 GB, and serve's swap guard tripped in both servers.
+  - The old build tripped during load and warm-up, before any request ran, and answered all 8 with 503.
+  - The fixed build served 4 of 8 while paging (2.7 tok/s), then tripped.
+- So whether §5's refused requests would have fit was not measured. It needs a rerun with the memory headroom the
+  09:39 cells had.
+- The swap guard refused requests rather than letting the machine page further, which is its job.

@@ -14,7 +14,7 @@ One fresh server per cell. Usage:
   GOINFER_SERVE_CPU=<serve binary> BENCH_W7_MODEL=<model> python3 scripts/bench_spec_copy.py OUT.json --key K \
       --clients 4 [--serve-args=-spec=ngram] [--server-log LOG]
 """
-import argparse, hashlib, json, os, subprocess, sys, threading, time
+import argparse, hashlib, json, os, subprocess, sys, threading, time, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -45,7 +45,11 @@ def cell(url, a, secs):
         for r in range(a.rounds):
             s = i * a.rounds + r
             body = dict(request(secs[s]), max_tokens=a.max_tokens)
-            lat, resp = w7.post(url, body, timeout=600)
+            try:
+                lat, resp = w7.post(url, body, timeout=600)
+            except urllib.error.HTTPError as e:  # e.g. serve's 413 prefill-memory refusal: recorded, not fatal
+                res[i][r] = {"section": s, "http_error": e.code, "completion_tokens": 0}
+                continue
             u = resp.get("usage") or {}
             content = ((resp.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
             res[i][r] = {"section": s, "latency_s": round(lat, 3), "prompt_tokens": u.get("prompt_tokens"),
@@ -60,7 +64,8 @@ def cell(url, a, secs):
         th.join()
     wall = time.perf_counter() - t0
     toks = sum(x["completion_tokens"] or 0 for c in res for x in c)
-    return {"clients": a.clients, "wall_s": round(wall, 3), "completion_tokens": toks,
+    errs = [x["http_error"] for c in res for x in c if "http_error" in x]
+    return {"clients": a.clients, "wall_s": round(wall, 3), "completion_tokens": toks, "http_errors": errs,
             "aggregate_tok_s": round(toks / wall, 3), "per_client": res}
 
 
@@ -87,7 +92,7 @@ def main():
     res[a.key] = r
     json.dump({"header": w7.machine_header(), "args": vars(a), "results": res}, open(a.out, "w"), indent=1)
     print(f"[spec-copy] {a.key}: clients={a.clients} wall={r['wall_s']}s aggregate={r['aggregate_tok_s']} tok/s "
-          f"({r['completion_tokens']} tokens)", file=sys.stderr)
+          f"({r['completion_tokens']} tokens; HTTP errors {r['http_errors'] or 'none'})", file=sys.stderr)
 
 
 if __name__ == "__main__":

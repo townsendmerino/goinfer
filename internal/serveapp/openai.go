@@ -1052,8 +1052,11 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	if lm.model != nil {
 		// MC3c: with several generations allowed at once, this request's prefill shares the margin with the ones running
 		// or queued ahead of it — counted now, capped at the model's concurrency. A lone request keeps the whole margin.
+		// So does a request that prefills on a GPU resident: its prefill passes run one at a time (MC3's exclusive
+		// section), and the margin is live memory, which already excludes what the other generations hold. Split there,
+		// it refused ~1000-token 7B prompts under MC3 (docs/measurements/spec-vs-batching-metal-2026-09-27.md §5).
 		share := 1
-		if lm.concurrent > 1 {
+		if lm.concurrent > 1 && !(residentPath && lm.model.ResidentActive()) {
 			share = min(lm.concurrent, lm.turns.load()+1)
 		}
 		if aerr := lm.model.AdmitPrefillMemoryShare(len(gr.promptIDs), gr.maxTokens, residentPath, share); aerr != nil {

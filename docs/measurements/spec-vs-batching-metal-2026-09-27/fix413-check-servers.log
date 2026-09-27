@@ -1,0 +1,44 @@
+==== 2026-09-27 10:35:56 /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/serve-metal-new-cc5f8c2c -model bench=/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:8098 -quant int4
+decoder: .giw context capped at 18144 (model allows 32768) so that KV+scratch fits: needs ~2.19 GB of 3.19 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+decoder: .giw context capped at 17804 (model allows 32768) so that KV+scratch fits: needs ~2.15 GB of 3.15 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[resident] BuildResident declined (ok=false err=resident path declined: the resident build needs 5.77 GB (weights, host copy and KV), over 70% of 16.0 GB RAM (budget 3.15 GB (this machine's live-available memory tightened the static 70%/11.20 GB ceiling further)). Metal wires the pages it touches, so loading this would page to swap exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.) — continuing on the CPU/staged path
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml]
+  decode path: cpu (int4) — requested metal → running on cpu: the resident build needs 5.77 GB (weights, host copy and KV), over 70% of 16.0 GB RAM (budget 3.15 GB (this machine's live-available memory tightened the static 70%/11.20 GB ceiling further)). Metal wires the pages it touches, so loading this would page to swap exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it., and metal has no staged decode path
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  context: 32768 tokens (model maximum) · KV f32
+  fit: 17804-token cap needs 1.9 GB KV (weights 4.8 GB, budget 2.2 GB, 0.3 GB left for a request's own prefill)
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV (-max-concurrent)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 0.65 GB swap-used
+swap guard: TRIPPED — swap grew 0.64 GB over baseline (1.29 GB used now); refusing new requests until it recovers
+
+shutting down…
+==== 2026-09-27 10:37:30 /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/serve-metal-new-fix413-ba044c75 -model bench=/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:8098 -quant int4
+decoder: .giw context capped at 19578 (model allows 32768) so that KV+scratch fits: needs ~2.34 GB of 3.34 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+decoder: .giw context capped at 19607 (model allows 32768) so that KV+scratch fits: needs ~2.34 GB of 3.34 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+[resident] BuildResident declined (ok=false err=resident path declined: the resident build needs 5.86 GB (weights, host copy and KV), over 70% of 16.0 GB RAM (budget 3.35 GB (this machine's live-available memory tightened the static 70%/11.20 GB ceiling further)). Metal wires the pages it touches, so loading this would page to swap exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.) — continuing on the CPU/staged path
+loaded "bench": 28-layer model (vocab 152064) in 8ms [chat: chatml]
+  decode path: cpu (int4) — requested metal → running on cpu: the resident build needs 5.86 GB (weights, host copy and KV), over 70% of 16.0 GB RAM (budget 3.35 GB (this machine's live-available memory tightened the static 70%/11.20 GB ceiling further)). Metal wires the pages it touches, so loading this would page to swap exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it., and metal has no staged decode path
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  context: 32768 tokens (model maximum) · KV f32
+  fit: 19607-token cap needs 2.1 GB KV (weights 4.8 GB, budget 2.3 GB, 0.2 GB left for a request's own prefill)
+  session reuse: on (4 conversations kept prefilled)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own session KV (-max-concurrent)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 1.65 GB swap-used
+swap guard: TRIPPED — swap grew 0.86 GB over baseline (2.50 GB used now); refusing new requests until it recovers
+
+shutting down…

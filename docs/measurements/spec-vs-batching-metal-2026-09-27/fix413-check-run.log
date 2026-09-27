@@ -1,0 +1,9 @@
+== 10:35:54 old (serve-metal-new-cc5f8c2c); total = 1024.00M  used = 617.50M  free = 406.50M  (encrypted); load { 3.74 3.36 3.06 }
+System-wide memory free percentage: 37%
+[spec-copy] old4: clients=4 wall=0.003s aggregate=0.0 tok/s (0 tokens; HTTP errors [503, 503, 503, 503, 503, 503, 503, 503])
+   after: total = 2048.00M  used = 1569.06M  free = 478.94M  (encrypted)
+== 10:36:29 new (serve-metal-new-fix413-ba044c75); total = 2048.00M  used = 1569.06M  free = 478.94M  (encrypted); load { 3.72 3.40 3.08 }
+System-wide memory free percentage: 34%
+[w7-plain] WARNING: proceeding after 60s without reaching 100 MB free (have 71 MB)
+[spec-copy] new4: clients=4 wall=377.523s aggregate=2.712 tok/s (1024 tokens; HTTP errors [503, 503, 503, 503])
+   after: total = 4096.00M  used = 3765.88M  free = 330.12M  (encrypted)

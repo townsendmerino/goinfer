@@ -695,7 +695,8 @@ production's decode kernels run layer-major in one command buffer, so an extra v
   - Found on the way, both open:
     - with `--spec ngram`, chat turns after the first differ from plain decode (turn 0 equal in every conversation);
     - on the 7B, serve's prefill-memory share 413'd MC3 batch cells, because it divides the margin as if prefills ran
-      concurrently.
+      concurrently. **Fixed 2026-09-27:** a request that prefills on a resident keeps the whole live margin
+      (`TestPrepare_prefillShare`). The end-to-end rerun is owed: the attempt ran on a Mac already swapping.
 
 ## MC5 — continuous batching, paged KV, chunked prefill (parked)
 

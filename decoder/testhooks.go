@@ -384,3 +384,17 @@ func SetSSMStopLayerForTest(n int) (restore func()) {
 // SetGGUFRowFilterForTest installs f as the GGUF loader's per-row filter over layer-matmul weights
 // (ggufRowFilter); nil removes it. Not safe to change while a load is in flight.
 func SetGGUFRowFilterForTest(f func(name string, row []float32)) { ggufRowFilter = f }
+
+// SetHostRAMAvailableForTest makes the memory probe behind the load-time fit guard and the per-request prefill
+// admission (AdmitPrefillMemory, AdmitPrefillMemoryShare) report v bytes available, and returns the restore. It clears
+// the probe's TTL cache both ways, so neither the override nor the real value is masked by a stale read. Set it after
+// a model loads, or the load's own fit guard sees v too.
+func SetHostRAMAvailableForTest(v int64) (restore func()) {
+	prev := hostRAMAvailable
+	hostRAMAvailable = func() int64 { return v }
+	resetAvailProbeCache()
+	return func() {
+		hostRAMAvailable = prev
+		resetAvailProbeCache()
+	}
+}

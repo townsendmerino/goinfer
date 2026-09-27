@@ -27,7 +27,7 @@
 
 | minimax-code sends (openai-completions, custom URL) | goinfer |
 |---|---|
-| system prompt as `role: "developer"` when its thinking toggle is on | treated as `system` (`internal/serveapp/openai.go:1163`) |
+| system prompt as `role: "developer"` when its thinking toggle is on | treated as `system` (`internal/serveapp/openai.go:1166`) |
 | `max_completion_tokens` (its default for an unrecognised URL) | honoured, preferred over `max_tokens`; clamped to the context, not refused; ceiling 131072 (`internal/serveapp/openai.go:40`) |
 | `stream: true` + `stream_options.include_usage` | supported; final usage chunk |
 | `store: false`, `prompt_cache_key`, tools' `strict: false`, `reasoning_effort` | unknown fields ignored (plain `json` decode) |
