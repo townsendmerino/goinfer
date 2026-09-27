@@ -232,7 +232,10 @@ func TestBanner_concurrency(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			resident := strings.HasPrefix(tc.name, "resident")
 			f := bannerFacts{hasTemplate: true, concurrent: tc.concurrent, resident: resident, kvSlots: tc.cfg.kvSessions}
-			line := bannerLine(modelBannerFrom(f, tc.cfg), "concurrency:")
+			if l := bannerLine(modelBannerFrom(f, tc.cfg), "concurrency:"); l != "" {
+				t.Errorf("the load-time banner printed %q — concurrency is decided after load (setConcurrency)", l)
+			}
+			line := concurrencyLine(f, tc.cfg)
 			if tc.want == "" {
 				if line != "" {
 					t.Errorf("unexpected concurrency line %q", line)

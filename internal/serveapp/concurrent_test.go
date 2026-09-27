@@ -215,3 +215,25 @@ func TestAdmission_load(t *testing.T) {
 	}
 	a.release()
 }
+
+// TestSetConcurrency_reportsTheDecidedValue: the concurrency line serve prints comes from setConcurrency itself, after
+// it has decided — not from the load banner, which runs before (every model's banner once said "one generation at a
+// time" whatever -max-concurrent was, because it read the value before setConcurrency set it).
+func TestSetConcurrency_reportsTheDecidedValue(t *testing.T) {
+	m, err := decoder.Load(buildSyntheticBase(t), decoder.Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	if !m.CPUConcurrentSafe() {
+		t.Skip("synthetic base is not CPU-concurrent-safe")
+	}
+	lm := &loadedModel{model: m, name: "m", fp: "fp", sessions: newSessionLRU(m, 4, 0, "fp")}
+	line := lm.setConcurrency(config{maxConcurrent: 4, kvSessions: 4})
+	if lm.concurrent != 4 || !strings.Contains(line, "4 generations at once") {
+		t.Errorf("setConcurrency decided %d and reported %q", lm.concurrent, line)
+	}
+	if line := lm.setConcurrency(config{maxConcurrent: 1, kvSessions: 4}); lm.concurrent != 1 || line != "" {
+		t.Errorf("-max-concurrent 1: decided %d, reported %q (want 1 and nothing)", lm.concurrent, line)
+	}
+}

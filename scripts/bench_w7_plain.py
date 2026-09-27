@@ -106,16 +106,21 @@ def wait_llama_health(port, timeout=240):
 
 
 class GoinferServer:
-    def __init__(self, backend="metal", extra=""):
+    def __init__(self, backend="metal", extra="", log_path=""):
         self.backend = backend
         self.extra = shlex.split(extra)
+        self.log_path = log_path  # "" discards the server's output; else it is appended there (its banner is provenance)
 
     def __enter__(self):
         wait_free_memory_mb(MIN_FREE_MB_BEFORE_NEXT_SERVER, timeout=60)
         argv = [SERVE_CPU_METAL, "-model", f"bench={MODEL_PATH}", "-backend", self.backend,
                 "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"] + self.extra
-        self.proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                      preexec_fn=os.setsid)
+        sink = subprocess.DEVNULL
+        if self.log_path:
+            sink = open(self.log_path, "a")
+            sink.write(f"==== {time.strftime('%Y-%m-%d %H:%M:%S')} {' '.join(argv)}\n")
+            sink.flush()
+        self.proc = subprocess.Popen(argv, stdout=sink, stderr=sink, preexec_fn=os.setsid)
         if not wait_port(GPORT):
             raise RuntimeError("goinfer: server did not come up")
         self.url = f"http://127.0.0.1:{GPORT}/v1/chat/completions"
@@ -141,8 +146,12 @@ class LlamaServer:
         wait_free_memory_mb(MIN_FREE_MB_BEFORE_NEXT_SERVER, timeout=60)
         argv = [LLAMA_BIN, "-m", MODEL_PATH, "--port", str(LPORT), "-np", str(self.n_slots),
                 "-cb", "--host", "127.0.0.1", "-c", str(4096 * self.n_slots)]
-        self.proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                      preexec_fn=os.setsid)
+        sink = subprocess.DEVNULL
+        if self.log_path:
+            sink = open(self.log_path, "a")
+            sink.write(f"==== {time.strftime('%Y-%m-%d %H:%M:%S')} {' '.join(argv)}\n")
+            sink.flush()
+        self.proc = subprocess.Popen(argv, stdout=sink, stderr=sink, preexec_fn=os.setsid)
         if not wait_llama_health(LPORT):
             raise RuntimeError("llama-server: server did not come up")
         self.url = f"http://127.0.0.1:{LPORT}/v1/chat/completions"
@@ -253,6 +262,7 @@ def main():
     ap.add_argument("--engines", default="goinfer,llamacpp", help="comma list: goinfer, llamacpp")
     ap.add_argument("--backend", default="metal", help="goinfer's -backend (cpu records as goinfer_cpu)")
     ap.add_argument("--serve-args", default="", help="extra goinfer serve flags, e.g. '-max-concurrent 4'")
+    ap.add_argument("--server-log", default="", help="append goinfer serve's stdout/stderr (its banner) to this file")
     ap.add_argument("--fixed-nonce", action="store_true",
                     help="use a per-client nonce that does not change between runs, so two runs' transcripts (content_sha) "
                          "can be compared turn by turn — e.g. an identity gate between two builds")
@@ -288,7 +298,7 @@ def main():
             print(f"[w7-plain] {gkey} clients={n}: already done, skipping", file=sys.stderr)
             continue
         print(f"[w7-plain] {gkey} clients={n} starting fresh server", file=sys.stderr)
-        with GoinferServer(a.backend, a.serve_args) as srv:
+        with GoinferServer(a.backend, a.serve_args, a.server_log) as srv:
             r = run_concurrent(srv.url, a.max_tokens, a.temperature, n, a.fixed_nonce)
         results[gkey][str(n)] = r
         save()

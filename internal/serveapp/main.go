@@ -827,7 +827,9 @@ func newServer(cfg config) (*server, error) {
 	}
 	// MC3c: decided last, once adapters and vision towers are attached — a vision model runs one generation at a time.
 	for _, lm := range s.models {
-		lm.setConcurrency(cfg)
+		if line := lm.setConcurrency(cfg); line != "" {
+			fmt.Fprintf(os.Stderr, "%q %s\n", lm.name, line) // decided only now, so not part of its load banner
+		}
 	}
 	// S3 (docs/tasks/task-never-swap-2026-09.md): armed last, after every startup load that could
 	// itself grow swap has already finished — the guard's baseline should be "steady state after

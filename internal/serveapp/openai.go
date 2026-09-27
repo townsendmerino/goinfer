@@ -202,7 +202,7 @@ func toolSchemaBytes(tools []toolSpec) int {
 // the CPU (decoder.Model.CPUConcurrentSafe: not GPU-resident, not weight-streaming) and has no vision tower, and never
 // more than -kv-sessions keeps — each running generation holds a session, and the LRU must always have an idle one
 // or room. The queue holds the running generations plus -max-queue waiting ones.
-func (lm *loadedModel) setConcurrency(cfg config) {
+func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	n := max(1, cfg.maxConcurrent)
 	switch {
 	case n <= 1 || lm.model == nil || lm.visionCapable():
@@ -228,6 +228,10 @@ func (lm *loadedModel) setConcurrency(cfg config) {
 	if cfg.maxQueue > 0 {
 		lm.queue = make(chan struct{}, n+cfg.maxQueue)
 	}
+	if lm.model == nil {
+		return ""
+	}
+	return concurrencyLine(bannerFacts{resident: lm.model.ResidentActive(), kvSlots: lm.model.ResidentKVSlots(), concurrent: n}, cfg)
 }
 
 // visionCapable reports whether this model has a loaded vision tower.
