@@ -192,3 +192,26 @@ func TestServe_maxConcurrentMatchesAlone(t *testing.T) {
 		}
 	}
 }
+
+// TestAdmission_load: load counts holders plus waiters — what the prefill-memory share reads, so a lone request sees 0
+// ahead of it and keeps the whole margin.
+func TestAdmission_load(t *testing.T) {
+	var a admission
+	a.setCap(1)
+	if a.load() != 0 {
+		t.Fatalf("idle load = %d, want 0", a.load())
+	}
+	ctx := context.Background()
+	a.enter(ctx, admissionRecord{})
+	done := make(chan struct{})
+	go func() { a.enter(ctx, admissionRecord{}); close(done) }()
+	for a.load() != 2 {
+		time.Sleep(time.Millisecond)
+	}
+	a.release()
+	<-done
+	if a.load() != 1 {
+		t.Fatalf("after the hand-off load = %d, want 1", a.load())
+	}
+	a.release()
+}

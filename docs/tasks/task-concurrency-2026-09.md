@@ -253,7 +253,9 @@ different adapters.
 - `serve -max-concurrent 4` on the W7 CPU workload gives 1.97× the serialized 4-client aggregate (repeats 1.86× and
   1.91×), and p99 per-turn latency falls from 12.8–13.4 s to 6.5–7.0 s.
 - Output is byte-identical to each conversation served alone, and the concurrency tests pass under `-race`.
-- It ships default 1. **A CPU default > 1 is the open owner decision.** Step 2 (batching) is not started.
+- It shipped default 1. **Owner decision 2026-09-26: default 4** (still capped by `-kv-sessions`). With that, a
+  request's prefill-memory share counts the generations running or queued ahead of it, so a lone request keeps the
+  whole margin. Step 2 (batching) is not started.
 
 **Why this, before MC3.** MC2 earned on the CPU with batching (1.69–2.04× at B = 4), and J8's cell, 4 independent
 decode workers, matched or beat it (2.00–2.48×) at a fraction of the build. MC3 on Metal needs a fidelity-gated

@@ -1033,7 +1033,13 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	// (including the C-18 clamp above), so the numbers in a refusal are the real ones, and every
 	// prepare() caller gets this for free rather than needing its own copy of the check.
 	if lm.model != nil {
-		if aerr := lm.model.AdmitPrefillMemoryShare(len(gr.promptIDs), gr.maxTokens, residentPath, lm.concurrent); aerr != nil {
+		// MC3c: with several generations allowed at once, this request's prefill shares the margin with the ones running
+		// or queued ahead of it — counted now, capped at the model's concurrency. A lone request keeps the whole margin.
+		share := 1
+		if lm.concurrent > 1 {
+			share = min(lm.concurrent, lm.turns.load()+1)
+		}
+		if aerr := lm.model.AdmitPrefillMemoryShare(len(gr.promptIDs), gr.maxTokens, residentPath, share); aerr != nil {
 			return genRequest{}, &prefillMemoryError{aerr}
 		}
 	}

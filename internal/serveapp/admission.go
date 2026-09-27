@@ -62,6 +62,13 @@ func (a *admission) setCap(n int) {
 
 func (a *admission) capacity() int { return max(1, a.cap) }
 
+// load is how many generations hold a turn or wait for one right now.
+func (a *admission) load() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.held + a.waiters.Len()
+}
+
 // enter blocks until this waiter holds a turn or ctx ends first. The immediate-admit fast path
 // (a turn free, nobody else waiting) never allocates or blocks. release() must be called exactly
 // once by whoever gets ok=true, when done running — see loadedModel.exit(). Turns are

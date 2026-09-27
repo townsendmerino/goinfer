@@ -99,12 +99,13 @@ finish, returning `200` if that completes within `--unload-drain-wait` (default 
 and `202` otherwise. `--max-queue N` (default 8) bounds each model's queue: a full queue
 returns 429 + Retry-After (no continuous batching).
 
-**`--max-concurrent N` (default 1) lets one CPU model run N generations at once** (Experimental; MC3c of
-`docs/tasks/task-concurrency-2026-09.md`, 2026-09-26). Each generation runs on its own session KV, so each
+**`--max-concurrent N` (default 4) lets one CPU model run N generations at once** (Experimental; MC3c of
+`docs/tasks/task-concurrency-2026-09.md`, 2026-09-26; default 4 by owner decision, and `1` restores strict
+serialization). Each generation runs on its own session KV, so each
 conversation's output is byte-identical to serving it alone, and admission stays FIFO. N is capped by `--kv-sessions`
 (each running generation holds a session). A GPU-resident, weight-streaming or vision model always runs one, and the
-banner says which applies. Each request's prefill must fit in 1/N of the memory safety margin, since concurrent
-prefills share it. The trade: aggregate throughput rises (4 decode workers measured 2.0–2.5× on an M1 Pro's CPU,
+banner says which applies. A request's prefill shares the memory safety margin with the generations running or queued
+ahead of it when it arrives (up to N), so a lone request keeps the whole margin. The trade: aggregate throughput rises (4 decode workers measured 2.0–2.5× on an M1 Pro's CPU,
 `measurements/concurrency-mc2-2026-09-26.md`), while each request, sharing the cores, takes longer than it would
 alone.
 

@@ -274,7 +274,7 @@ type config struct {
 	kvIdleDemote    time.Duration // -kv-idle-demote: tiered KV — demote a session idle this long to disk (0 = off)
 	kvDemotedMax    int           // -kv-demoted-max: cap on the on-disk cold tier
 	maxQueue        int           // -max-queue: bounded per-model queue depth (0 = unbounded)
-	maxConcurrent   int           // -max-concurrent: generations one CPU model may run at once (MC3c; 1 = serialized)
+	maxConcurrent   int           // -max-concurrent: generations one CPU model may run at once (MC3c; default 4, owner 2026-09-26; 1 = serialized)
 	jobDir          string        // -job-dir (J2, task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
 	maxInflight     int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
 	maxBodyBytes    int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
@@ -407,7 +407,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm session's KV to -session-dir once it's been idle this long, faulting it back on the next matching request (e.g. 10m; 0 = off). Lets a small-RAM box serve many intermittent chats. Needs -session-dir and -kv-sessions > 0")
 	flag.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
-	flag.IntVar(&cfg.maxConcurrent, "max-concurrent", 1, "generations one CPU model may run at once, each on its own session KV (capped by -kv-sessions; GPU-resident, weight-streaming and vision models always run one)")
+	flag.IntVar(&cfg.maxConcurrent, "max-concurrent", 4, "generations one CPU model may run at once, each on its own session KV (capped by -kv-sessions; GPU-resident, weight-streaming and vision models always run one; 1 = serialized)")
 	flag.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")
 	flag.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")
 	flag.DurationVar(&cfg.unloadDrainWait, "unload-drain-wait", 5*time.Second, "how long POST /admin/models/unload waits for in-flight requests to drain before returning 202 (native memory is freed as they finish either way; the model is unroutable immediately). ?wait=false returns 202 at once")
