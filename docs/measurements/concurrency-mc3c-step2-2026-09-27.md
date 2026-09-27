@@ -95,5 +95,14 @@ prefill of the new user turn, sampling and HTTP.
   - The design registered "a run mixing eligible and ineligible tokens batches the eligible ones". In the build, an
     ineligible cache never enters the batcher at all, so no run mixes them.
 - **`auto` is off on darwin** until a Mac 7B cell shows batched B = 4 ÷ J8 N = 4 ≥ 1.15×.
+- **The full decoder suite** was held until after timing and run at `d16f5845`: 704 pass, 103 skip, **1 fail**
+  (`decoder-suite.log`). The failure is `TestSamplingThroughputGate`, a timing-ratio gate: temp+top_p ÷ temp-only must
+  stay under 5.0× at V = 262144. It read 6.45× under the suite's own load.
+  - Run alone, interleaved with the pre-step-2 build (`0bc06f90`) and idle-gated, it passes at 3.6–4.6×.
+  - HEAD reads higher than base (4.3–4.6× against 3.6–4.0×) because HEAD is faster in **both** arms: temp-only by
+    15–20% and top_p by 4–6%. The ratio rises because its denominator got faster.
+  - Step 2 touches no sampler code, so why temp-only got faster is not established (layout, most likely).
+  - CI's decoder shards passed it on `d16f5845`.
+  - It is recorded as a noisy ratio gate near its bar, not as a regression.
 - **The batched numbers are a floor.** The batched path's M = 1 costs 0.965× production on the 7B; a tuned small-M
   amd64 kernel is a follow-on.
