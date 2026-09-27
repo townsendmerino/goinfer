@@ -226,6 +226,7 @@ func TestBanner_concurrency(t *testing.T) {
 		{"capped", 2, config{maxConcurrent: 4, kvSessions: 2}, "capped by --kv-sessions 2"},
 		{"asked, not eligible", 1, config{maxConcurrent: 4, kvSessions: 4}, "applies to CPU models"},
 		{"resident, batched", 4, config{maxConcurrent: 4, kvSessions: 4}, "resident KV slot, decode tokens batched"},
+		{"resident, batched, chunked prefill", 4, config{maxConcurrent: 4, kvSessions: 4, prefillChunk: 512}, "prefills in 512-token chunks"},
 		{"resident, capped by slots", 2, config{maxConcurrent: 4, kvSessions: 2}, "capped by the 2 resident KV slots"},
 		{"resident, cannot batch", 1, config{maxConcurrent: 4, kvSessions: 4}, "needs a resident that batches decode"},
 	} {

@@ -69,8 +69,8 @@ concurrent conversations are served, with limits:
   steps that are bit-identical to serving each alone. Measured 1.59× the serialized aggregate at 4 clients
   ([`measurements/concurrency-mc3-2026-09-26.md`](measurements/concurrency-mc3-2026-09-26.md)).
 
-A newcomer's prefill still runs whole between steps, and beyond those few conversations requests wait in a bounded
-queue. If your problem is saturating a datacentre GPU with concurrent requests, vLLM and its ports are built for that
+A long newcomer's prefill is chunked between those steps, and beyond those few conversations requests wait in a
+bounded queue. If your problem is saturating a datacentre GPU with concurrent requests, vLLM and its ports are built for that
 and goinfer is not.
 
 It is also not a provider-orchestration library (e.g. `teilomillet/gollm`) that calls remote

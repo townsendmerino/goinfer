@@ -1,0 +1,39 @@
+04:58:04 == chunked-prefill stall grading start; tree b69c73ad; { 1.43 1.46 1.45 }
+04:58:04 idle: load1=1.43
+04:58:04 cell old_1 decoders=3 bin=serve-metal-new-731f4f4e
+[stall] old_1: wall 24.556s; decoder gap p50 19.2 p99 22.9 max 5415.9 ms; newcomer TTFT [5.33, 5.276, 5.41]
+04:58:29 idle: load1=1.00
+04:58:29 cell new_1 decoders=3 bin=serve-metal-new-b69c73ad
+[stall] new_1: wall 25.555s; decoder gap p50 19.2 p99 1134.7 max 1239.4 ms; newcomer TTFT [5.882, 5.878, 5.888]
+04:58:56 idle: load1=0.88
+04:58:56 cell new_2 decoders=3 bin=serve-metal-new-b69c73ad
+[stall] new_2: wall 25.575s; decoder gap p50 19.2 p99 1134.7 max 1232.6 ms; newcomer TTFT [5.908, 5.855, 5.89]
+04:59:23 waiting for idle: load1=2.21 (0s)
+04:59:33 idle: load1=1.94
+04:59:33 cell old_2 decoders=3 bin=serve-metal-new-731f4f4e
+[stall] old_2: wall 24.472s; decoder gap p50 19.3 p99 22.8 max 5378.1 ms; newcomer TTFT [5.292, 5.289, 5.374]
+04:59:58 idle: load1=1.58
+04:59:58 cell old_3 decoders=3 bin=serve-metal-new-731f4f4e
+[stall] old_3: wall 24.409s; decoder gap p50 19.3 p99 22.3 max 5355.0 ms; newcomer TTFT [5.282, 5.346, 5.281]
+05:00:24 idle: load1=1.21
+05:00:24 cell new_3 decoders=3 bin=serve-metal-new-b69c73ad
+[stall] new_3: wall 25.629s; decoder gap p50 19.2 p99 1135.9 max 1273.9 ms; newcomer TTFT [5.91, 5.889, 5.909]
+05:00:50 idle: load1=1.00
+05:00:50 cell oldsolo_1 decoders=0 bin=serve-metal-new-731f4f4e
+[stall] oldsolo_1: wall 20.417s; no decoders; newcomer TTFT [5.347, 5.454, 5.328]
+05:01:12 idle: load1=0.85
+05:01:12 cell newsolo_1 decoders=0 bin=serve-metal-new-b69c73ad
+[stall] newsolo_1: wall 20.485s; no decoders; newcomer TTFT [5.349, 5.324, 5.378]
+05:01:33 idle: load1=0.87
+05:01:33 cell newsolo_2 decoders=0 bin=serve-metal-new-b69c73ad
+[stall] newsolo_2: wall 20.436s; no decoders; newcomer TTFT [5.378, 5.326, 5.416]
+05:01:55 idle: load1=0.69
+05:01:55 cell oldsolo_2 decoders=0 bin=serve-metal-new-731f4f4e
+[stall] oldsolo_2: wall 20.563s; no decoders; newcomer TTFT [5.42, 5.339, 5.47]
+05:02:17 idle: load1=0.69
+05:02:17 cell oldsolo_3 decoders=0 bin=serve-metal-new-731f4f4e
+[stall] oldsolo_3: wall 20.538s; no decoders; newcomer TTFT [5.469, 5.338, 5.316]
+05:02:38 idle: load1=1.07
+05:02:38 cell newsolo_3 decoders=0 bin=serve-metal-new-b69c73ad
+[stall] newsolo_3: wall 20.594s; no decoders; newcomer TTFT [5.337, 5.37, 5.324]
+05:03:00 == DONE

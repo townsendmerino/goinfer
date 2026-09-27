@@ -416,8 +416,8 @@ type Options struct {
 	// tokens while other generations are decoding, one decode step between chunks, instead of in one pass that stalls
 	// them all for the whole prompt (docs/tasks/task-concurrency-2026-09.md, chunked prefill). 0 = off: whole
 	// prefill, the behaviour before it. Sound only where the resident's batched prefill is chunk-invariant (Metal's is:
-	// TestMC5_prefillChunkInvariance). No default: the first registered candidate (256) cut the decoders' longest stall
-	// 4.7x but missed its wall-time gate (docs/measurements/chunked-prefill-2026-09-27.md).
+	// TestMC5_prefillChunkInvariance). serve defaults it to 512, the graded value (the decoders' longest stall 0.23x, wall
+	// 1.045x, replies identical; a 256 candidate missed its wall gate — docs/measurements/chunked-prefill-2026-09-27.md).
 	ResidentPrefillChunk int
 	// ActQuantGroup selects per-group ACTIVATION quantization for the int8-activation projections
 	// (int4 = W4A8, int8int8 = W8A8, int4mix): 0 (the default) scales each activation vector by one

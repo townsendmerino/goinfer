@@ -523,6 +523,11 @@ positioning, not a benchmark result.
 **Chunked prefill unparked by the owner, 2026-09-27** ("Owner decisions" above). Continuous batching and paged KV
 stay parked.
 
+**Chunked prefill SHIPPED 2026-09-27: the revised candidate passes all five gates** ([`chunked-prefill-2026-09-27.md`](../measurements/chunked-prefill-2026-09-27.md)).
+- 512-token chunks with the tail fix, `serve -prefill-chunk 512` by default.
+- The decoders' longest stall during a ~3k-token newcomer's prefill fell **5.38 → 1.23 s (0.229×)**.
+- Newcomer TTFT 1.107×, wall 1.045×, a lone request 0.998×, every reply identical.
+
 **Chunked prefill, first candidate (256-token chunks): NOT SHIPPED** ([`chunked-prefill-2026-09-27.md`](../measurements/chunked-prefill-2026-09-27.md)).
 - The decoders' longest stall during a ~3k-token newcomer's prefill fell **5.35 s → 1.14 s (0.213×)**.
 - Newcomer TTFT 1.137×; every reply identical; a lone request's TTFT 1.000×.

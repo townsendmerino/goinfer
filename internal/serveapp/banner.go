@@ -253,6 +253,9 @@ func concurrencyLine(f bannerFacts, cfg config) string {
 		if cfg.maxConcurrent > f.concurrent {
 			line += fmt.Sprintf("; %d asked, capped by the %d resident KV slots (--kv-sessions)", cfg.maxConcurrent, f.kvSlots)
 		}
+		if cfg.prefillChunk > 0 {
+			line += fmt.Sprintf("; a long prompt arriving mid-decode prefills in %d-token chunks (-prefill-chunk)", cfg.prefillChunk)
+		}
 		return line
 	case f.concurrent > 1:
 		line := fmt.Sprintf("concurrency: %d generations at once, each on its own session KV (-max-concurrent)", f.concurrent)

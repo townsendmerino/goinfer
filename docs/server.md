@@ -114,7 +114,13 @@ run together in one step on the GPU's matrix units, every logit bit-identical to
   (`measurements/concurrency-mc3-s2-2026-09-27.md`). A sampled draw is the same one a lone request would make.
 - Since S3 (2026-09-27), a batched step's per-row work runs as one dispatch over all rows: 4 clients 1.26× faster
   again, and a turn under 4-client load takes ~1.9× a lone request's (`measurements/concurrency-mc3-s3-2026-09-27.md`).
-- A newcomer's prefill runs whole between steps.
+- A newcomer's long prompt no longer stalls the others (`-prefill-chunk`, default 512). A prompt that arrives while
+  others are decoding is prefilled in 512-token chunks, with a decode step between chunks.
+  - Measured with a ~3k-token newcomer, the decoders' longest wait fell from 5.4 s to 1.2 s, and the newcomer's
+    time to first token rose ~11%.
+  - Replies are unchanged, because Metal's prefill is chunk-invariant (`measurements/chunked-prefill-2026-09-27.md`).
+  - `0` prefills whole.
+- A newcomer's prefill runs between steps, in chunks when it is long (below).
 - A model serving `--spec`, a `--drafter` or an adapter keeps one generation at a time, as does any non-dense family.
 - The line printed after load (`"<name>" concurrency: …`) says which applies. A request's prefill shares the memory safety margin with the generations running or queued
 ahead of it when it arrives (up to N), so a lone request keeps the whole margin. The trade: aggregate throughput rises (4 decode workers measured 2.0–2.5× on an M1 Pro's CPU,
