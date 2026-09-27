@@ -1983,7 +1983,7 @@ func fitsWeightsBudget(need, free int64) bool {
 // decline a model whose experts are about to be capped down to something that fits — the same
 // class of over-eager guard M-02 already fixed once for Metal's paging case.
 func (r *cudaResident) checkWeightsFit(m *decoder.Model) error {
-	need := m.ResidentDenseWeightBytes()
+	need := m.ResidentDenseWeightBytesFor("cuda") // device bytes: an untied embedding table stays on the host
 	// A companion allocation (a --drafter's weights) attaches on this same device AFTER
 	// BuildResident returns — price it here too, or a dense model whose weights alone fit could
 	// still leave the drafter with nowhere to go (m.ExtraResidentBytes's own doc comment). 0 when
@@ -2025,7 +2025,25 @@ func (r *cudaResident) checkKVFits() error {
 	// see the field's own doc comment. 0 for every load without one, so this is unchanged then.
 	if need+r.extraBytes+ctxCapMarginBytes <= int64(free) {
 		// MC1: as many of the requested KV slots as fit the same budget, each another `need`.
-		r.kvSlotsN = kvSlotsFit(r.kvSlotsReq, int64(free), need, r.extraBytes+ctxCapMarginBytes)
+		reserve := r.extraBytes + ctxCapMarginBytes
+		r.kvSlotsN = kvSlotsFit(r.kvSlotsReq, int64(free), need, reserve)
+		if r.kvSlotsN < r.kvSlotsReq && !r.ctxExplicit && r.ctxCap > cudaCtxCapDefault {
+			// Slots before context (owner decision 2026-09-27): an unpinned context gives up positions, never below
+			// cudaCtxCapDefault, until every requested slot fits. ctxForSlots planned this with Plan, which cannot see
+			// the build's own scratch and kernel modules (34-120 MB measured, TestResidentDenseBytes_matchesCUDADevice),
+			// so its choice can be a few dozen positions long; this trims it against the real free VRAM, before any KV
+			// exists. Nothing allocated so far depends on ctxCap exactly: the split-KV score scratch is indexed by the
+			// attended span, so a smaller cap uses less of it.
+			perPos := need / int64(r.ctxCap) // kvBytesForCap is exactly linear
+			c := max(cudaCtxCapDefault, int((int64(free)-reserve)/(int64(r.kvSlotsReq)*perPos)))
+			if c < r.ctxCap {
+				fmt.Fprintf(os.Stderr, "cuda: resident context %d, trimmed from %d at the build, so the %d requested KV slots "+
+					"fit beside the weights (%.0f MB free, less %.0f MB reserved)\n",
+					c, r.ctxCap, r.kvSlotsReq, float64(free)/(1<<20), float64(reserve)/(1<<20))
+				r.ctxCap, need = c, kvBytesForCap(c, r.layers)
+				r.kvSlotsN = kvSlotsFit(r.kvSlotsReq, int64(free), need, reserve)
+			}
+		}
 		if r.kvSlotsN < r.kvSlotsReq {
 			fmt.Fprintf(os.Stderr, "cuda: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident "+
 				"context %d, and free VRAM beside the weights (%.0f MB, less %.0f MB reserved) allows %d\n",

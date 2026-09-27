@@ -81,7 +81,7 @@ type Plan struct {
 	Ctx       int // the context actually used — may be smaller than PlanRequest.Ctx
 	Slots     int // expert-cache slot count actually used; 0 when N/A (dense) or "every expert" (unpaged)
 
-	DenseBytes      int64 // decoder.Model.ResidentDenseWeightBytes() — the fixed, never-shrinks term
+	DenseBytes      int64 // decoder.Model.ResidentDenseWeightBytesFor(backend) — the fixed, never-shrinks term
 	ExpertBytesFull int64 // every routed expert, unpaged — reported even when Slots caps what's actually resident
 	ExpertBytesUsed int64 // what Slots actually keeps resident (equals ExpertBytesFull when Slots==0/unpaged/dense)
 	KVBytes         int64 // at Ctx, as this backend allocates it (ResidentKVBytes)
@@ -239,10 +239,10 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 		}
 	}
 
-	p.DenseBytes = m.ResidentDenseWeightBytes()
+	p.DenseBytes = m.ResidentDenseWeightBytesFor(backend) // less what backend keeps host-side (CUDA: an untied embedding table)
 	nExperts, topK, isMoE := m.moeGeometry()
 	if isMoE {
-		p.ExpertBytesFull = m.ResidentWeightBytesPaged(0) - p.DenseBytes
+		p.ExpertBytesFull = m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes()
 	}
 
 	// tryCtx computes KV bytes at ctx and reports whether dense+KV+extra alone (i.e. a model with

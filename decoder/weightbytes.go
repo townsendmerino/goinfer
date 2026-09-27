@@ -125,6 +125,37 @@ func (m *Model) ResidentDenseWeightBytes() int64 {
 	return dense
 }
 
+// ResidentDenseWeightBytesFor is ResidentDenseWeightBytes less the model-level tables backend keeps on the HOST rather
+// than on its device — the dense figure its fit checks must price against device memory.
+//
+// CUDA (cuda/backend.go) uploads every per-layer matrix and the LM head, which is the embedding table when the
+// embeddings are tied. It gathers token embeddings on the host (embedResident), and it never uploads the learned
+// position table or Gemma 4's per-layer embedding tables. So for an UNTIED model the whole token-embedding table was
+// priced as device memory it never takes. Measured 2026-09-27 on qwen2.5-7b-instruct q4_k_m (RTX 2070 SUPER): Plan
+// priced the dense weights at 4930 MB, and the build allocates ~4476 MB before its KV, scratch and modules included.
+// The ~520 MB embedding table is the difference. That overcount made the MC1 slot-aware context
+// (cuda ctxForSlots) land on its 4096 floor where ~4,870 positions fit
+// (docs/measurements/concurrency-mc1-cuda-2026-09-27.md).
+//
+// Other backends: unchanged, ResidentDenseWeightBytes. Metal's accounting of these tables (unified memory, its own
+// host-copy term) was not re-measured here.
+func (m *Model) ResidentDenseWeightBytesFor(backend string) int64 {
+	return m.ResidentDenseWeightBytes() - m.residentHostSideBytes(backend)
+}
+
+// residentHostSideBytes is the dense-sum portion backend keeps host-side; see ResidentDenseWeightBytesFor.
+func (m *Model) residentHostSideBytes(backend string) int64 {
+	if backend != "cuda" || m == nil || m.w == nil {
+		return 0
+	}
+	w := m.w
+	n := wmBytes(&w.PosEmbed) + wmBytes(&w.PerLayerTokenEmbed) + wmBytes(&w.PerLayerModelProj)
+	if w.LMHead.Rows() != 0 {
+		n += wmBytes(&w.Embed) // untied: the table stays on the host (tied, it IS the uploaded LM head)
+	}
+	return n
+}
+
 // ResidentHostCopyBytes is the portion of ResidentWeightBytesPaged's footprint that a UNIFIED-
 // MEMORY backend (Metal — "device" memory IS host RAM) keeps resident in TWO PLACES at once: the
 // quantized host WeightMat the loader materializes, and a second, freshly re-packed device buffer

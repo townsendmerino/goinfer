@@ -385,7 +385,7 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 		layers[i].kvDim = nKV * hd
 	}
 	perPos := kvBytesForCap(1, layers)
-	dense := probe.ResidentDenseWeightBytes()
+	dense := probe.ResidentDenseWeightBytesFor("cuda") // what Plan prices for CUDA
 	probe.Close()
 	free, ok := decoder.FreeBytesFor("cuda")
 	if !ok {
@@ -398,7 +398,7 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 		want      func(got int) bool
 		wantSlots int // what checkKVFits grants at the chosen context
 	}{
-		{"interior: 4 slots fit at ~5000", 5000, func(got int) bool { return got > 4800 && got <= 5000 }, slots},
+		{"interior: 4 slots fit at ~5000", 5000, func(got int) bool { return got > 4800 && got <= 5064 }, slots},
 		{"not even the floor holds 4: the floor, and the build clamps", 3000, func(got int) bool { return got == cudaCtxCapDefault }, 2},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -424,18 +424,157 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 			if pinned != 8192 {
 				t.Errorf("an explicit -ctx 8192 became %d with slots requested — a pinned context must never shrink", pinned)
 			}
-			grant := func(ctx int) int {
-				r := &cudaResident{dev: dev, ctxCap: ctx, layers: layers, kvSlotsReq: slots, extraBytes: m.ExtraResidentBytes()}
+			grant := func(ctx int, pinned bool) (int, int) {
+				r := &cudaResident{dev: dev, ctxCap: ctx, ctxExplicit: pinned, layers: layers, kvSlotsReq: slots, extraBytes: m.ExtraResidentBytes()}
 				if err := r.checkKVFits(); err != nil {
 					t.Fatalf("checkKVFits at ctx %d: %v", ctx, err)
 				}
-				return r.kvSlotsN
+				return r.kvSlotsN, r.ctxCap
 			}
-			if g := grant(got); g != c.wantSlots {
+			if g, _ := grant(got, false); g != c.wantSlots {
 				t.Errorf("at the chosen ctx %d checkKVFits grants %d slots, want %d", got, g, c.wantSlots)
 			}
-			if g := grant(one); g >= slots {
-				t.Errorf("at the one-slot ctx %d checkKVFits still grants %d slots — the forced budget does not show the trade", one, g)
+			// The trade the rule removes: pinned at the one-slot context, fewer slots fit.
+			if g, _ := grant(one, true); g >= slots {
+				t.Errorf("pinned at the one-slot ctx %d checkKVFits still grants %d slots — the forced budget does not show the trade", one, g)
+			}
+			// Unpinned there, the build trims the context itself (TestCUDAKVSlots_buildTrimsTheContext) and fits them.
+			if g, ctx := grant(one, false); g != c.wantSlots || ctx > max(got+64, cudaCtxCapDefault) {
+				t.Errorf("unpinned at the one-slot ctx %d the build gave %d slots at ctx %d, want %d slots near ctx %d", one, g, ctx, c.wantSlots, got)
+			}
+		})
+	}
+}
+
+// TestResidentDenseBytes_matchesCUDADevice pins Plan's dense-weight figure for CUDA
+// (decoder.Model.ResidentDenseWeightBytesFor("cuda")) against what a real build puts on the device before its KV: the
+// fall in free VRAM from before the load to checkKVFits' probe. That fall is the weights plus the build's scratch and
+// kernel modules, so the estimate must not exceed it by more than an allocation quantum per matrix-ish slack, and it
+// must fall short of it by less than ctxCapMarginBytes, the margin Plan and checkKVFits both reserve for exactly that
+// scratch. Before the fix the untied 7B was priced with its ~520 MB host-side embedding table: 4930 MB against ~4476 MB
+// on the device (docs/measurements/concurrency-mc1-cuda-2026-09-27.md), so the first bound failed. GOINFER_HEAVY_TESTS
+// adds the 7B, the one untied model here.
+func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
+	requireCUDADevice(t)
+	home, _ := os.UserHomeDir()
+	models := []string{
+		filepath.Join("..", "testdata", "llama-tiny"),
+		filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"),
+		filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"),
+	}
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "" {
+		models = append(models, filepath.Join(home, "models", "qwen2.5-7b-instruct-q4_k_m.gguf"))
+	}
+	dev, err := gc.GetDevice(0)
+	if err != nil {
+		t.Skipf("no device: %v", err)
+	}
+	probe, err := dev.Primary()
+	if err != nil {
+		t.Skipf("primary ctx: %v", err)
+	}
+	realFree := func() int64 {
+		f, _, e := probe.MemInfo()
+		if e != nil {
+			t.Fatalf("MemInfo: %v", e)
+		}
+		return int64(f)
+	}
+	orig := cudaFreeVRAM
+	t.Cleanup(func() { cudaFreeVRAM = orig })
+	ran := 0
+	for _, p := range models {
+		t.Run(filepath.Base(p), func(t *testing.T) {
+			if _, err := os.Stat(p); err != nil {
+				t.Skipf("no model at %s", p)
+			}
+			var atKV int64
+			free0 := realFree()
+			cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
+				f, _, err := r.dev.Context().MemInfo()
+				atKV = int64(f)
+				return f, err
+			}
+			m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: "int4"})
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer m.Close()
+			if _, ok := m.ResidentForwardForTest().(*cudaResident); !ok || atKV == 0 {
+				t.Skipf("not CUDA-resident: %s", m.ResidentDecline())
+			}
+			ran++
+			drop := free0 - atKV
+			est, all := m.ResidentDenseWeightBytesFor("cuda"), m.ResidentDenseWeightBytes()
+			t.Logf("device before KV %.0f MB; Plan's CUDA dense %.0f MB (all dense, host tables included, %.0f MB); "+
+				"under by %.0f MB (margin %.0f MB)", mb(drop), mb(est), mb(all), mb(drop-est), mb(ctxCapMarginBytes))
+			if est > drop+allocQuantumBytes {
+				t.Errorf("Plan prices %.0f MB of dense weights for CUDA, but the build put only %.0f MB on the device "+
+					"before its KV: it counts something CUDA keeps on the host", mb(est), mb(drop))
+			}
+			if drop-est >= ctxCapMarginBytes {
+				t.Errorf("the build put %.0f MB on the device before its KV, %.0f MB more than Plan's %.0f MB: more than "+
+					"the %.0f MB margin reserved for scratch", mb(drop), mb(drop-est), mb(est), mb(ctxCapMarginBytes))
+			}
+		})
+	}
+	if ran == 0 {
+		t.Skip("no model built a CUDA resident here")
+	}
+}
+
+func mb(b int64) float64 { return float64(b) / (1 << 20) }
+
+// TestCUDAKVSlots_buildTrimsTheContext pins checkKVFits' half of the slots-before-context rule: when the planned
+// unpinned context (Plan cannot see the build's scratch) leaves room for fewer than the requested slots, the build
+// trims the context against the real free figure, never below cudaCtxCapDefault, so all of them fit. The free probe is
+// stubbed at the KV site to hold exactly 4 slots at 5000 positions. It needs a model whose own window exceeds 8192 so
+// the unpinned context starts above the floor (the tiny fixtures' windows are 64-512), so it uses the 0.5B. An explicit
+// -ctx is never trimmed: it keeps the context and clamps the slots.
+func TestCUDAKVSlots_buildTrimsTheContext(t *testing.T) {
+	requireCUDADevice(t)
+	home, _ := os.UserHomeDir()
+	p := filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("no model at %s", p)
+	}
+	orig := cudaFreeVRAM
+	t.Cleanup(func() { cudaFreeVRAM = orig })
+	const slots, target = 4, 5000
+	cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
+		perPos := kvBytesForCap(1, r.layers)
+		return uint64(int64(slots)*perPos*target + r.extraBytes + ctxCapMarginBytes), nil
+	}
+	for _, c := range []struct {
+		name               string
+		ctxReq             int
+		wantCtx, wantSlots int
+	}{
+		{"unpinned: trimmed to fit all 4", 0, target, slots},
+		{"explicit -ctx 8192: kept, slots clamped", 8192, 8192, 2},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: slots, ResidentContext: c.ctxReq})
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer m.Close()
+			r, ok := m.ResidentForwardForTest().(*cudaResident)
+			if !ok {
+				t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
+			}
+			t.Logf("ctx %d, %d slots", r.ctxCap, r.KVSlots())
+			if r.ctxCap != c.wantCtx || r.KVSlots() != c.wantSlots {
+				t.Errorf("built ctx %d with %d slots, want ctx %d with %d", r.ctxCap, r.KVSlots(), c.wantCtx, c.wantSlots)
+			}
+			if b := r.kc[0].Len(); b != r.ctxCap*r.layers[0].kvDim {
+				t.Errorf("layer 0 K holds %d floats, want ctxCap*kvDim = %d: the caches were sized before the trim", b, r.ctxCap*r.layers[0].kvDim)
+			}
+			if err := r.checkCap(r.ctxCap-1, 1); err != nil {
+				t.Errorf("checkCap at the last position: %v", err)
+			}
+			if err := r.checkCap(r.ctxCap, 1); err == nil {
+				t.Error("checkCap past the trimmed cap did not fail")
 			}
 		})
 	}
