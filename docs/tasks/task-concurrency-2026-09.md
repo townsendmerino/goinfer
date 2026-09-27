@@ -521,7 +521,55 @@ Unchanged from `roadmap.md`: not this engine's weight class. **Trigger:** the ow
 positioning, not a benchmark result.
 
 **Chunked prefill unparked by the owner, 2026-09-27** ("Owner decisions" above). Continuous batching and paged KV
-stay parked. Its registration goes here before its build.
+stay parked.
+
+**Chunked prefill — registered 2026-09-27, before any timing.**
+
+*The stall it removes.* Under MC3, a newcomer's prefill runs whole in the resident's exclusive section, so every
+decoding conversation stops for the entire prompt. W7 cannot show this: its turns reuse their history and prefill
+~150-token suffixes. A long prompt arriving mid-decode, such as a pasted file, a RAG context, or an agent's first
+turn, stalls the others for the whole prefill.
+
+*The question the design turns on, measured first.* Is Metal's fast prefill chunk-invariant? Is
+`PrefillLast(chunk, startPos)` one after another the same bits as one `PrefillLast` over the whole prompt?
+- `TestMC5_prefillChunkInvariance` prefilled a 1000-token prompt whole into one slot and in chunks of 64, 128, 256
+  and 384 (ragged tails) into another. **0 of 14,336,000 KV elements and 0 of 151,936 last-token logits differ**, at
+  every chunk size.
+- Its control changes one token at position 700: 0 elements differ before it, 3.7 M from it on, so the comparison
+  sees a difference and places it.
+- So chunking changes no reply, and it can be switched on only under load.
+
+*The build* (`decoder/model.go` `mc3Prefill`, `decoder/mc3_batch.go`).
+- Under MC3, a prompt suffix of ≥ 512 tokens (`prefillChunkMin`) is prefilled in 256-token chunks
+  (`prefillChunkTokens`), and only while another generation is decoding.
+- Each chunk runs in its own exclusive section, and one decode step is yielded between chunks (`yieldToDecode`,
+  bounded at 50 ms).
+- A chunk is cut only while two chunks' worth remains, so the pass that ends the prefill is never shorter than a
+  chunk. A shorter tail would take the sequential path, whose numerics differ.
+- With nobody decoding, the rest goes in one pass, exactly as before. A declined batched prefill falls back to the
+  ordinary path.
+- Tested on the fake resident: `TestMC3_longPrefillChunksWhileOthersDecode`. A 1200-token newcomer arrives in 4
+  chunks with decode steps between them, and every reply equals the alone run. It goes red with no yield, and red
+  with chunking off.
+
+*Grading, pre-registered.*
+- *old* = `serve-metal` at `731f4f4e` (S3); *new* = the chunked-prefill commit.
+- `scripts/bench_prefill_stall.py`:
+  - 3 decoder clients each stream 400 greedy tokens from a short prompt;
+  - after 2 s, 3 newcomers arrive one after another, each with a ~2400-word prompt (~3k tokens) and 16 answer tokens;
+  - a fresh server per cell, serve defaults, qwen2.5-coder-1.5b int4 from `~/models`, idle-gated.
+- Cells: old/new × 3 pairs (old new new old old new). A solo arm (`--decoders 0`, the 3 newcomers alone) runs old/new
+  × 3 pairs likewise.
+- Gates:
+  1. identity: every reply's hash equal, new vs old, decoders and newcomers, every cell (hard);
+  2. the stall: the decoders' max inter-token gap, new ÷ old, median of 3 pairs ≤ 0.5×;
+  3. newcomer TTFT: new ÷ old, median over newcomers and pairs ≤ 1.5× (chunking interleaves decode steps into it);
+  4. the cell's wall time: new ÷ old, median ≤ 1.05× (no throughput cost);
+  5. solo guard: the solo arm's newcomer TTFT, new ÷ old, median ≤ 1.05× (hard; nothing chunks with nobody
+     decoding).
+- Reported: the decoders' p50 and p99 gaps.
+- Decision: all pass ships (on by default under MC3). Gate 2 between 0.5× and 0.8× goes to the owner. Gate 1 or 5
+  failing is a bug.
 
 ---
 
