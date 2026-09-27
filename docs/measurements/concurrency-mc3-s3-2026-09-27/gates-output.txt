@@ -1,0 +1,17 @@
+clients=1: 6 cells compared turn by turn against new1_1 (content and prompt-reused)
+clients=2: 6 cells compared turn by turn against new2_1 (content and prompt-reused)
+clients=4: 6 cells compared turn by turn against new4_1 (content and prompt-reused)
+pair 1 4 clients: aggregate old 117.8 new 153.1 tok/s = 1.300x; p99 turn old 5.09 s new 3.69 s = 0.724x; p50 old 4.20 new 3.28 s
+pair 2 4 clients: aggregate old 121.6 new 153.1 tok/s = 1.259x; p99 turn old 4.66 s new 3.69 s = 0.791x; p50 old 4.16 new 3.27 s
+pair 3 4 clients: aggregate old 121.5 new 153.2 tok/s = 1.261x; p99 turn old 4.67 s new 3.66 s = 0.784x; p50 old 4.18 new 3.28 s
+GATE 3 aggregate median 1.261x (bar >= 1.2x): PASS
+GATE 4 p99 under load median 0.784x (bar <= 1.0): PASS
+pair 1 1 client: p50 old 1.659 new 1.656 s = 0.998x; p99 old 1.890 new 1.919 s = 1.015x; aggregate old 75.2 new 75.0
+pair 2 1 client: p50 old 1.661 new 1.659 s = 0.999x; p99 old 1.970 new 2.026 s = 1.028x; aggregate old 74.6 new 73.9
+pair 3 1 client: p50 old 1.657 new 1.692 s = 1.021x; p99 old 1.883 new 1.871 s = 0.994x; aggregate old 75.5 new 74.0
+GATE 5 solo guard: p50 median 0.999x, p99 median 1.015x (bar <= 1.05 each): PASS
+reported, 2 clients: aggregate old 81.9 new 88.4 = 1.079x; p99 old 3.34 new 3.08 s
+reported, 2 clients: aggregate old 82.0 new 89.0 = 1.086x; p99 old 3.34 new 3.07 s
+reported, 2 clients: aggregate old 80.6 new 89.3 = 1.107x; p99 old 3.40 new 3.07 s
+reported: new's 4-client p99 / new's lone-request p99 = 1.92x
+GATES 1-2 identity and reuse: PASS

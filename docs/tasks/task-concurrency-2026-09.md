@@ -337,6 +337,10 @@ different adapters.
 - A lone request: p50 1.002×, p99 1.004×.
 - Identity and reuse equal on every turn of all 14 cells. 2 clients read 1.071× (reported).
 
+**MC3 S3 SHIPPED 2026-09-27: all five W7 gates pass** ([`concurrency-mc3-s3-2026-09-27.md`](../measurements/concurrency-mc3-s3-2026-09-27.md)).
+- 4 clients at **1.261×** S2 (121.6 → 153.1 tok/s), with p99 turn 0.784×.
+- 2 clients 1.08–1.11×; a lone request 0.999× / 1.015×; every reply identical.
+
 **MC3 S3 — step polish (2026-09-27).** An exploratory breakdown (`TestMC3StepBreakdown`, in sequence, each category
 no-op'd in turn) showed the batched matmuls already amortised (14.4 ms at any B). What grew with B was the per-row
 work, run one sequence after another:

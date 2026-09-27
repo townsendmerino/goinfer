@@ -112,6 +112,8 @@ run together in one step on the GPU's matrix units, every logit bit-identical to
   4.7 s; a lone request is unchanged. See `measurements/concurrency-mc3-2026-09-26.md`.
 - Greedy and temperature-only sampled requests both batch; the latter at 1.62× at 4 clients
   (`measurements/concurrency-mc3-s2-2026-09-27.md`). A sampled draw is the same one a lone request would make.
+- Since S3 (2026-09-27), a batched step's per-row work runs as one dispatch over all rows: 4 clients 1.26× faster
+  again, and a turn under 4-client load takes ~1.9× a lone request's (`measurements/concurrency-mc3-s3-2026-09-27.md`).
 - A newcomer's prefill runs whole between steps.
 - A model serving `--spec`, a `--drafter` or an adapter keeps one generation at a time, as does any non-dense family.
 - The line printed after load (`"<name>" concurrency: …`) says which applies. A request's prefill shares the memory safety margin with the generations running or queued
