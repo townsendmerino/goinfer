@@ -1,0 +1,36 @@
+=== RUN   TestMC3_concurrentMatchesAloneOnMetal
+    mc3_concurrent_test.go:46: load: decoder: qwen2.5-7b-instruct-q4_k_m.gguf needs ~8.9 GB resident at quant int4 + 0.1 GB KV + 4.4 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 13.3 GB; this machine currently has 6.7 GB of memory available (budget 4.7 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestMC3_concurrentMatchesAloneOnMetal (0.14s)
+=== RUN   TestMC3_concurrentSampledMatchesAloneOnMetal
+goinfer: batched prefill declined for a 15-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): metal: prompt too short (15 tokens) for fast prefill (floor=64; §3 floor); using sequential path
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 0.1 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 3.2 GB; this machine currently has 5.6 GB of memory available (budget 3.9 GB = 70% of that) (81% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    mc3_concurrent_test.go:210: steps 48 serving 163 tokens, sizes [0 0 0 29 19 0], solo 0
+--- PASS: TestMC3_concurrentSampledMatchesAloneOnMetal (13.40s)
+=== RUN   TestMC3Step_bitIdentical
+    mc3_step_test.go:131: load: decoder: qwen2.5-7b-instruct-q4_k_m.gguf needs ~8.9 GB resident at quant int4 + 0.1 GB KV + 4.4 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 13.3 GB; this machine currently has 5.2 GB of memory available (budget 3.7 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestMC3Step_bitIdentical (0.07s)
+=== RUN   TestMC3Step_bitIdenticalDeep
+    mc3_step_test.go:131: load: decoder: qwen2.5-7b-instruct-q4_k_m.gguf needs ~8.9 GB resident at quant int4 + 0.2 GB KV + 4.4 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 13.4 GB; this machine currently has 6.1 GB of memory available (budget 4.3 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestMC3Step_bitIdenticalDeep (0.06s)
+=== RUN   TestMC3Step_drawsMatchForwardSample
+    mc3_step_test.go:254: load: decoder: qwen2.5-7b-instruct-q4_k_m.gguf needs ~8.9 GB resident at quant int4 + 0.1 GB KV + 4.4 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 13.3 GB; this machine currently has 6.1 GB of memory available (budget 4.3 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- FAIL: TestMC3Step_drawsMatchForwardSample (0.05s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	14.159s
+FAIL

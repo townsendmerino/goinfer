@@ -20,8 +20,10 @@
 >
 > **Open, 2026-09-26:**
 > - MC3c step 2 (batching behind the same admission; the Linux 1.5B data argues for it on larger models);
-> - MC3 follow-ons, none registered: a hybrid B = 2 (it reads 1.07×), an encode-ahead executor for steps, the 7B end to
->   end, and CUDA (only on its own measurement);
+> - MC3 follow-ons, none registered: a hybrid B = 2 (it reads 1.07× on the 1.5B, ~1.0× on the 7B), an encode-ahead
+>   executor for steps, and CUDA (only on its own measurement);
+> - ~~the 7B end to end~~ — done 2026-09-27: all five W7 gates pass, 4 clients at 1.785× the serialized build, p99 turn
+>   0.592× ([`concurrency-mc3-7b-w7-2026-09-27.md`](../measurements/concurrency-mc3-7b-w7-2026-09-27.md));
 > - MC1 on CUDA and WebGPU;
 > - ~~one MC2 Linux cell to re-run clean~~ — done 2026-09-27: the 0.5B depth-128 cell reads 1.185× clean (was 1.230×
 >   overlapping an rsync), still in the owner band.
@@ -368,6 +370,12 @@ B = 4, before S2 and S3 changed the step).
   - Aggregate 1.03–1.2× with the hard gates passing: goes to the owner with a recommendation.
   - Below 1.03×, or gate 4 or 5 fails: the owner decides whether batched decode stays on by default for a model of
     this size.
+- **Graded 2026-09-27: all five pass**
+  ([`concurrency-mc3-7b-w7-2026-09-27.md`](../measurements/concurrency-mc3-7b-w7-2026-09-27.md)).
+  - 4 clients at **1.785×** (25.5 → 45.5 tok/s), p99 turn 0.592×.
+  - A lone request 1.002× / 1.014×; every reply identical.
+  - 2 clients read 1.018×. In sequence, a step on the 7B costs ~1.9× a token at any B ≤ 4, so B = 2 breaks even.
+    The lever for this size is the batched matmuls' own cost.
 
 **MC3 S3 SHIPPED 2026-09-27: all five W7 gates pass** ([`concurrency-mc3-s3-2026-09-27.md`](../measurements/concurrency-mc3-s3-2026-09-27.md)).
 - 4 clients at **1.261×** S2 (121.6 → 153.1 tok/s), with p99 turn 0.784×.
