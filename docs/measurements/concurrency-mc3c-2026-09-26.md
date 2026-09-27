@@ -79,3 +79,17 @@ process of this session's, took the machine. Both arms fell, n1 by 30%, and they
   match it.
 - **An owner decision is open: a default > 1 for CPU models.** Throughput doubles at 4 clients and p99 halves under
   load, but a lone request is unaffected only while it runs alone.
+
+## J8's latency half, from this run (added 2026-09-26)
+
+J8's band (`task-work-queue-2026-09.md`, folded into MC2) is p99 per-request latency no worse than 1.5× "the
+single-worker figure". It uses this run's per-turn latencies, 24 turns per 4-client cell:
+
+| cell | p50 turn | p99 turn |
+|---|---:|---:|
+| one worker, 1 client (a lone request) | 2.98 s | 3.21 s |
+| one worker, 4 clients (serialized), 3 cells | 11.5–12.1 s | 12.8–13.4 s |
+| 4 workers, 4 clients, 3 cells | 5.9–6.4 s | 6.5–7.0 s |
+
+- **Same offered load:** 0.51–0.52×. This passes, and it is the reading taken, because J8 compares configurations.
+- **Against a lone request:** 2.0–2.2×. This fails the 1.5× bar.

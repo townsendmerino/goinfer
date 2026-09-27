@@ -433,8 +433,16 @@ would plausibly turn a clean 1.024× into 1.3×, so not chased further).
 **Folded 2026-09-26 into [`task-concurrency-2026-09.md`](task-concurrency-2026-09.md) MC2 (owner decision 2).** J8's
 N-independent-workers cell is measured there, in the same session as batched decode, so the two answers land side by
 side. Its band below is kept. It is not built as a feature either way. **Measured 2026-09-26 (Mac CPU,
-`concurrency-mc2-2026-09-26.md`):** 4 workers reach 2.00–2.48× aggregate, clearing the 1.25× half. The p99 latency half
-is not measured per request; the aggregates imply each of 4 concurrent requests takes 1.6–2.0× as long as alone.
+`concurrency-mc2-2026-09-26.md`):** 4 workers reach 2.00–2.48× aggregate, clearing the 1.25× half. **The p99 half, measured
+2026-09-26 on the serving path** (MC3c's W7 run, `concurrency-mc3c-2026-09-26.md`: 24 turns per cell, 3 cells at 4
+clients), depends on the reading:
+- **Against the single worker serving the same 4 concurrent clients:** p99 per turn is 0.51–0.52× (6.5–7.0 s against
+  12.8–13.4 s). That passes by a wide margin.
+- **Against a lone request on one worker:** p99 is 2.0–2.2× (against 3.2 s). That fails the 1.5× bar, because 4
+  requests share the cores.
+
+J8 compares server configurations under load, so the first reading is taken as the gate, and the second is recorded
+next to it.
 
 The only throughput item, and it is deliberately last.
 

@@ -117,3 +117,25 @@ func reusedOf(ts []kvSlotTurn) []int {
 	}
 	return out
 }
+
+// TestKVSlotsWithin pins MC1's fit-guard clamp (docs/tasks/task-concurrency-2026-09.md MC1 gate 4) without allocating a
+// real clamp's worth of KV on a 16 GB machine: the largest count up to the request that fits the budget, never below 1.
+func TestKVSlotsWithin(t *testing.T) {
+	const mb = int64(1 << 20)
+	for _, tc := range []struct {
+		name               string
+		want               int
+		budget, base, slot int64
+		got                int
+	}{
+		{"all fit", 4, 10000 * mb, 2000 * mb, 117 * mb, 4},
+		{"clamped to what fits", 8, 2500 * mb, 2000 * mb, 117 * mb, 5}, // 2000 + 4*117 = 2468 <= 2500; +5*117 > 2500
+		{"only the first fits", 4, 2050 * mb, 2000 * mb, 117 * mb, 1},
+		{"even the first over budget: still 1, the decline is elsewhere", 4, 1000 * mb, 2000 * mb, 117 * mb, 1},
+		{"request of 0 means 1", 0, 10000 * mb, 2000 * mb, 117 * mb, 1},
+	} {
+		if got := kvSlotsWithin(tc.want, tc.budget, tc.base, tc.slot); got != tc.got {
+			t.Errorf("%s: kvSlotsWithin(%d, ...) = %d, want %d", tc.name, tc.want, got, tc.got)
+		}
+	}
+}

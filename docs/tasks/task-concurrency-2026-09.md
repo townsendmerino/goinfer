@@ -15,10 +15,12 @@
 > - MC3c step 2 (batching behind the same admission; the Linux 1.5B data argues for it on larger models);
 > - MC3 (Metal batched decode: needs a fidelity-gate decision first);
 > - MC1 on CUDA and WebGPU;
-> - MC1's fit-guard clamp, never exercised;
-> - J8's per-request latency;
-> - re-running J6's prefix-aware scheduling against multi-slot MC1;
 > - one MC2 Linux cell to re-run clean.
+>
+> Closed 2026-09-26:
+> - MC1's clamp is pinned by `TestKVSlotsWithin` and logs when it clamps;
+> - J8's latency half is 0.51× the serialized p99 under the same load (2.0× a lone request);
+> - the J6 re-run is closed by analysis (see MC1's follow-on).
 >
 > MC4 and MC5 stay parked. MC2 is the kill-or-earn
 > measurement `roadmap.md` requires before any batched decode work, and now carries J8's cell. MC3
@@ -166,6 +168,15 @@ own prefix instead of evicting each other. Still one generation at a time; no ba
 - The fit guard declines a slot count that does not fit, with a message naming the count it chose.
 
 **Follow-on.** With more than one slot, J6's prefix-aware scheduling has something to exploit (now true on Metal).
+**Closed by analysis 2026-09-26, not re-measured:**
+- J6's 1.024× (2026-09-15) was measured on the CPU, where the session LRU already held 4 conversations. The "single
+  slot" premise above was wrong: J6 had multiple warm prefixes to schedule around, and it still did not pay.
+- J6's mechanism was reverted and conflicts with MC3c's N-wide admission.
+- MC1 and MC3c give every active conversation, up to the slot or session count, its own warm prefix and its own turn,
+  which removes the contention J6 reorders.
+
+**Re-open condition:** more concurrently active conversations than `-kv-sessions`, for example an agent fan-out of 8
+or more on one model.
 Re-run J6's measurement once after MC1 ships; its 1.024× was taken against a single slot.
 
 **Estimate.** One to two weeks across the three backends, mostly bookkeeping and the fit guard.

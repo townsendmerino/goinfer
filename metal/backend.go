@@ -382,8 +382,20 @@ func metalKVSlots(m *decoder.Model) int {
 	if err != nil || ram == 0 {
 		return 1
 	}
-	budget, base, per := metalMemoryCeiling(ram), residentNeedBytes(m), residentKVBytes(m)
-	for n > 1 && base+int64(n-1)*per > budget {
+	got := kvSlotsWithin(n, metalMemoryCeiling(ram), residentNeedBytes(m), residentKVBytes(m))
+	if got < n {
+		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident context, and the memory guard allows %d\n",
+			got, n, float64(residentKVBytes(m))/(1<<20), got)
+	}
+	return got
+}
+
+// kvSlotsWithin is metalKVSlots' arithmetic: the largest slot count up to want whose resident build — base bytes for
+// the first slot (weights, host copy, one KV) plus perSlot for each further one — fits budget, and never below 1 (the
+// first slot is priced, and refused if it does not fit, by residentMemoryDecline, not here).
+func kvSlotsWithin(want int, budget, base, perSlot int64) int {
+	n := max(1, want)
+	for n > 1 && base+int64(n-1)*perSlot > budget {
 		n--
 	}
 	return n
