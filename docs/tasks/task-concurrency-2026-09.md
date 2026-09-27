@@ -337,6 +337,11 @@ different adapters.
 - A lone request: p50 1.002×, p99 1.004×.
 - Identity and reuse equal on every turn of all 14 cells. 2 clients read 1.071× (reported).
 
+**MC3 S2 SHIPPED 2026-09-27: all five W7 gates pass** ([`concurrency-mc3-s2-2026-09-27.md`](../measurements/concurrency-mc3-s2-2026-09-27.md)).
+- 4 sampled clients (T = 0.8, fixed seeds) at **1.623×** the shipped MC3, with p99 turn 0.635×.
+- A lone request 1.002× / 1.005×; every reply identical, the pre-MC3 reference included.
+- The reference cell (74.1 tok/s) shows the shipped MC3 had given sampled requests nothing.
+
 **MC3 S2 — sampled tokens in steps (2026-09-27).** Under MC3, a temperature-only request's tokens are drawn on the
 device (ResidentSample), and each such token ran as its own per-sequence call. So a plain `temperature > 0` chat
 request, the default shape of most chat clients, got no batching at all.
