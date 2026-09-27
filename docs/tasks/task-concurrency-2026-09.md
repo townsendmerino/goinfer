@@ -7,15 +7,17 @@
 > (1.69–2.04× at B = 4, bit-identical; J8's 4 independent workers reach 2.00–2.48×). The Linux cells are owed. **MC3
 > S0 is done, 2026-09-26: no fidelity gate is needed.** Test-only `simdgroup_matrix` kernels carry 8 sequences for
 > 1.0–2.7 GEMVs on every decode matmul (qkv, o, gate/up, down, int8 LM head). Every output is bit-identical to
-> production's GEMV ([`concurrency-mc3-s0-2026-09-26.md`](../measurements/concurrency-mc3-s0-2026-09-26.md)). One
-> owner question is open before the build: the reading of the p99 bar. The owner chose "cpu first":
+> production's GEMV ([`concurrency-mc3-s0-2026-09-26.md`](../measurements/concurrency-mc3-s0-2026-09-26.md)). **S1**:
+> a whole batched step, in sequence, is bit-identical to production and reaches 1.73–1.84× at B = 4. The owner set
+> the p99 bar's reading (same load + a lone-request guard) before the build. The owner chose "cpu first":
 > **MC3c step 1 SHIPPED** (`serve -max-concurrent N`, CPU models): 1.86–1.97× at 4 clients, p99 halved,
 > byte-identical, **default 4** (owner, 2026-09-26). The MC2 Linux cells are in: the 1.5B earns, and there batching beats
 > the workers; the 0.5B is in the owner band.
 >
 > **Open, 2026-09-26:**
 > - MC3c step 2 (batching behind the same admission; the Linux 1.5B data argues for it on larger models);
-> - MC3 (Metal batched decode): S0 done, bit-identical; the p99 bar's reading is the owner's before the build;
+> - MC3 (Metal batched decode): S0 and S1 done, both bit-identical (S1: B = 4 at 1.73–1.84× in sequence); gates amended
+>   by the owner; production wiring and the scheduler are next;
 > - MC1 on CUDA and WebGPU;
 > - one MC2 Linux cell to re-run clean.
 >
@@ -244,6 +246,16 @@ fails it is a kill.
 **Estimate.** One to two weeks.
 
 ## MC3 — batched decode on Metal (only if MC2 earns and decision 1 is yes)
+
+**S1, 2026-09-26: the batched step holds in sequence, bit-identically**
+([`concurrency-mc3-s1-2026-09-26.md`](../measurements/concurrency-mc3-s1-2026-09-26.md)).
+- A test-only step runs production's per-sequence kernels (norms, RoPE, KV, attention, SwiGLU) and S0's batched
+  matmuls, each sequence on its own MC1 slot.
+- It matches production's single-token forward on every logit: 1.5B and 7B, 4 sequences × 12 steps, 0 differ.
+- In sequence, B = 4 reaches 1.73–1.84× one stream's aggregate (the step costs 2.1–2.3× a token) and B = 8 reaches
+  2.4–3.2×, within ~5% of S0's projection.
+- B = 2 is a wash (0.98–1.10×) and B = 1 loses (0.51–0.64×), so production's path runs below B = 3.
+- S1 also found and fixed an MC1 slot-clamp double count.
 
 **S0, second pass, 2026-09-26: the matrix units pay AND stay bit-identical, so MC3 keeps the identity gate**
 ([`concurrency-mc3-s0-2026-09-26.md`](../measurements/concurrency-mc3-s0-2026-09-26.md)).

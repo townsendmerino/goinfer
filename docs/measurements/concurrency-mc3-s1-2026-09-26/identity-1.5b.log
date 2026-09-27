@@ -1,0 +1,5 @@
+=== RUN   TestMC3Step_bitIdentical
+    mc3_step_test.go:499: 4 sequences x 12 steps at depths [5 23 40 300]: 0 logits differ from production's single-token forward
+--- PASS: TestMC3Step_bitIdentical (14.24s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	14.851s

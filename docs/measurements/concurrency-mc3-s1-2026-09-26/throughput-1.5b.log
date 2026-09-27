@@ -1,0 +1,8 @@
+=== RUN   TestMC3Step_throughput
+[mc3-s1   12.7s] depth 128: 9 slots filled
+[mc3-s1   22.0s] depth 128: production 10.660 ms/token  | B=1 step 16.940 ms (1.59x a token), aggregate 0.611x [0.606-0.674]  | B=2 step 18.853 ms (1.77x a token), aggregate 1.098x [1.065-1.192]  | B=4 step 22.538 ms (2.11x a token), aggregate 1.837x [1.783-1.948]  | B=8 step 29.658 ms (2.78x a token), aggregate 2.895x [2.797-2.932]
+[mc3-s1   73.5s] depth 512: 9 slots filled
+[mc3-s1   84.1s] depth 512: production 11.323 ms/token  | B=1 step 17.654 ms (1.56x a token), aggregate 0.641x [0.638-0.675]  | B=2 step 20.646 ms (1.82x a token), aggregate 1.094x [1.063-1.100]  | B=4 step 26.122 ms (2.31x a token), aggregate 1.733x [1.722-1.739]  | B=8 step 37.407 ms (3.30x a token), aggregate 2.422x [2.392-2.484]
+--- PASS: TestMC3Step_throughput (88.94s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	89.412s
