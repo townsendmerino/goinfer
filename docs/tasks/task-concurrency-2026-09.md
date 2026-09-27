@@ -282,8 +282,15 @@ different adapters.
 
 **Gates (pre-registered).**
 - Per-sequence output meets the identity or reference gate chosen in MC2, on Metal.
-- W7 plain workload, 4 clients: aggregate **≥ 1.5×** MC1's 4-client figure.
-- p99 per-request latency no worse than **1.5×** MC1's 1-client figure (J8's latency bar, kept).
+- W7 plain workload, 4 clients: aggregate **≥ 1.5×** MC1's 4-client figure (loosened to ≥ 1.2×, see "Amendments").
+- ~~p99 per-request latency no worse than **1.5×** MC1's 1-client figure (J8's latency bar, kept).~~ Replaced before the
+  build, by the owner 2026-09-26 (see "Amendments"). Both of these are hard:
+  - **p99 under load:** MC3's 4-client per-turn p99 must be no worse than MC1's 4-client per-turn p99 (the same offered
+    load).
+  - **the solo guard:** a lone request (1 client) under the MC3 build must be within noise of MC1's 1-client figure.
+    That means a p50 and p99 per-turn ratio ≤ 1.05×, as the median of 3 paired, interleaved, idle-gated cells.
+
+  The 4-client p99 ÷ a lone request is reported, not gated.
 
 **Estimate.** Four to eight weeks for Metal. A CUDA port follows only on its own measurement.
 
@@ -365,6 +372,18 @@ decline, and p99 latency. Only the speed thresholds move:
 | MC2 (B=4 vs B=1) | earn ≥ 1.6×, kill < 1.3×, owner between | **earn ≥ 1.25×, kill < 1.1×**, owner between. Still an investment gate for MC3's 4–8 weeks, so the gray zone goes to the owner with the numbers. |
 | MC3 (4 clients vs MC1's 4-client aggregate) | ≥ 1.5× | **≥ 1.2×**, with the p99 latency bar (≤ 1.5× MC1's 1-client figure) kept as a hard gate |
 | J8's cell (folded into MC2) | ≥ 1.25× at 4 requests, p99 ≤ 1.5× | unchanged. It is reported beside MC2 and is not built as a feature either way. |
+
+*2026-09-26, before the MC3 build, from S0's projection: the reading of MC3's p99 bar (owner).*
+- S0 ([`concurrency-mc3-s0-2026-09-26.md`](../measurements/concurrency-mc3-s0-2026-09-26.md)) projects a B = 4 Metal
+  step at ~2.1× a single step, and B = 2 at ~1.8×. So under load a batched request takes ~2× as long as a lone one,
+  and the bar as filed (≤ 1.5× MC1's *1-client* figure) projects to failing for any batching.
+- MC3c was graded on the same J8 bar at the same offered load (0.51–0.52×), and reported the lone-request ratio
+  (2.0–2.2×) without gating on it.
+- Asked which reading MC3 is held to, the owner chose **"same load + solo guard"**:
+  - MC3's 4-client p99 ≤ MC1's 4-client p99;
+  - and a lone request within noise of MC1's (≤ 1.05×, as registered in the MC3 gates above).
+
+  Both are hard gates. The aggregate gate (≥ 1.2×) and the identity gate are unchanged.
 
 ## Not in scope, stated
 

@@ -156,6 +156,40 @@ Against MC3's registered gates:
   - MC3c met the same J8 bar at the same offered load (0.51–0.52×) and failed it against a lone request (2.0–2.2×).
   - The reading the gate is held to is the owner's call, before the build.
 
+## Prior art (the sweep MC3's registration requires)
+
+Read from source, MLX [`09e67c68`](https://github.com/ml-explore/mlx/tree/09e67c68) and llama.cpp
+[`2b129ccf`](https://github.com/ggml-org/llama.cpp/tree/2b129ccf), 2026-09-27 UTC.
+
+**MLX.**
+- `QuantizedMatmul::eval_gpu` (backend/metal/quantized.cpp) takes the vector path below `get_qmv_batch_limit(K, N)`.
+  By GPU generation and K,N bucket:
+  - 13–14 non-Ultra: 14 / 10 / 6;
+  - 15–16: 13 / 15 / 13;
+  - ≥ 17: 33 / 25 / 13.
+- Below the limit:
+  - **`qmv_fast`** runs one activation row per threadgroup, re-reading the weights for every row.
+  - **`qmv_wide`**, adapted from llama.cpp's `mul_mv_ext` and enabled on generation ≥ 15 only, shares register
+    dequantisation across tiles of ≤ 5 rows.
+- Above the limit, `qmm_t` / `qmm_splitk` run 32 × 32 × 32 `simdgroup_matrix` tiles, with weights dequantised into
+  threadgroup memory.
+- MLX PR #3791 puts the vector/MMA crossover at M ≈ 10–13 on M3 Max and M5 Max for large shapes.
+
+**llama.cpp** (ggml-metal).
+- `kernel_mul_mv_ext_*` covers ne11 = 2–8 (4–8 for K-quants). Its weights are dequantised into registers and shared
+  across up to 5 columns, with no matrix units.
+- `kernel_mul_mm` (MMA with a 64 × 32 tile, weights staged in threadgroup memory) takes over only above ne11 = 8.
+- An open PR (#25377, M4 Pro) measures a **64 × 8 MMA tile beating `mul_mv_ext` from bs = 5**: 1.59× at 5, 2.02×
+  at 8. That is the same regime S0 finds.
+
+**What S0's kernels do that neither does.**
+- Neither project builds a weight fragment in registers. MLX's `thread_elements()` use (steel `BaseMMAFrag`, the lane
+  mapping used here) always loads fragments from staged threadgroup memory, and llama.cpp never calls it.
+- Neither is built to match its own single-row kernel bit for bit. Their batched kernels are separate kernels with
+  their own summation order. Whether their outputs happen to agree was not checked.
+- Both switch to matrix units late (M > 8 to 13+) because their tiles are 32 or 64 rows. An 8-row tile is what moves
+  the crossover to M ≈ 3 here.
+
 ## What S0 decided and did not
 
 - **Decided:** the matrix-unit route pays and is bit-identical, so MC3 keeps the identity gate. The kernel design is
