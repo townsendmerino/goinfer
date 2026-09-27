@@ -462,7 +462,35 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	// context; any OTHER writer's commit (plain Generate, n-gram) clears it via
 	// residentForgetIDs, so a drafter turn never trusts a context it never built.
 	if m.resident != nil {
-		m.residentCommitIDs(prompt, out, nil, nil) // BlockSpec never binds an adapter
+		// The trailing token. The seed and every round end on the target's own output: emitted, but not yet forwarded,
+		// because it is the next round's anchor. So at this exit the cache holds prompt+out less its last token, and
+		// committing prompt+out claimed a position it never received — a rejected draft's K/V, or nothing — which the
+		// next turn would reuse as it stood (TestBlockSpecGenerate_commitsOnlyWrittenPositions). Plain decode forwards
+		// every token it emits, so forward it here: the M=1 step the guard's fallback takes, its capture folded into
+		// the drafter's context while the seam is armed, as a round's rows are. With no room in the context, or on a
+		// forward error, commit only what was written.
+		keep := len(out)
+		if len(prompt)+len(out) > pos {
+			keep = max(0, pos-len(prompt))
+			ctxCap := m.ResidentContextCap()
+			if len(prompt)+len(out) == pos+1 && (ctxCap <= 0 || pos < ctxCap) {
+				emb := m.embedResident(out[len(out)-1])
+				var e error
+				if !seamOff {
+					if _, e = host.PrefillLastNArgmax([][]float32{emb}, pos); e == nil {
+						e = fuse(host.BatchedCapture(), 1)
+					}
+				} else if g, ok := m.resident.(ResidentGreedy); ok {
+					_, e = g.ForwardArgmax(emb, pos)
+				} else {
+					_, e = host.PrefillLastNArgmax([][]float32{emb}, pos)
+				}
+				if e == nil {
+					keep = len(out)
+				}
+			}
+		}
+		m.residentCommitIDs(prompt, out[:keep], nil, nil) // BlockSpec never binds an adapter
 		m.resDrafterSynced = s
 	}
 	return out, rounds, nil

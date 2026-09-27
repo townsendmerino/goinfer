@@ -78,10 +78,15 @@ func TestBlockSpecGenerate_reusesDrafterContextOnExtension(t *testing.T) {
 		t.Fatalf("second generate: %v", err)
 	}
 
-	if len(host.seedCalls) != 2 {
-		t.Fatalf("seedCalls = %v, want 2 entries", host.seedCalls)
+	// Each generate() makes its seed call and then, at this max_tokens exit, one M=1 forward of its trailing token (the
+	// anchor it emitted), so the cache holds everything it commits: [seed1, trailing1, seed2, trailing2].
+	if len(host.seedCalls) != 4 {
+		t.Fatalf("seedCalls = %v, want 4 entries (seed and trailing-token forward, per generate)", host.seedCalls)
 	}
-	first, second := host.seedCalls[0], host.seedCalls[1]
+	if tr := host.seedCalls[1]; tr.startPos != len(prompt1) || tr.n != 1 {
+		t.Errorf("first trailing forward: startPos=%d n=%d, want startPos=%d n=1 (the emitted anchor)", tr.startPos, tr.n, len(prompt1))
+	}
+	first, second := host.seedCalls[0], host.seedCalls[2]
 	if first.startPos != 0 || first.n != len(prompt1) {
 		t.Errorf("first seed call: startPos=%d n=%d, want startPos=0 n=%d (cold, whole prompt)",
 			first.startPos, first.n, len(prompt1))
@@ -104,15 +109,15 @@ func TestBlockSpecGenerate_reusesDrafterContextOnExtension(t *testing.T) {
 			"for the reused prefix, not wiped to 0", drafter.truncateCalls[1], wantReuseFrom)
 	}
 
-	if len(drafter.fuseRowCounts) != 2 {
-		t.Fatalf("fuseRowCounts = %v, want 2 entries", drafter.fuseRowCounts)
+	if len(drafter.fuseRowCounts) != 4 {
+		t.Fatalf("fuseRowCounts = %v, want 4 entries (seed and trailing token, per generate)", drafter.fuseRowCounts)
 	}
 	if drafter.fuseRowCounts[0] != len(prompt1) {
 		t.Errorf("first fuse row count = %d, want %d (cold, whole prompt)", drafter.fuseRowCounts[0], len(prompt1))
 	}
-	if drafter.fuseRowCounts[1] != 1 {
+	if drafter.fuseRowCounts[2] != 1 {
 		t.Errorf("second fuse row count = %d, want 1 — only the new suffix should be fused into "+
-			"the drafter's context", drafter.fuseRowCounts[1])
+			"the drafter's context", drafter.fuseRowCounts[2])
 	}
 }
 
@@ -147,6 +152,7 @@ func TestBlockSpecGenerate_declinesDrafterReuseAfterOtherWriter(t *testing.T) {
 	m.residentCommitIDs(committed, nil, nil, nil)
 
 	prompt2 := append(append([]int{}, committed...), 5)
+	firstGenCalls := len(host.seedCalls) // the first generate's seed and its trailing-token forward
 	if _, _, err := s.generate(prompt2, BlockSpecOptions{VerifyWidth: 4, MaxTokens: 1}, nil); err != nil {
 		t.Fatalf("second generate: %v", err)
 	}
@@ -158,8 +164,11 @@ func TestBlockSpecGenerate_declinesDrafterReuseAfterOtherWriter(t *testing.T) {
 		t.Errorf("second TruncateContext = %d, want 0 — resIDs matched, but the last commit was a "+
 			"DIFFERENT writer, so this drafter's own context must not be trusted", drafter.truncateCalls[1])
 	}
-	if len(host.seedCalls) != 2 || host.seedCalls[1].startPos != 0 || host.seedCalls[1].n != len(prompt2) {
+	if len(host.seedCalls) <= firstGenCalls {
+		t.Fatalf("seedCalls = %v: the second generate made no seed call", host.seedCalls)
+	}
+	if sc := host.seedCalls[firstGenCalls]; sc.startPos != 0 || sc.n != len(prompt2) {
 		t.Errorf("second seed call = %+v, want startPos=0 n=%d (cold, whole prompt) after a "+
-			"foreign commit", host.seedCalls[1], len(prompt2))
+			"foreign commit", sc, len(prompt2))
 	}
 }

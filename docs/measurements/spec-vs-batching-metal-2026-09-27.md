@@ -171,3 +171,37 @@ Spec still gains a lone Metal request nothing, and still forfeits batching under
 
 **Not checked:** the block-drafter (`--drafter`, CUDA), grammar-fused and two-model speculative loops may have the same
 trailing-token shape. They were not measured here.
+
+## Update 2026-09-27: the other speculation loops checked for the same gap
+
+The n-gram fix above left one question open: whether the other loops end a generation the same way. Each was read
+at its exit, and each finding below is tested.
+
+| loop | where it runs | at a `max_tokens` exit | status |
+|---|---|---|---|
+| **block drafter** (`--drafter`, `BlockSpec.generate`) | CUDA resident | **committed one position more than it wrote.** The seed and every round end on the target's own token, emitted but not forwarded (it is the next round's anchor). `residentCommitIDs(prompt, out)` recorded it anyway. So the next turn reused that position as it stood: a rejected draft's K/V, or nothing at `max_tokens` 1. That is a correctness bug, not only an identity one. | **fixed** |
+| grammar-fused (`genGrammarInto`) | CPU sessions (greedy constrained requests with `--spec`) | the n-gram loop's old shape: one token short, and consistent | **fixed**, for parity with plain decode |
+| two-model (`GenerateSpeculative`) | resident or CPU; chat's `--draft`, not in serve | forgets the resident cache first and never commits it, so the next turn cold-prefills by design | unchanged |
+
+**The block drafter.**
+- `TestBlockSpecGenerate_commitsOnlyWrittenPositions` records every position the target writes, and asserts
+  that every position the commit claims was written.
+  - Before the fix it fails at every exit it runs: the seed only (`max_tokens` 1) and after one and two rounds. Each
+    claims one unwritten position.
+  - The fix forwards the trailing token at that exit: the M = 1 step the guard's fallback takes, with its capture
+    folded into the drafter's context while the seam is armed, as a round's rows are. With no room in the context,
+    or on a forward error, it commits only what was written.
+- Two existing tests had encoded the old behaviour.
+  - `TestBlockSpecGenerate_commitsResIDsOnFullCompletion` asserted `resIDs` = prompt + out while its stub host wrote
+    only the prompt. It still passes: the commit is now also true.
+  - The two drafter-reuse tests had counted the host's calls. They now read each generation's seed call past its
+    trailing-token forward.
+- **Owed: the CUDA check.** The block drafter runs only on CUDA, so the fix is proven here against stubs only.
+  `cuda/blockspec_test.go` and `cuda/drafter_vs_off_test.go` on nobara, with the real Qwen3-4B and its DFlash drafter,
+  are the check. They were not run: nobara was fully loaded by another session's work (load 16.5 on 16 threads).
+
+**The grammar-fused loop.** `TestGrammarSpec_sessionTwoTurnsMatchPlain` (the 0.5B on CPU; it skips without
+`GOINFER_PREQUANT_GGUF`) ends turn 0 at `max_tokens` 6.
+- With the fix reverted, the session holds 25 tokens under spec against plain's 26. The turn-1 reply still matched.
+- So on CPU the gap cost one re-prefilled token, not identity. This is consistent with CPU prefill being bit-identical
+  to decode here. With the fix, both hold 26.

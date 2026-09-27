@@ -262,7 +262,25 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 		stats.Emitted++
 		return stats.Emitted < maxTokens
 	}
+	// finishTrailing forwards cur when the generation ended by reaching maxTokens just after streaming it, so the cache
+	// holds prompt + every emitted token, as plain constrained decode's does. A round's trailing token is otherwise
+	// forwarded only as the next round's seq[0], leaving the cache one token short for the next turn to re-prefill
+	// (the n-gram loop's same defect, which on Metal changed every later turn:
+	// docs/measurements/spec-vs-batching-metal-2026-09-27.md §4). A stop or a cancel takes no forward.
+	finishTrailing := func(tok int) {
+		if g.err != nil || stats.Emitted < maxTokens || target.isStop(tok, sp) {
+			return
+		}
+		if _, err := target.forwardN(ctx, []int{tok}, tc); err != nil {
+			return // the cache stays one token short, which is consistent
+		}
+		tpos++
+		if commit != nil {
+			commit(tok)
+		}
+	}
 	if !emit(cur) {
+		finishTrailing(cur)
 		return
 	}
 
@@ -357,6 +375,7 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 		}
 		cur = nextTok
 		if !emit(cur) {
+			finishTrailing(cur)
 			return
 		}
 	}
