@@ -41,8 +41,30 @@ type residentBatcher struct {
 	holders     int  // generations holding a slot (claimed, not yet released)
 	decoders    int  // holders inside their decode loop
 	pending     []*batchReq
+	freeAt      time.Time // when the resident last came free (a run or exclusive section ended)
 	timerAt     time.Time
 	slotBusy    []bool // resident KV slots a holder is using
+	stats       ResidentBatchStats
+}
+
+// ResidentBatchStats counts what MC3's batcher did (Model.ResidentBatchStats): runs, the tokens batched steps served
+// and how many steps there were, the tokens that ran as production's per-sequence call, and how many runs started
+// because the straggler window expired rather than because every decoding generation had submitted.
+type ResidentBatchStats struct {
+	Runs, Steps, StepTokens, SoloTokens, StragglerRuns int
+	StepSizes                                          [batchStatsSizes]int // StepSizes[b] = steps of b sequences
+}
+
+const batchStatsSizes = 17
+
+// ResidentBatchStats is a snapshot of the batcher's counters; zero when MC3 is not enabled.
+func (m *Model) ResidentBatchStats() ResidentBatchStats {
+	if m.batcher == nil {
+		return ResidentBatchStats{}
+	}
+	m.batcher.mu.Lock()
+	defer m.batcher.mu.Unlock()
+	return m.batcher.stats
 }
 
 // batchReq is one generation's decode token.
@@ -136,6 +158,7 @@ func (b *residentBatcher) exclusive(fn func()) {
 	defer func() {
 		b.mu.Lock()
 		b.busy = false
+		b.freeAt = time.Now()
 		b.cond.Broadcast()
 		b.mu.Unlock()
 	}()
@@ -181,8 +204,20 @@ func (b *residentBatcher) forward(q *batchReq) error {
 	b.cond.Broadcast()
 	for !q.done {
 		if !b.busy && b.exclWaiting == 0 && len(b.pending) > 0 {
-			oldest := b.pending[0].at
-			if len(b.pending) >= b.decoders || time.Since(oldest) >= b.wait {
+			// The straggler window opens when a run COULD start: at the oldest submission or when the resident came
+			// free, whichever is later. Timed from submission alone, a token submitted during a run has "waited" the
+			// whole run when it ends, starts one at once without the others, and the generations phase-lock into
+			// split runs every token (measured 2026-09-26: 4 generations ran as 3 batched + 1 solo on all 128 tokens,
+			// 255 of 256 runs straggler-started).
+			start := b.pending[0].at
+			if b.freeAt.After(start) {
+				start = b.freeAt
+			}
+			if all := len(b.pending) >= b.decoders; all || time.Since(start) >= b.wait {
+				if !all {
+					b.stats.StragglerRuns++
+				}
+				b.stats.Runs++
 				n := min(len(b.pending), b.hi)
 				run := b.pending[:n:n]
 				b.pending = append([]*batchReq(nil), b.pending[n:]...)
@@ -191,13 +226,14 @@ func (b *residentBatcher) forward(q *batchReq) error {
 				b.runTokens(run)
 				b.mu.Lock()
 				b.busy = false
+				b.freeAt = time.Now()
 				for _, r := range run {
 					r.done = true
 				}
 				b.cond.Broadcast()
 				continue
 			}
-			b.armLocked(oldest.Add(b.wait))
+			b.armLocked(start.Add(b.wait))
 		}
 		b.cond.Wait()
 	}
@@ -249,12 +285,20 @@ func (b *residentBatcher) runTokens(run []*batchReq) {
 				r.logits = out[i]
 			}
 		}
+		b.mu.Lock()
+		b.stats.Steps++
+		b.stats.StepTokens += len(bat)
+		b.stats.StepSizes[min(len(bat), batchStatsSizes-1)]++
+		b.mu.Unlock()
 	}
 	for _, r := range run {
 		if bat != nil && r.batchable {
 			continue
 		}
 		r.err = runSolo(r.solo)
+		b.mu.Lock()
+		b.stats.SoloTokens++
+		b.mu.Unlock()
 	}
 }
 

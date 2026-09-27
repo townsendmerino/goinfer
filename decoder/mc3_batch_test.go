@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // mc3Fake is a fake MC3 resident: several KV slots, each holding a positional history, and a batched step. A forward
@@ -26,6 +27,15 @@ type mc3Fake struct {
 	soloFwds int
 	lo, hi   int
 	stepErr  error
+	delay    time.Duration
+}
+
+// delay, when set, is how long a StepBatch or Forward takes (a GPU's step time) — long against the batcher's straggler
+// window, which is the regime the window has to get right.
+func (f *mc3Fake) wait() {
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 }
 
 func newMC3Fake(vocab, slots int) *mc3Fake {
@@ -62,6 +72,7 @@ func (f *mc3Fake) Forward(emb []float32, pos int) ([]float32, error) {
 	f.enter()
 	defer f.leave()
 	f.soloFwds++
+	f.wait()
 	return f.fwd(f.bound, emb, pos), nil
 }
 func (f *mc3Fake) KVSlots() int { return f.n }
@@ -79,6 +90,7 @@ func (f *mc3Fake) StepBatch(seqs []ResidentBatchSeq) ([][]float32, error) {
 		return nil, f.stepErr
 	}
 	f.steps++
+	f.wait()
 	f.stepSeqs += len(seqs)
 	f.maxStep = max(f.maxStep, len(seqs))
 	out := make([][]float32, len(seqs))
@@ -262,5 +274,45 @@ func TestMC3_stepErrorFailsTheGeneration(t *testing.T) {
 	}
 	if failed == 0 {
 		t.Error("four concurrent 64-token generations all succeeded with StepBatch failing — no step ran, or its error was dropped")
+	}
+}
+
+// TestMC3_concurrentGenerationsFillSteps pins the straggler window's timing. With a step that takes far longer than the
+// window (a GPU's), 4 generations decoding together must run as full 4-wide steps, token after token. The window is
+// timed from when the resident came free: timed from each token's submission, a token submitted during a run has
+// "waited" the whole run when it ends, runs at once without the others, and the generations phase-lock into split
+// runs — measured on Metal as 3 batched + 1 solo on every token, 255 of 256 runs started by the timeout.
+func TestMC3_concurrentGenerationsFillSteps(t *testing.T) {
+	m, rf := loadWithMC3Fake(t, 4)
+	rf.delay = 12 * time.Millisecond // 3x the straggler window
+	m.EnableResidentConcurrency(4)
+	var wg sync.WaitGroup
+	for c := range 4 {
+		wg.Add(1)
+		go func(c int) {
+			defer wg.Done()
+			if c == 3 {
+				// A late joiner: its prefill runs while the other three are decoding, and its first token arrives
+				// just as the resident comes free — the case that phase-locked on Metal.
+				time.Sleep(300 * time.Millisecond) // past the others' three 48 ms prefills, well into their decode
+			}
+			ch, gen := m.Generate(context.Background(), []int{1, 2, 3, 4 + c}, 60, SamplingParams{})
+			for range ch {
+			}
+			if err := gen.Err(); err != nil {
+				t.Errorf("conversation %d: %v", c, err)
+			}
+		}(c)
+	}
+	wg.Wait()
+	st := m.ResidentBatchStats()
+	t.Logf("runs %d (straggler-started %d), steps %d by size %v, solo tokens %d", st.Runs, st.StragglerRuns, st.Steps, st.StepSizes[:6], st.SoloTokens)
+	// The 4th joins ~13 tokens late and so also finishes ~13 tokens late: those ends run 3-wide and solo. Everything in
+	// between must be 4-wide.
+	if st.Steps == 0 || st.StepSizes[4]*10 < st.Steps*6 {
+		t.Errorf("only %d of %d steps ran all 4 generations (sizes %v): the generations did not join shared steps", st.StepSizes[4], st.Steps, st.StepSizes[:6])
+	}
+	if st.StragglerRuns*10 > st.Runs {
+		t.Errorf("%d of %d runs started on the straggler timeout: the window is firing on generations that were not late", st.StragglerRuns, st.Runs)
 	}
 }
