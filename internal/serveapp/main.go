@@ -708,6 +708,15 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(ctx)
+		// MC3c step 2: what the CPU batcher did over this server's life — the record that decode tokens actually ran
+		// in batched steps, and how wide (docs/tasks/task-concurrency-2026-09.md).
+		for _, lm := range srv.modelList() {
+			if lm.model != nil && lm.model.CPUBatchActive() {
+				st := lm.model.CPUBatchStats()
+				fmt.Fprintf(os.Stderr, "cpu batch %q: %d runs, %d batched steps (%d tokens), %d solo tokens, %d straggler runs, steps by size %v\n",
+					lm.name, st.Runs, st.Steps, st.StepTokens, st.SoloTokens, st.StragglerRuns, st.StepSizes[:max(2, lm.concurrent+1)])
+			}
+		}
 		if cfg.sessionDir != "" && cfg.kvSessions > 0 {
 			deadline := time.Now().Add(5 * time.Second)
 			for _, lm := range srv.modelList() {
