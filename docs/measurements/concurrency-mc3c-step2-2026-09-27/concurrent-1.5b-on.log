@@ -1,0 +1,10 @@
+=== RUN   TestCPUBatch_concurrentMatchesAlone
+=== RUN   TestCPUBatch_concurrentMatchesAlone/greedy
+    cpu_batch_test.go:194: runs 77, steps 72 (tokens 283), solo tokens 5, straggler runs 0, step sizes [0 0 0 5 67]
+=== RUN   TestCPUBatch_concurrentMatchesAlone/sampled
+    cpu_batch_test.go:194: runs 77, steps 72 (tokens 283), solo tokens 5, straggler runs 0, step sizes [0 0 0 5 67]
+--- PASS: TestCPUBatch_concurrentMatchesAlone (71.65s)
+    --- PASS: TestCPUBatch_concurrentMatchesAlone/greedy (36.06s)
+    --- PASS: TestCPUBatch_concurrentMatchesAlone/sampled (35.59s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	71.667s

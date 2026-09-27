@@ -105,6 +105,19 @@ serialization). Each generation runs on its own session KV, so each
 conversation's output is byte-identical to serving it alone, and admission stays FIFO. N is capped by `--kv-sessions`
 (each running generation holds a session). A weight-streaming or vision model always runs one.
 
+**`--cpu-batch auto|on|off` (default `auto`) batches those generations' decode tokens** (MC3c step 2, 2026-09-27).
+Concurrent CPU generations of one model join their decode tokens into one batched forward, which reads each weight once
+for all of them. Every reply is bit-identical either way, and a lone request takes exactly the unbatched path.
+- `auto` batches a plain dense model with at least 2 GiB of weights and leaves smaller models on the independent
+  workers, where they are faster.
+- On a 7B (qwen2.5-7b, Ryzen 7 3700X, W7, 4 clients): **2.19×** the workers' aggregate (5.4 → 11.9 tok/s), with the
+  p99 turn 96 → 46 s and a lone request unchanged. See `measurements/concurrency-mc3c-step2-2026-09-27.md`.
+- On the 0.5B, `on` reads 0.73× the workers.
+- `auto` is off on macOS until measured there.
+- Not batched (they run as workers): MoE, recurrent, hybrid and non-standard-block families, `--kv i8`, adapters,
+  speculative decode and vision.
+- The banner's concurrency line says which mode runs, and serve logs the batcher's step counts at shutdown.
+
 **On Metal, a dense resident model batches concurrent generations** (MC3, 2026-09-26). Under the same flag, each
 running generation holds its own resident KV slot (`--kv-sessions` sets the count, 4 by default). Their decode tokens
 run together in one step on the GPU's matrix units, every logit bit-identical to serving that conversation alone.

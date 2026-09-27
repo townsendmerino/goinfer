@@ -21,10 +21,13 @@
 > the workers; the 0.5B is in the owner band.
 >
 > **Open, 2026-09-26:**
-> - **MC3c step 2 (batching behind the same admission): BUILD, by the pre-registered trigger** (2026-09-27, `nobara`
->   CPU, 7B). Batched B = 4 ÷ J8 N = 4 is 2.41× at depth 128 and 2.25× at 512, against a 1.15× bar. On the 7B the
->   workers barely scale (1.13–1.15×) and batching reaches 2.59–2.73× ([`concurrency-mc2-2026-09-26.md`](../measurements/concurrency-mc2-2026-09-26.md),
->   "Linux 7B cell"). Design, correctness gates and W7 grading pre-registered 2026-09-27 (MC3c, "step 2"); not built;
+> - ~~MC3c step 2 (batching behind the same admission)~~ — **SHIPPED 2026-09-27** (`420d655b`, graded at `2c1d89ec`;
+>   [`concurrency-mc3c-step2-2026-09-27.md`](../measurements/concurrency-mc3c-step2-2026-09-27.md)). All five W7 gates
+>   pass on the 7B (CPU): 4 clients 2.19× the step-1 workers, p99 turn 0.48×, a lone request 1.000× / 1.000×, every
+>   reply identical. `-cpu-batch auto` (the default) batches models of ≥ 2 GiB of weights; off on darwin until a Mac
+>   7B cell;
+> - a Mac 7B MC2 cell (batched B = 4 ÷ J8 N = 4 ≥ 1.15× turns `-cpu-batch auto` on for darwin), and a tuned small-M
+>   amd64 kernel for the batched step (its M = 1 is 0.965× production on the 7B), each on its own measurement;
 > - MC3 follow-ons, none registered: a hybrid B = 2 (it reads 1.07× on the 1.5B, ~1.0× on the 7B), an encode-ahead
 >   executor for steps, and CUDA (only on its own measurement);
 > - ~~the 7B end to end~~ — done 2026-09-27: all five W7 gates pass, 4 clients at 1.785× the serialized build, p99 turn
@@ -716,6 +719,18 @@ because it trades per-request latency for throughput.
 - Step 2 is not started. Its design, gates and pre-registration follow.
 
 ### MC3c step 2 — batched CPU decode behind the same admission (design and grading pre-registered 2026-09-27, before any code)
+
+**Result, 2026-09-27: SHIPPED, all five W7 gates pass**
+([`concurrency-mc3c-step2-2026-09-27.md`](../measurements/concurrency-mc3c-step2-2026-09-27.md)).
+- Code `420d655b`; graded build `2c1d89ec`, which adds the shutdown stats line; census fix `d16f5845`.
+- On the 7B (CPU, 4 clients) the aggregate is **2.19×** the step-1 workers (5.44 → 11.92 tok/s), and the p99 turn is
+  **0.48×** (~96 → ~46 s).
+- A lone request is **1.000× / 1.000×** (p50 / p99): it ran no batched step.
+- Every reply is identical to the step-1 build's, turn for turn, at 1 and 4 clients.
+- Reported: 2 clients 1.47×. The 0.5B with `-cpu-batch on` reads 0.73× the workers, with identical replies, which is
+  why `auto` leaves it on them.
+- One change from the registered design: an ineligible cache never enters the batcher, so no run mixes eligible and
+  ineligible tokens.
 
 **Goal.** When several CPU generations of one model are decoding, their decode tokens run as one batched forward
 instead of N independent forwards. Each reply stays bit-identical to the same conversation served alone. The step-1

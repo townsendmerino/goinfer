@@ -1,0 +1,142 @@
+11:55:05 == MC3c step 2 W7 start; tree 2c1d89ec; old 0bc06f90 new 2c1d89ec; kernel 7.2.0-202.nobara.fc44.x86_64; governor schedutil; 16 threads; 2.02 4.18 3.75 1/909 1486724
+11:55:05 waiting: load1=2.02 busy=[] (0s)
+11:56:05 idle: load1=0.86
+11:56:05 cell old4_1 clients=4 bin=serve-cpu-0bc06f90 model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.86 3.45 3.53 1/918 1486978
+[w7-plain] old4_1 clients=4 starting fresh server
+[w7-plain] old4_1 clients=4: wall=567.484s aggregate=5.41 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+12:05:35 waiting: load1=17.36 busy=[] (0s)
+12:06:35 waiting: load1=6.79 busy=[] (60s)
+12:07:35 waiting: load1=2.60 busy=[] (120s)
+12:08:35 idle: load1=0.95
+12:08:35 cell new4_1 clients=4 bin=serve-cpu-2c1d89ec model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.95 8.18 7.91 1/1000 1490232
+[w7-plain] resuming: 1 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] new4_1 clients=4 starting fresh server
+[w7-plain] new4_1 clients=4: wall=258.069s aggregate=11.9 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+12:12:54 waiting: load1=8.54 busy=[] (0s)
+12:13:54 waiting: load1=3.17 busy=[] (60s)
+12:14:54 waiting: load1=1.23 busy=[] (120s)
+12:15:14 idle: load1=0.87
+12:15:14 cell new4_2 clients=4 bin=serve-cpu-2c1d89ec model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.87 5.63 7.22 1/866 1491056
+[w7-plain] resuming: 2 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] new4_2 clients=4 starting fresh server
+[w7-plain] new4_2 clients=4: wall=257.503s aggregate=11.93 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+12:19:33 waiting: load1=10.65 busy=[] (0s)
+12:20:33 waiting: load1=3.97 busy=[] (60s)
+12:21:33 waiting: load1=1.49 busy=[] (120s)
+12:22:03 idle: load1=0.90
+12:22:03 cell old4_2 clients=4 bin=serve-cpu-0bc06f90 model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.90 5.01 6.73 1/861 1491610
+[w7-plain] resuming: 3 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] old4_2 clients=4 starting fresh server
+[w7-plain] old4_2 clients=4: wall=562.451s aggregate=5.46 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+12:31:26 waiting: load1=16.14 busy=[] (0s)
+12:32:26 waiting: load1=5.93 busy=[] (60s)
+12:33:26 waiting: load1=2.26 busy=[] (120s)
+12:34:16 idle: load1=0.98
+12:34:16 cell old4_3 clients=4 bin=serve-cpu-0bc06f90 model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.98 8.24 9.22 1/859 1492502
+[w7-plain] resuming: 4 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] old4_3 clients=4 starting fresh server
+[w7-plain] old4_3 clients=4: wall=562.286s aggregate=5.46 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+12:43:39 waiting: load1=16.33 busy=[] (0s)
+12:44:40 waiting: load1=6.03 busy=[] (60s)
+12:45:40 waiting: load1=2.47 busy=[] (120s)
+12:46:40 idle: load1=0.94
+12:46:40 cell new4_3 clients=4 bin=serve-cpu-2c1d89ec model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.94 8.20 10.23 1/865 1493496
+[w7-plain] resuming: 5 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] new4_3 clients=4 starting fresh server
+[w7-plain] new4_3 clients=4: wall=257.262s aggregate=11.94 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+12:50:58 waiting: load1=9.59 busy=[] (0s)
+12:51:58 waiting: load1=3.52 busy=[] (60s)
+12:52:58 waiting: load1=1.29 busy=[] (120s)
+12:53:18 idle: load1=0.92
+12:53:18 cell old1_1 clients=1 bin=serve-cpu-0bc06f90 model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.92 6.17 9.00 2/861 1494092
+[w7-plain] resuming: 6 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] old1_1 clients=1 starting fresh server
+[w7-plain] old1_1 clients=1: wall=161.5s aggregate=4.76 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+12:56:00 waiting: load1=12.28 busy=[] (0s)
+12:57:00 waiting: load1=4.54 busy=[] (60s)
+12:58:01 waiting: load1=1.67 busy=[] (120s)
+12:58:41 idle: load1=0.85
+12:58:41 cell new1_1 clients=1 bin=serve-cpu-2c1d89ec model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.85 5.22 8.07 1/872 1494572
+[w7-plain] resuming: 7 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] new1_1 clients=1 starting fresh server
+[w7-plain] new1_1 clients=1: wall=161.518s aggregate=4.75 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+13:01:23 waiting: load1=13.19 busy=[] (0s)
+13:02:23 waiting: load1=4.84 busy=[] (60s)
+13:03:23 waiting: load1=1.78 busy=[] (120s)
+13:04:03 idle: load1=0.91
+13:04:03 cell new1_2 clients=1 bin=serve-cpu-2c1d89ec model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.91 5.25 7.62 1/862 1495053
+[w7-plain] resuming: 8 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] new1_2 clients=1 starting fresh server
+[w7-plain] new1_2 clients=1: wall=161.628s aggregate=4.75 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+13:06:46 waiting: load1=11.80 busy=[] (0s)
+13:07:46 waiting: load1=4.33 busy=[] (60s)
+13:08:46 waiting: load1=1.59 busy=[] (120s)
+13:09:16 idle: load1=0.96
+13:09:16 cell old1_2 clients=1 bin=serve-cpu-0bc06f90 model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.96 5.00 7.14 1/870 1495518
+[w7-plain] resuming: 9 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] old1_2 clients=1 starting fresh server
+[w7-plain] old1_2 clients=1: wall=161.465s aggregate=4.76 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+13:11:58 waiting: load1=13.56 busy=[] (0s)
+13:12:58 waiting: load1=4.98 busy=[] (60s)
+13:13:58 waiting: load1=1.91 busy=[] (120s)
+13:14:48 idle: load1=0.93
+13:14:48 cell old1_3 clients=1 bin=serve-cpu-0bc06f90 model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.93 4.98 6.84 1/861 1496005
+[w7-plain] resuming: 10 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] old1_3 clients=1 starting fresh server
+[w7-plain] old1_3 clients=1: wall=161.47s aggregate=4.76 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+13:17:31 waiting: load1=10.30 busy=[] (0s)
+13:18:31 waiting: load1=3.78 busy=[] (60s)
+13:19:31 waiting: load1=1.43 busy=[] (120s)
+13:20:01 idle: load1=0.87
+13:20:01 cell new1_3 clients=1 bin=serve-cpu-2c1d89ec model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.87 4.54 6.37 1/867 1496469
+[w7-plain] resuming: 11 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] new1_3 clients=1 starting fresh server
+[w7-plain] new1_3 clients=1: wall=161.531s aggregate=4.75 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+13:22:43 waiting: load1=12.44 busy=[] (0s)
+13:23:43 waiting: load1=4.57 busy=[] (60s)
+13:24:43 waiting: load1=1.72 busy=[] (120s)
+13:25:23 idle: load1=0.93
+13:25:23 cell old2_1 clients=2 bin=serve-cpu-0bc06f90 model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.93 4.87 6.33 1/861 1496948
+[w7-plain] resuming: 12 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] old2_1 clients=2 starting fresh server
+[w7-plain] old2_1 clients=2: wall=291.071s aggregate=5.28 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+13:30:15 waiting: load1=13.53 busy=[] (0s)
+13:31:15 waiting: load1=5.04 busy=[] (60s)
+13:32:16 waiting: load1=1.93 busy=[] (120s)
+13:33:06 idle: load1=0.87
+13:33:06 cell new2_1 clients=2 bin=serve-cpu-2c1d89ec model=qwen2.5-7b-instruct-q4_k_m.gguf extra=[] loadavg 0.87 6.18 7.15 1/860 1497536
+[w7-plain] resuming: 13 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+[w7-plain] new2_1 clients=2 starting fresh server
+[w7-plain] new2_1 clients=2: wall=198.514s aggregate=7.74 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7.json
+13:36:25 == reported: 0.5B, 4 clients, new build, -cpu-batch off vs on
+13:36:25 waiting: load1=11.05 busy=[] (0s)
+13:37:25 waiting: load1=4.06 busy=[] (60s)
+13:38:25 waiting: load1=1.49 busy=[] (120s)
+13:38:55 idle: load1=0.90
+13:38:55 cell newoff05_1 clients=4 bin=serve-cpu-2c1d89ec model=qwen2.5-coder-0.5b-instruct-q4_k_m.gguf extra=[-cpu-batch off] loadavg 0.90 5.16 6.70 1/862 1498039
+[w7-plain] newoff05_1 clients=4 starting fresh server
+[w7-plain] newoff05_1 clients=4: wall=46.325s aggregate=66.31 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7-05b.json
+13:39:42 waiting: load1=6.96 busy=[] (0s)
+13:40:42 waiting: load1=2.61 busy=[] (60s)
+13:41:42 idle: load1=0.96
+13:41:42 cell newon05_1 clients=4 bin=serve-cpu-2c1d89ec model=qwen2.5-coder-0.5b-instruct-q4_k_m.gguf extra=[-cpu-batch on] loadavg 0.96 4.10 6.10 1/866 1498370
+[w7-plain] resuming: 1 cell(s) already in /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7-05b.json
+[w7-plain] newon05_1 clients=4 starting fresh server
+[w7-plain] newon05_1 clients=4: wall=63.482s aggregate=48.39 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3c-step2-2026-09-27/w7-05b.json
+13:42:46 == DONE
