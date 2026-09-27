@@ -57,7 +57,7 @@ func TestCPUBatchS0_matmulScaling(t *testing.T) {
 		iters := max(3, int(2e9/float64(N*K))) // ~2 G weight-bytes-equivalent per timing
 		for r := range reps {
 			for i := range Ms {
-				M := Ms[(i+r)%len(Ms)] // rotate the order each rep
+				M := Ms[(i+r)%len(Ms)]                    // rotate the order each rep
 				matmul(m.be, sh.w, a[:M*K], dst[:M*N], M) // warm
 				t0 := time.Now()
 				for range iters {
