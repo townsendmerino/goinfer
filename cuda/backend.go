@@ -918,6 +918,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			}{
 				{&r.fRms, "rmsnorm_quant_g32"}, {&r.fQ, "quant_vec_g32"}, {&r.fSw, "glu_quant_g32"},
 				{&r.gemvW4, "gemv_w4a8_g32"}, {&r.gemvW8, "gemv_w8a8_g32"}, {&r.gemvQ4K, "gemv_q4k_g32"},
+				{&r.fQKVg32, "fused_rms_qkv_g32"}, {&r.fGUg32, "fused_rms_gu_g32"},
 			} {
 				if *f.dst, e = r.dev.NewComputePipeline(agmod, f.name); e != nil {
 					return fmt.Errorf("actgroup %s: %w", f.name, e)
@@ -1802,6 +1803,22 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if r.actG32 {
 		// fused_rms_qkv / fused_rms_gu quantize per vector internally.
 		r.fuseQKV = false
+		// Their per-32 twins (fused_rms_qkv_g32 / fused_rms_gu_g32) take any of the per-32 weight kinds,
+		// per projection. Losing fusion measured ~23% of the 1.5B's decode (docs/tasks/
+		// task-int4-weight-quality-2026-09.md, lever 3); the per-32 kernels themselves ~3%. Same
+		// structural exclusions as fuseQKV (no pre-norm, parallel block, MLA, gated q, MoE layers).
+		// Size-gated (fusedG32MaxHidden): every block redoes the rmsnorm + per-32 quant, and that cost
+		// grows with H while the launches it saves matter less as the GEMVs grow. Measured fused ÷
+		// unfused: +10% at H=1536 (qwen2.5-coder-1.5b), −8% at 3072 (phi3-mini), −5% at 3584 (qwen2.5-7b).
+		r.fuseG32 = r.knobValue("GOINFER_CUDA_NO_FUSE") == "" && !postOnly && !parallelBlock && !r.isMLA &&
+			H <= fusedG32MaxHidden
+		for l := range hls {
+			h := &hls[l]
+			if h.isMoE || h.qGate || !g32Fusable(h.q.kind, h.k.kind, h.v.kind, h.g.kind, h.u.kind) {
+				r.fuseG32 = false
+				break
+			}
+		}
 	}
 	// CUDA graphs (GOINFER_CUDA_GRAPHS): capture each layer's static launch segments now that fuseQKV
 	// is final (segA/segB branch on it), so decode replays them instead of re-issuing the launches.

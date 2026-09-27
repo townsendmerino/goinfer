@@ -354,3 +354,140 @@ func TestActGroupKernels_gemvQ4K(t *testing.T) {
 		}
 	}
 }
+
+// TestActGroupKernels_fusedG32BitIdentical: fused_rms_qkv_g32 and fused_rms_gu_g32 equal the unfused
+// per-32 chain (rmsnorm_quant_g32 + one gemv_*_g32 per projection) EXACTLY, with mixed weight kinds
+// (q4k / int8 / int4) and biases, at several rows-per-warp. They share the row code by construction
+// (actgroup.cu's row* functions), so any difference is a real defect, not rounding.
+func TestActGroupKernels_fusedG32BitIdentical(t *testing.T) {
+	ctx, _, launch := actGroupHarness(t)
+	rng := rand.New(rand.NewSource(17))
+	const H, qDim, kvDim, I = 1536, 1536, 256, 512
+	for rep, xScale := range []float64{1, 0.013, 57} { // three inputs: a single rnorm could coincide
+		x := outlierVec(rng, H)
+		for i := range x {
+			if x[i] == 0 {
+				x[i] = float32(rng.NormFloat64()) // rmsnorm input: no all-zero groups needed here
+			}
+			x[i] *= float32(xScale)
+		}
+		_ = rep
+		nw := make([]float32, H)
+		for i := range nw {
+			nw[i] = float32(0.5 + rng.Float64())
+		}
+		dx, dnw := upload(t, ctx, x), upload(t, ctx, nw)
+
+		type proj struct {
+			kind string
+			N    int
+			W    *gc.Buffer[uint32]
+			sc   gc.KernelArg
+			scW8 *gc.Buffer[float32]
+			scW4 *gc.Buffer[uint16]
+			bias *gc.Buffer[float32]
+		}
+		mk := func(kind string, N int) proj {
+			p := proj{kind: kind, N: N}
+			wf := make([]float32, N*H)
+			for i := range wf {
+				wf[i] = float32(rng.NormFloat64() * 0.05)
+			}
+			switch kind {
+			case "q4k":
+				raw := q4kHostRows(rng, N, H, false)
+				words := make([]uint32, len(raw)/4)
+				for i := range words {
+					words[i] = uint32(raw[4*i]) | uint32(raw[4*i+1])<<8 | uint32(raw[4*i+2])<<16 | uint32(raw[4*i+3])<<24
+				}
+				p.W, p.sc = upload(t, ctx, words), gc.ArgDevicePtr(0)
+			case "int8":
+				q8, s8 := linalg.QuantizeRowsInt8(wf, N, H)
+				p.W = upload(t, ctx, packI8(q8, N, H))
+				p.scW8 = upload(t, ctx, s8)
+				p.sc = gc.Arg(p.scW8)
+			case "int4":
+				q4, s4 := linalg.QuantizeGroupsInt4(wf, N, H, 32)
+				words := make([]uint32, N*(H/8))
+				for i := range words {
+					b := q4[4*i : 4*i+4]
+					words[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
+				}
+				gs := make([]uint16, len(s4))
+				for i, v := range s4 {
+					gs[i] = f32tof16(v)
+				}
+				p.W, p.scW4 = upload(t, ctx, words), upload(t, ctx, gs)
+				p.sc = gc.Arg(p.scW4)
+			}
+			b := make([]float32, N)
+			for i := range b {
+				b[i] = float32(rng.NormFloat64())
+			}
+			p.bias = upload(t, ctx, b)
+			return p
+		}
+		code := map[string]int32{"int8": 0, "int4": 1, "q4k": 2}
+		cfg8 := func(N int) gc.LaunchConfig {
+			return gc.LaunchConfig{GridX: uint32((N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+		}
+		// unfused: rmsnorm_quant_g32 then one per-32 gemv per projection
+		dq, das := mustAlloc[int32](t, ctx, H/4), mustAlloc[float32](t, ctx, 2*H/32)
+		one := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((H + 256) * 4)}
+		launch("rmsnorm_quant_g32", one, gc.Arg(dx), gc.Arg(dnw), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)),
+			gc.ArgValue(int32(0)), gc.Arg(dq), gc.Arg(das))
+		gemv := func(p proj, bias gc.KernelArg) []float32 {
+			out := mustAlloc[float32](t, ctx, p.N)
+			switch p.kind {
+			case "q4k":
+				launch("gemv_q4k_g32", cfg8(p.N), gc.Arg(p.W), gc.Arg(dq), gc.Arg(das), bias,
+					gc.ArgValue(int32(p.N)), gc.ArgValue(int32(H/256)), gc.Arg(out), gc.ArgValue(int32(0)))
+			case "int8":
+				launch("gemv_w8a8_g32", cfg8(p.N), gc.Arg(p.W), gc.Arg(dq), gc.Arg(p.scW8), gc.Arg(das), bias,
+					gc.ArgValue(int32(p.N)), gc.ArgValue(int32(H/4)), gc.Arg(out), gc.ArgValue(int32(0)))
+			case "int4":
+				launch("gemv_w4a8_g32", cfg8(p.N), gc.Arg(p.W), gc.Arg(dq), gc.Arg(p.scW4), gc.Arg(das), bias,
+					gc.ArgValue(int32(p.N)), gc.ArgValue(int32(H/8)), gc.ArgValue(int32(H/32)), gc.Arg(out), gc.ArgValue(int32(0)))
+			}
+			return download(t, out, p.N)
+		}
+		same := func(name string, got, want []float32) {
+			t.Helper()
+			for i := range want {
+				if math.Float32bits(got[i]) != math.Float32bits(want[i]) {
+					t.Fatalf("%s[%d] = %v, unfused %v: not bit-identical", name, i, got[i], want[i])
+				}
+			}
+		}
+		shmem := uint32((H + 256 + H/4 + 2*(H/32)) * 4)
+
+		q, k, v := mk("q4k", qDim), mk("int8", kvDim), mk("int4", kvDim)
+		wq, wk, wv := gemv(q, gc.Arg(q.bias)), gemv(k, gc.Arg(k.bias)), gemv(v, gc.Arg(v.bias))
+		for _, rpw := range []int{1, 2, 4} {
+			nrows := qDim + 2*kvDim
+			cfg := gc.LaunchConfig{GridX: uint32((nrows + 8*rpw - 1) / (8 * rpw)), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: shmem}
+			oq, ok, ov := mustAlloc[float32](t, ctx, qDim), mustAlloc[float32](t, ctx, kvDim), mustAlloc[float32](t, ctx, kvDim)
+			launch("fused_rms_qkv_g32", cfg, gc.Arg(dx), gc.Arg(dnw), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)),
+				gc.Arg(q.W), q.sc, gc.Arg(q.bias), gc.ArgValue(code[q.kind]),
+				gc.Arg(k.W), k.sc, gc.Arg(k.bias), gc.ArgValue(code[k.kind]),
+				gc.Arg(v.W), v.sc, gc.Arg(v.bias), gc.ArgValue(code[v.kind]),
+				gc.ArgValue(int32(qDim)), gc.ArgValue(int32(kvDim)), gc.ArgValue(int32(rpw)), gc.Arg(oq), gc.Arg(ok), gc.Arg(ov))
+			same("q", download(t, oq, qDim), wq)
+			same("k", download(t, ok, kvDim), wk)
+			same("v", download(t, ov, kvDim), wv)
+		}
+
+		g, u := mk("q4k", I), mk("int8", I)
+		wg, wu := gemv(g, gc.ArgDevicePtr(0)), gemv(u, gc.ArgDevicePtr(0))
+		for _, rpw := range []int{1, 8} {
+			cfg := gc.LaunchConfig{GridX: uint32((2*I + 8*rpw - 1) / (8 * rpw)), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: shmem}
+			og, ou := mustAlloc[float32](t, ctx, I), mustAlloc[float32](t, ctx, I)
+			launch("fused_rms_gu_g32", cfg, gc.Arg(dx), gc.Arg(dnw), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)),
+				gc.Arg(g.W), g.sc, gc.ArgValue(code[g.kind]),
+				gc.Arg(u.W), u.sc, gc.ArgValue(code[u.kind]),
+				gc.ArgValue(int32(I)), gc.ArgValue(int32(rpw)), gc.Arg(og), gc.Arg(ou))
+			same("gate", download(t, og, I), wg)
+			same("up", download(t, ou, I), wu)
+		}
+	}
+}

@@ -1,0 +1,6 @@
+int4 g0 -: 250.6 tok/s
+int4 g0 nofuse: 195.6 tok/s
+int4 g32 -: 184.1 tok/s
+int4 g0 -: 252.0 tok/s
+int4 g0 nofuse: 190.2 tok/s
+int4 g32 -: 188.3 tok/s

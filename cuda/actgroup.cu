@@ -118,20 +118,16 @@ __global__ void glu_quant_g32(const float* __restrict__ g, const float* __restri
     quantG32(dscratch, I / 32, q, scale);
 }
 
-// gemv_w4a8_g32: gemv_w4a8_fwd with per-32 activation scales aS[Kgroups]. Each word's dp4a partial
-// is scaled by weightScale(group) * aS[group] (group = word>>2) instead of the weight scale alone,
-// and the epilogue drops the per-vector activation multiply: dst[n] = sum + bias. Same launch
-// geometry as gemv_w4a8_fwd (8 rows per 256-thread block).
-__global__ void gemv_w4a8_g32(
-    const unsigned int* __restrict__ W, const int* __restrict__ a, const __half* __restrict__ gs,
-    const float* __restrict__ aS, const float* __restrict__ bias,
-    int N, int Kwords, int Kgroups, float* __restrict__ dst, int accum)
-{
-    int n = blockIdx.x * (blockDim.x / 32) + (threadIdx.x / 32);
-    int lane = threadIdx.x & 31;
-    if (n >= N) return;
-    const unsigned int* wr = W + (long)n * Kwords;
-    const __half* sr = gs + (long)n * Kgroups;
+// ---- Per-32 matvec row bodies. Each returns ONE lane's partial sum for output row `n` (the caller
+// does the warp reduction and the epilogue). The standalone matvecs below and the fused per-32
+// kernels (fused_rms_qkv_g32 / fused_rms_gu_g32) call these same functions, so a fused projection
+// is bit-identical to the unfused chain by construction, not by a copied expression.
+
+// rowW4g32: gemv_w4a8_fwd's row with per-32 activation scales aS[Kgroups]. Each word's dp4a partial
+// is scaled by weightScale(group) * aS[group] (group = word>>2) instead of the weight scale alone.
+__device__ __forceinline__ float rowW4g32(const unsigned int* __restrict__ wr, const int* __restrict__ a,
+                                          const __half* __restrict__ sr, const float* __restrict__ aS,
+                                          int Kwords, int lane) {
     float facc = 0.f;
     int base = 0;
     for (; base + 64 <= Kwords; base += 64) {
@@ -155,61 +151,36 @@ __global__ void gemv_w4a8_g32(
             facc = __fmaf_rn((float)p, __fmul_rn(__half2float(sr[wi >> 2]), aS[wi >> 2]), facc);
         }
     }
-    #pragma unroll
-    for (int off = 16; off > 0; off >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, off);
-    if (lane == 0) {
-        float val = __fadd_rn(facc, (bias ? bias[n] : 0.f));
-        dst[n] = accum ? dst[n] + val : val;
-    }
+    return facc;
 }
 
-// gemv_w8a8_g32: gemv_w8a8_fwd with per-32 activation scales aS[Kdiv4/8]. The per-row kernel
+// rowW8g32: gemv_w8a8_fwd's row with per-32 activation scales aS[Kdiv4/8]. The per-row kernel
 // accumulates the whole row in one int32; here each 4-element word's dp4a partial is scaled by its
-// group's activation scale (group = word>>3) and accumulated in f32, and the per-row weight scale
-// is applied in the epilogue: dst[n] = sum * wScale[n] + bias.
-__global__ void gemv_w8a8_g32(
-    const int* __restrict__ W, const int* __restrict__ a, const float* __restrict__ wScale,
-    const float* __restrict__ aS, const float* __restrict__ bias,
-    int N, int Kdiv4, float* __restrict__ dst, int accum)
-{
-    int n = blockIdx.x * (blockDim.x / 32) + (threadIdx.x / 32);
-    int lane = threadIdx.x & 31;
-    if (n >= N) return;
-    const int* wr = W + (long)n * Kdiv4;
+// group's activation scale (group = word>>3) and accumulated in f32. The per-row weight scale is
+// the epilogue's (finishRow).
+__device__ __forceinline__ float rowW8g32(const int* __restrict__ wr, const int* __restrict__ a,
+                                          const float* __restrict__ aS, int Kdiv4, int lane) {
     float facc = 0.f;
     for (int k = lane; k < Kdiv4; k += 32) facc = __fmaf_rn((float)__dp4a(wr[k], a[k], 0), aS[k >> 3], facc);
-    #pragma unroll
-    for (int o = 16; o > 0; o >>= 1) facc += __shfl_down_sync(0xffffffff, facc, o);
-    if (lane == 0) {
-        float val = __fmaf_rn(facc, wScale[n], (bias ? bias[n] : 0.f));
-        dst[n] = accum ? dst[n] + val : val;
-    }
+    return facc;
 }
 
-
-// gemv_q4k_g32: GGUF Q4_K weights, the raw super-blocks (36 words per 256 weights: d|dmin, three
-// words of packed 6-bit scales and minimums, 32 words of codes), × per-32 int8 activations.
-// aS holds 2·Kgroups floats: per-group activation scales, then aS·Σaq per group (quantG32).
-// One warp per output row, 8 rows per 256-thread block (the per-row GEMVs' geometry).
+// rowQ4K: one row of GGUF Q4_K weights (the raw super-blocks, 36 words per 256 weights: d|dmin,
+// three words of packed 6-bit scales and minimums, 32 words of codes) × per-32 int8 activations.
+// asum[g] = aS[g]·Σaq over group g (quantG32's second half).
 //
 // LANE MAPPING: lane l owns sub-block pair j = l & 3 of block b0 + (l >> 2), so a warp covers 8
-// blocks per iteration and a lane 64 weights: one 16-byte header load, one scale/min unpack, two
-// 16-byte code loads, four 16-byte activation loads and 16 dp4a. The first mapping (a lane per code
-// word, 8 weights) paid the header decode per 8 weights and was compute-bound: ~0.97× the int8 GEMV
-// it replaces despite reading 25% fewer bytes. Code word t of pair j holds elements 64j+4t..+3 (low
-// nibbles, sub-block 2j) and 64j+32+4t..+3 (high, 2j+1); their activation words are 64b+16j+t and
-// +8. Alignment: a block is 144 = 9·16 bytes and its codes start at byte 16, so every vector load is
-// 16-byte aligned. Per block and group:
-//   facc += aS_g·d·sc_g · idot_g − dmin·m_g · (aS·Σaq)_g
-__global__ void gemv_q4k_g32(
-    const unsigned int* __restrict__ W, const int* __restrict__ a, const float* __restrict__ aS,
-    const float* __restrict__ bias, int N, int nSB, float* __restrict__ dst, int accum)
-{
-    int n = blockIdx.x * (blockDim.x / 32) + (threadIdx.x / 32);
-    int lane = threadIdx.x & 31;
-    if (n >= N) return;
-    const unsigned int* wr = W + (long)n * nSB * 36;
-    const float* asum = aS + nSB * 8;
+// blocks per pass and a lane 64 weights: one 16-byte header load, one scale/min unpack, two 16-byte
+// code loads, four 16-byte activation loads, 16 dp4a. (A lane per code word paid the header decode
+// per 8 weights and was compute-bound; 8 lanes per row, lever 1, was 7% slower on the 7B and did not
+// help the 1.5B — docs/tasks/task-int4-weight-quality-2026-09.md.) Code word t of pair j holds
+// elements 64j+4t..+3 (low nibbles, sub-block 2j) and 64j+32+4t..+3 (high, 2j+1); their activation
+// words are 64b+16j+t and +8. A block is 144 = 9·16 bytes and its codes start at byte 16, so every
+// vector load is 16-byte aligned. Per block and group:
+//   facc += aS_g·d·sc_g · idot_g − dmin·m_g · asum_g
+__device__ __forceinline__ float rowQ4K(const unsigned int* __restrict__ wr, const int* __restrict__ a,
+                                        const float* __restrict__ aS, const float* __restrict__ asum,
+                                        int nSB, int lane) {
     int j = lane & 3, sub = lane >> 2;
     float facc = 0.f;
     for (int b0 = 0; b0 < nSB; b0 += 8) {
@@ -250,11 +221,175 @@ __global__ void gemv_q4k_g32(
             facc = __fmaf_rn(-__fmul_rn(dmin, (float)mHi), asum[g + 1], facc);
         }
     }
+    return facc;
+}
+
+// warpSum: the per-32 matvecs' lane reduction (shfl_down 16..1, the original kernels' order).
+__device__ __forceinline__ float warpSum(float f) {
     #pragma unroll
-    for (int off = 16; off > 0; off >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, off);
+    for (int off = 16; off > 0; off >>= 1) f += __shfl_down_sync(0xffffffffu, f, off);
+    return f;
+}
+
+// Weight kinds a fused per-32 projection can carry (cuda/resident.go's wkCode).
+#define WK_INT8 0
+#define WK_INT4 1
+#define WK_Q4K  2
+
+// projRow: lane partial for row n of a K-wide projection of the given kind. sc is the int8 row scales
+// (WK_INT8), the int4 f16 group scales (WK_INT4) or unused (WK_Q4K). Warp-uniform kind.
+__device__ __forceinline__ float projRow(int kind, const unsigned int* __restrict__ W, const void* __restrict__ sc,
+                                         int n, int K, const int* __restrict__ a, const float* __restrict__ aS,
+                                         const float* __restrict__ asum, int lane) {
+    if (kind == WK_Q4K) return rowQ4K(W + (long)n * (K >> 8) * 36, a, aS, asum, K >> 8, lane);
+    if (kind == WK_INT4) return rowW4g32(W + (long)n * (K >> 3), a, (const __half*)sc + (long)n * (K >> 5), aS, K >> 3, lane);
+    return rowW8g32((const int*)W + (long)n * (K >> 2), a, aS, K >> 2, lane);
+}
+
+// finishRow: the matching standalone kernel's epilogue (accum = 0).
+__device__ __forceinline__ float finishRow(int kind, float sum, const void* __restrict__ sc,
+                                           const float* __restrict__ bias, int n) {
+    if (kind == WK_INT8) return __fmaf_rn(sum, ((const float*)sc)[n], (bias ? bias[n] : 0.f));
+    return __fadd_rn(sum, (bias ? bias[n] : 0.f));
+}
+
+// gemv_w4a8_g32: gemv_w4a8_fwd with per-32 activation scales aS[Kgroups]; the epilogue drops the
+// per-vector activation multiply: dst[n] = sum + bias. Same launch geometry as gemv_w4a8_fwd (8 rows
+// per 256-thread block). Every multiply-accumulate is an explicit __fmaf_rn / __fmul_rn.
+__global__ void gemv_w4a8_g32(
+    const unsigned int* __restrict__ W, const int* __restrict__ a, const __half* __restrict__ gs,
+    const float* __restrict__ aS, const float* __restrict__ bias,
+    int N, int Kwords, int Kgroups, float* __restrict__ dst, int accum)
+{
+    int n = blockIdx.x * (blockDim.x / 32) + (threadIdx.x / 32);
+    int lane = threadIdx.x & 31;
+    if (n >= N) return;
+    float facc = warpSum(rowW4g32(W + (long)n * Kwords, a, gs + (long)n * Kgroups, aS, Kwords, lane));
     if (lane == 0) {
         float val = __fadd_rn(facc, (bias ? bias[n] : 0.f));
         dst[n] = accum ? dst[n] + val : val;
+    }
+}
+
+// gemv_w8a8_g32: gemv_w8a8_fwd with per-32 activation scales aS[Kdiv4/8]; the per-row weight scale
+// is applied in the epilogue: dst[n] = sum * wScale[n] + bias.
+__global__ void gemv_w8a8_g32(
+    const int* __restrict__ W, const int* __restrict__ a, const float* __restrict__ wScale,
+    const float* __restrict__ aS, const float* __restrict__ bias,
+    int N, int Kdiv4, float* __restrict__ dst, int accum)
+{
+    int n = blockIdx.x * (blockDim.x / 32) + (threadIdx.x / 32);
+    int lane = threadIdx.x & 31;
+    if (n >= N) return;
+    float facc = warpSum(rowW8g32(W + (long)n * Kdiv4, a, aS, Kdiv4, lane));
+    if (lane == 0) {
+        float val = __fmaf_rn(facc, wScale[n], (bias ? bias[n] : 0.f));
+        dst[n] = accum ? dst[n] + val : val;
+    }
+}
+
+// gemv_q4k_g32: GGUF Q4_K weights × per-32 int8 activations (rowQ4K). aS holds 2·Kgroups floats: the
+// per-group activation scales, then aS·Σaq per group (quantG32). One warp per output row, 8 rows per
+// 256-thread block (the per-row GEMVs' geometry).
+__global__ void gemv_q4k_g32(
+    const unsigned int* __restrict__ W, const int* __restrict__ a, const float* __restrict__ aS,
+    const float* __restrict__ bias, int N, int nSB, float* __restrict__ dst, int accum)
+{
+    int n = blockIdx.x * (blockDim.x / 32) + (threadIdx.x / 32);
+    int lane = threadIdx.x & 31;
+    if (n >= N) return;
+    float facc = warpSum(rowQ4K(W + (long)n * nSB * 36, a, aS, aS + nSB * 8, nSB, lane));
+    if (lane == 0) {
+        float val = __fadd_rn(facc, (bias ? bias[n] : 0.f));
+        dst[n] = accum ? dst[n] + val : val;
+    }
+}
+
+// rmsQuantShared is rmsnorm_quant_g32's body into SHARED memory: sh = normed[H] | red[256] | aq[H/4] |
+// aS[2·H/32]. Every block of a fused per-32 kernel runs it redundantly (x[H] is L2-resident), so the
+// activation, its per-32 scales and its group sums never make a global round trip, and no single-block
+// quantizer launch sits serially in the chain. Same passes, same reduction order and quantG32 itself,
+// so the codes and scales equal rmsnorm_quant_g32's exactly. Block size must be 256 (the ladder).
+__device__ __forceinline__ void rmsQuantShared(const float* __restrict__ x, const float* __restrict__ w,
+                                               int H, float eps, int addOne, float* sh,
+                                               int** aqOut, float** aSOut) {
+    float* normed = sh;
+    float* red = sh + H;
+    int* aq = (int*)(red + 256);
+    float* aS = (float*)(aq + H / 4);
+    int t = threadIdx.x, nt = blockDim.x;
+    float ss = 0.f;
+    for (int k = t; k < H; k += nt) ss = __fmaf_rn(x[k], x[k], ss);
+    red[t] = ss; __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
+    float rnorm = 1.f / sqrtf(red[0] / H + eps); __syncthreads();
+    for (int k = t; k < H; k += nt) { float g = addOne ? (1.f + w[k]) : w[k]; normed[k] = x[k] * g * rnorm; }
+    __syncthreads();
+    quantG32(normed, H / 32, aq, aS);
+    __syncthreads();
+    *aqOut = aq;
+    *aSOut = aS;
+}
+
+// fused_rms_qkv_g32: rmsnorm + per-32 quant (rmsQuantShared) + this block's Q|K|V rows, one launch
+// instead of four, for per-32 activations (fused_rms_qkv is per-vector and int4-only). Each projection
+// has its own weight kind (WK_*) and scale pointer; a warp walks `rpw` consecutive rows, and a
+// projection kind is uniform across a warp's row. Shared: (H + 256)·4 + H + 2·(H/32)·4 bytes.
+// grid: ceil((qDim + 2·kvDim) / (8·rpw)) blocks × 256 threads.
+__global__ void fused_rms_qkv_g32(
+    const float* __restrict__ x, const float* __restrict__ nrm, int H, float eps, int addOne,
+    const unsigned int* __restrict__ Wq, const void* __restrict__ sq, const float* __restrict__ bq, int kq,
+    const unsigned int* __restrict__ Wk, const void* __restrict__ sk, const float* __restrict__ bk, int kk,
+    const unsigned int* __restrict__ Wv, const void* __restrict__ sv, const float* __restrict__ bv, int kv,
+    int qDim, int kvDim, int rpw,
+    float* __restrict__ qOut, float* __restrict__ kOut, float* __restrict__ vOut)
+{
+    extern __shared__ float sh[];
+    int* aq;
+    float* aS;
+    rmsQuantShared(x, nrm, H, eps, addOne, sh, &aq, &aS);
+    const float* asum = aS + H / 32;
+    int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+    int nrows = qDim + 2 * kvDim;
+    int r0 = (blockIdx.x * (blockDim.x >> 5) + warp) * rpw;
+    for (int i = 0; i < rpw; i++) {
+        int r = r0 + i;
+        if (r >= nrows) return; // warp-uniform
+        const unsigned int* W; const void* sc; const float* bias; float* dst; int row, kind;
+        if (r < qDim)               { W = Wq; sc = sq; bias = bq; dst = qOut; row = r;                kind = kq; }
+        else if (r < qDim + kvDim)  { W = Wk; sc = sk; bias = bk; dst = kOut; row = r - qDim;         kind = kk; }
+        else                        { W = Wv; sc = sv; bias = bv; dst = vOut; row = r - qDim - kvDim; kind = kv; }
+        float f = warpSum(projRow(kind, W, sc, row, H, aq, aS, asum, lane));
+        if (lane == 0) dst[row] = finishRow(kind, f, sc, bias, row);
+    }
+}
+
+// fused_rms_gu_g32: rmsnorm + per-32 quant (rmsQuantShared) + this block's gate|up rows (no bias).
+// Same structure and shared layout as fused_rms_qkv_g32; rows 0..I-1 are gate, I..2I-1 up.
+// grid: ceil(2·I / (8·rpw)) blocks × 256 threads.
+__global__ void fused_rms_gu_g32(
+    const float* __restrict__ x, const float* __restrict__ nrm, int H, float eps, int addOne,
+    const unsigned int* __restrict__ Wg, const void* __restrict__ sg, int kg,
+    const unsigned int* __restrict__ Wu, const void* __restrict__ su, int ku,
+    int I, int rpw, float* __restrict__ gOut, float* __restrict__ uOut)
+{
+    extern __shared__ float sh[];
+    int* aq;
+    float* aS;
+    rmsQuantShared(x, nrm, H, eps, addOne, sh, &aq, &aS);
+    const float* asum = aS + H / 32;
+    int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+    int r0 = (blockIdx.x * (blockDim.x >> 5) + warp) * rpw;
+    for (int i = 0; i < rpw; i++) {
+        int r = r0 + i;
+        if (r >= 2 * I) return; // warp-uniform
+        bool gate = r < I;
+        int row = gate ? r : r - I;
+        const unsigned int* W = gate ? Wg : Wu;
+        const void* sc = gate ? sg : su;
+        int kind = gate ? kg : ku;
+        float f = warpSum(projRow(kind, W, sc, row, H, aq, aS, asum, lane));
+        if (lane == 0) (gate ? gOut : uOut)[row] = finishRow(kind, f, sc, (const float*)0, row);
     }
 }
 

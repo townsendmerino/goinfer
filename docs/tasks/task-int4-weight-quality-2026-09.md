@@ -473,3 +473,67 @@ Neither is started.
 **Instrument note:** zsh does not word-split an unquoted `$q`, so an interactive `set -- $q` loop handed
 the benchmark a quant of "int4 0". Several ad-hoc runs printed FAIL for that reason (not the VRAM
 release first suspected). The gate script ran under bash and was unaffected.
+
+## Lever 3: fused per-32 kernels on CUDA, PRE-REGISTERED 2026-09-26 before any build
+
+**Attribution** (`measurements/q4k-lever1-2026-09-26/attribution-1.5b.txt`, qwen2.5-coder-1.5b, depth 128):
+int4 fused 250.6 / 252.0 tok/s; int4 with fusion OFF (`GOINFER_CUDA_NO_FUSE`) 195.6 / 190.2; int4 + per-32
+184.1 / 188.3. **Losing fusion is ~23% on the 1.5B; the per-32 kernels themselves are ~3%.** Per-32
+turns fusion off because `fused_rms_qkv` and `fused_rms_gu` quantize per vector and read int4 only.
+
+**Change:**
+- `fused_rms_qkv_g32` and `fused_rms_gu_g32`: each block recomputes RMSNorm and the per-32 quantize
+  (codes, scales, group sums: `quantG32` itself) into shared memory, then runs its rows.
+- Each projection carries its weight kind (int8, int4 or Q4_K), and its row code is the matching
+  per-32 matvec's body, verbatim.
+- They replace "rmsnorm_quant_g32 + 3 (or 2) matvecs" whenever per-32 is on and every Q/K/V and
+  gate/up weight has one of those kinds. `GOINFER_CUDA_NO_FUSE` turns them off like the per-row ones.
+
+**Gates:**
+- **Correctness:** the fused kernels are **bit-identical** to the unfused per-32 chain: a unit test over
+  mixed kinds, and a resident test comparing q4k logits fused against `GOINFER_CUDA_NO_FUSE`.
+- **Speed:** `BenchmarkResidentDecode`, depth 128, 6 paired rounds, the same protocol as lever 1:
+  - **qwen2.5-coder-1.5b, q4k effective bandwidth ÷ int4's: ≥ 0.90 PASS; [0.85, 0.90) AMBIGUOUS;
+    < 0.85 FAIL** (now ~0.81);
+  - guard: qwen2.5-7b q4k fused ≥ 0.98× unfused.
+- phi3-mini fused ÷ unfused is reported for information.
+
+## Lever 3 result (2026-09-26): PASS after one rework; the fused per-32 path is size-gated to H ≤ 1536
+
+Raw data: [`measurements/q4k-lever3-2026-09-26/`](../measurements/q4k-lever3-2026-09-26/). Code on branch
+`q4k-per32-fuse`.
+
+**Run 1** (fused everywhere per-32 applies), 6 paired rounds:
+- 1.5B q4k effective bandwidth ÷ int4 **0.914** (0.905–0.917): **PASS**;
+- **7B guard 0.951** (0.948–0.953, fused slower than unfused): **FAIL**;
+- phi3-mini fused ÷ unfused 0.917 (information).
+
+Mechanism: every fused block redoes the rmsnorm + per-32 quant, a cost that grows with H while the
+saved launches matter less as the GEMVs grow. Two follow-up experiments, both on record as negative:
+- **warp-parallel `quantG32`:** bit-identical, but 2% *slower* on the unfused 7B (72.6 → 71.1 tok/s,
+  three pairs), so it was reverted;
+- **one row per warp:** the redundant prologue then dominated, and the 7B fell to 39 tok/s.
+
+**Rework** (registered as "or the change is reworked"): the fused path engages only at **H ≤ 1536**, the
+largest measured win. Phi-3 (3072) and qwen2.5-7b (3584) keep today's unfused path.
+
+**Run 2, size-gated:**
+
+| | median | range | bar | verdict |
+|---|---|---|---|---|
+| 1.5B q4k effective bandwidth ÷ int4 (253.4 vs 212.1 tok/s) | **0.911** | 0.903–0.923 | ≥ 0.90 | **PASS** |
+| 7B guard, default ÷ `NO_FUSE` | **1.001** | 0.997–1.006 | ≥ 0.98 | **PASS** |
+| phi3-mini, information | 1.000 | 0.996–1.002 | — | unchanged |
+
+**Correctness:**
+- The fused kernels equal the unfused per-32 chain **bit for bit**: a unit test over mixed kinds,
+  biases, rows-per-warp and three input scales; reassociating the prologue turns it red.
+- A resident test on qwen2.5-coder-1.5b covers 40 positions × 151936 logits, fused against
+  `GOINFER_CUDA_NO_FUSE`.
+- The Phi-3 resident run through the fused path, before the size gate, reproduced the unfused
+  agreement numbers to every printed digit.
+
+**Where the CUDA q4k default stands:** the 1.5B's q4k is now ~212 tok/s against llama.cpp's ~228 (still
+BEHIND), and the 7B is unchanged (~0.93× llama.cpp). By the byte accounting, lever 2 (native Q6_K for the
+layer tensors and the output head, llama.cpp's bytes) projects both to about level at depth 128. The
+deeper cells stay the open question.
