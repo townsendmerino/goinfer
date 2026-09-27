@@ -37,11 +37,16 @@ func TestSSEWriter_heartbeatAndHandlerDoNotRace(t *testing.T) {
 
 	stop := sseHeartbeat(ss)
 	var wg sync.WaitGroup
+	// Send for a minimum WALL time, not only a minimum count: 800 small writes into a recorder can
+	// finish before the ticker's first tick on a runner with a coarse timer (seen on the macOS CI
+	// runner, where the check below then failed with "no heartbeat frame at all"). 20ms is hundreds
+	// of 50µs intervals, so the overlap this test exists for always happens.
+	start := time.Now()
 	for i := range 4 { // several "handlers" is not the real shape, but it widens the window
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			for j := range 200 {
+			for j := 0; j < 200 || time.Since(start) < 20*time.Millisecond; j++ {
 				sseSend(ss, map[string]any{"delta": fmt.Sprintf("w%d-%d", i, j)})
 			}
 		}(i)
