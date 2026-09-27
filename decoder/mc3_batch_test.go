@@ -222,6 +222,10 @@ func TestMC3_concurrentGenerationsMatchAlone(t *testing.T) {
 		alone[c] = mc3Conversation(t, mAlone, c, turns, maxTok)
 	}
 	m, rf := loadWithMC3Fake(t, nConv)
+	// A step time, so a decoding generation yields while its token runs. With an instant fake, the one generation
+	// decoding runs every token at once and never blocks: on a starved scheduler (a busy CI runner, or -cpu 1, 10 of 10
+	// runs) it finishes its conversation before the others are scheduled, and nothing ever batches.
+	rf.delay = 3 * time.Millisecond
 	if got := m.EnableResidentConcurrency(nConv); got != nConv {
 		t.Fatalf("EnableResidentConcurrency(%d) = %d", nConv, got)
 	}
@@ -299,6 +303,7 @@ func TestMC3_stepErrorFailsTheGeneration(t *testing.T) {
 	m, rf := loadWithMC3Fake(t, 4)
 	m.EnableResidentConcurrency(4)
 	rf.stepErr = fmt.Errorf("forced step failure")
+	rf.delay = 3 * time.Millisecond // so the generations overlap on a starved scheduler (TestMC3_concurrentGenerationsMatchAlone)
 	var wg sync.WaitGroup
 	errs := make([]error, 4)
 	for c := range 4 {
@@ -389,6 +394,7 @@ func TestMC3_sampledConcurrentMatchesAlone(t *testing.T) {
 		alone[c] = run(mAlone, c)
 	}
 	m, rf := loadWithMC3Fake(t, nConv)
+	rf.delay = 3 * time.Millisecond // so the generations overlap on a starved scheduler (TestMC3_concurrentGenerationsMatchAlone)
 	m.EnableResidentConcurrency(nConv)
 	together := make([][]int, nConv)
 	var wg sync.WaitGroup

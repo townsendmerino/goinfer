@@ -644,6 +644,32 @@ Each item waits on MC3 shipping and on a measured request for it:
   still larger than batching's per-sequence share.
 - **Mixed adapters in one batch.** Trigger: a real multi-adapter workload.
 
+**The spec trigger, measured on Metal — pre-registered 2026-09-27, before any timing.** Today a model served with
+`--spec ngram` takes the resident exclusively, so under load it gives up MC3's batching. Its verify is `ForwardBatch`,
+production's decode kernels run layer-major in one command buffer, so an extra verified row costs 0.71–0.96 of a token
+(`thetaFor("metal")` = 0.96). The question is what a Metal user gains or loses by turning spec on.
+- One binary, `serve-metal` at `cc5f8c2c`, two arms, a fresh server per cell:
+  - *batch*: serve's defaults (MC3 batching; a lone request runs production's own path);
+  - *spec*: the same with `-spec ngram` (one generation at a time).
+- Two workloads, qwen2.5-coder-1.5b int4 from `~/models`, greedy:
+  - *copy*, where n-gram drafting does best: `scripts/bench_spec_copy.py`. Each request hands back a ~1000-token
+    section of `decoder/model.go` at `cc5f8c2c` verbatim, 256 tokens; each client sends 2 requests in turn.
+  - *chat*: the W7 workload as graded for MC3 (6 turns × 128 tokens, `--fixed-nonce`).
+- Cells: 4 clients, then 1, per workload, batch/spec × 3 pairs in the order batch spec spec batch batch spec, idle-gated
+  per cell (load1 ≤ 2.0).
+- Metrics, paired per pair, median of 3:
+  - **S**, spec's single-stream win: 1-client aggregate, spec ÷ batch;
+  - **L**, under load: 4-client aggregate, spec ÷ batch. The 4-client p99 request or turn latency is reported.
+- Identity is reported, not gated: every reply's hash, spec vs batch at the same client count. A difference is a finding
+  about spec's lossless claim on Metal, recorded and examined before anything is built on it.
+- Reported only: the copy workload on qwen2.5-7b-instruct at 1 and 4 clients, 3 pairs each.
+- **Decision** (the 1.5B, per workload):
+  - S ≤ 1.05 on both → spec has no single-stream win on Metal to keep. The spec item stays parked for Metal, and the
+    docs say that `--spec ngram` on Metal gives up batching under load for no gain.
+  - S > 1.05 on a workload, with L < 1.0 → "speculate when alone, batch under load" has value there. It is
+    registered as an MC4 candidate, and the owner decides.
+  - L ≥ 1.0 on a workload → spec beats batching even at 4 clients, and MC4's spec trigger is met there.
+
 ## MC5 — continuous batching, paged KV, chunked prefill (parked)
 
 Unchanged from `roadmap.md`: not this engine's weight class. **Trigger:** the owner reverses the
