@@ -739,6 +739,41 @@ because it trades per-request latency for throughput.
 - One change from the registered design: an ineligible cache never enters the batcher, so no run mixes eligible and
   ineligible tokens.
 
+**Step 2 follow-on S1 — fused batched projections in the step (pre-registered 2026-09-27, before any code).**
+- *Why.* An exploratory probe (`TestCPUBatchS0_matmulScaling`, 7B layer 0, amd64, canonical int4) timed each shape at
+  M rows against one row:
+  - gate/up (18944×3584) cost 1.03–1.09× one row at M = 2–4, and the LM head 1.00–1.02×: already amortised;
+  - down cost 1.11–1.34×;
+  - q/o (3584×3584) cost 1.6–1.9×, and k/v (512×3584) **2.0–3.0×**. At those sizes the time is fork/join overhead and
+    compute, not bandwidth.
+- *Ceiling.* Perfect amortisation everywhere would save ~45 ms of a ~290 ms B = 4 step, ≈ +17–19% batched throughput;
+  any real change gets part of it.
+- *Lever A (decoder-only, this item).*
+  - `decodeMultiStep` runs q‖k‖v as one `matmulW4A8Batch` over B rows, and gate‖up as another: one fork/join each
+    instead of three and two.
+  - The kernel already exists (`linalg.MatmulBTW4A8Batch`, the fused path production's single-token forward uses
+    behind `w4a8BatchEnabled`). Its contract is "numerically identical to calling MatmulBTW4A8Into once per op", with
+    the M ≥ 4 tile intact.
+  - It is used only when every op has canonical bytes and they share a group size and K; anything else keeps the
+    separate calls.
+  - An in-process switch (a test-hook package variable, no environment read) lets both arms run interleaved.
+- *Lever B (an aikit small-shape kernel)* is not started, and only follows if A leaves headroom.
+- *Gates:*
+  1. **Identity (hard):** with A on, `TestCPUBatch_everyEligibleFixtureBitIdentical`,
+     `TestCPUBatch_concurrentMatchesAlone` (tiny; 1.5B on; 7B auto) and `TestMC2_decodeMultiStepBitIdentical` on the
+     7B (int4 and int8int8) all pass.
+  2. **Speed:** `TestCPUBatchS1_fusedVsUnfused` on `nobara`, qwen2.5-7b q4_k_m int4, at depths 128 and 512.
+     - Setup: 16 steps, 5 reps; arms fused and unfused interleaved rep by rep with rotating order; B = 2, 4 and 8.
+     - Metric: batched B = 4 aggregate, fused ÷ unfused, paired per rep, median of 5, at each depth.
+     - The lower depth's median ≥ **1.03×** ships A on by default.
+     - The higher depth's median < **1.01×** parks A and removes it.
+     - Anything else goes to the owner.
+  3. **No regression (hard for ship):** the B = 2 and B = 8 medians are ≥ 0.99× at both depths.
+- *Reported, not gated:* the B = 2 and B = 8 ratios; the 1.5B's B = 4 ratio; and a W7 4-client confirmation, step-2
+  build (`2c1d89ec`) against the A build, 3 interleaved pairs, idle-gated. Identity there is hard, and the aggregate is
+  reported.
+- *Idle gate:* every timed run starts at load1 ≤ 1.0 with no other go, test or serve process.
+
 **Goal.** When several CPU generations of one model are decoding, their decode tokens run as one batched forward
 instead of N independent forwards. Each reply stays bit-identical to the same conversation served alone. The step-1
 admission, session check-out and prefill are unchanged; only what runs at a decode token changes.
