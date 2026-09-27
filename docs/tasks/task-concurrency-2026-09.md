@@ -470,6 +470,54 @@ B = 4, before S2 and S3 changed the step).
   - 2 clients read 1.018×. In sequence, a step on the 7B costs ~1.9× a token at any B ≤ 4, so B = 2 breaks even.
     The lever for this size is the batched matmuls' own cost.
 
+**MC3 S4 — the 7B's batched-step cost, and encode-ahead (2026-09-27). Registered before any build or W7 timing.**
+
+*Exploratory, measured first* (`docs/measurements/mc3-7b-lever-2026-09-27/`, M1 Pro):
+- **Why a 7B step costs ~1.9× a token at any B ≤ 4.** The step's matmul kernels (`mc3_bt`, `mc3_btd`) run four 8×8×8
+  `simdgroup_multiply_accumulate` per 32-k group over all 8 token columns, whatever B is. On the 7B's large shapes,
+  production's GEMV is bandwidth-bound (gate/up 0.433 ms, ~157 GB/s), and the fragment is ALU-bound at a fixed cost
+  (1.17 ms). The fragment costs 2.3× the GEMV on qkv, 1.9× on o, 2.7× on gate/up and 1.7× on down (S0's table,
+  re-read). Those four are ~56 ms of the 64 ms one-sequence step.
+- **No kernel family found does better below B = 4.** `TestMC3SmallMProbe`, re-run on this build: S0's bit-identical
+  M-row GEMV costs more than M sequential GEMVs on the 7B (gate/up M = 2: 1.02–1.17 ms against 2 × 0.433; M = 4:
+  2.99 ms). At B = 4 the fragment's half-empty columns cannot be refilled: its columns are token vectors.
+- **So the one clean saving is B = 2:** qkv and gate/up as two production GEMVs (0.146 against 0.155 ms, and 0.866
+  against 1.167).
+  - Projected on the 7B: −8.8 ms of a 65.3 ms B = 2 step, so the in-sequence aggregate goes 1.02× → ~1.17×.
+  - On the 1.5B only gate/up qualifies (0.224 against 0.244): about 3%.
+  - B ≥ 3 is unchanged.
+- **Encode-ahead: parked, by the numbers** (`TestMC3StepWallVsGPU`, depth 128).
+  - A batched step's non-GPU time is 1.26–1.66 ms on the 1.5B (6.8–8.1% of the step) and 1.41–2.18 ms on the 7B
+    (2.1–3.1%).
+  - Production's own encode-ahead recovers about half of its token's gap (0.83 → 0.45 ms, 0.92 → 0.50).
+  - So a step executor would buy ~4% on the 1.5B and ~1.3% on the 7B, and it needs a guess at the next run's
+    makeup, because the batcher regroups sequences between steps. That is at or under the park line.
+  - What the served gap mostly is (estimated from W7's own numbers, not measured): newcomer suffix prefills, ~⅓ of a
+    4-client 1.5B cell. That is the per-pass prefill cost lead.
+
+*The build (S4).*
+- In `forwardMulti`, qkv and gate/up run as B per-row production GEMVs (production's own kernel and dispatch, `saRowsPick`)
+  when B × t_GEMV < t_fragment for that shape, and as the fragment otherwise.
+- The two costs are measured once at build, on layer 0's real weights (median of 7 after 2 warm-ups), and logged
+  with the choice. Every server's log records what it chose.
+- Output is bit-identical to production by construction: it is production's kernel on each row. Tests force either
+  path.
+
+*Correctness before timing:* the step identity tests (`_bitIdentical`, `_Deep`, `_drawsMatchForwardSample`) with the
+per-row path forced on at B = 2 and 3, and both concurrent-vs-alone tests, on the 1.5B and the 7B.
+
+*Grading.*
+- *old* = `serve-metal` at the commit before S4; *new* = S4. Serve defaults, W7 greedy, `--fixed-nonce`.
+- 7B: 2, then 4, then 1 client(s), 3 interleaved pairs each (old new new old old new).
+- 1.5B, a guard: 2 clients, 3 pairs.
+- Gates:
+  1. identity and reuse equal, new vs old, every cell (hard);
+  2. the 7B's 2-client aggregate new ÷ old, median ≥ 1.05×;
+  3. the 7B's 4-client aggregate ≥ 0.98× and p99 turn ≤ 1.02× (hard: B ≥ 3 is meant to be untouched);
+  4. the 7B's lone request, p50 and p99 ≤ 1.05× (hard; its path is production's and unchanged);
+  5. the 1.5B's 2-client aggregate ≥ 0.98× (hard).
+- Decision: all pass ships. Gate 2 at 1.03–1.05× goes to the owner; below 1.03× parks.
+
 **MC3 S3 SHIPPED 2026-09-27: all five W7 gates pass** ([`concurrency-mc3-s3-2026-09-27.md`](../measurements/concurrency-mc3-s3-2026-09-27.md)).
 - 4 clients at **1.261×** S2 (121.6 → 153.1 tok/s), with p99 turn 0.784×.
 - 2 clients 1.08–1.11×; a lone request 0.999× / 1.015×; every reply identical.

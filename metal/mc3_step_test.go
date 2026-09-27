@@ -406,3 +406,66 @@ func TestMC3StepBreakdown(t *testing.T) {
 	}
 	set()
 }
+
+// TestMC3StepWallVsGPU: EXPLORATORY, for an encode-ahead batched step. How much of a batched step's wall time is not
+// GPU time — encoding its ~28 × 13 dispatches, commit and wait, and the host's logits copies — which is the most an
+// encode-ahead executor (pre-encoding step n+1 while the GPU runs step n, as production decode does) could hide. In
+// sequence, depth 128, median of 20 steps per arm: the batched step at B = 2, 4, 8, and production's single-token
+// decode synchronous (ForwardEmb) and through its encode-ahead executor (ForwardEmbPipe).
+//
+//	GOINFER_METAL_MC3=1 [GOINFER_METAL_MC3_MODEL=…] go test -tags goinfer_testhooks -count=1 -run '^TestMC3StepWallVsGPU$' -v ./metal/
+func TestMC3StepWallVsGPU(t *testing.T) {
+	const maxB, D, steps = 8, 128, 20
+	_, r := mc3Resident(t, maxB+1, 1024)
+	seed := uint32(97531)
+	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
+	for sl := 0; sl <= maxB; sl++ {
+		ids := make([]int, D)
+		for i := range ids {
+			ids[i] = rnd()
+		}
+		mc3Fill(t, r, sl, ids)
+	}
+	med := func(xs []float64) float64 { v := append([]float64(nil), xs...); sort.Float64s(v); return v[len(v)/2] }
+	report := func(name string, wall, gpu []float64) {
+		w, g := med(wall), med(gpu)
+		fmt.Fprintf(os.Stderr, "[mc3-wall] %-24s wall %7.3f ms  GPU %7.3f ms  not-GPU %6.3f ms (%.1f%% of wall)\n", name, w, g, w-g, 100*(w-g)/w)
+	}
+	for _, B := range []int{2, 4, 8} {
+		var wall, gpu []float64
+		for range steps + 2 {
+			seqs := make([]batchSeq, B)
+			for m := range B {
+				seqs[m] = batchSeq{slot: m, pos: D, emb: mc3Emb(r, rnd())}
+			}
+			t0 := time.Now()
+			mc3Step(t, r, seqs)
+			wall = append(wall, time.Since(t0).Seconds()*1e3)
+			gpu = append(gpu, (r.gpuEnd-r.gpuStart)*1e3)
+		}
+		report(fmt.Sprintf("batched step B=%d", B), wall[2:], gpu[2:])
+	}
+	for _, pipe := range []bool{false, true} {
+		if err := r.useKVSlot(maxB); err != nil {
+			t.Fatal(err)
+		}
+		var wall, gpu []float64
+		for range steps + 2 {
+			emb := mc3Emb(r, rnd())
+			t0 := time.Now()
+			if pipe {
+				r.ForwardEmbPipe(emb, D)
+			} else {
+				r.ForwardEmb(emb, D)
+			}
+			wall = append(wall, time.Since(t0).Seconds()*1e3)
+			gpu = append(gpu, (r.gpuEnd-r.gpuStart)*1e3)
+		}
+		r.stopExec()
+		name := "production token (sync)"
+		if pipe {
+			name = "production token (pipe)"
+		}
+		report(name, wall[2:], gpu[2:])
+	}
+}
