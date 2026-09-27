@@ -411,3 +411,26 @@ Phase 1b's speed gate measured only the 7B. A likely mechanism, not yet measured
 1536-wide projections are only 6 Q4_K blocks, and `gemv_q4k_g32` covers 8 blocks per warp pass, so a
 quarter of the lanes idle on every such row. Narrow-row geometry for `gemv_q4k_g32` is the kernel
 follow-up if a q4k default is revisited, re-graded on these same cells.
+
+## Toward a CUDA q4k default: lever 1, narrow-row geometry, PRE-REGISTERED 2026-09-26 before any build
+
+**Why** (byte accounting against the peer session, `measurements/q4k-peer-2026-09-26/`): on qwen2.5-7b
+all three engines decode at ~340 GB/s of weight bytes, so the 7B gap is bytes (lever 2, native Q6_K).
+On qwen2.5-coder-1.5b the effective bandwidths differ: int4 246 GB/s, llama.cpp 224, **q4k 205**. That
+gap is kernel efficiency. The likely cause: `gemv_q4k_g32` gives each row a whole warp (8 blocks × 4
+sub-block pairs per pass), and a 1536-wide row is only 6 blocks, so 25% of lanes idle on every
+q/k/v/o/gate/up row. **Change:** 8 lanes per row (4 rows per warp), each lane looping over its row's
+(block, pair) tasks. Utilization: 1536 → 100%, 8960 → 97%, 3072/3584/18944 → 100%.
+
+**Instrument:** `BenchmarkResidentDecode` (cuda), goinfer against goinfer, depth 128, 6 paired rounds,
+alternating order, separate processes, idle check. Effective bandwidth = tok/s × weight bytes per
+token (int4 0.970 GB, q4k 1.057 GB for the 1.5B).
+
+**Bar:** 1.5B q4k effective bandwidth ÷ int4's (the same session):
+- **≥ 0.90 PASS** (proceed to lever 2);
+- [0.85, 0.90) AMBIGUOUS;
+- < 0.85 FAIL.
+
+Before this change the ratio is about 205 / 246 = 0.83. **Guard:** the 7B q4k's tok/s must not fall
+below 0.98× its current kernel's (a same-session A/B, old kernel against new), or the change is
+reworked.
