@@ -53,21 +53,24 @@ __device__ __forceinline__ void quantG32(const float* __restrict__ vals, int nG,
     }
 }
 
-// q4kScaleMin is ggml's get_scale_min_k4 over a Q4_K block's 12 scale bytes, held as three words.
+// q4kByte is byte k (0..11) of a Q4_K block's 12 scale bytes, held as three words. Selects and
+// shifts only: an indexed byte array here compiled to a per-block local-memory spill (a 48-byte
+// __local_depot) that made gemv_q4k_g32 slower than the int8 GEMV it replaces.
+__device__ __forceinline__ unsigned int q4kByte(int k, unsigned int s0, unsigned int s1, unsigned int s2) {
+    unsigned int w = k < 4 ? s0 : (k < 8 ? s1 : s2);
+    return (w >> ((k & 3) << 3)) & 0xffu;
+}
+
+// q4kScaleMin is ggml's get_scale_min_k4 for sub-block j (0..7) of one Q4_K block.
 __device__ __forceinline__ void q4kScaleMin(int j, unsigned int s0, unsigned int s1, unsigned int s2,
                                             int* sc, int* m) {
-    unsigned int by[12];
-    for (int k = 0; k < 4; k++) {
-        by[k] = (s0 >> (8 * k)) & 0xffu;
-        by[4 + k] = (s1 >> (8 * k)) & 0xffu;
-        by[8 + k] = (s2 >> (8 * k)) & 0xffu;
-    }
     if (j < 4) {
-        *sc = by[j] & 63;
-        *m = by[j + 4] & 63;
+        *sc = (int)(q4kByte(j, s0, s1, s2) & 63u);
+        *m = (int)(q4kByte(j + 4, s0, s1, s2) & 63u);
     } else {
-        *sc = (by[j + 4] & 0x0F) | ((by[j - 4] >> 6) << 4);
-        *m = (by[j + 4] >> 4) | ((by[j] >> 6) << 4);
+        unsigned int hi = q4kByte(j + 4, s0, s1, s2);
+        *sc = (int)((hi & 0x0Fu) | ((q4kByte(j - 4, s0, s1, s2) >> 6) << 4));
+        *m = (int)((hi >> 4) | ((q4kByte(j, s0, s1, s2) >> 6) << 4));
     }
 }
 
@@ -187,12 +190,17 @@ __global__ void gemv_w8a8_g32(
 // gemv_q4k_g32: GGUF Q4_K weights, the raw super-blocks (36 words per 256 weights: d|dmin, three
 // words of packed 6-bit scales and minimums, 32 words of codes), × per-32 int8 activations.
 // aS holds 2·Kgroups floats: per-group activation scales, then aS·Σaq per group (quantG32).
-// One warp per output row, 8 rows per 256-thread block (the per-row GEMVs' geometry). Lane
-// l = 8j + w reads code word l of each block (coalesced): its low nibbles are elements
-// 64j+4w..+3 of sub-block 2j, its high nibbles the same positions of sub-block 2j+1, so its
-// activation words are 64b+16j+w and +8. Per block:
-//   facc += aS_g · d·sc_g · idot_g   (every lane, its own partial idot)
-//   facc -= dmin·m_g · (aS·Σaq)_g   (once per group: the w == 0 lane)
+// One warp per output row, 8 rows per 256-thread block (the per-row GEMVs' geometry).
+//
+// LANE MAPPING: lane l owns sub-block pair j = l & 3 of block b0 + (l >> 2), so a warp covers 8
+// blocks per iteration and a lane 64 weights: one 16-byte header load, one scale/min unpack, two
+// 16-byte code loads, four 16-byte activation loads and 16 dp4a. The first mapping (a lane per code
+// word, 8 weights) paid the header decode per 8 weights and was compute-bound: ~0.97× the int8 GEMV
+// it replaces despite reading 25% fewer bytes. Code word t of pair j holds elements 64j+4t..+3 (low
+// nibbles, sub-block 2j) and 64j+32+4t..+3 (high, 2j+1); their activation words are 64b+16j+t and
+// +8. Alignment: a block is 144 = 9·16 bytes and its codes start at byte 16, so every vector load is
+// 16-byte aligned. Per block and group:
+//   facc += aS_g·d·sc_g · idot_g − dmin·m_g · (aS·Σaq)_g
 __global__ void gemv_q4k_g32(
     const unsigned int* __restrict__ W, const int* __restrict__ a, const float* __restrict__ aS,
     const float* __restrict__ bias, int N, int nSB, float* __restrict__ dst, int accum)
@@ -202,24 +210,42 @@ __global__ void gemv_q4k_g32(
     if (n >= N) return;
     const unsigned int* wr = W + (long)n * nSB * 36;
     const float* asum = aS + nSB * 8;
-    int j = lane >> 3, w = lane & 7;
+    int j = lane & 3, sub = lane >> 2;
     float facc = 0.f;
-    for (int b = 0; b < nSB; b++) {
-        const unsigned int* blk = wr + b * 36;
-        unsigned int dd = blk[0];
-        float d = __half2float(__ushort_as_half((unsigned short)(dd & 0xffffu)));
-        float dmin = __half2float(__ushort_as_half((unsigned short)(dd >> 16)));
-        int scLo, mLo, scHi, mHi;
-        q4kScaleMin(j << 1, blk[1], blk[2], blk[3], &scLo, &mLo);
-        q4kScaleMin((j << 1) | 1, blk[1], blk[2], blk[3], &scHi, &mHi);
-        unsigned int q = blk[4 + lane];
-        int ai = (b << 6) + (j << 4) + w;    // activation word: 64 per block, 16 per pair
-        int pLo = __dp4a((int)(q & 0x0F0F0F0Fu), a[ai], 0);
-        int pHi = __dp4a((int)((q >> 4) & 0x0F0F0F0Fu), a[ai + 8], 0);
-        int g = (b << 3) + (j << 1);
-        facc = __fmaf_rn((float)pLo, __fmul_rn(__fmul_rn(d, (float)scLo), aS[g]), facc);
-        facc = __fmaf_rn((float)pHi, __fmul_rn(__fmul_rn(d, (float)scHi), aS[g + 1]), facc);
-        if (w == 0) {
+    for (int b0 = 0; b0 < nSB; b0 += 8) {
+        int b = b0 + sub;
+        if (b < nSB) {
+            const unsigned int* blk = wr + b * 36;
+            uint4 hdr = *reinterpret_cast<const uint4*>(blk);
+            float d = __half2float(__ushort_as_half((unsigned short)(hdr.x & 0xffffu)));
+            float dmin = __half2float(__ushort_as_half((unsigned short)(hdr.x >> 16)));
+            int scLo, mLo, scHi, mHi;
+            q4kScaleMin(j << 1, hdr.y, hdr.z, hdr.w, &scLo, &mLo);
+            q4kScaleMin((j << 1) | 1, hdr.y, hdr.z, hdr.w, &scHi, &mHi);
+            const uint4* qv = reinterpret_cast<const uint4*>(blk + 4 + (j << 3));
+            uint4 q0 = qv[0], q1 = qv[1];
+            const int4* av = reinterpret_cast<const int4*>(a + (b << 6) + (j << 4));
+            int4 l0 = av[0], l1 = av[1], h0 = av[2], h1 = av[3];
+            int pLo = 0, pHi = 0;
+            pLo = __dp4a((int)(q0.x & 0x0F0F0F0Fu), l0.x, pLo);
+            pLo = __dp4a((int)(q0.y & 0x0F0F0F0Fu), l0.y, pLo);
+            pLo = __dp4a((int)(q0.z & 0x0F0F0F0Fu), l0.z, pLo);
+            pLo = __dp4a((int)(q0.w & 0x0F0F0F0Fu), l0.w, pLo);
+            pLo = __dp4a((int)(q1.x & 0x0F0F0F0Fu), l1.x, pLo);
+            pLo = __dp4a((int)(q1.y & 0x0F0F0F0Fu), l1.y, pLo);
+            pLo = __dp4a((int)(q1.z & 0x0F0F0F0Fu), l1.z, pLo);
+            pLo = __dp4a((int)(q1.w & 0x0F0F0F0Fu), l1.w, pLo);
+            pHi = __dp4a((int)((q0.x >> 4) & 0x0F0F0F0Fu), h0.x, pHi);
+            pHi = __dp4a((int)((q0.y >> 4) & 0x0F0F0F0Fu), h0.y, pHi);
+            pHi = __dp4a((int)((q0.z >> 4) & 0x0F0F0F0Fu), h0.z, pHi);
+            pHi = __dp4a((int)((q0.w >> 4) & 0x0F0F0F0Fu), h0.w, pHi);
+            pHi = __dp4a((int)((q1.x >> 4) & 0x0F0F0F0Fu), h1.x, pHi);
+            pHi = __dp4a((int)((q1.y >> 4) & 0x0F0F0F0Fu), h1.y, pHi);
+            pHi = __dp4a((int)((q1.z >> 4) & 0x0F0F0F0Fu), h1.z, pHi);
+            pHi = __dp4a((int)((q1.w >> 4) & 0x0F0F0F0Fu), h1.w, pHi);
+            int g = (b << 3) + (j << 1);
+            facc = __fmaf_rn((float)pLo, __fmul_rn(__fmul_rn(d, (float)scLo), aS[g]), facc);
+            facc = __fmaf_rn((float)pHi, __fmul_rn(__fmul_rn(d, (float)scHi), aS[g + 1]), facc);
             facc = __fmaf_rn(-__fmul_rn(dmin, (float)mLo), asum[g], facc);
             facc = __fmaf_rn(-__fmul_rn(dmin, (float)mHi), asum[g + 1], facc);
         }
