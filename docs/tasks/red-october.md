@@ -2385,6 +2385,17 @@ it is coal-family and stays as it is.
 
 Record: `docs/measurements/metal-decode-gemv-r18b-2026-09-26.md`.
 
+*Exploration and confirmation parameters, 2026-09-26, fixed before the confirmation runs.*
+- **First cut:** re-reading the int8 activations from device per lane for the −8 fold read **0.94× / 0.98×** against
+  production in sequence (standalone had shown a gain; the in-sequence re-read is the difference).
+- **Second cut:** sum(a) taken from the staged halves the lane already reads. It reads 1.10–1.12× on both models, every
+  arm bit-identical.
+- **Candidate: `h4244`** (H form: 4 rows per simdgroup for qkv and gate/up, 2 for o; down unchanged at R18's staged 4).
+  It is the best uniform choice on the weaker model: exploratory 1.121× (1.5B) and 1.106× (7B), production ÷ candidate.
+- **Confirmation:** `TestR18InSequence` with `h4244` as the only prototype arm, one process per model (the 1.5B
+  `.gguf`, the 7B `.int4.metal.giw`). 7 paired reps, 20 step pairs per category, depths 128 (graded) / 2048 / 3900,
+  16 identity positions per depth, 3 after-idle samples.
+
 ---
 
 ## 6. Rules every brief inherits

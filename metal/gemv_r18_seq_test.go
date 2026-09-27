@@ -30,8 +30,8 @@ import (
 //     step pairs (a full token, then the no-op'd one, adjacent), and arm order rotates rep by rep;
 //  3. precondition 2's full-token times, and precondition 3's full token after 2 s idle.
 //
-// A prototype arm (GOINFER_METAL_R18_CANDS) is "<F><qkvR><oR><guR><downR>": F is i (step 0, integer math) or f (step 1,
-// shift-free f32); each digit is rows per simdgroup for that GEMV, and downR 0 keeps the shipped coal down projection
+// A prototype arm (GOINFER_METAL_R18_CANDS) is "<F><qkvR><oR><guR><downR>": F is i (step 0, integer math), f (step 1,
+// shift-free f32) or h (R18b: masked, half-staged); each digit is rows per simdgroup for that GEMV, and downR 0 keeps the shipped coal down projection
 // (else gemv_w4a8_resid_st<R>). "i1110" is the harness control: the prototype template at the shipped grid, which must
 // time like the shipped arm. The graded candidate was "i2244", which is what production now runs.
 //
@@ -139,8 +139,8 @@ func TestR18InSequence(t *testing.T) {
 		}
 		noop = get("r18_noop")
 		for _, c := range candSpecs {
-			if len(c) != 5 || (c[0] != 'i' && c[0] != 'f') {
-				t.Fatalf("candidate %q: want <i|f><qkvR><oR><guR><downR>", c)
+			if len(c) != 5 || (c[0] != 'i' && c[0] != 'f' && c[0] != 'h') {
+				t.Fatalf("candidate %q: want <i|f|h><qkvR><oR><guR><downR>", c)
 			}
 			for _, tag := range []string{c[0:1] + c[1:2], c[0:1] + c[2:3], c[0:1] + c[3:4]} {
 				get("r18_sa_" + tag)
@@ -354,6 +354,15 @@ func TestR18InSequence(t *testing.T) {
 				line += fmt.Sprintf("; after 2 s idle %v", fmtRatios(idleMs[ai]))
 			}
 			hb("%s", line)
+			if ai > 1 { // a prototype arm: R18b's metric is production (arm 1) over it, paired per rep
+				pr := make([]float64, reps)
+				for i := range pr {
+					pr[i] = rs[1].work[i] / rs[ai].work[i]
+				}
+				sort.Float64s(pr)
+				hb("  %-8s METRIC production/arm = %.3fx (per-rep sorted %v); full token %+.3f ms vs production", a.name,
+					pr[len(pr)/2], fmtRatios(pr), median(rs[ai].full)-median(rs[1].full))
+			}
 		}
 	}
 }

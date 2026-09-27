@@ -420,6 +420,83 @@ kernel void r18_sa_resid(device const uint4* wq[[buffer(0)]], device const half*
     r18_sa_acc<R,F>(wq, sct, aq, K, As, tgid, tid, tgs, sgid, lane, acc, row0);
     if (lane==0) { R18_UNROLL for (uint r=0;r<R;r++) out[row0+r] += acc[r]*asc[0]; }
 }
+// R18b candidates (docs/tasks/red-october.md R18b): the SA rows kernels in MLX's masked, half-staged form, production
+// signatures. Activations staged as HALF pre-scaled by 16^-(k mod 4) — exact, |a| <= 127 and 127*2^-12 is a normal half
+// — in the same K*2 bytes the shipped short staging uses. Each lane takes its group's sum(a), for the -8 fold, from the
+// staged halves it already reads (one exact dot per half-word), so neither extra threadgroup memory nor a device
+// re-read is needed. (The first cut re-read the int8 activations from device per lane: 0.94x / 0.98x in sequence.) Weight nibbles are masked in place per
+// 16-bit half-word, converted once per (row, half-word), and dotted with the four pre-scaled activations. Every product
+// and partial sum is an integer below 2^24, so the group sum equals the shipped integer gi exactly, and float(gi)*scale
+// accumulates per row in the shipped lane order -> bit-identical to gemv_w4a8_sa_rows.
+template <uint R>
+inline void r18_sa_h_acc(device const uint4* wq, device const half* sct, device const char* aq, uint K,
+    threadgroup half* Ah, uint tgid, uint tid, uint tgs, uint sgid, uint lane, thread float* acc, thread uint& row0) {
+    constexpr float P4[4] = {1.0f, 0.0625f, 0.00390625f, 0.000244140625f};
+    for (uint i=tid;i<K;i+=tgs) Ah[i] = half(float(aq[i]) * P4[i & 3u]);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint G = K>>5u;
+    row0 = (tgid*(tgs>>5u) + sgid)*R;
+    R18_UNROLL for (uint r=0;r<R;r++) acc[r]=0.0f;
+    constexpr float4 U4 = float4(1.0f, 16.0f, 256.0f, 4096.0f); // undoes the pre-scale: exact, the result is a
+    for (uint g=lane; g<G; g+=32u) {
+        float gf[R];
+        uint4 w[R];
+        R18_UNROLL for (uint r=0;r<R;r++) { gf[r] = 0.0f; w[r] = wq[(row0+r)*G + g]; }
+        threadgroup const half4* a4 = reinterpret_cast<threadgroup const half4*>(Ah + g*32u);
+        float sa = 0.0f; // sum(a) over the group, exact (integers below 2^24), from the staged halves already read
+        R18_UNROLL for (uint t=0;t<8u;t++) {
+            float4 x = float4(a4[t]);
+            sa += dot(x, U4);
+            R18_UNROLL for (uint r=0;r<R;r++) {
+                uint word = (t < 2u) ? w[r].x : (t < 4u) ? w[r].y : (t < 6u) ? w[r].z : w[r].w;
+                uint u = (t & 1u) ? (word >> 16) : (word & 0xFFFFu);
+                gf[r] += dot(float4(float(u & 0xFu), float(u & 0xF0u), float(u & 0xF00u), float(u & 0xF000u)), x);
+            }
+        }
+        R18_UNROLL for (uint r=0;r<R;r++) acc[r] += (gf[r] - 8.0f*sa) * float(sct[(row0+r)*G + g]);
+    }
+    R18_UNROLL for (uint r=0;r<R;r++) acc[r] = simd_sum(acc[r]);
+}
+template <uint R>
+kernel void r18_sa_h(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup half* Ah [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float acc[R]; uint row0;
+    r18_sa_h_acc<R>(wq, sct, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { R18_UNROLL for (uint r=0;r<R;r++) out[row0+r] = acc[r]*asc[0]; }
+}
+template <uint R>
+kernel void r18_sa_bias_h(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    device const float* bias[[buffer(5)]], constant uint& K[[buffer(6)]], threadgroup half* Ah [[threadgroup(0)]],
+    uint tgid[[threadgroup_position_in_grid]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float acc[R]; uint row0;
+    r18_sa_h_acc<R>(wq, sct, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { R18_UNROLL for (uint r=0;r<R;r++) out[row0+r] = acc[r]*asc[0] + bias[row0+r]; }
+}
+template <uint R>
+kernel void r18_sa_resid_h(device const uint4* wq[[buffer(0)]], device const half* sct[[buffer(1)]],
+    device const char* aq[[buffer(2)]], device const float* asc[[buffer(3)]], device float* out[[buffer(4)]],
+    constant uint& K[[buffer(5)]], threadgroup half* Ah [[threadgroup(0)]], uint tgid[[threadgroup_position_in_grid]],
+    uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]],
+    uint sgid[[simdgroup_index_in_threadgroup]], uint lane[[thread_index_in_simdgroup]]) {
+    float acc[R]; uint row0;
+    r18_sa_h_acc<R>(wq, sct, aq, K, Ah, tgid, tid, tgs, sgid, lane, acc, row0);
+    if (lane==0) { R18_UNROLL for (uint r=0;r<R;r++) out[row0+r] += acc[r]*asc[0]; }
+}
+template [[host_name("r18_sa_h1")]] kernel decltype(r18_sa_h<1>) r18_sa_h<1>;
+template [[host_name("r18_sa_bias_h1")]] kernel decltype(r18_sa_bias_h<1>) r18_sa_bias_h<1>;
+template [[host_name("r18_sa_resid_h1")]] kernel decltype(r18_sa_resid_h<1>) r18_sa_resid_h<1>;
+template [[host_name("r18_sa_h2")]] kernel decltype(r18_sa_h<2>) r18_sa_h<2>;
+template [[host_name("r18_sa_bias_h2")]] kernel decltype(r18_sa_bias_h<2>) r18_sa_bias_h<2>;
+template [[host_name("r18_sa_resid_h2")]] kernel decltype(r18_sa_resid_h<2>) r18_sa_resid_h<2>;
+template [[host_name("r18_sa_h4")]] kernel decltype(r18_sa_h<4>) r18_sa_h<4>;
+template [[host_name("r18_sa_bias_h4")]] kernel decltype(r18_sa_bias_h<4>) r18_sa_bias_h<4>;
+template [[host_name("r18_sa_resid_h4")]] kernel decltype(r18_sa_resid_h<4>) r18_sa_resid_h<4>;
+
 #define R18_SA_INST(R, F, tag) \
     template [[host_name("r18_sa_" tag)]] kernel decltype(r18_sa<R,F>) r18_sa<R,F>; \
     template [[host_name("r18_sa_bias_" tag)]] kernel decltype(r18_sa_bias<R,F>) r18_sa_bias<R,F>; \
