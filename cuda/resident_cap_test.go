@@ -112,7 +112,7 @@ func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 				t.Fatalf("Load: %v", err)
 			}
 			defer m.Close()
-			if got := resolveCtxCapFit(m, c.request, c.modelCtx); got != c.want {
+			if got := resolveCtxCapFit(m, c.request, c.modelCtx, 1); got != c.want {
 				t.Errorf("resolveCtxCapFit(m, %d, %d) = %d, want %d", c.request, c.modelCtx, got, c.want)
 			}
 		})
@@ -207,7 +207,7 @@ func TestResolveCtxCapFit_agreesWithCheckKVFits(t *testing.T) {
 			defer m.Close()
 
 			// Unpinned, modelCtx large enough that fitDefaultCtx itself is the real candidate.
-			ctx := resolveCtxCapFit(m, 0, 1<<20)
+			ctx := resolveCtxCapFit(m, 0, 1<<20, 1)
 			if ctx <= cudaCtxCapDefault {
 				t.Fatalf("resolveCtxCapFit did not improve on the historical default (got %d) — the "+
 					"forcing term left no room at all; this test's own arithmetic needs adjusting, not "+

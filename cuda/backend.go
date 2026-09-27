@@ -636,7 +636,8 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// Computed once, referenced by both ctxCap and extraBytes below (M-22, docs/audit-2026-09-10.md
 	// — extraBytes now needs this same final ctxCap value, and a struct literal cannot reference a
 	// sibling field being set in the same literal).
-	residentCtxCap := resolveCtxCapFit(m, m.ResidentContextRequest(), m.Config().MaxPositions)
+	kvSlotsReq := cudaKVSlotsRequest(m, dnetP != nil)
+	residentCtxCap := resolveCtxCapFit(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq)
 	r := &cudaResident{
 		knob:   m.Knob,
 		hidden: H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
@@ -665,7 +666,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 		// did not ask allocates exactly what they always did.
 		ctxCap:      residentCtxCap,
 		ctxExplicit: m.ResidentContextRequest() > 0,
-		kvSlotsReq:  cudaKVSlotsRequest(m, dnetP != nil),
+		kvSlotsReq:  kvSlotsReq,
 		// M-22 (docs/audit-2026-09-10.md): a drafter's device K/V is priced here at the FINAL,
 		// actually-chosen ctxCap — resolveCtxCapFit's own ExtraBytes consult (above, feeding
 		// residentCtxCap) already priced it at candidate, the widest ctx that call considered; this

@@ -103,7 +103,10 @@ const fitDefaultCtx = 8192
 // fixed cost that can be priced into ExtraBytes and left to Plan — its whole design is "however
 // much VRAM is left after everything pinned", so the fix is to not let ctx grow into that
 // leftover at all when this mode is on, the same way FitDisabled already opts out.
-func resolveCtxCapFit(m *decoder.Model, request, modelCtx int) int {
+//
+// slots is MC1's requested resident KV slot count (cudaKVSlotsRequest). Above 1, the unpinned choice gives up context
+// until every slot fits (ctxForSlots), never below cudaCtxCapDefault.
+func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int) int {
 	if request > 0 || m.FitDisabled() || m.MoECacheExperts() {
 		return resolveCtxCap(request, modelCtx) // an explicit -ctx is untouched either way
 	}
@@ -147,7 +150,53 @@ func resolveCtxCapFit(m *decoder.Model, request, modelCtx int) int {
 	if p.Placement == decoder.PlacementDecline || p.Ctx < cudaCtxCapDefault {
 		return cudaCtxCapDefault // Plan could not confidently improve on the historical floor
 	}
-	return p.Ctx
+	if slots <= 1 {
+		return p.Ctx
+	}
+	return ctxForSlots(m, marginedFree, extraBytes, p.Ctx, slots)
+}
+
+// ctxForSlots is resolveCtxCapFit's answer when MC1's resident KV slots are requested (owner decision 2026-09-27,
+// docs/tasks/task-concurrency-2026-09.md MC1 on CUDA): the largest context in [cudaCtxCapDefault, oneSlot] at which
+// Plan fits every requested slot — the build's own KV plus slots-1 more copies of it, priced as ExtraBytes — so an
+// unpinned load gives up context before conversations. Measured before the decision on the 8 GB card: the 7B at the
+// one-slot choice (8192) fit 2 of 4 slots and 4 round-robin clients thrashed (1.006x); at 4096 all 4 fit (1.33x).
+// When not even cudaCtxCapDefault holds them all, it returns cudaCtxCapDefault and checkKVFits clamps the count, as
+// it always has. An explicit -ctx never reaches here (resolveCtxCapFit's first branch).
+//
+// KV is exactly linear in the context and Plan's other terms do not grow with it, so "fits" is monotone and a binary
+// search finds the edge.
+//
+// Plan's weight figure is conservative, so this can land lower than the build would allow. On the 7B, Plan prices the
+// device weights at 4930 MB and the build allocates ~4476 MB before its KV. It returns the 4096 floor where checkKVFits
+// would have held 4 slots to ~4870 positions: 4 slots at 4096 instead of at ~4870. Measured 2026-09-27; tightening
+// Plan's weight estimate is its own item.
+func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slots int) int {
+	fits := func(ctx int) bool {
+		more := int64(slots-1) * m.ResidentKVBytes("cuda", ctx, false, false) // CUDA's KV is f32 whatever was requested
+		p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
+		return p.Placement != decoder.PlacementDecline
+	}
+	if fits(oneSlot) {
+		return oneSlot
+	}
+	if !fits(cudaCtxCapDefault) {
+		fmt.Fprintf(os.Stderr, "cuda: resident context %d (the floor), not %d, for the %d requested KV slots (--kv-sessions); "+
+			"the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots\n",
+			cudaCtxCapDefault, oneSlot, slots)
+		return cudaCtxCapDefault
+	}
+	lo, hi := cudaCtxCapDefault, oneSlot // fits(lo), !fits(hi)
+	for hi-lo > 1 {
+		if mid := lo + (hi-lo)/2; fits(mid) {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	fmt.Fprintf(os.Stderr, "cuda: resident context %d, not %d, so the %d requested KV slots fit (--kv-sessions); an "+
+		"explicit --ctx keeps a longer context with fewer slots\n", lo, oneSlot, slots)
+	return lo
 }
 
 // kvBytesForCap is the device bytes the resident K+V caches occupy at a given capacity: every layer

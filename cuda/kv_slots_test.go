@@ -359,3 +359,84 @@ func TestCUDAKVSlots_pricedAgainstWhatIsLeft(t *testing.T) {
 			"price counts the weights again; more means it was read before they were on the device", got, want)
 	}
 }
+
+// TestResolveCtxCapFit_slotsShrinkTheContext pins the owner's 2026-09-27 decision (docs/tasks/task-concurrency-2026-09.md
+// MC1 on CUDA): an unpinned load that asks for N resident KV slots gives up context until all N fit, instead of taking
+// the one-slot context and clamping the slots. The free-VRAM budget is forced (ExtraResidentBytes, from a real probe,
+// the way TestResolveCtxCapFit_agreesWithCheckKVFits does it) so that one slot fits the full candidate while 4 fit only
+// at about 5000 positions. It checks the planning-time choice against the build-time one: at the chosen context
+// checkKVFits must grant all 4 slots, and at the one-slot context it must not — the thrash the decision removes. A
+// budget where not even the floor holds 4 must return the floor, and an explicit -ctx must be untouched.
+func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
+	dir := filepath.Join("..", "testdata", "llama-tiny")
+	requireDeviceAndFixture(t, dir)
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no cuda device: %v", err)
+	}
+	defer dev.ReleaseObjects()
+	probe, err := decoder.Load(dir, decoder.Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("Load (probe): %v", err)
+	}
+	_, nLayers, _, nKV, hd, _, _ := probe.Dims()
+	layers := make([]cudaLayer, nLayers)
+	for i := range layers {
+		layers[i].kvDim = nKV * hd
+	}
+	perPos := kvBytesForCap(1, layers)
+	dense := probe.ResidentDenseWeightBytes()
+	probe.Close()
+	free, ok := decoder.FreeBytesFor("cuda")
+	if !ok {
+		t.Skip("no cuda free-bytes probe available")
+	}
+	const slots = 4
+	for _, c := range []struct {
+		name      string
+		target    int // the context at which exactly `slots` slots' KV fits the forced budget
+		want      func(got int) bool
+		wantSlots int // what checkKVFits grants at the chosen context
+	}{
+		{"interior: 4 slots fit at ~5000", 5000, func(got int) bool { return got > 4800 && got <= 5000 }, slots},
+		{"not even the floor holds 4: the floor, and the build clamps", 3000, func(got int) bool { return got == cudaCtxCapDefault }, 2},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			forced := free - ctxCapMarginBytes - dense - int64(slots)*perPos*int64(c.target)
+			if forced <= 0 {
+				t.Skipf("free VRAM %d B too small to force this budget", free)
+			}
+			m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ExtraResidentBytes: forced, ResidentKVSlots: slots})
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			defer m.Close()
+			one := resolveCtxCapFit(m, 0, 1<<20, 1)
+			got := resolveCtxCapFit(m, 0, 1<<20, slots)
+			pinned := resolveCtxCapFit(m, 8192, 1<<20, slots)
+			t.Logf("one slot: ctx %d; %d slots: ctx %d (target %d); explicit 8192 with %d slots: %d", one, slots, got, c.target, slots, pinned)
+			if one != fitDefaultCtx {
+				t.Fatalf("one slot chose ctx %d, want the full candidate %d — the forced budget did not leave one slot room", one, fitDefaultCtx)
+			}
+			if !c.want(got) {
+				t.Errorf("%d slots chose ctx %d, target %d", slots, got, c.target)
+			}
+			if pinned != 8192 {
+				t.Errorf("an explicit -ctx 8192 became %d with slots requested — a pinned context must never shrink", pinned)
+			}
+			grant := func(ctx int) int {
+				r := &cudaResident{dev: dev, ctxCap: ctx, layers: layers, kvSlotsReq: slots, extraBytes: m.ExtraResidentBytes()}
+				if err := r.checkKVFits(); err != nil {
+					t.Fatalf("checkKVFits at ctx %d: %v", ctx, err)
+				}
+				return r.kvSlotsN
+			}
+			if g := grant(got); g != c.wantSlots {
+				t.Errorf("at the chosen ctx %d checkKVFits grants %d slots, want %d", got, g, c.wantSlots)
+			}
+			if g := grant(one); g >= slots {
+				t.Errorf("at the one-slot ctx %d checkKVFits still grants %d slots — the forced budget does not show the trade", one, g)
+			}
+		})
+	}
+}
