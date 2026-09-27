@@ -452,6 +452,10 @@ var ErrLoadAborted = errLoadAborted
 func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	// Stamp the activation group on every quantizable weight: the CPU matmul helpers read it from
 	// the weight they hold, whichever backend object they run under.
+	if opts.Quant == "q4k" && opts.ActQuantGroup == 0 {
+		// q4k is per-32 by construction (its Q4_K kind cannot run otherwise); its int8 tensors follow.
+		opts.ActQuantGroup = 32
+	}
 	if opts.ActQuantGroup > 0 {
 		for _, wm := range w.matmulWeights() {
 			wm.SetActQuantGroup(opts.ActQuantGroup)
@@ -746,8 +750,10 @@ func parseQuant(q string) (quantMode, error) {
 		return quantInt4, nil
 	case "int4mix":
 		return quantInt4Mix, nil
+	case "q4k":
+		return quantQ4K, nil
 	default:
-		return quantNone, fmt.Errorf("decoder: unknown quant %q (have: int8, int8int8, int4, int4mix)", q)
+		return quantNone, fmt.Errorf("decoder: unknown quant %q (have: int8, int8int8, int4, int4mix, q4k)", q)
 	}
 }
 

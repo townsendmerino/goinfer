@@ -507,7 +507,8 @@ func measureBytesPerElem(q quantMode) float64 {
 	// models that fit six times over. Measure its dominant class instead: the FFN bulk it puts at
 	// int4. Attention stays int8, so this stays a lower bound, which is the safe direction.
 	probe := q
-	if probe == quantInt4Mix {
+	if probe == quantInt4Mix || probe == quantQ4K {
+		// q4k: Q4_K tensors are 4.5 bpw like int4, the rest int8 — int4 is its lower bound too.
 		probe = quantInt4
 	}
 	wm := quantizeWM(linalg.WrapF32(f32, n, n), probe)

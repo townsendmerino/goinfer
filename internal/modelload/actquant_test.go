@@ -1,6 +1,8 @@
 package modelload
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -25,9 +27,44 @@ func TestActivationSafeQuant(t *testing.T) {
 		{phi3, "f32", "", "f32", 0, ""},
 		{"../../testdata/nonexistent-model-dir", "int4", "", "int4", 0, ""},
 	} {
-		q, g, msg := activationSafeQuant(c.src, c.quant, 0, c.explicit)
+		q, g, msg := activationSafeQuant(c.src, c.quant, 0, c.explicit, "cpu")
 		if q != c.wantQ || g != c.wantG || !strings.HasPrefix(msg, c.msg) || (c.msg == "") != (msg == "") {
 			t.Errorf("activationSafeQuant(%s, %q, explicit %q) = %q, %d, %q; want %q, %d, prefix %q", c.src, c.quant, c.explicit, q, g, msg, c.wantQ, c.wantG, c.msg)
+		}
+	}
+}
+
+// TestActivationSafeQuant_ggufBackend: a Phi-3 .gguf defaults to q4k on the CPU backend (Phase 1a of
+// docs/tasks/task-int4-weight-quality-2026-09.md) and to int8int8 + per-32 on a GPU backend, where
+// q4k has no kernel yet and int8int8 runs resident. An explicit quant is never replaced by q4k. Needs
+// the real Phi-3 GGUF for PeekModelType; skips without it (a skip is not a pass).
+func TestActivationSafeQuant_ggufBackend(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
+	}
+	gguf := filepath.Join(home, "models", "phi3-mini-4k-gguf", "Phi-3-mini-4k-instruct-q4.gguf")
+	if _, err := os.Stat(gguf); err != nil {
+		t.Skipf("no Phi-3 GGUF at %s", gguf)
+	}
+	for _, c := range []struct {
+		backend, explicit, wantQ string
+		wantG                    int
+	}{
+		{"cpu", "", "q4k", 0},
+		{"", "", "q4k", 0},
+		{"cuda", "", "int8int8", 32},
+		{"metal", "", "int8int8", 32},
+		{"cpu", "int8int8", "int8int8", 32},
+		{"cpu", "int4", "int4", 0},
+	} {
+		quant := "int4"
+		if c.explicit != "" {
+			quant = c.explicit
+		}
+		q, g, _ := activationSafeQuant(gguf, quant, 0, c.explicit, c.backend)
+		if q != c.wantQ || g != c.wantG {
+			t.Errorf("backend %q explicit %q: got %q, %d; want %q, %d", c.backend, c.explicit, q, g, c.wantQ, c.wantG)
 		}
 	}
 }

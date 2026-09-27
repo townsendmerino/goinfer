@@ -35,6 +35,12 @@ const (
 	// policy only — matmulQuant resolves it to int8/int4 per tensor, so the resident
 	// weights and the .giw never carry quantInt4Mix itself. GGUF load path only.
 	quantInt4Mix
+	// quantQ4K keeps every tensor the GGUF stores as Q4_K in its own super-block layout
+	// (linalg.WrapQ4K, exact, 4.5 bpw) and puts every other layer matmul at int8 W8A8, with per-32
+	// activations throughout (docs/tasks/task-int4-weight-quality-2026-09.md: the re-quantization
+	// of Q4_K into symmetric int4 is the int4 quality loss). Like quantInt4Mix it is a LOAD-TIME
+	// policy resolved per tensor at the GGUF load sites. GGUF only; no .giw form yet.
+	quantQ4K
 )
 
 // matmulQuant resolves a matmul tensor's resident precision under the base quant.
@@ -42,6 +48,9 @@ const (
 // (cheap, sensitive) attention tensors at int8 and the (large, int4-tolerant) FFN
 // tensors at int4 — keyed off llama.cpp's tensor names (ffn_* vs attn_*).
 func matmulQuant(base quantMode, name string) quantMode {
+	if base == quantQ4K && strings.Contains(name, "ffn_gate_inp") {
+		return quantInt8I8 // the router, as in int4mix below: never the Q4_K kind
+	}
 	if base != quantInt4Mix {
 		return base
 	}
@@ -78,7 +87,7 @@ func matmulQuant(base quantMode, name string) quantMode {
 // not opt-in, given the size of the win against the size of the cost. int8 and
 // f32 modes use themselves, unaffected.
 func (q quantMode) embedding() quantMode {
-	if q == quantInt4 || q == quantInt4Mix {
+	if q == quantInt4 || q == quantInt4Mix || q == quantQ4K {
 		return quantInt8I8
 	}
 	return q
@@ -156,6 +165,11 @@ func streamQuantizedSkipRow4(rows, cols int, mode quantMode, rowInto func(r int,
 // row4-independent (row4 is int4-only).
 func streamQuantizedRow4(rows, cols int, mode quantMode, row4 bool, rowInto func(r int, dst []float32) error) (linalg.WeightMat, error) {
 	scratch := make([]float32, cols)
+	if mode == quantQ4K {
+		// Reached only where a load site has no raw Q4_K bytes to wrap (a non-Q4_K tensor, or a site
+		// q4kMat does not serve): the rest of quantQ4K is int8 W8A8.
+		mode = quantInt8I8
+	}
 	switch mode {
 	case quantInt8, quantInt8I8:
 		q8 := make([]int8, rows*cols)
@@ -271,6 +285,9 @@ func quantizeWMRow4(w linalg.WeightMat, mode quantMode, row4 bool) linalg.Weight
 	f32, ok := w.F32()
 	if !ok {
 		return w
+	}
+	if mode == quantQ4K {
+		mode = quantInt8I8 // no raw Q4_K bytes here: see streamQuantizedRow4
 	}
 	switch mode {
 	case quantInt8:
@@ -852,6 +869,15 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		defer matmulWSPool.Put(ws)
 		ws.SetThreshold(DefaultDecodeParallelThreshold)
 		linalg.MatmulBTQ8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+		return
+	}
+	if w.Kind() == "q4k" {
+		// Native Q4_K (quantQ4K): CPU only — no backend has a Q4_K kernel yet, and residency declines
+		// the mode. Per-32 activations are built into the kind.
+		ws := matmulWSPool.Get().(*linalg.Workspace)
+		defer matmulWSPool.Put(ws)
+		ws.SetThreshold(int4ParThreshold)
+		w.MatmulBTInto(ws, a, dst, M)
 		return
 	}
 	f32, _ := w.F32()

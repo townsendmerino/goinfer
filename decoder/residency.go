@@ -1007,6 +1007,10 @@ func (m *Model) withResidency() *Model {
 		m.resDecline = "backend does not implement residency (not built in, or the CPU backend)"
 		return m
 	}
+	if m.quant == "q4k" {
+		m.resDecline = "--quant q4k (native Q4_K) has no resident kernel on " + m.be.Name() + " yet (docs/tasks/task-int4-weight-quality-2026-09.md, Phase 1b)"
+		return m
+	}
 	if a := m.w.arch; a.nemotron != nil && a.MoE != nil && !isWebGPUBackend(m.be.Name()) {
 		// G7 (docs/tasks/task-gpu-paths-2026-09.md): Nemotron 3 Nano / 3.5 Lightning's fourth block
 		// kind (MoE FFN) has no GPU resident implementation on cuda/metal — decodeRunnerEligible's

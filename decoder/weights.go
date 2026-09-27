@@ -412,6 +412,9 @@ func loadWeights(dir string, quant quantMode, embedInt4, needCanonical, skipRow4
 	if quant == quantInt4Mix {
 		return nil, fmt.Errorf("decoder: int4mix is GGUF-only (got safetensors %s)", dir)
 	}
+	if quant == quantQ4K {
+		return nil, fmt.Errorf("decoder: q4k keeps a GGUF's Q4_K tensors as they are, so it is GGUF-only (got safetensors %s)", dir)
+	}
 	cfg, err := loadConfig(os.DirFS(dir), "config.json")
 	if err != nil {
 		return nil, err
