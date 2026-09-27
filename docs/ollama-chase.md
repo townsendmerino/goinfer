@@ -1110,7 +1110,7 @@ do not have the heads.
 > true when written, and the record of why we thought it is the useful part.
 >
 > What changed is our own loader. `decoder/gguf.go:754`, `decoder/gguf_qwen35.go:33`,
-> `decoder/weights.go:623` and `decoder/registry.go:1724` detect these heads, name them, and skip
+> `decoder/weights.go:626` and `decoder/registry.go:1724` detect these heads, name them, and skip
 > them — "block_count includes the trailing NextN/MTP block(s) goinfer drops". An inventory of
 > checkpoints already on disk (09, Gate 0) found MTP heads in **three families**: the qwen35 line
 > (3.5-0.8b / 3.6-35b / 3.8-27b), qwen3_next, and glm4moe. So "most checkpoints do not have the
@@ -1532,10 +1532,10 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   scratch. The old gather survives only as the f32 fallback exercised by tests, not on the real decode
   path.
 - ~~**embedResident host-scratch reuse — still open.**~~ **DONE, `c28c847` (2026-09-10, P-08 of
-  audit-2026-09-10.md).** `embedResidentInto(id, dst)` added (`decoder/residency.go:1317`);
+  audit-2026-09-10.md).** `embedResidentInto(id, dst)` added (`decoder/residency.go:1321`);
   `embedResident` itself is now a one-line `dst=nil` wrapper (`:1121`) kept for the batch-collection
   call sites that must not share a buffer. The resident decode loop's two hot call sites now pass a
-  reused `embScratch` (`decoder/model.go:1961,1463`) instead of allocating fresh per token. Gated by
+  reused `embScratch` (`decoder/model.go:1967,1463`) instead of allocating fresh per token. Gated by
   `decoder/embed_resident_scratch_test.go`. Found stale 2026-09-12: this bullet's own line-number
   citations had been silently re-keyed by `--update` in the SAME commit that fixed the code, without
   the "still open" claim itself being revisited. Bigger follow-on, still genuinely open: an
@@ -1546,7 +1546,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   still allocates, amortized over its K-token batch. All MoE-family int4 goldens pass bit-identical.
 - **int4 W4A8 `Workspace` alloc/token — DONE, P9, not via the fix this item originally proposed.** The
   item asked for an int4 case in `matmulInto`; what shipped instead pools the `Workspace` in `matmul()`
-  itself (`decoder/weightmat.go:764` `matmulWSPool`), which also covers the free-matmul callers
+  itself (`decoder/weightmat.go:781` `matmulWSPool`), which also covers the free-matmul callers
   `matmulInto` never sees — `matmul()`'s int4 and W8A8-fallback branches now pull their
   `linalg.Workspace` from the pool instead of declaring one fresh per call, so the Workspace's own
   lazily-grown `i8`/`f32` quant scratch survives across calls instead of reallocating
