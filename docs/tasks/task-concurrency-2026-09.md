@@ -633,6 +633,24 @@ started only if the `nobara` cells or larger client counts show it beating the w
 **Default.** `-max-concurrent` stays 1 until the gates pass. Then a default > 1 for CPU models is an owner decision,
 because it trades per-request latency for throughput.
 
+**Step-2 trigger cell, pre-registered 2026-09-27.**
+- What runs: `TestMC2_batchedDecodeThroughput` on `nobara` (Ryzen 7 3700X, 16 threads), qwen2.5-7b-instruct q4_k_m
+  from `~/models`, int4, at depths 128 and 512. The harness's defaults apply: 16 steps, 5 reps, and arms interleaved
+  and rotated.
+- Metric: batched B = 4 aggregate ÷ J8 N = 4 aggregate, per rep, median of 5, at each depth.
+- Decision:
+  - the LOWER of the two depths' medians ≥ 1.15× → build step 2;
+  - the HIGHER < 1.05× → park step 2, and rewrite its trigger to "a model size where batching beats the workers by
+    ≥ 1.15×";
+  - anything else → the owner decides.
+- Reported, not gated: B = 8, B = 2, the serial arms, and the identity test.
+- A caveat, recorded and not adjusted for: on amd64 the prototype's batched path at M = 1 costs 0.76–0.93× production
+  decode, because its kernels are untuned for M > 1 (MC2 record, "Linux CPU cells"). So the batched numbers are a
+  floor.
+- The identity test (`TestMC2_decodeMultiStepBitIdentical` on the 7B) runs first and is hard: a difference stops the
+  run as a bug.
+- Each depth runs only with load1 ≤ 1.0 and no other `go test` / `go build` / serve on the box.
+
 ## MC4 — broadening (parked)
 
 Each item waits on MC3 shipping and on a measured request for it:
