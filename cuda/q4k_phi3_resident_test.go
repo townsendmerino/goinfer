@@ -62,7 +62,10 @@ func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 	if nQ4K == 0 {
 		t.Fatal("no projection is on the q4k kernel: the test would measure int8 only")
 	}
-	t.Logf("resident: context %d positions, %d projections on gemv_q4k_g32", r.ctxCap, nQ4K)
+	if !r.fuseG32 {
+		t.Fatal("the fused per-32 kernels (fused_rms_qkv_g32 / fused_rms_gu_g32) did not engage")
+	}
+	t.Logf("resident: context %d positions, %d projections on gemv_q4k_g32, fused per-32 QKV and gate/up", r.ctxCap, nQ4K)
 	var gl [][]float32
 	for p, id := range ids {
 		lg, err := rf.Forward(gm.EmbedResidentForTest(id), p)

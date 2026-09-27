@@ -618,6 +618,11 @@ type cudaResident struct {
 	// gemvQ4K is actgroup.cu's gemv_q4k_g32: native GGUF Q4_K weights (--quant q4k), bound only
 	// under per-32 activations, the only mode that carries the per-group activation sums it needs.
 	gemvQ4K Pipeline
+	// fQKVg32 / fGUg32 are actgroup.cu's fused_rms_qkv_g32 / fused_rms_gu_g32: the per-32 twins of
+	// fQKV / fGU (rmsnorm + per-32 quant redundantly per block + the projection rows, any of int8 /
+	// int4 / q4k per projection). fuseG32 selects them (BuildResident); bound only under actG32.
+	fQKVg32, fGUg32 Pipeline
+	fuseG32         bool
 	// Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md — cuda/lora.go). Own module
 	// (lora.ptx), loaded unconditionally like every other glue pipeline — cheap, and whether a
 	// model will ever receive an adapter isn't known at BuildResident time.
@@ -2983,6 +2988,23 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			Arg(r.qB), Arg(r.kB), Arg(r.vB)); e != nil {
 			return e
 		}
+	} else if r.fuseG32 {
+		// Per-32 twin of K1: rmsnorm + per-32 quant redundantly per block + Q/K/V rows of any per-32
+		// kind — one launch instead of four. Bit-identical to the unfused chain below (shared row code).
+		nrows := Ly.qDim + 2*Ly.kvDim
+		rpw := fusedQKVRowsPerWarp(nrows)
+		cfg := LaunchConfig{GridX: uint32((nrows + 8*rpw - 1) / (8 * rpw)), GridY: 1, GridZ: 1,
+			BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: fusedG32Shmem(r.hidden)}
+		if e := r.launch(r.fQKVg32, cfg,
+			Arg(r.x), Arg(Ly.preNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
+			gpu.ArgValue(r.addOneArg()),
+			Arg(Ly.q.W), wkScale(Ly.q), qb, gpu.ArgValue(wkCode(Ly.q.kind)),
+			Arg(Ly.k.W), wkScale(Ly.k), kb, gpu.ArgValue(wkCode(Ly.k.kind)),
+			Arg(Ly.v.W), wkScale(Ly.v), vb, gpu.ArgValue(wkCode(Ly.v.kind)),
+			gpu.ArgValue(int32(Ly.qDim)), gpu.ArgValue(int32(Ly.kvDim)), gpu.ArgValue(int32(rpw)),
+			Arg(r.qB), Arg(r.kB), Arg(r.vB)); e != nil {
+			return e
+		}
 	} else {
 		if r.postOnly {
 			// Olmo 3/Olmo Hybrid: no pre-norm at all — quantize the RAW residual (quant_vec,
@@ -3268,6 +3290,20 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 			Arg(Ly.g.W), Arg(Ly.g.ws16),
 			Arg(Ly.u.W), Arg(Ly.u.ws16),
 			gpu.ArgValue(int32(r.inter)), gpu.ArgValue(int32(r.hidden/8)), gpu.ArgValue(int32(r.hidden/32)),
+			Arg(r.gO), Arg(r.uO)); e != nil {
+			return e
+		}
+	} else if r.fuseG32 && !postOnlyHere {
+		// Per-32 twin of fGU (fused_rms_gu_g32): bit-identical to the unfused chain below.
+		rpw := fusedGURowsPerWarp(r.hidden, r.inter)
+		cfg := LaunchConfig{GridX: uint32((2*r.inter + 8*rpw - 1) / (8 * rpw)), GridY: 1, GridZ: 1,
+			BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: fusedG32Shmem(r.hidden)}
+		if e := r.launch(r.fGUg32, cfg,
+			Arg(x), Arg(Ly.postNorm), gpu.ArgValue(int32(r.hidden)), gpu.ArgValue(r.eps),
+			gpu.ArgValue(r.addOneArg()),
+			Arg(Ly.g.W), wkScale(Ly.g), gpu.ArgValue(wkCode(Ly.g.kind)),
+			Arg(Ly.u.W), wkScale(Ly.u), gpu.ArgValue(wkCode(Ly.u.kind)),
+			gpu.ArgValue(int32(r.inter)), gpu.ArgValue(int32(rpw)),
 			Arg(r.gO), Arg(r.uO)); e != nil {
 			return e
 		}
@@ -4020,3 +4056,42 @@ func (r *cudaResident) actScaleLen(k int) int {
 	}
 	return 1
 }
+
+// wkCode is actgroup.cu's WK_* code for a per-32 weight kind (fused_rms_qkv_g32 / fused_rms_gu_g32).
+func wkCode(kind string) int32 {
+	switch kind {
+	case "q4k":
+		return 2
+	case "int4":
+		return 1
+	default:
+		return 0 // int8
+	}
+}
+
+// g32Fusable reports whether every listed projection has a kind the fused per-32 kernels read.
+func g32Fusable(kinds ...string) bool {
+	for _, k := range kinds {
+		if k != "int8" && k != "int4" && k != "q4k" {
+			return false
+		}
+	}
+	return true
+}
+
+// wkScale is a projection's scale argument for the fused per-32 kernels: the int8 row scales, the
+// int4 f16 group scales, or null for q4k (its scales live in the super-blocks).
+func wkScale(w cudaWQ) KernelArg {
+	switch w.kind {
+	case "q4k":
+		return ArgNull()
+	case "int4":
+		return Arg(w.ws16)
+	default:
+		return Arg(w.ws)
+	}
+}
+
+// fusedG32Shmem is fused_rms_qkv_g32 / fused_rms_gu_g32's shared memory for hidden size H:
+// normed[H] | red[256] | aq[H/4] int32 | aS[2·H/32].
+func fusedG32Shmem(H int) uint32 { return uint32((H + 256 + H/4 + 2*(H/32)) * 4) }
