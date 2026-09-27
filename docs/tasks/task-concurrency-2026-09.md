@@ -244,6 +244,37 @@ different adapters.
 **Docs that change when MC3 ships:** `positioning.md` (the "one generation at a time" sentence),
 `roadmap.md` §"Decided and parked," `docs/server.md`, red-october R12's row, `QUEUE.md`.
 
+## MC3c — concurrent decode on CPU (owner: "cpu first", 2026-09-26)
+
+**Why this, before MC3.** MC2 earned on the CPU with batching (1.69–2.04× at B = 4), and J8's cell, 4 independent
+decode workers, matched or beat it (2.00–2.48×) at a fraction of the build. MC3 on Metal needs a fidelity-gated
+matrix-unit kernel (MC3 S0). The owner chose the CPU first. **Step 1 is the workers**: N CPU generations of one model
+run at once, each on its own session KV. **Step 2 is batched decode behind the same admission**, registered here and
+started only if the `nobara` cells or larger client counts show it beating the workers.
+
+**Design (step 1).**
+- `serve -max-concurrent N` (default 1, which is today's behaviour exactly). It applies to a CPU model only: a
+  GPU-resident model keeps one generation at a time, because it has one claimed KV (`resBusy`). So does a streamed
+  model (expert or layer pager), whose pager is shared.
+- Admission (J1) becomes N-wide, still FIFO: up to N hold a turn, and the rest queue in arrival order.
+- The session LRU gains **check-out**. `acquire` never hands out a session another generation holds, and never evicts
+  one to make room. The LRU's own lock is held only around LRU operations, not across the generation. Background work
+  (idle demotion, save, restore) skips a checked-out session, and shutdown's save waits for check-ins.
+- No change inside the decoder: distinct sessions already run concurrently on one `*Model`
+  (`Model`'s own contract), and a race test pins that.
+
+**Gates (pre-registered; speed bar per the owner's standing guidance).**
+1. **Bit-identical:** each conversation's response, served concurrently, is byte-identical to the same conversation
+   served alone (greedy).
+2. **`-race` clean** across concurrent generations and the LRU's check-out.
+3. **Reuse unchanged:** on the W7 plain workload, CPU, every turn's prompt − reused equals the 1-client run's.
+4. **Speed:** the W7 4-client aggregate is ≥ 1.2× the serialized build's in the same session, with N = 4.
+5. **Latency under load:** p99 per-turn latency at 4 clients is no worse than the serialized build's at 4 clients.
+   This is the same offered load, not a lone request's latency.
+
+**Default.** `-max-concurrent` stays 1 until the gates pass. Then a default > 1 for CPU models is an owner decision,
+because it trades per-request latency for throughput.
+
 ## MC4 — broadening (parked)
 
 Each item waits on MC3 shipping and on a measured request for it:
