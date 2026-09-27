@@ -16,6 +16,32 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
+// mc3Checkpoint is the checkpoint the MC3 end-to-end tests load, GOINFER_METAL_MC3_MODEL (the 1.5B by default), and the
+// file its tokenizer is read from, GOINFER_METAL_MC3_TOKENIZER (the checkpoint itself by default). A .giw bundle is
+// named with its .gguf as the tokenizer: that is how the 7B loads here, weights aliased from the bundle, where the
+// .gguf's own load path does not fit.
+func mc3Checkpoint(t *testing.T) (path, tokPath string) {
+	t.Helper()
+	home, _ := os.UserHomeDir()
+	path = os.Getenv("GOINFER_METAL_MC3_MODEL")
+	if path == "" {
+		path = filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	}
+	tokPath = os.Getenv("GOINFER_METAL_MC3_TOKENIZER")
+	if tokPath == "" {
+		tokPath = path
+	}
+	for _, p := range []string{path, tokPath} {
+		if strings.HasPrefix(p, "/Volumes/") || strings.HasPrefix(p, "/srv/models") {
+			t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md)", p)
+		}
+		if _, err := os.Stat(p); err != nil {
+			t.Skipf("no checkpoint at %s: %v", p, err)
+		}
+	}
+	return path, tokPath
+}
+
 // TestMC3_concurrentMatchesAloneOnMetal is MC3's identity gate through the production Generate path on a real
 // checkpoint (docs/tasks/task-concurrency-2026-09.md): 4 conversations × 3 turns × 32 greedy tokens, generating at once
 // on one Metal resident with EnableResidentConcurrency(4), each emit exactly the ids — and reuse exactly the prefix —
@@ -28,17 +54,7 @@ func TestMC3_concurrentMatchesAloneOnMetal(t *testing.T) {
 	if os.Getenv("GOINFER_METAL_MC3") != "1" {
 		t.Skip("set GOINFER_METAL_MC3=1 (loads a real checkpoint twice)")
 	}
-	home, _ := os.UserHomeDir()
-	path := os.Getenv("GOINFER_METAL_MC3_MODEL")
-	if path == "" {
-		path = filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
-	}
-	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
-		t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md)", path)
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no checkpoint at %s: %v", path, err)
-	}
+	path, tokPath := mc3Checkpoint(t)
 	const nConv, turns, maxTok = 4, 3, 32
 	load := func() *decoder.Model {
 		m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024, ResidentKVSlots: nConv})
@@ -55,7 +71,7 @@ func TestMC3_concurrentMatchesAloneOnMetal(t *testing.T) {
 		ids    []int
 		reused int
 	}
-	tk, err := tokenizer.LoadGGUF(path)
+	tk, err := tokenizer.LoadGGUF(tokPath)
 	if err != nil {
 		t.Skipf("tokenizer: %v", err)
 	}
@@ -146,12 +162,8 @@ func TestMC3_concurrentSampledMatchesAloneOnMetal(t *testing.T) {
 	if os.Getenv("GOINFER_METAL_MC3") != "1" {
 		t.Skip("set GOINFER_METAL_MC3=1 (loads a real checkpoint twice)")
 	}
-	home, _ := os.UserHomeDir()
-	path := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no checkpoint at %s: %v", path, err)
-	}
-	tk, err := tokenizer.LoadGGUF(path)
+	path, tokPath := mc3Checkpoint(t)
+	tk, err := tokenizer.LoadGGUF(tokPath)
 	if err != nil {
 		t.Skipf("tokenizer: %v", err)
 	}

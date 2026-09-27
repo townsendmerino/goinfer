@@ -338,6 +338,37 @@ different adapters.
 - A lone request: p50 1.002×, p99 1.004×.
 - Identity and reuse equal on every turn of all 14 cells. 2 clients read 1.071× (reported).
 
+**The 7B end to end — W7 grading, pre-registered 2026-09-27 before any W7 timing on the 7B.** Every W7 grading so far ran
+the 1.5B. On the 7B, MC3 has been measured only below serve: S0's kernels, and S1's step in sequence (1.76–1.84× at
+B = 4, before S2 and S3 changed the step).
+- *old* = `serve-metal` at `9efc3185`, pre-MC3: MC1 plus R18b plus the slot-pricing fix, serialising its generations.
+- *new* = at `cc5f8c2c`, the current stack: MC3, S2, S3 and chunked prefill.
+- Both run at serve's defaults (`-max-concurrent` 4, `-kv-sessions` 4, context 4096). Both banners, checked without
+  timing, keep 4 conversations resident on the 7B; *new*'s also reports batched decode.
+- **Before any timing:** `TestMC3Step_bitIdentical`, `_Deep`, `_drawsMatchForwardSample` and both concurrent-vs-alone
+  tests (greedy, sampled) run on the 7B. A difference there is a bug and stops the grading.
+  - The tests load its `.int4.metal.giw` with weights aliased, as S1 did: the `.gguf`'s own int4 load path does not fit
+    this Mac.
+  - The sampled test had hard-coded the 1.5B. It now reads `GOINFER_METAL_MC3_MODEL` like the others, plus
+    `GOINFER_METAL_MC3_TOKENIZER`, since a bundle is named with its `.gguf` for the tokenizer.
+- **Workload:** `scripts/bench_w7_plain.py` with `BENCH_W7_MODEL` = qwen2.5-7b-instruct q4_k_m from `~/models` (serve
+  aliases its `.int4.metal.giw`). 6 turns × 128 greedy tokens per client, `--fixed-nonce`, a fresh server per cell,
+  idle-gated per cell (load1 ≤ 2.0).
+- **Cells:** 4, then 1, then 2 clients, each old/new × 3 pairs in the order old new new old old new.
+- **Gates.** 1, 2, 4 and 5 are hard.
+  1. identity: every turn's `content_sha` equal between new and old;
+  2. reuse equal;
+  3. 4-client aggregate new ÷ old, median of 3 ≥ 1.2× (MC3's bar);
+  4. 4-client p99 turn new ÷ old, median ≤ 1.0;
+  5. lone request p50 and p99, new ÷ old, median ≤ 1.05× each.
+- **Reported, not gated:** the 2-client cells, and the 4-client p99 ÷ a lone request's.
+- **Decision.**
+  - All pass: MC3 is recorded as paying on the 7B, and the open "7B end to end" item closes.
+  - Gate 1 or 2 fails: a bug, fixed before anything else.
+  - Aggregate 1.03–1.2× with the hard gates passing: goes to the owner with a recommendation.
+  - Below 1.03×, or gate 4 or 5 fails: the owner decides whether batched decode stays on by default for a model of
+    this size.
+
 **MC3 S3 SHIPPED 2026-09-27: all five W7 gates pass** ([`concurrency-mc3-s3-2026-09-27.md`](../measurements/concurrency-mc3-s3-2026-09-27.md)).
 - 4 clients at **1.261×** S2 (121.6 → 153.1 tok/s), with p99 turn 0.784×.
 - 2 clients 1.08–1.11×; a lone request 0.999× / 1.015×; every reply identical.
