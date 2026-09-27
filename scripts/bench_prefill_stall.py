@@ -123,9 +123,9 @@ def main():
         r = cell(srv.url, a)
     res[a.key] = r
     json.dump({"header": w7.machine_header(), "args": vars(a), "results": res}, open(a.out, "w"), indent=1)
-    print(f"[stall] {a.key}: wall {r['wall_s']}s; decoder gap p50 {r['decoder_gap_ms']['p50']:.1f} p99 "
-          f"{r['decoder_gap_ms']['p99']:.1f} max {r['decoder_gap_ms']['max']:.1f} ms; newcomer TTFT {r['newcomer_ttft_s']}",
-          file=sys.stderr)
+    gap = r["decoder_gap_ms"]
+    gaps = "no decoders" if gap["max"] is None else f"decoder gap p50 {gap['p50']:.1f} p99 {gap['p99']:.1f} max {gap['max']:.1f} ms"
+    print(f"[stall] {a.key}: wall {r['wall_s']}s; {gaps}; newcomer TTFT {r['newcomer_ttft_s']}", file=sys.stderr)
 
 
 if __name__ == "__main__":

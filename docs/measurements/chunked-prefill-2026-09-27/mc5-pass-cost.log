@@ -1,0 +1,6 @@
+=== RUN   TestMC5_passCost
+[mc5-pass] startPos 64:  C=16 95.8 ms (GPU 0.0)  C=64 104.8 ms (GPU 0.0)  C=128 154.2 ms (GPU 0.0)  C=256 290.0 ms (GPU 0.0)
+[mc5-pass] startPos 2048:  C=16 180.4 ms (GPU 0.0)  C=64 265.1 ms (GPU 0.0)  C=128 318.4 ms (GPU 0.0)  C=256 599.7 ms (GPU 0.0)
+--- PASS: TestMC5_passCost (16.72s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	17.092s

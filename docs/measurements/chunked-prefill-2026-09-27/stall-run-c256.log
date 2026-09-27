@@ -1,0 +1,76 @@
+04:43:28 == chunked-prefill stall grading start; tree d4293d41; { 2.36 2.42 1.83 }
+04:43:28 waiting for idle: load1=2.36 (0s)
+04:43:48 idle: load1=1.97
+04:43:48 cell old_1 decoders=3 bin=serve-metal-new-731f4f4e
+[stall] old_1: wall 24.677s; decoder gap p50 19.5 p99 29.6 max 5350.2 ms; newcomer TTFT [5.283, 5.342, 5.295]
+04:44:14 waiting for idle: load1=2.04 (0s)
+04:44:24 idle: load1=1.88
+04:44:24 cell new_1 decoders=3 bin=serve-metal-new-d4293d41
+[stall] new_1: wall 25.713s; decoder gap p50 19.3 p99 659.6 max 1137.8 ms; newcomer TTFT [6.05, 6.056, 6.053]
+04:44:51 idle: load1=1.45
+04:44:51 cell new_2 decoders=3 bin=serve-metal-new-d4293d41
+[stall] new_2: wall 25.73s; decoder gap p50 19.3 p99 659.3 max 1140.3 ms; newcomer TTFT [5.964, 6.036, 6.025]
+04:45:18 idle: load1=1.22
+04:45:18 cell old_2 decoders=3 bin=serve-metal-new-731f4f4e
+[stall] old_2: wall 24.4s; decoder gap p50 19.4 p99 22.5 max 5343.7 ms; newcomer TTFT [5.272, 5.334, 5.27]
+04:45:44 idle: load1=1.32
+04:45:44 cell old_3 decoders=3 bin=serve-metal-new-731f4f4e
+[stall] old_3: wall 24.5s; decoder gap p50 19.3 p99 22.6 max 5407.6 ms; newcomer TTFT [5.314, 5.276, 5.4]
+04:46:09 idle: load1=0.94
+04:46:09 cell new_3 decoders=3 bin=serve-metal-new-d4293d41
+[stall] new_3: wall 25.768s; decoder gap p50 19.3 p99 660.9 max 1171.3 ms; newcomer TTFT [6.042, 6.036, 5.992]
+04:46:36 idle: load1=0.62
+04:46:36 cell oldsolo_1 decoders=0 bin=serve-metal-new-731f4f4e
+Traceback (most recent call last):
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_prefill_stall.py", line 132, in <module>
+    main()
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_prefill_stall.py", line 126, in main
+    print(f"[stall] {a.key}: wall {r['wall_s']}s; decoder gap p50 {r['decoder_gap_ms']['p50']:.1f} p99 "
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: unsupported format string passed to NoneType.__format__
+04:46:58 idle: load1=0.57
+04:46:58 cell newsolo_1 decoders=0 bin=serve-metal-new-d4293d41
+Traceback (most recent call last):
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_prefill_stall.py", line 132, in <module>
+    main()
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_prefill_stall.py", line 126, in main
+    print(f"[stall] {a.key}: wall {r['wall_s']}s; decoder gap p50 {r['decoder_gap_ms']['p50']:.1f} p99 "
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: unsupported format string passed to NoneType.__format__
+04:47:19 idle: load1=0.51
+04:47:19 cell newsolo_2 decoders=0 bin=serve-metal-new-d4293d41
+Traceback (most recent call last):
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_prefill_stall.py", line 132, in <module>
+    main()
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_prefill_stall.py", line 126, in main
+    print(f"[stall] {a.key}: wall {r['wall_s']}s; decoder gap p50 {r['decoder_gap_ms']['p50']:.1f} p99 "
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: unsupported format string passed to NoneType.__format__
+04:47:41 idle: load1=0.37
+04:47:41 cell oldsolo_2 decoders=0 bin=serve-metal-new-731f4f4e
+Traceback (most recent call last):
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_prefill_stall.py", line 132, in <module>
+    main()
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_prefill_stall.py", line 126, in main
+    print(f"[stall] {a.key}: wall {r['wall_s']}s; decoder gap p50 {r['decoder_gap_ms']['p50']:.1f} p99 "
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: unsupported format string passed to NoneType.__format__
+04:48:02 idle: load1=0.48
+04:48:02 cell oldsolo_3 decoders=0 bin=serve-metal-new-731f4f4e
+Traceback (most recent call last):
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_prefill_stall.py", line 132, in <module>
+    main()
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_prefill_stall.py", line 126, in main
+    print(f"[stall] {a.key}: wall {r['wall_s']}s; decoder gap p50 {r['decoder_gap_ms']['p50']:.1f} p99 "
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: unsupported format string passed to NoneType.__format__
+04:48:24 idle: load1=0.40
+04:48:24 cell newsolo_3 decoders=0 bin=serve-metal-new-d4293d41
+Traceback (most recent call last):
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_prefill_stall.py", line 132, in <module>
+    main()
+  File "/Users/francistownsend-merino/tmcode/goinfer/scripts/bench_prefill_stall.py", line 126, in main
+    print(f"[stall] {a.key}: wall {r['wall_s']}s; decoder gap p50 {r['decoder_gap_ms']['p50']:.1f} p99 "
+                                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: unsupported format string passed to NoneType.__format__
+04:48:46 == DONE

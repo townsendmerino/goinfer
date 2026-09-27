@@ -81,6 +81,7 @@ type Model struct {
 	knobs         *knobSet     // per-model operator knobs, snapshotted once at Load (knobs.go)
 	resCtxReq     int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	resSlotsReq   int          // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
+	prefillChunk  int          // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
 	disableFit    bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache      bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
 	moeSlots      int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
@@ -411,6 +412,13 @@ type Options struct {
 	// and says so; a backend that does not implement ResidentKVSlotter, and every family with recurrent state, keep
 	// one slot. serve sets it from -kv-sessions.
 	ResidentKVSlots int
+	// ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many
+	// tokens while other generations are decoding, one decode step between chunks, instead of in one pass that stalls
+	// them all for the whole prompt (docs/tasks/task-concurrency-2026-09.md, chunked prefill). 0 = off: whole
+	// prefill, the behaviour before it. Sound only where the resident's batched prefill is chunk-invariant (Metal's is:
+	// TestMC5_prefillChunkInvariance). No default: the first registered candidate (256) cut the decoders' longest stall
+	// 4.7x but missed its wall-time gate (docs/measurements/chunked-prefill-2026-09-27.md).
+	ResidentPrefillChunk int
 	// ActQuantGroup selects per-group ACTIVATION quantization for the int8-activation projections
 	// (int4 = W4A8, int8int8 = W8A8, int4mix): 0 (the default) scales each activation vector by one
 	// max/127, 32 gives every 32 inputs their own scale. A family with massive activation outliers
@@ -466,7 +474,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	}
 	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(),
 		kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
-		resCtxReq: opts.ResidentContext, resSlotsReq: opts.ResidentKVSlots, disableFit: opts.DisableFit,
+		resCtxReq: opts.ResidentContext, resSlotsReq: opts.ResidentKVSlots, prefillChunk: opts.ResidentPrefillChunk, disableFit: opts.DisableFit,
 		moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
 		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup}
@@ -1586,17 +1594,19 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		from = 0 // never skip the seed token (residentPrefillSeed's own rule)
 	}
 	pf, ok := m.resident.(Prefiller)
-	chunk := ok && m.knobs.get(knobBatchedPrefill) != "0" && len(prompt)-from >= prefillChunkMin
+	C := m.prefillChunk
+	chunk := ok && C > 0 && m.knobs.get(knobBatchedPrefill) != "0"
 	var logits []float32
 	var err error
-	// Cut a chunk only while at least two chunks' worth remains, so the pass that ends the prefill always has >=
-	// prefillChunkTokens tokens: residentPrefillSeed sends a suffix under 8 tokens down the sequential path, whose
-	// numerics are not the batched prefill's, and a 1-token tail would make the reply depend on the chunking.
-	for chunk && len(prompt)-from >= prefillChunkMin && mc3.decoding() > 0 {
+	// Cut a chunk only while a chunk plus prefillTailMin tokens remain, so the pass that ends the prefill has at least
+	// prefillTailMin tokens (residentPrefillSeed sends a suffix under 8 down the sequential path, whose numerics are
+	// not the batched prefill's) and at most C + prefillTailMin - 1 — never the up-to-2C tail the first candidate
+	// left, which was its longest pass (docs/measurements/chunked-prefill-2026-09-27.md).
+	for chunk && len(prompt)-from >= C+prefillTailMin && mc3.decoding() > 0 {
 		if err = ctx.Err(); err != nil {
 			return nil, err
 		}
-		end := from + prefillChunkTokens
+		end := from + C
 		embs := make([][]float32, end-from)
 		for i, id := range prompt[from:end] {
 			embs[i] = m.embedResident(id)

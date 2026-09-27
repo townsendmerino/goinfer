@@ -1,0 +1,11 @@
+GATE 1 identity: PASS (6 stall cells, 6 solo cells)
+pair 1: decoder gap max old 5350 new 1138 ms (p99 30 -> 660, p50 19.5 -> 19.3); newcomer TTFT old [5.283, 5.342, 5.295] new [6.05, 6.056, 6.053] s; wall 24.68 -> 25.71 s
+pair 2: decoder gap max old 5344 new 1140 ms (p99 22 -> 659, p50 19.4 -> 19.3); newcomer TTFT old [5.272, 5.334, 5.27] new [5.964, 6.036, 6.025] s; wall 24.40 -> 25.73 s
+pair 3: decoder gap max old 5408 new 1171 ms (p99 23 -> 661, p50 19.3 -> 19.3); newcomer TTFT old [5.314, 5.276, 5.4] new [6.042, 6.036, 5.992] s; wall 24.50 -> 25.77 s
+GATE 2 the stall (decoders' max gap) median 0.213x (bar <= 0.5): PASS
+GATE 3 newcomer TTFT median 1.137x (bar <= 1.5): PASS
+GATE 4 wall median 1.052x (bar <= 1.05): FAIL
+solo pair 1: TTFT old [5.435, 5.308, 5.318] new [5.342, 5.366, 5.318] s
+solo pair 2: TTFT old [5.323, 5.453, 5.335] new [5.33, 5.405, 5.318] s
+solo pair 3: TTFT old [5.336, 5.317, 5.383] new [5.385, 5.311, 5.459] s
+GATE 5 solo guard (newcomer TTFT alone) median 1.000x (bar <= 1.05): PASS

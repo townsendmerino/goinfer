@@ -523,6 +523,27 @@ positioning, not a benchmark result.
 **Chunked prefill unparked by the owner, 2026-09-27** ("Owner decisions" above). Continuous batching and paged KV
 stay parked.
 
+**Chunked prefill, first candidate (256-token chunks): NOT SHIPPED** ([`chunked-prefill-2026-09-27.md`](../measurements/chunked-prefill-2026-09-27.md)).
+- The decoders' longest stall during a ~3k-token newcomer's prefill fell **5.35 s → 1.14 s (0.213×)**.
+- Newcomer TTFT 1.137×; every reply identical; a lone request's TTFT 1.000×.
+- **But the cell's wall time rose 1.052× against its ≤ 1.05× gate.** By the registered rule it does not ship.
+- Chunking is now `decoder.Options.ResidentPrefillChunk` / `serve -prefill-chunk`, 0 (off) by default.
+- The diagnosis, exploratory and after the grading:
+  - a pass's floor is the prefill GEMM's 64-row tile (~70 ms per 64 tokens on the 1.5B);
+  - the candidate's "cut while two chunks remain" rule left a final pass of up to 2C − 1 tokens at full depth, which
+    was the 1.14 s longest stall itself (a 1.20 s pass alone).
+
+**Chunked prefill, revised candidate — registered 2026-09-27, before any timing of it.**
+- **Two changes, each from the diagnosis:**
+  - 512-token chunks: half the passes, so less of chunking's per-pass cost; a 512-token chunk alone costs +5.8% on a
+    3000-token prefill, against +7.9% at 256;
+  - the tail rule: cut while a chunk plus 8 tokens remain, so the last pass is 8 .. C + 7 tokens, never the
+    up-to-2C tail.
+- The build is the commit carrying `Options.ResidentPrefillChunk`; *new* = that build with `-prefill-chunk 512`.
+- *old* = `serve-metal` at `731f4f4e` (S3), as before.
+- The bench, cells, pairs and all five gates are exactly the first candidate's, bars unchanged.
+- Decision: all pass ships, with `serve -prefill-chunk` defaulting to 512; anything else leaves it at 0.
+
 **Chunked prefill — registered 2026-09-27, before any timing.**
 
 *The stall it removes.* Under MC3, a newcomer's prefill runs whole in the resident's exclusive section, so every

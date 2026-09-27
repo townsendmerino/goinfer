@@ -164,16 +164,12 @@ func (b *residentBatcher) exclusive(fn func()) {
 	fn()
 }
 
-// prefillChunkTokens and prefillChunkMin are chunked prefill's rule (docs/tasks/task-concurrency-2026-09.md, chunked
-// prefill, unparked by the owner 2026-09-27): a newcomer whose prompt suffix is at least prefillChunkMin tokens
-// prefills it in chunks of prefillChunkTokens while other generations are decoding, yielding one decode step between
-// chunks, instead of in one pass that stalls every decoding conversation for the whole prompt. With nobody decoding it
-// prefills the rest in one pass. Sound only where the resident's prefill is chunk-invariant — the same bits whole or in
-// chunks (TestMC5_prefillChunkInvariance on Metal) — so a reply never depends on whether others were decoding.
-const (
-	prefillChunkTokens = 256
-	prefillChunkMin    = 2 * prefillChunkTokens
-)
+// prefillTailMin is chunked prefill's shortest final pass (Options.ResidentPrefillChunk; docs/tasks/task-concurrency-
+// 2026-09.md, chunked prefill, unparked by the owner 2026-09-27): residentPrefillSeed takes a suffix of at least 8
+// tokens through the batched prefill, and the chunks must all run that same path. Chunking is sound only where the
+// resident's prefill is chunk-invariant — the same bits whole or in chunks (TestMC5_prefillChunkInvariance on Metal) —
+// so a reply never depends on whether others were decoding.
+const prefillTailMin = 8
 
 // decoding reports how many holders are inside their decode loop.
 func (b *residentBatcher) decoding() int {

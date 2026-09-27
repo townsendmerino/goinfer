@@ -439,6 +439,7 @@ func TestMC3_longPrefillChunksWhileOthersDecode(t *testing.T) {
 
 	m, rf := loadWithMC3Fake(t, 4)
 	rf.delay = 3 * time.Millisecond
+	m.prefillChunk = 256 // Options.ResidentPrefillChunk
 	m.EnableResidentConcurrency(4)
 	var got0, got1, gotNew []int
 	var wg sync.WaitGroup
@@ -467,10 +468,42 @@ func TestMC3_longPrefillChunksWhileOthersDecode(t *testing.T) {
 		between = strings.Count(ev[i:j], "S")
 	}
 	t.Logf("resident events: %d prefill calls, %d steps between the first and last of them", chunks, between)
-	if chunks < 4 { // 1200 = 256 + 256 + 256 + 432 (the last pass is never shorter than a chunk)
+	if chunks < 4 { // 1200 = 256 x 4 + 176 (a chunk is cut while a chunk plus prefillTailMin remain)
 		t.Errorf("the newcomer's 1200-token prompt went in %d prefill calls: it was not chunked", chunks)
 	}
 	if between < chunks-1 {
 		t.Errorf("only %d decode steps ran between the %d prefill chunks: the decoders were stalled for the prefill", between, chunks)
+	}
+}
+
+// TestMC3_prefillChunkOffByDefault: with Options.ResidentPrefillChunk unset, a long newcomer is prefilled in one pass
+// even while others decode — chunked prefill ships off (its first candidate missed a gate).
+func TestMC3_prefillChunkOffByDefault(t *testing.T) {
+	m, rf := loadWithMC3Fake(t, 4)
+	rf.delay = 3 * time.Millisecond
+	m.EnableResidentConcurrency(4)
+	v := m.w.arch.VocabSize
+	long := make([]int, 1200)
+	for i := range long {
+		long[i] = (i*7 + 3) % v
+	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		ch, _ := m.Generate(context.Background(), []int{1, 2, 3, 40}, 60, SamplingParams{})
+		for range ch {
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		time.Sleep(40 * time.Millisecond)
+		ch, _ := m.Generate(context.Background(), long, 4, SamplingParams{})
+		for range ch {
+		}
+	}()
+	wg.Wait()
+	if n := strings.Count(string(rf.events), "P"); n != 1 {
+		t.Errorf("the 1200-token prompt went in %d prefill calls with chunking unset, want 1", n)
 	}
 }

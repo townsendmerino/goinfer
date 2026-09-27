@@ -1,0 +1,8 @@
+=== RUN   TestMC5_chunkCost
+[mc5-cost] C=0: 1 passes, total 5.367 s (median of 3), longest pass 5.486 s
+[mc5-cost] C=128: 23 passes, total 6.281 s (median of 3), longest pass 0.560 s
+[mc5-cost] C=256: 11 passes, total 5.791 s (median of 3), longest pass 1.200 s
+[mc5-cost] C=512: 5 passes, total 5.675 s (median of 3), longest pass 2.309 s
+--- PASS: TestMC5_chunkCost (73.97s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	74.505s
