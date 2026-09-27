@@ -66,3 +66,57 @@ func TestGenNgramInto_residentReusesWarmPrefix(t *testing.T) {
 		t.Errorf("round 2: PrefillReused = %d, want >= %d (all but the one-token seed floor)", g2.PrefillReused, want)
 	}
 }
+
+// TestGenNgramInto_residentCommitMatchesPlain: a speculative generation that ends by reaching maxTokens leaves the
+// resident holding exactly what plain decode leaves: prompt + every emitted token. Plain decode forwards each token it
+// emits, the last included. A round's trailing token used to be forwarded only as the next round's seq[0], so the
+// next turn reused one position less and re-prefilled it. On Metal that one re-prefilled position (f16-MMA prefill,
+// not bit-identical to decode) changed every later turn's output
+// (docs/measurements/spec-vs-batching-metal-2026-09-27.md §4). Asserted as equal reuse on the next turn, spec against
+// plain, at five lengths. Without the fix every one is one position short, so every case ends at the trailing-token
+// exit. The exit after a streamed draft token is not exercised here; its tokens are forwarded by the verify already.
+func TestGenNgramInto_residentCommitMatchesPlain(t *testing.T) {
+	greedy := SamplingParams{Temperature: 0}
+	ctx := context.Background()
+	prompt1 := []int{1, 2, 3, 1, 2, 3, 1, 2}
+	for _, maxTok := range []int{1, 2, 5, 6, 9} {
+		reuse := func(spec bool) (int, []int) {
+			m, _ := loadWithFakeResident(t)
+			if !m.DecodeRunnerEligible() {
+				t.Skip("fixture is not resident-decode-runner-eligible")
+			}
+			var ch <-chan int
+			var g *Generation
+			var err error
+			if spec {
+				ch, g, err = m.GenerateNgramSpeculative(ctx, prompt1, maxTok, &NgramDrafter{}, 4, greedy)
+				if err != nil {
+					t.Fatalf("spec: %v", err)
+				}
+			} else {
+				ch, g = m.Generate(ctx, prompt1, maxTok, greedy)
+			}
+			got := collectTokens(ch)
+			if g.Err() != nil {
+				t.Fatalf("round 1: %v", g.Err())
+			}
+			prompt2 := append(append(append([]int(nil), prompt1...), got...), 99, 98)
+			ch2, g2 := m.Generate(ctx, prompt2, 2, greedy)
+			for range ch2 {
+			}
+			if g2.Err() != nil {
+				t.Fatalf("round 2: %v", g2.Err())
+			}
+			return g2.PrefillReused, got
+		}
+		plainReuse, plainIDs := reuse(false)
+		specReuse, specIDs := reuse(true)
+		if len(plainIDs) != len(specIDs) {
+			t.Fatalf("maxTokens %d: plain emitted %d tokens, spec %d", maxTok, len(plainIDs), len(specIDs))
+		}
+		if specReuse != plainReuse {
+			t.Errorf("maxTokens %d: the next turn reused %d positions after spec, %d after plain decode — spec left the "+
+				"resident holding a different prefix", maxTok, specReuse, plainReuse)
+		}
+	}
+}

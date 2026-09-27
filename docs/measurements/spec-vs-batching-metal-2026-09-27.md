@@ -137,3 +137,37 @@ The spec cells never did.
 - So whether §5's refused requests would have fit was not measured. It needs a rerun with the memory headroom the
   09:39 cells had.
 - The swap guard refused requests rather than letting the machine page further, which is its job.
+
+## Update 2026-09-27: §4's divergence found and fixed
+
+**The cause was the turn boundary, not speculation.**
+- `TestSpecVerify_forwardNMatchesForward` (`metal/`) shows spec's verify is lossless on Metal. Every round runs
+  `ForwardN`, since Metal has no argmax-only verify. After the same 300-token prefix, 8 tokens as one `ForwardN` and
+  as 8 `Forward` calls give 0 differing logits and 0 differing K/V, at M = 8 and at M = 1.
+- `TestSpecNgram_multiTurnMatchesPlain` (`metal/`) replays two W7 turns in-process.
+  - Turn 0 is identical, and so is every K/V element both arms hold after it.
+  - Turn 1 diverged at token 44, with spec reusing 150 positions against plain's 151.
+- Plain decode forwards every token it emits, the last included. The n-gram loop forwards a round's trailing token
+  only as the next round's first row. So a generation that stopped at `max_tokens` left the cache one token short.
+  That is safe, and the loop's own comment said so.
+- The next turn re-prefills that one position. Metal's fast-prefill floor counts the whole prompt (start + M), so
+  even a ~27-token suffix runs the f16-MMA prefill, which is not bit-identical to decode.
+- That one position's K/V differs, and every later position attends to it. So every later turn diverged.
+
+**The fix** (`decoder/spec_ngram.go`, `finishTrailing`) forwards the trailing token at exactly that exit: the one
+forward a one-row round would make.
+- A stop, a cancel or a full context takes no forward, as in plain decode.
+- The CPU `Session` path commits the token too, so its reconcile invariant (prompt + every token in the cache) holds.
+- `TestGenNgramInto_residentCommitMatchesPlain` (`decoder/`, the fake resident, runs in CI) asserts equal next-turn
+  reuse, spec against plain, at five lengths. All five are one short with the fix reverted.
+- Through serve (`serve-metal` at `5a92348a` plus the fix, W7, `-spec ngram`), every turn now matches the batch arm's
+  reply: 6 / 6 at 1 client, 24 / 24 at 4 clients, reuse identical (157, 311, 466 …). The rate is unchanged: 69.3 and
+  72.4 tok/s, against 67.6–71.3 and 69.8–72.8 before.
+- Raw: [`specfix-check-chat.json`](spec-vs-batching-metal-2026-09-27/specfix-check-chat.json),
+  [`specfix-check-servers.log`](spec-vs-batching-metal-2026-09-27/specfix-check-servers.log).
+
+**§3's decision stands.** The fix restores identity and costs one forward per generation, which plain decode pays too.
+Spec still gains a lone Metal request nothing, and still forfeits batching under load.
+
+**Not checked:** the block-drafter (`--drafter`, CUDA), grammar-fused and two-model speculative loops may have the same
+trailing-token shape. They were not measured here.

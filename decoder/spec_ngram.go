@@ -425,8 +425,41 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				target.residentCommitIDs(prompt, hist[len(prompt):], nil, nil)
 			}
 		}
+		// finishTrailing forwards the round's trailing token when the generation ended by reaching maxTokens just
+		// after streaming it. Plain decode forwards every token it emits, the last included, so its cache holds
+		// prompt + every emitted token. Here a round's trailing token is otherwise forwarded only as the NEXT
+		// round's seq[0], so the cache ended one token short of plain's.
+		//
+		// Left short, the next turn re-prefills that one position. On a backend whose batched prefill is not
+		// bit-identical to decode, that changes the next turn's output: Metal's f16-MMA prefill runs whenever the
+		// whole prompt is past its floor, so every W7 turn after the first diverged from plain decode
+		// (docs/measurements/spec-vs-batching-metal-2026-09-27.md §4). The forward is the one a one-row round would
+		// make, and a stop, a cancel or a full context takes no forward, as in plain decode.
+		finishTrailing := func(tok int) {
+			if g.err != nil || stats.Emitted < maxTokens || target.isStop(tok, sp) {
+				return
+			}
+			if specRoundDraftWidth(0, tpos, target.ResidentContextCap()) < 0 {
+				return
+			}
+			var err error
+			if idsVerify != nil {
+				_, err = idsVerify([]int{tok}, tpos)
+			} else {
+				_, err = targetVerify([]int{tok}, tpos)
+			}
+			if err != nil {
+				return // the cache stays one token short, which is consistent (hist is not advanced)
+			}
+			tpos++
+			hist = append(hist, tok)
+			if commit != nil {
+				commit(tok)
+			}
+		}
 
 		if !emit(cur) {
+			finishTrailing(cur)
 			commitResident()
 			return
 		}
@@ -610,6 +643,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			}
 			cur = nextTok
 			if !emit(cur) {
+				finishTrailing(cur)
 				commitResident()
 				return
 			}

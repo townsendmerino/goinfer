@@ -709,7 +709,10 @@ production's decode kernels run layer-major in one command buffer, so an extra v
   - S: copy 0.979×, chat 0.928×. Spec gives a lone Metal request nothing.
   - L: copy 0.610×, chat 0.489×. Under 4-client load it forfeits MC3's batching.
   - Found on the way, both open:
-    - with `--spec ngram`, chat turns after the first differ from plain decode (turn 0 equal in every conversation);
+    - with `--spec ngram`, chat turns after the first differ from plain decode (turn 0 equal in every conversation).
+      **Fixed 2026-09-27:** the loop now forwards a round's trailing token when `max_tokens` ends the generation, as
+      plain decode does. The next turn had re-prefilled it through Metal's non-bit-identical f16 prefill. Every W7
+      turn now matches (`TestGenNgramInto_residentCommitMatchesPlain`, `TestSpecNgram_multiTurnMatchesPlain`);
     - on the 7B, serve's prefill-memory share 413'd MC3 batch cells, because it divides the margin as if prefills ran
       concurrently. **Fixed 2026-09-27:** a request that prefills on a resident keeps the whole live margin
       (`TestPrepare_prefillShare`). The end-to-end rerun is owed: the attempt ran on a Mac already swapping.
