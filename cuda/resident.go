@@ -4092,6 +4092,12 @@ func wkScale(w cudaWQ) KernelArg {
 	}
 }
 
+// fusedG32MaxHidden is the widest hidden size the fused per-32 kernels are used at: the largest
+// measured win (qwen2.5-coder-1.5b, H=1536, +10%). Phi-3 (3072) and qwen2.5-7b (3584) measured slower
+// fused than unfused (docs/tasks/task-int4-weight-quality-2026-09.md, lever 3). Sizes between 1536 and
+// 3072 are unmeasured and stay unfused.
+const fusedG32MaxHidden = 1536
+
 // fusedG32Shmem is fused_rms_qkv_g32 / fused_rms_gu_g32's shared memory for hidden size H:
 // normed[H] | red[256] | aq[H/4] int32 | aS[2·H/32].
 func fusedG32Shmem(H int) uint32 { return uint32((H + 256 + H/4 + 2*(H/32)) * 4) }
