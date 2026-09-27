@@ -103,8 +103,16 @@ returns 429 + Retry-After (no continuous batching).
 `docs/tasks/task-concurrency-2026-09.md`, 2026-09-26; default 4 by owner decision, and `1` restores strict
 serialization). Each generation runs on its own session KV, so each
 conversation's output is byte-identical to serving it alone, and admission stays FIFO. N is capped by `--kv-sessions`
-(each running generation holds a session). A GPU-resident, weight-streaming or vision model always runs one, and the
-banner says which applies. A request's prefill shares the memory safety margin with the generations running or queued
+(each running generation holds a session). A weight-streaming or vision model always runs one.
+
+**On Metal, a dense resident model batches concurrent generations** (MC3, 2026-09-26). Under the same flag, each
+running generation holds its own resident KV slot (`--kv-sessions` sets the count, 4 by default). Their decode tokens
+run together in one step on the GPU's matrix units, every logit bit-identical to serving that conversation alone.
+- Measured on qwen2.5-coder-1.5b (W7, 4 clients): 1.59× the serialized aggregate, and p99 per turn from 7.1 s to
+  4.7 s; a lone request is unchanged. See `measurements/concurrency-mc3-2026-09-26.md`.
+- A newcomer's prefill runs whole between steps.
+- A model serving `--spec`, a `--drafter` or an adapter keeps one generation at a time, as does any non-dense family.
+- The line printed after load (`"<name>" concurrency: …`) says which applies. A request's prefill shares the memory safety margin with the generations running or queued
 ahead of it when it arrives (up to N), so a lone request keeps the whole margin. The trade: aggregate throughput rises (4 decode workers measured 2.0–2.5× on an M1 Pro's CPU,
 `measurements/concurrency-mc2-2026-09-26.md`), while each request, sharing the cores, takes longer than it would
 alone.
@@ -283,7 +291,8 @@ fast/exact split exists on this backend, so there is nothing to opt out of.
 `docs/tasks/task-concurrency-2026-09.md`). `--kv-sessions N` also asks the resident for N GPU KV slots, one
 conversation each. Each generation binds the slot that already holds its prompt's prefix; a new conversation
 takes an empty slot, else the least recently used one. A slot that shares only a chat template's lead with the
-prompt is never truncated to serve it. Still one generation at a time. The memory guard clamps N to what fits
+prompt is never truncated to serve it. With `--max-concurrent` above 1, a dense model's generations also run at once,
+one per slot (MC3, above). The memory guard clamps N to what fits
 (each slot is the full KV at the resident context, e.g. ~117 MB for Qwen2.5-1.5B at 4k), and the banner says what
 it allocated. CUDA, WebGPU and the recurrent families (Gated DeltaNet, Mamba-2, LFM2) keep one slot.
 

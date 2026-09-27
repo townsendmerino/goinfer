@@ -5,7 +5,11 @@
 > (`c2f1532e`): 4 resident KV slots hold the 1-client aggregate at 2 and 4 clients (0.99× / 1.01×), and the 4-client
 > aggregate is 1.22–1.24× the previous build's. CUDA and WebGPU are not converted. **MC2 EARNS on the Mac CPU**
 > (1.69–2.04× at B = 4, bit-identical; J8's 4 independent workers reach 2.00–2.48×). The Linux cells are owed. **MC3
-> S0 is done, 2026-09-26: no fidelity gate is needed.** Test-only `simdgroup_matrix` kernels carry 8 sequences for
+> SHIPPED 2026-09-26 on Metal** (`d4b708b5` + fixes `2b1cc280`, `d2225ec4`;
+> [`concurrency-mc3-2026-09-26.md`](../measurements/concurrency-mc3-2026-09-26.md)). All five pre-registered W7 gates
+> pass: 4 clients at **1.593×** the serialized aggregate (76.2 → 121.5 tok/s), p99 turn **0.659×**, a lone request
+> **1.002× / 1.004×** (p50 / p99), and every reply identical. It is on under serve's default `-max-concurrent` 4.
+> **MC3 S0: no fidelity gate is needed.** Test-only `simdgroup_matrix` kernels carry 8 sequences for
 > 1.0–2.7 GEMVs on every decode matmul (qkv, o, gate/up, down, int8 LM head). Every output is bit-identical to
 > production's GEMV ([`concurrency-mc3-s0-2026-09-26.md`](../measurements/concurrency-mc3-s0-2026-09-26.md)). **S1**:
 > a whole batched step, in sequence, is bit-identical to production and reaches 1.73–1.84× at B = 4. The owner set
@@ -16,8 +20,8 @@
 >
 > **Open, 2026-09-26:**
 > - MC3c step 2 (batching behind the same admission; the Linux 1.5B data argues for it on larger models);
-> - MC3 (Metal batched decode): S0 and S1 done, both bit-identical (S1: B = 4 at 1.73–1.84× in sequence); gates amended
->   by the owner; production wiring and the scheduler are next;
+> - MC3 follow-ons, none registered: a hybrid B = 2 (it reads 1.07×), an encode-ahead executor for steps, the 7B end to
+>   end, and CUDA (only on its own measurement);
 > - MC1 on CUDA and WebGPU;
 > - one MC2 Linux cell to re-run clean.
 >
@@ -315,6 +319,14 @@ different adapters.
   The 4-client p99 ÷ a lone request is reported, not gated.
 
 **Estimate.** Four to eight weeks for Metal. A CUDA port follows only on its own measurement.
+
+**SHIPPED 2026-09-26: all five W7 gates pass** ([`concurrency-mc3-2026-09-26.md`](../measurements/concurrency-mc3-2026-09-26.md)).
+- The build is `d4b708b5`, plus `2b1cc280` (serve printed the concurrency line before deciding it) and `d2225ec4` (the
+  straggler window phase-locked 4 generations into 3-wide + solo runs). Both fixes were found before the grading;
+  the grading ran on `d2225ec4`.
+- 4 clients: 1.593× (1.583–1.599) aggregate, and p99 turn 0.659×.
+- A lone request: p50 1.002×, p99 1.004×.
+- Identity and reuse equal on every turn of all 14 cells. 2 clients read 1.071× (reported).
 
 **The W7 grading, pre-registered 2026-09-26 before any W7 timing of the MC3 build.**
 

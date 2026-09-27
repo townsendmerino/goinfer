@@ -62,10 +62,16 @@ Metal backend compiles its MSL at runtime with the OS's own shader toolchain, so
 for a given machine and OS version, not between them. The parity *gates* are what is portable;
 the bytes are not.
 
-It is **not a serving engine.** There is no continuous batching and no paged attention: a
-model serves one generation at a time behind a bounded queue. If your problem is saturating a
-datacentre GPU with concurrent requests, vLLM and its ports are built for that and goinfer is
-not.
+It is **not a serving engine.** There is no continuous batching and no paged attention. A few
+concurrent conversations are served, with limits:
+- a CPU model runs up to 4 generations at once;
+- a dense Metal-resident model runs up to 4, each on its own GPU KV slot, their decode tokens joined into shared
+  steps that are bit-identical to serving each alone. Measured 1.59× the serialized aggregate at 4 clients
+  ([`measurements/concurrency-mc3-2026-09-26.md`](measurements/concurrency-mc3-2026-09-26.md)).
+
+A newcomer's prefill still runs whole between steps, and beyond those few conversations requests wait in a bounded
+queue. If your problem is saturating a datacentre GPU with concurrent requests, vLLM and its ports are built for that
+and goinfer is not.
 
 It is also not a provider-orchestration library (e.g. `teilomillet/gollm`) that calls remote
 LLM APIs. goinfer runs the weights itself, locally, in-process.

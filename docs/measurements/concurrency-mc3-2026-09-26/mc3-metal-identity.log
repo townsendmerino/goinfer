@@ -1,0 +1,15 @@
+=== RUN   TestMC3_concurrentMatchesAloneOnMetal
+goinfer: batched prefill declined for a 20-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): metal: prompt too short (20 tokens) for fast prefill (floor=64; §3 floor); using sequential path
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 0.1 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 3.2 GB; this machine currently has 5.7 GB of memory available (budget 4.0 GB = 70% of that) (80% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    mc3_concurrent_test.go:116: batched steps 96 serving 277 tokens, largest 3
+    mc3_concurrent_test.go:130: conversation 0: reused per turn [0 52 99]; turn 0 32 tokens
+    mc3_concurrent_test.go:130: conversation 1: reused per turn [0 52 99]; turn 0 32 tokens
+    mc3_concurrent_test.go:130: conversation 2: reused per turn [0 50 97]; turn 0 32 tokens
+    mc3_concurrent_test.go:130: conversation 3: reused per turn [0 51 98]; turn 0 32 tokens
+--- PASS: TestMC3_concurrentMatchesAloneOnMetal (17.46s)
+=== RUN   TestMC3Step_bitIdenticalDeep
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 0.1 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 3.2 GB; this machine currently has 4.9 GB of memory available (budget 3.4 GB = 70% of that) (94% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    mc3_step_test.go:168: 4 sequences x 12 steps at depths [1936 1530 100 1600]: 0 logits differ from production's single-token forward
+--- PASS: TestMC3Step_bitIdenticalDeep (133.75s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	151.791s

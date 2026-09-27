@@ -1,0 +1,85 @@
+22:34:28 == MC3 W7 start; tree d2225ec4; { 1.51 2.35 2.47 }
+22:34:28 idle: load1=1.51
+22:34:28 cell old4_1 clients=4 bin=serve-metal-old-9efc3185
+[w7-plain] old4_1 clients=4 starting fresh server
+[w7-plain] old4_1 clients=4: wall=40.304s aggregate=76.22 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:35:10 idle: load1=1.57
+22:35:10 cell new4_1 clients=4 bin=serve-metal-new-d2225ec4
+[w7-plain] resuming: 1 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] new4_1 clients=4 starting fresh server
+[w7-plain] new4_1 clients=4: wall=25.294s aggregate=121.45 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:35:36 idle: load1=1.25
+22:35:36 cell new4_2 clients=4 bin=serve-metal-new-d2225ec4
+[w7-plain] resuming: 2 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] new4_2 clients=4 starting fresh server
+[w7-plain] new4_2 clients=4: wall=25.208s aggregate=121.86 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:36:02 idle: load1=0.82
+22:36:02 cell old4_2 clients=4 bin=serve-metal-old-9efc3185
+[w7-plain] resuming: 3 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] old4_2 clients=4 starting fresh server
+[w7-plain] old4_2 clients=4: wall=40.304s aggregate=76.22 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:36:43 idle: load1=0.53
+22:36:43 cell old4_3 clients=4 bin=serve-metal-old-9efc3185
+[w7-plain] resuming: 4 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] old4_3 clients=4 starting fresh server
+[w7-plain] old4_3 clients=4: wall=40.031s aggregate=76.74 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:37:24 idle: load1=1.03
+22:37:24 cell new4_3 clients=4 bin=serve-metal-new-d2225ec4
+[w7-plain] resuming: 5 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] new4_3 clients=4 starting fresh server
+[w7-plain] new4_3 clients=4: wall=25.292s aggregate=121.46 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:37:50 idle: load1=0.87
+22:37:50 cell old1_1 clients=1 bin=serve-metal-old-9efc3185
+[w7-plain] resuming: 6 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] old1_1 clients=1 starting fresh server
+[w7-plain] old1_1 clients=1: wall=10.12s aggregate=75.89 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:38:01 idle: load1=0.81
+22:38:01 cell new1_1 clients=1 bin=serve-metal-new-d2225ec4
+[w7-plain] resuming: 7 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] new1_1 clients=1 starting fresh server
+[w7-plain] new1_1 clients=1: wall=10.117s aggregate=75.91 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:38:12 idle: load1=0.85
+22:38:12 cell new1_2 clients=1 bin=serve-metal-new-d2225ec4
+[w7-plain] resuming: 8 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] new1_2 clients=1 starting fresh server
+[w7-plain] new1_2 clients=1: wall=10.239s aggregate=75.0 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:38:23 idle: load1=0.86
+22:38:23 cell old1_2 clients=1 bin=serve-metal-old-9efc3185
+[w7-plain] resuming: 9 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] old1_2 clients=1 starting fresh server
+[w7-plain] old1_2 clients=1: wall=10.11s aggregate=75.96 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:38:34 idle: load1=0.81
+22:38:34 cell old1_3 clients=1 bin=serve-metal-old-9efc3185
+[w7-plain] resuming: 10 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] old1_3 clients=1 starting fresh server
+[w7-plain] old1_3 clients=1: wall=10.209s aggregate=75.23 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:38:45 idle: load1=0.69
+22:38:45 cell new1_3 clients=1 bin=serve-metal-new-d2225ec4
+[w7-plain] resuming: 11 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] new1_3 clients=1 starting fresh server
+[w7-plain] new1_3 clients=1: wall=10.331s aggregate=74.34 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:38:56 idle: load1=0.58
+22:38:56 cell old2_1 clients=2 bin=serve-metal-old-9efc3185
+[w7-plain] resuming: 12 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] old2_1 clients=2 starting fresh server
+[w7-plain] old2_1 clients=2: wall=20.136s aggregate=76.28 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:39:17 idle: load1=0.49
+22:39:17 cell new2_1 clients=2 bin=serve-metal-new-d2225ec4
+[w7-plain] resuming: 13 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+[w7-plain] new2_1 clients=2 starting fresh server
+[w7-plain] new2_1 clients=2: wall=18.806s aggregate=81.68 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc3-2026-09-26/w7.json
+22:39:36 == DONE

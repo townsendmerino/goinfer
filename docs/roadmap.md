@@ -76,9 +76,10 @@ promoting are separate decisions with separate gates (see the last section).
 ## Decided and parked — each with its trigger
 
 - **Continuous batching / paged attention** — not this engine's weight class; unchanged since
-  v0.2. Its small cousin, N decode workers or batched multi-request decode, gets a kill-or-earn
-  measurement before any task doc (decode is bandwidth-bound; a second stream mostly shares the
-  same bytes).
+  v0.2 (MC5 of `tasks/task-concurrency-2026-09.md`, parked with a trigger). Its small cousin got its kill-or-earn
+  measurement (MC2 earned) and shipped in 2026-09:
+  - N CPU decode workers (MC3c);
+  - batched multi-request decode on Metal (MC3: 1.59× at 4 clients, bit-identical to serving each alone).
 - **Bindings** (sidecar for desktop, c-archive for mobile) — scoped in
   [`task-bindings.md`](tasks/parked/task-bindings.md), not started. Gate: the B0.1 on-device iPhone spike.
 - **Browser / WASM** (`GOOS=js` → `navigator.gpu`, cgo-free) — a demo, not a binding strategy;
