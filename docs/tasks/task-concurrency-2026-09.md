@@ -316,6 +316,44 @@ different adapters.
 
 **Estimate.** Four to eight weeks for Metal. A CUDA port follows only on its own measurement.
 
+**The W7 grading, pre-registered 2026-09-26 before any W7 timing of the MC3 build.**
+
+*Builds.*
+- *old* = `serve-metal` from `9efc3185`: MC1 plus R18b plus the slot-pricing fix. A Metal resident serialises its
+  generations there.
+- *new* = the MC3 commit; its hash goes in the run log.
+- Both run at serve's defaults (`-max-concurrent` 4, `-kv-sessions` 4), the release configuration: old serialises,
+  new batches.
+
+*Workload.*
+- `scripts/bench_w7_plain.py` on qwen2.5-coder-1.5b-instruct q4_k_m from `~/models`;
+- 6 turns × 128 greedy tokens per client, `--fixed-nonce`;
+- a fresh server per cell, idle-gated per cell (load1 ≤ 2.0).
+
+*Cells.*
+- 4 clients: old and new × 3 pairs, in the order old new new old old new.
+- 1 client: the same, 3 pairs.
+- 2 clients: one pair, reported only.
+
+*Gates.* 1, 2, 4 and 5 are hard.
+1. **Identity:** every turn's `content_sha` equal between new and old, at the same client count and client index, in
+   every cell.
+2. **Reuse:** every turn's prompt − `prefill_reused_tokens` equal between new and old.
+3. **Aggregate:** 4-client aggregate tok/s, new ÷ old paired per pair; the median of 3 must be ≥ 1.2×.
+4. **p99 under load:** new's 4-client per-turn p99 ÷ old's, paired per pair; the median of 3 must be ≤ 1.0.
+5. **Solo guard:** 1-client per-turn p50 and p99, new ÷ old paired per pair; the median of 3 must be ≤ 1.05× for
+   each.
+
+*Reported, not gated.* The 2-client cells, and the 4-client p99 ÷ a lone request's.
+
+*Decision.*
+- All gates pass: MC3 ships enabled under serve's existing default.
+- Gate 1 or 2 fails: it is a bug, not shipped.
+- Aggregate between 1.03× and 1.2× with gates 1, 2, 4 and 5 passing: goes to the owner with a ship recommendation,
+  per the standing guidance (the amendment above).
+- Below 1.03×: parked.
+- Gate 4 or 5 fails: not shipped on by default; the owner decides.
+
 **Docs that change when MC3 ships:** `positioning.md` (the "one generation at a time" sentence),
 `roadmap.md` §"Decided and parked," `docs/server.md`, red-october R12's row, `QUEUE.md`.
 
