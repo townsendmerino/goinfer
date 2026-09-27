@@ -2345,6 +2345,48 @@ bound. Future bands are to be much more permissive: park only a gain of a couple
 
 ---
 
+### R18b · Metal decode GEMV in MLX's masked, half-staged form (bit-identical), pre-registered 2026-09-26
+
+**Why.** MC3's S0 probe (`measurements/concurrency-mc2-2026-09-26.md`, MC3 S0) found a kernel form that beats the
+shipped R18 rows kernels *at M = 1*, bit-identically, in standalone timing: gate/up 1.17× (1.5B) and 1.23× (7B), qkv
+1.32× (1.5B).
+- Activations are staged as **half, pre-scaled by 16^-(k mod 4)**. That is exact: |a| ≤ 127, and 127·2⁻¹² is a normal
+  half.
+- Weight nibbles are **masked in place per 16-bit half-word**, converted once, and dotted with the four pre-scaled
+  activations, with −8·Σa folded in per group.
+
+R18's own float variants tied, because they staged shorts and masked 32-bit words. Every product and partial sum is
+an integer below 2²⁴, so the group sum equals the shipped integer exactly, and output is bit-identical by the same
+argument as R18's.
+
+**Metric.** R18's, unchanged: in-sequence int4-GEMV work per token at depth 128 through `TestR18InSequence`, current
+production (R18's `i2244`) ÷ candidate, graded on the weaker of the 1.5B and 7B. The down projection is not in scope:
+it is coal-family and stays as it is.
+
+**Band** (the owner's standing guidance, 2026-09-26: ship any clearly resolvable gain; park only a couple of percent):
+
+| outcome | int4-GEMV speedup at depth 128, weaker of 1.5B / 7B |
+|---|---|
+| **ship** | **≥ 1.03×** and every paired rep > 1.0 |
+| **park** | 1.00–1.03× |
+| **kill** | < 1.00× |
+
+**Preconditions for ship:**
+- bit-identical logits at every decode position through the executor, on both models, at 128 and 3900;
+- no full-token regression at 128 / 2048 / 3900;
+- `TestMetalSnapshotGolden` unchanged after wiring;
+- a fresh confirmation run of the selected candidate, with 7 paired reps.
+
+**Steps:**
+1. Production-signature prototypes in `metal/gemv_r18_test.go`, as `TestR18InSequence` arms with F = `h`.
+2. Exploratory sweep of R per GEMV.
+3. Confirmation.
+4. Wiring only after ship.
+
+Record: `docs/measurements/metal-decode-gemv-r18b-2026-09-26.md`.
+
+---
+
 ## 6. Rules every brief inherits
 
 Stated once, so the briefs can cite them by number.
