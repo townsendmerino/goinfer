@@ -21,7 +21,10 @@
 > the workers; the 0.5B is in the owner band.
 >
 > **Open, 2026-09-26:**
-> - MC3c step 2 (batching behind the same admission; the Linux 1.5B data argues for it on larger models);
+> - **MC3c step 2 (batching behind the same admission): BUILD, by the pre-registered trigger** (2026-09-27, `nobara`
+>   CPU, 7B). Batched B = 4 ÷ J8 N = 4 is 2.41× at depth 128 and 2.25× at 512, against a 1.15× bar. On the 7B the
+>   workers barely scale (1.13–1.15×) and batching reaches 2.59–2.73× ([`concurrency-mc2-2026-09-26.md`](../measurements/concurrency-mc2-2026-09-26.md),
+>   "Linux 7B cell"). Not started;
 > - MC3 follow-ons, none registered: a hybrid B = 2 (it reads 1.07× on the 1.5B, ~1.0× on the 7B), an encode-ahead
 >   executor for steps, and CUDA (only on its own measurement);
 > - ~~the 7B end to end~~ — done 2026-09-27: all five W7 gates pass, 4 clients at 1.785× the serialized build, p99 turn
@@ -650,6 +653,19 @@ because it trades per-request latency for throughput.
 - The identity test (`TestMC2_decodeMultiStepBitIdentical` on the 7B) runs first and is hard: a difference stops the
   run as a bug.
 - Each depth runs only with load1 ≤ 1.0 and no other `go test` / `go build` / serve on the box.
+
+**Step-2 trigger result, 2026-09-27: BUILD STEP 2** ([`concurrency-mc2-2026-09-26.md`](../measurements/concurrency-mc2-2026-09-26.md),
+"Linux 7B cell").
+- Identity passes on the 7B at int4 and int8int8.
+- Batched B = 4 ÷ J8 N = 4 is **2.41×** at depth 128 and **2.25×** at depth 512. That is the median of 5 paired reps;
+  every rep reads the same at the logged resolution, 2.22–2.27× at the worst rounding.
+- The lower depth's median clears the 1.15× bar, so the registered rule says build.
+- Why the gap is so large:
+  - On this CPU a 7B decode is already bandwidth-bound, so 4 independent workers reach only 1.13–1.15× one decode.
+  - Batching reads each weight once per step and reaches 2.59–2.73× at B = 4 (3.1–3.3× at B = 8).
+  - The batched numbers are a floor: the prototype's M = 1 path runs at 0.965× production decode on the 7B.
+- Across model sizes, batching's lead over the workers grows 0.64–0.75× (0.5B) → 1.02–1.11× (1.5B) → 2.25–2.41× (7B).
+- Step 2 is not started. Its design, gates and pre-registration come next.
 
 ## MC4 — broadening (parked)
 

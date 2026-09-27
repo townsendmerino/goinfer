@@ -154,6 +154,51 @@ On amd64 the picture differs from the Mac:
 - That is the case for MC3c step 2 (batching behind the same admission) on larger models, next to the workers MC3c
   step 1 shipped. The two combined are not measured.
 
+### Linux 7B cell (added 2026-09-27): the MC3c step-2 trigger
+
+MC3c's step 2 (batched CPU decode behind serve's N-wide admission) was registered to start only if batching beats step
+1's workers. The 1.5B left that open: batching led by 1.02–1.11×. This cell asks whether the lead grows on a larger
+model.
+
+Pre-registered in `2f5185c0` before any timing (the task doc's MC3c section):
+- metric: batched B = 4 ÷ J8 N = 4, per rep, median of 5, at each depth;
+- the lower depth's median ≥ 1.15× builds step 2; the higher < 1.05× parks it; anything else goes to the owner.
+
+Setup: `nobara`, Ryzen 7 3700X (16 threads), qwen2.5-7b-instruct q4_k_m from `~/models`, int4, and the same test at
+`2f5185c0`. Each depth ran in its own `go test`, idle-gated: load1 ≤ 1.0 with no other go, test or serve process.
+Depth 128 ran 10:36–10:42 PDT (load1 0.43 at start), and depth 512 ran 10:44–10:53 (0.99). Raw:
+[`run-linux-7b-2026-09-27.log`](concurrency-mc2-2026-09-26/run-linux-7b-2026-09-27.log) (driver),
+[`run-linux-7b-d128-2026-09-27.log`](concurrency-mc2-2026-09-26/run-linux-7b-d128-2026-09-27.log),
+[`run-linux-7b-d512-2026-09-27.log`](concurrency-mc2-2026-09-26/run-linux-7b-d512-2026-09-27.log),
+[`run-linux-7b-2026-09-27.sh`](concurrency-mc2-2026-09-26/run-linux-7b-2026-09-27.sh).
+
+**Identity passes on the 7B.** 4 sequences × 12 steps are bit-identical to the single-token forward at int4 and
+int8int8 ([`identity-linux-7b-2026-09-27.log`](concurrency-mc2-2026-09-26/identity-linux-7b-2026-09-27.log)).
+
+| model | depth | serial x1 | batched B=1 | B=2 | **B=4 (metric, paired)** | B=8 | J8 N=2 | **J8 N=4** | **B=4 ÷ J8 N=4 (trigger)** |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 7B | 128 | 5.1 | 0.965× | 1.691× | **2.734×** (2.73–2.74) | 3.341× | 1.092× | **1.133×** | **2.41×** |
+| 7B | 512 | 5.0 | 0.965× | 1.650× | **2.586×** (2.58–2.59) | 3.117× | 1.106× | **1.148×** | **2.25×** |
+
+The trigger column is computed per rep from the rep lines, which the harness prints to 0.1 tok/s. Every rep reads the
+same: 14.0 / 5.8 at depth 128 and 12.8 / 5.7 at depth 512. Rounding bounds each ratio to 2.39–2.44 and 2.22–2.27.
+The ratio of the harness's own medians (each against serial x1) agrees: 2.734 / 1.133 = 2.41 and 2.586 / 1.148 = 2.25.
+
+**Decision, by the registered rule: build step 2.** The lower depth's median, 2.25×, clears 1.15× by a wide margin.
+
+The results read as follows:
+- **The trend continued, steeply.** Across 0.5B → 1.5B → 7B, batching's lead over the workers at B = N = 4 goes from
+  0.64–0.75× to 1.02–1.11× to 2.25–2.41×.
+- **On the 7B the workers barely scale.** 4 independent decodes reach 1.13–1.15× one decode. A single 7B decode already
+  keeps this box's memory bandwidth busy, so running four of them splits it four ways.
+- **Batching reads each weight once for B tokens.** It keeps scaling past B = 4, to 3.1–3.3× at B = 8.
+- **So step 1's workers do almost nothing for a 7B on this CPU**, and step 2 is where the concurrency win is for
+  larger models.
+- **The batched numbers are a floor, as registered and not adjusted for.** The prototype's M = 1 batched path costs
+  0.965× production decode on the 7B, much less than on the 0.5B (0.76–0.81×).
+- Depth erodes batching, as on every other cell: 2.73× → 2.59× against serial from depth 128 to 512. Attention is per
+  sequence and does not amortise.
+
 ## Owed
 - J8's latency half, per request.
 - ~~A re-run of the Linux 0.5B depth-128 cell without the concurrent rsync.~~ Done 2026-09-27: 1.185×.

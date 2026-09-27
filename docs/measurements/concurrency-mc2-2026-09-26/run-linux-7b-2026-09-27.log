@@ -1,0 +1,47 @@
+2026-09-27 10:36:20 PDT start 2f5185c0;  10:36:20 up 13 days,  3:56,  4 users,  load average: 0.43, 1.41, 1.49
+2026-09-27 10:36:20 PDT idle: load1=0.43
+== 2026-09-27 10:36:20 PDT MC2 throughput 7b depth 128 int4; commit 2f5185c0; loadavg 0.43 1.41 1.49 1/902 1468151
+[mc2   59.2s] loaded qwen2.5-7b-instruct-q4_k_m.gguf (int4): depth 128, 16 steps per sequence, 5 reps, 8 arms
+[mc2  162.1s] rep 1/5:  serial x1 5.1  serial x4 5.1  batched B=1 4.9  batched B=2 8.6  batched B=4 14.0  batched B=8 17.1  J8 workers N=2 5.6  J8 workers N=4 5.8 tok/s
+[mc2  213.5s] rep 2/5:  serial x1 5.1  serial x4 5.1  batched B=1 4.9  batched B=2 8.6  batched B=4 14.0  batched B=8 17.1  J8 workers N=2 5.6  J8 workers N=4 5.8 tok/s
+[mc2  265.0s] rep 3/5:  serial x1 5.1  serial x4 5.1  batched B=1 4.9  batched B=2 8.7  batched B=4 14.0  batched B=8 17.1  J8 workers N=2 5.6  J8 workers N=4 5.8 tok/s
+[mc2  316.5s] rep 4/5:  serial x1 5.1  serial x4 5.1  batched B=1 4.9  batched B=2 8.6  batched B=4 14.0  batched B=8 17.1  J8 workers N=2 5.6  J8 workers N=4 5.8 tok/s
+[mc2  367.9s] rep 5/5:  serial x1 5.1  serial x4 5.1  batched B=1 4.9  batched B=2 8.7  batched B=4 14.0  batched B=8 17.1  J8 workers N=2 5.6  J8 workers N=4 5.8 tok/s
+[mc2  367.9s] aggregate decode tok/s, median of 5 reps (qwen2.5-7b-instruct-q4_k_m.gguf int4, depth 128):
+[mc2  367.9s]   serial x1            5.1 tok/s  1.000x serial x1
+[mc2  367.9s]   serial x4            5.1 tok/s  1.001x serial x1
+[mc2  367.9s]   batched B=1          4.9 tok/s  0.965x serial x1
+[mc2  367.9s]   batched B=2          8.6 tok/s  1.691x serial x1
+[mc2  367.9s]   batched B=4         14.0 tok/s  2.735x serial x1
+[mc2  367.9s]   batched B=8         17.1 tok/s  3.341x serial x1
+[mc2  367.9s]   J8 workers N=2       5.6 tok/s  1.092x serial x1
+[mc2  367.9s]   J8 workers N=4       5.8 tok/s  1.133x serial x1
+[mc2  367.9s] MC2 METRIC batched B=4 / serial x1 = 2.734x (per-rep sorted [2.730632639253176 2.7337266795112884 2.734005277776603 2.7357414544663383 2.7424963472312114]); J8 N=4 / serial x1 = 1.133x
+--- PASS: TestMC2_batchedDecodeThroughput (367.87s)
+ok  	github.com/townsendmerino/goinfer/decoder	367.895s
+== 2026-09-27 10:42:28 PDT depth 128 done; loadavg 11.04 8.61 4.81 1/897 1468621
+2026-09-27 10:42:28 PDT waiting: load1=11.04 busy=[] (0s)
+2026-09-27 10:43:28 PDT waiting: load1=3.76 busy=[] (60s)
+2026-09-27 10:44:28 PDT waiting: load1=1.38 busy=[] (120s)
+2026-09-27 10:44:48 PDT idle: load1=0.99
+== 2026-09-27 10:44:48 PDT MC2 throughput 7b depth 512 int4; commit 2f5185c0; loadavg 0.99 5.30 4.11 1/897 1468905
+[mc2  190.4s] loaded qwen2.5-7b-instruct-q4_k_m.gguf (int4): depth 512, 16 steps per sequence, 5 reps, 8 arms
+[mc2  298.1s] rep 1/5:  serial x1 5.0  serial x4 4.9  batched B=1 4.8  batched B=2 8.2  batched B=4 12.8  batched B=8 15.4  J8 workers N=2 5.5  J8 workers N=4 5.7 tok/s
+[mc2  351.9s] rep 2/5:  serial x1 5.0  serial x4 5.0  batched B=1 4.8  batched B=2 8.2  batched B=4 12.8  batched B=8 15.4  J8 workers N=2 5.5  J8 workers N=4 5.7 tok/s
+[mc2  405.6s] rep 3/5:  serial x1 5.0  serial x4 5.0  batched B=1 4.8  batched B=2 8.2  batched B=4 12.8  batched B=8 15.4  J8 workers N=2 5.5  J8 workers N=4 5.7 tok/s
+[mc2  459.4s] rep 4/5:  serial x1 5.0  serial x4 5.0  batched B=1 4.8  batched B=2 8.2  batched B=4 12.8  batched B=8 15.5  J8 workers N=2 5.5  J8 workers N=4 5.7 tok/s
+[mc2  513.2s] rep 5/5:  serial x1 5.0  serial x4 5.0  batched B=1 4.8  batched B=2 8.2  batched B=4 12.8  batched B=8 15.4  J8 workers N=2 5.5  J8 workers N=4 5.7 tok/s
+[mc2  513.2s] aggregate decode tok/s, median of 5 reps (qwen2.5-7b-instruct-q4_k_m.gguf int4, depth 512):
+[mc2  513.2s]   serial x1            5.0 tok/s  1.000x serial x1
+[mc2  513.2s]   serial x4            5.0 tok/s  1.000x serial x1
+[mc2  513.2s]   batched B=1          4.8 tok/s  0.965x serial x1
+[mc2  513.2s]   batched B=2          8.2 tok/s  1.650x serial x1
+[mc2  513.2s]   batched B=4         12.8 tok/s  2.588x serial x1
+[mc2  513.2s]   batched B=8         15.4 tok/s  3.117x serial x1
+[mc2  513.2s]   J8 workers N=2       5.5 tok/s  1.106x serial x1
+[mc2  513.2s]   J8 workers N=4       5.7 tok/s  1.148x serial x1
+[mc2  513.2s] MC2 METRIC batched B=4 / serial x1 = 2.586x (per-rep sorted [2.5830432974495765 2.5851434217265035 2.585866128322611 2.586582027672272 2.5904744817145824]); J8 N=4 / serial x1 = 1.148x
+--- PASS: TestMC2_batchedDecodeThroughput (513.20s)
+ok  	github.com/townsendmerino/goinfer/decoder	513.230s
+== 2026-09-27 10:53:22 PDT depth 512 done; loadavg 13.37 11.62 7.87 1/894 1469465
+2026-09-27 10:53:22 PDT DONE

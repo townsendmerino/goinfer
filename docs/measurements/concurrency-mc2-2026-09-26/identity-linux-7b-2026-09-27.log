@@ -1,0 +1,15 @@
+2026-09-27 10:32:15 PDT identity start 2f5185c0; 0.17 0.96 1.30 1/904 1466981
+=== RUN   TestMC2_decodeMultiStepBitIdentical
+=== RUN   TestMC2_decodeMultiStepBitIdentical/llama-tiny/
+    batchdecode_mc2_test.go:260: llama-tiny "": 4 sequences x 12 steps bit-identical to the single-token forward
+=== RUN   TestMC2_decodeMultiStepBitIdentical/qwen2.5-7b-instruct-q4_k_m.gguf/int4
+    batchdecode_mc2_test.go:260: qwen2.5-7b-instruct-q4_k_m.gguf "int4": 4 sequences x 12 steps bit-identical to the single-token forward
+=== RUN   TestMC2_decodeMultiStepBitIdentical/qwen2.5-7b-instruct-q4_k_m.gguf/int8int8
+    batchdecode_mc2_test.go:260: qwen2.5-7b-instruct-q4_k_m.gguf "int8int8": 4 sequences x 12 steps bit-identical to the single-token forward
+--- PASS: TestMC2_decodeMultiStepBitIdentical (74.44s)
+    --- PASS: TestMC2_decodeMultiStepBitIdentical/llama-tiny/ (0.01s)
+    --- PASS: TestMC2_decodeMultiStepBitIdentical/qwen2.5-7b-instruct-q4_k_m.gguf/int4 (36.65s)
+    --- PASS: TestMC2_decodeMultiStepBitIdentical/qwen2.5-7b-instruct-q4_k_m.gguf/int8int8 (37.77s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	74.473s
+2026-09-27 10:33:30 PDT identity exit 0
