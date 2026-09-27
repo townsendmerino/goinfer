@@ -28,8 +28,10 @@
 >   7B cell;
 > - a Mac 7B MC2 cell (batched B = 4 ÷ J8 N = 4 ≥ 1.15× turns `-cpu-batch auto` on for darwin), and a tuned small-M
 >   amd64 kernel for the batched step (its M = 1 is 0.965× production on the 7B), each on its own measurement;
-> - MC3 follow-ons, none registered: a hybrid B = 2 (it reads 1.07× on the 1.5B, ~1.0× on the 7B), an encode-ahead
->   executor for steps, and CUDA (only on its own measurement);
+> - MC3 follow-ons: ~~the 7B's batched-step cost~~ — S4 shipped 2026-09-27, 2 clients 1.121× on the 7B and 1.059× on the
+>   1.5B (B ≥ 3 keeps the fragment: no bit-identical kernel beats it); ~~encode-ahead~~ — parked on its measured
+>   headroom (~4% / ~1.3%); a per-pass prefill cost cut (the served gap's main term, estimated); CUDA (only on its own
+>   measurement);
 > - ~~the 7B end to end~~ — done 2026-09-27: all five W7 gates pass, 4 clients at 1.785× the serialized build, p99 turn
 >   0.592× ([`concurrency-mc3-7b-w7-2026-09-27.md`](../measurements/concurrency-mc3-7b-w7-2026-09-27.md));
 > - ~~MC1 on CUDA~~ — shipped 2026-09-27: 4 clients at 1.250× the one-slot build, every hard gate passes
@@ -520,6 +522,11 @@ per-row path forced on at B = 2 and 3, and both concurrent-vs-alone tests, on th
   4. the 7B's lone request, p50 and p99 ≤ 1.05× (hard; its path is production's and unchanged);
   5. the 1.5B's 2-client aggregate ≥ 0.98× (hard).
 - Decision: all pass ships. Gate 2 at 1.03–1.05× goes to the owner; below 1.03× parks.
+- **SHIPPED 2026-09-27 (`7fa344b2`): all five pass** ([`concurrency-mc3-s4-2026-09-27.md`](../measurements/concurrency-mc3-s4-2026-09-27.md)).
+  - The 7B at 2 clients reads **1.121×** (1.093–1.152), p99 turn 0.74–0.90×.
+  - The 1.5B at 2 clients reads **1.059×**.
+  - The 7B at 4 clients and alone is unchanged (0.998×; 1.001× / 0.998×). Every reply is identical.
+  - All 12 new servers calibrated B ≤ 2 for both shapes.
 
 **MC3 S3 SHIPPED 2026-09-27: all five W7 gates pass** ([`concurrency-mc3-s3-2026-09-27.md`](../measurements/concurrency-mc3-s3-2026-09-27.md)).
 - 4 clients at **1.261×** S2 (121.6 → 153.1 tok/s), with p99 turn 0.784×.

@@ -128,8 +128,11 @@ run together in one step on the GPU's matrix units, every logit bit-identical to
 - Since S3 (2026-09-27), a batched step's per-row work runs as one dispatch over all rows: 4 clients 1.26× faster
   again, and a turn under 4-client load takes ~1.9× a lone request's (`measurements/concurrency-mc3-s3-2026-09-27.md`).
 - On qwen2.5-7b-instruct (W7, the whole stack against the serialized build), 4 clients read 1.79× and p99 per turn
-  fell from 20.9 s to 12.4 s. 2 clients gain ~2% on this size, because a two-sequence step costs about what two
-  tokens do (`measurements/concurrency-mc3-7b-w7-2026-09-27.md`).
+  fell from 20.9 s to 12.4 s (`measurements/concurrency-mc3-7b-w7-2026-09-27.md`).
+- Since S4 (2026-09-27), a two-sequence step runs its largest projections as production's own per-row GEMVs where the
+  load-time calibration finds that cheaper. On the 7B, 2 clients read 1.12× the previous build (before, they gained
+  ~2% over one at a time); on the 1.5B, 1.06× (`measurements/concurrency-mc3-s4-2026-09-27.md`). The choice is printed
+  at load.
 - A newcomer's long prompt no longer stalls the others (`-prefill-chunk`, default 512). A prompt that arrives while
   others are decoding is prefilled in 512-token chunks, with a decode step between chunks.
   - Measured with a ~3k-token newcomer, the decoders' longest wait fell from 5.4 s to 1.2 s, and the newcomer's

@@ -1,0 +1,21 @@
+7B clients=1: 6 cells compared turn by turn (content and reuse)
+7B clients=2: 6 cells compared turn by turn (content and reuse)
+7B clients=4: 6 cells compared turn by turn (content and reuse)
+1.5B clients=2: 6 cells compared turn by turn (content and reuse)
+GATE 1 identity and reuse: PASS
+  pair 1, 2 client(s): aggregate old 24.79 new 28.55 = 1.152x; p50 0.900x; p99 12.84 -> 9.45 s = 0.736x
+  pair 2, 2 client(s): aggregate old 26.09 new 28.52 = 1.093x; p50 0.919x; p99 10.76 -> 9.49 s = 0.882x
+  pair 3, 2 client(s): aggregate old 26.32 new 29.51 = 1.121x; p50 0.895x; p99 10.27 -> 9.19 s = 0.895x
+GATE 2 7B 2-client aggregate median 1.121x (bar >= 1.05; 1.03-1.05 owner; < 1.03 parks): PASS
+  pair 1, 4 client(s): aggregate old 46.18 new 46.29 = 1.002x; p50 0.998x; p99 12.15 -> 12.14 s = 0.999x
+  pair 2, 4 client(s): aggregate old 46.30 new 46.23 = 0.998x; p50 1.001x; p99 12.12 -> 12.14 s = 1.001x
+  pair 3, 4 client(s): aggregate old 46.24 new 46.13 = 0.998x; p50 1.005x; p99 12.12 -> 12.10 s = 0.999x
+GATE 3 7B 4-client aggregate 0.998x (>= 0.98) and p99 0.999x (<= 1.02): PASS
+  pair 1, 1 client(s): aggregate old 26.18 new 26.01 = 0.994x; p50 1.002x; p99 5.16 -> 5.21 s = 1.009x
+  pair 2, 1 client(s): aggregate old 26.20 new 26.13 = 0.997x; p50 1.001x; p99 5.18 -> 5.16 s = 0.997x
+  pair 3, 1 client(s): aggregate old 25.96 new 26.23 = 1.010x; p50 0.980x; p99 5.17 -> 5.16 s = 0.998x
+GATE 4 7B lone request p50 1.001x p99 0.998x (<= 1.05 each): PASS
+  pair 1, 2 client(s): aggregate old 84.80 new 93.52 = 1.103x; p50 0.950x; p99 3.82 -> 2.94 s = 0.770x
+  pair 2, 2 client(s): aggregate old 89.30 new 93.99 = 1.053x; p50 0.951x; p99 3.07 -> 2.93 s = 0.953x
+  pair 3, 2 client(s): aggregate old 88.68 new 93.92 = 1.059x; p50 0.949x; p99 3.07 -> 2.93 s = 0.952x
+GATE 5 1.5B 2-client aggregate 1.059x (>= 0.98): PASS
