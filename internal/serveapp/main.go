@@ -178,6 +178,7 @@ func (s modelSpec) options(cfg config) decoder.Options {
 	// the banner reports what it allocated.
 	o.ResidentKVSlots = cfg.kvSessions
 	o.ResidentPrefillChunk = cfg.prefillChunk // MC3 chunked prefill (docs/tasks/task-concurrency-2026-09.md); 0 = off
+	o.CPUBatchDecode = cfg.cpuBatch           // MC3c step 2: batched CPU decode (-cpu-batch)
 	return o
 }
 
@@ -276,6 +277,7 @@ type config struct {
 	kvDemotedMax    int           // -kv-demoted-max: cap on the on-disk cold tier
 	maxQueue        int           // -max-queue: bounded per-model queue depth (0 = unbounded)
 	maxConcurrent   int           // -max-concurrent: generations one CPU model may run at once (MC3c; default 4, owner 2026-09-26; 1 = serialized)
+	cpuBatch        int           // -cpu-batch: decoder.CPUBatchAuto (default) / CPUBatchOn / CPUBatchOff (MC3c step 2)
 	prefillChunk    int           // -prefill-chunk: under MC3, a long prompt arriving while others decode prefills in chunks of this many tokens (default 512); 0 = off
 	jobDir          string        // -job-dir (J2, task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
 	maxInflight     int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
@@ -410,6 +412,19 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
 	flag.IntVar(&cfg.maxConcurrent, "max-concurrent", 4, "generations one CPU model may run at once, each on its own session KV (capped by -kv-sessions; GPU-resident, weight-streaming and vision models always run one; 1 = serialized)")
+	flag.Func("cpu-batch", "auto|on|off: whether concurrent CPU generations of one model join their decode tokens into one batched forward (MC3c step 2; replies are bit-identical either way). auto (the default) batches models with at least 2 GiB of dense weights, where it measured 2.25-2.41x the independent workers on a 7B, and keeps smaller models on the workers; off on macOS until measured there", func(v string) error {
+		switch v {
+		case "auto":
+			cfg.cpuBatch = decoder.CPUBatchAuto
+		case "on":
+			cfg.cpuBatch = decoder.CPUBatchOn
+		case "off":
+			cfg.cpuBatch = decoder.CPUBatchOff
+		default:
+			return fmt.Errorf("want auto, on or off")
+		}
+		return nil
+	})
 	flag.IntVar(&cfg.prefillChunk, "prefill-chunk", 512, "on a GPU-resident model running several generations at once (MC3), prefill a long prompt that arrives while others are decoding in chunks of this many tokens, one decode step between chunks, instead of stalling them for the whole prompt (replies are unchanged: Metal's prefill is chunk-invariant; 512 graded 2026-09-27: the decoders' longest stall 0.23x); 0 = off")
 	flag.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")
 	flag.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")

@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"os"
 	"strings"
@@ -247,5 +248,22 @@ func TestBanner_concurrency(t *testing.T) {
 				t.Errorf("concurrency line %q, want it to contain %q", line, tc.want)
 			}
 		})
+	}
+}
+
+// TestConcurrencyLine_cpuBatch pins the banner's MC3c step-2 wording: a CPU model whose concurrent generations batch
+// their decode tokens says so and names -cpu-batch; one left on independent workers under -cpu-batch auto says why.
+func TestConcurrencyLine_cpuBatch(t *testing.T) {
+	batched := concurrencyLine(bannerFacts{concurrent: 4, cpuBatched: true}, config{maxConcurrent: 4, kvSessions: 4})
+	if !strings.Contains(batched, "decode tokens batched on the CPU") || !strings.Contains(batched, "-cpu-batch") {
+		t.Errorf("batched CPU model: %q", batched)
+	}
+	workers := concurrencyLine(bannerFacts{concurrent: 4}, config{maxConcurrent: 4, kvSessions: 4, cpuBatch: decoder.CPUBatchAuto})
+	if !strings.Contains(workers, "independent workers") || strings.Contains(workers, "batched on the CPU") {
+		t.Errorf("CPU model on the workers under auto: %q", workers)
+	}
+	off := concurrencyLine(bannerFacts{concurrent: 4}, config{maxConcurrent: 4, kvSessions: 4, cpuBatch: decoder.CPUBatchOff})
+	if strings.Contains(off, "independent workers") || strings.Contains(off, "batched") {
+		t.Errorf("-cpu-batch off: %q (want step 1's line unchanged)", off)
 	}
 }

@@ -52,6 +52,10 @@ type Model struct {
 	// batcher: MC3's coordinator (mc3_batch.go) — several generations on the resident at once, each on its own KV
 	// slot, their decode tokens joined into shared steps. nil unless EnableResidentConcurrency enabled it.
 	batcher *residentBatcher
+	// cpuBatch: MC3c step 2's coordinator (cpu_batch.go) — several CPU generations' decode tokens joined into one
+	// batched forward. nil unless EnableCPUBatch enabled it. cpuBatchMode is Options.CPUBatchDecode.
+	cpuBatch     *cpuBatcher
+	cpuBatchMode int
 	// resIDs is the token sequence currently committed to the resident positional KV, or nil
 	// when its contents are unknown. Guarded by the same resBusy claim that serialises writes
 	// to that cache; see resident_reuse.go for why nil is the safe default.
@@ -419,6 +423,11 @@ type Options struct {
 	// TestMC5_prefillChunkInvariance). serve defaults it to 512, the graded value (the decoders' longest stall 0.23x, wall
 	// 1.045x, replies identical; a 256 candidate missed its wall gate — docs/measurements/chunked-prefill-2026-09-27.md).
 	ResidentPrefillChunk int
+	// CPUBatchDecode chooses whether concurrent CPU generations of this model join their decode tokens into one batched
+	// forward (MC3c step 2, docs/tasks/task-concurrency-2026-09.md; Model.EnableCPUBatch): CPUBatchAuto (0, the
+	// default) batches an eligible model with at least 2 GiB of dense weights, off on darwin; CPUBatchOn batches every
+	// eligible model; CPUBatchOff keeps step 1's independent workers. Every reply is bit-identical either way.
+	CPUBatchDecode int
 	// ActQuantGroup selects per-group ACTIVATION quantization for the int8-activation projections
 	// (int4 = W4A8, int8int8 = W8A8, int4mix): 0 (the default) scales each activation vector by one
 	// max/127, 32 gives every 32 inputs their own scale. A family with massive activation outliers
@@ -475,7 +484,8 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(),
 		kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
 		resCtxReq: opts.ResidentContext, resSlotsReq: opts.ResidentKVSlots, prefillChunk: opts.ResidentPrefillChunk, disableFit: opts.DisableFit,
-		moeCache: opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
+		cpuBatchMode: opts.CPUBatchDecode,
+		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
 		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup}
 }
@@ -1957,6 +1967,14 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		decoding = true
 		defer exitDecode()
 	}
+	// MC3c step 2 (cpu_batch.go): a CPU generation on an eligible cache submits its decode tokens to the model's CPU
+	// batcher, which joins them with other generations' into one batched step; alone, a token runs m.forward as always.
+	var cb *cpuBatcher
+	if !useGPU && m.cpuBatch != nil && cpuBatchCacheEligible(cache) == nil {
+		cb = m.cpuBatch
+		cb.enterDecode()
+		defer cb.exitDecode()
+	}
 	for range maxTokens {
 		select {
 		case <-ctx.Done():
@@ -2158,6 +2176,17 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				err = residentCall()
 			}
 			gpuPos++
+		} else if cb != nil {
+			// A batched step's row is bit-identical to this token's own m.forward (decodeMultiStep's contract).
+			q := &batchReq{id: next, cache: cache, solo: func() error {
+				var ferr error
+				logits, ferr = m.forward(next, cache)
+				return ferr
+			}}
+			err = cb.forward(q)
+			if err == nil && q.out != nil {
+				logits = q.out.Logits
+			}
 		} else {
 			logits, err = m.forward(next, cache)
 		}

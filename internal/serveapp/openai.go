@@ -223,6 +223,12 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	if cfg.kvSessions > 0 {
 		n = min(n, cfg.kvSessions)
 	}
+	// MC3c step 2: a CPU model's concurrent generations may also join their decode tokens into batched steps
+	// (decoder.Model.EnableCPUBatch decides from -cpu-batch, the family and the model's size).
+	cpuBatched := false
+	if lm.model != nil && !lm.model.ResidentActive() {
+		cpuBatched = lm.model.EnableCPUBatch(n)
+	}
 	lm.concurrent = n
 	lm.turns.setCap(n)
 	if cfg.maxQueue > 0 {
@@ -231,7 +237,8 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	if lm.model == nil {
 		return ""
 	}
-	return concurrencyLine(bannerFacts{resident: lm.model.ResidentActive(), kvSlots: lm.model.ResidentKVSlots(), concurrent: n}, cfg)
+	return concurrencyLine(bannerFacts{resident: lm.model.ResidentActive(), kvSlots: lm.model.ResidentKVSlots(), concurrent: n,
+		cpuBatched: cpuBatched}, cfg)
 }
 
 // visionCapable reports whether this model has a loaded vision tower.

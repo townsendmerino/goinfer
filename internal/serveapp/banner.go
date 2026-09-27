@@ -3,6 +3,8 @@ package serveapp
 import (
 	"fmt"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // The startup banner is the UI.
@@ -59,6 +61,10 @@ type bannerFacts struct {
 
 	// concurrent: how many generations of this model run at once (loadedModel.concurrent; MC3c).
 	concurrent int
+
+	// cpuBatched: a CPU model's concurrent generations join their decode tokens into batched steps (MC3c step 2,
+	// decoder.Model.EnableCPUBatch).
+	cpuBatched bool
 }
 
 func factsOf(lm *loadedModel) bannerFacts {
@@ -259,6 +265,11 @@ func concurrencyLine(f bannerFacts, cfg config) string {
 		return line
 	case f.concurrent > 1:
 		line := fmt.Sprintf("concurrency: %d generations at once, each on its own session KV (-max-concurrent)", f.concurrent)
+		if f.cpuBatched {
+			line = fmt.Sprintf("concurrency: %d generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)", f.concurrent)
+		} else if cfg.cpuBatch == decoder.CPUBatchAuto {
+			line += "; decode runs as independent workers (-cpu-batch auto batches models with 2 GiB or more of weights, not on macOS)"
+		}
 		if cfg.maxConcurrent > f.concurrent {
 			line += fmt.Sprintf("; %d asked, capped by --kv-sessions %d", cfg.maxConcurrent, cfg.kvSessions)
 		}
