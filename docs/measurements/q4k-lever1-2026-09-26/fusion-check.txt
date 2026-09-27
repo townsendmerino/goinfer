@@ -1,0 +1,6 @@
+int4 g0: 254.0 tok/s
+int4 g32: 189.3 tok/s
+q4k g0: 193.2 tok/s
+int4 g0: 252.8 tok/s
+int4 g32: 188.3 tok/s
+q4k g0: 188.3 tok/s

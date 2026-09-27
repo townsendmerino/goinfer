@@ -434,3 +434,42 @@ token (int4 0.970 GB, q4k 1.057 GB for the 1.5B).
 Before this change the ratio is about 205 / 246 = 0.83. **Guard:** the 7B q4k's tok/s must not fall
 below 0.98× its current kernel's (a same-session A/B, old kernel against new), or the change is
 reworked.
+
+## Lever 1 result (2026-09-26): FAIL — the 1.5B gap is the per-32 activation path, not the Q4_K kernel
+
+Raw data: [`measurements/q4k-lever1-2026-09-26/`](../measurements/q4k-lever1-2026-09-26/). The narrow-row kernel
+(8 lanes per row) is branch `q4k-narrow` at `de885035`, pushed and **not merged**.
+
+| | median (6 paired rounds) | range | bar | verdict |
+|---|---|---|---|---|
+| 1.5B q4k effective bandwidth ÷ int4 | **0.811** | 0.803–0.821 | ≥ 0.90 (< 0.85 FAIL) | **FAIL** |
+| 7B guard: new kernel ÷ old kernel | **0.926** | 0.925–0.927 | ≥ 0.98 | **FAIL** |
+
+The hypothesis was wrong. The 1.5B ratio did not move (about 0.83 before), and 8 lanes per row cost
+the 7B 7%: each lane now walks its tasks one after another, so fewer loads are in flight per row.
+The main kernel stays.
+
+**Diagnosis afterwards** (`fusion-check*.txt`, same binary, same session, two reps each, depth 128):
+
+| CUDA decode, tok/s | int4 (per-row) | int4 + per-32 (same bytes) | q4k |
+|---|---|---|---|
+| qwen2.5-coder-1.5b | 254.0 / 252.8 | **189.3 / 188.3** | 193.2 / 188.3 |
+| qwen2.5-7b | 81.6 / 81.5 | 79.3 / 79.3 | 72.6 / 72.6 |
+
+- **1.5B: the per-32 path costs 25% on its own**, whatever the weight format. Fusion is off, and there
+  are separate quantize launches and per-group scale work. At ~4 ms per token that overhead dominates.
+  q4k is no slower than int4 + per-32 despite reading 9% more bytes, so the Q4_K kernel is not the
+  1.5B's problem.
+- **7B: per-32 costs about 3%, and the rest is bytes**: 79.3 × (4.215 / 4.643) = 72.0, against 72.6
+  measured.
+
+**Consequences for a CUDA q4k default:**
+- **Lever 2** (native Q6_K, llama.cpp's bytes) addresses the 7B.
+- **A new lever 3, cheaper per-32 on CUDA** (fused per-32 RMSNorm+QKV and gate/up, fewer launches),
+  is what the 1.5B needs. It would also speed up Phi-3's CUDA default.
+
+Neither is started.
+
+**Instrument note:** zsh does not word-split an unquoted `$q`, so an interactive `set -- $q` loop handed
+the benchmark a quant of "int4 0". Several ad-hoc runs printed FAIL for that reason (not the VRAM
+release first suspected). The gate script ran under bash and was unaffected.
