@@ -115,7 +115,7 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 	}
 	// Before a sidecar is chosen: a .giw bakes its quant, so this cannot be fixed after the transcode.
 	var msg string
-	if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQuantGroup, req.ExplicitQuant); msg != "" {
+	if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQuantGroup, req.ExplicitQuant, opts.Backend); msg != "" {
 		fmt.Fprintln(os.Stderr, msg)
 	}
 	ensureGIW := func() (string, error) {
@@ -192,18 +192,24 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 }
 
 // activationSafeQuant is the precision and activation group a load should use for src. For a family
-// that per-vector int8 activations break (decoder.ActivationQuantHazard): the default becomes
-// int8int8 with per-32 activation scales, the configuration that passed
-// docs/tasks/task-actquant-pergroup-2026-09.md's quality gate and that CUDA runs resident; an
-// explicit int8int8 gets per-32 too; an explicit int4/int4mix is honoured with a warning (per-32 does
-// not yet clear int4's weight error). msg is "" when nothing applies.
-func activationSafeQuant(src, quant string, group int, explicitQuant string) (string, int, string) {
+// that per-vector int8 activations break (decoder.ActivationQuantHazard), the default becomes:
+//   - q4k for a .gguf on the CPU backend: the file's Q4_K tensors exact, the rest int8, per-32
+//     (docs/tasks/task-int4-weight-quality-2026-09.md Phase 1a: quality gate passed, 1.31× the
+//     int8int8 default's CPU decode on phi3-mini);
+//   - int8int8 with per-32 activation scales anywhere else, since q4k has no GPU kernel yet and a GPU
+//     backend runs int8int8 + per-32 resident (docs/tasks/task-actquant-pergroup-2026-09.md).
+//
+// An explicit int8int8 gets per-32 too. An explicit int4/int4mix is honoured with a warning, because
+// per-32 does not clear int4's weight error. msg is "" when nothing applies.
+func activationSafeQuant(src, quant string, group int, explicitQuant, backend string) (string, int, string) {
 	why := decoder.ActivationQuantHazard(decoder.PeekModelType(src))
 	if why == "" || !decoder.QuantizesActivations(quant) || group == 32 && quant == "int8int8" || quant == "q4k" {
 		// q4k is per-32 throughout by construction (decoder.modelFromOptions stamps it).
 		return quant, group, ""
 	}
 	switch {
+	case explicitQuant == "" && strings.HasSuffix(src, ".gguf") && (backend == "" || backend == "cpu"):
+		return "q4k", 0, fmt.Sprintf("note: loading at --quant q4k (the file's Q4_K tensors kept exact, the rest int8, per-32 activations) instead of the default %s: %s.", quant, why)
 	case explicitQuant == "":
 		return "int8int8", 32, fmt.Sprintf("note: loading at --quant int8int8 with per-32 activation scales instead of the default %s: %s.", quant, why)
 	case quant == "int8int8":
