@@ -2518,7 +2518,9 @@ func (r *cudaResident) doG(wt cudaWQ, a Buffer, as Buffer, bias KernelArg, dst B
 	cfg := LaunchConfig{GridX: uint32((wt.N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 	if wt.kind == "q4k" {
 		// BuildResident admits q4k only with actG32 (the per-group sums in as[K/32:] come from quantG32).
-		return r.launch(r.gemvQ4K, cfg, Arg(wt.W), Arg(a), Arg(as), bias,
+		// gemv_q4k_g32 runs 8 lanes per row: 32 rows per 256-thread block.
+		q4cfg := LaunchConfig{GridX: uint32((wt.N + 31) / 32), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+		return r.launch(r.gemvQ4K, q4cfg, Arg(wt.W), Arg(a), Arg(as), bias,
 			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/256)), Arg(dst), gpu.ArgValue(accum))
 	}
 	if wt.kind == "int4" {

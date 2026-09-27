@@ -190,31 +190,34 @@ __global__ void gemv_w8a8_g32(
 // gemv_q4k_g32: GGUF Q4_K weights, the raw super-blocks (36 words per 256 weights: d|dmin, three
 // words of packed 6-bit scales and minimums, 32 words of codes), × per-32 int8 activations.
 // aS holds 2·Kgroups floats: per-group activation scales, then aS·Σaq per group (quantG32).
-// One warp per output row, 8 rows per 256-thread block (the per-row GEMVs' geometry).
 //
-// LANE MAPPING: lane l owns sub-block pair j = l & 3 of block b0 + (l >> 2), so a warp covers 8
-// blocks per iteration and a lane 64 weights: one 16-byte header load, one scale/min unpack, two
-// 16-byte code loads, four 16-byte activation loads and 16 dp4a. The first mapping (a lane per code
-// word, 8 weights) paid the header decode per 8 weights and was compute-bound: ~0.97× the int8 GEMV
-// it replaces despite reading 25% fewer bytes. Code word t of pair j holds elements 64j+4t..+3 (low
-// nibbles, sub-block 2j) and 64j+32+4t..+3 (high, 2j+1); their activation words are 64b+16j+t and
-// +8. Alignment: a block is 144 = 9·16 bytes and its codes start at byte 16, so every vector load is
-// 16-byte aligned. Per block and group:
-//   facc += aS_g·d·sc_g · idot_g − dmin·m_g · (aS·Σaq)_g
+// GEOMETRY: 8 lanes per output row, 4 rows per warp, 32 rows per 256-thread block (launch
+// GridX = ceil(N/32)). A row's work is 4·nSB tasks, one per (block b, sub-block pair j), and lane
+// l8 of the row's group takes tasks l8, l8+8, ... Task counts at goinfer's shapes are multiples of 8
+// (1536 → 24, 3072 → 48, 3584 → 56, 18944 → 296) or nearly so (8960 → 140), so no lane idles. The
+// previous geometry gave a row a whole warp (8 blocks × 4 pairs per pass) and idled a quarter of its
+// lanes on 1536-wide rows (docs/tasks/task-int4-weight-quality-2026-09.md, lever 1).
+//
+// A task: one 16-byte header load, one scale/min unpack, two 16-byte code loads, four 16-byte
+// activation loads, 16 dp4a. Code word t of pair j holds elements 64j+4t..+3 (low nibbles, sub-block
+// 2j) and 64j+32+4t..+3 (high, 2j+1); their activation words are 64b+16j+t and +8. A block is
+// 144 = 9·16 bytes and its codes start at byte 16, so every vector load is 16-byte aligned. Per task:
+//   facc += aS_g·d·sc_g · idot_g − dmin·m_g · (aS·Σaq)_g        for g = 2j, 2j+1 of block b
+// Rows past N still run the shuffle reduction (every lane of the warp must), but skip work and write.
 __global__ void gemv_q4k_g32(
     const unsigned int* __restrict__ W, const int* __restrict__ a, const float* __restrict__ aS,
     const float* __restrict__ bias, int N, int nSB, float* __restrict__ dst, int accum)
 {
-    int n = blockIdx.x * (blockDim.x / 32) + (threadIdx.x / 32);
-    int lane = threadIdx.x & 31;
-    if (n >= N) return;
-    const unsigned int* wr = W + (long)n * nSB * 36;
-    const float* asum = aS + nSB * 8;
-    int j = lane & 3, sub = lane >> 2;
+    int n = blockIdx.x * (blockDim.x >> 3) + (threadIdx.x >> 3);
+    int l8 = threadIdx.x & 7;
+    bool live = n < N;
     float facc = 0.f;
-    for (int b0 = 0; b0 < nSB; b0 += 8) {
-        int b = b0 + sub;
-        if (b < nSB) {
+    if (live) {
+        const unsigned int* wr = W + (long)n * nSB * 36;
+        const float* asum = aS + nSB * 8;
+        int nT = nSB << 2;
+        for (int t = l8; t < nT; t += 8) {
+            int b = t >> 2, j = t & 3;
             const unsigned int* blk = wr + b * 36;
             uint4 hdr = *reinterpret_cast<const uint4*>(blk);
             float d = __half2float(__ushort_as_half((unsigned short)(hdr.x & 0xffffu)));
@@ -250,9 +253,10 @@ __global__ void gemv_q4k_g32(
             facc = __fmaf_rn(-__fmul_rn(dmin, (float)mHi), asum[g + 1], facc);
         }
     }
-    #pragma unroll
-    for (int off = 16; off > 0; off >>= 1) facc += __shfl_down_sync(0xffffffffu, facc, off);
-    if (lane == 0) {
+    facc += __shfl_xor_sync(0xffffffffu, facc, 4);
+    facc += __shfl_xor_sync(0xffffffffu, facc, 2);
+    facc += __shfl_xor_sync(0xffffffffu, facc, 1);
+    if (live && l8 == 0) {
         float val = __fadd_rn(facc, (bias ? bias[n] : 0.f));
         dst[n] = accum ? dst[n] + val : val;
     }

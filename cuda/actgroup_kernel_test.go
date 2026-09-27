@@ -297,60 +297,63 @@ func q4kHostRows(rng *rand.Rand, rows, cols int, sat bool) []byte {
 func TestActGroupKernels_gemvQ4K(t *testing.T) {
 	ctx, _, launch := actGroupHarness(t)
 	rng := rand.New(rand.NewSource(13))
-	const K, N = 3072, 200
-	for _, sat := range []bool{false, true} {
-		a := outlierVec(rng, K)
-		if sat {
-			for i := range a {
-				a[i] = -1
+	const N = 200 // not a multiple of 32: the last block carries rows past N
+	// 3072: 48 tasks per row; 1536: 24 (the 1.5B's narrow rows); 8960: 140, not a multiple of 8.
+	for _, K := range []int{3072, 1536, 8960} {
+		for _, sat := range []bool{false, true} {
+			a := outlierVec(rng, K)
+			if sat {
+				for i := range a {
+					a[i] = -1
+				}
 			}
-		}
-		aC, aS := quantG32Go(a)
-		nG := K / 32
-		aBuf := make([]float32, 2*nG)
-		copy(aBuf, aS)
-		for g := range nG {
-			var s int32
-			for _, c := range aC[32*g : 32*g+32] {
-				s += int32(c)
+			aC, aS := quantG32Go(a)
+			nG := K / 32
+			aBuf := make([]float32, 2*nG)
+			copy(aBuf, aS)
+			for g := range nG {
+				var s int32
+				for _, c := range aC[32*g : 32*g+32] {
+					s += int32(c)
+				}
+				aBuf[nG+g] = aS[g] * float32(s)
 			}
-			aBuf[nG+g] = aS[g] * float32(s)
-		}
-		raw := q4kHostRows(rng, N, K, sat)
-		wm, err := linalg.WrapQ4K(raw, N, K)
-		if err != nil {
-			t.Fatal(err)
-		}
-		bias, dst0 := make([]float32, N), make([]float32, N)
-		for i := range bias {
-			bias[i], dst0[i] = float32(rng.NormFloat64()), float32(rng.NormFloat64())
-		}
-		want := make([]float64, N)
-		row := make([]float32, K)
-		for n := range N {
-			wm.Row(n, row)
-			acc := float64(dst0[n]) + float64(bias[n])
-			for k := range K {
-				acc += float64(row[k]) * float64(aC[k]) * float64(aS[k/32])
+			raw := q4kHostRows(rng, N, K, sat)
+			wm, err := linalg.WrapQ4K(raw, N, K)
+			if err != nil {
+				t.Fatal(err)
 			}
-			want[n] = acc
-		}
-		words := make([]uint32, len(raw)/4)
-		for i := range words {
-			words[i] = uint32(raw[4*i]) | uint32(raw[4*i+1])<<8 | uint32(raw[4*i+2])<<16 | uint32(raw[4*i+3])<<24
-		}
-		dw, da, das, db, dd := upload(t, ctx, words), upload(t, ctx, packActI8(aC)), upload(t, ctx, aBuf), upload(t, ctx, bias), upload(t, ctx, dst0)
-		cfg := gc.LaunchConfig{GridX: uint32((N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
-		launch("gemv_q4k_g32", cfg, gc.Arg(dw), gc.Arg(da), gc.Arg(das), gc.Arg(db),
-			gc.ArgValue(int32(N)), gc.ArgValue(int32(K/256)), gc.Arg(dd), gc.ArgValue(int32(1)))
-		got := download(t, dd, N)
-		var num, den float64
-		for i := range want {
-			d := float64(got[i]) - want[i]
-			num, den = num+d*d, den+want[i]*want[i]
-		}
-		if e := math.Sqrt(num / den); e > 1e-5 || math.IsNaN(e) {
-			t.Errorf("sat=%v gemv_q4k_g32: rel err %.3g vs host sum", sat, e)
+			bias, dst0 := make([]float32, N), make([]float32, N)
+			for i := range bias {
+				bias[i], dst0[i] = float32(rng.NormFloat64()), float32(rng.NormFloat64())
+			}
+			want := make([]float64, N)
+			row := make([]float32, K)
+			for n := range N {
+				wm.Row(n, row)
+				acc := float64(dst0[n]) + float64(bias[n])
+				for k := range K {
+					acc += float64(row[k]) * float64(aC[k]) * float64(aS[k/32])
+				}
+				want[n] = acc
+			}
+			words := make([]uint32, len(raw)/4)
+			for i := range words {
+				words[i] = uint32(raw[4*i]) | uint32(raw[4*i+1])<<8 | uint32(raw[4*i+2])<<16 | uint32(raw[4*i+3])<<24
+			}
+			dw, da, das, db, dd := upload(t, ctx, words), upload(t, ctx, packActI8(aC)), upload(t, ctx, aBuf), upload(t, ctx, bias), upload(t, ctx, dst0)
+			cfg := gc.LaunchConfig{GridX: uint32((N + 31) / 32), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1} // 8 lanes per row
+			launch("gemv_q4k_g32", cfg, gc.Arg(dw), gc.Arg(da), gc.Arg(das), gc.Arg(db),
+				gc.ArgValue(int32(N)), gc.ArgValue(int32(K/256)), gc.Arg(dd), gc.ArgValue(int32(1)))
+			got := download(t, dd, N)
+			var num, den float64
+			for i := range want {
+				d := float64(got[i]) - want[i]
+				num, den = num+d*d, den+want[i]*want[i]
+			}
+			if e := math.Sqrt(num / den); e > 1e-5 || math.IsNaN(e) {
+				t.Errorf("K=%d sat=%v gemv_q4k_g32: rel err %.3g vs host sum", K, sat, e)
+			}
 		}
 	}
 }
