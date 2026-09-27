@@ -133,6 +133,37 @@ func cpuBatchCacheEligible(c *KVCache) error {
 	return nil
 }
 
+// cpuBatchFusedW4A8 lets decodeMultiStep run an int4 layer's q‖k‖v, and its gate‖up, each as ONE batched W4A8 call
+// over the B rows (MC3c step 2 S1, docs/tasks/task-concurrency-2026-09.md) instead of one matmul per projection. The
+// kernel (linalg.MatmulBTW4A8Batch) is numerically identical to calling MatmulBTW4A8Into once per op, so this changes
+// only how many fork/joins a step pays: the probe put the small projections (q/o, k/v) at 1.6-3.0x one row's cost at
+// M = 4, which is fork/join and compute, not bandwidth. A package variable, not an environment read: the S1
+// measurement flips it in-process to interleave its arms.
+var cpuBatchFusedW4A8 = true
+
+// w4a8FusedOps fills ops with one linalg.W4A8Op per weight for a fused batched W4A8 call and reports whether the group
+// qualifies: fusion on, every weight int4 with its canonical bytes present (wmW4A8Op passes no split-half layout), one
+// weight-group size, one K, and one activation-quant group. It returns that group size and activation-quant group.
+// Anything else keeps the per-projection matmul calls.
+func w4a8FusedOps(ops []linalg.W4A8Op, ws []*linalg.WeightMat, dsts [][]float32) (group, actGroup int, ok bool) {
+	if !cpuBatchFusedW4A8 {
+		return 0, 0, false
+	}
+	for i, w := range ws {
+		_, _, g, canon := w.Int4()
+		if !isW4A8(w) || !canon || w.Cols() != ws[0].Cols() || w.ActQuantGroup() != ws[0].ActQuantGroup() {
+			return 0, 0, false
+		}
+		var gi int
+		ops[i], gi = wmW4A8Op(w, dsts[i])
+		if gi != g || (i > 0 && g != group) {
+			return 0, 0, false
+		}
+		group = g
+	}
+	return group, ws[0].ActQuantGroup(), true
+}
+
 // decodeMultiStep is MC3c step 2's batched step (promoted from MC2's test-only prototype): ONE forward carrying B
 // independent sequences, each with its own KV cache at its own position, one token each. The projections, o-proj, MLP
 // and LM head run as M = B matmuls through the kernels forwardN uses (bit-identical to M = 1 row for row, by forwardN's
@@ -177,6 +208,11 @@ func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, erro
 	ws.SetThreshold(DefaultDecodeParallelThreshold)
 	var qkvOps [3]linalg.W8A8Op
 	var guOps [2]linalg.W8A8Op
+	// ws4: the fused W4A8 calls (S1), at the threshold matmul() gives int4 weights.
+	var ws4 linalg.Workspace
+	ws4.SetThreshold(int4ParThreshold)
+	var qkvOps4 [3]linalg.W4A8Op
+	var guOps4 [2]linalg.W4A8Op
 
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
@@ -192,6 +228,9 @@ func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, erro
 			qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
 			qkvOps[2] = linalg.W8A8Op{BQ: wmInt8(&lw.VProj), Scales: wmScales(&lw.VProj), Dst: v, N: lw.VProj.Rows()}
 			matmulW8A8Batch(be, &ws, norm, B, lw.QProj.Cols(), qkvOps[:], lw.QProj.ActQuantGroup())
+		} else if group, ag, ok := w4a8FusedOps(qkvOps4[:], []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj}, [][]float32{q, k, v}); ok {
+			// S1: q‖k‖v in one fork/join over the B rows — numerically identical to three matmul calls per op.
+			matmulW4A8Batch(be, &ws4, norm, B, lw.QProj.Cols(), group, qkvOps4[:], ag)
 		} else {
 			matmul(be, &lw.QProj, norm, q, B)
 			matmul(be, &lw.KProj, norm, k, B)
@@ -245,6 +284,9 @@ func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, erro
 			guOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
 			guOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
 			matmulW8A8Batch(be, &ws, norm, B, lw.GateProj.Cols(), guOps[:], lw.GateProj.ActQuantGroup())
+		} else if group, ag, ok := w4a8FusedOps(guOps4[:], []*linalg.WeightMat{&lw.GateProj, &lw.UpProj}, [][]float32{gate, up}); ok {
+			// S1: gate‖up in one fork/join over the B rows.
+			matmulW4A8Batch(be, &ws4, norm, B, lw.GateProj.Cols(), group, guOps4[:], ag)
 		} else {
 			matmul(be, &lw.GateProj, norm, gate, B)
 			matmul(be, &lw.UpProj, norm, up, B)
