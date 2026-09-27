@@ -473,3 +473,27 @@ Neither is started.
 **Instrument note:** zsh does not word-split an unquoted `$q`, so an interactive `set -- $q` loop handed
 the benchmark a quant of "int4 0". Several ad-hoc runs printed FAIL for that reason (not the VRAM
 release first suspected). The gate script ran under bash and was unaffected.
+
+## Lever 3: fused per-32 kernels on CUDA, PRE-REGISTERED 2026-09-26 before any build
+
+**Attribution** (`measurements/q4k-lever1-2026-09-26/attribution-1.5b.txt`, qwen2.5-coder-1.5b, depth 128):
+int4 fused 250.6 / 252.0 tok/s; int4 with fusion OFF (`GOINFER_CUDA_NO_FUSE`) 195.6 / 190.2; int4 + per-32
+184.1 / 188.3. **Losing fusion is ~23% on the 1.5B; the per-32 kernels themselves are ~3%.** Per-32
+turns fusion off because `fused_rms_qkv` and `fused_rms_gu` quantize per vector and read int4 only.
+
+**Change:**
+- `fused_rms_qkv_g32` and `fused_rms_gu_g32`: each block recomputes RMSNorm and the per-32 quantize
+  (codes, scales, group sums: `quantG32` itself) into shared memory, then runs its rows.
+- Each projection carries its weight kind (int8, int4 or Q4_K), and its row code is the matching
+  per-32 matvec's body, verbatim.
+- They replace "rmsnorm_quant_g32 + 3 (or 2) matvecs" whenever per-32 is on and every Q/K/V and
+  gate/up weight has one of those kinds. `GOINFER_CUDA_NO_FUSE` turns them off like the per-row ones.
+
+**Gates:**
+- **Correctness:** the fused kernels are **bit-identical** to the unfused per-32 chain: a unit test over
+  mixed kinds, and a resident test comparing q4k logits fused against `GOINFER_CUDA_NO_FUSE`.
+- **Speed:** `BenchmarkResidentDecode`, depth 128, 6 paired rounds, the same protocol as lever 1:
+  - **qwen2.5-coder-1.5b, q4k effective bandwidth ÷ int4's: ≥ 0.90 PASS; [0.85, 0.90) AMBIGUOUS;
+    < 0.85 FAIL** (now ~0.81);
+  - guard: qwen2.5-7b q4k fused ≥ 0.98× unfused.
+- phi3-mini fused ÷ unfused is reported for information.

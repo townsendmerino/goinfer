@@ -15,7 +15,7 @@ import (
 // after prefilling GOINFER_BENCH_DEPTH positions: one op is one decoded token. It is the Phase 1b
 // speed-gate instrument of docs/tasks/task-int4-weight-quality-2026-09.md (goinfer against goinfer,
 // separate processes per quant). Env: GOINFER_BENCH_MODEL (a .gguf), GOINFER_BENCH_QUANT,
-// GOINFER_BENCH_ACT_GROUP (0 or 32), GOINFER_BENCH_DEPTH (default 128). Prefill is outside the timer.
+// GOINFER_BENCH_ACT_GROUP (0 or 32), GOINFER_BENCH_DEPTH (default 128), GOINFER_BENCH_NO_FUSE (non-empty: fused kernels off). Prefill is outside the timer.
 func BenchmarkResidentDecode(b *testing.B) {
 	path := os.Getenv("GOINFER_BENCH_MODEL")
 	if path == "" {
@@ -28,8 +28,12 @@ func BenchmarkResidentDecode(b *testing.B) {
 	if v, err := strconv.Atoi(os.Getenv("GOINFER_BENCH_ACT_GROUP")); err == nil {
 		group = v
 	}
-	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: os.Getenv("GOINFER_BENCH_QUANT"),
-		ActQuantGroup: group, ResidentContext: depth + 1024})
+	opts := decoder.Options{Backend: "cuda", Quant: os.Getenv("GOINFER_BENCH_QUANT"),
+		ActQuantGroup: group, ResidentContext: depth + 1024}
+	if os.Getenv("GOINFER_BENCH_NO_FUSE") != "" { // attribution: the per-row path with its fused kernels off
+		opts.Knobs = &decoder.Knobs{"GOINFER_CUDA_NO_FUSE": "1"}
+	}
+	m, err := decoder.Load(path, opts)
 	if err != nil {
 		b.Fatalf("load: %v", err)
 	}
