@@ -1,0 +1,49 @@
+=== idle: 99% cpu idle, 50.8C
+=== 2026-09-26T23:32:34Z qwen2.5-7b int4 g0 round 1/6
+=== idle: 99% cpu idle, 68.9C
+=== 2026-09-26T23:33:18Z qwen2.5-7b q4k g0 round 1/6
+=== idle: 99% cpu idle, 60.6C
+=== 2026-09-26T23:34:18Z phi3-mini int8int8 g32 round 1/6
+=== idle: 99% cpu idle, 55.1C
+=== 2026-09-26T23:34:45Z phi3-mini q4k g0 round 1/6
+=== idle: 99% cpu idle, 59.9C
+=== 2026-09-26T23:35:16Z qwen2.5-7b q4k g0 round 2/6
+=== idle: 99% cpu idle, 66.1C
+=== 2026-09-26T23:36:16Z qwen2.5-7b int4 g0 round 2/6
+=== idle: 99% cpu idle, 64.1C
+=== 2026-09-26T23:37:00Z phi3-mini q4k g0 round 2/6
+=== idle: 99% cpu idle, 60.5C
+=== 2026-09-26T23:37:31Z phi3-mini int8int8 g32 round 2/6
+=== idle: 99% cpu idle, 55.4C
+=== 2026-09-26T23:37:58Z qwen2.5-7b int4 g0 round 3/6
+=== idle: 99% cpu idle, 64.2C
+=== 2026-09-26T23:38:42Z qwen2.5-7b q4k g0 round 3/6
+=== idle: 99% cpu idle, 61.4C
+=== 2026-09-26T23:39:42Z phi3-mini int8int8 g32 round 3/6
+=== idle: 99% cpu idle, 55.5C
+=== 2026-09-26T23:40:10Z phi3-mini q4k g0 round 3/6
+=== idle: 99% cpu idle, 60.4C
+=== 2026-09-26T23:40:40Z qwen2.5-7b q4k g0 round 4/6
+=== idle: 99% cpu idle, 61.4C
+=== 2026-09-26T23:41:40Z qwen2.5-7b int4 g0 round 4/6
+=== idle: 99% cpu idle, 64.5C
+=== 2026-09-26T23:42:24Z phi3-mini q4k g0 round 4/6
+=== idle: 99% cpu idle, 60.8C
+=== 2026-09-26T23:42:55Z phi3-mini int8int8 g32 round 4/6
+=== idle: 99% cpu idle, 55.6C
+=== 2026-09-26T23:43:22Z qwen2.5-7b int4 g0 round 5/6
+=== idle: 99% cpu idle, 64.8C
+=== 2026-09-26T23:44:06Z qwen2.5-7b q4k g0 round 5/6
+=== idle: 99% cpu idle, 61.5C
+=== 2026-09-26T23:45:07Z phi3-mini int8int8 g32 round 5/6
+=== idle: 99% cpu idle, 55.9C
+=== 2026-09-26T23:45:34Z phi3-mini q4k g0 round 5/6
+=== idle: 99% cpu idle, 60.6C
+=== 2026-09-26T23:46:04Z qwen2.5-7b q4k g0 round 6/6
+=== idle: 99% cpu idle, 61.5C
+=== 2026-09-26T23:47:05Z qwen2.5-7b int4 g0 round 6/6
+=== idle: 99% cpu idle, 65.0C
+=== 2026-09-26T23:47:49Z phi3-mini q4k g0 round 6/6
+=== idle: 99% cpu idle, 61.0C
+=== 2026-09-26T23:48:19Z phi3-mini int8int8 g32 round 6/6
+=== 2026-09-26T23:48:44Z ALL DONE

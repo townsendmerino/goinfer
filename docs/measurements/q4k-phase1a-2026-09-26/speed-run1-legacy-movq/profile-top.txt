@@ -1,0 +1,21 @@
+File: decoder.test
+Build ID: cc5295474dad34e9eb7da388c327a1b773979df2
+Type: cpu
+Time: 2026-09-26 16:49:14 PDT
+Duration: 28.23s, Total samples = 258.92s (917.04%)
+Showing nodes accounting for 255.21s, 98.57% of 258.92s total
+Dropped 284 nodes (cum <= 1.29s)
+Showing top 12 nodes out of 49
+      flat  flat%   sum%        cum   cum%
+   197.28s 76.19% 76.19%    197.28s 76.19%  github.com/townsendmerino/aikit/linalg.dotQ4KAVX2
+    32.56s 12.58% 88.77%     32.56s 12.58%  github.com/townsendmerino/aikit/linalg.dotI8Scaled32x2AVX2
+     9.21s  3.56% 92.33%      9.21s  3.56%  github.com/townsendmerino/aikit/linalg.maxAbsF32Scalar (inline)
+     4.82s  1.86% 94.19%      7.17s  2.77%  github.com/townsendmerino/aikit/linalg.quantizeRowScaledScalar
+     4.05s  1.56% 95.75%      4.05s  1.56%  runtime.memmove
+     2.59s  1.00% 96.75%      2.66s  1.03%  github.com/townsendmerino/aikit/embed.dequantQ6KBlock
+     2.16s  0.83% 97.59%      2.33s   0.9%  math.Round (inline)
+     1.46s  0.56% 98.15%     17.84s  6.89%  github.com/townsendmerino/aikit/linalg.quantizeRowInt8Core
+     0.38s  0.15% 98.30%    197.66s 76.34%  github.com/townsendmerino/aikit/linalg.dotQ4K
+     0.35s  0.14% 98.43%    198.01s 76.48%  github.com/townsendmerino/aikit/linalg.matmulQ4K.func1
+     0.31s  0.12% 98.55%     32.87s 12.70%  github.com/townsendmerino/aikit/linalg.w8a8GroupedSpan
+     0.04s 0.015% 98.57%      4.12s  1.59%  github.com/townsendmerino/goinfer/decoder.q4kMat

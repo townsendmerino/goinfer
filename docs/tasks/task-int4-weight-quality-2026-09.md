@@ -206,3 +206,64 @@ Format and kernels per the decision: aikit `WeightMat`, the CPU W4A8 kernels (am
 peers on the Phi-3 and 7B cells.
 
 <!-- doc-reviewed: 2026-09-26 -->
+
+## Phase 1a results (2026-09-26): quality PASS; speed FAIL on the first kernel, SHIP after a one-instruction fix
+
+Raw data, the gate tool (`q4kgate.go.txt`) and the logs are in
+[`measurements/q4k-phase1a-2026-09-26/`](../measurements/q4k-phase1a-2026-09-26/). Code lives in aikit
+(`683937f` the Q4_K kind and Go reference, `d1b71a5` `embed.GGUFFile.Q4KRaw`, `5910e74` the AVX2
+kernel, `366b8fe` its fix) and goinfer branch `q4k-phase1` (`cfda301f`, `--quant q4k`). Both are
+unreleased and unmerged; see "Next" below.
+
+**Correctness: PASS.** The Go reference and the AVX2 kernel match a float64 evaluation within
+relative error 1e-6 at M = 1 and 3, odd N, random and saturated blocks, serial and fanned out. Four
+deliberate breaks each turn tests red: dropping the minimum term, the wrong nibble, a flipped
+minimum sign, a corrupted scale-unpack mask. On a real Q4_K_M file, every Q4_K tensor (96) wrapped
+natively dequantizes bit-identically to `RowDequantizer`. The Go path also passes on arm64 under qemu.
+
+**Quality: PASS on all six families**, real `--quant q4k` loads, AVX2 kernel. The bar is each
+family's Phase 0 A0 − 0.01:
+
+| family | q4k p10, filler / prose | bar | argmax agreement |
+|---|---|---|---|
+| llama3.2-1b | 0.993 / 0.997 | 0.977 / 0.986 | 0.982 / 0.993 |
+| gemma3-1b | 1.000 / 1.000 | 0.990 / 0.990 | 0.993 / 0.948 |
+| qwen2.5-coder-1.5b | 1.000 / 1.000 | 0.990 / 0.990 | 0.979 / 0.983 |
+| phi3-mini | 0.969 / 0.999 | 0.963 / 0.988 | **0.572** / 0.928 |
+| mistral-7b | 1.000 / 1.000 | 0.990 / 0.990 | 0.993 / 0.992 |
+| qwen2.5-7b | 0.992 / 0.999 | 0.982 / 0.988 | 0.993 / 0.957 |
+
+Two families were first gated on the Go reference kernel (`quality/sweep-goref-partial.jsonl`). The
+run was then restarted so that the kernel which ships is the one graded. **Caveat:** phi3-mini's
+filler prompt passes on cosine with argmax agreement 0.572. That prompt is dense with near-ties, and
+Phase 0's A0 behaved the same way, so it is the configuration's sensitivity rather than a q4k
+defect. Phi-3's quality claim should rest on the prose prompt and on real output, not on filler
+cosines.
+
+**Speed, run 1: FAIL** (`speed-run1-legacy-movq/`). qwen2.5-7b 0.532× today's int4; phi3-mini 0.816×
+int8int8. The profile put 76% of decode in `dotQ4KAVX2` itself. A bare-routine microbenchmark read
+1900 ns per 14-block row, barely ahead of the scalar Go oracle, where the instruction count
+predicts about 30 cycles per block. The cause was two `MOVQ reg, X` per block, which the Go
+assembler encodes as legacy SSE. Writing an XMM register that way, inside an AVX loop with dirty
+upper YMM halves, cost about 450 cycles per block on the Ryzen 7 3700X. With VEX `VMOVQ` the row
+takes 115 ns (16×), numerics unchanged. That is a new mechanism, so the gate was re-run with its
+registered bands and protocol unchanged. Run 1 stays as the record of the failure.
+
+**Speed, run 2: SHIP both** (`speed-run2/`), 6 paired rounds each, CPU 55–70 °C:
+
+| cell | baseline | q4k | ratio (range) | band | verdict |
+|---|---|---|---|---|---|
+| qwen2.5-7b, q4k ÷ today's int4 | 5.18 tok/s | 5.06 tok/s | **0.977** (0.975–0.983) | ≥ 0.85 | **SHIP** |
+| phi3-mini, q4k ÷ int8int8 + per-32 | 6.52 tok/s | 8.53 tok/s | **1.308** (1.305–1.309) | ≥ 1.15 | **SHIP** |
+
+**Protocol change, before any valid pair, owner's choice:** the idle check before each run changed from
+"1-minute load average < 0.8" to "CPU ≥ 95% idle over 3 s from `/proc/stat`", with the CPU
+temperature logged per run. The load average mostly waited 2–3 minutes for the previous run's own
+trailing average to decay. The new check still refuses to measure while anything else runs, since
+one busy thread of 16 reads about 94% idle. The one run taken under the old check is archived and
+unused (`run-loadavg-aborted.log`).
+
+**Next:**
+- aikit release, then goinfer's bump, the parity refresh and the merge of `q4k-phase1`;
+- the owner decides the default scope;
+- 1b, the CUDA kernel, registered before it is built.

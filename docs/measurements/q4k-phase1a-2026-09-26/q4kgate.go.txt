@@ -1,0 +1,257 @@
+// q4kgate: Phase 1a quality gate (arm R = a real --quant q4k load) of; derived from the Phase 0 tool for docs/tasks/task-int4-weight-quality-2026-09.md. Derived from the H2 actsweep tool
+// (same prompts, same metric); per family, the logit damage each goinfer quant does against goinfer's own f32, per position,
+// on two ~130-token chat prompts. int8 (weight-only) vs int8int8 differ ONLY in activation quantization.
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"os"
+	"sort"
+	"strings"
+	"sync"
+	"sync/atomic"
+
+	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+const essay = "\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press."
+const prose = "Rivers shape the land they cross. Over thousands of years a river carves valleys, deposits silt on its floodplain, and builds deltas where it meets the sea. Early farming communities settled along rivers because the soil was fertile and the water reliable, and many of the first cities grew from those settlements. Trade followed the water as well: boats could carry heavy goods far more cheaply than carts on unpaved roads. Explain, in a few paragraphs, how rivers influenced the growth of early civilizations, and give two concrete historical examples."
+
+func cosine(a, b []float32) float64 {
+	var ab, aa, bb float64
+	for i := range a {
+		ab += float64(a[i]) * float64(b[i])
+		aa += float64(a[i]) * float64(a[i])
+		bb += float64(b[i]) * float64(b[i])
+	}
+	return ab / math.Sqrt(aa*bb)
+}
+
+func argmax(v []float32) int {
+	best := 0
+	for i := range v {
+		if v[i] > v[best] {
+			best = i
+		}
+	}
+	return best
+}
+
+func run(path, quant string, prompts [][]int) ([][][]float32, error) {
+	m, err := decoder.Load(path, decoder.Options{Quant: quant, Backend: "cpu"})
+	if err != nil {
+		return nil, err
+	}
+	defer m.Close()
+	all := make([][][]float32, len(prompts))
+	for i, ids := range prompts {
+		cache := m.NewCache(len(ids) + 8)
+		out := make([][]float32, len(ids))
+		for p, id := range ids {
+			lg, _, err := m.ForwardCapture(id, cache, nil)
+			if err != nil {
+				return nil, err
+			}
+			out[p] = append([]float32(nil), lg...)
+		}
+		all[i] = out
+	}
+	return all, nil
+}
+
+// f16 rounds v to the nearest f16 value (round-to-nearest-even), as the stored scale/offset would be.
+func f16(v float32) float32 {
+	b := math.Float32bits(v)
+	sign, exp, man := b&0x80000000, int((b>>23)&0xff)-127, b&0x7fffff
+	if exp < -25 || v == 0 {
+		return math.Float32frombits(sign)
+	}
+	shift := 13
+	if exp < -14 {
+		shift += -14 - exp
+	}
+	man |= 0x800000
+	half := uint32(1) << (shift - 1)
+	rem := man & (1<<shift - 1)
+	man >>= shift
+	if rem > half || (rem == half && man&1 == 1) {
+		man++
+	}
+	return math.Float32frombits(sign) + float32(math.Ldexp(float64(man), exp-23+shift))*func() float32 {
+		if sign != 0 {
+			return -1
+		}
+		return 1
+	}()
+}
+
+// affine: per 32, s = (max-min)/15 and lo = min, both f16; codes 0..15.
+func affine(row []float32) {
+	for g := 0; g+32 <= len(row); g += 32 {
+		v := row[g : g+32]
+		lo, hi := v[0], v[0]
+		for _, x := range v {
+			lo, hi = min(lo, x), max(hi, x)
+		}
+		s, l := f16((hi-lo)/15), f16(lo)
+		for i, x := range v {
+			q := float32(0)
+			if s != 0 {
+				q = float32(math.Max(0, math.Min(15, math.RoundToEven(float64((x-l)/s)))))
+			}
+			v[i] = l + q*s
+		}
+	}
+}
+
+// symmetric: goinfer's int4 rule, per 32, s = max|w|/7 (f16), codes clamped to [-7, 7].
+func symmetric(row []float32) {
+	for g := 0; g+32 <= len(row); g += 32 {
+		v := row[g : g+32]
+		var ma float32
+		for _, x := range v {
+			ma = max(ma, float32(math.Abs(float64(x))))
+		}
+		s := f16(ma / 7)
+		for i, x := range v {
+			q := float32(0)
+			if s != 0 {
+				q = float32(math.Max(-7, math.Min(7, math.RoundToEven(float64(x/s)))))
+			}
+			v[i] = q * s
+		}
+	}
+}
+
+const ggmlQ4K = 12
+
+func main() {
+	name, path := os.Args[1], os.Args[2]
+	types := map[string]int{}
+	tb, err := os.ReadFile(os.Getenv("TYPES_JSON"))
+	if err != nil || json.Unmarshal(tb, &types) != nil || len(types) == 0 {
+		fmt.Fprintln(os.Stderr, name, "types:", err)
+		os.Exit(1)
+	}
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, name, "tokenizer:", err)
+		os.Exit(1)
+	}
+	tmpl, _ := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	enc := func(text string) []int {
+		if tmpl != nil {
+			ids, _ := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: text}}), false)
+			return ids
+		}
+		ids, _ := tk.Encode(text, true)
+		return ids
+	}
+	names := []string{"filler", "prose"}
+	prompts := [][]int{enc(strings.Repeat("the ", 110) + strings.TrimSpace(essay)), enc(prose)}
+	res := map[string]any{"model": name, "template": fmt.Sprint(tmpl != nil), "act_group": 32}
+	ref, err := run(path, "", prompts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, name, "f32:", err)
+		os.Exit(1)
+	}
+	linalg.SetActQuantGroup(32)
+	type arm struct {
+		name, quant string
+		filter      func(typ int, row []float32)
+	}
+	arms := []arm{
+		{"C0", "int4", nil},
+		{"A0", "int8int8", nil},
+		{"A2", "int8int8", func(t int, r []float32) {
+			if t != ggmlQ4K {
+				affine(r)
+			}
+		}},
+		{"A3", "int8int8", func(t int, r []float32) {
+			if t != ggmlQ4K {
+				symmetric(r)
+			}
+		}},
+		{"A4", "int8int8", func(_ int, r []float32) { affine(r) }},
+		{"R", "q4k", nil},
+		{"A5", "int8int8", func(t int, r []float32) {
+			if t == ggmlQ4K {
+				symmetric(r)
+			}
+		}},
+	}
+	if v := os.Getenv("ARMS"); v != "" {
+		keep := map[string]bool{}
+		for _, a := range strings.Split(v, ",") {
+			keep[a] = true
+		}
+		var sel []arm
+		for _, a := range arms {
+			if keep[a.name] {
+				sel = append(sel, a)
+			}
+		}
+		arms = sel
+	}
+	for _, a := range arms {
+		var rows, filtered, unknown atomic.Int64
+		var mu sync.Mutex
+		missing := map[string]bool{}
+		if a.filter != nil {
+			f := a.filter
+			decoder.SetGGUFRowFilterForTest(func(tn string, row []float32) {
+				rows.Add(1)
+				t, ok := types[tn]
+				if !ok {
+					unknown.Add(1)
+					mu.Lock()
+					missing[tn] = true
+					mu.Unlock()
+					return
+				}
+				f(t, row)
+				filtered.Add(1)
+			})
+		}
+		got, err := run(path, a.quant, prompts)
+		decoder.SetGGUFRowFilterForTest(nil)
+		if a.filter != nil {
+			res[a.name+"/rows"] = map[string]any{"rows": rows.Load(), "filtered": filtered.Load(), "unknown": unknown.Load()}
+			if len(missing) > 0 || rows.Load() == 0 {
+				fmt.Fprintln(os.Stderr, name, a.name, "VOID: rows", rows.Load(), "unknown tensors", missing)
+				res[a.name] = "void: filter saw no rows or unknown tensors"
+				continue
+			}
+		}
+		if err != nil {
+			res[a.name] = "error: " + err.Error()
+			continue
+		}
+		for i, ids := range prompts {
+			var cs []float64
+			agree, first := 0, -1
+			for p := range ids {
+				c := cosine(got[i][p], ref[i][p])
+				cs = append(cs, c)
+				if argmax(got[i][p]) == argmax(ref[i][p]) {
+					agree++
+				}
+				if first < 0 && c < 0.9 {
+					first = p
+				}
+			}
+			sort.Float64s(cs)
+			res[names[i]+"/"+a.name] = map[string]any{"T": len(ids), "cos_min": cs[0], "cos_p10": cs[len(cs)/10], "cos_median": cs[len(cs)/2],
+				"argmax_agree": float64(agree) / float64(len(ids)), "first_pos_below_0.9": first}
+		}
+		fmt.Fprintln(os.Stderr, name, a.name, "done")
+	}
+	b, _ := json.Marshal(res)
+	fmt.Println(string(b))
+}

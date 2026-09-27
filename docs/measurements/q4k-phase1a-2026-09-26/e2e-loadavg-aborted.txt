@@ -1,0 +1,2 @@
+qwen2.5-7b int4 g0 1 BenchmarkDecode-16    	      48	 192759203 ns/op	         5.188 tok/s
+qwen2.5-7b int4 g0 1 BenchmarkDecode-16    	      48	 192839727 ns/op	         5.186 tok/s
