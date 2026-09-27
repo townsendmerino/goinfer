@@ -8,7 +8,19 @@
 > needs an owner decision before it starts:** bit-identical small-M kernels barely amortise on Metal (≤ 1.30× on
 > gate/up at M = 4), so a paying MC3 likely means the matrix units and a fidelity gate. The owner chose "cpu first":
 > **MC3c step 1 SHIPPED** (`serve -max-concurrent N`, CPU models): 1.86–1.97× at 4 clients, p99 halved,
-> byte-identical, default 1 pending a decision. MC2 is the kill-or-earn
+> byte-identical, **default 4** (owner, 2026-09-26). The MC2 Linux cells are in: the 1.5B earns, and there batching beats
+> the workers; the 0.5B is in the owner band.
+>
+> **Open, 2026-09-26:**
+> - MC3c step 2 (batching behind the same admission; the Linux 1.5B data argues for it on larger models);
+> - MC3 (Metal batched decode: needs a fidelity-gate decision first);
+> - MC1 on CUDA and WebGPU;
+> - MC1's fit-guard clamp, never exercised;
+> - J8's per-request latency;
+> - re-running J6's prefix-aware scheduling against multi-slot MC1;
+> - one MC2 Linux cell to re-run clean.
+>
+> MC4 and MC5 stay parked. MC2 is the kill-or-earn
 > measurement `roadmap.md` requires before any batched decode work, and now carries J8's cell. MC3
 > is in the niche (decision 1) but must not start until MC2 earns. MC4 and MC5 are parked with
 > triggers. The speed bars were loosened 2026-09-26, before any measurement, per the owner's
