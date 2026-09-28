@@ -37,7 +37,7 @@
     "loaders": "safetensors",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "real-oracle 100.0%/0.98988"
+    "parity": "experimental: real-oracle 100.0%/0.98988"
   },
   {
     "name": "qwen3_5_moe",
@@ -282,7 +282,7 @@
     "loaders": "safetensors, GGUF",
     "modality": "text (+ vision tower)",
     "gpu_residency_eligible": true,
-    "parity": "full-oracle 100.0%/0.99128",
+    "parity": "experimental: full-oracle 100.0%/0.99128",
     "checkpoint": {
       "name": "gemma-4-26b-a4b",
       "repo": "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
