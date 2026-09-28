@@ -1369,7 +1369,9 @@ Table 1's multimodal cell; `docs/multimodal.md` P6.
 > instrument (`scripts/readbw.c`: reached with 2–4 threads, access pattern and prefetch cost nothing). Real bytes per token from the
 > loaded weights (int4 is 0.625 B/param — the f32 scales — so the 2026-09-22 records' "19.5 GB/s, 64% of the ceiling" was ~24 GB/s, ~80%):
 > goinfer streams *fewer* bytes than Ollama (0.73× at 0.5B, 0.94× at 1.5B) but at 17–23 GB/s against Ollama's 26–28, so **the remaining
-> gap is achieved bandwidth, not bytes**. Per component on the 1.5B: gate+up 24.1 GB/s, down 20.1, LM head 27.1 (at the ceiling), o 17.2,
+> gap is achieved bandwidth, not bytes**. *(Corrected 2026-09-27, [`cpu-decode-peer-gap-2026-09-27.md`](../measurements/cpu-decode-peer-gap-2026-09-27.md):
+> the GGUFs carry a separate `output.weight`, so Ollama streams 392 / 980 MB, not the whole file. goinfer streams 0.92× / 1.075×
+> Ollama's bytes, and Ollama runs at 22.5–26.0 GB/s. About a third of the 1.5B / 7B gap is bytes.)* Per component on the 1.5B: gate+up 24.1 GB/s, down 20.1, LM head 27.1 (at the ceiling), o 17.2,
 > q/k/v 11.4, plus 6.6 ms/token that streams nothing (serial SwiGLU 3.65, attention core 2.6). Built and shipped **one fork/join per layer
 > for gate+up with the SwiGLU folded in** (non-arm64, default on, `GOINFER_CPU_FUSED_GATEUP=0` opts out): bit-identical (element-wise
 > test, mutation-checked; ~21.9M full-logit values compared on the real 0.5B/1.5B/7B, 0 differ), paired ABBA 1.066× / 1.113× / 1.029×

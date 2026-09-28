@@ -1,0 +1,6 @@
+qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: tied=False  per-token bytes  Q4_K_M 392 MB  goinfer (int4, int8 head) 361 MB  ratio 0.920
+   Q4_K_M by type (MB): {'Q8_0': 146, 'Q6_K': 43, 'Q5_0': 173, 'Q4_K': 29}
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: tied=False  per-token bytes  Q4_K_M 980 MB  goinfer (int4, int8 head) 1053 MB  ratio 1.075
+   Q4_K_M by type (MB): {'Q6_K': 354, 'Q4_K': 626}
+qwen2.5-7b-instruct-q4_k_m.gguf: tied=False  per-token bytes  Q4_K_M 4371 MB  goinfer (int4, int8 head) 4625 MB  ratio 1.058
+   Q4_K_M by type (MB): {'Q6_K': 1248, 'Q4_K': 3121}

@@ -68,6 +68,13 @@ The two smallest projections are fork/join-shaped (k and v are 256 columns each:
 
 ## 4. Where the gap to Ollama actually is: achieved bandwidth, not bytes
 
+> **CORRECTED 2026-09-27** ([`cpu-decode-peer-gap-2026-09-27.md`](cpu-decode-peer-gap-2026-09-27.md)): the 0.5B and 1.5B GGUFs
+> are **not** tied. Each carries a separate `output.weight` (Q8_0 / Q6_K), which is what llama.cpp streams as the head, and it only
+> looks rows up in `token_embd`. Ollama streams **392 / 980 / 4371 MB** per token, so its bandwidth was **22.5 / 23.5 / 26.0 GB/s**
+> (75–87% of the ceiling), not 28.1 / 26.6 / ~26.3 (86–92%). goinfer streams 0.92× / **1.075×** / 1.058× Ollama's bytes, not
+> 0.73× / 0.94×. At Ollama's real 23.5 GB/s the 1.5B would be **~0.93×** Ollama, not "~1.06×". Bytes are about a third of the
+> 1.5B / 7B gap. The paragraphs below are kept as written; the figures in them are superseded.
+
 Ollama's per-token stream is its whole file for the tied-embedding 0.5B/1.5B (the embedding *is* the head): 491.4 MB and 1117.3 MB;
 for the untied 7B ~4377 MB (the 4683 MB file less the ~306 MB token-embedding table it only looks a row up in — an estimate).
 Same-session served tok/s (§6) × those bytes:
@@ -141,7 +148,7 @@ the 2026-09-22 record (the ~3.5% session drift this repo already documents).
 
 ## 7. What is left, ranked by measured upside (1.5B, ms/token; not built)
 
-1. **Matmul efficiency, 22.0 → ~26.6 GB/s (Ollama's whole-token rate): up to ~8 ms.** Concentrated in `down` (20.1 GB/s — same matrix size as
+1. **Matmul efficiency, 22.0 → ~26.6 GB/s (Ollama's whole-token rate; corrected 2026-09-27 to 23.5 GB/s, see §4's note): up to ~8 ms.** Concentrated in `down` (20.1 GB/s — same matrix size as
    gate/up but N=1536 columns × K=8960; *why* it streams 17% slower per byte is unexplained), `o` (17.2) and q/k/v (11.4).
 2. **R-06's q/k/v batch: measured 1.053× / 1.039× (≈2.7 ms), bit-identical, still parked by its own ≥1.15× rule.** The roofline now gives it a
    mechanism (a 172 µs/layer q/k/v dispatch against ~70 µs at the ceiling) and the two levers stack (1.5B plain 56.46 → batch+fused 51.31 ms =

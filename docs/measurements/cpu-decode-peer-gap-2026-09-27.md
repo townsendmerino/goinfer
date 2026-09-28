@@ -1,0 +1,110 @@
+# CPU decode vs Ollama, Phase 0 — the gap is a third bytes and two-thirds bandwidth, and the 09-23 record overstated Ollama's bandwidth (2026-09-27)
+
+The Linux half of "CPU decode is the one backend still behind" (the 2026-09-25 peer claim: 0.80× at 0.5B, 1.5B and 7B
+void at 0.80× / 0.84× raw). This is exploratory, with no gate and no claim wording. It re-baselines, recounts the bytes
+each engine streams per token, and ranks the levers for a pre-registration. Prior art read first:
+[`cpu-decode-attribution-2026-09-22-linux.md`](cpu-decode-attribution-2026-09-22-linux.md) and
+[`cpu-decode-roofline-2026-09-23.md`](cpu-decode-roofline-2026-09-23.md), whose per-component split this does not
+repeat.
+
+**Result:**
+1. **Nothing has moved since the claim.** HEAD reads 0.818× / 0.810× / 0.856× Ollama, and is 1.001–1.003× the 09-25
+   build.
+2. **Correction to the 09-23 record.** Both the 0.5B and 1.5B GGUFs carry a separate `output.weight` (Q8_0 and Q6_K).
+   llama.cpp streams that head and only looks rows up in `token_embd`, so Ollama streams 392 / 980 MB per token, not
+   the whole file (491 / 1117 MB). Its bandwidth is therefore **22.5 / 23.5 / 26.0 GB/s**, not 28.1 / 26.6 / 26.3.
+   The claim that goinfer at Ollama's bandwidth would be "~1.06× Ollama" on the 1.5B is withdrawn: it would be
+   ~0.93×.
+3. **The gap = bytes ratio × bandwidth ratio.** On the 1.5B and 7B, goinfer streams 7.5% / 5.8% more bytes (f32 group
+   scales, int8 head) *and* achieves 13–15% less bandwidth. On the 0.5B it streams 8% fewer bytes and achieves 33%
+   less bandwidth.
+
+## Setup
+
+- `nobara`, Ryzen 7 3700X (8c/16t), Nobara 44, kernel 7.2.0.
+- goinfer `serve-cpu` at `157196bb` (HEAD) and at `411e7fc4` (the 09-25 claim's build), against Ollama v0.32.5 with
+  its defaults (CPU backend).
+- `scripts/bench_peer.py`, phase A, CPU only, depth 128, greedy, essay-v2 prompts, 3 runs × 8 completions × 64 tokens
+  per cell, a server restart per cell, the harness's load ≤ 1.0 gate per cell.
+- qwen2.5-coder-0.5b / coder-1.5b / 7b-instruct q4_k_m from `~/models`.
+- Run 2026-09-27 19:15–19:53 PDT. Raw: [`cpu-decode-peer-gap-2026-09-27/`](cpu-decode-peer-gap-2026-09-27/).
+- **Process notes.** Twice, a header-reading script of mine ran a whole-file hash while the sweep was up, because
+  `scripts/gguf_same_weights.py` executes its comparison at import. Neither overlapped a timed cell: both landed in
+  the harness's between-cell idle wait, which held the next cell until load decayed (`baseline.log`). A mistaken
+  `bench_peer.py --help` also ran one cell into a file named `--help` with the harness's default v0.15.0 binary; it
+  was discarded and is not in the data.
+
+## 1. Re-baseline (`baseline.json`; all cells pass the token gate)
+
+| model | goinfer HEAD tok/s | 09-25 build | Ollama | **HEAD ÷ Ollama** | HEAD ÷ 09-25 build |
+|---|---:|---:|---:|---:|---:|
+| 0.5B | 46.91 | 46.75 | 57.34 | **0.818×** | 1.003× |
+| 1.5B | 19.41 | 19.38 | 23.96 | **0.810×** | 1.002× |
+| 7B | 5.09 | 5.09 | 5.95 | **0.856×** | 1.001× |
+
+Medians of 3 runs; every run within 0.3% of its median. The essay-v2 prompts leave no early stops this time, so the
+1.5B and 7B, void on 09-25, read cleanly and agree with their void raw ratios (0.80×, 0.84×).
+
+## 2. Bytes per token (`bytes_per_token.py`, header-only; `bytes-per-token.txt`)
+
+- **Q4_K_M, as llama.cpp reads it:** every 2-D tensor at its own ggml type, with the head from `output.weight` where
+  it exists.
+- **goinfer int4:** 0.625 B/param (a nibble plus one f32 scale per 32-group); the head int8 plus one f32 per row.
+- goinfer's column matches the 09-23 record's count from the loaded model (360.4 / 1052.9 / 4623.9 MB).
+
+| model | Q4_K_M MB/token (by type) | goinfer MB/token | bytes ratio |
+|---|---|---:|---:|
+| 0.5B | 392 (Q5_0 173, Q8_0 head 146, Q6_K 43, Q4_K 29) | 361 | 0.920 |
+| 1.5B | 980 (Q4_K 626, Q6_K 354 incl. head) | 1053 | 1.075 |
+| 7B | 4371 (Q4_K 3121, Q6_K 1248 incl. head) | 4625 | 1.058 |
+
+## 3. The gap, decomposed
+
+Effective bandwidth = bytes per token × tok/s. The bytes ratio × the bandwidth ratio reproduces the measured time
+ratio.
+
+| model | goinfer GB/s | Ollama GB/s | bytes ratio | × bandwidth ratio | = time ratio | 1 ÷ measured |
+|---|---:|---:|---:|---:|---:|---:|
+| 0.5B | 16.9 | 22.5 | 0.920 | 1.329 | 1.223 | 1.222 |
+| 1.5B | 20.4 | 23.5 | 1.075 | 1.151 | 1.237 | 1.234 |
+| 7B | 23.5 | 26.0 | 1.058 | 1.105 | 1.169 | 1.169 |
+
+Against the ~30 GB/s read ceiling (`readbw.c`, 09-23), Ollama runs at 75–87%, so it is not at the ceiling either.
+goinfer runs at 56–78%.
+
+**What this changes from the 09-23 record.** That record found goinfer's bytes were fewer on the 0.5B and 1.5B, and
+ranked bandwidth alone as the gap. On the corrected counts, bytes are a third of the gap on the 1.5B and 7B, the
+sizes where the claim was void. They are none of it on the 0.5B, whose gap is efficiency only.
+
+## 4. Levers, ranked for a pre-registration (estimates, none measured)
+
+1. **f16 group scales for CPU int4 (bytes).** 0.625 → 0.5625 B/param saves 22 / 82 / 408 MB per token.
+   - That puts the byte ratio at 0.86 / 0.99 / 0.965 of Ollama's.
+   - If the matmuls keep their bandwidth, the estimate is 0.5B 1.06×, 1.5B 1.08×, 7B 1.10×. That is ~0.87× / 0.87× /
+     0.94× Ollama; it is an upper bound, because the kernel must convert f16 scales.
+   - **Quality has precedent.** CUDA (`ws16`), Metal and WebGPU already store int4 group scales as f16, so the CPU is
+     the only backend on f32. `GOINFER_INT4_F16_SCALES=1` (`decoder/int4f16scales.go`) already makes a CPU load carry
+     exactly those weights, so the quality gate can run before any kernel exists.
+   - **Cost:** an aikit kernel for each W4A8 path (AVX2, AVX-512 VNNI, NEON), a `.giw` version, and an aikit release.
+     It is not bit-identical to today's CPU output, so the goldens and the parity manifest are re-baselined, and the
+     peer same-weights story is unchanged.
+2. **Bandwidth on the small projections and `down` (efficiency; the whole 0.5B gap).** The 09-23 split puts q/k/v at
+   11.4 GB/s, o at 17.2 and down at 20.1, against gate+up at 24.1.
+   - R-06's fused q/k/v (`GOINFER_W4A8_BATCH`, bit-identical) measured 1.053× / 1.039× (1.5B / 0.5B) and is parked by
+     its own ≥ 1.15× bar. Flipping it is the owner's call under that bar.
+   - Why `down` streams 17% slower per byte than gate+up is still unexplained. The per-worker timestamps inside a real
+     token (S-02) are still not taken; they are the next instrument.
+3. **The LM head (bytes).** int8 at 234 MB against Q6_K's ~191 MB on the 1.5B. The ~4% it is worth is the smallest
+   of the three and the most quality-sensitive (a 1.5% argmax flip rate for int4 is on record). Not recommended first.
+
+Stacked, 1 and 2 (R-06 only) would put the 1.5B near ~0.92× by these estimates. Parity on the 1.5B and 7B needs the
+unexplained bandwidth in lever 2 as well.
+
+## Not established
+
+- Every speed-up in §4 is an estimate from bytes and a bandwidth assumption; none was measured.
+- Ollama's thread count on this box (its default is the physical-core count; goinfer runs 16 threads, and the 09-22
+  record found 16 vs 8 inside noise for goinfer).
+- Per-shape peer timing. `test-backend-ops perf` re-runs each op on one set of weights, and every 1.5B matrix fits
+  the 3700X's 16 MB L3. It would time cache-hot kernels rather than decode's DRAM stream, so it was not used.
+- The Mac half (0.5B ambiguous-low, 1.5B void on 09-25).
