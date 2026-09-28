@@ -45,6 +45,8 @@ import sys
 import time
 from pathlib import Path
 
+import timing_lock  # TE9: one timed run per box
+
 ROOT = Path(os.environ.get("NIGHT_DIR", str(Path.home() / "goinfer-logs" / "night"))).expanduser()
 QUEUE = ROOT / "queue"
 RUNS = ROOT / "runs"
@@ -58,6 +60,7 @@ SPLIT_WARN_MIN = 180
 SETTLE_LOADAVG = float(os.environ.get("NIGHT_SETTLE_LOADAVG", "1.0"))
 SETTLE_MAX_S = int(os.environ.get("NIGHT_SETTLE_MAX_S", "300"))
 POLL_S = 10
+LOCK_WAIT_MIN = float(os.environ.get("NIGHT_LOCK_WAIT_MIN", "30"))  # TE9: minutes a job waits for another timed run's lock
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
 
@@ -414,36 +417,54 @@ class Runner:
                     f.write(f"=== {k:<8} {j[k]}\n")
             f.write(f"=== START    {t0.strftime('%F %T %Z')}  loadavg {os.getloadavg()[0]:.2f}\n")
             f.flush()
-            cmd = j["cmd"] if len(j["cmd"]) > 1 else ["/bin/bash", "-c", j["cmd"][0]]
-            env = dict(os.environ, NIGHT_JOB=name, NIGHT_LOG=str(logp), NIGHT_RUNDIR=str(self.rundir))
+            # TE9: the job holds the timing lock, and its children (a run-*.sh, bench_peer.py) inherit it through the
+            # environment. A timed run still going from the day, or from another checkout, is waited for up to
+            # LOCK_WAIT_MIN; then this job is skipped, naming the holder, rather than measured on top of it.
             try:
-                if not Path(cwd).is_dir():
-                    raise FileNotFoundError(f"the directory it was queued from is gone: {cwd}")
-                self.proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=f,
-                                             stderr=subprocess.STDOUT, start_new_session=True, env=env)
-            except Exception as e:
+                lock = timing_lock.acquire(label=f"night.py job {name}", wait_s=LOCK_WAIT_MIN * 60,
+                                           cmd=shlex.join(j["cmd"]))
+            except timing_lock.Held as e:
                 f.write(f"=== could not start: {e}\n")
                 self.proc = None
-                return self.finish(j, t0, "failed to start", logp)
-            st = read_json(STATE) or {}
-            st["pid"] = self.proc.pid
-            write_json(STATE, st)
-            limit = t0 + dt.timedelta(minutes=j["timeout_min"])
-            outcome = None
-            while True:
-                try:
-                    self.proc.wait(timeout=POLL_S)
-                    break
-                except subprocess.TimeoutExpired:
-                    pass
-                if self.stop_now:
-                    self.kill_job("night.py stop --now")
-                    outcome = "stopped"
-                elif now() > limit:
-                    self.kill_job(f"timeout {j['timeout_min']} min")
-                    outcome = "timeout"
-            rc = self.proc.returncode
-            f.write(f"\n=== END      {now().strftime('%F %T %Z')}  rc={rc}\n")
+                return self.finish(j, t0, "skipped: timing lock held", logp)
+            try:
+                return self._run_locked(j, name, cwd, t0, logp, f)
+            finally:
+                lock.release()
+
+    def _run_locked(self, j, name, cwd, t0, logp, f):
+        """The job itself: run_job calls this with the log open and the timing lock held."""
+        cmd = j["cmd"] if len(j["cmd"]) > 1 else ["/bin/bash", "-c", j["cmd"][0]]
+        env = dict(os.environ, NIGHT_JOB=name, NIGHT_LOG=str(logp), NIGHT_RUNDIR=str(self.rundir))
+        try:
+            if not Path(cwd).is_dir():
+                raise FileNotFoundError(f"the directory it was queued from is gone: {cwd}")
+            self.proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=f,
+                                         stderr=subprocess.STDOUT, start_new_session=True, env=env)
+        except Exception as e:
+            f.write(f"=== could not start: {e}\n")
+            self.proc = None
+            return self.finish(j, t0, "failed to start", logp)
+        st = read_json(STATE) or {}
+        st["pid"] = self.proc.pid
+        write_json(STATE, st)
+        limit = t0 + dt.timedelta(minutes=j["timeout_min"])
+        outcome = None
+        while True:
+            try:
+                self.proc.wait(timeout=POLL_S)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            if self.stop_now:
+                self.kill_job("night.py stop --now")
+                outcome = "stopped"
+            elif now() > limit:
+                self.kill_job(f"timeout {j['timeout_min']} min")
+                outcome = "timeout"
+        rc = self.proc.returncode
+        f.write(f"\n=== END      {now().strftime('%F %T %Z')}  rc={rc}\n")
+        f.flush()
         if outcome is None:
             outcome = "ok" if rc == 0 else f"FAILED rc={rc}"
         return self.finish(j, t0, outcome, logp)

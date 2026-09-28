@@ -6,6 +6,9 @@
 > night"; c9d8ea04, c4e3aec2) moves long runs to the night queue. This campaign makes them shorter and fewer. It is the
 > device-bound complement of [`task-ci-speed-2026-09.md`](../completed/task-ci-speed-2026-09.md) (C0–C9), whose §4 left
 > exactly this out: "`go run ./cmd/gate` on a real box stays the correctness gate."
+>
+> **Done 2026-09-28:** TE9, the timing lock (`scripts/timing_lock.py`), and TE5(a), the two-arm rule in `CLAUDE.md`. See
+> each item for its proof.
 
 ## BLUF
 
@@ -250,6 +253,9 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
 - **Band:** −25–33% of cells on goinfer-vs-goinfer served gates from (a), immediately; a daytime kernel verdict in
   ≤ 5 min from (b).
 - **Kill (b):** any sign disagreement for a kernel-local change. The in-process lane then stays exploratory.
+- **(a) DONE 2026-09-28:** the rule is in root `CLAUDE.md` § Run budget ("Two arms when the decision is new ÷ old").
+  There is no separate `run-*.sh` template file to change; each campaign's script sets `BENCH_ENGINES`, so the rule
+  goes where those scripts are written.
 
 ### TE6 — Change-proportional correctness: identity against the last validated build, cached references *(by day + one night)*
 
@@ -329,6 +335,23 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   `fcntl.flock` on `~/.goinfer-timing.lock` for the length of its run. A second timed run waits or refuses, naming the
   holder (pid, command, start). The idle gate checks the lock first.
 - **Band:** void-by-collision records → 0.
+- **DONE 2026-09-28.** `scripts/timing_lock.py` holds an exclusive `flock` on `~/.goinfer-timing.lock`.
+  - **Where it is taken:** `bench_peer.py`, `bench_peer_prefill.py` and `bench_peer_transcript.py` take it at
+    `__main__`, before `preflight()`. `night.py` takes it per job; a daytime holder is waited for up to
+    `NIGHT_LOCK_WAIT_MIN` (default 30), then the job is skipped with the holder named. `timing_lock.py run -- CMD`
+    wraps any other timed step in a `run-*.sh`.
+  - **Behaviour:** a contender refuses (exit 75 from the CLI) with the holder's pid, command, start and label, or waits
+    with `BENCH_LOCK_WAIT` / `--wait`. The holder's children inherit it through `GOINFER_TIMING_LOCK`, so a night job
+    that runs a `run-*.sh` that runs `bench_peer.py` takes it once. The kernel drops it when the holder dies, so it
+    cannot go stale.
+  - **Proof, `scripts/test_timing_lock.py` (7 real-process cases):** refusal naming the holder, a foreign token not
+    bypassing, children inheriting through nested wrappers, waiting until release, SIGKILL freeing it, and `status`.
+    A shared-lock mutant turned 5 of 7 red.
+  - **End to end:** a `night.py` job's child inherits the lock. A job blocked by another holder is skipped after the
+    wait, with the holder named and its command not run. All three harnesses refuse in ≤ 0.3 s, before `preflight()`
+    and without writing output.
+  - **Scope:** the lock is cooperative, so a hand-typed `go test -bench` does not take it. TE1's named-process check is
+    what sees those.
 
 ### TE10 — Parity staleness keyed on what each family executes *(conditional)*
 
