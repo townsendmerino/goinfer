@@ -178,8 +178,8 @@ conversations.
 - The 4-client aggregate is 70.9 against the previous build's 57.0 tok/s (1.24×; the repeat reads 1.22×).
 - Each turn prefills only its new user turn at every client count.
 - Outputs are bit-identical to each conversation served alone, on the tiny fixture and on qwen2.5-coder-1.5b.
-- Not converted: WebGPU (one slot); recurrent families keep one; VL turns use the bound slot. CUDA shipped
-  2026-09-27; see "MC1 on CUDA" below.
+- Recurrent families keep one; VL turns use the bound slot. CUDA shipped 2026-09-27; see "MC1 on CUDA" below.
+  WebGPU was built 2026-09-27 and is graded in "MC1 on WebGPU" below.
 - The fit guard's clamp is implemented, but no clamping load was run.
 - **Fixed 2026-09-26 (found by MC3 S1): the clamp was priced after the build had allocated its own buffers.**
   - Its budget reads live available memory, and the base it compares against (`residentNeedBytes`) already includes
@@ -318,6 +318,81 @@ control thrashes (3 / 3). The tagged CUDA suite: 171 pass, 0 fail.
 - Also reported: one 4-client pair (old, then new) on qwen2.5-7b-instruct q4_k_m. Where the clamp should bind:
   the banner's slot count, and the aggregate.
 - Gates are computed by `gates.py`, archived with the raw JSON in `docs/measurements/concurrency-mc1-cuda-2026-09-27/`.
+
+### MC1 on WebGPU (the MacBook) — built 2026-09-27, W7 grading pre-registered below before any timing
+
+**What was built** (`gpu/kv_slots.go`). The WebGPU resident implements `decoder.ResidentKVSlotter`; the decoder half
+is Metal's, unchanged.
+- **A slot is a whole decode runner.** This is not a pointer swap, as it is on CUDA and Metal. `newDecodeRunner` bakes
+  every KV buffer into bind groups it builds once: `ropeStore`, `vStore`, `qkvFinalize`, the attention binds, and
+  the MLA store and attention. A runner can therefore only use the caches it was built over.
+  - Each slot has a `runModel` whose layers share every weight buffer with slot 0 and own only their KV: K and V
+    at the resident precision, the int8 scales, and the MLA latent.
+  - Each slot also has its own runner and its own lazily grown `ForwardN` pool.
+  - `UseKVSlot` swaps the bound `rm`/`runner`/`batch`. `UploadKV`, `Forward`, `ForwardN` and `PrefillLast` read those
+    at call time, so none of them changed.
+- **Adapters.** `generateInto` binds an adapter before it acquires the slot. A switch therefore binds the adapter on
+  the new slot's runner first (on an error the binding is unchanged), then clears the old runner's copy.
+- **Pricing.** WebGPU has no free-memory query.
+  - On darwin, where device memory is host RAM, the count is clamped against two ceilings, the smaller of which
+    applies, as in Metal's guard:
+    - 70% of RAM, against the weights, their host copy and every slot;
+    - the memory available when the build started (read before its first upload), against the weights and the
+      slots. The host copy is not counted twice here.
+  - Elsewhere, a slot whose allocation fails stops the count at the slots already built. Each slot must also leave a
+    384 MiB probe allocatable, CUDA's margin, for the per-call prefill scratch.
+  - Both clamps log the count they chose, and the banner names it.
+  - A slot request does **not** shrink the resident context here, unlike CUDA's `947e06ce`. The WebGPU context is
+    `WebGPUCtxCeiling`'s fixed 16k (f32 KV), clamped to the model's own window or `-ctx`. Applying "slots before
+    context" to this backend is an owner decision, open.
+- **Families.** A runModel carrying Mamba or DeltaNet state keeps one slot, on WebGPU as well as by the decoder.
+
+**Identity (before timing).** `gpu/kv_slots_test.go`:
+- The interleaved-vs-alone scenario with a one-slot thrash control runs on llama-tiny with f32, int8 (scales) and
+  f16 KV, and on deepseek-tiny (MLA). mistral-tiny-window is not built on this Mac (gitignored fixture), so it skips
+  here; nobara has it.
+- The same scenario runs with conversation A on a LoRA adapter.
+- A slot's `ForwardN` pool never serves another slot.
+- Every per-sequence buffer is the slot's own and every weight is shared.
+- The recurrent families (qwen35-tiny, nemotron-tiny) keep one slot.
+- A clamping build (a failure injected halfway through slot 2 of 4) grants 2, both usable, with zero live device
+  bytes after Close.
+- Both darwin ceilings are exercised on a real build, and there is an arithmetic table.
+- Mutation-checked: dropping the adapter move fails the adapter scenario on A and on B, and sharing slot 0's KV
+  fails identity and the `ForwardN` test.
+- On qwen2.5-coder-1.5b (48 tokens × 3 turns × 2 conversations), the result is recorded in the measurement.
+
+**W7 grading, pre-registered.**
+- *old* = `serve-webgpu` at `68f2dbdf` (one slot); *new* = `serve-webgpu` at the MC1-WebGPU commit. Each is built
+  once with `go -C gpu build -tags gpu -o <bin> ./cmd/serve`, and the binary is named by its hash.
+- Machine: the MacBook Pro (M1 Pro, 16 GB, macOS 26.6.2), WebGPU through wgpu-native's Metal backend
+  (`oliverbestmann/webgpu` v1.36.0).
+- Workload: `scripts/bench_w7_plain.py --engines goinfer --backend webgpu --fixed-nonce`, with
+  qwen2.5-coder-1.5b-instruct q4_k_m from `~/models`, `-quant int4` and serve defaults.
+  - `-kv-sessions` 4 means new asks for 4 slots, at the default 16k f32 context: ~0.94 GB of KV each.
+  - 6 turns × 128 greedy tokens per client, and a fresh server per cell.
+  - Prefill on this backend is per token for Qwen2.5: `PrefillLast` declines q/k/v bias off Vulkan. So a thrashing
+    turn re-prefills its whole conversation one token at a time.
+- Cells: 1, then 2, then 4 clients. Each is old/new × 3 pairs, in the order old new new old old new.
+- Every cell is idle-gated: load1 ≤ 2.0 (`sysctl vm.loadavg`), and no other serve process. The bench also waits for
+  3000 MB free before each server.
+- Gates, CUDA's (hard unless marked):
+  1. Identity:
+     - at 1 client, `content_sha` old == new on every turn of every pair;
+     - at 2 and 4 clients, new's client 0 == new's 1-client run on every turn;
+     - old vs new at 2 and 4 clients is reported only.
+  2. Reuse: at 2 and 4 clients, every new client's turn 1 reuses what the 1-client run's does (0, cold), and its turns
+     2–6 prefill exactly what the 1-client run's do.
+  3. *(Expected band, not a gate.)* new's 2- and 4-client aggregate is 0.90–1.0× its own 1-client aggregate. Below
+     0.85× at 4 clients is a finding to explain.
+  4. Ship: 4-client aggregate new ÷ old, median of 3 pairs, ≥ 1.03×.
+  5. Solo guard: 1-client p50 and p99 turn (nearest rank over the cell's 6 turns), new ÷ old, median of 3 pairs,
+     ≤ 1.05× each.
+- It ships if 1, 2, 4 and 5 hold. A hard-gate miss is recorded as a negative result and not shipped.
+- Also reported: the slot count new's banner states. If the darwin clamp grants fewer than 4 at the defaults, the
+  gates still read at the defaults, and the clamp is the finding.
+- Gates are computed by `gates.py` (CUDA's, unchanged in its arithmetic), archived with the raw JSON in
+  `docs/measurements/concurrency-mc1-webgpu-2026-09-27/`.
 
 **Estimate.** One to two weeks across the three backends, mostly bookkeeping and the fit guard.
 
