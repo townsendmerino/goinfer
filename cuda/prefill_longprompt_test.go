@@ -27,6 +27,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -run TestPrefillLongPrompt -v -timeout 40m ./cuda/
 func TestPrefillLongPrompt(t *testing.T) {
+	needsFreshProcess(t, "the 7B needs 0.94 GB of KV + 384 MB reserve against 1.29 GB free, 30 MB short in the one-process heavy tier; passes alone")
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a 7B model)")
 	}

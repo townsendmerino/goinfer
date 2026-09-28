@@ -640,7 +640,15 @@ func (g *gpuGate) cudaParity() {
 // the test files tracking the enclosing `func TestX` and returns X for each one that calls it. A
 // hand-kept -run list would be a constant restating a property — the same drift shape the census
 // denominators keep making visible.
-func drainingTests() []string {
+func drainingTests() []string { return markedTests("drainsDevice(t,") }
+
+// isolatedTests derives the fresh-process group from needsFreshProcess(t, why) in
+// cuda/isolated_marker_test.go, the same way: edge-of-card tests that fit in a fresh process and not
+// after a few hundred others (measured 2026-09-28, see the marker's comment).
+func isolatedTests() []string { return markedTests("needsFreshProcess(t,") }
+
+// markedTests returns every top-level test in cuda/*_test.go whose body calls marker.
+func markedTests(marker string) []string {
 	files, _ := filepath.Glob(filepath.Join("cuda", "*_test.go"))
 	sort.Strings(files)
 	set := map[string]bool{}
@@ -656,7 +664,7 @@ func drainingTests() []string {
 				name = m[1]
 				continue
 			}
-			if strings.Contains(ln, "drainsDevice(t,") && name != "" {
+			if strings.Contains(ln, marker) && name != "" {
 				set[name] = true
 				name = ""
 			}
@@ -673,7 +681,7 @@ func drainingTests() []string {
 // by someone waiting 28 minutes for a gate they thought took one.
 func (g *gpuGate) cudaHeavy() {
 	g.grp("heavy")
-	g.hdr("2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; ~28 min)")
+	g.hdr("2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; measured 78 min on 2026-09-28)")
 	if os.Getenv("GOINFER_GATE_SKIP_HEAVY") != "" {
 		g.skip("heavy tier (GOINFER_GATE_SKIP_HEAVY set) — the real-model gates did NOT run: 26B expert\n" +
 			"        streaming, real-weight GEMV parity, resident spec-serve, the bandwidth benchmarks")
@@ -721,10 +729,14 @@ func (g *gpuGate) cudaHeavy() {
 	// lesson when it replaced the script. 90m is ~50% headroom over the observed
 	// 60.2 min, which is enough for drift without letting a genuine hang sit for
 	// two hours.
+	//
+	// 120m SINCE 2026-09-28: the tier measured 4,699 s (78 min) that day, 12 min under 90m — the
+	// no-margin state the note above describes. The fresh-process tests below moved ~15 min out of
+	// this process at the same time, so 120m is headroom, not a new expectation.
 	mainRes, mainCR, mainOut := g.run(cell{
 		Name: "cuda-heavy", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
-		Serial: true, Timeout: "90m",
-		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1"},
+		Serial: true, Timeout: "120m",
+		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1", "GOINFER_ISOLATE_DEFER": "1"},
 	}, true)
 
 	// INVOCATION 2: the drain group, its own process, after everything else. GOINFER_DRAIN_GROUP is
@@ -760,6 +772,36 @@ func (g *gpuGate) cudaHeavy() {
 		g.bad("drain group (%d test(s), separate process)", len(drain))
 		g.detail(drainOut, failTestRe)
 		fmt.Fprintf(g.w, "      full output: %s\n", drainCR.LogPath)
+	}
+
+	// INVOCATION 3: each fresh-process test as its own process (needsFreshProcess). The main tier ran
+	// with GOINFER_ISOLATE_DEFER=1, so each one skipped there with ISOLATED-SKIP; here it runs alone
+	// and logs ISOLATED-RUN. Reconciled both ways, exactly as the drain group is.
+	iso := isolatedTests()
+	fmt.Fprintf(g.w, "      fresh-process tests (%d, derived from needsFreshProcess() in cuda/isolated_marker_test.go), one process each:\n", len(iso))
+	isoRan, isoBad := 0, 0
+	for _, name := range iso {
+		_, isoCR, isoOut := g.run(cell{
+			Name: "cuda-iso-" + name, Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
+			Serial: true, Timeout: "30m", Run: "^" + name + "$",
+			Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1"},
+		}, true)
+		isoRan += strings.Count(isoOut, "ISOLATED-RUN")
+		if isoCR.RC != 0 {
+			isoBad++
+			g.bad("%s (fresh process)", name)
+			g.detail(isoOut, failTestRe)
+			fmt.Fprintf(g.w, "      full output: %s\n", isoCR.LogPath)
+		}
+	}
+	isoSkipped := strings.Count(mainOut, "ISOLATED-SKIP")
+	fmt.Fprintf(g.w, "      reconciliation: marked=%d  skipped-in-main=%d  ran-alone=%d\n", len(iso), isoSkipped, isoRan)
+	if isoSkipped != len(iso) || isoRan != len(iso) {
+		g.bad("fresh-process partition does not reconcile — a test is in neither half or in both")
+		g.note(fmt.Sprintf("fresh-process mismatch: %d marked, %d skipped in main, %d ran alone", len(iso), isoSkipped, isoRan))
+	} else if isoBad == 0 && len(iso) > 0 {
+		g.ran++
+		g.ok("fresh-process tests (%d, one process each)", len(iso))
 	}
 
 	secs := int(time.Since(t0).Seconds())
@@ -1355,7 +1397,7 @@ func (g *gpuGate) repoHygiene() {
 		// unions every submodule and the guard reports a false red. Derived from whether the job
 		// sets up a workspace, not hardcoded here. "-" means no override.
 		cmd := exec.Command("bash", "-c", unescapeCI(cmdStr))
-		cmd.Env = os.Environ()
+		cmd.Env = withGoBin(os.Environ())
 		if envSpec != "-" && envSpec != "" {
 			cmd.Env = append(cmd.Env, envSpec)
 		}
@@ -1378,6 +1420,32 @@ func (g *gpuGate) repoHygiene() {
 	if ciBad == 0 {
 		g.ok("%d CI hygiene check(s) reproduced locally, derived from ci.yml", ciOK)
 	}
+}
+
+// withGoBin puts `go env GOPATH`/bin first on PATH. CI installs its tools (staticcheck@v0.8.0) with `go
+// install` and then calls them by bare name, which works there because setup-go puts GOPATH/bin on PATH.
+// A developer shell need not, and on nobara it did not: the gate reported "staticcheck: command not
+// found" as two failed CI checks (2026-09-28) while the pinned binary sat in ~/go/bin. Prepending the
+// same directory reproduces CI's environment; a missing binary still fails, now with the install hint.
+func withGoBin(env []string) []string {
+	out, err := exec.Command("go", "env", "GOPATH").Output()
+	gp := strings.TrimSpace(string(out))
+	if err != nil || gp == "" {
+		return env
+	}
+	bin := filepath.Join(strings.Split(gp, string(os.PathListSeparator))[0], "bin")
+	res := make([]string, 0, len(env)+1)
+	found := false
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, "PATH="); ok {
+			kv, found = "PATH="+bin+string(os.PathListSeparator)+v, true
+		}
+		res = append(res, kv)
+	}
+	if !found {
+		res = append(res, "PATH="+bin)
+	}
+	return res
 }
 
 // unescapeCI expands the \n escapes ci_checks.py packs a multi-line step into, matching the shell's

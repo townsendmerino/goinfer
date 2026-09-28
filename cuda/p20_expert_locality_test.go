@@ -31,6 +31,7 @@ import (
 //	GOINFER_HEAVY_TESTS=1 GOINFER_P20_MODEL=gemma4-26b-int4.giw GOINFER_P20_M=512 \
 //	  go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestP20ExpertLocality -v -timeout 20m
 func TestP20ExpertLocality(t *testing.T) {
+	needsFreshProcess(t, "the 26B needs 3.69 GB of KV + reserve against 3.98 GB free; declined in the one-process heavy tier, passes alone")
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a 26B model)")
 	}

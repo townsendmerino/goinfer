@@ -167,6 +167,7 @@ func (a *specPagerArm) alpha() float64 {
 }
 
 func TestSpecPagerInteraction(t *testing.T) {
+	needsFreshProcess(t, "NewBlockSpec hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone")
 	requireHeavyModel(t)
 
 	// PARAMETERIZED OVER THE VENUE, because one paged MoE cannot answer the whole question.

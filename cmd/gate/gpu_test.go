@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -429,5 +432,45 @@ func TestClassifyAdapterProbe_distinguishesNoAdapterFromProbeFailure(t *testing.
 				t.Errorf("note = %q, want it to contain %q (V-21)", note, tc.wantNoteText)
 			}
 		})
+	}
+}
+
+// The fresh-process group is derived from needsFreshProcess() the same way the drain group is derived from
+// drainsDevice(). Run from the repo root so the derivation has a cuda/ to read: from cmd/gate it finds
+// nothing, which is why the drain test above skips on every run and this one must not.
+func TestGPU_isolatedGroupIsDerivedFromTheMarker(t *testing.T) {
+	t.Chdir(filepath.Join("..", ".."))
+	iso, drain := isolatedTests(), drainingTests()
+	if len(drain) == 0 {
+		t.Fatal("drain derivation found nothing from the repo root — the scan itself is broken")
+	}
+	for _, want := range []string{"TestPrefillLongPrompt", "TestGemma4_26B_cache_B", "TestSpecPagerInteraction"} {
+		if !slices.Contains(iso, want) {
+			t.Errorf("fresh-process group %v is missing %s, which carries the marker", iso, want)
+		}
+	}
+	for _, n := range iso {
+		if slices.Contains(drain, n) {
+			t.Errorf("%s is in both the drain and the fresh-process group — it would run twice or not at all", n)
+		}
+	}
+}
+
+// withGoBin reproduces CI's PATH: GOPATH/bin first, the rest unchanged, and a PATH added if there was none.
+func TestGPU_withGoBinPrependsGOPATHBin(t *testing.T) {
+	out, err := exec.Command("go", "env", "GOPATH").Output()
+	if err != nil {
+		t.Skipf("go env GOPATH: %v", err)
+	}
+	bin := filepath.Join(strings.Split(strings.TrimSpace(string(out)), string(os.PathListSeparator))[0], "bin")
+	got := withGoBin([]string{"HOME=/h", "PATH=/usr/bin:/bin"})
+	if want := "PATH=" + bin + string(os.PathListSeparator) + "/usr/bin:/bin"; !slices.Contains(got, want) {
+		t.Errorf("withGoBin = %v, want an entry %q", got, want)
+	}
+	if !slices.Contains(got, "HOME=/h") {
+		t.Errorf("withGoBin dropped an unrelated variable: %v", got)
+	}
+	if got := withGoBin([]string{"HOME=/h"}); !slices.Contains(got, "PATH="+bin) {
+		t.Errorf("no PATH in the input: got %v, want PATH=%s added", got, bin)
 	}
 }

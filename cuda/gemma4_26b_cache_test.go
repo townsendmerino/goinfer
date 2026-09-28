@@ -45,6 +45,7 @@ func distinctTrigramRatio(s string) float64 {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda ./cuda/ -run TestGemma4_26B_cache_B -v -timeout 40m
 func TestGemma4_26B_cache_B(t *testing.T) {
+	needsFreshProcess(t, "the 26B's resident declined (4.00 GB free beside the weights) in the one-process heavy tier; passes alone")
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("GOINFER_HEAVY_TESTS unset — real 26B decode")
 	}

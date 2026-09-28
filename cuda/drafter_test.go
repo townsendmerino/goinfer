@@ -139,6 +139,7 @@ func TestResidentDrafter_fuseParity(t *testing.T) {
 //	identical input, because RoPE rotates by position. If they matched, the rope call is being
 //	handed the wrong start and every drafted token after the first block would be subtly wrong.
 func TestResidentDrafter_extendContext(t *testing.T) {
+	needsFreshProcess(t, "AttachDrafter's second resident hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone")
 	requireHeavyModel(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {

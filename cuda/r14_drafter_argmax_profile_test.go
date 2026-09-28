@@ -19,6 +19,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestR14DrafterArgmaxProfile -v -timeout 30m
 func TestR14DrafterArgmaxProfile(t *testing.T) {
+	needsFreshProcess(t, "prefill scratch out of device memory (M=23) in the one-process heavy tier; passes alone")
 	requireHeavyModel(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
