@@ -91,12 +91,13 @@ Jev-style `/v1/decisions` endpoint (state plus a typed question in, a calibrated
 allowed answers out, one prefill and no decode) by label-token scoring on any model or autotrust's open
 JEV decision heads on `qwen3_5`. Two measurements decide what is built.
 
-[`task-test-efficiency-2026-09.md`](tasks/task-test-efficiency-2026-09.md) (TE0–TE11, filed 2026-09-28) is the
+[`task-test-efficiency-2026-09.md`](tasks/task-test-efficiency-2026-09.md) (TE0–TE12, filed 2026-09-28) is the
 verification-cost campaign: a census of where the machine time goes (served gates that are mostly idle-gate waiting
-and start-up, measurement gates that live in `go test`, parity bookkeeping that re-validates every family for a
-local edit) and the items that cut it — an idle gate that reads current load, sequential counterbalanced gates, the
-cheapest instrument that resolves the bar, identity against the last validated build, and `gate quick` — each with
-a proof that it still detects what it did.
+and start-up, measurement gates that live in `go test`, fidelity gates whose fixed prompt count ignores what each
+criterion needs, parity bookkeeping that re-validates every family for a local edit) and the items that cut it — an idle
+gate that reads current load, sequential counterbalanced gates, prompt budgets sized per criterion, the cheapest
+instrument that resolves the bar, identity against the last validated build, and `gate quick` — each with a proof
+that it still detects what it did.
 
 One is the outside view rather than a design: [`task-first-hour.md`](tasks/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running
@@ -105,7 +106,7 @@ it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (213)
+## Evidence — `measurements/` (215)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world

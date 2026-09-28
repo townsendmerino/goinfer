@@ -1,0 +1,31 @@
+# fidelity-gate prompt budgets — 11 logs, 42 cells with 10 prompts
+
+prompts needed at 80% power when the arms are truly equal (the gates' own margins):
+  KL, mean(cand) <= 1.10 x mean(exact):  median 10, p90 24, max 34; 20 of 42 cells need more than 10
+  agreement, >= exact - 1 pt:           median 32, p90 72, max 148; 38 of 42 cells need more than 10
+  worst-case ('no prompt regresses'): 0 bad of 10 bounds the bad-prompt rate at 26% (95%); 0 of 30 at 10%
+
+group-sequential rule on the KL criterion (looks after 4 / 7 / 10 prompts, one-sided alpha 0.05/3 each):
+  recorded order: pass  at  4 prompts: 12 cells
+  recorded order: pass  at  7 prompts: 15 cells
+  recorded order: open  at 10 prompts: 12 cells
+  recorded order: pass  at 10 prompts: 3 cells
+  recorded order: prompts used 303 of 420 (72%)
+  2000 random orders per cell (84000 in all): mean prompts 7.26; the verdict differs from the fixed-10 verdict in 834 (0.99%), 834 of them a PASS the fixed-10 reading does not give
+    measurements/prefill-gate-ref-cuda-2026-09-28.log D7 K=256 (fixed-10 open): 0.4% of orders
+    measurements/cuda-deltanet-prefill-2026-09-28/heavy-fails-cl D7 K=256 (fixed-10 open): 0.2% of orders
+    measurements/metal-prefill-gemm-s2-2026-09-25/wiring-gates2. S K=1024 (fixed-10 open): 12.7% of orders
+    goinfer-logs/l2-metal-gate-b-20260910-080216-fixed.log S K=1024 (fixed-10 open): 8.8% of orders
+    goinfer-logs/phase-b-run.log S K=1024 (fixed-10 open): 7.1% of orders
+    goinfer-logs/env-config/heavy-isolated/TestPrefillGateVsRefe S K=1024 (fixed-10 open): 12.6% of orders
+
+verdict flags the gates printed (A = hard flips, B = agreement, C = KL):
+  CUDA form: C is KL <= 1.1x exact: 19 verdicts, 6 not passing
+    A=true  B=false C=true  x3
+    A=false B=false C=true  x2
+    A=false B=true  C=true  x1
+  Metal pooled form: C is KL <= exact, no margin: 47 verdicts, 19 not passing
+    A=true  B=true  C=false x15
+    A=true  B=false C=false x2
+    A=true  B=false C=true  x1
+    A=false B=true  C=true  x1

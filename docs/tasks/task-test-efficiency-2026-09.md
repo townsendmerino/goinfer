@@ -1,4 +1,4 @@
-# Task: the same verdicts for a fraction of the machine time — the test-efficiency campaign (TE0–TE11) — 2026-09
+# Task: the same verdicts for a fraction of the machine time — the test-efficiency campaign (TE0–TE12) — 2026-09
 
 > **Status: OPENED 2026-09-28; nothing built. TE0's first cut — the census in §1 — is done, from the records already on
 > disk.** Owner, 2026-09-28: *"holy shit there are so many huge runs, i think we need a campaign to figure out how to
@@ -35,6 +35,10 @@
   run at loadavg 2.8 during the owner's day, pointed the same way as the 33-minute served gate that followed it. Passes
   run to a fixed N plus a second order-reversed pass, even when the first has already cleared the bar — the owner
   amended one at 09:05 today to skip pass 2 when pass 1 clears by more than the passes' own spread.
+- **The prompt-heavy fidelity gates run 10 prompts per cell whatever each criterion needs.** At their own margins KL
+  needs a median of 10 (20 of 42 logged cells need more), agreement 32, and two criteria have no margin, so no count
+  decides them — and the gates' failures come from exactly those criteria. Stopping early saves little and is
+  order-sensitive (TE12).
 - **Bookkeeping re-validates the world for local edits.** 36 of 37 parity families depend on `core` (11 files); 144
   September commits touched a `core`/`loaders`/`quant` file, and 90 `Deps-Hash-Refresh` runs followed.
 - **Some runs are simply lost.** Of 168 September measurement records, 39 carry a void / withdrawn / discarded /
@@ -540,11 +544,85 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
 - The release tier — the full T3 sweep and the peer matrix, as `RELEASING.md` has them — does not change.
 - Re-run TE0 and report before/after by class.
 
+### TE12 — Prompt budgets sized per criterion: the fidelity gates first *(analysis done 2026-09-28; applies to the next gate that uses the protocol)*
+
+- **The protocol.** The prefill and decode fidelity gates share one design, in eleven test files (19 test functions):
+  10 prose prompts per cell × a K ladder × 64 scored positions per prompt, on two models, candidate against exact
+  against a reference. Each verdict combines three criteria:
+  - **A, hard flips:** candidate ≤ exact + 2√exact;
+  - **B, agreement:** candidate ≥ exact − 1 pt — and in the CUDA form, the candidate also wins in at least half the
+    prompts;
+  - **C, KL:** in the CUDA form, mean ≤ 1.1× exact; in the Metal pooled form, ≤ exact with no margin, lower in at least
+    half the prompts, under a ceiling.
+
+  The 10 is the same in every one of these gates, whatever the criterion.
+- **What each criterion needs.** Script: `prompt_power.py` beside the census, over the 42 logged cells with 10 prompts
+  (11 logs). Its output is `prompt-power-2026-09-28.txt`. Prompts needed at 80% power when the arms are truly equal,
+  at the gates' own margins:
+
+  | criterion | prompts needed, median / p90 | cells needing more than 10 |
+  |---|---|---|
+  | KL, mean ≤ 1.10× exact | 10 / 24 | 20 of 42 |
+  | agreement, ≥ exact − 1 pt | 32 / 72 | 38 of 42 |
+  | wins in at least half the prompts (CUDA B) | no N is enough | — |
+  | KL ≤ exact, lower in at least half (Metal C) | no N is enough | — |
+  | a worst-case check ("no prompt regresses") | 30 prompts to bound a 10% bad-prompt rate | 10 bounds it at 26% |
+
+  - The KL figure is computed on the gates' own statistic, the ratio of the arms' means. Per-prompt ratios explode
+    where the exact arm's KL is near zero: one logged prompt reads 0.0021 → 0.0143, a 6.9× "ratio" on a 0.012
+    difference.
+  - The two rows with no margin are coin flips for equal arms at any N: an equal arm wins at least half of 10 prompts
+    62% of the time, tending to 50% as N grows.
+  - So 10 prompts is about right for a typical KL cell, too few for half of them, and about a third of what agreement
+    needs. For the two no-margin criteria, prompts buy nothing. **The imbalance is in the criteria more than in the
+    count.**
+- **The verdicts agree.** 66 verdict lines were printed with their flags:
+  - CUDA form: 19 verdicts, 6 not passing. KL passed in all 19; every failure came from the flip-count or agreement
+    criteria.
+  - Metal pooled form: 47 verdicts, 19 not passing, 17 of them on the no-margin KL criterion.
+
+  The criteria that fail are the ones 10 prompts cannot resolve.
+- **Stopping early saves little, and is order-sensitive.** A conservative group-sequential rule on the KL criterion
+  (looks after 4, 7 and 10 prompts, one-sided α of 0.05/3 per look) used 72% of the prompts in recorded order. Over
+  2,000 random prompt orders per cell, it gives a PASS the fixed-10 reading does not in 0.99% of orders. These
+  concentrate in four S K=1024 cells, at 7–13% of their orders — the class of failure that killed TE4's SEQ-v1, in
+  exactly the heterogeneous cells where early stopping matters. **Not proposed** until it has TE3's registry noise floor
+  and a held-out validation; expect ~25% saved at best.
+- **Change.** This is pre-registered with the next gate that uses the protocol; past verdicts are not re-read.
+  - **Every "no worse than" criterion gets a margin.** Otherwise it is a superiority test, and the pre-registration
+    says so.
+  - **Agreement and hard flips are pooled** across the gate's cells at the same margins — five K cells × 10 prompts is
+    50, above the median 32 — with per-cell values reported and never a per-cell veto (`task-prefill-gap.md` §3.2).
+  - **The KL criterion is sized by `scripts/power.py`** from the registry's across-prompt spread. Some cells get more
+    prompts, not fewer.
+  - **A worst-case claim is a separate criterion.** It states the bad-prompt rate it must exclude and gets that N.
+  - **Prompts are fixed, snapshotted and hashed.** Set B already is. Set A's live-document prompts left 1 to 4 of 10
+    prompts scored against logits for different text (`prefill-ref-identity-2026-09-26.md`), so TE6(a)'s reference
+    key includes the prompt hash.
+- **Where time can come back: positions, not prompts (measure first).** Per-prompt agreement over 64 positions moves
+  in 1.56-point steps. If its noise is mostly within-prompt, longer continuations — cheap decode steps — buy agreement
+  precision more cheaply than more prompts, each of which costs a K-token prefill on three arms, reference included.
+  The logs keep only per-prompt aggregates, so the next run of the protocol logs per-position agreement and KL once.
+  The variance split then sets positions per prompt per K by the two-stage sampling optimum: positions per prompt
+  ∝ √((prompt cost ÷ position cost) × (within-prompt variance ÷ between-prompt variance)).
+- **The rule for other prompt-heavy tests:**
+  - **Bit-identity tests:** coverage, not count — one prompt per shape that exercises a different path (a single
+    token, tile and chunk boundaries, maximum depth).
+  - **Speed:** the prompt text barely matters, since decode speed depends on depth. The noise is run to run and per
+    engine — TE2(b), TE4.
+  - **Accuracy and evaluation runs:** a binomial sample size from the decision band (`power.py binomial`, as D6a
+    did).
+  - **Sweeps:** an A/A arm first, so the noise is known before the bar is set.
+- **Band:** fidelity cells that end undecided or failing on an unresolvable criterion → ~0. Prompt counts move both
+  ways by criterion; the time comes back from gates that decide the first time, instead of re-runs and amendments.
+- **Kill:** a gate registered under these criteria still ends undecided at its computed N.
+
 ---
 
 ## 3. Order, and what one gate looks like after
 
-**TE0 → TE9 → TE5(a) → the analysis trio → TE1 → TE3 → TE7 → TE6 → TE2(a) → TE8 → TE10 (if still warranted) → TE11.**
+**TE0 → TE9 → TE5(a) → the analysis trio → TE12 → TE1 → TE3 → TE7 → TE6 → TE2(a) → TE8 → TE10 (if still warranted) →
+TE11.**
 The analysis trio is TE4's replay, TE2(b)'s variance split and TE5(b)'s concordance: one day's work over existing data.
 
 Worked projection on this morning's L1 gate 6 — pass 1 was 40.5 min (29 of them waiting, 11.4 in cells, 2.9 of those
@@ -619,6 +697,8 @@ That is the size of the prize per gate, roughly 5–9×, **if the bands hold**. 
 4. **The analysis trio:** TE4's replay, TE2(b)'s variance split and TE5(b)'s concordance table, over existing JSONs and
    records.
 5. **TE7(b):** the `decoder` cache re-diagnosis, two back-to-back runs with `GODEBUG=gocachetest=1`, ~10 min.
+6. **TE12:** the criteria changes go into the next pre-registration that uses the fidelity-prompt protocol, and that
+   run logs per-position agreement and KL once.
 
 **Queue for the first night:** TE1's A/A + mutation run, pre-registered before it is queued.
 
