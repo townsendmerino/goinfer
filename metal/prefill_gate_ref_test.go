@@ -159,7 +159,12 @@ func TestPrefillGateVsReference(t *testing.T) {
 			if !ok {
 				t.Skipf("metal resident not built for this model")
 			}
-			tk, err := tokenizer.LoadGGUF(path)
+			// A .giw bundle carries no tokenizer: <pathEnv>_TOKENIZER names the .gguf it came from (default: the model path).
+			tokPath := os.Getenv(mc.pathEnv + "_TOKENIZER")
+			if tokPath == "" {
+				tokPath = path
+			}
+			tk, err := tokenizer.LoadGGUF(tokPath)
 			if err != nil {
 				t.Fatalf("load tokenizer: %v", err)
 			}

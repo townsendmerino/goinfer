@@ -67,3 +67,61 @@ Three kernels were compared:
   - goinfer's sliding `window`, which MLX lacks: a lower block bound, and masking on the window's edge blocks;
   - ragged tails.
 - An option neither peer takes: pack a GQA group's 6 query heads into one threadgroup, for 6× more K/V reuse.
+
+## The prototype, confirmed and wired (R19 SHIPS)
+
+**Exploratory run 1** ([`r19-explore1.log`](metal-prefill-attn-2026-09-27/r19-explore1.log)): the first prototype,
+`attention_prefill_steel`, built from the read above.
+- In sequence at K=3900 it read **7.32×** the fused kernel (4432 → 606 ms), and at K=512 6.25×.
+- Against the fused kernel on the same inputs: relative L2 6.4e-5, cosine 0.999999998.
+- It was selected as the candidate.
+
+**The confirmation run** ([`r19-confirm-1.5b.log`](metal-prefill-attn-2026-09-27/r19-confirm-1.5b.log)): a fresh
+process with the candidate alone, 7 paired reps, 2026-09-27 18:08–18:17 PDT.
+
+| | fused | prototype | speedup |
+|---|---:|---:|---:|
+| **attention in sequence, K=3900 (graded)** | 4444.5 ms | 617.8 ms | **7.204×** (every pair 7.15–7.43×) |
+| attention in sequence, K=512 | 110.0 ms | 16.6 ms | 6.62× |
+| attention alone, K=3900: sustained / after 2 s idle | 4203.6 / 4205.4 ms | 576.0 / 583.1 ms | |
+
+**Graded against R19's band: SHIP** (≥ 1.25×). The preconditions:
+1. **Fidelity, set A's §3.2 pooled gate, passes on both models with the new kernel as production's prefill
+   attention.** `TestPrefillGateVsReference` ran with the `.int4.metal.giw` bundles and the tokenizers from their
+   `.gguf`s (a new `GOINFER_METAL_MODEL[_D7]_TOKENIZER` in the test), 2026-09-27 18:29–19:01 PDT
+   ([`gate-setA-steel.log`](metal-prefill-attn-2026-09-27/gate-setA-steel.log)).
+   - A first launch stopped at once: the test read its tokenizer from the model path, and a `.giw` has none
+     ([`gate-setA-steel-attempt1-tokenizer.log`](metal-prefill-attn-2026-09-27/gate-setA-steel-attempt1-tokenizer.log)).
+
+   | model | pooled verdict (K = 256 / 512 / 1024) | hard flips, fast vs exact | agreement, fast vs exact |
+   |---|---|---|---|
+   | S (1.5B) | **SHIPS** (critA, critB, critC true) | 10 vs 12 | 93.39% vs 92.76% |
+   | D7 (7B) | **SHIPS** (critA, critB, critC true) | 35 vs 35 | 88.18% vs 87.71% |
+
+   Per cell, mean KL to the CPU f32 reference, fast against exact:
+   - S: 0.0327 / 0.0375 (K=256), 0.0326 / 0.0343 (512), 0.0391 / 0.0410 (1024), and at the K=3900 confirm cell
+     0.0419 / 0.0457 with hard flips 5 / 7;
+   - D7: 0.0761 / 0.0795, 0.0670 / 0.0689, 0.0793 / 0.0863.
+
+   The prefill lane with the new kernel is at least as close to the reference as the exact sequential path, in every
+   cell.
+   - **The baseline run on the retired fused kernel was deferred** by the owner's next priority. It was stopped
+     seconds in, and it is owed; it would also close R16's owed set-A run.
+2. **No burst dependence:** 1.01 after idle at K=3900. At K=512 the new kernel is slower after idle (22.5 against
+   16.4 ms), so the sustained number it is graded on is the better one.
+3. **K=512 does not regress:** 6.62× faster.
+4. **The do-nothing arm ran in the same session.**
+
+**Wired into production** (`metal/prefill.go`): head dim 128 runs `attention_prefill_steel`, and every other head dim
+keeps `attention_prefill_fused`. A test-only `prefillSteelAttnOff` restores the fused kernel for baselines. Checked on
+the wired build ([`r19-wired.log`](metal-prefill-attn-2026-09-27/r19-wired.log),
+[`metal-suite-r19.log`](metal-prefill-attn-2026-09-27/metal-suite-r19.log)):
+- the decomposition replica still reproduces `PrefillLast`'s logits bit for bit at K=512 and 3900;
+- production against the retired fused kernel reads 7.35× in sequence at K=3900;
+- the tagged Metal suite: 183 pass, 0 fail;
+- **`PrefillLast` wall at K=3900: 8171 → 4316 ms**, and at K=512: 596 → 526 ms.
+
+**Owed:**
+- **Served TTFT against Ollama** (`scripts/bench_peer_prefill.py`, cell h's protocol). In process, K=3900 now takes
+  4.32 s against Ollama's served 4.23 s from 2026-09-25. That is a projection, not the served claim.
+- The fused-kernel baseline gate run.

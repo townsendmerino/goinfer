@@ -246,7 +246,7 @@ re-baked by the code it checks (G-04).
   declined via the fit-guard (same pre-existing memory gap as M-03's run).
 
 #### M-05 · MoE batched prefill runs the FFN half as M sequential rows; paged/DeltaNet families prefill as M decode tokens — bounded by M × active-expert bytes, undocumented
-- **Where:** `metal/prefill.go:867-674` (`for m := 0; m < M; m++ { … r.encodeMoEExperts(e, L, moeDst) }`),
+- **Where:** `metal/prefill.go:1014-821` (`for m := 0; m < M; m++ { … r.encodeMoEExperts(e, L, moeDst) }`),
   `metal/moe.go:711-681`; `metal/model.go:853-778` (paged/g4moe/DeltaNet → `prefillOK=false`);
   `metal/backend.go:687-495` (`PrefillPath` reports "batched f16-MMA" for it);
   `docs/tasks/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").
@@ -307,11 +307,11 @@ re-baked by the code it checks (G-04).
 #### M-06 · Gemma 3 never reaches the batched prefill — `prefillFeatures` still lacks `FeatPerLayerRoPE` (prior audit M-23, open)
 - **Where:** `metal/model.go:92-122` (the map: no `FeatPerLayerRoPE`), `decoder/features.go:154`
   (`add(!a.ropeUniform(), FeatPerLayerRoPE)` — every shipped Gemma 3, 5:1 local/global, derives it),
-  `metal/prefill.go:852-659` (the dispatch already binds `L.invf`/`L.uWindow` per layer; the comment
+  `metal/prefill.go:999-806` (the dispatch already binds `L.invf`/`L.uWindow` per layer; the comment
   at `:624-625` says the feature "is not claimed").
 - **Mechanism and bound:** every real Gemma 3 prompt is sequential: M-01's 671 MB head per token on
   4B, at 13.5 ms/token. Note admitting it would still route Gemma 3 (hd=256) to the *exact*
-  `attention_prefill` (`ATTN_MAXHD 128`, `metal/prefill.go:818`) — the 46 GB/layer re-read shape — so the
+  `attention_prefill` (`ATTN_MAXHD 128`, `metal/prefill.go:965`) — the 46 GB/layer re-read shape — so the
   fused kernel needs an hd=256 variant for the full win.
 - **Fix:** `decoder.FeatPerLayerRoPE: true` in `prefillFeatures` (safe: `FeatRopeMscale` stays
   undeclared so per-layer *mscale* families still decline); give `testdata/gemma3-vl-tiny` a global
@@ -1092,7 +1092,7 @@ re-baked by the code it checks (G-04).
   `prefill_ttft_test.go` already used, since this test is about MoE arch admission, not the floor.
 
 #### G-02 · The §3.2 pooled gate still drops missing cells silently and turns a fit-guard decline into a SKIP that "SHIPS" (prior audit G-08, open)
-- **Where:** `metal/prefill_gate_ref_test.go:224-240` (`if cs != nil { … }` — a missing reference
+- **Where:** `metal/prefill_gate_ref_test.go:235-251` (`if cs != nil { … }` — a missing reference
   file is dropped; only zero cells fails; the header prints the full K set), `:114-117` (D7 that
   fails to build → `Skipf`). Both records say D7 was decided-around by fit-guard: the floor and both
   default-ON flips that govern 7B-class Mac users rest on the 1.5B alone (and M-07 is why D7 does
@@ -1218,7 +1218,7 @@ re-baked by the code it checks (G-04).
   passing end to end is what both bugs actually blocked.
 
 #### G-08 · The §3.2 gate never exercises `startPos > 0`, which every resident-prefix-reuse turn uses
-- **Where:** `metal/prefill_gate_ref_test.go:495` (`PrefillLast(ctx, embs, 0)`) vs
+- **Where:** `metal/prefill_gate_ref_test.go:506` (`PrefillLast(ctx, embs, 0)`) vs
   `decoder/model.go:1545` (`from`); the fused kernel's `startPos`/`uMReal` masking is covered only by
   a synthetic hd=64 case. The agent-turn shape the peer matrix calls the headline workload is not
   a fidelity cell. **Fix:** one decision cell with `from = K/2` on S. **Confidence:** plausible
@@ -1331,7 +1331,7 @@ re-baked by the code it checks (G-04).
   CI on real cross-machine/quantization variance.
 
 **Cold-path waste and small levers:**
-- N-15 `metal/prefill.go:818-665` (`PrefillLast`) — 26 per-request scratch buffers built from
+- N-15 `metal/prefill.go:965-812` (`PrefillLast`) — 26 per-request scratch buffers built from
   `make`d, zero-filled Go slices then copied (`guF` alone 140 MB at M=3900; ≈262 MB memset + ≈262 MB
   memcpy per long prompt); `gpu.NewBufferLenOf` exists and goinfer never calls it; only `xF` needs
   zeroed pad rows. A high-water-mark cache across calls removes the allocation entirely. Tens of ms
