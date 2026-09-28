@@ -1,0 +1,13 @@
+=== RUN   TestSmallShapeWidthS0_decode
+[ssw    6.5s] rep 1/7:  A 19.61  A' 19.57  w8 19.72  w12 19.48 tok/s
+[ssw   13.1s] rep 2/7:  A' 19.43  w8 19.73  w12 19.59  A 19.55 tok/s
+[ssw   19.7s] rep 3/7:  w8 19.69  w12 19.63  A 19.52  A' 19.51 tok/s
+[ssw   26.2s] rep 4/7:  w12 19.55  A 19.39  A' 19.48  w8 19.67 tok/s
+[ssw   32.8s] rep 5/7:  A 19.54  A' 19.48  w8 19.68  w12 19.55 tok/s
+[ssw   39.4s] rep 6/7:  A' 19.51  w8 19.62  w12 19.52  A 19.50 tok/s
+[ssw   45.9s] rep 7/7:  w8 19.67  w12 19.55  A 19.47  A' 19.54 tok/s
+[ssw   45.9s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf depth 128 single-token decode: A 19.52 tok/s  A' 1.000x  w8 1.009x  w12 1.002x   (A' is the control)
+    cpu_batch_s0_test.go:468: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf depth 128 single-token decode: A 19.52 tok/s  A' 1.000x  w8 1.009x  w12 1.002x
+--- PASS: TestSmallShapeWidthS0_decode (53.09s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	53.107s

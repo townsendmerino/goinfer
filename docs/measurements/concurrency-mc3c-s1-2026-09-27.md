@@ -117,6 +117,29 @@ an untimed warm block before each timed one and an A/A control:
   - It is unmeasured end to end. Production decode's own Workspace settings have not been checked, and nothing
     changes on this probe alone.
 
+**The single-token lead does not survive end to end: a negative result.**
+- *Prior art first.* R9 (`cpu-decode-attribution-2026-09-22-linux.md`) swept the fan-out width **globally** and found
+  16 fastest per token, because the large MLP matmuls want every thread. Only a **per-shape** width was untested.
+- *The probe.* An uncommitted test hook in `matmulInto` gave int4 projections of at most 16M MACs (q, k, v, o on the
+  7B), at M = 1, a narrower fan-out. Production `m.forward` then decoded 32 greedy tokens per block on one cache
+  rewound to depth 128, with arms A (off), A' (off: the control), 8 workers and 12 workers. There were 7 rotated reps,
+  and the logits were bit-identical across all arms.
+- *Result, tok/s ÷ A:*
+
+  | model | A' (control) | 8 workers | 12 workers |
+  |---|---:|---:|---:|
+  | 7B | 1.001× | 1.005× | 1.001× |
+  | 1.5B | 1.000× | 1.009× | 1.002× |
+  | 0.5B | 1.017× | **0.961×** | 0.975× |
+
+  Logs: `smallshape-7b.log`, `smallshape-coder-1.5b.log`, `smallshape-coder-0.5b.log`.
+- *Why S0c's 1.43–1.53× did not transfer.* That probe drove one fused shape back to back, with warm workers and hot
+  caches. In a real token q, k and v run as three separate calls between other work.
+  - It is the same shape of failure as the CUDA-graphs result (1.4–1.7× on a tiny model, 1.01× real): a
+    microbenchmark measuring the operation in a regime the system never runs it in.
+- *Outcome.* The hook and its probe were removed rather than committed. The logs stand as the record, and per-shape
+  width is closed for single-token decode on this box.
+
 ## What remains
 
 S1 takes ~5.8% of the ~17–19% ceiling. The rest is in the kernels themselves: the small shapes still cost more per row
