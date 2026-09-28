@@ -161,7 +161,7 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 		{"base", baseDesc},
 		{"changed", fmt.Sprintf("%d file(s)", len(changed))},
 		{"count", count},
-		{"jobs", fmt.Sprintf("%d at once (device cells one at a time)", o.Jobs)},
+		{"jobs", fmt.Sprintf("%d at once (device cells one at a time; checkpoint-loading cells alone)", o.Jobs)},
 		{"timing lock", lockNote},
 		{"run dir", orDash(rundir)},
 		{"started", t0.Format("15:04:05 MST")},
@@ -273,7 +273,7 @@ func testJob(qc *quickConfig, c *quickCell, o quickOpts) (*quickJob, error) {
 	}
 	args = append(args, m.TestArgs...)
 	args = append(args, c.Root.Pkg)
-	return &quickJob{Name: c.Name, Kind: "test", Dir: qc.modDir(m), Env: env, Args: args, Device: m.Device, Cell: c}, nil
+	return &quickJob{Name: c.Name, Kind: "test", Dir: qc.modDir(m), Env: env, Args: args, Device: m.Device, Mem: c.Mem, Cell: c}, nil
 }
 
 // lintJobs builds gofmt (per touched module), the staticcheck canary, and each module's vet /
@@ -487,7 +487,7 @@ func printSelection(w io.Writer, qc *quickConfig, g *quickGraph, s *quickSelecti
 	}
 	var split, nr []string
 	for _, c := range cells {
-		if strings.HasSuffix(c.Name, "[walkers]") {
+		if strings.HasSuffix(c.Name, "[walkers]") || strings.HasSuffix(c.Name, "[checkpoint]") {
 			n := strings.Count(c.Run, "|") + 1
 			split = append(split, fmt.Sprintf("%s (%d of %d tests)", c.Name, n, len(c.Root.tests)))
 			if verbose {
@@ -501,7 +501,26 @@ func printSelection(w io.Writer, qc *quickConfig, g *quickGraph, s *quickSelecti
 		}
 	}
 	if len(split) > 0 {
-		fmt.Fprintf(w, "  split cells (so the rest of the package can stay cached): %s\n", strings.Join(split, ", "))
+		fmt.Fprintf(w, "  split cells (so the rest of the package can stay cached, or run beside others): %s\n", strings.Join(split, ", "))
+	}
+	var mem []string
+	for _, c := range cells {
+		if c.Mem && c.NotRun == "" {
+			mem = append(mem, c.Name)
+		}
+	}
+	if len(mem) > 0 {
+		fmt.Fprintf(w, "  run ALONE, nothing beside them (they load a real checkpoint): %s\n", strings.Join(mem, ", "))
+		if verbose {
+			for _, r := range g.roots {
+				if !r.Mod.native() {
+					continue
+				}
+				for _, t := range r.loaders {
+					fmt.Fprintf(w, "    %s %s: %s\n", shortPkg(qc, r.Pkg), t, r.loadWhy[t])
+				}
+			}
+		}
 	}
 	for _, n := range nr {
 		fmt.Fprintf(w, "  %sNOT RUNNABLE HERE%s: %s\n", amber, off, n)

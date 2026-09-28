@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 // EQUIVALENCE for `gate quick` (TE7, docs/tasks/task-test-efficiency-2026-09.md). The campaign's
@@ -432,4 +433,179 @@ func TestQuick_realCoreMutationFailsTheGoldens(t *testing.T) {
 	}
 	t.Logf("real goldens under the mutation: %s passed, %s skipped, %s failed", m[1], m[2], m[3])
 	fmt.Fprintln(os.Stderr, "real goldens under the mutation:", m[0])
+}
+
+// ckFixture is a package whose tests reach a real checkpoint in each way this tree's tests do —
+// a helper returning a relative path, a package-level table of bare file names, and a
+// Join("..", "testdata", dir) — beside a tiny fixture, a production-code architecture name that
+// matches the checkpoint directory, and enough plain tests that the loaders are split off.
+func ckFixture(t *testing.T) (*quickConfig, *testRoot) {
+	t.Helper()
+	repo := t.TempDir()
+	if r, err := filepath.EvalSymlinks(repo); err == nil {
+		repo = r
+	}
+	big := func(rel string) {
+		p := filepath.Join(repo, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Sparse: the size is what the detector reads, and no disk is spent on it.
+		if err := f.Truncate(minCheckpointBytes); err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
+	}
+	big("testdata/big.gguf")
+	big("testdata/table.gguf")
+	big("testdata/bigdir/model.safetensors")
+	big("testdata/registered.gguf")
+	reg := `{"assets": [{"env": "GOINFER_CK_TEST_ASSET", "kind": "file", "candidates": ["$REPO/testdata/registered.gguf"]},
+		{"env": "GOINFER_CK_TEST_TINY", "kind": "file", "candidates": ["$REPO/testdata/tiny.gguf"]}]}`
+	if err := os.WriteFile(filepath.Join(repo, "testdata", "assets.json"), []byte(reg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "testdata", "tiny.gguf"), []byte("tiny"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var plain strings.Builder
+	for i := 0; i < minSplitRest; i++ {
+		fmt.Fprintf(&plain, "func TestPlain%02d(t *testing.T) {}\n", i)
+	}
+	files := map[string]string{
+		"go.mod":     "module example.com/ck\n\ngo 1.21\n",
+		"ck/arch.go": "package ck\n\n// Production code: \"bigdir\" here is an architecture name, reached by every test.\nfunc Arch(s string) bool {\n\tswitch s {\n\tcase \"bigdir\":\n\t\treturn true\n\t}\n\treturn false\n}\n",
+		"ck/ck_test.go": "package ck\n\nimport (\n\t\"path/filepath\"\n\t\"testing\"\n)\n\nfunc bigPath() string { return \"../testdata/big.gguf\" }\n\nvar models = []string{\"table.gguf\"}\n\nfunc TestHelper(t *testing.T) { _ = bigPath() }\n\nfunc TestTable(t *testing.T) {\n\tfor _, m := range models {\n\t\t_ = m\n\t}\n}\n\nfunc TestDir(t *testing.T) { _ = filepath.Join(\"..\", \"testdata\", \"bigdir\") }\n\nfunc TestTiny(t *testing.T) { _ = \"../testdata/tiny.gguf\"; _ = Arch(\"x\"); _ = \"GOINFER_CK_TEST_TINY\" }\n\n" +
+			"func asset(key string) string { return key }\n\nfunc TestRegistry(t *testing.T) { _ = asset(\"GOINFER_CK_TEST_ASSET\") }\n\n" + plain.String(),
+	}
+	for name, body := range files {
+		p := filepath.Join(repo, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	qc := &quickConfig{Root: repo, Modules: []*quickModule{{Name: "root", Dir: "."}}, GoldenPkg: "example.com/ck/none",
+		GoldenRun: goldenRunRE, StateDir: t.TempDir()}
+	if err := qc.finish(); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(repo, "ck")
+	r := &testRoot{Mod: qc.Modules[0], Pkg: "example.com/ck/ck", Dir: dir, repo: repo,
+		p: &qPkg{Path: "example.com/ck/ck", Dir: dir, Mod: qc.Modules[0],
+			Files: []string{filepath.Join(dir, "arch.go"), filepath.Join(dir, "ck_test.go")}}}
+	return qc, r
+}
+
+// The checkpoint loaders are found through a helper, a package-level table, a directory join and an
+// asset-registry key; a tiny fixture (by path or by registry key) and a production-code name that
+// happens to match the directory are not loaders.
+// They get a [checkpoint] cell of their own, marked Mem, and the split still runs every test
+// exactly once.
+func TestQuick_checkpointLoadersGetTheirOwnCell(t *testing.T) {
+	qc, r := ckFixture(t)
+	g := &quickGraph{roots: []*testRoot{r}}
+	cells := buildCells(qc, g, &quickSelection{}, false, false)
+	sort.Strings(r.loaders)
+	if want := []string{"TestDir", "TestHelper", "TestRegistry", "TestTable"}; strings.Join(r.loaders, ",") != strings.Join(want, ",") {
+		t.Fatalf("loaders %v, want %v (why: %v)", r.loaders, want, r.loadWhy)
+	}
+	var ck, rest *quickCell
+	for _, c := range cells {
+		switch c.Name {
+		case "ck [checkpoint]":
+			ck = c
+		case "ck":
+			rest = c
+		}
+	}
+	if ck == nil || rest == nil || len(cells) != 2 {
+		t.Fatalf("want a [checkpoint] cell and the rest, got %d cells", len(cells))
+	}
+	if !ck.Mem || rest.Mem {
+		t.Fatalf("Mem: [checkpoint] %v (want true), rest %v (want false)", ck.Mem, rest.Mem)
+	}
+	run, skip := regexp.MustCompile(ck.Run), regexp.MustCompile(rest.Skip)
+	for _, n := range r.tests {
+		in := 0
+		if run.MatchString(n) {
+			in++
+		}
+		if !skip.MatchString(n) {
+			in++
+		}
+		if in != 1 {
+			t.Errorf("%s runs in %d cells, want exactly 1", n, in)
+		}
+	}
+}
+
+// A package too small to split runs whole, and the whole cell takes the run-alone rule.
+func TestQuick_smallCheckpointPackageRunsWholeInTheLane(t *testing.T) {
+	qc, r := ckFixture(t)
+	b, err := os.ReadFile(r.p.Files[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	src = src[:strings.Index(src, "func TestPlain00")]
+	if err := os.WriteFile(r.p.Files[1], []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cells := buildCells(qc, &quickGraph{roots: []*testRoot{r}}, &quickSelection{}, false, false)
+	if len(cells) != 1 || !cells[0].Mem || cells[0].Skip != "" {
+		t.Fatalf("want one unsplit Mem cell, got %d cells (first: Mem %v, Skip %q)", len(cells), cells[0].Mem, cells[0].Skip)
+	}
+}
+
+// THE RULE, through the scheduler itself: with four slots, a Mem job overlaps no other job at all,
+// and the jobs that are not Mem still run beside each other (the rule costs no parallelism there).
+func TestQuick_memJobsRunAlone(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not on PATH")
+	}
+	dir := t.TempDir()
+	mk := func(name string, mem bool) *quickJob {
+		log := filepath.Join(dir, name)
+		// Each job records its own start and end, in nanoseconds, from its own process.
+		script := `python3 -c 'import time; print(time.time_ns())' > "$1"; sleep 0.4; python3 -c 'import time; print(time.time_ns())' >> "$1"`
+		return &quickJob{Name: name, Kind: "lint", Dir: dir, Env: os.Environ(), Mem: mem,
+			Args: []string{"sh", "-c", script, "sh", log}}
+	}
+	// A Mem job first in the queue as well as among the others: the start of a run is when nothing
+	// is running yet, which is where a check on "another Mem job" alone would let one slip in.
+	jobs := []*quickJob{mk("m1", true), mk("f1", false), mk("m2", true), mk("f2", false), mk("f3", false), mk("m3", true)}
+	runJobs(jobs, 4, t.TempDir(), io.Discard, 0, time.Now())
+	span := map[string][2]int64{}
+	for _, jb := range jobs {
+		if !jb.ok() {
+			t.Fatalf("%s: rc %d %v\n%s", jb.Name, jb.RC, jb.Err, jb.Out)
+		}
+		b, err := os.ReadFile(filepath.Join(dir, jb.Name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := strings.Fields(string(b))
+		var st, en int64
+		fmt.Sscan(f[0], &st)
+		fmt.Sscan(f[1], &en)
+		span[jb.Name] = [2]int64{st, en}
+	}
+	overlap := func(a, b [2]int64) bool { return a[0] < b[1] && b[0] < a[1] }
+	for _, m := range []string{"m1", "m2", "m3"} {
+		for _, o := range []string{"m1", "m2", "m3", "f1", "f2", "f3"} {
+			if m != o && overlap(span[m], span[o]) {
+				t.Errorf("Mem job %s overlapped %s", m, o)
+			}
+		}
+	}
+	if !overlap(span["f1"], span["f2"]) && !overlap(span["f1"], span["f3"]) && !overlap(span["f2"], span["f3"]) {
+		t.Error("no two non-Mem jobs ran together: the rule serialised more than the loaders")
+	}
 }

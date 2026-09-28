@@ -555,9 +555,30 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
     - The Mac's gitignored `vendor/` is stale (aikit v1.46.0), which breaks `GOWORK=off` root commands; quick uses
       `-mod=readonly`.
     - `cuda` does not build on darwin, so it is listed and linted for linux/amd64 and reported NOT RUN.
-  - **Open: memory-heavy cells.** In the cold check, `examples/confidence` failed under `-j 4`. Its real 0.5B load was
-    refused by the fit guard beside other test binaries, and it passes alone in 5.4 s. Packages that load real
-    checkpoints need the one-at-a-time rule GPU packages already get.
+  - **Memory-heavy cells: DONE 2026-09-28.** In the cold check, `examples/confidence` failed under `-j 4`. Its real
+    0.5B load was refused by the fit guard beside other test binaries, and it passes alone in 5.4 s.
+    - **Detection.** The package scan now finds the tests that reach a real checkpoint present on this host
+      (a model file of ≥ 64 MiB). It follows a path literal, a bare file name under `testdata/` or `~/models/`, a
+      `testdata/<dir>` join (test files only, since in production code `"gpt2"` is an architecture name), and an
+      asset-registry key resolved as `decoder/assets.go` resolves it. It also follows those through package-local
+      helpers and package-level tables. On this Mac that finds 12 cells: decoder, metal and gpu among them, split off
+      as `[checkpoint]` cells so the rest of each package still runs in parallel.
+    - **The rule is "alone", not "one loader at a time".** The first version held back only the other loaders.
+      confidence still failed: its f32 load needs 3.6 GB, and the fit guard saw 3.4 GB available beside decoder,
+      metal and their compiles. Alone it saw 5.8 GB. So a checkpoint cell now starts only when nothing else is running,
+      and nothing starts beside it.
+    - **Proof.** Four unit tests (`cmd/gate/quick_test.go`) and eleven mutations, each red on the test meant to
+      catch it. The mutations: the first version's rule; a loader starting beside running jobs; jobs starting beside a
+      loader; no helper propagation; no package-level names; bare names counted in production code; no size floor
+      (twice); no split; no registry resolution.
+    - **Real runs.** Both are `go run ./cmd/gate quick -j 4` on the MacBook. The logs are under
+      `~/goinfer-logs/quick/`, as `te7-mem-lane-2026-09-28{,-run2}.log`.
+      - **First version:** RED. confidence was refused while decoder, metal and gpu re-ran. Wall 5m35s.
+      - **"Alone" rule:** GREEN. 1,625 passed, 0 failed; wall 5m28s, with decoder re-running and metal/gpu
+        replayed. confidence passed in 5.3 s. `decoder [checkpoint]` (101 tests) took 2m47s alone, after the rest of
+        decoder's 2m23s.
+      - **Cold cost:** a cold run that re-runs metal and gpu as well should cost about a minute more than before
+        (their ~3.6 min runs beside decoder, then the checkpoint cells run alone). That is estimated, not measured.
 - **(b) RESULT 2026-09-28: `decoder` caches, so there is nothing to fix.** Two back-to-back
   `GODEBUG=gocachetest=1 go test ./decoder/` runs on the MacBook:
   - run 1 saved the result (310 s);

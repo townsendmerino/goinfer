@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // `gate quick`'s SELECTION (TE7(a), docs/tasks/task-test-efficiency-2026-09.md): changed files ->
@@ -415,8 +416,13 @@ type testRoot struct {
 	tests    []string // top-level Test functions
 	walkers  []string // the ones that walk the parent tree (split into their own cell)
 	walkSite string   // where the package enumerates a directory ("" = nowhere)
-	lits     []string // every string literal in the package's sources, unquoted
-	litSet   map[string]bool
+	// loaders are the tests that name a real checkpoint present on THIS host (see checkpointLit),
+	// directly or through a package-local helper or table; loadWhy[test] is the path each named.
+	loaders []string
+	loadWhy map[string]string
+	repo    string   // the repository root, which checkpoint literals resolve against
+	lits    []string // every string literal in the package's sources, unquoted
+	litSet  map[string]bool
 }
 
 type fileOwner struct {
@@ -534,7 +540,7 @@ func loadGraph(qc *quickConfig, overlay string) (*quickGraph, error) {
 		if q == nil {
 			continue
 		}
-		r := &testRoot{Mod: re.m, Pkg: re.base, Dir: q.Dir, Deps: map[string]bool{re.base: true}, p: q}
+		r := &testRoot{Mod: re.m, Pkg: re.base, Dir: q.Dir, Deps: map[string]bool{re.base: true}, p: q, repo: qc.Root}
 		for _, d := range re.deps {
 			r.Deps[stripVariant(d)] = true
 		}
@@ -573,6 +579,7 @@ func (r *testRoot) scan() {
 		site   string //
 		tree   bool   // enumerates the PARENT tree: the repo, not its own package or testdata
 		calls  []string
+		ckpt   string // a real checkpoint the function names ("" = none)
 	}
 	funcs := map[string]*fn{}
 	var tests []string
@@ -586,6 +593,9 @@ func (r *testRoot) scan() {
 	// Package-level names bound to the parent: decoder/assets.go's `const repoRoot = ".."`, which
 	// every tree walk in decoder passes by name.
 	parentNames := map[string]bool{}
+	// Package-level names whose value names a real checkpoint: `const ggufPath = "../testdata/…"`,
+	// or a table of models that a test ranges over.
+	ckptNames := map[string]string{}
 	for i, f := range r.p.Files {
 		b, err := os.ReadFile(f)
 		if err != nil {
@@ -612,6 +622,9 @@ func (r *testRoot) scan() {
 				for k, v := range vs.Values {
 					if lit, ok := v.(*ast.BasicLit); ok && isParent(lit) && k < len(vs.Names) {
 						parentNames[vs.Names[k].Name] = true
+					}
+					if ck := r.namesCheckpoint(v, strings.HasSuffix(f, "_test.go"), nil); ck != "" && k < len(vs.Names) {
+						ckptNames[vs.Names[k].Name] = ck
 					}
 				}
 			}
@@ -650,7 +663,7 @@ func (r *testRoot) scan() {
 			if fd.Recv != nil {
 				name = "(method)" + name // methods take no part in the call graph below
 			}
-			e := &fn{}
+			e := &fn{ckpt: r.namesCheckpoint(fd.Body, isTest, ckptNames)}
 			// The function reaches the parent itself: root := ".." / filepath.Abs("..") / repoRoot.
 			parentLit := reachesParent(fd.Body)
 			ast.Inspect(fd.Body, func(n ast.Node) bool {
@@ -690,6 +703,9 @@ func (r *testRoot) scan() {
 			if prev, dup := funcs[name]; dup { // same name under two build tags: union them
 				prev.direct = prev.direct || e.direct
 				prev.tree = prev.tree || e.tree
+				if prev.ckpt == "" {
+					prev.ckpt = e.ckpt
+				}
 				if prev.site == "" {
 					prev.site = e.site
 				}
@@ -717,6 +733,9 @@ func (r *testRoot) scan() {
 				if callee.tree && !e.tree {
 					e.tree, changed = true, true
 				}
+				if callee.ckpt != "" && e.ckpt == "" {
+					e.ckpt, changed = callee.ckpt, true
+				}
 			}
 		}
 	}
@@ -731,12 +750,214 @@ func (r *testRoot) scan() {
 		if e := funcs[t]; e != nil && e.tree {
 			r.walkers = append(r.walkers, t)
 		}
+		if e := funcs[t]; e != nil && e.ckpt != "" {
+			if r.loadWhy == nil {
+				r.loadWhy = map[string]string{}
+			}
+			r.loaders = append(r.loaders, t)
+			r.loadWhy[t] = e.ckpt
+		}
 	}
 	for _, e := range funcs {
 		if e.direct && (r.walkSite == "" || e.site < r.walkSite) {
 			r.walkSite = e.site
 		}
 	}
+}
+
+// ---- tests that load a real checkpoint ----
+
+// A real checkpoint is a model file of at least minCheckpointBytes. The tiny fixtures (the largest
+// is a few MB) load beside anything; a real one is what the fit guard refuses when other test
+// binaries hold memory. Measured 2026-09-28, the cold `gate quick` on the MacBook:
+// examples/confidence's f32 load of the 0.5B needed 3.6 GB against 3.2 GB available while decoder
+// and metal were loading the same checkpoint, and failed; alone it passes.
+const minCheckpointBytes = 64 << 20
+
+var checkpointExts = []string{".gguf", ".safetensors", ".giw"}
+
+var (
+	ckptMu     sync.Mutex
+	ckptCache  = map[string]string{}              // repo + "\x00" + dir + "\x00" + literal -> resolved path or ""
+	registries = map[string]map[string][]string{} // repo -> asset-registry key -> candidates
+)
+
+// namesCheckpoint returns the first real checkpoint that a string literal in n names, or one that a
+// package-level name in names is bound to, or "".
+func (r *testRoot) namesCheckpoint(n ast.Node, inTest bool, names map[string]string) string {
+	hit := ""
+	ast.Inspect(n, func(n ast.Node) bool {
+		if hit != "" {
+			return false
+		}
+		switch x := n.(type) {
+		case *ast.BasicLit:
+			if x.Kind == token.STRING {
+				if v, err := strconv.Unquote(x.Value); err == nil {
+					hit = r.checkpointLit(v, inTest)
+				}
+			}
+		case *ast.Ident:
+			hit = names[x.Name]
+		}
+		return hit == ""
+	})
+	return hit
+}
+
+// checkpointLit resolves one string literal to a real checkpoint present on this host, or "".
+//
+//   - A literal with a checkpoint extension is tried as written (after $VAR and ~ expansion), then
+//     against the package directory and the repo root, and a bare file name also under the repo's
+//     testdata/ and ~/models/ — the places this tree's tests look ("$HOME/models/qwen…gguf",
+//     "../testdata/qwen2.5-coder…gguf", Join(home, "models", "qwen…gguf")).
+//   - A bare name without one ("gpt2", from Join("..", "testdata", "gpt2")) counts only in a test
+//     file, and only as a directory under testdata/ or ~/models/ holding a real checkpoint: in
+//     production code "gpt2" is an architecture name that every test reaches.
+//
+// A miss costs parallelism, never coverage: the test still runs, only beside other loaders.
+func (r *testRoot) checkpointLit(lit string, inTest bool) string {
+	if lit == "" || len(lit) > 400 || strings.ContainsAny(lit, " \t\n%*?") {
+		return ""
+	}
+	if strings.HasPrefix(lit, "GOINFER_") {
+		return r.registryCheckpoint(lit)
+	}
+	ext := false
+	for _, e := range checkpointExts {
+		ext = ext || strings.HasSuffix(lit, e)
+	}
+	bare := !strings.ContainsAny(lit, "/\\$~")
+	if !ext && !(bare && inTest && len(lit) >= 3) {
+		return ""
+	}
+	key := r.repo + "\x00" + r.Dir + "\x00" + lit
+	ckptMu.Lock()
+	v, ok := ckptCache[key]
+	ckptMu.Unlock()
+	if ok {
+		return v
+	}
+	home, _ := os.UserHomeDir()
+	var got string
+	if ext {
+		s := os.ExpandEnv(lit)
+		if strings.HasPrefix(s, "~/") && home != "" {
+			s = filepath.Join(home, s[2:])
+		}
+		cands := []string{s}
+		if !filepath.IsAbs(s) {
+			cands = []string{filepath.Join(r.Dir, s), filepath.Join(r.repo, s)}
+			if bare {
+				cands = append(cands, filepath.Join(r.repo, "testdata", s))
+				if home != "" {
+					cands = append(cands, filepath.Join(home, "models", s))
+				}
+			}
+		}
+		for _, c := range cands {
+			if st, err := os.Stat(c); err == nil && st.Mode().IsRegular() && st.Size() >= minCheckpointBytes {
+				got = c
+				break
+			}
+		}
+	} else {
+		dirs := []string{filepath.Join(r.repo, "testdata", lit)}
+		if home != "" {
+			dirs = append(dirs, filepath.Join(home, "models", lit))
+		}
+		for _, d := range dirs {
+			if p := checkpointIn(d); p != "" {
+				got = p
+				break
+			}
+		}
+	}
+	ckptMu.Lock()
+	ckptCache[key] = got
+	ckptMu.Unlock()
+	return got
+}
+
+// registryCheckpoint resolves an asset-registry key (testdata/assets.json) the way decoder's
+// lookupAsset does — an explicit env value wins, else the first usable candidate, with $REPO and
+// $MODELS expanded — and returns it when it is a real checkpoint, or a directory holding one. Tests
+// reach most real models this way: assetPath(tb, "GOINFER_PREQUANT_GGUF") names no path at all.
+func (r *testRoot) registryCheckpoint(key string) string {
+	ckptMu.Lock()
+	reg, ok := registries[r.repo]
+	ckptMu.Unlock()
+	if !ok {
+		reg = map[string][]string{}
+		var doc struct {
+			Assets []struct {
+				Env        string   `json:"env"`
+				Candidates []string `json:"candidates"`
+			} `json:"assets"`
+		}
+		if b, err := os.ReadFile(filepath.Join(r.repo, "testdata", "assets.json")); err == nil && json.Unmarshal(b, &doc) == nil {
+			for _, a := range doc.Assets {
+				reg[a.Env] = a.Candidates
+			}
+		}
+		ckptMu.Lock()
+		registries[r.repo] = reg
+		ckptMu.Unlock()
+	}
+	cands, ok := reg[key]
+	if !ok {
+		return ""
+	}
+	if v := os.Getenv(key); v != "" {
+		cands = []string{v}
+	}
+	models := os.Getenv("GOINFER_MODELS")
+	if models == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			models = filepath.Join(home, "models")
+		}
+	}
+	for _, c := range cands {
+		switch {
+		case strings.HasPrefix(c, "$REPO/"):
+			c = filepath.Join(r.repo, strings.TrimPrefix(c, "$REPO/"))
+		case strings.HasPrefix(c, "$MODELS/"):
+			c = filepath.Join(models, strings.TrimPrefix(c, "$MODELS/"))
+		}
+		st, err := os.Stat(c)
+		if err != nil {
+			continue
+		}
+		if st.Mode().IsRegular() && st.Size() >= minCheckpointBytes {
+			return c
+		}
+		if st.IsDir() {
+			if p := checkpointIn(c); p != "" {
+				return p
+			}
+		}
+	}
+	return ""
+}
+
+// checkpointIn returns a real checkpoint directly inside dir, or "".
+func checkpointIn(dir string) string {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range ents {
+		for _, x := range checkpointExts {
+			if !strings.HasSuffix(e.Name(), x) {
+				continue
+			}
+			p := filepath.Join(dir, e.Name())
+			if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && st.Size() >= minCheckpointBytes {
+				return p
+			}
+		}
+	}
+	return ""
 }
 
 func isTestFunc(name string) bool {
@@ -1129,6 +1350,10 @@ type quickCell struct {
 	Tier   string // affected | observer | cache-checked
 	Why    string
 	Heavy  bool
+	// Mem: the cell loads a real checkpoint, so it runs with nothing beside it (runJobs). Its tests
+	// would otherwise be refused by the fit guard, or pass only while the rest of the run happens to
+	// leave enough memory free.
+	Mem    bool
 	NotRun string // non-empty: cannot run on this host, and why
 }
 
@@ -1182,6 +1407,25 @@ func buildCells(qc *quickConfig, g *quickGraph, s *quickSelection, count1, heavy
 			skips = append(skips, qc.GoldenRun)
 		}
 		goldenRE := regexp.MustCompile(qc.GoldenRun)
+		loads := map[string]bool{}
+		for _, l := range r.loaders {
+			loads[l] = true
+		}
+		anyLoads := func(names []string) bool {
+			for _, n := range names {
+				if loads[n] {
+					return true
+				}
+			}
+			return false
+		}
+		if golden {
+			gc := cells[len(cells)-1]
+			for _, l := range r.loaders {
+				gc.Mem = gc.Mem || goldenRE.MatchString(l)
+			}
+			gc.Mem = gc.Mem || heavyGoldens
+		}
 		var walkers []string
 		for _, w := range r.walkers {
 			if !golden || !goldenRE.MatchString(w) {
@@ -1189,13 +1433,33 @@ func buildCells(qc *quickConfig, g *quickGraph, s *quickSelection, count1, heavy
 			}
 		}
 		// A package small enough to re-run whole is not worth a second process.
+		split := map[string]bool{}
 		if len(walkers) > 0 && len(r.tests)-len(walkers) >= minSplitRest {
 			cells = append(cells, &quickCell{Name: shortPkg(qc, r.Pkg) + " [walkers]", Root: r, Run: anchored(walkers),
-				Count1: force, Tier: tier, Why: why, NotRun: notRun})
+				Count1: force, Tier: tier, Why: why, Mem: anyLoads(walkers), NotRun: notRun})
 			skips = append(skips, anchored(walkers))
+			for _, w := range walkers {
+				split[w] = true
+			}
+		}
+		// The checkpoint loaders get a cell of their own, so the run-alone rule holds only them and
+		// not the rest of a five-minute package.
+		var loaders []string
+		for _, l := range r.loaders {
+			if !split[l] && !(golden && goldenRE.MatchString(l)) {
+				loaders = append(loaders, l)
+			}
+		}
+		restMem := false
+		if len(loaders) > 0 && len(r.tests)-len(split)-len(loaders) >= minSplitRest {
+			cells = append(cells, &quickCell{Name: shortPkg(qc, r.Pkg) + " [checkpoint]", Root: r, Run: anchored(loaders),
+				Count1: force, Tier: tier, Why: why, Mem: true, NotRun: notRun})
+			skips = append(skips, anchored(loaders))
+		} else {
+			restMem = len(loaders) > 0
 		}
 		cells = append(cells, &quickCell{Name: shortPkg(qc, r.Pkg), Root: r, Skip: strings.Join(skips, "|"),
-			Count1: force, Tier: tier, Why: why, NotRun: notRun})
+			Count1: force, Tier: tier, Why: why, Mem: restMem, NotRun: notRun})
 	}
 	return cells
 }

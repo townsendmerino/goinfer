@@ -27,6 +27,7 @@ type quickJob struct {
 	Env    []string
 	Args   []string // argv, program first
 	Device bool
+	Mem    bool // loads a real checkpoint: at most one such job at once (quickCell.Mem)
 	Cell   *quickCell
 	// Filter, for a lint step, is a `go list` that drops packages with no files for the step's
 	// tags and target: vet given an explicit package the target excludes fails with "build
@@ -65,7 +66,8 @@ func (jb *quickJob) ok() bool {
 	return jb.RC == 0 && jb.Err == nil && jb.Fail == 0 && !jb.Hidden
 }
 
-// runJobs runs every job, at most j at once and at most one device job at once, in the order
+// runJobs runs every job, at most j at once and at most one device job at once, and a
+// checkpoint-loading job ALONE (nothing else running beside it), in the order
 // given: lint first (short, and a vet red is worth seeing before a five-minute cell finishes), then
 // test cells longest-expected first, so the long pole starts before the short ones pile up.
 func runJobs(jobs []*quickJob, j int, rundir string, progress io.Writer, beat time.Duration, t0 time.Time) {
@@ -73,7 +75,7 @@ func runJobs(jobs []*quickJob, j int, rundir string, progress io.Writer, beat ti
 	cond := sync.NewCond(&mu)
 	pending := append([]*quickJob(nil), jobs...)
 	running := map[*quickJob]bool{}
-	devBusy := false
+	devBusy, memBusy := false, false
 	// Cells of ONE package never overlap. `go test` runs a package in one process, so its tests
 	// were written for that; two processes of the same package at once could share a port, a
 	// fixture sidecar or a scratch path, and a red caused by the split is a red about nothing.
@@ -114,13 +116,19 @@ func runJobs(jobs []*quickJob, j int, rundir string, progress io.Writer, beat ti
 		started := false
 		if len(running) < j {
 			for i, jb := range pending {
-				if (jb.Device && devBusy) || (rootOf(jb) != nil && busyRoot[rootOf(jb)]) {
+				// A checkpoint loader runs alone. Measured 2026-09-28 on the MacBook: with only the
+				// other LOADERS held back, examples/confidence's f32 load (3.6 GB) still met 3.4 GB
+				// available beside decoder, metal and their compiles, and was refused; alone it had 5.8.
+				if memBusy || (jb.Mem && len(running) > 0) || (jb.Device && devBusy) || (rootOf(jb) != nil && busyRoot[rootOf(jb)]) {
 					continue
 				}
 				pending = append(pending[:i], pending[i+1:]...)
 				running[jb] = true
 				if jb.Device {
 					devBusy = true
+				}
+				if jb.Mem {
+					memBusy = true
 				}
 				if r := rootOf(jb); r != nil {
 					busyRoot[r] = true
@@ -132,6 +140,9 @@ func runJobs(jobs []*quickJob, j int, rundir string, progress io.Writer, beat ti
 					delete(running, jb)
 					if jb.Device {
 						devBusy = false
+					}
+					if jb.Mem {
+						memBusy = false
 					}
 					if r := rootOf(jb); r != nil {
 						delete(busyRoot, r)
