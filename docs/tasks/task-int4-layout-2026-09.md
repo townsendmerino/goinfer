@@ -151,7 +151,7 @@ backend-agnostic data into something with a hidden property and a silent failure
   unreachable in practice too: `webgpu` is never the literal string `"cpu"`, so
   `wantsCanonicalInt4` always keeps canonical for it regardless.
 - **Item 4: no code change needed.** `internal/serveapp/main.go:356`,
-  `internal/chatapp/main.go:179`, and the gemma demo's own flag (`internal/gemmaapp`, removed 2026-09-25) all already register `--backend` with
+  `internal/chatapp` (both binaries now register it through `internal/loadflags/loadflags.go:59`), and the gemma demo's own flag (`internal/gemmaapp`, removed 2026-09-25) all already register `--backend` with
   `flag.String(..., "cpu", ...)` — the literal default is already `"cpu"`, not empty. The root
   (no-tags) CPU release binaries already got this saving the moment L1 landed; nothing to wire up.
   `demo/chat`'s embedded variant shares `internal/chatapp`'s flag registration, so the same holds

@@ -1,7 +1,7 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
-> **Status, 2026-09-27: C0 and D0 done, D1 built; D6a next** (it needs the nobara fixture and the owner's call on
-> which template to grade).
+> **Status, 2026-09-27: C0 and D0 done, D1 and C1 built.** D6a needs the nobara fixture and the owner's call on
+> which template to grade. C2 (README paragraph and example) and the API shape for D5 are open.
 > - **C0 clears for enum, boolean and integer fields** ([`confidence-c0-2026-09-27.md`](../measurements/confidence-c0-2026-09-27.md)).
 >   AUROC on the 1.5B: 0.847 / 0.727 / 0.680. The readout costs 4.20% of a token on the 1.5B and 1.44% on the 7B.
 >   Number and string fields are parked: the labelled set drew too few wrong answers to judge them.
@@ -50,7 +50,7 @@ position the grammar or the template controls**, renormalized, optionally temper
 | Request | any schema-constrained generation | state + a question with a finite answer set |
 | Work | full constrained decode | one prefill, no decode |
 | Number | per field, aggregated over the field's free tokens | one distribution over the options |
-| Where the probabilities come from | the masked logits `constrain` already computes (`MaskAt` at `constrain/constrain.go:147`, `Process` at `:208`) and discards after sampling | the label tokens' logits at the last prompt position (Route A), or a trained head over the final hidden state (Route B) |
+| Where the probabilities come from | the masked logits `constrain` already computes (`MaskAt` at `constrain/constrain.go:148`, `Process` at `:208`) and discards after sampling | the label tokens' logits at the last prompt position (Route A), or a trained head over the final hidden state (Route B) |
 
 **Where they meet.** An `enum` or `boolean` field in constrained output is a decision: the masked
 distribution at the position that decides the value *is* a distribution over a closed answer set.
@@ -92,7 +92,7 @@ is.
 ## 3. What goinfer has today (verified against `9bf7f3a7`, 2026-09-27)
 
 **Constrained decoding.**
-- `MaskAt` (`constrain/constrain.go:147`) and `Process` (`:208`) walk the full logit vector at
+- `MaskAt` (`constrain/constrain.go:148`) and `Process` (`:208`) walk the full logit vector at
   every constrained position and set illegal entries to −∞. The surviving distribution is discarded
   once a token is sampled.
 - `ForcedRun` (`:97`) and `ForcedBytesRun` (`:166`) exist because the grammar often forces the next
@@ -222,6 +222,38 @@ beyond what the measurement needs.
   labelled set. Every kind that passed decides its value in one free token.
 
 ### C1 — capture, attribute, surface (only if C0's gates clear)
+
+**Built, 2026-09-27** (C0 cleared enum, boolean and integer).
+- **Capture:** `constrain.Masker.CaptureConfidence(ConfidenceOptions)`.
+  - Inside `Process` it records, at each position outside a free string, the normalizer and the legal tokens' logits
+    (all of them when there are at most 256, else the top 64).
+  - Off, `Process` pays one nil check. `TestFieldConfidence_offAndRefusals` pins identical masking and no capture
+    state.
+- **Attribution:** no plumbing was needed; the schema grammar's frame stack already carries the path.
+  `FieldConfidence(generated)` replays the tokens through a fresh copy of the grammar, byte by byte. That gives each
+  byte's owning value and path (`meta.level`, `tags[1]`) and each token's byte-level forcedness.
+- **Aggregations, C0's registered ones:**
+  - enum and boolean: option mass at the deciding token, where BPE splits sum per option;
+  - integer: the minimum over free tokens.
+  - Number and string fields, and fields with no free token, are omitted.
+  - `ConfidenceOptions.EnumTemperature` / `BooleanTemperature` apply a fitted temperature and mark the field
+    calibrated. Serve passes none today.
+- **Serve:** `goinfer_confidence: true` on `/v1/chat/completions` and `/v1/completions` with `response_format`
+  `json_schema`.
+  - The response gets a top-level `goinfer_confidence` array; a stream sends it as one event after the finish chunk.
+  - Other routes refuse the flag with a 400, so none drops it silently. The response without the flag is unchanged.
+  - A confidence request runs plain constrained decode: the grammar-fused speculative path drives the masker
+    without `Process`.
+  - Documented in `docs/server.md` with the §2 caveat.
+- **Tests:**
+  - a synthetic generation pins paths, kinds, BPE-summed distributions, the integer minimum, the temperature, the
+    omissions and the skipped free strings. Mutation-checked: counting only the chosen token turns it red;
+  - serve refusals run in CI;
+  - end to end on the local 0.5B: one record per enum/boolean/integer field, none for the string, the answer
+    identical with and without the flag, one stream event, and tools refused.
+- **Cost** (`TestConfidenceCost_C1`, real 151,936-token vocab; the box was not quiet, load 3, so indicative):
+  capture adds 0.29 ms at an object-key position, 0.28 ms at an enum value, and 0.000 ms inside a free string.
+  Against C0's decode tokens that is about 2% (1.5B) and 0.8% (7B) at the positions it reads.
 
 - **Capture, not compute.** A hook at the masking seam that records, per position, the probability
   of the sampled token among the legal set, plus the full restricted distribution at positions the
@@ -503,7 +535,7 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 
 ## Sources
 
-`constrain/constrain.go:97`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
+`constrain/constrain.go:98`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
 `Process`) · `decoder/model.go:1288` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
 contract) · `decoder/arch.go:954` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
 `decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:137` (`validateTargets`) ·
