@@ -1,7 +1,7 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
 > **Status, 2026-09-27: C0 and D0 done, D1 and C1 built.** D6a needs the nobara fixture and the owner's call on
-> which template to grade. C2 (README paragraph and example) and the API shape for D5 are open.
+> which template to grade. C2 done. D6a (chat-v1, the owner's pick) and D5 (a `/v1/systemone`-compatible route, the owner's pick) are next.
 > - **C0 clears for enum, boolean and integer fields** ([`confidence-c0-2026-09-27.md`](../measurements/confidence-c0-2026-09-27.md)).
 >   AUROC on the 1.5B: 0.847 / 0.727 / 0.680. The readout costs 4.20% of a token on the 1.5B and 1.44% on the 7B.
 >   Number and string fields are parked: the labelled set drew too few wrong answers to judge them.
@@ -275,6 +275,13 @@ beyond what the measurement needs.
   turns the number into a decision for the caller.
 
 ### C2 — docs for C
+
+**Done, 2026-09-28.**
+- `docs/server.md`, with the §2 caveat (landed with C1).
+- A README paragraph under "A Go struct the model cannot violate", with the caveat linked.
+- [`examples/confidence`](../../examples/confidence/main.go): a complete program. Its test runs the real binary on a
+  small Qwen checkpoint when one is present. On the 0.5B it printed category `billing` 0.70 (right), `urgent`
+  `true` 0.62 (wrong, and less sure) and orders 1 at 0.51.
 
 `docs/server.md` (the opt-in and the §2 caveat), the README's "A Go struct the model cannot
 violate" section (one paragraph, the caveat linked), and a worked example in `examples/`.
