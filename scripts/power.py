@@ -58,6 +58,7 @@ import argparse
 import json
 import math
 import os
+import statistics
 import sys
 from statistics import NormalDist
 
@@ -589,6 +590,89 @@ def cmd_verify(reg, out):
     return EXIT_OK if bad == 0 else EXIT_UNRESOLVABLE
 
 
+def fidelity_spreads(path):
+    """Per-prompt spreads from a fidelity.WritePositions JSONL (internal/fidelity): the sd of the per-prompt agreement
+    difference in points, and the KL residual sd relative to the exact arm's mean (the delta-method term the Go criterion
+    bounds). Returns (agree_sd_pts, kl_cv, n_prompts)."""
+    per = {}
+    with open(path) as f:
+        for line in f:
+            r = json.loads(line)
+            k = (r["cell"], r["prompt"])
+            d = per.setdefault(k, {"candidate": [], "exact": []})
+            d[r["arm"]].append((1.0 if r["agree"] else 0.0, float(r["kl"])))
+    dag, kc, ke = [], [], []
+    for d in per.values():
+        c, e = d["candidate"], d["exact"]
+        if not c or len(c) != len(e):
+            continue
+        dag.append(100.0 * (sum(x[0] for x in c) / len(c) - sum(x[0] for x in e) / len(e)))
+        kc.append(sum(x[1] for x in c) / len(c))
+        ke.append(sum(x[1] for x in e) / len(e))
+    if len(dag) < 2:
+        raise ValueError(f"{path}: fewer than 2 complete prompts")
+    me = sum(ke) / len(ke)
+    r = (sum(kc) / len(kc)) / me
+    resid = [c - r * e for c, e in zip(kc, ke)]
+    return statistics.stdev(dag), statistics.stdev(resid) / me, len(dag)
+
+
+def cmd_fidelity(argv, out):
+    """TE12: prompts a fidelity gate needs, per criterion, for internal/fidelity's non-inferiority tests."""
+    ap = argparse.ArgumentParser(prog="power.py fidelity",
+                                 description="prompts needed per criterion of internal/fidelity's NonInferior (TE12)")
+    ap.add_argument("--from-positions", help="a fidelity.WritePositions JSONL to estimate the spreads from")
+    ap.add_argument("--agree-sd", type=float, help="sd of the per-prompt agreement difference, points")
+    ap.add_argument("--kl-cv", type=float, help="sd of the per-prompt KL residual (c - R e) / mean exact KL")
+    ap.add_argument("--agree-margin", type=float, default=1.0, help="points (default 1)")
+    ap.add_argument("--kl-margin", type=float, default=0.10, help="fraction of exact's mean KL (default 0.10)")
+    ap.add_argument("--alpha", type=float, default=0.05, help="one-sided")
+    ap.add_argument("--power", type=float, default=0.80)
+    ap.add_argument("--max-prompts", type=int, default=400)
+    a = ap.parse_args(argv)
+    src = "given"
+    if a.from_positions:
+        a.agree_sd, a.kl_cv, n = fidelity_spreads(a.from_positions)
+        src = f"estimated from {n} prompts in {a.from_positions} (each sd is itself uncertain at that n)"
+    if a.agree_sd is None or a.kl_cv is None:
+        print("power.py fidelity: pass --from-positions, or both --agree-sd and --kl-cv", file=out)
+        return EXIT_USAGE
+    print(f"spreads ({src}): agreement sd {a.agree_sd:.3f} pts per prompt, KL residual cv {a.kl_cv:.4f}", file=out)
+    worst = 0
+    for name, sd, m, unit in (("agreement", a.agree_sd, a.agree_margin, "pts"), ("KL ratio", a.kl_cv, a.kl_margin, "")):
+        n, nz = solve_n(sd, m, a.alpha, a.power, paired=True, one_sided=True, max_n=a.max_prompts)
+        if n is None:
+            print(f"  {name:<10} margin {m:g}{unit}: cannot resolve within {a.max_prompts} prompts (normal N {nz:.0f}) "
+                  f"— widen the margin only with a reason, or change the instrument", file=out)
+            worst = None
+        else:
+            print(f"  {name:<10} margin {m:g}{unit}: {n} prompts (pooled across the gate's cells)", file=out)
+            if worst is not None:
+                worst = max(worst, n)
+    if worst is not None:
+        print(f"prompts for the gate: {worst} pooled (e.g. {math.ceil(worst / 5)} per cell over 5 cells); "
+              f"hard flips use the pooled Poisson bound and add no requirement", file=out)
+    return EXIT_OK
+
+
+def cmd_worstcase(argv, out):
+    """Zero-failure prompt count for a worst-case claim: (1 - rate)^n <= alpha."""
+    ap = argparse.ArgumentParser(prog="power.py worstcase", description="prompts that exclude a bad-prompt rate")
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--rate", type=float, help="bad-prompt rate to exclude, e.g. 0.10")
+    g.add_argument("--prompts", type=int, help="the rate N all-passing prompts exclude")
+    ap.add_argument("--alpha", type=float, default=0.05)
+    a = ap.parse_args(argv)
+    if a.rate is not None:
+        n = math.ceil(math.log(a.alpha) / math.log(1 - a.rate))
+        print(f"{n} prompts, all passing, exclude a bad-prompt rate >= {a.rate:g} at {1 - a.alpha:.0%} confidence", file=out)
+    else:
+        r = 1 - a.alpha ** (1 / a.prompts)
+        print(f"{a.prompts} all-passing prompts exclude a bad-prompt rate >= {r:.3f} at {1 - a.alpha:.0%} confidence",
+              file=out)
+    return EXIT_OK
+
+
 def main(argv=None, out=sys.stdout):
     argv = list(sys.argv[1:] if argv is None else argv)
     reg_path = REGISTRY
@@ -603,6 +687,10 @@ def main(argv=None, out=sys.stdout):
         return cmd_binomial(argv[1:], out)
     if argv[0] == "ece":
         return cmd_ece(argv[1:], out)
+    if argv[0] == "fidelity":
+        return cmd_fidelity(argv[1:], out)
+    if argv[0] == "worstcase":
+        return cmd_worstcase(argv[1:], out)
     reg = load_registry(reg_path)
     if argv[0] == "list":
         return cmd_list(argv[1:], reg, out)

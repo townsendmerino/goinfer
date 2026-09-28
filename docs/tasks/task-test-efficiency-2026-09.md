@@ -671,6 +671,38 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
 - **Band:** fidelity cells that end undecided or failing on an unresolvable criterion → ~0. Prompt counts move both
   ways by criterion; the time comes back from gates that decide the first time, instead of re-runs and amendments.
 - **Kill:** a gate registered under these criteria still ends undecided at its computed N.
+- **BUILT 2026-09-28: the criteria and the sizing, ready for the next gate.** The gates' own inline criteria are not
+  touched, because past verdicts are not re-read.
+  - **[`internal/fidelity`](../../internal/fidelity/fidelity.go):**
+    - `NonInferior` refuses a margin ≤ 0, since margin-free is a superiority test and `Superiority` is its own named
+      function.
+    - Hard flips are pooled under the Poisson bound, as today.
+    - Agreement passes if its one-sided lower bound, clustered by prompt, is ≥ −margin points. KL passes if the
+      delta-method upper bound on the ratio of means, clustered by prompt, is ≤ 1 + margin.
+    - Per-cell values are reported, never used as a veto. `WorstCasePrompts`, `PromptSetHash` and `WritePositions`
+      (the per-position log) complete it.
+  - **Tests, calibrated on simulated gates** (5 cells × 10 prompts pooled, correlated arms with 3% discordance):
+    - equal arms pass 87%;
+    - a candidate at 1.25× KL passes 0%;
+    - one 4 pts worse on agreement passes 0%;
+    - the old no-margin KL rule passes equal arms about half the time (a test, so the reason is executable).
+    
+    A no-margin mutant dropped equal arms to 4% and turned the calibration test red.
+  - **`scripts/power.py fidelity`** sizes both criteria with the same paired one-sided t test, from given spreads or
+    from a `WritePositions` log. `power.py worstcase` gives 29 prompts to exclude a 10% bad-prompt rate, and says 10
+    prompts exclude 26%. Its 26 tests pass, and a mutant turned them red.
+  - **Pre-registration template for the next gate on the protocol:**
+    - **Decision set:** the (model, K) cells, pooled. Per-cell values reported, no per-cell veto.
+    - **Criteria:** `fidelity.NonInferior` with `AgreeMarginPts = m_a` and `KLMargin = m_k`, one-sided α 0.05, and
+      hard flips under the pooled Poisson bound. No "wins in half" criterion. `Superiority` only if superiority is the
+      claim.
+    - **Prompts:** N from `power.py fidelity --from-positions <the last run's positions log>` (or `--agree-sd` /
+      `--kl-cv` from the registry), pooled. The prompt set is fixed, and its `fidelity.PromptSetHash` is recorded.
+    - **Worst case, if claimed:** the excluded rate `r`, with N from `power.py worstcase --rate r`.
+    - **Log:** `fidelity.WritePositions` output, kept, so the positions-per-prompt split can be sized next time.
+  - **What sets agreement's N is the discordance between the arms,** which the positions log measures. With
+    independent arms (~25% discordant positions) equal arms passed 28% at 50 prompts. With the 3% discordance the
+    gates' recorded d/N suggests, they passed 87%. Sizing therefore uses a real log, not an assumption.
 
 ---
 

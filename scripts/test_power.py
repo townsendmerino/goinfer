@@ -257,5 +257,53 @@ class CommittedRegistry(unittest.TestCase):
         self.assertEqual(rc, 0, out)
 
 
+class FidelitySizing(unittest.TestCase):
+    """TE12: the fidelity subcommands size internal/fidelity's criteria with the same formulas."""
+
+    def test_worstcase_both_directions(self):
+        rc, out, _ = run(["worstcase", "--rate", "0.10"])
+        self.assertEqual(rc, 0)
+        self.assertIn("29 prompts", out)
+        rc, out, _ = run(["worstcase", "--prompts", "10"])
+        self.assertIn("0.259", out)
+
+    def test_fidelity_sizes_each_criterion_and_takes_the_max(self):
+        rc, out, _ = run(["fidelity", "--agree-sd", "3.0", "--kl-cv", "0.15"])
+        self.assertEqual(rc, 0, out)
+        n_agree, _ = power.solve_n(3.0, 1.0, 0.05, 0.8, paired=True, one_sided=True, max_n=400)
+        n_kl, _ = power.solve_n(0.15, 0.10, 0.05, 0.8, paired=True, one_sided=True, max_n=400)
+        self.assertIn(f"agreement  margin 1pts: {n_agree} prompts", out)
+        self.assertIn(f"KL ratio   margin 0.1: {n_kl} prompts", out)
+        self.assertIn(f"prompts for the gate: {max(n_agree, n_kl)} pooled", out)
+
+    def test_fidelity_cannot_resolve_branch(self):
+        rc, out, _ = run(["fidelity", "--agree-sd", "40", "--kl-cv", "0.1", "--max-prompts", "50"])
+        self.assertIn("cannot resolve within 50 prompts", out)
+
+    def test_spreads_from_a_positions_log(self):
+        # Two prompts, 2 positions each. Prompt p0: candidate agrees 2/2, exact 1/2 -> +50 pts; p1: 1/2 vs 1/2 -> 0.
+        rows = []
+        for pid, cand, exact, kc, ke in (("p0", [1, 1], [1, 0], [0.02, 0.02], [0.01, 0.01]),
+                                         ("p1", [1, 0], [0, 1], [0.03, 0.03], [0.03, 0.03])):
+            for i in range(2):
+                rows.append({"cell": "c", "prompt": pid, "pos": i, "arm": "candidate", "agree": bool(cand[i]),
+                             "hard_flip": False, "kl": kc[i]})
+                rows.append({"cell": "c", "prompt": pid, "pos": i, "arm": "exact", "agree": bool(exact[i]),
+                             "hard_flip": False, "kl": ke[i]})
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        try:
+            sd, cv, n = power.fidelity_spreads(f.name)
+        finally:
+            os.unlink(f.name)
+        self.assertEqual(n, 2)
+        self.assertAlmostEqual(sd, math.sqrt(((50 - 25) ** 2 + (0 - 25) ** 2) / 1))  # stdev of [50, 0]
+        # R = mean(0.02, 0.03) / mean(0.01, 0.03) = 1.25; residuals 0.02-0.0125, 0.03-0.0375; cv = stdev / 0.02
+        resid = [0.02 - 1.25 * 0.01, 0.03 - 1.25 * 0.03]
+        m = sum(resid) / 2
+        self.assertAlmostEqual(cv, math.sqrt(sum((x - m) ** 2 for x in resid)) / 0.02)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
