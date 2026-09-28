@@ -503,6 +503,13 @@ func (r *resident) canUseAttnFAAt(l, nKeys int) bool {
 // touches the bound slot (r.kc/r.vc); every sequence's KV is addressed through kvSlotBufs. The pipelined executor is
 // stopped first: a command buffer it pre-encoded would otherwise run after this one's writes with its own stale plan.
 func (r *resident) forwardMulti(seqs []batchSeq) (logits [][]float32, ids []int, err error) {
+	return r.forwardMultiInto(seqs, false)
+}
+
+// forwardMultiInto is forwardMulti; with argmaxOnly it returns no logits, only each row's argmax, read in place from
+// the step's logits buffer (no per-row copy). That is the same id the copied row's argmax gives when no logit transform
+// applies, and the caller falls back to the full rows when one does (softcap, a logit scale).
+func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits [][]float32, ids []int, err error) {
 	b := r.batch
 	if b == nil {
 		return nil, nil, fmt.Errorf("metal: batched decode unavailable")
@@ -514,12 +521,18 @@ func (r *resident) forwardMulti(seqs []batchSeq) (logits [][]float32, ids []int,
 	if r.loraLayers != nil {
 		return nil, nil, fmt.Errorf("metal: batched step with an adapter bound")
 	}
-	seen := map[int]bool{}
+	// A slot may carry several rows only as ONE sequence's consecutive positions, in row order (a speculative verify:
+	// every row's K/V is stored before its attention runs, layer by layer, so each row sees the rows below it as
+	// sequential decode would). Two sequences on one slot would overwrite each other.
+	last := map[int]int{}
 	for _, q := range seqs {
-		if q.slot < 0 || q.slot >= len(r.kvSlotBufs) || seen[q.slot] {
-			return nil, nil, fmt.Errorf("metal: batched step: slot %d out of range or repeated", q.slot)
+		if q.slot < 0 || q.slot >= len(r.kvSlotBufs) {
+			return nil, nil, fmt.Errorf("metal: batched step: slot %d out of range", q.slot)
 		}
-		seen[q.slot] = true
+		if p, ok := last[q.slot]; ok && q.pos != p+1 {
+			return nil, nil, fmt.Errorf("metal: batched step: slot %d repeated at position %d after %d (rows on one slot must be consecutive positions of one sequence)", q.slot, q.pos, p)
+		}
+		last[q.slot] = q.pos
 		if q.pos < 0 || q.pos >= r.ctxCap {
 			return nil, nil, fmt.Errorf("metal: batched step: position %d outside the resident context %d", q.pos, r.ctxCap)
 		}
@@ -669,6 +682,12 @@ func (r *resident) forwardMulti(seqs []batchSeq) (logits [][]float32, ids []int,
 	logits, ids = make([][]float32, B), make([]int, B)
 	lg := b.logitsB.Floats()
 	gid := b.gOut.U32s()
+	if argmaxOnly {
+		for m := range seqs {
+			ids[m] = argmaxF32(lg[m*r.V : (m+1)*r.V])
+		}
+		return nil, ids, nil
+	}
 	for m, q := range seqs {
 		ids[m] = -1
 		if q.draw != nil {
@@ -718,4 +737,61 @@ func (a *metalResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.Re
 		out[i] = decoder.ResidentBatchOut{Logits: logits[i], ID: ids[i]}
 	}
 	return out, nil
+}
+
+// stepVerifyCost is the step-kernel verify's measured cost in single-token steps, indexed by rows verified: the
+// conservative end of TestMC3Verify_rowCost on the M1 Pro (the 7B at depth 2048, the dearest cell of both models; the
+// 1.5B at depth 128 reads 1.59 / 1.71 / 1.76 at 2 / 4 / 8 rows). 1 row is production's own Forward; 3 and 5-7 are
+// interpolated; 9 rows are an 8-row step plus one Forward. docs/tasks/task-concurrency-2026-09.md, MC4.
+var stepVerifyCost = []float64{0, 1, 1.79, 1.95, 2.11, 2.25, 2.38, 2.52, 2.65, 3.65}
+
+var (
+	_ decoder.VerifyCostReporter = (*metalResident)(nil)
+)
+
+// VerifyCost (decoder.VerifyCostReporter): the argmax-only verify's cost curve when this resident can run it on the
+// step kernels, nil otherwise.
+func (a *metalResident) VerifyCost() []float64 {
+	if a.r == nil || a.r.batch == nil || len(a.r.kvSlotBufs) == 0 || a.r.finalSoftcap > 0 || (a.r.logitScale != 0 && a.r.logitScale != 1) {
+		return nil
+	}
+	return stepVerifyCost
+}
+
+// PrefillLastNArgmax is the n-gram loop's argmax-only verify (decoder spec_ngram.go, idsVerify) on the step kernels:
+// the rows are consecutive positions of the bound slot's sequence from startPos, run by forwardMulti, which is
+// bit-identical to production decode for such rows (TestMC3Verify_sameSlotRowsBitIdentical), in pieces of at most
+// batchMaxSeqs, the fragment's width. A one-row piece runs production's own Forward, so a round with no draft costs
+// what plain decode does. Each id is the row's first maximum, as the decoder's own argmax.
+func (a *metalResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error) {
+	r := a.r
+	if a.VerifyCost() == nil {
+		return nil, fmt.Errorf("metal: no step-kernel verify on this resident")
+	}
+	if e := a.checkCap(startPos, len(embeddings)); e != nil {
+		return nil, e
+	}
+	ids := make([]int, 0, len(embeddings))
+	for from := 0; from < len(embeddings); {
+		n := min(batchMaxSeqs, len(embeddings)-from)
+		if n == 1 {
+			lg, err := a.Forward(embeddings[from], startPos+from)
+			if err != nil {
+				return nil, err
+			}
+			ids = append(ids, argmaxF32(lg))
+		} else {
+			seqs := make([]batchSeq, n)
+			for i := range n {
+				seqs[i] = batchSeq{slot: r.kvSlot, pos: startPos + from + i, emb: embeddings[from+i]}
+			}
+			_, got, err := r.forwardMultiInto(seqs, true)
+			if err != nil {
+				return nil, err
+			}
+			ids = append(ids, got...)
+		}
+		from += n
+	}
+	return ids, nil
 }

@@ -1,0 +1,181 @@
+17:21:08 == spec step-verify served grading start; tree 1e153876; { 3.31 2.83 2.50 }
+17:21:08 waiting for idle: load1=3.31 (0s)
+17:22:08 waiting for idle: load1=3.81 (60s)
+17:23:09 waiting for idle: load1=2.56 (120s)
+17:23:49 idle: load1=1.99
+17:23:49 copy 15b plain_1
+[spec-copy] plain_1: clients=1 wall=9.795s aggregate=52.271 tok/s (512 tokens; HTTP errors none)
+17:24:01 waiting for idle: load1=2.38 (0s)
+17:24:21 idle: load1=1.98
+17:24:21 copy 15b specold_1
+[spec-copy] specold_1: clients=1 wall=9.962s aggregate=51.396 tok/s (512 tokens; HTTP errors none)
+17:24:33 waiting for idle: load1=2.12 (0s)
+17:25:03 idle: load1=1.99
+17:25:03 copy 15b specnew_1
+[spec-copy] specnew_1: clients=1 wall=4.701s aggregate=108.91 tok/s (512 tokens; HTTP errors none)
+17:25:09 waiting for idle: load1=2.15 (0s)
+17:26:09 idle: load1=1.88
+17:26:09 copy 15b specnew_2
+[spec-copy] specnew_2: clients=1 wall=4.664s aggregate=109.78 tok/s (512 tokens; HTTP errors none)
+17:26:15 idle: load1=1.73
+17:26:15 copy 15b plain_2
+[spec-copy] plain_2: clients=1 wall=9.711s aggregate=52.724 tok/s (512 tokens; HTTP errors none)
+17:26:25 idle: load1=1.54
+17:26:25 copy 15b specold_2
+[spec-copy] specold_2: clients=1 wall=9.937s aggregate=51.523 tok/s (512 tokens; HTTP errors none)
+17:26:36 idle: load1=1.49
+17:26:36 copy 15b specold_3
+[spec-copy] specold_3: clients=1 wall=9.933s aggregate=51.543 tok/s (512 tokens; HTTP errors none)
+17:26:47 idle: load1=1.26
+17:26:47 copy 15b specnew_3
+[spec-copy] specnew_3: clients=1 wall=4.685s aggregate=109.282 tok/s (512 tokens; HTTP errors none)
+17:26:53 idle: load1=1.40
+17:26:53 copy 15b plain_3
+[spec-copy] plain_3: clients=1 wall=9.709s aggregate=52.737 tok/s (512 tokens; HTTP errors none)
+17:27:03 idle: load1=1.34
+17:27:03 chat 15b plain_1
+[w7-plain] plain_1 clients=1 starting fresh server
+[w7-plain] plain_1 clients=1: wall=12.489s aggregate=61.5 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+17:27:17 waiting for idle: load1=2.63 (0s)
+17:28:17 waiting for idle: load1=3.54 (60s)
+17:29:18 waiting for idle: load1=3.07 (120s)
+17:30:18 waiting for idle: load1=2.74 (180s)
+17:31:19 waiting for idle: load1=2.94 (240s)
+17:31:59 idle: load1=1.84
+17:31:59 chat 15b specold_1
+[w7-plain] resuming: 1 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+[w7-plain] specold_1 clients=1 starting fresh server
+[w7-plain] waiting for memory: 88 MB free, want >= 100 MB (0s/60s)
+[w7-plain] waiting for memory: 87 MB free, want >= 100 MB (2s/60s)
+[w7-plain] waiting for memory: 86 MB free, want >= 100 MB (4s/60s)
+[w7-plain] waiting for memory: 91 MB free, want >= 100 MB (6s/60s)
+[w7-plain] specold_1 clients=1: wall=11.464s aggregate=66.99 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+17:32:20 idle: load1=1.72
+17:32:20 chat 15b specnew_1
+[w7-plain] resuming: 2 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+[w7-plain] specnew_1 clients=1 starting fresh server
+[w7-plain] specnew_1 clients=1: wall=9.483s aggregate=80.99 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+17:32:31 idle: load1=1.84
+17:32:31 chat 15b specnew_2
+[w7-plain] resuming: 3 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+[w7-plain] specnew_2 clients=1 starting fresh server
+[w7-plain] specnew_2 clients=1: wall=9.461s aggregate=81.18 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+17:32:41 idle: load1=1.78
+17:32:41 chat 15b plain_2
+[w7-plain] resuming: 4 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+[w7-plain] plain_2 clients=1 starting fresh server
+[w7-plain] plain_2 clients=1: wall=10.084s aggregate=76.16 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+17:32:52 idle: load1=1.73
+17:32:52 chat 15b specold_2
+[w7-plain] resuming: 5 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+[w7-plain] specold_2 clients=1 starting fresh server
+[w7-plain] specold_2 clients=1: wall=10.55s aggregate=72.8 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+17:33:03 idle: load1=1.56
+17:33:03 chat 15b specold_3
+[w7-plain] resuming: 6 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+[w7-plain] specold_3 clients=1 starting fresh server
+[w7-plain] specold_3 clients=1: wall=10.576s aggregate=72.62 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+17:33:14 idle: load1=1.32
+17:33:14 chat 15b specnew_3
+[w7-plain] resuming: 7 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+[w7-plain] specnew_3 clients=1 starting fresh server
+[w7-plain] specnew_3 clients=1: wall=9.474s aggregate=81.07 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+17:33:24 idle: load1=1.51
+17:33:24 chat 15b plain_3
+[w7-plain] resuming: 8 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+[w7-plain] plain_3 clients=1 starting fresh server
+[w7-plain] plain_3 clients=1: wall=10.114s aggregate=75.94 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-15b.json
+17:33:35 idle: load1=1.28
+17:33:35 copy 7b plain_1
+[spec-copy] plain_1: clients=1 wall=30.437s aggregate=16.822 tok/s (512 tokens; HTTP errors none)
+17:34:10 idle: load1=1.64
+17:34:10 copy 7b specold_1
+[spec-copy] specold_1: clients=1 wall=30.436s aggregate=16.822 tok/s (512 tokens; HTTP errors none)
+17:34:42 idle: load1=1.14
+17:34:42 copy 7b specnew_1
+[spec-copy] specnew_1: clients=1 wall=16.322s aggregate=31.369 tok/s (512 tokens; HTTP errors none)
+17:34:59 idle: load1=1.02
+17:34:59 copy 7b specnew_2
+[spec-copy] specnew_2: clients=1 wall=16.392s aggregate=31.235 tok/s (512 tokens; HTTP errors none)
+17:35:17 idle: load1=1.08
+17:35:17 copy 7b plain_2
+[spec-copy] plain_2: clients=1 wall=30.136s aggregate=16.99 tok/s (512 tokens; HTTP errors none)
+17:35:49 idle: load1=0.82
+17:35:49 copy 7b specold_2
+[spec-copy] specold_2: clients=1 wall=30.374s aggregate=16.857 tok/s (512 tokens; HTTP errors none)
+17:36:21 idle: load1=1.53
+17:36:21 copy 7b specold_3
+[spec-copy] specold_3: clients=1 wall=30.375s aggregate=16.856 tok/s (512 tokens; HTTP errors none)
+17:36:52 idle: load1=1.45
+17:36:52 copy 7b specnew_3
+[spec-copy] specnew_3: clients=1 wall=16.324s aggregate=31.364 tok/s (512 tokens; HTTP errors none)
+17:37:10 idle: load1=1.18
+17:37:10 copy 7b plain_3
+[spec-copy] plain_3: clients=1 wall=30.138s aggregate=16.988 tok/s (512 tokens; HTTP errors none)
+17:37:42 idle: load1=1.14
+17:37:42 chat 7b plain_1
+[w7-plain] plain_1 clients=1 starting fresh server
+[w7-plain] plain_1 clients=1: wall=30.215s aggregate=25.42 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+17:38:13 idle: load1=0.92
+17:38:13 chat 7b specold_1
+[w7-plain] resuming: 1 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+[w7-plain] specold_1 clients=1 starting fresh server
+[w7-plain] specold_1 clients=1: wall=31.038s aggregate=24.74 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+17:38:45 idle: load1=1.41
+17:38:45 chat 7b specnew_1
+[w7-plain] resuming: 2 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+[w7-plain] specnew_1 clients=1 starting fresh server
+[w7-plain] specnew_1 clients=1: wall=30.704s aggregate=25.01 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+17:40:49 waiting for idle: load1=2.13 (0s)
+17:41:49 waiting for idle: load1=2.56 (60s)
+17:42:50 waiting for idle: load1=3.03 (120s)
+17:43:50 idle: load1=1.84
+17:43:50 chat 7b specnew_2
+[w7-plain] resuming: 3 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+[w7-plain] specnew_2 clients=1 starting fresh server
+[w7-plain] waiting for memory: 78 MB free, want >= 100 MB (0s/60s)
+[w7-plain] specnew_2 clients=1: wall=29.905s aggregate=25.68 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+17:44:23 idle: load1=1.27
+17:44:23 chat 7b plain_2
+[w7-plain] resuming: 4 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+[w7-plain] plain_2 clients=1 starting fresh server
+[w7-plain] plain_2 clients=1: wall=30.33s aggregate=25.32 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+17:44:54 idle: load1=1.18
+17:44:54 chat 7b specold_2
+[w7-plain] resuming: 5 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+[w7-plain] specold_2 clients=1 starting fresh server
+[w7-plain] specold_2 clients=1: wall=31.271s aggregate=24.56 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+17:45:26 idle: load1=0.96
+17:45:26 chat 7b specold_3
+[w7-plain] resuming: 6 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+[w7-plain] specold_3 clients=1 starting fresh server
+[w7-plain] specold_3 clients=1: wall=31.287s aggregate=24.55 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+17:45:58 idle: load1=0.84
+17:45:58 chat 7b specnew_3
+[w7-plain] resuming: 7 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+[w7-plain] specnew_3 clients=1 starting fresh server
+[w7-plain] specnew_3 clients=1: wall=29.816s aggregate=25.76 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+17:46:29 idle: load1=0.61
+17:46:29 chat 7b plain_3
+[w7-plain] resuming: 8 cell(s) already in /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+[w7-plain] plain_3 clients=1 starting fresh server
+[w7-plain] plain_3 clients=1: wall=30.299s aggregate=25.35 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/chat-7b.json
+17:47:00 == DONE

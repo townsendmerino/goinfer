@@ -493,3 +493,126 @@ func TestMC3StepWallVsGPU(t *testing.T) {
 		report(name, wall[2:], gpu[2:])
 	}
 }
+
+// TestMC3Verify_sameSlotRowsBitIdentical is the first gate of Metal spec verify on the step kernels
+// (docs/tasks/task-concurrency-2026-09.md, MC4): a step whose rows are CONSECUTIVE positions of one sequence on one slot
+// (a verify round) gives every logit and every K/V element bit-identical to production decoding those tokens one after
+// another. Twin slots are filled with the same history; M = 2, 4, 8 rows at depths 128 and 2048, and a run straddling
+// attnFADepthFloor, so one step mixes per-head and attention_fa rows.
+//
+//	GOINFER_METAL_MC3=1 [GOINFER_METAL_MC3_MODEL=…] go test -tags goinfer_testhooks -count=1 -run '^TestMC3Verify_sameSlotRowsBitIdentical$' -v ./metal/
+func TestMC3Verify_sameSlotRowsBitIdentical(t *testing.T) {
+	_, r := mc3Resident(t, 2, 4096)
+	seed := uint32(424242)
+	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
+	kv := func(slot, from, n int) [][]uint16 {
+		if err := r.useKVSlot(slot); err != nil {
+			t.Fatal(err)
+		}
+		var out [][]uint16
+		for l := range r.layers {
+			d := r.layers[l].geom.kvDim
+			o := r.kvHostOff(l, 2) + from*d
+			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+		}
+		return out
+	}
+	cases := []struct{ D, M int }{{128, 2}, {128, 4}, {128, 8}, {2048, 2}, {2048, 4}, {2048, 8}, {attnFADepthFloor - 4, 8}}
+	total := 0
+	for _, c := range cases {
+		ids := make([]int, c.D)
+		for i := range ids {
+			ids[i] = rnd()
+		}
+		mc3Fill(t, r, 0, ids)
+		mc3Fill(t, r, 1, ids)
+		embs := make([][]float32, c.M)
+		for i := range embs {
+			embs[i] = mc3Emb(r, rnd())
+		}
+		if err := r.useKVSlot(0); err != nil {
+			t.Fatal(err)
+		}
+		var ref [][]float32
+		for i, e := range embs {
+			ref = append(ref, append([]float32(nil), r.ForwardEmb(e, c.D+i)...))
+		}
+		refKV := kv(0, c.D, c.M)
+		seqs := make([]batchSeq, c.M)
+		for i := range seqs {
+			seqs[i] = batchSeq{slot: 1, pos: c.D + i, emb: embs[i]}
+		}
+		got := mc3Step(t, r, seqs)
+		gotKV := kv(1, c.D, c.M)
+		lg, kd := 0, 0
+		for i := range got {
+			for j := range got[i] {
+				if math.Float32bits(got[i][j]) != math.Float32bits(ref[i][j]) {
+					lg++
+				}
+			}
+		}
+		for i := range refKV {
+			for j := range refKV[i] {
+				if refKV[i][j] != gotKV[i][j] {
+					kd++
+				}
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[mc3-verify] depth %d, %d rows on one slot: %d of %d logits differ, %d K/V elements differ\n", c.D, c.M, lg, c.M*r.V, kd)
+		if lg != 0 || kd != 0 {
+			t.Errorf("depth %d, M = %d: the same-slot step differs from sequential decode (%d logits, %d K/V elements)", c.D, c.M, lg, kd)
+		}
+		total += lg + kd
+	}
+	t.Logf("%d differing values over %d cases", total, len(cases))
+}
+
+// TestMC3Verify_rowCost is the second gate: what each extra verified row costs on the step kernels. GPU time of one
+// step of M = 1, 2, 4, 8 consecutive rows on one slot, against a production token, at depths 128, 512 and 2048;
+// median of 7, arms interleaved. Extra-row cost = (T(M)/T(token) - 1) / (M - 1).
+//
+//	GOINFER_METAL_MC3=1 [GOINFER_METAL_MC3_MODEL=…] go test -tags goinfer_testhooks -count=1 -run '^TestMC3Verify_rowCost$' -v ./metal/
+func TestMC3Verify_rowCost(t *testing.T) {
+	_, r := mc3Resident(t, 2, 4096) // the step needs slot buffers, which a one-slot resident does not keep
+	seed := uint32(13131)
+	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
+	med := func(xs []float64) float64 { v := append([]float64(nil), xs...); sort.Float64s(v); return v[len(v)/2] }
+	for _, D := range []int{128, 512, 2048} {
+		ids := make([]int, D)
+		for i := range ids {
+			ids[i] = rnd()
+		}
+		mc3Fill(t, r, 0, ids)
+		arms := []int{0, 1, 2, 4, 8} // 0 = production token
+		per := map[int][]float64{}
+		for rep := range 9 {
+			for k := range arms {
+				M := arms[(k+rep)%len(arms)]
+				if M == 0 {
+					r.ForwardEmb(mc3Emb(r, rnd()), D)
+				} else {
+					seqs := make([]batchSeq, M)
+					for i := range seqs {
+						seqs[i] = batchSeq{slot: 0, pos: D + i, emb: mc3Emb(r, rnd())}
+					}
+					mc3Step(t, r, seqs)
+				}
+				if rep >= 2 {
+					per[M] = append(per[M], (r.gpuEnd-r.gpuStart)*1e3)
+				}
+			}
+		}
+		tok := med(per[0])
+		line := fmt.Sprintf("depth %d: production token %.3f ms", D, tok)
+		for _, M := range arms[1:] {
+			tm := med(per[M])
+			extra := "—"
+			if M > 1 {
+				extra = fmt.Sprintf("%.3f", (tm/tok-1)/float64(M-1))
+			}
+			line += fmt.Sprintf("  | M=%d %.3f ms (%.2fx a token, extra row %s)", M, tm, tm/tok, extra)
+		}
+		fmt.Fprintf(os.Stderr, "[mc3-verify-cost] %s\n", line)
+	}
+}

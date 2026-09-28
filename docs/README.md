@@ -51,7 +51,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (42: 37 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (44: 39 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -85,6 +85,12 @@ where darwin allows one.
 reading both codebases, the measured run that gates the rest, and the fixes — a context default an
 agent fits in, a thinking switch, and reasoning emitted separately.
 
+[`task-constrained-confidence.md`](tasks/task-constrained-confidence.md) (C0–C2 and D0–D9, filed
+2026-09-27) scopes confidence on answers: per-field probabilities on schema-constrained output, and a
+Jev-style `/v1/decisions` endpoint (state plus a typed question in, a calibrated distribution over the
+allowed answers out, one prefill and no decode) by label-token scoring on any model or autotrust's open
+JEV decision heads on `qwen3_5`. Two measurements decide what is built.
+
 One is the outside view rather than a design: [`task-first-hour.md`](tasks/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running
 it again — `RELEASING.md`'s pre-flight now calls for one before each release.
@@ -92,7 +98,7 @@ it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
 
-## Evidence — `measurements/` (204)
+## Evidence — `measurements/` (206)
 
 Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable to one of these.
 They are dated and machine-stamped by convention, and they are **not** updated when the world

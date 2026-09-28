@@ -956,6 +956,65 @@ production's decode kernels run layer-major in one command buffer, so an extra v
       concurrently. **Fixed 2026-09-27:** a request that prefills on a resident keeps the whole live margin
       (`TestPrepare_prefillShare`). The end-to-end rerun is owed: the attempt ran on a Mac already swapping.
 
+**Metal spec verify on the step kernels — registered 2026-09-27, before any build or timing.** This replaces
+`docs/prompts/metal-verify-curve-remeasure-2026-09.md`, deleted by the owner 2026-09-27. That prompt would have
+re-timed the f16-MMA prefill kernel as a verify path for P10's block drafters (`docs/spec/08-dspark-dflash.md`). That
+kernel is not bit-identical to decode, so its ceiling could unlock nothing on its own. Two findings of the day moved
+the question:
+- **Metal's present verify is lossless but expensive.** `ForwardN` is bit-identical to `Forward`
+  (`TestSpecVerify_forwardNMatchesForward`), but each extra row costs 0.71–0.96 of a token. Served n-gram spec
+  measured 0.98× plain decode on copy-heavy traffic (above).
+- **MC3's step kernels are a bit-identical batched path that costs little per row.** A step of 8 rows costs 1.82× a
+  token on the 1.5B and 2.06× on the 7B at depth 128 (S4's in-sequence run): an extra row is ~0.12–0.15 of a token,
+  about CUDA's measured 0.16–0.25.
+  - A verify is 1 + k consecutive positions of one sequence on one slot.
+  - The step already stores every row's K/V before its attention runs, layer by layer. So row i sees rows below it,
+    as sequential decode does.
+  - The one visible blocker: `forwardMulti` refuses a slot that appears on two rows.
+
+*First, exploratory, and deciding whether anything is built:*
+1. **Identity (hard, stops the item).** A step whose rows are consecutive positions of one sequence on one slot gives
+   every logit and every K/V element bit-identical to sequential production decode.
+   - Rows: M = 2, 4, 8 at depths 128 and 2048, plus a run straddling `attnFADepthFloor`.
+   - Models: the 1.5B and the 7B.
+2. **Cost:** the step's GPU time at M = 1, 2, 4, 8 rows against a production token, at depths 128, 512 and 2048, on
+   both models.
+   - The build starts if an extra row averages ≤ 0.30 of a token at M = 8 up to depth 2048 on both.
+   - Otherwise the item parks with the curve recorded.
+
+*The build* (only if 1 and 2 pass): the Metal resident gains an argmax-only verify (`PrefillLastNArgmax`, which the
+n-gram loop already prefers when present).
+- Rows run on the step kernels in pieces of at most 8, the fragment's width.
+- A one-row round runs production's own `Forward` plus a host argmax, so a round with no draft costs what plain
+  decode does.
+- `thetaFor("metal")` becomes the step's measured marginal cost, the conservative end.
+- The fragment's cost is nearly flat in M, which the controller's linear model understates for shallow drafts; the
+  chat gate below is what catches that.
+
+*Grading* (registered now, run only after the build):
+- One binary, three arms at 1 client (spec is single-stream; under load it forfeits batching either way):
+  - *plain*: serve's defaults;
+  - *spec-old*: `-spec ngram` on the current verify, the build's parent;
+  - *spec-new*: `-spec ngram` on the step verify.
+- The copy and chat workloads of the spec measurement above. The 1.5B is graded, the 7B reported. 3 interleaved
+  rounds, idle-gated.
+- Gates:
+  1. every reply equals plain's, every turn (hard);
+  2. copy: spec-new ÷ plain, median ≥ 1.25×. That is the level at which `--spec ngram` becomes worth recommending on
+     Metal;
+  3. chat: spec-new ÷ plain ≥ 0.97× (hard: spec must not cost ordinary traffic).
+- Decision: all pass ships, and `server.md`'s "leave it off on Metal" is rewritten. Copy at 1.03–1.25× goes to the
+  owner. A chat failure is fixed (for example, a minimum draft depth for step verifies) before anything ships.
+- P10's block drafters follow only on this result, with their own drafter port and measurement.
+- **SHIPPED 2026-09-27 (`1e153876`): both deciding gates and all three served gates pass**
+  ([`metal-spec-step-verify-2026-09-27.md`](../measurements/metal-spec-step-verify-2026-09-27.md)).
+  - Identity: same-slot rows are bit-identical to sequential decode, 0 differ in 7 cases on both models.
+  - Cost: an extra row is 0.11–0.19 (1.5B) and 0.16–0.24 (7B) of a token at M = 8.
+  - Served, 1 client, on the 1.5B: copy **2.082×** plain decode and chat **1.068×**, every reply identical. The 7B
+    reads 1.846× and 1.014×. The old verify read 0.977× and 0.956×.
+  - Next, by the spec measurement's own registered rule (S > 1.05× on both workloads, with L < 1): "speculate when
+    alone, batch under load" is now worth registering. P10's block drafters have a Metal verify.
+
 ## MC5 — continuous batching, paged KV, chunked prefill (parked)
 
 Unchanged from `roadmap.md`: not this engine's weight class. **Trigger:** the owner reverses the
