@@ -1,0 +1,12 @@
+=== 08:55:56 cpu 1.5b fix (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf)
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf on cpu: decode path cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+exit 0
+=== cpu 1.5b: fix vs 84ee8f49 IDENTICAL (58343424 bytes)
+=== 08:56:06 cpu 7b fix (qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw)
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw on cpu: decode path cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw: prompt 145 tokens, 48 steps captured
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw: prompt 621 tokens, 48 steps captured
+exit 0
+=== cpu 7b: fix vs 84ee8f49 IDENTICAL (58392576 bytes)

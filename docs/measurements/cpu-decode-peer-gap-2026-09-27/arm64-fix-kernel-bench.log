@@ -1,0 +1,153 @@
+start 08:49:00 local / 15:49:00 UTC; load { 1.51 2.06 2.53 }
+goos: darwin
+goarch: arm64
+pkg: github.com/townsendmerino/aikit/linalg
+cpu: Apple M1 Pro
+BenchmarkW4A8Row4F16Fix
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/f32
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/f32-8         	   14604	     82381 ns/op	        29.76 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/f32-8         	   14370	     82193 ns/op	        29.83 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/f32-8         	   14605	     82242 ns/op	        29.81 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/f32-8         	   14098	     82889 ns/op	        29.58 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/f32-8         	   14544	     82471 ns/op	        29.73 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/f32-8         	   14592	     82600 ns/op	        29.68 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/f32-8         	   14462	     82627 ns/op	        29.67 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/f32-8         	   13519	     82539 ns/op	        29.70 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/scalar
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/scalar-8      	    8226	    150183 ns/op	        16.32 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/scalar-8      	    8152	    148911 ns/op	        16.46 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/scalar-8      	    8101	    149366 ns/op	        16.41 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/scalar-8      	    7947	    149754 ns/op	        16.37 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/scalar-8      	    8014	    149765 ns/op	        16.37 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/scalar-8      	    7886	    154702 ns/op	        15.85 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/scalar-8      	    8090	    153270 ns/op	        15.99 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/scalar-8      	    8276	    148220 ns/op	        16.54 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/neon
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/neon-8        	   12495	     96076 ns/op	        25.52 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/neon-8        	   12552	     95408 ns/op	        25.69 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/neon-8        	   12384	     95961 ns/op	        25.55 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/neon-8        	   12570	     95874 ns/op	        25.57 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/neon-8        	   12439	     95417 ns/op	        25.69 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/neon-8        	   12518	     96529 ns/op	        25.40 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/neon-8        	   12446	     95483 ns/op	        25.67 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/neon-8        	   12577	     95839 ns/op	        25.58 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/fused
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/fused-8       	   16077	     74475 ns/op	        32.92 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/fused-8       	   16110	     74748 ns/op	        32.80 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/fused-8       	   16000	     74455 ns/op	        32.93 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/fused-8       	   16026	     74515 ns/op	        32.90 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/fused-8       	   16082	     75131 ns/op	        32.63 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/fused-8       	   16076	     74585 ns/op	        32.87 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/fused-8       	   16040	     74599 ns/op	        32.86 GB/s
+BenchmarkW4A8Row4F16Fix/0.5B-gateup-896x4864/fused-8       	   15598	     74691 ns/op	        32.82 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/f32
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/f32-8        	    4782	    252757 ns/op	        30.63 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/f32-8        	    4737	    253576 ns/op	        30.53 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/f32-8        	    4762	    252702 ns/op	        30.63 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/f32-8        	    4753	    252685 ns/op	        30.64 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/f32-8        	    4782	    253012 ns/op	        30.60 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/f32-8        	    4681	    254485 ns/op	        30.42 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/f32-8        	    4760	    252546 ns/op	        30.65 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/f32-8        	    4766	    252586 ns/op	        30.65 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/scalar
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/scalar-8     	    3374	    351610 ns/op	        22.02 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/scalar-8     	    3406	    349841 ns/op	        22.13 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/scalar-8     	    3342	    354453 ns/op	        21.84 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/scalar-8     	    3505	    354746 ns/op	        21.82 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/scalar-8     	    3393	    353995 ns/op	        21.87 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/scalar-8     	    3454	    355558 ns/op	        21.77 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/scalar-8     	    3388	    355252 ns/op	        21.79 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/scalar-8     	    3471	    352951 ns/op	        21.93 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/neon
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/neon-8       	    4114	    285560 ns/op	        27.11 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/neon-8       	    4207	    288288 ns/op	        26.85 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/neon-8       	    4144	    286959 ns/op	        26.98 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/neon-8       	    4152	    286308 ns/op	        27.04 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/neon-8       	    4198	    286646 ns/op	        27.01 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/neon-8       	    4178	    288275 ns/op	        26.85 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/neon-8       	    4168	    286886 ns/op	        26.98 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/neon-8       	    4171	    285981 ns/op	        27.07 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/fused
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/fused-8      	    5298	    228728 ns/op	        33.85 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/fused-8      	    5280	    230745 ns/op	        33.55 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/fused-8      	    5262	    228972 ns/op	        33.81 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/fused-8      	    5240	    229620 ns/op	        33.71 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/fused-8      	    5239	    228028 ns/op	        33.95 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/fused-8      	    5288	    227862 ns/op	        33.97 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/fused-8      	    5254	    227410 ns/op	        34.04 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-gateup-1536x8960/fused-8      	    5200	    228545 ns/op	        33.87 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/f32
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/f32-8          	    4790	    254535 ns/op	        30.41 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/f32-8          	    4765	    250257 ns/op	        30.93 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/f32-8          	    4735	    250646 ns/op	        30.89 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/f32-8          	    4813	    250255 ns/op	        30.93 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/f32-8          	    4750	    250831 ns/op	        30.86 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/f32-8          	    4730	    250158 ns/op	        30.95 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/f32-8          	    4831	    248646 ns/op	        31.13 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/f32-8          	    4710	    250479 ns/op	        30.91 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/scalar
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/scalar-8       	    3312	    366259 ns/op	        21.14 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/scalar-8       	    3277	    360299 ns/op	        21.49 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/scalar-8       	    3331	    355928 ns/op	        21.75 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/scalar-8       	    3309	    360289 ns/op	        21.49 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/scalar-8       	    3339	    353453 ns/op	        21.90 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/scalar-8       	    3456	    350615 ns/op	        22.08 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/scalar-8       	    3469	    351835 ns/op	        22.00 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/scalar-8       	    3410	    353933 ns/op	        21.87 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/neon
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/neon-8         	    4275	    277817 ns/op	        27.87 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/neon-8         	    4347	    276263 ns/op	        28.02 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/neon-8         	    4338	    275775 ns/op	        28.07 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/neon-8         	    4267	    274769 ns/op	        28.17 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/neon-8         	    4318	    277848 ns/op	        27.86 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/neon-8         	    4360	    274776 ns/op	        28.17 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/neon-8         	    4350	    276540 ns/op	        27.99 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/neon-8         	    4383	    275547 ns/op	        28.09 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/fused
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/fused-8        	    5232	    226156 ns/op	        34.23 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/fused-8        	    5323	    224851 ns/op	        34.43 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/fused-8        	    5384	    224815 ns/op	        34.43 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/fused-8        	    5344	    224717 ns/op	        34.45 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/fused-8        	    5380	    226996 ns/op	        34.10 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/fused-8        	    5281	    225145 ns/op	        34.38 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/fused-8        	    5378	    224856 ns/op	        34.43 GB/s
+BenchmarkW4A8Row4F16Fix/1.5B-down-8960x1536/fused-8        	    5348	    224500 ns/op	        34.48 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/f32
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/f32-8         	    2604	    457343 ns/op	        83.51 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/f32-8         	    2611	    453227 ns/op	        84.26 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/f32-8         	    2641	    459706 ns/op	        83.08 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/f32-8         	    2637	    455276 ns/op	        83.89 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/f32-8         	    2661	    452415 ns/op	        84.42 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/f32-8         	    2630	    464105 ns/op	        82.29 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/f32-8         	    2656	    462306 ns/op	        82.61 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/f32-8         	    2629	    455322 ns/op	        83.88 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/scalar
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/scalar-8      	     885	   1302157 ns/op	        29.33 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/scalar-8      	     853	   1411468 ns/op	        27.06 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/scalar-8      	     823	   1404971 ns/op	        27.18 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/scalar-8      	     843	   1419888 ns/op	        26.90 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/scalar-8      	     886	   1325451 ns/op	        28.81 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/scalar-8      	     996	   1225271 ns/op	        31.17 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/scalar-8      	     934	   1225583 ns/op	        31.16 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/scalar-8      	     975	   1224146 ns/op	        31.20 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/neon
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/neon-8        	    2919	    412372 ns/op	        92.61 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/neon-8        	    2929	    412639 ns/op	        92.55 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/neon-8        	    2871	    415905 ns/op	        91.83 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/neon-8        	    2941	    417238 ns/op	        91.53 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/neon-8        	    2559	    424520 ns/op	        89.96 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/neon-8        	    2906	    411863 ns/op	        92.73 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/neon-8        	    2860	    416639 ns/op	        91.66 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/neon-8        	    2929	    413184 ns/op	        92.43 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/fused
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/fused-8       	    3044	    396374 ns/op	        96.35 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/fused-8       	    3039	    396537 ns/op	        96.31 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/fused-8       	    3055	    408762 ns/op	        93.43 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/fused-8       	    3025	    405975 ns/op	        94.07 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/fused-8       	    3037	    397069 ns/op	        96.18 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/fused-8       	    2994	    395653 ns/op	        96.53 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/fused-8       	    2997	    398992 ns/op	        95.72 GB/s
+BenchmarkW4A8Row4F16Fix/7B-gateup-3584x18944/fused-8       	    3032	    397054 ns/op	        96.19 GB/s
+PASS
+ok  	github.com/townsendmerino/aikit/linalg	187.139s
+exit 0 end 08:52:09
