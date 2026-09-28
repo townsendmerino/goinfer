@@ -168,16 +168,16 @@
         "decoder/forward_gemma4.go"
       ],
       "deps_hash": "sha256:39bd6aa2c34774078c78b385e15ee41e8775fafdf439cf90171b2be09db24733",
-      "status": "experimental",
-      "validated_at": null,
-      "date": "2026-06-16",
-      "reference": "HF bf16 (google/gemma-4 E2B + 12B); q4_0 GGUF, argmax-exact + sample-256 cosine — RE-RUN OWED: these metrics were recorded on int4 weights before aikit v1.50.0 stored int4 group scales as binary16 (docs/tasks/task-cpu-decode-peer-gap-2026-09.md, L1); experimental with validated_at null until the gate re-runs",
-      "machine": "macbook-arm64",
+      "status": "validated",
+      "validated_at": "310a2e44",
+      "date": "2026-09-28",
+      "reference": "HF bf16 (google/gemma-4 E2B + 12B); q4_0 GGUF source loaded at int8int8, argmax-exact + sample-256 cosine (re-validated 2026-09-28 at 310a2e44 on nobara after the aikit v1.50.0 int4 f16-scale change, which does not reach int8int8: 12B 0.98972, E2B 0.99924)",
+      "machine": "linux-amd64",
       "method": "full-forward-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 0.99128,
-        "cosine_mean": 0.99526
+        "cosine_min": 0.98972,
+        "cosine_mean": 0.99448
       }
     },
     "glm4_moe": {
