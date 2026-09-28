@@ -503,6 +503,18 @@ per-package, not per-test, so one such test anywhere in `decoder` is enough to m
 splitting the 21 files into a separate package is not realistic given how tightly they depend on
 `decoder`'s unexported internals.
 
+> **RETRACTED 2026-09-28** (TE7(b), `docs/tasks/task-test-efficiency-2026-09.md`): the mechanism above is wrong, and
+> "permanently uncacheable" does not hold.
+> - **Why the mechanism is wrong.** cmd/go re-checks only paths inside the module root (`computeTestInputsID`), and
+>   `t.TempDir()` lives under `$TMPDIR`, outside it.
+> - **The measurement.** Two back-to-back `GODEBUG=gocachetest=1 go test ./decoder/` runs on the MacBook saved the
+>   result (310 s) and then replayed it `(cached)` in 2 s. That was with 34 files calling `t.TempDir()`, and with no
+>   file inside the module written during the first run.
+> - **What stays unknown.** Why the 2026-09-22 pair's hashes differed cannot be re-established. The candidates are a
+>   first-run write inside the tree (a fixture sidecar created once) or a concurrent edit.
+> - **What changes.** `decoder` caches when its test binary and the inputs its tests read are unchanged. This was not
+>   re-measured on CI. C8's speed-up and C9's sharding stand on their own measurements.
+
 **What this leaves C7 actually delivering, honestly re-stated.** Not "`decoder` replays cached on
 5 of 6 code pushes" — that premise is false and will stay false while any `t.TempDir()` test
 lives in the package. What the cache genuinely buys: the other 20 packages in `./...` (confirmed
@@ -576,7 +588,7 @@ the band, shipped as-is.
 
 Asked after C7/C8 landed — *"we were going to be able to cut down linux test too"* / *"just do
 it"*. C7 established `./decoder` cannot be cached (t.TempDir() in 21 files, per-package cache
-key, unstable on any machine — see the C7 section); C8 cut the package from 834s to 562s but that
+key, unstable on any machine — see the C7 section; **that claim was retracted on 2026-09-28**, see the note there); C8 cut the package from 834s to 562s but that
 is still the whole `test` job's wall, on effectively one of the runner's four cores (`./decoder`
 has ~691 top-level tests and only a handful of `t.Parallel()` calls). The only lever left is
 running it as more than one job.

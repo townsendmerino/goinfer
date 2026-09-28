@@ -206,7 +206,9 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
     burning (3.5 CPU-s in the window). It did not flag the idle resident Ollama.
 - **Pre-registration (2026-09-28, before queueing; the Mac's first night).**
   - **Run:** `run-te1-aa-mutation.sh`, graded by `te1_analyze.py`, both in `measurements/test-efficiency-2026-09/`.
-    - The binary is pinned: `serve-cpu-b9fcde67` in both arms (A/A).
+    - The binary is pinned: `serve-cpu-b9fcde67` in both arms (A/A). It was built at `b9fcde67`, which the push
+      rebased to `0607f30b`. The commits between touch only `cuda/` tests and a log, no non-test Go file, so the
+      binary is exactly `0607f30b`'s.
     - CPU, 0.5B / 1.5B / 7B, 3 runs, two arms.
     - Four sweeps interleaved (load, instant, load, instant), then a mutation per gate.
   - **Mutation:** an every-core CPU hog for 90 s, started the moment cell 1's record lands, so while the harness is in
@@ -363,6 +365,20 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   - the selection never drops a package that `go list -deps -test` says depends on the change.
 - **Kill (b) only:** if the in-tree cause cannot be removed without restructuring tests, caching stays a per-package
   bonus that nothing relies on.
+- **(b) RESULT 2026-09-28: `decoder` caches, so there is nothing to fix.** Two back-to-back
+  `GODEBUG=gocachetest=1 go test ./decoder/` runs on the MacBook:
+  - run 1 saved the result (310 s);
+  - run 2 replayed it: `ok … decoder (cached)` in 2 s, with the same test ID and the same input ID.
+
+  34 `decoder` test files call `t.TempDir()`, and no file inside the module was written during run 1. C7's
+  "permanently uncacheable" is retracted in place, in `task-ci-speed-2026-09.md`.
+  - **What re-runs `decoder` in practice:** `-count=1`, any Go change reaching the package (a new test binary is a new
+    test ID), and changed env vars or module files the tests read. A day loop that drops `-count=1` for a
+    reproducible check replays an unchanged `decoder` in seconds instead of ~5 min.
+  - **Found on the way:** the first attempt at these runs failed on `TestDecodeParityInt4`. Its int4 golden had been
+    red on arm64 since L1's merge (`5c85f7c0`) and nobody had seen it. It is re-captured in its own commit: the new
+    ids are exactly the pre-L1 build's with f16-rounded scales, and agreement with f32 is unchanged at 11/24. A
+    failing package is never cached, so TE7(b) could not have been measured until it was fixed.
 
 ### TE8 — Measurement gates that live in `go test`: resumable, reference-cached, right-sized *(per gate)*
 
