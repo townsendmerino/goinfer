@@ -104,7 +104,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/session.go:73` | goinfer | `func (s *Session) rewindForReuse(prompt []int) int {` |
 | `docs/audit-2026-09-10.md|decoder/spec_ngram.go:266` | goinfer | `if needHist {` |
 | `docs/audit-2026-09-10.md|decoder/spec_sample.go:111` | goinfer | `func (s *Sampler) specStep(p []float64, x int) (int, bool) {` |
-| `docs/audit-2026-09-10.md|gpu/backend.go:193` | goinfer | `key := &bQ4[0]` |
+| `docs/audit-2026-09-10.md|gpu/backend.go:197` | goinfer | `key := &bQ4[0]` |
 | `docs/audit-2026-09-10.md|internal/serveapp/banner.go:120` | goinfer | `ctxLine := "context: "` |
 | `docs/audit-2026-09-10.md|internal/serveapp/openai.go:655` | goinfer | `PrefillReusedTokens int `json:"prefill_reused_tokens"`` |
 | `docs/audit-2026-09-10.md|internal/serveapp/sessions.go:221` | goinfer | `func bestExtend(sessions [][]int, prompt []int) int {` |
@@ -125,7 +125,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/residency.go:194` | goinfer | `// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to ` |
 | `docs/audit-metal-2026-09-12.md|decoder/residentneed.go:61` | goinfer | `for l := range nLayers {` |
 | `docs/audit-metal-2026-09-12.md|decoder/spec_optfwd.go:202` | goinfer | `anchor: func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate ` |
-| `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:479` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
+| `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:483` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
 | `docs/audit-metal-2026-09-12.md|internal/loadflags/loadflags.go:203` | goinfer | `"            (4-bit weights). NOT the smallest on Apple Silicon or non-VNNI amd64: the l` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:953` | goinfer | `func (s *server) loadVisionTower(cfg config) error {` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1394` | goinfer | `// DecodeRunner when there is no session commit and no prefix reuse (model.go:` |
@@ -319,7 +319,7 @@ supports.
 | `docs/ollama-chase.md|decoder/model.go:2126` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
 | `docs/ollama-chase.md|decoder/registry.go:1724` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/ollama-chase.md|decoder/residency.go:1355` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
-| `docs/ollama-chase.md|decoder/weightmat.go:770` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
+| `docs/ollama-chase.md|decoder/weightmat.go:786` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:626` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:2416` | goinfer | `func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) error {` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
@@ -335,7 +335,7 @@ supports.
 | `docs/queue-engineering.md|decoder/kvsnapshot_gemma4_test.go:10` | goinfer | `func TestSnapshot_refusesNonUniformKVWidth_C05(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/layerpaging.go:42` | goinfer | `// mu guards the mutable paging state below (audit C-30). The pager lives on *Model, sha` |
 | `docs/queue-engineering.md|decoder/model.go:1316` | goinfer | `// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own` |
-| `docs/queue-engineering.md|decoder/serialize.go:858` | goinfer | `func (w *Weights) hasPopulatedLayers() bool {` |
+| `docs/queue-engineering.md|decoder/serialize.go:859` | goinfer | `func (w *Weights) hasPopulatedLayers() bool {` |
 | `docs/queue-engineering.md|decoder/serialize_shapecheck_test.go:15` | goinfer | `func TestValidateShapes_catchesArchMismatch(t *testing.T) {` |
 | `docs/queue-engineering.md|decoder/serialize_test.go:436` | goinfer | `t.Fatalf("streamed length %d != buffered %d", n, len(want))` |
 | `docs/queue-engineering.md|internal/giw/bundle.go:127` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
@@ -457,10 +457,10 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|cuda/resident.go:3874` | goinfer | `p := make([]uint32, N*(K/4))` |
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/gguf.go:1410` | goinfer | `// to choose what to write (repackRow4ForEmit computes row4 from canonical), even on a c` |
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/model.go:680` | goinfer | `w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), ` |
-| `docs/tasks/task-int4-layout-2026-09.md|decoder/serialize.go:1811` | goinfer | `return linalg.WrapInt4Row4(q4, q4s, rows, cols, group, q4Row4, q4Row4Scales)` |
-| `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:344` | goinfer | `// the parked .giw-kind decision is waiting on, docs/task-w4a8-neon-` |
-| `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:493` | goinfer | `func wantsCanonicalInt4(backendName string, be Backend) bool {` |
-| `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:663` | goinfer | `type GIWTarget string` |
+| `docs/tasks/task-int4-layout-2026-09.md|decoder/serialize.go:1846` | goinfer | `return linalg.WrapInt4Row4F16(q4, q4s, rows, cols, group, q4Row4, q4Row4Scales)` |
+| `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:348` | goinfer | `// the parked .giw-kind decision is waiting on, docs/task-w4a8-neon-` |
+| `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:497` | goinfer | `func wantsCanonicalInt4(backendName string, be Backend) bool {` |
+| `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:667` | goinfer | `type GIWTarget string` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/loadflags/loadflags.go:59` | goinfer | `fs.StringVar(&f.Backend, "backend", "cpu", backendHelp)` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/prequant/prequant.go:41` | goinfer | `// output. A cancelled ctx aborts a long streaming transcode at the next layer boundary` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/serveapp/main.go:362` | goinfer | `--ctx        KV capacity in positions` |

@@ -21,11 +21,11 @@ func TestSerializedInt4Weights_row4Kind_matchesCanonical(t *testing.T) {
 	}
 	var eligible, int4Count int
 	for _, wm := range mGGUF.w.matmulWeights() {
-		if _, _, _, ok := wm.Int4(); !ok {
+		if _, _, _, ok := Int4F32(wm); !ok {
 			continue
 		}
 		int4Count++
-		if _, _, ok := wm.Int4Row4(); ok {
+		if _, _, ok := int4Row4F32(wm); ok {
 			eligible++
 		}
 	}
@@ -47,10 +47,10 @@ func TestSerializedInt4Weights_row4Kind_matchesCanonical(t *testing.T) {
 		t.Fatalf("LoadSerializedWeights (kind 3): %v", err)
 	}
 	for i, wm := range w3.matmulWeights() {
-		if _, _, _, ok := wm.Int4(); !ok {
+		if _, _, _, ok := Int4F32(wm); !ok {
 			continue
 		}
-		if _, _, ok := wm.Int4Row4(); ok {
+		if _, _, ok := int4Row4F32(wm); ok {
 			t.Fatalf("weight %d: kind-3 .giw carries a row4 layout — SerializeWeights must never emit kind 4", i)
 		}
 	}
@@ -74,11 +74,11 @@ func TestSerializedInt4Weights_row4Kind_matchesCanonical(t *testing.T) {
 	}
 	var repackedOnLoad int
 	for i, wm := range gotWeights {
-		if _, _, _, ok := wm.Int4(); !ok {
+		if _, _, _, ok := Int4F32(wm); !ok {
 			continue
 		}
-		_, _, srcEligible := srcWeights[i].Int4Row4()
-		_, _, gotOK := wm.Int4Row4()
+		_, _, srcEligible := int4Row4F32(srcWeights[i])
+		_, _, gotOK := int4Row4F32(wm)
 		if srcEligible && !gotOK {
 			t.Fatalf("weight %d: row4-eligible at GGUF load but kind-4 .giw round-trip lost it", i)
 		}

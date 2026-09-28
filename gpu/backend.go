@@ -157,13 +157,13 @@ func (b *webgpuBackend) MatmulW8A8(a []float32, bQ []int8, bScales []float32, ds
 // declines, so matmulInto's caller falls back to the CPU W4A8 kernel exactly as it did before
 // this method existed. bQ4 is decoder's native on-disk packed layout (2 nibbles/byte); group is
 // always w4a8GroupSize (32) for goinfer's models (matches uploadProj's own assumption).
-func (b *webgpuBackend) MatmulW4A8(a []float32, bQ4 []byte, bScales []float32, group int, dst []float32, M, K, N int) bool {
+func (b *webgpuBackend) MatmulW4A8(a []float32, bQ4 []byte, bScales16 []uint16, group int, dst []float32, M, K, N int) bool {
 	if len(bQ4) == 0 || M != 1 || group != w4a8GroupSize {
 		return false
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	qr, ok := b.residentW4A8For(bQ4, bScales, N, K)
+	qr, ok := b.residentW4A8For(bQ4, bScales16, nil, N, K)
 	if !ok {
 		return false
 	}
@@ -189,10 +189,19 @@ func (b *webgpuBackend) MatmulW4A8(a []float32, bQ4 []byte, bScales []float32, g
 // int4 buffer, keyed by its backing pointer — shared by MatmulW4A8 and MatmulW4A8Batch (P-16,
 // audit-2026-09-10) so the upload/unpack logic exists exactly once. Caller holds b.mu. ok=false
 // means upload failed; the caller counts the fallback.
-func (b *webgpuBackend) residentW4A8For(bQ4 []byte, bScales []float32, N, K int) (*q4Resident, bool) {
+//
+// The scales arrive as binary16 (scales16, a WeightMat's storage) or, from an op built against f32,
+// as scales32. They are read only on a cache miss: widened (exactly) for the f32 upload path, which
+// converts back to the same binary16 bits the WeightMat holds.
+func (b *webgpuBackend) residentW4A8For(bQ4 []byte, scales16 []uint16, scales32 []float32, N, K int) (*q4Resident, bool) {
 	key := &bQ4[0]
 	if qr := b.q4resident[key]; qr != nil {
 		return qr, true
+	}
+	bScales := scales32
+	if scales16 != nil {
+		bScales = make([]float32, len(scales16))
+		linalg.F16ToF32Slice(bScales, scales16)
 	}
 	var rm *ResidentW4A8
 	var err error
@@ -248,7 +257,7 @@ func (b *webgpuBackend) MatmulW4A8Batch(a []float32, M, K, group int, ops []lina
 		if len(op.W4) == 0 {
 			return false
 		}
-		qr, ok := b.residentW4A8For(op.W4, op.Scales, op.N, K)
+		qr, ok := b.residentW4A8For(op.W4, op.ScalesF16, op.Scales, op.N, K)
 		if !ok {
 			return false
 		}
@@ -373,3 +382,10 @@ func (b *webgpuBackend) Close() error {
 	b.ctx.Close()
 	return nil
 }
+
+// The staged int4 interfaces are met by a runtime type assertion (decoder's matmul/matmulInto), so a
+// signature drift would silently route every int4 projection to the CPU; these make it a build error.
+var (
+	_ decoder.QuantBackend4      = (*webgpuBackend)(nil)
+	_ decoder.QuantBatchBackend4 = (*webgpuBackend)(nil)
+)

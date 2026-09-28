@@ -171,7 +171,7 @@ func (m *Model) Int4ScalesF16(w *linalg.WeightMat) ([]uint16, bool) {
 	if m == nil || m.w == nil || m.w.int4F16 == nil || w == nil {
 		return nil, false
 	}
-	q4, _, _, ok := w.Int4()
+	q4, _, _, ok := w.Int4F16()
 	if !ok || len(q4) == 0 {
 		return nil, false
 	}

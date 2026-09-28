@@ -3899,7 +3899,7 @@ func packWeight(w *linalg.WeightMat) (hostW, error) {
 		// wantsCanonicalInt4 doc comment has the full policy). Under that gate this case should
 		// be unreachable in practice (repacked-only only activates for Options.Backend=="cpu"
 		// literally, never "cuda"), so this is defense in depth, not a path expected to fire.
-		q4, sc, _, ok := w.Int4()
+		q4, sc, _, ok := decoder.Int4F32(w)
 		if !ok {
 			return hostW{}, fmt.Errorf("cuda: int4 tensor has no canonical bytes (layout %s-only): "+
 				"model was loaded for a CPU-only backend; load with Options.Backend set to "+

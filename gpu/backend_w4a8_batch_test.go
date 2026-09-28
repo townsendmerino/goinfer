@@ -126,7 +126,7 @@ func TestWebGPUBackend_MatmulW4A8Batch_oneSubmit(t *testing.T) {
 		a[i] = rng.Float32()*2 - 1
 	}
 
-	if !be.MatmulW4A8(a, op.W4, op.Scales, w4a8GroupSize, dst, 1, K, N) {
+	if !be.MatmulW4A8(a, op.W4, linalg.F32ToF16Scales(op.Scales), w4a8GroupSize, dst, 1, K, N) {
 		t.Fatal("MatmulW4A8 declined — expected it to run on a real device")
 	}
 	if len(be.q4resident) != 1 {

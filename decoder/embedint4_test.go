@@ -26,13 +26,13 @@ func TestEmbedInt4Knob(t *testing.T) {
 	if _, _, _, ok := pinned.w.Embed.Int8(); !ok {
 		t.Errorf("default int4 mode: embed should be int8-pinned, kind=%s", pinned.w.Embed.Kind())
 	}
-	if _, _, _, ok := relaxed.w.Embed.Int4(); !ok {
+	if _, _, _, ok := Int4F32(&relaxed.w.Embed); !ok {
 		t.Errorf("EmbedInt4: embed should be int4, kind=%s", relaxed.w.Embed.Kind())
 	}
 
 	// Untied models also carry a separate head; it follows the same policy.
 	if relaxed.w.arch != nil && !relaxed.w.arch.TiedLMHead && relaxed.w.LMHead.Rows() > 0 {
-		if _, _, _, ok := relaxed.w.LMHead.Int4(); !ok {
+		if _, _, _, ok := Int4F32(&relaxed.w.LMHead); !ok {
 			t.Errorf("EmbedInt4 (untied): LM head should be int4, kind=%s", relaxed.w.LMHead.Kind())
 		}
 	}

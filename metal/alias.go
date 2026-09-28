@@ -101,7 +101,7 @@ func (a *weightAlias) nibbles(d *Device, w *linalg.WeightMat) (Buffer, bool) {
 	if a == nil {
 		return Buffer{}, false
 	}
-	q4, _, group, ok := w.Int4()
+	q4, _, group, ok := w.Int4F16()
 	if !ok || group != 32 || len(q4) == 0 {
 		return Buffer{}, false
 	}
@@ -176,7 +176,7 @@ func (a *weightAlias) concatNibbles(d *Device, wms []*linalg.WeightMat) (Buffer,
 	first := make([][]byte, len(wms))
 	total := 0
 	for i, w := range wms {
-		q4, _, group, ok := w.Int4()
+		q4, _, group, ok := w.Int4F16()
 		if !ok || group != 32 || len(q4) == 0 {
 			return Buffer{}, false
 		}
@@ -267,12 +267,12 @@ func int4ConcatA(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, B
 	}
 	nScales := 0
 	for _, w := range wms {
-		_, q4s, _, _ := w.Int4()
+		_, q4s, _, _ := decoder.Int4F32(w)
 		nScales += len(q4s)
 	}
 	scales := make([]uint16, 0, nScales)
 	for _, w := range wms {
-		_, q4s, _, _ := w.Int4()
+		_, q4s, _, _ := decoder.Int4F32(w)
 		for _, s := range q4s {
 			scales = append(scales, f32ToF16(s))
 		}

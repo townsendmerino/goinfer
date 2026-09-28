@@ -26,7 +26,7 @@ func TestW4A8Row4GiwKind_loadTimeAndMemoryDelta(t *testing.T) {
 	}
 	var eligible int
 	for _, wm := range mGGUF.w.matmulWeights() {
-		if _, _, ok := wm.Int4Row4(); ok {
+		if _, _, ok := int4Row4F32(wm); ok {
 			eligible++
 		}
 	}
@@ -84,17 +84,17 @@ func TestW4A8Row4GiwKind_loadTimeAndMemoryDelta(t *testing.T) {
 	var canonicalBytes, row4BytesGGUF, row4BytesKind4 int64
 	var repackedGGUF, repackedKind4, int4Count int
 	for i, wm := range mGGUFBest.w.matmulWeights() {
-		q4, q4s, _, ok := wm.Int4()
+		q4, q4s, _, ok := Int4F32(wm)
 		if !ok {
 			continue
 		}
 		int4Count++
 		canonicalBytes += int64(len(q4)) + int64(len(q4s))*4
-		if p4, s4, ok := wm.Int4Row4(); ok {
+		if p4, s4, ok := int4Row4F32(wm); ok {
 			repackedGGUF++
 			row4BytesGGUF += int64(len(p4)) + int64(len(s4))*4
 		}
-		if p4, s4, ok := wKind4Best.matmulWeights()[i].Int4Row4(); ok {
+		if p4, s4, ok := int4Row4F32(wKind4Best.matmulWeights()[i]); ok {
 			repackedKind4++
 			row4BytesKind4 += int64(len(p4)) + int64(len(s4))*4
 		}

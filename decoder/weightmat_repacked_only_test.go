@@ -12,7 +12,11 @@ import (
 // minimal stand-in for a webgpu-class backend, for wantsCanonicalInt4's routing test.
 type fakeQuantBackend4 struct{ fakeMatmulBTBackend }
 
-func (fakeQuantBackend4) MatmulW4A8(a []float32, q4 []byte, q4s []float32, group int, dst []float32, M, K, N int) bool {
+// The QuantBackend4 match is a runtime type assertion; a signature drift here (it happened: f32 -> binary16
+// scales, aikit v1.50.0) would silently stop this fake satisfying it and change what the test covers.
+var _ QuantBackend4 = fakeQuantBackend4{}
+
+func (fakeQuantBackend4) MatmulW4A8(a []float32, q4 []byte, q4s []uint16, group int, dst []float32, M, K, N int) bool {
 	return false
 }
 
@@ -75,11 +79,11 @@ func TestQuantizeEmbedWM_repackedOnlyWhenEligible(t *testing.T) {
 	if !repackedOnly.IsInt4() {
 		t.Fatal("needCanonical=false: result is not int4-resident at all")
 	}
-	if _, _, _, ok := repackedOnly.Int4(); ok {
+	if _, _, _, ok := Int4F32(&repackedOnly); ok {
 		t.Error("needCanonical=false: Int4()'s ok is true — canonical bytes are resident, " +
 			"repacked-only construction did not happen")
 	}
-	if _, _, ok := repackedOnly.Int4Row4(); !ok {
+	if _, _, ok := int4Row4F32(&repackedOnly); !ok {
 		t.Error("needCanonical=false: Int4Row4() has no data — neither layout is present")
 	}
 	if repackedOnly.Int4Layout() != "row4" {
@@ -90,7 +94,7 @@ func TestQuantizeEmbedWM_repackedOnlyWhenEligible(t *testing.T) {
 	if !both.IsInt4() {
 		t.Fatal("needCanonical=true: result is not int4-resident")
 	}
-	if _, _, _, ok := both.Int4(); !ok {
+	if _, _, _, ok := Int4F32(&both); !ok {
 		t.Error("needCanonical=true: Int4()'s ok is false — canonical bytes are NOT resident, " +
 			"the existing policy regressed")
 	}
@@ -175,7 +179,7 @@ func TestQuantizeEmbedWM_ineligibleShapeFallsBackToCanonical(t *testing.T) {
 	if !wm.IsInt4() {
 		t.Fatal("result is not int4-resident at all")
 	}
-	if _, _, _, ok := wm.Int4(); !ok {
+	if _, _, _, ok := Int4F32(&wm); !ok {
 		t.Error("Int4()'s ok is false for an ineligible shape — the fallback to the canonical " +
 			"policy did not happen, so this tensor has no canonical bytes and no row4 either")
 	}
@@ -244,7 +248,7 @@ func TestQuantizeBatchedProjWM_repackedOnlyWhenEligible(t *testing.T) {
 		t.Errorf("needCanonical=false: Int4Layout() = %q, want %q", repackedOnly.Int4Layout(), "row4")
 	}
 	both := quantizeBatchedProjWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4, true, false)
-	if _, _, _, ok := both.Int4(); !ok {
+	if _, _, _, ok := Int4F32(&both); !ok {
 		t.Error("needCanonical=true: Int4()'s ok is false — canonical bytes are not resident")
 	}
 }
@@ -369,7 +373,7 @@ func TestLoad_qkvGateUpRepackedOnlyEndToEnd(t *testing.T) {
 		}
 		if layout := c.wm.Int4Layout(); layout == "row4" {
 			sawRow4 = true
-		} else if _, _, _, ok := c.wm.Int4(); !ok {
+		} else if _, _, _, ok := Int4F32(&c.wm); !ok {
 			t.Errorf("layer 0 %s: Int4Layout() = %q and Int4()'s ok is false — neither canonical "+
 				"nor row4, a real construction failure", c.name, layout)
 		}

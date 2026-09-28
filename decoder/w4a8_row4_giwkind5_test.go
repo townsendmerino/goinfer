@@ -30,11 +30,11 @@ func TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical(t *testing.T) 
 	}
 	var eligible, int4Count int
 	for _, wm := range mGGUF.w.matmulWeights() {
-		if _, _, _, ok := wm.Int4(); !ok {
+		if _, _, _, ok := Int4F32(wm); !ok {
 			continue
 		}
 		int4Count++
-		if _, _, ok := wm.Int4Row4(); ok {
+		if _, _, ok := int4Row4F32(wm); ok {
 			eligible++
 		}
 	}
@@ -75,15 +75,15 @@ func TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical(t *testing.T) 
 	}
 	var repackedOnly int
 	for i, wm := range gotWeights {
-		if _, _, _, ok := srcWeights[i].Int4(); !ok {
+		if _, _, _, ok := Int4F32(srcWeights[i]); !ok {
 			continue
 		}
-		_, _, srcRow4Eligible := srcWeights[i].Int4Row4()
+		_, _, srcRow4Eligible := int4Row4F32(srcWeights[i])
 		if !srcRow4Eligible {
 			// Not eligible for row4 at all (shape), or excluded by weightMatKind3Only
 			// (paged/not-yet-scoped) — either way this tensor must have round-tripped kind
 			// 3 (canonical still present).
-			if _, _, _, ok := wm.Int4(); !ok {
+			if _, _, _, ok := Int4F32(wm); !ok {
 				t.Fatalf("weight %d: not row4-eligible/not kind-5-scoped, but round-tripped WITHOUT canonical bytes", i)
 			}
 			continue
@@ -91,10 +91,10 @@ func TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical(t *testing.T) 
 		if !wm.IsInt4() {
 			t.Fatalf("weight %d: row4-eligible int4 tensor lost IsInt4() across kind-5 round-trip", i)
 		}
-		if _, _, _, ok := wm.Int4(); ok {
+		if _, _, _, ok := Int4F32(wm); ok {
 			t.Fatalf("weight %d: row4-eligible int4 tensor round-tripped WITH canonical bytes present — kind 5 must be canonical-absent", i)
 		}
-		if _, _, ok := wm.Int4Row4(); !ok {
+		if _, _, ok := int4Row4F32(wm); !ok {
 			t.Fatalf("weight %d: kind-5 round-trip has no row4 layout either — lost the tensor", i)
 		}
 		repackedOnly++
@@ -139,7 +139,7 @@ func TestLoad_kind5UnderBackendNeedingCanonical_declinesLoudlyAtLoad(t *testing.
 	}
 	var eligible bool
 	for _, wm := range mGGUF.w.matmulWeights() {
-		if _, _, ok := wm.Int4Row4(); ok {
+		if _, _, ok := int4Row4F32(wm); ok {
 			eligible = true
 			break
 		}

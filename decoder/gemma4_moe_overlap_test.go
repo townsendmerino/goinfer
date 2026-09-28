@@ -77,8 +77,8 @@ func gemma4BuildFixture(t *testing.T, nExperts, topK, hidden, denseInter, moeInt
 		off += guBytes
 		dnQ4 := mapping[off : off+dnBytes]
 		off += dnBytes
-		expertsGateUp[e] = linalg.WrapInt4(guQ4, randPos(guRows*guGroups), guRows, guCols, group)
-		expertsDown[e] = linalg.WrapInt4(dnQ4, randPos(dnRows*dnGroups), dnRows, dnCols, group)
+		expertsGateUp[e] = wrapInt4F32(guQ4, randPos(guRows*guGroups), guRows, guCols, group)
+		expertsDown[e] = wrapInt4F32(dnQ4, randPos(dnRows*dnGroups), dnRows, dnCols, group)
 	}
 
 	w = &gemma4MoEWeights{

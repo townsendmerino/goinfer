@@ -27,7 +27,7 @@ func synthInt4(rows, cols, group int, seed float32) linalg.WeightMat {
 	for i := range q4s {
 		q4s[i] = seed + float32(i)*0.5
 	}
-	return linalg.WrapInt4(q4, q4s, rows, cols, group)
+	return wrapInt4F32(q4, q4s, rows, cols, group)
 }
 
 func synthInt8(rows, cols int, seed float32) linalg.WeightMat {
@@ -80,19 +80,27 @@ func within(p unsafe.Pointer, region []byte) bool {
 	return a >= base && a < base+uintptr(len(region))
 }
 
-func scalesOf(t *testing.T, m *linalg.WeightMat) (scales []float32, which string) {
+// scalesOf returns a weight's scale values (widened to f32 for comparison) and the address of the array
+// the WeightMat actually STORES — binary16 for int4 (aikit v1.50.0), f32 for int8 — which is what must
+// alias the mapping.
+func scalesOf(t *testing.T, m *linalg.WeightMat) (scales []float32, stored unsafe.Pointer, which string) {
 	t.Helper()
-	if _, s, _, ok := m.Int4(); ok {
-		return s, "int4"
+	widen := func(s16 []uint16) []float32 {
+		f := make([]float32, len(s16))
+		linalg.F16ToF32Slice(f, s16)
+		return f
+	}
+	if _, s16, _, ok := m.Int4F16(); ok {
+		return widen(s16), unsafe.Pointer(&s16[0]), "int4"
 	}
 	if _, s, _, ok := m.Int8(); ok {
-		return s, "int8"
+		return s, unsafe.Pointer(&s[0]), "int8"
 	}
-	if _, s, ok := m.Int4Row4(); ok { // kind 5 (row4-only): no canonical view exists at all
-		return s, "int4-row4"
+	if _, s16, ok := m.Int4Row4F16(); ok { // kind 5 (row4-only): no canonical view exists at all
+		return widen(s16), unsafe.Pointer(&s16[0]), "int4-row4"
 	}
 	t.Fatal("weight matrix is neither int4, int8 nor row4 int4")
-	return nil, ""
+	return nil, nil, ""
 }
 
 func sameF32(a, b []float32) bool {
@@ -129,13 +137,13 @@ func TestGIWAligned_scalesAliasTheMapping(t *testing.T) {
 				"KProj (int8)":    {&src.Layers[0].KProj, &got.Layers[0].KProj},
 				"GateProj (int4)": {&src.Layers[0].GateProj, &got.Layers[0].GateProj},
 			} {
-				want, _ := scalesOf(t, pair[0])
-				gotS, gotKind := scalesOf(t, pair[1])
+				want, _, _ := scalesOf(t, pair[0])
+				gotS, gotPtr, gotKind := scalesOf(t, pair[1])
 				if gotKind == "int4-row4" {
 					// kind 5 stores the REPACKED scales; the same repack of the source is the truth.
 					// repackRow4ForEmit is the writer's own cross-arch entry point; this branch is only
 					// reachable where it is real (arm64), because elsewhere the writer emits kind 3.
-					q4, q4s, group, _ := pair[0].Int4()
+					q4, q4s, group, _ := Int4F32(pair[0])
 					_, rs, ok := repackRow4ForEmit(q4, q4s, pair[0].Rows(), pair[0].Cols(), group)
 					if !ok {
 						t.Fatalf("%s: stored as row4 but the source shape is not row4-eligible", name)
@@ -146,12 +154,12 @@ func TestGIWAligned_scalesAliasTheMapping(t *testing.T) {
 					t.Errorf("%s: scales differ after the round trip (%s)", name, gotKind)
 					continue
 				}
-				if !within(unsafe.Pointer(&gotS[0]), view) {
+				if !within(gotPtr, view) {
 					t.Errorf("%s: scales were COPIED to the heap, not aliased into the mapping — "+
-						"a v12 file's scale arrays must be aligned so the reader can alias them", name)
+						"a v12+ file's scale arrays must be aligned so the reader can alias them (v15: binary16)", name)
 				}
-				if uintptr(unsafe.Pointer(&gotS[0]))%16 != 0 {
-					t.Errorf("%s: aliased scale array is not 16-byte aligned (addr %#x)", name, uintptr(unsafe.Pointer(&gotS[0])))
+				if uintptr(gotPtr)%16 != 0 {
+					t.Errorf("%s: aliased scale array is not 16-byte aligned (addr %#x)", name, uintptr(gotPtr))
 				}
 			}
 		})
@@ -170,8 +178,11 @@ func TestGIWAligned_legacyLayoutStillLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	giwEmitVersion = prev
+	// The padded layout to compare against is v12's own: from v15 the int4 scale arrays are binary16, so a
+	// current blob is smaller than a legacy one for a different reason than padding.
+	giwEmitVersion = giwVAligned
 	current, err := SerializeWeightsForTarget(src, "align-legacy", GIWTargetNone)
+	giwEmitVersion = prev
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,8 +197,8 @@ func TestGIWAligned_legacyLayoutStillLoads(t *testing.T) {
 		"QProj": {&src.Layers[0].QProj, &got.Layers[0].QProj},
 		"KProj": {&src.Layers[0].KProj, &got.Layers[0].KProj},
 	} {
-		want, _ := scalesOf(t, pair[0])
-		gotS, _ := scalesOf(t, pair[1])
+		want, _, _ := scalesOf(t, pair[0])
+		gotS, _, _ := scalesOf(t, pair[1])
 		if !sameF32(want, gotS) {
 			t.Errorf("%s: scales differ after loading a legacy-layout blob", name)
 		}
@@ -221,8 +232,8 @@ func TestGIWAligned_misalignedBlobFallsBackToCopy(t *testing.T) {
 		"QProj": {&src.Layers[0].QProj, &got.Layers[0].QProj},
 		"KProj": {&src.Layers[0].KProj, &got.Layers[0].KProj},
 	} {
-		want, _ := scalesOf(t, pair[0])
-		gotS, _ := scalesOf(t, pair[1])
+		want, _, _ := scalesOf(t, pair[0])
+		gotS, _, _ := scalesOf(t, pair[1])
 		if !sameF32(want, gotS) {
 			t.Errorf("%s: scales wrong after a misaligned load", name)
 		}

@@ -531,9 +531,9 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 			spans := make([]expertSpan, len(experts))
 			resolved := true
 			for ei := range experts {
-				gq, _, _, okg := experts[ei].Gate.Int4()
-				uq, _, _, oku := experts[ei].Up.Int4()
-				dq, _, _, okd := experts[ei].Down.Int4()
+				gq, _, _, okg := experts[ei].Gate.Int4F16()
+				uq, _, _, oku := experts[ei].Up.Int4F16()
+				dq, _, _, okd := experts[ei].Down.Int4F16()
 				if !okg || !oku || !okd {
 					resolved = false
 					break

@@ -35,7 +35,7 @@ func (c *Context) uploadProj(w *linalg.WeightMat) (decodeWeight, error) {
 	N, K := w.Rows(), w.Cols()
 	switch w.Kind() {
 	case "int4":
-		q4, q4s, group, _ := w.Int4()
+		q4, q4s, group, _ := decoder.Int4F32(w)
 		if group != w4a8GroupSize {
 			return nil, fmt.Errorf("gpu: residency int4 group %d != %d", group, w4a8GroupSize)
 		}
@@ -587,7 +587,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					if w.Kind() != "int4" {
 						return nil, fmt.Errorf("gpu: MoE residency expert %d kind %q (mixed; want int4)", e, w.Kind())
 					}
-					q4, q4sc, group, _ := w.Int4()
+					q4, q4sc, group, _ := decoder.Int4F32(w)
 					if group != w4a8GroupSize {
 						return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)
 					}
@@ -607,7 +607,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 				if w.Kind() != "int4" {
 					return nil, fmt.Errorf("gpu: MoE residency expert %d kind %q (mixed; want int4)", e, w.Kind())
 				}
-				q4, q4s, group, _ := w.Int4()
+				q4, q4s, group, _ := decoder.Int4F32(w)
 				if group != w4a8GroupSize {
 					return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)
 				}

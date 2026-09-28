@@ -1,0 +1,10 @@
+=== RUN   TestGemma4_12B_logitParity
+    gemma4_12b_parity_test.go:55: argmax: got 50429 (logit 26.0628) | want 50429 (golden logit 26.0628)
+    gemma4_12b_parity_test.go:70: sample-256 cosine (int8int8 vs bf16) = 0.98972
+--- PASS: TestGemma4_12B_logitParity (36.49s)
+=== RUN   TestGemma4_logitParity
+    gemma4_parity_test.go:53: argmax: got 7001 (logit 5.1725) | want 7001 (golden logit 5.1725)
+    gemma4_parity_test.go:69: sample-256 cosine (int8int8 vs bf16) = 0.99924
+--- PASS: TestGemma4_logitParity (28.46s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	65.017s

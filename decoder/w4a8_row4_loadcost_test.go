@@ -76,19 +76,19 @@ func TestW4A8Row4_loadTimeAndMemoryDelta(t *testing.T) {
 	var canonicalBytes, row4Bytes int64
 	var repackedCount, int4Count int
 	for _, wm := range mOn.w.matmulWeights() {
-		q4, q4s, _, ok := wm.Int4()
+		q4, q4s, _, ok := Int4F32(wm)
 		if !ok {
 			continue
 		}
 		int4Count++
 		canonicalBytes += int64(len(q4)) + int64(len(q4s))*4
-		if p4, s4, ok := wm.Int4Row4(); ok {
+		if p4, s4, ok := int4Row4F32(wm); ok {
 			repackedCount++
 			row4Bytes += int64(len(p4)) + int64(len(s4))*4
 		}
 	}
 	for _, wm := range mOff.w.matmulWeights() {
-		if _, _, ok := wm.Int4Row4(); ok {
+		if _, _, ok := int4Row4F32(wm); ok {
 			t.Fatalf("repack-disabled load has a repacked weight — toggle is not being honored")
 		}
 	}

@@ -256,7 +256,7 @@ func repackedOnlyInt4Count(w *Weights) int {
 		if !m.IsInt4() {
 			continue
 		}
-		if _, _, _, ok := m.Int4(); !ok {
+		if _, _, _, ok := m.Int4F16(); !ok {
 			n++
 		}
 	}

@@ -45,7 +45,7 @@ func int4PoolFixture(t *testing.T, nExperts int) (path string, mapping []byte, c
 			scales[j] = rng.Float32() + 0.1
 		}
 		q4 := mapping[i*perExpert : (i+1)*perExpert]
-		canonical[i] = linalg.WrapInt4(q4, scales, rows, cols, group)
+		canonical[i] = wrapInt4F32(q4, scales, rows, cols, group)
 	}
 	return path, mapping, canonical
 }
@@ -103,11 +103,11 @@ func TestExpertBufferPool_refillIsByteExact(t *testing.T) {
 		if err := pool.ensure(k); err != nil {
 			t.Fatalf("ensure(%d): %v", i, err)
 		}
-		wantQ4, wantScales, wantGroup, ok := canonical[i].Int4()
+		wantQ4, wantScales, wantGroup, ok := Int4F32(&canonical[i])
 		if !ok {
 			t.Fatalf("canonical[%d] not int4", i)
 		}
-		gotQ4, gotScales, gotGroup, ok := live[i].Int4()
+		gotQ4, gotScales, gotGroup, ok := Int4F32(&live[i])
 		if !ok {
 			t.Fatalf("live[%d] not int4 after refill", i)
 		}
