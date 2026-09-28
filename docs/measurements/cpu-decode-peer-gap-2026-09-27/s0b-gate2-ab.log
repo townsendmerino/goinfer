@@ -1,0 +1,175 @@
+=== RUN   TestS0F16Scales_AB
+=== RUN   TestS0F16Scales_AB/1.5B
+    cpu_roofline_ab_test.go:419: 1.5B: f16 scales attached to 196 int4 weights
+DECODE TIMING (24 tok, gpu=false): forward 49.7 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.32 ms | MLP 32.26 ms | LM head 8.70 ms | residual 0.38 ms /token
+DECODE SPLIT MLP: gate+up matmuls 20.12 ms | activation 0.00 ms | down matmul 12.11 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.11 ms | rope+KV+scores/softmax/AV core 2.65 ms | o matmul 2.55 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 49.9 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.49 ms | MLP 32.27 ms | LM head 8.71 ms | residual 0.39 ms /token
+DECODE SPLIT MLP: gate+up matmuls 20.09 ms | activation 0.00 ms | down matmul 12.14 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.13 ms | rope+KV+scores/softmax/AV core 2.80 ms | o matmul 2.55 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 47.1 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.28 ms | MLP 29.78 ms | LM head 8.68 ms | residual 0.37 ms /token
+DECODE SPLIT MLP: gate+up matmuls 18.46 ms | activation 0.00 ms | down matmul 11.30 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.03 ms | rope+KV+scores/softmax/AV core 2.74 ms | o matmul 2.49 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 50.1 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.53 ms | MLP 32.46 ms | LM head 8.68 ms | residual 0.38 ms /token
+DECODE SPLIT MLP: gate+up matmuls 20.31 ms | activation 0.00 ms | down matmul 12.12 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.15 ms | rope+KV+scores/softmax/AV core 2.82 ms | o matmul 2.55 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (1.5B) pair 0: ON 47.11 | OFF 50.05 ms/tok | ON is 1.063x faster
+DECODE TIMING (24 tok, gpu=false): forward 49.9 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.50 ms | MLP 32.33 ms | LM head 8.66 ms | residual 0.38 ms /token
+DECODE SPLIT MLP: gate+up matmuls 20.17 ms | activation 0.00 ms | down matmul 12.13 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.14 ms | rope+KV+scores/softmax/AV core 2.77 ms | o matmul 2.58 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 47.2 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.29 ms | MLP 29.86 ms | LM head 8.69 ms | residual 0.38 ms /token
+DECODE SPLIT MLP: gate+up matmuls 18.52 ms | activation 0.00 ms | down matmul 11.31 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.01 ms | rope+KV+scores/softmax/AV core 2.76 ms | o matmul 2.51 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (1.5B) pair 1: ON 47.22 | OFF 49.87 ms/tok | ON is 1.056x faster
+DECODE TIMING (24 tok, gpu=false): forward 47.2 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.24 ms | MLP 29.88 ms | LM head 8.68 ms | residual 0.38 ms /token
+DECODE SPLIT MLP: gate+up matmuls 18.56 ms | activation 0.00 ms | down matmul 11.29 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.01 ms | rope+KV+scores/softmax/AV core 2.73 ms | o matmul 2.48 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 49.9 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.54 ms | MLP 32.34 ms | LM head 8.69 ms | residual 0.39 ms /token
+DECODE SPLIT MLP: gate+up matmuls 20.11 ms | activation 0.00 ms | down matmul 12.20 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.13 ms | rope+KV+scores/softmax/AV core 2.85 ms | o matmul 2.54 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (1.5B) pair 2: ON 47.18 | OFF 49.95 ms/tok | ON is 1.059x faster
+DECODE TIMING (24 tok, gpu=false): forward 50.3 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.55 ms | MLP 32.71 ms | LM head 8.69 ms | residual 0.39 ms /token
+DECODE SPLIT MLP: gate+up matmuls 20.34 ms | activation 0.00 ms | down matmul 12.34 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.18 ms | rope+KV+scores/softmax/AV core 2.78 ms | o matmul 2.58 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 47.2 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.38 ms | MLP 29.78 ms | LM head 8.68 ms | residual 0.37 ms /token
+DECODE SPLIT MLP: gate+up matmuls 18.44 ms | activation 0.00 ms | down matmul 11.31 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.05 ms | rope+KV+scores/softmax/AV core 2.81 ms | o matmul 2.51 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (1.5B) pair 3: ON 47.21 | OFF 50.34 ms/tok | ON is 1.066x faster
+DECODE TIMING (24 tok, gpu=false): forward 47.3 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.29 ms | MLP 29.94 ms | LM head 8.69 ms | residual 0.37 ms /token
+DECODE SPLIT MLP: gate+up matmuls 18.49 ms | activation 0.00 ms | down matmul 11.42 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.05 ms | rope+KV+scores/softmax/AV core 2.72 ms | o matmul 2.51 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 49.9 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.52 ms | MLP 32.33 ms | LM head 8.67 ms | residual 0.38 ms /token
+DECODE SPLIT MLP: gate+up matmuls 20.16 ms | activation 0.00 ms | down matmul 12.14 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.14 ms | rope+KV+scores/softmax/AV core 2.81 ms | o matmul 2.55 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (1.5B) pair 4: ON 47.29 | OFF 49.89 ms/tok | ON is 1.055x faster
+    cpu_roofline_ab_test.go:420: f16 scales (1.5B): mean ON 47.20 OFF 50.02 ms/tok | paired median 1.059x (min 1.055 max 1.066, n=5)
+=== RUN   TestS0F16Scales_AB/0.5B
+    cpu_roofline_ab_test.go:419: 0.5B: f16 scales attached to 168 int4 weights
+DECODE TIMING (24 tok, gpu=false): forward 22.4 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 6.28 ms | MLP 10.72 ms | LM head 5.14 ms | residual 0.25 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.42 ms | activation 0.00 ms | down matmul 4.29 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.50 ms | rope+KV+scores/softmax/AV core 1.61 ms | o matmul 2.16 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 23.8 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 7.07 ms | MLP 11.36 ms | LM head 5.12 ms | residual 0.28 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.76 ms | activation 0.00 ms | down matmul 4.59 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.78 ms | rope+KV+scores/softmax/AV core 1.81 ms | o matmul 2.47 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 23.8 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 7.28 ms | MLP 11.07 ms | LM head 5.13 ms | residual 0.28 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.55 ms | activation 0.00 ms | down matmul 4.51 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.96 ms | rope+KV+scores/softmax/AV core 1.81 ms | o matmul 2.50 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 23.0 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 6.63 ms | MLP 10.96 ms | LM head 5.14 ms | residual 0.26 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.53 ms | activation 0.00 ms | down matmul 4.42 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.64 ms | rope+KV+scores/softmax/AV core 1.73 ms | o matmul 2.26 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (0.5B) pair 0: ON 23.76 | OFF 22.99 ms/tok | ON is 0.968x faster
+DECODE TIMING (24 tok, gpu=false): forward 23.5 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 6.91 ms | MLP 11.17 ms | LM head 5.13 ms | residual 0.28 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.64 ms | activation 0.00 ms | down matmul 4.51 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.73 ms | rope+KV+scores/softmax/AV core 1.78 ms | o matmul 2.39 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 23.1 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 6.95 ms | MLP 10.75 ms | LM head 5.13 ms | residual 0.27 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.38 ms | activation 0.00 ms | down matmul 4.36 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.81 ms | rope+KV+scores/softmax/AV core 1.74 ms | o matmul 2.39 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (0.5B) pair 1: ON 23.10 | OFF 23.48 ms/tok | ON is 1.017x faster
+DECODE TIMING (24 tok, gpu=false): forward 23.6 ms | sample 0.10 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 7.19 ms | MLP 11.01 ms | LM head 5.14 ms | residual 0.28 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.51 ms | activation 0.00 ms | down matmul 4.48 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.86 ms | rope+KV+scores/softmax/AV core 1.81 ms | o matmul 2.51 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 22.8 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 6.52 ms | MLP 10.94 ms | LM head 5.13 ms | residual 0.25 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.55 ms | activation 0.00 ms | down matmul 4.38 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.58 ms | rope+KV+scores/softmax/AV core 1.70 ms | o matmul 2.24 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (0.5B) pair 2: ON 23.62 | OFF 22.84 ms/tok | ON is 0.967x faster
+DECODE TIMING (24 tok, gpu=false): forward 22.0 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 6.03 ms | MLP 10.57 ms | LM head 5.14 ms | residual 0.24 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.38 ms | activation 0.00 ms | down matmul 4.19 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.41 ms | rope+KV+scores/softmax/AV core 1.60 ms | o matmul 2.01 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 22.9 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 6.80 ms | MLP 10.70 ms | LM head 5.15 ms | residual 0.26 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.32 ms | activation 0.00 ms | down matmul 4.36 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.72 ms | rope+KV+scores/softmax/AV core 1.72 ms | o matmul 2.36 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (0.5B) pair 3: ON 22.90 | OFF 21.99 ms/tok | ON is 0.960x faster
+DECODE TIMING (24 tok, gpu=false): forward 22.6 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 6.68 ms | MLP 10.56 ms | LM head 5.14 ms | residual 0.26 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.24 ms | activation 0.00 ms | down matmul 4.30 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.69 ms | rope+KV+scores/softmax/AV core 1.69 ms | o matmul 2.29 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 23.3 ms | sample 0.09 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 6.80 ms | MLP 11.05 ms | LM head 5.13 ms | residual 0.27 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.59 ms | activation 0.00 ms | down matmul 4.45 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.71 ms | rope+KV+scores/softmax/AV core 1.73 ms | o matmul 2.36 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (0.5B) pair 4: ON 22.64 | OFF 23.25 ms/tok | ON is 1.027x faster
+    cpu_roofline_ab_test.go:420: f16 scales (0.5B): mean ON 23.20 OFF 22.91 ms/tok | paired median 0.968x (min 0.960 max 1.027, n=5)
+=== RUN   TestS0F16Scales_AB/7B
+    cpu_roofline_ab_test.go:419: 7B: f16 scales attached to 196 int4 weights
+DECODE TIMING (24 tok, gpu=false): forward 192.6 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 27.65 ms | MLP 144.30 ms | LM head 20.06 ms | residual 0.54 ms /token
+DECODE SPLIT MLP: gate+up matmuls 93.36 ms | activation 0.00 ms | down matmul 50.90 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 12.94 ms | rope+KV+scores/softmax/AV core 4.83 ms | o matmul 9.87 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 193.0 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 27.64 ms | MLP 144.77 ms | LM head 20.09 ms | residual 0.55 ms /token
+DECODE SPLIT MLP: gate+up matmuls 93.71 ms | activation 0.00 ms | down matmul 51.01 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 12.96 ms | rope+KV+scores/softmax/AV core 4.77 ms | o matmul 9.89 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 176.7 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 25.74 ms | MLP 130.39 ms | LM head 20.05 ms | residual 0.56 ms /token
+DECODE SPLIT MLP: gate+up matmuls 84.20 ms | activation 0.00 ms | down matmul 46.14 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 11.83 ms | rope+KV+scores/softmax/AV core 4.75 ms | o matmul 9.14 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 192.7 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 27.52 ms | MLP 144.54 ms | LM head 20.08 ms | residual 0.56 ms /token
+DECODE SPLIT MLP: gate+up matmuls 93.58 ms | activation 0.00 ms | down matmul 50.91 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 12.93 ms | rope+KV+scores/softmax/AV core 4.72 ms | o matmul 9.85 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (7B) pair 0: ON 176.73 | OFF 192.69 ms/tok | ON is 1.090x faster
+DECODE TIMING (24 tok, gpu=false): forward 193.2 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 27.74 ms | MLP 144.84 ms | LM head 20.05 ms | residual 0.55 ms /token
+DECODE SPLIT MLP: gate+up matmuls 93.71 ms | activation 0.00 ms | down matmul 51.08 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 12.97 ms | rope+KV+scores/softmax/AV core 4.84 ms | o matmul 9.91 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 176.9 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 25.78 ms | MLP 130.50 ms | LM head 20.03 ms | residual 0.56 ms /token
+DECODE SPLIT MLP: gate+up matmuls 84.30 ms | activation 0.00 ms | down matmul 46.15 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 11.90 ms | rope+KV+scores/softmax/AV core 4.76 ms | o matmul 9.10 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (7B) pair 1: ON 176.87 | OFF 193.18 ms/tok | ON is 1.092x faster
+DECODE TIMING (24 tok, gpu=false): forward 176.7 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 25.86 ms | MLP 130.18 ms | LM head 20.07 ms | residual 0.56 ms /token
+DECODE SPLIT MLP: gate+up matmuls 83.93 ms | activation 0.00 ms | down matmul 46.20 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 11.88 ms | rope+KV+scores/softmax/AV core 4.82 ms | o matmul 9.14 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 193.2 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 27.69 ms | MLP 144.95 ms | LM head 20.06 ms | residual 0.54 ms /token
+DECODE SPLIT MLP: gate+up matmuls 93.82 ms | activation 0.00 ms | down matmul 51.08 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 12.98 ms | rope+KV+scores/softmax/AV core 4.74 ms | o matmul 9.95 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (7B) pair 2: ON 176.67 | OFF 193.24 ms/tok | ON is 1.094x faster
+DECODE TIMING (24 tok, gpu=false): forward 192.6 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 27.68 ms | MLP 144.30 ms | LM head 20.04 ms | residual 0.55 ms /token
+DECODE SPLIT MLP: gate+up matmuls 93.28 ms | activation 0.00 ms | down matmul 50.97 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 12.93 ms | rope+KV+scores/softmax/AV core 4.83 ms | o matmul 9.90 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 177.8 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 25.88 ms | MLP 131.20 ms | LM head 20.16 ms | residual 0.57 ms /token
+DECODE SPLIT MLP: gate+up matmuls 84.79 ms | activation 0.00 ms | down matmul 46.37 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 11.92 ms | rope+KV+scores/softmax/AV core 4.80 ms | o matmul 9.14 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (7B) pair 3: ON 177.81 | OFF 192.57 ms/tok | ON is 1.083x faster
+DECODE TIMING (24 tok, gpu=false): forward 177.1 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 25.80 ms | MLP 130.76 ms | LM head 20.02 ms | residual 0.56 ms /token
+DECODE SPLIT MLP: gate+up matmuls 84.38 ms | activation 0.00 ms | down matmul 46.33 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 11.87 ms | rope+KV+scores/softmax/AV core 4.75 ms | o matmul 9.16 ms /token
+DECODE TIMING (24 tok, gpu=false): forward 192.7 ms | sample 0.08 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 27.61 ms | MLP 144.52 ms | LM head 20.04 ms | residual 0.55 ms /token
+DECODE SPLIT MLP: gate+up matmuls 93.51 ms | activation 0.00 ms | down matmul 50.96 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 12.91 ms | rope+KV+scores/softmax/AV core 4.78 ms | o matmul 9.90 ms /token
+    cpu_roofline_ab_test.go:420: f16 scales (7B) pair 4: ON 177.14 | OFF 192.70 ms/tok | ON is 1.088x faster
+    cpu_roofline_ab_test.go:420: f16 scales (7B): mean ON 177.04 OFF 192.88 ms/tok | paired median 1.090x (min 1.083 max 1.094, n=5)
+--- PASS: TestS0F16Scales_AB (193.26s)
+    --- PASS: TestS0F16Scales_AB/1.5B (37.94s)
+    --- PASS: TestS0F16Scales_AB/0.5B (19.63s)
+    --- PASS: TestS0F16Scales_AB/7B (135.69s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	193.320s

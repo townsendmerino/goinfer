@@ -206,3 +206,32 @@ bound. The 0.5B is slower and noisy. Phase 0 found its gap is not bytes, so the 
 (a conversion per 32 weights, on a path limited by compute and dispatch rather than DRAM) is not paid back there.
 The full build first tries converting eight groups' scales per instruction (one `VCVTPH2PS` to a Y register per 8
 groups, then a lane broadcast per group) to recover it; a 0.5B regression that survives goes to the owner.
+
+### L1 S0b (2026-09-27): a row-widening kernel — the 0.5B improves to 0.968×, the 7B to 1.090×
+
+**Why.** An aikit benchmark (single thread, cache-hot, minimum of 5; a diagnostic of compute cost, not a decode
+prediction) put the per-group `VCVTPH2PS` at +6–10% compute over the f32 kernel at the 0.5B / 1.5B shapes. That is
+hidden where decode is DRAM-bound and shows where it is not (the 0.5B).
+
+**The change.** `dotW4A8FoldF16RowAVX2` is one asm call per weight row. It widens the row's scales eight per
+`VCVTPH2PS` into an L1 buffer (the last block overlapping, so no scalar tail), then runs the f32 kernel's own loop.
+Measured on the same benchmark:
+
+| shape | f32 | f16, row-widened | f16, per group |
+|---|---|---|---|
+| K1536 × N8960 | 894.4 µs | 918.1 (+2.7%) | 961.6 (+7.5%) |
+| K4864 × N896 | 280.0 | 287.1 (+2.5%) | 305.1 (+9.0%) |
+| K896 × N4864 | 309.0 | 316.5 (+2.4%) | 326.5 (+5.7%) |
+
+**The S0 gates re-run on it** (`s0b-*` logs):
+- Bit-identical on the 0.5B / 1.5B / 7B (0 differ).
+- Paired medians:
+
+  | model | f32 → f16 ms/token | paired median (min–max) |
+  |---|---|---|
+  | 1.5B | 50.02 → 47.20 | **1.059×** (1.055–1.066) |
+  | 7B | 192.88 → 177.04 | **1.090×** (1.083–1.094) |
+  | 0.5B | 22.91 → 23.20 | **0.968×** (0.960–1.027) |
+
+The row kernel is the one the build uses: better or equal at every size. **A ~3% 0.5B regression survives**, and
+goes to the owner, as S0 said it would.
