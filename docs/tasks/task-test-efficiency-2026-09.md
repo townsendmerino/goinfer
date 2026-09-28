@@ -307,6 +307,23 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
 - **Template:** every pre-registration gains two lines — the registry's noise for the cell, and the tool's N.
 - **Band:** "ran and could not decide" → 0. N is right-sized: smaller for most gates, larger for the few that were
   under-powered, and those are correctness wins, not costs.
+- **BUILT 2026-09-28.**
+  - **The registry:** [`noise-registry.json`](../measurements/noise-registry.json) and its `.md` hold 83 entries from
+    109 records, 62 of them with a usable sd. Each has its statistic, n, source and provenance class, and a 16-item gap
+    list comes with it. `te3_registry_seed.py` computes the served rows.
+  - **The tool:** `scripts/power.py`. 22 tests pass; four hand mutations turned them red.
+  - **Finding: a same-binary A/A understates a new ÷ old gate's noise.** On nobara CUDA the same binary restarted gives
+    0.81% RMS, while two builds with identical 0.5B code give 1.64%, all six readings below 1. That offset is TE5(b)'s
+    "−2% on identical code", so the lookup prefers cross-build A/As.
+  - **What the tool then says:** at a 0.97 bar a 0.5B CUDA gate needs 11 blocks, and a Mac CPU 7B gate by day cannot
+    resolve at any feasible N.
+  - **`CLAUDE.md`'s ~3.5% session drift is one observation:** a sampled goinfer phi3-mini cell, 2026-08-09, commit
+    `414bb364`. TE2(b)'s 0.15% is 466 peer-engine pairs. goinfer's own cross-session drift is unmeasured. Suggested
+    wording is in the `.md`; changing `CLAUDE.md` is the owner's call.
+  - **D6a:** `power.py binomial --p 0.9 --half-width 0.015` reproduces the amendment's N = 400, read as one SE. Its
+    95% half-width at 400 is ±2.94 points.
+  - **The ECE approximation suggests D6a's ≤ 0.05 ECE bar may be tight:** a perfectly calibrated model would read
+    0.017–0.047 at that sample. That is for the owner before D6a runs.
 
 ### TE4 — Stop when the answer is in: sequential, counterbalanced gates *(replay by day, then night)*
 

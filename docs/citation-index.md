@@ -306,7 +306,7 @@ supports.
 | `docs/measurements/splitkv-sector-efficiency-2026-09-13.md|cuda/resident.go:297` | goinfer | `// M-16, MEASURED on the RTX 2070 SUPER (Turing) rather than inferred:` |
 | `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:832` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
 | `docs/measurements/vsum-split-fidelity-PREREGISTERED.md|cuda/prefill.go:704` | goinfer | `// The exact path — attn_batched and gemv_w4a8_rn — remains selectable, remains bit-iden` |
-| `docs/measurements/vsum-split-fidelity-PREREGISTERED.md|cuda/prefill_gate_ref_test.go:300` | goinfer | `lg, err := rf.Forward(m.EmbedResidentForTest(refTokens[i-1]), pos)` |
+| `docs/measurements/vsum-split-fidelity-PREREGISTERED.md|cuda/prefill_gate_ref_test.go:314` | goinfer | `lg, err := rf.Forward(m.EmbedResidentForTest(refTokens[i-1]), pos)` |
 | `docs/multimodal.md|decoder/config.go:1367` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `cfg.LayerTypes = append(cfg.LayerTypes, "linear_attention")` |
 | `docs/multimodal.md|decoder/weights.go:489` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
@@ -344,7 +344,7 @@ supports.
 | `docs/queue-engineering.md|internal/serveapp/main.go:710` | goinfer | `// so the shutdown handler just below can close it alongside stopDemote.` |
 | `docs/queue-engineering.md|linalg/quant.go:214` | aikit | `dequantRowInt8(deq, bq, 1.0)` |
 | `docs/queue-engineering.md|metal/model.go:1398` | goinfer | `r.ensureBatchCap(16)` |
-| `docs/queue-engineering.md|scripts/bench_peer.py:823` | goinfer | `def gate_cell_idle():` |
+| `docs/queue-engineering.md|scripts/bench_peer.py:934` | goinfer | `def gate_cell_idle():` |
 | `docs/queue-performance.md|cuda/resident.go:1382` | goinfer | `wOff, wLen := e*w.perExpertW*4, w.perExpertW*4` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:2941` | goinfer | `// qwen35DenseArchitecture expresses Qwen3.8 (model_type qwen3_5): the SAME Gated-DeltaN` |
 | `docs/scoping-qwen38-flash-next.md|decoder/registry.go:51` | goinfer | `"qwen3_5_moe_text": qwen35Architecture,        // the text-only checkpoint's model_type` |

@@ -1,0 +1,4053 @@
+{
+ "schema": "goinfer-noise-registry/v1",
+ "generated": "2026-09-28",
+ "about": "TE3 of docs/tasks/task-test-efficiency-2026-09.md. Read noise-registry.md beside this file first. sd and floor are in natural-log units of the ratio (0.01 ~ 1%) for every instrument except logits, whose entries carry a floor on their own metric (floor_value) and no sd. scripts/power.py reads this file; `power.py verify` recomputes every sd that has recorded values.",
+ "machines": {
+  "mac": "MacBook Pro M1 Pro, 16 GB, darwin/arm64 (Metal; CPU = arm64 NEON)",
+  "nobara": "nobara-pc: Ryzen 7 3700X (amd64, AVX2, no AVX-512) + RTX 2070 SUPER"
+ },
+ "instruments": {
+  "served-decode": {
+   "description": "goinfer new / goinfer old decode tok/s through the server (scripts/bench_peer.py, and scripts/bench_splitkv.py / bench_spec_lane.py, which share its cell shape): a block is one cell per arm (a fresh server, one discarded warm-up, runs x 8 completions x 64 tokens)",
+   "max_n": 12
+  },
+  "served-decode-peer": {
+   "description": "goinfer / a peer (Ollama or llama-server) decode tok/s, same harness and block",
+   "max_n": 12
+  },
+  "served-decode-peer-arm": {
+   "description": "a peer engine against itself (the same Ollama / llama-server build in two cells): the peer's own A/A, an input to served-decode-peer",
+   "max_n": 12
+  },
+  "served-decode-xsession": {
+   "description": "the same build in two sessions (what a cross-session ratio silently carries; CLAUDE.md forbids such ratios for claims)",
+   "max_n": 12
+  },
+  "served-w7": {
+   "description": "scripts/bench_w7_plain.py aggregate tok/s (6 turns x 128 greedy tokens per client, a fresh server per cell), new / old, one pair per block",
+   "max_n": 12
+  },
+  "served-ttft": {
+   "description": "served prompt latency (time to first token), new / old: scripts/bench_peer_prefill.py or scripts/bench_prefill_stall.py",
+   "max_n": 12
+  },
+  "inproc-kernel": {
+   "description": "an in-process kernel or category A/B (a kernel bench, an ncu timing, a decomposition category), both arms in one process or alternating processes",
+   "max_n": 60
+  },
+  "inproc-token": {
+   "description": "an in-process whole-token decode A/B (BenchmarkDecode / BenchmarkResidentDecode / ABBA test hooks over production forward)",
+   "max_n": 60
+  },
+  "inproc-prefill": {
+   "description": "an in-process whole-prefill A/B (BenchmarkPrefillLong and the like)",
+   "max_n": 60
+  },
+  "logits": {
+   "description": "fidelity metrics (cosine, argmax agreement, KL, p10 cosine): entries carry a floor on the metric (floor_value), not an sd; use `power.py binomial` for agreement-rate sample sizes",
+   "max_n": null
+  }
+ },
+ "entries": [
+  {
+   "id": "seed-mac-cpu-goinfer-all-S",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "mac",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "goinfer / the same goinfer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build goinfer restart pairs, same session (different passes, files < 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.000729,
+    1.008375,
+    1.007641,
+    1.006717,
+    1.007234,
+    1.000513,
+    0.9924,
+    1.034482,
+    1.042404,
+    1.023273,
+    1.040594,
+    1.093915
+   ],
+   "sd": 0.03333,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.01655,
+   "n": 12,
+   "groups": 6,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-fix-served.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-speed-served-pass2.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-speed-served.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py",
+   "floor_source": "seed-mac-cpu-l1gate6-replicate (order-effect point estimate; a counterbalanced design may pass --floor 0)"
+  },
+  {
+   "id": "seed-mac-cpu-goinfer-0.5B-S",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "mac",
+    "backend": "cpu",
+    "model": "0.5B",
+    "depth": "d128"
+   },
+   "engines": "goinfer / the same goinfer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build goinfer restart pairs, same session (different passes, files < 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.000729,
+    1.008375,
+    1.007641,
+    1.023273
+   ],
+   "sd": 0.01282,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.01655,
+   "n": 4,
+   "groups": 2,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-fix-served.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-speed-served-pass2.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-speed-served.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py",
+   "floor_source": "seed-mac-cpu-l1gate6-replicate (order-effect point estimate; a counterbalanced design may pass --floor 0)"
+  },
+  {
+   "id": "seed-mac-cpu-goinfer-1.5B-S",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "mac",
+    "backend": "cpu",
+    "model": "1.5B",
+    "depth": "d128"
+   },
+   "engines": "goinfer / the same goinfer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build goinfer restart pairs, same session (different passes, files < 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.006717,
+    1.007234,
+    1.000513,
+    1.040594
+   ],
+   "sd": 0.0205,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.01655,
+   "n": 4,
+   "groups": 2,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-fix-served.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-speed-served-pass2.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-speed-served.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py",
+   "floor_source": "seed-mac-cpu-l1gate6-replicate (order-effect point estimate; a counterbalanced design may pass --floor 0)"
+  },
+  {
+   "id": "seed-mac-cpu-goinfer-7B-S",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "mac",
+    "backend": "cpu",
+    "model": "7B",
+    "depth": "d128"
+   },
+   "engines": "goinfer / the same goinfer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build goinfer restart pairs, same session (different passes, files < 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.9924,
+    1.034482,
+    1.042404,
+    1.093915
+   ],
+   "sd": 0.05242,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.01655,
+   "n": 4,
+   "groups": 2,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-fix-served.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-speed-served-pass2.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-speed-served.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py",
+   "floor_source": "seed-mac-cpu-l1gate6-replicate (order-effect point estimate; a counterbalanced design may pass --floor 0)"
+  },
+  {
+   "id": "seed-mac-cpu-peer-all-O",
+   "instrument": "served-decode-xsession",
+   "cell": {
+    "machine": "mac",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "peer / the same peer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build peer restart pairs, other session (files >= 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.693309,
+    0.810312
+   ],
+   "sd": 0.29867,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 2,
+   "groups": 2,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "other session (files >= 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25-mac/i-cpu-decode.json"
+    },
+    {
+     "path": "docs/measurements/peer-matrix-2026-09-17/macbook-cpu-sweep.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-mac-cpu-peer-all-S",
+   "instrument": "served-decode-peer-arm",
+   "cell": {
+    "machine": "mac",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "peer / the same peer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build peer restart pairs, same session (different passes, files < 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.957753,
+    1.083931,
+    1.131743,
+    0.974456,
+    1.115891,
+    1.145142,
+    0.945153,
+    1.043233,
+    1.103772
+   ],
+   "sd": 0.08785,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 9,
+   "groups": 3,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-fix-served.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-speed-served-pass2.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-speed-served.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-mac-metal-goinfer-all-P",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "goinfer / the same goinfer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build goinfer restart pairs, same pass (one file)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.993687,
+    0.99992,
+    0.999593,
+    0.99672,
+    0.996177,
+    0.992968,
+    1.000746,
+    1.000862,
+    0.999952
+   ],
+   "sd": 0.0036,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 9,
+   "groups": 9,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same pass (one file)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/metal-depth-r2-2026-09-18-raw.json"
+    },
+    {
+     "path": "docs/measurements/s6-alias-2026-09-24/gates-decode/results-7b.json"
+    },
+    {
+     "path": "docs/measurements/s6-alias-2026-09-24/gates-decode/results.json"
+    },
+    {
+     "path": "docs/measurements/s6-alias-2026-09-24/step2-v14/results-v14.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-mac-metal-goinfer-all-S",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "goinfer / the same goinfer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build goinfer restart pairs, same session (different passes, files < 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.992491,
+    0.998796
+   ],
+   "sd": 0.0054,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 2,
+   "groups": 1,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/metal-depth-r2-2026-09-18-raw.json"
+    },
+    {
+     "path": "docs/measurements/r12-mlx-row-2026-09-18-raw.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-mac-metal-goinfer-1.5B-P",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "1.5B",
+    "depth": "d128"
+   },
+   "engines": "goinfer / the same goinfer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build goinfer restart pairs, same pass (one file)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.993687,
+    0.99672,
+    0.996177,
+    0.992968,
+    1.000746
+   ],
+   "sd": 0.00481,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 5,
+   "groups": 5,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same pass (one file)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/metal-depth-r2-2026-09-18-raw.json"
+    },
+    {
+     "path": "docs/measurements/s6-alias-2026-09-24/gates-decode/results.json"
+    },
+    {
+     "path": "docs/measurements/s6-alias-2026-09-24/step2-v14/results-v14.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-mac-metal-goinfer-7B-P",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "7B",
+    "depth": "d128"
+   },
+   "engines": "goinfer / the same goinfer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build goinfer restart pairs, same pass (one file)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.99992,
+    0.999593,
+    1.000862,
+    0.999952
+   ],
+   "sd": 0.00048,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 4,
+   "groups": 4,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same pass (one file)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/s6-alias-2026-09-24/gates-decode/results-7b.json"
+    },
+    {
+     "path": "docs/measurements/s6-alias-2026-09-24/step2-v14/results-v14.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-mac-metal-peer-all-O",
+   "instrument": "served-decode-xsession",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "peer / the same peer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build peer restart pairs, other session (files >= 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.979232,
+    0.974009,
+    0.994666,
+    0.999656,
+    1.00631,
+    1.006656,
+    0.994823,
+    1.004537,
+    1.009765,
+    0.997921,
+    0.997953,
+    1.000033,
+    0.994877,
+    0.99479,
+    0.999912,
+    0.803051,
+    0.810712,
+    1.009541,
+    0.995588,
+    0.998138,
+    1.002561,
+    0.998466,
+    1.016399,
+    0.995873,
+    1.017962,
+    0.997403,
+    0.979804,
+    1.030163,
+    1.000962,
+    0.99898,
+    1.00579,
+    0.99802,
+    1.004823,
+    1.006817,
+    0.99079
+   ],
+   "sd": 0.05232,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 35,
+   "groups": 11,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "other session (files >= 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/b5-mac-r7b-561e72f6.json"
+    },
+    {
+     "path": "docs/measurements/metal-decode-attn-r17-2026-09-25/e2e/r17-e2e-metal-decode.json"
+    },
+    {
+     "path": "docs/measurements/metal-decode-gemv-r18-2026-09-26/e2e/r18-e2e-metal-decode.json"
+    },
+    {
+     "path": "docs/measurements/metal-decode-gemv-r18b-2026-09-26/e2e/r18b-e2e-metal-decode.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25-mac/g-metal-decode.json"
+    },
+    {
+     "path": "docs/measurements/peer-matrix-2026-09-17/macbook-metal-sweep.json"
+    },
+    {
+     "path": "docs/measurements/peer-matrix-2026-09/mac-m1pro-d7-tier1-2026-09-04.json"
+    },
+    {
+     "path": "docs/measurements/peer-matrix-2026-09/mac-m1pro-s-tier1-2026-09-04.json"
+    },
+    {
+     "path": "docs/measurements/r12-mlx-row-2026-09-18-raw.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-mac-metal-peer-all-P",
+   "instrument": "served-decode-peer-arm",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "peer / the same peer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build peer restart pairs, same pass (one file)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.999354,
+    0.986108
+   ],
+   "sd": 0.0099,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 2,
+   "groups": 2,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same pass (one file)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/metal-depth-r2-2026-09-18-raw.json"
+    },
+    {
+     "path": "docs/measurements/metal-depth-r2-kvcache-isolation-2026-09-18-raw.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-nobara-cpu-goinfer-all-S",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "goinfer / the same goinfer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build goinfer restart pairs, same session (different passes, files < 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.999492,
+    0.996333,
+    0.99951
+   ],
+   "sd": 0.00216,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 3,
+   "groups": 3,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/cpu-peer-reanchor-2026-09-22-pass1.json"
+    },
+    {
+     "path": "docs/measurements/cpu-peer-reanchor-2026-09-22.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-nobara-cpu-peer-all-O",
+   "instrument": "served-decode-xsession",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "peer / the same peer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build peer restart pairs, other session (files >= 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.998313,
+    0.998894,
+    0.996617,
+    0.989566,
+    0.990554,
+    0.990673,
+    0.991724,
+    1.001119,
+    1.00218,
+    1.00012,
+    1.001181,
+    1.00106,
+    0.984834,
+    0.984776,
+    0.983975,
+    0.985558,
+    0.979606,
+    0.999128,
+    1.000736,
+    0.994692,
+    0.999187,
+    1.000795,
+    0.99475,
+    1.001609,
+    0.99556,
+    0.993961,
+    0.994362,
+    0.995168,
+    0.993289,
+    0.994167,
+    0.998921,
+    0.999804,
+    0.998112,
+    0.998995,
+    1.000885,
+    1.001669,
+    1.009265,
+    1.005012,
+    0.995787,
+    0.999835
+   ],
+   "sd": 0.00731,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 40,
+   "groups": 9,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "other session (files >= 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/baseline.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/gate5-served.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-roofline-served-2026-09-23.json"
+    },
+    {
+     "path": "docs/measurements/cpu-peer-reanchor-2026-09-22-pass1.json"
+    },
+    {
+     "path": "docs/measurements/cpu-peer-reanchor-2026-09-22.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25/a-e-dense.json"
+    },
+    {
+     "path": "docs/measurements/peer-matrix-2026-09-18/nobara-dense.json"
+    },
+    {
+     "path": "docs/measurements/peer-matrix-2026-09/nobara-s-cpu-lane_2026-09-04.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-nobara-cpu-peer-all-S",
+   "instrument": "served-decode-peer-arm",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "peer / the same peer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build peer restart pairs, same session (different passes, files < 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.000998,
+    0.999941,
+    1.00081
+   ],
+   "sd": 0.00074,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 3,
+   "groups": 3,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/cpu-peer-reanchor-2026-09-22-pass1.json"
+    },
+    {
+     "path": "docs/measurements/cpu-peer-reanchor-2026-09-22.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-nobara-cuda-goinfer-all-S",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "goinfer / the same goinfer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build goinfer restart pairs, same session (different passes, files < 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.994317,
+    1.007743,
+    1.001627,
+    1.013503,
+    1.007351,
+    0.993931,
+    1.007768,
+    0.998055,
+    1.007259,
+    0.990362,
+    0.999495,
+    1.009222,
+    1.008402,
+    0.994586,
+    1.005514,
+    0.986299,
+    0.997135,
+    1.010987,
+    1.013919,
+    1.000184
+   ],
+   "sd": 0.00806,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 20,
+   "groups": 5,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-repeat1-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-repeat2-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-repeat3-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25/a-e-dense.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25/b-controls.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25/f-sampled.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-nobara-cuda-goinfer-0.5B-S",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "0.5B",
+    "depth": "d128"
+   },
+   "engines": "goinfer / the same goinfer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build goinfer restart pairs, same session (different passes, files < 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.994317,
+    1.007743,
+    1.001627,
+    1.013503,
+    1.007351,
+    0.993931,
+    1.007768,
+    0.998055,
+    1.007259,
+    0.990362,
+    0.999495,
+    1.009222,
+    1.008402,
+    0.994586,
+    1.005514,
+    0.986299,
+    0.997135,
+    1.010987,
+    1.013919
+   ],
+   "sd": 0.00827,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 19,
+   "groups": 4,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-repeat1-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-repeat2-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-repeat3-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25/a-e-dense.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25/f-sampled.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-nobara-cuda-peer-all-O",
+   "instrument": "served-decode-xsession",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "peer / the same peer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build peer restart pairs, other session (files >= 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.996543,
+    1.001047,
+    1.001648,
+    0.999071,
+    0.998002,
+    0.998753,
+    1.003097,
+    0.997785,
+    1.001073,
+    0.99999,
+    0.997541,
+    1.001039,
+    1.001465,
+    1.002218,
+    1.006578,
+    1.001246,
+    1.004546,
+    1.00346,
+    1.001002,
+    1.004512,
+    0.996958,
+    0.997708,
+    1.002048,
+    0.996741,
+    1.000026,
+    0.998944,
+    0.996497,
+    0.999991,
+    0.996361,
+    0.99711,
+    1.001447,
+    0.996143,
+    0.999426,
+    0.998345,
+    0.9959,
+    0.999392,
+    0.99893,
+    0.999681,
+    1.00403,
+    0.998712,
+    1.002003,
+    1.00092,
+    0.998468,
+    1.001969,
+    0.999782,
+    1.003077,
+    1.001992,
+    0.999538,
+    1.003042,
+    0.99903,
+    1.002323,
+    1.001239,
+    0.998786,
+    1.002288,
+    0.994703,
+    0.997982,
+    0.996902,
+    0.994461,
+    0.997947,
+    1.002211,
+    0.999756,
+    1.003261,
+    0.998919,
+    0.996472,
+    0.999966,
+    0.997551,
+    1.001048,
+    1.003506,
+    0.999901,
+    1.001232,
+    1.000099,
+    1.000134,
+    0.998576,
+    0.999952,
+    0.997592,
+    1.000232,
+    0.998675,
+    1.000051,
+    0.99769,
+    0.998903,
+    0.997348,
+    0.998722,
+    0.996364,
+    1.000035,
+    0.998478,
+    0.999853,
+    0.997493,
+    0.998443,
+    0.999818,
+    0.997458,
+    1.001378,
+    0.999014,
+    0.997639,
+    1.00085,
+    1.000506,
+    0.999966,
+    1.000767,
+    1.00075,
+    0.999427,
+    0.99992,
+    0.999255,
+    0.999916,
+    0.999899,
+    0.998578,
+    0.99907,
+    0.998406,
+    1.000261,
+    1.000244,
+    0.998922,
+    0.999414,
+    0.99875,
+    1.000801,
+    1.000784,
+    0.999461,
+    0.999954,
+    0.999289,
+    0.999983,
+    0.998661,
+    0.999154,
+    0.998489,
+    0.998678,
+    0.999171,
+    0.998506,
+    1.000493,
+    0.999828,
+    0.999335,
+    0.99242,
+    0.999687,
+    1.001204,
+    0.999501,
+    0.997276,
+    0.998721,
+    1.000903,
+    1.007135,
+    1.004893,
+    1.006349,
+    1.008547,
+    0.999814,
+    0.997589,
+    0.999034,
+    1.001216,
+    0.998299,
+    0.996077,
+    0.99752,
+    0.999698,
+    0.997774,
+    0.999219,
+    1.001402,
+    1.001449,
+    1.003636,
+    1.002184,
+    1.000675,
+    1.000623,
+    1.001242,
+    1.001314,
+    1.000592,
+    0.998273,
+    1.002448,
+    1.000638,
+    0.999917,
+    0.9976,
+    1.001771,
+    1.000691,
+    0.99997,
+    0.997652,
+    1.001824,
+    1.000072,
+    0.999351,
+    0.997035,
+    1.001204,
+    0.999279,
+    0.996963,
+    1.001132,
+    0.997682,
+    1.001854,
+    1.004182,
+    1.001032,
+    1.002768,
+    0.999987,
+    1.002567,
+    1.003245,
+    1.001628,
+    1.002696,
+    1.001533,
+    1.00221,
+    1.000595,
+    1.001662,
+    0.999799,
+    1.000475,
+    0.998863,
+    0.999928,
+    1.00258,
+    1.003258,
+    1.001641,
+    1.002709,
+    1.000676,
+    0.999063,
+    1.000129,
+    0.998388,
+    0.999453,
+    1.001066,
+    1.001326,
+    1.001824,
+    1.001426,
+    1.001441,
+    1.003275,
+    1.002342,
+    1.003557,
+    1.000116,
+    1.001947,
+    1.001015,
+    1.002229,
+    0.999618,
+    1.001448,
+    1.000517,
+    1.00173,
+    1.000015,
+    1.001847,
+    1.000915,
+    1.002128,
+    1.001831,
+    1.0009,
+    1.002113,
+    0.99907,
+    1.000281,
+    1.001212,
+    1.000069,
+    1.000063,
+    0.999645,
+    1.000181,
+    1.00054,
+    0.999865,
+    0.999701,
+    1.000112,
+    1.000471,
+    0.999796,
+    0.999632,
+    1.000117,
+    1.000476,
+    0.999802,
+    0.999638,
+    1.000536,
+    1.000895,
+    1.00022,
+    1.000056,
+    1.000359,
+    0.999684,
+    0.99952,
+    0.999326,
+    0.999162,
+    0.999836,
+    0.999305,
+    0.999582,
+    0.998968,
+    1.000009,
+    1.000235,
+    1.000405,
+    0.999342,
+    1.000705,
+    1.00093,
+    1.0011,
+    1.000037,
+    1.000428,
+    1.000654,
+    1.000824,
+    0.999761,
+    1.001042,
+    1.001268,
+    1.001438,
+    1.000375,
+    1.000226,
+    1.000396,
+    0.999333,
+    1.00017,
+    0.999108,
+    0.998938,
+    0.996942,
+    1.003975,
+    1.001518,
+    0.997553,
+    0.999425,
+    1.001021,
+    0.999369,
+    0.999944,
+    0.99835,
+    1.00513,
+    1.001239,
+    1.006021,
+    1.004098,
+    1.001734,
+    1.004132,
+    1.000021,
+    0.97273,
+    0.989769,
+    0.979681,
+    0.983853,
+    1.001087,
+    0.990884,
+    1.017516,
+    1.007146,
+    0.989808,
+    0.997878,
+    0.996424,
+    0.989979,
+    0.998543,
+    0.992084,
+    0.993532,
+    1.003433,
+    0.998504,
+    1.002471,
+    1.000956,
+    0.995088,
+    0.999041,
+    0.997531,
+    1.003973,
+    1.002455,
+    0.998488,
+    1.002344,
+    1.011168,
+    1.014047,
+    1.008804,
+    1.011676,
+    1.002847,
+    1.050302,
+    1.008983,
+    1.031201,
+    0.96066,
+    0.981813,
+    1.022019,
+    1.003472,
+    1.004483,
+    0.993785,
+    1.001008,
+    0.990346,
+    0.989349,
+    1.002126,
+    1.002674,
+    1.010602,
+    1.000546,
+    1.008458,
+    1.007907,
+    1.000681,
+    0.999577,
+    0.998905,
+    0.998897,
+    0.998225,
+    0.999328,
+    1.000493,
+    0.997639,
+    0.999448,
+    0.997147,
+    0.998955,
+    1.001814,
+    1.002364,
+    1.001736,
+    1.002769,
+    0.999826,
+    0.997289,
+    1.000536,
+    1.000996,
+    0.999795,
+    1.000594,
+    1.000799,
+    1.006402,
+    1.014119,
+    1.007667,
+    1.026413,
+    0.98343,
+    0.958123,
+    1.018611,
+    1.028744,
+    1.009948,
+    1.000036,
+    1.000745,
+    1.000709,
+    1.000754,
+    1.00036,
+    0.999606,
+    0.985838,
+    0.986966,
+    0.996112,
+    1.001145,
+    1.010421,
+    1.009266,
+    1.008649,
+    0.998062,
+    0.994245,
+    0.989504,
+    0.985719,
+    0.996175,
+    1.001816,
+    1.000478,
+    1.000669,
+    0.998665,
+    0.998855,
+    1.000191,
+    0.997302,
+    1.002191,
+    0.972515,
+    1.004902,
+    0.975146,
+    0.970389,
+    0.998928,
+    1.002564,
+    0.982719,
+    1.00364,
+    0.983774,
+    0.980205,
+    0.990472,
+    0.993994,
+    0.998714,
+    1.003556,
+    1.008321,
+    1.004748,
+    1.000005,
+    1.004135,
+    0.971706,
+    1.00413,
+    0.971701,
+    0.967704,
+    0.997823,
+    1.000826,
+    0.979858,
+    1.00301,
+    0.981996,
+    0.979049
+   ],
+   "sd": 0.00743,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 426,
+   "groups": 45,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "other session (files >= 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/attn-decode-fa-peer-peer-fa-run1.json"
+    },
+    {
+     "path": "docs/measurements/attn-decode-fa-peer-peer-fa-run2-8000.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-repeat1-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-repeat2-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-repeat3-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/d7-decode-breakdown-2026-09-21/served-three-way.json"
+    },
+    {
+     "path": "docs/measurements/fused-rms-gu-diagnosis-2026-09-21/served-three-way.json"
+    },
+    {
+     "path": "docs/measurements/fused-rms-qkv-2026-09-21/served-three-way.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25/a-e-dense.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25/b-controls.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25/f-sampled.json"
+    },
+    {
+     "path": "docs/measurements/peer-matrix-2026-09-15/nobara-pc-cuda-sweep.json"
+    },
+    {
+     "path": "docs/measurements/peer-matrix-2026-09-17/nobara-pc-cuda-sweep.json"
+    },
+    {
+     "path": "docs/measurements/peer-matrix-2026-09-18/nobara-dense.json"
+    },
+    {
+     "path": "docs/measurements/peer-matrix-2026-09-18/nobara-moe.json"
+    },
+    {
+     "path": "docs/measurements/peer-matrix-2026-09/nobara-w1-d7-m35-m26_2026-09-04.json"
+    },
+    {
+     "path": "docs/measurements/peer-matrix-2026-09/nobara-w1-llamacpp-fit-retry_2026-09-04.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-nobara-cuda-peer-all-S",
+   "instrument": "served-decode-peer-arm",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "peer / the same peer build",
+   "statistic": "RMS about 0 of ln(ratio of two restart means) over same-build peer restart pairs, same session (different passes, files < 3 h apart)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.00452,
+    1.005123,
+    1.002538,
+    1.0006,
+    0.998026,
+    0.997428,
+    1.000752,
+    1.005105,
+    1.00435,
+    1.003296,
+    1.001331,
+    1.000198,
+    0.998868,
+    0.999656,
+    0.999116,
+    0.99946,
+    1.007322,
+    1.008851,
+    1.001518,
+    0.999948,
+    1.000567,
+    1.000619,
+    1.001734,
+    0.998956,
+    0.997226,
+    1.000498,
+    1.0001,
+    0.999603,
+    0.999994,
+    0.999576,
+    0.999582,
+    1.000276,
+    0.999663,
+    0.999386,
+    1.001597,
+    1.001916,
+    1.00428,
+    1.001881,
+    1.00236,
+    0.999966,
+    0.997612,
+    0.9984,
+    0.997337,
+    0.999791,
+    0.998935,
+    1.001393,
+    1.00246,
+    0.988695,
+    0.998971,
+    1.002827,
+    0.996816,
+    1.00049,
+    1.000216,
+    1.0002,
+    1.001935,
+    1.002612,
+    0.997393,
+    1.000714,
+    0.999278,
+    1.002466,
+    1.000835
+   ],
+   "sd": 0.00287,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 61,
+   "groups": 26,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 1, via te2b_variance.py's loader and curation"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-repeat1-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-repeat2-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/b5-r7b-repeat3-cbf2c25d.json"
+    },
+    {
+     "path": "docs/measurements/d7-decode-breakdown-2026-09-21/served-three-way.json"
+    },
+    {
+     "path": "docs/measurements/fused-rms-gu-diagnosis-2026-09-21/served-three-way.json"
+    },
+    {
+     "path": "docs/measurements/fused-rms-qkv-2026-09-21/served-three-way.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25/a-e-dense.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25/b-controls.json"
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25/f-sampled.json"
+    },
+    {
+     "path": "docs/measurements/q4k-peer-2026-09-26/s1-q4k.json"
+    },
+    {
+     "path": "docs/measurements/q4k-peer-2026-09-26/s2-int4.json"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "seed-mac-cpu-l1gate6-replicate",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "mac",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "d128"
+   },
+   "engines": "goinfer 5c85f7c0 / goinfer 3cd62e6d (a real A/B, measured twice)",
+   "statistic": "sd of one pass's ln(new/old) from two order-reversed passes of the same A/B: sqrt(mean(dln^2)/2) over 3 models; floor = mean half-difference (the order-effect point estimate)",
+   "estimator": "pair_diff",
+   "values": [
+    [
+     0.539624,
+     0.547906
+    ],
+    [
+     0.543726,
+     0.565409
+    ],
+    [
+     0.424804,
+     0.44434
+    ]
+   ],
+   "sd": 0.02511,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.01655,
+   "n": 3,
+   "unit": "one bench_peer.py pass: one cell per arm, 3 runs x 8 completions, Ollama between the arms",
+   "scope": "same session (2026-09-28 by day, BENCH_MAX_LOADAVG=2.5), order reversed between the passes",
+   "provenance": "replicate",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "section 2"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-speed-served.json"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-speed-served-pass2.json"
+    },
+    {
+     "path": "docs/tasks/task-cpu-decode-peer-gap-2026-09.md",
+     "line": 417,
+     "quote": "moved each ratio by at most 0.022, so the effect is not drift"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "derived-nobara-cuda-goinfer-vs-peer-S",
+   "instrument": "served-decode-peer",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "goinfer / a peer (Ollama or llama-server)",
+   "statistic": "sqrt((g^2 + p^2) / 2): one goinfer cell's sd (g/sqrt 2) and one peer cell's (p/sqrt 2) combined, from the same-build A/A RMS values g = 0.00806 (seed-nobara-cuda-goinfer-all-S) and p = 0.00287 (seed-nobara-cuda-peer-all-S)",
+   "estimator": "quoted",
+   "sd": 0.00605,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 20,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "model-inference",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "derived from the two input entries"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "derived-nobara-cpu-goinfer-vs-peer-S",
+   "instrument": "served-decode-peer",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "goinfer / a peer (Ollama or llama-server)",
+   "statistic": "sqrt((g^2 + p^2) / 2): one goinfer cell's sd (g/sqrt 2) and one peer cell's (p/sqrt 2) combined, from the same-build A/A RMS values g = 0.00216 (seed-nobara-cpu-goinfer-all-S) and p = 0.00074 (seed-nobara-cpu-peer-all-S)",
+   "estimator": "quoted",
+   "sd": 0.00161,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 3,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "model-inference",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "derived from the two input entries"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "derived-mac-metal-goinfer-vs-peer-P",
+   "instrument": "served-decode-peer",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "goinfer / a peer (Ollama or llama-server)",
+   "statistic": "sqrt((g^2 + p^2) / 2): one goinfer cell's sd (g/sqrt 2) and one peer cell's (p/sqrt 2) combined, from the same-build A/A RMS values g = 0.00360 (seed-mac-metal-goinfer-all-P) and p = 0.00990 (seed-mac-metal-peer-all-P)",
+   "estimator": "quoted",
+   "sd": 0.00745,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 2,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same pass (one file)",
+   "provenance": "model-inference",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "derived from the two input entries"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "derived-mac-cpu-goinfer-vs-peer-S",
+   "instrument": "served-decode-peer",
+   "cell": {
+    "machine": "mac",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "*"
+   },
+   "engines": "goinfer / a peer (Ollama or llama-server)",
+   "statistic": "sqrt((g^2 + p^2) / 2): one goinfer cell's sd (g/sqrt 2) and one peer cell's (p/sqrt 2) combined, from the same-build A/A RMS values g = 0.03333 (seed-mac-cpu-goinfer-all-S) and p = 0.08785 (seed-mac-cpu-peer-all-S)",
+   "estimator": "quoted",
+   "sd": 0.06644,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.01655,
+   "n": 9,
+   "unit": "one bench_peer.py cell per arm (a restart: 2-3 runs x 8 completions)",
+   "scope": "same session (different passes, files < 3 h apart)",
+   "provenance": "model-inference",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te3_registry_seed.py",
+     "note": "derived from the two input entries"
+    }
+   ],
+   "origin": "te3_registry_seed.py"
+  },
+  {
+   "id": "cuda-fused-rms-0.5B-crossbuild",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "0.5B",
+    "depth": "*"
+   },
+   "provenance": "cross-build-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio) over the 0.5B cells of two three-way sweeps whose new build leaves the 0.5B on the original kernels; floor = |mean ln ratio| (all 6 below 1: a build effect more cells of the same two builds would not re-draw)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.985452,
+    0.996326,
+    0.978447,
+    0.996002,
+    0.978996,
+    0.979088
+   ],
+   "sd": 0.01641,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.01442,
+   "n": 6,
+   "unit": "one bench_peer.py cell per arm, 2 runs x 8 completions, depths 128 / 2048 / 3900",
+   "scope": "same session, one sweep each, restart per cell",
+   "source": [
+    {
+     "path": "docs/measurements/fused-rms-qkv-2026-09-21.md",
+     "line": 42
+    },
+    {
+     "path": "docs/measurements/fused-rms-gu-diagnosis-2026-09-21.md",
+     "line": 70
+    },
+    {
+     "path": "docs/measurements/fused-rms-qkv-2026-09-21/served-three-way.json"
+    },
+    {
+     "path": "docs/measurements/fused-rms-gu-diagnosis-2026-09-21/served-three-way.json"
+    },
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te5b-concordance-2026-09-28.md",
+     "line": 298
+    }
+   ],
+   "date": "2026-09-21",
+   "notes": "Two different binaries (9709137b / 97653c61 vs their previous builds), code identical for the 0.5B per both records. The only CUDA cross-build A/A on record, and 3-4x the same-binary restart A/A (0.8%): layout/build effects are real here (Mytkowicz et al. 2009). Driver 595.91.07.",
+   "origin": "curated"
+  },
+  {
+   "id": "cuda-splitkv-aa-mistral7b",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "mistral-7b",
+    "depth": "*"
+   },
+   "provenance": "direct-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio), both polarities (split path off both sides, on both sides) at depths 3900 and 8000",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.0002,
+    1.00045,
+    0.99959,
+    1.00142
+   ],
+   "sd": 0.00078,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 4,
+   "unit": "one bench_splitkv.py cell per arm (fresh serve, 2 runs x 8), arms adjacent, order alternating",
+   "scope": "same session",
+   "source": [
+    {
+     "path": "docs/measurements/splitkv-aa-floor-2026-09-12.md",
+     "line": 18,
+     "quote": "| aa-on | 8000 | 34.73 | 34.68 | 1.00142 | **0.142%** |"
+    }
+   ],
+   "date": "2026-09-12",
+   "notes": "serve-cuda-1f224682, driver 595.91.07. The record's own statistic is max|r-1| = 0.142%. Raw JSON stayed on nobara.",
+   "origin": "curated"
+  },
+  {
+   "id": "cuda-splitkv-aa-d7-max",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "7B",
+    "depth": "*"
+   },
+   "provenance": "floor-only",
+   "statistic": "max |ratio - 1| over both A/A polarities at 3900 and 8000 (the per-cell ratios are not in the repo)",
+   "estimator": "quoted",
+   "values": null,
+   "sd": null,
+   "sd_kind": null,
+   "floor": 0.0,
+   "n": 4,
+   "unit": "one bench_splitkv.py cell per arm",
+   "scope": "same session",
+   "source": [
+    {
+     "path": "docs/measurements/splitkv-d7-fthreshold-2026-09-13.md",
+     "line": 19,
+     "quote": "against an A/A floor of 0.268%"
+    }
+   ],
+   "date": "2026-09-13",
+   "notes": "Only the max survives, so no sd.",
+   "origin": "curated",
+   "floor_value": 0.00268
+  },
+  {
+   "id": "cuda-splitkv-force-repeat",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "mistral-7b",
+    "depth": "*"
+   },
+   "provenance": "replicate",
+   "statistic": "sd of one reading of the force A/B's ln ratio from two runs of it: sqrt(mean(dln^2)/2)",
+   "estimator": "pair_diff",
+   "values": [
+    [
+     1.02402,
+     1.02405
+    ],
+    [
+     1.03538,
+     1.03711
+    ]
+   ],
+   "sd": 0.00083,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 2,
+   "unit": "one bench_splitkv.py A/B reading",
+   "scope": "two runs on one day",
+   "source": [
+    {
+     "path": "docs/measurements/splitkv-aa-floor-2026-09-12.md",
+     "line": 32
+    }
+   ],
+   "date": "2026-09-12",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "cuda-fa-aa-floor-deep",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "*",
+    "depth": "*"
+   },
+   "provenance": "direct-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): both arms the exact path, 1.5B and D7 at 3900 and 8000",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.003018,
+    0.999779,
+    1.002554,
+    0.999742
+   ],
+   "sd": 0.00198,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 4,
+   "unit": "one bench_splitkv.py cell per arm (fresh serve, 2 runs x 8)",
+   "scope": "same session",
+   "source": [
+    {
+     "path": "docs/measurements/attn-decode-fa-served-2026-09-20.md",
+     "line": 54
+    },
+    {
+     "path": "docs/measurements/attn-decode-fa-served-fa-aa-floor.json"
+    }
+   ],
+   "date": "2026-09-21",
+   "notes": "4e571d2b (dirty), driver 595.91.07.",
+   "origin": "curated"
+  },
+  {
+   "id": "cuda-fa-gate-shallow-envarm",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "*",
+    "depth": "*"
+   },
+   "provenance": "effective-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): cells where the flash lane is enabled but not taken (below 2048 keys, or phi3's hd96), same binary",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.983492,
+    1.000593,
+    0.994188,
+    1.000205,
+    0.999865,
+    1.00047,
+    1.013565,
+    0.993376,
+    0.997673,
+    1.000047,
+    1.00115,
+    1.00054,
+    1.000784,
+    1.000729
+   ],
+   "sd": 0.00624,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 14,
+   "unit": "one bench_splitkv.py cell per arm (fresh serve, 2 runs x 8)",
+   "scope": "same session",
+   "source": [
+    {
+     "path": "docs/measurements/attn-decode-fa-served-2026-09-20.md",
+     "line": 48,
+     "quote": "Below 2048 both arms run the exact path, so the shallow cells are an A/A: the 0.5B and gemma3-1b cells scatter 0.983-1.014"
+    },
+    {
+     "path": "docs/measurements/attn-decode-fa-served-fa-gate.json"
+    }
+   ],
+   "date": "2026-09-21",
+   "notes": "0.5B and gemma3-1b scatter to 1.7%; 1.5B and phi3 within 0.1%. The spread is per model, not per harness.",
+   "origin": "curated"
+  },
+  {
+   "id": "cuda-b63-phi3-declines",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "phi3-mini",
+    "depth": "*"
+   },
+   "provenance": "effective-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): the split-KV gate declines for phi3 at every depth, so both arms run the same kernel",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.000204,
+    1.000407,
+    1.00085,
+    0.998942,
+    1.00004,
+    1.000051
+   ],
+   "sd": 0.00059,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 6,
+   "unit": "one bench_splitkv.py cell per arm",
+   "scope": "same session",
+   "source": [
+    {
+     "path": "docs/benchmarks.md",
+     "line": 1570
+    },
+    {
+     "path": "docs/measurements/b6-splitkv-bb42106.json"
+    }
+   ],
+   "date": "2026-08-27",
+   "notes": "The 13 other declined cells in that JSON (0.5B/1.5B/gemma3, 0.974-1.020) are an inference from the gate code, not the record's claim, and are left out.",
+   "origin": "curated"
+  },
+  {
+   "id": "cuda-fa-peer-shallow-envarm",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "*",
+    "depth": "d128"
+   },
+   "provenance": "effective-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): lane arm below its floor (lane off) vs exact, same binary, bench_peer.py three-way",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.000635,
+    1.000648,
+    0.999598,
+    1.003831,
+    0.999525
+   ],
+   "sd": 0.00178,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 5,
+   "unit": "one bench_peer.py cell per arm (2 runs x 8)",
+   "scope": "same session",
+   "source": [
+    {
+     "path": "docs/measurements/attn-decode-fa-peer-2026-09-21.md",
+     "line": 19
+    },
+    {
+     "path": "docs/measurements/attn-decode-fa-peer-peer-fa-run1.json"
+    },
+    {
+     "path": "docs/measurements/attn-decode-fa-peer-peer-fa-run2-8000.json"
+    }
+   ],
+   "date": "2026-09-21",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "cuda-fa-verify-aa-spec",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "*",
+    "depth": "*"
+   },
+   "provenance": "direct-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): two exact+spec arms back to back, serve --spec ngram, 192 tokens, copy-heavy prompt",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.004857,
+    0.99775,
+    1.005039,
+    0.999968,
+    0.995721
+   ],
+   "sd": 0.0038,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 5,
+   "unit": "one bench_spec_lane.py arm (fresh serve, 1 warm + 2 reps)",
+   "scope": "same session",
+   "source": [
+    {
+     "path": "docs/measurements/attn-decode-fa-verify-2026-09-21.md",
+     "line": 34,
+     "quote": "A/A floors are within 0.5%."
+    },
+    {
+     "path": "docs/measurements/attn-decode-fa-verify-served-1p5b.json"
+    },
+    {
+     "path": "docs/measurements/attn-decode-fa-verify-served-d7.json"
+    }
+   ],
+   "date": "2026-09-21",
+   "notes": "Speculative decoding, not plain decode: its own config.",
+   "origin": "curated"
+  },
+  {
+   "id": "metal-r17-e2e-control-crossbuild",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "*",
+    "depth": "d128"
+   },
+   "provenance": "cross-build-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): R17 new vs old at depth 128, where the new kernel does not engage (it starts at 1536 keys)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.981872,
+    1.000808
+   ],
+   "sd": 0.01295,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 2,
+   "unit": "one bench_peer.py cell per arm (3 runs x 8), three engines interleaved",
+   "scope": "same session",
+   "source": [
+    {
+     "path": "docs/measurements/metal-decode-attn-r17-2026-09-25.md",
+     "line": 517
+    },
+    {
+     "path": "docs/measurements/metal-decode-attn-r17-2026-09-25/e2e/r17-e2e-metal-decode.json"
+    }
+   ],
+   "date": "2026-09-25",
+   "notes": "7df881f5 vs dde11d93. The 1.5B's runs do not overlap (71.99-72.84 vs 73.75-73.91): n=2 served runs 'resolve' a -1.8% that the code cannot have caused, the same shape as nobara's cross-build 0.5B.",
+   "origin": "curated"
+  },
+  {
+   "id": "metal-r2-served-d128-envarm",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "1.5B",
+    "depth": "d128"
+   },
+   "provenance": "effective-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): attention_fa on vs off at depth 128 (below its 1536-key floor), one invocation per arm",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.005435
+   ],
+   "sd": 0.00542,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 1,
+   "unit": "one bench_peer.py cell per arm (2 runs x 8)",
+   "scope": "two invocations, not interleaved",
+   "source": [
+    {
+     "path": "docs/measurements/r2-attn-fa-speed-2026-09-21.md",
+     "line": 64
+    }
+   ],
+   "date": "2026-09-21",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "metal-ollama-drift-controls",
+   "instrument": "served-decode-peer-arm",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "1.5B",
+    "depth": "*"
+   },
+   "provenance": "direct-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): the same Ollama cell inside two separate bench_peer.py invocations (depths 128 and 3900; W4A8/W4F16 runs)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.011641,
+    0.994778,
+    0.978848
+   ],
+   "sd": 0.01436,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 3,
+   "unit": "one bench_peer.py cell per invocation",
+   "scope": "same session, separate invocations",
+   "source": [
+    {
+     "path": "docs/measurements/r2-attn-fa-speed-2026-09-21.md",
+     "line": 65
+    },
+    {
+     "path": "docs/measurements/w4f16-decode-speed-2026-09-21.md",
+     "line": 57
+    }
+   ],
+   "date": "2026-09-21",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "metal-w7-s4-7b-lone-and-4c",
+   "instrument": "served-w7",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "7B",
+    "depth": "*"
+   },
+   "provenance": "cross-build-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio) of aggregate new/old per pair, at 1 client (lone path identical) and 4 clients (B=4 keeps the fragment)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.994,
+    0.997,
+    1.01,
+    1.002,
+    0.998,
+    0.998
+   ],
+   "sd": 0.0051,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 6,
+   "unit": "one bench_w7_plain.py pair (fresh server per cell)",
+   "scope": "same session, ONNOON",
+   "source": [
+    {
+     "path": "docs/measurements/concurrency-mc3-s4-2026-09-27.md",
+     "line": 106
+    }
+   ],
+   "date": "2026-09-27",
+   "notes": "915bf6fc vs 7fa344b2.",
+   "origin": "curated"
+  },
+  {
+   "id": "cpu-amd64-w7-mc3c-lone",
+   "instrument": "served-w7",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "7B",
+    "depth": "*"
+   },
+   "provenance": "cross-build-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio) of aggregate new/old per pair at 1 client (no batched step on the lone path)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.997899,
+    0.997899,
+    0.997899
+   ],
+   "sd": 0.0021,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 3,
+   "unit": "one bench_w7_plain.py pair",
+   "scope": "same session, ONNOON",
+   "source": [
+    {
+     "path": "docs/measurements/concurrency-mc3c-step2-2026-09-27.md",
+     "line": 55
+    }
+   ],
+   "date": "2026-09-27",
+   "notes": "Aggregates 4.76 vs 4.75 in every pair: at 2 decimals, so the resolution is 0.2%.",
+   "origin": "curated"
+  },
+  {
+   "id": "metal-ttft-chunked-solo",
+   "instrument": "served-ttft",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "1.5B",
+    "depth": "*"
+   },
+   "provenance": "cross-build-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio) of per-newcomer TTFT new/old for a lone ~3k-token prompt (the lone path is today's exactly), c256 and c512 gradings",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.9829,
+    1.0109,
+    1.0,
+    1.0013,
+    0.9912,
+    0.9968,
+    1.0092,
+    0.9989,
+    1.0141,
+    1.0004,
+    0.9762,
+    1.0094,
+    0.9923,
+    0.9976,
+    0.9901,
+    0.9759,
+    1.006,
+    1.0015
+   ],
+   "sd": 0.01118,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 18,
+   "unit": "one newcomer's TTFT per arm (bench_prefill_stall.py solo arm, 3 interleaved pairs x 3 newcomers)",
+   "scope": "same session",
+   "source": [
+    {
+     "path": "docs/measurements/chunked-prefill-2026-09-27.md",
+     "line": 79
+    },
+    {
+     "path": "docs/measurements/chunked-prefill-2026-09-27/gates-output-c256.txt",
+     "line": 8
+    },
+    {
+     "path": "docs/measurements/chunked-prefill-2026-09-27/gates-output-c512.txt",
+     "line": 8
+    }
+   ],
+   "date": "2026-09-27",
+   "notes": "731f4f4e vs d4293d41 / b69c73ad. The only served-TTFT A/A on record.",
+   "origin": "curated"
+  },
+  {
+   "id": "xsession-goinfer-phi3-sampled-2026-08-09",
+   "instrument": "served-decode-xsession",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "phi3-mini",
+    "depth": "d128"
+   },
+   "provenance": "single-observation",
+   "statistic": "RMS about 0 of ln(A/A ratio): the same goinfer binary (686c9f8), phi3-mini temp-only sampled cell, two sessions (and two scripts: the original row came from a separate add-on script)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.036477
+   ],
+   "sd": 0.03583,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 1,
+   "unit": "one served cell (2 runs x 8 originally, 5 x 8 re-measured)",
+   "scope": "two sessions, 2026-08 era, driver 595.58.03",
+   "source": [
+    {
+     "path": "docs/legacy-benchmarks.md",
+     "line": 908,
+     "quote": "gives **116.5 vs 116.4**"
+    },
+    {
+     "path": "docs/legacy-benchmarks.md",
+     "line": 910,
+     "quote": "this box carry ~3.5% between-session drift"
+    },
+    {
+     "path": "docs/benchmarks.md",
+     "line": 2415
+    },
+    {
+     "commit": "414bb364",
+     "note": "introduced the ~3.5% figure, 2026-08-09"
+    }
+   ],
+   "date": "2026-08-09",
+   "notes": "The origin of CLAUDE.md's ~3.5%: n = 1. In the same gap Ollama moved 125.8 -> 125.6 and 121.8 -> 121.4 (legacy-benchmarks.md:913-914). See noise-registry.md section 3.",
+   "origin": "curated"
+  },
+  {
+   "id": "mac-cpu-r13-same-cell-halved",
+   "instrument": "served-decode",
+   "cell": {
+    "machine": "mac",
+    "backend": "cpu",
+    "model": "0.5B",
+    "depth": "d128"
+   },
+   "provenance": "floor-only",
+   "statistic": "the same goinfer cell twice ~18 min apart under continuous load (loadavg 3.1-4.0): 99.2 -> 48.9 tok/s",
+   "estimator": "quoted",
+   "values": null,
+   "sd": null,
+   "sd_kind": null,
+   "floor": 0.0,
+   "n": 1,
+   "unit": "one bench_peer.py cell",
+   "scope": "one ~77-min run, thermally contaminated (void)",
+   "source": [
+    {
+     "path": "docs/measurements/r13-cpu-depth-row-2026-09-19.md",
+     "line": 90
+    }
+   ],
+   "date": "2026-09-19",
+   "notes": "Why the Mac CPU needs two passes or a counterbalanced design; not an sd.",
+   "origin": "curated",
+   "floor_value": 0.708
+  },
+  {
+   "id": "mac-cpu-peerclaim-i-ollama-shift",
+   "instrument": "served-decode-peer-arm",
+   "cell": {
+    "machine": "mac",
+    "backend": "cpu",
+    "model": "0.5B",
+    "depth": "d128"
+   },
+   "provenance": "single-observation",
+   "statistic": "sample sd of ln(run mean) inside one Ollama cell: 125.2, 93.7, 93.1 tok/s",
+   "estimator": "sd_log",
+   "values": [
+    125.2,
+    93.7,
+    93.1
+   ],
+   "sd": 0.16921,
+   "sd_kind": "arm_log_level",
+   "floor": 0.0,
+   "n": 3,
+   "unit": "one run (8 completions) inside one cell",
+   "scope": "within one server lifetime, by day",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te4-replay-2026-09-28.md",
+     "line": 223
+    },
+    {
+     "path": "docs/measurements/peer-claim-2026-09-25-mac/i-cpu-decode.json"
+    }
+   ],
+   "date": "2026-09-25",
+   "notes": "The regime shift that killed TE4-SEQ-v1: a between-run allowance has to cover it.",
+   "origin": "curated"
+  },
+  {
+   "id": "cpu-amd64-giw-aa-1.5B",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "1.5B",
+    "depth": "d128"
+   },
+   "provenance": "direct-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): direct' / direct (a second load of the same .gguf) per ABBA pair",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.9991,
+    1.0058,
+    1.0043,
+    0.996,
+    0.9995,
+    1.0073,
+    0.9969
+   ],
+   "sd": 0.00433,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 7,
+   "unit": "one ABBA pair of 24-token generations, one process",
+   "scope": "one process, idle-gated",
+   "source": [
+    {
+     "path": "docs/measurements/cpu-giw-vs-direct-2026-09-24.log",
+     "line": 11,
+     "quote": "[1.5B A/A direct'/direct] median b/a 0.9995 (min 0.9960 max 1.0073, n=7)"
+    }
+   ],
+   "date": "2026-09-24",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "cpu-amd64-giw-aa-7B",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "7B",
+    "depth": "d128"
+   },
+   "provenance": "direct-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): direct' / direct per ABBA pair",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.9879,
+    1.0048,
+    0.9966,
+    1.0035,
+    1.0041,
+    0.999,
+    1.0057
+   ],
+   "sd": 0.00592,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 7,
+   "unit": "one ABBA pair of 24-token generations, one process",
+   "scope": "one process, idle-gated",
+   "source": [
+    {
+     "path": "docs/measurements/cpu-giw-vs-direct-2026-09-24.log",
+     "line": 30,
+     "quote": "[7B A/A direct'/direct] median b/a 1.0035 (min 0.9879 max 1.0057, n=7)"
+    }
+   ],
+   "date": "2026-09-24",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "cpu-amd64-smallshape-aa-7B",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "7B",
+    "depth": "d128"
+   },
+   "provenance": "direct-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): A' / A (the same config twice) per rotated rep, production forward",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.0039,
+    1.0,
+    0.998,
+    1.002,
+    1.0,
+    1.0,
+    1.002
+   ],
+   "sd": 0.00197,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 7,
+   "unit": "one rotated rep of 32-token blocks",
+   "scope": "one process",
+   "source": [
+    {
+     "path": "docs/measurements/concurrency-mc3c-s1-2026-09-27.md",
+     "line": 131
+    },
+    {
+     "path": "docs/measurements/concurrency-mc3c-s1-2026-09-27/smallshape-7b.log",
+     "line": 2
+    }
+   ],
+   "date": "2026-09-27",
+   "notes": "The hook is not committed.",
+   "origin": "curated"
+  },
+  {
+   "id": "cpu-amd64-smallshape-aa-1.5B",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "1.5B",
+    "depth": "d128"
+   },
+   "provenance": "direct-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): A' / A per rotated rep",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.998,
+    0.9939,
+    0.9995,
+    1.0046,
+    0.9969,
+    1.0005,
+    1.0036
+   ],
+   "sd": 0.0035,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 7,
+   "unit": "one rotated rep of 32-token blocks",
+   "scope": "one process",
+   "source": [
+    {
+     "path": "docs/measurements/concurrency-mc3c-s1-2026-09-27.md",
+     "line": 132
+    },
+    {
+     "path": "docs/measurements/concurrency-mc3c-s1-2026-09-27/smallshape-coder-1.5b.log",
+     "line": 2
+    }
+   ],
+   "date": "2026-09-27",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "cpu-amd64-smallshape-aa-0.5B",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "0.5B",
+    "depth": "d128"
+   },
+   "provenance": "direct-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): A' / A per rotated rep",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.1248,
+    1.0288,
+    1.0053,
+    1.031,
+    0.9979,
+    1.0317,
+    0.9747
+   ],
+   "sd": 0.04962,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 7,
+   "unit": "one rotated rep of 32-token blocks",
+   "scope": "one process",
+   "source": [
+    {
+     "path": "docs/measurements/concurrency-mc3c-s1-2026-09-27.md",
+     "line": 133
+    },
+    {
+     "path": "docs/measurements/concurrency-mc3c-s1-2026-09-27/smallshape-coder-0.5b.log",
+     "line": 2
+    }
+   ],
+   "date": "2026-09-27",
+   "notes": "The 0.5B is ~10x noisier than the 1.5B/7B in-process on this CPU; the S0 / S0b / R-06 ABBA gates' reported 0.5B rows show the same (0.899-1.040 per pair).",
+   "origin": "curated"
+  },
+  {
+   "id": "cpu-amd64-deepseek-benchdecode-samples",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "deepseek-v2-lite",
+    "depth": "*"
+   },
+   "provenance": "replicate",
+   "statistic": "sample sd of ln(tok/s) over 8 single-arm BenchmarkDecode samples",
+   "estimator": "sd_log",
+   "values": [
+    0.9396,
+    0.939,
+    0.9605,
+    0.9461,
+    0.95,
+    0.9417,
+    0.9422,
+    0.9548
+   ],
+   "sd": 0.00818,
+   "sd_kind": "arm_log_level",
+   "floor": 0.0,
+   "n": 8,
+   "unit": "one BenchmarkDecode sample (-benchtime 30x)",
+   "scope": "one session",
+   "source": [
+    {
+     "path": "docs/measurements/aikit-v1.17.0-decode-ab.md",
+     "line": 30
+    }
+   ],
+   "date": "2026-08-12",
+   "notes": "The same record measured a 5% session-level shift (aikit-v1.17.1-decode-ab.md:101).",
+   "origin": "curated"
+  },
+  {
+   "id": "cpu-amd64-w4a8-benchdecode-samples",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "1.5B",
+    "depth": "*"
+   },
+   "provenance": "replicate",
+   "statistic": "sample sd of ln(tok/s) over 6 retained single-arm BenchmarkDecode samples",
+   "estimator": "sd_log",
+   "values": [
+    18.27,
+    18.43,
+    18.29,
+    18.33,
+    18.34,
+    18.31
+   ],
+   "sd": 0.00305,
+   "sd_kind": "arm_log_level",
+   "floor": 0.0,
+   "n": 6,
+   "unit": "one BenchmarkDecode sample (-benchtime 30x)",
+   "scope": "one session, 2 visits",
+   "source": [
+    {
+     "path": "docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md",
+     "line": 145
+    }
+   ],
+   "date": "2026-08-30",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "cpu-amd64-prefill-calibration",
+   "instrument": "inproc-prefill",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "0.5B",
+    "depth": "p512"
+   },
+   "provenance": "replicate",
+   "statistic": "sample sd of ln(tok/s) over 8 BenchmarkPrefillLong samples (f32, P=512)",
+   "estimator": "sd_log",
+   "values": [
+    81.9,
+    82.34,
+    81.96,
+    81.89,
+    81.79,
+    82.17,
+    82.18,
+    82.12
+   ],
+   "sd": 0.00227,
+   "sd_kind": "arm_log_level",
+   "floor": 0.0,
+   "n": 8,
+   "unit": "one BenchmarkPrefillLong sample (-benchtime 2x)",
+   "scope": "one session",
+   "source": [
+    {
+     "path": "docs/measurements/prefill-instrument-calibration.md",
+     "line": 90
+    }
+   ],
+   "date": "2026-08-12",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "cpu-amd64-s0c-width-aa",
+   "instrument": "inproc-kernel",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "7B",
+    "depth": "*"
+   },
+   "provenance": "direct-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): A' / A (default width twice) for the 7B's q||k||v, o, down at M=4 and M=1",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.008,
+    1.013,
+    1.003,
+    1.071,
+    1.026,
+    0.999
+   ],
+   "sd": 0.03056,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 6,
+   "unit": "one shape's med(A)/med(A') over 9 rotated reps, warm block before each timed block",
+   "scope": "one process",
+   "source": [
+    {
+     "path": "docs/measurements/concurrency-mc3c-s1-2026-09-27.md",
+     "line": 106
+    }
+   ],
+   "date": "2026-09-27",
+   "notes": "M=1 q||k||v read 1.071 on identical code.",
+   "origin": "curated"
+  },
+  {
+   "id": "cpu-amd64-s0b-position-effect",
+   "instrument": "inproc-kernel",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "7B",
+    "depth": "*"
+   },
+   "provenance": "floor-only",
+   "statistic": "the same config ('default' = w16) in a rotation with a serial arm read 0.994-1.412 apart (8 shapes)",
+   "estimator": "quoted",
+   "values": [
+    1.412,
+    1.313,
+    1.056,
+    1.283,
+    1.281,
+    1.179,
+    0.994,
+    1.074
+   ],
+   "sd": null,
+   "sd_kind": null,
+   "floor": 0.0,
+   "n": 8,
+   "unit": "one shape's median over 7 rotated reps",
+   "scope": "one process",
+   "source": [
+    {
+     "path": "docs/measurements/concurrency-mc3c-s1-2026-09-27.md",
+     "line": 96
+    }
+   ],
+   "date": "2026-09-27",
+   "notes": "A position effect (workers parked after a serial arm), discarded by the record. A warning, not a noise.",
+   "origin": "curated",
+   "floor_value": 0.345
+  },
+  {
+   "id": "cpu-amd64-kv-regather-floors",
+   "instrument": "inproc-kernel",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "*"
+   },
+   "provenance": "floor-only",
+   "statistic": "per-shape A/A floor of an interleaved decode-attention A/B (statistic not named)",
+   "estimator": "quoted",
+   "values": [
+    0.0003,
+    0.0082,
+    0.0077,
+    0.0047
+   ],
+   "sd": null,
+   "sd_kind": null,
+   "floor": 0.0,
+   "n": 4,
+   "unit": "median ms/step over 5 visits x 4 steps",
+   "scope": "one process",
+   "source": [
+    {
+     "path": "docs/measurements/aikit-kv-regather-strided-p1.md",
+     "line": 52
+    }
+   ],
+   "date": "2026-08-14",
+   "notes": "Raw A/A arms not recorded.",
+   "origin": "curated",
+   "floor_value": 0.0082
+  },
+  {
+   "id": "cpu-amd64-sampler-gate-replicates",
+   "instrument": "inproc-kernel",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "sampler-262k",
+    "depth": "*"
+   },
+   "provenance": "replicate",
+   "statistic": "sample sd of ln(gate ratio) over 6 standalone runs of TestSamplingThroughputGate on identical sampler code",
+   "estimator": "sd_log",
+   "values": [
+    4.83,
+    4.27,
+    3.9,
+    4.48,
+    4.24,
+    3.83
+   ],
+   "sd": 0.08646,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 6,
+   "unit": "one run of the gate",
+   "scope": "standalone runs",
+   "source": [
+    {
+     "path": "docs/measurements/sampled-gumbel-2026-09-20.md",
+     "line": 107
+    }
+   ],
+   "date": "2026-09-20",
+   "notes": "A 7th run inside a full suite read 5.35x. Separately, two builds with identical sampler code differed 15-20% in the temp-only arm (concurrency-mc3c-step2-2026-09-27.md:99).",
+   "origin": "curated"
+  },
+  {
+   "id": "cuda-resident-decode-reps-1.5B",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "1.5B",
+    "depth": "d128"
+   },
+   "provenance": "direct-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): rep 2 / rep 1 of BenchmarkResidentDecode, same binary, same config (6 configs)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.99528,
+    0.99472,
+    0.97464,
+    1.00559,
+    0.97239,
+    1.02281
+   ],
+   "sd": 0.01841,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 6,
+   "unit": "one BenchmarkResidentDecode reading",
+   "scope": "same session",
+   "source": [
+    {
+     "path": "docs/measurements/q4k-lever1-2026-09-26/fusion-check.txt",
+     "line": 1
+    },
+    {
+     "path": "docs/measurements/q4k-lever1-2026-09-26/attribution-1.5b.txt",
+     "line": 1
+    },
+    {
+     "path": "docs/tasks/task-int4-weight-quality-2026-09.md",
+     "line": 452
+    }
+   ],
+   "date": "2026-09-26",
+   "notes": "Up to 2.8% between two reads of the same config: the lever gates used 6 alternating rounds for this reason.",
+   "origin": "curated"
+  },
+  {
+   "id": "cuda-resident-decode-reps-7B",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "7B",
+    "depth": "d128"
+   },
+   "provenance": "direct-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): rep 2 / rep 1 of BenchmarkResidentDecode, same binary, 3 configs",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.99877,
+    1.00025,
+    1.00069
+   ],
+   "sd": 0.00083,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 3,
+   "unit": "one BenchmarkResidentDecode reading",
+   "scope": "same session",
+   "source": [
+    {
+     "path": "docs/measurements/q4k-lever1-2026-09-26/fusion-check-7b.txt",
+     "line": 1
+    }
+   ],
+   "date": "2026-09-26",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "cuda-prefill-gemv-control",
+   "instrument": "inproc-kernel",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "*",
+    "depth": "prefill"
+   },
+   "provenance": "effective-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio) of the gemv category (code identical across tile arms), arm / 64x64 per round (tile128 default record, 1.5B and 0.5B, K 512-3900)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.99439,
+    1.00277,
+    0.9988,
+    1.00064,
+    1.00205,
+    0.99963,
+    0.99869,
+    1.00724,
+    1.00043,
+    0.9968,
+    1.00646,
+    1.00377,
+    1.01032,
+    1.00751,
+    1.00037,
+    0.9997,
+    1.00418,
+    0.99574,
+    1.00284,
+    1.0088,
+    0.99784,
+    1.00599,
+    1.00093,
+    1.00163
+   ],
+   "sd": 0.00452,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 24,
+   "unit": "one TestPrefillDecomp round (arms as separate processes, interleaved)",
+   "scope": "one session",
+   "source": [
+    {
+     "path": "docs/measurements/attn-fused-tile128-default-2026-09-21.md",
+     "line": 25
+    },
+    {
+     "path": "docs/measurements/attn-fused-tile128-default-1.5b-2026-09-21.log",
+     "line": 2
+    },
+    {
+     "path": "docs/measurements/attn-fused-tile128-default-0.5b-2026-09-21.log",
+     "line": 2
+    }
+   ],
+   "date": "2026-09-21",
+   "notes": "The record summarises this as within +-0.6%; per round it reaches 1.03%. Its attention rounds' 'spread < 0.5%' also does not hold in the raw logs (64x64 @512: 1.8% on the 1.5B, 2.2% on the 0.5B).",
+   "origin": "curated"
+  },
+  {
+   "id": "cuda-vision-tower-exact-repeat",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "gemma3-4b-vision",
+    "depth": "*"
+   },
+   "provenance": "single-observation",
+   "statistic": "RMS about 0 of ln(A/A ratio): the exact tower arm in two alternating processes",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.99988
+   ],
+   "sd": 0.00012,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 1,
+   "unit": "one process's median of 3 tower forwards",
+   "scope": "one session",
+   "source": [
+    {
+     "path": "docs/measurements/vision-tower-mma-2026-09-21.md",
+     "line": 12
+    }
+   ],
+   "date": "2026-09-21",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "webgpu-theta-off-repeat",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "nobara",
+    "backend": "webgpu",
+    "model": "0.5B",
+    "depth": "*"
+   },
+   "provenance": "single-observation",
+   "statistic": "RMS about 0 of ln(A/A ratio): the off arm measured first and again last in one process",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.92016
+   ],
+   "sd": 0.08321,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 1,
+   "unit": "median of 3 Generate walls",
+   "scope": "one process",
+   "source": [
+    {
+     "path": "docs/measurements/theta-webgpu-2026-09-23.md",
+     "line": 62
+    }
+   ],
+   "date": "2026-09-23",
+   "notes": "8% between two reads of the same arm.",
+   "origin": "curated"
+  },
+  {
+   "id": "metal-r18-control-steppaired",
+   "instrument": "inproc-kernel",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "1.5B",
+    "depth": "d128"
+   },
+   "provenance": "effective-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): the harness control (candidate template at the shipped grid, bit-identical output), step-paired",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.984,
+    0.99,
+    0.991,
+    0.993,
+    1.002
+   ],
+   "sd": 0.00996,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 5,
+   "unit": "one rep (median of 20 step-pair differences)",
+   "scope": "one process",
+   "source": [
+    {
+     "path": "docs/measurements/metal-decode-gemv-r18-2026-09-26.md",
+     "line": 89
+    }
+   ],
+   "date": "2026-09-26",
+   "notes": "Block timing on the same control read 0.47-1.25 (1.5B) and was abandoned; on the 7B it read 0.99-1.04.",
+   "origin": "curated"
+  },
+  {
+   "id": "metal-r18-control-block-7B",
+   "instrument": "inproc-kernel",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "7B",
+    "depth": "d128"
+   },
+   "provenance": "effective-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): the same control under block timing (20 steps per side)",
+   "estimator": "rms_log_about_0",
+   "values": [
+    0.992,
+    0.993,
+    1.006,
+    1.019,
+    1.038
+   ],
+   "sd": 0.01947,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 5,
+   "unit": "one rep",
+   "scope": "one process",
+   "source": [
+    {
+     "path": "docs/measurements/metal-decode-gemv-r18-2026-09-26.md",
+     "line": 87
+    }
+   ],
+   "date": "2026-09-26",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "metal-prefill-gemm-runs",
+   "instrument": "inproc-kernel",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "1.5B",
+    "depth": "p512"
+   },
+   "provenance": "replicate",
+   "statistic": "sample sd of ln(run median) of the current GEMM kernel's in-sequence time across 6 runs",
+   "estimator": "sd_log",
+   "values": [
+    1539.7,
+    1537.2,
+    1533.0,
+    1536.5,
+    1548.6,
+    1534.2
+   ],
+   "sd": 0.00364,
+   "sd_kind": "arm_log_level",
+   "floor": 0.0,
+   "n": 6,
+   "unit": "one run's median (5 or 7 paired reps)",
+   "scope": "one day, separate processes",
+   "source": [
+    {
+     "path": "docs/measurements/metal-prefill-gemm-s2-2026-09-25.md",
+     "line": 193
+    }
+   ],
+   "date": "2026-09-25",
+   "notes": "Timed alone the same kernel is bimodal (~550 or ~1040 ms; :110): in-sequence timing only.",
+   "origin": "curated"
+  },
+  {
+   "id": "metal-r2-depthbench-envarm",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "1.5B",
+    "depth": "*"
+   },
+   "provenance": "effective-aa",
+   "statistic": "RMS about 0 of ln(A/A ratio): attention_fa on vs off below its floor (depth 128 and 512), median of 3 best-of-5",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.011252,
+    1.0
+   ],
+   "sd": 0.00791,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 2,
+   "unit": "median of 3 processes per arm",
+   "scope": "one session",
+   "source": [
+    {
+     "path": "docs/measurements/r2-attn-fa-speed-2026-09-21.md",
+     "line": 46
+    }
+   ],
+   "date": "2026-09-21",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "metal-theta-off-repeat",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "*",
+    "depth": "*"
+   },
+   "provenance": "single-observation",
+   "statistic": "RMS about 0 of ln(A/A ratio): the off arm bracketing the spec arms",
+   "estimator": "rms_log_about_0",
+   "values": [
+    1.01642
+   ],
+   "sd": 0.01629,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 1,
+   "unit": "median of 3",
+   "scope": "one process",
+   "source": [
+    {
+     "path": "docs/measurements/theta-per-backend-2026-09-01.md",
+     "line": 85
+    }
+   ],
+   "date": "2026-09-01",
+   "notes": "",
+   "origin": "curated"
+  },
+  {
+   "id": "metal-m35-paged-pairs",
+   "instrument": "inproc-token",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "M35",
+    "depth": "*"
+   },
+   "provenance": "replicate",
+   "statistic": "sd of one run's ln(tok/s) from counterbalanced same-config pairs: sqrt(mean(dln^2)/2) (pread, byte-copy, slot sweep N=8..64; N=128 thrash excluded)",
+   "estimator": "pair_diff",
+   "values": [
+    [
+     1.967,
+     2.022
+    ],
+    [
+     0.595,
+     0.641
+    ],
+    [
+     1.84,
+     1.876
+    ],
+    [
+     1.94,
+     1.929
+    ],
+    [
+     1.898,
+     1.92
+    ],
+    [
+     2.158,
+     2.224
+    ]
+   ],
+   "sd": 0.02542,
+   "sd_kind": "arm_log_level",
+   "floor": 0.0,
+   "n": 6,
+   "unit": "one 120-token run (median of the last 80)",
+   "scope": "separate runs, A B B A",
+   "source": [
+    {
+     "path": "docs/completed/task-metal-expert-streaming-at-scale.md",
+     "line": 79
+    },
+    {
+     "path": "docs/completed/task-metal-expert-streaming-at-scale.md",
+     "line": 238
+    }
+   ],
+   "date": "2026-08-28",
+   "notes": "The record calls the order/warmth term persistent per run, not averaging away (:203).",
+   "origin": "curated"
+  },
+  {
+   "id": "cpu-arm64-kernel-bench-ratio-replicate",
+   "instrument": "inproc-kernel",
+   "cell": {
+    "machine": "mac",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "*"
+   },
+   "provenance": "replicate",
+   "statistic": "sd of one reading of a kernel-bench ln(arm / f32) from two harnesses ~1 min apart (-count 8 vs interleaved), scalar-widen and fused arms, 4 shapes",
+   "estimator": "pair_diff",
+   "values": [
+    [
+     1.815,
+     1.694
+    ],
+    [
+     1.402,
+     1.193
+    ],
+    [
+     1.418,
+     1.391
+    ],
+    [
+     2.879,
+     3.117
+    ],
+    [
+     0.904,
+     0.904
+    ],
+    [
+     0.905,
+     0.898
+    ],
+    [
+     0.898,
+     0.898
+    ],
+    [
+     0.87,
+     0.949
+    ]
+   ],
+   "sd": 0.0531,
+   "sd_kind": "paired_log_ratio",
+   "floor": 0.0,
+   "n": 8,
+   "unit": "one harness run's median of 8",
+   "scope": "by day, loadavg ~2.8",
+   "source": [
+    {
+     "path": "docs/measurements/test-efficiency-2026-09/te5b-concordance-2026-09-28.md",
+     "line": 290
+    },
+    {
+     "path": "docs/tasks/task-cpu-decode-peer-gap-2026-09.md",
+     "line": 515
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-fix-kernel-bench.log"
+    },
+    {
+     "path": "docs/measurements/cpu-decode-peer-gap-2026-09-27/arm64-fix-kernel-bench-interleaved.log"
+    }
+   ],
+   "date": "2026-09-28",
+   "notes": "The f32 arm itself moved only 0.4-1.3% between the two harnesses; the drift is in the other arms' ratios (1.5B gate/up scalar 1.402 -> 1.193).",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-nobara-cpu-int4-f16scale-p10",
+   "instrument": "logits",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "*"
+   },
+   "metric": "p10 per-position logit cosine vs f32",
+   "statistic": "per-cell change in p10 cosine when every int4 group scale is rounded through binary16 (<= 2^-11 relative); 12 families x 2 prompts (n=24)",
+   "values": {
+    "worst_worsening": 0.0168,
+    "largest_improvement": -0.0457,
+    "mean_delta": -0.0044,
+    "cells_over_0.005": 6,
+    "cells_over_0.015": 1
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 0.02,
+   "n": null,
+   "provenance": "single-observation",
+   "source": [
+    {
+     "path": "docs/tasks/task-cpu-decode-peer-gap-2026-09.md",
+     "line": 138,
+     "quote": "So the p10 cosine on the per-row int4 path moves by ±0.02 under a perturbation this small, in either direction."
+    }
+   ],
+   "date": "2026-09-27",
+   "notes": "Not a do-nothing arm (f16 rounding is a real, tiny change), but the only per-family p10 perturbation on record. Track B's 0.005 allowance sits below it; the seeded-perturbation control the record suggests was never run. Raw: cpu-decode-peer-gap-2026-09-27/f16sweep-graded.txt, f16sweep.jsonl.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-mac-metal-1.5B-1e6-nudge",
+   "instrument": "logits",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "1.5B",
+    "depth": "d1600"
+   },
+   "metric": "logits cosine / maxAbs vs the shipped trajectory",
+   "statistic": "x += N(0,1)*1e-6 on the residual after layer 0, shipped kernels only, 8 decode steps",
+   "values": {
+    "cosine": [
+     0.9994473,
+     0.9996119
+    ],
+    "maxabs": [
+     0.567,
+     0.745
+    ]
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 0.9994473,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/r2-attn-fa-rootcause-2026-09-21.md",
+     "line": 126,
+     "quote": "A 1e-6 nudge — with `attention_fa` nowhere in the pipeline — produces, at every step, the same"
+    }
+   ],
+   "date": "2026-09-21",
+   "notes": "W4A8 per-tensor int8 activations: one rounding crossing gives the whole divergence. A candidate kernel whose end-to-end cosine is ~0.9995 on this path is indistinguishable from a 1e-6 nudge.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-mac-metal-1.5B-1ulp-scale",
+   "instrument": "logits",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "1.5B",
+    "depth": "d1600"
+   },
+   "metric": "logits cosine / maxAbs",
+   "statistic": "attention scale changed by 1 f32 ULP, shipped kernel both arms, positions 1600-1604 (n=5)",
+   "values": {
+    "cosine": [
+     0.999,
+     0.9994
+    ],
+    "maxabs": [
+     0.72,
+     0.94
+    ]
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 0.999,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/r2-attn-fa-followup-2026-09-20.md",
+     "line": 214,
+     "quote": "All 5 steps (positions 1600-1604) diverge immediately and uniformly (cosine"
+    }
+   ],
+   "date": "2026-09-20",
+   "notes": "Same hypersensitivity as the 1e-6 nudge.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-mac-metal-1.5B-same-magnitude-noise",
+   "instrument": "logits",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "1.5B",
+    "depth": "d0"
+   },
+   "metric": "cosine / maxAbs, layers 26-27 at pos 0",
+   "statistic": "random noise of the real w4f16-w4a8 difference's magnitude (0.855% relative) added to x entering layer 26",
+   "values": {
+    "cosine": 0.999,
+    "maxabs": 16.7,
+    "one_ulp_cosine": 1.0
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 0.999,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/w4f16-decode-investigation-2026-09-19.md",
+     "line": 131,
+     "quote": "**Random noise of the same magnitude** as a control: **cosine 0.999, maxAbs 16.7**"
+    }
+   ],
+   "date": "2026-09-19",
+   "notes": "The record is superseded on attribution; the control numbers stand.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-mac-metal-1.5B-decode-attn-kl-nulls",
+   "instrument": "logits",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "1.5B",
+    "depth": "d3900"
+   },
+   "metric": "KL ratio (candidate mean KL / exact mean KL), set A, 10 prompts x 64 positions",
+   "statistic": "accuracy-neutral variants of the exact kernel (reversed partial sums, scale x (1 + k 2^-23), chunked V); n=18",
+   "values": {
+    "small_rounding_ratio": [
+     0.995,
+     1.003
+    ],
+    "nudge_ratio": [
+     0.998,
+     1.004
+    ],
+    "chunked_v_ratio": [
+     0.996,
+     1.0
+    ],
+    "strict_critC_fails": "8 of 18 (all 10 prompts), 12 of 18 (valid six)"
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 1.05,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/metal-decode-attn-r17-2026-09-25.md",
+     "line": 303,
+     "quote": "fail it 8 of 18 times over all 10 prompts, and 12 of 18 times on the valid six."
+    }
+   ],
+   "date": "2026-09-25",
+   "notes": "Set A later found to have 4 of 10 prompts scored against mismatched references; the valid-six figures are post-hoc. This battery is why the owner amended the decode-attn bar to KL ratio <= 1.05.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-mac-metal-1.5B-decode-attn-kl-setb",
+   "instrument": "logits",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "1.5B",
+    "depth": "d3900"
+   },
+   "metric": "KL ratio, set B, 10 x 64",
+   "statistic": "the exact kernel with its q.k order reversed (exact-null), n=1",
+   "values": {
+    "exact_null_ratio": 0.954,
+    "exact_mean_kl": 0.0519
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 1.05,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/metal-decode-attn-r17-2026-09-25.md",
+     "line": 416,
+     "quote": "±5% end-to-end spread is what rounding order alone produces at 10 prompts."
+    }
+   ],
+   "date": "2026-09-25",
+   "notes": "The pre-registration states ~±2–3% resolution at 10 prompts (metal-decode-attn-fidelity-setb-PREREGISTERED.md:41); a single null read 0.954.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-nobara-cuda-7B-vsum-tree-nulls",
+   "instrument": "logits",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "7B",
+    "depth": "d8000"
+   },
+   "metric": "KL ratio and paired per-prompt KL delta, set A, 10 x 64",
+   "statistic": "equally valid V-sum reduction trees S=2/4/8/16 against exact, one binary, one session",
+   "values": {
+    "kl_ratio": {
+     "S2": 0.9805,
+     "S4": 0.9857,
+     "S8": 0.9953,
+     "S16": 0.9993
+    },
+    "paired_delta_se": {
+     "S2": 0.002,
+     "S4": 0.0019,
+     "S8": 0.0037,
+     "S16": 0.0021
+    },
+    "hard_flips_of_640": [
+     14,
+     17
+    ]
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 0.9805,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/vsum-mechanism-2026-09-20.md",
+     "line": 21,
+     "quote": "Paired per-prompt KL delta (arm − exact), mean ± s.e. over 10 prompts: S=2 −0.0020 ± 0.0020, **S=4 −0.0014 ± 0.0019**"
+    }
+   ],
+   "date": "2026-09-20",
+   "notes": "The only CUDA KL null. Ratios 0.98–1.00 for reduction order alone at 10 prompts.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-both-cpu-f32-crossarch",
+   "instrument": "logits",
+   "cell": {
+    "machine": "*",
+    "backend": "cpu",
+    "model": "0.5B",
+    "depth": "d64"
+   },
+   "metric": "argmax, abs error, top-2 margin",
+   "statistic": "pure-Go f32 CPU, same source and weights, arm64 (FMA fused) vs amd64 (not), 64 greedy positions",
+   "values": {
+    "argmax_flips": 0,
+    "logits_bit_different_pct": 93,
+    "abs_err_max": 1e-05,
+    "tightest_top2_margin": 0.65
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": null,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/parity-coverage-policy.md",
+     "line": 1273,
+     "quote": "The **tightest top-2 margin observed across all 64 positions was"
+    }
+   ],
+   "date": "2026-08-11",
+   "notes": "One model only (qwen2.5-coder-0.5b f32). int8/int4 CPU cross-arch is not measured.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-cpu-qwen35-gguf-box",
+   "instrument": "logits",
+   "cell": {
+    "machine": "*",
+    "backend": "cpu",
+    "model": "qwen3.5",
+    "depth": "*"
+   },
+   "metric": "worst-position logits cosine, 80 steps",
+   "statistic": "same code on two CPUs (0.99445 on one box, 0.99298 on the v0.10.0 release box)",
+   "values": {
+    "min_cosine": [
+     0.99298,
+     0.99445
+    ],
+    "delta": 0.0015
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 0.0015,
+   "n": null,
+   "provenance": "single-observation",
+   "source": [
+    {
+     "path": "decoder/qwen35_gguf_gate_test.go",
+     "line": 157,
+     "quote": "varies by ~0.0015 between machines with no code change."
+    }
+   ],
+   "date": "2026-08-07",
+   "notes": "Also: bit-identical across Go 1.26.6 / 1.27.0 and across four runs (decoder/qwen35_gguf_oracle_test.go:142).",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-cpu-qwen35-router-flips",
+   "instrument": "logits",
+   "cell": {
+    "machine": "*",
+    "backend": "cpu",
+    "model": "qwen3.5",
+    "depth": "*"
+   },
+   "metric": "per-step logits cosine; router top-k flips",
+   "statistic": "a bit-identical router under ~0.5% Q8_0 input noise (GGUF vs safetensors), 80 teacher-forced steps",
+   "values": {
+    "flipped_pairs": "779 of 3200",
+    "min_cosine": 0.987835,
+    "mean_cosine": 0.998114
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 0.987835,
+   "n": null,
+   "provenance": "single-observation",
+   "source": [
+    {
+     "path": "docs/quantization.md",
+     "line": 104,
+     "quote": "A **bit-identical** router still flips its top-k selection in **779 of 3200 (step, layer) pairs**"
+    }
+   ],
+   "date": "2026-08-18",
+   "notes": "A quant-noise input, not a null; the MoE gates' min/mean floors were re-expressed from it.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-nobara-cpu-phi3-norm-ulp",
+   "instrument": "logits",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "phi3-mini",
+    "depth": "*"
+   },
+   "metric": "min prompt logits cosine, argmax",
+   "statistic": "CPU int4 against itself with every f32 norm vector nudged +/-1 ULP (GOINFER_NORM_ULP_NOISE)",
+   "values": {
+    "min_cosine": 0.953287,
+    "argmax_flip": "pos 3: 21490 -> 23881",
+    "webgpu_vs_cpu_min_cosine": 0.98586
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 0.953287,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/completed/task-webgpu-nogqa-decode-bug.md",
+     "line": 35,
+     "quote": "forward against itself with every f32 norm nudged ±1 ULP. Min cosine **0.953287**"
+    }
+   ],
+   "date": "2026-09-18",
+   "notes": "The CPU's own ULP self-noise on phi3 is worse than WebGPU-vs-CPU on the same checkpoint.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-mac-metal-prefill-ref-identity",
+   "instrument": "logits",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "*",
+    "depth": "*"
+   },
+   "metric": "KL(reference prompt-final || Metal)",
+   "statistic": "same text vs different text in the prefill gate's reference files, S and D7, sets A and B",
+   "values": {
+    "same_text_max": 0.8,
+    "same_text_pairs": 150,
+    "different_text": [
+     3.1,
+     18.1
+    ]
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 0.8,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/prefill-ref-identity-2026-09-26.md",
+     "line": 28,
+     "quote": "largest is 0.80. A reference from different text lands at 3.1–18.1."
+    }
+   ],
+   "date": "2026-09-26",
+   "notes": "A quant+backend floor, not a do-nothing floor; it is why the identity check voids at KL > 1.0.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-mac-metal-prefill-gate-false-fail",
+   "instrument": "logits",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "*",
+    "depth": "*"
+   },
+   "metric": "teacher-forced agreement, hard flips",
+   "statistic": "analytic: paired agreement sd 0.9-1.7 pt at 640 positions per cell; flips <= exact at 4-17 counts",
+   "values": {
+    "agreement_sd_pt": [
+     0.9,
+     1.7
+    ],
+    "equal_arm_pass_prob": 0.05
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": null,
+   "n": null,
+   "provenance": "model-inference",
+   "source": [
+    {
+     "path": "docs/completed/task-prefill-gap.md",
+     "line": 341,
+     "quote": "(0.8)⁴ × (0.6)⁴ ≈ **5%**. The gate as pre-registered was built to fail an equal arm ~19 times in"
+    }
+   ],
+   "date": "2026-09-05",
+   "notes": "Why §3.2's pooled form replaced per-cell vetoes.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-nobara-cpu-int4q-session-repeat",
+   "instrument": "logits",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cpu",
+    "model": "*",
+    "depth": "*"
+   },
+   "metric": "p10 cosine, argmax agreement",
+   "statistic": "the same arms (C0, A0) re-run in a second session, 6 families x 2 prompts",
+   "values": {
+    "cells": 24,
+    "max_abs_diff": 0.0
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 0.0,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/tasks/task-int4-weight-quality-2026-09.md",
+     "line": 113,
+     "quote": "In the A5 session, C0 and A0"
+    }
+   ],
+   "date": "2026-09-26",
+   "notes": "CPU is bit-deterministic session to session: the p10/agreement metrics carry no run noise on CPU.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-cuda-determinism-lanes",
+   "instrument": "logits",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "*",
+    "depth": "*"
+   },
+   "metric": "bit-identity of logits",
+   "statistic": "two runs of the opt-in flash-decode lane (64 rows); V-sum spike; gemma4 tiny graphs-off x10",
+   "values": {
+    "bit_identical": true
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 0.0,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/attn-decode-fa-fidelity-2026-09-20.md",
+     "line": 14,
+     "quote": "2. A/A: two lane runs bit-identical over all 64 rows (prompt 1)."
+    }
+   ],
+   "date": "2026-09-20",
+   "notes": "No A/A of the DEFAULT CUDA decode on a real checkpoint is recorded (gap).",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-mac-metal-determinism",
+   "instrument": "logits",
+   "cell": {
+    "machine": "mac",
+    "backend": "metal",
+    "model": "*",
+    "depth": "*"
+   },
+   "metric": "sha256 of logits",
+   "statistic": "two consecutive runs; across code versions on the same GPU/OS (TestMetalSnapshotGolden)",
+   "values": {
+    "bit_identical": true
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": 0.0,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/ollama-chase.md",
+     "line": 529,
+     "quote": "byte-identical across two consecutive runs"
+    }
+   ],
+   "date": "2026-08-04",
+   "notes": "Not identical across chip families or OS toolchains, by construction; magnitude unmeasured.",
+   "origin": "curated"
+  },
+  {
+   "id": "logits-nobara-cuda-vision-word-prefix",
+   "instrument": "logits",
+   "cell": {
+    "machine": "nobara",
+    "backend": "cuda",
+    "model": "gemma3-4b-vision",
+    "depth": "*"
+   },
+   "metric": "word-level prefix agreement of greedy text vs arm E",
+   "statistic": "E vs E2 (A/A, 3 images) and a 1-LSB pixel jitter P (8 images)",
+   "values": {
+    "aa_identical": "3 of 3",
+    "jitter_mean_prefix_words": 13.0,
+    "jitter_differ_within_12_words": "4 of 8"
+   },
+   "estimator": "quoted",
+   "sd": null,
+   "floor_value": null,
+   "n": null,
+   "provenance": "direct-aa",
+   "source": [
+    {
+     "path": "docs/measurements/vision-tower-downstream-2026-09-21.md",
+     "line": 6,
+     "quote": "word-for-word identical on all 3 — greedy through this pipeline has a real floor."
+    }
+   ],
+   "date": "2026-09-21",
+   "notes": "The 4-of-8 figure is computed from the committed json, not printed in the record.",
+   "origin": "curated"
+  }
+ ],
+ "gaps": [
+  {
+   "instrument": "served-decode",
+   "cell": "nobara/cuda/1.5B, 7B (any depth), same binary",
+   "why": "no in-session goinfer restart replicate (TE2(b) section 6); only the 0.5B and phi3 have one"
+  },
+  {
+   "instrument": "served-decode",
+   "cell": "nobara/cuda/* except 0.5B, cross-build",
+   "why": "the only cross-build A/A is the 0.5B in the fused_rms sweeps; a new/old gate on any other model borrows a same-binary A/A that cannot see build/layout effects"
+  },
+  {
+   "instrument": "served-decode",
+   "cell": "mac/cpu/* by night",
+   "why": "every Mac CPU entry is from 2026-09-28 by day at BENCH_MAX_LOADAVG=2.5; TE1's A/A night (queued) is the first quiet-Mac A/A"
+  },
+  {
+   "instrument": "served-decode",
+   "cell": "mac/metal/* cross-build, per model and depth > 128",
+   "why": "n = 2 at depth 128 (R17 control); nothing deeper"
+  },
+  {
+   "instrument": "served-decode",
+   "cell": "*/webgpu/*",
+   "why": "no served WebGPU A/A of any kind"
+  },
+  {
+   "instrument": "served-decode",
+   "cell": "nobara/cuda/M26, M35 (goinfer)",
+   "why": "MoE goinfer cells trend inside a lifetime (+29.6% / -22.1%, TE2(b) 5b) and have no A/A"
+  },
+  {
+   "instrument": "served-decode-xsession",
+   "cell": "*/*/* goinfer",
+   "why": "every goinfer build on record lived in one session (TE2(b) 4.2): goinfer's session term is unmeasured apart from the n = 1 August observation behind the ~3.5%"
+  },
+  {
+   "instrument": "served-ttft",
+   "cell": "nobara/*/*, mac/cpu/*, and bench_peer_prefill.py anywhere",
+   "why": "the only TTFT A/A is Mac Metal 1.5B through bench_prefill_stall.py"
+  },
+  {
+   "instrument": "inproc-kernel",
+   "cell": "nobara/cuda decode kernels (ncu)",
+   "why": "ncu A/B gates (glu_quant, fused_rms_*, R6 ladder) record no same-kernel repeat"
+  },
+  {
+   "instrument": "inproc-token",
+   "cell": "mac/cpu/*",
+   "why": "no in-process whole-token A/A on arm64 CPU; the L1 arm64 decision used a kernel bench (entry cpu-arm64-kernel-bench-ratio-replicate) whose readings drift ~15% by day"
+  },
+  {
+   "instrument": "inproc-token",
+   "cell": "nobara/webgpu/*",
+   "why": "one bracketing repeat (8%), n = 1"
+  },
+  {
+   "instrument": "logits",
+   "cell": "19 full-forward-oracle families (0.9999 bar)",
+   "why": "no run-to-run or cross-arch cosine per family; cross-arch evidence is one model (0.5B f32)"
+  },
+  {
+   "instrument": "logits",
+   "cell": "real-model oracle 0.99 / 0.98 floors (11 families), the 0.95 'int4-noise floor'",
+   "why": "no per-family repeat or perturbation control"
+  },
+  {
+   "instrument": "logits",
+   "cell": "Track B / actquant / int4q p10 bars (0.005 allowance)",
+   "why": "no do-nothing arm; the L1 f16 sweep shows +/-0.02 under a 2^-11 perturbation"
+  },
+  {
+   "instrument": "logits",
+   "cell": "CUDA default decode on a real checkpoint; WebGPU any",
+   "why": "no logits A/A recorded (CUDA A/A exists only for opt-in lanes and a tiny fixture)"
+  },
+  {
+   "instrument": "logits",
+   "cell": "the 3% near-tie argmax rule",
+   "why": "no measured basis found"
+  }
+ ]
+}
