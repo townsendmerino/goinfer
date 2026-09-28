@@ -1,0 +1,148 @@
+// Command zzgateidentity is `gate identity`'s logit dumper (TE6(b), docs/tasks/task-test-efficiency-2026-09.md).
+// cmd/gate writes this file into a TEMPORARY worktree of each revision it compares and builds it there, so
+// the same source compiles against both revisions' decoder. It therefore uses the PUBLIC decoder API only
+// (Load, Options{Quant, Backend}, Generate with a LogitProcessor, DecodePath) — anything newer would stop
+// it building at an older revision.
+//
+// It reads a JSON spec (cells: a checkpoint, a quant, prompts as token ids), and for each cell dumps the
+// FULL logits of every captured step — the first is the prompt's own prefill, then one per greedy decode
+// step — as raw little-endian float32, one .bin per cell, plus a .json with what ran (decode path, vocab,
+// steps and tokens per prompt, or the error). Tokenizing is cmd/gate's job, so both builds see the same ids.
+//
+// Generated file; the template is cmd/gate/identity_dumper.go.tmpl in the goinfer tree.
+package main
+
+import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	//REGISTER
+)
+
+var _ = strings.Contains // the injected test hooks may use it
+
+type cellSpec struct {
+	ID      string  `json:"id"`
+	Path    string  `json:"path"`
+	Quant   string  `json:"quant"`
+	Prompts [][]int `json:"prompts"`
+}
+
+type spec struct {
+	Backend string     `json:"backend"`
+	Steps   int        `json:"steps"`
+	Out     string     `json:"out"`
+	Cells   []cellSpec `json:"cells"`
+}
+
+type promptMeta struct {
+	Len    int   `json:"len"`
+	Steps  int   `json:"steps"`
+	Tokens []int `json:"tokens"`
+}
+
+type cellMeta struct {
+	ID         string       `json:"id"`
+	OK         bool         `json:"ok"`
+	Err        string       `json:"err,omitempty"`
+	DecodePath string       `json:"decode_path"`
+	Vocab      int          `json:"vocab"`
+	Prompts    []promptMeta `json:"prompts"`
+	LoadMS     int64        `json:"load_ms"`
+	RunMS      int64        `json:"run_ms"`
+}
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: zzgateidentity <spec.json>")
+		os.Exit(2)
+	}
+	raw, err := os.ReadFile(os.Args[1])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	var s spec
+	if err := json.Unmarshal(raw, &s); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	for _, c := range s.Cells {
+		m := runCell(s, c)
+		b, _ := json.MarshalIndent(m, "", " ")
+		if err := os.WriteFile(filepath.Join(s.Out, c.ID+".json"), b, 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		status := "ok"
+		if !m.OK {
+			status = "ERROR " + m.Err
+		}
+		fmt.Fprintf(os.Stderr, "zzgateidentity: %s: %s [%s] load %d ms, run %d ms\n", c.ID, status, m.DecodePath, m.LoadMS, m.RunMS)
+	}
+}
+
+func runCell(s spec, c cellSpec) (m cellMeta) {
+	m.ID = c.ID
+	defer func() {
+		if r := recover(); r != nil {
+			m.OK, m.Err = false, fmt.Sprintf("panic: %v", r)
+		}
+	}()
+	f, err := os.Create(filepath.Join(s.Out, c.ID+".bin"))
+	if err != nil {
+		m.Err = err.Error()
+		return m
+	}
+	defer f.Close()
+	t0 := time.Now()
+	model, err := decoder.Load(c.Path, decoder.Options{Quant: c.Quant, Backend: s.Backend})
+	m.LoadMS = time.Since(t0).Milliseconds()
+	if err != nil {
+		m.Err = "load: " + err.Error()
+		return m
+	}
+	defer model.Close()
+	m.DecodePath = model.DecodePath()
+	t1 := time.Now()
+	for _, ids := range c.Prompts {
+		pm := promptMeta{Len: len(ids)}
+		sp := decoder.SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
+			if m.Vocab == 0 {
+				m.Vocab = len(logits)
+			} else if m.Vocab != len(logits) {
+				panic(fmt.Sprintf("vocab changed mid-run: %d then %d", m.Vocab, len(logits)))
+			}
+			buf := make([]byte, 4*len(logits))
+			for i, v := range logits {
+				binary.LittleEndian.PutUint32(buf[4*i:], math.Float32bits(v))
+			}
+			//HOOK
+			if _, err := f.Write(buf); err != nil {
+				panic(err)
+			}
+			pm.Steps++
+		}}
+		ch, g := model.Generate(context.Background(), ids, s.Steps, sp)
+		for tok := range ch {
+			pm.Tokens = append(pm.Tokens, tok)
+		}
+		if err := g.Err(); err != nil {
+			m.Err = "generate: " + err.Error()
+			m.Prompts = append(m.Prompts, pm)
+			return m
+		}
+		m.Prompts = append(m.Prompts, pm)
+	}
+	m.RunMS = time.Since(t1).Milliseconds()
+	m.OK = true
+	return m
+}

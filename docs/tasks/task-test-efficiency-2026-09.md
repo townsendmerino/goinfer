@@ -435,6 +435,36 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   reference build.
 - **Kill (b):** run-to-run nondeterminism on CPU. That should be impossible under the bit-identical discipline, and
   would be a finding in its own right.
+- **(b) BUILT 2026-09-28: `go run ./cmd/gate identity <old-rev> <new-rev>`** (`cmd/gate/identity*.go`).
+  - **Mechanics:** two temporary worktrees (removed afterwards, SIGINT included), one embedded public-API dumper built
+    in each with `-trimpath`, and each family in its own process in the order new#1 → old → new#2.
+  - **Compared:** full prefill + greedy-step logits as bytes. Every `GOINFER_*` variable is stripped from both sides,
+    which closes L1's trap of an old-side env diagnostic, and each side's decode path is printed.
+  - **Verdicts:** IDENTICAL means "validation inheritable from `<old>`". DIFFERENT gives the first differing step and
+    logit, max |diff|, argmax agreement, and "goes to its reference gate". NOT RUN is listed apart.
+  - **Manifest:** it prints the row it would record and writes nothing. Recording a manifest method
+    "identity-inherited" is the owner's decision.
+  - **Determinism holds:**
+    - CPU: 120 of 120 cells byte-identical run to run. The kill criterion did not fire.
+    - Metal: 38 of 38, over 19 families.
+    - WebGPU: 80 of 80, over 30 families.
+    - A tolerance mode exists (≤ 2× a cell's own run-to-run max |diff|, argmax and tokens exact, reported WITHIN
+      TOLERANCE), but no backend here needed it.
+  - **Equivalence** (opt-in heavy tests, scratch clones, ~16 s):
+    - a comment-only edit gives all IDENTICAL;
+    - a one-ulp `Nextafter32` in the NormParallel residual flags exactly cohere and cohere2;
+    - an injected nondeterministic dumper is reported NONDETERMINISTIC, exit 1.
+
+    Each is falsified by a `gate mutation` of the comparator or the run order.
+  - **Wall, tiny assets, CPU, MacBook:** `identity HEAD~1 HEAD` took 43–46 s, 30 IDENTICAL and 7 NOT RUN (checked
+    twice). The 7 lack a tiny fixture: qwen2, qwen3, qwen3_vl, qwen2_moe, mistral, mellum (skipped by design) and
+    deepseek_v2.
+  - **Real demo, 0.5B:** L1's own change (`3cd62e6d` → `5c85f7c0`) comes back DIFFERENT from prefill logit 0, as it
+    must.
+  - **Found on the way:** Metal's `BuildResident` panics on qwen3_next's W4A8 concat. It is a real bug, not yet filed
+    or fixed.
+  - **Limits:** no CUDA backend here, and the dumper uses a LogitProcessor, so device-side greedy-argmax paths are not
+    what it compares.
 
 ### TE7 — `gate quick`: affected-only, cached, parallel tests by day *(by day)*
 

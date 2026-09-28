@@ -67,6 +67,10 @@ usage:
   gate quick [-base REF] [-files a,b] [-count1] [-j N] [-select] [-v]
                                                    the day loop: gofmt, vet, staticcheck and the tests that can
                                                    observe the diff, one go test per package in parallel (TE7)
+  gate identity <old-rev> <new-rev> [-backend cpu|metal|webgpu] [-families a,b] [-assets tiny|real]
+               [-quant q,…] [-steps N] [-only asset,…] [-keep]
+                                                   inherit validation by identity (TE6(b)): dump full logits of
+                                                   each family's parity prompt at both revs, compare bytes
   gate ledger promote --gate G --value V --by YOU  record a person's confirmation of a gate's value (B14)
   gate ledger classify --gate G                    CONFIRMED | FIRST-RUN | SOURCE-CHANGED | UNKNOWN-GATE
   gate ledger reconcile [--gates a,b]              the ledger's three checks, as the parity sweep prints them
@@ -118,6 +122,10 @@ func run(argv []string, w io.Writer) int {
 	// `quick` has its own flags (quick.go).
 	if name == "quick" {
 		return runQuick(rest, w)
+	}
+	// `identity` takes two revs as positionals, interleaved with its flags (identity.go).
+	if name == "identity" {
+		return runIdentity(rest, w)
 	}
 
 	// Split at `--`: everything after it is verbatim `go test` args, not our flags.
