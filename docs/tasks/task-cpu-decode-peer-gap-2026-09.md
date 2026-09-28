@@ -235,3 +235,43 @@ Measured on the same benchmark:
 
 The row kernel is the one the build uses: better or equal at every size. **A ~3% 0.5B regression survives**, and
 goes to the owner, as S0 said it would.
+
+### L1 build — owner decision on the 0.5B, and the build's gates (pre-registered 2026-09-27, before any production code)
+
+**Owner decision 2026-09-27:** accept the 0.5B's ~3%. f16 scales for every CPU int4 model, consistent with the GPU
+backends. The 0.5B's real bottleneck (per-token overhead, lever 2) is next, and is where that 3% is to be recovered.
+
+**Design:**
+- **aikit.** An int4 `WeightMat` stores its per-group scales as f16, and the f32 copy goes.
+  - The quantizer picks codes against the f32 scale, then rounds the scale with goinfer's `F16Bits` rule
+    (round-half-up). These are the exact weights the GPU backends serve today.
+  - The hot M=1 kernels widen a row's scales in-asm (`dotW4A8FoldF16RowAVX2` on amd64, a NEON `FCVTL` twin on arm64).
+  - Every other path (prefill tiles, split-half, VNNI, row4, per-group activations, `Row()`) widens a row's or a
+    quad's scales once into a buffer, then calls its existing f32 kernel unchanged.
+  - The f32-scale entry points stay as deprecated converters, so no aikit API is removed in v1.
+  - Released as a new aikit minor version.
+- **goinfer.**
+  - Bump aikit.
+  - A new `.giw` version whose int4 kinds carry f16 scales. The reader converts older files on load; an older binary
+    refuses the new version by the existing version check.
+  - `weightbytes` counts 2 B per scale.
+  - The GPU backends upload the f16 scales as-is: the same bits they compute today.
+  - The `GOINFER_INT4_F16_SCALES` diagnostic is deleted (the env-read list shrinks by one).
+
+**Gates:**
+1. **aikit, per path (hard).** Every W4A8 path fed f16 scales is bit-identical to its f32 path fed the same values,
+   on amd64 natively and on arm64 under qemu. Each path carries a mutation check that a one-ulp scale change moves the
+   output.
+2. **goinfer, cross-build (hard).** CPU int4 logits from the new build equal the old build's with
+   `GOINFER_INT4_F16_SCALES=1`, bit for bit: 48 decode steps on the 0.5B / 1.5B / 7B, plus a 600-token prefill.
+3. **GPU backends unchanged (hard).** The CUDA tagged suite and heavy parity pass, and CUDA decode logits are
+   bit-identical before and after the change. Metal and WebGPU get the same check on the Mac.
+4. **Goldens.** CPU int4 numerics change by design (f16-rounded scales).
+   - The affected CPU int4 goldens and parity-manifest entries are re-validated through the manifest's numeric
+     procedure, not refreshed as non-numeric.
+   - Every f32, int8 and GPU golden must be unchanged.
+5. **Served speed** (`bench_peer.py`, same session, new vs old vs Ollama, CPU, depth 128, 3 runs):
+   - **SHIP (default)** if the new ÷ old ratio is ≥ 1.03× on the 1.5B and the 7B, and ≥ 0.95× on the 0.5B (the
+     owner-accepted cost).
+   - Anything else goes to the owner, with the numbers.
+6. **arm64 speed** is measured on the Mac before its default is claimed. The prompt is handed over, not assumed.
