@@ -7,8 +7,17 @@
 > device-bound complement of [`task-ci-speed-2026-09.md`](../completed/task-ci-speed-2026-09.md) (C0–C9), whose §4 left
 > exactly this out: "`go run ./cmd/gate` on a real box stays the correctness gate."
 >
-> **Done 2026-09-28:** TE9, the timing lock (`scripts/timing_lock.py`), and TE5(a), the two-arm rule in `CLAUDE.md`. See
-> each item for its proof.
+> **Done 2026-09-28 (the §6 first moves):**
+> - TE9, the timing lock (`scripts/timing_lock.py`), and TE5(a), the two-arm rule in `CLAUDE.md`.
+> - TE0's Mac transcript miner. Waiting is the largest class, 66.5 h in 30 days.
+> - The analysis trio:
+>   - TE2(b): a null, so restarts stay the unit;
+>   - TE4: SEQ-v1 killed by its replay, on order sensitivity;
+>   - TE5(b): killed as written, survives if only resolved rows count; the owner decides.
+> - TE7(b): `decoder` does cache, and C7's claim is retracted.
+> - TE1: built and queued for tonight (`te1-aa-mutation`, ~75 min).
+>
+> Owed: TE0 on nobara. See each item for its proof.
 
 ## BLUF
 
@@ -206,7 +215,9 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
     burning (3.5 CPU-s in the window). It did not flag the idle resident Ollama.
 - **Pre-registration (2026-09-28, before queueing; the Mac's first night).**
   - **Run:** `run-te1-aa-mutation.sh`, graded by `te1_analyze.py`, both in `measurements/test-efficiency-2026-09/`.
-    - The binary is pinned: `serve-cpu-b9fcde67` in both arms (A/A).
+    - The binary is pinned: `serve-cpu-b9fcde67` in both arms (A/A). It was built at `b9fcde67`, which the push
+      rebased to `0607f30b`. The commits between touch only `cuda/` tests and a log, no non-test Go file, so the
+      binary is exactly `0607f30b`'s.
     - CPU, 0.5B / 1.5B / 7B, 3 runs, two arms.
     - Four sweeps interleaved (load, instant, load, instant), then a mutation per gate.
   - **Mutation:** an every-core CPU hog for 90 s, started the moment cell 1's record lands, so while the harness is in
@@ -244,6 +255,30 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   - *Band:* a documented null (restarts are the right unit), or −20–40% of cells.
 - **Kill:** (a) the excess is prefill, or cutting start-up moves decode beyond A/A; (b) between-restart variance is
   ≥ half the total.
+- **(b) RESULT 2026-09-28: a documented null for the −20–40% band; restarts stay the unit.**
+  [`te2b_variance.py`](../measurements/test-efficiency-2026-09/te2b_variance.py) and
+  `te2b-variance-2026-09-28.md`, from existing JSONs only.
+  - **Data:** 820 usable cells from 45 files in 25 sessions; 108 replicated cell groups, 362 restarts, 7,072
+    completions.
+  - **Two corrections the automatic key needed.** The prompt set is part of a cell's identity (essay-v2 moved one
+    Ollama cell 195.1 → 183.0). 30 arm files had to stay file-local, because their treatment is not in the record.
+    Without both, both machines read ~90% between-restart, a false kill.
+  - **Read as the item states it** (the restart share of a run mean's variance): nobara 0% (90% bootstrap 0–66),
+    the Mac 67% (30–85). So it splits by machine.
+  - **With session drift separated,** the restart term inside one session is small: nobara 0% (0–33), the Mac 31%
+    (0–66). Most of "between restarts" is **between sessions**: 69% of a Mac run mean's variance, 20% of nobara's.
+    That is `CLAUDE.md`'s same-session interleaving rule, measured.
+  - **Trading restarts for completions saves nothing** at goinfer's measured in-session restart term (0.35% sd):
+    2 restarts × 3 runs is already the cheapest design. Only if the term were zero would 1 × 6 save 29–35% (restarts
+    priced dear) or 3–11% (priced cheap). No record has an in-session 1.5B/7B CUDA goinfer replicate to tell those
+    apart.
+  - **On the Mac CPU, more completions per restart is the wrong lever.** Rates fall within one server lifetime
+    (goinfer 7B down to −26.7%, plausibly thermal). TE2(a)'s "keep the server up" is unsafe there, and for MoE (one
+    M35 lifetime +29.6%, one M26 −22.1%).
+  - **Open for TE3:** nobara's same-build cross-session pairs differ by a median 0.15% (p90 0.99%), far under
+    `CLAUDE.md`'s ~3.5% session drift.
+  - **Night job to settle the in-session term, not queued:** 1.5B/7B CUDA goinfer, one build, 4 restarts × 6 runs in
+    one session, pre-registered first.
 
 ### TE3 — A noise registry, and a power check before any gate is registered *(by day)*
 
@@ -283,6 +318,24 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   in-test gates that loop over prompts.
 - **Band:** −40–60% wall on gates whose answer isn't close; unchanged on close ones, which is where the time belongs.
 - **Kill:** the replay disagrees on more than 5% of gates, flips any FAIL, or saves less than 25%.
+- **Replay RESULT 2026-09-28: TE4-SEQ-v1 is KILLED by its pre-registered replay.**
+  [`te4_replay.py`](../measurements/test-efficiency-2026-09/te4_replay.py) and `te4-replay-2026-09-28.md`. The rule
+  was fixed at 10:46, before the script existed.
+  - **The rule:** a completion-paired log ratio, Lan–DeMets O'Brien–Fleming spending (two-sided α 0.05, t scale),
+    a look after every run pair, and a δ = 0.022 allowance on served gates.
+  - **The gates:** 18 eligible — 4 served new-vs-old, 8 served peer, 3 in-process ABBA, and 3 q4k lever gates. All
+    93 graded sub-gates reproduce their recorded label at the cap.
+  - **Agreement 17/18 (94.4%),** under the ≥ 95% bar. With n = 18, one gate is 5.6%, so the kill is provisional on
+    the count.
+  - **In recorded order:** no FAIL → PASS, and 29.9% of cell-runs saved (40.7% on graded cells).
+  - **The disqualifying finding is order sensitivity.** Peer-claim cell i is the Mac CPU 0.5B against Ollama, and
+    Ollama moved 125.2 → 93.7 / 93.1 tok/s between runs, a shift no within-run interval sees. In 2 of its 6 run
+    orders the rule stops at run 2 and calls goinfer AHEAD. Every other gate agrees in every order, all 960
+    in-process orders included.
+  - **Neither alternative removes the bad orders:** δ = 0 (V0, pre-registered), or a variant designed afterwards (no
+    stop before run 2; recorded as not a validation).
+  - **What a v2 needs:** a between-run noise allowance from TE3's registry and ABBA blocks within the pass (TE4's own
+    design), validated on gates not used here.
 
 ### TE5 — The cheapest instrument that answers the question *(a rule now; calibration by day)*
 
@@ -305,6 +358,24 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
 - **Band:** −25–33% of cells on goinfer-vs-goinfer served gates from (a), immediately; a daytime kernel verdict in
   ≤ 5 min from (b).
 - **Kill (b):** any sign disagreement for a kernel-local change. The in-process lane then stays exploratory.
+- **(b) Calibration RESULT 2026-09-28: killed as written, and survives if only resolved rows count. Which reading
+  applies is the owner's call.** [`te5b_concordance.py`](../measurements/test-efficiency-2026-09/te5b_concordance.py)
+  and `te5b-concordance-2026-09-28.md`, from existing records only.
+  - **Coverage:** 142 candidate changes examined, 42 in the table as 87 rows, with 100 exclusions each given a
+    reason. Tier 1 (same-session served A/B, the change alone) is 65 rows over 29 changes.
+  - **Sign:** point estimates agree in 84/87 rows. Where both sides resolve a direction, 77/78 agree, and 37/37 of
+    the tier-1 kernel-local rows (45/45 over both tiers).
+  - **The one resolved disagreement is outside the kernel:** G26's sampler microbenchmark (0.810× in-process against
+    1.085× served), for the reason its own record names.
+  - **Strict reading, KILL.** Three tier-1 kernel-local rows fail because one side did not resolve a direction: the
+    L1 0.5B at 0.968× with 3 of 5 pairs below 1, and two ~2–3% effects with no recorded spread.
+  - **Resolved-only reading, no kill.**
+  - **Magnitude.** A whole-token in-process A/B gives k = ln(served)/ln(in-process) with a median of 0.97, range
+    0.60–1.08, on the kernel-local rows; 21/23 are within 1.25×. A kernel-only bench gives direction, not size
+    (k 0.05–1.72, median 0.55).
+  - **If the owner takes the resolved-only reading,** the supported flow is: a whole-token in-process A/B by day when
+    it resolves a direction; anything unresolved goes to the served gate at night.
+  - **The table cannot see false negatives:** a change the in-process A/B wrongly killed never got a served run.
 - **(a) DONE 2026-09-28:** the rule is in root `CLAUDE.md` § Run budget ("Two arms when the decision is new ÷ old").
   There is no separate `run-*.sh` template file to change; each campaign's script sets `BENCH_ENGINES`, so the rule
   goes where those scripts are written.
@@ -363,6 +434,20 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   - the selection never drops a package that `go list -deps -test` says depends on the change.
 - **Kill (b) only:** if the in-tree cause cannot be removed without restructuring tests, caching stays a per-package
   bonus that nothing relies on.
+- **(b) RESULT 2026-09-28: `decoder` caches, so there is nothing to fix.** Two back-to-back
+  `GODEBUG=gocachetest=1 go test ./decoder/` runs on the MacBook:
+  - run 1 saved the result (310 s);
+  - run 2 replayed it: `ok … decoder (cached)` in 2 s, with the same test ID and the same input ID.
+
+  34 `decoder` test files call `t.TempDir()`, and no file inside the module was written during run 1. C7's
+  "permanently uncacheable" is retracted in place, in `task-ci-speed-2026-09.md`.
+  - **What re-runs `decoder` in practice:** `-count=1`, any Go change reaching the package (a new test binary is a new
+    test ID), and changed env vars or module files the tests read. A day loop that drops `-count=1` for a
+    reproducible check replays an unchanged `decoder` in seconds instead of ~5 min.
+  - **Found on the way:** the first attempt at these runs failed on `TestDecodeParityInt4`. Its int4 golden had been
+    red on arm64 since L1's merge (`5c85f7c0`) and nobody had seen it. It is re-captured in its own commit: the new
+    ids are exactly the pre-L1 build's with f16-rounded scales, and agreement with f32 is unchanged at 11/24. A
+    failing package is never cached, so TE7(b) could not have been measured until it was fixed.
 
 ### TE8 — Measurement gates that live in `go test`: resumable, reference-cached, right-sized *(per gate)*
 
