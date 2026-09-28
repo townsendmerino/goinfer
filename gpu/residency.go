@@ -108,6 +108,17 @@ type residentDecoder struct {
 	newRunner func() (*DecodeRunner, error)
 	batch     []*DecodeRunner
 
+	// runnerFor builds a DecodeRunner over a given runModel (newRunner is runnerFor(rd.rm)); buildKVSlots uses it for
+	// the slots beyond the first, whose runModels share rd.rm's weights and own their KV.
+	runnerFor func(rm runModel) (*DecodeRunner, error)
+
+	// MC1 (docs/tasks/task-concurrency-2026-09.md, gpu/kv_slots.go): the resident KV slots, nil with one. slots[kvSlot]
+	// is the bound slot, and rm / runner / batch above are always ITS — every method keeps reading those, so binding a
+	// slot is swapping the three. adapter is what SetAdapter last bound, so a switch can move it to the new runner.
+	slots   []webgpuKVSlot
+	kvSlot  int
+	adapter []decoder.ResidentAdapterLayer
+
 	// prefillLast is decoder.Prefiller's batched-M forward (task-gpu-batched-
 	// prefill.md), captured as a closure over BuildResident's hidden/nH/inter/eps/
 	// scale/addOne locals the same way newRunner is — rd.rm (not a snapshot: this
@@ -180,6 +191,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	avail0 := availBeforeBuild(m) // MC1: read before the first upload (darwinKVSlots)
 	c := b.ctx
 	w := m.Weights()
 	hidden, _, nH, nKV, hd, inter, vocab := m.Dims() // arch-backed (Cfg may be zero for GGUF/.giw)
@@ -1150,9 +1162,10 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	if mlaOK { // MLA scores over qk_head_dim, not HeadDim — use the resolved score scale
 		scale = float32(mlaAttnScale)
 	}
-	rd.newRunner = func() (*DecodeRunner, error) {
-		return c.newDecodeRunner(rd.rm, hidden, nH, nKV, hd, inter, 0, eps, scale, addOne)
+	rd.runnerFor = func(rm runModel) (*DecodeRunner, error) {
+		return c.newDecodeRunner(rm, hidden, nH, nKV, hd, inter, 0, eps, scale, addOne)
 	}
+	rd.newRunner = func() (*DecodeRunner, error) { return rd.runnerFor(rd.rm) }
 	rd.prefillLast = func(xs [][]float32, startPos int) ([]float32, error) {
 		mw, ok := runModelToModelW(&rd.rm, hd)
 		if !ok {
@@ -1183,6 +1196,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		return fail(err)
 	}
 	rd.runner = runner
+	rd.buildKVSlots(m, kvSlotsRequest(m, &rd.rm), avail0)
 	return rd, true, nil
 }
 
@@ -1389,8 +1403,15 @@ func (rd *residentDecoder) TruncateTo(pos int) {}
 // (never ForwardN), and ForwardN's batched verify runners (rd.batch) are speculative-decode-only
 // — a path this backend's G3 wiring, like Metal's, does not cover (see gpu/lora.go's file
 // comment for the scope this shares with the CPU compute-time LoRA restriction itself).
+// It is recorded as well, because generateInto binds it BEFORE acquiring a KV slot and
+// UseKVSlot must move it onto the new slot's runner (MC1). A failed bind leaves none bound.
 func (rd *residentDecoder) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
-	return rd.runner.SetAdapter(layers)
+	rd.adapter = nil
+	if err := rd.runner.SetAdapter(layers); err != nil {
+		return err
+	}
+	rd.adapter = layers
+	return nil
 }
 
 // UploadKV writes a layer's post-RoPE K and raw V into the resident caches at absolute
@@ -1483,16 +1504,23 @@ func (rd *residentDecoder) Reset() {
 func (rd *residentDecoder) Close() error { rd.release(); return nil }
 
 func (rd *residentDecoder) release() {
-	// batch[0] aliases rd.runner; release the extra verify runners (batch[1:]) — they
-	// own scratch but share rm's weights/KV (freed via rd.keep below).
-	for i := 1; i < len(rd.batch); i++ {
-		rd.batch[i].Release()
+	// Every KV slot's runner and verify pool (MC1); the bound slot's are rd.runner / rd.batch.
+	slots := rd.slots
+	if slots == nil {
+		slots = []webgpuKVSlot{{}}
 	}
-	rd.batch = nil
-	if rd.runner != nil {
-		rd.runner.Release()
-		rd.runner = nil
+	slots[rd.kvSlot].runner, slots[rd.kvSlot].batch = rd.runner, rd.batch
+	for _, s := range slots {
+		// batch[0] aliases the slot's runner; release the extra verify runners (batch[1:]) —
+		// they own scratch but share the slot's weights/KV (freed via rd.keep below).
+		for i := 1; i < len(s.batch); i++ {
+			s.batch[i].Release()
+		}
+		if s.runner != nil {
+			s.runner.Release()
+		}
 	}
+	rd.slots, rd.kvSlot, rd.batch, rd.runner, rd.adapter = nil, 0, nil, nil, nil
 	for _, v := range slices.Backward(rd.keep) {
 		v()
 	}

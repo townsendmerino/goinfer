@@ -430,8 +430,8 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:301` | goinfer | `// SetImageBlocks/attendHi), the resident twin of prefillLogitsVL's CPU forward` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:303` | goinfer | `// paying for the CPU prefill; without it — or on any decline from it — that turn falls ` |
 | `docs/tasks/task-gpu-paths-2026-09.md|decoder/residency.go:339` | goinfer | `// resident-capability-gap discipline as every other optional extension here) — Generate` |
-| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1136` | goinfer | `rl.hasSink = true` |
-| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:578` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
+| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:1148` | goinfer | `rl.hasSink = true` |
+| `docs/tasks/task-gpu-paths-2026-09.md|gpu/residency.go:590` | goinfer | `return nil, fmt.Errorf("gpu: MoE residency int4 group %d != %d", group, w4a8GroupSize)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/loadflags/loadflags.go:91` | goinfer | `MoECacheSlots:    f.MoECacheSlots,` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/main.go:895` | goinfer | `return fmt.Errorf("--adapter %q: name collides with a loaded model", spec.name)` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1308` | goinfer | `var gen *decoder.Generation` |
