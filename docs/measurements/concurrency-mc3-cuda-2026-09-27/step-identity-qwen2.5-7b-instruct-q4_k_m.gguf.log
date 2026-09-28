@@ -1,0 +1,11 @@
+=== RUN   TestCUDAStepBatch_matchesForward
+=== RUN   TestCUDAStepBatch_matchesForward/qwen2.5-7b-instruct-q4_k_m.gguf
+cuda: resident context 5135, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5057, trimmed from 5135 at the build, so the 4 requested KV slots fit beside the weights (2597 MB free, less 384 MB reserved)
+    batchstep_test.go:117: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [120 2200])
+    batchstep_test.go:117: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [120 2200 700])
+    batchstep_test.go:117: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [120 2200 700 64])
+--- PASS: TestCUDAStepBatch_matchesForward (35.42s)
+    --- PASS: TestCUDAStepBatch_matchesForward/qwen2.5-7b-instruct-q4_k_m.gguf (35.42s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	35.491s

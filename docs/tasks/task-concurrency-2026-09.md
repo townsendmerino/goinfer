@@ -38,10 +38,11 @@
 >     ([`concurrency-mc3c-s1-2026-09-27.md`](../measurements/concurrency-mc3c-s1-2026-09-27.md));
 > - MC3 follow-ons: ~~the 7B's batched-step cost~~ — S4 shipped 2026-09-27, 2 clients 1.121× on the 7B and 1.059× on the
 >   1.5B (B ≥ 3 keeps the fragment: no bit-identical kernel beats it); ~~encode-ahead~~ — parked on its measured
->   headroom (~4% / ~1.3%); a per-pass prefill cost cut (the served gap's main term, estimated); **CUDA: S0 done 2026-09-27, worth
->   building** ([`concurrency-mc3-cuda-s0-2026-09-27.md`](../measurements/concurrency-mc3-cuda-s0-2026-09-27.md)). A
->   batched pass through the exact kernels is bit-identical to decode per row, and 1.75× (1.5B) / 2.04× (7B) cheaper
->   than 4 decodes with every row's logits; the build needs its own pre-registration;
+>   headroom (~4% / ~1.3%); a per-pass prefill cost cut (the served gap's main term, estimated); ~~CUDA~~ — **SHIPPED 2026-09-27**
+>   (`7a44a58e`; [`concurrency-mc3-cuda-2026-09-27.md`](../measurements/concurrency-mc3-cuda-2026-09-27.md)). All five
+>   W7 gates pass on the 1.5B: 4 clients 1.380× the one-at-a-time build, p99 turn 0.755×, a lone request 1.004× /
+>   0.999×, every reply identical. The 7B reads 1.826× at 4 clients. It is on under serve's defaults. Follow-on
+>   levers (estimated): per-call scratch in `prefillCore`, and a batched head proven bit-identical;
 > - ~~the 7B end to end~~ — done 2026-09-27: all five W7 gates pass, 4 clients at 1.785× the serialized build, p99 turn
 >   0.592× ([`concurrency-mc3-7b-w7-2026-09-27.md`](../measurements/concurrency-mc3-7b-w7-2026-09-27.md));
 > - ~~MC1 on CUDA~~ — shipped 2026-09-27: 4 clients at 1.250× the one-slot build, every hard gate passes
@@ -665,6 +666,16 @@ request, the default shape of most chat clients, got no batching at all.
 `roadmap.md` §"Decided and parked," `docs/server.md`, red-october R12's row, `QUEUE.md`.
 
 ### MC3 on CUDA — design, correctness gates and W7 grading (pre-registered 2026-09-27, before any code)
+
+**Result, 2026-09-27: SHIPS** (`7a44a58e`,
+[`concurrency-mc3-cuda-2026-09-27.md`](../measurements/concurrency-mc3-cuda-2026-09-27.md)).
+- Every correctness gate passes. That includes a 2200-key sequence on the flash-decode lane inside a step, and the
+  concurrent run against each conversation alone, greedy and sampled, on the tiny fixtures, the 1.5B and the 7B.
+- W7 on the 1.5B: gates 1–2 identical; 4 clients **1.380×** (218.0 → 300.6 tok/s); p99 turn **0.755×**; a lone
+  request **1.004× / 0.999×** (p50 / p99).
+- Reported: 2 clients 1.085×; the 7B at 4 clients 1.826× (p99 0.573×, every turn identical); 99.8% of 4-client tokens
+  ran in 4-row steps.
+- On under serve's defaults, per the table below.
 
 **Why now.** The S0 ([`concurrency-mc3-cuda-s0-2026-09-27.md`](../measurements/concurrency-mc3-cuda-s0-2026-09-27.md))
 found both halves:

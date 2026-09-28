@@ -1,0 +1,18 @@
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone/greedy
+cuda: resident context 5135, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5057, trimmed from 5135 at the build, so the 4 requested KV slots fit beside the weights (2597 MB free, less 384 MB reserved)
+cuda: resident context 5135, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5057, trimmed from 5135 at the build, so the 4 requested KV slots fit beside the weights (2597 MB free, less 384 MB reserved)
+    batchstep_test.go:220: runs 76, steps 75 (tokens 287), solo tokens 1, straggler runs 0, step sizes [0 0 3 7 65]
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone/sampled
+cuda: resident context 5135, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5057, trimmed from 5135 at the build, so the 4 requested KV slots fit beside the weights (2597 MB free, less 384 MB reserved)
+cuda: resident context 5135, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5057, trimmed from 5135 at the build, so the 4 requested KV slots fit beside the weights (2597 MB free, less 384 MB reserved)
+    batchstep_test.go:220: runs 77, steps 72 (tokens 283), solo tokens 5, straggler runs 0, step sizes [0 0 0 5 67]
+--- PASS: TestCUDAStepBatch_concurrentMatchesAlone (119.85s)
+    --- PASS: TestCUDAStepBatch_concurrentMatchesAlone/greedy (60.02s)
+    --- PASS: TestCUDAStepBatch_concurrentMatchesAlone/sampled (59.77s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	120.057s

@@ -1,0 +1,9 @@
+=== RUN   TestCUDAStepBatch_matchesForward
+=== RUN   TestCUDAStepBatch_matchesForward/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    batchstep_test.go:117: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [120 2200])
+    batchstep_test.go:117: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [120 2200 700])
+    batchstep_test.go:117: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [120 2200 700 64])
+--- PASS: TestCUDAStepBatch_matchesForward (10.68s)
+    --- PASS: TestCUDAStepBatch_matchesForward/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (10.68s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	10.742s

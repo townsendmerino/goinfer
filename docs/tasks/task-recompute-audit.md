@@ -135,7 +135,7 @@ positions are inherent, not recompute.
 - **Where:** `decoder/resident_reuse.go:125` — `if m.hasRecurrentState() {`, added
   2026-09-02 after repeated identical greedy prompts on qwen3.6-35B-A3B decoded from the previous
   generation's tail state. `decoder/forwardn.go:197-134` is the shared predicate;
-  `cuda/resident.go:470` holds the per-layer `dnWin`/`dnState` that are mutated in place and
+  `cuda/resident.go:469` holds the per-layer `dnWin`/`dnState` that are mutated in place and
   re-zeroed only at pos 0.
 - **What the staged path already does, and the resident path should copy:** the CPU `Session`
   reuses through `rewindForReuse` (`decoder/session.go:73-80`) → `KVCache.TruncateTo`
@@ -214,7 +214,7 @@ positions are inherent, not recompute.
   (per-layer or one arena) so `CopyDeviceBatch`'s adjacent-pair coalescing actually collapses them —
   spec/09 measured this specific gap costing 2× (174 vs 347 GB/s on a synthetic probe; the REAL,
   interleaved layout measured even worse, 65 GB/s in situ). CUDA's `DeltaNet` layer holds
-  `dnWin`+`dnState` at `cuda/resident.go:470`; Metal has the same `CopyDeviceBatch` available.
+  `dnWin`+`dnState` at `cuda/resident.go:469`; Metal has the same `CopyDeviceBatch` available.
   WebGPU is NOT covered by this plumbing at all -- its `dnState` lives in `gpu/decoderunner.go`
   (`*wgpu.Buffer`, transposed `[nv*hv*hk]` relative to the CPU's `[hk,hv]`) and would need its own
   copy path; not scoped here.

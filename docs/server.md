@@ -118,9 +118,15 @@ for all of them. Every reply is bit-identical either way, and a lone request tak
   speculative decode and vision.
 - The banner's concurrency line says which mode runs, and serve logs the batcher's step counts at shutdown.
 
-**On Metal, a dense resident model batches concurrent generations** (MC3, 2026-09-26). Under the same flag, each
-running generation holds its own resident KV slot (`--kv-sessions` sets the count, 4 by default). Their decode tokens
-run together in one step on the GPU's matrix units, every logit bit-identical to serving that conversation alone.
+**On Metal and CUDA, a dense resident model batches concurrent generations** (MC3: Metal 2026-09-26, CUDA
+2026-09-27). Under the same flag, each running generation holds its own resident KV slot (`--kv-sessions` sets the
+count, 4 by default). Their decode tokens run together in one step on the GPU, every logit bit-identical to serving
+that conversation alone.
+- On CUDA (RTX 2070 SUPER, W7, 4 clients): qwen2.5-coder-1.5b reads 1.38× the one-at-a-time build, with p99 per turn
+  from 2.68 s to 2.02 s. qwen2.5-7b-instruct reads 1.83×, with p99 from 7.2 s to 4.1 s. A lone request is unchanged.
+  - Greedy and sampled requests both batch.
+  - Long prompts that arrive mid-decode are prefilled in chunks, as on Metal.
+  - The bullets below are Metal's, except where they say CUDA. See `measurements/concurrency-mc3-cuda-2026-09-27.md`.
 - Measured on qwen2.5-coder-1.5b (W7, 4 clients): 1.59× the serialized aggregate, and p99 per turn from 7.1 s to
   4.7 s; a lone request is unchanged. See `measurements/concurrency-mc3-2026-09-26.md`.
 - Greedy and temperature-only sampled requests both batch; the latter at 1.62× at 4 clients
@@ -333,8 +339,8 @@ takes an empty slot, else the least recently used one. A slot that shares only a
 prompt is never truncated to serve it. With `--max-concurrent` above 1, a dense model's generations also run at once,
 one per slot (MC3, above). The memory guard clamps N to what fits
 (each slot is the full KV at the resident context, e.g. ~117 MB for Qwen2.5-1.5B at 4k on Metal, 448 MB at 8k in
-CUDA's f32 KV), and the banner says what it allocated. On CUDA the generations still run one at a time; the slots only
-stop interleaved conversations from evicting each other (qwen2.5-coder-1.5b, 4 clients: 1.25× the one-slot build,
+CUDA's f32 KV), and the banner says what it allocated. On CUDA the slots alone, before MC3 batched the generations,
+stopped interleaved conversations from evicting each other (qwen2.5-coder-1.5b, 4 clients: 1.25× the one-slot build,
 `measurements/concurrency-mc1-cuda-2026-09-27.md`).
 - **On CUDA, slots come before context** (owner decision 2026-09-27). When `--ctx` is not set, fit by default gives up
   context, down to 4096, until every requested slot fits, and it logs the shrink. Below 4096 the slots are clamped

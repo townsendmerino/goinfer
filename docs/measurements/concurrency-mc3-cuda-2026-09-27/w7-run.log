@@ -1,0 +1,103 @@
+18:59:09 == MC3-CUDA W7 start; tree 7a44a58e; old 01bcb640 new 7a44a58e; driver 595.91.07; gpu baseline 639MiB, 1 compute proc(s); 2.05 2.57 2.00 2/892 1544035
+18:59:09 waiting for idle: load1=2.05 gpu_used=639MiB procs=1 (0s)
+18:59:14 idle: load1=1.89 gpu_used=639MiB compute_procs=1
+18:59:14 cell old4_1 clients=4 bin=serve-cuda-01bcb640 model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] old4_1 clients=4 starting fresh server
+[w7-plain] old4_1 clients=4: wall=14.106s aggregate=217.78 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+18:59:31 idle: load1=1.92 gpu_used=639MiB compute_procs=1
+18:59:31 cell new4_1 clients=4 bin=serve-cuda-7a44a58e model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 1 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] new4_1 clients=4 starting fresh server
+[w7-plain] new4_1 clients=4: wall=10.217s aggregate=300.67 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+18:59:45 idle: load1=1.88 gpu_used=639MiB compute_procs=1
+18:59:45 cell new4_2 clients=4 bin=serve-cuda-7a44a58e model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 2 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] new4_2 clients=4 starting fresh server
+[w7-plain] new4_2 clients=4: wall=10.244s aggregate=299.89 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+18:59:58 waiting for idle: load1=2.94 gpu_used=639MiB procs=1 (0s)
+19:00:23 idle: load1=1.94 gpu_used=639MiB compute_procs=1
+19:00:23 cell old4_2 clients=4 bin=serve-cuda-01bcb640 model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 3 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] old4_2 clients=4 starting fresh server
+[w7-plain] old4_2 clients=4: wall=14.092s aggregate=218.0 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+19:00:41 waiting for idle: load1=2.40 gpu_used=639MiB procs=1 (0s)
+19:00:56 idle: load1=1.87 gpu_used=639MiB compute_procs=1
+19:00:56 cell old4_3 clients=4 bin=serve-cuda-01bcb640 model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 4 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] old4_3 clients=4 starting fresh server
+[w7-plain] old4_3 clients=4: wall=14.079s aggregate=218.19 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+19:01:14 waiting for idle: load1=2.07 gpu_used=639MiB procs=1 (0s)
+19:01:19 idle: load1=1.90 gpu_used=639MiB compute_procs=1
+19:01:19 cell new4_3 clients=4 bin=serve-cuda-7a44a58e model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 5 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] new4_3 clients=4 starting fresh server
+[w7-plain] new4_3 clients=4: wall=10.204s aggregate=301.07 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+19:01:32 waiting for idle: load1=2.40 gpu_used=639MiB procs=1 (0s)
+19:01:47 idle: load1=1.87 gpu_used=639MiB compute_procs=1
+19:01:47 cell old1_1 clients=1 bin=serve-cuda-01bcb640 model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 6 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] old1_1 clients=1 starting fresh server
+[w7-plain] old1_1 clients=1: wall=3.565s aggregate=215.43 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+19:01:54 idle: load1=1.81 gpu_used=639MiB compute_procs=1
+19:01:54 cell new1_1 clients=1 bin=serve-cuda-7a44a58e model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 7 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] new1_1 clients=1 starting fresh server
+[w7-plain] new1_1 clients=1: wall=3.58s aggregate=214.54 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+19:02:01 idle: load1=1.91 gpu_used=639MiB compute_procs=1
+19:02:01 cell new1_2 clients=1 bin=serve-cuda-7a44a58e model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 8 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] new1_2 clients=1 starting fresh server
+[w7-plain] new1_2 clients=1: wall=3.584s aggregate=214.28 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+19:02:08 idle: load1=1.75 gpu_used=639MiB compute_procs=1
+19:02:08 cell old1_2 clients=1 bin=serve-cuda-01bcb640 model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 9 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] old1_2 clients=1 starting fresh server
+[w7-plain] old1_2 clients=1: wall=3.583s aggregate=214.34 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+19:02:15 idle: load1=1.64 gpu_used=639MiB compute_procs=1
+19:02:15 cell old1_3 clients=1 bin=serve-cuda-01bcb640 model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 10 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] old1_3 clients=1 starting fresh server
+[w7-plain] old1_3 clients=1: wall=3.568s aggregate=215.25 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+19:02:22 idle: load1=1.75 gpu_used=639MiB compute_procs=1
+19:02:22 cell new1_3 clients=1 bin=serve-cuda-7a44a58e model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 11 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] new1_3 clients=1 starting fresh server
+[w7-plain] new1_3 clients=1: wall=3.57s aggregate=215.13 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+19:02:29 idle: load1=1.69 gpu_used=639MiB compute_procs=1
+19:02:29 cell old2_1 clients=2 bin=serve-cuda-01bcb640 model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 12 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] old2_1 clients=2 starting fresh server
+[w7-plain] old2_1 clients=2: wall=7.059s aggregate=217.59 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+19:02:39 idle: load1=1.96 gpu_used=639MiB compute_procs=1
+19:02:39 cell new2_1 clients=2 bin=serve-cuda-7a44a58e model=qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 13 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+[w7-plain] new2_1 clients=2 starting fresh server
+[w7-plain] new2_1 clients=2: wall=6.503s aggregate=236.18 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7.json
+19:02:48 == reported: the 7B, 4 clients, one pair
+19:02:48 waiting for idle: load1=2.05 gpu_used=639MiB procs=1 (0s)
+19:02:54 idle: load1=1.88 gpu_used=639MiB compute_procs=1
+19:02:54 cell old7b4_1 clients=4 bin=serve-cuda-01bcb640 model=qwen2.5-7b-instruct-q4_k_m.gguf
+[w7-plain] old7b4_1 clients=4 starting fresh server
+[w7-plain] old7b4_1 clients=4: wall=41.494s aggregate=74.03 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7-7b.json
+19:03:49 idle: load1=1.68 gpu_used=639MiB compute_procs=1
+19:03:49 cell new7b4_1 clients=4 bin=serve-cuda-7a44a58e model=qwen2.5-7b-instruct-q4_k_m.gguf
+[w7-plain] resuming: 1 cell(s) already in /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7-7b.json
+[w7-plain] new7b4_1 clients=4 starting fresh server
+[w7-plain] new7b4_1 clients=4: wall=22.729s aggregate=135.16 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /home/francis/goinfer-bench/mc3-cuda-2026-09-27/w7-7b.json
+19:04:22 == DONE

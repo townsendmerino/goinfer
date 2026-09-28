@@ -1,0 +1,10 @@
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone/greedy
+    batchstep_test.go:220: runs 74, steps 72 (tokens 286), solo tokens 2, straggler runs 0, step sizes [0 0 0 2 70]
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone/sampled
+    batchstep_test.go:220: runs 77, steps 74 (tokens 285), solo tokens 3, straggler runs 0, step sizes [0 0 2 7 65]
+--- PASS: TestCUDAStepBatch_concurrentMatchesAlone (36.68s)
+    --- PASS: TestCUDAStepBatch_concurrentMatchesAlone/greedy (18.35s)
+    --- PASS: TestCUDAStepBatch_concurrentMatchesAlone/sampled (18.22s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	36.765s

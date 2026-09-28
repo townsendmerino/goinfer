@@ -1,0 +1,2 @@
+7B 4 clients, old7b4_1 vs new7b4_1: 24 turns compared, 0 differ in content or prefilled tokens
+7B 4 clients: aggregate old 74.03 new 135.16 = 1.826x; p50 old 6.84 new 3.75 s; p99 old 7.22 new 4.14 s = 0.573x

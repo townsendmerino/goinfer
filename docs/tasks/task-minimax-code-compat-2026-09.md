@@ -41,7 +41,7 @@
    `--context-limit`, and sends its system prompt (`packages/local-runtime-v2/assets/agents/_default/prompt-base-all.md`
    alone is 7.7 KB) plus the tool schemas on every turn — roughly 5–8k tokens before the first user
    message, by estimate from the files (M0 measures it). goinfer's resident defaults are 4096 on Metal
-   (`metal/model.go:23`) and 4096→8192 fit on CUDA (`cuda/resident.go:49`). The first turn may not fit;
+   (`metal/model.go:23`) and 4096→8192 fit on CUDA (`cuda/resident.go:48`). The first turn may not fit;
    the second almost certainly will not. It does not read goinfer's `/v1/models` `context_window`.
 2. **Thinking models answer the connection test slowly.** `--use` sends a **non-streaming** `ping` with
    `max_tokens` = the configured output limit (default 16,384) and a **10 s** timeout

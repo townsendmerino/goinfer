@@ -1,0 +1,90 @@
+=== RUN   TestBatchedVsDecodeGap
+    batched_decode_gap_test.go:94: startPos=0:  mism=0/151936 maxΔ=0
+    batched_decode_gap_test.go:99: startPos=32: mism=0/151936 maxΔ=0  (the latent gap — informational, blocks bit-identical spec-decode)
+--- PASS: TestBatchedVsDecodeGap (8.04s)
+=== RUN   TestFlashDecode_defaultOnRealResident
+=== RUN   TestFlashDecode_defaultOnRealResident/unset_is_ON
+    flash_decode_default_hw_test.go:51: default: lane ON, S=16, floor=2048 keys, verify lane=true
+=== RUN   TestFlashDecode_defaultOnRealResident/=0_is_OFF
+=== RUN   TestFlashDecode_defaultOnRealResident/Options.Knobs_is_per_model
+--- PASS: TestFlashDecode_defaultOnRealResident (15.32s)
+    --- PASS: TestFlashDecode_defaultOnRealResident/unset_is_ON (3.95s)
+    --- PASS: TestFlashDecode_defaultOnRealResident/=0_is_OFF (3.92s)
+    --- PASS: TestFlashDecode_defaultOnRealResident/Options.Knobs_is_per_model (7.45s)
+=== RUN   TestFlashDecodeSpeculativeScope
+    flash_decode_spec_test.go:119: speculative == plain exact over 96 tokens; 11 verify rounds, lane launches inside = 0
+--- PASS: TestFlashDecodeSpeculativeScope (9.26s)
+=== RUN   TestFlashDecodeEndToEnd
+=== RUN   TestFlashDecodeEndToEnd/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    flash_decode_test.go:212: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: 28 layers, 0 sliding-window
+    flash_decode_test.go:283: S= 2: lane worst cos 0.9972320 (24/24 steps differ, argmax agree 20/24) | vsum spike worst cos 0.9972076 (24/24 differ, agree 18/24)
+    flash_decode_test.go:283: S= 4: lane worst cos 0.9951187 (24/24 steps differ, argmax agree 22/24) | vsum spike worst cos 0.9964742 (24/24 differ, agree 19/24)
+    flash_decode_test.go:283: S= 8: lane worst cos 0.9970174 (24/24 steps differ, argmax agree 23/24) | vsum spike worst cos 0.9969280 (24/24 differ, agree 24/24)
+    flash_decode_test.go:283: S=16: lane worst cos 0.9965320 (24/24 steps differ, argmax agree 23/24) | vsum spike worst cos 0.9973541 (24/24 differ, agree 21/24)
+    flash_decode_test.go:285: lane launches (all S)=2688; worst cosine over lane arms 0.9951187, over spike arms 0.9964742
+=== RUN   TestFlashDecodeEndToEnd/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+    flash_decode_test.go:212: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: 24 layers, 0 sliding-window
+    flash_decode_test.go:283: S= 2: lane worst cos 0.9941525 (24/24 steps differ, argmax agree 19/24) | vsum spike worst cos 0.9989060 (23/24 differ, agree 22/24)
+    flash_decode_test.go:283: S= 4: lane worst cos 0.9971776 (24/24 steps differ, argmax agree 19/24) | vsum spike worst cos 0.9989275 (24/24 differ, agree 20/24)
+    flash_decode_test.go:283: S= 8: lane worst cos 0.9988031 (24/24 steps differ, argmax agree 18/24) | vsum spike worst cos 0.9971776 (24/24 differ, agree 21/24)
+    flash_decode_test.go:283: S=16: lane worst cos 0.9971776 (24/24 steps differ, argmax agree 18/24) | vsum spike worst cos 0.9971776 (24/24 differ, agree 22/24)
+    flash_decode_test.go:285: lane launches (all S)=2304; worst cosine over lane arms 0.9941525, over spike arms 0.9971776
+=== RUN   TestFlashDecodeEndToEnd/gemma3-1b-q4_k_m.gguf
+    flash_decode_test.go:212: gemma3-1b-q4_k_m.gguf: 26 layers, 22 sliding-window
+    flash_decode_test.go:283: S= 2: lane worst cos 0.9694718 (23/24 steps differ, argmax agree 20/24) | vsum spike worst cos 0.9741632 (18/24 differ, agree 20/24)
+    flash_decode_test.go:283: S= 4: lane worst cos 0.9732290 (24/24 steps differ, argmax agree 21/24) | vsum spike worst cos 0.9731127 (18/24 differ, agree 21/24)
+    flash_decode_test.go:283: S= 8: lane worst cos 0.9723265 (24/24 steps differ, argmax agree 21/24) | vsum spike worst cos 0.9685260 (23/24 differ, agree 21/24)
+    flash_decode_test.go:283: S=16: lane worst cos 0.9719564 (24/24 steps differ, argmax agree 21/24) | vsum spike worst cos 0.9702423 (22/24 differ, agree 18/24)
+    flash_decode_test.go:285: lane launches (all S)=2496; worst cosine over lane arms 0.9694718, over spike arms 0.9685260
+--- PASS: TestFlashDecodeEndToEnd (30.50s)
+    --- PASS: TestFlashDecodeEndToEnd/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (12.98s)
+    --- PASS: TestFlashDecodeEndToEnd/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (6.46s)
+    --- PASS: TestFlashDecodeEndToEnd/gemma3-1b-q4_k_m.gguf (11.06s)
+=== RUN   TestGemma3ResidentParity
+    gemma_parity_test.go:60: admitted; required features = [embed-scale gated-gelu per-layer-rope qk-norm rms-add-one sandwich-norm sliding-window]
+    gemma_parity_test.go:92: prompt: 11 ids, round-trips to "<bos>The capital of France is Paris. The city is"
+    gemma_parity_test.go:118:   pos  0 cosine 0.999093
+    gemma_parity_test.go:118:   pos  1 cosine 0.980443
+    gemma_parity_test.go:118:   pos  2 cosine 0.987465
+    gemma_parity_test.go:118:   pos  3 cosine 0.993801
+    gemma_parity_test.go:118:   pos  4 cosine 0.994344
+    gemma_parity_test.go:118:   pos  5 cosine 0.993818
+    gemma_parity_test.go:118:   pos  6 cosine 0.994900
+    gemma_parity_test.go:118:   pos  7 cosine 0.995062
+    gemma_parity_test.go:118:   pos  8 cosine 0.994799
+    gemma_parity_test.go:118:   pos  9 cosine 0.996716
+    gemma_parity_test.go:118:   pos 10 cosine 0.997170
+    gemma_parity_test.go:142: CUDA vs CPU: 9/11 exact | worst near-tie 1.296% | hard fails 0 | min cosine 0.980443
+--- PASS: TestGemma3ResidentParity (31.17s)
+=== RUN   TestDenseResidentParity
+    gemma_parity_test.go:60: admitted; required features = []
+    gemma_parity_test.go:92: prompt: 11 ids, round-trips to "<|endoftext|>The capital of France is Paris. The city is"
+    gemma_parity_test.go:118:   pos  0 cosine 0.998591
+    gemma_parity_test.go:118:   pos  1 cosine 0.998798
+    gemma_parity_test.go:118:   pos  2 cosine 0.998272
+    gemma_parity_test.go:118:   pos  3 cosine 0.998441
+    gemma_parity_test.go:118:   pos  4 cosine 0.998848
+    gemma_parity_test.go:118:   pos  5 cosine 0.998683
+    gemma_parity_test.go:118:   pos  6 cosine 0.998927
+    gemma_parity_test.go:118:   pos  7 cosine 0.998065
+    gemma_parity_test.go:118:   pos  8 cosine 0.998901
+    gemma_parity_test.go:118:   pos  9 cosine 0.999064
+    gemma_parity_test.go:118:   pos 10 cosine 0.998707
+    gemma_parity_test.go:142: CUDA vs CPU: 9/11 exact | worst near-tie 2.541% | hard fails 0 | min cosine 0.998065
+--- PASS: TestDenseResidentParity (14.29s)
+=== RUN   TestRealForwardParity
+    realforward_test.go:307: pos  0 tok    785: CPU=    15 CUDA=    15  EXACT
+    realforward_test.go:307: pos  1 tok   3840: CPU=   315 CUDA=   315  EXACT
+    realforward_test.go:307: pos  2 tok    315: CPU=   279 CUDA=   279  EXACT
+    realforward_test.go:328: pos  3 tok  24231: CPU=   702 CUDA=   374  FLIP gap=0.563% near-tie(ok)
+    realforward_test.go:307: pos  4 tok   6137: CPU= 42298 CUDA= 42298  EXACT
+    realforward_test.go:307: pos  5 tok    448: CPU=   264 CUDA=   264  EXACT
+    realforward_test.go:307: pos  6 tok    264: CPU=  5244 CUDA=  5244  EXACT
+    realforward_test.go:307: pos  7 tok   4285: CPU= 13027 CUDA= 13027  EXACT
+    realforward_test.go:307: pos  8 tok   4522: CPU=    13 CUDA=    13  EXACT
+    realforward_test.go:328: pos  9 tok     13: CPU= 45779 CUDA=  4710  FLIP gap=0.336% near-tie(ok)
+    realforward_test.go:330: === real-checkpoint parity: 8/10 exact | worst near-tie gap 0.563% of range | hard fails 0 ===
+    realforward_test.go:334: B GATE GREEN: cgo-free CUDA decode matches CPU on the real q4_k_m checkpoint (8/10 exact, rest near-ties within goinfer's 3% rule)
+--- PASS: TestRealForwardParity (9.45s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	118.137s
