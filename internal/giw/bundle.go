@@ -82,6 +82,49 @@ func WriteStream(f *os.File, tok []byte, writeWeights func(io.Writer) (int64, er
 	return nil
 }
 
+// weightsMagic opens the weights blob inside a bundle. decoder/serialize.go owns it (giwMagic); it is
+// repeated here only so WeightsVersionFile can name the blob's version without loading it, and
+// TestWeightsVersionFile_currentWriter holds the two together.
+const weightsMagic = "GINFW"
+
+// WeightsVersionFile returns the format version of the weights blob inside the bundle at path (the u32
+// after the blob's "GINFW" magic — decoder's giwVersion as it stood when the file was written), reading
+// only the two headers. For a cache that must decide whether an existing file is worth keeping before
+// paying a full load (internal/prequant's cacheFresh).
+func WeightsVersionFile(path string) (uint32, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	var hdr [9]byte // magic(5) + u32 bundle version
+	if _, err := f.ReadAt(hdr[:], 0); err != nil {
+		return 0, fmt.Errorf("giw: read header: %w", err)
+	}
+	if string(hdr[:len(bundleMagic)]) != bundleMagic {
+		return 0, fmt.Errorf("giw: bad bundle magic %q", hdr[:len(bundleMagic)])
+	}
+	var blobOff int64
+	switch ver := binary.LittleEndian.Uint32(hdr[5:9]); ver {
+	case 1:
+		blobOff = 13 // magic+u32ver+u32len
+	case 2:
+		blobOff = 17 // magic+u32ver+u64len
+	case 3:
+		blobOff = bundleBlobOffsetV3
+	default:
+		return 0, fmt.Errorf("giw: bundle version %d, this build reads 1–3", ver)
+	}
+	var wh [len(weightsMagic) + 4]byte
+	if _, err := f.ReadAt(wh[:], blobOff); err != nil {
+		return 0, fmt.Errorf("giw: read weights header: %w", err)
+	}
+	if string(wh[:len(weightsMagic)]) != weightsMagic {
+		return 0, fmt.Errorf("giw: bad weights magic %q", wh[:len(weightsMagic)])
+	}
+	return binary.LittleEndian.Uint32(wh[len(weightsMagic):]), nil
+}
+
 // ReadTokFile reads only the tokenizer half of a bundle file, without pulling the
 // (potentially many-GB) weights half into memory: it parses the small header, then
 // ReadAts the trailing tokenizer GGUF past the weights. For serving a large .giw

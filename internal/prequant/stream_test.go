@@ -425,7 +425,7 @@ func TestSidecar_interruptedWriteDoesNotPoisonTheCache(t *testing.T) {
 		t.Fatal("premise broke: the partial cache is not newer than the source, so this no " +
 			"longer reproduces the state a killed transcode leaves")
 	}
-	if cacheFresh(cache, src) {
+	if cacheFresh(cache, src, "int8") {
 		t.Error("a truncated bundle newer than its source is reported FRESH — serve then fails " +
 			"at boot with `truncated bundle` and never rebuilds (M-12)")
 	}

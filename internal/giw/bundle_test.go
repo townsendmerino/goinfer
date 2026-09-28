@@ -287,3 +287,53 @@ func TestReadTokFile_boundsAlloc(t *testing.T) {
 		t.Fatalf("ReadTokFile returned %q, want %q", got, tok)
 	}
 }
+
+// TestWeightsVersionFile reads the blob version through every bundle layout: v1 (u32 length, blob at 13),
+// v2 (u64 length, blob at 17) and v3 (padded, blob at 64). Getting an offset wrong reads the version
+// out of the header's own length bytes, which is why each layout is built by hand here.
+func TestWeightsVersionFile(t *testing.T) {
+	blob := append([]byte(weightsMagic), 15, 0, 0, 0, 0xAA, 0xBB) // version 15, then payload
+	le32 := func(v uint32) []byte { return binary.LittleEndian.AppendUint32(nil, v) }
+	le64 := func(v uint64) []byte { return binary.LittleEndian.AppendUint64(nil, v) }
+	join := func(parts ...[]byte) []byte {
+		var out []byte
+		for _, p := range parts {
+			out = append(out, p...)
+		}
+		return out
+	}
+	tok := []byte("tok")
+	cases := map[string][]byte{
+		"v1": join([]byte(bundleMagic), le32(1), le32(uint32(len(blob))), blob, le32(3), tok),
+		"v2": join([]byte(bundleMagic), le32(2), le64(uint64(len(blob))), blob, le32(3), tok),
+		"v3": Write(blob, tok),
+	}
+	dir := t.TempDir()
+	for name, b := range cases {
+		p := filepath.Join(dir, name+".giw")
+		if err := os.WriteFile(p, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		v, err := WeightsVersionFile(p)
+		if err != nil || v != 15 {
+			t.Errorf("%s: got (%d, %v), want (15, nil)", name, v, err)
+		}
+	}
+	for name, b := range map[string][]byte{
+		"bundle magic": append([]byte("XXXXX"), cases["v3"][5:]...),
+		"weights magic": func() []byte {
+			b := append([]byte(nil), cases["v3"]...)
+			copy(b[bundleBlobOffsetV3:], "XXXXX")
+			return b
+		}(),
+		"truncated": cases["v3"][:bundleBlobOffsetV3+3],
+	} {
+		p := filepath.Join(dir, "bad.giw")
+		if err := os.WriteFile(p, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := WeightsVersionFile(p); err == nil {
+			t.Errorf("%s: want an error", name)
+		}
+	}
+}

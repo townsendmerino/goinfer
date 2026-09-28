@@ -206,7 +206,7 @@ func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool, t
 func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (string, error) {
 	target := decoder.GIWTargetForBackend(backend)
 	cache := streamCachePath(ggufPath, quant, target)
-	if cacheFresh(cache, ggufPath) {
+	if cacheFresh(cache, ggufPath, quant) {
 		return cache, nil
 	}
 	// S1 (task-never-swap-2026-09.md): a half-written sidecar on a full disk is a failure this
@@ -248,7 +248,7 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (stri
 // expensive one-time transcode, not for "nearly free" as the brief asks.
 func SidecarPathIfFresh(ggufPath, quant, backend string) (string, bool) {
 	cache := streamCachePath(ggufPath, quant, decoder.GIWTargetForBackend(backend))
-	if cacheFresh(cache, ggufPath) {
+	if cacheFresh(cache, ggufPath, quant) {
 		return cache, true
 	}
 	return "", false
@@ -294,8 +294,18 @@ func streamCachePath(ggufPath, quant string, target decoder.GIWTarget) string {
 // per (size, mtime) (decoder/giwverify.go), so this check costs a full pass only the first time a
 // sidecar is seen. A bundle that does not load is not fresh, and the caller rebuilds it instead of
 // failing at boot with an error that names the .giw rather than the cause.
-func cacheFresh(cache, src string) bool {
+//
+// Loading is not the whole answer either: an int4 bundle written before minInt4CacheGIWVersion
+// DOES load, by converting, and would be kept forever (cacheNewer + selfCheck both pass). See
+// cacheLayoutCurrent — quant is the cache's own quant, which decides whether that applies.
+func cacheFresh(cache, src, quant string) bool {
 	if !cacheNewer(cache, src) {
+		return false
+	}
+	if v, ok := cacheLayoutCurrent(cache, quant); !ok {
+		fmt.Fprintf(os.Stderr, "stream-weights: cache %s is format v%d; this build keeps int4 group scales "+
+			"as binary16 (v%d) and would convert them on every load, holding both copies — rebuilding once\n",
+			filepath.Base(cache), v, minInt4CacheGIWVersion)
 		return false
 	}
 	if err := selfCheck(cache); err != nil {
@@ -304,6 +314,34 @@ func cacheFresh(cache, src string) bool {
 		return false
 	}
 	return true
+}
+
+// minInt4CacheGIWVersion is the oldest weights-blob version whose int4 group scales an mmap load
+// can ALIAS: v15 stores them as binary16, aikit v1.50.0's in-RAM form (decoder/serialize.go's
+// giwVF16Scales). An older int4 bundle still loads — the reader converts its f32 scales to a heap
+// f16 copy — but that copy sits beside the file's f32 pages on every load, and a sidecar that loads
+// was judged fresh, so an upgraded box kept paying it forever. Measured 2026-09-28 (1.5B CPU, peak
+// RSS): old build on v12 1,123-1,127 MB, new build on the same v12 1,179-1,184 MB, new build on
+// its own v15 1,045-1,053 MB; the Mac's +478-589 MB on the 7B was the middle row.
+//
+// Raise this only when an older file loads at a real cost, never merely because the format gained
+// a kind: every bump here costs each user a one-time re-transcode.
+const minInt4CacheGIWVersion = 15
+
+// cacheLayoutCurrent reports whether cache's weights layout is one this build loads without
+// converting, and the version it read. Only an int4-bearing quant ("int4", "int4mix") is held to
+// minInt4CacheGIWVersion — v15 changed nothing else, so rebuilding an int8/f32 sidecar would cost
+// a transcode for nothing. An unreadable header reports ok, leaving the verdict to selfCheck,
+// which names the actual failure.
+func cacheLayoutCurrent(cache, quant string) (uint32, bool) {
+	if !strings.HasPrefix(quant, "int4") {
+		return 0, true
+	}
+	v, err := giw.WeightsVersionFile(cache)
+	if err != nil {
+		return 0, true
+	}
+	return v, v >= minInt4CacheGIWVersion
 }
 
 // cacheNewer is the mtime half of freshness, kept separate so each half can be tested for what

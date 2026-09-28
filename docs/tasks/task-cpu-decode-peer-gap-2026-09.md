@@ -426,6 +426,19 @@ bandwidth-bound (the old 0.5B's 9.4 ms/token against under 2 ms to stream its ~0
   f16 scales directly (identity above), and amd64 is unaffected.
 - **RSS, observed, not explained.** The new build's peak RSS is higher (0.5B +38–43 MB, 1.5B +150–179 MB, 7B +478–589
   MB, across the two passes).
+  - **Explained and fixed on nobara, 2026-09-28.** The new build was reading the old build's v12 sidecar. The two
+    builds share one sidecar path; the old build cannot read v15 and rebuilds it as v12, and the new build loaded v12
+    by converting its f32 scales to a heap f16 copy and never rewrote it. So every new-build cell held both. Peak RSS,
+    1.5B on CPU (amd64), three runs each:
+    - old build on v12: 1,123–1,127 MB;
+    - new build on the same v12: 1,179–1,184 MB (+57);
+    - new build on its own v15: 1,045–1,053 MB (−75).
+  - The fix (`internal/prequant`'s `cacheFresh`): an int4 sidecar older than v15 is stale and rebuilt once. With it,
+    the first load after a v12 sidecar rebuilt it and the next three peaked at 1,045–1,051 MB.
+  - Not verified on arm64. The Mac's 1.5B delta (+150–179) is larger than amd64's +57; unexplained, possibly a second
+    converted scale array in the arm64 row4 layout. **Any old-vs-new comparison needs a separate sidecar path per
+    build**, or the two builds rebuild each other's file every cell.
+  - The arm64 speed result above is unaffected: the converted scales hold the same values.
 
 **Follow-up (owner's call):** the task's named fix is a NEON widen. `FCVTL Vd.4S, Vn.4H` is exact for every finite binary16
 value, subnormals included (a scale is never NaN), so the result stays bit-identical to today's scalar widen, and fusing it into the row4

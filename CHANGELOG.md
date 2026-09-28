@@ -15,6 +15,14 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **CPU int4 group scales are stored as binary16 (aikit v1.50.0, `.giw` v15), and an older int4 sidecar is rebuilt
+  once.** A v15 sidecar maps the f16 scales straight from the file. An older one still loaded, by converting its f32
+  scales to a heap f16 copy on every load, and because it loaded it counted as fresh and was never replaced. The first
+  load after upgrading now prints `… is format v12 … rebuilding once` and re-transcodes (21 s for a 1.5B, minutes for a
+  7B). int8 and f32 sidecars are not rebuilt; a `.giw` passed directly to `--model` is not a cache and is left alone.
+  - Peak RSS, Qwen2.5-Coder-1.5B on CPU (nobara-pc): 1,123–1,127 MB before the change; 1,179–1,184 MB after it on a
+    kept v12 sidecar; **1,045–1,053 MB** after the rebuild. The Mac's +478–589 MB on the 7B was the middle case.
+
 - **Fixes found while rewriting the architecture doc:**
   - **`goinfer-serve` started without a model can serve one loaded later.** The `/v1` generation, job and batch routes
     were registered only when a model existed at startup, so a server started with only `--web`, `--allow-admin` or
