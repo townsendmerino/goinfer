@@ -90,6 +90,56 @@ scalar passes over the row — an abs/max scan, then round+clamp+store — with 
 2026-09-03). Two full passes over a row too large for L1 means the second pass re-fetches from L2/L3, which is
 exactly what a cache-size-dependent per-element cost predicts.
 
+## Fix built (same day): an AVX2 amd64 quantizer, mirroring the shipped arm64 one
+
+aikit branch `amd64-quant-avx2` ([PR #2](https://github.com/townsendmerino/aikit/pull/2)), not released.
+`linalg/quant_act_amd64.go`/`.s`/`_test.go`. Bit-identical to the scalar oracle (the existing
+arch-independent `TestQuantizeRowInt8_bitIdenticalToScalar`/`_corners`, plus new kernel-level tests
+mirroring arm64's own), mutation-checked, full `linalg` suite green, gofmt/vet/pinned-staticcheck clean.
+
+**Two x86 ISA differences from ARM64 found and fixed, neither assumed by analogy:**
+
+1. `VMAXPS`'s NaN rule is asymmetric (unlike ARM's symmetric `FMAXNM`). The first attempt got the operand
+   order backwards — `TestQuantizeRowInt8_corners`'s `all-nan` case caught it immediately ("scale differs:
+   scalar 0, dispatched NaN"). Verified empirically (a throwaway probe, every operand order) and fixed: the
+   accumulator is always the first Go-listed operand, so a NaN row value can never poison it.
+2. `VCVTTPS2DQ` (truncate to int32) returns one fixed "integer indefinite" value for ANY invalid conversion
+   — NaN or overflow alike — unlike ARM's `FCVTAS`, which saturates toward the input's own sign. A naive
+   port would turn `+Inf` into `-127` instead of `+127`. Fixed by clamping the FLOAT into `[-127,127]`
+   *before* truncating, so the indefinite-value path is never taken for a genuine overflow; NaN is handled
+   separately (an ordered-predicate compare + AND, zeroing exactly the NaN lanes).
+
+**Isolated quantizer microbenchmark, same K values as Method 3, after the fix:**
+
+| K | before (ns/elem) | after (ns/elem) | speedup |
+|---:|---:|---:|---:|
+| 896 | 3.572 | 0.430 | 8.3× |
+| 1536 | 3.473 | 0.320 | 10.9× |
+| 3584 | 3.623 | 0.246 | 14.7× |
+| 4864 | 3.779 | 0.241 | 15.7× |
+| 8960 | 5.371 | 0.213 | 25.2× |
+| 18944 | 6.768 | 0.201 | 33.7× |
+
+The super-linear degradation is gone — the win *grows* with K, exactly where `down` lives.
+
+**Real-token decode-timing, all three models, before/after (exploratory — `GOINFER_DECODE_TIMING=1`
+samples, not the paired `bench_peer` gate; goinfer built against this aikit branch via `go.work`):**
+
+| model | down ms/tok before→after | down/gate+up ratio before→after | ~forward speedup |
+|---|---|---|---:|
+| 0.5B | 4.70 → 2.80 | 0.679 → 0.479 | 1.25× |
+| 1.5B | 11.19 → 8.73 | 0.598 → 0.481 | 1.08× |
+| 7B | 46.35 → 41.10 | 0.548 → 0.494 | 1.05× |
+
+The ratio lands within 0.02 of the pure byte-ratio floor (0.500) on all three models — essentially closing
+the gap this record set out to explain. A real greedy generation (1.5B, 65 tokens, temp=0) is text-identical
+old vs new.
+
+**Not yet done: the paired `bench_peer` speed gate**, this repo's own bar for a speed claim, not a
+`GOINFER_DECODE_TIMING` sample. Queued for tonight (`avx2quant-cpu-speed`,
+`~/goinfer-bench/cpu-avx2quant-2026-09-28/run-avx2quant-speed.sh`), pre-registered: ship at ≥1.03× on every
+model in both pass directions, park below 1.00× on any model in either direction.
+
 ## What this does and does not close
 
 - **Closes the "why" question** lever 2 left open, with three independently-converging measurements.
@@ -114,5 +164,6 @@ exactly what a cache-size-dependent per-element cost predicts.
   the microbenchmark warms the SAME row repeatedly (steady-state cache behavior for THAT row), which is not
   identical to decode's cold-per-token access pattern; it isolates the compute+cache-locality shape, not the real
   cold-DRAM cost of the first touch.
-- Whether an AVX2 quantizer would actually close the projected gap — `c` is a measured input to the model, not
-  something this record changed. A build-and-gate is still owed before quoting a number.
+- Whether an AVX2 quantizer would actually close the projected gap — **built and preliminarily measured, see
+  "Fix built" above**; the paired `bench_peer` gate (this repo's own bar for a speed number) is still owed,
+  queued for tonight.
