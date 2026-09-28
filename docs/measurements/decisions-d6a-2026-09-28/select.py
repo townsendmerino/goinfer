@@ -11,7 +11,10 @@ From SargeDev/jev-distill-corpus-v3 @ fc99c6357a9f89f7512c4a987314352addead049
 
 Within a stratum, the rows with the lowest sha256(id) are taken. The corpus's row shape is decide's input shape.
 
-usage: select.py <data dir> <out dir>
+usage: select.py <data dir> <out dir> [calib total, default 1500] [eval rows per noul/choice stratum, default 1000]
+
+The optional sizes are the 2026-09-28 amendment (task doc, "D6a amendment"): 600 and 400. Rows are still the lowest
+sha256(id) within each stratum, so an amended sample is the head of the original one, stratum by stratum.
 """
 import hashlib, json, os, sys
 
@@ -24,17 +27,17 @@ def take(rows, n):
     return sorted(rows, key=key)[:n]
 
 
-def main(data, out):
+def main(data, out, ncal=1500, nev=1000):
     cal = [json.loads(l) for l in open(os.path.join(data, "calibration.jsonl"))]
     ood = [json.loads(l) for l in open(os.path.join(data, "ood.jsonl"))]
     cal = [r for r in cal if r["source"] != "yuri_v1"]
     by = {k: [r for r in cal if r["kind"] == k] for k in ("noul", "choice", "score")}
     total = sum(len(v) for v in by.values())
-    n = {k: round(1500 * len(v) / total) for k, v in by.items()}
-    n["noul"] += 1500 - sum(n.values())  # rounding remainder
+    n = {k: round(ncal * len(v) / total) for k, v in by.items()}
+    n["noul"] += ncal - sum(n.values())  # rounding remainder
     calib = [r for k in ("noul", "choice", "score") for r in take(by[k], n[k])]
     ev = {k: [r for r in ood if r["kind"] == k] for k in ("noul", "choice", "score")}
-    evs = take(ev["noul"], 1000) + take(ev["choice"], 1000) + ev["score"]
+    evs = take(ev["noul"], nev) + take(ev["choice"], nev) + ev["score"]
     os.makedirs(out, exist_ok=True)
     for name, rows in (("calib-sample.jsonl", calib), ("eval-sample.jsonl", evs)):
         with open(os.path.join(out, name), "w") as f:
@@ -45,4 +48,4 @@ def main(data, out):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2])
+    main(sys.argv[1], sys.argv[2], *(int(a) for a in sys.argv[3:5]))

@@ -13,7 +13,7 @@ set -u
 REV=${REV:?}
 BACKEND=${BACKEND:?}
 B=${B:-$HOME/goinfer-bench/decisions-d6a}
-S=$B/samples
+S=${S:-$B/samples} # the 2026-09-28 amendment runs with S=$B/samples-amended (select.py ... 600 400)
 BIN=${BIN:?}
 M9=$HOME/models/Qwen3.5-9B-Q4_K_M.gguf
 M15=$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf

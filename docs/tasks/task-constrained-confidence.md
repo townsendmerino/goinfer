@@ -530,6 +530,28 @@ template).** The artifacts are in `docs/measurements/decisions-d6a-2026-09-28/`:
     is read with that in mind, and the fixture's same-rows comparison settles it.
 - **Parked here:** the Metal decline of an *auto-pinned* context above its ceiling. It declines to the CPU instead
   of clamping to 32,768, which is a real usability bug in its own right, and is fixed separately.
+**D6a amendment (2026-09-28, owner; before any graded result).** The first nobara run (`5c85f7c0`) was stopped
+~25 minutes into arm A's calibration. It had written no calibration and no evaluation, so no graded number
+exists.
+- **Why it stopped:** its estimate was ~6 h. CUDA prefills a Gated-DeltaNet prompt one token at a time (~14 ms per
+  token). The owner: never a 6-hour run. Two changes:
+  1. **Batched DeltaNet prefill on CUDA**, as its own gated task
+     ([`task-cuda-deltanet-prefill-2026-09.md`](task-cuda-deltanet-prefill-2026-09.md)). D6a runs on the commit that
+     ships it, named then.
+  2. **Smaller samples**, from the same rule (lowest `sha256(id)` per stratum), so each is the head of the original:
+     - calibration: 600 rows (noul 239 / choice 187 / score 174), sha256 `91b3cc2a…95cb`;
+     - evaluation: 872 rows (noul 400 / choice 400 / all 72 score), sha256 `3b2f496f…69d8`.
+
+     They come from `select.py <data> <out> 600 400`, run with `S=<that dir>`. The defaults still reproduce the
+     original sample hashes.
+- **Unchanged:** the arms, the metrics, the control and the decision rule.
+- **What the smaller sample costs:** 1,472 prefills per arm instead of 3,572.
+  - The kind-weighted top-1 is dominated by noul (weight 9,767 / 13,058), estimated here from 400 rows. Its standard
+    error near p ≈ 0.9 is about ±1.5 points, against a 3-point band and a 10-point band. A result within ~1.5 points
+    of an edge is therefore read as the owner's call, whichever side it lands on.
+  - Calibration fits one temperature per arm, and 600 rows is ample for one parameter.
+- **Runtime:** re-estimated from the resident check once the prefill ships. Over ~1 hour is a stop, not a start.
+
 - **D6b (Route B parity).** goinfer JEV-9B against the D0 goldens at f32, int8int8 and int4
   (default). Pre-registered: mean KL ≤ 0.01 at f32 and ≤ 0.03 at int4, top-1 agreement ≥ 98%.
   Report ECE per arm: quantization can hold top-1 and still shift calibration, which is the
