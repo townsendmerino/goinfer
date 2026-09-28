@@ -26,6 +26,13 @@
 > **FIXED in aikit v1.50.1 (released 2026-09-28), and goinfer is on it (`c731ca1d`).** A NEON widen plus a fused f16
 > decode kernel, bit-identical, takes arm64 CPU decode to **1.041× / 1.053× / 1.080× of the f32-scale build** ("L1
 > arm64 fix — result", below).
+>
+> **amd64's own 0.5B ~3% regression (item 5/6, 2026-09-28), FIXED in aikit v1.50.2 (released, goinfer on it
+> `47876d2e`).** Traced to the same class of gap the arm64 fix closed — an unvectorized per-token pass, here the
+> activation quantizer — while investigating why CPU decode's `down` matmul streams slower than `gate+up`
+> (`docs/measurements/cpu-down-vs-gateup-bandwidth-2026-09-28.md`). An AVX2 quantizer, bit-identical, takes the
+> 0.5B to ~1.15× the ORIGINAL f32-scale build in a quick same-session check (not just recovered, reversed) —
+> "L1 build — owner decision on the 0.5B" below has the number; the formal paired gate is queued for tonight.
 
 ## L1 — f16 group scales for CPU int4: the quality gate (pre-registered 2026-09-27)
 
@@ -250,6 +257,17 @@ goes to the owner, as S0 said it would.
 
 **Owner decision 2026-09-27:** accept the 0.5B's ~3%. f16 scales for every CPU int4 model, consistent with the GPU
 backends. The 0.5B's real bottleneck (per-token overhead, lever 2) is next, and is where that 3% is to be recovered.
+
+**RECOVERED, 2026-09-28.** Lever 2's per-token-overhead fix landed as aikit v1.50.2's AVX2 activation quantizer
+(`docs/measurements/cpu-down-vs-gateup-bandwidth-2026-09-28.md` — built to close item 5's `down` deficit, and it
+is the SAME "per-token overhead" this line names: fewer, cheaper serial ops per token, not a bigger-work lever).
+An interleaved, matched-pair quick check on the 0.5B (`demo/chat`, `GOINFER_DECODE_TIMING=1`, 4 rounds against the
+TRUE pre-L1 baseline — goinfer `3cd62e6d` + aikit `v1.49.0`, the exact build S0b's 22.91 ms/token was measured
+against, not just v1.50.1) reads forward time 21.3–21.6 ms (old) vs 18.4–18.7 ms (new), **consistently 0.861–0.870×
+old across all four pairs** — not merely recovered, reversed into a ~13–14% net win over the ORIGINAL f32-scale
+build (`docs/measurements/cpu-down-vs-gateup-bandwidth-2026-09-28/item6-0.5b-quick-check.log`). The formal
+paired `bench_peer` gate (`item6-0.5b-recovery`, queued for tonight, same rule as every other speed claim here)
+confirms this with the same rigor as S0b's own number; this line is exploratory until that reports.
 
 **Design:**
 - **aikit.** An int4 `WeightMat` stores its per-group scales as f16, and the f32 copy goes.
