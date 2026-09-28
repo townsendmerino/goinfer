@@ -456,3 +456,96 @@ func TestDarwinKVSlots(t *testing.T) {
 		}
 	}
 }
+
+// TestWebGPUKVSlots_perPositionMatchesTheBuild pins slotsBeforeContext's price (kvBytesPerPosition, computed before
+// anything is allocated) against what the build really allocates for one slot, on each KV layout: a drift here would
+// size the context for slots against the wrong figure.
+func TestWebGPUKVSlots_perPositionMatchesTheBuild(t *testing.T) {
+	for _, tc := range []struct {
+		name, fixture string
+		opts          decoder.Options
+	}{
+		{"llama-tiny-f32", "llama-tiny", decoder.Options{Quant: "int4"}},
+		{"llama-tiny-f16", "llama-tiny", decoder.Options{Quant: "int4", KVPrecision: "f16"}},
+		{"llama-tiny-i8", "llama-tiny", decoder.Options{Quant: "int4", KVPrecision: "i8"}},
+		{"mistral-tiny-window", "mistral-tiny-window", decoder.Options{Quant: "int4"}},
+		{"deepseek-tiny-mla", "deepseek-tiny", decoder.Options{Quant: "int4"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", tc.fixture), tc.opts, 1)
+			defer m.Close()
+			per := kvBytesPerPosition(m, m.KVCacheF16(), m.KVCacheI8())
+			if got, want := kvBytesPerSlot(&rd.rm), per*int64(rd.ctxCap); got != want || got == 0 {
+				t.Errorf("one slot allocates %d bytes at %d positions; kvBytesPerPosition prices %d/position = %d", got, rd.ctxCap, per, want)
+			}
+		})
+	}
+}
+
+// TestCtxWhereSlotsFit pins slotsBeforeContext's search: unchanged when the slots already fit, the largest fitting
+// context otherwise, and the floor when not even the floor fits.
+func TestCtxWhereSlotsFit(t *testing.T) {
+	under := func(limit int) func(int) bool { return func(ctx int) bool { return ctx <= limit } }
+	for _, tc := range []struct {
+		name          string
+		oneSlot, edge int
+		got           int
+	}{
+		{"all fit at the default", 16384, 20000, 16384},
+		{"fits exactly at the default", 16384, 16384, 16384},
+		{"shrinks to the largest that fits", 16384, 7999, 7999},
+		{"one below the default", 16384, 16383, 16383},
+		{"exactly the floor", 16384, webgpuSlotCtxFloor, webgpuSlotCtxFloor},
+		{"not even the floor: the floor, and the slots clamp", 16384, 1000, webgpuSlotCtxFloor},
+	} {
+		if got := ctxWhereSlotsFit(tc.oneSlot, 4, under(tc.edge)); got != tc.got {
+			t.Errorf("%s: ctxWhereSlotsFit(%d, fits ≤ %d) = %d, want %d", tc.name, tc.oneSlot, tc.edge, got, tc.got)
+		}
+	}
+}
+
+// TestWebGPUKVSlots_slotsBeforeContext is the owner's rule on a real build (darwin; heavy — qwen2.5-coder-1.5b from
+// ~/models): with the memory available before the build stubbed to where 4 slots fit only up to 8000 positions, an
+// unpinned load gives up context to exactly that and keeps all 4 slots, while an explicit 16384 keeps its context
+// and gets the 1 slot that fits beside it.
+func TestWebGPUKVSlots_slotsBeforeContext(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("slots before context applies on darwin only until the discrete-GPU clamp is measured")
+	}
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 (loads qwen2.5-coder-1.5b from ~/models)")
+	}
+	home, _ := os.UserHomeDir()
+	path := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no model at %s: %v", path, err)
+	}
+	probe, rd := loadWebGPUResident(t, path, decoder.Options{Quant: "int4"}, 1)
+	per := kvBytesPerPosition(probe, false, false)
+	weights := probe.ResidentWeightBytes()
+	if rd.ctxCap != 16384 {
+		probe.Close()
+		t.Fatalf("the one-slot build chose %d positions, not WebGPU's 16384 default — this test's arithmetic assumes it", rd.ctxCap)
+	}
+	probe.Close()
+	const edge = 8000
+	defer func(r, a func() int64) { hostRAMBytes, hostRAMAvailable = r, a }(hostRAMBytes, hostRAMAvailable)
+	hostRAMBytes = func() int64 { return 16 << 30 }
+	hostRAMAvailable = func() int64 { return weights + 4*per*edge }
+
+	m, rd := loadWebGPUResident(t, path, decoder.Options{Quant: "int4"}, 4)
+	if m.ResidentContextPinned() {
+		m.Close()
+		t.Fatal("an unrequested context reads as pinned — the rule would never run")
+	}
+	if rd.ctxCap != edge || rd.KVSlots() != 4 {
+		t.Errorf("unpinned: %d positions and %d slots, want %d and 4", rd.ctxCap, rd.KVSlots(), edge)
+	}
+	m.Close()
+
+	mx, rdx := loadWebGPUResident(t, path, decoder.Options{Quant: "int4", ResidentContext: 16384}, 4)
+	defer mx.Close()
+	if rdx.ctxCap != 16384 || rdx.KVSlots() != 1 {
+		t.Errorf("explicit --ctx 16384: %d positions and %d slots, want 16384 and 1 (an explicit context is never shrunk)", rdx.ctxCap, rdx.KVSlots())
+	}
+}

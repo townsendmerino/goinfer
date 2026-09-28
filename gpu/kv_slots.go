@@ -175,6 +175,84 @@ func (rd *residentDecoder) newKVSlot(slot int) (webgpuKVSlot, []func(), error) {
 	return webgpuKVSlot{rm: rm, runner: r}, frees, nil
 }
 
+// webgpuSlotCtxFloor is the shortest context slotsBeforeContext gives up to: CUDA's floor (cudaCtxCapDefault), so the
+// two backends make the same trade.
+const webgpuSlotCtxFloor = 4096
+
+// kvBytesPerPosition is what one slot's KV costs per position, from the same geometry BuildResident allocates: K and V
+// per layer at the resident precision — f32 4 B/elem, f16 2 B/elem, int8 1 B/elem plus one f32 scale per KV head —
+// or one latent row of kvLoRA+qkRope f32 on an MLA model. It assumes every layer holds attention KV, which is true of
+// every family that may have more than one slot (a recurrent one keeps one, so it is never priced here);
+// TestWebGPUKVSlots_perPositionMatchesTheBuild pins it against kvBytesPerSlot on each KV layout.
+func kvBytesPerPosition(m *decoder.Model, kvF16, kvI8 bool) int64 {
+	_, nLayers, _, nKV, hd, _, _ := m.Dims()
+	if _, kvLoRA, _, qkRope, _, _, _, _, mlaOK := m.MLAResidentParams(); mlaOK {
+		return int64(nLayers) * int64(kvLoRA+qkRope) * 4
+	}
+	kvDim := int64(nKV * hd)
+	per := kvDim * 4
+	switch {
+	case kvI8:
+		per = kvDim + int64(nKV)*4
+	case kvF16:
+		per = kvDim * 2
+	}
+	return 2 * int64(nLayers) * per
+}
+
+// slotsBeforeContext is MC1's "slots before context" on WebGPU (owner decision 2026-09-27, the rule CUDA's
+// ctxForSlots applies): when more than one KV slot is requested and the caller did not choose the context
+// (decoder.Model.ResidentContextPinned — a fit-guard auto-pin is a one-slot ceiling, not a choice), give up context,
+// down to webgpuSlotCtxFloor, until every requested slot fits; below the floor the slot count is clamped instead, by
+// buildKVSlots as always. An explicit -ctx is never shrunk.
+//
+// darwin only, for now: there the device's memory is host RAM and darwinKVSlots can price a context before anything
+// is allocated. A discrete GPU has no free-memory query on this backend, so what fits is learned only by allocating;
+// shrinking there waits on a measurement of how a failed allocation behaves on real Vulkan hardware (the MC1-WebGPU
+// nobara prompt). KV is linear in the context, so "fits" is monotone and a binary search finds the edge.
+func slotsBeforeContext(m *decoder.Model, ctxCap int, kvF16, kvI8 bool, avail0 int64) int {
+	want := m.ResidentKVSlotsRequest()
+	if runtime.GOOS != "darwin" || want <= 1 || m.ResidentContextPinned() || ctxCap <= webgpuSlotCtxFloor {
+		return ctxCap
+	}
+	perPos := kvBytesPerPosition(m, kvF16, kvI8)
+	ram := hostRAMBytes()
+	if perPos <= 0 || ram <= 0 {
+		return ctxCap
+	}
+	weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
+	fits := func(ctx int) bool {
+		return darwinKVSlots(want, ram, avail0, weights, hostCopy, perPos*int64(ctx)) >= want
+	}
+	return ctxWhereSlotsFit(ctxCap, want, fits)
+}
+
+// ctxWhereSlotsFit is slotsBeforeContext's search, separated so its edges are testable without a model: the largest
+// context in [webgpuSlotCtxFloor, oneSlot] at which fits holds, oneSlot when it already does, and the floor when not
+// even the floor does (the slot clamp then takes over). It logs any shrink.
+func ctxWhereSlotsFit(oneSlot, want int, fits func(ctx int) bool) int {
+	if fits(oneSlot) {
+		return oneSlot
+	}
+	if !fits(webgpuSlotCtxFloor) {
+		fmt.Fprintf(os.Stderr, "webgpu: resident context %d (the floor), not %d, for the %d requested KV slots (--kv-sessions); "+
+			"the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots\n",
+			webgpuSlotCtxFloor, oneSlot, want)
+		return webgpuSlotCtxFloor
+	}
+	lo, hi := webgpuSlotCtxFloor, oneSlot // fits(lo), !fits(hi)
+	for hi-lo > 1 {
+		if mid := lo + (hi-lo)/2; fits(mid) {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	fmt.Fprintf(os.Stderr, "webgpu: resident context %d, not %d, so the %d requested KV slots fit (--kv-sessions); an "+
+		"explicit --ctx keeps a longer context with fewer slots\n", lo, oneSlot, want)
+	return lo
+}
+
 // availBeforeBuild is the memory available before BuildResident's first upload, for darwinKVSlots — read only on
 // darwin and only when more than one slot is requested (it execs vm_stat), else 0.
 func availBeforeBuild(m *decoder.Model) int64 {

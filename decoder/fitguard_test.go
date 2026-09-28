@@ -464,6 +464,9 @@ func TestFitGuard_unpinnedLoadAutoPinsASmallerContextRatherThanRefusing(t *testi
 	if got := m.ResidentContextRequest(); got != 0 {
 		t.Errorf("guard capped context to %d on a 64 GB machine — should not have needed to", got)
 	}
+	if m.ResidentContextPinned() {
+		t.Error("ResidentContextPinned() = true for a load that asked for no context")
+	}
 }
 
 // The estimator must not be free to drift from the accountant M-01 completed. It prices the model

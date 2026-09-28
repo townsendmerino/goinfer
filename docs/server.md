@@ -346,8 +346,12 @@ stopped interleaved conversations from evicting each other (qwen2.5-coder-1.5b, 
 prefills one token at a time there: 2.81× at 4 clients on an M1 Pro (`measurements/concurrency-mc1-webgpu-2026-09-27.md`).
 - **On WebGPU**, each slot is the full f32 KV at the resident context (~0.94 GB for Qwen2.5-1.5B at the default 16k).
   WebGPU has no free-memory query. On a Mac, slots are clamped to 70% of RAM and to what was available before the
-  build. Elsewhere a slot that fails to allocate, or that would leave under 384 MiB free, ends the count. Either
-  clamp logs, and the context is not shrunk to make room: pass a smaller `--ctx` for more slots.
+  build, and **slots come before context there as on CUDA** (owner decision 2026-09-27): when `--ctx` is not set, the
+  context gives up positions, down to 4096, until every requested slot fits, and it logs the shrink. A context the
+  load-time fit guard chose for you counts as not set; an explicit `--ctx` is never shrunk. Elsewhere (a discrete
+  GPU) a slot that fails to allocate, or that would leave under 384 MiB free, ends the count, and the context is not
+  shrunk yet; pass a smaller `--ctx` for more slots. That half waits on a measurement of the clamp on real Vulkan
+  hardware (`docs/prompts/nobara-mc1-webgpu-2026-09.md`).
 - **On CUDA, slots come before context** (owner decision 2026-09-27). When `--ctx` is not set, fit by default gives up
   context, down to 4096, until every requested slot fits, and it logs the shrink. Below 4096 the slots are clamped
   instead.

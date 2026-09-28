@@ -218,6 +218,20 @@ func TestLoad_giwAutoPinsUnderTightMemory(t *testing.T) {
 	if m.resCtxReq >= w.Cfg.MaxPositions {
 		t.Errorf("m.resCtxReq = %d did not actually shrink from MaxPositions %d", m.resCtxReq, w.Cfg.MaxPositions)
 	}
+	// MC1 "slots before context": the guard's auto-pin is a one-slot ceiling, not the caller's choice, so a backend
+	// may still trade it for KV slots. An explicit request under the same tight memory stays pinned even though the
+	// guard lowers it.
+	if m.ResidentContextPinned() {
+		t.Errorf("ResidentContextPinned() = true for a context only the fit guard chose (%d)", m.resCtxReq)
+	}
+	mx, err := Load(out, Options{Backend: "cpu", ResidentContext: w.Cfg.MaxPositions / 2})
+	if err != nil {
+		t.Fatalf("Load(.giw, explicit context): %v", err)
+	}
+	defer mx.Close()
+	if !mx.ResidentContextPinned() {
+		t.Errorf("ResidentContextPinned() = false for an explicit ResidentContext %d (resolved %d)", w.Cfg.MaxPositions/2, mx.resCtxReq)
+	}
 }
 
 func TestGuardGIWFit_scratchBudgetIsPositive(t *testing.T) {

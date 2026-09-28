@@ -53,7 +53,8 @@
 >   ([`concurrency-mc1-cuda-2026-09-27.md`](../measurements/concurrency-mc1-cuda-2026-09-27.md)); ~~MC1 on WebGPU~~ —
 >   shipped 2026-09-27: 4 clients at 2.805× the one-slot build on the Mac, every hard gate passes
 >   ([`concurrency-mc1-webgpu-2026-09-27.md`](../measurements/concurrency-mc1-webgpu-2026-09-27.md)). Owed: the
->   discrete-GPU clamp on real Vulkan hardware (nobara), and the owner's call on context against slots for WebGPU;
+>   discrete-GPU clamp on real Vulkan hardware (nobara, `docs/prompts/nobara-mc1-webgpu-2026-09.md`). Context against
+>   slots on WebGPU: decided 2026-09-27, slots first as on CUDA; done on darwin, discrete GPUs after the nobara run;
 > - ~~context against slots, owner's call~~ — decided 2026-09-27: a slot request shrinks the unpinned default
 >   context (`947e06ce`). The 7B now starts at 4096 with 4 slots and reads 1.34–1.35× at its default, where it
 >   thrashed on 2 slots at 8192. ~~`Plan`'s conservative weight estimate~~ — fixed 2026-09-27 (`4e230601`): it
@@ -339,8 +340,24 @@ control thrashes (3 / 3). The tagged CUDA suite: 171 pass, 0 fail.
   q/k/v bias off Vulkan), so each thrashing turn re-prefilled its whole conversation at decode speed.
 - The slowest turn at 4 clients falls from ~99 s to ~23.6 s. What remains is admission: WebGPU has no batch stepper,
   so generations still run one at a time.
-- Owed: the discrete-GPU clamp (a failed allocation plus the headroom probe) on real Vulkan hardware, and the
-  owner's call on context against slots.
+- Owed: the discrete-GPU clamp (a failed allocation plus the headroom probe) on real Vulkan hardware
+  (`docs/prompts/nobara-mc1-webgpu-2026-09.md`).
+- **Owner decision, 2026-09-27: slots before context on WebGPU too, in two steps.**
+  - **Step 1, done (darwin):** `slotsBeforeContext` (`gpu/kv_slots.go`). When more than one slot is requested and
+    the context is unpinned, the context gives up positions, down to 4096, until every slot fits under
+    `darwinKVSlots`. Below the floor the slots clamp. It is priced from `kvBytesPerPosition`, which is pinned against
+    the real allocation on every KV layout.
+  - "Unpinned" is the new `decoder.Model.ResidentContextPinned()`: false when the caller left the context 0,
+    including when the load-time fit guard auto-pinned it (R13). That pin is a one-slot ceiling, not a choice. An
+    explicit `-ctx` is never shrunk.
+  - On qwen2.5-coder-1.5b, with the memory available before the build stubbed to room for 4 slots at 8000
+    positions, an unpinned load lands on exactly 8000 with 4 slots. An explicit 16384 keeps 16384 with 1 slot
+    (`TestWebGPUKVSlots_slotsBeforeContext`).
+  - The graded W7 configuration (4 slots fit at 16k) is unchanged.
+  - **Step 2 (discrete GPUs):** only if the nobara run shows a failed allocation on Vulkan is clean. What fits is
+    learned from the build there, and the prompt carries the pre-registered decision rule.
+  - CUDA's `resolveCtxCapFit` still treats a guard-pinned context as explicit. Switching it to
+    `ResidentContextPinned()` is item 4 of the same prompt.
 
 **What was built** (`gpu/kv_slots.go`). The WebGPU resident implements `decoder.ResidentKVSlotter`; the decoder half
 is Metal's, unchanged.

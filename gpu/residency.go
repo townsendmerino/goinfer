@@ -299,6 +299,8 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	if req := m.ResidentContextRequest(); req > 0 && req < ctxCap {
 		ctxCap = req
 	}
+	// MC1: an unpinned context gives way to the requested KV slots (darwin; gpu/kv_slots.go slotsBeforeContext).
+	ctxCap = slotsBeforeContext(m, ctxCap, kvF16, kvI8, avail0)
 	kvDim := nKV * hd
 
 	rd := &residentDecoder{c: c, nKV: nKV, hd: hd, ctxCap: ctxCap, finalSoftcap: m.FinalLogitSoftcapResident()}

@@ -125,4 +125,8 @@ All in `gpu/kv_slots_test.go` on this Mac. The logs are archived.
   - The 7B on nobara's 8 GB card at the 16k f32 default (~1.9 GB per slot) is the case where it binds.
 - **Context against slots.** CUDA shrinks an unpinned context so the requested slots fit (`947e06ce`). WebGPU does
   not, because it has no free-memory query to size against. Whether it should is an open owner decision.
+  - **Decided after this grading, 2026-09-27:** slots first, as on CUDA.
+    - On darwin it is done (`slotsBeforeContext`); see the task doc's "MC1 on WebGPU".
+    - Discrete GPUs wait on the nobara measurement above.
+    - The graded configuration, where 4 slots fit at 16k, is unchanged by it, so these numbers stand.
 - **WebGPU off the Mac.** This grading is the M1 Pro through wgpu's Metal backend only.

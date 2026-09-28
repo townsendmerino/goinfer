@@ -85,6 +85,7 @@ type Model struct {
 	knobs         *knobSet     // per-model operator knobs, snapshotted once at Load (knobs.go)
 	resCtxReq     int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	resSlotsReq   int          // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
+	resCtxPinned  bool         // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
 	prefillChunk  int          // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
 	disableFit    bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache      bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
@@ -229,6 +230,13 @@ func (m *Model) KVCacheI8() bool { return m.kvPrecI8 }
 // effective cap as min(model context window, this) and VRAM-checks it at load; off the residency
 // path it has no effect. See cuda.resolveCtxCap.
 func (m *Model) ResidentContextRequest() int { return m.resCtxReq }
+
+// ResidentContextPinned reports whether the caller chose the resident context (Options.ResidentContext > 0), as
+// opposed to leaving it to the backend. A context the load-time fit guard auto-pinned for an unrequested load (R13)
+// is NOT pinned: it is a ceiling that fits one KV slot, and ResidentContextRequest still reports it as the upper
+// bound. A backend that trades context for KV slots (MC1 "slots before context") shrinks only an unpinned context,
+// never an explicit -ctx.
+func (m *Model) ResidentContextPinned() bool { return m.resCtxPinned }
 
 // ResidentKVSlotsRequest returns the requested number of resident KV slots (Options.ResidentKVSlots), at least 1, and 1
 // for a family with recurrent state. A residency builder that supports slots (ResidentKVSlotter) allocates up to this
@@ -483,7 +491,8 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	}
 	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(),
 		kvF16: opts.KVPrecision == "f16", kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8",
-		resCtxReq: opts.ResidentContext, resSlotsReq: opts.ResidentKVSlots, prefillChunk: opts.ResidentPrefillChunk, disableFit: opts.DisableFit,
+		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
+		resSlotsReq: opts.ResidentKVSlots, prefillChunk: opts.ResidentPrefillChunk, disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
@@ -501,6 +510,10 @@ func Load(dir string, opts Options) (*Model, error) {
 	// in the same process inherited exact prefill whether it asked for it or not. Serve no longer
 	// sets the env vars either: its flags travel as this field and Options.Knobs (phase 5,
 	// docs/tasks/task-env-config-2026-09.md).
+	// Whether the CALLER chose the resident context, read before either fit guard below can auto-pin one into
+	// opts.ResidentContext (R13) — that pin is a one-slot ceiling, not a choice (Model.ResidentContextPinned). Stamped
+	// on the Model after modelFromOptions and before withResidency, where a backend reads it.
+	ctxFromCaller := opts.ResidentContext > 0
 	be, beErr := NewBackend(opts.Backend)
 	// A nil backend means the name was genuinely unknown (not a registered/fallback backend) —
 	// abort rather than proceed and panic at the first matmul (M14). A non-nil be with a
@@ -588,6 +601,7 @@ func Load(dir string, opts Options) (*Model, error) {
 			fmt.Fprintln(os.Stderr, beErr)
 		}
 		m := modelFromOptions(w, be, opts)
+		m.resCtxPinned = ctxFromCaller
 		m.mmap, m.srcPath = data, dir
 		m.bindKnobs(opts.Knobs.values())
 		m.withBackendNames(opts.Backend, beErr)
@@ -703,6 +717,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		w.Cfg.EOSTokenID = raw
 	}
 	m := modelFromOptions(w, be, opts)
+	m.resCtxPinned = ctxFromCaller
 	m.quant, m.eosIDs = opts.Quant, resolvedEOS
 	m = m.withBackendNames(opts.Backend, beErr)
 	m.bindKnobs(opts.Knobs.values())
