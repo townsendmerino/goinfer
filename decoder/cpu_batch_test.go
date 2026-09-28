@@ -244,8 +244,8 @@ func TestCPUBatch_ineligibleCachesBypass(t *testing.T) {
 	}
 }
 
-// TestEnableCPUBatch_policy pins Options.CPUBatchDecode: auto engages only at cpuBatchAutoMinBytes (and never on
-// darwin), on engages any eligible family, off never engages, n < 2 never engages, and an ineligible family never does.
+// TestEnableCPUBatch_policy pins Options.CPUBatchDecode: auto engages only at cpuBatchAutoMinBytes, on engages any
+// eligible family, off never engages, n < 2 never engages, and an ineligible family never does.
 func TestEnableCPUBatch_policy(t *testing.T) {
 	tiny := "../testdata/llama-tiny"
 	if _, err := os.Stat(tiny); err != nil {

@@ -1,0 +1,20 @@
+=== RUN   TestMC2_batchedDecodeThroughput
+[mc2   18.6s] loaded qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw (int4): depth 128, 16 steps per sequence, 5 reps, 8 arms
+[mc2   49.4s] rep 1/5:  serial x1 17.8  serial x4 17.7  batched B=1 17.7  batched B=2 23.2  batched B=4 38.8  batched B=8 43.1  J8 workers N=2 23.1  J8 workers N=4 25.2 tok/s
+[mc2   64.7s] rep 2/5:  serial x1 17.4  serial x4 17.7  batched B=1 17.8  batched B=2 23.2  batched B=4 38.9  batched B=8 43.3  J8 workers N=2 23.0  J8 workers N=4 25.3 tok/s
+[mc2   80.1s] rep 3/5:  serial x1 17.9  serial x4 17.8  batched B=1 17.4  batched B=2 23.3  batched B=4 38.7  batched B=8 42.7  J8 workers N=2 22.7  J8 workers N=4 25.1 tok/s
+[mc2   95.5s] rep 4/5:  serial x1 17.1  serial x4 17.8  batched B=1 17.3  batched B=2 23.6  batched B=4 39.0  batched B=8 43.1  J8 workers N=2 23.4  J8 workers N=4 25.1 tok/s
+[mc2  111.0s] rep 5/5:  serial x1 18.1  serial x4 18.2  batched B=1 18.2  batched B=2 20.4  batched B=4 38.6  batched B=8 41.2  J8 workers N=2 22.8  J8 workers N=4 25.2 tok/s
+[mc2  111.0s] aggregate decode tok/s, median of 5 reps (qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw int4, depth 128):
+[mc2  111.0s]   serial x1           17.8 tok/s  1.000x serial x1
+[mc2  111.0s]   serial x4           17.8 tok/s  0.999x serial x1
+[mc2  111.0s]   batched B=1         17.7 tok/s  0.996x serial x1
+[mc2  111.0s]   batched B=2         23.2 tok/s  1.305x serial x1
+[mc2  111.0s]   batched B=4         38.8 tok/s  2.182x serial x1
+[mc2  111.0s]   batched B=8         43.1 tok/s  2.421x serial x1
+[mc2  111.0s]   J8 workers N=2      23.0 tok/s  1.293x serial x1
+[mc2  111.0s]   J8 workers N=4      25.2 tok/s  1.417x serial x1
+[mc2  111.0s] MC2 METRIC batched B=4 / serial x1 = 2.182x (per-rep sorted [2.1349010405447606 2.1638957265829912 2.181629330286634 2.2343855521309783 2.286604935406358]); J8 N=4 / serial x1 = 1.417x
+--- PASS: TestMC2_batchedDecodeThroughput (111.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	111.383s

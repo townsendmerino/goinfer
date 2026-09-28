@@ -113,7 +113,8 @@ for all of them. Every reply is bit-identical either way, and a lone request tak
 - On a 7B (qwen2.5-7b, Ryzen 7 3700X, W7, 4 clients): **2.19×** the workers' aggregate (5.4 → 11.9 tok/s), with the
   p99 turn 96 → 46 s and a lone request unchanged. See `measurements/concurrency-mc3c-step2-2026-09-27.md`.
 - On the 0.5B, `on` reads 0.73× the workers.
-- `auto` is off on macOS until measured there.
+- On macOS too: on an M1 Pro's CPU the 7B's batched step reads 1.54× (depth 128) and 1.38× (depth 512) the workers
+  (`measurements/concurrency-mc2-2026-09-26.md`, "Mac 7B cell"). A served W7 run on the Mac has not been made.
 - Not batched (they run as workers): MoE, recurrent, hybrid and non-standard-block families, `--kv i8`, adapters,
   speculative decode and vision.
 - The banner's concurrency line says which mode runs, and serve logs the batcher's step counts at shutdown.

@@ -268,7 +268,7 @@ func concurrencyLine(f bannerFacts, cfg config) string {
 		if f.cpuBatched {
 			line = fmt.Sprintf("concurrency: %d generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)", f.concurrent)
 		} else if cfg.cpuBatch == decoder.CPUBatchAuto {
-			line += "; decode runs as independent workers (-cpu-batch auto batches models with 2 GiB or more of weights, not on macOS)"
+			line += "; decode runs as independent workers (-cpu-batch auto batches models with 2 GiB or more of weights)"
 		}
 		if cfg.maxConcurrent > f.concurrent {
 			line += fmt.Sprintf("; %d asked, capped by --kv-sessions %d", cfg.maxConcurrent, cfg.kvSessions)

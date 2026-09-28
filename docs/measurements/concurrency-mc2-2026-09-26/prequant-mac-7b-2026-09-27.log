@@ -1,0 +1,2 @@
+decoder: .giw context capped at 22198 (model allows 32768) so that KV+scratch fits: needs ~2.62 GB of 3.62 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+wrote /Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw: 4937 MB (int4)

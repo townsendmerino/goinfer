@@ -3,7 +3,6 @@ package decoder
 import (
 	"fmt"
 	"math"
-	"runtime"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -20,15 +19,17 @@ import (
 
 // CPUBatchDecode values (Options.CPUBatchDecode).
 const (
-	CPUBatchAuto = 0  // batch an eligible model with at least cpuBatchAutoMinBytes of dense weights; off on darwin
+	CPUBatchAuto = 0  // batch an eligible model with at least cpuBatchAutoMinBytes of dense weights
 	CPUBatchOn   = 1  // batch every eligible model
 	CPUBatchOff  = -1 // never batch: step 1's independent workers
 )
 
 // cpuBatchAutoMinBytes is CPUBatchAuto's threshold, pre-registered 2026-09-27. Batching's lead over the workers at
 // B = N = 4 measured 0.64-0.75x on the 0.5B (0.47 GB of dense weights), 1.02-1.11x on the 1.5B (1.23 GB) and 2.25-2.41x
-// on the 7B (4.93 GB) on nobara, and the workers led on the Mac's 0.5B and 1.5B. Below it the workers are no worse
-// off; above it batching wins by a wide margin. The range between 2 GiB and the 7B is unmeasured.
+// on the 7B (4.93 GB) on nobara, and the workers led on the Mac's 0.5B and 1.5B. On the Mac's 7B batching leads by
+// 1.54x (depth 128) and 1.38x (512) (2026-09-27, docs/measurements/concurrency-mc2-2026-09-26.md, "Mac 7B cell"), so
+// the threshold holds on darwin too. Below it the workers are no worse off; above it batching wins by a wide margin.
+// The range between 2 GiB and the 7B is unmeasured.
 const cpuBatchAutoMinBytes = 2 << 30
 
 // cpuBatcher is a Model's MC3c step-2 coordinator (Model.EnableCPUBatch).
@@ -42,14 +43,13 @@ type cpuBatcher struct {
 //   - n < 2, or the model decodes on a GPU resident (MC3 is that path's batching);
 //   - Options.CPUBatchDecode is CPUBatchOff;
 //   - the family is outside decodeMultiStep's scope (cpuBatchModelEligible);
-//   - under CPUBatchAuto: the model's dense weights are under cpuBatchAutoMinBytes, or the OS is darwin (a Mac 7B cell
-//     is owed before auto batches there; the Mac's 0.5B and 1.5B favour the workers).
+//   - under CPUBatchAuto: the model's dense weights are under cpuBatchAutoMinBytes.
 func (m *Model) EnableCPUBatch(n int) bool {
 	m.cpuBatch = nil // a repeated call (a changed -max-concurrent) decides afresh
 	if n < 2 || m.resident != nil || m.cpuBatchMode == CPUBatchOff || m.cpuBatchModelEligible() != nil {
 		return false
 	}
-	if m.cpuBatchMode == CPUBatchAuto && (runtime.GOOS == "darwin" || m.ResidentDenseWeightBytes() < cpuBatchAutoMinBytes) {
+	if m.cpuBatchMode == CPUBatchAuto && m.ResidentDenseWeightBytes() < cpuBatchAutoMinBytes {
 		return false
 	}
 	b := &cpuBatcher{m: m}

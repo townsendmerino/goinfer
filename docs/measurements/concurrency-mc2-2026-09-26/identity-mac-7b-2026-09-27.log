@@ -1,0 +1,7 @@
+=== RUN   TestMC2_decodeMultiStepBitIdentical
+=== RUN   TestMC2_decodeMultiStepBitIdentical/qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw/int4
+    batchdecode_mc2_test.go:40: qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw "int4": 4 sequences x 12 steps bit-identical to the single-token forward
+--- PASS: TestMC2_decodeMultiStepBitIdentical (8.47s)
+    --- PASS: TestMC2_decodeMultiStepBitIdentical/qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw/int4 (8.47s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	8.979s

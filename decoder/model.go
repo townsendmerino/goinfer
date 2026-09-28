@@ -425,7 +425,7 @@ type Options struct {
 	ResidentPrefillChunk int
 	// CPUBatchDecode chooses whether concurrent CPU generations of this model join their decode tokens into one batched
 	// forward (MC3c step 2, docs/tasks/task-concurrency-2026-09.md; Model.EnableCPUBatch): CPUBatchAuto (0, the
-	// default) batches an eligible model with at least 2 GiB of dense weights, off on darwin; CPUBatchOn batches every
+	// default) batches an eligible model with at least 2 GiB of dense weights; CPUBatchOn batches every
 	// eligible model; CPUBatchOff keeps step 1's independent workers. Every reply is bit-identical either way.
 	CPUBatchDecode int
 	// ActQuantGroup selects per-group ACTIVATION quantization for the int8-activation projections

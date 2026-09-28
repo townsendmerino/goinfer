@@ -412,7 +412,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
 	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
 	flag.IntVar(&cfg.maxConcurrent, "max-concurrent", 4, "generations one CPU model may run at once, each on its own session KV (capped by -kv-sessions; GPU-resident, weight-streaming and vision models always run one; 1 = serialized)")
-	flag.Func("cpu-batch", "auto|on|off: whether concurrent CPU generations of one model join their decode tokens into one batched forward (MC3c step 2; replies are bit-identical either way). auto (the default) batches models with at least 2 GiB of dense weights, where it measured 2.25-2.41x the independent workers on a 7B, and keeps smaller models on the workers; off on macOS until measured there", func(v string) error {
+	flag.Func("cpu-batch", "auto|on|off: whether concurrent CPU generations of one model join their decode tokens into one batched forward (MC3c step 2; replies are bit-identical either way). auto (the default) batches models with at least 2 GiB of dense weights, where it measured 2.25-2.41x the independent workers on a 7B (1.38-1.54x on an M1 Pro), and keeps smaller models on the workers", func(v string) error {
 		switch v {
 		case "auto":
 			cfg.cpuBatch = decoder.CPUBatchAuto

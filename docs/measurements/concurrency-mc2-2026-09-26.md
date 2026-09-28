@@ -199,6 +199,55 @@ The results read as follows:
 - Depth erodes batching, as on every other cell: 2.73× → 2.59× against serial from depth 128 to 512. Attention is per
   sequence and does not amortise.
 
+### Mac 7B cell (added 2026-09-27): `-cpu-batch auto` on darwin
+
+MC3c step 2 shipped with `-cpu-batch auto` batching models of ≥ 2 GiB of dense weights, but off on darwin until a Mac
+7B cell showed batched B = 4 ÷ J8 N = 4 ≥ 1.15×. On the Mac's 0.5B and 1.5B the workers led; its 7B had not been
+measured.
+
+**Pre-registered** in `796ed628`, before any timing (the task doc's MC3c section):
+- the metric is batched B = 4 ÷ J8 N = 4, per rep, median of 5, at each depth;
+- both depths' medians ≥ 1.15× turn `auto` on for darwin; both below 1.05× leave it off; anything else goes to the
+  owner.
+
+**Setup:**
+- the M1 Pro (8P + 2E cores), qwen2.5-7b-instruct q4_k_m, int4;
+- loaded from its `.int4.cpu-arm64.giw`, transcoded by `cmd/prequant` for this cell
+  ([`prequant-mac-7b-2026-09-27.log`](concurrency-mc2-2026-09-26/prequant-mac-7b-2026-09-27.log)). The `.gguf`'s CPU
+  int4 load needs ~13.3 GB, which this Mac's fit guard refuses, and it was not bypassed;
+- the test loads with `GOINFER_MC2_BACKEND=cpu`, new and test-only, because a row4-only bundle needs the CPU backend
+  named;
+- each depth in its own `go test`, idle-gated (load1 ≤ 2.0, no other go test or serve);
+- depth 128 ran 19:13–19:15 PDT and depth 512 19:19–19:22.
+
+**Two false starts.**
+- The first launch (19:07) stopped on the backend error.
+- Its identity step had also matched no subtest, which the script then took as a pass. The check was fixed to require
+  the identity line before the relaunch at 19:09.
+- No timing ran in the first attempt, and its logs are not kept in the record.
+
+Raw: [`run-mac-7b-2026-09-27.log`](concurrency-mc2-2026-09-26/run-mac-7b-2026-09-27.log),
+[`run-mac-7b-d128-2026-09-27.log`](concurrency-mc2-2026-09-26/run-mac-7b-d128-2026-09-27.log),
+[`run-mac-7b-d512-2026-09-27.log`](concurrency-mc2-2026-09-26/run-mac-7b-d512-2026-09-27.log),
+[`run-mac-7b-2026-09-27.sh`](concurrency-mc2-2026-09-26/run-mac-7b-2026-09-27.sh).
+
+**Identity passes on the Mac's 7B:** 4 sequences × 12 steps are bit-identical to the single-token forward at int4
+([`identity-mac-7b-2026-09-27.log`](concurrency-mc2-2026-09-26/identity-mac-7b-2026-09-27.log)).
+
+| model | depth | serial x1 | batched B=1 | B=2 | **B=4** | B=8 | J8 N=2 | **J8 N=4** | **B=4 ÷ J8 N=4 (per rep → median)** |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 7B (Mac) | 128 | 17.8 | 0.996× | 1.305× | **2.182×** | 2.421× | 1.293× | **1.417×** | 1.540 · 1.538 · 1.542 · 1.554 · 1.532 → **1.540×** |
+| 7B (Mac) | 512 | 16.4 | 1.006× | 1.276× | **2.019×** | 2.176× | 1.334× | **1.460×** | 1.430 · 1.395 · 1.383 · 1.340 · 1.238 → **1.383×** |
+
+**Decision, by the registered rule: `auto` batches on darwin too.** Both medians are ≥ 1.15×. The `runtime.GOOS`
+clause in `decoder/cpu_batch.go` is gone, and the 2 GiB threshold holds, so the Mac's 1.5B (1.23 GB), where the workers
+lead, stays on the workers.
+
+**Reading.**
+- As on `nobara`, the workers barely scale on the 7B (1.42–1.46× serial at N = 4), while batching reaches 2.0–2.2×.
+- The Mac's lead (1.38–1.54×) is smaller than the Linux box's (2.25–2.41×), but well past the bar.
+- Depth 512's rep 5 (1.238) ran while load rose after the depth-128 cell; the median is unaffected.
+
 ## Owed
 - J8's latency half, per request.
 - ~~A re-run of the Linux 0.5B depth-128 cell without the concurrent rsync.~~ Done 2026-09-27: 1.185×.

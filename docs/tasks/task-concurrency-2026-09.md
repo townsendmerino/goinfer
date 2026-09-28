@@ -26,7 +26,8 @@
 >   pass on the 7B (CPU): 4 clients 2.19× the step-1 workers, p99 turn 0.48×, a lone request 1.000× / 1.000×, every
 >   reply identical. `-cpu-batch auto` (the default) batches models of ≥ 2 GiB of weights; off on darwin until a Mac
 >   7B cell;
-> - a Mac 7B MC2 cell (batched B = 4 ÷ J8 N = 4 ≥ 1.15× turns `-cpu-batch auto` on for darwin);
+> - ~~a Mac 7B MC2 cell~~ — done 2026-09-27: batched B = 4 ÷ J8 N = 4 reads 1.540× / 1.383× (depths 128 / 512), so
+>   `-cpu-batch auto` batches on darwin too;
 > - ~~fused projections in the batched CPU step (S1)~~ — shipped 2026-09-27 (`000efe2e`): the step 1.058× at B = 4
 >   on the 7B, W7 4 clients 1.051×. **Lever B, an aikit small-M kernel for the batched step: PARKED by the owner,
 >   2026-09-27.**
@@ -944,6 +945,11 @@ batching is enabled for the model and the cache is eligible:
      - **Decision:** both depths' medians ≥ 1.15× → `auto` batches on darwin too (the `runtime.GOOS` clause in
        `decoder/cpu_batch.go` goes). Both < 1.05× → darwin stays off, with the numbers recorded. Otherwise the owner
        decides.
+     - **Measured 2026-09-27: `auto` now batches on darwin.**
+       - Batched B = 4 ÷ J8 N = 4 reads **1.540×** at depth 128 and **1.383×** at 512
+         ([`concurrency-mc2-2026-09-26.md`](../measurements/concurrency-mc2-2026-09-26.md), "Mac 7B cell").
+       - Identity passes on the 7B.
+       - The darwin clause is removed. The 2 GiB threshold keeps the Mac's 1.5B on the workers.
 
 **Declines, per token, to production's own `m.forward` (the step-1 worker path):**
 - a cache that fails `mc2Eligible`: `--kv i8`, a sliding-window ring, an adapter session, a tree mask;

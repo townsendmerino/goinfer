@@ -28,7 +28,7 @@ func TestMC2_decodeMultiStepBitIdentical(t *testing.T) {
 			if _, err := os.Stat(c.path); err != nil {
 				t.Skipf("no checkpoint at %s: %v", c.path, err)
 			}
-			m, err := Load(c.path, Options{Quant: c.quant})
+			m, err := Load(c.path, Options{Quant: c.quant, Backend: os.Getenv("GOINFER_MC2_BACKEND")})
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
@@ -61,7 +61,8 @@ func argmaxF32(v []float32) int {
 //	GOINFER_MC2=1 GOINFER_MC2_MODEL=~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf \
 //	  go test -count=1 -timeout 60m -run '^TestMC2_batchedDecodeThroughput$' -v ./decoder/
 //
-// Env: GOINFER_MC2_QUANT (default int4), GOINFER_MC2_DEPTH (default 128), GOINFER_MC2_STEPS (default 16),
+// Env: GOINFER_MC2_BACKEND (default "": a row4-only .giw, the cpu-arm64 / cpu-amd64 prequant targets, needs "cpu"),
+// GOINFER_MC2_QUANT (default int4), GOINFER_MC2_DEPTH (default 128), GOINFER_MC2_STEPS (default 16),
 // GOINFER_MC2_REPS (default 5).
 func TestMC2_batchedDecodeThroughput(t *testing.T) {
 	if os.Getenv("GOINFER_MC2") != "1" {
@@ -86,7 +87,7 @@ func TestMC2_batchedDecodeThroughput(t *testing.T) {
 	hb := func(format string, a ...any) {
 		fmt.Fprintf(os.Stderr, "[mc2 %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(format, a...))
 	}
-	m, err := Load(path, Options{Quant: quant})
+	m, err := Load(path, Options{Quant: quant, Backend: os.Getenv("GOINFER_MC2_BACKEND")})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
