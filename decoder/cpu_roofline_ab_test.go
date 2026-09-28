@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -339,4 +340,84 @@ func pairAB(t *testing.T, name string, a, b *cpuDecodeAB, pairs int) {
 	}
 	sort.Float64s(ratios)
 	fmt.Fprintf(os.Stderr, "[%s] median b/a %.4f (min %.4f max %.4f, n=%d)\n", name, ratios[len(ratios)/2], ratios[0], ratios[len(ratios)-1], pairs)
+}
+
+// L1 S0 (docs/tasks/task-cpu-decode-peer-gap-2026-09.md): f16 group scales on the M=1 W4A8 paths. The model
+// loads with GOINFER_INT4_F16_SCALES=1 so its f32 scales are f16-rounded, then every int4 weight gets the
+// exact f16 encoding attached; linalg.SetInt4F16ScalesS0 flips between the two arms in-process.
+func withF16ScalesS0(t *testing.T, name, env, def string) *cpuDecodeAB {
+	t.Helper()
+	t.Setenv("GOINFER_INT4_F16_SCALES", "1")
+	h := newCPUDecodeAB(t, env, def, 128)
+	n := 0
+	for _, wm := range h.m.w.matmulWeights() {
+		if wm.AttachInt4ScalesF16S0() {
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatalf("%s: no int4 weight took f16 scales — the S0 would compare a path with itself", name)
+	}
+	t.Logf("%s: f16 scales attached to %d int4 weights", name, n)
+	t.Cleanup(func() { linalg.SetInt4F16ScalesS0(false) })
+	return h
+}
+
+var s0Models = []struct{ name, env, def string }{
+	{"0.5B", "GOINFER_CPU_MODEL_05B", "$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"},
+	{"1.5B", "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
+	{"7B", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf"},
+}
+
+// TestS0F16Scales_logitsBitIdentical is S0 gate 1.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_NO_FIT_GUARD=1 go test -tags goinfer_testhooks ./decoder/ -run TestS0F16Scales_logitsBitIdentical -v -count=1 -timeout 30m
+func TestS0F16Scales_logitsBitIdentical(t *testing.T) {
+	for _, mc := range s0Models {
+		t.Run(mc.name, func(t *testing.T) {
+			h := withF16ScalesS0(t, mc.name, mc.env, mc.def)
+			capture := func(on bool) [][]float32 {
+				linalg.SetInt4F16ScalesS0(on)
+				var steps [][]float32
+				sp := SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
+					steps = append(steps, append([]float32(nil), logits...))
+				}}
+				out, g := h.m.Generate(context.Background(), h.ids, 48, sp)
+				for range out {
+				}
+				if g.err != nil {
+					t.Fatalf("generate: %v", g.err)
+				}
+				return steps
+			}
+			off, on := capture(false), capture(true)
+			if len(on) != len(off) || len(on) == 0 {
+				t.Fatalf("captured %d steps f16 vs %d f32", len(on), len(off))
+			}
+			bad := 0
+			for s := range off {
+				for i := range off[s] {
+					if on[s][i] != off[s][i] {
+						bad++
+						if bad <= 3 {
+							t.Errorf("step %d logit %d: f16 %v != f32 %v", s, i, on[s][i], off[s][i])
+						}
+					}
+				}
+			}
+			t.Logf("f16 scales %s: %d decode steps x %d logits compared, %d differ", mc.name, len(off), len(off[0]), bad)
+		})
+	}
+}
+
+// TestS0F16Scales_AB is S0 gate 2: the paired ABBA speed of f16 against f32 scales.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_NO_FIT_GUARD=1 go test -tags goinfer_testhooks ./decoder/ -run TestS0F16Scales_AB -v -count=1 -timeout 45m
+func TestS0F16Scales_AB(t *testing.T) {
+	for _, mc := range []struct{ name, env, def string }{s0Models[1], s0Models[0], s0Models[2]} {
+		t.Run(mc.name, func(t *testing.T) {
+			h := withF16ScalesS0(t, mc.name, mc.env, mc.def)
+			h.run("f16 scales ("+mc.name+")", 5, func(on bool) { linalg.SetInt4F16ScalesS0(on) })
+		})
+	}
 }

@@ -756,7 +756,7 @@ func isW4A8(w *linalg.WeightMat) bool {
 func wmW4A8Op(w *linalg.WeightMat, dst []float32) (op linalg.W4A8Op, group int) {
 	q4, q4s, group, _ := w.Int4()
 	row4, row4s, _ := w.Int4Row4()
-	return linalg.W4A8Op{W4: q4, Scales: q4s, Row4: row4, Row4Scales: row4s, Dst: dst, N: w.Rows()}, group
+	return linalg.W4A8Op{W4: q4, Scales: q4s, Row4: row4, Row4Scales: row4s, ScalesF16: w.Int4ScalesF16S0(), Dst: dst, N: w.Rows()}, group
 }
 
 // matmulWSPool recycles the Workspace matmul() falls back to when the caller has no

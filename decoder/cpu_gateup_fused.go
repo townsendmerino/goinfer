@@ -100,8 +100,14 @@ func gatedMLPFusedGateUp(h []float32, lw *LayerWeights, arch *Architecture, scr 
 			return
 		}
 		wss[i].SetActQuantGroup(lw.GateProj.ActQuantGroup())
-		linalg.MatmulBTW4A8Into(wss[i], h, q4g[j0*bpr:j1*bpr], sg[j0*ng:j1*ng], gate[j0:j1], 1, K, j1-j0, group)
-		linalg.MatmulBTW4A8Into(wss[i], h, q4u[j0*bpr:j1*bpr], su[j0*ng:j1*ng], up[j0:j1], 1, K, j1-j0, group)
+		if sg16, su16 := lw.GateProj.Int4ScalesF16S0(), lw.UpProj.Int4ScalesF16S0(); linalg.Int4F16ScalesS0() && sg16 != nil && su16 != nil {
+			// L1 S0 prototype (docs/tasks/task-cpu-decode-peer-gap-2026-09.md): the same matmuls over f16 scales.
+			linalg.MatmulBTW4A8F16Into(wss[i], h, q4g[j0*bpr:j1*bpr], sg16[j0*ng:j1*ng], gate[j0:j1], 1, K, j1-j0, group)
+			linalg.MatmulBTW4A8F16Into(wss[i], h, q4u[j0*bpr:j1*bpr], su16[j0*ng:j1*ng], up[j0:j1], 1, K, j1-j0, group)
+		} else {
+			linalg.MatmulBTW4A8Into(wss[i], h, q4g[j0*bpr:j1*bpr], sg[j0*ng:j1*ng], gate[j0:j1], 1, K, j1-j0, group)
+			linalg.MatmulBTW4A8Into(wss[i], h, q4u[j0*bpr:j1*bpr], su[j0*ng:j1*ng], up[j0:j1], 1, K, j1-j0, group)
+		}
 		swiglu(gate[j0:j1], up[j0:j1])
 	}
 	if w == 1 {
