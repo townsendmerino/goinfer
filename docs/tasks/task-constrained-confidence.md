@@ -458,6 +458,47 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
     as the reopen trigger.
   - More than 10 points behind → build D2–D4.
   - In between → his call, with the numbers on the page.
+
+**D6a pre-registration (2026-09-28, committed before any graded run; the owner chose chat-v1 as the graded
+template).** The artifacts are in `docs/measurements/decisions-d6a-2026-09-28/`: `select.py`, `analyze.py` and
+`run-d6a.sh`, all written before any graded run.
+- **Machine: nobara-pc, CUDA** (`docs/prompts/nobara-decisions-d6a-2026-09.md`). The Mac cannot run it.
+  - The 9B fell back to the CPU there twice: first because the auto-pinned context exceeded Metal's 32,768
+    ceiling (fixed by `--ctx 4096`), then because Metal's memory guard budget (5.4–5.8 GB of live memory against
+    the 6.04 GB the resident needs) declined it.
+  - The CPU path took 10–79 s a row, which puts the run at about 60 hours.
+  - A 6-row smoke run on rows outside every graded sample was seen before this was written, and is disclosed:
+    chat-v1 got 3/6 right and bare-v1 1/6. That decides nothing.
+- **Model:** `unsloth/Qwen3.5-9B-GGUF` Q4_K_M (5,680,522,464 B; its base is `Qwen/Qwen3.5-9B`, JEV-9B's own base),
+  from `~/models`, at the default quant with `--ctx 4096`. The run must show the resident decode path.
+- **Arms** (the production CLI: `decisions-calibrate` on the calibration sample, then `decide` uncalibrated on the
+  eval sample; `analyze.py` applies each arm's fitted T):
+  - **A:** Qwen3.5-9B with **chat-v1**. Graded.
+  - **B:** Qwen3.5-9B with **bare-v1**. The control: the authors' B0 is this computation in bf16. Its raw top-1 must
+    land within 0.05 of B0's OOD 0.5180, or goinfer's Route A differs from theirs and arm A is not trusted until
+    that is explained.
+  - **C:** qwen2.5-coder-1.5b-instruct with chat-v1. Reported only ("what the any-model path gives").
+- **Data** (`SargeDev/jev-distill-corpus-v3` @ `fc99c635…`; calibration.jsonl sha256 `c5e232a0…b068155`, ood.jsonl
+  `70d0f017…885781`):
+  - **calibration:** 1,500 rows, excluding `yuri_v1`'s placeholder rows, stratified by kind as the rest of the
+    split is (noul 598, choice 468, score 434). Sample sha256 `0cde7143…4e15`.
+  - **evaluation:** OOD gold rows: 1,000 noul, 1,000 choice and all 72 score. Sample sha256 `307fe998…07b3`.
+  - Within each stratum, the rows with the lowest `sha256(id)`.
+- **Metrics:**
+  - top-1: argmax(p) = argmax(target);
+  - ECE: top-label, over 15 equal-width bins;
+  - noul AUROC (reported);
+  - per kind, then combined with the OOD split's own kind proportions (9,767 / 3,219 / 72), so the overall figures
+    compare with JEV-9B's published full-split OOD numbers (top-1 0.9181, ECE 0.0396, bf16).
+  - The KL to the JEV-9B reference waits on the D0 fixture, and is reported when it exists. It does not decide.
+- **The decision** is the rule above, on arm A calibrated:
+  - top-1 ≥ 0.8881 and ECE ≤ 0.05 → Route A is enough: ship D1 + D5, park D2–D4;
+  - top-1 < 0.8181 → build D2–D4;
+  - between → the owner's call.
+  - **This is not a paired comparison.** JEV-9B's figures are the authors' bf16 full-split run. A gap near an edge
+    is read with that in mind, and the fixture's same-rows comparison settles it.
+- **Parked here:** the Metal decline of an *auto-pinned* context above its ceiling. It declines to the CPU instead
+  of clamping to 32,768, which is a real usability bug in its own right, and is fixed separately.
 - **D6b (Route B parity).** goinfer JEV-9B against the D0 goldens at f32, int8int8 and int4
   (default). Pre-registered: mean KL ≤ 0.01 at f32 and ≤ 0.03 at int4, top-1 agreement ≥ 98%.
   Report ECE per arm: quantization can hold top-1 and still shift calibration, which is the
