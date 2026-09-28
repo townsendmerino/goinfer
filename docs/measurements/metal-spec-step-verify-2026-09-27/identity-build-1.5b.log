@@ -1,0 +1,31 @@
+=== RUN   TestSpecNgram_multiTurnMatchesPlain
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.038 ms), gate|up at B <= 2 (0.109, 0.250); 0 = always the fragment
+goinfer: batched prefill declined for a 23-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): metal: prompt too short (23 tokens) for fast prefill (floor=64; §3 floor); using sequential path
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.018 ms, fragment 0.038 ms), gate|up at B <= 2 (0.108, 0.250); 0 = always the fragment
+[spec-mt] turn 0: reused plain 0 spec 0; 128 / 128 tokens; first differing token -1; spec rounds 121 drafted 24 accepted 6
+[spec-mt] turn 1: reused plain 151 spec 151; 128 / 128 tokens; first differing token -1; spec rounds 93 drafted 67 accepted 38
+[spec-mt] K/V after turn 0: 0 elements differ over the shared positions
+--- PASS: TestSpecNgram_multiTurnMatchesPlain (6.97s)
+=== RUN   TestSpecNgram_copyOnStepVerify
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.038 ms), gate|up at B <= 2 (0.108, 0.249); 0 = always the fragment
+[spec-copy] 192 tokens identical; spec rounds 27 drafted 175 accepted 171; wall plain 4.027s spec 805ms (5.00x)
+--- PASS: TestSpecNgram_copyOnStepVerify (4.98s)
+=== RUN   TestSpecVerify_forwardNMatchesForward
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.038 ms), gate|up at B <= 2 (0.109, 0.249); 0 = always the fragment
+[spec-verify] M=8 row 0: logits 0 of 151936 differ (max |diff| 0), argmax equal true
+[spec-verify] M=8 row 1: logits 0 of 151936 differ (max |diff| 0), argmax equal true
+[spec-verify] M=8 row 2: logits 0 of 151936 differ (max |diff| 0), argmax equal true
+[spec-verify] M=8 row 3: logits 0 of 151936 differ (max |diff| 0), argmax equal true
+[spec-verify] M=8 row 4: logits 0 of 151936 differ (max |diff| 0), argmax equal true
+[spec-verify] M=8 row 5: logits 0 of 151936 differ (max |diff| 0), argmax equal true
+[spec-verify] M=8 row 6: logits 0 of 151936 differ (max |diff| 0), argmax equal true
+[spec-verify] M=8 row 7: logits 0 of 151936 differ (max |diff| 0), argmax equal true
+[spec-verify] M=8: K/V at positions 300..307: 0 elements differ (none)
+[spec-verify] M=1: logits 0 of 151936 differ (max |diff| 0), argmax equal true; K/V at position 300: 0 elements differ
+--- PASS: TestSpecVerify_forwardNMatchesForward (1.05s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	13.447s

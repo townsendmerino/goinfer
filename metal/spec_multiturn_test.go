@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -130,5 +131,77 @@ func TestSpecNgram_multiTurnMatchesPlain(t *testing.T) {
 	}
 	if d := firstDiff(plain[1].ids, spec[1].ids); d >= 0 {
 		t.Errorf("turn 1 differs from plain decode at token %d: n-gram speculation is not token-identical to plain greedy across turns", d)
+	}
+}
+
+// TestSpecNgram_copyOnStepVerify: on a verbatim-copy prompt, where n-gram drafting does most, speculation verifying on
+// the step kernels (PrefillLastNArgmax) emits exactly plain decode's ids, and really does draft deep: rounds well
+// under the token count. Reports both arms' wall time (exploratory; the served grading is the measure).
+//
+//	GOINFER_METAL_MC3=1 go test -tags goinfer_testhooks -count=1 -run '^TestSpecNgram_copyOnStepVerify$' -v ./metal/
+func TestSpecNgram_copyOnStepVerify(t *testing.T) {
+	path, tokPath := mc3Checkpoint(t)
+	if os.Getenv("GOINFER_METAL_MC3") != "1" {
+		t.Skip("set GOINFER_METAL_MC3=1 (loads a real checkpoint)")
+	}
+	tk, err := tokenizer.LoadGGUF(tokPath)
+	if err != nil {
+		t.Skipf("tokenizer: %v", err)
+	}
+	src, err := os.ReadFile("backend.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src[:3500])
+	prompt, err := tk.Encode("<|im_start|>user\nHere is part of a Go file:\n\n```go\n"+body+"\n```\n\nRewrite the code above EXACTLY, character for character, with no changes and no commentary.<|im_end|>\n<|im_start|>assistant\n", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const maxTok = 192
+	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 4096, ResidentKVSlots: 2})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	if _, ok := m.ResidentForwardForTest().(interface{ VerifyCost() []float64 }); !ok {
+		t.Fatal("the Metal resident does not report a verify cost")
+	}
+	run := func(spec bool) ([]int, *decoder.Generation, time.Duration) {
+		t0 := time.Now()
+		var ch <-chan int
+		var g *decoder.Generation
+		if spec {
+			if ch, g, err = m.GenerateNgramSpeculativeAdaptive(context.Background(), prompt, maxTok, &decoder.NgramDrafter{},
+				&decoder.AdaptiveDepth{MaxDraft: 8}, decoder.SamplingParams{}); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			ch, g = m.Generate(context.Background(), prompt, maxTok, decoder.SamplingParams{})
+		}
+		var ids []int
+		for id := range ch {
+			ids = append(ids, id)
+		}
+		if g.Err() != nil {
+			t.Fatal(g.Err())
+		}
+		return ids, g, time.Since(t0)
+	}
+	// Plain runs first and cold; spec then reuses its prompt prefix, so spec's wall excludes most of the prefill. The
+	// ratio printed is indicative only.
+	plain, _, tp := run(false)
+	spec, g, ts := run(true)
+	if !slices.Equal(plain, spec) {
+		i := 0
+		for i < min(len(plain), len(spec)) && plain[i] == spec[i] {
+			i++
+		}
+		t.Fatalf("spec differs from plain decode at token %d of %d/%d", i, len(plain), len(spec))
+	}
+	st := g.Spec
+	fmt.Fprintf(os.Stderr, "[spec-copy] %d tokens identical; spec rounds %d drafted %d accepted %d; wall plain %v spec %v (%.2fx)\n",
+		len(spec), st.Rounds, st.Drafted, st.Accepted, tp.Round(time.Millisecond), ts.Round(time.Millisecond), tp.Seconds()/ts.Seconds())
+	if st.Drafted == 0 || st.Rounds >= len(spec)*3/4 {
+		t.Errorf("spec drafted %d tokens over %d rounds for %d tokens: the step verify did not draft on a copy prompt", st.Drafted, st.Rounds, len(spec))
 	}
 }

@@ -1,0 +1,9 @@
+=== RUN   TestMC3Verify_rowCost
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.018 ms, fragment 0.040 ms), gate|up at B <= 2 (0.110, 0.265); 0 = always the fragment
+[mc3-verify-cost] depth 128: production token 10.431 ms  | M=1 13.018 ms (1.25x a token, extra row —)  | M=2 16.632 ms (1.59x a token, extra row 0.595)  | M=4 17.873 ms (1.71x a token, extra row 0.238)  | M=8 18.333 ms (1.76x a token, extra row 0.108)
+[mc3-verify-cost] depth 512: production token 11.511 ms  | M=1 13.881 ms (1.21x a token, extra row —)  | M=2 17.868 ms (1.55x a token, extra row 0.552)  | M=4 19.870 ms (1.73x a token, extra row 0.242)  | M=8 22.194 ms (1.93x a token, extra row 0.133)
+[mc3-verify-cost] depth 2048: production token 11.426 ms  | M=1 13.886 ms (1.22x a token, extra row —)  | M=2 18.423 ms (1.61x a token, extra row 0.612)  | M=4 21.581 ms (1.89x a token, extra row 0.296)  | M=8 26.828 ms (2.35x a token, extra row 0.193)
+--- PASS: TestMC3Verify_rowCost (37.78s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	38.277s

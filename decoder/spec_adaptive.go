@@ -36,9 +36,16 @@ type AdaptiveDepth struct {
 	// and two depths, 2026-09-01 -- and substituted 0.5, the most over-drafting
 	// setting available. A parameter whose domain excludes the measurement is
 	// not a default, it is a wrong answer that cannot be corrected.
-	Theta      float64
+	Theta float64
+	// Cost, when set, replaces the linear Theta rule with a measured cost curve: Cost[m] is the time to verify m rows
+	// (m >= 1) in units of one single-token target step, so Cost[1] is 1 (a round that drafts nothing is a plain
+	// decode step). A verify whose cost is NOT linear in m needs it: Metal's step-kernel verify costs ~1.6-1.8 tokens
+	// at 2 rows but only ~1.8-2.7 at 8 (a fixed overhead, then a nearly flat slope), so the linear rule, which drafts
+	// while alpha^k > Theta, would draft single tokens at an acceptance that cannot pay for the overhead. With Cost,
+	// Depth picks the depth that maximises expected emitted tokens per unit cost, and 0 when nothing beats plain decode.
+	Cost       []float64
 	Lambda     float64 // EMA retention for the acceptance estimate (default 0.8)
-	ProbeEvery int     // force D≥1 after this many idle (D=0) rounds (default 16)
+	ProbeEvery int     // force D≥1 after this many idle (D=0) rounds (default 16; 64 with a Cost curve)
 
 	alpha  float64 // running per-position acceptance estimate
 	idle   int     // consecutive rounds with no observation (D=0)
@@ -60,6 +67,11 @@ func (a *AdaptiveDepth) ensure() {
 	}
 	if a.ProbeEvery <= 0 {
 		a.ProbeEvery = 16
+		if len(a.Cost) > 1 {
+			// A probe verifies one draft at Cost[2], ~0.6-0.8 of a token over a plain step on a step-kernel verify;
+			// every 64 idle rounds that is ~1% on a stream that never drafts, against ~5% at 16.
+			a.ProbeEvery = 64
+		}
 	}
 	a.alpha = 0.9 // optimistic start: speculate, then adapt to the stream
 	a.inited = true
@@ -85,6 +97,20 @@ func (a *AdaptiveDepth) Depth(proposedLen int) int {
 	}
 	if a.idle >= a.ProbeEvery { // refresh a stale estimate
 		return 1
+	}
+	if len(a.Cost) > 1 {
+		// Expected tokens a round emits when it verifies d drafts: the correction or bonus token, plus draft i when
+		// the first i all land, E(d) = sum_{i=0..d} alpha^i. Pick the d with the best E(d) / Cost[d+1]; plain decode
+		// (d = 0) scores exactly 1.
+		best, bd, e, p := 1.0, 0, 1.0, 1.0
+		for d := 1; d <= max && d+1 < len(a.Cost); d++ {
+			p *= a.alpha
+			e += p
+			if r := e / a.Cost[d+1]; r > best {
+				best, bd = r, d
+			}
+		}
+		return bd
 	}
 	if a.alpha <= a.Theta { // even one node isn't worth it
 		return 0
@@ -129,6 +155,14 @@ func (target *Model) GenerateNgramSpeculativeAdaptive(ctx context.Context, promp
 	if ad.Theta <= 0 { // unset by the caller: take this model's measured verify cost
 		ad.Theta = target.verifyTheta()
 	}
+	// A resident whose argmax-only verify has a measured cost curve (VerifyCostReporter) gets it — for a greedy
+	// request only, since only greedy verifies through the argmax path (genNgramInto's idsVerify); a sampled request
+	// verifies through the full-logits ForwardN, which the curve does not describe.
+	if ad.Cost == nil && sp.Temperature <= 0 && target.resident != nil {
+		if cr, ok := target.resident.(VerifyCostReporter); ok {
+			ad.Cost = cr.VerifyCost()
+		}
+	}
 	ad.ensure()
 	if ad.Theta >= 1 {
 		// P-16: Theta >= 1 means Depth() always returns 0 (see its own comment) --
@@ -145,6 +179,14 @@ func (target *Model) GenerateNgramSpeculativeAdaptive(ctx context.Context, promp
 		return ch, gen, nil
 	}
 	return target.genNgram(ctx, prompt, maxTokens, drafter, ad.MaxDraft, sp, nil, ad)
+}
+
+// VerifyCostReporter is an OPTIONAL ResidentForward extension: a resident whose argmax-only batched verify
+// (PrefillLastNArgmax) is not linear in its row count reports its measured cost curve, AdaptiveDepth.Cost's shape
+// (index m = rows verified, in single-token steps; nil when that verify is unavailable). Exported so an implementation
+// can pin itself to it at compile time: an optional interface that stops matching fails open, silently back to Theta.
+type VerifyCostReporter interface {
+	VerifyCost() []float64
 }
 
 // defaultTheta is the fallback when a caller sets no Theta and the backend is
