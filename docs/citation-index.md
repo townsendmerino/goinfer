@@ -212,7 +212,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:965` | goinfer | `// L2-Metal: attention_prefill_fused's own row-count uniform — REAL M (unpadded), unlike` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill.go:999` | goinfer | `// at end of call. (r.uH / r.uKvDim / r.uHd are resident-owned and reused — deliberately` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:235` | goinfer | `for _, K := range decisionKs {` |
-| `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:506` | goinfer | `// refLogitsRef — no separate refTokens value is needed here (see readNote for why).` |
+| `docs/audit-metal-2026-09-12.md|metal/prefill_gate_ref_test.go:512` | goinfer | `// refLogitsRef — no separate refTokens value is needed here (see readNote for why).` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gate_test.go:65` | goinfer | `anchor: func TestPrefillGate(t *testing.T) {` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gemm_s2_test.go:412` | goinfer | `#define CPS 4` |
 | `docs/audit-metal-2026-09-12.md|metal/prefill_gemm_s2_test.go:440` | goinfer | `scr[c*64u + kl*8u + nl] = half(float(int((word >> (4u*kl)) & 0xF) - 8) * sc);` |
@@ -306,7 +306,7 @@ supports.
 | `docs/measurements/splitkv-sector-efficiency-2026-09-13.md|cuda/resident.go:297` | goinfer | `// M-16, MEASURED on the RTX 2070 SUPER (Turing) rather than inferred:` |
 | `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:832` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
 | `docs/measurements/vsum-split-fidelity-PREREGISTERED.md|cuda/prefill.go:704` | goinfer | `// The exact path — attn_batched and gemv_w4a8_rn — remains selectable, remains bit-iden` |
-| `docs/measurements/vsum-split-fidelity-PREREGISTERED.md|cuda/prefill_gate_ref_test.go:314` | goinfer | `lg, err := rf.Forward(m.EmbedResidentForTest(refTokens[i-1]), pos)` |
+| `docs/measurements/vsum-split-fidelity-PREREGISTERED.md|cuda/prefill_gate_ref_test.go:320` | goinfer | `lg, err := rf.Forward(m.EmbedResidentForTest(refTokens[i-1]), pos)` |
 | `docs/multimodal.md|decoder/config.go:1367` | goinfer | `if json.Unmarshal(b, &nest) == nil && len(nest.TextConfig) > 0 {` |
 | `docs/multimodal.md|decoder/gguf_qwen35.go:77` | goinfer | `cfg.LayerTypes = append(cfg.LayerTypes, "linear_attention")` |
 | `docs/multimodal.md|decoder/weights.go:489` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
@@ -481,8 +481,8 @@ supports.
 | `docs/tasks/task-never-swap-2026-09.md|decoder/moepaging.go:204` | goinfer | `budget = mmap.AutoBudget()` |
 | `docs/tasks/task-never-swap-2026-09.md|decoder/moepaging.go:213` | goinfer | `if pool && giwPath != "" && len(poolMembers) == len(members) {` |
 | `docs/tasks/task-never-swap-2026-09.md|internal/fitcmd/fit.go:103` | goinfer | `m, err := decoder.Load(loadPath, decoder.Options{Quant: *quant, Backend: loadBackend})` |
-| `docs/tasks/task-never-swap-2026-09.md|internal/modelload/modelload.go:174` | goinfer | `opts.StreamWeights = true` |
-| `docs/tasks/task-never-swap-2026-09.md|internal/prequant/prequant.go:206` | goinfer | `func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (string, erro` |
+| `docs/tasks/task-never-swap-2026-09.md|internal/modelload/modelload.go:173` | goinfer | `opts.StreamWeights = true` |
+| `docs/tasks/task-never-swap-2026-09.md|internal/prequant/prequant.go:211` | goinfer | `func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embedInt4 boo` |
 | `docs/tasks/task-never-swap-2026-09.md|metal/backend.go:138` | goinfer | `const residentMemFraction = decoder.WeightsMemFraction` |
 | `docs/tasks/task-recompute-audit.md|cuda/resident.go:469` | goinfer | `dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state` |
 | `docs/tasks/task-recompute-audit.md|decoder/attention.go:98` | goinfer | `if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {` |
