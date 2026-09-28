@@ -62,6 +62,7 @@ format update) — the output is what's committed, not the script's own executio
 - [`bench_tool_union_cost.py`](bench_tool_union_cost.py) — gate B / B′ of `docs/measurements/tool-union-2026-09-24.md`: decode tok/s of a prose `auto` turn with the multi-tool union on vs `GOINFER_TOOL_UNION=0`, fresh server per arm, ABBA. **[repeatable]**
 - [`bench_sidecar_cuda.py`](bench_sidecar_cuda.py) — CUDA `serve` with the `.giw` sidecar default vs `-direct-load`: output identity, decode tok/s, load wall (`docs/measurements/cpu-giw-vs-direct-2026-09-24.md`). **[repeatable]**
 - [`bench_compare.sh`](bench_compare.sh) — goinfer-only in-process Go benchmarks. **Not** for peer comparisons — its own header says so; that mixing produced the retired "0.5B 1.78×" claim (see root `CLAUDE.md`).
+- [`night.py`](night.py) — the overnight queue for long runs (owner rule 2026-09-28: quick by day, long by night). Sessions `add` long jobs during the day with an estimate; the owner runs `start` at bedtime; it runs them one at a time, detached, keeps the machine awake, does not start a job that would end after 06:30, and writes `SUMMARY.md` under `~/goinfer-logs/night/runs/<date>/`. `list` / `status` / `stop` / `morning` / `drop`. See root `CLAUDE.md` § "Run budget: quick by day, long by night". **[repeatable]**
 
 ## Site / book build
 

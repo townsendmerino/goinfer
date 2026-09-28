@@ -195,9 +195,62 @@ Heavy tests need `GOINFER_HEAVY_TESTS=1` and their assets; `testdata/assets.json
 registry and `go run ./cmd/gate` is the runner (`census`, `heavy`, `parity`, `composition`,
 `selector`, `gpu`, `mutation`).
 
+## Run budget: quick by day, long by night
+
+**Owner rule, 2026-09-28: he works during the day and wants quick tests; long runs happen overnight.**
+Measured cost of not having this rule: in the 24 hours before it, the L1 campaign ran six 26–46 minute timed sweeps
+across the two machines, three of them on the Mac between 07:15 and 09:05 while he was at the keyboard. The Mac's
+41-minute served pass spent **29 minutes in `bench_peer.py`'s per-cell idle gate** waiting out load that his own
+editor and desktop were making, with the load cap raised to 2.5 as a disclosed deviation — a slower run AND a
+weaker number. On nobara, D6a was launched on a ~6 h estimate and stopped at 25 minutes.
+
+- **Estimate first.** Before any run longer than a minute, state its estimated wall time (cells × runs × per-cell
+  time, plus idle-gate waits). The big task docs already do this; do it for every run.
+- **By day, quick checks only: nothing estimated over ~10 minutes, and no timed or graded measurement on the Mac**
+  (its idle gate is fighting the owner's own load, so the number is poor anyway). What fits: build, `go vet` (the
+  tagged variants), `gofmt -l`, staticcheck; `go test -run '<the tests your change touches>'` on one package; the
+  tiny-fixture goldens; bit-identity / logits-identity checks on the 0.5B; `scripts/refresh_parity_hashes.sh`
+  (~4 min); a one-cell smoke timing (`BENCH_RUNS=1`, one model, one engine pair) labelled **exploratory** and never
+  quoted as a result.
+- **Everything else goes on the night queue:** any `bench_peer*.py` served/peer gate, A/B passes (the
+  order-reversed second pass included), sweeps across models or families, `go run ./cmd/gate parity` and `gate gpu`
+  with its heavy tier, `GOINFER_HEAVY_TESTS=1` over whole packages, evaluation runs like D6a, and anything else over
+  ~10 minutes:
+
+  ```sh
+  python3 scripts/night.py add <name> --est <minutes> --by "<who>, <campaign>" --doc <task doc> -- bash docs/measurements/<campaign>/run-<x>.sh
+  ```
+
+  Then tell the owner what you queued and tonight's total (`add` prints it), and carry on with quick work or stop.
+  **Do not start the queue, wait on it, or poll it** — the owner starts it at bedtime (`night.py start`). The queue
+  is per machine: queue a job on the box that has to measure it.
+- **One copy of each run.** `night.py list` shows every queued command; check it before adding. If a queued job
+  already answers your question (the same gate or suite on tonight's tree, or a superset of it), do not queue another
+  — name that job in your report to the owner. `add` refuses an identical command from the same directory outright.
+  By day the same goes for a check that already passed at this commit: cite its log, do not re-run it. A repeat
+  that is part of a pre-registered design (the order-reversed second pass, an A/A control, a reproduce-on-another-day
+  run) is not a duplicate: queue it with `--allow-duplicate`, and pre-register a skip condition for it where one
+  fits, as the L1 served gate's 2026-09-28 amendment did (pass 2 skipped when pass 1 clears the bar by more than the
+  two passes' own measured spread).
+- **A queued job must run with nobody watching.** Use the `docs/measurements/<campaign>/run-*.sh` shape: pinned revs
+  or pre-built binaries (the tree may move before tonight), durable log/record paths, no prompts, nothing that
+  needs a Claude session alive. Its output also lands in `~/goinfer-logs/night/runs/<date>/<name>.log`.
+- **Night runs use the harness defaults** (`BENCH_MAX_LOADAVG=1.0`, not the daytime 2.5 deviation) — nothing else
+  is on the box.
+- **Jobs of 3 h or less; never 6.** `add` refuses an estimate over 360 min. Shrink the sample or fix the slow path
+  first, as D6a did. The runner does not START a job whose estimate would end after 06:30, so an over-full queue
+  carries to the next night instead of running into the owner's morning.
+- **Pre-registration is unchanged.** The rule and its bands are written and committed before the run, even when
+  the run is twelve hours away.
+- **Morning:** `python3 scripts/night.py morning` prints the latest `SUMMARY.md` (who queued each job, its doc,
+  outcome, and the tail of anything that failed). Grade against the pre-registration and commit the records. A job
+  that failed or timed out gets fixed and re-queued, not re-run by day.
+- **The owner can override.** "Run it now" means run it now.
+
 ## Long-running work
 
-Anything over a few minutes must be **detached** — `setsid nohup … </dev/null &` — because a
+By day, a long run should not be launched at all — queue it (above); `night.py` detaches its jobs itself.
+Anything over a few minutes that you do launch must be **detached** — `setsid nohup … </dev/null &` — because a
 plain background shell dies at session boundaries. Verify it took: `ps -o pid,ppid,sid` should
 show **PPID 1**.
 

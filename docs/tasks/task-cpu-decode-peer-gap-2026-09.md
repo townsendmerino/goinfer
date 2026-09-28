@@ -22,6 +22,10 @@
 > (0.5B / 1.5B / 7B, two order-reversed passes). The design's NEON `FCVTL` widen was never built, so arm64 widens every
 > scale in scalar Go on every token. amd64, Metal and WebGPU are unaffected. The NEON widen is owed (an aikit release)
 > before any arm64 CPU speed claim ("L1 build: the Mac half", below).
+>
+> **Fixed on aikit branch `arm64-f16-widen`, not yet released (2026-09-28).** A NEON widen plus a fused f16 decode
+> kernel, bit-identical, takes arm64 CPU decode to **1.041× / 1.053× / 1.080× of the f32-scale build** ("L1 arm64 fix
+> — result", below). The owner's remaining steps are an aikit tag and a goinfer bump.
 
 ## L1 — f16 group scales for CPU int4: the quality gate (pre-registered 2026-09-27)
 
@@ -483,3 +487,53 @@ Two candidate aikit fixes, both bit-exact by construction, since binary16 → f3
 - **Partial:** 0.90–0.97 on any model. It goes to the owner, with the numbers.
 - **Fallback:** < 0.90 on any model. Build the load-time f32 copy and measure it the same way.
 - **Any gain over old is reported, not a bar.** amd64's was 1.016–1.089×.
+
+**Owner amendment, 2026-09-28 09:05 PDT**, made during the served gate's pass 1, after its 0.5B triple (fix 111.5,
+old 107.1 tok/s) and the fix's 1.5B cell (53.6) had landed. Pass 2 is skipped if every model's pass-1 fix ÷ old is
+≥ 0.992: the 0.97 bar plus 0.022, the largest pass-to-pass difference the two order-reversed passes measured on this
+Mac earlier today. Otherwise pass 2 runs as pre-registered. The reason is cost. A pass is ~40 minutes on this Mac,
+and 60–70% of that is the per-cell idle gate waiting out each CPU cell's load spike.
+
+### L1 arm64 fix — result (2026-09-28): every gate passes; B (fused) chosen; arm64 CPU decode now beats the f32-scale build
+
+The fix is aikit branch `arm64-f16-widen` @ `2fd6f59` (draft PR townsendmerino/aikit#1), measured through goinfer
+`e351fad4` with aikit replaced by that branch. It is not released: an aikit tag and a goinfer bump are the owner's.
+
+**Hard gates: all pass.**
+1. `TestWidenF16_exhaustive`: all 65,536 binary16 patterns match `f16ToF32`, tails and canaries included, and the
+   comparison demonstrably fails on a shifted input.
+2. `TestDotW4A8SplitHalf4RowFoldF16_matchesF32` holds for nGroups 1–64, including subnormal scales. The full
+   `linalg` suite passes natively on the M1 Pro.
+   - Hand mutations of both asm files turned the tests red.
+   - golangci-lint v2.13.0 reports 0 issues on darwin/arm64, linux/amd64 and linux/arm64.
+3. CPU arm64 logits with the fix are **byte-identical** to `84ee8f49`'s: the 1.5B from `.gguf` (58,343,424 B) and
+   the 7B from the kind-5 `.giw` (58,392,576 B) (`xbuild-mac-arm64-fix.log`).
+
+**A or B: B.** Kernel time ÷ the f32-scale kernel, M=1 row4 matmul over a cold bank, median of 8
+(`arm64-fix-kernel-bench.log`):
+
+| shape | v1.50.0 scalar widen | A: NEON widen | **B: fused** | B ÷ A |
+|---|---:|---:|---:|---:|
+| 0.5B gate/up | 1.815 | 1.162 | **0.904** | 0.778 |
+| 1.5B gate/up | 1.402 | 1.135 | **0.905** | 0.797 |
+| 1.5B down | 1.418 | 1.102 | **0.898** | 0.815 |
+| 7B gate/up | 2.879 | 0.908 | **0.870** | 0.958 |
+
+- B is at or below A on every shape and at least 2% faster on all four, so B is chosen.
+- `-count` repeats each arm back to back, so an interleaved driver that rotates the arm order each round was run as
+  a drift check. It agrees (B ÷ f32 0.904 / 0.898 / 0.898 / 0.949; `arm64-fix-kernel-bench-interleaved.log`).
+- A on its own would not have cleared the served bar on the small models.
+
+**Served gate: CLOSED, and a gain.** `bench_peer.py`, CPU, depth 128, 3 runs, pass 1 (fix → Ollama → old per
+model), `arm64-fix-served.json`. Every token gate passes.
+
+| model | fix | old `3cd62e6d` | **fix ÷ old** | Ollama | fix ÷ Ollama |
+|---|---:|---:|---:|---:|---:|
+| 0.5B | 111.5 | 107.1 | **1.041×** | 141.3 | 0.789× |
+| 1.5B | 53.6 | 50.9 | **1.053×** | 69.9 | 0.767× |
+| 7B | 18.9 | 17.5 | **1.080×** | 17.2 | **1.099×** |
+
+- **Pass 2 skipped, per the owner amendment above.** Every ratio is ≥ 0.992, and the smallest (1.041×) clears the
+  bar by more than twice the largest order effect measured here (0.022).
+- **arm64 now shows the gain amd64 got** (1.016× / 1.047× / 1.089× on nobara). Against the merged `5c85f7c0` it is
+  1.9× / 1.9× / 2.4–2.6×. On the 7B, goinfer's CPU decode now passes Ollama's on this Mac.

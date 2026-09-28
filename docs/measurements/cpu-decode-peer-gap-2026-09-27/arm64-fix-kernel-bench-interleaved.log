@@ -1,0 +1,14 @@
+start 08:52:49 local / 15:52:49 UTC; load { 2.77 2.33 2.51 }
+goos: darwin
+goarch: arm64
+pkg: github.com/townsendmerino/aikit/linalg
+cpu: Apple M1 Pro
+BenchmarkW4A8Row4F16FixInterleaved
+    w4a8_f16_fix_bench_arm64_test.go:189: 0.5B-gateup-896x4864     f32    83406  scalar   141274  neon    96787  fused    75372 ns | scalar/f32 1.694  neon/f32 1.160  fused/f32 0.904  fused/neon 0.779
+    w4a8_f16_fix_bench_arm64_test.go:189: 1.5B-gateup-1536x8960    f32   255937  scalar   305453  neon   288091  fused   229876 ns | scalar/f32 1.193  neon/f32 1.126  fused/f32 0.898  fused/neon 0.798
+    w4a8_f16_fix_bench_arm64_test.go:189: 1.5B-down-8960x1536      f32   251303  scalar   349633  neon   276106  fused   225783 ns | scalar/f32 1.391  neon/f32 1.099  fused/f32 0.898  fused/neon 0.818
+    w4a8_f16_fix_bench_arm64_test.go:189: 7B-gateup-3584x18944     f32   453553  scalar  1413542  neon   446368  fused   430508 ns | scalar/f32 3.117  neon/f32 0.984  fused/f32 0.949  fused/neon 0.964
+BenchmarkW4A8Row4F16FixInterleaved-8   	       1	34361112250 ns/op
+PASS
+ok  	github.com/townsendmerino/aikit/linalg	34.757s
+exit 0 end 08:53:24
