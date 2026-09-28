@@ -35,8 +35,9 @@
   machine, checkpoint+quant, greedy/seed, pinned versions, date, thermal note and local-disk path.
   `~/models` only — never `/srv/models`, never `/Volumes/` (`CLAUDE.md`). CUDA rows are anchored
   to the driver version.
-- **Same session, interleaved, rotating arm order, n = 5, spreads reported.** Drift between
-  sessions is ~3.5% on the Linux box; a ratio across sessions is not a ratio.
+- **Same session, interleaved, rotating arm order, n = 5, spreads reported.** Cross-session
+  drift is ~0.7% RMS for peers on nobara (tail to ~5%) and 3.6% in goinfer's one measurement
+  (`docs/measurements/noise-registry.md`); a ratio across sessions is not a ratio.
 - **Off is a competitor** wherever a feature is on (speculation, constrained output, prefix reuse).
 - **One method for every engine.** Every engine is driven over its own HTTP server and timed
   client-side from the streaming timestamps; an engine's self-reported numbers are a secondary

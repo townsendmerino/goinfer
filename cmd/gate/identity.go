@@ -64,6 +64,7 @@ type identityOpts struct {
 	ModelsDir   string
 	LogDir      string
 	Keep        bool
+	Record      string        // -record: write eligible families' PARITY_ROW lines here (identity_record.go)
 	Timeout     time.Duration // per dumper process
 	Progress    io.Writer
 	// DumperSource replaces the embedded template (the equivalence tests inject a nondeterministic
@@ -84,6 +85,7 @@ func runIdentity(argv []string, w io.Writer) int {
 	fs.IntVar(&o.Steps, "steps", 0, "tokens generated per prompt; logits are dumped for each (default: tiny 8, real 32)")
 	fs.StringVar(&o.LogDir, "logdir", os.TempDir(), "where the run directory (worktrees, builds, dumps, logs) is created")
 	fs.BoolVar(&o.Keep, "keep", false, "keep the dumps, binaries and logs (worktrees are always removed)")
+	fs.StringVar(&o.Record, "record", "", "write PARITY_ROW lines for families whose T3 validation this run inherits (TE6(b)); merge them with the decoder's TestParityManifest_merge")
 	fs.DurationVar(&o.Timeout, "timeout", 15*time.Minute, "per dumper process")
 	// Positionals may sit before, between or after the flags.
 	var pos []string
@@ -744,6 +746,33 @@ func reportIdentity(w io.Writer, o identityOpts, old, nw *identitySide, manifest
 			amber, off, old.Short, len(notValidated), old.Short, wrapWords(notValidated, 96, "       "))
 	}
 	fmt.Fprintf(w, "  scope: this machine (%s) and backend (%s) only — identity is per machine and per backend (the CPU reference is bit-identical within an arch, not across).\n", host, o.Backend)
+
+	if o.Record != "" {
+		head, _ := gitOut(o.Repo, "rev-parse", "HEAD")
+		var rows []string
+		fmt.Fprintf(w, "\n%s== inheritance (-record %s) ==%s\n", bold, o.Record, off)
+		for _, f := range fams {
+			if f.Verdict == vNotRun {
+				continue
+			}
+			in := identityInheritance(o, old, nw, strings.TrimSpace(head), identityRecordArch(), host, manifest[f.Name], *f)
+			if in.Row != "" {
+				rows = append(rows, in.Row)
+				fmt.Fprintf(w, "  %sINHERITS%s %-18s\n", green, off, f.Name)
+				continue
+			}
+			fmt.Fprintf(w, "  not      %-18s %s\n", f.Name, strings.Join(in.Reasons, "; "))
+		}
+		if len(rows) == 0 {
+			fmt.Fprintf(w, "  nothing eligible; %s not written\n", o.Record)
+		} else if err := os.WriteFile(o.Record, []byte(strings.Join(rows, "\n")+"\n"), 0o644); err != nil {
+			fmt.Fprintf(w, "  %swrite %s: %v%s\n", red, o.Record, err, off)
+		} else {
+			fmt.Fprintf(w, "  wrote %d row(s) to %s. Before merging, check each row's checkpoint against its original reference, then:\n"+
+				"    GOINFER_MANIFEST_MACHINE=<the row's machine name> go test ./decoder/ -run TestParityManifest_merge -merge-rows %s\n",
+				len(rows), o.Record, o.Record)
+		}
+	}
 
 	end := time.Now()
 	fmt.Fprintf(w, "\n%s== verdict ==%s\n", bold, off)

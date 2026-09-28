@@ -69,6 +69,25 @@ forward path changes, *both* families go stale together, so the proxy can never
 silently drift from its source. (If an alias family ever gains its own forward
 file or a distinct `deps_hash`, it loses proxy status and needs its own T3.)
 
+**Identity-inherited validation** (TE6(b), owner decision 2026-09-28). A family whose full logits at the current rev are
+**byte-identical** to the build its T3 oracle validated clears T3 with
+`method: identity-inherited (<original method> @ <rev the oracle ran at>)`. `validated_at` becomes the current rev, and
+the original metrics are carried. Recorded only through `go run ./cmd/gate identity <validated_at> HEAD -assets real
+-quant f32,int8int8,int4 -record <file>`, then `TestParityManifest_merge -merge-rows <file>`. The recorder refuses
+unless all of these hold:
+- the row is `validated`, and its inner method is one the CPU reference carries (`full-forward-oracle`, `weightDiff`,
+  `shared-path`). A `real-model-oracle` row validated a GPU-resident path;
+- the run used real checkpoints, not tiny fixtures, which cannot reach a released checkpoint's shape-dependent kernel
+  paths;
+- the backend is the CPU, on the same arch the row was validated on (the reference is bit-identical within an arch, not
+  across);
+- `<old-rev>` is the row's `validated_at`, and `<new-rev>` is HEAD;
+- every cell, across all three CPU quants, is IDENTICAL.
+
+The row names the checkpoint that ran. **Check it against the original reference before merging**: identity on a
+smaller checkpoint of the same family is weaker evidence than on the one the oracle used. Chains keep the original method
+and rev. Any numeric difference sends the family back to its own T3 oracle.
+
 ## T3 gate outcomes: there are FOUR, not three
 
 A gate's result is one of these. The fourth was added 2026-08-13 after two live instances

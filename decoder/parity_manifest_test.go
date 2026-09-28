@@ -437,7 +437,28 @@ var t3Methods = map[string]bool{
 }
 
 func isT3Method(m string) bool {
+	if inner, _, ok := identityInherited(m); ok {
+		return t3Methods[inner] || strings.HasPrefix(inner, "shared-path (via ")
+	}
 	return t3Methods[m] || strings.HasPrefix(m, "shared-path (via ")
+}
+
+// identityInherited parses "identity-inherited (<method> @ <rev>)" (TE6(b), docs/tasks/task-test-efficiency-2026-09.md;
+// parity-coverage-policy.md): a family whose full logits at the current rev are byte-identical, on the same arch and
+// backend, to the build its T3 oracle ran at. <method> is that original T3 method and <rev> the rev it ran at; both
+// carry through chains of inheritance unchanged, and the row keeps the original metrics. It clears T3 exactly when the
+// inner method does.
+func identityInherited(m string) (inner, rev string, ok bool) {
+	const pre = "identity-inherited ("
+	if !strings.HasPrefix(m, pre) || !strings.HasSuffix(m, ")") {
+		return "", "", false
+	}
+	body := strings.TrimSuffix(strings.TrimPrefix(m, pre), ")")
+	i := strings.LastIndex(body, " @ ")
+	if i <= 0 || i+3 >= len(body) {
+		return "", "", false
+	}
+	return body[:i], body[i+3:], true
 }
 
 // TestParityManifest_methodTier is the claim-discipline gate: it makes "validated" MEAN T3.

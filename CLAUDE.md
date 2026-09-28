@@ -34,8 +34,9 @@ Read its Methodology section before adding or changing any measurement, and repr
 by its own design note drives no peer. Putting its output beside a peer number divides a kernel
 throughput by an end-to-end one; that is what produced the retired "0.5B 1.78×" claim.
 `bench_compare.sh` is still the right tool for goinfer-vs-goinfer work, and only that. Peer
-comparisons must be same-session interleaved — drift between sessions is ~3.5% on this box and
-silently corrupts ratios.
+comparisons must be same-session interleaved. Same-build cross-session drift is ~0.7% RMS for peers on nobara (tail
+to ~5%); goinfer's own is measured once, 3.6%, in a sampled cell. A cross-session ratio is not a ratio
+(`docs/measurements/noise-registry.md`, TE3).
 
 CUDA rows are anchored to a specific NVIDIA driver version. Changing the driver invalidates
 comparability and requires a deliberate re-anchor, not a silent carry-forward.
@@ -246,6 +247,14 @@ weaker number. On nobara, D6a was launched on a ~6 h estimate and stopped at 25 
   `BENCH_ENGINES=goinfer,goinfer_old`, with no peer arm. The peer ratio is read once, after the lever ships, as its own
   same-session interleaved run. In the 2026-09-28 L1 gates Ollama took a quarter to a third of the cell time and
   decided nothing.
+- **A kernel speed question starts in-process, by day** (TE5(b), owner decision 2026-09-28, the resolved-only reading).
+  - Run a whole-token in-process A/B, interleaved in one process, first. When it resolves a direction (its interval or
+    pair signs clear 1), that direction may be acted on by day. Over 142 examined changes, every resolved kernel-local
+    pair agreed in sign with its served A/B (37/37 same-session, 45/45 overall).
+  - An unresolved in-process result goes to the served gate, at night.
+  - The served gate stays the instrument for any end-to-end or peer claim.
+  - A kernel-only microbenchmark gives direction, not size: its served effect ranged 0.05–1.72× of it.
+  - `docs/measurements/test-efficiency-2026-09/te5b-concordance-2026-09-28.md` has the table.
 - **Night runs use the harness defaults** (`BENCH_MAX_LOADAVG=1.0`, not the daytime 2.5 deviation) — nothing else
   is on the box.
 - **Jobs of 3 h or less; never 6.** `add` refuses an estimate over 360 min. Shrink the sample or fix the slow path

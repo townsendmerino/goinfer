@@ -118,10 +118,12 @@ func identityRealPrompts() []string {
 
 // manifestFamilies reads the family names and the fields the report prints from the parity manifest.
 type manifestFamily struct {
-	Status      string `json:"status"`
-	Method      string `json:"method"`
-	ValidatedAt string `json:"validated_at"`
-	Machine     string `json:"machine"`
+	Status      string          `json:"status"`
+	Method      string          `json:"method"`
+	ValidatedAt string          `json:"validated_at"`
+	Machine     string          `json:"machine"`
+	Reference   string          `json:"reference"`
+	Metrics     json.RawMessage `json:"metrics"`
 }
 
 func readManifestFamilies(root string) (map[string]manifestFamily, error) {

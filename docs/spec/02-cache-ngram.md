@@ -631,8 +631,8 @@ change, not a drafter change.
 **Question.** Does re-tuning `Theta` from the shipped CPU constant (0.5) to the value measured on
 CUDA change resident decode throughput on **realistic** traffic?
 
-**Arms, all on the same box, same session, interleaved arm-by-arm per input** (drift between
-sessions is ~3.5% here and silently corrupts ratios):
+**Arms, all on the same box, same session, interleaved arm-by-arm per input** (cross-session drift, ~0.7% RMS for peers and 3.6% in goinfer's
+one measurement — `docs/measurements/noise-registry.md` — silently corrupts ratios):
 
 | arm | what |
 |---|---|

@@ -1597,8 +1597,8 @@ correct only for what it measures. TTFT was unchanged (~132–151 ms both arms) 
 lever, not a prefill one.
 
 The decode row is a **same-session interleaved A/B** — control, treatment, control, treatment,
-rebuilding between each — not two numbers from different sessions, because this box drifts ~3.5%
-between sessions and the effect had to be separated from that. Both arms reproduced exactly
+rebuilding between each — not two numbers from different sessions, because numbers drift between
+sessions (goinfer's one measurement 3.6%; `docs/measurements/noise-registry.md`) and the effect had to be separated from that. Both arms reproduced exactly
 (the harness reports best-of-6 × 48 tokens). A cross-session pair taken earlier the same day read
 103.7 → 114.0 (+9.9%); the interleaved pair supersedes it and is the number to quote.
 

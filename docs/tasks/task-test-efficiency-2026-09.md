@@ -322,8 +322,14 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   - **What the tool then says:** at a 0.97 bar a 0.5B CUDA gate needs 11 blocks, and a Mac CPU 7B gate by day cannot
     resolve at any feasible N.
   - **`CLAUDE.md`'s ~3.5% session drift is one observation:** a sampled goinfer phi3-mini cell, 2026-08-09, commit
-    `414bb364`. TE2(b)'s 0.15% is 466 peer-engine pairs. goinfer's own cross-session drift is unmeasured. Suggested
-    wording is in the `.md`; changing `CLAUDE.md` is the owner's call.
+    `414bb364`. TE2(b)'s 0.15% is 466 peer-engine pairs. goinfer's own cross-session drift is unmeasured.
+    **OWNER DECISION 2026-09-28: replaced.** `CLAUDE.md` now carries the registry's wording, as do the other living
+    statements of the rule (`docs/benchmarks.md`'s method notes, `task-peer-benchmarks.md`, `spec/02`, the
+    adaptive-speculation brief, `QUEUE.md`).
+    - **Dated measurement records** that cite ~3.5% as their reasoning are left as history; the registry's §3 lists the
+      Mac ones.
+    - **The frozen gate prompt snapshots** (`testdata/prefill-gate-prose-{a,b}/`) quote it too. They must not change:
+      they are the gates' hashed prompts.
   - **D6a:** `power.py binomial --p 0.9 --half-width 0.015` reproduces the amendment's N = 400, read as one SE. Its
     95% half-width at 400 is ±2.94 points.
   - **The ECE approximation suggests D6a's ≤ 0.05 ECE bar may be tight:** a perfectly calibrated model would read
@@ -406,6 +412,8 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   - **If the owner takes the resolved-only reading,** the supported flow is: a whole-token in-process A/B by day when
     it resolves a direction; anything unresolved goes to the served gate at night.
   - **The table cannot see false negatives:** a change the in-process A/B wrongly killed never got a served run.
+- **(b) OWNER DECISION 2026-09-28: the resolved-only reading.** "In-process by day when it resolves a direction,
+  served at night for the unresolved and for claims" is now the rule, in root `CLAUDE.md` § Run budget.
 - **(a) DONE 2026-09-28:** the rule is in root `CLAUDE.md` § Run budget ("Two arms when the decision is new ÷ old").
   There is no separate `run-*.sh` template file to change; each campaign's script sets `BENCH_ENGINES`, so the rule
   goes where those scripts are written.
@@ -489,6 +497,16 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
     or fixed.
   - **Limits:** no CUDA backend here, and the dumper uses a LogitProcessor, so device-side greedy-argmax paths are not
     what it compares.
+  - **OWNER DECISION 2026-09-28: yes, validation may be inherited by identity.**
+    - **Recording:** `gate identity … -record <file>` writes `PARITY_ROW` lines, method
+      `identity-inherited (<original method> @ <oracle rev>)` with the original metrics, for the decoder's
+      `TestParityManifest_merge`, the manifest's one writer.
+    - **Eligibility:** real checkpoints, the CPU on the row's own arch, old = the row's `validated_at`, new = HEAD, and
+      all three CPU quants IDENTICAL. The rule is in `docs/parity-coverage-policy.md`.
+    - **Tier:** `isT3Method` accepts the method exactly when its inner method is T3.
+    - **Tests:** eligibility (one row, a chain that keeps the original oracle, eleven refusals) and the method's tier;
+      an arch-check mutant turns the refusal test red.
+    - **Not yet used on a real row.** gemma4, for one, validated on linux-amd64, so only nobara can inherit it.
 
 ### TE7 — `gate quick`: affected-only, cached, parallel tests by day *(by day)*
 

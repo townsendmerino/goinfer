@@ -2412,7 +2412,7 @@ Three cautions, since this is a storage-regime number and those rot in specific 
 ## Measurement notes worth keeping
 
 - **Interleaving is not optional, and skipping it is invisible in the output.** Absolute sampled
-  numbers on this box drift ~3.5% between sessions (proven: the same binary read 112.4 in one session
+  numbers drift between sessions: goinfer's only measurement is 3.6% (the same binary read 112.4 in one session
   and 116.5 in another, while a *different* binary read 116.4 alongside it). A ratio built from two
   engines measured in different sessions silently absorbs that drift — which is what made the original
   phi3-mini row read 1.12× where the same-session pair reads 1.08×. If a cell's two sides were not

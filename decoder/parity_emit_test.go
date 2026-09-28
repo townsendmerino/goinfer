@@ -88,5 +88,8 @@ var parityMethods = map[string]bool{
 // knownParityMethod reports whether m is in the vocabulary. "shared-path (via X)" is accepted
 // by prefix the same way isT3Method accepts it, since X is a family name.
 func knownParityMethod(m string) bool {
+	if inner, _, ok := identityInherited(m); ok {
+		return parityMethods[inner] || strings.HasPrefix(inner, "shared-path (via ")
+	}
 	return parityMethods[m] || strings.HasPrefix(m, "shared-path (via ")
 }

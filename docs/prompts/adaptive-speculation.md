@@ -16,8 +16,8 @@
 
 ## Baselines to hold (re-measure FIRST, same session, interleaved)
 
-Absolute numbers on this box drift ~3.5% between sessions (`docs/benchmarks.md` §measurement
-notes), so every verdict below is against a **same-session interleaved baseline**, never against
+Absolute numbers drift between sessions (goinfer's one measurement 3.6%, peers ~0.7% RMS;
+`docs/measurements/noise-registry.md`), so every verdict below is against a **same-session interleaved baseline**, never against
 these historical figures:
 
 - End-to-end `--drafter`: code **1.44–1.60×**, math **1.50–1.79×**, chat **0.61× unguarded /
