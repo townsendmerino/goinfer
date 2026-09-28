@@ -83,19 +83,40 @@ func TestSpecDecodeCurve(t *testing.T) {
 		plainDur := time.Since(t0)
 
 		// --- speculative (re-prime; verify via PrefillLastN which now == the decode path) ---
-		prime()
+		//
+		// The loop has decoder/spec_ngram.go's shape: the prompt is prefilled ONCE, the first token is
+		// the prime's own argmax (`cur`), and each round verifies [cur, draft…] starting at cur's
+		// position — the last prompt token is never fed again. An earlier version re-fed it (verify
+		// from position depth-1), which rewrites that KV row through the decode kernels. At depth ≥
+		// fastPrefillFloor the prime's row came from the fast (tensor-core) prefill, so the two arms
+		// then attended over different KV and a near-tie flipped at depth 512 token 10 — a harness
+		// artefact, never production (GOINFER_CUDA_FAST_PREFILL=0 made every depth pass).
+		//
+		// The plain arm just wrote rows [depth, depth+N) for the SAME tokens the speculative arm will
+		// verify, so a verify that skipped writing a row would read correct stale K/V and pass. Overwrite
+		// every row the speculative arm can touch with unrelated tokens first. Found by mutation: a verify
+		// one position late passed at depth 128 without this.
+		poison := make([][]float32, N+k+1)
+		for i := range poison {
+			s = s*1664525 + 1013904223
+			poison[i] = emb(int(s>>9) % vocab)
+		}
+		if _, e := rf.PrefillLast(context.Background(), poison, depth); e != nil {
+			t.Fatalf("poison(%d): %v", depth, e)
+		}
+		cur := argmaxF(prime())
 		hist := append([]int(nil), seed...)
 		drafted, accepted, rounds := 0, 0, 0
 		t1 := time.Now()
 		for len(hist)-depth < N {
-			p := len(hist) - 1
-			draft := ngramDraft(hist, k, ctxLen)
-			feed := append([]int{hist[p]}, draft...)
+			pos := len(hist)
+			draft := ngramDraft(append(hist, cur), k, ctxLen)
+			feed := append([]int{cur}, draft...)
 			embs := make([][]float32, len(feed))
 			for i, tk := range feed {
 				embs[i] = emb(tk)
 			}
-			Ls, e := rf.PrefillLastN(embs, p)
+			Ls, e := rf.PrefillLastN(embs, pos)
 			if e != nil {
 				t.Fatalf("verify@%d: %v", depth, e)
 			}
@@ -110,10 +131,9 @@ func TestSpecDecodeCurve(t *testing.T) {
 				}
 			}
 			accepted += acc
-			for i := 0; i < acc; i++ {
-				hist = append(hist, draft[i])
-			}
-			hist = append(hist, argmaxF(Ls[acc]))
+			hist = append(hist, cur)
+			hist = append(hist, draft[:acc]...)
+			cur = argmaxF(Ls[acc])
 		}
 		specDur := time.Since(t1)
 		spec := hist[depth:]
