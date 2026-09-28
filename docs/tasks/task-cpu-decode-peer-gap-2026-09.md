@@ -275,3 +275,50 @@ backends. The 0.5B's real bottleneck (per-token overhead, lever 2) is next, and 
      owner-accepted cost).
    - Anything else goes to the owner, with the numbers.
 6. **arm64 speed** is measured on the Mac before its default is claimed. The prompt is handed over, not assumed.
+
+### L1 build result (2026-09-27): every gate run here passes — SHIP by the bands; not yet merged
+
+**Code.** The code is on unpushed local branches: aikit `f16-scales` (`9867cb7`, off `4eec1c5`) and goinfer
+`f16-scales` (`2669bf11`, off `8940eaca`).
+- aikit stores int4 scales as binary16. Every W4A8 path widens what it uses, and the amd64 M < 4 kernel widens
+  in-asm.
+- goinfer's decoder, staged-GPU interface and GPU uploads move to f16, and `GOINFER_INT4_F16_SCALES` is deleted.
+- **Deviation from the design above:** the `.giw` format is unchanged. The writer widens f16 exactly and the reader
+  converts at load, so on-disk f16 (v15) is a follow-up. It changes no numerics.
+
+**Raw data:** [`cpu-decode-peer-gap-2026-09-27/`](../measurements/cpu-decode-peer-gap-2026-09-27/) (`xbuild*`,
+`f16-goldens.log`, `gate5-*`).
+
+1. **aikit per path: PASS.** `TestW4A8F16_everyPathMatchesF32` checks every entry point against its own layout's
+   f32 path (M 1–7, per-row and per-32 activations, mutation-checked); `TestF32ToF16_rounding` checks the encoder.
+   Full suite on amd64, and on arm64 under qemu (row4 exercised).
+2. **Cross-build: PASS.** CPU int4 logits are byte-identical to the old build run with the diagnostic on: 0.5B /
+   1.5B / 7B, a 145- and a 621-token prompt with 48 decode steps each, about 14.6M logits per model
+   (`f16xbuild.go.txt`, `xbuild.log`).
+3. **GPU unchanged: PASS for CUDA.** CUDA logits are byte-identical old vs new on the same three models
+   (`xbuild-cuda.log`). **Metal and WebGPU are owed on the Mac.**
+4. **Goldens.** The forward goldens pass (69) except `TestInt4_forwardParity`, goinfer's own int4 snapshot.
+   - Its 22 committed entries are re-baselined.
+   - The replacement was regenerated twice, by the old build with f16-rounded scales and by the new build, and the
+     two files are byte-identical. So the new snapshot is exactly the f16 numerics.
+   - **Manifest:** almost every T3 row validated at f32 or int8, which this change does not reach. Two rows need an
+     owner decision:
+     - qwen3_next's validation ran int4 weights;
+     - gemma4's row names a q4_0 GGUF, and its goinfer quant is unconfirmed.
+5. **Served speed: SHIP.** `bench_peer.py`, same session, CPU, depth 128, 3 runs; every token gate passes:
+
+   | model | f16 | old (`8940eaca`) | Ollama | **f16 ÷ old** | bar | f16 ÷ Ollama |
+   |---|---:|---:|---:|---:|---|---:|
+   | 0.5B | 48.74 | 48.00 | 57.44 | **1.016×** | ≥ 0.95× | 0.848× |
+   | 1.5B | 20.86 | 19.92 | 23.99 | **1.047×** | ≥ 1.03× | 0.870× |
+   | 7B | 5.63 | 5.17 | 5.97 | **1.089×** | ≥ 1.03× | **0.944×** |
+
+   The 0.5B's in-process 0.968× does not show served (1.016×). Against this evening's Phase 0 baseline (0.818× /
+   0.810× / 0.856×), R-06 plus f16 scales move Ollama's ratio to 0.848× / 0.870× / 0.944×.
+6. **arm64 speed:** owed on the Mac.
+
+**Before it ships:**
+- an aikit release (owner: it is a public tag);
+- the goinfer bump, merge and push, with CI green;
+- the two manifest rows;
+- the Mac's Metal / WebGPU identity check and arm64 speed.

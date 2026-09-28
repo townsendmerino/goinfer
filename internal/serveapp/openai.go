@@ -536,6 +536,12 @@ type sampling struct {
 	Logprobs            bool            `json:"logprobs"`
 	TopLogprobs         *int            `json:"top_logprobs"`
 	ResponseFormat      *respFormat     `json:"response_format"`
+	// Confidence is the goinfer_confidence vendor extension (C1, docs/tasks/task-constrained-confidence.md):
+	// with response_format json_schema, the response carries each enum, boolean and integer field's confidence.
+	// Only the routes that write it back set confidenceOK; prepare refuses the flag everywhere else, so no route
+	// can accept it and silently drop the result.
+	Confidence   bool `json:"goinfer_confidence"`
+	confidenceOK bool
 }
 
 type respFormat struct {
@@ -715,6 +721,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
+	req.sampling.confidenceOK = true // written back below
 	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
 	if err != nil {
 		writeErr(w, prepareErrStatus(err), err.Error())
@@ -754,6 +761,9 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 			return
 		}
 		sseSend(ss, chatChunk(id, created, lm.name, delta{}, &finish))
+		if gr.conf != nil {
+			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
+		}
 		if cancelReason != "" {
 			// K1: one final SSE event naming the reason, so a client cannot mistake this for
 			// a natural stop even though finish_reason alone is already "cancelled" above.
@@ -783,11 +793,15 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	if req.Logprobs {
 		choice["logprobs"] = lm.logprobs(lps)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{choice},
 		"usage":   usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
-	})
+	}
+	if gr.conf != nil {
+		resp["goinfer_confidence"] = gr.conf.payload()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
@@ -834,6 +848,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		writeErr(w, http.StatusInternalServerError, "encode: "+err.Error())
 		return
 	}
+	req.sampling.confidenceOK = true // written back below
 	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
 	if err != nil {
 		writeErr(w, prepareErrStatus(err), err.Error())
@@ -866,6 +881,9 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 			return
 		}
 		sseSend(ss, completionChunk(id, created, lm.name, "", &finish))
+		if gr.conf != nil {
+			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
+		}
 		if cancelReason != "" {
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
@@ -884,11 +902,15 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"id": id, "object": "text_completion", "created": created, "model": lm.name,
 		"choices": []any{map[string]any{"index": 0, "text": sb.String(), "finish_reason": finish}},
 		"usage":   usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
-	})
+	}
+	if gr.conf != nil {
+		resp["goinfer_confidence"] = gr.conf.payload()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // genRequest is a prepared generation: prompt ids, sampling params (with the
@@ -903,6 +925,28 @@ type genRequest struct {
 	// been wired for cancellation (or a test calling drive/driveVL directly) is unaffected.
 	id     string
 	masker *constrain.Masker // set on constrained requests (response_format / tool grammar); enables grammar-spec
+	// conf, when the request asked for goinfer_confidence, receives the per-field confidences once streamTokens
+	// has drained the generation. Its presence also keeps drive on plain constrained decode: the grammar-fused
+	// speculative path drives the masker without Process, which is where the capture records.
+	conf *confResult
+}
+
+// confResult is a generation's per-field confidence (or why there is none).
+type confResult struct {
+	fields []constrain.FieldConfidence
+	err    error
+}
+
+// payload is the goinfer_confidence value a response carries: the field records (an empty list when no field
+// qualified), or an object naming the error.
+func (c *confResult) payload() any {
+	if c.err != nil {
+		return map[string]any{"error": c.err.Error()}
+	}
+	if c.fields == nil {
+		return []constrain.FieldConfidence{}
+	}
+	return c.fields
 }
 
 // contextWindow is the context cap prepare enforces for one request: the model's MaxPositions,
@@ -1045,9 +1089,21 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 	if err != nil {
 		return genRequest{}, err
 	}
+	if sm.Confidence {
+		switch {
+		case !sm.confidenceOK:
+			return genRequest{}, fmt.Errorf("goinfer_confidence is supported on /v1/chat/completions and /v1/completions with response_format json_schema, not with tools, images, jobs or batches")
+		case sm.ResponseFormat == nil || sm.ResponseFormat.Type != "json_schema":
+			return genRequest{}, fmt.Errorf("goinfer_confidence needs response_format {\"type\": \"json_schema\"}: the schema is what says each field's kind")
+		}
+	}
 	if g != nil {
 		eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
 		m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()
+		if sm.Confidence {
+			m.CaptureConfidence(constrain.ConfidenceOptions{})
+			gr.conf = &confResult{}
+		}
 		gr.sp.LogitProcessor = m.Process
 		gr.masker = m // enables grammar-fused speculative decode (drive)
 	}
@@ -1377,6 +1433,11 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 		lm.sessMu.Unlock()
 	}()
 	switch {
+	case gr.conf != nil:
+		// goinfer_confidence: plain constrained decode. The speculative paths below drive the masker without Process
+		// (grammar-fused) or batch verify positions past what is accepted (n-gram), and the capture records in
+		// Process, one call per emitted position.
+		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
 	case lm.spec && gr.masker != nil && gr.sp.Temperature == 0:
 		// Constrained request (response_format / tool grammar), greedy: grammar-fused
 		// speculative decode (01/03). A RouterDrafter fuses the grammar's forced byte-run
@@ -1587,6 +1648,11 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	// answer as complete: "length" is the signal it already knows how to act on.
 	if parent.Err() != nil && stopHit == "" {
 		finish = "length"
+	}
+	if gr.conf != nil && gr.masker != nil {
+		// goinfer_confidence: the stream has drained, so ids is everything this generation emitted (up to a stop
+		// string, if one ended it early — the confidences then cover the part the client received).
+		gr.conf.fields, gr.conf.err = gr.masker.FieldConfidence(ids)
 	}
 	return finish, len(ids), stopHit
 }

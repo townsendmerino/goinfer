@@ -53,8 +53,9 @@ type Masker struct {
 	// string state unchanged — 96.88% of a real vocab. One bit test replaces a grammar walk
 	// for those whenever the grammar reports a plain-string state (plainstring.go).
 	plainOK   bitset
-	stopAtEnd bool // once CanEnd, mask everything but EOS to force a stop
-	committed int  // how many generated tokens have been folded into g
+	stopAtEnd bool         // once CanEnd, mask everything but EOS to force a stop
+	committed int          // how many generated tokens have been folded into g
+	conf      *confCapture // per-field confidence capture (CaptureConfidence); nil = off
 }
 
 // eosAt reports whether id is an end/stop token. Bounds-checked because logits can be the
@@ -217,6 +218,9 @@ func (m *Masker) Process(generated []int, logits []float32) {
 			logits[id] = neg
 		}
 	}
+	if m.conf != nil {
+		m.conf.record(len(generated), logits, plain)
+	}
 }
 
 // maskID reports whether token id must be masked in grammar state g. It is the ONE
@@ -298,6 +302,9 @@ func (m *Masker) CanEnd() bool { return m.g.CanEnd() }
 func (m *Masker) Reset() {
 	m.g.Reset()
 	m.committed = 0
+	if m.conf != nil {
+		m.conf.pos = m.conf.pos[:0]
+	}
 }
 
 func (m *Masker) tokenBytes(id int) []byte {

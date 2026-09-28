@@ -338,6 +338,17 @@ objects (required + optional, `additionalProperties:false`), arrays
 `enum`/`const`, and arbitrary nesting. A property-based test asserts that every
 constrained generation validates against its schema.
 
+**How sure was it?** `.CaptureConfidence(constrain.ConfidenceOptions{})` on the masker, then
+`masker.FieldConfidence(ids)` after generation, gives each enum, boolean and integer field the model's
+probability over what the schema allowed at the position that decided it. For an enum or boolean that comes
+with a distribution over the options. The server equivalent is `"goinfer_confidence": true` beside a
+`json_schema` `response_format`.
+- **What it is good for:** low-confidence answers are measurably wrong more often, so it is good for routing
+  ("ask a person below 0.7").
+- **What it is not:** the probability that the value is right. It is not calibrated
+  ([what it is and is not](docs/server.md)).
+- **Example:** [`examples/confidence`](examples/confidence/main.go) is a complete program.
+
 ## What it is, and isn't
 
 goinfer targets **single-user local inference**: one process, one machine, batch-1 decode,

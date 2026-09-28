@@ -40,6 +40,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/decidecmd"
 	"github.com/townsendmerino/goinfer/internal/fitcmd"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/internal/modelload"
@@ -136,6 +137,14 @@ func Main() {
 	if len(os.Args) > 1 && os.Args[1] == "fit" {
 		os.Exit(fitcmd.Run(os.Args[2:]))
 	}
+	// `decide` / `decisions-calibrate` — D1 of docs/tasks/task-constrained-confidence.md: decisions by label-token
+	// scoring (one prefill per line, a distribution over the line's options) and the per-kind temperature fit.
+	if len(os.Args) > 1 && os.Args[1] == "decide" {
+		os.Exit(decidecmd.Run(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "decisions-calibrate" {
+		os.Exit(decidecmd.RunCalibrate(os.Args[2:]))
+	}
 	// `models` lists the checkpoints this project has actually run, so "what should I download"
 	// has an answer that is not "go read Hugging Face". Every row derives from a
 	// docs/capability-matrix.json family with a parity status (pull/registry.go).
@@ -199,6 +208,7 @@ or download goinfer-serve-<os>-<arch> from the latest release. It installs as `+
   %[1]s models                          what to download, and what each one costs
   %[1]s pull <name>                     fetch one, sha256-verified
   %[1]s fit <file.gguf|dir>             will this fit, and how — per backend, before you load it
+  %[1]s decide --model <f> in.jsonl     decisions: a distribution over each line's options, one prefill each
   %[1]s --model <file.gguf|dir>         chat with it
   %[1]s --model <f> --temp 0            greedy, for reproducible output
   %[1]s --version                       version + the backends compiled in
@@ -224,7 +234,7 @@ All flags:
 	// chat session — no error, no hint that "version" meant anything. Nothing in normal usage
 	// leaves a bare positional (every argument here is a --flag), so anything left is a mistake.
 	if args := flag.Args(); len(args) > 0 {
-		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <name>, fit <path>, models, --version. Or pass --model <file.gguf|dir>.\n",
+		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <name>, fit <path>, decide, decisions-calibrate, models, --version. Or pass --model <file.gguf|dir>.\n",
 			filepath.Base(os.Args[0]), args[0])
 		os.Exit(2)
 	}

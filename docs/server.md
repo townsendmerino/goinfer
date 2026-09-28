@@ -53,6 +53,42 @@ streaming (SSE); the sampling knobs (`temperature`/`top_p`/`top_k`/`seed`/
 output the model cannot violate (the same grammar as above). The chat template is
 auto-detected per model.
 
+**Per-field confidence (`goinfer_confidence`, opt-in).** Add `"goinfer_confidence": true` to a
+`/v1/chat/completions` or `/v1/completions` request that carries `response_format: {"type": "json_schema", …}`,
+and the response gains a top-level `goinfer_confidence` array, one record per reported field. Streaming sends the
+array as one event, `{"id": …, "goinfer_confidence": […]}`, after the finish chunk. For example:
+
+```json
+{"path": "category", "kind": "enum", "value": "shipping", "confidence": 0.60,
+ "distribution": {"billing": 0.37, "shipping": 0.60, "technical": 0.03}, "free_tokens": 1, "calibrated": false}
+```
+
+- **What the number is.** It is the model's probability over what the schema allowed, at the position that
+  decided the field. It is **not** the probability that the value is right, and `calibrated` is `false`.
+  - It *discriminates*: a low-confidence value is wrong more often. That was measured on a labelled set as AUROC
+    0.85 / 0.73 / 0.68 for enum / boolean / integer fields on a 1.5B
+    (`measurements/confidence-c0-2026-09-27.md`).
+  - It was not measured for calibration. Use it to rank or to route ("ask a person below 0.7"), not as a
+    probability of being right.
+- **Which fields.**
+  - Enum, boolean and integer fields are reported, at any depth (`items[2].status`).
+  - Number and string fields are not: the labelled set could not grade them yet.
+  - A field whose value the schema forced (a one-option enum) is not reported either; its value says nothing about
+    the model.
+- **Enum and boolean** fields carry `distribution`, the mass of every legal token summed by the option it spells,
+  so a literal split across tokens does not dilute it. `undecided` is the mass that did not yet pick an option.
+  **Integer** fields report the lowest probability among their digits.
+- **Cost.** It adds about 0.3 ms at each position that decides structure or a value, and nothing inside a free
+  string.
+  - It turns off grammar-fused speculative decoding for that request, which drives the grammar without the hook
+    the capture needs.
+  - The answer itself is unchanged: the same request without the flag returns the same content.
+- **Where it is refused (400):** without `response_format` `json_schema` (the schema is what says each field's
+  kind), and on routes that would drop it: tools, images, `/v1/jobs`, batches, `/v1/responses` and
+  `/v1/messages`.
+- **In Go:** `constrain.NewMasker(…).CaptureConfidence(constrain.ConfidenceOptions{})`, then
+  `masker.FieldConfidence(generatedIDs)` after the generation.
+
 **The server refuses new work before the machine swaps.** At startup it prints `swap guard: armed,
 threshold +512 MB over baseline` and the baseline swap-used it measured; if swap-used then grows past
 that threshold while serving, every generation route answers **503** with

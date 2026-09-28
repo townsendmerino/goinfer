@@ -1,8 +1,19 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
-> **Status: SCOPED, nothing built.** Two measurements decide what gets built: **C0** (does a
-> per-field number mean anything?) and **D6a** (is label scoring on any model good enough, or do the
-> trained decision heads earn their build?). Everything else waits on one of them.
+> **Status, 2026-09-27: C0 and D0 done, D1 and C1 built.** D6a needs the nobara fixture and the owner's call on
+> which template to grade. C2 done. D6a (chat-v1, the owner's pick) and D5 (a `/v1/systemone`-compatible route, the owner's pick) are next.
+> - **C0 clears for enum, boolean and integer fields** ([`confidence-c0-2026-09-27.md`](../measurements/confidence-c0-2026-09-27.md)).
+>   AUROC on the 1.5B: 0.847 / 0.727 / 0.680. The readout costs 4.20% of a token on the 1.5B and 1.44% on the 7B.
+>   Number and string fields are parked: the labelled set drew too few wrong answers to judge them.
+> - **D0** ([`decisions-d0-prior-art-2026-09-27.md`](../measurements/decisions-d0-prior-art-2026-09-27.md)) found
+>   that autotrust's server is unpublished, so the reference fixture comes from the card's `decide()`.
+>   - TypeSafe's `/v1/systemone` JSON is now recorded, and every SDK plus jevx takes a base-URL override.
+>   - **The authors' own B0 report already puts Route A with the bare-v1 template far behind JEV-9B** (choice
+>     top-1 0.532 against 0.898). D6a with that template would land in its "build D2–D4" branch; only a better
+>     goinfer template could change that.
+>   - The corrections to this doc are marked "(D0, 2026-09-27)" where they apply.
+> - Two measurements decide what gets built: **C0** (does a per-field number mean anything? — answered above) and
+>   **D6a** (is label scoring on any model good enough, or do the trained decision heads earn their build?).
 >
 > **Provenance.** This doc merges two drafts, neither of which was ever committed:
 > - the C-items: a per-field confidence draft written 2026-09-25 under this file name, delivered
@@ -39,7 +50,7 @@ position the grammar or the template controls**, renormalized, optionally temper
 | Request | any schema-constrained generation | state + a question with a finite answer set |
 | Work | full constrained decode | one prefill, no decode |
 | Number | per field, aggregated over the field's free tokens | one distribution over the options |
-| Where the probabilities come from | the masked logits `constrain` already computes (`MaskAt` at `constrain/constrain.go:147`, `Process` at `:208`) and discards after sampling | the label tokens' logits at the last prompt position (Route A), or a trained head over the final hidden state (Route B) |
+| Where the probabilities come from | the masked logits `constrain` already computes (`MaskAt` at `constrain/constrain.go:148`, `Process` at `:208`) and discards after sampling | the label tokens' logits at the last prompt position (Route A), or a trained head over the final hidden state (Route B) |
 
 **Where they meet.** An `enum` or `boolean` field in constrained output is a decision: the masked
 distribution at the position that decides the value *is* a distribution over a closed answer set.
@@ -81,7 +92,7 @@ is.
 ## 3. What goinfer has today (verified against `9bf7f3a7`, 2026-09-27)
 
 **Constrained decoding.**
-- `MaskAt` (`constrain/constrain.go:147`) and `Process` (`:208`) walk the full logit vector at
+- `MaskAt` (`constrain/constrain.go:148`) and `Process` (`:208`) walk the full logit vector at
   every constrained position and set illegal entries to −∞. The surviving distribution is discarded
   once a token is sampled.
 - `ForcedRun` (`:97`) and `ForcedBytesRun` (`:166`) exist because the grammar often forces the next
@@ -142,7 +153,107 @@ beyond what the measurement needs.
    token, against the sampler share above. Quiet box, report spread. If it costs more than sampling
    does, it is opt-in (it is opt-in regardless; this sets the documented cost).
 
+**C0 pre-registration (2026-09-27, committed before any graded run).**
+- **Harness:** `metal/confidence_c0_test.go` (`TestConfidenceC0`).
+- **Analysis:** `docs/measurements/confidence-c0-2026-09-27/analyze.py`, written before any graded run.
+  The gates below are that script's arithmetic.
+- **Models (graded):** qwen2.5-coder-1.5b-instruct q4_k_m (`.gguf`) and qwen2.5-7b-instruct q4_k_m
+  (`.int4.metal.giw`, tokenizer from its `.gguf`), both from `~/models`, at `-quant int4` on Metal, greedy,
+  up to 200 tokens per answer.
+  - A 3-ticket smoke run on qwen2.5-coder-0.5b checked the harness before this was written. It is not graded,
+    and it is disclosed below because it was seen.
+- **Data:** `docs/measurements/confidence-c0-2026-09-27/tickets.jsonl`, 60 support tickets written for
+  this (sha256 `71787d8fd0aad4368646bff65ad70e1a00fcca5a7d74a9d29b3a8619df6936ef`).
+  - Every gold label follows from rules stated in the prompt. The system prompt is in the harness.
+  - The schema has one field of each kind: `category` (enum of 5), `urgent` (boolean), `order_count`
+    (integer), `refund_amount` (number), `customer_name` (string, graded), and `summary` (string, no gold:
+    gates 0 and 1 only).
+  - D0's gold-labelled JEV items join the enum/boolean set when D0 delivers them. This registration covers
+    the hand-built set.
+- **Definitions.**
+  - *Free token*: at some byte of the token, the grammar allowed two or more non-whitespace next bytes.
+    Otherwise the token is *forced*: its probability is tokenization preference, not the model's view of
+    the value.
+  - *Field attribution*: a token belongs to the field whose value bytes it overlaps; otherwise it is
+    scaffolding.
+  - *p*: the token's probability under the model's distribution restricted to the grammar-legal tokens,
+    at T = 1.
+  - *Decision* (enum/boolean): at the first token of the value consistent with exactly one option, the mass
+    of every legal token summed by the option it spells and renormalized. The field's decision confidence is
+    the chosen option's share.
+- **Primary aggregation per kind** (item 2; the others are reported as secondary, never used to decide):
+  - enum and boolean: *decision*;
+  - integer and number: the *minimum* p over free tokens (a number is as weak as its weakest digit);
+  - string: the *geometric mean* p over free tokens (length-normalized).
+- **Correctness:** exact for `category`, `urgent` and `order_count`; |Δ| < 0.005 for `refund_amount`;
+  `customer_name` case-insensitive after trimming whitespace and trailing punctuation. An unparseable output
+  or missing field is excluded for that field, and counted.
+- **C-gate 0 (enough free tokens):** a kind is surfaceable only if at least 80% of its instances have at
+  least one free value token. Its confidence is computed over free tokens only; forced tokens never
+  enter a number.
+- **C-gate 1 (cost):** per model, the mean in-situ readout time (log-sum-exp over the legal logits, timed
+  inside the processor) is at most 5% of the mean mask-only decode token time. That is the bottom of the
+  sampler's measured share, 5.4%. The mean is the gate, because the readout costs several times more
+  inside a free string, where nearly the whole vocabulary is legal, than at a structural position. The
+  median is reported beside it.
+  - The 0.5B smoke run read 7.8% mean and 3.3% median.
+  - Zero cost when disabled is C1's to verify: no hook, no code on the path.
+  - A FAIL here does not close C. The feature is opt-in regardless, so it means the readout is optimized
+    before C1 ships (float32, or reading only at free positions), then re-measured.
+- **C-gate 2 (it discriminates):** directional only, per field kind and per model, on the primary
+  aggregation, for a model with at least 8 correct and 8 wrong instances of that field:
+  - AUROC (P(a correct answer's confidence > a wrong one's), ties ½) ≥ 0.65 → PASS;
+  - AUROC < 0.55 → FAIL, and the kind does not ship;
+  - in between → ambiguous, parked.
+  - A kind passes only if every qualifying model passes. No qualifying model → *insufficient errors*,
+    parked (not failed), with the counts on the page.
+- **Item 3's answer:** if enum and boolean pass gate 2 and the integer, number and string kinds do not, C1
+  ships enum/boolean only.
+
+**C0 result, 2026-09-27** ([`confidence-c0-2026-09-27.md`](../measurements/confidence-c0-2026-09-27.md)):
+- **Enum, boolean and integer pass every gate.**
+  - AUROC on the 1.5B: 0.847 (48/12), 0.727 (38/22) and 0.680 (43/17).
+  - The 7B makes too few mistakes to qualify on any kind; its AUROCs of 0.97 / 0.91 / 0.94 point the same way.
+- **Number and string are parked.** There were too few wrong answers: `refund_amount` was right 60/60 on both
+  models.
+- **Cost:** a mean 4.20% (1.5B) and 1.44% (7B) of a decode token. The ungraded 0.5B read 7.8%, so C1 should read
+  only at free positions.
+- **The consequence for C1:** it may surface enum, boolean and integer fields. Number and string wait for a harder
+  labelled set. Every kind that passed decides its value in one free token.
+
 ### C1 — capture, attribute, surface (only if C0's gates clear)
+
+**Built, 2026-09-27** (C0 cleared enum, boolean and integer).
+- **Capture:** `constrain.Masker.CaptureConfidence(ConfidenceOptions)`.
+  - Inside `Process` it records, at each position outside a free string, the normalizer and the legal tokens' logits
+    (all of them when there are at most 256, else the top 64).
+  - Off, `Process` pays one nil check. `TestFieldConfidence_offAndRefusals` pins identical masking and no capture
+    state.
+- **Attribution:** no plumbing was needed; the schema grammar's frame stack already carries the path.
+  `FieldConfidence(generated)` replays the tokens through a fresh copy of the grammar, byte by byte. That gives each
+  byte's owning value and path (`meta.level`, `tags[1]`) and each token's byte-level forcedness.
+- **Aggregations, C0's registered ones:**
+  - enum and boolean: option mass at the deciding token, where BPE splits sum per option;
+  - integer: the minimum over free tokens.
+  - Number and string fields, and fields with no free token, are omitted.
+  - `ConfidenceOptions.EnumTemperature` / `BooleanTemperature` apply a fitted temperature and mark the field
+    calibrated. Serve passes none today.
+- **Serve:** `goinfer_confidence: true` on `/v1/chat/completions` and `/v1/completions` with `response_format`
+  `json_schema`.
+  - The response gets a top-level `goinfer_confidence` array; a stream sends it as one event after the finish chunk.
+  - Other routes refuse the flag with a 400, so none drops it silently. The response without the flag is unchanged.
+  - A confidence request runs plain constrained decode: the grammar-fused speculative path drives the masker
+    without `Process`.
+  - Documented in `docs/server.md` with the §2 caveat.
+- **Tests:**
+  - a synthetic generation pins paths, kinds, BPE-summed distributions, the integer minimum, the temperature, the
+    omissions and the skipped free strings. Mutation-checked: counting only the chosen token turns it red;
+  - serve refusals run in CI;
+  - end to end on the local 0.5B: one record per enum/boolean/integer field, none for the string, the answer
+    identical with and without the flag, one stream event, and tools refused.
+- **Cost** (`TestConfidenceCost_C1`, real 151,936-token vocab; the box was not quiet, load 3, so indicative):
+  capture adds 0.29 ms at an object-key position, 0.28 ms at an enum value, and 0.000 ms inside a free string.
+  Against C0's decode tokens that is about 2% (1.5B) and 0.8% (7B) at the positions it reads.
 
 - **Capture, not compute.** A hook at the masking seam that records, per position, the probability
   of the sampled token among the legal set, plus the full restricted distribution at positions the
@@ -165,10 +276,35 @@ beyond what the measurement needs.
 
 ### C2 — docs for C
 
+**Done, 2026-09-28.**
+- `docs/server.md`, with the §2 caveat (landed with C1).
+- A README paragraph under "A Go struct the model cannot violate", with the caveat linked.
+- [`examples/confidence`](../../examples/confidence/main.go): a complete program. Its test runs the real binary on a
+  small Qwen checkpoint when one is present. On the 0.5B it printed category `billing` 0.70 (right), `urgent`
+  `true` 0.62 (wrong, and less sure) and orders 1 at 0.51.
+
 `docs/server.md` (the opt-in and the §2 caveat), the README's "A Go struct the model cannot
 violate" section (one paragraph, the caveat linked), and a worked example in `examples/`.
 
 ### D0 — prior art, reference fixture, API shape (no code in goinfer)
+
+**Result, 2026-09-27** ([`decisions-d0-prior-art-2026-09-27.md`](../measurements/decisions-d0-prior-art-2026-09-27.md),
+every fact read from a primary artifact at a pinned revision). Where it contradicts the text below, the record wins:
+- **autotrust's `jev_judge` server is not published**, and the `{distribution, decision, confidence, latency_ms}`
+  fields appear in no source. The reference fixture is the JEV-9B card's `decide()` (transformers 5.16.1 + peft
+  0.21.0), run on the Linux box: `docs/prompts/nobara-decisions-d0-fixture-2026-09.md`.
+- **The template is bare-v1**, with no chat template and no BOS. The labels are bare `false`/`true`, `0`–`5` and
+  `A`–`P` (no leading space). `slots.template_version` holds the version.
+- **The 9B's numbers:**
+  - T = noul 1.0022 / choice 0.9840 / score 1.0122;
+  - adapter 160,486,456 B;
+  - JEV-9B's base is the post-trained `Qwen/Qwen3.5-9B`, not `-Base`.
+- **Gold labels exist only on the `openjev_v2` rows** of `SargeDev/jev-distill-corpus-v3`:
+  - calibration: 1,109 noul and 463 choice, with no score rows;
+  - ood: 9,767 noul, 3,219 choice and 72 score.
+  - The `yuri_v3` targets are Jev's own distributions, a teacher and not gold.
+- **API shape:** TypeSafe's `POST /v1/systemone` is recorded verbatim. `@typesafe-ai/sdk`, `typesafe-sdk` (PyPI),
+  the Vercel and LangChain providers and jevx all take a base-URL override. The decision is still the owner's.
 
 - **Prior-art sweep (mandatory):** autotrust's `jev_judge` server code (the prompt template and its
   version in `judge_config.json`, the verbalizer token ids, how fewer than 16 options occupy the
@@ -189,7 +325,7 @@ violate" section (one paragraph, the caveat linked), and a worked example in `ex
 
   **A ready client exists (added 2026-09-27).** [`muthuishere/jevx`](https://github.com/muthuishere/jevx)
   is a CLI for Jev-style decisions (`is`, `ask --choice/--score`, `pick`, `rank`, `filter`) whose
-  exit codes map confidence to shell control flow (≥0.6 → 0, `unsure` → 3, error → 4). It talks to
+  exit codes map confidence to shell control flow (≥0.6 → 0, `unsure` → 3, error → 4; **(D0)** and no → 1, see D5). It talks to
   any server that speaks `/v1/systemone` through a profile and runs no models itself. A
   `/v1/systemone`-compatible route therefore gives goinfer a working terminal/CI/agent client on day
   one, which moves the decision toward **both**: TypeSafe's shape as the compatibility surface,
@@ -203,13 +339,39 @@ violate" section (one paragraph, the caveat linked), and a worked example in `ex
 
 ### D1 — Route A: label-token scoring on any model
 
+**Built, 2026-09-27.**
+- **`internal/decide`:** the readout (`internal/confidence.RestrictedLogSoftmax`), the templates, `calibration.json`
+  load/save, and the per-kind temperature fit.
+  - `bare-v1` (the default) is byte-identical to JEV's template; the D0 record's rendered example is pinned by
+    `TestRender_bareV1`.
+  - `chat-v1` puts the same content in the model's chat template, with thinking off.
+  - Each verbalizer must be a single bare token in the model's tokenizer, or `New` refuses and names it.
+  - A calibration fitted under the other template is refused.
+- **CLI:** the `goinfer-chat decide` / `decisions-calibrate` subcommands (`internal/decidecmd`). Every backend's chat
+  binary has them.
+  - `decide --model <f> [--template chat-v1] [--calibration c.json] [--permute n] in.jsonl`: one JSONL line in and
+    one out. Lines are in the corpus's row shape.
+  - `decisions-calibrate … -o calibration.json labelled.jsonl` fits T per kind on mean KL(target ‖ p_T), by
+    golden-section search on 1/T, in autotrust's format. It warns when T hits the search bound, where the model's
+    ranking disagrees with the labels beyond what a temperature can fix.
+- **One prefill per line**, through `Model.Generate` with a logit processor. Every backend, the resident prefix reuse
+  and the KV slots apply. The prompt is encoded as plain text, so special-token text in a state stays text.
+- **Owed:** D1 against transformers' B0 on identical bytes (the nobara fixture's `route_a_b0.jsonl`): the token ids
+  first, then the distributions.
+- **Not yet decided: the template for D6a.** On the 0.5B (anecdotal, not graded), chat-v1 separated a refund /
+  no-refund pair better than bare-v1 (P(true) 0.81 against 0.68, where bare-v1 read 0.45 against 0.39). But
+  `permute 3` flattened a 3-way choice to near uniform, which is position bias. D6a has to say which template it
+  grades, and D0's B0 already covers bare-v1 on Qwen3.5-9B.
+
 - A `decider` in `internal/serveapp` (not `decoder`). Build a prompt from `{state, question,
   options}` with a fixed template; label options A, B, C… so each label is one token in the model's
   vocab (check per tokenizer; fall back to digits). Disable thinking in the chat template. One
   prefill; take the last-position logits; read the label tokens; log-softmax over just those; apply
   the per-kind temperature. This is the shared readout helper C1 also uses.
 - `noul` uses two labels in yes/no form; `score` uses six labels 0–5 and returns the distribution
-  plus the expected score.
+  plus the expected score. **(D0, 2026-09-27)** The reference (bare-v1) labels noul as bare `false`/`true` and
+  uses no chat template, so "disable thinking in the chat template" above applies only to a chat-templated
+  variant. D1 renders bare-v1 by default, so Route A and a later Route B read the same prompt.
 - **Calibration.** A `decisions-calibrate` subcommand fits the per-kind temperature on a labelled
   JSONL (golden-section or L-BFGS on one scalar; no dependency) and writes `calibration.json` in
   autotrust's format, so Route A, Route B and C1's enum fields share one loader.
@@ -247,6 +409,8 @@ violate" section (one paragraph, the caveat linked), and a worked example in `ex
   out_proj, q/k/v/o_proj, gate/up/down_proj`, 416 MB unmerged); the last prompt token's final-norm
   hidden state through an fp32 linear head `H → 24 slots` (`head.safetensors`: noul 0–1, score 2–7,
   choice 8–23); a per-kind temperature (`calibration.json`: noul 1.014, choice 1.016, score 1.004);
+  **(D0, 2026-09-27)** those are JEV-27B's figures. JEV-9B's adapter is 160,486,456 B and its T is noul 1.0022 /
+  choice 0.9840 / score 1.0122;
   softmax over the slots the request's options occupy. Published: JEV-27B mean KL 0.104 on the
   Open-Jev OOD split, JEV-9B 0.234.
 - Load `head.safetensors` and `judge_config.json` (slot layout, verbalizer ids, template version,
@@ -270,9 +434,22 @@ violate" section (one paragraph, the caveat linked), and a worked example in `ex
 - `/v1/models` advertises `decisions: {routes: [...], kinds: [...]}` per loaded model.
 - **Acceptance:** jevx's scenario guide (https://muthuishere.github.io/jevx/guides/scenarios/) runs
   unchanged against a goinfer profile, and exit codes match on the non-borderline items.
+  - **(D0, 2026-09-27)** The exit codes are 0 = yes/decided, 1 = no, 3 = unsure (noul between 0.2 and 0.8, or a
+    choice/score below `min_confidence` 0.6) and 4 = error.
+  - About nine scenarios depend on unpublished input files, so "runs unchanged" covers the inline ones.
+  - jevx sends choice descriptions (`criteria`) and 2–10-level scores. bare-v1 has no place for either, and JEV's
+    score is fixed at six levels.
+  - TypeSafe's `GET /v1/models` is `{models:[…]}`, which conflicts with goinfer's OpenAI-shaped `/v1/models`. It
+    matters only to a client calling `models.list()`; jevx and `systemOne()` do not.
 
 ### D6 — fidelity gates (two, in order)
 
+- **(D0, 2026-09-27)** The authors' B0 report already measured Route A with the bare-v1 template on Qwen3.5-9B:
+  - choice top-1 0.532 against JEV-9B's 0.898 (test_set_30k);
+  - overall top-1 0.518 against 0.918 on OOD, with ECE 0.072 there.
+  - Temperature cannot move top-1, so a bare-v1 Route A lands in the "more than 10 points behind" branch.
+  - D6a remains worth running only for a goinfer template that could differ, such as a chat-templated prompt on an
+    instruct model, and it must say which template it grades.
 - **D6a (right after D1; decides D2–D4).** Route A on Qwen3.5-9B base, calibrated on the
   calibration split, against JEV-9B's reference outputs on D0's held-out items: top-1 agreement with
   gold where it exists, ECE, mean KL to the JEV-9B reference. Also run Route A on one small model
@@ -365,7 +542,7 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 
 ## Sources
 
-`constrain/constrain.go:97`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
+`constrain/constrain.go:98`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
 `Process`) · `decoder/model.go:1288` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
 contract) · `decoder/arch.go:954` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
 `decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:137` (`validateTargets`) ·

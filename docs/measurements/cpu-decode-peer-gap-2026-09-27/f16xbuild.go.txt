@@ -1,0 +1,59 @@
+// f16xbuild (L1 build gate 2, docs/tasks/task-cpu-decode-peer-gap-2026-09.md): dump a CPU int4 model's full
+// logits for two prompts — the first captured step is the prompt's own prefill (a 128-token and a ~600-token
+// prompt), then 48 greedy decode steps — as raw little-endian float32, so two builds' dumps compare with cmp.
+// Public decoder API only, so the same file builds in both trees.
+package main
+
+import (
+	"context"
+	"encoding/binary"
+	"fmt"
+	"math"
+	"os"
+	"strings"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+func main() {
+	path, out := os.Args[1], os.Args[2]
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		panic(err)
+	}
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4", Backend: "cpu"})
+	if err != nil {
+		panic(err)
+	}
+	f, err := os.Create(out)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	base := "Rivers shape the land they cross. Over thousands of years a river carves valleys, deposits silt on its floodplain, and builds deltas where it meets the sea. "
+	for _, reps := range []int{4, 18} {
+		ids, err := tk.Encode(strings.Repeat(base, reps)+"Explain how rivers influenced early civilizations.", true)
+		if err != nil {
+			panic(err)
+		}
+		steps := 0
+		sp := decoder.SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
+			buf := make([]byte, 4*len(logits))
+			for i, v := range logits {
+				binary.LittleEndian.PutUint32(buf[4*i:], math.Float32bits(v))
+			}
+			if _, err := f.Write(buf); err != nil {
+				panic(err)
+			}
+			steps++
+		}}
+		ch, g := m.Generate(context.Background(), ids, 48, sp)
+		for range ch {
+		}
+		if g.Err() != nil {
+			panic(g.Err())
+		}
+		fmt.Printf("%s: prompt %d tokens, %d steps captured\n", path, len(ids), steps)
+	}
+}

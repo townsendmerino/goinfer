@@ -1,0 +1,142 @@
+22:28:22 == C0 graded start; tree d805dd7c; load { 2.85 2.26 2.06 }
+22:28:22 waiting for idle: load1=2.85 (0s)
+22:29:23 waiting for idle: load1=2.42 (60s)
+22:29:54 idle: load1=1.93
+22:29:54 == 1.5b start
+    confidence_c0_test.go:121: deadline 23:09:55
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.9 GB; this machine currently has 7.8 GB of memory available (budget 5.4 GB = 70% of that) (89% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+C0: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf on metal (decode path metal-resident (int4)), 60 tickets
+22:30:03 C0 1/60 ticket 1: 67 tokens, complete=true, same A/B=true; elapsed 2s, eta 2m19s
+22:30:05 C0 2/60 ticket 2: 50 tokens, complete=true, same A/B=true; elapsed 4s, eta 1m53s
+22:30:07 C0 3/60 ticket 3: 79 tokens, complete=true, same A/B=false; elapsed 6s, eta 1m56s
+22:30:09 C0 4/60 ticket 4: 59 tokens, complete=true, same A/B=true; elapsed 8s, eta 1m50s
+22:30:11 C0 5/60 ticket 5: 91 tokens, complete=true, same A/B=true; elapsed 10s, eta 1m55s
+22:30:13 C0 6/60 ticket 6: 61 tokens, complete=true, same A/B=true; elapsed 12s, eta 1m50s
+22:30:15 C0 7/60 ticket 7: 57 tokens, complete=true, same A/B=true; elapsed 14s, eta 1m46s
+22:30:17 C0 8/60 ticket 8: 54 tokens, complete=true, same A/B=true; elapsed 16s, eta 1m41s
+22:30:18 C0 9/60 ticket 9: 58 tokens, complete=true, same A/B=true; elapsed 17s, eta 1m38s
+22:30:20 C0 10/60 ticket 10: 55 tokens, complete=true, same A/B=true; elapsed 19s, eta 1m35s
+22:30:22 C0 11/60 ticket 11: 63 tokens, complete=true, same A/B=false; elapsed 21s, eta 1m33s
+22:30:24 C0 12/60 ticket 12: 60 tokens, complete=true, same A/B=false; elapsed 23s, eta 1m31s
+22:30:26 C0 13/60 ticket 13: 61 tokens, complete=true, same A/B=false; elapsed 25s, eta 1m29s
+22:30:27 C0 14/60 ticket 14: 62 tokens, complete=true, same A/B=true; elapsed 26s, eta 1m27s
+22:30:29 C0 15/60 ticket 15: 68 tokens, complete=true, same A/B=true; elapsed 28s, eta 1m25s
+22:30:31 C0 16/60 ticket 16: 60 tokens, complete=true, same A/B=true; elapsed 30s, eta 1m23s
+22:30:33 C0 17/60 ticket 17: 59 tokens, complete=true, same A/B=false; elapsed 32s, eta 1m21s
+22:30:35 C0 18/60 ticket 18: 58 tokens, complete=true, same A/B=false; elapsed 34s, eta 1m19s
+22:30:37 C0 19/60 ticket 19: 69 tokens, complete=true, same A/B=false; elapsed 36s, eta 1m17s
+22:30:40 C0 20/60 ticket 20: 96 tokens, complete=true, same A/B=true; elapsed 39s, eta 1m17s
+22:30:41 C0 21/60 ticket 21: 59 tokens, complete=true, same A/B=true; elapsed 40s, eta 1m15s
+22:30:43 C0 22/60 ticket 22: 69 tokens, complete=true, same A/B=true; elapsed 42s, eta 1m13s
+22:30:45 C0 23/60 ticket 23: 67 tokens, complete=true, same A/B=false; elapsed 44s, eta 1m11s
+22:30:47 C0 24/60 ticket 24: 51 tokens, complete=true, same A/B=true; elapsed 46s, eta 1m9s
+22:30:49 C0 25/60 ticket 25: 58 tokens, complete=true, same A/B=false; elapsed 48s, eta 1m7s
+22:30:50 C0 26/60 ticket 26: 54 tokens, complete=true, same A/B=true; elapsed 49s, eta 1m4s
+22:30:52 C0 27/60 ticket 27: 57 tokens, complete=true, same A/B=false; elapsed 51s, eta 1m3s
+22:30:54 C0 28/60 ticket 28: 67 tokens, complete=true, same A/B=false; elapsed 53s, eta 1m1s
+22:30:56 C0 29/60 ticket 29: 62 tokens, complete=true, same A/B=false; elapsed 55s, eta 59s
+22:30:58 C0 30/60 ticket 30: 64 tokens, complete=true, same A/B=true; elapsed 57s, eta 57s
+22:31:00 C0 31/60 ticket 31: 70 tokens, complete=true, same A/B=false; elapsed 59s, eta 55s
+22:31:02 C0 32/60 ticket 32: 79 tokens, complete=true, same A/B=false; elapsed 1m1s, eta 54s
+22:31:04 C0 33/60 ticket 33: 59 tokens, complete=true, same A/B=true; elapsed 1m3s, eta 52s
+22:31:06 C0 34/60 ticket 34: 61 tokens, complete=true, same A/B=true; elapsed 1m5s, eta 50s
+22:31:08 C0 35/60 ticket 35: 68 tokens, complete=true, same A/B=true; elapsed 1m7s, eta 48s
+22:31:10 C0 36/60 ticket 36: 61 tokens, complete=true, same A/B=false; elapsed 1m9s, eta 46s
+22:31:11 C0 37/60 ticket 37: 58 tokens, complete=true, same A/B=true; elapsed 1m10s, eta 44s
+22:31:14 C0 38/60 ticket 38: 73 tokens, complete=true, same A/B=true; elapsed 1m13s, eta 42s
+22:31:15 C0 39/60 ticket 39: 65 tokens, complete=true, same A/B=true; elapsed 1m14s, eta 40s
+22:31:18 C0 40/60 ticket 40: 78 tokens, complete=true, same A/B=true; elapsed 1m17s, eta 38s
+22:31:19 C0 41/60 ticket 41: 53 tokens, complete=true, same A/B=false; elapsed 1m18s, eta 36s
+22:31:21 C0 42/60 ticket 42: 61 tokens, complete=true, same A/B=true; elapsed 1m20s, eta 34s
+22:31:23 C0 43/60 ticket 43: 60 tokens, complete=true, same A/B=true; elapsed 1m22s, eta 32s
+22:31:25 C0 44/60 ticket 44: 67 tokens, complete=true, same A/B=false; elapsed 1m24s, eta 31s
+22:31:27 C0 45/60 ticket 45: 54 tokens, complete=true, same A/B=true; elapsed 1m26s, eta 29s
+22:31:29 C0 46/60 ticket 46: 88 tokens, complete=true, same A/B=true; elapsed 1m28s, eta 27s
+22:31:31 C0 47/60 ticket 47: 68 tokens, complete=true, same A/B=true; elapsed 1m30s, eta 25s
+22:31:34 C0 48/60 ticket 48: 80 tokens, complete=true, same A/B=true; elapsed 1m33s, eta 23s
+22:31:36 C0 49/60 ticket 49: 86 tokens, complete=true, same A/B=false; elapsed 1m35s, eta 21s
+22:31:38 C0 50/60 ticket 50: 52 tokens, complete=true, same A/B=true; elapsed 1m36s, eta 19s
+22:31:39 C0 51/60 ticket 51: 53 tokens, complete=true, same A/B=false; elapsed 1m38s, eta 17s
+22:31:41 C0 52/60 ticket 52: 69 tokens, complete=true, same A/B=true; elapsed 1m40s, eta 15s
+22:31:43 C0 53/60 ticket 53: 64 tokens, complete=true, same A/B=true; elapsed 1m42s, eta 13s
+22:31:45 C0 54/60 ticket 54: 55 tokens, complete=true, same A/B=false; elapsed 1m44s, eta 12s
+22:31:47 C0 55/60 ticket 55: 66 tokens, complete=true, same A/B=false; elapsed 1m46s, eta 10s
+22:31:49 C0 56/60 ticket 56: 68 tokens, complete=true, same A/B=true; elapsed 1m47s, eta 8s
+22:31:50 C0 57/60 ticket 57: 56 tokens, complete=true, same A/B=true; elapsed 1m49s, eta 6s
+22:31:52 C0 58/60 ticket 58: 76 tokens, complete=true, same A/B=false; elapsed 1m51s, eta 4s
+22:31:54 C0 59/60 ticket 59: 56 tokens, complete=true, same A/B=false; elapsed 1m53s, eta 2s
+22:31:56 C0 60/60 ticket 60: 81 tokens, complete=true, same A/B=false; elapsed 1m55s, eta 0s
+--- PASS: TestConfidenceC0 (121.86s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	122.370s
+22:31:57 == 1.5b exit 0
+22:31:57 idle: load1=1.54
+22:31:57 == 7b start
+    confidence_c0_test.go:121: deadline 23:11:58
+[metal] weights aliased from qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4020 MB bound in place, 1 MB copied (anonymous) — 3112 MB int4 nibbles (56 single tensors + 56 fused groups = 2034 MB) + 520 MB int8 codes (1 matrices) + 389 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+C0: qwen2.5-7b-instruct-q4_k_m.int4.metal.giw on metal (decode path metal-resident (int4)), 60 tickets
+22:32:07 C0 1/60 ticket 1: 59 tokens, complete=true, same A/B=false; elapsed 9s, eta 8m37s
+22:32:12 C0 2/60 ticket 2: 55 tokens, complete=true, same A/B=false; elapsed 13s, eta 6m27s
+22:32:17 C0 3/60 ticket 3: 69 tokens, complete=true, same A/B=false; elapsed 19s, eta 5m54s
+22:32:22 C0 4/60 ticket 4: 63 tokens, complete=true, same A/B=false; elapsed 24s, eta 5m33s
+22:32:27 C0 5/60 ticket 5: 63 tokens, complete=true, same A/B=false; elapsed 29s, eta 5m17s
+22:32:31 C0 6/60 ticket 6: 51 tokens, complete=true, same A/B=true; elapsed 33s, eta 4m58s
+22:32:36 C0 7/60 ticket 7: 63 tokens, complete=true, same A/B=false; elapsed 38s, eta 4m49s
+22:32:41 C0 8/60 ticket 8: 58 tokens, complete=true, same A/B=false; elapsed 43s, eta 4m40s
+22:32:46 C0 9/60 ticket 9: 56 tokens, complete=true, same A/B=true; elapsed 48s, eta 4m29s
+22:32:50 C0 10/60 ticket 10: 51 tokens, complete=true, same A/B=true; elapsed 52s, eta 4m19s
+22:32:55 C0 11/60 ticket 11: 67 tokens, complete=true, same A/B=false; elapsed 57s, eta 4m15s
+22:33:00 C0 12/60 ticket 12: 58 tokens, complete=true, same A/B=false; elapsed 1m2s, eta 4m8s
+22:33:06 C0 13/60 ticket 13: 69 tokens, complete=true, same A/B=false; elapsed 1m8s, eta 4m4s
+22:33:11 C0 14/60 ticket 14: 58 tokens, complete=true, same A/B=false; elapsed 1m13s, eta 3m58s
+22:33:16 C0 15/60 ticket 15: 59 tokens, complete=true, same A/B=true; elapsed 1m17s, eta 3m52s
+22:33:20 C0 16/60 ticket 16: 54 tokens, complete=true, same A/B=true; elapsed 1m22s, eta 3m45s
+22:33:26 C0 17/60 ticket 17: 64 tokens, complete=true, same A/B=false; elapsed 1m27s, eta 3m41s
+22:33:30 C0 18/60 ticket 18: 60 tokens, complete=true, same A/B=true; elapsed 1m32s, eta 3m35s
+22:33:36 C0 19/60 ticket 19: 71 tokens, complete=true, same A/B=false; elapsed 1m38s, eta 3m31s
+22:33:41 C0 20/60 ticket 20: 56 tokens, complete=true, same A/B=true; elapsed 1m42s, eta 3m25s
+22:33:45 C0 21/60 ticket 21: 63 tokens, complete=true, same A/B=false; elapsed 1m47s, eta 3m19s
+22:33:50 C0 22/60 ticket 22: 56 tokens, complete=true, same A/B=true; elapsed 1m52s, eta 3m13s
+22:33:55 C0 23/60 ticket 23: 59 tokens, complete=true, same A/B=true; elapsed 1m57s, eta 3m8s
+22:33:59 C0 24/60 ticket 24: 52 tokens, complete=true, same A/B=true; elapsed 2m1s, eta 3m1s
+22:34:05 C0 25/60 ticket 25: 68 tokens, complete=true, same A/B=false; elapsed 2m6s, eta 2m57s
+22:34:10 C0 26/60 ticket 26: 63 tokens, complete=true, same A/B=true; elapsed 2m12s, eta 2m52s
+22:34:15 C0 27/60 ticket 27: 59 tokens, complete=true, same A/B=true; elapsed 2m17s, eta 2m47s
+22:34:20 C0 28/60 ticket 28: 58 tokens, complete=true, same A/B=false; elapsed 2m21s, eta 2m42s
+22:34:25 C0 29/60 ticket 29: 70 tokens, complete=true, same A/B=true; elapsed 2m27s, eta 2m37s
+22:34:30 C0 30/60 ticket 30: 60 tokens, complete=true, same A/B=false; elapsed 2m32s, eta 2m32s
+22:34:35 C0 31/60 ticket 31: 59 tokens, complete=true, same A/B=false; elapsed 2m37s, eta 2m26s
+22:34:40 C0 32/60 ticket 32: 59 tokens, complete=true, same A/B=true; elapsed 2m41s, eta 2m21s
+22:34:44 C0 33/60 ticket 33: 53 tokens, complete=true, same A/B=true; elapsed 2m46s, eta 2m16s
+22:34:49 C0 34/60 ticket 34: 63 tokens, complete=true, same A/B=false; elapsed 2m51s, eta 2m11s
+22:34:54 C0 35/60 ticket 35: 62 tokens, complete=true, same A/B=false; elapsed 2m56s, eta 2m6s
+22:34:59 C0 36/60 ticket 36: 59 tokens, complete=true, same A/B=false; elapsed 3m1s, eta 2m0s
+22:35:03 C0 37/60 ticket 37: 53 tokens, complete=true, same A/B=false; elapsed 3m5s, eta 1m55s
+22:35:09 C0 38/60 ticket 38: 67 tokens, complete=true, same A/B=false; elapsed 3m11s, eta 1m50s
+22:35:14 C0 39/60 ticket 39: 62 tokens, complete=true, same A/B=false; elapsed 3m16s, eta 1m45s
+22:35:20 C0 40/60 ticket 40: 69 tokens, complete=true, same A/B=false; elapsed 3m22s, eta 1m41s
+22:35:25 C0 41/60 ticket 41: 57 tokens, complete=true, same A/B=true; elapsed 3m27s, eta 1m36s
+22:35:30 C0 42/60 ticket 42: 60 tokens, complete=true, same A/B=false; elapsed 3m32s, eta 1m31s
+22:35:35 C0 43/60 ticket 43: 67 tokens, complete=true, same A/B=false; elapsed 3m37s, eta 1m26s
+22:35:41 C0 44/60 ticket 44: 63 tokens, complete=true, same A/B=false; elapsed 3m42s, eta 1m21s
+22:35:45 C0 45/60 ticket 45: 50 tokens, complete=true, same A/B=true; elapsed 3m47s, eta 1m16s
+22:35:50 C0 46/60 ticket 46: 70 tokens, complete=true, same A/B=false; elapsed 3m52s, eta 1m11s
+22:35:56 C0 47/60 ticket 47: 66 tokens, complete=true, same A/B=false; elapsed 3m57s, eta 1m6s
+22:36:00 C0 48/60 ticket 48: 54 tokens, complete=true, same A/B=false; elapsed 4m2s, eta 1m0s
+22:36:05 C0 49/60 ticket 49: 60 tokens, complete=true, same A/B=false; elapsed 4m7s, eta 55s
+22:36:10 C0 50/60 ticket 50: 54 tokens, complete=true, same A/B=true; elapsed 4m11s, eta 50s
+22:36:14 C0 51/60 ticket 51: 55 tokens, complete=true, same A/B=true; elapsed 4m16s, eta 45s
+22:36:19 C0 52/60 ticket 52: 55 tokens, complete=true, same A/B=true; elapsed 4m21s, eta 40s
+22:36:24 C0 53/60 ticket 53: 64 tokens, complete=true, same A/B=false; elapsed 4m26s, eta 35s
+22:36:29 C0 54/60 ticket 54: 57 tokens, complete=true, same A/B=true; elapsed 4m30s, eta 30s
+22:36:33 C0 55/60 ticket 55: 58 tokens, complete=true, same A/B=true; elapsed 4m35s, eta 25s
+22:36:38 C0 56/60 ticket 56: 58 tokens, complete=true, same A/B=true; elapsed 4m40s, eta 20s
+22:36:43 C0 57/60 ticket 57: 61 tokens, complete=true, same A/B=false; elapsed 4m45s, eta 15s
+22:36:48 C0 58/60 ticket 58: 61 tokens, complete=true, same A/B=false; elapsed 4m50s, eta 10s
+22:36:53 C0 59/60 ticket 59: 60 tokens, complete=true, same A/B=true; elapsed 4m55s, eta 5s
+22:36:58 C0 60/60 ticket 60: 61 tokens, complete=true, same A/B=false; elapsed 5m0s, eta 0s
+--- PASS: TestConfidenceC0 (300.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	300.491s
+22:36:58 == 7b exit 0
+22:36:58 == DONE
