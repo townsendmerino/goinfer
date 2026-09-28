@@ -2,12 +2,8 @@ github.com/ebitengine/purego v0.10.1 h1:dewVBCBT2GaMu1SrNTYxQhgQBethzfhiwvZiLGP/
 github.com/ebitengine/purego v0.10.1/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/eitamring/gocudrv v0.3.2 h1:zjRj3gRSfmbxbQkt1jXSTdGKHPwL1R912qovXnOPUlE=
 github.com/eitamring/gocudrv v0.3.2/go.mod h1:nA+ytiB8A1YvVSHzBQbn+Be+BGR4gAGVIP+7chLn+O4=
-github.com/townsendmerino/aikit v1.49.0 h1:ZMZRm8hXjPVTsn7p06S/Ed2DH9Mq0SQR+ylXnNVXN4U=
-github.com/townsendmerino/aikit v1.49.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
-github.com/townsendmerino/aikit v1.50.0 h1:YHWpLTnTiftp1Y+q5BZvReFGTWtx9WGc394CIFg+1IY=
-github.com/townsendmerino/aikit v1.50.0/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
-github.com/townsendmerino/aikit v1.50.1 h1:EVlUxtMAKp0zaN97wqQZTLloyzB0NZcMdX0alcTvzik=
-github.com/townsendmerino/aikit v1.50.1/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
+github.com/townsendmerino/aikit v1.50.2 h1:FW+eQ4PRagSStZk1EKBM0TV0yH9cMloPaBJeoNFZJns=
+github.com/townsendmerino/aikit v1.50.2/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
 github.com/townsendmerino/aikit/gpu v0.33.3 h1:6nosKIoDIc+5ruZ05aFJ9CyvgQYnvfz7aV3SMh5pUrc=
 github.com/townsendmerino/aikit/gpu v0.33.3/go.mod h1:5BoeTW/VGltnAT3zB/lhZPFDxjZBh+tMF+FFhHE8Fn0=
 github.com/townsendmerino/goinfer v0.19.0 h1:hUoKxP+bcR0EswIhn/1EgJyfu3HEKK6dsrogzieGGOA=
