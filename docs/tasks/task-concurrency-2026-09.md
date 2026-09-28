@@ -921,6 +921,18 @@ batching is enabled for the model and the cache is eligible:
    - The 2–4.9 GB range is unmeasured, and `auto` batches it; recorded, not tested.
    - **darwin:** `auto` means `off` until a Mac 7B MC2 cell shows batched B = 4 ÷ J8 N = 4 ≥ 1.15×. Batching loses on the
      Mac's 0.5B and 1.5B, and its 7B has not been measured.
+   - **The Mac 7B cell, pre-registered 2026-09-27 before any timing.**
+     - `TestMC2_batchedDecodeThroughput` on the M1 Pro (8P + 2E cores), qwen2.5-7b-instruct q4_k_m int4 from
+       `~/models`, depths 128 and 512, the harness's defaults (16 steps, 5 reps, arms interleaved and rotated).
+     - Each depth runs in its own `go test`, idle-gated: load1 ≤ 2.0 and no other go test or serve process.
+     - It loads the 7B's `.int4.cpu-arm64.giw`, transcoded with `cmd/prequant` for this cell. The `.gguf`'s CPU int4
+       load needs ~13.3 GB, which this Mac's fit guard refuses, and the guard is not bypassed.
+     - **Identity first (hard):** `TestMC2_decodeMultiStepBitIdentical`'s int4 subtest on the 7B. int8int8 is not
+       the metric's quant, and a 7B at int8int8 is ~7.6 GB of heap.
+     - **Metric:** batched B = 4 ÷ J8 N = 4, per rep, median of 5, at each depth.
+     - **Decision:** both depths' medians ≥ 1.15× → `auto` batches on darwin too (the `runtime.GOOS` clause in
+       `decoder/cpu_batch.go` goes). Both < 1.05× → darwin stays off, with the numbers recorded. Otherwise the owner
+       decides.
 
 **Declines, per token, to production's own `m.forward` (the step-1 worker path):**
 - a cache that fails `mc2Eligible`: `--kv i8`, a sliding-window ring, an adapter session, a tree mask;
