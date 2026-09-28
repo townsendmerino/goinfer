@@ -14,7 +14,8 @@
 > **L2 SHIPPED 2026-09-27:** R-06 is on for non-arm64. Every gate passes: logits bit-identical, the suites green, and
 > paired 1.016× / 1.030× / 1.018× (0.5B / 1.5B / 7B). **L1 FAILS as pre-registered** (worst drop 0.0168 > 0.015), but
 > the drops are symmetric about zero (13 of 24 cells improve, mean +0.0044 in f16's favour). The gate had no noise arm;
-> whether to re-gate with one is the owner's call.
+> whether to re-gate with one is the owner's call. **Owner decision 2026-09-27: override, build it, for consistency.**
+> CPU int4 moves to the f16 group scales CUDA, Metal and WebGPU already store (L1 build, below).
 
 ## L1 — f16 group scales for CPU int4: the quality gate (pre-registered 2026-09-27)
 
@@ -136,3 +137,44 @@ pre-registration and the owner's call.
   production env read).
 - f16 would then pass if its per-cell Δ sits inside the controls' spread, and its mean Δ is no worse than theirs.
 - Cost: about 1.5–2 hours of sweep.
+
+### L1 owner override (2026-09-27): build f16 scales for CPU int4, for consistency with the GPU backends
+
+**The owner overrode the FAIL:** "for consistency, let's override."
+- **Basis:** the three GPU backends already serve these exact weights, so the CPU joins them.
+- **The quality question stays open, not answered.** The gate above could not separate f16's effect from the metric's
+  noise. Nothing here claims f16 passed.
+- **Precedent for the form:** R8's fused vision-tower kernel, default by owner override after missing both fidelity
+  gates.
+
+The build gets its own correctness and speed gates, pre-registered before any timing.
+
+### L1 S0 — does an f16-scale kernel actually buy the bytes? (pre-registered 2026-09-27, before any code)
+
+**Why an S0 first.** The override settles quality, not speed. The 1.06–1.10× is an estimate from bytes, and the
+kernel pays a conversion per 32 weights. The full migration is large, so the speed is measured on a prototype first:
+- aikit: `Int4()`, `W4A8Op.Scales` and the upload APIs are typed `[]float32`, and the arm64 NEON kernels need f16
+  loads;
+- goinfer: the `.giw` format and every backend's upload path;
+- an aikit release.
+
+**Prototype (local branches in aikit and goinfer; nothing pushed; goinfer builds against the local aikit via
+`go.work`):**
+- **The hot kernel.** On amd64 decode, q/k/v, gate/up, o/down and MoE experts all end in `dotW4A8FoldAVX2`.
+  `dotW4A8FoldF16AVX2` is its copy, with `VBROADCASTSS (BX)` replaced by `VPBROADCASTW (BX)` plus `VCVTPH2PS`, and the
+  scale pointer advancing 2 bytes per group instead of 4. It requires F16C.
+- **Routing.** A `WeightMat` carries an optional f16 copy of its scales, and `W4A8Op` an optional f16 slice. A
+  test-hook switch picks f16 or f32 at run time, so one loaded model runs both arms. Prefill kernels (M ≥ 4) are out
+  of S0's scope: the tile kernel stays f32.
+- **Weights.** Loaded with `GOINFER_INT4_F16_SCALES=1`, so the f32 arm reads f16-rounded scales and the f16 arm reads
+  their exact half-precision encoding. Decoding f16 to f32 is exact, so the two arms compute identical numbers.
+
+**Gates:**
+1. **Correctness (hard).** Logits are bit-identical between the arms: 48 decode steps on the 0.5B / 1.5B / 7B, every
+   element compared with `!=`. Any difference is a kernel or routing bug, not a result.
+2. **Speed.** The same paired in-process ABBA harness (`cpuDecodeAB`), 5 pairs, depth 128, at today's defaults
+   (fused gate+up and R-06 on).
+   - **BUILD** (proceed to the full migration): the paired median is ≥ 1.04× on both the 1.5B and the 7B.
+   - **PARK:** < 1.02× on either; the conversion eats the bytes.
+   - **Between: the owner decides.**
+   - The 0.5B is reported, not gated.
