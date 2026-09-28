@@ -15,6 +15,7 @@ pick up from. See root CLAUDE.md, "Run budget: quick by day, long by night".
 
 usage:
   night.py add NAME --est MIN [--timeout MIN] [--priority N] [--by WHO] [--doc PATH] -- CMD [ARGS...]
+                                     (refuses a command already queued from the same directory)
   night.py list [--from HH:MM]       the queue in run order, with estimates and projected finish
   night.py start [--deadline HH:MM]  bedtime: detach and run the queue (default deadline 06:30)
   night.py status                    what is running now and what finished tonight
@@ -115,6 +116,16 @@ def queued():
     return jobs
 
 
+def running():
+    """The job file of whatever is running right now (empty by day, normally)."""
+    out = []
+    for f in sorted(RUNNING.glob("*.json")) if RUNNING.exists() else []:
+        j = read_json(f)
+        if j:
+            out.append(j)
+    return out
+
+
 def runner_pid():
     try:
         pid = int(PIDFILE.read_text().strip())
@@ -164,6 +175,16 @@ def cmd_add(a):
     if any(j["name"] == a.name for j in queued()):
         die(f"a job named {a.name!r} is already queued (night.py drop {a.name} first)")
     cwd = Path(a.cwd or os.getcwd()).resolve()
+    # ONE COPY OF EACH RUN. The same command from the same directory is the same run tonight, whatever rev each
+    # session was on when it queued it: a tree-relative command runs on tonight's tree, and a run-*.sh runs
+    # whatever that script says tonight. Two sessions queueing the same gate is the case this exists for.
+    if not a.allow_duplicate:
+        for j in queued() + running():
+            if j["cmd"] == cmd and j["cwd"] == str(cwd):
+                die(f"the same command from the same directory is already queued as {j['name']!r}"
+                    f"{' by ' + j['by'] if j.get('by') else ''} (est {fmt_min(j['est_min'])}). It runs on tonight's "
+                    f"tree, so a second copy would repeat it — name that job in your report instead. A repeat that "
+                    f"is part of a pre-registered design goes in with --allow-duplicate.")
     seq = int(time.time() * 1000)
     job = {
         "name": a.name,
@@ -189,6 +210,14 @@ def cmd_add(a):
     total = sum(j["est_min"] for j in jobs)
     print(f"queued {a.name!r} (est {fmt_min(a.est)}, timeout {fmt_min(job['timeout_min'])}, rev {job['rev'] or '?'}"
           f"{' +dirty' if job['dirty'] else ''}). Tonight's queue: {len(jobs)} job(s), {fmt_min(total)}.")
+
+
+def cmdline(j, width=110):
+    """The command as a shell line, shown by `list` so a session can see whether a queued job already covers its run."""
+    c = shlex.join(j["cmd"])
+    if j["cwd"] != os.getcwd():
+        c = f"(in {j['cwd']}) {c}"
+    return c if len(c) <= width else c[:width - 1] + "…"
 
 
 def plan(jobs, start, deadline):
@@ -218,13 +247,15 @@ def cmd_list(a):
     total = sum(j["est_min"] for j in jobs)
     print(f"{len(jobs)} queued job(s), {fmt_min(total)} estimated. If started {'at' if frm else 'now,'} "
           f"{hm(start)}, deadline {hm(deadline)}:")
-    print(f"  {'pri':>3}  {'job':<34} {'est':>9}  {'start':>5}-{'end':<5}  by / doc")
+    print(f"  {'pri':>3}  {'job':<34} {'est':>10}  {'start':>5}-{'end':<5}  by / doc")
     for j, s, e in rows:
         who = " / ".join(x for x in (j.get("by"), j.get("doc")) if x)
-        print(f"  {j['priority']:>3}  {j['name']:<34} {fmt_min(j['est_min']):>9}  {hm(s)}-{hm(e):<5}  {who}")
+        print(f"  {j['priority']:>3}  {j['name']:<34} {fmt_min(j['est_min']):>10}  {hm(s)}-{hm(e):<5}  {who}")
+        print(f"       $ {cmdline(j)}")
     for j in left:
-        print(f"  {j['priority']:>3}  {j['name']:<34} {fmt_min(j['est_min']):>9}  would not fit before {hm(deadline)}"
+        print(f"  {j['priority']:>3}  {j['name']:<34} {fmt_min(j['est_min']):>10}  would not fit before {hm(deadline)}"
               f" — stays queued")
+        print(f"       $ {cmdline(j)}")
     latest = deadline - dt.timedelta(minutes=total)
     if latest > start:
         print(f"Everything fits if started by {hm(latest)}.")
@@ -595,6 +626,8 @@ def main():
     s.add_argument("--note", help="anything the morning reader needs")
     s.add_argument("--cwd", help="run from here (default: the current directory)")
     s.add_argument("--force", action="store_true", help=f"allow --est over {MAX_EST_MIN} (owner's explicit ask only)")
+    s.add_argument("--allow-duplicate", action="store_true",
+                   help="queue a command that is already queued (a pre-registered repeat only)")
     s.set_defaults(fn=cmd_add)
 
     s = sp.add_parser("list", help="the queue, in run order")

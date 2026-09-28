@@ -224,6 +224,14 @@ weaker number. On nobara, D6a was launched on a ~6 h estimate and stopped at 25 
   Then tell the owner what you queued and tonight's total (`add` prints it), and carry on with quick work or stop.
   **Do not start the queue, wait on it, or poll it** — the owner starts it at bedtime (`night.py start`). The queue
   is per machine: queue a job on the box that has to measure it.
+- **One copy of each run.** `night.py list` shows every queued command; check it before adding. If a queued job
+  already answers your question (the same gate or suite on tonight's tree, or a superset of it), do not queue another
+  — name that job in your report to the owner. `add` refuses an identical command from the same directory outright.
+  By day the same goes for a check that already passed at this commit: cite its log, do not re-run it. A repeat
+  that is part of a pre-registered design (the order-reversed second pass, an A/A control, a reproduce-on-another-day
+  run) is not a duplicate: queue it with `--allow-duplicate`, and pre-register a skip condition for it where one
+  fits, as the L1 served gate's 2026-09-28 amendment did (pass 2 skipped when pass 1 clears the bar by more than the
+  two passes' own measured spread).
 - **A queued job must run with nobody watching.** Use the `docs/measurements/<campaign>/run-*.sh` shape: pinned revs
   or pre-built binaries (the tree may move before tonight), durable log/record paths, no prompts, nothing that
   needs a Claude session alive. Its output also lands in `~/goinfer-logs/night/runs/<date>/<name>.log`.
