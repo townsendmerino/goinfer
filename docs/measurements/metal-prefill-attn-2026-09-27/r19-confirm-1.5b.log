@@ -1,0 +1,142 @@
+=== RUN   TestMetalPrefillDecomp
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.9 GB; this machine currently has 7.0 GB of memory available (budget 4.9 GB = 70% of that) (99% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+[decomp    6.3s] loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: H=1536 I=8960 nL=28 nH=12 V=151936, weights aliased from the file: false
+[decomp    7.0s] K=512 warm-up PrefillLast 765.0 ms
+[decomp   11.3s] K=512 PrefillLast wall ms 607.0 607.1 607.8 604.8 607.6 609.7 609.7
+[decomp   11.9s] K=512 replica logits bit-identical to PrefillLast (151936 values)
+[decomp   12.5s] K=512 rep 1/7: full replay 597.0 ms GPU  pageins +138 swapins +0  thermal: none
+[decomp   12.7s] K=512 rep 1/7:   attention                  106.8 ms GPU  pageins +154 swapins +0
+[decomp   13.0s] K=512 rep 1/7:   GEMM gate/up               271.2 ms GPU  pageins +190 swapins +0
+[decomp   13.2s] K=512 rep 1/7:   GEMM down (+residual)      143.2 ms GPU  pageins +7 swapins +0
+[decomp   13.8s] K=512 rep 2/7: full replay 596.1 ms GPU  pageins +283 swapins +0  thermal: none
+[decomp   14.0s] K=512 rep 2/7:   attention                  107.9 ms GPU  pageins +60 swapins +0
+[decomp   14.3s] K=512 rep 2/7:   GEMM gate/up               272.5 ms GPU  pageins +14 swapins +0
+[decomp   14.5s] K=512 rep 2/7:   GEMM down (+residual)      142.2 ms GPU  pageins +1 swapins +0
+[decomp   15.1s] K=512 rep 3/7: full replay 596.6 ms GPU  pageins +1 swapins +0  thermal: none
+[decomp   15.3s] K=512 rep 3/7:   attention                  107.7 ms GPU  pageins +1 swapins +0
+[decomp   15.6s] K=512 rep 3/7:   GEMM gate/up               270.7 ms GPU  pageins +1 swapins +0
+[decomp   15.8s] K=512 rep 3/7:   GEMM down (+residual)      144.0 ms GPU  pageins +1 swapins +0
+[decomp   16.4s] K=512 rep 4/7: full replay 597.4 ms GPU  pageins +4 swapins +0  thermal: none
+[decomp   16.6s] K=512 rep 4/7:   attention                  107.2 ms GPU  pageins +2 swapins +0
+[decomp   16.9s] K=512 rep 4/7:   GEMM gate/up               271.7 ms GPU  pageins +1 swapins +0
+[decomp   17.1s] K=512 rep 4/7:   GEMM down (+residual)      142.0 ms GPU  pageins +1 swapins +0
+[decomp   17.7s] K=512 rep 5/7: full replay 592.6 ms GPU  pageins +2 swapins +0  thermal: none
+[decomp   17.9s] K=512 rep 5/7:   attention                  107.2 ms GPU  pageins +1 swapins +0
+[decomp   18.2s] K=512 rep 5/7:   GEMM gate/up               271.8 ms GPU  pageins +3 swapins +0
+[decomp   18.4s] K=512 rep 5/7:   GEMM down (+residual)      142.3 ms GPU  pageins +1 swapins +0
+[decomp   19.0s] K=512 rep 6/7: full replay 595.2 ms GPU  pageins +1 swapins +0  thermal: none
+[decomp   19.2s] K=512 rep 6/7:   attention                  108.1 ms GPU  pageins +28 swapins +0
+[decomp   19.6s] K=512 rep 6/7:   GEMM gate/up               278.4 ms GPU  pageins +241 swapins +0
+[decomp   19.7s] K=512 rep 6/7:   GEMM down (+residual)      143.5 ms GPU  pageins +1 swapins +0
+[decomp   20.3s] K=512 rep 7/7: full replay 594.2 ms GPU  pageins +183 swapins +0  thermal: none
+[decomp   20.5s] K=512 rep 7/7:   attention                  107.7 ms GPU  pageins +1 swapins +0
+[decomp   20.8s] K=512 rep 7/7:   GEMM gate/up               273.3 ms GPU  pageins +1 swapins +0
+[decomp   21.0s] K=512 rep 7/7:   GEMM down (+residual)      142.7 ms GPU  pageins +26 swapins +0
+
+=== Metal prefill decomposition, K=512 (Mpad=512), 7 reps, medians ===
+  rmsnorm (pre-attn)          0.84 ms    0.1% of full  spread  6.9%
+  GEMM qkv                   33.58 ms    5.6% of full  spread  2.5%  2.69 TFLOPS
+  rope q+k                    1.43 ms    0.2% of full  spread  4.9%
+  kv store                    0.33 ms    0.1% of full  spread 23.2%
+  attention                 107.69 ms   18.1% of full  spread  1.2%
+  GEMM o (+residual)         25.32 ms    4.2% of full  spread  1.8%  2.67 TFLOPS
+  rmsnorm (pre-MLP)           0.86 ms    0.1% of full  spread 139.1%
+  GEMM gate/up              271.78 ms   45.6% of full  spread  2.8%  2.90 TFLOPS
+  swiglu                      5.82 ms    1.0% of full  spread  5.1%
+  GEMM down (+residual)     142.67 ms   23.9% of full  spread  1.4%  2.77 TFLOPS
+  LM head (last row)          1.51 ms    0.3% of full  spread  9.0%
+  sum of categories         591.81 ms  (99.3% of the full replay — non-additivity)
+  full replay (GPU)         596.11 ms  spread  0.8%
+  PrefillLast (wall)        607.64 ms  spread  0.8%  → host/other 11.5 ms (1.9%)
+  GEMM share: 79.4% of GPU, 77.9% of PrefillLast wall
+
+[decomp   21.6s] K=512 R19 layer 27 attention, prototype vs fused on the same inputs: relative L2 7.85e-05, max |diff| 0.00781, cosine 0.999999997
+[decomp   22.1s] K=512 R19 full-replay logits with the prototype: cosine 0.999898201 against PrefillLast, argmax 261 vs 261
+[decomp   24.2s] K=512 R19 rep 1/7: attention in sequence — fused 108.3 ms, prototype 20.4 ms → 5.30x
+[decomp   26.3s] K=512 R19 rep 2/7: attention in sequence — fused 109.5 ms, prototype 13.4 ms → 8.15x
+[decomp   28.4s] K=512 R19 rep 3/7: attention in sequence — fused 110.0 ms, prototype 16.6 ms → 6.62x
+[decomp   30.4s] K=512 R19 rep 4/7: attention in sequence — fused 110.2 ms, prototype 17.0 ms → 6.47x
+[decomp   32.5s] K=512 R19 rep 5/7: attention in sequence — fused 109.8 ms, prototype 15.3 ms → 7.18x
+[decomp   34.6s] K=512 R19 rep 6/7: attention in sequence — fused 110.4 ms, prototype 17.3 ms → 6.40x
+[decomp   36.7s] K=512 R19 rep 7/7: attention in sequence — fused 112.4 ms, prototype 15.0 ms → 7.48x
+[decomp   36.7s] K=512 R19 attention in sequence (median of 7 paired reps): fused 110.0 ms, prototype 16.6 ms → 6.616x (per rep [5.298184708100997 8.15130776916862 6.615897153001537 6.471608512059699 7.179429794882007 6.400083099214369 7.4783395746507235])
+[decomp   67.9s] K=512 R19 attention alone: fused sustained 107.4 ms, after 2 s idle 114.0 (1.06); prototype sustained 16.4, after idle 22.5 (1.37)
+    prefill_decomp_test.go:697: K=512: GEMM 473.4 ms of 596.1 ms GPU (79.4%), PrefillLast wall 607.6 ms
+[decomp   76.1s] K=3900 warm-up PrefillLast 8164.3 ms
+[decomp  134.8s] K=3900 PrefillLast wall ms 8094.7 8467.2 8687.2 8386.2 8130.2 8579.7 8333.8
+[decomp  143.1s] K=3900 replica logits bit-identical to PrefillLast (151936 values)
+[decomp  151.3s] K=3900 rep 1/7: full replay 8215.2 ms GPU  pageins +264 swapins +0  thermal: none
+[decomp  151.6s] K=3900 rep 1/7:   GEMM qkv                   240.0 ms GPU  pageins +3 swapins +0
+[decomp  155.9s] K=3900 rep 1/7:   attention                 4238.0 ms GPU  pageins +72 swapins +0
+[decomp  156.1s] K=3900 rep 1/7:   GEMM o (+residual)         208.0 ms GPU  pageins +1 swapins +0
+[decomp  158.3s] K=3900 rep 1/7:   GEMM gate/up              2139.9 ms GPU  pageins +151 swapins +0
+[decomp  159.4s] K=3900 rep 1/7:   GEMM down (+residual)     1027.5 ms GPU  pageins +34 swapins +0
+[decomp  167.4s] K=3900 rep 2/7: full replay 7985.4 ms GPU  pageins +78 swapins +0  thermal: none
+[decomp  167.6s] K=3900 rep 2/7:   GEMM qkv                   237.1 ms GPU  pageins +1 swapins +0
+[decomp  171.9s] K=3900 rep 2/7:   attention                 4182.9 ms GPU  pageins +51 swapins +0
+[decomp  172.0s] K=3900 rep 2/7:   GEMM o (+residual)         180.5 ms GPU  pageins +3 swapins +0
+[decomp  174.2s] K=3900 rep 2/7:   GEMM gate/up              2142.1 ms GPU  pageins +66 swapins +0
+[decomp  175.3s] K=3900 rep 2/7:   GEMM down (+residual)     1036.8 ms GPU  pageins +3 swapins +0
+[decomp  183.4s] K=3900 rep 3/7: full replay 7989.7 ms GPU  pageins +135 swapins +0  thermal: none
+[decomp  183.6s] K=3900 rep 3/7:   GEMM qkv                   237.2 ms GPU  pageins +1 swapins +0
+[decomp  187.9s] K=3900 rep 3/7:   attention                 4182.5 ms GPU  pageins +1150 swapins +0
+[decomp  188.1s] K=3900 rep 3/7:   GEMM o (+residual)         180.2 ms GPU  pageins +174 swapins +0
+[decomp  190.2s] K=3900 rep 3/7:   GEMM gate/up              2058.8 ms GPU  pageins +85 swapins +0
+[decomp  191.2s] K=3900 rep 3/7:   GEMM down (+residual)     1025.5 ms GPU  pageins +31 swapins +0
+[decomp  199.3s] K=3900 rep 4/7: full replay 7995.7 ms GPU  pageins +463 swapins +0  thermal: none
+[decomp  199.6s] K=3900 rep 4/7:   GEMM qkv                   238.5 ms GPU  pageins +3 swapins +0
+[decomp  203.9s] K=3900 rep 4/7:   attention                 4258.2 ms GPU  pageins +64 swapins +0
+[decomp  204.0s] K=3900 rep 4/7:   GEMM o (+residual)         181.4 ms GPU  pageins +1 swapins +0
+[decomp  206.1s] K=3900 rep 4/7:   GEMM gate/up              2062.4 ms GPU  pageins +30 swapins +0
+[decomp  207.2s] K=3900 rep 4/7:   GEMM down (+residual)     1023.7 ms GPU  pageins +1 swapins +0
+[decomp  215.4s] K=3900 rep 5/7: full replay 8157.0 ms GPU  pageins +32 swapins +0  thermal: none
+[decomp  215.7s] K=3900 rep 5/7:   GEMM qkv                   274.4 ms GPU  pageins +1 swapins +0
+[decomp  220.0s] K=3900 rep 5/7:   attention                 4204.2 ms GPU  pageins +17 swapins +0
+[decomp  220.2s] K=3900 rep 5/7:   GEMM o (+residual)         180.5 ms GPU  pageins +1 swapins +0
+[decomp  222.3s] K=3900 rep 5/7:   GEMM gate/up              2061.8 ms GPU  pageins +13 swapins +0
+[decomp  223.4s] K=3900 rep 5/7:   GEMM down (+residual)     1027.3 ms GPU  pageins +188 swapins +0
+[decomp  231.5s] K=3900 rep 6/7: full replay 8066.2 ms GPU  pageins +252 swapins +0  thermal: none
+[decomp  231.7s] K=3900 rep 6/7:   GEMM qkv                   238.9 ms GPU  pageins +17 swapins +0
+[decomp  236.0s] K=3900 rep 6/7:   attention                 4202.2 ms GPU  pageins +592 swapins +4
+[decomp  236.2s] K=3900 rep 6/7:   GEMM o (+residual)         187.7 ms GPU  pageins +7 swapins +0
+[decomp  238.3s] K=3900 rep 6/7:   GEMM gate/up              2075.8 ms GPU  pageins +80 swapins +0
+[decomp  239.4s] K=3900 rep 6/7:   GEMM down (+residual)     1034.6 ms GPU  pageins +108 swapins +0
+[decomp  247.5s] K=3900 rep 7/7: full replay 8095.8 ms GPU  pageins +1051 swapins +0  thermal: none
+[decomp  247.8s] K=3900 rep 7/7:   GEMM qkv                   238.8 ms GPU  pageins +1 swapins +0
+[decomp  252.1s] K=3900 rep 7/7:   attention                 4223.5 ms GPU  pageins +441 swapins +0
+[decomp  252.2s] K=3900 rep 7/7:   GEMM o (+residual)         181.3 ms GPU  pageins +1 swapins +0
+[decomp  254.4s] K=3900 rep 7/7:   GEMM gate/up              2075.8 ms GPU  pageins +24 swapins +0
+[decomp  255.5s] K=3900 rep 7/7:   GEMM down (+residual)     1035.7 ms GPU  pageins +13 swapins +0
+
+=== Metal prefill decomposition, K=3900 (Mpad=3904), 7 reps, medians ===
+  rmsnorm (pre-attn)          3.88 ms    0.0% of full  spread 12.4%
+  GEMM qkv                  238.82 ms    3.0% of full  spread 15.6%  2.88 TFLOPS
+  rope q+k                    8.18 ms    0.1% of full  spread 22.0%
+  kv store                    1.15 ms    0.0% of full  spread  8.4%
+  attention                4204.20 ms   52.1% of full  spread  1.8%
+  GEMM o (+residual)        181.27 ms    2.2% of full  spread 15.4%  2.85 TFLOPS
+  rmsnorm (pre-MLP)           4.07 ms    0.1% of full  spread 31.2%
+  GEMM gate/up             2075.83 ms   25.7% of full  spread  4.0%  2.90 TFLOPS
+  swiglu                     43.22 ms    0.5% of full  spread  0.9%
+  GEMM down (+residual)    1027.53 ms   12.7% of full  spread  1.3%  2.93 TFLOPS
+  LM head (last row)          1.58 ms    0.0% of full  spread 12.8%
+  sum of categories        7789.72 ms  (96.6% of the full replay — non-additivity)
+  full replay (GPU)        8066.21 ms  spread  2.8%
+  PrefillLast (wall)       8386.15 ms  spread  7.1%  → host/other 319.9 ms (3.8%)
+  GEMM share: 43.7% of GPU, 42.0% of PrefillLast wall
+
+[decomp  263.8s] K=3900 R19 layer 27 attention, prototype vs fused on the same inputs: relative L2 6.38e-05, max |diff| 0.00781, cosine 0.999999998
+[decomp  268.1s] K=3900 R19 full-replay logits with the prototype: cosine 0.999919410 against PrefillLast, argmax 8 vs 8
+[decomp  287.6s] K=3900 R19 rep 1/7: attention in sequence — fused 4450.3 ms, prototype 619.2 ms → 7.19x
+[decomp  307.2s] K=3900 R19 rep 2/7: attention in sequence — fused 4444.5 ms, prototype 617.8 ms → 7.19x
+[decomp  326.7s] K=3900 R19 rep 3/7: attention in sequence — fused 4442.0 ms, prototype 598.1 ms → 7.43x
+[decomp  346.3s] K=3900 R19 rep 4/7: attention in sequence — fused 4431.4 ms, prototype 611.7 ms → 7.24x
+[decomp  365.8s] K=3900 R19 rep 5/7: attention in sequence — fused 4426.1 ms, prototype 619.1 ms → 7.15x
+[decomp  385.3s] K=3900 R19 rep 6/7: attention in sequence — fused 4458.1 ms, prototype 611.6 ms → 7.29x
+[decomp  404.9s] K=3900 R19 rep 7/7: attention in sequence — fused 4451.7 ms, prototype 617.9 ms → 7.20x
+[decomp  404.9s] K=3900 R19 attention in sequence (median of 7 paired reps): fused 4444.5 ms, prototype 617.8 ms → 7.204x (per rep [7.187513702736865 7.194519776903517 7.426607973614781 7.244674224974178 7.1488612818071 7.289242786312222 7.204392771700377])
+[decomp  534.3s] K=3900 R19 attention alone: fused sustained 4203.6 ms, after 2 s idle 4205.4 (1.00); prototype sustained 576.0, after idle 583.1 (1.01)
+    prefill_decomp_test.go:697: K=3900: GEMM 3523.4 ms of 8066.2 ms GPU (43.7%), PrefillLast wall 8386.2 ms
+--- PASS: TestMetalPrefillDecomp (534.31s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	534.990s

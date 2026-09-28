@@ -1,0 +1,134 @@
+=== RUN   TestPrefillGateVsReference
+=== RUN   TestPrefillGateVsReference/S
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+--- S prompt set "a" (DECIDING) ---
+[ref-gate] S set "a" K=256 prompt  1/10 exact(agree=89.1% HF=0/64 KL=0.0309) fast(agree=92.2% HF=0/64 KL=0.0288) diff(agree=+3.1pt KL=-0.0021) seedKL=0.1190 elapsed=6s
+[ref-gate] S set "a" K=256 prompt  2/10 exact(agree=100.0% HF=0/64 KL=0.0105) fast(agree=100.0% HF=0/64 KL=0.0089) diff(agree=+0.0pt KL=-0.0016) seedKL=0.1115 elapsed=11s
+[ref-gate] S set "a" K=256 prompt  3/10 exact(agree=85.9% HF=0/64 KL=0.0513) fast(agree=93.8% HF=0/64 KL=0.0463) diff(agree=+7.8pt KL=-0.0050) seedKL=0.0708 elapsed=16s
+[ref-gate] S set "a" K=256 prompt  4/10 exact(agree=89.1% HF=0/64 KL=0.0509) fast(agree=89.1% HF=0/64 KL=0.0440) diff(agree=+0.0pt KL=-0.0070) seedKL=0.0964 elapsed=22s
+[ref-gate] S set "a" K=256 prompt  5/10 exact(agree=89.1% HF=1/64 KL=0.0453) fast(agree=90.6% HF=1/64 KL=0.0423) diff(agree=+1.6pt KL=-0.0030) seedKL=0.0974 elapsed=27s
+[ref-gate] S set "a" K=256 prompt  6/10 exact(agree=92.2% HF=3/64 KL=0.0872) fast(agree=90.6% HF=3/64 KL=0.0689) diff(agree=-1.6pt KL=-0.0183) seedKL=0.0911 elapsed=32s
+[ref-gate] S set "a" K=256 prompt  7/10 exact(agree=95.3% HF=0/64 KL=0.0227) fast(agree=95.3% HF=0/64 KL=0.0200) diff(agree=+0.0pt KL=-0.0027) seedKL=0.0537 elapsed=37s
+[ref-gate] S set "a" K=256 prompt  8/10 exact(agree=95.3% HF=0/64 KL=0.0305) fast(agree=95.3% HF=0/64 KL=0.0242) diff(agree=+0.0pt KL=-0.0063) seedKL=0.1036 elapsed=43s
+[ref-gate] S set "a" K=256 prompt  9/10 exact(agree=95.3% HF=0/64 KL=0.0320) fast(agree=95.3% HF=0/64 KL=0.0299) diff(agree=+0.0pt KL=-0.0021) seedKL=0.0180 elapsed=48s
+[ref-gate] S set "a" K=256 prompt 10/10 exact(agree=96.9% HF=0/64 KL=0.0140) fast(agree=98.4% HF=0/64 KL=0.0140) diff(agree=+1.6pt KL=-0.0000) seedKL=0.1267 elapsed=53s
+=== S set "a" K=256 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=92.8% HF=4 meanKL=0.0375 worstGap=5.811%) fast(agree=94.1% HF=4 meanKL=0.0327 worstGap=5.811%) — reported, no per-cell veto
+[ref-gate] S set "a" K=512 prompt  1/10 exact(agree=92.2% HF=1/64 KL=0.0419) fast(agree=93.8% HF=0/64 KL=0.0412) diff(agree=+1.6pt KL=-0.0007) seedKL=0.0965 elapsed=9s
+[ref-gate] S set "a" K=512 prompt  2/10 exact(agree=92.2% HF=0/64 KL=0.0308) fast(agree=93.8% HF=0/64 KL=0.0298) diff(agree=+1.6pt KL=-0.0010) seedKL=0.0101 elapsed=17s
+[ref-gate] S set "a" K=512 prompt  3/10 exact(agree=87.5% HF=3/64 KL=0.0520) fast(agree=87.5% HF=3/64 KL=0.0489) diff(agree=+0.0pt KL=-0.0031) seedKL=0.1182 elapsed=26s
+[ref-gate] S set "a" K=512 prompt  4/10 exact(agree=95.3% HF=0/64 KL=0.0137) fast(agree=95.3% HF=0/64 KL=0.0143) diff(agree=+0.0pt KL=+0.0006) seedKL=0.0004 elapsed=34s
+[ref-gate] S set "a" K=512 prompt  5/10 exact(agree=95.3% HF=0/64 KL=0.0529) fast(agree=95.3% HF=0/64 KL=0.0478) diff(agree=+0.0pt KL=-0.0051) seedKL=0.0201 elapsed=43s
+[ref-gate] S set "a" K=512 prompt  6/10 exact(agree=96.9% HF=0/64 KL=0.0211) fast(agree=98.4% HF=0/64 KL=0.0228) diff(agree=+1.6pt KL=+0.0017) seedKL=0.0722 elapsed=51s
+[ref-gate] S set "a" K=512 prompt  7/10 exact(agree=98.4% HF=0/64 KL=0.0205) fast(agree=96.9% HF=0/64 KL=0.0212) diff(agree=-1.6pt KL=+0.0007) seedKL=0.0113 elapsed=1m0s
+[ref-gate] S set "a" K=512 prompt  8/10 exact(agree=100.0% HF=0/64 KL=0.0190) fast(agree=100.0% HF=0/64 KL=0.0146) diff(agree=+0.0pt KL=-0.0044) seedKL=0.0008 elapsed=1m8s
+[ref-gate] S set "a" K=512 prompt  9/10 exact(agree=95.3% HF=0/64 KL=0.0277) fast(agree=96.9% HF=0/64 KL=0.0263) diff(agree=+1.6pt KL=-0.0014) seedKL=0.0852 elapsed=1m17s
+[ref-gate] S set "a" K=512 prompt 10/10 exact(agree=79.7% HF=1/64 KL=0.0633) fast(agree=81.2% HF=0/64 KL=0.0593) diff(agree=+1.6pt KL=-0.0040) seedKL=0.0921 elapsed=1m25s
+=== S set "a" K=512 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=93.3% HF=5 meanKL=0.0343 worstGap=4.998%) fast(agree=93.9% HF=3 meanKL=0.0326 worstGap=4.998%) — reported, no per-cell veto
+[ref-gate] S set "a" K=1024 prompt  1/10 exact(agree=89.1% HF=0/64 KL=0.0488) fast(agree=89.1% HF=1/64 KL=0.0518) diff(agree=+0.0pt KL=+0.0030) seedKL=0.0804 elapsed=16s
+[ref-gate] S set "a" K=1024 prompt  2/10 exact(agree=100.0% HF=0/64 KL=0.0095) fast(agree=100.0% HF=0/64 KL=0.0088) diff(agree=+0.0pt KL=-0.0007) seedKL=0.0939 elapsed=32s
+[ref-gate] S set "a" K=1024 prompt  3/10 exact(agree=90.6% HF=0/64 KL=0.0587) fast(agree=89.1% HF=0/64 KL=0.0497) diff(agree=-1.6pt KL=-0.0089) seedKL=0.0471 elapsed=48s
+[ref-gate] S set "a" K=1024 prompt  4/10 exact(agree=87.5% HF=0/64 KL=0.0637) fast(agree=85.9% HF=0/64 KL=0.0568) diff(agree=-1.6pt KL=-0.0069) seedKL=0.1711 elapsed=1m4s
+[ref-gate] S set "a" K=1024 prompt  5/10 exact(agree=95.3% HF=0/64 KL=0.0461) fast(agree=96.9% HF=0/64 KL=0.0461) diff(agree=+1.6pt KL=-0.0001) seedKL=0.0152 elapsed=1m20s
+[ref-gate] S set "a" K=1024 prompt  6/10 exact(agree=92.2% HF=0/64 KL=0.0382) fast(agree=93.8% HF=0/64 KL=0.0378) diff(agree=+1.6pt KL=-0.0004) seedKL=0.0001 elapsed=1m36s
+[ref-gate] S set "a" K=1024 prompt  7/10 exact(agree=100.0% HF=0/64 KL=0.0182) fast(agree=100.0% HF=0/64 KL=0.0167) diff(agree=+0.0pt KL=-0.0015) seedKL=0.0461 elapsed=1m52s
+[ref-gate] S set "a" K=1024 prompt  8/10 exact(agree=98.4% HF=0/64 KL=0.0107) fast(agree=98.4% HF=0/64 KL=0.0112) diff(agree=+0.0pt KL=+0.0004) seedKL=0.0024 elapsed=2m8s
+[ref-gate] S set "a" K=1024 prompt  9/10 exact(agree=76.6% HF=3/64 KL=0.0698) fast(agree=76.6% HF=1/64 KL=0.0669) diff(agree=+0.0pt KL=-0.0029) seedKL=0.1196 elapsed=2m23s
+[ref-gate] S set "a" K=1024 prompt 10/10 exact(agree=92.2% HF=0/64 KL=0.0463) fast(agree=92.2% HF=1/64 KL=0.0450) diff(agree=+0.0pt KL=-0.0013) seedKL=0.0481 elapsed=2m39s
+=== S set "a" K=1024 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=92.2% HF=3 meanKL=0.0410 worstGap=4.317%) fast(agree=92.2% HF=3 meanKL=0.0391 worstGap=6.636%) — reported, no per-cell veto
+[ref-gate]   ... exact prefill K=3900 pos 1538/3900
+[ref-gate]   ... exact prefill K=3900 pos 2683/3900
+[ref-gate]   ... exact prefill K=3900 pos 3635/3900
+[ref-gate] S set "a" K=3900 prompt  1/10 exact(agree=100.0% HF=0/64 KL=0.0094) fast(agree=100.0% HF=0/64 KL=0.0085) diff(agree=+0.0pt KL=-0.0009) seedKL=0.0111 elapsed=1m14s
+[ref-gate]   ... exact prefill K=3900 pos 1537/3900
+[ref-gate]   ... exact prefill K=3900 pos 2678/3900
+[ref-gate]   ... exact prefill K=3900 pos 3634/3900
+[ref-gate] S set "a" K=3900 prompt  2/10 exact(agree=96.9% HF=0/64 KL=0.0217) fast(agree=98.4% HF=0/64 KL=0.0204) diff(agree=+1.6pt KL=-0.0013) seedKL=0.0565 elapsed=2m28s
+[ref-gate]   ... exact prefill K=3900 pos 1538/3900
+[ref-gate]   ... exact prefill K=3900 pos 2680/3900
+[ref-gate]   ... exact prefill K=3900 pos 3634/3900
+[ref-gate] S set "a" K=3900 prompt  3/10 exact(agree=84.4% HF=3/64 KL=0.0755) fast(agree=87.5% HF=2/64 KL=0.0709) diff(agree=+3.1pt KL=-0.0046) seedKL=0.0328 elapsed=3m42s
+[ref-gate]   ... exact prefill K=3900 pos 1542/3900
+[ref-gate]   ... exact prefill K=3900 pos 2683/3900
+[ref-gate]   ... exact prefill K=3900 pos 3638/3900
+[ref-gate] S set "a" K=3900 prompt  4/10 exact(agree=95.3% HF=0/64 KL=0.0381) fast(agree=93.8% HF=0/64 KL=0.0362) diff(agree=-1.6pt KL=-0.0019) seedKL=0.0302 elapsed=4m56s
+[ref-gate]   ... exact prefill K=3900 pos 1536/3900
+[ref-gate]   ... exact prefill K=3900 pos 2675/3900
+[ref-gate]   ... exact prefill K=3900 pos 3636/3900
+[ref-gate] S set "a" K=3900 prompt  5/10 exact(agree=93.8% HF=0/64 KL=0.0088) fast(agree=98.4% HF=0/64 KL=0.0108) diff(agree=+4.7pt KL=+0.0019) seedKL=0.0000 elapsed=6m10s
+[ref-gate]   ... exact prefill K=3900 pos 1546/3900
+[ref-gate]   ... exact prefill K=3900 pos 2680/3900
+[ref-gate]   ... exact prefill K=3900 pos 3637/3900
+[ref-gate] S set "a" K=3900 prompt  6/10 exact(agree=87.5% HF=0/64 KL=0.0676) fast(agree=85.9% HF=1/64 KL=0.0656) diff(agree=-1.6pt KL=-0.0019) seedKL=0.0613 elapsed=7m24s
+[ref-gate]   ... exact prefill K=3900 pos 1539/3900
+[ref-gate]   ... exact prefill K=3900 pos 2681/3900
+[ref-gate]   ... exact prefill K=3900 pos 3638/3900
+[ref-gate] S set "a" K=3900 prompt  7/10 exact(agree=93.8% HF=0/64 KL=0.0440) fast(agree=95.3% HF=0/64 KL=0.0401) diff(agree=+1.6pt KL=-0.0039) seedKL=0.0754 elapsed=8m38s
+[ref-gate]   ... exact prefill K=3900 pos 1538/3900
+[ref-gate]   ... exact prefill K=3900 pos 2678/3900
+[ref-gate]   ... exact prefill K=3900 pos 3635/3900
+[ref-gate] S set "a" K=3900 prompt  8/10 exact(agree=93.8% HF=1/64 KL=0.0755) fast(agree=95.3% HF=0/64 KL=0.0689) diff(agree=+1.6pt KL=-0.0066) seedKL=0.0220 elapsed=9m53s
+[ref-gate]   ... exact prefill K=3900 pos 1535/3900
+[ref-gate]   ... exact prefill K=3900 pos 2634/3900
+[ref-gate]   ... exact prefill K=3900 pos 3589/3900
+[ref-gate] S set "a" K=3900 prompt  9/10 exact(agree=95.3% HF=0/64 KL=0.0460) fast(agree=96.9% HF=0/64 KL=0.0377) diff(agree=+1.6pt KL=-0.0082) seedKL=0.0004 elapsed=11m8s
+[ref-gate]   ... exact prefill K=3900 pos 1539/3900
+[ref-gate]   ... exact prefill K=3900 pos 2683/3900
+[ref-gate]   ... exact prefill K=3900 pos 3637/3900
+[ref-gate] S set "a" K=3900 prompt 10/10 exact(agree=89.1% HF=3/64 KL=0.0700) fast(agree=89.1% HF=2/64 KL=0.0596) diff(agree=+0.0pt KL=-0.0104) seedKL=0.0859 elapsed=12m22s
+=== S set "a" K=3900 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=93.0% HF=7 meanKL=0.0457 worstGap=6.571%) fast(agree=94.1% HF=5 meanKL=0.0419 worstGap=6.571%) — reported, no per-cell veto
+=== S (set "a", DECIDING) POOLED decision-set verdict (K=[256 512 1024], 3 cells, 1920 positions): critA(hardFlips fast<=exact+2*sqrt(exact))=true (exact=12 fast=10) critB(agree fast>=exact-2*sqrt(d)/N)=true (exactAgree=92.76% fastAgree=93.39% d=48 N=1920) critC(KL pooled fast<=exact & fast lower on >=half prompts & no cell >1.1x)=true (exactMeanKL=0.0376 fastMeanKL=0.0348 fastLowerPrompts=25/30 ceilingOK=true) — SHIPS ===
+    prefill_gate_ref_test.go:173: S (set "a", DECIDING): pooled verdict = SHIPS (critA=true critB=true critC=true)
+[confirm, not gating] S set "a" K=3900: exact(agree=93.0% HF=7/640 meanKL=0.0457) fast(agree=94.1% HF=5/640 meanKL=0.0419)
+=== RUN   TestPrefillGateVsReference/D7
+[metal] weights aliased from qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4020 MB bound in place, 1 MB copied (anonymous) — 3112 MB int4 nibbles (56 single tensors + 56 fused groups = 2034 MB) + 520 MB int8 codes (1 matrices) + 389 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+--- D7 prompt set "a" (DECIDING) ---
+[ref-gate] D7 set "a" K=256 prompt  1/10 exact(agree=90.6% HF=1/64 KL=0.0670) fast(agree=92.2% HF=1/64 KL=0.0654) diff(agree=+1.6pt KL=-0.0016) seedKL=0.2154 elapsed=18s
+[ref-gate] D7 set "a" K=256 prompt  2/10 exact(agree=85.9% HF=1/64 KL=0.0932) fast(agree=82.8% HF=3/64 KL=0.0907) diff(agree=-3.1pt KL=-0.0025) seedKL=0.1705 elapsed=33s
+[ref-gate] D7 set "a" K=256 prompt  3/10 exact(agree=87.5% HF=1/64 KL=0.0664) fast(agree=90.6% HF=0/64 KL=0.0623) diff(agree=+3.1pt KL=-0.0041) seedKL=0.0839 elapsed=48s
+[ref-gate] D7 set "a" K=256 prompt  4/10 exact(agree=95.3% HF=1/64 KL=0.0389) fast(agree=95.3% HF=0/64 KL=0.0348) diff(agree=+0.0pt KL=-0.0041) seedKL=0.0909 elapsed=1m3s
+[ref-gate] D7 set "a" K=256 prompt  5/10 exact(agree=87.5% HF=1/64 KL=0.0592) fast(agree=89.1% HF=1/64 KL=0.0623) diff(agree=+1.6pt KL=+0.0031) seedKL=0.0152 elapsed=1m18s
+[ref-gate] D7 set "a" K=256 prompt  6/10 exact(agree=81.2% HF=1/64 KL=0.1052) fast(agree=75.0% HF=3/64 KL=0.1061) diff(agree=-6.2pt KL=+0.0009) seedKL=0.1065 elapsed=1m32s
+[ref-gate] D7 set "a" K=256 prompt  7/10 exact(agree=84.4% HF=4/64 KL=0.0986) fast(agree=84.4% HF=3/64 KL=0.0989) diff(agree=+0.0pt KL=+0.0003) seedKL=0.2957 elapsed=1m47s
+[ref-gate] D7 set "a" K=256 prompt  8/10 exact(agree=93.8% HF=0/64 KL=0.0440) fast(agree=92.2% HF=0/64 KL=0.0403) diff(agree=-1.6pt KL=-0.0036) seedKL=0.0251 elapsed=2m2s
+[ref-gate] D7 set "a" K=256 prompt  9/10 exact(agree=84.4% HF=2/64 KL=0.1124) fast(agree=79.7% HF=4/64 KL=0.1087) diff(agree=-4.7pt KL=-0.0037) seedKL=0.0737 elapsed=2m17s
+[ref-gate] D7 set "a" K=256 prompt 10/10 exact(agree=87.5% HF=2/64 KL=0.1104) fast(agree=85.9% HF=2/64 KL=0.0918) diff(agree=-1.6pt KL=-0.0186) seedKL=0.3312 elapsed=2m32s
+=== D7 set "a" K=256 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=87.8% HF=14 meanKL=0.0795 worstGap=8.110%) fast(agree=86.7% HF=17 meanKL=0.0761 worstGap=10.556%) — reported, no per-cell veto
+[ref-gate] D7 set "a" K=512 prompt  1/10 exact(agree=84.4% HF=1/64 KL=0.0753) fast(agree=84.4% HF=1/64 KL=0.0864) diff(agree=+0.0pt KL=+0.0111) seedKL=0.0512 elapsed=25s
+[ref-gate] D7 set "a" K=512 prompt  2/10 exact(agree=96.9% HF=0/64 KL=0.0325) fast(agree=98.4% HF=0/64 KL=0.0270) diff(agree=+1.6pt KL=-0.0056) seedKL=0.0101 elapsed=50s
+[ref-gate] D7 set "a" K=512 prompt  3/10 exact(agree=96.9% HF=0/64 KL=0.0602) fast(agree=98.4% HF=0/64 KL=0.0583) diff(agree=+1.6pt KL=-0.0019) seedKL=0.2171 elapsed=1m16s
+[ref-gate] D7 set "a" K=512 prompt  4/10 exact(agree=92.2% HF=0/64 KL=0.0107) fast(agree=90.6% HF=0/64 KL=0.0090) diff(agree=-1.6pt KL=-0.0017) seedKL=0.0001 elapsed=1m41s
+[ref-gate] D7 set "a" K=512 prompt  5/10 exact(agree=81.2% HF=2/64 KL=0.0801) fast(agree=87.5% HF=1/64 KL=0.0662) diff(agree=+6.2pt KL=-0.0138) seedKL=0.1304 elapsed=2m7s
+[ref-gate] D7 set "a" K=512 prompt  6/10 exact(agree=79.7% HF=3/64 KL=0.1418) fast(agree=84.4% HF=2/64 KL=0.1434) diff(agree=+4.7pt KL=+0.0016) seedKL=0.2191 elapsed=2m33s
+[ref-gate] D7 set "a" K=512 prompt  7/10 exact(agree=89.1% HF=0/64 KL=0.0762) fast(agree=89.1% HF=0/64 KL=0.0697) diff(agree=+0.0pt KL=-0.0065) seedKL=0.0099 elapsed=2m58s
+[ref-gate] D7 set "a" K=512 prompt  8/10 exact(agree=100.0% HF=0/64 KL=0.0154) fast(agree=100.0% HF=0/64 KL=0.0106) diff(agree=+0.0pt KL=-0.0048) seedKL=0.0005 elapsed=3m24s
+[ref-gate] D7 set "a" K=512 prompt  9/10 exact(agree=87.5% HF=0/64 KL=0.0803) fast(agree=79.7% HF=1/64 KL=0.0863) diff(agree=-7.8pt KL=+0.0059) seedKL=0.1694 elapsed=3m49s
+[ref-gate] D7 set "a" K=512 prompt 10/10 exact(agree=81.2% HF=2/64 KL=0.1163) fast(agree=82.8% HF=2/64 KL=0.1128) diff(agree=+1.6pt KL=-0.0034) seedKL=0.0656 elapsed=4m14s
+=== D7 set "a" K=512 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=88.9% HF=8 meanKL=0.0689 worstGap=6.111%) fast(agree=89.5% HF=7 meanKL=0.0670 worstGap=4.764%) — reported, no per-cell veto
+[ref-gate]   ... exact prefill K=1024 pos 577/1024
+[ref-gate] D7 set "a" K=1024 prompt  1/10 exact(agree=79.7% HF=0/64 KL=0.0853) fast(agree=78.1% HF=1/64 KL=0.0865) diff(agree=-1.6pt KL=+0.0012) seedKL=0.1097 elapsed=47s
+[ref-gate]   ... exact prefill K=1024 pos 577/1024
+[ref-gate] D7 set "a" K=1024 prompt  2/10 exact(agree=89.1% HF=4/64 KL=0.1104) fast(agree=93.8% HF=3/64 KL=0.0899) diff(agree=+4.7pt KL=-0.0205) seedKL=0.0554 elapsed=1m34s
+[ref-gate]   ... exact prefill K=1024 pos 576/1024
+[ref-gate] D7 set "a" K=1024 prompt  3/10 exact(agree=84.4% HF=1/64 KL=0.1148) fast(agree=93.8% HF=0/64 KL=0.1009) diff(agree=+9.4pt KL=-0.0139) seedKL=0.1093 elapsed=2m22s
+[ref-gate]   ... exact prefill K=1024 pos 578/1024
+[ref-gate] D7 set "a" K=1024 prompt  4/10 exact(agree=81.2% HF=0/64 KL=0.0908) fast(agree=82.8% HF=1/64 KL=0.0937) diff(agree=+1.6pt KL=+0.0029) seedKL=0.2075 elapsed=3m9s
+[ref-gate]   ... exact prefill K=1024 pos 578/1024
+[ref-gate] D7 set "a" K=1024 prompt  5/10 exact(agree=84.4% HF=2/64 KL=0.0532) fast(agree=90.6% HF=0/64 KL=0.0457) diff(agree=+6.2pt KL=-0.0075) seedKL=0.0027 elapsed=3m56s
+[ref-gate]   ... exact prefill K=1024 pos 578/1024
+[ref-gate] D7 set "a" K=1024 prompt  6/10 exact(agree=84.4% HF=2/64 KL=0.0907) fast(agree=89.1% HF=0/64 KL=0.0816) diff(agree=+4.7pt KL=-0.0091) seedKL=0.0001 elapsed=4m43s
+[ref-gate]   ... exact prefill K=1024 pos 577/1024
+[ref-gate] D7 set "a" K=1024 prompt  7/10 exact(agree=85.9% HF=2/64 KL=0.0903) fast(agree=89.1% HF=2/64 KL=0.0828) diff(agree=+3.1pt KL=-0.0075) seedKL=0.1322 elapsed=5m30s
+[ref-gate]   ... exact prefill K=1024 pos 577/1024
+[ref-gate] D7 set "a" K=1024 prompt  8/10 exact(agree=92.2% HF=1/64 KL=0.0509) fast(agree=92.2% HF=1/64 KL=0.0480) diff(agree=+0.0pt KL=-0.0029) seedKL=0.0624 elapsed=6m18s
+[ref-gate]   ... exact prefill K=1024 pos 579/1024
+[ref-gate] D7 set "a" K=1024 prompt  9/10 exact(agree=92.2% HF=0/64 KL=0.0756) fast(agree=90.6% HF=0/64 KL=0.0690) diff(agree=-1.6pt KL=-0.0065) seedKL=0.2627 elapsed=7m4s
+[ref-gate]   ... exact prefill K=1024 pos 579/1024
+[ref-gate] D7 set "a" K=1024 prompt 10/10 exact(agree=90.6% HF=1/64 KL=0.1006) fast(agree=82.8% HF=3/64 KL=0.0949) diff(agree=-7.8pt KL=-0.0057) seedKL=0.1528 elapsed=7m52s
+=== D7 set "a" K=1024 cell SUMMARY (n=10 prompts, 64 positions each, 640 total): exact(agree=86.4% HF=13 meanKL=0.0863 worstGap=6.371%) fast(agree=88.3% HF=11 meanKL=0.0793 worstGap=6.713%) — reported, no per-cell veto
+=== D7 (set "a", DECIDING) POOLED decision-set verdict (K=[256 512 1024], 3 cells, 1920 positions): critA(hardFlips fast<=exact+2*sqrt(exact))=true (exact=35 fast=35) critB(agree fast>=exact-2*sqrt(d)/N)=true (exactAgree=87.71% fastAgree=88.18% d=169 N=1920) critC(KL pooled fast<=exact & fast lower on >=half prompts & no cell >1.1x)=true (exactMeanKL=0.0782 fastMeanKL=0.0741 fastLowerPrompts=22/30 ceilingOK=true) — SHIPS ===
+    prefill_gate_ref_test.go:173: D7 (set "a", DECIDING): pooled verdict = SHIPS (critA=true critB=true critC=true)
+--- PASS: TestPrefillGateVsReference (1918.14s)
+    --- PASS: TestPrefillGateVsReference/S (1039.87s)
+    --- PASS: TestPrefillGateVsReference/D7 (878.27s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	1918.618s

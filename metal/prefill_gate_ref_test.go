@@ -107,6 +107,12 @@ func TestPrefillGateVsReference(t *testing.T) {
 	// meaning "sequential Forward, with attention_fa engaged past 1536" on any future re-run,
 	// changing what this gate's already-recorded results compare against.
 	t.Setenv("GOINFER_METAL_ATTN_FA", "0")
+	// R19 (docs/tasks/red-october.md): GOINFER_METAL_R19_BASELINE=1 runs the fast arm on the retired
+	// attention_prefill_fused where production now runs attention_prefill_steel — the baseline of R19's precondition 1.
+	if os.Getenv("GOINFER_METAL_R19_BASELINE") == "1" {
+		prefillSteelAttnOff = true
+		t.Cleanup(func() { prefillSteelAttnOff = false })
+	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -153,7 +159,12 @@ func TestPrefillGateVsReference(t *testing.T) {
 			if !ok {
 				t.Skipf("metal resident not built for this model")
 			}
-			tk, err := tokenizer.LoadGGUF(path)
+			// A .giw bundle carries no tokenizer: <pathEnv>_TOKENIZER names the .gguf it came from (default: the model path).
+			tokPath := os.Getenv(mc.pathEnv + "_TOKENIZER")
+			if tokPath == "" {
+				tokPath = path
+			}
+			tk, err := tokenizer.LoadGGUF(tokPath)
 			if err != nil {
 				t.Fatalf("load tokenizer: %v", err)
 			}

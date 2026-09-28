@@ -194,6 +194,10 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 	// false unless GOINFER_METAL_S2=1 compiled the prototype, so every other phase is unchanged.
 	var protoPipe Pipeline
 	protoOn := false
+	// R19 (GOINFER_METAL_R19=1): with attnProtoOn the attention category runs the comparison arm — since R19's wiring,
+	// the RETIRED attention_prefill_fused at head dim 128 — instead of production's kernel, with the same buffer list.
+	attnProtoOn := false
+	useSteelAttn := useFusedAttn && g0.hd == 128 && !prefillSteelAttnOff
 	protoRows := 32 // tokens per threadgroup: 32 for prototypes 1-3, 64 for gemm_w4f16_tg4; 0 = the retired 1-D kernel
 	dispatchGemm := func(e *Encoder, N int, bufs ...Buffer) {
 		if protoOn {
@@ -228,7 +232,13 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		}},
 		{name: "attention", enc: func(e *Encoder, l int) {
 			L := &r.layers[l]
-			if useFusedAttn {
+			if attnProtoOn {
+				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedSGPT*32, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal)
+				return
+			}
+			if useSteelAttn {
+				e.Dispatch(pf.pAttnSteel, r.nH*((M+31)/32)*128, 128, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal)
+			} else if useFusedAttn {
 				e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedSGPT*32, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow, uMReal)
 			} else {
 				e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, r.kc[l], r.vc[l], ctxF, r.uNH, g0.uNKV, g0.uHd, uStartPos, r.uScale, uStride, L.uWindow)
@@ -682,6 +692,9 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 	fmt.Fprintf(os.Stderr, "  %-22s %9.2f ms  spread %4.1f%%\n", "full replay (GPU)", fullMed, 100*spreadOf(fullMs))
 	fmt.Fprintf(os.Stderr, "  %-22s %9.2f ms  spread %4.1f%%  → host/other %.1f ms (%.1f%%)\n", "PrefillLast (wall)", wallMed, 100*spreadOf(wall), wallMed-fullMed, 100*(wallMed-fullMed)/wallMed)
 	fmt.Fprintf(os.Stderr, "  GEMM share: %.1f%% of GPU, %.1f%% of PrefillLast wall\n\n", 100*gemm/fullMed, 100*gemm/wallMed)
+	if os.Getenv("GOINFER_METAL_R19") == "1" {
+		runR19Phase(t, r, M, reps, hb, cats, full, resetX, gpuMs, ref, ctxF, &attnProtoOn, useSteelAttn)
+	}
 	t.Logf("K=%d: GEMM %.1f ms of %.1f ms GPU (%.1f%%), PrefillLast wall %.1f ms", M, gemm, fullMed, 100*gemm/fullMed, wallMed)
 }
 
