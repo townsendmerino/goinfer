@@ -178,3 +178,31 @@ kernel pays a conversion per 32 weights. The full migration is large, so the spe
    - **PARK:** < 1.02× on either; the conversion eats the bytes.
    - **Between: the owner decides.**
    - The 0.5B is reported, not gated.
+
+### L1 S0 result (2026-09-27): BUILD — 1.059× (1.5B), 1.084× (7B), bit-identical; the 0.5B reads 0.957×
+
+**Setup.** The prototype is on the unpushed `f16-scales-s0` branches of aikit (off `4eec1c5`) and goinfer (off
+`7e17f520`), wired through `go.work`:
+- `dotW4A8FoldF16AVX2`: `VPBROADCASTW` + `VCVTPH2PS` in place of `VBROADCASTSS`;
+- `MatmulBTW4A8F16Into`, `W4A8Op.ScalesF16`, and the `WeightMat` entry point;
+- goinfer's `wmW4A8Op` and fused gate+up passing the f16 slices.
+
+aikit's `TestW4A8F16S0_matchesF32` checks all three entry points bit-identical at four shapes, and mutation-checks
+that a one-ulp scale change moves the output; the full linalg suite passes. Logs: `s0-*` in
+[`cpu-decode-peer-gap-2026-09-27/`](../measurements/cpu-decode-peer-gap-2026-09-27/).
+
+1. **Correctness: PASS.** f16 scales attached to every int4 weight (168 / 196 / 196). 48 decode steps × 151,936 /
+   151,936 / 152,064 logits on the 0.5B / 1.5B / 7B: **0 differ**.
+2. **Speed** (paired in-process ABBA, 5 pairs, depth 128, fused gate+up and R-06 on):
+
+   | model | f32 → f16 ms/token | paired median (min–max) | byte-count estimate |
+   |---|---|---|---|
+   | 1.5B | 50.03 → 47.15 | **1.059×** (1.058–1.070) | ≤ 1.078× |
+   | 7B | 192.74 → 177.71 | **1.084×** (1.082–1.087) | ≤ 1.097× |
+   | 0.5B (reported) | 23.03 → 24.10 | **0.957×** (0.899–1.007) | ≤ 1.065× |
+
+**Verdict: BUILD** (both gated sizes ≥ 1.04×). The 1.5B and 7B recover 76% and 87% of the byte estimate's upper
+bound. The 0.5B is slower and noisy. Phase 0 found its gap is not bytes, so the added `VCVTPH2PS` per group
+(a conversion per 32 weights, on a path limited by compute and dispatch rather than DRAM) is not paid back there.
+The full build first tries converting eight groups' scales per instruction (one `VCVTPH2PS` to a Y register per 8
+groups, then a lane broadcast per group) to recover it; a 0.5B regression that survives goes to the owner.

@@ -1,0 +1,40 @@
+=== RUN   TestS0F16Scales_logitsBitIdentical
+=== RUN   TestS0F16Scales_logitsBitIdentical/0.5B
+    cpu_roofline_ab_test.go:378: 0.5B: f16 scales attached to 168 int4 weights
+DECODE TIMING (48 tok, gpu=false): forward 22.3 ms | sample 0.08 ms | logitProc 0.14 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 6.23 ms | MLP 10.68 ms | LM head 5.10 ms | residual 0.24 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.36 ms | activation 0.00 ms | down matmul 4.31 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.53 ms | rope+KV+scores/softmax/AV core 1.56 ms | o matmul 2.14 ms /token
+DECODE TIMING (48 tok, gpu=false): forward 22.3 ms | sample 0.08 ms | logitProc 0.19 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 6.57 ms | MLP 10.35 ms | LM head 5.14 ms | residual 0.25 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.10 ms | activation 0.00 ms | down matmul 4.24 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.63 ms | rope+KV+scores/softmax/AV core 1.71 ms | o matmul 2.23 ms /token
+    cpu_roofline_ab_test.go:408: f16 scales 0.5B: 48 decode steps x 151936 logits compared, 0 differ
+=== RUN   TestS0F16Scales_logitsBitIdentical/1.5B
+    cpu_roofline_ab_test.go:378: 1.5B: f16 scales attached to 196 int4 weights
+DECODE TIMING (48 tok, gpu=false): forward 50.1 ms | sample 0.07 ms | logitProc 0.24 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.43 ms | MLP 32.58 ms | LM head 8.69 ms | residual 0.37 ms /token
+DECODE SPLIT MLP: gate+up matmuls 20.31 ms | activation 0.00 ms | down matmul 12.25 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.18 ms | rope+KV+scores/softmax/AV core 2.72 ms | o matmul 2.52 ms /token
+DECODE TIMING (48 tok, gpu=false): forward 47.4 ms | sample 0.07 ms | logitProc 0.30 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.38 ms | MLP 29.94 ms | LM head 8.68 ms | residual 0.37 ms /token
+DECODE SPLIT MLP: gate+up matmuls 18.48 ms | activation 0.00 ms | down matmul 11.44 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.05 ms | rope+KV+scores/softmax/AV core 2.86 ms | o matmul 2.45 ms /token
+    cpu_roofline_ab_test.go:408: f16 scales 1.5B: 48 decode steps x 151936 logits compared, 0 differ
+=== RUN   TestS0F16Scales_logitsBitIdentical/7B
+    cpu_roofline_ab_test.go:378: 7B: f16 scales attached to 196 int4 weights
+DECODE TIMING (48 tok, gpu=false): forward 192.6 ms | sample 0.07 ms | logitProc 0.28 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 27.59 ms | MLP 144.39 ms | LM head 20.04 ms | residual 0.55 ms /token
+DECODE SPLIT MLP: gate+up matmuls 93.41 ms | activation 0.00 ms | down matmul 50.93 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 12.98 ms | rope+KV+scores/softmax/AV core 4.74 ms | o matmul 9.86 ms /token
+DECODE TIMING (48 tok, gpu=false): forward 178.0 ms | sample 0.07 ms | logitProc 0.28 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 26.20 ms | MLP 131.22 ms | LM head 20.06 ms | residual 0.54 ms /token
+DECODE SPLIT MLP: gate+up matmuls 84.63 ms | activation 0.00 ms | down matmul 46.54 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 11.97 ms | rope+KV+scores/softmax/AV core 4.99 ms | o matmul 9.22 ms /token
+    cpu_roofline_ab_test.go:408: f16 scales 7B: 48 decode steps x 152064 logits compared, 0 differ
+--- PASS: TestS0F16Scales_logitsBitIdentical (67.27s)
+    --- PASS: TestS0F16Scales_logitsBitIdentical/0.5B (7.08s)
+    --- PASS: TestS0F16Scales_logitsBitIdentical/1.5B (13.65s)
+    --- PASS: TestS0F16Scales_logitsBitIdentical/7B (46.55s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	67.326s
