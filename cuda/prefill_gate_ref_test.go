@@ -88,9 +88,19 @@ func TestPrefillGateVsReferenceCUDA(t *testing.T) {
 	// cells are 256 and 1024, so placing a floor between them without measuring there would be
 	// interpolating a fidelity result nobody took. An override run labels itself in the log and
 	// does not silently become the decision set.
-	decisionKs := []int{256, 1024}
+	//
+	// THE DECISION SET IS {512, 1024}, NOT §3's ORIGINAL {256, 1024}. The fast path ships behind
+	// fastPrefillFloor (512), and docs/measurements/prefill-l2l3-phase3-2026-09-05.md §2.6 records the
+	// consequence the day the floor landed: "With the floor at 512 the decision set becomes {512, 1024},
+	// and every cell in it ships on both models." This test kept grading 256 as a decision cell, so from
+	// 2026-09-05 it reported the floor's own evidence as a failed gate on every heavy run. K=256 still
+	// runs (the floor is disabled above), as a REPORTED sub-floor cell: its DOES NOT SHIP is why the floor
+	// is at 512, and a pass there is what moving the floor down would need (fastPrefillFloor's comment).
+	decisionKs := []int{512, 1024}
+	subFloorKs := []int{256}
 	confirmKsByModel := map[string][]int{"S": {3900}}
 	if v := os.Getenv("GOINFER_CUDA_GATE_KS"); strings.TrimSpace(v) != "" {
+		subFloorKs = nil
 		decisionKs = decisionKs[:0]
 		for _, f := range strings.Split(v, ",") {
 			if k, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && k > 0 {
@@ -132,7 +142,7 @@ func TestPrefillGateVsReferenceCUDA(t *testing.T) {
 					"them would score the exact path twice and call it a pass", err)
 			}
 
-			allKs := append(append([]int{}, decisionKs...), confirmKsByModel[mc.name]...)
+			allKs := append(append(append([]int{}, subFloorKs...), decisionKs...), confirmKsByModel[mc.name]...)
 			maxK := 0
 			for _, k := range allKs {
 				maxK = max(maxK, k)
@@ -159,6 +169,10 @@ func TestPrefillGateVsReferenceCUDA(t *testing.T) {
 				ran := runCUDARefGateCell(t, rf, m, mc.name, K, prompts, refDir)
 				if ran == nil {
 					continue
+				}
+				if slices.Contains(subFloorKs, K) {
+					t.Logf("%s K=%d is below fastPrefillFloor (%d): reported, not graded — production never runs "+
+						"the fast path at this depth, and this cell's result is the floor's evidence", mc.name, K, fastPrefillFloor)
 				}
 				if slices.Contains(decisionKs, K) {
 					anyDecision = true

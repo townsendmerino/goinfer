@@ -1,0 +1,100 @@
+=== RUN   TestPrefillGateVsReferenceCUDA
+=== RUN   TestPrefillGateVsReferenceCUDA/S
+    prefill_gate_ref_test.go:161: prompt set "a" (10 snapshot files)
+[cuda-gate] S K=256 prompt  1/10 exact(agree=89.1% HF=0/64 KL=0.0316) fast(agree=87.5% HF=0/64 KL=0.0302) diff(agree=-1.6pt KL=-0.0014) seedKL=0.0607 elapsed=2s
+[cuda-gate] S K=256 prompt  2/10 exact(agree=100.0% HF=0/64 KL=0.0097) fast(agree=100.0% HF=0/64 KL=0.0102) diff(agree=+0.0pt KL=+0.0005) seedKL=0.0771 elapsed=3s
+[cuda-gate] S K=256 prompt  3/10 exact(agree=89.1% HF=0/64 KL=0.0474) fast(agree=84.4% HF=0/64 KL=0.0498) diff(agree=-4.7pt KL=+0.0023) seedKL=0.0535 elapsed=5s
+[cuda-gate] S K=256 prompt  4/10 exact(agree=90.6% HF=0/64 KL=0.0447) fast(agree=87.5% HF=0/64 KL=0.0470) diff(agree=-3.1pt KL=+0.0023) seedKL=0.0940 elapsed=7s
+[cuda-gate] S K=256 prompt  5/10 exact(agree=87.5% HF=1/64 KL=0.0543) fast(agree=90.6% HF=1/64 KL=0.0493) diff(agree=+3.1pt KL=-0.0050) seedKL=0.0911 elapsed=9s
+[cuda-gate] S K=256 prompt  6/10 exact(agree=92.2% HF=3/64 KL=0.0832) fast(agree=90.6% HF=2/64 KL=0.0871) diff(agree=-1.6pt KL=+0.0038) seedKL=0.0933 elapsed=10s
+[cuda-gate] S K=256 prompt  7/10 exact(agree=95.3% HF=0/64 KL=0.0214) fast(agree=95.3% HF=0/64 KL=0.0237) diff(agree=+0.0pt KL=+0.0023) seedKL=0.0446 elapsed=12s
+[cuda-gate] S K=256 prompt  8/10 exact(agree=96.9% HF=0/64 KL=0.0284) fast(agree=93.8% HF=0/64 KL=0.0252) diff(agree=-3.1pt KL=-0.0032) seedKL=0.2292 elapsed=14s
+[cuda-gate] S K=256 prompt  9/10 exact(agree=98.4% HF=0/64 KL=0.0354) fast(agree=95.3% HF=0/64 KL=0.0303) diff(agree=-3.1pt KL=-0.0051) seedKL=0.0180 elapsed=15s
+[cuda-gate] S K=256 prompt 10/10 exact(agree=98.4% HF=0/64 KL=0.0146) fast(agree=98.4% HF=0/64 KL=0.0149) diff(agree=+0.0pt KL=+0.0003) seedKL=0.0935 elapsed=17s
+=== CUDA S K=256 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=93.75% HF=4/640 worstGap=5.811% meanKL=0.03708) fast(meanAgree=92.34% HF=3/640 worstGap=5.811% meanKL=0.03678) critA(HF fast<=exact)=true critB(agree>=exact-1pt & >=half)=false critC(KL<=1.1x)=true — CELL DOES NOT SHIP
+    prefill_gate_ref_test.go:169: CUDA S K=256: exact(agree=93.75% HF=4 KL=0.03708) fast(agree=92.34% HF=3 KL=0.03678) A=true B=false C=true cell=DOES NOT SHIP
+    prefill_gate_ref_test.go:174: S K=256 is below fastPrefillFloor (512): reported, not graded — production never runs the fast path at this depth, and this cell's result is the floor's evidence
+[cuda-gate] S K=512 prompt  1/10 exact(agree=92.2% HF=1/64 KL=0.0447) fast(agree=90.6% HF=2/64 KL=0.0453) diff(agree=-1.6pt KL=+0.0005) seedKL=0.1119 elapsed=2s
+[cuda-gate] S K=512 prompt  2/10 exact(agree=92.2% HF=0/64 KL=0.0315) fast(agree=93.8% HF=0/64 KL=0.0318) diff(agree=+1.6pt KL=+0.0003) seedKL=0.0038 elapsed=4s
+[cuda-gate] S K=512 prompt  3/10 exact(agree=89.1% HF=2/64 KL=0.0540) fast(agree=89.1% HF=2/64 KL=0.0505) diff(agree=+0.0pt KL=-0.0035) seedKL=0.1574 elapsed=6s
+[cuda-gate] S K=512 prompt  4/10 exact(agree=93.8% HF=0/64 KL=0.0143) fast(agree=93.8% HF=0/64 KL=0.0137) diff(agree=+0.0pt KL=-0.0007) seedKL=0.0003 elapsed=8s
+[cuda-gate] S K=512 prompt  5/10 exact(agree=92.2% HF=1/64 KL=0.0556) fast(agree=92.2% HF=0/64 KL=0.0560) diff(agree=+0.0pt KL=+0.0004) seedKL=0.0157 elapsed=10s
+[cuda-gate] S K=512 prompt  6/10 exact(agree=96.9% HF=0/64 KL=0.0214) fast(agree=96.9% HF=0/64 KL=0.0233) diff(agree=+0.0pt KL=+0.0019) seedKL=0.0604 elapsed=12s
+[cuda-gate] S K=512 prompt  7/10 exact(agree=98.4% HF=0/64 KL=0.0209) fast(agree=96.9% HF=0/64 KL=0.0202) diff(agree=-1.6pt KL=-0.0007) seedKL=0.0171 elapsed=14s
+[cuda-gate] S K=512 prompt  8/10 exact(agree=98.4% HF=0/64 KL=0.0209) fast(agree=100.0% HF=0/64 KL=0.0164) diff(agree=+1.6pt KL=-0.0045) seedKL=0.0010 elapsed=16s
+[cuda-gate] S K=512 prompt  9/10 exact(agree=95.3% HF=0/64 KL=0.0276) fast(agree=96.9% HF=0/64 KL=0.0256) diff(agree=+1.6pt KL=-0.0019) seedKL=0.0829 elapsed=18s
+[cuda-gate] S K=512 prompt 10/10 exact(agree=85.9% HF=1/64 KL=0.0642) fast(agree=84.4% HF=0/64 KL=0.0597) diff(agree=-1.6pt KL=-0.0045) seedKL=0.1432 elapsed=20s
+=== CUDA S K=512 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=93.44% HF=5/640 worstGap=5.619% meanKL=0.03552) fast(meanAgree=93.44% HF=4/640 worstGap=5.619% meanKL=0.03425) critA(HF fast<=exact)=true critB(agree>=exact-1pt & >=half)=true critC(KL<=1.1x)=true — CELL SHIPS
+    prefill_gate_ref_test.go:169: CUDA S K=512: exact(agree=93.44% HF=5 KL=0.03552) fast(agree=93.44% HF=4 KL=0.03425) A=true B=true C=true cell=SHIPS
+[cuda-gate] S K=1024 prompt  1/10 exact(agree=87.5% HF=0/64 KL=0.0553) fast(agree=87.5% HF=0/64 KL=0.0490) diff(agree=+0.0pt KL=-0.0063) seedKL=0.0878 elapsed=3s
+[cuda-gate] S K=1024 prompt  2/10 exact(agree=100.0% HF=0/64 KL=0.0085) fast(agree=100.0% HF=0/64 KL=0.0091) diff(agree=+0.0pt KL=+0.0006) seedKL=0.1098 elapsed=5s
+[cuda-gate] S K=1024 prompt  3/10 exact(agree=90.6% HF=0/64 KL=0.0614) fast(agree=87.5% HF=0/64 KL=0.0550) diff(agree=-3.1pt KL=-0.0063) seedKL=0.0546 elapsed=8s
+[cuda-gate] S K=1024 prompt  4/10 exact(agree=81.2% HF=1/64 KL=0.0626) fast(agree=85.9% HF=0/64 KL=0.0632) diff(agree=+4.7pt KL=+0.0006) seedKL=0.1854 elapsed=10s
+[cuda-gate] S K=1024 prompt  5/10 exact(agree=93.8% HF=1/64 KL=0.0506) fast(agree=93.8% HF=0/64 KL=0.0446) diff(agree=+0.0pt KL=-0.0060) seedKL=0.0185 elapsed=13s
+[cuda-gate] S K=1024 prompt  6/10 exact(agree=90.6% HF=0/64 KL=0.0408) fast(agree=92.2% HF=0/64 KL=0.0366) diff(agree=+1.6pt KL=-0.0043) seedKL=0.0001 elapsed=16s
+[cuda-gate] S K=1024 prompt  7/10 exact(agree=100.0% HF=0/64 KL=0.0177) fast(agree=100.0% HF=0/64 KL=0.0173) diff(agree=+0.0pt KL=-0.0003) seedKL=0.0363 elapsed=18s
+[cuda-gate] S K=1024 prompt  8/10 exact(agree=98.4% HF=0/64 KL=0.0102) fast(agree=98.4% HF=0/64 KL=0.0108) diff(agree=+0.0pt KL=+0.0006) seedKL=0.0021 elapsed=21s
+[cuda-gate] S K=1024 prompt  9/10 exact(agree=79.7% HF=0/64 KL=0.0715) fast(agree=76.6% HF=1/64 KL=0.0667) diff(agree=-3.1pt KL=-0.0048) seedKL=0.1633 elapsed=24s
+[cuda-gate] S K=1024 prompt 10/10 exact(agree=84.4% HF=3/64 KL=0.0475) fast(agree=87.5% HF=2/64 KL=0.0463) diff(agree=+3.1pt KL=-0.0012) seedKL=0.0717 elapsed=26s
+=== CUDA S K=1024 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=90.62% HF=5/640 worstGap=11.555% meanKL=0.04261) fast(meanAgree=90.94% HF=3/640 worstGap=9.752% meanKL=0.03987) critA(HF fast<=exact)=true critB(agree>=exact-1pt & >=half)=true critC(KL<=1.1x)=true — CELL SHIPS
+    prefill_gate_ref_test.go:169: CUDA S K=1024: exact(agree=90.62% HF=5 KL=0.04261) fast(agree=90.94% HF=3 KL=0.03987) A=true B=true C=true cell=SHIPS
+[cuda-gate] S K=3900 prompt  1/10 exact(agree=100.0% HF=0/64 KL=0.0115) fast(agree=100.0% HF=0/64 KL=0.0110) diff(agree=+0.0pt KL=-0.0004) seedKL=0.0415 elapsed=8s
+[cuda-gate] S K=3900 prompt  2/10 exact(agree=100.0% HF=0/64 KL=0.0221) fast(agree=100.0% HF=0/64 KL=0.0209) diff(agree=+0.0pt KL=-0.0012) seedKL=0.0525 elapsed=17s
+[cuda-gate] S K=3900 prompt  3/10 exact(agree=79.7% HF=5/64 KL=0.0785) fast(agree=81.2% HF=4/64 KL=0.0788) diff(agree=+1.6pt KL=+0.0004) seedKL=0.0319 elapsed=25s
+[cuda-gate] S K=3900 prompt  4/10 exact(agree=93.8% HF=0/64 KL=0.0418) fast(agree=93.8% HF=0/64 KL=0.0384) diff(agree=+0.0pt KL=-0.0034) seedKL=0.0288 elapsed=33s
+[cuda-gate] S K=3900 prompt  5/10 exact(agree=95.3% HF=0/64 KL=0.0094) fast(agree=93.8% HF=0/64 KL=0.0109) diff(agree=-1.6pt KL=+0.0015) seedKL=0.0000 elapsed=41s
+[cuda-gate] S K=3900 prompt  6/10 exact(agree=84.4% HF=1/64 KL=0.0737) fast(agree=87.5% HF=0/64 KL=0.0727) diff(agree=+3.1pt KL=-0.0011) seedKL=0.0905 elapsed=50s
+[cuda-gate] S K=3900 prompt  7/10 exact(agree=95.3% HF=0/64 KL=0.0420) fast(agree=95.3% HF=0/64 KL=0.0435) diff(agree=+0.0pt KL=+0.0015) seedKL=0.1030 elapsed=58s
+[cuda-gate] S K=3900 prompt  8/10 exact(agree=93.8% HF=1/64 KL=0.0852) fast(agree=90.6% HF=2/64 KL=0.0802) diff(agree=-3.1pt KL=-0.0050) seedKL=0.0155 elapsed=1m6s
+[cuda-gate] S K=3900 prompt  9/10 exact(agree=95.3% HF=0/64 KL=0.0423) fast(agree=96.9% HF=0/64 KL=0.0412) diff(agree=+1.6pt KL=-0.0011) seedKL=0.0007 elapsed=1m15s
+[cuda-gate] S K=3900 prompt 10/10 exact(agree=90.6% HF=2/64 KL=0.0627) fast(agree=89.1% HF=1/64 KL=0.0617) diff(agree=-1.6pt KL=-0.0010) seedKL=0.0841 elapsed=1m23s
+=== CUDA S K=3900 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=92.81% HF=9/640 worstGap=6.571% meanKL=0.04692) fast(meanAgree=92.81% HF=7/640 worstGap=6.930% meanKL=0.04594) critA(HF fast<=exact)=true critB(agree>=exact-1pt & >=half)=true critC(KL<=1.1x)=true — CELL SHIPS
+    prefill_gate_ref_test.go:169: CUDA S K=3900: exact(agree=92.81% HF=9 KL=0.04692) fast(agree=92.81% HF=7 KL=0.04594) A=true B=true C=true cell=SHIPS
+=== CUDA S: §3 DECISION-SET VERDICT = SHIPS ===
+    prefill_gate_ref_test.go:190: CUDA S: §3 decision-set verdict = SHIPS
+=== RUN   TestPrefillGateVsReferenceCUDA/D7
+    prefill_gate_ref_test.go:161: prompt set "a" (10 snapshot files)
+[cuda-gate] D7 K=256 prompt  1/10 exact(agree=95.3% HF=1/64 KL=0.0712) fast(agree=92.2% HF=3/64 KL=0.0805) diff(agree=-3.1pt KL=+0.0093) seedKL=0.1906 elapsed=3s
+[cuda-gate] D7 K=256 prompt  2/10 exact(agree=89.1% HF=1/64 KL=0.0865) fast(agree=89.1% HF=3/64 KL=0.0903) diff(agree=+0.0pt KL=+0.0037) seedKL=0.1096 elapsed=7s
+[cuda-gate] D7 K=256 prompt  3/10 exact(agree=82.8% HF=1/64 KL=0.0684) fast(agree=90.6% HF=0/64 KL=0.0658) diff(agree=+7.8pt KL=-0.0026) seedKL=0.1133 elapsed=10s
+[cuda-gate] D7 K=256 prompt  4/10 exact(agree=95.3% HF=0/64 KL=0.0416) fast(agree=93.8% HF=0/64 KL=0.0498) diff(agree=-1.6pt KL=+0.0082) seedKL=0.0723 elapsed=14s
+[cuda-gate] D7 K=256 prompt  5/10 exact(agree=89.1% HF=0/64 KL=0.1108) fast(agree=84.4% HF=1/64 KL=0.1281) diff(agree=-4.7pt KL=+0.0173) seedKL=0.0205 elapsed=17s
+[cuda-gate] D7 K=256 prompt  6/10 exact(agree=87.5% HF=1/64 KL=0.0651) fast(agree=87.5% HF=1/64 KL=0.0632) diff(agree=+0.0pt KL=-0.0019) seedKL=0.1078 elapsed=21s
+[cuda-gate] D7 K=256 prompt  7/10 exact(agree=90.6% HF=2/64 KL=0.1003) fast(agree=87.5% HF=2/64 KL=0.0880) diff(agree=-3.1pt KL=-0.0122) seedKL=0.5851 elapsed=24s
+[cuda-gate] D7 K=256 prompt  8/10 exact(agree=82.8% HF=0/64 KL=0.0799) fast(agree=79.7% HF=1/64 KL=0.0838) diff(agree=-3.1pt KL=+0.0040) seedKL=0.0132 elapsed=28s
+[cuda-gate] D7 K=256 prompt  9/10 exact(agree=87.5% HF=1/64 KL=0.0976) fast(agree=82.8% HF=3/64 KL=0.1075) diff(agree=-4.7pt KL=+0.0099) seedKL=0.1093 elapsed=31s
+[cuda-gate] D7 K=256 prompt 10/10 exact(agree=82.8% HF=4/64 KL=0.1259) fast(agree=84.4% HF=1/64 KL=0.1042) diff(agree=+1.6pt KL=-0.0217) seedKL=0.2201 elapsed=34s
+=== CUDA D7 K=256 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=88.28% HF=11/640 worstGap=6.550% meanKL=0.08473) fast(meanAgree=87.19% HF=15/640 worstGap=7.113% meanKL=0.08613) critA(HF fast<=exact)=false critB(agree>=exact-1pt & >=half)=false critC(KL<=1.1x)=true — CELL DOES NOT SHIP
+    prefill_gate_ref_test.go:169: CUDA D7 K=256: exact(agree=88.28% HF=11 KL=0.08473) fast(agree=87.19% HF=15 KL=0.08613) A=false B=false C=true cell=DOES NOT SHIP
+    prefill_gate_ref_test.go:174: D7 K=256 is below fastPrefillFloor (512): reported, not graded — production never runs the fast path at this depth, and this cell's result is the floor's evidence
+[cuda-gate] D7 K=512 prompt  1/10 exact(agree=84.4% HF=1/64 KL=0.0804) fast(agree=82.8% HF=1/64 KL=0.0808) diff(agree=-1.6pt KL=+0.0004) seedKL=0.0485 elapsed=4s
+[cuda-gate] D7 K=512 prompt  2/10 exact(agree=95.3% HF=0/64 KL=0.0310) fast(agree=96.9% HF=0/64 KL=0.0278) diff(agree=+1.6pt KL=-0.0032) seedKL=0.0103 elapsed=9s
+[cuda-gate] D7 K=512 prompt  3/10 exact(agree=98.4% HF=0/64 KL=0.0710) fast(agree=96.9% HF=0/64 KL=0.0778) diff(agree=-1.6pt KL=+0.0068) seedKL=0.2658 elapsed=13s
+[cuda-gate] D7 K=512 prompt  4/10 exact(agree=89.1% HF=0/64 KL=0.0094) fast(agree=89.1% HF=0/64 KL=0.0141) diff(agree=+0.0pt KL=+0.0047) seedKL=0.0000 elapsed=18s
+[cuda-gate] D7 K=512 prompt  5/10 exact(agree=85.9% HF=3/64 KL=0.0753) fast(agree=84.4% HF=1/64 KL=0.0711) diff(agree=-1.6pt KL=-0.0041) seedKL=0.1000 elapsed=22s
+[cuda-gate] D7 K=512 prompt  6/10 exact(agree=82.8% HF=2/64 KL=0.1570) fast(agree=76.6% HF=5/64 KL=0.1680) diff(agree=-6.2pt KL=+0.0110) seedKL=0.3054 elapsed=27s
+[cuda-gate] D7 K=512 prompt  7/10 exact(agree=81.2% HF=1/64 KL=0.0638) fast(agree=87.5% HF=2/64 KL=0.0740) diff(agree=+6.2pt KL=+0.0103) seedKL=0.0289 elapsed=31s
+[cuda-gate] D7 K=512 prompt  8/10 exact(agree=100.0% HF=0/64 KL=0.0125) fast(agree=100.0% HF=0/64 KL=0.0122) diff(agree=+0.0pt KL=-0.0003) seedKL=0.0028 elapsed=35s
+[cuda-gate] D7 K=512 prompt  9/10 exact(agree=82.8% HF=3/64 KL=0.0846) fast(agree=82.8% HF=1/64 KL=0.0928) diff(agree=+0.0pt KL=+0.0082) seedKL=0.1058 elapsed=40s
+[cuda-gate] D7 K=512 prompt 10/10 exact(agree=78.1% HF=2/64 KL=0.1138) fast(agree=73.4% HF=2/64 KL=0.1163) diff(agree=-4.7pt KL=+0.0025) seedKL=0.1155 elapsed=44s
+=== CUDA D7 K=512 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=87.81% HF=12/640 worstGap=10.958% meanKL=0.06986) fast(meanAgree=87.03% HF=12/640 worstGap=10.958% meanKL=0.07350) critA(HF fast<=exact)=true critB(agree>=exact-1pt & >=half)=true critC(KL<=1.1x)=true — CELL SHIPS
+    prefill_gate_ref_test.go:169: CUDA D7 K=512: exact(agree=87.81% HF=12 KL=0.06986) fast(agree=87.03% HF=12 KL=0.07350) A=true B=true C=true cell=SHIPS
+[cuda-gate] D7 K=1024 prompt  1/10 exact(agree=82.8% HF=1/64 KL=0.0816) fast(agree=84.4% HF=0/64 KL=0.0798) diff(agree=+1.6pt KL=-0.0018) seedKL=0.1005 elapsed=7s
+[cuda-gate] D7 K=1024 prompt  2/10 exact(agree=84.4% HF=4/64 KL=0.1105) fast(agree=85.9% HF=3/64 KL=0.0928) diff(agree=+1.6pt KL=-0.0177) seedKL=0.0381 elapsed=13s
+[cuda-gate] D7 K=1024 prompt  3/10 exact(agree=84.4% HF=1/64 KL=0.1138) fast(agree=90.6% HF=2/64 KL=0.1108) diff(agree=+6.2pt KL=-0.0030) seedKL=0.0606 elapsed=20s
+[cuda-gate] D7 K=1024 prompt  4/10 exact(agree=79.7% HF=0/64 KL=0.0951) fast(agree=79.7% HF=1/64 KL=0.0905) diff(agree=+0.0pt KL=-0.0045) seedKL=0.3013 elapsed=26s
+[cuda-gate] D7 K=1024 prompt  5/10 exact(agree=82.8% HF=2/64 KL=0.0475) fast(agree=84.4% HF=1/64 KL=0.0549) diff(agree=+1.6pt KL=+0.0074) seedKL=0.0036 elapsed=33s
+[cuda-gate] D7 K=1024 prompt  6/10 exact(agree=84.4% HF=1/64 KL=0.0956) fast(agree=89.1% HF=1/64 KL=0.0828) diff(agree=+4.7pt KL=-0.0128) seedKL=0.0002 elapsed=40s
+[cuda-gate] D7 K=1024 prompt  7/10 exact(agree=89.1% HF=1/64 KL=0.0943) fast(agree=92.2% HF=1/64 KL=0.1134) diff(agree=+3.1pt KL=+0.0191) seedKL=0.1977 elapsed=46s
+[cuda-gate] D7 K=1024 prompt  8/10 exact(agree=93.8% HF=1/64 KL=0.0517) fast(agree=92.2% HF=2/64 KL=0.0529) diff(agree=-1.6pt KL=+0.0011) seedKL=0.0454 elapsed=53s
+[cuda-gate] D7 K=1024 prompt  9/10 exact(agree=85.9% HF=1/64 KL=0.0723) fast(agree=89.1% HF=1/64 KL=0.0755) diff(agree=+3.1pt KL=+0.0032) seedKL=0.1891 elapsed=59s
+[cuda-gate] D7 K=1024 prompt 10/10 exact(agree=85.9% HF=3/64 KL=0.1037) fast(agree=84.4% HF=3/64 KL=0.0990) diff(agree=-1.6pt KL=-0.0047) seedKL=0.2111 elapsed=1m6s
+=== CUDA D7 K=1024 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=85.31% HF=15/640 worstGap=7.716% meanKL=0.08661) fast(meanAgree=87.19% HF=15/640 worstGap=10.988% meanKL=0.08524) critA(HF fast<=exact)=true critB(agree>=exact-1pt & >=half)=true critC(KL<=1.1x)=true — CELL SHIPS
+    prefill_gate_ref_test.go:169: CUDA D7 K=1024: exact(agree=85.31% HF=15 KL=0.08661) fast(agree=87.19% HF=15 KL=0.08524) A=true B=true C=true cell=SHIPS
+=== CUDA D7: §3 DECISION-SET VERDICT = SHIPS ===
+    prefill_gate_ref_test.go:190: CUDA D7: §3 decision-set verdict = SHIPS
+--- PASS: TestPrefillGateVsReferenceCUDA (327.07s)
+    --- PASS: TestPrefillGateVsReferenceCUDA/S (154.92s)
+    --- PASS: TestPrefillGateVsReferenceCUDA/D7 (172.15s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	327.173s
