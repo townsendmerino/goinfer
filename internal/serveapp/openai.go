@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -60,7 +61,12 @@ type loadedModel struct {
 	// 0.17x — a 6x loss — with the loop itself perfectly healthy (docs/spec/08).
 	blockSpec *decoder.BlockSpec
 	sessions  *sessionLRU // prefix-keyed KV reuse across requests
-	turns     admission   // J1: FIFO, context-aware turn-granter serializing this model's single
+	// decisions (D5): the label-scoring decider POST /v1/systemone answers with, built on first use — its label
+	// tokens are resolved once per tokenizer.
+	deciderOnce sync.Once
+	decider     *decide.Decider
+	deciderErr  error
+	turns       admission // J1: FIFO, context-aware turn-granter serializing this model's single
 	// decode worker — replaces the OLD lm.mu's admission role. A mutex has no notion of context,
 	// so a waiting request could not notice its own client disconnecting (or a K2 halt) without
 	// first being granted the lock. Zero value ready to use, same as the mutex it replaces.
@@ -664,9 +670,30 @@ func (s *server) handleModels(w http.ResponseWriter, _ *http.Request) {
 		// another language may reject them — GET /health carries the same three fields on a payload
 		// with no compatibility contract, for operators who need a surface that can't break a client.
 		maps.Copy(e, s.pathFields(name))
+		if d := s.decisionsField(name); d != nil {
+			e["decisions"] = d // vendor extension, same convention: POST /v1/systemone's support for this entry
+		}
 		data = append(data, e)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+// decisionsField is a /v1/models entry's decisions support (D5): the route, kinds and template POST /v1/systemone
+// answers with, and whether a calibration was loaded. nil for an entry that cannot answer (an encoder, or a
+// compute-time adapter, which label scoring would answer with the base model).
+func (s *server) decisionsField(name string) map[string]any {
+	s.regMu.RLock()
+	lm := s.models[name]
+	s.regMu.RUnlock()
+	if lm == nil || lm.model == nil || lm.adapter != "" {
+		return nil
+	}
+	tmpl := s.cfg.decisionsTemplate
+	if tmpl == "" {
+		tmpl = decide.TemplateChat
+	}
+	return map[string]any{"endpoint": "/v1/systemone", "route": "label", "kinds": []string{decide.KindNoul, decide.KindChoice, decide.KindScore},
+		"template": tmpl, "calibrated": s.cfg.decisionsCal != ""}
 }
 
 func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {

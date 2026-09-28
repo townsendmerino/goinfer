@@ -1,9 +1,10 @@
 // Command serve is an OpenAI- and Anthropic-compatible HTTP server for goinfer
 // models: pure stdlib net/http, no dependencies. It speaks /v1/chat/completions,
 // /v1/completions, /v1/responses, /v1/embeddings, /v1/models, and the Anthropic
-// Messages API (/v1/messages, /v1/messages/count_tokens) — enough for Open WebUI,
-// LangChain, the OpenAI SDKs, Claude Code, and anything else that points at an
-// OpenAI or Anthropic base URL — including streaming (SSE) and
+// Messages API (/v1/messages, /v1/messages/count_tokens), and TypeSafe's decisions
+// shape (/v1/systemone, answered by label scoring) — enough for Open WebUI,
+// LangChain, the OpenAI SDKs, Claude Code, jevx, and anything else that points at an
+// OpenAI, Anthropic or TypeSafe base URL — including streaming (SSE) and
 // `response_format: json_schema` constrained decoding (the model physically
 // cannot emit non-conforming JSON; see the constrain package).
 //
@@ -44,6 +45,7 @@ import (
 	"github.com/townsendmerino/aikit/vision"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/internal/modelload"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
@@ -293,6 +295,10 @@ type config struct {
 	requireBE       bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
 	visionPath      string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
 	visionQuant     string        // -vision-quant: "f32" (default) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
+	// decisions (D5, docs/tasks/task-constrained-confidence.md): POST /v1/systemone's label-scoring template, and an
+	// optional calibration.json of per-kind temperatures ("" = none: every answer is uncalibrated).
+	decisionsTemplate string
+	decisionsCal      string
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
@@ -389,6 +395,8 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.IntVar(&cfg.haltExitCode, "halt-exit-code", 0, "K2: when nonzero, any halt (admin, -halt-file, or SIGUSR1) exits the process with this code once every cancelled generation has actually stopped, instead of staying up halted. For a supervisor whose restart policy must not undo a deliberate halt (RestartPreventExitStatus=N or the equivalent). 0 (default) means halt never exits the process")
 	flag.StringVar(&cfg.adminSocket, "admin-socket", "", fmt.Sprintf("K5: serve /admin/* (load/unload plus K1/K2's cancel/list/halt/resume) on a Unix socket instead of the TCP listener — mode 0600, unlinked and recreated fresh at start, no -api-key check (the socket's file permissions are the auth). Removes /admin/* from the TCP listener entirely (404, not 403) — see -allow-admin. Suggested path: %s. Off by default (empty = /admin/* stays on TCP, gated by -allow-admin as before). Control it with the same binary: `%[2]s status|ls|cancel <id>|halt [reason]|resume` talks to this socket (defaults to the suggested path above when -admin-socket is not repeated on that command line)", defaultAdminSocketPath(), filepath.Base(os.Args[0])))
 	flag.StringVar(&cfg.visionPath, "vision", "", "vision tower dir for a multimodal --model (auto-discovered per family: SigLIP+projector for Gemma 3, Qwen2.5-VL's own ViT, or Gemma 4's own encoder — N-35, docs/audit-2026-09-10.md); enables image content parts. Defaults to the --model dir when it contains a vision tower")
+	flag.StringVar(&cfg.decisionsTemplate, "decisions-template", "chat-v1", "POST /v1/systemone's prompt template: chat-v1 (the model's chat template; for instruct models) or bare-v1 (JEV's own, no chat template)")
+	flag.StringVar(&cfg.decisionsCal, "decisions-calibration", "", "calibration.json with per-kind temperatures for /v1/systemone (from goinfer-chat decisions-calibrate, fitted under the same template); none: every answer is uncalibrated")
 	flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
 	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
@@ -494,6 +502,21 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		fmt.Fprintln(os.Stderr, "error: -kv-idle-demote needs -session-dir and -kv-sessions > 0")
 		os.Exit(2)
 	}
+	if cfg.decisionsTemplate != decide.TemplateChat && cfg.decisionsTemplate != decide.TemplateBare {
+		fmt.Fprintf(os.Stderr, "error: -decisions-template %q: want %s or %s\n", cfg.decisionsTemplate, decide.TemplateChat, decide.TemplateBare)
+		os.Exit(2)
+	}
+	if cfg.decisionsCal != "" {
+		// Fail at startup, not on the first /v1/systemone request: a bad file, or one fitted under the other template.
+		cal, err := decide.LoadCalibration(cfg.decisionsCal)
+		if err == nil && cal.Template != "" && cal.Template != cfg.decisionsTemplate {
+			err = fmt.Errorf("fitted under template %q, not -decisions-template %q", cal.Template, cfg.decisionsTemplate)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: -decisions-calibration %s: %v\n", cfg.decisionsCal, err)
+			os.Exit(2)
+		}
+	}
 
 	srv, err := newServer(cfg)
 	if err != nil {
@@ -550,6 +573,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	mux.HandleFunc("POST /v1/responses", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleResponses)))))
 	mux.HandleFunc("POST /v1/messages", auth(srv.haltGate(inf(maxBytes(visionCap, srv.handleMessages)))))
 	mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
+	// Decisions (D5, docs/tasks/task-constrained-confidence.md): TypeSafe's POST /v1/systemone wire shape, served by
+	// label scoring (internal/decide), so jevx and the TypeSafe SDKs work against goinfer through their base-URL override.
+	mux.HandleFunc("POST /v1/systemone", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleSystemOne)))))
 	// J3 (task-work-queue-2026-09.md): submitting a job starts new admission, so it gets the
 	// same haltGate/inf/maxBytes stack as every other POST above. Polling state (GET), reading
 	// the event stream (GET .../events), and cancelling (DELETE) are NOT new inference work —

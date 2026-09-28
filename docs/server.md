@@ -396,6 +396,59 @@ prefills one token at a time there: 2.81× at 4 clients on an M1 Pro (`measureme
   - An explicit `--ctx` is never shrunk: it keeps that context and the slots that fit beside it.
 - **One slot:** the recurrent families (Gated DeltaNet, Mamba-2, LFM2), and a CUDA load with expert streaming on.
 
+**Decisions (`POST /v1/systemone`).** This is TypeSafe's decisions wire shape: a state and named questions with a
+closed answer set, returning a probability distribution per question. goinfer answers it by **label scoring on the
+served model**: one prefill per question, reading the model's probabilities for the option labels, with no decode.
+It exists so [jevx](https://github.com/muthuishere/jevx) and TypeSafe's SDKs work against goinfer unchanged. Point
+them at goinfer, and set `model` to goinfer's served name; an unknown name such as `jev-latest` is refused with the
+names that are served.
+- **jevx:** a profile's `url` is the full endpoint, e.g. `"url": "http://127.0.0.1:8080/v1/systemone", "model": "local"`.
+- **`typesafe-sdk` (Python) and `@typesafe-ai/sdk` (JS):** `base_url=` / `baseURL`, or the `TYPESAFE_BASE_URL`
+  environment variable, set to the server root (`http://127.0.0.1:8080`).
+- **The Vercel provider:** `baseURL` must include `/v1`.
+- **LangChain:** the `base_url` / `baseUrl` field.
+
+```json
+{"model": "local", "state": "Help! My payouts have been failing for 3 days.",
+ "questions": {"department": {"type": "choice", "instructions": "Which team should handle this?",
+                              "criteria": {"billing": "Payments, invoicing, refunds", "technical": "Bugs, outages", "sales": null}},
+               "is_urgent":  {"type": "noul", "instructions": "Is this urgent?"}}}
+```
+
+```json
+{"model": "local",
+ "answers": {"department": {"type": "choice", "choice": "billing", "confidence": 0.77,
+                            "probabilities": {"billing": 0.85, "technical": 0.12, "sales": 0.03}},
+             "is_urgent":  {"type": "noul", "noul": 0.91}},
+ "usage": {"input_tokens": 212, "output_tokens": 0},
+ "goinfer": {"route": "label", "template": "chat-v1", "calibrated": {"choice": false, "noul": false}}}
+```
+
+- **Kinds:**
+  - `noul` returns P(true). Its optional `criteria` (`{"true": …, "false": …}`) is shown to the model.
+  - `choice` takes 2–16 options, the letters A–P that label scoring reads; TypeSafe allows 255. The options come
+    from the `criteria` keys, in the order sent, and each description is shown beside its option.
+  - `score` takes 2–10 levels, one per `criteria` entry. It returns the expected level, a `legend` and the
+    probabilities by level.
+- **`confidence`** (choice and score) is the top probability's margin over uniform, `(n·p − 1)/(n − 1)`: 0 when the
+  model cannot tell the options apart, 1 when it is certain. TypeSafe does not publish its formula; this is the
+  form its docs' demo uses for three options. jevx compares it against its `min_confidence` (0.6).
+- **`usage`:** `output_tokens` is 0, because nothing is decoded.
+- **`goinfer`** says how the answer was made: the route, the template, and which kinds a fitted temperature
+  calibrated.
+- **What it is not: TypeSafe's hosted model, or a trained decision head.** The probabilities are the served model's
+  own over the options it was shown.
+  - They are calibrated only for a kind whose temperature `--decisions-calibration` supplies: a `calibration.json`
+    from `goinfer-chat decisions-calibrate`, fitted under the same template.
+  - How good they are depends on the model. On Qwen3.5-9B, the authors of the open JEV models measured this method
+    with their bare template at choice top-1 0.53, against their trained head's 0.90
+    (`measurements/decisions-d0-prior-art-2026-09-27.md`).
+  - goinfer's own measurement on its default chat template (D6a) is pending.
+- **`--decisions-template`** is `chat-v1` (the default: the model's chat template, for instruct models) or
+  `bare-v1` (JEV's own, no chat template). One prefill per question; each question re-prefills the state.
+- **Refused:** a question that breaks a rule is a 422 before any prefill. A compute-time adapter entry cannot answer,
+  since label scoring would read the base model. `/v1/models` lists each entry's `decisions` support.
+
 **Embeddings.** Point `--embed-model` at a [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)
 HF snapshot to serve `/v1/embeddings` (`--embed-quant f32|q8`). `--model` and
 `--embed-model` are each optional and can run together — generation and

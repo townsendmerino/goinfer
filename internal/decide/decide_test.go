@@ -28,7 +28,10 @@ func TestValidate(t *testing.T) {
 	ok := []Request{
 		{Kind: KindNoul, Options: noulOptions},
 		{Kind: KindScore, Options: scoreOptions},
+		{Kind: KindScore, Options: []string{"0", "1"}}, // two levels (TypeSafe's minimum)
+		{Kind: KindScore, Options: ScoreOptions(10)},   // ten, the digit limit
 		{Kind: KindChoice, Options: []string{"a", "b"}, Permute: 2},
+		{Kind: KindChoice, Options: []string{"a", "b"}, Descriptions: []string{"first", ""}},
 	}
 	for _, r := range ok {
 		if err := Validate(r); err != nil {
@@ -36,8 +39,10 @@ func TestValidate(t *testing.T) {
 		}
 	}
 	bad := []Request{
-		{Kind: KindNoul, Options: []string{"true", "false"}}, // the order is fixed
-		{Kind: KindScore, Options: []string{"0", "1"}},
+		{Kind: KindNoul, Options: []string{"true", "false"}},                         // the order is fixed
+		{Kind: KindScore, Options: []string{"1", "2"}},                               // levels start at 0
+		{Kind: KindScore, Options: []string{"0"}},                                    // one level
+		{Kind: KindChoice, Options: []string{"a", "b"}, Descriptions: []string{"x"}}, // misaligned
 		{Kind: KindChoice, Options: []string{"a"}},
 		{Kind: KindChoice, Options: []string{"a", "a"}},
 		{Kind: KindChoice, Options: strings.Split("abcdefghijklmnopq", "")}, // 17
@@ -66,7 +71,7 @@ func (f fakeTok) EncodeChat(string) ([]int, error) { return []int{4, 5, 6, 7}, n
 
 func newFake() fakeTok {
 	f := fakeTok{ids: map[string]int{}}
-	for i, v := range append(append(append([]string(nil), noulOptions...), scoreOptions...), strings.Split(letters, "")...) {
+	for i, v := range append(append(append([]string(nil), noulOptions...), strings.Split(digits, "")...), strings.Split(letters, "")...) {
 		f.ids[v] = 10 + i
 	}
 	return f
@@ -235,5 +240,47 @@ func TestAtSearchBound(t *testing.T) {
 		if got := AtSearchBound(c.t); got != c.want {
 			t.Errorf("AtSearchBound(%v) = %v, want %v", c.t, got, c.want)
 		}
+	}
+}
+
+func TestRender_descriptions(t *testing.T) {
+	got := RenderChat(KindChoice, "s", "q", []string{"billing", "sales"}, "payments", "")
+	if !strings.Contains(got, "A) billing: payments\nB) sales\n") {
+		t.Errorf("chat render with descriptions:\n%s", got)
+	}
+	got = Render(KindScore, "s", "q", ScoreOptions(3), "calm", "upset", "angry")
+	if !strings.Contains(got, "[options]\n0: calm\n1: upset\n2: angry\n[decision]:") {
+		t.Errorf("bare render of a described 3-level score:\n%s", got)
+	}
+	if got := RenderChat(KindScore, "s", "q", ScoreOptions(3)); !strings.HasSuffix(got, "one digit from 0 to 2.") {
+		t.Errorf("a 3-level score's instruction: %q", got)
+	}
+}
+
+// recTok records each chat prompt it is asked to encode.
+type recTok struct {
+	fakeTok
+	seen *[]string
+}
+
+func (r recTok) EncodeChat(s string) ([]int, error) {
+	*r.seen = append(*r.seen, s)
+	return []int{4, 5, 6, 7}, nil
+}
+
+// A permutation moves each option's description with it: order 2 of 2 shows "A) y: dy" and "B) x: dx".
+func TestDecide_permuteCarriesDescriptions(t *testing.T) {
+	var seen []string
+	tok := recTok{newFake(), &seen}
+	d, err := New(tok, func(context.Context, []int) ([]float32, error) { return make([]float32, 64), nil }, Options{Template: TemplateChat})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Decide(context.Background(), Request{Kind: KindChoice, State: "s", Question: "q",
+		Options: []string{"x", "y"}, Descriptions: []string{"dx", "dy"}, Permute: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 2 || !strings.Contains(seen[0], "A) x: dx\nB) y: dy") || !strings.Contains(seen[1], "A) y: dy\nB) x: dx") {
+		t.Errorf("rendered prompts:\n%v", seen)
 	}
 }

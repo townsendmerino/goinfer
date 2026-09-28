@@ -1,7 +1,7 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
 > **Status, 2026-09-27: C0 and D0 done, D1 and C1 built.** D6a needs the nobara fixture and the owner's call on
-> which template to grade. C2 done. D6a (chat-v1, the owner's pick) and D5 (a `/v1/systemone`-compatible route, the owner's pick) are next.
+> which template to grade. C2 done. D5 built (`POST /v1/systemone`, TypeSafe-compatible). D6a is pre-registered and waits on nobara (`docs/prompts/nobara-decisions-d6a-2026-09.md`).
 > - **C0 clears for enum, boolean and integer fields** ([`confidence-c0-2026-09-27.md`](../measurements/confidence-c0-2026-09-27.md)).
 >   AUROC on the 1.5B: 0.847 / 0.727 / 0.680. The readout costs 4.20% of a token on the 1.5B and 1.44% on the 7B.
 >   Number and string fields are parked: the labelled set drew too few wrong answers to judge them.
@@ -25,7 +25,7 @@
 > `goinfer.Into[T](ctx, prompt)`. No such function exists. The real surfaces are
 > `constrain.GrammarFromStruct` / `constrain.JSONSchema` → `constrain.NewMasker(...).Process` set as
 > `SamplingParams.LogitProcessor` (the README's "A Go struct the model cannot violate" section), and
-> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:538`). C1
+> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:544`). C1
 > is written against those.
 >
 > **Siblings.** [`task-tool-grammar-union-2026-09.md`](task-tool-grammar-union-2026-09.md)
@@ -122,7 +122,7 @@ is.
   recurrent state (`decoder/kvsnapshot.go:62`). So "prefill the shared state once, branch per
   question" is not available on `qwen3_5` today (D8).
 - **Route A is approximable from outside already.** `/v1/completions` with `max_tokens: 1,
-  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:536`, cap at `:33`) gives a client
+  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:542`, cap at `:33`) gives a client
   the label-token logprobs, with no renormalization over the option set, no calibration, and no
   guarantee the labels are in the top 20. That is the baseline D1 improves on.
 
@@ -422,9 +422,40 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
 
 ### D5 — the endpoint
 
+**Built, 2026-09-28: `POST /v1/systemone`, TypeSafe-compatible** (the owner's pick). autotrust's `/v1/decisions`
+schema was never published (D0).
+- **Code:** `internal/serveapp/systemone.go`, answered by `internal/decide` with the same auth → haltGate → inf →
+  maxBytes chain as its siblings.
+- **Request:**
+  - `{model, state, questions: {name: {type, instructions, criteria}}}`. The question and option order is preserved
+    (choice letters follow the order sent).
+  - A state or instructions given as an object or array is compacted to JSON, as jevx does.
+  - Up to 256 questions per request. Every question is validated before any prefill, and a bad one is a 422.
+- **Response:** TypeSafe's per-kind answers (`noul`; `choice` + `probabilities` + `confidence`; `score` + `legend`
+  + `probabilities` + `confidence`), `usage` (output 0) and a `goinfer` block (route, template, calibrated per kind).
+- **`confidence`** = the top probability's margin over uniform, `(n·p − 1)/(n − 1)`, TypeSafe's demo form
+  generalized. TypeSafe publishes no formula.
+- **Limits:** choice 2–16 options (A–P), score 2–10 levels. `decide` gained described options and N-level scores
+  for this; bare-v1 is byte-identical to JEV's template only without descriptions.
+- **Flags:** `--decisions-template` (default chat-v1) and `--decisions-calibration`, both validated at startup.
+- `/v1/models` lists each entry's `decisions` support. Adapter entries are refused.
+- **Tests:**
+  - a CI run of the handler with an injected decider, checked against jevx's fail-closed rules: exactly the
+    questions asked, noul in [0,1], each probability set summing to 0.98–1.02, the choice among the offered keys,
+    the options in the order sent, and `usage` present;
+  - the 422/404/400 cases;
+  - the confidence map;
+  - a real-model end to end on the local 0.5B.
+- **Documented** in `docs/server.md` with the §2 caveat, the SDK/jevx base-URL settings, and the authors' measured
+  quality of this method.
+- **Not done:** the `:batch` route (a single request already carries many questions); the J3 job object; the
+  `goinfer-chat -decide` JSONL mode is `goinfer-chat decide`, from D1.
+  - Running jevx's own binary against it: its request shape and fail-closed checks are reproduced in the test
+    instead of executing third-party code here.
+
 - `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
   registered with the same `auth → haltGate → inf → maxBytes` chain as its siblings
-  (`internal/serveapp/main.go:548`). Batch goes through J1 admission and, when asked, the J3 job
+  (`internal/serveapp/main.go:571`). Batch goes through J1 admission and, when asked, the J3 job
   object, so a long batch is re-attachable.
 - Response: `distribution`, `decision`, `confidence`, `latency_ms`, plus `model`, `route` (`label` |
   `head`), `backend`, and `calibrated` (false when no `calibration.json` was found — legal, but
@@ -589,8 +620,8 @@ contract) · `decoder/arch.go:954` (the `qwen3_5` / `qwen3_5_moe` own-forward ro
 `decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:137` (`validateTargets`) ·
 `decoder/lora.go:309` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:682`, `:744`
 (merge-at-load) · `decoder/kvcache.go:540` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
-skips recurrent state) · `internal/serveapp/openai.go:33`, `:536`, `:538` (`top_logprobs` cap,
-`logprobs`, `response_format`) · `internal/serveapp/main.go:548` (route middleware) ·
+skips recurrent state) · `internal/serveapp/openai.go:34`, `:536`, `:538` (`top_logprobs` cap,
+`logprobs`, `response_format`) · `internal/serveapp/main.go:571` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·
 [autotrust/JEV-27B](https://huggingface.co/autotrust/JEV-27B) (adapter, head, calibration, API) ·
 [autotrust/JEV](https://huggingface.co/autotrust/JEV) · [autotrust/JEV-9B](https://huggingface.co/autotrust/JEV-9B) ·

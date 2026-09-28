@@ -42,11 +42,25 @@ const (
 // MaxChoiceOptions is the choice kind's limit: the sixteen letter verbalizers A..P.
 const MaxChoiceOptions = 16
 
+// MaxScoreLevels is the score kind's limit: the ten digit verbalizers 0..9. JEV's own score is six levels (0..5);
+// a Route A score may use any 2..10, which TypeSafe's API allows.
+const MaxScoreLevels = 10
+
 var (
 	noulOptions  = []string{"false", "true"}
-	scoreOptions = []string{"0", "1", "2", "3", "4", "5"}
+	scoreOptions = []string{"0", "1", "2", "3", "4", "5"} // JEV's six levels
 	letters      = "ABCDEFGHIJKLMNOP"
+	digits       = "0123456789"
 )
+
+// ScoreOptions returns the options of an n-level score: "0" .. "n-1".
+func ScoreOptions(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = digits[i : i+1]
+	}
+	return out
+}
 
 // Request is one decision.
 type Request struct {
@@ -54,6 +68,10 @@ type Request struct {
 	State    string
 	Question string
 	Options  []string
+	// Descriptions, when set, are aligned with Options and rendered beside them ("A) billing: payments, invoicing"):
+	// what each option or level means. "" leaves an option bare. bare-v1 is byte-identical to JEV's template only
+	// without descriptions.
+	Descriptions []string
 	// Permute > 1 (choice only) averages the distribution over that many option orders — cyclic rotations, so with
 	// Permute == len(Options) every option sits at every letter once. It costs one prefill per order and exists
 	// because label-order bias under shuffled options is a known failure of label scoring.
@@ -75,17 +93,20 @@ type Result struct {
 	Latency       time.Duration
 }
 
-// Validate checks a request against its kind's rules: the fixed option lists for noul and score, and 2..16 distinct
-// non-empty options for choice.
+// Validate checks a request against its kind's rules: noul's fixed options, a score's "0".."n-1" for 2..10 levels,
+// 2..16 distinct non-empty options for choice, and descriptions (if any) aligned with the options.
 func Validate(r Request) error {
+	if r.Descriptions != nil && len(r.Descriptions) != len(r.Options) {
+		return fmt.Errorf("decide: %d descriptions for %d options", len(r.Descriptions), len(r.Options))
+	}
 	switch r.Kind {
 	case KindNoul:
 		if !equal(r.Options, noulOptions) {
 			return fmt.Errorf("decide: noul options must be %q, got %q", noulOptions, r.Options)
 		}
 	case KindScore:
-		if !equal(r.Options, scoreOptions) {
-			return fmt.Errorf("decide: score options must be %q, got %q", scoreOptions, r.Options)
+		if n := len(r.Options); n < 2 || n > MaxScoreLevels || !equal(r.Options, ScoreOptions(n)) {
+			return fmt.Errorf("decide: score options must be \"0\"..\"n-1\" for 2..%d levels, got %q", MaxScoreLevels, r.Options)
 		}
 	case KindChoice:
 		if n := len(r.Options); n < 2 || n > MaxChoiceOptions {
@@ -110,34 +131,41 @@ func Validate(r Request) error {
 	return nil
 }
 
-// Render returns the bare-v1 prompt for a request whose options are listed in the given order.
-func Render(kind, state, question string, options []string) string {
-	lines := options
-	if kind == KindChoice {
-		lines = make([]string, len(options))
-		for i, o := range options {
+// optionLines renders the options as the templates list them: "A) option" for choice, the bare label otherwise, and
+// ": description" after any option that has one.
+func optionLines(kind string, options, descriptions []string) []string {
+	lines := make([]string, len(options))
+	for i, o := range options {
+		lines[i] = o
+		if kind == KindChoice {
 			lines[i] = fmt.Sprintf("%c) %s", letters[i], o)
 		}
+		if i < len(descriptions) && descriptions[i] != "" {
+			lines[i] += ": " + descriptions[i]
+		}
 	}
-	return "[kind] " + kind + "\n[state] " + state + "\n[question] " + question + "\n[options]\n" + strings.Join(lines, "\n") + "\n[decision]:"
+	return lines
+}
+
+// Render returns the bare-v1 prompt for a request whose options are listed in the given order. descriptions is
+// optional (see Request.Descriptions).
+func Render(kind, state, question string, options []string, descriptions ...string) string {
+	return "[kind] " + kind + "\n[state] " + state + "\n[question] " + question + "\n[options]\n" +
+		strings.Join(optionLines(kind, options, descriptions), "\n") + "\n[decision]:"
 }
 
 // RenderChat returns chat-v1's user message: the same state, question and options as bare-v1, and an instruction
 // to answer with the label alone, so the assistant's first token is the verbalizer the readout scores.
-func RenderChat(kind, state, question string, options []string) string {
-	lines := options
+func RenderChat(kind, state, question string, options []string, descriptions ...string) string {
 	instr := "Answer with exactly one word: true or false."
 	switch kind {
 	case KindScore:
-		instr = "Answer with exactly one digit from 0 to 5."
+		instr = fmt.Sprintf("Answer with exactly one digit from 0 to %d.", len(options)-1)
 	case KindChoice:
-		lines = make([]string, len(options))
-		for i, o := range options {
-			lines[i] = fmt.Sprintf("%c) %s", letters[i], o)
-		}
 		instr = "Answer with exactly one letter: the letter of the best option."
 	}
-	return "State:\n" + state + "\n\nQuestion: " + question + "\n\nOptions:\n" + strings.Join(lines, "\n") + "\n\n" + instr
+	return "State:\n" + state + "\n\nQuestion: " + question + "\n\nOptions:\n" +
+		strings.Join(optionLines(kind, options, descriptions), "\n") + "\n\n" + instr
 }
 
 // verbalizers returns the label strings a kind reads, one per option position.
@@ -146,7 +174,7 @@ func verbalizers(kind string, n int) []string {
 	case KindNoul:
 		return noulOptions
 	case KindScore:
-		return scoreOptions
+		return ScoreOptions(n)
 	}
 	out := make([]string, n)
 	for i := range out {
@@ -199,7 +227,7 @@ func New(tok Tokenizer, prefill Prefill, opts Options) (*Decider, error) {
 	}
 	d := &Decider{tok: tok, prefill: prefill, label: map[string]int{}, cal: cal, template: tmpl}
 	var bad []string
-	for _, v := range append(append(append([]string(nil), noulOptions...), scoreOptions...), strings.Split(letters, "")...) {
+	for _, v := range append(append(append([]string(nil), noulOptions...), strings.Split(digits, "")...), strings.Split(letters, "")...) {
 		ids, err := tok.EncodePlain(v)
 		if err != nil {
 			return nil, err
@@ -244,10 +272,17 @@ func (d *Decider) Decide(ctx context.Context, r Request) (Result, error) {
 			perm[i] = (i + shift) % n
 		}
 		shown := make([]string, n)
+		var descs []string
+		if r.Descriptions != nil {
+			descs = make([]string, n)
+		}
 		for i, j := range perm {
 			shown[i] = r.Options[j]
+			if descs != nil {
+				descs[i] = r.Descriptions[j]
+			}
 		}
-		logp, promptTokens, err := d.score(ctx, r.Kind, r.State, r.Question, shown, temp)
+		logp, promptTokens, err := d.score(ctx, r.Kind, r.State, r.Question, shown, descs, temp)
 		if err != nil {
 			return Result{}, err
 		}
@@ -282,17 +317,17 @@ func (d *Decider) Scores(ctx context.Context, r Request) ([]float64, error) {
 	if err := Validate(r); err != nil {
 		return nil, err
 	}
-	lp, _, err := d.score(ctx, r.Kind, r.State, r.Question, r.Options, 1)
+	lp, _, err := d.score(ctx, r.Kind, r.State, r.Question, r.Options, r.Descriptions, 1)
 	return lp, err
 }
 
-func (d *Decider) score(ctx context.Context, kind, state, question string, shown []string, temp float64) ([]float64, int, error) {
+func (d *Decider) score(ctx context.Context, kind, state, question string, shown, descs []string, temp float64) ([]float64, int, error) {
 	var ids []int
 	var err error
 	if d.template == TemplateChat {
-		ids, err = d.tok.EncodeChat(RenderChat(kind, state, question, shown))
+		ids, err = d.tok.EncodeChat(RenderChat(kind, state, question, shown, descs...))
 	} else {
-		ids, err = d.tok.EncodePlain(Render(kind, state, question, shown))
+		ids, err = d.tok.EncodePlain(Render(kind, state, question, shown, descs...))
 	}
 	if err != nil {
 		return nil, 0, err
