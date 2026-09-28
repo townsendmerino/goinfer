@@ -64,6 +64,9 @@ usage:
   gate selector                                    tests that EXIST vs tests a selector RUNS
   gate gpu                                         the pre-tag GPU correctness gate (cuda | metal)
   gate mutation <name> <file> <sed-expr> <cmd...>  prove a gate can FAIL: green -> mutate -> red -> restore -> green
+  gate quick [-base REF] [-files a,b] [-count1] [-j N] [-select] [-v]
+                                                   the day loop: gofmt, vet, staticcheck and the tests that can
+                                                   observe the diff, one go test per package in parallel (TE7)
   gate ledger promote --gate G --value V --by YOU  record a person's confirmation of a gate's value (B14)
   gate ledger classify --gate G                    CONFIRMED | FIRST-RUN | SOURCE-CHANGED | UNKNOWN-GATE
   gate ledger reconcile [--gates a,b]              the ledger's three checks, as the parity sweep prints them
@@ -111,6 +114,10 @@ func run(argv []string, w io.Writer) int {
 	// `ledger` has its own subcommands and flags (ported from scripts/gate_ledger.py).
 	if name == "ledger" {
 		return runLedger(rest, w)
+	}
+	// `quick` has its own flags (quick.go).
+	if name == "quick" {
+		return runQuick(rest, w)
 	}
 
 	// Split at `--`: everything after it is verbatim `go test` args, not our flags.
