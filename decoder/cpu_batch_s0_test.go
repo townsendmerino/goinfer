@@ -183,3 +183,115 @@ func TestCPUBatchS1_fusedVsUnfused(t *testing.T) {
 		t.Log(msg)
 	}
 }
+
+// TestCPUBatchS0b_fusedShapesAndWidth is an EXPLORATORY probe (not a gate) for what is left after MC3c step 2 S1, on a
+// real checkpoint's layer 0:
+//   - E1: the shapes the batched step now issues — q‖k‖v and gate‖up as one linalg.MatmulBTW4A8Batch each, o and down
+//     alone — timed at M = 1, 2, 4, 8 against M = 1 (t(M)/t(1): 1 = weights read once for every row);
+//   - E2: the same shapes at M = 4 (and M = 1) across fan-out widths and serial. Width is numerically inert
+//     (parallel matmuls partition output columns), so a width that wins is a free lever for the step's Workspace.
+//
+// GOINFER_CPUBATCH_S0_MODEL=<checkpoint> (int4). Medians of 7 reps with rotated order; progress to stderr.
+func TestCPUBatchS0b_fusedShapesAndWidth(t *testing.T) {
+	path := os.Getenv("GOINFER_CPUBATCH_S0_MODEL")
+	if path == "" {
+		t.Skip("exploratory: set GOINFER_CPUBATCH_S0_MODEL=<checkpoint>")
+	}
+	m, err := Load(path, Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	lw := &m.w.Layers[0]
+	type shape struct {
+		name string
+		ws   []*linalg.WeightMat
+	}
+	shapes := []shape{
+		{"qkv", []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj}},
+		{"o", []*linalg.WeightMat{&lw.OProj}},
+		{"gate‖up", []*linalg.WeightMat{&lw.GateProj, &lw.UpProj}},
+		{"down", []*linalg.WeightMat{&lw.DownProj}},
+	}
+	rng := rand.New(rand.NewSource(1))
+	start := time.Now()
+	med := func(v []float64) float64 { s := append([]float64(nil), v...); sort.Float64s(s); return s[len(s)/2] }
+	// timeOp runs one fused call of shape sh at M rows with the given width (0 = default) or serial, and returns ns/op.
+	timeOp := func(sh shape, M, width int, serial bool, a []float32, dsts [][]float32, iters int) float64 {
+		var ws linalg.Workspace
+		ws.SetThreshold(int4ParThreshold)
+		if serial {
+			ws.SetThreshold(1 << 62)
+		}
+		ws.SetWorkers(width)
+		ops := make([]linalg.W4A8Op, len(sh.ws))
+		dd := make([][]float32, len(sh.ws))
+		for i, w := range sh.ws {
+			dd[i] = dsts[i][:M*w.Rows()]
+		}
+		group, ag, ok := w4a8FusedOps(ops, sh.ws, dd)
+		if !ok {
+			t.Fatalf("%s: not fusable", sh.name)
+		}
+		K := sh.ws[0].Cols()
+		matmulW4A8Batch(m.be, &ws, a[:M*K], M, K, group, ops, ag) // warm
+		t0 := time.Now()
+		for range iters {
+			matmulW4A8Batch(m.be, &ws, a[:M*K], M, K, group, ops, ag)
+		}
+		return float64(time.Since(t0).Nanoseconds()) / float64(iters)
+	}
+	const reps = 7
+	for si, sh := range shapes {
+		K := sh.ws[0].Cols()
+		totalN := 0
+		dsts := make([][]float32, len(sh.ws))
+		for i, w := range sh.ws {
+			totalN += w.Rows()
+			dsts[i] = make([]float32, 8*w.Rows())
+		}
+		a := make([]float32, 8*K)
+		for i := range a {
+			a[i] = float32(rng.NormFloat64())
+		}
+		iters := max(3, int(2e9/float64(totalN*K)))
+		// E1: M scaling at the default width.
+		Ms := []int{1, 2, 4, 8}
+		e1 := map[int][]float64{}
+		for r := range reps {
+			for i := range Ms {
+				M := Ms[(i+r)%len(Ms)]
+				e1[M] = append(e1[M], timeOp(sh, M, 0, false, a, dsts, iters))
+			}
+		}
+		t1 := med(e1[1])
+		line := fmt.Sprintf("E1 %-8s N=%-6d K=%-6d t(1)=%7.0f us", sh.name, totalN, K, t1/1e3)
+		for _, M := range Ms[1:] {
+			line += fmt.Sprintf("  t(%d)/t(1)=%.2f", M, med(e1[M])/t1)
+		}
+		fmt.Fprintf(os.Stderr, "[s0b %6.1fs %d/%d] %s\n", time.Since(start).Seconds(), si+1, len(shapes), line)
+		t.Log(line)
+		// E2: width sweep at M = 4 and M = 1 (0 = default width; -1 = serial).
+		widths := []int{0, 4, 6, 8, 12, 16, -1}
+		for _, M := range []int{4, 1} {
+			e2 := map[int][]float64{}
+			for r := range reps {
+				for i := range widths {
+					w := widths[(i+r)%len(widths)]
+					e2[w] = append(e2[w], timeOp(sh, M, max(w, 0), w < 0, a, dsts, iters))
+				}
+			}
+			base := med(e2[0])
+			line := fmt.Sprintf("E2 %-8s M=%d default %7.0f us:", sh.name, M, base/1e3)
+			for _, w := range widths[1:] {
+				name := fmt.Sprintf("w%d", w)
+				if w < 0 {
+					name = "serial"
+				}
+				line += fmt.Sprintf("  %s %.3fx", name, base/med(e2[w]))
+			}
+			fmt.Fprintf(os.Stderr, "[s0b %6.1fs %d/%d] %s   (x = speed-up over default)\n", time.Since(start).Seconds(), si+1, len(shapes), line)
+			t.Log(line)
+		}
+	}
+}
