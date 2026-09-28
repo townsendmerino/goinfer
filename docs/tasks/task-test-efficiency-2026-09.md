@@ -17,7 +17,7 @@
 > - TE7(b): `decoder` does cache, and C7's claim is retracted.
 > - TE1: built and queued for tonight (`te1-aa-mutation`, ~75 min).
 >
-> Owed: TE0 on nobara. See each item for its proof.
+> TE0 is complete on both machines ([record](../measurements/test-efficiency-2026-09.md)). See each item for its proof.
 
 ## BLUF
 
@@ -183,9 +183,10 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
     days, at 5–10 min each. That is TE7's target (affected-only selection and the test cache).
   - **Smaller classes:** in-test measurement 8.7 h, build/lint 6.1 h, parity/refresh 1.4 h. The served harness calls
     total 1.2 h because served gates run detached, and their spans are census.py's (§1.1).
-  - **Owed: the same miner on nobara, from its own transcripts.** It was not run on 2026-09-28 because a timed CUDA
-    prefill gate was running there, and a scan should not overlap a timed run. census.py on nobara's
-    `~/goinfer-bench` is owed with it.
+  - **nobara: DONE 2026-09-28** (at 12:31, with the box idle), from a temporary worktree of `origin/main`. It covers
+    18,730 calls, and waiting is again the largest class (47.8 h). The deliverable,
+    [`test-efficiency-2026-09.md`](../measurements/test-efficiency-2026-09.md), combines both machines: **114 h of
+    session waiting, 54% of all session call time, 95 h of it by day.** Unit suites come next at 36.7 h.
 
 ### TE1 — The idle gate reads what is running now *(one night: A/A + mutation)*
 
