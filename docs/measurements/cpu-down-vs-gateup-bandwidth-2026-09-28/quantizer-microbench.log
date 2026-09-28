@@ -1,0 +1,6 @@
+K=   896  3.572 ns/element  (3.20 us total)
+K=  1536  3.473 ns/element  (5.33 us total)
+K=  3584  3.623 ns/element  (12.98 us total)
+K=  4864  3.779 ns/element  (18.38 us total)
+K=  8960  5.371 ns/element  (48.13 us total)
+K= 18944  6.768 ns/element  (128.22 us total)

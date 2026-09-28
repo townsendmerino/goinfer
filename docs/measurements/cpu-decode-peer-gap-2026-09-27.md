@@ -94,6 +94,16 @@ sizes where the claim was void. They are none of it on the 0.5B, whose gap is ef
      its own ≥ 1.15× bar. Flipping it is the owner's call under that bar.
    - Why `down` streams 17% slower per byte than gate+up is still unexplained. The per-worker timestamps inside a real
      token (S-02) are still not taken; they are the next instrument.
+   - **ANSWERED, 2026-09-28** ([`cpu-down-vs-gateup-bandwidth-2026-09-28.md`](cpu-down-vs-gateup-bandwidth-2026-09-28.md),
+     not the S-02 instrument itself — a cheaper existing one answered the question). Two compounding causes: `down`
+     is an unfused, standalone fork/join (pays a ~71 µs/barrier fixed tax alone, where gate+up's own fusion
+     amortizes the same tax over ~2× the bytes) and `down`'s serial, scalar, single-threaded activation quantizer
+     runs over `intermediate_size` (not `hidden_size`), a length where the two-pass algorithm stops fitting L1/L2
+     and its cost turns super-linear (3.5 → 6.8 ns/element, directly microbenched). A 3-parameter global fit across
+     all three model sizes (fixed tax + quantizer cost/element + true bandwidth) reproduces the measured gate+up and
+     down ms/token within 0.1–8.2%, R² = 0.9998. Not yet built: an AVX2 amd64 quantizer (S-03's own "open" item,
+     already shipped for arm64/NEON) is the smaller, lower-risk next lever; fusing `down` into a bigger fork/join is
+     the other, structurally harder.
 3. **The LM head (bytes).** int8 at 234 MB against Q6_K's ~191 MB on the 1.5B. The ~4% it is worth is the smallest
    of the three and the most quality-sensitive (a 1.5% argmax flip rate for int4 is on record). Not recommended first.
 

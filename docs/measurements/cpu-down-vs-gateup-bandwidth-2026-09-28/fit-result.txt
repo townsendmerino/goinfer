@@ -1,0 +1,13 @@
+tau = 71.1 us/barrier
+c   = 5.706 ns/element (serial scalar quantizer)
+B   = 26.03 GB/s (true streaming bandwidth)
+
+model  phase     measured_ms    pred_ms   resid%
+0.5B   gate+up          6.92       6.35    -8.23
+0.5B   down             4.70       4.63    -1.41
+1.5B   gate+up         18.72      18.89     0.91
+1.5B   down            11.19      11.75     5.01
+7B     gate+up         84.65      84.72     0.08
+7B     down            46.35      46.10    -0.55
+
+R^2 = 0.9998

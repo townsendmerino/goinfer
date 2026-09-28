@@ -1,0 +1,41 @@
+// Standalone probe: linalg.QuantizeRowInt8 wall time per element at each model's own K
+// (hidden_size for gate+up's shared quantization, intermediate_size for down's own),
+// warm-cache repeats (N=20000, cold-load noise averaged out; this measures the SCALAR
+// amd64 kernel's own per-element cost as K crosses cache boundaries, not a first-touch
+// DRAM read — decode's real call is cold per token, so this is a LOWER bound on the
+// real per-token cost, useful for isolating the compute+cache-locality component).
+package main
+
+import (
+	"fmt"
+	"math/rand"
+	"time"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
+
+func bench(K int) float64 {
+	rng := rand.New(rand.NewSource(1))
+	row := make([]float32, K)
+	for i := range row {
+		row[i] = float32(rng.NormFloat64())
+	}
+	dst := make([]int8, K)
+	const N = 20000
+	for i := 0; i < 100; i++ {
+		linalg.QuantizeRowInt8(row, dst)
+	}
+	t0 := time.Now()
+	for i := 0; i < N; i++ {
+		linalg.QuantizeRowInt8(row, dst)
+	}
+	d := time.Since(t0)
+	return float64(d.Nanoseconds()) / float64(N) / float64(K)
+}
+
+func main() {
+	for _, K := range []int{896, 1536, 3584, 4864, 8960, 18944} {
+		ns := bench(K)
+		fmt.Printf("K=%6d  %.3f ns/element  (%.2f us total)\n", K, ns, ns*float64(K)/1000)
+	}
+}

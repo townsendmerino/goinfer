@@ -1,0 +1,15 @@
+loading + quantizing…
+loaded 28-layer model (hidden 1536, vocab 151936) in 3ms [backend=cpu [int4 layout: canonical (down, gate/up, qkv)] decode=cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]]
+chat template: chatml
+
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+
+[1myou>[0m [36mRivers are long, flowing bodies of water that carry water from one place to another. Oceans are vast, salty bodies of water that cover most of the Earth's surface and are home to aDECODE TIMING (40 tok, gpu=false): forward 46.4 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 7.34 ms | MLP 29.94 ms | LM head 8.72 ms | residual 0.36 ms /token
+DECODE SPLIT MLP: gate+up matmuls 18.72 ms | activation 0.00 ms | down matmul 11.19 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.04 ms | rope+KV+scores/softmax/AV core 1.69 ms | o matmul 2.60 ms /token
+[0m
+[2m[40 tok, 16.3 tok/s][0m
+[1myou>[0m 
+bye

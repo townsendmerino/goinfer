@@ -1,0 +1,15 @@
+loading + quantizing…
+loaded 28-layer model (hidden 3584, vocab 152064) in 2ms [backend=cpu [int4 layout: canonical (down, gate/up, qkv)] decode=cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]]
+chat template: chatml
+
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+
+[1myou>[0m [36mRivers are natural waterways that flow across landscapes, often originating in mountains and flowing towards larger bodies of water like oceans. Oceans, the largest bodies of water on Earth, cover about 7DECODE TIMING (40 tok, gpu=false): forward 175.5 ms | sample 0.07 ms | logitProc 0.00 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 23.84 ms | MLP 131.05 ms | LM head 20.12 ms | residual 0.54 ms /token
+DECODE SPLIT MLP: gate+up matmuls 84.65 ms | activation 0.00 ms | down matmul 46.35 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 11.75 ms | rope+KV+scores/softmax/AV core 2.82 ms | o matmul 9.25 ms /token
+[0m
+[2m[40 tok, 4.4 tok/s][0m
+[1myou>[0m 
+bye
