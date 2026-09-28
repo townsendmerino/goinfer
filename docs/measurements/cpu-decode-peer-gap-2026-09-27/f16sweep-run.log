@@ -1,0 +1,25 @@
+=== 2026-09-27 20:10:23 PDT START phi3-mini
+=== 2026-09-27 20:15:09 PDT END phi3-mini rc=0 (286s)
+=== 2026-09-27 20:15:09 PDT START qwen2.5-7b
+=== 2026-09-27 20:23:07 PDT END qwen2.5-7b rc=0 (478s)
+=== 2026-09-27 20:23:07 PDT START qwen2.5-coder-1.5b
+=== 2026-09-27 20:25:01 PDT END qwen2.5-coder-1.5b rc=0 (114s)
+=== 2026-09-27 20:25:01 PDT START qwen3-1.7b
+=== 2026-09-27 20:27:10 PDT END qwen3-1.7b rc=0 (130s)
+=== 2026-09-27 20:27:11 PDT START qwen3.5-0.8b
+=== 2026-09-27 20:28:17 PDT END qwen3.5-0.8b rc=0 (66s)
+=== 2026-09-27 20:28:17 PDT START gemma3-1b
+=== 2026-09-27 20:29:30 PDT END gemma3-1b rc=0 (73s)
+=== 2026-09-27 20:29:30 PDT START llama3.2-1b
+=== 2026-09-27 20:31:04 PDT END llama3.2-1b rc=0 (94s)
+=== 2026-09-27 20:31:04 PDT START tinyllama-1.1b
+=== 2026-09-27 20:32:19 PDT END tinyllama-1.1b rc=0 (75s)
+=== 2026-09-27 20:32:19 PDT START mistral-7b
+=== 2026-09-27 20:39:08 PDT END mistral-7b rc=0 (409s)
+=== 2026-09-27 20:39:08 PDT START granite-4.2-3b
+=== 2026-09-27 20:42:46 PDT END granite-4.2-3b rc=0 (218s)
+=== 2026-09-27 20:42:46 PDT START smollm3-3b
+=== 2026-09-27 20:45:59 PDT END smollm3-3b rc=0 (193s)
+=== 2026-09-27 20:45:59 PDT START olmo3-7b
+=== 2026-09-27 20:56:05 PDT END olmo3-7b rc=0 (606s)
+=== 2026-09-27 20:56:05 PDT ALL DONE

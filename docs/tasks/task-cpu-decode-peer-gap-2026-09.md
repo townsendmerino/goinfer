@@ -12,7 +12,9 @@
 > Both are pre-registered here, before any code or run.
 >
 > **L2 SHIPPED 2026-09-27:** R-06 is on for non-arm64. Every gate passes: logits bit-identical, the suites green, and
-> paired 1.016× / 1.030× / 1.018× (0.5B / 1.5B / 7B). **L1 is running.**
+> paired 1.016× / 1.030× / 1.018× (0.5B / 1.5B / 7B). **L1 FAILS as pre-registered** (worst drop 0.0168 > 0.015), but
+> the drops are symmetric about zero (13 of 24 cells improve, mean +0.0044 in f16's favour). The gate had no noise arm;
+> whether to re-gate with one is the owner's call.
 
 ## L1 — f16 group scales for CPU int4: the quality gate (pre-registered 2026-09-27)
 
@@ -88,3 +90,49 @@ The code was measured at `cc1769c7` with the test edits; the flip is the next co
 
    No size's median is below 0.98, so the flip stands. The gains are small, as R-06's mechanism predicts: it saves a
    roughly fixed per-barrier cost, and with gate+up already fused only q/k/v's two extra barriers remain.
+
+### L1 result (2026-09-27): FAIL by the pre-registered bands; the reading says the bar is below the metric's noise
+
+The sweep ran 20:10–20:56 PDT with the program ([`f16sweep.go.txt`](../measurements/cpu-decode-peer-gap-2026-09-27/f16sweep.go.txt))
+built at `cc1769c7`. Raw data: `f16sweep.jsonl`; the table: `f16sweep-graded.txt`, same directory.
+
+**Verdict, unchanged from the bands:** the worst Δ is **+0.0168** (qwen3-1.7b filler) > 0.015, so **FAIL**. Six of 24
+cells exceed 0.005.
+
+| family | filler: int4 → f16 p10 (Δ) | prose: int4 → f16 p10 (Δ) |
+|---|---|---|
+| phi3-mini | 0.2359 → 0.2408 (−0.0049) | 0.9436 → 0.9384 (+0.0052) |
+| qwen2.5-7b | 0.1523 → 0.1463 (+0.0061) | 0.9423 → 0.9323 (+0.0100) |
+| qwen2.5-coder-1.5b | 0.9940 → 0.9931 (+0.0009) | 0.9911 → 0.9913 (−0.0002) |
+| qwen3-1.7b | 0.9692 → 0.9524 (**+0.0168**) | 0.8900 → 0.9068 (−0.0168) |
+| qwen3.5-0.8b | 0.9622 → 0.9644 (−0.0023) | 0.9538 → 0.9571 (−0.0033) |
+| gemma3-1b | 0.9832 → 0.9834 (−0.0002) | 0.9774 → 0.9770 (+0.0004) |
+| llama3.2-1b | 0.6453 → 0.6849 (−0.0396) | 0.7308 → 0.7290 (+0.0018) |
+| tinyllama-1.1b | 0.9682 → 0.9572 (+0.0110) | 0.9897 → 0.9898 (−0.0001) |
+| mistral-7b | 0.9952 → 0.9951 (+0.0001) | 0.9973 → 0.9972 (+0.0001) |
+| granite-4.2-3b | 0.9757 → 0.9705 (+0.0052) | 0.9502 → 0.9572 (−0.0069) |
+| smollm3-3b | 0.9653 → 0.9721 (−0.0068) | 0.8466 → 0.8623 (−0.0158) |
+| olmo3-7b | 0.7983 → 0.8441 (−0.0457) | 0.9365 → 0.9580 (−0.0216) |
+
+(Δ = int4 − f16; positive means f16 is worse.)
+
+**Reading (not a grade).**
+- **No direction.** 11 cells worsen and 13 improve. The mean Δ is −0.0044, meaning f16 is slightly better on average.
+- **The largest moves are improvements:** olmo3-7b by 0.046 and 0.022, llama3.2-1b filler by 0.040.
+- **The failing family moves both ways.** qwen3-1.7b loses 0.0168 on filler and gains exactly 0.0168 on prose.
+- **The cleanest families barely move:** mistral-7b, coder-1.5b and gemma3 stay within ±0.001.
+- **The perturbation is tiny.** Rounding a scale to f16 changes it by at most 2^-11 (~0.05%). Where the f16 arm is
+  compared against today's int4 directly, it reads p10 0.95–0.999, lowest where the int4 path is already damaged
+  (qwen2.5-7b filler 0.72; llama 0.955).
+- **So the p10 cosine on the per-row int4 path moves by ±0.02 under a perturbation this small, in either direction.**
+  Track B's 0.005 allowance on the worst of 24 cells sits below that. The gate had no do-nothing arm to measure the
+  noise, which is this repo's "include the do-nothing arm" rule, and its MoE router-flip lesson (judge the mean, not
+  the minimum over N).
+
+**Not done, on purpose:** re-banding, and building the kernel. The bar is the bar; any re-gate is a new
+pre-registration and the owner's call.
+- **The re-gate this suggests:** the same sweep with control arms that perturb each int4 scale by a seeded random
+  relative amount of the same size as f16 rounding (|ε| ≤ 2^-11), 2–3 seeds, through a `goinfer_testhooks` seam (no
+  production env read).
+- f16 would then pass if its per-cell Δ sits inside the controls' spread, and its mean Δ is no worse than theirs.
+- Cost: about 1.5–2 hours of sweep.
