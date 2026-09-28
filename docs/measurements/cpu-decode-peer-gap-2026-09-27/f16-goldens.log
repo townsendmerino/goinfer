@@ -1,0 +1,404 @@
+=== RUN   TestBailingHybrid_forwardParity
+    bailing_hybrid_test.go:125: bailing_hybrid: argmax=3 (want 3) | maxSampleΔ=0.00000 | cosine=0.9999999999999226
+--- PASS: TestBailingHybrid_forwardParity (0.01s)
+=== RUN   TestCohere2_forwardParity
+    cohere2_test.go:82: argmax: got 164 | want 164
+    cohere2_test.go:98: last-logit parity: cosine=1.00000000 maxAbs=5.215e-08 over 256 vocab
+    cohere2_test.go:123: continuation: got [164 164 164 164 164 164] | want [164 164 164 164 164 164]
+--- PASS: TestCohere2_forwardParity (0.02s)
+=== RUN   TestCohere_forwardParity
+    cohere_test.go:72: argmax: got 240 (logit 0.1016) | want 240 (golden logit 0.1016)
+    cohere_test.go:90: last-logit parity: cosine=1.00000000 maxAbs=2.235e-08 over 256 vocab
+    cohere_test.go:116: continuation: got [240 240 240 240 240 240] | want [240 240 240 240 240 240]
+--- PASS: TestCohere_forwardParity (0.03s)
+=== RUN   TestDeepseek_textParity
+    deepseek_test.go:122: deepseek text parity: argmax got=115 want=115 | logit cosine=1.000000
+--- PASS: TestDeepseek_textParity (0.01s)
+=== RUN   TestForward_logitParity
+    forward_test.go:122: argmax=9079 (want 9079) | maxSampleΔ=0.00001 | sum rel=8.83e-07 | cosine=NaN
+--- PASS: TestForward_logitParity (0.66s)
+=== RUN   TestGemma3VL_textParity
+    gemma3_vl_test.go:56: gemma3-VL text parity: argmax got=246 want=246 | logit cosine=1.000000
+--- PASS: TestGemma3VL_textParity (0.00s)
+=== RUN   TestGemma4_12B_logitParity
+    gemma4_12b_parity_test.go:55: argmax: got 50429 (logit 26.0628) | want 50429 (golden logit 26.0628)
+    gemma4_12b_parity_test.go:70: sample-256 cosine (int8int8 vs bf16) = 0.98972
+--- PASS: TestGemma4_12B_logitParity (36.41s)
+=== RUN   TestGemma4MoE_forwardParity
+    gemma4_moe_forward_test.go:121: argmax: got 88 (logit 1.1106) | want 88 (golden logit 1.1106)
+    gemma4_moe_forward_test.go:121: last-logit parity: cosine=1.00000000 maxAbs=3.219e-06 over 256 vocab
+    gemma4_moe_forward_test.go:121: continuation: got [88 88 88 161 161 161] | want [88 88 88 161 161 161]
+--- PASS: TestGemma4MoE_forwardParity (0.03s)
+=== RUN   TestGemma4MoEUnified_forwardParity
+    gemma4_moe_forward_test.go:135: argmax: got 88 (logit 1.1106) | want 88 (golden logit 1.1106)
+    gemma4_moe_forward_test.go:135: last-logit parity: cosine=1.00000000 maxAbs=3.219e-06 over 256 vocab
+    gemma4_moe_forward_test.go:135: continuation: got [88 88 88 161 161 161] | want [88 88 88 161 161 161]
+--- PASS: TestGemma4MoEUnified_forwardParity (0.03s)
+=== RUN   TestGemma4DenseTwoGeom_forwardParity
+    gemma4_moe_forward_test.go:148: argmax: got 67 (logit 1.1321) | want 67 (golden logit 1.1321)
+    gemma4_moe_forward_test.go:148: last-logit parity: cosine=1.00000000 maxAbs=1.032e-06 over 256 vocab
+    gemma4_moe_forward_test.go:148: continuation: got [67 67 67 67 67 67] | want [67 67 67 67 67 67]
+--- PASS: TestGemma4DenseTwoGeom_forwardParity (0.03s)
+=== RUN   TestGemma4DenseScaled_forwardParity
+    gemma4_moe_forward_test.go:160: argmax: got 200 (logit 3.3384) | want 200 (golden logit 3.3384)
+    gemma4_moe_forward_test.go:160: last-logit parity: cosine=1.00000000 maxAbs=1.518e-04 over 256 vocab
+    gemma4_moe_forward_test.go:160: continuation: got [200 200 200 200 200 200] | want [200 200 200 200 200 200]
+--- PASS: TestGemma4DenseScaled_forwardParity (3.79s)
+=== RUN   TestGemma4MoEKV_forwardParity
+    gemma4_moe_forward_test.go:172: argmax: got 14 (logit 0.4197) | want 14 (golden logit 0.4197)
+    gemma4_moe_forward_test.go:172: last-logit parity: cosine=1.00000000 maxAbs=2.161e-06 over 256 vocab
+    gemma4_moe_forward_test.go:172: continuation: got [14 209 26 26 26 171] | want [14 209 26 26 26 171]
+--- PASS: TestGemma4MoEKV_forwardParity (0.02s)
+=== RUN   TestGemma4_logitParity
+    gemma4_parity_test.go:53: argmax: got 7001 (logit 5.1725) | want 7001 (golden logit 5.1725)
+    gemma4_parity_test.go:69: sample-256 cosine (int8int8 vs bf16) = 0.99924
+--- PASS: TestGemma4_logitParity (30.86s)
+=== RUN   TestGemma4VLBidir_textParity
+    gemma4_vl_bidir_test.go:71: sequential: argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:89: batched:    argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:101: sequential vs batched: logit cosine=1.00000000
+--- PASS: TestGemma4VLBidir_textParity (0.01s)
+=== RUN   TestGemma4VL_textParity
+    gemma4_vl_test.go:69: gemma4-VL text parity: argmax got=8 want=8 | logit cosine=1.000000
+--- PASS: TestGemma4VL_textParity (0.01s)
+=== RUN   TestGGUF_Q8_0_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q8_0.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q8_0_parity (2.11s)
+=== RUN   TestGGUF_gemma3_parity
+    gguf_forward_test.go:136: gguf gemma3 Q8_0: argmax=9079 (want 9079) | cosine vs f32 = NaN
+--- PASS: TestGGUF_gemma3_parity (0.61s)
+=== RUN   TestGGUF_qwen3_parity
+    gguf_forward_test.go:198: gguf qwen3 Q8_0: argmax=12095 (want 12095) | cosine vs f32 = NaN
+--- PASS: TestGGUF_qwen3_parity (3.06s)
+=== RUN   TestGGUF_qwen2_parity
+    gguf_forward_test.go:265: gguf qwen2 Q8_0: argmax=12095 (want 12095) | cosine vs f32 = NaN
+--- PASS: TestGGUF_qwen2_parity (1.21s)
+=== RUN   TestGGUF_Q4_0_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q4_0.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q4_0_parity (2.48s)
+=== RUN   TestGGUF_Q4_K_M_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q4_K_M_parity (4.07s)
+=== RUN   TestGGUF_Q5_K_M_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q5_K_M.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q5_K_M_parity (3.14s)
+=== RUN   TestGGUF_Q3_K_M_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q3_K_M.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q3_K_M_parity (2.43s)
+=== RUN   TestGGUF_Q2_K_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q2_K.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q2_K_parity (2.31s)
+=== RUN   TestGGUF_Q6_K_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q6_K.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q6_K_parity (2.18s)
+=== RUN   TestGGUF_Q4_K_S_parity
+    gguf_forward_test.go:69: gguf ../testdata/tinyllama-gguf/tinyllama-1.1b-chat-v1.0.Q4_K_S.gguf: argmax=3681 (want 3681) | cosine vs f32 = NaN
+--- PASS: TestGGUF_Q4_K_S_parity (2.47s)
+=== RUN   TestGlm4Moe_textParity
+    glm4moe_test.go:170: glm4_moe text parity: argmax got=200 want=200 | logit cosine=1.000000
+--- PASS: TestGlm4Moe_textParity (0.00s)
+=== RUN   TestGPT2_forwardParity
+    gpt2_test.go:120: gpt2: argmax=262 (want 262) | maxSampleΔ=0.00014 | cosine=0.9999999999999403
+--- PASS: TestGPT2_forwardParity (1.27s)
+=== RUN   TestGraniteDense_forwardParity
+    granite_dense_test.go:109: granite (dense): argmax=194 (want 194) | maxSampleΔ=0.00000 | cosine=0.999999999999992
+--- PASS: TestGraniteDense_forwardParity (0.01s)
+=== RUN   TestGranite_textParity
+    granite_test.go:92: granite text parity: argmax got=96 want=96 | logit cosine=1.000000
+--- PASS: TestGranite_textParity (0.02s)
+=== RUN   TestInt4_forwardParity
+=== RUN   TestInt4_forwardParity/cohere-tiny
+=== RUN   TestInt4_forwardParity/cohere2-tiny
+=== RUN   TestInt4_forwardParity/deepseek-tiny
+    int4_golden_test.go:298: sum = 4.247685791924596, want 4.254356744451798 (Δ 0.0066709525272017345 > 0.005)
+=== RUN   TestInt4_forwardParity/gemma3-vl-tiny
+    int4_golden_test.go:287: sample[8] = -0.05309879034757614, want -0.05852224677801132 (Δ 0.005423456430435181 > 0.005)
+    int4_golden_test.go:298: sum = 1.3459785402519628, want 1.3249027507263236 (Δ 0.021075789525639266 > 0.005)
+=== RUN   TestInt4_forwardParity/gemma4-dense-scaled
+    int4_golden_test.go:287: sample[1] = -1.2468059062957764, want -1.1533658504486084 (Δ 0.09344005584716797 > 0.005)
+    int4_golden_test.go:287: sample[2] = -0.373832643032074, want -0.5905877351760864 (Δ 0.21675509214401245 > 0.005)
+    int4_golden_test.go:287: sample[3] = 0.38434886932373047, want 0.2706160545349121 (Δ 0.11373281478881836 > 0.005)
+    int4_golden_test.go:287: sample[4] = -0.6938645243644714, want -0.9408127665519714 (Δ 0.2469482421875 > 0.005)
+    int4_golden_test.go:287: sample[5] = 0.08826932311058044, want -0.15448494255542755 (Δ 0.242754265666008 > 0.005)
+    int4_golden_test.go:287: sample[6] = 0.13550269603729248, want 0.5220240950584412 (Δ 0.3865213990211487 > 0.005)
+    int4_golden_test.go:287: sample[7] = 0.2542300522327423, want 0.24807068705558777 (Δ 0.006159365177154541 > 0.005)
+    int4_golden_test.go:287: sample[8] = -0.0064522819593548775, want 0.2441309243440628 (Δ 0.2505832063034177 > 0.005)
+    int4_golden_test.go:287: sample[9] = -0.2947610020637512, want 0.2787172198295593 (Δ 0.5734782218933105 > 0.005)
+    int4_golden_test.go:287: sample[10] = -0.05309737101197243, want -0.002125500002875924 (Δ 0.0509718710090965 > 0.005)
+    int4_golden_test.go:287: sample[11] = -0.8928235769271851, want -1.1641757488250732 (Δ 0.2713521718978882 > 0.005)
+    int4_golden_test.go:287: sample[12] = -0.38066166639328003, want -0.20279650390148163 (Δ 0.1778651624917984 > 0.005)
+    int4_golden_test.go:287: sample[13] = 0.7383293509483337, want 0.5687578916549683 (Δ 0.16957145929336548 > 0.005)
+    int4_golden_test.go:287: sample[14] = -0.45389705896377563, want -0.7854852676391602 (Δ 0.3315882086753845 > 0.005)
+    int4_golden_test.go:287: sample[15] = 0.09672991931438446, want 0.29482632875442505 (Δ 0.1980964094400406 > 0.005)
+    int4_golden_test.go:287: sample[16] = 0.6185866594314575, want 0.6845762729644775 (Δ 0.06598961353302002 > 0.005)
+    int4_golden_test.go:287: sample[17] = 0.669491171836853, want 0.5318657159805298 (Δ 0.13762545585632324 > 0.005)
+    int4_golden_test.go:287: sample[18] = 0.030360259115695953, want -0.18967151641845703 (Δ 0.22003177553415298 > 0.005)
+    int4_golden_test.go:287: sample[19] = -0.5202750563621521, want -0.38556212186813354 (Δ 0.13471293449401855 > 0.005)
+    int4_golden_test.go:287: sample[20] = -0.5488812327384949, want -0.07451242208480835 (Δ 0.4743688106536865 > 0.005)
+    int4_golden_test.go:287: sample[21] = -0.30033111572265625, want -0.12670332193374634 (Δ 0.1736277937889099 > 0.005)
+    int4_golden_test.go:287: sample[22] = 0.36356860399246216, want 0.2895844578742981 (Δ 0.07398414611816406 > 0.005)
+    int4_golden_test.go:287: sample[23] = -0.22109098732471466, want 0.15119361877441406 (Δ 0.3722846060991287 > 0.005)
+    int4_golden_test.go:287: sample[24] = 0.029714137315750122, want 0.3616892993450165 (Δ 0.33197516202926636 > 0.005)
+    int4_golden_test.go:287: sample[25] = 0.06542237102985382, want 0.30841103196144104 (Δ 0.24298866093158722 > 0.005)
+    int4_golden_test.go:287: sample[26] = 0.35147783160209656, want 0.41132277250289917 (Δ 0.05984494090080261 > 0.005)
+    int4_golden_test.go:287: sample[27] = 0.4083126187324524, want -0.13518314063549042 (Δ 0.5434957593679428 > 0.005)
+    int4_golden_test.go:287: sample[29] = 0.05641595646739006, want 0.5041409134864807 (Δ 0.44772495701909065 > 0.005)
+    int4_golden_test.go:287: sample[30] = -0.5333918333053589, want -0.9728052616119385 (Δ 0.4394134283065796 > 0.005)
+    int4_golden_test.go:287: sample[31] = 0.19779479503631592, want -0.06584221124649048 (Δ 0.2636370062828064 > 0.005)
+    int4_golden_test.go:298: sum = -5.341830976540223, want -0.5003657763591036 (Δ 4.841465200181119 > 0.005)
+    int4_golden_test.go:298: sum_sq = 123.22582814654618, want 124.62287412251362 (Δ 1.397045975967444 > 0.012462287412251362)
+    int4_golden_test.go:298: min = -1.8788015842437744, want -1.902949333190918 (Δ 0.024147748947143555 > 0.005)
+    int4_golden_test.go:298: max = 2.953489303588867, want 2.8271484375 (Δ 0.1263408660888672 > 0.005)
+=== RUN   TestInt4_forwardParity/gemma4-dense-twogeom-tiny
+    int4_golden_test.go:287: sample[1] = 0.5388967990875244, want 0.5287391543388367 (Δ 0.010157644748687744 > 0.005)
+    int4_golden_test.go:287: sample[5] = -0.01674715429544449, want -0.010381413623690605 (Δ 0.006365740671753883 > 0.005)
+    int4_golden_test.go:287: sample[7] = -1.1394373178482056, want -1.1456646919250488 (Δ 0.006227374076843262 > 0.005)
+    int4_golden_test.go:287: sample[8] = 0.18795402348041534, want 0.19997498393058777 (Δ 0.012020960450172424 > 0.005)
+    int4_golden_test.go:287: sample[10] = 0.3144460618495941, want 0.30411022901535034 (Δ 0.010335832834243774 > 0.005)
+    int4_golden_test.go:287: sample[11] = -0.2272329479455948, want -0.21954652667045593 (Δ 0.007686421275138855 > 0.005)
+    int4_golden_test.go:287: sample[12] = -0.20936983823776245, want -0.2026541829109192 (Δ 0.006715655326843262 > 0.005)
+    int4_golden_test.go:287: sample[14] = 0.05189655348658562, want 0.057342104613780975 (Δ 0.005445551127195358 > 0.005)
+    int4_golden_test.go:287: sample[15] = 0.19936655461788177, want 0.19100993871688843 (Δ 0.008356615900993347 > 0.005)
+    int4_golden_test.go:287: sample[24] = -0.27225160598754883, want -0.27876561880111694 (Δ 0.006514012813568115 > 0.005)
+    int4_golden_test.go:287: sample[27] = -0.14425428211688995, want -0.15439024567604065 (Δ 0.010135963559150696 > 0.005)
+    int4_golden_test.go:287: sample[28] = 0.6373829245567322, want 0.6301162242889404 (Δ 0.007266700267791748 > 0.005)
+    int4_golden_test.go:287: sample[30] = -0.1546333134174347, want -0.1645660549402237 (Δ 0.009932741522789001 > 0.005)
+    int4_golden_test.go:298: sum = -5.895938466768712, want -6.002320592524484 (Δ 0.106382125755772 > 0.005)
+    int4_golden_test.go:298: sum_sq = 27.694614505730488, want 27.73485434085319 (Δ 0.04023983512270135 > 0.005)
+    int4_golden_test.go:298: min = -1.1394373178482056, want -1.1456646919250488 (Δ 0.006227374076843262 > 0.005)
+=== RUN   TestInt4_forwardParity/gemma4-moe-kv-tiny
+    int4_golden_test.go:287: sample[10] = 0.009480815380811691, want 0.015431993640959263 (Δ 0.0059511782601475716 > 0.005)
+    int4_golden_test.go:287: sample[12] = -0.17472073435783386, want -0.16895785927772522 (Δ 0.005762875080108643 > 0.005)
+    int4_golden_test.go:298: sum = 4.320625458611175, want 4.344339733012021 (Δ 0.02371427440084517 > 0.005)
+=== RUN   TestInt4_forwardParity/gemma4-moe-tiny
+    int4_golden_test.go:287: sample[1] = -0.012608043849468231, want -0.022039705887436867 (Δ 0.009431662037968636 > 0.005)
+    int4_golden_test.go:287: sample[2] = -0.4435957372188568, want -0.4360481798648834 (Δ 0.007547557353973389 > 0.005)
+    int4_golden_test.go:287: sample[3] = -0.23610840737819672, want -0.24844558537006378 (Δ 0.012337177991867065 > 0.005)
+    int4_golden_test.go:287: sample[5] = 0.1009303629398346, want 0.10865893214941025 (Δ 0.007728569209575653 > 0.005)
+    int4_golden_test.go:287: sample[6] = 0.1962393820285797, want 0.2054671347141266 (Δ 0.009227752685546875 > 0.005)
+    int4_golden_test.go:287: sample[8] = 0.052666809409856796, want 0.02369369938969612 (Δ 0.028973110020160675 > 0.005)
+    int4_golden_test.go:287: sample[9] = -0.4633321762084961, want -0.44849613308906555 (Δ 0.014836043119430542 > 0.005)
+    int4_golden_test.go:287: sample[11] = 0.10351132601499557, want 0.0812925174832344 (Δ 0.02221880853176117 > 0.005)
+    int4_golden_test.go:287: sample[12] = 0.1470252275466919, want 0.16037917137145996 (Δ 0.013353943824768066 > 0.005)
+    int4_golden_test.go:287: sample[13] = -0.15693628787994385, want -0.1790943443775177 (Δ 0.022158056497573853 > 0.005)
+    int4_golden_test.go:287: sample[15] = -0.2617863714694977, want -0.2812422811985016 (Δ 0.019455909729003906 > 0.005)
+    int4_golden_test.go:287: sample[17] = -0.03935420513153076, want -0.04982135817408562 (Δ 0.010467153042554855 > 0.005)
+    int4_golden_test.go:287: sample[18] = 0.47627973556518555, want 0.48831167817115784 (Δ 0.01203194260597229 > 0.005)
+    int4_golden_test.go:287: sample[19] = 0.15897172689437866, want 0.15358200669288635 (Δ 0.00538972020149231 > 0.005)
+    int4_golden_test.go:287: sample[20] = 0.21689927577972412, want 0.22502167522907257 (Δ 0.00812239944934845 > 0.005)
+    int4_golden_test.go:287: sample[21] = -0.14664189517498016, want -0.13703356683254242 (Δ 0.009608328342437744 > 0.005)
+    int4_golden_test.go:287: sample[22] = 0.2369861602783203, want 0.257914274930954 (Δ 0.020928114652633667 > 0.005)
+    int4_golden_test.go:287: sample[24] = -0.14339983463287354, want -0.12078175693750381 (Δ 0.02261807769536972 > 0.005)
+    int4_golden_test.go:287: sample[25] = -0.010507503524422646, want 0.0005387969431467354 (Δ 0.011046300467569381 > 0.005)
+    int4_golden_test.go:287: sample[28] = -0.2977946400642395, want -0.2782342731952667 (Δ 0.01956036686897278 > 0.005)
+    int4_golden_test.go:287: sample[29] = -0.07154945284128189, want -0.03593830391764641 (Δ 0.03561114892363548 > 0.005)
+    int4_golden_test.go:287: sample[31] = 0.038474321365356445, want 0.05505283549427986 (Δ 0.016578514128923416 > 0.005)
+    int4_golden_test.go:298: sum = 3.4488357612572145, want 3.58220682508545 (Δ 0.1333710638282355 > 0.005)
+    int4_golden_test.go:298: sum_sq = 24.11325491674766, want 24.232713524774905 (Δ 0.1194586080272444 > 0.005)
+    int4_golden_test.go:298: min = -0.8438986539840698, want -0.8581146597862244 (Δ 0.014216005802154541 > 0.005)
+=== RUN   TestInt4_forwardParity/gemma4-moe-unified-tiny
+    int4_golden_test.go:287: sample[1] = -0.012608043849468231, want -0.022039705887436867 (Δ 0.009431662037968636 > 0.005)
+    int4_golden_test.go:287: sample[2] = -0.4435957372188568, want -0.4360481798648834 (Δ 0.007547557353973389 > 0.005)
+    int4_golden_test.go:287: sample[3] = -0.23610840737819672, want -0.24844558537006378 (Δ 0.012337177991867065 > 0.005)
+    int4_golden_test.go:287: sample[5] = 0.1009303629398346, want 0.10865893214941025 (Δ 0.007728569209575653 > 0.005)
+    int4_golden_test.go:287: sample[6] = 0.1962393820285797, want 0.2054671347141266 (Δ 0.009227752685546875 > 0.005)
+    int4_golden_test.go:287: sample[8] = 0.052666809409856796, want 0.02369369938969612 (Δ 0.028973110020160675 > 0.005)
+    int4_golden_test.go:287: sample[9] = -0.4633321762084961, want -0.44849613308906555 (Δ 0.014836043119430542 > 0.005)
+    int4_golden_test.go:287: sample[11] = 0.10351132601499557, want 0.0812925174832344 (Δ 0.02221880853176117 > 0.005)
+    int4_golden_test.go:287: sample[12] = 0.1470252275466919, want 0.16037917137145996 (Δ 0.013353943824768066 > 0.005)
+    int4_golden_test.go:287: sample[13] = -0.15693628787994385, want -0.1790943443775177 (Δ 0.022158056497573853 > 0.005)
+    int4_golden_test.go:287: sample[15] = -0.2617863714694977, want -0.2812422811985016 (Δ 0.019455909729003906 > 0.005)
+    int4_golden_test.go:287: sample[17] = -0.03935420513153076, want -0.04982135817408562 (Δ 0.010467153042554855 > 0.005)
+    int4_golden_test.go:287: sample[18] = 0.47627973556518555, want 0.48831167817115784 (Δ 0.01203194260597229 > 0.005)
+    int4_golden_test.go:287: sample[19] = 0.15897172689437866, want 0.15358200669288635 (Δ 0.00538972020149231 > 0.005)
+    int4_golden_test.go:287: sample[20] = 0.21689927577972412, want 0.22502167522907257 (Δ 0.00812239944934845 > 0.005)
+    int4_golden_test.go:287: sample[21] = -0.14664189517498016, want -0.13703356683254242 (Δ 0.009608328342437744 > 0.005)
+    int4_golden_test.go:287: sample[22] = 0.2369861602783203, want 0.257914274930954 (Δ 0.020928114652633667 > 0.005)
+    int4_golden_test.go:287: sample[24] = -0.14339983463287354, want -0.12078175693750381 (Δ 0.02261807769536972 > 0.005)
+    int4_golden_test.go:287: sample[25] = -0.010507503524422646, want 0.0005387969431467354 (Δ 0.011046300467569381 > 0.005)
+    int4_golden_test.go:287: sample[28] = -0.2977946400642395, want -0.2782342731952667 (Δ 0.01956036686897278 > 0.005)
+    int4_golden_test.go:287: sample[29] = -0.07154945284128189, want -0.03593830391764641 (Δ 0.03561114892363548 > 0.005)
+    int4_golden_test.go:287: sample[31] = 0.038474321365356445, want 0.05505283549427986 (Δ 0.016578514128923416 > 0.005)
+    int4_golden_test.go:298: sum = 3.4488357612572145, want 3.58220682508545 (Δ 0.1333710638282355 > 0.005)
+    int4_golden_test.go:298: sum_sq = 24.11325491674766, want 24.232713524774905 (Δ 0.1194586080272444 > 0.005)
+    int4_golden_test.go:298: min = -0.8438986539840698, want -0.8581146597862244 (Δ 0.014216005802154541 > 0.005)
+=== RUN   TestInt4_forwardParity/glm-tiny
+    int4_golden_test.go:298: sum = 2.474295748048462, want 2.489394912554417 (Δ 0.015099164505954832 > 0.005)
+    int4_golden_test.go:298: sum_sq = 6.333334616599127, want 6.319430018702715 (Δ 0.013904597896412518 > 0.005)
+=== RUN   TestInt4_forwardParity/glm-tiny-bias
+    int4_golden_test.go:298: sum = -1.9044688398716971, want -1.9094813642441295 (Δ 0.005012524372432381 > 0.005)
+    int4_golden_test.go:298: sum_sq = 7.15948432981035, want 7.167563558964701 (Δ 0.008079229154350998 > 0.005)
+=== RUN   TestInt4_forwardParity/gpt2
+    int4_golden_test.go:281: centered cosine(samples) = 0.9924654473532222, want >= 0.995 — the int4 forward changed
+=== RUN   TestInt4_forwardParity/granite-tiny
+=== RUN   TestInt4_forwardParity/kimi-tiny
+    int4_golden_test.go:287: sample[2] = -0.42907941341400146, want -0.42339661717414856 (Δ 0.005682796239852905 > 0.005)
+    int4_golden_test.go:287: sample[15] = -0.22153818607330322, want -0.22667863965034485 (Δ 0.005140453577041626 > 0.005)
+    int4_golden_test.go:287: sample[18] = 0.023855872452259064, want 0.02906307950615883 (Δ 0.005207207053899765 > 0.005)
+    int4_golden_test.go:287: sample[19] = 0.4063262641429901, want 0.411356121301651 (Δ 0.005029857158660889 > 0.005)
+    int4_golden_test.go:287: sample[23] = 0.03722364082932472, want 0.04268202558159828 (Δ 0.00545838475227356 > 0.005)
+    int4_golden_test.go:287: sample[31] = -0.1214592307806015, want -0.11558674275875092 (Δ 0.005872488021850586 > 0.005)
+    int4_golden_test.go:298: sum = 2.085560753941536, want 2.0646314043551683 (Δ 0.020929349586367607 > 0.005)
+    int4_golden_test.go:298: sum_sq = 12.479334849260944, want 12.460055327242843 (Δ 0.019279522018100792 > 0.005)
+    int4_golden_test.go:298: min = -0.8646430969238281, want -0.8595314621925354 (Δ 0.005111634731292725 > 0.005)
+=== RUN   TestInt4_forwardParity/llama4-tiny
+    int4_golden_test.go:298: sum_sq = 3.2492657854872813, want 3.2563713366801044 (Δ 0.0071055511928230786 > 0.005)
+=== RUN   TestInt4_forwardParity/mixtral-tiny
+    int4_golden_test.go:287: sample[17] = 0.1014605388045311, want 0.10717952996492386 (Δ 0.005718991160392761 > 0.005)
+    int4_golden_test.go:298: sum = -0.35437942212593043, want -0.4184147747582756 (Δ 0.06403535263234517 > 0.005)
+    int4_golden_test.go:298: sum_sq = 12.874709978333739, want 12.922466688560903 (Δ 0.04775671022716388 > 0.005)
+=== RUN   TestInt4_forwardParity/nemotron-tiny
+    int4_golden_test.go:298: sum_sq = 5.81356484942537, want 5.826342473318016 (Δ 0.012777623892645806 > 0.005)
+=== RUN   TestInt4_forwardParity/nemotron3nano-tiny
+    int4_golden_test.go:298: sum = 3.1358755555411335, want 3.1285434053861536 (Δ 0.0073321501549798995 > 0.005)
+    int4_golden_test.go:298: sum_sq = 6.975342523300119, want 6.968733693717972 (Δ 0.0066088295821469245 > 0.005)
+=== RUN   TestInt4_forwardParity/phi3-tiny
+    int4_golden_test.go:298: sum_sq = 3.4222656649864716, want 3.4300868315778854 (Δ 0.007821166591413853 > 0.005)
+=== RUN   TestInt4_forwardParity/qwen25vl-tiny
+    int4_golden_test.go:298: sum = -0.09995117067592219, want -0.0015558647719444707 (Δ 0.09839530590397771 > 0.005)
+    int4_golden_test.go:298: sum_sq = 8.176192806202687, want 8.11121299022227 (Δ 0.06497981598041669 > 0.005)
+=== RUN   TestInt4_forwardParity/qwen35-tiny
+    int4_golden_test.go:298: sum_sq = 5.685190885919449, want 5.67163661796061 (Δ 0.013554267958839183 > 0.005)
+=== RUN   TestInt4_forwardParity/qwen3next-tiny
+    int4_golden_test.go:298: sum = -0.6232667351141572, want -0.6032807914307341 (Δ 0.019985943683423102 > 0.005)
+    int4_golden_test.go:298: sum_sq = 6.552680793504831, want 6.567356728656561 (Δ 0.014675935151729824 > 0.005)
+=== NAME  TestInt4_forwardParity
+    int4_golden_test.go:308: int4 goldens: 22 fixtures compared against recorded int4 output
+--- FAIL: TestInt4_forwardParity (3.06s)
+    --- PASS: TestInt4_forwardParity/cohere-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/cohere2-tiny (0.01s)
+    --- FAIL: TestInt4_forwardParity/deepseek-tiny (0.01s)
+    --- FAIL: TestInt4_forwardParity/gemma3-vl-tiny (0.01s)
+    --- FAIL: TestInt4_forwardParity/gemma4-dense-scaled (0.62s)
+    --- FAIL: TestInt4_forwardParity/gemma4-dense-twogeom-tiny (0.03s)
+    --- FAIL: TestInt4_forwardParity/gemma4-moe-kv-tiny (0.01s)
+    --- FAIL: TestInt4_forwardParity/gemma4-moe-tiny (0.05s)
+    --- FAIL: TestInt4_forwardParity/gemma4-moe-unified-tiny (0.04s)
+    --- FAIL: TestInt4_forwardParity/glm-tiny (0.01s)
+    --- FAIL: TestInt4_forwardParity/glm-tiny-bias (0.01s)
+    --- FAIL: TestInt4_forwardParity/gpt2 (2.17s)
+    --- PASS: TestInt4_forwardParity/granite-tiny (0.01s)
+    --- FAIL: TestInt4_forwardParity/kimi-tiny (0.03s)
+    --- FAIL: TestInt4_forwardParity/llama4-tiny (0.01s)
+    --- FAIL: TestInt4_forwardParity/mixtral-tiny (0.01s)
+    --- FAIL: TestInt4_forwardParity/nemotron-tiny (0.00s)
+    --- FAIL: TestInt4_forwardParity/nemotron3nano-tiny (0.01s)
+    --- FAIL: TestInt4_forwardParity/phi3-tiny (0.01s)
+    --- FAIL: TestInt4_forwardParity/qwen25vl-tiny (0.01s)
+    --- FAIL: TestInt4_forwardParity/qwen35-tiny (0.01s)
+    --- FAIL: TestInt4_forwardParity/qwen3next-tiny (0.01s)
+=== RUN   TestInternLM2_textParity
+    internlm2_test.go:83: internlm2 text parity (groups=4): argmax got=113 want=113 | logit cosine=1.000000
+--- PASS: TestInternLM2_textParity (0.01s)
+=== RUN   TestInternLM3_textParity
+    internlm3_test.go:79: internlm3 text parity: argmax got=105 want=105 | logit cosine=1.000000
+--- PASS: TestInternLM3_textParity (0.01s)
+=== RUN   TestKimi_textParity
+    kimi_test.go:109: kimi text parity: argmax got=100 want=100 | logit cosine=1.000000
+--- PASS: TestKimi_textParity (0.02s)
+=== RUN   TestLaguna_textParity
+=== RUN   TestLaguna_textParity/xs21
+    laguna_test.go:104: laguna/xs21 text parity: argmax got=1 want=1 | logit cosine=1.000000 | gate=per-head
+=== RUN   TestLaguna_textParity/xs2
+    laguna_test.go:104: laguna/xs2 text parity: argmax got=1 want=1 | logit cosine=1.000000 | gate=per-head
+=== RUN   TestLaguna_textParity/m1
+    laguna_test.go:104: laguna/m1 text parity: argmax got=111 want=111 | logit cosine=1.000000 | gate=per-element
+--- PASS: TestLaguna_textParity (0.04s)
+    --- PASS: TestLaguna_textParity/xs21 (0.01s)
+    --- PASS: TestLaguna_textParity/xs2 (0.02s)
+    --- PASS: TestLaguna_textParity/m1 (0.01s)
+=== RUN   TestLFM2_textParity
+    lfm2_test.go:185: lfm2 text parity: argmax got=88 want=88 | logit cosine=1.000000
+--- PASS: TestLFM2_textParity (0.00s)
+=== RUN   TestLlama32_forwardParity
+    llama32_forward_test.go:113: llama3.2: argmax=12366 (want 12366) | maxSampleΔ=0.00001 | cosine=NaN
+--- PASS: TestLlama32_forwardParity (3.28s)
+=== RUN   TestLlama4_textParity
+    llama4_test.go:96: llama4 text parity: argmax got=18 want=18 | logit cosine=1.000000
+--- PASS: TestLlama4_textParity (0.00s)
+=== RUN   TestLlama_forwardParity
+    llama_forward_test.go:101: llama: argmax=3681 (want 3681) | maxSampleΔ=0.00001 | cosine=NaN
+--- PASS: TestLlama_forwardParity (2.72s)
+=== RUN   TestLlamaTiny_textParity
+    llama_tiny_test.go:88: llama-tiny parity: argmax=45 cosine=1.00000000 maxAbs=1.453e-07 over 256 vocab
+--- PASS: TestLlamaTiny_textParity (0.01s)
+=== RUN   TestLongPromptFast_forwardParity
+--- PASS: TestLongPromptFast_forwardParity (16.32s)
+=== RUN   TestLoRACompute_forwardParity
+--- PASS: TestLoRACompute_forwardParity (0.00s)
+=== RUN   TestMellum2_logitParity
+22:24:36 [TestMellum2_logitParity] start — 19 items
+22:24:36 [TestMellum2_logitParity] load 12B checkpoint elapsed=0s 0/19 io=23.9GB
+22:25:00 [TestMellum2_logitParity] prefill elapsed=25s 0/19 io=38.4GB (604MB/s)
+22:25:12 [TestMellum2_logitParity] final forward elapsed=36s 19/19 rate=100/min io=38.4GB
+    mellum2_parity_test.go:97: argmax: got 50195 (logit 17.0982) | want 50195 (golden logit 17.0982)
+    mellum2_parity_test.go:97: sample-256 cosine (int8int8 vs bf16) = 0.99969 (floor 0.98)
+22:25:12 [TestMellum2_logitParity] done elapsed=37s 19/19 io=38.4GB
+--- PASS: TestMellum2_logitParity (36.79s)
+=== RUN   TestMinistral3_forwardParity
+    ministral3_test.go:119: mistral3: argmax=371 (want 371) | maxSampleΔ=0.00000 | cosine=0.9999999999999654
+--- PASS: TestMinistral3_forwardParity (0.01s)
+=== RUN   TestMistral_forwardParity
+    mistral_test.go:104: mistral: 67-token prompt (window 32) | argmax=13 (want 13) | maxSampleΔ=0.00000 | cosine=NaN
+--- PASS: TestMistral_forwardParity (3.50s)
+=== RUN   TestMixtral_forwardParity
+    mixtral_test.go:109: mixtral: 8x top-2 | argmax=131 (want 131) | maxSampleΔ=0.00000 | cosine=0.9999999999999634
+--- PASS: TestMixtral_forwardParity (0.01s)
+=== RUN   TestNemotron3NanoMoE_textParity
+    nemotron_moe_test.go:191: nemotron3nano-moe text parity: argmax got=151 want=151 | logit cosine=1.000000
+--- PASS: TestNemotron3NanoMoE_textParity (0.01s)
+=== RUN   TestNemotron_textParity
+    nemotron_test.go:89: nemotron text parity: argmax got=177 want=177 | logit cosine=1.000000
+--- PASS: TestNemotron_textParity (0.01s)
+=== RUN   TestOlmo3_forwardParity
+    olmo3_test.go:110: olmo3: argmax=366 (want 366) | maxSampleΔ=0.00000 | cosine=0.9999999999994874
+--- PASS: TestOlmo3_forwardParity (0.01s)
+=== RUN   TestOlmoHybrid_forwardParity
+    olmo_hybrid_test.go:142: olmo_hybrid: argmax=57 (want 57) | maxSampleΔ=0.00000 | cosine=0.9999999999998593
+--- PASS: TestOlmoHybrid_forwardParity (0.00s)
+=== RUN   TestPhi3_textParity
+    phi3_test.go:81: phi3 text parity: argmax got=60 want=60 | logit cosine=1.000000
+--- PASS: TestPhi3_textParity (0.00s)
+=== RUN   TestQwen25VL_textParity
+    qwen25vl_test.go:351: qwen2.5-VL text parity: argmax got=147 want=147 | logit cosine=1.000000
+--- PASS: TestQwen25VL_textParity (0.00s)
+=== RUN   TestQwen2_forwardParity
+    qwen2_test.go:116: qwen2: argmax=12095 (want 12095) | maxSampleΔ=0.00002 | cosine=NaN
+--- PASS: TestQwen2_forwardParity (1.36s)
+=== RUN   TestQwen2Moe_forwardParity
+    qwen2moe_test.go:103: qwen2_moe: argmax=97936 (want 97936) | maxSampleΔ=0.00000 | cosine=0.9999999999999133
+--- PASS: TestQwen2Moe_forwardParity (0.06s)
+=== RUN   TestQwen35_forwardParity
+    qwen35_forward_test.go:71: qwen3_5_moe prefill: argmax=162 cosine=1.00000000
+    qwen35_forward_test.go:92: greedy continuation matches HF: [162 127 171 212 161 226]
+--- PASS: TestQwen35_forwardParity (0.00s)
+=== RUN   TestQwen3_5_textParity
+=== RUN   TestQwen3_5_textParity/dense
+    qwen3_5_test.go:108: qwen3_5 text parity (3 linear / 1 full): argmax got=159 want=159 | logit cosine=1.000000
+=== RUN   TestQwen3_5_textParity/moe
+    qwen3_5_test.go:108: qwen3_5_moe text parity (3 linear / 1 full): argmax got=190 want=190 | logit cosine=1.000000
+--- PASS: TestQwen3_5_textParity (0.03s)
+    --- PASS: TestQwen3_5_textParity/dense (0.01s)
+    --- PASS: TestQwen3_5_textParity/moe (0.02s)
+=== RUN   TestQwen3_forwardParity
+    qwen3_test.go:94: qwen3: argmax=12095 (want 12095) | maxSampleΔ=0.00002 | cosine=NaN
+--- PASS: TestQwen3_forwardParity (4.94s)
+=== RUN   TestQwen3Moe_forwardParity
+    qwen3moe_test.go:113: qwen3_moe: 8x top-2 | argmax=485 (want 485) | maxSampleΔ=0.00000 | cosine=0.99999999999992
+--- PASS: TestQwen3Moe_forwardParity (0.01s)
+=== RUN   TestQwen3Next_textParity
+    qwen3next_real_test.go:63: qwen3next text parity: argmax got=102 want=102 | logit cosine=1.000000
+--- PASS: TestQwen3Next_textParity (0.01s)
+=== RUN   TestQwen3VL_textParity
+    qwen3vl_test.go:65: qwen3-VL text parity: argmax got=217 want=217 | logit cosine=1.000000
+--- PASS: TestQwen3VL_textParity (0.01s)
+=== RUN   TestSmolLM3_forwardParity
+    smollm3_test.go:101: smollm3: argmax=5 (want 5) | maxSampleΔ=0.00000 | cosine=0.9999999999999784
+--- PASS: TestSmolLM3_forwardParity (0.00s)
+=== RUN   TestSpark25Tiny_textParity
+    spark25_test.go:96: spark2-5-tiny parity: argmax=154 cosine=1.00000000 maxAbs=2.086e-07 over 256 vocab
+--- PASS: TestSpark25Tiny_textParity (0.01s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	171.634s
+FAIL
+exit=1

@@ -1,0 +1,22 @@
+=== 22:18:50 qwen2.5-coder-0.5b-instruct-q4_k_m old
+/home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+=== 22:18:59 qwen2.5-coder-0.5b-instruct-q4_k_m new
+/home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+=== qwen2.5-coder-0.5b-instruct-q4_k_m: IDENTICAL (58343424 bytes, 14585856 logits)
+=== 22:19:09 qwen2.5-coder-1.5b-instruct-q4_k_m old
+/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+=== 22:19:29 qwen2.5-coder-1.5b-instruct-q4_k_m new
+/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/home/francis/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+=== qwen2.5-coder-1.5b-instruct-q4_k_m: IDENTICAL (58343424 bytes, 14585856 logits)
+=== 22:19:48 qwen2.5-7b-instruct-q4_k_m old
+/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+=== 22:20:56 qwen2.5-7b-instruct-q4_k_m new
+/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+=== qwen2.5-7b-instruct-q4_k_m: IDENTICAL (58392576 bytes, 14598144 logits)
+=== 22:22:03 DONE
