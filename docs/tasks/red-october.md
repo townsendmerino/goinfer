@@ -430,6 +430,7 @@ Status table, kept current as briefs move:
 | R17 | Metal decode attention at depth — a peer-shaped kernel | Mac | M–L (step 0 is S) | **SHIPPED 2026-09-25**: the default for GQA group sizes 6 and 7 (Qwen2.5-1.5B/-7B), pinned to the graded source; other group sizes keep `attention_fa`. End to end (same-session A/B against Ollama): 1.5B 0.61× → **0.87×** Ollama at 3900 keys, 7B 0.61× → **0.81×**; the new build is 1.18–1.41× the previous one at depth. Fidelity and speed confirmed: Confirmation run: in-sequence attention at 3900 keys (1.5B) 8.52 → 2.44 ms, **3.50×** (7 reps, 3.4–3.7; band ship ≥ 2.5×); full token 20.79 → 14.71 ms (Ollama 13.06). After idle, full token 21.87 vs 26.01 ms. Fidelity on set B under the 2026-09-25 amendment ([registration](../measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md)): kernel error vs float64 about 3× below the shipped kernel's on both models, end-to-end KL 0.967×, PASSES. Step 0 (more splits) = 1.20×, KILL band. Record: [`metal-decode-attn-r17-2026-09-25.md`](../measurements/metal-decode-attn-r17-2026-09-25.md) |
 | R18 | Metal decode GEMV — MLX-shaped, bit-identical int4 GEMV | Mac | M–L (step 0 is S–M) | **Band PARK at 1.171×, SHIPPED by owner decision 2026-09-26.** The candidate is `i2244`: rows per simdgroup (2 for qkv/o, 4 for gate/up) with integer math unchanged, plus a staged down projection at 4 rows. Bit-identical at every position at 128/2048/3900 on both models. In-sequence int4-GEMV speedup at depth 128: 1.171× on the 1.5B (the grade) and 1.317× on the 7B. Full token 12.98 → 11.36 ms (1.5B) and 45.62 → 35.94 ms (7B). Registered band: ship ≥ 1.35× / park 1.15–1.35×; the owner overrode it (future bands are to be far more permissive). End to end against Ollama (bench_peer, interleaved): 1.5B 0.99× / 0.97× / 0.96× at 128 / 2048 / 3900 (was 0.87× / 0.86× / 0.86×); 7B 1.11× / 1.05× / 1.02×, AHEAD at every depth (was 0.88× / 0.84× / 0.83×). The f32 form, the thesis's lever, did not pay; gate/up is capped at ~1.25–1.28× for an unmeasured reason ([record](../measurements/metal-decode-gemv-r18-2026-09-26.md)) |
 | R18b | Metal decode GEMV — MLX's masked, half-staged form | Mac | S | **SHIPPED 2026-09-26.** It is the rows kernels' inner loop with half activations pre-scaled by 16^-(k mod 4), nibbles masked per 16-bit half-word, and Σa taken from the staged halves; bit-identical. Confirmation: 1.079× (1.5B, the grade) and 1.102× (7B) over R18 at depth 128, every rep > 1.0 (band ship ≥ 1.03×). Wired, R18 + R18b is 1.38× / 1.46× the pre-R18 kernels; full token 12.93 → 10.46 ms and 45.78 → 33.12 ms. End to end against Ollama (bench_peer, interleaved): **ahead in every cell**, 1.5B 1.06× / 1.04× / 1.03×, 7B 1.19× / 1.11× / 1.06× at 128 / 2048 / 3900. A first cut that re-read Σa from device lost in sequence (0.94×) despite winning standalone ([record](../measurements/metal-decode-gemv-r18b-2026-09-26.md)) |
+| R19 | Metal prefill attention at depth — an MLX-steel-shaped kernel | Mac | M–L (S0 and the read done) | **REGISTERED 2026-09-27**: in-sequence attention at K=3900 (1.5B) ship ≥ 1.25× / park 1.05–1.25× / kill < 1.05×; parity with Ollama at K=3900 needs ~6.5× (reported, not the bar); fidelity (set A §3.2) and K=512 no-regression are preconditions |
 
 Every brief below has the same shape: goal, the standing and the band registered here, what to read
 first (prior art and the negatives not to re-propose), what to build, the gates, the measurement
@@ -2402,6 +2403,72 @@ Record: `docs/measurements/metal-decode-gemv-r18b-2026-09-26.md`.
 - **Confirmation:** `TestR18InSequence` with `h4244` as the only prototype arm, one process per model (the 1.5B
   `.gguf`, the 7B `.int4.metal.giw`). 7 paired reps, 20 step pairs per category, depths 128 (graded) / 2048 / 3900,
   16 identity positions per depth, 3 after-idle samples.
+
+### R19 · Metal prefill attention at depth — an MLX-steel-shaped kernel, pre-registered 2026-09-27
+
+**Goal.** Close the K=3900 TTFT gap on Metal. After R16, K=512 TTFT is level with Ollama (0.950), but K=3900 reads
+0.511: 8278 against 4225 ms (`metal-prefill-gemm-s2-2026-09-25.md`). Long agent turns hit this.
+
+**Standing: S0 and the prior-art read are done, before any prototype**
+([`metal-prefill-attn-2026-09-27.md`](../measurements/metal-prefill-attn-2026-09-27.md)).
+- **S0,** re-run on the current build (1.5B, `TestMetalPrefillDecomp` with leave-one-out, medians of 5):
+  - at K=3900, attention is **4429 ms in sequence, 55.1% of the 8060 ms prefill**. That is ~1.3 TFLOP at ~0.30 TFLOPS;
+  - the GEMMs total 3528 ms (43.8%), at 2.8–3.0 TFLOPS;
+  - at K=512, attention is 108.8 ms (18.3%).
+- **What parity needs:** with today's GEMMs, attention must fall to ~0.6–0.7 s, about **6.5×**.
+- **The read** (MLX 0.32.0 `steel_attention`, ggml 0.22.0 `kernel_flash_attn_ext`, against `attention_prefill_fused`).
+  The gap is structural, and it is not K/V reuse, since ggml reuses K/V as little as goinfer and is fast. In order:
+  1. O is accumulated through threadgroup memory on every head-dim tile: 16 stores, 32 barriers and 8-lane serial
+     rescales per 32 keys.
+  2. The online softmax runs serially on 8 of 32 lanes, through scratch.
+  3. About 68 barriers per 64 keys, against MLX's 16 and ggml's 3.
+  4. 22.9 KB of threadgroup memory per threadgroup, which limits occupancy.
+- **The template is MLX's `steel_attention`**, f16 at head dim 128 as `bq32_bk16_bd128_wm4_wn1`:
+  - 32 query rows per threadgroup on 4 simdgroups;
+  - K (transposed) and V staged in padded threadgroup memory, each element reused by 32 rows;
+  - O in registers as 8×8 fragments;
+  - the row max and sum in registers, with `simd_shuffle_xor` and `exp2` (log2e folded into the scale);
+  - causal blocks past the diagonal skipped, and the mask applied only on the diagonal.
+  - Its strides fit goinfer's packed-qkv rows and row-major K/V cache without transposes.
+  - goinfer's MC3 kernels already use the fragment lane map (`mc3_frag`), measured and checked on this GPU. That map is
+    the stated reason the current kernel avoided per-row fragment work.
+
+**Registered band — committed before any prototype is written or timed.**
+- **The metric** is the in-sequence attention category at K=3900 on the 1.5B: `TestMetalPrefillDecomp`'s
+  leave-one-out, current kernel ÷ candidate, median of ≥ 5 paired reps, both arms in one session.
+- **The bands** follow the owner's standing guidance (a clean, non-regressing double-digit win ships). 1.25× on
+  attention is ~12% TTFT at K=3900.
+
+| outcome | in-sequence attention speedup at K=3900, 1.5B |
+|---|---|
+| **ship** | **≥ 1.25×** |
+| **park** | 1.05–1.25× |
+| **kill** | < 1.05× |
+
+- **Reported, not the bar:** the 6.5× that parity needs; K=1024 and 2048; the 7B; and, after wiring, served TTFT
+  against Ollama through `scripts/bench_peer_prefill.py` (cell h's protocol).
+
+**Preconditions for "ship"** (a prototype that misses one is not graded on speed):
+1. **Fidelity.** The §3.2 pooled gate (`TestPrefillGateVsReference`) passes on set A with the prototype as the prefill
+   attention. The current kernel is already not bit-identical to the exact path, so the bar is §3.2's pooled
+   criteria, not identity. Set A can decide again since 2026-09-27 (`prefill-ref-identity-2026-09-26.md`).
+   - The gate also runs once on the current kernel, as its baseline. That closes R16's owed set-A run too, since R16's
+     kernel is bit-identical to what it replaced.
+2. **No burst dependence.** Graded on the sustained number, as in R16.
+3. **K=512 does not regress:** in-sequence attention at K=512, candidate ÷ current, ≤ 1.02×.
+4. **The do-nothing arm is the current kernel, re-measured in the same session.**
+
+**The protocol is R16's.**
+- A test-only prototype first, wired only into the benchmark.
+- Exploratory runs select a candidate. The grade comes from a fresh confirmation run of that candidate alone (R16's
+  amendment of 2026-09-25).
+- Production wiring only after a ship grade.
+- Sliding-window layers (`window`) keep the current kernel until the prototype covers them.
+- A family the prototype does not cover declines to the current kernel.
+
+**Record.** [`metal-prefill-attn-2026-09-27.md`](../measurements/metal-prefill-attn-2026-09-27.md).
+
+**Amendments.** A band or precondition changes only by a dated amendment below this line that gives the mechanism.
 
 ---
 
