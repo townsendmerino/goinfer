@@ -1,0 +1,65 @@
+// f16xbuild-mac (L1 build gates 2 and 3 on the Mac, docs/tasks/task-cpu-decode-peer-gap-2026-09.md): nobara's
+// f16xbuild.go.txt with the backend and the tokenizer source as arguments, so the same file dumps CPU, Metal and
+// WebGPU logits (the Metal / WebGPU copies add their module's registration import). It dumps a model's full logits
+// for two prompts — the first captured step is the prompt's own prefill (145 and 621 tokens), then 48 greedy decode
+// steps — as raw little-endian float32, so two builds' dumps compare with cmp. Public decoder API only, so the same
+// file builds in both trees.
+//
+//	f16xbuild <model: .gguf | .giw> <tokenizer .gguf> <backend: cpu | metal | webgpu> <out.bin>
+package main
+
+import (
+	"context"
+	"encoding/binary"
+	"fmt"
+	"math"
+	"os"
+	"strings"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+	//REGISTER
+)
+
+func main() {
+	path, tokPath, backend, out := os.Args[1], os.Args[2], os.Args[3], os.Args[4]
+	tk, err := tokenizer.LoadGGUF(tokPath)
+	if err != nil {
+		panic(err)
+	}
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4", Backend: backend})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%s on %s: decode path %s\n", path, backend, m.DecodePath())
+	f, err := os.Create(out)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	base := "Rivers shape the land they cross. Over thousands of years a river carves valleys, deposits silt on its floodplain, and builds deltas where it meets the sea. "
+	for _, reps := range []int{4, 18} {
+		ids, err := tk.Encode(strings.Repeat(base, reps)+"Explain how rivers influenced early civilizations.", true)
+		if err != nil {
+			panic(err)
+		}
+		steps := 0
+		sp := decoder.SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
+			buf := make([]byte, 4*len(logits))
+			for i, v := range logits {
+				binary.LittleEndian.PutUint32(buf[4*i:], math.Float32bits(v))
+			}
+			if _, err := f.Write(buf); err != nil {
+				panic(err)
+			}
+			steps++
+		}}
+		ch, g := m.Generate(context.Background(), ids, 48, sp)
+		for range ch {
+		}
+		if g.Err() != nil {
+			panic(g.Err())
+		}
+		fmt.Printf("%s: prompt %d tokens, %d steps captured\n", path, len(ids), steps)
+	}
+}

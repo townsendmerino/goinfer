@@ -1,0 +1,10 @@
+CPU 7B, qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw (kind 5, pre-v15 f32 scales on disk), 145- and 621-token prompts, 48 captured steps each.
+old = 3cd62e6d UNPATCHED with GOINFER_INT4_F16_SCALES=1 -- the diagnostic does not reach the .giw reader, so this ran f32 scales.
+new = 84ee8f49, the reader converts the f32 scales to binary16 at load.
+This is NOT the identity gate (it compares f32 against f16 scales). The gate is xbuild-mac-cpu7b-oldpatched.log.
+
+vocab 152064; rows 96 (rows 0 and 48 are the two prompts' prefill logits)
+prefill cosine: 145-token 0.985683, 621-token 0.989293
+argmax agreement: 11/96 rows (greedy trajectories diverge after the prefill, so later rows compare different contexts)
+first argmax divergence: prompt 1 step 1, prompt 2 step 4
+max |diff| over all rows 37.0225

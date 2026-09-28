@@ -1,0 +1,83 @@
+=== 06:58:16 metal 1.5b old (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf) 
+decoder: context capped at 26326 (model allows 32768) so that KV fits: weights 2.1 GB + KV 1.4 GB of budget 4.5 GB — pass -ctx to choose, or -stream-weights to lift
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf on metal: decode path metal-resident (int4)
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+=== 06:58:25 metal 1.5b old exit 0
+=== 06:58:25 metal 1.5b new (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf) 
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.9 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.7 GB; this machine currently has 7.7 GB of memory available (budget 5.4 GB = 70% of that) (86% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf on metal: decode path metal-resident (int4)
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+=== 06:58:31 metal 1.5b new exit 0
+=== metal 1.5b: IDENTICAL (58343424 bytes, 14585856 logits)
+=== 06:58:31 metal 7b old (qwen2.5-7b-instruct-q4_k_m.int4.metal.giw) 
+[metal] weights aliased from qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4020 MB bound in place, 1 MB copied (anonymous) — 3112 MB int4 nibbles (56 single tensors + 56 fused groups = 2034 MB) + 520 MB int8 codes (1 matrices) + 389 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.metal.giw on metal: decode path metal-resident (int4)
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: prompt 145 tokens, 48 steps captured
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: prompt 621 tokens, 48 steps captured
+=== 06:58:41 metal 7b old exit 0
+=== 06:58:41 metal 7b new (qwen2.5-7b-instruct-q4_k_m.int4.metal.giw) 
+[metal] weights aliased from qwen2.5-7b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 4020 MB bound in place, 1 MB copied (anonymous) — 3112 MB int4 nibbles (56 single tensors + 56 fused groups = 2034 MB) + 520 MB int8 codes (1 matrices) + 389 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.metal.giw on metal: decode path metal-resident (int4)
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: prompt 145 tokens, 48 steps captured
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.metal.giw: prompt 621 tokens, 48 steps captured
+=== 06:58:49 metal 7b new exit 0
+=== metal 7b: IDENTICAL (58392576 bytes, 14598144 logits)
+=== 06:58:49 webgpu 1.5b old (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf) 
+decoder: context capped at 28386 (model allows 32768) so that KV fits: weights 2.1 GB + KV 1.5 GB of budget 4.6 GB — pass -ctx to choose, or -stream-weights to lift
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf on webgpu: decode path webgpu:metal-resident (int4)
+goinfer: batched prefill declined for a 145-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): gpu: PrefillLast declines — model uses a feature outside plain dense W8A8 (MoE/MLA/SSM/sliding-window/…)
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+=== 06:59:16 webgpu 1.5b old exit 0
+=== 06:59:16 webgpu 1.5b new (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf) 
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.9 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.7 GB; this machine currently has 8.1 GB of memory available (budget 5.7 GB = 70% of that) (82% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf on webgpu: decode path webgpu:metal-resident (int4)
+goinfer: batched prefill declined for a 145-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): gpu: PrefillLast declines — model uses a feature outside plain dense W8A8 (MoE/MLA/SSM/sliding-window/…)
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+=== 06:59:39 webgpu 1.5b new exit 0
+=== webgpu 1.5b: IDENTICAL (58343424 bytes, 14585856 logits)
+=== 06:59:39 webgpu 7b old (qwen2.5-7b-instruct-q4_k_m.gguf) 
+	  Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+	  Or run a smaller model.
+	  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+goroutine 1 [running]:
+main.main()
+	/Users/francistownsend-merino/goinfer-bench/l1-mac/wt-old/gpu/cmd/f16xbuild/main.go:34 +0x438
+=== 06:59:39 webgpu 7b old exit 2
+=== 06:59:39 webgpu 7b new (qwen2.5-7b-instruct-q4_k_m.gguf) 
+	  Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+	  Or run a smaller model.
+	  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+goroutine 1 [running]:
+main.main()
+	/Users/francistownsend-merino/goinfer-bench/l1-mac/wt-new/gpu/cmd/f16xbuild/main.go:34 +0x438
+=== 06:59:39 webgpu 7b new exit 2
+=== webgpu 7b: MISSING a dump
+=== 06:59:39 cpu 1.5b old (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf) GOINFER_INT4_F16_SCALES=1
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~2.1 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.9 GB; this machine currently has 7.7 GB of memory available (budget 5.4 GB = 70% of that) (90% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf on cpu: decode path cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+=== 06:59:48 cpu 1.5b old exit 0
+=== 06:59:48 cpu 1.5b new (qwen2.5-coder-1.5b-instruct-q4_k_m.gguf) 
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.9 GB resident at quant int4 + 1.8 GB KV + 1.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 4.7 GB; this machine currently has 7.7 GB of memory available (budget 5.4 GB = 70% of that) (87% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf on cpu: decode path cpu (int4) [int4 layout: canonical+row4 (down); row4-only (gate/up, qkv)]
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 145 tokens, 48 steps captured
+/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: prompt 621 tokens, 48 steps captured
+=== 06:59:57 cpu 1.5b new exit 0
+=== cpu 1.5b: IDENTICAL (58343424 bytes, 14585856 logits)
+=== 06:59:58 cpu 7b old (qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw) GOINFER_INT4_F16_SCALES=1
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw on cpu: decode path cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw: prompt 145 tokens, 48 steps captured
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw: prompt 621 tokens, 48 steps captured
+=== 07:00:24 cpu 7b old exit 0
+=== 07:00:24 cpu 7b new (qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw) 
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw on cpu: decode path cpu (int4) [int4 layout: row4-only (down, gate/up, qkv)]
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw: prompt 145 tokens, 48 steps captured
+/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.int4.cpu-arm64.giw: prompt 621 tokens, 48 steps captured
+=== 07:00:51 cpu 7b new exit 0
+=== cpu 7b: DIFFER — /Users/francistownsend-merino/goinfer-bench/l1-mac/dump-cpu-7b-old.bin /Users/francistownsend-merino/goinfer-bench/l1-mac/dump-cpu-7b-new.bin differ: char 1, line 1; sizes 58392576 / 58392576
+=== 07:00:51 DONE

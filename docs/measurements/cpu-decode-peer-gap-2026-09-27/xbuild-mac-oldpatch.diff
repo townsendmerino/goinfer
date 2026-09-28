@@ -1,0 +1,51 @@
+diff --git a/decoder/serialize.go b/decoder/serialize.go
+index 70b0b2d3..dc253118 100644
+--- a/decoder/serialize.go
++++ b/decoder/serialize.go
+@@ -1783,7 +1783,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
+ 			r.fail(fmt.Sprintf("int4 weightMat %d×%d group=%d: q4=%d (want %d) q4s=%d (want %d)", rows, cols, group, len(q4), wantQ4, len(q4s), wantScales))
+ 			return linalg.WeightMat{}
+ 		}
+-		return linalg.WrapInt4(q4, q4s, rows, cols, group)
++		return linalg.WrapInt4(q4, l1RoundGIWScales(q4s), rows, cols, group)
+ 	case 4:
+ 		r.alignArray()
+ 		q4s := r.f32Alias()
+@@ -1808,7 +1808,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
+ 			r.fail(fmt.Sprintf("int4-row4 weightMat %d×%d group=%d: q4Row4=%d (want %d) q4Row4Scales=%d (want %d)", rows, cols, group, len(q4Row4), wantQ4, len(q4Row4Scales), wantScales))
+ 			return linalg.WeightMat{}
+ 		}
+-		return linalg.WrapInt4Row4(q4, q4s, rows, cols, group, q4Row4, q4Row4Scales)
++		return linalg.WrapInt4Row4(q4, l1RoundGIWScales(q4s), rows, cols, group, q4Row4, l1RoundGIWScales(q4Row4Scales))
+ 	case 5:
+ 		if group <= 0 {
+ 			r.fail(fmt.Sprintf("int4-row4-only weightMat group %d ≤ 0", group))
+@@ -1825,7 +1825,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
+ 			r.fail(fmt.Sprintf("int4-row4-only weightMat %d×%d group=%d: q4Row4=%d (want %d) q4Row4Scales=%d (want %d)", rows, cols, group, len(q4Row4), wantQ4, len(q4Row4Scales), wantScales))
+ 			return linalg.WeightMat{}
+ 		}
+-		wm, ok := linalg.WrapInt4Row4Only(q4Row4, q4Row4Scales, rows, cols, group)
++		wm, ok := linalg.WrapInt4Row4Only(q4Row4, l1RoundGIWScales(q4Row4Scales), rows, cols, group)
+ 		if !ok {
+ 			// Named and actionable, per docs/tasks/task-int4-layout-2026-09.md's ground rules — a
+ 			// kind-5 file is a promise to ONE target (the box/core that wrote it), unlike
+package decoder
+
+import "os"
+
+// L1 Mac cross-build MEASUREMENT PATCH — never committed. The old build's GOINFER_INT4_F16_SCALES
+// diagnostic reaches only the quantize-from-f32 paths (weightmat.go), not the .giw reader, so an old
+// build loading a .giw runs f32 scales whatever the env says. This routes the reader's aliased int4
+// scale arrays through the diagnostic's own f16RoundF32 (element-wise, so the row4 scale interleave
+// does not matter) when the env is set, making the old build carry the f16-rounded weights the new
+// build converts to at read.
+func l1RoundGIWScales(s []float32) []float32 {
+	if os.Getenv("GOINFER_INT4_F16_SCALES") == "" {
+		return s
+	}
+	out := make([]float32, len(s))
+	for i, v := range s {
+		out[i] = f16RoundF32(v)
+	}
+	return out
+}

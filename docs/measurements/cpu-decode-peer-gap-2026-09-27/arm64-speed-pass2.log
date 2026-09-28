@@ -1,0 +1,91 @@
+=== waiting for idle: loadavg 4.41
+=== waiting for idle: loadavg 3.64
+=== waiting for idle: loadavg 3.21
+=== waiting for idle: loadavg 3.16
+=== waiting for idle: loadavg 3.33
+=== waiting for idle: loadavg 2.65
+=== waiting for idle: loadavg 5.20
+=== waiting for idle: loadavg 4.51
+=== waiting for idle: loadavg 3.60
+=== waiting for idle: loadavg 3.65
+=== waiting for idle: loadavg 3.60
+=== waiting for idle: loadavg 2.94
+=== waiting for idle: loadavg 2.52
+=== waiting for idle: loadavg 2.54
+=== 2026-09-28 08:00:46 PDT / 15:00:46 UTC START L1 gate 6 arm64 served PASS 2 (reversed: goinfer=OLD 3cd62e6d, goinfer_old=NEW 5c85f7c0)
+vm.swapusage: total = 3072.00M  used = 1567.88M  free = 1504.12M  (encrypted)
+# preflight OK: loadavg [2.1728515625, 3.337890625, 3.77490234375] · gpu None · compute apps []
+# 9 cells planned, 0 already done
+#   tokens/chunks = 1.0000  (1536 tok / 1536 chunks)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 0.428 GiB (448784 KiB)
+{"phase": "A", "engine": "goinfer", "backend": "cpu", "model": "0.5B", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [107.0883054384926, 106.77590687072737, 107.26708937309311], "error": null, "machine": {"loadavg": [2.15869140625, 3.3154296875, 3.76416015625], "gpu": null}, "secs": 19.6, "counts": {"tokens": 1536, "chunks": 1536, "tokens_per_chunk": 1.0, "completion_rates": [107.77686333139671, 107.4727692930067, 106.59744407071129, 107.92279666275726, 106.94594837255491, 107.52817411686647, 106.43237290152037, 106.03007475912707, 107.09051847426706, 107.93570898489102, 103.40469528788813, 106.97352786636115, 107.0982935091043, 107.8824081086643, 106.8981246037736, 106.92397813086943, 107.46267887554221, 107.80465801411889, 106.99686610382703, 107.58228871478936, 107.36482973038792, 107.74267214031018, 106.09068598773526, 107.0920354180341], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "rss_peak_kb": 448784}, "mean": 107.0, "spread": 0.5}
+# cell gate: loadavg 2.55 > 2.50, waiting (0/1800s)
+#   tokens/chunks = 1.0000  (1536 tok / 1536 chunks)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 0.820 GiB (859824 KiB)
+{"phase": "A", "engine": "ollama", "backend": "cpu", "model": "0.5B", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [146.60023914782607, 146.773856700564, 148.61079060621347], "error": null, "machine": {"loadavg": [2.14794921875, 3.1962890625, 3.7021484375], "gpu": null}, "secs": 18.8, "counts": {"tokens": 1536, "chunks": 1536, "tokens_per_chunk": 1.0, "completion_rates": [143.36176716859313, 146.56401874507, 148.21528503781437, 149.18360443945696, 146.20360851810938, 146.17700732638286, 147.73295862070978, 145.363663326472, 148.9431388511023, 138.31000542063597, 149.61261020608134, 150.7855507057759, 148.96893670034004, 140.60146180192288, 149.78831986369872, 147.180830054955, 147.53254731034696, 149.0032452675946, 150.124746514199, 150.25876382698053, 148.80665353592553, 149.8664582668575, 144.4038356419579, 148.89007448584576], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "rss_peak_kb": 859824}, "mean": 147.3, "spread": 2.0}
+# cell gate: loadavg 3.02 > 2.50, waiting (0/1800s)
+# cell gate: loadavg 2.63 > 2.50, waiting (20/1800s)
+#   tokens/chunks = 1.0000  (1536 tok / 1536 chunks)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 0.466 GiB (488368 KiB)
+{"phase": "A", "engine": "goinfer_old", "backend": "cpu", "model": "0.5B", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {}, "note": "temperature=0 both sides (deterministic)", "runs": [57.950320012348044, 58.37739580810486, 59.62200693247203], "error": null, "machine": {"loadavg": [2.24072265625, 3.07177734375, 3.62158203125], "gpu": null}, "secs": 31.8, "counts": {"tokens": 1536, "chunks": 1536, "tokens_per_chunk": 1.0, "completion_rates": [58.009781092766, 58.48556730997652, 58.376126765940974, 56.566086189065345, 58.407408475932954, 58.48028312904405, 58.814875605385495, 56.46243153067301, 58.49503190775528, 58.00846359125317, 58.538008552779054, 58.504144198831355, 58.65576122831155, 58.74753977006197, 57.94377097493224, 58.12644624091426, 59.372841340444346, 60.224669103328864, 58.17504200602834, 60.546603665818154, 60.25363670805798, 60.19049098166538, 59.47047910420538, 58.74229255022781], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "rss_peak_kb": 488368}, "mean": 58.6, "spread": 1.7}
+# cell gate: loadavg 4.32 > 2.50, waiting (0/1800s)
+# cell gate: loadavg 3.65 > 2.50, waiting (20/1800s)
+# cell gate: loadavg 3.05 > 2.50, waiting (40/1800s)
+# cell gate: loadavg 3.16 > 2.50, waiting (60/1800s)
+# cell gate: loadavg 2.67 > 2.50, waiting (80/1800s)
+#   tokens/chunks = 1.0000  (1536 tok / 1536 chunks)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 1.094 GiB (1147296 KiB)
+{"phase": "A", "engine": "goinfer", "backend": "cpu", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [50.302767979931666, 50.54249358737341, 50.93926735544338], "error": null, "machine": {"loadavg": [2.39892578125, 3.0908203125, 3.56640625], "gpu": null}, "secs": 37.6, "counts": {"tokens": 1536, "chunks": 1536, "tokens_per_chunk": 1.0, "completion_rates": [49.85753999306493, 50.54338653417645, 50.96630360135377, 48.218095791859945, 50.98006133522158, 50.225431465874344, 50.933628241396214, 50.69769687650607, 50.690483476265285, 48.60561361418699, 51.18932576739027, 50.58522622276213, 51.237662324399125, 51.03787131491657, 51.15999885009424, 49.83376712897262, 50.87186368009, 51.09429138685013, 49.99649000764916, 51.156922947524464, 51.04609384138771, 51.41965865912654, 51.218635981984875, 50.710182338934146], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "rss_peak_kb": 1147296}, "mean": 50.6, "spread": 0.6}
+# cell gate: loadavg 2.82 > 2.50, waiting (0/1800s)
+#   tokens/chunks = 1.0000  (1536 tok / 1536 chunks)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 1.502 GiB (1574944 KiB)
+{"phase": "A", "engine": "ollama", "backend": "cpu", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [70.86373662999627, 71.88764419954438, 72.22801427716705], "error": null, "machine": {"loadavg": [2.498046875, 3.03369140625, 3.51708984375], "gpu": null}, "secs": 31.9, "counts": {"tokens": 1536, "chunks": 1536, "tokens_per_chunk": 1.0, "completion_rates": [71.72210757358907, 70.43087386134778, 73.31407451520774, 67.88354201195708, 74.28819676282859, 71.39443582022481, 71.82040458372352, 66.05625791109152, 71.18017722523308, 73.96860388973244, 74.15484077262231, 66.2188746630443, 72.19439541105108, 71.8602488954994, 75.11743430389022, 70.4065784352823, 70.60093159939942, 72.45938913222662, 72.1558911133776, 72.49331701955731, 72.97726634371463, 73.11273751060911, 70.77260757031246, 73.25197392813926], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "rss_peak_kb": 1574944}, "mean": 71.7, "spread": 1.4}
+# cell gate: loadavg 4.00 > 2.50, waiting (0/1800s)
+# cell gate: loadavg 3.37 > 2.50, waiting (20/1800s)
+# cell gate: loadavg 2.69 > 2.50, waiting (40/1800s)
+#   tokens/chunks = 1.0000  (1536 tok / 1536 chunks)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 1.270 GiB (1331184 KiB)
+{"phase": "A", "engine": "goinfer_old", "backend": "cpu", "model": "1.5B", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {}, "note": "temperature=0 both sides (deterministic)", "runs": [28.496686522068295, 28.656594123794008, 28.667043857770047], "error": null, "machine": {"loadavg": [2.32373046875, 2.98095703125, 3.455078125], "gpu": null}, "secs": 61.2, "counts": {"tokens": 1536, "chunks": 1536, "tokens_per_chunk": 1.0, "completion_rates": [28.173614690940518, 28.63550999815856, 28.66680203355108, 28.299981375147674, 28.292900681819848, 28.63226293631853, 28.597871330892577, 28.67454912971758, 28.628631185987096, 28.649330714163064, 28.649790517049567, 28.598006015098168, 28.654857951089188, 28.67957854635064, 28.73324036847578, 28.65931769213856, 28.723899183993005, 28.63931978724473, 28.702410701568123, 28.633471551745227, 28.70702205669035, 28.689132078728164, 28.582388938741992, 28.65870656344877], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "rss_peak_kb": 1331184}, "mean": 28.6, "spread": 0.2}
+# cell gate: loadavg 3.39 > 2.50, waiting (0/1800s)
+# cell gate: loadavg 3.09 > 2.50, waiting (20/1800s)
+# cell gate: loadavg 2.91 > 2.50, waiting (40/1800s)
+# cell gate: loadavg 3.48 > 2.50, waiting (60/1800s)
+# cell gate: loadavg 2.92 > 2.50, waiting (80/1800s)
+#   tokens/chunks = 1.0000  (1536 tok / 1536 chunks)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 4.472 GiB (4689712 KiB)
+{"phase": "A", "engine": "goinfer", "backend": "cpu", "model": "7B", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {"temperature": 0}, "note": "temperature=0 both sides (deterministic)", "runs": [17.724596296117436, 17.5568687383416, 17.72740296999635], "error": null, "machine": {"loadavg": [2.4375, 2.95166015625, 3.36572265625], "gpu": null}, "secs": 101.0, "counts": {"tokens": 1536, "chunks": 1536, "tokens_per_chunk": 1.0, "completion_rates": [17.757467033808915, 17.79946529438321, 17.56498597385681, 17.771020402272015, 17.744826025119824, 17.62644443994458, 17.777122917270752, 17.75543828228337, 17.758473551416213, 17.58289480164742, 16.933868630267327, 17.30150824954619, 17.60342132278557, 17.544936153727853, 17.983818848299336, 17.7460283490429, 17.77773429843909, 17.519929932469793, 17.788145725572242, 17.683633689687575, 17.788451475965314, 17.750526078194973, 17.755696205187103, 17.75510635445472], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "rss_peak_kb": 4689712}, "mean": 17.7, "spread": 0.2}
+# cell gate: loadavg 5.63 > 2.50, waiting (0/1800s)
+# cell gate: loadavg 4.42 > 2.50, waiting (20/1800s)
+# cell gate: loadavg 3.87 > 2.50, waiting (40/1800s)
+# cell gate: loadavg 3.83 > 2.50, waiting (60/1800s)
+# cell gate: loadavg 6.68 > 2.50, waiting (80/1800s)
+# cell gate: loadavg 5.68 > 2.50, waiting (100/1800s)
+# cell gate: loadavg 5.49 > 2.50, waiting (120/1800s)
+# cell gate: loadavg 4.37 > 2.50, waiting (140/1800s)
+# cell gate: loadavg 3.62 > 2.50, waiting (160/1800s)
+# cell gate: loadavg 2.94 > 2.50, waiting (180/1800s)
+# cell gate: loadavg 2.54 > 2.50, waiting (200/1800s)
+# cell gate: loadavg 2.52 > 2.50, waiting (220/1800s)
+# cell gate: loadavg 2.51 > 2.50, waiting (240/1800s)
+#   tokens/chunks = 1.0000  (1536 tok / 1536 chunks)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 4.869 GiB (5105440 KiB)
+{"phase": "A", "engine": "ollama", "backend": "cpu", "model": "7B", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {"temperature": 0, "seed": 1}, "note": "temperature=0 both sides (deterministic)", "runs": [19.466069246169273, 18.5231651456512, 16.48850122072651], "error": null, "machine": {"loadavg": [2.31884765625, 3.4443359375, 3.583984375], "gpu": null}, "secs": 106.5, "counts": {"tokens": 1536, "chunks": 1536, "tokens_per_chunk": 1.0, "completion_rates": [19.493047958850845, 19.26363482048235, 19.749270731997218, 19.489326540915705, 19.516773970176207, 19.46567895269484, 19.307129440669762, 19.443691553567266, 19.482081745834844, 19.503026008614224, 19.311802212939025, 19.073267520468644, 16.74802047308126, 18.19954983255509, 17.446921782505324, 18.42065158921117, 18.163775629019778, 18.03518084098728, 17.69797479132358, 17.437665793900955, 16.487439187020133, 15.525585103984431, 14.47419250750511, 14.086195912070789], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "rss_peak_kb": 5105440}, "mean": 18.2, "spread": 3.0}
+# cell gate: loadavg 6.51 > 2.50, waiting (0/1800s)
+# cell gate: loadavg 5.07 > 2.50, waiting (20/1800s)
+# cell gate: loadavg 3.96 > 2.50, waiting (40/1800s)
+# cell gate: loadavg 3.40 > 2.50, waiting (60/1800s)
+# cell gate: loadavg 2.99 > 2.50, waiting (80/1800s)
+#   tokens/chunks = 1.0000  (1536 tok / 1536 chunks)
+#   token gate = ok  (min 64 / threshold 32, warm-up 64)
+#   rss_peak = 5.047 GiB (5292112 KiB)
+{"phase": "A", "engine": "goinfer_old", "backend": "cpu", "model": "7B", "depth": 128, "prompt_tokens": 129, "prompt_format": "essay-v2", "config": "greedy", "sent": {}, "note": "temperature=0 both sides (deterministic)", "runs": [8.692236683209835, 8.11091430639001, 6.7508264036063546], "error": null, "machine": {"loadavg": [2.4267578125, 3.74560546875, 3.74658203125], "gpu": null}, "secs": 223.7, "counts": {"tokens": 1536, "chunks": 1536, "tokens_per_chunk": 1.0, "completion_rates": [8.669031944765614, 8.693191502750743, 8.702726517596528, 8.725757542916876, 8.670746466629977, 8.720710222902063, 8.708444943233971, 8.647284324882907, 8.457646424889507, 8.27356159390016, 8.24241779265105, 8.205407529629566, 8.180895086745755, 8.073902393000674, 7.832468756694077, 7.621014873609286, 7.576691413939607, 7.218018201069639, 6.997842073101965, 6.858355588324317, 6.452021977286341, 6.352365726899907, 6.28357682511583, 6.26773942311323], "ngen": 64, "completion_tokens": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64], "warmup_tokens": 64, "token_gate": {"verdict": "ok", "min": 64, "threshold": 32, "rule": "void if any completion < 32 of 64 tokens or unreported"}, "rss_peak_kb": 5292112}, "mean": 7.9, "spread": 1.9}
+vm.swapusage: total = 2048.00M  used = 1208.75M  free = 839.25M  (encrypted)
+=== 2026-09-28 08:26:26 PDT / 15:26:26 UTC END PASS 2 rc=0

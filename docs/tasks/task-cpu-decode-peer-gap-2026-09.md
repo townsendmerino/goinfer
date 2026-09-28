@@ -16,6 +16,12 @@
 > the drops are symmetric about zero (13 of 24 cells improve, mean +0.0044 in f16's favour). The gate had no noise arm;
 > whether to re-gate with one is the owner's call. **Owner decision 2026-09-27: override, build it, for consistency.**
 > CPU int4 moves to the f16 group scales CUDA, Metal and WebGPU already store (L1 build, below).
+>
+> **L1 MERGED 2026-09-28** (PR #5, `5c85f7c0`). Mac check, same day: Metal, WebGPU and arm64 CPU logits are
+> byte-identical old vs new. But **arm64 CPU int4 decode regresses to 0.544× / 0.554× / 0.435× of the old build**
+> (0.5B / 1.5B / 7B, two order-reversed passes). The design's NEON `FCVTL` widen was never built, so arm64 widens every
+> scale in scalar Go on every token. amd64, Metal and WebGPU are unaffected. The NEON widen is owed (an aikit release)
+> before any arm64 CPU speed claim ("L1 build: the Mac half", below).
 
 ## L1 — f16 group scales for CPU int4: the quality gate (pre-registered 2026-09-27)
 
@@ -296,7 +302,8 @@ backends. The 0.5B's real bottleneck (per-token overhead, lever 2) is next, and 
    1.5B / 7B, a 145- and a 621-token prompt with 48 decode steps each, about 14.6M logits per model
    (`f16xbuild.go.txt`, `xbuild.log`).
 3. **GPU unchanged: PASS for CUDA.** CUDA logits are byte-identical old vs new on the same three models
-   (`xbuild-cuda.log`). **Metal and WebGPU are owed on the Mac.**
+   (`xbuild-cuda.log`). **Metal and WebGPU are owed on the Mac.** *(2026-09-28: byte-identical, except WebGPU 7B,
+   which this Mac cannot load; see "L1 build: the Mac half".)*
 4. **Goldens.** The forward goldens pass (69) except `TestInt4_forwardParity`, goinfer's own int4 snapshot.
    - Its 22 committed entries are re-baselined.
    - The replacement was regenerated twice, by the old build with f16-rounded scales and by the new build, and the
@@ -315,13 +322,15 @@ backends. The 0.5B's real bottleneck (per-token overhead, lever 2) is next, and 
 
    The 0.5B's in-process 0.968× does not show served (1.016×). Against this evening's Phase 0 baseline (0.818× /
    0.810× / 0.856×), R-06 plus f16 scales move Ollama's ratio to 0.848× / 0.870× / 0.944×.
-6. **arm64 speed:** owed on the Mac.
+6. **arm64 speed:** owed on the Mac. *(2026-09-28: a regression, 0.435–0.554× of the old build; see "L1 build:
+   the Mac half".)*
 
 **Before it ships:**
 - an aikit release (owner: it is a public tag);
 - the goinfer bump, merge and push, with CI green;
 - the two manifest rows;
-- the Mac's Metal / WebGPU identity check and arm64 speed.
+- the Mac's Metal / WebGPU identity check and arm64 speed. *(Ran after the merge: identity holds; arm64 speed
+  regressed.)*
 
 ### L1 build: the `.giw` deviation resolved (2026-09-28, on the PR)
 
@@ -337,3 +346,88 @@ not copy them to the heap, and that aliasing was measured to matter for the Mac'
   - the legacy-size check compares against an explicit v12 write;
   - the non-Metal check now asserts identical bytes across non-Metal targets at v15, and exactly v12 from the pre-v15
     emitter.
+
+### L1 build: the Mac half (2026-09-28, after the merge) — identity holds; arm64 CPU decode regresses to ~0.4–0.5× of the old build
+
+PR #5 merged as `5c85f7c0` at 14:01 UTC, while this ran. Measured on the MacBook (M1 Pro, 16 GB, darwin/arm64).
+- **Builds.** Old is `3cd62e6d`, the merge's first parent (aikit v1.49.0, f32 scales). New is the PR head `84ee8f49`
+  for the logit dumps, and the merge `5c85f7c0` for served speed. The merge adds nothing to what the dumps exercise:
+  over `84ee8f49` it changes only docs, `internal/decide` and `internal/serveapp`.
+- **New ≠ old in one more respect.** New also carries `310a2e44`, the fit-guard re-pricing. The load banners show it
+  (the 1.5B prices at 1.9 GB resident, against 2.1 GB in the old build), and the old Metal/WebGPU 1.5B loads capped
+  their context below the model maximum. No dump or speed cell here is long enough for the cap to matter.
+
+**Raw data:** [`cpu-decode-peer-gap-2026-09-27/`](../measurements/cpu-decode-peer-gap-2026-09-27/) (`*-mac*`,
+`arm64-speed*`).
+
+**Identity (gates 2 and 3, hard): PASS wherever it can run here.** The dumper is `f16xbuild-mac.go.txt`: nobara's
+`f16xbuild.go.txt`, with the backend and tokenizer as arguments and the backend module's registration import. It
+dumps full logits for the 145- and 621-token prompts, 48 steps each, and `cmp` decides.
+
+| backend | model (source) | old vs new |
+|---|---|---|
+| Metal | 1.5B (`.gguf`) | **byte-identical**, 58,343,424 B |
+| Metal | 7B (`.int4.metal.giw`, aliased) | **byte-identical**, 58,392,576 B |
+| WebGPU | 1.5B (`.gguf`) | **byte-identical**, 58,343,424 B |
+| WebGPU | 7B | **not run.** The fit guard refuses it: ~8.0 GB resident + 3.5 GB KV against a 4.0 GB budget. Not bypassed. A sidecar would remove only the 4.4 GB checkpoint-read term. |
+| CPU arm64 | 1.5B (`.gguf`; old with `GOINFER_INT4_F16_SCALES=1`) | **byte-identical**, 58,343,424 B |
+| CPU arm64 | 7B (`.int4.cpu-arm64.giw`, kind 5) | **byte-identical**, 58,392,576 B, against a measurement-patched old build (below) |
+
+- **The CPU 7B's first comparison differed from byte 1, and it was the comparison that was wrong.** The old build's
+  `GOINFER_INT4_F16_SCALES` rounds scales only on the quantize-from-f32 paths (`decoder/weightmat.go`). It never
+  reaches the `.giw` reader, so an old build loading a sidecar ran f32 scales whatever the env said. Two better
+  comparisons were out of reach here: the 7B `.gguf` path does not fit this machine's CPU fit guard, and a second
+  4.5 GB sidecar did not fit on disk.
+- **The patch.** The old tree was given a measurement-only patch (`xbuild-mac-oldpatch.diff`, never committed). With
+  the env set, it routes the reader's aliased int4 scale arrays through the diagnostic's own `f16RoundF32`. That is
+  element-wise, so the row4 interleave does not matter. With the patch, old and new are byte-identical
+  (`xbuild-mac-cpu7b-oldpatched.log`).
+- **What that also shows.** The new reader's pre-v15 conversion rounds exactly as the diagnostic did.
+- **The unpatched pair is kept as a contrast** (`xbuild-mac-cpu7b-f32-vs-f16.txt`). On qwen2.5-7b, f32 against f16
+  scales gives prefill cosine 0.9857 / 0.9893, and argmax first diverges at decode step 1 / 4. That is inside the L1
+  sweep's measured sensitivity for this model (f16-vs-int4 p10 0.719 filler / 0.962 prose), which is why a
+  mis-aimed comparison produced a large, non-bug difference.
+
+**gemma4: nothing owed.** The row's "q4_0 GGUF" names the source file. Both gate tests load it at int8int8, which the
+f16 change does not reach, and nobara re-validated it at `310a2e44`, whose decoder is the merge's (`84ee8f49`
+restored the row). A Mac re-run would exercise nothing this change touches. The 12B at int8int8 does not fit in
+16 GB anyway. qwen3_next stays experimental, as recorded at the merge.
+
+**arm64 CPU speed (gate 6, reported): REGRESSION.**
+- **Setup.** `bench_peer.py`, CPU, depth 128, 3 runs per cell, Ollama 0.32.5 forced to CPU.
+- **Two passes, because of r13's Finding 2** (the same goinfer cell on this Mac once halved within ~18 minutes).
+  - Pass 1 ran new → Ollama → old per model.
+  - Pass 2 swapped the binaries behind the labels, so it ran old → Ollama → new.
+  - The rule was written into `run-arm64-speed-pass2.sh` before any old cell existed. It reports the geometric
+    mean of the two passes' new ÷ old, and calls a model "unresolved by drift" if the passes disagree on direction.
+- **Disclosed:** `BENCH_MAX_LOADAVG=2.5`. This box's ambient load measured 2.2–2.6 before launch.
+- Every token gate passed. Swap did not grow.
+
+| model | new ÷ old, pass 1 (new first) | pass 2 (old first) | **combined** | new / old tok/s (pass 1; pass 2) | new ÷ Ollama | old ÷ Ollama |
+|---|---:|---:|---:|---|---:|---:|
+| 0.5B | 0.540× | 0.548× | **0.544×** | 57.3 / 106.2; 58.6 / 107.0 | 0.417× | 0.768× |
+| 1.5B | 0.543× | 0.565× | **0.554×** | 27.5 / 50.6; 28.6 / 50.6 | 0.418× | 0.753× |
+| 7B | 0.424× | 0.446× | **0.435×** | 7.2 / 17.0; 7.9 / 17.7 | 0.435× | 1.001× |
+
+- **By the rule, every model is slower in both passes, so the NEON-widen follow-up is flagged.** Reversing the order
+  moved each ratio by at most 0.022, so the effect is not drift. The combined figures are geometric means
+  (`arm64-speed-combine.py`, output `arm64-speed-combined.md`).
+- **The new 7B cells sagged inside the cell in both passes** (runs 8.1 → 6.0 and 8.7 → 6.8), and the old 7B's did
+  not (16.4–17.7). Ollama's 7B showed a milder sag.
+
+**Why.** The L1 design above says the hot M=1 kernels widen scales "in-asm (… a NEON `FCVTL` twin on arm64)". That
+twin was not built, and the build result did not record the omission. On arm64, `widenF16` is the portable
+`f16scale_other.go` (`//go:build !amd64`): a scalar Go loop calling the branchy `f16ToF32`, once per scale, per
+quad, per GEMV, per token (`w4a8Row4SpanF16`, and `dotW4A8F16Row` for canonical). amd64 widens with F16C
+(`cvtF16ToF32x8F16C`), which is why nobara's gate 5 saw a gain. This Mac's CPU decode is compute-bound, not
+bandwidth-bound (the old 0.5B's 9.4 ms/token against under 2 ms to stream its ~0.34 GB of weights at the M1 Pro's 200 GB/s). So a scalar conversion per
+32-weight group costs about as much as the NEON dot it feeds, and the bytes saved buy nothing.
+- **Scope.** Only CPU int4 on arm64: `-backend cpu` on a Mac, and any arm64 Linux host. Metal and WebGPU upload the
+  f16 scales directly (identity above), and amd64 is unaffected.
+- **RSS, observed, not explained.** The new build's peak RSS is higher (0.5B +38–43 MB, 1.5B +150–179 MB, 7B +478–589
+  MB, across the two passes).
+
+**Follow-up (owner's call):** the task's named fix is a NEON widen. `FCVTL Vd.4S, Vn.4H` is exact for every finite binary16
+value, subnormals included (a scale is never NaN), so the result stays bit-identical to today's scalar widen, and fusing it into the row4
+kernel is the design's original intent. Until an aikit release carries it, goinfer on `main` decodes CPU int4 on
+arm64 at 0.44–0.55× of the build before the merge. That applies to any release tagged from it.
