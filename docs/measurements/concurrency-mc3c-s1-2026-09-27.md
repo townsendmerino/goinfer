@@ -90,6 +90,33 @@ The full decoder suite at `000efe2e`, run after timing, passes: 707 pass, 105 sk
 ([`decoder-suite.log`](concurrency-mc3c-s1-2026-09-27/decoder-suite.log)). The sampler throughput gate that sat near
 its bar in step 2's run reads 4.09× here, under its 5.0× bar.
 
+## Exploratory probes after S1 (not gates)
+
+**S0b** ([`s0b-7b.log`](concurrency-mc3c-s1-2026-09-27/s0b-7b.log)) times the shapes the step now issues at M rows
+against one row: q‖k‖v fused 1.83× at M = 4, o 1.95×, down 1.36×, gate‖up 1.10×. Its width sweep (E2) is **discarded**.
+Its "default" and "w16" arms are the same configuration (the default width is GOMAXPROCS = 16 here), and they read
+1.41× apart. The arms' position after a long serial run, which leaves the workers parked, mattered more than the
+width.
+
+**S0c** ([`s0c-7b.log`](concurrency-mc3c-s1-2026-09-27/s0c-7b.log)) re-runs the width sweep without a serial arm, with
+an untimed warm block before each timed one and an A/A control:
+
+| shape | M = 4: A' (control) | M = 4: 8 workers | M = 1: A' (control) | M = 1: 8 workers | M = 1: 12 workers |
+|---|---:|---:|---:|---:|---:|
+| q‖k‖v | 1.008× | 1.020× | 1.071× | **1.429×** | 1.254× |
+| o | 1.013× | 1.017× | 1.026× | **1.527×** | 1.229× |
+| down | 1.003× | 1.035× | 0.999× | 1.034× | 1.011× |
+
+(× = speed-up over the default width.)
+
+- **Width is not a lever for the batched step:** at M = 4 it is ≤ 1.035×, at the noise.
+- **For single-token decode it may be.** At M = 1, q‖k‖v and o run 1.43–1.53× faster on 8 workers, one per physical
+  core on this 8-core, 16-thread CPU, than on 16. That is well outside the A/A spread.
+  - This is a lead for every CPU request on amd64, not only batched ones. It is numerically inert (parallel matmuls
+    partition output columns).
+  - It is unmeasured end to end. Production decode's own Workspace settings have not been checked, and nothing
+    changes on this probe alone.
+
 ## What remains
 
 S1 takes ~5.8% of the ~17–19% ceiling. The rest is in the kernels themselves: the small shapes still cost more per row

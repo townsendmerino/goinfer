@@ -295,3 +295,86 @@ func TestCPUBatchS0b_fusedShapesAndWidth(t *testing.T) {
 		}
 	}
 }
+
+// TestCPUBatchS0c_widthAA re-runs S0b's width sweep with an A/A control, because S0b's E2 was confounded: its
+// "default" and "w16" arms are the SAME configuration (the default width is GOMAXPROCS = 16 on nobara) and read 1.41x
+// apart, so position in the rotation (after a long serial arm the workers are parked) mattered more than width. Here
+// there is no serial arm, the default is measured twice (A and A'), every timed block is preceded by an untimed warm
+// block, and blocks are longer. A width result counts only if A/A' agree within a few percent.
+func TestCPUBatchS0c_widthAA(t *testing.T) {
+	path := os.Getenv("GOINFER_CPUBATCH_S0_MODEL")
+	if path == "" {
+		t.Skip("exploratory: set GOINFER_CPUBATCH_S0_MODEL=<checkpoint>")
+	}
+	m, err := Load(path, Options{Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	lw := &m.w.Layers[0]
+	shapes := []struct {
+		name string
+		ws   []*linalg.WeightMat
+	}{
+		{"qkv", []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj}},
+		{"o", []*linalg.WeightMat{&lw.OProj}},
+		{"down", []*linalg.WeightMat{&lw.DownProj}},
+	}
+	type arm struct {
+		name  string
+		width int
+	}
+	arms := []arm{{"A", 0}, {"A'", 0}, {"w8", 8}, {"w12", 12}}
+	rng := rand.New(rand.NewSource(1))
+	start := time.Now()
+	med := func(v []float64) float64 { s := append([]float64(nil), v...); sort.Float64s(s); return s[len(s)/2] }
+	const reps = 9
+	for _, M := range []int{4, 1} {
+		for si, sh := range shapes {
+			K := sh.ws[0].Cols()
+			totalN := 0
+			dd := make([][]float32, len(sh.ws))
+			for i, w := range sh.ws {
+				totalN += w.Rows()
+				dd[i] = make([]float32, M*w.Rows())
+			}
+			a := make([]float32, M*K)
+			for i := range a {
+				a[i] = float32(rng.NormFloat64())
+			}
+			ops := make([]linalg.W4A8Op, len(sh.ws))
+			group, ag, ok := w4a8FusedOps(ops, sh.ws, dd)
+			if !ok {
+				t.Fatalf("%s: not fusable", sh.name)
+			}
+			iters := max(20, int(8e9/float64(totalN*K)))
+			block := func(width int) float64 {
+				var ws linalg.Workspace
+				ws.SetThreshold(int4ParThreshold)
+				ws.SetWorkers(width)
+				for range iters / 4 { // untimed warm block: wake the workers, settle the caches
+					matmulW4A8Batch(m.be, &ws, a, M, K, group, ops, ag)
+				}
+				t0 := time.Now()
+				for range iters {
+					matmulW4A8Batch(m.be, &ws, a, M, K, group, ops, ag)
+				}
+				return float64(time.Since(t0).Nanoseconds()) / float64(iters)
+			}
+			times := map[string][]float64{}
+			for r := range reps {
+				for i := range arms {
+					ar := arms[(i+r)%len(arms)]
+					times[ar.name] = append(times[ar.name], block(ar.width))
+				}
+			}
+			base := med(times["A"])
+			line := fmt.Sprintf("M=%d %-5s A %6.0f us:", M, sh.name, base/1e3)
+			for _, ar := range arms[1:] {
+				line += fmt.Sprintf("  %s %.3fx", ar.name, base/med(times[ar.name]))
+			}
+			fmt.Fprintf(os.Stderr, "[s0c %6.1fs %d/%d] %s   (x = speed-up over A; A' is the control)\n", time.Since(start).Seconds(), si+1, len(shapes), line)
+			t.Log(line)
+		}
+	}
+}
