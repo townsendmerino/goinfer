@@ -15,13 +15,22 @@ any surface may still change.
 
 ## [Unreleased]
 
-- **CPU int4 group scales are stored as binary16 (aikit v1.50.0, `.giw` v15), and an older int4 sidecar is rebuilt
+- **CPU int4 group scales are stored as binary16 (aikit v1.50.1, `.giw` v15), and an older int4 sidecar is rebuilt
   once.** A v15 sidecar maps the f16 scales straight from the file. An older one still loaded, by converting its f32
   scales to a heap f16 copy on every load, and because it loaded it counted as fresh and was never replaced. The first
   load after upgrading now prints `… is format v12 … rebuilding once` and re-transcodes (21 s for a 1.5B, minutes for a
   7B). int8 and f32 sidecars are not rebuilt; a `.giw` passed directly to `--model` is not a cache and is left alone.
   - Peak RSS, Qwen2.5-Coder-1.5B on CPU (nobara-pc): 1,123–1,127 MB before the change; 1,179–1,184 MB after it on a
     kept v12 sidecar; **1,045–1,053 MB** after the rebuild. The Mac's +478–589 MB on the 7B was the middle case.
+  - **Served CPU int4 decode**, against the f32-scale build just before the change (qwen2.5 0.5B / 1.5B / 7B):
+    - amd64 (nobara-pc, Ryzen 7 3700X): **1.016× / 1.047× / 1.089×**;
+    - arm64 (M1 Pro): **1.041× / 1.053× / 1.080×**.
+
+    Logits are bit-identical to that build run with f16-rounded scales.
+  - **arm64 needs aikit v1.50.1.** v1.50.0 widened the scales in scalar Go there, and CPU decode fell to 0.44–0.55×.
+    v1.50.1 widens them with NEON `FCVTL`, in-kernel for the M=1 decode matmul. That regression was never in a
+    goinfer release: `main` ran it from `5c85f7c0` to `c731ca1d`
+    (`docs/tasks/task-cpu-decode-peer-gap-2026-09.md`, "L1 arm64 fix").
 
 - **Fixes found while rewriting the architecture doc:**
   - **`goinfer-serve` started without a model can serve one loaded later.** The `/v1` generation, job and batch routes

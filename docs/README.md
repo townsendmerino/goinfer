@@ -51,7 +51,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (46: 41 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (48: 43 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -91,6 +91,13 @@ Jev-style `/v1/decisions` endpoint (state plus a typed question in, a calibrated
 allowed answers out, one prefill and no decode) by label-token scoring on any model or autotrust's open
 JEV decision heads on `qwen3_5`. Two measurements decide what is built.
 
+[`task-test-efficiency-2026-09.md`](tasks/task-test-efficiency-2026-09.md) (TE0–TE11, filed 2026-09-28) is the
+verification-cost campaign: a census of where the machine time goes (served gates that are mostly idle-gate waiting
+and start-up, measurement gates that live in `go test`, parity bookkeeping that re-validates every family for a
+local edit) and the items that cut it — an idle gate that reads current load, sequential counterbalanced gates, the
+cheapest instrument that resolves the bar, identity against the last validated build, and `gate quick` — each with
+a proof that it still detects what it did.
+
 One is the outside view rather than a design: [`task-first-hour.md`](tasks/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running
 it again — `RELEASING.md`'s pre-flight now calls for one before each release.
@@ -116,7 +123,7 @@ separate sweep because this step kept being skipped at move time.
 
 ## Other kinds
 
-- `prompts/` (6) — briefs written for another session or the other machine to execute. 21 of the
+- `prompts/` (11) — briefs written for another session or the other machine to execute. 21 of the
   original 25 were archived to `completed/` in a 2026-09-13 sweep once verified delivered; the 4
   remaining are each genuinely still open (drafted-by-decision, blocked, or unshipped, per their
   own status). Newest: `prompts/cuda-r6-flash-decode.md` (2026-09-19), the Linux kickoff for

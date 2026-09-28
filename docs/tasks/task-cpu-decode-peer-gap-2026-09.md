@@ -23,9 +23,9 @@
 > scale in scalar Go on every token. amd64, Metal and WebGPU are unaffected. The NEON widen is owed (an aikit release)
 > before any arm64 CPU speed claim ("L1 build: the Mac half", below).
 >
-> **Fixed on aikit branch `arm64-f16-widen`, not yet released (2026-09-28).** A NEON widen plus a fused f16 decode
-> kernel, bit-identical, takes arm64 CPU decode to **1.041× / 1.053× / 1.080× of the f32-scale build** ("L1 arm64 fix
-> — result", below). The owner's remaining steps are an aikit tag and a goinfer bump.
+> **FIXED in aikit v1.50.1 (released 2026-09-28), and goinfer is on it (`c731ca1d`).** A NEON widen plus a fused f16
+> decode kernel, bit-identical, takes arm64 CPU decode to **1.041× / 1.053× / 1.080× of the f32-scale build** ("L1
+> arm64 fix — result", below).
 
 ## L1 — f16 group scales for CPU int4: the quality gate (pre-registered 2026-09-27)
 
@@ -537,3 +537,12 @@ model), `arm64-fix-served.json`. Every token gate passes.
   bar by more than twice the largest order effect measured here (0.022).
 - **arm64 now shows the gain amd64 got** (1.016× / 1.047× / 1.089× on nobara). Against the merged `5c85f7c0` it is
   1.9× / 1.9× / 2.4–2.6×. On the 7B, goinfer's CPU decode now passes Ollama's on this Mac.
+
+**Released 2026-09-28.** PR #1 was merged by fast-forward, so `2fd6f59` is on aikit `main`, and the fix is tagged
+**aikit v1.50.1** (`a5850f0`); the release gate, consumer resolution and root CI all pass.
+- **Exceptions, recorded in the aikit CHANGELOG.** perfgate was not run: no file in the amd64 build changed. The
+  vulnerability statement is carried from v1.50.0 for the four CUDA modules, whose dependency graph is unchanged.
+- **goinfer** requires v1.50.1 in all five modules (`c731ca1d`).
+  - With the released module, the 1.5B CPU logits are byte-identical to v1.50.0's.
+  - The parity `deps_hash` refresh passed its goldens gate (38 passed / 0 failed).
+
