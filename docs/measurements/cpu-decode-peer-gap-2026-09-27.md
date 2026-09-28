@@ -106,6 +106,23 @@ sizes where the claim was void. They are none of it on the 0.5B, whose gap is ef
      the other, structurally harder.
 3. **The LM head (bytes).** int8 at 234 MB against Q6_K's ~191 MB on the 1.5B. The ~4% it is worth is the smallest
    of the three and the most quality-sensitive (a 1.5% argmax flip rate for int4 is on record). Not recommended first.
+   - **RE-EXAMINED, 2026-09-28, after levers 1 and 2 both shipped.** Two findings, one negative and one positive.
+     - **Negative: lever 2's AVX2 activation quantizer (item 5) does NOT touch the head.** Its own activation
+       quantize is over `hidden_size` (small, like gate+up's), trivial next to streaming `vocab_size × hidden_size`
+       weight bytes — confirmed directly from already-captured decode-timing logs, LM head phase flat at
+       5.15→5.13 / 8.72→8.69 / 20.12→20.13 ms (0.5B/1.5B/7B) before vs after the AVX2 quantizer shipped. The
+       head's cost is pure weight-streaming bandwidth, not per-token overhead — a different mechanism from `down`.
+     - **Positive: the lever is BIGGER now than when ranked, because 1 and 2 shrank everything around it.** The
+       head is now 26.5% / 20.3% / 12.0% of a token (0.5B/1.5B/7B) — not the small remainder it was against the
+       original, slower baseline. `--embed-int4` (already built, already opt-in, already measured at ~2.3 pts
+       top-1 drop, mostly rare tokens — `docs/completed/task-w4a8-neon-bandwidth.md`) is a real, zero-new-code
+       lever to re-quantify: measured fresh, its own time drops 40.9% / 42.5% / 43.1% at the head, for a further
+       **1.122× / 1.094× / 1.054×** on TOTAL token time — bigger than the original "~4%" estimate, because that
+       estimate was computed against a token this campaign has since made ~10-25% smaller. The 2.3-pt quality
+       cost is UNCHANGED by any of this (re-quantizing the same weights costs the same accuracy regardless of how
+       much time it saves) and was NOT independently re-verified here (needs a real eval harness with reference
+       labels, not a decode-timing sample). **This is a quality-vs-speed tradeoff, not an engineering gap — the
+       owner's call**, the same way the f16-scale quality gate and the 0.5B's accepted 3% both were.
 
 Stacked, 1 and 2 (R-06 only) would put the 1.5B near ~0.92× by these estimates. Parity on the 1.5B and 7B needs the
 unexplained bandwidth in lever 2 as well.
