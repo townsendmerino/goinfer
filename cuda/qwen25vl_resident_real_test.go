@@ -106,8 +106,8 @@ func TestQwen25VLResidentReal_gate(t *testing.T) {
 	}
 	// Cross-check against the existing golden — this also re-confirms TestQwen25VLReal_gate's own
 	// claim on this same checkpoint before anything gap-0-specific is exercised.
-	if cos := cosine(cpuPrefillLogits, g.LastLogits); cos < 0.99 {
-		t.Fatalf("CPU prefill logits vs golden: cosine %.6f < 0.99 — the reference itself doesn't hold, stop here", cos)
+	if cos := cosine(cpuPrefillLogits, g.LastLogits); cos < cpuInt4VsF32GoldenFloor {
+		t.Fatalf("CPU prefill logits vs golden: cosine %.6f < %.2f — the reference itself doesn't hold, stop here", cos, cpuInt4VsF32GoldenFloor)
 	}
 	mropeDelta := cache.MRopeDeltaForTest()
 	t.Logf("mropeDelta = %d (nonzero confirms this prompt actually exercises the m-RoPE decode split)", mropeDelta)

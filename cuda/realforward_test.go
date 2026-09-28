@@ -334,6 +334,31 @@ func TestRealForwardParity(t *testing.T) {
 	t.Logf("B GATE GREEN: cgo-free CUDA decode matches CPU on the real q4_k_m checkpoint (%d/%d exact, rest near-ties within goinfer's 3%% rule)", exact, len(prompt))
 }
 
+// cpuInt4VsF32GoldenFloor is the precondition floor for a gap-0 hybrid-decode gate's FIRST check:
+// its own CPU int4 forward against an f32/bf16 HF golden — "does the reference itself hold, before
+// testing the CUDA bridge at all" (each such test's own comment). It is NOT the gate's real
+// assertion (the CPU-vs-hybrid-CUDA comparison right after it, same precision both sides, which
+// keeps its own tighter 0.99 bar); it only decides whether that real assertion is worth running.
+//
+// 0.98, matching decoder's own int4-vs-bf16/f32-HF precedent (oracleCosFloor's int4 case,
+// decoder/real_oracle_test.go) rather than the 0.99 these four tests inherited from an int8/f32
+// bar at introduction (gemma3_resident_real_test.go, gemma3_img_prefill_resident_real_test.go,
+// qwen25vl_resident_real_test.go, qwen25vl_mrope_prefill_resident_real_test.go).
+//
+// MEASURED, NOT GUESSED (2026-09-28, after aikit v1.50.0's binary16 int4 group scales landed):
+//   - gemma3: 0.998167 at introduction (84850d62) -> 0.997912 confirmed on pre-f16-scale aikit
+//     v1.49.0 in a throwaway worktree -> 0.989747 today. The f16-scale CPU rounding is the whole
+//     cause: nothing else in the diff between those two aikit versions touches this path.
+//   - qwen25vl: 0.989088 on pre-f16-scale aikit v1.49.0 (already below the OLD 0.99 bar, so this
+//     one predates the f16-scale work) -> 0.988259 today, a further ~0.0008 from the scale change.
+//     TestQwen25VLReal_gate (decoder package) loads the SAME checkpoint at f32 and passes at
+//     cosine 0.999459 with an exact argmax, so this is int4 quantization noise on this specific
+//     checkpoint/path, not a defect in goinfer's Qwen2.5-VL forward.
+//
+// Both numbers clear 0.98 today. Raise this back only with a new measurement, the same discipline
+// oracleCosFloor's own comment names for its int4 case.
+const cpuInt4VsF32GoldenFloor = 0.98
+
 func argmaxF(v []float32) int {
 	bi, bv := 0, v[0]
 	for i, x := range v {

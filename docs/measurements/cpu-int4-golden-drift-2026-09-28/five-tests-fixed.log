@@ -1,0 +1,36 @@
+=== RUN   TestGemma3ImgPrefillResidentReal_gate
+    gemma3_img_prefill_resident_real_test.go:123: real image, resident image-prefill vs CPU prefill: CPU argmax=496 resident argmax=496 | cosine=0.996878
+    gemma3_img_prefill_resident_real_test.go:159: GenerateVL streamed 4 tokens via the resident image-prefill fast path (ImgPrefillResident=true), first=496
+--- PASS: TestGemma3ImgPrefillResidentReal_gate (47.33s)
+=== RUN   TestGemma3ResidentReal_gate
+    gemma3_resident_real_test.go:130: real image, one decode step past the image block: CPU argmax=15004 hybrid argmax=15004 | cosine=0.998271
+--- PASS: TestGemma3ResidentReal_gate (45.95s)
+=== RUN   TestMLAResidentParityCUDA
+    mla_resident_test.go:69: [int4] pos 0 (tok 1): cosine vs cpu = 0.99984573
+    mla_resident_test.go:69: [int4] pos 1 (tok 7): cosine vs cpu = 0.99987964
+    mla_resident_test.go:69: [int4] pos 2 (tok 3): cosine vs cpu = 0.99994115
+    mla_resident_test.go:69: [int4] pos 3 (tok 42): cosine vs cpu = 0.99992589
+    mla_resident_test.go:69: [int4] pos 4 (tok 9): cosine vs cpu = 0.99992748
+    mla_resident_test.go:69: [int4] pos 5 (tok 5): cosine vs cpu = 0.99993721
+    mla_resident_test.go:71: [int4] MLA resident decode, 6 prompt positions: worst cosine 0.999846
+    mla_resident_test.go:84: [int4] gen 0 (fed tok 5): cpu argmax=39 cuda argmax=39 cosine=0.99993721
+    mla_resident_test.go:84: [int4] gen 1 (fed tok 39): cpu argmax=61 cuda argmax=61 cosine=0.99994530
+    mla_resident_test.go:84: [int4] gen 2 (fed tok 61): cpu argmax=121 cuda argmax=121 cosine=0.99990266
+    mla_resident_test.go:84: [int4] gen 3 (fed tok 121): cpu argmax=19 cuda argmax=19 cosine=0.99993451
+    mla_resident_test.go:84: [int4] gen 4 (fed tok 19): cpu argmax=34 cuda argmax=34 cosine=0.99990609
+    mla_resident_test.go:84: [int4] gen 5 (fed tok 34): cpu argmax=51 cuda argmax=87 cosine=0.99991720
+    mla_resident_test.go:121: [int4] gen token 5: cpu=51 cuda=87 — mutual near-tie (each side's pick is the other's runner-up), tolerated
+    mla_resident_test.go:84: [int4] gen 6 (fed tok 51): cpu argmax=95 cuda argmax=95 cosine=0.99992665
+    mla_resident_test.go:84: [int4] gen 7 (fed tok 95): cpu argmax=48 cuda argmax=48 cosine=0.99987316
+    mla_resident_test.go:132: [int4] MLA generate: cpu=[39 61 121 19 34 51 95 48] cuda=[39 61 121 19 34 87 95 48] | worst cosine over 14 positions (prompt+generation): 0.999846
+--- PASS: TestMLAResidentParityCUDA (0.30s)
+=== RUN   TestQwen25VLMRoPEPrefillResidentReal_gate
+    qwen25vl_mrope_prefill_resident_real_test.go:108: real image, resident m-RoPE prefill vs CPU prefill: CPU argmax=264 resident argmax=264 | cosine=0.998644
+    qwen25vl_mrope_prefill_resident_real_test.go:142: GenerateQwenVL streamed 4 tokens via the resident m-RoPE prefill fast path (ImgPrefillResident=true), first=264
+--- PASS: TestQwen25VLMRoPEPrefillResidentReal_gate (16.74s)
+=== RUN   TestQwen25VLResidentReal_gate
+    qwen25vl_resident_real_test.go:113: mropeDelta = -3 (nonzero confirms this prompt actually exercises the m-RoPE decode split)
+    qwen25vl_resident_real_test.go:146: real image, one decode step past the image block: CPU argmax=1697 hybrid argmax=1697 | cosine=1.000000
+--- PASS: TestQwen25VLResidentReal_gate (14.11s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	124.487s
