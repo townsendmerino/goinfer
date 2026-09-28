@@ -142,6 +142,63 @@ beyond what the measurement needs.
    token, against the sampler share above. Quiet box, report spread. If it costs more than sampling
    does, it is opt-in (it is opt-in regardless; this sets the documented cost).
 
+**C0 pre-registration (2026-09-27, committed before any graded run).**
+- **Harness:** `metal/confidence_c0_test.go` (`TestConfidenceC0`).
+- **Analysis:** `docs/measurements/confidence-c0-2026-09-27/analyze.py`, written before any graded run.
+  The gates below are that script's arithmetic.
+- **Models (graded):** qwen2.5-coder-1.5b-instruct q4_k_m (`.gguf`) and qwen2.5-7b-instruct q4_k_m
+  (`.int4.metal.giw`, tokenizer from its `.gguf`), both from `~/models`, at `-quant int4` on Metal, greedy,
+  up to 200 tokens per answer.
+  - A 3-ticket smoke run on qwen2.5-coder-0.5b checked the harness before this was written. It is not graded,
+    and it is disclosed below because it was seen.
+- **Data:** `docs/measurements/confidence-c0-2026-09-27/tickets.jsonl`, 60 support tickets written for
+  this (sha256 `71787d8fd0aad4368646bff65ad70e1a00fcca5a7d74a9d29b3a8619df6936ef`).
+  - Every gold label follows from rules stated in the prompt. The system prompt is in the harness.
+  - The schema has one field of each kind: `category` (enum of 5), `urgent` (boolean), `order_count`
+    (integer), `refund_amount` (number), `customer_name` (string, graded), and `summary` (string, no gold:
+    gates 0 and 1 only).
+  - D0's gold-labelled JEV items join the enum/boolean set when D0 delivers them. This registration covers
+    the hand-built set.
+- **Definitions.**
+  - *Free token*: at some byte of the token, the grammar allowed two or more non-whitespace next bytes.
+    Otherwise the token is *forced*: its probability is tokenization preference, not the model's view of
+    the value.
+  - *Field attribution*: a token belongs to the field whose value bytes it overlaps; otherwise it is
+    scaffolding.
+  - *p*: the token's probability under the model's distribution restricted to the grammar-legal tokens,
+    at T = 1.
+  - *Decision* (enum/boolean): at the first token of the value consistent with exactly one option, the mass
+    of every legal token summed by the option it spells and renormalized. The field's decision confidence is
+    the chosen option's share.
+- **Primary aggregation per kind** (item 2; the others are reported as secondary, never used to decide):
+  - enum and boolean: *decision*;
+  - integer and number: the *minimum* p over free tokens (a number is as weak as its weakest digit);
+  - string: the *geometric mean* p over free tokens (length-normalized).
+- **Correctness:** exact for `category`, `urgent` and `order_count`; |Δ| < 0.005 for `refund_amount`;
+  `customer_name` case-insensitive after trimming whitespace and trailing punctuation. An unparseable output
+  or missing field is excluded for that field, and counted.
+- **C-gate 0 (enough free tokens):** a kind is surfaceable only if at least 80% of its instances have at
+  least one free value token. Its confidence is computed over free tokens only; forced tokens never
+  enter a number.
+- **C-gate 1 (cost):** per model, the mean in-situ readout time (log-sum-exp over the legal logits, timed
+  inside the processor) is at most 5% of the mean mask-only decode token time. That is the bottom of the
+  sampler's measured share, 5.4%. The mean is the gate, because the readout costs several times more
+  inside a free string, where nearly the whole vocabulary is legal, than at a structural position. The
+  median is reported beside it.
+  - The 0.5B smoke run read 7.8% mean and 3.3% median.
+  - Zero cost when disabled is C1's to verify: no hook, no code on the path.
+  - A FAIL here does not close C. The feature is opt-in regardless, so it means the readout is optimized
+    before C1 ships (float32, or reading only at free positions), then re-measured.
+- **C-gate 2 (it discriminates):** directional only, per field kind and per model, on the primary
+  aggregation, for a model with at least 8 correct and 8 wrong instances of that field:
+  - AUROC (P(a correct answer's confidence > a wrong one's), ties ½) ≥ 0.65 → PASS;
+  - AUROC < 0.55 → FAIL, and the kind does not ship;
+  - in between → ambiguous, parked.
+  - A kind passes only if every qualifying model passes. No qualifying model → *insufficient errors*,
+    parked (not failed), with the counts on the page.
+- **Item 3's answer:** if enum and boolean pass gate 2 and the integer, number and string kinds do not, C1
+  ships enum/boolean only.
+
 ### C1 — capture, attribute, surface (only if C0's gates clear)
 
 - **Capture, not compute.** A hook at the masking seam that records, per position, the probability
