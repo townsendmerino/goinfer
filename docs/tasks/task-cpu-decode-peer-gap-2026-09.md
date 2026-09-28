@@ -10,6 +10,9 @@
 > 2. Flip R-06's fused W4A8 q/k/v on by default (L2 below).
 >
 > Both are pre-registered here, before any code or run.
+>
+> **L2 SHIPPED 2026-09-27:** R-06 is on for non-arm64. Every gate passes: logits bit-identical, the suites green, and
+> paired 1.016× / 1.030× / 1.018× (0.5B / 1.5B / 7B). **L1 is running.**
 
 ## L1 — f16 group scales for CPU int4: the quality gate (pre-registered 2026-09-27)
 
@@ -63,3 +66,25 @@ default-on there, R-06 changes only q/k/v (one fork/join instead of three).
    whatever it is.
 
 **Not a gate:** a served re-read against Ollama after both levers. Its ratios are reported, not graded.
+
+### L2 result (2026-09-27): every gate passes, on for non-arm64
+
+The code was measured at `cc1769c7` with the test edits; the flip is the next commit. Logs are in
+[`cpu-decode-peer-gap-2026-09-27/`](../measurements/cpu-decode-peer-gap-2026-09-27/) (`r06-*`).
+
+1. **Bit-identical** (`r06-gate1-bitident.log`): 48 decode steps × 151,936 / 151,936 / 152,064 logits on the 0.5B,
+   1.5B and 7B, **0 differ**.
+2. **Suites** (`r06-gate2-suites.log`, run with the flip in place): `TestForwardN_matchesSequential`,
+   `TestSpeculativeGreedyParity`, `TestDecodeParityInt4`, `TestSession_reuseParity`, `TestInt4_forwardParity`,
+   `TestEnvVars_docAndCodeAgree` and `TestDispatchCensus` all pass.
+   - The parity refresh ran the forward goldens first: 62 passed, 0 skipped, 0 failed (`r06-parity-refresh.log`).
+3. **Speed** (`r06-gate3-ab.log`; paired in-process ABBA, 5 pairs, depth 128, the fused gate+up on in both arms):
+
+   | model | off → on ms/token | paired median (min–max) |
+   |---|---|---|
+   | 0.5B | 23.81 → 23.54 | **1.016×** (0.979–1.040) |
+   | 1.5B | 51.33 → 49.83 | **1.030×** (1.026–1.036) |
+   | 7B | 195.88 → 192.72 | **1.018×** (1.012–1.020) |
+
+   No size's median is below 0.98, so the flip stands. The gains are small, as R-06's mechanism predicts: it saves a
+   roughly fixed per-barrier cost, and with gate+up already fused only q/k/v's two extra barriers remain.

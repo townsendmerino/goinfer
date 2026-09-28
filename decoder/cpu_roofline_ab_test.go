@@ -127,6 +127,7 @@ func TestCPURoofline_w4a8Batch(t *testing.T) {
 	for _, mc := range []struct{ name, env, def string }{
 		{"1.5B", "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
 		{"0.5B", "GOINFER_CPU_MODEL_05B", "$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"},
+		{"7B", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf"},
 	} {
 		t.Run(mc.name, func(t *testing.T) {
 			h := newCPUDecodeAB(t, mc.env, mc.def, 128)
@@ -167,6 +168,25 @@ func TestCPURoofline_fusedGateUp(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_NO_FIT_GUARD=1 go test -tags goinfer_testhooks ./decoder/ -run TestCPURoofline_fusedGateUp_logitsBitIdentical -v -count=1 -timeout 30m
 func TestCPURoofline_fusedGateUp_logitsBitIdentical(t *testing.T) {
+	orig := cpuFusedGateUp
+	t.Cleanup(func() { cpuFusedGateUp = orig })
+	logitsBitIdentical(t, "fused", func(on bool) { cpuFusedGateUp = on })
+}
+
+// TestCPURoofline_w4a8Batch_logitsBitIdentical is the same check for R-06's fused W4A8 q/k/v (and gate/up where
+// the fused gate+up does not take it), at today's defaults otherwise. Gate 1 of L2 in
+// docs/tasks/task-cpu-decode-peer-gap-2026-09.md.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_NO_FIT_GUARD=1 go test -tags goinfer_testhooks ./decoder/ -run TestCPURoofline_w4a8Batch_logitsBitIdentical -v -count=1 -timeout 30m
+func TestCPURoofline_w4a8Batch_logitsBitIdentical(t *testing.T) {
+	orig := w4a8BatchEnabled
+	t.Cleanup(func() { w4a8BatchEnabled = orig })
+	logitsBitIdentical(t, "w4a8 batch", func(on bool) { w4a8BatchEnabled = on })
+}
+
+// logitsBitIdentical decodes 48 greedy steps on the real 0.5B / 1.5B / 7B with set(false) and set(true), captures
+// every step's full logits through the sampler's LogitProcessor, and fails on any element that differs.
+func logitsBitIdentical(t *testing.T, name string, set func(on bool)) {
 	for _, mc := range []struct{ name, env, def string }{
 		{"0.5B", "GOINFER_CPU_MODEL_05B", "$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"},
 		{"1.5B", "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
@@ -174,10 +194,8 @@ func TestCPURoofline_fusedGateUp_logitsBitIdentical(t *testing.T) {
 	} {
 		t.Run(mc.name, func(t *testing.T) {
 			h := newCPUDecodeAB(t, mc.env, mc.def, 128)
-			orig := cpuFusedGateUp
-			t.Cleanup(func() { cpuFusedGateUp = orig })
 			capture := func(on bool) [][]float32 {
-				cpuFusedGateUp = on
+				set(on)
 				var steps [][]float32
 				sp := SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
 					steps = append(steps, append([]float32(nil), logits...))
@@ -201,12 +219,12 @@ func TestCPURoofline_fusedGateUp_logitsBitIdentical(t *testing.T) {
 					if on[s][i] != off[s][i] {
 						bad++
 						if bad <= 3 {
-							t.Errorf("step %d logit %d: fused %v != unfused %v", s, i, on[s][i], off[s][i])
+							t.Errorf("step %d logit %d: %s %v != off %v", s, i, name, on[s][i], off[s][i])
 						}
 					}
 				}
 			}
-			t.Logf("%s: %d decode steps x %d logits compared, %d differ", mc.name, len(off), len(off[0]), bad)
+			t.Logf("%s %s: %d decode steps x %d logits compared, %d differ", name, mc.name, len(off), len(off[0]), bad)
 		})
 	}
 }

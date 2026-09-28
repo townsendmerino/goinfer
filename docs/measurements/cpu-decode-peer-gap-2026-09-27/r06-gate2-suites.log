@@ -1,0 +1,73 @@
+=== RUN   TestDispatchCensus
+    dispatch_census_test.go:145: EXAMINED: 116 non-test .go file(s) in package decoder/ (glob "*.go"; 417 skipped as _test.go). That is the whole denominator — dispatch outside decoder/ is NOT scanned here.
+    dispatch_census_test.go:175: dispatch census: 11 identity-predicate site(s), 3 type switch(es), all declared (keyed on content, so line moves do not trip it). GREEN MEANS UNCHANGED, NOT CORRECT.
+--- PASS: TestDispatchCensus (0.11s)
+=== RUN   TestEnvVars_docAndCodeAgree
+--- PASS: TestEnvVars_docAndCodeAgree (0.56s)
+=== RUN   TestForwardN_matchesSequential
+=== RUN   TestForwardN_matchesSequential/K=6
+    forwardn_test.go:179: K=6: bit-identical across 911616 logits
+=== RUN   TestForwardN_matchesSequential/K=128
+    forwardn_test.go:179: K=128: bit-identical across 19447808 logits
+--- PASS: TestForwardN_matchesSequential (10.82s)
+    --- PASS: TestForwardN_matchesSequential/K=6 (0.35s)
+    --- PASS: TestForwardN_matchesSequential/K=128 (6.71s)
+=== RUN   TestInt4_forwardParity
+=== RUN   TestInt4_forwardParity/cohere-tiny
+=== RUN   TestInt4_forwardParity/cohere2-tiny
+=== RUN   TestInt4_forwardParity/deepseek-tiny
+=== RUN   TestInt4_forwardParity/gemma3-vl-tiny
+=== RUN   TestInt4_forwardParity/gemma4-dense-scaled
+=== RUN   TestInt4_forwardParity/gemma4-dense-twogeom-tiny
+=== RUN   TestInt4_forwardParity/gemma4-moe-kv-tiny
+=== RUN   TestInt4_forwardParity/gemma4-moe-tiny
+=== RUN   TestInt4_forwardParity/gemma4-moe-unified-tiny
+=== RUN   TestInt4_forwardParity/glm-tiny
+=== RUN   TestInt4_forwardParity/glm-tiny-bias
+=== RUN   TestInt4_forwardParity/gpt2
+=== RUN   TestInt4_forwardParity/granite-tiny
+=== RUN   TestInt4_forwardParity/kimi-tiny
+=== RUN   TestInt4_forwardParity/llama4-tiny
+=== RUN   TestInt4_forwardParity/mixtral-tiny
+=== RUN   TestInt4_forwardParity/nemotron-tiny
+=== RUN   TestInt4_forwardParity/nemotron3nano-tiny
+=== RUN   TestInt4_forwardParity/phi3-tiny
+=== RUN   TestInt4_forwardParity/qwen25vl-tiny
+=== RUN   TestInt4_forwardParity/qwen35-tiny
+=== RUN   TestInt4_forwardParity/qwen3next-tiny
+=== NAME  TestInt4_forwardParity
+    int4_golden_test.go:308: int4 goldens: 22 fixtures compared against recorded int4 output
+--- PASS: TestInt4_forwardParity (6.51s)
+    --- PASS: TestInt4_forwardParity/cohere-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/cohere2-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/deepseek-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/gemma3-vl-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/gemma4-dense-scaled (1.20s)
+    --- PASS: TestInt4_forwardParity/gemma4-dense-twogeom-tiny (0.06s)
+    --- PASS: TestInt4_forwardParity/gemma4-moe-kv-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/gemma4-moe-tiny (0.07s)
+    --- PASS: TestInt4_forwardParity/gemma4-moe-unified-tiny (0.08s)
+    --- PASS: TestInt4_forwardParity/glm-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/glm-tiny-bias (0.02s)
+    --- PASS: TestInt4_forwardParity/gpt2 (4.84s)
+    --- PASS: TestInt4_forwardParity/granite-tiny (0.03s)
+    --- PASS: TestInt4_forwardParity/kimi-tiny (0.05s)
+    --- PASS: TestInt4_forwardParity/llama4-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/mixtral-tiny (0.02s)
+    --- PASS: TestInt4_forwardParity/nemotron-tiny (0.00s)
+    --- PASS: TestInt4_forwardParity/nemotron3nano-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/phi3-tiny (0.00s)
+    --- PASS: TestInt4_forwardParity/qwen25vl-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/qwen35-tiny (0.01s)
+    --- PASS: TestInt4_forwardParity/qwen3next-tiny (0.01s)
+=== RUN   TestDecodeParityInt4
+--- PASS: TestDecodeParityInt4 (4.90s)
+=== RUN   TestSession_reuseParity
+--- PASS: TestSession_reuseParity (5.37s)
+=== RUN   TestSpeculativeGreedyParity
+--- PASS: TestSpeculativeGreedyParity (25.98s)
+=== RUN   TestSpeculativeGreedyParity_draftTarget
+    speculative_test.go:116: set GOINFER_SPEC_TARGET to the 1.5B gguf to run the draft≠target gate
+--- SKIP: TestSpeculativeGreedyParity_draftTarget (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	54.390s

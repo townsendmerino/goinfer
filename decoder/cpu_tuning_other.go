@@ -22,3 +22,8 @@ var activationFanoutEnabled = false
 // bit-identical: 1.5B 1.066×, 0.5B 1.113×, 7B 1.029× against the unfused path
 // (docs/measurements/cpu-decode-roofline-2026-09-23.md). On.
 const fusedGateUpDefault = true
+
+// w4a8BatchDefault: R-06's one fork/join for q/k/v (weightmat.go). Bit-identical; paired ABBA on top of the
+// fused gate+up, Ryzen 7 3700X: 0.5B 1.016×, 1.5B 1.030×, 7B 1.018× (docs/tasks/task-cpu-decode-peer-gap-2026-09.md,
+// L2; owner decision 2026-09-27). On.
+const w4a8BatchDefault = true

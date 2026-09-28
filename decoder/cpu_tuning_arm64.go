@@ -19,3 +19,8 @@ var activationFanoutEnabled = true
 // (which the fused path declines anyway), but an mmap'd .giw is canonical and would otherwise turn
 // it on unmeasured. GOINFER_CPU_FUSED_GATEUP=1 forces it on for that measurement.
 const fusedGateUpDefault = false
+
+// w4a8BatchDefault: R-06's one fork/join for q/k/v (weightmat.go) was turned on for amd64 only. Here it read a
+// null on the 7B (docs/measurements/w4a8-batch-7b-2026-09-20.md) and has not been measured on the current tree.
+// Off until the Mac measures it; GOINFER_W4A8_BATCH=1 forces it on for that measurement.
+const w4a8BatchDefault = false

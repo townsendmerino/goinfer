@@ -1,0 +1,37 @@
+=== RUN   TestCPURoofline_w4a8Batch_logitsBitIdentical
+=== RUN   TestCPURoofline_w4a8Batch_logitsBitIdentical/0.5B
+DECODE TIMING (48 tok, gpu=false): forward 23.7 ms | sample 0.09 ms | logitProc 0.19 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 7.11 ms | MLP 11.20 ms | LM head 5.12 ms | residual 0.27 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.70 ms | activation 0.00 ms | down matmul 4.48 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.95 ms | rope+KV+scores/softmax/AV core 1.79 ms | o matmul 2.37 ms /token
+DECODE TIMING (48 tok, gpu=false): forward 22.1 ms | sample 0.08 ms | logitProc 0.17 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 6.22 ms | MLP 10.55 ms | LM head 5.13 ms | residual 0.24 ms /token
+DECODE SPLIT MLP: gate+up matmuls 6.35 ms | activation 0.00 ms | down matmul 4.19 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 2.45 ms | rope+KV+scores/softmax/AV core 1.68 ms | o matmul 2.08 ms /token
+    cpu_roofline_ab_test.go:227: w4a8 batch 0.5B: 48 decode steps x 151936 logits compared, 0 differ
+=== RUN   TestCPURoofline_w4a8Batch_logitsBitIdentical/1.5B
+DECODE TIMING (48 tok, gpu=false): forward 51.1 ms | sample 0.07 ms | logitProc 0.21 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 9.76 ms | MLP 32.27 ms | LM head 8.71 ms | residual 0.40 ms /token
+DECODE SPLIT MLP: gate+up matmuls 20.18 ms | activation 0.00 ms | down matmul 12.07 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 4.74 ms | rope+KV+scores/softmax/AV core 2.55 ms | o matmul 2.46 ms /token
+DECODE TIMING (48 tok, gpu=false): forward 51.9 ms | sample 0.07 ms | logitProc 0.23 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 8.79 ms | MLP 33.80 ms | LM head 8.88 ms | residual 0.39 ms /token
+DECODE SPLIT MLP: gate+up matmuls 21.27 ms | activation 0.00 ms | down matmul 12.51 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 3.24 ms | rope+KV+scores/softmax/AV core 2.93 ms | o matmul 2.61 ms /token
+    cpu_roofline_ab_test.go:227: w4a8 batch 1.5B: 48 decode steps x 151936 logits compared, 0 differ
+=== RUN   TestCPURoofline_w4a8Batch_logitsBitIdentical/7B
+DECODE TIMING (48 tok, gpu=false): forward 196.6 ms | sample 0.07 ms | logitProc 0.24 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 30.47 ms | MLP 145.40 ms | LM head 20.10 ms | residual 0.65 ms /token
+DECODE SPLIT MLP: gate+up matmuls 94.29 ms | activation 0.00 ms | down matmul 51.06 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 15.95 ms | rope+KV+scores/softmax/AV core 4.72 ms | o matmul 9.79 ms /token
+DECODE TIMING (48 tok, gpu=false): forward 192.5 ms | sample 0.07 ms | logitProc 0.16 ms | embed 0.00 ms /token
+DECODE SPLIT: attention 27.64 ms | MLP 144.24 ms | LM head 20.07 ms | residual 0.54 ms /token
+DECODE SPLIT MLP: gate+up matmuls 93.30 ms | activation 0.00 ms | down matmul 50.89 ms /token
+DECODE SPLIT ATTN: q/k/v matmuls 12.93 ms | rope+KV+scores/softmax/AV core 4.86 ms | o matmul 9.84 ms /token
+    cpu_roofline_ab_test.go:227: w4a8 batch 7B: 48 decode steps x 152064 logits compared, 0 differ
+--- PASS: TestCPURoofline_w4a8Batch_logitsBitIdentical (66.88s)
+    --- PASS: TestCPURoofline_w4a8Batch_logitsBitIdentical/0.5B (6.95s)
+    --- PASS: TestCPURoofline_w4a8Batch_logitsBitIdentical/1.5B (13.52s)
+    --- PASS: TestCPURoofline_w4a8Batch_logitsBitIdentical/7B (46.41s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	66.921s

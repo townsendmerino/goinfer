@@ -125,7 +125,7 @@ supports.
 | `docs/audit-metal-2026-09-12.md|decoder/residency.go:194` | goinfer | `// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to ` |
 | `docs/audit-metal-2026-09-12.md|decoder/residentneed.go:61` | goinfer | `for l := range nLayers {` |
 | `docs/audit-metal-2026-09-12.md|decoder/spec_optfwd.go:202` | goinfer | `anchor: func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate ` |
-| `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:490` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
+| `docs/audit-metal-2026-09-12.md|decoder/weightmat.go:479` | goinfer | `// generically, then call metal.buildResident on the result directly, which decoder.Load` |
 | `docs/audit-metal-2026-09-12.md|internal/loadflags/loadflags.go:203` | goinfer | `"            (4-bit weights). NOT the smallest on Apple Silicon or non-VNNI amd64: the l` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/main.go:927` | goinfer | `func (s *server) loadVisionTower(cfg config) error {` |
 | `docs/audit-metal-2026-09-12.md|internal/serveapp/openai.go:1311` | goinfer | `// DecodeRunner when there is no session commit and no prefix reuse (model.go:` |
@@ -319,7 +319,7 @@ supports.
 | `docs/ollama-chase.md|decoder/model.go:2111` | goinfer | `emb = m.embedResidentInto(next, embScratch)` |
 | `docs/ollama-chase.md|decoder/registry.go:1724` | goinfer | `// num_nextn_predict_layers MTP head is dropped (only num_hidden_layers load). The` |
 | `docs/ollama-chase.md|decoder/residency.go:1355` | goinfer | `func (m *Model) embedResidentInto(id int, dst []float32) []float32 {` |
-| `docs/ollama-chase.md|decoder/weightmat.go:781` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
+| `docs/ollama-chase.md|decoder/weightmat.go:770` | goinfer | `var matmulWSPool = sync.Pool{New: func() any { return new(linalg.Workspace) }}` |
 | `docs/ollama-chase.md|decoder/weights.go:626` | goinfer | `// index so one loader serves both — the vision tower (model.visual.*) and MTP` |
 | `docs/parity-coverage-policy.md|cuda/resident.go:2416` | goinfer | `func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) error {` |
 | `docs/parity-coverage-policy.md|linalg/dot.go:25` | aikit | `sum += a[k] * b[k]` |
@@ -459,8 +459,8 @@ supports.
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/model.go:666` | goinfer | `w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), ` |
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/serialize.go:1811` | goinfer | `return linalg.WrapInt4Row4(q4, q4s, rows, cols, group, q4Row4, q4Row4Scales)` |
 | `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:344` | goinfer | `// the parked .giw-kind decision is waiting on, docs/task-w4a8-neon-` |
-| `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:504` | goinfer | `func wantsCanonicalInt4(backendName string, be Backend) bool {` |
-| `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:674` | goinfer | `type GIWTarget string` |
+| `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:493` | goinfer | `func wantsCanonicalInt4(backendName string, be Backend) bool {` |
+| `docs/tasks/task-int4-layout-2026-09.md|decoder/weightmat.go:663` | goinfer | `type GIWTarget string` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/chatapp/main.go:179` | goinfer | `anchor: func Main() {` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/prequant/prequant.go:41` | goinfer | `// output. A cancelled ctx aborts a long streaming transcode at the next layer boundary` |
 | `docs/tasks/task-int4-layout-2026-09.md|internal/serveapp/main.go:356` | goinfer | `--ctx        KV capacity in positions` |

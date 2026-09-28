@@ -429,28 +429,17 @@ var w4a8SplitHalfRepacked, w4a8SplitHalfSkipped, w4a8SplitHalfBytes atomic.Int64
 // 1.12x, or if canonical can be dropped for a build that only ever decodes.
 var w4a8SplitHalfRepackEnabled = os.Getenv("GOINFER_W4A8_SPLITHALF") != ""
 
-// w4a8BatchEnabled is DEFAULT-OFF, a measured decision (audit R-06). Set
-// GOINFER_W4A8_BATCH=1 to opt in.
+// w4a8BatchEnabled runs a layer's q/k/v (and gate/up, where the fused gate+up does not take them) as
+// one W4A8 fork/join instead of one per projection (audit R-06, aikit MatmulBTW4A8Batch). Bit-identical:
+// every output column is the same dot product either way. Default per architecture (w4a8BatchDefault,
+// cpu_tuning_{arm64,other}.go); GOINFER_W4A8_BATCH=0 opts out, =1 forces it on.
 //
-// aikit's MatmulBTW4A8Batch fuses q/k/v (and separately gate/up) into one
-// fork/join, amortizing the goroutine-wake stagger S-02 measured as the real
-// decode-fan-out cost (docs/task-simd-audit.md). Paired, interleaved,
-// run1-discarded-as-warm-up measurement on this box (qwen2.5-coder-1.5b-int4,
-// BenchmarkDecode, 10 pairs): mean before 46.122 tok/s, mean after 49.915,
-// **1.08x** (per-pair ratios 0.984-1.143). S-02's own pre-registered rule is
-// ship at >=1.15x, park below 1.05x; 1.08x lands in neither band. Per this
-// repo's own measurement discipline ("pre-register... an explicit ambiguous ->
-// parked band... the zone just below the threshold is where motivated
-// reasoning lives"), that ambiguous reading parks rather than ships by
-// default — the code is correctness-proven (TestInt4_forwardParity,
-// mutation-checked) and kept, shovel-ready, not rebuilt from zero if a
-// different box or workload clears the bar.
-//
-// Re-open the decision with a fresh paired measurement — ideally on a
-// different day/machine state, per this same repo's own "a single-machine
-// result needs to reproduce before a remedy gets built against it" rule
-// (docs/completed/task-zeno-compare.md's R-05 saga) — before flipping this default.
-var w4a8BatchEnabled = os.Getenv("GOINFER_W4A8_BATCH") != ""
+// History: parked by audit R-06 at 1.08x on the 1.5B against S-02's ≥1.15x ship bar (ambiguous), and a null on
+// the M1 Pro's 7B (docs/measurements/w4a8-batch-7b-2026-09-20.md). Turned on for non-arm64 by owner
+// decision 2026-09-27 under docs/tasks/task-cpu-decode-peer-gap-2026-09.md's L2 gates: logits
+// bit-identical on the real 0.5B/1.5B/7B, and on top of today's fused gate+up (so only q/k/v changes)
+// paired ABBA 1.016x / 1.030x / 1.018x on the Ryzen 7 3700X, no size regressing.
+var w4a8BatchEnabled = envBoolDefault("GOINFER_W4A8_BATCH", w4a8BatchDefault)
 
 // repackW4A8IfEligible applies whichever ISA-specific W4A8 layout THIS build
 // has a kernel for: row4 on arm64, split-half on amd64. Each is a no-op off its
