@@ -1,0 +1,82 @@
+# verification census — 2026-09-28 12:30 PDT, repo cc92d104, roots: /home/francis/goinfer-bench
+
+## 1. served harness outputs
+
+93 outputs, 1057 cells, 24.3 h of cell wall (dated outputs span 2026-08-27 .. 2026-09-28; 1 undated)
+  mac       24 outputs   232 cells    7.5 h
+  nobara    69 outputs   825 cells   16.8 h
+
+cells with token counts: 923; cell wall 16.73 h, of which decode being timed 7.53 h (45%) — the rest is server start, load, warm-up, prompt prefill, teardown
+
+  model      engine       cells  wall min  timed  overhead/cell
+  M35        goinfer         10     166.8     4%        961.6 s
+  7B         goinfer         86     152.4    58%         44.6 s
+  phi3-mini  goinfer         68     104.6    52%         44.6 s
+  1.5B       goinfer        124      87.3    45%         23.2 s
+  7B         ollama          65      75.5    69%         21.5 s
+  7B         goinfer_old     37      71.5    69%         35.9 s
+  1.5B       ollama         100      55.4    50%         16.5 s
+  M26        goinfer         13      54.8    17%        210.2 s
+  phi3-mini  ollama          43      30.3    71%         12.2 s
+  0.5B       goinfer         71      28.5    37%         15.1 s
+  0.5B       ollama          70      25.8    35%         14.3 s
+  1.5B       goinfer_old     37      22.1    64%         12.7 s
+  7B         llamacpp        31      17.9    73%          9.5 s
+  M26        ollama           9      16.1    44%         59.5 s
+  M35        ollama           8      13.0    42%         56.9 s
+  M26        llamacpp        10      12.4    50%         37.0 s
+
+## 2. START/END spans in run logs
+
+20 spans, 2.2 h; 2 contain idle-gate waits: 73 min of wall, 29 min of it waiting (40%)
+
+longest 15:
+  2026-09-27 19:15   37.4 min  waits 15.0 min  goinfer-bench/cpu-decode-2026-09-27/baseline.log
+  2026-09-27 22:29   35.6 min  waits 14.0 min  goinfer-bench/cpu-decode-2026-09-27/gate5.log
+  2026-09-27 20:45   10.1 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/f16sweep-run.log
+  2026-09-27 20:15    8.0 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/f16sweep-run.log
+  2026-09-27 20:32    6.8 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/f16sweep-run.log
+  2026-09-27 20:10    4.8 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/f16sweep-run.log
+  2026-09-27 20:39    3.6 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/f16sweep-run.log
+  2026-09-27 20:06    3.3 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/r06-run.log
+  2026-09-27 21:17    3.2 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/s0-run.log
+  2026-09-27 21:36    3.2 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/s0b-run.log
+  2026-09-27 20:42    3.2 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/f16sweep-run.log
+  2026-09-27 20:25    2.1 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/f16sweep-run.log
+  2026-09-27 20:23    1.9 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/f16sweep-run.log
+  2026-09-27 20:29    1.6 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/f16sweep-run.log
+  2026-09-27 20:31    1.2 min  waits  0.0 min  goinfer-bench/cpu-decode-2026-09-27/f16sweep-run.log
+
+## 3. go test in archived logs
+
+59 package results, 3.9 h
+  goinfer/decoder                    n= 35 median   193.3 s  max   1393.9 s  total   2.8 h
+  goinfer/cuda                       n= 23 median   115.4 s  max   1061.3 s  total   1.0 h
+  goinfer/internal/serveapp          n=  1 median   122.4 s  max    122.4 s  total   0.0 h
+
+4432 top-level test results; the 15 longest single runs:
+  TestQwen3NextReal_oracle                       n=  1 max   11.8 min  median   11.8 min
+  TestMC2_batchedDecodeThroughput                n=  4 max    8.6 min  median    8.6 min
+  TestMoEExpertMajor_bitIdentical                n=  3 max    7.9 min  median    7.5 min
+  TestCPUBatchS1_fusedVsUnfused                  n=  5 max    6.0 min  median    3.6 min
+  TestPrefillGateVsReferenceCUDA                 n=  3 max    5.5 min  median    4.4 min
+  TestPrefillLongPrompt                          n=  2 max    4.4 min  median    4.4 min
+  TestCPUBatch_concurrentMatchesAlone            n=  7 max    3.9 min  median    1.2 min
+  TestP20ExpertLocality                          n=  2 max    3.7 min  median    3.7 min
+  TestSmallShapeWidthS0_decode                   n=  3 max    3.3 min  median    0.9 min
+  TestCPURoofline_w4a8Batch                      n=  6 max    3.2 min  median    0.0 min
+  TestS0F16Scales_AB                             n=  2 max    3.2 min  median    3.2 min
+  TestSpecPagerInteraction                       n=  2 max    3.2 min  median    3.2 min
+  TestCPUBatch_everyEligibleFixtureBitIdentical  n=  3 max    2.4 min  median    2.3 min
+  TestPrefillAttnRowTileInvariance               n=  3 max    2.3 min  median    2.3 min
+  TestCUDAStepBatch_concurrentMatchesAlone       n=  5 max    2.0 min  median    0.0 min
+
+## 4. parity churn
+
+37 families; 36 use `core` (11 files)
+since 2026-09-01: 144 commits touched a core/loaders/quant file; 90 Deps-Hash-Refresh trailers
+
+## 5. waste signals in measurement records
+
+171 records with 2026-09 in their path: 41 carry a void/withdrawn/discarded/contaminated verdict somewhere; 4 say a gate could not resolve its bar
+

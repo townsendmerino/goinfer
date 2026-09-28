@@ -17,7 +17,7 @@
 > - TE7(b): `decoder` does cache, and C7's claim is retracted.
 > - TE1: built and queued for tonight (`te1-aa-mutation`, ~75 min).
 >
-> Owed: TE0 on nobara. See each item for its proof.
+> TE0 is complete on both machines ([record](../measurements/test-efficiency-2026-09.md)). See each item for its proof.
 
 ## BLUF
 
@@ -163,6 +163,14 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
 - **Continuous.** The served harness records per-cell phase times — idle-gate wait, start→listening, warm-up, timed
   runs, teardown — so §1.1's 55% is split by measurement instead of by inference. `night.py`'s per-job durations
   already land in `SUMMARY.md`.
+  - **DONE 2026-09-28.** `bench_peer.py` records `counts.phases`: `start_to_listening_s`, `warmup_s`,
+    `runs_wall_s` = `decode_timed_s` + `prefill_and_request_s`, and `teardown_s`. The idle-gate wait is in
+    `machine.gate.wait_s` (TE1).
+  - `census.py` prints a phase split for cells that carry these fields, and now counts gate waits in seconds for both
+    gates. It still reproduces §1.2's 138 of 311 min on the load-gate logs.
+  - A one-cell exploratory smoke (not a result) showed the phases sum to the cell's own `secs` exactly.
+  - Visible in the code: teardown includes a fixed `sleep 3` "to let VRAM settle", paid on CPU cells too. That is a
+    TE2(a) candidate.
 - **Deliverable:** `docs/measurements/test-efficiency-2026-09.md` — hours by class (served gate, in-test measurement
   gate, sweep, suite, parity/refresh, evaluation) × machine × day/night for the last 30 days, the top 20 runs, and the
   re-runs. Re-run weekly while the campaign is open, and at close.
@@ -183,9 +191,10 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
     days, at 5–10 min each. That is TE7's target (affected-only selection and the test cache).
   - **Smaller classes:** in-test measurement 8.7 h, build/lint 6.1 h, parity/refresh 1.4 h. The served harness calls
     total 1.2 h because served gates run detached, and their spans are census.py's (§1.1).
-  - **Owed: the same miner on nobara, from its own transcripts.** It was not run on 2026-09-28 because a timed CUDA
-    prefill gate was running there, and a scan should not overlap a timed run. census.py on nobara's
-    `~/goinfer-bench` is owed with it.
+  - **nobara: DONE 2026-09-28** (at 12:31, with the box idle), from a temporary worktree of `origin/main`. It covers
+    18,730 calls, and waiting is again the largest class (47.8 h). The deliverable,
+    [`test-efficiency-2026-09.md`](../measurements/test-efficiency-2026-09.md), combines both machines: **114 h of
+    session waiting, 54% of all session call time, 95 h of it by day.** Unit suites come next at 36.7 h.
 
 ### TE1 — The idle gate reads what is running now *(one night: A/A + mutation)*
 
