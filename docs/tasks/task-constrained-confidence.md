@@ -552,6 +552,35 @@ exists.
   - Calibration fits one temperature per arm, and 600 rows is ample for one parameter.
 - **Runtime:** re-estimated from the resident check once the prefill ships. Over ~1 hour is a stop, not a start.
 
+**D6a amendment 2 (2026-09-28, owner; before any graded result): the ECE bar is bias-adjusted.**
+- **Why:** ECE is biased upward at small N, so a perfectly calibrated model does not read 0. TE3
+  (`docs/measurements/noise-registry.md`) put that floor at ~0.02–0.05 for 400 / 400 / 72 rows, against a 0.05 bar.
+  The bare bar could therefore fail a calibrated model on sampling noise alone.
+- **The bar:** ECE ≤ √(0.05² + floor²). The floor is `ece_floor()` in
+  `docs/measurements/decisions-d6a-2026-09-28/analyze.py`: it takes arm A's own calibrated confidences, draws each
+  row correct with probability equal to its confidence, scores the draw with the same 15 bins and kind weights, and
+  averages 2,000 draws (seed 0). The top-1 bands are unchanged.
+- **Why quadrature and not 0.05 + floor.** The owner chose "0.05 + the floor". A simulation run before recording
+  it showed that the linear form over-corrects:
+  - Setup: 400 / 400 / 72 rows, 40 simulated runs per cell. The confidences are either concentrated near 0.9 or
+    spread out, and the model is overconfident by a fixed true gap.
+
+    | true gap | floor | bare 0.05 | 0.05 + floor | √(0.05² + floor²) |
+    |---|---|---|---|---|
+    | 0 (calibrated), concentrated | 0.026 | 40/40 | 40/40 | 40/40 |
+    | 0 (calibrated), spread | 0.040 | 37/40 | 40/40 | 40/40 |
+    | 0.05, concentrated | 0.026 | 13/40 | 37/40 | 22/40 |
+    | 0.05, spread | 0.040 | 8/40 | 39/40 | 24/40 |
+    | 0.08, concentrated | 0.026 | 0/40 | 12/40 | 0/40 |
+    | 0.08, spread | 0.040 | 1/40 | 24/40 | 4/40 |
+
+  - The linear form puts the effective bar near a true gap of 0.07. The quadrature form puts it at ~0.05, which is
+    the bar's stated intent: a model right at the boundary passes about half the time. It still passes a calibrated
+    model in every simulated run.
+  - Sampling noise and a true gap combine roughly in quadrature inside |accuracy − confidence|, which is why
+    quadrature lands on the intent.
+- **Reported alongside:** the bare ECE, the floor and the bar, so the reading at the bare 0.05 remains visible.
+
 - **D6b (Route B parity).** goinfer JEV-9B against the D0 goldens at f32, int8int8 and int4
   (default). Pre-registered: mean KL ≤ 0.01 at f32 and ≤ 0.03 at int4, top-1 agreement ≥ 98%.
   Report ECE per arm: quantization can hold top-1 and still shift calibration, which is the

@@ -13,7 +13,8 @@ Metrics (per kind, then combined with the OOD split's own kind proportions — n
   noul AUROC: P(true) against the gold label (reported)
 
 Decision (arm A = Qwen3.5-9B chat-v1, calibrated), against JEV-9B's published OOD top-1 0.9181 / ECE 0.0396:
-  top-1 >= 0.8881 and ECE <= 0.05  -> Route A is enough: ship D1 + D5, park D2-D4
+  top-1 >= 0.8881 and ECE <= sqrt(0.05^2 + floor^2)  -> Route A is enough: ship D1 + D5, park D2-D4
+    (floor = ece_floor(): the ECE a perfectly calibrated model reads at this sample; owner amendment 2026-09-28)
   top-1 <  0.8181                  -> build D2-D4
   otherwise                        -> the owner's call, with these numbers
 Control (arm B = Qwen3.5-9B bare-v1, raw): the authors' B0 (the same computation, bf16) read OOD top-1 0.5180. Arm B
@@ -21,7 +22,8 @@ within 0.05 of it -> goinfer's Route A reproduces theirs; outside -> flagged, an
 
 usage: analyze.py <arm-name>=<eval-out.jsonl>:<calibration.json> ...
 """
-import json, math, sys
+import json
+import random, math, sys
 
 PROP = {"noul": 9767, "choice": 3219, "score": 72}
 TOTAL = sum(PROP.values())
@@ -90,6 +92,37 @@ def metrics(rows, temps):
     return top1 / wsum, ece, per
 
 
+def combined_ece(per, outcome):
+    """The combined, kind-weighted top-label ECE of metrics(), with accuracies taken from outcome(k, i)."""
+    bins = [[0.0, 0.0, 0.0] for _ in range(15)]
+    wsum = 0.0
+    for k, m in per.items():
+        w = PROP[k] / TOTAL / m["n"]
+        wsum += PROP[k] / TOTAL
+        for i, c in enumerate(m["conf"]):
+            b = min(14, int(c * 15))
+            bins[b][0] += w
+            bins[b][1] += w * outcome(k, i)
+            bins[b][2] += w * c
+    return sum(abs(b[1] - b[2]) for b in bins if b[0] > 0) / wsum
+
+
+def ece_floor(per, draws=2000, seed=0):
+    """The ECE a PERFECTLY CALIBRATED model would read at this sample: each row is correct with probability equal to
+    its own confidence, scored with the same bins and kind weights, averaged over draws (fixed seed, so the bar is
+    reproducible). Owner amendment 2026-09-28 (TE3's finding): at 400 / 400 / 72 rows this floor is ~0.02-0.05 against
+    a 0.05 bar. The bar adds the floor in quadrature, sqrt(0.05^2 + floor^2): sampling noise and a true calibration gap
+    combine roughly that way inside |accuracy - confidence|, so this bar sits at a true gap of ~0.05. Adding the floor
+    linearly (0.05 + floor) was checked by simulation and rejected: it passed a model 5 points overconfident 37-39
+    times in 40, which moves the bar to a true gap of ~0.07."""
+    rng = random.Random(seed)
+    tot = 0.0
+    for _ in range(draws):
+        draw = {k: [rng.random() < c for c in m["conf"]] for k, m in per.items()}
+        tot += combined_ece(per, lambda k, i: draw[k][i])
+    return tot / draws
+
+
 def main(args):
     results = {}
     for a in args:
@@ -113,15 +146,19 @@ def main(args):
             print(f"  fit {k}: n {f['n']} T {f['T']:.4f} KL {f['kl_before']:.4f} -> {f['kl_after']:.4f}{flag}")
         print()
     if "A" in results:
-        top1, ece, _ = results["A"][1]
-        if top1 >= JEV9B_TOP1 - 0.03 and ece <= 0.05:
+        top1, ece, per_a = results["A"][1]
+        floor = ece_floor(per_a)
+        bar = math.hypot(0.05, floor)
+        print(f"ECE floor (a perfectly calibrated model at this sample, arm A's own confidences, 2000 draws): {floor:.4f}; "
+              f"bar sqrt(0.05^2 + floor^2) = {bar:.4f}")
+        if top1 >= JEV9B_TOP1 - 0.03 and ece <= bar:
             verdict = "ROUTE A IS ENOUGH: ship D1 + D5, park D2-D4"
         elif top1 < JEV9B_TOP1 - 0.10:
             verdict = "BUILD D2-D4 (more than 10 points behind JEV-9B)"
         else:
             verdict = "IN BETWEEN: the owner's call"
         print(f"DECISION (arm A calibrated): top-1 {top1:.4f} vs JEV-9B {JEV9B_TOP1} (gap {JEV9B_TOP1 - top1:+.4f} points x100 = "
-              f"{100 * (JEV9B_TOP1 - top1):.1f}), ECE {ece:.4f} vs bar 0.05 -> {verdict}")
+              f"{100 * (JEV9B_TOP1 - top1):.1f}), ECE {ece:.4f} vs bar {bar:.4f} (0.05 and the floor in quadrature) -> {verdict}")
     if "B" in results:
         top1 = results["B"][0][0]
         ok = abs(top1 - B0_TOP1) <= 0.05
