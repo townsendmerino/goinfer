@@ -196,16 +196,21 @@ func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool, t
 
 // EnsureCachedGIW returns a .giw for the GGUF at ggufPath quantized to quant,
 // promised to backend — transcoding once into a sidecar cache (alongside the
-// GGUF, "<base>.<quant>.<target>.giw") when no fresh cache exists. The cache is
-// fresh when it's newer than the source AND was built for the same target (L2:
-// the cache key carries the target, so a CPU-built cache is never reused by a
-// Metal load — the same "wrong file → rebuild" path the version guard already
-// takes for a stale writer). The one-time transcode is logged to stderr (it can
-// take minutes and write tens of GB) so a slow first start isn't mistaken for a
-// hang. Returns the .giw path to load.
-func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (string, error) {
+// GGUF, "<base>.<quant>.<target>.giw", or "<base>.<quant>.e4h.<target>.giw" when
+// embedInt4 is set) when no fresh cache exists. The cache is fresh when it's
+// newer than the source AND was built for the same target (L2: the cache key
+// carries the target, so a CPU-built cache is never reused by a Metal load —
+// the same "wrong file → rebuild" path the version guard already takes for a
+// stale writer) AND the same embedInt4 setting (a plain-head sidecar and an
+// embed-int4 one are different bundles, never interchangeable — folding
+// embedInt4 into the filename, not just the Transcode call, is what stops a
+// stale plain-head cache from being silently served under the new default).
+// The one-time transcode is logged to stderr (it can take minutes and write
+// tens of GB) so a slow first start isn't mistaken for a hang. Returns the
+// .giw path to load.
+func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embedInt4 bool) (string, error) {
 	target := decoder.GIWTargetForBackend(backend)
-	cache := streamCachePath(ggufPath, quant, target)
+	cache := streamCachePath(ggufPath, quant, embedInt4, target)
 	if cacheFresh(cache, ggufPath, quant) {
 		return cache, nil
 	}
@@ -231,7 +236,7 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (stri
 	fmt.Fprintf(os.Stderr, "stream-weights: transcoding %s → %s (%s, one-time — minutes + ~model-size on disk)…\n",
 		filepath.Base(ggufPath), filepath.Base(cache), quantLabel(quant))
 	t0 := time.Now()
-	if err := Transcode(ctx, ggufPath, cache, quant, false, target); err != nil {
+	if err := Transcode(ctx, ggufPath, cache, quant, embedInt4, target); err != nil {
 		return "", err
 	}
 	if fi, e := os.Stat(cache); e == nil {
@@ -241,13 +246,13 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string) (stri
 	return cache, nil
 }
 
-// SidecarPathIfFresh returns the sidecar .giw for ggufPath at quant/backend's target, and true,
-// ONLY when a fresh one already exists — it never transcodes. For a caller like `fit`
-// (task-never-swap-2026-09.md S1 item 5) where measuring is supposed to stay cheap; forcing a
-// transcode just to check fit would trade a 32 s / 256 CPU-s resident build for an equally
-// expensive one-time transcode, not for "nearly free" as the brief asks.
-func SidecarPathIfFresh(ggufPath, quant, backend string) (string, bool) {
-	cache := streamCachePath(ggufPath, quant, decoder.GIWTargetForBackend(backend))
+// SidecarPathIfFresh returns the sidecar .giw for ggufPath at quant/backend's target and
+// embedInt4 setting, and true, ONLY when a fresh one already exists — it never transcodes. For a
+// caller like `fit` (task-never-swap-2026-09.md S1 item 5) where measuring is supposed to stay
+// cheap; forcing a transcode just to check fit would trade a 32 s / 256 CPU-s resident build for
+// an equally expensive one-time transcode, not for "nearly free" as the brief asks.
+func SidecarPathIfFresh(ggufPath, quant, backend string, embedInt4 bool) (string, bool) {
+	cache := streamCachePath(ggufPath, quant, embedInt4, decoder.GIWTargetForBackend(backend))
 	if cacheFresh(cache, ggufPath, quant) {
 		return cache, true
 	}
@@ -269,16 +274,23 @@ func DefaultToSidecar(directLoad bool) bool {
 	return runtime.GOOS == "darwin" || runtime.GOOS == "linux"
 }
 
-// streamCachePath is the sidecar cache for a GGUF at a quant and target:
-// "<base>.<quant>.<target>.giw" — GIWTargetNone spells as "canonical" rather than
-// an empty segment, so the path stays unambiguous.
-func streamCachePath(ggufPath, quant string, target decoder.GIWTarget) string {
+// streamCachePath is the sidecar cache for a GGUF at a quant, embedInt4 setting and target:
+// "<base>.<quant>.<target>.giw", or "<base>.<quant>.e4h.<target>.giw" when embedInt4 is set —
+// GIWTargetNone spells as "canonical" rather than an empty segment, so the path stays
+// unambiguous. The "e4h" segment (embed-int4-head) exists so a plain-head sidecar built before
+// EmbedInt4 defaulted on is never mistaken for, or overwritten by, an embed-int4 one built after:
+// they are different bundles at the same source and quant, and need different cache keys.
+func streamCachePath(ggufPath, quant string, embedInt4 bool, target decoder.GIWTarget) string {
 	base := ggufPath[:len(ggufPath)-len(filepath.Ext(ggufPath))]
 	tgt := string(target)
 	if tgt == "" {
 		tgt = "canonical"
 	}
-	return base + "." + quantLabel(quant) + "." + tgt + ".giw"
+	label := quantLabel(quant)
+	if embedInt4 {
+		label += ".e4h"
+	}
+	return base + "." + label + "." + tgt + ".giw"
 }
 
 // cacheFresh reports whether cache exists, is newer than src, AND actually loads.

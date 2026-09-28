@@ -366,8 +366,9 @@ drifted: serve alone retried a fit decline with streaming, and `fit` could not r
 references. `modelload.Load` runs these steps:
 
 1. It resolves a reference.
-2. It decides what to load. A `.gguf` becomes its sidecar `.giw` (below), unless the platform,
-   `-direct-load` or `--embed-int4` says otherwise. `--stream-weights` always needs the `.giw`.
+2. It decides what to load. A `.gguf` becomes its sidecar `.giw` (below), unless the platform or
+   `-direct-load` says otherwise — `--embed-int4` bakes into its own sidecar cache key rather than
+   forcing a direct load. `--stream-weights` always needs the `.giw`.
 3. It loads the tokenizer, from the `.giw`'s metadata half, the GGUF itself, or `tokenizer.json`.
 4. It calls `decoder.Load`. A direct `.gguf` build runs under the swap guard
    (`internal/swapguard`). If swap grows past `GOINFER_SWAP_GUARD` (512 MB by default), the build
@@ -443,8 +444,9 @@ This page used to promise an automatic fallback to the GGUF path; that fallback 
 ### Quantization and the CPU kernels
 
 **The default is `int4`.** `--quant` defaults to `int4` in chat, serve and `fit`. That is W4A8: int4
-weights, int8 activations. The embedding and LM head are kept at W8A8 unless you pass serve's
-`--embed-int4`. The alternatives:
+weights, int8 activations. The embedding and LM head are relaxed to int4 too by default
+(`--embed-int4`, default ON since 2026-09-28 — pass `--embed-int4=false` for the W8A8 pin). The
+alternatives:
 - `int8int8` (W8A8), where accuracy matters more than RAM;
 - `int8` (weight-only);
 - `int4mix`: the FFN at int4, attention and the router at int8 (GGUF sources only);

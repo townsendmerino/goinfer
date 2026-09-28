@@ -34,7 +34,7 @@ func TestSidecarLoad_matchesDirectLoad(t *testing.T) {
 	}
 	defer direct.Close()
 
-	giwPath, err := EnsureCachedGIW(context.Background(), src, quant, "")
+	giwPath, err := EnsureCachedGIW(context.Background(), src, quant, "", false)
 	if err != nil {
 		t.Fatalf("EnsureCachedGIW: %v", err)
 	}

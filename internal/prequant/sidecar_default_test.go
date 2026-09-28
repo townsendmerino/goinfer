@@ -69,10 +69,10 @@ func TestSidecarPathIfFresh(t *testing.T) {
 		dir := t.TempDir()
 		src := filepath.Join(dir, "model.gguf")
 		copyFixture(t, gguf, src)
-		if _, ok := SidecarPathIfFresh(src, "int8int8", ""); ok {
+		if _, ok := SidecarPathIfFresh(src, "int8int8", "", false); ok {
 			t.Fatal("no cache exists, want ok=false")
 		}
-		cache := streamCachePath(src, "int8int8", decoder.GIWTargetNone)
+		cache := streamCachePath(src, "int8int8", false, decoder.GIWTargetNone)
 		if _, err := os.Stat(cache); err == nil {
 			t.Fatal("SidecarPathIfFresh built a cache — it must only ever REUSE one, never build it (fit's whole point is staying cheap)")
 		}
@@ -82,7 +82,7 @@ func TestSidecarPathIfFresh(t *testing.T) {
 		dir := t.TempDir()
 		src := filepath.Join(dir, "model.gguf")
 		copyFixture(t, realTokenizerGGUF(t), src)
-		cache := streamCachePath(src, "int8int8", decoder.GIWTargetNone)
+		cache := streamCachePath(src, "int8int8", false, decoder.GIWTargetNone)
 		if err := Transcode(context.Background(), src, cache, "int8int8", false, decoder.GIWTargetNone); err != nil {
 			t.Fatalf("Transcode: %v", err)
 		}
@@ -90,7 +90,7 @@ func TestSidecarPathIfFresh(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, ok := SidecarPathIfFresh(src, "int8int8", "")
+		got, ok := SidecarPathIfFresh(src, "int8int8", "", false)
 		if !ok || got != cache {
 			t.Fatalf("got (%q, %v), want (%q, true)", got, ok, cache)
 		}
@@ -107,7 +107,7 @@ func TestSidecarPathIfFresh(t *testing.T) {
 		dir := t.TempDir()
 		src := filepath.Join(dir, "model.gguf")
 		copyFixture(t, realTokenizerGGUF(t), src)
-		cache := streamCachePath(src, "int8int8", decoder.GIWTargetNone)
+		cache := streamCachePath(src, "int8int8", false, decoder.GIWTargetNone)
 		if err := Transcode(context.Background(), src, cache, "int8int8", false, decoder.GIWTargetNone); err != nil {
 			t.Fatalf("Transcode: %v", err)
 		}
@@ -115,7 +115,7 @@ func TestSidecarPathIfFresh(t *testing.T) {
 		if err := os.Chtimes(src, future, future); err != nil {
 			t.Fatal(err)
 		}
-		if _, ok := SidecarPathIfFresh(src, "int8int8", ""); ok {
+		if _, ok := SidecarPathIfFresh(src, "int8int8", "", false); ok {
 			t.Fatal("source is newer than the cache, want ok=false")
 		}
 	})
@@ -131,14 +131,14 @@ func TestEnsureCachedGIW_refusesOnInsufficientDisk(t *testing.T) {
 	defer func() { freeDiskBytes = orig }()
 	freeDiskBytes = func(string) (int64, bool) { return 1, true } // 1 byte free: always less than any real source
 
-	_, err := EnsureCachedGIW(context.Background(), src, "int8int8", "")
+	_, err := EnsureCachedGIW(context.Background(), src, "int8int8", "", false)
 	if err == nil {
 		t.Fatal("want a refusal when free disk is far below the projected sidecar size")
 	}
 	if !strings.Contains(err.Error(), "free on this disk") {
 		t.Errorf("refusal %q does not name the disk-space reason", err.Error())
 	}
-	cache := streamCachePath(src, "int8int8", decoder.GIWTargetNone)
+	cache := streamCachePath(src, "int8int8", false, decoder.GIWTargetNone)
 	if _, statErr := os.Stat(cache); statErr == nil {
 		t.Error("a disk-space refusal must not leave a half-written sidecar (or any sidecar) behind")
 	}
@@ -157,7 +157,7 @@ func TestEnsureCachedGIW_proceedsWhenDiskProbeUnknown(t *testing.T) {
 	defer func() { freeDiskBytes = orig }()
 	freeDiskBytes = func(string) (int64, bool) { return 0, false } // unknown — every unknown proceeds
 
-	cache, err := EnsureCachedGIW(context.Background(), src, "int8int8", "")
+	cache, err := EnsureCachedGIW(context.Background(), src, "int8int8", "", false)
 	if err != nil {
 		t.Fatalf("an unknown disk probe must not block a load that would otherwise have worked: %v", err)
 	}

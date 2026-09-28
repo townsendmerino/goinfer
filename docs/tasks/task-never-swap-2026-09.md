@@ -277,6 +277,14 @@ precedent for the same idea).
 3. `--embed-int4`: the sidecar keeps the int8 pin today; either bake it into the sidecar name
    (`<base>.<quant>.embedint4.<target>.giw`) or keep the current note and have `--embed-int4`
    imply `--direct-load`. Pick one; document it in `--help`.
+
+   **DONE, 2026-09-28** (`docs/measurements/cpu-decode-peer-gap-2026-09-27.md` §4 lever 3, owner
+   decision to make `--embed-int4` the default): picked the first option. `streamCachePath` folds
+   an `e4h` segment into the cache key (`<base>.<quant>.e4h.<target>.giw`), so a plain-head and an
+   embed-int4 sidecar of the same source/quant never collide or get silently reused for each
+   other; `EnsureCachedGIW` threads `embedInt4` through to `Transcode` instead of hardcoding
+   `false`. `--embed-int4` no longer implies `--direct-load` or bypasses the sidecar — it now goes
+   through the same fast cached-mmap path as everything else, just under its own cache key.
 4. Compute-time LoRA: `loadAdapters` refuses `--stream-weights` because the pager mutates
    per-layer state under a shared model. A sidecar load *without* `-stream-weights` builds no
    pager (`newExpertPager`/`newLayerPager` are only constructed under `opts.StreamWeights`), so

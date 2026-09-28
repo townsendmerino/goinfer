@@ -124,10 +124,13 @@ Stated so nobody reads absence as endorsement:
   and for end-to-end coherence on the two real checkpoints named above. Nobody has measured what
   those sources cost in quality against their own f16 originals, and this page will not guess.
 - **`--embed-int4`** is disclosed as lossy at roughly **2.3 points of top-1**, mostly on rare
-  tokens. It is off by default for that reason. On darwin, it also implies `-direct-load`
-  (`docs/tasks/task-never-swap-2026-09.md` S1): the sidecar `.giw` cache has no representation for
-  the int4 embed/head pin yet, so a `--embed-int4` load stays on the direct-heap path rather than
-  silently losing the pin.
+  tokens (last measured pre-2026-09-28, not independently re-verified since). It is **default ON**
+  since 2026-09-28 (owner decision: the CPU decode-gap work made the LM head a bigger share of a
+  token — `docs/measurements/cpu-decode-peer-gap-2026-09-27.md` — and the quality re-eval was
+  explicitly parked, not re-run, before the flip); pass `--embed-int4=false` for the int8 pin
+  instead. It works with the sidecar `.giw` cache (baked into its own `e4h`-suffixed cache key,
+  distinct from a plain-head sidecar of the same source and quant — `internal/prequant.go`'s
+  `streamCachePath`) as well as a direct load.
 - The recommendation is for the families and shapes in `parity_manifest.json`. A family outside
   the gated set inherits no promise from this page.
 

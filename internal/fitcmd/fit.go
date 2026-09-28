@@ -162,7 +162,10 @@ func selfMeasure(path, quant string, admitted []string) {
 	}
 
 	measurePath := path
-	if cached, ok := prequant.SidecarPathIfFresh(path, quant, backend); ok && strings.HasSuffix(path, ".gguf") {
+	// embedInt4=false: fit has no -embed-int4 of its own and does not know the caller's, so it can
+	// only ever find a plain-head sidecar here — a pre-existing, separate blind spot, not fixed by
+	// this call's new parameter.
+	if cached, ok := prequant.SidecarPathIfFresh(path, quant, backend, false); ok && strings.HasSuffix(path, ".gguf") {
 		measurePath = cached // the sidecar a `--backend <this>` load built: mapped, not rebuilt
 	}
 	pm, err := decoder.Load(measurePath, decoder.Options{Backend: backend, Quant: quant})
@@ -264,7 +267,9 @@ func freshSidecar(path, quant string) (giw, backend string, ok bool) {
 		return "", "", false
 	}
 	for _, be := range []string{"cpu", "cuda", ""} {
-		if p, fresh := prequant.SidecarPathIfFresh(path, quant, be); fresh {
+		// embedInt4=false: same pre-existing blind spot as above — fit only ever looks for a
+		// plain-head sidecar.
+		if p, fresh := prequant.SidecarPathIfFresh(path, quant, be, false); fresh {
 			if be == "cuda" {
 				be = ""
 			}

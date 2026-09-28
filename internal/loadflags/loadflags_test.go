@@ -69,8 +69,10 @@ func TestOptions_everyFlagReachesOptions(t *testing.T) {
 		"moe-cache-slots":   {"--moe-cache-slots=7", func(o decoder.Options, _ *Flags) bool { return o.MoECacheSlots == 7 }},
 		"moe-pager":         {"--moe-pager=" + otherPager(), func(o decoder.Options, _ *Flags) bool { return o.MoEPager == otherPager() }},
 		"accept-slow":       {"--accept-slow", func(o decoder.Options, _ *Flags) bool { return o.AcceptSlowMoE }},
-		"embed-int4":        {"--embed-int4", func(o decoder.Options, _ *Flags) bool { return o.EmbedInt4 }},
-		"fit":               {"--fit=off", func(o decoder.Options, _ *Flags) bool { return o.DisableFit }},
+		// Default is true (2026-09-28): the row must probe the opt-out, not the (now-default) bare
+		// flag, or the "default does NOT look like the non-default value" check below is vacuous.
+		"embed-int4": {"--embed-int4=false", func(o decoder.Options, _ *Flags) bool { return !o.EmbedInt4 }},
+		"fit":        {"--fit=off", func(o decoder.Options, _ *Flags) bool { return o.DisableFit }},
 		"exact-prefill": {"--exact-prefill", func(o decoder.Options, _ *Flags) bool {
 			return o.ExactPrefill && (*o.Knobs)["GOINFER_CPU_FAST_ATTENTION"] == "0"
 		}},

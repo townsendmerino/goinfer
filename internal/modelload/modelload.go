@@ -119,16 +119,15 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 		fmt.Fprintln(os.Stderr, msg)
 	}
 	ensureGIW := func() (string, error) {
-		if opts.EmbedInt4 {
-			fmt.Fprintln(os.Stderr, "note: embed-int4 is ignored with stream-weights (the cached .giw keeps the int8 pin); prequant the model with embed-int4 to bake it")
-		}
-		return prequant.EnsureCachedGIW(ctx, src, opts.Quant, opts.Backend)
+		return prequant.EnsureCachedGIW(ctx, src, opts.Quant, opts.Backend, opts.EmbedInt4)
 	}
 
 	// Weight streaming needs the read-only mmap only a .giw provides, so a .gguf is transcoded to a
 	// sidecar once. Without streaming, a .gguf still resolves to its sidecar by default (S1,
 	// task-never-swap-2026-09.md) so resident weights are zero-copy mmap aliases rather than heap
-	// copies; -embed-int4 implies a direct load there rather than silently losing its int4 embed pin.
+	// copies. -embed-int4 bakes its int4 head into the sidecar too (streamCachePath's "e4h" cache
+	// key keeps it distinct from a plain-head sidecar of the same source and quant) — it no longer
+	// forces a direct load.
 	loadPath := src
 	if opts.Quant == "q4k" && strings.HasSuffix(src, ".gguf") {
 		// q4k has no .giw form yet (docs/tasks/task-int4-weight-quality-2026-09.md): load the .gguf
@@ -147,7 +146,7 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 			fmt.Fprintf(os.Stderr, "note: -stream-weights only applies to a .gguf source; %q is a "+
 				"safetensors directory — see cmd/prequant to build a streamable .giw from it\n", src)
 		}
-	} else if strings.HasSuffix(src, ".gguf") && !opts.EmbedInt4 && prequant.DefaultToSidecar(req.DirectLoad) {
+	} else if strings.HasSuffix(src, ".gguf") && prequant.DefaultToSidecar(req.DirectLoad) {
 		if loadPath, err = ensureGIW(); err != nil {
 			return nil, fmt.Errorf("sidecar cache (%s): %w — pass -direct-load (or GOINFER_GGUF_DIRECT=1) to load this .gguf straight into the heap instead", src, err)
 		}

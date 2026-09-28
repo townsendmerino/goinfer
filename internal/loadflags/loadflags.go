@@ -67,7 +67,7 @@ func Register(fs *flag.FlagSet, app App) *Flags {
 	fs.IntVar(&f.MoECacheSlots, "moe-cache-slots", 0, moeCacheSlotsHelp)
 	fs.StringVar(&f.MoEPager, "moe-pager", decoder.MoEPagerDefault(runtime.GOOS), moePagerHelp)
 	fs.BoolVar(&f.AcceptSlow, "accept-slow", false, acceptSlowHelp)
-	fs.BoolVar(&f.EmbedInt4, "embed-int4", false, embedInt4Help+per("embed-int4"))
+	fs.BoolVar(&f.EmbedInt4, "embed-int4", true, embedInt4Help+per("embed-int4"))
 	fs.BoolVar(&f.DirectLoad, "direct-load", os.Getenv("GOINFER_GGUF_DIRECT") != "", directLoadHelp)
 	fs.Var((*cliutil.OnOff)(&f.Fit), "fit", fitHelp) // lenient: --fit=off works (M-14)
 	fs.BoolVar(&f.ExactPrefill, "exact-prefill", false, ExactPrefillHelp)
@@ -227,7 +227,7 @@ const moePagerHelp = "CPU backing mode for a .giw-paged MoE model's expert pager
 
 const acceptSlowHelp = "acknowledge a -stream-weights paged-MoE load whose predicted working-set rate falls below decoder's own floor (2 tok/s) and load it anyway. Without this, such a load is refused with the predicted rate named, rather than run for hours with zero completions the way an unacknowledged M35/M26-class load did before this flag existed (task-never-swap-2026-09.md S4). The prediction is a PRIOR borrowed from an unrelated CUDA cache curve, not a measurement of this pager — raising -weight-cache to shrink the predicted miss rate is usually the better fix"
 
-const embedInt4Help = "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model. Lossy (~2.3 pts top-1, mostly rare tokens); GGUF direct load only (not the -stream-weights .giw cache)"
+const embedInt4Help = "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model, and on CPU measured a further 1.05-1.12x on total token time once the head became a bigger share of it (docs/measurements/cpu-decode-peer-gap-2026-09-27.md). Default ON since 2026-09-28 (owner decision, quality re-eval parked); pass -embed-int4=false for the int8 pin instead. Lossy (~2.3 pts top-1, mostly rare tokens, last measured pre-2026-09-28 — not independently re-verified since). Works with the -stream-weights .giw cache (baked into its own \"e4h\" sidecar, distinct from the int8-pin one) as well as a direct load"
 
 const directLoadHelp = "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin (since S1, task-never-swap-2026-09.md) and linux (since 2026-09-24) a .gguf resolves to its sidecar by default — this opts back out to the direct-heap-dequant load, which is still the default on other platforms. Also via GOINFER_GGUF_DIRECT=1. Ignored with -stream-weights, which always needs the sidecar's mmap regardless of platform"
 
