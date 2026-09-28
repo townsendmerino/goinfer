@@ -716,6 +716,12 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 				fmt.Fprintf(os.Stderr, "cpu batch %q: %d runs, %d batched steps (%d tokens), %d solo tokens, %d straggler runs, steps by size %v\n",
 					lm.name, st.Runs, st.Steps, st.StepTokens, st.SoloTokens, st.StragglerRuns, st.StepSizes[:max(2, lm.concurrent+1)])
 			}
+			if lm.model != nil && lm.model.ResidentConcurrency() > 1 {
+				// MC3 (Metal, CUDA): the resident batcher's counters, the same shape.
+				st := lm.model.ResidentBatchStats()
+				fmt.Fprintf(os.Stderr, "resident batch %q: %d runs, %d batched steps (%d tokens), %d solo tokens, %d straggler runs, steps by size %v\n",
+					lm.name, st.Runs, st.Steps, st.StepTokens, st.SoloTokens, st.StragglerRuns, st.StepSizes[:max(2, lm.concurrent+1)])
+			}
 		}
 		if cfg.sessionDir != "" && cfg.kvSessions > 0 {
 			deadline := time.Now().Add(5 * time.Second)

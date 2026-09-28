@@ -187,7 +187,7 @@ func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]floa
 		return nil, fmt.Errorf("cuda prefill: image prefill needs the whole %d-row prompt in one "+
 			"%d-row chunk (no chunked path for a bidirectional block): %w", M, chunk, errPrefillDeclined)
 	}
-	outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits, imgStart, imgEnd, nil)
+	outs, _, err := r.prefillCore(ctx, embeddings, startPos, tailLastLogits, imgStart, imgEnd, nil, nil)
 	if err != nil {
 		// N-41 (docs/audit-2026-09-10.md): unlike prefillChunked, this call cannot retry at a
 		// smaller width — a bidirectional image block has to land in one pass, and errPrefillOOM
@@ -305,7 +305,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		return nil, e
 	}
 	if M <= chunk || len(r.capBTaps) > 0 {
-		outs, _, err := r.prefillCore(ctx, embeddings, startPos, finalTail, 0, 0, mropePos)
+		outs, _, err := r.prefillCore(ctx, embeddings, startPos, finalTail, 0, 0, mropePos, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -330,7 +330,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 		if last {
 			tail = finalTail
 		}
-		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail, 0, 0, mropePos)
+		outs, _, err := r.prefillCore(ctx, embeddings[i:i+n], startPos+i, tail, 0, 0, mropePos, nil)
 		if err != nil {
 			if errors.Is(err, errPrefillOOM) && chunk > prefillMinChunk {
 				chunk = max(chunk/2, prefillMinChunk)
@@ -355,7 +355,7 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 // final norm + LM head is applied per row exactly as PrefillLast applies it to the last — so each
 // row's logits equal a sequential Forward's, which is what makes greedy accept lossless.
 func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]float32, error) {
-	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, 0, 0, nil)
+	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, 0, 0, nil, nil)
 	return outs, err
 }
 
@@ -373,7 +373,7 @@ func (r *cudaResident) PrefillLastN(embeddings [][]float32, startPos int) ([][]f
 // weaker requirement than PrefillLastN's, and it is what makes batching the head admissible at
 // all. TestPrefillLastNArgmax_matchesPerRow gates it.
 func (r *cudaResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error) {
-	_, ids, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllArgmax, 0, 0, nil)
+	_, ids, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllArgmax, 0, 0, nil, nil)
 	return ids, err
 }
 
@@ -397,7 +397,7 @@ func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (
 	// cancelled block-spec seed runs to completion. It is not fixed here because the fix is another
 	// interface change on a different seam, and doing it silently as a side effect of this one is
 	// how a surface changes without anyone deciding to. Filed with the P20 cancellation item.
-	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailLastLogits, 0, 0, nil)
+	outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailLastLogits, 0, 0, nil, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -765,7 +765,12 @@ func mropePosWindow(mropePos [][3]int, startPos, M int) [][3]int {
 	return mropePos[startPos : startPos+M]
 }
 
-func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, imgStart, imgEnd int, mropePos [][3]int) ([][]float32, []int, error) {
+// rows (MC3 on CUDA, batchstep.go) is the multi-sequence mode: non-nil means row m is ONE decode token of its own
+// sequence — KV slot rows[m].slot at position rows[m].pos — rather than prompt row startPos+m of one sequence. The
+// batched layer stack is unchanged; rope, the KV store and attention run per row through decode's own gap
+// (decodeAttnGap) with that row's slot bound; the tail must be tailAllLogits, whose per-row head is decode's, and a row
+// with a draw ends in ForwardSample's pick. nil is every other caller: behaviour unchanged.
+func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, imgStart, imgEnd int, mropePos [][3]int, rows []stepRow) ([][]float32, []int, error) {
 	M := len(embeddings)
 	if M == 0 {
 		return nil, nil, fmt.Errorf("cuda prefill: empty prompt")
@@ -773,11 +778,24 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	if e := r.prefillStaticDecline(); e != nil {
 		return nil, nil, e
 	}
-	if e := r.checkCap(startPos, M); e != nil {
+	if rows != nil {
+		// A step: each row is one decode token at its own position, and its attention is decode's (whose own launch
+		// checks the shared-memory limit per row), so the whole-pass checks below do not apply.
+		if len(rows) != M || tail != tailAllLogits || imgEnd > imgStart || mropePos != nil {
+			return nil, nil, fmt.Errorf("cuda step: %d rows for %d embeddings, tail %d — a step is all-logits, text only", len(rows), M, tail)
+		}
+		for _, rw := range rows {
+			if e := r.checkCap(rw.pos, 1); e != nil {
+				return nil, nil, e
+			}
+		}
+	} else if e := r.checkCap(startPos, M); e != nil {
 		return nil, nil, e
 	}
-	if e := r.checkPrefillShmem(startPos, M); e != nil {
-		return nil, nil, e
+	if rows == nil {
+		if e := r.checkPrefillShmem(startPos, M); e != nil {
+			return nil, nil, e
+		}
 	}
 	// Gemma 3 image-block prefill (decoder.ResidentImagePrefill). imgEnd<=imgStart is the "no
 	// block" sentinel every other caller passes (0,0) — see cuda/attn_img_prefill.cu's header
@@ -968,143 +986,156 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				}
 				r.profToc(glueCat, t)
 			}
-			// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V.
-			t = r.profTic()
-			ropeCfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
-			ropeArgs := []gpu.KernelArg{
-				Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
-				gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
-				gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
-				gpu.ArgValue(Ly.mscale),
-			}
-			var ropeErr error
-			if mropePos != nil {
-				mropeArgs := append(append([]gpu.KernelArg{}, ropeArgs...),
-					Arg(rposT), Arg(rposH), Arg(rposW), gpu.ArgValue(r.mropeSec0), gpu.ArgValue(r.mropeSec1))
-				ropeErr = r.launch(r.bRopeKVMRoPE, ropeCfg, mropeArgs...)
-			} else {
-				// qTempRows (Ministral 3, FeatAttnTemp): this launch covers M rows at different
-				// positions (startPos+m), so each row's post-RoPE query scale comes from a table
-				// built on the host with launchToken's own float64 expression. That keeps a batched
-				// row bit-identical to decode (audit-2026-09-10 G-11). Not carried into the m-RoPE
-				// branch above: rope_kv_mrope_batched has no attention temperature, and no family
-				// needs both today (Ministral 3 has no m-RoPE, Qwen2.5-VL no temperature).
-				qTemp, qe := r.attnTempRows(startPos, M)
-				if qe != nil {
-					return qe
+			if rows != nil {
+				// MC3 on CUDA: rope, the KV store and attention per sequence, through decode's own gap, each row on its own
+				// slot at its own position; the batched stack resumes at the ctx-quant below.
+				t = r.profTic()
+				if e := r.stepAttnRows(Ly, l, rows, qBb, kBb, vBb, cctxB); e != nil {
+					return e
 				}
-				ropeErr = r.launch(r.bRopeKV, ropeCfg, append(append([]gpu.KernelArg{}, ropeArgs...), qTemp)...)
-			}
-			if ropeErr != nil {
-				return ropeErr
-			}
-			r.profToc(glueCat, t)
-			// causal + per-row sliding-window attention; block 128 matches the M=1 attention reduce.
-			maxNWin := startPos + M
-			if Ly.window > 0 && int(Ly.window) < maxNWin {
-				maxNWin = int(Ly.window)
-			}
-			if imgEnd > imgStart {
-				// Widened per checkPrefillShmemImg's SAME formula (imgBlockMaxNWin) — the two must
-				// never drift apart, or this allocation under-sizes the launch it is meant to cover.
-				maxNWin = imgBlockMaxNWin(maxNWin, int(Ly.window), imgStart, imgEnd)
-			}
-			t = r.profTic()
-			// L2: the fused kernel when it serves this (hd, M), else attn_batched. Identical
-			// argument list by construction, so the two launches differ only in pipeline, grid and
-			// shared memory — see useAttnFused for the selection rule.
-			// The argument list is IDENTICAL for all three kernels by construction, so it is built
-			// once; the launches differ only in pipeline, grid and shared memory. Each names its
-			// pipeline field directly — see useAttnFused for why a local variable will not do.
-			attnArgs := []gpu.KernelArg{
-				Arg(qBb), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
-				gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(r.attnScale),
-				// N-10: r.sinkArg(l), not ArgNull(). The decode launches thread the gpt-oss
-				// learned sink through and this one hard-coded null — unreachable today only
-				// because every gpt-oss model is MoE and MoE declines batched prefill, which
-				// is a property of a DIFFERENT check and not something this call site should
-				// depend on.
-				gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l),
-			}
-			var attnErr error
-			// FLASH-DECODE LANE FOR SPECULATIVE VERIFY (attn-decode-fa-verify-PREREGISTERED.md): rows [laneFrom, M) of an all-rows
-			// verify batch are served by the multi-row lane, whose output is bit-identical to the M=1 lane at each row's position
-			// (TestFlashDecodeRowsBitIdentical), so a verified position scores exactly as plain lane decode scores it. Rows below
-			// laneFrom are under the attended-span floor and take the exact path below, as their M=1 decode would. laneFrom == M is
-			// "no lane rows" (the common case, and everything when the lane is off). laneFrom == 0 skips the exact launch entirely.
-			laneFrom := r.verifyLaneFrom(l, startPos, M, tail, imgEnd > imgStart)
-			// IMAGE BLOCK FIRST, unconditionally, before useAttnFused is even consulted — attn_fused's
-			// tile-level aggregates assume monotonic per-row nKeys across a 64-row tile, which an image
-			// block breaks (not supported; attn_batched's exact-path twin, attn_img_batched, is used
-			// instead). Checking imgEnd>imgStart after useAttnFused would risk silently routing a >=512
-			// -token image prompt through the incompatible fused kernel instead of declining to it.
-			if laneFrom == 0 {
-				// every row is a lane row: the exact attention launch is skipped and the lane below writes the whole context buffer
-			} else if imgEnd > imgStart {
-				imgArgs := append(append([]gpu.KernelArg{}, attnArgs...),
-					gpu.ArgValue(int32(imgStart)), gpu.ArgValue(int32(imgEnd)))
-				attnErr = r.launch(r.bAttnImg, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
-					BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, imgArgs...)
-			} else if fsh, use := r.useAttnFused(hd, M); use {
-				fcfg := LaunchConfig{GridX: uint32(r.nH),
-					GridY: uint32((M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
-					BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: fsh}
-				// Default tile (attn-fused-tile128-default-PREREGISTERED.md): hd128 layers with no sliding window run the
-				// 128-row-tile kernel (bit-identical to the 64x64 one for window == 0, 2.4x faster at K=3900). hd64 stays 64x64
-				// (0.5B measured ~5% slower with it), and so do windowed layers (their key-tile grouping starts at the block's
-				// first row, so a taller block is not bit-identical there). GOINFER_CUDA_ATTN_FUSED_TILE=64x64 forces 64x64.
-				tile := r.attnTile
-				if tile == 0 && hd == 128 && Ly.window <= 0 && r.bAttnBM128hd128 != (Pipeline{}) {
-					tile = 3
+				r.profToc(attnCat, t)
+			} else if e := func() error {
+				// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V.
+				t = r.profTic()
+				ropeCfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+				ropeArgs := []gpu.KernelArg{
+					Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
+					gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+					gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
+					gpu.ArgValue(Ly.mscale),
 				}
-				if tile > 0 {
-					// R5 phase-1/diagnostic arms (attn-fused-tile-PREREGISTERED.md): query tile 32 / 32 / 128 rows.
-					// Each pipeline is named at its launch (TestPipelineLint_boundKernelsAreLaunched keys on that).
-					bm, bn := 32, 64
-					if tile == 2 {
-						bn = 32
-					} else if tile == 3 {
-						bm = 128
-					}
-					fcfg.GridY = uint32((M + bm - 1) / bm)
-					fcfg.BlockX = uint32(bm / 16 * 32)
-					fcfg.SharedMemBytes = uint32(2 * (bn*(hd+attnFusedKPAD) + hd*(bn+attnFusedKPAD)))
-					switch {
-					case tile == 1 && hd == 64:
-						attnErr = r.launch(r.bAttnBM32x64hd64, fcfg, attnArgs...)
-					case tile == 1:
-						attnErr = r.launch(r.bAttnBM32x64hd128, fcfg, attnArgs...)
-					case tile == 2 && hd == 64:
-						attnErr = r.launch(r.bAttnBM32x32hd64, fcfg, attnArgs...)
-					case tile == 2:
-						attnErr = r.launch(r.bAttnBM32x32hd128, fcfg, attnArgs...)
-					case hd == 64:
-						attnErr = r.launch(r.bAttnBM128hd64, fcfg, attnArgs...)
-					default:
-						attnErr = r.launch(r.bAttnBM128hd128, fcfg, attnArgs...)
-					}
-					r.fastAttnLaunches++
-					if tile == 3 {
-						r.tile128Launches++
-					}
-				} else if hd == 64 {
-					attnErr = r.launch(r.bAttnFused64, fcfg, attnArgs...)
-					r.fastAttnLaunches++
+				var ropeErr error
+				if mropePos != nil {
+					mropeArgs := append(append([]gpu.KernelArg{}, ropeArgs...),
+						Arg(rposT), Arg(rposH), Arg(rposW), gpu.ArgValue(r.mropeSec0), gpu.ArgValue(r.mropeSec1))
+					ropeErr = r.launch(r.bRopeKVMRoPE, ropeCfg, mropeArgs...)
 				} else {
-					attnErr = r.launch(r.bAttnFused128, fcfg, attnArgs...)
-					r.fastAttnLaunches++
+					// qTempRows (Ministral 3, FeatAttnTemp): this launch covers M rows at different
+					// positions (startPos+m), so each row's post-RoPE query scale comes from a table
+					// built on the host with launchToken's own float64 expression. That keeps a batched
+					// row bit-identical to decode (audit-2026-09-10 G-11). Not carried into the m-RoPE
+					// branch above: rope_kv_mrope_batched has no attention temperature, and no family
+					// needs both today (Ministral 3 has no m-RoPE, Qwen2.5-VL no temperature).
+					qTemp, qe := r.attnTempRows(startPos, M)
+					if qe != nil {
+						return qe
+					}
+					ropeErr = r.launch(r.bRopeKV, ropeCfg, append(append([]gpu.KernelArg{}, ropeArgs...), qTemp)...)
 				}
-			} else {
-				attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
-					BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, attnArgs...)
+				if ropeErr != nil {
+					return ropeErr
+				}
+				r.profToc(glueCat, t)
+				// causal + per-row sliding-window attention; block 128 matches the M=1 attention reduce.
+				maxNWin := startPos + M
+				if Ly.window > 0 && int(Ly.window) < maxNWin {
+					maxNWin = int(Ly.window)
+				}
+				if imgEnd > imgStart {
+					// Widened per checkPrefillShmemImg's SAME formula (imgBlockMaxNWin) — the two must
+					// never drift apart, or this allocation under-sizes the launch it is meant to cover.
+					maxNWin = imgBlockMaxNWin(maxNWin, int(Ly.window), imgStart, imgEnd)
+				}
+				t = r.profTic()
+				// L2: the fused kernel when it serves this (hd, M), else attn_batched. Identical
+				// argument list by construction, so the two launches differ only in pipeline, grid and
+				// shared memory — see useAttnFused for the selection rule.
+				// The argument list is IDENTICAL for all three kernels by construction, so it is built
+				// once; the launches differ only in pipeline, grid and shared memory. Each names its
+				// pipeline field directly — see useAttnFused for why a local variable will not do.
+				attnArgs := []gpu.KernelArg{
+					Arg(qBb), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
+					gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(r.attnScale),
+					// N-10: r.sinkArg(l), not ArgNull(). The decode launches thread the gpt-oss
+					// learned sink through and this one hard-coded null — unreachable today only
+					// because every gpt-oss model is MoE and MoE declines batched prefill, which
+					// is a property of a DIFFERENT check and not something this call site should
+					// depend on.
+					gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l),
+				}
+				var attnErr error
+				// FLASH-DECODE LANE FOR SPECULATIVE VERIFY (attn-decode-fa-verify-PREREGISTERED.md): rows [laneFrom, M) of an all-rows
+				// verify batch are served by the multi-row lane, whose output is bit-identical to the M=1 lane at each row's position
+				// (TestFlashDecodeRowsBitIdentical), so a verified position scores exactly as plain lane decode scores it. Rows below
+				// laneFrom are under the attended-span floor and take the exact path below, as their M=1 decode would. laneFrom == M is
+				// "no lane rows" (the common case, and everything when the lane is off). laneFrom == 0 skips the exact launch entirely.
+				laneFrom := r.verifyLaneFrom(l, startPos, M, tail, imgEnd > imgStart)
+				// IMAGE BLOCK FIRST, unconditionally, before useAttnFused is even consulted — attn_fused's
+				// tile-level aggregates assume monotonic per-row nKeys across a 64-row tile, which an image
+				// block breaks (not supported; attn_batched's exact-path twin, attn_img_batched, is used
+				// instead). Checking imgEnd>imgStart after useAttnFused would risk silently routing a >=512
+				// -token image prompt through the incompatible fused kernel instead of declining to it.
+				if laneFrom == 0 {
+					// every row is a lane row: the exact attention launch is skipped and the lane below writes the whole context buffer
+				} else if imgEnd > imgStart {
+					imgArgs := append(append([]gpu.KernelArg{}, attnArgs...),
+						gpu.ArgValue(int32(imgStart)), gpu.ArgValue(int32(imgEnd)))
+					attnErr = r.launch(r.bAttnImg, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
+						BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, imgArgs...)
+				} else if fsh, use := r.useAttnFused(hd, M); use {
+					fcfg := LaunchConfig{GridX: uint32(r.nH),
+						GridY: uint32((M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
+						BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: fsh}
+					// Default tile (attn-fused-tile128-default-PREREGISTERED.md): hd128 layers with no sliding window run the
+					// 128-row-tile kernel (bit-identical to the 64x64 one for window == 0, 2.4x faster at K=3900). hd64 stays 64x64
+					// (0.5B measured ~5% slower with it), and so do windowed layers (their key-tile grouping starts at the block's
+					// first row, so a taller block is not bit-identical there). GOINFER_CUDA_ATTN_FUSED_TILE=64x64 forces 64x64.
+					tile := r.attnTile
+					if tile == 0 && hd == 128 && Ly.window <= 0 && r.bAttnBM128hd128 != (Pipeline{}) {
+						tile = 3
+					}
+					if tile > 0 {
+						// R5 phase-1/diagnostic arms (attn-fused-tile-PREREGISTERED.md): query tile 32 / 32 / 128 rows.
+						// Each pipeline is named at its launch (TestPipelineLint_boundKernelsAreLaunched keys on that).
+						bm, bn := 32, 64
+						if tile == 2 {
+							bn = 32
+						} else if tile == 3 {
+							bm = 128
+						}
+						fcfg.GridY = uint32((M + bm - 1) / bm)
+						fcfg.BlockX = uint32(bm / 16 * 32)
+						fcfg.SharedMemBytes = uint32(2 * (bn*(hd+attnFusedKPAD) + hd*(bn+attnFusedKPAD)))
+						switch {
+						case tile == 1 && hd == 64:
+							attnErr = r.launch(r.bAttnBM32x64hd64, fcfg, attnArgs...)
+						case tile == 1:
+							attnErr = r.launch(r.bAttnBM32x64hd128, fcfg, attnArgs...)
+						case tile == 2 && hd == 64:
+							attnErr = r.launch(r.bAttnBM32x32hd64, fcfg, attnArgs...)
+						case tile == 2:
+							attnErr = r.launch(r.bAttnBM32x32hd128, fcfg, attnArgs...)
+						case hd == 64:
+							attnErr = r.launch(r.bAttnBM128hd64, fcfg, attnArgs...)
+						default:
+							attnErr = r.launch(r.bAttnBM128hd128, fcfg, attnArgs...)
+						}
+						r.fastAttnLaunches++
+						if tile == 3 {
+							r.tile128Launches++
+						}
+					} else if hd == 64 {
+						attnErr = r.launch(r.bAttnFused64, fcfg, attnArgs...)
+						r.fastAttnLaunches++
+					} else {
+						attnErr = r.launch(r.bAttnFused128, fcfg, attnArgs...)
+						r.fastAttnLaunches++
+					}
+				} else {
+					attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
+						BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, attnArgs...)
+				}
+				if attnErr == nil && laneFrom < M {
+					attnErr = r.flashVerifyAttn(l, startPos, laneFrom, M, qBb, cctxB)
+				}
+				if attnErr != nil {
+					return attnErr
+				}
+				r.profToc(attnCat, t)
+				return nil
+			}(); e != nil {
+				return e
 			}
-			if attnErr == nil && laneFrom < M {
-				attnErr = r.flashVerifyAttn(l, startPos, laneFrom, M, qBb, cctxB)
-			}
-			if attnErr != nil {
-				return attnErr
-			}
-			r.profToc(attnCat, t)
 			// segB: ctx-quant (glue), o-proj (gemv, accum into residual), MLP.
 			t = r.profTic()
 			if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
@@ -1328,6 +1359,18 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			if e := r.doG(r.lmW, r.aq, r.aSc, ArgNull(), r.logits, 0); e != nil {
 				return e
 			}
+			if rows != nil && rows[m].draw != nil {
+				// A step row whose token is drawn on-device: ForwardSample's own pick over this row's logits.
+				if ids == nil {
+					ids = make([]int, M)
+				}
+				id, e := r.stepDraw(rows[m].draw)
+				if e != nil {
+					return e
+				}
+				ids[m] = id
+				continue
+			}
 			if e := r.stream.Sync(); e != nil {
 				return e
 			}
@@ -1335,6 +1378,11 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				return e
 			}
 			outs[m] = append([]float32(nil), r.logitsHost...)
+			if rows != nil {
+				// Forward's own host tail (step()): a step row must equal Forward's return, not only the device buffer.
+				applySoftcap(outs[m], r.finalSoftcap)
+				applyLogitScale(outs[m], r.logitScale)
+			}
 		}
 		return r.launchErr
 	})

@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"reflect"
 	"runtime/debug"
@@ -2197,7 +2196,7 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	if r.prefillReady && r.dnet == nil {
 		// context.Background(): ForwardN is the spec-decode verify, M<=9 rows, and its own
 		// interface carries no context. Nothing here is long enough to want cancelling.
-		if outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, 0, 0, nil); err == nil {
+		if outs, _, err := r.prefillCore(context.Background(), embeddings, startPos, tailAllLogits, 0, 0, nil, nil); err == nil {
 			return outs, nil
 		} else if !errors.Is(err, errPrefillDeclined) {
 			return nil, err
@@ -3628,10 +3627,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 	// decoder.Model.AttnTempScale exactly. attnTempBeta==0 (every family without this feature)
 	// skips the division entirely: attnTempOrigMaxPos is 0 for those families, and pos/0 would
 	// poison Q with NaN otherwise.
-	qTempScale := float32(1)
-	if r.attnTempBeta != 0 {
-		qTempScale = float32(1 + r.attnTempBeta*math.Log1p(math.Floor(float64(pos)/r.attnTempOrigMaxPos)))
-	}
+	qTempScale := r.qTempScaleAt(pos)
 	if e := gpu.Upload(r.x, emb); e != nil {
 		return e
 	}
@@ -3696,70 +3692,9 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 			} else if e := r.segA(Ly, l); e != nil {
 				return e
 			}
-			// --- dynamic gap: rope_kv + attention (bind pos/nKeys; attention's shared-mem grows with the
-			// attended span — never graph-static). Same stream as the segments, so ordering is preserved.
-			// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): rhalf == hd/2 for full rotary, rotaryDim/2 for partial.
-			if err := r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
-				Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
-				gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
-				gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(ropePos)), gpu.ArgValue(int32(Ly.rhalf)),
-				gpu.ArgValue(Ly.mscale), gpu.ArgValue(qTempScale)); err != nil {
-				return err
-			}
-			nKeys := pos + 1
-			// Sliding window (per layer: Mistral all-local, Mellum interleaves); shared sized to the attended span.
-			nWin := nKeys
-			if Ly.window > 0 && nKeys > int(Ly.window) {
-				nWin = int(Ly.window)
-			}
-			// M-16: split-KV is REQUIRED, not merely preferred, once the single-block launch would
-			// exceed the device's shared-memory limit. The `r.splitkvAttn` env gate and the
-			// per-geometry perf threshold both describe when split-KV is FASTER; neither knows when
-			// the alternative cannot run at all. Without this, -ctx 16384 on a model whose geometry
-			// says splitkvNever (nH >= 24: Qwen2.5-7B, Llama-3-8B, phi3-mini) fails at position
-			// 12,160 — or silently drops to the sequential prefill.
-			mustSplit := splitKVRequired(nWin)
-			if mustSplit && (!r.splitkvAttn || r.skScores == (Pipeline{})) {
-				return fmt.Errorf("cuda: attention at %d attended keys needs %d B of shared memory, "+
-					"past this device's %d B limit, and split-KV is unavailable (%s) — lower -ctx or "+
-					"re-enable GOINFER_SPLITKV_ATTN (M-16)", nWin, attnShmemBytes(nWin),
-					singleBlockAttnShmemLimit,
-					map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
-			}
-			if r.faSplit > 0 && r.faExactScope.Load() == 0 && nWin >= r.faMinKeys && r.faEligible(l) {
-				// Flash-decode lane (default ON, GOINFER_CUDA_FLASH_DECODE=0 to disable; R6): NOT bit-identical, fidelity-gated.
-				// Checked first because it replaces the exact path's three launches outright when eligible.
-				if err := r.flashDecodeAttn(l, pos); err != nil {
-					return err
-				}
-			} else if r.splitkvAttn && r.skScores != (Pipeline{}) && (mustSplit || nWin >= r.splitkvMin(Ly.nKV, Ly.hd)) {
-				// Campaign-A split-KV: high-occupancy, BIT-IDENTICAL to attn_batched(M=1) (proven by
-				// TestSplitKV_bitIdentical) — fills the SMs the single-block kernel leaves idle at long ctx.
-				// Gated PER LAYER on nWin (the EFFECTIVE attended span) against a per-geometry threshold, so
-				// shallow decode keeps the cheaper single-block path. nWin not nKeys: a sliding-window layer
-				// never attends more than `window` keys, so its cost is set by the window, not by position —
-				// gating it on position made gemma3's windowed layers take the split path at a 512-key span
-				// (its loss regime) at every depth past the window. Both arms are byte-identical, so a layer
-				// flipping arms mid-request as nWin grows is safe by construction.
-				if err := r.splitKVAttnDecode(l, pos); err != nil {
-					return err
-				}
-			} else if r.prefillReady {
-				// Coalesced M=1 decode attention: attn_batched with M=1 is BIT-IDENTICAL to the glue
-				// `attention` (TestAttnBatched_bitIdentical) but reads K via float4 — 21.96%→98% bytes/sector.
-				// ncu found the glue decode attention L1TEX-latency-bound at 2048 (~63% of the decode budget,
-				// the 221→97 tok/s long-context deficit vs current Ollama); the coalesced read recovers it.
-				// startPos=pos, M=1 → nKeys = pos+1; same GridX/block/shared/ctx-layout as the glue launch, so
-				// decode stays byte-identical. glue `attention` (audited) is UNTOUCHED and is the fallback below.
-				if err := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-					Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l)); err != nil {
-					return err
-				}
-			} else {
-				if err := r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
-					Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx)); err != nil {
-					return err
-				}
+			// --- dynamic gap: rope_kv + attention (decodeAttnGap; MC3 on CUDA runs it per sequence inside a step).
+			if e := r.decodeAttnGap(Ly, l, pos, ropePos, qTempScale); e != nil {
+				return e
 			}
 		}
 		if r.subCap { // pre-o-proj attention context (qDim), before quant — the cross-box discriminator (live path only)
@@ -3798,6 +3733,78 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 		r.profMark(&r.profHead)
 	}
 	return r.launchErr // surface any launch error discarded in the dense chain above (M23)
+}
+
+// decodeAttnGap is one layer's dynamic gap of a single-token decode: rope_kv at (pos, ropePos) into the BOUND KV slot,
+// then the attention launch decode chooses for this position — the flash-decode lane, split-KV, the coalesced
+// attn_batched(M=1), or the glue kernel — reading r.qB/r.kB/r.vB and writing r.cctx. Moved out of launchToken
+// unchanged, so decode is byte-identical; MC3 on CUDA (batchstep.go) calls it per sequence inside a step, with those
+// four buffers pointed at the sequence's row and its slot bound, so every row gets exactly its own decode's kernels.
+func (r *cudaResident) decodeAttnGap(Ly *cudaLayer, l, pos, ropePos int, qTempScale float32) error {
+	// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): rhalf == hd/2 for full rotary, rotaryDim/2 for partial.
+	if err := r.launch(r.ropeKV, g1cfg(r.nH*Ly.rhalf+Ly.nKV*Ly.rhalf+Ly.nKV*(Ly.hd-2*Ly.rhalf), 256),
+		Arg(r.qB), Arg(r.kB), Arg(r.vB), Arg(Ly.invF), Arg(r.kc[l]), Arg(r.vc[l]),
+		gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)),
+		gpu.ArgValue(int32(pos)), gpu.ArgValue(int32(ropePos)), gpu.ArgValue(int32(Ly.rhalf)),
+		gpu.ArgValue(Ly.mscale), gpu.ArgValue(qTempScale)); err != nil {
+		return err
+	}
+	nKeys := pos + 1
+	// Sliding window (per layer: Mistral all-local, Mellum interleaves); shared sized to the attended span.
+	nWin := nKeys
+	if Ly.window > 0 && nKeys > int(Ly.window) {
+		nWin = int(Ly.window)
+	}
+	// M-16: split-KV is REQUIRED, not merely preferred, once the single-block launch would
+	// exceed the device's shared-memory limit. The `r.splitkvAttn` env gate and the
+	// per-geometry perf threshold both describe when split-KV is FASTER; neither knows when
+	// the alternative cannot run at all. Without this, -ctx 16384 on a model whose geometry
+	// says splitkvNever (nH >= 24: Qwen2.5-7B, Llama-3-8B, phi3-mini) fails at position
+	// 12,160 — or silently drops to the sequential prefill.
+	mustSplit := splitKVRequired(nWin)
+	if mustSplit && (!r.splitkvAttn || r.skScores == (Pipeline{})) {
+		return fmt.Errorf("cuda: attention at %d attended keys needs %d B of shared memory, "+
+			"past this device's %d B limit, and split-KV is unavailable (%s) — lower -ctx or "+
+			"re-enable GOINFER_SPLITKV_ATTN (M-16)", nWin, attnShmemBytes(nWin),
+			singleBlockAttnShmemLimit,
+			map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
+	}
+	if r.faSplit > 0 && r.faExactScope.Load() == 0 && nWin >= r.faMinKeys && r.faEligible(l) {
+		// Flash-decode lane (default ON, GOINFER_CUDA_FLASH_DECODE=0 to disable; R6): NOT bit-identical, fidelity-gated.
+		// Checked first because it replaces the exact path's three launches outright when eligible.
+		if err := r.flashDecodeAttn(l, pos); err != nil {
+			return err
+		}
+	} else if r.splitkvAttn && r.skScores != (Pipeline{}) && (mustSplit || nWin >= r.splitkvMin(Ly.nKV, Ly.hd)) {
+		// Campaign-A split-KV: high-occupancy, BIT-IDENTICAL to attn_batched(M=1) (proven by
+		// TestSplitKV_bitIdentical) — fills the SMs the single-block kernel leaves idle at long ctx.
+		// Gated PER LAYER on nWin (the EFFECTIVE attended span) against a per-geometry threshold, so
+		// shallow decode keeps the cheaper single-block path. nWin not nKeys: a sliding-window layer
+		// never attends more than `window` keys, so its cost is set by the window, not by position —
+		// gating it on position made gemma3's windowed layers take the split path at a 512-key span
+		// (its loss regime) at every depth past the window. Both arms are byte-identical, so a layer
+		// flipping arms mid-request as nWin grows is safe by construction.
+		if err := r.splitKVAttnDecode(l, pos); err != nil {
+			return err
+		}
+	} else if r.prefillReady {
+		// Coalesced M=1 decode attention: attn_batched with M=1 is BIT-IDENTICAL to the glue
+		// `attention` (TestAttnBatched_bitIdentical) but reads K via float4 — 21.96%→98% bytes/sector.
+		// ncu found the glue decode attention L1TEX-latency-bound at 2048 (~63% of the decode budget,
+		// the 221→97 tok/s long-context deficit vs current Ollama); the coalesced read recovers it.
+		// startPos=pos, M=1 → nKeys = pos+1; same GridX/block/shared/ctx-layout as the glue launch, so
+		// decode stays byte-identical. glue `attention` (audited) is UNTOUCHED and is the fallback below.
+		if err := r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
+			Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(pos)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), gpu.ArgValue(int32(1)), Arg(r.cctx), r.sinkArg(l)); err != nil {
+			return err
+		}
+	} else {
+		if err := r.launch(r.fAttn, LaunchConfig{GridX: uint32(r.nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((nWin + 128) * 4)},
+			Arg(r.qB), Arg(r.kc[l]), Arg(r.vc[l]), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(Ly.nKV)), gpu.ArgValue(int32(Ly.hd)), gpu.ArgValue(int32(nKeys)), gpu.ArgValue(r.attnScale), gpu.ArgValue(Ly.window), Arg(r.cctx)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // step returns full logits — the general contract (sampler / constrained decode / logprobs).
