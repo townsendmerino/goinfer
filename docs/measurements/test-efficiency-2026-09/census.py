@@ -108,7 +108,50 @@ def served(since):
     print(f"\n  {'model':<10} {'engine':<12} {'cells':>5} {'wall min':>9} {'timed':>6} {'overhead/cell':>14}")
     for k, v in sorted(by.items(), key=lambda kv: -kv[1][1])[:16]:
         print(f"  {k[0]:<10} {k[1]:<12} {v[0]:>5} {v[1] / 60:>9.1f} {100 * v[2] / v[1]:>5.0f}% {(v[1] - v[2]) / v[0]:>12.1f} s")
+    # TE0 "continuous": cells recorded since bench_peer.py began timing its phases (counts.phases) and its idle gate
+    # (machine.gate.wait_s) split the overhead above by measurement instead of by inference.
+    keys = ("start_to_listening_s", "warmup_s", "prefill_and_request_s", "decode_timed_s", "teardown_s")
+    ph = collections.defaultdict(lambda: [0] + [0.0] * (len(keys) + 1))
+    for _, _, _, recs in outs:
+        for r in recs:
+            c = r.get("counts")
+            try:
+                c = ast.literal_eval(c) if isinstance(c, str) else c
+            except Exception:
+                c = None
+            p = (c or {}).get("phases") if isinstance(c, dict) else None
+            if not p:
+                continue
+            k = (str(r.get("model")), str(r.get("engine")))
+            ph[k][0] += 1
+            for i, key in enumerate(keys):
+                ph[k][1 + i] += p.get(key, 0.0)
+            ph[k][-1] += ((r.get("machine") or {}).get("gate") or {}).get("wait_s", 0.0)
+    n = sum(v[0] for v in ph.values())
+    print(f"\nphase split (cells that record counts.phases): {n}")
+    if n:
+        print(f"  {'model':<10} {'engine':<12} {'cells':>5}  mean s per cell: {'gate':>6} {'start':>6} {'warm':>6} "
+              f"{'prefill':>7} {'decode':>7} {'teardn':>6}")
+        for k, v in sorted(ph.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+            m = [x / v[0] for x in v[1:]]
+            print(f"  {k[0]:<10} {k[1]:<12} {v[0]:>5}  {'':16} {m[-1]:>6.1f} {m[0]:>6.1f} {m[1]:>6.1f} {m[2]:>7.1f} "
+                  f"{m[3]:>7.1f} {m[4]:>6.1f}")
     print()
+
+
+def gate_wait_seconds(text):
+    """Seconds a run log spent in bench_peer.py's idle gates. A load-gate line ("cell gate: loadavg", or a run-*.sh's
+    "waiting for idle") is one 20 s sleep. An instant-gate line (TE1, "cell gate (instant): … waiting (N/…") carries its
+    own cumulative wait N, so each run of consecutive lines contributes its last N plus one sample window (~5 s)."""
+    load = len(re.findall(r"cell gate: loadavg|waiting for idle", text)) * 20
+    inst, prev = 0.0, None
+    for n in (float(x) for x in re.findall(r"cell gate \(instant\):.*?waiting \((\d+)/", text)):
+        if prev is not None and n < prev:
+            inst += prev + 5
+        prev = n
+    if prev is not None:
+        inst += prev + 5
+    return load + inst
 
 
 def spans_and_tests(roots, since):
@@ -133,7 +176,7 @@ def spans_and_tests(roots, since):
                 secs = (b - a).total_seconds()
                 if not (0 < secs < 86400) or (since and ts[:10] < since):
                     continue
-                waits = len(re.findall(r"cell gate: loadavg|waiting for idle", t[pos:nxt[0][0]]))
+                waits = gate_wait_seconds(t[pos:nxt[0][0]])
                 line = t[pos:t.find("\n", pos)]
                 spans.append((ts[:16], secs, waits, rel, line))
             for m in re.finditer(r"^(ok|FAIL)\s+(\S+)\s+([\d.]+)s", t, re.M):
@@ -144,11 +187,11 @@ def spans_and_tests(roots, since):
     tot = sum(s[1] for s in spans)
     gated = [s for s in spans if s[2]]
     print(f"{len(spans)} spans, {tot / 3600:.1f} h; {len(gated)} contain idle-gate waits: "
-          f"{sum(s[1] for s in gated) / 60:.0f} min of wall, {sum(s[2] for s in gated) * 20 / 60:.0f} min of it waiting "
-          f"({100 * sum(s[2] for s in gated) * 20 / max(1, sum(s[1] for s in gated)):.0f}%)")
+          f"{sum(s[1] for s in gated) / 60:.0f} min of wall, {sum(s[2] for s in gated) / 60:.0f} min of it waiting "
+          f"({100 * sum(s[2] for s in gated) / max(1, sum(s[1] for s in gated)):.0f}%)")
     print("\nlongest 15:")
     for s in sorted(spans, key=lambda s: -s[1])[:15]:
-        print(f"  {s[0]}  {s[1] / 60:5.1f} min  waits {s[2] * 20 / 60:4.1f} min  {s[3][:64]}")
+        print(f"  {s[0]}  {s[1] / 60:5.1f} min  waits {s[2] / 60:4.1f} min  {s[3][:64]}")
     print("\n## 3. go test in archived logs\n")
     print(f"{len(pkgs)} package results, {sum(p[1] for p in pkgs) / 3600:.1f} h")
     agg = collections.defaultdict(list)

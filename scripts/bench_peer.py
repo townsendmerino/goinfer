@@ -996,6 +996,11 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
     # CALIB_TIMEOUT) rather than a number nobody has measured against.
     load_timeout = 900 if model_key in MOE_MODELS else LOAD_TIMEOUT
     proc = None
+    # TE0 (docs/tasks/task-test-efficiency-2026-09.md): where a cell's wall goes, measured rather than inferred. The dict
+    # is shared with the returned counts, so the teardown in `finally` (which runs after the return value is built)
+    # still lands in the record.
+    phases = {}
+    t_cell = time.time()
     try:
         if engine in ("goinfer", "goinfer_old"):
             # MOE_MODELS: `-moe-cache-experts` is added for every model in this set so a >8GB-VRAM
@@ -1091,6 +1096,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 parse_openai, (lambda: mlx_payload(mlx_path, prompt, cfg))
         ready = wait_llamacpp_ready(port, timeout=load_timeout) if engine == "llamacpp" \
             else wait_port(port, timeout=load_timeout)
+        phases["start_to_listening_s"] = round(time.time() - t_cell, 2)
         if not ready:
             return None, "server did not come up", None
         # RSS sampling starts once the server is confirmed up -- the process exists and its RSS
@@ -1102,12 +1108,15 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
         # it is the only COLD request in the cell, and a prompt cache can change the reply between
         # a cold request and the warm ones that are timed (llama-server's gemma3-1b: 51 cold, 64
         # warm, measured 2026-09-25).
+        t_warm = time.time()
         try:
             warm = post_stream(url, mk(), parse)
         except Exception as e:
             return None, f"warmup failed: {e}", None
+        phases["warmup_s"] = round(time.time() - t_warm, 2)
 
         _, ncomp, nruns = gen_params()
+        t_runs, decode_s = time.time(), 0.0
         run_rates, comp_rates, tok_total, chunk_total = [], [], 0, 0
         comp_tokens = []  # the engine's own count per timed completion; None where it reported none
         for _ in range(nruns):
@@ -1123,6 +1132,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 # one token precedes it.
                 n = n - 1 if reported else n
                 rates.append(n / (tl - tf))
+                decode_s += tl - tf
                 tok_total += (reported or 0)
                 comp_tokens.append(reported)
                 chunk_total += chunks
@@ -1132,6 +1142,11 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 # ~fixed depth, and spec/10's kill gate turns on their spread -- which this loop has
                 # always computed and then discarded, reporting only the mean of 8.
                 comp_rates.extend(rates)
+        runs_wall = time.time() - t_runs
+        # timed = the decode windows the tok/s is computed from; the rest of the runs' wall is each completion's
+        # request, prompt prefill (time to first token) and stream tail.
+        phases.update(runs_wall_s=round(runs_wall, 2), decode_timed_s=round(decode_s, 2),
+                      prefill_and_request_s=round(runs_wall - decode_s, 2))
         ratio = (tok_total / chunk_total) if chunk_total else None
         rss_peak_kb = rss.stop()
         ngen = gen_params()[0]
@@ -1139,10 +1154,11 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                                  "completion_rates": comp_rates, "ngen": ngen,
                                  "completion_tokens": comp_tokens, "warmup_tokens": warm[4],
                                  "token_gate": token_gate(comp_tokens, ngen),
-                                 "rss_peak_kb": rss_peak_kb}
+                                 "rss_peak_kb": rss_peak_kb, "phases": phases}
     except Exception as e:
         return None, str(e), None
     finally:
+        t_down = time.time()
         if proc:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
@@ -1153,6 +1169,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                 except Exception:
                     pass
             time.sleep(3)  # let VRAM settle before the next engine loads
+            phases["teardown_s"] = round(time.time() - t_down, 2)
 
 def _stop_proc(proc):
     """Shared teardown for run_embed_cell/run_vision_cell -- identical to run_cell's own inline

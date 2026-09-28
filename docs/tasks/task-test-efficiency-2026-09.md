@@ -163,6 +163,14 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
 - **Continuous.** The served harness records per-cell phase times — idle-gate wait, start→listening, warm-up, timed
   runs, teardown — so §1.1's 55% is split by measurement instead of by inference. `night.py`'s per-job durations
   already land in `SUMMARY.md`.
+  - **DONE 2026-09-28.** `bench_peer.py` records `counts.phases`: `start_to_listening_s`, `warmup_s`,
+    `runs_wall_s` = `decode_timed_s` + `prefill_and_request_s`, and `teardown_s`. The idle-gate wait is in
+    `machine.gate.wait_s` (TE1).
+  - `census.py` prints a phase split for cells that carry these fields, and now counts gate waits in seconds for both
+    gates. It still reproduces §1.2's 138 of 311 min on the load-gate logs.
+  - A one-cell exploratory smoke (not a result) showed the phases sum to the cell's own `secs` exactly.
+  - Visible in the code: teardown includes a fixed `sleep 3` "to let VRAM settle", paid on CPU cells too. That is a
+    TE2(a) candidate.
 - **Deliverable:** `docs/measurements/test-efficiency-2026-09.md` — hours by class (served gate, in-test measurement
   gate, sweep, suite, parity/refresh, evaluation) × machine × day/night for the last 30 days, the top 20 runs, and the
   re-runs. Re-run weekly while the campaign is open, and at close.
