@@ -464,6 +464,28 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   - the selection never drops a package that `go list -deps -test` says depends on the change.
 - **Kill (b) only:** if the in-tree cause cannot be removed without restructuring tests, caching stays a per-package
   bonus that nothing relies on.
+- **(a)+(c) BUILT 2026-09-28: `go run ./cmd/gate quick`** (`cmd/gate/quick*.go`).
+  - **What it runs:** gofmt, CI's build/vet tag matrix, the pinned staticcheck (a U1000 canary proves it can go red),
+    and one `go test -json` per package, `-j 4`, with GPU-device packages one at a time. The goldens run when a
+    parity shared-set file changes, and zero goldens run is red. No `-count=1` by default. It refuses while the TE9
+    timing lock is held.
+  - **Selection:** the diff against the merge-base, through a `go list -deps -test` graph per module, with a reason
+    per package: *affected* (the binary compiles the change), *observer* (its tests read the change as data), and
+    everything else *cache-checked* (the Go cache replays it, and nothing is dropped). A test that reads outside its
+    module is forced to `-count=1`.
+  - **Equivalence:** checked against an independent per-test-binary graph (1,416 files × 28 binaries, 0 dropped). Leaf,
+    cross-module and shared-set mutations all go red, and four deliberately broken selections each fail their test.
+    An overlay-only one-character RMSNorm mutation failed 17 of 38 goldens.
+  - **Wall, MacBook:** warm, a serveapp edit took 27 s and a decoder-core edit 5m55s (the agent's runs). A **cold** run
+    after a day of commits took 5m53s (the Mac session's check): 29 cells, 15 run, 13 replayed.
+  - **Found on the way:**
+    - An explicit `GOWORK` leaks into tests that spawn `go`, so test cells use the repo's own `go.work`.
+    - The Mac's gitignored `vendor/` is stale (aikit v1.46.0), which breaks `GOWORK=off` root commands; quick uses
+      `-mod=readonly`.
+    - `cuda` does not build on darwin, so it is listed and linted for linux/amd64 and reported NOT RUN.
+  - **Open: memory-heavy cells.** In the cold check, `examples/confidence` failed under `-j 4`. Its real 0.5B load was
+    refused by the fit guard beside other test binaries, and it passes alone in 5.4 s. Packages that load real
+    checkpoints need the one-at-a-time rule GPU packages already get.
 - **(b) RESULT 2026-09-28: `decoder` caches, so there is nothing to fix.** Two back-to-back
   `GODEBUG=gocachetest=1 go test ./decoder/` runs on the MacBook:
   - run 1 saved the result (310 s);
@@ -472,8 +494,11 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   34 `decoder` test files call `t.TempDir()`, and no file inside the module was written during run 1. C7's
   "permanently uncacheable" is retracted in place, in `task-ci-speed-2026-09.md`.
   - **What re-runs `decoder` in practice:** `-count=1`, any Go change reaching the package (a new test binary is a new
-    test ID), and changed env vars or module files the tests read. A day loop that drops `-count=1` for a
-    reproducible check replays an unchanged `decoder` in seconds instead of ~5 min.
+    test ID), and changed env vars or module files the tests read.
+  - **CORRECTED the same day (TE7(a)'s build):** eight `decoder` tests walk the whole repo, `.git/objects` included.
+    So until they are split off, **any** edit or commit anywhere invalidates `decoder`'s cache. Replay needs a tree
+    unchanged since the last run, not merely an untouched `decoder/`. `gate quick` runs those eight in their own
+    ~3 s cell, and the rest of `decoder` then replays.
   - **Found on the way:** the first attempt at these runs failed on `TestDecodeParityInt4`. Its int4 golden had been
     red on arm64 since L1's merge (`5c85f7c0`) and nobody had seen it. It is re-captured in its own commit: the new
     ids are exactly the pre-L1 build's with f16-rounded scales, and agreement with f32 is unchanged at 11/24. A
