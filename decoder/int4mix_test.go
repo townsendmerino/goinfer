@@ -61,7 +61,7 @@ func TestInt4MixMode(t *testing.T) {
 	if _, _, _, ok := w2.Layers[0].QProj.Int8(); !ok {
 		t.Error("round-trip: QProj lost int8")
 	}
-	if _, _, _, ok := w2.Layers[0].DownProj.Int4(); !ok {
+	if _, _, _, ok := Int4F32(&w2.Layers[0].DownProj); !ok {
 		t.Error("round-trip: DownProj lost int4")
 	}
 	m2, err := NewModel(w2, "cpu")

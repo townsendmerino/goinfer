@@ -29,7 +29,7 @@ func fusedFixture(t *testing.T) *Weights {
 
 func int4Bytes(t *testing.T, m *linalg.WeightMat) []byte {
 	t.Helper()
-	q4, _, _, ok := m.Int4()
+	q4, _, _, ok := Int4F32(m)
 	if !ok {
 		t.Fatal("not a canonical int4 matrix")
 	}
@@ -38,8 +38,8 @@ func int4Bytes(t *testing.T, m *linalg.WeightMat) []byte {
 
 func sameMat(t *testing.T, name string, a, b *linalg.WeightMat) {
 	t.Helper()
-	aq, as, ag, aok := a.Int4()
-	bq, bs, bg, bok := b.Int4()
+	aq, as, ag, aok := Int4F32(a)
+	bq, bs, bg, bok := Int4F32(b)
 	if !aok || !bok || ag != bg || !bytes.Equal(aq, bq) || !sameF32(as, bs) || a.Rows() != b.Rows() || a.Cols() != b.Cols() {
 		t.Errorf("%s: differs after the round trip", name)
 	}
@@ -91,27 +91,38 @@ func TestGIWFused_roundTripAndAdjacency(t *testing.T) {
 	}
 }
 
-// A non-Metal target must be byte-for-byte what v12 wrote: nothing about fused groups may leak into a
-// bundle whose reader never asked for them (and it must stay readable by a pre-v13 reader).
+// Nothing about fused groups (the Metal-only kinds 6 and 7) may leak into a bundle whose reader never asked
+// for them. Before v15 that meant a non-Metal target wrote exactly v12; from v15 (binary16 int4 scales,
+// which every target writes) it means every non-Metal target writes the same bytes as the plain target,
+// at the current version, and the pre-v15 emitter still writes exactly v12 for them.
 func TestGIWFused_nonMetalTargetIsUnchanged(t *testing.T) {
 	src := fusedFixture(t)
+	plain, err := SerializeWeightsForTarget(src, "fused", GIWTargetNone)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, tgt := range []GIWTarget{GIWTargetNone, GIWTargetCUDA, GIWTargetWebGPU} {
 		now, err := SerializeWeightsForTarget(src, "fused", tgt)
 		if err != nil {
 			t.Fatal(err)
 		}
+		if !bytes.Equal(now, plain) {
+			t.Errorf("target %q: bytes differ from the plain target's (%d vs %d) — a non-Metal bundle carries target-specific content", tgt, len(now), len(plain))
+		}
+		if v := binary.LittleEndian.Uint32(now[len(giwMagic):]); v != giwVersion {
+			t.Errorf("target %q: version %d, want %d", tgt, v, giwVersion)
+		}
 		prev := giwEmitVersion
+		giwEmitVersion = giwVF16 // the last version before binary16 scales: non-Metal must still emit v12 there
+		pre, err := SerializeWeightsForTarget(src, "fused", tgt)
 		giwEmitVersion = giwVAligned
-		old, err := SerializeWeightsForTarget(src, "fused", tgt)
+		old, err2 := SerializeWeightsForTarget(src, "fused", tgt)
 		giwEmitVersion = prev
-		if err != nil {
-			t.Fatal(err)
+		if err != nil || err2 != nil {
+			t.Fatal(err, err2)
 		}
-		if !bytes.Equal(now, old) {
-			t.Errorf("target %q: bytes differ from a v12 write (%d vs %d) — a non-Metal bundle changed", tgt, len(now), len(old))
-		}
-		if v := binary.LittleEndian.Uint32(now[len(giwMagic):]); v != giwVAligned {
-			t.Errorf("target %q: version %d, want %d (a pre-v13 reader must keep reading it)", tgt, v, giwVAligned)
+		if !bytes.Equal(pre, old) {
+			t.Errorf("target %q: a pre-v15 emit differs from a v12 write (%d vs %d) — fused content leaked", tgt, len(pre), len(old))
 		}
 	}
 }
@@ -215,7 +226,7 @@ func TestGIWFused_blockPaddingAtEveryAlignment(t *testing.T) {
 				// v14: the member's f16 scales, recorded against its nibbles, equal F16Bits of its f32 scales,
 				// and the members' f16 arrays are one contiguous run starting 16-aligned.
 				f16 := r.f16[uintptr(unsafe.Pointer(&q4[0]))]
-				_, q4s, _, _ := ms[i].Int4()
+				_, q4s, _, _ := Int4F32(&ms[i])
 				if len(f16) != len(q4s) {
 					t.Fatalf("shape %v lead %d member %d: %d f16 scales recorded, want %d", shape, lead, i, len(f16), len(q4s))
 				}
@@ -229,7 +240,7 @@ func TestGIWFused_blockPaddingAtEveryAlignment(t *testing.T) {
 					t.Errorf("shape %v lead %d: f16 block at blob offset %d, not 16-aligned", shape, lead, at16)
 				}
 				if i > 0 {
-					pq, _, _, _ := got[i-1].Int4()
+					pq, _, _, _ := got[i-1].Int4F16()
 					pf := r.f16[uintptr(unsafe.Pointer(&pq[0]))]
 					if uintptr(unsafe.Pointer(&pf[0]))+uintptr(2*len(pf)) != uintptr(unsafe.Pointer(&f16[0])) {
 						t.Errorf("shape %v lead %d: f16 scales of members %d and %d are not adjacent", shape, lead, i-1, i)

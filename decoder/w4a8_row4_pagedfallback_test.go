@@ -26,11 +26,11 @@ func TestSerializedInt4Weights_neverRepacked_pagedFallback(t *testing.T) {
 	}
 	var repackedCount, int4Count int
 	for _, wm := range m1.w.matmulWeights() {
-		if _, _, _, ok := wm.Int4(); !ok {
+		if _, _, _, ok := Int4F32(wm); !ok {
 			continue
 		}
 		int4Count++
-		if _, _, ok := wm.Int4Row4(); ok {
+		if _, _, ok := int4Row4F32(wm); ok {
 			repackedCount++
 		}
 	}
@@ -49,10 +49,10 @@ func TestSerializedInt4Weights_neverRepacked_pagedFallback(t *testing.T) {
 	}
 
 	for i, wm := range w2.matmulWeights() {
-		if _, _, _, ok := wm.Int4(); !ok {
+		if _, _, _, ok := Int4F32(wm); !ok {
 			continue
 		}
-		if _, _, ok := wm.Int4Row4(); ok {
+		if _, _, ok := int4Row4F32(wm); ok {
 			t.Fatalf("weight %d: .giw-loaded int4 tensor was repacked — the paged-MoE carve-out is broken (a resident row4 copy would pin RAM for a tensor paging expects to release)", i)
 		}
 	}

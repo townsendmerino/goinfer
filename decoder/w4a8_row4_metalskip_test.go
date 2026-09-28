@@ -65,20 +65,20 @@ func TestW4A8Row4_skippedForMetalBackend(t *testing.T) {
 		l := &mMetal.w.Layers[i]
 		for _, wm := range []*linalg.WeightMat{&l.QProj, &l.KProj, &l.VProj, &l.GateProj, &l.UpProj} {
 			metalBatchedTotal++
-			if _, _, ok := wm.Int4Row4(); ok {
+			if _, _, ok := int4Row4F32(wm); ok {
 				metalBatchedRow4++
 			}
-			if _, _, _, ok := wm.Int4(); !ok {
+			if _, _, _, ok := Int4F32(wm); !ok {
 				t.Fatalf("layer %d: a Q/K/V/gate/up projection has no canonical int4 bytes on Backend:\"metal\" "+
 					"— skipping row4 must never also drop canonical, Metal's GPU upload reads it directly", i)
 			}
 		}
 		for _, wm := range []*linalg.WeightMat{&l.OProj, &l.DownProj} {
 			metalOtherTotal++
-			if _, _, ok := wm.Int4Row4(); ok {
+			if _, _, ok := int4Row4F32(wm); ok {
 				metalOtherRow4++
 			}
-			if _, _, _, ok := wm.Int4(); !ok {
+			if _, _, _, ok := Int4F32(wm); !ok {
 				t.Fatalf("layer %d: o_proj/down_proj has no canonical int4 bytes on Backend:\"metal\"", i)
 			}
 		}
@@ -97,13 +97,13 @@ func TestW4A8Row4_skippedForMetalBackend(t *testing.T) {
 		l := &mUnspecified.w.Layers[i]
 		for _, wm := range []*linalg.WeightMat{&l.QProj, &l.KProj, &l.VProj, &l.GateProj, &l.UpProj} {
 			unspecBatchedTotal++
-			if _, _, ok := wm.Int4Row4(); ok {
+			if _, _, ok := int4Row4F32(wm); ok {
 				unspecBatchedRow4++
 			}
 		}
 		for _, wm := range []*linalg.WeightMat{&l.OProj, &l.DownProj} {
 			unspecOtherTotal++
-			if _, _, ok := wm.Int4Row4(); ok {
+			if _, _, ok := int4Row4F32(wm); ok {
 				unspecOtherRow4++
 			}
 		}
@@ -149,11 +149,11 @@ func TestW4A8Row4_skippedForMetalBackend_MoE(t *testing.T) {
 			}
 
 			row4Free := func(wm *linalg.WeightMat) bool {
-				_, _, ok := wm.Int4Row4()
+				_, _, ok := int4Row4F32(wm)
 				return !ok
 			}
 			hasCanonical := func(wm *linalg.WeightMat) bool {
-				_, _, _, ok := wm.Int4()
+				_, _, _, ok := Int4F32(wm)
 				return ok
 			}
 			// collect every router/expert/shared-expert WeightMat this fixture actually has,

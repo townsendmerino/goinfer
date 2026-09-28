@@ -298,8 +298,8 @@ func TestStreamTranscodeMatchesResident_metalTarget(t *testing.T) {
 	}
 	fused := 0
 	for i := range w.Layers {
-		if a, _, _, ok := w.Layers[i].GateProj.Int4(); ok {
-			if b, _, _, ok2 := w.Layers[i].UpProj.Int4(); ok2 && len(a) > 0 && len(b) > 0 {
+		if a, _, _, ok := w.Layers[i].GateProj.Int4F16(); ok {
+			if b, _, _, ok2 := w.Layers[i].UpProj.Int4F16(); ok2 && len(a) > 0 && len(b) > 0 {
 				if uintptr(unsafe.Pointer(&a[0]))+uintptr(len(a)) == uintptr(unsafe.Pointer(&b[0])) {
 					fused++
 				}
@@ -336,7 +336,7 @@ func TestTranscode_embedInt4Threaded(t *testing.T) {
 	if _, _, _, ok := pinnedW.Embed.Int8(); !ok {
 		t.Errorf("embedInt4=false: embed should be int8-pinned, kind=%s", pinnedW.Embed.Kind())
 	}
-	if _, _, _, ok := relaxedW.Embed.Int4(); !ok {
+	if _, _, _, ok := relaxedW.Embed.Int4F16(); !ok {
 		t.Errorf("embedInt4=true: embed should be int4, kind=%s", relaxedW.Embed.Kind())
 	}
 
@@ -387,7 +387,7 @@ func TestTranscode_embedInt4ThreadedThroughRealGGUF(t *testing.T) {
 	if _, _, _, ok := pinnedM.Weights().Embed.Int8(); !ok {
 		t.Errorf("Transcode embedInt4=false: embed should be int8-pinned, kind=%s", pinnedM.Weights().Embed.Kind())
 	}
-	if _, _, _, ok := relaxedM.Weights().Embed.Int4(); !ok {
+	if _, _, _, ok := relaxedM.Weights().Embed.Int4F16(); !ok {
 		t.Errorf("Transcode embedInt4=true: embed should be int4, kind=%s — cmd/prequant -embed-int4 "+
 			"is being silently ignored for this GGUF input", relaxedM.Weights().Embed.Kind())
 	}

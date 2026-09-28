@@ -58,7 +58,7 @@ func BenchmarkInt4ParThresholdSweep(b *testing.B) {
 			wf[i] = float32(rng.NormFloat64()) * 0.05
 		}
 		wm := linalg.QuantizeInt4(wf, sh.N, sh.K, int4GroupSize)
-		q4, q4s, group, ok := wm.Int4()
+		q4, q4s, group, ok := Int4F32(&wm)
 		if !ok {
 			b.Fatalf("%s: QuantizeInt4 did not yield an int4 WeightMat", sh.name)
 		}

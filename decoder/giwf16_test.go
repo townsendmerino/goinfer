@@ -24,7 +24,7 @@ func f16Fixture(t *testing.T) *Weights {
 
 func requireF16(t *testing.T, w *Weights, view []byte, name string, m *linalg.WeightMat, wantAligned bool) {
 	t.Helper()
-	q4, q4s, _, ok := m.Int4()
+	q4, q4s, _, ok := Int4F32(m)
 	if !ok {
 		t.Fatalf("%s: not int4", name)
 	}

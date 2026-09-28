@@ -322,3 +322,18 @@ backends. The 0.5B's real bottleneck (per-token overhead, lever 2) is next, and 
 - the goinfer bump, merge and push, with CI green;
 - the two manifest rows;
 - the Mac's Metal / WebGPU identity check and arm64 speed.
+
+### L1 build: the `.giw` deviation resolved (2026-09-28, on the PR)
+
+The `.giw` format is now **v15**. Converting f32 scales at load (the deviation recorded above) broke a real v12
+invariant: `TestGIWAligned_scalesAliasTheMapping` requires the reader to **alias** scale arrays from the mapping,
+not copy them to the heap, and that aliasing was measured to matter for the Mac's MoE pager.
+- **Kinds 3 / 4 / 5** store binary16 scales, 16-aligned as before; the reader aliases them.
+- **Kinds 6 / 7** (Metal) keep their v14 layout; the reader takes their f16 block as the WeightMat storage, aliased.
+- **Every target** writes v15.
+- **Old files** load, converted at read time. A pre-v15 reader refuses a v15 file through the version guard.
+- **Tests updated** where they encoded the old format facts:
+  - the alias check now reads the stored binary16 array;
+  - the legacy-size check compares against an explicit v12 write;
+  - the non-Metal check now asserts identical bytes across non-Metal targets at v15, and exactly v12 from the pre-v15
+    emitter.

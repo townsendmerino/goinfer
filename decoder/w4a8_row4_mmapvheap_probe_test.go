@@ -15,17 +15,17 @@ import (
 // byte-identical to what mmap held, just backed by a new []byte the runtime allocated
 // on the heap instead of a page from the mmap'd file.
 func heapifyRow4(wm *linalg.WeightMat) bool {
-	q4, q4s, group, ok := wm.Int4()
+	q4, q4s, group, ok := Int4F32(wm)
 	if !ok {
 		return false
 	}
-	row4, row4Scales, ok := wm.Int4Row4()
+	row4, row4Scales, ok := int4Row4F32(wm)
 	if !ok {
 		return false
 	}
 	heapRow4 := append([]byte(nil), row4...)
 	heapScales := append([]float32(nil), row4Scales...)
-	*wm = linalg.WrapInt4Row4(q4, q4s, wm.Rows(), wm.Cols(), group, heapRow4, heapScales)
+	*wm = wrapInt4Row4F32(q4, q4s, wm.Rows(), wm.Cols(), group, heapRow4, heapScales)
 	return true
 }
 
@@ -75,7 +75,7 @@ func TestRow4_mmapVsHeapResident(t *testing.T) {
 		}
 		for e := 0; e < len(gm.expertsGateUp) && len(samples) < wantSamples; e += 200 { // sparse spread, not every expert
 			wm := &gm.expertsGateUp[e]
-			if _, _, ok := wm.Int4Row4(); !ok {
+			if _, _, ok := int4Row4F32(wm); !ok {
 				continue
 			}
 			act := make([]float32, wm.Cols())

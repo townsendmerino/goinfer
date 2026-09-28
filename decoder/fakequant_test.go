@@ -63,8 +63,8 @@ func TestFakeQuantOffBitIdentical(t *testing.T) {
 	got := quantizeWM(linalg.WrapF32(append([]float32(nil), w...), rows, cols), quantInt4)
 	want := linalg.QuantizeInt4(append([]float32(nil), w...), rows, cols, int4GroupSize)
 
-	gq, gs, gg, gok := got.Int4()
-	wq, ws, wg, wok := want.Int4()
+	gq, gs, gg, gok := Int4F32(&got)
+	wq, ws, wg, wok := Int4F32(&want)
 	if !gok || !wok {
 		t.Fatalf("expected int4 resident (got ok=%v want ok=%v)", gok, wok)
 	}
