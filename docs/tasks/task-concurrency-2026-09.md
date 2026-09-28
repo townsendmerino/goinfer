@@ -28,8 +28,14 @@
 >   7B cell;
 > - a Mac 7B MC2 cell (batched B = 4 ÷ J8 N = 4 ≥ 1.15× turns `-cpu-batch auto` on for darwin);
 > - ~~fused projections in the batched CPU step (S1)~~ — shipped 2026-09-27 (`000efe2e`): the step 1.058× at B = 4
->   on the 7B, W7 4 clients 1.051×; lever B, an aikit small-shape kernel for k/v and q/o at small M (the rest of a
->   ~17–19% ceiling), only on its own measurement;
+>   on the 7B, W7 4 clients 1.051×. **Lever B, an aikit small-M kernel for the batched step: PARKED by the owner,
+>   2026-09-27.**
+>   - The ceiling after S1, estimated from the probes, is ~+11–12% at 4 clients (~+7% at 2), realistically about half
+>     that. A lone request gains 0.
+>   - It needs an aikit assembly kernel and a release.
+>   - Re-open if 7B-class concurrent CPU serving becomes a priority, or if a peer comparison puts the batched CPU path
+>     behind. Per-shape fan-out width was tried and closed: a negative result
+>     ([`concurrency-mc3c-s1-2026-09-27.md`](../measurements/concurrency-mc3c-s1-2026-09-27.md));
 > - MC3 follow-ons: ~~the 7B's batched-step cost~~ — S4 shipped 2026-09-27, 2 clients 1.121× on the 7B and 1.059× on the
 >   1.5B (B ≥ 3 keeps the fragment: no bit-identical kernel beats it); ~~encode-ahead~~ — parked on its measured
 >   headroom (~4% / ~1.3%); a per-pass prefill cost cut (the served gap's main term, estimated); CUDA (only on its own
@@ -747,8 +753,9 @@ because it trades per-request latency for throughput.
   (bar 1.03×); B = 2 is 1.04× and B = 8 is 1.06×, and every step's logits are bit-identical between the arms.
 - W7 at 4 clients (reported): **1.051×** (11.93 → 12.54 tok/s), p99 turn 0.96×, every reply identical.
 - The 1.5B's step gains 1.142×, under `-cpu-batch on` only.
-- S1 takes ~5.8% of the ~17–19% ceiling. Lever B (an aikit small-shape kernel) is the rest, and it starts only on its
-  own measurement.
+- S1 takes ~5.8% of the ~17–19% ceiling. Lever B (an aikit small-M kernel) is the rest. It is **parked by the owner
+  (2026-09-27)**: realistically ~+5–6% end to end at 4 clients and nothing for a lone request, for an aikit release.
+  The trigger is in the status header's open list.
 
 **Step 2 follow-on S1 — fused batched projections in the step (pre-registered 2026-09-27, before any code).**
 - *Why.* An exploratory probe (`TestCPUBatchS0_matmulScaling`, 7B layer 0, amd64, canonical int4) timed each shape at
