@@ -1,0 +1,25 @@
+=== RUN   TestQwen3NextReal_oracle
+11:06:31 [TestQwen3NextReal_oracle] start — 11 items
+11:06:31 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=0s 0/11 io=408KB
+11:07:16 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=45s 0/11 io=35.8GB (815MB/s)
+11:08:01 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=1m30s 0/11 io=70.1GB (781MB/s)
+11:08:53 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=2m23s 0/11 io=75.3GB (101MB/s)
+11:09:55 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=3m24s 0/11 io=75.3GB (354KB/s)
+11:10:17 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=3m46s 0/11 io=75.3GB
+11:11:05 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=4m34s 0/11 io=75.5GB (3MB/s)
+11:12:40 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=6m9s 0/11 io=75.5GB (35KB/s)
+11:13:18 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=6m47s 0/11 io=88.8GB (356MB/s)
+11:14:01 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=7m30s 0/11 io=91.1GB (55MB/s)
+11:15:01 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=8m30s 0/11 io=91.7GB (11MB/s)
+11:15:31 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=9m0s 0/11 io=106.5GB (508MB/s)
+11:16:16 [TestQwen3NextReal_oracle] load int4 (streams + quantizes the full checkpoint) elapsed=9m45s 0/11 io=134.7GB (642MB/s)
+11:16:39 [TestQwen3NextReal_oracle] prefill the golden prompt elapsed=10m8s 0/11 io=142.3GB (335MB/s)
+11:17:01 [TestQwen3NextReal_oracle] prefill the golden prompt elapsed=10m30s 0/11 io=142.9GB (32MB/s)
+    qwen3next_oracle_test.go:43: qwen3_next parity: argmax got=12095 want=12095 | logit cosine=0.989309
+11:17:43 [TestQwen3NextReal_oracle] greedy continuation elapsed=11m12s 5/11 rate=7.2/min io=143.7GB (19MB/s)
+11:17:46 [TestQwen3NextReal_oracle] greedy continuation elapsed=11m15s 5/11 eta=50s io=143.8GB (24MB/s)
+    qwen3next_oracle_test.go:43: qwen3_next continuation got=[12095 13 576 6722 315 9856] want=[12095 13 576 6722 315 9856]
+11:18:18 [TestQwen3NextReal_oracle] done elapsed=11m47s 11/11 rate=11/min io=144.2GB (14MB/s)
+--- PASS: TestQwen3NextReal_oracle (706.85s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	709.082s
