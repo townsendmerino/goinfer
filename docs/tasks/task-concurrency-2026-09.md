@@ -664,6 +664,88 @@ request, the default shape of most chat clients, got no batching at all.
 **Docs that change when MC3 ships:** `positioning.md` (the "one generation at a time" sentence),
 `roadmap.md` §"Decided and parked," `docs/server.md`, red-october R12's row, `QUEUE.md`.
 
+### MC3 on CUDA — design, correctness gates and W7 grading (pre-registered 2026-09-27, before any code)
+
+**Why now.** The S0 ([`concurrency-mc3-cuda-s0-2026-09-27.md`](../measurements/concurrency-mc3-cuda-s0-2026-09-27.md))
+found both halves:
+- A batched pass through CUDA's exact kernels is bit-identical to decode per row.
+- At B = 4 it is 1.75× (1.5B) and 2.04× (7B) cheaper than 4 decodes, with every row's logits.
+
+MC1 on CUDA (the KV slots) shipped the same day. The decoder side (`ResidentBatchStepper`, MC3's batcher,
+`EnableResidentConcurrency`, serve's `setConcurrency` and banner) is backend-generic and unchanged.
+
+**Design.** The CUDA resident implements `BatchStepRange` / `StepBatch`.
+1. **The layer stack is `prefillCore`'s, in a multi-sequence mode.** The step runs B rows, one per sequence, through the
+   same batched exact path the verify tail uses: rms+quant, `gemv_w4a8_rn` for q/k/v, o, gate/up and down, the
+   batched qk-norm, SwiGLU and residuals. `forceExactKernels` holds, as for every non-ordinary tail. No new kernel.
+2. **Rope, KV store and attention run per sequence, through decode's own code.**
+   - The dynamic gap of `launchToken` (rope_kv, then the attention choice: single-block, split-KV or the
+     flash-decode lane) moves into a method, as a pure move with decode unchanged.
+   - For row b, the step points decode's single-row buffers (`qB`, `kB`, `vB`, `cctx`) at row b's views of the batched
+     buffers (`Buffer.At`), binds sequence b's KV slot, and calls that method at b's own position. Then it restores
+     them.
+   - Every sequence therefore gets exactly the kernel, and the position-dependent scales, its own decode would use.
+     That includes the flash-decode lane past 2048 keys, which is not bit-identical to the exact path; using decode's
+     own path makes the choice identical by construction. Launch arguments are captured at launch, and everything
+     runs on one stream in order.
+3. **The head is per row, as `PrefillLastN`'s tail does it today** (bit-identical to `Forward`, per the S0).
+   - A row that carries a `Draw` then runs `gumbelPick` on that row's logits, which is `ForwardSample`'s own draw. An
+     infinite-temperature draw takes `ForwardArgmax`'s argmax, as `ForwardSample` does.
+   - A batched head is a later lever, only with bit-identity proven: the S0 puts the per-row head at 4.2 of the 7B's
+     27.0 ms at B = 4.
+4. **Scope, as Metal's MC3 had it.** Dense families whose batched prefill engages (`prefillReady`).
+   - `BatchStepRange` reports hi = 0, so the model keeps one generation at a time, for: MoE (including C′ expert
+     streaming), MLA, Gated DeltaNet and the other recurrent families, and a model with no batched prefill.
+   - Speculation, adapters and vision take the resident exclusively (the decoder's existing rule).
+   - The range is lo = 2, hi = the slot count.
+
+**Correctness, before any timing (hard; a failure is a bug):**
+1. **Step identity.** For B = 2, 3 and 4 sequences on their own slots at different depths, each `StepBatch` row equals
+   that sequence's own `Forward` bit for bit, or `ForwardSample`'s id for a `Draw` row.
+   - Fixtures: the tiny CUDA fixtures the resident serves (at least llama-tiny and mistral-tiny-window, the latter for
+     the window); qwen2.5-coder-1.5b, including one sequence past 2048 keys so the flash-decode lane runs inside a
+     step; and the 7B.
+2. **Through the production path.** 4 concurrent `Generate` calls on a CUDA model with `EnableResidentConcurrency(4)`
+   emit exactly the ids each conversation emits alone, turn for turn, greedy and sampled (fixed seeds).
+   - A control reads `ResidentBatchStats`: steps of ≥ 2 must have run.
+   - One conversation's prompt is longer than 512 tokens, so chunked prefill (`-prefill-chunk`) runs while the others
+     decode.
+   - Tiny fixture, 1.5B and 7B.
+3. **Decode unchanged.** The tagged CUDA suite passes, since the gap's move touches the decode hot path. So do vet,
+   gofmt and CI's pinned staticcheck with the cuda tags.
+
+**W7 grading, pre-registered.**
+- *Builds:* *old* = `serve-cuda` at the commit before this work (MC1: slots, one generation at a time); *new* = the
+  MC3-CUDA commit. Both are built once from clean worktrees, named by hash, and run at serve's defaults
+  (`-max-concurrent` 4, `-kv-sessions` 4, `-prefill-chunk` 512).
+- *Machine:* `nobara`, RTX 2070 SUPER, NVIDIA driver 595.91.07 (CUDA rows are anchored to it).
+- *Workload:* `scripts/bench_w7_plain.py --engines goinfer --backend cuda --fixed-nonce --server-log`,
+  qwen2.5-coder-1.5b-instruct q4_k_m from `~/models` (never `/srv/models`), 6 turns × 128 greedy tokens per client, a
+  fresh server per cell.
+- *Idle gate, every cell:* load1 ≤ 2.0; no CUDA compute process beyond those present at the start; GPU memory within
+  256 MiB of the starting baseline.
+- *Cells:* 4 clients old/new × 3 pairs (old new new old old new); 1 client the same; 2 clients one pair, reported.
+- *Gates* (1, 2, 4 and 5 are hard):
+  1. **Identity:** every turn's `content_sha` is equal between old and new at the same client count and index, in
+     every cell.
+  2. **Reuse:** every turn's prompt − `prefill_reused_tokens` is equal between old and new.
+  3. **Aggregate:** 4-client aggregate, new ÷ old paired, median of 3 ≥ **1.2×**.
+  4. **p99 under load:** new's 4-client per-turn p99 ÷ old's, paired, median ≤ **1.0**.
+  5. **Solo guard:** 1-client p50 and p99 turn, new ÷ old, median ≤ **1.05×** each.
+- *Reported, not gated:*
+  - one 4-client pair on qwen2.5-7b q4_k_m, which starts at 4984 tokens with 4 slots (MC1-CUDA);
+  - `ResidentBatchStats` per cell (a shutdown log line, as MC3c's);
+  - the 4-client p99 ÷ a lone request's.
+- *Decision (MC3's table):*
+  - all gates pass and ≥ 1.2×: ships on under serve's defaults;
+  - gate 1 or 2 fails: a bug, not shipped;
+  - 1.03–1.2× with 1, 2, 4 and 5 passing: the owner, with a ship recommendation;
+  - < 1.03×: parked;
+  - 4 or 5 fails: not on by default; the owner decides.
+
+**Docs when it ships:** `docs/server.md` (the concurrency paragraph: CUDA joins Metal), the banner's wording if it
+names Metal, this section and the status header, and `docs/README.md`'s count.
+
 ## MC3c — concurrent decode on CPU (owner: "cpu first", 2026-09-26)
 
 **Step 1 result, 2026-09-26: all five gates pass**
