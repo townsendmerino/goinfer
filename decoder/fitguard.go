@@ -709,9 +709,31 @@ func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
 		if strings.HasSuffix(name, ".qweight") {
 			n *= gptqAWQPackFactor
 		}
+		// The token embedding and LM head are held at q.embedding() (int8 under int4), not at q: pricing
+		// them at q under-counted every big-vocabulary small model, and binary16 int4 scales (aikit
+		// v1.50.0) pushed the tiny fixtures' estimate below the 0.85 band.
+		if embeddingTensorName(name) {
+			total += quantBytesPerElem(q.embedding()) * float64(n)
+			continue
+		}
 		total += quantBytesPerElem(q) * float64(n)
 	}
 	return int64(total)
+}
+
+// embeddingTensorName reports a checkpoint tensor the loaders keep at the embedding precision
+// (quantMode.embedding()): a token-embedding table or an untied LM head, under the names the supported
+// safetensors families use.
+func embeddingTensorName(name string) bool {
+	if name == "output.weight" { // InternLM2's LM head
+		return true
+	}
+	for _, s := range []string{"embed_tokens.weight", "lm_head.weight", "tok_embeddings.weight", "wte.weight", "word_embeddings.weight", "embed_in.weight", "embed_out.weight"} {
+		if name == s || strings.HasSuffix(name, "."+s) {
+			return true
+		}
+	}
+	return false
 }
 
 // kvBytesPerPosition is the KV cost of ONE position, so both estimateKVBytes and

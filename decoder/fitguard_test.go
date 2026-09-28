@@ -710,9 +710,10 @@ func TestQuantBytesPerElem_everyModeIsPlausible(t *testing.T) {
 	// int4 has exactly TWO legitimate costs, and which one applies is a property of the host, not
 	// of the encoding:
 	//
-	//   ~0.625  canonical nibbles + one f32 scale per group of 32, and no repack
-	//   ~1.250  the same, PLUS a second repacked buffer that the loader keeps beside it —
-	//           RepackInt4Row4 on arm64-with-dotprod, split-half on AVX2-without-VNNI
+	//   ~0.5625 canonical nibbles + one binary16 scale per group of 32 (aikit v1.50.0; 0.625 with the f32
+	//           scales before it), and no repack
+	//   ~1.125  the same, PLUS a second repacked buffer that the loader keeps beside it —
+	//           RepackInt4Row4 on arm64-with-dotprod (nibbles and scales both doubled; 1.250 before)
 	//
 	// Pinning the pair rather than a range is the point: a wrong measurement usually lands
 	// BETWEEN them, and a range wide enough to hold both would accept it.
@@ -727,7 +728,7 @@ func TestQuantBytesPerElem_everyModeIsPlausible(t *testing.T) {
 	}{{"int4", quantInt4}, {"int4mix", quantInt4Mix}} {
 		t.Run(name.label, func(t *testing.T) {
 			got := quantBytesPerElem(name.mode)
-			const enc, repacked = 0.625, 1.250
+			const enc, repacked = 0.5625, 1.125
 			near := func(want float64) bool { return got > want*0.95 && got < want*1.05 }
 			if !near(enc) && !near(repacked) {
 				t.Errorf("%s costs %.4f bytes/elem — neither the ~%.3f encoding-only cost nor the "+
