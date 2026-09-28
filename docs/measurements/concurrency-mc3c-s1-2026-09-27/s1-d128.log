@@ -1,0 +1,16 @@
+=== RUN   TestCPUBatchS1_fusedVsUnfused
+[s1   42.8s] qwen2.5-7b-instruct-q4_k_m.gguf depth 128: 8 caches prefilled
+[s1   73.7s] rep 1/5:  B=2 fused 8.93 unfused 8.62 tok/s = 1.036x  B=4 fused 14.80 unfused 13.93 tok/s = 1.062x  B=8 fused 18.06 unfused 16.98 tok/s = 1.064x
+[s1  104.8s] rep 2/5:  B=2 fused 8.88 unfused 8.50 tok/s = 1.044x  B=4 fused 14.62 unfused 13.86 tok/s = 1.055x  B=8 fused 17.96 unfused 16.87 tok/s = 1.064x
+[s1  135.8s] rep 3/5:  B=2 fused 8.94 unfused 8.41 tok/s = 1.063x  B=4 fused 14.71 unfused 13.93 tok/s = 1.056x  B=8 fused 18.09 unfused 17.06 tok/s = 1.060x
+[s1  166.6s] rep 4/5:  B=2 fused 8.96 unfused 8.62 tok/s = 1.039x  B=4 fused 14.76 unfused 13.94 tok/s = 1.059x  B=8 fused 18.11 unfused 17.05 tok/s = 1.062x
+[s1  197.4s] rep 5/5:  B=2 fused 8.96 unfused 8.63 tok/s = 1.039x  B=4 fused 14.77 unfused 13.96 tok/s = 1.058x  B=8 fused 18.12 unfused 17.08 tok/s = 1.061x
+[s1  197.4s] S1 METRIC depth 128 B=2 fused/unfused median 1.039x (per-rep sorted [1.036 1.039 1.039 1.044 1.063])
+    cpu_batch_s0_test.go:183: S1 METRIC depth 128 B=2 fused/unfused median 1.039x (per-rep sorted [1.036 1.039 1.039 1.044 1.063])
+[s1  197.4s] S1 METRIC depth 128 B=4 fused/unfused median 1.058x (per-rep sorted [1.055 1.056 1.058 1.059 1.062])
+    cpu_batch_s0_test.go:183: S1 METRIC depth 128 B=4 fused/unfused median 1.058x (per-rep sorted [1.055 1.056 1.058 1.059 1.062])
+[s1  197.4s] S1 METRIC depth 128 B=8 fused/unfused median 1.062x (per-rep sorted [1.060 1.061 1.062 1.064 1.064])
+    cpu_batch_s0_test.go:183: S1 METRIC depth 128 B=8 fused/unfused median 1.062x (per-rep sorted [1.060 1.061 1.062 1.064 1.064])
+--- PASS: TestCPUBatchS1_fusedVsUnfused (213.88s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	213.902s

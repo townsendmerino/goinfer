@@ -1,0 +1,33 @@
+== 16:33:46 sweep + tiny concurrent
+--- PASS: TestMC2_decodeMultiStepBitIdentical (0.02s)
+    cpu_batch_test.go:88: admitted and bit-identical: [granite-dense-tiny/ granite-dense-tiny/int8int8 llama-attnfa-tiny/ llama-attnfa-tiny/int8int8 llama-tiny/ llama-tiny/int8int8 llama3-tokenizer/ llama3-tokenizer/int8int8 llama3.2-1b/ llama3.2-1b/int8int8 ministral3-tiny/ ministral3-tiny/int8int8 phi3-tiny/ phi3-tiny/int8int8 qwen2.5-0.5b/ qwen2.5-0.5b/int8int8 qwen25vl-tiny/ qwen25vl-tiny/int8int8 qwen3-1.7b/ qwen3-1.7b/int8int8 qwen3vl-tiny/ qwen3vl-tiny/int8int8 smollm3-tiny/ smollm3-tiny/int8int8 tinyllama-1.1b/ tinyllama-1.1b/int8int8 tinyllama-awq/ tinyllama-awq/int8int8 tinyllama-gptq/ tinyllama-gptq/int8int8]
+--- PASS: TestCPUBatch_everyEligibleFixtureBitIdentical (137.24s)
+    cpu_batch_test.go:194: runs 34, steps 31 (tokens 117), solo tokens 3, straggler runs 0, step sizes [0 0 1 5 25]
+    cpu_batch_test.go:194: runs 33, steps 32 (tokens 115), solo tokens 1, straggler runs 0, step sizes [0 0 2 9 21]
+--- PASS: TestCPUBatch_concurrentMatchesAlone (0.04s)
+--- PASS: TestCPUBatch_ineligibleCachesBypass (0.01s)
+ok  	github.com/townsendmerino/goinfer/decoder	137.424s
+== 16:36:08 1.5B on
+    cpu_batch_test.go:194: runs 77, steps 72 (tokens 283), solo tokens 5, straggler runs 0, step sizes [0 0 0 5 67]
+    cpu_batch_test.go:194: runs 77, steps 75 (tokens 286), solo tokens 2, straggler runs 2, step sizes [0 0 5 4 66]
+--- PASS: TestCPUBatch_concurrentMatchesAlone (69.09s)
+    --- PASS: TestCPUBatch_concurrentMatchesAlone/greedy (34.61s)
+    --- PASS: TestCPUBatch_concurrentMatchesAlone/sampled (34.49s)
+ok  	github.com/townsendmerino/goinfer/decoder	69.112s
+== 16:37:18 7B auto
+    cpu_batch_test.go:194: runs 77, steps 72 (tokens 283), solo tokens 5, straggler runs 0, step sizes [0 0 0 5 67]
+    cpu_batch_test.go:194: runs 77, steps 72 (tokens 283), solo tokens 5, straggler runs 0, step sizes [0 0 0 5 67]
+--- PASS: TestCPUBatch_concurrentMatchesAlone (228.26s)
+    --- PASS: TestCPUBatch_concurrentMatchesAlone/greedy (114.07s)
+    --- PASS: TestCPUBatch_concurrentMatchesAlone/sampled (114.19s)
+ok  	github.com/townsendmerino/goinfer/decoder	228.284s
+== 16:41:06 MC2 identity 7B
+    batchdecode_mc2_test.go:40: llama-tiny "": 4 sequences x 12 steps bit-identical to the single-token forward
+    batchdecode_mc2_test.go:40: qwen2.5-7b-instruct-q4_k_m.gguf "int4": 4 sequences x 12 steps bit-identical to the single-token forward
+    batchdecode_mc2_test.go:40: qwen2.5-7b-instruct-q4_k_m.gguf "int8int8": 4 sequences x 12 steps bit-identical to the single-token forward
+--- PASS: TestMC2_decodeMultiStepBitIdentical (74.13s)
+    --- PASS: TestMC2_decodeMultiStepBitIdentical/llama-tiny/ (0.02s)
+    --- PASS: TestMC2_decodeMultiStepBitIdentical/qwen2.5-7b-instruct-q4_k_m.gguf/int4 (36.57s)
+    --- PASS: TestMC2_decodeMultiStepBitIdentical/qwen2.5-7b-instruct-q4_k_m.gguf/int8int8 (37.54s)
+ok  	github.com/townsendmerino/goinfer/decoder	74.283s
+== 16:42:21 done

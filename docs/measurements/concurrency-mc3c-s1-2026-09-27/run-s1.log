@@ -1,0 +1,32 @@
+2026-09-27 16:43:01 PDT start 000efe2e (+ working tree: )
+2026-09-27 16:43:01 PDT waiting: load1=6.55 busy=[] (0s)
+2026-09-27 16:44:01 PDT waiting: load1=2.40 busy=[] (60s)
+2026-09-27 16:45:01 PDT idle: load1=0.88
+== 2026-09-27 16:45:01 PDT S1 depth 128; loadavg 0.88 4.95 3.62 1/896 1515602
+[s1   42.8s] qwen2.5-7b-instruct-q4_k_m.gguf depth 128: 8 caches prefilled
+[s1   73.7s] rep 1/5:  B=2 fused 8.93 unfused 8.62 tok/s = 1.036x  B=4 fused 14.80 unfused 13.93 tok/s = 1.062x  B=8 fused 18.06 unfused 16.98 tok/s = 1.064x
+[s1  104.8s] rep 2/5:  B=2 fused 8.88 unfused 8.50 tok/s = 1.044x  B=4 fused 14.62 unfused 13.86 tok/s = 1.055x  B=8 fused 17.96 unfused 16.87 tok/s = 1.064x
+[s1  135.8s] rep 3/5:  B=2 fused 8.94 unfused 8.41 tok/s = 1.063x  B=4 fused 14.71 unfused 13.93 tok/s = 1.056x  B=8 fused 18.09 unfused 17.06 tok/s = 1.060x
+[s1  166.6s] rep 4/5:  B=2 fused 8.96 unfused 8.62 tok/s = 1.039x  B=4 fused 14.76 unfused 13.94 tok/s = 1.059x  B=8 fused 18.11 unfused 17.05 tok/s = 1.062x
+[s1  197.4s] rep 5/5:  B=2 fused 8.96 unfused 8.63 tok/s = 1.039x  B=4 fused 14.77 unfused 13.96 tok/s = 1.058x  B=8 fused 18.12 unfused 17.08 tok/s = 1.061x
+[s1  197.4s] S1 METRIC depth 128 B=2 fused/unfused median 1.039x (per-rep sorted [1.036 1.039 1.039 1.044 1.063])
+[s1  197.4s] S1 METRIC depth 128 B=4 fused/unfused median 1.058x (per-rep sorted [1.055 1.056 1.058 1.059 1.062])
+[s1  197.4s] S1 METRIC depth 128 B=8 fused/unfused median 1.062x (per-rep sorted [1.060 1.061 1.062 1.064 1.064])
+--- PASS: TestCPUBatchS1_fusedVsUnfused (213.88s)
+ok  	github.com/townsendmerino/goinfer/decoder	213.902s
+2026-09-27 16:48:35 PDT waiting: load1=6.95 busy=[] (0s)
+2026-09-27 16:49:36 PDT waiting: load1=2.63 busy=[] (60s)
+2026-09-27 16:50:36 PDT idle: load1=1.00
+== 2026-09-27 16:50:36 PDT S1 depth 512; loadavg 1.00 4.55 4.11 1/876 1517477
+[s1  174.6s] qwen2.5-7b-instruct-q4_k_m.gguf depth 512: 8 caches prefilled
+[s1  208.3s] rep 1/5:  B=2 fused 8.49 unfused 8.17 tok/s = 1.040x  B=4 fused 13.53 unfused 12.80 tok/s = 1.058x  B=8 fused 16.15 unfused 15.42 tok/s = 1.047x
+[s1  241.9s] rep 2/5:  B=2 fused 8.50 unfused 8.16 tok/s = 1.041x  B=4 fused 13.53 unfused 12.77 tok/s = 1.059x  B=8 fused 16.33 unfused 15.41 tok/s = 1.059x
+[s1  275.5s] rep 3/5:  B=2 fused 8.50 unfused 8.18 tok/s = 1.040x  B=4 fused 13.52 unfused 12.80 tok/s = 1.056x  B=8 fused 16.34 unfused 15.42 tok/s = 1.059x
+[s1  309.1s] rep 4/5:  B=2 fused 8.49 unfused 8.17 tok/s = 1.039x  B=4 fused 13.53 unfused 12.80 tok/s = 1.057x  B=8 fused 16.32 unfused 15.42 tok/s = 1.059x
+[s1  342.7s] rep 5/5:  B=2 fused 8.47 unfused 8.17 tok/s = 1.037x  B=4 fused 13.53 unfused 12.76 tok/s = 1.060x  B=8 fused 16.30 unfused 15.42 tok/s = 1.057x
+[s1  342.7s] S1 METRIC depth 512 B=2 fused/unfused median 1.040x (per-rep sorted [1.037 1.039 1.040 1.040 1.041])
+[s1  342.7s] S1 METRIC depth 512 B=4 fused/unfused median 1.058x (per-rep sorted [1.056 1.057 1.058 1.059 1.060])
+[s1  342.7s] S1 METRIC depth 512 B=8 fused/unfused median 1.059x (per-rep sorted [1.047 1.057 1.059 1.059 1.059])
+--- PASS: TestCPUBatchS1_fusedVsUnfused (359.23s)
+ok  	github.com/townsendmerino/goinfer/decoder	359.262s
+2026-09-27 16:56:35 PDT DONE

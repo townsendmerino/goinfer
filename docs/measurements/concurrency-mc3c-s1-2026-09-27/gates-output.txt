@@ -1,0 +1,7 @@
+clients=4: 6 cells compared turn by turn against new4_1 (content and prompt-reused)
+pair 1 4 clients: aggregate old 11.9 new 12.5 tok/s = 1.053x; p99 turn old 46.23 s new 44.35 s = 0.959x; p50 old 42.66 new 40.71 s
+pair 2 4 clients: aggregate old 11.9 new 12.6 tok/s = 1.051x; p99 turn old 46.15 s new 44.26 s = 0.959x; p50 old 42.80 new 40.55 s
+pair 3 4 clients: aggregate old 11.9 new 12.6 tok/s = 1.051x; p99 turn old 46.11 s new 44.35 s = 0.962x; p50 old 42.85 new 40.53 s
+GATE 3 aggregate median 1.051x (bar >= 1.2x): owner band
+GATE 4 p99 under load median 0.959x (bar <= 1.0): PASS
+GATES 1-2 identity and reuse: PASS
