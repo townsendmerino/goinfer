@@ -1,8 +1,18 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
-> **Status: SCOPED, nothing built.** Two measurements decide what gets built: **C0** (does a
-> per-field number mean anything?) and **D6a** (is label scoring on any model good enough, or do the
-> trained decision heads earn their build?). Everything else waits on one of them.
+> **Status, 2026-09-27: C0 and D0 done; D1 in progress.**
+> - **C0 clears for enum, boolean and integer fields** ([`confidence-c0-2026-09-27.md`](../measurements/confidence-c0-2026-09-27.md)).
+>   AUROC on the 1.5B: 0.847 / 0.727 / 0.680. The readout costs 4.20% of a token on the 1.5B and 1.44% on the 7B.
+>   Number and string fields are parked: the labelled set drew too few wrong answers to judge them.
+> - **D0** ([`decisions-d0-prior-art-2026-09-27.md`](../measurements/decisions-d0-prior-art-2026-09-27.md)) found
+>   that autotrust's server is unpublished, so the reference fixture comes from the card's `decide()`.
+>   - TypeSafe's `/v1/systemone` JSON is now recorded, and every SDK plus jevx takes a base-URL override.
+>   - **The authors' own B0 report already puts Route A with the bare-v1 template far behind JEV-9B** (choice
+>     top-1 0.532 against 0.898). D6a with that template would land in its "build D2–D4" branch; only a better
+>     goinfer template could change that.
+>   - The corrections to this doc are marked "(D0, 2026-09-27)" where they apply.
+> - Two measurements decide what gets built: **C0** (does a per-field number mean anything? — answered above) and
+>   **D6a** (is label scoring on any model good enough, or do the trained decision heads earn their build?).
 >
 > **Provenance.** This doc merges two drafts, neither of which was ever committed:
 > - the C-items: a per-field confidence draft written 2026-09-25 under this file name, delivered
@@ -199,6 +209,17 @@ beyond what the measurement needs.
 - **Item 3's answer:** if enum and boolean pass gate 2 and the integer, number and string kinds do not, C1
   ships enum/boolean only.
 
+**C0 result, 2026-09-27** ([`confidence-c0-2026-09-27.md`](../measurements/confidence-c0-2026-09-27.md)):
+- **Enum, boolean and integer pass every gate.**
+  - AUROC on the 1.5B: 0.847 (48/12), 0.727 (38/22) and 0.680 (43/17).
+  - The 7B makes too few mistakes to qualify on any kind; its AUROCs of 0.97 / 0.91 / 0.94 point the same way.
+- **Number and string are parked.** There were too few wrong answers: `refund_amount` was right 60/60 on both
+  models.
+- **Cost:** a mean 4.20% (1.5B) and 1.44% (7B) of a decode token. The ungraded 0.5B read 7.8%, so C1 should read
+  only at free positions.
+- **The consequence for C1:** it may surface enum, boolean and integer fields. Number and string wait for a harder
+  labelled set. Every kind that passed decides its value in one free token.
+
 ### C1 — capture, attribute, surface (only if C0's gates clear)
 
 - **Capture, not compute.** A hook at the masking seam that records, per position, the probability
@@ -227,6 +248,24 @@ violate" section (one paragraph, the caveat linked), and a worked example in `ex
 
 ### D0 — prior art, reference fixture, API shape (no code in goinfer)
 
+**Result, 2026-09-27** ([`decisions-d0-prior-art-2026-09-27.md`](../measurements/decisions-d0-prior-art-2026-09-27.md),
+every fact read from a primary artifact at a pinned revision). Where it contradicts the text below, the record wins:
+- **autotrust's `jev_judge` server is not published**, and the `{distribution, decision, confidence, latency_ms}`
+  fields appear in no source. The reference fixture is the JEV-9B card's `decide()` (transformers 5.16.1 + peft
+  0.21.0), run on the Linux box: `docs/prompts/nobara-decisions-d0-fixture-2026-09.md`.
+- **The template is bare-v1**, with no chat template and no BOS. The labels are bare `false`/`true`, `0`–`5` and
+  `A`–`P` (no leading space). `slots.template_version` holds the version.
+- **The 9B's numbers:**
+  - T = noul 1.0022 / choice 0.9840 / score 1.0122;
+  - adapter 160,486,456 B;
+  - JEV-9B's base is the post-trained `Qwen/Qwen3.5-9B`, not `-Base`.
+- **Gold labels exist only on the `openjev_v2` rows** of `SargeDev/jev-distill-corpus-v3`:
+  - calibration: 1,109 noul and 463 choice, with no score rows;
+  - ood: 9,767 noul, 3,219 choice and 72 score.
+  - The `yuri_v3` targets are Jev's own distributions, a teacher and not gold.
+- **API shape:** TypeSafe's `POST /v1/systemone` is recorded verbatim. `@typesafe-ai/sdk`, `typesafe-sdk` (PyPI),
+  the Vercel and LangChain providers and jevx all take a base-URL override. The decision is still the owner's.
+
 - **Prior-art sweep (mandatory):** autotrust's `jev_judge` server code (the prompt template and its
   version in `judge_config.json`, the verbalizer token ids, how fewer than 16 options occupy the
   choice slots, the batch route); `kyegomez/open-jev` (a different, random-weights architecture;
@@ -246,7 +285,7 @@ violate" section (one paragraph, the caveat linked), and a worked example in `ex
 
   **A ready client exists (added 2026-09-27).** [`muthuishere/jevx`](https://github.com/muthuishere/jevx)
   is a CLI for Jev-style decisions (`is`, `ask --choice/--score`, `pick`, `rank`, `filter`) whose
-  exit codes map confidence to shell control flow (≥0.6 → 0, `unsure` → 3, error → 4). It talks to
+  exit codes map confidence to shell control flow (≥0.6 → 0, `unsure` → 3, error → 4; **(D0)** and no → 1, see D5). It talks to
   any server that speaks `/v1/systemone` through a profile and runs no models itself. A
   `/v1/systemone`-compatible route therefore gives goinfer a working terminal/CI/agent client on day
   one, which moves the decision toward **both**: TypeSafe's shape as the compatibility surface,
@@ -266,7 +305,9 @@ violate" section (one paragraph, the caveat linked), and a worked example in `ex
   prefill; take the last-position logits; read the label tokens; log-softmax over just those; apply
   the per-kind temperature. This is the shared readout helper C1 also uses.
 - `noul` uses two labels in yes/no form; `score` uses six labels 0–5 and returns the distribution
-  plus the expected score.
+  plus the expected score. **(D0, 2026-09-27)** The reference (bare-v1) labels noul as bare `false`/`true` and
+  uses no chat template, so "disable thinking in the chat template" above applies only to a chat-templated
+  variant. D1 renders bare-v1 by default, so Route A and a later Route B read the same prompt.
 - **Calibration.** A `decisions-calibrate` subcommand fits the per-kind temperature on a labelled
   JSONL (golden-section or L-BFGS on one scalar; no dependency) and writes `calibration.json` in
   autotrust's format, so Route A, Route B and C1's enum fields share one loader.
@@ -304,6 +345,8 @@ violate" section (one paragraph, the caveat linked), and a worked example in `ex
   out_proj, q/k/v/o_proj, gate/up/down_proj`, 416 MB unmerged); the last prompt token's final-norm
   hidden state through an fp32 linear head `H → 24 slots` (`head.safetensors`: noul 0–1, score 2–7,
   choice 8–23); a per-kind temperature (`calibration.json`: noul 1.014, choice 1.016, score 1.004);
+  **(D0, 2026-09-27)** those are JEV-27B's figures. JEV-9B's adapter is 160,486,456 B and its T is noul 1.0022 /
+  choice 0.9840 / score 1.0122;
   softmax over the slots the request's options occupy. Published: JEV-27B mean KL 0.104 on the
   Open-Jev OOD split, JEV-9B 0.234.
 - Load `head.safetensors` and `judge_config.json` (slot layout, verbalizer ids, template version,
@@ -327,9 +370,22 @@ violate" section (one paragraph, the caveat linked), and a worked example in `ex
 - `/v1/models` advertises `decisions: {routes: [...], kinds: [...]}` per loaded model.
 - **Acceptance:** jevx's scenario guide (https://muthuishere.github.io/jevx/guides/scenarios/) runs
   unchanged against a goinfer profile, and exit codes match on the non-borderline items.
+  - **(D0, 2026-09-27)** The exit codes are 0 = yes/decided, 1 = no, 3 = unsure (noul between 0.2 and 0.8, or a
+    choice/score below `min_confidence` 0.6) and 4 = error.
+  - About nine scenarios depend on unpublished input files, so "runs unchanged" covers the inline ones.
+  - jevx sends choice descriptions (`criteria`) and 2–10-level scores. bare-v1 has no place for either, and JEV's
+    score is fixed at six levels.
+  - TypeSafe's `GET /v1/models` is `{models:[…]}`, which conflicts with goinfer's OpenAI-shaped `/v1/models`. It
+    matters only to a client calling `models.list()`; jevx and `systemOne()` do not.
 
 ### D6 — fidelity gates (two, in order)
 
+- **(D0, 2026-09-27)** The authors' B0 report already measured Route A with the bare-v1 template on Qwen3.5-9B:
+  - choice top-1 0.532 against JEV-9B's 0.898 (test_set_30k);
+  - overall top-1 0.518 against 0.918 on OOD, with ECE 0.072 there.
+  - Temperature cannot move top-1, so a bare-v1 Route A lands in the "more than 10 points behind" branch.
+  - D6a remains worth running only for a goinfer template that could differ, such as a chat-templated prompt on an
+    instruct model, and it must say which template it grades.
 - **D6a (right after D1; decides D2–D4).** Route A on Qwen3.5-9B base, calibrated on the
   calibration split, against JEV-9B's reference outputs on D0's held-out items: top-1 agreement with
   gold where it exists, ECE, mean KL to the JEV-9B reference. Also run Route A on one small model
