@@ -1,0 +1,250 @@
+{
+ "header": {
+  "utc": "2026-09-28T00:37:41Z",
+  "host": "macbookpro.lan",
+  "model": "/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+  "goinfer_commit": "1e153876",
+  "goinfer_dirty": true,
+  "goinfer_serve_mtime": "Sep 27 17:21:07 2026",
+  "llama_server_version": "version: 0.3.0 (build 10621, commit c1d0e7a00)",
+  "uptime": "17:37  up 3 days,  7:33, 1 user, load averages: 1.14 1.66 2.10"
+ },
+ "args": {
+  "out": "/Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/copy-7b.json",
+  "key": "plain_3",
+  "clients": 1,
+  "rounds": 2,
+  "chars": 3500,
+  "max_tokens": 256,
+  "rev": "cc5f8c2c",
+  "serve_args": "",
+  "server_log": "/Users/francistownsend-merino/goinfer-bench/spec-step-verify-2026-09-27/servers.log"
+ },
+ "results": {
+  "plain_1": {
+   "clients": 1,
+   "wall_s": 30.437,
+   "completion_tokens": 512,
+   "http_errors": [],
+   "aggregate_tok_s": 16.822,
+   "per_client": [
+    [
+     {
+      "section": 0,
+      "latency_s": 15.37,
+      "prompt_tokens": 967,
+      "completion_tokens": 256,
+      "content_sha": "92b3bcfc04be7d94"
+     },
+     {
+      "section": 1,
+      "latency_s": 15.065,
+      "prompt_tokens": 942,
+      "completion_tokens": 256,
+      "content_sha": "562ce60e575e15c9"
+     }
+    ]
+   ]
+  },
+  "specold_1": {
+   "clients": 1,
+   "wall_s": 30.436,
+   "completion_tokens": 512,
+   "http_errors": [],
+   "aggregate_tok_s": 16.822,
+   "per_client": [
+    [
+     {
+      "section": 0,
+      "latency_s": 15.4,
+      "prompt_tokens": 967,
+      "completion_tokens": 256,
+      "content_sha": "92b3bcfc04be7d94"
+     },
+     {
+      "section": 1,
+      "latency_s": 15.035,
+      "prompt_tokens": 942,
+      "completion_tokens": 256,
+      "content_sha": "562ce60e575e15c9"
+     }
+    ]
+   ]
+  },
+  "specnew_1": {
+   "clients": 1,
+   "wall_s": 16.322,
+   "completion_tokens": 512,
+   "http_errors": [],
+   "aggregate_tok_s": 31.369,
+   "per_client": [
+    [
+     {
+      "section": 0,
+      "latency_s": 8.306,
+      "prompt_tokens": 967,
+      "completion_tokens": 256,
+      "content_sha": "92b3bcfc04be7d94"
+     },
+     {
+      "section": 1,
+      "latency_s": 8.015,
+      "prompt_tokens": 942,
+      "completion_tokens": 256,
+      "content_sha": "562ce60e575e15c9"
+     }
+    ]
+   ]
+  },
+  "specnew_2": {
+   "clients": 1,
+   "wall_s": 16.392,
+   "completion_tokens": 512,
+   "http_errors": [],
+   "aggregate_tok_s": 31.235,
+   "per_client": [
+    [
+     {
+      "section": 0,
+      "latency_s": 8.313,
+      "prompt_tokens": 967,
+      "completion_tokens": 256,
+      "content_sha": "92b3bcfc04be7d94"
+     },
+     {
+      "section": 1,
+      "latency_s": 8.079,
+      "prompt_tokens": 942,
+      "completion_tokens": 256,
+      "content_sha": "562ce60e575e15c9"
+     }
+    ]
+   ]
+  },
+  "plain_2": {
+   "clients": 1,
+   "wall_s": 30.136,
+   "completion_tokens": 512,
+   "http_errors": [],
+   "aggregate_tok_s": 16.99,
+   "per_client": [
+    [
+     {
+      "section": 0,
+      "latency_s": 15.235,
+      "prompt_tokens": 967,
+      "completion_tokens": 256,
+      "content_sha": "92b3bcfc04be7d94"
+     },
+     {
+      "section": 1,
+      "latency_s": 14.901,
+      "prompt_tokens": 942,
+      "completion_tokens": 256,
+      "content_sha": "562ce60e575e15c9"
+     }
+    ]
+   ]
+  },
+  "specold_2": {
+   "clients": 1,
+   "wall_s": 30.374,
+   "completion_tokens": 512,
+   "http_errors": [],
+   "aggregate_tok_s": 16.857,
+   "per_client": [
+    [
+     {
+      "section": 0,
+      "latency_s": 15.373,
+      "prompt_tokens": 967,
+      "completion_tokens": 256,
+      "content_sha": "92b3bcfc04be7d94"
+     },
+     {
+      "section": 1,
+      "latency_s": 15.0,
+      "prompt_tokens": 942,
+      "completion_tokens": 256,
+      "content_sha": "562ce60e575e15c9"
+     }
+    ]
+   ]
+  },
+  "specold_3": {
+   "clients": 1,
+   "wall_s": 30.375,
+   "completion_tokens": 512,
+   "http_errors": [],
+   "aggregate_tok_s": 16.856,
+   "per_client": [
+    [
+     {
+      "section": 0,
+      "latency_s": 15.345,
+      "prompt_tokens": 967,
+      "completion_tokens": 256,
+      "content_sha": "92b3bcfc04be7d94"
+     },
+     {
+      "section": 1,
+      "latency_s": 15.029,
+      "prompt_tokens": 942,
+      "completion_tokens": 256,
+      "content_sha": "562ce60e575e15c9"
+     }
+    ]
+   ]
+  },
+  "specnew_3": {
+   "clients": 1,
+   "wall_s": 16.324,
+   "completion_tokens": 512,
+   "http_errors": [],
+   "aggregate_tok_s": 31.364,
+   "per_client": [
+    [
+     {
+      "section": 0,
+      "latency_s": 8.305,
+      "prompt_tokens": 967,
+      "completion_tokens": 256,
+      "content_sha": "92b3bcfc04be7d94"
+     },
+     {
+      "section": 1,
+      "latency_s": 8.019,
+      "prompt_tokens": 942,
+      "completion_tokens": 256,
+      "content_sha": "562ce60e575e15c9"
+     }
+    ]
+   ]
+  },
+  "plain_3": {
+   "clients": 1,
+   "wall_s": 30.138,
+   "completion_tokens": 512,
+   "http_errors": [],
+   "aggregate_tok_s": 16.988,
+   "per_client": [
+    [
+     {
+      "section": 0,
+      "latency_s": 15.22,
+      "prompt_tokens": 967,
+      "completion_tokens": 256,
+      "content_sha": "92b3bcfc04be7d94"
+     },
+     {
+      "section": 1,
+      "latency_s": 14.918,
+      "prompt_tokens": 942,
+      "completion_tokens": 256,
+      "content_sha": "562ce60e575e15c9"
+     }
+    ]
+   ]
+  }
+ }
+}

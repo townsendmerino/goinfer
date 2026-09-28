@@ -1,0 +1,19 @@
+  copy 15b round 1: plain 52.27 tok/s; specold 51.40 (0.983x); specnew 108.91 (2.084x)
+  copy 15b round 2: plain 52.72 tok/s; specold 51.52 (0.977x); specnew 109.78 (2.082x)
+  copy 15b round 3: plain 52.74 tok/s; specold 51.54 (0.977x); specnew 109.28 (2.072x)
+  copy 15b: spec-new / plain median 2.082x, spec-old / plain 0.977x; replies equal to plain: spec-new 6/6, spec-old 6/6
+  copy 7b round 1: plain 16.82 tok/s; specold 16.82 (1.000x); specnew 31.37 (1.865x)
+  copy 7b round 2: plain 16.99 tok/s; specold 16.86 (0.992x); specnew 31.23 (1.838x)
+  copy 7b round 3: plain 16.99 tok/s; specold 16.86 (0.992x); specnew 31.36 (1.846x)
+  copy 7b: spec-new / plain median 1.846x, spec-old / plain 0.992x; replies equal to plain: spec-new 6/6, spec-old 6/6
+  chat 15b round 1: plain 61.50 tok/s; specold 66.99 (1.089x); specnew 80.99 (1.317x)
+  chat 15b round 2: plain 76.16 tok/s; specold 72.80 (0.956x); specnew 81.18 (1.066x)
+  chat 15b round 3: plain 75.94 tok/s; specold 72.62 (0.956x); specnew 81.07 (1.068x)
+  chat 15b: spec-new / plain median 1.068x, spec-old / plain 0.956x; replies equal to plain: spec-new 18/18, spec-old 18/18
+  chat 7b round 1: plain 25.42 tok/s; specold 24.74 (0.973x); specnew 25.01 (0.984x)
+  chat 7b round 2: plain 25.32 tok/s; specold 24.56 (0.970x); specnew 25.68 (1.014x)
+  chat 7b round 3: plain 25.35 tok/s; specold 24.55 (0.968x); specnew 25.76 (1.016x)
+  chat 7b: spec-new / plain median 1.014x, spec-old / plain 0.970x; replies equal to plain: spec-new 18/18, spec-old 18/18
+GATE 1 every reply equals plain's (1.5B, hard): PASS
+GATE 2 copy 1.5B spec-new / plain 2.082x (>= 1.25 ships; 1.03-1.25 owner): PASS
+GATE 3 chat 1.5B spec-new / plain 1.068x (>= 0.97, hard): PASS

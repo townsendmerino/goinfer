@@ -995,6 +995,14 @@ n-gram loop already prefers when present).
 - Decision: all pass ships, and `server.md`'s "leave it off on Metal" is rewritten. Copy at 1.03–1.25× goes to the
   owner. A chat failure is fixed (for example, a minimum draft depth for step verifies) before anything ships.
 - P10's block drafters follow only on this result, with their own drafter port and measurement.
+- **SHIPPED 2026-09-27 (`1e153876`): both deciding gates and all three served gates pass**
+  ([`metal-spec-step-verify-2026-09-27.md`](../measurements/metal-spec-step-verify-2026-09-27.md)).
+  - Identity: same-slot rows are bit-identical to sequential decode, 0 differ in 7 cases on both models.
+  - Cost: an extra row is 0.11–0.19 (1.5B) and 0.16–0.24 (7B) of a token at M = 8.
+  - Served, 1 client, on the 1.5B: copy **2.082×** plain decode and chat **1.068×**, every reply identical. The 7B
+    reads 1.846× and 1.014×. The old verify read 0.977× and 0.956×.
+  - Next, by the spec measurement's own registered rule (S > 1.05× on both workloads, with L < 1): "speculate when
+    alone, batch under load" is now worth registering. P10's block drafters have a Metal verify.
 
 ## MC5 — continuous batching, paged KV, chunked prefill (parked)
 

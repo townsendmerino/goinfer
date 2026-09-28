@@ -141,13 +141,16 @@ run together in one step on the GPU's matrix units, every logit bit-identical to
   - `0` prefills whole.
 - A newcomer's prefill runs between steps, in chunks when it is long (below).
 - A model serving `--spec`, a `--drafter` or an adapter keeps one generation at a time, as does any non-dense family.
-  - On Metal, `--spec ngram` measured no gain for a lone request: 0.98× plain decode on verbatim-copy requests, 0.93×
-    on chat.
-  - Under 4-client load it gives up batching: 0.61× / 0.49× the batched aggregate.
+  - On Metal, `--spec ngram` verifies its drafts on the batched step's kernels (since 2026-09-27), bit-identically.
+    A lone greedy request measured 2.08× plain decode on verbatim-copy requests and 1.07× on chat (1.5B); the 7B
+    measured 1.85× and 1.01× (`measurements/metal-spec-step-verify-2026-09-27.md`).
   - Its replies are identical to plain decode's on every turn. Before 2026-09-27, turns after the first diverged on
     Metal, because a generation ending at `max_tokens` left its last token unforwarded, and the next turn
     re-prefilled it through the f16 prefill. That is fixed.
-  - Source: `measurements/spec-vs-batching-metal-2026-09-27.md`. Leave it off on Metal.
+  - It still takes the resident exclusively: under 4-client load it gives up batching, at 0.61× / 0.49× the batched
+    aggregate (`measurements/spec-vs-batching-metal-2026-09-27.md`).
+  - So on Metal, turn it on for one user or an agent loop (copy-heavy edits pay most), and leave it off for a server
+    shared by several clients.
 - The line printed after load (`"<name>" concurrency: …`) says which applies. A request's prefill shares the memory safety margin with the generations running or queued
 ahead of it when it arrives (up to N), so a lone request keeps the whole margin. The trade: aggregate throughput rises (4 decode workers measured 2.0–2.5× on an M1 Pro's CPU,
 `measurements/concurrency-mc2-2026-09-26.md`), while each request, sharing the cores, takes longer than it would
