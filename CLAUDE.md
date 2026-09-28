@@ -235,6 +235,17 @@ weaker number. On nobara, D6a was launched on a ~6 h estimate and stopped at 25 
 - **A queued job must run with nobody watching.** Use the `docs/measurements/<campaign>/run-*.sh` shape: pinned revs
   or pre-built binaries (the tree may move before tonight), durable log/record paths, no prompts, nothing that
   needs a Claude session alive. Its output also lands in `~/goinfer-logs/night/runs/<date>/<name>.log`.
+- **One timed run per box** (TE9, `docs/tasks/task-test-efficiency-2026-09.md`).
+  - The `bench_peer*.py` harnesses and every `night.py` job hold `~/.goinfer-timing.lock` for their whole run
+    (`scripts/timing_lock.py`). A second timed run refuses, naming the holder, and the holder's children inherit it.
+  - A `run-*.sh` whose timed step is not one of those harnesses (a `go test` measurement gate, a sweep loop) wraps it:
+    `python3 scripts/timing_lock.py run --label <name> -- <cmd>`.
+  - A refusal means another run is measuring on this box. Wait for it (`timing_lock.py status` names it); never delete
+    the lock file to get past it.
+- **Two arms when the decision is new ÷ old** (TE5(a)). A gate that grades a goinfer-vs-goinfer ratio runs
+  `BENCH_ENGINES=goinfer,goinfer_old`, with no peer arm. The peer ratio is read once, after the lever ships, as its own
+  same-session interleaved run. In the 2026-09-28 L1 gates Ollama took a quarter to a third of the cell time and
+  decided nothing.
 - **Night runs use the harness defaults** (`BENCH_MAX_LOADAVG=1.0`, not the daytime 2.5 deviation) — nothing else
   is on the box.
 - **Jobs of 3 h or less; never 6.** `add` refuses an estimate over 360 min. Shrink the sample or fix the slow path

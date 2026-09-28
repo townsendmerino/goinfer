@@ -495,4 +495,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # TE9 (docs/tasks/task-test-efficiency-2026-09.md): one timed run per box. The lock is held for the whole run and
+    # taken before preflight(), so a second timed run refuses, naming this one; BENCH_LOCK_WAIT=<seconds> waits for a
+    # holder instead. Under a night.py job or a `timing_lock.py run` wrapper the lock is inherited, not re-taken.
+    import timing_lock
+    with timing_lock.hold(f"{os.path.basename(sys.argv[0])} {' '.join(sys.argv[1:])}",
+                          wait_s=float(os.environ.get("BENCH_LOCK_WAIT", "0"))):
+        main()

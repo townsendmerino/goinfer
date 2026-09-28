@@ -6,6 +6,9 @@
 > night"; c9d8ea04, c4e3aec2) moves long runs to the night queue. This campaign makes them shorter and fewer. It is the
 > device-bound complement of [`task-ci-speed-2026-09.md`](../completed/task-ci-speed-2026-09.md) (C0–C9), whose §4 left
 > exactly this out: "`go run ./cmd/gate` on a real box stays the correctness gate."
+>
+> **Done 2026-09-28:** TE9, the timing lock (`scripts/timing_lock.py`), and TE5(a), the two-arm rule in `CLAUDE.md`. See
+> each item for its proof.
 
 ## BLUF
 
@@ -155,6 +158,25 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   gate, sweep, suite, parity/refresh, evaluation) × machine × day/night for the last 30 days, the top 20 runs, and the
   re-runs. Re-run weekly while the campaign is open, and at close.
 - **Band / kill:** none — it is the instrument.
+- **Mac transcript miner: DONE 2026-09-28.** The miner is
+  [`transcript_miner.py`](../measurements/test-efficiency-2026-09/transcript_miner.py), and its output is
+  `transcripts-macbook-2026-09-28.txt` beside it. It pairs each Bash `tool_use` with its `tool_result`, or with its
+  `task-notification` for a backgrounded call. It covers 206 transcripts (subagents included) and 43,914 calls since
+  2026-08-29.
+  - **Excluded, 7 spans (145.6 h in total).** These are foreground calls whose result arrived more than 610 s later
+    (the tool caps a foreground call at 600 s, so these were blocked, not running), and background tasks that ended
+    "stopped" (a server or a watch left up for days until someone stopped it). Left in, they were more than half of
+    the raw total, including one 100.5 h "call".
+  - **The largest class is waiting:** **66.5 h of wait/poll, 55.7 h of it by day**, more than half of all call time.
+    These are sessions blocked in `until … sleep` / `gh run list` / `ssh … kill -0` loops on CI, remote runs and
+    detached benchmarks.
+  - **Unit-test suites: 23.7 h, 20.0 h by day.** Re-runs are visible: the whole `decoder` suite 3–6 times on single
+    days, at 5–10 min each. That is TE7's target (affected-only selection and the test cache).
+  - **Smaller classes:** in-test measurement 8.7 h, build/lint 6.1 h, parity/refresh 1.4 h. The served harness calls
+    total 1.2 h because served gates run detached, and their spans are census.py's (§1.1).
+  - **Owed: the same miner on nobara, from its own transcripts.** It was not run on 2026-09-28 because a timed CUDA
+    prefill gate was running there, and a scan should not overlap a timed run. census.py on nobara's
+    `~/goinfer-bench` is owed with it.
 
 ### TE1 — The idle gate reads what is running now *(one night: A/A + mutation)*
 
@@ -171,6 +193,39 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
 - **Kill:** the A/A spread widens past that, meaning the long wait was buying real recovery (thermals on the M1 Pro are
   the suspect). Fallback: a fixed, measured cool-down plus the instantaneous check. Record `pmset -g therm` per cell on
   the Mac either way, so the thermal question has data next time.
+- **Built 2026-09-28** (by day, nothing timed).
+  - `bench_peer.py BENCH_IDLE_GATE=load|instant`. The default stays `load`, unchanged, until the night below decides.
+  - `instant` samples the share of all CPUs busy over `BENCH_BUSY_WINDOW_S` (3 s; `/proc/stat` deltas on Linux, the
+    second sample of `top -l 2` on macOS), under `BENCH_MAX_BUSY` (10%).
+  - It also refuses while any timed-workload-named process (`goinfer*`, `serve*`, `ollama`, `llama-server`, `*.test`)
+    burned more than 5% of a core during that window. A named process that is merely alive, like the Mac's resident
+    Ollama app, does not count.
+  - Every cell now records `machine.gate` (kind, `wait_s`, busy % or loadavg) under both gates, and `machine.therm`
+    (`pmset -g therm`) on the Mac.
+  - Checked live, not timed. The sampler read 23% busy and named the `decoder.test` binary a concurrent test run was
+    burning (3.5 CPU-s in the window). It did not flag the idle resident Ollama.
+- **Pre-registration (2026-09-28, before queueing; the Mac's first night).**
+  - **Run:** `run-te1-aa-mutation.sh`, graded by `te1_analyze.py`, both in `measurements/test-efficiency-2026-09/`.
+    - The binary is pinned: `serve-cpu-b9fcde67` in both arms (A/A).
+    - CPU, 0.5B / 1.5B / 7B, 3 runs, two arms.
+    - Four sweeps interleaved (load, instant, load, instant), then a mutation per gate.
+  - **Mutation:** an every-core CPU hog for 90 s, started the moment cell 1's record lands, so while the harness is in
+    cell 2's gate. Each gate must hold cell 2 for the hog's life (gate wait ≥ hog time − 5 s). The instant gate must
+    also release within 10 s of the hog stopping. The load gate's release lag is recorded. **A mutation failure is a
+    kill.**
+  - **A/A spread:** per sweep and model, the log ratio of the two identical arms' means. For each gate, the RMS over
+    its 6. Bands on the ratio RMS(instant) ÷ RMS(load):
+    - **≤ 1.25 PASS** (the item's own line);
+    - **> 2.07 KILL** (the one-sided 5% point of F(6,6), 4.28, square-rooted);
+    - **between them, PARKED** (to the owner, with more pairs).
+    
+    This deviates from the item's single "+25%" line. At 6 values per gate, equal spreads would exceed +25% about
+    30% of the time. That is §1.5's gate that cannot resolve its bar, so the kill line sits where chance alone would
+    reach it 5% of the time, and the band in between is parked, not guessed.
+  - **Idle-gate share of served wall:** the instant gate's mean over its two sweeps must be ≤ 10%. The sweep-wall
+    reduction is reported against the −30–45% band.
+  - **Thermal:** every cell's `pmset -g therm` line is kept. Any warning is listed.
+  - **On PASS:** `instant` becomes the default in a separate commit, citing the result.
 
 ### TE2 — Per-cell overhead: start once, time more *(analysis by day, one night to confirm)*
 
@@ -250,6 +305,9 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
 - **Band:** −25–33% of cells on goinfer-vs-goinfer served gates from (a), immediately; a daytime kernel verdict in
   ≤ 5 min from (b).
 - **Kill (b):** any sign disagreement for a kernel-local change. The in-process lane then stays exploratory.
+- **(a) DONE 2026-09-28:** the rule is in root `CLAUDE.md` § Run budget ("Two arms when the decision is new ÷ old").
+  There is no separate `run-*.sh` template file to change; each campaign's script sets `BENCH_ENGINES`, so the rule
+  goes where those scripts are written.
 
 ### TE6 — Change-proportional correctness: identity against the last validated build, cached references *(by day + one night)*
 
@@ -329,6 +387,23 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   `fcntl.flock` on `~/.goinfer-timing.lock` for the length of its run. A second timed run waits or refuses, naming the
   holder (pid, command, start). The idle gate checks the lock first.
 - **Band:** void-by-collision records → 0.
+- **DONE 2026-09-28.** `scripts/timing_lock.py` holds an exclusive `flock` on `~/.goinfer-timing.lock`.
+  - **Where it is taken:** `bench_peer.py`, `bench_peer_prefill.py` and `bench_peer_transcript.py` take it at
+    `__main__`, before `preflight()`. `night.py` takes it per job; a daytime holder is waited for up to
+    `NIGHT_LOCK_WAIT_MIN` (default 30), then the job is skipped with the holder named. `timing_lock.py run -- CMD`
+    wraps any other timed step in a `run-*.sh`.
+  - **Behaviour:** a contender refuses (exit 75 from the CLI) with the holder's pid, command, start and label, or waits
+    with `BENCH_LOCK_WAIT` / `--wait`. The holder's children inherit it through `GOINFER_TIMING_LOCK`, so a night job
+    that runs a `run-*.sh` that runs `bench_peer.py` takes it once. The kernel drops it when the holder dies, so it
+    cannot go stale.
+  - **Proof, `scripts/test_timing_lock.py` (7 real-process cases):** refusal naming the holder, a foreign token not
+    bypassing, children inheriting through nested wrappers, waiting until release, SIGKILL freeing it, and `status`.
+    A shared-lock mutant turned 5 of 7 red.
+  - **End to end:** a `night.py` job's child inherits the lock. A job blocked by another holder is skipped after the
+    wait, with the holder named and its command not run. All three harnesses refuse in ≤ 0.3 s, before `preflight()`
+    and without writing output.
+  - **Scope:** the lock is cooperative, so a hand-typed `go test -bench` does not take it. TE1's named-process check is
+    what sees those.
 
 ### TE10 — Parity staleness keyed on what each family executes *(conditional)*
 

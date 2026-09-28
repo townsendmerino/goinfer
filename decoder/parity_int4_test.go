@@ -72,7 +72,18 @@ func loadInt4Model(tb testing.TB) *Model {
 // loadInt4Model above). It only began running when the asset registry gave it the
 // fallback, and it went red on its first execution. A dependency bump moved a
 // numerics path with the one gate that watches it dark.
-var parityWantInt4 = []int{4710, 73594, 12669, 198, 750, 1438, 4136, 3932, 262, 671, 1096, 374, 264, 5878, 369, 279, 5042, 2038, 198, 262, 1494, 271, 8960, 4136}
+//
+// RE-CAPTURED 2026-09-28 for L1's binary16 int4 group scales (aikit v1.50.0, and v1.50.1's
+// bit-identical arm64 fix; docs/tasks/task-cpu-decode-peer-gap-2026-09.md). That change moves int4
+// numerics by design, and was owner-approved on 2026-09-27. This golden was not re-baselined with it:
+// only TestInt4_forwardParity was, and this one went red on arm64 at the merge (3cd62e6d passes,
+// 5c85f7c0 fails, drift at id 13). It was found the next day by a whole-package run. The evidence:
+//   - The new list is exactly what the PRE-L1 build (3cd62e6d) produces with GOINFER_INT4_F16_SCALES=1,
+//     all 24 ids identical, so the drift is the intended f16 rounding and nothing else.
+//   - Scored against an f32 forward, as above: the old golden 11/24, THIS golden 11/24, int8int8 19/24.
+//     Both int4 paths leave f32 at the same id and differ from each other only after it, so this one is
+//     no less faithful.
+var parityWantInt4 = []int{4710, 73594, 12669, 198, 750, 1438, 4136, 3932, 262, 671, 1096, 374, 264, 6573, 315, 2038, 429, 3880, 311, 387, 10865, 198, 262, 1494}
 
 // TestDecodeParityInt4 greedily continues parityPrompt at int4 and checks the
 // token ids against parityWantInt4. The prompt is prefilled (batched

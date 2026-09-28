@@ -40,7 +40,7 @@ current one AND a real peer in one sweep -- see SERVE_OLD and plan_engines()' ow
     BENCH_ENGINES=goinfer,goinfer_old,ollama BENCH_BACKENDS=cpu \
     python3 scripts/bench_peer.py results.json
 """
-import json, os, signal, socket, subprocess, sys, threading, time, urllib.request, statistics
+import json, os, re, signal, socket, subprocess, sys, threading, time, urllib.request, statistics
 
 GOINFER = os.environ.get("GOINFER_SERVE", "./goinfer-serve")
 OLLAMA = os.environ.get("OLLAMA_BIN", os.path.expanduser("~/ollama-0325/bin/ollama"))
@@ -260,6 +260,18 @@ for _kv in os.environ.get("BENCH_QUANT_OVERRIDE", "M35=int4mix,phi3-mini=int8int
 # wait_llamacpp_ready window is sized for a small model's load, not a 15-22 GB checkpoint's
 # first-use .gguf->.giw transcode, which can itself run past 180s before the port ever opens.
 LOAD_TIMEOUT = int(os.environ.get("BENCH_LOAD_TIMEOUT", "180"))
+# TE1 (docs/tasks/task-test-efficiency-2026-09.md): the idle gate before each cell. "load" is the original: the 1-min load
+# average under BENCH_MAX_LOADAVG. That is an exponentially damped average with a ~60 s time constant, so after a cell
+# that loaded the box to ~8 it waits ~2 min for the harness's OWN previous cell to drain, and it measured 44% of timed-run
+# wall. "instant" gates on what is running NOW: the share of all CPUs busy over BENCH_BUSY_WINDOW_S seconds (under
+# BENCH_MAX_BUSY percent), and no foreign timed workload (a server, a *.test binary, ollama, llama-server) burning
+# CPU. The refusal design is unchanged. "load" stays the default until TE1's pre-registered A/A + mutation night decides.
+IDLE_GATE = os.environ.get("BENCH_IDLE_GATE", "load")
+if IDLE_GATE not in ("load", "instant"):
+    sys.exit(f"BENCH_IDLE_GATE: {IDLE_GATE!r} is not load|instant")
+BUSY_CAP = float(os.environ.get("BENCH_MAX_BUSY", "10"))
+BUSY_WINDOW_S = float(os.environ.get("BENCH_BUSY_WINDOW_S", "3"))
+FOREIGN_RE = re.compile(r"^(?:goinfer\S*|serve\S*|ollama|llama-server|\S+\.test)$")
 
 NGEN = int(os.environ.get("BENCH_NGEN", "64"))  # tokens generated per completion
 # BENCH_NGEN exists for spec/10's window-variance question: one completion IS a decode window at
@@ -360,6 +372,94 @@ def _loadavg():
         return list(os.getloadavg())
     except Exception:
         return None
+
+
+def _proc_stat_cpu():
+    """Linux: (busy, total) jiffies over all CPUs from /proc/stat's first line."""
+    f = [int(x) for x in open("/proc/stat").readline().split()[1:]]
+    idle = f[3] + (f[4] if len(f) > 4 else 0)  # idle + iowait
+    return sum(f) - idle, sum(f)
+
+
+def cpu_busy_pct(window=None):
+    """Percent of ALL CPUs busy over `window` seconds, measured now, or None if this platform cannot say. Linux:
+    /proc/stat deltas. macOS: the second sample of `top -l 2 -s <window> -n 0` (the first covers boot to now)."""
+    window = BUSY_WINDOW_S if window is None else window
+    try:
+        if sys.platform.startswith("linux"):
+            b0, t0 = _proc_stat_cpu()
+            time.sleep(window)
+            b1, t1 = _proc_stat_cpu()
+            return round(100.0 * (b1 - b0) / max(1, t1 - t0), 1)
+        if sys.platform == "darwin":
+            out = _sh(["top", "-l", "2", "-s", str(max(1, int(round(window)))), "-n", "0"])
+            idle = re.findall(r"CPU usage: [\d.]+% user, [\d.]+% sys, ([\d.]+)% idle", out)
+            if len(idle) >= 2:
+                return round(100.0 - float(idle[-1]), 1)
+    except Exception:
+        pass
+    return None
+
+
+def _cpu_seconds(t):
+    """ps's cumulative CPU time ([dd-][hh:]mm:ss[.ss]) in seconds."""
+    days, _, rest = t.rpartition("-")
+    parts = [float(x) for x in rest.split(":")]
+    secs = 0.0
+    for x in parts:
+        secs = secs * 60 + x
+    return secs + (int(days) * 86400 if days else 0)
+
+
+def timed_workloads():
+    """{pid: (name, cumulative CPU seconds)} for processes whose name looks like a timed workload (FOREIGN_RE),
+    this process excluded. Linux reads /proc (10 ms resolution; ps rounds to whole seconds); macOS reads ps."""
+    out, me = {}, os.getpid()
+    try:
+        if sys.platform.startswith("linux"):
+            tick = os.sysconf("SC_CLK_TCK")
+            for d in os.listdir("/proc"):
+                if not d.isdigit() or int(d) == me:
+                    continue
+                try:
+                    raw = open(f"/proc/{d}/stat").read()
+                    name = raw[raw.index("(") + 1:raw.rindex(")")]
+                    if FOREIGN_RE.match(name):
+                        f = raw[raw.rindex(")") + 2:].split()
+                        out[int(d)] = (name, (int(f[11]) + int(f[12])) / tick)  # utime + stime
+                except (OSError, ValueError, IndexError):
+                    continue
+        else:
+            for line in _sh(["ps", "-Ao", "pid=,time=,comm="]).splitlines():
+                bits = line.split(None, 2)
+                if len(bits) == 3 and bits[0].isdigit() and int(bits[0]) != me:
+                    name = os.path.basename(bits[2].strip())
+                    if FOREIGN_RE.match(name):
+                        out[int(bits[0])] = (name, _cpu_seconds(bits[1]))
+    except Exception:
+        pass
+    return out
+
+
+def instant_idle_sample():
+    """(busy %, [(pid, name, cpu seconds used during the window)]) for the instant gate. A named process that is
+    merely alive and idle (the Mac's resident Ollama app) is not foreign load; one that burned more than 5% of a core
+    during the sample window is."""
+    before = timed_workloads()
+    t0 = time.time()
+    busy = cpu_busy_pct()
+    span = max(0.1, time.time() - t0)
+    after = timed_workloads()
+    active = [(pid, name, round(cpu - before[pid][1], 2)) for pid, (name, cpu) in after.items()
+              if pid in before and cpu - before[pid][1] > 0.05 * span]
+    return busy, active
+
+
+def thermal_state():
+    """macOS `pmset -g therm` (TE1 records it per cell: the M1 Pro thermal question needs data), else None."""
+    if sys.platform != "darwin":
+        return None
+    return " / ".join(l.strip() for l in _sh(["pmset", "-g", "therm"]).splitlines() if l.strip()) or None
 
 def _gpu_state():
     out = _sh(["nvidia-smi", "--query-gpu=driver_version,name,temperature.gpu,memory.used,memory.total",
@@ -532,7 +632,11 @@ def provenance():
 
 def machine_state():
     """Recorded at the START of each cell. See the note above: a record, not a gate."""
-    return {"loadavg": _loadavg(), "gpu": _gpu_state()}
+    m = {"loadavg": _loadavg(), "gpu": _gpu_state()}
+    th = thermal_state()
+    if th:
+        m["therm"] = th
+    return m
 
 def preflight():
     """The idle check, and the ONLY place it is answerable -- before this harness loads the box.
@@ -541,7 +645,14 @@ def preflight():
     all, after the numbers already exist and have already been believed."""
     cap = float(os.environ.get("BENCH_MAX_LOADAVG", "1.0"))
     la = _loadavg()
-    if la and la[0] > cap:
+    if IDLE_GATE == "instant":
+        busy, active = instant_idle_sample()
+        if busy is None:
+            sys.exit("REFUSED: BENCH_IDLE_GATE=instant cannot measure CPU busy on this platform. Use the load gate.")
+        if busy > BUSY_CAP or active:
+            sys.exit(f"REFUSED: {busy}% of all CPUs busy over {BUSY_WINDOW_S:g} s (cap {BUSY_CAP:g}%)"
+                     f"{', timed workloads active: ' + str(active) if active else ''}. The box is not idle.")
+    elif la and la[0] > cap:
         sys.exit(f"REFUSED: 1-min load average {la[0]:.2f} exceeds {cap:.2f}. The box is not idle, "
                  f"and a number measured on a busy box is not distinguishable afterwards from a "
                  f"number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.")
@@ -550,7 +661,7 @@ def preflight():
     if len(apps) > 1:
         sys.exit("REFUSED: %d compute processes already hold the GPU (1 = the compositor, expected):\n  %s"
                  % (len(apps), "\n  ".join(apps)))
-    print(f"# preflight OK: loadavg {la} · gpu {_gpu_state()} · compute apps {apps}", flush=True)
+    print(f"# preflight OK: gate {IDLE_GATE} · loadavg {la} · gpu {_gpu_state()} · compute apps {apps}", flush=True)
 
 def wait_port(port, timeout=180):
     t0 = time.time()
@@ -835,12 +946,28 @@ def gate_cell_idle():
     entirely normal and are silently taken on a loaded box. Refusing loses a sweep; proceeding
     loses the ability to tell which rows were real.
     """
+    limit = int(os.environ.get("BENCH_IDLE_WAIT", "600"))
+    if IDLE_GATE == "instant":
+        # TE1: sample what is running now; poll every 2 s after each sample window. Same refusal on timeout.
+        t_start = time.time()
+        while True:
+            busy, active = instant_idle_sample()
+            waited = time.time() - t_start
+            if busy is not None and busy <= BUSY_CAP and not active:
+                return {"kind": "instant", "wait_s": round(waited, 1), "busy_pct": busy}
+            if waited >= limit:
+                sys.exit(f"REFUSED mid-sweep: {busy}% of all CPUs busy (cap {BUSY_CAP:g}%)"
+                         f"{', timed workloads active: ' + str(active) if active else ''} after waiting "
+                         f"{waited:.0f}s. Another job is on the box. NOT measuring anyway.")
+            print(f"# cell gate (instant): busy {busy}% (cap {BUSY_CAP:g}%)"
+                  f"{', active ' + str(active) if active else ''}, waiting ({waited:.0f}/{limit}s)", flush=True)
+            time.sleep(2)
     cap = float(os.environ.get("BENCH_MAX_LOADAVG", "1.0"))
-    waited, limit = 0, int(os.environ.get("BENCH_IDLE_WAIT", "600"))
+    waited = 0
     while True:
         la = _loadavg()
         if not la or la[0] <= cap:
-            return
+            return {"kind": "load", "wait_s": waited, "loadavg": la[0] if la else None}
         if waited >= limit:
             sys.exit(f"REFUSED mid-sweep: 1-min load average {la[0]:.2f} still exceeds {cap:.2f} "
                      f"after waiting {waited}s. Another job is on the box. NOT measuring anyway — "
@@ -1454,9 +1581,10 @@ def main():
         if key in done:
             print(f"# skip (done): {key}", flush=True)
             continue
-        gate_cell_idle()
+        gate = gate_cell_idle()
         t0 = time.time()
         machine = machine_state()
+        machine["gate"] = gate
         if phase == "D":
             rates, err, counts = run_embed_cell(engine, depth, n_embed_inputs)
         elif phase == "E":
@@ -1499,4 +1627,10 @@ def main():
             json.dump(out, f, indent=1)
 
 if __name__ == "__main__":
-    main()
+    # TE9 (docs/tasks/task-test-efficiency-2026-09.md): one timed run per box. The lock is held for the whole run and
+    # taken before preflight(), so a second timed run refuses, naming this one; BENCH_LOCK_WAIT=<seconds> waits for a
+    # holder instead. Under a night.py job or a `timing_lock.py run` wrapper the lock is inherited, not re-taken.
+    import timing_lock
+    with timing_lock.hold(f"{os.path.basename(sys.argv[0])} {' '.join(sys.argv[1:])}",
+                          wait_s=float(os.environ.get("BENCH_LOCK_WAIT", "0"))):
+        main()
