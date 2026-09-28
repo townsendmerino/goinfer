@@ -328,8 +328,8 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 			dOff := make([]int64, len(down))
 			resolved := true
 			for ei := range experts {
-				gq, _, _, ok1 := experts[ei].Int4()
-				dq, _, _, ok2 := down[ei].Int4()
+				gq, _, _, ok1 := experts[ei].Int4F16()
+				dq, _, _, ok2 := down[ei].Int4F16()
 				if !ok1 || !ok2 {
 					resolved = false
 					break

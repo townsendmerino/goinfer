@@ -461,7 +461,7 @@ func int8Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 // 0.649 vs the direct-int4 reference's ~0.93). Consuming the decoder's int4 directly — exactly
 // what CUDA/WebGPU do — removes the int8 step. Qwen is insensitive to it (ships clean either way).
 func int4DirectWords(w *linalg.WeightMat) (words []uint32, scales []uint16, ok bool) {
-	q4, q4s, group, ok := w.Int4()
+	q4, q4s, group, ok := decoder.Int4F32(w)
 	if !ok || group != 32 {
 		return nil, nil, false
 	}
@@ -497,7 +497,7 @@ func bytesToU32(b []byte) []uint32 {
 // reconstruction + a 1.9 GB/run allocation, both removed here; the words path (int4DirectWords)
 // stays for the one-time non-paged build where the []uint32 shape is wanted.
 func int4DirectBytes(w *linalg.WeightMat) (q4 []byte, scales []uint16, ok bool) {
-	b, q4s, group, ok := w.Int4()
+	b, q4s, group, ok := decoder.Int4F32(w)
 	if !ok || group != 32 {
 		return nil, nil, false
 	}
@@ -514,7 +514,7 @@ func int4DirectBytes(w *linalg.WeightMat) (q4 []byte, scales []uint16, ok bool) 
 // paged hot path precompute each expert's f16 scales ONCE at build time (buildMoELayer /
 // buildGemma4MoELayer) and use this for the bytes half of every subsequent stage.
 func int4DirectBytesOnly(w *linalg.WeightMat) (q4 []byte, ok bool) {
-	b, _, group, ok := w.Int4()
+	b, _, group, ok := w.Int4F16()
 	if !ok || group != 32 {
 		return nil, false
 	}
@@ -585,7 +585,7 @@ func int4BufA(d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, e
 		if sc, ok := a.scales16(d, []*linalg.WeightMat{w}); ok { // v14 metal-target file: f16 scales in place too
 			return nib, sc, nil
 		}
-		_, q4s, _, _ := w.Int4()
+		_, q4s, _, _ := decoder.Int4F32(w)
 		scales := make([]uint16, len(q4s))
 		for i, s := range q4s {
 			scales[i] = f32ToF16(s) // the same conversion int4DirectWords applies

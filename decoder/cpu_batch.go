@@ -150,7 +150,7 @@ func w4a8FusedOps(ops []linalg.W4A8Op, ws []*linalg.WeightMat, dsts [][]float32)
 		return 0, 0, false
 	}
 	for i, w := range ws {
-		_, _, g, canon := w.Int4()
+		_, _, g, canon := w.Int4F16()
 		if !isW4A8(w) || !canon || w.Cols() != ws[0].Cols() || w.ActQuantGroup() != ws[0].ActQuantGroup() {
 			return 0, 0, false
 		}

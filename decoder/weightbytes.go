@@ -16,11 +16,11 @@ func wmBytes(w *linalg.WeightMat) int64 {
 	if q8, sc, _, ok := w.Int8(); ok {
 		n += int64(len(q8)) + 4*int64(len(sc))
 	}
-	if q4, sc, _, ok := w.Int4(); ok {
-		n += int64(len(q4)) + 4*int64(len(sc))
+	if q4, sc, _, ok := w.Int4F16(); ok {
+		n += int64(len(q4)) + 2*int64(len(sc)) // int4 scales are binary16
 	}
-	if p4, sc, ok := w.Int4Row4(); ok {
-		n += int64(len(p4)) + 4*int64(len(sc))
+	if p4, sc, ok := w.Int4Row4F16(); ok {
+		n += int64(len(p4)) + 2*int64(len(sc))
 	}
 	if f, ok := w.F32(); ok {
 		n += 4 * int64(len(f))
@@ -53,14 +53,14 @@ func mmapAliasedBytes(m *Model, w *linalg.WeightMat) int64 {
 			n += int64(len(q8)) + 4*int64(len(sc))
 		}
 	}
-	if q4, sc, _, ok := w.Int4(); ok && len(q4) > 0 {
+	if q4, sc, _, ok := w.Int4F16(); ok && len(q4) > 0 {
 		if _, aliased := m.MmapByteOffset(q4); aliased {
-			n += int64(len(q4)) + 4*int64(len(sc))
+			n += int64(len(q4)) + 2*int64(len(sc)) // int4 scales are binary16
 		}
 	}
-	if p4, sc, ok := w.Int4Row4(); ok && len(p4) > 0 {
+	if p4, sc, ok := w.Int4Row4F16(); ok && len(p4) > 0 {
 		if _, aliased := m.MmapByteOffset(p4); aliased {
-			n += int64(len(p4)) + 4*int64(len(sc))
+			n += int64(len(p4)) + 2*int64(len(sc))
 		}
 	}
 	return n

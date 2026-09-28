@@ -186,14 +186,16 @@ func streamQuantizedRow4(rows, cols int, mode quantMode, row4 bool, rowInto func
 		nGroups := (cols + group - 1) / group
 		bpr := (cols + 1) / 2
 		q4 := make([]byte, rows*bpr)
-		q4s := make([]float32, rows*nGroups)
+		q4s := make([]uint16, rows*nGroups)
+		rowScales := make([]float32, nGroups)
 		for r := range rows {
 			if err := rowInto(r, scratch); err != nil {
 				return linalg.WeightMat{}, err
 			}
-			linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], q4s[r*nGroups:(r+1)*nGroups])
+			linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], rowScales)
+			linalg.F32ToF16Slice(q4s[r*nGroups:(r+1)*nGroups], rowScales) // int4 scales are stored as binary16
 		}
-		canon := maybeF16RoundInt4Scales(linalg.WrapInt4(q4, q4s, rows, cols, group))
+		canon := linalg.WrapInt4F16(q4, q4s, rows, cols, group)
 		if row4 {
 			return repackW4A8IfEligible(canon), nil
 		}
@@ -229,14 +231,16 @@ func streamQuantizedRepackable(rows, cols int, mode quantMode, needCanonical, sk
 	nGroups := (cols + group - 1) / group
 	bpr := (cols + 1) / 2
 	q4 := make([]byte, rows*bpr)
-	q4s := make([]float32, rows*nGroups)
+	q4s := make([]uint16, rows*nGroups)
+	rowScales := make([]float32, nGroups)
 	for r := range rows {
 		if err := rowInto(r, scratch); err != nil {
 			return linalg.WeightMat{}, err
 		}
-		linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], q4s[r*nGroups:(r+1)*nGroups])
+		linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], rowScales)
+		linalg.F32ToF16Slice(q4s[r*nGroups:(r+1)*nGroups], rowScales) // int4 scales are stored as binary16
 	}
-	canon := maybeF16RoundInt4Scales(linalg.WrapInt4(q4, q4s, rows, cols, group))
+	canon := linalg.WrapInt4F16(q4, q4s, rows, cols, group)
 	return repackedOnlyOrCanonical(canon, needCanonical, skipRow4), nil
 }
 
@@ -298,7 +302,7 @@ func quantizeWMRow4(w linalg.WeightMat, mode quantMode, row4 bool) linalg.Weight
 		if fakeQuantScheme != "" { // DIAGNOSTIC (default-off, single load-time env read): see fakequant.go
 			return fakeInt4WM(f32, w.Rows(), w.Cols(), fakeQuantScheme)
 		}
-		canon := maybeF16RoundInt4Scales(linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)) // GOINFER_INT4_F16_SCALES diagnostic
+		canon := linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)
 		if row4 {
 			return repackW4A8IfEligible(canon)
 		}
@@ -551,11 +555,11 @@ func repackedOnlyOrCanonical(canon linalg.WeightMat, needCanonical, skipRow4 boo
 		}
 		return repackW4A8IfEligible(canon)
 	}
-	q4, q4s, group, ok := canon.Int4()
+	q4, q4s, group, ok := canon.Int4F16()
 	if !ok || !linalg.Int4Row4Usable(canon.Rows(), canon.Cols(), group) {
 		return repackW4A8IfEligible(canon) // this core/shape can't do row4 at all — existing policy
 	}
-	if repacked, repOK := linalg.RepackInt4Row4InPlace(q4, q4s, canon.Rows(), canon.Cols(), group); repOK {
+	if repacked, repOK := linalg.RepackInt4Row4InPlaceF16(q4, q4s, canon.Rows(), canon.Cols(), group); repOK {
 		return repacked
 	}
 	return repackW4A8IfEligible(canon) // Int4Row4Usable said yes, so this shouldn't miss — no silent data loss either way
@@ -582,7 +586,7 @@ func quantizeEmbedWM(w linalg.WeightMat, mode quantMode, needCanonical bool) lin
 	if !ok {
 		return quantizeWM(w, mode) // already quantized, or empty — quantizeWM's own no-op path
 	}
-	canon := maybeF16RoundInt4Scales(linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize))
+	canon := linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)
 	// skipRow4 is always false here: Embed/LMHead are read via .Row() on the host on every
 	// backend, so M-07's row4-skip trade is not this tensor class's call to make (see
 	// streamQuantizedEmbed's own doc comment — the streaming path makes the identical choice).
@@ -631,7 +635,7 @@ func quantizeBatchedProjWM(w linalg.WeightMat, mode quantMode, needCanonical, sk
 	if !ok {
 		return quantizeWM(w, mode)
 	}
-	canon := maybeF16RoundInt4Scales(linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize))
+	canon := linalg.QuantizeInt4(f32, w.Rows(), w.Cols(), int4GroupSize)
 	return repackedOnlyOrCanonical(canon, needCanonical, skipRow4)
 }
 
@@ -745,6 +749,18 @@ func isW4A8(w *linalg.WeightMat) bool {
 	return w.IsInt4()
 }
 
+// Int4F32 returns w's canonical int4 nibbles and its binary16 group scales widened, exactly, to f32 in a NEW
+// slice — for load-time consumers written against f32 scales (GPU uploads, the .giw writer). ok and group are
+// linalg.WeightMat.Int4F16's. It allocates, so it is not for a per-token path; decode reads Int4F16.
+func Int4F32(w *linalg.WeightMat) (q4 []byte, scales []float32, group int, ok bool) {
+	q4, s16, group, ok := w.Int4F16()
+	if s16 != nil {
+		scales = make([]float32, len(s16))
+		linalg.F16ToF32Slice(scales, s16)
+	}
+	return q4, scales, group, ok
+}
+
 // wmW4A8Op builds one linalg.W4A8Op for the batched W4A8 dispatch: canonical
 // nibbles/scales are always present when isW4A8(w), and Row4/Row4Scales are
 // populated only when RepackInt4Row4 has already run for this tensor (arm64,
@@ -754,9 +770,9 @@ func isW4A8(w *linalg.WeightMat) bool {
 // single-scalar signature) since every op in one call comes from the same layer's
 // quant config.
 func wmW4A8Op(w *linalg.WeightMat, dst []float32) (op linalg.W4A8Op, group int) {
-	q4, q4s, group, _ := w.Int4()
-	row4, row4s, _ := w.Int4Row4()
-	return linalg.W4A8Op{W4: q4, Scales: q4s, Row4: row4, Row4Scales: row4s, Dst: dst, N: w.Rows()}, group
+	q4, q4s, group, _ := w.Int4F16()
+	row4, row4s, _ := w.Int4Row4F16()
+	return linalg.W4A8Op{W4: q4, ScalesF16: q4s, Row4: row4, Row4ScalesF16: row4s, Dst: dst, N: w.Rows()}, group
 }
 
 // matmulWSPool recycles the Workspace matmul() falls back to when the caller has no
@@ -788,7 +804,7 @@ func matmul(be Backend, w *linalg.WeightMat, a, dst []float32, M int) {
 		// present (canonical, row4, or split-half) via aikit's own per-arch method.
 		// A per-group activation weight (ActQuantGroup) skips the staged consult: no staged GPU
 		// kernel reads per-group activation scales.
-		if q4, q4s, group, ok := w.Int4(); ok && w.ActQuantGroup() == 0 {
+		if q4, q4s, group, ok := w.Int4F16(); ok && w.ActQuantGroup() == 0 {
 			if qb, ok := be.(QuantBackend4); ok && qb.MatmulW4A8(a, q4, q4s, group, dst, M, w.Cols(), w.Rows()) {
 				return
 			}
@@ -914,7 +930,7 @@ func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []
 		//
 		// Nested under Int4()'s ok, not the outer IsInt4() — see matmul()'s own comment on
 		// this same shape for why a repacked-only tensor cannot serve the staged consult.
-		if q4, q4s, group, ok := w.Int4(); ok && w.ActQuantGroup() == 0 {
+		if q4, q4s, group, ok := w.Int4F16(); ok && w.ActQuantGroup() == 0 {
 			if qb, ok := be.(QuantBackend4); ok && qb.MatmulW4A8(a, q4, q4s, group, dst, M, w.Cols(), w.Rows()) {
 				return
 			}

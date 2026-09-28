@@ -47,9 +47,10 @@ type expertField struct {
 	kind       expertFieldKind
 	off        int64
 	n          int
-	scales     []float32
-	group      int  // int4 only
-	w8a8       bool // int8 only
+	scales     []float32 // int8 only
+	scales16   []uint16  // int4 only (binary16, as the WeightMat stores them)
+	group      int       // int4 only
+	w8a8       bool      // int8 only
 	rows, cols int
 }
 
@@ -63,17 +64,17 @@ type expertField struct {
 // MappedSpan/MappedSpanRow4 -- those round to a page-aligned interior, which is correct for an
 // madvise hint but WRONG for a pread offset/length, which must be byte-exact.
 func buildExpertField(wm *linalg.WeightMat, base, end uintptr) (expertField, bool) {
-	if packed4, scales4, ok := wm.Int4Row4(); ok {
+	if packed4, scales4, ok := wm.Int4Row4F16(); ok {
 		if off, n, ok := containedOffset(packed4, base, end); ok {
-			_, _, group, _ := wm.Int4() // group is a plain shared field, valid even when Int4()'s own ok is false
+			_, _, group, _ := wm.Int4F16() // group is a plain shared field, valid even when Int4F16()'s own ok is false
 			return expertField{wm: wm, kind: fieldInt4Row4Only, off: off, n: n,
-				scales: scales4, group: group, rows: wm.Rows(), cols: wm.Cols()}, true
+				scales16: scales4, group: group, rows: wm.Rows(), cols: wm.Cols()}, true
 		}
 	}
-	if q4, q4s, group, ok := wm.Int4(); ok {
+	if q4, q4s, group, ok := wm.Int4F16(); ok {
 		if off, n, ok := containedOffset(q4, base, end); ok {
 			return expertField{wm: wm, kind: fieldInt4Canonical, off: off, n: n,
-				scales: q4s, group: group, rows: wm.Rows(), cols: wm.Cols()}, true
+				scales16: q4s, group: group, rows: wm.Rows(), cols: wm.Cols()}, true
 		}
 	}
 	if q8, scales, w8a8, ok := wm.Int8(); ok && len(q8) > 0 {
@@ -110,13 +111,13 @@ func (f *expertField) refill(fd *os.File, dst []byte) error {
 	}
 	switch f.kind {
 	case fieldInt4Row4Only:
-		wm, ok := linalg.WrapInt4Row4Only(dst, f.scales, f.rows, f.cols, f.group)
+		wm, ok := linalg.WrapInt4Row4OnlyF16(dst, f.scales16, f.rows, f.cols, f.group)
 		if !ok {
 			return fmt.Errorf("WrapInt4Row4Only rejected rows=%d cols=%d group=%d", f.rows, f.cols, f.group)
 		}
 		*f.wm = wm
 	case fieldInt4Canonical:
-		*f.wm = linalg.WrapInt4(dst, f.scales, f.rows, f.cols, f.group)
+		*f.wm = linalg.WrapInt4F16(dst, f.scales16, f.rows, f.cols, f.group)
 	case fieldInt8:
 		q8 := unsafe.Slice((*int8)(unsafe.Pointer(&dst[0])), len(dst))
 		*f.wm = linalg.WrapInt8(q8, f.scales, f.rows, f.cols, f.w8a8)

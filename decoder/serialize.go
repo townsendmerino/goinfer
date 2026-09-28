@@ -1154,7 +1154,7 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 	}
 	if eligible && w.f16SingleEligible(m) {
 		// kind 7 (v14, metal target): canonical int4 + its f16 scales for a no-copy Metal buffer.
-		q4, q4s, group, _ := m.Int4()
+		q4, q4s, group, _ := Int4F32(m)
 		w.raw([]byte{7})
 		w.u32(uint32(m.Rows()))
 		w.u32(uint32(m.Cols()))
@@ -1168,7 +1168,7 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 		w.f16Scales(q4s)
 		return
 	}
-	q4, q4s, group, isQ4 := m.Int4()
+	q4, q4s, group, isQ4 := Int4F32(m)
 	q8, scales, w8a8, isQ8 := m.Int8()
 	f32, _ := m.F32()
 	var kind byte
@@ -1256,7 +1256,7 @@ func (w *giwWriter) f16SingleEligible(m *linalg.WeightMat) bool {
 	if w.target != GIWTargetMetal || w.emitVersion() < giwVF16 || m.Rows() == 0 || m.Cols()%32 != 0 {
 		return false
 	}
-	_, _, group, ok := m.Int4()
+	_, _, group, ok := m.Int4F16()
 	return ok && group == 32
 }
 
@@ -1269,7 +1269,7 @@ func (w *giwWriter) fusedEligible(ms []*linalg.WeightMat) bool {
 		if m.Rows() == 0 || m.Cols() != k || k%32 != 0 {
 			return false
 		}
-		if _, _, group, ok := m.Int4(); !ok || group != 32 {
+		if _, _, group, ok := m.Int4F16(); !ok || group != 32 {
 			return false
 		}
 	}
@@ -1294,7 +1294,7 @@ func (w *giwWriter) fusedGroup(ms ...*linalg.WeightMat) {
 		return
 	}
 	for _, m := range ms {
-		_, q4s, group, _ := m.Int4()
+		_, q4s, group, _ := Int4F32(m)
 		w.raw([]byte{6})
 		w.u32(uint32(m.Rows()))
 		w.u32(uint32(m.Cols()))
@@ -1308,7 +1308,7 @@ func (w *giwWriter) fusedGroup(ms ...*linalg.WeightMat) {
 		w.raw(z[:pad])
 	}
 	for _, m := range ms {
-		q4, _, _, _ := m.Int4()
+		q4, _, _, _ := m.Int4F16()
 		w.raw(q4)
 	}
 	if w.emitVersion() >= giwVF16 {
@@ -1319,7 +1319,7 @@ func (w *giwWriter) fusedGroup(ms ...*linalg.WeightMat) {
 			w.raw(z[:pad])
 		}
 		for _, m := range ms {
-			_, q4s, _, _ := m.Int4()
+			_, q4s, _, _ := Int4F32(m)
 			b := make([]byte, 2*len(q4s))
 			for i, v := range q4s {
 				binary.LittleEndian.PutUint16(b[2*i:], F16Bits(v))
@@ -1783,7 +1783,10 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			r.fail(fmt.Sprintf("int4 weightMat %d×%d group=%d: q4=%d (want %d) q4s=%d (want %d)", rows, cols, group, len(q4), wantQ4, len(q4s), wantScales))
 			return linalg.WeightMat{}
 		}
-		return linalg.WrapInt4(q4, q4s, rows, cols, group)
+		// Scales are stored f32 on disk (every version); a WeightMat holds binary16 (aikit), so they are
+		// converted here: exact for a file this build wrote, and for an older file the same rounding a fresh
+		// quantization applies.
+		return linalg.WrapInt4F16(q4, linalg.F32ToF16Scales(q4s), rows, cols, group)
 	case 4:
 		r.alignArray()
 		q4s := r.f32Alias()
@@ -1808,7 +1811,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			r.fail(fmt.Sprintf("int4-row4 weightMat %d×%d group=%d: q4Row4=%d (want %d) q4Row4Scales=%d (want %d)", rows, cols, group, len(q4Row4), wantQ4, len(q4Row4Scales), wantScales))
 			return linalg.WeightMat{}
 		}
-		return linalg.WrapInt4Row4(q4, q4s, rows, cols, group, q4Row4, q4Row4Scales)
+		return linalg.WrapInt4Row4F16(q4, linalg.F32ToF16Scales(q4s), rows, cols, group, q4Row4, linalg.F32ToF16Scales(q4Row4Scales))
 	case 5:
 		if group <= 0 {
 			r.fail(fmt.Sprintf("int4-row4-only weightMat group %d ≤ 0", group))
@@ -1825,7 +1828,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			r.fail(fmt.Sprintf("int4-row4-only weightMat %d×%d group=%d: q4Row4=%d (want %d) q4Row4Scales=%d (want %d)", rows, cols, group, len(q4Row4), wantQ4, len(q4Row4Scales), wantScales))
 			return linalg.WeightMat{}
 		}
-		wm, ok := linalg.WrapInt4Row4Only(q4Row4, q4Row4Scales, rows, cols, group)
+		wm, ok := linalg.WrapInt4Row4OnlyF16(q4Row4, linalg.F32ToF16Scales(q4Row4Scales), rows, cols, group)
 		if !ok {
 			// Named and actionable, per docs/tasks/task-int4-layout-2026-09.md's ground rules — a
 			// kind-5 file is a promise to ONE target (the box/core that wrote it), unlike
@@ -1857,7 +1860,9 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			return linalg.WeightMat{}
 		}
 		r.recordF16(q4, f16)
-		return linalg.WrapInt4(q4, q4s, rows, cols, group)
+		// The f16 block is F16Bits of the f32 scales (the writer's f16Scales), the same bits
+		// linalg.F32ToF16 gives, so it is the WeightMat's scale storage as it stands.
+		return linalg.WrapInt4F16(q4, f16, rows, cols, group)
 	default:
 		r.fail(fmt.Sprintf("unknown weightMat kind %d", kind))
 		return linalg.WeightMat{}
@@ -1916,7 +1921,7 @@ func (r *giwReader) fusedGroup(dst ...*linalg.WeightMat) {
 		if r.err != nil {
 			return
 		}
-		*p.dst = linalg.WrapInt4(q4, p.scales, p.rows, p.cols, p.group)
+		*p.dst = linalg.WrapInt4F16(q4, linalg.F32ToF16Scales(p.scales), p.rows, p.cols, p.group)
 	}
 	if r.version >= giwVF16 {
 		// v14: the members' f16 scales, back to back, starting 16-aligned (see the writer).
@@ -1928,7 +1933,7 @@ func (r *giwReader) fusedGroup(dst ...*linalg.WeightMat) {
 			if r.err != nil {
 				return
 			}
-			q4, _, _, _ := p.dst.Int4()
+			q4, _, _, _ := p.dst.Int4F16()
 			r.recordF16(q4, f16)
 		}
 	}

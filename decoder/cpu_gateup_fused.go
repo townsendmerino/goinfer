@@ -82,8 +82,8 @@ func gatedMLPFusedGateUp(h []float32, lw *LayerWeights, arch *Architecture, scr 
 	if lw.GateProj.Int4Layout() != "canonical" || lw.UpProj.Int4Layout() != "canonical" {
 		return false // repacked layouts (arm64 row4, amd64 split-half) need aikit's own per-arch dispatch
 	}
-	q4g, sg, group, _ := lw.GateProj.Int4()
-	q4u, su, groupU, _ := lw.UpProj.Int4()
+	q4g, sg, group, _ := lw.GateProj.Int4F16()
+	q4u, su, groupU, _ := lw.UpProj.Int4F16()
 	N, K := lw.GateProj.Rows(), lw.GateProj.Cols()
 	if group != groupU || lw.UpProj.Rows() != N || lw.UpProj.Cols() != K || group <= 0 || K%group != 0 ||
 		len(h) < K || N > len(scr.gate) || N > len(scr.up) {
@@ -100,8 +100,8 @@ func gatedMLPFusedGateUp(h []float32, lw *LayerWeights, arch *Architecture, scr 
 			return
 		}
 		wss[i].SetActQuantGroup(lw.GateProj.ActQuantGroup())
-		linalg.MatmulBTW4A8Into(wss[i], h, q4g[j0*bpr:j1*bpr], sg[j0*ng:j1*ng], gate[j0:j1], 1, K, j1-j0, group)
-		linalg.MatmulBTW4A8Into(wss[i], h, q4u[j0*bpr:j1*bpr], su[j0*ng:j1*ng], up[j0:j1], 1, K, j1-j0, group)
+		linalg.MatmulBTW4A8F16Into(wss[i], h, q4g[j0*bpr:j1*bpr], sg[j0*ng:j1*ng], gate[j0:j1], 1, K, j1-j0, group)
+		linalg.MatmulBTW4A8F16Into(wss[i], h, q4u[j0*bpr:j1*bpr], su[j0*ng:j1*ng], up[j0:j1], 1, K, j1-j0, group)
 		swiglu(gate[j0:j1], up[j0:j1])
 	}
 	if w == 1 {

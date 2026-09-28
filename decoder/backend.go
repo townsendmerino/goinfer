@@ -49,7 +49,7 @@ type QuantBackend interface {
 // QuantBackend. Declines (false) fall back to linalg.WeightMat's own CPU W4A8 kernel, so results
 // stay correct either way.
 type QuantBackend4 interface {
-	MatmulW4A8(a []float32, bQ4 []byte, bScales []float32, group int, dst []float32, M, K, N int) bool
+	MatmulW4A8(a []float32, bQ4 []byte, bScales16 []uint16, group int, dst []float32, M, K, N int) bool
 }
 
 // QuantBatchBackend additionally runs a SET of W8A8 matmuls that share one

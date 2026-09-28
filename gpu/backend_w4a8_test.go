@@ -61,7 +61,7 @@ func TestWebGPUBackend_MatmulW4A8_matchesCPU(t *testing.T) {
 			}
 
 			dstGPU := make([]float32, N)
-			if !be.MatmulW4A8(a, bQ4, scales, group, dstGPU, 1, K, N) {
+			if !be.MatmulW4A8(a, bQ4, linalg.F32ToF16Scales(scales), group, dstGPU, 1, K, N) {
 				t.Fatal("MatmulW4A8 declined — expected it to run on a real device")
 			}
 
@@ -103,7 +103,7 @@ func TestWebGPUBackend_MatmulW4A8_declinesPrefill(t *testing.T) {
 	scales := make([]float32, N)
 	a := make([]float32, M*K)
 	dst := make([]float32, M*N)
-	if be.MatmulW4A8(a, bQ4, scales, w4a8GroupSize, dst, M, K, N) {
+	if be.MatmulW4A8(a, bQ4, linalg.F32ToF16Scales(scales), w4a8GroupSize, dst, M, K, N) {
 		t.Error("MatmulW4A8 must decline for M>1 (no int4 prefill kernel on this backend)")
 	}
 }

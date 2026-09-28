@@ -26,7 +26,6 @@ GOINFER_GPU_CAPTURE	diagnostic: docs/completed/task-webgpu-nogqa-decode-bug.md �
 GOINFER_HEAVY_PKGS	startup: cmd/gate — heavy tier package list
 GOINFER_HEAVY_RUN	startup: cmd/gate — heavy tier test selector
 GOINFER_HEAVY_TIMEOUT	startup: cmd/gate — heavy tier timeout
-GOINFER_INT4_F16_SCALES	diagnostic: docs/completed/task-webgpu-nogqa-decode-bug.md — int4 scale-precision probe, load time only
 GOINFER_MODELS	startup: decoder test-asset search path (testdata/assets.json)
 GOINFER_MODEL_TMP	startup: chat — scratch directory for model staging
 GOINFER_MOE_CACHE_PROF	diagnostic: docs/completed/task-moe-streaming.md — C′ cache hit/miss profile
