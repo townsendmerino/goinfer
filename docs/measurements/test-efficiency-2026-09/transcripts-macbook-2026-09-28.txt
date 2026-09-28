@@ -1,0 +1,179 @@
+# transcript census — macbookpro.lan — 2026-09-28 10:49 PDT
+206 transcript files; 43935 Bash calls since 2026-08-29; 43355 with a duration; 580 without (detached launches, or a result never recorded). Day = 07-22 local.
+
+## 1. by class (sum of call durations; parallel calls overlap)
+
+| class | calls | total | day | night | median | longest |
+|---|---:|---:|---:|---:|---:|---:|
+| wait/poll | 1418 |   66.5 h |   55.7 h |   10.8 h |    0.3 m |    2.0 h |
+| test suite | 3921 |   23.7 h |   20.0 h |    3.7 h |    0.1 m |   14.0 m |
+| other | 26239 |   11.6 h |    9.5 h |    2.2 h |    0.0 m |   41.3 m |
+| in-test measurement | 669 |    8.7 h |    7.5 h |    1.2 h |    0.1 m |   40.0 m |
+| build/lint | 5085 |    6.1 h |    5.2 h |   56.9 m |    0.1 m |    4.4 m |
+| gate | 179 |    2.1 h |    2.0 h |    6.5 m |    0.2 m |   10.7 m |
+| git/gh | 5180 |    2.0 h |    1.8 h |   12.3 m |    0.0 m |    1.4 m |
+| parity/refresh | 313 |    1.4 h |    1.2 h |   13.7 m |    0.0 m |    5.6 m |
+| served gate | 613 |    1.2 h |    1.1 h |    7.2 m |    0.0 m |   11.9 m |
+| detached launch | 269 |   47.0 m |   40.0 m |    7.0 m |    0.1 m |    5.7 m |
+| evaluation | 42 |    9.5 m |    0.8 m |    8.7 m |    0.0 m |    6.4 m |
+| logit dump / identity | 7 |    1.5 m |    0.8 m |    0.7 m |    0.1 m |    0.7 m |
+
+All classes:  124.4 h of call time;  117.4 h after merging each session's overlapping calls.
+Excluded: 7 call(s),  145.6 h in total: foreground calls whose result came more than 610 s later (blocked, since a foreground call cannot run that long), and background tasks that ended 'stopped' (they ran until someone stopped them, so the span is not the work).
+  work (excluding wait/poll) run local:   52.5 h
+  work (excluding wait/poll) run nobara (via ssh):    5.4 h
+
+## 2. by day (sum of call durations, excluding wait/poll)
+
+| date | calls | work | of which served / in-test / suite / parity | wait/poll |
+|---|---:|---:|---|---:|
+| 2026-08-29 | 99 |   11.7 m |    0.0 m /    4.0 m /    3.6 m /    0.1 m |    1.0 h |
+| 2026-08-30 | 602 |   57.3 m |    0.0 m /    6.1 m /   25.6 m /    3.5 m |   52.0 m |
+| 2026-08-31 | 1167 |    4.3 h |    0.2 m /    1.3 h /    1.8 h /    3.5 m |    1.9 h |
+| 2026-09-01 | 977 |    3.0 h |   12.4 m /   49.8 m /   45.3 m /   14.2 m |    3.1 h |
+| 2026-09-02 | 1712 |    2.7 h |    0.4 m /    5.4 m /    1.5 h /   14.2 m |    2.8 h |
+| 2026-09-03 | 2231 |    3.4 h |    0.0 m /   18.7 m /    2.0 h /    8.3 m |   53.1 m |
+| 2026-09-04 | 2155 |    2.1 h |    6.3 m /    3.7 m /   12.7 m /    6.1 m |    5.3 h |
+| 2026-09-05 | 721 |   38.6 m |    1.7 m /    0.4 m /    2.2 m /    0.3 m |    3.8 h |
+| 2026-09-06 | 1588 |    1.9 h |    3.8 m /    5.2 m /   52.8 m /    0.1 m |    1.4 h |
+| 2026-09-07 | 288 |   43.3 m |    0.0 m /    0.9 m /    0.2 m /    0.3 m |    1.1 m |
+| 2026-09-08 | 1630 |    1.5 h |    0.0 m /    0.3 m /   59.0 m /    0.6 m |   25.3 m |
+| 2026-09-09 | 1273 |   54.4 m |    0.2 m /   17.5 m /    6.7 m /    0.2 m |    1.4 h |
+| 2026-09-10 | 2122 |    3.5 h |    0.0 m /   56.8 m /    1.4 h /    0.9 m |    1.1 h |
+| 2026-09-11 | 2631 |    4.1 h |    0.7 m /   52.6 m /    1.7 h /    2.7 m |   49.6 m |
+| 2026-09-12 | 2473 |    3.0 h |    1.1 m /   50.3 m /    1.1 h /    0.8 m |    1.2 h |
+| 2026-09-13 | 4378 |    2.7 h |    0.0 m /   18.9 m /    1.3 h /    0.9 m |    1.0 h |
+| 2026-09-14 | 1677 |    1.2 h |    0.0 m /    7.7 m /   22.3 m /    0.1 m |    1.4 h |
+| 2026-09-15 | 2151 |    2.4 h |    0.0 m /   11.7 m /   55.9 m /    1.6 m |    2.6 h |
+| 2026-09-16 | 1946 |   40.6 m |    0.0 m /    0.9 m /   13.7 m /    1.6 m |   56.0 m |
+| 2026-09-17 | 485 |   20.0 m |    0.3 m /    5.9 m /    1.2 m /    0.3 m |   11.6 m |
+| 2026-09-18 | 600 |   51.3 m |    0.3 m /   16.2 m /    9.9 m /    0.0 m |    1.5 m |
+| 2026-09-19 | 493 |   33.3 m |    7.6 m /    7.8 m /    8.6 m /    0.2 m |   47.2 m |
+| 2026-09-20 | 1914 |    2.3 h |   10.6 m /   53.5 m /   35.2 m /    1.5 m |    5.1 h |
+| 2026-09-21 | 1137 |    2.0 h |   12.3 m /   15.9 m /   57.9 m /    0.6 m |    2.1 h |
+| 2026-09-22 | 1018 |    1.4 h |    0.4 m /    2.7 m /   46.2 m /    1.9 m |    3.1 h |
+| 2026-09-23 | 481 |   26.8 m |    0.0 m /    1.4 m /    9.6 m /    1.9 m |    1.7 h |
+| 2026-09-24 | 1463 |    3.3 h |    2.1 m /   10.9 m /    1.6 h /   11.7 m |    3.5 h |
+| 2026-09-25 | 1274 |    1.7 h |    3.1 m /    0.1 m /   42.4 m /    1.4 m |    6.7 h |
+| 2026-09-26 | 846 |    2.0 h |    1.5 m /    8.9 m /    1.4 h /    1.1 m |    3.8 h |
+| 2026-09-27 | 1099 |    2.3 h |    2.5 m /   10.2 m /    1.3 h /    1.7 m |    6.3 h |
+| 2026-09-28 | 724 |   45.4 m |    5.0 m /    0.7 m /    2.3 m /    0.6 m |    1.2 h |
+
+## 3. the 20 longest calls
+
+| started (local) | dur | class | bg | command |
+|---|---:|---|---|---|
+| 09-27 03:36 |    2.0 h | wait/poll | y | `for i in $(seq 1 120); do out=$(ssh -o ConnectTimeout=10 nobara 'grep -E "DONE$\|D7 exit [1-9]\|panic\|--- FAIL" ` |
+| 09-05 11:59 |    1.3 h | wait/poll | y | `LOG=/Users/francistownsend-merino/tmcode/goinfer/docs/measurements/prefill-gate-d7-2026-09-05.log PID=65002 ec` |
+| 09-05 14:35 |    1.0 h | wait/poll | y | `LOG=/Users/francistownsend-merino/tmcode/goinfer/docs/measurements/prefill-ref-gen-2026-09-05.log PID=87611 ec` |
+| 09-24 19:49 |   55.8 m | wait/poll | y | `cd /Users/francistownsend-merino/tmcode/goinfer; gh run list --commit 1cfb99db --json name,conclusion -q '.[]\|` |
+| 09-20 20:07 |   54.2 m | wait/poll | y | `echo "START: $(date '+%Y-%m-%d %H:%M:%S %Z')" > /tmp/ci_wait5.log while true; do statuses=$(gh run list --limi` |
+| 09-27 05:38 |   50.1 m | wait/poll | y | `for i in $(seq 1 180); do out=$(ssh -o ConnectTimeout=10 nobara 'grep -E "DONE$\|D7 exit [1-9]\|panic\|--- FAIL" ` |
+| 09-25 07:47 |   48.3 m | wait/poll | y | `cd /Users/francistownsend-merino/tmcode/goinfer; for i in $(seq 1 80); do n=$(gh run list --commit a6617dae --` |
+| 08-29 07:20 |   46.6 m | wait/poll | y | `until timeout 30 ssh -o ConnectTimeout=8 nobara 'grep -qE "A3-MoE-tokenlevel\|FAIL\|panic\|^ok " ~/goinfer-logs/a` |
+| 09-04 20:56 |   45.1 m | wait/poll | y | `ssh nobara 'i=0; while [ $i -lt 90 ]; do sleep 30; i=$((i+1)); if ! ps -p 1912955 >/dev/null 2>&1; then echo "` |
+| 09-05 15:35 |   43.5 m | wait/poll | y | `LOG=/Users/francistownsend-merino/tmcode/goinfer/docs/measurements/prefill-gate-vs-ref-2026-09-05.log PID=2577` |
+| 09-05 06:59 |   42.0 m | wait/poll | y | `ssh nobara 'until ! kill -0 2197011 2>/dev/null; do sleep 30; done; echo "=== process ended ==="; tail -60 ~/m` |
+| 09-14 23:34 |   41.7 m | wait/poll | y | `until [ -f docs/measurements/j6-prefix-scheduling-raw-2026-09-15.json ]; do sleep 20; done; echo "RUN COMPLETE` |
+| 09-15 00:18 |   41.3 m | other | y | `rm -f /Users/francistownsend-merino/tmcode/goinfer/docs/measurements/j6-prefix-scheduling-run2.log cd /Users/f` |
+| 08-31 07:48 |   40.0 m | in-test measurement | y | `ssh nobara 'export PATH=$PATH:/usr/local/go/bin; cd ~/mycode/goinfer && date "+START %H:%M:%S" && GOINFER_HEAV` |
+| 09-20 16:22 |   38.5 m | wait/poll | y | `echo "START: $(date '+%Y-%m-%d %H:%M:%S %Z')" > /tmp/ci_wait.log cd /Users/francistownsend-merino/tmcode/goinf` |
+| 09-20 20:24 |   36.7 m | wait/poll | y | `echo "START: $(date '+%Y-%m-%d %H:%M:%S %Z')" > /tmp/ci_wait7.log while true; do statuses=$(gh run list --limi` |
+| 09-20 18:11 |   32.5 m | wait/poll | y | `echo "START: $(date '+%Y-%m-%d %H:%M:%S %Z')" > /tmp/ci_wait3.log while true; do statuses=$(gh run list --limi` |
+| 09-04 12:59 |   29.9 m | wait/poll | y | `until ! ps -p 15458 >/dev/null 2>&1; do sleep 10; done echo "M26 calibration process ended" cat /tmp/calib-m26` |
+| 09-04 17:54 |   29.7 m | wait/poll | y | `until grep -qE "^DONE:\|REFUSED" /Users/francistownsend-merino/tmcode/goinfer/docs/measurements/peer-matrix-202` |
+| 09-26 14:12 |   27.6 m | wait/poll | y | `E=~/goinfer-bench/r18-e2e-2026-09-26/run.log; until grep -q "== DONE\\|NOT IDLE" $E 2>/dev/null; do sleep 30; d` |
+
+## 4. re-runs: the same test/bench command run 3+ times in one day
+
+| date | runs | total | class | command |
+|---|---:|---:|---|---|
+| 2026-09-03 | 3 |   32.2 m | test suite | `go test ./decoder/... -timeout 20m > <tmp> 2>&1; echo "REAL EXIT CODE: $?"` |
+| 2026-09-10 | 6 |   26.4 m | test suite | `cd ~/tmcode/goinfer && go test ./decoder/... -timeout 300s > <tmp> 2>&1; echo "EXIT:$?"; grep -n -- ` |
+| 2026-09-13 | 5 |   17.4 m | test suite | `(go test ./metal/... -count=1 -timeout 8m -v > <tmp> 2>&1; echo "EXIT $?" >> <tmp>` |
+| 2026-09-15 | 4 |   13.7 m | test suite | `go test ./decoder/... > <tmp> 2>&1; echo "REAL_EXIT:$?" >> <tmp> tail -15 <tmp>` |
+| 2026-09-08 | 6 |   10.9 m | test suite | `cd /Users/francistownsend-merino/tmcode/goinfer/gpu && go test -tags 'gpu goinfer_testhooks' -count=` |
+| 2026-09-12 | 3 |   10.9 m | test suite | `(go test ./decoder/... -timeout 8m -v > <tmp> 2>&1; echo "EXIT $?" >> <tmp>` |
+| 2026-09-06 | 3 |   10.4 m | gate | `ssh nobara 'export PATH=/usr/local/go/bin:$HOME/go/bin:$PATH GOWORK=off && cd /home/francis/mycode/a` |
+| 2026-09-13 | 5 |   10.3 m | test suite | `date "+start %H:%M:%S" && (go test -v -timeout 10m ./metal/ 2>&1 \| tee <tmp> \| tail -5); date "+end ` |
+| 2026-09-11 | 3 |   10.1 m | test suite | `go test ./decoder/... > <tmp> 2>&1 echo "EXIT:$?" grep -n "^--- FAIL" <tmp>` |
+| 2026-09-13 | 4 |    9.8 m | test suite | `date "+start %H:%M:%S" && (go test -v -timeout 15m -tags goinfer_testhooks ./metal/ 2>&1 \| tee <tmp>` |
+| 2026-09-13 | 3 |    8.7 m | test suite | `(go test -tags goinfer_testhooks ./metal/... -count=1 -timeout 10m -v > <tmp> 2>&1; echo "EXIT $?" >` |
+| 2026-09-20 | 6 |    5.1 m | in-test measurement | `date && GOINFER_HEAVY_TESTS=1 GOINFER_TEST_MODEL=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf GO` |
+| 2026-09-09 | 3 |    5.1 m | in-test measurement | `ssh nobara "cd ~/mycode/goinfer-m02-cuda && export PATH=/usr/local/go/bin:\$PATH && GOINFER_HEAVY_TE` |
+| 2026-09-20 | 5 |    4.1 m | test suite | `go test -mod=readonly -race ./decoder/ -run 'TestAttendGroupedHeads\|TestAttendGroupedLayer\|TestAtten` |
+| 2026-09-15 | 3 |    2.7 m | in-test measurement | `date ssh nobara-ts "export PATH=\$PATH:/usr/local/go/bin:~/go/bin && cd ~/mycode/goinfer-cuda-audit ` |
+| 2026-09-20 | 7 |    2.5 m | test suite | `GOINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf GOINFER_BENCH_DEPTH=2048 go t` |
+| 2026-09-01 | 3 |    1.8 m | in-test measurement | `cd /Users/francistownsend-merino/tmcode/goinfer cat > <tmp> <<'EOF' #!/bin/bash export PATH=/usr/loc` |
+| 2026-09-25 | 3 |    1.7 m | test suite | `cd /Users/francistownsend-merino/tmcode/goinfer && D=~/goinfer-bench/metal-decode-r17-2026-09-25 && ` |
+| 2026-09-11 | 4 |    1.4 m | in-test measurement | `ssh nobara "zsh -lic 'cd <tmp> && NVRTC_LIB=/home/francis/.local/lib/python3.14/site-packages/nvidia` |
+| 2026-09-12 | 6 |    1.0 m | in-test measurement | `cd /Users/francistownsend-merino/tmcode/goinfer/gpu && go build -tags 'gpu goinfer_testhooks' ./... ` |
+| 2026-08-31 | 3 |    0.6 m | test suite | `cd /Users/francistownsend-merino/tmcode/goinfer; cat > <tmp> <<'GOEOF' //go:build cuda && goinfer_te` |
+| 2026-09-24 | 3 |    0.6 m | served gate | `date +"START %H:%M:%S"; uptime \| sed 's/.*averages/load averages/'; (BENCH_MAX_LOADAVG=4 GOINFER_SER` |
+| 2026-09-15 | 3 |    0.5 m | test suite | `go test -race -count=1 ./internal/serveapp/... 2>&1 \| tail -10` |
+| 2026-09-14 | 3 |    0.5 m | test suite | `go test -race ./internal/serveapp/... 2>&1 \| tail -10` |
+| 2026-09-12 | 5 |    0.5 m | in-test measurement | `cd /Users/francistownsend-merino/tmcode/goinfer/gpu && GOINFER_HEAVY_TESTS=1 GOINFER_RESIDENT_GGUF=$` |
+| 2026-09-12 | 4 |    0.4 m | in-test measurement | `ssh nobara 'export PATH=$PATH:/usr/local/go/bin; cd ~/mycode/goinfer/gpu && GOINFER_HEAVY_TESTS=1 GO` |
+| 2026-09-03 | 8 |    0.4 m | test suite | `nohup go test ./decoder/... -v -timeout 20m > <tmp> 2>&1 & disown echo "PID $!"` |
+| 2026-09-15 | 3 |    0.3 m | test suite | `go test ./internal/serveapp/... 2>&1 \| tail -20` |
+| 2026-09-15 | 4 |    0.3 m | test suite | `rsync -av /Users/francistownsend-merino/tmcode/goinfer/cuda/resident_cap_test.go nobara-ts:~/mycode/` |
+| 2026-09-15 | 3 |    0.2 m | test suite | `go build ./... 2>&1 \| tail -30 go test ./decoder/... -run "TestFitEstimate_f32PinnedMixersAgreeWithR` |
+| 2026-09-13 | 7 |    0.2 m | test suite | `date "+start %H:%M:%S" && go test -v ./metal/ > <tmp> 2>&1 & echo "pid $!"` |
+| 2026-09-13 | 8 |    0.2 m | test suite | `date "+start %H:%M:%S" && go test -v -tags goinfer_testhooks ./metal/ > <tmp> 2>&1 & echo "pid $!"` |
+| 2026-09-03 | 5 |    0.2 m | test suite | `cd /Users/francistownsend-merino/tmcode/goinfer date +"%H:%M:%S" nohup go test ./decoder/... -v -tim` |
+| 2026-09-06 | 6 |    0.2 m | test suite | `cd /Users/francistownsend-merino/tmcode/goinfer date +"%H:%M:%S %Z" nohup go test -v -timeout 20m ./` |
+| 2026-09-03 | 6 |    0.2 m | test suite | `go test ./decoder/ -run TestResidentWeightBytes -v 2>&1 \| tail -20` |
+| 2026-09-20 | 3 |    0.2 m | test suite | `go test -mod=readonly ./decoder/ -run 'TestAttendGroupedHeads' -v > <tmp> 2>&1; echo "EXIT:$?"; cat ` |
+| 2026-09-13 | 3 |    0.1 m | test suite | `date -u +"%Y-%m-%dT%H:%M:%SZ (UTC)"; date +"%H:%M %Z (local)" ssh nobara "export PATH=\$PATH:/usr/lo` |
+| 2026-09-08 | 3 |    0.1 m | test suite | `date +"%H:%M:%S %Z" nohup go test -tags goinfer_testhooks -v ./metal/... > <tmp> 2>&1 & echo "PID $!` |
+| 2026-09-09 | 3 |    0.1 m | test suite | `cd /Users/francistownsend-merino/tmcode/goinfer nohup go test -tags goinfer_testhooks -v ./metal/...` |
+| 2026-09-06 | 5 |    0.1 m | test suite | `cd /Users/francistownsend-merino/tmcode/goinfer go test ./decoder -run 'TestResidentAdmission_regist` |
+| 2026-09-15 | 4 |    0.1 m | test suite | `go build ./internal/serveapp/... 2>&1; echo "BUILD_EXIT:$?" go test ./internal/serveapp/... -run "Te` |
+| 2026-09-13 | 3 |    0.1 m | test suite | `date "+start %H:%M:%S" && go test -v ./decoder/ > <tmp> 2>&1 & echo "pid $!"` |
+| 2026-09-21 | 3 |    0.1 m | test suite | `go test ./decoder/ -run "TestCapabilityMatrix\|TestHardwareMatrix\|TestParityManifest\|TestResidentAdmi` |
+| 2026-09-02 | 3 |    0.1 m | test suite | `git diff testdata/parity_manifest.json \| grep -E "^[+-]" \| grep -vE "^(\+\+\+\|---)" \| grep -vE "deps` |
+| 2026-09-04 | 3 |    0.1 m | test suite | `cd /Users/francistownsend-merino/tmcode/goinfer gofmt -l internal/serveapp/webui_test.go go vet ./in` |
+| 2026-09-13 | 3 |    0.1 m | test suite | `date "+start %H:%M:%S" GOINFER_MOE_REUSE_PROBE_CKPT=/Users/francistownsend-merino/models/qwen15-moe-` |
+| 2026-09-12 | 3 |    0.1 m | served gate | `cd ~/tmcode/goinfer && python3 -m py_compile scripts/bench_peer.py && echo "COMPILE OK"` |
+| 2026-09-14 | 3 |    0.1 m | test suite | `GOINFER_SERVE_MODEL=~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf go test ./internal/serveapp/ -r` |
+| 2026-09-04 | 3 |    0.1 m | served gate | `cd /Users/francistownsend-merino/tmcode/goinfer python3 -c "import ast; ast.parse(open('scripts/benc` |
+| 2026-09-08 | 3 |    0.1 m | test suite | `go test -tags goinfer_testhooks -run "TestLoRAResidentParityMetal" -v ./metal/... 2>&1 \| tail -30` |
+| 2026-09-09 | 3 |    0.1 m | in-test measurement | `GOINFER_HEAVY_TESTS=1 go test ./decoder/ -run '(_forwardParity\|_logitParity\|_textParity)$\|^TestGGUF_` |
+| 2026-09-25 | 3 |    0.1 m | served gate | `S=~/goinfer-bench/metal-decode-r17-2026-09-25; T=/Users/francistownsend-merino/tmcode/goinfer/docs/m` |
+| 2026-09-06 | 3 |    0.1 m | test suite | `cd /Users/francistownsend-merino/tmcode/goinfer go test ./decoder -run ParityManifest -update -v 2>&` |
+| 2026-09-19 | 3 |    0.1 m | served gate | `rm -f <tmp> <tmp> cd /Users/francistownsend-merino/tmcode/goinfer && GOINFER_SERVE_METAL="$HOME/benc` |
+| 2026-09-20 | 3 |    0.1 m | in-test measurement | `GOFLAGS="-mod=readonly" GOINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf GOINF` |
+| 2026-09-05 | 3 |    0.1 m | served gate | `grep -n "^<<<<<<<\\|^=======\\|^>>>>>>>" scripts/bench_peer.py python3 -c "import ast; ast.parse(open(` |
+| 2026-09-20 | 3 |    0.1 m | test suite | `go test -mod=readonly -v ./decoder/... > <tmp> 2>&1 & echo "PID:$!"` |
+| 2026-09-20 | 3 |    0.1 m | test suite | `cd /Users/francistownsend-merino/tmcode/aikit && go test ./linalg/ -run "TestMatmulQKAcc64Group_matc` |
+| 2026-09-04 | 3 |    0.1 m | test suite | `cd /Users/francistownsend-merino/tmcode/goinfer go build ./cmd/gate/... 2>&1 go test ./cmd/gate/ -ru` |
+| 2026-09-20 | 3 |    0.1 m | served gate | `date && \ GOINFER_SERVE_CPU=<tmp> \ OLLAMA_BIN=/opt/homebrew/bin/ollama \ OLLAMA_MODELS=/Users/franc` |
+| 2026-09-22 | 4 |    0.1 m | test suite | `go test -run 'TestParityManifest_fresh' ./decoder/ -count=1 -timeout 30s -v 2>&1 \| tail -10` |
+| 2026-09-18 | 3 |    0.1 m | test suite | `go test -tags 'metal goinfer_testhooks' ./metal/ -run 'TestNib2HalfAllValues\|TestGemvW4F16_vsScalarR` |
+| 2026-09-15 | 3 |    0.0 m | test suite | `go test ./decoder/... -run TestParityManifest_fresh -v 2>&1 \| tail -20` |
+| 2026-09-13 | 5 |    0.0 m | test suite | `ssh nobara "ps aux \| grep 'go test' \| grep -v grep"` |
+| 2026-09-16 | 4 |    0.0 m | test suite | `ps aux \| grep "go test" \| grep -v grep echo "---FAIL/panic/summary search---" grep -n "^--- FAIL\\|pa` |
+| 2026-09-03 | 3 |    0.0 m | test suite | `ps aux \| grep "go test ./decoder" \| grep -v grep` |
+| 2026-09-13 | 3 |    0.0 m | test suite | `ssh nobara "ps aux\|grep 'go test'\|grep -v grep"` |
+| 2026-09-05 | 4 |    0.0 m | served gate | `git add scripts/bench_peer.py git rebase --continue 2>&1 </dev/null` |
+| 2026-09-15 | 3 |    0.0 m | test suite | `ps aux \| grep "go test" \| grep -v grep` |
+| 2026-09-05 | 5 |    0.0 m | served gate | `grep -n "^<<<<<<<\\|^=======\\|^>>>>>>>" scripts/bench_peer.py` |
+| 2026-09-15 | 3 |    0.0 m | parity/refresh | `cat scripts/refresh_parity_hashes.sh \| head -30` |
+
+## 5. detached launches (duration in their own logs, see census.py): 269
+
+- 09-28 09:54 `cd ~/.claude/projects/-Users-francistownsend-merino-tmcode-goinfer/memory/ && grep -il 'zsh\|bash-ism\|word split\|nomatch\|no matches found`
+- 09-28 09:55 `grep -rn 'launchctl\|setsid' ~/tmcode/aikit/CLAUDE.md ~/tmcode/aikit/.claude/ 2>/dev/null | head -5; ls ~/.claude/projects/-Users-francistow`
+- 09-28 09:55 `G=~/.claude/projects/-Users-francistownsend-merino-tmcode-goinfer/memory; A=~/.claude/projects/-Users-francistownsend-merino-tmcode-aikit/me`
+- 09-12 14:10 `ssh nobara 'export PATH=$PATH:/usr/local/go/bin; cd ~/mycode/goinfer/gpu && setsid nohup go test -tags gpu -v -timeout 20m ./... > /tmp/gpu-`
+- 09-12 14:21 `ssh nobara 'export PATH=$PATH:/usr/local/go/bin; cd ~/mycode/goinfer/gpu && setsid nohup go test -tags gpu -v -timeout 20m ./... > /tmp/gpu-`
+- 09-12 14:52 `ssh nobara 'export PATH=$PATH:/usr/local/go/bin; cd ~/mycode/goinfer/gpu && echo "START: $(date "+%Y-%m-%d %H:%M:%S %Z")" && setsid nohup go`
+- 09-12 15:39 `ssh nobara 'export PATH=$PATH:/usr/local/go/bin; cd ~/mycode/goinfer/gpu && echo "START: $(date "+%Y-%m-%d %H:%M:%S %Z")" && setsid nohup en`
+- 09-12 17:07 `ssh nobara 'export PATH=$PATH:/usr/local/go/bin; cd ~/mycode/goinfer/gpu && echo "START: $(date "+%Y-%m-%d %H:%M:%S %Z")" && setsid nohup en`
+- 09-12 18:17 `ssh nobara 'export PATH=$PATH:/usr/local/go/bin; cd ~/mycode/goinfer/gpu && echo "START: $(date "+%Y-%m-%d %H:%M:%S %Z")" && setsid nohup en`
+- 09-12 19:07 `ssh nobara "zsh -lc 'cd ~/mycode/aikit/aikit && setsid nohup heavy go run -C tools ./perfgate > /tmp/perfgate-aikit.log 2>&1 < /dev/null & d`
+- 09-12 19:07 `cat > /tmp/run_perfgate.sh <<'EOF' #!/usr/bin/env zsh cd ~/mycode/aikit/aikit setsid nohup heavy go run -C tools ./perfgate > /tmp/perfgate-`
+- 09-12 19:08 `cat > /tmp/run_perfgate.sh <<'EOF' #!/usr/bin/env zsh cd ~/mycode/aikit/aikit setsid nohup zsh -lc 'cd ~/mycode/aikit/aikit && heavy go run `
+- 09-12 19:19 `ssh nobara 'setsid nohup zsh -lc "sleep 30 && date >> /tmp/detach-test.log" > /tmp/detach-out.log 2>&1 < /dev/null & disown; sleep 1; echo s`
+- 09-12 19:19 `date ssh nobara 'cd ~/mycode/aikit/aikit && setsid nohup zsh -lc "cd ~/mycode/aikit/aikit && heavy go run -C tools ./perfgate" > /tmp/perfga`
+- 09-12 19:20 `date ssh nobara 'cd ~/mycode/aikit/aikit && export PATH=$PATH:/usr/local/go/bin && setsid nohup go run -C tools ./perfgate > /tmp/perfgate-a`

@@ -158,6 +158,25 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   gate, sweep, suite, parity/refresh, evaluation) × machine × day/night for the last 30 days, the top 20 runs, and the
   re-runs. Re-run weekly while the campaign is open, and at close.
 - **Band / kill:** none — it is the instrument.
+- **Mac transcript miner: DONE 2026-09-28.** The miner is
+  [`transcript_miner.py`](../measurements/test-efficiency-2026-09/transcript_miner.py), and its output is
+  `transcripts-macbook-2026-09-28.txt` beside it. It pairs each Bash `tool_use` with its `tool_result`, or with its
+  `task-notification` for a backgrounded call. It covers 206 transcripts (subagents included) and 43,914 calls since
+  2026-08-29.
+  - **Excluded, 7 spans (145.6 h in total).** These are foreground calls whose result arrived more than 610 s later
+    (the tool caps a foreground call at 600 s, so these were blocked, not running), and background tasks that ended
+    "stopped" (a server or a watch left up for days until someone stopped it). Left in, they were more than half of
+    the raw total, including one 100.5 h "call".
+  - **The largest class is waiting:** **66.5 h of wait/poll, 55.7 h of it by day**, more than half of all call time.
+    These are sessions blocked in `until … sleep` / `gh run list` / `ssh … kill -0` loops on CI, remote runs and
+    detached benchmarks.
+  - **Unit-test suites: 23.7 h, 20.0 h by day.** Re-runs are visible: the whole `decoder` suite 3–6 times on single
+    days, at 5–10 min each. That is TE7's target (affected-only selection and the test cache).
+  - **Smaller classes:** in-test measurement 8.7 h, build/lint 6.1 h, parity/refresh 1.4 h. The served harness calls
+    total 1.2 h because served gates run detached, and their spans are census.py's (§1.1).
+  - **Owed: the same miner on nobara, from its own transcripts.** It was not run on 2026-09-28 because a timed CUDA
+    prefill gate was running there, and a scan should not overlap a timed run. census.py on nobara's
+    `~/goinfer-bench` is owed with it.
 
 ### TE1 — The idle gate reads what is running now *(one night: A/A + mutation)*
 
