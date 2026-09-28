@@ -431,3 +431,42 @@ bandwidth-bound (the old 0.5B's 9.4 ms/token against under 2 ms to stream its ~0
 value, subnormals included (a scale is never NaN), so the result stays bit-identical to today's scalar widen, and fusing it into the row4
 kernel is the design's original intent. Until an aikit release carries it, goinfer on `main` decodes CPU int4 on
 arm64 at 0.44–0.55× of the build before the merge. That applies to any release tagged from it.
+
+### L1 arm64 fix — pre-registered 2026-09-28, before any fix code or timing
+
+Two candidate aikit fixes, both bit-exact by construction, since binary16 → f32 widening is exact.
+- **A: a NEON `widenF16`.** `FCVTL` / `FCVTL2`, 8 halves per iteration, replacing the scalar Go widen for every
+  arm64 path. The per-32-activation row4 path (`matmulBTW4A8Row4GroupedF16Into`) inlines a scalar `f16ToF32` of its
+  own and moves onto `widenF16` too.
+- **B: A, plus a fused f16 twin of the M=1 decode kernel** (`dotW4A8SplitHalf4RowFoldF16`). Per group it does one
+  8-byte load and one `FCVTL` for the quad's four scales, then `FMLA` by element: no widen buffer. This is the L1
+  design's original intent.
+- **Fallback only:** widening once at load, into an f32 copy. On this Mac that copy would un-alias the `.giw` v15
+  scales the MoE pager relies on, and it would add 4 B per scale the fit guard does not price.
+
+**Hard gates (both candidates):**
+1. **Exhaustive widen.** All 65,536 binary16 patterns widen to `f16ToF32`'s f32 bits. The one exception is NaN
+   inputs, where both results must be NaN: `FCVTL` quiets a signalling NaN, and a scale is never NaN. Lengths 0–40
+   are covered for the tails.
+2. **aikit per path.** `TestW4A8F16_everyPathMatchesF32` and the arm64 suite pass natively on the M1 Pro.
+   - The fused kernel is exactly equal to the f32 kernel on the widened scales, for nGroups 1–64 and random data.
+   - A mutation check: a one-ulp change to one scale must change the output.
+3. **goinfer cross-build.** CPU arm64 logits with the fix are byte-identical to `5c85f7c0`'s: the 1.5B from the
+   `.gguf` and the 7B from the kind-5 `.giw`, with the dumper and prompts above.
+
+**A or B (decided in-process, before any served timing).**
+- **Benchmark:** a paired microbenchmark of the M=1 row4 matmul, over a cold (DRAM-streamed) bank with the parallel
+  workspace.
+- **Shapes:** 0.5B gate/up (K 896 → N 4864), 1.5B gate/up (1536 → 8960), 1.5B down (8960 → 1536) and 7B gate/up
+  (3584 → 18944).
+- **Arms:** f32 scales, A and B, `-count 8`.
+- **Rule:** B is chosen if its median is at or below A's on every shape and at least 2% faster on one. Otherwise A
+  ships and B's numbers are recorded.
+
+**Served gate (decides the release candidate).**
+- **Setup:** `bench_peer.py` as in the Mac half above: CPU, depth 128, 3 runs, two order-reversed passes, the fix
+  against old `3cd62e6d` (f32 scales) with Ollama, combined by geometric mean, `BENCH_MAX_LOADAVG=2.5`.
+- **Closed:** combined fix ÷ old ≥ 0.97 on all three models.
+- **Partial:** 0.90–0.97 on any model. It goes to the owner, with the numbers.
+- **Fallback:** < 0.90 on any model. Build the load-time f32 copy and measure it the same way.
+- **Any gain over old is reported, not a bar.** amd64's was 1.016–1.089×.
