@@ -435,6 +435,30 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   reference build.
 - **Kill (b):** run-to-run nondeterminism on CPU. That should be impossible under the bit-identical discipline, and
   would be a finding in its own right.
+- **(a) BUILT 2026-09-28: the prefill references are content-keyed** (`decoder/prefill_ref_cache_testhook.go`).
+  - **The key.** Each (model, K, prompt) reference is keyed by:
+    - the checkpoint's sha256 (cached by path + size + mtime, so a 4.7 GB file is hashed once);
+    - the prompt's own ids at that K (`fidelity.PromptSetHash`'s encoding);
+    - the reference path's source: the non-test Go in `decoder/`, `internal/giw/` and `constrain/` (`go list -deps
+      ./decoder`), plus `go.mod` pinning aikit and x/*;
+    - the arch, weight quant, continuation length and forced exact attention.
+  - **The store.** Entries live in `~/goinfer-logs/prefill-ref-cache/`, written atomically. A `.bin` without its parts
+    record is an interrupted store, not a hit.
+  - **The consumer path.** `TestPrefillGateReference` looks each prompt up, links a hit into the historical
+    `prefill-ref[-<set>]/` path, and computes only misses. Beside each file it writes `<file>.key.json`, so every
+    consumer reads the path it always did.
+  - **Prompt identity is exact now.** Both gates, Metal's `TestPrefillGateVsReference` and CUDA's
+    `TestPrefillGateVsReferenceCUDA`, check the sidecar's prompt hash before scoring. A mismatch is VOID with the
+    reason. A file from before the cache has no sidecar and falls back to the seed-logit KL > 1.0 inference, which
+    `prefill-ref-identity-2026-09-26.md` needed.
+  - **Tests** (`prefill_ref_cache_testhook_test.go`, tiny llama, milliseconds):
+    - the key moves with the checkpoint bytes, prompt ids, prompt length, quant, continuation and fast attention, and
+      not with the checkpoint's path;
+    - store, lookup, the interrupted-store miss, link, and identity verified / mismatch / no sidecar;
+    - the generator computes 3 prompts, recomputes 0 on a rerun (cache mtimes unchanged), and computes exactly 1 after
+      one prompt changes.
+    
+    A lookup-never-hits mutant turned two of them red.
 - **(b) BUILT 2026-09-28: `go run ./cmd/gate identity <old-rev> <new-rev>`** (`cmd/gate/identity*.go`).
   - **Mechanics:** two temporary worktrees (removed afterwards, SIGINT included), one embedded public-API dumper built
     in each with `-trimpath`, and each family in its own process in the order new#1 → old → new#2.
@@ -547,6 +571,20 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
 - **Band:** re-running a failed gate costs only its unfinished cells; a re-run against an unchanged reference skips the
   reference entirely.
 - **Kill:** judged per gate.
+- **Per gate, 2026-09-28:**
+  - **`TestPrefillGateReference`** (the longest, 168 min): **DONE** through TE6(a).
+    - (a) Each prompt is stored atomically as it finishes, and a rerun computes only the missing ones.
+    - (b) The reference is a content-keyed lookup.
+    - Its consumers, `TestPrefillGateVsReference[CUDA]` (49 min), no longer rebuild or hand-check references.
+  - **`TestMoEExpertMajor_endToEnd`** (113 min): **not resumed, on purpose.** It is a timed A/B over interleaved pairs.
+    Resuming after a restart would pool pairs from different sessions, and `CLAUDE.md`'s same-session rule exists
+    because that drift corrupts ratios. Its levers are TE3 (`power.py` sizing of the pairs) and TE4, and it runs on
+    the night queue.
+  - **`TestA3MoEExclusionIsMeasured`** (108 min): a measurement that decides nothing, by its own doc. Its timing half
+    is the same case as above. Its cosine half is deterministic and could use the cache, which is worth it only if the
+    measurement is re-run.
+  - **(c) Right-sizing is not done for any gate.** It needs past data showing a smaller configuration reaching the same
+    verdict. TE12's `power.py fidelity` is the tool for the fidelity gates.
 
 ### TE9 — One timed run per box *(small; by day)*
 

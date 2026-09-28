@@ -146,7 +146,7 @@ func TestPrefillGateReference(t *testing.T) {
 			preflightConcurrencySafety(t, m, prompts[0], workers)
 
 			for _, K := range mc.ks {
-				runPrefillReferenceKConcurrent(t, m, mc.name, K, prompts, outDir, continuationN, workers)
+				runPrefillReferenceKConcurrent(t, m, mc.name, path, mc.quant, K, prompts, outDir, continuationN, workers)
 			}
 		})
 	}
@@ -275,20 +275,42 @@ func preflightConcurrencySafety(t *testing.T, m *Model, prompt []int, workers in
 // runPrefillReferenceKConcurrent processes every prompt for one (model, K) cell across a bounded
 // worker pool, each worker owning its own *KVCache (see the concurrency-safety note on
 // TestPrefillGateReference and the preflight above).
-func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName string, K int, prompts [][]int, outDir string, continuationN, workers int) {
+//
+// CONTENT-KEYED AND RESUMABLE (TE6(a)/TE8, docs/tasks/task-test-efficiency-2026-09.md): each prompt's reference is
+// looked up in prefill_ref_cache_testhook.go's cache by checkpoint sha256 + the prompt's ids + the reference path's
+// source + arch/quant/continuation. A hit is linked into outDir and skipped; a miss is computed, stored atomically, then
+// linked. So a rerun after an interruption computes only the prompts not yet stored, and a reference for different
+// text, weights or code can never be picked up by accident.
+func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName, checkpointPath, quant string, K int, prompts [][]int, outDir string, continuationN, workers int) {
 	t.Helper()
 	type job struct {
-		pi  int
-		ids []int
+		pi    int
+		ids   []int
+		parts PrefillRefKeyParts
 	}
 	jobs := make(chan job, len(prompts))
+	cached := 0
 	for pi, ids := range prompts {
 		if len(ids) < K {
 			t.Fatalf("prompt %d: only %d tokens, need >= %d", pi, len(ids), K)
 		}
-		jobs <- job{pi, ids[:K]}
+		parts, err := PrefillRefKeyForTest(checkpointPath, quant, ids[:K], continuationN)
+		if err != nil {
+			t.Fatalf("prompt %d: reference key: %v", pi, err)
+		}
+		outPath := filepath.Join(outDir, fmt.Sprintf("%s-K%d-p%d.bin", modelName, K, pi))
+		if cp, ok := LookupPrefillRefForTest(parts); ok {
+			if err := LinkPrefillRefForTest(cp, outPath, parts); err != nil {
+				t.Fatalf("link cached reference %s -> %s: %v", cp, outPath, err)
+			}
+			cached++
+			continue
+		}
+		jobs <- job{pi, ids[:K], parts}
 	}
 	close(jobs)
+	fmt.Printf("[ref] %s K=%d: %d of %d prompts already in the reference cache, %d to compute\n",
+		modelName, K, cached, len(prompts), len(prompts)-cached)
 
 	var (
 		mu       sync.Mutex
@@ -312,18 +334,22 @@ func runPrefillReferenceKConcurrent(t *testing.T, m *Model, modelName string, K 
 					continue
 				}
 				outPath := filepath.Join(outDir, fmt.Sprintf("%s-K%d-p%d.bin", modelName, K, j.pi))
-				if err := WritePrefillReferenceForTest(outPath, seedLogits, refTokens, refLogits); err != nil {
+				cp, err := StorePrefillRefForTest(j.parts, seedLogits, refTokens, refLogits)
+				if err == nil {
+					err = LinkPrefillRefForTest(cp, outPath, j.parts)
+				}
+				if err != nil {
 					mu.Lock()
 					if firstErr == nil {
-						firstErr = fmt.Errorf("write %s: %w", outPath, err)
+						firstErr = fmt.Errorf("store %s: %w", outPath, err)
 					}
 					mu.Unlock()
 					continue
 				}
 				mu.Lock()
 				done++
-				fmt.Printf("[ref] %s K=%d prompt %2d done (%d/%d) -> %s elapsed=%s\n",
-					modelName, K, j.pi+1, done, len(prompts), outPath, time.Since(t0).Round(time.Second))
+				fmt.Printf("[ref] %s K=%d prompt %2d done (%d/%d computed) -> %s elapsed=%s\n",
+					modelName, K, j.pi+1, done, len(prompts)-cached, outPath, time.Since(t0).Round(time.Second))
 				mu.Unlock()
 			}
 		}()

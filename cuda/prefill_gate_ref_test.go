@@ -218,11 +218,14 @@ func runCUDARefGateCell(t *testing.T, rf *cudaResident, m *decoder.Model, model 
 	t0 := time.Now()
 	var identityFail []int
 	for pi, ids := range prompts {
-		seedRef, refTokens, refLogits, err := decoder.ReadPrefillReferenceForTest(
-			filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", model, K, pi)))
+		refPath := filepath.Join(refDir, fmt.Sprintf("%s-K%d-p%d.bin", model, K, pi))
+		seedRef, refTokens, refLogits, err := decoder.ReadPrefillReferenceForTest(refPath)
 		if err != nil {
 			t.Fatalf("read reference: %v", err)
 		}
+		// TE6(a): a reference from the content-keyed cache carries its prompt's hash, so identity is checked exactly;
+		// a file from before the cache has no sidecar and falls back to the seed-logit KL inference below.
+		refID, refWhy := decoder.PrefillRefIdentityForTest(refPath, ids[:K])
 		contN = len(refTokens)
 		r := runCUDARefCell(t, rf, m, ids[:K], K, seedRef, refTokens, refLogits)
 		n++
@@ -238,9 +241,12 @@ func runCUDARefGateCell(t *testing.T, rf *cudaResident, m *decoder.Model, model 
 			fWins++
 		}
 		mismatch := ""
-		if r.seedKL > 1.0 {
+		if refID == decoder.RefIdentityMismatch || (refID == decoder.RefIdentityNoSidecar && r.seedKL > 1.0) {
 			identityFail = append(identityFail, pi+1)
 			mismatch = "  <-- REFERENCE/PROMPT MISMATCH"
+			if refID == decoder.RefIdentityMismatch {
+				mismatch += " (" + refWhy + ")"
+			}
 		}
 		fmt.Printf("[cuda-gate] %s K=%d prompt %2d/%2d exact(agree=%.1f%% HF=%d/%d KL=%.4f) "+
 			"fast(agree=%.1f%% HF=%d/%d KL=%.4f) diff(agree=%+.1fpt KL=%+.4f) seedKL=%.4f%s elapsed=%s\n",

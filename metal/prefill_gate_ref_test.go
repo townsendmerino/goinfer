@@ -363,6 +363,9 @@ func runPrefillRefGateCellK(t *testing.T, rf *metalResident, m *decoder.Model, m
 		if err != nil {
 			t.Fatalf("read reference %s: %v", refPath, err)
 		}
+		// TE6(a): a reference from the content-keyed cache carries its prompt's hash, so identity is checked exactly;
+		// a file from before the cache has no sidecar and falls back to the seed-logit KL inference below.
+		refID, refWhy := decoder.PrefillRefIdentityForTest(refPath, ids[:K])
 		_ = seedRef // folded into refLogitsRef[0] already (see decoder/prefill_ref_gen_test.go)
 		_ = refTokens
 		res := runPrefillRefCell(t, rf, m, ids[:K], K, refLogitsRef)
@@ -386,9 +389,12 @@ func runPrefillRefGateCellK(t *testing.T, rf *metalResident, m *decoder.Model, m
 			cs.worstFastGap = res.fastWorstGap
 		}
 		mismatch := ""
-		if res.seedKL > 1.0 {
+		if refID == decoder.RefIdentityMismatch || (refID == decoder.RefIdentityNoSidecar && res.seedKL > 1.0) {
 			cs.identityFail = append(cs.identityFail, pi+1)
 			mismatch = "  <-- REFERENCE/PROMPT MISMATCH"
+			if refID == decoder.RefIdentityMismatch {
+				mismatch += " (" + refWhy + ")"
+			}
 		}
 		fmt.Printf("[ref-gate] %s set %q K=%d prompt %2d/%2d exact(agree=%.1f%% HF=%d/%d KL=%.4f) "+
 			"fast(agree=%.1f%% HF=%d/%d KL=%.4f) diff(agree=%+.1fpt KL=%+.4f) seedKL=%.4f%s elapsed=%s\n",
