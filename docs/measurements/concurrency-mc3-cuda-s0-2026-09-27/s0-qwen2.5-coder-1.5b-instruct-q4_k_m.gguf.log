@@ -1,0 +1,11 @@
+=== RUN   TestMC3CUDAS0_batchedRowsVsDecode
+[mc3cuda] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf depth 1024: one decode 5.499 ms
+[mc3cuda] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf k=2: 2×decode 9.712 ms | PrefillLastN 7.475 ms = 1.30x cheaper | PrefillLastNArgmax 6.685 ms = 1.45x cheaper | per-row logits differing from Forward: 0 of 303872
+    mc3_cuda_s0_test.go:123: k=2: 2×decode 9.712 ms | PrefillLastN 7.475 ms = 1.30x cheaper | PrefillLastNArgmax 6.685 ms = 1.45x cheaper | per-row logits differing from Forward: 0 of 303872
+[mc3cuda] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf k=4: 4×decode 18.581 ms | PrefillLastN 10.613 ms = 1.75x cheaper | PrefillLastNArgmax 8.439 ms = 2.20x cheaper | per-row logits differing from Forward: 0 of 607744
+    mc3_cuda_s0_test.go:123: k=4: 4×decode 18.581 ms | PrefillLastN 10.613 ms = 1.75x cheaper | PrefillLastNArgmax 8.439 ms = 2.20x cheaper | per-row logits differing from Forward: 0 of 607744
+[mc3cuda] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf k=8: 8×decode 37.237 ms | PrefillLastN 16.761 ms = 2.22x cheaper | PrefillLastNArgmax 11.611 ms = 3.21x cheaper | per-row logits differing from Forward: 0 of 1215488
+    mc3_cuda_s0_test.go:123: k=8: 8×decode 37.237 ms | PrefillLastN 16.761 ms = 2.22x cheaper | PrefillLastNArgmax 11.611 ms = 3.21x cheaper | per-row logits differing from Forward: 0 of 1215488
+--- PASS: TestMC3CUDAS0_batchedRowsVsDecode (9.14s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	9.203s

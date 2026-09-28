@@ -1,0 +1,13 @@
+=== RUN   TestSpecVerifyCeiling
+    spec_verify_ceiling_test.go:80: single decode (M=1) @depth 1024: 4.749 ms
+    spec_verify_ceiling_test.go:81: k    batched(M=k)   k×sequential     cheaper by   → spec ceiling
+    spec_verify_ceiling_test.go:100: 2    7.355          10.062           1.37        × (ceiling ≈ 1.37× if 100% accept)
+    spec_verify_ceiling_test.go:100: 4    8.556          18.620           2.18        × (ceiling ≈ 2.18× if 100% accept)
+    spec_verify_ceiling_test.go:100: 6    9.545          28.129           2.95        × (ceiling ≈ 2.95× if 100% accept)
+    spec_verify_ceiling_test.go:100: 8    11.307         37.710           3.34        × (ceiling ≈ 3.34× if 100% accept)
+    spec_verify_ceiling_test.go:100: 16   33.294         75.885           2.28        × (ceiling ≈ 2.28× if 100% accept)
+    spec_verify_ceiling_test.go:103: Read: spec-decode replaces k sequential decodes with 1 batched verify + 1 draft (n-gram=free).
+    spec_verify_ceiling_test.go:104: If 'cheaper by' ≫ 1 at k=4-8, D1 can win (× accept rate); if ≈ 1, batching doesn't amortize → no D1.
+--- PASS: TestSpecVerifyCeiling (9.40s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	9.465s

@@ -38,8 +38,10 @@
 >     ([`concurrency-mc3c-s1-2026-09-27.md`](../measurements/concurrency-mc3c-s1-2026-09-27.md));
 > - MC3 follow-ons: ~~the 7B's batched-step cost~~ — S4 shipped 2026-09-27, 2 clients 1.121× on the 7B and 1.059× on the
 >   1.5B (B ≥ 3 keeps the fragment: no bit-identical kernel beats it); ~~encode-ahead~~ — parked on its measured
->   headroom (~4% / ~1.3%); a per-pass prefill cost cut (the served gap's main term, estimated); CUDA (only on its own
->   measurement);
+>   headroom (~4% / ~1.3%); a per-pass prefill cost cut (the served gap's main term, estimated); **CUDA: S0 done 2026-09-27, worth
+>   building** ([`concurrency-mc3-cuda-s0-2026-09-27.md`](../measurements/concurrency-mc3-cuda-s0-2026-09-27.md)). A
+>   batched pass through the exact kernels is bit-identical to decode per row, and 1.75× (1.5B) / 2.04× (7B) cheaper
+>   than 4 decodes with every row's logits; the build needs its own pre-registration;
 > - ~~the 7B end to end~~ — done 2026-09-27: all five W7 gates pass, 4 clients at 1.785× the serialized build, p99 turn
 >   0.592× ([`concurrency-mc3-7b-w7-2026-09-27.md`](../measurements/concurrency-mc3-7b-w7-2026-09-27.md));
 > - ~~MC1 on CUDA~~ — shipped 2026-09-27: 4 clients at 1.250× the one-slot build, every hard gate passes
