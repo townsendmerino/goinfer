@@ -1,6 +1,7 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
-> **Status, 2026-09-27: C0 and D0 done; D1 in progress.**
+> **Status, 2026-09-27: C0 and D0 done, D1 built; D6a next** (it needs the nobara fixture and the owner's call on
+> which template to grade).
 > - **C0 clears for enum, boolean and integer fields** ([`confidence-c0-2026-09-27.md`](../measurements/confidence-c0-2026-09-27.md)).
 >   AUROC on the 1.5B: 0.847 / 0.727 / 0.680. The readout costs 4.20% of a token on the 1.5B and 1.44% on the 7B.
 >   Number and string fields are parked: the labelled set drew too few wrong answers to judge them.
@@ -298,6 +299,30 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
   are also C0's gate-2 set for enum and boolean fields.
 
 ### D1 — Route A: label-token scoring on any model
+
+**Built, 2026-09-27.**
+- **`internal/decide`:** the readout (`internal/confidence.RestrictedLogSoftmax`), the templates, `calibration.json`
+  load/save, and the per-kind temperature fit.
+  - `bare-v1` (the default) is byte-identical to JEV's template; the D0 record's rendered example is pinned by
+    `TestRender_bareV1`.
+  - `chat-v1` puts the same content in the model's chat template, with thinking off.
+  - Each verbalizer must be a single bare token in the model's tokenizer, or `New` refuses and names it.
+  - A calibration fitted under the other template is refused.
+- **CLI:** the `goinfer-chat decide` / `decisions-calibrate` subcommands (`internal/decidecmd`). Every backend's chat
+  binary has them.
+  - `decide --model <f> [--template chat-v1] [--calibration c.json] [--permute n] in.jsonl`: one JSONL line in and
+    one out. Lines are in the corpus's row shape.
+  - `decisions-calibrate … -o calibration.json labelled.jsonl` fits T per kind on mean KL(target ‖ p_T), by
+    golden-section search on 1/T, in autotrust's format. It warns when T hits the search bound, where the model's
+    ranking disagrees with the labels beyond what a temperature can fix.
+- **One prefill per line**, through `Model.Generate` with a logit processor. Every backend, the resident prefix reuse
+  and the KV slots apply. The prompt is encoded as plain text, so special-token text in a state stays text.
+- **Owed:** D1 against transformers' B0 on identical bytes (the nobara fixture's `route_a_b0.jsonl`): the token ids
+  first, then the distributions.
+- **Not yet decided: the template for D6a.** On the 0.5B (anecdotal, not graded), chat-v1 separated a refund /
+  no-refund pair better than bare-v1 (P(true) 0.81 against 0.68, where bare-v1 read 0.45 against 0.39). But
+  `permute 3` flattened a 3-way choice to near uniform, which is position bias. D6a has to say which template it
+  grades, and D0's B0 already covers bare-v1 on Qwen3.5-9B.
 
 - A `decider` in `internal/serveapp` (not `decoder`). Build a prompt from `{state, question,
   options}` with a fixed template; label options A, B, C… so each label is one token in the model's
