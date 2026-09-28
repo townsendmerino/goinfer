@@ -1,0 +1,25 @@
+reported: old vs new at 2 clients pair 1: 0 of 12 turns differ in content
+reported: old vs new at 2 clients pair 2: 0 of 12 turns differ in content
+reported: old vs new at 2 clients pair 3: 0 of 12 turns differ in content
+reported: old vs new at 4 clients pair 1: 0 of 24 turns differ in content
+reported: old vs new at 4 clients pair 2: 0 of 24 turns differ in content
+reported: old vs new at 4 clients pair 3: 0 of 24 turns differ in content
+GATE 1 identity: PASS
+GATE 2 reuse: PASS
+BAND 3 new 2 clients / new 1 client: 0.998, 1.002, 0.998; median 0.998x — in band
+reported: old 2 clients / old 1 client: 0.355, 0.355, 0.356; median 0.355x
+BAND 3 new 4 clients / new 1 client: 0.935, 1.005, 1.000; median 1.000x — in band
+reported: old 4 clients / old 1 client: 0.356, 0.356, 0.355; median 0.356x
+pair 1 4 clients: aggregate old 9.27 new 24.49 tok/s = 2.642x; p50 turn old 44.66 new 20.87 s; p99 turn old 98.91 new 23.67 s
+pair 2 4 clients: aggregate old 9.27 new 26.00 tok/s = 2.805x; p50 turn old 44.94 new 18.69 s; p99 turn old 99.16 new 23.43 s
+pair 3 4 clients: aggregate old 9.25 new 26.03 tok/s = 2.814x; p50 turn old 44.72 new 18.63 s; p99 turn old 99.73 new 23.57 s
+GATE 4 ship: 4-client aggregate new/old median 2.805x (bar >= 1.03x): PASS
+pair 1 2 clients: aggregate old 9.26 new 26.14 tok/s = 2.823x; p50 turn old 22.31 new 9.33 s; p99 turn old 49.58 new 11.68 s
+pair 2 2 clients: aggregate old 9.26 new 25.94 tok/s = 2.801x; p50 turn old 22.33 new 9.37 s; p99 turn old 49.71 new 11.77 s
+pair 3 2 clients: aggregate old 9.27 new 25.98 tok/s = 2.803x; p50 turn old 22.39 new 9.36 s; p99 turn old 49.65 new 11.88 s
+reported: 2-client aggregate new/old median 2.803x
+pair 1 1 client: p50 old 4.668 new 4.674 s = 1.001x; p99 old 5.779 new 5.828 s = 1.008x; aggregate old 26.06 new 26.18
+pair 2 1 client: p50 old 4.688 new 4.767 s = 1.017x; p99 old 5.807 new 5.857 s = 1.009x; aggregate old 26.06 new 25.88
+pair 3 1 client: p50 old 4.703 new 4.634 s = 0.985x; p99 old 5.791 new 5.825 s = 1.006x; aggregate old 26.06 new 26.04
+GATE 5 solo guard: p50 median 1.001x, p99 median 1.008x (bar <= 1.05 each): PASS
+ALL HARD GATES: PASS

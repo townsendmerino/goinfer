@@ -1,0 +1,150 @@
+20:15:55 == MC1-WebGPU W7 start; tree 9cad1d2e; old 68f2dbdf new 3926f927; 26.6.2; load { 3.53 3.32 2.76 }
+20:15:55 waiting for idle: load1=3.53 serve_procs=0 (0s)
+20:16:56 waiting for idle: load1=2.45 serve_procs=0 (60s)
+20:17:17 idle: load1=1.90 serve_procs=0
+20:17:17 cell old1_1 clients=1 bin=serve-webgpu-68f2dbdf
+[w7-plain] old1_1 clients=1 starting fresh server
+[w7-plain] waiting for memory: 1628 MB free, want >= 3000 MB (0s/60s)
+[w7-plain] waiting for memory: 1635 MB free, want >= 3000 MB (2s/60s)
+[w7-plain] waiting for memory: 1602 MB free, want >= 3000 MB (4s/60s)
+[w7-plain] waiting for memory: 1584 MB free, want >= 3000 MB (6s/60s)
+[w7-plain] waiting for memory: 1601 MB free, want >= 3000 MB (8s/60s)
+[w7-plain] waiting for memory: 1614 MB free, want >= 3000 MB (10s/60s)
+[w7-plain] waiting for memory: 1630 MB free, want >= 3000 MB (12s/60s)
+[w7-plain] waiting for memory: 1629 MB free, want >= 3000 MB (14s/60s)
+[w7-plain] waiting for memory: 1628 MB free, want >= 3000 MB (17s/60s)
+[w7-plain] waiting for memory: 1638 MB free, want >= 3000 MB (19s/60s)
+[w7-plain] waiting for memory: 1631 MB free, want >= 3000 MB (21s/60s)
+[w7-plain] waiting for memory: 1631 MB free, want >= 3000 MB (23s/60s)
+[w7-plain] waiting for memory: 1636 MB free, want >= 3000 MB (25s/60s)
+[w7-plain] waiting for memory: 1633 MB free, want >= 3000 MB (27s/60s)
+[w7-plain] waiting for memory: 1633 MB free, want >= 3000 MB (29s/60s)
+[w7-plain] waiting for memory: 1683 MB free, want >= 3000 MB (31s/60s)
+[w7-plain] waiting for memory: 1682 MB free, want >= 3000 MB (33s/60s)
+[w7-plain] waiting for memory: 1565 MB free, want >= 3000 MB (35s/60s)
+[w7-plain] waiting for memory: 1564 MB free, want >= 3000 MB (37s/60s)
+[w7-plain] waiting for memory: 1603 MB free, want >= 3000 MB (40s/60s)
+[w7-plain] waiting for memory: 1556 MB free, want >= 3000 MB (42s/60s)
+[w7-plain] waiting for memory: 1480 MB free, want >= 3000 MB (44s/60s)
+[w7-plain] waiting for memory: 1481 MB free, want >= 3000 MB (46s/60s)
+[w7-plain] waiting for memory: 1507 MB free, want >= 3000 MB (48s/60s)
+[w7-plain] waiting for memory: 1509 MB free, want >= 3000 MB (50s/60s)
+[w7-plain] waiting for memory: 1508 MB free, want >= 3000 MB (52s/60s)
+[w7-plain] waiting for memory: 1475 MB free, want >= 3000 MB (54s/60s)
+[w7-plain] waiting for memory: 1477 MB free, want >= 3000 MB (56s/60s)
+[w7-plain] waiting for memory: 1453 MB free, want >= 3000 MB (58s/60s)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1490 MB)
+[w7-plain] old1_1 clients=1: wall=29.476s aggregate=26.06 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:18:49 idle: load1=1.43 serve_procs=0
+20:18:49 cell new1_1 clients=1 bin=serve-webgpu-3926f927
+[w7-plain] resuming: 1 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] new1_1 clients=1 starting fresh server
+[w7-plain] new1_1 clients=1: wall=29.34s aggregate=26.18 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:19:20 idle: load1=1.54 serve_procs=0
+20:19:20 cell new1_2 clients=1 bin=serve-webgpu-3926f927
+[w7-plain] resuming: 2 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] new1_2 clients=1 starting fresh server
+[w7-plain] new1_2 clients=1: wall=29.674s aggregate=25.88 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:19:51 idle: load1=1.60 serve_procs=0
+20:19:51 cell old1_2 clients=1 bin=serve-webgpu-68f2dbdf
+[w7-plain] resuming: 3 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] old1_2 clients=1 starting fresh server
+[w7-plain] waiting for memory: 1816 MB free, want >= 3000 MB (0s/60s)
+[w7-plain] old1_2 clients=1: wall=29.47s aggregate=26.06 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:20:24 idle: load1=1.38 serve_procs=0
+20:20:24 cell old1_3 clients=1 bin=serve-webgpu-68f2dbdf
+[w7-plain] resuming: 4 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] old1_3 clients=1 starting fresh server
+[w7-plain] waiting for memory: 1972 MB free, want >= 3000 MB (0s/60s)
+[w7-plain] old1_3 clients=1: wall=29.474s aggregate=26.06 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:20:57 idle: load1=1.17 serve_procs=0
+20:20:57 cell new1_3 clients=1 bin=serve-webgpu-3926f927
+[w7-plain] resuming: 5 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] new1_3 clients=1 starting fresh server
+[w7-plain] waiting for memory: 2131 MB free, want >= 3000 MB (0s/60s)
+[w7-plain] new1_3 clients=1: wall=29.496s aggregate=26.04 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:21:29 == 1-client cells done
+20:21:29 idle: load1=0.81 serve_procs=0
+20:21:29 cell old2_1 clients=2 bin=serve-webgpu-68f2dbdf
+[w7-plain] resuming: 6 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] old2_1 clients=2 starting fresh server
+[w7-plain] old2_1 clients=2: wall=165.868s aggregate=9.26 tok/s; prefill_reused per client per turn [[7, 7, 7, 7, 7, 7], [0, 7, 7, 7, 7, 7]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:24:16 idle: load1=1.06 serve_procs=0
+20:24:16 cell new2_1 clients=2 bin=serve-webgpu-3926f927
+[w7-plain] resuming: 7 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] new2_1 clients=2 starting fresh server
+[w7-plain] new2_1 clients=2: wall=58.765s aggregate=26.14 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:25:17 idle: load1=1.26 serve_procs=0
+20:25:17 cell new2_2 clients=2 bin=serve-webgpu-3926f927
+[w7-plain] resuming: 8 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] new2_2 clients=2 starting fresh server
+[w7-plain] new2_2 clients=2: wall=59.204s aggregate=25.94 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:26:17 idle: load1=0.88 serve_procs=0
+20:26:17 cell old2_2 clients=2 bin=serve-webgpu-68f2dbdf
+[w7-plain] resuming: 9 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] old2_2 clients=2 starting fresh server
+[w7-plain] old2_2 clients=2: wall=165.91s aggregate=9.26 tok/s; prefill_reused per client per turn [[7, 7, 7, 7, 7, 7], [0, 7, 7, 7, 7, 7]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:29:04 idle: load1=0.39 serve_procs=0
+20:29:04 cell old2_3 clients=2 bin=serve-webgpu-68f2dbdf
+[w7-plain] resuming: 10 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] old2_3 clients=2 starting fresh server
+[w7-plain] old2_3 clients=2: wall=165.621s aggregate=9.27 tok/s; prefill_reused per client per turn [[0, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:31:51 idle: load1=0.48 serve_procs=0
+20:31:51 cell new2_3 clients=2 bin=serve-webgpu-3926f927
+[w7-plain] resuming: 11 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] new2_3 clients=2 starting fresh server
+[w7-plain] new2_3 clients=2: wall=59.13s aggregate=25.98 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:32:52 == 2-client cells done
+20:32:52 idle: load1=0.62 serve_procs=0
+20:32:52 cell old4_1 clients=4 bin=serve-webgpu-68f2dbdf
+[w7-plain] resuming: 12 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] old4_1 clients=4 starting fresh server
+[w7-plain] old4_1 clients=4: wall=331.292s aggregate=9.27 tok/s; prefill_reused per client per turn [[7, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7], [0, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:38:24 idle: load1=1.73 serve_procs=0
+20:38:24 cell new4_1 clients=4 bin=serve-webgpu-3926f927
+[w7-plain] resuming: 13 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] new4_1 clients=4 starting fresh server
+[w7-plain] waiting for memory: 2475 MB free, want >= 3000 MB (0s/60s)
+[w7-plain] new4_1 clients=4: wall=125.457s aggregate=24.49 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:40:33 waiting for idle: load1=2.16 serve_procs=0 (0s)
+20:41:35 waiting for idle: load1=2.40 serve_procs=0 (60s)
+20:42:00 idle: load1=2.00 serve_procs=0
+20:42:00 cell new4_2 clients=4 bin=serve-webgpu-3926f927
+[w7-plain] resuming: 14 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] new4_2 clients=4 starting fresh server
+[w7-plain] new4_2 clients=4: wall=118.17s aggregate=26.0 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:44:00 idle: load1=1.59 serve_procs=0
+20:44:00 cell old4_2 clients=4 bin=serve-webgpu-68f2dbdf
+[w7-plain] resuming: 15 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] old4_2 clients=4 starting fresh server
+[w7-plain] old4_2 clients=4: wall=331.297s aggregate=9.27 tok/s; prefill_reused per client per turn [[7, 7, 7, 7, 7, 7], [0, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:49:33 idle: load1=0.74 serve_procs=0
+20:49:33 cell old4_3 clients=4 bin=serve-webgpu-68f2dbdf
+[w7-plain] resuming: 16 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] old4_3 clients=4 starting fresh server
+[w7-plain] old4_3 clients=4: wall=332.055s aggregate=9.25 tok/s; prefill_reused per client per turn [[7, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7], [0, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:55:06 idle: load1=0.76 serve_procs=0
+20:55:06 cell new4_3 clients=4 bin=serve-webgpu-3926f927
+[w7-plain] resuming: 17 cell(s) already in /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+[w7-plain] new4_3 clients=4 starting fresh server
+[w7-plain] new4_3 clients=4: wall=118.021s aggregate=26.03 tok/s; prefill_reused per client per turn [[0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766], [0, 157, 311, 466, 618, 766]]
+wrote /Users/francistownsend-merino/goinfer-bench/mc1-webgpu-2026-09-27/w7.json
+20:57:05 == 4-client cells done
+20:57:05 == DONE

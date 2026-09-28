@@ -5,7 +5,10 @@
 > (`c2f1532e`): 4 resident KV slots hold the 1-client aggregate at 2 and 4 clients (0.99× / 1.01×), and the 4-client
 > aggregate is 1.22–1.24× the previous build's. **MC1 SHIPPED on CUDA 2026-09-27** (`9fddaf7e`,
 > [`concurrency-mc1-cuda-2026-09-27.md`](../measurements/concurrency-mc1-cuda-2026-09-27.md)): on the 1.5B, 4 clients
-> reach 1.250× the one-slot build, and a lone request is unchanged. WebGPU is not converted. **MC2 EARNS on the Mac CPU**
+> reach 1.250× the one-slot build, and a lone request is unchanged. **MC1 SHIPPED on WebGPU 2026-09-27** (`3926f927`,
+> [`concurrency-mc1-webgpu-2026-09-27.md`](../measurements/concurrency-mc1-webgpu-2026-09-27.md)): on the Mac, 4 clients
+> reach 2.805× the one-slot build (Qwen2.5 prefills per token there, so a thrash costs more), and a lone request is
+> unchanged. **MC2 EARNS on the Mac CPU**
 > (1.69–2.04× at B = 4, bit-identical; J8's 4 independent workers reach 2.00–2.48×). The Linux cells are owed. **MC3
 > SHIPPED 2026-09-26 on Metal** (`d4b708b5` + fixes `2b1cc280`, `d2225ec4`;
 > [`concurrency-mc3-2026-09-26.md`](../measurements/concurrency-mc3-2026-09-26.md)). All five pre-registered W7 gates
@@ -47,7 +50,10 @@
 > - ~~the 7B end to end~~ — done 2026-09-27: all five W7 gates pass, 4 clients at 1.785× the serialized build, p99 turn
 >   0.592× ([`concurrency-mc3-7b-w7-2026-09-27.md`](../measurements/concurrency-mc3-7b-w7-2026-09-27.md));
 > - ~~MC1 on CUDA~~ — shipped 2026-09-27: 4 clients at 1.250× the one-slot build, every hard gate passes
->   ([`concurrency-mc1-cuda-2026-09-27.md`](../measurements/concurrency-mc1-cuda-2026-09-27.md)); MC1 on WebGPU;
+>   ([`concurrency-mc1-cuda-2026-09-27.md`](../measurements/concurrency-mc1-cuda-2026-09-27.md)); ~~MC1 on WebGPU~~ —
+>   shipped 2026-09-27: 4 clients at 2.805× the one-slot build on the Mac, every hard gate passes
+>   ([`concurrency-mc1-webgpu-2026-09-27.md`](../measurements/concurrency-mc1-webgpu-2026-09-27.md)). Owed: the
+>   discrete-GPU clamp on real Vulkan hardware (nobara), and the owner's call on context against slots for WebGPU;
 > - ~~context against slots, owner's call~~ — decided 2026-09-27: a slot request shrinks the unpinned default
 >   context (`947e06ce`). The 7B now starts at 4096 with 4 slots and reads 1.34–1.35× at its default, where it
 >   thrashed on 2 slots at 8192. ~~`Plan`'s conservative weight estimate~~ — fixed 2026-09-27 (`4e230601`): it
@@ -178,8 +184,8 @@ conversations.
 - The 4-client aggregate is 70.9 against the previous build's 57.0 tok/s (1.24×; the repeat reads 1.22×).
 - Each turn prefills only its new user turn at every client count.
 - Outputs are bit-identical to each conversation served alone, on the tiny fixture and on qwen2.5-coder-1.5b.
-- Recurrent families keep one; VL turns use the bound slot. CUDA shipped 2026-09-27; see "MC1 on CUDA" below.
-  WebGPU was built 2026-09-27 and is graded in "MC1 on WebGPU" below.
+- Recurrent families keep one; VL turns use the bound slot. CUDA and WebGPU shipped 2026-09-27; see "MC1 on CUDA" and
+  "MC1 on WebGPU" below.
 - The fit guard's clamp is implemented, but no clamping load was run.
 - **Fixed 2026-09-26 (found by MC3 S1): the clamp was priced after the build had allocated its own buffers.**
   - Its budget reads live available memory, and the base it compares against (`residentNeedBytes`) already includes
@@ -320,6 +326,21 @@ control thrashes (3 / 3). The tagged CUDA suite: 171 pass, 0 fail.
 - Gates are computed by `gates.py`, archived with the raw JSON in `docs/measurements/concurrency-mc1-cuda-2026-09-27/`.
 
 ### MC1 on WebGPU (the MacBook) — built 2026-09-27, W7 grading pre-registered below before any timing
+
+**Result, 2026-09-27: SHIPPED** ([`concurrency-mc1-webgpu-2026-09-27.md`](../measurements/concurrency-mc1-webgpu-2026-09-27.md)).
+- Every hard gate passes.
+  - Identity: every compared turn matches; old and new also agree on all 108 turns at 2 and 4 clients.
+  - Reuse: every client prefills only its new user turn.
+  - Ship: the 4-client aggregate reads **2.805×** the one-slot build (9.27 → 26.00 tok/s; pairs 2.642 / 2.805 /
+    2.814). 2 clients read 2.803×.
+  - Solo guard: p50 1.001×, p99 1.008×.
+- The expected band reads 0.998× / 1.000×.
+- The win is larger than CUDA's because Qwen2.5 prefills one token at a time on this backend (`PrefillLast` declines
+  q/k/v bias off Vulkan), so each thrashing turn re-prefilled its whole conversation at decode speed.
+- The slowest turn at 4 clients falls from ~99 s to ~23.6 s. What remains is admission: WebGPU has no batch stepper,
+  so generations still run one at a time.
+- Owed: the discrete-GPU clamp (a failed allocation plus the headroom probe) on real Vulkan hardware, and the
+  owner's call on context against slots.
 
 **What was built** (`gpu/kv_slots.go`). The WebGPU resident implements `decoder.ResidentKVSlotter`; the decoder half
 is Metal's, unchanged.

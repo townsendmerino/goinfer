@@ -744,8 +744,8 @@ user on consumer hardware.
     new. `--session-dir` keeps sessions across restarts, and `--kv-idle-demote` moves idle ones to
     disk snapshots. Snapshots refuse recurrent and MLA caches.
   - **A resident model** skips the sessions and takes the stateless path, because its KV lives on
-    the device. The resident cache's own prefix reuse (§3) serves the most recent conversation — on Metal and CUDA, one
-    per GPU KV slot (`--kv-sessions`, MC1 of `docs/tasks/task-concurrency-2026-09.md`), bound per generation by
+    the device. The resident cache's own prefix reuse (§3) serves the most recent conversation — on Metal, CUDA and
+    WebGPU, one per GPU KV slot (`--kv-sessions`, MC1 of `docs/tasks/task-concurrency-2026-09.md`), bound per generation by
     `residentAcquire`.
   - **A compute-time adapter** routes a request through the session path whatever the backend.
 - **One generation core.** `/v1/chat/completions`, `/v1/responses` and `/v1/messages` differ only in
