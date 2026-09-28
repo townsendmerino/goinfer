@@ -1323,6 +1323,13 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			loadD(&r.dnNorm, "delta_norm")
 			loadD(&r.dnRule, "delta_rule")
 			loadD(&r.dnGNorm, "delta_gnorm")
+			// Row-batched twins for prompt prefill (docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
+			loadD(&r.dnConvRows, "delta_conv_rows")
+			loadD(&r.dnGatesRows, "delta_gates_rows")
+			loadD(&r.dnNormRows, "delta_norm_rows")
+			loadD(&r.dnRuleRows, "delta_rule_rows")
+			loadD(&r.dnRuleRows128, "delta_rule_rows_128")
+			loadD(&r.dnGNormRows, "delta_gnorm_rows")
 			loadD(&r.dnQSplit, "delta_qsplit")
 			loadD(&r.dnAttnGate, "delta_attn_gate")
 			if lerr != nil {

@@ -749,8 +749,11 @@ type cudaResident struct {
 	// Gated-DeltaNet mixer (deltanet.ptx — own module; nothing else here is recurrent).
 	// Loaded only for that family; every other model leaves these zero and never dispatches them.
 	dnConv, dnGates, dnNorm, dnRule, dnGNorm Pipeline
-	dnQSplit, dnAttnGate                     Pipeline // the family's fused double-width q_proj + output gate
-	dnet                                     *dnetParams
+	// Row-batched twins of the five, for prompt prefill (prefillDeltaNetRows): one launch per layer covers M rows.
+	dnConvRows, dnGatesRows, dnNormRows, dnRuleRows, dnGNormRows Pipeline
+	dnRuleRows128                                                Pipeline // the scan with its state row in registers (hk == hv == 128)
+	dnQSplit, dnAttnGate                                         Pipeline // the family's fused double-width q_proj + output gate
+	dnet                                                         *dnetParams
 
 	gptOssSw                 Pipeline // glu_quant_gptoss (own module — audited glue.ptx/moe.ptx untouched)
 	gptOssRoute              Pipeline // route_gptoss — top-k + softmax over the BIASED logits (moe_route's contract is wrong for this family)

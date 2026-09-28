@@ -1,0 +1,12 @@
+=== RUN   TestCUDADeltaNetPrefill_matchesPerToken
+=== RUN   TestCUDADeltaNetPrefill_matchesPerToken/Qwen3.5-9B-Q4_K_M.gguf
+    prefill_deltanet_test.go:132: profile L=621: gemv 1.653752704s, attention 58.490255ms, DeltaNet recurrence 38.084093ms, glue 24.788553ms
+    prefill_deltanet_test.go:150: L=145: 0 of 248320 logits differ, cosine 1.0000000, argmax per-token 2758 batched 2758; per-token 2.383s, batched 421ms (5.7x)
+    prefill_deltanet_test.go:150: L=561: 0 of 248320 logits differ, cosine 1.0000000, argmax per-token 248046 batched 248046; per-token 9.27s, batched 1.614s (5.7x)
+    prefill_deltanet_test.go:175: L=561 split at 300: argmax equal, cosine 1.0000000
+    prefill_deltanet_test.go:150: L=621: 0 of 248320 logits differ, cosine 1.0000000, argmax per-token 248046 batched 248046; per-token 10.298s, batched 1.791s (5.8x)
+    prefill_deltanet_test.go:175: L=621 split at 300: argmax equal, cosine 1.0000000
+--- PASS: TestCUDADeltaNetPrefill_matchesPerToken (69.33s)
+    --- PASS: TestCUDADeltaNetPrefill_matchesPerToken/Qwen3.5-9B-Q4_K_M.gguf (69.33s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	69.407s

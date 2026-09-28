@@ -4,7 +4,7 @@ package cuda
 
 import (
 	"context"
-	"errors"
+	"math"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -79,31 +79,54 @@ func testOlmoFamilyResidentSmokeCUDA(t *testing.T, ckpt string) {
 		}
 	}
 
-	// Prefill check: Olmo 3 admits batched prefill; Olmo Hybrid declines due to DeltaNet recurrence.
+	// Prefill check: both admit batched prefill. Olmo Hybrid's DeltaNet layers take prefillDeltaNetRows
+	// (docs/tasks/task-cuda-deltanet-prefill-2026-09.md); at 24 rows the projections run the batched GEMM, so the bar
+	// against the per-token pass above is that task's: argmax equal, cosine >= 0.9999.
 	cr, isCR := rf.(*cudaResident)
 	if isCR {
-		rf.Reset()
 		embs := make([][]float32, ntok)
 		for i := range ntok {
 			tok := (i*37 + 3) % vocab
 			embs[i] = mc.EmbedResidentForTest(tok)
 		}
-		got, err := cr.PrefillLast(context.Background(), embs, 0)
-		if cr.dnet != nil {
-			if !errors.Is(err, errPrefillDeclined) {
-				t.Fatalf("Olmo Hybrid has recurrent DeltaNet state and must decline batched prefill, got %v", err)
-			}
-			t.Logf("Olmo Hybrid properly declined batched prefill: %v", err)
-		} else {
+		rf.Reset()
+		var ref []float32
+		for i, e := range embs {
+			l, err := rf.Forward(e, i)
 			if err != nil {
-				t.Fatalf("Olmo 3 PrefillLast: %v (batched prefill should not decline)", err)
+				t.Fatalf("per-token reference forward[%d]: %v", i, err)
 			}
-			for j, v := range got {
-				if v != v {
-					t.Fatalf("PrefillLast: logit[%d] is NaN", j)
+			ref = append(ref[:0], l...)
+		}
+		rf.Reset()
+		got, err := cr.PrefillLast(context.Background(), embs, 0)
+		if err != nil {
+			t.Fatalf("PrefillLast: %v (batched prefill should not decline; recurrent=%v)", err, cr.dnet != nil)
+		}
+		argmax := func(v []float32) int {
+			b := 0
+			for i := range v {
+				if v[i] > v[b] {
+					b = i
 				}
 			}
-			t.Logf("Olmo 3 batched prefill succeeded with %d tokens", ntok)
+			return b
 		}
+		var ab, aa, bb float64
+		for j := range got {
+			if got[j] != got[j] {
+				t.Fatalf("PrefillLast: logit[%d] is NaN", j)
+			}
+			ab += float64(ref[j]) * float64(got[j])
+			aa += float64(ref[j]) * float64(ref[j])
+			bb += float64(got[j]) * float64(got[j])
+		}
+		cs := ab / math.Sqrt(aa*bb)
+		if argmax(ref) != argmax(got) || cs < 0.9999 {
+			t.Fatalf("batched prefill vs per-token: argmax %d vs %d, cosine %.7f (bar: equal, >= 0.9999)",
+				argmax(got), argmax(ref), cs)
+		}
+		t.Logf("batched prefill of %d tokens matches per-token (recurrent=%v): argmax %d, cosine %.7f",
+			ntok, cr.dnet != nil, argmax(got), cs)
 	}
 }

@@ -172,35 +172,38 @@ func TestPrefillPath_mixedInt4Int8Batches(t *testing.T) {
 	}
 }
 
-// TestPrefillPath_recurrentDeclines pins the guard TestPrefillPath_matchesPrefillCore cannot: that
-// one asserts the guard and the report AGREE, so it stays green whichever way they answer, and a
-// deleted recurrent check would simply make both say "batched".
+// TestPrefillPath_deltaNetBindsItsOwnProjections pins what replaced the blanket recurrent decline
+// (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): a Gated-DeltaNet model IS admitted to batched prefill, and the
+// admission is decided by the projections prefillDeltaNetRows actually binds — dnQKV/dnB/dnA/dnZ/dnOut — not by q/k/o.
 //
-// The fixture is a Gated-DeltaNet model whose layers ALSO carry valid int4 q/k/o. Real qwen3_5_moe
-// does not look like this — its DeltaNet layers load no q/k/o at all, so nonBatchableKind reports
-// the absence and the model declines for a reason that has nothing to do with recurrence. That
-// accident is why no fixture ever exercised the real guard, and why the guard was missing here for
-// as long as `r.moe` happened to be refusing the same models. With the projections present, the
-// recurrent check is the ONLY thing that can refuse this, so deleting it turns this red.
-func TestPrefillPath_recurrentDeclines(t *testing.T) {
+// The fixture's layers carry valid int4 q/k/o, which a DeltaNet layer never binds. If nonBatchableKind checked those
+// instead of the DeltaNet five, the first half below would be admitted with absent DeltaNet weights and run the
+// batched GEMVs over nil buffers; that is the LFM2 bug class (audit-2026-09-02 C-01) the kind dispatch exists to stop.
+func TestPrefillPath_deltaNetBindsItsOwnProjections(t *testing.T) {
 	r := declineFixture(2, "int4")
 	r.dnet = &dnetParams{}
+	for i := range r.layers {
+		r.layers[i].isDeltaNet = true
+	}
 	err := r.prefillStaticDecline()
 	if err == nil {
-		t.Fatal("a Gated-DeltaNet model was admitted to batched prefill — the recurrent state advances " +
-			"one token at a time and a batched pass would run M rows over it out of order, silently")
+		t.Fatal("a DeltaNet layer with NO DeltaNet projections was admitted — nonBatchableKind is checking q/k/o, " +
+			"which a DeltaNet layer never binds")
 	}
 	if !errors.Is(err, errPrefillDeclined) {
-		t.Errorf("recurrent decline must wrap errPrefillDeclined so the caller falls back: %v", err)
+		t.Errorf("decline must wrap errPrefillDeclined so the caller falls back: %v", err)
 	}
-	if !strings.Contains(err.Error(), "DeltaNet") {
-		t.Errorf("decline should name recurrence, not some incidental property: %q", err)
+	w := cudaWQ{kind: "int4", N: 8, K: 32}
+	for i := range r.layers {
+		L := &r.layers[i]
+		L.dnQKV, L.dnB, L.dnA, L.dnZ, L.dnOut = w, w, w, w, w
 	}
-	// And the same model WITHOUT the recurrent marker must still batch — otherwise this test would
-	// pass against a guard that refuses everything.
-	r2 := declineFixture(2, "int4")
-	if e := r2.prefillStaticDecline(); e != nil {
-		t.Fatalf("control: the same fixture without dnet must batch, got %v", e)
+	if e := r.prefillStaticDecline(); e != nil {
+		t.Fatalf("a Gated-DeltaNet model with int4 DeltaNet projections must batch, got %v", e)
+	}
+	r.layers[1].dnOut.kind = "f32"
+	if e := r.prefillStaticDecline(); e == nil {
+		t.Fatal("an f32 dnOut was admitted — the M-wide GEMV takes int4/int8 only")
 	}
 }
 

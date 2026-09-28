@@ -1,0 +1,182 @@
+=== RUN   TestResidentDrafter_extendContext
+    drafter_test.go:234: incremental (4+4) is BIT-IDENTICAL to one-shot (8) across 8192 K values
+--- PASS: TestResidentDrafter_extendContext (25.88s)
+=== RUN   TestGemma4_26B_cache_B
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+    gemma4_26b_cache_test.go:89: loaded 26B resident + C′ staging in 1m27s (11.4 GB experts host-pinned; ~0.7 GB slots + ~1.3 GB core in VRAM)
+    gemma4_26b_cache_test.go:190: B′ OK — 26B resident via C′ (29 slots/layer): 64 tok, distinct-trigram 0.793, 46 ms/tok (21.76 tok/s — capture OFF; sync H2D; informative capability number, NOT a same-machine benchmark)
+          cont: "The capital of France is **Paris**.\n\nIt is famous for its-\n* **Iconic Landmarks:** It is home to world-famous landmarks like the Eiffel Tower, the Louvre Museum, the Notre-Damen Cathedral, and the Arc de Triomphe.\n* **Culture and Art:** It is a"
+    gemma4_26b_cache_test.go:193: C′ cache: 11738 hits / 5202 misses = 69.3% hit rate (each hit is one skipped expert DMA; nSlots=29, topK=8, nE=128) — set GOINFER_MOE_CACHE_SLOTS>topK for cross-token reuse
+--- PASS: TestGemma4_26B_cache_B (90.50s)
+=== RUN   TestP20ExpertLocality
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 1.6 GB free — capping to 10 (1.1 GB)
+    p20_expert_locality_test.go:61: loaded gemma4-26b-int4.giw in 3m10s
+=== P20 EXPERT LOCALITY: gemma4-26b-int4.giw, M=512, cacheSlots=10, nE=128, topK=8 ===
+layer      rows distinct   row*topK  dupFactor fitsInSlots?
+MoE layers=0, worst-case distinct/layer=0 (cacheSlots=10), mean row-to-distinct dup factor=0.00
+EXISTING per-row LRU cache, this same prefill: 0 hits / 2082 misses (0.0% hit rate) — the headroom expert-major would have to beat
+--- PASS: TestP20ExpertLocality (199.94s)
+=== RUN   TestPrefillGateVsReferenceCUDA
+=== RUN   TestPrefillGateVsReferenceCUDA/S
+    prefill_gate_ref_test.go:151: prompt set "a" (10 snapshot files)
+[cuda-gate] S K=256 prompt  1/10 exact(agree=89.1% HF=0/64 KL=0.0316) fast(agree=87.5% HF=0/64 KL=0.0302) diff(agree=-1.6pt KL=-0.0014) seedKL=0.0607 elapsed=2s
+[cuda-gate] S K=256 prompt  2/10 exact(agree=100.0% HF=0/64 KL=0.0097) fast(agree=100.0% HF=0/64 KL=0.0102) diff(agree=+0.0pt KL=+0.0005) seedKL=0.0771 elapsed=4s
+[cuda-gate] S K=256 prompt  3/10 exact(agree=89.1% HF=0/64 KL=0.0474) fast(agree=84.4% HF=0/64 KL=0.0498) diff(agree=-4.7pt KL=+0.0023) seedKL=0.0535 elapsed=5s
+[cuda-gate] S K=256 prompt  4/10 exact(agree=90.6% HF=0/64 KL=0.0447) fast(agree=87.5% HF=0/64 KL=0.0470) diff(agree=-3.1pt KL=+0.0023) seedKL=0.0940 elapsed=7s
+[cuda-gate] S K=256 prompt  5/10 exact(agree=87.5% HF=1/64 KL=0.0543) fast(agree=90.6% HF=1/64 KL=0.0493) diff(agree=+3.1pt KL=-0.0050) seedKL=0.0911 elapsed=9s
+[cuda-gate] S K=256 prompt  6/10 exact(agree=92.2% HF=3/64 KL=0.0832) fast(agree=90.6% HF=2/64 KL=0.0871) diff(agree=-1.6pt KL=+0.0038) seedKL=0.0933 elapsed=11s
+[cuda-gate] S K=256 prompt  7/10 exact(agree=95.3% HF=0/64 KL=0.0214) fast(agree=95.3% HF=0/64 KL=0.0237) diff(agree=+0.0pt KL=+0.0023) seedKL=0.0446 elapsed=12s
+[cuda-gate] S K=256 prompt  8/10 exact(agree=96.9% HF=0/64 KL=0.0284) fast(agree=93.8% HF=0/64 KL=0.0252) diff(agree=-3.1pt KL=-0.0032) seedKL=0.2292 elapsed=14s
+[cuda-gate] S K=256 prompt  9/10 exact(agree=98.4% HF=0/64 KL=0.0354) fast(agree=95.3% HF=0/64 KL=0.0303) diff(agree=-3.1pt KL=-0.0051) seedKL=0.0180 elapsed=16s
+[cuda-gate] S K=256 prompt 10/10 exact(agree=98.4% HF=0/64 KL=0.0146) fast(agree=98.4% HF=0/64 KL=0.0149) diff(agree=+0.0pt KL=+0.0003) seedKL=0.0935 elapsed=18s
+=== CUDA S K=256 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=93.75% HF=4/640 worstGap=5.811% meanKL=0.03708) fast(meanAgree=92.34% HF=3/640 worstGap=5.811% meanKL=0.03678) critA(HF fast<=exact)=true critB(agree>=exact-1pt & >=half)=false critC(KL<=1.1x)=true — CELL DOES NOT SHIP
+    prefill_gate_ref_test.go:159: CUDA S K=256: exact(agree=93.75% HF=4 KL=0.03708) fast(agree=92.34% HF=3 KL=0.03678) A=true B=false C=true cell=DOES NOT SHIP
+[cuda-gate] S K=1024 prompt  1/10 exact(agree=87.5% HF=0/64 KL=0.0553) fast(agree=87.5% HF=0/64 KL=0.0490) diff(agree=+0.0pt KL=-0.0063) seedKL=0.0878 elapsed=3s
+[cuda-gate] S K=1024 prompt  2/10 exact(agree=100.0% HF=0/64 KL=0.0085) fast(agree=100.0% HF=0/64 KL=0.0091) diff(agree=+0.0pt KL=+0.0006) seedKL=0.1098 elapsed=5s
+[cuda-gate] S K=1024 prompt  3/10 exact(agree=90.6% HF=0/64 KL=0.0614) fast(agree=87.5% HF=0/64 KL=0.0550) diff(agree=-3.1pt KL=-0.0063) seedKL=0.0546 elapsed=8s
+[cuda-gate] S K=1024 prompt  4/10 exact(agree=81.2% HF=1/64 KL=0.0626) fast(agree=85.9% HF=0/64 KL=0.0632) diff(agree=+4.7pt KL=+0.0006) seedKL=0.1854 elapsed=11s
+[cuda-gate] S K=1024 prompt  5/10 exact(agree=93.8% HF=1/64 KL=0.0506) fast(agree=93.8% HF=0/64 KL=0.0446) diff(agree=+0.0pt KL=-0.0060) seedKL=0.0185 elapsed=13s
+[cuda-gate] S K=1024 prompt  6/10 exact(agree=90.6% HF=0/64 KL=0.0408) fast(agree=92.2% HF=0/64 KL=0.0366) diff(agree=+1.6pt KL=-0.0043) seedKL=0.0001 elapsed=16s
+[cuda-gate] S K=1024 prompt  7/10 exact(agree=100.0% HF=0/64 KL=0.0177) fast(agree=100.0% HF=0/64 KL=0.0173) diff(agree=+0.0pt KL=-0.0003) seedKL=0.0363 elapsed=18s
+[cuda-gate] S K=1024 prompt  8/10 exact(agree=98.4% HF=0/64 KL=0.0102) fast(agree=98.4% HF=0/64 KL=0.0108) diff(agree=+0.0pt KL=+0.0006) seedKL=0.0021 elapsed=21s
+[cuda-gate] S K=1024 prompt  9/10 exact(agree=79.7% HF=0/64 KL=0.0715) fast(agree=76.6% HF=1/64 KL=0.0667) diff(agree=-3.1pt KL=-0.0048) seedKL=0.1633 elapsed=24s
+[cuda-gate] S K=1024 prompt 10/10 exact(agree=84.4% HF=3/64 KL=0.0475) fast(agree=87.5% HF=2/64 KL=0.0463) diff(agree=+3.1pt KL=-0.0012) seedKL=0.0717 elapsed=26s
+=== CUDA S K=1024 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=90.62% HF=5/640 worstGap=11.555% meanKL=0.04261) fast(meanAgree=90.94% HF=3/640 worstGap=9.752% meanKL=0.03987) critA(HF fast<=exact)=true critB(agree>=exact-1pt & >=half)=true critC(KL<=1.1x)=true — CELL SHIPS
+    prefill_gate_ref_test.go:159: CUDA S K=1024: exact(agree=90.62% HF=5 KL=0.04261) fast(agree=90.94% HF=3 KL=0.03987) A=true B=true C=true cell=SHIPS
+[cuda-gate] S K=3900 prompt  1/10 exact(agree=100.0% HF=0/64 KL=0.0115) fast(agree=100.0% HF=0/64 KL=0.0110) diff(agree=+0.0pt KL=-0.0004) seedKL=0.0415 elapsed=8s
+[cuda-gate] S K=3900 prompt  2/10 exact(agree=100.0% HF=0/64 KL=0.0221) fast(agree=100.0% HF=0/64 KL=0.0209) diff(agree=+0.0pt KL=-0.0012) seedKL=0.0525 elapsed=17s
+[cuda-gate] S K=3900 prompt  3/10 exact(agree=79.7% HF=5/64 KL=0.0785) fast(agree=81.2% HF=4/64 KL=0.0788) diff(agree=+1.6pt KL=+0.0004) seedKL=0.0319 elapsed=25s
+[cuda-gate] S K=3900 prompt  4/10 exact(agree=93.8% HF=0/64 KL=0.0418) fast(agree=93.8% HF=0/64 KL=0.0384) diff(agree=+0.0pt KL=-0.0034) seedKL=0.0288 elapsed=33s
+[cuda-gate] S K=3900 prompt  5/10 exact(agree=95.3% HF=0/64 KL=0.0094) fast(agree=93.8% HF=0/64 KL=0.0109) diff(agree=-1.6pt KL=+0.0015) seedKL=0.0000 elapsed=41s
+[cuda-gate] S K=3900 prompt  6/10 exact(agree=84.4% HF=1/64 KL=0.0737) fast(agree=87.5% HF=0/64 KL=0.0727) diff(agree=+3.1pt KL=-0.0011) seedKL=0.0905 elapsed=50s
+[cuda-gate] S K=3900 prompt  7/10 exact(agree=95.3% HF=0/64 KL=0.0420) fast(agree=95.3% HF=0/64 KL=0.0435) diff(agree=+0.0pt KL=+0.0015) seedKL=0.1030 elapsed=58s
+[cuda-gate] S K=3900 prompt  8/10 exact(agree=93.8% HF=1/64 KL=0.0852) fast(agree=90.6% HF=2/64 KL=0.0802) diff(agree=-3.1pt KL=-0.0050) seedKL=0.0155 elapsed=1m6s
+[cuda-gate] S K=3900 prompt  9/10 exact(agree=95.3% HF=0/64 KL=0.0423) fast(agree=96.9% HF=0/64 KL=0.0412) diff(agree=+1.6pt KL=-0.0011) seedKL=0.0007 elapsed=1m15s
+[cuda-gate] S K=3900 prompt 10/10 exact(agree=90.6% HF=2/64 KL=0.0627) fast(agree=89.1% HF=1/64 KL=0.0617) diff(agree=-1.6pt KL=-0.0010) seedKL=0.0841 elapsed=1m23s
+=== CUDA S K=3900 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=92.81% HF=9/640 worstGap=6.571% meanKL=0.04692) fast(meanAgree=92.81% HF=7/640 worstGap=6.930% meanKL=0.04594) critA(HF fast<=exact)=true critB(agree>=exact-1pt & >=half)=true critC(KL<=1.1x)=true — CELL SHIPS
+    prefill_gate_ref_test.go:159: CUDA S K=3900: exact(agree=92.81% HF=9 KL=0.04692) fast(agree=92.81% HF=7 KL=0.04594) A=true B=true C=true cell=SHIPS
+=== CUDA S: §3 DECISION-SET VERDICT = DOES NOT SHIP ===
+    prefill_gate_ref_test.go:176: CUDA S: §3 decision-set verdict = DOES NOT SHIP
+    prefill_gate_ref_test.go:178: §3 gate: CUDA S does not ship on the decision set — the default stays exact and the fast path stays opt-in, which is a RESULT, not a failure of the run
+=== RUN   TestPrefillGateVsReferenceCUDA/D7
+    prefill_gate_ref_test.go:151: prompt set "a" (10 snapshot files)
+[cuda-gate] D7 K=256 prompt  1/10 exact(agree=95.3% HF=1/64 KL=0.0712) fast(agree=92.2% HF=3/64 KL=0.0805) diff(agree=-3.1pt KL=+0.0093) seedKL=0.1906 elapsed=3s
+[cuda-gate] D7 K=256 prompt  2/10 exact(agree=89.1% HF=1/64 KL=0.0865) fast(agree=89.1% HF=3/64 KL=0.0903) diff(agree=+0.0pt KL=+0.0037) seedKL=0.1096 elapsed=7s
+[cuda-gate] D7 K=256 prompt  3/10 exact(agree=82.8% HF=1/64 KL=0.0684) fast(agree=90.6% HF=0/64 KL=0.0658) diff(agree=+7.8pt KL=-0.0026) seedKL=0.1133 elapsed=10s
+[cuda-gate] D7 K=256 prompt  4/10 exact(agree=95.3% HF=0/64 KL=0.0416) fast(agree=93.8% HF=0/64 KL=0.0498) diff(agree=-1.6pt KL=+0.0082) seedKL=0.0723 elapsed=14s
+[cuda-gate] D7 K=256 prompt  5/10 exact(agree=89.1% HF=0/64 KL=0.1108) fast(agree=84.4% HF=1/64 KL=0.1281) diff(agree=-4.7pt KL=+0.0173) seedKL=0.0205 elapsed=17s
+[cuda-gate] D7 K=256 prompt  6/10 exact(agree=87.5% HF=1/64 KL=0.0651) fast(agree=87.5% HF=1/64 KL=0.0632) diff(agree=+0.0pt KL=-0.0019) seedKL=0.1078 elapsed=21s
+[cuda-gate] D7 K=256 prompt  7/10 exact(agree=90.6% HF=2/64 KL=0.1003) fast(agree=87.5% HF=2/64 KL=0.0880) diff(agree=-3.1pt KL=-0.0122) seedKL=0.5851 elapsed=24s
+[cuda-gate] D7 K=256 prompt  8/10 exact(agree=82.8% HF=0/64 KL=0.0799) fast(agree=79.7% HF=1/64 KL=0.0838) diff(agree=-3.1pt KL=+0.0040) seedKL=0.0132 elapsed=28s
+[cuda-gate] D7 K=256 prompt  9/10 exact(agree=87.5% HF=1/64 KL=0.0976) fast(agree=82.8% HF=3/64 KL=0.1075) diff(agree=-4.7pt KL=+0.0099) seedKL=0.1093 elapsed=31s
+[cuda-gate] D7 K=256 prompt 10/10 exact(agree=82.8% HF=4/64 KL=0.1259) fast(agree=84.4% HF=1/64 KL=0.1042) diff(agree=+1.6pt KL=-0.0217) seedKL=0.2201 elapsed=34s
+=== CUDA D7 K=256 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=88.28% HF=11/640 worstGap=6.550% meanKL=0.08473) fast(meanAgree=87.19% HF=15/640 worstGap=7.113% meanKL=0.08613) critA(HF fast<=exact)=false critB(agree>=exact-1pt & >=half)=false critC(KL<=1.1x)=true — CELL DOES NOT SHIP
+    prefill_gate_ref_test.go:159: CUDA D7 K=256: exact(agree=88.28% HF=11 KL=0.08473) fast(agree=87.19% HF=15 KL=0.08613) A=false B=false C=true cell=DOES NOT SHIP
+[cuda-gate] D7 K=1024 prompt  1/10 exact(agree=82.8% HF=1/64 KL=0.0816) fast(agree=84.4% HF=0/64 KL=0.0798) diff(agree=+1.6pt KL=-0.0018) seedKL=0.1005 elapsed=7s
+[cuda-gate] D7 K=1024 prompt  2/10 exact(agree=84.4% HF=4/64 KL=0.1105) fast(agree=85.9% HF=3/64 KL=0.0928) diff(agree=+1.6pt KL=-0.0177) seedKL=0.0381 elapsed=13s
+[cuda-gate] D7 K=1024 prompt  3/10 exact(agree=84.4% HF=1/64 KL=0.1138) fast(agree=90.6% HF=2/64 KL=0.1108) diff(agree=+6.2pt KL=-0.0030) seedKL=0.0606 elapsed=20s
+[cuda-gate] D7 K=1024 prompt  4/10 exact(agree=79.7% HF=0/64 KL=0.0951) fast(agree=79.7% HF=1/64 KL=0.0905) diff(agree=+0.0pt KL=-0.0045) seedKL=0.3013 elapsed=26s
+[cuda-gate] D7 K=1024 prompt  5/10 exact(agree=82.8% HF=2/64 KL=0.0475) fast(agree=84.4% HF=1/64 KL=0.0549) diff(agree=+1.6pt KL=+0.0074) seedKL=0.0036 elapsed=33s
+[cuda-gate] D7 K=1024 prompt  6/10 exact(agree=84.4% HF=1/64 KL=0.0956) fast(agree=89.1% HF=1/64 KL=0.0828) diff(agree=+4.7pt KL=-0.0128) seedKL=0.0002 elapsed=40s
+[cuda-gate] D7 K=1024 prompt  7/10 exact(agree=89.1% HF=1/64 KL=0.0943) fast(agree=92.2% HF=1/64 KL=0.1134) diff(agree=+3.1pt KL=+0.0191) seedKL=0.1977 elapsed=46s
+[cuda-gate] D7 K=1024 prompt  8/10 exact(agree=93.8% HF=1/64 KL=0.0517) fast(agree=92.2% HF=2/64 KL=0.0529) diff(agree=-1.6pt KL=+0.0011) seedKL=0.0454 elapsed=53s
+[cuda-gate] D7 K=1024 prompt  9/10 exact(agree=85.9% HF=1/64 KL=0.0723) fast(agree=89.1% HF=1/64 KL=0.0755) diff(agree=+3.1pt KL=+0.0032) seedKL=0.1891 elapsed=59s
+[cuda-gate] D7 K=1024 prompt 10/10 exact(agree=85.9% HF=3/64 KL=0.1037) fast(agree=84.4% HF=3/64 KL=0.0990) diff(agree=-1.6pt KL=-0.0047) seedKL=0.2111 elapsed=1m6s
+=== CUDA D7 K=1024 SUMMARY (n=10 prompts x 64 positions): exact(meanAgree=85.31% HF=15/640 worstGap=7.716% meanKL=0.08661) fast(meanAgree=87.19% HF=15/640 worstGap=10.988% meanKL=0.08524) critA(HF fast<=exact)=true critB(agree>=exact-1pt & >=half)=true critC(KL<=1.1x)=true — CELL SHIPS
+    prefill_gate_ref_test.go:159: CUDA D7 K=1024: exact(agree=85.31% HF=15 KL=0.08661) fast(agree=87.19% HF=15 KL=0.08524) A=true B=true C=true cell=SHIPS
+=== CUDA D7: §3 DECISION-SET VERDICT = DOES NOT SHIP ===
+    prefill_gate_ref_test.go:176: CUDA D7: §3 decision-set verdict = DOES NOT SHIP
+    prefill_gate_ref_test.go:178: §3 gate: CUDA D7 does not ship on the decision set — the default stays exact and the fast path stays opt-in, which is a RESULT, not a failure of the run
+--- FAIL: TestPrefillGateVsReferenceCUDA (264.92s)
+    --- FAIL: TestPrefillGateVsReferenceCUDA/S (136.83s)
+    --- FAIL: TestPrefillGateVsReferenceCUDA/D7 (128.08s)
+=== RUN   TestPrefillLongPrompt
+[longprompt] loading /home/francis/models/qwen2.5-7b-instruct-q4_k_m.gguf ...
+[longprompt] loaded in 25.736s
+[longprompt] PrefillPath(load-time) = true — batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+[longprompt] guards: prefillReady=true moe=false gemma4Moe=false sandwich=false qkNorm=false
+[longprompt] layers=28 non-uniform-vs-L0=0 kEqV=0 nonBatchableKinds=map[] (L0: hd=128 nKV=4 qDim=3584 kvDim=512 rhalf=64 window=0)
+[longprompt] hidden=3584 inter=18944 layers=28 ctxCap=8192
+[longprompt] VRAM free=1.78 GB of 8.16 GB after load
+[longprompt] M=512   batched OK 367ms      (0.716 ms/token)
+[longprompt] M=2048  batched OK 1.564s     (0.764 ms/token)
+[longprompt] M=4096  batched OK 3.384s     (0.826 ms/token)
+[longprompt] M=8012  batched OK 7.732s     (0.965 ms/token)
+[longprompt] M=512   SEQUENTIAL 5.668s     (11.070 ms/token)
+[longprompt] M=2048  SEQUENTIAL 25.479s    (12.441 ms/token)
+[longprompt] M=4096  SEQUENTIAL 57.339s    (13.999 ms/token)
+[longprompt] M=8012  SEQUENTIAL 2m13.899s  (16.712 ms/token)
+--- PASS: TestPrefillLongPrompt (261.65s)
+=== RUN   TestR14DrafterArgmaxAB
+    r14_drafter_argmax_ab_test.go:95: bit-identical: 582 device argmax calls matched the host loop row-for-row; emitted sequences equal on 2 prompts
+    r14_drafter_argmax_ab_test.go:113: pair 0: host 1296 ms | device 1053 ms | speedup 1.231x
+    r14_drafter_argmax_ab_test.go:113: pair 1: host 1301 ms | device 1053 ms | speedup 1.236x
+    r14_drafter_argmax_ab_test.go:113: pair 2: host 1305 ms | device 1055 ms | speedup 1.237x
+    r14_drafter_argmax_ab_test.go:113: pair 3: host 1298 ms | device 1053 ms | speedup 1.233x
+    r14_drafter_argmax_ab_test.go:113: pair 4: host 1309 ms | device 1053 ms | speedup 1.243x
+    r14_drafter_argmax_ab_test.go:113: pair 5: host 1297 ms | device 1055 ms | speedup 1.229x
+    r14_drafter_argmax_ab_test.go:124: paired median speedup 1.234x (min 1.229, max 1.243) over 6 pairs; pooled host 7806 vs device 6322 ms — SHIP (>=2%)
+--- PASS: TestR14DrafterArgmaxAB (41.52s)
+=== RUN   TestR14DrafterArgmaxProfile
+    r14_drafter_argmax_profile_test.go:95: code w=7: 193 tokens, 41 rounds, spec wall 1071 ms (26.12 ms/round)
+    r14_drafter_argmax_profile_test.go:96:   head→argmax tails: 84 calls (582 rows, 6.9 rows/call, vocab 151936): sync 167.275ms | D2H 4.726ms | host argmax 0s | total 172.001ms
+    r14_drafter_argmax_profile_test.go:99:   per round: sync 4.080 ms | D2H 0.115 ms | host 0.000 ms | D2H+host 0.115 ms = 0.4% of the round (sync 15.6%)
+    r14_drafter_argmax_profile_test.go:102:   D2H bandwidth 74.84 GB/s; host argmax 0.0 ns/element
+    r14_drafter_argmax_profile_test.go:95: math w=8: 194 tokens, 33 rounds, spec wall 979 ms (29.67 ms/round)
+    r14_drafter_argmax_profile_test.go:96:   head→argmax tails: 68 calls (557 rows, 8.2 rows/call, vocab 151936): sync 172.065ms | D2H 3.858ms | host argmax 0s | total 175.923ms
+    r14_drafter_argmax_profile_test.go:99:   per round: sync 5.214 ms | D2H 0.117 ms | host 0.000 ms | D2H+host 0.117 ms = 0.4% of the round (sync 17.6%)
+    r14_drafter_argmax_profile_test.go:102:   D2H bandwidth 87.75 GB/s; host argmax 0.0 ns/element
+--- PASS: TestR14DrafterArgmaxProfile (21.29s)
+=== RUN   TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel
+    rope_kv_mrope_batched_test.go:182: launch: rope_kv_batched: launch bRopeKV: cuLaunchKernel: CUDA_ERROR_INVALID_VALUE
+--- FAIL: TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel (13.35s)
+=== RUN   TestSpecDecodeCurve
+    spec_curve_test.go:49: depth   plain     spec      speedup  accept   tok/rnd   lossless
+    spec_curve_test.go:131: 128     231.9     279.0     1.20     1.00     1.95      ✓ (==sequential)
+    spec_curve_test.go:124: depth 512: LOSSLESS VIOLATION at token 10 — spec 6929 vs sequential 3910
+--- FAIL: TestSpecDecodeCurve (11.05s)
+=== RUN   TestSpecPagerInteraction
+[spec-pager 09:43:36] loading qwen3.6-35b-a3b-int4.giw (pinned ~20 GB, expect ~5 min)
+[spec-pager 09:45:07] loaded in 1m31s (decode path cuda-resident (int4mix))
+[spec-pager 09:45:07] pager: 64 slots/layer BUILT (requested ""), topK=8
+[spec-pager 09:45:11] drafter attached: block 16, taps [1 6 11 16 22 27 32 37]
+[spec-pager 09:45:11] warm-up prompt 0 (untimed)
+goinfer: batched prefill declined for a 27-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: Gated-DeltaNet recurrent state advances one token at a time and cannot be batched: cuda prefill: batched path declined (arch/geometry)
+[spec-pager 09:45:13] warm-up prompt 1 (untimed)
+[spec-pager 09:45:15] warm-up prompt 2 (untimed)
+[spec-pager 09:45:17] SPEC PROBE DECLINED: cuda prefill: Gated-DeltaNet recurrent state advances one token at a time and cannot be batched: cuda prefill: batched path declined (arch/geometry)
+[spec-pager 09:45:17] recording the decline and measuring the off arm only (the ladder still runs, so the decline can be shown slot-INDEPENDENT rather than assumed to be)
+[spec-pager 09:45:20] off p0 r0: 64 tok in 2.93s (21.84 tok/s) | stages 3640 distinct/stage 8.000 | 1/45 done, elapsed 3s
+[spec-pager 09:45:23] off p0 r1: 64 tok in 2.99s (21.39 tok/s) | stages 3640 distinct/stage 8.000 | 2/45 done, elapsed 6s
+[spec-pager 09:45:26] off p0 r2: 64 tok in 3.03s (21.16 tok/s) | stages 3640 distinct/stage 8.000 | 3/45 done, elapsed 9s
+[spec-pager 09:45:29] off p1 r0: 64 tok in 2.92s (21.91 tok/s) | stages 3480 distinct/stage 8.000 | 4/45 done, elapsed 12s
+[spec-pager 09:45:32] off p1 r1: 64 tok in 2.92s (21.88 tok/s) | stages 3480 distinct/stage 8.000 | 5/45 done, elapsed 15s
+[spec-pager 09:45:35] off p1 r2: 64 tok in 2.92s (21.92 tok/s) | stages 3480 distinct/stage 8.000 | 6/45 done, elapsed 18s
+[spec-pager 09:45:38] off p2 r0: 64 tok in 3.66s (17.48 tok/s) | stages 4480 distinct/stage 8.000 | 7/45 done, elapsed 21s
+[spec-pager 09:45:42] off p2 r1: 64 tok in 3.48s (18.36 tok/s) | stages 4480 distinct/stage 8.000 | 8/45 done, elapsed 25s
+[spec-pager 09:45:45] off p2 r2: 64 tok in 3.46s (18.50 tok/s) | stages 4480 distinct/stage 8.000 | 9/45 done, elapsed 28s
+[spec-pager 09:45:45] ng4 p0 r0 DECLINED: decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+[spec-pager 09:45:45] ng4 p1 r0 DECLINED: decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+[spec-pager 09:45:45] ng4 p2 r0 DECLINED: decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+[spec-pager 09:45:45] ng7 p0 r0 DECLINED: decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+[spec-pager 09:45:45] ng7 p1 r0 DECLINED: decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+[spec-pager 09:45:45] ng7 p2 r0 DECLINED: decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+    spec_pager_interaction_test.go:442: === spec x pager [qwen3.6-35b-a3b-int4.giw], 64 slots/layer, topK 8, 64 new tokens/generation ===
+    spec_pager_interaction_test.go:442: seconds are normalized to 64 emitted tokens; per-arm raw token counts logged below
+    spec_pager_interaction_test.go:442: arm   |   mean s |    med s | wspread | dist/stage |     hit% | miss/stg |  alpha
+    spec_pager_interaction_test.go:442: off   |    3.147 |    2.992 |    3.0% |     8.0000 |    77.3% |    1.819 |  0.000
+    spec_pager_interaction_test.go:442:       raw token counts [[64 64 64] [64 64 64] [64 64 64]] (short/excluded: 0)
+    spec_pager_interaction_test.go:442: blk4  | DECLINED — cuda prefill: Gated-DeltaNet recurrent state advances one token at a time and cannot be batched: cuda prefill: batched path declined (arch/geometry)
+    spec_pager_interaction_test.go:442: blk7  | DECLINED — cuda prefill: Gated-DeltaNet recurrent state advances one token at a time and cannot be batched: cuda prefill: batched path declined (arch/geometry)
+    spec_pager_interaction_test.go:442: ng4   | DECLINED — decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+    spec_pager_interaction_test.go:442: ng7   | DECLINED — decoder.GenerateNgramSpeculative: this model has recurrent state (Mamba-2 / Gated DeltaNet / LFM2 conv / KDA) or a staged sliding-window ring cache that speculative rollback cannot losslessly restore; use Generate
+    spec_pager_interaction_test.go:442: R2 off: not evaluable (off arm is the baseline)
+    spec_pager_interaction_test.go:442: R2 blk4: not evaluable (arm declined)
+    spec_pager_interaction_test.go:442: R2 blk7: not evaluable (arm declined)
+    spec_pager_interaction_test.go:442: R2 ng4: not evaluable (arm declined)
+    spec_pager_interaction_test.go:442: R2 ng7: not evaluable (arm declined)
+[spec-pager 09:45:45] arms complete
+--- PASS: TestSpecPagerInteraction (129.90s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	1061.298s
+FAIL

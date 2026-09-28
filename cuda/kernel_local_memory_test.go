@@ -183,6 +183,11 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		"rope_kv_mrope_batched": 32,   // rope_mrope_prefill.ptx
 		"mla_q_rope":            32,   // mla.ptx (FeatMLA)
 		"mla_latent_store":      32,   // mla.ptx (FeatMLA)
+		// deltanet.ptx, the batched Gated-DeltaNet prefill (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): the
+		// scan holds its 128-float state row in registers across the rows and spills 24 floats of it at 255
+		// registers (launch_bounds(128, 1) measured the same 96 B). 3.8 MiB at full occupancy, against the 1.23 s →
+		// 38 ms it bought on a 621-token Qwen3.5-9B prefill over the no-spill generic scan.
+		"delta_rule_rows_128": 96,
 	}
 	got := map[string]int{}
 	for _, r := range rows {

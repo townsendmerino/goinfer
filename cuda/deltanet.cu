@@ -242,3 +242,196 @@ extern "C" __global__ void delta_attn_gate(float* __restrict__ ctx,
     if (t >= n) return;
     ctx[t] = ctx[t] / (1.f + __expf(-gate[t]));
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// ROW-BATCHED TWINS for a prompt prefill (docs/tasks/task-cuda-deltanet-prefill-2026-09.md). A prefill of M tokens
+// used to cost 5 launches per token per layer; these cover all M rows in one launch each. Every body is its
+// single-token twin's, line for line, with a row offset added — the same intrinsics in the same order, so each
+// element is bit-identical to what the per-token path computes. Only two carry state across rows, and both walk the
+// rows IN ORDER inside one thread: the conv ring (per channel) and the delta rule (per state row). The gates, the
+// q/k norm and the gated norm have no cross-row dependency and run parallel over rows.
+// ---------------------------------------------------------------------------------------------------------------
+
+// delta_conv_rows: delta_conv for M consecutive tokens. One thread per channel, rows in order.
+extern "C" __global__ void delta_conv_rows(const float* __restrict__ mixed,  // [M*convDim]
+                                           const float* __restrict__ convW,  // [convDim*K]
+                                           float* __restrict__ win,          // [(K-1)*convDim], in place
+                                           float* __restrict__ conv,         // [M*convDim]
+                                           int convDim, int K, int M) {
+    int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= convDim) return;
+    for (int m = 0; m < M; m++) {
+        float xc = mixed[(size_t)m * convDim + c];
+        float s = __fmul_rn(convW[c * K + (K - 1)], xc);
+        for (int j = 0; j < K - 1; j++) s = __fmaf_rn(convW[c * K + j], win[j * convDim + c], s);
+        conv[(size_t)m * convDim + c] = dn_silu(s);
+        for (int j = 0; j + 1 < K - 1; j++) win[j * convDim + c] = win[(j + 1) * convDim + c];
+        win[(K - 2) * convDim + c] = xc;
+    }
+}
+
+// delta_gates_rows: delta_gates for M rows. One thread per (row, value head).
+extern "C" __global__ void delta_gates_rows(const float* __restrict__ bt,      // [M*nv]
+                                            const float* __restrict__ at,      // [M*nv]
+                                            const float* __restrict__ dtBias,  // [nv]
+                                            const float* __restrict__ negExpA, // [nv]
+                                            float* __restrict__ headP,         // [M*nv*2]
+                                            int nv, int M) {
+    int t = blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= M * nv) return;
+    int h = t % nv;
+    float sp = dn_softplus(__fadd_rn(at[t], dtBias[h]));
+    headP[t * 2 + 0] = 1.f / (1.f + __expf(-bt[t]));
+    headP[t * 2 + 1] = __expf(__fmul_rn(negExpA[h], sp));
+}
+
+// delta_norm_rows: delta_norm for M rows. Grid (nk, M); the same block reduction per (row, key head).
+extern "C" __global__ void delta_norm_rows(const float* __restrict__ convAll, // [M*convDim]
+                                           float* __restrict__ qnAll,         // [M*nk*hk]
+                                           float* __restrict__ knAll,         // [M*nk*hk]
+                                           int nk, int hk, int keyDim, int convDim, float qScale) {
+    extern __shared__ float red[];   // [2*blockDim]
+    int h = blockIdx.x;
+    if (h >= nk) return;
+    const float* conv = convAll + (size_t)blockIdx.y * convDim;
+    float* qn = qnAll + (size_t)blockIdx.y * keyDim;
+    float* kn = knAll + (size_t)blockIdx.y * keyDim;
+    int t = threadIdx.x, nt = blockDim.x, base = h * hk;
+    float qs = 0.f, ks = 0.f;
+    for (int i = t; i < hk; i += nt) {
+        float qv = conv[base + i], kv = conv[keyDim + base + i];
+        qs = __fmaf_rn(qv, qv, qs);
+        ks = __fmaf_rn(kv, kv, ks);
+    }
+    red[t] = qs; red[nt + t] = ks;
+    __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) {
+        if (t < o) { red[t] += red[t + o]; red[nt + t] += red[nt + t + o]; }
+        __syncthreads();
+    }
+    float qi = __fmul_rn(sqrtf(1.f / (red[0] + 1e-6f)), qScale);
+    float ki = sqrtf(1.f / (red[nt] + 1e-6f));
+    __syncthreads();
+    for (int i = t; i < hk; i += nt) {
+        qn[base + i] = __fmul_rn(conv[base + i], qi);
+        kn[base + i] = __fmul_rn(conv[keyDim + base + i], ki);
+    }
+}
+
+// delta_rule_rows: delta_rule scanned over M rows in order. One thread per (headV, vd) state row, as in decode.
+extern "C" __global__ void delta_rule_rows(const float* __restrict__ qnAll,    // [M*nk*hk]
+                                           const float* __restrict__ knAll,    // [M*nk*hk]
+                                           const float* __restrict__ vAll,     // [M*convDim], v at vBase in each row
+                                           const float* __restrict__ headPAll, // [M*nv*2]
+                                           float* __restrict__ state,          // [nv*hv*hk], in place
+                                           float* __restrict__ youtAll,        // [M*nv*hv]
+                                           int nv, int hk, int hv, int rep, int vBase, int keyDim, int convDim, int M) {
+    int t = blockIdx.x * blockDim.x + threadIdx.x;
+    if (t >= nv * hv) return;
+    int headV = t / hv;
+    int vd = t % hv;
+    int headK = headV / rep;
+    float* S = state + (size_t)(headV * hv + vd) * hk;
+    for (int m = 0; m < M; m++) {
+        const float* headP = headPAll + (size_t)m * nv * 2;
+        float beta = headP[headV * 2 + 0];
+        float gt = headP[headV * 2 + 1];
+        const float* k = knAll + (size_t)m * keyDim + headK * hk;
+        const float* q = qnAll + (size_t)m * keyDim + headK * hk;
+        float kvdot = 0.f;
+#pragma unroll 8
+        for (int kd = 0; kd < hk; kd++) {
+            float s = __fmul_rn(S[kd], gt);
+            S[kd] = s;
+            kvdot = __fmaf_rn(s, k[kd], kvdot);
+        }
+        float delta = __fmul_rn(__fadd_rn(vAll[(size_t)m * convDim + vBase + headV * hv + vd], -kvdot), beta);
+        float o = 0.f;
+#pragma unroll 8
+        for (int kd = 0; kd < hk; kd++) {
+            float s = __fmaf_rn(k[kd], delta, S[kd]);
+            S[kd] = s;
+            o = __fmaf_rn(s, q[kd], o);
+        }
+        youtAll[(size_t)m * nv * hv + headV * hv + vd] = o;
+    }
+}
+
+// delta_gnorm_rows: delta_gnorm for M rows. Grid (nv, M); the same block reduction per (row, value head).
+extern "C" __global__ void delta_gnorm_rows(const float* __restrict__ coreAll,  // [M*nv*hv]
+                                            const float* __restrict__ zAll,     // [M*nv*hv] pre-silu gate
+                                            const float* __restrict__ normW,    // [hv]
+                                            float* __restrict__ outAll,         // [M*nv*hv]
+                                            int nv, int hv, float eps) {
+    extern __shared__ float red[];
+    int h = blockIdx.x;
+    if (h >= nv) return;
+    size_t row = (size_t)blockIdx.y * nv * hv;
+    const float* core = coreAll + row;
+    const float* z = zAll + row;
+    float* out = outAll + row;
+    int t = threadIdx.x, nt = blockDim.x, base = h * hv;
+    float ss = 0.f;
+    for (int i = t; i < hv; i += nt) { float c = core[base + i]; ss = __fmaf_rn(c, c, ss); }
+    red[t] = ss;
+    __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
+    float inv = rsqrtf(red[0] / hv + eps);
+    __syncthreads();
+    for (int i = t; i < hv; i += nt) {
+        float g = __fmul_rn(__fmul_rn(core[base + i], inv), normW[i]);
+        out[base + i] = __fmul_rn(g, dn_silu(z[base + i]));
+    }
+}
+
+// delta_rule_rows_128: delta_rule_rows for the released geometry (hk == hv == 128), with each thread's state row held
+// in REGISTERS across the M rows and each row's q/k staged once per block in shared memory. The generic twin re-reads
+// and re-writes its 128-float state row in global memory at every row, with only nv·hv threads to hide that latency:
+// measured 1.23 s of a 621-token Qwen3.5-9B prefill. The arithmetic is unchanged — the same two passes, the same
+// single-accumulator FMA chains in ascending kd — so each output is bit-identical to delta_rule's.
+// Grid: nv blocks of 128 threads; thread vd of block headV owns state row (headV, vd). The state row is fully unrolled
+// with compile-time indices so it stays in registers (TestKernelLocalMemoryCensus would catch a spill).
+extern "C" __global__ void __launch_bounds__(128) delta_rule_rows_128(
+        const float* __restrict__ qnAll,    // [M*nk*128]
+        const float* __restrict__ knAll,    // [M*nk*128]
+        const float* __restrict__ vAll,     // [M*convDim], v at vBase in each row
+        const float* __restrict__ headPAll, // [M*nv*2]
+        float* __restrict__ state,          // [nv*128*128], in place
+        float* __restrict__ youtAll,        // [M*nv*128]
+        int nv, int rep, int vBase, int keyDim, int convDim, int M) {
+    __shared__ float ks[128], qs[128];
+    int headV = blockIdx.x, vd = threadIdx.x;
+    if (headV >= nv) return;
+    int headK = headV / rep;
+    float* S = state + (size_t)(headV * 128 + vd) * 128;
+    float Sr[128];
+#pragma unroll
+    for (int kd = 0; kd < 128; kd++) Sr[kd] = S[kd];
+    for (int m = 0; m < M; m++) {
+        ks[vd] = knAll[(size_t)m * keyDim + headK * 128 + vd];
+        qs[vd] = qnAll[(size_t)m * keyDim + headK * 128 + vd];
+        __syncthreads();
+        const float* headP = headPAll + (size_t)m * nv * 2;
+        float beta = headP[headV * 2 + 0];
+        float gt = headP[headV * 2 + 1];
+        float kvdot = 0.f;
+#pragma unroll
+        for (int kd = 0; kd < 128; kd++) {
+            float s = __fmul_rn(Sr[kd], gt);
+            Sr[kd] = s;
+            kvdot = __fmaf_rn(s, ks[kd], kvdot);
+        }
+        float delta = __fmul_rn(__fadd_rn(vAll[(size_t)m * convDim + vBase + headV * 128 + vd], -kvdot), beta);
+        float o = 0.f;
+#pragma unroll
+        for (int kd = 0; kd < 128; kd++) {
+            float s = __fmaf_rn(ks[kd], delta, Sr[kd]);
+            Sr[kd] = s;
+            o = __fmaf_rn(s, qs[kd], o);
+        }
+        youtAll[(size_t)m * nv * 128 + headV * 128 + vd] = o;
+        __syncthreads(); // every thread done with ks/qs before the next row overwrites them
+    }
+#pragma unroll
+    for (int kd = 0; kd < 128; kd++) S[kd] = Sr[kd];
+}
