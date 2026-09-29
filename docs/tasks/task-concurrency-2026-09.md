@@ -1423,6 +1423,51 @@ n-gram loop already prefers when present).
     reads 1.846× and 1.014×. The old verify read 0.977× and 0.956×.
   - Next, by the spec measurement's own registered rule (S > 1.05× on both workloads, with L < 1): "speculate when
     alone, batch under load" is now worth registering. P10's block drafters have a Metal verify.
+  - **MC4 candidate: "speculate when alone, batch under load". Pre-registered 2026-09-28, before any design code or
+    timing; building it is the owner's decision.**
+    - **Why its condition is met.** The 2026-09-27 rule registers this when S > 1.05 on a workload with L < 1.
+      - When that rule ran, S was 0.979× / 0.928×. The step-kernel verify (1e153876) then made a lone request 2.082×
+        plain on copy and 1.068× on chat (1.5B; the 7B 1.846× / 1.014×), so S > 1.05 on both workloads.
+      - L is still < 1. `-spec` forces one generation at a time (`internal/serveapp/openai.go`, `setConcurrency`), so
+        under 4 clients it gives up MC3's batching (0.610× / 0.489× before the step verify, and still one stream).
+    - **The candidate.** With `-spec ngram` on a resident that batches, the model keeps MC3's concurrency. A
+      generation speculates only while it is alone.
+      - **At every spec round boundary**, the loop checks whether any other generation is decoding, waiting to
+        prefill, or queued. If one is, it stops drafting and joins MC3's decode loop from its committed position,
+        on the same slot and KV. Each round runs in `exclusive`, so a newcomer's prefill waits at most one round, not
+        a whole generation.
+      - **It resumes speculating** after 8 consecutive steps alone (hysteresis, so a briefly idle second client
+        does not thrash it).
+      - **Rejected:** choosing at admission and holding the resident for the whole generation. A lone request that
+        starts long makes every later arrival wait for it, the p99 cost the 2026-09-27 run measured (1.64× / 1.98×).
+    - **Why it can be lossless.** A spec round on the step verify is bit-identical to sequential decode, and so is an
+      MC3 step (`TestMC3Step_bitIdentical`, `TestMC3Verify_sameSlotRowsBitIdentical`). A switch at a round boundary changes only who runs
+      the next committed token. That is a claim to prove, not to assume: see step 0.
+    - **Step 0, by day, before any served timing. Hard; it stops the item.**
+      1. **Identity:** a generation forced to switch spec → batch → spec at round boundaries, beside 1–3 others,
+         emits exactly plain decode's ids, and its KV is bit-identical.
+         - The 1.5B and the 7B, at depths 128 and 2048.
+         - Two turns per conversation. The Metal re-prefill lesson: a cache one token short changes every later turn.
+      2. **The alone cost:** a lone speculating generation that takes `exclusive` every round keeps ≥ 0.97× of
+         today's exclusive spec rate, in process on the copy prompt.
+    - **The graded run, after the build, Mac night queue (~60 min).**
+      - **Arms:** *batch* (serve's defaults, the do-nothing arm), *spec-exclusive* (today's `-spec ngram`), and
+        *candidate*. One binary.
+      - **Workloads:** `bench_spec_copy.py`'s copy and W7's chat at 1 and at 4 clients, plus a staggered workload.
+        Clients join at 0 / 5 / 10 / 15 s and leave at different times, the case that exercises the switch.
+      - 3 interleaved rounds, idle-gated. The 1.5B is graded, the 7B reported.
+    - **Gates, candidate against batch:**
+      1. every reply equals batch's (plain decode's), every turn, every arm and workload (hard);
+      2. alone: copy ≥ 1.25× and chat ≥ 0.97× (hard for chat);
+      3. at 4 clients: ≥ 0.97× on both workloads (hard; it must not give up batching);
+      4. staggered: aggregate ≥ 1.00×, and p99 turn latency ≤ 1.10× batch's.
+    - **Decision:**
+      - All pass: `-spec ngram` becomes safe under load on Metal, and `docs/server.md` says so. Whether it becomes
+        serve's default on Metal is then a separate owner decision.
+      - Copy alone at 1.03–1.25×: the owner's call.
+      - Any hard gate fails: parked with the numbers.
+    - **CUDA:** MC3 CUDA shipped (7a44a58e) and its spec verify is cheap (θ 0.155–0.251), so the same candidate may pay
+      there. It gets its own grading on nobara, and is not inferred from Metal's.
   - **P10 on Metal, projected 2026-09-28, not started (owner):**
     [`p10-metal-projection-2026-09-28.md`](../measurements/p10-metal-projection-2026-09-28.md).
     - Code 1.14–1.49×, math 1.33–1.73×; chat a loss, unguarded.
