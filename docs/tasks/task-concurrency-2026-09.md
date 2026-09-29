@@ -55,9 +55,12 @@
 >   ([`concurrency-mc1-webgpu-2026-09-27.md`](../measurements/concurrency-mc1-webgpu-2026-09-27.md)); ~~the
 >   discrete-GPU clamp on real Vulkan hardware~~ — measured 2026-09-28 on nobara: CLEAN (a real
 >   out-of-memory buffer allocation on Vulkan fails as a normal Go error, no device loss;
->   [`mc1-webgpu-nobara-2026-09-28/`](../measurements/mc1-webgpu-nobara-2026-09-28/)), so slots-before-context step 2
->   (discrete GPUs) is now in scope. Context against slots on WebGPU: decided 2026-09-27, slots first as on CUDA;
->   done on darwin, discrete-GPU step 2 next;
+>   [`mc1-webgpu-nobara-2026-09-28/`](../measurements/mc1-webgpu-nobara-2026-09-28/)); ~~slots-before-context step 2
+>   (discrete GPUs)~~ — attempted 2026-09-28, REVERTED: a real in-process release does not return VRAM the same
+>   process can reuse (LiveBufferBytes 0, wgpu-native still refuses the identical re-allocation after Close + 1s of
+>   Poll), so a rebuild-and-retry can only ever LOSE the working clamped build, not improve it. Discrete GPUs keep
+>   today's clamp-only behavior; "slots before context" ships on darwin only. Context against slots on WebGPU:
+>   decided 2026-09-27, slots first as on CUDA; done on darwin, discrete GPUs stay clamp-only by design now;
 > - ~~context against slots, owner's call~~ — decided 2026-09-27: a slot request shrinks the unpinned default
 >   context (`947e06ce`). The 7B now starts at 4096 with 4 slots and reads 1.34–1.35× at its default, where it
 >   thrashed on 2 slots at 8192. ~~`Plan`'s conservative weight estimate~~ — fixed 2026-09-27 (`4e230601`): it
@@ -392,6 +395,61 @@ control thrashes (3 / 3). The tagged CUDA suite: 171 pass, 0 fail.
     failure — no subsequent allocation, dispatch, generation or `Close` failed on either checkpoint. That is
     **Clean** by the rule's own text ("a LATER allocation or dispatch fails" is what would make it not clean).
 - Step 2 (below) is therefore in scope, per the rule.
+
+**Item 27, RESULT 2026-09-28: attempted, found UNSAFE on real hardware, REVERTED — not shipped.**
+Step 1 being clean does not make step 2 automatic; step 2 asked a genuinely different question and the answer
+was no, for a reason step 1 could not have surfaced.
+
+- **Design tried.** `BuildResident` split into a thin wrapper and `buildResidentAt(m, forceCtx int)`, the whole
+  original body plus one override point (`forceCtx > 0` replaces `slotsBeforeContext`'s resolution outright). On a
+  shortfall (`rd.KVSlots() < want`, unpinned, above the floor), the wrapper priced the largest context that would
+  fit `want` slots in the room the first build actually measured (`ctxWhereSlotsFit`, reusing the same search
+  `slotsBeforeContext`'s darwin path already uses), closed the first resident, and called `buildResidentAt` again
+  at that smaller context — the exact shape the prompt suggests, built to reuse the already-tested eligibility/
+  weights/KV code rather than a second, easier-to-drift path.
+- **First bug, found immediately: a self-deadlock.** `buildResidentAt` holds `b.mu` (a plain, non-reentrant
+  `sync.Mutex`) for its whole body via `defer b.mu.Unlock()`. The first cut called the retry from INSIDE
+  `buildResidentAt`, before that defer could run — `TestWebGPUKVSlots_realClamp/qwen2.5-7b` hung past its 10-minute
+  timeout instead of failing fast (one goroutine, blocked on its own lock). Fixed by moving the retry to the
+  wrapper, entirely outside any call that holds `b.mu` — structurally impossible to deadlock this way, not just
+  observed to not deadlock.
+- **Second bug, the one that killed the approach: real VRAM is not returned for reuse inside the same process.**
+  With the deadlock fixed, the retry reliably reproduced on the real 7B: `Close()` on the first (1-slot) resident,
+  then the SAME weight upload that had JUST succeeded (~4.4 GB, unchanged) failed immediately with wgpu-native's
+  own `wgpuDeviceCreateBuffer ... Not enough memory left` — the identical error the ORIGINAL allocation failure
+  used to justify the clamp in the first place. `LiveBufferBytes()` (this package's own buffer-object accounting,
+  independent of the driver) read **0** immediately after `Close()` — so nothing was leaked at the Go/wgpu-object
+  level; the buffers were correctly released as objects. The VRAM itself was not usable again regardless: neither
+  one `device.Poll(true, nil)` (this codebase's established GPU/CPU fence, used everywhere else for exactly this
+  kind of wait) nor ten of them with 100 ms sleeps between each (1 full second) changed the outcome. This reads as
+  wgpu-native's Vulkan allocator not returning freed device memory to a state a same-process, back-to-back
+  allocation can draw from — not a bug in this codebase's release bookkeeping, which the zero `LiveBufferBytes()`
+  reading rules out directly.
+- **Why this had to be reverted, not shipped with a caveat.** The failure mode is not "no better than before" —
+  it is WORSE. On the retry's failure, `buildResidentAt` returns a decline, and the wrapper returned that decline
+  as-is: `decoder.Model.withResidency()` saw a failed resident build and fell back to the CPU/staged path
+  ENTIRELY — losing the working 1-of-4-slot GPU-resident build the FIRST attempt had already produced, correctly,
+  before step 2 ever touched it. A user who would have gotten a clamped-but-GPU-resident 1-slot serve got the
+  CPU-staged path instead, silently, the moment their card was too small for the requested slot count at the
+  default context. Recovering by rebuilding at the ORIGINAL context after a failed retry was considered and
+  rejected: given the driver-level reclaim problem just measured, there is no confidence that attempt would
+  succeed either, on a device now in whatever state the failed retry left it.
+- **Reverted in full**, before commit: `buildResidentAt`/`forceCtx`, `webgpuDiscreteSlotsShrink`, its test, the
+  `TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches` watch-target update, and the retry call in
+  `BuildResident`. `gpu/` is back to exactly item 26's committed state (`8c9b647f`); `git diff` against it is
+  empty for every file step 2 touched.
+- **Proposed default, left to the owner, per the prompt's own decision rule for this outcome:** keep today's
+  behavior unconditionally on discrete GPUs — the clamp grants as many slots as fit at the requested context and
+  stops there (a real, working, GPU-resident build, just fewer slots than asked), and a user who wants more slots
+  on a card too small at the default context passes a smaller explicit `--ctx` themselves and reloads, rather than
+  the backend silently retrying in-process. "Slots before context" therefore ships on darwin only; a discrete GPU
+  is not a smaller version of the same mechanism, because darwin's version never allocates before it prices.
+- **What would actually be needed to revisit this**, if the owner wants slots-before-context on discrete GPUs
+  later: either (a) probe context sizes downward BEFORE any allocation, the way darwin does — which needs a real
+  free-VRAM query this backend does not have (unlike CUDA's driver `MemInfo()`; that gap is exactly why step 2 had
+  to be measured after the fact instead of priced up front), or (b) accept that a shrink means restarting the
+  process at a smaller `-ctx`, never an in-process rebuild — which is closer to "propose a safe default" than an
+  engineering fix, since it hands the decision back to the operator rather than solving it silently.
 
 **What was built** (`gpu/kv_slots.go`). The WebGPU resident implements `decoder.ResidentKVSlotter`; the decoder half
 is Metal's, unchanged.
