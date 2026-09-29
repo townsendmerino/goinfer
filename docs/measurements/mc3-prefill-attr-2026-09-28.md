@@ -8,11 +8,11 @@ The first step of the "per-pass prefill cost cut" follow-on in
 
 ## 1. The instrument
 
-- **2bdd3f3b:** `ResidentBatchStats` gains wall time with the resident held. `RunNs` is time inside decode runs,
+- **073be561:** `ResidentBatchStats` gains wall time with the resident held. `RunNs` is time inside decode runs,
   `ExclusiveNs` inside exclusive sections, and `PrefillNs` / `PrefillPasses` inside the sections that are prefill
   passes (chunked `PrefillLast` and the final seed). `TestMC3_longPrefillChunksWhileOthersDecode` checks the pass
   count against the resident's calls and that the durations nest; zeroing the counter turns it red.
-- **666561ab:** `GET /admin/status` reports the counters per MC3 model. The driver reads them over serve's admin socket
+- **9e1d31c8:** `GET /admin/status` reports the counters per MC3 model. The driver reads them over serve's admin socket
   immediately before and after the cell, and differences them. So load, the warm request and first-use pipeline
   compiles are excluded.
   - An exploratory smoke showed why that matters: the server's lifetime counters carried 1.49 s of pre-cell prefill.
@@ -21,7 +21,10 @@ The first step of the "per-pass prefill cost cut" follow-on in
 
 ## 2. The run
 
-- **Binary:** `serve-metal-666561ab`, Metal resident, int4, `-embed-int4=false`. Since 9ccf7fb1 the int4-embedding
+*(Hashes are the ones on `main`. The binary was built before a rebase renamed the commits; the only commit
+interleaved, 9a48035e, adds a CUDA test and docs, so the Metal binary's sources are 9e1d31c8's.)*
+
+- **Binary:** `serve-metal-9e1d31c8`, Metal resident, int4, `-embed-int4=false`. Since 9ccf7fb1 the int4-embedding
   default makes the Metal resident decline to the CPU; a cell whose log does not show `decode path: metal-resident`
   is void. Otherwise serve's defaults: 4 generations, `-prefill-chunk 512`.
 - **Workload:** `bench_w7_plain.py`'s W7, 4 clients × 4 growing chat turns, 128 max tokens, greedy, fixed nonces.

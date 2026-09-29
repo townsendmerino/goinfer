@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """MC3 per-pass prefill: how much of a 4-client served W7 cell is the resident's prefill passes (mc3-prefill-attr-
-2026-09-28.md). Reads the time counters serve prints at shutdown (ResidentBatchStats, 2bdd3f3b); times nothing
+2026-09-28.md). Reads the time counters serve prints at shutdown (ResidentBatchStats, 073be561); times nothing
 else itself beyond the cell's wall clock.
 
     python3 mc3_prefill_attr.py <job dir> [--reps 3] [--max-tokens 128] [--clients 4] [--models 1.5B,7B]
