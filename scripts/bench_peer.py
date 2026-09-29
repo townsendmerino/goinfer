@@ -1458,6 +1458,35 @@ def plan_vision():
     return os.environ.get("BENCH_VISION", "").strip() == "1"
 
 
+def abba_plan(plan, quads):
+    """BENCH_ABBA=<quads> (TE4, docs/measurements/test-efficiency-2026-09/te4-seq-v2-2026-09-28.md §1.1): run each
+    group -- one phase x backend x model x depth x config -- as `quads` counterbalanced quads of restarted cells before
+    moving on. The engine order is the plan's own in a quad's first block and reversed in its second (A B, B A), so a
+    linear drift across the quad lands on every arm equally. That replaces the separate order-reversed second pass.
+
+    Every entry gains a block number (None when BENCH_ABBA is unset, so existing files resume unchanged). Phases D
+    and E are not paired decode cells and pass through with block None."""
+    if quads <= 0:
+        return [p + (None,) for p in plan]
+    groups, order, out = {}, [], []
+    for phase, eng, be, mk, depth, cfg in plan:
+        if phase not in ("A", "B", "C"):
+            continue
+        g = (phase, be, mk, depth, cfg)
+        if g not in groups:
+            groups[g] = []
+            order.append(g)
+        if eng not in groups[g]:
+            groups[g].append(eng)
+    for g in order:
+        phase, be, mk, depth, cfg = g
+        for q in range(quads):
+            for b, engs in ((2 * q, groups[g]), (2 * q + 1, groups[g][::-1])):
+                out += [(phase, eng, be, mk, depth, cfg, b) for eng in engs]
+    out += [p + (None,) for p in plan if p[0] not in ("A", "B", "C")]
+    return out
+
+
 def main():
     """Plan. Phase A is the headline BACKEND table -- every backend at one depth, so the
     cross-backend row is apples-to-apples. Phase B is the depth curve, CUDA only, because
@@ -1474,7 +1503,7 @@ def main():
             print(f"# resuming: {len(out)} cells already recorded in {outpath}", flush=True)
         except Exception:
             out = []
-    done = {(r["phase"], r["engine"], r.get("backend"), r["model"], r["depth"], r["config"])
+    done = {(r["phase"], r["engine"], r.get("backend"), r["model"], r["depth"], r["config"], r.get("block"))
             for r in out if r.get("runs")}
 
     # The provenance header is element 0 and is REFRESHED on every (re)start, with the earlier
@@ -1592,9 +1621,13 @@ def main():
             if eng in ("goinfer", "ollama"):
                 plan.append(("E", eng, "vision", "vision", 0, "greedy"))
 
+    quads = int(os.environ.get("BENCH_ABBA", "0") or 0)
+    plan = abba_plan(plan, quads)
+    if quads:
+        print(f"# BENCH_ABBA={quads}: each group runs {quads} mirrored quad(s) of restarted cells (A B, B A)", flush=True)
     print(f"# {len(plan)} cells planned, {len(done)} already done", flush=True)
-    for phase, engine, backend, mk, depth, cfg in plan:
-        key = (phase, engine, backend, mk, depth, cfg)
+    for phase, engine, backend, mk, depth, cfg, block in plan:
+        key = (phase, engine, backend, mk, depth, cfg, block)
         if key in done:
             print(f"# skip (done): {key}", flush=True)
             continue
@@ -1619,6 +1652,8 @@ def main():
                "note": CONFIGS[cfg]["note"], "runs": rates, "error": err,
                "machine": machine,
                "secs": round(time.time() - t0, 1)}
+        if block is not None:
+            rec["block"] = block
         if counts:
             # tokens/chunks is the DIAGNOSTIC for the chunk-counting bug: 1.000 means chunking cost
             # this cell nothing and the old numbers were right here; >1 means the old harness
