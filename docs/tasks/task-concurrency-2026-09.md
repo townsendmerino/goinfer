@@ -485,6 +485,50 @@ was no, for a reason step 1 could not have surfaced.
   process at a smaller `-ctx`, never an in-process rebuild — which is closer to "propose a safe default" than an
   engineering fix, since it hands the decision back to the operator rather than solving it silently.
 
+**Item 29, PRE-REGISTERED 2026-09-28, before any timing: W7 on Vulkan (optional, reported only).** Items 26–28 are
+all resolved (26 clean, 27 measured-and-reverted with a clear writeup, 28 shipped), so this is unblocked per the
+prompt's own §5, run at the owner's word — never on its own initiative (queued overnight, not run by day; see
+CLAUDE.md's run budget).
+
+- **Hypothesis, from the prompt itself, stated before running:** the win should look more like CUDA's 1.25× than
+  the Mac's 2.8×. Qwen2.5 has a batched prefill on Vulkan (`PrefillLast` admits q/k/v bias there, unlike Metal,
+  where it declines and every thrashing turn re-prefills one token at a time at decode speed) — so a thrashing
+  turn here costs less to begin with, and MC1 has less thrash to remove.
+- **old** = `serve-webgpu` at `68f2dbdf` (one slot, pre-MC1); **new** = `serve-webgpu` at `a08bc26d` (this tree,
+  item 28 included). Each built once with `go -C gpu build -tags gpu -o <bin> ./cmd/serve`, named by its hash.
+- **Machine:** nobara-pc, RTX 2070 SUPER 8 GB, WebGPU through wgpu-native's **Vulkan** backend
+  (`oliverbestmann/webgpu` v1.36.0 — same version the Mac graded), NVIDIA driver 595.91.07.
+- **Workload:** `scripts/bench_w7_plain.py --engines goinfer --backend webgpu --fixed-nonce`, with
+  qwen2.5-coder-1.5b-instruct q4_k_m from `~/models` (NVMe — never `/srv/models`), `-quant int4` and serve
+  defaults. `-kv-sessions` 4 means new asks for 4 slots at the default 16k f32 context (~0.94 GB/slot). 6 turns ×
+  128 greedy tokens per client, a fresh server per cell.
+- **Cells:** 1, then 2, then 4 clients. Each is old/new × 3 pairs, in the order old new new old old new.
+- **Idle gate: the CUDA one, not the Mac's** (this job's own §5 instruction) — `/proc/loadavg` load1 ≤ 2.0, GPU
+  compute-process count at or below the run's starting baseline, and GPU memory within 256 MiB of the starting
+  baseline (`concurrency-mc1-cuda-2026-09-27/run-w7.sh`'s gate, adapted in
+  `concurrency-mc1-webgpu-nobara-2026-09-28/run-w7.sh`).
+- **Gates (the Mac cell's, hard unless marked — same arithmetic, `gates.py` unchanged):**
+  1. Identity: at 1 client, `content_sha` old == new on every turn of every pair; at 2 and 4 clients, new's
+     client 0 == new's 1-client run on every turn; old vs new at 2 and 4 clients is reported only.
+  2. Reuse: at 2 and 4 clients, every new client's turn 1 reuses what the 1-client run's turn 1 reuses (0, cold),
+     and its turns 2–6 prefill exactly what the 1-client run's do.
+  3. *(Expected band, not a gate.)* new's 2- and 4-client aggregate is 0.90–1.0× its own 1-client aggregate. Below
+     0.85× at 4 clients is a finding to explain.
+  4. Ship: 4-client aggregate new ÷ old, median of 3 pairs, ≥ 1.03×.
+  5. Solo guard: 1-client p50 and p99 turn (nearest rank over the cell's 6 turns), new ÷ old, median of 3 pairs,
+     ≤ 1.05× each.
+- **This item is "reported only" per the prompt's own §5**, not a ship/park decision: 1, 2, 4 and 5 are graded and
+  stated as pass/fail exactly like the shipped CUDA/Mac cells, but nothing in this codebase currently branches on
+  the verdict — WebGPU's MC1 already shipped 2026-09-27 regardless of this result. A hard-gate miss is a finding
+  to record, not a blocker.
+- Also reported: the slot count new's banner states, and whether item 26's discrete-GPU clamp (1 of 4 on the real
+  7B at the default context) visibly costs anything in THIS workload's 1.5B cells, which fit all 4 slots.
+- Estimate: the graded CUDA/Mac cells each ran 18 server starts (3 cell-sizes × 6 keys) at ~1–2 min per cell
+  (6 turns × 128 tokens, plus idle-gate settling) — roughly 30–45 min end to end on comparable hardware. Over
+  CLAUDE.md's ~10-minute daytime quick-check bound: **queued to the night queue**
+  (`scripts/night.py add mc1-webgpu-w7-nobara --est 45 ...`), not run by day.
+- Raw output and gates land in `docs/measurements/concurrency-mc1-webgpu-nobara-2026-09-28/`.
+
 **What was built** (`gpu/kv_slots.go`). The WebGPU resident implements `decoder.ResidentKVSlotter`; the decoder half
 is Metal's, unchanged.
 - **A slot is a whole decode runner.** This is not a pointer swap, as it is on CUDA and Metal. `newDecodeRunner` bakes
