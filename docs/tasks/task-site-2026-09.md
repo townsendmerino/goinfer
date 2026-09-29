@@ -136,10 +136,11 @@ inside · No toolchain of any kind.
   The mockup's one-line summaries were invented for it. Add a `summary` field (and `tasks` tags:
   chat / code / vision) to the decoder registry, so the matrix carries them. Do not hand-edit the
   JSON.
-- **The Gemma 4 26B-A4B checkpoint's `needs` text quotes 16.12 tok/s** on the RTX 2070 SUPER at 30
-  cached expert slots. `docs/benchmarks.md` now reports 40.2 tok/s on the same card. They may be
-  different configurations, but side by side on one page they read as a contradiction. Reconcile or
-  date the registry text.
+- **The Gemma 4 26B-A4B checkpoint's `needs` text quoted 16.12 tok/s** (the pre-DMA-overlap slot sweep, 2026-08-27)
+  while `docs/benchmarks.md` reports 40.2 tok/s on the same card (2026-09-25, peer-claim cell c). **Resolved
+  2026-09-29 (owner: "go with 40.2"):** the registry text, README, the `benchmarks.md` §B4 banner and the mockup now
+  say 40.2, with the configuration named. The 16.12 / 17.62 rows stay in §B4.1 as the pre-overlap record. The
+  claims check (S8b) is what would have caught this.
 - **The Qwen2.5-Coder 1.5B release tier has no `GoodFor` / `Needs` / `Tools`.** It is pinned in
   `pull/curated.json`, not in the registry, so its model page is thin.
 - The `qwen3_5` family displays as "Qwen3.8". Confirm that is intended.
@@ -198,6 +199,10 @@ inside · No toolchain of any kind.
 
 ## 8. S8 — Build, deploy, and keep it current (decided 2026-09-29)
 
+**Owner decision, 2026-09-29: the site changes only when a release is cut.** The owner's concern was churn: a public site
+that moves with every push to `main`. So a push never deploys. It builds and runs the gates, and the deploy waits for a
+release. The consequences are spelled out in S8d and S8f.
+
 ### S8a — The generator
 - **A Go program in `site/`, with its own `go.mod`** (`github.com/townsendmerino/goinfer/site`). A
   markdown library for the writeups then never enters goinfer's own dependency graph.
@@ -228,8 +233,16 @@ inside · No toolchain of any kind.
 - Tone: plain and humble, per the owner's standing style rules for public writing.
 
 ### S8d — Deploy: `.github/workflows/site.yml`
-- **Triggers:** a push to `main` touching `site/**`, `docs/capability-matrix.json`, `pull/*.json`
-  or the workflow itself; `release: published` (so S4 lists the new tag); `workflow_dispatch`.
+- **Deploy triggers (release-only):**
+  - `workflow_run` of `release assets` completing successfully for a `v*` tag. `release-assets.yml` runs on the tag push
+    and attaches the binaries, so waiting for it means S4 lists assets that exist. A plain `release: published` would
+    race it.
+  - `workflow_dispatch`, for the owner's first launch (S8e) and an emergency fix.
+- **Validation triggers (no deploy):** a push or pull request touching `site/**`, `docs/capability-matrix.json`,
+  `pull/*.json` or this workflow. It runs the build, every S7 gate and the claims check, so breakage is caught
+  before a release, and it never publishes.
+- **What gets built:** a deploy checks out the **release tag's commit**, not `main`. The site shows exactly what was
+  released, and the claims check runs against the sources as they were at that tag.
 - **Steps:** checkout → setup-go → build → **every S7 gate** → deploy with
   `cloudflare/wrangler-action`. Actions are pinned by SHA, like the repo's other workflows.
   `concurrency: site`, no cancel-in-progress. **The deploy job needs the gates**, so a failed gate
@@ -249,15 +262,17 @@ inside · No toolchain of any kind.
    `townsendmerino.github.io/goinfer/...` chapter URL gives a 301 to `book.goinfer.dev`.
 
 ### S8f — Keeping it current
-- **Generated pages update themselves.** A new family, a new checkpoint or a new release rebuilds
-  the site on the next push. S7 fails the build if a family has no page.
+- **Generated pages update themselves, at a release.** A new family, a new checkpoint or a new release rebuilds the
+  site when the next release is cut, and only then. S7 fails the build if a family has no page. Numbers measured after
+  the last release do not appear until the next one, which is intended.
 - **Numbers cannot silently go stale.** The claims check fails the build when a cited source
   changes under it.
 - **What stays hand-written:** the twelve writeups and the family `summary` field. Each carries a
   reviewed date.
 - **Build order:** S8a skeleton + S2 Models first (the reason for the site), then S1 Home, then the
   writeups (confidence first, since its mockup exists), then S4 Download, then the S3 docs shell.
-  Deploy from the first working S2, with the other nav items marked "coming".
+  The first deploy is the owner's manual dispatch once S8e is done, with the other nav items marked "coming". After that,
+releases only.
 
 ## Sources
 

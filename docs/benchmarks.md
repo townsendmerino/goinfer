@@ -1194,8 +1194,9 @@ verify path).
 
 ### B4. Host↔VRAM MoE streaming — a 26B that does not fit the card (cgo-free CUDA)
 
-> **Current rows: §B4.1** (re-anchored 2026-08-27 on driver `595.91.07` / Nobara 44) — **16.12 tok/s**
-> at the 30 slots the card now grants, **17.62 tok/s** at 40 slots with the resident context halved.
+> **Slot-count sweep: §B4.1** (re-anchored 2026-08-27 on driver `595.91.07` / Nobara 44) — **16.12 tok/s**
+> at the 30 slots the card now grants, **17.62 tok/s** at 40 slots with the resident context halved. **These are the
+> pre-DMA-overlap rows. The current rate is 40.2 tok/s (2026-09-25; the note below).**
 > The **16.98 tok/s @ 38 slots** figure measured 2026-08-02 on driver `595.58.03` is preserved in
 > [`legacy-benchmarks.md`](legacy-benchmarks.md) §B4 as *measured-but-unsafe, not retracted*: that
 > configuration is no longer grantable (§B4.2 has the arithmetic), so it is not a current rate.

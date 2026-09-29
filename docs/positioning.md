@@ -133,7 +133,7 @@ at ~24.5 tok/s until this release's DMA overlap; the pre-registered sweep of 202
 > another process, a longer `--ctx` all shrink it), capped to what fits rather than to a number you
 > chose; on a bare 8 GB card that is 30–33 slots today. `goinfer-chat fit` answers "does this fit,
 > and how fast" before anything loads. The measured slot ladder — from an inert cache at the old
-> default of 8 to **16.12 tok/s at 30** — is in [`docs/benchmarks.md`](benchmarks.md) §B4/§B4.1;
+> default of 8 to **16.12 tok/s at 30** (before the DMA overlap; 40.2 tok/s now) — is in [`docs/benchmarks.md`](benchmarks.md) §B4/§B4.1;
 > read the slot count as part of any number quoted from it. The remaining work to make this
 > invisible is [`docs/tasks/task-fit-to-hardware.md`](tasks/task-fit-to-hardware.md).
 

@@ -662,7 +662,7 @@ var recommendedCheckpoints = map[string]recommendedCheckpoint{
 		File: "gemma-4-26B_q4_0-it.gguf", Quant: "q4_0",
 		Bytes: 14439363584, SHA256: "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
 		GoodFor: "the 20-35B-class MoE this project has the most measurements on (docs/benchmarks.md §B4/§B4.1): a 26B-A4B that does not fit an 8 GB card, kept fully GPU-resident via host↔VRAM expert streaming (the C′ cache, -moe-cache-experts) rather than CPU-offloaded",
-		Needs:   "~11.4 GB of int4 experts; does not fit an 8 GB card resident. Measured on an RTX 2070 SUPER: 16.12 tok/s at 30 cached expert slots (§B4.1) — capacity-bound (PCIe host→VRAM streaming), not a kernel or MoE deficiency",
+		Needs:   "~11.4 GB of int4 experts; does not fit an 8 GB card resident. Measured on an RTX 2070 SUPER (driver 595.91.07): 40.2 tok/s at ctx 2048, every expert kept on the GPU through host→VRAM streaming with the DMA overlap (docs/benchmarks.md §B4, peer-claim 2026-09-25 cell c), at ~25.5 GB peak host RSS — capacity-bound (PCIe host→VRAM streaming), not a kernel or MoE deficiency",
 		// Not yet measured against `serve check`'s tools rows (R11 gate: never guessed). This
 		// checkpoint is multimodal (image-text-to-text); Gemma-4's tool template was a known
 		// partial (M-20, docs/tasks/task-embed-and-harness-ux.md §3.1) but that was fixed
