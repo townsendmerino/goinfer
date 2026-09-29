@@ -78,6 +78,7 @@ def main():
     ap.add_argument("--chars", type=int, default=3500, help="characters of source per request (~1000 tokens)")
     ap.add_argument("--max-tokens", type=int, default=256)
     ap.add_argument("--rev", default="cc5f8c2c", help="the commit decoder/model.go is read from")
+    ap.add_argument("--backend", default="metal", help="serve's -backend (default metal, so the Mac's own records still reproduce)")
     ap.add_argument("--serve-args", default="")
     ap.add_argument("--server-log", default="")
     a = ap.parse_args()
@@ -85,7 +86,7 @@ def main():
     res = {}
     if os.path.exists(a.out):
         res = json.load(open(a.out)).get("results", {})
-    with w7.GoinferServer("metal", a.serve_args, a.server_log) as srv:
+    with w7.GoinferServer(a.backend, a.serve_args, a.server_log) as srv:
         # one warm request so the cell does not pay pipeline compile / page-in inside its timing
         w7.post(srv.url, {"model": "bench", "messages": [{"role": "user", "content": "warm"}], "max_tokens": 4, "temperature": 0})
         r = cell(srv.url, a, secs)
