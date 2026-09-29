@@ -6,6 +6,10 @@
     ],
     "display_name": "Olmo Hybrid",
     "description": "Ai2 Olmo Hybrid (7B): qwen3.5's Gated DeltaNet (3:1) + olmo3's own full-attention shape, MIXED norm placement per layer kind, no RoPE at all",
+    "summary": "Ai2's 7B hybrid: mostly linear-attention layers, a few full-attention ones, no position encoding at all.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
     "moe": "dense",
     "sliding_window": "none",
@@ -26,6 +30,10 @@
     ],
     "display_name": "Qwen3-Next",
     "description": "Qwen3-Next 80B-A3B: same DeltaNet/softmax/MoE hybrid shape as Qwen3.5, computed (not stated) layer pattern",
+    "summary": "Qwen's 80B mixture-of-experts with about 3B active per token, on hybrid attention.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
     "moe": "sparse +shared",
     "sliding_window": "none",
@@ -47,6 +55,10 @@
     ],
     "display_name": "Qwen3.5-MoE",
     "description": "Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE",
+    "summary": "Qwen3.5 and 3.6 mixture-of-experts on hybrid attention.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
     "moe": "sparse +shared",
     "sliding_window": "none",
@@ -68,6 +80,10 @@
     ],
     "display_name": "Qwen3.8",
     "description": "Qwen3.8 dense: the same Gated DeltaNet + softmax 3:1 hybrid as Qwen3.5-MoE, with a plain SwiGLU in place of the router",
+    "summary": "Qwen3.8 dense: the same hybrid attention, without the experts.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
     "moe": "dense",
     "sliding_window": "none",
@@ -88,6 +104,10 @@
     ],
     "display_name": "DeepSeek-V2",
     "description": "DeepSeek-V2/V2-Lite: MLA + DeepSeekMoE (softmax routing)",
+    "summary": "DeepSeek-V2 and V2-Lite: a compressed attention cache plus experts.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "latent-KV (MLA)",
     "moe": "sparse +shared",
     "sliding_window": "none",
@@ -108,6 +128,10 @@
     ],
     "display_name": "DeepSeek-V3",
     "description": "DeepSeek-V3: MLA + DeepSeekMoE (sigmoid + group-limited routing)",
+    "summary": "DeepSeek-V3: the same design at frontier scale. Far larger than any machine on this site.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "latent-KV (MLA)",
     "moe": "sparse +shared",
     "sliding_window": "none",
@@ -128,6 +152,11 @@
     ],
     "display_name": "Kimi K2",
     "description": "Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)",
+    "summary": "Moonshot's Kimi K2 line, K2.7-Code included. Runs on DeepSeek-V3's code path.",
+    "tasks": [
+      "chat",
+      "code"
+    ],
     "coverage_axis": "latent-KV (MLA)",
     "moe": "sparse +shared",
     "sliding_window": "none",
@@ -148,6 +177,10 @@
     ],
     "display_name": "Ling 3.0",
     "description": "inclusionAI Ling 3.0 (tiny/flash): DeepSeek-style MLA alternating with Kimi Delta Attention (per-channel-decay delta rule) every layer_group_size-th layer, over a DeepSeekMoE FFN",
+    "summary": "inclusionAI's Ling 3.0, tiny and flash.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "latent-KV (MLA)",
     "moe": "sparse +shared",
     "sliding_window": "none",
@@ -168,6 +201,10 @@
     ],
     "display_name": "Command-R",
     "description": "Cohere Command-R / Aya (bias-free LayerNorm + parallel attn/MLP block + logit-scale + GPT-J RoPE)",
+    "summary": "Cohere's Command-R and Aya.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -188,6 +225,10 @@
     ],
     "display_name": "Command-R7B",
     "description": "Cohere2 Command-R7B / Command-A (cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm)",
+    "summary": "Cohere's Command-R7B and Command-A.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "interleave",
@@ -208,6 +249,10 @@
     ],
     "display_name": "GLM-4.5/4.6",
     "description": "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)",
+    "summary": "Zhipu's GLM-4.5 and 4.6 mixture-of-experts.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "sparse +shared",
     "sliding_window": "none",
@@ -228,6 +273,10 @@
     ],
     "display_name": "GPT-2",
     "description": "GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)",
+    "summary": "GPT-2 and GPT-NeoX. Old and small, kept as a reference.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -249,6 +298,10 @@
     ],
     "display_name": "Gemma 3",
     "description": "Google Gemma 3 dense (270M/1B/4B/12B/27B)",
+    "summary": "Google's Gemma 3, from 270M to 27B.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "interleave",
@@ -271,6 +324,11 @@
     ],
     "display_name": "Gemma 4",
     "description": "Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)",
+    "summary": "Google's Gemma 4: dense models, the small E-models, and the 26B-A4B mixture-of-experts. Reads images.",
+    "tasks": [
+      "chat",
+      "vision"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense ‖ sparse, no-shared",
     "sliding_window": "interleave",
@@ -302,6 +360,10 @@
     ],
     "display_name": "Granite 4.2",
     "description": "IBM Granite 4.2 dense (3B/8B/30B): llama skeleton + Granite's scalar multipliers",
+    "summary": "IBM's Granite 4.2 dense, 3B to 30B.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -322,6 +384,10 @@
     ],
     "display_name": "InternLM2",
     "description": "InternLM2 dense — llama math, renamed tensors + grouped fused wqkv",
+    "summary": "Shanghai AI Lab's InternLM2.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -342,6 +408,10 @@
     ],
     "display_name": "LFM2.5",
     "description": "Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)",
+    "summary": "Liquid AI's LFM2 and LFM2.5: short convolutions mixed with attention.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -362,6 +432,10 @@
     ],
     "display_name": "Laguna",
     "description": "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads",
+    "summary": "poolside's Laguna coding models.",
+    "tasks": [
+      "code"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "sparse +shared",
     "sliding_window": "interleave",
@@ -383,6 +457,10 @@
     ],
     "display_name": "Llama",
     "description": "Meta Llama 2/3 dense (single-base RoPE)",
+    "summary": "Meta's Llama 2 and 3, plus InternLM3. The one family that also loads GPTQ and AWQ.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -403,6 +481,10 @@
     ],
     "display_name": "Llama 4",
     "description": "Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)",
+    "summary": "Meta's Llama 4 Scout and Maverick, text only.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "sparse +shared",
     "sliding_window": "none",
@@ -423,6 +505,10 @@
     ],
     "display_name": "Mellum2",
     "description": "JetBrains Mellum2 code model (MoE + sliding/full interleave + YaRN)",
+    "summary": "JetBrains' Mellum2, built for code completion.",
+    "tasks": [
+      "code"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "sparse, no-shared",
     "sliding_window": "interleave",
@@ -444,6 +530,10 @@
     ],
     "display_name": "Ministral 3",
     "description": "Ministral 3 (3B/8B/14B): Mistral GQA + YaRN + Llama4-style attention-temperature tuning, no sliding window",
+    "summary": "Ministral 3, 3B to 14B. Text only: the vision tower is skipped.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -464,6 +554,10 @@
     ],
     "display_name": "Mistral",
     "description": "Mistral dense (all-layer sliding window)",
+    "summary": "Mistral-style dense models with a sliding attention window.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "all-layer",
@@ -484,6 +578,10 @@
     ],
     "display_name": "Mixtral",
     "description": "Mistral + sparse MoE FFN (router + top-k experts)",
+    "summary": "Mistral's mixture-of-experts.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "sparse, no-shared",
     "sliding_window": "none",
@@ -504,6 +602,10 @@
     ],
     "display_name": "Olmo 3",
     "description": "Ai2 Olmo 3 (7B/32B): no pre-norm at all (post-only), whole-vector QK-norm, sliding/full 3:1 + YaRN on full layers only",
+    "summary": "Ai2's Olmo 3, 7B and 32B.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "interleave",
@@ -524,6 +626,10 @@
     ],
     "display_name": "Phi-3 / Phi-4",
     "description": "Microsoft Phi-3/Phi-4 dense (fused qkv/gate-up, partial rotary)",
+    "summary": "Microsoft's Phi-3 and Phi-4.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -555,6 +661,11 @@
     ],
     "display_name": "Qwen2 / Qwen2.5",
     "description": "Alibaba Qwen2/2.5 dense (q/k/v bias)",
+    "summary": "Qwen2 and Qwen2.5, including the Coder models most of goinfer's numbers are measured on.",
+    "tasks": [
+      "chat",
+      "code"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -586,6 +697,10 @@
     ],
     "display_name": "Qwen2-MoE",
     "description": "Qwen1.5/2 MoE (sparse + always-on shared expert)",
+    "summary": "Qwen1.5 and Qwen2 mixture-of-experts.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "sparse +shared",
     "sliding_window": "none",
@@ -606,6 +721,11 @@
     ],
     "display_name": "Qwen2.5-VL",
     "description": "Qwen2.5-VL text decoder (qwen2 + m-RoPE)",
+    "summary": "Qwen2.5-VL. Reads images.",
+    "tasks": [
+      "chat",
+      "vision"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -626,6 +746,10 @@
     ],
     "display_name": "Qwen3",
     "description": "Alibaba Qwen3 dense (QK-norm, no bias)",
+    "summary": "Alibaba's Qwen3 dense models.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -646,6 +770,11 @@
     ],
     "display_name": "Qwen3-MoE",
     "description": "Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert",
+    "summary": "Qwen3-30B-A3B and Qwen3-Coder-30B-A3B.",
+    "tasks": [
+      "chat",
+      "code"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "sparse, no-shared",
     "sliding_window": "none",
@@ -666,6 +795,10 @@
     ],
     "display_name": "Qwen3-VL",
     "description": "Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; no vision tower, no DeepStack — P8 Phase 0)",
+    "summary": "Qwen3-VL, the text half only. It doesn't take images yet.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -686,6 +819,10 @@
     ],
     "display_name": "SmolLM3",
     "description": "HuggingFaceTB SmolLM3-3B: llama dense + per-layer NoPE on every 4th layer, tied embeddings",
+    "summary": "Hugging Face's SmolLM3, 3B.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "none",
@@ -706,6 +843,10 @@
     ],
     "display_name": "Spark-X2.5",
     "description": "XHToken Spark-X2.5 (1.7B/4B): fused QKV, sigmoid head-wise attention output gate, 1:3 sliding:full interleave with layer-dependent partial RoPE, gated exact-GELU MLP",
+    "summary": "XHToken's Spark-X2.5, 1.7B and 4B.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "dense",
     "sliding_window": "interleave",
@@ -726,6 +867,10 @@
     ],
     "display_name": "gpt-oss",
     "description": "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on BOTH Metal and CUDA since 2026-08-31 — the CUDA half validated on the real 20B, resident on an 8 GB card via --moe-cache-experts)",
+    "summary": "OpenAI's open-weight gpt-oss, 20B and 120B.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "softmax-GQA",
     "moe": "sparse, no-shared",
     "sliding_window": "interleave",
@@ -757,6 +902,10 @@
     ],
     "display_name": "Granite-4.0-H",
     "description": "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer",
+    "summary": "IBM's Granite 4.0-H: Mamba-2 layers plus attention and experts.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "state-space hybrid (Mamba-2)",
     "moe": "sparse +shared",
     "sliding_window": "none",
@@ -788,6 +937,10 @@
     ],
     "display_name": "Nemotron-H",
     "description": "NVIDIA Nemotron-H/Nemotron 3 Nano single-op-per-block hybrid (mamba | attention | relu² MLP | MoE-FFN)",
+    "summary": "NVIDIA's Nemotron-H and Nemotron 3 Nano: a Mamba-2 hybrid.",
+    "tasks": [
+      "chat"
+    ],
     "coverage_axis": "state-space hybrid (Mamba-2, single-op)",
     "moe": "dense",
     "sliding_window": "none",

@@ -545,6 +545,59 @@ var familyDocs = map[string]familyDoc{
 	"lfm2":             {"LFM2.5", "Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)", "safetensors", "text"},
 }
 
+// siteDoc is what goinfer.dev's model pages say about a family in plain words (docs/tasks/task-site-2026-09.md, 4a). Keyed by
+// the resolved Architecture.Name, the same key as the row, not by model_type alias: a summary describes the family, and
+// one row covers every alias. Summary is one sentence for someone choosing a model, not an engineer; Tasks tags what the
+// family is for (chat, code, vision). Written by hand, reviewed by the owner; the matrix carries them so the site never
+// hand-edits generated JSON.
+type siteDoc struct {
+	Summary string
+	Tasks   []string
+}
+
+// siteTasks is the closed set a family's Tasks may draw from; the site's filters are built from it.
+var siteTasks = map[string]bool{"chat": true, "code": true, "vision": true}
+
+var siteDocs = map[string]siteDoc{
+	"olmo_hybrid":      {"Ai2's 7B hybrid: mostly linear-attention layers, a few full-attention ones, no position encoding at all.", []string{"chat"}},
+	"qwen3_next":       {"Qwen's 80B mixture-of-experts with about 3B active per token, on hybrid attention.", []string{"chat"}},
+	"qwen3_5_moe":      {"Qwen3.5 and 3.6 mixture-of-experts on hybrid attention.", []string{"chat"}},
+	"qwen3_5":          {"Qwen3.8 dense: the same hybrid attention, without the experts.", []string{"chat"}},
+	"deepseek_v2":      {"DeepSeek-V2 and V2-Lite: a compressed attention cache plus experts.", []string{"chat"}},
+	"deepseek_v3":      {"DeepSeek-V3: the same design at frontier scale. Far larger than any machine on this site.", []string{"chat"}},
+	"kimi_k2":          {"Moonshot's Kimi K2 line, K2.7-Code included. Runs on DeepSeek-V3's code path.", []string{"chat", "code"}},
+	"bailing_hybrid":   {"inclusionAI's Ling 3.0, tiny and flash.", []string{"chat"}},
+	"cohere":           {"Cohere's Command-R and Aya.", []string{"chat"}},
+	"cohere2":          {"Cohere's Command-R7B and Command-A.", []string{"chat"}},
+	"glm4_moe":         {"Zhipu's GLM-4.5 and 4.6 mixture-of-experts.", []string{"chat"}},
+	"gpt2":             {"GPT-2 and GPT-NeoX. Old and small, kept as a reference.", []string{"chat"}},
+	"gemma3":           {"Google's Gemma 3, from 270M to 27B.", []string{"chat"}},
+	"gemma4":           {"Google's Gemma 4: dense models, the small E-models, and the 26B-A4B mixture-of-experts. Reads images.", []string{"chat", "vision"}},
+	"granite":          {"IBM's Granite 4.2 dense, 3B to 30B.", []string{"chat"}},
+	"internlm2":        {"Shanghai AI Lab's InternLM2.", []string{"chat"}},
+	"lfm2":             {"Liquid AI's LFM2 and LFM2.5: short convolutions mixed with attention.", []string{"chat"}},
+	"laguna":           {"poolside's Laguna coding models.", []string{"code"}},
+	"llama":            {"Meta's Llama 2 and 3, plus InternLM3. The one family that also loads GPTQ and AWQ.", []string{"chat"}},
+	"llama4_text":      {"Meta's Llama 4 Scout and Maverick, text only.", []string{"chat"}},
+	"mellum":           {"JetBrains' Mellum2, built for code completion.", []string{"code"}},
+	"mistral3":         {"Ministral 3, 3B to 14B. Text only: the vision tower is skipped.", []string{"chat"}},
+	"mistral":          {"Mistral-style dense models with a sliding attention window.", []string{"chat"}},
+	"mixtral":          {"Mistral's mixture-of-experts.", []string{"chat"}},
+	"olmo3":            {"Ai2's Olmo 3, 7B and 32B.", []string{"chat"}},
+	"phi3":             {"Microsoft's Phi-3 and Phi-4.", []string{"chat"}},
+	"qwen2":            {"Qwen2 and Qwen2.5, including the Coder models most of goinfer's numbers are measured on.", []string{"chat", "code"}},
+	"qwen2_moe":        {"Qwen1.5 and Qwen2 mixture-of-experts.", []string{"chat"}},
+	"qwen2_5_vl":       {"Qwen2.5-VL. Reads images.", []string{"chat", "vision"}},
+	"qwen3":            {"Alibaba's Qwen3 dense models.", []string{"chat"}},
+	"qwen3_moe":        {"Qwen3-30B-A3B and Qwen3-Coder-30B-A3B.", []string{"chat", "code"}},
+	"qwen3_vl":         {"Qwen3-VL, the text half only. It doesn't take images yet.", []string{"chat"}},
+	"smollm3":          {"Hugging Face's SmolLM3, 3B.", []string{"chat"}},
+	"spark2_5":         {"XHToken's Spark-X2.5, 1.7B and 4B.", []string{"chat"}},
+	"gpt-oss":          {"OpenAI's open-weight gpt-oss, 20B and 120B.", []string{"chat"}},
+	"granitemoehybrid": {"IBM's Granite 4.0-H: Mamba-2 layers plus attention and experts.", []string{"chat"}},
+	"nemotron_h":       {"NVIDIA's Nemotron-H and Nemotron 3 Nano: a Mamba-2 hybrid.", []string{"chat"}},
+}
+
 // capabilityRow is one family's row in the matrix (alias group → one row). All
 // columns except Loaders/Modality/DisplayName/OneLineDesc are DERIVED from the
 // resolved Architecture.
@@ -553,6 +606,8 @@ type capabilityRow struct {
 	Aliases       []string `json:"model_types"`
 	DisplayName   string   `json:"display_name"`
 	OneLineDesc   string   `json:"description"`
+	Summary       string   `json:"summary"`
+	Tasks         []string `json:"tasks"`
 	CoverageAxis  string   `json:"coverage_axis"`
 	MoE           string   `json:"moe"`
 	SlidingWindow string   `json:"sliding_window"`
@@ -920,10 +975,16 @@ func buildMatrix(t *testing.T) ([]capabilityRow, error) {
 			if fam, ok := manifest.Families[arch.Name]; ok {
 				parity = parityColumn(fam)
 			}
+			sd, ok := siteDocs[arch.Name]
+			if !ok {
+				return nil, fmt.Errorf("family %q has no siteDoc (summary and tasks for goinfer.dev)", arch.Name)
+			}
 			r = &capabilityRow{
 				Name:          arch.Name,
 				DisplayName:   doc.DisplayName,
 				OneLineDesc:   doc.OneLineDesc,
+				Summary:       sd.Summary,
+				Tasks:         sd.Tasks,
 				CoverageAxis:  coverageAxis(arch),
 				MoE:           moeColumn(arch),
 				SlidingWindow: slidingWindowColumn(arch),
@@ -1099,6 +1160,38 @@ func TestCapabilityMatrix(t *testing.T) {
 
 // TestCapabilityMatrix_CoverageComplete asserts every registry key has both a
 // representativeConfig and a familyDoc, so adding a family without these fails CI.
+// TestCapabilityMatrix_siteDocsAreUsable: the site builds its filters and its "what hasn't been shown" text from these,
+// so an empty summary, an unknown task tag, or a table entry that names no family must fail here, not on the site.
+func TestCapabilityMatrix_siteDocsAreUsable(t *testing.T) {
+	rows, err := buildMatrix(t)
+	if err != nil {
+		t.Fatalf("build matrix: %v", err)
+	}
+	have := map[string]bool{}
+	for _, r := range rows {
+		have[r.Name] = true
+		if len(strings.TrimSpace(r.Summary)) < 20 {
+			t.Errorf("family %q: summary %q is missing or too short to say anything", r.Name, r.Summary)
+		}
+		if strings.HasSuffix(strings.TrimSpace(r.Summary), "  ") || strings.Contains(r.Summary, "\n") {
+			t.Errorf("family %q: summary must be one clean line", r.Name)
+		}
+		if len(r.Tasks) == 0 {
+			t.Errorf("family %q: no tasks", r.Name)
+		}
+		for _, tk := range r.Tasks {
+			if !siteTasks[tk] {
+				t.Errorf("family %q: task %q is not one of chat, code, vision", r.Name, tk)
+			}
+		}
+	}
+	for name := range siteDocs {
+		if !have[name] {
+			t.Errorf("siteDocs has an entry for %q, which is no family in the matrix", name)
+		}
+	}
+}
+
 func TestCapabilityMatrix_CoverageComplete(t *testing.T) {
 	for mt := range registry {
 		if representativeConfig(mt) == nil {
