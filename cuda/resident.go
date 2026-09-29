@@ -104,21 +104,46 @@ const fitDefaultCtx = 8192
 // leftover at all when this mode is on, the same way FitDisabled already opts out.
 //
 // slots is MC1's requested resident KV slot count (cudaKVSlotsRequest). Above 1, the unpinned choice gives up context
-// until every slot fits (ctxForSlots), never below cudaCtxCapDefault.
+// until every slot fits (ctxForSlots), never below cudaCtxCapDefault — or below request, when request is itself a
+// guard pin under that default (see below).
+//
+// request > 0 is NOT always a choice. decoder.Model.ResidentContextPinned() is what actually tells a genuine -ctx
+// apart from the load-time fit guard auto-pinning a smaller context for an UNREQUESTED load (R13,
+// decoder/model.go): request still reports that pin (ResidentContextRequest's own doc comment), but it is a
+// ceiling the guard already proved safe against host RAM, not the caller's own decision — MC1's slots rule is
+// meant to shrink an unpinned load, and a guard pin was never a "the caller chose this" pin in the first place.
+// Before this fix, m.ResidentContextPinned() didn't exist and this function had only request>0 to go on, so it
+// treated a guard pin exactly like an explicit -ctx: fit-by-default (and the slots rule) never ran for it, even
+// though decoder.ctxFloor (2048) can pin BELOW cudaCtxCapDefault (4096) — a case this function's own "never
+// regress the historical default" comment above did not anticipate, because raising an already-guard-shrunk
+// context back to cudaCtxCapDefault is exactly the regression the guard pinned it to prevent.
 func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int) int {
-	if request > 0 || m.FitDisabled() || m.MoECacheExperts() {
-		return resolveCtxCap(request, modelCtx) // an explicit -ctx is untouched either way
+	if (request > 0 && m.ResidentContextPinned()) || m.FitDisabled() || m.MoECacheExperts() {
+		return resolveCtxCap(request, modelCtx) // a genuine explicit -ctx is untouched either way
 	}
 	candidate := fitDefaultCtx
 	if modelCtx > 0 && candidate > modelCtx {
 		candidate = modelCtx
 	}
-	if candidate <= cudaCtxCapDefault {
-		return cudaCtxCapDefault // the model's own window is at or below the historical default anyway
+	floor := cudaCtxCapDefault
+	if request > 0 {
+		// A guard pin (request>0, not ResidentContextPinned — the branch above already returned
+		// otherwise): the ceiling AND the floor both follow it down, never up. Growing past it
+		// asks Plan for more than the guard already determined host RAM can hold; flooring above
+		// it (at the historical cudaCtxCapDefault) would do the same by a different route.
+		if candidate > request {
+			candidate = request
+		}
+		if floor > request {
+			floor = request
+		}
+	}
+	if candidate <= floor {
+		return floor // nothing to gain from asking Plan: already at or below the real floor
 	}
 	free, ok := decoder.FreeBytesFor("cuda")
 	if !ok {
-		return cudaCtxCapDefault // unknown ⇒ the safe historical default, never guess
+		return floor // unknown ⇒ the safe floor, never guess
 	}
 	// M-12 (docs/audit-2026-09-10.md): Plan's own chooseCtx reserves NO margin — it picks the
 	// largest ctx that exactly fills freeBytes-dense-extra, budget down to the last byte. But the
@@ -146,22 +171,26 @@ func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int) int {
 	// or land exactly on it — never under-price the way pricing at a fixed guess could.
 	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate)
 	p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
-	if p.Placement == decoder.PlacementDecline || p.Ctx < cudaCtxCapDefault {
-		return cudaCtxCapDefault // Plan could not confidently improve on the historical floor
+	if p.Placement == decoder.PlacementDecline || p.Ctx < floor {
+		return floor // Plan could not confidently improve on the floor
 	}
 	if slots <= 1 {
 		return p.Ctx
 	}
-	return ctxForSlots(m, marginedFree, extraBytes, p.Ctx, slots)
+	return ctxForSlots(m, marginedFree, extraBytes, p.Ctx, slots, floor)
 }
 
 // ctxForSlots is resolveCtxCapFit's answer when MC1's resident KV slots are requested (owner decision 2026-09-27,
-// docs/tasks/task-concurrency-2026-09.md MC1 on CUDA): the largest context in [cudaCtxCapDefault, oneSlot] at which
-// Plan fits every requested slot — the build's own KV plus slots-1 more copies of it, priced as ExtraBytes — so an
-// unpinned load gives up context before conversations. Measured before the decision on the 8 GB card: the 7B at the
+// docs/tasks/task-concurrency-2026-09.md MC1 on CUDA): the largest context in [floor, oneSlot] at which Plan fits
+// every requested slot — the build's own KV plus slots-1 more copies of it, priced as ExtraBytes — so an unpinned
+// load gives up context before conversations. Measured before the decision on the 8 GB card: the 7B at the
 // one-slot choice (8192) fit 2 of 4 slots and 4 round-robin clients thrashed (1.006x); at 4096 all 4 fit (1.33x).
-// When not even cudaCtxCapDefault holds them all, it returns cudaCtxCapDefault and checkKVFits clamps the count, as
-// it always has. An explicit -ctx never reaches here (resolveCtxCapFit's first branch).
+// When not even floor holds them all, it returns floor and checkKVFits clamps the count, as it always has. An
+// explicit -ctx never reaches here (resolveCtxCapFit's first branch).
+//
+// floor is cudaCtxCapDefault, UNLESS resolveCtxCapFit's own caller passed a guard-pinned request below it
+// (decoder.ctxFloor, 2048, can sit under cudaCtxCapDefault's 4096) — the slots rule may shrink a guard-pinned load
+// same as an unpinned one, but never past what the guard already proved was the real safety floor.
 //
 // KV is exactly linear in the context and Plan's other terms do not grow with it, so "fits" is monotone and a binary
 // search finds the edge.
@@ -170,7 +199,7 @@ func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int) int {
 // device weights at 4930 MB and the build allocates ~4476 MB before its KV. It returns the 4096 floor where checkKVFits
 // would have held 4 slots to ~4870 positions: 4 slots at 4096 instead of at ~4870. Measured 2026-09-27; tightening
 // Plan's weight estimate is its own item.
-func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slots int) int {
+func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slots, floor int) int {
 	fits := func(ctx int) bool {
 		more := int64(slots-1) * m.ResidentKVBytes("cuda", ctx, false, false) // CUDA's KV is f32 whatever was requested
 		p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extraBytes + more})
@@ -179,13 +208,13 @@ func ctxForSlots(m *decoder.Model, marginedFree, extraBytes int64, oneSlot, slot
 	if fits(oneSlot) {
 		return oneSlot
 	}
-	if !fits(cudaCtxCapDefault) {
+	if !fits(floor) {
 		fmt.Fprintf(os.Stderr, "cuda: resident context %d (the floor), not %d, for the %d requested KV slots (--kv-sessions); "+
 			"the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots\n",
-			cudaCtxCapDefault, oneSlot, slots)
-		return cudaCtxCapDefault
+			floor, oneSlot, slots)
+		return floor
 	}
-	lo, hi := cudaCtxCapDefault, oneSlot // fits(lo), !fits(hi)
+	lo, hi := floor, oneSlot // fits(lo), !fits(hi)
 	for hi-lo > 1 {
 		if mid := lo + (hi-lo)/2; fits(mid) {
 			lo = mid

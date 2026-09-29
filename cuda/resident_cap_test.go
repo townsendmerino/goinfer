@@ -80,26 +80,46 @@ func TestResolveCtxCap(t *testing.T) {
 // nobara numbers). A real (if minimal, tracked-in-git) model is loaded per case rather than
 // passing nil — m.FitDisabled() reads a real field now, unlike the plain env-var check this
 // replaced, so a nil *decoder.Model would panic in the request==0 cases where it's evaluated.
+//
+// `pinned` decides whether the case's Options carries ResidentContext: request, i.e. whether m
+// itself is a GENUINE pin (decoder.Model.ResidentContextPinned() true) or just a bare request
+// value passed straight to resolveCtxCapFit with an unpinned m — item 28
+// (docs/prompts/nobara-mc1-webgpu-2026-09.md §4): before this field existed here, every
+// request>0 case below loaded m WITHOUT ResidentContext set, so `pinned` was accidentally always
+// false and these cases were passing by coincidence (fitDefaultCtx is itself 8192, and llama-tiny
+// is small enough that Plan hands 8192 straight back unshrunk) rather than by actually taking the
+// "genuine pin, skip fit entirely" branch they claimed to test.
 func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 	for _, c := range []struct {
 		name              string
 		request, modelCtx int
+		pinned            bool
 		noFitEnv          bool
 		disableFitOpt     bool
 		moeCacheOpt       bool
 		want              int
 	}{
-		{"explicit request bypasses fit entirely", 8192, 32768, false, false, false, 8192},
-		{"explicit request bypasses fit even with the env var set", 8192, 32768, true, false, false, 8192},
-		{"GOINFER_NO_FIT_DEFAULT restores the historical default", 0, 32768, true, false, false, cudaCtxCapDefault},
-		{"Options.DisableFit (--fit=off) restores the historical default", 0, 32768, false, true, false, cudaCtxCapDefault},
-		{"model window at the historical default has nothing to gain", 0, cudaCtxCapDefault, false, false, false, cudaCtxCapDefault},
-		{"model window below the historical default has nothing to gain", 0, 2048, false, false, false, cudaCtxCapDefault},
+		{"genuine pin bypasses fit entirely", 8192, 32768, true, false, false, false, 8192},
+		{"genuine pin bypasses fit even with the env var set", 8192, 32768, true, true, false, false, 8192},
+		{"genuine pin below cudaCtxCapDefault is still untouched", 2048, 32768, true, false, false, false, 2048},
+		{"GOINFER_NO_FIT_DEFAULT restores the historical default", 0, 32768, false, true, false, false, cudaCtxCapDefault},
+		{"Options.DisableFit (--fit=off) restores the historical default", 0, 32768, false, false, true, false, cudaCtxCapDefault},
+		{"model window at the historical default has nothing to gain", 0, cudaCtxCapDefault, false, false, false, false, cudaCtxCapDefault},
+		{"model window below the historical default has nothing to gain", 0, 2048, false, false, false, false, cudaCtxCapDefault},
 		// Found live 2026-09-15/16: growing ctx starves the expert-slot cache's own claim on the
-		// same free VRAM (resolveCtxCapFit's own doc comment has the measured numbers). An explicit
-		// -ctx still overrides it below — this only changes the UNPINNED default.
-		{"Options.MoECacheExperts restores the historical default, same as DisableFit", 0, 32768, false, false, true, cudaCtxCapDefault},
-		{"explicit request still bypasses fit with MoECacheExperts set", 8192, 32768, false, false, true, 8192},
+		// same free VRAM (resolveCtxCapFit's own doc comment has the measured numbers). A genuine
+		// pin still overrides it below — this only changes the UNPINNED default.
+		{"Options.MoECacheExperts restores the historical default, same as DisableFit", 0, 32768, false, false, false, true, cudaCtxCapDefault},
+		{"genuine pin still bypasses fit with MoECacheExperts set", 8192, 32768, true, false, false, true, 8192},
+		// Item 28's own fix: request>0 but NOT pinned is a load-time fit-guard auto-pin (R13), not
+		// a choice — it must still go through fit-by-default (never the request>0 shortcut above),
+		// clamped so it can only ever land AT OR UNDER the guard's own pin, never over it. llama-tiny
+		// is tiny enough that Plan always has room, so this lands exactly at the pin (the clamp,
+		// not Plan, is what's under test) — including the below-cudaCtxCapDefault case, where the
+		// OLD code would have wrongly floored back UP to cudaCtxCapDefault, raising a context past
+		// what the guard proved host RAM could hold.
+		{"guard pin (unpinned m) at cudaCtxCapDefault: fit-by-default still runs, clamped to it", cudaCtxCapDefault, 32768, false, false, false, false, cudaCtxCapDefault},
+		{"guard pin (unpinned m) BELOW cudaCtxCapDefault: floor follows it down, not back up", 2048, 32768, false, false, false, false, 2048},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if c.noFitEnv {
@@ -107,11 +127,18 @@ func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 			} else {
 				os.Unsetenv("GOINFER_NO_FIT_DEFAULT")
 			}
-			m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Quant: "int4", DisableFit: c.disableFitOpt, MoECacheExperts: c.moeCacheOpt})
+			opts := decoder.Options{Quant: "int4", DisableFit: c.disableFitOpt, MoECacheExperts: c.moeCacheOpt}
+			if c.pinned {
+				opts.ResidentContext = c.request
+			}
+			m, err := decoder.Load("../testdata/llama-tiny", opts)
 			if err != nil {
 				t.Fatalf("Load: %v", err)
 			}
 			defer m.Close()
+			if got := m.ResidentContextPinned(); got != c.pinned {
+				t.Fatalf("ResidentContextPinned() = %v, want %v — this case's own setup is wrong", got, c.pinned)
+			}
 			if got := resolveCtxCapFit(m, c.request, c.modelCtx, 1); got != c.want {
 				t.Errorf("resolveCtxCapFit(m, %d, %d) = %d, want %d", c.request, c.modelCtx, got, c.want)
 			}

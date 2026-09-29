@@ -61,6 +61,9 @@
 >   Poll), so a rebuild-and-retry can only ever LOSE the working clamped build, not improve it. Discrete GPUs keep
 >   today's clamp-only behavior; "slots before context" ships on darwin only. Context against slots on WebGPU:
 >   decided 2026-09-27, slots first as on CUDA; done on darwin, discrete GPUs stay clamp-only by design now;
+>   ~~CUDA `resolveCtxCapFit` keys on `ResidentContextPinned()`~~ — shipped 2026-09-28 (item 28): a guard-pinned
+>   context (not a genuine `-ctx`) now correctly runs fit-by-default and the slots rule, clamped so it can only
+>   land at or under the guard's own pin, including below `cudaCtxCapDefault`, which the old code got backwards;
 > - ~~context against slots, owner's call~~ — decided 2026-09-27: a slot request shrinks the unpinned default
 >   context (`947e06ce`). The 7B now starts at 4096 with 4 slots and reads 1.34–1.35× at its default, where it
 >   thrashed on 2 slots at 8192. ~~`Plan`'s conservative weight estimate~~ — fixed 2026-09-27 (`4e230601`): it
@@ -362,8 +365,39 @@ control thrashes (3 / 3). The tagged CUDA suite: 171 pass, 0 fail.
   - The graded W7 configuration (4 slots fit at 16k) is unchanged.
   - **Step 2 (discrete GPUs):** only if the nobara run shows a failed allocation on Vulkan is clean. What fits is
     learned from the build there, and the prompt carries the pre-registered decision rule.
-  - CUDA's `resolveCtxCapFit` still treats a guard-pinned context as explicit. Switching it to
-    `ResidentContextPinned()` is item 4 of the same prompt.
+  - ~~CUDA's `resolveCtxCapFit` still treats a guard-pinned context as explicit~~ — fixed 2026-09-28 (item 28,
+    item 4 of the same prompt). See its own result below.
+
+**Item 28, SHIPPED 2026-09-28: CUDA `resolveCtxCapFit` now keys on `ResidentContextPinned()`, not `request > 0`.**
+Before this, `request > 0` alone made the function return `resolveCtxCap(request, modelCtx)` untouched — the same
+path a genuine `-ctx` takes — whether `request` came from the caller's own choice or from the load-time fit
+guard auto-pinning a smaller context for an unrequested load (R13). A guard pin is a ceiling the guard already
+proved safe against host RAM, not a choice; MC1's slots rule is supposed to shrink exactly that kind of
+context, and it silently never ran for it.
+
+- **The bug had a second edge fit-by-default's own comments hadn't anticipated:** `decoder.ctxFloor` (the
+  general fit guard's own floor, 2048) sits BELOW `cudaCtxCapDefault` (4096, CUDA's historical floor). The old
+  code's `return cudaCtxCapDefault` fallbacks would have floored a guard pin of, say, 2048 back UP to 4096 —
+  raising the context past exactly what the guard had just determined host RAM could hold. Fixed by having both
+  the ceiling (`candidate`) and the floor CUDA's own logic returns to follow a guard pin down together, never
+  just the ceiling.
+- **Fix:** `resolveCtxCapFit`'s guard is now `request > 0 && m.ResidentContextPinned()` for the genuine-pin
+  shortcut; a guard pin (`request > 0`, not pinned) clamps both `candidate` and a new `floor` variable to
+  `request` before Plan runs, and `ctxForSlots` takes that `floor` as a parameter instead of hardcoding
+  `cudaCtxCapDefault`, so the slots search still respects a sub-4096 guard pin as its own lower bound.
+- **Found and fixed two existing tests that were passing for the wrong reason.** Both `TestResolveCtxCapFit_shortcuts`
+  (`cuda/resident_cap_test.go`) and `TestResolveCtxCapFit_slotsShrinkTheContext` (`cuda/kv_slots_test.go`) called
+  `resolveCtxCapFit(m, 8192, ...)` on an `m` loaded WITHOUT `ResidentContext` set — i.e. `m.ResidentContextPinned()`
+  was already false before this fix existed to check it, so under the corrected logic these cases would silently
+  stop testing "a genuine pin never shrinks" and start testing the (different, also-correct) guard-pin path
+  instead, without a single assertion changing shape — `fitDefaultCtx` is itself 8192 and llama-tiny is small
+  enough that both paths happen to land on 8192 for the unshrunk case. Fixed by loading a genuinely-pinned `m`
+  (`Options.ResidentContext: request`) for every case meant to exercise the explicit-pin shortcut, with a
+  `m.ResidentContextPinned()` assertion on the setup itself so a future edit here can't reintroduce the same
+  silent drift. Added a new case pinning the sub-cudaCtxCapDefault floor-follows-down behavior directly
+  (`request=2048`, unpinned `m`, want 2048 — the exact scenario the old code got backwards).
+- Full tagged CUDA suite: 177 pass, 0 fail (same as item 9's baseline). `gofmt`, `go vet` and the pinned
+  staticcheck 0.8.0 all clean on `-tags 'cuda goinfer_testhooks'`.
 
 **Item 26, RESULT 2026-09-28 (nobara-pc, RTX 2070 SUPER 8 GB, WebGPU through wgpu-native's Vulkan backend, driver
 595.91.07): CLEAN — go to step 2.** Logs: [`docs/measurements/mc1-webgpu-nobara-2026-09-28/`](../measurements/mc1-webgpu-nobara-2026-09-28/).

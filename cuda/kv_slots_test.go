@@ -411,9 +411,19 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 				t.Fatalf("Load: %v", err)
 			}
 			defer m.Close()
+			// A GENUINE pin (item 28, docs/prompts/nobara-mc1-webgpu-2026-09.md §4): ResidentContext set
+			// in Options, not just a bare 8192 handed to resolveCtxCapFit with an otherwise-unpinned m —
+			// the latter is now a guard-pin scenario (m.ResidentContextPinned() false) and correctly runs
+			// fit-by-default clamped to it, which would shrink for these slots, not the "never shrinks"
+			// invariant this case exists to check.
+			mPinned, err := decoder.Load(dir, decoder.Options{Quant: "int4", ExtraResidentBytes: forced, ResidentKVSlots: slots, ResidentContext: 8192})
+			if err != nil {
+				t.Fatalf("Load (pinned): %v", err)
+			}
+			defer mPinned.Close()
 			one := resolveCtxCapFit(m, 0, 1<<20, 1)
 			got := resolveCtxCapFit(m, 0, 1<<20, slots)
-			pinned := resolveCtxCapFit(m, 8192, 1<<20, slots)
+			pinned := resolveCtxCapFit(mPinned, mPinned.ResidentContextRequest(), 1<<20, slots)
 			t.Logf("one slot: ctx %d; %d slots: ctx %d (target %d); explicit 8192 with %d slots: %d", one, slots, got, c.target, slots, pinned)
 			if one != fitDefaultCtx {
 				t.Fatalf("one slot chose ctx %d, want the full candidate %d — the forced budget did not leave one slot room", one, fitDefaultCtx)
