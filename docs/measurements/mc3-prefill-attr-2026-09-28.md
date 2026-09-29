@@ -45,6 +45,31 @@ interleaved, 9a48035e, adds a CUDA test and docs, so the Metal binary's sources 
 - **Reported, not graded:** the 7B's share, runs and bookkeeping time, idle time, passes per cell, and the lifetime
   counters beside the differenced ones.
 
-## 4. Results
+## 4. Results (Mac night queue, 2026-09-28 21:17–21:27 PDT): the share is 0.151. CLOSED by the owner
 
-*(After the run.)*
+The Mac night queue ran `run-mc3-prefill-attr.sh` unattended. It was idle-gated, on AC power, and every cell was on
+the Metal resident (`decode path: metal-resident (int4)` in each server log). Raw data:
+[`results.json`](mc3-prefill-attr-2026-09-28/results.json), [`run.log`](mc3-prefill-attr-2026-09-28/run.log) and the
+six `server-*.log`.
+
+| model | rep | cell wall (s) | prefill (s) / passes | decode runs (s) | bookkeeping / idle (s) | **prefill share** | aggregate tok/s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1.5B | 1 | 19.78 | 3.01 / 24 | 16.46 | 0.001 / 0.31 | **0.152** | 155.3 |
+| 1.5B | 2 | 20.00 | 3.00 / 24 | 16.80 | 0.001 / 0.19 | **0.150** | 153.6 |
+| 1.5B | 3 | 19.80 | 2.99 / 24 | 16.61 | 0.000 / 0.20 | **0.151** | 155.2 |
+| 7B | 1 | 66.76 | 10.15 / 24 | 56.16 | 0.001 / 0.45 | 0.152 | 46.0 |
+| 7B | 2 | 66.59 | 10.19 / 24 | 56.19 | 0.001 / 0.21 | 0.153 | 46.1 |
+| 7B | 3 | 67.45 | 10.20 / 24 | 57.04 | 0.001 / 0.21 | 0.151 | 45.6 |
+
+- **The graded reading:** the 1.5B's median prefill share is **0.151**, just inside the owner's-call band
+  [0.15, 0.25). The three repetitions span 0.150–0.152, and the 7B reads the same (0.151–0.153).
+- **The estimate it tested does not hold.** Newcomer prefills are ~15% of a 4-client cell, not the ~⅓ estimated before
+  chunked prefill. Decode runs are ~84%.
+- **Per pass:** each cell prefilled 609 new prompt tokens in 24 passes. 9,884 prompt tokens were sent and 9,275 reused
+  from the slots' prefixes, so each pass averages ~125 ms (1.5B) and ~425 ms (7B).
+- **What a cut could buy:** it removes per-pass overhead, not the prefill compute itself, so its ceiling is a fraction
+  of the 15%.
+
+**Owner decision, 2026-09-28: close the per-pass prefill cost cut.** The follow-on is struck in
+`task-concurrency-2026-09.md`. The instrument stays: the counters print at shutdown and are on `/admin/status`, so a
+later workload with longer or more frequent newcomer prompts can be read the same way.

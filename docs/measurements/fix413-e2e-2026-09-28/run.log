@@ -1,0 +1,38 @@
+[w7-plain] waiting for memory: 1893 MB free, want >= 3000 MB (0s/60s)
+[w7-plain] waiting for memory: 1893 MB free, want >= 3000 MB (2s/60s)
+[w7-plain] waiting for memory: 1878 MB free, want >= 3000 MB (4s/60s)
+[w7-plain] waiting for memory: 1878 MB free, want >= 3000 MB (6s/60s)
+[w7-plain] waiting for memory: 1878 MB free, want >= 3000 MB (8s/60s)
+[w7-plain] waiting for memory: 1877 MB free, want >= 3000 MB (10s/60s)
+[w7-plain] waiting for memory: 1876 MB free, want >= 3000 MB (12s/60s)
+[w7-plain] waiting for memory: 1890 MB free, want >= 3000 MB (14s/60s)
+[w7-plain] waiting for memory: 1890 MB free, want >= 3000 MB (16s/60s)
+[w7-plain] waiting for memory: 1890 MB free, want >= 3000 MB (18s/60s)
+[w7-plain] waiting for memory: 1889 MB free, want >= 3000 MB (20s/60s)
+[w7-plain] waiting for memory: 1890 MB free, want >= 3000 MB (22s/60s)
+[w7-plain] waiting for memory: 1890 MB free, want >= 3000 MB (24s/60s)
+[w7-plain] waiting for memory: 1888 MB free, want >= 3000 MB (26s/60s)
+[w7-plain] waiting for memory: 1892 MB free, want >= 3000 MB (28s/60s)
+[w7-plain] waiting for memory: 1889 MB free, want >= 3000 MB (30s/60s)
+[w7-plain] waiting for memory: 1888 MB free, want >= 3000 MB (32s/60s)
+[w7-plain] waiting for memory: 1839 MB free, want >= 3000 MB (34s/60s)
+[w7-plain] waiting for memory: 1790 MB free, want >= 3000 MB (36s/60s)
+[w7-plain] waiting for memory: 1767 MB free, want >= 3000 MB (38s/60s)
+[w7-plain] waiting for memory: 1735 MB free, want >= 3000 MB (40s/60s)
+[w7-plain] waiting for memory: 1732 MB free, want >= 3000 MB (42s/60s)
+[w7-plain] waiting for memory: 1734 MB free, want >= 3000 MB (45s/60s)
+[w7-plain] waiting for memory: 1707 MB free, want >= 3000 MB (47s/60s)
+[w7-plain] waiting for memory: 1690 MB free, want >= 3000 MB (49s/60s)
+[w7-plain] waiting for memory: 1690 MB free, want >= 3000 MB (51s/60s)
+[w7-plain] waiting for memory: 1688 MB free, want >= 3000 MB (53s/60s)
+[w7-plain] waiting for memory: 1685 MB free, want >= 3000 MB (55s/60s)
+[w7-plain] waiting for memory: 1683 MB free, want >= 3000 MB (57s/60s)
+[w7-plain] waiting for memory: 1681 MB free, want >= 3000 MB (59s/60s)
+[w7-plain] WARNING: proceeding after 60s without reaching 3000 MB free (have 1683 MB)
+[fix413-e2e] round 1 unfixed  valid=False errors=None completed=None avail=None ballast did not settle in 240s: growing 
+[fix413-e2e] round 1 fixed    valid=False errors=None completed=None avail=None ballast did not settle in 240s: growing 
+[fix413-e2e] round 2 fixed    valid=False errors=None completed=None avail=None ballast did not settle in 240s: growing 
+[fix413-e2e] round 2 unfixed  valid=False errors=None completed=None avail=None ballast did not settle in 240s: growing 
+[fix413-e2e] round 3 unfixed  valid=False errors=None completed=None avail=None ballast did not settle in 240s: growing 
+[fix413-e2e] round 3 fixed    valid=False errors=None completed=None avail=None ballast did not settle in 240s: growing 
+[fix413-e2e] VERDICT: INCONCLUSIVE: valid rounds fixed 0, unfixed 0 (need 2 each)

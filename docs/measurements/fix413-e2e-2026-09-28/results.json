@@ -1,0 +1,134 @@
+{
+ "header": {
+  "utc": "2026-09-29T03:47:16Z",
+  "host": "macbookpro.lan",
+  "model": "/Users/francistownsend-merino/models/qwen2.5-7b-instruct-q4_k_m.gguf",
+  "goinfer_commit": "",
+  "goinfer_dirty": false,
+  "goinfer_serve_mtime": "Sep 19 21:48:45 2026",
+  "llama_server_version": "version: 0.3.0 (build 10621, commit c1d0e7a00)",
+  "uptime": "20:47  up 4 days, 10:42, 1 user, load averages: 2.07 2.80 2.73"
+ },
+ "band_gb": [
+  1.0,
+  1.6
+ ],
+ "args": {
+  "clients": 4,
+  "rounds": 2,
+  "chars": 3500,
+  "max_tokens": 256,
+  "rev": "cc5f8c2c"
+ },
+ "rounds": [
+  {
+   "round": 1,
+   "arm": "unfixed",
+   "binary": "serve-metal-unfixed-33217487",
+   "started": "20:47:16",
+   "resident": true,
+   "ballast_at_start": {
+    "t": 236.4,
+    "state": "growing",
+    "available": 5886984192,
+    "ballast": 12884901888,
+    "swap_growth": 0,
+    "settled_for_s": 0.0
+   },
+   "valid": false,
+   "invalid_why": "ballast did not settle in 240s: growing ",
+   "ended": "20:52:25"
+  },
+  {
+   "round": 1,
+   "arm": "fixed",
+   "binary": "serve-metal-fixed-33217487",
+   "started": "20:52:25",
+   "resident": true,
+   "ballast_at_start": {
+    "t": 234.4,
+    "state": "growing",
+    "available": 5835161600,
+    "ballast": 12884901888,
+    "swap_growth": 0,
+    "settled_for_s": 0.0
+   },
+   "valid": false,
+   "invalid_why": "ballast did not settle in 240s: growing ",
+   "ended": "20:56:29"
+  },
+  {
+   "round": 2,
+   "arm": "fixed",
+   "binary": "serve-metal-fixed-33217487",
+   "started": "20:56:29",
+   "resident": true,
+   "ballast_at_start": {
+    "t": 239.7,
+    "state": "growing",
+    "available": 5760663552,
+    "ballast": 12884901888,
+    "swap_growth": -8388608,
+    "settled_for_s": 0.0
+   },
+   "valid": false,
+   "invalid_why": "ballast did not settle in 240s: growing ",
+   "ended": "21:00:33"
+  },
+  {
+   "round": 2,
+   "arm": "unfixed",
+   "binary": "serve-metal-unfixed-33217487",
+   "started": "21:00:33",
+   "resident": true,
+   "ballast_at_start": {
+    "t": 237.1,
+    "state": "growing",
+    "available": 6127386624,
+    "ballast": 12884901888,
+    "swap_growth": 0,
+    "settled_for_s": 0.0
+   },
+   "valid": false,
+   "invalid_why": "ballast did not settle in 240s: growing ",
+   "ended": "21:04:40"
+  },
+  {
+   "round": 3,
+   "arm": "unfixed",
+   "binary": "serve-metal-unfixed-33217487",
+   "started": "21:04:40",
+   "resident": true,
+   "ballast_at_start": {
+    "t": 236.8,
+    "state": "growing",
+    "available": 6230147072,
+    "ballast": 12884901888,
+    "swap_growth": 0,
+    "settled_for_s": 0.0
+   },
+   "valid": false,
+   "invalid_why": "ballast did not settle in 240s: growing ",
+   "ended": "21:08:47"
+  },
+  {
+   "round": 3,
+   "arm": "fixed",
+   "binary": "serve-metal-fixed-33217487",
+   "started": "21:08:47",
+   "resident": true,
+   "ballast_at_start": {
+    "t": 235.0,
+    "state": "growing",
+    "available": 6015074304,
+    "ballast": 12884901888,
+    "swap_growth": 0,
+    "settled_for_s": 0.0
+   },
+   "valid": false,
+   "invalid_why": "ballast did not settle in 240s: growing ",
+   "ended": "21:12:51"
+  }
+ ],
+ "verdict": "INCONCLUSIVE: valid rounds fixed 0, unfixed 0 (need 2 each)"
+}

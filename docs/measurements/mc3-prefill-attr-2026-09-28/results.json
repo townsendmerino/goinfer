@@ -1,0 +1,389 @@
+{
+ "header": {
+  "utc": "2026-09-29T04:17:51Z",
+  "host": "macbookpro.lan",
+  "model": "/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+  "goinfer_commit": "",
+  "goinfer_dirty": false,
+  "goinfer_serve_mtime": "Sep 28 19:14:11 2026",
+  "llama_server_version": "version: 0.3.0 (build 10621, commit c1d0e7a00)",
+  "uptime": "21:17  up 4 days, 11:13, 1 user, load averages: 2.56 2.59 2.82"
+ },
+ "binary": "serve-metal-9e1d31c8",
+ "args": {
+  "job": "/Users/francistownsend-merino/goinfer-bench/mc3-prefill-attr-2026-09-28",
+  "reps": 3,
+  "max_tokens": 128,
+  "clients": 4,
+  "models": "1.5B,7B"
+ },
+ "cells": [
+  {
+   "model": "1.5B",
+   "rep": 1,
+   "wall_s": 19.777,
+   "aggregate_tok_s": 155.33,
+   "completion_tokens": 3072,
+   "prompt_tokens": 9884,
+   "reused_tokens": 9275,
+   "turn_latency_ms": [
+    [
+     3497.3,
+     2970.5,
+     3111.1,
+     3255.7,
+     3382.4,
+     3559.2
+    ],
+    [
+     3496.8,
+     2971.1,
+     3111.2,
+     3255.2,
+     3382.9,
+     3559.0
+    ],
+    [
+     3496.9,
+     2971.2,
+     3110.7,
+     3255.2,
+     3382.6,
+     3559.4
+    ],
+    [
+     3497.0,
+     2970.8,
+     3110.5,
+     3256.0,
+     3382.5,
+     3558.8
+    ]
+   ],
+   "lifetime": {
+    "runs_s": 16.472,
+    "exclusive_s": 4.75,
+    "prefill_passes": 25,
+    "prefill_s": 4.75,
+    "bookkeeping_s": 0.001
+   },
+   "runs_s": 16.462,
+   "exclusive_s": 3.01,
+   "prefill_passes": 24,
+   "prefill_s": 3.009,
+   "bookkeeping_s": 0.001,
+   "prefill_share": 0.1522,
+   "idle_s": 0.305,
+   "batch_runs": 769,
+   "steps": 768,
+   "step_tokens": 3072,
+   "solo_tokens": 1
+  },
+  {
+   "model": "1.5B",
+   "rep": 2,
+   "wall_s": 19.995,
+   "aggregate_tok_s": 153.64,
+   "completion_tokens": 3072,
+   "prompt_tokens": 9884,
+   "reused_tokens": 9275,
+   "turn_latency_ms": [
+    [
+     3505.4,
+     2986.9,
+     3130.4,
+     3272.5,
+     3478.7,
+     3620.4
+    ],
+    [
+     3504.7,
+     2975.7,
+     3142.4,
+     3271.8,
+     3478.7,
+     3620.9
+    ],
+    [
+     3516.1,
+     2964.2,
+     3141.7,
+     3272.5,
+     3479.2,
+     3620.3
+    ],
+    [
+     3504.6,
+     2975.2,
+     3142.4,
+     3272.7,
+     3478.1,
+     3620.4
+    ]
+   ],
+   "lifetime": {
+    "runs_s": 16.81,
+    "exclusive_s": 3.13,
+    "prefill_passes": 25,
+    "prefill_s": 3.129,
+    "bookkeeping_s": 0.001
+   },
+   "runs_s": 16.799,
+   "exclusive_s": 3.004,
+   "prefill_passes": 24,
+   "prefill_s": 3.004,
+   "bookkeeping_s": 0.001,
+   "prefill_share": 0.1502,
+   "idle_s": 0.192,
+   "batch_runs": 771,
+   "steps": 768,
+   "step_tokens": 3070,
+   "solo_tokens": 3
+  },
+  {
+   "model": "1.5B",
+   "rep": 3,
+   "wall_s": 19.796,
+   "aggregate_tok_s": 155.18,
+   "completion_tokens": 3072,
+   "prompt_tokens": 9884,
+   "reused_tokens": 9275,
+   "turn_latency_ms": [
+    [
+     3487.5,
+     2955.4,
+     3156.2,
+     3241.7,
+     3410.7,
+     3543.6
+    ],
+    [
+     3486.8,
+     2955.5,
+     3145.0,
+     3252.1,
+     3412.5,
+     3543.1
+    ],
+    [
+     3486.9,
+     2955.1,
+     3144.7,
+     3253.2,
+     3411.5,
+     3543.5
+    ],
+    [
+     3487.4,
+     2954.7,
+     3144.5,
+     3252.0,
+     3412.0,
+     3543.7
+    ]
+   ],
+   "lifetime": {
+    "runs_s": 16.615,
+    "exclusive_s": 3.115,
+    "prefill_passes": 25,
+    "prefill_s": 3.114,
+    "bookkeeping_s": 0.0
+   },
+   "runs_s": 16.605,
+   "exclusive_s": 2.993,
+   "prefill_passes": 24,
+   "prefill_s": 2.992,
+   "bookkeeping_s": 0.0,
+   "prefill_share": 0.1512,
+   "idle_s": 0.198,
+   "batch_runs": 770,
+   "steps": 768,
+   "step_tokens": 3071,
+   "solo_tokens": 2
+  },
+  {
+   "model": "7B",
+   "rep": 1,
+   "wall_s": 66.758,
+   "aggregate_tok_s": 46.02,
+   "completion_tokens": 3072,
+   "prompt_tokens": 9884,
+   "reused_tokens": 9275,
+   "turn_latency_ms": [
+    [
+     11961.9,
+     10260.5,
+     10706.4,
+     10959.2,
+     11280.3,
+     11588.6
+    ],
+    [
+     11961.4,
+     10261.1,
+     11048.6,
+     10653.0,
+     11243.1,
+     11589.1
+    ],
+    [
+     11961.4,
+     10295.8,
+     10609.7,
+     11020.3,
+     11280.1,
+     11589.9
+    ],
+    [
+     11960.6,
+     10261.2,
+     10644.6,
+     11020.6,
+     11280.3,
+     11589.6
+    ]
+   ],
+   "lifetime": {
+    "runs_s": 56.291,
+    "exclusive_s": 10.698,
+    "prefill_passes": 25,
+    "prefill_s": 10.697,
+    "bookkeeping_s": 0.001
+   },
+   "runs_s": 56.159,
+   "exclusive_s": 10.153,
+   "prefill_passes": 24,
+   "prefill_s": 10.153,
+   "bookkeeping_s": 0.001,
+   "prefill_share": 0.1521,
+   "idle_s": 0.445,
+   "batch_runs": 775,
+   "steps": 769,
+   "step_tokens": 3070,
+   "solo_tokens": 6
+  },
+  {
+   "model": "7B",
+   "rep": 2,
+   "wall_s": 66.594,
+   "aggregate_tok_s": 46.13,
+   "completion_tokens": 3072,
+   "prompt_tokens": 9884,
+   "reused_tokens": 9275,
+   "turn_latency_ms": [
+    [
+     12002.3,
+     10354.9,
+     10538.8,
+     10868.2,
+     11194.1,
+     11635.3
+    ],
+    [
+     12002.4,
+     10355.2,
+     10537.9,
+     10868.4,
+     11195.0,
+     11634.5
+    ],
+    [
+     12001.9,
+     10355.5,
+     10538.6,
+     10867.5,
+     11194.9,
+     11635.2
+    ],
+    [
+     12002.3,
+     10354.8,
+     10538.4,
+     10868.1,
+     11194.9,
+     11634.5
+    ]
+   ],
+   "lifetime": {
+    "runs_s": 56.325,
+    "exclusive_s": 10.593,
+    "prefill_passes": 25,
+    "prefill_s": 10.593,
+    "bookkeeping_s": 0.001
+   },
+   "runs_s": 56.191,
+   "exclusive_s": 10.191,
+   "prefill_passes": 24,
+   "prefill_s": 10.19,
+   "bookkeeping_s": 0.001,
+   "prefill_share": 0.153,
+   "idle_s": 0.213,
+   "batch_runs": 772,
+   "steps": 768,
+   "step_tokens": 3072,
+   "solo_tokens": 4
+  },
+  {
+   "model": "7B",
+   "rep": 3,
+   "wall_s": 67.445,
+   "aggregate_tok_s": 45.55,
+   "completion_tokens": 3072,
+   "prompt_tokens": 9884,
+   "reused_tokens": 9275,
+   "turn_latency_ms": [
+    [
+     12401.4,
+     10355.6,
+     10662.3,
+     11120.7,
+     11094.0,
+     11810.6
+    ],
+    [
+     12401.6,
+     10355.1,
+     10734.4,
+     11049.0,
+     11094.2,
+     11810.1
+    ],
+    [
+     12400.9,
+     10356.0,
+     10734.2,
+     11049.3,
+     11093.6,
+     11810.1
+    ],
+    [
+     12401.2,
+     10355.0,
+     10734.5,
+     11049.4,
+     11094.2,
+     11810.0
+    ]
+   ],
+   "lifetime": {
+    "runs_s": 57.173,
+    "exclusive_s": 10.588,
+    "prefill_passes": 25,
+    "prefill_s": 10.588,
+    "bookkeeping_s": 0.001
+   },
+   "runs_s": 57.041,
+   "exclusive_s": 10.197,
+   "prefill_passes": 24,
+   "prefill_s": 10.196,
+   "bookkeeping_s": 0.001,
+   "prefill_share": 0.1512,
+   "idle_s": 0.207,
+   "batch_runs": 773,
+   "steps": 769,
+   "step_tokens": 3072,
+   "solo_tokens": 4
+  }
+ ],
+ "verdict": "OWNER'S CALL: median prefill share 0.151 in [0.15, 0.25)"
+}

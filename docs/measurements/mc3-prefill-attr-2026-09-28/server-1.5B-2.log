@@ -1,0 +1,24 @@
+==== 2026-09-28 21:18:16 /Users/francistownsend-merino/goinfer-bench/mc3-prefill-attr-2026-09-28/serve-metal-9e1d31c8 -model bench=/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf -backend metal -addr 127.0.0.1:8098 -quant int4 -embed-int4=false -admin-socket /tmp/mc3attr-35619-1.5B-2.sock
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.018 ms, fragment 0.040 ms), gate|up at B <= 2 (0.110, 0.252); 0 = always the fragment
+loaded "bench": 28-layer model (vocab 151936) in 183ms [chat: chatml]
+  decode path: metal-resident (int4)
+  prefill path: batched f16-MMA above 64 prompt tokens; sequential below (§3 floor)
+  context: 4096 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f16
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.1 GB, budget 6.5 GB, 4.7 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+admin socket: /tmp/mc3attr-35619-1.5B-2.sock (mode 0600, no api-key — file permissions are the auth; /admin/* is NOT registered on the TCP listener while this is set)
+goinfer serving on http://127.0.0.1:8098 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+goinfer: batched prefill declined for a 9-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): metal: prompt too short (9 tokens) for fast prefill (floor=64; §3 floor); using sequential path
+swap guard: baseline 0.48 GB swap-used
+
+shutting down…
+resident batch "bench": 771 runs, 768 batched steps (3070 tokens), 3 solo tokens, 0 straggler runs, steps by size [0 0 0 2 766]
+resident batch "bench" time: runs 16.810 s, exclusive 3.130 s (prefill 25 passes 3.129 s, bookkeeping 0.001 s)

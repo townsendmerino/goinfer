@@ -7,7 +7,9 @@
 >   chunked prefill (`-prefill-chunk 512`) and the step-kernel spec verify.
 > - **MC3c (CPU)** shipped: workers, then batched decode (`-cpu-batch auto`).
 > - **MC2 earned**, with its Linux cells in.
-> - **Queued:** the 413 prefill-share fix's end-to-end check and the per-pass prefill attribution (Mac night queue).
+> - **The 413 prefill-share fix's end-to-end check** ran 2026-09-28 and was INCONCLUSIVE: its memory ballast was
+>   compressible, so it could not hold the band. The fix is owed before a re-run.
+> - **The per-pass prefill cut is CLOSED:** the measured share is 0.151, not ~⅓.
 > - **Registered, owner to decide:** the MC4 candidate "speculate when alone, batch under load" (its CUDA premise is a
 >   nobara prompt). P10 on Metal is projected, not started.
 > - **⚠ Since 9ccf7fb1** (embed-int4 on by default), a default Metal load declines the resident and runs on the CPU,
@@ -56,7 +58,7 @@
 >     ([`concurrency-mc3c-s1-2026-09-27.md`](../measurements/concurrency-mc3c-s1-2026-09-27.md));
 > - MC3 follow-ons: ~~the 7B's batched-step cost~~ — S4 shipped 2026-09-27, 2 clients 1.121× on the 7B and 1.059× on the
 >   1.5B (B ≥ 3 keeps the fragment: no bit-identical kernel beats it); ~~encode-ahead~~ — parked on its measured
->   headroom (~4% / ~1.3%); a per-pass prefill cost cut (the served gap's main term, estimated; its attribution is instrumented and queued, [`mc3-prefill-attr-2026-09-28.md`](../measurements/mc3-prefill-attr-2026-09-28.md)); ~~CUDA~~ — **SHIPPED 2026-09-27**
+>   headroom (~4% / ~1.3%); ~~a per-pass prefill cost cut~~ — CLOSED 2026-09-28 by the owner: measured, prefill passes are 0.151 of a 4-client W7 cell on the 1.5B (0.152 on the 7B), not the estimated ~⅓ ([`mc3-prefill-attr-2026-09-28.md`](../measurements/mc3-prefill-attr-2026-09-28.md)); ~~CUDA~~ — **SHIPPED 2026-09-27**
 >   (`7a44a58e`; [`concurrency-mc3-cuda-2026-09-27.md`](../measurements/concurrency-mc3-cuda-2026-09-27.md)). All five
 >   W7 gates pass on the 1.5B: 4 clients 1.380× the one-at-a-time build, p99 turn 0.755×, a lone request 1.004× /
 >   0.999×, every reply identical. The 7B reads 1.826× at 4 clients. It is on under serve's defaults. ~~Follow-on
