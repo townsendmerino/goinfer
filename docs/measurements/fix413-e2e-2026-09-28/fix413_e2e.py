@@ -40,7 +40,12 @@ def run_round(k, arm, secs):
     rec = {"round": k, "arm": arm, "binary": os.path.basename(w7.SERVE_CPU_METAL), "started": time.strftime("%H:%M:%S")}
     status = os.path.join(J, f"ballast-{k}-{arm}.status")
     blog = open(os.path.join(J, f"ballast-{k}-{arm}.log"), "w")
-    with w7.GoinferServer("metal", "", os.path.join(J, "servers.log")) as srv:
+    slog = os.path.join(J, f"server-{k}-{arm}.log")
+    # -embed-int4=false: since 9ccf7fb1 the int4 embedding default makes the Metal resident decline to the CPU, and the
+    # 413 fix concerns the resident path (amendment, fix413-e2e-2026-09-28.md §2, before the run).
+    with w7.GoinferServer("metal", "-embed-int4=false", slog) as srv:
+        resident = "decode path: metal-resident" in open(slog).read()
+        rec["resident"] = resident
         w7.post(srv.url, {"model": "bench", "messages": [{"role": "user", "content": "warm"}], "max_tokens": 4,
                           "temperature": 0}, timeout=300)
         bp = subprocess.Popen([sys.executable, os.path.join(J, "ballast.py"), "--lo-gb", str(BAND[0]), "--hi-gb",
@@ -53,7 +58,10 @@ def run_round(k, arm, secs):
                 break
             time.sleep(1)
         rec["ballast_at_start"] = st
-        if st.get("state") != "settled":
+        if not resident:
+            rec["valid"] = False
+            rec["invalid_why"] = "the server is not on the Metal resident (see its log's decode path)"
+        elif st.get("state") != "settled":
             rec["valid"] = False
             rec["invalid_why"] = f"ballast did not settle in {SETTLE_TIMEOUT}s: {st.get('state')} {st.get('reason', '')}"
         else:

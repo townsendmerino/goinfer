@@ -42,7 +42,7 @@
 >     ([`concurrency-mc3c-s1-2026-09-27.md`](../measurements/concurrency-mc3c-s1-2026-09-27.md));
 > - MC3 follow-ons: ~~the 7B's batched-step cost~~ — S4 shipped 2026-09-27, 2 clients 1.121× on the 7B and 1.059× on the
 >   1.5B (B ≥ 3 keeps the fragment: no bit-identical kernel beats it); ~~encode-ahead~~ — parked on its measured
->   headroom (~4% / ~1.3%); a per-pass prefill cost cut (the served gap's main term, estimated); ~~CUDA~~ — **SHIPPED 2026-09-27**
+>   headroom (~4% / ~1.3%); a per-pass prefill cost cut (the served gap's main term, estimated; its attribution is instrumented and queued, [`mc3-prefill-attr-2026-09-28.md`](../measurements/mc3-prefill-attr-2026-09-28.md)); ~~CUDA~~ — **SHIPPED 2026-09-27**
 >   (`7a44a58e`; [`concurrency-mc3-cuda-2026-09-27.md`](../measurements/concurrency-mc3-cuda-2026-09-27.md)). All five
 >   W7 gates pass on the 1.5B: 4 clients 1.380× the one-at-a-time build, p99 turn 0.755×, a lone request 1.004× /
 >   0.999×, every reply identical. The 7B reads 1.826× at 4 clients. It is on under serve's defaults. Follow-on
@@ -1423,6 +1423,11 @@ n-gram loop already prefers when present).
     reads 1.846× and 1.014×. The old verify read 0.977× and 0.956×.
   - Next, by the spec measurement's own registered rule (S > 1.05× on both workloads, with L < 1): "speculate when
     alone, batch under load" is now worth registering. P10's block drafters have a Metal verify.
+  - **P10 on Metal, projected 2026-09-28, not started (owner):**
+    [`p10-metal-projection-2026-09-28.md`](../measurements/p10-metal-projection-2026-09-28.md).
+    - Code 1.14–1.49×, math 1.33–1.73×; chat a loss, unguarded.
+    - The one unmeasured term is the drafter trunk's Metal cost. Its by-day in-process measurement is step 0 when
+      the item is picked up.
 
 ## MC5 — continuous batching, paged KV, chunked prefill (parked)
 
