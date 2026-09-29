@@ -343,6 +343,7 @@
     "parity": "full-oracle 100.0%/0.98972",
     "checkpoint": {
       "name": "gemma-4-26b-a4b",
+      "label": "Gemma 4 26B-A4B",
       "repo": "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
       "file": "gemma-4-26B_q4_0-it.gguf",
       "quant": "q4_0",
@@ -644,6 +645,7 @@
     "parity": "full-oracle 100.0%/1.00000",
     "checkpoint": {
       "name": "phi3-mini-4k",
+      "label": "Phi-3 mini 4k",
       "repo": "microsoft/Phi-3-mini-4k-instruct-gguf",
       "file": "Phi-3-mini-4k-instruct-q4.gguf",
       "quant": "q4",
@@ -680,6 +682,7 @@
     "parity": "full-oracle 100.0%/1.00000",
     "checkpoint": {
       "name": "qwen2.5-coder-0.5b",
+      "label": "Qwen2.5-Coder 0.5B",
       "repo": "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
       "file": "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
       "quant": "q4_k_m",
@@ -885,6 +888,7 @@
     "parity": "real-oracle 100.0%/0.99843",
     "checkpoint": {
       "name": "gpt-oss-20b",
+      "label": "gpt-oss 20B",
       "repo": "ggml-org/gpt-oss-20b-GGUF",
       "file": "gpt-oss-20b-MXFP4.gguf",
       "quant": "mxfp4",
@@ -920,6 +924,7 @@
     "parity": "real-oracle 100.0%/0.99566",
     "checkpoint": {
       "name": "granite-4.0-h-tiny",
+      "label": "Granite 4.0-H Tiny",
       "repo": "ibm-granite/granite-4.0-h-tiny-GGUF",
       "file": "granite-4.0-h-tiny-Q8_0.gguf",
       "quant": "q8_0",

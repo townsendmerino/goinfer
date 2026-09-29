@@ -637,6 +637,7 @@ type capabilityRow struct {
 // what consumes it and why nothing is listed that the parity gates do not back.
 type recommendedCheckpoint struct {
 	Name    string `json:"name"`     // the short name `pull` accepts
+	Label   string `json:"label"`    // what a page titles it: the model in words, not the short name
 	Repo    string `json:"repo"`     // Hugging Face repo
 	File    string `json:"file"`     // exact filename in that repo
 	Quant   string `json:"quant"`    // on-disk quantization
@@ -658,7 +659,7 @@ type recommendedCheckpoint struct {
 // enforces that, so a family still at tiny-golden cannot be recommended to a first-time user.
 var recommendedCheckpoints = map[string]recommendedCheckpoint{
 	"qwen2": {
-		Name: "qwen2.5-coder-0.5b", Repo: "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
+		Name: "qwen2.5-coder-0.5b", Label: "Qwen2.5-Coder 0.5B", Repo: "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
 		File: "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", Quant: "q4_k_m",
 		Bytes: 491400064, SHA256: "1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
 		GoodFor: "code completion and small edits; the smallest checkpoint here that writes usable Go",
@@ -670,7 +671,7 @@ var recommendedCheckpoints = map[string]recommendedCheckpoint{
 		Tools: "minimal schema: ok; harness-scale (12 tools): skip — too small (measured 2026-09-07, nobara-pc)",
 	},
 	"phi3": {
-		Name: "phi3-mini-4k", Repo: "microsoft/Phi-3-mini-4k-instruct-gguf",
+		Name: "phi3-mini-4k", Label: "Phi-3 mini 4k", Repo: "microsoft/Phi-3-mini-4k-instruct-gguf",
 		File: "Phi-3-mini-4k-instruct-q4.gguf", Quant: "q4",
 		Bytes: 2393231072, SHA256: "8a83c7fb9049a9b2e92266fa7ad04933bb53aa1e85136b7b30f1b8000ff2edef",
 		GoodFor: "general instruction following at a size that still loads in seconds",
@@ -680,7 +681,7 @@ var recommendedCheckpoints = map[string]recommendedCheckpoint{
 		Tools: "not yet measured",
 	},
 	"granitemoehybrid": {
-		Name: "granite-4.0-h-tiny", Repo: "ibm-granite/granite-4.0-h-tiny-GGUF",
+		Name: "granite-4.0-h-tiny", Label: "Granite 4.0-H Tiny", Repo: "ibm-granite/granite-4.0-h-tiny-GGUF",
 		File: "granite-4.0-h-tiny-Q8_0.gguf", Quant: "q8_0",
 		Bytes: 7390331328, SHA256: "3528ba7c7ece5cb9ea8b981f57577bae41d280c5753e1de8f3df4b03ac46d5b8",
 		GoodFor: "a Mamba-2/attention hybrid MoE, if you want to exercise that path",
@@ -713,7 +714,7 @@ var recommendedCheckpoints = map[string]recommendedCheckpoint{
 	// an actual local copy already on this box (~/models/gemma4-26b-gguf/gemma-4-26B_q4_0-it.gguf,
 	// byte count matches exactly) via TestRegistry_digestsMatchLocalFiles, same as gpt-oss-20b.
 	"gemma4": {
-		Name: "gemma-4-26b-a4b", Repo: "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
+		Name: "gemma-4-26b-a4b", Label: "Gemma 4 26B-A4B", Repo: "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
 		File: "gemma-4-26B_q4_0-it.gguf", Quant: "q4_0",
 		Bytes: 14439363584, SHA256: "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
 		GoodFor: "the 20-35B-class MoE this project has the most measurements on (docs/benchmarks.md §B4/§B4.1): a 26B-A4B that does not fit an 8 GB card, kept fully GPU-resident via host↔VRAM expert streaming (the C′ cache, -moe-cache-experts) rather than CPU-offloaded",
@@ -739,7 +740,7 @@ var recommendedCheckpoints = map[string]recommendedCheckpoint{
 	// entry the way the release workflow's embedded-tier fetch step already does for its own,
 	// much smaller, pins).
 	"gpt-oss": {
-		Name: "gpt-oss-20b", Repo: "ggml-org/gpt-oss-20b-GGUF",
+		Name: "gpt-oss-20b", Label: "gpt-oss 20B", Repo: "ggml-org/gpt-oss-20b-GGUF",
 		File: "gpt-oss-20b-MXFP4.gguf", Quant: "mxfp4",
 		Bytes: 12109566624, SHA256: "27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901",
 		GoodFor: "the 20-35B-class MoE this project actually validates and measures: too big to hold fully resident on an 8 GB GPU, which is the point — bring -moe-cache-experts or -stream-weights",
@@ -1160,6 +1161,19 @@ func TestCapabilityMatrix(t *testing.T) {
 
 // TestCapabilityMatrix_CoverageComplete asserts every registry key has both a
 // representativeConfig and a familyDoc, so adding a family without these fails CI.
+// TestCapabilityMatrix_checkpointLabels: a checkpoint's page is titled by its label, so a checkpoint without one (or a
+// label that is only its short name again) would title the page with an identifier.
+func TestCapabilityMatrix_checkpointLabels(t *testing.T) {
+	for fam, c := range recommendedCheckpoints {
+		if strings.TrimSpace(c.Label) == "" {
+			t.Errorf("%s: checkpoint %q has no label", fam, c.Name)
+		}
+		if c.Label == c.Name {
+			t.Errorf("%s: label %q is the short name verbatim; write it as a person would", fam, c.Label)
+		}
+	}
+}
+
 // TestCapabilityMatrix_siteDocsAreUsable: the site builds its filters and its "what hasn't been shown" text from these,
 // so an empty summary, an unknown task tag, or a table entry that names no family must fail here, not on the site.
 func TestCapabilityMatrix_siteDocsAreUsable(t *testing.T) {
