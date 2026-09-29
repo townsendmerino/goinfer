@@ -1,0 +1,31 @@
+=== RUN   TestCUDAStepBatch_matchesForward
+=== RUN   TestCUDAStepBatch_matchesForward/llama-tiny
+    batchstep_test.go:117: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23])
+    batchstep_test.go:117: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40])
+    batchstep_test.go:117: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [5 23 40 11])
+=== RUN   TestCUDAStepBatch_matchesForward/mistral-tiny-window
+    batchstep_test.go:117: B=2: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70])
+    batchstep_test.go:117: B=3: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70 200])
+    batchstep_test.go:117: B=4: 4 steps bit-identical to each sequence's own Forward / ForwardSample (depths [9 70 200 33])
+--- PASS: TestCUDAStepBatch_matchesForward (0.75s)
+    --- PASS: TestCUDAStepBatch_matchesForward/llama-tiny (0.44s)
+    --- PASS: TestCUDAStepBatch_matchesForward/mistral-tiny-window (0.30s)
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone/greedy
+    batchstep_test.go:220: runs 31, steps 24 (tokens 89), solo tokens 7, straggler runs 0, step sizes [0 0 0 7 17]
+=== RUN   TestCUDAStepBatch_concurrentMatchesAlone/sampled
+    batchstep_test.go:220: runs 31, steps 25 (tokens 90), solo tokens 6, straggler runs 0, step sizes [0 0 1 8 16]
+--- PASS: TestCUDAStepBatch_concurrentMatchesAlone (1.23s)
+    --- PASS: TestCUDAStepBatch_concurrentMatchesAlone/greedy (0.61s)
+    --- PASS: TestCUDAStepBatch_concurrentMatchesAlone/sampled (0.63s)
+=== RUN   TestMC3CUDAS0_batchedRowsVsDecode
+[mc3cuda] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf depth 1024: one decode 5.358 ms
+[mc3cuda] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf k=2: 2×decode 10.424 ms | PrefillLastN 7.255 ms = 1.44x cheaper | PrefillLastNArgmax 6.628 ms = 1.57x cheaper | per-row logits differing from Forward: 0 of 303872
+    mc3_cuda_s0_test.go:123: k=2: 2×decode 10.424 ms | PrefillLastN 7.255 ms = 1.44x cheaper | PrefillLastNArgmax 6.628 ms = 1.57x cheaper | per-row logits differing from Forward: 0 of 303872
+[mc3cuda] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf k=4: 4×decode 18.691 ms | PrefillLastN 9.046 ms = 2.07x cheaper | PrefillLastNArgmax 8.435 ms = 2.22x cheaper | per-row logits differing from Forward: 0 of 607744
+    mc3_cuda_s0_test.go:123: k=4: 4×decode 18.691 ms | PrefillLastN 9.046 ms = 2.07x cheaper | PrefillLastNArgmax 8.435 ms = 2.22x cheaper | per-row logits differing from Forward: 0 of 607744
+[mc3cuda] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf k=8: 8×decode 37.061 ms | PrefillLastN 12.977 ms = 2.86x cheaper | PrefillLastNArgmax 11.594 ms = 3.20x cheaper | per-row logits differing from Forward: 0 of 1215488
+    mc3_cuda_s0_test.go:123: k=8: 8×decode 37.061 ms | PrefillLastN 12.977 ms = 2.86x cheaper | PrefillLastNArgmax 11.594 ms = 3.20x cheaper | per-row logits differing from Forward: 0 of 1215488
+--- PASS: TestMC3CUDAS0_batchedRowsVsDecode (5.83s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	7.888s

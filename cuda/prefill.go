@@ -1378,12 +1378,23 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		if tail == tailAllArgmax {
 			return r.batchedHeadArgmax(xB, aqB, aScB, M, &ids)
 		}
-		first := M - 1
-		if tail == tailAllLogits {
-			first = 0
-		}
 		outs = make([][]float32, M)
-		for m := first; m < M; m++ {
+		if tail == tailAllLogits {
+			// Every row needs the head (PrefillLastN, speculative verify, MC3's step) — batch it:
+			// ONE norm+quant+GEMV over all M rows instead of M single-row calls, the same batched
+			// primitives batchedHeadArgmax already uses and bGemvB's own doc comment documents as
+			// bit-identical to the per-row GEMV by construction. See batchedHeadFull's own doc
+			// comment for what stays per-row (draw, softcap, logit scale, host download) and why.
+			var e error
+			if outs, ids, e = r.batchedHeadFull(xB, aqB, aScB, M, rows); e != nil {
+				return e
+			}
+			return r.launchErr
+		}
+		// tailLastLogits / tailHiddenLast: only the LAST row's output is ever used, so batching the
+		// head here would compute M-1 rows nobody reads — the exact regression the tailAllLogits
+		// branch above exists to avoid. One row, unchanged from before this lever.
+		for m := M - 1; m < M; m++ {
 			if e := gpu.Upload(r.x, xhost[m*hidden:(m+1)*hidden]); e != nil {
 				return e
 			}
@@ -1511,6 +1522,79 @@ func (r *cudaResident) batchedHeadArgmax(xB, aqB, aScB Buffer, M int, out *[]int
 	}
 	*out = ids
 	return r.launchErr
+}
+
+// batchedHeadFull is prefillCore's batched head for tailAllLogits, where every row's FULL logits
+// are needed (PrefillLastN, speculative verify, MC3's StepBatch) — unlike batchedHeadArgmax, which
+// only ever returns an id per row. It replaces the M single-row upload+norm+GEMV calls the tail
+// used to make with ONE batched norm+quant (bNormB) and ONE batched GEMV (bGemvB) over all M rows
+// — the same primitives batchedHeadArgmax already uses, and bGemvB's own doc comment documents its
+// int8 kernel as "bit-identical to gemv_w8a8_fwd by construction" (exact int32 accumulation; tiling
+// M changes no element) — the S0 measurement (concurrency-mc3-cuda-s0-2026-09-27.md) found the same
+// holds for the int4 kernels used elsewhere in this same batched pass. The GEMV was the only
+// redundant part of the old loop: it read the SAME lm_head weights M times over.
+//
+// Everything downstream of the GEMV stays exactly as the loop it replaces did it, per row:
+//   - a step row with an on-device draw (rows[m].draw != nil) still goes through the unmodified
+//     stepDraw/gumbelPick kernels, which read the single-row r.logits field, not a batched buffer —
+//     rather than touching those kernels, this copies that row's slice of the batched logits into
+//     r.logits first (gpu.CopyDevice, a existing, documented, synchronous device-to-device verb),
+//     which is cheap for one vocab-sized row and leaves the sampling kernels themselves untouched;
+//   - every other row is downloaded to the SAME pinned host buffer the per-row loop already used
+//     (r.logitsPinned/r.logitsHost), one row at a time — the download itself was never the
+//     redundant part, since M rows always need M separate host slices regardless of how the GEMV
+//     that produced them was dispatched;
+//   - softcap and logit scale are applied per row exactly as before (rows != nil only — the same
+//     condition the loop already used, for the same reason: a step row must equal Forward's own
+//     return, not only the device buffer's raw contents).
+func (r *cudaResident) batchedHeadFull(xB, aqB, aScB Buffer, M int, rows []stepRow) (outs [][]float32, ids []int, err error) {
+	if M > r.logitsBCap {
+		if r.logitsBCap > 0 {
+			r.dev.ReleaseBuf(r.logitsB)
+			r.dev.ReleaseBuf(r.logitsBIdx)
+		}
+		r.logitsB = r.af(M * r.vocab)
+		r.logitsBIdx = r.ai(M)
+		r.logitsBCap = M
+	}
+	if e := r.bNormB(xB, r.finalNorm, r.hidden, aqB, aScB, M); e != nil {
+		return nil, nil, e
+	}
+	if e := r.bGemvB(r.lmW, aqB, aScB, ArgNull(), r.logitsB, M, 0); e != nil {
+		return nil, nil, e
+	}
+	outs = make([][]float32, M)
+	for m := 0; m < M; m++ {
+		row := r.logitsB.At(m * r.vocab * 4)
+		if rows != nil && rows[m].draw != nil {
+			// stepDraw/gumbelPick read r.logits, not a caller-supplied buffer — copy this row's
+			// slice into it rather than changing kernels the per-row path already proved correct.
+			if e := gpu.CopyDevice(r.logits, row, r.vocab*4); e != nil {
+				return nil, nil, e
+			}
+			if ids == nil {
+				ids = make([]int, M)
+			}
+			id, e := r.stepDraw(rows[m].draw)
+			if e != nil {
+				return nil, nil, e
+			}
+			ids[m] = id
+			continue
+		}
+		if e := r.stream.Sync(); e != nil {
+			return nil, nil, e
+		}
+		if e := gpu.ReadToHost(row, r.logitsPinned); e != nil {
+			return nil, nil, e
+		}
+		outs[m] = append([]float32(nil), r.logitsHost...)
+		if rows != nil {
+			applySoftcap(outs[m], r.finalSoftcap)
+			applyLogitScale(outs[m], r.logitScale)
+		}
+	}
+	return outs, ids, r.launchErr
 }
 
 // bRmsB launches rmsnorm_quant_batched over M rows (shared = [blockDim]+[hidden]).

@@ -45,8 +45,10 @@
 >   headroom (~4% / ~1.3%); a per-pass prefill cost cut (the served gap's main term, estimated; its attribution is instrumented and queued, [`mc3-prefill-attr-2026-09-28.md`](../measurements/mc3-prefill-attr-2026-09-28.md)); ~~CUDA~~ — **SHIPPED 2026-09-27**
 >   (`7a44a58e`; [`concurrency-mc3-cuda-2026-09-27.md`](../measurements/concurrency-mc3-cuda-2026-09-27.md)). All five
 >   W7 gates pass on the 1.5B: 4 clients 1.380× the one-at-a-time build, p99 turn 0.755×, a lone request 1.004× /
->   0.999×, every reply identical. The 7B reads 1.826× at 4 clients. It is on under serve's defaults. Follow-on
->   levers (estimated): per-call scratch in `prefillCore`, and a batched head proven bit-identical;
+>   0.999×, every reply identical. The 7B reads 1.826× at 4 clients. It is on under serve's defaults. ~~Follow-on
+>   lever: a batched head~~ — **SHIPPED 2026-09-28**: PrefillLastN at M=4 moved 1.75×→2.07× (1.5B), 2.04×→2.34× (7B),
+>   0 differing logits at every M tested; W7 rerun queued. Per-call scratch in `prefillCore` is unmeasured, not
+>   pursued this pass;
 > - ~~the 7B end to end~~ — done 2026-09-27: all five W7 gates pass, 4 clients at 1.785× the serialized build, p99 turn
 >   0.592× ([`concurrency-mc3-7b-w7-2026-09-27.md`](../measurements/concurrency-mc3-7b-w7-2026-09-27.md));
 > - ~~MC1 on CUDA~~ — shipped 2026-09-27: 4 clients at 1.250× the one-slot build, every hard gate passes
@@ -1040,6 +1042,63 @@ MC1 on CUDA (the KV slots) shipped the same day. The decoder side (`ResidentBatc
 
 **Docs when it ships:** `docs/server.md` (the concurrency paragraph: CUDA joins Metal), the banner's wording if it
 names Metal, this section and the status header, and `docs/README.md`'s count.
+
+**Follow-on lever, SHIPPED 2026-09-28: the batched head.** The S0's own "Reading" section named this "the first
+lever to test," with a quantified ceiling: batching the head should move M=4 from PrefillLastN's 1.75×/2.04×
+(1.5B/7B) toward `PrefillLastNArgmax`'s already-batched 2.20×/2.42×. Measured, not just estimated, this time.
+
+- **What was actually redundant.** `prefillCore`'s head, for `tailAllLogits` (every row needs it — PrefillLastN,
+  speculative verify, and MC3's own `StepBatch`), ran the LM head GEMV once PER ROW in a loop (`r.doG`), reading
+  the SAME `lm_head` weights M times. `batchedHeadArgmax` already had the fix for the argmax-only case
+  (`bNormB` + one `bGemvB` call over all M rows) — `tailAllLogits` had never been given the same treatment, only
+  the argmax tail had.
+- **`batchedHeadFull`** (`cuda/prefill.go`) reuses those same two calls — `bGemvB`'s own doc comment documents its
+  int8 kernel as "bit-identical to gemv_w8a8_fwd by construction" (exact int32 accumulation, so tiling M changes
+  no element), and the S0 already proved the same for the int4 kernels used elsewhere in this pass. Only the GEMV
+  is batched; per-row post-processing is untouched: a draw row's logits are copied into the single-row `r.logits`
+  buffer first (`gpu.CopyDevice`, an existing documented device-to-device verb) so the unmodified `stepDraw`/
+  `gumbelPick` kernels never needed to change, and every other row still downloads to the same pinned host buffer
+  and gets softcap/logit-scale applied exactly as before — those were never the redundant part.
+  - `tailLastLogits`/`tailHiddenLast` (only the LAST of M rows is ever read — a long prompt's ordinary
+    `PrefillLast`) are explicitly excluded from batching: batching there would compute M−1 rows nobody reads, the
+    regression this scoping exists to avoid.
+- **Correctness (nobara-pc, RTX 2070 SUPER, driver 595.91.07, idle):**
+  [`batchedhead-correctness-2026-09-28.log`](../measurements/concurrency-mc3-cuda-s0-2026-09-27/batchedhead-correctness-2026-09-28.log),
+  [`batchedhead-7b-2026-09-28.log`](../measurements/concurrency-mc3-cuda-s0-2026-09-27/batchedhead-7b-2026-09-28.log).
+  - `TestCUDAStepBatch_matchesForward`, `TestCUDAStepBatch_concurrentMatchesAlone`: pass, unchanged — MC3's own
+    step-identity and concurrent-matches-alone gates.
+  - `TestMC3CUDAS0_batchedRowsVsDecode` (the S0's own bit-identity check, re-run against the new code): **0
+    differing logits** at M = 2/4/8 on both the 1.5B (303,872 / 607,744 / 1,215,488 compared) and the 7B
+    (304,128 / 608,256 / 1,216,512), same as before this change.
+  - Full tagged CUDA suite: 177 pass, 0 fail. `gofmt`, `go vet`, pinned staticcheck 0.8.0 all clean.
+- **Speed — a real number, not the estimate:**
+
+  | model | M | PrefillLastN before | PrefillLastN after | before | after |
+  |---|---:|---:|---:|---:|---:|
+  | 1.5B | 2 | 7.48 ms | 7.255 ms | 1.30× | **1.44×** |
+  | 1.5B | 4 | 10.61 ms | 9.046 ms | 1.75× | **2.07×** |
+  | 1.5B | 8 | 16.76 ms | 12.977 ms | 2.22× | **2.86×** |
+  | 7B | 2 | 18.73 ms | 17.905 ms | 1.47× | **1.54×** |
+  | 7B | 4 | 27.00 ms | 23.526 ms | 2.04× | **2.34×** |
+  | 7B | 8 | 45.78 ms | 38.722 ms | 2.41× | **2.85×** |
+
+  At M=4 (MC3's default slot count) the 7B lands at 2.34×, inside the 2.2–2.4× band the S0 predicted, and within
+  0.07× of `PrefillLastNArgmax`'s own 2.41× ceiling — the head is now nearly as cheap as the argmax-only variant
+  for every family this scoping covers.
+- **In-process, by day, per TE5(b)** (owner decision 2026-09-28, `docs/tasks/task-test-efficiency-2026-09.md`): a
+  resolved in-process kernel-speed result may be acted on by day, and this one resolves cleanly — real,
+  bit-identical, and consistent across both models and every M tested. The served, end-to-end W7 number (how much
+  of this reaches the 4-client aggregate) is queued for tonight, not assumed from the per-step figure above.
+- **Owed:** a W7 rerun on the 1.5B (the graded MC3-CUDA configuration) to see how much of this reaches the
+  4-client aggregate beyond the already-shipped 1.380×/1.826× (1.5B/7B) — queued, `mc3-cuda-batchedhead-w7`.
+- **Not pursued this pass: per-call scratch in `prefillCore`.** Unlike the batched head, this had no prior
+  measurement anywhere in the codebase (the S0 named it only as an estimate). `prefillCore` allocates its
+  M-sized scratch fresh from the device allocator on every call — including every MC3 `StepBatch` — and frees it
+  at return (`cuda/prefill.go`'s own "M-sized scratch (device), freed at the end" comment), roughly 13 `af`/`ai`
+  calls per call, all before the per-layer loop (not multiplied by depth). Whether that allocate/free cycle is a
+  meaningful fraction of a 2-4-row step's time was not measured here; sizing it (a category on `prefillProf`, or an
+  isolated allocation microbenchmark at MC3's actual M) is the natural next step before deciding whether to build
+  a persistent scratch pool for the batched-step case.
 
 ## MC3c — concurrent decode on CPU (owner: "cpu first", 2026-09-26)
 
