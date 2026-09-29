@@ -1,0 +1,3 @@
+=== wait_idle aa gate=load tag=1: 121 s to load 0.98
+=== 2026-09-29 07:29:28 PDT 1790692168 START aa gate=load tag=1
+=== 2026-09-29 08:24:31 PDT 1790695471 END aa gate=load tag=1 rc=1

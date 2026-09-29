@@ -263,6 +263,26 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   - The hog is `te1_hog.py`, a file with a `__main__` guard. Checked by day for 2 s: every core busy (758% CPU).
   - Output goes to `te1-attempt2/`, because `bench_peer.py` resumes from existing files. Graded as
     `te1_analyze.py te1-attempt2`.
+- **Attempt 2, started by the owner by day on 2026-09-29 at 07:22, and stopped by the owner at 08:49. Nothing is
+  graded from it.** Partial output is in `te1-attempt2/`.
+  - The first load-gate sweep started at 07:29, after a 121 s pre-wait. One cell's gate then waited its full 1,800 s
+    and REFUSED mid-sweep at 08:24 ("load average 1.96 … Another job is on the box").
+  - The instant sweep's pre-wait then sat behind the load average too: the amendment above keyed both gates' waits on
+    it, which was a mistake.
+  - **There was no other job.** At 08:42, `top` read the CPU **90.5% idle** (6.1% user, 3.3% sys) at a 1-min load of
+    **2.92**. The largest consumers were VS Code's helpers (~30% of one core together), WindowServer (8%) and this
+    Claude session (6%). At 08:50 the load was 2.03 while the instant gate's own sample passed.
+  - **So on this Mac the 1-min load average sits at ~2–3 with the CPU essentially idle, by day,** and the load gate's
+    1.0 cap cannot be met. This is TE1's premise ("the idle gate reads what is running now"), observed directly. The
+    harness's "Another job is on the box" names a job that does not exist. It is not graded, because it is outside
+    the pre-registered night A/A.
+- **Amendment for attempt 3, 2026-09-29, before it runs.** Design, bands and analyzer are unchanged.
+  - Each sweep's and mutation's pre-wait uses its own gate's test: load ≤ 1.0 for the load gate, and
+    `bench_peer.instant_idle_sample()` (CPU busy ≤ `BENCH_MAX_BUSY`, no timed workload active) for the instant gate.
+    Checked by day at 08:50: instant passes (rc 0) and load fails (rc 1, load 2.03).
+  - Output goes to `te1-attempt3/`, graded as `te1_analyze.py te1-attempt3`. The Mac night queue, run at night.
+  - If the load gate still cannot reach 1.0 at night, its sweeps are refused, and that refusal is itself the A/A's
+    answer for the load gate.
 
 ### TE2 — Per-cell overhead: start once, time more *(analysis by day, one night to confirm)*
 

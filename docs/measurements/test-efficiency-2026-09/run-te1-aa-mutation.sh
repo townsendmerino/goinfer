@@ -12,9 +12,9 @@
 # BENCH_MAX_LOADAVG=1.0 applies (a night run).
 set -u
 REPO=/Users/francistownsend-merino/tmcode/goinfer
-# Attempt 2 writes to its own directory: bench_peer.py resumes from an existing results file, and attempt 1's partial
-# sweep (te1-2026-09-28/) must not be mixed into this one.
-D=$REPO/docs/measurements/test-efficiency-2026-09/te1-attempt2
+# Each attempt writes to its own directory: bench_peer.py resumes from an existing results file, and an earlier
+# attempt's partial sweep (te1-2026-09-28/, te1-attempt2/) must not be mixed into this one.
+D=$REPO/docs/measurements/test-efficiency-2026-09/te1-attempt3
 HOG=$REPO/docs/measurements/test-efficiency-2026-09/te1_hog.py
 BIN=$HOME/goinfer-bench/te1-2026-09-28/serve-cpu-b9fcde67
 mkdir -p "$D"
@@ -24,23 +24,33 @@ export GOINFER_SERVE_CPU=$BIN GOINFER_SERVE_CPU_OLD=$BIN
 export OLLAMA_BIN=/opt/homebrew/bin/ollama OLLAMA_MODELS=$HOME/.ollama/models
 export BENCH_RUNS=3 BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=cpu BENCH_DEPTHS=none BENCH_IDLE_WAIT=1800
 
-# bench_peer.py's preflight REFUSES a busy box rather than waiting (by design), so wait for the 1-min load average to be
-# at or under 1.0 before each sweep and each mutation run. Attempt 1 ran them back to back, and both load-gate sweeps
-# were refused at start (load 1.50, 6.56). The wait is logged BEFORE the timeline's START line, so it is outside every
-# timed span te1_analyze.py grades.
-wait_idle() { # label
-  local t0=$(date +%s) la
-  while :; do
-    la=$(sysctl -n vm.loadavg | awk '{print $2}')
-    if python3 -c "import sys; sys.exit(0 if float('$la') <= 1.0 else 1)"; then break; fi
-    if [ $(( $(date +%s) - t0 )) -ge 1800 ]; then echo "=== wait_idle $1: gave up after 1800 s at load $la" | tee -a "$D/timeline.txt"; return; fi
+# bench_peer.py's preflight REFUSES a busy box rather than waiting (by design), so before each sweep and each mutation
+# wait until THAT sweep's own gate would pass (up to 30 min): the load gate's 1-min load average <= 1.0, or the instant
+# gate's own sample (bench_peer.instant_idle_sample: CPU busy <= BENCH_MAX_BUSY and no timed workload active).
+# Attempt 1 ran sweeps back to back, and its load-gate sweeps were refused at start. Attempt 2 waited on the load
+# average for BOTH gates, which put the instant sweeps behind the very signal TE1 is testing (2026-09-29 08:42: CPU
+# 90.5% idle at load 2.92). The wait is logged BEFORE the timeline's START line, outside every span te1_analyze.py
+# grades.
+gate_idle() { # gate -> exit 0 if that gate would pass now
+  if [ "$1" = instant ]; then
+    python3 -B -c "import sys; sys.path.insert(0, 'scripts'); import bench_peer as b; busy, active = b.instant_idle_sample(); sys.exit(0 if busy is not None and busy <= b.BUSY_CAP and not active else 1)"
+  else
+    python3 -c "import os, sys; sys.exit(0 if os.getloadavg()[0] <= 1.0 else 1)"
+  fi
+}
+wait_idle() { # gate label
+  local t0=$(date +%s)
+  until gate_idle "$1"; do
+    if [ $(( $(date +%s) - t0 )) -ge 1800 ]; then
+      echo "=== wait_idle $2: gave up after 1800 s (load $(sysctl -n vm.loadavg))" | tee -a "$D/timeline.txt"; return
+    fi
     sleep 10
   done
-  echo "=== wait_idle $1: $(( $(date +%s) - t0 )) s to load $la" | tee -a "$D/timeline.txt"
+  echo "=== wait_idle $2: $(( $(date +%s) - t0 )) s (load $(sysctl -n vm.loadavg))" | tee -a "$D/timeline.txt"
 }
 
 sweep() { # gate tag
-  wait_idle "aa gate=$1 tag=$2"
+  wait_idle "$1" "aa gate=$1 tag=$2"
   local out=$D/aa-$1-$2.json
   echo "=== $(date '+%F %T %Z') $(date +%s) START aa gate=$1 tag=$2" | tee -a "$D/timeline.txt"
   BENCH_MODELS=0.5B,1.5B,7B BENCH_IDLE_GATE=$1 python3 scripts/bench_peer.py "$out"
@@ -51,7 +61,7 @@ sweep() { # gate tag
 mutation() { # gate
   local out=$D/mut-$1.json log=$D/mut-$1.log
   rm -f "$out" "$log"
-  wait_idle "mutation gate=$1"
+  wait_idle "$1" "mutation gate=$1"
   echo "=== $(date '+%F %T %Z') $(date +%s) START mutation gate=$1" | tee -a "$D/timeline.txt"
   # >> (O_APPEND) so the HOG lines tee'd into the same log are not overwritten by the harness's own writes
   BENCH_MODELS=0.5B BENCH_IDLE_GATE=$1 python3 scripts/bench_peer.py "$out" >> "$log" 2>&1 &
