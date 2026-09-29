@@ -1,5 +1,25 @@
 # Task: a site for goinfer — a browsable library, generated from the repo (S1–S8) — 2026-09
 
+> **Current, 2026-09-29. Nothing of S8 is built yet.**
+> - **Owner decisions:**
+>   - the site changes **only when a release is cut** (S8d);
+>   - the 26B figure is **40.2 tok/s** (done);
+>   - **twenty** "What's different" writeups (§4a).
+> - **Done:** the scoping (§1–§8), three approved mockups in `site/mockups/`, and the stale 26B text fixed. `-update` on
+>   the capability-matrix test now also writes `pull/`'s byte copy.
+> - **Next:**
+>   1. S8a skeleton + S2 Models (a `site/` module of its own, the generator, the "every family has a page" gate,
+>      its own CI job);
+>   2. S8b `claims.json` and its check;
+>   3. the registry `summary` / `tasks` fields (regenerate the matrix, never hand-edit it).
+>
+>   Then S1 Home, the first writeups, S4 Download, and the S3 docs shell (S8f).
+> - **Waiting on the owner:** S8e (the Cloudflare zone, API token and repo secrets), before any deploy.
+> - **Open:**
+>   - writeups #17 and #20 wait on the embed-int4 Metal issue;
+>   - which writeups ship in the first release (proposal in §4a);
+>   - the `qwen3_5` family displays as "Qwen3.8".
+
 > **Status: SCOPED 2026-09-18, unstarted. Domain registered 2026-09-21: `goinfer.dev` (§5). Designed
 > 2026-09-29: three mockups in `site/mockups/` are the reference (§4a). Hosting and the build/deploy
 > pipeline decided 2026-09-29 (§5, §8).** Filed after the owner looked at ollama.com and wanted
@@ -115,20 +135,43 @@ but the Google Fonts request.
   repo/file/quant/size/sha), good-for/needs, tools, **how sure we are** (the two parity numbers
   explained in words), measured speed per machine, and a **"What hasn't been shown" list generated
   from the data**, not written by hand. Architecture sits in a collapsed section.
-- **`different-confidence.html` — one of the twelve writeups.** Every writeup follows the same
+- **`different-confidence.html` — one of the writeups (the mockup shows the first twelve; twenty are planned, below).** Every writeup follows the same
   order: the problem → what goinfer does (with a worked example) → how it works → what was
-  measured → use it (HTTP and Go) → **what it doesn't do**. A left rail lists all twelve. Its
+  measured → use it (HTTP and Go) → **what it doesn't do**. A left rail lists them all (the mockup's lists twelve). Its
   example tickets are marked illustrative on the page; everything else is from the repo.
 
 **Tokens.** The colours, fonts and spacing are the `:root` block at the top of each file, the same
 in all three, with light and dark themes. Fonts: Schibsted Grotesk (display), Instrument Sans (body),
 Martian Mono (labels, numbers). The muted grey is `#5c6672` (see S7).
 
-**The twelve writeups** (titles are the mockup's; the owner may reword): Stop means stop · How sure
+**The first twelve writeups** (titles are the mockup's; the owner may reword): Stop means stop · How sure
 was it? · Tool calls that can't come out malformed · A Go struct the model can't break · Decisions
 without generating · Checked against the reference · It refuses rather than swaps · A 26B model on
 an 8 GB card · Turn nine in under half a second · Work that survives a disconnect · One file, model
 inside · No toolchain of any kind.
+
+**Eight more, twenty in all (the owner approved the list, 2026-09-29).** Titles are proposals, and each follows the
+same order, with a real "It doesn't…" line and its figures in `claims.json`.
+
+| # | Title | The claim, and where the evidence is | It doesn't… |
+|---|---|---|---|
+| 13 | Batching that doesn't change the answer | Several conversations share GPU steps, and each reply is bit-identical to serving it alone. Metal 1.59× at 4 clients, CUDA 1.38× (1.5B) and 1.83× (7B), CPU 2.19× the workers on the 7B (`measurements/concurrency-mc3-2026-09-26.md`, `-cuda-`, `-mc3c-step2-`) | do continuous batching or paged attention. It runs 4 at once, the rest queue, a lone request is unchanged, not faster, and hybrid families, adapters and speculation stay one at a time |
+| 14 | Faster, with the same words | Lossless n-gram speculation: on Metal 2.08× on copy-heavy traffic and 1.07× on chat, every reply identical to plain decode (`measurements/metal-spec-step-verify-2026-09-27.md`). Carries a "what we got wrong": an earlier build measured 0.98× and later turns differed, found and fixed | help ordinary chat much, and today it gives up batching under load |
+| 15 | An upgrade that can't change your answers | `gate identity <old> <new>` compares full logits across two builds and reports IDENTICAL or names the difference: 120 CPU, 38 Metal and 80 WebGPU cells byte-identical run to run (`measurements/test-efficiency-2026-09.md`, TE6(b)) | hold across machines or OS versions, cover CUDA from a Mac, or say the answers are right (that is "Checked against the reference"). The most developer-facing of the twenty |
+| 16 | Numbers with their receipts | Every benchmark row names its machine, checkpoint and quant, versions, date and thermal state. Both engines are driven over their own HTTP, interleaved, with restarts. The retired "1.78×" claim and why, and "a cross-session ratio is not a ratio" (`benchmarks.md` Methodology, `measurements/noise-registry.md`) | cover more than three machines, or anything but single-user, single-stream speed |
+| 17 | Runs on the GPU you have | CUDA, Metal, and WebGPU over Vulkan, Metal or DX12 (so AMD and Intel too), from one cgo-free Go codebase (`hardware-matrix.md`, the real-Vulkan check in `measurements/mc1-webgpu-nobara-2026-09-28/`) | match CUDA or Metal speed on WebGPU, or support ROCm |
+| 18 | Starts in a hundredth of a second | A prebuilt sidecar is mapped, not re-quantized: load in 0.01 s against 5.6–16.5 s, about zero heap against 1.3–5 GB (`measurements/cpu-giw-vs-direct-2026-09-24.md`) | skip the first-load conversion, which takes minutes and about the model's size in disk space |
+| 19 | Find out before your agent does | `serve check` runs a dozen-tool schema shaped like opencode's before you configure anything, and `fit` answers "does it fit" before loading. Its answer matched every real opencode outcome measured (`integrations/opencode.md`) | guarantee a long agent session. `skip` means pick another checkpoint, and the `Tools` row is measured, never guessed |
+| 20 | What 4-bit costs | The quality cost of each quantization mode, stated: `--embed-int4` at about 2.3 points of top-1, and which families are int4-hostile (`quantization.md`) | measure against each source's own f16. The 2.3 figure is last measured before the 2026-09-28 default flip and not re-verified |
+
+- **Two of them wait on an open issue.** #17 and #20 both touch the embed-int4 default, which currently makes a
+  default Metal load run on the CPU (`quantization.md`, "Known issue"). Each is written after that is fixed, or says
+  it plainly.
+- **Proposal, not decided: ship a subset first.** With release-only deploys, the first release could carry the
+  clearest-numbers writeups (16, 13, 14, 18) beside the first twelve, and add the rest at later releases. That
+  keeps the review load manageable, and the owner decides.
+- **Reserves, if any is swapped out:** "a Go library, not a server" (overlaps the "Embed it" door) and "vision with
+  no Python" (31 s per image on CPU, so weak).
 
 **What the mockups found in the repo's data**, to fix before or during S2:
 
@@ -267,7 +310,7 @@ release. The consequences are spelled out in S8d and S8f.
   the last release do not appear until the next one, which is intended.
 - **Numbers cannot silently go stale.** The claims check fails the build when a cited source
   changes under it.
-- **What stays hand-written:** the twelve writeups and the family `summary` field. Each carries a
+- **What stays hand-written:** the twenty writeups and the family `summary` field. Each carries a
   reviewed date.
 - **Build order:** S8a skeleton + S2 Models first (the reason for the site), then S1 Home, then the
   writeups (confidence first, since its mockup exists), then S4 Download, then the S3 docs shell.

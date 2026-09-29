@@ -1061,6 +1061,10 @@ func TestCapabilityMatrix(t *testing.T) {
 
 	const mdPath = "../docs/capability-matrix.md"
 	const jsPath = "../docs/capability-matrix.json"
+	// pull/ embeds a BYTE COPY of the json (pull/registry.go's go:embed cannot reach ../docs), which
+	// TestRegistry_embeddedMatrixMatchesTheDoc keeps in lockstep. -update writes it too: a regeneration that left the
+	// copy behind went red in CI twice (2026-09-29: 49f594d0's qwen3_next row, then the 26B text on top of it).
+	const pullJSPath = "../pull/capability-matrix.json"
 
 	if *updateMatrix {
 		if err := os.WriteFile(mdPath, md, 0o644); err != nil {
@@ -1069,7 +1073,10 @@ func TestCapabilityMatrix(t *testing.T) {
 		if err := os.WriteFile(jsPath, js, 0o644); err != nil {
 			t.Fatalf("write %s: %v", jsPath, err)
 		}
-		t.Logf("wrote %s and %s", mdPath, jsPath)
+		if err := os.WriteFile(pullJSPath, js, 0o644); err != nil {
+			t.Fatalf("write %s: %v", pullJSPath, err)
+		}
+		t.Logf("wrote %s, %s and its copy %s", mdPath, jsPath, pullJSPath)
 		return
 	}
 
