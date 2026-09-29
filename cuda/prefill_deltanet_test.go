@@ -35,6 +35,12 @@ func TestCUDADeltaNetPrefill_matchesPerToken(t *testing.T) {
 		// Post-only norm placement (Olmo 3's): the DeltaNet layers' FFN must still take the pre-MLP norm, as decode's
 		// segBFFN does. The first cut applied the model-level placement there and read cosine 0.888 at 24 rows.
 		{filepath.Join("..", "testdata", "olmo_hybrid-tiny"), []int{3, 8, 15, 40}, 25},
+		// The MoE sibling (item 9, task-cuda-deltanet-prefill-2026-09.md): DeltaNet mixer + sparse FFN +
+		// sigmoid-gated shared expert in the SAME layer, unlike the three above. Resident-eligible as-is
+		// (moeInter 64, hidden 64 — both already multiples of 32); qwen3next-tiny was not, until its own
+		// fixture was regenerated at moeInter/sharedInter 32 (scripts/pin_qwen3next_tiny.py) to close the
+		// same gap for the qwen3_next config-shape path specifically.
+		{filepath.Join("..", "decoder", "testdata", "qwen3_5_moe-tiny"), []int{3, 8, 15, 40}, 25},
 	}
 	if p := os.Getenv("GOINFER_CUDA_DNET_MODEL"); p != "" {
 		cfgs = []cfg{{p, []int{145, 561, 621}, 300}}
@@ -42,7 +48,11 @@ func TestCUDADeltaNetPrefill_matchesPerToken(t *testing.T) {
 	for _, c := range cfgs {
 		t.Run(filepath.Base(c.path), func(t *testing.T) {
 			requireCUDADevice(t)
-			if _, err := os.Stat(c.path); err != nil {
+			// Stat the WEIGHTS, not the directory: qwen3_5_moe-tiny's config.json is committed while its
+			// model.safetensors is gitignored (built by scripts/pin_qwen3_5_forward.py --moe), so a
+			// dir-existence guard would flip this skip into a hard failure on a fresh clone — the same trap
+			// qwen35ResidentParityCUDA's own stat comment (qwen35_resident_parity_test.go) already avoids.
+			if _, err := os.Stat(filepath.Join(c.path, "model.safetensors")); err != nil {
 				t.Skipf("no fixture at %s", c.path)
 			}
 			m, err := decoder.Load(c.path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 4096})
@@ -52,9 +62,10 @@ func TestCUDADeltaNetPrefill_matchesPerToken(t *testing.T) {
 			defer m.Close()
 			r, ok := m.ResidentForwardForTest().(*cudaResident)
 			if !ok {
-				// qwen3next-tiny's MoE shape (moeInter 16, hidden 64) is below the resident's int4 multiple-of-32
-				// requirement, so the whole resident declines before this path is reached. A skip, not a pass:
-				// the task doc records which fixtures exercised the gate.
+				// A skip, not a pass: the task doc records which fixtures exercised the gate. A fixture
+				// landing here means its MoE shape (moeInter/sharedInter/hidden) isn't a multiple of 32 —
+				// CUDA's int4 residency's own group-of-32 packing requirement (cuda/backend.go) — so the
+				// resident declines before the batched-prefill path is even reachable.
 				t.Skipf("not CUDA-resident, so the batched prefill is unreachable here: %s", m.ResidentDecline())
 			}
 			if r.dnet == nil {

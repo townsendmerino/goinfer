@@ -87,12 +87,31 @@ exact kernels the batched path is **bit-identical to per-token decode at every l
 |---|---|---|---|---|
 | qwen35-tiny | 3 / 8 / 15 / 40 | 0 / 0 / 0 / 0 | 40 split at 25: cosine 1.0 | equal |
 | olmo_hybrid-tiny | 3 / 8 / 15 / 40 | 0 / 0 / 0 / 0 | cosine 1.0 | equal |
-| qwen3next-tiny | — | skipped | — | — |
+| qwen3next-tiny | 3 / 8 / 15 / 40 | 0 / 0 / 0 / 0 | 40 split at 25: cosine 1.0 | equal |
+| qwen3_5_moe-tiny | 3 / 8 / 15 / 40 | 0 / 0 / 0 / 0 | 40 split at 25: cosine 1.0 | equal |
 | Qwen3.5-9B Q4_K_M | 145 / 561 / 621 | 0 of 248,320 at each | 561 and 621 split at 300: cosine 1.0 | equal |
 
-- qwen3next-tiny does not go resident at all (its MoE shape, moeInter 16 × hidden 64, is below the int4 multiple
-  of 32), so the gate cannot reach it. That is a skip, not a pass, and qwen3_5_moe / qwen3_next are therefore
-  covered only through the shared per-row MoE FFN path, not by a fixture.
+- **Fixture gap CLOSED, 2026-09-28** (item 9). qwen3next-tiny did not go resident at all: its MoE shape (moeInter
+  16 × hidden 64) was below the int4 residency's own group-of-32 packing requirement
+  (`moeInter%32 != 0 || H%32 != 0`, `cuda/backend.go`), so this gate could only skip it, and qwen3_5_moe /
+  qwen3_next were covered only through the shared per-row MoE FFN path, never by a fixture. Fixed two ways:
+  - `scripts/pin_qwen3next_tiny.py` now builds moeInter/sharedInter at 32 instead of 16 (the smallest multiple
+    that clears the residency check), regenerating `testdata/qwen3next-tiny` + its golden. `TestQwen3Next_textParity`
+    (decoder, CPU) still passes at cosine 1.000000 against the reshaped HF reference — the reshape changes nothing
+    about the two deltas this fixture exists to test (`normalizeQwen3NextLayerTypes`, the flat-RoPE path). The HF
+    reference forward itself needed routing onto CUDA inside the pin script (a `fla`/Triton kernel version now
+    raises on a CPU tensor rather than falling back), which changes nothing about what is measured — the chunked
+    and sequential forms of the delta rule are the same computation reordered, and the CPU-saved checkpoint is
+    unaffected either way.
+  - `decoder/testdata/qwen3_5_moe-tiny` (moeInter 64, hidden 64 — already both multiples of 32, needed no
+    reshaping) is now in this gate's own fixture list, the first fixture here carrying a DeltaNet mixer, a sparse
+    FFN, AND a sigmoid-gated shared expert in the same layer (`cuda/qwen35_resident_parity_test.go`'s own
+    whole-model parity test already establishes this fixture goes resident at int4; the stat guard here now
+    checks `model.safetensors`, not the directory, for the same reason that test's comment gives — the fixture's
+    weights are gitignored, built by `scripts/pin_qwen3_5_forward.py --moe`).
+  - Both new rows: 0 of 256 differing logits at every length (3/8/15/40), cosine 1.0000000, split-continuity
+    cosine 1.0 — bit-identical, the same bar the pre-existing fixtures clear. Full tagged CUDA suite (non-heavy):
+    177 pass, 0 fail. `~/models` RTX 2070 SUPER, driver 595.91.07, 2026-09-28.
 - **olmo_hybrid-tiny found a real bug that the old test hid.** A DeltaNet layer in a post-only-norm model (Olmo
   Hybrid) must take the normal pre-MLP norm in its FFN, which is what decode's `segBFFN` does (`postOnlyHere`).
   The first cut applied the model-level placement and read cosine 0.888 at 24 rows. The old

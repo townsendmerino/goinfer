@@ -21,8 +21,13 @@ CFG=dict(vocab_size=256, hidden_size=64, num_hidden_layers=6,
     intermediate_size=32, full_attention_interval=4,
     linear_conv_kernel_dim=4, linear_key_head_dim=8, linear_value_head_dim=8,
     linear_num_key_heads=2, linear_num_value_heads=4,
-    num_experts=4, num_experts_per_tok=2, moe_intermediate_size=16,
-    shared_expert_intermediate_size=16, norm_topk_prob=True,
+    # moe_intermediate_size and shared_expert_intermediate_size are 32, not the original 16:
+    # CUDA's int4 residency declines any MoE whose moeInter or sharedInter isn't a multiple of
+    # 32 (cuda/backend.go's BuildResident, group-of-32 int4 packing) — at 16 this fixture could
+    # never go resident, so docs/tasks/task-cuda-deltanet-prefill-2026-09.md's batched-prefill
+    # gate could only skip it (item 9, 2026-09-28). Keep this a multiple of 32.
+    num_experts=4, num_experts_per_tok=2, moe_intermediate_size=32,
+    shared_expert_intermediate_size=32, norm_topk_prob=True,
     partial_rotary_factor=0.25, rope_theta=1000000.0, rms_norm_eps=1e-6,
     tie_word_embeddings=False)
 PROMPT=[2,7,42,100,5,200,13,88]; N_NEW=6
@@ -34,13 +39,22 @@ def main():
     for k in ['layer_types','full_attention_interval','partial_rotary_factor','rope_scaling','rope_parameters','hidden_act']:
         print(f"  {k} = {cd.get(k,'<absent>')}")
     m=Qwen3NextForCausalLM(c).eval().to(torch.float32)
+    # transformers' Qwen3Next linear_attn routes through fla's chunked Triton kernel whenever fla
+    # is importable, with no CPU fallback (it raises "Pointer argument cannot be accessed from
+    # Triton" on a CPU tensor rather than falling back) — so the forward pass needs a CUDA device
+    # when one is present. This changes nothing about what is being measured: it's still HF's own
+    # Qwen3NextForCausalLM, and the chunked-parallel and sequential forms of the delta rule are the
+    # same computation reordered, not a different one. The saved checkpoint stays CPU/f32 either way.
+    dev="cuda" if torch.cuda.is_available() else "cpu"
+    mf=m.to(dev)
     with torch.no_grad():
-        ids=torch.tensor([PROMPT])
-        last=m(input_ids=ids,use_cache=False).logits[0,-1].float().tolist()
+        ids=torch.tensor([PROMPT],device=dev)
+        last=mf(input_ids=ids,use_cache=False).logits[0,-1].float().cpu().tolist()
         cur,cont=list(PROMPT),[]
         for _ in range(N_NEW):
-            o=m(input_ids=torch.tensor([cur]),use_cache=False)
+            o=mf(input_ids=torch.tensor([cur],device=dev),use_cache=False)
             cont.append(int(o.logits[0,-1].argmax())); cur.append(cont[-1])
+    m=m.to("cpu")
     g=dict(note="tiny Qwen3-Next text fwd fp32", config=CFG, prompt_ids=PROMPT,
         argmax=int(torch.tensor(last).argmax()), last_logits=last, n_new=N_NEW, continuation_ids=cont)
     os.makedirs(os.path.dirname(OUT),exist_ok=True); json.dump(g,open(OUT,"w"))
