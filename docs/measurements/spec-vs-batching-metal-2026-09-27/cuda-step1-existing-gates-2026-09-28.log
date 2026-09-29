@@ -1,0 +1,29 @@
+=== RUN   TestGenerateBlockSpec_production
+    blockspec_test.go:109: LOSSLESS: 96 tokens identical to plain greedy
+    blockspec_test.go:110: 17 rounds (5.65 tok/round) | spec 504 ms vs greedy 764 ms => 1.52x
+--- PASS: TestGenerateBlockSpec_production (17.17s)
+=== RUN   TestBlockSpecStream
+    blockspec_test.go:184: stream == direct: 48 tokens, 13 rounds, spec stats rounds=13 accepted=34
+    blockspec_test.go:204: cancelled after 3 tokens, stream closed at 4 (full run is 48)
+--- PASS: TestBlockSpecStream (13.77s)
+=== RUN   TestFlashDecodeSpeculativeScope
+    flash_decode_spec_test.go:119: speculative == plain exact over 96 tokens; 11 verify rounds, lane launches inside = 0
+--- PASS: TestFlashDecodeSpeculativeScope (6.44s)
+=== RUN   TestFlashDecodeBlockSpecLane
+=== RUN   TestFlashDecodeBlockSpecLane/multirow-verify
+    flash_decode_spec_test.go:448: multirow-verify: block speculation == plain LANE over 96 tokens; 18 rounds; multi-row launches 972, lane launches 972 inside
+=== RUN   TestFlashDecodeBlockSpecLane/optionA-scope
+    flash_decode_spec_test.go:448: optionA-scope: block speculation == plain EXACT over 96 tokens; 17 rounds; multi-row launches 0, lane launches 0 inside
+--- PASS: TestFlashDecodeBlockSpecLane (28.31s)
+    --- PASS: TestFlashDecodeBlockSpecLane/multirow-verify (14.16s)
+    --- PASS: TestFlashDecodeBlockSpecLane/optionA-scope (14.16s)
+=== RUN   TestFlashDecodeTwoModelSpecLane
+=== RUN   TestFlashDecodeTwoModelSpecLane/multirow-verify
+    flash_decode_spec_test.go:545: multirow-verify: two-model speculation == plain LANE over 64 tokens; 15 rounds; multi-row launches 532, lane launches 532 inside
+=== RUN   TestFlashDecodeTwoModelSpecLane/optionA-scope
+    flash_decode_spec_test.go:545: optionA-scope: two-model speculation == plain EXACT over 64 tokens; 16 rounds; multi-row launches 0, lane launches 0 inside
+--- PASS: TestFlashDecodeTwoModelSpecLane (14.55s)
+    --- PASS: TestFlashDecodeTwoModelSpecLane/multirow-verify (7.12s)
+    --- PASS: TestFlashDecodeTwoModelSpecLane/optionA-scope (7.34s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	80.304s

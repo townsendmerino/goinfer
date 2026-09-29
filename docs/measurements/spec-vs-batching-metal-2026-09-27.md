@@ -200,9 +200,40 @@ at its exit, and each finding below is tested.
     only the prompt. It still passes: the commit is now also true.
   - The two drafter-reuse tests had counted the host's calls. They now read each generation's seed call past its
     trailing-token forward.
-- **Owed: the CUDA check.** The block drafter runs only on CUDA, so the fix is proven here against stubs only.
-  `cuda/blockspec_test.go` and `cuda/drafter_vs_off_test.go` on nobara, with the real Qwen3-4B and its DFlash drafter,
-  are the check. They were not run: nobara was fully loaded by another session's work (load 16.5 on 16 threads).
+- **The CUDA check, RUN 2026-09-28** (`docs/prompts/nobara-cuda-spec-trailing-token-2026-09.md`; nobara-pc, RTX
+  2070 SUPER 8 GB, driver 595.91.07, idle before starting — load 0.18/0.37/0.55, no other GPU process). Logs:
+  [`cuda-step1-existing-gates-2026-09-28.log`](spec-vs-batching-metal-2026-09-27/cuda-step1-existing-gates-2026-09-28.log),
+  [`cuda-step2-twoturn-withfix-2026-09-28.log`](spec-vs-batching-metal-2026-09-27/cuda-step2-twoturn-withfix-2026-09-28.log),
+  [`cuda-step2-twoturn-reverted-2026-09-28.log`](spec-vs-batching-metal-2026-09-27/cuda-step2-twoturn-reverted-2026-09-28.log).
+  - **1. The existing CUDA gates, with the fix in:** `TestGenerateBlockSpec_production`, `TestBlockSpecStream`,
+    `TestFlashDecodeBlockSpecLane`, `TestFlashDecodeSpeculativeScope`, `TestFlashDecodeTwoModelSpecLane` — **5/5
+    pass**. No regression in the trailing forward (`PrefillLastNArgmax` at M=1, the one-row capture fuse).
+  - **2. New `cuda/spec_twoturn_test.go`** (`TestBlockSpec_twoTurnsMatchPlain`,
+    `TestNgramSpec_twoTurnsMatchPlain`), qwen3-4b int4 + the real DFlash drafter, N ∈ {1, 17, 48}, run twice:
+    - **With the fix (HEAD): 14/14 pass.** Every arm — n-gram, and the block drafter continued through both plain
+      `Generate` and the drafter's own `GenerateStream` again — matches plain decode exactly: turn-1 losslessness,
+      turn-2 `PrefillReused` equal to plain's and to len(prompt1)+len(out1), turn-2 ids equal, at every N.
+    - **Reverted** (`decoder/blockspec.go` from `0e579400^`, `decoder/spec_ngram.go` from `97615930^`): **11/14
+      fail**, exactly the shape the fixes describe, not a different failure:
+      - **n-gram: `PrefillReused` is exactly one short at every N** (23/24, 39/40, 70/71) — the documented
+        one-token gap, reproduced precisely.
+      - **Block drafter: the reused COUNT stays correct, but turn 2's actual ids diverge** at N=17 (token 6 of 17)
+        and N=48 (token 28 of 48) — the bug's own description, "reused that position as it stood": the position is
+        still counted as reused, but its K/V is stale rather than what the trailing forward would have written.
+      - **N=1 (the seed-only exit) passes even reverted, for the block drafter only.** Not a test gap: the n-gram
+        arm at N=1 still shows its usual one-short count (23 vs 24) in the same run, so the harness clearly can
+        see the bug when it's there. The seed-only exit's own stale position happens not to corrupt this
+        particular continuation — a real, narrower boundary than the prose "or nothing at max_tokens 1" implied,
+        worth knowing if `--drafter` is ever graded specifically at very short generations.
+    - One test-harness-only finding, not a production bug: `BlockSpec.GenerateStream` never sets
+      `Generation.PrefillReused` at all (confirmed by grep — no occurrence in `decoder/blockspec.go`), so the
+      turn2-via-`GenerateStream` variant reads 0 regardless of the fix. That variant's `PrefillReused` assertion
+      is skipped; its ids-equality check (the one that actually proves the KV is correct) still ran and passed at
+      HEAD, failed when reverted, same as every other arm.
+  - Full tagged CUDA suite after restoring both files: 177 pass, 0 fail (same baseline as before this check).
+    `gofmt`, `go vet` and the pinned staticcheck 0.8.0 clean.
+  - `TestDrafterVsOff_perSuite` (the optional timing comparison) was not run — this check was about correctness,
+    not speed, and the two-turn tests already answer the question the prompt asked.
 
 **The grammar-fused loop.** `TestGrammarSpec_sessionTwoTurnsMatchPlain` (the 0.5B on CPU; it skips without
 `GOINFER_PREQUANT_GGUF`) ends turn 0 at `max_tokens` 6.

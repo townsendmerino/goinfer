@@ -1,0 +1,50 @@
+=== RUN   TestBlockSpec_twoTurnsMatchPlain
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate
+    spec_twoturn_test.go:247: block-spec, turn2=Generate: turn1 1 tok (reused 0), turn2 1 tok (reused 24, want 24, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream
+    spec_twoturn_test.go:251: block-spec, turn2=GenerateStream: turn1 1 tok (reused 0), turn2 1 tok (reused 0, want 24, checked=false)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate
+    spec_twoturn_test.go:247: block-spec, turn2=Generate: turn 2 differs from plain at token 6 (plain 17, got 17)
+    spec_twoturn_test.go:247: block-spec, turn2=Generate: turn1 17 tok (reused 0), turn2 17 tok (reused 40, want 40, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream
+    spec_twoturn_test.go:251: block-spec, turn2=GenerateStream: turn 2 differs from plain at token 6 (plain 17, got 17)
+    spec_twoturn_test.go:251: block-spec, turn2=GenerateStream: turn1 17 tok (reused 0), turn2 17 tok (reused 0, want 40, checked=false)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate
+    spec_twoturn_test.go:247: block-spec, turn2=Generate: turn 2 differs from plain at token 28 (plain 48, got 48)
+    spec_twoturn_test.go:247: block-spec, turn2=Generate: turn1 48 tok (reused 0), turn2 48 tok (reused 71, want 71, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream
+    spec_twoturn_test.go:251: block-spec, turn2=GenerateStream: turn 2 differs from plain at token 28 (plain 48, got 48)
+    spec_twoturn_test.go:251: block-spec, turn2=GenerateStream: turn1 48 tok (reused 0), turn2 48 tok (reused 0, want 71, checked=false)
+--- FAIL: TestBlockSpec_twoTurnsMatchPlain (123.90s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1 (40.08s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate (14.21s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream (13.08s)
+    --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=17 (40.76s)
+        --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate (14.56s)
+        --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream (13.37s)
+    --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=48 (42.68s)
+        --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate (14.51s)
+        --- FAIL: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream (14.96s)
+=== RUN   TestNgramSpec_twoTurnsMatchPlain
+=== RUN   TestNgramSpec_twoTurnsMatchPlain/N=1
+    spec_twoturn_test.go:303: n-gram spec: turn 2 PrefillReused = 23, want 24 (len(prompt1)=23 + len(out1)=1) — the trailing token was not committed
+    spec_twoturn_test.go:303: n-gram spec: turn 2 PrefillReused = 23, plain's is 24 — should be identical
+    spec_twoturn_test.go:303: n-gram spec: turn1 1 tok (reused 0), turn2 1 tok (reused 23, want 24, checked=true)
+=== RUN   TestNgramSpec_twoTurnsMatchPlain/N=17
+    spec_twoturn_test.go:303: n-gram spec: turn 2 PrefillReused = 39, want 40 (len(prompt1)=23 + len(out1)=17) — the trailing token was not committed
+    spec_twoturn_test.go:303: n-gram spec: turn 2 PrefillReused = 39, plain's is 40 — should be identical
+    spec_twoturn_test.go:303: n-gram spec: turn1 17 tok (reused 0), turn2 17 tok (reused 39, want 40, checked=true)
+=== RUN   TestNgramSpec_twoTurnsMatchPlain/N=48
+    spec_twoturn_test.go:303: n-gram spec: turn 2 PrefillReused = 70, want 71 (len(prompt1)=23 + len(out1)=48) — the trailing token was not committed
+    spec_twoturn_test.go:303: n-gram spec: turn 2 PrefillReused = 70, plain's is 71 — should be identical
+    spec_twoturn_test.go:303: n-gram spec: turn1 48 tok (reused 0), turn2 48 tok (reused 70, want 71, checked=true)
+--- FAIL: TestNgramSpec_twoTurnsMatchPlain (78.69s)
+    --- FAIL: TestNgramSpec_twoTurnsMatchPlain/N=1 (25.24s)
+    --- FAIL: TestNgramSpec_twoTurnsMatchPlain/N=17 (25.73s)
+    --- FAIL: TestNgramSpec_twoTurnsMatchPlain/N=48 (27.36s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	202.741s
+FAIL

@@ -1,0 +1,39 @@
+=== RUN   TestBlockSpec_twoTurnsMatchPlain
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate
+    spec_twoturn_test.go:247: block-spec, turn2=Generate: turn1 1 tok (reused 0), turn2 1 tok (reused 24, want 24, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream
+    spec_twoturn_test.go:251: block-spec, turn2=GenerateStream: turn1 1 tok (reused 0), turn2 1 tok (reused 0, want 24, checked=false)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate
+    spec_twoturn_test.go:247: block-spec, turn2=Generate: turn1 17 tok (reused 0), turn2 17 tok (reused 40, want 40, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream
+    spec_twoturn_test.go:251: block-spec, turn2=GenerateStream: turn1 17 tok (reused 0), turn2 17 tok (reused 0, want 40, checked=false)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate
+    spec_twoturn_test.go:247: block-spec, turn2=Generate: turn1 48 tok (reused 0), turn2 48 tok (reused 71, want 71, checked=true)
+=== RUN   TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream
+    spec_twoturn_test.go:251: block-spec, turn2=GenerateStream: turn1 48 tok (reused 0), turn2 48 tok (reused 0, want 71, checked=false)
+--- PASS: TestBlockSpec_twoTurnsMatchPlain (121.96s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1 (40.70s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-Generate (14.30s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=1/turn2-via-GenerateStream (13.26s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17 (39.76s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-Generate (13.43s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=17/turn2-via-GenerateStream (13.56s)
+    --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48 (41.08s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-Generate (13.62s)
+        --- PASS: TestBlockSpec_twoTurnsMatchPlain/N=48/turn2-via-GenerateStream (14.25s)
+=== RUN   TestNgramSpec_twoTurnsMatchPlain
+=== RUN   TestNgramSpec_twoTurnsMatchPlain/N=1
+    spec_twoturn_test.go:303: n-gram spec: turn1 1 tok (reused 0), turn2 1 tok (reused 24, want 24, checked=true)
+=== RUN   TestNgramSpec_twoTurnsMatchPlain/N=17
+    spec_twoturn_test.go:303: n-gram spec: turn1 17 tok (reused 0), turn2 17 tok (reused 40, want 40, checked=true)
+=== RUN   TestNgramSpec_twoTurnsMatchPlain/N=48
+    spec_twoturn_test.go:303: n-gram spec: turn1 48 tok (reused 0), turn2 48 tok (reused 71, want 71, checked=true)
+--- PASS: TestNgramSpec_twoTurnsMatchPlain (78.30s)
+    --- PASS: TestNgramSpec_twoTurnsMatchPlain/N=1 (25.13s)
+    --- PASS: TestNgramSpec_twoTurnsMatchPlain/N=17 (25.70s)
+    --- PASS: TestNgramSpec_twoTurnsMatchPlain/N=48 (27.11s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	200.427s

@@ -1351,8 +1351,14 @@ production's decode kernels run layer-major in one command buffer, so an extra v
       turn now matches (`TestGenNgramInto_residentCommitMatchesPlain`, `TestSpecNgram_multiTurnMatchesPlain`).
       The other loops were checked the same day.
       - The block drafter (`--drafter`, CUDA) committed one position more than it wrote, so the next turn reused a
-        stale one. It is fixed and pinned by `TestBlockSpecGenerate_commitsOnlyWrittenPositions`, but its CUDA check on
-        nobara is owed.
+        stale one. It is fixed and pinned by `TestBlockSpecGenerate_commitsOnlyWrittenPositions`. ~~its CUDA check on
+        nobara is owed~~ — **run 2026-09-28** (item 30, `docs/prompts/nobara-cuda-spec-trailing-token-2026-09.md`):
+        new `cuda/spec_twoturn_test.go` on the real qwen3-4b + DFlash drafter, N ∈ {1, 17, 48}, both fixes together
+        (the n-gram one too). 14/14 pass with the fixes in; reverted, n-gram is exactly one token short at every N
+        and the block drafter's turn 2 visibly diverges at N=17/48 (N=1's stale position happens not to corrupt
+        that particular continuation — see the record for the caveat). Full results and logs:
+        [`spec-vs-batching-metal-2026-09-27.md`](../measurements/spec-vs-batching-metal-2026-09-27.md)'s own
+        "the CUDA check" update.
       - The grammar-fused loop was one short and is fixed.
       - The two-model loop never commits, and is unchanged;
     - on the 7B, serve's prefill-memory share 413'd MC3 batch cells, because it divides the margin as if prefills ran
