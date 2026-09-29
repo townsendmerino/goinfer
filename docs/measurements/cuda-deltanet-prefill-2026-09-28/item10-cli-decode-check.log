@@ -1,0 +1,18 @@
+# item 10 check: real CLI decode rate vs the disputed 8.0s/561tok figure
+# cuda/cmd/chat, Qwen3.5-9B-Q4_K_M, backend cuda, --embed-int4=false (reuse the existing plain-head sidecar), temp 0, max 64
+Tue Sep 29 12:19:21 AM UTC 2026
+loading + quantizing…
+loaded 32-layer model (hidden 4096, vocab 248320) in 11.664s [backend=cuda [int4 layout: canonical (down, gate/up)] decode=cuda-resident (int4)]
+chat template: chatml
+
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+
+[1myou>[0m [36m<think>
+
+</think>
+
+Rivers are dynamic natural features that originate from sources like glaciers, springs, or lakes, flowing continuously downhill due to gravity until they empty into oceans, seas, or other bodies of water. As they travel, they carve deep valleys, deposit fertile sediments to create deltas, and sustain diverse ecosystems that[0m
+[2m[64 tok, 48.8 tok/s][0m
+[1myou>[0m 
+bye
