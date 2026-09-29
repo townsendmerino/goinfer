@@ -1,0 +1,12 @@
+=== 2026-09-28 20:35:15 PDT 1790652915 START aa gate=load tag=1
+=== 2026-09-28 20:35:15 PDT 1790652915 END aa gate=load tag=1 rc=1
+=== 2026-09-28 20:35:15 PDT 1790652915 START aa gate=instant tag=1
+=== 2026-09-28 20:42:08 PDT 1790653328 END aa gate=instant tag=1 rc=0
+=== 2026-09-28 20:42:08 PDT 1790653328 START aa gate=load tag=2
+=== 2026-09-28 20:42:08 PDT 1790653328 END aa gate=load tag=2 rc=1
+=== 2026-09-28 20:42:08 PDT 1790653328 START aa gate=instant tag=2
+=== 2026-09-28 20:42:11 PDT 1790653331 END aa gate=instant tag=2 rc=1
+=== 2026-09-28 20:42:11 PDT 1790653331 START mutation gate=instant
+=== 2026-09-28 20:42:15 PDT 1790653335 END mutation gate=instant rc=1
+=== 2026-09-28 20:42:15 PDT 1790653335 START mutation gate=load
+=== 2026-09-28 20:42:16 PDT 1790653336 END mutation gate=load rc=1

@@ -12,7 +12,10 @@
 # BENCH_MAX_LOADAVG=1.0 applies (a night run).
 set -u
 REPO=/Users/francistownsend-merino/tmcode/goinfer
-D=$REPO/docs/measurements/test-efficiency-2026-09/te1-2026-09-28
+# Attempt 2 writes to its own directory: bench_peer.py resumes from an existing results file, and attempt 1's partial
+# sweep (te1-2026-09-28/) must not be mixed into this one.
+D=$REPO/docs/measurements/test-efficiency-2026-09/te1-attempt2
+HOG=$REPO/docs/measurements/test-efficiency-2026-09/te1_hog.py
 BIN=$HOME/goinfer-bench/te1-2026-09-28/serve-cpu-b9fcde67
 mkdir -p "$D"
 cd "$REPO" || exit 1
@@ -21,7 +24,23 @@ export GOINFER_SERVE_CPU=$BIN GOINFER_SERVE_CPU_OLD=$BIN
 export OLLAMA_BIN=/opt/homebrew/bin/ollama OLLAMA_MODELS=$HOME/.ollama/models
 export BENCH_RUNS=3 BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=cpu BENCH_DEPTHS=none BENCH_IDLE_WAIT=1800
 
+# bench_peer.py's preflight REFUSES a busy box rather than waiting (by design), so wait for the 1-min load average to be
+# at or under 1.0 before each sweep and each mutation run. Attempt 1 ran them back to back, and both load-gate sweeps
+# were refused at start (load 1.50, 6.56). The wait is logged BEFORE the timeline's START line, so it is outside every
+# timed span te1_analyze.py grades.
+wait_idle() { # label
+  local t0=$(date +%s) la
+  while :; do
+    la=$(sysctl -n vm.loadavg | awk '{print $2}')
+    if python3 -c "import sys; sys.exit(0 if float('$la') <= 1.0 else 1)"; then break; fi
+    if [ $(( $(date +%s) - t0 )) -ge 1800 ]; then echo "=== wait_idle $1: gave up after 1800 s at load $la" | tee -a "$D/timeline.txt"; return; fi
+    sleep 10
+  done
+  echo "=== wait_idle $1: $(( $(date +%s) - t0 )) s to load $la" | tee -a "$D/timeline.txt"
+}
+
 sweep() { # gate tag
+  wait_idle "aa gate=$1 tag=$2"
   local out=$D/aa-$1-$2.json
   echo "=== $(date '+%F %T %Z') $(date +%s) START aa gate=$1 tag=$2" | tee -a "$D/timeline.txt"
   BENCH_MODELS=0.5B,1.5B,7B BENCH_IDLE_GATE=$1 python3 scripts/bench_peer.py "$out"
@@ -32,19 +51,14 @@ sweep() { # gate tag
 mutation() { # gate
   local out=$D/mut-$1.json log=$D/mut-$1.log
   rm -f "$out" "$log"
+  wait_idle "mutation gate=$1"
   echo "=== $(date '+%F %T %Z') $(date +%s) START mutation gate=$1" | tee -a "$D/timeline.txt"
   # >> (O_APPEND) so the HOG lines tee'd into the same log are not overwritten by the harness's own writes
   BENCH_MODELS=0.5B BENCH_IDLE_GATE=$1 python3 scripts/bench_peer.py "$out" >> "$log" 2>&1 &
   local bp=$!
   until grep -q '"engine"' "$log" 2>/dev/null || ! kill -0 $bp 2>/dev/null; do sleep 0.2; done
   echo "=== $(python3 -c 'import time; print(f"{time.time():.2f}")') HOG START gate=$1" | tee -a "$log"
-  python3 -c "
-import multiprocessing as mp, time
-def spin(t):
-    end = time.time() + t
-    while time.time() < end: pass
-ps = [mp.Process(target=spin, args=(90,)) for _ in range(mp.cpu_count())]
-[p.start() for p in ps]; [p.join() for p in ps]"
+  python3 "$HOG" 90
   echo "=== $(python3 -c 'import time; print(f"{time.time():.2f}")') HOG STOP gate=$1" | tee -a "$log"
   wait $bp; local rc=$?
   echo "=== $(date '+%F %T %Z') $(date +%s) END mutation gate=$1 rc=$rc" | tee -a "$D/timeline.txt"

@@ -250,6 +250,19 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
     reduction is reported against the −30–45% band.
   - **Thermal:** every cell's `pmset -g therm` line is kept. Any warning is listed.
   - **On PASS:** `instant` becomes the default in a separate commit, citing the result.
+- **Attempt 1, the Mac's night of 2026-09-28: it did not run as designed. Nothing is graded from it.**
+  Partial output is in `te1-2026-09-28/`.
+  - **Only one of the four A/A sweeps ran** (instant, tag 1). Both load-gate sweeps were REFUSED at start by
+    `bench_peer.py`'s preflight (load 1.50, then 6.56). The script ran its sweeps back to back, and the preflight
+    refuses a busy box rather than waiting, by design.
+  - **Both mutations crashed before any hog ran.** The hog was `python3 -c` with `multiprocessing`, which cannot spawn
+    workers on macOS (`Can't get attribute 'spin' on <module '__main__'>`).
+- **Amendment for attempt 2, 2026-09-28, before it runs. The design, bands and analyzer are unchanged.**
+  - Before each sweep and each mutation, `run-te1-aa-mutation.sh` waits until the 1-min load is ≤ 1.0 (up to 30 min).
+    The wait is logged before the timeline's START line, so it is outside every span `te1_analyze.py` grades.
+  - The hog is `te1_hog.py`, a file with a `__main__` guard. Checked by day for 2 s: every core busy (758% CPU).
+  - Output goes to `te1-attempt2/`, because `bench_peer.py` resumes from existing files. Graded as
+    `te1_analyze.py te1-attempt2`.
 
 ### TE2 — Per-cell overhead: start once, time more *(analysis by day, one night to confirm)*
 
