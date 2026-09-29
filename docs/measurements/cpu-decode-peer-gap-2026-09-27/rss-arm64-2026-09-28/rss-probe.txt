@@ -1,0 +1,18 @@
+== ctx 4096  (free memory: ['Pages', 'free:', '3926.', 'Pages', 'inactive:', '369208.'])
+  old-3cd62e6d           peak   2346.4 MB  ok TRANSCODED (not counted)     context: 32768 tokens (model maximum) · KV f32
+  new-00fa4b11           peak   2252.5 MB  ok TRANSCODED (not counted)     context: 32768 tokens (model maximum) · KV f32
+  old-3cd62e6d           peak   1087.4 MB  ok     context: 32768 tokens (model maximum) · KV f32
+  new-00fa4b11           peak   1017.6 MB  ok     context: 32768 tokens (model maximum) · KV f32
+  old-3cd62e6d           peak   1095.3 MB  ok     context: 32768 tokens (model maximum) · KV f32
+  new-00fa4b11           peak   1017.7 MB  ok     context: 32768 tokens (model maximum) · KV f32
+  old-3cd62e6d           peak   1094.3 MB  ok     context: 32768 tokens (model maximum) · KV f32
+  new-00fa4b11           peak   1008.4 MB  ok     context: 32768 tokens (model maximum) · KV f32
+== ctx auto (as the L1 cells ran)  (free memory: ['Pages', 'free:', '10965.', 'Pages', 'inactive:', '301144.'])
+  old-3cd62e6d           peak   1093.2 MB  ok     context: 32768 tokens (model maximum) · KV f32
+  new-00fa4b11           peak   1009.3 MB  ok     context: 32768 tokens (model maximum) · KV f32
+  old-3cd62e6d           peak   1095.9 MB  ok     context: 32768 tokens (model maximum) · KV f32
+  new-00fa4b11           peak   1019.0 MB  ok     context: 32768 tokens (model maximum) · KV f32
+  old-3cd62e6d           peak   1092.4 MB  ok     context: 32768 tokens (model maximum) · KV f32
+  new-00fa4b11           peak   1022.8 MB  ok     context: 32768 tokens (model maximum) · KV f32
+  old-3cd62e6d           peak   1094.3 MB  ok     context: 32768 tokens (model maximum) · KV f32
+  new-00fa4b11           peak   1016.5 MB  ok     context: 32768 tokens (model maximum) · KV f32

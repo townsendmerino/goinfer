@@ -446,7 +446,7 @@ bandwidth-bound (the old 0.5B's 9.4 ms/token against under 2 ms to stream its ~0
 32-weight group costs about as much as the NEON dot it feeds, and the bytes saved buy nothing.
 - **Scope.** Only CPU int4 on arm64: `-backend cpu` on a Mac, and any arm64 Linux host. Metal and WebGPU upload the
   f16 scales directly (identity above), and amd64 is unaffected.
-- **RSS, observed, not explained.** The new build's peak RSS is higher (0.5B +38–43 MB, 1.5B +150–179 MB, 7B +478–589
+- **RSS: explained on both machines (2026-09-28).** The new build's peak RSS read higher (0.5B +38–43 MB, 1.5B +150–179 MB, 7B +478–589
   MB, across the two passes).
   - **Explained and fixed on nobara, 2026-09-28.** The new build was reading the old build's v12 sidecar. The two
     builds share one sidecar path; the old build cannot read v15 and rebuilds it as v12, and the new build loaded v12
@@ -457,9 +457,23 @@ bandwidth-bound (the old 0.5B's 9.4 ms/token against under 2 ms to stream its ~0
     - new build on its own v15: 1,045–1,053 MB (−75).
   - The fix (`internal/prequant`'s `cacheFresh`): an int4 sidecar older than v15 is stale and rebuilt once. With it,
     the first load after a v12 sidecar rebuilt it and the next three peaked at 1,045–1,051 MB.
-  - Not verified on arm64. The Mac's 1.5B delta (+150–179) is larger than amd64's +57; unexplained, possibly a second
-    converted scale array in the arm64 row4 layout. **Any old-vs-new comparison needs a separate sidecar path per
-    build**, or the two builds rebuild each other's file every cell.
+  - **Verified on arm64, 2026-09-28: the same cause, with nothing extra.** The Mac's 1.5B delta (+150–179) was
+    larger than amd64's +57, and "a second converted scale array in the arm64 row4 layout" was the open guess. It is
+    not one.
+    - **Method:** each build on its OWN sidecar (a per-build directory holding a symlink to the `~/models` GGUF), CPU
+      int4, `-embed-int4=false` on HEAD to match the older builds' int8 head. Peak process-group RSS was polled every
+      50 ms, as `bench_peer.py` does, over load and one 64-token completion. The first load of each build transcoded
+      its sidecar and is not counted.
+    - **Results:** pre-L1 `3cd62e6d` peaked at **1,087–1,096 MB** (8 loads). The L1 merge build `5c85f7c0` peaked at
+      **1,009–1,020 MB** (3 loads), and HEAD `00fa4b11` at **1,008–1,023 MB** (8 loads).
+    - **So the L1 build is 75–85 MB *below* the old one on arm64,** the same −75 as amd64. The +150–179 MB was
+      entirely the new build loading the old build's v12 sidecar and holding a converted copy.
+    - The auto-sized and `-ctx 4096` loads read the same.
+    - **Not timed:** it is a memory reading only, taken by day with the machine in normal use, so macOS memory pressure
+      could lower an RSS reading. The two builds were interleaved.
+    - Script and output: `measurements/cpu-decode-peer-gap-2026-09-27/rss-arm64-2026-09-28/`.
+    - **Any old-vs-new comparison still needs a separate sidecar path per build**, or the two builds rebuild each
+      other's file every cell.
   - The arm64 speed result above is unaffected: the converted scales hold the same values.
 
 **Follow-up (owner's call):** the task's named fix is a NEON widen. `FCVTL Vd.4S, Vn.4H` is exact for every finite binary16

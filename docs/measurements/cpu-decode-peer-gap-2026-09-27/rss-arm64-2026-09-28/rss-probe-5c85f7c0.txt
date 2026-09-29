@@ -1,0 +1,5 @@
+== 5c85f7c0 (the L1 merge build the Mac's +150-179 MB was measured on), own sidecar, ctx 4096
+  l1-5c85f7c0            peak   2255.3 MB  ok TRANSCODED (not counted)
+  l1-5c85f7c0            peak   1019.5 MB  ok
+  l1-5c85f7c0            peak   1009.4 MB  ok
+  l1-5c85f7c0            peak   1008.6 MB  ok
