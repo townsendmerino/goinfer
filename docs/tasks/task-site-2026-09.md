@@ -5,7 +5,9 @@
 >   - the site changes **only when a release is cut** (S8d);
 >   - the 26B figure is **40.2 tok/s** (done);
 >   - **twenty** "What's different" writeups (§4a).
-> - **Done:** the scoping (§1–§8), three approved mockups in `site/mockups/`, and the stale 26B text fixed. `-update` on
+> - **Done:** the scoping (§1–§8), three approved mockups in `site/mockups/`, and the stale 26B text fixed. The book wears the
+>   site's tokens (fonts, light and dark colours) through `docs/book-search/head-custom.html`, which `book-pages.yml` already
+>   ships; `scripts/test_book_tokens.py` fails if they drift from the mockups. Not yet pushed: it changes the live book. `-update` on
 >   the capability-matrix test now also writes `pull/`'s byte copy.
 > - **Next:**
 >   1. S8a skeleton + S2 Models (a `site/` module of its own, the generator, the "every family has a page" gate,

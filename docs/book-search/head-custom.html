@@ -28,26 +28,87 @@
      no body to attach to yet; the box is created on DOMContentLoaded and inserted at the top of
      .markdown-body, which is the container primer wraps every page in. -->
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=Martian+Mono:wght@400;500&display=swap">
 <style>
+  /* The site's design tokens (site/mockups, docs/tasks/task-site-2026-09.md 4a) applied to primer's .markdown-body,
+     so the book and goinfer.dev read as one thing. scripts/test_book_tokens.py fails if these drift from the mockups. */
+  :root {
+    --ground: #eceff3; --surface: #f9fafc; --sunk: #e2e6ec; --line: #cfd5de;
+    --ink: #212831; --ink-2: #48525e; --muted: #5c6672;
+    --accent: #0b6fd4; --accent-soft: #d8e6f7; --on-accent: #ffffff;
+    --f-display: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+    --f-body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+    --f-mono: "Martian Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #12161c; --surface: #1a2029; --sunk: #222a35; --line: #323c49;
+      --ink: #e5e9ef; --ink-2: #b6bfca; --muted: #8a95a2;
+      --accent: #4c9bef; --accent-soft: #1a2d45; --on-accent: #0b1522;
+    }
+  }
+  html, body { background: var(--ground); }
+  body { color: var(--ink); -webkit-font-smoothing: antialiased; }
+  .markdown-body {
+    max-width: 46rem; margin-inline: auto; background: transparent; color: var(--ink);
+    font-family: var(--f-body); font-size: 1.0625rem; line-height: 1.65;
+  }
+  .markdown-body a { color: var(--accent); text-decoration: none; }
+  .markdown-body a:hover { text-decoration: underline; }
+  .markdown-body :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+    font-family: var(--f-display); color: var(--ink); letter-spacing: -.01em;
+  }
+  .markdown-body h1 { font-size: 2.1rem; font-weight: 800; line-height: 1.15; border-bottom: 0; margin: .4em 0 .5em; }
+  .markdown-body h2 { font-size: 1.5rem; font-weight: 700; border-bottom: 1px solid var(--line); padding-bottom: .3em; }
+  .markdown-body h3 { font-size: 1.15rem; font-weight: 700; }
+  .markdown-body > h1:first-child {
+    font-family: var(--f-mono); font-size: .78rem; font-weight: 500; letter-spacing: .06em;
+    text-transform: uppercase; margin: 0 0 1.6rem;
+  }
+  .markdown-body > h1:first-child a { color: var(--muted); }
+  .markdown-body em { color: var(--ink-2); }
+  .markdown-body hr { background: var(--line); height: 1px; border: 0; }
+  .markdown-body code, .markdown-body tt {
+    font-family: var(--f-mono); font-size: .82em; background: var(--sunk); color: var(--ink); border-radius: 4px;
+  }
+  .markdown-body pre, .markdown-body .highlight, .markdown-body .highlighter-rouge, .markdown-body .highlight pre {
+    background: var(--sunk); color: var(--ink); border-radius: 8px;
+  }
+  .markdown-body pre { border: 1px solid var(--line); }
+  .markdown-body .highlight pre { border: 0; }
+  .markdown-body pre code { background: none; font-size: .82rem; line-height: 1.55; }
+  @media (prefers-color-scheme: dark) {
+    /* rouge's token colours are tuned for a white page and lose contrast on the dark surface, so inherit the ink */
+    .markdown-body .highlight span { color: inherit !important; }
+  }
+  .markdown-body table, .markdown-body table th, .markdown-body table td { border-color: var(--line); }
+  .markdown-body table tr { background: var(--surface); border-top: 1px solid var(--line); }
+  .markdown-body table tr:nth-child(2n) { background: var(--sunk); }
+  .markdown-body table th { font-family: var(--f-display); }
+  .markdown-body img { max-width: 100%; }
+  /* the figures are SVG files with their own light palette, so they sit on a light card in either theme */
+  .markdown-body img[src$=".svg"] {
+    background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px; box-sizing: border-box;
+  }
+  .markdown-body ::selection { background: var(--accent-soft); }
+
   .bk-search { margin: 0 0 1.5rem; }
   .bk-search input {
-    width: 100%; padding: .5rem .65rem; font-size: 1rem;
-    border: 1px solid #d0d7de; border-radius: 6px; box-sizing: border-box;
+    width: 100%; padding: .55rem .7rem; font: inherit; font-size: 1rem; box-sizing: border-box;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
   }
-  .bk-search input:focus { outline: none; border-color: #0969da; box-shadow: 0 0 0 3px rgba(9,105,218,.15); }
+  .bk-search input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .bk-results { margin: .5rem 0 0; padding: 0; list-style: none; }
-  .bk-results li { padding: .5rem 0; border-bottom: 1px solid #eaeef2; }
+  .bk-results li { padding: .5rem 0; border-bottom: 1px solid var(--line); }
   .bk-results a { font-weight: 600; text-decoration: none; }
-  .bk-ch { color: #57606a; font-size: .85rem; margin-left: .4rem; font-weight: 400; }
-  .bk-snip { display: block; color: #57606a; font-size: .9rem; margin-top: .15rem; }
-  .bk-snip mark { background: #fff8c5; padding: 0 .1em; }
-  .bk-note { color: #57606a; font-size: .9rem; padding: .5rem 0; }
-  @media (prefers-color-scheme: dark) {
-    .bk-search input { background: #0d1117; color: #e6edf3; border-color: #30363d; }
-    .bk-results li { border-bottom-color: #21262d; }
-    .bk-ch, .bk-snip, .bk-note { color: #8b949e; }
-    .bk-snip mark { background: #bb8009; color: #0d1117; }
-  }
+  .bk-ch { color: var(--muted); font-size: .85rem; margin-left: .4rem; font-weight: 400; }
+  .bk-snip { display: block; color: var(--muted); font-size: .9rem; margin-top: .15rem; }
+  .bk-snip mark { background: var(--accent-soft); color: var(--ink); padding: 0 .1em; }
+  .bk-note { color: var(--muted); font-size: .9rem; padding: .5rem 0; }
 </style>
 
 <script>
