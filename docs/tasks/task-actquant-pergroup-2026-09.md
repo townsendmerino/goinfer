@@ -21,6 +21,47 @@
 > It supersedes every "Track B ... parked until owned" line below — the int4-weight lever this doc
 > parked is that doc's whole subject now, not an open item here.
 
+## Measure first: is the Metal/WebGPU orphan worth building? (2026-09-29, nobara)
+
+The doc-review's worth-it call asked one number before committing to two more backends' worth of
+per-32 kernels: does Phi-3's CPU fallback (what Metal and WebGPU users get today, since neither has
+a resident path for this family) lose to Ollama badly enough to matter, or is it already close?
+
+**Method.** `bench_peer.py`, CPU backend, phi3-mini, `essay-v2` prompt, depth 128, 3 runs, greedy,
+against the `p3m-local` Ollama tag (same weights as goinfer's GGUF, confirmed 2026-09-25 —
+Ollama's registry `p3m` tag is a DIFFERENT checkpoint and would be an invalid comparison). goinfer
+built fresh from HEAD (`114a4f2e`) after the first attempt silently used `bench_peer.py`'s stale
+unset-env-var default (`/home/francis/bench-v0.15.0/serve-cpu`, predating this whole campaign) —
+caught by its result being implausibly bad, not by any gate. A second attempt at goinfer's
+*previous* default (`--quant int8int8`, forced by `bench_peer.py`'s own `BENCH_QUANT_OVERRIDE`,
+which predates `activationSafeQuant`'s later q4k default) gave 6.3 tok/s, matching the release
+section's informal "guard's 6.3 tok/s" figure exactly — but that quant is no longer what Phi-3
+actually loads at by default (`internal/modelload/modelload.go:195-200`: Phi-3 on `.gguf` now
+defaults to `--quant q4k` on CPU or CUDA, 1.31× int8int8's CPU decode per that doc's own citation).
+Re-run at the TRUE current default, `--quant q4k`:
+
+| engine | quant | tok/s | vs Ollama |
+|---|---|---:|---:|
+| goinfer | q4k (today's real CPU default) | 8.2 | **0.766×** |
+| goinfer | int8int8 (the old default, kept for the cross-check) | 6.3 | 0.589× |
+| ollama (`p3m-local`) | Q4 GGUF | 10.7 | — |
+
+Both q4k cells' token gates read `ok` (tokens/chunks = 1.0, not the earlier `void` — the stale
+binary's response was missing `usage.completion_tokens` entirely, which the harness's own
+interval-count fallback then under-reports, per `scripts/bench_peer.py`'s `post_stream` docstring).
+
+**Reading.** On CPU — what Metal and WebGPU fall back to today — goinfer is 23% behind Ollama, not
+badly losing. That's a real but moderate gap, roughly in the range other families' CPU peer gaps
+already sit at (`docs/measurements/cpu-decode-peer-gap-2026-09-27.md`: 0.81—0.86×), not the
+catastrophic gap the int8int8-only reading would have suggested. **This number alone does not
+answer the Metal/WebGPU worth-it call**: it says the CPU floor is not embarrassing, but says
+nothing about how much a resident GPU path would additionally buy on Metal specifically — CUDA's
+own informal reading (guard's old int8int8 6.3 tok/s to resident int8int8 ~80-88 tok/s at `--ctx
+2048`) suggests GPU residency could be a large multiplier if Metal's kernels reached similar
+utilization, but a small model's Metal headroom over its own CPU path, and Ollama's own Metal
+speed for Phi-3, are both unmeasured here — Metal does not exist on this box. That decisive number
+needs the Mac.
+
 ## Why
 
 Every quantized projection in goinfer (int4 = W4A8, int8int8 = W8A8, int4mix, and every resident GPU
