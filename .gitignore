@@ -294,3 +294,6 @@ decoder/testdata/mellum-*-slice/
 /gate
 /prequant
 /serve
+
+# goinfer.dev build output (site/README.md)
+site/_site/

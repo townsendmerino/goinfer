@@ -1,0 +1,170 @@
+{
+  "_comment": "Every measured figure the site shows, with where it came from (docs/tasks/task-site-2026-09.md, S8b). value and peer are the median of the cell's 3 runs, and runs / peer_runs are those runs exactly as the record prints them (basis median-of-3), or the record's own mean where it prints one (basis mean); ratio_raw is the record's own median ratio and ratio is that rounded to 2 places. The claims check fails the build if a figure, the raw ratio or the date is not in the cited section of the cited file. A speed is only ever added here from a record; the mockup's figures were checked against these sources and three did not match (see the task doc).",
+  "method": "Ollama v0.32.5 at its defaults, same machine, same session. 128 tokens of context unless noted.",
+  "facts": [
+    {
+      "text": "Ollama v0.32.5",
+      "source": {
+        "path": "docs/measurements/peer-claim-2026-09-25.md",
+        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
+      }
+    },
+    {
+      "text": "Ollama v0.32.5",
+      "source": {
+        "path": "docs/measurements/peer-claim-2026-09-25.md",
+        "heading": "Cells g–i in detail (MacBook, 2026-09-25)"
+      }
+    }
+  ],
+  "claims": [
+    {
+      "id": "qwen2.5-coder-0.5b/cuda/decode",
+      "checkpoint": "qwen2.5-coder-0.5b",
+      "machine": "cuda",
+      "basis": "median-of-3",
+      "value": 341.9,
+      "peer": 268.8,
+      "runs": "341.9 / 337.4 / 342.1",
+      "peer_runs": "268.8 / 269.3 / 268.6",
+      "ratio_raw": "1.272",
+      "ratio": "1.27×",
+      "verdict": "ahead",
+      "why": "",
+      "date": "2026-09-25",
+      "source": {
+        "path": "docs/measurements/peer-claim-2026-09-25.md",
+        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
+      }
+    },
+    {
+      "id": "qwen2.5-coder-0.5b/cpu/decode",
+      "checkpoint": "qwen2.5-coder-0.5b",
+      "machine": "cpu",
+      "basis": "median-of-3",
+      "value": 45.9,
+      "peer": 57.6,
+      "runs": "46.5 / 45.9 / 44.6",
+      "peer_runs": "57.7 / 57.6 / 57.6",
+      "ratio_raw": "0.797",
+      "ratio": "0.80×",
+      "verdict": "behind",
+      "why": "",
+      "date": "2026-09-25",
+      "source": {
+        "path": "docs/measurements/peer-claim-2026-09-25.md",
+        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
+      }
+    },
+    {
+      "id": "qwen2.5-coder-0.5b/mac/decode",
+      "checkpoint": "qwen2.5-coder-0.5b",
+      "machine": "mac",
+      "basis": "median-of-3",
+      "value": 171.2,
+      "peer": 144.5,
+      "runs": "172.7 / 171.2 / 167.7",
+      "peer_runs": "144.5 / 144.7 / 144.4",
+      "ratio_raw": "1.183",
+      "ratio": "1.18×",
+      "verdict": "ahead",
+      "why": "From the 2026-09-25 pre-registered sweep. The Metal decode kernels changed on 2026-09-26.",
+      "date": "2026-09-25",
+      "source": {
+        "path": "docs/measurements/peer-claim-2026-09-25.md",
+        "heading": "Cells g–i in detail (MacBook, 2026-09-25)"
+      }
+    },
+    {
+      "id": "qwen2.5-coder-1.5b/cuda/decode",
+      "checkpoint": "qwen2.5-coder-1.5b",
+      "machine": "cuda",
+      "basis": "median-of-3",
+      "value": 252.9,
+      "peer": 195.1,
+      "runs": "253.1 / 252.9 / 252.9",
+      "peer_runs": "195.1 / 195.1 / 195.0",
+      "ratio_raw": "1.297",
+      "ratio": "1.30×",
+      "verdict": "ahead",
+      "why": "",
+      "date": "2026-09-25",
+      "source": {
+        "path": "docs/measurements/peer-claim-2026-09-25.md",
+        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
+      }
+    },
+    {
+      "id": "qwen2.5-coder-1.5b/cpu/decode",
+      "checkpoint": "qwen2.5-coder-1.5b",
+      "machine": "cpu",
+      "basis": "none",
+      "value": null,
+      "peer": null,
+      "ratio_raw": "0.802",
+      "ratio": "not graded",
+      "verdict": "na",
+      "why": "One engine stopped its reply early, so the run doesn't count.",
+      "date": "2026-09-25",
+      "source": {
+        "path": "docs/measurements/peer-claim-2026-09-25.md",
+        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
+      }
+    },
+    {
+      "id": "qwen2.5-coder-1.5b/mac/decode",
+      "checkpoint": "qwen2.5-coder-1.5b",
+      "machine": "mac",
+      "basis": "mean",
+      "value": 89.3,
+      "peer": 84.3,
+      "ratio_raw": "1.059",
+      "ratio": "1.06×",
+      "verdict": "ahead",
+      "why": "After the R18b kernel change, a same-session A/B against Ollama. Not the pre-registered sweep.",
+      "date": "2026-09-26",
+      "source": {
+        "path": "docs/measurements/metal-decode-gemv-r18b-2026-09-26.md",
+        "heading": "End to end against Ollama (reported, not deciding)"
+      }
+    },
+    {
+      "id": "phi3-mini-4k/cuda/decode",
+      "checkpoint": "phi3-mini-4k",
+      "machine": "cuda",
+      "basis": "median-of-3",
+      "value": 143.2,
+      "peer": 125.9,
+      "runs": "143.1 / 143.2 / 143.3",
+      "peer_runs": "126.0 / 125.9 / 125.8",
+      "ratio_raw": "1.138",
+      "ratio": "1.14×",
+      "verdict": "ahead",
+      "why": "",
+      "date": "2026-09-25",
+      "source": {
+        "path": "docs/measurements/peer-claim-2026-09-25.md",
+        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
+      }
+    },
+    {
+      "id": "gemma-4-26b-a4b/cuda/decode",
+      "checkpoint": "gemma-4-26b-a4b",
+      "machine": "cuda",
+      "basis": "median-of-3",
+      "value": 40.2,
+      "peer": 22.2,
+      "runs": "40.2 / 40.2 / 40.1",
+      "peer_runs": "22.2 / 22.2 / 22.2",
+      "ratio_raw": "1.815",
+      "ratio": "1.82×",
+      "verdict": "ahead",
+      "why": "goinfer keeps every expert on the card; Ollama offloads to the CPU. Different checkpoints, so this compares approaches, not kernels. Context capped at 2,048.",
+      "date": "2026-09-25",
+      "source": {
+        "path": "docs/measurements/peer-claim-2026-09-25.md",
+        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
+      }
+    }
+  ]
+}

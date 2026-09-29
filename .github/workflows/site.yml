@@ -1,0 +1,70 @@
+# goinfer.dev: build, test and gate. It does NOT deploy.
+#
+# Owner decision 2026-09-29 (docs/tasks/task-site-2026-09.md, S8): the site changes only when a release is cut. So a push or
+# pull request runs everything a deploy would run (the build, its gates, the tests, staticcheck), which catches a broken
+# site before a release, and publishes nothing. The deploy job (workflow_run after `release assets` for a v* tag, plus a
+# manual dispatch, built from the release tag's commit) is added when the owner has done S8e: the Cloudflare zone, the API
+# token and the repo secrets.
+name: site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/capability-matrix.json'
+      - 'pull/curated.json'
+      # the records claims.json cites: a change under a cited figure must re-run the claims check
+      - 'docs/measurements/peer-claim-2026-09-25.md'
+      - 'docs/measurements/metal-decode-gemv-r18b-2026-09-26.md'
+      - 'docs/benchmarks.md'
+      - '.github/workflows/site.yml'
+  pull_request:
+    paths:
+      - 'site/**'
+      - 'docs/capability-matrix.json'
+      - 'pull/curated.json'
+      - 'docs/measurements/peer-claim-2026-09-25.md'
+      - 'docs/measurements/metal-decode-gemv-r18b-2026-09-26.md'
+      - 'docs/benchmarks.md'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      GOTOOLCHAIN: local
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        working-directory: site
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: vet
+        working-directory: site
+        run: go vet ./...
+      - uses: ./.github/actions/staticcheck
+        with:
+          version: "2026.2" # v0.8.0
+          checksum: df1fd2b42de9fdef42231329522ea8f1f6846a5eb1a0200fad14c90bba464d02
+      - name: staticcheck
+        working-directory: site
+        run: staticcheck ./...
+      - name: test
+        working-directory: site
+        run: go test -count=1 ./...
+      # The build runs the claims check and the output check. It writes to a directory nothing publishes.
+      - name: build (every gate)
+        working-directory: site
+        run: go run ./cmd/build -repo .. -out _site

@@ -1,0 +1,8 @@
+{
+  "_comment": "The machines every speed on the site was measured on, and what the fit verdict knows about them. memory_gb is host RAM (nobara-pc is a 62 GB box, docs/hardware-matrix.md); gpu is apple, nv8 (8 GB card), nv16 or none. A speed is only shown for a machine listed here.",
+  "machines": [
+    {"key": "mac", "name": "MacBook Pro, M1 Pro, 16 GB", "short": "M1 Pro 16 GB", "label": "MacBook Pro · M1 Pro 16 GB", "path": "Metal", "memory_gb": 16, "gpu": "apple"},
+    {"key": "cuda", "name": "RTX 2070 SUPER, 8 GB", "short": "RTX 2070 SUPER", "label": "RTX 2070 SUPER · 8 GB", "path": "CUDA", "memory_gb": 62, "gpu": "nv8"},
+    {"key": "cpu", "name": "Ryzen 7 3700X, CPU only", "short": "Ryzen 7 3700X", "label": "Ryzen 7 · CPU only", "path": "CPU", "memory_gb": 62, "gpu": "none"}
+  ]
+}

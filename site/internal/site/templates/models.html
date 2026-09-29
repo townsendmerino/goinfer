@@ -1,0 +1,96 @@
+{{template "head" .}}
+{{$m := .M}}
+<header class="hero" id="top">
+  <p class="eyebrow">Models · generated from the repo</p>
+  <h1>Every model goinfer runs, and how sure we are about each one.</h1>
+  <p class="lede">Each family is checked against HuggingFace's own implementation, and the result is printed next to it. A few checkpoints are vetted end to end: pinned, sized, fitted and timed. Everything else says what hasn't been shown yet.</p>
+  <div class="counts">
+    <div class="count"><div class="n">{{$m.Counts.Families}}</div><div class="l">model families</div></div>
+    <div class="count"><div class="n">{{$m.Counts.Released}}</div><div class="l">checked against the released model</div></div>
+    <div class="count"><div class="n">{{$m.Counts.Fixture}}</div><div class="l">checked against a small test model only</div></div>
+    <div class="count"><div class="n">{{$m.Counts.Shared}}</div><div class="l">with no check of its own</div></div>
+    <div class="count"><div class="n">{{$m.Counts.Vetted}}</div><div class="l">vetted checkpoints</div></div>
+  </div>
+</header>
+
+<div class="machine" role="group" aria-label="Your machine">
+  <span class="lab">Fit and speed for</span>
+  <div class="seg" id="mseg">
+    {{range machines}}<button type="button" data-m="{{.Key}}"{{if eq .Key "mac"}} aria-pressed="true"{{end}}>{{.Label}}</button>
+    {{end}}<button type="button" data-m="other">Something else</button>
+  </div>
+  <span class="other" id="other" hidden>
+    <select id="o-mem" aria-label="Memory"><option value="8">8 GB</option><option value="16" selected>16 GB</option><option value="32">32 GB</option><option value="64">64 GB</option></select>
+    <select id="o-gpu" aria-label="Graphics"><option value="apple">Apple Silicon</option><option value="nv8">NVIDIA 8 GB</option><option value="nv16" selected>NVIDIA 12–16 GB</option><option value="none">No GPU</option></select>
+  </span>
+</div>
+
+<section aria-labelledby="v-h">
+  <div class="s-head"><div><h2 class="s" id="v-h">Vetted checkpoints</h2><p class="s-sub">Pinned by checksum, with a fit verdict and whatever speed was measured. If you don't know where to start, start here.</p></div></div>
+  <div class="vetted">
+    {{range $m.Vetted}}{{$c := .}}
+    <a class="vc" href="/models/{{.Family.Name}}/#{{.ID}}">
+      <div class="t"><h3>{{.Label}}</h3><span class="q">{{.Quant}} · {{gb .Bytes}}</span></div>
+      <span>{{template "fit" $c}}</span>
+      <p class="g">{{if .GoodFor}}{{first .GoodFor}}{{else}}{{.Family.Summary}}{{end}}</p>
+      {{template "proof" .Family}}
+      <div class="sp">{{range machines}}{{$s := speedOf $c .Key}}<span class="mv sprow" data-m="{{.Key}}">{{if and $s $s.Tok}}<span><b>{{num $s.Tok}}</b> tok/s</span> <span class="vs {{$s.Verdict}}">{{vs $s}}</span>{{else}}<span class="none">not measured on this machine</span>{{end}}</span>{{end}}<span class="mv" data-m="other"><span class="none">no speeds for a machine we haven't measured</span></span></div>
+    </a>
+    {{end}}
+  </div>
+</section>
+
+<section aria-labelledby="l-h">
+  <div class="s-head"><div><h2 class="s" id="l-h">All families</h2><p class="s-sub">Sorted by how strong the check is, strongest first. There's no "popular" sort: goinfer doesn't count downloads.</p></div></div>
+  <div class="filters">
+    <div class="frow"><span class="lab">For</span>
+      <div class="seg" id="f-task">
+        <button type="button" data-v="any" aria-pressed="true">Anything</button>
+        <button type="button" data-v="chat">Chat</button>
+        <button type="button" data-v="code">Code</button>
+        <button type="button" data-v="vision">Images</button>
+      </div>
+    </div>
+    <div class="frow"><span class="lab">Checked</span>
+      <div class="seg" id="f-proof">
+        <button type="button" data-v="any" aria-pressed="true">Any way</button>
+        <button type="button" data-v="released">Against released weights</button>
+        <button type="button" data-v="fixture">Against a test model</button>
+        <button type="button" data-v="shared">Shares a check</button>
+      </div>
+      <label class="chk"><input type="checkbox" id="f-exp"> Hide experimental</label>
+    </div>
+    <div class="frow"><span class="lab">Needs</span>
+      <label class="chk"><input type="checkbox" id="f-pull"> goinfer can download it (GGUF)</label>
+      <label class="chk"><input type="checkbox" id="f-gpu"> Runs on a GPU</label>
+      <label class="chk"><input type="checkbox" id="f-moe"> Mixture of experts</label>
+      <label class="chk"><input type="checkbox" id="f-ck"> Has a vetted checkpoint</label>
+    </div>
+  </div>
+  <div class="shown"><span id="shown">Showing {{len $m.Ledger}} of {{len $m.Families}} families</span><a href="#parity">What the checks mean</a></div>
+  <div class="hdr" aria-hidden="true"><span>Family</span><span>How it was checked</span><span>Get it</span><span class="c4">Runs on</span></div>
+  <ul class="ledger" id="ledger">
+    {{range $m.Ledger}}<li class="lrow" data-name="{{.Name}}" data-tasks="{{join .Tasks " "}}" data-tier="{{.P.Tier}}" data-exp="{{b2s .P.Exp}}" data-gguf="{{b2s .HasGGUF}}" data-gpu="{{b2s .GPUResident}}" data-moe="{{b2s .IsMoE}}" data-ck="{{if .Checkpoints}}1{{else}}0{{end}}">
+      <a class="lr" href="/models/{{.Name}}/">
+        <div><div class="nm">{{.DisplayName}}</div><div class="bl">{{.Summary}}</div>{{template "tags" .}}</div>
+        <div class="col">{{template "proof" .}}<span class="pstr{{if lt100 .P.Argmax}} low{{end}}">{{.P.Core}}</span></div>
+        <div class="col">{{if .Checkpoints}}<span class="ck">{{if eq (len .Checkpoints) 1}}{{(index .Checkpoints 0).Label}}{{else}}{{len .Checkpoints}} checkpoints{{end}}</span><small>vetted, one command</small>{{else if .HasGGUF}}<span>Pull by repo</span><small>GGUF · no vetted checkpoint</small>{{else}}<span>Download it yourself</span><small>safetensors only · can't pull yet</small>{{end}}</div>
+        <div class="col c4"><span>{{if .GPUResident}}GPU or CPU{{else}}CPU only{{end}}</span><small>{{.Loaders}}</small></div>
+      </a>
+    </li>
+    {{end}}
+    <li class="empty" id="empty" hidden>Nothing matches all of those. Loosen a filter.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="p-h" id="parity">
+  <div class="s-head"><div><h2 class="s" id="p-h">What the checks mean</h2><p class="s-sub">Every family gets one of these. They are listed strongest first.</p></div></div>
+  <div class="tiers">
+    <div><span class="proof released"><i></i>Against the released model</span><p>The family's output is compared with HuggingFace's own implementation on a real checkpoint. Two numbers are printed: how often the next token is the same, and the closest the raw scores get at their worst position (cosine, where 1.00000 is identical).</p></div>
+    <div><span class="proof fixture"><i></i>Against a small test model</span><p>No released model was small enough to run on the hardware available, so the family is checked against a small test model built from the same wiring. A weaker claim, and it is labelled that way.</p></div>
+    <div><span class="proof shared"><i></i>Shares another family's check</span><p>The family runs another family's code, so that family's numbers stand in for it. It has none of its own.</p></div>
+    <div><span class="proof other"><i></i>Not recorded</span><p>No check is on file for this family yet.</p></div>
+  </div>
+  <p class="s-sub">More in <a href="{{cfg.GitHubURL}}/blob/main/docs/what-parity-gated-means.md">what "parity-gated" means</a>. A family registered as <em>experimental</em> can change, or go, before v1.0.</p>
+</section>
+{{template "foot" .}}

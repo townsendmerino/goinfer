@@ -1,0 +1,51 @@
+{{define "head"}}<!doctype html>
+<html lang="en" data-machine="mac">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+{{if .Desc}}<meta name="description" content="{{.Desc}}">
+{{end}}<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=Martian+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/assets/site.css">
+<script>try{var m=localStorage.getItem("gi-machine");if(m==="mac"||m==="cuda"||m==="cpu"||m==="other")document.documentElement.dataset.machine=m}catch(e){}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="wrap">
+{{template "nav" .}}
+<main id="main">
+{{end}}
+
+{{define "nav"}}<nav class="top" aria-label="Main">
+  <a class="wordmark" href="/"><i></i>goinfer</a>
+  <ul>
+    <li><a href="/models/"{{if eq .Nav "models"}} aria-current="page"{{end}}>Models</a></li>
+    <li><span class="soon" title="Not built yet">Docs</span></li>
+    <li><span class="soon" title="Not built yet">Download</span></li>
+    <li><span class="soon" title="Not built yet">What's different</span></li>
+    <li><a href="{{cfg.BookURL}}">Book</a></li>
+  </ul>
+  <a class="gh" href="{{cfg.GitHubURL}}">github.com/townsendmerino/goinfer</a>
+</nav>
+{{end}}
+
+{{define "foot"}}</main>
+<footer>
+  <span>goinfer · pure Go · no cgo, no CUDA toolkit, no Python</span>
+  <ul><li><a href="/models/">Models</a></li><li><a href="{{cfg.BookURL}}">Book</a></li><li><a href="{{cfg.GitHubURL}}">GitHub</a></li></ul>
+</footer>
+</div>
+<script src="/assets/site.js" defer></script>
+</body>
+</html>
+{{end}}
+
+{{define "fit"}}{{$c := .}}<span class="fitslot" data-bytes="{{$c.Bytes}}" data-moe="{{b2s $c.Family.IsMoE}}" data-gpu="{{b2s $c.Family.GPUResident}}">{{range machines}}{{$f := fitOf $c .Key}}<span class="mv" data-m="{{.Key}}"><span class="fit {{$f.Verdict}}">{{if eq $f.Verdict "no"}}won't fit{{else}}{{$f.Verdict}}{{end}}</span>{{if $f.Note}} <span class="fitnote">{{$f.Note}}</span>{{end}}</span>{{end}}<span class="mv fitother" data-m="other"></span></span>{{end}}
+
+{{define "bigfit"}}{{$c := .}}<span class="fitslot" data-on="1" data-bytes="{{$c.Bytes}}" data-moe="{{b2s $c.Family.IsMoE}}" data-gpu="{{b2s $c.Family.GPUResident}}">{{range machines}}{{$f := fitOf $c .Key}}<span class="mv" data-m="{{.Key}}"><span class="fit {{$f.Verdict}}">{{if eq $f.Verdict "no"}}won't fit{{else}}{{$f.Verdict}}{{end}}</span>{{if $f.Note}} <span class="fitnote">{{$f.Note}}</span>{{end}} <span class="fitnote">on {{.Name}}</span></span>{{end}}<span class="mv fitother" data-m="other"></span></span>{{end}}
+
+{{define "proof"}}<span class="proof {{.P.Tier}}"><i></i>{{tierText .P.Tier}}</span>{{end}}
+
+{{define "tags"}}<div class="tg">{{range .Tasks}}<span class="tag">{{task .}}</span>{{end}}{{if .IsMoE}}<span class="tag moe">experts</span>{{end}}{{if .P.Exp}}<span class="tag exp">experimental</span>{{end}}</div>{{end}}

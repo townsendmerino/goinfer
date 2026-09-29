@@ -1,26 +1,24 @@
 # Task: a site for goinfer — a browsable library, generated from the repo (S1–S8) — 2026-09
 
-> **Current, 2026-09-29. Nothing of S8 is built yet.**
+> **Current, 2026-09-29. S8a (generator), S2 (Models) and S8b (claims check) are built; nothing is deployed.**
 > - **Owner decisions:**
 >   - the site changes **only when a release is cut** (S8d);
 >   - the 26B figure is **40.2 tok/s** (done);
 >   - **twenty** "What's different" writeups (§4a).
-> - **Done:** the scoping (§1–§8), three approved mockups in `site/mockups/`, and the stale 26B text fixed. The book wears the
->   site's tokens (fonts, light and dark colours) through `docs/book-search/head-custom.html`, which `book-pages.yml` already
->   ships; `scripts/test_book_tokens.py` fails if they drift from the mockups. Not yet pushed: it changes the live book. `-update` on
->   the capability-matrix test now also writes `pull/`'s byte copy.
-> - **Next:**
->   1. S8a skeleton + S2 Models (a `site/` module of its own, the generator, the "every family has a page" gate,
->      its own CI job);
->   2. S8b `claims.json` and its check;
->   3. the registry `summary` / `tasks` fields (regenerate the matrix, never hand-edit it).
->
->   Then S1 Home, the first writeups, S4 Download, and the S3 docs shell (S8f).
+> - **Done:**
+>   - the scoping (§1–§8) and three approved mockups in `site/mockups/`;
+>   - the registry now carries a `summary`, `tasks` and per-checkpoint `label` (regenerate the matrix, never hand-edit it);
+>   - the book wears the site's tokens (live), and `-update` on the capability-matrix test writes `pull/`'s byte copy too;
+>   - **the generator, `site/`** (a module of its own): every one of the 37 families gets a page, and the Models page is built from
+>     the registry. Results and findings are in §8g. Its `site` workflow validates only; it never deploys.
+> - **Next:** S1 Home, the first writeups (confidence first), S4 Download, and the S3 docs shell (S8f).
 > - **Waiting on the owner:** S8e (the Cloudflare zone, API token and repo secrets), before any deploy.
 > - **Open:**
 >   - writeups #17 and #20 wait on the embed-int4 Metal issue;
 >   - which writeups ship in the first release (proposal in §4a);
->   - the `qwen3_5` family displays as "Qwen3.8".
+>   - the `qwen3_5` family displays as "Qwen3.8";
+>   - the owner reviews the 37 summaries and the checkpoint labels (they are public copy, now in the registry);
+>   - the fit-rule differences from the mockup (§8g).
 
 > **Status: SCOPED 2026-09-18, unstarted. Domain registered 2026-09-21: `goinfer.dev` (§5). Designed
 > 2026-09-29: three mockups in `site/mockups/` are the reference (§4a). Hosting and the build/deploy
@@ -318,6 +316,46 @@ release. The consequences are spelled out in S8d and S8f.
   writeups (confidence first, since its mockup exists), then S4 Download, then the S3 docs shell.
   The first deploy is the owner's manual dispatch once S8e is done, with the other nav items marked "coming". After that,
 releases only.
+
+### S8g — What was built, and what building it found (2026-09-29)
+
+**Built.**
+- `site/`, its own module (`GOWORK=off`). `cd site && GOWORK=off go run ./cmd/build -repo .. -out _site`. Inputs are
+  `docs/capability-matrix.json`, `pull/curated.json` and `site/data/{machines,claims}.json`. (S8b's `claims.json` lives
+  in `site/data/`.)
+- Pages: `/models/` and `/models/<family>/` for all 37 families, plus a redirect at `/` and a 404. The pages are server-rendered.
+  The machine picker, ledger filters and copy buttons are progressive enhancement.
+- **Gates.** The build fails unless: every family has a page that names it and carries "What hasn't been shown"; the Models page
+  links every family; every claim's speed and date appears on its page; the claims check passes.
+- **The claims check** requires each value and its peer, the raw ratio and the date to be present in the cited section of the cited
+  record. For a median-of-3 claim it also requires the printed runs to have that median, so a run-list member cannot pass as the
+  result. It refuses drift (test `TestCheckClaims_refusesDrift`).
+- `js_test.go` runs 1,200 cases of the JS fit rule against the Go one under Node. `staticcheck` (CI's pinned version) is clean, and a
+  canary showed it can go red. Three code mutations and a JS-rule mutation were each caught by a test.
+
+**Findings: the mockup was wrong in these places, and the generator does not carry them over.**
+1. **Mac 0.5B "109 tok/s"** was the CPU cell labelled Metal. The Metal cell is 171.2 against Ollama's 144.5 (1.18x).
+2. **Gemma 4 26B on the Mac, "16.98"**, is a CUDA figure (§B4). That claim is dropped, so there is no Mac speed for it.
+3. **1.5B on CUDA "253.1"** appears in the record's run list. The median, which is the claim, is 252.9. The first version of the
+   check let 253.1 through because it is present in the section; the median rule is the fix.
+4. **Embeddings.** The mockup says "0 embedding models" and shows embeddings as "none yet". The README documents `--embed-model`
+   (CodeRankEmbed). The generator omits that count and filter cell until someone decides what the site should say.
+5. Phi-3 mini 4k has a CUDA speed in the record (143.2 against 125.9) and none in the mockup. The generator shows it.
+
+**Decision for the owner: fit verdicts are now derived by rule** (`FitFor`, mirrored in `site.js` and tested against it), where the
+mockup hand-wrote them. Five cells differ, all towards "fits", because `machines.json` gives the CPU box 62 GB and the mockup assumed
+less:
+
+| checkpoint | machine | mockup | derived |
+|---|---|---|---|
+| Granite 4.0-H Tiny (7.4 GB) | Mac | tight, "half your memory" | fits, on the CPU |
+| gpt-oss 20B (12.1 GB) | CPU box | tight | fits |
+| Gemma 4 26B-A4B (14.4 GB) | CPU box | tight | fits |
+| Granite 4.0-H Tiny | CUDA | fits, "on the CPU, not the card" | fits, "on the CPU" |
+| gpt-oss 20B | CUDA | fits, "with -moe-cache-experts" | fits, "experts streamed to the card" |
+
+The two CUDA rows differ in wording only. A fit says nothing about speed. If the owner wants the old hand verdicts, the
+change is a per-checkpoint override in `pull/curated.json`, not a rule change.
 
 ## Sources
 

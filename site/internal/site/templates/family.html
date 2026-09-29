@@ -1,0 +1,115 @@
+{{template "head" .}}
+{{$m := .M}}{{$f := .Family}}
+<article class="page">
+  <div class="crumb"><span><a href="/models/">Models</a> / {{$f.DisplayName}}</span><span>generated from capability-matrix.json</span></div>
+  <div class="ph">
+    <h1>{{$f.DisplayName}}</h1>
+    <p>{{$f.Summary}}</p>
+    <div class="tg">{{range $f.Tasks}}<span class="tag">{{task .}}</span>{{end}}{{if $f.IsMoE}}<span class="tag moe">experts: {{$f.MoE}}</span>{{end}}{{if $f.P.Exp}}<span class="tag exp">experimental</span>{{end}}<span class="tag">{{$f.Loaders}}</span></div>
+  </div>
+  {{if gt (len $f.Checkpoints) 1}}<div class="cktabs">{{range $f.Checkpoints}}<a href="#{{.ID}}">{{.Label}}{{if not .Pinned}} · unpinned{{end}}</a>{{end}}</div>{{end}}
+
+  {{define "howsure"}}{{$f := .}}<div class="blk"><h3>How sure we are</h3>
+    {{template "proof" $f}}
+    {{if $f.P.Argmax}}<div class="meter">
+      <div class="track"><div class="fill{{if lt100 $f.P.Argmax}} low{{end}}" style="width:{{fmt1 $f.P.Argmax}}%"></div></div><span class="v">{{fmt1 $f.P.Argmax}}%</span>
+      <span class="d">picks the same next token as HuggingFace</span>
+      <div class="track"><div class="fill{{if lt99 $f.P.Cos}} low{{end}}" style="width:{{cosw $f.P.Cos}}%"></div></div><span class="v">{{fmt5 $f.P.Cos}}</span>
+      <span class="d">closest the raw scores get at their worst position (cosine, 1.00000 is identical; bar starts at 0.95)</span>
+    </div>
+    {{else if eq $f.P.Tier "shared"}}<p class="prose">Same forward code as {{via $f}}, so it has no numbers of its own.</p>{{end}}
+    <p class="prose" style="margin-top:8px"><span class="mono">{{$f.Parity}}</span> · <a href="/models/#parity">what parity-gated means</a></p>
+  </div>{{end}}
+
+  {{define "gapsblock"}}{{$g := gaps .F .C}}<div class="blk"><h3>What hasn't been shown</h3><ul class="gaps">
+    {{range $g.Common}}<li>{{.}}</li>{{end}}
+    {{$by := $g.ByMachine}}{{range machines}}{{$key := .Key}}{{range index $by $key}}<li class="mv blk" data-m="{{$key}}">{{.}}</li>{{end}}{{end}}
+    {{if .C}}<li class="mv blk" data-m="other">{{otherGap}}</li>{{end}}
+  </ul></div>{{end}}
+
+  {{if $f.Checkpoints}}
+  {{range $i, $c := $f.Checkpoints}}
+  <section class="ckblock" id="{{$c.ID}}">
+    <h2 class="ckh">{{$c.Label}}{{if not $c.Pinned}} · unpinned{{end}}</h2>
+    <div class="pgrid">
+      <div>
+        <div class="blk"><h3>Get it</h3>
+          <div class="big">{{template "bigfit" $c}}</div>
+          <div class="copy"><code>{{$c.Pull}}</code><button type="button">copy</button></div>
+          <dl class="kv" style="margin-top:12px">
+            <dt>repo</dt><dd class="mono">{{$c.Repo}}</dd>
+            <dt>file</dt><dd class="mono">{{$c.File}}</dd>
+            <dt>quant</dt><dd class="mono">{{$c.Quant}}</dd>
+            <dt>size</dt><dd>{{gb $c.Bytes}}</dd>
+            <dt>sha256</dt><dd class="mono">{{sha16 $c.SHA256}}</dd>
+          </dl>
+        </div>
+        <div class="blk"><h3>Good for, and what it needs</h3>
+          {{if $c.GoodFor}}<p class="prose">{{cap $c.GoodFor}}.</p>{{end}}
+          {{if $c.Needs}}<p class="prose">{{$c.Needs}}</p>{{end}}
+          {{if $c.Note}}<p class="prose">{{$c.Note}}</p>{{end}}
+          {{if and (not $c.GoodFor) (not $c.Needs) (not $c.Note)}}<p class="prose">Nothing recorded yet.</p>{{end}}
+        </div>
+        <div class="blk"><h3>Tool calling</h3><p class="prose mono">{{$c.Tools}}</p></div>
+        {{template "gapsblock" (dict2 $f $c)}}
+      </div>
+      <div>
+        {{if eq $i 0}}{{template "howsure" $f}}{{end}}
+        <div class="blk"><h3>Measured speed · decode, tokens per second</h3>
+          <div class="speeds">
+            {{$max := smax $c}}
+            {{range machines}}{{$mc := .}}{{$s := speedOf $c .Key}}
+            <div>
+              <div class="mach"><span><span class="yp mv" data-m="{{.Key}}">your pick · </span>{{.Name}}</span><small>{{.Path}}{{if $s}}{{if $s.Date}} · {{$s.Date}}{{end}}{{end}}</small></div>
+              {{if and $s $s.Tok}}
+              <div class="bars">
+                <span class="bl2 gi">goinfer</span><div class="track"><div class="f gi" style="width:{{bar $s.Tok $max}}%"></div></div><span class="bv">{{num $s.Tok}}</span>
+                {{if $s.Peer}}<span class="bl2 ol">Ollama</span><div class="track"><div class="f ol" style="width:{{bar $s.Peer $max}}%"></div></div><span class="bv">{{num $s.Peer}}</span>{{end}}
+              </div>
+              <div class="why"><span class="vs {{$s.Verdict}}">{{vs $s}}</span>{{if $s.Why}} {{$s.Why}}{{end}}</div>
+              {{else}}<div class="nm2">{{if $s}}{{$s.Ratio}}{{if $s.Why}} · {{$s.Why}}{{end}}{{else}}not measured{{end}}</div>{{end}}
+            </div>
+            {{end}}
+          </div>
+          <p class="prose" style="margin-top:12px;font-size:12.5px">{{$m.Method}} Full method in <a href="{{cfg.GitHubURL}}/blob/main/docs/benchmarks.md">benchmarks</a>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+  {{end}}
+  {{else}}
+  <div class="pgrid">
+    <div>
+      <div class="blk"><h3>Get it</h3>
+        {{if $f.HasGGUF}}<p class="prose">No vetted checkpoint yet. You can pull any GGUF of this family by repo and quant. goinfer checks it fits before downloading, but nobody here has timed it.</p>
+        <div class="copy"><code>goinfer-chat pull &lt;owner&gt;/&lt;repo&gt;:&lt;quant&gt;</code><button type="button">copy</button></div>
+        {{else}}<p class="prose">goinfer can't fetch this one yet. Download the safetensors folder with your usual tool, then point goinfer at it.</p>
+        <div class="copy"><code>goinfer-serve -model ./path/to/checkpoint-folder</code><button type="button">copy</button></div>{{end}}
+      </div>
+      {{template "gapsblock" (dict2 $f nil)}}
+    </div>
+    <div>
+      {{template "howsure" $f}}
+      <div class="blk"><h3>Measured speed · decode, tokens per second</h3><p class="nm2">not measured — no vetted checkpoint to measure</p></div>
+    </div>
+  </div>
+  {{end}}
+
+  <details class="arch"><summary>Architecture, for the curious</summary>
+    <dl class="kv">
+      <dt>model_type</dt><dd>{{join $f.ModelTypes ", "}}</dd>
+      <dt>design</dt><dd>{{$f.CoverageAxis}}</dd>
+      <dt>experts</dt><dd>{{$f.MoE}}</dd>
+      <dt>attention window</dt><dd>{{$f.SlidingWindow}}</dd>
+      <dt>QK-norm</dt><dd>{{if $f.QKNorm}}yes{{else}}no{{end}}</dd>
+      <dt>RoPE</dt><dd>{{$f.RopeStyle}}</dd>
+      <dt>norm</dt><dd>{{$f.Norm}}</dd>
+      <dt>activation</dt><dd>{{$f.Activation}}</dd>
+      <dt>tied head</dt><dd>{{if $f.TiedLMHead}}yes{{else}}no{{end}}</dd>
+      <dt>modality</dt><dd>{{$f.Modality}}</dd>
+      <dt>GPU-resident</dt><dd>{{if $f.GPUResident}}eligible{{else}}no{{end}}</dd>
+    </dl>
+    <div class="raw">registry description: {{$f.Description}}</div>
+  </details>
+</article>
+{{template "foot" .}}
