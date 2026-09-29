@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Design mockup, 2026-09-29. Reference for docs/tasks/task-site-2026-09.md; not the site itself. -->
+<title>goinfer.dev homepage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=Martian+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a hardware picker that answers in a dated spec table, then doors, differences, dead ends — one column, instrument-panel register. */
+:root{
+  --ground:#eceff3;
+  --surface:#f9fafc;
+  --sunk:#e2e6ec;
+  --line:#cfd5de;
+  --ink:#212831;
+  --ink-2:#48525e;
+  --muted:#5c6672;
+  --accent:#0b6fd4;
+  --accent-soft:#d8e6f7;
+  --on-accent:#ffffff;
+  --good:#17744a;
+  --good-soft:#d6ecdf;
+  --warn:#9a4a12;
+  --warn-soft:#f4e3d4;
+  --peer:#212831;
+  --peer-bar:#7f8a98;
+  --f-display:"Schibsted Grotesk","Helvetica Neue",Arial,sans-serif;
+  --f-body:"Instrument Sans","Segoe UI",system-ui,sans-serif;
+  --f-mono:"Martian Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#12161c; --surface:#1a2029; --sunk:#222a35; --line:#323c49;
+    --ink:#e5e9ef; --ink-2:#b6bfca; --muted:#8a95a2;
+    --accent:#4c9bef; --accent-soft:#1a2d45; --on-accent:#0b1522;
+    --good:#5fc38f; --good-soft:#17301f; --warn:#e39a5f; --warn-soft:#3a2616;
+    --peer:#e5e9ef; --peer-bar:#6f7b8a; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#12161c; --surface:#1a2029; --sunk:#222a35; --line:#323c49;
+  --ink:#e5e9ef; --ink-2:#b6bfca; --muted:#8a95a2;
+  --accent:#4c9bef; --accent-soft:#1a2d45; --on-accent:#0b1522;
+  --good:#5fc38f; --good-soft:#17301f; --warn:#e39a5f; --warn-soft:#3a2616;
+  --peer:#e5e9ef; --peer-bar:#6f7b8a; color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0;padding-inline:20px;padding-block:0 64px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+code,.mono{font-family:var(--f-mono);font-size:.82em}
+
+/* mockup notice */
+.notice{margin:14px 0 0;padding:8px 12px;border:1px dashed var(--line);border-radius:6px;font-size:13px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
+.notice b{color:var(--ink-2);font-weight:600}
+
+/* nav */
+nav.top{display:flex;align-items:center;gap:28px;padding-block:18px;flex-wrap:wrap}
+.wordmark{font-family:var(--f-mono);font-weight:500;font-size:18px;color:var(--ink);letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.wordmark i{width:10px;height:10px;background:var(--accent);border-radius:2px;display:inline-block}
+nav.top ul{list-style:none;margin:0;padding:0;display:flex;gap:22px;flex-wrap:wrap;flex:1}
+nav.top ul a{color:var(--ink-2);font-weight:500;font-size:15px}
+nav.top .gh{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+
+/* hero */
+.hero{padding-block:44px 22px}
+.eyebrow{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 14px}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(34px,6vw,64px);line-height:1.0;letter-spacing:-.03em;margin:0;max-width:16ch;text-wrap:balance}
+.lede{font-size:18px;color:var(--ink-2);max-width:60ch;margin:18px 0 0}
+
+/* machine picker */
+.picker{margin-top:30px;display:flex;flex-wrap:wrap;gap:10px}
+.chip{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:10px 14px;text-align:left;cursor:pointer;font:inherit;display:grid;gap:2px;min-width:0}
+.chip .n{font-weight:600;font-size:15px}
+.chip .s{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.chip[aria-pressed="true"] .s{color:var(--on-accent);opacity:.85}
+.other{margin-top:12px;display:flex;gap:14px;flex-wrap:wrap;align-items:end}
+.other label{display:grid;gap:4px;font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+.other select{font:inherit;font-size:14px;padding:7px 10px;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+
+/* answer panel */
+.answer{margin-top:22px;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.answer-head{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid var(--line);align-items:baseline}
+.answer-head h2{font-family:var(--f-display);font-weight:700;font-size:20px;margin:0;letter-spacing:-.01em}
+.legend{display:flex;gap:16px;font-size:12px;color:var(--muted);font-family:var(--f-mono);flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.lg-bar{width:18px;height:8px;border-radius:2px;background:var(--accent)}
+.lg-bar.peer{background:var(--peer-bar)}
+.bars{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:7px 10px;align-items:center}
+.bl{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.bl.gi{color:var(--accent)}
+.track{position:relative;height:11px;background:var(--sunk);border-radius:3px}
+.fill{position:absolute;inset:0 auto 0 0;border-radius:3px}
+.fill.gi{background:var(--accent)}
+.fill.ol{background:var(--peer-bar)}
+.bv{font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums;text-align:right;color:var(--ink-2)}
+.bv.gi{color:var(--ink);font-weight:500}
+.rows{list-style:none;margin:0;padding:0}
+.row{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1.6fr) minmax(0,1fr);gap:18px;padding:16px 20px;border-bottom:1px solid var(--line);align-items:center}
+.row:last-child{border-bottom:0}
+.m-name{font-weight:600;font-size:16px}
+.m-meta{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+.m-good{font-size:13.5px;color:var(--ink-2);margin-top:5px}
+.fit{display:inline-block;font-family:var(--f-mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px}
+.fit.fits{background:var(--good-soft);color:var(--good)}
+.fit.tight{background:var(--warn-soft);color:var(--warn)}
+.fit.no{background:var(--sunk);color:var(--muted)}
+.parity{font-family:var(--f-mono);font-size:10.5px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+
+.speed{min-width:0}
+.bar{position:relative;height:14px;background:var(--sunk);border-radius:3px}
+.bar .g{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:3px}
+.bar .t{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--peer)}
+.speed-read{display:flex;justify-content:space-between;gap:10px;margin-top:6px;font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums;flex-wrap:wrap}
+.speed-read b{font-weight:500;color:var(--ink)}
+.speed-read .pe{color:var(--muted)}
+.nomeasure{font-family:var(--f-mono);font-size:12px;color:var(--muted);padding:6px 0}
+.vs{font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums}
+.vs .pill{display:inline-block;padding:3px 8px;border-radius:5px;font-weight:500}
+.vs .ahead{background:var(--good-soft);color:var(--good)}
+.vs .behind{background:var(--warn-soft);color:var(--warn)}
+.vs .level{background:var(--sunk);color:var(--ink-2)}
+.vs .na{color:var(--muted)}
+.vs .why{display:block;color:var(--muted);font-size:11px;margin-top:5px;line-height:1.45;font-family:var(--f-body)}
+.copy{margin-top:8px;display:flex;gap:6px;align-items:center;min-width:0}
+.copy code{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;background:var(--sunk);padding:5px 8px;border-radius:5px;font-size:10.5px;color:var(--ink-2)}
+.copy button{font:inherit;font-size:11px;font-family:var(--f-mono);border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:5px;padding:4px 8px;cursor:pointer}
+.answer-foot{padding:12px 20px;background:var(--sunk);font-size:12.5px;color:var(--muted);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+
+/* sections */
+section{padding-block:64px 0}
+.s-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+h2.s{font-family:var(--f-display);font-weight:800;font-size:clamp(26px,3.6vw,36px);letter-spacing:-.025em;margin:0;text-wrap:balance}
+.s-sub{color:var(--ink-2);max-width:58ch;margin:8px 0 0}
+
+/* doors */
+.doors{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.door{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.door h3{font-family:var(--f-display);font-weight:700;font-size:19px;margin:0}
+.door p{margin:0;font-size:14.5px;color:var(--ink-2)}
+.door pre{margin:auto 0 0;background:var(--sunk);border-radius:6px;padding:9px 10px;font-family:var(--f-mono);font-size:10.5px;overflow-x:auto;color:var(--ink-2);line-height:1.6}
+
+/* differences */
+.diff{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border-top:2px solid var(--ink)}
+.card{padding:22px 22px 24px 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px;min-width:0}
+.card:not(:nth-child(3n+1)){padding-left:22px;border-left:1px solid var(--line)}
+.card .k{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.card h3{font-family:var(--f-display);font-weight:700;font-size:21px;line-height:1.15;margin:0;letter-spacing:-.01em}
+.card p{margin:0;font-size:14.5px;color:var(--ink-2)}
+.card .doesnt{font-size:13.5px;color:var(--muted);border-left:2px solid var(--line);padding-left:10px}
+.card .doesnt b{color:var(--ink-2);font-weight:600}
+.card a.more{margin-top:auto;font-weight:600;font-size:14px}
+
+/* dead ends */
+.dead{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.de{border:1px solid var(--line);border-radius:12px;padding:18px;background:var(--surface);min-width:0}
+.de .x{font-family:var(--f-mono);font-size:11px;color:var(--warn);letter-spacing:.08em;text-transform:uppercase}
+.de h3{font-size:16px;margin:8px 0 6px;font-weight:600}
+.de .num{font-family:var(--f-mono);font-size:22px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.de p{margin:6px 0 0;font-size:13.5px;color:var(--ink-2)}
+
+/* book */
+.book{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:28px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:28px;align-items:center}
+.book ol{margin:0;padding-left:1.4em;columns:2;column-gap:24px;font-size:14px;color:var(--ink-2)}
+.book ol li{break-inside:avoid;margin-bottom:4px}
+
+footer{margin-top:72px;padding-top:22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+footer ul{list-style:none;margin:0;padding:0;display:flex;gap:18px;flex-wrap:wrap}
+
+@media (max-width:900px){
+  .doors{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .diff{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .card:not(:nth-child(3n+1)){padding-left:0;border-left:0}
+  .card:nth-child(even){padding-left:22px;border-left:1px solid var(--line)}
+  .dead{grid-template-columns:1fr}
+  .book{grid-template-columns:1fr}
+}
+@media (max-width:720px){
+  .row{grid-template-columns:1fr;gap:12px}
+  .doors,.diff{grid-template-columns:1fr}
+  .card:nth-child(even){padding-left:0;border-left:0}
+  .book ol{columns:1}
+}
+@media (prefers-reduced-motion:no-preference){
+  .bar .g{transition:width .45s ease}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="notice"><b>Mockup · 2026-09-29</b><span>Every speed on this page is a real, dated measurement from the repo. Links go nowhere yet.</span></div>
+
+  <nav class="top" aria-label="Main">
+    <span class="wordmark"><i></i>goinfer</span>
+    <ul>
+      <li><a href="#models">Models</a></li>
+      <li><a href="#docs">Docs</a></li>
+      <li><a href="#download">Download</a></li>
+      <li><a href="#different">What's different</a></li>
+    </ul>
+    <span class="gh">github.com/townsendmerino/goinfer</span>
+  </nav>
+
+  <header class="hero">
+    <p class="eyebrow">Local LLMs · one file · pure Go</p>
+    <h1>What will run well on your machine?</h1>
+    <p class="lede">Pick the computer closest to yours. goinfer says what fits, how fast it measured on that hardware, and how that compared with Ollama in the same session.</p>
+
+    <div class="picker" role="group" aria-label="Your machine">
+      <button class="chip" id="m-mac" data-m="mac" aria-pressed="true"><span class="n">MacBook Pro</span><span class="s">M1 Pro · 16 GB · Metal</span></button>
+      <button class="chip" id="m-cuda" data-m="cuda" aria-pressed="false"><span class="n">PC with an 8 GB GPU</span><span class="s">RTX 2070 SUPER · CUDA</span></button>
+      <button class="chip" id="m-cpu" data-m="cpu" aria-pressed="false"><span class="n">PC, CPU only</span><span class="s">Ryzen 7 3700X · 16 threads</span></button>
+      <button class="chip" id="m-other" data-m="other" aria-pressed="false"><span class="n">Something else</span><span class="s">fit estimate, no speeds</span></button>
+    </div>
+    <div class="other" id="other-controls" hidden>
+      <label for="o-mem">Memory<select id="o-mem"><option>8</option><option selected>16</option><option>24</option><option>32</option><option>64</option></select></label>
+      <label for="o-gpu">Graphics<select id="o-gpu"><option value="apple">Apple Silicon</option><option value="nv8">NVIDIA, 8 GB</option><option value="nv16" selected>NVIDIA, 12–16 GB</option><option value="none">None / integrated</option></select></label>
+    </div>
+
+    <div class="answer" aria-live="polite">
+      <div class="answer-head">
+        <h2 id="ans-title">On a MacBook Pro, M1 Pro, 16 GB</h2>
+        <div class="legend"><span><i class="lg-bar"></i>goinfer</span><span><i class="lg-bar peer"></i>Ollama v0.32.5, same session</span><span>tokens per second</span></div>
+      </div>
+      <ul class="rows" id="rows"></ul>
+      <div class="answer-foot"><span id="ans-note">Metal decode.</span><a href="#lab">How these are measured</a></div>
+    </div>
+  </header>
+
+  <section id="doors" aria-labelledby="doors-h">
+    <div class="s-head"><div><h2 class="s" id="doors-h">What are you here to do?</h2></div></div>
+    <div class="doors">
+      <div class="door"><h3>Try it</h3><p>One file with a model inside. Download, run, ask. Nothing to install.</p><pre>./goinfer-chat-0.5b</pre></div>
+      <div class="door"><h3>Embed it</h3><p>A Go library. Ask a question, get a filled-in struct back.</p><pre>go get github.com/
+  townsendmerino/goinfer</pre></div>
+      <div class="door"><h3>Connect your tools</h3><p>OpenAI- and Anthropic-compatible. Claude Code, opencode and jevx work as they are.</p><pre>goinfer-serve -web
+  -model qwen2.5-coder-7b</pre></div>
+      <div class="door"><h3>Run bigger models</h3><p>A 26B mixture-of-experts on an 8 GB card, by streaming experts in.</p><pre>goinfer-chat fit
+  gemma-4-26b-a4b</pre></div>
+    </div>
+  </section>
+
+  <section id="different" aria-labelledby="diff-h">
+    <div class="s-head">
+      <div><h2 class="s" id="diff-h">What's different</h2><p class="s-sub">Each of these has a writeup: the problem, what goinfer does, what was measured, and what it doesn't do.</p></div>
+      <a href="#different" class="mono">All twelve →</a>
+    </div>
+    <div class="diff">
+      <article class="card"><span class="k">Control</span><h3>Stop means stop</h3><p>Cancel one generation by id, or halt everything from an HTTP call, a file, or a signal. Control lives on its own socket, away from the API.</p><p class="doesnt"><b>It doesn't</b> sandbox what an agent does with the text it already received.</p><a class="more" href="#different">Read →</a></article>
+      <article class="card"><span class="k">Structured output</span><h3>How sure was it?</h3><p>Each enum, boolean and integer field comes back with the model's probability over the answers the schema allowed. Useful for "ask a person below 0.7".</p><p class="doesnt"><b>It isn't</b> the probability the answer is right. It is not calibrated.</p><a class="more" href="#different">Read →</a></article>
+      <article class="card"><span class="k">Agents</span><h3>Tool calls that can't come out malformed</h3><p>When a model starts a tool call, one grammar covering every tool it was given keeps the call well-formed.</p><p class="doesnt"><b>It doesn't</b> choose the right tool for the model. Llama 3 is left unconstrained.</p><a class="more" href="#different">Read →</a></article>
+      <article class="card"><span class="k">Correctness</span><h3>Checked against the reference</h3><p>Every model family is tested against HuggingFace's own implementation, and the result is published beside it.</p><p class="doesnt"><b>It doesn't</b> cover every quantization on every machine. A run names what it tested.</p><a class="more" href="#different">Read →</a></article>
+      <article class="card"><span class="k">Memory</span><h3>It refuses rather than swaps</h3><p>If a model won't fit, goinfer says so and by how much, before your laptop grinds to a halt.</p><p class="doesnt"><b>It can't</b> always hold the machine on its own. The swap tripwire notices in time, and the limit is written down.</p><a class="more" href="#different">Read →</a></article>
+      <article class="card"><span class="k">Distribution</span><h3>One file, model inside</h3><p>A single binary with the weights compiled in. First token in about half a second, 77 MB resident.</p><p class="doesnt"><b>It isn't</b> small. The 0.5B build is around 600 MB.</p><a class="more" href="#different">Read →</a></article>
+    </div>
+  </section>
+
+  <section id="lab" aria-labelledby="lab-h">
+    <div class="s-head">
+      <div><h2 class="s" id="lab-h">What didn't work</h2><p class="s-sub">Ideas measured against a target set in advance, and dropped when they missed it. They stay published.</p></div>
+      <a href="#lab" class="mono">The lab →</a>
+    </div>
+    <div class="dead">
+      <div class="de"><span class="x">Dropped</span><h3>Prefix-aware scheduling</h3><div class="num">1.024×</div><p>Needed 1.15× to stay. Reverted the same day it was built.</p></div>
+      <div class="de"><span class="x">Removed</span><h3>Adaptive speculation width</h3><div class="num">0 of 4</div><p>ship gates passed, so it was removed, as the plan written before the test said it would be.</p></div>
+      <div class="de"><span class="x">Refuted</span><h3>Quantizing the KV cache for speed</h3><div class="num">no gain</div><p>Smaller, not faster. Kept as a memory option only.</p></div>
+    </div>
+  </section>
+
+  <section id="docs" aria-labelledby="book-h">
+    <div class="book">
+      <div>
+        <p class="eyebrow">book.goinfer.dev</p>
+        <h2 class="s" id="book-h">New to how this works?</h2>
+        <p class="s-sub">Eleven chapters on how a language model actually runs, for someone who knows Go and not machine learning. Each ends in a number measured in this repo.</p>
+      </div>
+      <ol>
+        <li>Text becomes numbers</li><li>One forward pass</li><li>Picking a token</li><li>The loop and the KV cache</li><li>Making the weights small</li><li>When the model doesn't fit</li><li>Mixture of Experts</li><li>Prefill versus decode</li><li>Guessing ahead</li><li>Kernels and backends</li><li>Knowing you're right</li>
+      </ol>
+    </div>
+  </section>
+
+  <footer>
+    <span>goinfer · pure Go · no cgo, no CUDA toolkit, no Python</span>
+    <ul><li><a href="#models">Models</a></li><li><a href="#docs">Docs</a></li><li><a href="#download">Download</a></li><li><a href="#lab">Benchmarks</a></li><li><a href="#docs">Book</a></li></ul>
+  </footer>
+</div>
+
+<script>
+const PARITY = {
+  qwen2:"full-oracle 100.0%/1.00000",
+  gemma4:"full-oracle 100.0%/0.98972",
+  gptoss:"real-oracle 100.0%/0.99843"
+};
+const M = {
+  mac:{
+    title:"On a MacBook Pro, M1 Pro, 16 GB",
+    note:"Metal decode at 128 tokens of context unless noted. Ollama v0.32.5 at its defaults, 3 runs each, measured 2026-09-26.",
+    rows:[
+      {name:"Qwen2.5-Coder 1.5B",q:"int4",size:"1.1 GB",fit:"fits",good:"Code completion and small edits",fam:"qwen2",tok:89.3,peer:84.3,vs:"ahead",r:"1.06×",cmd:"goinfer-chat pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m"},
+      {name:"Qwen2.5-Coder 7B",q:"int4",size:"4.7 GB",fit:"fits",good:"Code, and longer answers worth waiting for",fam:"qwen2",tok:29.4,peer:24.8,vs:"ahead",r:"1.19×",cmd:"goinfer-chat pull Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:q4_k_m"},
+      {name:"Qwen2.5-Coder 0.5B",q:"int4",size:"0.5 GB",fit:"fits",good:"The smallest here that writes usable Go",fam:"qwen2",tok:109,peer:null,vs:"level",r:"too close to call",why:"On the CPU. Ollama's own three runs varied by 31%, so no ratio is claimed.",cmd:"goinfer-chat pull qwen2.5-coder-0.5b"},
+      {name:"Gemma 4 26B-A4B",q:"q4_0",size:"14.4 GB",fit:"tight",fitNote:"pages experts from disk",good:"A 26B mixture-of-experts on a laptop",fam:"gemma4",tok:16.98,peer:null,vs:"na",r:"no Ollama run",why:"Measured July 2026, 81.6% of experts served from memory.",cmd:"goinfer-chat pull gemma-4-26b-a4b"},
+      {name:"gpt-oss 20B",q:"mxfp4",size:"12.1 GB",fit:"tight",fitNote:"pages experts from disk",good:"OpenAI's open-weight MoE",fam:"gptoss",tok:null,peer:null,vs:"na",r:"not measured here",cmd:"goinfer-chat pull gpt-oss-20b"}
+    ]
+  },
+  cuda:{
+    title:"On a PC with an RTX 2070 SUPER, 8 GB",
+    note:"CUDA decode at 128 tokens of context unless noted. Ollama v0.32.5 at its defaults, 3 pairs per cell, pre-registered, measured 2026-09-25.",
+    rows:[
+      {name:"Qwen2.5-Coder 0.5B",q:"int4",size:"0.5 GB",fit:"fits",good:"The smallest here that writes usable Go",fam:"qwen2",tok:341.9,peer:268.8,vs:"ahead",r:"1.27×",cmd:"goinfer-chat pull qwen2.5-coder-0.5b"},
+      {name:"Qwen2.5-Coder 1.5B",q:"int4",size:"1.1 GB",fit:"fits",good:"Code completion and small edits",fam:"qwen2",tok:253.1,peer:195.1,vs:"ahead",r:"1.30×",cmd:"goinfer-chat pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m"},
+      {name:"Qwen2.5-Coder 7B",q:"int4",size:"4.7 GB",fit:"fits",good:"Code, and longer answers worth waiting for",fam:"qwen2",tok:76.3,peer:71.0,vs:"ahead",r:"1.08×",why:"At 2,048 tokens of context.",cmd:"goinfer-chat pull Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:q4_k_m"},
+      {name:"Gemma 4 26B-A4B",q:"q4_0",size:"14.4 GB",fit:"fits",fitNote:"experts streamed to the GPU",good:"A 26B model on a card with 8 GB",fam:"gemma4",tok:40.2,peer:22.2,vs:"ahead",r:"1.82×",why:"goinfer keeps every expert on the GPU; Ollama offloads to the CPU. Different checkpoints, so this compares approaches.",cmd:"goinfer-chat pull gemma-4-26b-a4b"},
+      {name:"gpt-oss 20B",q:"mxfp4",size:"12.1 GB",fit:"fits",fitNote:"with --moe-cache-experts",good:"OpenAI's open-weight MoE",fam:"gptoss",tok:null,peer:null,vs:"na",r:"not measured against a peer",cmd:"goinfer-chat pull gpt-oss-20b"}
+    ]
+  },
+  cpu:{
+    title:"On a PC with a Ryzen 7 3700X, CPU only",
+    note:"goinfer is behind Ollama on x86 CPU decode today, by about a fifth. It is the slowest place to run it. Measured 2026-09-25, 128 tokens of context.",
+    rows:[
+      {name:"Qwen2.5-Coder 0.5B",q:"int4",size:"0.5 GB",fit:"fits",good:"The smallest here that writes usable Go",fam:"qwen2",tok:45.9,peer:57.6,vs:"behind",r:"0.80×",cmd:"goinfer-chat pull qwen2.5-coder-0.5b"},
+      {name:"Qwen2.5-Coder 1.5B",q:"int4",size:"1.1 GB",fit:"fits",good:"Code completion and small edits",fam:"qwen2",tok:null,peer:null,vs:"na",r:"not graded",why:"One engine stopped its reply early, so the run doesn't count. Raw reading 0.80×.",cmd:"goinfer-chat pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m"},
+      {name:"Qwen2.5-Coder 7B",q:"int4",size:"4.7 GB",fit:"fits",good:"Code, and longer answers worth waiting for",fam:"qwen2",tok:null,peer:null,vs:"na",r:"not graded",why:"Same reason. Raw reading 0.84×.",cmd:"goinfer-chat pull Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:q4_k_m"}
+    ]
+  }
+};
+const MODELS = [
+  {name:"Qwen2.5-Coder 0.5B",q:"int4",gb:0.5,moe:false,good:"The smallest here that writes usable Go",fam:"qwen2",cmd:"goinfer-chat pull qwen2.5-coder-0.5b"},
+  {name:"Qwen2.5-Coder 1.5B",q:"int4",gb:1.1,moe:false,good:"Code completion and small edits",fam:"qwen2",cmd:"goinfer-chat pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m"},
+  {name:"Qwen2.5-Coder 7B",q:"int4",gb:4.7,moe:false,good:"Code, and longer answers worth waiting for",fam:"qwen2",cmd:"goinfer-chat pull Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:q4_k_m"},
+  {name:"gpt-oss 20B",q:"mxfp4",gb:12.1,moe:true,good:"OpenAI's open-weight MoE",fam:"gptoss",cmd:"goinfer-chat pull gpt-oss-20b"},
+  {name:"Gemma 4 26B-A4B",q:"q4_0",gb:14.4,moe:true,good:"A 26B mixture-of-experts",fam:"gemma4",cmd:"goinfer-chat pull gemma-4-26b-a4b"}
+];
+
+function estimate(mem, gpu){
+  return MODELS.map(m=>{
+    let fit="fits", note="";
+    if(gpu==="apple"){ const b=mem*0.7; if(m.gb>b){ if(m.moe && m.gb<mem*1.6){fit="tight";note="pages experts from disk"} else {fit="no"} } }
+    else if(gpu==="nv8"||gpu==="nv16"){ const v=gpu==="nv8"?8:14;
+      if(m.gb>v*0.85){ if(m.moe && m.gb<mem){fit="fits";note="experts streamed to the GPU"} else if(m.gb<mem*0.6){fit="tight";note="runs on the CPU"} else {fit="no"} } }
+    else { if(m.gb>mem*0.9){ if(m.moe && m.gb<mem*1.6){fit="tight";note="pages experts from disk"} else fit="no" } else if(m.gb>mem*0.6){fit="tight"} }
+    return {...m,size:m.gb.toFixed(1)+" GB",fit,fitNote:note,tok:null,peer:null,vs:"na",r:"no measurement for this machine",why:""};
+  });
+}
+
+const $=id=>document.getElementById(id);
+function fitLabel(f){return f==="fits"?"fits":f==="tight"?"tight":"won't fit"}
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+
+function render(key){
+  let data;
+  if(key==="other"){
+    const mem=+$("o-mem").value, gpu=$("o-gpu").value;
+    const g={apple:"Apple Silicon",nv8:"an 8 GB NVIDIA GPU",nv16:"a 12–16 GB NVIDIA GPU",none:"no discrete GPU"}[gpu];
+    data={title:`With ${mem} GB of memory and ${g}`,note:"A coarse fit estimate from download sizes, with no speeds. goinfer hasn't been measured on this machine, so nothing is claimed.",rows:estimate(mem,gpu)};
+  } else data=M[key];
+  $("ans-title").textContent=data.title;
+  $("ans-note").textContent=data.note;
+  const max=Math.max(1,...data.rows.flatMap(r=>[r.tok||0,r.peer||0]))*1.08;
+  const ul=$("rows"); ul.textContent="";
+  data.rows.forEach(r=>{
+    const li=el("li","row");
+    const a=el("div");
+    a.appendChild(el("div","m-name",r.name));
+    const meta=el("div","m-meta");
+    meta.appendChild(el("span",null,r.q+" · "+r.size));
+    const f=el("span","fit "+(r.fit==="no"?"no":r.fit),fitLabel(r.fit)+(r.fitNote?" · "+r.fitNote:""));
+    meta.appendChild(f);
+    const p=el("span","parity","parity: "+PARITY[r.fam].split(" ")[0]); p.title=PARITY[r.fam];
+    meta.appendChild(p);
+    a.appendChild(meta);
+    a.appendChild(el("div","m-good",r.good));
+    const b=el("div","speed");
+    if(r.tok!=null){
+      const bars=el("div","bars");
+      const addBar=(label,val,cls)=>{
+        bars.appendChild(el("span","bl "+cls,label));
+        const tr=el("div","track"); const f=el("div","fill "+cls);
+        f.style.width=(val/max*100).toFixed(1)+"%"; tr.appendChild(f); bars.appendChild(tr);
+        bars.appendChild(el("span","bv "+cls,String(val)));
+      };
+      addBar("goinfer",r.tok,"gi");
+      if(r.peer!=null) addBar("Ollama",r.peer,"ol");
+      b.appendChild(bars);
+    } else b.appendChild(el("div","nomeasure","No speed measured"));
+    const c=el("div","vs");
+    const pill=el("span","pill "+(r.vs==="na"?"na":r.vs), r.vs==="ahead"||r.vs==="behind" ? r.r+" Ollama" : r.r);
+    c.appendChild(pill);
+    if(r.why) c.appendChild(el("span","why",r.why));
+    const cp=el("div","copy"); const code=el("code",null,r.cmd); const btn=el("button",null,"copy");
+    btn.type="button";
+    btn.addEventListener("click",()=>{
+      const done=()=>{btn.textContent="copied";setTimeout(()=>btn.textContent="copy",1400)};
+      try{navigator.clipboard.writeText(r.cmd).then(done,()=>selectText(code))}catch(e){selectText(code)}
+    });
+    cp.appendChild(code); cp.appendChild(btn); c.appendChild(cp);
+    li.appendChild(a); li.appendChild(b); li.appendChild(c);
+    ul.appendChild(li);
+  });
+}
+function selectText(n){const r=document.createRange();r.selectNodeContents(n);const s=getSelection();s.removeAllRanges();s.addRange(r)}
+
+function pick(key){
+  document.querySelectorAll(".chip").forEach(c=>c.setAttribute("aria-pressed",String(c.dataset.m===key)));
+  $("other-controls").hidden = key!=="other";
+  render(key);
+  try{localStorage.setItem("gi-machine",key)}catch(e){}
+}
+document.querySelectorAll(".chip").forEach(c=>c.addEventListener("click",()=>pick(c.dataset.m)));
+$("o-mem").addEventListener("change",()=>render("other"));
+$("o-gpu").addEventListener("change",()=>render("other"));
+let start="mac"; try{const s=localStorage.getItem("gi-machine"); if(s&&(M[s]||s==="other")) start=s}catch(e){}
+pick(start);
+</script>
+</body>
+</html>

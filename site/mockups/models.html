@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Design mockup, 2026-09-29. Reference for docs/tasks/task-site-2026-09.md; not the site itself. -->
+<title>goinfer.dev models</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=Martian+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: proof-first library. Counts strip, vetted checkpoints, a filterable ledger of all families, then one generated model page. */
+:root{
+  --ground:#eceff3; --surface:#f9fafc; --sunk:#e2e6ec; --line:#cfd5de;
+  --ink:#212831; --ink-2:#48525e; --muted:#5c6672;
+  --accent:#0b6fd4; --accent-soft:#d8e6f7; --on-accent:#ffffff;
+  --good:#17744a; --good-soft:#d6ecdf; --warn:#9a4a12; --warn-soft:#f4e3d4;
+  --peer-bar:#7f8a98;
+  --f-display:"Schibsted Grotesk","Helvetica Neue",Arial,sans-serif;
+  --f-body:"Instrument Sans","Segoe UI",system-ui,sans-serif;
+  --f-mono:"Martian Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#12161c; --surface:#1a2029; --sunk:#222a35; --line:#323c49;
+    --ink:#e5e9ef; --ink-2:#b6bfca; --muted:#8a95a2;
+    --accent:#4c9bef; --accent-soft:#1a2d45; --on-accent:#0b1522;
+    --good:#5fc38f; --good-soft:#17301f; --warn:#e39a5f; --warn-soft:#3a2616;
+    --peer-bar:#6f7b8a; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#12161c; --surface:#1a2029; --sunk:#222a35; --line:#323c49;
+  --ink:#e5e9ef; --ink-2:#b6bfca; --muted:#8a95a2;
+  --accent:#4c9bef; --accent-soft:#1a2d45; --on-accent:#0b1522;
+  --good:#5fc38f; --good-soft:#17301f; --warn:#e39a5f; --warn-soft:#3a2616;
+  --peer-bar:#6f7b8a; color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0;padding-inline:16px;padding-block:0 64px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+code,.mono{font-family:var(--f-mono);font-size:.82em}
+button{font:inherit;color:inherit}
+
+.notice{margin:14px 0 0;padding:8px 12px;border:1px dashed var(--line);border-radius:6px;font-size:13px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
+.notice b{color:var(--ink-2);font-weight:600}
+
+nav.top{display:flex;align-items:center;gap:28px;padding-block:18px;flex-wrap:wrap}
+.wordmark{font-family:var(--f-mono);font-weight:500;font-size:18px;color:var(--ink);letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.wordmark i{width:10px;height:10px;background:var(--accent);border-radius:2px;display:inline-block}
+nav.top ul{list-style:none;margin:0;padding:0;display:flex;gap:22px;flex-wrap:wrap;flex:1}
+nav.top ul a{color:var(--ink-2);font-weight:500;font-size:15px}
+nav.top ul a[aria-current]{color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent);padding-bottom:3px}
+nav.top .gh{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+
+.hero{padding-block:36px 8px}
+.eyebrow{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 14px}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(32px,5.4vw,56px);line-height:1.02;letter-spacing:-.03em;margin:0;max-width:19ch;text-wrap:balance}
+.lede{font-size:17px;color:var(--ink-2);max-width:62ch;margin:16px 0 0}
+
+/* counts */
+.counts{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));margin-top:28px;border-top:2px solid var(--ink);border-bottom:1px solid var(--line)}
+.count{padding:14px 14px 14px 0;min-width:0}
+.count+.count{padding-left:14px;border-left:1px solid var(--line)}
+.count .n{font-family:var(--f-mono);font-size:28px;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1.1}
+.count .l{font-size:12.5px;color:var(--ink-2);margin-top:4px;line-height:1.35}
+.count.zero .n{color:var(--muted)}
+
+/* machine bar */
+.machine{position:sticky;top:0;z-index:5;margin-top:22px;background:var(--ground);padding-block:10px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;border-bottom:1px solid var(--line)}
+.machine .lab{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface);flex-wrap:wrap}
+.seg button{border:0;background:transparent;padding:6px 11px;font-size:13.5px;cursor:pointer;color:var(--ink-2)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
+.seg button:disabled{color:var(--muted);cursor:not-allowed;text-decoration:line-through;text-decoration-color:var(--line)}
+select{font:inherit;font-size:13.5px;padding:5px 8px;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.other{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+section{padding-block:52px 0}
+.s-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+h2.s{font-family:var(--f-display);font-weight:800;font-size:clamp(24px,3.2vw,32px);letter-spacing:-.025em;margin:0;text-wrap:balance}
+.s-sub{color:var(--ink-2);max-width:64ch;margin:6px 0 0;font-size:15px}
+
+/* badges */
+.fit{display:inline-block;font-family:var(--f-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:4px;white-space:nowrap}
+.fit.fits{background:var(--good-soft);color:var(--good)}
+.fit.tight{background:var(--warn-soft);color:var(--warn)}
+.fit.no{background:var(--sunk);color:var(--muted)}
+.fitnote{font-size:12px;color:var(--muted)}
+.proof{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500}
+.proof i{width:9px;height:9px;border-radius:50%;flex:none}
+.proof.released i{background:var(--good)}
+.proof.fixture i{background:transparent;border:2px solid var(--warn)}
+.proof.shared i{background:transparent;border:2px dashed var(--muted)}
+.pstr{font-family:var(--f-mono);font-size:10.5px;color:var(--muted);display:block;margin-top:2px}
+.pstr .low{color:var(--warn)}
+.tag{display:inline-block;font-family:var(--f-mono);font-size:10px;letter-spacing:.04em;padding:1px 6px;border:1px solid var(--line);border-radius:4px;color:var(--ink-2);white-space:nowrap}
+.tag.exp{border-color:var(--warn);color:var(--warn)}
+.tag.moe{background:var(--sunk);border-color:var(--sunk)}
+
+/* vetted */
+.vetted{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.vc{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:8px;text-align:left;cursor:pointer;min-width:0}
+.vc:hover{border-color:var(--accent)}
+.vc .t{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.vc h3{font-family:var(--f-display);font-weight:700;font-size:18px;margin:0;letter-spacing:-.01em}
+.vc .q{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.vc .g{font-size:13.5px;color:var(--ink-2);margin:0}
+.vc .sp{margin-top:auto;padding-top:8px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;font-family:var(--f-mono);font-size:12px}
+.vc .sp b{font-size:18px;font-weight:500;letter-spacing:-.02em}
+.vc .sp .none{color:var(--muted)}
+.vs{font-family:var(--f-mono);font-size:11.5px;padding:2px 7px;border-radius:5px;white-space:nowrap}
+.vs.ahead{background:var(--good-soft);color:var(--good)}
+.vs.behind{background:var(--warn-soft);color:var(--warn)}
+.vs.na{color:var(--muted);padding-inline:0}
+
+/* filters */
+.filters{display:grid;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.frow{display:flex;gap:10px 14px;flex-wrap:wrap;align-items:center}
+.frow .lab{font-family:var(--f-mono);font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;min-width:88px}
+.chk{display:inline-flex;gap:6px;align-items:center;font-size:13.5px;color:var(--ink-2);cursor:pointer}
+.chk input{accent-color:var(--accent)}
+.shown{font-family:var(--f-mono);font-size:12px;color:var(--muted);margin:14px 0 8px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+
+/* ledger */
+.ledger{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.lr{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(0,1.25fr) minmax(0,1fr) minmax(0,.8fr);gap:16px;padding:13px 16px;border-bottom:1px solid var(--line);align-items:start;cursor:pointer;width:100%;text-align:left;background:transparent;border-left:0;border-right:0;border-top:0}
+.ledger li:last-child .lr{border-bottom:0}
+.lr:hover{background:var(--sunk)}
+.lr[aria-current="true"]{box-shadow:inset 3px 0 0 var(--accent);background:var(--accent-soft)}
+.lr .nm{font-weight:600;font-size:15.5px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.lr .bl{font-size:13.5px;color:var(--ink-2);margin-top:2px}
+.lr .tg{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.lr .col{font-size:13px;color:var(--ink-2);min-width:0}
+.lr .col small{display:block;font-family:var(--f-mono);font-size:10.5px;color:var(--muted);margin-top:2px}
+.lr .ck{color:var(--accent);font-weight:500}
+.hdr{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(0,1.25fr) minmax(0,1fr) minmax(0,.8fr);gap:16px;padding:0 16px 6px;font-family:var(--f-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.empty{padding:28px 16px;color:var(--ink-2);font-size:14.5px}
+
+/* model page */
+.page{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;scroll-margin-top:70px}
+.crumb{padding:10px 20px;border-bottom:1px solid var(--line);font-family:var(--f-mono);font-size:11.5px;color:var(--muted);background:var(--sunk);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.ph{padding:22px 20px 16px}
+.ph h2{font-family:var(--f-display);font-weight:800;font-size:clamp(28px,4vw,40px);letter-spacing:-.03em;margin:0;line-height:1.05}
+.ph p{margin:8px 0 0;color:var(--ink-2);max-width:66ch}
+.ph .tg{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.cktabs{display:flex;gap:6px;flex-wrap:wrap;padding:0 20px 14px}
+.cktabs button{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:5px 10px;font-size:13px;cursor:pointer;color:var(--ink-2)}
+.cktabs button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+.pgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);border-top:1px solid var(--line)}
+.pgrid>div{padding:18px 20px;min-width:0}
+.pgrid>div+div{border-left:1px solid var(--line)}
+.blk+.blk{margin-top:22px}
+.blk h3{font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500;margin:0 0 8px}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;font-size:14px;margin:0}
+.kv dt{color:var(--muted);font-size:13px}
+.kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.big{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.prose{font-size:14px;color:var(--ink-2);margin:0}
+.prose+.prose{margin-top:6px}
+.meter{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;font-size:13px;margin-top:10px}
+.meter .track{height:8px;background:var(--sunk);border-radius:3px;position:relative;overflow:hidden}
+.meter .fill{position:absolute;inset:0 auto 0 0;background:var(--good);border-radius:3px}
+.meter .fill.low{background:var(--warn)}
+.meter .v{font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums}
+.meter .d{grid-column:1/-1;color:var(--muted);font-size:12px;margin-top:-2px;margin-bottom:6px}
+.copy{display:flex;gap:6px;align-items:center;min-width:0;margin-top:6px}
+.copy code{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;background:var(--sunk);padding:7px 9px;border-radius:6px;font-size:11px;color:var(--ink)}
+.copy button{font-size:11px;font-family:var(--f-mono);border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:5px;padding:5px 9px;cursor:pointer}
+.speeds{display:grid;gap:14px}
+.mach{font-size:13px;font-weight:600;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.mach small{font-family:var(--f-mono);font-weight:400;font-size:10.5px;color:var(--muted)}
+.mach .yp{color:var(--accent);font-weight:500}
+.bars{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 10px;align-items:center;margin-top:6px}
+.bars .bl2{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.bars .bl2.gi{color:var(--accent)}
+.bars .track{position:relative;height:10px;background:var(--sunk);border-radius:3px}
+.bars .f{position:absolute;inset:0 auto 0 0;border-radius:3px}
+.bars .f.gi{background:var(--accent)}
+.bars .f.ol{background:var(--peer-bar)}
+.bars .bv{font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums;text-align:right;color:var(--ink-2)}
+.why{font-size:12px;color:var(--muted);margin-top:5px}
+.nm2{font-family:var(--f-mono);font-size:12px;color:var(--muted);margin-top:4px}
+.gaps{margin:0;padding:0;list-style:none;display:grid;gap:7px}
+.gaps li{font-size:13.5px;color:var(--ink-2);border-left:2px solid var(--warn);padding-left:10px}
+details.arch{border-top:1px solid var(--line);padding:14px 20px}
+details.arch summary{cursor:pointer;font-family:var(--f-mono);font-size:12px;color:var(--ink-2)}
+details.arch .kv{margin-top:12px;font-size:13px}
+details.arch .kv dd{font-family:var(--f-mono);font-size:11.5px}
+.raw{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);margin-top:10px}
+
+footer{margin-top:72px;padding-top:22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+footer ul{list-style:none;margin:0;padding:0;display:flex;gap:18px;flex-wrap:wrap}
+
+@media (max-width:900px){
+  .counts{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .count:nth-child(4){padding-left:0;border-left:0}
+  .count:nth-child(n+4){border-top:1px solid var(--line)}
+  .vetted{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .lr,.hdr{grid-template-columns:minmax(0,1.8fr) minmax(0,1.2fr) minmax(0,1fr)}
+  .lr .c4,.hdr .c4{display:none}
+}
+@media (max-width:680px){
+  .counts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .count:nth-child(n){padding-left:0;border-left:0;border-top:1px solid var(--line)}
+  .count:nth-child(even){padding-left:14px;border-left:1px solid var(--line)}
+  .count:nth-child(-n+2){border-top:0}
+  .vetted{grid-template-columns:1fr}
+  .hdr{display:none}
+  .lr{grid-template-columns:1fr;gap:8px}
+  .lr .c4{display:block}
+  .pgrid{grid-template-columns:1fr}
+  .pgrid>div+div{border-left:0;border-top:1px solid var(--line)}
+  .frow .lab{min-width:0;width:100%}
+  .machine{position:static}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="notice"><b>Mockup · 2026-09-29</b><span>Families, parity, loaders and checkpoints are the real <code>capability-matrix.json</code>. Speeds are real and dated. The one-line plain descriptions are invented for this mockup.</span></div>
+
+  <nav class="top" aria-label="Main">
+    <span class="wordmark"><i></i>goinfer</span>
+    <ul>
+      <li><a href="#top" aria-current="page">Models</a></li>
+      <li><a href="#docs">Docs</a></li>
+      <li><a href="#download">Download</a></li>
+      <li><a href="#different">What's different</a></li>
+    </ul>
+    <span class="gh">github.com/townsendmerino/goinfer</span>
+  </nav>
+
+  <header class="hero" id="top">
+    <p class="eyebrow">Models · generated from the repo</p>
+    <h1>Every model goinfer runs, and how sure we are about each one.</h1>
+    <p class="lede">Each family is checked against HuggingFace's own implementation, and the result is printed next to it. A few checkpoints are vetted end to end: pinned, sized, fitted and timed. Everything else says what hasn't been shown yet.</p>
+    <div class="counts" id="counts"></div>
+  </header>
+
+  <div class="machine" role="group" aria-label="Your machine">
+    <span class="lab">Fit and speed for</span>
+    <div class="seg" id="mseg">
+      <button type="button" data-m="mac">MacBook Pro · M1 Pro 16 GB</button>
+      <button type="button" data-m="cuda">RTX 2070 SUPER · 8 GB</button>
+      <button type="button" data-m="cpu">Ryzen 7 · CPU only</button>
+      <button type="button" data-m="other">Something else</button>
+    </div>
+    <span class="other" id="other" hidden>
+      <select id="o-mem" aria-label="Memory"><option value="8">8 GB</option><option value="16" selected>16 GB</option><option value="32">32 GB</option><option value="64">64 GB</option></select>
+      <select id="o-gpu" aria-label="Graphics"><option value="apple">Apple Silicon</option><option value="nv8">NVIDIA 8 GB</option><option value="nv16" selected>NVIDIA 12–16 GB</option><option value="none">No GPU</option></select>
+    </span>
+  </div>
+
+  <section aria-labelledby="v-h">
+    <div class="s-head"><div><h2 class="s" id="v-h">Vetted checkpoints</h2><p class="s-sub">Pinned by checksum, with a fit verdict and whatever speed was measured. If you don't know where to start, start here.</p></div></div>
+    <div class="vetted" id="vetted"></div>
+  </section>
+
+  <section aria-labelledby="l-h">
+    <div class="s-head"><div><h2 class="s" id="l-h">All families</h2><p class="s-sub">Sorted by how strong the check is, strongest first. There's no "popular" sort: goinfer doesn't count downloads.</p></div></div>
+    <div class="filters">
+      <div class="frow"><span class="lab">For</span>
+        <div class="seg" id="f-task">
+          <button type="button" data-v="any" aria-pressed="true">Anything</button>
+          <button type="button" data-v="chat">Chat</button>
+          <button type="button" data-v="code">Code</button>
+          <button type="button" data-v="vision">Images</button>
+          <button type="button" data-v="embed" disabled title="goinfer doesn't run embedding models yet">Embeddings · none yet</button>
+        </div>
+      </div>
+      <div class="frow"><span class="lab">Checked</span>
+        <div class="seg" id="f-proof">
+          <button type="button" data-v="any" aria-pressed="true">Any way</button>
+          <button type="button" data-v="released">Against released weights</button>
+          <button type="button" data-v="fixture">Against a test model</button>
+          <button type="button" data-v="shared">Shares a check</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="f-exp"> Hide experimental</label>
+      </div>
+      <div class="frow"><span class="lab">Needs</span>
+        <label class="chk"><input type="checkbox" id="f-pull"> goinfer can download it (GGUF)</label>
+        <label class="chk"><input type="checkbox" id="f-gpu"> Runs on a GPU</label>
+        <label class="chk"><input type="checkbox" id="f-moe"> Mixture of experts</label>
+        <label class="chk"><input type="checkbox" id="f-ck"> Has a vetted checkpoint</label>
+      </div>
+    </div>
+    <div class="shown"><span id="shown"></span><a href="#parity">What the checks mean</a></div>
+    <div class="hdr" aria-hidden="true"><span>Family</span><span>How it was checked</span><span>Get it</span><span class="c4">Runs on</span></div>
+    <ul class="ledger" id="ledger"></ul>
+  </section>
+
+  <section aria-labelledby="p-h" id="parity">
+    <div class="s-head"><div><h2 class="s" id="p-h">A model page</h2><p class="s-sub">What <span class="mono" id="slug">goinfer.dev/models/gemma4</span> would show. Pick any family above to swap it. The "hasn't been shown" list is generated from the same data, not written by hand.</p></div></div>
+    <article class="page" id="page"></article>
+  </section>
+
+  <footer>
+    <span>goinfer · pure Go · no cgo, no CUDA toolkit, no Python</span>
+    <ul><li><a href="#top">Models</a></li><li><a href="#docs">Docs</a></li><li><a href="#download">Download</a></li><li><a href="#lab">Benchmarks</a></li><li><a href="#docs">Book</a></li></ul>
+  </footer>
+</div>
+
+<script>
+const FAM = [{"name":"olmo_hybrid","display_name":"Olmo Hybrid","description":"Ai2 Olmo Hybrid (7B): qwen3.5's Gated DeltaNet (3:1) + olmo3's own full-attention shape, MIXED norm placement per layer kind, no RoPE at all","coverage_axis":"gated-linear hybrid (Gated DeltaNet)","moe":"dense","sliding_window":"none","qk_norm":true,"rope_style":"none","norm":"RMSNorm, post-only","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors","modality":"text","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/1.00000","model_types":["olmo_hybrid"],"blurb":"Ai2's 7B hybrid: mostly linear-attention layers, a few full-attention ones, no position encoding at all.","tasks":["chat"]},{"name":"qwen3_next","display_name":"Qwen3-Next","description":"Qwen3-Next 80B-A3B: same DeltaNet/softmax/MoE hybrid shape as Qwen3.5, computed (not stated) layer pattern","coverage_axis":"gated-linear hybrid (Gated DeltaNet)","moe":"sparse +shared","sliding_window":"none","qk_norm":true,"rope_style":"partial","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors","modality":"text","gpu_residency_eligible":true,"parity":"experimental: real-oracle 100.0%/0.98988","model_types":["qwen3_next"],"blurb":"Qwen's 80B mixture-of-experts with about 3B active per token, on hybrid attention.","tasks":["chat"]},{"name":"qwen3_5_moe","display_name":"Qwen3.5-MoE","description":"Qwen3.5/3.6 hybrid: Gated DeltaNet + softmax + MoE","coverage_axis":"gated-linear hybrid (Gated DeltaNet)","moe":"sparse +shared","sliding_window":"none","qk_norm":true,"rope_style":"partial","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"full-oracle 77.5%/0.99069","model_types":["qwen3_5_moe","qwen3_5_moe_text"],"blurb":"Qwen3.5 and 3.6 mixture-of-experts on hybrid attention.","tasks":["chat"]},{"name":"qwen3_5","display_name":"Qwen3.8","description":"Qwen3.8 dense: the same Gated DeltaNet + softmax 3:1 hybrid as Qwen3.5-MoE, with a plain SwiGLU in place of the router","coverage_axis":"gated-linear hybrid (Gated DeltaNet)","moe":"dense","sliding_window":"none","qk_norm":true,"rope_style":"partial","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"real-oracle 100.0%/0.99989","model_types":["qwen3_5","qwen3_5_text"],"blurb":"Qwen3.8 dense: the same hybrid attention, without the experts.","tasks":["chat"]},{"name":"deepseek_v2","display_name":"DeepSeek-V2","description":"DeepSeek-V2/V2-Lite: MLA + DeepSeekMoE (softmax routing)","coverage_axis":"latent-KV (MLA)","moe":"sparse +shared","sliding_window":"none","qk_norm":false,"rope_style":"partial","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"real-oracle 100.0%/0.99924","model_types":["deepseek_v2"],"blurb":"DeepSeek-V2 and V2-Lite: a compressed attention cache plus experts.","tasks":["chat"]},{"name":"deepseek_v3","display_name":"DeepSeek-V3","description":"DeepSeek-V3: MLA + DeepSeekMoE (sigmoid + group-limited routing)","coverage_axis":"latent-KV (MLA)","moe":"sparse +shared","sliding_window":"none","qk_norm":false,"rope_style":"partial","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"real-oracle 100.0%/0.99951","model_types":["deepseek_v3"],"blurb":"DeepSeek-V3: the same design at frontier scale. Far larger than any machine on this site.","tasks":["chat"]},{"name":"kimi_k2","display_name":"Kimi K2","description":"Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)","coverage_axis":"latent-KV (MLA)","moe":"sparse +shared","sliding_window":"none","qk_norm":false,"rope_style":"partial","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"shared-path: deepseek_v3","model_types":["kimi_k2"],"blurb":"Moonshot's Kimi K2 line, K2.7-Code included. Runs on DeepSeek-V3's code path.","tasks":["chat","code"]},{"name":"bailing_hybrid","display_name":"Ling 3.0","description":"inclusionAI Ling 3.0 (tiny/flash): DeepSeek-style MLA alternating with Kimi Delta Attention (per-channel-decay delta rule) every layer_group_size-th layer, over a DeepSeekMoE FFN","coverage_axis":"latent-KV (MLA)","moe":"sparse +shared","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors","modality":"text","gpu_residency_eligible":false,"parity":"experimental: tiny-oracle 100.0%/1.00000","model_types":["bailing_hybrid"],"blurb":"inclusionAI's Ling 3.0, tiny and flash.","tasks":["chat"]},{"name":"cohere","display_name":"Command-R","description":"Cohere Command-R / Aya (bias-free LayerNorm + parallel attn/MLP block + logit-scale + GPT-J RoPE)","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"LayerNorm, parallel","activation":"SwiGLU","tied_lm_head":true,"loaders":"safetensors","modality":"text","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/1.00000","model_types":["cohere"],"blurb":"Cohere's Command-R and Aya.","tasks":["chat"]},{"name":"cohere2","display_name":"Command-R7B","description":"Cohere2 Command-R7B / Command-A (cohere1 stack + interleaved sliding-window + NoPE on the global layers, no QK-norm)","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"interleave","qk_norm":false,"rope_style":"full","norm":"LayerNorm, parallel","activation":"SwiGLU","tied_lm_head":true,"loaders":"safetensors","modality":"text","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/1.00000","model_types":["cohere2"],"blurb":"Cohere's Command-R7B and Command-A.","tasks":["chat"]},{"name":"glm4_moe","display_name":"GLM-4.5/4.6","description":"Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)","coverage_axis":"softmax-GQA","moe":"sparse +shared","sliding_window":"none","qk_norm":true,"rope_style":"partial","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"experimental: tiny-oracle 100.0%/1.00000","model_types":["glm4_moe"],"blurb":"Zhipu's GLM-4.5 and 4.6 mixture-of-experts.","tasks":["chat"]},{"name":"gpt2","display_name":"GPT-2","description":"GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":false,"rope_style":"learned/none","norm":"LayerNorm, pre-norm","activation":"GELU-tanh (non-gated)","tied_lm_head":true,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/1.00000","model_types":["gpt2"],"blurb":"GPT-2 and GPT-NeoX. Old and small, kept as a reference.","tasks":["chat"]},{"name":"gemma3","display_name":"Gemma 3","description":"Google Gemma 3 dense (270M/1B/4B/12B/27B)","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"interleave","qk_norm":true,"rope_style":"dual-base","norm":"RMSNorm, sandwich","activation":"GeGLU","tied_lm_head":true,"loaders":"safetensors, GGUF","modality":"text (+ vision via VL text_config)","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/0.99972","model_types":["gemma3","gemma3_text"],"blurb":"Google's Gemma 3, from 270M to 27B.","tasks":["chat"]},{"name":"gemma4","display_name":"Gemma 4","description":"Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)","coverage_axis":"softmax-GQA","moe":"dense ‖ sparse, no-shared","sliding_window":"interleave","qk_norm":true,"rope_style":"dual-base","norm":"RMSNorm, sandwich","activation":"GeGLU","tied_lm_head":true,"loaders":"safetensors, GGUF","modality":"text (+ vision tower)","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/0.98972","model_types":["gemma4","gemma4_text","gemma4_unified_text"],"blurb":"Google's Gemma 4: dense models, the small E-models, and the 26B-A4B mixture-of-experts. Reads images.","tasks":["chat","vision"]},{"name":"granite","display_name":"Granite 4.2","description":"IBM Granite 4.2 dense (3B/8B/30B): llama skeleton + Granite's scalar multipliers","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/1.00000","model_types":["granite"],"blurb":"IBM's Granite 4.2 dense, 3B to 30B.","tasks":["chat"]},{"name":"internlm2","display_name":"InternLM2","description":"InternLM2 dense — llama math, renamed tensors + grouped fused wqkv","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors","modality":"text","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/1.00000","model_types":["internlm2"],"blurb":"Shanghai AI Lab's InternLM2.","tasks":["chat"]},{"name":"lfm2","display_name":"LFM2.5","description":"Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":true,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":true,"loaders":"safetensors","modality":"text","gpu_residency_eligible":false,"parity":"full-oracle 100.0%/1.00000","model_types":["lfm2"],"blurb":"Liquid AI's LFM2 and LFM2.5: short convolutions mixed with attention.","tasks":["chat"]},{"name":"laguna","display_name":"Laguna","description":"poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads","coverage_axis":"softmax-GQA","moe":"sparse +shared","sliding_window":"interleave","qk_norm":true,"rope_style":"partial","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":false,"parity":"real-oracle 100.0%/0.99884","model_types":["laguna"],"blurb":"poolside's Laguna coding models.","tasks":["code"]},{"name":"llama","display_name":"Llama","description":"Meta Llama 2/3 dense (single-base RoPE)","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF, GPTQ, AWQ","modality":"text","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/1.00000","model_types":["internlm3","llama"],"blurb":"Meta's Llama 2 and 3, plus InternLM3. The one family that also loads GPTQ and AWQ.","tasks":["chat"]},{"name":"llama4_text","display_name":"Llama 4","description":"Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)","coverage_axis":"softmax-GQA","moe":"sparse +shared","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":false,"parity":"experimental: tiny-oracle 100.0%/1.00000 +coherent","model_types":["llama4_text"],"blurb":"Meta's Llama 4 Scout and Maverick, text only.","tasks":["chat"]},{"name":"mellum","display_name":"Mellum2","description":"JetBrains Mellum2 code model (MoE + sliding/full interleave + YaRN)","coverage_axis":"softmax-GQA","moe":"sparse, no-shared","sliding_window":"interleave","qk_norm":true,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"real-oracle 100.0%/0.99969","model_types":["mellum"],"blurb":"JetBrains' Mellum2, built for code completion.","tasks":["code"]},{"name":"mistral3","display_name":"Ministral 3","description":"Ministral 3 (3B/8B/14B): Mistral GQA + YaRN + Llama4-style attention-temperature tuning, no sliding window","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors","modality":"text (+ vision tower, ignored)","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/1.00000","model_types":["ministral3","mistral3"],"blurb":"Ministral 3, 3B to 14B. Text only: the vision tower is skipped.","tasks":["chat"]},{"name":"mistral","display_name":"Mistral","description":"Mistral dense (all-layer sliding window)","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"all-layer","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/1.00000","model_types":["mistral"],"blurb":"Mistral-style dense models with a sliding attention window.","tasks":["chat"]},{"name":"mixtral","display_name":"Mixtral","description":"Mistral + sparse MoE FFN (router + top-k experts)","coverage_axis":"softmax-GQA","moe":"sparse, no-shared","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"experimental: tiny-oracle 100.0%/1.00000","model_types":["mixtral"],"blurb":"Mistral's mixture-of-experts.","tasks":["chat"]},{"name":"olmo3","display_name":"Olmo 3","description":"Ai2 Olmo 3 (7B/32B): no pre-norm at all (post-only), whole-vector QK-norm, sliding/full 3:1 + YaRN on full layers only","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"interleave","qk_norm":true,"rope_style":"full","norm":"RMSNorm, post-only","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors","modality":"text","gpu_residency_eligible":true,"parity":"experimental: tiny-oracle 100.0%/1.00000","model_types":["olmo3"],"blurb":"Ai2's Olmo 3, 7B and 32B.","tasks":["chat"]},{"name":"phi3","display_name":"Phi-3 / Phi-4","description":"Microsoft Phi-3/Phi-4 dense (fused qkv/gate-up, partial rotary)","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":false,"parity":"full-oracle 100.0%/1.00000","model_types":["phi3"],"blurb":"Microsoft's Phi-3 and Phi-4.","tasks":["chat"]},{"name":"qwen2","display_name":"Qwen2 / Qwen2.5","description":"Alibaba Qwen2/2.5 dense (q/k/v bias)","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/1.00000","model_types":["qwen2"],"blurb":"Qwen2 and Qwen2.5, including the Coder models most of goinfer's numbers are measured on.","tasks":["chat","code"]},{"name":"qwen2_moe","display_name":"Qwen2-MoE","description":"Qwen1.5/2 MoE (sparse + always-on shared expert)","coverage_axis":"softmax-GQA","moe":"sparse +shared","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"real-oracle 100.0%/0.99954","model_types":["qwen2_moe"],"blurb":"Qwen1.5 and Qwen2 mixture-of-experts.","tasks":["chat"]},{"name":"qwen2_5_vl","display_name":"Qwen2.5-VL","description":"Qwen2.5-VL text decoder (qwen2 + m-RoPE)","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors","modality":"text (+ vision tower)","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/0.99946","model_types":["qwen2_5_vl"],"blurb":"Qwen2.5-VL. Reads images.","tasks":["chat","vision"]},{"name":"qwen3","display_name":"Qwen3","description":"Alibaba Qwen3 dense (QK-norm, no bias)","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":true,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/1.00000","model_types":["qwen3"],"blurb":"Qwen3 dense.","tasks":["chat"]},{"name":"qwen3_moe","display_name":"Qwen3-MoE","description":"Qwen3-30B-A3B / Qwen3-Coder-30B-A3B: qwen3 attention (QK-norm) + sparse MoE, no shared expert","coverage_axis":"softmax-GQA","moe":"sparse, no-shared","sliding_window":"none","qk_norm":true,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"real-oracle 100.0%/0.99834","model_types":["qwen3_moe"],"blurb":"Qwen3-30B-A3B and Qwen3-Coder-30B-A3B.","tasks":["chat","code"]},{"name":"qwen3_vl","display_name":"Qwen3-VL","description":"Qwen3-VL TEXT decoder only (qwen3 + interleaved m-RoPE; no vision tower, no DeepStack — P8 Phase 0)","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":true,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors","modality":"text","gpu_residency_eligible":true,"parity":"experimental: tiny-oracle 100.0%/1.00000","model_types":["qwen3_vl"],"blurb":"Qwen3-VL, the text half only. It doesn't take images yet.","tasks":["chat"]},{"name":"smollm3","display_name":"SmolLM3","description":"HuggingFaceTB SmolLM3-3B: llama dense + per-layer NoPE on every 4th layer, tied embeddings","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors","modality":"text","gpu_residency_eligible":true,"parity":"full-oracle 100.0%/1.00000","model_types":["smollm3"],"blurb":"Hugging Face's SmolLM3, 3B.","tasks":["chat"]},{"name":"spark2_5","display_name":"Spark-X2.5","description":"XHToken Spark-X2.5 (1.7B/4B): fused QKV, sigmoid head-wise attention output gate, 1:3 sliding:full interleave with layer-dependent partial RoPE, gated exact-GELU MLP","coverage_axis":"softmax-GQA","moe":"dense","sliding_window":"interleave","qk_norm":false,"rope_style":"partial","norm":"RMSNorm, pre-norm","activation":"GELU (gated)","tied_lm_head":false,"loaders":"safetensors","modality":"text","gpu_residency_eligible":false,"parity":"full-oracle 100.0%/1.00000","model_types":["spark2_5"],"blurb":"XHToken's Spark-X2.5, 1.7B and 4B.","tasks":["chat"]},{"name":"gpt-oss","display_name":"gpt-oss","description":"OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on BOTH Metal and CUDA since 2026-08-31 — the CUDA half validated on the real 20B, resident on an 8 GB card via --moe-cache-experts)","coverage_axis":"softmax-GQA","moe":"sparse, no-shared","sliding_window":"interleave","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"real-oracle 100.0%/0.99843","model_types":["gpt_oss"],"blurb":"OpenAI's open-weight gpt-oss, 20B and 120B.","tasks":["chat"]},{"name":"granitemoehybrid","display_name":"Granite-4.0-H","description":"IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer","coverage_axis":"state-space hybrid (Mamba-2)","moe":"sparse +shared","sliding_window":"none","qk_norm":false,"rope_style":"full","norm":"RMSNorm, pre-norm","activation":"SwiGLU","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":false,"parity":"real-oracle 100.0%/0.99566","model_types":["granitemoehybrid"],"blurb":"IBM's Granite 4.0-H: Mamba-2 layers plus attention and experts.","tasks":["chat"]},{"name":"nemotron_h","display_name":"Nemotron-H","description":"NVIDIA Nemotron-H/Nemotron 3 Nano single-op-per-block hybrid (mamba | attention | relu² MLP | MoE-FFN)","coverage_axis":"state-space hybrid (Mamba-2, single-op)","moe":"dense","sliding_window":"none","qk_norm":false,"rope_style":"none","norm":"RMSNorm, pre-norm","activation":"ReLU² (non-gated)","tied_lm_head":false,"loaders":"safetensors, GGUF","modality":"text","gpu_residency_eligible":true,"parity":"real-oracle 100.0%/0.99574","model_types":["nemotron_h"],"blurb":"NVIDIA's Nemotron-H and Nemotron 3 Nano: a Mamba-2 hybrid.","tasks":["chat"]}];
+
+const MACH = {
+  mac:{name:"MacBook Pro, M1 Pro, 16 GB", short:"M1 Pro 16 GB", path:"Metal"},
+  cuda:{name:"RTX 2070 SUPER, 8 GB", short:"RTX 2070 SUPER", path:"CUDA"},
+  cpu:{name:"Ryzen 7 3700X, CPU only", short:"Ryzen 7 3700X", path:"CPU"}
+};
+
+/* Checkpoints: registry (pull/capability-matrix.json) + curated tiers + one measured-but-unpinned. */
+const CK = {
+  qwen2:[
+    {id:"qwen2.5-coder-0.5b",label:"Qwen2.5-Coder 0.5B",pinned:true,repo:"Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",file:"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",quant:"q4_k_m",bytes:491400064,sha:"1d9614638d18024d0fbb36575a15f1302a3adf044df10345688ec4f6e1c4ff32",
+     good:"code completion and small edits; the smallest checkpoint here that writes usable Go",needs:"~1 GB resident at --quant int4; runs on any laptop",
+     tools:"minimal schema: ok; harness-scale (12 tools): skip — too small (measured 2026-09-07, nobara-pc)",
+     pull:"goinfer-chat pull qwen2.5-coder-0.5b",
+     fit:{mac:["fits",""],cuda:["fits",""],cpu:["fits",""]},
+     speed:{mac:{tok:109,peer:null,vs:"na",r:"too close to call",why:"On the CPU. Ollama's own three runs varied by 31%, so no ratio is claimed.",date:"2026-09-26"},
+            cuda:{tok:341.9,peer:268.8,vs:"ahead",r:"1.27×",date:"2026-09-25"},
+            cpu:{tok:45.9,peer:57.6,vs:"behind",r:"0.80×",date:"2026-09-25"}}},
+    {id:"qwen2.5-coder-1.5b",label:"Qwen2.5-Coder 1.5B",pinned:true,repo:"Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",file:"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",quant:"q4_k_m",bytes:1117320768,sha:"cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+     good:"code completion and small edits, with more headroom than 0.5B",needs:"",note:"Pinned as a release tier (pull/curated.json), not a registry checkpoint, so it carries no good-for, needs or tools fields.",
+     tools:"not yet measured",
+     pull:"goinfer-chat pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m",
+     fit:{mac:["fits",""],cuda:["fits",""],cpu:["fits",""]},
+     speed:{mac:{tok:89.3,peer:84.3,vs:"ahead",r:"1.06×",date:"2026-09-26"},
+            cuda:{tok:253.1,peer:195.1,vs:"ahead",r:"1.30×",date:"2026-09-25"},
+            cpu:{tok:null,vs:"na",r:"not graded",why:"One engine stopped its reply early, so the run doesn't count. Raw reading 0.80×.",date:"2026-09-25"}}},
+    {id:"qwen2.5-coder-7b",label:"Qwen2.5-Coder 7B",pinned:false,repo:"Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",file:"(chosen by quant at pull time)",quant:"q4_k_m",bytes:4.7e9,sha:null,
+     good:"code, and longer answers worth waiting for",needs:"",note:"Benchmarked but not pinned: no checksum on file, so the download isn't verified.",
+     tools:"not yet measured",
+     pull:"goinfer-chat pull Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:q4_k_m",
+     fit:{mac:["fits",""],cuda:["fits",""],cpu:["fits",""]},
+     speed:{mac:{tok:29.4,peer:24.8,vs:"ahead",r:"1.19×",date:"2026-09-26"},
+            cuda:{tok:76.3,peer:71.0,vs:"ahead",r:"1.08×",why:"At 2,048 tokens of context.",date:"2026-09-25"},
+            cpu:{tok:null,vs:"na",r:"not graded",why:"One engine stopped its reply early. Raw reading 0.84×.",date:"2026-09-25"}}}
+  ],
+  phi3:[
+    {id:"phi3-mini-4k",label:"Phi-3 mini 4k",pinned:true,repo:"microsoft/Phi-3-mini-4k-instruct-gguf",file:"Phi-3-mini-4k-instruct-q4.gguf",quant:"q4",bytes:2393231072,sha:"8a83c7fb9049a9b2e92266fa7ad04933bb53aa1e85136b7b30f1b8000ff2edef",
+     good:"general instruction following at a size that still loads in seconds",needs:"~3 GB resident at --quant int4",tools:"not yet measured",
+     pull:"goinfer-chat pull phi3-mini-4k",
+     fit:{mac:["fits","on the CPU"],cuda:["fits","on the CPU, not the card"],cpu:["fits",""]},speed:{}}
+  ],
+  granitemoehybrid:[
+    {id:"granite-4.0-h-tiny",label:"Granite 4.0-H Tiny",pinned:true,repo:"ibm-granite/granite-4.0-h-tiny-GGUF",file:"granite-4.0-h-tiny-Q8_0.gguf",quant:"q8_0",bytes:7390331328,sha:"3528ba7c7ece5cb9ea8b981f57577bae41d280c5753e1de8f3df4b03ac46d5b8",
+     good:"a Mamba-2/attention hybrid MoE, if you want to exercise that path",needs:"~8 GB resident at --quant int4; see docs/quantization.md on MoE and low-bit. Tokenizer: pre=\"dbrx\", measured cl100k-shaped (tokenizer/gguf.go) — no PreTokenizerDecline",tools:"not yet measured",
+     pull:"goinfer-chat pull granite-4.0-h-tiny",
+     fit:{mac:["tight","on the CPU, half your memory"],cuda:["fits","on the CPU, not the card"],cpu:["fits",""]},speed:{}}
+  ],
+  "gpt-oss":[
+    {id:"gpt-oss-20b",label:"gpt-oss 20B",pinned:true,repo:"ggml-org/gpt-oss-20b-GGUF",file:"gpt-oss-20b-MXFP4.gguf",quant:"mxfp4",bytes:12109566624,sha:"27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901",
+     good:"the 20-35B-class MoE this project actually validates and measures: too big to hold fully resident on an 8 GB GPU, which is the point — bring -moe-cache-experts or -stream-weights",
+     needs:"~12 GB if loaded fully resident (native MXFP4); on an 8 GB card use -moe-cache-experts (CUDA resident-core + cached-experts, measured working, not just eligible — see this family's description above)",tools:"not yet measured",
+     pull:"goinfer-chat pull gpt-oss-20b",
+     fit:{mac:["tight","pages experts from disk"],cuda:["fits","with -moe-cache-experts"],cpu:["tight","on the CPU"]},speed:{}}
+  ],
+  gemma4:[
+    {id:"gemma-4-26b-a4b",label:"Gemma 4 26B-A4B",pinned:true,repo:"google/gemma-4-26B-A4B-it-qat-q4_0-gguf",file:"gemma-4-26B_q4_0-it.gguf",quant:"q4_0",bytes:14439363584,sha:"3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+     good:"the 20-35B-class MoE this project has the most measurements on (docs/benchmarks.md §B4/§B4.1): a 26B-A4B that does not fit an 8 GB card, kept fully GPU-resident via host↔VRAM expert streaming (the C′ cache, -moe-cache-experts) rather than CPU-offloaded",
+     needs:"~11.4 GB of int4 experts; does not fit an 8 GB card resident. Measured on an RTX 2070 SUPER: 16.12 tok/s at 30 cached expert slots (§B4.1) — capacity-bound (PCIe host→VRAM streaming), not a kernel or MoE deficiency",tools:"not yet measured",
+     pull:"goinfer-chat pull gemma-4-26b-a4b",
+     fit:{mac:["tight","pages experts from disk"],cuda:["fits","experts streamed to the card"],cpu:["tight","on the CPU"]},
+     speed:{mac:{tok:16.98,peer:null,vs:"na",r:"no Ollama run",why:"Measured July 2026, with 81.6% of experts served from memory.",date:"2026-07"},
+            cuda:{tok:40.2,peer:22.2,vs:"ahead",r:"1.82×",why:"goinfer keeps every expert on the card; Ollama offloads to the CPU. Different checkpoints, so this compares approaches, not kernels.",date:"2026-09-25"}}}
+  ]
+};
+const VETTED = [["qwen2",0],["qwen2",1],["phi3",0],["granitemoehybrid",0],["gpt-oss",0],["gemma4",0]];
+
+/* ---------- helpers ---------- */
+const $=id=>document.getElementById(id);
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+function gb(b){return (b/1e9).toFixed(b<1e9?2:1)+" GB"}
+const TIER_ORDER={released:0,fixture:1,shared:2,other:3};
+function proof(p){
+  const exp=p.startsWith("experimental: "); const core=exp?p.slice(14):p;
+  let tier="other"; if(/^(full|real)-oracle/.test(core))tier="released"; else if(core.startsWith("tiny-oracle"))tier="fixture"; else if(core.startsWith("shared-path"))tier="shared";
+  const m=core.match(/([\d.]+)%\/([\d.]+)/);
+  const via=core.startsWith("shared-path")?core.split(":")[1].trim():null;
+  return {exp,core,tier,argmax:m?+m[1]:null,cos:m?+m[2]:null,via,coherent:/\+coherent/.test(core),method:core.split(" ")[0]};
+}
+const TIER_TXT={released:"Against the released model",fixture:"Against a small test model",shared:"Shares another family's check",other:"Not recorded"};
+const hasGGUF=f=>/GGUF/.test(f.loaders);
+const famByName=n=>FAM.find(f=>f.name===n);
+FAM.forEach(f=>{f.p=proof(f.parity); f.ck=CK[f.name]||[]});
+
+/* ---------- machine ---------- */
+let machine="mac";
+function otherFit(c,f){
+  const mem=+$("o-mem").value, g=$("o-gpu").value, s=c.bytes/1e9, moe=f.moe!=="dense", gpu=f.gpu_residency_eligible;
+  if(g==="apple"){ if(s<=mem*0.7) return ["fits",gpu?"":"on the CPU"]; if(moe&&s<mem*1.6) return ["tight","pages experts from disk"]; return ["no",""]; }
+  if(g==="nv8"||g==="nv16"){ const v=g==="nv8"?8:14;
+    if(gpu&&s<=v*0.85) return ["fits",""];
+    if(gpu&&moe&&s<mem) return ["fits","experts streamed to the card"];
+    if(s<=mem*0.6) return ["fits","on the CPU"]; if(s<mem*0.9) return ["tight","on the CPU"]; return ["no",""]; }
+  if(s<=mem*0.6) return ["fits",""]; if(s<=mem*0.9||(moe&&s<mem*1.6)) return ["tight",moe?"pages experts from disk":""]; return ["no",""];
+}
+function fitFor(c,f){ return machine==="other"?otherFit(c,f):c.fit[machine]; }
+function machName(){ if(machine!=="other") return MACH[machine].name;
+  const g={apple:"Apple Silicon",nv8:"an 8 GB NVIDIA card",nv16:"a 12–16 GB NVIDIA card",none:"no GPU"}[$("o-gpu").value];
+  return $("o-mem").value+" GB with "+g; }
+function fitBadge(fv){ const w=el("span"); const b=el("span","fit "+fv[0],fv[0]==="no"?"won't fit":fv[0]); w.appendChild(b);
+  if(fv[1]){ w.appendChild(document.createTextNode(" ")); w.appendChild(el("span","fitnote",fv[1])); } return w; }
+
+/* ---------- counts ---------- */
+function counts(){
+  const c=$("counts"); c.textContent="";
+  const rel=FAM.filter(f=>f.p.tier==="released").length, fix=FAM.filter(f=>f.p.tier==="fixture").length, sh=FAM.filter(f=>f.p.tier==="shared").length;
+  const pinned=VETTED.length;
+  const items=[[FAM.length,"model families"],[rel,"checked against the released model"],[fix,"checked against a small test model only"],[sh,"with no check of its own"],[pinned,"vetted checkpoints"],[0,"embedding models"]];
+  items.forEach(([n,l],i)=>{const d=el("div","count"+(n===0?" zero":"")); d.appendChild(el("div","n",String(n))); d.appendChild(el("div","l",l)); c.appendChild(d)});
+}
+
+/* ---------- vetted ---------- */
+function vetted(){
+  const v=$("vetted"); v.textContent="";
+  VETTED.forEach(([fn,i])=>{
+    const f=famByName(fn), c=f.ck[i];
+    const b=el("button","vc"); b.type="button";
+    const t=el("div","t"); t.appendChild(el("h3",null,c.label)); t.appendChild(el("span","q",c.quant+" · "+gb(c.bytes))); b.appendChild(t);
+    b.appendChild(fitBadge(fitFor(c,f)));
+    b.appendChild(el("p","g",cap(c.good.split(/[:;(]/)[0])));
+    const pr=el("span","proof "+f.p.tier); pr.appendChild(el("i")); pr.appendChild(document.createTextNode(f.p.tier==="released"?"Checked against the released model":TIER_TXT[f.p.tier])); b.appendChild(pr);
+    const sp=el("div","sp"); const s=machine!=="other"&&c.speed[machine];
+    if(s&&s.tok!=null){ const l=el("span"); l.appendChild(el("b",null,String(s.tok))); l.appendChild(document.createTextNode(" tok/s")); sp.appendChild(l);
+      sp.appendChild(el("span","vs "+s.vs, s.vs==="ahead"||s.vs==="behind"? s.r+" Ollama" : s.r)); }
+    else sp.appendChild(el("span","none",machine==="other"?"no speeds for a machine we haven't measured":"not measured on this machine"));
+    b.appendChild(sp);
+    b.addEventListener("click",()=>openPage(fn,i,true));
+    v.appendChild(b);
+  });
+}
+function cap(s){s=s.trim();return s.charAt(0).toUpperCase()+s.slice(1)}
+
+/* ---------- filters + ledger ---------- */
+const F={task:"any",proof:"any"};
+function segWire(id,key){ $(id).querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ if(b.disabled)return; F[key]=b.dataset.v;
+  $(id).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b))); ledger(); })); }
+function pass(f){
+  if(F.task!=="any"&&!f.tasks.includes(F.task))return false;
+  if(F.proof!=="any"&&f.p.tier!==F.proof)return false;
+  if($("f-exp").checked&&f.p.exp)return false;
+  if($("f-pull").checked&&!hasGGUF(f))return false;
+  if($("f-gpu").checked&&!f.gpu_residency_eligible)return false;
+  if($("f-moe").checked&&f.moe==="dense")return false;
+  if($("f-ck").checked&&!f.ck.length)return false;
+  return true;
+}
+let current="gemma4";
+function ledger(){
+  const rows=FAM.filter(pass).sort((a,b)=>TIER_ORDER[a.p.tier]-TIER_ORDER[b.p.tier]||(a.p.exp-b.p.exp)||((b.p.argmax||0)-(a.p.argmax||0))||((b.p.cos||0)-(a.p.cos||0))||a.display_name.localeCompare(b.display_name));
+  $("shown").textContent=`Showing ${rows.length} of ${FAM.length} families`;
+  const ul=$("ledger"); ul.textContent="";
+  if(!rows.length){ const li=el("li","empty", F.task==="vision"?"Nothing matches. Only two families take images today: Gemma 4 and Qwen2.5-VL.":"Nothing matches all of those. Loosen a filter."); ul.appendChild(li); return; }
+  rows.forEach(f=>{
+    const li=el("li"); const b=el("button","lr"); b.type="button"; b.setAttribute("aria-current",String(f.name===current));
+    const a=el("div"); const nm=el("div","nm",f.display_name); a.appendChild(nm);
+    a.appendChild(el("div","bl",f.blurb));
+    const tg=el("div","tg"); f.tasks.forEach(t=>tg.appendChild(el("span","tag",t==="vision"?"images":t)));
+    if(f.moe!=="dense")tg.appendChild(el("span","tag moe","experts"));
+    if(f.p.exp)tg.appendChild(el("span","tag exp","experimental"));
+    a.appendChild(tg); b.appendChild(a);
+    const p=el("div","col"); const pr=el("span","proof "+f.p.tier); pr.appendChild(el("i")); pr.appendChild(document.createTextNode(TIER_TXT[f.p.tier])); p.appendChild(pr);
+    const ps=el("span","pstr"); ps.textContent=f.p.core; if(f.p.argmax!=null&&f.p.argmax<100) ps.classList.add("low"); p.appendChild(ps); b.appendChild(p);
+    const g=el("div","col");
+    if(f.ck.length){ const s=el("span","ck",f.ck.length===1?f.ck[0].label:f.ck.length+" checkpoints"); g.appendChild(s); g.appendChild(el("small",null,"vetted, one command")); }
+    else if(hasGGUF(f)){ g.appendChild(el("span",null,"Pull by repo")); g.appendChild(el("small",null,"GGUF · no vetted checkpoint")); }
+    else { g.appendChild(el("span",null,"Download it yourself")); g.appendChild(el("small",null,"safetensors only · can't pull yet")); }
+    b.appendChild(g);
+    const r=el("div","col c4"); r.appendChild(el("span",null,f.gpu_residency_eligible?"GPU or CPU":"CPU only"));
+    r.appendChild(el("small",null,f.loaders)); b.appendChild(r);
+    b.addEventListener("click",()=>openPage(f.name,0,true));
+    li.appendChild(b); ul.appendChild(li);
+  });
+}
+
+/* ---------- model page ---------- */
+let ckIdx=0;
+function openPage(name,i,scroll){ current=name; ckIdx=i||0; renderPage(); ledger();
+  try{history.replaceState(null,"","#models/"+name)}catch(e){}
+  if(scroll) $("page").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"}); }
+
+function gaps(f,c){
+  const g=[];
+  if(f.p.tier==="fixture") g.push("Only checked against a small test model built from the same wiring, because no released "+f.display_name+" was small enough to run on the hardware available. Two families promoted past this stage turned out to have real bugs behind a passing fixture.");
+  if(f.p.tier==="shared"){ const v=famByName(f.p.via.replace(/-/g,"_"))||famByName(f.p.via); g.push("No check of its own. It runs "+(v?v.display_name:f.p.via)+"'s code, and "+(v?v.display_name:f.p.via)+"'s numbers stand in for it."); }
+  if(f.p.argmax!=null&&f.p.argmax<100) g.push("Picks the same next token as the reference at "+f.p.argmax+"% of positions, not all of them.");
+  if(f.p.exp) g.push("Registered as experimental. It can change, or go, before v1.0.");
+  if(/ignored/.test(f.modality)) g.push("The checkpoint has a vision tower, and goinfer skips it. Text only.");
+  if(f.name==="qwen3_vl") g.push("Images aren't supported yet: only the text decoder is implemented.");
+  if(!f.gpu_residency_eligible) g.push("Runs on the CPU only today. Not eligible to live on a GPU.");
+  if(!hasGGUF(f)) g.push("goinfer can't download it for you: this family only loads from safetensors, which come as several files. That's planned (checkpoint fetch, P1–P9).");
+  if(!f.ck.length) g.push("No vetted checkpoint, so there's no fit verdict, no speed and no tool-calling result for this family.");
+  if(c){
+    if(!c.pinned) g.push("This checkpoint isn't pinned: there's no checksum on file, so the download isn't verified.");
+    if(/not yet measured/.test(c.tools)) g.push("Tool calling hasn't been measured on "+c.label+".");
+    if(/skip/.test(c.tools)) g.push("Too small for an agent's full tool list: given twelve tools, it answered instead of calling one.");
+    const s=machine!=="other"&&c.speed[machine];
+    if(machine==="other") g.push("Never measured on a machine like yours, so no speed is shown.");
+    else if(!s||s.tok==null) g.push("No graded speed on the "+MACH[machine].short+".");
+    else if(s.peer==null) g.push("No same-session Ollama comparison on the "+MACH[machine].short+".");
+    const any=Object.values(c.speed).some(x=>x&&x.tok!=null); if(!any) g.push("No speed measured on any machine.");
+  }
+  return g;
+}
+
+function renderPage(){
+  const f=famByName(current), c=f.ck[ckIdx]||null, pg=$("page"); pg.textContent="";
+  $("slug").textContent="goinfer.dev/models/"+f.name;
+  const cr=el("div","crumb"); cr.appendChild(el("span",null,"Models / "+f.display_name+(c?" / "+c.id:""))); cr.appendChild(el("span",null,"generated 2026-09-29 from capability-matrix.json")); pg.appendChild(cr);
+  const ph=el("div","ph"); ph.appendChild(el("h2",null,c?c.label:f.display_name)); ph.appendChild(el("p",null,f.blurb));
+  const tg=el("div","tg"); f.tasks.forEach(t=>tg.appendChild(el("span","tag",t==="vision"?"images":t))); if(f.moe!=="dense")tg.appendChild(el("span","tag moe","experts: "+f.moe)); if(f.p.exp)tg.appendChild(el("span","tag exp","experimental")); tg.appendChild(el("span","tag",f.loaders)); ph.appendChild(tg);
+  pg.appendChild(ph);
+  if(f.ck.length>1){ const t=el("div","cktabs"); f.ck.forEach((k,i)=>{const b=el("button",null,k.label+(k.pinned?"":" · unpinned")); b.type="button"; b.setAttribute("aria-pressed",String(i===ckIdx)); b.addEventListener("click",()=>{ckIdx=i;renderPage()}); t.appendChild(b)}); pg.appendChild(t); }
+
+  const grid=el("div","pgrid"), L=el("div"), R=el("div");
+
+  /* left: get it */
+  const g1=el("div","blk"); g1.appendChild(el("h3",null,"Get it"));
+  if(c){
+    const big=el("div","big"); big.appendChild(fitBadge(fitFor(c,f))); big.appendChild(el("span","fitnote","on "+machName())); g1.appendChild(big);
+    g1.appendChild(copyBox(c.pull));
+    const kv=el("dl","kv");
+    [["repo",c.repo],["file",c.file],["quant",c.quant],["size",gb(c.bytes)],["sha256",c.sha?c.sha.slice(0,16)+"…":"none on file"]].forEach(([k,v])=>{kv.appendChild(el("dt",null,k));const d=el("dd",null,v);if(k!=="size")d.className="mono";kv.appendChild(d)});
+    kv.style.marginTop="12px"; g1.appendChild(kv);
+  } else if(hasGGUF(f)){
+    g1.appendChild(el("p","prose","No vetted checkpoint yet. You can pull any GGUF of this family by repo and quant. goinfer checks it fits before downloading, but nobody here has timed it."));
+    g1.appendChild(copyBox("goinfer-chat pull <owner>/<repo>:<quant>"));
+  } else {
+    g1.appendChild(el("p","prose","goinfer can't fetch this one yet. Download the safetensors folder with your usual tool, then point goinfer at it."));
+    g1.appendChild(copyBox("goinfer-serve -model ./path/to/checkpoint-folder"));
+  }
+  L.appendChild(g1);
+
+  if(c){ const g2=el("div","blk"); g2.appendChild(el("h3",null,"Good for, and what it needs"));
+    g2.appendChild(el("p","prose",cap(c.good)+"."));
+    if(c.needs) g2.appendChild(el("p","prose",c.needs));
+    if(c.note) g2.appendChild(el("p","prose",c.note));
+    L.appendChild(g2);
+    const g3=el("div","blk"); g3.appendChild(el("h3",null,"Tool calling")); g3.appendChild(el("p","prose mono",c.tools)); L.appendChild(g3);
+  }
+
+  const g4=el("div","blk"); g4.appendChild(el("h3",null,"What hasn't been shown"));
+  const ul=el("ul","gaps"); gaps(f,c).forEach(t=>ul.appendChild(el("li",null,t))); g4.appendChild(ul); L.appendChild(g4);
+
+  /* right: proof + speed */
+  const r1=el("div","blk"); r1.appendChild(el("h3",null,"How sure we are"));
+  const pr=el("span","proof "+f.p.tier); pr.appendChild(el("i")); pr.appendChild(document.createTextNode(TIER_TXT[f.p.tier])); r1.appendChild(pr);
+  if(f.p.argmax!=null){
+    const m=el("div","meter");
+    const t1=el("div","track"); const f1=el("div","fill"+(f.p.argmax<100?" low":"")); f1.style.width=f.p.argmax+"%"; t1.appendChild(f1); m.appendChild(t1); m.appendChild(el("span","v",f.p.argmax.toFixed(1)+"%"));
+    m.appendChild(el("span","d","picks the same next token as HuggingFace"));
+    const t2=el("div","track"); const f2=el("div","fill"+(f.p.cos<0.99?" low":"")); f2.style.width=Math.max(0,(f.p.cos-0.95)/0.05*100)+"%"; t2.appendChild(f2); m.appendChild(t2); m.appendChild(el("span","v",f.p.cos.toFixed(5)));
+    m.appendChild(el("span","d","closest the raw scores get at their worst position (cosine, 1.00000 is identical; bar starts at 0.95)"));
+    r1.appendChild(m);
+  } else if(f.p.tier==="shared"){ {const v=famByName(f.p.via); r1.appendChild(el("p","prose","Same forward code as "+(v?v.display_name:f.p.via)+", so it has no numbers of its own."));} }
+  const pl=el("p","prose"); pl.style.marginTop="8px"; pl.appendChild(el("span","mono",f.parity)); pl.appendChild(document.createTextNode(" · ")); const lk=el("a",null,"what parity-gated means"); lk.href="#parity"; pl.appendChild(lk); r1.appendChild(pl);
+  R.appendChild(r1);
+
+  const r2=el("div","blk"); r2.appendChild(el("h3",null,"Measured speed · decode, tokens per second"));
+  if(c){
+    const sp=el("div","speeds"); const keys=["mac","cuda","cpu"];
+    const max=Math.max(1,...keys.flatMap(k=>{const s=c.speed[k];return s?[s.tok||0,s.peer||0]:[0]}))*1.05;
+    keys.forEach(k=>{
+      const s=c.speed[k]; const w=el("div");
+      const h=el("div","mach"); const nmS=el("span"); if(k===machine){nmS.appendChild(el("span","yp","your pick · "))} nmS.appendChild(document.createTextNode(MACH[k].name)); h.appendChild(nmS); h.appendChild(el("small",null,MACH[k].path+(s&&s.date?" · "+s.date:""))); w.appendChild(h);
+      if(s&&s.tok!=null){
+        const bars=el("div","bars");
+        const add=(lab,val,cls)=>{bars.appendChild(el("span","bl2 "+cls,lab)); const tr=el("div","track"); const fl=el("div","f "+cls); fl.style.width=(val/max*100).toFixed(1)+"%"; tr.appendChild(fl); bars.appendChild(tr); bars.appendChild(el("span","bv",String(val)));};
+        add("goinfer",s.tok,"gi"); if(s.peer!=null) add("Ollama",s.peer,"ol");
+        w.appendChild(bars);
+        const v=el("div","why"); v.appendChild(el("span","vs "+s.vs,s.vs==="ahead"||s.vs==="behind"?s.r+" Ollama":s.r)); if(s.why) v.appendChild(document.createTextNode(" "+s.why)); w.appendChild(v);
+      } else { w.appendChild(el("div","nm2",s&&s.r?s.r+(s.why?" · "+s.why:""):"not measured")); }
+      sp.appendChild(w);
+    });
+    r2.appendChild(sp);
+    const n=el("p","prose"); n.style.marginTop="12px"; n.style.fontSize="12.5px"; n.textContent="Ollama v0.32.5 at its defaults, same machine, same session. 128 tokens of context unless noted. Full method in benchmarks."; r2.appendChild(n);
+  } else r2.appendChild(el("p","nm2","not measured — no vetted checkpoint to measure"));
+  R.appendChild(r2);
+
+  grid.appendChild(L); grid.appendChild(R); pg.appendChild(grid);
+
+  const d=el("details","arch"); d.appendChild(el("summary",null,"Architecture, for the curious"));
+  const kv=el("dl","kv");
+  [["model_type",f.model_types.join(", ")],["design",f.coverage_axis],["experts",f.moe],["attention window",f.sliding_window],["QK-norm",f.qk_norm?"yes":"no"],["RoPE",f.rope_style],["norm",f.norm],["activation",f.activation],["tied head",f.tied_lm_head?"yes":"no"],["modality",f.modality],["GPU-resident",f.gpu_residency_eligible?"eligible":"no"]]
+    .forEach(([k,v])=>{kv.appendChild(el("dt",null,k));kv.appendChild(el("dd",null,v))});
+  d.appendChild(kv); d.appendChild(el("div","raw","registry description: "+f.description));
+  pg.appendChild(d);
+}
+function copyBox(cmd){ const w=el("div","copy"); const code=el("code",null,cmd); const b=el("button",null,"copy"); b.type="button";
+  b.addEventListener("click",()=>{const done=()=>{b.textContent="copied";setTimeout(()=>b.textContent="copy",1400)};
+    try{navigator.clipboard.writeText(cmd).then(done,()=>sel(code))}catch(e){sel(code)}});
+  w.appendChild(code); w.appendChild(b); return w; }
+function sel(n){const r=document.createRange();r.selectNodeContents(n);const s=getSelection();s.removeAllRanges();s.addRange(r)}
+
+/* ---------- wiring ---------- */
+function setMachine(m){ machine=m; $("mseg").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.m===m)));
+  $("other").hidden=m!=="other"; try{localStorage.setItem("gi-machine",m)}catch(e){} vetted(); renderPage(); }
+$("mseg").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>setMachine(b.dataset.m)));
+$("o-mem").addEventListener("change",()=>{vetted();renderPage()}); $("o-gpu").addEventListener("change",()=>{vetted();renderPage()});
+segWire("f-task","task"); segWire("f-proof","proof");
+["f-exp","f-pull","f-gpu","f-moe","f-ck"].forEach(id=>$(id).addEventListener("change",ledger));
+
+counts();
+let start="mac"; try{const s=localStorage.getItem("gi-machine"); if(s&&(MACH[s]||s==="other")) start=s}catch(e){}
+const h=(location.hash.match(/^#models\/(.+)$/)||[])[1]; if(h&&famByName(h)) current=h;
+setMachine(start); ledger();
+</script>
+</body>
+</html>

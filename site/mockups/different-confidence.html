@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Design mockup, 2026-09-29. Reference for docs/tasks/task-site-2026-09.md; not the site itself. -->
+<title>goinfer: how sure was it</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=Martian+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a series rail on the left, one long-form writeup on the right: problem, live example, mechanism, measurement, use, limits. */
+:root{
+  --ground:#eceff3; --surface:#f9fafc; --sunk:#e2e6ec; --line:#cfd5de;
+  --ink:#212831; --ink-2:#48525e; --muted:#5c6672;
+  --accent:#0b6fd4; --accent-soft:#d8e6f7; --on-accent:#ffffff;
+  --good:#17744a; --good-soft:#d6ecdf; --warn:#9a4a12; --warn-soft:#f4e3d4;
+  --peer-bar:#7f8a98;
+  --f-display:"Schibsted Grotesk","Helvetica Neue",Arial,sans-serif;
+  --f-body:"Instrument Sans","Segoe UI",system-ui,sans-serif;
+  --f-mono:"Martian Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#12161c; --surface:#1a2029; --sunk:#222a35; --line:#323c49;
+    --ink:#e5e9ef; --ink-2:#b6bfca; --muted:#8a95a2;
+    --accent:#4c9bef; --accent-soft:#1a2d45; --on-accent:#0b1522;
+    --good:#5fc38f; --good-soft:#17301f; --warn:#e39a5f; --warn-soft:#3a2616;
+    --peer-bar:#6f7b8a; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#12161c; --surface:#1a2029; --sunk:#222a35; --line:#323c49;
+  --ink:#e5e9ef; --ink-2:#b6bfca; --muted:#8a95a2;
+  --accent:#4c9bef; --accent-soft:#1a2d45; --on-accent:#0b1522;
+  --good:#5fc38f; --good-soft:#17301f; --warn:#e39a5f; --warn-soft:#3a2616;
+  --peer-bar:#6f7b8a; color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.6;margin:0;padding-inline:16px;padding-block:0 64px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+code,.mono{font-family:var(--f-mono);font-size:.82em}
+button{font:inherit;color:inherit}
+
+.notice{margin:14px 0 0;padding:8px 12px;border:1px dashed var(--line);border-radius:6px;font-size:13px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
+.notice b{color:var(--ink-2);font-weight:600}
+nav.top{display:flex;align-items:center;gap:28px;padding-block:18px;flex-wrap:wrap}
+.wordmark{font-family:var(--f-mono);font-weight:500;font-size:18px;color:var(--ink);letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+.wordmark i{width:10px;height:10px;background:var(--accent);border-radius:2px;display:inline-block}
+nav.top ul{list-style:none;margin:0;padding:0;display:flex;gap:22px;flex-wrap:wrap;flex:1}
+nav.top ul a{color:var(--ink-2);font-weight:500;font-size:15px}
+nav.top ul a[aria-current]{color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent);padding-bottom:3px}
+nav.top .gh{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+
+.layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:48px;margin-top:28px}
+
+/* series rail */
+.rail{position:sticky;top:16px;align-self:start;max-height:calc(100vh - 32px);overflow-y:auto}
+.rail h2{font-family:var(--f-display);font-size:15px;font-weight:700;margin:0 0 4px}
+.rail p{font-size:12.5px;color:var(--muted);margin:0 0 14px;line-height:1.45}
+.rail ol{list-style:none;margin:0;padding:0;counter-reset:w;border-top:1px solid var(--line)}
+.rail li{counter-increment:w;border-bottom:1px solid var(--line)}
+.rail a{display:grid;grid-template-columns:22px minmax(0,1fr);gap:6px;padding:7px 0;color:var(--ink-2);font-size:13.5px;line-height:1.35}
+.rail a::before{content:counter(w,decimal-leading-zero);font-family:var(--f-mono);font-size:11px;color:var(--muted);padding-top:2px}
+.rail a span{display:block;font-family:var(--f-mono);font-size:11px;color:var(--muted);margin-top:1px}
+.rail a[aria-current]{color:var(--ink);font-weight:600}
+.rail a[aria-current]::before{color:var(--accent)}
+.rail-mobile{display:none}
+
+/* article */
+article{min-width:0;max-width:760px}
+.series{font-family:var(--f-mono);font-size:12px;color:var(--muted);margin:0 0 12px}
+.series b{color:var(--accent);font-weight:500}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(36px,6vw,62px);line-height:1;letter-spacing:-.035em;margin:0;text-wrap:balance}
+.stand{font-size:20px;line-height:1.45;color:var(--ink-2);margin:18px 0 0;max-width:40ch;text-wrap:pretty}
+.facts{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:22px;padding-top:14px;border-top:2px solid var(--ink);font-size:13px;color:var(--ink-2)}
+.facts b{font-family:var(--f-mono);font-weight:500;font-size:12px;color:var(--muted);margin-right:6px}
+
+article h2{font-family:var(--f-display);font-weight:800;font-size:26px;letter-spacing:-.02em;margin:56px 0 12px;text-wrap:balance}
+article p{margin:0 0 14px;max-width:66ch}
+article p.lead{font-size:17.5px}
+.note{font-size:13px;color:var(--muted)}
+
+/* demo */
+.demo{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin:20px 0 10px;max-width:none}
+.demo-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--sunk)}
+.demo-head .t{font-family:var(--f-mono);font-size:12px;color:var(--ink-2)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface);flex-wrap:wrap}
+.seg button{border:0;background:transparent;padding:6px 11px;font-size:13px;cursor:pointer;color:var(--ink-2)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
+.ticket{padding:16px;border-bottom:1px solid var(--line);font-size:15px}
+.ticket .l{font-family:var(--f-mono);font-size:11px;color:var(--muted);display:block;margin-bottom:4px}
+.fields{list-style:none;margin:0;padding:0}
+.fld{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:18px;padding:14px 16px;border-bottom:1px solid var(--line);align-items:start}
+.fld .k{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.fld .v{font-family:var(--f-mono);font-size:17px;font-weight:500;margin-top:2px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.fld .c{font-family:var(--f-mono);font-size:12px;padding:2px 7px;border-radius:5px;font-weight:500}
+.c.hi{background:var(--good-soft);color:var(--good)}
+.c.lo{background:var(--warn-soft);color:var(--warn)}
+.fld .kind{font-size:12px;color:var(--muted);margin-top:4px}
+.dist{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:5px 10px;align-items:center}
+.dist .o{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-2)}
+.dist .o.pick{color:var(--ink);font-weight:500}
+.dist .track{position:relative;height:9px;background:var(--sunk);border-radius:3px}
+.dist .f{position:absolute;inset:0 auto 0 0;border-radius:3px;background:var(--peer-bar)}
+.dist .f.pick{background:var(--accent)}
+.dist .p{font-family:var(--f-mono);font-size:11.5px;text-align:right;font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.dist .th{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+.intnote{font-size:12.5px;color:var(--muted)}
+.route{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px 16px;background:var(--sunk)}
+.route label{font-size:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.route input[type=range]{accent-color:var(--accent);width:160px}
+.route output{font-family:var(--f-mono);font-size:13px;min-width:34px}
+.verdict{font-size:14px;font-weight:600;padding:6px 10px;border-radius:7px;text-align:right}
+.verdict.auto{background:var(--good-soft);color:var(--good)}
+.verdict.person{background:var(--warn-soft);color:var(--warn)}
+.verdict small{display:block;font-weight:400;font-size:12px;opacity:.9}
+.demo-foot{padding:9px 16px;font-size:12px;color:var(--muted);border-top:1px solid var(--line)}
+
+/* tokens figure */
+.fig{margin:20px 0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px}
+.toks{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end}
+.tk{display:grid;gap:4px;justify-items:center}
+.tk code{font-size:13px;padding:6px 8px;border-radius:6px;border:1px solid var(--line);background:var(--sunk);color:var(--muted);white-space:pre}
+.tk.free code{background:var(--accent-soft);border-color:var(--accent);color:var(--ink);font-weight:500}
+.tk small{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.tk.free small{color:var(--accent)}
+.figcap{font-size:13px;color:var(--ink-2);margin:14px 0 0}
+
+/* measurement */
+.scale{position:relative;margin:26px 0 8px;height:118px}
+.axis{position:absolute;left:0;right:0;top:92px;height:1px;background:var(--line)}
+.tick{position:absolute;top:92px;transform:translateX(-50%);font-family:var(--f-mono);font-size:11px;color:var(--muted);padding-top:6px}
+.band{position:absolute;top:0;bottom:26px;background:var(--warn-soft);opacity:.7}
+.gate{position:absolute;top:0;bottom:26px;border-left:2px dashed var(--ink-2)}
+.gate span{position:absolute;bottom:4px;left:6px;font-family:var(--f-mono);font-size:11px;color:var(--ink-2);white-space:nowrap}
+.pt{position:absolute;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;background:var(--accent);border:2px solid var(--accent)}
+.pt.hollow{background:var(--surface);border-color:var(--peer-bar)}
+.pl{position:absolute;transform:translateX(-50%);font-family:var(--f-mono);font-size:11px;white-space:nowrap;color:var(--ink)}
+.pl.h{color:var(--muted)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--accent);margin-right:6px;vertical-align:-1px}
+.legend i.h{background:var(--surface);border:2px solid var(--peer-bar)}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:18px 0}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-mono);font-size:11px;font-weight:500;color:var(--muted)}
+td.n{font-family:var(--f-mono);font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pass{color:var(--good);font-weight:600}
+.park{color:var(--muted)}
+.tablewrap{overflow-x:auto}
+.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 0}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.stat .n{font-family:var(--f-mono);font-size:30px;letter-spacing:-.03em;line-height:1.1}
+.stat .l{font-size:13px;color:var(--ink-2);margin-top:4px}
+
+/* code */
+.code{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:16px 0}
+.code .seg{margin:10px 12px}
+.code pre{margin:0;padding:14px 16px;background:var(--sunk);font-family:var(--f-mono);font-size:12px;line-height:1.7;overflow-x:auto;color:var(--ink)}
+.code .cm{color:var(--muted)}
+
+/* doesn't */
+.doesnt{border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:6px 20px;margin-top:6px}
+.doesnt dl{margin:0}
+.doesnt div{padding:14px 0;border-bottom:1px solid var(--line)}
+.doesnt div:last-child{border-bottom:0}
+.doesnt dt{font-weight:600;font-size:15.5px}
+.doesnt dd{margin:4px 0 0;color:var(--ink-2);font-size:14.5px}
+
+.next{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:56px}
+.next a{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;gap:4px;color:var(--ink)}
+.next a:hover{border-color:var(--accent);text-decoration:none}
+.next small{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.next b{font-family:var(--f-display);font-size:19px}
+.next span{font-size:13.5px;color:var(--ink-2)}
+.srcs{margin-top:40px;font-size:13px;color:var(--muted)}
+.srcs code{color:var(--ink-2)}
+
+footer{margin-top:72px;padding-top:22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+footer ul{list-style:none;margin:0;padding:0;display:flex;gap:18px;flex-wrap:wrap}
+
+@media (max-width:900px){
+  .layout{grid-template-columns:1fr;gap:0}
+  .rail{display:none}
+  .rail-mobile{display:block;margin-bottom:22px}
+  .rail-mobile select{font:inherit;font-size:14px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);width:100%}
+  .rail-mobile label{display:block;font-family:var(--f-mono);font-size:11px;color:var(--muted);margin-bottom:4px}
+}
+@media (max-width:620px){
+  .fld{grid-template-columns:1fr;gap:10px}
+  .route{grid-template-columns:1fr}
+  .verdict{text-align:left}
+  .stats,.next{grid-template-columns:1fr}
+  .stand{font-size:18px}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="notice"><b>Mockup · 2026-09-29</b><span>One of the twelve "What's different" writeups. The measurements and API are real, from the repo. The three tickets in the example are illustrative, not a recorded run.</span></div>
+
+  <nav class="top" aria-label="Main">
+    <span class="wordmark"><i></i>goinfer</span>
+    <ul>
+      <li><a href="#models">Models</a></li>
+      <li><a href="#docs">Docs</a></li>
+      <li><a href="#download">Download</a></li>
+      <li><a href="#top" aria-current="page">What's different</a></li>
+    </ul>
+    <span class="gh">github.com/townsendmerino/goinfer</span>
+  </nav>
+
+  <div class="layout" id="top">
+    <aside class="rail" aria-label="What's different">
+      <h2>What's different</h2>
+      <p>Twelve things goinfer does that are unusual, each with what it doesn't do.</p>
+      <ol id="rail"></ol>
+    </aside>
+
+    <article>
+      <div class="rail-mobile"><label for="railsel">What's different · 12 writeups</label><select id="railsel"></select></div>
+
+      <p class="series"><b>Structured output</b> · 02 of 12 · measured 2026-09-27</p>
+      <h1>How sure was it?</h1>
+      <p class="stand">Ask for a JSON answer, and each choice, yes/no and count in it comes back with the model's own probability over the answers your schema allowed.</p>
+      <div class="facts">
+        <span><b>turn it on</b><code>"goinfer_confidence": true</code></span>
+        <span><b>costs</b>1–4% of a token</span>
+        <span><b>fields</b>enum, boolean, integer</span>
+        <span><b>calibrated</b>no</span>
+      </div>
+
+      <h2>The problem</h2>
+      <p class="lead">A constrained answer always looks sure of itself.</p>
+      <p>goinfer can already force a model's output into a JSON schema, so the reply always parses and every field holds a value the schema allows. That's useful, and it hides something. A model that knew the answer and a model that picked between two options by a hair produce the same clean JSON. Nothing in the reply tells them apart.</p>
+      <p>If you're sorting support tickets, or reading invoices, or deciding which requests an agent may act on alone, that difference is the one you care about.</p>
+
+      <h2>What goinfer does</h2>
+      <p>At every step of a constrained answer, goinfer already computes which next tokens the schema allows, and throws the rest of the model's scores away. With confidence turned on, it also reads what the model thought at the one point where each field was decided, and reports it next to the answer.</p>
+
+      <div class="demo" aria-label="Example">
+        <div class="demo-head">
+          <span class="t">example · Qwen2.5-Coder 1.5B · triage schema</span>
+          <div class="seg" id="tix" role="group" aria-label="Ticket">
+            <button type="button" data-i="0" aria-pressed="true">Two lamps</button>
+            <button type="button" data-i="1">Charged twice</button>
+            <button type="button" data-i="2">Broken link</button>
+          </div>
+        </div>
+        <div class="ticket"><span class="l">ticket</span><span id="tt"></span></div>
+        <ul class="fields" id="flds"></ul>
+        <div class="route">
+          <label for="th">Send to a person when any field is below <input type="range" id="th" min="0.5" max="0.95" step="0.05" value="0.7"><output id="tho" for="th">0.70</output></label>
+          <div class="verdict" id="verdict"></div>
+        </div>
+        <div class="demo-foot">Illustrative values, in the shape the server returns. The measured results are further down.</div>
+      </div>
+
+      <p>That threshold is the intended use. The number ranks answers, and a low one is wrong more often, so you can route on it: handle the confident ones, and send the rest to a person.</p>
+
+      <h2>Why only the deciding token</h2>
+      <p>Most tokens in a constrained answer aren't a choice at all. Once a model has started writing <code>"sh</code>, the schema allows only <code>shipping</code>, so the rest of the word and its closing quote have probability 1.0. Averaging those in would make every enum look about two-thirds certain before the model had a say.</p>
+      <div class="fig">
+        <div class="toks" aria-label="Tokens of one enum value">
+          <div class="tk"><code>"category":</code><small>structure</small></div>
+          <div class="tk free"><code>"sh</code><small>decides</small></div>
+          <div class="tk"><code>ipping</code><small>forced</small></div>
+          <div class="tk"><code>"</code><small>forced</small></div>
+        </div>
+        <p class="figcap">An enum value is three tokens and one decision. goinfer reads the model at the free token and adds up the probability by the option each allowed token would spell. Where the tokens split is illustrative.</p>
+      </div>
+      <p>So a field's confidence comes only from tokens where the schema left the model a real choice. A field the schema forces outright, like an enum with one option, isn't reported, because its value says nothing about the model. An integer reports the least certain of its digits.</p>
+
+      <h2>What was measured</h2>
+      <p>Before anything was built, the question was whether this number means anything. We wrote 60 support tickets whose correct labels follow from rules in the prompt, ran two models over them on an M1 Pro, and set the bar before the graded runs: for each field kind, the confidence must separate right answers from wrong ones with an AUROC of at least 0.65.</p>
+      <p class="note">AUROC, in plain terms: pick one right answer and one wrong answer at random. How often did the right one carry the higher confidence? 0.5 is a coin toss. 1.0 is perfect.</p>
+
+      <div class="fig" aria-label="AUROC by field kind">
+        <div class="scale" id="scale"></div>
+        <div class="legend"><span><i></i>1.5B: counts, enough mistakes to grade</span><span><i class="h"></i>7B: too few mistakes to count</span><span>shaded: below 0.55 would have failed</span></div>
+      </div>
+
+      <div class="tablewrap"><table>
+        <thead><tr><th>field kind</th><th>1.5B AUROC (right / wrong)</th><th>7B AUROC (right / wrong)</th><th>result</th></tr></thead>
+        <tbody>
+          <tr><td>enum</td><td class="n">0.847 (48 / 12)</td><td class="n">0.967 (55 / 5)</td><td class="pass">reported</td></tr>
+          <tr><td>boolean</td><td class="n">0.727 (38 / 22)</td><td class="n">0.905 (58 / 2)</td><td class="pass">reported</td></tr>
+          <tr><td>integer</td><td class="n">0.680 (43 / 17)</td><td class="n">0.942 (57 / 3)</td><td class="pass">reported</td></tr>
+          <tr><td>number</td><td class="n">— (60 / 0)</td><td class="n">— (60 / 0)</td><td class="park">not reported yet</td></tr>
+          <tr><td>string</td><td class="n">— (57 / 3)</td><td class="n">— (60 / 0)</td><td class="park">not reported yet</td></tr>
+        </tbody>
+      </table></div>
+      <p>The 7B got almost everything right, which is good for the 7B and useless for grading: a confidence can't be judged against mistakes that didn't happen. Its numbers point the same way and decide nothing. Integer cleared the bar on one model by 0.03, on 17 wrong answers. Numbers and free text need a harder test set, so they aren't reported until one exists.</p>
+
+      <div class="stats">
+        <div class="stat"><div class="n">4.20%</div><div class="l">of a token's time on the 1.5B (0.57 ms of 13.56 ms). Median 1.88%.</div></div>
+        <div class="stat"><div class="n">1.44%</div><div class="l">of a token's time on the 7B (0.54 ms of 37.55 ms). Median 0.72%.</div></div>
+      </div>
+      <p>It costs most inside free text, where nearly every token is allowed and there's more to add up, and it's off unless you ask for it. The answer itself doesn't change: the same request without the flag returns the same content.</p>
+
+      <h2>Use it</h2>
+      <div class="code">
+        <div class="seg" id="codetabs" role="group" aria-label="Language">
+          <button type="button" data-c="http" aria-pressed="true">HTTP</button>
+          <button type="button" data-c="go">Go</button>
+        </div>
+<pre id="c-http"><span class="cm"># any /v1/chat/completions or /v1/completions request with a json_schema</span>
+curl -s localhost:8080/v1/chat/completions -d '{
+  "messages": [{"role": "user", "content": "Triage this ticket: …"}],
+  "response_format": {"type": "json_schema", "json_schema": {
+    "name": "triage", "schema": { … }}},
+  "goinfer_confidence": true
+}'
+
+<span class="cm"># the response gains one record per reported field</span>
+"goinfer_confidence": [
+  {"path": "category", "kind": "enum", "value": "shipping",
+   "confidence": 0.60, "free_tokens": 1, "calibrated": false,
+   "distribution": {"billing": 0.02, "shipping": 0.60, "technical": 0.37,
+                   "other": 0.01}},
+  …
+]</pre>
+<pre id="c-go" hidden><span class="cm">// the masker that forces the schema also records what it saw</span>
+mask := constrain.NewMasker(g, constrain.TokenBytes(vocab, tok.TokenText), stop).
+    StopWhenComplete().
+    CaptureConfidence(constrain.ConfidenceOptions{})
+
+ch, gen := m.Generate(ctx, ids, 128, decoder.SamplingParams{
+    LogitProcessor: mask.Process, StopIDs: stop})
+<span class="cm">// … collect the generated ids into out …</span>
+
+fields, err := mask.FieldConfidence(out)
+for _, f := range fields {
+    if f.Confidence &lt; 0.7 {
+        escalate(f.Path, f.Value) <span class="cm">// route on it; don't read it as P(right)</span>
+    }
+}
+<span class="cm">// full program: examples/confidence</span></pre>
+      </div>
+
+      <h2>What it doesn't do</h2>
+      <div class="doesnt"><dl>
+        <div><dt>It isn't the probability that the answer is right.</dt><dd>It's the model's probability over what the schema allowed, which is a narrower thing. It was tested for ranking, not calibration, and every record says <code>"calibrated": false</code>. A 0.9 doesn't mean nine times in ten.</dd></div>
+        <div><dt>It doesn't cover numbers or free text.</dt><dd>Only enum, boolean and integer fields are reported. The test set produced too few wrong numbers and names to judge the rest.</dd></div>
+        <div><dt>It rests on one small test.</dt><dd>60 tickets, one kind of task, written by us, two models from one family. A harder labelled set would say more, and might move the integer result either way.</dd></div>
+        <div><dt>It doesn't work everywhere a schema does.</dt><dd>The server refuses it, with a 400, alongside tools, images, <code>/v1/jobs</code>, batches, <code>/v1/responses</code> and <code>/v1/messages</code>, rather than dropping it silently. It also turns off grammar-fused speculative decoding for that request.</dd></div>
+        <div><dt>It doesn't make a small model good.</dt><dd>A 1.5B that is unsure is often right to be. The number tells you where to look, not what the answer should have been.</dd></div>
+      </dl></div>
+
+      <p style="margin-top:22px">If all you need is a pick between a few options, <a href="#decisions">decisions</a> answer from a single read of the prompt with no generation at all, in the request shape some decision APIs already use.</p>
+
+      <nav class="next" aria-label="More writeups">
+        <a href="#w01"><small>← 01</small><b>Stop means stop</b><span>Cancel one generation, or halt everything, from outside the API.</span></a>
+        <a href="#w03"><small>03 →</small><b>Tool calls that can't come out malformed</b><span>One grammar covering every tool a model was given.</span></a>
+      </nav>
+
+      <p class="srcs">From the repo: <code>docs/server.md</code> (the contract) · <code>docs/measurements/confidence-c0-2026-09-27.md</code> (the test, pre-registered before the graded runs) · <code>constrain/confidence.go</code> · <code>examples/confidence</code></p>
+    </article>
+  </div>
+
+  <footer>
+    <span>goinfer · pure Go · no cgo, no CUDA toolkit, no Python</span>
+    <ul><li><a href="#models">Models</a></li><li><a href="#docs">Docs</a></li><li><a href="#download">Download</a></li><li><a href="#lab">Benchmarks</a></li><li><a href="#docs">Book</a></li></ul>
+  </footer>
+</div>
+
+<script>
+const W=[
+ ["Stop means stop","Control"],["How sure was it?","Structured output"],["Tool calls that can't come out malformed","Agents"],
+ ["A Go struct the model can't break","Structured output"],["Decisions without generating","Structured output"],["Checked against the reference","Correctness"],
+ ["It refuses rather than swaps","Memory"],["A 26B model on an 8 GB card","Memory"],["Turn nine in under half a second","Speed"],
+ ["Work that survives a disconnect","Serving"],["One file, model inside","Distribution"],["No toolchain of any kind","Distribution"]
+];
+const CUR=1;
+const $=id=>document.getElementById(id);
+function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+W.forEach(([t,k],i)=>{const li=el("li");const a=el("a");a.href="#w"+String(i+1).padStart(2,"0");a.appendChild(document.createTextNode(t));a.appendChild(el("span",null,k));if(i===CUR)a.setAttribute("aria-current","page");li.appendChild(a);$("rail").appendChild(li);
+  const o=el("option",null,String(i+1).padStart(2,"0")+"  "+t);if(i===CUR)o.selected=true;$("railsel").appendChild(o)});
+
+const T=[
+ {text:"I ordered two lamps, #4471 and #4472, and neither has arrived. Where are they?",
+  f:[{k:"category",kind:"enum",v:"shipping",c:0.94,d:{billing:0.03,technical:0.01,shipping:0.94,other:0.02}},
+     {k:"urgent",kind:"boolean",v:"false",c:0.88,d:{"true":0.12,"false":0.88}},
+     {k:"orders",kind:"integer",v:"2",c:0.97}]},
+ {text:"I was charged twice for order #123. - Ann",
+  f:[{k:"category",kind:"enum",v:"billing",c:0.91,d:{billing:0.91,technical:0.02,shipping:0.03,other:0.04}},
+     {k:"urgent",kind:"boolean",v:"false",c:0.79,d:{"true":0.21,"false":0.79}},
+     {k:"orders",kind:"integer",v:"1",c:0.99}]},
+ {text:"The tracking link you sent for #9020 gives an error page, and I need it before we move out on Friday.",
+  f:[{k:"category",kind:"enum",v:"shipping",c:0.60,d:{billing:0.02,technical:0.37,shipping:0.60,other:0.01}},
+     {k:"urgent",kind:"boolean",v:"true",c:0.56,d:{"true":0.56,"false":0.44}},
+     {k:"orders",kind:"integer",v:"1",c:0.98}]}
+];
+let ti=0;
+const KIND={enum:"choice from a list, reported as the chosen option's share",boolean:"yes or no",integer:"a count, reported as its least certain digit"};
+function render(){
+  const t=T[ti], th=+$("th").value; $("tt").textContent=t.text; $("tho").textContent=th.toFixed(2);
+  const ul=$("flds"); ul.textContent="";
+  t.f.forEach(f=>{
+    const li=el("li","fld"); const a=el("div");
+    a.appendChild(el("div","k",f.k));
+    const v=el("div","v"); v.appendChild(el("span",null,f.v)); v.appendChild(el("span","c "+(f.c<th?"lo":"hi"),f.c.toFixed(2))); a.appendChild(v);
+    a.appendChild(el("div","kind",KIND[f.kind]));
+    const b=el("div");
+    if(f.d){ const d=el("div","dist");
+      Object.entries(f.d).sort((x,y)=>y[1]-x[1]).forEach(([o,p])=>{const pick=o===f.v;
+        d.appendChild(el("span","o"+(pick?" pick":""),o)); const tr=el("div","track"); const fl=el("div","f"+(pick?" pick":"")); fl.style.width=(p*100)+"%"; tr.appendChild(fl);
+        if(pick){const m=el("span","th");m.style.left="calc("+(th*100)+"% - 1px)";m.title="threshold";tr.appendChild(m)}
+        d.appendChild(tr); d.appendChild(el("span","p",p.toFixed(2)));});
+      b.appendChild(d);
+    } else b.appendChild(el("p","intnote","One digit, and the model gave it "+Math.round(f.c*100)+"% of what the schema allowed. Integers carry no distribution: there's no closed list of options to spread it over."));
+    li.appendChild(a); li.appendChild(b); ul.appendChild(li);
+  });
+  const low=t.f.filter(f=>f.c<th); const v=$("verdict"); v.textContent="";
+  if(low.length){v.className="verdict person";v.appendChild(document.createTextNode("Send to a person"));v.appendChild(el("small",null,low.map(f=>f.k+" "+f.c.toFixed(2)).join(", ")+" below "+th.toFixed(2)));}
+  else {v.className="verdict auto";v.appendChild(document.createTextNode("Handle automatically"));v.appendChild(el("small",null,"every field at or above "+th.toFixed(2)));}
+}
+$("tix").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ti=+b.dataset.i;$("tix").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));render()}));
+$("th").addEventListener("input",render);
+$("codetabs").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{$("codetabs").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));$("c-http").hidden=b.dataset.c!=="http";$("c-go").hidden=b.dataset.c!=="go"}));
+
+/* AUROC scale: 0.5 .. 1.0 */
+(function(){
+  const s=$("scale"), X=v=>((v-0.5)/0.5*100)+"%";
+  const band=el("div","band"); band.style.left="0"; band.style.width=X(0.55); band.title="below 0.55: fails"; s.appendChild(band);
+  const g=el("div","gate"); g.style.left=X(0.65); g.appendChild(el("span",null,"bar set in advance: 0.65")); s.appendChild(g);
+  s.appendChild(el("div","axis"));
+  [0.5,0.6,0.7,0.8,0.9,1.0].forEach(v=>{const t=el("span","tick",v.toFixed(1));t.style.left=X(v);s.appendChild(t)});
+  const P=[["enum",0.847,0,10],["boolean",0.727,0,35],["integer",0.680,0,10],["enum",0.967,1,60],["boolean",0.905,1,35],["integer",0.942,1,10]];
+  P.forEach(([k,v,h,y])=>{const d=el("span","pt"+(h?" hollow":""));d.style.left=X(v);d.style.top=(y+14)+"px";d.title=k+" "+v;s.appendChild(d);
+    const l=el("span","pl"+(h?" h":""),k+" "+v.toFixed(2));l.style.left=X(v);l.style.top=(y-8)+"px";s.appendChild(l)});
+})();
+render();
+</script>
+</body>
+</html>
