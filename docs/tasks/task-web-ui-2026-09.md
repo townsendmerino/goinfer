@@ -186,7 +186,7 @@ refreshes the model list, and selects the new model, so the next message goes to
 stats now follow whichever model is selected, not always the first one listed.
 
 **The gate decision: a narrow route, not the admin load.** `POST /admin/models/load`
-(`internal/serveapp/admin.go:113`) takes any caller-named path and stays behind
+(`internal/serveapp/admin.go:125`) takes any caller-named path and stays behind
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
 (`internal/serveapp/main.go:640`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
@@ -204,7 +204,7 @@ Also decided here:
   for nothing. (A pull, by contrast, still stops when the tab closes and deletes its `.part` file.)
 - **"Already loaded" counts as success.** The page selects that model instead of showing an error.
 - **Loading and publishing are shared with the admin load.** Both go through `loadDecoder` and
-  `publishLoaded` (`internal/serveapp/admin.go:171`), so the M-24 close-on-race and the session
+  `publishLoaded` (`internal/serveapp/admin.go:183`), so the M-24 close-on-race and the session
   restore live in one place, and a web-loaded model unloads like any other.
 
 **What this settles for W22** (the question was to be answered once, for both): a `-web` route
@@ -1115,7 +1115,7 @@ not the page — caught before it could produce a false pass.
 
 **W5 shipped half a door.** ~~nothing on the page can free the first model to make room~~ — a
 `POST /web/models/unload` route now exists over `unloadByName`
-(`internal/serveapp/admin.go:246`), the two-phase unpublish-then-drain `handleAdminUnload` already
+(`internal/serveapp/admin.go:258`), the two-phase unpublish-then-drain `handleAdminUnload` already
 did (unpublish under `regMu`, drain-and-close detached) — pulled out into its own function
 specifically so the web route and the admin route share it verbatim, rather than the page getting a
 second, parallel implementation of the same use-after-free-avoiding logic.
@@ -1444,7 +1444,7 @@ by a pre-registered margin, on a small local model, or it does not ship.
 `internal/serveapp/webui/ui/app.js:309`, `:935`, `:122`, `:1434`, `:1581`, `:357`, `:841`, `:86`, `:489`, `:1358`, `:641`, `:205`, `:1288`, `:7`, `:946` (the conversation transcript, the
 rendering rule, the error explanations, the keyboard handling, the load offer that replaced the dead-end line, the thinking split,
 regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:984` (`contextWindow`) ·
-`internal/serveapp/admin.go:113` (`handleAdminLoad`) ·
+`internal/serveapp/admin.go:125` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:534` (the sampling fields the page never sends) ·
 `internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:181` (`Size`, for the
 fit verdict) · `demo/agent/cmd/agent-web/index.html:129`, `:183`, `:198` (the image composer, the
