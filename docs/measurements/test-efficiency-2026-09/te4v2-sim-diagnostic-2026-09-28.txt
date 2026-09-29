@@ -1,0 +1,12 @@
+== registered shift model (a 5% shift per arm per block at p 0.05, 31% at p 0.01)
+   worst P(PASS | r <= S): sequential 0.317, fixed-N 0.300
+   largest excess of sequential over fixed-N: +0.022 (nobara CUDA, Q 6, bars (0.97, 0.97), r 0.97: seq 0.305 fixed-N 0.283)
+   agreement with fixed-N: 0.9477; blocks saved where clear of the bar: 0.491
+== no shifts: the registry's Gaussian noise and the build bias only
+   worst P(PASS | r <= S): sequential 0.031, fixed-N 0.027
+   largest excess of sequential over fixed-N: +0.005 (nobara CUDA, Q 6, bars (1.03, 0.97), r 1.03: seq 0.030 fixed-N 0.025)
+   agreement with fixed-N: 0.9953; blocks saved where clear of the bar: 0.539
+== shifts at 1/7 the rate (about the registry's observed tail: 3 of 426 nobara peer pairs >= 3.5%)
+   worst P(PASS | r <= S): sequential 0.093, fixed-N 0.088
+   largest excess of sequential over fixed-N: +0.005 (nobara CUDA, Q 6, bars (0.97, 0.97), r 0.97: seq 0.093 fixed-N 0.088)
+   agreement with fixed-N: 0.9865; blocks saved where clear of the bar: 0.531

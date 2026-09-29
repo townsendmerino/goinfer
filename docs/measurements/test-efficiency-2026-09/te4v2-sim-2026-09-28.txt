@@ -1,0 +1,108 @@
+TE4-SEQ-v2 simulation screen (§2.1): 4000 gates per combination, seed 20260928
+
+| noise | Q | bars (S, K) | true r | P(PASS) | agree w/ fixed-N | blocks used / cap | clear of bar |
+|---|---|---|---|---|---|---|---|
+| nobara CUDA | 4 | (0.97, 0.97) | 0.94 | 0.089 | 0.889 | 2.28 / 4 | yes |
+| nobara CUDA | 4 | (0.97, 0.97) | 0.97 | 0.212 | 0.975 | 3.44 / 4 |  |
+| nobara CUDA | 4 | (0.97, 0.97) | 1.00 | 0.817 | 0.883 | 2.26 / 4 | yes |
+| nobara CUDA | 4 | (0.97, 0.97) | 1.03 | 0.927 | 0.943 | 2.16 / 4 | yes |
+| nobara CUDA | 4 | (0.97, 0.97) | 1.06 | 0.952 | 0.956 | 2.07 / 4 | yes |
+| nobara CUDA | 4 | (0.97, 0.97) | 1.10 | 0.959 | 0.966 | 2.06 / 4 | yes |
+| nobara CUDA | 4 | (1.03, 0.97) | 0.94 | 0.025 | 0.896 | 2.36 / 4 | yes |
+| nobara CUDA | 4 | (1.03, 0.97) | 0.97 | 0.038 | 0.984 | 3.66 / 4 |  |
+| nobara CUDA | 4 | (1.03, 0.97) | 1.00 | 0.089 | 0.984 | 3.75 / 4 | yes |
+| nobara CUDA | 4 | (1.03, 0.97) | 1.03 | 0.213 | 0.987 | 3.68 / 4 |  |
+| nobara CUDA | 4 | (1.03, 0.97) | 1.06 | 0.818 | 0.888 | 2.36 / 4 | yes |
+| nobara CUDA | 4 | (1.03, 0.97) | 1.10 | 0.946 | 0.940 | 2.11 / 4 | yes |
+| nobara CUDA | 6 | (0.97, 0.97) | 0.94 | 0.122 | 0.830 | 2.53 / 6 | yes |
+| nobara CUDA | 6 | (0.97, 0.97) | 0.97 | 0.305 | 0.957 | 4.62 / 6 |  |
+| nobara CUDA | 6 | (0.97, 0.97) | 1.00 | 0.825 | 0.837 | 2.51 / 6 | yes |
+| nobara CUDA | 6 | (0.97, 0.97) | 1.03 | 0.936 | 0.903 | 2.31 / 6 | yes |
+| nobara CUDA | 6 | (0.97, 0.97) | 1.06 | 0.951 | 0.924 | 2.11 / 6 | yes |
+| nobara CUDA | 6 | (0.97, 0.97) | 1.10 | 0.963 | 0.949 | 2.10 / 6 | yes |
+| nobara CUDA | 6 | (1.03, 0.97) | 0.94 | 0.040 | 0.847 | 2.69 / 6 | yes |
+| nobara CUDA | 6 | (1.03, 0.97) | 0.97 | 0.063 | 0.980 | 5.14 / 6 |  |
+| nobara CUDA | 6 | (1.03, 0.97) | 1.00 | 0.145 | 0.979 | 5.39 / 6 | yes |
+| nobara CUDA | 6 | (1.03, 0.97) | 1.03 | 0.317 | 0.982 | 5.16 / 6 |  |
+| nobara CUDA | 6 | (1.03, 0.97) | 1.06 | 0.822 | 0.847 | 2.73 / 6 | yes |
+| nobara CUDA | 6 | (1.03, 0.97) | 1.10 | 0.945 | 0.906 | 2.26 / 6 | yes |
+| CUDA 0.5B cross-build | 4 | (0.97, 0.97) | 0.94 | 0.046 | 0.950 | 3.29 / 4 |  |
+| CUDA 0.5B cross-build | 4 | (0.97, 0.97) | 0.97 | 0.130 | 0.981 | 3.69 / 4 |  |
+| CUDA 0.5B cross-build | 4 | (0.97, 0.97) | 1.00 | 0.540 | 0.955 | 3.30 / 4 |  |
+| CUDA 0.5B cross-build | 4 | (0.97, 0.97) | 1.03 | 0.837 | 0.927 | 2.41 / 4 | yes |
+| CUDA 0.5B cross-build | 4 | (0.97, 0.97) | 1.06 | 0.935 | 0.950 | 2.16 / 4 | yes |
+| CUDA 0.5B cross-build | 4 | (0.97, 0.97) | 1.10 | 0.957 | 0.966 | 2.07 / 4 | yes |
+| CUDA 0.5B cross-build | 4 | (1.03, 0.97) | 0.94 | 0.025 | 0.950 | 3.32 / 4 |  |
+| CUDA 0.5B cross-build | 4 | (1.03, 0.97) | 0.97 | 0.032 | 0.990 | 3.81 / 4 |  |
+| CUDA 0.5B cross-build | 4 | (1.03, 0.97) | 1.00 | 0.051 | 0.998 | 3.90 / 4 |  |
+| CUDA 0.5B cross-build | 4 | (1.03, 0.97) | 1.03 | 0.125 | 0.994 | 3.82 / 4 |  |
+| CUDA 0.5B cross-build | 4 | (1.03, 0.97) | 1.06 | 0.480 | 0.955 | 3.40 / 4 |  |
+| CUDA 0.5B cross-build | 4 | (1.03, 0.97) | 1.10 | 0.853 | 0.934 | 2.36 / 4 | yes |
+| CUDA 0.5B cross-build | 6 | (0.97, 0.97) | 0.94 | 0.081 | 0.928 | 4.37 / 6 |  |
+| CUDA 0.5B cross-build | 6 | (0.97, 0.97) | 0.97 | 0.205 | 0.973 | 5.21 / 6 |  |
+| CUDA 0.5B cross-build | 6 | (0.97, 0.97) | 1.00 | 0.600 | 0.930 | 4.44 / 6 |  |
+| CUDA 0.5B cross-build | 6 | (0.97, 0.97) | 1.03 | 0.828 | 0.899 | 3.00 / 6 | yes |
+| CUDA 0.5B cross-build | 6 | (0.97, 0.97) | 1.06 | 0.937 | 0.921 | 2.35 / 6 | yes |
+| CUDA 0.5B cross-build | 6 | (0.97, 0.97) | 1.10 | 0.955 | 0.942 | 2.15 / 6 | yes |
+| CUDA 0.5B cross-build | 6 | (1.03, 0.97) | 0.94 | 0.041 | 0.928 | 4.47 / 6 |  |
+| CUDA 0.5B cross-build | 6 | (1.03, 0.97) | 0.97 | 0.051 | 0.982 | 5.49 / 6 |  |
+| CUDA 0.5B cross-build | 6 | (1.03, 0.97) | 1.00 | 0.082 | 0.992 | 5.69 / 6 |  |
+| CUDA 0.5B cross-build | 6 | (1.03, 0.97) | 1.03 | 0.202 | 0.987 | 5.50 / 6 |  |
+| CUDA 0.5B cross-build | 6 | (1.03, 0.97) | 1.06 | 0.562 | 0.936 | 4.64 / 6 |  |
+| CUDA 0.5B cross-build | 6 | (1.03, 0.97) | 1.10 | 0.854 | 0.912 | 2.85 / 6 | yes |
+| Mac CPU | 4 | (0.97, 0.97) | 0.94 | 0.052 | 0.963 | 3.39 / 4 |  |
+| Mac CPU | 4 | (0.97, 0.97) | 0.97 | 0.172 | 0.986 | 3.70 / 4 |  |
+| Mac CPU | 4 | (0.97, 0.97) | 1.00 | 0.549 | 0.961 | 3.40 / 4 |  |
+| Mac CPU | 4 | (0.97, 0.97) | 1.03 | 0.830 | 0.953 | 2.69 / 4 | yes |
+| Mac CPU | 4 | (0.97, 0.97) | 1.06 | 0.933 | 0.957 | 2.23 / 4 | yes |
+| Mac CPU | 4 | (0.97, 0.97) | 1.10 | 0.956 | 0.974 | 2.08 / 4 | yes |
+| Mac CPU | 4 | (1.03, 0.97) | 0.94 | 0.029 | 0.966 | 3.42 / 4 |  |
+| Mac CPU | 4 | (1.03, 0.97) | 0.97 | 0.032 | 0.994 | 3.82 / 4 |  |
+| Mac CPU | 4 | (1.03, 0.97) | 1.00 | 0.064 | 0.998 | 3.88 / 4 |  |
+| Mac CPU | 4 | (1.03, 0.97) | 1.03 | 0.164 | 0.994 | 3.82 / 4 |  |
+| Mac CPU | 4 | (1.03, 0.97) | 1.06 | 0.506 | 0.964 | 3.49 / 4 |  |
+| Mac CPU | 4 | (1.03, 0.97) | 1.10 | 0.870 | 0.954 | 2.55 / 4 | yes |
+| Mac CPU | 6 | (0.97, 0.97) | 0.94 | 0.110 | 0.946 | 4.46 / 6 |  |
+| Mac CPU | 6 | (0.97, 0.97) | 0.97 | 0.249 | 0.978 | 5.14 / 6 |  |
+| Mac CPU | 6 | (0.97, 0.97) | 1.00 | 0.638 | 0.945 | 4.52 / 6 |  |
+| Mac CPU | 6 | (0.97, 0.97) | 1.03 | 0.839 | 0.937 | 3.44 / 6 | yes |
+| Mac CPU | 6 | (0.97, 0.97) | 1.06 | 0.924 | 0.935 | 2.65 / 6 | yes |
+| Mac CPU | 6 | (0.97, 0.97) | 1.10 | 0.953 | 0.946 | 2.21 / 6 | yes |
+| Mac CPU | 6 | (1.03, 0.97) | 0.94 | 0.043 | 0.944 | 4.56 / 6 |  |
+| Mac CPU | 6 | (1.03, 0.97) | 0.97 | 0.063 | 0.984 | 5.44 / 6 |  |
+| Mac CPU | 6 | (1.03, 0.97) | 1.00 | 0.103 | 0.992 | 5.64 / 6 |  |
+| Mac CPU | 6 | (1.03, 0.97) | 1.03 | 0.250 | 0.986 | 5.45 / 6 |  |
+| Mac CPU | 6 | (1.03, 0.97) | 1.06 | 0.605 | 0.952 | 4.71 / 6 |  |
+| Mac CPU | 6 | (1.03, 0.97) | 1.10 | 0.864 | 0.927 | 3.30 / 6 | yes |
+
+worst P(PASS) where r <= S: 0.317  (pass: <= 0.05)
+agreement with the fixed-N verdict: 0.9477  (pass: >= 0.95)
+blocks saved where the truth clears its nearest bar by >= 2 fixed-N half-widths: 0.491  (pass: >= 0.25)
+  FAIL: P(PASS) 0.089 at r 0.94 <= S 0.97 (nobara CUDA, Q 4)
+  FAIL: P(PASS) 0.212 at r 0.97 <= S 0.97 (nobara CUDA, Q 4)
+  FAIL: P(PASS) 0.089 at r 1.0 <= S 1.03 (nobara CUDA, Q 4)
+  FAIL: P(PASS) 0.213 at r 1.03 <= S 1.03 (nobara CUDA, Q 4)
+  FAIL: P(PASS) 0.122 at r 0.94 <= S 0.97 (nobara CUDA, Q 6)
+  FAIL: P(PASS) 0.305 at r 0.97 <= S 0.97 (nobara CUDA, Q 6)
+  FAIL: P(PASS) 0.063 at r 0.97 <= S 1.03 (nobara CUDA, Q 6)
+  FAIL: P(PASS) 0.145 at r 1.0 <= S 1.03 (nobara CUDA, Q 6)
+  FAIL: P(PASS) 0.317 at r 1.03 <= S 1.03 (nobara CUDA, Q 6)
+  FAIL: P(PASS) 0.130 at r 0.97 <= S 0.97 (CUDA 0.5B cross-build, Q 4)
+  FAIL: P(PASS) 0.051 at r 1.0 <= S 1.03 (CUDA 0.5B cross-build, Q 4)
+  FAIL: P(PASS) 0.125 at r 1.03 <= S 1.03 (CUDA 0.5B cross-build, Q 4)
+  FAIL: P(PASS) 0.081 at r 0.94 <= S 0.97 (CUDA 0.5B cross-build, Q 6)
+  FAIL: P(PASS) 0.205 at r 0.97 <= S 0.97 (CUDA 0.5B cross-build, Q 6)
+  FAIL: P(PASS) 0.051 at r 0.97 <= S 1.03 (CUDA 0.5B cross-build, Q 6)
+  FAIL: P(PASS) 0.082 at r 1.0 <= S 1.03 (CUDA 0.5B cross-build, Q 6)
+  FAIL: P(PASS) 0.202 at r 1.03 <= S 1.03 (CUDA 0.5B cross-build, Q 6)
+  FAIL: P(PASS) 0.052 at r 0.94 <= S 0.97 (Mac CPU, Q 4)
+  FAIL: P(PASS) 0.172 at r 0.97 <= S 0.97 (Mac CPU, Q 4)
+  FAIL: P(PASS) 0.064 at r 1.0 <= S 1.03 (Mac CPU, Q 4)
+  FAIL: P(PASS) 0.164 at r 1.03 <= S 1.03 (Mac CPU, Q 4)
+  FAIL: P(PASS) 0.110 at r 0.94 <= S 0.97 (Mac CPU, Q 6)
+  FAIL: P(PASS) 0.249 at r 0.97 <= S 0.97 (Mac CPU, Q 6)
+  FAIL: P(PASS) 0.063 at r 0.97 <= S 1.03 (Mac CPU, Q 6)
+  FAIL: P(PASS) 0.103 at r 1.0 <= S 1.03 (Mac CPU, Q 6)
+  FAIL: P(PASS) 0.250 at r 1.03 <= S 1.03 (Mac CPU, Q 6)
+
+SCREEN: FAIL

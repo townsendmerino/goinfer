@@ -372,6 +372,22 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
     stop before run 2; recorded as not a validation).
   - **What a v2 needs:** a between-run noise allowance from TE3's registry and ABBA blocks within the pass (TE4's own
     design), validated on gates not used here.
+- **TE4-SEQ-v2, 2026-09-28: pre-registered, then failed its own simulation screen; the cause is the screen.**
+  Record: [`te4-seq-v2-2026-09-28.md`](../measurements/test-efficiency-2026-09/te4-seq-v2-2026-09-28.md).
+  - **The rule** (5551e9c3, written before any code or data):
+    - mirrored ABBA quads of restarted cells;
+    - no stop before the second quad;
+    - the registry's sd as a prior pooled into the interval (ν₀ ≤ 6);
+    - v1's O'Brien–Fleming spending over the quads;
+    - a floor only for a cross-build build effect.
+
+    Validation is a simulation screen by day, then a held-out 8-gate nobara night corpus.
+  - **Screen, as registered: FAIL.** Worst P(PASS) at a true ratio at or below the ship bar was 0.317 (bar ≤ 0.05), and
+    agreement with fixed-N 94.77% (bar ≥ 95%). Savings: 49.1%.
+  - **Post-hoc diagnosis.** The screen's shift model moves each arm ±5% with p = 0.05 per block, and the fixed-N gate
+    the rule replaces fails it too (0.300). The rule is never more than 2.2 points above fixed-N. Without shifts it is
+    calibrated: 0.031 against fixed-N's 0.027, 99.53% agreement.
+  - **Next:** the owner's call. The night corpus is not queued.
 
 ### TE5 — The cheapest instrument that answers the question *(a rule now; calibration by day)*
 
