@@ -70,6 +70,10 @@ func TestServe_adminSocket(t *testing.T) {
 	if statusResult["halted"] != true {
 		t.Errorf("status over socket after halt: %v, want halted:true", statusResult)
 	}
+	// resident_batch is reported only for a model running MC3; with no model loaded there is none.
+	if _, ok := statusResult["resident_batch"]; ok {
+		t.Errorf("status with no model reports resident_batch: %v", statusResult)
+	}
 
 	resumeResp, err := client.Post("http://admin-socket/admin/resume", "application/json", nil)
 	if err != nil {

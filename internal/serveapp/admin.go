@@ -106,6 +106,18 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 		resp["halt_trigger"] = hi.trigger
 		resp["halt_at"] = hi.at
 	}
+	// MC3's resident batcher counters per model running several generations at once (the same numbers serve prints at
+	// shutdown), so a harness can difference them across one cell rather than across the server's whole life: load,
+	// warm-up and first-use pipeline compiles excluded (the per-pass prefill attribution, task-concurrency-2026-09.md).
+	rb := map[string]any{}
+	for _, lm := range s.modelList() {
+		if lm.model != nil && lm.model.ResidentConcurrency() > 1 {
+			rb[lm.name] = lm.model.ResidentBatchStats()
+		}
+	}
+	if len(rb) > 0 {
+		resp["resident_batch"] = rb
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
