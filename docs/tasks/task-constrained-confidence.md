@@ -626,6 +626,22 @@ suffix, and the cost is documented.
 
 ### D9 — docs for D
 
+**Done 2026-09-28, except the parts that wait on D6a or D7:**
+- **`docs/server.md`:** the Decisions section, with the §2 caveat, came with D5. It now also says that many
+  questions about one state cost a full prefill each.
+- **README:** the Decisions paragraph, with no speed claim.
+- **`docs/README.md`:** the index entry updated.
+- **The site:** [`task-site-2026-09.md`](task-site-2026-09.md) S2 gains a decisions row on each model page, and a
+  decision-model tag reserved for Route B.
+- **The recipe:** [`../integrations/typesafe-jevx.md`](../integrations/typesafe-jevx.md), for jevx and TypeSafe's
+  SDKs. It is marked not yet run end to end.
+- **The capability matrix: deferred to D2–D4.**
+  - Route A (label scoring) is the same on every family, so a per-family column would be a constant.
+  - Whether a checkpoint's tokenizer has the single-token labels is a property of the checkpoint, not the registry
+    the matrix is generated from, and `New` refuses at load when it does not.
+  - Routes differ per family only once a trained head exists.
+- **Waits on:** D6a's result for the route recommendation, and D7's measurement for any speed claim.
+
 `docs/server.md` (a Decisions section with the §2 caveat), README (one paragraph; no speed claim
 unless D7 is in), the capability matrix (decision routes per family),
 [`task-site-2026-09.md`](task-site-2026-09.md) (a models-page tag for decision models), and a recipe

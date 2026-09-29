@@ -86,10 +86,11 @@ reading both codebases, the measured run that gates the rest, and the fixes — 
 agent fits in, a thinking switch, and reasoning emitted separately.
 
 [`task-constrained-confidence.md`](tasks/task-constrained-confidence.md) (C0–C2 and D0–D9, filed
-2026-09-27) scopes confidence on answers: per-field probabilities on schema-constrained output, and a
-Jev-style `/v1/decisions` endpoint (state plus a typed question in, a calibrated distribution over the
-allowed answers out, one prefill and no decode) by label-token scoring on any model or autotrust's open
-JEV decision heads on `qwen3_5`. Two measurements decide what is built.
+2026-09-27) is confidence on answers.
+- **Shipped:** per-field probabilities on schema-constrained output (C0–C2), and a TypeSafe-compatible decisions
+  endpoint, `POST /v1/systemone` (D5). It takes a state plus typed questions in and returns a distribution over the
+  allowed answers, with one prefill per question and no decode, by label-token scoring on any model (D1).
+- **Open:** D6a, pending, decides whether autotrust's trained JEV decision heads on `qwen3_5` are built (D2–D4).
 
 [`task-test-efficiency-2026-09.md`](tasks/task-test-efficiency-2026-09.md) (TE0–TE12, filed 2026-09-28) is the
 verification-cost campaign: a census of where the machine time goes (served gates that are mostly idle-gate waiting

@@ -446,6 +446,11 @@ names that are served.
   - goinfer's own measurement on its default chat template (D6a) is pending.
 - **`--decisions-template`** is `chat-v1` (the default: the model's chat template, for instruct models) or
   `bare-v1` (JEV's own, no chat template). One prefill per question; each question re-prefills the state.
+- **Many questions about one state cost one full prefill each.** On the hybrid families (Qwen3.5 and the other
+  Gated-DeltaNet models) no prefix is reused between questions today. A request's cost therefore grows with its
+  question count, and one schema-constrained generation that answers every field in a single pass can be the faster
+  shape for a fixed set of questions. The comparison is D7 in `tasks/task-constrained-confidence.md`; its projection
+  is recorded in `measurements/decisions-d7-2026-09-28.md`, and nothing is measured yet.
 - **Refused:** a question that breaks a rule is a 422 before any prefill. A compute-time adapter entry cannot answer,
   since label scoring would read the base model. `/v1/models` lists each entry's `decisions` support.
 

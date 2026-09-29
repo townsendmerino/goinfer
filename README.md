@@ -349,6 +349,14 @@ with a distribution over the options. The server equivalent is `"goinfer_confide
   ([what it is and is not](docs/server.md)).
 - **Example:** [`examples/confidence`](examples/confidence/main.go) is a complete program.
 
+**Decisions.** `POST /v1/systemone` answers TypeSafe's decisions wire shape: a state plus named yes/no, choice or
+score questions in, a probability distribution per question out. It works by label scoring on the served model:
+one prefill per question and no decode. Clients written for TypeSafe, such as jevx and its SDKs, work against it
+once pointed at it ([recipe](docs/integrations/typesafe-jevx.md)).
+- **Not included:** TypeSafe's hosted model or a trained decision head. The probabilities are calibrated only when you
+  fit a temperature on your own labelled examples.
+- **Answer quality depends on the model.** goinfer's own measurement is pending ([details](docs/server.md)).
+
 ## What it is, and isn't
 
 goinfer targets **single-user local inference**: one process, one machine, batch-1 decode,

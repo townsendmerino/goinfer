@@ -76,6 +76,9 @@ A model page carries what the repo knows and ollama.com's equivalent pages do no
 - **the parity row** — `full-oracle 100.0%/1.00000`, `real-oracle 100.0%/0.98988`,
   `experimental: tiny-oracle` — with a link to what that means. Nobody else publishes this.
 - **the tools row** — whether this checkpoint held up under a real agent's tool schema, measured
+- **the decisions row** (added 2026-09-28, D9 of `task-constrained-confidence.md`). It shows this checkpoint's measured
+  label-scoring figures (top-1, ECE) where a D6-style run exists, and "label scoring, unmeasured" otherwise. A
+  **decision model** tag goes only on checkpoints with a trained decision head (Route B, D2–D4), and none exist yet.
 - measured throughput, with the machine and date named
 - the exact `goinfer-chat pull` line, copyable
 
