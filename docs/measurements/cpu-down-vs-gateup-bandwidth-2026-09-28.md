@@ -135,10 +135,21 @@ The ratio lands within 0.02 of the pure byte-ratio floor (0.500) on all three mo
 the gap this record set out to explain. A real greedy generation (1.5B, 65 tokens, temp=0) is text-identical
 old vs new.
 
-**Not yet done: the paired `bench_peer` speed gate**, this repo's own bar for a speed claim, not a
-`GOINFER_DECODE_TIMING` sample. Queued for tonight (`avx2quant-cpu-speed`,
-`~/goinfer-bench/cpu-avx2quant-2026-09-28/run-avx2quant-speed.sh`), pre-registered: ship at ≥1.03× on every
-model in both pass directions, park below 1.00× on any model in either direction.
+**Formal gate result (2026-09-29): SHIP, every model, both pass directions.** `bench_peer.py`, CPU, 3 runs,
+`serve-cpu-new-avx2quant` vs `serve-cpu-old` (aikit branch `amd64-quant-avx2` vs origin/main pre-branch), rule
+≥ 1.03× on every model both directions / park below 1.00× on any (`~/goinfer-bench/cpu-avx2quant-2026-09-28/
+run-avx2quant-speed.sh`).
+
+| model | pass 1 (new, old) | pass 2 (old, new) |
+|---|---:|---:|
+| 0.5B | 52.6 / 45.0 = **1.169×** | 53.4 / 47.1 = **1.134×** |
+| 1.5B | 22.4 / 20.8 = **1.077×** | 22.3 / 20.8 = **1.072×** |
+| 7B | 5.9 / 5.6 = **1.054×** | 5.9 / 5.7 = **1.035×** |
+
+All six cells clear the 1.03× bar (smallest: 7B pass 2 at 1.035×); both directions agree per model (no order
+effect), consistent with the exploratory `GOINFER_DECODE_TIMING` samples above. Logs:
+`~/goinfer-bench/cpu-avx2quant-2026-09-28/avx2quant-speed-pass{1,2}.json`. **Not yet decided: whether to cut an
+aikit release for this branch** — owner call.
 
 ## What this does and does not close
 
@@ -164,6 +175,5 @@ model in both pass directions, park below 1.00× on any model in either directio
   the microbenchmark warms the SAME row repeatedly (steady-state cache behavior for THAT row), which is not
   identical to decode's cold-per-token access pattern; it isolates the compute+cache-locality shape, not the real
   cold-DRAM cost of the first touch.
-- Whether an AVX2 quantizer would actually close the projected gap — **built and preliminarily measured, see
-  "Fix built" above**; the paired `bench_peer` gate (this repo's own bar for a speed number) is still owed,
-  queued for tonight.
+- Whether an AVX2 quantizer would actually close the projected gap — **built and confirmed, see the formal
+  gate result above**: SHIP at ≥1.03× on every model, both pass directions, 2026-09-29.

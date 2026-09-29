@@ -32,7 +32,12 @@
 > activation quantizer — while investigating why CPU decode's `down` matmul streams slower than `gate+up`
 > (`docs/measurements/cpu-down-vs-gateup-bandwidth-2026-09-28.md`). An AVX2 quantizer, bit-identical, takes the
 > 0.5B to ~1.15× the ORIGINAL f32-scale build in a quick same-session check (not just recovered, reversed) —
-> "L1 build — owner decision on the 0.5B" below has the number; the formal paired gate is queued for tonight.
+> "L1 build — owner decision on the 0.5B" below has the number.
+>
+> **Both formal paired `bench_peer` gates CONFIRMED, 2026-09-29** (both pass directions, no order effect):
+> the AVX2 quantizer SHIPS at ≥1.03× on every model, 0.5B/1.5B/7B reading 1.13–1.17× / 1.07× / 1.04–1.05×
+> (`docs/measurements/cpu-down-vs-gateup-bandwidth-2026-09-28.md`); the 0.5B's item-6 recovery gate reads
+> 1.107× / 1.115×, confirmed above. Still open: whether to cut an aikit release for the SHIP — owner call.
 
 ## L1 — f16 group scales for CPU int4: the quality gate (pre-registered 2026-09-27)
 
@@ -268,6 +273,20 @@ old across all four pairs** — not merely recovered, reversed into a ~13–14% 
 build (`docs/measurements/cpu-down-vs-gateup-bandwidth-2026-09-28/item6-0.5b-quick-check.log`). The formal
 paired `bench_peer` gate (`item6-0.5b-recovery`, queued for tonight, same rule as every other speed claim here)
 confirms this with the same rigor as S0b's own number; this line is exploratory until that reports.
+
+**Formal gate result (2026-09-29): CONFIRMED, both pass directions.** `bench_peer.py`, CPU, 0.5B only, depth
+128, 3 runs, `serve-cpu-v1502-real` (aikit v1.50.2) vs `serve-cpu-prel1-f32scale` (goinfer `3cd62e6d` + aikit
+v1.49.0, S0b's own baseline build). Rule: recovered if new/old ≥ 1.00× both directions.
+
+| pass (engine order) | new (v1.50.2) | old (pre-L1 f32-scale) | new ÷ old |
+|---|---:|---:|---:|
+| 1 (new, old) | 52.9 tok/s | 47.8 tok/s | **1.107×** |
+| 2 (old, new) | 53.4 tok/s | 47.9 tok/s | **1.115×** |
+
+Both directions clear the ≥ 1.00× bar by a wide margin and agree with each other (no order effect) and with the
+exploratory check's 0.861–0.870× forward-time ratio above (≈ 1.15–1.16×⁻¹). S0b's ~3% 0.5B regression against the
+TRUE pre-L1 baseline is not just recovered, it is reversed into an ~11% net win. Logs:
+`~/goinfer-bench/cpu-avx2quant-2026-09-28/item6-0.5b-recovery-pass{1,2}.json`.
 
 **Design:**
 - **aikit.** An int4 `WeightMat` stores its per-group scales as f16, and the f32 copy goes.
