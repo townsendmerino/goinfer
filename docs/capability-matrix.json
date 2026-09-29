@@ -37,7 +37,7 @@
     "loaders": "safetensors",
     "modality": "text",
     "gpu_residency_eligible": true,
-    "parity": "experimental: real-oracle 100.0%/0.98988"
+    "parity": "real-oracle 100.0%/0.98931"
   },
   {
     "name": "qwen3_5_moe",

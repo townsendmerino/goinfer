@@ -772,16 +772,16 @@
         "scripts/pin_slice_oracle.py"
       ],
       "deps_hash": "sha256:7d1b06d83f538fda735a2f7c6c3cb1d9eb282a5d94365f0dfbb8ad0f6ab9e074",
-      "status": "experimental",
-      "validated_at": null,
-      "date": "2026-09-06",
-      "reference": "HF bf16 (Qwen/Qwen3-Next-80B-A3B-Instruct, full model via accelerate disk offload; int4 weights, f32 activations) — RE-RUN OWED: these metrics were recorded on int4 weights before aikit v1.50.0 stored int4 group scales as binary16 (docs/tasks/task-cpu-decode-peer-gap-2026-09.md, L1); experimental with validated_at null until the gate re-runs",
-      "machine": "linux-62gb",
+      "status": "validated",
+      "validated_at": "426ca57d",
+      "date": "2026-09-29",
+      "reference": "HF bf16 (Qwen/Qwen3-Next-80B-A3B-Instruct, full model via accelerate disk offload; int4 weights, f32 activations)",
+      "machine": "linux-amd64",
       "method": "real-model-oracle",
       "metrics": {
         "argmax_pct": 100.0,
-        "cosine_min": 0.98988,
-        "cosine_mean": 0.98988
+        "cosine_min": 0.98931,
+        "cosine_mean": 0.98931
       }
     },
     "qwen3_vl": {
