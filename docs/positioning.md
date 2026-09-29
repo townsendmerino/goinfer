@@ -52,8 +52,8 @@ and runs them **in-process**. What makes it different — you don't have to choo
 
 goinfer targets **single-user local inference**: one process, one machine, batch-1 decode,
 deployed by copying a file. Single-user includes one user's parallel agents: a harness on one machine that fans out
-subagents is in the niche even though it is not batch-1 (decided 2026-09-26; batched decode for it is being measured
-in [`task-concurrency-2026-09.md`](tasks/task-concurrency-2026-09.md), not shipped). That is the axis it optimizes — `go build` with **no toolchain of
+subagents is in the niche even though it is not batch-1 (decided 2026-09-26; batched decode for it shipped in
+2026-09, [`task-concurrency-2026-09.md`](tasks/task-concurrency-2026-09.md)). That is the axis it optimizes — `go build` with **no toolchain of
 any kind** (no CUDA toolkit, no C++ compiler, no CMake, no Python), cross-compiling like any
 other Go program, and every GPU fast path is gated bit-identical against its own reference path,
 with all backends parity-gated against the pure-Go CPU implementation — which is itself
@@ -64,10 +64,11 @@ the bytes are not.
 
 It is **not a serving engine.** There is no continuous batching and no paged attention. A few
 concurrent conversations are served, with limits:
-- a CPU model runs up to 4 generations at once;
-- a dense Metal-resident model runs up to 4, each on its own GPU KV slot, their decode tokens joined into shared
-  steps that are bit-identical to serving each alone. Measured 1.59× the serialized aggregate at 4 clients
-  ([`measurements/concurrency-mc3-2026-09-26.md`](measurements/concurrency-mc3-2026-09-26.md)).
+- a CPU model runs up to 4 generations at once, and a model of 2 GiB or more batches their decode tokens;
+- a dense Metal- or CUDA-resident model runs up to 4, each on its own GPU KV slot, their decode tokens joined into
+  shared steps that are bit-identical to serving each alone. Measured on Metal at 1.59× the serialized aggregate at 4
+  clients ([`measurements/concurrency-mc3-2026-09-26.md`](measurements/concurrency-mc3-2026-09-26.md)), and on CUDA at
+  1.38× (1.5B) and 1.83× (7B) ([`measurements/concurrency-mc3-cuda-2026-09-27.md`](measurements/concurrency-mc3-cuda-2026-09-27.md)).
 
 A long newcomer's prefill is chunked between those steps, and beyond those few conversations requests wait in a
 bounded queue. If your problem is saturating a datacentre GPU with concurrent requests, vLLM and its ports are built for that

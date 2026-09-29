@@ -206,11 +206,13 @@ is done and `docs/integrations/claude-code.md` is published with measured number
 - **Open-WebUI and Continue recipes** are unwritten, because §3.5's rule is that a recipe with no
   number is not published and neither has one.
 
-**Resident prefix reuse is single-conversation on CUDA and WebGPU.** Two interleaved conversations on one model each
-cold-prefill as they alternate. Metal no longer does, as of 2026-09-26: MC1 keeps 4 conversations in GPU KV slots, and
-MC3 runs them concurrently (`tasks/task-concurrency-2026-09.md`). For the other backends the options are MC1's slots,
-or per-conversation KV parked in host RAM and swapped back (~257 MiB and ~43 ms for a 2.3k-token conversation, against
-~8.9 s to recompute it).
+**Resident prefix reuse holds several conversations on every GPU backend now** (`tasks/task-concurrency-2026-09.md`):
+- **MC1's KV slots** keep 4 conversations resident on Metal (2026-09-26), CUDA and WebGPU (2026-09-27). On discrete
+  WebGPU GPUs they are clamp-only.
+- **MC3** runs them concurrently on Metal and CUDA.
+- **What is left:** more active conversations than slots still re-prefill on the least recently used one. The
+  host-RAM parking option (~257 MiB and ~43 ms for a 2.3k-token conversation, against ~8.9 s to recompute it) stays
+  unbuilt.
 
 **The facade (`docs/tasks/task-embed-and-harness-ux.md` phase 1) is unblocked and undecided.** G4 was the
 gate and it passes at 1.21×.

@@ -1,5 +1,19 @@
 # Task: concurrency — stop the resident-KV thrash, then earn batched multi-request decode (MC0–MC5) — 2026-09
 
+> **Current, 2026-09-28 (doc sweep):**
+> - **MC1 (resident KV slots)** shipped on Metal, CUDA and WebGPU. On discrete WebGPU GPUs it is clamp-only by design,
+>   since step 2 was reverted.
+> - **MC3 (batched multi-request decode)** shipped on Metal and CUDA, with sampled batching (S2), step polish (S3/S4),
+>   chunked prefill (`-prefill-chunk 512`) and the step-kernel spec verify.
+> - **MC3c (CPU)** shipped: workers, then batched decode (`-cpu-batch auto`).
+> - **MC2 earned**, with its Linux cells in.
+> - **Queued:** the 413 prefill-share fix's end-to-end check and the per-pass prefill attribution (Mac night queue).
+> - **Registered, owner to decide:** the MC4 candidate "speculate when alone, batch under load" (its CUDA premise is a
+>   nobara prompt). P10 on Metal is projected, not started.
+> - **⚠ Since 9ccf7fb1** (embed-int4 on by default), a default Metal load declines the resident and runs on the CPU,
+>   and so without MC1/MC3. Pass `-embed-int4=false` on Metal until that is fixed (`docs/quantization.md`, "Known
+>   issue").
+>
 > **Status: FILED 2026-09-23; owner decisions taken 2026-09-26 (1: yes, 2: fold). MC0 DONE 2026-09-26: the
 > thrash is confirmed on Metal, and a CPU session-LRU bug it uncovered is fixed. MC1 SHIPPED 2026-09-26 on Metal**
 > (`c2f1532e`): 4 resident KV slots hold the 1-client aggregate at 2 and 4 clients (0.99× / 1.01×), and the 4-client
@@ -9,7 +23,7 @@
 > [`concurrency-mc1-webgpu-2026-09-27.md`](../measurements/concurrency-mc1-webgpu-2026-09-27.md)): on the Mac, 4 clients
 > reach 2.805× the one-slot build (Qwen2.5 prefills per token there, so a thrash costs more), and a lone request is
 > unchanged. **MC2 EARNS on the Mac CPU**
-> (1.69–2.04× at B = 4, bit-identical; J8's 4 independent workers reach 2.00–2.48×). The Linux cells are owed. **MC3
+> (1.69–2.04× at B = 4, bit-identical; J8's 4 independent workers reach 2.00–2.48×). The Linux cells followed (below). **MC3
 > SHIPPED 2026-09-26 on Metal** (`d4b708b5` + fixes `2b1cc280`, `d2225ec4`;
 > [`concurrency-mc3-2026-09-26.md`](../measurements/concurrency-mc3-2026-09-26.md)). All five pre-registered W7 gates
 > pass: 4 clients at **1.593×** the serialized aggregate (76.2 → 121.5 tok/s), p99 turn **0.659×**, a lone request
@@ -79,10 +93,9 @@
 > - J8's latency half is 0.51× the serialized p99 under the same load (2.0× a lone request);
 > - the J6 re-run is closed by analysis (see MC1's follow-on).
 >
-> MC4 and MC5 stay parked. MC2 is the kill-or-earn
-> measurement `roadmap.md` requires before any batched decode work, and now carries J8's cell. MC3
-> is in the niche (decision 1) but must not start until MC2 earns. MC4 and MC5 are parked with
-> triggers. The speed bars were loosened 2026-09-26, before any measurement, per the owner's
+> MC2 was the kill-or-earn measurement `roadmap.md` required before any batched decode work, and it earned, so MC3
+> went ahead (decision 1) and shipped. MC5 stays parked with its trigger. MC4 is parked, except the one candidate
+> registered 2026-09-28 (the owner decides whether to build it). The speed bars were loosened 2026-09-26, before any measurement, per the owner's
 > standing guidance; see "Amendments".
 >
 > **What this is.** R12's W7 measurement (`docs/measurements/w7-plain-concurrency-2026-09-19.md`,
@@ -244,7 +257,8 @@ own prefix instead of evicting each other. Still one generation at a time; no ba
 - Per-turn `prefill_reused_tokens` at 2 and 4 clients equals the 1-client run's, turn for turn.
 - The fit guard declines a slot count that does not fit, with a message naming the count it chose.
 
-**Follow-on.** With more than one slot, J6's prefix-aware scheduling has something to exploit (now true on Metal).
+**Follow-on.** With more than one slot, J6's prefix-aware scheduling has something to exploit (now true on Metal,
+CUDA and WebGPU).
 **Closed by analysis 2026-09-26, not re-measured:**
 - J6's 1.024× (2026-09-15) was measured on the CPU, where the session LRU already held 4 conversations. The "single
   slot" premise above was wrong: J6 had multiple warm prefixes to schedule around, and it still did not pay.
@@ -367,6 +381,9 @@ control thrashes (3 / 3). The tagged CUDA suite: 171 pass, 0 fail.
   - The graded W7 configuration (4 slots fit at 16k) is unchanged.
   - **Step 2 (discrete GPUs):** only if the nobara run shows a failed allocation on Vulkan is clean. What fits is
     learned from the build there, and the prompt carries the pre-registered decision rule.
+    - **Outcome, 2026-09-28 (items 26–27):** the clamp is clean on real Vulkan. But step 2 was attempted and
+      REVERTED: an in-process release does not return VRAM the process can reuse. Discrete GPUs stay clamp-only by
+      design, and "slots before context" ships on darwin only (the header's MC1 entry).
   - ~~CUDA's `resolveCtxCapFit` still treats a guard-pinned context as explicit~~ — fixed 2026-09-28 (item 28,
     item 4 of the same prompt). See its own result below.
 

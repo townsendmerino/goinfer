@@ -156,7 +156,8 @@ for all of them. Every reply is bit-identical either way, and a lone request tak
 - The banner's concurrency line says which mode runs, and serve logs the batcher's step counts at shutdown.
 
 **On Metal and CUDA, a dense resident model batches concurrent generations** (MC3: Metal 2026-09-26, CUDA
-2026-09-27). Under the same flag, each running generation holds its own resident KV slot (`--kv-sessions` sets the
+2026-09-27). *Known issue:* since the 2026-09-28 `--embed-int4` default, a default Metal load is not resident and so
+does not batch. Pass `--embed-int4=false` on Metal (`quantization.md`, "Known issue"). Under the same flag, each running generation holds its own resident KV slot (`--kv-sessions` sets the
 count, 4 by default). Their decode tokens run together in one step on the GPU, every logit bit-identical to serving
 that conversation alone.
 - On CUDA (RTX 2070 SUPER, W7, 4 clients): qwen2.5-coder-1.5b reads 1.38× the one-at-a-time build, with p99 per turn

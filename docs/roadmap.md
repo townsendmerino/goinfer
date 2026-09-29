@@ -78,8 +78,11 @@ promoting are separate decisions with separate gates (see the last section).
 - **Continuous batching / paged attention** — not this engine's weight class; unchanged since
   v0.2 (MC5 of `tasks/task-concurrency-2026-09.md`, parked with a trigger). Its small cousin got its kill-or-earn
   measurement (MC2 earned) and shipped in 2026-09:
-  - N CPU decode workers (MC3c);
-  - batched multi-request decode on Metal (MC3: 1.59× at 4 clients, bit-identical to serving each alone).
+  - N CPU decode workers (MC3c), then batched CPU decode behind them (MC3c step 2: 2.19× the workers at 4 clients
+    on the 7B);
+  - batched multi-request decode on Metal (MC3: 1.59× at 4 clients, bit-identical to serving each alone) and on CUDA
+    (1.380× on the 1.5B, 1.826× on the 7B);
+  - per-conversation resident KV slots on Metal, CUDA and WebGPU (MC1).
 - **Bindings** (sidecar for desktop, c-archive for mobile) — scoped in
   [`task-bindings.md`](tasks/parked/task-bindings.md), not started. Gate: the B0.1 on-device iPhone spike.
 - **Browser / WASM** (`GOOS=js` → `navigator.gpu`, cgo-free) — a demo, not a binding strategy;
