@@ -480,6 +480,22 @@ func TestMC3_longPrefillChunksWhileOthersDecode(t *testing.T) {
 	if between < chunks-1 {
 		t.Errorf("only %d decode steps ran between the %d prefill chunks: the decoders were stalled for the prefill", between, chunks)
 	}
+	// The time attribution the served per-pass prefill measurement reads (ResidentBatchStats): every prefill call the
+	// resident saw is one counted pass, and the durations nest — prefill inside exclusive, runs timed apart.
+	st := m.ResidentBatchStats()
+	t.Logf("stats: %d prefill passes %.1f ms, exclusive %.1f ms, runs %.1f ms over %d runs",
+		st.PrefillPasses, float64(st.PrefillNs)/1e6, float64(st.ExclusiveNs)/1e6, float64(st.RunNs)/1e6, st.Runs)
+	// One seed pass per generation (the two 4-token decoders seed through per-token Forward, under the 8-token batched
+	// floor, so the fake logs them as F, not P), plus the newcomer's chunks before its seed.
+	if want := 3 + (chunks - 1); st.PrefillPasses != want {
+		t.Errorf("PrefillPasses = %d, want %d (3 seed passes + %d earlier chunks)", st.PrefillPasses, want, chunks-1)
+	}
+	if st.PrefillNs <= 0 || st.ExclusiveNs < st.PrefillNs {
+		t.Errorf("prefill %d ns, exclusive %d ns: prefill passes must be timed, inside the exclusive total", st.PrefillNs, st.ExclusiveNs)
+	}
+	if st.Steps > 0 && st.RunNs < int64(st.Steps)*rf.delay.Nanoseconds() {
+		t.Errorf("runs timed %d ns over %d steps of %v each: RunNs misses the steps", st.RunNs, st.Steps, rf.delay)
+	}
 }
 
 // TestMC3_prefillChunkOffByDefault: with Options.ResidentPrefillChunk unset, a long newcomer is prefilled in one pass

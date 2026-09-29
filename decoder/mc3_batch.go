@@ -65,9 +65,16 @@ type residentBatcher struct {
 // ResidentBatchStats counts what MC3's batcher did (Model.ResidentBatchStats): runs, the tokens batched steps served
 // and how many steps there were, the tokens that ran as production's per-sequence call, and how many runs started
 // because the straggler window expired rather than because every decoding generation had submitted.
+//
+// The durations are wall time with the resident held: RunNs inside decode runs, ExclusiveNs inside every exclusive
+// section, and PrefillNs inside the ones that are prefill passes (PrefillPasses of them). ExclusiveNs − PrefillNs is
+// slot bookkeeping. They attribute a served cell's time without timing anything else (docs/tasks/task-concurrency-
+// 2026-09.md, the per-pass prefill cost item).
 type ResidentBatchStats struct {
 	Runs, Steps, StepTokens, SoloTokens, StragglerRuns int
 	StepSizes                                          [batchStatsSizes]int // StepSizes[b] = steps of b sequences
+	PrefillPasses                                      int
+	RunNs, ExclusiveNs, PrefillNs                      int64
 }
 
 const batchStatsSizes = 17
@@ -162,7 +169,12 @@ func (b *residentBatcher) claimExclusive(resBusy *int32) bool {
 }
 
 // exclusive runs fn with the resident to itself, between runs: prefill, slot bookkeeping. It goes ahead of the next run.
-func (b *tokenCoalescer) exclusive(fn func()) {
+func (b *tokenCoalescer) exclusive(fn func()) { b.exclusiveKind(false, fn) }
+
+// prefillExclusive is exclusive for a prefill pass, counted in PrefillPasses and PrefillNs as well.
+func (b *tokenCoalescer) prefillExclusive(fn func()) { b.exclusiveKind(true, fn) }
+
+func (b *tokenCoalescer) exclusiveKind(prefill bool, fn func()) {
 	b.mu.Lock()
 	b.exclWaiting++
 	for b.busy {
@@ -171,8 +183,15 @@ func (b *tokenCoalescer) exclusive(fn func()) {
 	b.exclWaiting--
 	b.busy = true
 	b.mu.Unlock()
+	t0 := time.Now()
 	defer func() {
+		d := time.Since(t0).Nanoseconds()
 		b.mu.Lock()
+		b.stats.ExclusiveNs += d
+		if prefill {
+			b.stats.PrefillPasses++
+			b.stats.PrefillNs += d
+		}
 		b.busy = false
 		b.freeAt = time.Now()
 		b.cond.Broadcast()
@@ -267,8 +286,10 @@ func (b *tokenCoalescer) forward(q *batchReq) error {
 				b.pending = append([]*batchReq(nil), b.pending[n:]...)
 				b.busy = true
 				b.mu.Unlock()
+				t0 := time.Now()
 				b.runTokens(run)
 				b.mu.Lock()
+				b.stats.RunNs += time.Since(t0).Nanoseconds()
 				b.busy = false
 				b.freeAt = time.Now()
 				for _, r := range run {

@@ -1636,7 +1636,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		for i, id := range prompt[from:end] {
 			embs[i] = m.embedResident(id)
 		}
-		mc3.exclusive(func() {
+		mc3.prefillExclusive(func() {
 			if err = m.residentBind(slot); err == nil {
 				_, err = pf.PrefillLast(ctx, embs, from)
 			}
@@ -1653,7 +1653,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		mc3.yieldToDecode()
 	}
 	err = nil
-	mc3.exclusive(func() {
+	mc3.prefillExclusive(func() {
 		if err = m.residentBind(slot); err == nil {
 			logits, err = m.residentPrefillSeed(ctx, prompt, from, false)
 		}

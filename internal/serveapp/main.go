@@ -747,6 +747,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 				st := lm.model.ResidentBatchStats()
 				fmt.Fprintf(os.Stderr, "resident batch %q: %d runs, %d batched steps (%d tokens), %d solo tokens, %d straggler runs, steps by size %v\n",
 					lm.name, st.Runs, st.Steps, st.StepTokens, st.SoloTokens, st.StragglerRuns, st.StepSizes[:max(2, lm.concurrent+1)])
+				fmt.Fprintf(os.Stderr, "resident batch %q time: runs %.3f s, exclusive %.3f s (prefill %d passes %.3f s, bookkeeping %.3f s)\n",
+					lm.name, float64(st.RunNs)/1e9, float64(st.ExclusiveNs)/1e9, st.PrefillPasses, float64(st.PrefillNs)/1e9,
+					float64(st.ExclusiveNs-st.PrefillNs)/1e9)
 			}
 		}
 		if cfg.sessionDir != "" && cfg.kvSessions > 0 {
