@@ -2,6 +2,24 @@
 
 > **Status 2026-09-25: Track A quality gate NOT PASSED as registered (int8int8 met; int4 limited by weights) → both tracks. Track B: both candidates FAIL. Track A speed gate re-run: end to end 1.5B int4 / 7B int4 / 7B int8int8 SHIP, 1.5B int8int8 AMBIGUOUS (0.969); 3 small kernel shapes FAIL. CUDA per-32 decode built (branch `actgroup-wiring`). Next: owner decision, then the aikit release.** Owner decision 2026-09-25: this is the fix for
 > `queue-engineering.md` H2. The guard shipped first (`dcbbaa91`); this lifts it.
+>
+> **Correction, 2026-09-29 (doc-review pass; nothing below this block edited).** Track A CPU shipped
+> in full (speed-gate re-run 3, all four cells SHIP; aikit v1.48.0, `cad1973b` "Merge PR #1"). CUDA
+> **decode** shipped the same way (`residentGateReasonAct`, `decoder/features.go:340`, bypasses the
+> hazard guard only for `actSafe && backend == "cuda"`); Phi-3/Phi-4 now default to `--quant q4k` on
+> both CPU and CUDA (`59bc0933`, `1cee4b09`), which sidesteps Track B's int4-weight problem entirely
+> by keeping Q4_K tensors native instead of re-quantizing them. **Still not built, and owned by no
+> other doc: Metal and WebGPU per-32 kernels** (Order of work step 5 — `grep` for `ActQuantGroup` /
+> `actgroup` under `metal/` and `gpu/` returns nothing), and **CUDA's batched prefill kernel** for
+> per-32 (the release section below already flags this; `--require-backend` still refuses a per-32
+> prefill load). `docs/hardware-matrix.md` (the generated truth) confirms: Phi-3/Phi-4 reads CPU on
+> all three GPU backends at default settings — CUDA's is a context-fit decline, not the hazard guard
+> anymore, but Metal/WebGPU's is the hazard guard, still unconditional there.
+>
+> **Track B has an owner now:** `docs/tasks/task-int4-weight-quality-2026-09.md` (opened
+> 2026-09-26), already three PRs deep (Phase 0/1a/1b, CUDA `--quant q4k`, three fused-kernel levers).
+> It supersedes every "Track B ... parked until owned" line below — the int4-weight lever this doc
+> parked is that doc's whole subject now, not an open item here.
 
 ## Why
 
@@ -378,4 +396,4 @@ Logs are in `~/goinfer-logs/actgroup-serve-*` and `~/goinfer-logs/actgroup-cuda-
 6. **Re-gate every family**, re-run the peer sweep, and lift the Phi-3 guard only after a long-prompt
    quality gate passes at int4.
 
-<!-- doc-reviewed: 2026-09-25 -->
+<!-- doc-reviewed: 2026-09-29 -->
