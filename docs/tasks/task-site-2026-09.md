@@ -338,8 +338,13 @@ releases only.
 2. **Gemma 4 26B on the Mac, "16.98"**, is a CUDA figure (§B4). That claim is dropped, so there is no Mac speed for it.
 3. **1.5B on CUDA "253.1"** appears in the record's run list. The median, which is the claim, is 252.9. The first version of the
    check let 253.1 through because it is present in the section; the median rule is the fix.
-4. **Embeddings.** The mockup says "0 embedding models" and shows embeddings as "none yet". The README documents `--embed-model`
-   (CodeRankEmbed). The generator omits that count and filter cell until someone decides what the site should say.
+4. **Embeddings.** The mockup says "0 embedding models" and shows embeddings as "none yet". `docs/server.md` documents
+   `--embed-model`, which serves `/v1/embeddings` from Qwen3-Embedding-0.6B (a GGUF; cosine 1.0000000 against the
+   sentence-transformers reference on five cases, 2026-07-20, `docs/completed/task-decoder-as-embedder.md`) or CodeRankEmbed
+   (an HF directory; served and timed against nomic-embed-text, no reference comparison recorded in this repo). The registry has
+   no embedding family, so the generator drops the count and the filter cell and carries a hand-written "Embeddings" section on
+   the Models page that says only what those records support. `Verify` fails the build if the section goes missing.
+   embeddinggemma is left off: it was never verified (the checkpoint is gated).
 5. Phi-3 mini 4k has a CUDA speed in the record (143.2 against 125.9) and none in the mockup. The generator shows it.
 
 **Decision for the owner: fit verdicts are now derived by rule** (`FitFor`, mirrored in `site.js` and tested against it), where the

@@ -21,6 +21,10 @@ func Verify(out string, m *Model) error {
 		return fmt.Errorf("verify: the Models page is missing: %w", err)
 	}
 	var bad []string
+	// Embeddings are not a family, so nothing above generates them; a hand-written section covers them.
+	if !strings.Contains(idx, `id="embeddings"`) || !strings.Contains(idx, "/v1/embeddings") {
+		bad = append(bad, "the Models page has no Embeddings section")
+	}
 	for _, f := range m.Families {
 		page, err := read("models/" + f.Name + "/index.html")
 		switch {

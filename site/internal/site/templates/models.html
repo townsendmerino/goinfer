@@ -83,6 +83,11 @@
   </ul>
 </section>
 
+<section aria-labelledby="e-h" id="embeddings">
+  <div class="s-head"><div><h2 class="s" id="e-h">Embeddings</h2><p class="s-sub">Separate from the families above: they are encoders, not chat models.</p></div></div>
+  <p class="prose"><code>goinfer serve --embed-model</code> serves <code>/v1/embeddings</code>, on its own or beside a chat model. Two encoders work today. <strong>Qwen3-Embedding-0.6B</strong> (a GGUF file) matches the sentence-transformers reference to cosine 1.0000000 on five test inputs, checked 2026-07-20. <strong>CodeRankEmbed</strong> (a HuggingFace directory) is served and timed against Ollama's nomic-embed-text, but no comparison with a reference is recorded here. Details in <a href="{{cfg.GitHubURL}}/blob/main/docs/server.md">the server docs</a>.</p>
+</section>
+
 <section aria-labelledby="p-h" id="parity">
   <div class="s-head"><div><h2 class="s" id="p-h">What the checks mean</h2><p class="s-sub">Every family gets one of these. They are listed strongest first.</p></div></div>
   <div class="tiers">
