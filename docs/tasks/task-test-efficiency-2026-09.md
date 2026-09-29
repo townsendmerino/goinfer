@@ -387,7 +387,8 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   - **Post-hoc diagnosis.** The screen's shift model moves each arm ±5% with p = 0.05 per block, and the fixed-N gate
     the rule replaces fails it too (0.300). The rule is never more than 2.2 points above fixed-N. Without shifts it is
     calibrated: 0.031 against fixed-N's 0.027, 99.53% agreement.
-  - **Next:** the owner's call. The night corpus is not queued.
+  - **Owner, 2026-09-28: the screen is void; the night corpus decides.** `bench_peer.py` gained `BENCH_ABBA=<quads>`
+    (25950af1), and the corpus is queued on nobara as `te4v2-validation-cuda` and `te4v2-validation-cpu` (3 h 20 min).
 
 ### TE5 — The cheapest instrument that answers the question *(a rule now; calibration by day)*
 
