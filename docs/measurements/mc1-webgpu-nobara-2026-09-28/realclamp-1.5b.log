@@ -1,0 +1,9 @@
+=== RUN   TestWebGPUKVSlots_realClamp
+=== RUN   TestWebGPUKVSlots_realClamp/qwen2.5-coder-1.5b
+    kv_slots_test.go:622: 
+    kv_slots_test.go:622: granted 4 of 4 requested KV slots — no clamp message, so every requested slot fit
+    kv_slots_test.go:622: nvidia-smi used MiB: 639 before, 642 after (delta 3)
+--- PASS: TestWebGPUKVSlots_realClamp (10.50s)
+    --- PASS: TestWebGPUKVSlots_realClamp/qwen2.5-coder-1.5b (10.50s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	10.553s

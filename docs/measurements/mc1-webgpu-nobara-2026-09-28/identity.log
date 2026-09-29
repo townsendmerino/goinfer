@@ -1,0 +1,72 @@
+=== RUN   TestWebGPUKVSlots_interleavedMatchesAlone
+=== RUN   TestWebGPUKVSlots_interleavedMatchesAlone/llama-tiny
+goinfer: batched prefill declined for a 14-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): gpu: PrefillLast declines — model uses a feature outside plain dense W8A8 (MoE/MLA/SSM/sliding-window/…)
+    kv_slots_test.go:197: A: ids per turn alone [[73 48 73 73 96 96 96 96] [96 96 96 96 96 96 96 96] [96 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:197: B: ids per turn alone [[191 253 73 253 73 253 73 253] [73 253 73 253 73 253 73 96] [238 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+=== RUN   TestWebGPUKVSlots_interleavedMatchesAlone/llama-tiny-kv-i8
+    kv_slots_test.go:197: A: ids per turn alone [[73 48 73 73 96 96 96 96] [96 96 96 96 96 96 96 96] [96 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:197: B: ids per turn alone [[191 253 73 253 73 253 73 253] [73 253 73 253 73 253 73 96] [238 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+=== RUN   TestWebGPUKVSlots_interleavedMatchesAlone/llama-tiny-kv-f16
+    kv_slots_test.go:197: A: ids per turn alone [[73 48 73 73 96 96 96 96] [96 96 96 96 96 96 96 96] [96 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:197: B: ids per turn alone [[191 253 73 253 73 253 73 253] [73 253 73 253 73 253 73 96] [238 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+=== RUN   TestWebGPUKVSlots_interleavedMatchesAlone/mistral-tiny-window
+    kv_slots_test.go:197: A: ids per turn alone [[113 113 113 113 113 117 91 117] [117 91 91 93 91 93 93 93] [32 32 88 11 30 11 11 11]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:197: B: ids per turn alone [[40 40 40 123 113 40 123 125] [123 7 123 94 7 82 82 82] [82 40 40 40 40 40 40 15]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+=== RUN   TestWebGPUKVSlots_interleavedMatchesAlone/deepseek-tiny
+    kv_slots_test.go:197: A: ids per turn alone [[106 69 89 120 34 51 95 42] [120 34 51 105 45 28 79 51] [58 89 120 35 52 95 42 58]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:197: B: ids per turn alone [[81 4 40 32 82 115 17 90] [54 52 95 108 52 95 108 52] [58 88 36 38 18 90 13 106]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+--- PASS: TestWebGPUKVSlots_interleavedMatchesAlone (5.63s)
+    --- PASS: TestWebGPUKVSlots_interleavedMatchesAlone/llama-tiny (1.25s)
+    --- PASS: TestWebGPUKVSlots_interleavedMatchesAlone/llama-tiny-kv-i8 (1.10s)
+    --- PASS: TestWebGPUKVSlots_interleavedMatchesAlone/llama-tiny-kv-f16 (1.04s)
+    --- PASS: TestWebGPUKVSlots_interleavedMatchesAlone/mistral-tiny-window (1.05s)
+    --- PASS: TestWebGPUKVSlots_interleavedMatchesAlone/deepseek-tiny (1.19s)
+=== RUN   TestWebGPUKVSlots_adapterFollowsTheSwitch
+    kv_slots_test.go:207: A: ids per turn alone [[84 111 111 111 111 111 111 227] [223 202 126 217 111 111 111 111] [126 217 111 111 111 111 48 249]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 0 0]
+    kv_slots_test.go:207: B: ids per turn alone [[191 253 73 253 73 253 73 253] [73 253 73 253 73 253 73 96] [238 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 0 0]
+--- PASS: TestWebGPUKVSlots_adapterFollowsTheSwitch (1.38s)
+=== RUN   TestWebGPUKVSlots_recurrentKeepsOne
+=== RUN   TestWebGPUKVSlots_recurrentKeepsOne/qwen35-tiny
+=== RUN   TestWebGPUKVSlots_recurrentKeepsOne/nemotron-tiny
+--- PASS: TestWebGPUKVSlots_recurrentKeepsOne (0.48s)
+    --- PASS: TestWebGPUKVSlots_recurrentKeepsOne/qwen35-tiny (0.27s)
+    --- PASS: TestWebGPUKVSlots_recurrentKeepsOne/nemotron-tiny (0.22s)
+=== RUN   TestWebGPUKVSlots_slotOwnsItsKV
+=== RUN   TestWebGPUKVSlots_slotOwnsItsKV/llama-tiny
+=== RUN   TestWebGPUKVSlots_slotOwnsItsKV/deepseek-tiny
+--- PASS: TestWebGPUKVSlots_slotOwnsItsKV (0.54s)
+    --- PASS: TestWebGPUKVSlots_slotOwnsItsKV/llama-tiny (0.28s)
+    --- PASS: TestWebGPUKVSlots_slotOwnsItsKV/deepseek-tiny (0.26s)
+=== RUN   TestWebGPUKVSlots_forwardNFollowsTheSlot
+--- PASS: TestWebGPUKVSlots_forwardNFollowsTheSlot (0.46s)
+=== RUN   TestWebGPUKVSlots_clampedBuild
+webgpu: 2 resident KV slots of 4 requested — slot 2 (0 MB of KV at 128 positions) did not fit: layer 1 KV: injected allocation failure
+--- PASS: TestWebGPUKVSlots_clampedBuild (0.25s)
+=== RUN   TestWebGPUKVSlots_pricedAgainstMemory
+    kv_slots_test.go:403: the memory pricing applies on darwin only (unified memory); elsewhere a slot is clamped by its allocation
+--- SKIP: TestWebGPUKVSlots_pricedAgainstMemory (0.00s)
+=== RUN   TestDarwinKVSlots
+--- PASS: TestDarwinKVSlots (0.00s)
+=== RUN   TestWebGPUKVSlots_perPositionMatchesTheBuild
+=== RUN   TestWebGPUKVSlots_perPositionMatchesTheBuild/llama-tiny-f32
+=== RUN   TestWebGPUKVSlots_perPositionMatchesTheBuild/llama-tiny-f16
+=== RUN   TestWebGPUKVSlots_perPositionMatchesTheBuild/llama-tiny-i8
+=== RUN   TestWebGPUKVSlots_perPositionMatchesTheBuild/mistral-tiny-window
+=== RUN   TestWebGPUKVSlots_perPositionMatchesTheBuild/deepseek-tiny-mla
+--- PASS: TestWebGPUKVSlots_perPositionMatchesTheBuild (1.18s)
+    --- PASS: TestWebGPUKVSlots_perPositionMatchesTheBuild/llama-tiny-f32 (0.25s)
+    --- PASS: TestWebGPUKVSlots_perPositionMatchesTheBuild/llama-tiny-f16 (0.24s)
+    --- PASS: TestWebGPUKVSlots_perPositionMatchesTheBuild/llama-tiny-i8 (0.24s)
+    --- PASS: TestWebGPUKVSlots_perPositionMatchesTheBuild/mistral-tiny-window (0.22s)
+    --- PASS: TestWebGPUKVSlots_perPositionMatchesTheBuild/deepseek-tiny-mla (0.23s)
+=== RUN   TestCtxWhereSlotsFit
+webgpu: resident context 7999, not 16384, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+webgpu: resident context 16383, not 16384, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+webgpu: resident context 4096, not 16384, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+webgpu: resident context 4096 (the floor), not 16384, for the 4 requested KV slots (--kv-sessions); the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots
+--- PASS: TestCtxWhereSlotsFit (0.00s)
+=== RUN   TestWebGPUKVSlots_slotsBeforeContext
+    kv_slots_test.go:513: slots before context applies on darwin only until the discrete-GPU clamp is measured
+--- SKIP: TestWebGPUKVSlots_slotsBeforeContext (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	10.072s

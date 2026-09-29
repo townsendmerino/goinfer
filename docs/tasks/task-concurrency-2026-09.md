@@ -52,9 +52,12 @@
 > - ~~MC1 on CUDA~~ — shipped 2026-09-27: 4 clients at 1.250× the one-slot build, every hard gate passes
 >   ([`concurrency-mc1-cuda-2026-09-27.md`](../measurements/concurrency-mc1-cuda-2026-09-27.md)); ~~MC1 on WebGPU~~ —
 >   shipped 2026-09-27: 4 clients at 2.805× the one-slot build on the Mac, every hard gate passes
->   ([`concurrency-mc1-webgpu-2026-09-27.md`](../measurements/concurrency-mc1-webgpu-2026-09-27.md)). Owed: the
->   discrete-GPU clamp on real Vulkan hardware (nobara, `docs/prompts/nobara-mc1-webgpu-2026-09.md`). Context against
->   slots on WebGPU: decided 2026-09-27, slots first as on CUDA; done on darwin, discrete GPUs after the nobara run;
+>   ([`concurrency-mc1-webgpu-2026-09-27.md`](../measurements/concurrency-mc1-webgpu-2026-09-27.md)); ~~the
+>   discrete-GPU clamp on real Vulkan hardware~~ — measured 2026-09-28 on nobara: CLEAN (a real
+>   out-of-memory buffer allocation on Vulkan fails as a normal Go error, no device loss;
+>   [`mc1-webgpu-nobara-2026-09-28/`](../measurements/mc1-webgpu-nobara-2026-09-28/)), so slots-before-context step 2
+>   (discrete GPUs) is now in scope. Context against slots on WebGPU: decided 2026-09-27, slots first as on CUDA;
+>   done on darwin, discrete-GPU step 2 next;
 > - ~~context against slots, owner's call~~ — decided 2026-09-27: a slot request shrinks the unpinned default
 >   context (`947e06ce`). The 7B now starts at 4096 with 4 slots and reads 1.34–1.35× at its default, where it
 >   thrashed on 2 slots at 8192. ~~`Plan`'s conservative weight estimate~~ — fixed 2026-09-27 (`4e230601`): it
@@ -358,6 +361,37 @@ control thrashes (3 / 3). The tagged CUDA suite: 171 pass, 0 fail.
     learned from the build there, and the prompt carries the pre-registered decision rule.
   - CUDA's `resolveCtxCapFit` still treats a guard-pinned context as explicit. Switching it to
     `ResidentContextPinned()` is item 4 of the same prompt.
+
+**Item 26, RESULT 2026-09-28 (nobara-pc, RTX 2070 SUPER 8 GB, WebGPU through wgpu-native's Vulkan backend, driver
+595.91.07): CLEAN — go to step 2.** Logs: [`docs/measurements/mc1-webgpu-nobara-2026-09-28/`](../measurements/mc1-webgpu-nobara-2026-09-28/).
+
+- **1. Identity on Vulkan.** `mistral-tiny-window` ran here for the first time anywhere (`identity.log`) and passed
+  — the sliding-window layout has now been through the interleaved-vs-alone scenario. The full non-heavy `gpu`
+  suite: **135 pass, 0 fail** (`full-gpu-suite.log`; the Mac's own run was 132/0 — the difference is fixture
+  availability, not a platform gap). The two darwin-only tests (`_pricedAgainstMemory`, `_slotsBeforeContext`) skip
+  here as expected. `TestWebGPUKVSlots_interleavedMatchesAlone` on the real 1.5B (`GOINFER_HEAVY_TESTS=1
+  GOINFER_WEBGPU_KVSLOTS_MODEL=...`) reused 0/55/105 per turn, matching the CUDA figure exactly
+  (`identity-1.5b.log`).
+- **2. The real clamp** (`TestWebGPUKVSlots_realClamp`, `gpu/kv_slots_test.go`, committed). Loads with 4 slots
+  requested at the default 16k f32-KV context, runs 2 turns × 32 tokens on every granted slot, checks it against a
+  fresh one-slot load, and checks `LiveBufferBytes()` and `nvidia-smi` return to their pre-load baseline after
+  `Close`.
+  - **qwen2.5-coder-1.5b** (`~/models`, ~0.94 GB/slot): all 4 requested slots fit, no clamp message
+    (`realclamp-1.5b.log`).
+  - **qwen2.5-7b-instruct** (`~/models`, ~4.4 GB weights + ~1.79 GB/slot): **1 of 4 granted.** Slot 1's build (the
+    second slot; slots are 0-indexed) failed on layer 8's K/V buffer — a raw allocation failure, not the 384 MiB
+    headroom probe (the probe never ran) — with wgpu-native's own error text: `wgpuDeviceCreateBuffer ... label =
+    'kvcache-slot' ... Not enough memory left` (`realclamp-7b.log`). That answers this job's first question: **a
+    real out-of-memory buffer allocation on Vulkan fails as a normal Go `error` from `TryCreateBuffer`** — no
+    panic, no device loss, no corrupted state. Slot 0's generation is bit-identical to a fresh one-slot load,
+    `LiveBufferBytes()` matched exactly, and `nvidia-smi` read +3 MiB after `Close` (well under the 128 MiB margin
+    `cuda/lifecycle_test.go` already uses for the same kind of check).
+  - Read against the pre-registered rule: the build's own clamp message is the "logged reason"; the granted slot(s)
+    are bit-identical on both checkpoints; nothing leaked on either checkpoint; the only "validation error" that
+    appeared is the deliberate, handled `TryCreateBuffer` probe the clamp exists to catch, not an unexpected later
+    failure — no subsequent allocation, dispatch, generation or `Close` failed on either checkpoint. That is
+    **Clean** by the rule's own text ("a LATER allocation or dispatch fails" is what would make it not clean).
+- Step 2 (below) is therefore in scope, per the rule.
 
 **What was built** (`gpu/kv_slots.go`). The WebGPU resident implements `decoder.ResidentKVSlotter`; the decoder half
 is Metal's, unchanged.

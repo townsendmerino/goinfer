@@ -1,0 +1,15 @@
+=== RUN   TestWebGPUKVSlots_realClamp
+=== RUN   TestWebGPUKVSlots_realClamp/qwen2.5-7b
+    kv_slots_test.go:622: webgpu: 1 resident KV slots of 4 requested — slot 1 (1792 MB of KV at 16384 positions) did not fit: layer 8 KV: wgpu.(*Device).TryCreateBuffer: Validation Error
+        
+        Caused by:
+          In wgpuDeviceCreateBuffer, label = 'kvcache-slot'
+            Not enough memory left.
+        
+        
+    kv_slots_test.go:622: granted 1 of 4 requested KV slots — stopped by a raw BUFFER ALLOCATION failure (device out of memory before the headroom probe ran)
+    kv_slots_test.go:622: nvidia-smi used MiB: 639 before, 642 after (delta 3)
+--- PASS: TestWebGPUKVSlots_realClamp (31.87s)
+    --- PASS: TestWebGPUKVSlots_realClamp/qwen2.5-7b (31.87s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	32.183s

@@ -5,11 +5,13 @@ package gpu
 import (
 	"context"
 	"errors"
+	"io"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -547,5 +549,174 @@ func TestWebGPUKVSlots_slotsBeforeContext(t *testing.T) {
 	defer mx.Close()
 	if rdx.ctxCap != 16384 || rdx.KVSlots() != 1 {
 		t.Errorf("explicit --ctx 16384: %d positions and %d slots, want 16384 and 1 (an explicit context is never shrunk)", rdx.ctxCap, rdx.KVSlots())
+	}
+}
+
+// captureStderrGPU swaps os.Stderr for a pipe for the duration of fn and returns what was written.
+// Drains the pipe concurrently (unlike a synchronous read-after-fn) because fn here is a real
+// multi-GB checkpoint load that can print more than a pipe's buffer before returning. Restores
+// os.Stderr and closes the writer via defer, not after a plain fn() call: fn calls t.Fatalf on a
+// load failure, which unwinds the goroutine via runtime.Goexit() and would otherwise skip the
+// restore, leaving every later test's stderr silently swallowed and the reader goroutine parked
+// forever on an unclosed pipe.
+func captureStderrGPU(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stderr
+	os.Stderr = w
+	out := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		out <- string(b)
+	}()
+	// fn runs inside its own deferred restore, not captureStderrGPU's: the restore (and the w.Close
+	// that lets the reader goroutine see EOF) must happen BEFORE the return statement below reads
+	// from out, and a defer on captureStderrGPU itself would not run until AFTER that read is
+	// evaluated — deadlocking the ordinary, non-Fatalf path on every call.
+	func() {
+		defer func() {
+			os.Stderr = orig
+			w.Close()
+		}()
+		fn()
+	}()
+	return <-out
+}
+
+// TestWebGPUKVSlots_realClamp is item 26 of docs/prompts/nobara-mc1-webgpu-2026-09.md, §2: the discrete-GPU clamp
+// (a slot whose allocation fails, or whose headroom probe after it fails, stops buildKVSlots) has only run under an
+// injected failure (TestWebGPUKVSlots_clampedBuild) — nobody has seen what wgpu-native on Vulkan does when a real
+// buffer allocation runs out of VRAM. This is that measurement, on real hardware and a real checkpoint, not a
+// synthetic one: load with 4 slots requested, run every granted slot, and check the device comes back clean.
+//
+// It records what happened rather than asserting an expected count (the brief's own instruction) — but DOES fail
+// hard on any device-lost or validation error, on a slot that isn't bit-identical to a fresh one-slot load, or on
+// memory that does not return to baseline. A skip here is not a pass; only a missing checkpoint file skips.
+func TestWebGPUKVSlots_realClamp(t *testing.T) {
+	requireHeavyModel(t)
+	if runtime.GOOS == "darwin" {
+		t.Skip("the discrete-GPU allocation clamp is what this test measures; darwin prices slots against RAM before allocating anything (darwinKVSlots) and never reaches it")
+	}
+	home, _ := os.UserHomeDir()
+	for _, tc := range []struct {
+		name, envVar, defaultFile string
+	}{
+		// ~4.4 GB of int4 weights + ~1.88 GB/slot at the default 16k f32 KV on an 8 GB card: the brief
+		// expects 1 slot, with slot 2 failing — CLAUDE.md's own model-storage rule applies (~/models
+		// NVMe only; a path under /srv/models or /Volumes/ would be measuring a 5400 rpm SMR disk).
+		{"qwen2.5-7b", "GOINFER_WEBGPU_KVSLOTS_REALCLAMP_7B", "qwen2.5-7b-instruct-q4_k_m.gguf"},
+		// ~0.94 GB/slot: the brief expects all 4 to fit.
+		{"qwen2.5-coder-1.5b", "GOINFER_WEBGPU_KVSLOTS_REALCLAMP_1_5B", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := os.Getenv(tc.envVar)
+			if path == "" {
+				path = filepath.Join(home, "models", tc.defaultFile)
+			}
+			if _, err := os.Stat(path); err != nil {
+				t.Skipf("no checkpoint at %s: %v", path, err)
+			}
+			webgpuRealClampScenario(t, path)
+		})
+	}
+}
+
+// webgpuRealClampScenario is TestWebGPUKVSlots_realClamp's body, factored out so each checkpoint gets its own
+// before/after device-memory baseline and its own t.Run scope.
+func webgpuRealClampScenario(t *testing.T, path string) {
+	t.Helper()
+	beforeBytes := LiveBufferBytes()
+	beforeVRAM := gpuVRAMMiB(t)
+
+	var m *decoder.Model
+	stderr := captureStderrGPU(t, func() {
+		var err error
+		m, err = decoder.Load(path, decoder.Options{Backend: "webgpu", Quant: "int4", ResidentKVSlots: 4})
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+	})
+	t.Log(stderr) // t.Fatal inside captureStderrGPU's fn would otherwise lose whatever was already printed
+	rd, ok := m.ResidentForwardForTest().(*residentDecoder)
+	if !ok {
+		m.Close()
+		t.Fatalf("%s did not go webgpu-resident: %s", path, m.ResidentDecline())
+	}
+	n := rd.KVSlots()
+	if got := m.ResidentKVSlots(); got != n {
+		m.Close()
+		t.Fatalf("KVSlots() = %d but ResidentKVSlots() reports %d — the decoder and the resident disagree", n, got)
+	}
+	switch {
+	case strings.Contains(stderr, "MiB left after it"):
+		t.Logf("granted %d of 4 requested KV slots — stopped by the %d MiB HEADROOM PROBE after the last one that fit (webgpuSlotHeadroom)", n, webgpuSlotHeadroom>>20)
+	case strings.Contains(stderr, "did not fit"):
+		t.Logf("granted %d of 4 requested KV slots — stopped by a raw BUFFER ALLOCATION failure (device out of memory before the headroom probe ran)", n)
+	default:
+		t.Logf("granted %d of 4 requested KV slots — no clamp message, so every requested slot fit", n)
+	}
+
+	// Run the same short conversation on every granted slot: >= 32 tokens over >= 2 turns, as
+	// kvSlotsScenario's own turns do. A recurrent family would have declined multiple slots long
+	// before this point (kvSlotsRequest), so every slot here owns independent KV.
+	_, _, _, _, _, _, vocab := m.Dims()
+	prompt := []int{7 % vocab, 42 % vocab, 100 % vocab}
+	const turns, maxTok = 2, 32
+	runConversation := func(gen func(ctx context.Context, ids []int, n int, sp decoder.SamplingParams) (<-chan int, *decoder.Generation)) [][]int {
+		cur := slices.Clone(prompt)
+		out := make([][]int, turns)
+		for turn := range turns {
+			ch, g := gen(context.Background(), cur, maxTok, decoder.SamplingParams{})
+			var ids []int
+			for id := range ch {
+				ids = append(ids, id)
+			}
+			if err := g.Err(); err != nil {
+				t.Fatalf("turn %d: %v", turn, err)
+			}
+			out[turn] = ids
+			cur = append(append(cur, ids...), 900+turn, 901+turn)
+		}
+		return out
+	}
+
+	got := make([][][]int, n)
+	for s := range n {
+		if err := rd.UseKVSlot(s); err != nil {
+			t.Fatalf("UseKVSlot(%d): %v", s, err)
+		}
+		got[s] = runConversation(m.Generate)
+	}
+	m.Close()
+
+	afterBytes := LiveBufferBytes()
+	if afterBytes != beforeBytes {
+		t.Errorf("live device bytes %d before the load, %d after Close — leaked %d", beforeBytes, afterBytes, afterBytes-beforeBytes)
+	}
+	if afterVRAM := gpuVRAMMiB(t); beforeVRAM > 0 && afterVRAM > 0 {
+		const marginMiB = 128 // cuda/lifecycle_test.go's own post-Close margin, for driver/context bookkeeping
+		t.Logf("nvidia-smi used MiB: %d before, %d after (delta %d)", beforeVRAM, afterVRAM, afterVRAM-beforeVRAM)
+		if d := afterVRAM - beforeVRAM; d > marginMiB {
+			t.Errorf("nvidia-smi memory did not return to baseline: %d MiB before, %d MiB after (delta %d, margin %d) — the device did not give the model back",
+				beforeVRAM, afterVRAM, d, marginMiB)
+		}
+	} else {
+		t.Log("nvidia-smi unavailable — device-memory-return check skipped, LiveBufferBytes above still covers the leak")
+	}
+
+	// Bit-identical against a fresh one-slot load of the SAME prompt: every slot is independent KV over
+	// the same weights, so this is the single reference every granted slot must match, not one per slot.
+	ref, _ := loadWebGPUResident(t, path, decoder.Options{Quant: "int4"}, 1)
+	defer ref.Close()
+	want := runConversation(ref.Generate)
+	for s := range n {
+		for turn := range turns {
+			if !slices.Equal(got[s][turn], want[turn]) {
+				t.Errorf("slot %d turn %d: %v, want (one-slot) %v — not bit-identical", s, turn, got[s][turn], want[turn])
+			}
+		}
 	}
 }
