@@ -1,0 +1,13 @@
+// goinfer.dev: a Workers static-assets site (no Worker script). `wrangler deploy` uploads _site, which the
+// site workflow builds: the generator's pages plus the book under /book/. Docs: docs/tasks/task-site-2026-09.md S5, S8d.
+{
+  "name": "goinfer-site",
+  "compatibility_date": "2026-09-29",
+  "assets": {
+    "directory": "./_site",
+    // an unknown path serves the nearest 404.html with a 404 status
+    "not_found_handling": "404-page"
+  },
+  // the apex is attached as a custom domain (Cloudflare creates the DNS record and the certificate)
+  "routes": [{ "pattern": "goinfer.dev", "custom_domain": true }]
+}

@@ -21,7 +21,7 @@ var assetFS embed.FS
 
 // Config is what a build is told, apart from the repo.
 type Config struct {
-	BookURL   string // where the book lives; changes in one place when it moves to book.goinfer.dev
+	BookURL   string // where the book lives: /book/ on this same site (the workflow builds it into the output)
 	GitHubURL string
 	Generated string // the date shown on generated pages
 }
@@ -29,7 +29,7 @@ type Config struct {
 // DefaultConfig is the site as it is today.
 func DefaultConfig() Config {
 	return Config{
-		BookURL:   "https://townsendmerino.github.io/goinfer/",
+		BookURL:   "/book/",
 		GitHubURL: "https://github.com/townsendmerino/goinfer",
 	}
 }

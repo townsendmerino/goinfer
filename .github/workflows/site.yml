@@ -1,10 +1,12 @@
-# goinfer.dev: build, test and gate. It does NOT deploy.
+# goinfer.dev: build, gate, and (only for a release or a manual dispatch) deploy to Cloudflare Workers.
 #
-# Owner decision 2026-09-29 (docs/tasks/task-site-2026-09.md, S8): the site changes only when a release is cut. So a push or
-# pull request runs everything a deploy would run (the build, its gates, the tests, staticcheck), which catches a broken
-# site before a release, and publishes nothing. The deploy job (workflow_run after `release assets` for a v* tag, plus a
-# manual dispatch, built from the release tag's commit) is added when the owner has done S8e: the Cloudflare zone, the API
-# token and the repo secrets.
+# Owner decision 2026-09-29 (docs/tasks/task-site-2026-09.md, S8): the site changes only when a release is cut. So a push
+# or pull request runs everything a deploy would run (the site build and its gates, the book build, the tests,
+# staticcheck), which catches breakage before a release, and publishes nothing. Two things deploy:
+#   - `release assets` completing for a v* tag (workflow_run), built from that tag's commit;
+#   - a manual dispatch (the first launch, or an emergency fix), built from the ref it was dispatched on.
+# The book is part of the same artifact, at /book/ (owner decision 2026-09-29: one host). Its Jekyll build is
+# scripts/build_book_src.sh plus actions/jekyll-build-pages, the same steps book-pages.yml uses for GitHub Pages.
 name: site
 
 on:
@@ -18,6 +20,11 @@ on:
       - 'docs/measurements/peer-claim-2026-09-25.md'
       - 'docs/measurements/metal-decode-gemv-r18b-2026-09-26.md'
       - 'docs/benchmarks.md'
+      # the book ships inside the site artifact, so a change to it re-runs its build here
+      - 'docs/book/**'
+      - 'docs/book-search/**'
+      - 'scripts/build_search_index.py'
+      - 'scripts/build_book_src.sh'
       - '.github/workflows/site.yml'
   pull_request:
     paths:
@@ -27,24 +34,38 @@ on:
       - 'docs/measurements/peer-claim-2026-09-25.md'
       - 'docs/measurements/metal-decode-gemv-r18b-2026-09-26.md'
       - 'docs/benchmarks.md'
+      - 'docs/book/**'
+      - 'docs/book-search/**'
+      - 'scripts/build_search_index.py'
+      - 'scripts/build_book_src.sh'
       - '.github/workflows/site.yml'
+  workflow_run:
+    workflows: ["release assets"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Validation runs are per ref and may be superseded; the deploy job has its own, non-cancelling group.
 concurrency:
   group: site-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
+    # For workflow_run, only a successful `release assets` run for a v* tag builds; anything else is skipped.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-24.04
     env:
       GOTOOLCHAIN: local
       GOWORK: "off"
     steps:
+      # A release deploy builds the tag's commit, so the site shows exactly what was released and the claims check
+      # runs against the sources as they were at that tag.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
@@ -64,7 +85,75 @@ jobs:
       - name: test
         working-directory: site
         run: go test -count=1 ./...
-      # The build runs the claims check and the output check. It writes to a directory nothing publishes.
+      # The build runs the claims check and the output check.
       - name: build (every gate)
         working-directory: site
         run: go run ./cmd/build -repo .. -out _site
+
+      # The book, under /book/. The staging script carries the book's own guards (the head-custom.html Liquid and
+      # comment checks, the search-index size check). baseurl /book is what makes the theme's stylesheet and the
+      # search index resolve under it.
+      - name: stage the book
+        run: scripts/build_book_src.sh _book_src https://goinfer.dev /book
+      - uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1
+        with:
+          source: ./_book_src
+          destination: ./site/_site/book
+      - name: book gates
+        run: |
+          set -euo pipefail
+          b=site/_site/book
+          test -f "$b/index.html"
+          test -f "$b/search-index.json"
+          # the index page plus eleven chapters and the glossary
+          n=$(find "$b" -name '*.html' | wc -l)
+          echo "book pages: $n"
+          test "$n" -ge 13
+          # the theme's stylesheet must resolve under /book/, or every page renders unstyled
+          grep -q '/book/assets/css/style.css' "$b/index.html"
+          # Nothing may point at the old GitHub Pages path, and no root-relative link may escape /book/ (it would
+          # land on the site, not the book). The first is a stale baseurl, the second a hard-coded absolute link.
+          if grep -rEl 'href="/goinfer|src="/goinfer' "$b"; then echo "::error::the book still links to /goinfer"; exit 1; fi
+          # (to a file, not `| grep -q`: under pipefail a matching grep -q can SIGPIPE its producer, and the check
+          # would then read as passing)
+          grep -rhoE '(href|src)="/[^/"][^"]*"' "$b" | grep -vE '="/book(/|")' | sort -u > "$RUNNER_TEMP/escaping.txt" || true
+          if [ -s "$RUNNER_TEMP/escaping.txt" ]; then
+            echo "::error::root-relative links that escape /book/:"; cat "$RUNNER_TEMP/escaping.txt"; exit 1
+          fi
+      - name: the whole artifact
+        run: |
+          set -euo pipefail
+          # the generator's pages must still be there next to the book
+          test -f site/_site/models/index.html
+          test -f site/_site/404.html
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event_name != 'push' && github.event_name != 'pull_request'
+        with:
+          name: site
+          path: site/_site
+          if-no-files-found: error
+
+  deploy:
+    # Only a release (workflow_run, gated in `build`) or a manual dispatch. A push or pull request never deploys.
+    needs: build
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run'
+    runs-on: ubuntu-24.04
+    # A deploy is never cancelled half-way; a second one waits for the first.
+    concurrency:
+      group: site-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: site
+          path: site/_site
+      - uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.144.0"
+          workingDirectory: site
+          command: deploy

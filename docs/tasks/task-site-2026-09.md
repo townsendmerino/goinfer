@@ -10,9 +10,12 @@
 >   - the registry now carries a `summary`, `tasks` and per-checkpoint `label` (regenerate the matrix, never hand-edit it);
 >   - the book wears the site's tokens (live), and `-update` on the capability-matrix test writes `pull/`'s byte copy too;
 >   - **the generator, `site/`** (a module of its own): every one of the 37 families gets a page, and the Models page is built from
->     the registry. Results and findings are in §8g. Its `site` workflow validates only; it never deploys.
-> - **Next:** S1 Home, the first writeups (confidence first), S4 Download, and the S3 docs shell (S8f).
-> - **Waiting on the owner:** S8e (the Cloudflare zone, API token and repo secrets), before any deploy.
+>     the registry. Results and findings are in §8g. Its `site` workflow validates on every push and deploys only for a release or a manual run (S8d).
+> - **Next:** S1 Home (`/` is a redirect until it exists; the mockup's book card says `book.goinfer.dev`, which is now `goinfer.dev/book/`), the first writeups, S4 Download, and the S3 docs shell (S8f).
+> - **Built, not launched:** the deploy job in `.github/workflows/site.yml` (release-triggered plus manual dispatch),
+>   `site/wrangler.jsonc`, and the book's build inside the site artifact at `/book/` (S5, S8d). The repo secrets are set.
+> - **Waiting on the owner:** the first launch (S8e step 3, a manual run of the `site` workflow), and the call on whether
+>   to launch with Models and the book only or wait for Home.
 > - **Open:**
 >   - writeups #17 and #20 wait on the embed-int4 Metal issue;
 >   - which writeups ship in the first release (proposal in §4a);
@@ -190,31 +193,32 @@ same order, with a real "It doesn't…" line and its figures in `claims.json`.
 
 ## 5. S5 — Hosting and the domain
 
-- **Where the book is now:** GitHub Pages via `book-pages.yml`, at `townsendmerino.github.io/goinfer`.
-- **Decided 2026-09-29: the apex site on Cloudflare Workers (static assets); the book stays on GitHub
-  Pages at `book.goinfer.dev`.**
+- **Where the book is now:** GitHub Pages via `book-pages.yml`, at `townsendmerino.github.io/goinfer`. It stays
+  there until the launch step below.
+- **Decided 2026-09-29, revised the same day: the whole site on Cloudflare Workers (static assets), the book
+  included, at `goinfer.dev/book/`.** The first plan kept the book on GitHub Pages at `book.goinfer.dev`. The owner
+  preferred one host: one deploy, one certificate, no subdomain or second custom-domain step, and the book can share the
+  site's nav and stylesheet.
   - **Workers, not Cloudflare Pages.** Pages is still maintained, but Cloudflare now ships new
-    features to Workers only. Static-asset requests on Workers are free and unlimited, and
-    `_redirects` / `_headers` files work the same way they do on Pages.
-  - **Two hosts, split by subdomain, on purpose.** This replaces the earlier "splitting the site
-    across both does not work" line. GitHub redirecting the old `github.io` URLs by itself is what
-    keeps the book's existing links alive, and nothing on the Cloudflare side would reproduce that for
-    free. Moving the book to Cloudflare later is its own item, and it would need redirect pages left
-    on GitHub Pages.
+    features to Workers only. Static-asset requests on Workers are free and unlimited.
+  - **The book's Jekyll build runs in the site workflow** (`scripts/build_book_src.sh` plus `actions/jekyll-build-pages`,
+    the same steps `book-pages.yml` uses) with `baseurl: /book`. Its output goes into the artifact under `book/`.
+    Consequence: the book follows the release-only rule. An edit to `docs/book/` reaches the public site at the next
+    release, not on push.
+  - **GitHub Pages cannot simply be switched off.** The old address is baked into things that cannot be edited:
+    every released binary's web UI links to `townsendmerino.github.io/goinfer/` (`internal/serveapp/webui/index.html`),
+    and the published v0.19.0 and v0.20.0 release notes quote it. So Pages stays, reduced to a **redirect stub**: a
+    `404.html` that sends any old path to the same path under `goinfer.dev/book/`. It is a meta refresh plus script, not a
+    301. It is a small permanent obligation. The stub goes live only after `goinfer.dev/book/` exists, or every old link would
+    redirect to a 404.
 - **The domain: `goinfer.dev` — registered 2026-09-21.** Chosen over `.io` (a country-code TLD
   whose long-term future has been uncertain since the 2024 Chagos agreement) and `.ai` (several
   times the price, and it brands an engine as an AI product). `goinfer.com` was already taken —
   registered December 2023, not by this project. `.dev` echoes `go.dev`, which is the right
   neighbourhood for an audience of Go engineers, and the whole TLD is HSTS-preloaded, so the site is
   HTTPS-only by construction. Both hosts issue certificates automatically.
-- **Put the book on a subdomain now — `book.goinfer.dev` — rather than the apex.** Pointing the apex
-  at today's book would make the domain useful immediately, but it would move every chapter's URL a
-  second time when the real site arrives and claims the apex. A subdomain moves the book exactly
-  once, forever, and leaves the apex free for S1. GitHub Pages redirects the old
-  `townsendmerino.github.io/goinfer` URLs to a configured custom domain on its own, which satisfies
-  the URL rule below for that move.
-- **Existing URLs must keep working.** The primer is linked from the README, from release notes, and
-  from chapter to chapter. Redirects are a requirement of this item, not a nicety.
+- **Existing URLs must keep working.** The primer is linked from the README, from release notes, from every released
+  binary's web UI, and from chapter to chapter. The stub above is the requirement met, not a nicety.
 
 ## 6. S6 — What not to build, stated
 
@@ -285,24 +289,30 @@ release. The consequences are spelled out in S8d and S8f.
   `pull/*.json` or this workflow. It runs the build, every S7 gate and the claims check, so breakage is caught
   before a release, and it never publishes.
 - **What gets built:** a deploy checks out the **release tag's commit**, not `main`. The site shows exactly what was
-  released, and the claims check runs against the sources as they were at that tag.
+  released, and the claims check runs against the sources as they were at that tag. The artifact is the generator's pages
+  plus the book under `book/`, and the build gates the book too (13 pages or more, the search index present, the theme
+  stylesheet under `/book/`, no link to the old path, no root-relative link that escapes `/book/`).
 - **Steps:** checkout → setup-go → build → **every S7 gate** → deploy with
   `cloudflare/wrangler-action`. Actions are pinned by SHA, like the repo's other workflows.
   `concurrency: site`, no cancel-in-progress. **The deploy job needs the gates**, so a failed gate
   leaves the last good site up.
 - `site/wrangler.jsonc`: `assets.directory` → the build output, `not_found_handling: "404-page"`,
-  `goinfer.dev` attached as a custom domain. `_redirects` sends `www.goinfer.dev` to the apex.
+  `goinfer.dev` attached as a custom domain. `www.goinfer.dev` is not attached: `_redirects` sources are paths only, so a
+  host redirect is a Cloudflare Single Redirect rule, set in the dashboard (S8e).
 - Secrets: `CLOUDFLARE_API_TOKEN` (from the "Edit Cloudflare Workers" token template) and
   `CLOUDFLARE_ACCOUNT_ID`.
 - Preview deploys for pull requests (`wrangler versions upload`) are not in v1.
 
 ### S8e — The owner's one-time steps
-1. Put `goinfer.dev`'s DNS on Cloudflare (already there if it was registered through Cloudflare).
-2. Create the API token and add both repo secrets.
-3. `book.goinfer.dev`: add a DNS-only CNAME to `townsendmerino.github.io`, set it as the custom
-   domain in the repo's Pages settings, and enforce HTTPS.
-4. After the first deploy, check with `curl -sI`: the apex is 200; `www` redirects; an old
-   `townsendmerino.github.io/goinfer/...` chapter URL gives a 301 to `book.goinfer.dev`.
+1. Put `goinfer.dev`'s DNS on Cloudflare. **Done** (the nameservers are Cloudflare's).
+2. Create the API token and add both repo secrets. **Done 2026-09-29** (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`).
+3. **First launch:** run the `site` workflow by hand (Actions → site → Run workflow, on `main`). The deploy job attaches
+   `goinfer.dev` as a custom domain, so Cloudflare creates the DNS record and certificate. Then check with `curl -sI`:
+   `https://goinfer.dev/` and `https://goinfer.dev/book/` are 200, and `https://goinfer.dev/models/` too.
+4. **Then, and only then, the stub** (Claude does this in one commit): `book-pages.yml` publishes the redirect stub instead
+   of the book, and the README, `docs/README.md` and the web UI link move to `goinfer.dev/book/`. Check that an old
+   `townsendmerino.github.io/goinfer/<chapter>.html` lands on the same chapter under `/book/`.
+5. Optional: `www.goinfer.dev` → the apex, as a Cloudflare Single Redirect rule (the `www` DNS record must be proxied).
 
 ### S8f — Keeping it current
 - **Generated pages update themselves, at a release.** A new family, a new checkpoint or a new release rebuilds the
