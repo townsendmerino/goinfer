@@ -1,7 +1,13 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
-> **Status, 2026-09-27: C0 and D0 done, D1 and C1 built.** D6a needs the nobara fixture and the owner's call on
-> which template to grade. C2 done. D5 built (`POST /v1/systemone`, TypeSafe-compatible). D6a is pre-registered and waits on nobara (`docs/prompts/nobara-decisions-d6a-2026-09.md`).
+> **Status, 2026-09-28: C0–C2, D0, D1 and D5 done; D6a queued; D7 projected.**
+> - **D6a** is pre-registered and amended twice (smaller samples; the bias-adjusted ECE bar). It is queued on nobara
+>   as `d6a-amended-cuda` and decides D2–D4.
+> - **D7's projection** is in [`decisions-d7-2026-09-28.md`](../measurements/decisions-d7-2026-09-28.md). For one
+>   question, a decision beats a schema answer by 1.11× at 256 prompt tokens and by ~1.01× at 4K. For five questions
+>   about one state on qwen3_5, decisions are 3–5× slower, so D8's trigger is projected to fire.
+> - Previous status, 2026-09-27: C0 and D0 done, D1 and C1 built. C2 done. D5 built (`POST /v1/systemone`,
+>   TypeSafe-compatible).
 > - **C0 clears for enum, boolean and integer fields** ([`confidence-c0-2026-09-27.md`](../measurements/confidence-c0-2026-09-27.md)).
 >   AUROC on the 1.5B: 0.847 / 0.727 / 0.680. The readout costs 4.20% of a token on the 1.5B and 1.44% on the 7B.
 >   Number and string fields are parked: the labelled set drew too few wrong answers to judge them.
@@ -598,6 +604,13 @@ exists.
   saturating concurrency (MC1/MC3 slots where they exist).
 - Not a kill gate: the calibrated distribution is the product whether or not it is faster. It is the
   number the docs and site quote, and it is quoted as measured.
+- **Projection done, 2026-09-28** ([`decisions-d7-2026-09-28.md`](../measurements/decisions-d7-2026-09-28.md)),
+  for nobara CUDA on Qwen3.5-9B, the only machine with figures on record.
+  - One question: the decision is faster by 1.11 / 1.03 / 1.01× than a schema answer at K = 256 / 1024 / 4096, and
+    by 1.9–2.0 / 1.2 / 1.06× than a tool call.
+  - Five questions about one state: decisions are **3.2–4.9× slower**, because each question pays a full prefill on
+    qwen3_5.
+  - The Mac cannot run the 9B resident. The measurement is not yet queued.
 
 ### D8 — shared state, many questions (deferred)
 
