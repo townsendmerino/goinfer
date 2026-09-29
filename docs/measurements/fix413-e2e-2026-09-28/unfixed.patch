@@ -1,0 +1,13 @@
+diff --git a/internal/serveapp/openai.go b/internal/serveapp/openai.go
+index afe2da7a..23d4f80c 100644
+--- a/internal/serveapp/openai.go
++++ b/internal/serveapp/openai.go
+@@ -1146,7 +1146,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool)
+ 		// section), and the margin is live memory, which already excludes what the other generations hold. Split there,
+ 		// it refused ~1000-token 7B prompts under MC3 (docs/measurements/spec-vs-batching-metal-2026-09-27.md §5).
+ 		share := 1
+-		if lm.concurrent > 1 && !(residentPath && lm.model.ResidentActive()) {
++		if lm.concurrent > 1 { // TE-e2e control: 5a92348a's fix reverted
+ 			share = min(lm.concurrent, lm.turns.load()+1)
+ 		}
+ 		if aerr := lm.model.AdmitPrefillMemoryShare(len(gr.promptIDs), gr.maxTokens, residentPath, share); aerr != nil {

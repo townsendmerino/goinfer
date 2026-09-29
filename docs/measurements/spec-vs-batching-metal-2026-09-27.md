@@ -137,6 +137,10 @@ The spec cells never did.
 - So whether §5's refused requests would have fit was not measured. It needs a rerun with the memory headroom the
   09:39 cells had.
 - The swap guard refused requests rather than letting the machine page further, which is its job.
+- **Rerun pre-registered and queued, 2026-09-28:** [`fix413-e2e-2026-09-28.md`](fix413-e2e-2026-09-28.md).
+  - Both arms are built from one commit and differ only by the fix.
+  - A memory ballast holds available memory in the 1.0–1.6 GB band where the arms disagree.
+  - Validity rules and a do-nothing check (the unfixed build must refuse) were written first.
 
 ## Update 2026-09-27: §4's divergence found and fixed
 
