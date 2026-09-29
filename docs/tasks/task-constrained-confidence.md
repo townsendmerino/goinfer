@@ -610,7 +610,10 @@ exists.
     by 1.9–2.0 / 1.2 / 1.06× than a tool call.
   - Five questions about one state: decisions are **3.2–4.9× slower**, because each question pays a full prefill on
     qwen3_5.
-  - The Mac cannot run the 9B resident. The measurement is not yet queued.
+  - The Mac cannot run the 9B resident.
+  - **Measurement pre-registered, 2026-09-28** (the record's §4): nobara CUDA, batch 1 (qwen3_5 serves one slot),
+    8 states per K, paired ratios against the band, and D8's trigger as a state-prefill share ≥ 0.70 at K = 1024.
+    It is about 35 min and not queued; it needs `d7_bench.py` built and smoke-tested first.
 
 ### D8 — shared state, many questions (deferred)
 

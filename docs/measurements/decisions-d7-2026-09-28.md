@@ -83,8 +83,71 @@ A tool call also puts the tool's definition into the prompt. Measured with `chat
   both routes stay prefill-bound. The single-question ratios should move toward 1. The multi-question gap depends on
   prefill throughput under concurrency, which has no figure on record for this family.
 
-## 4. Measurement
+## 4. Measurement: pre-registration (2026-09-28, before any harness or run exists)
 
-*(Not run. It goes on the night queue, and its pre-registration is written here first: same model, same prompts,
-quiet box, paired differences, decisions/s at batch 1 and at saturating concurrency. Each measured ratio is set
-beside §3's band.)*
+### 4.1 Setup
+
+- **Machine:** nobara CUDA, on the night queue, with the harness defaults (`BENCH_MAX_LOADAVG=1.0`, idle-gated per
+  request block) and the TE9 timing lock.
+- **Model:** Qwen3.5-9B Q4_K_M from `~/models`, served by one pinned `goinfer-serve` binary, named with its commit in
+  the record.
+  - **Context:** `--ctx 8192`, so the 4096-token state plus a tool definition fits. The run must show the resident
+    decode path.
+  - If the resident declines at 8192, the harness retries at `--ctx 5120`, records the decline and the context used,
+    and goes on. A CPU fallback voids the run.
+- **Concurrency:** batch 1 only. `docs/server.md` gives the Gated-DeltaNet families one slot, so "saturating
+  concurrency" is a queue for qwen3_5 and measures nothing new. Stated here, not measured.
+
+### 4.2 Prompts
+
+- **Setup:** 8 distinct states at each K ∈ {256, 1024, 4096}, calibrated to K state tokens with the model's own
+  tokenizer, as `bench_prompts_calibrate.py` does for `bench_peer.py`. They are support-ticket-like prose, and every
+  state is different, so no prefix is shared.
+- **One question per state**, rotating over the kinds: noul, a six-level score, and a four-option choice.
+- **The five-question set** is those three plus a second noul and a second choice, all about the same state.
+- **Built and frozen with the harness:** the prompt file's sha256 is recorded here before the run.
+
+### 4.3 The arms, all over HTTP, timed client-side from request sent to response complete
+
+| arm | request | what it answers |
+|---|---|---|
+| **decision** | `POST /v1/systemone`, the state and one question | one question |
+| **schema** | `POST /v1/chat/completions`: the state plus the question's instructions as the user turn, `response_format` a one-field `json_schema` (the question's enum, boolean or integer), greedy | one question |
+| **tool** | the same chat request with one `decide` tool whose `answer` parameter carries the same enum, `tool_choice: "required"`, greedy | one question |
+| **decision ×5** | `POST /v1/systemone`, the state and all five questions | five questions |
+| **schema ×5** | one chat request whose `json_schema` has all five fields | five questions |
+
+- **Recorded per request:** wall time, `usage.input_tokens` and `usage.output_tokens`, and the arm's actual prompt
+  length.
+- **Order:** the three single-question arms rotate through a 3 × 3 Latin square over consecutive states. The two
+  five-question arms alternate AB / BA by state.
+- **Warm-up:** 2 requests per arm, discarded, after the server loads.
+
+### 4.4 What is computed
+
+- **Per state, the paired ratio** t_arm ÷ t_decision (single-question) or t_decision×5 ÷ t_schema×5. The point
+  estimate is the geometric mean over the 8 states, with a t-interval on the log ratios (df 7).
+- **Against §3's band.**
+  - A ratio whose 95% interval overlaps its projected band, widened by ±10%, is **as projected**.
+  - Otherwise it is **off projection**. The record then names which input was wrong, by recomputing t_prefill and
+    t_decode from the measured requests (usage tokens ÷ time), before the number is quoted anywhere.
+- **D8's trigger:** the state-prefill share of a five-question decision request,
+  **share = 1 − t_decision×5(K = 32) ÷ t_decision×5(K)**. This is what a longer state adds, since the 32-token cell has
+  almost none. It needs a K = 32 cell, 8 states, run the same way. **D8 fires if the share is ≥ 0.70 at K = 1024.**
+  1024 is the "realistic workload" D8 asked for: a support ticket plus a little history.
+
+### 4.5 What is quoted
+
+- The docs and site quote the measured ratios, with the machine, date and interval. They never quote §3's
+  projection.
+- The single-question ratio goes into `docs/server.md` only as "about the same as" or "N× faster than" constrained
+  generation. The five-question ratio goes there as the cost warning it already carries, now with its number.
+
+### 4.6 Cost
+
+**About 35 minutes, one night job** (from §3's projections, plus about 25% for warm-up, load and gating):
+- single-question arms: about 7 minutes;
+- five-question arms: about 12.5 minutes;
+- the K = 32 cell: about 1 minute.
+
+**Not yet queued.** It needs the harness (`d7_bench.py`, next to this file), built and smoke-tested by day first.

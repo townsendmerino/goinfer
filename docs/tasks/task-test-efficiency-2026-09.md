@@ -510,8 +510,15 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
     deepseek_v2.
   - **Real demo, 0.5B:** L1's own change (`3cd62e6d` → `5c85f7c0`) comes back DIFFERENT from prefill logit 0, as it
     must.
-  - **Found on the way:** Metal's `BuildResident` panics on qwen3_next's W4A8 concat. It is a real bug, not yet filed
-    or fixed.
+  - **Found on the way:** Metal's `BuildResident` panics on qwen3_next's W4A8 concat.
+    - **RETRACTED 2026-09-28: not a bug.** The panic is `W4A8 concat needs K%32==0 (group=32), got K=16 (audit M-10)`.
+      It is thrown on purpose (`metal/model.go`, `int4Concat`) and recovered by `BuildResident` into a clean decline
+      to the CPU.
+    - The old `qwen3next-tiny` fixture had `moe_intermediate_size: 16`, so its expert down-projection had K = 16.
+      Real qwen3_next widths are multiples of 32.
+    - 1b698b22 re-pinned the fixture at 32. `gate identity -backend metal -families qwen3_next HEAD HEAD` then runs
+      both Metal cells resident and IDENTICAL.
+    - The same decline line appears in the Metal suite logs under `docs/measurements/` from before the re-pin.
   - **Limits:** no CUDA backend here, and the dumper uses a LogitProcessor, so device-side greedy-argmax paths are not
     what it compares.
   - **OWNER DECISION 2026-09-28: yes, validation may be inherited by identity.**
