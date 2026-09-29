@@ -1468,6 +1468,10 @@ n-gram loop already prefers when present).
       - Any hard gate fails: parked with the numbers.
     - **CUDA:** MC3 CUDA shipped (7a44a58e) and its spec verify is cheap (θ 0.155–0.251), so the same candidate may pay
       there. It gets its own grading on nobara, and is not inferred from Metal's.
+      - **The premise comes first:** CUDA's own S and L under the 2026-09-27 rule, unchanged, with a check that the
+        CUDA resident survives the embed-int4 default.
+      - Prompt: [`nobara-mc4-spec-alone-cuda-2026-09.md`](../prompts/nobara-mc4-spec-alone-cuda-2026-09.md); night
+        queue, not run.
   - **P10 on Metal, projected 2026-09-28, not started (owner):**
     [`p10-metal-projection-2026-09-28.md`](../measurements/p10-metal-projection-2026-09-28.md).
     - Code 1.14–1.49×, math 1.33–1.73×; chat a loss, unguarded.
