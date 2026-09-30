@@ -3,8 +3,10 @@
 > **Current, 2026-09-29. LIVE at https://goinfer.dev (first launch 2026-09-29, a manual run of the `site` workflow). Built: the
 > generator, Models (S2), Home (S1), Download (S4), the Docs shell (S3), the writeup machinery (S8c) with the first writeup, and the
 > book at `/book/`. The old GitHub Pages address is a redirect stub.**
+>   **Amended 2026-09-30 (S8, below): a push to `main` that changes `docs/capability-matrix.json` also deploys.**
 > - **Owner decisions:**
->   - the site changes **only when a release is cut** (S8d);
+>   - the site changes **only when a release is cut** (S8d), **or when the capability matrix on `main` changes**
+>     (amendment 2026-09-30);
 >   - the 26B figure is **40.2 tok/s** (done);
 >   - **twenty** "What's different" writeups (§4a);
 >   - one host: the book lives at `goinfer.dev/book/` (§5).
@@ -267,6 +269,22 @@ same order, with a real "It doesn't…" line and its figures in `claims.json`.
 that moves with every push to `main`. So a push never deploys. It builds and runs the gates, and the deploy waits for a
 release. The consequences are spelled out in S8d and S8f.
 
+**Amendment, 2026-09-30 (owner, via the positioning brief): a capability-matrix change on `main` deploys too.** The
+Models page said 37 families while `main` had 39, and the count would stay wrong until the next release. Two things
+found while making the change:
+- The rule was already not what ran: both deploys so far (2026-09-30, `914de67a` and `634799af`) were manual
+  dispatches from `main`, not release builds. The latest release is v0.19.0 (2026-09-18), so the live site already
+  described `main`.
+- A deploy from `main` renders `main`. Between releases the Models pages can therefore list a family the latest
+  release's binaries do not carry yet (Gemma 1 and 2 are in `main`, not in v0.19.0). Nothing on the site marks that
+  today.
+
+How it works (`site.yml`): every build writes the matrix's sha256 to `/capability-matrix.sha256`. A push to `main`
+reads the live copy and deploys when it differs, or when the live site has none (a 404). Comparing against the live
+site, rather than asking whether this push touched the file, means a push run that was cancelled or failed before its
+deploy is made up by the next push that runs the workflow. Push runs no longer cancel each other; pull-request runs
+still do. Any other push still deploys nothing.
+
 ### S8a — The generator
 - **A Go program in `site/`, with its own `go.mod`** (`github.com/townsendmerino/goinfer/site`). A
   markdown library for the writeups then never enters goinfer's own dependency graph.
@@ -332,8 +350,8 @@ release. The consequences are spelled out in S8d and S8f.
 5. Optional: `www.goinfer.dev` → the apex, as a Cloudflare Single Redirect rule (the `www` DNS record must be proxied).
 
 ### S8f — Keeping it current
-- **Generated pages update themselves, at a release.** A new family, a new checkpoint or a new release rebuilds the
-  site when the next release is cut, and only then. S7 fails the build if a family has no page. Numbers measured after
+- **Generated pages update themselves, at a release** (and, since the 2026-09-30 amendment, when the capability
+  matrix on `main` changes). A new checkpoint or a new release rebuilds the site when the next release is cut. S7 fails the build if a family has no page. Numbers measured after
   the last release do not appear until the next one, which is intended.
 - **Numbers cannot silently go stale.** The claims check fails the build when a cited source
   changes under it.
