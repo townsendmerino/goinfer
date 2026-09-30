@@ -367,6 +367,11 @@ func (d *Decider) Scores(ctx context.Context, r Request) ([]float64, error) {
 func (d *Decider) score(ctx context.Context, kind, state, question string, shown, descs []string, temp float64) ([]float64, int, error) {
 	var ids []int
 	var err error
+	if d.head != nil { // the head was trained on jev_core's prompts, which cut a long state
+		if state, _, err = truncateState(d.tok, state); err != nil {
+			return nil, 0, err
+		}
+	}
 	if d.template == TemplateChat {
 		ids, err = d.tok.EncodeChat(RenderChat(kind, state, question, shown, descs...))
 	} else {

@@ -35,6 +35,16 @@ func (p PlainTokenizer) EncodePlain(s string) ([]int, error) {
 	return p.Tok.EncodeSegments([]tokenizer.Segment{{Text: s}}, false)
 }
 
+// DecodePlain implements StateDecoder: the tokenizer's decode, with invalid UTF-8 replaced exactly as transformers'
+// byte-level decoder replaces it (a cut can split a character).
+func (p PlainTokenizer) DecodePlain(ids []int) (string, error) {
+	s, err := p.Tok.Decode(ids)
+	if err != nil {
+		return "", err
+	}
+	return pyReplaceInvalidUTF8([]byte(s)), nil
+}
+
 // EncodeChat implements Tokenizer: the message as one user turn with the assistant turn opened, and, for a template
 // with <think>/</think>, the empty think block its enable_thinking=False rendering emits, so the next token is the
 // answer rather than a think marker. The suffix is resolved through this tokenizer and verified, never pinned: the

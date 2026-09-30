@@ -1,6 +1,6 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
-> **Status, 2026-09-30: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b sized, not queued (owner's call); D7 projected.**
+> **Status, 2026-09-30: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b queued on nobara for tonight's run; D7 projected.**
 > - **D6a** ([`decisions-d6a-2026-09-28.md`](../measurements/decisions-d6a-2026-09-28.md)): arm A (Qwen3.5-9B, chat-v1, calibrated)
 >   reads top-1 0.4197 and ECE 0.1656, against JEV-9B's 0.9181 and a bar of 0.0632, so the registered rule says **build D2–D4**.
 >   The control failed as registered (bare-v1 0.3378 against the authors' B0 0.5180). The investigation found the inputs identical
@@ -504,9 +504,18 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
       which is decode-speed and memory-bandwidth bound.
   - **Not done:**
     - Serve's `/v1/systemone` still answers by Route A only.
-    - `jev_core`'s state truncation (a state over 1024 tokens is cut to its first 60% and last 40%) is not
-      reproduced. None of the 150 D0 items needs it, but a Route B request with a longer state renders a prompt the
-      head was not trained on.
+    - ~~`jev_core`'s state truncation~~ **done 2026-09-30** (`internal/decide/truncate.go`). A state over 1024 tokens
+      is cut to its first 614 and last 410 tokens and decoded back to text, with a split character replaced exactly as
+      CPython's `errors="replace"` does it.
+      - **Gate:** `TestTruncateState_matchesReference`, eight states built to cut badly (CJK, emoji, accents, rare
+        ideographs, a multi-byte seam, exactly 1024 and 1025 tokens). The kept text and the whole prompt's token ids
+        match transformers with JEV-9B's own tokenizer (`scripts/pin_decisions_truncation.py`). A 50/50 cut goes red.
+      - **CPython's rule:** `TestPyReplaceInvalidUTF8` holds the replacement to CPython's output on 16 byte strings,
+        the cases where Go's `strings.ToValidUTF8` differs.
+      - **Scope:** it runs on the head route only; Route A's prompts are unchanged. None of the pinned corpus's 26,824
+        states reaches 1024 tokens (the longest is 541), so it matters for served requests, not for D6.
+      - **Still different from the reference:** a state containing special-token text such as `<|im_start|>`, which
+        transformers parses as one special token and goinfer encodes as plain text.
     - A batched or resident hidden-state path for Qwen3.5, which D6b's cost depends on (below).
 - **D6b sizing, from that probe.** The 150 items are 27,861 tokens:
 

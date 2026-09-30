@@ -24,6 +24,9 @@ func (f fixedTokenizer) EncodePlain(s string) ([]int, error) {
 	if ids, ok := f[s]; ok {
 		return ids, nil
 	}
+	if len(s) < 200 { // a short state, which the head route counts before rendering: well under the 1024-token cut
+		return []int{0}, nil
+	}
 	return nil, errors.New("fixedTokenizer: prompt not in the golden")
 }
 
