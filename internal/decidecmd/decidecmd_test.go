@@ -1,6 +1,7 @@
 package decidecmd
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -30,5 +31,18 @@ func TestOut_alwaysSaysCalibratedAndRoute(t *testing.T) {
 	b, _ := json.Marshal(Out{Kind: "noul", Route: "label"})
 	if s := string(b); !strings.Contains(s, `"calibrated":false`) || !strings.Contains(s, `"route":"label"`) {
 		t.Errorf("out line %s", s)
+	}
+}
+
+// TestHeadFlag_refusesAConflictingLoRA: an unmerged head brings its own adapter, so a different --lora is refused before
+// anything loads, rather than one of the two silently winning.
+func TestHeadFlag_refusesAConflictingLoRA(t *testing.T) {
+	c := newCommon("decide", decideUsage)
+	if err := c.fs.Parse([]string{"--model", "unused", "--head", "../../testdata/decisions/judge-tiny", "--lora", "/some/other/adapter"}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := c.open(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "brings its adapter") {
+		t.Fatalf("got %v", err)
 	}
 }

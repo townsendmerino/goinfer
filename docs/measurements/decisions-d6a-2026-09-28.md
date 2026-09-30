@@ -111,7 +111,9 @@ split is made of. It is not a second defect. The size of that share is an **esti
   0.492, and the OOD-weighted top-1 from 0.338 to 0.451. That is about 11 of the 14 points.
 - **Why it is only an estimate.** The shifts come from 7–17 items per environment, and choice and score are left as measured.
 - **The rest** is item-level difference that samples this small cannot resolve.
-- **The check that would settle it** is the transformers reference on D6a's 400 OOD noul rows. That is a night job, not run.
+- **The check that would settle it** is the transformers reference on D6a's 400 OOD noul rows. Queued on nobara 2026-09-30 as
+  `d6a-b0-ood-noul` ([`run-b0-ood-noul.sh`](decisions-d6a-2026-09-28/run-b0-ood-noul.sh) at 3e2f9ea3, `pin_decisions_d0.py b0rows`).
+  A two-row probe matched goinfer's token counts exactly (516 and 124).
 
 **Two consequences for Route A (D1), neither of which touches D6a's decision:**
 
