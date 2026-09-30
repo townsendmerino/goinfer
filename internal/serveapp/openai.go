@@ -46,16 +46,17 @@ const maxOutputTokensCeiling = 131072
 // The server registry holds N of them keyed by served name; each has its own
 // mutex, so requests to distinct models run in parallel.
 type loadedModel struct {
-	tk      *tokenizer.Tokenizer
-	model   *decoder.Model
-	tmpl    *chat.Template // nil → raw completion
-	stopIDs []int          // turn-stop token ids from the template
-	eosIDs  []int
-	vocab   int
-	name    string // served id (reported by /v1/models, matched on the request model field)
-	fp      string // model fingerprint (binds --session-dir snapshots)
-	adapter string // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
-	spec    bool   // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
+	tk           *tokenizer.Tokenizer
+	model        *decoder.Model
+	tmpl         *chat.Template // nil → raw completion
+	stopIDs      []int          // turn-stop token ids from the template
+	eosIDs       []int
+	vocab        int
+	name         string // served id (reported by /v1/models, matched on the request model field)
+	fp           string // model fingerprint (binds --session-dir snapshots)
+	adapter      string // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
+	spec         bool   // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
+	specAdaptive bool   // --spec-adaptive: MC4 candidate, speculate only while alone, join MC3's batch otherwise
 	// blockSpec is an attached pretrained block drafter (--drafter), nil when unused. Attached
 	// ONCE at load: the weight upload is a per-process cost, and doing it per request measured
 	// 0.17x — a 6x loss — with the loop itself perfectly healthy (docs/spec/08).
@@ -217,11 +218,17 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 		// MC3: a GPU-resident model runs n generations at once only when its resident can batch their decode tokens
 		// (decoder.Model.EnableResidentConcurrency — a dense family on at least two resident KV slots; capped by the
 		// slot count, which --kv-sessions sets). Speculative decode and adapters take the resident exclusively, so a
-		// model serving them keeps one generation at a time.
-		if lm.spec || lm.blockSpec != nil || lm.adapter != "" {
+		// model serving them keeps one generation at a time — UNLESS --spec-adaptive is also set (MC4 candidate,
+		// docs/tasks/task-concurrency-2026-09.md): then a spec generation gives the resident up at a round boundary
+		// whenever another is waiting, so MC3 can still run. Block drafters and adapters are unaffected by
+		// --spec-adaptive; they still take the resident exclusively for the whole generation.
+		if lm.blockSpec != nil || lm.adapter != "" || (lm.spec && !lm.specAdaptive) {
 			n = 1
 		} else {
 			n = lm.model.EnableResidentConcurrency(n)
+			if lm.spec && lm.specAdaptive {
+				lm.model.SetSpecAdaptive(n > 1)
+			}
 		}
 	case !lm.model.CPUConcurrentSafe():
 		n = 1

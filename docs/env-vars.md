@@ -11,7 +11,7 @@ is grep-derivable and enumerated at the bottom.
 
 ## Read once per model, at Load (since 2026-09-24)
 
-These fifty-two knobs are snapshotted when a model is loaded, not read on every forward:
+These fifty-three knobs are snapshotted when a model is loaded, not read on every forward:
 `GOINFER_ATTN_GROUPED`, `GOINFER_ATTN_ROW_TILE`, `GOINFER_PREFILL_ATTN_WORKERS`,
 `GOINFER_FUSED_ATTENTION`, `GOINFER_MLA_NAIVE`, `GOINFER_MOE_EXPERT_MAJOR`, `GOINFER_BATCHED_PREFILL`,
 `GOINFER_NO_KVONLY_PREFILL`, `GOINFER_NO_GREEDY_FASTPATH`, `GOINFER_NO_OPTFWD`,
@@ -27,7 +27,7 @@ These fifty-two knobs are snapshotted when a model is loaded, not read on every 
 `GOINFER_MOE_PREAD`, `GOINFER_MOE_RESIDENCY`, `GOINFER_MOE_RESIDENCY_SCOPE`, `GOINFER_NO_RESIDENT_MEM_GUARD`,
 `GOINFER_PRECISE_MATH`, and (phase 6, rollback switches for default-on paths) `GOINFER_CUDA_MOE_EXPERT_MAJOR`,
 `GOINFER_CUDA_ATTN_FUSED_TILE`, `GOINFER_MOE_DMA_OVERLAP`, `GOINFER_MOE_PIN_REGISTER`,
-`GOINFER_MOE_PREAD_CPU`. Changing one after Load does not affect a model already loaded. A
+`GOINFER_MOE_PREAD_CPU`, `GOINFER_SPEC_ADAPTIVE_NEVER_YIELD`. Changing one after Load does not affect a model already loaded. A
 library caller can set any of them for one model with `decoder.Options{Knobs: &decoder.Knobs{name: value}}` (which
 overrides the environment for that model only).  The CPU, CUDA and Metal paths
 all read them from the model's snapshot (`decoder.Model.Knob`). See
@@ -143,6 +143,10 @@ mmap elsewhere (`decoder.MoEPagerDefault`). serve no longer sets it),
 `GOINFER_CUDA_ATTN_FUSED_TILE` (CUDA: overrides the attn_fused kernel's tile-size selection —
 `64x64`, `128x64`, `32x64`, or `32x32`; an R5-phase investigation knob, default unchanged, the
 32-row tiles are a measured regression kept only for A/B comparison),
+`GOINFER_SPEC_ADAPTIVE_NEVER_YIELD` (MC4 "spec inside a batch" premise, `docs/tasks/task-concurrency-2026-09.md`:
+set to force a `-spec-adaptive` generation to wait for exclusive resident access every round instead of ever
+yielding to MC3's batch, reproducing today's plain `-spec ngram` one-at-a-time behavior even with
+`-spec-adaptive` on. A measurement bisect, not a shipped policy — no effect without `-spec-adaptive`),
 `GOINFER_CUDA_VISION_ATTN` (CUDA vision tower: `bm128` is the DEFAULT since 2026-09-21 — the R8 fused non-causal attention kernel for the SigLIP tower, 6.4× faster (26.0 → 4.1 s/image). Its output differs from the pre-2026-09-21 `attn_img_batched` path at tower level (cosine 0.96 vs the old resident output; cosine vs the CPU int8 reference unchanged, ~0.91-0.93 either way) and a pre-registered served downstream check found it perturbs greedy generation somewhat MORE than a 1-LSB pixel jitter control does (no defect found in either check) — the owner chose the speedup anyway, overriding both pre-registered rules; see `docs/measurements/vision-tower-mma-2026-09-21.md` and `vision-tower-downstream-2026-09-21.md`. `exact` restores the old kernel; `bm64` selects the other fused arm),
 `GOINFER_MOE_PIN_REGISTER` (CUDA C′: DEFAULT ON. Stages the expert-stack DMA source by pinning the
 already-populated host bytes in place (aikit `Device.RegisterMappedHostBuffer`, gpu/v0.33.3) instead

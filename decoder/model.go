@@ -52,6 +52,10 @@ type Model struct {
 	// batcher: MC3's coordinator (mc3_batch.go) — several generations on the resident at once, each on its own KV
 	// slot, their decode tokens joined into shared steps. nil unless EnableResidentConcurrency enabled it.
 	batcher *residentBatcher
+	// specAdaptive: MC4's "speculate when alone, batch under load" candidate (SetSpecAdaptive,
+	// docs/tasks/task-concurrency-2026-09.md). off by default — genNgramInto's exclusive claim is unchanged unless
+	// this is on AND batcher is non-nil.
+	specAdaptive bool
 	// cpuBatch: MC3c step 2's coordinator (cpu_batch.go) — several CPU generations' decode tokens joined into one
 	// batched forward. nil unless EnableCPUBatch enabled it. cpuBatchMode is Options.CPUBatchDecode.
 	cpuBatch     *cpuBatcher

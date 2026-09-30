@@ -33,6 +33,22 @@ type mc3Fake struct {
 	events    []byte // P: a PrefillLast call, S: a StepBatch, F: a single-sequence Forward
 }
 
+// ForwardN overrides fakeResident's own (which calls ITS Forward, not this type's guarded/slot-aware one, since Go
+// embedding is not virtual dispatch): a multi-row verify pass, one row per position, on the bound slot — exactly
+// what a real ForwardN's sequential-write contract requires, and guarded the same way every other entry point here
+// is, so a spec round's multi-token verify is caught by the same concurrent-use panic StepBatch/Forward/PrefillLast
+// already are.
+func (f *mc3Fake) ForwardN(embs [][]float32, startPos int) ([][]float32, error) {
+	f.enter()
+	defer f.leave()
+	f.wait()
+	rows := make([][]float32, len(embs))
+	for i, e := range embs {
+		rows[i] = f.fwd(f.bound, e, startPos+i)
+	}
+	return rows, nil
+}
+
 // PrefillLast makes mc3Fake a batched prefiller (Prefiller): the positions from startPos on, in order, as Forward would
 // write them — chunk-invariant by construction, as a real prefill must be for chunking to be sound.
 func (f *mc3Fake) PrefillLast(ctx context.Context, embs [][]float32, startPos int) ([]float32, error) {

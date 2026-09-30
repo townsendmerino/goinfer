@@ -40,6 +40,12 @@ const (
 
 	// Phase 6: a rollback switch that had been filed as a diagnostic.
 	knobMoEPreadCPU = "GOINFER_MOE_PREAD_CPU"
+
+	// MC4 "spec inside a batch" premise (docs/tasks/task-concurrency-2026-09.md): does the just-shipped
+	// switch's per-round yield ever cost more than it buys on copy-heavy traffic, where staying exclusive
+	// beats joining MC3's batch? Set to force genNgramInto's adaptive round loop to never yield — the
+	// measurement this bisects, not a shipped policy.
+	knobSpecAdaptiveNeverYield = "GOINFER_SPEC_ADAPTIVE_NEVER_YIELD"
 )
 
 // cudaKnobs are phase 3's: the CUDA backend's operator knobs, snapshotted here with the rest so one mechanism
@@ -60,7 +66,7 @@ var knobNames = []string{
 	knobBatchedPrefill, knobNoKVOnlyPrefill, knobNoGreedyFastpath, knobNoOptFwd, knobNoSampleFastpath,
 	knobNoTopKFastpath, knobOptFwdMaxTemp, knobCPUFastAttention,
 	knobMoECacheExperts, knobMoECacheSlots, knobNoFitDefault, knobNoFitGuard, knobNoResidency,
-	knobNoResidentReuse, knobSSMResident, knobMoEPreadCPU,
+	knobNoResidentReuse, knobSSMResident, knobMoEPreadCPU, knobSpecAdaptiveNeverYield,
 }
 
 // metalKnobs are phase 4's: the Metal backend's operator knobs, same arrangement as cudaKnobs (read through

@@ -131,6 +131,12 @@ func (m *Model) ResidentConcurrency() int {
 	return m.batcher.maxHolders
 }
 
+// SetSpecAdaptive turns MC4's "speculate when alone, batch under load" candidate on or off
+// (docs/tasks/task-concurrency-2026-09.md). Call it once at load, before any generation starts. It has no
+// effect unless EnableResidentConcurrency also enabled a batcher — with no batcher, genNgramInto's
+// exclusive claim behaves exactly as it does with this off.
+func (m *Model) SetSpecAdaptive(on bool) { m.specAdaptive = on }
+
 // ResidentBatchCapable reports whether EnableResidentConcurrency could enable anything on this model.
 func (m *Model) ResidentBatchCapable() bool {
 	st, ok := m.resident.(ResidentBatchStepper)

@@ -286,6 +286,7 @@ type config struct {
 	maxBodyBytes    int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
 	unloadDrainWait time.Duration // -unload-drain-wait: how long an unload waits for in-flight requests to drain before 202 (native free continues detached)
 	spec            string        // -spec: "" (off) | "ngram" — lossless n-gram speculative decode
+	specAdaptive    bool          // -spec-adaptive: MC4 candidate, "speculate when alone, batch under load" (needs -spec ngram and a resident that batches; off has no effect otherwise)
 	drafter         string        // -drafter: dir of a pretrained BLOCK drafter (DFlash); resident GPU backends only
 	allowAdmin      bool          // -allow-admin: enable POST /admin/models/{load,unload}
 	haltFile        string        // -halt-file: polled every 250ms; present ⇒ halted, absent ⇒ resumed (K2)
@@ -438,6 +439,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	flag.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")
 	flag.DurationVar(&cfg.unloadDrainWait, "unload-drain-wait", 5*time.Second, "how long POST /admin/models/unload waits for in-flight requests to drain before returning 202 (native memory is freed as they finish either way; the model is unroutable immediately). ?wait=false returns 202 at once")
 	flag.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth. Wins on copy-heavy traffic (code edits / RAG / agent loops) on the CPU backend; output is identical (greedy bit-exact, sampled in-distribution incl. temperature/top-k/p/min-p + repetition penalties + logit bias). On greedy constrained/tool requests (response_format / tool grammar) it switches to grammar-fused drafting — the grammar's forced bytes are drafted for free, fused with the n-gram source. Auto-falls back to plain decode per-request when the sampler isn't yet supported on the spec path (e.g. constrained + temperature>0) goinfer-chat has the same --spec ngram, and additionally --draft (a separate small draft model).")
+	flag.BoolVar(&cfg.specAdaptive, "spec-adaptive", false, "MC4 candidate (docs/tasks/task-concurrency-2026-09.md): with -spec ngram on a resident whose decode can batch (MC3), keep MC3's concurrency instead of forcing one generation at a time — a generation speculates only while it is alone, joining MC3's batched decode at a round boundary when others arrive, and resumes speculating after 8 consecutive rounds alone. Output is unaffected (the same lossless verify either way). No effect without -spec ngram, or on a resident MC3 cannot batch.")
 	flag.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
 	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
 	flag.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
@@ -931,8 +933,9 @@ func (s *server) loadAdapters(cfg config) error {
 		lm := &loadedModel{
 			tk: base.tk, model: base.model, tmpl: base.tmpl, stopIDs: base.stopIDs,
 			eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name,
-			spec:     cfg.spec == "ngram",
-			sessions: newSessionLRU(base.model, cfg.kvSessions, 0, fp),
+			spec:         cfg.spec == "ngram",
+			specAdaptive: cfg.specAdaptive,
+			sessions:     newSessionLRU(base.model, cfg.kvSessions, 0, fp),
 		}
 		lm.sessions.adapter = spec.name
 		if cfg.maxQueue > 0 {
@@ -1176,7 +1179,8 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	fp := modelFingerprint(spec.path, model.Quant())
 	lm := &loadedModel{
 		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp,
-		spec: cfg.spec == "ngram",
+		spec:         cfg.spec == "ngram",
+		specAdaptive: cfg.specAdaptive,
 		// capHint 0: KV grows on demand. The fingerprint binds disk snapshots to
 		// this exact model+quant so a -session-dir reused across models is rejected.
 		sessions: newSessionLRU(model, cfg.kvSessions, 0, fp),
