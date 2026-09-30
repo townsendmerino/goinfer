@@ -98,13 +98,13 @@ Not rebuilt below; this is the floor J1–J9 build on.
   20-token request that arrived last can go after a 4,000-token one that arrived first, and
   nothing in the system knows the difference.
 - **Backpressure is a number, not a plan.** `-max-queue` defaults to 8
-  (`internal/serveapp/main.go:392`); a full queue is a 429 on the OpenAI routes and a 529
+  (`internal/serveapp/main.go:396`); a full queue is a 429 on the OpenAI routes and a 529
   `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:599`). A global
   `-max-inflight` (default 128) bounds the pre-queue stage — JSON and image decode, tokenisation,
   template render — and is deliberately distinct from the per-model 429
   (`internal/serveapp/helpers.go:85`).
 - **Nothing is durable.** `drive` runs the generation for the life of the request
-  (`internal/serveapp/openai.go:1369`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
+  (`internal/serveapp/openai.go:1375`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
 - **There is warm state worth scheduling around.** The session LRU keeps prefilled KV and hands a
   request the session that already holds its prompt as a prefix
   (`internal/serveapp/sessions.go:14`), `-kv-sessions` 4 by default
