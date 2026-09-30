@@ -469,6 +469,8 @@ names that are served.
     - a state over 1024 tokens is cut to its first and last parts as the reference cuts it.
   - **The adapter is merged at load.** That entry's text generation is the decision model's, not the base model's.
     Serve the base model as another entry if you need both.
+    - A `.giw` built with `prequant -lora DIR` carries the adapter already, so no merge happens at load.
+    - `head=` checks the bundle's `.lora.json` sidecar and refuses a bundle built without that exact adapter.
   - **CPU only.** No GPU executor exposes this hidden state yet.
   - **How closely it tracks the reference** is D6b in `tasks/task-constrained-confidence.md`, not yet graded.
 

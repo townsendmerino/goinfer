@@ -48,6 +48,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/internal/modelload"
+	"github.com/townsendmerino/goinfer/internal/prequant"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
 	"github.com/townsendmerino/goinfer/internal/servecheck"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -201,7 +202,12 @@ func specHead(s modelSpec, o *decoder.Options) (*decide.Head, error) {
 	if err != nil {
 		return nil, err
 	}
-	if a := h.AdapterDir(); a != "" {
+	// A .giw built with the adapter merged in (prequant -lora) needs no LoRA; AdapterLoRA checks its sidecar.
+	a, err := prequant.AdapterLoRA(h.AdapterDir(), s.path)
+	if err != nil {
+		return nil, err
+	}
+	if a != "" {
 		if o.LoRA != "" && o.LoRA != a {
 			return nil, fmt.Errorf("lora=%s and the head's own adapter %s: an unmerged head brings its adapter", o.LoRA, a)
 		}

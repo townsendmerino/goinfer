@@ -443,7 +443,19 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
   - **Not tested:** the fused `in_proj_qkvz` (qwen3_next) and Olmo Hybrid layouts are merged by the same readers
     but have no PEFT gate of their own. JEV-9B's real adapter has not been loaded yet (that is D4's first step).
   - **Memory.** The merge runs tensor by tensor on the streaming-quant path, so the extra peak is one tensor's f32
-    copy, not the model's. `transcode --lora` → `.giw` is still offered in the bullet above and is not built.
+    copy, not the model's.
+  - **`transcode --lora`: built 2026-09-30** as `prequant -lora DIR` (`internal/prequant/lora.go`).
+    - **What it writes:** a `.giw` from a safetensors directory with the adapter merged at load, plus
+      `<bundle>.lora.json` recording the adapter and the sha256 of its weights. The sidecar is published only after
+      the bundle passes its self-check, and a plain rebuild at the same path removes it.
+    - **How loads use it:** `prequant.AdapterLoRA` decides what a decision head's load merges. A safetensors model
+      gets the adapter; a `.giw` whose sidecar records that exact adapter gets nothing; any other `.giw` is refused.
+      Serve's `head=` and `goinfer-chat decide --head` both call it.
+    - **Test:** `TestTranscodeLoRA`. On the tiny fixtures at f32, the bundle's `PromptHidden` is bit-identical to a
+      merge-at-load and differs from the base; another adapter and a sidecar-less bundle are refused; a GGUF input is
+      refused.
+    - **Peak memory:** the transcode itself holds the whole quantized model (it is `transcodeDir`), so a 27B is built
+      on a box that can hold it, and the Mac then mmaps the result.
 
 ### D4 — readout head + calibration (Route B)
 

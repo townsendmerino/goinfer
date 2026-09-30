@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -38,6 +39,13 @@ func TestSpecHead(t *testing.T) {
 	}
 	if _, err := specHead(m[2], &decoder.Options{}); err == nil || !strings.Contains(err.Error(), "judge_config.json") {
 		t.Fatalf("a dir with no head: %v", err)
+	}
+	// A .giw is taken as-is only when its sidecar records the head's adapter (prequant -lora); a bare one is refused.
+	if err := m.Set("z=" + filepath.Join(t.TempDir(), "plain.giw") + ",head=" + judgeTiny); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := specHead(m[3], &decoder.Options{}); err == nil || !strings.Contains(err.Error(), "does not carry the head's adapter") {
+		t.Fatalf("a .giw without the adapter: %v", err)
 	}
 	if err := m.Set("y=/some/model,head="); err == nil {
 		t.Fatal("an empty head= was accepted")

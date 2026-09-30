@@ -55,7 +55,7 @@ var freeDiskBytes = statfsFreeBytes
 // that tensor — always safe to pass any target.
 func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
 	if fi, err := os.Stat(in); err == nil && fi.IsDir() {
-		return transcodeDir(ctx, in, out, quant, embedInt4, target)
+		return transcodeDir(ctx, in, "", out, quant, embedInt4, target)
 	}
 	// 1) Tokenizer half: the source GGUF truncated at the tensor-data boundary —
 	// metadata + tensor infos, no weight bytes. Only the file's head is read.
@@ -127,6 +127,7 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 		return fmt.Errorf("publish %s: %w", out, err)
 	}
 	carryVerifiedMarker(tmp, out)
+	_ = os.Remove(loraSidecar(out)) // a plain bundle carries no adapter, whatever an earlier build at this path did
 	return nil
 }
 
@@ -136,7 +137,7 @@ func Transcode(ctx context.Context, in, out, quant string, embedInt4 bool, targe
 // verbatim as the tok half (the serve side loads it via tokenizer.LoadJSONBytes when the
 // blob isn't GGUF metadata). Peak RAM ≈ the resident weight size, since the whole model
 // is loaded rather than layer-streamed — acceptable for the models this targets.
-func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
+func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 bool, target decoder.GIWTarget) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -153,11 +154,19 @@ func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool, t
 	} else {
 		fmt.Fprintf(os.Stderr, "prequant: note: no tokenizer.json in %s — weights-only bundle (serve needs a separate tokenizer)\n", dir)
 	}
-	m, err := decoder.Load(dir, decoder.Options{Quant: quant, EmbedInt4: embedInt4})
+	m, err := decoder.Load(dir, decoder.Options{Quant: quant, EmbedInt4: embedInt4, LoRA: lora})
 	if err != nil {
 		return fmt.Errorf("load %s (%s): %w", dir, quant, err)
 	}
 	defer m.Close()
+	id := filepath.Base(dir)
+	var side []byte
+	if lora != "" {
+		if side, err = loraSidecarBytes(lora); err != nil {
+			return err
+		}
+		id += " + LoRA " + filepath.Base(filepath.Dir(lora)) + "/" + filepath.Base(lora)
+	}
 	// TEMP + RENAME, same reason as Transcode's GGUF branch above (M-12/M-33): a write to
 	// `out` directly leaves a placeholder-length bundle behind on SIGKILL/OOM-kill/power
 	// loss — exactly the interruption class this whole-model-resident path is most exposed
@@ -172,7 +181,7 @@ func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool, t
 		return fmt.Errorf("create %s: %w", tmp, err)
 	}
 	werr := giw.WriteStream(f, tokBytes, func(w io.Writer) (int64, error) {
-		return decoder.SerializeWeightsToForTarget(w, m.Weights(), filepath.Base(dir), target)
+		return decoder.SerializeWeightsToForTarget(w, m.Weights(), id, target)
 	})
 	runtime.GC()
 	if cerr := f.Close(); werr == nil {
@@ -191,6 +200,13 @@ func transcodeDir(ctx context.Context, dir, out, quant string, embedInt4 bool, t
 		return fmt.Errorf("publish %s: %w", out, err)
 	}
 	carryVerifiedMarker(tmp, out)
+	// The sidecar is published after the bundle, so a bundle never claims an adapter it was not built with; a crash in
+	// between leaves a bundle without its sidecar, which a head refuses (AdapterLoRA) rather than trusts.
+	if side == nil {
+		_ = os.Remove(loraSidecar(out))
+	} else if err := os.WriteFile(loraSidecar(out), side, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", loraSidecar(out), err)
+	}
 	return nil
 }
 

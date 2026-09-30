@@ -649,7 +649,7 @@ func TestTranscodeDir_failedWriteLeavesNoFinalFile(t *testing.T) {
 	// failure. Instead force one directly: a bogus quant string makes decoder.Load itself fail,
 	// which is enough to prove no partial file is left at `out` (the property under test is
 	// "never publish an incomplete bundle," not "this specific step fails").
-	if err := transcodeDir(context.Background(), dir, out, "not-a-real-quant", false, decoder.GIWTargetNone); err == nil {
+	if err := transcodeDir(context.Background(), dir, "", out, "not-a-real-quant", false, decoder.GIWTargetNone); err == nil {
 		t.Fatal("transcodeDir accepted a bogus quant string")
 	}
 	if _, err := os.Stat(out); err == nil {
