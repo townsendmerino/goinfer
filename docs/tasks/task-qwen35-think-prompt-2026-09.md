@@ -72,6 +72,13 @@ What shipped, against the design in "Proposed fix" below (which is kept as the r
     tool responses where goinfer's tool renderer writes it before the calls.
   - **Consequence for the KV cache:** when a new user query arrives the previous loop's turns lose their reasoning, so a cached
     prefix is reusable only up to the first such turn — the templates' own design.
+- **Stop strings on the answer only (built 2026-09-30, owner request).** `streamTokens` now takes the reasoning out BEFORE the stop
+  logic (`thinkOut.feed`), so `firstStop` / `stopTailHold` / the UTF-8 holdback see the answer alone; the reasoning goes to its own
+  callback with its own UTF-8 carry (a multi-byte character split across two tokens reaches the client whole). The splitter's
+  end-of-reply flush runs through the stop logic once more. deepseek-legacy (content is the raw text) and `-reasoning-format none`
+  keep watching the raw text by design. Replaces the pinned "KNOWN LIMITATION" test. Gates: stop in the answer / in the reasoning /
+  in both / split across the boundary / inside an unfinished block, both tag encodings; legacy and none unchanged; rune-split
+  reasoning; the existing differential stop-string test against the pre-R-08 algorithm still passes unchanged; four mutations red.
 - **Claude Code itself, tested 2026-09-30** (2.1.284, isolated config dir, dummy key, tools off and with `Read`, through a
   logging proxy; the real 0.8B served under a Claude model name): it sent `thinking: {type: enabled, budget_tokens}`, parsed the
   `thinking_delta` stream (its own thinking-token counter climbed), accepted the empty `signature`, printed the answer, and
@@ -151,8 +158,6 @@ test that would have gone red.
 
 ## Not built
 
-- **Stop strings on content only.** Stops are still matched on raw text, so a stop that appears in the reasoning ends the
-  reply with no answer. Pinned by `TestStreamTokens_thinkStopStrings`, named as a known limitation.
 - **Harmony (gpt-oss)** needs its own parser (several channel messages per reply); the interface admits one, none written.
 - **The `goinfer-chat` CLI and `demo/agent`** keep their own decode loops and do not split yet.
 - **Qwen3.5's XML tool-call format** (separate task), and what signature Claude Code wants on a thinking block — still to
@@ -354,7 +359,7 @@ changing how history renders breaks KV prefix reuse from the changed turn onward
 `reasoning_content` on input and drop it, and write down that this is a deliberate deviation.
 
 **Hazards found in the code map** (file:line as reported by the map; re-verify before editing):
-- *Stop strings are matched on raw decoded text* inside `streamTokens` (`firstStop`, `stopTailHold`), which includes
+- *(RESOLVED 2026-09-30 — see "Stop strings on the answer only" under Built; kept as the record of the reasoning.)* *Stop strings are matched on raw decoded text* inside `streamTokens` (`firstStop`, `stopTailHold`), which includes
   reasoning: a stop string appearing in the reasoning ends the reply early with no answer. A splitter downstream of `onText`
   sees already-truncated text. Fixing it means matching stops on the content side only, which restructures `streamTokens` —
   and `TestStreamTokens_decodesAsAContinuation` pins exactly one `DecodePiece` call and zero `Decode` calls in it.

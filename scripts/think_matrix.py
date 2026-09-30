@@ -214,6 +214,39 @@ def run(base, model, mx):
     cell("budget/request: stream == non-stream", (sc, sr) == (m2["content"] or "", m2.get("reasoning_content", "")),
          f"stream {(sc[:40], sr[:40])!r} vs {((m2['content'] or '')[:40], m2.get('reasoning_content', '')[:40])!r}")
 
+    # ---- stop strings are matched against the ANSWER only ---------------------------------------------------------------
+    # Pick a word the model really writes in its reasoning (its own first words), ask to stop on it: before this the reply ended
+    # there with no answer; now the reasoning is intact and the answer is written.
+    probe = chat_nonstream(base, model, "on", mx)
+    pr = (probe["choices"][0]["message"].get("reasoning_content") or "").strip()
+    word = next((w for w in pr.replace("*", " ").split() if w.isalpha() and len(w) >= 5), "")
+    if word:
+        r = chat_nonstream(base, model, "on", mx, {"stop": [word]})
+        m = r["choices"][0]["message"]
+        rc, cc = m.get("reasoning_content") or "", m["content"] or ""
+        cell(f"stop/openai: a stop string ({word!r}) the model writes in its REASONING does not end the reply",
+             word in rc and cc.strip() != "" and r["choices"][0]["finish_reason"] in ("stop", "length"),
+             f"finish={r['choices'][0]['finish_reason']} reasoning={rc[:60]!r} content={cc[:60]!r}")
+        sc, sr, sf, su, _ = chat_stream(base, model, "on", mx, {"stop": [word]})
+        cell("stop/openai: the same, streaming == non-streaming", (sc, sr) == (cc, rc), f"stream {(sc[:30], sr[:30])!r} vs {(cc[:30], rc[:30])!r}")
+        ra = post(base + "/v1/messages", {"model": model, "max_tokens": mx, "temperature": 0, "thinking": {"type": "enabled", "budget_tokens": 1024},
+                                          "stop_sequences": [word], "messages": [{"role": "user", "content": Q}]})
+        types = [b["type"] for b in ra["content"]]
+        thought = "".join(b.get("thinking", "") for b in ra["content"] if b["type"] == "thinking")
+        cell(f"stop/anthropic: stop_sequences ({word!r}) in the thinking block does not end the reply {types}",
+             word in thought and "text" in types, f"types={types} stop_reason={ra['stop_reason']}")
+    else:
+        unexercised("stop/*", "the model wrote no usable word in its reasoning to use as a stop string")
+    # a stop string in the ANSWER still ends the reply (off: no reasoning to interfere)
+    r = chat_nonstream(base, model, "off", mx)
+    ans = (r["choices"][0]["message"]["content"] or "")
+    aw = next((w for w in ans.split() if w.isalnum() and len(w) >= 2), "")
+    if aw:
+        r2 = chat_nonstream(base, model, "off", mx, {"stop": [aw]})
+        c2 = r2["choices"][0]["message"]["content"] or ""
+        cell(f"stop/openai: a stop string ({aw!r}) in the ANSWER still ends the reply there", aw not in c2 and r2["choices"][0]["finish_reason"] == "stop",
+             f"content={c2[:60]!r} finish={r2['choices'][0]['finish_reason']}")
+
     # ---- reasoning_format ---------------------------------------------------------------------------------------
     r = chat_nonstream(base, model, "on", mx, {"reasoning_format": "none"})
     c = r["choices"][0]["message"]["content"] or ""

@@ -1647,9 +1647,10 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 // reason ("stop" | "length"), the completion token count, and the stop string
 // that was hit (empty unless a stop sequence ended the turn).
 func (lm *loadedModel) streamTokens(parent context.Context, cancel context.CancelFunc, stream <-chan int, gr genRequest, gen *decoder.Generation, onText func(string)) (string, int, string) {
-	// Reasoning is split AFTER stop handling below (stops are matched on the raw decoded text, think text included) and
-	// BEFORE any caller sees a fragment, so every route — tools, vision, batches — gets clean content from one place.
-	onText, endThink := gr.think.route(onText)
+	// Reasoning is taken out BEFORE the stop logic below, so a stop string is matched against the ANSWER only (see thinkOut): the
+	// reasoning goes to its own callback, and what the stop logic watches, holds back and emits is the answer text. With no
+	// splitter (th == nil) the stop logic watches everything the model wrote, exactly as it always did.
+	th := gr.think
 	var ids []int
 	// sb accumulates the decoded text INCREMENTALLY instead of re-decoding the whole `ids`
 	// sequence every token (audit R-08: was O(n^2) in output length). decode()'s per-token loop
@@ -1666,16 +1667,9 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	finish := ""
 	stopHit := ""
 	stopping := false
-	for id := range stream {
-		if stopping {
-			continue // drain so the generation goroutine exits cleanly
-		}
-		ids = append(ids, id)
-		// DecodePiece, not Decode/DecodeContinuation: these ids CONTINUE the prompt (no
-		// sequence-level dummy-prefix strip — M-25), and appending each token's own piece is
-		// exactly what the whole-sequence decode does internally, one token at a time.
-		piece, _ := lm.tk.DecodePiece(id)
-		sb.WriteString(piece)
+	// step runs the stop logic over what sb holds now: look for a stop string in the not-yet-emitted tail, else emit up to
+	// the safe boundary. Once per token, and once more when the splitter hands back what it held at the end.
+	step := func() {
 		text := sb.String() // O(1): a view over the Builder's buffer, not a copy
 		// tail is text[printed:] — the not-yet-emitted suffix, bounded (does not grow with total
 		// output length). Scanning it instead of the whole text is the other half of R-08's fix:
@@ -1695,7 +1689,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 			}
 			finish, stopHit, stopping = "stop", which, true
 			cancel()
-			continue
+			return
 		}
 		// Emit up to the UTF-8 boundary, but never past a trailing partial stop
 		// match — those bytes wait until the next token proves them stop or not (M2).
@@ -1706,6 +1700,29 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		if end > printed {
 			onText(text[printed:end])
 			printed = end
+		}
+	}
+	for id := range stream {
+		if stopping {
+			continue // drain so the generation goroutine exits cleanly
+		}
+		ids = append(ids, id)
+		// DecodePiece, not Decode/DecodeContinuation: these ids CONTINUE the prompt (no
+		// sequence-level dummy-prefix strip — M-25), and appending each token's own piece is
+		// exactly what the whole-sequence decode does internally, one token at a time.
+		piece, _ := lm.tk.DecodePiece(id)
+		if th != nil {
+			piece = th.feed(piece)
+		}
+		sb.WriteString(piece)
+		step()
+	}
+	if th != nil {
+		// The splitter may still hold text (a partial tag, or whitespace that turned out to be answer): it goes through the
+		// stop logic like any other answer text. After a stop hit only the reasoning side is flushed.
+		if tail := th.finish(); tail != "" && !stopping {
+			sb.WriteString(tail)
+			step()
 		}
 	}
 	if !stopping { // flush any held-back trailing bytes
@@ -1722,7 +1739,6 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 			finish = "stop" // EOS / turn-stop
 		}
 	}
-	endThink() // flush what the splitter held; a reply that ends inside a think block has no answer
 	// M-23: the generation was cut short from OUTSIDE and no stop string ended it, so the text is
 	// TRUNCATED and must not be reported as a clean finish. `parent`, not `ctx`: drive's own
 	// stop-string cancel fires on the derived context, so this sees only external cancellation —

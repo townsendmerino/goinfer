@@ -33,6 +33,9 @@ any surface may still change.
     assistant message is now rendered the way the model's own chat template would — kept for the tool loop in progress, dropped
     before the last user query — instead of ignored. Pinned against HuggingFace for Qwen3, Qwen3.5 and Gemma 4 (144 prompts).
     Claude Code's reminder text inside a `tool_result` message is not treated as a new query. `-thinking asis` ignores it.
+  - **Stop strings are matched against the answer only.** A `stop` / `stop_sequences` string that the model wrote in its
+    reasoning used to end the reply there with no answer; the reasoning is no longer watched. A stop in the answer, and every
+    existing stop-string behaviour when the reasoning is not separated (`reasoning_format none` / `deepseek-legacy`), is unchanged.
   - **Fixed on the way:** Gemma 4 with thinking on ends a prompt inside an open thought channel after a tool response; serve's
     splitter did not know, so the reply's reasoning would have landed in `content`.
   - **What changes for an existing client:** a model that was writing `<think>` into `content` now writes it to

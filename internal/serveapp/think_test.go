@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -104,7 +105,9 @@ func templateFromGolden(t *testing.T, checkpoint string) *chat.Template {
 type thinkRun struct {
 	reasoning, content string
 	finish             string
-	ended              bool // the reply ended inside an unclosed block
+	stopHit            string   // the stop string that ended the reply ("" = none)
+	fragments          []string // the reasoning as it was reported, fragment by fragment
+	ended              bool     // the reply ended inside an unclosed block
 }
 
 // runThink drives ids through the real streamTokens with a thinkOut built from tm/ts.
@@ -117,12 +120,13 @@ func runThink(t *testing.T, tk *tokenizer.Tokenizer, ids []int, tm *chat.Templat
 	}
 	close(stream)
 	var r, c strings.Builder
+	var frags []string
 	gr := genRequest{maxTokens: maxTokens, stopStrings: stops}
-	gr.think = newThinkOut(tm, nil, ts, func(s string) { r.WriteString(s) })
+	gr.think = newThinkOut(tm, nil, ts, func(s string) { r.WriteString(s); frags = append(frags, s) })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	finish, _, _ := lm.streamTokens(ctx, cancel, stream, gr, nil, func(s string) { c.WriteString(s) })
-	out := thinkRun{reasoning: r.String(), content: c.String(), finish: finish}
+	finish, _, stopHit := lm.streamTokens(ctx, cancel, stream, gr, nil, func(s string) { c.WriteString(s) })
+	out := thinkRun{reasoning: r.String(), content: c.String(), finish: finish, stopHit: stopHit, fragments: frags}
 	if gr.think != nil {
 		out.ended = gr.think.endedInReasoning
 	}
@@ -151,6 +155,7 @@ func TestStreamTokens_thinkSplit(t *testing.T) {
 		{"0.8B closed prefill: the reply is all content", small, "Hello there.", "", "Hello there.", false},
 		{"truncated inside the block: reasoning only, no answer", nineB, "Okay the user asks for a very long", "Okay the user asks for a very long", "", true},
 		{"content that mentions the tag stays content", qwen3, "Use <think> tags to reason.", "", "Use <think> tags to reason.", false},
+		{"a reply ending on a partial open tag: the splitter's held text is flushed as answer", qwen3, "<thin", "", "<thin", false},
 	}
 	for _, tc := range cases {
 		for _, whole := range []bool{true, false} {
@@ -195,22 +200,78 @@ func TestStreamTokens_thinkUnmanagedIsPassthrough(t *testing.T) {
 	}
 }
 
-// Stop strings are matched on the raw decoded text (think text included), BEFORE the split. A stop that appears in the
-// answer ends the reply there; one that appears in the reasoning ends it there, with no answer. The second is a known
-// limitation recorded in docs/tasks/task-qwen35-think-prompt-2026-09.md (hazard "stop strings are matched on raw decoded
-// text"); this test pins today's behaviour so a change to it is deliberate, and is named for what it pins.
+// Stop strings are matched against the ANSWER only. A stop string is a request about what the model says to the client; the
+// reasoning is scratch work, and one that appears in it used to end the reply there with no answer at all. (Not so in
+// deepseek-legacy, where `content` is the raw text, tags included — what the client sees is what the stop logic watches.)
 func TestStreamTokens_thinkStopStrings(t *testing.T) {
 	tk, vocab := thinkTokenizer(t, thinkAlphabet)
 	tm := templateFromGolden(t, "qwen3-4b")
 	split := thinkSettings{format: rfSplit}
-
-	got := runThink(t, tk, thinkIDs(vocab, "<think>\nhmm\n</think>\n\nOne. END Two.", true), tm, split, []string{"END"}, 1000)
-	if got.content != "One. " || got.reasoning != "hmm" || got.finish != "stop" {
-		t.Fatalf("stop in the answer: %+v", got)
+	for _, whole := range []bool{true, false} {
+		name := map[bool]string{true: "tag tokens", false: "tag spelled out"}[whole]
+		t.Run(name, func(t *testing.T) {
+			// A stop in the ANSWER still ends the reply there.
+			got := runThink(t, tk, thinkIDs(vocab, "<think>\nhmm\n</think>\n\nOne. END Two.", whole), tm, split, []string{"END"}, 1000)
+			if got.content != "One. " || got.reasoning != "hmm" || got.finish != "stop" || got.stopHit != "END" {
+				t.Fatalf("stop in the answer: %+v", got)
+			}
+			// A stop in the REASONING is ignored: the reasoning is intact, the answer is written, no stop is reported.
+			got = runThink(t, tk, thinkIDs(vocab, "<think>\nthe word END appears\n</think>\n\nAnswer.", whole), tm, split, []string{"END"}, 1000)
+			if got.reasoning != "the word END appears" || got.content != "Answer." || got.stopHit != "" {
+				t.Fatalf("a stop string inside the reasoning must be ignored: %+v", got)
+			}
+			// In both: the answer's stop still wins even though the reasoning also said it.
+			got = runThink(t, tk, thinkIDs(vocab, "<think>\nEND is a stop\n</think>\n\nFine END rest", whole), tm, split, []string{"END"}, 1000)
+			if got.reasoning != "END is a stop" || got.content != "Fine " || got.stopHit != "END" {
+				t.Fatalf("stop in both: %+v", got)
+			}
+			// A stop split ACROSS the reasoning/answer boundary is not a match: they are separate streams.
+			got = runThink(t, tk, thinkIDs(vocab, "<think>\nEN\n</think>\n\nD is fine", whole), tm, split, []string{"END"}, 1000)
+			if got.content != "D is fine" || got.stopHit != "" {
+				t.Fatalf("a stop must not match across the reasoning/answer boundary: %+v", got)
+			}
+			// A reply that never leaves its reasoning has no answer to stop: a stop in it is ignored and it is truncated, not stopped.
+			got = runThink(t, tk, thinkIDs(vocab, "<think>\nEND END END", whole), tm, split, []string{"END"}, 10000)
+			if got.stopHit != "" || got.content != "" || !got.ended {
+				t.Fatalf("stop strings in an unfinished block: %+v", got)
+			}
+		})
 	}
-	got = runThink(t, tk, thinkIDs(vocab, "<think>\nthe word END appears\n</think>\n\nAnswer.", true), tm, split, []string{"END"}, 1000)
-	if got.content != "" || got.finish != "stop" {
-		t.Fatalf("KNOWN LIMITATION pinned: a stop string inside the reasoning ends the reply with no answer; got %+v", got)
+	// deepseek-legacy: content is the raw text, so a stop in the thinking stops the reply there, as it always did.
+	got := runThink(t, tk, thinkIDs(vocab, "<think>\nthe word END appears\n</think>\n\nAnswer.", true), tm, thinkSettings{format: rfLegacy}, []string{"END"}, 1000)
+	if got.stopHit != "END" || got.content != "<think>\nthe word " {
+		t.Fatalf("deepseek-legacy watches the raw text: %+v", got)
+	}
+	// No splitter (-reasoning-format none): the stop logic watches everything, unchanged.
+	got = runThink(t, tk, thinkIDs(vocab, "<think>\nthe word END appears\n</think>\n\nAnswer.", true), tm, thinkSettings{format: rfNone}, []string{"END"}, 1000)
+	if got.stopHit != "END" || got.content != "<think>\nthe word " {
+		t.Fatalf("-reasoning-format none: %+v", got)
+	}
+}
+
+// Reasoning no longer rides through the stop logic, which used to hold a partial UTF-8 rune back for it. A multi-byte character
+// split across two tokens inside the reasoning must still reach the client whole — every reported fragment valid UTF-8.
+func TestStreamTokens_thinkReasoningNeverSplitsARune(t *testing.T) {
+	tk, vocab := thinkTokenizer(t, thinkAlphabet+"Ã©")
+	tm := templateFromGolden(t, "qwen3-4b")
+	reply := "<think>\ncaf\u00e9 au lait \u00e9t\u00e9\n</think>\n\nOK \u00e9"
+	for _, whole := range []bool{true, false} {
+		got := runThink(t, tk, thinkIDs(vocab, reply, whole), tm, thinkSettings{format: rfSplit}, nil, 1000)
+		if got.reasoning != "caf\u00e9 au lait \u00e9t\u00e9" || got.content != "OK \u00e9" {
+			t.Fatalf("whole=%v reasoning=%q content=%q", whole, got.reasoning, got.content)
+		}
+		for i, f := range got.fragments {
+			if !utf8.ValidString(f) {
+				t.Errorf("whole=%v: reasoning fragment %d %q is not valid UTF-8 (a rune was split)", whole, i, f)
+			}
+		}
+	}
+	// A reply that is cut off mid-rune inside its reasoning: the bytes that are there are still reported at the end.
+	ids := thinkIDs(vocab, "<think>\nab\u00e9", true)
+	ids = ids[:len(ids)-1] // drop the rune's second byte
+	got := runThink(t, tk, ids, tm, thinkSettings{format: rfSplit}, nil, 1000)
+	if !strings.HasPrefix(got.reasoning, "ab") {
+		t.Errorf("truncated mid-rune reasoning lost its text: %q", got.reasoning)
 	}
 }
 

@@ -516,8 +516,12 @@ to ignore.**
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
   that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.
-- **Stop strings are matched on the raw text, reasoning included.** A `stop` string that appears in the model's reasoning
-  ends the reply there, with no answer. Known, and pinned by a test; it affects clients that turn thinking on and set `stop`.
+- **Stop strings are matched against the answer only.** A `stop` (OpenAI) or `stop_sequences` (Anthropic) string is a request
+  about what the model says to you, so it is checked against the answer, not the thinking: a stop string that appears in the
+  model's reasoning no longer ends the reply there with no answer — the reasoning stays whole and the answer is written. A
+  stop string in the answer ends the reply exactly as before, and one split across the thinking/answer boundary is not a
+  match. Exceptions, where `content` carries the thinking too: `reasoning_format: "none"` and `deepseek-legacy` return the raw
+  text, so a stop string in the thinking still stops the reply there.
 - **Replayed reasoning (history).** A client that sends the model's reasoning back — `reasoning_content` or `reasoning` on an
   OpenAI assistant message, `thinking` blocks on an Anthropic one (Claude Code sends them with every turn of a tool loop) —
   has it rendered the way the model's own chat template would: **kept for the turns of the tool loop in progress** (those after
