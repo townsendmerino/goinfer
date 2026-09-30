@@ -224,6 +224,9 @@ func Build(root, out string, cfg Config) (*Report, error) {
 	if err := CheckClaims(root, in); err != nil {
 		return nil, err
 	}
+	if err := CheckOllama(root, in); err != nil {
+		return nil, err
+	}
 	m, err := Derive(in)
 	if err != nil {
 		return nil, err

@@ -114,6 +114,7 @@ type Inputs struct {
 	Curated  Curated
 	Machines []Machine
 	Claims   Claims
+	Ollama   *OllamaData // site/data/ollama.json, the "Coming from Ollama?" section
 }
 
 func readJSON(path string, v any) error {
@@ -145,6 +146,10 @@ func LoadInputs(root string) (*Inputs, error) {
 	}
 	in.Machines = m.Machines
 	if err := readJSON(filepath.Join(root, "site", "data", "claims.json"), &in.Claims); err != nil {
+		return nil, err
+	}
+	var err error
+	if in.Ollama, err = LoadOllama(root); err != nil {
 		return nil, err
 	}
 	return in, nil

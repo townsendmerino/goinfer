@@ -113,6 +113,12 @@ A model page carries what the repo knows and ollama.com's equivalent pages do no
   **decision model** tag goes only on checkpoints with a trained decision head (Route B, D2–D4), and none exist yet.
 - measured throughput, with the machine and date named
 - the exact `goinfer-chat pull` line, copyable
+- **"Coming from Ollama?"** (added 2026-09-30) at the bottom of the Models page: Ollama's 60 most-pulled models with what
+  goinfer does with each, from the dated snapshot `docs/measurements/ollama-coverage-2026-09-30.md`. The rows are
+  `site/data/ollama.json`, and each row's status is derived from the capability matrix at build. `CheckOllama` fails the
+  build if the data stops matching the snapshot, if a status derived from today's matrix differs from the snapshot's
+  ("new snapshot needed"), or if the shares stop matching its Result table. The headline is a Fact under the claims
+  check.
 
 ### S3 — Docs
 The book (already built and deployed) plus `server.md`, `api-tiers.md`, `integrations/`,

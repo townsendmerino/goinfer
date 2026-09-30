@@ -188,7 +188,8 @@ func CheckClaims(root string, in *Inputs) error {
 			bad = append(bad, fmt.Sprintf("fact %q: %v", f.Text, err))
 			continue
 		}
-		if !strings.Contains(sec, f.Text) {
+		// Whitespace is collapsed on both sides: a record wraps its lines, and a line break is not part of a sentence.
+		if !strings.Contains(strings.Join(strings.Fields(sec), " "), strings.Join(strings.Fields(f.Text), " ")) {
 			bad = append(bad, fmt.Sprintf("fact %q is not under %q in %s", f.Text, f.Source.Heading, f.Source.Path))
 		}
 	}

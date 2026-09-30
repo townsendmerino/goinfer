@@ -231,3 +231,15 @@ html[data-machine="mac"] .vc .sp .mv.sprow[data-m="mac"],html[data-machine="cuda
 .yp{color:var(--accent);font-weight:500}
 @media (max-width:680px){.tiers{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+
+/* Coming from Ollama? (models page). The table scrolls inside its wrapper, never the page. */
+.ollama .tablewrap{overflow-x:auto;margin-top:14px}
+table.otab{border-collapse:collapse;width:100%;font-size:14px}
+table.otab th,table.otab td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.otab th{font-family:var(--f-mono);font-size:11px;font-weight:500;color:var(--muted);white-space:nowrap}
+table.otab td.n{font-family:var(--f-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+table.otab td.st{white-space:nowrap}
+table.otab tr.o-N td.st,table.otab tr.o-U td.st{color:var(--muted)}
+.orest{margin-top:10px}
+.orest summary{cursor:pointer;color:var(--accent);font-size:14.5px;padding-block:6px}
+.ofoot{margin-top:14px;font-size:13.5px}

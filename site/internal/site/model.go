@@ -186,6 +186,7 @@ type Model struct {
 	Docs     []*DocPage    // the repo documents rendered under /docs/
 	Book     []BookChapter // the primer's chapters, for Home
 	Counts   Counts
+	Ollama   *Ollama // the "Coming from Ollama?" section; nil when the inputs had none
 }
 
 // Counts is the strip at the top of the Models page.
@@ -286,6 +287,13 @@ func Derive(in *Inputs) (*Model, error) {
 		}
 		return strings.ToLower(a.DisplayName) < strings.ToLower(b.DisplayName)
 	})
+	if in.Ollama != nil {
+		es, err := deriveOllama(in.Ollama, m.ByName)
+		if err != nil {
+			return nil, err
+		}
+		m.Ollama = &Ollama{OllamaData: in.Ollama, Entries: es}
+	}
 	m.Counts = Counts{Families: len(m.Families), Vetted: len(m.Vetted)}
 	for _, f := range m.Families {
 		switch f.P.Tier {

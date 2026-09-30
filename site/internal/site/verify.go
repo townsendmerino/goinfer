@@ -27,6 +27,17 @@ func Verify(out string, m *Model, ws []*Writeup, drafts bool) error {
 	if !strings.Contains(idx, `id="embeddings"`) || !strings.Contains(idx, "/v1/embeddings") {
 		bad = append(bad, "the Models page has no Embeddings section")
 	}
+	// The Ollama section: its heading, its headline sentence, and every tag in the data, in the built page.
+	if m.Ollama != nil {
+		if !strings.Contains(idx, `id="ollama"`) || !strings.Contains(idx, html.EscapeString(m.Ollama.Headline)) {
+			bad = append(bad, "the Models page has no Coming from Ollama? section, or it lacks the headline")
+		}
+		for _, e := range m.Ollama.Entries {
+			if !strings.Contains(idx, "<code>"+html.EscapeString(e.Tag)+"</code>") {
+				bad = append(bad, fmt.Sprintf("the Ollama section does not list %s", e.Tag))
+			}
+		}
+	}
 	// Every visible writeup has a page that names it and lists what it doesn't do, and the index links it. A draft must
 	// never be linked from a deploy: the index of a non-preview build has no draft in it.
 	di, err := read("different/index.html")
