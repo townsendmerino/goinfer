@@ -204,9 +204,9 @@ resident (a 21 GB 35B-A3B on an M1 Pro / 16 GB: without it **+7.8 GB of swap in 
 transcode — watch the first `-stream-weights` run of one, don't walk away from it.
 
 **GPU:** on cuda/metal, GPU means fully resident. A MoE bigger than your card has `-moe-cache-experts`: the non-expert
-core stays resident and the experts a token routes to stream host→VRAM on demand — **40.2 tok/s** at ctx 2048 for
+core stays resident and the experts a token routes to stream host→VRAM on demand — **39.3 tok/s** at ctx 2048 (2026-09-29, median of three runs) for
 `gemma-4-26b-a4b` (26B-A4B, 128 experts top-8) on an 8 GB RTX 2070 SUPER with the DMA overlap
-([`docs/benchmarks.md`](docs/benchmarks.md) §B4/§B4.1, [peer sweep](docs/measurements/peer-claim-2026-09-25.md) cell c),
+([`docs/benchmarks.md`](docs/benchmarks.md) §B4/§B4.1, [peer sweep](docs/measurements/peer-sweep-2026-09-29.md) cell c),
 capacity-bound (PCIe host→VRAM streaming), not a kernel or MoE deficiency. A dense model bigger than your card has no
 partial-GPU story here.
 

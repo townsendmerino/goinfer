@@ -105,6 +105,7 @@ h2.s{font-family:var(--f-display);font-weight:800;font-size:clamp(24px,3.2vw,32p
 .vs.ahead{background:var(--good-soft);color:var(--good)}
 .vs.behind{background:var(--warn-soft);color:var(--warn)}
 .vs.na{color:var(--muted);padding-inline:0}
+.vs.level{background:var(--sunk);color:var(--ink-2)}
 
 /* filters */
 .filters{display:grid;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}

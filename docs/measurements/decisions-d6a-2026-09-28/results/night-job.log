@@ -1,0 +1,23 @@
+=== night job d6a-amended-cuda
+=== cmd      env REV=a4e16c43 BACKEND=cuda S=/home/francis/goinfer-bench/decisions-d6a/samples-amended BIN=/home/francis/goinfer-bench/decisions-d6a/goinfer-chat-cuda-a4e16c43 bash docs/measurements/decisions-d6a-2026-09-28/run-d6a.sh
+=== cwd      /home/francis/mycode/goinfer
+=== rev      queued at a4e16c43, now 426ca57d
+=== host     nobara-pc
+=== est      45.0 min, timeout 90.0 min
+=== by       vscode-claude, decisions D6a (amended samples, batched DeltaNet prefill)
+=== doc      docs/tasks/task-constrained-confidence.md
+=== note     Pinned binary goinfer-chat-cuda-a4e16c43. Morning: every arm's stderr must show no 'declined'; then analyze.py and the D6a record. Estimate from the 3-item resident check (3.1-3.4 ms/prompt token).
+=== START    2026-09-28 20:20:51 PDT  loadavg 0.08
+20:20:51 == D6a start; rev a4e16c43; backend cuda; bin /home/francis/goinfer-bench/decisions-d6a/goinfer-chat-cuda-a4e16c43; Linux 7.2.0-202.nobara.fc44.x86_64 x86_64
+20:20:51 == arm A: Qwen3.5-9B-Q4_K_M.gguf chat-v1 — calibrate
+20:25:03 == arm A calibrate exit 0; 
+20:37:01 == arm A eval exit 0
+20:37:01 == arm B: Qwen3.5-9B-Q4_K_M.gguf bare-v1 — calibrate
+20:40:48 == arm B calibrate exit 0; 
+20:52:11 == arm B eval exit 0
+20:52:11 == arm C: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf chat-v1 — calibrate
+20:52:59 == arm C calibrate exit 0; 
+20:55:21 == arm C eval exit 0
+20:55:21 == DONE
+
+=== END      2026-09-28 20:55:21 PDT  rc=0

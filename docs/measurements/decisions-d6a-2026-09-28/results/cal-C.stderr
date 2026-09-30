@@ -1,0 +1,10 @@
+decisions-calibrate: 100 lines, 9s
+decisions-calibrate: 200 lines, 17s
+decisions-calibrate: 300 lines, 25s
+decisions-calibrate: 400 lines, 33s
+decisions-calibrate: 500 lines, 39s
+decisions-calibrate: 600 lines, 46s
+decisions-calibrate: choice  n=187  T=1.4786  KL 0.69984 -> 0.68978
+decisions-calibrate: noul  n=239  T=5.7698  KL 0.38304 -> 0.32206
+decisions-calibrate: score  n=174  T=1.0073  KL 0.55848 -> 0.55847
+decisions-calibrate: 600 rows fitted, 0 skipped, wrote /home/francis/goinfer-bench/decisions-d6a/cal-C.json

@@ -1,0 +1,108 @@
+// b0cmp: goinfer's Route A inputs against transformers' B0 on identical items (task-constrained-confidence.md, "Owed:
+// D1 against transformers' B0 on identical bytes ... the token ids first"). Loads only the tokenizer.
+package main
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+	"slices"
+
+	"github.com/townsendmerino/goinfer/internal/decide"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+type item struct {
+	ID, Kind, State, Question, Prompt string
+	Options                          []string
+	TokenIDs                         []int `json:"token_ids"`
+}
+type ref struct {
+	ID             string
+	Labels         []string
+	VerbalizerIDs  []int `json:"verbalizer_ids"`
+}
+
+func readJSONL[T any](p string) []T {
+	f, err := os.Open(p)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	var out []T
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<20), 1<<26)
+	for sc.Scan() {
+		var v T
+		if err := json.Unmarshal(sc.Bytes(), &v); err != nil {
+			panic(err)
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+func main() {
+	tk, err := tokenizer.LoadGGUF(os.Args[1])
+	if err != nil {
+		panic(err)
+	}
+	pt := decide.NewPlainTokenizer(tk)
+	d, err := decide.New(pt, nil, decide.Options{Template: decide.TemplateBare})
+	if err != nil {
+		panic(err)
+	}
+	items := readJSONL[item](os.Args[2])
+	refs := map[string]ref{}
+	for _, r := range readJSONL[ref](os.Args[3]) {
+		refs[r.ID] = r
+	}
+	var promptSame, idsSame, labelsSame, n int
+	shown := 0
+	for _, it := range items {
+		r, ok := refs[it.ID]
+		if !ok {
+			continue
+		}
+		n++
+		p := decide.Render(it.Kind, it.State, it.Question, it.Options)
+		if p == it.Prompt {
+			promptSame++
+		} else if shown < 2 {
+			shown++
+			i := 0
+			for i < len(p) && i < len(it.Prompt) && p[i] == it.Prompt[i] {
+				i++
+			}
+			fmt.Printf("PROMPT DIFF %s at byte %d:\n  goinfer %q\n  fixture %q\n", it.ID, i, p[max(0, i-40):min(len(p), i+60)], it.Prompt[max(0, i-40):min(len(it.Prompt), i+60)])
+		}
+		ids, _ := pt.EncodePlain(it.Prompt)
+		if slices.Equal(ids, it.TokenIDs) {
+			idsSame++
+		} else if shown < 4 {
+			shown++
+			i := 0
+			for i < len(ids) && i < len(it.TokenIDs) && ids[i] == it.TokenIDs[i] {
+				i++
+			}
+			fmt.Printf("IDS DIFF %s: len %d vs %d, first difference at %d: goinfer %v fixture %v\n", it.ID, len(ids), len(it.TokenIDs), i, ids[i:min(len(ids), i+6)], it.TokenIDs[i:min(len(it.TokenIDs), i+6)])
+		}
+		var mine []int
+		for _, l := range r.Labels {
+			id, _ := d.LabelID(l)
+			mine = append(mine, id)
+		}
+		if slices.Equal(mine, r.VerbalizerIDs) {
+			labelsSame++
+		} else if shown < 6 {
+			shown++
+			var txt []string
+			for _, id := range append(mine, r.VerbalizerIDs...) {
+				txt = append(txt, fmt.Sprintf("%d=%q", id, tk.TokenText(id)))
+			}
+			fmt.Printf("LABEL DIFF %s labels %v: goinfer %v, fixture %v  (%v)\n", it.ID, r.Labels, mine, r.VerbalizerIDs, txt)
+		}
+	}
+	fmt.Printf("items %d: prompt text identical %d, token ids identical %d, label ids identical %d\n", n, promptSame, idsSame, labelsSame)
+}

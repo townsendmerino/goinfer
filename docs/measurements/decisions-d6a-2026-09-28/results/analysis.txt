@@ -1,0 +1,24 @@
+## A  (872 rows, 0 failed validation; template chat-v1; T {'choice': 1.600730046550269, 'noul': 1.7382724158178295, 'score': 1.5929869348602304})
+  raw        overall top-1 0.4197  ECE 0.2291   | noul top-1 0.4125 ece 0.2369 (n 400) auroc 0.5955, choice top-1 0.4450 ece 0.2136 (n 400), score top-1 0.2639 ece 0.1989 (n 72)
+  calibrated overall top-1 0.4197  ECE 0.1656   | noul top-1 0.4125 ece 0.1821 (n 400) auroc 0.5955, choice top-1 0.4450 ece 0.1300 (n 400), score top-1 0.2639 ece 0.0898 (n 72)
+  fit choice: n 187 T 1.6007 KL 0.5659 -> 0.5139
+  fit noul: n 239 T 1.7383 KL 0.2686 -> 0.2398
+  fit score: n 174 T 1.5930 KL 0.5922 -> 0.5474
+
+## B  (872 rows, 0 failed validation; template bare-v1; T {'choice': 1.2210612845961544, 'noul': 2.001149782805661, 'score': 49.99989571437015})
+  raw        overall top-1 0.3378  ECE 0.2818   | noul top-1 0.3400 ece 0.3274 (n 400) auroc 0.6949, choice top-1 0.3350 ece 0.1499 (n 400), score top-1 0.1667 ece 0.1751 (n 72)
+  calibrated overall top-1 0.3378  ECE 0.2199   | noul top-1 0.3400 ece 0.2496 (n 400) auroc 0.6949, choice top-1 0.3350 ece 0.1349 (n 400), score top-1 0.1667 ece 0.0031 (n 72)
+  fit choice: n 187 T 1.2211 KL 0.6075 -> 0.6020
+  fit noul: n 239 T 2.0011 KL 0.3224 -> 0.3046
+  fit score: n 174 T 49.9999 KL 1.0315 -> 0.7640  (AT THE SEARCH BOUND: not a calibration)
+
+## C  (872 rows, 0 failed validation; template chat-v1; T {'choice': 1.4785621374655213, 'noul': 5.7698472135146375, 'score': 1.0072571722987815})
+  raw        overall top-1 0.2774  ECE 0.2897   | noul top-1 0.2600 ece 0.3551 (n 400) auroc 0.4531, choice top-1 0.3275 ece 0.0962 (n 400), score top-1 0.3889 ece 0.1286 (n 72)
+  calibrated overall top-1 0.2774  ECE 0.2102   | noul top-1 0.2600 ece 0.2609 (n 400) auroc 0.4531, choice top-1 0.3275 ece 0.0583 (n 400), score top-1 0.3889 ece 0.1292 (n 72)
+  fit choice: n 187 T 1.4786 KL 0.6998 -> 0.6898
+  fit noul: n 239 T 5.7698 KL 0.3830 -> 0.3221
+  fit score: n 174 T 1.0073 KL 0.5585 -> 0.5585
+
+ECE floor (a perfectly calibrated model at this sample, arm A's own confidences, 2000 draws): 0.0386; bar sqrt(0.05^2 + floor^2) = 0.0632
+DECISION (arm A calibrated): top-1 0.4197 vs JEV-9B 0.9181 (gap +0.4984 points x100 = 49.8), ECE 0.1656 vs bar 0.0632 (0.05 and the floor in quadrature) -> BUILD D2-D4 (more than 10 points behind JEV-9B)
+CONTROL (arm B raw): top-1 0.3378 vs B0 0.518 -> DOES NOT REPRODUCE: arm A not trusted until explained

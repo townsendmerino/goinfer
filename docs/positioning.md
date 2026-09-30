@@ -121,9 +121,9 @@ at 30 it measures 16.12. Read the slot count as part of the claim.
 (Current Ollama also runs this 26B on 8 GB, by offloading 58% to the CPU; goinfer's distinction is
 all-experts-on-GPU, not that peers can't run it —
 [docs/completed/task-moe-streaming.md](completed/task-moe-streaming.md). Ollama was the faster of the two
-at ~24.5 tok/s until this release's DMA overlap; the pre-registered sweep of 2026-09-25 measured goinfer
-40.2 tok/s against Ollama 22.2 at ctx 2048, an architecture comparison on different checkpoints —
-[docs/measurements/peer-claim-2026-09-25.md](measurements/peer-claim-2026-09-25.md), cell c.)*
+at ~24.5 tok/s until this release's DMA overlap; the pre-registered sweep, re-run 2026-09-29, measured goinfer
+39.3 tok/s against Ollama 22.3 at ctx 2048 (graded AMBIGUOUS-HIGH on goinfer's own 5.3% run spread), an architecture comparison on different checkpoints —
+[docs/measurements/peer-sweep-2026-09-29.md](measurements/peer-sweep-2026-09-29.md), cell c.)*
 
 > **Running a model larger than your card is opt-in, and the runtime does the sizing.** Gemma 4
 > residency is on by default; host→VRAM expert streaming is not. Without it the 26B's experts must
@@ -133,7 +133,7 @@ at ~24.5 tok/s until this release's DMA overlap; the pre-registered sweep of 202
 > another process, a longer `--ctx` all shrink it), capped to what fits rather than to a number you
 > chose; on a bare 8 GB card that is 30–33 slots today. `goinfer-chat fit` answers "does this fit,
 > and how fast" before anything loads. The measured slot ladder — from an inert cache at the old
-> default of 8 to **16.12 tok/s at 30** (before the DMA overlap; 40.2 tok/s now) — is in [`docs/benchmarks.md`](benchmarks.md) §B4/§B4.1;
+> default of 8 to **16.12 tok/s at 30** (before the DMA overlap; 39.3 tok/s as of 2026-09-29) — is in [`docs/benchmarks.md`](benchmarks.md) §B4/§B4.1;
 > read the slot count as part of any number quoted from it. The remaining work to make this
 > invisible is [`docs/tasks/task-fit-to-hardware.md`](tasks/task-fit-to-hardware.md).
 

@@ -326,8 +326,8 @@ func TestBuild_realRepo(t *testing.T) {
 	}
 	// the pre-overlap 26B figure must not be back on the checkpoint's page
 	g, _ := os.ReadFile(filepath.Join(out, "models", "gemma4", "index.html"))
-	if strings.Contains(string(g), "16.12") || !strings.Contains(string(g), "40.2") {
-		t.Error("the Gemma 4 page must say 40.2 tok/s and not the pre-overlap 16.12")
+	if strings.Contains(string(g), "16.12") || !strings.Contains(string(g), "39.3") {
+		t.Error("the Gemma 4 page must say 39.3 tok/s (the 2026-09-29 cell) and not the pre-overlap 16.12")
 	}
 }
 

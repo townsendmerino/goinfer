@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "per_kind": {
+    "choice": 1.600730046550269,
+    "noul": 1.7382724158178295,
+    "score": 1.5929869348602304
+  },
+  "per_kind_family": {},
+  "fit": {
+    "choice": {
+      "n": 187,
+      "T": 1.600730046550269,
+      "kl_before": 0.5658588164847642,
+      "kl_after": 0.51385419748664
+    },
+    "noul": {
+      "n": 239,
+      "T": 1.7382724158178295,
+      "kl_before": 0.2686413503028867,
+      "kl_after": 0.23979172243275293
+    },
+    "score": {
+      "n": 174,
+      "T": 1.5929869348602304,
+      "kl_before": 0.5922432729272333,
+      "kl_after": 0.5474068839697017
+    }
+  },
+  "source": "goinfer decisions-calibrate Qwen3.5-9B-Q4_K_M.gguf",
+  "fit_rows": 600,
+  "template_version": "chat-v1"
+}

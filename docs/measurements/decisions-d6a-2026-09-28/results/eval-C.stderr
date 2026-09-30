@@ -1,0 +1,9 @@
+decide: 100 lines, 14s
+decide: 200 lines, 29s
+decide: 300 lines, 43s
+decide: 400 lines, 56s
+decide: 500 lines, 1m13s
+decide: 600 lines, 1m29s
+decide: 700 lines, 1m46s
+decide: 800 lines, 2m4s
+decide: 872 lines in 2m18.862s, 0 failed validation

@@ -1,0 +1,8 @@
+05:38:02 915bf6fc top-p 317.7 tok/s -> good
+05:38:28 534393cd top-p 231.3 tok/s -> bad
+05:38:52 561a9362 top-p 233.5 tok/s -> bad
+05:39:09 5f911d0b top-p 326.8 tok/s -> good
+05:39:26 68f2dbdf top-p 235.5 tok/s -> bad
+05:39:41 c33f37db top-p 330.8 tok/s -> good
+05:39:57 05cbcc48 top-p 229.2 tok/s -> bad
+05:40:12 7a44a58e top-p 239.1 tok/s -> bad

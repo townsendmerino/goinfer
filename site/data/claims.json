@@ -15,6 +15,13 @@
         "path": "docs/measurements/peer-claim-2026-09-25.md",
         "heading": "Cells g–i in detail (MacBook, 2026-09-25)"
       }
+    },
+    {
+      "text": "Ollama v0.32.5",
+      "source": {
+        "path": "docs/measurements/peer-sweep-2026-09-29.md",
+        "heading": "Results — nobara-pc, cells a–f (graded 2026-09-30)"
+      }
     }
   ],
   "claims": [
@@ -23,18 +30,18 @@
       "checkpoint": "qwen2.5-coder-0.5b",
       "machine": "cuda",
       "basis": "median-of-3",
-      "value": 341.9,
-      "peer": 268.8,
-      "runs": "341.9 / 337.4 / 342.1",
-      "peer_runs": "268.8 / 269.3 / 268.6",
-      "ratio_raw": "1.272",
-      "ratio": "1.27×",
+      "value": 367.9,
+      "peer": 263.8,
+      "runs": "362.5 / 371.0 / 367.9",
+      "peer_runs": "263.8 / 263.9 / 263.6",
+      "ratio_raw": "1.396",
+      "ratio": "1.40×",
       "verdict": "ahead",
       "why": "",
-      "date": "2026-09-25",
+      "date": "2026-09-29",
       "source": {
-        "path": "docs/measurements/peer-claim-2026-09-25.md",
-        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
+        "path": "docs/measurements/peer-sweep-2026-09-29.md",
+        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
       }
     },
     {
@@ -42,18 +49,18 @@
       "checkpoint": "qwen2.5-coder-0.5b",
       "machine": "cpu",
       "basis": "median-of-3",
-      "value": 45.9,
-      "peer": 57.6,
-      "runs": "46.5 / 45.9 / 44.6",
-      "peer_runs": "57.7 / 57.6 / 57.6",
-      "ratio_raw": "0.797",
-      "ratio": "0.80×",
+      "value": 52.0,
+      "peer": 57.4,
+      "runs": "52.6 / 52.0 / 51.1",
+      "peer_runs": "57.4 / 57.4 / 57.5",
+      "ratio_raw": "0.905",
+      "ratio": "0.91×",
       "verdict": "behind",
       "why": "",
-      "date": "2026-09-25",
+      "date": "2026-09-29",
       "source": {
-        "path": "docs/measurements/peer-claim-2026-09-25.md",
-        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
+        "path": "docs/measurements/peer-sweep-2026-09-29.md",
+        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
       }
     },
     {
@@ -80,36 +87,38 @@
       "checkpoint": "qwen2.5-coder-1.5b",
       "machine": "cuda",
       "basis": "median-of-3",
-      "value": 252.9,
-      "peer": 195.1,
-      "runs": "253.1 / 252.9 / 252.9",
-      "peer_runs": "195.1 / 195.1 / 195.0",
-      "ratio_raw": "1.297",
-      "ratio": "1.30×",
+      "value": 270.7,
+      "peer": 183.7,
+      "runs": "270.7 / 270.6 / 270.8",
+      "peer_runs": "183.7 / 183.3 / 183.9",
+      "ratio_raw": "1.474",
+      "ratio": "1.47×",
       "verdict": "ahead",
       "why": "",
-      "date": "2026-09-25",
+      "date": "2026-09-29",
       "source": {
-        "path": "docs/measurements/peer-claim-2026-09-25.md",
-        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
+        "path": "docs/measurements/peer-sweep-2026-09-29.md",
+        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
       }
     },
     {
       "id": "qwen2.5-coder-1.5b/cpu/decode",
       "checkpoint": "qwen2.5-coder-1.5b",
       "machine": "cpu",
-      "basis": "none",
-      "value": null,
-      "peer": null,
-      "ratio_raw": "0.802",
-      "ratio": "not graded",
-      "verdict": "na",
-      "why": "One engine stopped its reply early, so the run doesn't count.",
-      "date": "2026-09-25",
+      "basis": "median-of-3",
+      "value": 24.3,
+      "peer": 24.0,
+      "ratio_raw": "1.01",
+      "ratio": "level with Ollama",
+      "verdict": "level",
+      "why": "Every pair within 3% of Ollama (1.007 to 1.015).",
+      "date": "2026-09-29",
       "source": {
-        "path": "docs/measurements/peer-claim-2026-09-25.md",
-        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
-      }
+        "path": "docs/measurements/peer-sweep-2026-09-29.md",
+        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
+      },
+      "runs": "24.3 / 24.2 / 24.4",
+      "peer_runs": "24.0 / 24.0 / 24.0"
     },
     {
       "id": "qwen2.5-coder-1.5b/mac/decode",
@@ -133,18 +142,18 @@
       "checkpoint": "phi3-mini-4k",
       "machine": "cuda",
       "basis": "median-of-3",
-      "value": 143.2,
-      "peer": 125.9,
-      "runs": "143.1 / 143.2 / 143.3",
-      "peer_runs": "126.0 / 125.9 / 125.8",
-      "ratio_raw": "1.138",
-      "ratio": "1.14×",
-      "verdict": "ahead",
-      "why": "",
-      "date": "2026-09-25",
+      "value": 112.6,
+      "peer": 125.8,
+      "runs": "112.7 / 112.5 / 112.6",
+      "peer_runs": "125.9 / 125.8 / 125.7",
+      "ratio_raw": "0.895",
+      "ratio": "0.90×",
+      "verdict": "behind",
+      "why": "At its default, --quant q4k. The earlier 1.14× compared a raw completion with broken output and is withdrawn.",
+      "date": "2026-09-29",
       "source": {
-        "path": "docs/measurements/peer-claim-2026-09-25.md",
-        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
+        "path": "docs/measurements/peer-sweep-2026-09-29.md",
+        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
       }
     },
     {
@@ -152,18 +161,18 @@
       "checkpoint": "gemma-4-26b-a4b",
       "machine": "cuda",
       "basis": "median-of-3",
-      "value": 40.2,
-      "peer": 22.2,
-      "runs": "40.2 / 40.2 / 40.1",
-      "peer_runs": "22.2 / 22.2 / 22.2",
-      "ratio_raw": "1.815",
-      "ratio": "1.82×",
-      "verdict": "ahead",
-      "why": "goinfer keeps every expert on the card; Ollama offloads to the CPU. Different checkpoints, so this compares approaches, not kernels. Context capped at 2,048.",
-      "date": "2026-09-25",
+      "value": 39.3,
+      "peer": 22.3,
+      "runs": "39.4 / 39.3 / 37.3",
+      "peer_runs": "22.3 / 22.3 / 22.3",
+      "ratio_raw": "1.763",
+      "ratio": "1.76× Ollama, graded ambiguous",
+      "verdict": "level",
+      "why": "Every pair was above 1.67×, but goinfer's own runs spread 5.3%, over the 5% cap set before the run, so it is not graded ahead. goinfer keeps every expert on the card; Ollama offloads to the CPU. Different checkpoints, so this compares approaches, not kernels. Context capped at 2,048.",
+      "date": "2026-09-29",
       "source": {
-        "path": "docs/measurements/peer-claim-2026-09-25.md",
-        "heading": "Cells a–f in detail (nobara-pc, 2026-09-25)"
+        "path": "docs/measurements/peer-sweep-2026-09-29.md",
+        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
       }
     }
   ]

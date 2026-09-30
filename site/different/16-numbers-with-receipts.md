@@ -55,6 +55,9 @@ figures:
   - {text: "0.80", source: docs/measurements/peer-claim-2026-09-25.md}
   - {text: "595.91.07", source: docs/measurements/peer-claim-2026-09-25.md}
   - {text: "427291b", source: docs/measurements/peer-claim-2026-09-25.md}
+  - {text: "1.045", source: "docs/measurements/peer-sweep-2026-09-29.md"}
+  - {text: "1.474", source: "docs/measurements/peer-sweep-2026-09-29.md"}
+  - {text: "0.905", source: "docs/measurements/peer-sweep-2026-09-29.md"}
   - {text: "1.059", source: "docs/measurements/metal-decode-gemv-r18b-2026-09-26.md"}
   - {text: "1.039", source: "docs/measurements/metal-decode-gemv-r18b-2026-09-26.md"}
   - {text: "1.032", source: "docs/measurements/metal-decode-gemv-r18b-2026-09-26.md"}
@@ -67,6 +70,7 @@ sources:
   - docs/legacy-benchmarks.md
   - docs/measurements/noise-registry.md
   - docs/measurements/peer-claim-2026-09-25.md
+  - "docs/measurements/peer-sweep-2026-09-29.md"
   - scripts/bench_peer.py
 ---
 
@@ -122,6 +126,8 @@ The pre-registered comparison of 2026-09-25 tested "goinfer is as fast as Ollama
 Measurements that were not counted are kept and named. Each one is a reply that ended early, from goinfer or from the other engine. Two of the twelve CUDA measurements were not counted because Ollama ended its reply early. The losses are in the same record as the wins.
 
 The Metal row is dated, and a page like this one should say when it has moved. Three kernel changes landed on the Mac on 2026-09-25 and 2026-09-26. The same comparison was then repeated on the same MacBook, interleaved in one session like the table, but not pre-registered, so it is reported and decides nothing. It put goinfer ahead of Ollama at every depth it measured: the 1.5B at 1.059×, 1.039× and 1.032× (depths 128, 2048 and 3900), and the 7B at 1.185×, 1.113× and 1.064× ([the R18b record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/metal-decode-gemv-r18b-2026-09-26.md)). A pre-registered re-run of the whole table at one build is the step that would replace the row.
+
+The Linux rows have been re-run, all at one build (`754f12d3`), on 2026-09-29, under the same bars plus two added checks written down first: a reply that ends early is judged against half the requested tokens, and a GPU measurement that quietly ran on the CPU is not counted. On CUDA goinfer was ahead of Ollama in all 12 measurements, 1.045× to 1.474×, with none left out. On the CPU the 0.5B was still behind (0.905×), and the 1.5B and 7B, left out in the table above, were level and ahead. The same re-run found a slowdown in goinfer's own top-p sampling, which is how a table like this earns its keep ([the re-run's record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/peer-sweep-2026-09-29.md)). The Mac half of the re-run has not been done yet.
 
 Everything here is one client at a time. The multi-client results in [Batching that doesn't change the answer](/different/13-batching-same-answer/) compare goinfer with its own earlier builds, not with another engine.
 
