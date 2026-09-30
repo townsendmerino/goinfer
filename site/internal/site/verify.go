@@ -2,6 +2,7 @@ package site
 
 import (
 	"fmt"
+	"html"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -42,7 +43,7 @@ func Verify(out string, m *Model, ws []*Writeup, drafts bool) error {
 		switch {
 		case err != nil:
 			bad = append(bad, fmt.Sprintf("doc %q has no page", d.Slug))
-		case !strings.Contains(page, d.Title):
+		case !strings.Contains(page, html.EscapeString(d.Title)):
 			bad = append(bad, fmt.Sprintf("doc %q: its page never carries its title", d.Slug))
 		case relLink.MatchString(page):
 			bad = append(bad, fmt.Sprintf("doc %q still has a relative link", d.Slug))
@@ -70,7 +71,7 @@ func Verify(out string, m *Model, ws []*Writeup, drafts bool) error {
 		case err != nil:
 			bad = append(bad, fmt.Sprintf("writeup %q has no page", w.Slug))
 			continue
-		case !strings.Contains(page, w.Title):
+		case !strings.Contains(page, html.EscapeString(w.Title)):
 			bad = append(bad, fmt.Sprintf("writeup %q: its page never names it", w.Slug))
 		case !strings.Contains(page, "What it doesn&#39;t do") && !strings.Contains(page, "What it doesn't do"):
 			bad = append(bad, fmt.Sprintf("writeup %q: its page has no \"What it doesn't do\" section", w.Slug))
@@ -88,7 +89,7 @@ func Verify(out string, m *Model, ws []*Writeup, drafts bool) error {
 		case err != nil:
 			bad = append(bad, fmt.Sprintf("family %q has no page", f.Name))
 			continue
-		case !strings.Contains(page, f.DisplayName):
+		case !strings.Contains(page, html.EscapeString(f.DisplayName)):
 			bad = append(bad, fmt.Sprintf("family %q: its page never names it (%q)", f.Name, f.DisplayName))
 		case !strings.Contains(page, "What hasn't been shown"):
 			bad = append(bad, fmt.Sprintf("family %q: its page has no \"What hasn't been shown\" list", f.Name))

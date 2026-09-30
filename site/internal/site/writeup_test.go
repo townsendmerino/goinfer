@@ -164,3 +164,26 @@ func TestVerify_refusesADraftInADeploy(t *testing.T) {
 		t.Error("a draft page must ask not to be indexed")
 	}
 }
+
+// The templates escape an apostrophe as &#39;, so the output check must compare escaped titles. A title like "Batching that
+// doesn't change the answer" failed the build before this (found while drafting the first batch).
+func TestVerify_acceptsATitleWithAnApostrophe(t *testing.T) {
+	needRepo(t)
+	out := t.TempDir()
+	m, err := Derive(realInputs(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Book = []BookChapter{{Num: 1, Title: "T", File: "01.html"}}
+	if m.Docs, err = LoadDocs(repoRoot, DefaultConfig().GitHubURL); err != nil {
+		t.Fatal(err)
+	}
+	w := &Writeup{Slug: "05-apostrophe", Order: 5, Title: "It doesn't break & it's <fine>", Area: "A", Summary: "s", Stand: "s", Measured: "2026-09-01", Reviewed: "2026-09-29", Doesnt: []WLimit{{"t", "x"}}, HTML: "<p>x</p>"}
+	ws := Visible([]*Writeup{w}, false)
+	if _, err := m.Render(out, DefaultConfig(), ws); err != nil {
+		t.Fatal(err)
+	}
+	if err := Verify(out, m, ws, false); err != nil {
+		t.Errorf("a title with an apostrophe, an ampersand and angle brackets must verify: %v", err)
+	}
+}
