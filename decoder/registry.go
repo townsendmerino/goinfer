@@ -1357,7 +1357,7 @@ func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if cfg.NormTopKProb != nil {
 		normTopK = *cfg.NormTopKProb
 	}
-	return &Architecture{
+	arch := &Architecture{
 		Name:            "qwen3_5_moe",
 		HiddenDim:       cfg.HiddenDim,
 		NumLayers:       cfg.NumLayers,
@@ -1397,7 +1397,9 @@ func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			NumValueHeads: cfg.LinearNumValueHeads,
 			AttnGate:      true, // qwen3_5_moe's own double-width [query‖gate] q_proj
 		},
-	}, &qwen35TensorSchema, nil
+	}
+	arch.MRopeSection, arch.MRopeInterleaved = parseMRopeFlat(cfg.RopeParameters)
+	return arch, &qwen35TensorSchema, nil
 }
 
 // qwen3NextArchitecture expresses Qwen3-Next (model_type qwen3_next): the same
@@ -2960,7 +2962,9 @@ func internlm2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 //     a new variant. For TEXT it reduces EXACTLY to standard partial RoPE: position_ids
 //     arrive 2-D and are expand()ed to three identical components, so
 //     apply_interleaved_mrope overwrites interleaved indices with identical values — a no-op.
-//     MRopeSection is therefore deliberately NOT set; an image path would need it (non-goal).
+//     The text path is unaffected by MRopeSection being set (ropeAt only consults it when a
+//     cache carries mropePos, which only GenerateQwenVL sets); P8a sets it from rope_parameters
+//     for the image path (parseMRopeFlat), proven byte-identical by TestQwen35_textIdentityHashes.
 //
 // rope fields are NESTED under rope_parameters on this release, which parseRopeFlat reads.
 func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
@@ -2975,7 +2979,7 @@ func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) 
 	if partialRotary > 0 && partialRotary < 1 {
 		rotaryDim = int(partialRotary * float64(cfg.HeadDim))
 	}
-	return &Architecture{
+	arch := &Architecture{
 		Name:             "qwen3_5",
 		HiddenDim:        cfg.HiddenDim,
 		NumLayers:        cfg.NumLayers,
@@ -3009,5 +3013,7 @@ func qwen35DenseArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) 
 			NumValueHeads: cfg.LinearNumValueHeads,
 			AttnGate:      true, // qwen3.5's own double-width [query‖gate] q_proj — the dense sibling shares qwen3_5_moe's attention layer
 		},
-	}, &qwen35DenseTensorSchema, nil
+	}
+	arch.MRopeSection, arch.MRopeInterleaved = parseMRopeFlat(cfg.RopeParameters)
+	return arch, &qwen35DenseTensorSchema, nil
 }

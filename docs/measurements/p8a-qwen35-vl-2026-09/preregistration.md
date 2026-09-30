@@ -117,3 +117,17 @@ erf→tanh → PASS (blind). Fix, two parts, both fixed now:
    activation if the erf→tanh mutation is RUN against the real tower and shown to breach 2e-5; otherwise
    it is declared blind to that defect and only the tiny gate carries it.
 Nothing else in G0 changes.
+
+**A2 — 2026-09-30, after the G1 tiny fixture first ran green, before any real-checkpoint image number.**
+Mechanism: with `rope_theta = 1e7` (the released value) the tiny fixture PASSED two deliberately wrong
+decoders — the contiguous m-RoPE layout in place of the interleaved one, and a dropped `mropeDelta` on
+decode — because at positions 3..9 every frequency but the first rotates by ~1e-2 rad or less, so the logits
+move by less than the 0.9999 cosine bar. A gate that passes the defect it exists for is not a gate. The tiny
+fixture's `rope_theta` is now 10 (tiny only; the layout and delta logic are theta-independent; the real
+checkpoints keep 1e7). Bars UNCHANGED (position_ids/delta exact; features cosine ≥ 0.9999; logits cosine
+≥ 0.9999; argmax and all 8 tokens exact). Mutations against the re-pinned fixture: scalar RoPE → FAIL (cosine
+0.9946); contiguous layout → FAIL (0.99977); `mropeDelta` = 0 → FAIL (continuation diverges at step 5);
+resident branch not refused → FAIL (`UploadKV` runs). Consequence for G2: the real checkpoints have theta 1e7,
+so G2's image runs are LESS sensitive to a rotary-layout error than this fixture; G2 (exact tokens over 32
+steps on 3 images) is not evidence about the layout, G1 is.
+

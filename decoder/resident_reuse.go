@@ -123,18 +123,43 @@ func (m *Model) reuseLenOf(resIDs []int, resLora *loraRuntime, resImgBlocks []re
 	// TestPagerDeterminism is the gate (reuse-on red before this guard, green after; still green
 	// with this narrower rule since an identical resend has len(prompt) == n).
 	if m.hasRecurrentState() {
-		// No recurrent-family VL arch exists today; refuse rather than silently mis-serve a
-		// claim the rewind-free recurrent rule below can't honour (its state has no per-position
-		// history to selectively keep, so an image block's atomicity has no meaning here at all).
-		if len(imgs) > 0 {
-			return 0
-		}
 		n := len(resIDs)
 		if len(prompt) <= n {
 			return 0
 		}
 		for i := range n {
 			if resIDs[i] != prompt[i] {
+				return 0
+			}
+		}
+		// Image blocks (P8a). The placeholder id is the SAME for every image, so an id match over an
+		// image block proves nothing about which image the recurrent state was built from, and the
+		// state cannot be rewound to an image boundary to repair a wrong guess. So the extension is
+		// honoured only if the committed blocks and this prompt's claims are the same set over the
+		// reused span: every committed block has a claim with the same start, length and NONZERO
+		// hash, and no claim reaches into [0, n) without a committed block behind it (a prompt saying
+		// "an image is here" over positions the state saw as plain tokens). Anything else is cold.
+		for _, blk := range resImgBlocks {
+			c, ok := findImageClaim(imgs, blk.start)
+			if !ok || blk.hash == 0 || c.Hash != blk.hash || c.Len != blk.end-blk.start {
+				return 0
+			}
+		}
+		for _, c := range imgs {
+			if c.Start >= n {
+				continue // a new image past the reused span is ordinary new work
+			}
+			if c.Start+c.Len > n {
+				return 0 // straddles the boundary: half of it would be reused
+			}
+			ok := false
+			for _, blk := range resImgBlocks {
+				if blk.start == c.Start && blk.end-blk.start == c.Len {
+					ok = true
+					break
+				}
+			}
+			if !ok {
 				return 0
 			}
 		}

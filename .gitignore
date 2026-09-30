@@ -78,6 +78,7 @@ demo/chat/dist/
 !testdata/nemotron3nano-tiny/model.safetensors
 !testdata/qwen3next-tiny/model.safetensors
 !testdata/qwen25vl-tiny/model.safetensors
+!testdata/qwen35vl-tiny/model.safetensors
 !testdata/glm-tiny/model.safetensors
 !testdata/glm-tiny-bias/model.safetensors
 !testdata/qwen35-tiny/model.safetensors

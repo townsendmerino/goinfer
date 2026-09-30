@@ -201,14 +201,54 @@ func TestResidentReuseLen_zeroHashNeverMatches(t *testing.T) {
 	}
 }
 
-// TestResidentReuseLen_recurrentRefusesImageClaims: no recurrent-family VL architecture exists
-// today, and the rewind-free recurrent rule has no notion of an image block's atomicity — a
-// claim there must refuse (fall to 0) rather than silently mis-serve it.
-func TestResidentReuseLen_recurrentRefusesImageClaims(t *testing.T) {
-	m := recurrentTestModel([]int{1, 2, 3})
-	claim := []residentImageClaim{{Start: 1, Len: 1, Hash: 7}}
-	if got := m.residentReuseLen([]int{1, 2, 3, 4}, claim, nil); got != 0 {
-		t.Errorf("recurrent family with an image claim: residentReuseLen = %d, want 0 (refuse)", got)
+// TestResidentReuseLen_recurrentImageClaims is P8a's decision-function gate (preregistration G4c). A
+// recurrent family cannot rewind, and the placeholder id is the same for every image, so an image
+// claim is honoured only under EXACT EXTENSION and only if the committed blocks and the prompt's
+// claims agree byte-for-byte over the reused span (same start, length, nonzero hash). Everything
+// else falls to 0 — cold. This tests the decision function directly; the end-to-end
+// "reused == cold, bitwise" cell is NOT gated here because with CPU decode after an image turn the
+// resident cache is never populated by one (it would pass vacuously) — it belongs to the
+// resident-image step. Rows are named for the failure they pin.
+func TestResidentReuseLen_recurrentImageClaims(t *testing.T) {
+	const P = 900 // the shared placeholder id
+	committed := []int{10, 11, P, P, P, P, 12, 13}
+	blk := residentImageBlock{start: 2, end: 6, hash: 7}
+	ext := append(append([]int(nil), committed...), 20, 21)
+	for _, tc := range []struct {
+		name   string
+		blocks []residentImageBlock
+		prompt []int
+		claims []residentImageClaim
+		want   int
+	}{
+		{"same image, exact extension: reuse the whole committed span", []residentImageBlock{blk}, ext, []residentImageClaim{{Start: 2, Len: 4, Hash: 7}}, 8},
+		{"different image bytes under the same placeholder ids", []residentImageBlock{blk}, ext, []residentImageClaim{{Start: 2, Len: 4, Hash: 9}}, 0},
+		{"committed block with no claim at all", []residentImageBlock{blk}, ext, nil, 0},
+		{"claim of a different length", []residentImageBlock{blk}, ext, []residentImageClaim{{Start: 2, Len: 3, Hash: 7}}, 0},
+		{"committed hash 0 never verifies, even against a claim of 0", []residentImageBlock{{start: 2, end: 6, hash: 0}}, ext, []residentImageClaim{{Start: 2, Len: 4, Hash: 0}}, 0},
+		{"a new image past the reused span is ordinary new work", []residentImageBlock{blk}, append(append([]int(nil), ext...), P, P, 30),
+			[]residentImageClaim{{Start: 2, Len: 4, Hash: 7}, {Start: 10, Len: 2, Hash: 55}}, 8},
+		{"a claim straddling the committed boundary (ids still match the whole span)", []residentImageBlock{blk}, append(append([]int(nil), committed...), P, P, 20),
+			[]residentImageClaim{{Start: 2, Len: 4, Hash: 7}, {Start: 6, Len: 5, Hash: 3}}, 0},
+		{"claim over positions the state saw as plain tokens", nil, ext, []residentImageClaim{{Start: 2, Len: 4, Hash: 7}}, 0},
+		{"edited prefix", []residentImageBlock{blk}, append([]int{99}, ext[1:]...), []residentImageClaim{{Start: 2, Len: 4, Hash: 7}}, 0},
+		{"identical resend has no new token to extend with", []residentImageBlock{blk}, committed, []residentImageClaim{{Start: 2, Len: 4, Hash: 7}}, 0},
+		{"two committed images, the second swapped", []residentImageBlock{{start: 1, end: 3, hash: 5}, {start: 4, end: 6, hash: 6}},
+			[]int{1, P, P, 2, P, P, 3, 4}, []residentImageClaim{{Start: 1, Len: 2, Hash: 5}, {Start: 4, Len: 2, Hash: 8}}, 0},
+		{"two committed images, both verified", []residentImageBlock{{start: 1, end: 3, hash: 5}, {start: 4, end: 6, hash: 6}},
+			[]int{1, P, P, 2, P, P, 3, 4}, []residentImageClaim{{Start: 1, Len: 2, Hash: 5}, {Start: 4, Len: 2, Hash: 6}}, 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resIDs := committed
+			if len(tc.blocks) == 2 {
+				resIDs = []int{1, P, P, 2, P, P}
+			}
+			m := recurrentTestModel(resIDs)
+			m.resImgBlocks = tc.blocks
+			if got := m.residentReuseLen(tc.prompt, tc.claims, nil); got != tc.want {
+				t.Errorf("residentReuseLen = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }
 

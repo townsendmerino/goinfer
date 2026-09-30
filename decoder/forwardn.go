@@ -1726,6 +1726,9 @@ func (m *Model) prefillLogitsVL(ctx context.Context, ids []int, imageEmbeds []fl
 // cache.mropePos). The merged features are RAW (no embed scale), matching HF's
 // scatter into inputs_embeds. (P5)
 func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, cache *KVCache) ([]float32, error) {
+	if m.w.arch.qwen35 != nil { // the Gated-DeltaNet hybrids have no batched prefill: per-token, P8a
+		return m.prefillLogitsQwen35VL(ctx, ids, imageFeats, imgPos, imgLen, mropePos, cache)
+	}
 	if !m.canBatchN(len(ids)) {
 		return nil, fmt.Errorf("decoder: Qwen2.5-VL prefill needs the batched path (canBatchN false)")
 	}

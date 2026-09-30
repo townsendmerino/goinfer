@@ -269,7 +269,17 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 		// never the tower's output — so it's available up front, before any reuse decision.
 		mropeDelta := mropeDelta(mropePos, len(ids))
 
-		if r, ok := m.resident.(ResidentMRoPE); ok && m.tryClaimResident() {
+		// A recurrent family (the Gated-DeltaNet hybrids) takes NO resident branch here, and must
+		// be refused rather than merely not engaged: every resident executor implements
+		// ResidentMRoPE, so the type assertions below succeed on a CUDA-resident qwen3.5, and the
+		// CPU-prefill → residentUploadPrefill bridge copies only layers that have KV — a DeltaNet
+		// layer has none, so it is skipped and resident decode would start from a ZEROED recurrent
+		// state, with no error and wrong tokens (the failure class 62309847 fixed for reuse). Image
+		// turns on a recurrent family are CPU prefill + CPU decode until a resident hybrid m-RoPE
+		// prefill (or a recurrent-state upload) exists. docs/multimodal.md P8 record, item 5.
+		recurrent := m.hasRecurrentState()
+
+		if r, ok := m.resident.(ResidentMRoPE); ok && !recurrent && m.tryClaimResident() {
 			claim := []residentImageClaim{{Start: imgPos, Len: imgLen, Hash: imgHash}}
 			// M-01 (docs/audit-2026-09-10.md): same cap decline as GenerateVL's identical P9a
 			// site above — a prompt in (ResidentContextCap, MaxPositions) already passed
@@ -330,7 +340,7 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 		// chunk, resident busy) falls through UNCHANGED to the CPU-prefill+UploadKV bridge;
 		// the claim is released before falling through so the CPU prefill below never runs
 		// while holding it.
-		if rmp, ok := m.resident.(ResidentMRoPEPrefill); ok {
+		if rmp, ok := m.resident.(ResidentMRoPEPrefill); ok && !recurrent {
 			if r, ok2 := m.resident.(ResidentMRoPE); ok2 && m.tryClaimResident() {
 				if logits, gpuPos, ferr := m.residentMRoPEPrefill(ctx, rmp, ids, feats, imgPos, imgLen, mropePos); ferr == nil {
 					g.ImgPrefillResident = true
@@ -381,7 +391,7 @@ func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen in
 		// cannot do Qwen decode (no m-RoPE support) shouldn't contend with a concurrent
 		// plain-text Generate for a claim it can't use. Safe on a nil m.resident: a type
 		// assertion on a nil interface value just reports ok=false.
-		if r, ok := m.resident.(ResidentMRoPE); ok && m.tryClaimResident() {
+		if r, ok := m.resident.(ResidentMRoPE); ok && !recurrent && m.tryClaimResident() {
 			defer func() {
 				if !committed {
 					m.residentForgetIDs() // see GenerateVL's identical comment — same V-11 discipline

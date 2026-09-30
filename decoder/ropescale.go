@@ -205,6 +205,27 @@ func parseRopeFlat(raw json.RawMessage) (spec *ropeLayerSpec, partialRotary floa
 	return spec, head.PartialRotaryFactor, nil
 }
 
+// parseMRopeFlat reads qwen3_5 / qwen3_5_moe's m-RoPE fields from the nested rope_parameters object:
+// mrope_section (T,H,W frequency counts) and mrope_interleaved. A missing, malformed or wrong-length
+// section returns (nil, false) — text-only loading must not depend on it; the image path checks
+// the section itself (GenerateQwenVL refuses a nil MRopeSection). Not validated against the rotary
+// dimension here: that needs the architecture and lives with the image seam.
+func parseMRopeFlat(raw json.RawMessage) (section []int, interleaved bool) {
+	var head struct {
+		Section     []int `json:"mrope_section"`
+		Interleaved bool  `json:"mrope_interleaved"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &head) != nil || len(head.Section) != 3 {
+		return nil, false
+	}
+	for _, n := range head.Section {
+		if n < 0 {
+			return nil, false
+		}
+	}
+	return head.Section, head.Interleaved
+}
+
 // newYarnScaling builds a YaRN ropeScaling, mirroring HF
 // _compute_yarn_parameters' defaults: beta_fast 32, beta_slow 1, and an
 // attention_factor of get_mscale(factor) = 0.1·ln(factor)+1 when not given.

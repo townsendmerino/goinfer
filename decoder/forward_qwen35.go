@@ -8,6 +8,19 @@ package decoder
 // prefill drives this sequentially so the DeltaNet recurrence sees every token.
 // See docs/qwen3_5_moe.md.
 func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
+	h := make([]float32, m.w.arch.HiddenDim)
+	m.w.Embed.Row(id, h) // no embedding scale for qwen3_5_moe
+	return m.runLayersQwen35FromEmbed(h, cache)
+}
+
+// runLayersQwen35FromEmbed is runLayersQwen35's body for a position whose residual-stream
+// embedding is supplied directly — the image-splice seam (P8a): an image row is a tower feature,
+// not a table lookup. Same shape as runLayersGemma4FromEmbed. It consumes h (the layers mutate it
+// in place) and returns it. One token per call, like its wrapper: there is no batched qwen3_5
+// prefill to mirror (prefill is this same per-token loop, so the DeltaNet recurrence sees every
+// token), and GDN layers take no position ids, so an image row needs nothing the text row doesn't
+// except the m-RoPE positions the full-attention layers read from cache.mropePos.
+func (m *Model) runLayersQwen35FromEmbed(h []float32, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	if cache.scr == nil { // a cache built via NewKVCache directly (tests) skips runLayers' setup
 		cache.scr = newDecodeScratch(arch)
@@ -16,9 +29,6 @@ func (m *Model) runLayersQwen35(id int, cache *KVCache) ([]float32, error) {
 	hidden := arch.HiddenDim
 	eps := arch.NormEps
 	pos := cache.Pos() // this token's absolute position (stable; Advance() at the end)
-
-	h := make([]float32, hidden)
-	m.w.Embed.Row(id, h) // no embedding scale for qwen3_5_moe
 
 	for l := 0; l < arch.NumLayers; l++ {
 		lw := &m.w.Layers[l]
@@ -116,8 +126,11 @@ func (m *Model) qwen35Attention(n []float32, lw *LayerWeights, arch *Architectur
 	rmsNorm(k, a.kNorm, nKV, hd, eps, arch.RMSAddOne)
 	invFreq := arch.ropeInvFreq(layer)
 	ms := arch.ropeMscale(layer)
-	applyRoPE(q, nH, hd, pos, invFreq, ms)
-	applyRoPE(k, nKV, hd, pos, invFreq, ms)
+	// ropeAt is applyRoPE unless the cache carries m-RoPE positions (GenerateQwenVL sets them for an
+	// image turn), so the text path is unchanged. The interleave flag stays false: this family's
+	// rotary has always been the half-split form, whatever arch.ropeInterleave says.
+	ropeAt(q, nH, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, false, arch.MRopeInterleaved)
+	ropeAt(k, nKV, hd, pos, invFreq, ms, arch.MRopeSection, cache.mropePos, cache.mropeDelta, false, arch.MRopeInterleaved)
 
 	cache.Append(layer, k, v)
 	ctx := make([]float32, nH*hd)
