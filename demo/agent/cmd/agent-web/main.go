@@ -74,6 +74,7 @@ func main() {
 		kTop    = flag.Int("ken-top-k", 4, "chunks requested per ken search")
 		freqPen = flag.Float64("freq-penalty", 0.3, "answer-phase frequency penalty (repetition/loop guard; 0 = off)")
 		presPen = flag.Float64("presence-penalty", 0.0, "answer-phase presence penalty (0 = off)")
+		think   = flag.String("thinking", "template", "thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): template (the model's own default), asis, on, off. The page shows its own \"Thinking…\" indicator; the model's reasoning is not sent to it")
 	)
 	flag.Parse()
 
@@ -81,7 +82,7 @@ func main() {
 		ModelPath: *model, Quant: *quant, Vision: *visDir, VisionQuant: *visQ, VisionBackend: *visBE,
 		KenBin: *ken, KenTopK: *kTop,
 		MaxTokens: *maxTok, Temperature: *temp, TopK: *topK, TopP: *topP,
-		FrequencyPenalty: *freqPen, PresencePenalty: *presPen,
+		FrequencyPenalty: *freqPen, PresencePenalty: *presPen, Thinking: *think,
 	}
 	if *model == "" {
 		raw, ok := embedmodel.Bytes()

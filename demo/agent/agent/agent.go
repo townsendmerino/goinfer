@@ -104,6 +104,12 @@ type Options struct {
 	// standard cure. Applied only to ANSWER (DECIDE stays greedy + constrained).
 	FrequencyPenalty float64
 	PresencePenalty  float64
+
+	// Thinking is the thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4):
+	// "" or "template" (the model's own default), "asis" (the prompt as goinfer rendered it before thinking was modelled), "on",
+	// "off". The DECIDE phase is always rendered thinking-off (its JSON grammar governs the first token). A model with no
+	// recognised control ignores it.
+	Thinking string
 }
 
 // Events lets a UI observe a Turn as it happens. All callbacks are optional
@@ -116,6 +122,9 @@ type Events struct {
 	Search func(query, results string, err error)
 	// Token fires for each newly-completed span of answer text (UTF-8 safe).
 	Token func(text string)
+	// Reasoning fires for each span of the model's reasoning, before its answer (UTF-8 safe). Optional: nil drops it. The reasoning
+	// is never part of Token's text, of Turn's return value, or of the conversation history.
+	Reasoning func(text string)
 }
 
 // Session holds the loaded model, the ken MCP client, and the chat history.
@@ -143,7 +152,8 @@ type Session struct {
 
 	ken *kenClient
 
-	opts Options
+	opts  Options
+	think chat.ThinkMode // resolved from opts.Thinking in New; the zero value is the pre-thinking rendering
 
 	mu      sync.Mutex
 	history []msg
@@ -178,6 +188,12 @@ func New(ctx context.Context, o Options) (*Session, error) {
 		return nil, err
 	}
 	s.opts = o
+	m, terr := resolveThinking(o.Thinking)
+	if terr != nil {
+		s.Close()
+		return nil, terr
+	}
+	s.think = m
 
 	// Vision tower (optional): -vision dir, else the ModelPath dir when it carries
 	// a Gemma 3 VL tower (auto-discover). Enables TurnImage.
@@ -259,7 +275,7 @@ func (s *Session) Turn(ctx context.Context, user string, ev Events) (string, err
 		FrequencyPenalty: s.opts.FrequencyPenalty,
 		PresencePenalty:  s.opts.PresencePenalty,
 	}
-	reply, err := s.generate(ctx, answerSystem, answerTurns, sp, s.opts.MaxTokens, ev.Token)
+	reply, err := s.generate(ctx, answerSystem, answerTurns, sp, s.opts.MaxTokens, ev.Token, ev.Reasoning, false)
 
 	// Only the clean user/assistant exchange enters long-term history — the
 	// bulky search results stay out so context doesn't balloon across turns.
@@ -426,7 +442,7 @@ func (s *Session) decide(ctx context.Context, user string) decision {
 	turns := append(append([]msg(nil), s.history...), msg{"user", user})
 	sp := decoder.SamplingParams{Temperature: 0,
 		LogitProcessor: s.schemaMasker([]byte(decisionSchema))}
-	raw, _ := s.generate(ctx, decideSystem, turns, sp, 96, nil)
+	raw, _ := s.generate(ctx, decideSystem, turns, sp, 96, nil, nil, true)
 
 	var d decision
 	if err := json.Unmarshal([]byte(raw), &d); err != nil {
@@ -436,22 +452,81 @@ func (s *Session) decide(ctx context.Context, user string) decision {
 }
 
 // generate renders system+turns through the chat template, runs one
-// generation, emitting completed text spans to onToken (if non-nil), and
-// returns the full text.
-func (s *Session) generate(ctx context.Context, system string, turns []msg, sp decoder.SamplingParams, maxTok int, onToken func(string)) (string, error) {
-	ids, err := s.tk.EncodeSegments(s.buildPromptSegments(system, turns), s.tmpl == nil /* addBOS */)
+// generation, emitting completed text spans to onToken (if non-nil) and the model's
+// reasoning to onReasoning (if non-nil), and returns the full ANSWER text — the reasoning
+// is never part of it.
+//
+// constrained marks a generation whose output a grammar governs from its first token (the
+// DECIDE phase's JSON): its prompt is rendered thinking-off, since a prompt that ends inside
+// an open think block would contradict the mask. Every other generation runs in the session's
+// thinking mode, with the reasoning budget: a thinking reply must always have room to answer,
+// so once its think block has used three quarters of maxTok the next token is forced to close
+// it (chat.ReasoningBudget — the same rule serve and goinfer-chat apply).
+func (s *Session) generate(ctx context.Context, system string, turns []msg, sp decoder.SamplingParams, maxTok int, onToken, onReasoning func(string), constrained bool) (string, error) {
+	tm := s.templateFor(constrained)
+	ct := make([]chat.Turn, len(turns))
+	for i, m := range turns {
+		ct[i] = chat.Turn{Role: m.role, Content: m.content}
+	}
+	ids, err := s.tk.EncodeSegments(s.buildPromptSegmentsWith(tm, system, turns), s.tmpl == nil /* addBOS */)
 	if err != nil {
 		return "", fmt.Errorf("encode: %w", err)
 	}
 	sp.StopIDs = s.stopIDs
+	s.applyBudget(&sp, tm, ct, maxTok, constrained)
 	tokens, gen := s.model.Generate(ctx, ids, maxTok, sp)
-	return s.streamGen(ctx, tokens, gen, onToken)
+	return s.streamReply(ctx, tokens, gen, tm.NewReplySplitter(ct), onReasoning, onToken)
+}
+
+// templateFor is the chat template a generation renders with: the session's own, in its thinking mode — except for a constrained
+// generation (the DECIDE phase's JSON grammar governs the first token), which is rendered thinking-off whenever the mode would
+// leave the prompt inside an open think block.
+func (s *Session) templateFor(constrained bool) *chat.Template {
+	tm := s.tmpl.WithThinking(s.think)
+	if constrained && tm.PromptOpensThink() {
+		tm = tm.WithThinking(chat.ThinkOff)
+	}
+	return tm
+}
+
+// applyBudget installs the reasoning budget on sp (see generate): never for a constrained generation, never over a processor that
+// is already set, and only where the model can think at all.
+func (s *Session) applyBudget(sp *decoder.SamplingParams, tm *chat.Template, turns []chat.Turn, maxTok int, constrained bool) {
+	if constrained || sp.LogitProcessor != nil {
+		return
+	}
+	room, ok := chat.BudgetRoom(maxTok)
+	if !ok {
+		return
+	}
+	if b := tm.NewReasoningBudgetFor(s.tk, turns, room); b != nil {
+		sp.LogitProcessor, sp.LogitProcessorGate = b.Process, b.Gate
+	}
+}
+
+// resolveThinking maps Options.Thinking to a mode: "" is the model's own default (template).
+func resolveThinking(v string) (chat.ThinkMode, error) {
+	if v == "" {
+		return chat.ThinkTemplate, nil
+	}
+	m, ok := chat.ParseThinkMode(v)
+	if !ok {
+		return chat.ThinkAsIs, fmt.Errorf("agent: Options.Thinking %q: want template, asis, on or off", v)
+	}
+	return m, nil
 }
 
 // streamGen drains a token channel into text with UTF-8 holdback, emitting each
 // newly-completed span to onToken. Shared by the text path (generate) and the
 // vision path (generateImage).
 func (s *Session) streamGen(ctx context.Context, tokens <-chan int, gen *decoder.Generation, onToken func(string)) (string, error) {
+	return s.streamReply(ctx, tokens, gen, nil, nil, onToken)
+}
+
+// streamReply is streamGen with the reasoning taken out: with a splitter (chat.Template.NewReplySplitter; nil for a model with no
+// recognised thinking control) each fragment's reasoning goes to onReasoning, on UTF-8 boundaries, and only the answer is held
+// back, emitted to onToken and returned.
+func (s *Session) streamReply(ctx context.Context, tokens <-chan int, gen *decoder.Generation, rs *chat.ReplySplitter, onReasoning, onToken func(string)) (string, error) {
 	// Stream with UTF-8 holdback: a byte-fallback token may be a partial rune, so a flush emits
 	// only the longest complete-rune prefix of what has not been emitted yet.
 	//
@@ -484,8 +559,22 @@ func (s *Session) streamGen(ctx context.Context, tokens <-chan int, gen *decoder
 		// dummy-prefix strip — M-25), and appending each token's own piece is exactly what a
 		// whole-sequence decode does internally, one token at a time.
 		piece, _ := s.tk.DecodePiece(id)
+		if rs != nil {
+			r, a := rs.Push(piece)
+			if r != "" && onReasoning != nil {
+				onReasoning(r)
+			}
+			piece = a
+		}
 		sb.WriteString(piece)
 		flush(false)
+	}
+	if rs != nil { // what the splitter still held: reasoning first, then any answer text
+		r, a, _ := rs.Finish()
+		if r != "" && onReasoning != nil {
+			onReasoning(r)
+		}
+		sb.WriteString(a)
 	}
 	flush(true)
 
@@ -507,12 +596,18 @@ func (s *Session) streamGen(ctx context.Context, tokens <-chan int, gen *decoder
 //
 // Same ids as Encode(Render(...)) on legitimate input; different, and correct, on hostile input.
 func (s *Session) buildPromptSegments(system string, turns []msg) []tokenizer.Segment {
+	return s.buildPromptSegmentsWith(s.tmpl.WithThinking(s.think), system, turns)
+}
+
+// buildPromptSegmentsWith is buildPromptSegments for an explicit template (the session's own, in the thinking mode chosen for
+// this generation).
+func (s *Session) buildPromptSegmentsWith(tm *chat.Template, system string, turns []msg) []tokenizer.Segment {
 	ct := make([]chat.Turn, len(turns))
 	for i, m := range turns {
 		ct[i] = chat.Turn{Role: m.role, Content: m.content}
 	}
-	if s.tmpl != nil {
-		cs := s.tmpl.RenderSegments(system, ct)
+	if tm != nil {
+		cs := tm.RenderSegments(system, ct)
 		out := make([]tokenizer.Segment, len(cs))
 		for i, seg := range cs {
 			out[i] = tokenizer.Segment{Text: seg.Text, Special: seg.Special}

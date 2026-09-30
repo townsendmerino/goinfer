@@ -38,14 +38,17 @@ func main() {
 		kTop    = flag.Int("ken-top-k", 4, "chunks requested per ken search")
 		freqPen = flag.Float64("freq-penalty", 0.3, "answer-phase frequency penalty (repetition/loop guard; 0 = off)")
 		presPen = flag.Float64("presence-penalty", 0.0, "answer-phase presence penalty (0 = off)")
+		think   = flag.String("thinking", "template", "thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): template (the model's own default), asis, on, off. The decide phase is always thinking-off")
+		showTh  = flag.Bool("show-thinking", true, "print the model's reasoning, dimmed, before its answer (false: a \"(thinking…)\" marker only)")
 	)
 	flag.Parse()
+	showThinking = *showTh
 
 	opts := agent.Options{
 		ModelPath: *model, Quant: *quant,
 		KenBin: *ken, KenTopK: *kTop,
 		MaxTokens: *maxTok, Temperature: *temp, TopK: *topK, TopP: *topP,
-		FrequencyPenalty: *freqPen, PresencePenalty: *presPen,
+		FrequencyPenalty: *freqPen, PresencePenalty: *presPen, Thinking: *think,
 	}
 	if *model == "" {
 		raw, ok := embedmodel.Bytes()
@@ -101,14 +104,29 @@ func repl(s *agent.Session) {
 
 // turn runs one exchange, streaming the answer in cyan with dim status lines
 // for the agentic machinery. Ctrl-C cancels just this generation.
+// showThinking is --show-thinking: whether the model's reasoning is printed (dimmed) or only marked.
+var showThinking = true
+
 func turn(s *agent.Session, user string) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	start := time.Now()
 	toks := 0
-	streaming := false
+	streaming, thinking := false, false
 	_, err := s.Turn(ctx, user, agent.Events{
+		Reasoning: func(text string) {
+			if !thinking {
+				thinking = true
+				fmt.Print("\033[2m")
+				if !showThinking {
+					fmt.Print("(thinking…)")
+				}
+			}
+			if showThinking {
+				fmt.Print(text)
+			}
+		},
 		Decision: func(action, query string) {
 			if action == "search" {
 				fmt.Fprintf(os.Stderr, "\033[2m[ken search: %q]\033[0m\n", query)
@@ -120,6 +138,10 @@ func turn(s *agent.Session, user string) {
 			}
 		},
 		Token: func(text string) {
+			if thinking { // the answer starts where the thinking ends
+				fmt.Print("\033[0m\n\n")
+				thinking = false
+			}
 			if !streaming {
 				fmt.Print("\033[36m")
 				streaming = true
@@ -129,6 +151,9 @@ func turn(s *agent.Session, user string) {
 			fmt.Print(text)
 		},
 	})
+	if thinking { // the reply ended while still thinking: no answer to print
+		fmt.Print("\033[0m\n(no answer: the reply ended while the model was still thinking — raise --max)\n")
+	}
 	if streaming {
 		fmt.Print("\033[0m\n")
 	}
