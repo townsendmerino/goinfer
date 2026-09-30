@@ -51,6 +51,10 @@
           {{if and (not $c.GoodFor) (not $c.Needs) (not $c.Note)}}<p class="prose">Nothing recorded yet.</p>{{end}}
         </div>
         <div class="blk"><h3>Tool calling</h3><p class="prose mono">{{$c.Tools}}</p></div>
+        <div class="blk"><h3>Decisions · <code>/v1/systemone</code></h3>{{with $c.Decision}}
+          <p class="prose">{{if eq .Route "head"}}A trained decision head{{else}}Label scoring{{end}}, {{.Template}}{{if .Calibrated}}, calibrated{{end}}: top-1 <span class="mono">{{.Top1}}</span>, ECE <span class="mono">{{.ECE}}</span>, over {{.Sample}}. Measured {{.Date}} on the {{(machine .Machine).Short}}.</p>
+          <p class="prose">Label scoring reads the model's own probabilities for the option labels; it is not a trained decision head, and the record explains how far behind one it sits: <a href="{{cfg.GitHubURL}}/blob/main/{{.Source.Path}}">the measurement</a>.</p>{{else}}
+          <p class="prose">Label scoring, unmeasured.</p>{{end}}</div>
         {{template "gapsblock" (dict2 $f $c)}}
       </div>
       <div>

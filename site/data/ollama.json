@@ -1,0 +1,744 @@
+{
+ "snapshot": "docs/measurements/ollama-coverage-2026-09-30.md",
+ "read": "2026-09-30",
+ "headline": "Of the 60 most-pulled models in Ollama's library on 2026-09-30, goinfer runs the families behind 87.5% of the pulls as Ollama ships them, and another 1.0% as text only.",
+ "rows": [
+  {
+   "rank": 1,
+   "tag": "llama3.1",
+   "pulls_m": 119.9,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 2,
+   "tag": "deepseek-r1",
+   "pulls_m": 93.3,
+   "ollama_caps": [
+    "tools",
+    "thinking"
+   ],
+   "families": [
+    "qwen2",
+    "qwen3",
+    "llama",
+    "deepseek_v3"
+   ],
+   "note": "distills plus the 671B",
+   "unverified": false
+  },
+  {
+   "rank": 3,
+   "tag": "nomic-embed-text",
+   "pulls_m": 87.5,
+   "ollama_caps": [
+    "embedding"
+   ],
+   "families": [
+    "encoder:nomic-bert"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 4,
+   "tag": "llama3.2",
+   "pulls_m": 84.6,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 5,
+   "tag": "qwen2.5",
+   "pulls_m": 41.2,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "qwen2"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 6,
+   "tag": "gemma3",
+   "pulls_m": 40.8,
+   "ollama_caps": [
+    "vision"
+   ],
+   "families": [
+    "gemma3"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 7,
+   "tag": "qwen3",
+   "pulls_m": 38.3,
+   "ollama_caps": [
+    "tools",
+    "thinking"
+   ],
+   "families": [
+    "qwen3"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 8,
+   "tag": "mistral",
+   "pulls_m": 33.7,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "mistral"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 9,
+   "tag": "gemma2",
+   "pulls_m": 33.6,
+   "ollama_caps": [],
+   "families": [],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 10,
+   "tag": "gemma4",
+   "pulls_m": 26.0,
+   "ollama_caps": [
+    "vision",
+    "tools",
+    "thinking",
+    "audio"
+   ],
+   "families": [
+    "gemma4"
+   ],
+   "note": "images yes; audio input not yet",
+   "unverified": false
+  },
+  {
+   "rank": 11,
+   "tag": "llama3",
+   "pulls_m": 25.4,
+   "ollama_caps": [],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 12,
+   "tag": "qwen2.5-coder",
+   "pulls_m": 21.9,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "qwen2"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 13,
+   "tag": "qwen3.5",
+   "pulls_m": 21.2,
+   "ollama_caps": [
+    "vision",
+    "tools",
+    "thinking"
+   ],
+   "families": [
+    "qwen3_5",
+    "qwen3_5_moe"
+   ],
+   "note": "images from safetensors, dense sizes only; Ollama's GGUF and the MoE sizes run as text",
+   "unverified": false
+  },
+  {
+   "rank": 14,
+   "tag": "phi3",
+   "pulls_m": 18.2,
+   "ollama_caps": [],
+   "families": [
+    "phi3"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 15,
+   "tag": "mxbai-embed-large",
+   "pulls_m": 15.2,
+   "ollama_caps": [
+    "embedding"
+   ],
+   "families": [
+    "encoder:bert"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 16,
+   "tag": "llava",
+   "pulls_m": 15.0,
+   "ollama_caps": [
+    "vision"
+   ],
+   "families": [],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 17,
+   "tag": "gpt-oss",
+   "pulls_m": 13.3,
+   "ollama_caps": [
+    "tools",
+    "thinking"
+   ],
+   "families": [
+    "gpt-oss"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 18,
+   "tag": "qwen3-coder",
+   "pulls_m": 9.6,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "qwen3_moe"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 19,
+   "tag": "gemma",
+   "pulls_m": 8.3,
+   "ollama_caps": [],
+   "families": [],
+   "note": "Gemma 1",
+   "unverified": false
+  },
+  {
+   "rank": 20,
+   "tag": "qwen",
+   "pulls_m": 7.9,
+   "ollama_caps": [],
+   "families": [],
+   "note": "Qwen 1",
+   "unverified": false
+  },
+  {
+   "rank": 21,
+   "tag": "phi4",
+   "pulls_m": 7.7,
+   "ollama_caps": [],
+   "families": [
+    "phi3"
+   ],
+   "note": "Phi-4 uses the phi3 architecture",
+   "unverified": false
+  },
+  {
+   "rank": 22,
+   "tag": "glm-ocr",
+   "pulls_m": 7.7,
+   "ollama_caps": [
+    "vision",
+    "tools"
+   ],
+   "families": [],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 23,
+   "tag": "llama2",
+   "pulls_m": 7.5,
+   "ollama_caps": [],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 24,
+   "tag": "bge-m3",
+   "pulls_m": 7.2,
+   "ollama_caps": [
+    "embedding"
+   ],
+   "families": [
+    "encoder:xlm-roberta"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 25,
+   "tag": "qwen3.6",
+   "pulls_m": 6.9,
+   "ollama_caps": [
+    "vision",
+    "tools",
+    "thinking"
+   ],
+   "families": [
+    "qwen3_5",
+    "qwen3_5_moe"
+   ],
+   "note": "images from safetensors, dense sizes only; Ollama's GGUF and the MoE sizes run as text",
+   "unverified": false
+  },
+  {
+   "rank": 26,
+   "tag": "codellama",
+   "pulls_m": 6.6,
+   "ollama_caps": [],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 27,
+   "tag": "qwen3-vl",
+   "pulls_m": 6.4,
+   "ollama_caps": [
+    "vision",
+    "tools",
+    "thinking"
+   ],
+   "families": [
+    "qwen3_vl"
+   ],
+   "note": "text side experimental; safetensors only",
+   "unverified": false
+  },
+  {
+   "rank": 28,
+   "tag": "qwen2",
+   "pulls_m": 6.2,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "qwen2"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 29,
+   "tag": "tinyllama",
+   "pulls_m": 5.9,
+   "ollama_caps": [],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 30,
+   "tag": "mistral-nemo",
+   "pulls_m": 5.7,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "mistral"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 31,
+   "tag": "minicpm-v",
+   "pulls_m": 5.5,
+   "ollama_caps": [
+    "vision"
+   ],
+   "families": [],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 32,
+   "tag": "llama3.2-vision",
+   "pulls_m": 5.4,
+   "ollama_caps": [
+    "vision"
+   ],
+   "families": [],
+   "note": "cross-attention (mllama)",
+   "unverified": false
+  },
+  {
+   "rank": 33,
+   "tag": "qwen2.5vl",
+   "pulls_m": 5.2,
+   "ollama_caps": [
+    "vision"
+   ],
+   "families": [
+    "qwen2_5_vl"
+   ],
+   "note": "safetensors only",
+   "unverified": false
+  },
+  {
+   "rank": 34,
+   "tag": "deepseek-coder",
+   "pulls_m": 4.7,
+   "ollama_caps": [],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 35,
+   "tag": "llama3.3",
+   "pulls_m": 4.2,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 36,
+   "tag": "dolphin3",
+   "pulls_m": 4.1,
+   "ollama_caps": [],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 37,
+   "tag": "qwen3-embedding",
+   "pulls_m": 4.1,
+   "ollama_caps": [
+    "embedding"
+   ],
+   "families": [
+    "qwen3"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 38,
+   "tag": "smollm2",
+   "pulls_m": 4.1,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 39,
+   "tag": "deepseek-v3",
+   "pulls_m": 3.8,
+   "ollama_caps": [],
+   "families": [
+    "deepseek_v3"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 40,
+   "tag": "olmo2",
+   "pulls_m": 3.8,
+   "ollama_caps": [],
+   "families": [],
+   "note": "goinfer has olmo3, not olmo2",
+   "unverified": false
+  },
+  {
+   "rank": 41,
+   "tag": "all-minilm",
+   "pulls_m": 3.7,
+   "ollama_caps": [
+    "embedding"
+   ],
+   "families": [
+    "encoder:minilm"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 42,
+   "tag": "codegemma",
+   "pulls_m": 3.2,
+   "ollama_caps": [],
+   "families": [],
+   "note": "Gemma 1 architecture",
+   "unverified": false
+  },
+  {
+   "rank": 43,
+   "tag": "deepseek-coder-v2",
+   "pulls_m": 3.2,
+   "ollama_caps": [],
+   "families": [
+    "deepseek_v2"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 44,
+   "tag": "mistral-small",
+   "pulls_m": 3.1,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "mistral"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 45,
+   "tag": "snowflake-arctic-embed",
+   "pulls_m": 3.1,
+   "ollama_caps": [
+    "embedding"
+   ],
+   "families": [
+    "encoder:arctic"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 46,
+   "tag": "orca-mini",
+   "pulls_m": 3.1,
+   "ollama_caps": [],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 47,
+   "tag": "granite3.1-moe",
+   "pulls_m": 3.0,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [],
+   "note": "granitemoe; goinfer has granite and granitemoehybrid",
+   "unverified": false
+  },
+  {
+   "rank": 48,
+   "tag": "starcoder2",
+   "pulls_m": 3.0,
+   "ollama_caps": [],
+   "families": [],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 49,
+   "tag": "nemotron-3-super",
+   "pulls_m": 3.0,
+   "ollama_caps": [
+    "tools",
+    "thinking"
+   ],
+   "families": [
+    "nemotron_h"
+   ],
+   "note": "family matches; the Super MoE variant is unchecked",
+   "unverified": true
+  },
+  {
+   "rank": 50,
+   "tag": "mixtral",
+   "pulls_m": 2.9,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "mixtral"
+   ],
+   "note": "parity tier experimental",
+   "unverified": false
+  },
+  {
+   "rank": 51,
+   "tag": "qwen3.8",
+   "pulls_m": 2.8,
+   "ollama_caps": [
+    "vision",
+    "tools",
+    "thinking"
+   ],
+   "families": [
+    "qwen3_5",
+    "qwen3_5_moe"
+   ],
+   "note": "images from safetensors, dense sizes only; Ollama's GGUF and the MoE sizes run as text",
+   "unverified": false
+  },
+  {
+   "rank": 52,
+   "tag": "llama2-uncensored",
+   "pulls_m": 2.7,
+   "ollama_caps": [],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 53,
+   "tag": "falcon3",
+   "pulls_m": 2.6,
+   "ollama_caps": [],
+   "families": [
+    "llama"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 54,
+   "tag": "translategemma",
+   "pulls_m": 2.5,
+   "ollama_caps": [
+    "vision"
+   ],
+   "families": [
+    "gemma3"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 55,
+   "tag": "mistral-small3.2",
+   "pulls_m": 2.5,
+   "ollama_caps": [
+    "vision",
+    "tools"
+   ],
+   "families": [
+    "mistral3"
+   ],
+   "note": "vision tower ignored; safetensors only",
+   "unverified": false
+  },
+  {
+   "rank": 56,
+   "tag": "minimax-m2.7",
+   "pulls_m": 2.4,
+   "ollama_caps": [
+    "tools",
+    "thinking"
+   ],
+   "families": [],
+   "note": "minimax_m2",
+   "unverified": false
+  },
+  {
+   "rank": 57,
+   "tag": "llava-llama3",
+   "pulls_m": 2.3,
+   "ollama_caps": [
+    "vision"
+   ],
+   "families": [],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 58,
+   "tag": "qwq",
+   "pulls_m": 2.3,
+   "ollama_caps": [
+    "tools",
+    "thinking"
+   ],
+   "families": [
+    "qwen2"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 59,
+   "tag": "embeddinggemma",
+   "pulls_m": 2.3,
+   "ollama_caps": [
+    "embedding"
+   ],
+   "families": [
+    "gemma3"
+   ],
+   "note": "",
+   "unverified": false
+  },
+  {
+   "rank": 60,
+   "tag": "gemma3n",
+   "pulls_m": 2.2,
+   "ollama_caps": [],
+   "families": [],
+   "note": "",
+   "unverified": false
+  }
+ ]
+}

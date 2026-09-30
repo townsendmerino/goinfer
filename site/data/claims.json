@@ -22,6 +22,13 @@
         "path": "docs/measurements/peer-sweep-2026-09-29.md",
         "heading": "Results — nobara-pc, cells a–f (graded 2026-09-30)"
       }
+    },
+    {
+      "text": "Of the 60 most-pulled models in Ollama's library on 2026-09-30, goinfer runs the families behind 87.5% of the pulls as Ollama ships them, and another 1.0% as text only.",
+      "source": {
+        "path": "docs/measurements/ollama-coverage-2026-09-30.md",
+        "heading": "Result"
+      }
     }
   ],
   "claims": [
@@ -173,6 +180,24 @@
       "source": {
         "path": "docs/measurements/peer-sweep-2026-09-29.md",
         "heading": "Cells in detail (nobara-pc, 2026-09-29)"
+      }
+    }
+  ],
+  "decisions": [
+    {
+      "id": "d6a-qwen2.5-coder-1.5b-chat",
+      "checkpoint": "qwen2.5-coder-1.5b",
+      "machine": "cuda",
+      "route": "label",
+      "template": "chat-v1",
+      "top1": "0.2774",
+      "ece": "0.2102",
+      "calibrated": true,
+      "sample": "872 out-of-distribution questions from a public decisions corpus",
+      "date": "2026-09-28",
+      "source": {
+        "path": "docs/measurements/decisions-d6a-2026-09-28.md",
+        "heading": "The run"
       }
     }
   ]

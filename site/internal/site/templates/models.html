@@ -98,4 +98,20 @@
   </div>
   <p class="s-sub">More in <a href="{{cfg.GitHubURL}}/blob/main/docs/what-parity-gated-means.md">what "parity-gated" means</a>. A family registered as <em>experimental</em> can change, or go, before v1.0.</p>
 </section>
+{{with $m.Ollama}}
+<section aria-labelledby="o-h" id="ollama" class="ollama">
+  <div class="s-head"><div><h2 class="s" id="o-h">Coming from Ollama?</h2>
+    <p class="s-sub">{{.Headline}}</p>
+    <p class="s-sub">Pull counts are cumulative, so older models rank higher than their current use; this is a guide to what loads, not a measure of what people run.</p></div></div>
+  {{template "otable" .Top}}
+  {{with .Rest}}<details class="orest"><summary>The other {{len .}}</summary>{{template "otable" .}}</details>{{end}}
+  <p class="s-sub ofoot">Ollama's library page, read {{.Read}}. The statuses and the figures come from <a href="{{cfg.GitHubURL}}/blob/main/{{.Snapshot}}">the snapshot</a>.</p>
+</section>
+{{end}}
 {{template "foot" .}}
+{{define "otable"}}<div class="tablewrap"><table class="otab">
+    <thead><tr><th scope="col">#</th><th scope="col">Ollama tag</th><th scope="col">goinfer</th><th scope="col">Family</th><th scope="col">Note</th></tr></thead>
+    <tbody>{{range .}}<tr class="o-{{.Status}}"><td class="n">{{.Rank}}</td><td><code>{{.Tag}}</code></td><td class="st">{{.StatusText}}</td>
+      <td>{{range $i, $f := .Links}}{{if $i}}, {{end}}<a href="/models/{{$f.Name}}/">{{$f.DisplayName}}</a>{{end}}{{if .Encoder}}{{if .Links}}, {{end}}<a href="#embeddings">Embeddings</a>{{end}}</td>
+      <td>{{.Note}}</td></tr>{{end}}</tbody>
+  </table></div>{{end}}

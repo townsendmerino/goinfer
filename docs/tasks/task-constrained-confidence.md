@@ -1,6 +1,6 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
-> **Status, 2026-09-30: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b sized, not queued (owner's call); D7 projected.**
+> **Status, 2026-09-30: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b queued on nobara for tonight's run; D7 projected.**
 > - **D6a** ([`decisions-d6a-2026-09-28.md`](../measurements/decisions-d6a-2026-09-28.md)): arm A (Qwen3.5-9B, chat-v1, calibrated)
 >   reads top-1 0.4197 and ECE 0.1656, against JEV-9B's 0.9181 and a bar of 0.0632, so the registered rule says **build D2–D4**.
 >   The control failed as registered (bare-v1 0.3378 against the authors' B0 0.5180). The investigation found the inputs identical
@@ -36,7 +36,7 @@
 > `goinfer.Into[T](ctx, prompt)`. No such function exists. The real surfaces are
 > `constrain.GrammarFromStruct` / `constrain.JSONSchema` → `constrain.NewMasker(...).Process` set as
 > `SamplingParams.LogitProcessor` (the README's "A Go struct the model cannot violate" section), and
-> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:557`). C1
+> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:558`). C1
 > is written against those.
 >
 > **Siblings.** [`task-tool-grammar-union-2026-09.md`](task-tool-grammar-union-2026-09.md)
@@ -133,7 +133,7 @@ is.
   recurrent state (`decoder/kvsnapshot.go:62`). So "prefill the shared state once, branch per
   question" is not available on `qwen3_5` today (D8).
 - **Route A is approximable from outside already.** `/v1/completions` with `max_tokens: 1,
-  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:555`, cap at `:33`) gives a client
+  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:556`, cap at `:33`) gives a client
   the label-token logprobs, with no renormalization over the option set, no calibration, and no
   guarantee the labels are in the top 20. That is the baseline D1 improves on.
 
@@ -443,7 +443,19 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
   - **Not tested:** the fused `in_proj_qkvz` (qwen3_next) and Olmo Hybrid layouts are merged by the same readers
     but have no PEFT gate of their own. JEV-9B's real adapter has not been loaded yet (that is D4's first step).
   - **Memory.** The merge runs tensor by tensor on the streaming-quant path, so the extra peak is one tensor's f32
-    copy, not the model's. `transcode --lora` → `.giw` is still offered in the bullet above and is not built.
+    copy, not the model's.
+  - **`transcode --lora`: built 2026-09-30** as `prequant -lora DIR` (`internal/prequant/lora.go`).
+    - **What it writes:** a `.giw` from a safetensors directory with the adapter merged at load, plus
+      `<bundle>.lora.json` recording the adapter and the sha256 of its weights. The sidecar is published only after
+      the bundle passes its self-check, and a plain rebuild at the same path removes it.
+    - **How loads use it:** `prequant.AdapterLoRA` decides what a decision head's load merges. A safetensors model
+      gets the adapter; a `.giw` whose sidecar records that exact adapter gets nothing; any other `.giw` is refused.
+      Serve's `head=` and `goinfer-chat decide --head` both call it.
+    - **Test:** `TestTranscodeLoRA`. On the tiny fixtures at f32, the bundle's `PromptHidden` is bit-identical to a
+      merge-at-load and differs from the base; another adapter and a sidecar-less bundle are refused; a GGUF input is
+      refused.
+    - **Peak memory:** the transcode itself holds the whole quantized model (it is `transcodeDir`), so a 27B is built
+      on a box that can hold it, and the Mac then mmaps the result.
 
 ### D4 — readout head + calibration (Route B)
 
@@ -503,10 +515,33 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
       `PromptHidden` runs Qwen3.5 token by token on the CPU (no resident executor exposes the hidden state, D2),
       which is decode-speed and memory-bandwidth bound.
   - **Not done:**
-    - Serve's `/v1/systemone` still answers by Route A only.
-    - `jev_core`'s state truncation (a state over 1024 tokens is cut to its first 60% and last 40%) is not
-      reproduced. None of the 150 D0 items needs it, but a Route B request with a longer state renders a prompt the
-      head was not trained on.
+    - ~~Serve's `/v1/systemone` still answers by Route A only~~ **done 2026-09-30:** a `--model` entry's `head=DIR`
+      loads the head at startup, and its unmerged adapter becomes the entry's LoRA (a different `lora=` is refused).
+      `/v1/systemone` on that entry answers by Route B, with the head's template and calibration.
+      - **Validation:** questions are validated against the head's limits before any prefill (422), via
+        `Decider.Validate`.
+      - **Descriptions:** they are left out of the prompt, as `jev_core` builds it, and listed in
+        `goinfer.descriptions_dropped`. They are not refused, since TypeSafe's score questions always carry them.
+      - **Reporting:** `/v1/models` reports route `head`. The load banner says the entry's text generation is the
+        decision model's.
+      - **Tests:** `TestSpecHead`, `TestSystemOne_head`, `TestHead_dropsDescriptions`. Documented in
+        `docs/server.md`.
+      - **End-to-end probe** (exploratory; nobara-pc CPU, `goinfer-serve` at 11837723, default int4):
+        `--model jev=~/models/JEV-9B,head=~/models/JEV-9B` loads, and `/v1/models` reports route `head`. One D0 item
+        (`v3_63e22867e7c69c10_n`) answers P(true) 0.6175 against the f32 reference's 0.602, with 71 input tokens, the
+        reference's count.
+    - ~~`jev_core`'s state truncation~~ **done 2026-09-30** (`internal/decide/truncate.go`). A state over 1024 tokens
+      is cut to its first 614 and last 410 tokens and decoded back to text, with a split character replaced exactly as
+      CPython's `errors="replace"` does it.
+      - **Gate:** `TestTruncateState_matchesReference`, eight states built to cut badly (CJK, emoji, accents, rare
+        ideographs, a multi-byte seam, exactly 1024 and 1025 tokens). The kept text and the whole prompt's token ids
+        match transformers with JEV-9B's own tokenizer (`scripts/pin_decisions_truncation.py`). A 50/50 cut goes red.
+      - **CPython's rule:** `TestPyReplaceInvalidUTF8` holds the replacement to CPython's output on 16 byte strings,
+        the cases where Go's `strings.ToValidUTF8` differs.
+      - **Scope:** it runs on the head route only; Route A's prompts are unchanged. None of the pinned corpus's 26,824
+        states reaches 1024 tokens (the longest is 541), so it matters for served requests, not for D6.
+      - **Still different from the reference:** a state containing special-token text such as `<|im_start|>`, which
+        transformers parses as one special token and goinfer encodes as plain text.
     - A batched or resident hidden-state path for Qwen3.5, which D6b's cost depends on (below).
 - **D6b sizing, from that probe.** The 150 items are 27,861 tokens:
 
@@ -566,7 +601,7 @@ schema was never published (D0).
 
 - `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
   registered with the same `auth → haltGate → inf → maxBytes` chain as its siblings
-  (`internal/serveapp/main.go:613`). Batch goes through J1 admission and, when asked, the J3 job
+  (`internal/serveapp/main.go:639`). Batch goes through J1 admission and, when asked, the J3 job
   object, so a long batch is re-attachable.
 - Response: `distribution`, `decision`, `confidence`, `latency_ms`, plus `model`, `route` (`label` |
   `head`), `backend`, and `calibrated` (false when no `calibration.json` was found — legal, but
@@ -754,6 +789,14 @@ suffix, and the cost is documented.
 - **`docs/README.md`:** the index entry updated.
 - **The site:** [`task-site-2026-09.md`](task-site-2026-09.md) S2 gains a decisions row on each model page, and a
   decision-model tag reserved for Route B.
+  - **Built 2026-09-30.** Each vetted checkpoint's card has a "Decisions · /v1/systemone" block.
+    - **Where measured:** the checkpoint's label-scoring figures, from `site/data/claims.json`'s new `decisions`
+      list. Today that is Qwen2.5-Coder 1.5B, D6a's arm C (chat-v1, calibrated, top-1 0.2774, ECE 0.2102).
+    - **Otherwise:** "Label scoring, unmeasured."
+    - **Gates:** the claims check requires both figures and the date under the cited heading, and Verify requires
+      them on the page (`TestDecisionClaims_refuse`, `TestVerify_decisionsRow`).
+    - **No decision-model tag:** no registry checkpoint carries a trained head. JEV-9B is served with `head=`, not
+      pulled from the registry.
 - **The recipe:** [`../integrations/typesafe-jevx.md`](../integrations/typesafe-jevx.md), for jevx and TypeSafe's
   SDKs. It is marked not yet run end to end.
 - **The capability matrix: deferred to D2–D4.**
@@ -822,7 +865,7 @@ contract) · `decoder/arch.go:954` (the `qwen3_5` / `qwen3_5_moe` own-forward ro
 `decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:695`, `:744`
 (merge-at-load) · `decoder/kvcache.go:540` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
 skips recurrent state) · `internal/serveapp/openai.go:34`, `:536`, `:538` (`top_logprobs` cap,
-`logprobs`, `response_format`) · `internal/serveapp/main.go:613` (route middleware) ·
+`logprobs`, `response_format`) · `internal/serveapp/main.go:639` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·
 [autotrust/JEV-27B](https://huggingface.co/autotrust/JEV-27B) (adapter, head, calibration, API) ·
 [autotrust/JEV](https://huggingface.co/autotrust/JEV) · [autotrust/JEV-9B](https://huggingface.co/autotrust/JEV-9B) ·

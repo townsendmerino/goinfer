@@ -182,13 +182,29 @@ func CheckClaims(root string, in *Inputs) error {
 			bad = append(bad, fmt.Sprintf("claim %s: a verdict against Ollama needs both figures", c.ID))
 		}
 	}
+	for _, d := range in.Claims.Decisions {
+		sec, err := section(d.Source)
+		if err != nil {
+			bad = append(bad, fmt.Sprintf("decision claim %s: %v", d.ID, err))
+			continue
+		}
+		for what, tok := range map[string]string{"top1": d.Top1, "ece": d.ECE} {
+			if !hasToken(sec, tok) {
+				bad = append(bad, fmt.Sprintf("decision claim %s: %s %q is not under %q in %s", d.ID, what, tok, d.Source.Heading, d.Source.Path))
+			}
+		}
+		if !strings.Contains(sec, d.Date) {
+			bad = append(bad, fmt.Sprintf("decision claim %s: date %q is not under %q in %s", d.ID, d.Date, d.Source.Heading, d.Source.Path))
+		}
+	}
 	for _, f := range in.Claims.Facts {
 		sec, err := section(f.Source)
 		if err != nil {
 			bad = append(bad, fmt.Sprintf("fact %q: %v", f.Text, err))
 			continue
 		}
-		if !strings.Contains(sec, f.Text) {
+		// Whitespace is collapsed on both sides: a record wraps its lines, and a line break is not part of a sentence.
+		if !strings.Contains(strings.Join(strings.Fields(sec), " "), strings.Join(strings.Fields(f.Text), " ")) {
 			bad = append(bad, fmt.Sprintf("fact %q is not under %q in %s", f.Text, f.Source.Heading, f.Source.Path))
 		}
 	}

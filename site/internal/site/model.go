@@ -130,6 +130,7 @@ type Checkpoint struct {
 	Pull                                 string
 	Fit                                  map[string]Fit // by machine key
 	Speed                                map[string]*Speed
+	Decision                             *DecisionClaim // measured decision figures; nil = unmeasured
 	Family                               *Family
 }
 
@@ -186,6 +187,7 @@ type Model struct {
 	Docs     []*DocPage    // the repo documents rendered under /docs/
 	Book     []BookChapter // the primer's chapters, for Home
 	Counts   Counts
+	Ollama   *Ollama // the "Coming from Ollama?" section; nil when the inputs had none
 }
 
 // Counts is the strip at the top of the Models page.
@@ -267,6 +269,17 @@ func Derive(in *Inputs) (*Model, error) {
 		}
 		c.Speed[cl.Machine] = &Speed{Tok: cl.Value, Peer: cl.Peer, Verdict: cl.Verdict, Ratio: cl.Ratio, Why: cl.Why, Date: cl.Date}
 	}
+	for i := range in.Claims.Decisions {
+		d := &in.Claims.Decisions[i]
+		c, ok := ck[d.Checkpoint]
+		if !ok {
+			return nil, fmt.Errorf("decision claim %q is about checkpoint %q, which no page carries", d.ID, d.Checkpoint)
+		}
+		if c.Decision != nil {
+			return nil, fmt.Errorf("checkpoint %q has two decision claims (%s, %s)", c.ID, c.Decision.ID, d.ID)
+		}
+		c.Decision = d
+	}
 	sort.SliceStable(m.Vetted, func(i, j int) bool { return m.Vetted[i].Bytes < m.Vetted[j].Bytes })
 	// The ledger: strongest check first, then non-experimental, then by the two numbers, then by name.
 	m.Ledger = append([]*Family(nil), m.Families...)
@@ -286,6 +299,13 @@ func Derive(in *Inputs) (*Model, error) {
 		}
 		return strings.ToLower(a.DisplayName) < strings.ToLower(b.DisplayName)
 	})
+	if in.Ollama != nil {
+		es, err := deriveOllama(in.Ollama, m.ByName)
+		if err != nil {
+			return nil, err
+		}
+		m.Ollama = &Ollama{OllamaData: in.Ollama, Entries: es}
+	}
 	m.Counts = Counts{Families: len(m.Families), Vetted: len(m.Vetted)}
 	for _, f := range m.Families {
 		switch f.P.Tier {

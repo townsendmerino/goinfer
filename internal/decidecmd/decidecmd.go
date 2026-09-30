@@ -22,6 +22,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/internal/modelload"
+	"github.com/townsendmerino/goinfer/internal/prequant"
 )
 
 const decideUsage = `%[1]s decide --model <file.gguf|dir> [flags] <in.jsonl|->  — decisions by label-token scoring,
@@ -115,7 +116,11 @@ func (c *common) open(ctx context.Context, cal *decide.Calibration) (*decide.Dec
 		if head, err = decide.LoadHead(*c.head); err != nil {
 			return nil, nil, err
 		}
-		if a := head.AdapterDir(); a != "" {
+		a, err := prequant.AdapterLoRA(head.AdapterDir(), *c.model) // "" for a .giw that carries it (prequant -lora)
+		if err != nil {
+			return nil, nil, err
+		}
+		if a != "" {
 			if opts.LoRA != "" && opts.LoRA != a {
 				return nil, nil, fmt.Errorf("--lora %s and the head's own adapter %s: an unmerged head brings its adapter", opts.LoRA, a)
 			}

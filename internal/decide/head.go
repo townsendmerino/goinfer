@@ -184,8 +184,9 @@ func (h *Head) Kinds() []string {
 }
 
 // check refuses a request this head was not trained to answer: a kind it has no slots for, more options than its
-// slots, a score whose levels are not exactly its own (JEV's prompt always shows 0..5), and option descriptions,
-// which JEV's template does not have.
+// slots, and a score whose levels are not exactly its own (JEV's prompt always shows 0..5). Option descriptions are not
+// refused: the head route leaves them out of the prompt, as jev_core's build_decision_prompt does (it renders a score
+// as bare 0..5 and a choice by option names), and Result.DescriptionsDropped says so.
 func (h *Head) check(r Request) error {
 	rg, ok := h.ranges[r.Kind]
 	if !ok {
@@ -197,8 +198,6 @@ func (h *Head) check(r Request) error {
 		return fmt.Errorf("decide: the decision head scores exactly %d levels (0..%d), not %d", n, n-1, len(r.Options))
 	case len(r.Options) > n:
 		return fmt.Errorf("decide: %d options, more than the decision head's %d %s slots", len(r.Options), n, r.Kind)
-	case r.Descriptions != nil:
-		return errors.New("decide: option descriptions are not part of the template the decision head was trained on")
 	}
 	return nil
 }

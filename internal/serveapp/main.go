@@ -48,6 +48,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/internal/modelload"
+	"github.com/townsendmerino/goinfer/internal/prequant"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
 	"github.com/townsendmerino/goinfer/internal/servecheck"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -70,6 +71,7 @@ type modelSpec struct {
 	weightCache *float64 // weight-cache= (GB)
 	embedInt4   *bool    // embed-int4 (bare) or embed-int4=true|false
 	ctxSize     *int     // ctx= (resident KV positions)
+	head        *string  // head= (a trained decision head dir: POST /v1/systemone answers by Route B)
 }
 
 // modelFlag collects repeated --model flags. Each value is
@@ -127,6 +129,11 @@ func (s *modelSpec) setOverride(key, val string, hasVal bool) error {
 		s.kvPrec = &val
 	case "kv-quant":
 		s.kvQuant = &val
+	case "head":
+		if val == "" {
+			return errors.New("head= needs a directory (judge_config.json, head.safetensors, calibration.json)")
+		}
+		s.head = &val
 	case "ctx":
 		n, perr := strconv.Atoi(val)
 		if perr != nil {
@@ -182,6 +189,31 @@ func (s modelSpec) options(cfg config) decoder.Options {
 	o.ResidentPrefillChunk = cfg.prefillChunk // MC3 chunked prefill (docs/tasks/task-concurrency-2026-09.md); 0 = off
 	o.CPUBatchDecode = cfg.cpuBatch           // MC3c step 2: batched CPU decode (-cpu-batch)
 	return o
+}
+
+// specHead loads a --model entry's head= (a trained decision head, D4) and, for a head whose adapter is unmerged, makes
+// that adapter the model's LoRA so it is merged at load, as goinfer-chat decide --head does. A different lora= is
+// refused rather than one of the two silently winning. nil, nil when the entry has no head.
+func specHead(s modelSpec, o *decoder.Options) (*decide.Head, error) {
+	if s.head == nil {
+		return nil, nil
+	}
+	h, err := decide.LoadHead(*s.head)
+	if err != nil {
+		return nil, err
+	}
+	// A .giw built with the adapter merged in (prequant -lora) needs no LoRA; AdapterLoRA checks its sidecar.
+	a, err := prequant.AdapterLoRA(h.AdapterDir(), s.path)
+	if err != nil {
+		return nil, err
+	}
+	if a != "" {
+		if o.LoRA != "" && o.LoRA != a {
+			return nil, fmt.Errorf("lora=%s and the head's own adapter %s: an unmerged head brings its adapter", o.LoRA, a)
+		}
+		o.LoRA = a
+	}
+	return h, nil
 }
 
 // adapterSpec is one --adapter entry (#7): a served name, the --model it attaches
@@ -351,7 +383,9 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
 		"OpenAI `model` field. Append comma-separated per-model overrides of the global\n"+
 		"defaults below: `--model big=moe.giw,stream,weight-cache=16 --model fast=small.giw`\n"+
-		"streams only the big MoE. Keys: quant,lora,kv,kv-quant,ctx,stream,weight-cache,embed-int4.\n"+
+		"streams only the big MoE. Keys: quant,lora,kv,kv-quant,ctx,stream,weight-cache,embed-int4,head.\n"+
+		"head=DIR attaches a trained decision head (autotrust's JEV layout): POST /v1/systemone on that model\n"+
+		"answers with it (Route B), and an unmerged head's adapter is merged into the model at load.\n"+
 		"(Paths may not contain commas.)")
 	fs.StringVar(&cfg.drafter, "drafter", "", "directory of a pretrained BLOCK drafter (z-lab DFlash) paired with --model: the drafter proposes a whole block of tokens per round and the target verifies them in ONE batched pass, measured 1.6-1.8x on code/math and ~0.96x on open chat (docs/spec/08). LOSSLESS — every emitted token is one the target's own argmax produced, so output is identical to plain greedy. Greedy only: a request with temperature, penalties or logit bias falls back to normal decoding automatically. Requires a resident GPU backend (--backend cuda); declines with a reason otherwise serve-only; goinfer-chat offers --spec ngram and --draft instead.")
 	sf.showVersion = fs.Bool("version", false, "print version, the backends COMPILED INTO this binary, and the Go toolchain, then exit. `backends:` is the compiled-in truth — --backend accepts names this build cannot run and falls back to cpu")
@@ -1171,6 +1205,10 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// Resolve this model's knobs (per-model overrides over server-global defaults)
 	// and reject invalid enums up front.
 	opts := spec.options(cfg)
+	head, err := specHead(spec, &opts)
+	if err != nil {
+		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
+	}
 	if err := opts.Validate(); err != nil {
 		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
 	}
@@ -1223,7 +1261,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	}
 	fp := modelFingerprint(spec.path, model.Quant())
 	lm := &loadedModel{
-		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp,
+		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, head: head,
 		spec:         cfg.spec == "ngram",
 		specAdaptive: cfg.specAdaptive,
 		// capHint 0: KV grows on demand. The fingerprint binds disk snapshots to
@@ -1277,6 +1315,13 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	bannerCfg.load.Ctx = opts.ResidentContext // the -ctx this model actually asked for (a per-model ctx= wins)
 	for _, line := range modelBanner(lm, bannerCfg) {
 		fmt.Fprintf(os.Stderr, "  %s\n", line)
+	}
+	if h := lm.head; h != nil {
+		how := "weights merged"
+		if h.AdapterDir() != "" {
+			how = "adapter merged at load; this entry's text generation is the decision model's, not the base's"
+		}
+		fmt.Fprintf(os.Stderr, "  decisions: route B, head %s %s (%s), POST /v1/systemone\n", h.Name, h.Version, how)
 	}
 	// C-10: the same reasoning one line up, applied to the TOKENIZER. A pre-tokenizer this build
 	// does not walk produces a different id stream from HF and from llama.cpp with no error

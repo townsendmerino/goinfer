@@ -145,6 +145,14 @@ func (s *server) serveSystemOne(w http.ResponseWriter, r *http.Request, lm *load
 		writeErr(w, http.StatusBadRequest, "this model cannot answer decisions: "+err.Error())
 		return
 	}
+	// The decider's own limits (a decision head's six score levels, no descriptions, its kinds), before any prefill:
+	// a question this model cannot answer is the client's error, not a failure halfway through the answers.
+	for _, it := range items {
+		if err := d.Validate(it.req); err != nil {
+			writeErr(w, http.StatusUnprocessableEntity, fmt.Sprintf("question %q: %v", it.name, err))
+			return
+		}
+	}
 	textBytes := 0
 	for _, it := range items {
 		textBytes = max(textBytes, len(it.req.State)+len(it.req.Question)+len(strings.Join(it.req.Options, ""))+len(strings.Join(it.req.Descriptions, "")))
@@ -159,6 +167,7 @@ func (s *server) serveSystemOne(w http.ResponseWriter, r *http.Request, lm *load
 	defer lm.exit()
 	var answers orderedJSON
 	calibrated := map[string]bool{}
+	dropped := []string{} // questions whose option descriptions a decision head did not read
 	inputTokens := 0
 	for _, it := range items {
 		res, err := d.Decide(r.Context(), it.req)
@@ -171,15 +180,21 @@ func (s *server) serveSystemOne(w http.ResponseWriter, r *http.Request, lm *load
 		}
 		inputTokens += res.PromptTokens * res.Prefills
 		calibrated[it.req.Kind] = res.Calibrated
+		if res.DescriptionsDropped {
+			dropped = append(dropped, it.name)
+		}
 		answers = append(answers, orderedField{it.name, systemOneAnswer(it, res)})
+	}
+	gi := map[string]any{"route": d.Route(), "template": d.Template(), "calibrated": calibrated, "note": systemOneNote(d.Route())}
+	if d.Route() == decide.RouteHead {
+		gi["descriptions_dropped"] = dropped // the head reads option names only, as JEV's template has them
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"model":   lm.name,
 		"answers": answers,
-		// Label scoring decodes nothing: every prompt token is input, and no token is generated.
-		"usage": map[string]int{"input_tokens": inputTokens, "output_tokens": 0},
-		"goinfer": map[string]any{"route": "label", "template": d.Template(), "calibrated": calibrated,
-			"note": "probabilities are the served model's own over the options; calibrated only where a fitted temperature says so"},
+		// A decision decodes nothing: every prompt token is input, and no token is generated.
+		"usage":   map[string]int{"input_tokens": inputTokens, "output_tokens": 0},
+		"goinfer": gi,
 	})
 }
 
@@ -237,6 +252,13 @@ func (lm *loadedModel) getDecider(cfg config) (*decide.Decider, error) {
 			if cal, lm.deciderErr = decide.LoadCalibration(cfg.decisionsCal); lm.deciderErr != nil {
 				return
 			}
+		}
+		if lm.head != nil {
+			// Route B: the head's own template and calibration.json. -decisions-template and -decisions-calibration
+			// describe label scoring and do not apply to a head.
+			lm.decider, lm.deciderErr = decide.New(decide.NewPlainTokenizer(lm.tk), nil,
+				decide.Options{Template: lm.head.Template, Head: lm.head, Hidden: decide.ModelHidden(lm.model)})
+			return
 		}
 		lm.decider, lm.deciderErr = decide.New(decide.NewPlainTokenizer(lm.tk), decide.ModelPrefill(lm.model),
 			decide.Options{Template: tmpl, Calibration: cal})
@@ -324,4 +346,12 @@ func (o orderedJSON) MarshalJSON() ([]byte, error) {
 	}
 	b.WriteByte('}')
 	return b.Bytes(), nil
+}
+
+// systemOneNote is the response's plain statement of what its probabilities are, by route.
+func systemOneNote(route string) string {
+	if route == decide.RouteHead {
+		return "probabilities are a trained decision head's over the options, calibrated by its own per-kind temperatures"
+	}
+	return "probabilities are the served model's own over the options; calibrated only where a fitted temperature says so"
 }

@@ -101,11 +101,29 @@ type Source struct {
 	Heading string `json:"heading"`
 }
 
+// DecisionClaim is one checkpoint's measured decision figures (the S2 decisions row, D9 of
+// docs/tasks/task-constrained-confidence.md): label scoring (Route A) through POST /v1/systemone, top-1 and ECE on a
+// labelled sample, both of which must appear in the cited record, as a speed must.
+type DecisionClaim struct {
+	ID         string `json:"id"`
+	Checkpoint string `json:"checkpoint"`
+	Machine    string `json:"machine"`
+	Route      string `json:"route"`    // label (Route A); head once a checkpoint has a trained decision head
+	Template   string `json:"template"` // chat-v1 or bare-v1
+	Top1       string `json:"top1"`     // as the record prints it
+	ECE        string `json:"ece"`
+	Calibrated bool   `json:"calibrated"`
+	Sample     string `json:"sample"` // what the figures are over, in words
+	Date       string `json:"date"`
+	Source     Source `json:"source"`
+}
+
 // Claims is the whole claims file.
 type Claims struct {
-	Method string  `json:"method"`
-	Facts  []Fact  `json:"facts"`
-	Claims []Claim `json:"claims"`
+	Method    string          `json:"method"`
+	Facts     []Fact          `json:"facts"`
+	Claims    []Claim         `json:"claims"`
+	Decisions []DecisionClaim `json:"decisions"`
 }
 
 // Inputs is everything a build reads.
@@ -114,6 +132,7 @@ type Inputs struct {
 	Curated  Curated
 	Machines []Machine
 	Claims   Claims
+	Ollama   *OllamaData // site/data/ollama.json, the "Coming from Ollama?" section
 }
 
 func readJSON(path string, v any) error {
@@ -145,6 +164,10 @@ func LoadInputs(root string) (*Inputs, error) {
 	}
 	in.Machines = m.Machines
 	if err := readJSON(filepath.Join(root, "site", "data", "claims.json"), &in.Claims); err != nil {
+		return nil, err
+	}
+	var err error
+	if in.Ollama, err = LoadOllama(root); err != nil {
 		return nil, err
 	}
 	return in, nil
@@ -188,6 +211,18 @@ func (in *Inputs) Validate() error {
 		}
 		if c.Source.Path == "" || c.Source.Heading == "" {
 			return fmt.Errorf("claim %q has no source", c.ID)
+		}
+	}
+	for _, d := range in.Claims.Decisions {
+		switch {
+		case !mk[d.Machine]:
+			return fmt.Errorf("decision claim %q names machine %q, which machines.json does not list", d.ID, d.Machine)
+		case d.Date == "" || d.Top1 == "" || d.ECE == "" || d.Sample == "":
+			return fmt.Errorf("decision claim %q needs top1, ece, sample and date", d.ID)
+		case d.Route != "label" && d.Route != "head":
+			return fmt.Errorf("decision claim %q: route %q must be label or head", d.ID, d.Route)
+		case d.Source.Path == "" || d.Source.Heading == "":
+			return fmt.Errorf("decision claim %q has no source", d.ID)
 		}
 	}
 	return nil
