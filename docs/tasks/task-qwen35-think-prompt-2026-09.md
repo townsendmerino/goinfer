@@ -4,6 +4,12 @@
 > (`docs/measurements/p8a-qwen35-vl-2026-09/g1-g4-results.md`, finding 1), then widened the same day when the 9B leg of P8a
 > died on it: **the 0.8B and the 9B disagree about the default, so the G4 write-up's "Qwen3.5 defaults to thinking OFF" is
 > true of one size only.** Nothing here has been changed in product code.
+>
+> **Measured since (same day):** the 9B, given a prompt *without* its open `<think>\n`, writes `<think>\n` itself as its first two
+> tokens and then continues identically to the with-opener run (question 1, three images, 32 tokens). And serve has **no
+> think-block handling at all** in non-test Go (no `reasoning_content`, no stripping — question 3), so the self-written
+> opener, and the whole reasoning block that follows it, reach the client as ordinary reply content. The P8a pin script's
+> 0.8B-only assertion that killed the 9B night job is fixed (`e6b41252`, local) and verified on the 9B.
 
 ## The defect
 
@@ -62,11 +68,21 @@ carry both variants, and G2 compares against `golden_*`, so the vision gate does
    c. *Leave the default, add the knob* — plumb `enable_thinking` (OpenAI-compat `chat_template_kwargs` on serve, a
       `chat.Turn`/render option in the library) and keep today's bytes as the default. No G3 movement; does not fix the
       default gap, only makes it reachable.
+   What the 9B measurement does to each: (c) leaves the 9B's replies opening with `<think>\n` and all reasoning in
+   `content` (question 3) until the knob is used; (b)-non-thinking makes the 9B's replies shorter than HF's default ever is;
+   (b)-open and (a) put the opener in the prompt, which matches HF for the 9B but leaves the reasoning block to be surfaced
+   or stripped (question 3) — so question 3 has to be settled for every option except non-thinking. The 0.8B is the reverse:
+   its default is already non-thinking, so (a) and (b)-non-thinking agree there and (c) is the no-op.
    Any option that changes default bytes moves G3 and needs the baseline **re-registered with a mechanism**, not
    re-baselined because the number moved.
-3. **Stop and output handling if thinking is on by default.** A 9B that opens `<think>` answers with a reasoning block
-   first: check how serve surfaces it (streamed as content? stripped? `reasoning_content`?) before making thinking-ON the
-   default anywhere. Not looked at in this doc.
+3. **Output handling when thinking is on — PARTLY ANSWERED 2026-09-30 (grep, no run).** Non-test Go contains no
+   `reasoning_content` field and no `</think>` stripping on the serve reply path; the only `</think>` uses are
+   `internal/decide/model.go` (which appends the empty no-think block *itself* — `<think>\n\n</think>\n\n` — and refuses
+   a tokenizer where that does not encode as `[<think> \n </think> \n]`, so it is a precedent for "the caller supplies the
+   suffix" and a place that would need to learn the 9B's open form) and a test hook (`decoder/testhooks.go`). So today a
+   Qwen3.5-9B chat reply through serve begins with a literal `<think>\n`, then reasoning, then `</think>`, then the answer,
+   all as `content`. Still **not measured**: how long the 9B's reasoning runs on a text prompt (the 32-token runs never left the
+   block), and whether a client such as Claude Code's Messages path or an OpenAI SDK chokes on or hides it.
 4. **Is it only Qwen3.5?** Qwen3 (default ON) is served with its template adding nothing and the model left to open `<think>` itself
    (`decoder/testhooks.go` calls this "thinking left ON"); that is long-standing behaviour, not a measured-correct one. The
    same self-opening question applies to any family whose template pre-writes a think opener. Survey the other detected
@@ -82,6 +98,14 @@ carry both variants, and G2 compares against `golden_*`, so the vision gate does
   added.
 - Quality is judged through the real template, not raw completion (see the quant-eval note in memory); a change that makes
   the model think by default also changes latency per reply, so report tokens-to-answer, not only token identity.
+
+## What P8a does and does not cover for the 9B
+
+The night job's goinfer G2 (`TestQwen35VLReal_G2_9B`) feeds the decoder `golden_*` ids — the model's own template, opener
+*in* the prompt — so it gates the vision tower, splice and decode on the 9B, **not** serve's prompt rendering. There is no
+9B G4: the serve-level test (`TestServe_qwen35Image_G4`) runs on the 0.8B only. The `serve_*` goldens exist for the 9B now and
+a serve-level 9B gate could be built on them, but it would pin today's behaviour (literal `<think>\n` in the reply), so
+build it after the contract is chosen, not before.
 
 ## Not in scope
 
