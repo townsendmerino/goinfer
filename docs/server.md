@@ -471,7 +471,11 @@ names that are served.
     Serve the base model as another entry if you need both.
     - A `.giw` built with `prequant -lora DIR` carries the adapter already, so no merge happens at load.
     - `head=` checks the bundle's `.lora.json` sidecar and refuses a bundle built without that exact adapter.
-  - **CPU only.** No GPU executor exposes this hidden state yet.
+  - **It runs on the GPU when the model is resident** (CUDA or Metal), through the same headless forward embeddings
+    use, and falls back to the CPU otherwise.
+    - On nobara's RTX 2070 SUPER, JEV-9B at int4 measured about 3 ms per prompt token, against about 65 ms on its
+      CPU (exploratory, five items).
+    - The GPU's int4 kernels are not the CPU's, so the two answers differ slightly.
   - **How closely it tracks the reference** is D6b in `tasks/task-constrained-confidence.md`, not yet graded.
 
 **Reasoning models (thinking).** Qwen3, Qwen3.5 and Gemma 4 can think before they answer, and their own chat templates

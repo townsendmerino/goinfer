@@ -542,7 +542,22 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
         states reaches 1024 tokens (the longest is 541), so it matters for served requests, not for D6.
       - **Still different from the reference:** a state containing special-token text such as `<|im_start|>`, which
         transformers parses as one special token and goinfer encodes as plain text.
-    - A batched or resident hidden-state path for Qwen3.5, which D6b's cost depends on (below).
+    - ~~A batched or resident hidden-state path for Qwen3.5~~ **both done 2026-09-30.**
+      - **Batched CPU:** `runLayersQwen35N`, below.
+      - **Resident GPU:** `PromptHidden` now tries `ResidentHiddenLast` first, the seam `HiddenLast` uses for
+        embeddings. That is CUDA's batched prefill with a headless tail, or Metal's per-token headless forward, with a
+        CPU fallback on a decline. `HiddenLast` and `PromptHidden` both claim the resident through
+        `tryClaimResident`; `HiddenLast` used a raw CAS that ignored MC3's batcher.
+      - **Gates:** `TestPromptHiddenResidentMetal` and `TestPromptHiddenResidentCUDA` run the tiny Qwen3.5 with its
+        PEFT adapter merged, both sides at int4. Resident vs CPU reads cosine 0.99985 / 0.99991 on Metal and
+        0.99987 / 0.99988 on CUDA. `PromptHidden` is bit-identical to the runner's own `HiddenLast`, so the dispatch
+        took the resident; disabling the branch turns that check red.
+      - **Why int4 on both sides:** Metal has no int8 GEMV. A CPU-int8 against Metal comparison read 0.977, which is
+        the two quantizations differing, not the resident path.
+      - **Real model** (exploratory; nobara RTX 2070 SUPER, JEV-9B int4, five D0 items): 2.9–3.0 ms/token against
+        the CPU's 65. KL to the f32 reference ranges 1.3e-7 to 1.3e-2, against 5e-4 to 6e-2 for CPU int4.
+      - **D6b is unaffected:** its pre-registered arms run on the CPU (`--backend cpu`), and the f32 arm could not
+        fit the card anyway.
 - **D6b sizing, from that probe.** The 150 items are 27,861 tokens:
 
   | arm | estimate |
