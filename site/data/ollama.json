@@ -1,12 +1,12 @@
 {
- "snapshot": "docs/measurements/ollama-coverage-2026-09-30.md",
+ "snapshot": "docs/measurements/ollama-coverage-2026-09-30b.md",
  "read": "2026-09-30",
- "headline": "Of the 60 most-pulled models in Ollama's library on 2026-09-30, goinfer runs the families behind 87.5% of the pulls as Ollama ships them, and another 1.0% as text only.",
+ "headline": "Of the 60 most-pulled models in Ollama's library on 2026-09-30, goinfer runs the families behind 92.4% of the pulls as Ollama ships them, and another 1.0% as text only.",
  "rows": [
   {
    "rank": 1,
    "tag": "llama3.1",
-   "pulls_m": 119.9,
+   "pulls_m": 120.0,
    "ollama_caps": [
     "tools"
    ],
@@ -14,7 +14,8 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 2,
@@ -31,12 +32,13 @@
     "deepseek_v3"
    ],
    "note": "distills plus the 671B",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 3,
    "tag": "nomic-embed-text",
-   "pulls_m": 87.5,
+   "pulls_m": 87.6,
    "ollama_caps": [
     "embedding"
    ],
@@ -44,12 +46,13 @@
     "encoder:nomic-bert"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 4,
    "tag": "llama3.2",
-   "pulls_m": 84.6,
+   "pulls_m": 84.7,
    "ollama_caps": [
     "tools"
    ],
@@ -57,12 +60,13 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 5,
    "tag": "qwen2.5",
-   "pulls_m": 41.2,
+   "pulls_m": 41.4,
    "ollama_caps": [
     "tools"
    ],
@@ -70,7 +74,8 @@
     "qwen2"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 6,
@@ -83,12 +88,13 @@
     "gemma3"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 7,
    "tag": "qwen3",
-   "pulls_m": 38.3,
+   "pulls_m": 38.5,
    "ollama_caps": [
     "tools",
     "thinking"
@@ -97,12 +103,13 @@
     "qwen3"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 8,
    "tag": "mistral",
-   "pulls_m": 33.7,
+   "pulls_m": 33.8,
    "ollama_caps": [
     "tools"
    ],
@@ -110,21 +117,25 @@
     "mistral"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 9,
    "tag": "gemma2",
-   "pulls_m": 33.6,
+   "pulls_m": 33.7,
    "ollama_caps": [],
-   "families": [],
+   "families": [
+    "gemma2"
+   ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 10,
    "tag": "gemma4",
-   "pulls_m": 26.0,
+   "pulls_m": 26.1,
    "ollama_caps": [
     "vision",
     "tools",
@@ -135,7 +146,8 @@
     "gemma4"
    ],
    "note": "images yes; audio input not yet",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 11,
@@ -146,7 +158,8 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 12,
@@ -159,12 +172,13 @@
     "qwen2"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 13,
    "tag": "qwen3.5",
-   "pulls_m": 21.2,
+   "pulls_m": 21.3,
    "ollama_caps": [
     "vision",
     "tools",
@@ -175,7 +189,8 @@
     "qwen3_5_moe"
    ],
    "note": "images from safetensors, dense sizes only; Ollama's GGUF and the MoE sizes run as text",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 14,
@@ -186,7 +201,8 @@
     "phi3"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 15,
@@ -199,7 +215,8 @@
     "encoder:bert"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 16,
@@ -210,12 +227,13 @@
    ],
    "families": [],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": "llava_next"
   },
   {
    "rank": 17,
    "tag": "gpt-oss",
-   "pulls_m": 13.3,
+   "pulls_m": 13.4,
    "ollama_caps": [
     "tools",
     "thinking"
@@ -224,7 +242,8 @@
     "gpt-oss"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 18,
@@ -237,16 +256,20 @@
     "qwen3_moe"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 19,
    "tag": "gemma",
    "pulls_m": 8.3,
    "ollama_caps": [],
-   "families": [],
+   "families": [
+    "gemma"
+   ],
    "note": "Gemma 1",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 20,
@@ -255,7 +278,8 @@
    "ollama_caps": [],
    "families": [],
    "note": "Qwen 1",
-   "unverified": false
+   "unverified": false,
+   "needs": "qwen"
   },
   {
    "rank": 21,
@@ -266,7 +290,8 @@
     "phi3"
    ],
    "note": "Phi-4 uses the phi3 architecture",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 22,
@@ -278,7 +303,8 @@
    ],
    "families": [],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": "glm_ocr"
   },
   {
    "rank": 23,
@@ -289,7 +315,8 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 24,
@@ -302,7 +329,8 @@
     "encoder:xlm-roberta"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 25,
@@ -318,7 +346,8 @@
     "qwen3_5_moe"
    ],
    "note": "images from safetensors, dense sizes only; Ollama's GGUF and the MoE sizes run as text",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 26,
@@ -329,7 +358,8 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 27,
@@ -344,7 +374,8 @@
     "qwen3_vl"
    ],
    "note": "text side experimental; safetensors only",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 28,
@@ -357,7 +388,8 @@
     "qwen2"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 29,
@@ -368,7 +400,8 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 30,
@@ -381,7 +414,8 @@
     "mistral"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 31,
@@ -392,7 +426,8 @@
    ],
    "families": [],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": "minicpmv"
   },
   {
    "rank": 32,
@@ -403,7 +438,8 @@
    ],
    "families": [],
    "note": "cross-attention (mllama)",
-   "unverified": false
+   "unverified": false,
+   "needs": "mllama"
   },
   {
    "rank": 33,
@@ -416,7 +452,8 @@
     "qwen2_5_vl"
    ],
    "note": "safetensors only",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 34,
@@ -427,7 +464,8 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 35,
@@ -440,7 +478,8 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 36,
@@ -451,7 +490,8 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 37,
@@ -464,7 +504,8 @@
     "qwen3"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 38,
@@ -477,7 +518,8 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 39,
@@ -488,7 +530,8 @@
     "deepseek_v3"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 40,
@@ -497,7 +540,8 @@
    "ollama_caps": [],
    "families": [],
    "note": "goinfer has olmo3, not olmo2",
-   "unverified": false
+   "unverified": false,
+   "needs": "olmo2"
   },
   {
    "rank": 41,
@@ -510,16 +554,20 @@
     "encoder:minilm"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 42,
    "tag": "codegemma",
    "pulls_m": 3.2,
    "ollama_caps": [],
-   "families": [],
-   "note": "Gemma 1 architecture",
-   "unverified": false
+   "families": [
+    "gemma"
+   ],
+   "note": "the Gemma 1 architecture",
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 43,
@@ -530,7 +578,8 @@
     "deepseek_v2"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 44,
@@ -543,7 +592,8 @@
     "mistral"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 45,
@@ -556,7 +606,8 @@
     "encoder:arctic"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 46,
@@ -567,7 +618,8 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 47,
@@ -578,7 +630,8 @@
    ],
    "families": [],
    "note": "granitemoe; goinfer has granite and granitemoehybrid",
-   "unverified": false
+   "unverified": false,
+   "needs": "granitemoe"
   },
   {
    "rank": 48,
@@ -587,7 +640,8 @@
    "ollama_caps": [],
    "families": [],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": "starcoder2"
   },
   {
    "rank": 49,
@@ -601,25 +655,13 @@
     "nemotron_h"
    ],
    "note": "family matches; the Super MoE variant is unchecked",
-   "unverified": true
+   "unverified": true,
+   "needs": ""
   },
   {
    "rank": 50,
-   "tag": "mixtral",
-   "pulls_m": 2.9,
-   "ollama_caps": [
-    "tools"
-   ],
-   "families": [
-    "mixtral"
-   ],
-   "note": "parity tier experimental",
-   "unverified": false
-  },
-  {
-   "rank": 51,
    "tag": "qwen3.8",
-   "pulls_m": 2.8,
+   "pulls_m": 2.9,
    "ollama_caps": [
     "vision",
     "tools",
@@ -630,7 +672,22 @@
     "qwen3_5_moe"
    ],
    "note": "images from safetensors, dense sizes only; Ollama's GGUF and the MoE sizes run as text",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
+  },
+  {
+   "rank": 51,
+   "tag": "mixtral",
+   "pulls_m": 2.9,
+   "ollama_caps": [
+    "tools"
+   ],
+   "families": [
+    "mixtral"
+   ],
+   "note": "parity tier experimental",
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 52,
@@ -641,7 +698,8 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 53,
@@ -652,7 +710,8 @@
     "llama"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 54,
@@ -665,7 +724,8 @@
     "gemma3"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 55,
@@ -679,7 +739,8 @@
     "mistral3"
    ],
    "note": "vision tower ignored; safetensors only",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 56,
@@ -691,7 +752,8 @@
    ],
    "families": [],
    "note": "minimax_m2",
-   "unverified": false
+   "unverified": false,
+   "needs": "minimax_m2"
   },
   {
    "rank": 57,
@@ -702,21 +764,22 @@
    ],
    "families": [],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": "llava"
   },
   {
    "rank": 58,
    "tag": "qwq",
    "pulls_m": 2.3,
    "ollama_caps": [
-    "tools",
-    "thinking"
+    "tools"
    ],
    "families": [
     "qwen2"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 59,
@@ -729,7 +792,8 @@
     "gemma3"
    ],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": ""
   },
   {
    "rank": 60,
@@ -738,7 +802,8 @@
    "ollama_caps": [],
    "families": [],
    "note": "",
-   "unverified": false
+   "unverified": false,
+   "needs": "gemma3n"
   }
  ]
 }

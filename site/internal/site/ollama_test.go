@@ -22,7 +22,7 @@ func TestCheckOllama_theRealDataHolds(t *testing.T) {
 		status[e.Tag] = e.Status
 	}
 	for tag, want := range map[string]string{"gemma3": "S", "gemma4": "S", "qwen2.5vl": "S", "qwen3-vl": "T",
-		"mistral-small3.2": "T", "nemotron-3-super": "U", "gemma2": "N", "nomic-embed-text": "S"} {
+		"mistral-small3.2": "T", "nemotron-3-super": "U", "gemma2": "S", "codegemma": "S", "llava": "N", "nomic-embed-text": "S"} {
 		if status[tag] != want {
 			t.Errorf("%s: derived %q, want %q", tag, status[tag], want)
 		}
@@ -38,7 +38,7 @@ func TestCheckOllama_refuses(t *testing.T) {
 		name, want string
 		edit       func(in *Inputs)
 	}{
-		{"a mistyped pull count", "pulls 119.9", func(in *Inputs) { in.Ollama.Rows[0].PullsM = 119.8 }},
+		{"a mistyped pull count", "pulls 120.0", func(in *Inputs) { in.Ollama.Rows[0].PullsM = 119.8 }},
 		{"a family changed", "families", func(in *Inputs) { in.Ollama.Rows[4].Families = []string{"qwen3"} }},
 		{"the matrix moved (qwen3_5 loses its images)", "new snapshot needed", func(in *Inputs) {
 			for i := range in.Rows {
@@ -51,9 +51,20 @@ func TestCheckOllama_refuses(t *testing.T) {
 			in.Claims.Facts = nil
 		}},
 		{"a headline with another share", "does not carry the S share", func(in *Inputs) {
-			in.Ollama.Headline = strings.Replace(in.Ollama.Headline, "87.5%", "88.0%", 1)
+			in.Ollama.Headline = strings.Replace(in.Ollama.Headline, "92.4%", "93.0%", 1)
 		}},
 		{"a row dropped", "rows, ollama.json", func(in *Inputs) { in.Ollama.Rows = in.Ollama.Rows[:59] }},
+		// The case that slipped through before needs existed: support landing for a row that names no family.
+		{"the matrix gains an N row's needs", "the matrix now has llava_next", func(in *Inputs) {
+			in.Rows = append(in.Rows, Row{Name: "llava_next", Modality: "text (+ vision tower)", Tasks: []string{"chat", "vision"}})
+		}},
+		{"a mistyped needs", `needs "mllama" in the snapshot`, func(in *Inputs) {
+			for i := range in.Ollama.Rows {
+				if in.Ollama.Rows[i].Tag == "llama3.2-vision" {
+					in.Ollama.Rows[i].Needs = "mllama2"
+				}
+			}
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in := realInputs(t)
