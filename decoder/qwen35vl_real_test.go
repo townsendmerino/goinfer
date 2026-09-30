@@ -28,8 +28,19 @@ import (
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestQwen35VLReal_G2 -v -timeout 30m
 func TestQwen35VLReal_G2(t *testing.T) {
 	requireHeavyModel(t)
-	ckpt := assetPath(t, "GOINFER_QWEN35VL_08B")
-	dir := assetPath(t, "GOINFER_QWEN35VL_G2")
+	qwen35VLRealG2(t, assetPath(t, "GOINFER_QWEN35VL_08B"), assetPath(t, "GOINFER_QWEN35VL_G2"))
+}
+
+// TestQwen35VLReal_G2_9B is the same gate on Qwen3.5-9B (tower 27x1152 -> 4096). A night-queue job:
+// docs/measurements/p8a-qwen35-vl-2026-09/run-g2-9b.sh downloads the checkpoint at a pinned revision,
+// writes the HF f32 references, then runs this. CPU f32 is ~36 GB, so the HF process must have exited.
+func TestQwen35VLReal_G2_9B(t *testing.T) {
+	requireHeavyModel(t)
+	qwen35VLRealG2(t, assetPath(t, "GOINFER_QWEN35VL_9B"), assetPath(t, "GOINFER_QWEN35VL_G2_9B"))
+}
+
+func qwen35VLRealG2(t *testing.T, ckpt, dir string) {
+	t.Helper()
 
 	pp, err := multimodal.LoadQwen3PreprocessConfig(ckpt)
 	if err != nil {

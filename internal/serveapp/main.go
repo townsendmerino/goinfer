@@ -982,6 +982,8 @@ func (s *server) loadVisionTower(cfg config) error {
 			if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
 				if visionModelType(cand) == "qwen2_5_vl" {
 					dir = cand
+				} else if isQwen35VisionDir(cand) {
+					dir = cand
 				} else if visionModelType(cand) == "gemma4" {
 					dir = cand
 				} else if _, err := multimodal.LoadProjector(cand); err == nil {
@@ -1006,6 +1008,9 @@ func (s *server) loadVisionTower(cfg config) error {
 	int8Tower := cfg.visionQuant == "int8" || cfg.load.Backend == "webgpu" || cfg.load.Backend == "cuda"
 	if visionModelType(dir) == "qwen2_5_vl" {
 		return s.loadQwenVisionTower(dir, int8Tower)
+	}
+	if mt := visionModelType(dir); mt == "qwen3_5" || mt == "qwen3_5_moe" {
+		return s.loadQwen35VisionTower(dir, int8Tower)
 	}
 	if visionModelType(dir) == "gemma4" {
 		return s.loadGemma4VisionTower(dir, int8Tower)

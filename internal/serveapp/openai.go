@@ -117,6 +117,12 @@ type loadedModel struct {
 	qwenMerge  int // spatial_merge_size
 	qwenImgTok int // <|image_pad|> id
 
+	// Qwen3.5+ vision tower (P8a; nil ⇒ not Qwen3.5 / no tower). Shares qwenPP/qwenMerge/qwenImgTok
+	// and the GenerateQwenVL route with the Qwen2.5-VL path above, but the tower itself loads LAZILY
+	// on the first image request (qwen3Tower): every Qwen3.5 checkpoint carries one, so eager loading
+	// would tax every text-only user's startup and memory for a tower they never call.
+	qwen3 *qwen3Tower
+
 	// Gemma 4 vision tower (P7 serving integration; nil ⇒ not gemma4/no tower). No
 	// separate projector — Gemma4Encoder.Forward bakes the embed_vision projection
 	// in. gemma4MaxSoft is the checkpoint's vision_soft_tokens_per_image budget
@@ -256,7 +262,7 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 
 // visionCapable reports whether this model has a loaded vision tower.
 func (lm *loadedModel) visionCapable() bool {
-	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil || lm.gemma4Enc != nil
+	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil || lm.qwen3 != nil || lm.gemma4Enc != nil
 }
 
 // tryEnter claims a queue slot then waits for this model's turn (J1's admission — the decode

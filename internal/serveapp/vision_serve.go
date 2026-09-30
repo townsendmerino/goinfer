@@ -123,7 +123,7 @@ func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageR
 	if idx < 0 {
 		return visionInput{}, fmt.Errorf("no user turn to attach the image to")
 	}
-	if lm.qwenEnc != nil {
+	if lm.qwenEnc != nil || lm.qwen3 != nil {
 		return lm.qwenVisionPrompt(system, turns, idx, img)
 	}
 	if lm.gemma4Enc != nil {
@@ -163,7 +163,20 @@ func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageR
 	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen}, nil
 }
 
-// qwenVisionPrompt is the Qwen2.5-VL image path: smart-resize preprocess → ViT +
+// qwenForward runs whichever Qwen tower this model carries: the Qwen2.5-VL ViT (eager) or the
+// Qwen3.5+ tower (loaded on first use).
+func (lm *loadedModel) qwenForward(pv []float32, grid [3]int) ([]float32, error) {
+	if lm.qwen3 != nil {
+		enc, err := lm.qwen3.encoder()
+		if err != nil {
+			return nil, err
+		}
+		return enc.Forward(pv, [][3]int{grid})
+	}
+	return lm.qwenEnc.Forward(pv, [][3]int{grid})
+}
+
+// qwenVisionPrompt is the Qwen2.5-VL and Qwen3.5+ image path: smart-resize preprocess → ViT +
 // merger (the merged features replace the <|image_pad|> run) → the prompt with the
 // vision block prepended. The grid drives m-RoPE in GenerateQwenVL.
 func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
@@ -175,7 +188,7 @@ func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx in
 	n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
 	hiddenDim := lm.model.Config().HiddenDim
 	features := func() ([]float32, error) {
-		feats, err := lm.qwenEnc.Forward(pv, [][3]int{grid})
+		feats, err := lm.qwenForward(pv, grid)
 		if err != nil {
 			return nil, fmt.Errorf("qwen vision encoder: %w", err)
 		}
