@@ -400,6 +400,14 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
   field says which ran.
 - **Gate:** cosine ≥ 0.9999 against HF `output_hidden_states[-1]` at the last position on 5 prompts
   (f32 weights), before any head is attached.
+- **DONE 2026-09-30.** `decoder.Model.PromptHidden(ctx, prompt)` (`decoder/embed.go`): every family, its own layer loop
+  included, since it runs `runLayers` per token in a fresh cache and then the same final norm `logitsFromHidden` applies (the
+  generic families take the batched path). CPU only; no resident executor exposes this hidden state yet. **Gate passed:**
+  `TestPromptHidden_matchesHF`, cosine 1.00000000 and relative L2 at most 1e-5 on 5 prompts (2–64 tokens) × 3 fixtures, against
+  `scripts/pin_prompt_hidden.py` (transformers 5.16.1, f32). **A trap found on the way:** the tiny checkpoints' final-norm
+  weights are all 0, a scale of 1 under the add-one RMSNorm, so cosine alone could not see a missing or doubled final norm (a
+  mutation dropping it passed). Fixed with a derived fixture, `qwen3_5-tiny-normw` (random final-norm weight), and the L2
+  bound; both mutations now fail 20 checks.
 
 ### D3 — LoRA merge-at-load for the GDN projections (Route B)
 

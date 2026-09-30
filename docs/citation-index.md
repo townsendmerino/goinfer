@@ -73,7 +73,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/deltanet.go:448` | goinfer | `// l2normScaled returns x/‖x‖ (eps 1e-6, matching FLA's l2norm) times s.` |
 | `docs/audit-2026-09-10.md|decoder/dflash_pairing_test.go:18` | goinfer | `// granite's flat-only rope and nemotron's hybrid_override_pattern, which is why it is g` |
 | `docs/audit-2026-09-10.md|decoder/embed.go:44` | goinfer | `if _, own := a.ownForward(); own {` |
-| `docs/audit-2026-09-10.md|decoder/embed.go:74` | goinfer | `if m.resident != nil {` |
+| `docs/audit-2026-09-10.md|decoder/embed.go:56` | goinfer | `if m.resident != nil {` |
 | `docs/audit-2026-09-10.md|decoder/fidelity_testhook.go:210` | goinfer | `func KLDivergenceForTest(pLogits, qLogits []float32) float64 {` |
 | `docs/audit-2026-09-10.md|decoder/fitguard.go:278` | goinfer | `_, own := arch.ownForward()` |
 | `docs/audit-2026-09-10.md|decoder/forward_gemma4.go:29` | goinfer | `func (m *Model) runLayersGemma4(id int, cache *KVCache) ([]float32, error) {` |
