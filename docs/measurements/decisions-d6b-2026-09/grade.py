@@ -19,6 +19,9 @@ Rule (registered before any run):
   f32       PASS if KL <= 0.01 and top-1 >= 0.98
   int4      PASS if KL <= 0.03 and top-1 >= 0.98
   int8int8  graded on int4's band (amendment: it is the fallback default)
+  int4-cuda (amendment 2, 2026-09-30) the served GPU path, CUDA resident at int4: int4's band; void unless its mean
+            latency is under 20 ms per prompt token (the GPU measured ~3, the CPU ~65), so a CPU fallback cannot pass
+            as a GPU result. Its verdict is its own: it does not change the three CPU arms'.
   calibration (amendment): an arm FAILS CALIBRATION if the bootstrap 95% interval of (arm ECE - reference ECE) lies
             wholly above 0 (resolvably worse calibrated than the reference); an interval that reaches 0 is UNRESOLVED,
             not failed. If int4 fails calibration but passes top-1, the default for decision models is int8.
@@ -27,7 +30,8 @@ import json, math, os, random, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TD = os.path.join(HERE, "..", "..", "..", "testdata", "decisions")
-BANDS = {"f32": 0.01, "int8int8": 0.03, "int4": 0.03}
+BANDS = {"f32": 0.01, "int8int8": 0.03, "int4": 0.03, "int4-cuda": 0.03}
+GPU_MS_PER_TOKEN = 20.0  # int4-cuda validity: the GPU measured ~3 ms/token, the CPU ~65; above this it did not run resident
 TOP1 = 0.98
 
 
@@ -62,7 +66,7 @@ def main(resdir):
     ref_rows = {i: (max(ref[i]["p"]), argmax(ref[i]["p"]) == gold_idx[i]) for i in gold}
     print(f"reference: {len(ref)} items, {len(gold)} gold rows; reference ECE on them {ece(list(ref_rows.values())):.4f}")
     verdicts, facts = {}, {}
-    for arm in ("f32", "int8int8", "int4"):
+    for arm in ("f32", "int8int8", "int4", "int4-cuda"):
         p = os.path.join(resdir, arm + ".jsonl")
         if not os.path.exists(p):
             print(f"\n## {arm}: MISSING ({p})")
@@ -75,6 +79,13 @@ def main(resdir):
             print(f"  INVALID: {len(bad)} rows missing, failed, not route head, or with a different prompt length, e.g. {bad[:3]}")
             verdicts[arm] = "INVALID"
             continue
+        if arm == "int4-cuda":
+            ms = sum(out[i]["latency_ms"] for i in items) / sum(out[i]["prompt_tokens"] for i in items)
+            print(f"  {ms:.1f} ms per prompt token (validity: under {GPU_MS_PER_TOKEN:.0f}, i.e. it ran on the GPU)")
+            if ms > GPU_MS_PER_TOKEN:
+                print("  INVALID: this arm did not run resident; it measured a CPU fallback")
+                verdicts[arm] = "INVALID (not resident)"
+                continue
         kls = {i: kl(ref[i]["p"], out[i]["distribution"]) for i in items}
         agree = {i: argmax(ref[i]["p"]) == argmax(out[i]["distribution"]) for i in items}
         mkl, t1 = sum(kls.values()) / len(kls), sum(agree.values()) / len(agree)
