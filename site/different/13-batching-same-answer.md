@@ -5,7 +5,7 @@ order: 13
 summary: "Up to four conversations share each GPU step, and every reply is the one it would get alone. Measured on Metal, CUDA and CPU; a lone request is unchanged."
 stand: "When several conversations are active, goinfer decodes their next tokens together in one step. Each conversation gets the same reply it would get running alone."
 measured: 2026-09-27
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "Metal, 1.5B, 4 clients", value: "1.593× the one-at-a-time build"}
   - {label: "CUDA, 7B, 4 clients", value: "1.826×"}

@@ -5,7 +5,7 @@ order: 18
 summary: "After a one-time conversion, a model loads by mapping a prebuilt file: 0.01 s against 16.49 s for a 7B on the CPU, with almost no heap. Decode is unchanged."
 stand: "The first time you serve a .gguf, goinfer converts it once into a sidecar file next to it. After that it maps that file instead of re-quantizing the model on every start."
 measured: 2026-09-24
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "CPU load, 7B", value: "0.01 s against 16.49 s"}
   - {label: "Go heap after load, 7B", value: "+1 MB against +4961 MB"}

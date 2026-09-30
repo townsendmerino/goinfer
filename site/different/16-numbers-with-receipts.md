@@ -5,7 +5,7 @@ order: 16
 summary: "Every speed names its machine, checkpoint, quant, versions, date and machine state, and comes from both engines run over their own HTTP, interleaved."
 stand: "A speed figure is only useful if you can see what produced it. goinfer's benchmark rows carry that, and the page says where it has lost and where it has been wrong."
 measured: 2026-09-28
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "each row names", value: "machine, checkpoint and quant, versions, date, thermal state"}
   - {label: "both engines", value: "over their own HTTP, interleaved, restarted between cells"}

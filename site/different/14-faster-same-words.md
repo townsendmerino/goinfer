@@ -5,7 +5,7 @@ order: 14
 summary: "Lossless n-gram speculation on Metal: 2.082× plain decode on copy-heavy requests, 1.068× on chat, and every greedy reply identical to plain decode."
 stand: "When the reply is likely to repeat text already in the prompt, goinfer guesses the next few tokens and checks them all in one step. A wrong guess costs a little time; it never changes a word."
 measured: 2026-09-28
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "copy-heavy, Metal 1.5B", value: "2.082× plain decode"}
   - {label: "chat, Metal 1.5B", value: "1.068×"}
