@@ -43,6 +43,36 @@ What shipped, against the design in "Proposed fix" below (which is kept as the r
 **Verified against real checkpoints** (client matrix, `scripts/think_matrix.py`, exploratory daytime run on Qwen3.5-0.8B; the
 9B is a night job). See the record in "Matrix results" below for what passed, what did not, and what was not exercised.
 
+## Matrix results (exploratory, daytime, Qwen3.5-0.8B int4 CPU, 2026-09-30)
+
+`scripts/think_matrix.py` against a running `serve` (logs kept in `~/goinfer-logs/think/`). Not a measurement of speed; a
+check that the invariant holds on every client's request shape. **Final run: 37 of 37 cells pass, 1 not exercised.**
+
+- **Passed, and what it proves on a real model:** OpenAI chat with thinking unset / off / on, streaming vs non-streaming
+  byte-identical at temperature 0; all reasoning deltas before all content deltas; usage identical between the two; the
+  prompt half end to end (`prompt_tokens` moves by exactly +4 for off and +2 for on against the as-is prompt — the closed
+  block and the open `<think>\n`); a reply truncated inside the block (empty `content`, `reasoning_content` present,
+  `finish_reason` length); `reasoning_format` none (no reasoning field), deepseek-legacy, and a 400 on a bad value;
+  `reasoning_effort: none` (no reasoning) and `high` (prompt unchanged); tools under each mode; Anthropic with `thinking`
+  absent / enabled / disabled, streaming and not (block order, contiguous indices, every block opened and closed, a
+  `signature_delta` before a thinking block stops, no thinking block unless asked, no markup in text); Anthropic tools;
+  `count_tokens` equal to the generation's `input_tokens` in all three settings; the Responses API with effort unset / none /
+  high.
+- **NOT exercised: a reply that thinks, closes the block, and then answers, on a real model.** The 0.8B never finishes
+  thinking under greedy decoding — two probes at `max_tokens` 3000 (`Say hello.`, `Reply with only the word: yes`) ended
+  `finish_reason length` with 17,580 and 10,986 characters of reasoning and no content — and the sampled, seeded retry inside
+  the matrix also ran to its limit. That path is covered by the unit tests (synthetic vocabulary, both "tag token" and "tag
+  spelled out" encodings) and by `TestThinkModes_delimitersDecodeToTheirSurfaceForm`, which checks against the real Qwen3 /
+  Qwen3.5 / Gemma 4 tokenizers that the delimiter tokens decode to their literal text. It has not run end to end on a model
+  that closes its block. The matrix now reports this state as NOT EXERCISED (exit status 2) instead of passing or failing it,
+  and tonight's job runs it on the 9B, Qwen3-1.7B and Gemma-4-E2B.
+- **Not covered at all:** Claude Code itself (the empty `signature`), vision routes with thinking, jobs and batches with
+  thinking on a real model, any concurrent-request interaction (the K1 progress counter now also counts reasoning
+  fragments; unit-untested).
+- **How the first runs went:** run 1 stopped on a 503 when another session's 52 GB probe pushed the box into swap and
+  serve's own swap guard refused requests (the matrix now retries a 503); run 2's completion cell failed for the reason above
+  (a test-design error, not a server defect) and was reworked.
+
 ## Not built
 
 - **The default (phase 3).** `-thinking asis` keeps today's bytes, so the truncation hole is open for clients that turn
