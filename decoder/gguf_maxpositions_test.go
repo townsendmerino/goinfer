@@ -91,6 +91,8 @@ func TestGGUFConfig_everyArchitectureReadsMaxPositions(t *testing.T) {
 		{"llama", dense("llama")},
 		{"qwen2", dense("qwen2")},
 		{"qwen3", dense("qwen3")},
+		{"gemma", dense("gemma")},
+		{"gemma2", dense("gemma2")},
 		{"gemma3", dense("gemma3")},
 		{"gemma4", gemma4},
 		{"mellum", mellum},
