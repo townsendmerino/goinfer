@@ -1,10 +1,12 @@
 (1) per-kind top-1, goinfer bare-v1
   OOD sample (D6a arm B)       noul 0.340  choice 0.335  score 0.167   OOD-weighted 0.338
-  fixture (calibration split)  noul 0.529  choice 0.340  score 0.184   OOD-weighted 0.481
+  fixture (100 cal + 50 OOD)   noul 0.529  choice 0.340  score 0.184   OOD-weighted 0.481
 
 (2) noul: base rate and bias
   OOD sample   n=400 gold-true 0.215 pred-true 0.845 acc|true 0.930 acc|false 0.178 always-false 0.785
   fixture      n= 51 gold-true 0.373 pred-true 0.725 acc|true 0.842 acc|false 0.344 always-false 0.627
+  fixture noul, calibration items: n= 34 top-1 0.559
+  fixture noul, ood         items: n= 17 top-1 0.471
 
 (3) noul by source environment
   OOD sample

@@ -74,7 +74,7 @@ lower on the same items, from quantization. That does not rescue Route A. A perf
 0.8181 line, and the trained head reads 0.93 on the same items. **So BUILD D2–D4 holds whatever the numeric gap turns out to be.**
 
 **The 14-point gap between the two samples (explained 2026-09-30).** On D6a's own OOD sample goinfer's bare-v1 read 0.338, where
-the 150 fixture items (calibration split) put it at 0.481. [`gap.py`](decisions-d6a-2026-09-28/gap.py)
+the 150 fixture items (100 from the calibration split, 50 from OOD) put it at 0.481. [`gap.py`](decisions-d6a-2026-09-28/gap.py)
 ([`results/gap.txt`](decisions-d6a-2026-09-28/results/gap.txt)) reads only committed files and finds three things:
 
 1. **All of it is noul.** noul falls from 0.529 to 0.340, while choice (0.340 → 0.335) and score (0.184 → 0.167) hold. noul carries
@@ -90,6 +90,7 @@ the 150 fixture items (calibration split) put it at 0.481. [`gap.py`](decisions-
 
    The fixture's largest noul group, 17 `v3_*` items on which goinfer reads 0.65, does not occur in the OOD sample at all.
    Discrimination is not what changed: noul AUROC is 0.695 on the OOD sample against 0.719 on the fixture.
+   The fixture shows the same split effect inside itself: its 34 calibration noul items read 0.559 and its 17 OOD ones 0.471.
 3. **The quantization shift is largest exactly there.** On the fixture's own noul items, goinfer's P(true) sits above the transformers
    f32 reference's by:
 
