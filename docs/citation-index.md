@@ -549,7 +549,12 @@ supports.
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:96` | goinfer | `// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/responses.go:50` | goinfer | `type responseStore struct {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/sessions.go:14` | goinfer | `// sessionLRU keeps up to size prefilled KV sessions and hands each request the` |
-| `site/different/REVIEW-08.md|internal/serveapp/main.go:411` | goinfer | `flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at st` |
+| `site/different/REVIEW-08.md|internal/serveapp/main.go:412` | goinfer | `flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at st` |
+| `site/different/REVIEW-10.md|internal/serveapp/batches_http.go:93` | goinfer | `if req.Endpoint != "/v1/chat/completions" {` |
+| `site/different/REVIEW-10.md|internal/serveapp/main.go:392` | goinfer | `flag.StringVar(&cfg.jobDir, "job-dir", "", "J2 (task-work-queue-2026-09.md): optional di` |
+| `site/different/REVIEW-10.md|internal/serveapp/main.go:422` | goinfer | `flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests ` |
+| `site/different/REVIEW-10.md|internal/serveapp/main.go:585` | goinfer | `// inf's inflight cap exists to bound pre-queue JSON/image decode + tokenization, none o` |
+| `site/different/REVIEW-10.md|internal/serveapp/main.go:843` | goinfer | `// 256 matches responseStore's own bound (newResponseStore(256), just below) — no dedica` |
 | `site/different/REVIEW-11.md|internal/chatapp/prequant.go:19` | goinfer | `//go:embed model.giw` |
 
 ## Bare file index
