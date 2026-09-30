@@ -601,6 +601,160 @@ number is published without provenance.
   supports Qwen3-VL — `PROJECTOR_TYPE_QWEN3VL` in `clip.cpp` — but `aikit/vision`'s loading path is
   safetensors-specific by construction, needing a new tensor-source abstraction); the MoE variants
   (30B-A3B/235B-A22B) — Phase 0 only targets the dense sizes.
+
+  **RE-SCOPED 2026-09-30 — Qwen3.5+ is the target, DeepStack is not on its path.** Qwen's current open
+  line (Qwen3.5 / 3.6 / 3.8) ships a vision tower in every checkpoint and Ollama tags all of them as vision
+  models (qwen3.5 21.2M pulls, qwen3.6 6.9M, qwen3.8 2.8M, against qwen3-vl 6.4M); goinfer loads them
+  text-only through `qwen3_5` / `qwen3_5_moe`. The Phase 0 above was written around Qwen3-VL and treats
+  DeepStack as the hard part. Qwen3.5 does not use it. Split:
+
+  - **P8a — Qwen3.5+ images, end to end** (safetensors). Gates G0–G4 are pre-registered in
+    `docs/measurements/p8a-qwen35-vl-2026-09/preregistration.md`. Dev checkpoint `Qwen/Qwen3.5-0.8B`, then 9B; the MoE checkpoint
+    (`Qwen3.6-35B-A3B`) last and separately.
+  - **P8b — GGUF `mmproj`.** Same intent as before, now targeting the Qwen3.5+ tower. The name is kept
+    because P9(d) cites it. Its Phase 0 reads what Ollama's qwen3.5 blobs and unsloth's `mmproj-*.gguf`
+    actually ship (a prior-art sweep was done for P8a, see below, but is not that Phase 0).
+  - **P8c — Qwen3-VL DeepStack**, PARKED. Trigger: P8a shipped AND Qwen3-VL still draws use that
+    Qwen3.5+ does not cover.
+
+  **P8a Phase 0 record (2026-09-30; transformers 5.15.0 installed here — the checkpoints name
+  4.57.0.dev0 / 4.57.1, which predate the `qwen3_5` modeling files, so the installed source is the only
+  readable one; every fact below is from that source plus the three configs).** Premise CONFIRMED, no
+  stop condition hit.
+
+  1. *Tower facts.* Confirmed against `modeling_qwen3_5.py` (self-contained `Qwen3_5VisionModel`; it also
+     subclasses `Qwen3VLVisionModel` in `modular_qwen3_5.py` and `del`s `deepstack_visual_indexes` /
+     `deepstack_merger_list`). `deepstack_visual_indexes` is `[]` in Qwen3.5-0.8B (12 blocks × 768 →
+     1024), Qwen3.5-9B (27 × 1152 → 4096; MLP 4304, 16 heads) and Qwen3.6-35B-A3B (27 × 1152 → 2048),
+     read from each HF `config.json`. Tower: biased Conv3d patch embed (kernel = stride =
+     [2,16,16], weight `[768,3,2,16,16]`); learned `pos_embed` 2304×hidden = 48×48 grid, resampled by
+     `F.interpolate`-equivalent **bilinear with `align_corners=True`** (source coord
+     `i·(48−1)/(n−1)`, `n==1 → 0`, computed in f32; the four taps are weighted and SUMMED in order
+     (h0w0, h0w1, h1w0, h1w1) — that order is the bit-identity surface) and added after patch embed;
+     2D rotary with `inv_freq` = 1/1e4^(2i/(head_dim/2)) over head_dim/2, h and w rotated
+     separately, `cat(emb, emb)` to head_dim, HF `rotate_half` convention; full attention over the
+     whole image (no windows), fused biased `qkv` reshaped `(seq,3,heads,hd)`, biased `proj`, scale
+     hd^-0.5; **LayerNorm eps 1e-6**, pre-norm blocks; MLP `linear_fc1 → gelu_pytorch_tanh →
+     linear_fc2`, both biased, NOT gated. **Correction to the brief: the merger's GELU is EXACT (erf,
+     `nn.GELU()`, printed `GELU(approximate='none')` on the loaded 0.8B), not tanh** — only the block
+     MLP is `gelu_pytorch_tanh`. Merger: `LayerNorm(hidden)` per patch token (`use_postshuffle_norm=
+     False`, so the norm is BEFORE the 2×2 view, over `hidden`, not `4·hidden`), `view(-1, 4·hidden)`,
+     `fc1 → GELU(erf) → fc2` to `out_hidden`. No `deepstack_merger_list` weights exist in the 0.8B
+     index (153 `model.visual.*` tensors: 12 blocks × 12 + patch_embed 2 + pos_embed 1 + merger 6).
+  2. *Preprocessing (0.8B / 9B / 35B `preprocessor_config.json`, identical).* `size.shortest_edge
+     = 65536`, `size.longest_edge = 16777216` (these are min/max PIXELS under the `size` keys — there are NO
+     `min_pixels`/`max_pixels` keys), `patch_size 16`, `merge_size 2`, so smart_resize factor = 32;
+     mean = std = `[0.5,0.5,0.5]`; processor `Qwen2VLImageProcessorFast` (`transformers` maps `qwen3_5` to
+     `Qwen2VLImageProcessor`; torchvision backend = bicubic with `antialias=True`, PIL backend also
+     exists). A still image is filled by REPEATING the single frame `temporal_patch_size`=2 times
+     (`patchify`: `unsqueeze(6).expand(..., temporal_patch_size, ...)`), so grid_t = 1 and each patch's
+     values are ordered (channel, temporal, py, px) within blocks ordered (block-row, block-col,
+     merge-row, merge-col). **TRAP found in our tree:** `multimodal.LoadQwenPreprocessConfig`
+     (`multimodal/qwen_preprocess.go`) reads `min_pixels`/`max_pixels` and, on a Qwen3.5 config that has
+     only `size.*`, SILENTLY falls back to Qwen2.5-VL's `4·28²` / `16384·28²` (and patch 14 is only fixed
+     because the file does carry `patch_size`). Mean/std are read correctly. The new loader must read
+     `size.*`, and a test must assert the loaded 0.8B values are 65536 / 16777216 / 16 / 32.
+     Consequence of the 65536 floor: any image under 256×256 is UP-scaled; the ceiling is 16384 merged
+     tokens (`16777216 / 32²`), which the serve path must cap far lower (a 16k-token image on the CPU
+     hybrid prefill is not a usable request).
+  3. *`get_rope_index` vs `mropePositions` / `mropeDelta`.* `Qwen3_5Model.get_rope_index`
+     (identical to Qwen3-VL's) groups tokens by `mm_token_type_ids` (text 0 / image 1 / video 2);
+     `vision_start`/`vision_end` are TEXT (type 0) so they take scalar positions; an image group at
+     `current_pos` gets `T = arange(t)·1 + cp`, `H = arange(h/2) + cp`, `W = arange(w/2) + cp`, then
+     `cp += max(h, w)/merge` (**t is dropped**); `delta = max(pos)+1 − seq_len`; decode positions are
+     `arange + cache_len + delta` on all three rows. `mropePositions` (`decoder/rope.go:279`) scans by
+     image-token runs, gives text `[st,st,st]`, image `[base+tt, base+hh, base+ww]`, resumes at
+     `base + max(t, hm, wm)`; `mropeDelta` is `max over any component + 1 − seqLen`. **For an image
+     (t = 1 — always, after temporal duplication) the two are identical**: `max(1,hm,wm) == max(hm,wm)`
+     since hm, wm ≥ 1. They differ only for t > 1 (video, out of scope). The interleaved component
+     layout `mropeComponentInterleaved` is already pinned against the HF slice logic (`d%3==1 &&
+     d<11·3 → H`, `d%3==2 && d<10·3 → W`, else T). Right as they stand for P8a; no change to either.
+     Also `Qwen3_5TextModel` splits a 4-row `position_ids` into `text_position_ids` (row 0, used ONLY for
+     mask creation and passed down) and the 3 m-RoPE rows.
+  4. *Seam.* GDN premise CONFIRMED: `Qwen3_5GatedDeltaNet.forward(hidden_states, cache_params,
+     attention_mask)` takes no position ids and there is no rotary in it; only `Qwen3_5Attention` rotates
+     (partial: `rotary_dim = head_dim·0.25` = 64 of 256, `inv_freq` over that dim, theta 1e7, mrope
+     section `[11,11,10]` summing to 32 = 64/2 — matching `arch.ropeInvFreq` length). goinfer:
+     `runLayersQwen35` (`decoder/forward_qwen35.go`) is ONE token per call, embedding by
+     `m.w.Embed.Row(id, h)`, and prefill "drives this sequentially so the DeltaNet recurrence sees every
+     token". So (a) `runLayersQwen35FromEmbed(h, cache)` goes right there, `runLayersQwen35` becoming its
+     `Embed.Row` wrapper (same shape as `runLayersGemma4` → `…FromEmbed`); (b) **no batched form is needed
+     on day one** — there is no batched qwen35 prefill to mirror, the existing prefill is already a
+     per-token loop, so the image rows are just fed through the same loop; (c) the rotary call in
+     `qwen35Attention` is `applyRoPE(q, …, pos, …)` — scalar only; it must become `ropeAt(...)` with
+     `arch.MRopeSection` / `MRopeInterleaved` / `cache.mropePos` / `cache.mropeDelta`, exactly the call the
+     generic attention makes (`decoder/attention.go:155`). `ropeAt` with `mropePos == nil` is `applyRoPE`, so
+     the text path is unchanged by construction — G3 proves it. `arch.MRopeSection`/`MRopeInterleaved`
+     are set for `qwen3_vl` (`registry.go:1656`) but NOT by `qwen35DenseArchitecture` /
+     the MoE builder; they must be set from `rope_parameters` there, only when a vision tower is present or
+     unconditionally (unconditional is safe: text tokens have equal components).
+  5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`
+     (`cuda/resident.go:2165`), the WebGPU `residentDecoder` (`gpu/residency.go:1249`) and `metalResident`
+     (`metal/backend.go:511`), so the SCALAR-`ropePos` decode half is not the obstacle: a decoded token
+     has T=H=W, which is exactly what one scalar carries. The obstacle is the bridge into it.
+     `GenerateQwenVL`'s non-fast path is CPU prefill → `residentUploadPrefill` → `UploadKV`, and
+     `residentUploadPrefill` (`decoder/generate_vl_resident.go:20`) copies only layers whose
+     `cache.LayerKV(l)` is non-empty — **a DeltaNet layer has no KV, so it is skipped, and the resident
+     decode would start from a ZEROED recurrent state** (no error, wrong tokens: the exact failure class
+     `62309847` fixed for reuse). The image rows themselves cannot be prefilled resident either:
+     `ForwardMRoPE` carries one scalar and image tokens have distinct H/W components, so it needs a
+     `ResidentMRoPEPrefill` for the hybrid (a new kernel path), or a recurrent-state upload. Neither exists.
+     **P8a therefore ships CPU decode after an image, and `GenerateQwenVL` must REFUSE the resident
+     branches for a recurrent family** (`m.hasRecurrentState()`), not merely fail to engage — as written
+     the `ResidentMRoPE` type assertion would succeed on a CUDA-resident qwen3.5 and take the zero-state
+     bridge. Resident image decode is its own step with its own measurement.
+     **Consequence for G4's reuse arm:** with CPU decode the resident cache is never populated by an image
+     turn, so an end-to-end "reused == cold" has nothing to reuse and would be VACUOUS — a green test that
+     exercises no reuse. `residentReuseLen` today returns 0 for ANY image claim on a recurrent family
+     (`decoder/resident_reuse.go:129`, "no recurrent-family VL arch exists today"). P8a instead extends that
+     rule as a unit: image claims on a recurrent family are honoured only under exact extension AND only
+     if every committed image block has a claim with the same nonzero hash (the placeholder id alone
+     cannot tell two images apart, and recurrent state cannot be rewound to an image boundary); G4 tests
+     that decision function directly (match → n; changed hash / missing claim / edited prefix → 0) plus
+     serve-level cold determinism, and the end-to-end reused==cold cell is deferred to the resident-image
+     step and named there. Flagged for Francis: this reads G4 narrower than the brief's wording.
+  6. *Prior-art sweep (2026-09-30; done by a delegated research pass reading primary sources at master, NOT
+     re-read line by line by me — the tensor names/dtypes were read from real GGUF headers, the source claims
+     from GitHub; treat as evidence to re-check where a decision hangs on it).* Nothing found contradicts the
+     HF source; what it adds:
+     - **llama.cpp** reuses `PROJECTOR_TYPE_QWEN3VL` (`qwen3vl_merger`) for Qwen3.5/3.6 (converter
+       `conversion/qwen3vl.py`, graph `tools/mtmd/models/qwen3vl.cpp`). mmproj tensors: `v.patch_embd.weight` and
+       `v.patch_embd.weight.1` (the Conv3d kernel SPLIT along T into two 2D convs — for a still image
+       conv(W0,x)+conv(W1,x) = HF's duplicated frame), `v.patch_embd.bias`, `v.position_embd.weight (C,2304)`,
+       per block `ln1/ln2 (w,b)`, fused `attn_qkv` (+bias), `attn_out`, `ffn_up`/`ffn_down` (biased, no gate),
+       merger `v.post_ln` (= HF `merger.norm`), `mm.0`/`mm.2`; `clip.vision.is_deepstack_layers` present, all
+       false, no `v.deepstack.*`. That is the P8b target layout.
+     - **llama.cpp deviates from HF in the merger: it runs GELU-tanh where HF runs erf.** Ollama's MLX runner and
+       mlx-vlm both use erf. P8a follows HF (erf); if P8b ever loads an mmproj it inherits tensors trained
+       against erf, so it should also use erf, not copy llama.cpp.
+     - llama.cpp's default image budget is 8–4096 tokens (min px 8192, max 4,194,304), not the checkpoint's
+       65536 / 16777216, and its resize is Pillow-style bicubic a = −0.5 with antialiasing where the HF fast
+       processor (torchvision) uses a = −0.75; its `round` is half-away, Python's is half-even (smart_resize
+       differs only on exact .5 ties). Ollama's MLX runner uses RoundToEven, Catmull-Rom, `pix/127.5 − 1`.
+     - **Do not pair images.** llama.cpp `mtmd` (`can_merge_with`, #21858) fuses ADJACENT SAME-SIZE images into
+       one 2-frame temporal input, so 4 images read as 2 (llama.cpp #24303, Ollama #17814). HF treats every
+       image as its own t = 1 grid with a duplicated frame; so must we.
+     - llama.cpp CUDA flash-attention gives wrong vision embeddings (worst-token cosine 0.64–0.74 vs FA off,
+       #29629, open; suspected F16 accumulation) — the tower's attention accumulates in f32.
+     - Positions: llama.cpp `mtmd_image_tokens_get_decoder_pos` gives t = pos0, x = pos0 + i%nx, y = pos0 + i/nx
+       and advances by `max(nx, ny)` — identical to HF. Image chunks decode CAUSALLY. The hybrid recurrent
+       memory warns on every image about a "non-consecutive position" (#28166), reported harmless: the GDN
+       layers ignore positions.
+     - **Ollama's shipped blobs differ by model**: `qwen3.5:latest` (9B) is ONE monolithic GGUF, arch `qwen35`,
+       `qwen35.vision.*` keys (size 65536/16777216, `deepstack_visual_indexes []`), vision tensors with
+       HF-style names and UNFUSED q/k/v (`v.blk.N.attn_q/k/v`), patch_embed kept as one `(16,16,2,3456)` F16
+       tensor with T intact; `qwen3.6:latest` (35B-A3B) has a separate `vnd.ollama.image.projector` layer
+       (llama.cpp-format mmproj, BF16 matrices, F32 patch/pos, 334 tensors). Ollama's `llama-ollama-compat.cpp`
+       concatenates QKV and splits patch_embed on load. So P8b faces THREE container layouts (unsloth mmproj,
+       Ollama monolithic, Ollama projector blob), not one.
+     - Reference Go implementation to read at P8b/resident time: `ollama/ollama`
+       `mlxrunner/model/qwen3_5/vision.go` + `process_image.go` (fp32 four-corner pos interpolation, erf merger,
+       rejects non-empty `deepstack_visual_indexes`, `PrepareMedia` builds the m-RoPE positions).
+     - mlx-vlm: `qwen3_5/vision.py` is an empty subclass of `qwen3_vl.VisionModel` (same semantics as HF).
+       Its quantised-`pos_embed` bug (fractional weights cast to the packed dtype → 99.9% of position rows
+       zero, PR #2304) is a reminder: never quantise `pos_embed`; ours stays f32 under `quant`.
+     - Not found anywhere: an image-token-count off-by-one, or an m-RoPE bug tied to `partial_rotary_factor`
+       0.25. Not verified by anyone: whether ggml's im2col patch conv rounds to F16.
 - **P9 · Image turns in the agent loop.** (a) Prefix reuse over image blocks: an image's embedding
   block is a pure function of its bytes and the tower, so key the resident bookkeeping on a hash of
   the image bytes standing in for a token id at each placeholder position — a reused prefix with an

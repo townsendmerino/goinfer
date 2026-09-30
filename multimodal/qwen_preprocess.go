@@ -35,6 +35,12 @@ type QwenPreprocessConfig struct {
 	PatchSize, MergeSize, TemporalPatchSize int
 	MinPixels, MaxPixels                    int
 	Mean, Std                               [3]float32
+	// FusedNormalize selects HF's torchvision-backend arithmetic, (x - mean*255)/(std*255) on the
+	// 0..255 value, instead of (x/255 - mean)/std. The two differ in the last bit for 111 of the
+	// 256 byte values at mean = std = 0.5 (measured), so a "bit-exact vs HF" claim needs the
+	// fused form. Set by LoadQwen3PreprocessConfig; the Qwen2.5-VL loader leaves it false, so that
+	// path's pixel_values are unchanged.
+	FusedNormalize bool
 }
 
 // QwenDefaultPreprocess returns the standard Qwen2.5-VL processor config (patch 14,
@@ -92,6 +98,53 @@ func LoadQwenPreprocessConfig(dir string) (QwenPreprocessConfig, error) {
 		cfg.Std = [3]float32{pc.ImageStd[0], pc.ImageStd[1], pc.ImageStd[2]}
 	}
 	return cfg, nil
+}
+
+// LoadQwen3PreprocessConfig reads a Qwen3.5+ checkpoint's preprocessor_config.json. Unlike the
+// Qwen2.5-VL file, its pixel budget lives under size.shortest_edge / size.longest_edge (they are
+// MIN and MAX PIXELS, despite the names) and there are NO min_pixels/max_pixels keys, so
+// LoadQwenPreprocessConfig on one silently keeps the Qwen2.5-VL defaults (4·28² / 16384·28²) and
+// gets the budget wrong with no error. This loader requires the size keys and every geometry field
+// and refuses a file that lacks them rather than defaulting; a missing file is an error too.
+func LoadQwen3PreprocessConfig(dir string) (QwenPreprocessConfig, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, "preprocessor_config.json"))
+	if err != nil {
+		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): read preprocessor_config: %w", err)
+	}
+	var pc struct {
+		Size struct {
+			Shortest int `json:"shortest_edge"`
+			Longest  int `json:"longest_edge"`
+		} `json:"size"`
+		PatchSize         int       `json:"patch_size"`
+		MergeSize         int       `json:"merge_size"`
+		TemporalPatchSize int       `json:"temporal_patch_size"`
+		ImageMean         []float32 `json:"image_mean"`
+		ImageStd          []float32 `json:"image_std"`
+	}
+	if err := json.Unmarshal(raw, &pc); err != nil {
+		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): parse preprocessor_config: %w", err)
+	}
+	switch {
+	case pc.Size.Shortest <= 0 || pc.Size.Longest <= 0:
+		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config has no size.shortest_edge/longest_edge (min/max pixels); refusing to default to Qwen2.5-VL's")
+	case pc.PatchSize <= 0 || pc.MergeSize <= 0 || pc.TemporalPatchSize <= 0:
+		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config is missing patch_size/merge_size/temporal_patch_size")
+	case len(pc.ImageMean) != 3 || len(pc.ImageStd) != 3:
+		return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): preprocessor_config is missing image_mean/image_std")
+	}
+	for _, s := range pc.ImageStd {
+		if s == 0 {
+			return QwenPreprocessConfig{}, fmt.Errorf("multimodal(qwen3): image_std has a zero")
+		}
+	}
+	return QwenPreprocessConfig{
+		PatchSize: pc.PatchSize, MergeSize: pc.MergeSize, TemporalPatchSize: pc.TemporalPatchSize,
+		MinPixels: pc.Size.Shortest, MaxPixels: pc.Size.Longest,
+		Mean:           [3]float32{pc.ImageMean[0], pc.ImageMean[1], pc.ImageMean[2]},
+		Std:            [3]float32{pc.ImageStd[0], pc.ImageStd[1], pc.ImageStd[2]},
+		FusedNormalize: true,
+	}, nil
 }
 
 // qwenMaxInputPixels bounds the raw (pre-resize) image area QwenPreprocess will allocate for,
@@ -213,6 +266,18 @@ func qwenResizeNormalize(img image.Image, h, w, hb, wb int, cfg QwenPreprocessCo
 		resized = qwenBicubicU8(src, h, w, hb, wb)
 	}
 	out := make([]float32, hb*wb*3)
+	if cfg.FusedNormalize {
+		// HF torchvision backend: mean/std are pre-multiplied by 255 in f32, then (x - m)/s.
+		var m, sd [3]float32
+		for c := range 3 {
+			m[c], sd[c] = cfg.Mean[c]*255, cfg.Std[c]*255
+		}
+		for i := range out {
+			c := i % 3
+			out[i] = (resized[i] - m[c]) / sd[c]
+		}
+		return out
+	}
 	for i := range out {
 		c := i % 3
 		out[i] = (resized[i]/255 - cfg.Mean[c]) / cfg.Std[c]
