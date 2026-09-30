@@ -514,6 +514,10 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
         decision model's.
       - **Tests:** `TestSpecHead`, `TestSystemOne_head`, `TestHead_dropsDescriptions`. Documented in
         `docs/server.md`.
+      - **End-to-end probe** (exploratory; nobara-pc CPU, `goinfer-serve` at 11837723, default int4):
+        `--model jev=~/models/JEV-9B,head=~/models/JEV-9B` loads, and `/v1/models` reports route `head`. One D0 item
+        (`v3_63e22867e7c69c10_n`) answers P(true) 0.6175 against the f32 reference's 0.602, with 71 input tokens, the
+        reference's count.
     - ~~`jev_core`'s state truncation~~ **done 2026-09-30** (`internal/decide/truncate.go`). A state over 1024 tokens
       is cut to its first 614 and last 410 tokens and decoded back to text, with a split character replaced exactly as
       CPython's `errors="replace"` does it.
