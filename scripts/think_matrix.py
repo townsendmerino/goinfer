@@ -153,15 +153,16 @@ def run(base, model, mx):
     print(f"         (prompt_tokens unset={ptoks['unset']} off={ptoks['off']} on={ptoks['on']})", flush=True)
 
     # ---- truncated inside the think block: no answer, reasoning only, finish length -----------------------------
-    r = chat_nonstream(base, model, "on", 6)
+    # max_tokens 3 is below the budget's floor (serve leaves turns under 4 tokens alone), so this is the pure truncation path.
+    r = chat_nonstream(base, model, "on", 3)
     ch = r["choices"][0]
     msg = ch["message"]
     if msg.get("reasoning_content"):
-        cell("chat/on/truncated in reasoning: empty content + reasoning + length",
+        cell("chat/on/truncated in reasoning (max_tokens 3, below the budget's floor): empty content + reasoning + length",
              (msg["content"] or "") == "" and ch["finish_reason"] == "length",
              f"content={msg['content']!r} finish={ch['finish_reason']}")
     else:
-        unexercised("chat/on/truncated in reasoning", "the model wrote no reasoning in 6 tokens, so the truncated-inside-the-block path did not run")
+        unexercised("chat/on/truncated in reasoning", "the model wrote no reasoning in 3 tokens, so the truncated-inside-the-block path did not run")
 
     # ---- the full path: a reply that thinks AND then answers (needs room: --max-think) -------------------------------
     # Sampled, not greedy: greedy thinking on a small model often loops forever (the Qwen card says so), which would leave this
@@ -170,17 +171,48 @@ def run(base, model, mx):
     ch = r["choices"][0]
     msg = ch["message"]
     content, reasoning = msg["content"] or "", msg.get("reasoning_content", "")
-    if ch["finish_reason"] == "length":
+    # With the reasoning budget a thinking reply that would otherwise run out of tokens has its block force-closed and then
+    # writes an answer, so "reasoning but no content" is now a FAILURE here (it was the hole the budget exists to close), and
+    # "reasoning, then content" is the think-close-answer path, whether the model closed the block itself or was made to.
+    if not reasoning:
         unexercised(f"chat/on/completes within {MAX_THINK} tokens",
-                    f"the model was still {'thinking' if not content else 'writing'} at the limit (reasoning {len(reasoning)} chars, content {len(content)}); the think-then-answer path did not run on this model")
-    elif not reasoning:
-        unexercised(f"chat/on/completes within {MAX_THINK} tokens",
-                    "thinking was requested but the model wrote no reasoning (finish stop); nothing to separate on this model/prompt")
+                    f"thinking was requested but the model wrote no reasoning (finish {ch['finish_reason']}); nothing to separate on this model/prompt")
     else:
-        cell(f"chat/on/completes within {MAX_THINK} tokens: reasoning, then a clean non-empty answer, finish stop",
+        cell(f"chat/on/completes within {MAX_THINK} tokens: reasoning, then a clean non-empty answer",
              content.strip() != "" and not any(t in content for t in TAGS),
              f"finish={ch['finish_reason']} reasoning={len(reasoning)}ch content={content[:80]!r}")
-        print(f"         (answer after thinking: {content[:80]!r}; reasoning {len(reasoning)} chars)", flush=True)
+        print(f"         (answer after thinking: {content[:80]!r}; reasoning {len(reasoning)} chars; finish {ch['finish_reason']})", flush=True)
+
+    # ---- the reasoning budget: a thinking reply that would run out of tokens still gets an answer ---------------------
+    r = chat_nonstream(base, model, "on", mx)   # mx is small next to how long this model thinks
+    ch = r["choices"][0]
+    msg = ch["message"]
+    content, reasoning = msg["content"] or "", msg.get("reasoning_content", "")
+    if reasoning:
+        cell(f"budget/auto: thinking on at max_tokens {mx} still ends with an answer (the block is force-closed)",
+             content.strip() != "" and not any(t in content for t in TAGS), f"finish={ch['finish_reason']} reasoning={len(reasoning)}ch content={content[:80]!r}")
+        print(f"         (answer: {content[:70]!r}; reasoning {len(reasoning)} chars; completion_tokens={r['usage']['completion_tokens']})", flush=True)
+    else:
+        unexercised("budget/auto", "the model wrote no reasoning, so there was no block to close")
+    r = chat_nonstream(base, model, "on", mx, {"thinking_token_budget": 16})
+    msg = r["choices"][0]["message"]
+    content, reasoning = msg["content"] or "", msg.get("reasoning_content", "")
+    if reasoning:
+        cell("budget/request: thinking_token_budget 16 bounds the reasoning and leaves an answer",
+             len(reasoning) <= 16 * 14 and content.strip() != "", f"reasoning={len(reasoning)}ch content={content[:60]!r}")
+    else:
+        unexercised("budget/request", "the model wrote no reasoning")
+    try:
+        chat_nonstream(base, model, "on", mx, {"thinking_token_budget": -5})
+        cell("budget: a negative thinking_token_budget is a 400", False, "accepted")
+    except urllib.error.HTTPError as e:
+        cell("budget: a negative thinking_token_budget is a 400", e.code == 400, str(e.code))
+    # the same budget on the streaming path must agree with non-streaming at temperature 0
+    sc, sr, sf, su, order = chat_stream(base, model, "on", mx, {"thinking_token_budget": 16})
+    r = chat_nonstream(base, model, "on", mx, {"thinking_token_budget": 16})
+    m2 = r["choices"][0]["message"]
+    cell("budget/request: stream == non-stream", (sc, sr) == (m2["content"] or "", m2.get("reasoning_content", "")),
+         f"stream {(sc[:40], sr[:40])!r} vs {((m2['content'] or '')[:40], m2.get('reasoning_content', '')[:40])!r}")
 
     # ---- reasoning_format ---------------------------------------------------------------------------------------
     r = chat_nonstream(base, model, "on", mx, {"reasoning_format": "none"})
@@ -287,6 +319,17 @@ def run(base, model, mx):
     ev = anth("enabled", stream=True, tools=True)
     starts = [(d["index"], d["content_block"]["type"]) for n, d in ev if n == "content_block_start"]
     cell(f"anthropic/enabled/tools stream: indices {starts}", [i for i, _ in starts] == list(range(len(starts))), str(starts))
+
+    # budget_tokens is enforced as a ceiling: the thinking block is force-closed and a text block follows
+    r = post(base + "/v1/messages", {"model": model, "max_tokens": mx, "temperature": 0, "thinking": {"type": "enabled", "budget_tokens": 16},
+                                     "messages": [{"role": "user", "content": Q}]})
+    types = [b["type"] for b in r["content"]]
+    texts = "".join(b.get("text", "") for b in r["content"] if b["type"] == "text")
+    if "thinking" in types:
+        cell(f"anthropic/budget_tokens 16: thinking block then a text block with an answer {types}",
+             types[0] == "thinking" and texts.strip() != "", f"types={types} text={texts[:60]!r} stop={r['stop_reason']}")
+    else:
+        unexercised("anthropic/budget_tokens 16", "the model wrote no reasoning")
 
     # count_tokens must render exactly as generation does
     for thinking in (None, "enabled", "disabled"):

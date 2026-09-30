@@ -25,6 +25,10 @@ any surface may still change.
   `none` restores the old raw output).
   A template control that is not recognised is left alone. See `docs/server.md` § Reasoning models and
   `docs/tasks/task-qwen35-think-prompt-2026-09.md`.
+  - **A thinking reply always gets room to answer.** `-reasoning-budget` (default `auto`) force-closes the think block once
+    it has used three quarters of `max_tokens` (or the request's own `thinking_token_budget` / Anthropic `budget_tokens`,
+    clamped to leave a quarter), so a small `max_tokens` with thinking on no longer returns an empty `content`. Off under
+    `-spec` / `-drafter`. A gated logit processor: decode fast paths are untouched until the budget is due.
   - **What changes for an existing client:** a model that was writing `<think>` into `content` now writes it to
     `reasoning_content`. A small Qwen3.5 (0.8B) now gets its closed empty think block and answers without thinking, as
     HuggingFace's default does (+4 prompt tokens); Qwen3, Qwen3.5-9B and Gemma 4 prompts decode as before. A client that parsed the tags out of `content` sets `-reasoning-format none`.

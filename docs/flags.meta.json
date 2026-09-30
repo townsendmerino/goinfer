@@ -311,6 +311,12 @@
    "group": "Reasoning models",
    "summary": "How a reply's reasoning reaches the client: `deepseek` (clean `content`, reasoning in `reasoning_content` / Anthropic thinking blocks), `deepseek-legacy` (both, tags kept in `content`), or `none` (nothing separated).",
    "type": "deepseek | deepseek-legacy | none"
+  },
+  {
+   "name": "reasoning-budget",
+   "group": "Reasoning models",
+   "summary": "A ceiling on how long a thinking reply may think before serve forces the block closed, so the reply always has room to answer: `auto` (the default: at most three quarters of the request's `max_tokens`), `unlimited`, or `N` tokens. A request's `thinking_token_budget` / Anthropic `budget_tokens` applies too. Off under `-spec` / `-drafter`.",
+   "type": "auto | unlimited | N"
   }
  ],
  "subcommands": [

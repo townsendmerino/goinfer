@@ -118,7 +118,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	defer lm.exit()
 
 	var sb, rb strings.Builder
-	gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
+	s.routeThink(lm, &gr, tm, ts, func(t string) { rb.WriteString(t) })
 	finish, nComp, _, _, prefillReused, cancelReason, gerr := lm.drive(
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
@@ -233,7 +233,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	defer lm.exit()
 
 	var sb, rb strings.Builder
-	gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
+	s.routeThink(lm, &gr, tm, ts, func(t string) { rb.WriteString(t) })
 	finish, nComp, _, stopHitOut, _, cancelReason, gerr := lm.drive(
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {

@@ -306,6 +306,9 @@ type config struct {
 	// reasoningFmt is -reasoning-format (deepseek | deepseek-legacy | none).
 	thinking     string
 	reasoningFmt string
+	// reasoningBudget is -reasoning-budget (auto | unlimited | N tokens): a ceiling on how long a thinking reply may think
+	// before serve forces the block closed, so a reply always has room to answer (budget.go).
+	reasoningBudget string
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
@@ -341,6 +344,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.decisionsTemplate, "decisions-template", "chat-v1", "POST /v1/systemone's prompt template: chat-v1 (the model's chat template; for instruct models) or bare-v1 (JEV's own, no chat template)")
 	fs.StringVar(&cfg.decisionsCal, "decisions-calibration", "", "calibration.json with per-kind temperatures for /v1/systemone (from goinfer-chat decisions-calibrate, fitted under the same template); none: every answer is uncalibrated")
 	fs.StringVar(&cfg.thinking, "thinking", "template", "default thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): template (what the checkpoint's own template renders — Qwen3.5-0.8B: off, Qwen3.5-9B: on), asis (the prompt bytes serve rendered before thinking was modelled: nothing written, the model decides), on, or off. A request overrides it with chat_template_kwargs.enable_thinking, reasoning_effort, or Anthropic's thinking. A model whose template control is not recognised ignores this.")
+	fs.StringVar(&cfg.reasoningBudget, "reasoning-budget", "auto", "ceiling on how long a thinking reply may think before serve forces the block closed so the reply can answer: auto (the default: thinking takes at most three quarters of the request's max_tokens), unlimited (no ceiling of serve's own), or N (cap every thinking reply at N tokens, still leaving room to answer). A request's own budget (thinking_token_budget, or Anthropic's thinking.budget_tokens) applies too, clamped so a quarter of max_tokens is left to answer. Not applied under -spec or -drafter, or to a model with no recognised thinking control.")
 	fs.StringVar(&cfg.reasoningFmt, "reasoning-format", "deepseek", "how a reply's reasoning reaches the client: deepseek (content is the clean answer, reasoning goes in reasoning_content / Anthropic thinking blocks), deepseek-legacy (reasoning_content is filled and content keeps the raw <think> tags), or none (nothing is separated: the raw text is the content). A request may override it with reasoning_format.")
 	fs.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
 	fs.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
@@ -530,6 +534,10 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	}
 	if _, ok := chat.ParseThinkMode(cfg.thinking); !ok {
 		fmt.Fprintf(os.Stderr, "error: -thinking %q: want asis, template, on or off\n", cfg.thinking)
+		os.Exit(2)
+	}
+	if _, err := parseBudgetFlag(cfg.reasoningBudget); err != nil {
+		fmt.Fprintf(os.Stderr, "error: -reasoning-budget %q: %v\n", cfg.reasoningBudget, err)
 		os.Exit(2)
 	}
 	if _, ok := parseReasoningFormat(cfg.reasoningFmt); !ok {

@@ -478,10 +478,18 @@ to ignore.**
   Gemma 4 prompts decode the same as before. `reasoning_effort: "none"` turns thinking off; any other value changes
   nothing, because clients such as dsh send a bare `reasoning_effort` to every endpoint and must not have their prompts
   flipped by it.
-- **A reply cut off while thinking has no answer.** `max_tokens` counts thinking too, so a small `max_tokens` with thinking on
-  (the default for Qwen3.5-9B and Qwen3) can end inside the block: `content` is empty, `reasoning_content` holds what was written, `finish_reason` is `length`
-  (`stop_reason: max_tokens` with only a thinking block on `/v1/messages`). Turn thinking off (or raise `max_tokens`) for a
-  client that cannot tolerate that. `budget_tokens` is accepted and not enforced.
+- **A thinking reply always gets room to answer (the reasoning budget).** `max_tokens` counts thinking too, so a thinking
+  reply could run out of tokens inside its block and return nothing (empty `content`, `finish_reason: length`). serve prevents
+  that: once the block has used its budget, the next token is forced to be the block's closing token and the model writes its
+  answer in what remains. The budget is the smaller of what the request asked for (`thinking_token_budget` in an OpenAI-style
+  body, or Anthropic's `thinking.budget_tokens`; else `-reasoning-budget N`) and what leaves room to answer: thinking takes at
+  most three quarters of `max_tokens` (and leaves at least 2 tokens). `-reasoning-budget auto` (the default) applies only that
+  room rule; `unlimited` applies none of serve's own (a request's budget still holds). The budget costs nothing until it is
+  due — the decode fast paths stay on until then. **It does not apply** under `-spec` or `-drafter` (any logit processor would
+  silently turn the drafter off for every thinking request), to a turn shorter than 4 tokens, to a model with no recognised
+  thinking control, or to a model whose tokenizer has no single token for the block's delimiters. A reply that ends inside its
+  block anyway (one of those cases) has empty `content`, `reasoning_content` holding what was written, and `finish_reason:
+  length` (`stop_reason: max_tokens` with only a thinking block on `/v1/messages`).
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
   that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.

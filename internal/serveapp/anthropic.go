@@ -32,10 +32,11 @@ type anthropicReq struct {
 	StopSequences []string           `json:"stop_sequences"`
 	Stream        bool               `json:"stream"`
 	// Thinking: {type: enabled|adaptive|disabled, budget_tokens}. enabled/adaptive render the model's thinking mode on
-	// and return `thinking` content blocks (think.go); budget_tokens is accepted and NOT enforced (a reasoning budget is
-	// a follow-up — max_tokens bounds the whole turn, thinking included). metadata is accepted and ignored.
+	// and return `thinking` content blocks (think.go); budget_tokens is enforced as a ceiling on the thinking block
+	// (budget.go): serve forces the block closed there, clamped so a quarter of max_tokens is left to answer. metadata is accepted and ignored.
 	Thinking *struct {
-		Type string `json:"type"`
+		Type         string `json:"type"`
+		BudgetTokens int    `json:"budget_tokens"`
 	} `json:"thinking"`
 }
 
@@ -44,6 +45,9 @@ func (r *anthropicReq) thinkRequest() thinkRequest {
 	tr := thinkRequest{}
 	if r.Thinking != nil {
 		tr.anthropicType = r.Thinking.Type
+		if r.Thinking.Type == "enabled" {
+			tr.budget = r.Thinking.BudgetTokens // serve force-closes the block at it (budget.go), clamped to leave room to answer
+		}
 	}
 	return tr
 }
@@ -620,7 +624,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	id := "msg_" + reqID()
 	gr.id = id
 	var rb strings.Builder
-	gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
+	s.routeThink(lm, &gr, tm, ts, func(t string) { rb.WriteString(t) })
 	var (
 		text                          string
 		calls                         []chat.ToolCall

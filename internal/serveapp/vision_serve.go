@@ -321,7 +321,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		// CPU an image prefill can take minutes — the M-19 gate that catches a missing heartbeat
 		// on the text-only lm.drive( sites never enumerated the driveVL sites at all.
 		stopBeat := sseHeartbeat(ss)
-		gr.think = newThinkOut(tm, ts, func(t string) {
+		s.routeThink(lm, &gr, tm, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
 		finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
@@ -343,7 +343,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	var sb, rb strings.Builder
-	gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
+	s.routeThink(lm, &gr, tm, ts, func(t string) { rb.WriteString(t) })
 	finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
@@ -441,7 +441,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		})
 		anthropicEvent(ss, "ping", map[string]any{"type": "ping"})
 		th := &anthropicThink{ss: ss, want: req.wantsThinking()}
-		gr.think = newThinkOut(tm, ts, th.push)
+		s.routeThink(lm, &gr, tm, ts, th.push)
 		if th.want {
 			streamMessagesThinking(ss, th, func(onText func(string)) (string, int, string, string, error) {
 				finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, onText)
@@ -474,7 +474,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	var sb, rb strings.Builder
-	gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
+	s.routeThink(lm, &gr, tm, ts, func(t string) { rb.WriteString(t) })
 	finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())

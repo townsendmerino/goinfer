@@ -69,6 +69,7 @@ func (c config) reasoningFormat() reasoningFormat {
 
 // thinkSettings is what one request resolved to.
 type thinkSettings struct {
+	budget   int             // the request's own reasoning-token budget (0 = none asked for); budget.go clamps it
 	mode     chat.ThinkMode  // the mode to render; the server default when the request said nothing
 	explicit bool            // the request itself chose on/off (vs inheriting the server default)
 	format   reasoningFormat // how reasoning reaches this client
@@ -80,6 +81,7 @@ type thinkRequest struct {
 	reasoningEffort string                     // OpenAI reasoning_effort
 	anthropicType   string                     // anthropic thinking.type
 	format          string                     // reasoning_format
+	budget          int                        // thinking_token_budget / Anthropic budget_tokens (0 = none)
 }
 
 // resolveThink turns the request's controls plus the server defaults into settings. The error is a client error (400).
@@ -92,6 +94,10 @@ func (s *server) resolveThink(tr thinkRequest) (thinkSettings, error) {
 		}
 		ts.format = f
 	}
+	if tr.budget < 0 {
+		return ts, fmt.Errorf("the thinking token budget must be positive, got %d", tr.budget)
+	}
+	ts.budget = tr.budget
 	set := func(on bool) {
 		ts.explicit = true
 		ts.mode = chat.ThinkOff

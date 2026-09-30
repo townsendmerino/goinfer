@@ -600,12 +600,18 @@ type chatReq struct {
 	ChatTemplateKwargs map[string]json.RawMessage `json:"chat_template_kwargs"`
 	ReasoningEffort    string                     `json:"reasoning_effort"`
 	ReasoningFormat    string                     `json:"reasoning_format"`
+	// ThinkingTokenBudget is vLLM's name for a cap on reasoning tokens; serve force-closes the block at it (budget.go).
+	ThinkingTokenBudget *int `json:"thinking_token_budget"`
 	sampling
 }
 
 // think is the request's thinking controls as think.go's input.
 func (r chatReq) think() thinkRequest {
-	return thinkRequest{kwargs: r.ChatTemplateKwargs, reasoningEffort: r.ReasoningEffort, format: r.ReasoningFormat}
+	tr := thinkRequest{kwargs: r.ChatTemplateKwargs, reasoningEffort: r.ReasoningEffort, format: r.ReasoningFormat}
+	if r.ThinkingTokenBudget != nil {
+		tr.budget = *r.ThinkingTokenBudget
+	}
+	return tr
 }
 
 type chatMessage struct {
@@ -818,7 +824,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		// 300s harness idle timeout. Streaming per token once generation starts does not cover
 		// the prefill window itself, same shape as the buffer-then-stream sites M-19 fixed.
 		stopBeat := sseHeartbeat(ss)
-		gr.think = newThinkOut(tm, ts, func(t string) {
+		s.routeThink(lm, &gr, tm, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
 		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
@@ -846,7 +852,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	}
 
 	var sb, rb strings.Builder
-	gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
+	s.routeThink(lm, &gr, tm, ts, func(t string) { rb.WriteString(t) })
 	finish, nComp, lps, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())

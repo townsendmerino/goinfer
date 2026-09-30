@@ -182,8 +182,8 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
-	gr.id = id                          // K1: registers this generation for cancel-by-id
-	gr.think = newThinkOut(tm, ts, nil) // reasoning is dropped on this route
+	gr.id = id                         // K1: registers this generation for cancel-by-id
+	s.routeThink(lm, &gr, tm, ts, nil) // reasoning is dropped on this route
 	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}
@@ -269,14 +269,14 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
-	gr.id = id                          // K1: registers this generation for cancel-by-id
-	gr.think = newThinkOut(tm, ts, nil) // reasoning is dropped on this route
+	gr.id = id // K1: registers this generation for cancel-by-id
 	forced := forcedTool(req.ToolChoice, tools)
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"
 	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, openAIUnionMode(req.ToolChoice), tools); cerr != nil {
 		writeErr(w, http.StatusBadRequest, cerr.Error()) // named tool_choice unconstrainable → 400 (M-05)
 		return
 	}
+	s.routeThink(lm, &gr, tm, ts, nil) // reasoning is dropped on this route; AFTER the tool constraint, which the budget composes with
 	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}

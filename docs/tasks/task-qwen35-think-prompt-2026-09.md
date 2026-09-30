@@ -41,6 +41,24 @@ What shipped, against the design in "Proposed fix" below (which is kept as the r
 - **Found and fixed on the way:** `renderGemma4Tools` wrote a newline between a system prompt and the first declaration that
   Gemma's template does not; the old tool goldens had no system-prompt case. The per-checkpoint goldens found it.
 
+- **The reasoning budget (built 2026-09-30, owner request)** closes the truncation hole: a gated logit processor
+  (`internal/serveapp/budget.go`) force-closes the think block once it has used its budget (request's own, else
+  `-reasoning-budget`, else `auto` = three quarters of `max_tokens`), so a thinking reply always has room to answer. Gated:
+  fast paths are untouched until due. Composes with the lazy tool-union masker; steps aside under `-spec`/`-drafter` and for
+  grammar-constrained requests. Gates: pure-function table, the real decode loop on the tiny model (gated and ungated;
+  identical to an unprocessed run up to the budget, close token forced at exactly the budget, never forced twice), composition
+  and skip rules, six mutations each red. On the real 0.8B: thinking on at `max_tokens` 160 ends with an answer; a request
+  `thinking_token_budget` of 16 bounds the reasoning and leaves an answer; Anthropic `budget_tokens` gives a thinking block then
+  a text block; streaming equals non-streaming.
+- **Claude Code itself, tested 2026-09-30** (2.1.284, isolated config dir, dummy key, tools off and with `Read`, through a
+  logging proxy; the real 0.8B served under a Claude model name): it sent `thinking: {type: enabled, budget_tokens}`, parsed the
+  `thinking_delta` stream (its own thinking-token counter climbed), accepted the empty `signature`, printed the answer, and
+  exited 0 (`is_error: false`). In a tool loop it replayed our thinking blocks in history with `signature: ""`; serve dropped
+  them and answered 200 on every turn. Executing the tool took ~0.1 s; the 125 s was three ~40 s model turns on CPU. What went
+  wrong was the 0.8B's own tool-call quality (a wrong path, junk arguments, and one call written as text with broken JSON,
+  which serve returns as prose) — not the protocol. Not tested: a model that calls tools reliably (the 9B), which would make the
+  loop meaningful.
+
 **Verified against real checkpoints** (client matrix, `scripts/think_matrix.py`, exploratory daytime run on Qwen3.5-0.8B; the
 9B is a night job). See the record in "Matrix results" below for what passed, what did not, and what was not exercised.
 
@@ -111,10 +129,6 @@ test that would have gone red.
 
 ## Not built
 
-- **Closing the truncation hole.** The default is `template` (decided 2026-09-30), so Qwen3.5-9B and Qwen3 think by default
-  and a small `max_tokens` can end inside the block: `content` is empty, `finish_reason` is `length`. Only `-thinking off` or a
-  reasoning budget closes it; `off` is one flag (consequences in "What flipping the default changes" below).
-- **A reasoning budget** (`budget_tokens` is accepted and not enforced).
 - **Stop strings on content only.** Stops are still matched on raw text, so a stop that appears in the reasoning ends the
   reply with no answer. Pinned by `TestStreamTokens_thinkStopStrings`, named as a known limitation.
 - **History:** replayed `reasoning_content` and Anthropic `thinking` blocks are dropped on input; the templates' rule

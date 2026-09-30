@@ -79,6 +79,11 @@ const (
 type Reasoning struct {
 	open, close string // delimiters as they appear in DECODED output
 
+	// openTok / closeTok are the SINGLE TOKENS whose text opens and closes the block (for Qwen the same as open/close; for
+	// Gemma 4 the channel markers "<|channel>" / "<channel|>", where open also carries the "thought\n" that follows). A
+	// reasoning budget finds the block by these ids and closes it by forcing closeTok.
+	openTok, closeTok string
+
 	def thinkDefault // the template's own default, read from the template text
 
 	// onSuffix / offSuffix are appended after the family's generic generation prompt (ChatML family), as tagged segments;
@@ -94,6 +99,10 @@ type Reasoning struct {
 // Open and Close are the delimiters a reply uses around its reasoning, as decoded text.
 func (r *Reasoning) Open() string  { return r.open }
 func (r *Reasoning) Close() string { return r.close }
+
+// OpenToken and CloseToken are the single-token texts that open and close the block (see the field comment).
+func (r *Reasoning) OpenToken() string  { return r.openTok }
+func (r *Reasoning) CloseToken() string { return r.closeTok }
 
 // DefaultOn reports whether the checkpoint's own template has thinking ON when enable_thinking is unset.
 func (r *Reasoning) DefaultOn() bool { return r.def == defOn }
@@ -128,7 +137,7 @@ func detectChatMLReasoning(tmpl string) *Reasoning {
 	hasOpen := strings.Contains(tail, openLit)
 	isFalse := strings.Contains(tail, "enable_thinking is defined and enable_thinking is false")
 	isTrue := strings.Contains(tail, "enable_thinking is defined and enable_thinking is true")
-	r := &Reasoning{open: "<think>", close: "</think>"}
+	r := &Reasoning{open: "<think>", close: "</think>", openTok: "<think>", closeTok: "</think>"}
 	switch {
 	case isFalse && hasClosed && !hasOpen && !isTrue: // Qwen3
 		r.def, r.onSuffix, r.offSuffix, r.onOpens = defOn, nil, closedSegs, false
@@ -150,7 +159,7 @@ func detectGemma4Reasoning(tmpl string) *Reasoning {
 		!strings.Contains(tmpl, "enable_thinking | default(false)") {
 		return nil
 	}
-	return &Reasoning{open: "<|channel>thought\n", close: "<channel|>", def: defOff, gemma4: true}
+	return &Reasoning{open: "<|channel>thought\n", close: "<channel|>", openTok: "<|channel>", closeTok: "<channel|>", def: defOff, gemma4: true}
 }
 
 // effectiveOn resolves a mode to on/off for this checkpoint. ThinkAsIs has no answer of its own (ok=false): it is the
@@ -215,6 +224,18 @@ func (t *Template) PromptOpensThink() bool {
 	}
 	on, ok := t.reason.effectiveOn(t.think)
 	return ok && on && t.reason.onOpens
+}
+
+// ThinkingPossible reports whether a reply to a prompt from this Template can contain a reasoning block: false for a
+// family without a spec and under ThinkOff (the prompt carries a closed block), true under ThinkOn, true under ThinkAsIs
+// (nothing is written, so the model may open one itself — unknowable), and under ThinkTemplate whatever the checkpoint's
+// own default is. A reasoning budget is only installed where this is true.
+func (t *Template) ThinkingPossible() bool {
+	if t == nil || t.reason == nil {
+		return false
+	}
+	on, ok := t.reason.effectiveOn(t.think)
+	return !ok || on
 }
 
 // NewReasoningSplitter returns a splitter for replies to prompts from t, or nil when t has no reasoning spec (the caller

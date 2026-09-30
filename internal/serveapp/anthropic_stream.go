@@ -67,7 +67,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	// Thinking (think.go): reasoning becomes a `thinking` block at index 0 when the request asked for one, and is dropped
 	// otherwise — an Anthropic client that never asked for thinking must see only text. Everything after it shifts by one.
 	th := &anthropicThink{ss: ss, want: wantThinking}
-	gr.think = newThinkOut(tm, ts, th.push)
+	s.routeThink(lm, &gr, tm, ts, th.push)
 
 	if toolsActive {
 		s.streamMessagesTools(w, r, ss, lm, gr, tools, th)
