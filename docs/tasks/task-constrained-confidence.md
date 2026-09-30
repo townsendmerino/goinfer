@@ -789,6 +789,14 @@ suffix, and the cost is documented.
 - **`docs/README.md`:** the index entry updated.
 - **The site:** [`task-site-2026-09.md`](task-site-2026-09.md) S2 gains a decisions row on each model page, and a
   decision-model tag reserved for Route B.
+  - **Built 2026-09-30.** Each vetted checkpoint's card has a "Decisions · /v1/systemone" block.
+    - **Where measured:** the checkpoint's label-scoring figures, from `site/data/claims.json`'s new `decisions`
+      list. Today that is Qwen2.5-Coder 1.5B, D6a's arm C (chat-v1, calibrated, top-1 0.2774, ECE 0.2102).
+    - **Otherwise:** "Label scoring, unmeasured."
+    - **Gates:** the claims check requires both figures and the date under the cited heading, and Verify requires
+      them on the page (`TestDecisionClaims_refuse`, `TestVerify_decisionsRow`).
+    - **No decision-model tag:** no registry checkpoint carries a trained head. JEV-9B is served with `head=`, not
+      pulled from the registry.
 - **The recipe:** [`../integrations/typesafe-jevx.md`](../integrations/typesafe-jevx.md), for jevx and TypeSafe's
   SDKs. It is marked not yet run end to end.
 - **The capability matrix: deferred to D2–D4.**

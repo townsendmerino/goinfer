@@ -182,5 +182,23 @@
         "heading": "Cells in detail (nobara-pc, 2026-09-29)"
       }
     }
+  ],
+  "decisions": [
+    {
+      "id": "d6a-qwen2.5-coder-1.5b-chat",
+      "checkpoint": "qwen2.5-coder-1.5b",
+      "machine": "cuda",
+      "route": "label",
+      "template": "chat-v1",
+      "top1": "0.2774",
+      "ece": "0.2102",
+      "calibrated": true,
+      "sample": "872 out-of-distribution questions from a public decisions corpus",
+      "date": "2026-09-28",
+      "source": {
+        "path": "docs/measurements/decisions-d6a-2026-09-28.md",
+        "heading": "The run"
+      }
+    }
   ]
 }

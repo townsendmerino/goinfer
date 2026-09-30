@@ -122,8 +122,16 @@ func (m *Model) funcs(cfg Config) template.FuncMap {
 		"parityWord": func(p string) string { w, _, _ := strings.Cut(p, " "); return strings.TrimSuffix(w, ":") },
 		"factval":    factVal,
 		"machines":   func() []Machine { return m.Machines },
-		"cfg":        func() Config { return cfg },
-		"tierText":   func(t string) string { return TierText[t] },
+		"machine": func(key string) Machine {
+			for _, mc := range m.Machines {
+				if mc.Key == key {
+					return mc
+				}
+			}
+			return Machine{Key: key, Short: key}
+		},
+		"cfg":      func() Config { return cfg },
+		"tierText": func(t string) string { return TierText[t] },
 		"b2s": func(b bool) string {
 			if b {
 				return "1"

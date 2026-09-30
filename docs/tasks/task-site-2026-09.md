@@ -111,6 +111,8 @@ A model page carries what the repo knows and ollama.com's equivalent pages do no
 - **the decisions row** (added 2026-09-28, D9 of `task-constrained-confidence.md`). It shows this checkpoint's measured
   label-scoring figures (top-1, ECE) where a D6-style run exists, and "label scoring, unmeasured" otherwise. A
   **decision model** tag goes only on checkpoints with a trained decision head (Route B, D2–D4), and none exist yet.
+  **Built 2026-09-30:** the row reads `site/data/claims.json`'s `decisions` list, under the claims check and Verify.
+  Today it shows figures for Qwen2.5-Coder 1.5B (D6a arm C).
 - measured throughput, with the machine and date named
 - the exact `goinfer-chat pull` line, copyable
 - **"Coming from Ollama?"** (added 2026-09-30) at the bottom of the Models page: Ollama's 60 most-pulled models with what

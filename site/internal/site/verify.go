@@ -109,6 +109,14 @@ func Verify(out string, m *Model, ws []*Writeup, drafts bool) error {
 			bad = append(bad, fmt.Sprintf("family %q is not linked from the Models page", f.Name))
 		}
 		for _, c := range f.Checkpoints {
+			// The decisions row: a measured checkpoint's page carries both figures, an unmeasured one says so.
+			if d := c.Decision; d != nil {
+				if !strings.Contains(page, d.Top1) || !strings.Contains(page, d.ECE) {
+					bad = append(bad, fmt.Sprintf("checkpoint %q: decision figures %s / %s are not on its page", c.ID, d.Top1, d.ECE))
+				}
+			} else if !strings.Contains(page, "Label scoring, unmeasured.") {
+				bad = append(bad, fmt.Sprintf("checkpoint %q: no decisions row", c.ID))
+			}
 			for key, s := range c.Speed {
 				if s.Tok != nil && (!strings.Contains(page, num(s.Tok)) || !strings.Contains(page, s.Date)) {
 					bad = append(bad, fmt.Sprintf("checkpoint %q: its %s speed %s (%s) is not on its page", c.ID, key, num(s.Tok), s.Date))
