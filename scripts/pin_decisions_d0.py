@@ -14,6 +14,8 @@ Phases, each its own process (a 9B f32 load is ~36 GB; the two precisions never 
   pin_decisions_d0.py f32  [--limit N]  Route B in f32, and Route A B0 (adapter off)   -> jev9b_ref_f32.jsonl,
                                                                                           route_a_b0.jsonl
   pin_decisions_d0.py check             the sanity checks: verbalizer ids, top-1 vs gold, bf16 vs f32
+  pin_decisions_d0.py b0rows --rows R --out O [--kind K]
+                                        Route A B0 (f32 base, no adapter) over any rows file (D6a's gap check)
 
 Model phases append one line per item and skip ids already written, so an interrupted run resumes. --limit N stops
 after N new items: the probe that sizes a full run before it is launched.
@@ -252,6 +254,70 @@ def cmd_model(args):
         f.close()
 
 
+# ---- b0rows: the reference Route A over any rows file ------------------------------------------------------------
+def cmd_b0rows(args):
+    """Route A B0 exactly as the f32 phase computes it (pristine Qwen3.5-9B in f32, the verbalizer logits at the last
+    token, softmax), over an arbitrary corpus-format rows file rather than the 150 items. Added for D6a's gap check
+    (docs/measurements/decisions-d6a-2026-09-28.md, "The 14-point gap"): the reference on the OOD sample's noul rows.
+    The base is loaded WITHOUT the adapter, which is what the f32 phase's disable_adapter() computes. Resumable: ids
+    already in --out are skipped."""
+    import torch
+    from transformers import AutoModelForCausalLM
+    for lib, want in LIBS.items():
+        have = __import__(lib).__version__
+        if have != want:
+            sys.exit(f"{lib} {have} != pinned {want}")
+    rows = [json.loads(l) for l in open(args.rows) if l.strip()]
+    if args.kind:
+        rows = [r for r in rows if r["kind"] == args.kind]
+    done = set()
+    if os.path.exists(args.out):
+        done = {json.loads(l)["id"] for l in open(args.out) if l.strip()}
+    todo = [r for r in rows if r["id"] not in done]
+    if args.limit:
+        todo = todo[:args.limit]
+    log(f"b0rows: {len(rows)} rows ({args.kind or 'all kinds'}), {len(done)} already written, {len(todo)} to do")
+    if not todo:
+        return
+    judge = json.load(open(os.path.join(MODEL, "judge_config.json")))
+    ranges, verb = judge["slots"]["ranges"], judge["verbalizer_ids"]
+    tok = tokenizer()
+    prepared = []
+    for r in todo:
+        state, truncated, n_state = truncate_state(tok, r["state"])
+        prompt, labels = build_decision_prompt(r["kind"], state, r["question"], r["options"])
+        prepared.append((r, prompt, labels, tok(prompt, add_special_tokens=False)["input_ids"], truncated))
+    torch.set_grad_enabled(False)
+    t0 = time.time()
+    model = AutoModelForCausalLM.from_pretrained(MODEL, dtype=torch.float32).eval()  # the base: no adapter loaded
+    log(f"loaded f32 base in {time.time()-t0:.0f}s")
+    env = env_record("f32", "none")
+    env["lora_mode"] = "none (base only)"
+    tok_total = sum(len(ids) for _, _, _, ids, _ in prepared)
+    tok_done, t_start, last_beat = 0, time.time(), 0.0
+    with open(args.out, "a") as f:
+        for i, (r, prompt, labels, ids, truncated) in enumerate(prepared):
+            t1 = time.time()
+            lo, n = ranges[r["kind"]][0], len(labels)
+            h0 = model.model(input_ids=torch.tensor([ids])).last_hidden_state[0, -1]
+            z0 = model.lm_head.weight[verb[lo:lo + n]].float() @ h0.float()
+            rec = {"id": r["id"], "kind": r["kind"], "labels": labels, "verbalizer_ids": verb[lo:lo + n],
+                   "target": r.get("target"), "logits": z0.tolist(), "p": softmax(z0),
+                   "n_tokens": len(ids), "state_truncated": truncated,
+                   "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+                   "seconds": round(time.time() - t1, 3), **env}
+            f.write(json.dumps(rec) + "\n")
+            f.flush()
+            tok_done += len(ids)
+            now = time.time()
+            if now - last_beat >= 30 or i == len(prepared) - 1:
+                el = now - t_start
+                eta = el / tok_done * (tok_total - tok_done)  # per token: prompt length is what an item costs
+                log(f"b0rows: {i+1}/{len(prepared)} rows, {tok_done}/{tok_total} tokens, elapsed {el/60:.1f} min, "
+                    f"eta {eta/60:.1f} min")
+                last_beat = now
+
+
 # ---- check ----------------------------------------------------------------------------------------------------
 def cmd_check(_):
     judge = json.load(open(os.path.join(MODEL, "judge_config.json")))
@@ -282,10 +348,15 @@ def cmd_check(_):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("phase", choices=["select", "bf16", "f32", "check"])
+    ap.add_argument("phase", choices=["select", "bf16", "f32", "check", "b0rows"])
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--rows", help="b0rows: a corpus-format rows file (id, kind, options, state, question)")
+    ap.add_argument("--kind", help="b0rows: only rows of this kind")
+    ap.add_argument("--out", help="b0rows: the output jsonl (appended; resumable)")
     a = ap.parse_args()
-    {"select": cmd_select, "bf16": cmd_model, "f32": cmd_model, "check": cmd_check}[a.phase](a)
+    if a.phase == "b0rows" and not (a.rows and a.out):
+        ap.error("b0rows needs --rows and --out")
+    {"select": cmd_select, "bf16": cmd_model, "f32": cmd_model, "check": cmd_check, "b0rows": cmd_b0rows}[a.phase](a)
 
 
 if __name__ == "__main__":
