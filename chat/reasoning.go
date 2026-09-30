@@ -74,12 +74,6 @@ const (
 	defOff                     // thinking off (the prompt carries a closed block)
 )
 
-// What a generation prompt may end with, for the ChatML-with-think family.
-const (
-	thinkClosedSuffix = "<think>\n\n</think>\n\n"
-	thinkOpenSuffix   = "<think>\n"
-)
-
 // Reasoning is one family's declared reasoning behaviour. nil on a Template means the family does not think in its
 // template (Phi-3, Gemma 3, Qwen2.5, …): no prefill, no splitting.
 type Reasoning struct {
