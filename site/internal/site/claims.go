@@ -131,6 +131,10 @@ func CheckClaims(root string, in *Inputs) error {
 		}
 		for what, tok := range need {
 			ok := hasToken(sec, tok)
+			// A record prints a rate to one decimal ("52.0"); the JSON number loses the trailing zero ("52").
+			if !ok && (what == "value" || what == "peer") && !strings.Contains(tok, ".") {
+				ok = hasToken(sec, tok+".0")
+			}
 			if what == "date" {
 				ok = strings.Contains(sec, tok)
 			}
@@ -168,6 +172,11 @@ func CheckClaims(root string, in *Inputs) error {
 		case "mean", "none":
 		default:
 			bad = append(bad, fmt.Sprintf("claim %s: basis %q must be median-of-3, mean or none", c.ID, c.Basis))
+		}
+		switch c.Verdict {
+		case "ahead", "behind", "level", "na":
+		default:
+			bad = append(bad, fmt.Sprintf("claim %s: verdict %q must be ahead, behind, level or na", c.ID, c.Verdict))
 		}
 		if (c.Verdict == "ahead" || c.Verdict == "behind") && (c.Value == nil || c.Peer == nil) {
 			bad = append(bad, fmt.Sprintf("claim %s: a verdict against Ollama needs both figures", c.ID))

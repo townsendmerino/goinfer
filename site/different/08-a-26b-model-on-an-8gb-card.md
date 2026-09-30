@@ -2,18 +2,18 @@
 title: "A 26B model on an 8 GB card"
 area: "Memory"
 order: 8
-summary: "Gemma 4 26B-A4B runs on an 8 GB card by streaming its experts from host RAM: 40.2 tokens/s on 2026-09-25. An architecture comparison, not like-for-like."
+summary: "Gemma 4 26B-A4B runs on an 8 GB card by streaming its experts from host RAM: 39.3 tokens/s on 2026-09-29. An architecture comparison, not like-for-like."
 stand: "The 26B mixture-of-experts model does not fit an 8 GB card, so goinfer keeps its experts in host memory and copies the ones each token needs to the GPU. This page gives the one figure measured for that, and what it does not show."
 measured: 2026-09-25
 reviewed: 2026-09-29
 facts:
   - {label: "card", value: "RTX 2070 SUPER, 8 GB, driver 595.91.07"}
   - {label: "model", value: "Gemma 4 26B-A4B, goinfer's int4 .giw bundle"}
-  - {label: "generation rate, 2048-token context", value: "40.2 tok/s on 2026-09-25 (may be replaced)"}
-  - {label: "peak host RAM", value: "25.5 GB"}
+  - {label: "generation rate, 2048-token context", value: "39.3 tok/s on 2026-09-29"}
+  - {label: "peak host RAM", value: "20.0 GiB"}
 doesnt:
   - title: "It doesn't fit in a small amount of RAM."
-    text: "The experts live in pinned host memory, so the machine needs the RAM to hold them. goinfer's peak resident memory in the record was 25.5 GB, against 17.2 GB for Ollama and 17.0 GB for llama.cpp, on the same model and card. The Linux PC it ran on has 62.7 GB of RAM."
+    text: "The experts live in pinned host memory, so the machine needs the RAM to hold them. goinfer's peak resident memory in the record was 20.0 GiB, against 16.4 GiB for Ollama and 16.2 GiB for llama.cpp, on the same model and card. The Linux PC it ran on has 62.7 GB of RAM."
   - title: "It isn't a like-for-like win over Ollama."
     text: "goinfer ran its own int4 .giw bundle. Ollama and llama.cpp ran the Q4_K_M GGUF and put some layers on the CPU. The record labels this an architecture comparison and keeps it out of every claim about a model family. An earlier record measured Ollama at about 24.5 tok/s on another file of this model (Google's q4_0 QAT GGUF), so the gap depends on which file is used."
   - title: "Its speed is set by the copy to the card."
@@ -23,14 +23,18 @@ doesnt:
   - title: "It doesn't apply to every mixture-of-experts model."
     text: "On CUDA, only experts stored as int4 are streamed; experts in other formats stay fully on the GPU. Only the CUDA and Metal backends take the flag. The code and tests cover Gemma 4, gpt-oss and the Qwen3.6 MoE, but this page has a measured generation rate for Gemma 4 26B-A4B alone. The copy overlap speeds up generation only; the record says prefill (reading the prompt) is untouched."
 figures:
-  - {text: "40.2", source: "docs/measurements/peer-claim-2026-09-25.md"}
-  - {text: "22.2", source: "docs/measurements/peer-claim-2026-09-25.md"}
-  - {text: "27.6", source: "docs/measurements/peer-claim-2026-09-25.md"}
-  - {text: "1.815", source: "docs/measurements/peer-claim-2026-09-25.md"}
-  - {text: "25.5", source: "docs/measurements/peer-claim-2026-09-25.md"}
-  - {text: "17.2", source: "docs/measurements/peer-claim-2026-09-25.md"}
-  - {text: "17.0", source: "docs/measurements/peer-claim-2026-09-25.md"}
   - {text: "595.91.07", source: "docs/measurements/peer-claim-2026-09-25.md"}
+  - {text: "39.3", source: "docs/measurements/peer-sweep-2026-09-29.md"}
+  - {text: "37.3", source: "docs/measurements/peer-sweep-2026-09-29.md"}
+  - {text: "22.3", source: "docs/measurements/peer-sweep-2026-09-29.md"}
+  - {text: "1.763", source: "docs/measurements/peer-sweep-2026-09-29.md"}
+  - {text: "20.0 GiB", source: "docs/measurements/peer-sweep-2026-09-29.md"}
+  - {text: "16.4 GiB", source: "docs/measurements/peer-sweep-2026-09-29.md"}
+  - {text: "16.2 GiB", source: "docs/measurements/peer-sweep-2026-09-29.md"}
+  - {text: "1.815", source: "docs/measurements/peer-sweep-2026-09-29.md"}
+  - {text: "40.2", source: "docs/measurements/peer-sweep-2026-09-29.md"}
+  - {text: "27.7", source: "docs/measurements/peer-sweep-2026-09-29.md"}
+  - {text: "22.2", source: "docs/measurements/peer-claim-2026-09-25.md"}
   - {text: "24.5", source: "docs/benchmarks.md"}
   - {text: "16.12", source: "docs/benchmarks.md"}
   - {text: "17.62", source: "docs/benchmarks.md"}
@@ -45,6 +49,7 @@ figures:
   - {text: "5.98", source: "docs/measurements/m26-alias-fork-collapse-2026-09-24.md"}
   - {text: "6.19", source: "docs/measurements/m26-alias-fork-collapse-2026-09-24.md"}
 sources:
+  - docs/measurements/peer-sweep-2026-09-29.md
   - docs/measurements/peer-claim-2026-09-25.md
   - docs/benchmarks.md
   - docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md
@@ -71,7 +76,7 @@ This is the command that produced the number below. The benchmark script ([`scri
 goinfer-serve -model bench=$HOME/models/gemma4-26b-int4.giw -backend cuda -moe-cache-experts -ctx 2048
 ```
 
-`bench=` is the name that requests use for the model. The `.giw` file is goinfer's own int4 bundle of the model: weights converted ahead of time into the layout goinfer reads (the page [Starts in a hundredth of a second](/different/18-starts-in-a-hundredth/) explains the format). The record does not say how this particular file was built.
+`bench=` is the name that requests use for the model. The `.giw` file is goinfer's own int4 bundle of the model: weights converted ahead of time into the layout goinfer reads (the page [Starts without converting the model again](/different/18-starts-in-a-hundredth/) explains the format). The record does not say how this particular file was built.
 
 ## How it works
 
@@ -84,16 +89,16 @@ A copy overlap, on by default, hides part of it. While a missing expert copies o
 ## What was measured
 
 - **Machine:** a Linux PC (Ryzen 7 3700X, RTX 2070 SUPER 8 GB, NVIDIA driver 595.91.07), running Nobara 44.
-- **Model:** Gemma 4 26B-A4B. **Date:** 2026-09-25.
+- **Model:** Gemma 4 26B-A4B. **Date:** 2026-09-29 (a re-run of the 2026-09-25 measurement at one build, `754f12d3`).
 - **How:** each engine ran as a server, with a 2048-token context and a 128-token prompt. Decoding was greedy: the model takes its most likely token every time, so a run repeats exactly. One run was 8 completions of 64 tokens each. The rate is in tok/s, timed from the first streamed token. Each engine did three runs, taken in turn with the other engines.
 
 | Engine | What it ran | Generation rate |
 |---|---|---|
-| goinfer | int4 `.giw`, all experts streamed to the GPU | 40.2 tok/s (40.2, 40.2, 40.1) |
-| Ollama v0.32.5 | Q4_K_M GGUF, layers offloaded to the CPU | 22.2 tok/s (22.2, 22.2, 22.2) |
-| llama.cpp build 427291b | Q4_K_M GGUF, layers offloaded to the CPU | 27.6 tok/s |
+| goinfer | int4 `.giw`, all experts streamed to the GPU | 39.3 tok/s (39.4, 39.3, 37.3) |
+| Ollama v0.32.5 | Q4_K_M GGUF, layers offloaded to the CPU | 22.3 tok/s (22.3, 22.3, 22.3) |
+| llama.cpp build 427291b | Q4_K_M GGUF, layers offloaded to the CPU | 27.7 tok/s |
 
-The ratio to Ollama is 1.815, the median of the three pairs of runs. **This is an architecture comparison, not a like-for-like one.** goinfer ran its own int4 bundle. The other two ran a different file, the Q4_K_M GGUF (a common 4-bit format). The record keeps this result out of every claim it makes about a model family. Read it as "these two designs, on this card", not as one engine being faster.
+The ratio to Ollama is 1.763, the median of the three pairs of runs, and every pair was above 1.67. It is graded ambiguous rather than ahead: goinfer's own three runs spread 5.3% (its third read 37.3), over the 5% bound set before the run. On 2026-09-25 the same measurement read 40.2 tok/s against 22.2 (1.815). **This is an architecture comparison, not a like-for-like one.** goinfer ran its own int4 bundle. The other two ran a different file, the Q4_K_M GGUF (a common 4-bit format). The record keeps this result out of every claim it makes about a model family. Read it as "these two designs, on this card", not as one engine being faster.
 
 Three cautions from the record:
 
@@ -111,4 +116,4 @@ For context, the same model measured 16.12 tok/s at 30 slots and 17.62 tok/s at 
 - `-require-backend` makes the server exit at start-up if a model did not reach the fast GPU path, rather than run on the CPU quietly.
 - `GOINFER_MOE_DMA_OVERLAP=0`, set before the server starts, turns the overlap off, for comparison.
 - Once the server is up, send a request: `curl localhost:8080/v1/chat/completions -d '{"model":"bench","messages":[{"role":"user","content":"hi"}]}'`.
-- The README uses Google's q4_0 GGUF instead. It fetches the file with `goinfer-chat pull gemma-4-26b-a4b` and serves it with `goinfer-serve -backend cuda -moe-cache-experts -model ~/models/gemma-4-26B_q4_0-it.gguf`. The 40.2 figure was measured on the `.giw` bundle, not on that file.
+- The README uses Google's q4_0 GGUF instead. It fetches the file with `goinfer-chat pull gemma-4-26b-a4b` and serves it with `goinfer-serve -backend cuda -moe-cache-experts -model ~/models/gemma-4-26B_q4_0-it.gguf`. The 39.3 figure was measured on the `.giw` bundle, not on that file.

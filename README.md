@@ -255,8 +255,8 @@ only `-stream-weights` (above, RAM-side) or the CPU. **A MoE does**, and that is
 token actually routes to streams host→VRAM per token on demand, so the whole model never needs
 to fit VRAM. Measured on this project's own most-benchmarked checkpoint at this size,
 `gemma-4-26b-a4b` (26B-A4B, 128 experts top-8; [`docs/benchmarks.md`](docs/benchmarks.md) §B4/§B4.1),
-on an RTX 2070 SUPER 8 GB: **40.2 tok/s** at ctx 2048, with every expert kept on the GPU (the DMA overlap;
-[`docs/measurements/peer-claim-2026-09-25.md`](docs/measurements/peer-claim-2026-09-25.md) cell c) — capacity-bound
+on an RTX 2070 SUPER 8 GB: **39.3 tok/s** at ctx 2048 (2026-09-29, median of three runs), with every expert kept on the GPU (the DMA overlap;
+[`docs/measurements/peer-sweep-2026-09-29.md`](docs/measurements/peer-sweep-2026-09-29.md) cell c) — capacity-bound
 (PCIe host→VRAM streaming), not a kernel or MoE deficiency:
 
 ```bash

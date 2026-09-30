@@ -86,12 +86,14 @@ r is shown, the outcome is decided by every pair):
 4. **A likely regression, found here: top-p sampling on CUDA.** goinfer's 0.5B at t=0.8 / top-p 0.95 decoded 239.3–242.9 tok/s, against
    318.4–318.5 at 09-25's `411e7fc4` (−24%), while greedy (362–371) and untruncated t=1.0 (359–363) got faster. So the cost is in the
    top-p path, somewhere in `411e7fc4..754f12d3`. Phi-3's top-p cell shows no such drop (111.7 vs 112.6 greedy), which points at a
-   per-token cost that matters at 0.5B speed and hides at Phi-3's. **Not diagnosed**; owed: a goinfer-vs-goinfer A/B at the two commits
-   (`BENCH_ENGINES=goinfer,goinfer_old`, one cell, by day it is minutes), then a bisect.
+   per-token cost that matters at 0.5B speed and hides at Phi-3's. **Found and fixed 2026-09-30** ([`topp-regression-2026-09-30.md`](topp-regression-2026-09-30.md)): bisected to `7a44a58e`,
+   where MC3 on CUDA switched the device top-K path off for every top-p request; the fix reads 347.0 against 246.0 tok/s, same text.
+   The graded cell above stands as measured; it is re-measured at the next sweep.
 5. **The 26B cell dropped from AHEAD to AMBIGUOUS-HIGH on goinfer's own spread**, not on the ratio: its third run read 37.3 against
-   39.4 / 39.3 (5.3% > the 5% cap). Every pair is still above 1.67. The median rate is 39.3 tok/s (09-25: 40.2).
-6. **TTFT** is unchanged in substance: far ahead at K=512 (96 against 430 ms, capped by Ollama's own 17.9% spread), level at K=3900
-   (965 against 954 ms), now capped LOW by Ollama's 6.6% spread.
+   39.4 / 39.3 (5.3% > the 5% cap). Every pair is still above 1.67. The median rate is 39.3 tok/s (09-25: 40.2). llama.cpp read 27.7 tok/s (27.7 / 27.7 / 27.7).
+   Peak resident memory over the cell (the harness's own sampler): goinfer 20.0 GiB, Ollama 16.4 GiB, llama.cpp 16.2 GiB (09-25: 25.5 / 17.2 / 17.0).
+6. **TTFT** is unchanged in substance: far ahead at K=512 (medians 95.4 against 425.5 ms, capped by Ollama's own 17.9% spread), level at K=3900
+   (medians 965.1 against 938.2 ms), now capped LOW by Ollama's 6.6% spread.
 
 **Against llama.cpp** (reported beside, as 09-25 did; the claims name Ollama): CUDA 1.5B ahead at 128–3900 (1.079–1.191) and level at
 8000; 7B ahead at 128 / 2048 (1.093 / 1.052), AMBIGUOUS-HIGH at 3900 (1.029), level at 8000 (0.974); **0.5B behind at 2048 / 3900
@@ -101,3 +103,22 @@ CPU behind at 0.5B / 1.5B (0.809 / 0.908), level at 7B (0.979); sampled top-p 0.
 **What moves because of this (per the rule above), and what waits.** The CUDA and CPU rows of the peer table and of the site's
 `claims.json` are replaced by these cells. The Metal rows wait for the Mac half (g–i), which is re-queued. Nothing is re-graded to
 look better: the Phi-3 losses, the CPU 0.5B loss, the llama.cpp losses and the top-p regression stay as measured.
+
+### Cells in detail (nobara-pc, 2026-09-29)
+
+Measured 2026-09-29, 22:09–23:38 PDT, on nobara-pc (RTX 2070 SUPER, driver 595.91.07; Ryzen 7 3700X for the CPU rows), against Ollama
+v0.32.5. Each engine's three runs (tok/s, mean of 8 completions × 64 tokens each), their medians, and the pairs against Ollama, as
+graded. These are the cells the site's `claims.json` cites.
+
+| cell | goinfer runs | median | Ollama runs | median | pairs r | median r | outcome |
+|---|---|---:|---|---:|---|---:|---|
+| cuda 0.5B @128 greedy | 362.5 / 371.0 / 367.9 | 367.9 | 263.8 / 263.9 / 263.6 | 263.8 | 1.374 / 1.406 / 1.396 | 1.396 | AHEAD |
+| cuda 1.5B @128 greedy | 270.7 / 270.6 / 270.8 | 270.7 | 183.7 / 183.3 / 183.9 | 183.7 | 1.474 / 1.477 / 1.473 | 1.474 | AHEAD |
+| cuda 7B @128 greedy | 85.5 / 85.5 / 85.5 | 85.5 | 72.3 / 72.2 / 72.2 | 72.2 | 1.183 / 1.184 / 1.184 | 1.184 | AHEAD |
+| cpu 0.5B @128 greedy | 52.6 / 52.0 / 51.1 | 52.0 | 57.4 / 57.4 / 57.5 | 57.4 | 0.915 / 0.905 / 0.89 | 0.905 | BEHIND |
+| cpu 1.5B @128 greedy | 24.3 / 24.2 / 24.4 | 24.3 | 24.0 / 24.0 / 24.0 | 24.0 | 1.01 / 1.007 / 1.015 | 1.01 | LEVEL |
+| cpu 7B @128 greedy | 6.2 / 6.2 / 6.2 | 6.2 | 6.0 / 6.0 / 6.0 | 6.0 | 1.043 / 1.044 / 1.041 | 1.043 | AHEAD |
+| cuda phi3-mini @128 greedy | 112.7 / 112.5 / 112.6 | 112.6 | 125.9 / 125.8 / 125.7 | 125.8 | 0.895 / 0.895 / 0.896 | 0.895 | BEHIND |
+| cuda phi3-mini @3900 greedy | 53.4 / 53.4 / 53.4 | 53.4 | 74.4 / 74.4 / 74.4 | 74.4 | 0.717 / 0.718 / 0.718 | 0.718 | BEHIND |
+| cuda M26 @128 greedy | 39.4 / 39.3 / 37.3 | 39.3 | 22.3 / 22.3 / 22.3 | 22.3 | 1.767 / 1.763 / 1.676 | 1.763 | AMBIGUOUS-HIGH |
+| cuda 0.5B @128 temp0.8_topp0.95 | 242.9 / 240.0 / 239.3 | 240.0 | 260.7 / 260.2 / 260.4 | 260.4 | 0.932 / 0.922 / 0.919 | 0.922 | BEHIND |
