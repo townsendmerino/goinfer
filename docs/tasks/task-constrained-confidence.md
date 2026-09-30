@@ -760,6 +760,15 @@ exists.
   - **It runs on the batched Qwen3.5 `PromptHidden`** (`runLayersQwen35N`, 7ba740fe), the path goinfer ships. Its CPU
     cost measured 65–66 ms/token at int4 and ~80 ms/token at f32, against the per-token path's ~0.19 / ~1.2 s, so the
     three arms are ~2 h in all.
+- **Amendment 2, 2026-09-30, before any D6b run: a fourth arm, `int4-cuda`.**
+  - **What it is:** the served GPU path, `PromptHidden` on a CUDA-resident JEV-9B at int4 (f7e1782a), graded on
+    int4's band (mean KL ≤ 0.03, top-1 ≥ 98%).
+  - **Why:** on a GPU box goinfer now answers from the GPU, whose int4 kernels are not the CPU's (a five-item probe
+    moved the answers slightly), and nothing graded covered that.
+  - **Validity:** the arm is void unless its mean latency is under 20 ms per prompt token (the GPU measured ~3, the
+    CPU ~65), so a silent CPU fallback cannot be graded as a GPU result.
+  - **Scope:** its verdict is its own and does not change the three CPU arms'. The f32 arm stays on the CPU because
+    ~36 GB of f32 weights do not fit the 8 GB card.
 
 ### D7 — decisions vs constrained generation (speed)
 
