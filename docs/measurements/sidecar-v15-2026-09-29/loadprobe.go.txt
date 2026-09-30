@@ -1,0 +1,48 @@
+// loadprobe (2026-09-30): time one .giw CPU load, with the bytes read from disk (/proc/self/io read_bytes), the major page faults
+// (getrusage) and a CPU profile. Built from a scratch main package in a worktree at 0a3f0a7f+fix; not part of the repo. Run as:
+//   evict() { python3 -c "import os,sys; fd=os.open(sys.argv[1],os.O_RDONLY); os.posix_fadvise(fd,0,0,os.POSIX_FADV_DONTNEED); os.close(fd)" "$1"; }
+//   evict F; loadprobe F cold; loadprobe F warm; evict F; loadprobe F cold2
+package main
+
+import (
+	"fmt"
+	"os"
+	"runtime/pprof"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+func readBytes() int64 {
+	b, _ := os.ReadFile("/proc/self/io")
+	for _, l := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(l, "read_bytes:") {
+			v, _ := strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(l, "read_bytes:")), 10, 64)
+			return v
+		}
+	}
+	return -1
+}
+
+func majflt() int64 { var ru syscall.Rusage; syscall.Getrusage(syscall.RUSAGE_SELF, &ru); return ru.Majflt }
+
+func main() {
+	p, tag := os.Args[1], os.Args[2]
+	f, _ := os.Create("/tmp/zz-" + tag + ".pprof")
+	r0, m0 := readBytes(), majflt()
+	pprof.StartCPUProfile(f)
+	t0 := time.Now()
+	m, err := decoder.Load(p, decoder.Options{Backend: "cpu", Quant: "int4"})
+	el := time.Since(t0)
+	pprof.StopCPUProfile()
+	f.Close()
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+	fmt.Printf("%-5s load %.3fs  read from disk %d MB  major faults %d\n", tag, el.Seconds(), (readBytes()-r0)>>20, majflt()-m0)
+	m.Close()
+}

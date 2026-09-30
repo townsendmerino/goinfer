@@ -1,0 +1,18 @@
+nobara-pc, 2026-09-30 06:19-06:21 PDT, worktree 0a3f0a7f + the top-p fix (the load path is unchanged by it), idle box.
+Files: the 2026-09-29 run's v15 sidecars (their .verified markers valid, so no CRC pass runs).
+
+First process of the morning, two loads each, then the same process run again:
+qwen2.5-coder-1.5b ... .int4.cpu-amd64.giw: load 0.533s, heap +0 MB, total alloc 2 MB
+qwen2.5-7b ...         .int4.cpu-amd64.giw: load 1.357s, heap +1 MB, total alloc 3 MB
+qwen2.5-coder-1.5b ... .int4.cpu-amd64.giw: load 0.002s, heap +0 MB, total alloc 2 MB
+qwen2.5-7b ...         .int4.cpu-amd64.giw: load 0.003s, heap +1 MB, total alloc 3 MB
+
+7B, page cache evicted (posix_fadvise DONTNEED) before "cold" and "cold2":
+cold  load 1.309s  read from disk 974 MB  major faults 193
+warm  load 0.003s  read from disk 0 MB  major faults 0
+cold2 load 1.201s  read from disk 974 MB  major faults 195
+
+Cold profile (1.31 s wall, 440 ms of CPU samples; the rest is waiting on the disk):
+  100%  decoder.Load -> loadSerializedWeights -> (*giwReader).layer
+   75%  (*giwReader).u32 / encoding/binary Uint32   (reading each tensor's header, which sits beside its payload)
+   57%  (*giwReader).weightMat;  50% rawAlias;  45% fusedGroup;  25% (*giwReader).f32

@@ -2,12 +2,12 @@
 title: "Starts without converting the model again"
 area: "Loading"
 order: 18
-summary: "After a one-time conversion, a model loads by mapping a file: 1.39 s against 9.16 s for a 7B on the CPU, with almost no heap. Generation speed is unchanged."
+summary: "After a one-time conversion, a model loads by mapping a file: 0.003 s warm, about 1.3 s cold, against 9.16 s for a 7B. Generation speed is unchanged."
 stand: "The first time you serve a .gguf, goinfer converts it once into a sidecar file next to it. After that it maps that file instead of converting the model again on every start."
 measured: 2026-09-29
 reviewed: 2026-09-29
 facts:
-  - {label: "CPU load, 7B", value: "1.39 s against 9.16 s"}
+  - {label: "CPU load, 7B", value: "0.003 s warm, 1.2–1.3 s cold, against 9.16 s"}
   - {label: "Go heap after load, 7B", value: "+1 MB against +4577 MB"}
   - {label: "generation speed", value: "unchanged (1.0011×)"}
   - {label: "first start", value: "converts once, writing about the model's size to disk"}
@@ -16,14 +16,18 @@ doesnt:
     text: "The first start of each combination of model, quantization and target converts the `.gguf` and writes a file about the model's size beside it: on the Linux PC's CPU, 18 s and 1155 MB for the 1.5B, 87 s and 4548 MB for the 7B; on CUDA the first start took 40.0 s and 120.3 s. If free disk space is short, the server refuses to start and names `-direct-load`."
   - title: "A fast load is not a fast first token."
     text: "Loading maps the file, and each page of weights is read from the operating system's page cache when it is first used. The measured cache was warm, because the files had been written minutes earlier. A cold cache reads from disk and was not measured. On CUDA the weights still have to be copied to the GPU: 3.0–3.2 s for the 1.5B and 10.41–12.22 s for the 7B."
-  - title: "The 7B's load got slower in the current format, and why is not known."
-    text: "On version 15 of the file format (v15), which is not yet in a release, the 1.5B still loads in 0.00 s but the 7B takes 1.39 s. On the earlier v12 it took 0.01 s. Its heap stays at +1 MB, so the time is not a copy into memory. No profile was taken, so the cause is not established."
+  - title: "A cold start still reads part of the file first."
+    text: "With the file in the operating system's page cache, the 7B loads in 0.003 s. After the cache has been emptied (a reboot, or other large files read since), the loader's walk over each tensor's header reads about 974 MB of the 4.8 GB file from disk first, and the load takes 1.2–1.3 s. Those are weights the first generation reads anyway."
   - title: "It doesn't make generation faster."
     text: "The sidecar and the direct load read the same quantized weights. Generation speed came out at 1.0057× and 1.0011× the direct load's on the two models, inside the noise measured by a control that changed nothing. This is a start-up and memory change only."
   - title: "It was measured on two models and one machine."
     text: "Qwen2.5-Coder 1.5B and Qwen2.5 7B, on one Linux PC, on the CPU and with CUDA. Neither record measured WebGPU, a cold page cache, any model above 7B, or macOS load time. A sidecar is keyed to the model, the quantization and the target (a CPU architecture, CUDA, and so on), and an older sidecar is rebuilt once after a format change."
 figures:
   - {text: "1.39 s", source: "docs/measurements/sidecar-v15-2026-09-29.md"}
+  - {text: "0.003 s", source: "docs/measurements/sidecar-v15-2026-09-29.md"}
+  - {text: "1.309 s", source: "docs/measurements/sidecar-v15-2026-09-29.md"}
+  - {text: "1.201 s", source: "docs/measurements/sidecar-v15-2026-09-29.md"}
+  - {text: "974 MB", source: "docs/measurements/sidecar-v15-2026-09-29.md"}
   - {text: "9.16 s", source: "docs/measurements/sidecar-v15-2026-09-29.md"}
   - {text: "2.53 s", source: "docs/measurements/sidecar-v15-2026-09-29.md"}
   - {text: "0.00 s", source: "docs/measurements/sidecar-v15-2026-09-29.md"}
@@ -98,11 +102,11 @@ It was first run on 2026-09-24 on version 12 of the file format, and repeated on
 | 1.5B direct | 2.53 s | +1184 MB | 5.61 s | +1262 MB |
 | 1.5B sidecar | 0.00 s | +0 MB | 0.00 s | +0 MB |
 | 7B direct | 9.16 s | +4577 MB | 16.49 s | +4961 MB |
-| 7B sidecar | 1.39 s | +1 MB | 0.01 s | +1 MB |
+| 7B sidecar | 1.39 s (cache cold; warm 0.003 s) | +1 MB | 0.01 s (warm) | +1 MB |
 
 The identity check passed in both runs: every generation's greedy token stream was identical across the three configurations. On 2026-09-29, decode speed, sidecar over direct, read 1.0057 on the 1.5B and 1.0011 on the 7B (the median of seven paired runs); the control read 1.0003 and 0.9957 (2026-09-24: 1.0007 and 1.0016). So the difference is inside the noise.
 
-The 7B's sidecar load is the one figure that moved: 1.39 s on v15 against 0.01 s on v12. It missed the bound set before the run (0.05 s), which is why this page's title changed. The heap did not move, so the time is not spent copying weights into memory; what it is spent on was not measured. The direct loads got faster over the same period, so the sidecar's advantage on the 7B is now 9.16 s against 1.39 s rather than 16.49 s against 0.01 s.
+The 7B's sidecar load is the one figure that moved: 1.39 s on 2026-09-29 against 0.01 s on 2026-09-24. It missed the bound set before the run (0.05 s), which is why this page's title changed. A follow-up the next morning found the cause, and it is not the format: that load found the file's pages evicted from the page cache. Timed again with the cache emptied on purpose, the 7B loaded in 1.309 s and 1.201 s and read 974 MB from disk; with the cache warm it loaded in 0.003 s and read nothing, which is what the 2026-09-24 figure was. The loader reads each tensor's header, and the headers sit beside the weights throughout the file, so a cold start faults in about a fifth of it. The direct loads got faster over the same period (9.16 s against 16.49 s for the 7B).
 
 On CUDA, in the same run on the same PC through the server: the sidecar loads in 3.0–3.2 s (1.5B) and 10.41–12.22 s (7B), against 10.22–10.42 s and 32.05–32.85 s direct, with the same output text on all 16 servers per model. The first start there converts once: 40.0 s for the 1.5B and 120.3 s for the 7B.
 
