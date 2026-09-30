@@ -982,9 +982,9 @@ def gate_cell_idle():
 # THE SERVE LOG AND THE DECODE PATH (2026-09-29, docs/measurements/peer-sweep-2026-09-29.md). Every goinfer cell's server
 # output used to go to /dev/null, so a GPU cell whose model silently fell back to the CPU timed the CPU and reported a
 # plausible number: `--embed-int4`'s default (2026-09-28) does exactly that on Metal, and a Phi-3 load can decline
-# residency on CUDA. Now: the server's stderr is kept per cell, GPU cells pass `-require-backend` (serve exits at startup
-# instead of falling back), and the decode path the load resolved to is read from the log and recorded in the cell. A GPU
-# cell whose path is the CPU's is VOID by construction.
+# residency on CUDA. Now: the server's stderr is kept per cell, the decode path the load resolved to is read from the log and
+# recorded in the cell, and a GPU cell whose path is the CPU's is VOID by construction (BENCH_REQUIRE_BACKEND=1 also passes
+# -require-backend, so serve refuses at startup).
 #   BENCH_SERVE_LOG_DIR   where the logs go (default: serve-logs/ beside the results file)
 #   BENCH_GOINFER_ARGS    extra flags for every goinfer serve, e.g. "-embed-int4=false"; recorded with the cell
 import shlex
@@ -1068,7 +1068,10 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             os.makedirs(SERVE_LOG_DIR, exist_ok=True)
             serve_log_path = os.path.join(SERVE_LOG_DIR, f"{engine}-{backend}-{model_key}-{depth}-{cfg_name}.log")
             log_offset = os.path.getsize(serve_log_path) if os.path.exists(serve_log_path) else 0
-            be_args = ["-require-backend"] if backend != "cpu" else []
+            # -require-backend is opt-in here (BENCH_REQUIRE_BACKEND=1): it also refuses a load whose PREFILL declines to the
+            # sequential path (Phi-3 on CUDA at q4k does, ~9x slower TTFT), which does not touch a decode-only rate. The
+            # decode-path check below is this harness's guard; bench_peer_prefill.py, where prefill is the number, always passes it.
+            be_args = ["-require-backend"] if (backend != "cpu" and os.environ.get("BENCH_REQUIRE_BACKEND") == "1") else []
             with open(serve_log_path, "ab") as serve_log:   # the child keeps its own copy of the descriptor
                 proc = subprocess.Popen(
                     [serve_map[backend], "-model", f"bench={gpath}", "-backend", backend,
