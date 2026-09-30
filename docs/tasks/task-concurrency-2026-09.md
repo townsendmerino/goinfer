@@ -10,8 +10,10 @@
 > - **The 413 prefill-share fix's end-to-end check** ran 2026-09-28 and was INCONCLUSIVE: its memory ballast was
 >   compressible, so it could not hold the band. The fix is owed before a re-run.
 > - **The per-pass prefill cut is CLOSED:** the measured share is 0.151, not ~⅓.
-> - **Registered, owner to decide:** the MC4 candidate "speculate when alone, batch under load" (its CUDA premise is a
->   nobara prompt). P10 on Metal is projected, not started.
+> - **Registered, owner to decide:** the MC4 candidate "speculate when alone, batch under load" for chat traffic on
+>   both Metal and CUDA (CUDA premise measured 2026-09-29: S 1.253×, L 0.790×). CUDA's copy workload
+>   overshot the candidate's own condition (L 1.540×, spec beats batching under load) — a separate, larger
+>   "spec inside a batch" question, also owner's call. P10 on Metal is projected, not started.
 > - **⚠ Since 9ccf7fb1** (embed-int4 on by default), a default Metal load declines the resident and runs on the CPU,
 >   and so without MC1/MC3. Pass `-embed-int4=false` on Metal until that is fixed (`docs/quantization.md`, "Known
 >   issue").
@@ -1544,12 +1546,18 @@ n-gram loop already prefers when present).
         serve's default on Metal is then a separate owner decision.
       - Copy alone at 1.03–1.25×: the owner's call.
       - Any hard gate fails: parked with the numbers.
-    - **CUDA:** MC3 CUDA shipped (7a44a58e) and its spec verify is cheap (θ 0.155–0.251), so the same candidate may pay
-      there. It gets its own grading on nobara, and is not inferred from Metal's.
-      - **The premise comes first:** CUDA's own S and L under the 2026-09-27 rule, unchanged, with a check that the
-        CUDA resident survives the embed-int4 default.
-      - Prompt: [`nobara-mc4-spec-alone-cuda-2026-09.md`](../prompts/nobara-mc4-spec-alone-cuda-2026-09.md); night
-        queue, not run.
+    - **CUDA premise, measured 2026-09-29** (queued 2026-09-28, graded 2026-09-29;
+      [`spec-vs-batching-cuda-2026-09-29.md`](../measurements/spec-vs-batching-cuda-2026-09-29.md)): a split verdict,
+      by the same rule.
+      - **chat clears it:** S = 1.253×, L = 0.790× — the candidate applies on CUDA for chat traffic. Its
+        build gets the same graded run as Metal's (above), on nobara.
+      - **copy overshoots it:** S = 2.104×, and **L = 1.540× — spec beats MC3's batching even at 4
+        clients**, which the rule reads as MC4's own "spec inside a batch" trigger, a different and larger feature
+        than this candidate. Parked as its own item, owner's call; not folded into "speculate when alone, batch
+        under load".
+      - Identity held perfectly under load (0 differences, every turn, every workload, both models) — unlike
+        Metal's 2026-09-27 record, where later turns diverged before item 30's trailing-token fix existed.
+      - The embed-int4 default did not knock the CUDA resident off; every cell read `cuda-resident (int4)`.
   - **P10 on Metal, projected 2026-09-28, not started (owner):**
     [`p10-metal-projection-2026-09-28.md`](../measurements/p10-metal-projection-2026-09-28.md).
     - Code 1.14–1.49×, math 1.33–1.73×; chat a loss, unguarded.
@@ -1679,4 +1687,4 @@ decline, and p99 latency. Only the speed thresholds move:
   shows eviction still hurts at realistic client counts.
 - **Multi-model scheduling.** Distinct models already run in parallel; nothing here changes that.
 
-<!-- doc-reviewed: 2026-09-23 -->
+<!-- doc-reviewed: 2026-09-29 -->
