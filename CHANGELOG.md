@@ -15,6 +15,12 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **`goinfer-chat --batch in.jsonl -o out.jsonl`: run a batch file locally, resumable (J5).** The same JSONL that
+  `POST /v1/batches` reads, run in-process with no server. Finished lines are fsynced to `-o` as they land; a rerun skips the
+  `custom_id`s already answered, cuts off a line a killed run died in, and retries failures (`out.errors.jsonl`). The file
+  format moved to `internal/batchio`, shared by serve and the CLI, and `TestBatch_cliAndServeAgree` checks the two give
+  identical replies. Lines that ask for tools, images, logprobs or `n` > 1 are refused by name. See `docs/server.md` § Batch
+  files.
 - **Reasoning models: `content` is the answer, the thinking is a separate field (`serve`).** A Qwen3 / Qwen3.5 / Gemma 4
   reply no longer mixes `<think>…</think>` into `content`. `chat.Template` now declares each checkpoint's thinking
   behaviour, read from its own template text — Qwen3 and Qwen3.5-9B default to thinking on, Qwen3.5-0.8B and Gemma 4 to

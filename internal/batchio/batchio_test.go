@@ -143,9 +143,11 @@ func TestWriterResume(t *testing.T) {
 		}
 	}
 	w.Close()
-	// The process dies halfway through the third line.
+	// The process dies partway through a line that was LONGER than the one that will replace it (a rerun need not reproduce the
+	// same text), so a torn tail that is not truncated would outlast the overwrite and corrupt the file.
+	long := OKLine("i3", "c", 200, map[string]any{"n": 3, "text": strings.Repeat("long reply ", 40)})
 	f, _ := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644)
-	f.Write(lines[2][:10])
+	f.Write(long[:len(long)/2])
 	f.Close()
 
 	p, err := ScanOutput(path)

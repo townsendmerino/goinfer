@@ -1,0 +1,28 @@
+=== RUN   TestBatch_cliAndServeAgree
+loaded "m": 24-layer model (vocab 248320) in 1.601s [chat: chatml, thinking: template default off, serving template]
+  decode path: cpu (int8int8)
+  prefill path: sequential — this arch has its own per-token forward (no batched CPU prefill)
+  context: 262144 tokens (model maximum) · KV f32
+  fit: 262144-token cap needs 6.0 GB KV (weights 0.7 GB, budget 39.6 GB, 33.6 GB left for a request's own prefill)
+  session reuse: OFF (--kv-sessions 0)
+  features: tools (constrainable call form) · structured output
+Qwen3.5 vision for "m": tower loads on first image (merge 2, image-pad id 248056, <= 1024 tokens/image) from /home/francis/models/qwen3.5-0.8b
+loaded 24-layer model (hidden 1024, vocab 248320) in 0s [backend=cpu decode=cpu (int8int8)]
+chat template: chatml
+    batch_cli_parity_test.go:156: greedy                 finish=stop   prompt=19 completion=14 reasoning=0B content="Silent winds,\nTangled roots,\nAnd endless flow."
+    batch_cli_parity_test.go:156: system                 finish=stop   prompt=30 completion=1 reasoning=0B content="Paris"
+    batch_cli_parity_test.go:156: seeded-sampled         finish=length prompt=16 completion=24 reasoning=0B content="The most common colour in the world is **blue**.…"
+    batch_cli_parity_test.go:156: seeded-penalties       finish=length prompt=18 completion=30 reasoning=0B content="The sea is often described as a vast, living she…"
+    batch_cli_parity_test.go:156: stop-string            finish=stop   prompt=23 completion=7 reasoning=0B content="1 2 3 "
+    batch_cli_parity_test.go:156: length                 finish=length prompt=18 completion=3 reasoning=0B content="The rain in"
+    batch_cli_parity_test.go:156: max-completion-tokens  finish=length prompt=18 completion=5 reasoning=0B content="The rain in the city"
+    batch_cli_parity_test.go:156: content-parts          finish=stop   prompt=19 completion=1 reasoning=0B content="pong"
+    batch_cli_parity_test.go:156: json-object            finish=stop   prompt=21 completion=11 reasoning=0B content="{\n  \"a\": \"a\"\n}"
+    batch_cli_parity_test.go:156: json-schema            finish=stop   prompt=16 completion=8 reasoning=0B content="{ \"n\": 42 }"
+    batch_cli_parity_test.go:156: thinking-off           finish=stop   prompt=15 completion=11 reasoning=0B content="Hello! How can I help you today? 😊"
+    batch_cli_parity_test.go:156: thinking-on-budget     finish=stop   prompt=19 completion=52 reasoning=150B content="17 times 3 is 51."
+    batch_cli_parity_test.go:156: thinking-on-room       finish=length prompt=19 completion=24 reasoning=70B content="17 times "
+    batch_cli_parity_test.go:156: thinking-format-none   finish=stop   prompt=18 completion=57 reasoning=0B content="Thinking Process:\n\n1.  **Analyze the Request:** …"
+--- PASS: TestBatch_cliAndServeAgree (49.12s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	49.175s

@@ -545,6 +545,38 @@ to ignore.**
   "Thinking…" indicator).
 - **Jobs and batches** apply the same split; a job's result and a batch line's `content` are the clean answer.
 
+**Batch files — over HTTP, or locally with `goinfer-chat --batch` and no server.** One JSONL file, two ways to run it. Each
+input line is `{"custom_id": "a1", "method": "POST", "url": "/v1/chat/completions", "body": {chat request}}`; `custom_id` is
+required and must be unique. Over HTTP it is `POST /v1/files` then `POST /v1/batches` (OpenAI) — or inline requests to
+`POST /v1/messages/batches` (Anthropic). Locally:
+
+```sh
+goinfer-chat --model ~/models/qwen2.5-7b-instruct-q4_k_m.gguf --batch in.jsonl -o out.jsonl
+```
+
+The output is the real API's: `out.jsonl` holds a line per request that produced a response, `{"custom_id", "response":
+{"status_code", "body"}, "error": null}`, and the lines that failed — `{"custom_id", "response": null, "error": {"code",
+"message"}}` — go to `out.errors.jsonl` beside it (over HTTP, the batch's output and error files). The format is one piece of
+code (`internal/batchio`) used by both, and `TestBatch_cliAndServeAgree` runs a file through both on the same model and checks
+the replies are identical, line for line.
+
+- **Resumable.** Each finished line is appended to `-o` and fsynced before the next starts. Rerun the same command after a
+  crash, a Ctrl-C or a power cut and lines whose `custom_id` is already in the output are skipped; a final line the process died
+  in the middle of is cut off and run again. A line that failed is not done, so a rerun retries it (`out.errors.jsonl` is
+  rewritten each run and holds only that run's failures). A run with nothing left to do exits without loading the model.
+- **A line that states no sampling settings gets the API's defaults** (temperature 1, no top-k/top-p, 512 tokens, a random
+  seed, no system prompt), not `goinfer-chat`'s interactive ones — unless you pass the flag (`--temp 0`, `--seed`, `--max`,
+  `--system`…), which is an instruction about this run. Put `temperature` and `seed` in the line for a reproducible file.
+- **Scope is text chat,** as over HTTP. Supported per line: `messages` (string or text-part content, `system`/`developer`,
+  replayed `reasoning_content`), `temperature`, `top_p`, `top_k`, `max_tokens` / `max_completion_tokens`, `seed`,
+  `frequency_penalty`, `presence_penalty`, `stop`, `response_format` (`json_object`, `json_schema`), and the thinking controls
+  (`chat_template_kwargs.enable_thinking`, `reasoning_effort: "none"`, `thinking_token_budget`, `reasoning_format`
+  `deepseek`|`none`). A line asking for what the runner cannot do — tools, tool messages, images, `logprobs`, `n` above 1,
+  `goinfer_confidence` — is refused with an error line naming it, never answered without it.
+- **Progress** goes to stderr, one line per finished line (`[137/20000] id ok  212 tok  18.3 tok/s  elapsed 4m12s  eta ~38m`;
+  the estimate appears after ten lines and is a mean — lines differ in cost) and a `… still running` line each minute inside a
+  slow one. The exit status is 0 when every line produced a response, 1 when some failed, 130 when interrupted.
+
 **Embeddings.** Point `--embed-model` at a [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)
 HF snapshot to serve `/v1/embeddings` (`--embed-quant f32|q8`). `--model` and
 `--embed-model` are each optional and can run together — generation and

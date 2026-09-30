@@ -2,7 +2,7 @@
 
 > **Status: J0/J1/J2/J3/J4 DONE 2026-09-15 (J3/J4 text-chat scope only); J6 KILLED 2026-09-15
 > (measured 1.024× against a 1.3–2.0× pass band, not shipped); J8 FOLDED 2026-09-26 into
-> `task-concurrency-2026-09.md` MC2 (owner decision); J5/J7/J9 unstarted.** This doc
+> `task-concurrency-2026-09.md` MC2 (owner decision); J7/J9 unstarted (J5 built 2026-09-30).** This doc
 > was first written 2026-09-12 and was never committed. It was deleted the next morning by a
 > workaround, not by a decision — see "How this doc was lost" below, which is kept because the
 > failure is structural and the fix was J0. The rebuild is faithful to the J1–J9 scope as filed,
@@ -388,6 +388,48 @@ remain open.
   20,000-line job that dies at line 14,000 does not start over.
 - No server required — this runs the library in-process, which is also the mode-2 story the facade
   doc wants a real example of.
+
+**Status: built 2026-09-30.** `goinfer-chat --batch in.jsonl -o out.jsonl` (`internal/chatapp/batch.go`), documented in
+`docs/server.md` § Batch files.
+
+- **One format, one copy of the code.** The input parser, the byte layout of an output and an error line, and the resume scan
+  live in `internal/batchio`, and serve's `POST /v1/batches` now calls them (its output bytes are unchanged; the three real-model
+  `TestBatches_*` round trips pass on the 0.5B). "Interchangeable" is therefore true of the format by construction.
+- **Resume** keys on `custom_id` (which the CLI requires to be unique, as OpenAI does — serve's HTTP path does not check).
+  Each finished line is appended and fsynced before the next starts. On restart a line that holds a response is skipped; a
+  final partial line (a run killed mid-write) is truncated and rerun; a COMPLETE line that is not valid output is refused,
+  because appending after it would bury the corruption. A failed line is not done, so a rerun retries it; failures go to a
+  sibling `out.errors.jsonl`, rewritten each run (created only on the first failure). Ctrl-C drops the line in flight. A run with
+  nothing left to do exits before loading the model.
+- **Defaults differ from the REPL on purpose.** A line that omits a setting gets the API's default (temperature 1, no
+  top-k/top-p, 512 tokens, random seed, no system prompt) so a file means the same posted to serve; a flag the user passes
+  explicitly overrides it for the run (`flag.Visit`), because that is an instruction.
+- **Scope is serve's batch scope (text chat).** Tools, tool messages, images, `logprobs`, `n` > 1 and `goinfer_confidence` are
+  refused per line, by name — the rule being that an unrecognised key is ignored by design, so a request for something the runner
+  cannot do must be an error or the reply reads as if it had been done.
+
+Verified:
+
+- **Unit (no model):** `planBatch` (missing/empty/duplicate/corrupt/same-file inputs, done vs errored vs orphaned), the run loop
+  over a fake line function (success/failure split, rerun retries only failures and removes the stale error file, interrupt
+  drops the in-flight line, kill -9 torn tail then resume produces the same results as an uninterrupted run), progress and ETA
+  gating, every refusal path, the flag-default rule. Mutation-checked: recording an interrupted line, ignoring what is already
+  done, and not truncating a torn tail each turn a test red (the torn-tail test first could NOT catch the last one — its torn
+  fragment was a prefix of the replacement line, so overwriting hid the bug; it now tears with a longer line).
+- **Interchange (real model):** `TestBatch_cliAndServeAgree` (`-tags goinfer_testhooks`, `GOINFER_SERVE_MODEL`) puts one file
+  through `RunBatchForTest` and through serve's `/v1/files` → `/v1/batches` on the same loaded model and compares text, reasoning,
+  finish reason and token counts per line. 14 lines on Qwen2.5-Coder-0.5B-Instruct q4_k_m (greedy, seeded sampling with top-p/top-k,
+  penalties, a stop string, `length`, `max_completion_tokens`, content parts, `json_object`, `json_schema`, thinking off) and
+  Qwen3.5-0.8B (the same plus thinking on with a request budget, a tiny turn whose block the room rule force-closes, and
+  `reasoning_format: none`): identical on every line, and the three refusals (tools, image, no messages) land in both error
+  files. Logs: `docs/measurements/j5-batch-cli-2026-09-30/parity-qwen25-coder-0.5b.log` and `parity-qwen35-0.8b.log`.
+- **Not verified:** a model larger than the 0.5B/0.8B (the 9B's thinking path is covered by the night `think-matrix` for serve, not
+  by this test); Metal/CUDA (the runner calls `decoder.Generate`, the same entry serve uses, but the test ran on CPU); a 20,000-line
+  run's memory and time (the input is read whole and lines run one at a time; nothing accumulates per line beyond the plan).
+
+**Not built:** concurrent lines (one worker, so sequential is what serve's own admission queue would do for one model);
+prefix reuse across lines sharing a system prompt (serve's session LRU does this, `decoder.Generate` here starts cold each line —
+a real speed lever for big batches, not measured); vision and tool lines (as J4); `/v1/embeddings` and `/v1/completions` lines.
 
 ## J6 — prefix-aware scheduling
 

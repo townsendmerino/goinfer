@@ -1,0 +1,27 @@
+=== RUN   TestBatch_cliAndServeAgree
+loaded "m": 24-layer model (vocab 151936) in 2ms [chat: chatml, thinking: unmanaged]
+  decode path: cpu (int8int8)
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  context: 32768 tokens (model maximum) · KV f32
+  fit: 32768-token cap needs 0.8 GB KV (weights 0.6 GB, budget 40.9 GB, 40.2 GB left for a request's own prefill)
+  session reuse: OFF (--kv-sessions 0)
+  features: tools (constrainable call form) · structured output
+loaded 24-layer model (hidden 896, vocab 151936) in 0s [backend=cpu decode=cpu (int8int8)]
+chat template: chatml
+    batch_cli_parity_test.go:156: greedy                 finish=stop   prompt=15 completion=30 reasoning=0B content="Go's code is like a magic wand,\nIt can do everyt…"
+    batch_cli_parity_test.go:156: system                 finish=stop   prompt=26 completion=1 reasoning=0B content="Paris"
+    batch_cli_parity_test.go:156: seeded-sampled         finish=length prompt=12 completion=24 reasoning=0B content="RGB (Red, Green, Blue) is a three-dimensional co…"
+    batch_cli_parity_test.go:156: seeded-penalties       finish=length prompt=14 completion=30 reasoning=0B content="sea is often described as a vast, open area of w…"
+    batch_cli_parity_test.go:156: stop-string            finish=stop   prompt=19 completion=7 reasoning=0B content="1 2 3 "
+    batch_cli_parity_test.go:156: length                 finish=length prompt=14 completion=3 reasoning=0B content="Long story about"
+    batch_cli_parity_test.go:156: max-completion-tokens  finish=length prompt=14 completion=5 reasoning=0B content="Long story about a young"
+    batch_cli_parity_test.go:156: content-parts          finish=stop   prompt=15 completion=1 reasoning=0B content="Yes"
+    batch_cli_parity_test.go:156: json-object            finish=stop   prompt=17 completion=9 reasoning=0B content="{\n  \"a\": \"value\"\n}"
+    batch_cli_parity_test.go:156: json-schema            finish=stop   prompt=12 completion=12 reasoning=0B content="\n{\n  \"n\": 100\n}"
+    batch_cli_parity_test.go:156: thinking-off           finish=stop   prompt=11 completion=9 reasoning=0B content="Hi! How can I assist you today?"
+    batch_cli_parity_test.go:156: thinking-on-budget     finish=stop   prompt=17 completion=10 reasoning=0B content="17 times 3 is 51."
+    batch_cli_parity_test.go:156: thinking-on-room       finish=stop   prompt=17 completion=10 reasoning=0B content="17 times 3 is 51."
+    batch_cli_parity_test.go:156: thinking-format-none   finish=stop   prompt=16 completion=8 reasoning=0B content="2 plus 2 equals 4."
+--- PASS: TestBatch_cliAndServeAgree (9.85s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	9.874s
