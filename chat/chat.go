@@ -60,6 +60,14 @@ type Turn struct {
 	ToolCalls  []ToolCall // assistant turns: the calls the model made
 	ToolName   string     // tool turns: the function this result is for
 	ToolCallID string     // tool turns: the id of the call being answered
+	// Reasoning is an assistant turn's own reasoning, as the client replays it (OpenAI reasoning_content / reasoning,
+	// Anthropic thinking blocks). A family with a history rule renders it the way the model's own template does (history.go):
+	// kept for the turns of the tool loop in progress, dropped for turns before the last user query.
+	Reasoning string
+	// ToolLoop marks a user turn that only ACCOMPANIES tool results (an Anthropic user message carries its tool_result blocks
+	// and any reminder text together). The history rule must not read it as a new user query, or every tool loop from such a
+	// client would lose its reasoning on the very turn after the first tool result.
+	ToolLoop bool
 }
 
 // Stops are the strings that end a model turn for this family (e.g.

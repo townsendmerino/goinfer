@@ -172,7 +172,7 @@ func TestApplyBudget(t *testing.T) {
 	lm := &loadedModel{tk: tk}
 	ts := thinkSettings{}
 
-	apply := func(lm *loadedModel, tm *chat.Template, gr *genRequest) { srv.applyBudget(lm, gr, tm, ts) }
+	apply := func(lm *loadedModel, tm *chat.Template, gr *genRequest) { srv.applyBudget(lm, gr, tm, nil, ts) }
 
 	gr := genRequest{maxTokens: 160}
 	apply(lm, nine, &gr)

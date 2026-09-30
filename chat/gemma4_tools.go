@@ -22,7 +22,7 @@ import (
 
 const gq = `<|"|>` // Gemma's string-quote marker
 
-func renderGemma4Tools(system string, turns []Turn, tools []Tool, think bool) string {
+func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist bool) string {
 	var b strings.Builder
 	b.WriteString("<bos><|turn>system\n")
 	if think {
@@ -54,11 +54,32 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool, think bool) st
 			openModelTurn = false
 		}
 	}
-	for _, m := range turns {
+	lu := lastUserIndex(turns)
+	for i, m := range turns {
 		switch m.Role {
 		case "assistant":
-			closeModelTurn()
-			b.WriteString("<|turn>model\n" + m.Content)
+			// The tool loop in progress keeps each turn's reasoning as a thought channel at the top of the turn (history.go).
+			// A model turn that CONTINUES an open one (calls answered by tool turns) carries no new turn marker, but its
+			// reasoning channel is still written.
+			content := m.Content
+			var channel string
+			if hist {
+				content = stripChannels(content)
+				if m.Reasoning != "" && i > lu {
+					channel = "<|channel>thought\n" + m.Reasoning + "\n<channel|>"
+				}
+			}
+			// The managed rendering continues an open model turn the way the template does (an assistant turn after tool
+			// responses has no turn marker of its own); the generic rendering keeps closing it and opening a new one, byte for
+			// byte as before the history rule existed.
+			if !hist {
+				closeModelTurn()
+			}
+			if openModelTurn {
+				b.WriteString(channel + content)
+			} else {
+				b.WriteString("<|turn>model\n" + channel + content)
+			}
 			for _, c := range m.ToolCalls {
 				b.WriteString("<|tool_call>call:" + c.Name + "{" + gemmaArgs(c.Arguments) + "}<tool_call|>")
 			}
@@ -79,6 +100,10 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool, think bool) st
 		if !think { // thinking on leaves the channel for the model to open
 			b.WriteString("<|channel>thought\n<channel|>")
 		}
+	} else if think && hist && len(turns) > 0 && turns[len(turns)-1].Role == "tool" {
+		// The model is still in the turn that made the call. With thinking on the template reopens its thought channel for
+		// the next step, so the reply starts inside it (Template.PromptOpensThinkFor).
+		b.WriteString("<|channel>thought\n")
 	}
 	return b.String()
 }

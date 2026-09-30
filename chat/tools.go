@@ -37,13 +37,13 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 	}
 	switch t.name {
 	case "chatml", "mellum2":
-		return renderChatMLTools(system, turns, tools) + t.thinkSuffixText()
+		return renderChatMLTools(system, turns, tools, t.historyKind()) + t.thinkSuffixText()
 	case "mistral":
 		return renderMistralTools(system, turns, tools)
 	case "llama3":
 		return renderLlama3Tools(system, turns, tools)
 	case "gemma4":
-		return renderGemma4Tools(system, turns, tools, t.gemma4Think())
+		return renderGemma4Tools(system, turns, tools, t.gemma4Think(), t.historyKind() == histGemma4)
 	}
 	return t.Render(system, turns) // gemma3 etc.: no native tool template
 }
@@ -240,7 +240,7 @@ func callObjectJSON(c ToolCall, argsKey string) string {
 
 // --- ChatML / Qwen (Hermes) ---
 
-func renderChatMLTools(system string, turns []Turn, tools []Tool) string {
+func renderChatMLTools(system string, turns []Turn, tools []Tool, hist histKind) string {
 	var b strings.Builder
 	b.WriteString("<|im_start|>system\n")
 	if s := strings.TrimSpace(system); s != "" {
@@ -252,9 +252,29 @@ func renderChatMLTools(system string, turns []Turn, tools []Tool) string {
 		b.WriteString(funcDefJSON(tl) + "\n")
 	}
 	b.WriteString("</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n")
-	for _, m := range turns {
+	lq := lastQueryIndex(turns)
+	for i, m := range turns {
 		switch m.Role {
 		case "assistant":
+			if hist != histNone {
+				// A managed family (history.go): the think block per the model's own rule, and the template's own newline rule
+				// between the content and a call — a newline only after content or before a later call, none before a first call
+				// that follows nothing.
+				block, reasoning, content := qwenAssistant(hist, m, i, lq, len(turns))
+				b.WriteString("<|im_start|>assistant\n")
+				if block {
+					b.WriteString("<think>\n" + reasoning + "\n</think>\n\n")
+				}
+				b.WriteString(content)
+				for ci, c := range m.ToolCalls {
+					if (ci == 0 && content != "") || ci > 0 {
+						b.WriteString("\n")
+					}
+					b.WriteString("<tool_call>\n" + callObjectJSON(c, "arguments") + "\n</tool_call>")
+				}
+				b.WriteString("<|im_end|>\n")
+				continue
+			}
 			b.WriteString("<|im_start|>assistant\n")
 			b.WriteString(m.Content)
 			for _, c := range m.ToolCalls {

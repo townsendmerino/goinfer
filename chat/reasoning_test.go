@@ -344,7 +344,7 @@ func TestThinkModes_unrecognisedIsUnmanaged(t *testing.T) {
 				t.Errorf("%s mode %s changed the bytes: %q vs %q", name, m, got, base)
 			}
 		}
-		if tmpl.NewReasoningSplitter() != nil {
+		if tmpl.NewReasoningSplitter(nil) != nil {
 			t.Errorf("%s: an unmanaged template must not split", name)
 		}
 	}

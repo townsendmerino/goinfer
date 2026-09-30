@@ -178,12 +178,12 @@ type thinkOut struct {
 	endedInReasoning bool
 }
 
-// newThinkOut builds the router for a request rendered with tmpl, or nil when nothing should be split.
-func newThinkOut(tmpl *chat.Template, ts thinkSettings, onReasoning func(string)) *thinkOut {
+// newThinkOut builds the router for a request rendered with tmpl from turns, or nil when nothing should be split.
+func newThinkOut(tmpl *chat.Template, turns []chat.Turn, ts thinkSettings, onReasoning func(string)) *thinkOut {
 	if ts.format == rfNone {
 		return nil
 	}
-	sp := tmpl.NewReasoningSplitter()
+	sp := tmpl.NewReasoningSplitter(turns)
 	if sp == nil {
 		return nil
 	}

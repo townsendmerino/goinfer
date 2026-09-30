@@ -107,9 +107,9 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	var rb strings.Builder
 	if ss != nil {
 		onProse = func(out string) { sseSend(ss, chatChunk(id, created, lm.name, delta{Content: out}, nil)) }
-		s.routeThink(lm, &gr, tm, ts, func(t string) { sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil)) })
+		s.routeThink(lm, &gr, tm, turns, ts, func(t string) { sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil)) })
 	} else {
-		s.routeThink(lm, &gr, tm, ts, func(t string) { rb.WriteString(t) })
+		s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
 	}
 	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, onProse)
 	if errors.Is(gerr, errProseDiverged) {

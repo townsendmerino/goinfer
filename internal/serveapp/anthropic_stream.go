@@ -47,7 +47,7 @@ func anthropicStreamErr(ss *sseWriter, msg string) {
 // buffered fully (tools.go decides from the whole output) and emitted as one
 // input_json_delta — Claude Code accepts the single chunk, as it does for
 // llama.cpp.
-func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *loadedModel, gr genRequest, toolsActive bool, tools []chat.Tool, tm *chat.Template, ts thinkSettings, wantThinking bool) {
+func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *loadedModel, gr genRequest, toolsActive bool, tools []chat.Tool, tm *chat.Template, turns []chat.Turn, ts thinkSettings, wantThinking bool) {
 	ss, ok := anthropicSSEStart(w)
 	if !ok {
 		return
@@ -67,7 +67,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	// Thinking (think.go): reasoning becomes a `thinking` block at index 0 when the request asked for one, and is dropped
 	// otherwise — an Anthropic client that never asked for thinking must see only text. Everything after it shifts by one.
 	th := &anthropicThink{ss: ss, want: wantThinking}
-	s.routeThink(lm, &gr, tm, ts, th.push)
+	s.routeThink(lm, &gr, tm, turns, ts, th.push)
 
 	if toolsActive {
 		s.streamMessagesTools(w, r, ss, lm, gr, tools, th)

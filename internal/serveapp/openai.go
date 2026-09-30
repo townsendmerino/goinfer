@@ -621,6 +621,11 @@ type chatMessage struct {
 	Name       string          `json:"name,omitempty"`         // tool messages: function name
 	ToolCallID string          `json:"tool_call_id,omitempty"` // tool messages: id answered
 	ToolCalls  []apiToolCall   `json:"tool_calls,omitempty"`   // assistant messages
+	// ReasoningContent / Reasoning are an assistant message's own reasoning, replayed by a client that kept it (the two spellings
+	// llama.cpp / the DeepSeek API and vLLM use). A model with a history rule renders it the way its own template would for the
+	// turns of the tool loop in progress and drops it for earlier turns (chat/history.go); any other model ignores it, as before.
+	ReasoningContent string `json:"reasoning_content,omitempty"`
+	Reasoning        string `json:"reasoning,omitempty"`
 }
 
 // text returns the message's text: the plain-string content, or the concatenated
@@ -829,7 +834,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		// 300s harness idle timeout. Streaming per token once generation starts does not cover
 		// the prefill window itself, same shape as the buffer-then-stream sites M-19 fixed.
 		stopBeat := sseHeartbeat(ss)
-		s.routeThink(lm, &gr, tm, ts, func(t string) {
+		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
 		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
@@ -857,7 +862,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	}
 
 	var sb, rb strings.Builder
-	s.routeThink(lm, &gr, tm, ts, func(t string) { rb.WriteString(t) })
+	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
 	finish, nComp, lps, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
@@ -1324,7 +1329,11 @@ func messagesToTurns(msgs []chatMessage) (string, []chat.Turn) {
 			for _, c := range m.ToolCalls {
 				tc = append(tc, chat.ToolCall{ID: c.ID, Name: c.Function.Name, Arguments: json.RawMessage(c.Function.Arguments)})
 			}
-			turns = append(turns, chat.Turn{Role: "assistant", Content: m.text(), ToolCalls: tc})
+			reasoning := m.ReasoningContent
+			if reasoning == "" {
+				reasoning = m.Reasoning
+			}
+			turns = append(turns, chat.Turn{Role: "assistant", Content: m.text(), ToolCalls: tc, Reasoning: reasoning})
 		default:
 			turns = append(turns, chat.Turn{Role: "user", Content: m.text()})
 		}

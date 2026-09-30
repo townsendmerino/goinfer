@@ -84,7 +84,8 @@ type Reasoning struct {
 	// reasoning budget finds the block by these ids and closes it by forcing closeTok.
 	openTok, closeTok string
 
-	def thinkDefault // the template's own default, read from the template text
+	def  thinkDefault // the template's own default, read from the template text
+	hist histKind     // how the template re-renders an assistant turn's reasoning in history (history.go)
 
 	// onSuffix / offSuffix are appended after the family's generic generation prompt (ChatML family), as tagged segments;
 	// onOpens reports that onSuffix leaves the prompt inside an open block.
@@ -148,6 +149,7 @@ func detectChatMLReasoning(tmpl string) *Reasoning {
 	default:
 		return nil
 	}
+	r.hist = detectHistoryKind(tmpl)
 	return r
 }
 
@@ -159,7 +161,7 @@ func detectGemma4Reasoning(tmpl string) *Reasoning {
 		!strings.Contains(tmpl, "enable_thinking | default(false)") {
 		return nil
 	}
-	return &Reasoning{open: "<|channel>thought\n", close: "<channel|>", openTok: "<|channel>", closeTok: "<channel|>", def: defOff, gemma4: true}
+	return &Reasoning{open: "<|channel>thought\n", close: "<channel|>", openTok: "<|channel>", closeTok: "<channel|>", def: defOff, gemma4: true, hist: detectGemma4History(tmpl)}
 }
 
 // effectiveOn resolves a mode to on/off for this checkpoint. ThinkAsIs has no answer of its own (ok=false): it is the
@@ -238,13 +240,29 @@ func (t *Template) ThinkingPossible() bool {
 	return !ok || on
 }
 
+// PromptOpensThinkFor is PromptOpensThink for one conversation. Gemma 4 with thinking on ends a prompt INSIDE an open thought
+// channel (`<|channel>thought\n`) when the conversation's last turn is a tool response — the model is still in the turn that made
+// the call and the template reopens its channel — so a reply to such a prompt starts mid-reasoning and only the close is generated,
+// exactly like Qwen3.5-9B's open `<think>\n`. Every other prompt is as PromptOpensThink says.
+func (t *Template) PromptOpensThinkFor(turns []Turn) bool {
+	if t.PromptOpensThink() {
+		return true
+	}
+	if t == nil || t.reason == nil || !t.reason.gemma4 || len(turns) == 0 || turns[len(turns)-1].Role != "tool" {
+		return false
+	}
+	on, ok := t.reason.effectiveOn(t.think)
+	return ok && on
+}
+
 // NewReasoningSplitter returns a splitter for replies to prompts from t, or nil when t has no reasoning spec (the caller
-// then passes text through untouched).
-func (t *Template) NewReasoningSplitter() *ThinkSplitter {
+// then passes text through untouched). turns is the conversation the prompt was rendered from (nil = unknown: only the
+// template-level answer is used).
+func (t *Template) NewReasoningSplitter(turns []Turn) *ThinkSplitter {
 	if t == nil || t.reason == nil {
 		return nil
 	}
-	return NewThinkSplitter(t.reason.open, t.reason.close, t.PromptOpensThink())
+	return NewThinkSplitter(t.reason.open, t.reason.close, t.PromptOpensThinkFor(turns))
 }
 
 // renderThinking applies t.think to a base rendering. Only called when t.reason != nil and t.think != ThinkAsIs.
@@ -252,9 +270,9 @@ func (t *Template) renderThinking(system string, turns []Turn) []Segment {
 	r := t.reason
 	if r.gemma4 {
 		on, _ := r.effectiveOn(t.think)
-		return gemma4Segments(system, turns, on)
+		return gemma4Segments(system, turns, on, r.hist == histGemma4)
 	}
-	segs := t.render(system, turns)
+	segs := chatMLSegments(system, turns, r.hist)
 	return append(segs[:len(segs):len(segs)], r.suffix(t.think)...)
 }
 
@@ -380,7 +398,7 @@ func (s *ThinkSplitter) Flush() (reasoning, content string) {
 
 // SplitThink splits a whole reply (the non-streaming form of ThinkSplitter).
 func (t *Template) SplitThink(reply string) (reasoning, content string) {
-	ts := t.NewReasoningSplitter()
+	ts := t.NewReasoningSplitter(nil)
 	if ts == nil {
 		return "", reply
 	}

@@ -71,7 +71,7 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
-	s.routeThink(lm, &gr, tm, ts, nil) // runJob streams the reasoning into the job's event log
+	s.routeThink(lm, &gr, tm, jturns, ts, nil) // runJob streams the reasoning into the job's event log
 	if hi := s.haltState(); hi != nil {
 		release()
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "halted", "reason": hi.reason})

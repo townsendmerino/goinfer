@@ -128,12 +128,12 @@ func (b *reasoningBudget) Gate(generated []int) bool { return b.due(generated) }
 
 // routeThink wires one generation's reasoning: the splitter that separates it (think.go) and, where it applies, the budget
 // that bounds it. Every route calls it in place of newThinkOut.
-func (s *server) routeThink(lm *loadedModel, gr *genRequest, tm *chat.Template, ts thinkSettings, onReasoning func(string)) {
-	gr.think = newThinkOut(tm, ts, onReasoning)
-	s.applyBudget(lm, gr, tm, ts)
+func (s *server) routeThink(lm *loadedModel, gr *genRequest, tm *chat.Template, turns []chat.Turn, ts thinkSettings, onReasoning func(string)) {
+	gr.think = newThinkOut(tm, turns, ts, onReasoning)
+	s.applyBudget(lm, gr, tm, turns, ts)
 }
 
-func (s *server) applyBudget(lm *loadedModel, gr *genRequest, tm *chat.Template, ts thinkSettings) {
+func (s *server) applyBudget(lm *loadedModel, gr *genRequest, tm *chat.Template, turns []chat.Turn, ts thinkSettings) {
 	if !tm.ThinkingPossible() || gr.masker != nil || lm.spec || lm.blockSpec != nil || lm.tk == nil {
 		return
 	}
@@ -147,7 +147,7 @@ func (s *server) applyBudget(lm *loadedModel, gr *genRequest, tm *chat.Template,
 	if !ok {
 		return
 	}
-	b := &reasoningBudget{open: openID, closeID: closeID, opens: tm.PromptOpensThink(), limit: limit}
+	b := &reasoningBudget{open: openID, closeID: closeID, opens: tm.PromptOpensThinkFor(turns), limit: limit}
 	prev, prevGate := gr.sp.LogitProcessor, gr.sp.LogitProcessorGate
 	switch {
 	case prev == nil:

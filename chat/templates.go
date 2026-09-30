@@ -66,7 +66,7 @@ func Gemma3() *Template {
 // scaffold: "<|turn>model\n<|channel>thought\n<channel|>".
 func Gemma4() *Template {
 	return &Template{name: "gemma4", stops: []string{"<turn|>"}, render: func(system string, turns []Turn) []Segment {
-		return gemma4Segments(system, turns, false)
+		return gemma4Segments(system, turns, false, false)
 	}}
 }
 
@@ -74,7 +74,7 @@ func Gemma4() *Template {
 // carries the closed thinking scaffold); think=true is the template's enable_thinking=true form: a system turn that
 // opens with the "<|think|>" marker (present even when the caller gave no system prompt) and a generation prompt that
 // leaves the thinking channel for the model to open.
-func gemma4Segments(system string, turns []Turn, think bool) []Segment {
+func gemma4Segments(system string, turns []Turn, think, hist bool) []Segment {
 	var b segBuf
 	b.sp("<bos>")
 	if system != "" || think {
@@ -89,13 +89,24 @@ func gemma4Segments(system string, turns []Turn, think bool) []Segment {
 		b.sp("<turn|>")
 		b.ct("\n")
 	}
-	for _, t := range turns {
+	lu := lastUserIndex(turns)
+	for i, t := range turns {
 		role := "user"
 		if t.Role == "assistant" {
 			role = "model"
 		}
 		b.sp("<|turn>")
-		b.ct(role + "\n" + t.Content)
+		if role == "model" && hist {
+			b.ct("model\n")
+			if t.Reasoning != "" && i > lu { // the tool loop in progress keeps its reasoning; earlier turns do not
+				b.sp("<|channel>")
+				b.ct("thought\n" + t.Reasoning + "\n")
+				b.sp("<channel|>")
+			}
+			b.ct(stripChannels(t.Content))
+		} else {
+			b.ct(role + "\n" + t.Content)
+		}
 		b.sp("<turn|>")
 		b.ct("\n")
 	}
@@ -179,23 +190,44 @@ func Harmony() *Template {
 // generation prompt "<|im_start|>assistant\n". No BOS in the template.
 func ChatML() *Template {
 	return &Template{name: "chatml", stops: []string{"<|im_end|>"}, render: func(system string, turns []Turn) []Segment {
-		var b segBuf
-		if system != "" {
-			b.sp("<|im_start|>")
-			b.ct("system\n" + system)
-			b.sp("<|im_end|>")
-			b.ct("\n")
-		}
-		for _, t := range turns {
-			b.sp("<|im_start|>")
-			b.ct(t.Role + "\n" + t.Content)
-			b.sp("<|im_end|>")
-			b.ct("\n")
-		}
-		b.sp("<|im_start|>")
-		b.ct("assistant\n")
-		return b.segs
+		return chatMLSegments(system, turns, histNone)
 	}}
+}
+
+// chatMLSegments renders the conversation as ChatML. hist is the family's history rule for assistant turns (history.go);
+// histNone is the generic rendering — each turn's content as given — and is what every ChatML family without a recognised
+// thinking control gets, byte for byte as before the history rule existed.
+func chatMLSegments(system string, turns []Turn, hist histKind) []Segment {
+	var b segBuf
+	if system != "" {
+		b.sp("<|im_start|>")
+		b.ct("system\n" + system)
+		b.sp("<|im_end|>")
+		b.ct("\n")
+	}
+	lq := lastQueryIndex(turns)
+	for i, t := range turns {
+		b.sp("<|im_start|>")
+		if t.Role == "assistant" && hist != histNone {
+			block, reasoning, content := qwenAssistant(hist, t, i, lq, len(turns))
+			if block {
+				b.ct("assistant\n")
+				b.sp("<think>") // the markers are control tokens; the reasoning between them is untrusted text
+				b.ct("\n" + reasoning + "\n")
+				b.sp("</think>")
+				b.ct("\n\n" + content)
+			} else {
+				b.ct("assistant\n" + content)
+			}
+		} else {
+			b.ct(t.Role + "\n" + t.Content)
+		}
+		b.sp("<|im_end|>")
+		b.ct("\n")
+	}
+	b.sp("<|im_start|>")
+	b.ct("assistant\n")
+	return b.segs
 }
 
 // Phi3 — microsoft/Phi-3-mini-4k-instruct's current template: per turn

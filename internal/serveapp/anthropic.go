@@ -97,6 +97,10 @@ type anthropicTool struct {
 type anthropicBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text"` // type:text
+	// type:thinking (assistant replay): the model's reasoning, which a client such as Claude Code sends back with every turn of
+	// a tool loop. A model with a history rule gets it back the way its own template would put it (chat/history.go); the
+	// signature is not checked (serve's own thinking blocks carry an empty one).
+	Thinking string `json:"thinking"`
 	// type:tool_use (assistant replay):
 	ID    string          `json:"id"`
 	Name  string          `json:"name"`
@@ -294,18 +298,22 @@ func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
 		if err := json.Unmarshal(m.Content, &blocks); err != nil {
 			return "", nil, badReq("message %d: content must be a string or an array of blocks", mi)
 		}
-		var text strings.Builder
+		var text, reasoning strings.Builder
 		var calls []chat.ToolCall
+		sawToolResult := false
 		for _, bl := range blocks {
 			switch bl.Type {
 			case "text":
 				text.WriteString(bl.Text)
+			case "thinking":
+				reasoning.WriteString(bl.Thinking)
 			case "tool_use":
 				calls = append(calls, chat.ToolCall{ID: bl.ID, Name: bl.Name, Arguments: defaultObj(bl.Input)})
 				if bl.ID != "" {
 					toolNames[bl.ID] = bl.Name
 				}
 			case "tool_result":
+				sawToolResult = true
 				turns = append(turns, chat.Turn{
 					Role:       "tool",
 					Content:    anthropicText(bl.Content),
@@ -322,10 +330,12 @@ func anthropicTurns(req *anthropicReq) (string, []chat.Turn, *apiErr) {
 		}
 		if m.Role == "assistant" {
 			if text.Len() > 0 || len(calls) > 0 {
-				turns = append(turns, chat.Turn{Role: "assistant", Content: text.String(), ToolCalls: calls})
+				turns = append(turns, chat.Turn{Role: "assistant", Content: text.String(), ToolCalls: calls, Reasoning: reasoning.String()})
 			}
 		} else if text.Len() > 0 {
-			turns = append(turns, chat.Turn{Role: "user", Content: text.String()})
+			// Text in the same user message as tool results (Claude Code adds reminders there) continues the tool loop; it is
+			// not a new query, and the history rule must not treat it as one (chat.Turn.ToolLoop).
+			turns = append(turns, chat.Turn{Role: "user", Content: text.String(), ToolLoop: sawToolResult})
 		}
 	}
 	return system, mergeAdjacent(turns), nil
@@ -395,6 +405,13 @@ func mergeAdjacent(turns []chat.Turn) []chat.Turn {
 				prev.Content = t.Content
 			}
 			prev.ToolCalls = append(prev.ToolCalls, t.ToolCalls...)
+			switch {
+			case prev.Reasoning != "" && t.Reasoning != "":
+				prev.Reasoning += "\n" + t.Reasoning
+			case t.Reasoning != "":
+				prev.Reasoning = t.Reasoning
+			}
+			prev.ToolLoop = prev.ToolLoop && t.ToolLoop // a merged user turn is a continuation only if every part was
 			continue
 		}
 		out = append(out, t)
@@ -617,14 +634,14 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	defer lm.exit()
 
 	if req.Stream {
-		s.streamMessages(w, r, lm, gr, toolsActive, tools, tm, ts, req.wantsThinking())
+		s.streamMessages(w, r, lm, gr, toolsActive, tools, tm, turns, ts, req.wantsThinking())
 		return
 	}
 
 	id := "msg_" + reqID()
 	gr.id = id
 	var rb strings.Builder
-	s.routeThink(lm, &gr, tm, ts, func(t string) { rb.WriteString(t) })
+	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
 	var (
 		text                          string
 		calls                         []chat.ToolCall

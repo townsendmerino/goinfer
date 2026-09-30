@@ -118,7 +118,7 @@ func runThink(t *testing.T, tk *tokenizer.Tokenizer, ids []int, tm *chat.Templat
 	close(stream)
 	var r, c strings.Builder
 	gr := genRequest{maxTokens: maxTokens, stopStrings: stops}
-	gr.think = newThinkOut(tm, ts, func(s string) { r.WriteString(s) })
+	gr.think = newThinkOut(tm, nil, ts, func(s string) { r.WriteString(s) })
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	finish, _, _ := lm.streamTokens(ctx, cancel, stream, gr, nil, func(s string) { c.WriteString(s) })
