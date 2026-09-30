@@ -1013,8 +1013,11 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             # model_key request a non-default quant (e.g. "int4mix") instead of the "int4" default.
             has_own_bundle = model_key in GOINFER_MOE_PATH
             gpath = GOINFER_MOE_PATH[model_key] if has_own_bundle else path
-            quant_args = [] if has_own_bundle else \
-                ["-quant", GOINFER_QUANT_OVERRIDE.get(model_key, "int4")]
+            # BENCH_QUANT_OVERRIDE=<key>=default drops `-quant` altogether, so the cell times what a user who
+            # typed no flag gets (the load-time activationSafeQuant choice: q4k on a CPU/CUDA .gguf, int8int8
+            # with per-32 activations on Metal). Every other value is passed through as before.
+            _q = GOINFER_QUANT_OVERRIDE.get(model_key, "int4")
+            quant_args = [] if (has_own_bundle or _q == "default") else ["-quant", _q]
             moe_args = ["-moe-cache-experts"] if (model_key in MOE_MODELS and backend == "cuda") else []
             # "goinfer_old" picks SERVE_OLD instead of SERVE -- same flags, same port (the two never
             # run concurrently: run_cell always tears one engine down before the next starts), a

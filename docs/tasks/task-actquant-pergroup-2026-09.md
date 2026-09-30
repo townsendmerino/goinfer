@@ -62,6 +62,46 @@ utilization, but a small model's Metal headroom over its own CPU path, and Ollam
 speed for Phi-3, are both unmeasured here — Metal does not exist on this box. That decisive number
 needs the Mac.
 
+### Mac arm — pre-registered 2026-09-29, before the run (MacBook, Claude session)
+
+**Question.** Does Phi-3's CPU fallback lose to Ollama running on Metal by enough to justify per-32 Metal/WebGPU kernels?
+The decisive ratio is **S = goinfer's CPU fallback ÷ Ollama on Metal**, the two interleaved in one session.
+
+**What the Mac showed before any timing (probe, 2026-09-29, `docs/measurements/phi3-metal-2026-09-29/`).** nobara's read of
+`internal/modelload/modelload.go:118` holds here. A Metal user who passes no `-quant` gets `--quant int8int8` with per-32 activations, and the
+log says `decode path: cpu (int8int8) — requested metal → running on cpu`. The quant is chosen from the *requested* backend
+(`activationSafeQuant`'s CPU-or-CUDA test for q4k), so the CPU fallback of a Metal user is stuck at the slower int8int8, which
+was 6.3 tok/s on nobara. So there are two goinfer arms, and they are not the same thing.
+
+**Second finding, before any timing.** `--quant q4k` on this 16 GB Mac at the default 4096 context needs 9.2 GB (4.0 weights,
+3.0 KV, 2.2 for reading the file) and the fit guard refuses it (by day, with the editor open). The auto weight-streaming retry
+cannot help: q4k has no `.giw` form yet. The guard is not bypassed. Every arm therefore pins `-ctx 2048` on **both** engines
+(`BENCH_CTX`), which halves the KV. If q4k still does not fit at night, that cell is recorded as declined, and that is itself the result for
+that arm.
+
+**Design.** `bench_peer.py` phase A, phi3-mini, `essay-v2`, depth 128, greedy, 3 runs, ctx 2048, binaries built at
+`cbc6147e`, Ollama v0.32.5 tag `p3m-local` (an alias of the Mac's `p3m`; 195/195 tensors identical to the GGUF, 2026-09-29).
+Three runs, each with the two engines interleaved:
+
+| run | goinfer | Ollama | gives |
+|---|---|---|---|
+| a1 | metal backend, **no `-quant`** (the user's default; runs on CPU at int8int8/per-32) | Metal | S for what a Mac user gets today |
+| a2 | metal backend, `-quant q4k` (CPU fallback at nobara's quant) | Metal | **S, the decisive ratio** |
+| b | cpu backend, `-quant q4k` | CPU only | S on CPU, comparable to nobara's 0.766 |
+
+The Metal headroom Ollama itself gets is its a-run rate ÷ its b-run rate: the same engine in two sessions, so it is a
+cross-session ratio, read as direction and size only.
+
+**Decision rule (bands fixed now).** Decisive S = a2 (a1 if a2 is declined by the fit guard):
+- **S ≥ 0.70:** the CPU fallback is close to Ollama's Metal speed. Park the Metal/WebGPU kernel work: "measured, not worth it".
+- **S ≤ 0.50:** Ollama on Metal is at least twice as fast as goinfer's fallback. That is the case for building it, and S is the number written in.
+- **0.50 < S < 0.70:** ambiguous. Written up as ambiguous and parked for the owner; no verdict is inferred.
+
+Separately, and not a gate: a1 vs a2 says what the requested-backend quirk costs a Metal user (a2 ÷ a1 on goinfer's own rate,
+cross-session). It may deserve its own small follow-up.
+
+**Cost.** Est 45 min on the Mac, queued behind TE1 attempt 3 (`night.py list`). By day, only the probe above ran (loads, no timing).
+
 ## Why
 
 Every quantized projection in goinfer (int4 = W4A8, int8int8 = W8A8, int4mix, and every resident GPU
