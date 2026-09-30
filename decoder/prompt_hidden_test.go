@@ -107,3 +107,59 @@ func TestPromptHidden_refusesAndCancels(t *testing.T) {
 		t.Errorf("a cancelled context must stop the prefill, got %v", err)
 	}
 }
+
+// TestPromptHidden_batchedMatchesSequential bounds the batched Qwen3.5 forward (runLayersQwen35N, which PromptHidden
+// takes for this family) against the per-token forward it replaces there (runLayers in a fresh cache, then the final
+// norm): dense and MoE, f32 and int4, prompts of 2..64 tokens. The two are not bit-identical (a batched matmul may
+// reduce in another order than its matvec, and int4's activation quantization sees the same rows either way but
+// through a different kernel), so each prompt's relative L2 difference is bounded, not zero.
+func TestPromptHidden_batchedMatchesSequential(t *testing.T) {
+	for _, tc := range []struct {
+		ckpt, quant string
+		bar         float64
+	}{
+		{"qwen3_5-tiny-normw", "", 1e-6},
+		{"qwen3_5_moe-tiny", "", 1e-6},
+		{"qwen3_5-tiny-normw", "int4", 1e-6},
+		{"qwen3_5_moe-tiny", "int4", 1e-6},
+	} {
+		t.Run(tc.ckpt+"/"+tc.quant, func(t *testing.T) {
+			ckpt := filepath.Join("testdata", tc.ckpt)
+			if _, err := os.Stat(filepath.Join(ckpt, "model.safetensors")); errors.Is(err, fs.ErrNotExist) {
+				t.Skipf("no checkpoint at %s", ckpt)
+			}
+			m, err := Load(ckpt, Options{Quant: tc.quant})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			for _, n := range []int{2, 5, 13, 32, 64} {
+				ids := make([]int, n)
+				for i := range ids {
+					ids[i] = (i*37 + 11) % m.w.arch.VocabSize
+				}
+				if !m.qwen35BatchN(n, m.NewCache(n)) {
+					t.Fatalf("%d tokens: the batched Qwen3.5 path does not apply", n)
+				}
+				got, err := m.PromptHidden(context.Background(), ids)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want, err := m.hiddenLastSequential(ids)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var ne, nb float64
+				for j := range want {
+					d := float64(got[j]) - float64(want[j])
+					ne, nb = ne+d*d, nb+float64(want[j])*float64(want[j])
+				}
+				rel := math.Sqrt(ne / nb)
+				t.Logf("%d tokens: relative L2 batched vs per-token %.3g", n, rel)
+				if rel > tc.bar {
+					t.Errorf("%d tokens: relative L2 %.3g > %.0e", n, rel, tc.bar)
+				}
+			}
+		})
+	}
+}
