@@ -1160,7 +1160,8 @@ why its rate stays flat where our 12-block-per-head kernel starves.
 Ollama runs Gemma-4 **26B-A4B** at **24.5 tok/s** on the same 8 GB card that goinfer's expert
 paging gets **16.98** (both measured, §B4). *(Superseded 2026-09-25: with the C′ DMA overlap, goinfer
 decodes it at 40.2 tok/s against Ollama's 22.2 at ctx 2048, in the pre-registered sweep
-`docs/measurements/peer-claim-2026-09-25.md` cell c. The mechanism below still describes the two
+`docs/measurements/peer-claim-2026-09-25.md` cell c; re-run 2026-09-29, 39.3 against 22.3, graded AMBIGUOUS-HIGH on goinfer's run spread,
+`docs/measurements/peer-sweep-2026-09-29.md` cell c. The mechanism below still describes the two
 architectures; the speed ordering it was written against no longer holds.)* The difference is architectural, and it is worth
 stating as a mechanism, not a number:
 
@@ -1535,7 +1536,7 @@ parity discipline still applies per-change: goldens, `TestParityManifest_fresh`,
   audit-2026-09-10.md).** `embedResidentInto(id, dst)` added (`decoder/residency.go:1355`);
   `embedResident` itself is now a one-line `dst=nil` wrapper (`:1121`) kept for the batch-collection
   call sites that must not share a buffer. The resident decode loop's two hot call sites now pass a
-  reused `embScratch` (`decoder/model.go:2130,1463`) instead of allocating fresh per token. Gated by
+  reused `embScratch` (`decoder/model.go:2145,1463`) instead of allocating fresh per token. Gated by
   `decoder/embed_resident_scratch_test.go`. Found stale 2026-09-12: this bullet's own line-number
   citations had been silently re-keyed by `--update` in the SAME commit that fixed the code, without
   the "still open" claim itself being revisited. Bigger follow-on, still genuinely open: an

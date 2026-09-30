@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,6 +32,14 @@ type mc3Fake struct {
 	delay     time.Duration
 	stepDraws int    // rows a StepBatch drew on-device
 	events    []byte // P: a PrefillLast call, S: a StepBatch, F: a single-sequence Forward
+	// topK makes the fake a ResidentTopK. last is the resident's ONE logits buffer, written by every forward and every
+	// step whatever slot it serves, as on the device, and a TopKRow's Full reads it when CALLED: so a Full called after
+	// another generation's step returns that generation's row, which is the hazard MC3 must avoid.
+	topK      bool
+	last      []float32
+	writes    int // writes to last; a TopKRow's Full fails if any happened after its row
+	topKCap   int // > 0: return at most this many candidates, so a row can fail to cover the retained set
+	topKCalls int
 }
 
 // ForwardN overrides fakeResident's own (which calls ITS Forward, not this type's guarded/slot-aware one, since Go
@@ -131,6 +140,8 @@ func (f *mc3Fake) StepBatch(seqs []ResidentBatchSeq) ([]ResidentBatchOut, error)
 	out := make([]ResidentBatchOut, len(seqs))
 	for i, q := range seqs {
 		lg := f.fwd(q.Slot, q.Emb, q.Pos)
+		f.last = append(f.last[:0], lg...)
+		f.writes++
 		if q.Draw != nil {
 			f.stepDraws++
 			out[i] = ResidentBatchOut{ID: fakeDraw(lg, q.Draw.Seed, q.Draw.Draw)}
@@ -150,6 +161,47 @@ func (f *mc3Fake) ForwardSample(emb []float32, pos int, temperature float64, see
 	f.soloFwds++
 	f.wait()
 	return fakeDraw(f.fwd(f.bound, emb, pos), seed, draw), nil
+}
+
+// TopKAvailable / ForwardTopK make mc3Fake a ResidentTopK when topK is set. The row is exact (sorted, with Z), so the
+// sampler's draw from it must equal its draw from the full row; Full reads the shared buffer at call time.
+func (f *mc3Fake) TopKAvailable() bool { return f.topK }
+func (f *mc3Fake) ForwardTopK(emb []float32, pos, k int, temperature float64, wantZ bool) (TopKRow, error) {
+	f.enter()
+	defer f.leave()
+	f.soloFwds++
+	f.topKCalls++
+	f.wait()
+	lg := f.fwd(f.bound, emb, pos)
+	f.last = append(f.last[:0], lg...)
+	f.writes++
+	mine := f.writes
+	idx := make([]int, len(lg))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.SliceStable(idx, func(a, b int) bool { return lg[idx[a]] > lg[idx[b]] })
+	k = min(k, len(lg))
+	if f.topKCap > 0 {
+		k = min(k, f.topKCap)
+	}
+	row := TopKRow{IDs: make([]int32, k), Logits: make([]float32, k)}
+	for i := range k {
+		row.IDs[i], row.Logits[i] = int32(idx[i]), lg[idx[i]]
+	}
+	if wantZ {
+		maxL := float64(lg[idx[0]])
+		for _, x := range lg {
+			row.Z += math.Exp((float64(x) - maxL) / temperature)
+		}
+	}
+	row.Full = func() ([]float32, error) {
+		if f.writes != mine {
+			return nil, fmt.Errorf("mc3Fake: a TopKRow's Full read the logits buffer after %d later write(s): another generation's row", f.writes-mine)
+		}
+		return append([]float32(nil), f.last...), nil
+	}
+	return row, nil
 }
 
 func fakeDraw(logits []float32, seed, draw uint64) int {
@@ -543,5 +595,71 @@ func TestMC3_prefillChunkOffByDefault(t *testing.T) {
 	wg.Wait()
 	if n := strings.Count(string(rf.events), "P"); n != 1 {
 		t.Errorf("the 1200-token prompt went in %d prefill calls with chunking unset, want 1", n)
+	}
+}
+
+// TestMC3_topPConcurrentMatchesAlone: a top-p generation keeps the device top-K path under MC3 (it was simply off there
+// until 2026-09-30, which cost CUDA top-p 26%: docs/measurements/topp-regression-2026-09-30.md), and concurrent
+// generations still each get exactly the tokens they get alone. Two filters: one the K candidates usually serve, and one
+// (top_p near 1) whose rows fall back to the full row. The fake's Full fails if any other write reached the shared
+// logits buffer after its row, which is the hazard: the fallback must be read while the generation holds the resident.
+func TestMC3_topPConcurrentMatchesAlone(t *testing.T) {
+	const nConv, maxTok = 4, 24
+	for _, tc := range []struct {
+		topP float64
+		cap  int // 0: the fake returns the whole (tiny) vocabulary, so the K candidates always serve
+	}{{0.5, 0}, {0.999, 4}} {
+		topP, capK := tc.topP, tc.cap
+		t.Run(fmt.Sprintf("top_p=%g", topP), func(t *testing.T) {
+			run := func(m *Model, c int) ([]int, *Generation) {
+				ch, gen := m.Generate(context.Background(), []int{1, 2, 3, 10 + c}, maxTok, SamplingParams{Temperature: 0.8, TopP: topP, Seed: int64(100 + c)})
+				var ids []int
+				for id := range ch {
+					ids = append(ids, id)
+				}
+				if err := gen.Err(); err != nil {
+					t.Errorf("conversation %d: %v", c, err)
+				}
+				return ids, gen
+			}
+			// The regression: alone on a model with MC3 enabled, the top-K path must serve (or fall back), not be skipped.
+			m1, rf1 := loadWithMC3Fake(t, nConv)
+			rf1.topK, rf1.topKCap = true, capK
+			m1.EnableResidentConcurrency(nConv)
+			_, g1 := run(m1, 0)
+			if rf1.topKCalls == 0 {
+				t.Fatal("alone under MC3, no top-K row was requested: the fast path is still off")
+			}
+			if topP < 0.9 && g1.TopKServed == 0 {
+				t.Error("top_p=0.5: the K candidates served no draw")
+			}
+			if topP > 0.99 && g1.TopKFallbacks == 0 {
+				t.Error("top_p=0.999: no row fell back to the full row, so the fallback path was not exercised")
+			}
+			// Concurrent generations each get their alone tokens.
+			mAlone, rfAlone := loadWithMC3Fake(t, nConv)
+			rfAlone.topK, rfAlone.topKCap = true, capK
+			alone := make([][]int, nConv)
+			for c := range nConv {
+				alone[c], _ = run(mAlone, c)
+			}
+			m, rf := loadWithMC3Fake(t, nConv)
+			rf.topK, rf.topKCap = true, capK
+			rf.delay = 3 * time.Millisecond
+			m.EnableResidentConcurrency(nConv)
+			together := make([][]int, nConv)
+			var wg sync.WaitGroup
+			for c := range nConv {
+				wg.Add(1)
+				go func(c int) { defer wg.Done(); together[c], _ = run(m, c) }(c)
+			}
+			wg.Wait()
+			for c := range nConv {
+				if !slices.Equal(alone[c], together[c]) {
+					t.Errorf("conversation %d: concurrent %v, alone %v", c, together[c], alone[c])
+				}
+			}
+			t.Logf("alone under MC3: top-K rows %d (served %d, fell back %d); concurrent: top-K rows %d, steps %d", rf1.topKCalls, g1.TopKServed, g1.TopKFallbacks, rf.topKCalls, rf.steps)
+		})
 	}
 }

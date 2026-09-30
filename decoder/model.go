@@ -1907,9 +1907,12 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// (escape hatch / A-B check), same convention as GOINFER_NO_GREEDY_FASTPATH.
 	var topKRF ResidentTopK
 	topKWidth, topKVocab := 0, len(logits)
-	// MC3: off — a TopKRow's Full() reads the resident's logits a token later, after another generation's step may have
-	// overwritten them.
-	if useGPU && mc3 == nil && !fastGreedy && !optFwd && procFree && m.knobs.get(knobNoTopKFastpath) == "" && sampler.TopKEligible() {
+	// MC3: a TopKRow's Full() reads the resident's logits, and a token later another generation's step may have overwritten
+	// them. So under MC3 the draw is resolved inside the resident call (topKPre / topKPreFull below), while this generation
+	// still holds the resident, instead of at the top of the next iteration. It was simply off under MC3 until 2026-09-30,
+	// which sent every CUDA top-p request, alone or not, down the full-row path: a 151,936-logit readback and a host sort per
+	// token, 0.74× the top-K path's speed (docs/measurements/topp-regression-2026-09-30.md).
+	if useGPU && !fastGreedy && !optFwd && procFree && m.knobs.get(knobNoTopKFastpath) == "" && sampler.TopKEligible() {
 		if rf, ok := m.resident.(ResidentTopK); ok && rf.TopKAvailable() {
 			if w, wok := sampler.TopKWidth(len(logits)); wok {
 				topKRF, topKWidth = rf, w
@@ -1926,6 +1929,12 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		}
 	}
 	var topKRow *TopKRow // this step's device top-K row, set instead of logits when topKRF is active
+	// Under MC3 the top-K draw is made inside the resident call (see topKRF above): topKPre is the drawn token when the row
+	// held the whole retained set, else topKPreFull says topKFullBuf holds this step's full row, copied before the resident
+	// was released. Both are consumed, and cleared, where topKRow is.
+	var topKPre *SampleInfo
+	var topKPreFull bool
+	var topKFullBuf []float32
 	var optGate *optFwdGate
 	if optFwd {
 		optGate = &optFwdGate{}
@@ -2049,7 +2058,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// has been consumed, so the fallback is invisible) and take the ordinary path below.
 			drew := false
 			if topKRow != nil {
-				if inf, ok := sampler.SampleFromTopK(*topKRow, topKVocab); ok {
+				if topKPre != nil {
+					info, next, drew = *topKPre, topKPre.ID, true
+					g.TopKServed++
+				} else if topKPreFull {
+					logits = topKFullBuf
+					g.TopKFallbacks++
+				} else if inf, ok := sampler.SampleFromTopK(*topKRow, topKVocab); ok {
 					info, next, drew = inf, inf.ID, true
 					g.TopKServed++
 				} else {
@@ -2061,7 +2076,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 					logits = full
 					g.TopKFallbacks++
 				}
-				topKRow = nil
+				topKRow, topKPre, topKPreFull = nil, nil, false
 				if decodeTiming {
 					tSample += time.Since(t0)
 				}
@@ -2161,6 +2176,19 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				} else if topKRF != nil {
 					var row TopKRow
 					row, ferr = topKRF.ForwardTopK(emb, pos, topKWidth, sp.Temperature, sampler.topPActive())
+					if ferr == nil && mc3 != nil {
+						// Resolve the draw now, while this generation holds the resident (see topKRF). The sampler is this
+						// generation's own and nothing else draws from it before the next iteration would have, so the RNG
+						// is consumed in the same order as the unbatched path.
+						if inf, ok := sampler.SampleFromTopK(row, topKVocab); ok {
+							topKPre = &inf
+						} else if full, e := row.Full(); e != nil {
+							ferr = e
+						} else {
+							topKFullBuf = append(topKFullBuf[:0], full...) // the resident's host buffer is shared
+							topKPreFull = true
+						}
+					}
 					if ferr == nil {
 						topKRow = &row
 					}
