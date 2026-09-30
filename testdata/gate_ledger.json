@@ -253,6 +253,24 @@
       "value": "PASS"
     },
     {
+      "commit": "13c19bf7",
+      "date": "2026-09-30",
+      "gate": "TestGemma12Real_gate",
+      "note": "confirmed from docs/measurements/gemma12-gates-2026-09-30/real-gate-nobara.log (nobara-pc): gemma-2b-it, codegemma-2b, gemma-2-2b-it \u2014 safetensors f32 argmax exact, 8/8 greedy continuation, cosine 1.000000 per-token and batched; llama.cpp Q8_0 GGUFs argmax exact, 8/8, cosine 0.999981-0.999999",
+      "promoted_by": "claude",
+      "source_sha256": "f718667adbb403b1",
+      "value": "PASS"
+    },
+    {
+      "commit": "13c19bf7",
+      "date": "2026-09-30",
+      "gate": "TestGemma12_forwardParity",
+      "note": "confirmed from docs/measurements/gemma12-gates-2026-09-30/forward-parity-mac.log (M1 Pro): gemma1/gemma2 tiny, safetensors and GGUF, per-token and batched, max |dlogit| <= 2.3e-6, cosine 1.00000000 against HF f32 eager; mutation-checked (no attention softcap / no sliding window / sliding-full inverted / no +1 all red)",
+      "promoted_by": "claude",
+      "source_sha256": "3da84bbc25a6b727",
+      "value": "PASS"
+    },
+    {
       "commit": "679c9e5",
       "date": "2026-08-14",
       "gate": "TestGemma4_12B_logitParity",

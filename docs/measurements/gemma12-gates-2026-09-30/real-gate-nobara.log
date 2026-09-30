@@ -1,0 +1,19 @@
+=== RUN   TestGemma12Real_gate
+=== RUN   TestGemma12Real_gate/gemma-2b-it
+    gemma12_real_test.go:93: gemma-2b-it safetensors f32: argmax 7127 (want 7127), cosine per-token 1.000000 batched 1.000000, continuation [7127 235265 109 5036 689 7662 235336 109] (want [7127 235265 109 5036 689 7662 235336 109])
+    gemma12_real_test.go:77: GGUF Q8_0: 256128 logits against the reference's 256000; the cosine is over the first 256000
+    gemma12_real_test.go:93: gemma-2b-it GGUF Q8_0: argmax 7127 (want 7127), cosine per-token 0.999987 batched 0.999987, continuation [7127 235265 109 5036 689 7662 235336 109] (want [7127 235265 109 5036 689 7662 235336 109])
+PARITY_ROW {"family":"gemma","method":"full-forward-oracle","reference":"HF f32 eager (gemma-2b-it; codegemma-2b and the Q8_0 GGUFs also checked)","metrics":{"argmax_pct":100.0,"cosine_min":1.00000,"cosine_mean":1.00000}}
+=== RUN   TestGemma12Real_gate/codegemma-2b
+    gemma12_real_test.go:93: codegemma-2b safetensors f32: argmax 648 (want 648), cosine per-token 1.000000 batched 1.000000, continuation [648 552 5718 235248 235274 235292 108 145] (want [648 552 5718 235248 235274 235292 108 145])
+    gemma12_real_test.go:93: codegemma-2b GGUF Q8_0: argmax 648 (want 648), cosine per-token 0.999999 batched 0.999999, continuation [648 552 5718 235248 235274 235292 108 145] (want [648 552 5718 235248 235274 235292 108 145])
+=== RUN   TestGemma12Real_gate/gemma-2-2b-it
+    gemma12_real_test.go:93: gemma-2-2b-it safetensors f32: argmax 7127 (want 7127), cosine per-token 1.000000 batched 1.000000, continuation [7127 235265 235248 109 2437 736 6218 1382] (want [7127 235265 235248 109 2437 736 6218 1382])
+    gemma12_real_test.go:93: gemma-2-2b-it GGUF Q8_0: argmax 7127 (want 7127), cosine per-token 0.999981 batched 0.999981, continuation [7127 235265 235248 109 2437 736 6218 1382] (want [7127 235265 235248 109 2437 736 6218 1382])
+PARITY_ROW {"family":"gemma2","method":"full-forward-oracle","reference":"HF f32 eager (gemma-2-2b-it; the Q8_0 GGUF also checked)","metrics":{"argmax_pct":100.0,"cosine_min":1.00000,"cosine_mean":1.00000}}
+--- PASS: TestGemma12Real_gate (54.92s)
+    --- PASS: TestGemma12Real_gate/gemma-2b-it (16.95s)
+    --- PASS: TestGemma12Real_gate/codegemma-2b (18.97s)
+    --- PASS: TestGemma12Real_gate/gemma-2-2b-it (18.77s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	54.968s

@@ -149,6 +149,7 @@ var parityRealckptGates = []gateCheck{
 	// unmistakable in the sweep's own report, not just in code.
 	{"granite-dense-real", "TestGraniteDenseReal_gate"},
 	{"olmo3-oracle", "TestOlmo3Real_gate"},
+	{"gemma12-oracle", "TestGemma12Real_gate"},
 	{"olmo-hybrid-oracle", "TestOlmoHybridReal_gate"},
 	// internlm2 repeated the exact smollm3/lfm2/mistral3 registration gap: its gate and asset
 	// (commit d1449f4) landed without this line, leaving TestRealckptGateIsListedOrExplicitly
@@ -185,6 +186,7 @@ var emitGates = []gateCheck{
 	{"mistral3", "TestMinistral3Real_gate"},
 	{"granite", "TestGraniteDenseReal_gate"},
 	{"olmo3", "TestOlmo3Real_gate"},
+	{"gemma+gemma2", "TestGemma12Real_gate"}, // gemma-2b-it, codegemma-2b, gemma-2-2b-it: safetensors f32 + llama.cpp Q8_0 GGUF
 	{"olmo_hybrid", "TestOlmoHybridReal_gate"},
 	{"internlm2", "TestInternLM2_1_8bReal_gate"},
 	{"qwen2_moe", "TestQwen2MoeReal_oracle"},

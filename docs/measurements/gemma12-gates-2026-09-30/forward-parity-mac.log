@@ -1,0 +1,20 @@
+=== RUN   TestGemma12_forwardParity
+=== RUN   TestGemma12_forwardParity/gemma1
+    gemma12_test.go:93: gemma1 per-token: max |Δlogit| 7.15e-07, cosine 1.00000000
+    gemma12_test.go:101: gemma1 batched: max |Δlogit| 7.15e-07, cosine 1.00000000
+=== RUN   TestGemma12_forwardParity/gemma2
+    gemma12_test.go:93: gemma2 per-token: max |Δlogit| 2.21e-06, cosine 1.00000000
+    gemma12_test.go:101: gemma2 batched: max |Δlogit| 2.21e-06, cosine 1.00000000
+=== RUN   TestGemma12_forwardParity/gemma1.gguf
+    gemma12_test.go:93: gemma1 per-token: max |Δlogit| 7.15e-07, cosine 1.00000000
+    gemma12_test.go:101: gemma1 batched: max |Δlogit| 7.15e-07, cosine 1.00000000
+=== RUN   TestGemma12_forwardParity/gemma2-hd.gguf
+    gemma12_test.go:93: gemma2-hd per-token: max |Δlogit| 2.26e-06, cosine 1.00000000
+    gemma12_test.go:101: gemma2-hd batched: max |Δlogit| 2.26e-06, cosine 1.00000000
+--- PASS: TestGemma12_forwardParity (0.04s)
+    --- PASS: TestGemma12_forwardParity/gemma1 (0.01s)
+    --- PASS: TestGemma12_forwardParity/gemma2 (0.01s)
+    --- PASS: TestGemma12_forwardParity/gemma1.gguf (0.01s)
+    --- PASS: TestGemma12_forwardParity/gemma2-hd.gguf (0.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.338s

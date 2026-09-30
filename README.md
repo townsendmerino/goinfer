@@ -1,7 +1,7 @@
 # goinfer
 
 **Run open-weight LLMs in pure Go — one cgo-free static binary, portable by default and
-native-GPU-fast when you want it.** 37 model families, HuggingFace-parity-gated, with
+native-GPU-fast when you want it.** 39 model families, HuggingFace-parity-gated, with
 schema-constrained structured output. No Python, no llama.cpp, no CUDA toolkit.
 
 **[goinfer.dev](https://goinfer.dev)** — the [models](https://goinfer.dev/models/) it runs (one page per family),
@@ -293,7 +293,7 @@ runs the weights itself, in-process. Longer form: [docs/positioning.md](docs/pos
 
 ## What it runs
 
-- **37 model families** — Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA, GLM, Kimi, Granite,
+- **39 model families** — Gemma 1/2/3/4 (and CodeGemma), Qwen 2.5/3, Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA, GLM, Kimi, Granite,
   Nemotron, Mellum and more; one page each at [goinfer.dev/models](https://goinfer.dev/models/), generated from the
   `decoder` registry ([capability-matrix.md](docs/capability-matrix.md)).
 - **All four sequence-mixing families** — softmax·GQA, gated-linear (DeltaNet), state-space (Mamba-2), latent-KV
