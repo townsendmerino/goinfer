@@ -113,29 +113,18 @@ fi
 cat <<'PEERS'
 
 ═══════════════════════════════════════════════════════════════════════
- PEER COMMANDS — reference only. Numbers you obtain this way are NOT comparable
- with the goinfer figures above (those are in-process benchmarks, these are
- end-to-end server measurements). For a publishable comparison run
- scripts/bench_peer.py instead, which measures both sides identically.
+ NO PEER COMMANDS HERE, on purpose. The figures above are in-process benchmarks of
+ goinfer's own kernels. A peer's own tool (ollama run --verbose, llama-bench) measures
+ something else, so a number from it set beside these is not a comparison.
+
+ For a comparison run scripts/bench_peer.py, which drives BOTH engines over HTTP,
+ interleaved, with a restart between cells and the same weights on both sides:
+
+   GOINFER_SERVE_CPU=<serve binary> OLLAMA_BIN=<ollama> BENCH_BACKENDS=cpu \
+     BENCH_DEPTHS=none BENCH_MODELS=1.5B BENCH_ENGINES=goinfer,ollama \
+     python3 scripts/bench_peer.py results.json
+
+ A number enters docs/benchmarks.md only if both engines ran the SAME checkpoint at the
+ SAME quant on the SAME machine (docs/benchmarks.md, Methodology). When in doubt, re-measure.
 ═══════════════════════════════════════════════════════════════════════
-
-# Ollama (decode tok/s; ensure `ollama ps` shows 100% GPU for the GPU row):
-#   ollama --version
-#   ollama run qwen2.5-coder:1.5b-instruct-q8_0 --verbose "<<your fixed prompt>>"
-#     → read "eval rate (tokens/s)". Match the quant to goinfer's (q8_0 ≈ int8).
-
-# llama.cpp (decode + prefill, same GGUF goinfer loads):
-#   llama-cli --version
-#   llama-bench -m qwen2.5-coder-1.5b-instruct-q8_0.gguf -p 512 -n 128 -ngl 99
-#     → "pp" = prefill tok/s, "tg" = decode tok/s. -ngl 99 = all layers on GPU.
-
-# vLLM (server throughput; not single-stream comparable — note that in the table):
-#   python -c "import vllm; print(vllm.__version__)"
-#   vllm serve <model> ; then benchmark with vllm's bench_serving.
-
-# IMPORTANT: a number only enters docs/benchmarks.md if peer + goinfer ran the
-# SAME model checkpoint at the SAME quant on the SAME machine. Mismatched runs
-# (e.g. a different param count or quant) are how you get a wrong comparison —
-# see docs/gpu-assessment.md, which caught exactly that (a 1.8B q4 mistaken for
-# the 1.5B). When in doubt, REMEASURE; never paste a number you can't trace.
 PEERS

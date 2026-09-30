@@ -219,8 +219,9 @@ caught one of its own early runs comparing a **Qwen1.5-1.8B q4** against the
 **Qwen2.5-1.5B** target (a 191 tok/s number) and discarded it. Same-checkpoint,
 same-quant, same-machine is the whole discipline.
 
-Reproduce goinfer's side end-to-end (and get the verbatim peer commands) with
-[`scripts/bench_compare.sh`](../scripts/bench_compare.sh).
+Reproduce a row with [`scripts/bench_peer.py`](../scripts/bench_peer.py), which drives both engines over
+their own HTTP servers ([Reproduce it](#reproduce-it)). [`scripts/bench_compare.sh`](../scripts/bench_compare.sh) is for
+goinfer-against-goinfer work only: it drives no peer.
 
 **Two pinned peers — a CURRENT one and a historical one.** A live competitive claim must be
 measured against the *current* peer; a *reproducible* historical row is kept beside it. As of
@@ -424,8 +425,8 @@ the registry, this footnote should not need editing every time a family ships.
 
 Two rigs, both the repo's existing ones. Apple-Silicon CPU is the pure-Go lane; the
 RTX section is the GPU-residency story. Peer columns are filled **only** from
-same-machine/same-quant runs; where we have none, the cell is `—` and the script +
-peer commands are how you fill it.
+same-machine/same-quant runs; where we have none, the cell is `—` and `scripts/bench_peer.py`
+is how you fill it.
 
 **The two rigs, precisely** — stated once here so rows can say "M1 Pro" or "the Ryzen box"
 without the reader having to guess what that means:
@@ -2453,8 +2454,9 @@ Three cautions, since this is a storage-regime number and those rot in specific 
   prevent, and the window between "the stack moved" and "the numbers are back" is exactly where it
   happens. Re-measure with `scripts/bench_peer.py`; `bench_compare.sh` does not drive the peer and
   cannot produce a comparison.
-- **Re-run `scripts/bench_compare.sh` at each tag.** A number more than one minor
-  version stale is re-measured or struck — never silently carried forward.
+- **Re-measure the table with `scripts/bench_peer.py` at each tag.** A number more than one minor
+  version stale is re-measured or struck — never silently carried forward. (`bench_compare.sh` measures goinfer's own
+  kernels in-process and cannot refresh a peer row.)
 - **Re-verify the capability matrix against peer release notes at each tag** (cheap —
   it's mostly booleans). Peers move: Ollama dropped its CGO runner for a `llama-server`
   subprocess (PR #16031, merged 2026-05-29); mistral.rs shipped multi-model + an OpenAI
@@ -2466,16 +2468,31 @@ Three cautions, since this is a storage-regime number and those rot in specific 
 
 ## Reproduce it
 
-`scripts/bench_compare.sh` runs **goinfer's** side end-to-end on your machine —
-`BenchmarkDecode` (decode tok/s), `BenchmarkPrefillLong` (prefill), cold-start wall
-clock to first token, and resident memory (`phys_footprint` on macOS, max-RSS on
-Linux) — stamping each with the goinfer commit + date + machine. It then **prints the
-peer commands verbatim** (`ollama run --verbose`, `llama-bench -ngl 99`, vLLM) for you
-to run yourself on the same machine; it never drives the peers (their install is
-yours). Peers absent → it still emits goinfer's column.
+**A row of the tables above** is reproduced with `scripts/bench_peer.py`. It drives goinfer and the peer each over their own
+HTTP server (goinfer `/v1/chat/completions`, Ollama `/api/chat`), one cell at a time, interleaved, with a server restart
+between cells, sampling sent explicitly to both, and the machine's state stamped into the results file. It refuses a box
+that is not idle. Decode speed is timed client-side from the first streamed token, so prefill is excluded on both sides.
 
 ```bash
-GOINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q8_0.gguf \
+# a cell: 0.5B and 1.5B on the CPU, goinfer against Ollama, depth 128, 3 runs
+GOINFER_SERVE_CPU=/path/to/serve-cpu OLLAMA_BIN=/path/to/ollama \
+  BENCH_BACKENDS=cpu BENCH_DEPTHS=none BENCH_MODELS=0.5B,1.5B BENCH_ENGINES=goinfer,ollama BENCH_RUNS=3 \
+  python3 scripts/bench_peer.py results.json
+```
+
+Its docstring lists every knob (`BENCH_BACKENDS`, `BENCH_MODELS`, `BENCH_ENGINES`, `BENCH_DEPTHS`, `BENCH_CTX`,
+`BENCH_QUANT_OVERRIDE`, and one serve binary per backend). The checkpoints are read from local disk, never from the model
+archive, and the peer must load the same weights (`scripts/gguf_same_weights.py` compares them tensor by tensor). A worked
+example with the binaries, the environment and a per-cell idle wait is
+[`docs/measurements/peer-claim-2026-09-25-mac/run-mac-cells.sh`](measurements/peer-claim-2026-09-25-mac/run-mac-cells.sh).
+
+**goinfer against itself** (a before/after on one machine) can use `BENCH_ENGINES=goinfer,goinfer_old` with the same
+harness, or `scripts/bench_compare.sh`, which runs in-process Go benchmarks (`BenchmarkDecode`, `BenchmarkPrefillLong`,
+cold-start time to first token, resident memory) and stamps each with the commit, date and machine. Its numbers are
+kernel throughputs, not end-to-end ones, and must never be set beside a peer's.
+
+```bash
+GOINFER_PREQUANT_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
   scripts/bench_compare.sh            # add GOINFER_GPU=1 for the -tags gpu residency row
 ```
 
