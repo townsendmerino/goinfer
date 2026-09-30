@@ -66,31 +66,47 @@ func Gemma3() *Template {
 // scaffold: "<|turn>model\n<|channel>thought\n<channel|>".
 func Gemma4() *Template {
 	return &Template{name: "gemma4", stops: []string{"<turn|>"}, render: func(system string, turns []Turn) []Segment {
-		var b segBuf
-		b.sp("<bos>")
-		if system != "" {
-			b.sp("<|turn>")
+		return gemma4Segments(system, turns, false)
+	}}
+}
+
+// gemma4Segments renders the Gemma 4 conversation. think=false is the family's generic rendering (its generation prompt
+// carries the closed thinking scaffold); think=true is the template's enable_thinking=true form: a system turn that
+// opens with the "<|think|>" marker (present even when the caller gave no system prompt) and a generation prompt that
+// leaves the thinking channel for the model to open.
+func gemma4Segments(system string, turns []Turn, think bool) []Segment {
+	var b segBuf
+	b.sp("<bos>")
+	if system != "" || think {
+		b.sp("<|turn>")
+		if think {
+			b.ct("system\n")
+			b.sp("<|think|>")
+			b.ct("\n" + system)
+		} else {
 			b.ct("system\n" + system)
-			b.sp("<turn|>")
-			b.ct("\n")
 		}
-		for _, t := range turns {
-			role := "user"
-			if t.Role == "assistant" {
-				role = "model"
-			}
-			b.sp("<|turn>")
-			b.ct(role + "\n" + t.Content)
-			b.sp("<turn|>")
-			b.ct("\n")
+		b.sp("<turn|>")
+		b.ct("\n")
+	}
+	for _, t := range turns {
+		role := "user"
+		if t.Role == "assistant" {
+			role = "model"
 		}
 		b.sp("<|turn>")
-		b.ct("model\n")
+		b.ct(role + "\n" + t.Content)
+		b.sp("<turn|>")
+		b.ct("\n")
+	}
+	b.sp("<|turn>")
+	b.ct("model\n")
+	if !think {
 		b.sp("<|channel>")
 		b.ct("thought\n")
 		b.sp("<channel|>")
-		return b.segs
-	}}
+	}
+	return b.segs
 }
 
 // Harmony (gpt-oss) — "<|start|>{role}<|message|>{content}<|end|>", with a REQUIRED

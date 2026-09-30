@@ -22,11 +22,17 @@ import (
 
 const gq = `<|"|>` // Gemma's string-quote marker
 
-func renderGemma4Tools(system string, turns []Turn, tools []Tool) string {
+func renderGemma4Tools(system string, turns []Turn, tools []Tool, think bool) string {
 	var b strings.Builder
 	b.WriteString("<bos><|turn>system\n")
+	if think {
+		b.WriteString("<|think|>\n")
+	}
+	// No separator between the system text and the first declaration: upstream's template renders
+	// "<|turn>system\n{system}<|tool>declaration:…" (measured against HF with a system prompt, 2026-09-30 —
+	// the golden's only cases had none, so the "\n" that used to be written here was never compared).
 	if s := strings.TrimSpace(system); s != "" {
-		b.WriteString(s + "\n")
+		b.WriteString(s)
 	}
 	for _, tl := range tools {
 		b.WriteString("<|tool>declaration:" + tl.Name + "{description:" + gq + tl.Description + gq +
@@ -69,7 +75,10 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool) string {
 	// add_generation_prompt emits nothing after a tool_response, because the model is already
 	// mid-turn and simply continues.
 	if !openModelTurn {
-		b.WriteString("<|turn>model\n<|channel>thought\n<channel|>")
+		b.WriteString("<|turn>model\n")
+		if !think { // thinking on leaves the channel for the model to open
+			b.WriteString("<|channel>thought\n<channel|>")
+		}
 	}
 	return b.String()
 }

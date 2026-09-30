@@ -37,13 +37,13 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 	}
 	switch t.name {
 	case "chatml", "mellum2":
-		return renderChatMLTools(system, turns, tools)
+		return renderChatMLTools(system, turns, tools) + t.thinkSuffixText()
 	case "mistral":
 		return renderMistralTools(system, turns, tools)
 	case "llama3":
 		return renderLlama3Tools(system, turns, tools)
 	case "gemma4":
-		return renderGemma4Tools(system, turns, tools)
+		return renderGemma4Tools(system, turns, tools, t.gemma4Think())
 	}
 	return t.Render(system, turns) // gemma3 etc.: no native tool template
 }

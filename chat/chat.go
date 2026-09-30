@@ -75,6 +75,12 @@ type Template struct {
 	name   string
 	render func(system string, turns []Turn) []Segment
 	stops  []string
+
+	// reason is this checkpoint's declared thinking behaviour (reasoning.go); nil = the family does not think in its
+	// template, or the template's control was not recognised. think is the mode WithThinking selected; the zero value
+	// ThinkAsIs renders exactly what render renders.
+	reason *Reasoning
+	think  ThinkMode
 }
 
 // Name is the family identifier ("chatml", "mellum2", "gemma3", "gemma4", "harmony", "llama3",
@@ -88,7 +94,7 @@ func (t *Template) Name() string { return t.name }
 // EncodeSegments so untrusted content can't forge control tokens (M25).
 func (t *Template) Render(system string, turns []Turn) string {
 	var b strings.Builder
-	for _, s := range t.render(system, turns) {
+	for _, s := range t.RenderSegments(system, turns) {
 		b.WriteString(s.Text)
 	}
 	return b.String()
@@ -99,6 +105,9 @@ func (t *Template) Render(system string, turns []Turn) string {
 // content as non-special ones (tokenized without it). Feed to Tokenizer.
 // EncodeSegments. On legitimate input the token stream equals Encode(Render(...)).
 func (t *Template) RenderSegments(system string, turns []Turn) []Segment {
+	if t.reason != nil && t.think != ThinkAsIs {
+		return t.renderThinking(system, turns)
+	}
 	return t.render(system, turns)
 }
 
@@ -133,7 +142,9 @@ func Detect(meta Meta) (*Template, error) {
 		case strings.Contains(t, "<|start|>") && strings.Contains(t, "<|message|>"):
 			return Harmony(), nil
 		case strings.Contains(t, "<|turn>") || strings.Contains(t, "<|channel>"):
-			return Gemma4(), nil
+			g := Gemma4()
+			g.reason = detectGemma4Reasoning(t)
+			return g, nil
 		case strings.Contains(t, "<start_of_turn>"):
 			return Gemma3(), nil
 		case strings.Contains(t, "<|start_header_id|>"):
@@ -172,7 +183,9 @@ func Detect(meta Meta) (*Template, error) {
 		case strings.Contains(t, "<|user|>") && strings.Contains(t, "<|end|>") && strings.Contains(t, "bos_token"):
 			return Phi3Orig(), nil
 		case strings.Contains(t, "<|im_start|>"):
-			return ChatML(), nil
+			c := ChatML()
+			c.reason = detectChatMLReasoning(t)
+			return c, nil
 		case strings.Contains(t, "[INST]"):
 			return Mistral(), nil
 		}
