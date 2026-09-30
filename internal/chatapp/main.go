@@ -98,7 +98,7 @@ type chatFlags struct {
 	temp, topP, minP, repPen, presPen, freqPen *float64
 	seed                                       *int64
 	modelTmp, showVersion, showThinking        *bool
-	thinking                                   *string
+	thinking, batch, out                       *string
 }
 
 // registerFlags puts chat's whole command line on fs. Main passes flag.CommandLine; a test passes a fresh
@@ -124,6 +124,8 @@ func registerFlags(fs *flag.FlagSet) *chatFlags {
 	c.specK = fs.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
 	c.thinking = fs.String("thinking", "template", "thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): template (what the model's own template renders — the default), asis (the prompt as goinfer rendered it before thinking was modelled), on, or off. /think changes it mid-session")
 	c.showThinking = fs.Bool("show-thinking", true, "print the model's reasoning, dimmed, before its answer (false: show only a \"thinking…\" marker). The reasoning is never kept in the conversation history either way")
+	c.batch = fs.String("batch", "", "run a batch file instead of chatting: an OpenAI-style JSONL of chat requests (the same file goinfer-serve's POST /v1/batches reads), one reply each, written to -o. No server; resumable — rerun the same command after an interruption and finished lines are skipped. A line that states no sampling settings gets the API's defaults (temperature 1, 512 tokens, random seed), not this binary's interactive ones, unless you pass the flag")
+	c.out = fs.String("o", "", "with --batch: the output file. Finished lines are appended as they land and already-finished custom_ids are skipped on a rerun; lines that failed go to a sibling <name>.errors.jsonl")
 	c.showVersion = fs.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
 	return c
 }
@@ -217,6 +219,7 @@ or download goinfer-serve-<os>-<arch> from the latest release. It installs as `+
   %[1]s pull <name>                     fetch one, sha256-verified
   %[1]s fit <file.gguf|dir>             will this fit, and how — per backend, before you load it
   %[1]s decide --model <f> in.jsonl     decisions: a distribution over each line's options, one prefill each
+  %[1]s --model <f> --batch in.jsonl -o out.jsonl   run a batch file locally; resumable
   %[1]s --model <file.gguf|dir>         chat with it
   %[1]s --model <f> --temp 0            greedy, for reproducible output
   %[1]s --version                       version + the backends compiled in
@@ -245,6 +248,27 @@ All flags:
 		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <name>, fit <path>, decide, decisions-calibrate, models, --version. Or pass --model <file.gguf|dir>.\n",
 			filepath.Base(os.Args[0]), args[0])
 		os.Exit(2)
+	}
+
+	// --batch: read and check the input and the existing output BEFORE loading a model — a bad file costs a second, not a load,
+	// and a run that has nothing left to do never loads one.
+	var plan *batchPlan
+	if *cf.batch != "" || *cf.out != "" {
+		if *cf.schema != "" {
+			fmt.Fprintln(os.Stderr, "error: --schema constrains the interactive session; in a batch put response_format in each line")
+			os.Exit(2)
+		}
+		var perr error
+		if plan, perr = planBatch(*cf.batch, *cf.out); perr != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", perr)
+			os.Exit(2)
+		}
+		fmt.Fprintf(os.Stderr, "batch %s: %d lines, %d already done in %s, %d to run\n",
+			plan.in, len(plan.lines), len(plan.lines)-len(plan.todo), plan.out, len(plan.todo))
+		if len(plan.todo) == 0 {
+			fmt.Fprintln(os.Stderr, "nothing to do")
+			return
+		}
 	}
 
 	if err := cf.load.Validate(); err != nil {
@@ -356,6 +380,11 @@ All flags:
 		}
 	}
 
+	if plan != nil {
+		explicit := map[string]bool{}
+		flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+		os.Exit(s.runBatch(plan, newBatchDefaults(cf, explicit), modelNameOf(*cf.model)))
+	}
 	s.repl()
 }
 
@@ -496,31 +525,7 @@ func (s *session) generate() string {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	// Speculative path when a draft model is loaded and we're greedy (temp 0) with
-	// no logit masking — output is token-identical to plain greedy, just faster.
-	var stream <-chan int
-	var gen *decoder.Generation
-	useSpec := s.draft != nil && sp.Temperature == 0 && sp.LogitProcessor == nil
-	if useSpec {
-		var serr error
-		stream, gen, serr = s.model.GenerateSpeculative(ctx, ids, s.maxTok, s.draft, s.specK, sp)
-		if serr != nil {
-			fmt.Fprintf(os.Stderr, "(speculative unavailable: %v; using plain decode)\n", serr)
-			useSpec = false
-		}
-	}
-	if !useSpec && s.ngram {
-		// Same try/fallback shape as goinfer-serve's --spec ngram: the call validates the request
-		// (e.g. a --schema logit processor) and returns an error BEFORE touching any state, so a
-		// turn it cannot take falls back to plain decode exactly.
-		var serr error
-		if stream, gen, serr = s.model.GenerateNgramSpeculativeAdaptive(ctx, ids, s.maxTok, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, sp); serr == nil {
-			useSpec = true
-		}
-	}
-	if !useSpec {
-		stream, gen = s.model.Generate(ctx, ids, s.maxTok, sp)
-	}
+	stream, gen := s.startGen(ctx, ids, s.maxTok, sp)
 
 	// The reasoning, when the model has any, prints dimmed (or as a one-word marker with --show-thinking=false) and the answer
 	// follows in cyan; the two never mix, and only the answer goes into the conversation history.
@@ -569,17 +574,58 @@ func (s *session) generate() string {
 	return strings.TrimSpace(text)
 }
 
+// startGen starts one generation: speculative when a draft model is loaded and the turn is greedy with no masking (output is
+// token-identical to plain greedy, just faster), n-gram speculative when --spec ngram is on and the turn can take it, plain
+// decode otherwise. Shared by the REPL and --batch, so the two cannot pick different decode paths for the same request.
+func (s *session) startGen(ctx context.Context, ids []int, maxTok int, sp decoder.SamplingParams) (<-chan int, *decoder.Generation) {
+	var stream <-chan int
+	var gen *decoder.Generation
+	// Speculative path when a draft model is loaded and we're greedy (temp 0) with
+	// no logit masking — output is token-identical to plain greedy, just faster.
+	useSpec := s.draft != nil && sp.Temperature == 0 && sp.LogitProcessor == nil
+	if useSpec {
+		var serr error
+		stream, gen, serr = s.model.GenerateSpeculative(ctx, ids, maxTok, s.draft, s.specK, sp)
+		if serr != nil {
+			fmt.Fprintf(os.Stderr, "(speculative unavailable: %v; using plain decode)\n", serr)
+			useSpec = false
+		}
+	}
+	if !useSpec && s.ngram {
+		// Same try/fallback shape as goinfer-serve's --spec ngram: the call validates the request
+		// (e.g. a --schema logit processor) and returns an error BEFORE touching any state, so a
+		// turn it cannot take falls back to plain decode exactly.
+		var serr error
+		if stream, gen, serr = s.model.GenerateNgramSpeculativeAdaptive(ctx, ids, maxTok, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, sp); serr == nil {
+			useSpec = true
+		}
+	}
+	if !useSpec {
+		stream, gen = s.model.Generate(ctx, ids, maxTok, sp)
+	}
+	return stream, gen
+}
+
 // applyBudget installs the reasoning budget on sp: a thinking reply must always have room to answer, so once the think block has used
 // three quarters of --max the next token is forced to close it (chat.ReasoningBudget; the same rule serve applies). Not under a JSON
 // grammar (it governs token 1, and the prompt is rendered thinking-off), not under speculative decoding (a logit processor would turn
 // the drafter off), and not over a processor already set.
 func (s *session) applyBudget(sp *decoder.SamplingParams, tm *chat.Template, turns []chat.Turn) {
-	if s.jsonOut || s.draft != nil || s.ngram || sp.LogitProcessor != nil {
+	s.applyBudgetFor(sp, tm, turns, s.maxTok, s.jsonOut, 0)
+}
+
+// applyBudgetFor is applyBudget for one turn's own settings: its max_tokens, whether a grammar constrains it, and the request's
+// own cap on thinking tokens (0 = none asked for; a cap above the room is clamped to it, as serve does).
+func (s *session) applyBudgetFor(sp *decoder.SamplingParams, tm *chat.Template, turns []chat.Turn, maxTok int, constrained bool, explicit int) {
+	if constrained || s.draft != nil || s.ngram || sp.LogitProcessor != nil {
 		return
 	}
-	room, ok := chat.BudgetRoom(s.maxTok)
+	room, ok := chat.BudgetRoom(maxTok)
 	if !ok {
 		return
+	}
+	if explicit > 0 {
+		room = min(explicit, room)
 	}
 	if b := tm.NewReasoningBudgetFor(s.tk, turns, room); b != nil {
 		sp.LogitProcessor, sp.LogitProcessorGate = b.Process, b.Gate
@@ -780,18 +826,6 @@ func rawPrompt(system string, turns []chat.Turn) string {
 // jsonMasker constrains output to valid JSON via logit masking; EOS/end-of-turn
 // are gated until the document is complete.
 func (s *session) jsonMasker() func(generated []int, logits []float32) {
-	// N-71 (docs/audit-2026-09-10.md): EOS/EndOfTurn alone misses the template's own turn-stop
-	// ids (s.stopIDs, resolved from tmpl.Stops()) — Llama-3's <|eot_id|> and harmony's <|end|>
-	// are neither EOS nor EndOfTurn, so without stopIDs the masker never holds them back and a
-	// constrained JSON generation could emit one mid-document. internal/serveapp/openai.go's own
-	// masker already unions eosIDs with stopIDs; this mirrors that.
-	var eos []int
-	for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {
-		if id >= 0 {
-			eos = append(eos, id)
-		}
-	}
-	eos = append(eos, s.stopIDs...)
 	g := constrain.JSON()
 	if s.schema != nil { // --schema: constrain to the schema, not just well-formed JSON
 		if sg, err := constrain.JSONSchema(s.schema); err == nil {
@@ -806,6 +840,24 @@ func (s *session) jsonMasker() func(generated []int, logits []float32) {
 			fmt.Fprintf(os.Stderr, "warning: schema failed to compile (%v); falling back to unconstrained JSON\n", err)
 		}
 	}
+	return s.grammarMasker(g)
+}
+
+// grammarMasker constrains output to grammar g via logit masking; EOS/end-of-turn are held back until the document is complete.
+// jsonMasker's grammar is the session's (--schema or plain JSON); --batch passes each line's own response_format.
+func (s *session) grammarMasker(g constrain.Grammar) func(generated []int, logits []float32) {
+	// N-71 (docs/audit-2026-09-10.md): EOS/EndOfTurn alone misses the template's own turn-stop
+	// ids (s.stopIDs, resolved from tmpl.Stops()) — Llama-3's <|eot_id|> and harmony's <|end|>
+	// are neither EOS nor EndOfTurn, so without stopIDs the masker never holds them back and a
+	// constrained JSON generation could emit one mid-document. internal/serveapp/openai.go's own
+	// masker already unions eosIDs with stopIDs; this mirrors that.
+	var eos []int
+	for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {
+		if id >= 0 {
+			eos = append(eos, id)
+		}
+	}
+	eos = append(eos, s.stopIDs...)
 	m := constrain.NewMasker(g, s.tokenBytes, eos).StopWhenComplete()
 	return m.Process
 }
