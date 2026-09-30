@@ -6,8 +6,8 @@ preregistration.md): HF f32 greedy, N_NEW tokens, on the three grid-aligned proc
     ~/g4venv/bin/python scripts/pin_qwen35_vl_real.py ~/models/qwen3.5-0.8b ~/models/qwen35vl_g2
 
 writes DIR/golden_{A,B,C}.json (HF's default template) and DIR/serve_{A,B,C}.json — the same image and
-question but with the template's generation-prompt think block (`<think>\\n\\n</think>\\n\\n`, which
-Qwen3.5's own template emits unless enable_thinking is true) REMOVED, because goinfer's generic ChatML
+question but with the template's generation-prompt think opener (0.8B: the empty block `<think>\\n\\n</think>\\n\\n`, emitted unless
+enable_thinking is true; 9B: the open `<think>\\n`, emitted unless enable_thinking is false) REMOVED, because goinfer's generic ChatML
 renderer does not emit it. That is a pre-existing text-path difference, not a P8a change (changing it
 would alter every Qwen3.5 text turn, contradicting gate G3); G4 compares serve to the serve_ goldens and
 asserts serve's ids equal them. The prompt is the model's REAL chat template applied to
@@ -44,12 +44,15 @@ def main():
         msgs = [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": Q}]}]
         base = tok.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False)
         assert base.count(pad) == 1, "expected exactly one <|image_pad|> in the rendered template"
-        assert base.endswith(THINK_OFF), "template's generation prompt changed; the serve variant assumes the empty think block"
-        for name, text in (("golden", base), ("serve", base[: -len(THINK_OFF)])):
+        think = next((t for t in THINK_OPENERS if base.endswith(t)), None)
+        assert think, "template's generation prompt ends in neither think form; the serve variant assumes one of them"
+        for name, text in (("golden", base), ("serve", base[: -len(think)])):
             run(m, tok, cfg, d, k, name, text.replace(pad, pad * n_merged), pv, grid, n_merged, img_id)
 
 
-THINK_OFF = "<think>\n\n</think>\n\n"
+# What the template's generation prompt ends with, longest first. The 0.8B's template defaults to thinking OFF
+# (empty block); the 9B's defaults to thinking ON (open `<think>\n`) — the same jinja with the test inverted.
+THINK_OPENERS = ("<think>\n\n</think>\n\n", "<think>\n")
 
 
 def run(m, tok, cfg, d, k, name, text, pv, grid, n_merged, img_id):
