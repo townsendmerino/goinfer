@@ -22,12 +22,12 @@ import (
 // -> handleChat -> preprocess -> lazily-loaded tower -> GenerateQwenVL, temperature 0.
 //
 //	(a) the prompt serve builds (chat template + image block + tokenizer) is EXACTLY the ids HF builds
-//	    from Qwen3.5's own template with the empty think block removed (serve_{A,B,C}.json), and the
-//	    reply text is HF's 32 greedy tokens over those ids, decoded, for each of the 3 images. The
-//	    think block: Qwen3.5's template emits `<think>\n\n</think>\n\n` after the generation prompt
-//	    unless enable_thinking is true; goinfer's generic ChatML renderer emits nothing there. That is
-//	    a PRE-EXISTING text-path difference and is pinned here as a named 4-token delta, not fixed:
-//	    fixing it changes every Qwen3.5 text turn (P8a gate G3 says they must not move);
+//	    from Qwen3.5's own template with enable_thinking unset (golden_{A,B,C}.json) — serve's default
+//	    is `-thinking template`, this checkpoint's own default (0.8B: thinking off, so the template
+//	    closes an empty `<think>\n\n</think>\n\n` after the generation prompt) — and the reply text is
+//	    HF's 32 greedy tokens over those ids, decoded, for each of the 3 images. Before 2026-09-30 serve
+//	    rendered nothing there (goinfer's generic ChatML renderer) and this test pinned a named 4-token
+//	    delta; `-thinking asis` still renders those old bytes, and (a1) keeps checking that (serve_{A,B,C}.json);
 //	(b) usage.prompt_tokens is that id count, completion_tokens is 32;
 //	(c) the same request twice returns identical text (cold determinism).
 //
@@ -81,18 +81,27 @@ func TestServe_qwen35Image_G4(t *testing.T) {
 				}
 				return g
 			}
-			g, def := read("serve"), read("golden")
-			// The named delta: HF's default-template ids are serve's ids plus the empty think block
-			// (<think> \n\n </think> \n\n = 4 tokens). If this stops holding, the template moved.
-			if len(def.InputIDs) != len(g.InputIDs)+4 || !slices.Equal(def.InputIDs[:len(g.InputIDs)], g.InputIDs) {
-				t.Fatalf("serve_ ids are not HF's default-template ids minus a 4-token think block (lens %d vs %d)", len(g.InputIDs), len(def.InputIDs))
+			asis, def := read("serve"), read("golden")
+			// The two goldens differ by exactly the 4-token closed think block (<think> \n\n </think> \n\n). If this stops
+			// holding, the goldens were regenerated against a different template.
+			if len(def.InputIDs) != len(asis.InputIDs)+4 || !slices.Equal(def.InputIDs[:len(asis.InputIDs)], asis.InputIDs) {
+				t.Fatalf("golden_ ids are not serve_ ids plus a 4-token think block (lens %d vs %d)", len(def.InputIDs), len(asis.InputIDs))
 			}
+			g := def // serve's default now renders the template's own default
 			png, err := os.ReadFile(filepath.Join(gdir, "img_"+k+".png"))
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			// (a1) the prompt ids, built by serve's own code path.
+			// `-thinking asis` still renders the pre-thinking bytes: the ids WITHOUT the think block.
+			viAsIs, err := lm.visionPrompt(lm.tmpl.WithThinking(chat.ThinkAsIs), "", []chat.Turn{{Role: "user", Content: g.Question}}, imageRef{mediaType: "image/png", data: png})
+			if err != nil {
+				t.Fatalf("visionPrompt (asis): %v", err)
+			}
+			if !slices.Equal(viAsIs.ids, asis.InputIDs) {
+				t.Fatalf("-thinking asis no longer renders the pre-thinking bytes: %d ids vs serve_ golden's %d", len(viAsIs.ids), len(asis.InputIDs))
+			}
 			vi, err := lm.visionPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: g.Question}}, imageRef{mediaType: "image/png", data: png})
 			if err != nil {
 				t.Fatalf("visionPrompt: %v", err)

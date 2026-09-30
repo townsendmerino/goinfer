@@ -35,7 +35,7 @@ ATOOL = {"name": "get_weather", "description": "Weather for a city",
 results = []
 t0 = time.time()
 MAX_THINK = 1500
-OFF_DELTA, ON_DELTA = 4, 2   # prompt tokens the closed block / open `<think>\n` add over the server default (--thinking asis)
+OFF_DELTA, ON_DELTA = 0, -2   # prompt tokens thinking=off / on add over the server default (--thinking template). Qwen3.5-0.8B: off 0, on -2; see run-matrix.sh for the other families
 
 
 def post(url, body, stream=False, timeout=900):
@@ -317,8 +317,8 @@ def main():
     ap.add_argument("--json", default="")
     ap.add_argument("--max-think", type=int, default=1500, help="max_tokens for the cell that must think AND finish with an answer")
     ap.add_argument("--tags", default="<think>,</think>", help="comma-separated think delimiters that must never reach content")
-    ap.add_argument("--off-delta", type=int, default=4, help="prompt tokens thinking=off adds over unset (closed block: 4)")
-    ap.add_argument("--on-delta", type=int, default=2, help="prompt tokens thinking=on adds over unset (open <think>\\n: 2; Qwen3 writes nothing: 0)")
+    ap.add_argument("--off-delta", type=int, default=0, help="prompt tokens thinking=off adds over unset under the server default (0.8B: 0; 9B: +2; Qwen3: +4)")
+    ap.add_argument("--on-delta", type=int, default=-2, help="prompt tokens thinking=on adds over unset under the server default (0.8B: -2; 9B and Qwen3: 0; Gemma 4: +3)")
     a = ap.parse_args()
     global OFF_DELTA, ON_DELTA, MAX_THINK, TAGS
     TAGS = tuple(a.tags.split(","))

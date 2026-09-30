@@ -20,12 +20,14 @@ any surface may still change.
   behaviour, read from its own template text — Qwen3 and Qwen3.5-9B default to thinking on, Qwen3.5-0.8B and Gemma 4 to
   off — and `serve` splits the reply on every route: `reasoning_content` (OpenAI chat, streamed), `thinking` blocks
   (`/v1/messages`, when the request asks), clean `output_text` (`/v1/responses`), jobs and batches. New request controls
-  `chat_template_kwargs.enable_thinking`, `reasoning_format`, Anthropic `thinking`; new flags `-thinking` (default `asis`:
-  prompts are byte-identical to before) and `-reasoning-format` (default `deepseek`; `none` restores the old raw output).
+  `chat_template_kwargs.enable_thinking`, `reasoning_format`, Anthropic `thinking`; new flags `-thinking` (default `template`:
+  each model's own chat-template default; `asis` restores the old prompt bytes) and `-reasoning-format` (default `deepseek`;
+  `none` restores the old raw output).
   A template control that is not recognised is left alone. See `docs/server.md` § Reasoning models and
   `docs/tasks/task-qwen35-think-prompt-2026-09.md`.
   - **What changes for an existing client:** a model that was writing `<think>` into `content` now writes it to
-    `reasoning_content`. A client that parsed the tags out of `content` sets `-reasoning-format none`.
+    `reasoning_content`. A small Qwen3.5 (0.8B) now gets its closed empty think block and answers without thinking, as
+    HuggingFace's default does (+4 prompt tokens); Qwen3, Qwen3.5-9B and Gemma 4 prompts decode as before. A client that parsed the tags out of `content` sets `-reasoning-format none`.
   - **Fixed on the way:** the Gemma 4 tool prompt put a newline between a system prompt and the first tool declaration
     that Gemma's own template does not; the tool goldens had no system-prompt case.
 - **Qwen3.5 image input (`serve`, safetensors, CPU).** An OpenAI `image_url` content part now works on a Qwen3.5

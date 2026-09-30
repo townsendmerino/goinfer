@@ -1,9 +1,10 @@
 # Task: Qwen3.5's generation prompt — serve renders it differently from the model's own template (2026-09)
 
-> **Status 2026-09-30: phases 1 and 2 BUILT, phase 3 (the default) still the owner's decision.** Found by P8a gate G4
+> **Status 2026-09-30: phases 1, 2 and 3 DECIDED AND BUILT — serve's default is `-thinking template`** (owner decision
+> 2026-09-30: each model follows its own chat template's default). Found by P8a gate G4
 > (`docs/measurements/p8a-qwen35-vl-2026-09/g1-g4-results.md`, finding 1), widened the same day when the 9B leg of P8a died
 > on it: **the 0.8B and the 9B disagree about the default, so the G4 write-up's "Qwen3.5 defaults to thinking OFF" is true of
-> one size only.** What is built is in "Built" below; what is not is in "Not built".
+> one size only.** What is built is in "Built" below; what is not is in "Not built". `-thinking asis` restores the old bytes.
 >
 > **Measured on the way:** the 9B, given a prompt *without* its open `<think>\n`, writes `<think>\n` itself as its first two
 > tokens and then continues identically to the with-opener run (question 1, three images, 32 tokens). Before this work
@@ -110,10 +111,9 @@ test that would have gone red.
 
 ## Not built
 
-- **The default (phase 3).** `-thinking asis` keeps today's bytes, so the truncation hole is open for clients that turn
-  thinking on with a small `max_tokens`: `content` is empty, `finish_reason` is `length`. Only a non-thinking default or a
-  reasoning budget closes it. `-thinking off` / `template` exist now, so flipping the default is one word plus
-  the consequences in "What flipping the default changes" below.
+- **Closing the truncation hole.** The default is `template` (decided 2026-09-30), so Qwen3.5-9B and Qwen3 think by default
+  and a small `max_tokens` can end inside the block: `content` is empty, `finish_reason` is `length`. Only `-thinking off` or a
+  reasoning budget closes it; `off` is one flag (consequences in "What flipping the default changes" below).
 - **A reasoning budget** (`budget_tokens` is accepted and not enforced).
 - **Stop strings on content only.** Stops are still matched on raw text, so a stop that appears in the reasoning ends the
   reply with no answer. Pinned by `TestStreamTokens_thinkStopStrings`, named as a known limitation.

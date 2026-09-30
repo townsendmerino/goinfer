@@ -303,8 +303,8 @@
   {
    "name": "thinking",
    "group": "Reasoning models",
-   "summary": "Default thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): `asis` (today's prompt, the model decides), `template` (what the checkpoint's own template renders), `on`, or `off`. A request overrides it.",
-   "type": "asis | template | on | off"
+   "summary": "Default thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): `template` (the default: what the checkpoint's own template renders), `asis` (the prompt serve rendered before thinking was modelled: nothing written, the model decides), `on`, or `off`. A request overrides it.",
+   "type": "template | asis | on | off"
   },
   {
    "name": "reasoning-format",

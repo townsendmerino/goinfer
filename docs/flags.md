@@ -139,6 +139,6 @@ Models that think before they answer (Qwen3, Qwen3.5, Gemma 4): whether they are
 
 | Flag | Type | Default | What it does |
 |---|---|---|---|
-| `--thinking` | `asis \| template \| on \| off` | `asis` | Default thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): `asis` (today's prompt, the model decides), `template` (what the checkpoint's own template renders), `on`, or `off`. A request overrides it. |
+| `--thinking` | `template \| asis \| on \| off` | `template` | Default thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): `template` (the default: what the checkpoint's own template renders), `asis` (the prompt serve rendered before thinking was modelled: nothing written, the model decides), `on`, or `off`. A request overrides it. |
 | `--reasoning-format` | `deepseek \| deepseek-legacy \| none` | `deepseek` | How a reply's reasoning reaches the client: `deepseek` (clean `content`, reasoning in `reasoning_content` / Anthropic thinking blocks), `deepseek-legacy` (both, tags kept in `content`), or `none` (nothing separated). |
 

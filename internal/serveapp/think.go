@@ -11,7 +11,7 @@ package serveapp
 //	chat_template_kwargs.enable_thinking      true → on, false → off        (vLLM / llama.cpp / SGLang's own spelling)
 //	reasoning_effort                          "none" → off; any other value changes nothing (see below)
 //	anthropic thinking.type                   enabled|adaptive → on, disabled → off
-//	(nothing)                                 the server default, -thinking (asis | template | on | off)
+//	(nothing)                                 the server default, -thinking (template | asis | on | off; default template)
 //
 // -reasoning-format (llama.cpp's names, so configs carry over) decides what a client that understands reasoning gets:
 //
@@ -50,9 +50,14 @@ func parseReasoningFormat(s string) (reasoningFormat, bool) {
 	return rfSplit, false
 }
 
-// thinkDefault / reasoningFormat resolve the -thinking / -reasoning-format flags (validated at startup; a config built
-// without them, as tests do, gets the zero behaviour: asis and deepseek).
+// thinkDefault / reasoningFormat resolve the -thinking / -reasoning-format flags (validated at startup). The default is
+// `template` — each model's own chat template's default (owner decision 2026-09-30) — and it lives HERE, so a config built
+// without the flag, as tests build it, gets exactly what the flag's default gives; `asis` (the pre-thinking prompt bytes)
+// has to be asked for by name.
 func (c config) thinkDefault() chat.ThinkMode {
+	if strings.TrimSpace(c.thinking) == "" {
+		return chat.ThinkTemplate
+	}
 	m, _ := chat.ParseThinkMode(c.thinking)
 	return m
 }

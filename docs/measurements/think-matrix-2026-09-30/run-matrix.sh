@@ -12,10 +12,12 @@
 # script exits 1 if any leg failed, 2 if every cell that ran passed but some path was NOT EXERCISED (the model never finished
 # thinking, say — that is not a pass), 0 only when all three legs proved everything. All three legs always run.
 #
-# Legs (the prompt deltas are what each template writes; they are pinned against HF in chat/reasoning_test.go):
-#   qwen3.5-9b      default ON, open prompt     as-is P; off +4 tokens; on +2
-#   qwen3-1.7b      default ON, nothing written as-is P; off +4 tokens; on +0
-#   gemma-4-E2B     default OFF, closed scaffold as-is P; off +0 tokens; on +3
+# Legs. serve's default is `-thinking template`, so "unset" is each model's own default and the deltas below are against
+# IT (from the per-checkpoint HF goldens in testdata/chat_think_goldens, pinned by chat/reasoning_test.go):
+#   qwen3.5-9b      default ON, open block      unset = on;  off +2 tokens (closed block 4 vs open 2); on +0
+#   qwen3-1.7b      default ON, nothing written unset = on;  off +4 tokens; on +0
+#   gemma-4-E2B     default OFF, closed scaffold unset = off; off +0 tokens; on +3
+# (The 0.8B daytime run is: off +0, on -2.)
 # No speed is measured here; int4 is serve's default and is enough for plumbing. One copy of each model is in ~/models.
 set -uo pipefail
 D=$HOME/goinfer-bench/think-matrix-2026-09-30
@@ -61,7 +63,7 @@ leg() { # name model-arg port on-delta off-delta tags max maxthink
   kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
   phase "leg $name: done"
 }
-leg qwen35-9b   "$HOME/models/qwen3.5-9b"                          8097  2 4 "<think>,</think>"           120 1500
+leg qwen35-9b   "$HOME/models/qwen3.5-9b"                          8097  0 2 "<think>,</think>"           120 1500
 leg qwen3-1.7b  "$HOME/models/qwen3-1.7b-bf16"                     8096  0 4 "<think>,</think>"           120 1500
 leg gemma4-e2b  "$HOME/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf" 8095  3 0 "<|channel>,<channel|>" 120 1500
 phase "done rc=$rc"

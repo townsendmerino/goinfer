@@ -227,20 +227,21 @@ func TestResolveThink(t *testing.T) {
 		wantFmt  reasoningFormat
 		wantErr  string
 	}{
-		{"nothing: asis and deepseek", config{}, thinkRequest{}, chat.ThinkAsIs, false, rfSplit, ""},
+		{"nothing: the model's own template default, and deepseek", config{}, thinkRequest{}, chat.ThinkTemplate, false, rfSplit, ""},
+		{"server asked for asis by name", config{thinking: "asis"}, thinkRequest{}, chat.ThinkAsIs, false, rfSplit, ""},
 		{"server default thinking=off", config{thinking: "off"}, thinkRequest{}, chat.ThinkOff, false, rfSplit, ""},
 		{"server default template", config{thinking: "template"}, thinkRequest{}, chat.ThinkTemplate, false, rfSplit, ""},
-		{"server format none", config{reasoningFmt: "none"}, thinkRequest{}, chat.ThinkAsIs, false, rfNone, ""},
+		{"server format none", config{reasoningFmt: "none"}, thinkRequest{}, chat.ThinkTemplate, false, rfNone, ""},
 		{"kwargs enable_thinking true", config{}, thinkRequest{kwargs: map[string]json.RawMessage{"enable_thinking": raw("true")}}, chat.ThinkOn, true, rfSplit, ""},
 		{"kwargs enable_thinking false overrides server on", config{thinking: "on"}, thinkRequest{kwargs: map[string]json.RawMessage{"enable_thinking": raw("false")}}, chat.ThinkOff, true, rfSplit, ""},
 		{"kwargs win over effort", config{}, thinkRequest{kwargs: map[string]json.RawMessage{"enable_thinking": raw("false")}, reasoningEffort: "high"}, chat.ThinkOff, true, rfSplit, ""},
 		{"effort none is off", config{}, thinkRequest{reasoningEffort: "none"}, chat.ThinkOff, true, rfSplit, ""},
-		{"effort medium changes nothing (a bare reasoning_effort must not flip a client's prompt)", config{}, thinkRequest{reasoningEffort: "Medium"}, chat.ThinkAsIs, false, rfSplit, ""},
+		{"effort medium changes nothing (a bare reasoning_effort must not flip a client's prompt)", config{}, thinkRequest{reasoningEffort: "Medium"}, chat.ThinkTemplate, false, rfSplit, ""},
 		{"effort high under server thinking=on stays on", config{thinking: "on"}, thinkRequest{reasoningEffort: "high"}, chat.ThinkOn, false, rfSplit, ""},
 		{"anthropic enabled", config{}, thinkRequest{anthropicType: "enabled"}, chat.ThinkOn, true, rfSplit, ""},
 		{"anthropic adaptive", config{}, thinkRequest{anthropicType: "adaptive"}, chat.ThinkOn, true, rfSplit, ""},
 		{"anthropic disabled", config{}, thinkRequest{anthropicType: "disabled"}, chat.ThinkOff, true, rfSplit, ""},
-		{"per-request format", config{}, thinkRequest{format: "deepseek-legacy"}, chat.ThinkAsIs, false, rfLegacy, ""},
+		{"per-request format", config{}, thinkRequest{format: "deepseek-legacy"}, chat.ThinkTemplate, false, rfLegacy, ""},
 		{"enable_thinking must be a bool", config{}, thinkRequest{kwargs: map[string]json.RawMessage{"enable_thinking": raw(`"yes"`)}}, 0, false, 0, "enable_thinking must be a boolean"},
 		{"unknown format is a 400", config{}, thinkRequest{format: "xml"}, 0, false, 0, "reasoning_format"},
 		{"unknown anthropic type is a 400", config{}, thinkRequest{anthropicType: "maybe"}, 0, false, 0, "thinking.type"},
@@ -308,6 +309,33 @@ func TestToolsConstrainedFromStart(t *testing.T) {
 	for _, tc := range cases {
 		if got := toolsConstrainedFromStart(tc.forced, tc.named, tc.union, tc.tools); got != tc.want {
 			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// The default, end to end through the template a server would load: with no -thinking flag each checkpoint renders exactly
+// what HuggingFace renders from its own template with enable_thinking unset — 0.8B closed block, 9B open block, Qwen3
+// nothing, Gemma 4 its closed scaffold — and `-thinking asis` still renders the pre-thinking bytes (no block at all).
+func TestDefaultThinkingIsTheTemplatesOwn(t *testing.T) {
+	user := []chat.Turn{{Role: "user", Content: "Hi"}}
+	cases := []struct {
+		ckpt     string
+		wantTail string // the end of the default prompt
+	}{
+		{"qwen3.5-0.8b", "<|im_start|>assistant\n<think>\n\n</think>\n\n"},
+		{"qwen3.5-9b", "<|im_start|>assistant\n<think>\n"},
+		{"qwen3-4b", "<|im_start|>assistant\n"},
+		{"gemma-4-26b-a4b-it", "<|turn>model\n<|channel>thought\n<channel|>"},
+	}
+	for _, tc := range cases {
+		base := templateFromGolden(t, tc.ckpt)
+		def := base.WithThinking(config{}.thinkDefault()).Render("", user)
+		if !strings.HasSuffix(def, tc.wantTail) {
+			t.Errorf("%s: default prompt ends %q, want it to end %q", tc.ckpt, def[max(0, len(def)-50):], tc.wantTail)
+		}
+		asis := base.WithThinking(config{thinking: "asis"}.thinkDefault()).Render("", user)
+		if strings.Contains(asis, "<think>") {
+			t.Errorf("%s: -thinking asis must not write a think block, got %q", tc.ckpt, asis[max(0, len(asis)-50):])
 		}
 	}
 }

@@ -470,13 +470,16 @@ to ignore.**
 | Anthropic `/v1/messages` | `thinking: {"type": "enabled"\|"adaptive"\|"disabled"}` | a `thinking` block first, then `text` (and `tool_use`); with no `thinking` field, text only — reasoning is dropped |
 | `/v1/responses` | `reasoning: {"effort": "none"}` turns it off | clean `output_text`; reasoning items are not returned |
 
-- **Defaults.** `-thinking asis` (the default) renders the prompt exactly as before — the model decides — so nothing
-  changes for a client that says nothing. `-thinking template` renders what the checkpoint's own template renders; `on` and
-  `off` force it. A request overrides the flag. `reasoning_effort: "none"` turns thinking off; any other value changes
+- **Defaults.** `-thinking template` (the default) renders what each checkpoint's own chat template renders when thinking
+  is unspecified, so serve behaves as the model's card says: Qwen3.5-0.8B and Gemma 4 do not think; Qwen3.5-9B and Qwen3 do.
+  `-thinking asis` renders the prompt serve produced before thinking was modelled (nothing written after the assistant tag,
+  the model decides); `on` and `off` force it. A request overrides the flag. What changed from that older behaviour: a small
+  Qwen3.5 now gets its closed empty think block and answers directly, as HuggingFace's default does; Qwen3, Qwen3.5-9B and
+  Gemma 4 prompts decode the same as before. `reasoning_effort: "none"` turns thinking off; any other value changes
   nothing, because clients such as dsh send a bare `reasoning_effort` to every endpoint and must not have their prompts
   flipped by it.
 - **A reply cut off while thinking has no answer.** `max_tokens` counts thinking too, so a small `max_tokens` with thinking on
-  can end inside the block: `content` is empty, `reasoning_content` holds what was written, `finish_reason` is `length`
+  (the default for Qwen3.5-9B and Qwen3) can end inside the block: `content` is empty, `reasoning_content` holds what was written, `finish_reason` is `length`
   (`stop_reason: max_tokens` with only a thinking block on `/v1/messages`). Turn thinking off (or raise `max_tokens`) for a
   client that cannot tolerate that. `budget_tokens` is accepted and not enforced.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
