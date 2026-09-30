@@ -62,8 +62,9 @@ type loadedModel struct {
 	// 0.17x — a 6x loss — with the loop itself perfectly healthy (docs/spec/08).
 	blockSpec *decoder.BlockSpec
 	sessions  *sessionLRU // prefix-keyed KV reuse across requests
-	// decisions (D5): the label-scoring decider POST /v1/systemone answers with, built on first use — its label
-	// tokens are resolved once per tokenizer.
+	// decisions (D5): the decider POST /v1/systemone answers with, built on first use — its label tokens are resolved
+	// once per tokenizer. head is the entry's trained decision head (head=, D4), nil for label scoring.
+	head        *decide.Head
 	deciderOnce sync.Once
 	decider     *decide.Decider
 	deciderErr  error
@@ -718,11 +719,15 @@ func (s *server) decisionsField(name string) map[string]any {
 	if lm == nil || lm.model == nil || lm.adapter != "" {
 		return nil
 	}
+	if h := lm.head; h != nil {
+		return map[string]any{"endpoint": "/v1/systemone", "route": decide.RouteHead, "kinds": h.Kinds(), "template": h.Template,
+			"calibrated": h.Calibration != nil, "head": h.Name + " " + h.Version}
+	}
 	tmpl := s.cfg.decisionsTemplate
 	if tmpl == "" {
 		tmpl = decide.TemplateChat
 	}
-	return map[string]any{"endpoint": "/v1/systemone", "route": "label", "kinds": []string{decide.KindNoul, decide.KindChoice, decide.KindScore},
+	return map[string]any{"endpoint": "/v1/systemone", "route": decide.RouteLabel, "kinds": []string{decide.KindNoul, decide.KindChoice, decide.KindScore},
 		"template": tmpl, "calibrated": s.cfg.decisionsCal != ""}
 }
 

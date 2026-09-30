@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -89,9 +90,12 @@ type Result struct {
 	Temperature   float64
 	Template      string
 	Route         string // RouteLabel or RouteHead
-	PromptTokens  int
-	Prefills      int
-	Latency       time.Duration
+	// DescriptionsDropped: the request had option descriptions and a decision head answered it, which reads the
+	// options' names only (JEV's template has no descriptions).
+	DescriptionsDropped bool
+	PromptTokens        int
+	Prefills            int
+	Latency             time.Duration
 }
 
 // Validate checks a request against its kind's rules: noul's fixed options, a score's "0".."n-1" for 2..10 levels,
@@ -278,7 +282,12 @@ func (d *Decider) Route() string {
 	return RouteLabel
 }
 
-// validate is Validate plus, for Route B, the head's own limits.
+// Validate is the package-level Validate plus, for a Route B decider, the head's own limits (its kinds, its slot
+// counts, JEV's six score levels, no option descriptions). A server calls it before any prefill, so a request the head
+// cannot answer is refused as the client's error rather than failing mid-request.
+func (d *Decider) Validate(r Request) error { return d.validate(r) }
+
+// validate is Validate's body.
 func (d *Decider) validate(r Request) error {
 	if err := Validate(r); err != nil {
 		return err
@@ -337,6 +346,7 @@ func (d *Decider) Decide(ctx context.Context, r Request) (Result, error) {
 	res.Prefills = orders
 	res.Temperature, res.Calibrated, res.Template = temp, calibrated, d.template
 	res.Route = d.Route()
+	res.DescriptionsDropped = d.head != nil && slices.ContainsFunc(r.Descriptions, func(s string) bool { return s != "" })
 	for i, p := range acc {
 		if p > acc[res.Index] {
 			res.Index = i
@@ -367,10 +377,11 @@ func (d *Decider) Scores(ctx context.Context, r Request) ([]float64, error) {
 func (d *Decider) score(ctx context.Context, kind, state, question string, shown, descs []string, temp float64) ([]float64, int, error) {
 	var ids []int
 	var err error
-	if d.head != nil { // the head was trained on jev_core's prompts, which cut a long state
+	if d.head != nil { // the head was trained on jev_core's prompts: a long state is cut, and no option is described
 		if state, _, err = truncateState(d.tok, state); err != nil {
 			return nil, 0, err
 		}
+		descs = nil
 	}
 	if d.template == TemplateChat {
 		ids, err = d.tok.EncodeChat(RenderChat(kind, state, question, shown, descs...))

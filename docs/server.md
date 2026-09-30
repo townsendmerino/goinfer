@@ -437,14 +437,16 @@ names that are served.
 - **`usage`:** `output_tokens` is 0, because nothing is decoded.
 - **`goinfer`** says how the answer was made: the route, the template, and which kinds a fitted temperature
   calibrated.
-- **What it is not: TypeSafe's hosted model, or a trained decision head.** The probabilities are the served model's
-  own over the options it was shown.
+- **What it is not: TypeSafe's hosted model.** Without a head (below), the probabilities are the served model's own over
+  the options it was shown.
   - They are calibrated only for a kind whose temperature `--decisions-calibration` supplies: a `calibration.json`
     from `goinfer-chat decisions-calibrate`, fitted under the same template.
   - How good they are depends on the model. On Qwen3.5-9B, the authors of the open JEV models measured this method
     with their bare template at choice top-1 0.53, against their trained head's 0.90
     (`measurements/decisions-d0-prior-art-2026-09-27.md`).
-  - goinfer's own measurement on its default chat template (D6a) is pending.
+  - goinfer's own measurement (D6a, `measurements/decisions-d6a-2026-09-28.md`) on Qwen3.5-9B Q4_K_M with its chat
+    template, calibrated, is top-1 0.42 and ECE 0.17 on an out-of-distribution sample, against the trained JEV-9B's
+    0.92. Label scoring is not a substitute for a trained head.
 - **`--decisions-template`** is `chat-v1` (the default: the model's chat template, for instruct models) or
   `bare-v1` (JEV's own, no chat template). One prefill per question; each question re-prefills the state.
 - **Many questions about one state cost one full prefill each.** On the hybrid families (Qwen3.5 and the other
@@ -454,6 +456,21 @@ names that are served.
   is recorded in `measurements/decisions-d7-2026-09-28.md`, and nothing is measured yet.
 - **Refused:** a question that breaks a rule is a 422 before any prefill. A compute-time adapter entry cannot answer,
   since label scoring would read the base model. `/v1/models` lists each entry's `decisions` support.
+- **With a trained decision head (Route B):** `--model jev=~/models/JEV-9B,head=~/models/JEV-9B`. `head=` takes a
+  directory in autotrust's JEV layout (`judge_config.json`, `head.safetensors`, `calibration.json`, and `adapter/`
+  when the head's weights are unmerged). That entry then answers `/v1/systemone` the way the JEV reference does:
+  - **The answer:** the final-norm hidden state at the last prompt token goes through the head, then the kind's slots,
+    then the head's own per-kind temperatures. `goinfer.route` is `"head"`, and `--decisions-template` /
+    `--decisions-calibration` do not apply to it.
+  - **The prompt is JEV's template, bare-v1**:
+    - option descriptions are left out, as JEV's template has none, and `goinfer.descriptions_dropped` names the
+      questions that had them;
+    - a score must have JEV's six levels (0–5), or the question is a 422;
+    - a state over 1024 tokens is cut to its first and last parts as the reference cuts it.
+  - **The adapter is merged at load.** That entry's text generation is the decision model's, not the base model's.
+    Serve the base model as another entry if you need both.
+  - **CPU only.** No GPU executor exposes this hidden state yet.
+  - **How closely it tracks the reference** is D6b in `tasks/task-constrained-confidence.md`, not yet graded.
 
 **Reasoning models (thinking).** Qwen3, Qwen3.5 and Gemma 4 can think before they answer, and their own chat templates
 disagree about the default — Qwen3 and Qwen3.5-9B think unless told not to, Qwen3.5-0.8B and Gemma 4 do not. serve reads

@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -192,10 +193,61 @@ func TestHead_refuses(t *testing.T) {
 		r          Request
 	}{
 		{"score of 4 levels", "exactly 6 levels", Request{Kind: KindScore, State: "s", Question: "q", Options: ScoreOptions(4)}},
-		{"descriptions", "descriptions", Request{Kind: KindChoice, State: "s", Question: "q", Options: []string{"a", "b"}, Descriptions: []string{"x", "y"}}},
 	} {
 		if _, err := d.Decide(context.Background(), tc.r); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: got %v, want an error containing %q", tc.name, err, tc.want)
 		}
 	}
+}
+
+// TestHead_dropsDescriptions: a decision head reads the options' names only, as jev_core's prompt has them, so a
+// request's descriptions are left out, the answer is the one without them, and the result says they were dropped.
+func TestHead_dropsDescriptions(t *testing.T) {
+	h, err := LoadHead(judgeTiny)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden := func(context.Context, []int) ([]float32, error) {
+		v := make([]float32, h.Hidden)
+		for i := range v {
+			v[i] = float32(i%7) - 3
+		}
+		return v, nil
+	}
+	var seen []string
+	tok := recordingTokenizer{seen: &seen}
+	d, err := New(tok, nil, Options{Head: h, Hidden: hidden})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bare := Request{Kind: KindChoice, State: "s", Question: "q", Options: []string{"billing", "shipping", "other"}}
+	desc := bare
+	desc.Descriptions = []string{"payments and invoices", "", "anything else"}
+	a, err := d.Decide(context.Background(), bare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := d.Decide(context.Background(), desc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(a.Distribution, b.Distribution) || a.DescriptionsDropped || !b.DescriptionsDropped {
+		t.Fatalf("with descriptions %v (dropped %v), without %v (dropped %v)", b.Distribution, b.DescriptionsDropped, a.Distribution, a.DescriptionsDropped)
+	}
+	for _, p := range seen {
+		if strings.Contains(p, "payments") {
+			t.Fatalf("a description reached the prompt: %q", p)
+		}
+	}
+}
+
+// recordingTokenizer returns three ids for any text and records what it was asked to encode.
+type recordingTokenizer struct{ seen *[]string }
+
+func (r recordingTokenizer) EncodePlain(s string) ([]int, error) {
+	*r.seen = append(*r.seen, s)
+	return []int{1, 2, 3}, nil
+}
+func (recordingTokenizer) EncodeChat(string) ([]int, error) {
+	return nil, errors.New("no chat template")
 }

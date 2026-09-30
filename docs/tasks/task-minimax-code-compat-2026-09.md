@@ -27,13 +27,13 @@
 
 | minimax-code sends (openai-completions, custom URL) | goinfer |
 |---|---|
-| system prompt as `role: "developer"` when its thinking toggle is on | treated as `system` (`internal/serveapp/openai.go:1307`) |
+| system prompt as `role: "developer"` when its thinking toggle is on | treated as `system` (`internal/serveapp/openai.go:1312`) |
 | `max_completion_tokens` (its default for an unrecognised URL) | honoured, preferred over `max_tokens`; clamped to the context, not refused; ceiling 131072 (`internal/serveapp/openai.go:41`) |
 | `stream: true` + `stream_options.include_usage` | supported; final usage chunk |
 | `store: false`, `prompt_cache_key`, tools' `strict: false`, `reasoning_effort` | unknown fields ignored (plain `json` decode) |
 | tool calls read from `delta.tool_calls[i]` with `index` | emitted in that shape (`internal/serveapp/tools.go`) |
 | `Authorization: Bearer <key>` (its `--api-key-env` is mandatory) | ignored when serve has no `--api-key` |
-| overflow detection by error text (`utils/overflow.ts`, generic `/context[_ ]length[_ ]exceeded/i`) | the 400 reads "… context window of N tokens (context_length_exceeded)" (`internal/serveapp/openai.go:177`) — matches, so its compaction should fire |
+| overflow detection by error text (`utils/overflow.ts`, generic `/context[_ ]length[_ ]exceeded/i`) | the 400 reads "… context window of N tokens (context_length_exceeded)" (`internal/serveapp/openai.go:178`) — matches, so its compaction should fire |
 
 **Will bite, in order of likelihood:**
 
@@ -53,7 +53,7 @@
    convention pi-ai reads, `providers/openai-completions.ts`, `reasoningFields`), so `<think>` text is
    shown as the reply and is resent as assistant history, spending context.
 4. **Images with tools are refused.** minimax-code always sends tools; a pasted screenshot gets goinfer's
-   deliberate 400 "tools are not supported together with image inputs" (`internal/serveapp/openai.go:754`,
+   deliberate 400 "tools are not supported together with image inputs" (`internal/serveapp/openai.go:759`,
    N-16 / R-08).
 5. **The other two formats are unverified.** `openai-responses` sends item types the route declares out
    of scope ("reasoning items", `internal/serveapp/responses.go` header); `anthropic-messages` sends

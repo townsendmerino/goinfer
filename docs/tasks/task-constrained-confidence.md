@@ -36,7 +36,7 @@
 > `goinfer.Into[T](ctx, prompt)`. No such function exists. The real surfaces are
 > `constrain.GrammarFromStruct` / `constrain.JSONSchema` → `constrain.NewMasker(...).Process` set as
 > `SamplingParams.LogitProcessor` (the README's "A Go struct the model cannot violate" section), and
-> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:557`). C1
+> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:558`). C1
 > is written against those.
 >
 > **Siblings.** [`task-tool-grammar-union-2026-09.md`](task-tool-grammar-union-2026-09.md)
@@ -133,7 +133,7 @@ is.
   recurrent state (`decoder/kvsnapshot.go:62`). So "prefill the shared state once, branch per
   question" is not available on `qwen3_5` today (D8).
 - **Route A is approximable from outside already.** `/v1/completions` with `max_tokens: 1,
-  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:555`, cap at `:33`) gives a client
+  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:556`, cap at `:33`) gives a client
   the label-token logprobs, with no renormalization over the option set, no calibration, and no
   guarantee the labels are in the top 20. That is the baseline D1 improves on.
 
@@ -503,7 +503,17 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
       `PromptHidden` runs Qwen3.5 token by token on the CPU (no resident executor exposes the hidden state, D2),
       which is decode-speed and memory-bandwidth bound.
   - **Not done:**
-    - Serve's `/v1/systemone` still answers by Route A only.
+    - ~~Serve's `/v1/systemone` still answers by Route A only~~ **done 2026-09-30:** a `--model` entry's `head=DIR`
+      loads the head at startup, and its unmerged adapter becomes the entry's LoRA (a different `lora=` is refused).
+      `/v1/systemone` on that entry answers by Route B, with the head's template and calibration.
+      - **Validation:** questions are validated against the head's limits before any prefill (422), via
+        `Decider.Validate`.
+      - **Descriptions:** they are left out of the prompt, as `jev_core` builds it, and listed in
+        `goinfer.descriptions_dropped`. They are not refused, since TypeSafe's score questions always carry them.
+      - **Reporting:** `/v1/models` reports route `head`. The load banner says the entry's text generation is the
+        decision model's.
+      - **Tests:** `TestSpecHead`, `TestSystemOne_head`, `TestHead_dropsDescriptions`. Documented in
+        `docs/server.md`.
     - ~~`jev_core`'s state truncation~~ **done 2026-09-30** (`internal/decide/truncate.go`). A state over 1024 tokens
       is cut to its first 614 and last 410 tokens and decoded back to text, with a split character replaced exactly as
       CPython's `errors="replace"` does it.
@@ -575,7 +585,7 @@ schema was never published (D0).
 
 - `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
   registered with the same `auth → haltGate → inf → maxBytes` chain as its siblings
-  (`internal/serveapp/main.go:605`). Batch goes through J1 admission and, when asked, the J3 job
+  (`internal/serveapp/main.go:633`). Batch goes through J1 admission and, when asked, the J3 job
   object, so a long batch is re-attachable.
 - Response: `distribution`, `decision`, `confidence`, `latency_ms`, plus `model`, `route` (`label` |
   `head`), `backend`, and `calibrated` (false when no `calibration.json` was found — legal, but
@@ -831,7 +841,7 @@ contract) · `decoder/arch.go:954` (the `qwen3_5` / `qwen3_5_moe` own-forward ro
 `decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:695`, `:744`
 (merge-at-load) · `decoder/kvcache.go:540` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
 skips recurrent state) · `internal/serveapp/openai.go:34`, `:536`, `:538` (`top_logprobs` cap,
-`logprobs`, `response_format`) · `internal/serveapp/main.go:605` (route middleware) ·
+`logprobs`, `response_format`) · `internal/serveapp/main.go:633` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·
 [autotrust/JEV-27B](https://huggingface.co/autotrust/JEV-27B) (adapter, head, calibration, API) ·
 [autotrust/JEV](https://huggingface.co/autotrust/JEV) · [autotrust/JEV-9B](https://huggingface.co/autotrust/JEV-9B) ·
