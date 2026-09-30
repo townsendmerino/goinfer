@@ -54,8 +54,8 @@ func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 	// always has, and resIDs is left unknown either way (residentForgetIDs), since a HiddenLast
 	// prefill has nothing durable worth remembering for the next Generate call.
 	if m.resident != nil {
-		if rh, ok := m.resident.(ResidentHiddenLast); ok && atomic.CompareAndSwapInt32(&m.resBusy, 0, 1) {
-			out, err := m.hiddenLastResident(rh, ids)
+		if rh, ok := m.resident.(ResidentHiddenLast); ok && m.tryClaimResident() {
+			out, err := m.hiddenLastResident(context.Background(), rh, ids)
 			atomic.StoreInt32(&m.resBusy, 0)
 			if err == nil {
 				return out, nil
@@ -80,13 +80,13 @@ func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 // same embedResident the plain resident forward uses) and hand the whole sequence to the
 // backend's ResidentHiddenLast in one call, starting at position 0 — HiddenLast never reuses a
 // previous resident KV (each call is a fresh sequence), unlike Generate's prefix reuse.
-func (m *Model) hiddenLastResident(rh ResidentHiddenLast, ids []int) ([]float32, error) {
+func (m *Model) hiddenLastResident(ctx context.Context, rh ResidentHiddenLast, ids []int) ([]float32, error) {
 	m.residentForgetIDs()
 	embs := make([][]float32, len(ids))
 	for i, id := range ids {
 		embs[i] = m.embedResident(id)
 	}
-	return rh.HiddenLast(context.Background(), embs, 0)
+	return rh.HiddenLast(ctx, embs, 0)
 }
 
 // hiddenLastBatched is HiddenLast's fast path: one batched forward over the whole
@@ -162,14 +162,30 @@ func (m *Model) checkHiddenIDs(who string, ids []int) error {
 // Qwen3.5 takes its own batched forward (runLayersQwen35N: every projection one matmul over the prompt, the DeltaNet
 // recurrence still sequential), bounded against the per-token forward by TestPromptHidden_batchedMatchesSequential.
 //
-// CPU only, and it says so: it never uses a resident, since no resident executor exposes this hidden state yet (a GPU path is a
-// follow-up with its own measurement). ctx is checked between tokens, so a long prompt can be abandoned.
+// On a resident backend it runs on the device first, through ResidentHiddenLast (CUDA's batched prefill with a headless tail,
+// Metal's per-token headless forward), and falls back to the CPU on a decline. The resident's numerics are its kernels', not
+// the CPU reference's: TestPromptHidden_residentMatchesCPU in the backend modules bounds the difference. ctx is checked between
+// tokens (CPU) or at the backend's own granularity, so a long prompt can be abandoned.
 func (m *Model) PromptHidden(ctx context.Context, prompt []int) ([]float32, error) {
 	if len(prompt) == 0 {
 		return nil, fmt.Errorf("decoder.PromptHidden: empty prompt")
 	}
 	if err := m.checkHiddenIDs("decoder.PromptHidden", prompt); err != nil {
 		return nil, err
+	}
+	// A resident backend answers first, through the same seam HiddenLast uses (G4): the whole prompt on the device,
+	// stopping at the final norm. A decline (an arch the backend's headless forward does not cover, a paged MoE, a
+	// cap) falls through to the CPU exactly as if there were no resident; a cancellation returns. The resident's
+	// prefix-reuse record is forgotten either way, since the prompt overwrote its KV.
+	if rh, ok := m.resident.(ResidentHiddenLast); ok && m.tryClaimResident() {
+		out, err := m.hiddenLastResident(ctx, rh, prompt)
+		atomic.StoreInt32(&m.resBusy, 0)
+		if err == nil {
+			return out, nil
+		}
+		if ctx.Err() != nil {
+			return nil, err
+		}
 	}
 	if m.canBatchN(len(prompt)) {
 		return m.hiddenLastBatched(prompt)
