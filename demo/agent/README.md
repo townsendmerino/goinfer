@@ -102,6 +102,14 @@ guard, default 0.3; small models loop without it), `--presence-penalty`,
 `--temp` (answer phase; the decide phase is always greedy), `--max`, `--quant`;
 agent-web adds `--addr` (default `127.0.0.1:8484`).
 
+### Thinking models (Qwen3, Qwen3.5, Gemma 4)
+
+Point `-model` at one of these and the agent keeps the model's reasoning out of its answer. `-thinking template|asis|on|off` (default
+`template`: the model's own default) picks the mode; the decide phase is always thinking-off (its JSON grammar governs the first
+token). `stdlib-agent` prints the reasoning dimmed before the answer (`-show-thinking=false` for a marker only); `agent-web` drops it
+and keeps its own "Thinking…" indicator. Only the answer enters the conversation history, and a thinking answer always keeps room
+for the answer itself: the think block is closed after three quarters of `-max`.
+
 ### Images (Gemma 3 VL)
 
 Run with a Gemma 3 VL model + its vision tower and **agent-web takes images** —

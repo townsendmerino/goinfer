@@ -79,6 +79,17 @@ What shipped, against the design in "Proposed fix" below (which is kept as the r
   keep watching the raw text by design. Replaces the pinned "KNOWN LIMITATION" test. Gates: stop in the answer / in the reasoning /
   in both / split across the boundary / inside an unfinished block, both tag encodings; legacy and none unchanged; rune-split
   reasoning; the existing differential stop-string test against the pre-R-08 algorithm still passes unchanged; four mutations red.
+- **`goinfer-chat` and the demo agent (built 2026-09-30, owner request).** The splitter's UTF-8 handling and the budget moved into the
+  public `chat` package (`ReplySplitter`, `ReasoningBudget`, `BudgetRoom`, `Template.NewReasoningBudgetFor`) so serve, the CLI and the
+  agent share one copy of "where reasoning ends" and "how much of a turn thinking may take". CLI: `--thinking` / `/think`,
+  `--show-thinking`, reasoning dimmed before a cyan answer, history holds the answer alone, budget except under JSON / `--draft` /
+  `--spec ngram`. Agent: `Options.Thinking` + `-thinking`, DECIDE always thinking-off (its grammar governs token 1), answer through the
+  splitter into an optional `Events.Reasoning`, budget on the answer phase only. Gates: separation with rune splits in all three
+  consumers, per-mode prompt tails, where the budget installs and where it must not, seven mutations red; the real `goinfer-chat`
+  binary on the 0.8B prints a thinking run dimmed then the answer, and the answer-only default for that model.
+  - **Known build caveat:** `demo/agent` is its own module pinned to the released goinfer (v0.19.0); in the workspace (CI's build) it
+    uses the new `chat` API, but a standalone `GOWORK=off` build resolves the old release and fails until the next release — the
+    between-releases state CLAUDE.md records.
 - **Claude Code itself, tested 2026-09-30** (2.1.284, isolated config dir, dummy key, tools off and with `Read`, through a
   logging proxy; the real 0.8B served under a Claude model name): it sent `thinking: {type: enabled, budget_tokens}`, parsed the
   `thinking_delta` stream (its own thinking-token counter climbed), accepted the empty `signature`, printed the answer, and
@@ -159,7 +170,6 @@ test that would have gone red.
 ## Not built
 
 - **Harmony (gpt-oss)** needs its own parser (several channel messages per reply); the interface admits one, none written.
-- **The `goinfer-chat` CLI and `demo/agent`** keep their own decode loops and do not split yet.
 - **Qwen3.5's XML tool-call format** (separate task), and what signature Claude Code wants on a thinking block — still to
   settle with the outstanding manual Claude Code smoke test.
 

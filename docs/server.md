@@ -535,7 +535,14 @@ to ignore.**
   reasoning, so the cached prefix is reusable only up to the first such turn — the templates' own design, not serve's.
   Not replicated: the templates also trim every message's content and Gemma 4 has a `preserve_thinking` option.
 - **Not split:** a model whose template has no recognised thinking control (everything else, and any template shape not
-  read from a real checkpoint) is served exactly as before. The `goinfer-chat` CLI does not split yet.
+  read from a real checkpoint) is served exactly as before. `goinfer-chat` and the demo agent apply the same separation (below).
+- **`goinfer-chat` and the demo agent.** Both run the same machinery. `goinfer-chat` takes `--thinking template|asis|on|off` (default
+  `template`, as serve; `/think <mode>` changes it mid-session) and `--show-thinking` (default true): the reasoning prints dimmed
+  before the answer, the answer in cyan, and only the answer enters the conversation history; `--show-thinking=false` prints a
+  `(thinking…)` marker instead. The reasoning budget applies (three quarters of `--max`), except under `--schema` / JSON mode (whose
+  prompt is rendered thinking-off), `--draft` and `--spec ngram`. The demo agent takes the same `-thinking` flag; its DECIDE phase
+  (a JSON grammar) is always thinking-off; `stdlib-agent` prints the reasoning dimmed, `agent-web` drops it (its page keeps its own
+  "Thinking…" indicator).
 - **Jobs and batches** apply the same split; a job's result and a batch line's `content` are the clean answer.
 
 **Embeddings.** Point `--embed-model` at a [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)

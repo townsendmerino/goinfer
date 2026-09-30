@@ -36,6 +36,11 @@ any surface may still change.
   - **Stop strings are matched against the answer only.** A `stop` / `stop_sequences` string that the model wrote in its
     reasoning used to end the reply there with no answer; the reasoning is no longer watched. A stop in the answer, and every
     existing stop-string behaviour when the reasoning is not separated (`reasoning_format none` / `deepseek-legacy`), is unchanged.
+  - **`goinfer-chat` and the demo agent no longer print raw `<think>` text.** Both now take `--thinking` (default: the model's own
+    mode) and separate the reasoning from the answer: `goinfer-chat` prints it dimmed before the answer (`--show-thinking=false` to
+    hide it, `/think` to change mode), stores only the answer in the history, and applies the reasoning budget. The demo agent's
+    constrained DECIDE phase is always thinking-off; its answer streams through the same splitter, with the reasoning going to an
+    optional `Events.Reasoning`.
   - **Fixed on the way:** Gemma 4 with thinking on ends a prompt inside an open thought channel after a tool response; serve's
     splitter did not know, so the reply's reasoning would have landed in `content`.
   - **What changes for an existing client:** a model that was writing `<think>` into `content` now writes it to
