@@ -4,7 +4,7 @@
     python3 gap.py > results/gap.txt      (run from this directory; reads only committed files)
 
 Inputs: results/eval-B.jsonl (arm B, the 872-row OOD sample), results/b0cmp-goinfer-bare.jsonl (goinfer on the 150 D0
-fixture items, calibration split) and testdata/decisions/route_a_b0.jsonl (transformers f32 on the same 150 items).
+fixture items: 100 calibration split, 50 OOD) and testdata/decisions/route_a_b0.jsonl (transformers f32 on the same 150 items).
 Four steps: (1) per-kind top-1 on both samples, which puts the whole gap on noul; (2) noul base rate, prediction rate and
 per-class accuracy; (3) noul by source environment; (4) the reference against goinfer on the fixture's noul items, per
 source, and a counterfactual that removes that per-source P(true) shift from the OOD sample. Step 4 is an ESTIMATE: the
@@ -34,7 +34,7 @@ ref = {x["id"]: x for x in load("../../../testdata/decisions/route_a_b0.jsonl")}
 gold = lambda x: x["target"][1] > x["target"][0]
 
 print("(1) per-kind top-1, goinfer bare-v1")
-for name, rows in (("OOD sample (D6a arm B)", oos), ("fixture (calibration split)", fix)):
+for name, rows in (("OOD sample (D6a arm B)", oos), ("fixture (100 cal + 50 OOD)", fix)):
     per = {}
     for k in PROP:
         r = [x for x in rows if x["kind"] == k]
@@ -51,6 +51,11 @@ for name, rows in (("OOD sample", oos), ("fixture", fix)):
     af = sum(not a for a, b in zip(p, g) if not b) / (len(r) - sum(g))
     print(f"  {name:12s} n={len(r):3d} gold-true {sum(g)/len(r):.3f} pred-true {sum(p)/len(r):.3f} "
           f"acc|true {at:.3f} acc|false {af:.3f} always-false {1-sum(g)/len(r):.3f}")
+
+items = {x["id"]: x for x in load("../../../testdata/decisions/items.jsonl")}
+for sp in ("calibration", "ood"):
+    r = [x for x in fix if x["kind"] == "noul" and items[x["id"]]["split"] == sp]
+    print(f"  fixture noul, {sp:11s} items: n={len(r):3d} top-1 {sum((x['distribution'][1] > 0.5) == gold(x) for x in r)/len(r):.3f}")
 
 print("\n(3) noul by source environment")
 for name, rows in (("OOD sample", oos), ("fixture", fix)):
