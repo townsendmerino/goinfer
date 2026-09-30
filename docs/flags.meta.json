@@ -9,6 +9,7 @@
   "Speculative decoding": "Lossless drafting: output is identical to plain decoding, only the speed changes.",
   "Network and security": "Where the server listens and who may talk to it.",
   "Admin and halt": "Controlling a running server without restarting it.",
+  "Reasoning models": "Models that think before they answer (Qwen3, Qwen3.5, Gemma 4): whether they are prompted to, and where the thinking goes in the reply.",
   "Other": "Everything else."
  },
  "flags": [
@@ -298,6 +299,18 @@
    "name": "decisions-calibration",
    "group": "Other",
    "summary": "A `calibration.json` of per-kind temperatures for `/v1/systemone`. Without it, answers are uncalibrated."
+  },
+  {
+   "name": "thinking",
+   "group": "Reasoning models",
+   "summary": "Default thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): `asis` (today's prompt, the model decides), `template` (what the checkpoint's own template renders), `on`, or `off`. A request overrides it.",
+   "type": "asis | template | on | off"
+  },
+  {
+   "name": "reasoning-format",
+   "group": "Reasoning models",
+   "summary": "How a reply's reasoning reaches the client: `deepseek` (clean `content`, reasoning in `reasoning_content` / Anthropic thinking blocks), `deepseek-legacy` (both, tags kept in `content`), or `none` (nothing separated).",
+   "type": "deepseek | deepseek-legacy | none"
   }
  ],
  "subcommands": [

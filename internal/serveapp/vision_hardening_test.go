@@ -73,7 +73,7 @@ func TestVision_userTextIsNotSpecialButTheImageBlockIs(t *testing.T) {
 func TestVision_missingImageBlockIsAnErrorNotAPlainPrompt(t *testing.T) {
 	lm := &loadedModel{tmpl: chat.Gemma4(), tk: &tokenizer.Tokenizer{}}
 	turns := []chat.Turn{{Role: "user", Content: "no image block here"}}
-	_, err := encodeVisionSegments(lm, "", turns, multimodal.Gemma3ImageBlock(4)+"\n")
+	_, err := encodeVisionSegments(lm, lm.tmpl, "", turns, multimodal.Gemma3ImageBlock(4)+"\n")
 	if err == nil {
 		t.Fatal("encoding succeeded with no image block in the prompt; the sentinels would have " +
 			"been tokenized as ordinary text")

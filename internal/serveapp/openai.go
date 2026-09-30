@@ -571,6 +571,13 @@ type respFormat struct {
 	} `json:"json_schema"`
 }
 
+// constrainsOutput reports whether the request's response_format makes a grammar constrain the output from the first
+// token (json_object / json_schema) — the case think.go renders thinking-off, since an open think block in the prompt
+// would contradict the mask.
+func (sm sampling) constrainsOutput() bool {
+	return sm.ResponseFormat != nil && (sm.ResponseFormat.Type == "json_object" || sm.ResponseFormat.Type == "json_schema")
+}
+
 type chatReq struct {
 	Model    string        `json:"model"`
 	Messages []chatMessage `json:"messages"`
@@ -588,7 +595,17 @@ type chatReq struct {
 	// dropped, so `n: 3` used to get one choice back under a 200 rather than an error naming
 	// what was ignored. *int (not int) so n:0 and "omitted" are distinguishable from n:1.
 	N *int `json:"n"`
+	// Thinking controls (think.go): vLLM/llama.cpp's chat_template_kwargs.enable_thinking, OpenAI's reasoning_effort, and
+	// llama.cpp's reasoning_format. Absent = the server defaults (-thinking, -reasoning-format).
+	ChatTemplateKwargs map[string]json.RawMessage `json:"chat_template_kwargs"`
+	ReasoningEffort    string                     `json:"reasoning_effort"`
+	ReasoningFormat    string                     `json:"reasoning_format"`
 	sampling
+}
+
+// think is the request's thinking controls as think.go's input.
+func (r chatReq) think() thinkRequest {
+	return thinkRequest{kwargs: r.ChatTemplateKwargs, reasoningEffort: r.ReasoningEffort, format: r.ReasoningFormat}
 }
 
 type chatMessage struct {
@@ -756,7 +773,17 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ids, err := lm.chatPrompt(req.Messages)
+	ts, terr := s.resolveThink(req.think())
+	if terr != nil {
+		writeErr(w, http.StatusBadRequest, terr.Error())
+		return
+	}
+	tm := lm.templateFor(ts)
+	if req.sampling.constrainsOutput() {
+		tm = lm.constrainedTemplate(ts)
+	}
+	system, turns := messagesToTurns(req.Messages)
+	ids, err := lm.promptForT(tm, system, turns)
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
 		return
@@ -791,6 +818,9 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		// 300s harness idle timeout. Streaming per token once generation starts does not cover
 		// the prefill window itself, same shape as the buffer-then-stream sites M-19 fixed.
 		stopBeat := sseHeartbeat(ss)
+		gr.think = newThinkOut(tm, ts, func(t string) {
+			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
+		})
 		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
@@ -815,7 +845,8 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		return
 	}
 
-	var sb strings.Builder
+	var sb, rb strings.Builder
+	gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
 	finish, nComp, lps, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
@@ -825,9 +856,13 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
+	msg := map[string]any{"role": "assistant", "content": sb.String()}
+	if rb.Len() > 0 {
+		msg["reasoning_content"] = rb.String()
+	}
 	choice := map[string]any{
 		"index":         0,
-		"message":       map[string]any{"role": "assistant", "content": sb.String()},
+		"message":       msg,
 		"finish_reason": finish,
 	}
 	if req.Logprobs {
@@ -969,6 +1004,9 @@ type genRequest struct {
 	// has drained the generation. Its presence also keeps drive on plain constrained decode: the grammar-fused
 	// speculative path drives the masker without Process, which is where the capture records.
 	conf *confResult
+	// think, when set, routes the decoded text through a reasoning splitter (think.go): content goes to drive's onText,
+	// reasoning to think.onReasoning. nil = pass text through untouched.
+	think *thinkOut
 }
 
 // confResult is a generation's per-field confidence (or why there is none).
@@ -1304,25 +1342,6 @@ func (lm *loadedModel) encode(prompt string) ([]int, error) {
 	return lm.tk.Encode(prompt, lm.tmpl == nil)
 }
 
-// chatPrompt renders system + messages into the model's chat template (no tools).
-func (lm *loadedModel) chatPrompt(msgs []chatMessage) ([]int, error) {
-	system, turns := messagesToTurns(msgs)
-	return lm.promptFor(system, turns)
-}
-
-// promptFor renders system + turns into token ids via the model's chat template
-// (raw-conversation fallback when the family is unrecognized). Shared by the
-// OpenAI and Anthropic chat paths so both encode prompts identically.
-func (lm *loadedModel) promptFor(system string, turns []chat.Turn) ([]int, error) {
-	if lm.tmpl != nil {
-		// EncodeSegments keeps a special-token surface form typed into a user/tool
-		// message from becoming a real control token that forges a turn boundary (M25);
-		// addBOS=false because the template emits its own BOS marker.
-		return lm.tk.EncodeSegments(lm.tmpl.RenderSegments(system, turns), false)
-	}
-	return lm.encode(rawPrompt(system, turns))
-}
-
 // genErr filters a generation's terminal error (gen.Err()) down to what's worth
 // surfacing to the client: context.Canceled — our own stop-string cancel, or a
 // client disconnect — is a clean end, not a failure. A non-nil result becomes a
@@ -1371,6 +1390,10 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 		defer gens.remove(gr.id)
 		wrapped := onText
 		onText = func(t string) { g.tokens.Add(1); wrapped(t) }
+		if gr.think != nil { // a model that is still reasoning is making progress, not stuck
+			wr := gr.think.onReasoning
+			gr.think.onReasoning = func(t string) { g.tokens.Add(1); wr(t) }
+		}
 	}
 	if jobs != nil && gr.id != "" {
 		j := jobs.getOrCreate(gr.id, lm.name, gr.promptIDs)
@@ -1604,6 +1627,9 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 // reason ("stop" | "length"), the completion token count, and the stop string
 // that was hit (empty unless a stop sequence ended the turn).
 func (lm *loadedModel) streamTokens(parent context.Context, cancel context.CancelFunc, stream <-chan int, gr genRequest, gen *decoder.Generation, onText func(string)) (string, int, string) {
+	// Reasoning is split AFTER stop handling below (stops are matched on the raw decoded text, think text included) and
+	// BEFORE any caller sees a fragment, so every route — tools, vision, batches — gets clean content from one place.
+	onText, endThink := gr.think.route(onText)
 	var ids []int
 	// sb accumulates the decoded text INCREMENTALLY instead of re-decoding the whole `ids`
 	// sequence every token (audit R-08: was O(n^2) in output length). decode()'s per-token loop
@@ -1676,6 +1702,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 			finish = "stop" // EOS / turn-stop
 		}
 	}
+	endThink() // flush what the splitter held; a reply that ends inside a think block has no answer
 	// M-23: the generation was cut short from OUTSIDE and no stop string ended it, so the text is
 	// TRUNCATED and must not be reported as a clean finish. `parent`, not `ctx`: drive's own
 	// stop-string cancel fires on the derived context, so this sees only external cancellation —

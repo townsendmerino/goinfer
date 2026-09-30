@@ -48,7 +48,18 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	ids, err := lm.chatPrompt(req.Messages)
+	ts, terr := s.resolveThink(req.think())
+	if terr != nil {
+		release()
+		writeErr(w, http.StatusBadRequest, terr.Error())
+		return
+	}
+	tm := lm.templateFor(ts)
+	if req.sampling.constrainsOutput() {
+		tm = lm.constrainedTemplate(ts)
+	}
+	jsys, jturns := messagesToTurns(req.Messages)
+	ids, err := lm.promptForT(tm, jsys, jturns)
 	if err != nil {
 		release()
 		writeServerErr(w, "encode: "+err.Error())
@@ -60,6 +71,7 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
+	gr.think = newThinkOut(tm, ts, nil) // runJob streams the reasoning into the job's event log
 	if hi := s.haltState(); hi != nil {
 		release()
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "halted", "reason": hi.reason})

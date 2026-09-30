@@ -102,6 +102,11 @@ func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admis
 	}
 	defer lm.exit()
 
+	if gr.think != nil {
+		gr.think.onReasoning = func(t string) {
+			log.append(mustJSON(chatChunk(gr.id, created, lm.name, delta{ReasoningContent: t}, nil)))
+		}
+	}
 	_, _, _, _, _, _, _ = lm.drive(bgCtx, gr, s.gens, s.jobs, func(t string) {
 		log.append(mustJSON(chatChunk(gr.id, created, lm.name, delta{Content: t}, nil)))
 	})

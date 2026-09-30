@@ -37,7 +37,20 @@ type responseReq struct {
 	Stream             bool            `json:"stream"`
 	Store              *bool           `json:"store"` // default true (capped ring)
 	PreviousResponseID string          `json:"previous_response_id"`
+	// Reasoning.effort is OpenAI's thinking control ("none" turns thinking off, anything else on); the reasoning text
+	// itself is not returned on this route (reasoning items are out of scope) — output_text is always the clean answer.
+	Reasoning *struct {
+		Effort string `json:"effort"`
+	} `json:"reasoning"`
 	sampling
+}
+
+func (r responseReq) thinkRequest() thinkRequest {
+	tr := thinkRequest{}
+	if r.Reasoning != nil {
+		tr.reasoningEffort = r.Reasoning.Effort
+	}
+	return tr
 }
 
 // --- Phase B: in-memory response store (id → conversation) ---
@@ -149,7 +162,17 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 
-	ids, err := lm.chatPrompt(messages)
+	ts, terr := s.resolveThink(req.thinkRequest())
+	if terr != nil {
+		writeErr(w, http.StatusBadRequest, terr.Error())
+		return
+	}
+	tm := lm.templateFor(ts)
+	if sm.constrainsOutput() {
+		tm = lm.constrainedTemplate(ts)
+	}
+	system, turns := messagesToTurns(messages)
+	ids, err := lm.promptForT(tm, system, turns)
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
 		return
@@ -159,7 +182,8 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
-	gr.id = id // K1: registers this generation for cancel-by-id
+	gr.id = id                          // K1: registers this generation for cancel-by-id
+	gr.think = newThinkOut(tm, ts, nil) // reasoning is dropped on this route
 	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
 		return
 	}
@@ -226,7 +250,16 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		tools[i] = chat.Tool{Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters}
 	}
 	system, turns := messagesToTurns(messages)
-	ids, err := lm.tk.EncodeSegments(lm.tmpl.RenderToolsSegments(system, turns, tools), false) // M25
+	ts, terr := s.resolveThink(req.thinkRequest())
+	if terr != nil {
+		writeErr(w, http.StatusBadRequest, terr.Error())
+		return
+	}
+	tm := lm.templateFor(ts)
+	if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
+		tm = lm.constrainedTemplate(ts)
+	}
+	ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false) // M25
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
 		return
@@ -236,7 +269,8 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		writeErr(w, prepareErrStatus(err), err.Error())
 		return
 	}
-	gr.id = id // K1: registers this generation for cancel-by-id
+	gr.id = id                          // K1: registers this generation for cancel-by-id
+	gr.think = newThinkOut(tm, ts, nil) // reasoning is dropped on this route
 	forced := forcedTool(req.ToolChoice, tools)
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"
 	if cerr := constrainForcedTool(lm, &gr, forced, namedForce, openAIUnionMode(req.ToolChoice), tools); cerr != nil {

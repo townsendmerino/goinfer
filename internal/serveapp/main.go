@@ -301,6 +301,12 @@ type config struct {
 	decisionsTemplate string
 	decisionsCal      string
 
+	// thinking / reasoningFmt: how a reasoning model's think block is prompted and surfaced (think.go). thinking is the
+	// server default render mode (-thinking: asis | template | on | off), a request overrides it per call;
+	// reasoningFmt is -reasoning-format (deepseek | deepseek-legacy | none).
+	thinking     string
+	reasoningFmt string
+
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
 	embedQuant string // "" | f32 | q8
 	embedName  string // -embed-served-model-name
@@ -334,6 +340,8 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.visionPath, "vision", "", "vision tower dir for a multimodal --model (auto-discovered per family: SigLIP+projector for Gemma 3, Qwen2.5-VL's own ViT, or Gemma 4's own encoder — N-35, docs/audit-2026-09-10.md); enables image content parts. Defaults to the --model dir when it contains a vision tower")
 	fs.StringVar(&cfg.decisionsTemplate, "decisions-template", "chat-v1", "POST /v1/systemone's prompt template: chat-v1 (the model's chat template; for instruct models) or bare-v1 (JEV's own, no chat template)")
 	fs.StringVar(&cfg.decisionsCal, "decisions-calibration", "", "calibration.json with per-kind temperatures for /v1/systemone (from goinfer-chat decisions-calibrate, fitted under the same template); none: every answer is uncalibrated")
+	fs.StringVar(&cfg.thinking, "thinking", "asis", "default thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): asis (today's prompt bytes, the model decides), template (what the checkpoint's own template renders — Qwen3.5-0.8B: off, Qwen3.5-9B: on), on, or off. A request overrides it with chat_template_kwargs.enable_thinking, reasoning_effort, or Anthropic's thinking. A model whose template control is not recognised ignores this.")
+	fs.StringVar(&cfg.reasoningFmt, "reasoning-format", "deepseek", "how a reply's reasoning reaches the client: deepseek (content is the clean answer, reasoning goes in reasoning_content / Anthropic thinking blocks), deepseek-legacy (reasoning_content is filled and content keeps the raw <think> tags), or none (nothing is separated: the raw text is the content). A request may override it with reasoning_format.")
 	fs.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
 	fs.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
 		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
@@ -518,6 +526,14 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	}
 	if cfg.kvIdleDemote > 0 && (cfg.sessionDir == "" || cfg.kvSessions <= 0) {
 		fmt.Fprintln(os.Stderr, "error: -kv-idle-demote needs -session-dir and -kv-sessions > 0")
+		os.Exit(2)
+	}
+	if _, ok := chat.ParseThinkMode(cfg.thinking); !ok {
+		fmt.Fprintf(os.Stderr, "error: -thinking %q: want asis, template, on or off\n", cfg.thinking)
+		os.Exit(2)
+	}
+	if _, ok := parseReasoningFormat(cfg.reasoningFmt); !ok {
+		fmt.Fprintf(os.Stderr, "error: -reasoning-format %q: want deepseek, deepseek-legacy or none\n", cfg.reasoningFmt)
 		os.Exit(2)
 	}
 	if cfg.decisionsTemplate != decide.TemplateChat && cfg.decisionsTemplate != decide.TemplateBare {
@@ -1232,7 +1248,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		lm.queue = make(chan struct{}, 1+cfg.maxQueue)
 	}
 	if tmpl, derr := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has}); derr == nil {
-		lm.tmpl = tmpl
+		lm.tmpl = tmpl.WithThinking(cfg.thinkDefault())
 		for _, str := range tmpl.Stops().Strings {
 			if id, ok := tk.TokenID(str); ok {
 				lm.stopIDs = append(lm.stopIDs, id)

@@ -1355,6 +1355,7 @@ async function runReply(out, entry, divider, open) {
       throw new Error(problem.title);
     }
     if (entry.job) { pollQueue(); polling = setInterval(pollQueue, 1000); }
+    let thinkOpen = false;   // a reasoning_content run is open in acc (see below)
     for await (const ev of sse(r)) {
       if (ev.data === "[DONE]") break;
       let j; try { j = JSON.parse(ev.data); } catch { continue; }
@@ -1366,7 +1367,17 @@ async function runReply(out, entry, divider, open) {
         entry.usage = {prompt_tokens: j.usage.prompt_tokens, completion_tokens: j.usage.completion_tokens};
       }
       const d = j.choices && j.choices[0] && j.choices[0].delta;
+      // The server separates a model's reasoning into delta.reasoning_content (and keeps it out of content). Everything
+      // below — the fold, the saved entry, Copy, what later turns send back — works on the <think>…</think> form, so the
+      // two fields are stitched back into it here: one place, and the old tag parsing stays the only parser.
+      if (d && d.reasoning_content) {
+        if (!thinkOpen) { acc += THINK_OPEN + "\n"; thinkOpen = true; }
+        acc += d.reasoning_content; got++;
+        entry.content = acc;
+        if (!paintQueued) { paintQueued = true; requestAnimationFrame(paint); }
+      }
       if (d && d.content) {
+        if (thinkOpen) { acc += "\n" + THINK_CLOSE + "\n\n"; thinkOpen = false; }
         acc += d.content; got++;
         entry.content = acc;
         if (!paintQueued) { paintQueued = true; requestAnimationFrame(paint); }

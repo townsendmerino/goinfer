@@ -337,6 +337,9 @@ func sseHeartbeat(ss *sseWriter) (stop func()) {
 type delta struct {
 	Role    string `json:"role,omitempty"`
 	Content string `json:"content,omitempty"`
+	// ReasoningContent is the model's think-block text (think.go), streamed before the answer's content. llama.cpp and
+	// the DeepSeek API spell it reasoning_content; omitted when the model did not reason.
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
 func chatChunk(id string, created int64, model string, d delta, finish *string) map[string]any {

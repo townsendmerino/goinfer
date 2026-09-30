@@ -64,8 +64,8 @@ type visionInput struct {
 // segment instead, and a block that fails to splice is an error rather than a prompt that silently
 // tokenizes the sentinels as text (the imgLen check downstream would catch it, but late and with a
 // misleading message about a template mismatch).
-func encodeVisionSegments(lm *loadedModel, system string, turns []chat.Turn, block string) ([]int, error) {
-	segs, err := spliceImageBlock(lm.tmpl.RenderSegments(system, turns), block)
+func encodeVisionSegments(lm *loadedModel, tm *chat.Template, system string, turns []chat.Turn, block string) ([]int, error) {
+	segs, err := spliceImageBlock(tm.RenderSegments(system, turns), block)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,8 @@ func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segme
 	return out, nil
 }
 
-func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageRef) (visionInput, error) {
+// tm is the per-request template (think.go): the model's own, switched to the request's thinking mode.
+func (lm *loadedModel) visionPrompt(tm *chat.Template, system string, turns []chat.Turn, img imageRef) (visionInput, error) {
 	if lm.tmpl == nil {
 		return visionInput{}, fmt.Errorf("this model has no chat template for vision")
 	}
@@ -124,10 +125,10 @@ func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageR
 		return visionInput{}, fmt.Errorf("no user turn to attach the image to")
 	}
 	if lm.qwenEnc != nil || lm.qwen3 != nil {
-		return lm.qwenVisionPrompt(system, turns, idx, img)
+		return lm.qwenVisionPrompt(tm, system, turns, idx, img)
 	}
 	if lm.gemma4Enc != nil {
-		return lm.gemma4VisionPrompt(system, turns, idx, img)
+		return lm.gemma4VisionPrompt(tm, system, turns, idx, img)
 	}
 	pv, err := vision.Preprocess(img.data, lm.vcfg)
 	if err != nil {
@@ -152,7 +153,7 @@ func (lm *loadedModel) visionPrompt(system string, turns []chat.Turn, img imageR
 	}
 	block := multimodal.Gemma3PromptBlock(n)
 	turns[idx].Content = block + turns[idx].Content
-	ids, err := encodeVisionSegments(lm, system, turns, block)
+	ids, err := encodeVisionSegments(lm, tm, system, turns, block)
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}
@@ -179,7 +180,7 @@ func (lm *loadedModel) qwenForward(pv []float32, grid [3]int) ([]float32, error)
 // qwenVisionPrompt is the Qwen2.5-VL and Qwen3.5+ image path: smart-resize preprocess → ViT +
 // merger (the merged features replace the <|image_pad|> run) → the prompt with the
 // vision block prepended. The grid drives m-RoPE in GenerateQwenVL.
-func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
+func (lm *loadedModel) qwenVisionPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
 	pv, grid, err := multimodal.QwenPreprocess(img.data, lm.qwenPP)
 	if err != nil {
 		return visionInput{}, err
@@ -203,7 +204,7 @@ func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx in
 	// exist in the real template.
 	block := multimodal.QwenImageBlock(n)
 	turns[idx].Content = block + turns[idx].Content
-	ids, err := encodeVisionSegments(lm, system, turns, block)
+	ids, err := encodeVisionSegments(lm, tm, system, turns, block)
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}
@@ -220,7 +221,7 @@ func (lm *loadedModel) qwenVisionPrompt(system string, turns []chat.Turn, idx in
 // patch grid (multimodal.Gemma4PooledTokens), not a fixed per-checkpoint constant
 // — see that function's doc comment. CPU-only v1 (decoder.GenerateGemma4VL): see
 // its own doc comment for why no resident GPU bridge is attempted here.
-func (lm *loadedModel) gemma4VisionPrompt(system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
+func (lm *loadedModel) gemma4VisionPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
 	patches, positionIDs, err := vision.Gemma4Preprocess(img.data, lm.gemma4MaxSoft)
 	if err != nil {
 		return visionInput{}, err
@@ -243,7 +244,7 @@ func (lm *loadedModel) gemma4VisionPrompt(system string, turns []chat.Turn, idx 
 	// newline at all, unlike the trailing "\n" this used to append.
 	block := multimodal.Gemma4ImageBlock(n)
 	turns[idx].Content = block + turns[idx].Content
-	ids, err := encodeVisionSegments(lm, system, turns, block)
+	ids, err := encodeVisionSegments(lm, tm, system, turns, block)
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}
@@ -280,7 +281,16 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	system, turns := messagesToTurns(req.Messages)
-	vi, err := lm.visionPrompt(system, turns, imgs[0])
+	ts, terr := s.resolveThink(req.think())
+	if terr != nil {
+		writeErr(w, http.StatusBadRequest, terr.Error())
+		return
+	}
+	tm := lm.templateFor(ts)
+	if req.sampling.constrainsOutput() {
+		tm = lm.constrainedTemplate(ts)
+	}
+	vi, err := lm.visionPrompt(tm, system, turns, imgs[0])
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -311,6 +321,9 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		// CPU an image prefill can take minutes — the M-19 gate that catches a missing heartbeat
 		// on the text-only lm.drive( sites never enumerated the driveVL sites at all.
 		stopBeat := sseHeartbeat(ss)
+		gr.think = newThinkOut(tm, ts, func(t string) {
+			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
+		})
 		finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
@@ -329,7 +342,8 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		sseDone(ss)
 		return
 	}
-	var sb strings.Builder
+	var sb, rb strings.Builder
+	gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
 	finish, nComp, _, reused, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
@@ -339,11 +353,15 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
 		return
 	}
+	vmsg := map[string]any{"role": "assistant", "content": sb.String()}
+	if rb.Len() > 0 {
+		vmsg["reasoning_content"] = rb.String()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{map[string]any{
 			"index":         0,
-			"message":       map[string]any{"role": "assistant", "content": sb.String()},
+			"message":       vmsg,
 			"finish_reason": finish,
 		}},
 		"usage": usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused},
@@ -376,7 +394,13 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		aerr.write(w)
 		return
 	}
-	vi, err := lm.visionPrompt(system, turns, imgs[0])
+	ts, terr := s.resolveThink(req.thinkRequest())
+	if terr != nil {
+		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", terr.Error())
+		return
+	}
+	tm := lm.templateFor(ts)
+	vi, err := lm.visionPrompt(tm, system, turns, imgs[0])
 	if err != nil {
 		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
@@ -416,6 +440,15 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 			},
 		})
 		anthropicEvent(ss, "ping", map[string]any{"type": "ping"})
+		th := &anthropicThink{ss: ss, want: req.wantsThinking()}
+		gr.think = newThinkOut(tm, ts, th.push)
+		if th.want {
+			streamMessagesThinking(ss, th, func(onText func(string)) (string, int, string, string, error) {
+				finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, onText)
+				return finish, nComp, stopSeq, cancelReason, gerr
+			})
+			return
+		}
 		anthropicEvent(ss, "content_block_start", map[string]any{
 			"type": "content_block_start", "index": 0,
 			"content_block": map[string]any{"type": "text", "text": ""},
@@ -440,7 +473,8 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
 		return
 	}
-	var sb strings.Builder
+	var sb, rb strings.Builder
+	gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
 	finish, nComp, stopSeq, _, cancelReason, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())
@@ -451,9 +485,16 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	reason, seq := anthropicStopReason(finish, stopSeq)
+	vcontent := []map[string]any{textBlock(sb.String())}
+	if req.wantsThinking() && rb.Len() > 0 {
+		vcontent = append([]map[string]any{thinkingBlock(rb.String())}, vcontent...)
+		if sb.Len() == 0 { // cut off while thinking: no answer, so no text block
+			vcontent = vcontent[:1]
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "type": "message", "role": "assistant", "model": lm.name,
-		"content":       []map[string]any{textBlock(sb.String())},
+		"content":       vcontent,
 		"stop_reason":   reason,
 		"stop_sequence": seq,
 		"usage":         map[string]any{"input_tokens": len(gr.promptIDs), "output_tokens": nComp},

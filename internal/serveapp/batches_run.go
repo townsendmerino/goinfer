@@ -76,7 +76,17 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 		setResult(batch, i, lineError(customID, 400, "invalid_request_error", err.Error()))
 		return
 	}
-	ids, err := lm.chatPrompt(req.Messages)
+	ts, terr := s.resolveThink(req.think())
+	if terr != nil {
+		setResult(batch, i, lineError(customID, 400, "invalid_request_error", terr.Error()))
+		return
+	}
+	tm := lm.templateFor(ts)
+	if req.sampling.constrainsOutput() {
+		tm = lm.constrainedTemplate(ts)
+	}
+	bsys, bturns := messagesToTurns(req.Messages)
+	ids, err := lm.promptForT(tm, bsys, bturns)
 	if err != nil {
 		setResult(batch, i, lineError(customID, 500, "api_error", "encode: "+err.Error()))
 		return
@@ -107,7 +117,8 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	}
 	defer lm.exit()
 
-	var sb strings.Builder
+	var sb, rb strings.Builder
+	gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
 	finish, nComp, _, _, prefillReused, cancelReason, gerr := lm.drive(
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
@@ -119,11 +130,15 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 		return
 	}
 
+	bmsg := map[string]any{"role": "assistant", "content": sb.String()}
+	if rb.Len() > 0 {
+		bmsg["reasoning_content"] = rb.String()
+	}
 	body := map[string]any{
 		"id": jobID, "object": "chat.completion", "created": time.Now().Unix(), "model": lm.name,
 		"choices": []any{map[string]any{
 			"index":         0,
-			"message":       map[string]any{"role": "assistant", "content": sb.String()},
+			"message":       bmsg,
 			"finish_reason": finish,
 		}},
 		"usage": usage{
@@ -182,7 +197,13 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		setResult(batch, i, lineError(customID, 400, "invalid_request_error", err.Error()))
 		return
 	}
-	ids, err := lm.promptFor(system, turns)
+	ts, terr := s.resolveThink(req.thinkRequest())
+	if terr != nil {
+		setResult(batch, i, lineError(customID, 400, "invalid_request_error", terr.Error()))
+		return
+	}
+	tm := lm.templateFor(ts)
+	ids, err := lm.promptForT(tm, system, turns)
 	if err != nil {
 		setResult(batch, i, lineError(customID, 500, "api_error", "encode: "+err.Error()))
 		return
@@ -211,7 +232,8 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	}
 	defer lm.exit()
 
-	var sb strings.Builder
+	var sb, rb strings.Builder
+	gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
 	finish, nComp, _, stopHitOut, _, cancelReason, gerr := lm.drive(
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
@@ -224,9 +246,16 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	}
 
 	reason, seq := anthropicStopReason(finish, stopHitOut)
+	content := []map[string]any{textBlock(sb.String())}
+	if req.wantsThinking() && rb.Len() > 0 {
+		content = append([]map[string]any{thinkingBlock(rb.String())}, content...)
+		if sb.Len() == 0 { // cut off while thinking: no answer, so no text block
+			content = content[:1]
+		}
+	}
 	body := map[string]any{
 		"id": jobID, "type": "message", "role": "assistant", "model": lm.name,
-		"content":       []map[string]any{textBlock(sb.String())},
+		"content":       content,
 		"stop_reason":   reason,
 		"stop_sequence": seq,
 		"usage":         map[string]any{"input_tokens": len(gr.promptIDs), "output_tokens": nComp},

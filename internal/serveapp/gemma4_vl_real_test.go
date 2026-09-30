@@ -102,7 +102,7 @@ func loadGemma4VLReal(t *testing.T, modelPath, visionDir string, opts decoder.Op
 func askAboutImage(t *testing.T, lm *loadedModel, question string, imgData []byte, maxTokens int) string {
 	t.Helper()
 	turns := []chat.Turn{{Role: "user", Content: question}}
-	vi, err := lm.gemma4VisionPrompt("", turns, 0, imageRef{mediaType: "image/png", data: imgData})
+	vi, err := lm.gemma4VisionPrompt(lm.tmpl, "", turns, 0, imageRef{mediaType: "image/png", data: imgData})
 	if err != nil {
 		t.Fatalf("gemma4VisionPrompt: %v", err)
 	}

@@ -93,7 +93,7 @@ func TestServe_qwen35Image_G4(t *testing.T) {
 			}
 
 			// (a1) the prompt ids, built by serve's own code path.
-			vi, err := lm.visionPrompt("", []chat.Turn{{Role: "user", Content: g.Question}}, imageRef{mediaType: "image/png", data: png})
+			vi, err := lm.visionPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: g.Question}}, imageRef{mediaType: "image/png", data: png})
 			if err != nil {
 				t.Fatalf("visionPrompt: %v", err)
 			}

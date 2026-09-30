@@ -42,7 +42,16 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		tools[i] = chat.Tool{Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters}
 	}
 	system, turns := messagesToTurns(req.Messages)
-	ids, err := lm.tk.EncodeSegments(lm.tmpl.RenderToolsSegments(system, turns, tools), false) // M25: harden the no-tools/content spans
+	ts, terr := s.resolveThink(req.think())
+	if terr != nil {
+		writeErr(w, http.StatusBadRequest, terr.Error())
+		return
+	}
+	tm := lm.templateFor(ts)
+	if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
+		tm = lm.constrainedTemplate(ts)
+	}
+	ids, err := lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false) // M25: harden the no-tools/content spans
 	if err != nil {
 		writeServerErr(w, "encode: "+err.Error())
 		return
@@ -95,8 +104,12 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	// The shared tool turn (tool_turn.go): heartbeats while streaming (G19), prose streamed as content
 	// deltas as the model writes it where the family allows (G21), then the parse.
 	var onProse func(string)
+	var rb strings.Builder
 	if ss != nil {
 		onProse = func(out string) { sseSend(ss, chatChunk(id, created, lm.name, delta{Content: out}, nil)) }
+		gr.think = newThinkOut(tm, ts, func(t string) { sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil)) })
+	} else {
+		gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
 	}
 	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, onProse)
 	if errors.Is(gerr, errProseDiverged) {
@@ -141,6 +154,9 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	} else {
 		msg["content"] = t.raw
 	}
+	if rb.Len() > 0 {
+		msg["reasoning_content"] = rb.String()
+	}
 	choice := map[string]any{"index": 0, "message": msg, "finish_reason": finish}
 	usagev := usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused}
 
@@ -170,6 +186,19 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{choice}, "usage": usagev,
 	})
+}
+
+// toolsConstrainedFromStart reports whether constrainForcedTool will install a grammar that governs the output from its
+// FIRST token (a forced or lone tool, or union "required"): the requests think.go must render thinking-off, because an open
+// think block in the prompt contradicts a mask that demands `<tool_call>` immediately. Conservative by design — a grammar
+// that then fails to compile still gets the thinking-off prompt. The lazy "auto" union is NOT included: it arms on the
+// family's call opener, so reasoning before it is legal (a model quoting the opener inside its reasoning would arm it early;
+// that hazard is recorded in docs/tasks/task-qwen35-think-prompt-2026-09.md).
+func toolsConstrainedFromStart(forced *chat.Tool, namedForce bool, union string, tools []chat.Tool) bool {
+	if forced != nil {
+		return true
+	}
+	return !namedForce && len(tools) >= 1 && union == "required" && toolUnionEnabled
 }
 
 // constrainForcedTool wires constrained decoding for a forced/lone tool call. When the

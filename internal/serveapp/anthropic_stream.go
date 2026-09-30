@@ -47,7 +47,7 @@ func anthropicStreamErr(ss *sseWriter, msg string) {
 // buffered fully (tools.go decides from the whole output) and emitted as one
 // input_json_delta — Claude Code accepts the single chunk, as it does for
 // llama.cpp.
-func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *loadedModel, gr genRequest, toolsActive bool, tools []chat.Tool) {
+func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *loadedModel, gr genRequest, toolsActive bool, tools []chat.Tool, tm *chat.Template, ts thinkSettings, wantThinking bool) {
 	ss, ok := anthropicSSEStart(w)
 	if !ok {
 		return
@@ -64,8 +64,21 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	})
 	anthropicEvent(ss, "ping", map[string]any{"type": "ping"}) // liveness check; cheap insurance
 
+	// Thinking (think.go): reasoning becomes a `thinking` block at index 0 when the request asked for one, and is dropped
+	// otherwise — an Anthropic client that never asked for thinking must see only text. Everything after it shifts by one.
+	th := &anthropicThink{ss: ss, want: wantThinking}
+	gr.think = newThinkOut(tm, ts, th.push)
+
 	if toolsActive {
-		s.streamMessagesTools(w, r, ss, lm, gr, tools)
+		s.streamMessagesTools(w, r, ss, lm, gr, tools, th)
+		return
+	}
+
+	if wantThinking {
+		streamMessagesThinking(ss, th, func(onText func(string)) (string, int, string, string, error) {
+			finish, nComp, _, stopSeq, _, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, onText)
+			return finish, nComp, stopSeq, cancelReason, gerr
+		})
 		return
 	}
 
@@ -103,9 +116,10 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 // (audit-2026-09-02 M-19 added those: the single `ping` at message_start was the only byte for the
 // entire generation, measured elsewhere at 1682.6s against a 300s idle timeout) — only the OpenAI
 // route streamed prose during a tool call.
-func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss *sseWriter, lm *loadedModel, gr genRequest, tools []chat.Tool) {
-	ts := &anthropicTextStream{ss: ss}
+func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss *sseWriter, lm *loadedModel, gr genRequest, tools []chat.Tool, th *anthropicThink) {
+	ts := &anthropicTextStream{ss: ss, think: th}
 	t, gerr := s.runToolTurn(r.Context(), lm, gr, tools, ss, ts.push)
+	th.close() // a turn that went straight from thinking to a tool call never pushed prose, which is what closes it
 	if gerr != nil && !errors.Is(gerr, errProseDiverged) {
 		anthropicStreamErr(ss, "generation failed: "+gerr.Error())
 		return
@@ -156,10 +170,15 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 // version dropped a lead that was only whitespace), so leading whitespace is held until real text
 // arrives; if a call comes first, it is dropped exactly as before.
 type anthropicTextStream struct {
-	ss      *sseWriter
-	open    bool
-	pending strings.Builder // prose received but not yet sent: whitespace before the block opens
+	ss       *sseWriter
+	think    *anthropicThink // may be nil; its block, when emitted, is index 0 and the text block follows it
+	open     bool
+	everOpen bool            // pushPlain opened a block at some point (the no-tools thinking path)
+	pending  strings.Builder // prose received but not yet sent: whitespace before the block opens
 }
+
+// idx is the text block's index: 0, or 1 after a thinking block.
+func (a *anthropicTextStream) idx() int { return a.think.offset() }
 
 func (a *anthropicTextStream) push(text string) {
 	if !a.open {
@@ -167,8 +186,9 @@ func (a *anthropicTextStream) push(text string) {
 		if strings.TrimSpace(a.pending.String()) == "" {
 			return
 		}
+		a.think.close() // the thinking block ends where the answer begins
 		anthropicEvent(a.ss, "content_block_start", map[string]any{
-			"type": "content_block_start", "index": 0,
+			"type": "content_block_start", "index": a.idx(),
 			"content_block": map[string]any{"type": "text", "text": ""},
 		})
 		a.open = true
@@ -176,7 +196,7 @@ func (a *anthropicTextStream) push(text string) {
 		a.pending.Reset()
 	}
 	anthropicEvent(a.ss, "content_block_delta", map[string]any{
-		"type": "content_block_delta", "index": 0,
+		"type": "content_block_delta", "index": a.idx(),
 		"delta": map[string]any{"type": "text_delta", "text": text},
 	})
 }
@@ -190,21 +210,110 @@ func (a *anthropicTextStream) finish(rest string, always bool) int {
 			a.push(rest)
 		}
 		a.close()
-		return 1
+		return a.idx() + 1
 	}
 	text := a.pending.String() + rest
 	if always || strings.TrimSpace(text) != "" {
-		streamTextBlock(a.ss, 0, text)
+		a.think.close()
+		streamTextBlock(a.ss, a.idx(), text)
+		return a.idx() + 1
+	}
+	return a.idx()
+}
+
+func (a *anthropicTextStream) close() {
+	if a.open {
+		anthropicEvent(a.ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": a.idx()})
+		a.open = false
+	}
+}
+
+// anthropicThink is the thinking half of a streamed turn: a `thinking` content block at index 0, opened lazily when
+// the first reasoning arrives and closed — with its signature_delta, which a client expects before content_block_stop —
+// when the answer (or the end of the turn) begins. With want false (the request did not ask for thinking) reasoning is
+// discarded and no block is ever emitted. A nil *anthropicThink is a turn with no thinking.
+type anthropicThink struct {
+	ss   *sseWriter
+	want bool
+	open bool
+	used bool
+}
+
+func (t *anthropicThink) push(text string) {
+	if t == nil || !t.want || text == "" {
+		return
+	}
+	if !t.open {
+		anthropicEvent(t.ss, "content_block_start", map[string]any{
+			"type": "content_block_start", "index": 0,
+			"content_block": map[string]any{"type": "thinking", "thinking": "", "signature": ""},
+		})
+		t.open, t.used = true, true
+	}
+	anthropicEvent(t.ss, "content_block_delta", map[string]any{
+		"type": "content_block_delta", "index": 0,
+		"delta": map[string]any{"type": "thinking_delta", "thinking": text},
+	})
+}
+
+func (t *anthropicThink) close() {
+	if t == nil || !t.open {
+		return
+	}
+	anthropicEvent(t.ss, "content_block_delta", map[string]any{
+		"type": "content_block_delta", "index": 0,
+		"delta": map[string]any{"type": "signature_delta", "signature": ""},
+	})
+	anthropicEvent(t.ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
+	t.open = false
+}
+
+// offset is the index the first non-thinking block takes: 1 once a thinking block has been emitted, else 0.
+func (t *anthropicThink) offset() int {
+	if t != nil && t.used {
 		return 1
 	}
 	return 0
 }
 
-func (a *anthropicTextStream) close() {
-	if a.open {
-		anthropicEvent(a.ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
-		a.open = false
+// streamMessagesThinking is the no-tools stream for a request that asked for thinking: a thinking block (when the model
+// reasoned), then one text block opened on the first answer byte. A turn that ends while still thinking emits only the
+// thinking block — there is no answer to put in a text block.
+//
+// run is the generation (lm.drive or lm.driveVL), so the text and image routes share this one state machine.
+func streamMessagesThinking(ss *sseWriter, th *anthropicThink, run func(onText func(string)) (finish string, nComp int, stopSeq, cancelReason string, err error)) {
+	text := &anthropicTextStream{ss: ss, think: th}
+	stopBeat := sseHeartbeat(ss)
+	finish, nComp, stopSeq, cancelReason, gerr := run(text.pushPlain)
+	stopBeat()
+	th.close()
+	if gerr != nil {
+		text.close()
+		anthropicStreamErr(ss, "generation failed: "+gerr.Error())
+		return
 	}
+	text.close()
+	if !th.used && !text.everOpen {
+		streamTextBlock(ss, 0, "") // a turn that produced nothing is still one (empty) text block, as it always was
+	}
+	reason, seq := anthropicStopReason(finish, stopSeq)
+	anthropicMessageEnd(ss, reason, seq, nComp, cancelReason)
+}
+
+// pushPlain is push without the tool path's whitespace holding: the no-tools route has always streamed every byte.
+func (a *anthropicTextStream) pushPlain(text string) {
+	if !a.open {
+		a.think.close()
+		anthropicEvent(a.ss, "content_block_start", map[string]any{
+			"type": "content_block_start", "index": a.idx(),
+			"content_block": map[string]any{"type": "text", "text": ""},
+		})
+		a.open, a.everOpen = true, true
+	}
+	anthropicEvent(a.ss, "content_block_delta", map[string]any{
+		"type": "content_block_delta", "index": a.idx(),
+		"delta": map[string]any{"type": "text_delta", "text": text},
+	})
 }
 
 // streamTextBlock emits a complete text content block (start, one delta, stop) —

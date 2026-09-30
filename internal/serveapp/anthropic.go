@@ -31,8 +31,46 @@ type anthropicReq struct {
 	TopK          *int               `json:"top_k"`
 	StopSequences []string           `json:"stop_sequences"`
 	Stream        bool               `json:"stream"`
-	// metadata and thinking are accepted and ignored (unknown JSON fields are
-	// dropped by the decoder); stop_reason is therefore never "thinking" in v1.
+	// Thinking: {type: enabled|adaptive|disabled, budget_tokens}. enabled/adaptive render the model's thinking mode on
+	// and return `thinking` content blocks (think.go); budget_tokens is accepted and NOT enforced (a reasoning budget is
+	// a follow-up — max_tokens bounds the whole turn, thinking included). metadata is accepted and ignored.
+	Thinking *struct {
+		Type string `json:"type"`
+	} `json:"thinking"`
+}
+
+// thinkRequest is the request's thinking controls as think.go's input.
+func (r *anthropicReq) thinkRequest() thinkRequest {
+	tr := thinkRequest{}
+	if r.Thinking != nil {
+		tr.anthropicType = r.Thinking.Type
+	}
+	return tr
+}
+
+// wantsThinking reports whether the request asked for thinking blocks back (enabled or adaptive). A request that did not
+// still gets a model that may reason under the server default, but its reasoning is dropped: an Anthropic client that
+// never asked for thinking must see only text.
+func (r *anthropicReq) wantsThinking() bool {
+	return r.Thinking != nil && (r.Thinking.Type == "enabled" || r.Thinking.Type == "adaptive")
+}
+
+// anthropicToolsConstrainedFromStart is toolsConstrainedFromStart for this route's tool_choice vocabulary.
+func anthropicToolsConstrainedFromStart(mode, name string, tools []chat.Tool) bool {
+	union := ""
+	switch mode {
+	case "auto":
+		union = "auto"
+	case "any":
+		union = "required"
+	}
+	return toolsConstrainedFromStart(anthropicForcedTool(mode, name, tools), mode == "tool", union, tools)
+}
+
+// thinkingBlock is an Anthropic `thinking` content block. The signature is empty: the real API signs thinking so it can
+// verify a replay, and this server drops replayed thinking blocks on input (anthropicTurns), so there is nothing to verify.
+func thinkingBlock(text string) map[string]any {
+	return map[string]any{"type": "thinking", "thinking": text, "signature": ""}
 }
 
 type anthropicMessage struct {
@@ -524,15 +562,24 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	var gr genRequest
 	var ids []int
 	var err error
+	ts, terr := s.resolveThink(req.thinkRequest())
+	if terr != nil {
+		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", terr.Error())
+		return
+	}
+	tm := lm.templateFor(ts)
 	if toolsActive {
 		if lm.tmpl == nil || !lm.tmpl.SupportsTools() {
 			writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "this model has no tool-calling template")
 			return
 		}
 		tools = anthropicTools(req.Tools)
-		ids, err = lm.tk.EncodeSegments(lm.tmpl.RenderToolsSegments(system, turns, tools), false) // M25
+		if anthropicToolsConstrainedFromStart(mode, name, tools) {
+			tm = lm.constrainedTemplate(ts)
+		}
+		ids, err = lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false) // M25
 	} else {
-		ids, err = lm.promptFor(system, turns)
+		ids, err = lm.promptForT(tm, system, turns)
 	}
 	if err != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "encode: "+err.Error())
@@ -566,12 +613,14 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	defer lm.exit()
 
 	if req.Stream {
-		s.streamMessages(w, r, lm, gr, toolsActive, tools)
+		s.streamMessages(w, r, lm, gr, toolsActive, tools, tm, ts, req.wantsThinking())
 		return
 	}
 
 	id := "msg_" + reqID()
 	gr.id = id
+	var rb strings.Builder
+	gr.think = newThinkOut(tm, ts, func(t string) { rb.WriteString(t) })
 	var (
 		text                          string
 		calls                         []chat.ToolCall
@@ -602,6 +651,10 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	var content []map[string]any
 	reason := ""
 	var seq any
+	thinking := req.wantsThinking() && rb.Len() > 0
+	if thinking {
+		content = append(content, thinkingBlock(rb.String()))
+	}
 	if len(calls) > 0 {
 		if strings.TrimSpace(lead) != "" {
 			content = append(content, textBlock(lead))
@@ -612,7 +665,11 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		reason = "tool_use"
 	}
 	if reason == "" { // plain text turn (no tools, or the model declined to call)
-		content = []map[string]any{textBlock(text)}
+		// A turn cut off while still thinking has no answer: only the thinking block, stop_reason max_tokens —
+		// Anthropic's own shape for running out of tokens inside a thinking block.
+		if !(thinking && text == "") {
+			content = append(content, textBlock(text))
+		}
 		reason, seq = anthropicStopReason(finish, stopSeq)
 	}
 
@@ -656,10 +713,22 @@ func (s *server) serveCountTokensWith(w http.ResponseWriter, req anthropicReq, l
 	}
 	var ids []int
 	var err error
-	if mode, _ := anthropicToolMode(req.ToolChoice); len(req.Tools) > 0 && mode != "none" && lm.tmpl != nil && lm.tmpl.SupportsTools() {
-		ids, err = lm.tk.EncodeSegments(lm.tmpl.RenderToolsSegments(system, turns, anthropicTools(req.Tools)), false) // M25
+	// Rendered exactly as /v1/messages would render it, thinking mode and the constrained-tool rule included — a count
+	// that differs from the generation's prompt is worse than no count.
+	ts, terr := s.resolveThink(req.thinkRequest())
+	if terr != nil {
+		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", terr.Error())
+		return
+	}
+	tm := lm.templateFor(ts)
+	if mode, name := anthropicToolMode(req.ToolChoice); len(req.Tools) > 0 && mode != "none" && lm.tmpl != nil && lm.tmpl.SupportsTools() {
+		tools := anthropicTools(req.Tools)
+		if anthropicToolsConstrainedFromStart(mode, name, tools) {
+			tm = lm.constrainedTemplate(ts)
+		}
+		ids, err = lm.tk.EncodeSegments(tm.RenderToolsSegments(system, turns, tools), false) // M25
 	} else {
-		ids, err = lm.promptFor(system, turns)
+		ids, err = lm.promptForT(tm, system, turns)
 	}
 	if err != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "encode: "+err.Error())

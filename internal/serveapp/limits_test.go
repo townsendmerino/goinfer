@@ -114,7 +114,7 @@ func TestServe_everyTokenizingRouteGuardsItsInputSize(t *testing.T) {
 	// own — visionPrompt does — so the gate passed over the very route whose guard it was written
 	// to protect, and dropping that guard produced no failure. Caught by mutation, not by reading.
 	tokenizers := []string{
-		"lm.chatPrompt(", "lm.tk.EncodeSegments(", "lm.tk.Encode(", "lm.encode(", "lm.promptFor(",
+		"lm.promptForT(", "lm.tk.EncodeSegments(", "lm.tk.Encode(", "lm.encode(",
 		"lm.visionPrompt(", "lm.qwenVisionPrompt(",
 	}
 
