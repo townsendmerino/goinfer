@@ -107,7 +107,209 @@ The night job's goinfer G2 (`TestQwen35VLReal_G2_9B`) feeds the decoder `golden_
 a serve-level 9B gate could be built on them, but it would pin today's behaviour (literal `<think>\n` in the reply), so
 build it after the contract is chosen, not before.
 
+## Proposed fix — research and design (2026-09-30, not built, nothing measured beyond what is marked)
+
+**What "all clients, all the time" can honestly mean.** It cannot mean one wire format: clients split into families that
+want contradictory things, and the other servers did not find a single format either — llama.cpp ships three
+(`--reasoning-format none | deepseek | deepseek-legacy`, where legacy "keeps `<think>` tags in `message.content` while also
+populating `message.reasoning_content`"), vLLM and SGLang ship a per-model reasoning parser, and Open WebUI documents that
+it reads BOTH structured deltas (`reasoning_content` / `reasoning` / `thinking`) and inline tags, with inline tags the most
+common path. What it can mean is **one invariant that every client family survives**:
+
+> `content` is always the answer, never contains think markup, and is never silently empty when an answer was produced;
+> reasoning, when it exists, goes in a separate field that a client is free to ignore; and a client that asked for
+> thinking in its own dialect gets it in that dialect.
+
+**Client families and what each needs.**
+
+| family | reads | needs |
+|---|---|---|
+| OpenAI-SDK / curl / LangChain, unaware of reasoning | `choices[0].message.content`, `delta.content` | clean `content`; extra fields ignored (true for the OpenAI SDKs — unknown fields are dropped) |
+| Reasoning-aware OpenAI-compat (Open WebUI, Cline-style, DeepSeek-API clients) | `reasoning_content` (also `reasoning`, `thinking`) | the separated field, streamed as `delta.reasoning_content` before content |
+| Tag-parsing UIs (Open WebUI's inline path, LM Studio-style) | `<think>…</think>` inside `content` | raw tags in `content` — today's behaviour; the escape hatch below |
+| Anthropic Messages (Claude Code, the SDKs) | `content[]` blocks; `thinking` request field | `text` blocks always; `thinking` blocks only if the request enabled thinking (the real API's `thinking_delta` events, then a `signature_delta` before `content_block_stop`) |
+| Responses API | `output_text` items | clean text; reasoning items are out of scope (file header says so) |
+| goinfer's own web UI | its JS `splitThinking` | keeps working on clean content (no tags left to split) |
+
+**The mechanism: one splitter at the one choke point.** Every reply funnels through `drive`'s `onText(string)`
+(`streamTokens` in `internal/serveapp/openai.go` decodes special tokens to literal `<think>` / `</think>` text, one token
+each, so tags never arrive split across *special-token* boundaries — but a model can also write them as ordinary tokens, so
+chunk-safety is still required). Add a pure, chunk-boundary-safe state machine in `chat/` next to `ProseStreamer`
+(`chat/tools.go`, same shape: `Push(chunk) → (reasoning, content)`, holds back a partial tag at the tail, `Flush`):
+
+1. start state from what the PROMPT ended with: `forcedOpen` (prompt ended `<think>\n`) → Reasoning; otherwise Undecided;
+2. Undecided: optional leading whitespace then `<think>` → strip it, Reasoning; anything else → Content (the closed
+   empty-block case is Content from token 1);
+3. Reasoning: up to `</think>` → reasoning; on `</think>` strip the following `\n`s, → Content; a `<think>` seen later in
+   Content is ordinary content (never re-enters);
+4. `Flush` at end: still in Reasoning ⇒ **truncated inside the block** ⇒ everything so far is reasoning, content is empty
+   (vLLM's rule, verified in its `Qwen3ReasoningParser` docs: "output was truncated. Everything generated so far is
+   reasoning"). This is the one case the invariant cannot rescue by splitting — see "thinking budget / default" below.
+
+It must run **before** `runToolTurn`'s `ProseStreamer` and `ParseToolCallsFor`: a model that quotes `<tool_call>` inside its
+reasoning would otherwise trip the tool parser, and a leading `<think>` defeats the bare-JSON recovery (first non-space byte
+check). vLLM has the same rule ("tool calling only parses functions from the `content` field"). Properties to test, in the
+style of `TestProseStreamerMatchesParser`: (i) output is independent of chunking, byte-by-byte included; (ii) reasoning+content
+reassembled with the tags equals the raw text (lossless — so `reasoning_format=none` can be built from the same state
+machine); (iii) equals a non-streaming whole-string split; (iv) every tag spelling above, including `<think>` as several
+ordinary tokens.
+
+**Wire formats.**
+- *OpenAI chat:* add `reasoning_content` (`omitempty`) to the non-streaming `message` map and to `delta` (`helpers.go`);
+  stream reasoning deltas first, then content. Emit `reasoning_content` only — not also `reasoning`/`thinking` — because a
+  client that reads several and concatenates would show it twice; vLLM moved to `reasoning` while llama.cpp/DeepSeek kept
+  `reasoning_content`, so this is a real fork, and the choice should be made knowingly (recommend `reasoning_content`, the
+  one llama.cpp and the DeepSeek API use, and the only one the OpenAI-compat reasoning clients all read; Open WebUI reads all three).
+- *`reasoning_format` (llama.cpp's name, so configs carry over):* server flag and per-request override. `deepseek` (default,
+  separated), `none` (raw, today's bytes, for tag-parsing UIs), `deepseek-legacy` (both). Cheap, because (ii) makes it a
+  re-join.
+- *Anthropic:* the `thinking` request field is accepted and ignored today (`internal/serveapp/anthropic.go:34-35`). Emit `thinking` blocks
+  only when the request has `thinking.type` `enabled`/`adaptive`; otherwise run non-thinking (below) and emit text only.
+  `anthropicTextStream` hardcodes block index 0 and `finish()` returns 0|1 — it needs real index bookkeeping, in
+  `streamMessages`, `streamMessagesTools` and the duplicate in `vision_serve.go`. **Open, unverified:** what `signature` a
+  non-Anthropic server should send (the real API validates it on replay; serve drops `thinking` blocks on input
+  already, `anthropicTurns` default branch, so replay is safe), and whether Claude Code accepts an empty one. Settle it with
+  the manual Claude Code smoke test that is still outstanding (memory: anthropic-messages-api), not by reading docs.
+- *Responses API, `/v1/completions`:* Responses: drop reasoning, emit clean `output_text`. Completions is raw-prompt,
+  untouched. Jobs and batches record the split form (`resultText` in `drive` currently sees raw text — decide once).
+
+**Controlling it: `enable_thinking`.** Plumb it as a render option, not a per-request env read (the env-config rules in
+`task-env-config-2026-09.md` apply): accept `chat_template_kwargs.enable_thinking` (vLLM / llama.cpp / SGLang all use exactly
+that), Anthropic `thinking`, and Ollama-style `think` where cheap; add a render-options argument to `chat.Template.render`
+(today `func(system string, turns []Turn) []Segment`; every caller listed in the serve map must pass it — `serveChatText`,
+`tools.go`, `anthropic.go`, `responses.go`, vision routes, jobs, batches, and **`count_tokens`, which must render identically
+to generation**). Decide the checkpoint's default by matching its own template's `enable_thinking` test
+(`… is false` vs `… is true`, the two forms read above), and **fail toward today's bytes when the pattern is unrecognised** —
+there is no jinja engine here, so a string match is fragile and must be pinned by a test against every size's actual
+template file.
+
+**Two rules that remove whole failure classes.**
+1. *Grammar-constrained tool turns force non-thinking.* A forced/named/lone tool installs a masker from token 1
+   (`constrainForcedTool`), and `required` uses `ToolCallsGrammar` from token 1: the model cannot write `<think>` at all, so
+   an open `<think>\n` in the prompt would be contradicted. With `auto`, the `LazyMasker` must be armed only **after** the
+   splitter has left Reasoning, or a `<tool_call>` quoted in reasoning arms it.
+2. *Unaware clients get a bounded answer.* The truncation hole: a client that sent `max_tokens: 64` and never heard of
+   reasoning gets `content: ""`, `finish_reason: length` from a thinking model — the failure that looks exactly like a broken
+   server. vLLM's docs are silent on it. Options: (a) default non-thinking unless the request opts in (the closed empty block
+   in the prompt; no reasoning is ever generated; also the fastest), (b) thinking by default with a reasoning budget that
+   force-closes `</think>` (llama.cpp `--reasoning-budget`: -1 unlimited, 0 immediate end, N>0 budget), (c) leave it and
+   document. **Recommendation: (a) as the default, opt-in to thinking, with (b) as a follow-up for opted-in clients** — but
+   (a) changes default bytes (0.8B: +4 tokens, which moves G3 by construction; 9B: moves the default off the model's own),
+   so it is its own decision with G3 re-registered on a stated mechanism ("prompt now equals the model's template with
+   `enable_thinking=false`"), not folded into the splitter.
+
+**History.** Serve already drops Anthropic `thinking` blocks on input and ignores `reasoning_content` (not a `chatMessage`
+field), so a client that splits reasoning and replays only the answer is safe. A client that replays raw `<think>` in
+`content` gets it re-rendered as plain text every turn (context cost, differs from the template). Qwen3.5's template keeps
+reasoning only for assistant turns after the last user query (`loop.index0 > ns.last_query_index`) — that matters for agent
+loops, where tool-call turns after the last query carry their reasoning. Do not build history handling in the first cut;
+changing how history renders breaks KV prefix reuse from the changed turn onward (`lm.sessions.acquire`). Accept
+`reasoning_content` on input and drop it, and write down that this is a deliberate deviation.
+
+**Hazards found in the code map** (file:line as reported by the map; re-verify before editing):
+- *Stop strings are matched on raw decoded text* inside `streamTokens` (`firstStop`, `stopTailHold`), which includes
+  reasoning: a stop string appearing in the reasoning ends the reply early with no answer. A splitter downstream of `onText`
+  sees already-truncated text. Fixing it means matching stops on the content side only, which restructures `streamTokens` —
+  and `TestStreamTokens_decodesAsAContinuation` pins exactly one `DecodePiece` call and zero `Decode` calls in it.
+  First cut: document it; it affects thinking clients only.
+- *Several tests are AST guards:* `TestStreamSurfaces_allSendUsageBeforeDone` counts exactly 5 `sseDone` completions,
+  `TestDriveUsesRequestContext`, `TestServe_noRouteEncodesARenderedPrompt`. A new streaming site updates the count.
+- *No shared reply builder:* the text-reply logic is duplicated in `serveChatText`, `serveVisionChat`,
+  `serveVisionMessages`, the tool paths, `batches_run.go`, `jobs_run.go`, plus library copies in `internal/chatapp/main.go`
+  and `demo/agent/agent/agent.go`. The splitter belongs in `chat/` (importable by all) and each site needs wiring; budget
+  for missing one, and grep for `onText` callers as the completeness check.
+- *Adjacent, separate defect:* Qwen3.5's own tool format (`<tool_call><function=NAME><parameter=K>…`) is not parsed anywhere
+  in Go; serve prompts it with Hermes JSON, and if the model emits the XML form the call is dropped silently and returns as
+  prose. It will make a "client works" claim false for tool-using clients on Qwen3.5 regardless of the think fix. Out of
+  scope here; worth its own task.
+- *No fake-token serve harness exists* (end-to-end serve tests need `GOINFER_SERVE_MODEL` and skip without it — a skip is
+  not a pass). The usable model-free seam is `lm := &loadedModel{tk: tk}` plus a hand-fed `chan int` into `streamTokens`
+  (`streamtokens_windowing_test.go`), and `httptest` against a bare `server`. Build splitter and wire-format tests there;
+  use the real 0.8B and 9B only for the client matrix.
+
+**Phasing, each shippable alone.**
+1. *Splitter + `reasoning_content` + `reasoning_format` + Anthropic thinking blocks, default bytes UNCHANGED.* Works today
+   without a prompt change: the 9B self-opens `<think>` (measured), so Undecided→Reasoning handles it, and the 0.8B mostly
+   emits none. No G3 movement. Delivers the invariant except for the truncation hole.
+2. *`enable_thinking` plumbed* (OpenAI `chat_template_kwargs`, Anthropic `thinking`), render option through every caller,
+   byte-exactness gate per size, tool-grammar rule 1. Default bytes still unchanged.
+3. *Default decision* (rule 2 a/b), G3 re-registered with a mechanism. Owner decision.
+4. *Stops on content only; reasoning budget; history.*
+
+**Gate: the client matrix, run for real (night queue if it exceeds ~10 min; the 0.8B is quick by day).** For each of 0.8B
+and 9B, thinking unset/on/off, text and tools: OpenAI Python SDK non-streaming and streaming; the same with `max_tokens`
+small enough to truncate inside the block (expect empty content + reasoning + `length`, and a documented note); raw `curl`;
+Anthropic SDK with and without `thinking`; Claude Code (the outstanding smoke test); Open WebUI with its inline-tag path
+(`reasoning_format=none`) and its structured path. Every cell asserts the invariant, not just "a reply came back". A cell
+that passes only because the reply was empty is a fail — the same trap as a skipped test.
+
+**Sources read for this section** (web, 2026-09-30; not re-verified line by line): vLLM reasoning-outputs page and its
+`Qwen3ReasoningParser` API docs (Qwen3.5's template "places `<think>` in the prompt so only `</think>` appears in the
+generated output"; `enable_thinking` via `chat_template_kwargs`; field renamed `reasoning_content` → `reasoning`; thinking
+disabled → content, via `prompt_is_reasoning_end`); the llama.cpp server README and `common/chat` (`thinking_forced_open`
+when the template ends `<think>\n`; `--reasoning-format`; `--reasoning-budget`); Open WebUI's reasoning-models page;
+Anthropic's streaming and extended-thinking docs (`thinking_delta`, `signature_delta`, `display: omitted`; the final turn of a
+thinking request must begin with a thinking block in manual mode); Ollama's `think` parameter and `message.thinking`.
+
+## It is not only Qwen — measured survey, and the general shape (2026-09-30)
+
+Rendered every chat template on this box (`~/models`, HF `apply_chat_template`, one user turn, `add_generation_prompt=True`)
+with `enable_thinking` unset / `False` / `True` and read the tail. Templates that could not be loaded or carry no
+`chat_template` in their tokenizer files (gpt-oss HF, SmolLM3, OLMo-3-think, LFM2.5, Ministral, Granite-4.2, Gemma-4-E2B, internlm2
+— needs `trust_remote_code`) are **not surveyed** here; for gpt-oss the repo's own comment (`chat/templates.go`, Harmony) is the
+only evidence used.
+
+| family (checkpoints on this box) | generation prompt, `enable_thinking` unset | `=False` | `=True` | reasoning delimiters |
+|---|---|---|---|---|
+| Qwen3 (1.7B, 4B, 30B-A3B) | nothing (model decides) | closed empty `<think>\n\n</think>\n\n` | nothing | `<think>…</think>`, model writes both |
+| Qwen3.5 0.8B | closed empty block | same | open `<think>\n` | `<think>…</think>` |
+| Qwen3.5 9B, JEV-9B | open `<think>\n` | closed empty block | open `<think>\n` | only `</think>` is generated |
+| Gemma 4 26B-A4B | closed scaffold `<\|channel>thought\n<channel\|>` | same | nothing after `<\|turn>model\n` (`<\|think\|>\n` goes in the system turn instead) | `<\|channel>thought\n…<channel\|>` |
+| gpt-oss (Harmony; repo comment only) | no non-thinking form: always a channel protocol | — | — | `analysis` / `commentary` / `final` messages, several per reply |
+| Gemma 3, Granite-hf, Mellum2, Phi-3, Qwen2.5/1.5, TinyLlama, Qwen3-Next instruct | nothing | kwarg ignored | kwarg ignored | none in the template |
+
+What the table shows, in order of weight:
+1. **The generation prompt has exactly four shapes** — nothing; open prefill; closed prefill; an always-on channel protocol — and
+   **the same knob name (`enable_thinking`) means different things per family and per size**: default ON (Qwen3, Qwen3.5-9B),
+   default OFF (Qwen3.5-0.8B, Gemma 4), or absent. Code that hard-wires "Qwen does X" or "ChatML does Y" is wrong by
+   construction; this defect was the ChatML renderer doing exactly that.
+2. **The output side has two parser shapes, not one per family:** a *delimited* span (`<think>…</think>`, Gemma 4's channel
+   markers — same machine, different strings, optionally "forced open" by the prompt) and Harmony's *multi-message channel
+   routing*. vLLM and SGLang land on the same split (a parser per model family, parameterised).
+3. **History rules are also shared.** Gemma 4's template, like Qwen3.5's, re-renders reasoning only for assistant turns after
+   the last user turn (`loop.index0 > last_user_idx`), additionally gated by `preserve_thinking` when there are tool calls,
+   and it reads `reasoning` **or** `reasoning_content` from the assistant message (`chat_template.jinja`, lines ~238-242).
+   So inputs should accept both field names.
+
+**The general solution: make the prompt half and the parse half one declared object per family, and make the machinery
+generic over it.** The defect class is *a renderer and a parser that were written separately and disagree*; fixing Qwen3.5
+alone fixes one instance. Concretely:
+- Add to `chat.Template` a `Reasoning *ReasoningSpec`, filled in by `Detect` from the template string and the vocabulary
+  (`HasToken`), e.g. `{Open, Close string; Default ThinkDefault /*On|Off|Absent*/; Prefill func(mode) string; History HistoryRule}`.
+  `nil` means "this family does not think in the template" (Phi-3, Gemma 3, …): no splitting, no prefill, today's bytes.
+- One render option `Thinking{Default, On, Off}` through the same render signature for every family; each family's spec knows
+  its three prompt endings (the table's columns). A test renders the Go template and the real HF template for **every
+  checkpoint on the box** in all three modes and asserts byte equality — a generated golden per checkpoint, not a hand-written
+  one per family, so a family nobody has written yet fails loudly when its first checkpoint is added (the repo's
+  `validateResolved()` chokepoint idea, applied to templates).
+- One generic *delimited* splitter parameterised by `{Open, Close, forcedOpen}` (Qwen, Qwen3.5, GLM, DeepSeek, MiniMax, Gemma 4
+  with its channel strings) plus a separate `HarmonyParser` for the channel protocol, both behind one interface
+  `Push(chunk) (reasoning, content)`; the wire layer (`reasoning_content`, Anthropic `thinking` blocks, `reasoning_format`) only
+  ever sees that interface, so it is written once.
+- Tool-call parsing already dispatches per template (`Template.ParseToolCalls`); put it behind the same per-family object so
+  prompt, reasoning parse and tool parse cannot drift apart. The Qwen3.5 XML-tool-format gap above is the same defect class:
+  the renderer speaks Hermes JSON, the model speaks XML, nothing checks them against each other.
+- **Fail toward today's behaviour:** a template whose `enable_thinking` pattern is not recognised gets `Reasoning == nil`
+  (no prefill change, no splitting), and a startup log line names the model as "thinking unmanaged". Never guess a default.
+
+Alternative considered and **not** recommended now: embed a real Jinja engine and render each checkpoint's own
+`chat_template` for every family, which removes hand-written renderers and their drift entirely and makes every kwarg work
+without per-family code. Cost: a new dependency in a repo that hand-writes byte-exact renderers with goldens on purpose,
+no test that the engine matches HF's Jinja (custom `raise_exception`, `strftime_now`, `tojson`, `namespace`, macros — the
+Qwen3.5 and Gemma 4 templates use all of them), and a per-request render cost. It is the long-term option if the per-family
+specs keep multiplying; the spec approach is the smaller step and keeps the goldens.
+
 ## Not in scope
 
-The vision path itself (P8a G0-G4 stand on `golden_*`), Qwen3 (served with thinking left on, as today), and any change to thinking-mode
-output parsing beyond the check in question 3.
+The vision path itself (P8a G0-G4 stand on `golden_*`), Qwen3 (served with thinking left on, as today — though the phase-1
+splitter would cover it for free), and Qwen3.5's XML tool-call format (separate task).
