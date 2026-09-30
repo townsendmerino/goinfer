@@ -2,6 +2,7 @@
   "_comment": "The repo documents the site renders under /docs/ (docs/tasks/task-site-2026-09.md S3): a navigation shell, not new writing. Each src is a repo path; a relative link between two of them becomes a link between their pages, and any other relative link becomes a link to the file on GitHub. Titles come from each file's first heading.",
   "docs": [
     {"slug": "server", "src": "docs/server.md", "group": "Serving"},
+    {"slug": "flags", "src": "docs/flags.md", "group": "Serving"},
     {"slug": "api-tiers", "src": "docs/api-tiers.md", "group": "Serving"},
     {"slug": "claude-code", "src": "docs/integrations/claude-code.md", "group": "Connect a tool"},
     {"slug": "opencode", "src": "docs/integrations/opencode.md", "group": "Connect a tool"},

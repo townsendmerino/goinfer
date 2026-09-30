@@ -1,0 +1,321 @@
+{
+ "_comment": "Curated text for docs/flags.md, which internal/serveapp/flagsdoc_test.go generates from serve's real flags (registerFlags). Every flag needs an entry here and every entry needs a flag; the test fails otherwise. Regenerate the page with: go test ./internal/serveapp -run TestFlagsDoc -update. Groups appear in the order their first flag does. type is needed only for flags whose Go type says nothing (custom values, enums); default only for defaults that vary by platform or environment. summary is plain prose: no commit hashes, no measurement diaries; the long text stays in --help.",
+ "groups": {
+  "Choosing models": "What to serve. `--model` is the one flag most invocations need.",
+  "Memory and swap safety": "Read these before loading a model that is close to your RAM or VRAM.",
+  "Backend, precision and context": "Which compute backend runs the model, at what precision, with how much context.",
+  "Concurrency and queues": "How many requests run at once, and what happens to the rest.",
+  "Sessions and KV cache": "Keeping conversations warm between requests, and across restarts.",
+  "Speculative decoding": "Lossless drafting: output is identical to plain decoding, only the speed changes.",
+  "Network and security": "Where the server listens and who may talk to it.",
+  "Admin and halt": "Controlling a running server without restarting it.",
+  "Other": "Everything else."
+ },
+ "flags": [
+  {
+   "name": "model",
+   "group": "Choosing models",
+   "summary": "What to serve: a `.gguf` or `.giw` file, a model directory, or a reference fetched on first use (`hf:owner/repo:quant`, `demo:<tier>`). Repeatable; `name=path` serves several models from one process, with optional per-model overrides after the path.",
+   "type": "[name=]path-or-ref (repeatable)",
+   "see": "docs/server.md"
+  },
+  {
+   "name": "served-model-name",
+   "group": "Choosing models",
+   "summary": "The id `/v1/models` reports for a single unnamed `--model` (default: the file or directory name)."
+  },
+  {
+   "name": "lora",
+   "group": "Choosing models",
+   "summary": "A PEFT LoRA adapter directory, merged into a safetensors base at load."
+  },
+  {
+   "name": "adapter",
+   "group": "Choosing models",
+   "summary": "A compute-time LoRA adapter that shares a base model's resident weights. Repeatable. Needs a dense safetensors base; not compatible with `--stream-weights`.",
+   "type": "serveName=baseName=dir (repeatable)"
+  },
+  {
+   "name": "vision",
+   "group": "Choosing models",
+   "summary": "Vision tower directory for a multimodal `--model` (found automatically per family); enables image content parts. Defaults to the `--model` directory when it holds a tower."
+  },
+  {
+   "name": "vision-quant",
+   "group": "Choosing models",
+   "summary": "Vision encoder precision: `f32` (bit-exact) or `int8`, which only speeds up the vision encoder on AVX512-VNNI CPUs.",
+   "type": "f32 | int8"
+  },
+  {
+   "name": "embed-model",
+   "group": "Choosing models",
+   "summary": "An embedding model directory (CodeRankEmbed layout), served on `/v1/embeddings`."
+  },
+  {
+   "name": "embed-quant",
+   "group": "Choosing models",
+   "summary": "Embedding weight precision.",
+   "type": "f32 | q8"
+  },
+  {
+   "name": "embed-served-model-name",
+   "group": "Choosing models",
+   "summary": "The id `/v1/models` reports for the embedding model (default: the directory name)."
+  },
+  {
+   "name": "fit",
+   "group": "Memory and swap safety",
+   "summary": "Size an unpinned load to what this machine actually has instead of a flat historical default, for example a larger CUDA context when the card has the free VRAM. `--fit=off` restores the fixed defaults.",
+   "type": "on | off"
+  },
+  {
+   "name": "stream-weights",
+   "group": "Memory and swap safety",
+   "summary": "Run a model bigger than your RAM: page weights from disk instead of holding them resident. The flag to know before loading something large."
+  },
+  {
+   "name": "weight-cache",
+   "group": "Memory and swap safety",
+   "summary": "Resident expert-weight budget in GB for `--stream-weights`. 0 = automatic, about half of available RAM."
+  },
+  {
+   "name": "accept-slow",
+   "group": "Memory and swap safety",
+   "summary": "Load a `--stream-weights` paged-MoE model even when its predicted decode rate is below the 2 tok/s floor. Without this, such a load is refused and the predicted rate is named."
+  },
+  {
+   "name": "moe-cache-experts",
+   "group": "Memory and swap safety",
+   "summary": "Run a MoE model whose experts exceed VRAM or RAM by streaming routed experts to the GPU per token. Bit-identical to fully resident, at the cost of a transfer per token. Off by default."
+  },
+  {
+   "name": "moe-cache-slots",
+   "group": "Memory and swap safety",
+   "summary": "Per-layer expert slots to keep resident for a paged MoE model. On CUDA this is an upper bound: it is lowered if free VRAM cannot hold it."
+  },
+  {
+   "name": "moe-pager",
+   "group": "Memory and swap safety",
+   "summary": "Backing mode for the expert pager of a `.giw`-paged MoE model: `mmap` (zero-copy, but on macOS the memory budget is not enforced) or `pool` (owned buffers, a firm cap on every platform).",
+   "type": "mmap | pool",
+   "default": "`pool` on macOS, `mmap` elsewhere"
+  },
+  {
+   "name": "require-backend",
+   "group": "Memory and swap safety",
+   "summary": "Exit non-zero at startup if a model did not get the requested `--backend`'s fast paths (no resident decode, or a prefill that fell back to the per-token loop). For batch jobs that should fail at second zero rather than run slow."
+  },
+  {
+   "name": "backend",
+   "group": "Backend, precision and context",
+   "summary": "The compute backend. `--version` lists the backends compiled into this binary; naming one that is not there falls back to `cpu`.",
+   "type": "cpu | webgpu | cuda | metal"
+  },
+  {
+   "name": "quant",
+   "group": "Backend, precision and context",
+   "summary": "Weight precision, the accuracy, speed and RAM trade-off. `int4` is the default; `f32` is unquantized. A prequantized `.giw` carries its own.",
+   "type": "int4 | int4mix | q4k | int8int8 | int8 | f32",
+   "see": "docs/quantization.md"
+  },
+  {
+   "name": "embed-int4",
+   "group": "Backend, precision and context",
+   "summary": "With `--quant int4`, keep the token-embedding and LM-head table at int4 as well, halving the largest resident tensor on a small model with a big vocabulary. `--embed-int4=false` keeps it at int8.",
+   "see": "docs/quantization.md"
+  },
+  {
+   "name": "kv",
+   "group": "Backend, precision and context",
+   "summary": "KV cache precision: `f32` is bit-exact; `f16` and `i8` are lossy and smaller (`f16` applies to GPU-resident models only).",
+   "type": "f32 | f16 | i8"
+  },
+  {
+   "name": "kv-quant",
+   "group": "Backend, precision and context",
+   "summary": "Overrides the CPU KV cache precision alone.",
+   "type": "f32 | i8",
+   "deprecated": "use `--kv`"
+  },
+  {
+   "name": "ctx",
+   "group": "Backend, precision and context",
+   "summary": "GPU-resident KV capacity in positions. 0 keeps the backend default, which `--fit` may raise."
+  },
+  {
+   "name": "direct-load",
+   "group": "Backend, precision and context",
+   "summary": "Load a plain `.gguf` straight into memory instead of through its sidecar `.giw` cache. Also enabled by setting `GOINFER_GGUF_DIRECT`.",
+   "default": "off (on when `GOINFER_GGUF_DIRECT` is set)"
+  },
+  {
+   "name": "exact-prefill",
+   "group": "Backend, precision and context",
+   "summary": "Force bit-exact prompt ingestion on every backend, turning off the faster prefill paths that are not bit-identical. For diffing outputs across versions or reproducing a bug."
+  },
+  {
+   "name": "cpu-exact-prefill",
+   "group": "Backend, precision and context",
+   "summary": "The same, for the CPU backend only: the f64-accumulating attention kernel instead of the faster f32 default."
+  },
+  {
+   "name": "max-concurrent",
+   "group": "Concurrency and queues",
+   "summary": "How many generations of one model run at once, capped by `--kv-sessions`. GPU-resident models run several only where the backend can batch their decode; vision and weight-streaming models, and `--spec` without `--spec-adaptive`, run one."
+  },
+  {
+   "name": "max-queue",
+   "group": "Concurrency and queues",
+   "summary": "Requests that may wait per model before new ones get a 429. 0 = unbounded."
+  },
+  {
+   "name": "max-inflight",
+   "group": "Concurrency and queues",
+   "summary": "Global cap on concurrent inference requests, applied before the per-model queue. A full cap returns 503 with `Retry-After`. 0 = unbounded."
+  },
+  {
+   "name": "cpu-batch",
+   "group": "Concurrency and queues",
+   "summary": "Whether concurrent CPU generations of one model join their decode tokens into one batched forward (replies are bit-identical either way). `auto` batches models with at least 2 GiB of dense weights.",
+   "type": "auto | on | off"
+  },
+  {
+   "name": "prefill-chunk",
+   "group": "Concurrency and queues",
+   "summary": "On a GPU-resident model serving several generations, prefill a long prompt that arrives mid-decode in chunks of this many tokens, with a decode step between chunks. 0 = off."
+  },
+  {
+   "name": "max-body-bytes",
+   "group": "Concurrency and queues",
+   "summary": "Cap on request-body size in bytes; a larger body is rejected with 413 before it is read. 0 derives the cap from the model's context window."
+  },
+  {
+   "name": "kv-sessions",
+   "group": "Sessions and KV cache",
+   "summary": "Conversations kept prefilled in RAM for prompt-prefix reuse. 0 disables. On GPU backends this is also how many resident KV slots a model keeps, clamped by its memory guard."
+  },
+  {
+   "name": "session-dir",
+   "group": "Sessions and KV cache",
+   "summary": "Directory that persists and restores KV sessions across restarts."
+  },
+  {
+   "name": "kv-idle-demote",
+   "group": "Sessions and KV cache",
+   "summary": "Demote a warm session's KV to `--session-dir` once it has been idle this long (for example `10m`); it faults back in on the next matching request. 0 = off."
+  },
+  {
+   "name": "kv-demoted-max",
+   "group": "Sessions and KV cache",
+   "summary": "Maximum demoted (on-disk) sessions to keep; older ones are dropped. Only with `--kv-idle-demote`."
+  },
+  {
+   "name": "job-dir",
+   "group": "Sessions and KV cache",
+   "summary": "Directory for a durable job journal: one line per generation state change. After a restart, a job still running at its last recorded change is marked `interrupted`. Off by default."
+  },
+  {
+   "name": "spec",
+   "group": "Speculative decoding",
+   "summary": "Lossless n-gram (prompt-lookup) speculative decoding. Wins on copy-heavy traffic such as code edits, RAG and agent loops. Serves one generation at a time unless `--spec-adaptive` is also set.",
+   "type": "ngram",
+   "see": "docs/spec/02-cache-ngram.md"
+  },
+  {
+   "name": "spec-adaptive",
+   "group": "Speculative decoding",
+   "summary": "Experimental. With `--spec ngram`, keeps concurrent generations: one speculates only while it is alone and joins batched decode when others arrive. Needs a resident whose decode can batch. Early measurements found it slower than plain `--spec ngram` under copy-heavy load, so it is not recommended there."
+  },
+  {
+   "name": "drafter",
+   "group": "Speculative decoding",
+   "summary": "A pretrained block-drafter directory (DFlash) paired with `--model`: it proposes a block of tokens per round and the target verifies them in one pass. Lossless; greedy requests only; needs a resident GPU backend.",
+   "see": "docs/spec/08-dspark-dflash.md"
+  },
+  {
+   "name": "addr",
+   "group": "Network and security",
+   "summary": "Listen address. Loopback by default; bind `0.0.0.0` only with `--api-key` and TLS, or behind a TLS-terminating proxy."
+  },
+  {
+   "name": "api-key",
+   "group": "Network and security",
+   "summary": "Shared secret every request must send as `Authorization: Bearer <key>` or `x-api-key`. Falls back to `$GOINFER_API_KEY`. Required to bind anywhere but loopback, and with `--allow-admin`."
+  },
+  {
+   "name": "tls-cert",
+   "group": "Network and security",
+   "summary": "PEM certificate file. With `--tls-key`, serves HTTPS instead of plaintext HTTP."
+  },
+  {
+   "name": "tls-key",
+   "group": "Network and security",
+   "summary": "PEM private key file, paired with `--tls-cert`."
+  },
+  {
+   "name": "web",
+   "group": "Network and security",
+   "summary": "Serve a local browser UI at `/` to chat and to pull GGUF checkpoints from Hugging Face. Off by default: its pull route starts multi-gigabyte downloads."
+  },
+  {
+   "name": "allow-admin",
+   "group": "Network and security",
+   "summary": "Enable `/admin/*` on the TCP listener: model load and unload, cancel, halt, resume. A deliberate opt-in that requires `--api-key`. Ignored when `--admin-socket` is set.",
+   "see": "docs/server.md"
+  },
+  {
+   "name": "admin-socket",
+   "group": "Admin and halt",
+   "summary": "Serve `/admin/*` on a Unix socket (mode 0600, no key check: file permissions are the auth) instead of TCP. The same binary controls it with `status`, `ls`, `cancel`, `halt` and `resume`."
+  },
+  {
+   "name": "halt-file",
+   "group": "Admin and halt",
+   "summary": "Poll this path every 250 ms: present halts the server (inference routes return 503 and in-flight generations are cancelled), absent resumes it. A supervisor halts with `touch` and resumes with `rm`."
+  },
+  {
+   "name": "halt-exit-code",
+   "group": "Admin and halt",
+   "summary": "When nonzero, a halt exits the process with this code once every cancelled generation has stopped, for supervisors whose restart policy must not undo a deliberate halt. 0 = a halt never exits."
+  },
+  {
+   "name": "unload-drain-wait",
+   "group": "Admin and halt",
+   "summary": "How long `POST /admin/models/unload` waits for in-flight requests to drain before returning 202."
+  },
+  {
+   "name": "version",
+   "group": "Other",
+   "summary": "Print the version, the backends compiled into this binary, and the Go toolchain, then exit."
+  },
+  {
+   "name": "decisions-template",
+   "group": "Other",
+   "summary": "Prompt template for `POST /v1/systemone`: `chat-v1` (the model's chat template) or `bare-v1` (no chat template).",
+   "type": "chat-v1 | bare-v1"
+  },
+  {
+   "name": "decisions-calibration",
+   "group": "Other",
+   "summary": "A `calibration.json` of per-kind temperatures for `/v1/systemone`. Without it, answers are uncalibrated."
+  }
+ ],
+ "subcommands": [
+  {
+   "cmd": "pull <ref>",
+   "summary": "Fetch a model, sha256-verified, into the local cache."
+  },
+  {
+   "cmd": "check",
+   "summary": "Drive a running server through a harness conversation and print per-feature verdicts."
+  },
+  {
+   "cmd": "status | ls | cancel <id> | halt [reason] | resume",
+   "summary": "Control a running server over its `--admin-socket`."
+  },
+  {
+   "cmd": "--version",
+   "summary": "Print the version and the backends compiled into this binary."
+  }
+ ]
+}
