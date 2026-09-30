@@ -516,10 +516,20 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
   | int4 | ≈ 1.6 h |
   | int8int8 | not probed; likely 2–3 h |
 
-  That is ~13–14 h of night time under the 3 h job cap. **Not queued: the owner decides** among three options:
-  - run it as registered over several nights;
-  - first make `PromptHidden` batched for Qwen3.5, the lever that shrinks all three arms;
-  - amend the f32 arm to a pre-registered subset.
+  That was ~13–14 h of night time under the 3 h job cap.
+  - **Owner's choice, 2026-09-30:** make `PromptHidden` batched first. Done: `runLayersQwen35N` (7ba740fe).
+  - **Re-measured on the same JEV-9B probe** (exploratory; nobara-pc CPU, binary at 90f8dbc9, single items):
+
+    | | per-token (before) | batched (now) | per-token RSS |
+    |---|---|---|---|
+    | int4 | 186–201 ms/token | 65–66 ms/token (≈3×) | 33 GB |
+    | f32 | 1,188 ms/token | 74–84 ms/token after the first item (≈15×; the first read 241, warm-up) | 52.7 GB |
+
+  - **Numerics on four unsaturated items:**
+    - f32 batched matches the reference to KL ≤ 6e-8.
+    - At int4, batched and per-token differ from each other by KL 3.5e-5 to 7.4e-3, each about as far from the
+      reference as the other, in both directions. That is int4's own error, which D6b's int4 arm grades.
+  - **D6b is now ~2 h for the three arms**, run under the amendment below.
 
 ### D5 — the endpoint
 
@@ -687,6 +697,19 @@ exists.
   Report ECE per arm: quantization can hold top-1 and still shift calibration, which is the
   product's actual promise. If int4 fails calibration but passes top-1, the default for decision
   models is int8, recorded in the capability matrix, not in a comment.
+- **Amendment, 2026-09-30, before any D6b run** (registered with its grader, [`decisions-d6b-2026-09/grade.py`](../measurements/decisions-d6b-2026-09/grade.py)):
+  - **"Fails calibration" is made operational.** Calibration is the top-label ECE against gold on the 84 gold rows of
+    the 150 items (15 equal-width bins), for each arm and for the reference on the same rows. An arm fails calibration
+    if the 95% paired-bootstrap interval of (arm ECE − reference ECE) over those rows lies wholly above 0. An interval
+    that reaches 0 is recorded as unresolved, not as a failure. At 84 rows the ECE alone cannot resolve small gaps, so
+    the paired difference is what can.
+  - **int8int8 is graded on int4's band** (mean KL ≤ 0.03, top-1 ≥ 98%), since it is the fallback default the rule
+    names.
+  - **Validity.** Every arm must answer all 150 items by route `head` with the reference's prompt token count, or the
+    arm is void.
+  - **It runs on the batched Qwen3.5 `PromptHidden`** (`runLayersQwen35N`, 7ba740fe), the path goinfer ships. Its CPU
+    cost measured 65–66 ms/token at int4 and ~80 ms/token at f32, against the per-token path's ~0.19 / ~1.2 s, so the
+    three arms are ~2 h in all.
 
 ### D7 — decisions vs constrained generation (speed)
 
