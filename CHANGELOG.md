@@ -15,6 +15,19 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Reasoning models: `content` is the answer, the thinking is a separate field (`serve`).** A Qwen3 / Qwen3.5 / Gemma 4
+  reply no longer mixes `<think>…</think>` into `content`. `chat.Template` now declares each checkpoint's thinking
+  behaviour, read from its own template text — Qwen3 and Qwen3.5-9B default to thinking on, Qwen3.5-0.8B and Gemma 4 to
+  off — and `serve` splits the reply on every route: `reasoning_content` (OpenAI chat, streamed), `thinking` blocks
+  (`/v1/messages`, when the request asks), clean `output_text` (`/v1/responses`), jobs and batches. New request controls
+  `chat_template_kwargs.enable_thinking`, `reasoning_format`, Anthropic `thinking`; new flags `-thinking` (default `asis`:
+  prompts are byte-identical to before) and `-reasoning-format` (default `deepseek`; `none` restores the old raw output).
+  A template control that is not recognised is left alone. See `docs/server.md` § Reasoning models and
+  `docs/tasks/task-qwen35-think-prompt-2026-09.md`.
+  - **What changes for an existing client:** a model that was writing `<think>` into `content` now writes it to
+    `reasoning_content`. A client that parsed the tags out of `content` sets `-reasoning-format none`.
+  - **Fixed on the way:** the Gemma 4 tool prompt put a newline between a system prompt and the first tool declaration
+    that Gemma's own template does not; the tool goldens had no system-prompt case.
 - **Qwen3.5 image input (`serve`, safetensors, CPU).** An OpenAI `image_url` content part now works on a Qwen3.5
   checkpoint that carries its vision tower (`Qwen3_5ForConditionalGeneration`; the tower is auto-discovered and loads on
   the first image, not at startup). Qwen3.5 does not use DeepStack, so this is the ordinary splice-at-placeholder path

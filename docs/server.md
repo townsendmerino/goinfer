@@ -455,6 +455,40 @@ names that are served.
 - **Refused:** a question that breaks a rule is a 422 before any prefill. A compute-time adapter entry cannot answer,
   since label scoring would read the base model. `/v1/models` lists each entry's `decisions` support.
 
+**Reasoning models (thinking).** Qwen3, Qwen3.5 and Gemma 4 can think before they answer, and their own chat templates
+disagree about the default — Qwen3 and Qwen3.5-9B think unless told not to, Qwen3.5-0.8B and Gemma 4 do not. serve reads
+the default from the checkpoint's own template (nothing is hard-wired per family) and keeps one rule on every route:
+**`content` is the answer and never carries `<think>` markup; the reasoning travels in a separate field a client is free
+to ignore.**
+
+| client | what it sends | what it gets |
+|---|---|---|
+| OpenAI SDK / curl, reasoning-unaware | nothing special | clean `message.content`; an extra `reasoning_content` it ignores |
+| Reasoning-aware OpenAI-compatible | `chat_template_kwargs: {"enable_thinking": true\|false}` | `reasoning_content` (streamed as `delta.reasoning_content`, all of it before any `content`) |
+| Clients that parse `<think>` tags themselves | `reasoning_format: "none"` (or `-reasoning-format none`) | the raw text, tags and all, in `content` — exactly what serve sent before |
+| Both at once | `reasoning_format: "deepseek-legacy"` | `reasoning_content` filled and the tags kept in `content` |
+| Anthropic `/v1/messages` | `thinking: {"type": "enabled"\|"adaptive"\|"disabled"}` | a `thinking` block first, then `text` (and `tool_use`); with no `thinking` field, text only — reasoning is dropped |
+| `/v1/responses` | `reasoning: {"effort": "none"}` turns it off | clean `output_text`; reasoning items are not returned |
+
+- **Defaults.** `-thinking asis` (the default) renders the prompt exactly as before — the model decides — so nothing
+  changes for a client that says nothing. `-thinking template` renders what the checkpoint's own template renders; `on` and
+  `off` force it. A request overrides the flag. `reasoning_effort: "none"` turns thinking off; any other value changes
+  nothing, because clients such as dsh send a bare `reasoning_effort` to every endpoint and must not have their prompts
+  flipped by it.
+- **A reply cut off while thinking has no answer.** `max_tokens` counts thinking too, so a small `max_tokens` with thinking on
+  can end inside the block: `content` is empty, `reasoning_content` holds what was written, `finish_reason` is `length`
+  (`stop_reason: max_tokens` with only a thinking block on `/v1/messages`). Turn thinking off (or raise `max_tokens`) for a
+  client that cannot tolerate that. `budget_tokens` is accepted and not enforced.
+- **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema`, and a tool call the
+  server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
+  that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.
+- **Stop strings are matched on the raw text, reasoning included.** A `stop` string that appears in the model's reasoning
+  ends the reply there, with no answer. Known, and pinned by a test; it affects clients that turn thinking on and set `stop`.
+- **Not split:** a model whose template has no recognised thinking control (everything else, and any template shape not
+  read from a real checkpoint) is served exactly as before. Replayed reasoning is dropped on input: `reasoning_content` on an
+  assistant message and Anthropic `thinking` blocks are ignored. The `goinfer-chat` CLI does not split yet.
+- **Jobs and batches** apply the same split; a job's result and a batch line's `content` are the clean answer.
+
 **Embeddings.** Point `--embed-model` at a [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)
 HF snapshot to serve `/v1/embeddings` (`--embed-quant f32|q8`). `--model` and
 `--embed-model` are each optional and can run together — generation and

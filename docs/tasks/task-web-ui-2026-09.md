@@ -188,7 +188,7 @@ stats now follow whichever model is selected, not always the first one listed.
 **The gate decision: a narrow route, not the admin load.** `POST /admin/models/load`
 (`internal/serveapp/admin.go:125`) takes any caller-named path and stays behind
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
-(`internal/serveapp/main.go:658`), registered only under `-web` and wrapped like pull
+(`internal/serveapp/main.go:674`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
 (`webLoadPath`, `internal/serveapp/webui.go:440`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither
@@ -230,9 +230,11 @@ part of W9/W14.
 ### W6 — Fold the thinking block — DONE 2026-09-14 (page side)
 ~~Reasoning tokens stream inline as body text~~ — a reply's thinking is now folded into a collapsed
 "Thinking…" section above the answer, relabelled "Thought for Ns" when it closes
-(`splitThinking`, `internal/serveapp/webui/ui/app.js:357`). The server still does not split
-thinking from the answer (`stop_reason` is never `thinking` in v1, `internal/serveapp/anthropic.go:35`),
-so the page does it.
+(`splitThinking`, `internal/serveapp/webui/ui/app.js:357`). The server did not split
+thinking from the answer when this was written (`stop_reason` was never `thinking` in v1), so the page did it.
+**Superseded 2026-09-30:** serve now separates it (`reasoning_content`, Anthropic `thinking` blocks —
+`docs/server.md` § Reasoning models), and the page stitches `reasoning_content` back into the `<think>` form this
+fold already parses, so the fold is unchanged.
 
 The recognised shapes come from real `serve` output, captured before writing any code, not from
 documentation:
@@ -324,7 +326,7 @@ chat, or delete earlier exchanges (W7). If a request does hit the wall, the erro
 in plain words, with the server's own message underneath. Other 400s are left as they are.
 
 **Server: `/v1/models` (and `/health`) publish `context_window`.** It comes from one function,
-`contextWindow` (`internal/serveapp/openai.go:1005`), which `prepare` also uses to enforce the limit,
+`contextWindow` (`internal/serveapp/openai.go:1043`), which `prepare` also uses to enforce the limit,
 so the number a client plans against is exactly the one that rejects it. On a resident GPU backend
 that is the resident KV cap, not the model's `MaxPositions`. Measured on this box (CUDA, Qwen3-1.7B):
 `context_window: 8192` rather than Qwen3's native maximum. A prompt of 8192 tokens is rejected naming
@@ -764,7 +766,7 @@ checks that the list is laid out below its heading at full width (found by W15's
      search is substring, not fuzzy — "quen" does not find "Qwen", only completes a correctly-typed
      prefix.
   2. **The quant/backend a model loads at is invisible and unchangeable from the page.** `-quant`
-     and `-backend` (`internal/serveapp/main.go:331`, `:502`) are server-startup flags with "no
+     and `-backend` (`internal/serveapp/main.go:337`, `:502`) are server-startup flags with "no
      per-request override" (W5's own decision, §2). That was the right call for *requests*; it is
      what made *this* incident invisible — the page had no way to show what quant was about to be
      used, or that a bigger model would blow the budget under it. Arguably the higher-value half of
@@ -942,7 +944,7 @@ saying it was stopped). **Effort was: M.**
 ~~A busy server is currently an indistinguishable spinner~~ — most of this shipped as part of the
 server's own job-status work this morning (`de0f13c5`) and W27's client, ahead of this doc catching
 up: `GET /v1/jobs/{id}` reports a still-queued job's `queue: {position, waiting, running}`
-(`internal/serveapp/jobs_http.go:114`, from `lm.turns.position`), and the page polls it once a
+(`internal/serveapp/jobs_http.go:126`, from `lm.turns.position`), and the page polls it once a
 second while nothing has streamed yet, showing *"Waiting for its turn: 2nd in line (3 waiting, 1
 running)."* in place of a spinner (`pollQueue`, `internal/serveapp/webui/ui/app.js:1101`).
 **Gate, as anticipated:** this is a field on the page's own request's own state (its W27 job), never
@@ -1124,7 +1126,7 @@ second, parallel implementation of the same use-after-free-avoiding logic.
 filesystem path the admin route would otherwise trust unconditionally; unload names nothing but a
 registry key, and the only keys that exist are ones `GET /v1/models` already publishes to every
 client. `handleWebUnload` (`internal/serveapp/webui.go:613`) is `sameOrigin(auth(...))` behind
-`-web` — W5's exact gate stack (`internal/serveapp/main.go:658`) — with `s.models[req.Name]` under
+`-web` — W5's exact gate stack (`internal/serveapp/main.go:674`) — with `s.models[req.Name]` under
 `regMu` (inside `unloadByName`) as the entire "policy": a name not loaded is a 404, the same shape
 as any other unknown model. `TestWebUI_disabledByDefault` and the AST wiring guard
 (`TestWebUI_listAndPullAreWrappedInSameOrigin`, `internal/serveapp/webui_test.go`) were both
@@ -1443,10 +1445,10 @@ by a pre-registered margin, on a small local model, or it does not ship.
 `internal/serveapp/webui/ui/app.css:1513` (layout) · `internal/serveapp/webui/index.html:13` (tabs) ·
 `internal/serveapp/webui/ui/app.js:309`, `:935`, `:122`, `:1434`, `:1581`, `:357`, `:841`, `:86`, `:489`, `:1358`, `:641`, `:205`, `:1288`, `:7`, `:946` (the conversation transcript, the
 rendering rule, the error explanations, the keyboard handling, the load offer that replaced the dead-end line, the thinking split,
-regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:997` (`contextWindow`) ·
+regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:1035` (`contextWindow`) ·
 `internal/serveapp/admin.go:125` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:547` (the sampling fields the page never sends) ·
-`internal/serveapp/anthropic.go:35` (no thinking block in v1) · `pull/pull.go:181` (`Size`, for the
+`anthropic.go`'s request type (no thinking block in v1; added 2026-09-30) · `pull/pull.go:181` (`Size`, for the
 fit verdict) · `demo/agent/cmd/agent-web/index.html:129`, `:183`, `:198` (the image composer, the
 markdown TODO, the tool chips — all transplantable) ·
 [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) §F.3, §0 ·

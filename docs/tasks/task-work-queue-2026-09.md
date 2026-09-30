@@ -98,13 +98,13 @@ Not rebuilt below; this is the floor J1–J9 build on.
   20-token request that arrived last can go after a 4,000-token one that arrived first, and
   nothing in the system knows the difference.
 - **Backpressure is a number, not a plan.** `-max-queue` defaults to 8
-  (`internal/serveapp/main.go:350`); a full queue is a 429 on the OpenAI routes and a 529
-  `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:552`). A global
+  (`internal/serveapp/main.go:358`); a full queue is a 429 on the OpenAI routes and a 529
+  `overloaded_error` on the Anthropic one (`internal/serveapp/anthropic.go:599`). A global
   `-max-inflight` (default 128) bounds the pre-queue stage — JSON and image decode, tokenisation,
   template render — and is deliberately distinct from the per-model 429
   (`internal/serveapp/helpers.go:85`).
 - **Nothing is durable.** `drive` runs the generation for the life of the request
-  (`internal/serveapp/openai.go:1345`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
+  (`internal/serveapp/openai.go:1364`). The client's connection *is* the job: close it and the  work is cancelled and unrecoverable. There is no id to ask about afterwards.
 - **There is warm state worth scheduling around.** The session LRU keeps prefilled KV and hands a
   request the session that already holds its prompt as a prefix
   (`internal/serveapp/sessions.go:14`), `-kv-sessions` 4 by default
@@ -240,7 +240,7 @@ to `runJob` to defer over the job's whole life instead of the handler's. Everyth
 admission (`lm.tryEnter`, no `http.ResponseWriter` required), cancel-by-id (`drive`/`driveVL`
 already register `gr.id` in K1's registry once running) — was already reusable as-is.
 
-`jobStore` (J2) gained a `responseStore`-style FIFO cap (`internal/serveapp/responses.go:50`'s pattern), skipping
+`jobStore` (J2) gained a `responseStore`-style FIFO cap (`internal/serveapp/responses.go:63`'s pattern), skipping
 over any still-pending/running job rather than evicting it; and two creation paths — `create`
 (unchanged, both transitions at once, for every synchronous handler) and `createPending` +
 `getOrCreate` (the async path: pre-create pending BEFORE admission is even attempted, so
@@ -485,7 +485,7 @@ The only throughput item, and it is deliberately last.
 `internal/serveapp/openai.go:96`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
 check, `drive`) · `internal/serveapp/helpers.go:85` (`-max-inflight`, distinct from the per-model
 429) · `internal/loadflags/loadflags.go:67`, `:508` (`-kv-sessions`, `-max-queue`) ·
-`internal/serveapp/anthropic.go:552` (529 on a full queue) · `internal/serveapp/sessions.go:14`
+`internal/serveapp/anthropic.go:599` (529 on a full queue) · `internal/serveapp/sessions.go:14`
 (the session LRU J6 schedules around) · `internal/serveapp/embeddings.go:34` (the one existing bulk
 surface) · `internal/chatapp/main.go:123` (the CLI J5 extends) ·
 [`task-halt-2026-09.md`](task-halt-2026-09.md) K1/K2/K4/K5/K9 ·

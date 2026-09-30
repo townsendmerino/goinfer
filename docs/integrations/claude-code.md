@@ -65,7 +65,12 @@ families this holds for). Two items this page used to list as known-open are clo
 2026-09-02, `0e7a5956`). Gemma 4's own call syntax is parsed, not constrained, so Qwen2.5 remains
 the better choice for tool work.
 
-`thinking`, `cache_control` and `metadata` are accepted and ignored.
+`cache_control` and `metadata` are accepted and ignored. `thinking` is honoured for a model whose chat template has a
+thinking control (Qwen3, Qwen3.5, Gemma 4 — `docs/server.md`, "Reasoning models (thinking)"): with `enabled` or
+`adaptive` the reply carries a `thinking` content block (empty `signature`) before the text, and with no `thinking` field
+the reasoning is dropped and only text is returned. **Not yet smoke-tested with Claude Code itself** — the blocks are
+checked against the Messages streaming shape by `scripts/think_matrix.py`, but whether Claude Code accepts an empty
+signature is unverified; if it objects, send `thinking: {"type": "disabled"}` or start serve with `-thinking off`.
 
 ## Retiring this page
 

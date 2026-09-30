@@ -1,15 +1,63 @@
 # Task: Qwen3.5's generation prompt — serve renders it differently from the model's own template (2026-09)
 
-> **Status 2026-09-30: open, owner decision needed (scope below).** Found by P8a gate G4
-> (`docs/measurements/p8a-qwen35-vl-2026-09/g1-g4-results.md`, finding 1), then widened the same day when the 9B leg of P8a
-> died on it: **the 0.8B and the 9B disagree about the default, so the G4 write-up's "Qwen3.5 defaults to thinking OFF" is
-> true of one size only.** Nothing here has been changed in product code.
+> **Status 2026-09-30: phases 1 and 2 BUILT, phase 3 (the default) still the owner's decision.** Found by P8a gate G4
+> (`docs/measurements/p8a-qwen35-vl-2026-09/g1-g4-results.md`, finding 1), widened the same day when the 9B leg of P8a died
+> on it: **the 0.8B and the 9B disagree about the default, so the G4 write-up's "Qwen3.5 defaults to thinking OFF" is true of
+> one size only.** What is built is in "Built" below; what is not is in "Not built".
 >
-> **Measured since (same day):** the 9B, given a prompt *without* its open `<think>\n`, writes `<think>\n` itself as its first two
-> tokens and then continues identically to the with-opener run (question 1, three images, 32 tokens). And serve has **no
-> think-block handling at all** in non-test Go (no `reasoning_content`, no stripping — question 3), so the self-written
-> opener, and the whole reasoning block that follows it, reach the client as ordinary reply content. The P8a pin script's
-> 0.8B-only assertion that killed the 9B night job is fixed (`e6b41252`, local) and verified on the 9B.
+> **Measured on the way:** the 9B, given a prompt *without* its open `<think>\n`, writes `<think>\n` itself as its first two
+> tokens and then continues identically to the with-opener run (question 1, three images, 32 tokens). Before this work
+> serve had no think-block handling at all, so that self-written opener and the whole reasoning block reached the client as
+> ordinary `content`. The P8a pin script's 0.8B-only assertion that killed the 9B night job is fixed and verified on the 9B.
+
+## Built (2026-09-30)
+
+What shipped, against the design in "Proposed fix" below (which is kept as the record of the reasoning):
+
+- **`chat/reasoning.go` — the per-family spec.** `chat.Template` carries a `Reasoning` read from the checkpoint's own template
+  text (Qwen3: default on, nothing written; Qwen3.5-0.8B: default off, closed block; Qwen3.5-9B / JEV-9B: default on, open
+  block; Gemma 4: default off, `<|think|>` system marker when on). `WithThinking(ThinkAsIs|Template|On|Off)` renders each; a
+  template control that is not one of those shapes gets no spec — no prefill, no splitting. `ThinkSplitter` is the output
+  half, chunk-boundary safe. **Gate:** 36 text prompts byte-equal to HuggingFace in every mode, token ids equal against the
+  real tokenizers, Gemma 4 tool prompts byte-equal (`testdata/chat_think_goldens/think_modes.json`, made by
+  `scripts/pin_chat_think_modes.py`); the splitter is property-tested over every split point and random partitions. Nine
+  mutations (9B default flipped, trailing-newline trim, partial-close hold, re-entry from content, splitter bypassed, flush
+  dropped, effort mapping, constrained-template rule, legacy raw) each turn a gate red.
+- **`internal/serveapp/think.go` — the wire half.** One splitter wrap inside `streamTokens`, so every route gets clean
+  `content` from one place: OpenAI chat (`reasoning_content`, streamed, all before content), tools, vision, Anthropic
+  (`thinking` blocks with `signature_delta`, block indices shifted, only when the request asked), Responses (reasoning
+  dropped), jobs (reasoning in the event log, not the result) and batches. Controls: `chat_template_kwargs.enable_thinking`,
+  `reasoning_effort`, `reasoning_format`, Anthropic `thinking`; flags `-thinking` (default `asis` = today's prompt bytes)
+  and `-reasoning-format` (default `deepseek`; `none` restores the old raw output). count_tokens renders exactly as
+  generation does. The web UI stitches `reasoning_content` back into the `<think>` form its own fold already parses.
+- **Constrained requests render thinking-off** (`response_format` json, a forced or lone tool, `required`): the grammar
+  governs token 1, so a prompt ending inside an open block would contradict it. The lazy `auto` tool union is not
+  constrained this way; a model that quotes the tool opener inside its reasoning can arm it early (hazard kept).
+- **Deviation from the design: `reasoning_effort` can only turn thinking OFF.** `none` → off; any other value changes
+  nothing. The design mapped every non-`none` value to on. `docs/server.md` records that the DeepSeek Harness sends a bare
+  `reasoning_effort` to every endpoint it does not recognise; reading it as "thinking on" would change that client's prompts
+  and, at a small `max_tokens`, hand it an empty answer. A client that wants thinking says so in `enable_thinking`.
+- **Found and fixed on the way:** `renderGemma4Tools` wrote a newline between a system prompt and the first declaration that
+  Gemma's template does not; the old tool goldens had no system-prompt case. The per-checkpoint goldens found it.
+
+**Verified against real checkpoints** (client matrix, `scripts/think_matrix.py`, exploratory daytime run on Qwen3.5-0.8B; the
+9B is a night job). See the record in "Matrix results" below for what passed, what did not, and what was not exercised.
+
+## Not built
+
+- **The default (phase 3).** `-thinking asis` keeps today's bytes, so the truncation hole is open for clients that turn
+  thinking on with a small `max_tokens`: `content` is empty, `finish_reason` is `length`. Only a non-thinking default or a
+  reasoning budget closes it. `-thinking off` / `template` exist now, so flipping the default is one word plus G3
+  re-registered on a stated mechanism.
+- **A reasoning budget** (`budget_tokens` is accepted and not enforced).
+- **Stop strings on content only.** Stops are still matched on raw text, so a stop that appears in the reasoning ends the
+  reply with no answer. Pinned by `TestStreamTokens_thinkStopStrings`, named as a known limitation.
+- **History:** replayed `reasoning_content` and Anthropic `thinking` blocks are dropped on input; the templates' rule
+  (keep reasoning only for assistant turns after the last user turn, `preserve_thinking`) is not implemented.
+- **Harmony (gpt-oss)** needs its own parser (several channel messages per reply); the interface admits one, none written.
+- **The `goinfer-chat` CLI and `demo/agent`** keep their own decode loops and do not split yet.
+- **Qwen3.5's XML tool-call format** (separate task), and what signature Claude Code wants on a thinking block — still to
+  settle with the outstanding manual Claude Code smoke test.
 
 ## The defect
 
@@ -163,7 +211,7 @@ ordinary tokens.
 - *`reasoning_format` (llama.cpp's name, so configs carry over):* server flag and per-request override. `deepseek` (default,
   separated), `none` (raw, today's bytes, for tag-parsing UIs), `deepseek-legacy` (both). Cheap, because (ii) makes it a
   re-join.
-- *Anthropic:* the `thinking` request field is accepted and ignored today (`internal/serveapp/anthropic.go:34-35`). Emit `thinking` blocks
+- *Anthropic:* before this work the `thinking` request field was accepted and ignored (a comment on `anthropicReq` said so; it is now rewritten). Emit `thinking` blocks
   only when the request has `thinking.type` `enabled`/`adaptive`; otherwise run non-thinking (below) and emit text only.
   `anthropicTextStream` hardcodes block index 0 and `finish()` returns 0|1 — it needs real index bookkeeping, in
   `streamMessages`, `streamMessagesTools` and the duplicate in `vision_serve.go`. **Open, unverified:** what `signature` a
