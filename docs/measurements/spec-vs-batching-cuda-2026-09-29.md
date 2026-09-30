@@ -111,3 +111,55 @@ identity is perfect here too (0/8 and 0/2 mismatches). Not graded — reported p
   not switching between the two modes) and needs its own design before any build.
 - **Build "speculate when alone, batch under load" for chat**, gated on nobara per §3's re-run list,
   before it ships.
+
+## 6. "Spec inside a batch" investigated, parked (2026-09-29): the shipped candidate underperforms on copy, and the cheap fix does not work
+
+MC4's "Speculative decode inside a batch" item (`task-concurrency-2026-09.md`, "MC4 — broadening
+(parked)") predates this session, with its own trigger: "MC3 shipped and spec's single-stream win is
+still larger than batching's per-sequence share." Section 3's copy result (L = 1.540×) fires that
+trigger. There has never been a design for it beyond the one-line trigger.
+
+**What a real ragged-batch kernel would need.** MC3's `StepBatch` takes one row per generation per
+step, a fixed 1:1 shape. A genuine multi-token spec round batched alongside other generations' ordinary
+single-token steps needs a ragged batch: rows causally sequential within one generation's own group,
+while other generations' rows stay independent — a new kernel shape, not proven safe by anything that
+exists today (`mc3Fake`'s test double processes rows sequentially by construction, which says nothing
+about the real CUDA/Metal/WebGPU kernels). That is backend kernel work, unscoped.
+
+**The cheap hypothesis, checked first instead:** does the just-shipped switch candidate ("speculate
+when alone, batch under load", this same session) already cost something on copy traffic by yielding to
+MC3's batch, and would a policy that refuses to yield recover most of copy's 1.54×, with zero new
+kernels? A `GOINFER_SPEC_ADAPTIVE_NEVER_YIELD` diagnostic knob was added (`decoder/knobs.go`,
+`docs/env-vars.md`) to bisect this before writing anything smarter.
+
+**Exploratory smoke (2026-09-29, single run per arm, NOT paired or graded — a direction check only)**,
+1.5B, 4-client copy, fresh `serve-cuda` built from the working tree:
+
+| arm | aggregate tok/s |
+|---|---:|
+| plain `-spec ngram` (today's shipped default) | 402.2 |
+| `-spec-adaptive`, shipped yielding policy | 206.0 |
+| `-spec-adaptive` + never-yield (spin-wait) | 191.8 |
+
+**Reading.**
+- The shipped candidate's yielding policy (206.0) already loses badly to plain spec (402.2) on copy
+  traffic — confirming the risk, and worse than the graded numbers alone suggested.
+- The never-yield knob does **not** recover plain spec's number — it is worse still (191.8). The
+  measurement itself is the reason: plain `-spec ngram` gets its throughput by serializing at
+  **admission** (`setConcurrency` forces one generation running at a time; the other three block on a
+  queue, no CPU spent). `-spec-adaptive` admits all four concurrently regardless of the yield policy, so
+  "never yield" makes them **busy-spin** (`runtime.Gosched()`) contending for one exclusive CAS flag
+  instead of blocking cleanly. That is a real, structural cost of concurrent admission itself, not
+  something a per-round policy can fix.
+- **Conclusion: no per-round policy change (accept-rate-gated or otherwise) can close this gap**, because
+  the cost comes from being admitted concurrently at all, not from what happens once admitted. Recovering
+  copy's win would need either the real ragged-batch kernel (unscoped, real backend work) or reconsidering
+  concurrent admission itself for copy-shaped traffic — contradicting "keep MC3's concurrency always
+  on," the switch candidate's own premise.
+
+**Parked.** Filed as its own item (not folded into the switch candidate, which is correct as shipped for
+chat — its graded workload). No further work without a real design and owner sign-off. The diagnostic
+knob stays for whoever picks this up next; it is not a shipped policy.
+
+Raw: [`smoke.log`](spec-vs-batching-cuda-2026-09-29-inside-batch-smoke/smoke.log).
+

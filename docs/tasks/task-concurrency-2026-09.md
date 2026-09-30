@@ -1392,7 +1392,12 @@ Each item waits on MC3 shipping and on a measured request for it:
 - **Recurrent and hybrid families** — per-slot state is MC1's job; batching the state update is
   this item's. Trigger: same.
 - **Speculative decode inside a batch.** Trigger: MC3 shipped and spec's single-stream win is
-  still larger than batching's per-sequence share.
+  still larger than batching's per-sequence share. **Trigger fired on CUDA, 2026-09-29** (copy L
+  = 1.540×, [`spec-vs-batching-cuda-2026-09-29.md`](../measurements/spec-vs-batching-cuda-2026-09-29.md)
+  §6). Investigated the same day: the real fix is a ragged-batch kernel (unscoped, real backend
+  work); the cheap hypothesis (a workload-aware yield policy in the switch candidate, zero new
+  kernels) does NOT work — measured worse than doing nothing, because the cost is concurrent
+  admission itself, not the per-round policy. **Parked, no design exists yet, owner's call.**
 - **Mixed adapters in one batch.** Trigger: a real multi-adapter workload.
 
 **The spec trigger, measured on Metal — pre-registered 2026-09-27, before any timing.** Today a model served with
@@ -1554,7 +1559,10 @@ n-gram loop already prefers when present).
       - **copy overshoots it:** S = 2.104×, and **L = 1.540× — spec beats MC3's batching even at 4
         clients**, which the rule reads as MC4's own "spec inside a batch" trigger, a different and larger feature
         than this candidate. Parked as its own item, owner's call; not folded into "speculate when alone, batch
-        under load".
+        under load". **Investigated 2026-09-29** (§6 of the same record): this candidate's own yielding policy
+        underperforms plain `-spec ngram` on copy traffic (206 vs 402 tok/s, exploratory), and a workload-aware
+        fix within the switch does not work (concurrent admission is the cost, not the per-round policy) — a
+        real reason to caveat `-spec-adaptive` for copy-heavy traffic, not just a missed opportunity elsewhere.
       - Identity held perfectly under load (0 differences, every turn, every workload, both models) — unlike
         Metal's 2026-09-27 record, where later turns diverged before item 30's trailing-token fix existed.
       - The embed-int4 default did not knock the CUDA resident off; every cell read `cuda-resident (int4)`.

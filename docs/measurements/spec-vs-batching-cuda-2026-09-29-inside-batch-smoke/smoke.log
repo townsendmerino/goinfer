@@ -1,0 +1,8 @@
+=== 2026-09-29 21:13:50 PDT exploratory: never-yield knob vs plain spec vs adaptive-yielding, 4-client copy ===
+--- arm 1: plain -spec ngram (today's shipped, forces concurrency=1) ---
+[spec-copy] plain_spec: clients=4 wall=5.033s aggregate=402.16 tok/s (2024 tokens; HTTP errors none)
+--- arm 2: -spec-adaptive, shipped yielding policy ---
+[spec-copy] adaptive_yield: clients=4 wall=7.921s aggregate=206.026 tok/s (1632 tokens; HTTP errors none)
+--- arm 3: -spec-adaptive + GOINFER_SPEC_ADAPTIVE_NEVER_YIELD=1 ---
+[spec-copy] adaptive_neveryield: clients=4 wall=6.804s aggregate=191.79 tok/s (1305 tokens; HTTP errors none)
+=== 2026-09-29 21:14:21 PDT DONE ===
