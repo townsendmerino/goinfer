@@ -26,8 +26,8 @@ So serve's prompt differs from HF's default in *different* ways per size:
 - **0.8B:** serve is 4 tokens short (the empty block). HF's default answers with thinking suppressed; serve leaves the
   model free to start its own reasoning. Measured in G4 (`TestServe_qwen35Image_G4` pins the 4-token delta as a named
   difference).
-- **9B:** serve is short by the open `<think>\n` (the token count is **not measured**). Whether the model then writes
-  `<think>\n` itself, answers directly, or does something else is **not measured** — that is the first question below.
+- **9B:** serve is short by the open `<think>\n` (2 tokens: `<think>`, `\n`). The model writes the opener itself at step 0 (question 1, measured), so the
+  difference shows up as a literal `<think>\n` at the start of serve's reply text.
 
 The gap applies to **every Qwen3.5 text turn through serve**, not only image turns, and to any other caller of the ChatML
 renderer for these checkpoints. `enable_thinking` is not plumbed anywhere in product code (`grep enable_thinking` in `*.go`
@@ -42,11 +42,17 @@ carry both variants, and G2 compares against `golden_*`, so the vision gate does
 
 ## Questions, in the order they unblock each other
 
-1. **What does the 9B do when the open `<think>\n` is missing?** P8a's 9B golden step produces both variants on the same
-   three images under HF f32 greedy (`golden_*` with the opener, `serve_*` without), 32 tokens each: if the `serve_*` text
-   starts `<think>\n` the model re-opens the block itself and the prompt difference is cosmetic at the first token; if it
-   answers directly, serve is running the 9B in a mode HF's default never exercises. Free once the pin step has run; read
-   `hf_text` in both files. (32 tokens, three images, an image prompt — suggestive only for text turns.)
+1. **What does the 9B do when the open `<think>\n` is missing? — ANSWERED 2026-09-30 (HF f32 greedy, 9B at the pinned
+   revision, three grid-aligned images, 32 tokens, log `~/goinfer-logs/p8a/pin-9b-goldens-2026-09-30.log`).** It writes the
+   opener itself: on all three images the `serve_*` variant's first two generated tokens are `<think>` (id 248068) and
+   `\n` (id 198), and its remaining 30 tokens equal the `golden_*` variant's first 30 exactly. The prompts differ by
+   exactly 2 tokens (82/80, 114/112, 178/176). Min top-1/top-2 gaps 0.063-0.189 in both variants, so none of this is a
+   near-tie. So for this prompt the 9B is not run in a mode HF's default never exercises — the missing opener is
+   regenerated at step 0 — but **the generated text of a serve reply starts with a literal `<think>\n`**, where an HF reply
+   built from the model's template does not (the opener lives in the prompt there). That moves the weight onto question 3.
+   Caveats: an image prompt, three images, 32 tokens (all inside the think block); says nothing about long replies,
+   text-only turns, tool calls, or sampling at temperature > 0. The 0.8B's side (closed empty block missing) is the
+   G4-measured delta and was not re-tested here.
 2. **What should the contract be?** Options, none chosen:
    a. *Follow the checkpoint's own template default* — render the generation prompt from the model's `chat_template`
       (or detect its `enable_thinking` default), so each size gets what HF gives it. Closest to "the model's own template"
