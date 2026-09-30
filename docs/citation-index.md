@@ -401,7 +401,7 @@ supports.
 | `docs/tasks/task-constrained-confidence.md|internal/serveapp/openai.go:557` | goinfer | `ResponseFormat      *respFormat     `json:"response_format"`` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/mlp.go:300` | goinfer | `// activationFanoutWorkers caps the fan-out at the P-core count, same reasoning as` |
 | `docs/tasks/task-cpu-thread-affinity.md|decoder/scratch.go:194` | goinfer | `// not GOMAXPROCS (this machine's 2 E-cores measured harmful for this class of` |
-| `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:124` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
+| `docs/tasks/task-embed-and-harness-ux.md|chat/chat.go:133` | goinfer | `func Detect(meta Meta) (*Template, error) {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:1424` | goinfer | `func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingPa` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:330` | goinfer | `type Options struct {` |
 | `docs/tasks/task-embed-and-harness-ux.md|decoder/model.go:509` | goinfer | `func Load(dir string, opts Options) (*Model, error) {` |

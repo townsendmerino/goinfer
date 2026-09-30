@@ -60,7 +60,7 @@ and the README example (`README.md:76-88`):
 2. `decoder.Load(dir, decoder.Options{...})` (`decoder/model.go:509`), choosing a quant and a
    backend, and knowing that four default-ON behaviours are set through `os.Setenv` rather than
    `Options` (N-42).
-3. Load the tokenizer separately; detect the chat template (`chat.Detect`, `chat/chat.go:124`);
+3. Load the tokenizer separately; detect the chat template (`chat.Detect`, `chat/chat.go:133`);
    render turns to a string; encode.
 4. Build `constrain.GrammarFromStruct(Person{})`, then the masker
    `constrain.NewMasker(g, toks, eos).StopWhenComplete().Process`, which needs the token-bytes
@@ -346,7 +346,7 @@ by default (the banner says how to turn it on); which of the five routes a given
 `docs/api-tiers.md` (the Hard tier; the surfaces the facade must not touch) · `README.md:76-88`
 (the six-step example the facade replaces) · `internal/chatapp/main.go` (the 632-line reference
 implementation of mode 2) · `decoder/model.go:330`, `:193`, `:802` (`Options`, `Load`,
-`Generate`) · `chat/chat.go:124` (`Detect`) · `pull/pull.go` (the library `pull`
+`Generate`) · `chat/chat.go:133` (`Detect`) · `pull/pull.go` (the library `pull`
 exports) · `internal/serveapp/main.go:329`, `:354`, `:927-932` (`-web`, `-require-backend`, the
 resolved-path banner) · `docs/server.md:109-133`, `:173-200` (Claude Code and dsh today) ·
 `docs/scoping-dsh-goinfer.md` (Tier 0–2) · `docs/task-model-pull.md` (shipped; `hf:` refs, the
