@@ -1889,7 +1889,7 @@ grammar implementations. Proven able to go red: mis-classifying control bytes as
 - The mask is CPU work that runs *after* the logits come back, so it is additive to the decode
   step rather than overlapped. Not separately verified against the resident path's own timing.
 - **Two costs are excluded and neither is measured here.** A non-nil `LogitProcessor` disables
-  the speculative-decode paths (`decoder/speculative.go:71`, `decoder/spec_ngram.go:172`) and, on the resident backends, the
+  the speculative-decode paths (`decoder/speculative.go:71`, `decoder/spec_ngram.go:173`) and, on the resident backends, the
   on-device greedy argmax fast path. So the real cost of constrained decoding on a spec-enabled
   or greedy-fast-path configuration is HIGHER than the ratios above. Sizing that is open.
 - The remaining L-07 levers (per-state first-byte bitmap, string-state cache, vocab byte-trie)

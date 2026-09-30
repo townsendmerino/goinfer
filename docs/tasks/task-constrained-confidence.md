@@ -31,7 +31,7 @@
 > `goinfer.Into[T](ctx, prompt)`. No such function exists. The real surfaces are
 > `constrain.GrammarFromStruct` / `constrain.JSONSchema` → `constrain.NewMasker(...).Process` set as
 > `SamplingParams.LogitProcessor` (the README's "A Go struct the model cannot violate" section), and
-> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:544`). C1
+> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:551`). C1
 > is written against those.
 >
 > **Siblings.** [`task-tool-grammar-union-2026-09.md`](task-tool-grammar-union-2026-09.md)
@@ -110,7 +110,7 @@ is.
 
 **Decisions.**
 - **Hidden-state seam exists and is wired for `qwen3_5`.** `ForwardCapture`
-  (`decoder/model.go:1288`) returns logits plus captured residuals. `qwen3_5` dense shares
+  (`decoder/model.go:1292`) returns logits plus captured residuals. `qwen3_5` dense shares
   `qwen3_5_moe`'s own-forward row, which has Captures = true and Recurrent = true
   (`decoder/arch.go:954`; the predicate is `a.qwen35 != nil`, so it matches both). The capture
   contract (`decoder/capture.go:14`) is the residual *after* layer l, before the final norm, so D2
@@ -128,7 +128,7 @@ is.
   recurrent state (`decoder/kvsnapshot.go:62`). So "prefill the shared state once, branch per
   question" is not available on `qwen3_5` today (D8).
 - **Route A is approximable from outside already.** `/v1/completions` with `max_tokens: 1,
-  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:542`, cap at `:33`) gives a client
+  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:549`, cap at `:33`) gives a client
   the label-token logprobs, with no renormalization over the option set, no calibration, and no
   guarantee the labels are in the top 20. That is the baseline D1 improves on.
 
@@ -461,7 +461,7 @@ schema was never published (D0).
 
 - `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
   registered with the same `auth → haltGate → inf → maxBytes` chain as its siblings
-  (`internal/serveapp/main.go:571`). Batch goes through J1 admission and, when asked, the J3 job
+  (`internal/serveapp/main.go:573`). Batch goes through J1 admission and, when asked, the J3 job
   object, so a long batch is re-attachable.
 - Response: `distribution`, `decision`, `confidence`, `latency_ms`, plus `model`, `route` (`label` |
   `head`), `backend`, and `calibrated` (false when no `calibration.json` was found — legal, but
@@ -698,13 +698,13 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 ## Sources
 
 `constrain/constrain.go:98`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
-`Process`) · `decoder/model.go:1288` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
+`Process`) · `decoder/model.go:1292` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
 contract) · `decoder/arch.go:954` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
 `decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:137` (`validateTargets`) ·
 `decoder/lora.go:309` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:682`, `:744`
 (merge-at-load) · `decoder/kvcache.go:540` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
 skips recurrent state) · `internal/serveapp/openai.go:34`, `:536`, `:538` (`top_logprobs` cap,
-`logprobs`, `response_format`) · `internal/serveapp/main.go:571` (route middleware) ·
+`logprobs`, `response_format`) · `internal/serveapp/main.go:573` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·
 [autotrust/JEV-27B](https://huggingface.co/autotrust/JEV-27B) (adapter, head, calibration, API) ·
 [autotrust/JEV](https://huggingface.co/autotrust/JEV) · [autotrust/JEV-9B](https://huggingface.co/autotrust/JEV-9B) ·
