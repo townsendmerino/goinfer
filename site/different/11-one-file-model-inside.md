@@ -5,7 +5,7 @@ order: 11
 summary: "One file holds the runtime and a fixed Qwen2.5-Coder model, 0.5B or 1.5B. It is large, starts on the CPU, and its speed figures are old."
 stand: "A release asset that is the program and a model in one executable. You download it, check its hash and run it. There is nothing else to install and no model to fetch."
 measured: 2026-09-19
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "size on macOS arm64, v0.19.0", value: "653 MB (0.5B), 1.81 GB (1.5B)"}
   - {label: "what is inside", value: "Qwen2.5-Coder-Instruct, int8, mapped from the binary"}

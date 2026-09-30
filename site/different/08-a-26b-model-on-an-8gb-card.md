@@ -5,7 +5,7 @@ order: 8
 summary: "Gemma 4 26B-A4B decodes on an 8 GB card by streaming experts from host RAM: 40.2 tok/s on 2026-09-25, an architecture comparison, not like-for-like."
 stand: "The 26B mixture-of-experts model does not fit an 8 GB card, so goinfer keeps its experts in host memory and copies the ones each token needs to the GPU. This page gives the one figure measured for that, and what it does not show."
 measured: 2026-09-25
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "card", value: "RTX 2070 SUPER, 8 GB, driver 595.91.07"}
   - {label: "model", value: "Gemma 4 26B-A4B, goinfer's int4 .giw bundle"}

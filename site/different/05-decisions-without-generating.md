@@ -5,7 +5,7 @@ order: 5
 summary: "goinfer answers a choice among a few options from one read of the prompt, with no generation. The mechanism ships; its accuracy on a real checkpoint is not yet measured."
 stand: "Ask a yes/no, a pick among options, or a 0-to-5 score, and goinfer answers from one read of the prompt, with a probability for each option and nothing generated. Whether the answers are good enough is still being measured."
 measured: 2026-09-28
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "generation", value: "none: one prefill per question, no decode"}
   - {label: "endpoint", value: "POST /v1/systemone"}

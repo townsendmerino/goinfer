@@ -5,7 +5,7 @@ order: 9
 summary: "goinfer keeps several conversations prefilled, so a later turn prefills only what is new: on one CUDA replay, turn 9 of a coding-agent session began in 319.5 ms."
 stand: "In a long conversation, each new turn only has to process what you just added. goinfer keeps up to four conversations prefilled at once, so the history is not read again."
 measured: 2026-09-27
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "kept prefilled", value: "4 conversations by default (--kv-sessions)"}
   - {label: "turn 1, cold, 7B on CUDA", value: "651.2 ms to first token"}

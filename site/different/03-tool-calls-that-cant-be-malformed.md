@@ -5,7 +5,7 @@ order: 3
 summary: "When a model starts a tool call, goinfer holds it to valid JSON, a tool you supplied, and that tool's argument schema. It does not pick the tool for the model."
 stand: "goinfer builds one grammar over every tool a request supplies and applies it while the model writes a call. The call's form is guaranteed, and the choice of tool is still the model's."
 measured: 2026-09-24
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "guaranteed", value: "valid JSON, a supplied tool name, arguments that fit that tool's schema"}
   - {label: "Qwen2.5-7B, 12 tools, auto", value: "14/111 unusable calls became 0"}
