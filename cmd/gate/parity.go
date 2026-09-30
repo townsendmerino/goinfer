@@ -50,6 +50,7 @@ var parityGates = []gateCheck{
 	{"mistral3", "TestMinistral3_forwardParity"},
 	{"smollm3", "TestSmolLM3_forwardParity"},
 	{"olmo3", "TestOlmo3_forwardParity"},
+	{"gemma+gemma2", "TestGemma12_forwardParity"}, // Gemma 1 / CodeGemma and Gemma 2, safetensors and GGUF
 	{"olmo_hybrid", "TestOlmoHybrid_forwardParity"},
 	{"bailing_hybrid", "TestBailingHybrid_forwardParity"},
 	{"mistral3-batched", "TestMinistral3_batchedMatchesSequential"},

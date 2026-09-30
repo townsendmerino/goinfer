@@ -292,6 +292,55 @@
     "parity": "full-oracle 100.0%/1.00000"
   },
   {
+    "name": "gemma",
+    "model_types": [
+      "gemma"
+    ],
+    "display_name": "Gemma",
+    "description": "Google Gemma 1 (2B/7B) and CodeGemma: pre-norm, (1+w) RMSNorm, GeGLU, tied head",
+    "summary": "Google's first Gemma, 2B and 7B, and CodeGemma.",
+    "tasks": [
+      "chat",
+      "code"
+    ],
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "none",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, pre-norm",
+    "activation": "GeGLU",
+    "tied_lm_head": true,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": true,
+    "parity": "experimental: tiny-oracle 0.0%/0.00000"
+  },
+  {
+    "name": "gemma2",
+    "model_types": [
+      "gemma2"
+    ],
+    "display_name": "Gemma 2",
+    "description": "Google Gemma 2 (2B/9B/27B): sandwich norms, sliding/full alternating, attention + final-logit softcaps",
+    "summary": "Google's Gemma 2, 2B to 27B.",
+    "tasks": [
+      "chat"
+    ],
+    "coverage_axis": "softmax-GQA",
+    "moe": "dense",
+    "sliding_window": "interleave",
+    "qk_norm": false,
+    "rope_style": "full",
+    "norm": "RMSNorm, sandwich",
+    "activation": "GeGLU",
+    "tied_lm_head": true,
+    "loaders": "safetensors, GGUF",
+    "modality": "text",
+    "gpu_residency_eligible": false,
+    "parity": "experimental: tiny-oracle 0.0%/0.00000"
+  },
+  {
     "name": "gemma3",
     "model_types": [
       "gemma3",

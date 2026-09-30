@@ -287,7 +287,7 @@ func attendQuery(q, ctx, scores []float32, cache *KVCache, layer, pos int, globa
 			for d := range hd {
 				dot += float64(qHead[d]) * float64(kHead[d])
 			}
-			sc := dot * scale
+			sc := softcapScore(dot*scale, arch.AttnLogitSoftcap)
 			scores[s] = float32(sc)
 			if sc > maxS {
 				maxS = sc
@@ -358,7 +358,7 @@ func attendQueryI8(q, ctx, scores []float32, cache *KVCache, layer, pos int, glo
 		for s := start; s < nKeys; s++ {
 			row, srow := phys(s)*kvDim+kvh*hd, phys(s)*nKV+kvh
 			dot := linalg.DotI8(qq, kQ[row:row+hd])
-			sc := float64(dot) * qScale * float64(kSc[srow]) * scale
+			sc := softcapScore(float64(dot)*qScale*float64(kSc[srow])*scale, arch.AttnLogitSoftcap)
 			scores[s] = float32(sc)
 			if sc > maxS {
 				maxS = sc
@@ -485,4 +485,14 @@ func softplus32(x float32) float32 {
 		return x
 	}
 	return float32(math.Log1p(math.Exp(float64(x))))
+}
+
+// softcapScore is Gemma 2's attention-score soft-capping (attn_logit_softcapping): cap·tanh(s/cap), applied to the
+// scaled q·k score before the mask and softmax, as HF's Gemma2Attention does. cap 0 leaves the score unchanged, so every
+// other family takes the plain path. Every CPU scoring site calls it: attendQuery, attendQueryI8 and attendBatchedHeads.
+func softcapScore(s, c float64) float64 {
+	if c == 0 {
+		return s
+	}
+	return c * math.Tanh(s/c)
 }

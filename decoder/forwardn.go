@@ -397,7 +397,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 	// layer below reuses the same attnPool with the same useAcc64/cache), so fusedOK
 	// (attendBatchedHeads: !useAcc64 && cache.treeMask == nil) is the same for every layer too —
 	// exactly the promise newHeadWorkerPool's wantFused needs to safely skip vt/scores.
-	wantFusedPool := !useAcc64 && cache.treeMask == nil
+	wantFusedPool := !useAcc64 && cache.treeMask == nil && arch.AttnLogitSoftcap == 0 // the fused tile never sees a score to cap
 	attnPool := newHeadWorkerPoolK(m.knobs, prefillAttnWorkersK(m.knobs, K, maxKeys, hd, arch.maxHeads()), K, maxKeys, hd, wantFusedPool)
 	// f32 scratch for the assembled local window (ring history + new rows) AND for
 	// dequantizing int8 layers into for the f32 attention; ≤ maxKeys rows wide.
@@ -971,7 +971,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 	// P19: the fused schedule is eligible only on the f32 path (it would break
 	// acc64's bit-identity) and only without a tree mask. Each worker uses ITS OWN
 	// ws.fused — never a shared one, since each gathers a different kv head's V.
-	fusedOK := !useAcc64 && cache.treeMask == nil
+	fusedOK := !useAcc64 && cache.treeMask == nil && arch.AttnLogitSoftcap == 0
 	attendOneHead := func(qhead int, ws *headWorkerScratch, mm func(a, b, dst []float32, M, K, N int)) {
 		var fs *fusedScratch
 		if fusedOK {
@@ -1069,7 +1069,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					maxS := math.Inf(-1)
 					for s := range nKeys {
 						if allowed(s) {
-							sc := float64(rowS[s]) * scale
+							sc := softcapScore(float64(rowS[s])*scale, arch.AttnLogitSoftcap)
 							rowS[s] = float32(sc)
 							if sc > maxS {
 								maxS = sc
@@ -1112,7 +1112,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					_ = active[len(active)-1]
 					maxS := math.Inf(-1)
 					for s, v := range active {
-						sc := float64(v) * scale
+						sc := softcapScore(float64(v)*scale, arch.AttnLogitSoftcap)
 						active[s] = float32(sc)
 						if sc > maxS {
 							maxS = sc
@@ -1200,7 +1200,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 				_ = active[len(active)-1]
 				maxS := math.Inf(-1)
 				for s, v := range active {
-					sc := float64(v) * scale
+					sc := softcapScore(float64(v)*scale, arch.AttnLogitSoftcap)
 					active[s] = float32(sc)
 					if sc > maxS {
 						maxS = sc
@@ -1368,7 +1368,7 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 					_ = active[len(active)-1]
 					maxS := math.Inf(-1)
 					for s, v := range active {
-						sc := float64(v) * scale
+						sc := softcapScore(float64(v)*scale, arch.AttnLogitSoftcap)
 						active[s] = float32(sc)
 						if sc > maxS {
 							maxS = sc

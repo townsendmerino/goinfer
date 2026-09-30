@@ -138,6 +138,50 @@
         "cosine_mean": 0.99951
       }
     },
+    "gemma": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [
+        "decoder/gemma12.go"
+      ],
+      "deps_hash": "",
+      "status": "experimental",
+      "validated_at": "",
+      "date": "",
+      "reference": "HF f32 eager (gemma1-tiny seeded fixture, MQA + (1+w) RMSNorm), safetensors and GGUF",
+      "machine": "",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 0.0,
+        "cosine_min": 0.00000,
+        "cosine_mean": 0.00000
+      }
+    },
+    "gemma2": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [
+        "decoder/gemma12.go"
+      ],
+      "deps_hash": "",
+      "status": "experimental",
+      "validated_at": "",
+      "date": "",
+      "reference": "HF f32 eager (gemma2-tiny seeded fixture, sandwich norms + sliding 4 + softcaps 5/3), safetensors and GGUF",
+      "machine": "",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 0.0,
+        "cosine_min": 0.00000,
+        "cosine_mean": 0.00000
+      }
+    },
     "gemma3": {
       "uses": [
         "core",
