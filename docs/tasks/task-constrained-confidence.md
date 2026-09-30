@@ -1,6 +1,6 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
-> **Status, 2026-09-30: C0–C2, D0, D1, D2, D3 and D5 done; D6a GRADED → BUILD D2–D4, D4 next; D7 projected.**
+> **Status, 2026-09-30: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b sized, not queued (owner's call); D7 projected.**
 > - **D6a** ([`decisions-d6a-2026-09-28.md`](../measurements/decisions-d6a-2026-09-28.md)): arm A (Qwen3.5-9B, chat-v1, calibrated)
 >   reads top-1 0.4197 and ECE 0.1656, against JEV-9B's 0.9181 and a bar of 0.0632, so the registered rule says **build D2–D4**.
 >   The control failed as registered (bare-v1 0.3378 against the authors' B0 0.5180). The investigation found the inputs identical
@@ -461,6 +461,65 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
   softmax is what the reference does.
 - The template must be byte-identical to the reference's version. Pin it, and refuse a
   `judge_config.json` whose version the loader does not know.
+- **DONE 2026-09-30.** `decide.LoadHead` and a Route B `Decider` (`internal/decide/head.go`); `goinfer-chat decide
+  --head DIR` and `decisions-calibrate --head DIR` (`internal/decidecmd`).
+  - **Loading.** `judge_config.json`, `head.safetensors` (`proj.weight` [slots, hidden], `proj.bias`) and
+    `calibration.json`. The loader refuses:
+    - a `weights_mode` other than `unmerged`/`merged`;
+    - a `template_version` other than bare-v1;
+    - a `softcap`;
+    - a kind goinfer does not have;
+    - slot verbalizers that are not goinfer's labels in order;
+    - ranges outside the head, and any shape mismatch.
+
+    An unmerged head's adapter becomes the load's LoRA (merged at load, D3), and a different `--lora` is refused.
+  - **Decision.** `PromptHidden` (D2), then W·h + b, then the kind's first n slots, then ÷ T, then softmax. That is
+    the reference `decide()`, which slices the slots before the softmax, so masking unused choice slots is confirmed.
+    The head's own `calibration.json` applies unless `--calibration` replaces it. Refused: chat-v1, option
+    descriptions, a score other than the head's six levels.
+  - **Gate passed:** `TestHead_matchesReference`. The reference is `scripts/pin_decisions_head_tiny.py` (peft 0.21.1,
+    the adapter **unmerged**, as the demo Space runs it) on a tiny JEV-shaped judge over `qwen3_5-tiny`
+    (`testdata/decisions/judge-tiny`).
+    - **Result:** max |Δp| 1.5e-8 to 2.1e-7 on five cases (noul ×2, score, choice at 3 and 16 options), against a bar
+      of 1e-5.
+    - **Mutation-checked:** each of these goes red:
+      - every kind read from slot 0 (0.62);
+      - the bias dropped (0.107);
+      - the temperature skipped (0.018);
+      - a softmax over all of a kind's slots (0.685).
+  - **Real-model probe (exploratory; nobara-pc CPU, 2026-09-30, binary at 3d333203).** Two D0 items on autotrust's
+    JEV-9B.
+    - **It loads:** the 200 deltas merge and pass `checkAllMerged`, and the head and temperatures apply.
+    - **It answers like the reference:** the prompt token counts match (516, 112), and both items give the
+      reference's [1.0, 0.0]. At f32, KL(ref ‖ goinfer) is 3.5e-9. Both items are saturated, so this proves the
+      wiring, not the numbers; D6b does the numbers.
+    - **Cost:**
+
+      | quant | load | per token | peak RSS |
+      |---|---|---|---|
+      | int4 | ~45 s | ~0.2 s | 33 GB |
+      | f32 | — | ~1.2 s | 52.7 GB |
+
+      `PromptHidden` runs Qwen3.5 token by token on the CPU (no resident executor exposes the hidden state, D2),
+      which is decode-speed and memory-bandwidth bound.
+  - **Not done:**
+    - Serve's `/v1/systemone` still answers by Route A only.
+    - `jev_core`'s state truncation (a state over 1024 tokens is cut to its first 60% and last 40%) is not
+      reproduced. None of the 150 D0 items needs it, but a Route B request with a longer state renders a prompt the
+      head was not trained on.
+    - A batched or resident hidden-state path for Qwen3.5, which D6b's cost depends on (below).
+- **D6b sizing, from that probe.** The 150 items are 27,861 tokens:
+
+  | arm | estimate |
+  |---|---|
+  | f32 | ≈ 9 h |
+  | int4 | ≈ 1.6 h |
+  | int8int8 | not probed; likely 2–3 h |
+
+  That is ~13–14 h of night time under the 3 h job cap. **Not queued: the owner decides** among three options:
+  - run it as registered over several nights;
+  - first make `PromptHidden` batched for Qwen3.5, the lever that shrinks all three arms;
+  - amend the f32 arm to a pre-registered subset.
 
 ### D5 — the endpoint
 
