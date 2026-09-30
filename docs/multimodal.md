@@ -685,7 +685,7 @@ number is published without provenance.
      `arch.MRopeSection` / `MRopeInterleaved` / `cache.mropePos` / `cache.mropeDelta`, exactly the call the
      generic attention makes (`decoder/attention.go:155`). `ropeAt` with `mropePos == nil` is `applyRoPE`, so
      the text path is unchanged by construction — G3 proves it. `arch.MRopeSection`/`MRopeInterleaved`
-     are set for `qwen3_vl` (`registry.go:1656`) but NOT by `qwen35DenseArchitecture` /
+     are set for `qwen3_vl` (`decoder/registry.go:1656`) but NOT by `qwen35DenseArchitecture` /
      the MoE builder; they must be set from `rope_parameters` there, only when a vision tower is present or
      unconditionally (unconditional is safe: text tokens have equal components).
   5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`
@@ -755,6 +755,12 @@ number is published without provenance.
        zero, PR #2304) is a reminder: never quantise `pos_embed`; ours stays f32 under `quant`.
      - Not found anywhere: an image-token-count off-by-one, or an m-RoPE bug tied to `partial_rotary_factor`
        0.25. Not verified by anyone: whether ggml's im2col patch conv rounds to F16.
+  **P8a STATUS 2026-09-30 (local commits, NOT pushed).** G0 (tower vs HF), G0b (preprocessing), G1 (tiny fixture),
+  G3 (text path byte-identical), G2 (0.8B, 3 images, 32 tokens) and G4 (serve) all met on the 0.8B; results in
+  `docs/measurements/p8a-qwen35-vl-2026-09/{g0-g0b-results,g1-g4-results}.md`, bars and two amendments in
+  `preregistration.md`. Open: the 9B leg (night job `run-g2-9b.sh`), aikit tag + five-module pin bump (perfgate is a
+  night item), resident image decode, the MoE checkpoint, resize fidelity, and an owner decision on Qwen3.5's
+  generation-prompt think block (finding 1 in the results).
 - **P9 · Image turns in the agent loop.** (a) Prefix reuse over image blocks: an image's embedding
   block is a pure function of its bytes and the tower, so key the resident bookkeeping on a hash of
   the image bytes standing in for a token id at each placeholder position — a reused prefix with an

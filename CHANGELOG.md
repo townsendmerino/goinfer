@@ -15,6 +15,17 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Qwen3.5 image input (`serve`, safetensors, CPU).** An OpenAI `image_url` content part now works on a Qwen3.5
+  checkpoint that carries its vision tower (`Qwen3_5ForConditionalGeneration`; the tower is auto-discovered and loads on
+  the first image, not at startup). Qwen3.5 does not use DeepStack, so this is the ordinary splice-at-placeholder path
+  plus m-RoPE on the hybrid's full-attention layers (new aikit tower, `vision.Qwen3VisionEncoder`; new
+  `LoadQwen3PreprocessConfig`). Verified on Qwen3.5-0.8B: 32 greedy tokens identical to HuggingFace f32 on three images,
+  text-only logits byte-identical to the previous build (`docs/measurements/p8a-qwen35-vl-2026-09/`).
+  - **Image turns decode on the CPU**, even with a GPU backend: the resident executors cannot yet carry a Gated-DeltaNet
+    image turn (the KV upload skips the recurrent layers, so decode would start from a zeroed state). `GenerateQwenVL`
+    now refuses the resident path for a recurrent family rather than merely not engaging it. Images are capped at 1024
+    merged tokens; larger ones are resized down. 9B and the MoE checkpoints are not yet verified. Images that need a
+    resize are not yet fidelity-gated against the HF processor. Needs aikit vX.Y.Z (tower) — not yet tagged.
 - **CPU int4 group scales are stored as binary16 (aikit v1.50.1, `.giw` v15), and an older int4 sidecar is rebuilt
   once.** A v15 sidecar maps the f16 scales straight from the file. An older one still loaded, by converting its f32
   scales to a heap f16 copy on every load, and because it loaded it counted as fresh and was never replaced. The first

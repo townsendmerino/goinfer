@@ -31,7 +31,7 @@
 > `goinfer.Into[T](ctx, prompt)`. No such function exists. The real surfaces are
 > `constrain.GrammarFromStruct` / `constrain.JSONSchema` → `constrain.NewMasker(...).Process` set as
 > `SamplingParams.LogitProcessor` (the README's "A Go struct the model cannot violate" section), and
-> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:551`). C1
+> `response_format: {"type": "json_schema"}` on the server (`internal/serveapp/openai.go:557`). C1
 > is written against those.
 >
 > **Siblings.** [`task-tool-grammar-union-2026-09.md`](task-tool-grammar-union-2026-09.md)
@@ -128,7 +128,7 @@ is.
   recurrent state (`decoder/kvsnapshot.go:62`). So "prefill the shared state once, branch per
   question" is not available on `qwen3_5` today (D8).
 - **Route A is approximable from outside already.** `/v1/completions` with `max_tokens: 1,
-  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:549`, cap at `:33`) gives a client
+  logprobs: true, top_logprobs: 20` (`internal/serveapp/openai.go:555`, cap at `:33`) gives a client
   the label-token logprobs, with no renormalization over the option set, no calibration, and no
   guarantee the labels are in the top 20. That is the baseline D1 improves on.
 
