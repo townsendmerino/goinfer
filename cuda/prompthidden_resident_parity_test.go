@@ -18,6 +18,7 @@ import (
 //
 // Both sides run int4, as the Metal twin does (metal/prompthidden_resident_parity_test.go records why).
 func TestPromptHiddenResidentCUDA(t *testing.T) {
+	requireCUDADevice(t) // CI's cuda job has no driver (libcuda.so.1): skip there, as every other device test does
 	const ckpt, lora = "../decoder/testdata/qwen3_5-tiny", "../decoder/testdata/qwen3_5-tiny-lora"
 	opts := decoder.Options{Backend: "cuda", Quant: "int4", LoRA: lora}
 	mRes, err := decoder.Load(ckpt, opts)
