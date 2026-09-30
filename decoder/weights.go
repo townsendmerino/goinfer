@@ -432,6 +432,11 @@ func loadWeights(dir string, quant quantMode, embedInt4, needCanonical, skipRow4
 	// probing candidate dirs, or retrying a load of a checkpoint with one missing tensor,
 	// accumulates GBs of address space — the exact leak Model.Close exists to avoid (audit M-08).
 	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, embedInt4, needCanonical, skipRow4, lora)
+	if err == nil {
+		// D3: every family's loader, not only the generic one, answers for the adapter here. A delta
+		// the load never merged is refused, which covers the loaders that take no lora at all.
+		err = lora.checkAllMerged()
+	}
 	if err != nil {
 		_ = st.Close()
 		return nil, err
@@ -675,12 +680,21 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 	//     tensor (deltas are unprefixed) — now it fails loudly instead;
 	//   - qwen35/mla load attention via loadQwen35Attn/loadDeepseekAttn, OUTSIDE loadProj, so merge
 	//     never touches their attention deltas — reject rather than half-merge.
+	//
+	// qwen35 (D3, docs/tasks/task-constrained-confidence.md) loads its attention and DeltaNet
+	// projections through loadQwen35Attn, which now merges. Its tensor names live in that function
+	// across four layouts (plain in_proj_qkv, qwen3_next's fused in_proj_qkvz, Olmo Hybrid's separate
+	// q/k/v, Olmo's plain full attention), so a list here would be a second copy of them that could
+	// drift, which is V-12's bug. It skips this name check and is covered by checkAllMerged in
+	// loadWeights, which compares the adapter with what the load merged.
 	if lora != nil {
-		if arch.qwen35 != nil || arch.mla != nil {
+		if arch.mla != nil {
 			return nil, fmt.Errorf("decoder: LoRA merge unsupported for %s (attention projections load outside the generic merge path)", arch.Name)
 		}
-		if err := lora.validateTargets(cfg.NumLayers, s, tn); err != nil {
-			return nil, err
+		if arch.qwen35 == nil {
+			if err := lora.validateTargets(cfg.NumLayers, s, tn); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -757,6 +771,40 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 		return m, nil
 	}
 
+	// loadF32Merged reads an f32 tensor the way st.TensorF32 does and merges its LoRA delta, if it has
+	// one, into a writable copy (TensorF32 may alias the read-only mmap). loadMatMerged is loadMatQ
+	// with that merge before quantizing. Both are loadMatQ / TensorF32 exactly for a tensor with no
+	// delta, so a load without an adapter is unchanged. They serve the projections loaded outside
+	// loadProj (qwen35's, D3).
+	loadF32Merged := func(name string, shape ...int) ([]float32, error) {
+		data, derr := st.TensorF32(name, shape...)
+		if derr != nil || !lora.has(name) {
+			return data, derr
+		}
+		if len(shape) != 2 {
+			return nil, fmt.Errorf("decoder(lora): %q is rank %d; only a rank-2 weight can take a LoRA delta", name, len(shape))
+		}
+		data = append([]float32(nil), data...)
+		if derr = lora.merge(name, data, shape[0], shape[1]); derr != nil {
+			return nil, derr
+		}
+		return data, nil
+	}
+	loadMatMerged := func(name string, rows, cols int) (linalg.WeightMat, error) {
+		if !lora.has(name) {
+			return loadMatQ(name, rows, cols)
+		}
+		data, derr := loadF32Merged(name, rows, cols)
+		if derr != nil {
+			return linalg.WeightMat{}, derr
+		}
+		m := linalg.WrapF32(data, rows, cols)
+		if skipRow4 {
+			return quantizeWMSkipRow4(m, quant), nil
+		}
+		return quantizeWM(m, quant), nil
+	}
+
 	// Input embedding + final norm. The embedding is the (tied or untied) LM
 	// head, so it is logit-critical — quantize it with the embedding policy
 	// (int8 even in int4 mode), not the projection mode.
@@ -810,7 +858,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 			// qwen3.5's own double-width gated softmax attention, so only the
 			// linear (DeltaNet) layers come through here; the rest fall through
 			// to the generic tensorSchema-driven path below (olmo3's own shape).
-			if err = loadQwen35Attn(st, i, l, arch, hd, tn, loadMatQ, quant, skipRow4); err != nil {
+			if err = loadQwen35Attn(i, l, arch, hd, tn, loadMatMerged, loadF32Merged, quant, skipRow4); err != nil {
 				return err
 			}
 		} else if arch.kda != nil && arch.isLinearLayer(i) {
@@ -1141,8 +1189,13 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 // mkQ builds a quantized-if-requested WeightMat, so this loader honours Options.Quant like every
 // other family. Passed in rather than rebuilt here because the quant resolution lives in
 // buildWeights with the rest of the load.
-func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Architecture, hidden int,
-	tn func(int, string) string, mkQ func(string, int, int) (linalg.WeightMat, error), quant quantMode, skipRow4 bool) error {
+//
+// mkQ and f32 are the loader's merge-aware readers (loadMatMerged / loadF32Merged): every tensor here
+// is read through one of them, so a LoRA delta on any of its projections is merged on the on-disk
+// tensor, before qwen3_next's fused split or Olmo's q/k/v concatenation rearranges it (D3).
+func loadQwen35Attn(i int, l *LayerWeights, arch *Architecture, hidden int,
+	tn func(int, string) string, mkQ func(string, int, int) (linalg.WeightMat, error),
+	f32 func(string, ...int) ([]float32, error), quant quantMode, skipRow4 bool) error {
 	g := arch.qwen35
 	var err error
 	nm := func(suf string) string { return tn(i, suf) }
@@ -1160,11 +1213,11 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 		d := &deltaNetWeights{}
 		if g.FusedDeltaNetProj {
 			qkvzRows := 2*keyDim + 2*valueDim
-			qkvz, e := st.TensorF32(nm("linear_attn.in_proj_qkvz.weight"), qkvzRows, hidden)
+			qkvz, e := f32(nm("linear_attn.in_proj_qkvz.weight"), qkvzRows, hidden)
 			if e != nil {
 				return e
 			}
-			ba, e := st.TensorF32(nm("linear_attn.in_proj_ba.weight"), 2*g.NumValueHeads, hidden)
+			ba, e := f32(nm("linear_attn.in_proj_ba.weight"), 2*g.NumValueHeads, hidden)
 			if e != nil {
 				return e
 			}
@@ -1181,15 +1234,15 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 			// reproduces the SAME flat [convDim, hidden] layout in_proj_qkv already
 			// has — a plain row concat, no per-group interleaving like
 			// splitQwen3NextQKVZ needs for the head-grouped fused case.
-			qf, e := st.TensorF32(nm("linear_attn.q_proj.weight"), keyDim, hidden)
+			qf, e := f32(nm("linear_attn.q_proj.weight"), keyDim, hidden)
 			if e != nil {
 				return e
 			}
-			kf, e := st.TensorF32(nm("linear_attn.k_proj.weight"), keyDim, hidden)
+			kf, e := f32(nm("linear_attn.k_proj.weight"), keyDim, hidden)
 			if e != nil {
 				return e
 			}
-			vf, e := st.TensorF32(nm("linear_attn.v_proj.weight"), valueDim, hidden)
+			vf, e := f32(nm("linear_attn.v_proj.weight"), valueDim, hidden)
 			if e != nil {
 				return e
 			}
@@ -1201,10 +1254,10 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 			if d.inProjZ, err = mkQ(nm("linear_attn.g_proj.weight"), valueDim, hidden); err != nil {
 				return err
 			}
-			if d.inProjB, err = st.TensorF32(nm("linear_attn.b_proj.weight"), g.NumValueHeads, hidden); err != nil {
+			if d.inProjB, err = f32(nm("linear_attn.b_proj.weight"), g.NumValueHeads, hidden); err != nil {
 				return err
 			}
-			if d.inProjA, err = st.TensorF32(nm("linear_attn.a_proj.weight"), g.NumValueHeads, hidden); err != nil {
+			if d.inProjA, err = f32(nm("linear_attn.a_proj.weight"), g.NumValueHeads, hidden); err != nil {
 				return err
 			}
 		} else {
@@ -1214,10 +1267,10 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 			if d.inProjZ, err = mkQ(nm("linear_attn.in_proj_z.weight"), valueDim, hidden); err != nil {
 				return err
 			}
-			if d.inProjB, err = st.TensorF32(nm("linear_attn.in_proj_b.weight"), g.NumValueHeads, hidden); err != nil {
+			if d.inProjB, err = f32(nm("linear_attn.in_proj_b.weight"), g.NumValueHeads, hidden); err != nil {
 				return err
 			}
-			if d.inProjA, err = st.TensorF32(nm("linear_attn.in_proj_a.weight"), g.NumValueHeads, hidden); err != nil {
+			if d.inProjA, err = f32(nm("linear_attn.in_proj_a.weight"), g.NumValueHeads, hidden); err != nil {
 				return err
 			}
 		}
@@ -1225,15 +1278,15 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 			// Olmo Hybrid: q_conv1d/k_conv1d/v_conv1d, split at the SAME q/k/v
 			// channel boundaries as q_proj/k_proj/v_proj (keyDim, keyDim,
 			// valueDim rows) — see SeparateConv's own comment.
-			qc, e := st.TensorF32(nm("linear_attn.q_conv1d.weight"), keyDim, 1, g.ConvKernel)
+			qc, e := f32(nm("linear_attn.q_conv1d.weight"), keyDim, 1, g.ConvKernel)
 			if e != nil {
 				return e
 			}
-			kc, e := st.TensorF32(nm("linear_attn.k_conv1d.weight"), keyDim, 1, g.ConvKernel)
+			kc, e := f32(nm("linear_attn.k_conv1d.weight"), keyDim, 1, g.ConvKernel)
 			if e != nil {
 				return e
 			}
-			vc, e := st.TensorF32(nm("linear_attn.v_conv1d.weight"), valueDim, 1, g.ConvKernel)
+			vc, e := f32(nm("linear_attn.v_conv1d.weight"), valueDim, 1, g.ConvKernel)
 			if e != nil {
 				return e
 			}
@@ -1242,13 +1295,13 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 			conv = append(conv, kc...)
 			conv = append(conv, vc...)
 			d.convW = conv
-		} else if d.convW, err = st.TensorF32(nm("linear_attn.conv1d.weight"), convDim, 1, g.ConvKernel); err != nil {
+		} else if d.convW, err = f32(nm("linear_attn.conv1d.weight"), convDim, 1, g.ConvKernel); err != nil {
 			return err
 		}
-		if d.dtBias, err = st.TensorF32(nm("linear_attn.dt_bias"), g.NumValueHeads); err != nil {
+		if d.dtBias, err = f32(nm("linear_attn.dt_bias"), g.NumValueHeads); err != nil {
 			return err
 		}
-		aLog, aerr := st.TensorF32(nm("linear_attn.A_log"), g.NumValueHeads)
+		aLog, aerr := f32(nm("linear_attn.A_log"), g.NumValueHeads)
 		if aerr != nil {
 			return aerr
 		}
@@ -1263,7 +1316,7 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 		if g.DeltaNetOutProjSuffix != "" {
 			outProjSuffix = g.DeltaNetOutProjSuffix
 		}
-		if d.normW, err = st.TensorF32(nm(normSuffix), g.ValueHeadDim); err != nil {
+		if d.normW, err = f32(nm(normSuffix), g.ValueHeadDim); err != nil {
 			return err
 		}
 		if d.outProj, err = mkQ(nm(outProjSuffix), hidden, valueDim); err != nil {
@@ -1287,10 +1340,10 @@ func loadQwen35Attn(st *embed.SafetensorsFile, i int, l *LayerWeights, arch *Arc
 	if a.oProj, err = mkQ(nm("self_attn.o_proj.weight"), hidden, arch.NumHeads*hd); err != nil {
 		return err
 	}
-	if a.qNorm, err = st.TensorF32(nm("self_attn.q_norm.weight"), hd); err != nil {
+	if a.qNorm, err = f32(nm("self_attn.q_norm.weight"), hd); err != nil {
 		return err
 	}
-	if a.kNorm, err = st.TensorF32(nm("self_attn.k_norm.weight"), hd); err != nil {
+	if a.kNorm, err = f32(nm("self_attn.k_norm.weight"), hd); err != nil {
 		return err
 	}
 	l.qattn = a

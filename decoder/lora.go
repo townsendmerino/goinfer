@@ -6,7 +6,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -28,6 +30,11 @@ type loraDelta struct {
 type loraAdapter struct {
 	st     *embed.SafetensorsFile
 	deltas map[string]loraDelta // base tensor name (model.layers.N.…weight) → delta
+
+	// merged records each delta merge() applied, for checkAllMerged. Layers load in parallel, hence
+	// the lock.
+	mu     sync.Mutex
+	merged map[string]bool
 }
 
 // loadLoRA reads a PEFT adapter directory (adapter_config.json +
@@ -207,6 +214,12 @@ func (a *loraAdapter) merge(name string, data []float32, out, in int) error {
 	if d.out != out || d.in != in {
 		return fmt.Errorf("decoder(lora): %q delta [%d,%d] != base [%d,%d]", name, d.out, d.in, out, in)
 	}
+	a.mu.Lock()
+	if a.merged == nil {
+		a.merged = map[string]bool{}
+	}
+	a.merged[name] = true
+	a.mu.Unlock()
 	sc := float32(d.scale)
 	for o := range out {
 		brow := d.b[o*d.r : o*d.r+d.r]
@@ -223,6 +236,37 @@ func (a *loraAdapter) merge(name string, data []float32, out, in int) error {
 		}
 	}
 	return nil
+}
+
+// checkAllMerged refuses an adapter that has a delta the load never merged (D3). validateTargets checks
+// names against a list before the load; this checks them against what the load actually did, so it
+// also covers a family whose tensor names no list holds (qwen35's DeltaNet layouts), a loader that
+// takes no adapter at all (internlm2, gpt-oss), and a name that is on the list but is not loaded
+// in that layer (a self_attn projection on a linear-attention layer). nil-safe.
+func (a *loraAdapter) checkAllMerged() error {
+	if a == nil {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var missed []string
+	for base := range a.deltas {
+		if !a.merged[base] {
+			missed = append(missed, base)
+		}
+	}
+	if len(missed) == 0 {
+		return nil
+	}
+	sort.Strings(missed)
+	n, more := len(missed), ""
+	if n > 3 {
+		more = fmt.Sprintf(" and %d more", n-3)
+		missed = missed[:3]
+	}
+	return fmt.Errorf("decoder(lora): the load did not merge %d of the adapter's %d deltas (%s%s); "+
+		"this family's loader does not merge those tensors, or the checkpoint does not load them",
+		n, len(a.deltas), strings.Join(missed, ", "), more)
 }
 
 // has reports whether the adapter has a delta for this base tensor.

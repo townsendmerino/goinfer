@@ -1,6 +1,6 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
-> **Status, 2026-09-30: C0–C2, D0, D1 and D5 done; D6a GRADED → BUILD D2–D4 (the owner decides whether to start); D7 projected.**
+> **Status, 2026-09-30: C0–C2, D0, D1, D2, D3 and D5 done; D6a GRADED → BUILD D2–D4, D4 next; D7 projected.**
 > - **D6a** ([`decisions-d6a-2026-09-28.md`](../measurements/decisions-d6a-2026-09-28.md)): arm A (Qwen3.5-9B, chat-v1, calibrated)
 >   reads top-1 0.4197 and ECE 0.1656, against JEV-9B's 0.9181 and a bar of 0.0632, so the registered rule says **build D2–D4**.
 >   The control failed as registered (bare-v1 0.3378 against the authors' B0 0.5180). The investigation found the inputs identical
@@ -122,11 +122,11 @@ is.
   applies the final RMSNorm itself and must match HF's `hidden_states[-1]`, which is already normed
   on Qwen. Verify in D2; do not assume.
 - **LoRA cannot reach this family.** Both paths are closed:
-  - Merge-at-load (`--lora`): `validateTargets` (`decoder/lora.go:137`, called at
-    `decoder/weights.go:682`) knows only the Q/K/V/O/gate/up/down suffixes, so an adapter that also
+  - Merge-at-load (`--lora`): `validateTargets` (`decoder/lora.go:144`, called at
+    `decoder/weights.go:695`) knows only the Q/K/V/O/gate/up/down suffixes, so an adapter that also
     targets the GDN projections is refused whole. The merge itself runs inside the `loadProj`
-    closure (`decoder/weights.go:744`), and the GDN projections are loaded outside it.
-  - Compute-time (`--adapter`): `LoadAdapter` (`decoder/lora.go:309`) refuses every own-forward
+    closure (`decoder/weights.go:758`), and the GDN projections are loaded outside it.
+  - Compute-time (`--adapter`): `LoadAdapter` (`decoder/lora.go:353`) refuses every own-forward
     family by design.
 - **Recurrent state cannot be rewound.** `KVCache.TruncateTo` (`decoder/kvcache.go:540`) reports
   inexact on any partial rewind when the model has recurrent state, and `.giw-kv` snapshots skip
@@ -418,9 +418,32 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
   repack.
 - **Consequence, stated:** a merged model is a decision model; its text generation is no longer the
   base Qwen's. One set of weights serving both is out of scope (§6).
-- Offer `goinfer transcode --lora` → `.giw` so the whole-model f32 merge is paid once, not per load.
-  On the 16 GB Mac a 27B merge-at-load in the Go heap is exactly the anonymous-memory spike
-  never-swap S1 exists to avoid. JEV-9B is the Mac target; JEV-27B is the Linux box target.
+- **DONE 2026-09-30 (the merge; `transcode --lora` not built).**
+  - **What changed.** `loadQwen35Attn` reads every tensor through the loader's merge-aware readers (`loadMatMerged`,
+    `loadF32Merged` in `decoder/weights.go`), so a delta is merged on the on-disk f32 before qwen3_next's fused
+    `in_proj_qkvz` split or Olmo Hybrid's q/k/v concatenation. With no adapter those readers are exactly `loadMatQ` /
+    `TensorF32`, so an adapter-free load is unchanged.
+  - **Validation, departing from the bullet above.** `validateTargets` was not extended. The qwen35 tensor names live
+    in `loadQwen35Attn` across four layouts, so a list would be the second copy V-12 warns about. Instead
+    `loraAdapter.checkAllMerged`, called once in `loadWeights`, refuses any delta the load did not merge. It is
+    derived from what the loader did, so it cannot drift from it.
+  - **Two silent no-ops it also closes.** `buildInternLM2Weights` and `buildGptOssWeights` take no adapter and
+    returned before any LoRA check, so an adapter on either loaded clean and changed nothing. It also catches a
+    listed name on a layer that does not load it (a `self_attn` projection on a linear-attention layer).
+  - **Gate passed:** `TestLoRA_mergeAtLoad_qwen35MatchesPEFT` (`decoder/lora_qwen35_test.go`).
+    - **The reference.** A PEFT-written adapter (`scripts/pin_qwen35_lora.py`; peft 0.21.1, transformers 5.16.1,
+      f32) on `qwen3_5-tiny`: r 4, α 8, all ten of autotrust's target kinds, 25 modules over three DeltaNet
+      layers and one full-attention layer. B is redrawn non-zero so the adapter is not a no-op.
+    - **The result.** `PromptHidden` matches PEFT's `merge_and_unload()` to relative L2 3.1–4.9e-7 on five prompts
+      (2–64 tokens), where the bar is 1e-5. The base is 0.72–1.02 away, and the test fails if it is under 1e-3.
+    - **Mutation-checked.** Recording but not applying the merge for `in_proj_z`, the DeltaNet `out_proj`,
+      `in_proj_qkv`, or the full-attention `q_proj` each goes red, 0.2–0.48 off.
+    - **The two refusal tests** go red with `checkAllMerged` disabled: an unloaded name on `qwen3_5-tiny`, and an
+      adapter on `internlm2-tiny`.
+  - **Not tested:** the fused `in_proj_qkvz` (qwen3_next) and Olmo Hybrid layouts are merged by the same readers
+    but have no PEFT gate of their own. JEV-9B's real adapter has not been loaded yet (that is D4's first step).
+  - **Memory.** The merge runs tensor by tensor on the streaming-quant path, so the extra peak is one tensor's f32
+    copy, not the model's. `transcode --lora` → `.giw` is still offered in the bullet above and is not built.
 
 ### D4 — readout head + calibration (Route B)
 
@@ -713,8 +736,8 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 `constrain/constrain.go:98`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
 `Process`) · `decoder/model.go:1292` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
 contract) · `decoder/arch.go:954` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
-`decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:137` (`validateTargets`) ·
-`decoder/lora.go:309` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:682`, `:744`
+`decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:144` (`validateTargets`) ·
+`decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:695`, `:744`
 (merge-at-load) · `decoder/kvcache.go:540` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
 skips recurrent state) · `internal/serveapp/openai.go:34`, `:536`, `:538` (`top_logprobs` cap,
 `logprobs`, `response_format`) · `internal/serveapp/main.go:589` (route middleware) ·
