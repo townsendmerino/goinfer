@@ -549,6 +549,8 @@ supports.
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/openai.go:95` | goinfer | `// queue bounds in-flight+waiting requests (cap = 1 running + --max-queue` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/responses.go:50` | goinfer | `type responseStore struct {` |
 | `docs/tasks/task-work-queue-2026-09.md|internal/serveapp/sessions.go:14` | goinfer | `// sessionLRU keeps up to size prefilled KV sessions and hands each request the` |
+| `site/different/REVIEW-08.md|internal/serveapp/main.go:411` | goinfer | `flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at st` |
+| `site/different/REVIEW-11.md|internal/chatapp/prequant.go:19` | goinfer | `//go:embed model.giw` |
 
 ## Bare file index
 
