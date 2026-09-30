@@ -1,0 +1,2179 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-09-30T06:19:13Z",
+  "host": "nobara-pc",
+  "uname": "Linux 7.2.0-202.nobara.fc44.x86_64 x86_64",
+  "distro": "Nobara Linux 44",
+  "goinfer_commit": "754f12d3",
+  "goinfer_tree_dirty": false,
+  "peer": {
+   "ollama_bin": "/home/francis/ollama-0325/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "/home/francis/mycode/peers/llama.cpp/build/bin/llama-server",
+   "version": "0.4.0-dev (build 1, commit 427291b)"
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/home/francis/goinfer-bench/peer-sweep-2026-09-29/serve-cpu-754f12d3",
+    "mtime": "2026-09-30T05:10:00Z"
+   },
+   "cuda": {
+    "path": "/home/francis/goinfer-bench/peer-sweep-2026-09-29/serve-cuda-754f12d3",
+    "mtime": "2026-09-30T05:10:00Z"
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu",
+    "mtime": "2026-08-22T18:17:55Z"
+   },
+   "metal": {
+    "path": "/nonexistent/serve-metal",
+    "mtime": null
+   }
+  },
+  "serve_binaries_old": {},
+  "gpu": {
+   "driver": "595.91.07",
+   "name": "NVIDIA GeForce RTX 2070 SUPER",
+   "temp_c": 50,
+   "mem_used_mib": 639,
+   "mem_total_mib": 8192
+  },
+  "cpu_count": 16,
+  "loadavg_at_start": [
+   0.64453125,
+   1.02685546875,
+   1.53857421875
+  ],
+  "gpu_compute_apps_at_start": [
+   "1748, 20 MiB"
+  ],
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "deep_ctx": 0,
+  "ctx_pin": 0
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   361.42242253307,
+   366.1053472867967,
+   362.92928978158295
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.64453125,
+    1.02685546875,
+    1.53857421875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 50,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.64453125
+   }
+  },
+  "secs": 9.8,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    347.9832689126521,
+    366.37902946020034,
+    365.8122255142787,
+    360.6761212032206,
+    368.7413662582372,
+    360.65650602753266,
+    359.62547986015124,
+    361.50538302828744,
+    373.1693640824141,
+    370.3410781389533,
+    376.6229981345589,
+    361.1899142673967,
+    353.4242232580675,
+    365.07943360806604,
+    364.4046803850605,
+    364.61108641985646,
+    354.80680428398455,
+    371.9341097717853,
+    353.885441935331,
+    369.58885381517814,
+    350.0253338050289,
+    365.03847794417646,
+    371.82283825006647,
+    366.3324584471128
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cuda-resident (int4)",
+   "rss_peak_kb": 479516,
+   "phases": {
+    "start_to_listening_s": 2.01,
+    "warmup_s": 0.27,
+    "runs_wall_s": 4.32,
+    "decode_timed_s": 4.16,
+    "prefill_and_request_s": 0.16,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 363.5,
+  "spread": 4.7
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   263.3788376301008,
+   263.0440979280457,
+   262.6358526256597
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.69287109375,
+    1.02587890625,
+    1.533203125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 52,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.69287109375
+   }
+  },
+  "secs": 22.8,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    264.8412429441394,
+    262.9391114147689,
+    264.53876818942007,
+    262.5856487237092,
+    262.75647553060196,
+    262.1295891097164,
+    263.737352358665,
+    263.5025127697853,
+    263.4867644342293,
+    262.70616092789425,
+    264.19288081306496,
+    261.2711612596947,
+    263.4597124828346,
+    261.59150037832325,
+    264.127685686713,
+    263.51691744161155,
+    263.53501841099546,
+    263.6926234459395,
+    261.7815393205498,
+    260.9399867222934,
+    262.22967395908796,
+    263.212609657143,
+    263.1536013840208,
+    262.5417681052478
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 602276,
+   "phases": {
+    "start_to_listening_s": 0.5,
+    "warmup_s": 5.21,
+    "runs_wall_s": 13.93,
+    "decode_timed_s": 5.75,
+    "prefill_and_request_s": 8.18,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 263.0,
+  "spread": 0.7
+ },
+ {
+  "phase": "A",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   369.2749946896547,
+   377.07989958675967,
+   364.2397386730553
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.78125,
+    1.02392578125,
+    1.521484375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 52,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.78125
+   }
+  },
+  "secs": 8.7,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    354.4083254460066,
+    358.4586666925402,
+    375.8757638217007,
+    376.4182654337578,
+    377.7638417088078,
+    379.1130244688794,
+    369.23737618377004,
+    362.92469376177536,
+    377.354537309609,
+    376.86909121894683,
+    372.64883204175743,
+    379.5890877984118,
+    379.75980548413884,
+    377.7536715954739,
+    375.9440175004777,
+    376.72015374526194,
+    359.9636807110651,
+    358.5927773827398,
+    366.0298648798348,
+    358.15514935141755,
+    379.35491769732255,
+    373.23787702185297,
+    359.8079283859526,
+    358.77571395425673
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 520632,
+   "phases": {
+    "start_to_listening_s": 1.01,
+    "warmup_s": 0.21,
+    "runs_wall_s": 4.3,
+    "decode_timed_s": 4.09,
+    "prefill_and_request_s": 0.21,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 370.2,
+  "spread": 12.8
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   112.6345014575981,
+   112.47567604808314,
+   112.52051566723289
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.734375,
+    1.00634765625,
+    1.51025390625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 52,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.734375
+   }
+  },
+  "secs": 21.2,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    112.64908581001885,
+    112.62718885803821,
+    112.74067438068774,
+    112.66334251571791,
+    112.62858622262856,
+    112.53924022953254,
+    112.565284279083,
+    112.66260936507804,
+    112.56199571623019,
+    112.64774435371659,
+    112.19220929003123,
+    112.47553057588371,
+    112.55054765194141,
+    112.32712977901028,
+    112.61793769495479,
+    112.43231332289695,
+    112.67883214848867,
+    112.4364792052331,
+    112.53352313465282,
+    112.58407858925072,
+    112.58114122207252,
+    112.42147921356266,
+    112.67480166787377,
+    112.25379015672881
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cuda-resident (q4k)",
+   "rss_peak_kb": 3245340,
+   "phases": {
+    "start_to_listening_s": 2.51,
+    "warmup_s": 1.65,
+    "runs_wall_s": 13.89,
+    "decode_timed_s": 13.43,
+    "prefill_and_request_s": 0.46,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 112.5,
+  "spread": 0.2
+ },
+ {
+  "phase": "A",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   125.85089360539918,
+   125.69242265673122,
+   125.69469289678943
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.751953125,
+    1.00634765625,
+    1.4814453125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 48,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 40,
+    "loadavg": 0.751953125
+   }
+  },
+  "secs": 22.2,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    125.95775124903561,
+    126.01875185042331,
+    125.85352864341634,
+    126.00674914303546,
+    125.94297053607292,
+    125.59490693333998,
+    125.70929123087329,
+    125.72319925699651,
+    125.71836191268892,
+    125.65578455339501,
+    125.71984242342626,
+    125.79769140303193,
+    125.68957540505312,
+    125.73540870525997,
+    125.64747187527895,
+    125.57524497571562,
+    125.59303412288486,
+    125.83149578337067,
+    125.7528393007676,
+    125.53529892353528,
+    125.73599110989936,
+    125.6024313837619,
+    125.73944673604113,
+    125.76700581405468
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 2668548,
+   "phases": {
+    "start_to_listening_s": 0.5,
+    "warmup_s": 4.88,
+    "runs_wall_s": 13.66,
+    "decode_timed_s": 12.02,
+    "prefill_and_request_s": 1.63,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 125.7,
+  "spread": 0.2
+ },
+ {
+  "phase": "A",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0
+  },
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   127.85788327684304,
+   127.60375094176513,
+   126.87661633932711
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.7568359375,
+    0.9873046875,
+    1.46142578125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 54,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.7568359375
+   }
+  },
+  "secs": 16.9,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    126.7981678631385,
+    128.35992130911683,
+    128.1846825957853,
+    128.28891886807602,
+    128.27782235418178,
+    128.22356642627315,
+    127.89165725623752,
+    126.83832954193522,
+    127.88316556074216,
+    126.52495228298731,
+    127.66847662313062,
+    127.89960482632617,
+    127.94560925080302,
+    127.98148565343085,
+    127.36396769245326,
+    127.5627456442477,
+    126.7045263095513,
+    126.41808430060848,
+    127.24538210925184,
+    127.45915701136515,
+    126.44415757724224,
+    126.64355264935448,
+    126.75248770602997,
+    127.34558305121351
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 441308,
+   "phases": {
+    "start_to_listening_s": 1.03,
+    "warmup_s": 0.56,
+    "runs_wall_s": 12.12,
+    "decode_timed_s": 11.86,
+    "prefill_and_request_s": 0.25,
+    "teardown_s": 3.21
+   }
+  },
+  "mean": 127.4,
+  "spread": 1.0
+ },
+ {
+  "phase": "C",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp1.0_notrunc",
+  "sent": {
+   "temperature": 1.0
+  },
+  "note": "temperature=1.0, no truncation, both sides",
+  "runs": [
+   358.58533489475667,
+   362.192991506628,
+   362.7720930986786
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.89111328125,
+    1.00537109375,
+    1.45849609375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 55,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.89111328125
+   }
+  },
+  "secs": 9.7,
+  "counts": {
+   "tokens": 1484,
+   "chunks": 1484,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    363.7372569391138,
+    357.29329074980916,
+    368.9187842764083,
+    347.55228372720615,
+    361.8047687591488,
+    342.93214365840487,
+    363.29748481470136,
+    363.14666623326104,
+    353.672918841358,
+    365.45152861389295,
+    353.86189961356393,
+    353.04319536511747,
+    378.13974601884996,
+    357.2137754007632,
+    359.17458807583745,
+    376.98628012364105,
+    376.813694075825,
+    360.2643061431513,
+    367.5517715802242,
+    365.9326911926757,
+    361.771568513922,
+    354.3730518925396,
+    356.80464324889357,
+    358.66501814219777
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    12,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "void",
+    "min": 12,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cuda-resident (int4)",
+   "rss_peak_kb": 491892,
+   "phases": {
+    "start_to_listening_s": 2.0,
+    "warmup_s": 0.3,
+    "runs_wall_s": 4.23,
+    "decode_timed_s": 4.05,
+    "prefill_and_request_s": 0.18,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 361.2,
+  "spread": 4.2
+ },
+ {
+  "phase": "C",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp1.0_notrunc",
+  "sent": {
+   "temperature": 1.0,
+   "seed": 1
+  },
+  "note": "temperature=1.0, no truncation, both sides",
+  "runs": [
+   262.98906088657577,
+   262.2440939940217,
+   262.0348861135295
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.833984375,
+    0.98876953125,
+    1.44775390625
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 54,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.833984375
+   }
+  },
+  "secs": 22.4,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    264.4327609082005,
+    261.5820203028694,
+    262.7244465920593,
+    264.0986761802869,
+    262.77122694948383,
+    263.72788165465323,
+    261.8220335143231,
+    262.75344099072987,
+    261.8001972683402,
+    262.1430387336836,
+    262.16508537839167,
+    260.5600263598602,
+    262.08981945444725,
+    263.3722296588796,
+    263.04458351060674,
+    262.7777715879643,
+    262.89934838542285,
+    262.13350568997276,
+    262.7173253206889,
+    260.3648713242827,
+    262.27274281552155,
+    263.3848369670925,
+    261.7574910967385,
+    260.74896730851634
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 10,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 876252,
+   "phases": {
+    "start_to_listening_s": 0.5,
+    "warmup_s": 5.02,
+    "runs_wall_s": 13.68,
+    "decode_timed_s": 5.76,
+    "prefill_and_request_s": 7.91,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 262.4,
+  "spread": 1.0
+ },
+ {
+  "phase": "C",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp1.0_notrunc",
+  "sent": {
+   "temperature": 1.0
+  },
+  "note": "temperature=1.0, no truncation, both sides",
+  "runs": [
+   376.3126212629775,
+   378.86505295267693,
+   376.7550316220357
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.81103515625,
+    0.97412109375,
+    1.43017578125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.81103515625
+   }
+  },
+  "secs": 8.6,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    378.4162134266409,
+    377.5796468289134,
+    373.4796884757746,
+    368.98799286868973,
+    379.75150757240533,
+    378.88279994086145,
+    375.0063841004165,
+    378.3967368901177,
+    379.41892042826555,
+    377.8036540778578,
+    379.5584065720925,
+    379.5880675137334,
+    377.44710669834757,
+    379.77258857005336,
+    379.553306560579,
+    377.77837320048616,
+    376.0631906493355,
+    370.6883040377153,
+    375.44848459499974,
+    379.0393845630515,
+    377.1496521617687,
+    379.23353095266935,
+    379.2226437740609,
+    377.19506224268457
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 520580,
+   "phases": {
+    "start_to_listening_s": 1.01,
+    "warmup_s": 0.21,
+    "runs_wall_s": 4.2,
+    "decode_timed_s": 4.01,
+    "prefill_and_request_s": 0.2,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 377.3,
+  "spread": 2.6
+ },
+ {
+  "phase": "C",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp1.0_notrunc",
+  "sent": {
+   "temperature": 1.0
+  },
+  "note": "temperature=1.0, no truncation, both sides",
+  "runs": [
+   112.68256287930011,
+   112.59074025585619,
+   112.35707031089404
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.826171875,
+    0.974609375,
+    1.427734375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 52,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.826171875
+   }
+  },
+  "secs": 21.2,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    112.40669359076144,
+    112.49230212102604,
+    112.8451584792858,
+    112.77692877186303,
+    112.79553959007393,
+    112.71244948415404,
+    112.66573994599138,
+    112.7656910512452,
+    112.78822952156683,
+    112.29925784066214,
+    112.51772933823086,
+    112.76460923197402,
+    112.76953628314722,
+    112.71383300153435,
+    112.43541327097374,
+    112.43731355876038,
+    112.56717650262891,
+    112.47868887485212,
+    112.44013329623428,
+    111.48964009905977,
+    112.22053518151598,
+    112.48604351291695,
+    112.76097217808389,
+    112.4133728418604
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cuda-resident (q4k)",
+   "rss_peak_kb": 3250392,
+   "phases": {
+    "start_to_listening_s": 2.51,
+    "warmup_s": 1.65,
+    "runs_wall_s": 13.9,
+    "decode_timed_s": 13.43,
+    "prefill_and_request_s": 0.46,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 112.5,
+  "spread": 0.3
+ },
+ {
+  "phase": "C",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp1.0_notrunc",
+  "sent": {
+   "temperature": 1.0,
+   "seed": 1
+  },
+  "note": "temperature=1.0, no truncation, both sides",
+  "runs": [
+   125.74344450411711,
+   125.60097009621111,
+   125.58362666025431
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.72216796875,
+    0.94189453125,
+    1.3955078125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 48,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 20,
+    "loadavg": 0.72216796875
+   }
+  },
+  "secs": 22.4,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    125.90784273107008,
+    126.0250843176808,
+    125.8242180396602,
+    125.69789645815025,
+    125.59539767651066,
+    125.7658958512576,
+    125.65879716712253,
+    125.47242379148476,
+    125.68616268589335,
+    125.57445402618447,
+    125.60342074605137,
+    125.59467905212378,
+    125.57056201428816,
+    125.53123928441727,
+    125.59234811203952,
+    125.65489484869099,
+    125.64025530595164,
+    125.68994427986728,
+    125.62601491153362,
+    125.56539879537416,
+    125.50638113466536,
+    125.53702999632523,
+    125.50896399073069,
+    125.59502486758653
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 2669016,
+   "phases": {
+    "start_to_listening_s": 0.5,
+    "warmup_s": 5.02,
+    "runs_wall_s": 13.67,
+    "decode_timed_s": 12.03,
+    "prefill_and_request_s": 1.64,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 125.6,
+  "spread": 0.2
+ },
+ {
+  "phase": "C",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp1.0_notrunc",
+  "sent": {
+   "temperature": 1.0
+  },
+  "note": "temperature=1.0, no truncation, both sides",
+  "runs": [
+   127.86032324377597,
+   127.75320719862097,
+   127.81830626690724
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.72119140625,
+    0.9287109375,
+    1.38037109375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 54,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.72119140625
+   }
+  },
+  "secs": 16.8,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    127.71872959202088,
+    127.84145514051325,
+    128.09592342679505,
+    128.37546057321512,
+    128.3921575198281,
+    128.08377680518046,
+    127.39268637550101,
+    126.98239651715389,
+    128.2031300456514,
+    128.12771445443317,
+    126.71290301862325,
+    127.90726255635145,
+    128.0385602792032,
+    127.8903485641515,
+    127.0379764970165,
+    128.10776217353734,
+    127.9512946228159,
+    128.01905718918476,
+    127.9580439126835,
+    127.9415062592359,
+    127.76724663966148,
+    128.0496001045632,
+    127.0700238423895,
+    127.78967756472366
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 441320,
+   "phases": {
+    "start_to_listening_s": 1.03,
+    "warmup_s": 0.55,
+    "runs_wall_s": 12.09,
+    "decode_timed_s": 11.83,
+    "prefill_and_request_s": 0.26,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 127.8,
+  "spread": 0.1
+ },
+ {
+  "phase": "C",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp0.8_topp0.95",
+  "sent": {
+   "temperature": 0.8,
+   "top_p": 0.95,
+   "seed": 1
+  },
+  "note": "temperature=0.8, top_p=0.95 both sides",
+  "runs": [
+   242.9358339967164,
+   239.96293776138404,
+   239.32496541540453
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.78369140625,
+    0.93310546875,
+    1.373046875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 55,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.78369140625
+   }
+  },
+  "secs": 12.0,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    251.81591653155255,
+    236.18549803296008,
+    241.76960242315235,
+    249.45170510548027,
+    241.87372049517043,
+    235.68536331541446,
+    242.03720353170897,
+    244.6676625382921,
+    235.63278996213896,
+    238.59012685084107,
+    243.9562142283748,
+    244.2219869117265,
+    228.63242712816003,
+    243.95250065429101,
+    240.31246943299763,
+    244.4049869225423,
+    248.07072547348804,
+    243.51988275086924,
+    241.0642938410141,
+    237.1101745527464,
+    227.99504213491855,
+    241.58536602499535,
+    228.57486606759076,
+    246.6793724776139
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cuda-resident (int4)",
+   "rss_peak_kb": 491712,
+   "phases": {
+    "start_to_listening_s": 2.01,
+    "warmup_s": 0.34,
+    "runs_wall_s": 6.49,
+    "decode_timed_s": 6.28,
+    "prefill_and_request_s": 0.2,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 240.7,
+  "spread": 3.6
+ },
+ {
+  "phase": "C",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp0.8_topp0.95",
+  "sent": {
+   "temperature": 0.8,
+   "top_p": 0.95,
+   "seed": 1
+  },
+  "note": "temperature=0.8, top_p=0.95 both sides",
+  "runs": [
+   260.7460983785791,
+   260.2025097160017,
+   260.37043272638624
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.97265625,
+    0.96923828125,
+    1.376953125
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 53,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.97265625
+   }
+  },
+  "secs": 22.8,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    259.784688250211,
+    260.7639261611858,
+    261.0639048493478,
+    261.79071092572303,
+    260.93309220129663,
+    261.5574765058414,
+    259.9039183056149,
+    260.17106982941226,
+    260.7575678925373,
+    258.9495822764566,
+    261.1540847586613,
+    260.77643628519024,
+    260.05501893256474,
+    260.43651155675906,
+    259.6275673394107,
+    259.8633086864335,
+    261.79756320182935,
+    261.6468329437207,
+    261.29054914230124,
+    261.4022490349949,
+    258.2381908947776,
+    259.6360305757647,
+    258.897896362149,
+    260.0541496555525
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 875676,
+   "phases": {
+    "start_to_listening_s": 0.5,
+    "warmup_s": 5.25,
+    "runs_wall_s": 13.83,
+    "decode_timed_s": 5.81,
+    "prefill_and_request_s": 8.03,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 260.4,
+  "spread": 0.5
+ },
+ {
+  "phase": "C",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "0.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp0.8_topp0.95",
+  "sent": {
+   "temperature": 0.8,
+   "top_p": 0.95,
+   "seed": 1
+  },
+  "note": "temperature=0.8, top_p=0.95 both sides",
+  "runs": [
+   365.6343954503641,
+   369.3530363484897,
+   371.7250246120342
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.7587890625,
+    0.923828125,
+    1.3427734375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 48,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 20,
+    "loadavg": 0.7587890625
+   }
+  },
+  "secs": 8.7,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    344.35500930263845,
+    378.8392171984326,
+    358.9747187497531,
+    361.097136780903,
+    350.8549690818739,
+    376.31662208384887,
+    374.1876094309338,
+    380.44988097452904,
+    371.8770821583312,
+    379.5494674002398,
+    366.2107713955801,
+    362.3229932855656,
+    377.01017126248496,
+    362.66919116780076,
+    372.9570741464075,
+    362.22753997150795,
+    360.6554426904161,
+    378.4673194956985,
+    370.73812671057675,
+    372.0905044034084,
+    372.7919091240688,
+    380.36319334893165,
+    377.2436026357037,
+    361.45009848746946
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 520604,
+   "phases": {
+    "start_to_listening_s": 1.01,
+    "warmup_s": 0.22,
+    "runs_wall_s": 4.31,
+    "decode_timed_s": 4.1,
+    "prefill_and_request_s": 0.21,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 368.9,
+  "spread": 6.1
+ },
+ {
+  "phase": "C",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp0.8_topp0.95",
+  "sent": {
+   "temperature": 0.8,
+   "top_p": 0.95,
+   "seed": 1
+  },
+  "note": "temperature=0.8, top_p=0.95 both sides",
+  "runs": [
+   111.72547751683254,
+   111.6096701525573,
+   111.6502984768373
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.7158203125,
+    0.90966796875,
+    1.33349609375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.7158203125
+   }
+  },
+  "secs": 21.4,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    111.76822786571978,
+    111.59712504612034,
+    111.71948199326559,
+    111.88720678697032,
+    111.73967336432504,
+    111.7314038342444,
+    111.81692300122303,
+    111.54377824279176,
+    111.72024475841984,
+    111.73142565708729,
+    111.65330884204572,
+    111.68966551326236,
+    111.80080039843062,
+    111.74502885237648,
+    110.64689643446098,
+    111.88999076437514,
+    111.6545930846579,
+    111.7155515837838,
+    111.55332598828612,
+    111.4964850428876,
+    111.68145076962256,
+    111.70237920345403,
+    111.66201821155873,
+    111.7365839304477
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "cuda-resident (q4k)",
+   "rss_peak_kb": 3283136,
+   "phases": {
+    "start_to_listening_s": 2.5,
+    "warmup_s": 1.65,
+    "runs_wall_s": 14.02,
+    "decode_timed_s": 13.54,
+    "prefill_and_request_s": 0.48,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 111.7,
+  "spread": 0.1
+ },
+ {
+  "phase": "C",
+  "engine": "ollama",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp0.8_topp0.95",
+  "sent": {
+   "temperature": 0.8,
+   "top_p": 0.95,
+   "seed": 1
+  },
+  "note": "temperature=0.8, top_p=0.95 both sides",
+  "runs": [
+   125.73356582270326,
+   125.57960731572572,
+   125.52829420135718
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.76806640625,
+    0.9296875,
+    1.3154296875
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 48,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 40,
+    "loadavg": 0.76806640625
+   }
+  },
+  "secs": 22.3,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    125.90937047792076,
+    125.8582377691894,
+    125.88876190846689,
+    125.56226060766114,
+    125.69196314590582,
+    125.54032459468372,
+    125.65587727667355,
+    125.76173080112474,
+    125.72893747068916,
+    125.63824078411912,
+    125.54219082417076,
+    125.6328615946778,
+    125.55318959960694,
+    125.59044780552831,
+    125.48855658061926,
+    125.46243386639448,
+    125.54794002177648,
+    125.53768034036159,
+    125.3463309213389,
+    125.5690652629374,
+    125.66120358050196,
+    125.45313972885802,
+    125.58936369065748,
+    125.52163006442568
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 2670000,
+   "phases": {
+    "start_to_listening_s": 0.5,
+    "warmup_s": 4.97,
+    "runs_wall_s": 13.62,
+    "decode_timed_s": 12.04,
+    "prefill_and_request_s": 1.58,
+    "teardown_s": 3.16
+   }
+  },
+  "mean": 125.6,
+  "spread": 0.2
+ },
+ {
+  "phase": "C",
+  "engine": "llamacpp",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "temp0.8_topp0.95",
+  "sent": {
+   "temperature": 0.8,
+   "top_p": 0.95,
+   "seed": 1
+  },
+  "note": "temperature=0.8, top_p=0.95 both sides",
+  "runs": [
+   127.68701097038715,
+   127.63763172992282,
+   127.55130915455747
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    0.830078125,
+    0.93505859375,
+    1.30615234375
+   ],
+   "gpu": {
+    "driver": "595.91.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 53,
+    "mem_used_mib": 639,
+    "mem_total_mib": 8192
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.830078125
+   }
+  },
+  "secs": 17.0,
+  "counts": {
+   "tokens": 1536,
+   "chunks": 1536,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    127.70503667497024,
+    127.7803697426361,
+    128.01334962337944,
+    127.45779009223064,
+    127.29845028612371,
+    127.47316345262337,
+    127.9070418061638,
+    127.86088608496995,
+    127.57958066758968,
+    127.5624277567977,
+    127.58003771660233,
+    127.82902241339309,
+    127.99752085809953,
+    128.0635697586969,
+    127.85146694143708,
+    126.63742772676625,
+    126.54265569132393,
+    127.65295307827952,
+    127.37258891688012,
+    127.33637102810152,
+    127.35420202660055,
+    127.95976940888046,
+    128.0472915561299,
+    128.14464153026375
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": null,
+   "rss_peak_kb": 441348,
+   "phases": {
+    "start_to_listening_s": 1.07,
+    "warmup_s": 0.56,
+    "runs_wall_s": 12.1,
+    "decode_timed_s": 11.85,
+    "prefill_and_request_s": 0.25,
+    "teardown_s": 3.21
+   }
+  },
+  "mean": 127.6,
+  "spread": 0.1
+ }
+]

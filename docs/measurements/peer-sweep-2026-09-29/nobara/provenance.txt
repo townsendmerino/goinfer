@@ -1,0 +1,7 @@
+rev 754f12d3
+host nobara-pc Linux 7.2.0-202.nobara.fc44.x86_64
+595.91.07, NVIDIA GeForce RTX 2070 SUPER
+aikit d7436e6 release: bump gpu backends to aikit v1.50.2 (gpupins --fix)
+load 0.88 2.77 3.48
+ollama Warning: client version is 0.32.5
+llama-server version: 0.4.0-dev (build 1, commit 427291b)

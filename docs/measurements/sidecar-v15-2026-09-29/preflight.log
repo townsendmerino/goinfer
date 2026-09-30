@@ -1,0 +1,18 @@
+20:15:32 == provenance
+rev dc0699d4
+host nobara-pc Linux 7.2.0-202.nobara.fc44.x86_64
+595.91.07, NVIDIA GeForce RTX 2070 SUPER
+aikit d7436e6 release: bump gpu backends to aikit v1.50.2 (gpupins --fix)
+thp [always] madvise never
+load 0.12 0.06 0.01
+free 377G
+20:15:32 == worktree at dc0699d4
+Preparing worktree (detached HEAD dc0699d4)
+HEAD is now at dc0699d4 site: first batch of writeup drafts for review; the output check compares escaped titles
+20:15:33 == build prequant and the CUDA serve binary
+20:15:37 == build the CPU sidecars fresh (v15 expected)
+wrote /home/francis/goinfer-bench/sidecar-v15-2026-09-29/home/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.cpu-amd64.giw: 1155 MB (int4)
+20:15:55 transcode qwen2.5-coder-1.5b-instruct-q4_k_m: 18 s, 1.2G, format v15
+wrote /home/francis/goinfer-bench/sidecar-v15-2026-09-29/home/models/qwen2.5-7b-instruct-q4_k_m.int4.cpu-amd64.giw: 4548 MB (int4)
+20:17:22 transcode qwen2.5-7b-instruct-q4_k_m: 87 s, 4.5G, format v15
+20:17:26 == PREFLIGHT OK

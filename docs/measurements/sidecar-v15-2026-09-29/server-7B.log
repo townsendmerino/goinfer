@@ -1,0 +1,204 @@
+stream-weights: transcoding qwen2.5-7b-instruct-q4_k_m.gguf → qwen2.5-7b-instruct-q4_k_m.int4.e4h.cuda.giw (int4, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (4092 MB) in 1m36s
+cuda: resident context 6547, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5502, trimmed from 6547 at the build, so the 4 requested KV slots fit beside the weights (2791 MB free, less 384 MB reserved)
+loaded "m": 28-layer model (vocab 152064) in 10.245s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 5502 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 3.5 GB KV (weights 4.0 GB, budget 40.8 GB, 37.3 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"m" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8095 [chat:[m]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 6.00 GB swap-used
+
+shutting down…
+resident batch "m": 782 runs, 0 batched steps (0 tokens), 782 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+resident batch "m" time: runs 9.092 s, exclusive 0.347 s (prefill 7 passes 0.347 s, bookkeeping 0.000 s)
+cuda: resident context 6547, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5502, trimmed from 6547 at the build, so the 4 requested KV slots fit beside the weights (2791 MB free, less 384 MB reserved)
+loaded "m": 28-layer model (vocab 152064) in 10.149s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 5502 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 3.5 GB KV (weights 4.0 GB, budget 40.8 GB, 37.3 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"m" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8095 [chat:[m]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 6.00 GB swap-used
+
+shutting down…
+resident batch "m": 782 runs, 0 batched steps (0 tokens), 782 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+resident batch "m" time: runs 9.090 s, exclusive 0.347 s (prefill 7 passes 0.346 s, bookkeeping 0.000 s)
+swap guard (load): armed for /home/francis/goinfer-bench/sidecar-v15-2026-09-29/home/models/qwen2.5-7b-instruct-q4_k_m.gguf, threshold +512 MB over baseline
+swap guard (load): baseline 6.00 GB swap-used
+cuda: resident context 6547, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5502, trimmed from 6547 at the build, so the 4 requested KV slots fit beside the weights (2791 MB free, less 384 MB reserved)
+loaded "m": 28-layer model (vocab 152064) in 32.389s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 5502 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 3.5 GB KV (weights 4.0 GB, budget 38.1 GB, 34.6 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"m" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8095 [chat:[m]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  load 32.25s (map 56ms build 20.6s resident 11.6s) — 64% build; 4.36 GB source, 0.14 GB/s effective
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 6.21 GB swap-used
+
+shutting down…
+resident batch "m": 782 runs, 0 batched steps (0 tokens), 782 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+resident batch "m" time: runs 9.094 s, exclusive 0.347 s (prefill 7 passes 0.347 s, bookkeeping 0.000 s)
+swap guard (load): armed for /home/francis/goinfer-bench/sidecar-v15-2026-09-29/home/models/qwen2.5-7b-instruct-q4_k_m.gguf, threshold +512 MB over baseline
+swap guard (load): baseline 6.21 GB swap-used
+swap guard (load): TRIPPED — swap grew 0.56 GB over baseline (6.77 GB used now); aborting the load of /home/francis/goinfer-bench/sidecar-v15-2026-09-29/home/models/qwen2.5-7b-instruct-q4_k_m.gguf
+cuda: resident context 6547, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5502, trimmed from 6547 at the build, so the 4 requested KV slots fit beside the weights (2791 MB free, less 384 MB reserved)
+loaded "m": 28-layer model (vocab 152064) in 32.593s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 5502 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 3.5 GB KV (weights 4.0 GB, budget 38.5 GB, 35.0 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"m" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8095 [chat:[m]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  load 32.46s (map 54ms build 21.02s resident 11.38s) — 65% build; 4.36 GB source, 0.13 GB/s effective
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 6.86 GB swap-used
+
+shutting down…
+resident batch "m": 782 runs, 0 batched steps (0 tokens), 782 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+resident batch "m" time: runs 9.090 s, exclusive 0.347 s (prefill 7 passes 0.347 s, bookkeeping 0.000 s)
+cuda: resident context 6547, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5502, trimmed from 6547 at the build, so the 4 requested KV slots fit beside the weights (2791 MB free, less 384 MB reserved)
+loaded "m": 28-layer model (vocab 152064) in 10.685s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 5502 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 3.5 GB KV (weights 4.0 GB, budget 41.2 GB, 37.7 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"m" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8095 [chat:[m]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 6.76 GB swap-used
+
+shutting down…
+resident batch "m": 782 runs, 0 batched steps (0 tokens), 782 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+resident batch "m" time: runs 9.095 s, exclusive 0.396 s (prefill 7 passes 0.396 s, bookkeeping 0.000 s)
+cuda: resident context 6547, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5502, trimmed from 6547 at the build, so the 4 requested KV slots fit beside the weights (2791 MB free, less 384 MB reserved)
+loaded "m": 28-layer model (vocab 152064) in 10.074s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 5502 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 3.5 GB KV (weights 4.0 GB, budget 41.2 GB, 37.7 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"m" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8095 [chat:[m]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 6.54 GB swap-used
+
+shutting down…
+resident batch "m": 782 runs, 0 batched steps (0 tokens), 782 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+resident batch "m" time: runs 9.091 s, exclusive 0.346 s (prefill 7 passes 0.346 s, bookkeeping 0.000 s)
+swap guard (load): armed for /home/francis/goinfer-bench/sidecar-v15-2026-09-29/home/models/qwen2.5-7b-instruct-q4_k_m.gguf, threshold +512 MB over baseline
+swap guard (load): baseline 6.54 GB swap-used
+cuda: resident context 6547, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5502, trimmed from 6547 at the build, so the 4 requested KV slots fit beside the weights (2791 MB free, less 384 MB reserved)
+loaded "m": 28-layer model (vocab 152064) in 32.007s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 5502 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 3.5 GB KV (weights 4.0 GB, budget 38.3 GB, 34.8 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"m" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8095 [chat:[m]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  load 31.86s (map 54ms build 21.01s resident 10.8s) — 66% build; 4.36 GB source, 0.14 GB/s effective
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 6.56 GB swap-used
+
+shutting down…
+resident batch "m": 782 runs, 0 batched steps (0 tokens), 782 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+resident batch "m" time: runs 9.096 s, exclusive 0.347 s (prefill 7 passes 0.347 s, bookkeeping 0.000 s)
+swap guard (load): armed for /home/francis/goinfer-bench/sidecar-v15-2026-09-29/home/models/qwen2.5-7b-instruct-q4_k_m.gguf, threshold +512 MB over baseline
+swap guard (load): baseline 6.56 GB swap-used
+cuda: resident context 6547, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5502, trimmed from 6547 at the build, so the 4 requested KV slots fit beside the weights (2791 MB free, less 384 MB reserved)
+loaded "m": 28-layer model (vocab 152064) in 31.82s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 5502 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 3.5 GB KV (weights 4.0 GB, budget 38.4 GB, 34.9 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"m" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8095 [chat:[m]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  load 31.69s (map 45ms build 20.99s resident 10.66s) — 66% build; 4.36 GB source, 0.14 GB/s effective
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 6.86 GB swap-used
+
+shutting down…
+resident batch "m": 782 runs, 0 batched steps (0 tokens), 782 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+resident batch "m" time: runs 9.089 s, exclusive 0.347 s (prefill 7 passes 0.347 s, bookkeeping 0.000 s)
+cuda: resident context 6547, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5502, trimmed from 6547 at the build, so the 4 requested KV slots fit beside the weights (2791 MB free, less 384 MB reserved)
+loaded "m": 28-layer model (vocab 152064) in 10.82s [chat: chatml]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 5502 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 3.5 GB KV (weights 4.0 GB, budget 41.1 GB, 37.6 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"m" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8095 [chat:[m]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 6.58 GB swap-used
+
+shutting down…
+resident batch "m": 782 runs, 0 batched steps (0 tokens), 782 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+resident batch "m" time: runs 9.102 s, exclusive 0.401 s (prefill 7 passes 0.400 s, bookkeeping 0.000 s)

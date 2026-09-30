@@ -1,0 +1,4 @@
+qwen2.5-7b-instruct-q4_k_m.int4.cpu-amd64.giw: v15, 4.5G
+qwen2.5-7b-instruct-q4_k_m.int4.e4h.cuda.giw: v15, 4.0G
+qwen2.5-coder-1.5b-instruct-q4_k_m.int4.cpu-amd64.giw: v15, 1.2G
+qwen2.5-coder-1.5b-instruct-q4_k_m.int4.e4h.cuda.giw: v15, 960M

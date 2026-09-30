@@ -1,0 +1,46 @@
+note: loading at --quant q4k (the file's Q4_K tensors kept exact, the rest int8, per-32 activations) instead of the default int4: Phi-3's activation outliers are rounded to zero by the per-row int8 activation scale every int4/int8int8/int4mix path uses (queue-engineering.md H2).
+swap guard (load): armed for /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf, threshold +512 MB over baseline
+swap guard (load): baseline 6.16 GB swap-used
+cuda: 1 resident KV slots of 4 requested — each costs 3072 MB of KV at the resident context 4096, and free VRAM beside the weights (4257 MB, less 384 MB reserved) allows 1
+loaded "bench": 32-layer model (vocab 32064) in 3.307s [chat: phi3_orig]
+  decode path: cuda-resident (q4k)
+  prefill path: sequential — batched prefill needs int4 or int8 projections (q4k weights) — ~9× slower TTFT, 20× CPU on a 300-token prompt
+  context: 4096 tokens (model maximum) · KV f32
+  fit: 4096-token cap needs 3.0 GB KV (weights 2.6 GB, budget 39.0 GB, 36.0 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8099 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  load 3.26s (map 7ms build 1.79s resident 1.47s) — 55% build; 2.23 GB source, 0.68 GB/s effective
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+goinfer: batched prefill declined for a 129-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: per-32 activation quantization has no batched kernels yet: cuda prefill: batched path declined (arch/geometry)
+swap guard: baseline 6.16 GB swap-used
+
+shutting down…
+note: loading at --quant q4k (the file's Q4_K tensors kept exact, the rest int8, per-32 activations) instead of the default int4: Phi-3's activation outliers are rounded to zero by the per-row int8 activation scale every int4/int8int8/int4mix path uses (queue-engineering.md H2).
+swap guard (load): armed for /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf, threshold +512 MB over baseline
+swap guard (load): baseline 6.16 GB swap-used
+cuda: 1 resident KV slots of 4 requested — each costs 3072 MB of KV at the resident context 4096, and free VRAM beside the weights (4257 MB, less 384 MB reserved) allows 1
+loaded "bench": 32-layer model (vocab 32064) in 2.384s [chat: phi3_orig]
+  decode path: cuda-resident (q4k)
+  prefill path: sequential — batched prefill needs int4 or int8 projections (q4k weights) — ~9× slower TTFT, 20× CPU on a 300-token prompt
+  context: 4096 tokens (model maximum) · KV f32
+  fit: 4096-token cap needs 3.0 GB KV (weights 2.6 GB, budget 39.0 GB, 36.0 GB left for a request's own prefill)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8099 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  load 2.33s (map 11ms build 873ms resident 1.45s) — 62% resident; 2.23 GB source, 0.95 GB/s effective
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 4.0 MiB (text) / 36.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+goinfer: batched prefill declined for a 129-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: per-32 activation quantization has no batched kernels yet: cuda prefill: batched path declined (arch/geometry)
+swap guard: baseline 6.16 GB swap-used
+
+shutting down…
