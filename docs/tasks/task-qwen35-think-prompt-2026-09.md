@@ -50,6 +50,28 @@ What shipped, against the design in "Proposed fix" below (which is kept as the r
   and skip rules, six mutations each red. On the real 0.8B: thinking on at `max_tokens` 160 ends with an answer; a request
   `thinking_token_budget` of 16 bounds the reasoning and leaves an answer; Anthropic `budget_tokens` gives a thinking block then
   a text block; streaming equals non-streaming.
+- **History handling (built 2026-09-30, owner request).** A client's replayed reasoning is rendered the way the model's own template
+  would: kept for the turns of the tool loop in progress, dropped before the last user query (`chat/history.go`). Per family, read
+  from the real templates: Qwen3.5 always writes the `<think>` block for those turns; Qwen3 only for the last message or a turn with
+  reasoning; Gemma 4 a thought channel when there is reasoning and strips channel spans from model turns. `<think>…</think>` left in
+  content is extracted as the Qwen templates do. Inputs: OpenAI `reasoning_content` / `reasoning`, Anthropic `thinking` blocks
+  (`Turn.Reasoning`). **Gate:** 144 HuggingFace prompts byte-equal per checkpoint and mode (plain conversations for all three;
+  tool loops byte-exact for Qwen3 — the JSON inside `<tool_call>` compared structurally — and Gemma 4, through the assistant turn's
+  first call for Qwen3.5); `-thinking asis` asserted unchanged by replayed reasoning for every case; nine mutations each red.
+  - **Deviation, deliberate: `Turn.ToolLoop`.** Claude Code puts reminder text inside the same user message as a `tool_result`.
+    Applied literally, Qwen's rule reads that text as a new query and strips the reasoning of the turns just before it — on the turn
+    right after the first tool result, for exactly the client this matters most for. Such text is marked as a loop continuation and
+    does not move the "last query". An OpenAI client cannot produce this shape (its tool results are separate `tool` messages).
+  - **Found by the new goldens:** Gemma 4 with thinking on ends a prompt inside an OPEN thought channel after a tool response, so a
+    reply starts mid-reasoning; serve's splitter would have put that reasoning in `content`. "The prompt ends inside an open block"
+    is now per conversation (`Template.PromptOpensThinkFor`); the reasoning budget uses it too.
+  - **Not replicated, recorded:** the templates trim every message's content (user and system too), which goinfer's renderers
+    have never done; Gemma 4's `preserve_thinking`. **Pre-existing Gemma 4 renderer differences, unrelated to reasoning, found and
+    skipped by name in the gate:** consecutive assistant messages share one model turn in Gemma's template (goinfer opens one per
+    message; serve merges adjacent turns first, so it is unreachable there), and Gemma writes an assistant message's TEXT after its
+    tool responses where goinfer's tool renderer writes it before the calls.
+  - **Consequence for the KV cache:** when a new user query arrives the previous loop's turns lose their reasoning, so a cached
+    prefix is reusable only up to the first such turn — the templates' own design.
 - **Claude Code itself, tested 2026-09-30** (2.1.284, isolated config dir, dummy key, tools off and with `Read`, through a
   logging proxy; the real 0.8B served under a Claude model name): it sent `thinking: {type: enabled, budget_tokens}`, parsed the
   `thinking_delta` stream (its own thinking-token counter climbed), accepted the empty `signature`, printed the answer, and
@@ -131,8 +153,6 @@ test that would have gone red.
 
 - **Stop strings on content only.** Stops are still matched on raw text, so a stop that appears in the reasoning ends the
   reply with no answer. Pinned by `TestStreamTokens_thinkStopStrings`, named as a known limitation.
-- **History:** replayed `reasoning_content` and Anthropic `thinking` blocks are dropped on input; the templates' rule
-  (keep reasoning only for assistant turns after the last user turn, `preserve_thinking`) is not implemented.
 - **Harmony (gpt-oss)** needs its own parser (several channel messages per reply); the interface admits one, none written.
 - **The `goinfer-chat` CLI and `demo/agent`** keep their own decode loops and do not split yet.
 - **Qwen3.5's XML tool-call format** (separate task), and what signature Claude Code wants on a thinking block — still to

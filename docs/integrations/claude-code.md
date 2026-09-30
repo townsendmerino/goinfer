@@ -68,9 +68,11 @@ the better choice for tool work.
 `cache_control` and `metadata` are accepted and ignored. `thinking` is honoured for a model whose chat template has a
 thinking control (Qwen3, Qwen3.5, Gemma 4 — `docs/server.md`, "Reasoning models (thinking)"): with `enabled` or
 `adaptive` the reply carries a `thinking` content block (empty `signature`) before the text, and with no `thinking` field
-the reasoning is dropped and only text is returned. **Not yet smoke-tested with Claude Code itself** — the blocks are
-checked against the Messages streaming shape by `scripts/think_matrix.py`, but whether Claude Code accepts an empty
-signature is unverified; if it objects, send `thinking: {"type": "disabled"}` or start serve with `-thinking off`.
+the reasoning is dropped and only text is returned. **Smoke-tested with Claude Code 2.1.284 (2026-09-30)** against the Qwen3.5-0.8B: it parses the thinking stream, accepts the
+empty signature, and in a tool loop replays the thinking blocks with every turn; serve renders them into the prompt the way the
+model's own template would (kept for the loop in progress, dropped before the last query) and answers 200. The test model could
+not use tools reliably, so the loop itself was poor — a model-quality limit, not the protocol. If you would rather not have
+thinking, send `thinking: {"type": "disabled"}` or start serve with `-thinking off`.
 
 ## Retiring this page
 

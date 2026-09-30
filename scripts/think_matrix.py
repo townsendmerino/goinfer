@@ -340,6 +340,42 @@ def run(base, model, mx):
         gen = post(base + "/v1/messages", {**body, "max_tokens": 4, "temperature": 0})["usage"]["input_tokens"]
         cell(f"anthropic/{thinking}: count_tokens == generation input_tokens ({ct})", ct == gen, f"{ct} vs {gen}")
 
+    # ---- history: replayed reasoning reaches the model the way its own template would put it there ---------------------
+    # Observed through usage.prompt_tokens / input_tokens, one generated token each: the tool loop in progress keeps the
+    # reasoning (the prompt grows by it); a loop that a later user query has finished drops it (the prompt does not change).
+    R = "I need the weather for Paris, so I will call the weather tool with the city name and then report the temperature."
+    tc = [{"id": "c1", "type": "function", "function": {"name": "get_weather", "arguments": "{\"city\": \"Paris\"}"}}]
+    def hist_tokens(msgs):
+        r = post(base + "/v1/chat/completions", {"model": model, "messages": msgs, "tools": [TOOL], "max_tokens": 1, "temperature": 0})
+        return r["usage"]["prompt_tokens"]
+    loop = lambda **kw: [{"role": "user", "content": "Weather in Paris?"}, {"role": "assistant", "content": "", "tool_calls": tc, **kw},
+                         {"role": "tool", "tool_call_id": "c1", "name": "get_weather", "content": "18C"}]
+    n0, n1, n2 = hist_tokens(loop()), hist_tokens(loop(reasoning_content=R)), hist_tokens(loop(reasoning=R))
+    cell("history/openai: a tool loop in progress keeps replayed reasoning (prompt grows by it)", n1 > n0 + 10, f"without={n0} with={n1}")
+    cell("history/openai: `reasoning` and `reasoning_content` are the same field", n1 == n2, f"{n1} vs {n2}")
+    done = lambda **kw: loop(**kw) + [{"role": "assistant", "content": "It is 18C."}, {"role": "user", "content": "And Rome?"}]
+    d0, d1 = hist_tokens(done()), hist_tokens(done(reasoning_content=R))
+    cell("history/openai: reasoning of a FINISHED loop is dropped (prompt unchanged)", d0 == d1, f"without={d0} with={d1}")
+
+    def anth_tokens(msgs):
+        body = {"model": model, "max_tokens": 1, "temperature": 0, "tools": [ATOOL], "messages": msgs}
+        r = post(base + "/v1/messages", body)
+        return r["usage"]["input_tokens"], post(base + "/v1/messages/count_tokens", {k: v for k, v in body.items() if k != "temperature"})["input_tokens"]
+    tu = {"type": "tool_use", "id": "toolu_1", "name": "get_weather", "input": {"city": "Paris"}}
+    th = {"type": "thinking", "thinking": R, "signature": ""}
+    def aloop(thinking, reminder):
+        res = [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "18C"}]
+        if reminder:
+            res.append({"type": "text", "text": "<system-reminder>Answer briefly.</system-reminder>"})
+        return [{"role": "user", "content": [{"type": "text", "text": "Weather in Paris?"}]},
+                {"role": "assistant", "content": ([th] if thinking else []) + [tu]}, {"role": "user", "content": res}]
+    a0, c0 = anth_tokens(aloop(False, False)); a1, c1 = anth_tokens(aloop(True, False))
+    cell("history/anthropic: a replayed thinking block is rendered in a tool loop in progress", a1 > a0 + 10, f"without={a0} with={a1}")
+    ar0, _ = anth_tokens(aloop(False, True)); ar1, cr1 = anth_tokens(aloop(True, True))
+    cell("history/anthropic: Claude Code's reminder text beside the tool_result does not cost the reasoning (ToolLoop)",
+         ar1 > ar0 + 10, f"without={ar0} with={ar1}")
+    cell("history/anthropic: count_tokens equals the generation's input_tokens with thinking blocks replayed", (c1, cr1) == (a1, ar1), f"count {c1},{cr1} vs generation {a1},{ar1}")
+
     # ---- Responses API --------------------------------------------------------------------------------------------
     for eff in (None, "none", "high"):
         body = {"model": model, "input": Q, "max_output_tokens": mx, "temperature": 0}

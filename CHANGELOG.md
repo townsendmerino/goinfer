@@ -29,6 +29,12 @@ any surface may still change.
     it has used three quarters of `max_tokens` (or the request's own `thinking_token_budget` / Anthropic `budget_tokens`,
     clamped to leave a quarter), so a small `max_tokens` with thinking on no longer returns an empty `content`. Off under
     `-spec` / `-drafter`. A gated logit processor: decode fast paths are untouched until the budget is due.
+  - **Replayed reasoning reaches the model.** An OpenAI `reasoning_content` / `reasoning` or an Anthropic `thinking` block on an
+    assistant message is now rendered the way the model's own chat template would — kept for the tool loop in progress, dropped
+    before the last user query — instead of ignored. Pinned against HuggingFace for Qwen3, Qwen3.5 and Gemma 4 (144 prompts).
+    Claude Code's reminder text inside a `tool_result` message is not treated as a new query. `-thinking asis` ignores it.
+  - **Fixed on the way:** Gemma 4 with thinking on ends a prompt inside an open thought channel after a tool response; serve's
+    splitter did not know, so the reply's reasoning would have landed in `content`.
   - **What changes for an existing client:** a model that was writing `<think>` into `content` now writes it to
     `reasoning_content`. A small Qwen3.5 (0.8B) now gets its closed empty think block and answers without thinking, as
     HuggingFace's default does (+4 prompt tokens); Qwen3, Qwen3.5-9B and Gemma 4 prompts decode as before. A client that parsed the tags out of `content` sets `-reasoning-format none`.

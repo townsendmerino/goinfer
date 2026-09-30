@@ -518,9 +518,20 @@ to ignore.**
   that ends inside an open `<think>` would contradict the grammar, so those requests are rendered with thinking off.
 - **Stop strings are matched on the raw text, reasoning included.** A `stop` string that appears in the model's reasoning
   ends the reply there, with no answer. Known, and pinned by a test; it affects clients that turn thinking on and set `stop`.
+- **Replayed reasoning (history).** A client that sends the model's reasoning back — `reasoning_content` or `reasoning` on an
+  OpenAI assistant message, `thinking` blocks on an Anthropic one (Claude Code sends them with every turn of a tool loop) —
+  has it rendered the way the model's own chat template would: **kept for the turns of the tool loop in progress** (those after
+  the last user query) and **dropped for turns before it**. The families differ in the details and follow their own templates:
+  Qwen3.5 always writes the `<think>` block for those turns (empty when there is no reasoning), Qwen3 only for the last message
+  or a turn that has reasoning, Gemma 4 a thought channel when there is reasoning. A client that left `<think>…</think>` inside
+  `content` instead has it extracted the way the Qwen templates do, so an old turn's tags are stripped rather than re-sent as prose.
+  An Anthropic user message carrying `tool_result` blocks plus reminder text (Claude Code's shape) does **not** count as a new
+  query, or the turn after the first tool result would lose its reasoning. Under `-thinking asis` replayed reasoning is ignored
+  (the pre-thinking prompt). Consequence for the KV cache: when a new user query arrives, the previous loop's turns lose their
+  reasoning, so the cached prefix is reusable only up to the first such turn — the templates' own design, not serve's.
+  Not replicated: the templates also trim every message's content and Gemma 4 has a `preserve_thinking` option.
 - **Not split:** a model whose template has no recognised thinking control (everything else, and any template shape not
-  read from a real checkpoint) is served exactly as before. Replayed reasoning is dropped on input: `reasoning_content` on an
-  assistant message and Anthropic `thinking` blocks are ignored. The `goinfer-chat` CLI does not split yet.
+  read from a real checkpoint) is served exactly as before. The `goinfer-chat` CLI does not split yet.
 - **Jobs and batches** apply the same split; a job's result and a batch line's `content` are the clean answer.
 
 **Embeddings.** Point `--embed-model` at a [CodeRankEmbed](https://huggingface.co/nomic-ai/CodeRankEmbed)
