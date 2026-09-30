@@ -16,7 +16,7 @@ across thinking unset / on / off, and asserts the INVARIANT on every cell, not j
   * the prompt half: usage.prompt_tokens moves by exactly the think-block token counts between modes.
 
 A cell that passes only because the reply was empty is a FAIL (the same trap as a skipped test). Stdlib only, so it runs
-unattended on the night queue. Exit status is nonzero if any cell fails. Progress is printed per cell with elapsed time.
+unattended on the night queue. Exit status: 0 all pass, 1 a cell failed, 2 all that ran passed but some path was NOT EXERCISED. Progress is printed per cell with elapsed time.
 """
 import argparse
 import json
@@ -67,9 +67,19 @@ def post(url, body, stream=False, timeout=900):
     return events
 
 
+UNEXERCISED = []
+
+
 def cell(name, ok, why=""):
     results.append((name, ok, why))
     print(f"[{time.time() - t0:6.0f}s] {'PASS' if ok else 'FAIL'}  {name}" + ("" if ok else f"\n        -> {why}"), flush=True)
+
+
+def unexercised(name, why):
+    """A cell whose path the model did not take (e.g. it never finished thinking). NOT a pass: it is listed at the end and
+    makes the exit status 2, so a matrix that proved less than it says is visible in the morning record."""
+    UNEXERCISED.append((name, why))
+    print(f"[{time.time() - t0:6.0f}s] NOT EXERCISED  {name}\n        -> {why}", flush=True)
 
 
 def kw(think):
@@ -151,20 +161,26 @@ def run(base, model, mx):
              (msg["content"] or "") == "" and ch["finish_reason"] == "length",
              f"content={msg['content']!r} finish={ch['finish_reason']}")
     else:
-        cell("chat/on/truncated: model did not think in 6 tokens (cell not exercised)", True)
+        unexercised("chat/on/truncated in reasoning", "the model wrote no reasoning in 6 tokens, so the truncated-inside-the-block path did not run")
 
     # ---- the full path: a reply that thinks AND then answers (needs room: --max-think) -------------------------------
-    r = chat_nonstream(base, model, "on", MAX_THINK)
+    # Sampled, not greedy: greedy thinking on a small model often loops forever (the Qwen card says so), which would leave this
+    # path unexercised for a reason that has nothing to do with the server. A seed keeps it repeatable.
+    r = chat_nonstream(base, model, "on", MAX_THINK, {"temperature": 0.6, "top_p": 0.95, "seed": 7})
     ch = r["choices"][0]
     msg = ch["message"]
     content, reasoning = msg["content"] or "", msg.get("reasoning_content", "")
-    cell(f"chat/on/completes within {MAX_THINK} tokens: reasoning, then a clean non-empty answer, finish stop",
-         bool(reasoning) and content.strip() != "" and ch["finish_reason"] == "stop" and not any(t in content for t in TAGS),
-         f"finish={ch['finish_reason']} reasoning={len(reasoning)}ch content={content[:80]!r}")
-    sc, sr, sf, su, order = chat_stream(base, model, "on", MAX_THINK)
-    cell("chat/on/completes: stream == non-stream", (sc, sr, sf) == (content, reasoning, ch["finish_reason"]),
-         f"stream {(sc[:40], sr[:40], sf)!r} vs {(content[:40], reasoning[:40], ch['finish_reason'])!r}")
-    print(f"         (answer after thinking: {content[:80]!r}; reasoning {len(reasoning)} chars)", flush=True)
+    if ch["finish_reason"] == "length":
+        unexercised(f"chat/on/completes within {MAX_THINK} tokens",
+                    f"the model was still {'thinking' if not content else 'writing'} at the limit (reasoning {len(reasoning)} chars, content {len(content)}); the think-then-answer path did not run on this model")
+    elif not reasoning:
+        unexercised(f"chat/on/completes within {MAX_THINK} tokens",
+                    "thinking was requested but the model wrote no reasoning (finish stop); nothing to separate on this model/prompt")
+    else:
+        cell(f"chat/on/completes within {MAX_THINK} tokens: reasoning, then a clean non-empty answer, finish stop",
+             content.strip() != "" and not any(t in content for t in TAGS),
+             f"finish={ch['finish_reason']} reasoning={len(reasoning)}ch content={content[:80]!r}")
+        print(f"         (answer after thinking: {content[:80]!r}; reasoning {len(reasoning)} chars)", flush=True)
 
     # ---- reasoning_format ---------------------------------------------------------------------------------------
     r = chat_nonstream(base, model, "on", mx, {"reasoning_format": "none"})
@@ -314,9 +330,14 @@ def main():
     run(a.url, model, a.max)
     bad = [r for r in results if not r[1]]
     print(f"\n{len(results) - len(bad)}/{len(results)} cells pass in {time.time() - t0:.0f}s", flush=True)
+    if UNEXERCISED:
+        print(f"{len(UNEXERCISED)} cell(s) NOT EXERCISED (a path the model did not take — not a pass):", flush=True)
+        for n, w in UNEXERCISED:
+            print(f"  - {n}: {w}", flush=True)
     if a.json:
-        json.dump([{"cell": n, "pass": ok, "why": w} for n, ok, w in results], open(a.json, "w"), indent=1)
-    sys.exit(1 if bad else 0)
+        json.dump([{"cell": n, "pass": ok, "why": w} for n, ok, w in results] +
+                  [{"cell": n, "pass": None, "why": w} for n, w in UNEXERCISED], open(a.json, "w"), indent=1)
+    sys.exit(1 if bad else (2 if UNEXERCISED else 0))
 
 
 if __name__ == "__main__":

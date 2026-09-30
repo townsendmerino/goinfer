@@ -393,3 +393,43 @@ func TestThinkModes_idsMatchHF(t *testing.T) {
 	}
 	t.Logf("%d prompts tokenized and compared against HF ids", ran)
 }
+
+// TestThinkModes_delimitersDecodeToTheirSurfaceForm: the splitter works on DECODED text, so the real tokenizer must decode
+// the delimiter tokens to their literal surface form (serve's streamTokens appends DecodePiece(id) per token). Checked
+// against each checkpoint's real tokenizer, because the serve-level splitter tests use a synthetic vocabulary and would pass
+// even if a real tokenizer dropped special tokens on decode — the one thing that would make the whole split a no-op.
+// Skipped, visibly, without the tokenizer files; run with -v.
+func TestThinkModes_delimitersDecodeToTheirSurfaceForm(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	want := map[string][]string{
+		"qwen3-4b":           {"<think>", "</think>"},
+		"qwen3.5-0.8b":       {"<think>", "</think>"},
+		"qwen3.5-9b":         {"<think>", "</think>"},
+		"gemma-4-26b-a4b-it": {"<|channel>", "<channel|>"},
+	}
+	ran := 0
+	for name, toks := range want {
+		dir := filepath.Join(home, "models", name)
+		if _, err := os.Stat(filepath.Join(dir, "tokenizer.json")); err != nil {
+			t.Logf("SKIP %s: no tokenizer at %s", name, dir)
+			continue
+		}
+		tk, err := tokenizer.Load(dir)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, lit := range toks {
+			id, ok := tk.TokenID(lit)
+			if !ok {
+				t.Errorf("%s: %q is not a single token", name, lit)
+				continue
+			}
+			piece, _ := tk.DecodePiece(id)
+			ran++
+			if piece != lit {
+				t.Errorf("%s: DecodePiece(%d) = %q, want the literal %q — the splitter would never see the delimiter", name, id, piece, lit)
+			}
+		}
+	}
+	t.Logf("%d delimiter tokens decoded and compared", ran)
+}

@@ -9,7 +9,8 @@
 # Each leg starts a serve binary PRE-BUILT at a pinned revision (the tree may move before tonight), runs
 # scripts/think_matrix.py against it (copied here for the same reason), and stops the server by PID. The matrix asserts the
 # invariant on every cell (docs/tasks/task-qwen35-think-prompt-2026-09.md), so a leg's exit status is its verdict; this
-# script fails if any leg fails, but runs all three regardless, so one bad leg does not hide the others.
+# script exits 1 if any leg failed, 2 if every cell that ran passed but some path was NOT EXERCISED (the model never finished
+# thinking, say — that is not a pass), 0 only when all three legs proved everything. All three legs always run.
 #
 # Legs (the prompt deltas are what each template writes; they are pinned against HF in chat/reasoning_test.go):
 #   qwen3.5-9b      default ON, open prompt     as-is P; off +4 tokens; on +2
@@ -52,12 +53,16 @@ leg() { # name model-arg port on-delta off-delta tags max maxthink
   phase "leg $name: matrix"
   python3 "$MATRIX" --url "http://127.0.0.1:$port" --max "$mx" --max-think "$mt" --on-delta "$on" --off-delta "$off" \
       --tags "$tags" --json "$OUT/$name.json" 2>&1 | tee "$OUT/$name.log"
-  [ "${PIPESTATUS[0]}" = 0 ] || { rc=1; phase "leg $name: FAILED"; }
+  case "${PIPESTATUS[0]}" in
+    0) ;;
+    2) [ "$rc" = 1 ] || rc=2; phase "leg $name: all cells that ran passed, but some path was NOT EXERCISED (see its log)" ;;
+    *) rc=1; phase "leg $name: FAILED" ;;
+  esac
   kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
   phase "leg $name: done"
 }
-leg qwen35-9b   "$HOME/models/qwen3.5-9b"                          8097  2 4 "<think>,</think>"           120 800
-leg qwen3-1.7b  "$HOME/models/qwen3-1.7b-bf16"                     8096  0 4 "<think>,</think>"           120 800
-leg gemma4-e2b  "$HOME/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf" 8095  3 0 "<|channel>,<channel|>" 120 800
+leg qwen35-9b   "$HOME/models/qwen3.5-9b"                          8097  2 4 "<think>,</think>"           120 1500
+leg qwen3-1.7b  "$HOME/models/qwen3-1.7b-bf16"                     8096  0 4 "<think>,</think>"           120 1500
+leg gemma4-e2b  "$HOME/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf" 8095  3 0 "<|channel>,<channel|>" 120 1500
 phase "done rc=$rc"
 exit $rc
