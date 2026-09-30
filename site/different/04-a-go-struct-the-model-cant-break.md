@@ -2,18 +2,18 @@
 title: "A Go struct the model can't break"
 area: "Structured output"
 order: 4
-summary: "Give goinfer a Go struct and the model can only write JSON that fits it, so json.Unmarshal into that struct parses. It fixes the shape, not whether the values are right."
+summary: "Give goinfer a Go struct and the model can only write JSON that fits it, so json.Unmarshal parses it. It fixes the shape, not whether the values are right."
 stand: "goinfer turns a Go struct's json tags into a grammar and holds the model to it while it writes. The output is always the struct's shape. What each field says is still the model's."
 measured: 2026-09-02
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "output", value: "always the struct's shape, so json.Unmarshal parses it"}
   - {label: "not guaranteed", value: "that a value is true, or that a number fits its Go type"}
-  - {label: "cost of the mask", value: "1.21x a 6.2 ms decode step, one box, one document"}
+  - {label: "cost of the mask", value: "1.21x a 6.2 ms decode step, on one PC, for one document"}
   - {label: "a parse rate on a real model", value: "not measured"}
 doesnt:
   - title: "It doesn't check what the values say."
-    text: "The grammar knows a field is a string or an integer, not whether it is correct. An age of 412 fits an int. Free text inside a string is the model's own, and a special token id that is not a stop id can still appear as text there (audit finding N-79, deferred, not fixed)."
+    text: "The grammar knows a field is a string or an integer, not whether it is correct. An age of 412 fits an int. Free text inside a string is the model's own. A special control token that is not a stop token can also appear there as plain text: a known audit finding, deferred and not fixed."
   - title: "It doesn't bound a number's size."
     text: "JSON Schema integers have no width, so a uint8 field can be given 99999 and json.Unmarshal will return an error for it. Unsigned fields are stopped from going negative, and that is all."
   - title: "It doesn't take every schema."
@@ -21,7 +21,7 @@ doesnt:
   - title: "It doesn't take every Go type."
     text: "Maps, interfaces and recursive types are refused, as is a type with its own UnmarshalJSON. Only json tags are read, so a struct has no way to say 'one of these three strings'; for that, write the schema by hand. A pointer field is optional, but the model cannot write null into it."
   - title: "It can't finish a document the token budget won't fit."
-    text: "The grammar holds the model to valid prefixes; it does not make it hurry. If generation stops at max_tokens before the closing brace, you get a valid prefix that will not parse. The server reports that stop as finish_reason length."
+    text: "The grammar holds the model to valid prefixes; it does not make it hurry. If generation stops at the request's token limit (max_tokens) before the closing brace, you get a valid prefix that will not parse. The server reports that stop as finish_reason length."
 figures:
   - {text: "1.299 ms/step", source: "docs/QUEUE.md"}
   - {text: "1.21×", source: "docs/QUEUE.md"}
@@ -47,7 +47,7 @@ Ask a language model for JSON and you usually get JSON. Usually. Sometimes there
 
 ## What goinfer does
 
-You give the `constrain` package a Go value of your struct type. It reads the type and its `json` tags, derives a JSON Schema, and compiles the schema into a grammar. While the model writes, goinfer removes every next token that would take the output outside that grammar. This is the shape from the README:
+You give the `constrain` package a Go value of your struct type. It reads the type and its `json` tags, derives a JSON Schema, and compiles the schema into a grammar. A model writes one token at a time (a token is a word or a piece of one). While it writes, goinfer removes every next token that would take the output outside that grammar. This is the example from the project's [README](https://github.com/townsendmerino/goinfer/blob/main/README.md):
 
 ```go
 type Person struct {
@@ -64,7 +64,7 @@ var p Person
 _ = json.Unmarshal(out, &p)                          // shape guaranteed, not magnitude
 ```
 
-`generate`, `toks` and `eos` are stand-ins there. The real calls are in `examples/confidence`, which uses a hand-written schema instead of a struct and also switches on per-field confidence (the "How sure was it?" page). This is its generation half, unchanged:
+`generate`, `toks` (each token's bytes) and `eos` (the token ids that end generation) are stand-ins there. The real calls are in [`examples/confidence`](https://github.com/townsendmerino/goinfer/blob/main/examples/confidence/main.go). It uses a hand-written schema instead of a struct, and it also turns on per-field confidence, which [How sure was it?](/different/02-how-sure-was-it/) covers. This is its generation half, unchanged:
 
 ```go
 g, err := constrain.JSONSchema([]byte(schema))
@@ -80,7 +80,7 @@ for id := range ch {
 check(gen.Err(), "generate")
 ```
 
-To see what a struct becomes, `constrain.SchemaFromStruct` returns the schema itself. This output is asserted by `ExampleSchemaFromStruct` in the package's tests, for a `Person` with `Name`, `Age` and an `Email string` tagged `json:"email,omitempty"`:
+To see what a struct becomes, `constrain.SchemaFromStruct` returns the schema itself. The package's tests check this exact output (`ExampleSchemaFromStruct`), for a `Person` with `Name`, `Age` and an `Email string` tagged `json:"email,omitempty"`:
 
 ```json
 {"additionalProperties":false,"properties":{"age":{"type":"integer"},"email":{"type":"string"},"name":{"type":"string"}},"required":["name","age"],"type":"object"}
@@ -90,7 +90,7 @@ Fields without `omitempty`, and not pointers, are required. `omitempty` and poin
 
 ## How it works
 
-At each step the model scores every token in its vocabulary (151,936 of them for Qwen2.5). `Masker.Process` runs before the sampler. For each token it asks the grammar whether that token's bytes keep the output a valid start of a document that fits the schema. If not, the token's score becomes minus infinity, so the sampler cannot pick it. Nothing is retried; the bad token is unreachable.
+At each step the model gives every token in its vocabulary a score. The Qwen2.5 models have 151,936 tokens. `Masker.Process` runs before the sampler, the step that picks the next token from those scores. For each token it asks the grammar whether that token's bytes keep the output a valid start of a document that fits the schema. If not, the token's score becomes minus infinity, so the sampler cannot pick it. Nothing is retried; the bad token is unreachable.
 
 The grammar works on bytes, so a token that spans structure, like a closing quote and brace together, is judged correctly. Keys are matched against the properties not yet written, each at most once, in any order. The end-of-sequence token stays blocked until the document is complete, and `StopWhenComplete` then ends generation at the first complete document.
 
@@ -98,7 +98,7 @@ A schema keyword the compiler cannot enforce is an error when you build the gram
 
 ## What was measured
 
-No record here measures a parse rate on a real model. Nothing was counted as "N answers, N parsed". What does exist is tests of the grammar itself. They drive the masker with random choices over a small made-up vocabulary, not a model, and assert that it never dead-ends and that the output is valid:
+No record in the repo measures a parse rate on a real model. Nothing was counted as "N answers, N parsed". What does exist is tests of the grammar itself. They drive the masker with random choices over a small made-up vocabulary, not a model, and assert that it never dead-ends and that the output is valid:
 
 <table>
 <thead><tr><th>what</th><th>what it asserts</th><th>where</th></tr></thead>
@@ -109,11 +109,13 @@ No record here measures a parse rate on a real model. Nothing was counted as "N 
 </tbody>
 </table>
 
-The cost of the mask was measured once, on 2026-09-02, and is recorded in `docs/QUEUE.md` (section G37). The mask work is the same size whatever the model is. Timed at every step of a 17-token JSON document, with a 151,936-token vocabulary, it averaged 1.299 ms/step. Against a 1.5B model's resident-GPU decode step, that made constrained decoding 1.21× the unconstrained time at 6.2 ms per step and 1.18× at 7.4 ms. The slowest single grammar state was a 1.72× upper bound, not a typical step.
+The cost of the mask was measured once, on 2026-09-02. It is recorded in the project's work queue, [`docs/QUEUE.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/QUEUE.md), in the entry on the cost of constrained decoding. The mask work is the same size whatever the model is. Timed at every step of a 17-token JSON document, with a 151,936-token vocabulary, it averaged 1.299 ms/step.
 
-A large part of that came from one fix: inside a string, 96.88% of the vocabulary is legal without walking the grammar, so goinfer answers those with one bit test.
+The record compares that with a decode step, the time to produce one token, for a 1.5B model (Qwen2.5-Coder-1.5B, 8-bit weights) held on the GPU of the Linux PC (Ryzen 7 3700X, RTX 2070 SUPER 8 GB). The record does not say which machine timed the mask itself. That step took 6.2 ms at the 64th token of context and 7.4 ms at the 512th. With the mask, constrained decoding took 1.21× the unconstrained time at 6.2 ms per step, and 1.18× at 7.4 ms. The slowest single grammar state would give at most 1.72×. That is an upper bound, not a typical step.
 
-The record also says where this stops holding. One box, one vocabulary and one small struct were timed. The mask does not get cheaper for a faster model, so against a step of about 2 ms it would be about 1.65×. And it left two costs unsized: a request with a logit processor skips some faster decode paths.
+A large part of that came from one fix. Inside a JSON string, 96.88% of the vocabulary's tokens hold no quote, backslash or control byte. Those tokens are always allowed there and leave the grammar where it was, so goinfer answers them with one bit test instead of checking each byte against the grammar.
+
+The record also says where this stops holding. One PC, one vocabulary and one small struct were timed. The mask does not get cheaper for a faster model, so against a step of about 2 ms it would be about 1.65×. And it left two costs unmeasured, both with one cause: a request that runs a mask like this one skips some faster decode paths. On setups that use those paths, the real cost is higher than these ratios.
 
 ## Use it
 
@@ -121,10 +123,10 @@ The record also says where this stops holding. One box, one vocabulary and one s
 go get github.com/townsendmerino/goinfer/decoder@latest github.com/townsendmerino/goinfer/tokenizer@latest
 ```
 
-Then import `github.com/townsendmerino/goinfer/constrain` beside `decoder`, `tokenizer` and `chat`. The complete program to copy is `examples/confidence`:
+Then import `github.com/townsendmerino/goinfer/constrain` beside `decoder`, `tokenizer` and `chat`. The complete program to copy is `examples/confidence`. From a clone of the repo:
 
 ```sh
 go run ./examples/confidence ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf "I was charged twice for order #123. - Ann"
 ```
 
-The chat demo takes a schema file with `--schema` (from the README: `go run ./demo/chat --model … --schema person.schema.json`). The server takes the same subset as `response_format` with `{"type":"json_schema", …}`; that path has no Go struct in it, so it takes a schema. Sketch, not run: a Go client can call `constrain.SchemaFromStruct(Person{})` and send those bytes as the `schema`.
+The chat demo takes a schema file with `--schema` (from the README: `go run ./demo/chat --model … --schema person.schema.json`). The HTTP server, `goinfer-serve`, takes the same schema subset in a request's `response_format`, as `{"type":"json_schema", …}`. That path has no Go struct in it, so it takes a schema. Sketch, not run: a Go client can call `constrain.SchemaFromStruct(Person{})` and send those bytes as the `schema`.

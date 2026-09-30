@@ -1,6 +1,6 @@
 ---
 title: "How sure was it?"
-area: Structured output
+area: "Structured output"
 order: 2
 summary: "Each enum, boolean and integer field of a constrained JSON answer comes back with the model's own probability over the answers the schema allowed."
 stand: "Ask for a JSON answer, and each choice, yes/no and count in it comes back with the model's own probability over the answers your schema allowed."
@@ -8,50 +8,52 @@ measured: 2026-09-27
 reviewed: 2026-09-29
 raw: true
 facts:
-  - {label: "turn it on", value: '`"goinfer_confidence": true`'}
-  - {label: "costs", value: "1–4% of a token"}
+  - {label: "turn it on", value: "`\"goinfer_confidence\": true`"}
+  - {label: "costs", value: "1–4% of each token's time"}
   - {label: "fields", value: "enum, boolean, integer"}
   - {label: "calibrated", value: "no"}
 doesnt:
   - title: "It isn't the probability that the answer is right."
-    text: "It's the model's probability over what the schema allowed, which is a narrower thing. It was tested for ranking, not calibration, and every record says `\"calibrated\": false`. A 0.9 doesn't mean nine times in ten."
+    text: "It's the model's probability over what the schema allowed, which is a narrower thing. It was tested for ranking (is a low number wrong more often?), not for calibration, and every field it reports says `\"calibrated\": false`. A 0.9 doesn't mean nine times in ten."
   - title: "It doesn't cover numbers or free text."
-    text: "Only enum, boolean and integer fields are reported. The test set produced too few wrong numbers and names to judge the rest."
+    text: "Only enum, boolean and integer fields are reported. Number and string fields are not: the test set produced too few wrong numbers and names to judge them."
   - title: "It rests on one small test."
-    text: "60 tickets, one kind of task, written by us, two models from one family. A harder labelled set would say more, and might move the integer result either way."
+    text: "60 support tickets, one kind of task, written by us, and two models from one family (Qwen2.5). A harder labelled set would say more, and might move the integer result either way."
   - title: "It doesn't work everywhere a schema does."
-    text: "The server refuses it, with a 400, alongside tools, images, `/v1/jobs`, batches, `/v1/responses` and `/v1/messages`, rather than dropping it silently. It also turns off grammar-fused speculative decoding for that request."
+    text: "The server refuses the flag with a 400, rather than dropping it silently, on requests with tools or images, on `/v1/jobs` and batches, and on `/v1/responses` and `/v1/messages`. It also turns off grammar-fused speculative decoding for that request: the speed-up that guesses several tokens ahead and checks them in one step."
   - title: "It doesn't make a small model good."
-    text: "A 1.5B that is unsure is often right to be. The number tells you where to look, not what the answer should have been."
+    text: "A 1.5B-parameter model that is unsure is often right to be. The number tells you where to look, not what the answer should have been."
 figures:
-  - {text: "0.847", source: docs/measurements/confidence-c0-2026-09-27.md}
-  - {text: "0.967", source: docs/measurements/confidence-c0-2026-09-27.md}
-  - {text: "0.727", source: docs/measurements/confidence-c0-2026-09-27.md}
-  - {text: "0.905", source: docs/measurements/confidence-c0-2026-09-27.md}
-  - {text: "0.680", source: docs/measurements/confidence-c0-2026-09-27.md}
-  - {text: "0.942", source: docs/measurements/confidence-c0-2026-09-27.md}
-  - {text: "4.20%", source: docs/measurements/confidence-c0-2026-09-27.md}
-  - {text: "0.570 ms", source: docs/measurements/confidence-c0-2026-09-27.md}
-  - {text: "13.56 ms", source: docs/measurements/confidence-c0-2026-09-27.md}
-  - {text: "1.44%", source: docs/measurements/confidence-c0-2026-09-27.md}
-  - {text: "0.542", source: docs/measurements/confidence-c0-2026-09-27.md}
-  - {text: "37.55 ms", source: docs/measurements/confidence-c0-2026-09-27.md}
-  - {text: "0.65", source: docs/tasks/task-constrained-confidence.md}
-  - {text: "0.55", source: docs/tasks/task-constrained-confidence.md}
+  - {text: "0.847", source: "docs/measurements/confidence-c0-2026-09-27.md"}
+  - {text: "0.967", source: "docs/measurements/confidence-c0-2026-09-27.md"}
+  - {text: "0.727", source: "docs/measurements/confidence-c0-2026-09-27.md"}
+  - {text: "0.905", source: "docs/measurements/confidence-c0-2026-09-27.md"}
+  - {text: "0.680", source: "docs/measurements/confidence-c0-2026-09-27.md"}
+  - {text: "0.942", source: "docs/measurements/confidence-c0-2026-09-27.md"}
+  - {text: "4.20%", source: "docs/measurements/confidence-c0-2026-09-27.md"}
+  - {text: "0.570 ms", source: "docs/measurements/confidence-c0-2026-09-27.md"}
+  - {text: "13.56 ms", source: "docs/measurements/confidence-c0-2026-09-27.md"}
+  - {text: "1.44%", source: "docs/measurements/confidence-c0-2026-09-27.md"}
+  - {text: "0.542", source: "docs/measurements/confidence-c0-2026-09-27.md"}
+  - {text: "37.55 ms", source: "docs/measurements/confidence-c0-2026-09-27.md"}
+  - {text: "0.65", source: "docs/tasks/task-constrained-confidence.md"}
+  - {text: "0.55", source: "docs/tasks/task-constrained-confidence.md"}
+  - {text: "0.29 ms", source: "docs/tasks/task-constrained-confidence.md"}
+  - {text: "0.28 ms", source: "docs/tasks/task-constrained-confidence.md"}
 sources:
-  - docs/server.md
-  - docs/measurements/confidence-c0-2026-09-27.md
-  - docs/tasks/task-constrained-confidence.md
-  - constrain/confidence.go
-  - examples/confidence
+  - "docs/server.md"
+  - "docs/measurements/confidence-c0-2026-09-27.md"
+  - "docs/tasks/task-constrained-confidence.md"
+  - "constrain/confidence.go"
+  - "examples/confidence"
 ---
 <h2>The problem</h2>
 <p class="lead">A constrained answer always looks sure of itself.</p>
-<p>goinfer can already force a model's output into a JSON schema, so the reply always parses and every field holds a value the schema allows. That's useful, and it hides something. A model that knew the answer and a model that picked between two options by a hair produce the same clean JSON. Nothing in the reply tells them apart.</p>
+<p>goinfer can already <a href="/different/04-a-go-struct-the-model-cant-break/">force a model's output into a JSON schema</a>, so the reply always parses and every field holds a value the schema allows. That's useful, and it hides something. A model that knew the answer and a model that picked between two options by a hair produce the same clean JSON. Nothing in the reply tells them apart.</p>
 <p>If you're sorting support tickets, or reading invoices, or deciding which requests an agent may act on alone, that difference is the one you care about.</p>
 
 <h2>What goinfer does</h2>
-<p>At every step of a constrained answer, goinfer already computes which next tokens the schema allows, and throws the rest of the model's scores away. With confidence turned on, it also reads what the model thought at the one point where each field was decided, and reports it next to the answer.</p>
+<p>A model writes its answer one token at a time; a token is a word or a piece of one. At every step of a constrained answer, the model scores every possible next token, goinfer works out which of them the schema allows, and it throws the other scores away. With confidence turned on, it also reads what the model thought at the one point where each field was decided, and reports it next to the answer.</p>
 
 <div class="demo" aria-label="Example">
   <div class="demo-head">
@@ -87,7 +89,7 @@ sources:
 <p>So a field's confidence comes only from tokens where the schema left the model a real choice. A field the schema forces outright, like an enum with one option, isn't reported, because its value says nothing about the model. An integer reports the least certain of its digits.</p>
 
 <h2>What was measured</h2>
-<p>Before anything was built, the question was whether this number means anything. We wrote 60 support tickets whose correct labels follow from rules in the prompt, ran two models over them on an M1 Pro, and set the bar before the graded runs: for each field kind, the confidence must separate right answers from wrong ones with an AUROC of at least 0.65.</p>
+<p>Before anything was built, the question was whether this number means anything. We wrote 60 support tickets whose correct labels follow from rules in the prompt. On 2026-09-27 we ran two models over them on a MacBook Pro (M1 Pro, 16 GB), on its GPU through Metal. The models were Qwen2.5-Coder 1.5B Instruct and Qwen2.5 7B Instruct, with weights stored in about 4 bits each (Q4_K_M quantization). Each always took its most likely next token (greedy decoding). The bar was set in writing before the graded runs (pre-registered): for each field kind, the confidence must separate right answers from wrong ones with an AUROC of at least 0.65. Below 0.55 the kind would fail; in between, it would be left undecided.</p>
 <p class="note">AUROC, in plain terms: pick one right answer and one wrong answer at random. How often did the right one carry the higher confidence? 0.5 is a coin toss. 1.0 is perfect.</p>
 
 <div class="fig" aria-label="AUROC by field kind">
@@ -105,13 +107,13 @@ sources:
     <tr><td>string</td><td class="n">— (57 / 3)</td><td class="n">— (60 / 0)</td><td class="park">not reported yet</td></tr>
   </tbody>
 </table></div>
-<p>The 7B got almost everything right, which is good for the 7B and useless for grading: a confidence can't be judged against mistakes that didn't happen. Its numbers point the same way and decide nothing. Integer cleared the bar on one model by 0.03, on 17 wrong answers. Numbers and free text need a harder test set, so they aren't reported until one exists.</p>
+<p>A model counted for a field kind only if it had at least 8 right and 8 wrong answers of that kind. The 7B got almost everything right, which is good for the 7B and useless for grading: a confidence can't be judged against mistakes that didn't happen. Its numbers point the same way and decide nothing. Integer cleared the bar on one model by 0.03, on 17 wrong answers. Numbers and free text need a harder test set, so they aren't reported until one exists.</p>
 
 <div class="stats">
   <div class="stat"><div class="n">4.20%</div><div class="l">of a token's time on the 1.5B (0.570 ms of 13.56 ms). Median 1.88%.</div></div>
   <div class="stat"><div class="n">1.44%</div><div class="l">of a token's time on the 7B (0.542 ms of 37.55 ms). Median 0.72%.</div></div>
 </div>
-<p>It costs most inside free text, where nearly every token is allowed and there's more to add up, and it's off unless you ask for it. The answer itself doesn't change: the same request without the flag returns the same content.</p>
+<p>Those two figures are from the test, which read the model at every position. The version that shipped reads only the positions that decide a value and skips free text, where nearly every token is allowed. Its own cost test added 0.29 ms at an object key, 0.28 ms at an enum value and nothing inside a free string, about 2% (1.5B) and 0.8% (7B) of a token at the positions it reads. That test ran on a busy machine, so read it as indicative. It's off unless you ask for it, and the answer itself doesn't change: the same request without the flag returns the same content.</p>
 
 <h2>Use it</h2>
 <div class="code">
@@ -119,7 +121,8 @@ sources:
     <button type="button" data-c="http" aria-pressed="true">HTTP</button>
     <button type="button" data-c="go">Go</button>
   </div>
-<pre id="c-http"><span class="cm"># any /v1/chat/completions or /v1/completions request with a json_schema</span>
+<pre id="c-http"><span class="cm"># with goinfer-serve -model &lt;model.gguf&gt; running, any /v1/chat/completions
+# or /v1/completions request with a json_schema</span>
 curl -s localhost:8080/v1/chat/completions -d '{
   "messages": [{"role": "user", "content": "Triage this ticket: …"}],
   "response_format": {"type": "json_schema", "json_schema": {
@@ -150,7 +153,8 @@ for _, f := range fields {
   escalate(f.Path, f.Value) <span class="cm">// route on it; don't read it as P(right)</span>
     }
 }
-<span class="cm">// full program: examples/confidence</span></pre>
+<span class="cm">// full program: examples/confidence. From a clone of the repo:
+// go run ./examples/confidence &lt;model.gguf&gt; "&lt;ticket&gt;"</span></pre>
 </div>
 
-<p>If all you need is a pick between a few options, the server's <a href="https://github.com/townsendmerino/goinfer/blob/main/docs/server.md">decisions</a> answer from a single read of the prompt with no generation at all, in the request shape some decision APIs already use.</p>
+<p>If all you need is a pick between a few options, the server's <a href="/different/05-decisions-without-generating/">decisions</a> endpoint answers from a single read of the prompt, with no generation at all, in the request shape some decision APIs already use.</p>

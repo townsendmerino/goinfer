@@ -67,9 +67,10 @@ func (w *Writeup) Card() string {
 }
 
 var (
-	slugRE   = regexp.MustCompile(`^(\d{2})-[a-z0-9]+(?:-[a-z0-9]+)*$`)
-	dateRE   = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-	doesntRE = regexp.MustCompile(`(?im)(^#{1,6}\s*|<h[1-6][^>]*>\s*)what it doesn.?t do`)
+	slugRE     = regexp.MustCompile(`^(\d{2})-[a-z0-9]+(?:-[a-z0-9]+)*$`)
+	dateRE     = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	repoLinkRE = regexp.MustCompile(`https://github\.com/townsendmerino/goinfer/(?:blob|tree)/main/([^)"#\s?]+)`)
+	doesntRE   = regexp.MustCompile(`(?im)(^#{1,6}\s*|<h[1-6][^>]*>\s*)what it doesn.?t do`)
 )
 
 func splitFrontMatter(b []byte) (fm, body []byte, err error) {
@@ -172,8 +173,8 @@ func (w *Writeup) validate() error {
 			return fmt.Errorf("front matter %q is empty", name)
 		}
 	}
-	if len(w.Summary) > 200 {
-		return fmt.Errorf("summary is %d characters; a card holds 200", len(w.Summary))
+	if n := len([]rune(w.Summary)); n > 160 {
+		return fmt.Errorf("summary is %d characters; a card holds 160", n)
 	}
 	if !dateRE.MatchString(w.Measured) {
 		return fmt.Errorf("measured %q is not YYYY-MM-DD", w.Measured)
@@ -224,6 +225,12 @@ func CheckWriteups(root string, ws []*Writeup) error {
 				bad = append(bad, fmt.Sprintf("%s: figure %q is listed but never appears in the page", w.Slug, f.Text))
 			case !hasToken(string(src), f.Text):
 				bad = append(bad, fmt.Sprintf("%s: figure %q does not appear in %s", w.Slug, f.Text, f.Source))
+			}
+		}
+		// A link into the repo on GitHub must name a path that exists, or it is a dead link on a public page.
+		for _, m := range repoLinkRE.FindAllStringSubmatch(text+"\n"+string(w.HTML), -1) {
+			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(m[1]))); err != nil {
+				bad = append(bad, fmt.Sprintf("%s: links to %s, which is not in the repo", w.Slug, m[1]))
 			}
 		}
 		for _, s := range w.Sources {

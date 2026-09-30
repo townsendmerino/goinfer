@@ -71,7 +71,7 @@ func TestLoadWriteups_refusesBadFiles(t *testing.T) {
 		"no limits":           {"07-a-title.md", strings.Replace(goodWriteup, "doesnt:\n  - {title: \"It isn't this.\", text: \"Because.\"}\n", "", 1), "at least one thing it doesn't do"},
 		"its own limits head": {"07-a-title.md", goodWriteup + "\n## What it doesn't do\n", "renders the front matter"},
 		"bad date":            {"07-a-title.md", strings.Replace(goodWriteup, "2026-09-01", "September", 1), "measured"},
-		"long summary":        {"07-a-title.md", strings.Replace(goodWriteup, "One sentence.", strings.Repeat("x", 201), 1), "a card holds 200"},
+		"long summary":        {"07-a-title.md", strings.Replace(goodWriteup, "One sentence.", strings.Repeat("x", 161), 1), "a card holds 160"},
 	}
 	for name, c := range cases {
 		root := writeupRoot(t, map[string]string{c.file: c.content})
@@ -185,5 +185,43 @@ func TestVerify_acceptsATitleWithAnApostrophe(t *testing.T) {
 	}
 	if err := Verify(out, m, ws, false); err != nil {
 		t.Errorf("a title with an apostrophe, an ampersand and angle brackets must verify: %v", err)
+	}
+}
+
+// The link check is what keeps cross-links between writeups honest: a link to a page the build did not write (a typo, a draft
+// left out of a deploy, a renamed slug) fails the build.
+func TestCheckLinks_findsABrokenInternalLink(t *testing.T) {
+	out := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(out, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("index.html", `<a href="/different/01-a/">a</a> <a href="/book/x.html">book</a> <img src="/assets/x.css"> <a href="/different/01-a/#h">h</a>`)
+	write("different/01-a/index.html", `<a href="/">home</a>`)
+	write("assets/x.css", "")
+	if err := CheckLinks(out); err != nil {
+		t.Fatalf("every link resolves (and /book/ is not this build's): %v", err)
+	}
+	write("different/01-a/index.html", `<a href="/different/02-draft/">next</a>`)
+	if err := CheckLinks(out); err == nil || !strings.Contains(err.Error(), "different/01-a/index.html -> /different/02-draft/") {
+		t.Errorf("a link to a page that was not written must fail, naming both ends: %v", err)
+	}
+}
+
+func TestCheckWriteups_repoLinksMustResolve(t *testing.T) {
+	body := goodWriteup + "\nSee [the record](https://github.com/townsendmerino/goinfer/blob/main/docs/rec.md#part) and [gone](https://github.com/townsendmerino/goinfer/blob/main/docs/moved.md).\n"
+	root := writeupRoot(t, map[string]string{"07-a-title.md": body, "docs/rec.md": "1.83\n"})
+	ws, err := LoadWriteups(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = CheckWriteups(root, ws)
+	if err == nil || !strings.Contains(err.Error(), "links to docs/moved.md") || strings.Contains(err.Error(), "docs/rec.md, which") {
+		t.Errorf("a GitHub link to a missing path must fail, and only that one: %v", err)
 	}
 }

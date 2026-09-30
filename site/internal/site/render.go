@@ -256,6 +256,9 @@ func Build(root, out string, cfg Config) (*Report, error) {
 	if err := Verify(out, m, ws, cfg.Drafts); err != nil {
 		return nil, err
 	}
+	if err := CheckLinks(out); err != nil {
+		return nil, err
+	}
 	return rep, nil
 }
 
