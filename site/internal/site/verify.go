@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -11,7 +12,7 @@ import (
 // has a page that names it, the Models page links every one, and every measured figure that a claim carries is on its
 // checkpoint's page with its date. It reads the files back, so a template or a loop that quietly skips a family fails
 // here and not in production.
-func Verify(out string, m *Model) error {
+func Verify(out string, m *Model, ws []*Writeup, drafts bool) error {
 	read := func(rel string) (string, error) {
 		b, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(rel)))
 		return string(b), err
@@ -24,6 +25,62 @@ func Verify(out string, m *Model) error {
 	// Embeddings are not a family, so nothing above generates them; a hand-written section covers them.
 	if !strings.Contains(idx, `id="embeddings"`) || !strings.Contains(idx, "/v1/embeddings") {
 		bad = append(bad, "the Models page has no Embeddings section")
+	}
+	// Every visible writeup has a page that names it and lists what it doesn't do, and the index links it. A draft must
+	// never be linked from a deploy: the index of a non-preview build has no draft in it.
+	di, err := read("different/index.html")
+	if err != nil {
+		return fmt.Errorf("verify: the What's different page is missing: %w", err)
+	}
+	// Every doc has a page, and none keeps a relative link: each was rewritten to a docs page or to GitHub.
+	if _, err := read("docs/index.html"); err != nil {
+		return fmt.Errorf("verify: the Docs page is missing: %w", err)
+	}
+	relLink := regexp.MustCompile(`href="(?:\./|\.\./|[a-zA-Z0-9_-]+\.md)`)
+	for _, d := range m.Docs {
+		page, err := read("docs/" + d.Slug + "/index.html")
+		switch {
+		case err != nil:
+			bad = append(bad, fmt.Sprintf("doc %q has no page", d.Slug))
+		case !strings.Contains(page, d.Title):
+			bad = append(bad, fmt.Sprintf("doc %q: its page never carries its title", d.Slug))
+		case relLink.MatchString(page):
+			bad = append(bad, fmt.Sprintf("doc %q still has a relative link", d.Slug))
+		}
+	}
+	// The Download page names every binary and carries its checksum, or the build had no release data and says so.
+	dl, err := read("download/index.html")
+	if err != nil {
+		return fmt.Errorf("verify: the Download page is missing: %w", err)
+	}
+	if m.Download != nil {
+		for _, k := range m.Download.Kinds {
+			for key, f := range k.Files {
+				if !strings.Contains(dl, f.Name) || !strings.Contains(dl, f.SHA) || !strings.Contains(dl, f.URL) {
+					bad = append(bad, fmt.Sprintf("download: %s (%s) is not fully on the page", f.Name, key))
+				}
+			}
+		}
+	} else if !strings.Contains(dl, "built without release data") {
+		bad = append(bad, "download: a build without release data must say so on the page")
+	}
+	for _, w := range ws {
+		page, err := read("different/" + w.Slug + "/index.html")
+		switch {
+		case err != nil:
+			bad = append(bad, fmt.Sprintf("writeup %q has no page", w.Slug))
+			continue
+		case !strings.Contains(page, w.Title):
+			bad = append(bad, fmt.Sprintf("writeup %q: its page never names it", w.Slug))
+		case !strings.Contains(page, "What it doesn&#39;t do") && !strings.Contains(page, "What it doesn't do"):
+			bad = append(bad, fmt.Sprintf("writeup %q: its page has no \"What it doesn't do\" section", w.Slug))
+		}
+		if !strings.Contains(di, `href="/different/`+w.Slug+`/"`) {
+			bad = append(bad, fmt.Sprintf("writeup %q is not linked from the What's different page", w.Slug))
+		}
+		if w.Draft() && !drafts {
+			bad = append(bad, fmt.Sprintf("writeup %q is an unreviewed draft in a deploy build", w.Slug))
+		}
 	}
 	for _, f := range m.Families {
 		page, err := read("models/" + f.Name + "/index.html")

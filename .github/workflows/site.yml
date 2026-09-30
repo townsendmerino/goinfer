@@ -22,6 +22,13 @@ on:
       - 'docs/benchmarks.md'
       # the book ships inside the site artifact, so a change to it re-runs its build here
       - 'docs/book/**'
+      # the repo documents the site renders under /docs/ (site/data/docs.json)
+      - 'docs/server.md'
+      - 'docs/api-tiers.md'
+      - 'docs/integrations/**'
+      - 'docs/quantization.md'
+      - 'docs/giw-bundles.md'
+      - 'scripts/site_release_data.py'
       - 'docs/book-search/**'
       - 'scripts/build_search_index.py'
       - 'scripts/build_book_src.sh'
@@ -35,6 +42,13 @@ on:
       - 'docs/measurements/metal-decode-gemv-r18b-2026-09-26.md'
       - 'docs/benchmarks.md'
       - 'docs/book/**'
+      # the repo documents the site renders under /docs/ (site/data/docs.json)
+      - 'docs/server.md'
+      - 'docs/api-tiers.md'
+      - 'docs/integrations/**'
+      - 'docs/quantization.md'
+      - 'docs/giw-bundles.md'
+      - 'scripts/site_release_data.py'
       - 'docs/book-search/**'
       - 'scripts/build_search_index.py'
       - 'scripts/build_book_src.sh'
@@ -85,7 +99,14 @@ jobs:
       - name: test
         working-directory: site
         run: go test -count=1 ./...
-      # The build runs the claims check and the output check.
+      # The Download page is built from the release's own asset list and checksums. A release deploy reads the tag that
+      # triggered it; anything else reads the latest release, so a pull request exercises the same path. The script
+      # refuses a release that is only partly attached.
+      - name: release data for the Download page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/site_release_data.py "${{ github.event.workflow_run.head_branch || 'latest' }}" site/data/release.json
+      # The build runs the claims check, the writeup figure check and the output check.
       - name: build (every gate)
         working-directory: site
         run: go run ./cmd/build -repo .. -out _site
@@ -124,8 +145,12 @@ jobs:
         run: |
           set -euo pipefail
           # the generator's pages must still be there next to the book
-          test -f site/_site/models/index.html
-          test -f site/_site/404.html
+          for f in index.html models/index.html different/index.html docs/index.html docs/server/index.html download/index.html 404.html; do
+            test -s "site/_site/$f" || { echo "::error::missing $f"; exit 1; }
+          done
+          # Home is the picker, not the old redirect; Download carries real checksums
+          grep -q 'What will run well' site/_site/index.html
+          grep -qE '[0-9a-f]{64}' site/_site/download/index.html
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: github.event_name != 'push' && github.event_name != 'pull_request'
         with:

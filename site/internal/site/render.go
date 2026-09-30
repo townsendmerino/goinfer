@@ -24,6 +24,7 @@ type Config struct {
 	BookURL   string // where the book lives: /book/ on this same site (the workflow builds it into the output)
 	GitHubURL string
 	Generated string // the date shown on generated pages
+	Drafts    bool   // also build the unreviewed writeups (a preview; never for a deploy)
 }
 
 // DefaultConfig is the site as it is today.
@@ -116,10 +117,13 @@ func (m *Model) funcs(cfg Config) template.FuncMap {
 	return template.FuncMap{
 		"gb": gb, "cap": capFirst, "first": firstClause, "num": num, "task": taskLabel, "vs": vsText,
 		"bar": barWidth, "smax": speedMax, "cosw": meterCos,
-		"join":     strings.Join,
-		"machines": func() []Machine { return m.Machines },
-		"cfg":      func() Config { return cfg },
-		"tierText": func(t string) string { return TierText[t] },
+		"join":       strings.Join,
+		"pad":        func(n int) string { return fmt.Sprintf("%02d", n) },
+		"parityWord": func(p string) string { w, _, _ := strings.Cut(p, " "); return strings.TrimSuffix(w, ":") },
+		"factval":    factVal,
+		"machines":   func() []Machine { return m.Machines },
+		"cfg":        func() Config { return cfg },
+		"tierText":   func(t string) string { return TierText[t] },
 		"b2s": func(b bool) string {
 			if b {
 				return "1"
@@ -168,6 +172,29 @@ type page struct {
 	M                      *Model
 	Family                 *Family
 	Cfg                    Config
+	Writeup                *Writeup  // a writeup page
+	Download               *Download // the download page
+	Doc                    *DocPage  // a docs page (nil on the docs index)
+	DocGroups              []DocGroup
+	Writeups               []*Writeup // the visible writeups, in order
+	Styles, Scripts        []string   // extra stylesheets and scripts for this page
+	NoIndex                bool
+}
+
+// factVal escapes text and turns `backticked` spans into <code>, for a fact strip or a limit's text.
+func factVal(s string) template.HTML {
+	parts := strings.Split(s, "`")
+	var b strings.Builder
+	for i, p := range parts {
+		if i%2 == 1 && i < len(parts)-1 {
+			b.WriteString("<code>" + template.HTMLEscapeString(p) + "</code>")
+		} else if i%2 == 1 {
+			b.WriteString("`" + template.HTMLEscapeString(p))
+		} else {
+			b.WriteString(template.HTMLEscapeString(p))
+		}
+	}
+	return template.HTML(b.String())
 }
 
 // Report says what a build wrote, for the gates and the CI log.
@@ -201,18 +228,39 @@ func Build(root, out string, cfg Config) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	rep, err := m.Render(out, cfg)
+	if m.Book, err = LoadBook(root); err != nil {
+		return nil, err
+	}
+	if m.Docs, err = LoadDocs(root, cfg.GitHubURL); err != nil {
+		return nil, err
+	}
+	rel, err := LoadRelease(root)
 	if err != nil {
 		return nil, err
 	}
-	if err := Verify(out, m); err != nil {
+	if m.Download, err = BuildDownload(rel); err != nil {
+		return nil, err
+	}
+	all, err := LoadWriteups(root)
+	if err != nil {
+		return nil, err
+	}
+	if err := CheckWriteups(root, all); err != nil {
+		return nil, err
+	}
+	ws := Visible(all, cfg.Drafts)
+	rep, err := m.Render(out, cfg, ws)
+	if err != nil {
+		return nil, err
+	}
+	if err := Verify(out, m, ws, cfg.Drafts); err != nil {
 		return nil, err
 	}
 	return rep, nil
 }
 
 // Render writes the pages of an already-derived model.
-func (m *Model) Render(out string, cfg Config) (*Report, error) {
+func (m *Model) Render(out string, cfg Config, ws []*Writeup) (*Report, error) {
 	tpl, err := template.New("site").Funcs(m.funcs(cfg)).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("templates: %w", err)
@@ -242,8 +290,70 @@ func (m *Model) Render(out string, cfg Config) (*Report, error) {
 		}
 		r.Families++
 	}
-	for _, n := range []struct{ tpl, file string }{{"root.html", "index.html"}, {"notfound.html", "404.html"}} {
-		b, err := exec(n.tpl, page{Title: "goinfer", Path: "/", M: m, Cfg: cfg})
+	groups := GroupDocs(m.Docs)
+	b, err = exec("docs.html", page{Title: "Docs · goinfer", Desc: "How to run goinfer, connect tools to it, and choose a quantization.", Path: "/docs/", Nav: "docs", M: m, Cfg: cfg, DocGroups: groups, Styles: []string{"/assets/writeup.css", "/assets/docs.css"}})
+	if err != nil {
+		return nil, err
+	}
+	if err := write(out, "docs/index.html", b, r); err != nil {
+		return nil, err
+	}
+	for _, d := range m.Docs {
+		b, err := exec("docs.html", page{Title: d.Title + " · goinfer docs", Desc: "", Path: "/docs/" + d.Slug + "/", Nav: "docs", M: m, Cfg: cfg, Doc: d, DocGroups: groups, Styles: []string{"/assets/writeup.css", "/assets/docs.css"}})
+		if err != nil {
+			return nil, err
+		}
+		if err := write(out, "docs/"+d.Slug+"/index.html", b, r); err != nil {
+			return nil, err
+		}
+	}
+	b, err = exec("download.html", page{Title: "Download · goinfer", Desc: "goinfer binaries for macOS, Linux and Windows, with checksums.", Path: "/download/", Nav: "download", M: m, Cfg: cfg, Download: m.Download, Styles: []string{"/assets/home.css"}, Scripts: []string{"/assets/download.js"}})
+	if err != nil {
+		return nil, err
+	}
+	if err := write(out, "download/index.html", b, r); err != nil {
+		return nil, err
+	}
+	b, err = exec("different.html", page{Title: "What's different · goinfer", Desc: "Things goinfer does that are unusual, each with what it doesn't do.", Path: "/different/", Nav: "different", M: m, Cfg: cfg, Writeups: ws, Styles: []string{"/assets/writeup.css", "/assets/home.css"}})
+	if err != nil {
+		return nil, err
+	}
+	if err := write(out, "different/index.html", b, r); err != nil {
+		return nil, err
+	}
+	for _, w := range ws {
+		styles, scripts := []string{"/assets/writeup.css"}, []string{"/assets/writeup.js"}
+		for _, f := range w.CSS {
+			styles = append(styles, "/different/"+w.Slug+"/"+f)
+		}
+		for _, f := range w.JS {
+			scripts = append(scripts, "/different/"+w.Slug+"/"+f)
+		}
+		b, err := exec("writeup.html", page{Title: w.Title + " · goinfer", Desc: w.Summary, Path: "/different/" + w.Slug + "/", Nav: "different", M: m, Cfg: cfg, Writeup: w, Writeups: ws, Styles: styles, Scripts: scripts, NoIndex: w.Draft()})
+		if err != nil {
+			return nil, err
+		}
+		if err := write(out, "different/"+w.Slug+"/index.html", b, r); err != nil {
+			return nil, err
+		}
+		for name, fb := range w.Files {
+			if err := write(out, "different/"+w.Slug+"/"+name, fb, r); err != nil {
+				return nil, err
+			}
+		}
+	}
+	hw := ws
+	if len(hw) > 6 {
+		hw = hw[:6]
+	}
+	for _, n := range []struct {
+		tpl, file string
+		p         page
+	}{
+		{"home.html", "index.html", page{Title: "goinfer · what will run well on your machine", Desc: "A local LLM engine in pure Go. Pick your machine and see what fits and how fast it measured.", Path: "/", Nav: "home", M: m, Cfg: cfg, Writeups: hw, Styles: []string{"/assets/home.css"}}},
+		{"notfound.html", "404.html", page{Title: "goinfer", Path: "/", M: m, Cfg: cfg}},
+	} {
+		b, err := exec(n.tpl, n.p)
 		if err != nil {
 			return nil, err
 		}

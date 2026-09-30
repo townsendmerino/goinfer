@@ -9,7 +9,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=Martian+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/assets/site.css">
-<script>try{var m=localStorage.getItem("gi-machine");if(m==="mac"||m==="cuda"||m==="cpu"||m==="other")document.documentElement.dataset.machine=m}catch(e){}</script>
+{{range .Styles}}<link rel="stylesheet" href="{{.}}">
+{{end}}{{if .NoIndex}}<meta name="robots" content="noindex">
+{{end}}<script>try{var m=localStorage.getItem("gi-machine");if(m==="mac"||m==="cuda"||m==="cpu"||m==="other")document.documentElement.dataset.machine=m}catch(e){}</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -22,9 +24,9 @@
   <a class="wordmark" href="/"><i></i>goinfer</a>
   <ul>
     <li><a href="/models/"{{if eq .Nav "models"}} aria-current="page"{{end}}>Models</a></li>
-    <li><span class="soon" title="Not built yet">Docs</span></li>
-    <li><span class="soon" title="Not built yet">Download</span></li>
-    <li><span class="soon" title="Not built yet">What's different</span></li>
+    <li><a href="/docs/"{{if eq .Nav "docs"}} aria-current="page"{{end}}>Docs</a></li>
+    <li><a href="/download/"{{if eq .Nav "download"}} aria-current="page"{{end}}>Download</a></li>
+    <li><a href="/different/"{{if eq .Nav "different"}} aria-current="page"{{end}}>What's different</a></li>
     <li><a href="{{cfg.BookURL}}">Book</a></li>
   </ul>
   <a class="gh" href="{{cfg.GitHubURL}}">github.com/townsendmerino/goinfer</a>
@@ -34,10 +36,12 @@
 {{define "foot"}}</main>
 <footer>
   <span>goinfer · pure Go · no cgo, no CUDA toolkit, no Python</span>
-  <ul><li><a href="/models/">Models</a></li><li><a href="{{cfg.BookURL}}">Book</a></li><li><a href="{{cfg.GitHubURL}}">GitHub</a></li></ul>
+  <ul><li><a href="/models/">Models</a></li><li><a href="/docs/">Docs</a></li><li><a href="/download/">Download</a></li><li><a href="{{cfg.BookURL}}">Book</a></li><li><a href="{{cfg.GitHubURL}}">GitHub</a></li></ul>
 </footer>
 </div>
 <script src="/assets/site.js" defer></script>
+{{range .Scripts}}<script src="{{.}}" defer></script>
+{{end}}
 </body>
 </html>
 {{end}}

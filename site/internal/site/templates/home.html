@@ -1,0 +1,86 @@
+{{template "head" .}}
+{{$m := .M}}
+<header class="hero" id="top">
+  <p class="eyebrow">Local LLMs · one file · pure Go</p>
+  <h1>What will run well on your machine?</h1>
+  <p class="lede">Pick the computer closest to yours. goinfer says what fits, how fast it measured on that hardware, and how that compared with Ollama in the same session.</p>
+
+  <div class="picker" id="mseg" role="group" aria-label="Your machine">
+    {{range machines}}<button class="chip" type="button" data-m="{{.Key}}"{{if eq .Key "mac"}} aria-pressed="true"{{end}}><span class="n">{{.Short}}</span><span class="s">{{.Path}} · {{.MemoryGB | printf "%.0f"}} GB memory</span></button>
+    {{end}}<button class="chip" type="button" data-m="other"><span class="n">Something else</span><span class="s">fit estimate, no speeds</span></button>
+  </div>
+  <div class="other" id="other" hidden>
+    <label for="o-mem">Memory<select id="o-mem"><option value="8">8 GB</option><option value="16" selected>16 GB</option><option value="32">32 GB</option><option value="64">64 GB</option></select></label>
+    <label for="o-gpu">Graphics<select id="o-gpu"><option value="apple">Apple Silicon</option><option value="nv8">NVIDIA, 8 GB</option><option value="nv16" selected>NVIDIA, 12–16 GB</option><option value="none">None / integrated</option></select></label>
+  </div>
+
+  <div class="answer">
+    <div class="answer-head">
+      {{range machines}}<h2 class="mv blk" data-m="{{.Key}}">On {{.Name}}</h2>
+      {{end}}<h2 class="mv blk" data-m="other">With your memory and graphics</h2>
+      <div class="legend"><span><i class="lg-bar"></i>goinfer</span><span><i class="lg-bar peer"></i>Ollama, same session</span><span>tokens per second</span></div>
+    </div>
+    <ul class="rows">
+      {{range $m.Vetted}}{{$c := .}}
+      <li class="row">
+        <div>
+          <div class="m-name"><a href="/models/{{.Family.Name}}/#{{.ID}}">{{.Label}}</a></div>
+          <div class="m-meta"><span>{{.Quant}} · {{gb .Bytes}}</span> {{template "fit" $c}} <span class="parity" title="{{.Family.Parity}}">parity: {{parityWord .Family.Parity}}</span></div>
+          <div class="m-good">{{if .GoodFor}}{{first .GoodFor}}{{else}}{{.Family.Summary}}{{end}}</div>
+        </div>
+        <div class="speed">
+          {{range machines}}{{$s := speedOf $c .Key}}<span class="mv blk" data-m="{{.Key}}">{{if and $s $s.Tok}}<div class="bars">
+            <span class="bl gi">goinfer</span><div class="track"><div class="fill gi" style="width:{{bar $s.Tok (smax $c)}}%"></div></div><span class="bv gi">{{num $s.Tok}}</span>
+            {{if $s.Peer}}<span class="bl ol">Ollama</span><div class="track"><div class="fill ol" style="width:{{bar $s.Peer (smax $c)}}%"></div></div><span class="bv ol">{{num $s.Peer}}</span>{{end}}
+          </div>{{else}}<div class="nomeasure">No speed measured</div>{{end}}</span>
+          {{end}}<span class="mv blk" data-m="other"><div class="nomeasure">No speed measured</div></span>
+        </div>
+        <div class="vs">
+          {{range machines}}{{$s := speedOf $c .Key}}<span class="mv blk" data-m="{{.Key}}">{{if and $s $s.Tok}}<span class="pill {{$s.Verdict}}">{{vs $s}}</span>{{if $s.Why}}<span class="why">{{$s.Why}}</span>{{end}}{{else}}<span class="pill na">not measured</span>{{end}}</span>
+          {{end}}<span class="mv blk" data-m="other"><span class="pill na">no measurement for this machine</span></span>
+          {{if .Pull}}<div class="copy"><code>{{.Pull}}</code><button type="button" data-copy="{{.Pull}}">copy</button></div>{{end}}
+        </div>
+      </li>
+      {{end}}
+    </ul>
+    <div class="answer-foot">
+      <span>{{range machines}}<span class="mv" data-m="{{.Key}}">{{$m.MachineNote .Key}}</span>{{end}}<span class="mv" data-m="other">A coarse fit estimate from download sizes, with no speeds. goinfer has not been measured on this machine, so nothing is claimed.</span></span>
+      <a href="/models/">Every model and how it was checked</a>
+    </div>
+  </div>
+</header>
+
+<section id="doors" aria-labelledby="doors-h">
+  <div class="s-head"><div><h2 class="s" id="doors-h">What are you here to do?</h2></div></div>
+  <div class="doors">
+    <div class="door"><h3>Try it</h3><p>One file with a model inside. Download, run, ask. Nothing to install.</p><pre>./goinfer-chat-0.5b-&lt;os&gt;-&lt;arch&gt;</pre></div>
+    <div class="door"><h3>Embed it</h3><p>A Go library. Ask a question, get a filled-in struct back.</p><pre>go get github.com/
+  townsendmerino/goinfer</pre></div>
+    <div class="door"><h3>Connect your tools</h3><p>OpenAI- and Anthropic-compatible. Setup notes for Claude Code, opencode and jevx.</p><pre>goinfer-serve -web -model
+  ~/models/model.gguf</pre></div>
+    <div class="door"><h3>Run bigger models</h3><p>Ask whether a model fits your machine before loading it, and how.</p><pre>goinfer-chat fit &lt;model&gt;</pre></div>
+  </div>
+</section>
+
+{{if .Writeups}}<section id="different" aria-labelledby="diff-h">
+  <div class="s-head">
+    <div><h2 class="s" id="diff-h">What's different</h2><p class="s-sub">Each of these has a writeup: the problem, what goinfer does, what was measured, and what it doesn't do.</p></div>
+    <a href="/different/" class="mono">All {{len .Writeups}} →</a>
+  </div>
+  <div class="diff">
+    {{range .Writeups}}<article class="card"><span class="k">{{.Area}}</span><h3>{{.Title}}</h3><p>{{.Summary}}</p><p class="doesnt"><b>Limit</b> {{.Card}}</p><a class="more" href="/different/{{.Slug}}/">Read →</a></article>
+    {{end}}
+  </div>
+</section>{{end}}
+
+{{if $m.Book}}<section id="docs" aria-labelledby="book-h">
+  <div class="book">
+    <div>
+      <p class="eyebrow">The book</p>
+      <h2 class="s" id="book-h">New to how this works?</h2>
+      <p class="s-sub">{{len $m.Book}} chapters on how a language model actually runs, for someone who knows Go and not machine learning. <a href="{{cfg.BookURL}}">Read it here.</a></p>
+    </div>
+    <ol>{{range $m.Book}}<li><a href="{{cfg.BookURL}}{{.File}}">{{.Title}}</a></li>{{end}}</ol>
+  </div>
+</section>{{end}}
+{{template "foot" .}}

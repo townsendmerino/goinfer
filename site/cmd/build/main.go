@@ -14,8 +14,11 @@ import (
 func main() {
 	repo := flag.String("repo", "..", "the goinfer repository root")
 	out := flag.String("out", "_site", "where to write the site")
+	drafts := flag.Bool("drafts", false, "also build the unreviewed writeups, for a preview (never for a deploy)")
 	flag.Parse()
-	rep, err := site.Build(*repo, *out, site.DefaultConfig())
+	cfg := site.DefaultConfig()
+	cfg.Drafts = *drafts
+	rep, err := site.Build(*repo, *out, cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "site:", err)
 		os.Exit(1)

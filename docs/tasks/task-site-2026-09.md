@@ -1,24 +1,27 @@
 # Task: a site for goinfer — a browsable library, generated from the repo (S1–S8) — 2026-09
 
-> **Current, 2026-09-29. S8a (generator), S2 (Models) and S8b (claims check) are built; nothing is deployed.**
+> **Current, 2026-09-29. Built: the generator, Models (S2), Home (S1), Download (S4), the Docs shell (S3), the writeup
+> machinery (S8c) with the first writeup, and the book at `/book/`. Nothing is deployed until the first launch (S8e).**
 > - **Owner decisions:**
 >   - the site changes **only when a release is cut** (S8d);
 >   - the 26B figure is **40.2 tok/s** (done);
->   - **twenty** "What's different" writeups (§4a).
-> - **Done:**
->   - the scoping (§1–§8) and three approved mockups in `site/mockups/`;
->   - the registry now carries a `summary`, `tasks` and per-checkpoint `label` (regenerate the matrix, never hand-edit it);
->   - the book wears the site's tokens (live), and `-update` on the capability-matrix test writes `pull/`'s byte copy too;
->   - **the generator, `site/`** (a module of its own): every one of the 37 families gets a page, and the Models page is built from
->     the registry. Results and findings are in §8g. Its `site` workflow validates on every push and deploys only for a release or a manual run (S8d).
-> - **Next:** S1 Home (`/` is a redirect until it exists; the mockup's book card says `book.goinfer.dev`, which is now `goinfer.dev/book/`), the first writeups, S4 Download, and the S3 docs shell (S8f).
-> - **Built, not launched:** the deploy job in `.github/workflows/site.yml` (release-triggered plus manual dispatch),
->   `site/wrangler.jsonc`, and the book's build inside the site artifact at `/book/` (S5, S8d). The repo secrets are set.
-> - **Waiting on the owner:** the first launch (S8e step 3, a manual run of the `site` workflow), and the call on whether
->   to launch with Models and the book only or wait for Home.
+>   - **twenty** "What's different" writeups (§4a);
+>   - one host: the book lives at `goinfer.dev/book/` (§5).
+> - **Built:**
+>   - `site/`, its own module: 37 family pages, the Models index, **Home** (the machine picker, generated from the
+>     vetted checkpoints and `claims.json`; the doors; published writeups; the book's chapters), **Download** (from the
+>     release's own checksums, `scripts/site_release_data.py`), **Docs** (seven repo documents, links rewritten), and
+>     **What's different** (each writeup a page; a writeup is published only when its front matter has a `reviewed` date).
+>   - the deploy job and `site/wrangler.jsonc`; the repo secrets are set.
+>   - "How sure was it?" (writeup #2) is the first published writeup, carried over from the approved mockup.
+> - **For the owner to review:** the first batch of drafts (#13, #14, #16, #18), in `site/different/`, with notes in
+>   `REVIEW-batch1.md`. Setting `reviewed:` publishes one at the next release.
+> - **Left out of Home on purpose:** the mockup's "What didn't work" cards. Their figures are not traced to records yet,
+>   and no page in this plan sits behind them.
+> - **Waiting on the owner:** the first launch (S8e step 3), then the redirect stub (step 4).
 > - **Open:**
 >   - writeups #17 and #20 wait on the embed-int4 Metal issue;
->   - which writeups ship in the first release (proposal in §4a);
+>   - the writeups #1, #3–#12, #15, #17, #19, #20 are not written;
 >   - the `qwen3_5` family displays as "Qwen3.8";
 >   - the owner reviews the 37 summaries and the checkpoint labels (they are public copy, now in the registry);
 >   - the fit-rule differences from the mockup (§8g).

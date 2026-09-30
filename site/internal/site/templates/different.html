@@ -1,0 +1,13 @@
+{{template "head" .}}
+<header class="hero" id="top">
+  <p class="eyebrow">What's different</p>
+  <h1>Things goinfer does that are unusual.</h1>
+  <p class="lede">Each one has a writeup: the problem, what goinfer does, what was measured, and what it doesn't do. A writeup is published only after the owner has reviewed it.</p>
+</header>
+<section aria-label="Writeups">
+  {{if .Writeups}}<div class="diff">
+    {{range .Writeups}}<article class="card"><span class="k">{{.Area}}</span><h3><a href="/different/{{.Slug}}/">{{.Title}}</a></h3><p>{{.Summary}}</p><p class="doesnt"><b>Limit</b> {{.Card}}</p><a class="more" href="/different/{{.Slug}}/">Read →</a></article>
+    {{end}}
+  </div>{{else}}<p class="prose">The writeups are being written. Each will be published here once it has been reviewed.</p>{{end}}
+</section>
+{{template "foot" .}}

@@ -1,0 +1,41 @@
+{{template "head" .}}
+{{$d := .Download}}
+<header class="hero" id="top">
+  <p class="eyebrow">Download</p>
+  <h1>One file. Run it.</h1>
+  {{if $d}}<p class="lede">goinfer <b>{{$d.Rel.Tag}}</b>, released {{$d.Rel.Published}}. Six platforms, each with its checksum below. Each is a single file, and there is nothing to install.</p>
+  <p class="s-sub"><a href="{{$d.Rel.URL}}">Release notes on GitHub</a></p>{{else}}<p class="lede">Binaries are attached to each release, for macOS, Linux and Windows on Intel and ARM.</p>
+  <p class="s-sub"><a href="{{cfg.GitHubURL}}/releases/latest">Get the latest release on GitHub</a>. This copy of the page was built without release data, so it cannot list the files or their checksums.</p>{{end}}
+</header>
+
+{{if $d}}
+<section aria-labelledby="dl-h">
+  <div class="s-head"><div><h2 class="s" id="dl-h">Pick a file</h2><p class="s-sub">Your platform is marked when the browser reports it. If you want a model included, take the 0.5B; if you have a GGUF, take the runtime.</p></div></div>
+  {{range $d.Kinds}}{{$k := .}}
+  <div class="dlkind">
+    <h3>{{.Title}} <code>{{.Key}}</code></h3>
+    <p class="s-sub">{{.What}}</p>
+    <div class="tablewrap"><table class="dl">
+      <thead><tr><th>Platform</th><th>File</th><th>Size</th><th>sha256</th></tr></thead>
+      <tbody>{{range $d.Platforms}}{{$f := index $k.Files .Key}}{{if $f}}<tr data-platform="{{.Key}}"><td>{{.Label}} <span class="here" hidden>your platform</span></td><td><a href="{{$f.URL}}">{{$f.Name}}</a></td><td class="n">{{$f.Size}}</td><td class="n"><span class="sha" title="{{$f.SHA}}">{{$f.SHA}}</span></td></tr>{{end}}{{end}}</tbody>
+    </table></div>
+  </div>
+  {{end}}
+</section>
+
+<section aria-labelledby="use-h">
+  <div class="s-head"><div><h2 class="s" id="use-h">Run it, and check it</h2></div></div>
+  {{with $d.Sample}}<div class="dlcode"><pre>chmod +x {{.Shell}}
+./{{.Shell}}</pre></div>{{end}}
+  <p class="prose">The same commands work for the server and the runtime. To bring your own model, give the runtime a GGUF with <code>--model</code>, or let it fetch one: <code>./goinfer-chat-&lt;os&gt;-&lt;arch&gt; pull qwen2.5-coder-0.5b</code>. To check a download against the release's own list:</p>
+  {{with $d.Sample}}<div class="dlcode"><pre>grep {{.Shell}} checksums.txt | shasum -a 256 -c</pre></div>{{end}}
+  <p class="s-sub">Every binary's sha256 is in <a href="{{range $d.Others}}{{if eq .Name "checksums.txt"}}{{.URL}}{{end}}{{end}}">checksums.txt</a>. Other files on the release: {{range $i, $o := $d.Others}}{{if ne $o.Name "checksums.txt"}}<a href="{{$o.URL}}">{{$o.Name}}</a> {{end}}{{end}}.</p>
+</section>
+{{end}}
+
+<section aria-labelledby="lib-h">
+  <div class="s-head"><div><h2 class="s" id="lib-h">As a Go library</h2></div></div>
+  <div class="dlcode"><pre>go get github.com/townsendmerino/goinfer</pre></div>
+  <p class="prose">The engine is a Go module with no cgo on the default build. Its own README has the API and a complete forty-line program.</p>
+</section>
+{{template "foot" .}}

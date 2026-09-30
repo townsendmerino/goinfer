@@ -182,6 +182,9 @@ type Model struct {
 	Machines []Machine
 	ByName   map[string]*Family
 	Method   string
+	Download *Download     // the release binaries; nil when the build had no release data
+	Docs     []*DocPage    // the repo documents rendered under /docs/
+	Book     []BookChapter // the primer's chapters, for Home
 	Counts   Counts
 }
 

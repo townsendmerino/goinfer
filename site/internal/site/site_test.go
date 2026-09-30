@@ -340,17 +340,17 @@ func TestVerify_failsWhenAFamilyHasNoPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Render(out, DefaultConfig()); err != nil {
+	if _, err := m.Render(out, DefaultConfig(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := Verify(out, m); err != nil {
+	if err := Verify(out, m, nil, false); err != nil {
 		t.Fatalf("a clean build must verify: %v", err)
 	}
 	victim := m.Families[3].Name
 	if err := os.Remove(filepath.Join(out, "models", victim, "index.html")); err != nil {
 		t.Fatal(err)
 	}
-	if err := Verify(out, m); err == nil || !strings.Contains(err.Error(), victim) {
+	if err := Verify(out, m, nil, false); err == nil || !strings.Contains(err.Error(), victim) {
 		t.Errorf("Verify must name the family with no page (%s), got %v", victim, err)
 	}
 	// a figure that is on the claim but not on the page
@@ -361,7 +361,7 @@ func TestVerify_failsWhenAFamilyHasNoPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.Families[3].Checkpoints = append(m.Families[3].Checkpoints, &Checkpoint{ID: "ghost", Speed: map[string]*Speed{"mac": {Tok: f64(123.4), Date: "2026-09-25"}}})
-	if err := Verify(out, m); err == nil || !strings.Contains(err.Error(), "123.4") {
+	if err := Verify(out, m, nil, false); err == nil || !strings.Contains(err.Error(), "123.4") {
 		t.Errorf("Verify must refuse a speed that is not on its page, got %v", err)
 	}
 }

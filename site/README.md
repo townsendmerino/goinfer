@@ -21,6 +21,10 @@ python3 -m http.server -d _site 8765                  # look at it
 | `pull/curated.json` | the release tiers, attached to the family that shares their model line |
 | `site/data/machines.json` | the machines speeds were measured on, and what the fit verdict knows about them |
 | `site/data/claims.json` | every measured figure the site shows, and where it came from |
+| `site/different/*.md` | the "What's different" writeups (below) |
+| `site/data/docs.json` | which repo documents are rendered under `/docs/`; their relative links are rewritten to docs pages or to GitHub |
+| `docs/book/` | the book's chapter titles, for Home (the book itself is built by Jekyll into `/book/` by the workflow) |
+| the release data (a generated file next to the other data, not committed) | `scripts/site_release_data.py` writes the release's tag, assets, sizes and checksums for the Download page. A build without it says so on that page |
 
 ## The gates
 
@@ -31,8 +35,21 @@ A build fails, naming the cause, when:
 - **the claims check** finds a figure that is not in the file it cites, under the heading it cites. A figure that is
   a run's median must list its three runs exactly as the record prints them, and be their median. The mockup's own
   1.5B speed (253.1, the first run) failed this and became 252.9;
+- **the writeup check** finds a listed figure missing from the page or from its record, or a source that does not exist;
 - **the output check** finds a family with no page, a family the Models page does not link, or a figure that is not on
-  its page with its date.
+  its page with its date; a doc with no page or a relative link left in it; a Download page missing a binary, its URL or
+  its checksum; a writeup with no page, or an unreviewed draft in a deploy build.
+
+## Writeups
+
+`site/different/NN-slug.md`: YAML front matter (every string double-quoted; unknown keys are errors), then Markdown, or HTML
+with `raw: true`. The front matter carries the title, standfirst, facts strip, the "It doesn't..." list, the `figures` it
+quotes (each must appear in the page **and** in the record it names) and its `sources`. The body has the problem, what
+goinfer does, how it works, what was measured and how to use it; the template adds "What it doesn't do".
+
+A writeup is **published only when `reviewed:` holds a date**, which is the owner's. An empty one is a draft: it is built
+only by `go run ./cmd/build -drafts` (a preview, marked `noindex`, never linked) and the output check fails a deploy build
+that contains one. `NN-slug.css` and `NN-slug.js` beside a writeup are loaded on its page only (the Confidence example).
 
 ## Adding a speed
 
@@ -41,5 +58,5 @@ medians, `ratio_raw` the record's own ratio, `date`, and `source` (file and head
 
 ## Not built yet
 
-Home, Docs, Download and What's different (S1, S3, S4, S8c). Deploy: it happens only when a release is cut
-(S8d), and waits on the owner's Cloudflare steps (S8e).
+The remaining writeups (the twenty are listed in the task doc, section 4a; the rest are drafts for review). Deploy happens
+only when a release is cut (S8d): `.github/workflows/site.yml`.

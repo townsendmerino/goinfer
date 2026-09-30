@@ -1,0 +1,24 @@
+/* /docs/: the repo's own Markdown, in the writeup layout. */
+.rail h3.rgroup{font-family:var(--f-mono);font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:18px 0 6px}
+.rail h3.rgroup:first-of-type{margin-top:6px}
+.rail ol.docs li a{display:block}
+article.doc{max-width:780px}
+article.doc h1{font-size:clamp(30px,5vw,44px);margin-bottom:8px}
+article.doc h2{border-top:1px solid var(--line);padding-top:26px;margin-top:44px}
+article.doc h3{font-family:var(--f-display);font-size:19px;margin:30px 0 8px}
+article.doc h4{font-family:var(--f-display);font-size:16px;margin:22px 0 6px}
+article.doc ul,article.doc ol{max-width:68ch;padding-left:22px}
+article.doc li{margin:4px 0}
+article.doc pre{background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow-x:auto;font-size:12.5px;line-height:1.55}
+article.doc code{font-size:.9em}
+article.doc :not(pre)>code{background:var(--sunk);padding:1px 5px;border-radius:4px}
+article.doc blockquote{margin:16px 0;padding:2px 16px;border-left:3px solid var(--line);color:var(--ink-2)}
+article.doc table{display:block;overflow-x:auto}
+article.doc hr{border:0;border-top:1px solid var(--line);margin:32px 0}
+ul.doclist{list-style:none;padding:0;margin:0 0 8px}
+ul.doclist li{padding:8px 0;border-bottom:1px solid var(--line)}
+.rail ol.docs a{display:block;padding:6px 0}
+.rail ol.docs a::before{content:none}
+.rail p a{display:inline;padding:0}
+.rail p a::before{content:none}
+article.doc hr+h2{border-top:0;margin-top:26px}

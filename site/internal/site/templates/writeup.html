@@ -1,0 +1,36 @@
+{{template "head" .}}
+{{$w := .Writeup}}
+{{if $w.Draft}}<div class="notice draft"><b>Draft · not reviewed</b><span>This writeup is a preview. It is not linked from the site and is not published until its front matter carries a reviewed date.</span></div>{{end}}
+<div class="layout wr" id="top">
+  <aside class="rail" aria-label="What's different">
+    <h2>What's different</h2>
+    <p>Things goinfer does that are unusual, each with what it doesn't do.</p>
+    <ol>{{range .Writeups}}<li><a href="/different/{{.Slug}}/"{{if eq .Slug $w.Slug}} aria-current="page"{{end}}>{{.Title}}<span>{{.Area}}</span></a></li>
+    {{end}}</ol>
+  </aside>
+
+  <article>
+    <div class="rail-mobile"><label for="railsel">What's different · {{len .Writeups}} writeups</label><select id="railsel">{{range .Writeups}}<option value="/different/{{.Slug}}/"{{if eq .Slug $w.Slug}} selected{{end}}>{{.Title}}</option>{{end}}</select></div>
+
+    <p class="series"><b>{{$w.Area}}</b> · {{pad $w.Pos}} of {{$w.Of}} · measured {{$w.Measured}}</p>
+    <h1>{{$w.Title}}</h1>
+    <p class="stand">{{$w.Stand}}</p>
+    {{if $w.Facts}}<div class="facts">{{range $w.Facts}}<span><b>{{.Label}}</b>{{factval .Value}}</span>{{end}}</div>{{end}}
+
+    {{$w.HTML}}
+
+    <h2>What it doesn't do</h2>
+    <div class="doesnt"><dl>
+      {{range $w.Doesnt}}<div><dt>{{.Title}}</dt><dd>{{factval .Text}}</dd></div>
+      {{end}}
+    </dl></div>
+
+    {{if or $w.Prev $w.Next}}<nav class="next" aria-label="More writeups">
+      {{if $w.Prev}}<a href="/different/{{$w.Prev.Slug}}/"><small>← {{pad $w.Prev.Pos}}</small><b>{{$w.Prev.Title}}</b><span>{{$w.Prev.Summary}}</span></a>{{else}}<span></span>{{end}}
+      {{if $w.Next}}<a href="/different/{{$w.Next.Slug}}/"><small>{{pad $w.Next.Pos}} →</small><b>{{$w.Next.Title}}</b><span>{{$w.Next.Summary}}</span></a>{{end}}
+    </nav>{{end}}
+
+    {{if $w.Sources}}<p class="srcs">From the repo: {{range $i, $s := $w.Sources}}{{if $i}} · {{end}}<a href="{{cfg.GitHubURL}}/blob/main/{{$s}}"><code>{{$s}}</code></a>{{end}}</p>{{end}}
+  </article>
+</div>
+{{template "foot" .}}

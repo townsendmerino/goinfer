@@ -1,0 +1,23 @@
+{{template "head" .}}
+{{$cur := .Doc}}
+<div class="layout wr" id="top">
+  <aside class="rail" aria-label="Docs">
+    <h2>Docs</h2>
+    <p>Reference for running and connecting goinfer. The <a href="{{cfg.BookURL}}">book</a> explains how it works.</p>
+    {{range .DocGroups}}<h3 class="rgroup">{{.Name}}</h3>
+    <ol class="docs">{{range .Pages}}<li><a href="/docs/{{.Slug}}/"{{if and $cur (eq .Slug $cur.Slug)}} aria-current="page"{{end}}>{{.Title}}</a></li>
+    {{end}}</ol>{{end}}
+  </aside>
+  <article class="doc">
+    {{if $cur}}<p class="series"><b>{{$cur.Group}}</b> · from <a href="{{cfg.GitHubURL}}/blob/main/{{$cur.Src}}"><code>{{$cur.Src}}</code></a></p>
+    {{$cur.HTML}}
+    {{else}}<h1>Docs</h1>
+    <p class="stand">What each part of goinfer does and how to run it. These pages are the repo's own documents, shown here so they are easy to find.</p>
+    {{range .DocGroups}}<h2>{{.Name}}</h2>
+    <ul class="doclist">{{range .Pages}}<li><a href="/docs/{{.Slug}}/">{{.Title}}</a></li>{{end}}</ul>{{end}}
+    <h2>The book</h2>
+    <p>An <a href="{{cfg.BookURL}}">inference primer for Go engineers</a>: eleven chapters on how a language model runs, each ending in a number measured in this repo.</p>
+    {{end}}
+  </article>
+</div>
+{{template "foot" .}}

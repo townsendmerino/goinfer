@@ -297,3 +297,5 @@ decoder/testdata/mellum-*-slice/
 
 # goinfer.dev build output (site/README.md)
 site/_site/
+
+site/data/release.json
