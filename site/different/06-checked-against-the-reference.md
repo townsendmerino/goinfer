@@ -5,7 +5,7 @@ order: 6
 summary: "Each model family is compared with HuggingFace's own implementation, the result is printed on the Models page, and the label says how strong the check was."
 stand: "goinfer compares every model family's output with HuggingFace transformers on the same weights. The Models page prints the result next to the family, and says whether the check used the released model or only a small test model."
 measured: 2026-09-29
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "compared with", value: "HuggingFace transformers, same weights"}
   - {label: "two numbers per family", value: "next token the same, and worst-position logit cosine"}

@@ -5,7 +5,7 @@ order: 7
 summary: "If a model won't fit, goinfer says so and by how much before it loads, watches swap while it loads, and retries dense models with weight streaming."
 stand: "goinfer prices a load against the memory the machine has free right now, and refuses with the arithmetic if it will not fit. A swap tripwire backs that up. The tripwire's limit is written down."
 measured: 2026-09-24
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "before loading", value: "says what it needs and what is free"}
   - {label: "during loading", value: "swap tripwire, +512 MB over its baseline"}

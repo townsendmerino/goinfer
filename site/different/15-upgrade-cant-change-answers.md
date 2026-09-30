@@ -5,7 +5,7 @@ order: 15
 summary: "gate identity builds two revisions of goinfer, compares their full logits byte for byte, and says IDENTICAL or shows the first difference."
 stand: "Before you trust a new build, you can ask whether it computes exactly what the old one did. goinfer has a command that answers that with bytes, not with a similar-looking reply."
 measured: 2026-09-28
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "command", value: "`gate identity <old> <new>`"}
   - {label: "compares", value: "full logits, prefill and each greedy step, as raw bytes"}

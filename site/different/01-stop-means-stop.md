@@ -5,7 +5,7 @@ order: 1
 summary: "Cancel one generation by id, or halt them all from an HTTP call, a file or a signal. Control sits on its own Unix socket, away from the API."
 stand: "If a client loops, or you just want it to stop, one command stops the tokens: for one generation, or for the whole server. The controls live on a separate channel from the one the client talks to."
 measured: 2026-09-12
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "cancel one", value: "by generation id"}
   - {label: "halt all", value: "HTTP call, file, or signal"}

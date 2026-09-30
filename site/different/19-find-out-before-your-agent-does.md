@@ -5,7 +5,7 @@ order: 19
 summary: "serve check sends a dozen-tool schema to a loaded model before you configure opencode, and fit sizes a checkpoint for your machine first. Both are measured."
 stand: "Two commands answer the expensive questions before an agent asks them: will this checkpoint fit here, and will it still call tools when the schema looks like a real agent's."
 measured: 2026-09-18
-reviewed:
+reviewed: 2026-09-29
 facts:
   - {label: "will it call tools", value: "`goinfer-serve check`, row `tools, harness-scale`: `ok` or `skip`"}
   - {label: "will it fit", value: "`goinfer-chat fit <model>`"}
