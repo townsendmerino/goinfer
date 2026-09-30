@@ -15,6 +15,7 @@ import (
 // decode token by token and compares every position's logits with the CPU's, both at int4, as the Metal twin does
 // (metal/gemma1_resident_parity_test.go).
 func TestGemma1ResidentParityCUDA(t *testing.T) {
+	requireCUDADevice(t) // CI's cuda job has no driver: skip there, as every other device test does
 	const ckpt = "../testdata/gemma1-tiny"
 	mRes, err := decoder.Load(ckpt, decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
