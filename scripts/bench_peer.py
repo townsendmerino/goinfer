@@ -1155,7 +1155,9 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
         if engine in ("goinfer", "goinfer_old"):
             decode_path = decode_path_since(serve_log_path, log_offset)
             bad = decode_path_mismatch(decode_path, backend)
-            if bad:
+            # BENCH_ALLOW_CPU_FALLBACK=1 keeps such a cell and records its path: for a run whose POINT is the CPU fallback of a
+            # GPU backend (phi3-metal-2026-09-29: a Metal user's Phi-3 runs on the CPU, and that is what is being timed).
+            if bad and os.environ.get("BENCH_ALLOW_CPU_FALLBACK") != "1":
                 return None, bad, None
         # RSS sampling starts once the server is confirmed up -- the process exists and its RSS
         # already reflects the checkpoint load, which is itself worth capturing (L1's 890 MB figure

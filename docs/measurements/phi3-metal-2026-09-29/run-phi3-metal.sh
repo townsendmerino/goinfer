@@ -18,6 +18,8 @@ MODEL=$HOME/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf
 export OLLAMA_BIN=/opt/homebrew/bin/ollama OLLAMA_MODELS=$HOME/.ollama/models
 export GOINFER_SERVE_METAL=$B/serve-metal-$REV GOINFER_SERVE_CPU=$B/serve-cpu-$REV
 export BENCH_RUNS=3 BENCH_DEPTHS=none BENCH_MODELS=phi3-mini BENCH_CTX=2048 BENCH_ENGINES=goinfer,ollama
+# a1 and a2 time the CPU fallback of a Metal request ON PURPOSE; the harness would otherwise void a GPU cell on the CPU. Its decode path is recorded.
+export BENCH_ALLOW_CPU_FALLBACK=1
 
 ts() { date '+%H:%M:%S'; }
 echo "$(ts) start; tree $(git rev-parse --short HEAD) $(git status --porcelain scripts/bench_peer.py | head -1)"
