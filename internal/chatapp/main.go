@@ -78,6 +78,11 @@ type session struct {
 	jsonOut bool
 	schema  []byte // when set, JSON output is constrained to this JSON Schema
 
+	// think is the thinking mode the prompt is rendered in (-thinking; /think changes it) and showThinking whether the model's
+	// reasoning is printed (dimmed) or hidden. A model whose template has no recognised thinking control is unaffected by both.
+	think        chat.ThinkMode
+	showThinking bool
+
 	draft *decoder.Model // optional speculative-decoding draft model (--draft)
 	specK int            // speculative draft length per verify pass
 	ngram bool           // --spec ngram: lossless n-gram (prompt-lookup) drafting, adaptive depth
@@ -92,7 +97,8 @@ type chatFlags struct {
 	maxTok, topK, repLastN, specK              *int
 	temp, topP, minP, repPen, presPen, freqPen *float64
 	seed                                       *int64
-	modelTmp, showVersion                      *bool
+	modelTmp, showVersion, showThinking        *bool
+	thinking                                   *string
 }
 
 // registerFlags puts chat's whole command line on fs. Main passes flag.CommandLine; a test passes a fresh
@@ -116,6 +122,8 @@ func registerFlags(fs *flag.FlagSet) *chatFlags {
 	c.draft = fs.String("draft", "", "path to a smaller .gguf draft model for speculative decoding (e.g. the 0.5B drafting for a 1.5B target). Greedy only (--temp 0); output is token-identical to plain greedy, just faster. Must share the target's tokenizer/vocab. chat-only; goinfer-serve offers --spec ngram and --drafter instead")
 	c.spec = fs.String("spec", "", "speculative decoding without a second model: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth, as goinfer-serve's --spec. Wins on copy-heavy turns (code edits, quoting the conversation back); output is identical to plain decode (greedy bit-exact, sampled in-distribution). Falls back to plain decode per turn when it cannot apply (e.g. with --schema). Not combinable with --draft")
 	c.specK = fs.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
+	c.thinking = fs.String("thinking", "template", "thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): template (what the model's own template renders — the default), asis (the prompt as goinfer rendered it before thinking was modelled), on, or off. /think changes it mid-session")
+	c.showThinking = fs.Bool("show-thinking", true, "print the model's reasoning, dimmed, before its answer (false: show only a \"thinking…\" marker). The reasoning is never kept in the conversation history either way")
 	c.showVersion = fs.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
 	return c
 }
@@ -290,6 +298,12 @@ All flags:
 		os.Exit(1)
 	}
 	s.system = *cf.system
+	mode, ok := chat.ParseThinkMode(*cf.thinking)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "error: --thinking %q: want template, asis, on or off\n", *cf.thinking)
+		os.Exit(2)
+	}
+	s.think, s.showThinking = mode, *cf.showThinking
 	s.maxTok = *cf.maxTok
 	s.sp = decoder.SamplingParams{
 		Temperature: *cf.temp, TopK: *cf.topK, TopP: *cf.topP, MinP: *cf.minP, Seed: *cf.seed,
@@ -463,7 +477,7 @@ func (s *session) repl() {
 // reply to stdout, and returns the assistant text (for history). Ctrl-C during
 // generation cancels just this turn.
 func (s *session) generate() string {
-	prompt := s.buildPrompt()
+	prompt, turns, tm := s.buildPrompt()
 	// Rendered templates already include the family's BOS marker; only the raw
 	// fallback needs the tokenizer to prepend one.
 	ids, err := s.tk.Encode(prompt, s.tmpl == nil /* addBOS */)
@@ -477,6 +491,7 @@ func (s *session) generate() string {
 	if s.jsonOut {
 		sp.LogitProcessor = s.jsonMasker()
 	}
+	s.applyBudget(&sp, tm, turns)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -507,10 +522,39 @@ func (s *session) generate() string {
 		stream, gen = s.model.Generate(ctx, ids, s.maxTok, sp)
 	}
 
-	fmt.Print("\033[36m") // cyan reply
+	// The reasoning, when the model has any, prints dimmed (or as a one-word marker with --show-thinking=false) and the answer
+	// follows in cyan; the two never mix, and only the answer goes into the conversation history.
+	rs := tm.NewReplySplitter(turns) // nil for a model with no recognised thinking control: everything is the answer
+	var inThink, answering bool
+	onReasoning := func(r string) {
+		if !inThink {
+			inThink = true
+			fmt.Print("\033[2m")
+			if !s.showThinking {
+				fmt.Print("(thinking…)")
+			}
+		}
+		if s.showThinking {
+			os.Stdout.WriteString(r)
+		}
+	}
+	onChunk := func(chunk string) {
+		if inThink {
+			fmt.Print("\033[0m\n\n")
+			inThink = false
+		}
+		if !answering {
+			fmt.Print("\033[36m") // cyan reply
+			answering = true
+		}
+		os.Stdout.WriteString(chunk)
+	}
 	start := time.Now()
-	text, nTok := s.streamGen(stream, func(chunk string) { os.Stdout.WriteString(chunk) })
+	text, _, nTok, truncated := s.streamReply(stream, rs, onReasoning, onChunk)
 	fmt.Print("\033[0m\n")
+	if truncated {
+		fmt.Fprintln(os.Stderr, "\033[2m(no answer: the reply ended while the model was still thinking — raise /max)\033[0m")
+	}
 
 	if err := gen.Err(); err != nil && ctx.Err() == nil {
 		fmt.Fprintf(os.Stderr, "(generation error: %v)\n", err)
@@ -523,6 +567,23 @@ func (s *session) generate() string {
 		fmt.Fprintln(os.Stderr)
 	}
 	return strings.TrimSpace(text)
+}
+
+// applyBudget installs the reasoning budget on sp: a thinking reply must always have room to answer, so once the think block has used
+// three quarters of --max the next token is forced to close it (chat.ReasoningBudget; the same rule serve applies). Not under a JSON
+// grammar (it governs token 1, and the prompt is rendered thinking-off), not under speculative decoding (a logit processor would turn
+// the drafter off), and not over a processor already set.
+func (s *session) applyBudget(sp *decoder.SamplingParams, tm *chat.Template, turns []chat.Turn) {
+	if s.jsonOut || s.draft != nil || s.ngram || sp.LogitProcessor != nil {
+		return
+	}
+	room, ok := chat.BudgetRoom(s.maxTok)
+	if !ok {
+		return
+	}
+	if b := tm.NewReasoningBudgetFor(s.tk, turns, room); b != nil {
+		sp.LogitProcessor, sp.LogitProcessorGate = b.Process, b.Gate
+	}
 }
 
 // streamGen drains a token channel into text with UTF-8 holdback, calling onChunk with each
@@ -538,7 +599,16 @@ func (s *session) generate() string {
 // `text += piece`: Go strings are immutable, so naive concatenation is itself O(n) per append and
 // would silently reintroduce the O(n^2) this removes.
 func (s *session) streamGen(tokens <-chan int, onChunk func(string)) (text string, nTok int) {
-	var sb strings.Builder
+	text, _, nTok, _ = s.streamReply(tokens, nil, nil, onChunk)
+	return text, nTok
+}
+
+// streamReply is streamGen with the reasoning taken out: with a splitter (chat.Template.NewReplySplitter, nil for a model with
+// no recognised thinking control) each decoded fragment's reasoning goes to onReasoning — on UTF-8 boundaries — and only the
+// answer goes through the holdback and onChunk. Returns the answer, the reasoning, the token count (thinking included), and
+// whether the reply ended inside an unclosed think block (no answer).
+func (s *session) streamReply(tokens <-chan int, rs *chat.ReplySplitter, onReasoning, onChunk func(string)) (answer, reasoning string, nTok int, truncated bool) {
+	var sb, rb strings.Builder
 	printed := 0
 	flush := func(final bool) {
 		txt := sb.String() // O(1): a view over the Builder's buffer, not a copy
@@ -554,17 +624,37 @@ func (s *session) streamGen(tokens <-chan int, onChunk func(string)) (text strin
 			printed = end
 		}
 	}
+	report := func(r string) {
+		if r == "" {
+			return
+		}
+		rb.WriteString(r)
+		if onReasoning != nil {
+			onReasoning(r)
+		}
+	}
 	for id := range tokens {
 		nTok++
 		// DecodePiece, not Decode: these ids CONTINUE the prompt (no sequence-level
 		// dummy-prefix strip — M-25), and appending each token's own piece is exactly what a
 		// whole-sequence decode does internally, one token at a time.
 		piece, _ := s.tk.DecodePiece(id)
+		if rs != nil {
+			r, a := rs.Push(piece)
+			report(r)
+			piece = a
+		}
 		sb.WriteString(piece)
 		flush(false)
 	}
+	if rs != nil {
+		r, a, trunc := rs.Finish()
+		report(r)
+		sb.WriteString(a)
+		truncated = trunc
+	}
 	flush(true)
-	return sb.String(), nTok
+	return sb.String(), rb.String(), nTok, truncated
 }
 
 // command handles a /slash line; returns true to quit.
@@ -594,6 +684,18 @@ func (s *session) command(line string) bool {
 		s.sp.Seed = int64(parseI(arg, int(s.sp.Seed)))
 	case "/max":
 		s.maxTok = parseI(arg, s.maxTok)
+	case "/think":
+		if arg == "" {
+			fmt.Printf("(thinking: %s, reasoning shown: %v — /think template|asis|on|off)\n", s.think, s.showThinking)
+			break
+		}
+		m, ok := chat.ParseThinkMode(arg)
+		if !ok {
+			fmt.Printf("(bad mode %q — want template, asis, on or off)\n", arg)
+			break
+		}
+		s.think = m
+		fmt.Printf("(thinking: %s)\n", s.think)
 	case "/json":
 		s.jsonOut = !s.jsonOut
 		fmt.Printf("(json-constrained output: %v)\n", s.jsonOut)
@@ -637,23 +739,29 @@ func (s *session) command(line string) bool {
 }
 
 func (s *session) printParams() {
-	fmt.Printf("temp=%.2f topK=%d topP=%.2f seed=%d max=%d json=%v history=%d turns\nsystem: %s\n",
-		s.sp.Temperature, s.sp.TopK, s.sp.TopP, s.sp.Seed, s.maxTok, s.jsonOut, len(s.history), short(s.system))
+	fmt.Printf("temp=%.2f topK=%d topP=%.2f seed=%d max=%d json=%v thinking=%s history=%d turns\nsystem: %s\n",
+		s.sp.Temperature, s.sp.TopK, s.sp.TopP, s.sp.Seed, s.maxTok, s.jsonOut, s.think, len(s.history), short(s.system))
 }
 
 // buildPrompt renders system + history into the model's chat template via the
 // chat package (the family was resolved at load). With no recognized template it
 // falls back to a plain raw completion.
-func (s *session) buildPrompt() string {
+func (s *session) buildPrompt() (prompt string, turns []chat.Turn, tm *chat.Template) {
 	system := strings.TrimSpace(s.system)
-	turns := make([]chat.Turn, len(s.history))
+	turns = make([]chat.Turn, len(s.history))
 	for i, m := range s.history {
 		turns[i] = chat.Turn{Role: m.role, Content: m.content}
 	}
-	if s.tmpl != nil {
-		return s.tmpl.Render(system, turns)
+	// The model's own template, in the thinking mode the session is in (nil-safe: no template → nil). A JSON grammar governs
+	// the first token, so a prompt that ends inside an open think block would contradict it: render thinking-off.
+	tm = s.tmpl.WithThinking(s.think)
+	if s.jsonOut && tm.PromptOpensThink() {
+		tm = tm.WithThinking(chat.ThinkOff)
 	}
-	return rawPrompt(system, turns)
+	if tm != nil {
+		return tm.Render(system, turns), turns, tm
+	}
+	return rawPrompt(system, turns), turns, nil
 }
 
 // rawPrompt is the unrecognized-template fallback: the conversation as plain
@@ -832,6 +940,7 @@ const helpText = `commands:
   /temp <f>       temperature (0 = greedy)      /topk <n>  top-k (0=off)
   /topp <f>       nucleus (0=off)               /seed <n>  RNG seed
   /max <n>        max tokens per reply          /json      toggle JSON-only output
+  /think <mode>   thinking: template | asis | on | off (no arg: show)
   /reset          clear conversation history    /params    show settings
   /demos          list canned demo prompts      /demo <n>  run demo n (or by name)
   /help           this list                     /quit      exit
