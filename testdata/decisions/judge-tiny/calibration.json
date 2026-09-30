@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "per_kind": {
+    "noul": 1.3,
+    "choice": 0.7,
+    "score": 1.1
+  },
+  "per_kind_family": {}
+}

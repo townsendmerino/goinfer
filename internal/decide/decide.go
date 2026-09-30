@@ -88,6 +88,7 @@ type Result struct {
 	Calibrated    bool     // a fitted temperature for this kind was applied
 	Temperature   float64
 	Template      string
+	Route         string // RouteLabel or RouteHead
 	PromptTokens  int
 	Prefills      int
 	Latency       time.Duration
@@ -198,16 +199,22 @@ type Prefill func(ctx context.Context, ids []int) ([]float32, error)
 // Options configure a Decider.
 type Options struct {
 	Template    string       // TemplateBare (default) or TemplateChat
-	Calibration *Calibration // per-kind temperatures; nil ⇒ T = 1, uncalibrated
+	Calibration *Calibration // per-kind temperatures; nil ⇒ T = 1, uncalibrated (with a Head: the head's own)
+	// Head, when set, makes this a Route B decider (D4): the trained head over Hidden's final-norm hidden state
+	// replaces the label logits, and the prefill is not used. It requires bare-v1 and a Hidden.
+	Head   *Head
+	Hidden Hidden
 }
 
 // Decider scores decisions on one model.
 type Decider struct {
 	tok      Tokenizer
 	prefill  Prefill
-	label    map[string]int // verbalizer → its single token id
+	label    map[string]int // verbalizer → its single token id (Route A only)
 	cal      *Calibration
 	template string
+	head     *Head
+	hidden   Hidden
 }
 
 // New resolves every verbalizer to a single token and returns a Decider. It fails, naming the offenders, when any
@@ -224,6 +231,22 @@ func New(tok Tokenizer, prefill Prefill, opts Options) (*Decider, error) {
 	cal := opts.Calibration
 	if cal != nil && cal.Template != "" && cal.Template != tmpl {
 		return nil, fmt.Errorf("decide: the calibration was fitted under template %q, not %q", cal.Template, tmpl)
+	}
+	if opts.Head != nil {
+		// Route B reads slots, not label tokens, so the verbalizers need not be single tokens here.
+		if opts.Hidden == nil {
+			return nil, errors.New("decide: a decision head needs the model's hidden state (Options.Hidden)")
+		}
+		if tmpl != opts.Head.Template {
+			return nil, fmt.Errorf("decide: the decision head was trained under template %q, not %q", opts.Head.Template, tmpl)
+		}
+		if cal == nil {
+			cal = opts.Head.Calibration
+		}
+		if cal != nil && cal.Template != "" && cal.Template != tmpl {
+			return nil, fmt.Errorf("decide: the calibration was fitted under template %q, not %q", cal.Template, tmpl)
+		}
+		return &Decider{tok: tok, cal: cal, template: tmpl, head: opts.Head, hidden: opts.Hidden}, nil
 	}
 	d := &Decider{tok: tok, prefill: prefill, label: map[string]int{}, cal: cal, template: tmpl}
 	var bad []string
@@ -247,12 +270,31 @@ func New(tok Tokenizer, prefill Prefill, opts Options) (*Decider, error) {
 // Template returns the template this decider renders.
 func (d *Decider) Template() string { return d.template }
 
+// Route returns RouteHead for a decider with a trained head, RouteLabel otherwise.
+func (d *Decider) Route() string {
+	if d.head != nil {
+		return RouteHead
+	}
+	return RouteLabel
+}
+
+// validate is Validate plus, for Route B, the head's own limits.
+func (d *Decider) validate(r Request) error {
+	if err := Validate(r); err != nil {
+		return err
+	}
+	if d.head != nil {
+		return d.head.check(r)
+	}
+	return nil
+}
+
 // LabelID returns a verbalizer's token id (for tests and the reference comparison).
 func (d *Decider) LabelID(v string) (int, bool) { id, ok := d.label[v]; return id, ok }
 
 // Decide answers one request.
 func (d *Decider) Decide(ctx context.Context, r Request) (Result, error) {
-	if err := Validate(r); err != nil {
+	if err := d.validate(r); err != nil {
 		return Result{}, err
 	}
 	t0 := time.Now()
@@ -294,6 +336,7 @@ func (d *Decider) Decide(ctx context.Context, r Request) (Result, error) {
 	res.Distribution = acc
 	res.Prefills = orders
 	res.Temperature, res.Calibrated, res.Template = temp, calibrated, d.template
+	res.Route = d.Route()
 	for i, p := range acc {
 		if p > acc[res.Index] {
 			res.Index = i
@@ -314,7 +357,7 @@ func (d *Decider) Decide(ctx context.Context, r Request) (Result, error) {
 // Scores returns a request's restricted log-probabilities at temperature 1, in the request's option order, with no
 // permutation — the raw material decisions-calibrate fits a temperature on.
 func (d *Decider) Scores(ctx context.Context, r Request) ([]float64, error) {
-	if err := Validate(r); err != nil {
+	if err := d.validate(r); err != nil {
 		return nil, err
 	}
 	lp, _, err := d.score(ctx, r.Kind, r.State, r.Question, r.Options, r.Descriptions, 1)
@@ -334,6 +377,21 @@ func (d *Decider) score(ctx context.Context, kind, state, question string, shown
 	}
 	if len(ids) == 0 {
 		return nil, 0, errors.New("decide: empty prompt")
+	}
+	if d.head != nil {
+		h, err := d.hidden(ctx, ids)
+		if err != nil {
+			return nil, 0, err
+		}
+		z, err := d.head.logits(h, kind, len(shown))
+		if err != nil {
+			return nil, 0, err
+		}
+		slots := make([]int, len(z))
+		for i := range slots {
+			slots[i] = i
+		}
+		return confidence.RestrictedLogSoftmax(z, slots, temp), len(ids), nil
 	}
 	logits, err := d.prefill(ctx, ids)
 	if err != nil {

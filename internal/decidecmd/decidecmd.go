@@ -24,7 +24,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/modelload"
 )
 
-const decideUsage = `%[1]s decide --model <file.gguf|dir> [flags] <in.jsonl|->  — decisions by label-token scoring
+const decideUsage = `%[1]s decide --model <file.gguf|dir> [flags] <in.jsonl|->  — decisions by label-token scoring,
+or by a trained decision head with --head (e.g. --model ~/models/JEV-9B --head ~/models/JEV-9B)
 
 Each input line is {"id","kind","state","question","options"} with kind noul (options ["false","true"]),
 score (options "0".."5") or choice (2-16 options). Each output line carries the distribution over the
@@ -32,7 +33,8 @@ line's options, the decision, its probability, and what produced it. One prefill
 
 The number is the model's probability over the options it was shown. It is calibrated only for a kind
 whose temperature a --calibration file (from %[1]s decisions-calibrate, or autotrust's own) supplies,
-and then only in the sense that fit measured.
+and then only in the sense that fit measured. With --head, the head's own calibration.json applies unless
+--calibration replaces it; a head reads bare-v1 only, JEV's six score levels, and no option descriptions.
 
 `
 
@@ -79,6 +81,7 @@ type common struct {
 	load     *loadflags.Flags
 	model    *string
 	template *string
+	head     *string
 	out      *string
 }
 
@@ -87,6 +90,9 @@ func newCommon(name, usage string) *common {
 	c := &common{fs: fs, load: loadflags.Register(fs, loadflags.Chat)}
 	c.model = fs.String("model", "", "model: a .gguf, an HF checkpoint dir, or an hf:/demo: reference")
 	c.template = fs.String("template", decide.TemplateBare, "prompt template: bare-v1 (JEV's own; no chat template) or chat-v1 (the model's chat template, for instruct models)")
+	c.head = fs.String("head", "", "a trained decision head (Route B): a dir with judge_config.json, head.safetensors and calibration.json, "+
+		"such as autotrust's JEV-9B. --model must be its backbone; an unmerged head's adapter is merged at load. "+
+		"Without it, decisions are label-token scoring (Route A)")
 	c.out = fs.String("o", "", "output file (default stdout)")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), usage, filepath.Base(os.Args[0]))
@@ -102,18 +108,49 @@ func (c *common) open(ctx context.Context, cal *decide.Calibration) (*decide.Dec
 	if err := c.load.Validate(); err != nil {
 		return nil, nil, err
 	}
-	res, err := modelload.Load(ctx, modelload.Request{Spec: *c.model, Opts: c.load.Options(), DirectLoad: c.load.DirectLoad,
+	opts := c.load.Options()
+	var head *decide.Head
+	if *c.head != "" {
+		var err error
+		if head, err = decide.LoadHead(*c.head); err != nil {
+			return nil, nil, err
+		}
+		if a := head.AdapterDir(); a != "" {
+			if opts.LoRA != "" && opts.LoRA != a {
+				return nil, nil, fmt.Errorf("--lora %s and the head's own adapter %s: an unmerged head brings its adapter", opts.LoRA, a)
+			}
+			opts.LoRA = a
+		}
+	}
+	res, err := modelload.Load(ctx, modelload.Request{Spec: *c.model, Opts: opts, DirectLoad: c.load.DirectLoad,
 		ExplicitQuant: c.load.ExplicitQuant()})
 	if err != nil {
 		return nil, nil, err
 	}
-	d, err := decide.New(decide.NewPlainTokenizer(res.Tokenizer), decide.ModelPrefill(res.Model),
-		decide.Options{Template: *c.template, Calibration: cal})
+	dopts := decide.Options{Template: *c.template, Calibration: cal}
+	if head != nil {
+		dopts.Head, dopts.Hidden = head, decide.ModelHidden(res.Model)
+		fmt.Fprintf(os.Stderr, "decide: route B, head %s %s (%s), adapter %q, temperatures %v\n",
+			head.Name, head.Version, head.WeightsMode, head.AdapterDir(), headTemps(cal, head))
+	}
+	d, err := decide.New(decide.NewPlainTokenizer(res.Tokenizer), decide.ModelPrefill(res.Model), dopts)
 	if err != nil {
 		res.Model.Close()
 		return nil, nil, err
 	}
 	return d, func() { res.Model.Close() }, nil
+}
+
+// headTemps is the calibration a head decider will use, for the startup line: an explicit --calibration, else the
+// head's own calibration.json.
+func headTemps(cal *decide.Calibration, h *decide.Head) map[string]float64 {
+	if cal == nil {
+		cal = h.Calibration
+	}
+	if cal == nil {
+		return nil
+	}
+	return cal.PerKind
 }
 
 func (c *common) input() (io.ReadCloser, error) {
@@ -178,7 +215,7 @@ func Run(args []string) int {
 	t0 := time.Now()
 	err = eachRow(in, func(r Row) error {
 		n++
-		o := Out{ID: r.ID, Kind: r.Kind, Options: r.Options, Route: "label", Template: d.Template(), Target: r.Target}
+		o := Out{ID: r.ID, Kind: r.Kind, Options: r.Options, Route: d.Route(), Template: d.Template(), Target: r.Target}
 		req := decide.Request{Kind: r.Kind, State: r.State, Question: r.Question, Options: r.Options}
 		if r.Kind == decide.KindChoice {
 			req.Permute = *permute

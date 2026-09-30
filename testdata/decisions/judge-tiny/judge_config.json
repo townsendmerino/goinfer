@@ -1,0 +1,83 @@
+{
+  "hidden_size": 64,
+  "slots": {
+    "num_slots": 24,
+    "ranges": {
+      "noul": [
+        0,
+        2
+      ],
+      "score": [
+        2,
+        8
+      ],
+      "choice": [
+        8,
+        24
+      ]
+    },
+    "verbalizers": [
+      "false",
+      "true",
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H",
+      "I",
+      "J",
+      "K",
+      "L",
+      "M",
+      "N",
+      "O",
+      "P"
+    ],
+    "template_version": "bare-v1"
+  },
+  "verbalizer_ids": [
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    116,
+    117,
+    118,
+    119,
+    120,
+    121,
+    122,
+    123
+  ],
+  "kinds": [
+    "noul",
+    "choice",
+    "score"
+  ],
+  "model_name": "judge-tiny",
+  "model_version": "0.0.1",
+  "weights_mode": "unmerged",
+  "adapter_subfolder": "adapter",
+  "softcap": null
+}
