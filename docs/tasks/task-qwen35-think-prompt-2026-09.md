@@ -74,12 +74,46 @@ check that the invariant holds on every client's request shape. **Final run: 37 
   serve's own swap guard refused requests (the matrix now retries a 503); run 2's completion cell failed for the reason above
   (a test-design error, not a server defect) and was reworked.
 
+## What flipping the default changes (and a correction about G3)
+
+**Correction, 2026-09-30.** Earlier text in this record and in the hand-off said a default flip "moves G3". That was
+imprecise. G3 as registered (`docs/measurements/p8a-qwen35-vl-2026-09/preregistration.md`, `TestQwen35_textIdentityHashes`)
+hashes raw f32 logits for **hard-coded token ids** fed straight to the model on two tiny fixtures and the real 0.8B. No chat
+template is involved, so changing the renderer's default cannot fail that test. What G3 stood for in P8a was a *scope
+promise* — "the image work must not change a Qwen3.5 text turn" — and that promise ended when P8a did. The finding that
+deferred this fix ("doing so alters every Qwen3.5 text turn, which G3 says must not move") was about that promise, not about a
+test that would have gone red.
+
+**What a flip to `-thinking off` or `template` does change:**
+
+1. **Every client of a recognised model gets a different prompt and a different model behaviour.**
+
+   | model | today (`asis`) | `-thinking template` | `-thinking off` |
+   |---|---|---|---|
+   | Qwen3.5-0.8B | prompt without the block (22 tokens in the matrix prompt); the model answered directly | + closed block (26); no thinking — same as HF's default | same as `template` |
+   | Qwen3.5-9B | prompt without the block; the model writes `<think>\n` itself | + open `<think>\n` (+2); thinks, as HF's default does | + closed block (+4); **stops thinking by default** |
+   | Qwen3 (1.7B/4B/30B-A3B) | nothing written; the model decides | nothing written (its template default is on) | + closed block (+4); stops thinking |
+   | Gemma 4 | closed scaffold = its default, no change | no change | no change |
+
+   Prompt-token deltas are from the 0.8B matrix run and the per-checkpoint goldens. `off` changes the 9B and Qwen3 most: shorter,
+   cheaper replies, and no empty-`content`-at-small-`max_tokens` failure — but also weaker answers on prompts that benefit from
+   reasoning, and behaviour that differs from what those models' own cards call the default. `template` matches each model's
+   own default exactly (so it fixes nothing for the 9B's truncation hole, and fixes the 0.8B's mismatch with HF).
+2. **One test must be rewritten on purpose:** `TestServe_qwen35Image_G4` pins serve's prompt as "HF's default ids minus a
+   4-token think block". Under `template` serve's ids equal HF's, so that assertion fails by design and becomes "equal".
+3. **Comparability of anything measured through serve's chat endpoint on these families.** A flip changes the rendered
+   prompt and, for the 9B and Qwen3, how many tokens a reply takes. I found no served benchmark row for Qwen3 / Qwen3.5 / Gemma 4
+   in `docs/benchmarks.md` (six mentions of those names, all in family lists or notes — found by name, not read row by row), and
+   the decisions work (`internal/decide`) builds its own prompt suffix and does not go through serve's renderer. So nothing
+   published is invalidated today; any *future* row is comparable only within one default, which the row's provenance must name.
+4. **It is one flag and reversible.** `-thinking asis` restores today's bytes exactly; a request can still override either way.
+
 ## Not built
 
 - **The default (phase 3).** `-thinking asis` keeps today's bytes, so the truncation hole is open for clients that turn
   thinking on with a small `max_tokens`: `content` is empty, `finish_reason` is `length`. Only a non-thinking default or a
-  reasoning budget closes it. `-thinking off` / `template` exist now, so flipping the default is one word plus G3
-  re-registered on a stated mechanism.
+  reasoning budget closes it. `-thinking off` / `template` exist now, so flipping the default is one word plus
+  the consequences in "What flipping the default changes" below.
 - **A reasoning budget** (`budget_tokens` is accepted and not enforced).
 - **Stop strings on content only.** Stops are still matched on raw text, so a stop that appears in the reasoning ends the
   reply with no answer. Pinned by `TestStreamTokens_thinkStopStrings`, named as a known limitation.
@@ -152,8 +186,8 @@ carry both variants, and G2 compares against `golden_*`, so the vision gate does
    (b)-open and (a) put the opener in the prompt, which matches HF for the 9B but leaves the reasoning block to be surfaced
    or stripped (question 3) — so question 3 has to be settled for every option except non-thinking. The 0.8B is the reverse:
    its default is already non-thinking, so (a) and (b)-non-thinking agree there and (c) is the no-op.
-   Any option that changes default bytes moves G3 and needs the baseline **re-registered with a mechanism**, not
-   re-baselined because the number moved.
+   Any option that changes default bytes changes every client's prompt; see "What flipping the default changes" (the G3 logit
+   baseline itself does not move — corrected 2026-09-30).
 3. **Output handling when thinking is on — PARTLY ANSWERED 2026-09-30 (grep, no run).** Non-test Go contains no
    `reasoning_content` field and no `</think>` stripping on the serve reply path; the only `</think>` uses are
    `internal/decide/model.go` (which appends the empty no-think block *itself* — `<think>\n\n</think>\n\n` — and refuses
@@ -173,7 +207,7 @@ carry both variants, and G2 compares against `golden_*`, so the vision gate does
   for text-only and image requests, with `enable_thinking` unset, true and false. A test that renders with only one size's
   template proves nothing about the other — this defect exists because the script and the G4 gate were built from the 0.8B
   alone.
-- G3 re-registered before the run if default bytes change; the 4-token G4 delta becomes 0 (0.8B) and the 9B equivalent is
+- If default bytes change, the G4 test's pinned 4-token delta is rewritten on purpose (it becomes 0 for the 0.8B) and the 9B equivalent is
   added.
 - Quality is judged through the real template, not raw completion (see the quant-eval note in memory); a change that makes
   the model think by default also changes latency per reply, so report tokens-to-answer, not only token identity.
@@ -273,8 +307,8 @@ template file.
    in the prompt; no reasoning is ever generated; also the fastest), (b) thinking by default with a reasoning budget that
    force-closes `</think>` (llama.cpp `--reasoning-budget`: -1 unlimited, 0 immediate end, N>0 budget), (c) leave it and
    document. **Recommendation: (a) as the default, opt-in to thinking, with (b) as a follow-up for opted-in clients** — but
-   (a) changes default bytes (0.8B: +4 tokens, which moves G3 by construction; 9B: moves the default off the model's own),
-   so it is its own decision with G3 re-registered on a stated mechanism ("prompt now equals the model's template with
+   (a) changes default bytes (0.8B: +4 tokens; 9B: moves the default off the model's own),
+   so it is its own decision, with the consequences listed in "What flipping the default changes" ("prompt now equals the model's template with
    `enable_thinking=false`"), not folded into the splitter.
 
 **History.** Serve already drops Anthropic `thinking` blocks on input and ignores `reasoning_content` (not a `chatMessage`
@@ -312,7 +346,7 @@ changing how history renders breaks KV prefix reuse from the changed turn onward
    emits none. No G3 movement. Delivers the invariant except for the truncation hole.
 2. *`enable_thinking` plumbed* (OpenAI `chat_template_kwargs`, Anthropic `thinking`), render option through every caller,
    byte-exactness gate per size, tool-grammar rule 1. Default bytes still unchanged.
-3. *Default decision* (rule 2 a/b), G3 re-registered with a mechanism. Owner decision.
+3. *Default decision* (rule 2 a/b); consequences in "What flipping the default changes". Owner decision.
 4. *Stops on content only; reasoning budget; history.*
 
 **Gate: the client matrix, run for real (night queue if it exceeds ~10 min; the 0.8B is quick by day).** For each of 0.8B

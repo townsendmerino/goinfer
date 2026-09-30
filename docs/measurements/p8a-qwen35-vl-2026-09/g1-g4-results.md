@@ -73,7 +73,7 @@ resident-image step.
    goinfer renders every Qwen family through its generic ChatML renderer (`chat/templates.go`), which emits nothing
    there — right for Qwen3 (whose default is thinking ON), wrong for Qwen3.5. So a text-only Qwen3.5 request through
    serve puts the model in a state HF's default does not, on every turn, not just image turns. NOT changed here: doing
-   so alters every Qwen3.5 text turn, which G3 says must not move. Pinned as a named 4-token delta in G4. Needs an
+   so alters every Qwen3.5 text turn, which P8a's scope promise ("the image work must not change a text turn") ruled out. *(Corrected 2026-09-30: this was worded as "which G3 says must not move", but G3's test hashes logits for fixed token ids and never touches the renderer — a default change cannot fail it. See `docs/tasks/task-qwen35-think-prompt-2026-09.md` § What flipping the default changes.)* Pinned as a named 4-token delta in G4. Needs an
    owner decision.
 2. **A resident executor would have silently served zero-state image decode.** Every executor implements
    `ResidentMRoPE`; the CPU-prefill → `UploadKV` bridge skips KV-less DeltaNet layers. Guarded and tested.
