@@ -158,8 +158,46 @@ func newDeltaState(p qwen35Params) *deltaState {
 
 // gatedDeltaNetStep advances one token through the Gated DeltaNet layer, reading
 // and updating st, and returns the layer output [hidden]. Driven per token by
-// both prefill and decode (the recurrence is inherently sequential).
+// both prefill and decode (the recurrence is inherently sequential). Its four
+// projections are here; everything between them is deltaNetCore, which the
+// batched forward (gatedDeltaNetN) shares so the two cannot drift.
 func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Params, hidden int, eps float64, st *deltaState) []float32 {
+	nv := p.NumValueHeads
+	var t0 time.Time
+	if deltaNetTiming {
+		t0 = time.Now()
+	}
+	mixed := matvecWM(be, &w.inProjQKV, h)
+	if deltaNetTiming {
+		dnProjNs.Add(int64(time.Since(t0)))
+		t0 = time.Now()
+	}
+	bt := matvec(w.inProjB, nv, hidden, h)
+	at := matvec(w.inProjA, nv, hidden, h)
+	z := matvecWM(be, &w.inProjZ, h)
+	if deltaNetTiming {
+		dnOtherNs.Add(int64(time.Since(t0)))
+	}
+	core := make([]float32, p.ValueHeadDim*nv)
+	deltaNetCore(core, mixed, bt, at, z, w, p, eps, st)
+	if deltaNetTiming {
+		t0 = time.Now()
+	}
+	out := matvecWM(be, &w.outProj, core)
+	if deltaNetTiming {
+		dnProjNs.Add(int64(time.Since(t0)))
+		dnCalls.Add(1)
+	}
+	return out
+}
+
+// deltaNetCore is one token's sequential middle of the Gated DeltaNet layer, from the projections'
+// outputs to out_proj's input: the depthwise causal conv (+ SiLU) over the window in st, the gated
+// delta-rule recurrence (state in st.s), and the gated RMSNorm (× SiLU(z)). mixed is in_proj_qkv's
+// output [convDim], bt/at the raw gate projections [nv], z the output gate [valueDim]; core
+// [valueDim] receives the result. mixed is retained in st's conv window, so the caller must not
+// reuse its storage.
+func deltaNetCore(core, mixed, bt, at, z []float32, w *deltaNetWeights, p qwen35Params, eps float64, st *deltaState) {
 	nk, nv := p.NumKeyHeads, p.NumValueHeads
 	hk, hv := p.KeyHeadDim, p.ValueHeadDim
 	keyDim, valueDim := hk*nk, hv*nv
@@ -177,13 +215,8 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 		t0 = time.Now()
 	}
 
-	// 1. Projection + depthwise causal conv (+ SiLU). Taps t-K+1..t: the last K-1
-	// come from convWin (zero-padded early), the K-th is this token.
-	mixed := matvecWM(be, &w.inProjQKV, h)
-	if deltaNetTiming {
-		dnProjNs.Add(int64(time.Since(t0)))
-		t0 = time.Now()
-	}
+	// 1. Depthwise causal conv (+ SiLU). Taps t-K+1..t: the last K-1 come from
+	// convWin (zero-padded early), the K-th is this token.
 	conv := make([]float32, convDim)
 	win := st.convWin
 	for c := range convDim {
@@ -200,21 +233,16 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 	if len(st.convWin) > K-1 {
 		st.convWin = st.convWin[len(st.convWin)-(K-1):]
 	}
-
-	// 2. Gates + output gate.
-	bt := matvec(w.inProjB, nv, hidden, h)
-	at := matvec(w.inProjA, nv, hidden, h)
-	z := matvecWM(be, &w.inProjZ, h)
 	if deltaNetTiming {
-		dnOtherNs.Add(int64(time.Since(t0))) // conv (above) + gates (this block)
+		dnOtherNs.Add(int64(time.Since(t0))) // conv; the gate projections are timed by the caller
 	}
 
-	// 3. Gated delta-rule recurrence, per value head; state persists in st.s.
-	core := make([]float32, valueDim)
+	// 2. Gated delta-rule recurrence, per value head; state persists in st.s.
+	clear(core)
 	deltaNetRecurrence(core, conv, at, bt, w, p, st)
 
 	var capPre, capGate []float32
-	if deltaCapHook != nil { // test seam: step 3's output, before step 4 overwrites it in place
+	if deltaCapHook != nil { // test seam: step 2's output, before step 3 overwrites it in place
 		capPre = append([]float32(nil), core...)
 		capGate = make([]float32, 2*nv)
 		for headV := range nv {
@@ -228,7 +256,7 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 		}
 	}
 
-	// 4. Gated RMSNorm (over head_v_dim, × SiLU(z)) then out_proj.
+	// 3. Gated RMSNorm (over head_v_dim, × SiLU(z)); out_proj is the caller's.
 	if deltaNetTiming {
 		t0 = time.Now()
 	}
@@ -250,15 +278,6 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 	if deltaCapHook != nil {
 		deltaCapHook(mixed, conv, append(append([]float32(nil), bt...), at...), capGate, capPre, core, z)
 	}
-	if deltaNetTiming {
-		t0 = time.Now()
-	}
-	out := matvecWM(be, &w.outProj, core)
-	if deltaNetTiming {
-		dnProjNs.Add(int64(time.Since(t0)))
-		dnCalls.Add(1)
-	}
-	return out
 }
 
 func deltaNetRecurrence(core, conv, at, bt []float32, w *deltaNetWeights, p qwen35Params, st *deltaState) {

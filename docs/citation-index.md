@@ -70,7 +70,7 @@ supports.
 | `docs/audit-2026-09-10.md|decoder/arch.go:288` | goinfer | `// sigmoid-activated where Laguna's is softplus (verified against source, not assumed). ` |
 | `docs/audit-2026-09-10.md|decoder/arch.go:636` | goinfer | `RouterSigmoid bool    // score experts with per-expert sigmoid(logit) instead of softmax` |
 | `docs/audit-2026-09-10.md|decoder/attention.go:186` | goinfer | `acc64 := true` |
-| `docs/audit-2026-09-10.md|decoder/deltanet.go:448` | goinfer | `// l2normScaled returns x/‖x‖ (eps 1e-6, matching FLA's l2norm) times s.` |
+| `docs/audit-2026-09-10.md|decoder/deltanet.go:467` | goinfer | `// l2normScaled returns x/‖x‖ (eps 1e-6, matching FLA's l2norm) times s.` |
 | `docs/audit-2026-09-10.md|decoder/dflash_pairing_test.go:18` | goinfer | `// granite's flat-only rope and nemotron's hybrid_override_pattern, which is why it is g` |
 | `docs/audit-2026-09-10.md|decoder/embed.go:44` | goinfer | `if _, own := a.ownForward(); own {` |
 | `docs/audit-2026-09-10.md|decoder/embed.go:56` | goinfer | `if m.resident != nil {` |
@@ -361,7 +361,7 @@ supports.
 | `docs/spec/09-mtp-heads.md|decoder/blockspec.go:622` | goinfer | `// breakEvenTokensPerRound is the acceptance below which block drafting LOSES.` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:147` | goinfer | `// head). Fixed size — independent of sequence length, and NOT position-` |
 | `docs/spec/09-mtp-heads.md|decoder/deltanet.go:150` | goinfer | `type deltaState struct {` |
-| `docs/spec/09-mtp-heads.md|decoder/deltanet.go:188` | goinfer | `win := st.convWin` |
+| `docs/spec/09-mtp-heads.md|decoder/deltanet.go:221` | goinfer | `win := st.convWin` |
 | `docs/spec/09-mtp-heads.md|decoder/forwardn.go:209` | goinfer | `func (m *Model) specRollbackSafe() bool {` |
 | `docs/spec/09-mtp-heads.md|decoder/gguf.go:754` | goinfer | `numLayers := u("block_count") - u("nextn_predict_layers")` |
 | `docs/spec/09-mtp-heads.md|decoder/gguf_qwen35.go:33` | goinfer | `numLayers := blocks - u("nextn_predict_layers") // drop the NextN/MTP block(s)` |

@@ -158,7 +158,9 @@ func (m *Model) checkHiddenIDs(who string, ids []int) error {
 // Unlike HiddenLast it serves every family, those with their own layer loop included (Qwen3.5, the JEV models' family): it runs
 // the same per-token forward Generate's CPU path runs, runLayers, which dispatches to them, in a fresh cache, then the final norm
 // logitsFromHidden applies before the LM head. So the hidden state is the one the logits are computed from, by construction. A
-// family on the generic batched path (canBatchN) takes hiddenLastBatched instead, which ends at the same final norm.
+// family on the generic batched path (canBatchN) takes hiddenLastBatched instead, which ends at the same final norm, and
+// Qwen3.5 takes its own batched forward (runLayersQwen35N: every projection one matmul over the prompt, the DeltaNet
+// recurrence still sequential), bounded against the per-token forward by TestPromptHidden_batchedMatchesSequential.
 //
 // CPU only, and it says so: it never uses a resident, since no resident executor exposes this hidden state yet (a GPU path is a
 // follow-up with its own measurement). ctx is checked between tokens, so a long prompt can be abandoned.
@@ -174,6 +176,13 @@ func (m *Model) PromptHidden(ctx context.Context, prompt []int) ([]float32, erro
 	}
 	a := m.w.arch
 	cache := m.NewCache(len(prompt))
+	if m.qwen35BatchN(len(prompt), cache) {
+		hN, err := m.runLayersQwen35N(ctx, m.embedN(prompt), cache)
+		if err != nil {
+			return nil, err
+		}
+		return append([]float32(nil), hN[(len(prompt)-1)*a.HiddenDim:]...), nil
+	}
 	var h []float32
 	for _, id := range prompt {
 		if err := ctx.Err(); err != nil {

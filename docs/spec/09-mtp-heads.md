@@ -486,7 +486,7 @@ The CPU figures must not be read as a bound on a GPU-resident path in either dir
 
 This one is answerable from the code rather than by measurement, and the answer is not "probably".
 `gatedDeltaNetStep` reads `convWin` as the depthwise conv's left context every step
-(`decoder/deltanet.go:188`, taps `j = 0..K-2`) and mutates it every step, appending the current
+(`decoder/deltanet.go:221`, taps `j = 0..K-2`) and mutates it every step, appending the current
 mixed vector and sliding to the last `K-1`. A verify of width K advances that window by K tokens.
 
 **With `ConvKernel = 4` the window is 3 vectors, so any verify of width K ≥ 4 replaces it

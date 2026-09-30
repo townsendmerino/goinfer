@@ -569,7 +569,7 @@
         "scripts/pin_olmo_hybrid_real.py",
         "scripts/pin_olmo_hybrid_tiny.py"
       ],
-      "deps_hash": "sha256:ecf119d4f6e60e9f8e6671d2c2cd46cb6bf6186d5c272ac842c285795fc0d276",
+      "deps_hash": "sha256:adc6d0b3195a4e6a575f9aecf5410822a9d1b89fe3fe5d28671ac51efa7fa2bf",
       "status": "validated",
       "validated_at": "0b74e671",
       "date": "2026-09-18",
@@ -695,7 +695,7 @@
         "decoder/qwen3_5_test.go",
         "scripts/pin_qwen3_5_forward.py"
       ],
-      "deps_hash": "sha256:e8af42f14e27e81e55a3640e778d70b4abd974ba366cc94159b22c0c576ce0b3",
+      "deps_hash": "sha256:f28981a1f275f1cd73da3f67a88a5b3fb9a704640b583bc669ca9c40aa5fc90f",
       "status": "validated",
       "validated_at": "0b74e671",
       "date": "2026-09-18",
@@ -720,7 +720,7 @@
         "decoder/forward_qwen35.go",
         "decoder/gguf_qwen35.go"
       ],
-      "deps_hash": "sha256:69ff815d183c8643014f0252e7497434310f3f943a1391094bda9e22f83df516",
+      "deps_hash": "sha256:58bf39f0e3f543448dad87fccbe6e907ac3ab0abe2b5f86472100bb3fd515266",
       "status": "validated",
       "validated_at": "eaa8bb23",
       "date": "2026-09-06",
@@ -771,7 +771,7 @@
         "scripts/pin_qwen3next_tiny.py",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:956872077497965a46c0f67589a1e4ba685316da92f59a011914c26a5be29849",
+      "deps_hash": "sha256:100c3b81ecc72822d7a6f0b1e3661fc528ae2b1f46a0bb0db424a54ad271a61f",
       "status": "validated",
       "validated_at": "426ca57d",
       "date": "2026-09-29",
