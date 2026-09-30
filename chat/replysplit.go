@@ -2,20 +2,32 @@ package chat
 
 import "unicode/utf8"
 
-// ReplySplitter is what a decode loop holds to separate a streamed reply into reasoning and answer: a ThinkSplitter plus the one
-// thing a loop that prints or forwards the reasoning needs beyond it — the reasoning is reported only on UTF-8 boundaries, so a
-// multi-byte character split across two tokens reaches the reader whole. (The answer is returned as it arrives, raw: the loops
-// that consume it already hold a trailing partial rune back for their own stop-string and display logic.)
+// ReplySplitter is what a decode loop holds to separate a streamed reply into reasoning and answer: a ThinkSplitter (a delimited
+// <think>…</think> span — Qwen, Gemma 4) or the Harmony parser (gpt-oss's channel messages), plus the one thing a loop that
+// prints or forwards the reasoning needs beyond it — the reasoning is reported only on UTF-8 boundaries, so a multi-byte
+// character split across two tokens reaches the reader whole. (The answer is returned as it arrives, raw: the loops that
+// consume it already hold a trailing partial rune back for their own stop-string and display logic.)
 //
 // serve, goinfer-chat and the demo agent all use it, so the three cannot disagree about where reasoning ends.
 type ReplySplitter struct {
-	sp    *ThinkSplitter
+	sp    replyCore
 	carry []byte
+}
+
+// replyCore is the part of a splitter ReplySplitter needs: ThinkSplitter and the Harmony parser both satisfy it, so the three
+// decode loops that hold a ReplySplitter never learn which family they are reading.
+type replyCore interface {
+	Push(chunk string) (reasoning, content string)
+	Flush() (reasoning, content string)
+	InReasoning() bool
 }
 
 // NewReplySplitter returns a splitter for replies to prompts rendered by t from turns, or nil when t has no reasoning spec (the
 // caller then passes every fragment through as answer, exactly as before thinking was modelled).
 func (t *Template) NewReplySplitter(turns []Turn) *ReplySplitter {
+	if t != nil && t.name == "harmony" {
+		return &ReplySplitter{sp: newHarmonySplitter()}
+	}
 	sp := t.NewReasoningSplitter(turns)
 	if sp == nil {
 		return nil
