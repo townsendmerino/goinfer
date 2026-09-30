@@ -306,6 +306,82 @@ type config struct {
 	embedName  string // -embed-served-model-name
 }
 
+// serveFlags is what the serve flags parse into: the config every model shares, the four listener flags that
+// are not part of it, --version, and the model-loading flags goinfer-chat shares (loadflags).
+type serveFlags struct {
+	cfg                           config
+	addr, apiKey, tlsCert, tlsKey *string
+	showVersion                   *bool
+	lf                            *loadflags.Flags
+}
+
+// registerFlags adds every serve flag to fs. Main registers on flag.CommandLine; TestFlagsDoc registers on a
+// fresh set, so docs/flags.md is generated from the flags themselves and cannot drift from them.
+func registerFlags(fs *flag.FlagSet) *serveFlags {
+	sf := &serveFlags{}
+	cfg := &sf.cfg
+	sf.addr = fs.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; use 0.0.0.0:8080 to expose, and set -api-key and -tls-cert/-tls-key — or put a TLS-terminating reverse proxy in front — when you do)")
+	sf.apiKey = fs.String("api-key", "", "optional shared secret; when set, every request must send it as `Authorization: Bearer <key>` or `x-api-key: <key>`. Falls back to $GOINFER_API_KEY. REQUIRED with -allow-admin.")
+	sf.tlsCert = fs.String("tls-cert", "", "PEM certificate file; with -tls-key, serves HTTPS instead of plaintext HTTP. Without it, -api-key and every prompt/completion travel in cleartext — fine on loopback, not on a shared network. For ACME/auto-renewal, put a reverse proxy (Caddy, nginx, Traefik) in front instead and leave this unset.")
+	sf.tlsKey = fs.String("tls-key", "", "PEM private key file, paired with -tls-cert")
+	fs.StringVar(&cfg.sessionDir, "session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
+	fs.StringVar(&cfg.jobDir, "job-dir", "", "J2 (task-work-queue-2026-09.md): optional dir for a durable job journal — one JSONL line per generation state transition (pending/running/done/failed/cancelled), 0700/0600 permissions matching -session-dir. On restart, any job still 'running' at the last recorded transition is marked 'interrupted', never silently 'failed'. Off by default: every generation still gets an in-memory job record, just no durability across a restart")
+	fs.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded model and pull GGUF checkpoints from HuggingFace, on the same server and the same /v1 routes any other client uses (one embedded HTML file; no external assets, so it works offline). Off by default: the page is static, but its pull route starts a caller-named multi-gigabyte download and writes it to disk. On a non-loopback bind the existing -api-key requirement applies as usual")
+	fs.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable /admin/* on THIS (TCP) listener — model load/unload (loads attacker-named paths), GET /admin/generations, POST /admin/generations/{id}/cancel, POST /admin/halt, POST /admin/resume (deliberate opt-in; requires -api-key). A /v1 client holding the same key can reach every one of these routes too, including halt/resume. Ignored when -admin-socket is set: /admin/* is then not registered on TCP at all (a request 404s, not 403s — this listener does not admit the surface exists), and is served on the socket instead with no key check")
+	fs.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present halts the server (every inference route 503s, in-flight generations are cancelled), absent resumes it. No HTTP call, socket, or signal needed; a supervisor halts with `touch` and resumes with `rm`. The model stays loaded either way; resume is instant. Off by default")
+	fs.IntVar(&cfg.haltExitCode, "halt-exit-code", 0, "K2: when nonzero, any halt (admin, -halt-file, or SIGUSR1) exits the process with this code once every cancelled generation has actually stopped, instead of staying up halted. For a supervisor whose restart policy must not undo a deliberate halt (RestartPreventExitStatus=N or the equivalent). 0 (default) means halt never exits the process")
+	fs.StringVar(&cfg.adminSocket, "admin-socket", "", fmt.Sprintf("K5: serve /admin/* (load/unload plus K1/K2's cancel/list/halt/resume) on a Unix socket instead of the TCP listener — mode 0600, unlinked and recreated fresh at start, no -api-key check (the socket's file permissions are the auth). Removes /admin/* from the TCP listener entirely (404, not 403) — see -allow-admin. Suggested path: %s. Off by default (empty = /admin/* stays on TCP, gated by -allow-admin as before). Control it with the same binary: `%[2]s status|ls|cancel <id>|halt [reason]|resume` talks to this socket (defaults to the suggested path above when -admin-socket is not repeated on that command line)", defaultAdminSocketPath(), filepath.Base(os.Args[0])))
+	fs.StringVar(&cfg.visionPath, "vision", "", "vision tower dir for a multimodal --model (auto-discovered per family: SigLIP+projector for Gemma 3, Qwen2.5-VL's own ViT, or Gemma 4's own encoder — N-35, docs/audit-2026-09-10.md); enables image content parts. Defaults to the --model dir when it contains a vision tower")
+	fs.StringVar(&cfg.decisionsTemplate, "decisions-template", "chat-v1", "POST /v1/systemone's prompt template: chat-v1 (the model's chat template; for instruct models) or bare-v1 (JEV's own, no chat template)")
+	fs.StringVar(&cfg.decisionsCal, "decisions-calibration", "", "calibration.json with per-kind temperatures for /v1/systemone (from goinfer-chat decisions-calibrate, fitted under the same template); none: every answer is uncalibrated")
+	fs.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
+	fs.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
+		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
+		"OpenAI `model` field. Append comma-separated per-model overrides of the global\n"+
+		"defaults below: `--model big=moe.giw,stream,weight-cache=16 --model fast=small.giw`\n"+
+		"streams only the big MoE. Keys: quant,lora,kv,kv-quant,ctx,stream,weight-cache,embed-int4.\n"+
+		"(Paths may not contain commas.)")
+	fs.StringVar(&cfg.drafter, "drafter", "", "directory of a pretrained BLOCK drafter (z-lab DFlash) paired with --model: the drafter proposes a whole block of tokens per round and the target verifies them in ONE batched pass, measured 1.6-1.8x on code/math and ~0.96x on open chat (docs/spec/08). LOSSLESS — every emitted token is one the target's own argmax produced, so output is identical to plain greedy. Greedy only: a request with temperature, penalties or logit bias falls back to normal decoding automatically. Requires a resident GPU backend (--backend cuda); declines with a reason otherwise serve-only; goinfer-chat offers --spec ngram and --draft instead.")
+	sf.showVersion = fs.Bool("version", false, "print version, the backends COMPILED INTO this binary, and the Go toolchain, then exit. `backends:` is the compiled-in truth — --backend accepts names this build cannot run and falls back to cpu")
+	// The model-loading flags goinfer-chat shares — one registration, so the two binaries cannot drift.
+	sf.lf = loadflags.Register(fs, loadflags.Serve)
+	fs.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. native f32 on cuda, ~9x slower TTFT — N-35, docs/audit-2026-09-10.md: every quantized mode gets batched CUDA prefill, see -quant's own help above; only f32 falls back). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
+	fs.StringVar(&cfg.kvQuant, "kv-quant", "", "DEPRECATED — use --kv, which now covers the CPU cache too. When given, overrides the CPU KV cache alone: f32 | i8")
+	fs.Var(&cfg.adapters, "adapter", "compute-time LoRA adapter sharing a base model's resident weights: `serveName=baseName=dir`.\n"+
+		"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost ~base + N\n"+
+		"low-rank deltas — request the fine-tune via the OpenAI `model` field. Base must be a safetensors\n"+
+		"--model (dense, gated MLP; not MoE/gemma4/qwen3.5). Incompatible with --stream-weights.")
+	fs.StringVar(&cfg.name, "served-model-name", "", "served id for a single unnamed --model (default: file/dir basename)")
+	fs.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled in RAM for prompt-prefix KV reuse (0 disables); on Metal, CUDA and WebGPU, also how many GPU KV slots a resident model keeps (clamped by its memory guard)")
+	fs.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm session's KV to -session-dir once it's been idle this long, faulting it back on the next matching request (e.g. 10m; 0 = off). Lets a small-RAM box serve many intermittent chats. Needs -session-dir and -kv-sessions > 0")
+	fs.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
+	fs.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
+	fs.IntVar(&cfg.maxConcurrent, "max-concurrent", 4, "generations one CPU model may run at once, each on its own session KV (capped by -kv-sessions; GPU-resident, weight-streaming and vision models always run one; 1 = serialized)")
+	fs.Func("cpu-batch", "auto|on|off: whether concurrent CPU generations of one model join their decode tokens into one batched forward (MC3c step 2; replies are bit-identical either way). auto (the default) batches models with at least 2 GiB of dense weights, where it measured 2.25-2.41x the independent workers on a 7B (1.38-1.54x on an M1 Pro), and keeps smaller models on the workers", func(v string) error {
+		switch v {
+		case "auto":
+			cfg.cpuBatch = decoder.CPUBatchAuto
+		case "on":
+			cfg.cpuBatch = decoder.CPUBatchOn
+		case "off":
+			cfg.cpuBatch = decoder.CPUBatchOff
+		default:
+			return fmt.Errorf("want auto, on or off")
+		}
+		return nil
+	})
+	fs.IntVar(&cfg.prefillChunk, "prefill-chunk", 512, "on a GPU-resident model running several generations at once (MC3), prefill a long prompt that arrives while others are decoding in chunks of this many tokens, one decode step between chunks, instead of stalling them for the whole prompt (replies are unchanged: Metal's prefill is chunk-invariant; 512 graded 2026-09-27: the decoders' longest stall 0.23x); 0 = off")
+	fs.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")
+	fs.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")
+	fs.DurationVar(&cfg.unloadDrainWait, "unload-drain-wait", 5*time.Second, "how long POST /admin/models/unload waits for in-flight requests to drain before returning 202 (native memory is freed as they finish either way; the model is unroutable immediately). ?wait=false returns 202 at once")
+	fs.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth. Wins on copy-heavy traffic (code edits / RAG / agent loops) on the CPU backend; output is identical (greedy bit-exact, sampled in-distribution incl. temperature/top-k/p/min-p + repetition penalties + logit bias). On greedy constrained/tool requests (response_format / tool grammar) it switches to grammar-fused drafting — the grammar's forced bytes are drafted for free, fused with the n-gram source. Auto-falls back to plain decode per-request when the sampler isn't yet supported on the spec path (e.g. constrained + temperature>0) goinfer-chat has the same --spec ngram, and additionally --draft (a separate small draft model).")
+	fs.BoolVar(&cfg.specAdaptive, "spec-adaptive", false, "MC4 candidate (docs/tasks/task-concurrency-2026-09.md): with -spec ngram on a resident whose decode can batch (MC3), keep MC3's concurrency instead of forcing one generation at a time — a generation speculates only while it is alone, joining MC3's batched decode at a round boundary when others arrive, and resumes speculating after 8 consecutive rounds alone. Output is unaffected (the same lossless verify either way). No effect without -spec ngram, or on a resident MC3 cannot batch.")
+	fs.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
+	fs.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
+	fs.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
+	return sf
+}
+
 func Main() {
 	// Subcommand dispatch, before flag.Parse so `pull` gets its own flag set. Shares one
 	// implementation with `goinfer-chat pull` (internal/pullcmd) rather than repeating the
@@ -381,69 +457,9 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
 		return
 	}
-	var (
-		cfg     config
-		addr    = flag.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; use 0.0.0.0:8080 to expose, and set -api-key and -tls-cert/-tls-key — or put a TLS-terminating reverse proxy in front — when you do)")
-		apiKey  = flag.String("api-key", "", "optional shared secret; when set, every request must send it as `Authorization: Bearer <key>` or `x-api-key: <key>`. Falls back to $GOINFER_API_KEY. REQUIRED with -allow-admin.")
-		tlsCert = flag.String("tls-cert", "", "PEM certificate file; with -tls-key, serves HTTPS instead of plaintext HTTP. Without it, -api-key and every prompt/completion travel in cleartext — fine on loopback, not on a shared network. For ACME/auto-renewal, put a reverse proxy (Caddy, nginx, Traefik) in front instead and leave this unset.")
-		tlsKey  = flag.String("tls-key", "", "PEM private key file, paired with -tls-cert")
-	)
-	flag.StringVar(&cfg.sessionDir, "session-dir", "", "optional dir to persist/restore KV sessions across restarts (.giw-kv snapshots)")
-	flag.StringVar(&cfg.jobDir, "job-dir", "", "J2 (task-work-queue-2026-09.md): optional dir for a durable job journal — one JSONL line per generation state transition (pending/running/done/failed/cancelled), 0700/0600 permissions matching -session-dir. On restart, any job still 'running' at the last recorded transition is marked 'interrupted', never silently 'failed'. Off by default: every generation still gets an in-memory job record, just no durability across a restart")
-	flag.BoolVar(&cfg.web, "web", false, "serve a local browser UI at / — chat with the loaded model and pull GGUF checkpoints from HuggingFace, on the same server and the same /v1 routes any other client uses (one embedded HTML file; no external assets, so it works offline). Off by default: the page is static, but its pull route starts a caller-named multi-gigabyte download and writes it to disk. On a non-loopback bind the existing -api-key requirement applies as usual")
-	flag.BoolVar(&cfg.allowAdmin, "allow-admin", false, "enable /admin/* on THIS (TCP) listener — model load/unload (loads attacker-named paths), GET /admin/generations, POST /admin/generations/{id}/cancel, POST /admin/halt, POST /admin/resume (deliberate opt-in; requires -api-key). A /v1 client holding the same key can reach every one of these routes too, including halt/resume. Ignored when -admin-socket is set: /admin/* is then not registered on TCP at all (a request 404s, not 403s — this listener does not admit the surface exists), and is served on the socket instead with no key check")
-	flag.StringVar(&cfg.haltFile, "halt-file", "", "K2: poll this path every 250ms — present halts the server (every inference route 503s, in-flight generations are cancelled), absent resumes it. No HTTP call, socket, or signal needed; a supervisor halts with `touch` and resumes with `rm`. The model stays loaded either way; resume is instant. Off by default")
-	flag.IntVar(&cfg.haltExitCode, "halt-exit-code", 0, "K2: when nonzero, any halt (admin, -halt-file, or SIGUSR1) exits the process with this code once every cancelled generation has actually stopped, instead of staying up halted. For a supervisor whose restart policy must not undo a deliberate halt (RestartPreventExitStatus=N or the equivalent). 0 (default) means halt never exits the process")
-	flag.StringVar(&cfg.adminSocket, "admin-socket", "", fmt.Sprintf("K5: serve /admin/* (load/unload plus K1/K2's cancel/list/halt/resume) on a Unix socket instead of the TCP listener — mode 0600, unlinked and recreated fresh at start, no -api-key check (the socket's file permissions are the auth). Removes /admin/* from the TCP listener entirely (404, not 403) — see -allow-admin. Suggested path: %s. Off by default (empty = /admin/* stays on TCP, gated by -allow-admin as before). Control it with the same binary: `%[2]s status|ls|cancel <id>|halt [reason]|resume` talks to this socket (defaults to the suggested path above when -admin-socket is not repeated on that command line)", defaultAdminSocketPath(), filepath.Base(os.Args[0])))
-	flag.StringVar(&cfg.visionPath, "vision", "", "vision tower dir for a multimodal --model (auto-discovered per family: SigLIP+projector for Gemma 3, Qwen2.5-VL's own ViT, or Gemma 4's own encoder — N-35, docs/audit-2026-09-10.md); enables image content parts. Defaults to the --model dir when it contains a vision tower")
-	flag.StringVar(&cfg.decisionsTemplate, "decisions-template", "chat-v1", "POST /v1/systemone's prompt template: chat-v1 (the model's chat template; for instruct models) or bare-v1 (JEV's own, no chat template)")
-	flag.StringVar(&cfg.decisionsCal, "decisions-calibration", "", "calibration.json with per-kind temperatures for /v1/systemone (from goinfer-chat decisions-calibrate, fitted under the same template); none: every answer is uncalibrated")
-	flag.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
-	flag.Var(&cfg.models, "model", "generative model: a .gguf/.giw file, an HF dir, or a reference that is fetched on first use — hf:<owner>/<repo>:<quant> (e.g. hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m) or demo:<tier>. A reference is sha256-verified and cached; a path is used as-is. Repeatable\n"+
-		"as `name=path` to serve a model zoo from one process; requests route on the\n"+
-		"OpenAI `model` field. Append comma-separated per-model overrides of the global\n"+
-		"defaults below: `--model big=moe.giw,stream,weight-cache=16 --model fast=small.giw`\n"+
-		"streams only the big MoE. Keys: quant,lora,kv,kv-quant,ctx,stream,weight-cache,embed-int4.\n"+
-		"(Paths may not contain commas.)")
-	flag.StringVar(&cfg.drafter, "drafter", "", "directory of a pretrained BLOCK drafter (z-lab DFlash) paired with --model: the drafter proposes a whole block of tokens per round and the target verifies them in ONE batched pass, measured 1.6-1.8x on code/math and ~0.96x on open chat (docs/spec/08). LOSSLESS — every emitted token is one the target's own argmax produced, so output is identical to plain greedy. Greedy only: a request with temperature, penalties or logit bias falls back to normal decoding automatically. Requires a resident GPU backend (--backend cuda); declines with a reason otherwise serve-only; goinfer-chat offers --spec ngram and --draft instead.")
-	showVersion := flag.Bool("version", false, "print version, the backends COMPILED INTO this binary, and the Go toolchain, then exit. `backends:` is the compiled-in truth — --backend accepts names this build cannot run and falls back to cpu")
-	// The model-loading flags goinfer-chat shares — one registration, so the two binaries cannot drift.
-	lf := loadflags.Register(flag.CommandLine, loadflags.Serve)
-	flag.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. native f32 on cuda, ~9x slower TTFT — N-35, docs/audit-2026-09-10.md: every quantized mode gets batched CUDA prefill, see -quant's own help above; only f32 falls back). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
-	flag.StringVar(&cfg.kvQuant, "kv-quant", "", "DEPRECATED — use --kv, which now covers the CPU cache too. When given, overrides the CPU KV cache alone: f32 | i8")
-	flag.Var(&cfg.adapters, "adapter", "compute-time LoRA adapter sharing a base model's resident weights: `serveName=baseName=dir`.\n"+
-		"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost ~base + N\n"+
-		"low-rank deltas — request the fine-tune via the OpenAI `model` field. Base must be a safetensors\n"+
-		"--model (dense, gated MLP; not MoE/gemma4/qwen3.5). Incompatible with --stream-weights.")
-	flag.StringVar(&cfg.name, "served-model-name", "", "served id for a single unnamed --model (default: file/dir basename)")
-	flag.IntVar(&cfg.kvSessions, "kv-sessions", 4, "number of conversations to keep prefilled in RAM for prompt-prefix KV reuse (0 disables); on Metal, CUDA and WebGPU, also how many GPU KV slots a resident model keeps (clamped by its memory guard)")
-	flag.DurationVar(&cfg.kvIdleDemote, "kv-idle-demote", 0, "tiered KV: demote a warm session's KV to -session-dir once it's been idle this long, faulting it back on the next matching request (e.g. 10m; 0 = off). Lets a small-RAM box serve many intermittent chats. Needs -session-dir and -kv-sessions > 0")
-	flag.IntVar(&cfg.kvDemotedMax, "kv-demoted-max", 64, "tiered KV: max demoted (on-disk) sessions to keep; older ones are dropped (only with -kv-idle-demote)")
-	flag.IntVar(&cfg.maxQueue, "max-queue", 8, "per-model backpressure: max queued requests before 429 (0 = unbounded)")
-	flag.IntVar(&cfg.maxConcurrent, "max-concurrent", 4, "generations one CPU model may run at once, each on its own session KV (capped by -kv-sessions; GPU-resident, weight-streaming and vision models always run one; 1 = serialized)")
-	flag.Func("cpu-batch", "auto|on|off: whether concurrent CPU generations of one model join their decode tokens into one batched forward (MC3c step 2; replies are bit-identical either way). auto (the default) batches models with at least 2 GiB of dense weights, where it measured 2.25-2.41x the independent workers on a 7B (1.38-1.54x on an M1 Pro), and keeps smaller models on the workers", func(v string) error {
-		switch v {
-		case "auto":
-			cfg.cpuBatch = decoder.CPUBatchAuto
-		case "on":
-			cfg.cpuBatch = decoder.CPUBatchOn
-		case "off":
-			cfg.cpuBatch = decoder.CPUBatchOff
-		default:
-			return fmt.Errorf("want auto, on or off")
-		}
-		return nil
-	})
-	flag.IntVar(&cfg.prefillChunk, "prefill-chunk", 512, "on a GPU-resident model running several generations at once (MC3), prefill a long prompt that arrives while others are decoding in chunks of this many tokens, one decode step between chunks, instead of stalling them for the whole prompt (replies are unchanged: Metal's prefill is chunk-invariant; 512 graded 2026-09-27: the decoders' longest stall 0.23x); 0 = off")
-	flag.IntVar(&cfg.maxInflight, "max-inflight", 128, "global cap on concurrent inference requests, bounding the pre-queue stage (JSON+image decode, tokenization, template render, vision Forward) that runs before the per-model queue; a full cap returns 503 Retry-After (0 = unbounded)")
-	flag.Int64Var(&cfg.maxBodyBytes, "max-body-bytes", 0, "cap on request body size in bytes; a larger body is rejected 413 before it is read. 0 = derive from the model's context window (a body that could never fit is rejected up front). The vision endpoints get at least 32 MiB on top for base64 image data")
-	flag.DurationVar(&cfg.unloadDrainWait, "unload-drain-wait", 5*time.Second, "how long POST /admin/models/unload waits for in-flight requests to drain before returning 202 (native memory is freed as they finish either way; the model is unroutable immediately). ?wait=false returns 202 at once")
-	flag.StringVar(&cfg.spec, "spec", "", "speculative decoding: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth. Wins on copy-heavy traffic (code edits / RAG / agent loops) on the CPU backend; output is identical (greedy bit-exact, sampled in-distribution incl. temperature/top-k/p/min-p + repetition penalties + logit bias). On greedy constrained/tool requests (response_format / tool grammar) it switches to grammar-fused drafting — the grammar's forced bytes are drafted for free, fused with the n-gram source. Auto-falls back to plain decode per-request when the sampler isn't yet supported on the spec path (e.g. constrained + temperature>0) goinfer-chat has the same --spec ngram, and additionally --draft (a separate small draft model).")
-	flag.BoolVar(&cfg.specAdaptive, "spec-adaptive", false, "MC4 candidate (docs/tasks/task-concurrency-2026-09.md): with -spec ngram on a resident whose decode can batch (MC3), keep MC3's concurrency instead of forcing one generation at a time — a generation speculates only while it is alone, joining MC3's batched decode at a round boundary when others arrive, and resumes speculating after 8 consecutive rounds alone. Output is unaffected (the same lossless verify either way). No effect without -spec ngram, or on a resident MC3 cannot batch.")
-	flag.StringVar(&cfg.embedPath, "embed-model", "", "embedding model: a CodeRankEmbed HF dir (config.json + model.safetensors + tokenizer.json) for /v1/embeddings")
-	flag.StringVar(&cfg.embedQuant, "embed-quant", "f32", "embedding weight precision: f32 | q8")
-	flag.StringVar(&cfg.embedName, "embed-served-model-name", "", "embedding model id reported by /v1/models (default: dir basename)")
+	sf := registerFlags(flag.CommandLine)
 	flag.Parse()
+	cfg, addr, apiKey, tlsCert, tlsKey, showVersion, lf := sf.cfg, sf.addr, sf.apiKey, sf.tlsCert, sf.tlsKey, sf.showVersion, sf.lf
 	if *showVersion {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
 		return
