@@ -1,8 +1,12 @@
 # goinfer
 
 **Run open-weight LLMs in pure Go — one cgo-free static binary, portable by default and
-native-GPU-fast when you want it.** 35 model families, HuggingFace-parity-gated, with
+native-GPU-fast when you want it.** 37 model families, HuggingFace-parity-gated, with
 schema-constrained structured output. No Python, no llama.cpp, no CUDA toolkit.
+
+**[goinfer.dev](https://goinfer.dev)** — the [models](https://goinfer.dev/models/) it runs (one page per family),
+[downloads](https://goinfer.dev/download/), [docs](https://goinfer.dev/docs/), and the
+[inference primer](https://goinfer.dev/book/). This page is install, first run, and what it is and is not.
 
 ![goinfer chat — an entire LLM in one file](docs/assets/demo.gif)
 
@@ -64,43 +68,15 @@ skip that step and an instruct model degenerates into repeating itself.
 
 ## Download and run
 
-**From nothing to an answer in 25 seconds** — download, pull a model, get a reply. Measured on an
-Apple M1 Pro / 16 GB against Ollama 0.32.5 doing the same thing on the same box: **25 s vs 33 s**,
-from an 8 MB binary with no daemon to install and nothing left running afterwards
-([`docs/measurements/cold-user-2026-09-06.md`](docs/measurements/cold-user-2026-09-06.md),
-scenario E). That leg is a cold start only; steady-state decode on that machine is a separate
-measurement. On **v0.17.1** — a Mac asset confirmed carrying Metal (`backends: cpu metal`,
-`decode path: metal-resident`, both engines confirmed offloaded to GPU) — Qwen2.5-Coder-1.5B,
-q4_K_M, interleaved: **goinfer ~13–18% behind Ollama**
-([`docs/measurements/cold-user-2026-09-07-macbook-arm64.md`](docs/measurements/cold-user-2026-09-07-macbook-arm64.md),
-scenario E; `docs/benchmarks.md` §B3 has the numbers and this run's caveats — 2 interleaved runs,
-not the section's own best-of-3 protocol). This replaces an earlier v0.16.0-asset reading here,
-which R2 found was measuring a Mac binary with no Metal backend linked in, not the engine.
+Binaries are on the [latest release](https://github.com/townsendmerino/goinfer/releases/latest) and the
+[download page](https://goinfer.dev/download/) (macOS / Linux / Windows, Intel + ARM; sizes and sha256 are listed there):
 
-On a Linux box with a GPU, cold start is network-bound (**56.5 s**, dominated by a **1.71 GiB**
-binary download at **~31.5 MB/s** — not a fixed number, a function of your connection) and
-steady-state CUDA decode, matched quant, interleaved, client-side tok/s from first token to
-last: goinfer **192.8 tok/s** vs Ollama **183.6 tok/s**, ~5% ahead
-([`docs/measurements/cold-user-2026-09-06-nobara-pc.md`](docs/measurements/cold-user-2026-09-06-nobara-pc.md),
-scenario E) — consistent with `docs/benchmarks.md` §B8's own formally-provenanced anchor table,
-whose shallow-KV-depth cells (this was a short completion, effectively depth ≈128) show goinfer
-ahead of Ollama on the same quant class. §B8's deeper cells showed Ollama pulling ahead as context
-grew; since flash-decode, the pre-registered sweep of 2026-09-25 has goinfer level or ahead at 10 of
-12 cells from 128 to 8,000 tokens and behind at none, with two void
-([`docs/measurements/peer-claim-2026-09-25.md`](docs/measurements/peer-claim-2026-09-25.md)). Measure it yourself rather than trust either
-number: `scripts/bench_peer.py` is the committed harness both of the above used underneath —
-same weights both sides, decode-only, interleaved, server-restarted per cell, provenance
-stamped into the output file.
-
-Binaries on the [latest release](https://github.com/townsendmerino/goinfer/releases/latest)
-(macOS / Linux / Windows, Intel + ARM). Sizes are the darwin-arm64 assets of v0.16.0:
-
-| asset | size | what it is |
-|---|---|---|
-| `goinfer-serve-<os>-<arch>` | ~16 MB | the **server** — OpenAI + Anthropic APIs, web UI, GPU built in |
-| `goinfer-chat-<os>-<arch>` | 8.3 MB | the single-shot runtime; point it at your own GGUF |
-| `goinfer-chat-0.5b-<os>-<arch>` | 652 MB | runtime **and** model in one file — no download, no install |
-| `goinfer-chat-1.5b-<os>-<arch>` | 1.81 GB | same, with the 1.5B coder model |
+| asset | what it is |
+|---|---|
+| `goinfer-serve-<os>-<arch>` | the **server** — OpenAI + Anthropic APIs, web UI, GPU built in |
+| `goinfer-chat-<os>-<arch>` | the single-shot runtime; point it at your own GGUF |
+| `goinfer-chat-0.5b-<os>-<arch>` | runtime **and** model in one file — no download, no install |
+| `goinfer-chat-1.5b-<os>-<arch>` | same, with the 1.5B coder model |
 
 ```bash
 # model included — nothing else to fetch
@@ -110,7 +86,18 @@ Binaries on the [latest release](https://github.com/townsendmerino/goinfer/relea
 ./goinfer-chat-darwin-arm64 --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 ```
 
-Don't have one yet? The runtime can fetch a GGUF straight from HuggingFace — no extra tool
+**Against Ollama, honestly.** From nothing to an answer on an M1 Pro / 16 GB: **25 s vs 33 s**, from an 8 MB binary
+with no daemon ([cold-user run](docs/measurements/cold-user-2026-09-06.md), scenario E; a cold start only). Steady-state
+decode is mixed and machine-dependent: on CUDA, matched quant, interleaved, goinfer **192.8 tok/s** vs Ollama
+**183.6 tok/s** (~5% ahead, short context —
+[record](docs/measurements/cold-user-2026-09-06-nobara-pc.md)), and level or ahead at 10 of 12 cells from 128 to 8,000
+tokens with none behind and two void, after flash-decode ([peer sweep](docs/measurements/peer-claim-2026-09-25.md)); on Apple Metal
+(v0.17.1, Qwen2.5-Coder-1.5B q4_K_M) **~13–18% behind**
+([record](docs/measurements/cold-user-2026-09-07-macbook-arm64.md)). Every figure names its machine, checkpoint,
+quant and date in [`docs/benchmarks.md`](docs/benchmarks.md); measure it yourself with `scripts/bench_peer.py` — same
+weights both sides, decode-only, interleaved, server restarted per cell.
+
+Don't have a model yet? The runtime can fetch a GGUF straight from HuggingFace — no extra tool
 to install, and no `huggingface-cli`:
 
 ```bash
@@ -124,32 +111,25 @@ to install, and no `huggingface-cli`:
 ./goinfer-chat-darwin-arm64 pull demo:1.5b
 ```
 
-Interrupted transfers resume where they stopped. `goinfer-serve pull …` is the same command.
-
-Or skip the separate step entirely — `--model` takes the same reference and fetches it on first
-use, so one command goes from nothing to a running endpoint:
+Interrupted transfers resume where they stopped; `goinfer-serve pull …` is the same command. `--model` takes the same
+reference and fetches it on first use, so one command goes from nothing to a running endpoint:
 
 ```bash
 goinfer-serve -model hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m
 goinfer-chat  --model demo:0.5b
 ```
 
-A plain path still means exactly what it always did; only the `hf:`/`demo:` prefixes are new.
+Downloads land in your user cache dir and print the exact `--model` command to run them. Anonymous only: a gated repo
+is detected before the transfer starts and named, rather than failing after a multi-gigabyte download. A plain path
+still means exactly what it always did; only the `hf:`/`demo:` prefixes are new.
 
-It lands in your user cache dir and prints the exact `--model` command to run it. Anonymous
-only: a gated repo is detected before the transfer starts and named, rather than failing after
-a multi-gigabyte download — community GGUF re-uploads are usually ungated and work directly.
-
-Prefer a browser? `serve -web` adds a local UI at `http://127.0.0.1:8080` — chat with the loaded
-model, browse a HuggingFace repo, and pull a checkpoint with live progress:
+Prefer a browser? `serve -web` adds a local UI at `http://127.0.0.1:8080` — chat, browse a HuggingFace repo, and pull a
+checkpoint with live progress. One embedded HTML file, no external assets, off by default, and `-web` alone is enough
+to start with no model at all:
 
 ```bash
 goinfer-serve -web -model ~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 ```
-
-One embedded HTML file, no external assets, so it works offline like everything else here. Off by
-default, and `-web` alone is enough to start with no model at all — which is how you use it to go
-and fetch your first one.
 
 ### Bake any model into its own single file
 
@@ -174,8 +154,9 @@ go run ./demo/chat --model ~/models/gemma-4-E2B_q4_0-it.gguf
 
 ## Which model to download
 
-`goinfer-chat models` lists the checkpoints this project has actually run — size, quantization,
-what each is good for, and what it costs to run:
+[**goinfer.dev/models**](https://goinfer.dev/models/) has a page per family and the checkpoints this project has
+actually run — size, quantization, what each is good for, what it costs to run, and the sha256 the download is
+verified against. The same list is in your terminal:
 
 ```bash
 # <!-- smoke-help --> lists known-good checkpoints; every row traces to a parity-gated family
@@ -184,10 +165,9 @@ goinfer-chat models
 goinfer-chat pull qwen2.5-coder-0.5b        # short name, no repo path to look up
 ```
 
-Each entry derives from a row in [`docs/capability-matrix.json`](docs/capability-matrix.json), so
-nothing is listed that the parity gates do not back, and each carries a sha256 the download is
-verified against. **goinfer hosts no weights** — downloads come from Hugging Face, and any other
-GGUF works too via the explicit `owner/repo:quant` form.
+Both derive from [`docs/capability-matrix.json`](docs/capability-matrix.json), so nothing is listed that the parity
+gates do not back. **goinfer hosts no weights** — downloads come from Hugging Face, and any other GGUF works too via
+the explicit `owner/repo:quant` form.
 
 ## Which quantization to use
 
@@ -201,12 +181,11 @@ not int8 quality. [`docs/quantization.md`](docs/quantization.md) states which qu
 stands behind, which it has measured and refused, and — importantly — which read paths have no
 quality evidence at all.
 
-## Running a model bigger than your RAM — or your GPU
+## Bigger than your RAM or your GPU
 
-A 20-35B-class MoE does not fit in 16 GB of RAM, or on an 8 GB GPU, and loading it anyway will
-drive your machine into swap (or your CUDA allocator into an OOM) before anything says so.
-The RAM-overflow and GPU-overflow examples below both use the checkpoint this project actually
-validates at that size, rather than a size class with nothing behind it to download:
+A 20-35B-class MoE does not fit in 16 GB of RAM or on an 8 GB GPU, and loading it anyway drives the machine into swap
+(or the CUDA allocator into an OOM) before anything says so. Two flags cover it, and both examples use a checkpoint this
+project actually validates at that size:
 
 ```bash
 # <!-- smoke-model --> a 20-35B-class MoE, real and resolvable — goinfer-chat models for the full entry
@@ -218,46 +197,18 @@ goinfer-chat pull gpt-oss-20b
 goinfer-serve -stream-weights -weight-cache 6 -model ~/models/gpt-oss-20b-MXFP4.gguf
 ```
 
-Resident memory is then capped near `-weight-cache` rather than the model size, because only the
-experts a token actually routes to are resident. Measured on an M1 Pro / 16 GB with a 21 GB
-35B-A3B (a different checkpoint at the same size class — the mechanism is the same either way):
-without the flag, **+7.8 GB of swap in five seconds**; with it, RSS peaked at **8.95 GB** and fell
-back to 2.7 GB, with zero swapouts
-([`docs/measurements/cold-user-2026-09-06.md`](docs/measurements/cold-user-2026-09-06.md),
-scenario D).
+**RAM:** `-stream-weights` caps resident memory near `-weight-cache`, because only the experts a token routes to are
+resident (a 21 GB 35B-A3B on an M1 Pro / 16 GB: without it **+7.8 GB of swap in five seconds**, with it RSS peaked at
+**8.95 GB** with zero swapouts). This is `goinfer-serve`'s job; the single-shot `goinfer-chat` holds all weights resident.
+**Caution:** five families (gemma4, laguna, granite, nemotron, llama4) still build resident before their one-time
+transcode — watch the first `-stream-weights` run of one, don't walk away from it.
 
-**Update on `gpt-oss-20b` specifically: its one-time sidecar transcode now streams (S2,
-2026-09-23) and a real run showed swap-used flat throughout** —
-[`docs/measurements/transcode-streaming-2026-09-23.md`](docs/measurements/transcode-streaming-2026-09-23.md).
-That run did not finish end-to-end (this machine's free disk ran out mid-write, an unrelated
-capacity limit, not a memory one), so treat this as strong evidence rather than a completed proof
-until a disk-headroom-permitting rerun confirms the finished bundle byte-identical to a resident
-build. **The other five `needsResidentSerialize` families (gemma4, laguna, granite, nemotron,
-llama4) still build resident before they can be transcoded at all** — the same historical risk
-this whole section describes, for those families' one-time transcode specifically.
-`GOINFER_SWAP_GUARD`'s load-time half (armed by default) will abort a resident build if swap grows
-too far, but a real run on gpt-oss-20b (before its own S2 fix) found it does not always hold the
-line unassisted under a fast enough burst
-([`docs/measurements/swap-tripwire-2026-09-22.md`](docs/measurements/swap-tripwire-2026-09-22.md)).
-Treat the first `-stream-weights` run of any of those five families' checkpoints with the same
-caution as a direct load of one — watch it, don't walk away from it.
-
-**This is `goinfer-serve`'s job, not `goinfer-chat`'s.** The single-shot chat runtime holds all
-weights resident by design; it has no `-stream-weights`. If your model is bigger than your RAM,
-reach for the server.
-
-**On cuda/metal, GPU means fully resident, full stop.** Neither backend has a partial/"staged"
-GPU path (R9, [`docs/measurements/cold-user-2026-09-06-nobara-pc.md`](docs/measurements/cold-user-2026-09-06-nobara-pc.md)):
-a model or architecture that does not build the resident runner declines straight to CPU, at
-whatever quant you asked for. A dense model bigger than your card has no partial-GPU story here —
-only `-stream-weights` (above, RAM-side) or the CPU. **A MoE does**, and that is
-`-moe-cache-experts`: the non-expert core stays resident while a slot cache of the experts a
-token actually routes to streams host→VRAM per token on demand, so the whole model never needs
-to fit VRAM. Measured on this project's own most-benchmarked checkpoint at this size,
-`gemma-4-26b-a4b` (26B-A4B, 128 experts top-8; [`docs/benchmarks.md`](docs/benchmarks.md) §B4/§B4.1),
-on an RTX 2070 SUPER 8 GB: **40.2 tok/s** at ctx 2048, with every expert kept on the GPU (the DMA overlap;
-[`docs/measurements/peer-claim-2026-09-25.md`](docs/measurements/peer-claim-2026-09-25.md) cell c) — capacity-bound
-(PCIe host→VRAM streaming), not a kernel or MoE deficiency:
+**GPU:** on cuda/metal, GPU means fully resident. A MoE bigger than your card has `-moe-cache-experts`: the non-expert
+core stays resident and the experts a token routes to stream host→VRAM on demand — **40.2 tok/s** at ctx 2048 for
+`gemma-4-26b-a4b` (26B-A4B, 128 experts top-8) on an 8 GB RTX 2070 SUPER with the DMA overlap
+([`docs/benchmarks.md`](docs/benchmarks.md) §B4/§B4.1, [peer sweep](docs/measurements/peer-claim-2026-09-25.md) cell c),
+capacity-bound (PCIe host→VRAM streaming), not a kernel or MoE deficiency. A dense model bigger than your card has no
+partial-GPU story here.
 
 ```bash
 # <!-- smoke-model --> the checkpoint this project has the most measurements on at this size
@@ -269,45 +220,23 @@ goinfer-chat pull gemma-4-26b-a4b
 goinfer-serve -backend cuda -moe-cache-experts -model ~/models/gemma-4-26B_q4_0-it.gguf
 ```
 
-`gpt-oss-20b` (`goinfer-chat pull gpt-oss-20b`; 12 GB at native MXFP4) is a second real option at
-this size class — its own CUDA resident gate is measured on an 8 GB card too, see
-`docs/capability-matrix.md`'s gpt-oss row — with `-moe-cache-experts` results not yet as
-thoroughly measured as gemma-4-26b-a4b's.
+The evidence, the swap-tripwire history and the `gpt-oss-20b` caveats:
+[`docs/bigger-than-memory.md`](docs/bigger-than-memory.md).
 
-## Small devices — a Raspberry Pi, not a microcontroller
+## Small devices
 
-Because the whole build is `CGO_ENABLED=0`, a 64-bit ARM Linux board is an ordinary
-cross-compile and a copy; nothing on the board needs installing:
+Because the whole build is `CGO_ENABLED=0`, a 64-bit ARM Linux board is an ordinary cross-compile and a copy — nothing
+on the board needs installing:
 
 ```bash
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o goinfer-serve ./cmd/serve
 scp goinfer-serve pi@raspberrypi.local:
 ```
 
-The published `goinfer-serve-linux-arm64` asset works too — it carries the CUDA backend, which
-looks for `libcuda.so.1` at startup and declines to the CPU path when it is absent, so on a board
-with no NVIDIA driver it is simply the CPU server.
-
-What to expect, and what to check before quoting a number:
-
-- **Memory is the floor.** The smallest checkpoints this project vets are the 270M–0.5B
-  class; at int4 they want a few hundred MB for weights plus the KV cache, so a 512 MB board
-  (Pi Zero 2 W) is the low end, running one small model with a short context. Weights load
-  from a `.giw` bundle mapped from disk rather than copied into the heap, which is what makes
-  the low end reachable at all — see [`docs/giw-bundles.md`](docs/giw-bundles.md).
-- **The fast arm64 kernels need the DotProd extension (ARMv8.2 `SDOT`).** goinfer reads
-  the kernel's HWCAP at startup and uses `SDOT` where it exists — Cortex-A76 and newer, so a
-  Pi 5 — and the base NEON kernel where it does not (Cortex-A53/A72: Pi Zero 2 W, Pi 3, Pi 4).
-  Both are correct; the base kernel is several times slower.
-- **No board row is published yet.** The numbers in [`docs/benchmarks.md`](docs/benchmarks.md)
-  come from a MacBook and a desktop GPU box, and a Pi figure will appear there only once it has
-  been measured under the same rules (local disk, pinned versions, thermal note). Until then,
-  treat "a small model decodes at a usable rate on a Pi 5" as the expectation, not a claim.
-
-**Out of scope: microcontrollers and TinyGo.** An ESP32- or RP2040-class part has kilobytes to a
-few megabytes of RAM against a model that needs hundreds, so the gap is not one a compiler can
-close. TinyGo would also drop the hand-written `.s` kernels and most of `os`/`net/http`, which
-is the serving path. 32-bit ARM (`GOARCH=arm`) is not a target this project builds or tests.
+A 512 MB board (Pi Zero 2 W) is the low end, running one 270M–0.5B model with a short context; the fast arm64 kernels
+need the DotProd extension (Pi 5 and newer). **No Pi figure is published yet** — treat "a small model decodes at a usable
+rate on a Pi 5" as an expectation, not a claim. Microcontrollers and TinyGo are out of scope. Details:
+[`docs/small-devices.md`](docs/small-devices.md).
 
 ## A Go struct the model cannot violate
 
@@ -339,24 +268,17 @@ objects (required + optional, `additionalProperties:false`), arrays
 `enum`/`const`, and arbitrary nesting. A property-based test asserts that every
 constrained generation validates against its schema.
 
-**How sure was it?** `.CaptureConfidence(constrain.ConfidenceOptions{})` on the masker, then
-`masker.FieldConfidence(ids)` after generation, gives each enum, boolean and integer field the model's
-probability over what the schema allowed at the position that decided it. For an enum or boolean that comes
-with a distribution over the options. The server equivalent is `"goinfer_confidence": true` beside a
-`json_schema` `response_format`.
-- **What it is good for:** low-confidence answers are measurably wrong more often, so it is good for routing
-  ("ask a person below 0.7").
-- **What it is not:** the probability that the value is right. It is not calibrated
-  ([what it is and is not](docs/server.md)).
-- **Example:** [`examples/confidence`](examples/confidence/main.go) is a complete program.
+**How sure was it?** `.CaptureConfidence(...)` on the masker gives each enum, boolean and integer field the model's
+probability over what the schema allowed at the position that decided it (server: `"goinfer_confidence": true`
+beside a `json_schema` `response_format`). Good for routing ("ask a person below 0.7"); **not** the probability the
+value is right, and not calibrated ([what it is and is not](docs/server.md);
+[example](examples/confidence/main.go)).
 
-**Decisions.** `POST /v1/systemone` answers TypeSafe's decisions wire shape: a state plus named yes/no, choice or
-score questions in, a probability distribution per question out. It works by label scoring on the served model:
-one prefill per question and no decode. Clients written for TypeSafe, such as jevx and its SDKs, work against it
-once pointed at it ([recipe](docs/integrations/typesafe-jevx.md)).
-- **Not included:** TypeSafe's hosted model or a trained decision head. The probabilities are calibrated only when you
-  fit a temperature on your own labelled examples.
-- **Answer quality depends on the model.** goinfer's own measurement is pending ([details](docs/server.md)).
+**Decisions.** `POST /v1/systemone` answers TypeSafe's decisions wire shape by label scoring on the served model — one
+prefill per question, no decode — so clients written for TypeSafe, such as jevx and its SDKs, work against it
+([recipe](docs/integrations/typesafe-jevx.md)). Not included: TypeSafe's hosted model or a trained decision head.
+Answer quality depends on the model; goinfer's own measurement is pending ([details](docs/server.md)).
+
 
 ## What it is, and isn't
 
@@ -371,34 +293,22 @@ runs the weights itself, in-process. Longer form: [docs/positioning.md](docs/pos
 
 ## What it runs
 
-- **35 model families** (counted from the generated `docs/capability-matrix.md`, which the
-  `decoder` registry produces) — Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA,
-  GLM, Kimi, Granite, Nemotron, Mellum and more. Full generated map:
-  [docs/capability-matrix.md](docs/capability-matrix.md).
-- **All four sequence-mixing families** — softmax·GQA, gated-linear (DeltaNet), state-space
-  (Mamba-2), latent-KV (MLA) — plus dense and sparse-MoE.
-- **Loaders** — GGUF, safetensors, GPTQ, AWQ, and prequantized
-  [`.giw` bundles](docs/giw-bundles.md).
+- **37 model families** — Gemma 3/4, Qwen 2.5/3, Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA, GLM, Kimi, Granite,
+  Nemotron, Mellum and more; one page each at [goinfer.dev/models](https://goinfer.dev/models/), generated from the
+  `decoder` registry ([capability-matrix.md](docs/capability-matrix.md)).
+- **All four sequence-mixing families** — softmax·GQA, gated-linear (DeltaNet), state-space (Mamba-2), latent-KV
+  (MLA) — plus dense and sparse-MoE.
+- **Loaders** — GGUF, safetensors, GPTQ, AWQ, and prequantized [`.giw` bundles](docs/giw-bundles.md).
 - **Quantization** — f32, int8, int8int8, int4 (W4A8), with a
-  [HuggingFace logit-parity gate per family](docs/what-parity-gated-means.md). **What a given
-  parity run proves is scoped to the fixtures that machine has**, and a
-  missing fixture skips silently rather than failing — a run reading `28 ran / 20 skipped / 0
-  failed` is a pass. Measured on a MacBook 2026-08-31, all eleven GGUF-quant gates skipped for want
-  of a local checkpoint while int4 and one of three int8×int8 goldens ran. Quote a run's counts, not
-  the word "green": `docs/parity-coverage-policy.md` §"Scoped: a goldens green names the
-  quantizations that actually RAN".
-- **GPU** — WebGPU everywhere, plus cgo-free CUDA and Metal for dense and MoE models; anything
-  unsupported declines at load and falls back to CPU rather than dropping a feature silently.
-  See [docs/cuda-backend.md](docs/cuda-backend.md) and
-  [docs/gpu-residency-coverage.md](docs/gpu-residency-coverage.md).
-- **Tensor-core prompt prefill on CUDA** (new, 2026-09-05) — a fused FlashAttention-style
-  attention kernel and a tensor-core int4 GEMM, on by default for prompts of **512 tokens or
-  more**. End-to-end prefill is **3.9× faster** on a 1.5B int4 at a 3900-token prompt, and the
-  overhead-free gap to Ollama at depth narrows from 12.1× to **3.2×** (1.5B) and 14.5× to **1.9×**
-  (0.5B). Shorter prompts keep the exact path, because that is where a fidelity gate against an
-  f32 reference says the fast kernels do not earn their place; at depth the same gate finds them
-  **closer to that reference than the path they replaced**. `GOINFER_CUDA_FAST_PREFILL=0` restores
-  the previous behaviour in full. Details:
+  [HuggingFace logit-parity gate per family](docs/what-parity-gated-means.md). **What a given parity run proves is
+  scoped to the fixtures that machine has**, and a missing fixture skips silently rather than failing — quote a run's
+  counts (`28 ran / 20 skipped / 0 failed`), not the word "green": `docs/parity-coverage-policy.md` §"Scoped: a
+  goldens green names the quantizations that actually RAN".
+- **GPU** — WebGPU everywhere, plus cgo-free CUDA and Metal for dense and MoE models; anything unsupported declines at
+  load and falls back to CPU rather than dropping a feature silently. See [docs/cuda-backend.md](docs/cuda-backend.md)
+  and [docs/gpu-residency-coverage.md](docs/gpu-residency-coverage.md). On CUDA, prompts of 512 tokens or more use a
+  fused FlashAttention-style kernel and a tensor-core int4 GEMM (**3.9×** end-to-end prefill at a 3900-token prompt on a
+  1.5B int4; `GOINFER_CUDA_FAST_PREFILL=0` restores the previous path):
   [docs/measurements/prefill-l2l3-phase3-2026-09-05.md](docs/measurements/prefill-l2l3-phase3-2026-09-05.md).
 - **Serving** — OpenAI-compatible and Anthropic Messages endpoints, multi-model, vision,
   embeddings: [docs/server.md](docs/server.md). Pointing a real agent (Claude Code, opencode) at
@@ -412,21 +322,23 @@ runs the weights itself, in-process. Longer form: [docs/positioning.md](docs/pos
 
 ## Docs
 
-**New to how any of this works?** [**An inference primer for Go engineers**](https://goinfer.dev/book/)
-— eleven chapters on how a language model actually runs, written for someone who knows Go and does
-not know machine learning. Each chapter ends in a measured number from this repo. Source in
-[docs/book/](docs/book/); chapter 11, on how measurements in this tree have gone wrong, is the one
-to read if you only read one.
+The site is the readable front door: [**goinfer.dev**](https://goinfer.dev) — [models](https://goinfer.dev/models/),
+[download](https://goinfer.dev/download/), [docs](https://goinfer.dev/docs/), and
+[**an inference primer for Go engineers**](https://goinfer.dev/book/): eleven chapters on how a language model
+actually runs, for someone who knows Go and not machine learning, each ending in a measured number from this repo.
+Chapter 11, on how measurements in this tree have gone wrong, is the one to read if you only read one. Source in
+[docs/book/](docs/book/). The site is rebuilt when a release is cut, so the repo is the source of truth between
+releases.
 
 | page | what's in it |
 |---|---|
 | [docs/README.md](docs/README.md) | **the map of the docs** — what each kind of page is, and which ones are current claims |
-| [docs/book/](docs/book/) · [read online](https://goinfer.dev/book/) | the inference primer — concepts from zero, tied to measured numbers |
-| [docs/how-inference-works.md](docs/how-inference-works.md) | the same ground in ten minutes, anchored to specific source lines |
+| [docs/how-inference-works.md](docs/how-inference-works.md) | the same ground as the book in ten minutes, anchored to specific source lines |
 | [docs/server.md](docs/server.md) | the HTTP surface: OpenAI, Anthropic, multi-model, vision, embeddings, admin |
 | [docs/benchmarks.md](docs/benchmarks.md) | every measured number, each with machine, checkpoint, quant and date |
 | [docs/capability-matrix.md](docs/capability-matrix.md) | generated per-architecture support map |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | modules, packages, and how the pieces fit |
+| [docs/bigger-than-memory.md](docs/bigger-than-memory.md) · [docs/small-devices.md](docs/small-devices.md) | running past your RAM or GPU; running on a Raspberry Pi |
 | [docs/giw-bundles.md](docs/giw-bundles.md) | prequantized `.giw` bundles and `cmd/prequant` |
 | [docs/positioning.md](docs/positioning.md) | what goinfer is for, and what it is not |
 | [docs/api-tiers.md](docs/api-tiers.md) | which surfaces v1.0 will semver-bind |

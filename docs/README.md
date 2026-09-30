@@ -15,6 +15,8 @@ better starting point if you are picking something up.
 |---|---|
 | [**book/**](book/) · [read online](https://goinfer.dev/book/) | eleven-chapter inference primer for Go engineers — concepts from zero, each chapter ending in a measured number |
 | [task-download-and-load.md](tasks/task-download-and-load.md) | which checkpoints to download and what a load actually costs — plus why the load is compute-bound, not storage-bound |
+| [bigger-than-memory.md](bigger-than-memory.md) | running a model bigger than your RAM or your GPU: `-stream-weights`, `-moe-cache-experts`, the swap-tripwire history and which families still build resident first |
+| [small-devices.md](small-devices.md) | a Raspberry Pi, not a microcontroller: cross-compile and copy, what memory floor and CPU features to expect, and why no board figure is published yet |
 | [quantization.md](quantization.md) | which quants goinfer stands behind, which it measured and refused, and where there is no evidence — reading a format is not endorsing it |
 | [how-inference-works.md](how-inference-works.md) | the same ground in ~2,300 words, anchored to specific source lines. The code map |
 | [webgpu-primer.md](webgpu-primer.md) | orientation for anyone touching `gpu/` |
