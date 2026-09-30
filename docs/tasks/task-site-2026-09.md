@@ -1,7 +1,8 @@
 # Task: a site for goinfer — a browsable library, generated from the repo (S1–S8) — 2026-09
 
-> **Current, 2026-09-29. Built: the generator, Models (S2), Home (S1), Download (S4), the Docs shell (S3), the writeup
-> machinery (S8c) with the first writeup, and the book at `/book/`. Nothing is deployed until the first launch (S8e).**
+> **Current, 2026-09-29. LIVE at https://goinfer.dev (first launch 2026-09-29, a manual run of the `site` workflow). Built: the
+> generator, Models (S2), Home (S1), Download (S4), the Docs shell (S3), the writeup machinery (S8c) with the first writeup, and the
+> book at `/book/`. The old GitHub Pages address is a redirect stub.**
 > - **Owner decisions:**
 >   - the site changes **only when a release is cut** (S8d);
 >   - the 26B figure is **40.2 tok/s** (done);
@@ -18,7 +19,10 @@
 >   `REVIEW-batch1.md`. Setting `reviewed:` publishes one at the next release.
 > - **Left out of Home on purpose:** the mockup's "What didn't work" cards. Their figures are not traced to records yet,
 >   and no page in this plan sits behind them.
-> - **Waiting on the owner:** the first launch (S8e step 3), then the redirect stub (step 4).
+> - **Launch:** done (S8e steps 1–4). It needed a new Cloudflare token from the "Edit Cloudflare Workers" template: a first token with
+>   only Pages and DNS permissions failed with `Authentication error [code: 10000]`. Checked live afterwards: `/`, `/models/`,
+>   `/download/`, `/docs/`, `/different/` and `/book/` are 200, a chapter's `.html` URL 307s to its extensionless page, an unknown path
+>   is the 404 page, and no draft is linked. `www.goinfer.dev` is not attached (the optional step 5).
 > - **Open:**
 >   - writeups #17 and #20 wait on the embed-int4 Metal issue;
 >   - the writeups #1, #3–#12, #15, #17, #19, #20 are not written;

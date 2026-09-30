@@ -412,7 +412,7 @@ runs the weights itself, in-process. Longer form: [docs/positioning.md](docs/pos
 
 ## Docs
 
-**New to how any of this works?** [**An inference primer for Go engineers**](https://townsendmerino.github.io/goinfer/)
+**New to how any of this works?** [**An inference primer for Go engineers**](https://goinfer.dev/book/)
 — eleven chapters on how a language model actually runs, written for someone who knows Go and does
 not know machine learning. Each chapter ends in a measured number from this repo. Source in
 [docs/book/](docs/book/); chapter 11, on how measurements in this tree have gone wrong, is the one
@@ -421,7 +421,7 @@ to read if you only read one.
 | page | what's in it |
 |---|---|
 | [docs/README.md](docs/README.md) | **the map of the docs** — what each kind of page is, and which ones are current claims |
-| [docs/book/](docs/book/) · [read online](https://townsendmerino.github.io/goinfer/) | the inference primer — concepts from zero, tied to measured numbers |
+| [docs/book/](docs/book/) · [read online](https://goinfer.dev/book/) | the inference primer — concepts from zero, tied to measured numbers |
 | [docs/how-inference-works.md](docs/how-inference-works.md) | the same ground in ten minutes, anchored to specific source lines |
 | [docs/server.md](docs/server.md) | the HTTP surface: OpenAI, Anthropic, multi-model, vision, embeddings, admin |
 | [docs/benchmarks.md](docs/benchmarks.md) | every measured number, each with machine, checkpoint, quant and date |

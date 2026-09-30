@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The goinfer book has moved to goinfer.dev/book</title>
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://goinfer.dev/book/">
+<!-- This one file is served for every path of the old address (as index.html and as 404.html), so a link to
+     townsendmerino.github.io/goinfer/<page>.html lands on the same page under goinfer.dev/book/. Without script it
+     goes to the book's front page. -->
+<script>
+  var rest = location.pathname.replace(/^\/goinfer\/?/, "");
+  location.replace("https://goinfer.dev/book/" + rest + location.search + location.hash);
+</script>
+<noscript><meta http-equiv="refresh" content="0; url=https://goinfer.dev/book/"></noscript>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:34rem;margin:15vh auto;padding:0 1rem}</style>
+</head>
+<body>
+<p>The goinfer book has moved to <a href="https://goinfer.dev/book/">goinfer.dev/book</a>.</p>
+</body>
+</html>

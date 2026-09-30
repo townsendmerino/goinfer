@@ -211,7 +211,7 @@ func TestWebUI_pageIsSelfContained(t *testing.T) {
 	// "anything goes" — a DIFFERENT http(s) reference slipping in later (a tracking pixel, a
 	// font @import, a fetch to an analytics host) is still exactly the kind of silent
 	// offline-break this test exists to catch.
-	bookLink := `<a class="book-link" href="https://townsendmerino.github.io/goinfer/" target="_blank" rel="noopener">`
+	bookLink := `<a class="book-link" href="https://goinfer.dev/book/" target="_blank" rel="noopener">`
 	if !strings.Contains(page, bookLink) {
 		t.Errorf("embedded page's book link is missing or no longer matches the pinned shape: want %q", bookLink)
 	}

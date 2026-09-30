@@ -1,34 +1,27 @@
-# Publishes docs/book/ — and ONLY docs/book/ — to GitHub Pages.
+# The old address of the book, kept alive as a redirect. The book itself is built and served by site.yml at
+# https://goinfer.dev/book/ (owner decision 2026-09-29: one host; docs/tasks/task-site-2026-09.md S5).
 #
-# WHY A WORKFLOW RATHER THAN "deploy from branch /docs": serving /docs would publish
-# every tracked file under it — ~220 of them, including docs/measurements/ (104),
-# docs/completed/ (59), docs/prompts/ (24) and docs/spec/ (13). The repo is public so
-# that is not a disclosure problem, but it would make the front door of the site a
-# directory listing of internal working documents instead of an eleven-chapter primer.
-# This job stages the book into a clean directory and builds only that.
+# WHY THIS STILL EXISTS. townsendmerino.github.io/goinfer/ is baked into things that cannot be edited: every released
+# binary's web UI links to it, and the published v0.19.0 and v0.20.0 release notes quote it. Switching Pages off would turn
+# those into 404s for good. So Pages serves one small file (.github/pages-stub/index.html) for every path of the old
+# address, as both index.html and 404.html; it sends a visitor to the same page under goinfer.dev/book/.
+#
+# It only changes when the stub does. Do not delete this workflow or disable Pages without replacing those links first.
 name: book-pages
 
 on:
   push:
     branches: [main]
     paths:
-      - 'docs/book/**'
-      # N-57 (docs/audit-2026-09-10.md): the build step below also reads
-      # docs/book-search/head-custom.html and runs scripts/build_search_index.py — neither was
-      # in this filter, so a push touching only the search UI or its index builder silently
-      # left the deployed Pages site stale.
-      - 'docs/book-search/**'
-      - 'scripts/build_search_index.py'
+      - '.github/pages-stub/**'
       - '.github/workflows/book-pages.yml'
   workflow_dispatch:
 
-# Least privilege: read the repo, write Pages, and mint the OIDC token deploy-pages needs.
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# One deploy at a time; do not cancel a running deploy half-way.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -38,95 +31,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-
-      - name: Stage only the book
+      - name: Stage the stub as the front page and as the 404
         run: |
           set -euo pipefail
-          mkdir -p _book_src
-          cp docs/book/*.md _book_src/
-          # Figures. The book's diagrams are .svg FILES referenced with ![](),
-          # not inline <svg> and not mermaid, because the book is read in two
-          # places that disagree: GitHub's markdown sanitizer strips inline
-          # <svg>, and Pages has no mermaid plugin (only jekyll-relative-links
-          # is enabled below), so a ```mermaid fence renders here as a code
-          # block. A referenced .svg is the one form that renders in both.
-          # Without this copy the figures 404 on Pages while looking fine on
-          # GitHub — which is the failure mode that would ship unnoticed.
-          if compgen -G "docs/book/*.svg" > /dev/null; then
-            cp docs/book/*.svg _book_src/
-          fi
-          # The chapter table is the front page.
-          mv _book_src/README.md _book_src/index.md
-          cat > _book_src/_config.yml <<'CFG'
-          title: An inference primer for Go engineers
-          description: How a language model actually runs, for someone who knows Go and not machine learning.
-          theme: jekyll-theme-primer
-          # jekyll-relative-links ships enabled in the github-pages gem and rewrites the
-          # README's ./NN-chapter.md links to their built .html permalinks. Without it,
-          # every chapter link on the index page 404s.
-          plugins:
-            - jekyll-relative-links
-          relative_links:
-            enabled: true
-            collections: false
-          CFG
-          echo "staged $(ls _book_src/*.md | wc -l) markdown files:"
-          ls _book_src
-
-      # Client-side search. GitHub Pages runs Jekyll in safe mode with a short plugin allowlist
-      # and no search plugin on it, so this is a generated JSON index plus a small browser-side
-      # UI rather than a plugin. The include is the theme's OWN extension point —
-      # jekyll-theme-primer's _layouts/default.html ends its <head> with
-      # `{% include head-custom.html %}` — so nothing here forks the layout.
-      - name: Build the search index and inject the UI
-        run: |
-          set -euo pipefail
-          mkdir -p _book_src/_includes
-          # GUARD: the include must contain no Liquid TAGS ({%...%}), only output ({{...}}).
-          # Liquid is evaluated before HTML comments mean anything, so a tag written inside
-          # <!-- --> still runs — and because this file IS head-custom.html, a comment naming
-          # its own include tag made it include itself. That shipped: the build died with
-          # "stack level too deep ... 10124 levels" blaming the THEME's layout. One grep is
-          # cheaper than re-deriving that from a stack trace.
-          if grep -q '{%' docs/book-search/head-custom.html; then
-            echo "::error::head-custom.html contains a Liquid tag ({%...%}). Even inside an HTML"
-            echo "::error::comment it is executed; a self-include here recurses until the build dies."
-            grep -n '{%' docs/book-search/head-custom.html
-            exit 1
-          fi
-          # GUARD 2: exactly one HTML comment open and one close in the whole file.
-          #
-          # The guard above stops the build from DYING. This one stops it from succeeding while
-          # rendering garbage, which is worse because nothing reports it. The file's leading
-          # comment explained the Liquid trap by writing an empty HTML comment inline to
-          # illustrate "inside a comment" — and that inline close ENDED the real comment there,
-          # so seventeen lines of prose about Liquid escaping rendered as visible text at the
-          # top of every page of the book. It deployed green.
-          #
-          # Counting opens against closes would NOT have caught it: that file had two of each,
-          # perfectly balanced. The invariant that actually holds for this file is that it
-          # carries exactly ONE comment, so any second delimiter of either kind is the bug.
-          opens=$(grep -o -- '<!--' docs/book-search/head-custom.html | wc -l | tr -d ' ')
-          closes=$(grep -o -- '-->' docs/book-search/head-custom.html | wc -l | tr -d ' ')
-          if [ "$opens" != "1" ] || [ "$closes" != "1" ]; then
-            echo "::error::head-custom.html must contain exactly one HTML comment: found $opens open(s), $closes close(s)."
-            echo "::error::A second delimiter closes the leading comment early and its prose renders on every page."
-            grep -n -- '<!--\|-->' docs/book-search/head-custom.html
-            exit 1
-          fi
-          cp docs/book-search/head-custom.html _book_src/_includes/head-custom.html
-          python3 scripts/build_search_index.py _book_src _book_src/search-index.json
-          # Non-vacuity: an empty or trivially small index would still deploy and would still
-          # render a search box that finds nothing, which looks like a working feature.
-          test "$(python3 -c 'import json,sys;print(len(json.load(open("_book_src/search-index.json"))))')" -ge 50
-
+          mkdir -p _site
+          cp .github/pages-stub/index.html _site/index.html
+          cp .github/pages-stub/index.html _site/404.html
+          # Non-vacuity: both files must send a visitor to goinfer.dev/book/, or the old links would dead-end.
+          for f in _site/index.html _site/404.html; do
+            grep -q 'https://goinfer.dev/book/' "$f"
+            grep -q 'location.replace' "$f"
+          done
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
-
-      - uses: actions/jekyll-build-pages@44a6e6beabd48582f863aeeb6cb2151cc1716697 # v1
-        with:
-          source: ./_book_src
-          destination: ./_site
-
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
 
   deploy:
