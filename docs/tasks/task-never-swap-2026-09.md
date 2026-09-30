@@ -410,7 +410,7 @@ byte-identical to the resident-serialize path's output on the family fixtures (t
 `TestStreamTranscodeMatchesResident` shape, extended per family).**
 
 **Read first.** `decoder/gguf.go` — the qwen35 branch (`loadQ35`, the `sink != nil` streaming
-loop near `decoder/gguf.go:1824`), then each of the six loaders and *why* it was excluded: gemma4's
+loop near `decoder/gguf.go:1826`), then each of the six loaders and *why* it was excluded: gemma4's
 "fused PLE/MoE tail can't stream incrementally" (a model-level tail written after the layers —
 the head/tail split `writeHeadGlobals` already supports: `decoder/serialize.go`'s "streaming
 transcode can emit the head, then produce-write-free each layer" note), gpt-oss's stacked experts

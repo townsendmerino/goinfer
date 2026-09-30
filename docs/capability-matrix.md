@@ -54,6 +54,10 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 > **GPT-2** — GPT-2/NeoX (LayerNorm, learned positions, non-gated GELU)
 
+> **Gemma** — Google Gemma 1 (2B/7B) and CodeGemma: pre-norm, (1+w) RMSNorm, GeGLU, tied head
+
+> **Gemma 2** — Google Gemma 2 (2B/9B/27B): sandwich norms, sliding/full alternating, attention + final-logit softcaps
+
 > **Gemma 3** — Google Gemma 3 dense (270M/1B/4B/12B/27B)
 
 > **Gemma 4** — Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)
@@ -106,6 +110,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Command-R7B | `cohere2` | dense | interleave | no | full | LayerNorm, parallel | SwiGLU | yes | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | GLM-4.5/4.6 | `glm4_moe` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
 | GPT-2 | `gpt2` | dense | none | no | learned/none | LayerNorm, pre-norm | GELU-tanh (non-gated) | yes | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |
+| Gemma | `gemma` | dense | none | no | full | RMSNorm, pre-norm | GeGLU | yes | safetensors, GGUF | text | yes | experimental: tiny-oracle 100.0%/1.00000 |
+| Gemma 2 | `gemma2` | dense | interleave | no | full | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text | no | experimental: tiny-oracle 100.0%/1.00000 |
 | Gemma 3 | `gemma3`, `gemma3_text` | dense | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision via VL text_config) | yes | full-oracle 100.0%/0.99972 |
 | Gemma 4 | `gemma4`, `gemma4_text`, `gemma4_unified_text` | dense ‖ sparse, no-shared | interleave | yes | dual-base | RMSNorm, sandwich | GeGLU | yes | safetensors, GGUF | text (+ vision tower) | yes | full-oracle 100.0%/0.98972 |
 | Granite 4.2 | `granite` | dense | none | no | full | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 100.0%/1.00000 |

@@ -17,6 +17,8 @@ type archAdapter func(*Config) (*Architecture, *tensorSchema, error)
 // is a new entry here plus its tensor schema — the
 // forward pass itself doesn't change.
 var registry = map[string]archAdapter{
+	"gemma":               gemmaArchitecture,  // Gemma 1 and CodeGemma: pre-norm, √hidden embed scale, (1+w) RMSNorm, GeGLU, tied head (gemma12.go)
+	"gemma2":              gemma2Architecture, // Gemma 2: gemma3's sandwich norms without QK-norm, sliding/full alternating, attention + final softcaps (gemma12.go)
 	"gemma3":              gemma3Architecture,
 	"gemma3_text":         gemma3Architecture,     // the 270M/1B text checkpoints
 	"gemma4":              gemma4Architecture,     // Gemma 4 top-level model_type for the "gemma4" family wrapper (E2B/E4B/26B-A4B/31B — real vision+audio towers, not built here)

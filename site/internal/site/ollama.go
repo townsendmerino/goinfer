@@ -24,6 +24,10 @@ type OllamaRow struct {
 	Families   []string `json:"families"` // matrix family names, or "encoder:<kind>" for an aikit encoder
 	Note       string   `json:"note"`
 	Unverified bool     `json:"unverified"`
+	// Needs is, for a not-supported row, the Hugging Face model_type the tag's weights use, so the build can tell when
+	// the capability matrix gains it: a row with no family can otherwise never change status, and support landing for
+	// it would leave the page saying "Not supported yet" (it did, for Gemma 1 and 2, before this field existed).
+	Needs string `json:"needs"`
 }
 
 // OllamaData is site/data/ollama.json.
@@ -205,8 +209,8 @@ func CheckOllama(root string, in *Inputs) error {
 	}
 	for i := 0; i < min(len(snap), len(d.Rows)); i++ {
 		s, r, e := snap[i], d.Rows[i], entries[i]
-		if len(s) != 7 {
-			bad = append(bad, fmt.Sprintf("snapshot row %d has %d cells, want 7", i+1, len(s)))
+		if len(s) != 8 {
+			bad = append(bad, fmt.Sprintf("snapshot row %d has %d cells, want 8 (#, tag, pulls, tags, family, status, needs, note)", i+1, len(s)))
 			continue
 		}
 		caps := []string{}
@@ -225,6 +229,11 @@ func CheckOllama(root string, in *Inputs) error {
 			bad = append(bad, fmt.Sprintf("row %d (%s): Ollama's tags %q in the snapshot, %q in ollama.json", i+1, r.Tag, caps, r.Caps))
 		case !slices.Equal(snapshotFamilies(s[4]), r.Families):
 			bad = append(bad, fmt.Sprintf("row %d (%s): families %q in the snapshot, %q in ollama.json", i+1, r.Tag, snapshotFamilies(s[4]), r.Families))
+		case s[6] != r.Needs:
+			bad = append(bad, fmt.Sprintf("row %d (%s): needs %q in the snapshot, %q in ollama.json", i+1, r.Tag, s[6], r.Needs))
+		case e.Status == OllamaUnsupported && r.Needs != "" && byName[r.Needs] != nil:
+			bad = append(bad, fmt.Sprintf("row %d (%s): the matrix now has %s, which this row needs; the snapshot's figures are "+
+				"a reading of an older matrix: a new snapshot needed (docs/measurements/, dated), not an edit to this one", i+1, r.Tag, r.Needs))
 		case s[5] != e.Status:
 			bad = append(bad, fmt.Sprintf("row %d (%s): the matrix now makes it %s, the snapshot says %s. The snapshot's figures are a "+
 				"reading of an older matrix: a new snapshot needed (docs/measurements/, dated), not an edit to this one",

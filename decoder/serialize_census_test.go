@@ -111,6 +111,9 @@ var censusList = []string{
 	// laguna/bailing_hybrid already exercise) are both real per-layer state no other censused
 	// fixture covers.
 	"testdata/spark2-5-tiny",
+	// gemma1-tiny / gemma2-tiny (2026-09-30): Gemma 1's Pre2 + (1+w) RMSNorm + MQA and Gemma 2's Sandwich4 without
+	// QK-norm, sliding/full alternating, both softcaps; and their GGUF copies, whose loader derives what the file omits.
+	"../testdata/gemma1-tiny", "../testdata/gemma2-tiny", "../testdata/gemma1-tiny.gguf", "../testdata/gemma2-hd-tiny.gguf",
 }
 
 // censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with
@@ -135,6 +138,7 @@ var censusExcluded = map[string]string{
 	"mistral-tiny-window":  "config-only fixture (no model.safetensors); it exists to pin sliding-window CONFIG parsing, and Load cannot open it.",
 	"llama-attnfa-tiny":    "plain llama arch, same per-layer field set llama-tiny already covers (GQA, SwiGLU, RMSNorm) — it differs only in geometry (hidden_size 512, head_dim 128, vs llama-tiny's 64/16), chosen to clear Metal's canUseAttnFA hd==128 dispatch guard. Its job is metal/snapshot_golden_test.go's attention_fa coverage, not this census.",
 	"qwen35vl-tiny":        "a Qwen3_5ForConditionalGeneration fixture (P8a): a 4-layer qwen3_5_text decoder (3 linear_attention + 1 full_attention, hidden 64) plus a `visual.*` vision tower. The decoder half has exactly the per-layer field set qwen3_5-tiny already covers (Gated DeltaNet + gated attention), and the tower is an encoder — no LayerWeights to census, same as siglip-tiny and gemma4-vision-tiny. Its job is the P8a image-seam and tower tests, not this census.",
+	"gemma2-hd-tiny":       "gemma2-tiny with query_pre_attn_scalar == head_dim, the rule a GGUF can express (its .gguf copy is on the list); the same per-layer fields as gemma2-tiny, which is on the list.",
 	"qwen3_5-tiny-normw":   "qwen3_5-tiny with a random final-norm weight and every other tensor identical (scripts/pin_prompt_hidden.py, D2). The final norm is MODEL-level state, which this per-layer census does not reflect over; its per-layer fields are exactly qwen3_5-tiny's, which is on the list.",
 	"qwen3moe-tiny-k3":     "same qwen3_moe field set qwen3moe-tiny already covers — it differs only in num_experts_per_tok (3 vs 2), needed because float addition of exactly 2 terms is exactly commutative, so a k=2 fixture cannot catch an accumulation-order regression. Its job is cuda/moe_expert_major_test.go's bit-identity gate, not this census.",
 

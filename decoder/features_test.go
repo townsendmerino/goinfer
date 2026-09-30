@@ -149,6 +149,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// softcap. So it is feature-compatible with CUDA; its OWN forward (per-layer head_dim / K=V)
 	// is what the resident geometry bridge addresses, and dense admission is env-gated
 	// (GOINFER_GEMMA4_RESIDENT) in decodeRunnerEligible — a separate gate from this feature set.
+	// Gemma 1 / CodeGemma and Gemma 2 (2026-09-30, gemma12.go). Gemma 2 needs the attention-score softcap, a per-layer
+	// kernel no resident backend ships, so it is admitted nowhere and runs on the CPU until one does.
+	"gemma":       {FeatEmbedScale, FeatGatedGELU, FeatRMSAddOne},
+	"gemma2":      {FeatAttnLogitSoftcap, FeatEmbedScale, FeatFinalLogitSoftcap, FeatGatedGELU, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
 	"gemma3":      {FeatEmbedScale, FeatGatedGELU, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
 	"gemma3_text": {FeatEmbedScale, FeatGatedGELU, FeatPerLayerRoPE, FeatQKNorm, FeatRMSAddOne, FeatSandwichNorm, FeatSlidingWindow},
 	"gemma4":      {FeatEmbedScale, FeatFinalLogitSoftcap, FeatGatedGELU, FeatPerLayerRoPE, FeatQKNorm, FeatSandwichNorm, FeatSlidingWindow},
@@ -221,6 +225,8 @@ var admissionGolden = map[string][]string{
 	// webgpu despite this table showing it feature-admitted — this golden intentionally tracks
 	// the simplified feature-only model, not full runtime truth, matching this file's own MoE-cap
 	// precedent (deepseek_v2/kimi_k2 below, admitted by feature but capped elsewhere).
+	"gemma":               {"cuda", "metal", "webgpu"},
+	"gemma2":              {},
 	"gemma3":              {"cuda", "metal", "webgpu"},
 	"gemma3_text":         {"cuda", "metal", "webgpu"},
 	"gemma4":              {"cuda", "metal", "webgpu"},

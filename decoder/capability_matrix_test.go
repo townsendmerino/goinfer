@@ -41,6 +41,19 @@ var updateMatrix = flag.Bool("update", false, "rewrite the generated capability-
 // deepseek_v2 vs deepseek_v3 routing flavor). Returns nil for an unknown key.
 func representativeConfig(modelType string) *Config {
 	switch modelType {
+	case "gemma":
+		return &Config{
+			ModelType: "gemma", VocabSize: 100, HiddenDim: 8, NumLayers: 2, NumHeads: 2, NumKVHeads: 1, HeadDim: 4,
+			IntermediateDim: 16, RMSNormEps: 1e-6, RoPEGlobalBase: 10000, HiddenActivation: "gelu_pytorch_tanh",
+		}
+	case "gemma2":
+		// Explicit LayerTypes (one sliding, one full) so the per-layer probe sees the interleave; both softcaps set.
+		return &Config{
+			ModelType: "gemma2", VocabSize: 100, HiddenDim: 8, NumLayers: 2, NumHeads: 2, NumKVHeads: 1, HeadDim: 4,
+			IntermediateDim: 16, RMSNormEps: 1e-6, RoPEGlobalBase: 10000, HiddenActivation: "gelu_pytorch_tanh",
+			SlidingWindow: 4096, QueryPreAttnScalar: 4, AttnLogitSoftcap: 50, FinalLogitSoftcap: 30,
+			LayerTypes: []string{"sliding_attention", "full_attention"},
+		}
 	case "gemma3", "gemma3_text":
 		// Explicit LayerTypes (one sliding + one global) so slidingWindowColumn's
 		// per-layer probe sees the interleave; SlidingWindowPattern alone yields 0
@@ -494,6 +507,8 @@ type familyDoc struct {
 }
 
 var familyDocs = map[string]familyDoc{
+	"gemma":               {"Gemma", "Google Gemma 1 (2B/7B) and CodeGemma: pre-norm, (1+w) RMSNorm, GeGLU, tied head", "safetensors, GGUF", "text"},
+	"gemma2":              {"Gemma 2", "Google Gemma 2 (2B/9B/27B): sandwich norms, sliding/full alternating, attention + final-logit softcaps", "safetensors, GGUF", "text"},
 	"gemma3":              {"Gemma 3", "Google Gemma 3 dense (270M/1B/4B/12B/27B)", "safetensors, GGUF", "text (+ vision via VL text_config)"},
 	"gemma3_text":         {"Gemma 3", "Google Gemma 3 dense (270M/1B/4B/12B/27B)", "safetensors, GGUF", "text (+ vision via VL text_config)"},
 	"gemma4":              {"Gemma 4", "Google Gemma 4 dense + E-models (per-layer attention deltas, PLE)", "safetensors, GGUF", "text (+ vision tower)"},
@@ -571,6 +586,8 @@ var siteDocs = map[string]siteDoc{
 	"cohere2":          {"Cohere's Command-R7B and Command-A.", []string{"chat"}},
 	"glm4_moe":         {"Zhipu's GLM-4.5 and 4.6 mixture-of-experts.", []string{"chat"}},
 	"gpt2":             {"GPT-2 and GPT-NeoX. Old and small, kept as a reference.", []string{"chat"}},
+	"gemma":            {"Google's first Gemma, 2B and 7B, and CodeGemma.", []string{"chat", "code"}},
+	"gemma2":           {"Google's Gemma 2, 2B to 27B.", []string{"chat"}},
 	"gemma3":           {"Google's Gemma 3, from 270M to 27B.", []string{"chat"}},
 	"gemma4":           {"Google's Gemma 4: dense models, the small E-models, and the 26B-A4B mixture-of-experts. Reads images.", []string{"chat", "vision"}},
 	"granite":          {"IBM's Granite 4.2 dense, 3B to 30B.", []string{"chat"}},

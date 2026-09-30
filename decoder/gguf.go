@@ -56,6 +56,8 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 		return ggufQwen2Config(g)
 	case "qwen3":
 		return ggufQwen3Config(g)
+	case "gemma", "gemma2":
+		return ggufGemma12Config(g, arch)
 	case "gemma3", "gemma3_text":
 		return ggufGemmaConfig(g)
 	case "gemma4":
@@ -89,7 +91,7 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 	case "gpt-oss":
 		return ggufGptOssConfig(g)
 	default:
-		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, qwen3moe, glm4moe, laguna, granitehybrid, granite, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
+		return nil, fmt.Errorf("decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma, gemma2, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, qwen3moe, glm4moe, laguna, granitehybrid, granite, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
 	}
 }
 
