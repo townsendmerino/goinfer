@@ -2,8 +2,9 @@ package serveapp
 
 import (
 	"bytes"
-	"encoding/json"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/batchio"
 )
 
 // finalizeBatch waits for every line to finish (b.wg.Wait() — no polling, see batchRecord's own
@@ -43,20 +44,12 @@ func (s *server) finalizeBatch(id string) {
 func assembleOpenAIOutput(b *batchRecord) (output, errors []byte) {
 	var out, errs bytes.Buffer
 	for _, r := range b.Results {
-		line := map[string]any{"id": "batch_req_" + reqID(), "custom_id": r.CustomID}
-		var buf *bytes.Buffer
+		id := "batch_req_" + reqID()
 		if r.ErrType != "" || r.Body == nil {
-			line["response"] = nil
-			line["error"] = map[string]any{"code": r.ErrType, "message": r.ErrMsg}
-			buf = &errs
+			errs.Write(batchio.ErrLine(id, r.CustomID, r.ErrType, r.ErrMsg))
 		} else {
-			line["response"] = map[string]any{"status_code": r.StatusCode, "body": r.Body}
-			line["error"] = nil
-			buf = &out
+			out.Write(batchio.OKLine(id, r.CustomID, r.StatusCode, r.Body))
 		}
-		lineBytes, _ := json.Marshal(line)
-		buf.Write(lineBytes)
-		buf.WriteByte('\n')
 	}
 	return out.Bytes(), errs.Bytes()
 }

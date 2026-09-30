@@ -1,14 +1,13 @@
 package serveapp
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/batchio"
 )
 
 // J4 (task-work-queue-2026-09.md): the two batch APIs, both thin translations onto the job store
@@ -73,14 +72,6 @@ func (s *server) handleGetFileContent(w http.ResponseWriter, r *http.Request) {
 
 // --- OpenAI: POST /v1/batches, GET /v1/batches/{id}, POST /v1/batches/{id}/cancel ---
 
-// batchInputLine is one line of an OpenAI batch input JSONL file.
-type batchInputLine struct {
-	CustomID string          `json:"custom_id"`
-	Method   string          `json:"method"`
-	URL      string          `json:"url"`
-	Body     json.RawMessage `json:"body"`
-}
-
 func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		InputFileID      string `json:"input_file_id"`
@@ -101,27 +92,15 @@ func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var lines []batchInputLine
+	// The input format is internal/batchio's, shared with `goinfer-chat --batch`, so a file is one thing for both.
+	lines, err := batchio.ParseInput(f.Bytes)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	var customIDs []string
 	var reqs []chatReq
-	sc := bufio.NewScanner(bytes.NewReader(f.Bytes))
-	sc.Buffer(make([]byte, 0, 64*1024), 16<<20)
-	lineNo := 0
-	for sc.Scan() {
-		lineNo++
-		raw := strings.TrimSpace(sc.Text())
-		if raw == "" {
-			continue
-		}
-		var l batchInputLine
-		if err := json.Unmarshal([]byte(raw), &l); err != nil {
-			writeErr(w, http.StatusBadRequest, fmt.Sprintf("input file line %d: invalid JSON: %s", lineNo, err.Error()))
-			return
-		}
-		if l.CustomID == "" {
-			writeErr(w, http.StatusBadRequest, fmt.Sprintf("input file line %d: custom_id is required", lineNo))
-			return
-		}
+	for _, l := range lines {
 		var creq chatReq
 		if err := json.Unmarshal(l.Body, &creq); err != nil {
 			// A malformed per-line BODY is that line's own problem, not the whole batch's — record
@@ -130,17 +109,8 @@ func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 			// rest" semantics, task doc's own framing).
 			creq = chatReq{}
 		}
-		lines = append(lines, l)
 		customIDs = append(customIDs, l.CustomID)
 		reqs = append(reqs, creq)
-	}
-	if err := sc.Err(); err != nil {
-		writeErr(w, http.StatusBadRequest, "reading input file: "+err.Error())
-		return
-	}
-	if len(lines) == 0 {
-		writeErr(w, http.StatusBadRequest, "input file has no request lines")
-		return
 	}
 
 	b := s.batches.create("openai_chat", req.Endpoint, req.CompletionWindow, req.InputFileID, customIDs)
