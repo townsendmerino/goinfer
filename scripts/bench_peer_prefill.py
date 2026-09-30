@@ -78,7 +78,7 @@ ONE IS AMBIGUOUS.
   GOINFER_SERVE_CUDA=~/bench-cur/serve-cuda OLLAMA_BIN=~/ollama-0325/bin/ollama \
     python3 scripts/bench_peer_prefill.py out.json --models 0.5B,1.5B --depths 512,1024,2048
 """
-import argparse, json, os, platform, signal, socket, statistics, subprocess, sys, time, urllib.request
+import argparse, json, os, platform, shlex, signal, socket, statistics, subprocess, sys, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GPORT, OPORT, MPORT = 8098, 11498, 8099
@@ -202,9 +202,16 @@ class Engine:
             else:
                 argv = [SERVE_CUDA, "-model", f"bench={self.path}", "-backend", "cuda",
                         "-addr", f"127.0.0.1:{GPORT}", "-quant", "int4"]
-            argv += self.extra_flags
-            self.proc = subprocess.Popen(
-                argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
+            # A GPU cell passes -require-backend so a silent CPU fallback fails at startup instead of timing the CPU
+            # (docs/measurements/peer-sweep-2026-09-29.md). BENCH_GOINFER_ARGS adds flags to every goinfer serve, e.g.
+            # "-embed-int4=false", and the server's own log is kept so the decode path is on record.
+            if self.backend != "cpu":
+                argv.append("-require-backend")
+            argv += self.extra_flags + shlex.split(os.environ.get("BENCH_GOINFER_ARGS", ""))
+            log_dir = os.environ.get("BENCH_SERVE_LOG_DIR") or os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), "serve-logs")
+            os.makedirs(log_dir, exist_ok=True)
+            with open(os.path.join(log_dir, f"prefill-{self.name}-{self.backend}-{self.model_key}.log"), "ab") as serve_log:
+                self.proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=serve_log, preexec_fn=os.setsid)
             self.port = GPORT
             self.url = f"http://127.0.0.1:{GPORT}/v1/chat/completions"
             self.parse = parse_openai

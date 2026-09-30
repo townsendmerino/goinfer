@@ -979,6 +979,46 @@ def gate_cell_idle():
         waited += 20
 
 
+# THE SERVE LOG AND THE DECODE PATH (2026-09-29, docs/measurements/peer-sweep-2026-09-29.md). Every goinfer cell's server
+# output used to go to /dev/null, so a GPU cell whose model silently fell back to the CPU timed the CPU and reported a
+# plausible number: `--embed-int4`'s default (2026-09-28) does exactly that on Metal, and a Phi-3 load can decline
+# residency on CUDA. Now: the server's stderr is kept per cell, GPU cells pass `-require-backend` (serve exits at startup
+# instead of falling back), and the decode path the load resolved to is read from the log and recorded in the cell. A GPU
+# cell whose path is the CPU's is VOID by construction.
+#   BENCH_SERVE_LOG_DIR   where the logs go (default: serve-logs/ beside the results file)
+#   BENCH_GOINFER_ARGS    extra flags for every goinfer serve, e.g. "-embed-int4=false"; recorded with the cell
+import shlex
+EXTRA_GOINFER_ARGS = shlex.split(os.environ.get("BENCH_GOINFER_ARGS", ""))
+SERVE_LOG_DIR = os.environ.get("BENCH_SERVE_LOG_DIR") or os.path.join(
+    os.path.dirname(os.path.abspath(sys.argv[1])) if len(sys.argv) > 1 else ".", "serve-logs")
+
+
+def decode_path_since(log_path, offset=0):
+    """The last `decode path:` line goinfer wrote to log_path after byte offset, or None."""
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(offset)
+            text = f.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    found = None
+    for ln in text.splitlines():
+        if "decode path:" in ln:
+            found = ln.split("decode path:", 1)[1].strip()
+    return found
+
+
+def decode_path_mismatch(decode_path, backend):
+    """A reason string when a GPU cell's decode path is the CPU's, else None. `cpu (int8int8) - requested metal ->
+    running on cpu` is the shape serve prints on a fallback; a resident path starts with the backend's own name."""
+    if backend == "cpu" or not decode_path:
+        return None
+    if decode_path.startswith("cpu"):
+        return f"decode path is the CPU's, not {backend}'s: {decode_path[:160]}"
+    return None
+
+
+
 def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
     """Restart the server, do NRUNS runs of NCOMP completions, return per-run rates.
 
@@ -996,6 +1036,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
     # CALIB_TIMEOUT) rather than a number nobody has measured against.
     load_timeout = 900 if model_key in MOE_MODELS else LOAD_TIMEOUT
     proc = None
+    decode_path = None   # what goinfer's own load resolved to, read from its serve log (goinfer engines only)
     # TE0 (docs/tasks/task-test-efficiency-2026-09.md): where a cell's wall goes, measured rather than inferred. The dict
     # is shared with the returned counts, so the teardown in `finally` (which runs after the return value is built)
     # still lands in the record.
@@ -1024,13 +1065,19 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             # DIFFERENT binary built from a named prior commit. Empty SERVE_OLD entry -> Popen raises
             # immediately (a clear "no such file" rather than a silently-wrong placeholder path).
             serve_map = SERVE_OLD if engine == "goinfer_old" else SERVE
-            proc = subprocess.Popen(
-                [serve_map[backend], "-model", f"bench={gpath}", "-backend", backend,
-                 "-addr", f"127.0.0.1:{GPORT}"] + quant_args + moe_args
-                + (["-ctx", str(DEEP_CTX or CTX_PIN)] if (DEEP_CTX or CTX_PIN) else [])
-                + (["-stream-weights"] if model_key in STREAM_WEIGHTS_MODELS else []),
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                preexec_fn=os.setsid)
+            os.makedirs(SERVE_LOG_DIR, exist_ok=True)
+            serve_log_path = os.path.join(SERVE_LOG_DIR, f"{engine}-{backend}-{model_key}-{depth}-{cfg_name}.log")
+            log_offset = os.path.getsize(serve_log_path) if os.path.exists(serve_log_path) else 0
+            be_args = ["-require-backend"] if backend != "cpu" else []
+            with open(serve_log_path, "ab") as serve_log:   # the child keeps its own copy of the descriptor
+                proc = subprocess.Popen(
+                    [serve_map[backend], "-model", f"bench={gpath}", "-backend", backend,
+                     "-addr", f"127.0.0.1:{GPORT}"] + quant_args + moe_args
+                    + (["-ctx", str(DEEP_CTX or CTX_PIN)] if (DEEP_CTX or CTX_PIN) else [])
+                    + (["-stream-weights"] if model_key in STREAM_WEIGHTS_MODELS else [])
+                    + be_args + EXTRA_GOINFER_ARGS,
+                    stdout=subprocess.DEVNULL, stderr=serve_log,
+                    preexec_fn=os.setsid)
             port, url, parse, mk = GPORT, f"http://127.0.0.1:{GPORT}/v1/chat/completions", parse_openai, \
                 (lambda: goinfer_payload(path, prompt, cfg))
         elif engine == "ollama":
@@ -1102,6 +1149,11 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
         phases["start_to_listening_s"] = round(time.time() - t_cell, 2)
         if not ready:
             return None, "server did not come up", None
+        if engine in ("goinfer", "goinfer_old"):
+            decode_path = decode_path_since(serve_log_path, log_offset)
+            bad = decode_path_mismatch(decode_path, backend)
+            if bad:
+                return None, bad, None
         # RSS sampling starts once the server is confirmed up -- the process exists and its RSS
         # already reflects the checkpoint load, which is itself worth capturing (L1's 890 MB figure
         # was a LOAD-time footprint, not just a decode-time one). Stopped just before teardown below,
@@ -1157,6 +1209,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
                                  "completion_rates": comp_rates, "ngen": ngen,
                                  "completion_tokens": comp_tokens, "warmup_tokens": warm[4],
                                  "token_gate": token_gate(comp_tokens, ngen),
+                                 "decode_path": decode_path,
                                  "rss_peak_kb": rss_peak_kb, "phases": phases}
     except Exception as e:
         return None, str(e), None
