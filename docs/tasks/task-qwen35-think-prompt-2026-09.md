@@ -61,7 +61,8 @@ check that the invariant holds on every client's request shape. **Final run: 37 
 - **NOT exercised: a reply that thinks, closes the block, and then answers, on a real model.** The 0.8B never finishes
   thinking under greedy decoding — two probes at `max_tokens` 3000 (`Say hello.`, `Reply with only the word: yes`) ended
   `finish_reason length` with 17,580 and 10,986 characters of reasoning and no content — and the sampled, seeded retry inside
-  the matrix also ran to its limit. That path is covered by the unit tests (synthetic vocabulary, both "tag token" and "tag
+  the matrix was still thinking at its 600-token limit (1,587 characters of reasoning, no content) — a short limit, so that
+  run says less than the 3000-token probes do. That path is covered by the unit tests (synthetic vocabulary, both "tag token" and "tag
   spelled out" encodings) and by `TestThinkModes_delimitersDecodeToTheirSurfaceForm`, which checks against the real Qwen3 /
   Qwen3.5 / Gemma 4 tokenizers that the delimiter tokens decode to their literal text. It has not run end to end on a model
   that closes its block. The matrix now reports this state as NOT EXERCISED (exit status 2) instead of passing or failing it,
