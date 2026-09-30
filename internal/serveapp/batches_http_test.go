@@ -427,3 +427,46 @@ func TestBatches_cancelStopsQueuedLines(t *testing.T) {
 			polled.RequestCounts.Failed)
 	}
 }
+
+// Two requests under one custom_id are refused up front — by both dialects, as the real APIs do. A result is matched to its
+// request by that id, so a batch that accepted a duplicate would hand back two results nobody could tell apart. No model is
+// needed: the 400 is decided before any line runs.
+func TestBatches_duplicateCustomIDIsRefused(t *testing.T) {
+	srv := &server{files: newFileStore(8), batches: newBatchStore(8)}
+	ts := httptest.NewServer(batchesTestMux(srv))
+	defer ts.Close()
+
+	body := `{"model":"m","messages":[{"role":"user","content":"hi"}]}`
+	row := func(id string) string {
+		return mustJSONLine(t, map[string]any{"custom_id": id, "method": "POST", "url": "/v1/chat/completions", "body": json.RawMessage(body)})
+	}
+	fileID := uploadJSONLFile(t, ts, "in.jsonl", []string{row("a"), row("b"), row("a")})
+	resp := postJSON(t, ts.URL+"/v1/batches", map[string]any{"input_file_id": fileID, "endpoint": "/v1/chat/completions", "completion_window": "24h"})
+	defer resp.Body.Close()
+	var oa struct {
+		Error struct{ Message string } `json:"error"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&oa)
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(oa.Error.Message, `"a" (entries 1 and 3)`) {
+		t.Errorf("OpenAI dialect: status %d, message %q; want 400 naming the duplicate and both positions", resp.StatusCode, oa.Error.Message)
+	}
+	srv.batches.mu.Lock()
+	n := len(srv.batches.batches)
+	srv.batches.mu.Unlock()
+	if n != 0 {
+		t.Errorf("a refused batch must not be created (%d in the store)", n)
+	}
+
+	req := func(id string) map[string]any {
+		return map[string]any{"custom_id": id, "params": map[string]any{"model": "m", "max_tokens": 8, "messages": []map[string]any{{"role": "user", "content": "hi"}}}}
+	}
+	resp2 := postJSON(t, ts.URL+"/v1/messages/batches", map[string]any{"requests": []map[string]any{req("x"), req("y"), req("x")}})
+	defer resp2.Body.Close()
+	var an struct {
+		Error struct{ Message string } `json:"error"`
+	}
+	_ = json.NewDecoder(resp2.Body).Decode(&an)
+	if resp2.StatusCode != http.StatusBadRequest || !strings.Contains(an.Error.Message, `"x" (entries 1 and 3)`) {
+		t.Errorf("Anthropic dialect: status %d, message %q; want 400 naming the duplicate and both positions", resp2.StatusCode, an.Error.Message)
+	}
+}

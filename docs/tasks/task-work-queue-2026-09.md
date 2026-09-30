@@ -395,7 +395,7 @@ remain open.
 - **One format, one copy of the code.** The input parser, the byte layout of an output and an error line, and the resume scan
   live in `internal/batchio`, and serve's `POST /v1/batches` now calls them (its output bytes are unchanged; the three real-model
   `TestBatches_*` round trips pass on the 0.5B). "Interchangeable" is therefore true of the format by construction.
-- **Resume** keys on `custom_id` (which the CLI requires to be unique, as OpenAI does — serve's HTTP path does not check).
+- **Resume** keys on `custom_id` (which both the CLI and serve's two batch endpoints require to be unique, as the real APIs do — a duplicate is a 400 naming both positions; serve accepted one until 2026-09-30).
   Each finished line is appended and fsynced before the next starts. On restart a line that holds a response is skipped; a
   final partial line (a run killed mid-write) is truncated and rerun; a COMPLETE line that is not valid output is refused,
   because appending after it would bury the corruption. A failed line is not done, so a rerun retries it; failures go to a

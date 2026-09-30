@@ -67,17 +67,28 @@ func ParseInput(data []byte) ([]Line, error) {
 	return lines, nil
 }
 
-// CheckUnique refuses a file in which two lines share a custom_id. OpenAI's batch API requires uniqueness, and a resumable
-// run depends on it: the output is keyed by custom_id, so a second line with the same id would be skipped as "already done".
+// CheckUnique refuses a file in which two lines share a custom_id. OpenAI's and Anthropic's batch APIs require uniqueness, and
+// results are matched to requests by it: a resumable run keys its output on it (a second line with the same id would be skipped
+// as "already done"), and over HTTP two results under one id cannot be told apart.
 func CheckUnique(lines []Line) error {
-	first := make(map[string]int, len(lines))
-	var dup []string
+	ids := make([]string, len(lines))
 	for i, l := range lines {
-		if j, ok := first[l.CustomID]; ok {
-			dup = append(dup, fmt.Sprintf("%q (entries %d and %d)", l.CustomID, j+1, i+1))
+		ids[i] = l.CustomID
+	}
+	return CheckUniqueIDs(ids)
+}
+
+// CheckUniqueIDs is CheckUnique over bare ids, for a request list that never was a file (Anthropic's inline requests). Entries
+// are numbered from 1, in the order given.
+func CheckUniqueIDs(ids []string) error {
+	first := make(map[string]int, len(ids))
+	var dup []string
+	for i, id := range ids {
+		if j, ok := first[id]; ok {
+			dup = append(dup, fmt.Sprintf("%q (entries %d and %d)", id, j+1, i+1))
 			continue
 		}
-		first[l.CustomID] = i
+		first[id] = i
 	}
 	if len(dup) > 0 {
 		const show = 5

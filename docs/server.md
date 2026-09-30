@@ -547,7 +547,7 @@ to ignore.**
 
 **Batch files — over HTTP, or locally with `goinfer-chat --batch` and no server.** One JSONL file, two ways to run it. Each
 input line is `{"custom_id": "a1", "method": "POST", "url": "/v1/chat/completions", "body": {chat request}}`; `custom_id` is
-required and must be unique. Over HTTP it is `POST /v1/files` then `POST /v1/batches` (OpenAI) — or inline requests to
+required and must be unique (a duplicate is refused, naming both positions). Over HTTP it is `POST /v1/files` then `POST /v1/batches` (OpenAI) — or inline requests to
 `POST /v1/messages/batches` (Anthropic). Locally:
 
 ```sh

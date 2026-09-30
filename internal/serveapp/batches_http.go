@@ -98,6 +98,10 @@ func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := batchio.CheckUnique(lines); err != nil {
+		writeErr(w, http.StatusBadRequest, "input file: "+err.Error())
+		return
+	}
 	var customIDs []string
 	var reqs []chatReq
 	for _, l := range lines {
@@ -207,6 +211,11 @@ func (s *server) handleCreateMessageBatch(w http.ResponseWriter, r *http.Request
 		var areq anthropicReq
 		_ = json.Unmarshal(line.Params, &areq) // a malformed params object is THIS line's own error, see handleCreateBatch's identical comment
 		reqs[i] = areq
+	}
+
+	if err := batchio.CheckUniqueIDs(customIDs); err != nil {
+		writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", "requests: "+err.Error())
+		return
 	}
 
 	b := s.batches.create("anthropic_messages", "/v1/messages", "", "", customIDs)
