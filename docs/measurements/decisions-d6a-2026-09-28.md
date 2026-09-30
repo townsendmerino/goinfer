@@ -73,9 +73,52 @@ The control asked "does goinfer's Route A reproduce theirs?" The answer is: the 
 lower on the same items, from quantization. That does not rescue Route A. A perfect port would read about 0.56, still far below the
 0.8181 line, and the trained head reads 0.93 on the same items. **So BUILD D2–D4 holds whatever the numeric gap turns out to be.**
 
-**Not explained:** on D6a's own OOD sample goinfer's bare-v1 read 0.338, where the 150 fixture items (calibration split) put it at
-about 0.48. The two samples differ in split and items, and the size of that difference (about 14 points, roughly four standard errors
-on 400 noul rows) is more than sampling alone predicts. It does not change the decision (both are far below 0.8181) and is left open.
+**The 14-point gap between the two samples (explained 2026-09-30).** On D6a's own OOD sample goinfer's bare-v1 read 0.338, where
+the 150 fixture items (calibration split) put it at 0.481. [`gap.py`](decisions-d6a-2026-09-28/gap.py)
+([`results/gap.txt`](decisions-d6a-2026-09-28/results/gap.txt)) reads only committed files and finds three things:
+
+1. **All of it is noul.** noul falls from 0.529 to 0.340, while choice (0.340 → 0.335) and score (0.184 → 0.167) hold. noul carries
+   75% of the OOD weight, so its 19 points are the whole 14.
+2. **The noul items differ, and goinfer leans "true".** goinfer answers "true" on 85% of the OOD sample's noul items, where gold is
+   true on only 21.5% (the fixture: 72.5% against 37.3%). Two environments that the fixture barely samples make up 65% of the OOD
+   noul items, and gold is mostly "false" in both:
+
+   | environment | share of OOD noul | gold true | goinfer says true |
+   |---|---|---|---|
+   | painting-geometry | 39% | 33% | 100% |
+   | snake | 26% | 8% | 88% |
+
+   The fixture's largest noul group, 17 `v3_*` items on which goinfer reads 0.65, does not occur in the OOD sample at all.
+   Discrimination is not what changed: noul AUROC is 0.695 on the OOD sample against 0.719 on the fixture.
+3. **The quantization shift is largest exactly there.** On the fixture's own noul items, goinfer's P(true) sits above the transformers
+   f32 reference's by:
+
+   | environment | P(true) shift |
+   |---|---|
+   | `v3_*` | −0.002 |
+   | workflow-controls | +0.042 |
+   | painting-geometry | +0.074 |
+   | snake | +0.143 |
+
+   On snake the reference says "true" on 3 of the 7 items and goinfer on all 7. These are near-margin decisions: the median
+   |P(true) − 0.5| on the OOD sample is 0.17.
+
+**What that makes the gap.** It is the same ~8-point quantization shift measured above, falling hardest on the environments the OOD
+split is made of. It is not a second defect. The size of that share is an **estimate**:
+
+- **The counterfactual.** Subtracting each environment's measured shift from goinfer's OOD probabilities lifts noul from 0.340 to
+  0.492, and the OOD-weighted top-1 from 0.338 to 0.451. That is about 11 of the 14 points.
+- **Why it is only an estimate.** The shifts come from 7–17 items per environment, and choice and score are left as measured.
+- **The rest** is item-level difference that samples this small cannot resolve.
+- **The check that would settle it** is the transformers reference on D6a's 400 OOD noul rows. That is a night job, not run.
+
+**Two consequences for Route A (D1), neither of which touches D6a's decision:**
+
+- **A constant beats every arm on noul here.** Answering "false" every time scores 0.785 on this sample, above every arm and above
+  the fixture reference's 0.608.
+- **The calibration cannot correct a lean.** It fits a temperature only, and a temperature never changes which label wins. A per-kind
+  bias term (a prior correction, fitted on the calibration split) would change the argmax. Whether it beats the trained head's 0.98
+  on noul is a separate question, and it is not run here.
 
 **Owed, by night:** the 150 items at `--quant q4k` on the CPU (about 4 hours), to split the 8-point gap between the Q4_K file and
 goinfer's re-quantization. It matters for D1's Route A quality on 4-bit models, not for D6a's decision.

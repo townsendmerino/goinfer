@@ -1,0 +1,29 @@
+(1) per-kind top-1, goinfer bare-v1
+  OOD sample (D6a arm B)       noul 0.340  choice 0.335  score 0.167   OOD-weighted 0.338
+  fixture (calibration split)  noul 0.529  choice 0.340  score 0.184   OOD-weighted 0.481
+
+(2) noul: base rate and bias
+  OOD sample   n=400 gold-true 0.215 pred-true 0.845 acc|true 0.930 acc|false 0.178 always-false 0.785
+  fixture      n= 51 gold-true 0.373 pred-true 0.725 acc|true 0.842 acc|false 0.344 always-false 0.627
+
+(3) noul by source environment
+  OOD sample
+    painting-geometry-v1   n=156 share 0.39 gold-true 0.33 pred-true 1.00 top-1 0.33
+    workflow-controls-v1   n=121 share 0.30 gold-true 0.17 pred-true 0.59 top-1 0.49
+    snake-v1               n=103 share 0.26 gold-true 0.08 pred-true 0.88 top-1 0.19
+    vizdoom-basic-v1       n=  9 share 0.02 gold-true 0.33 pred-true 1.00 top-1 0.33
+    reasoning-control-v1   n=  6 share 0.01 gold-true 0.17 pred-true 1.00 top-1 0.17
+    customer-control-v1    n=  5 share 0.01 gold-true 0.20 pred-true 1.00 top-1 0.20
+  fixture
+    v3_*                   n= 17 share 0.33 gold-true 0.41 pred-true 0.76 top-1 0.65
+    workflow-controls-v1   n= 15 share 0.29 gold-true 0.33 pred-true 0.40 top-1 0.67
+    painting-geometry-v1   n= 12 share 0.24 gold-true 0.58 pred-true 0.92 top-1 0.50
+    snake-v1               n=  7 share 0.14 gold-true 0.00 pred-true 1.00 top-1 0.00
+
+(4) reference (transformers f32) vs goinfer (Q4_K_M int4) on the fixture's noul items
+  v3_*                   n= 17 ref pred-true 0.71 goinfer pred-true 0.76  mean P(true) shift -0.002
+  workflow-controls-v1   n= 15 ref pred-true 0.27 goinfer pred-true 0.40  mean P(true) shift +0.042
+  painting-geometry-v1   n= 12 ref pred-true 0.83 goinfer pred-true 0.92  mean P(true) shift +0.074
+  snake-v1               n=  7 ref pred-true 0.43 goinfer pred-true 1.00  mean P(true) shift +0.143
+  all sources: mean shift +0.049
+  counterfactual (ESTIMATE): OOD noul top-1 0.340 as measured -> 0.492 with each source's shift removed (unlisted sources: the all-source mean)
