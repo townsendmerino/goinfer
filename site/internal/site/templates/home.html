@@ -54,8 +54,7 @@
   <div class="s-head"><div><h2 class="s" id="doors-h">What are you here to do?</h2></div></div>
   <div class="doors">
     <div class="door"><h3>Try it</h3><p>One file with a model inside. Download, run, ask. Nothing to install.</p><pre>./goinfer-chat-0.5b-&lt;os&gt;-&lt;arch&gt;</pre></div>
-    <div class="door"><h3>Embed it</h3><p>A Go library. Ask a question, get a filled-in struct back.</p><pre>go get github.com/
-  townsendmerino/goinfer</pre></div>
+    <div class="door"><h3>Embed it</h3><p>A Go library. Ask a question, get a filled-in struct back.</p><pre>go get github.com/townsendmerino/goinfer/decoder@latest github.com/townsendmerino/goinfer/tokenizer@latest</pre></div>
     <div class="door"><h3>Connect your tools</h3><p>OpenAI- and Anthropic-compatible. Setup notes for Claude Code, opencode and jevx.</p><pre>goinfer-serve -web -model
   ~/models/model.gguf</pre></div>
     <div class="door"><h3>Run bigger models</h3><p>Ask how a model would be placed on your machine, and whether it fits, without starting a chat.</p><pre>goinfer-chat fit &lt;model&gt;</pre></div>

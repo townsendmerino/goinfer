@@ -16,6 +16,8 @@ on:
       - 'site/**'
       - 'docs/capability-matrix.json'
       - 'pull/curated.json'
+      # the install-line gate compares the site's go get / go install lines with the README's
+      - 'README.md'
       # the records claims.json cites: a change under a cited figure must re-run the claims check
       - 'docs/measurements/peer-claim-2026-09-25.md'
       - 'docs/measurements/metal-decode-gemv-r18b-2026-09-26.md'
@@ -38,6 +40,8 @@ on:
       - 'site/**'
       - 'docs/capability-matrix.json'
       - 'pull/curated.json'
+      # the install-line gate compares the site's go get / go install lines with the README's
+      - 'README.md'
       - 'docs/measurements/peer-claim-2026-09-25.md'
       - 'docs/measurements/metal-decode-gemv-r18b-2026-09-26.md'
       - 'docs/benchmarks.md'

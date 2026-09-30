@@ -270,6 +270,9 @@ func Build(root, out string, cfg Config) (*Report, error) {
 	if err := CheckLinks(out); err != nil {
 		return nil, err
 	}
+	if err := CheckInstallLines(root, out); err != nil {
+		return nil, err
+	}
 	return rep, nil
 }
 
