@@ -173,13 +173,12 @@ func (lm *loadedModel) promptForT(tmpl *chat.Template, system string, turns []ch
 // where `content` is the raw text, tags and all: what the client sees is what the stop logic watches, so a stop in the thinking
 // still stops it there.
 type thinkOut struct {
-	split *chat.ThinkSplitter
+	rs *chat.ReplySplitter
 	// onReasoning receives the reasoning text as it arrives, always on a UTF-8 boundary. Never nil once routed: a route that
 	// does not surface reasoning (Responses, an Anthropic request that did not ask for thinking) sets a discarding func, which
 	// keeps drive's progress accounting honest while the model reasons.
 	onReasoning func(string)
-	raw         bool   // deepseek-legacy: content is the raw text, tags included; reasoning is ALSO reported
-	carry       []byte // reasoning bytes held back because they end in a partial UTF-8 rune
+	raw         bool // deepseek-legacy: content is the raw text, tags included; reasoning is ALSO reported
 	// endedInReasoning is set when the reply ended inside an unclosed block: truncated while thinking, so there is no
 	// answer — content is empty and finish_reason is "length".
 	endedInReasoning bool
@@ -190,50 +189,36 @@ func newThinkOut(tmpl *chat.Template, turns []chat.Turn, ts thinkSettings, onRea
 	if ts.format == rfNone {
 		return nil
 	}
-	sp := tmpl.NewReasoningSplitter(turns)
-	if sp == nil {
+	rs := tmpl.NewReplySplitter(turns)
+	if rs == nil {
 		return nil
 	}
 	if onReasoning == nil {
 		onReasoning = func(string) {}
 	}
-	return &thinkOut{split: sp, onReasoning: onReasoning, raw: ts.format == rfLegacy}
-}
-
-// emitReasoning reports reasoning text, holding back a trailing partial rune so a multi-byte character split across two tokens
-// reaches the client whole (the stop logic used to do this for it).
-func (o *thinkOut) emitReasoning(r string) {
-	if r == "" {
-		return
-	}
-	buf := append(o.carry, r...)
-	n := completeUTF8(string(buf))
-	if n > 0 {
-		o.onReasoning(string(buf[:n]))
-	}
-	o.carry = append(o.carry[:0], buf[n:]...)
+	return &thinkOut{rs: rs, onReasoning: onReasoning, raw: ts.format == rfLegacy}
 }
 
 // feed takes one decoded fragment, reports its reasoning, and returns the text the stop logic must watch: the answer (the
 // fragment with its reasoning taken out), or — deepseek-legacy — the fragment itself.
 func (o *thinkOut) feed(piece string) string {
-	r, c := o.split.Push(piece)
-	o.emitReasoning(r)
+	r, c := o.rs.Push(piece)
+	if r != "" {
+		o.onReasoning(r)
+	}
 	if o.raw {
 		return piece
 	}
 	return c
 }
 
-// finish ends the reply: it reports the reasoning the splitter still held (and any partial rune, now as it stands) and returns
-// the answer text it still held for the stop logic. A reply that ends inside an unclosed block has no answer.
+// finish ends the reply: it reports the reasoning still held (and any partial rune, now as it stands) and returns the answer text
+// still held for the stop logic. A reply that ends inside an unclosed block has no answer.
 func (o *thinkOut) finish() string {
-	o.endedInReasoning = o.split.InReasoning()
-	r, c := o.split.Flush()
-	o.emitReasoning(r)
-	if len(o.carry) > 0 {
-		o.onReasoning(string(o.carry))
-		o.carry = nil
+	r, c, truncated := o.rs.Finish()
+	o.endedInReasoning = truncated
+	if r != "" {
+		o.onReasoning(r)
 	}
 	if o.raw {
 		return ""

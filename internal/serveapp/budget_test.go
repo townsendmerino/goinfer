@@ -2,7 +2,6 @@ package serveapp
 
 import (
 	"context"
-	"math"
 	"slices"
 	"testing"
 
@@ -61,56 +60,6 @@ func TestResolveBudget(t *testing.T) {
 	}
 }
 
-// due/Process/Gate: the processor as a pure function of the generated ids.
-func TestReasoningBudget_due(t *testing.T) {
-	const open, closeID = 10, 11
-	prompt := &reasoningBudget{open: open, closeID: closeID, opens: true, limit: 3} // the prompt ended inside an open block
-	self := &reasoningBudget{open: open, closeID: closeID, opens: false, limit: 3}  // the model opens the block itself
-	cases := []struct {
-		name string
-		b    *reasoningBudget
-		gen  []int
-		want bool
-	}{
-		{"prompt-opened: nothing generated yet", prompt, nil, false},
-		{"prompt-opened: one token under the limit", prompt, []int{1, 2}, false},
-		{"prompt-opened: exactly at the limit forces", prompt, []int{1, 2, 3}, true},
-		{"prompt-opened: over the limit still forces (a missed step)", prompt, []int{1, 2, 3, 4}, true},
-		{"prompt-opened: already closed is never forced", prompt, []int{1, closeID, 3, 4, 5}, false},
-		{"prompt-opened: closed exactly at the limit", prompt, []int{1, 2, closeID}, false},
-		{"self-opened: no open token, no budget", self, []int{1, 2, 3, 4, 5}, false},
-		{"self-opened: counts from after the open token", self, []int{7, open, 1, 2}, false},
-		{"self-opened: at the limit forces", self, []int{7, open, 1, 2, 3}, true},
-		{"self-opened: closed before the limit", self, []int{open, 1, closeID, 2, 3, 4}, false},
-		{"self-opened: a block that opened, closed and answered is done", self, []int{open, 1, 2, 3, closeID, 9, 9, 9, 9}, false},
-	}
-	for _, tc := range cases {
-		if got := tc.b.due(tc.gen); got != tc.want {
-			t.Errorf("%s: due(%v) = %v, want %v", tc.name, tc.gen, got, tc.want)
-		}
-		if got := tc.b.Gate(tc.gen); got != tc.want {
-			t.Errorf("%s: Gate(%v) = %v, want %v", tc.name, tc.gen, got, tc.want)
-		}
-		logits := make([]float32, 16)
-		for i := range logits {
-			logits[i] = float32(i) * 0.1
-		}
-		tc.b.Process(tc.gen, logits)
-		if tc.want {
-			for i, v := range logits {
-				if i == closeID && v != 0 {
-					t.Errorf("%s: the close token's logit was changed to %v, want 0", tc.name, v)
-				}
-				if i != closeID && !math.IsInf(float64(v), -1) {
-					t.Errorf("%s: logit %d = %v, want -Inf (only the close token may survive)", tc.name, i, v)
-				}
-			}
-		} else if logits[3] != 0.3 {
-			t.Errorf("%s: logits were touched while the budget was not due", tc.name)
-		}
-	}
-}
-
 // The budget in the REAL decode loop. A gated processor is only as right as its first step: the gate is asked before any
 // token exists, and again after each emitted one, and the fast paths resume when it says no. This runs the tiny model with
 // the processor both gated and ungated and checks the same thing each way: the stream is identical to an unprocessed run up to
@@ -138,7 +87,7 @@ func TestReasoningBudget_inTheDecodeLoop(t *testing.T) {
 	vocab := lm.model.Config().VocabSize
 	closeID := (base[limit] + 1) % vocab // any id the model would NOT have picked at that step
 	for _, gated := range []bool{true, false} {
-		b := &reasoningBudget{open: 1, closeID: closeID, opens: true, limit: limit}
+		b := chat.NewReasoningBudget(1, closeID, true, limit)
 		sp := decoder.SamplingParams{LogitProcessor: b.Process}
 		if gated {
 			sp.LogitProcessorGate = b.Gate
@@ -156,7 +105,7 @@ func TestReasoningBudget_inTheDecodeLoop(t *testing.T) {
 		}
 	}
 	// A budget that is never reached changes nothing.
-	b := &reasoningBudget{open: 1, closeID: closeID, opens: true, limit: 1000}
+	b := chat.NewReasoningBudget(1, closeID, true, 1000)
 	if got := run(decoder.SamplingParams{LogitProcessor: b.Process, LogitProcessorGate: b.Gate}, 14); !slices.Equal(got, base) {
 		t.Errorf("an unreached budget changed the stream: %v vs %v", got, base)
 	}

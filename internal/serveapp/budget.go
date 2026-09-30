@@ -25,7 +25,6 @@ package serveapp
 
 import (
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 
@@ -61,10 +60,10 @@ func (c config) reasoningBudgetFlag() budgetFlag {
 // resolveBudget is the ceiling on reasoning tokens for a request whose turn is maxTokens long, or ok=false when none applies.
 // explicit is the request's own budget (0 = none asked for).
 func resolveBudget(f budgetFlag, explicit, maxTokens int) (limit int, ok bool) {
-	if maxTokens < 4 {
+	room, ok := chat.BudgetRoom(maxTokens) // thinking leaves at least a quarter of the turn (min 2 tokens) for the answer
+	if !ok {
 		return 0, false // nothing worth protecting: the whole turn is a few tokens
 	}
-	room := maxTokens - max(2, maxTokens/4) // thinking leaves at least a quarter of the turn (min 2 tokens) for the answer
 	limit = room
 	if explicit > 0 {
 		limit = min(explicit, room)
@@ -75,56 +74,6 @@ func resolveBudget(f budgetFlag, explicit, maxTokens int) (limit int, ok bool) {
 	}
 	return limit, limit >= 1
 }
-
-// reasoningBudget is the processor. opens means the PROMPT already ends inside an open block (counting starts at the first
-// generated token); otherwise the block starts after the first open token the model writes.
-type reasoningBudget struct {
-	open, closeID int
-	opens         bool
-	limit         int
-}
-
-// due reports whether the next token must be the close token: inside an unclosed block that has used its budget.
-func (b *reasoningBudget) due(generated []int) bool {
-	start := 0
-	if !b.opens {
-		i := indexOfID(generated, b.open)
-		if i < 0 {
-			return false // the model has not opened a block (and may never)
-		}
-		start = i + 1
-	}
-	inside := generated[start:]
-	if len(inside) < b.limit {
-		return false
-	}
-	return indexOfID(inside, b.closeID) < 0
-}
-
-func indexOfID(ids []int, id int) int {
-	for i, v := range ids {
-		if v == id {
-			return i
-		}
-	}
-	return -1
-}
-
-// Process is a decoder.SamplingParams.LogitProcessor. It is safe to call on every step (the vision decode loop ignores the
-// gate): it does nothing unless the budget is due.
-func (b *reasoningBudget) Process(generated []int, logits []float32) {
-	if !b.due(generated) || b.closeID < 0 || b.closeID >= len(logits) {
-		return
-	}
-	neg := float32(math.Inf(-1))
-	for i := range logits {
-		logits[i] = neg
-	}
-	logits[b.closeID] = 0
-}
-
-// Gate is a decoder.SamplingParams.LogitProcessorGate.
-func (b *reasoningBudget) Gate(generated []int) bool { return b.due(generated) }
 
 // routeThink wires one generation's reasoning: the splitter that separates it (think.go) and, where it applies, the budget
 // that bounds it. Every route calls it in place of newThinkOut.
@@ -137,17 +86,14 @@ func (s *server) applyBudget(lm *loadedModel, gr *genRequest, tm *chat.Template,
 	if !tm.ThinkingPossible() || gr.masker != nil || lm.spec || lm.blockSpec != nil || lm.tk == nil {
 		return
 	}
-	r := tm.Reasoning()
-	openID, ok1 := lm.tk.TokenID(r.OpenToken())
-	closeID, ok2 := lm.tk.TokenID(r.CloseToken())
-	if !ok1 || !ok2 {
-		return
-	}
 	limit, ok := resolveBudget(s.cfg.reasoningBudgetFlag(), ts.budget, gr.maxTokens)
 	if !ok {
 		return
 	}
-	b := &reasoningBudget{open: openID, closeID: closeID, opens: tm.PromptOpensThinkFor(turns), limit: limit}
+	b := tm.NewReasoningBudgetFor(lm.tk, turns, limit)
+	if b == nil {
+		return // the tokenizer has no single token for the delimiters
+	}
 	prev, prevGate := gr.sp.LogitProcessor, gr.sp.LogitProcessorGate
 	switch {
 	case prev == nil:
