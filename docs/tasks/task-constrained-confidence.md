@@ -1,8 +1,13 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
-> **Status, 2026-09-28: C0–C2, D0, D1 and D5 done; D6a queued; D7 projected.**
-> - **D6a** is pre-registered and amended twice (smaller samples; the bias-adjusted ECE bar). It is queued on nobara
->   as `d6a-amended-cuda` and decides D2–D4.
+> **Status, 2026-09-30: C0–C2, D0, D1 and D5 done; D6a GRADED → BUILD D2–D4 (the owner decides whether to start); D7 projected.**
+> - **D6a** ([`decisions-d6a-2026-09-28.md`](../measurements/decisions-d6a-2026-09-28.md)): arm A (Qwen3.5-9B, chat-v1, calibrated)
+>   reads top-1 0.4197 and ECE 0.1656, against JEV-9B's 0.9181 and a bar of 0.0632, so the registered rule says **build D2–D4**.
+>   The control failed as registered (bare-v1 0.3378 against the authors' B0 0.5180). The investigation found the inputs identical
+>   to transformers' on the D0 fixture (prompts, token ids, label tokens: 150/150) and the gap numeric (4-bit weights plus goinfer's
+>   re-quantization; 60% argmax agreement with f32). On those same items the reference's own Route A reads 0.559 and the trained head
+>   0.934, so label scoring is about 37 points behind a trained head **in the reference itself**; the decision holds whatever the
+>   numeric gap is. Owed by night: the 150 items at `--quant q4k` (CPU-only for this model on CUDA), to split that gap.
 > - **D7's projection** is in [`decisions-d7-2026-09-28.md`](../measurements/decisions-d7-2026-09-28.md). For one
 >   question, a decision beats a schema answer by 1.11× at 256 prompt tokens and by ~1.01× at 4K. For five questions
 >   about one state on qwen3_5, decisions are 3–5× slower, so D8's trigger is projected to fire.

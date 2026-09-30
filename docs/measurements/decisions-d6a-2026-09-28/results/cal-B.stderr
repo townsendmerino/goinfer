@@ -1,0 +1,11 @@
+decisions-calibrate: 100 lines, 49s
+decisions-calibrate: 200 lines, 1m26s
+decisions-calibrate: 300 lines, 2m5s
+decisions-calibrate: 400 lines, 2m39s
+decisions-calibrate: 500 lines, 3m7s
+decisions-calibrate: 600 lines, 3m35s
+decisions-calibrate: choice  n=187  T=1.2211  KL 0.60749 -> 0.60202
+decisions-calibrate: noul  n=239  T=2.0011  KL 0.32236 -> 0.30456
+decisions-calibrate: score  n=174  T=49.9999  KL 1.03154 -> 0.76402
+decisions-calibrate: WARNING score: T hit the search bound — the model's ranking disagrees with the targets more than any temperature can fix (flattening toward uniform, or sharpening without limit). Do not trust this kind's calibration; check the template and the labels, and fit on more rows.
+decisions-calibrate: 600 rows fitted, 0 skipped, wrote /home/francis/goinfer-bench/decisions-d6a/cal-B.json
