@@ -80,20 +80,21 @@
     ],
     "display_name": "Qwen3.8",
     "description": "Qwen3.8 dense: the same Gated DeltaNet + softmax 3:1 hybrid as Qwen3.5-MoE, with a plain SwiGLU in place of the router",
-    "summary": "Qwen3.8 dense: the same hybrid attention, without the experts.",
+    "summary": "Qwen3.8 dense: the same hybrid attention, without the experts. Reads images (verified on Qwen3.5-0.8B).",
     "tasks": [
-      "chat"
+      "chat",
+      "vision"
     ],
     "coverage_axis": "gated-linear hybrid (Gated DeltaNet)",
     "moe": "dense",
     "sliding_window": "none",
     "qk_norm": true,
-    "rope_style": "partial",
+    "rope_style": "m-RoPE",
     "norm": "RMSNorm, pre-norm",
     "activation": "SwiGLU",
     "tied_lm_head": false,
     "loaders": "safetensors, GGUF",
-    "modality": "text",
+    "modality": "text (+ vision tower)",
     "gpu_residency_eligible": true,
     "parity": "real-oracle 100.0%/0.99989"
   },

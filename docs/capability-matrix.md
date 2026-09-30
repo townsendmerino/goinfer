@@ -25,7 +25,7 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 | Olmo Hybrid | `olmo_hybrid` | dense | none | yes | none | RMSNorm, post-only | SwiGLU | no | safetensors | text | yes | full-oracle 100.0%/1.00000 |
 | Qwen3-Next | `qwen3_next` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors | text | yes | real-oracle 100.0%/0.98931 |
 | Qwen3.5-MoE | `qwen3_5_moe`, `qwen3_5_moe_text` | sparse +shared | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | full-oracle 77.5%/0.99069 |
-| Qwen3.8 | `qwen3_5`, `qwen3_5_text` | dense | none | yes | partial | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text | yes | real-oracle 100.0%/0.99989 |
+| Qwen3.8 | `qwen3_5`, `qwen3_5_text` | dense | none | yes | m-RoPE | RMSNorm, pre-norm | SwiGLU | no | safetensors, GGUF | text (+ vision tower) | yes | real-oracle 100.0%/0.99989 |
 
 ## latent-KV (MLA)
 
