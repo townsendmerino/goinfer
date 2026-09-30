@@ -25,7 +25,7 @@ import time
 import urllib.error
 import urllib.request
 
-TAGS = ("<think>", "</think>")
+TAGS = ("<think>", "</think>")   # the family's think delimiters; --tags overrides (Gemma 4: "<|channel>,<channel|>")
 Q = "What is 2 + 3? Answer in one short sentence."
 TOOL = {"type": "function", "function": {"name": "get_weather", "description": "Weather for a city",
         "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}
@@ -174,7 +174,7 @@ def run(base, model, mx):
     r = chat_nonstream(base, model, "on", mx, {"reasoning_format": "deepseek-legacy"})
     m = r["choices"][0]["message"]
     cell("chat/on/reasoning_format legacy: reasoning_content filled AND tags kept when the model thought",
-         (not m.get("reasoning_content")) or ("</think>" in (m["content"] or "") or r["choices"][0]["finish_reason"] == "length"),
+         (not m.get("reasoning_content")) or (TAGS[1] in (m["content"] or "") or r["choices"][0]["finish_reason"] == "length"),
          f"content={m['content'][:80]!r}")
     try:
         chat_nonstream(base, model, "unset", 8, {"reasoning_format": "bogus"})
@@ -300,10 +300,12 @@ def main():
     ap.add_argument("--max", type=int, default=200)
     ap.add_argument("--json", default="")
     ap.add_argument("--max-think", type=int, default=1500, help="max_tokens for the cell that must think AND finish with an answer")
+    ap.add_argument("--tags", default="<think>,</think>", help="comma-separated think delimiters that must never reach content")
     ap.add_argument("--off-delta", type=int, default=4, help="prompt tokens thinking=off adds over unset (closed block: 4)")
     ap.add_argument("--on-delta", type=int, default=2, help="prompt tokens thinking=on adds over unset (open <think>\\n: 2; Qwen3 writes nothing: 0)")
     a = ap.parse_args()
-    global OFF_DELTA, ON_DELTA, MAX_THINK
+    global OFF_DELTA, ON_DELTA, MAX_THINK, TAGS
+    TAGS = tuple(a.tags.split(","))
     OFF_DELTA, ON_DELTA, MAX_THINK = a.off_delta, a.on_delta, a.max_think
     model = a.model
     if not model:

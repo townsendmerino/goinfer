@@ -198,6 +198,14 @@ func (t *Template) Reasoning() *Reasoning {
 	return t.reason
 }
 
+// ThinkMode is the mode this Template renders (ThinkAsIs unless WithThinking chose another).
+func (t *Template) ThinkMode() ThinkMode {
+	if t == nil {
+		return ThinkAsIs
+	}
+	return t.think
+}
+
 // PromptOpensThink reports whether the generation prompt this Template renders ends INSIDE an open think block, so the
 // reply starts with reasoning and only the closing delimiter will be generated. It is what a ThinkSplitter's forcedOpen
 // must be for replies to prompts from this Template.

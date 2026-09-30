@@ -1464,5 +1464,20 @@ func templateName(t *chat.Template) string {
 	if t == nil {
 		return "raw (no template)"
 	}
-	return t.Name()
+	return t.Name() + thinkingNote(t)
+}
+
+// thinkingNote is the load log's statement of what serve will do about thinking for this model: the checkpoint's own
+// default (read from its template), the mode -thinking selected, or "unmanaged" — a ChatML/Gemma template whose thinking
+// control was not recognised is served exactly as before, and saying so beats leaving an operator to find out.
+func thinkingNote(t *chat.Template) string {
+	r := t.Reasoning()
+	if r == nil {
+		if t.Name() == "chatml" || t.Name() == "gemma4" {
+			return ", thinking: unmanaged"
+		}
+		return ""
+	}
+	def := map[bool]string{true: "on", false: "off"}[r.DefaultOn()]
+	return fmt.Sprintf(", thinking: template default %s, serving %s", def, t.ThinkMode())
 }
