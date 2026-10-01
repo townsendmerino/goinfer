@@ -248,6 +248,8 @@ int8int8 on the Mac" loose end from task-first-hour is void until this is decide
 
 **Size.** Reporting: trivial, do now. Kernel: medium.
 
+**Reopened 2026-10-01** for the kernel half: `docs/tasks/task-metal-int8-2026-10.md`.
+
 ### G11 — no layer placement on CUDA/Metal (resident-or-CPU)
 
 **Where.** `cuda/backend.go` / `metal/backend.go` `BuildResident` admit the whole model or decline

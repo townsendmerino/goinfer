@@ -1347,6 +1347,9 @@ On nobara-pc, binaries built from this change picked `cuda` for the plain `goinf
 for the model-included 0.5B (`cuda-resident (int8int8)`), and the CPU with `CUDA_VISIBLE_DEVICES=-1`, naming why
 (`docs/measurements/r17-auto-backend-2026-10-01/`).
 
+**Follow-up:** Metal running int8 weights natively would let auto send those models to the GPU too:
+`docs/tasks/task-metal-int8-2026-10.md`, slice 5.
+
 ### R18 — the release binaries report `-dirty`
 
 **Found** (versions table). `goinfer-serve --version` printed `v0.19.0 (c7f8eff76c7c-dirty)` from the release asset, a

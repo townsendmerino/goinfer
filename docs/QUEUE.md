@@ -45,6 +45,10 @@ Boxes: `linux` (nvidia-rtx2070s, CUDA) · `mac` (Apple Silicon, Metal).
 
 ## In flight
 
+- **Metal runs int8 weights natively (W8A8)**, `docs/tasks/task-metal-int8-2026-10.md`. Slice 1, dense int8 decode,
+  started 2026-10-01; gates F1–F3 by day, S on the Mac's night queue. Owner decision O1 (explicit `-backend metal`
+  with an int8 model: native or re-quant) is open there.
+
 ## Queued
 
 Ordered roughly by priority within each group. Each item carries enough context to be picked up
