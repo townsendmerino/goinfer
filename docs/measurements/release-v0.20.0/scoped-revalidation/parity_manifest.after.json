@@ -1,0 +1,897 @@
+{
+  "shared_sets": {
+    "core": [
+      "decoder/model.go",
+      "decoder/forwardn.go",
+      "decoder/attention.go",
+      "decoder/mlp.go",
+      "decoder/kvcache.go",
+      "decoder/rope.go",
+      "decoder/ropescale.go",
+      "decoder/rmsnorm.go",
+      "decoder/registry.go",
+      "decoder/arch.go",
+      "decoder/config.go"
+    ],
+    "deltanet": [
+      "decoder/deltanet.go"
+    ],
+    "loaders": [
+      "decoder/weights.go",
+      "decoder/gguf.go"
+    ],
+    "mamba2": [
+      "decoder/mamba2.go"
+    ],
+    "moe": [
+      "decoder/mlp.go"
+    ],
+    "quant": [
+      "decoder/weightmat.go",
+      "decoder/gptq.go",
+      "decoder/awq.go"
+    ],
+    "serialize": [
+      "decoder/serialize.go"
+    ]
+  },
+  "families": {
+    "bailing_hybrid": {
+      "uses": [],
+      "own": [],
+      "deps_hash": "sha256:1ff25e70e4cc54e3c860852936f455145151d9523d4933426a3a06635a9be721",
+      "status": "experimental",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "hand-assembled f32 reference (bailing_hybrid-tiny fixture, MLA+KDA composition, KDA's per-channel-decay recurrence via fla-org's own naive reference)",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "cohere": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "validated",
+      "validated_at": "bcf50a49",
+      "date": "2026-10-01",
+      "reference": "HF f32 (Aya-Expanse-8B, CohereForCausalLM)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "cohere2": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "validated",
+      "validated_at": "bcf50a49",
+      "date": "2026-10-01",
+      "reference": "HF f32 (Command-R7B, Cohere2ForCausalLM)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "deepseek_v2": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [
+        "decoder/forward_deepseek.go"
+      ],
+      "deps_hash": "sha256:5cb15e40dc0d8cb208687d0099f09a21c2432326b3794a6bab5f74bd4dc8f67f",
+      "status": "validated",
+      "validated_at": "bcf50a49",
+      "date": "2026-10-01",
+      "reference": "HF bf16 (DeepSeek-V2-Lite 15.7B; int8 resident)",
+      "machine": "linux-amd64",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99924,
+        "cosine_mean": 0.99924
+      }
+    },
+    "deepseek_v3": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [
+        "decoder/forward_deepseek.go"
+      ],
+      "deps_hash": "sha256:5cb15e40dc0d8cb208687d0099f09a21c2432326b3794a6bab5f74bd4dc8f67f",
+      "status": "validated",
+      "validated_at": "bcf50a49",
+      "date": "2026-10-01",
+      "reference": "HF bf16 (Moonlight-16B-A3B; int8 resident)",
+      "machine": "linux-amd64",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99951,
+        "cosine_mean": 0.99951
+      }
+    },
+    "gemma": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [
+        "decoder/gemma12.go"
+      ],
+      "deps_hash": "sha256:6d1d5dbcc37f52502320ee248b0eab8e4ffe1e6c2b8d4a740719dd6dd5c0c182",
+      "status": "experimental",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF f32 eager (gemma1-tiny seeded fixture, MQA + (1+w) RMSNorm), safetensors and GGUF",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "gemma2": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [
+        "decoder/gemma12.go"
+      ],
+      "deps_hash": "sha256:6d1d5dbcc37f52502320ee248b0eab8e4ffe1e6c2b8d4a740719dd6dd5c0c182",
+      "status": "experimental",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF f32 eager (gemma2-tiny seeded fixture, sandwich norms + sliding 4 + softcaps 5/3), safetensors and GGUF",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "gemma3": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "validated",
+      "validated_at": "bcf50a49",
+      "date": "2026-10-01",
+      "reference": "HF f32 (gemma-3-4b-it, text)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99972,
+        "cosine_mean": 0.99972
+      }
+    },
+    "gemma4": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [
+        "decoder/forward_gemma4.go"
+      ],
+      "deps_hash": "sha256:d5f54957a5c9aebc91ee8296596bd9ecadd725f73a7f307cf4ee3744fe4da794",
+      "status": "validated",
+      "validated_at": "310a2e44",
+      "date": "2026-09-28",
+      "reference": "HF bf16 (google/gemma-4 E2B + 12B); q4_0 GGUF source loaded at int8int8, argmax-exact + sample-256 cosine (re-validated 2026-09-28 at 310a2e44 on nobara after the aikit v1.50.0 int4 f16-scale change, which does not reach int8int8: 12B 0.98972, E2B 0.99924)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.98972,
+        "cosine_mean": 0.99448
+      }
+    },
+    "glm4_moe": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "experimental",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF f32 (glm-tiny seeded fixture)",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "gpt-oss": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [
+        "decoder/forward_gptoss.go",
+        "decoder/gptoss120_test.go",
+        "decoder/gptoss_safetensors.go",
+        "decoder/gptoss_safetensors_test.go"
+      ],
+      "deps_hash": "sha256:bc2f7b2b977f8e863a7dc61da8bf65d5df248e37e8759f2057ca248e34009a2f",
+      "status": "validated",
+      "validated_at": "25a4711",
+      "date": "2026-07-27",
+      "reference": "tiny HF f32 gpt-oss golden (attention sinks + clamped-SwiGLU MoE + sliding/full + YaRN): argmax-exact, logit cosine 1.0. Real gpt-oss:20b MXFP4 (int8 resident, ~20 GB) vs HF bf16 (scripts/gptoss_hf_oracle.py): argmax-exact (\" Paris\") and coherent generation. Reproduced on main once the root go.mod pinned aikit v1.12.0, whose ggml type-39 dequant the MXFP4 experts need. | SAFETENSORS loader (2026-08-18) diffed against this same GGUF path at identical int8: argmax identical, logit cosine 0.999121; residual attributable to the GGUF's Q8_0 attention vs safetensors BF16 (experts are MXFP4 ggml_type 39 in BOTH, so the expert path agrees exactly). A wrong nibble order or mis-split gate_up measured 0.081, so the threshold separates right from wrong by three orders of magnitude. The loader also generalizes to gpt-oss-120b (4-layer slice: 128 experts, distinct across indices 0/63/127, all logits finite) -- shape coverage only, since 4 layers of 120b dequantize to ~51GB in f32 and no reference forward fits.",
+      "machine": "linux-62gb",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99843
+      }
+    },
+    "gpt2": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "validated",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF f32 (GPT-2 small, 124M)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "granite": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "experimental",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF f32 (granite-dense-tiny seeded fixture, non-trivial scalar multipliers)",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "granitemoehybrid": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe",
+        "mamba2"
+      ],
+      "own": [
+        "decoder/forward_granite.go"
+      ],
+      "deps_hash": "sha256:c935403cdc707b32282e51e1839fffff5484672e595bfd639092b713356823b1",
+      "status": "validated",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF bf16 (Granite-4.0-H-Tiny 7B-A1B; int8 resident)",
+      "machine": "linux-amd64",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99566,
+        "cosine_mean": 0.99566
+      }
+    },
+    "internlm2": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [
+        "decoder/internlm2.go",
+        "decoder/internlm2_test.go",
+        "scripts/pin_internlm2_tiny.py"
+      ],
+      "deps_hash": "sha256:fbd62c435d29995ce21e9fcb15ee462aaec8da181c46ee78d383b544ae37a7d3",
+      "status": "validated",
+      "validated_at": "bcf50a49",
+      "date": "2026-10-01",
+      "reference": "HF f32 (internlm2_5-1_8b-chat, InternLM2ForCausalLM)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "kimi_k2": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [
+        "decoder/forward_deepseek.go"
+      ],
+      "deps_hash": "sha256:5cb15e40dc0d8cb208687d0099f09a21c2432326b3794a6bab5f74bd4dc8f67f",
+      "status": "validated",
+      "validated_at": "b067007",
+      "date": "2026-08-05",
+      "reference": "rides deepseek_v3's real-model oracle (HF bf16 Moonlight-16B-A3B; int8 resident) \u2014 same forward_deepseek.go, same deps_hash. Kimi's config-delta (64 heads, 384 experts top-8, sigmoid noaux_tc routing default) is covered by TestKimi_descriptor / TestKimi_routingDefault / TestKimi_textParity (tiny golden, cosine 1.000000)",
+      "machine": "linux-62gb",
+      "method": "shared-path (via deepseek_v3)",
+      "metrics": null
+    },
+    "laguna": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [
+        "decoder/laguna_config_test.go",
+        "decoder/laguna_test.go",
+        "decoder/laguna_slice_test.go",
+        "decoder/laguna_gguf_test.go",
+        "scripts/pin_laguna_tiny.py",
+        "scripts/pin_slice_oracle.py"
+      ],
+      "deps_hash": "sha256:2548bda866120a3ec5b8a47504294f3e5ae6d6c547a890f7e1e756fe09d8f43a",
+      "status": "validated",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF bf16 (poolside Laguna-XS.2, 33B-A3B; full model via accelerate disk offload; int8 weights, f32 activations)",
+      "machine": "linux-amd64",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99884,
+        "cosine_mean": 0.99884
+      }
+    },
+    "lfm2": {
+      "uses": [
+        "core",
+        "loaders"
+      ],
+      "own": [
+        "decoder/lfm2.go",
+        "decoder/forward_lfm2.go"
+      ],
+      "deps_hash": "sha256:ae4101cbbd556a241bfc27b147b21124d54c8dca944f6ec83c4b1517b05d471c",
+      "status": "experimental",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF f32 (lfm2-tiny seeded fixture)",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "llama": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "validated",
+      "validated_at": "bcf50a49",
+      "date": "2026-10-01",
+      "reference": "HF f32 (TinyLlama-1.1B-Chat)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "llama4_text": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [
+        "decoder/forward_llama4.go"
+      ],
+      "deps_hash": "sha256:c862d3b951a65b5196d91c7c8f249b56c089d7f1d786f1d864ff28a1a84547a1",
+      "status": "experimental",
+      "validated_at": "3f23c96",
+      "date": "2026-06-16",
+      "reference": "tiny HF f32 Llama-4 golden (iRoPE/NoPE, L2 QK-norm, attn-temp, dense/MoE) + real Llama-4-Scout-17B-16E Q2_K GGUF (int4 resident; coherent+factual)",
+      "machine": "linux-62gb",
+      "method": "tiny-golden+coherent",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.0,
+        "cosine_mean": 1.0
+      }
+    },
+    "mellum": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [
+        "decoder/mellum_slice_test.go",
+        "scripts/pin_slice_oracle.py"
+      ],
+      "deps_hash": "sha256:03fe372f0b7e3ba6f07524cd8fe0c32eaa99369906dcb9eb77e152009f7bd5e7",
+      "status": "validated",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF bf16 (Mellum2-12B-A2.5B-Instruct)",
+      "machine": "linux-amd64",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99969,
+        "cosine_mean": 0.99969
+      }
+    },
+    "mistral": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "validated",
+      "validated_at": "bcf50a49",
+      "date": "2026-10-01",
+      "reference": "HF f32 (TinyMistral-248M)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "mistral3": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "experimental",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF f32 (ministral3-tiny seeded fixture, prompt \u003e original_max_position_embeddings to exercise attn-temp)",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "mixtral": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "experimental",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF f32 (mixtral-tiny seeded fixture, 8x top-2)",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "nemotron_h": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "mamba2"
+      ],
+      "own": [
+        "decoder/forward_nemotron.go"
+      ],
+      "deps_hash": "sha256:4e26cec43a586f3c70a96ac1916525945842a4bd10a4e49abae1e66cb2ccf59c",
+      "status": "validated",
+      "validated_at": "0b74e671",
+      "date": "2026-09-18",
+      "reference": "HF bf16 (NVIDIA-Nemotron-Nano-9B-v2; int8 resident)",
+      "machine": "linux-amd64",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99574,
+        "cosine_mean": 0.99574
+      }
+    },
+    "olmo3": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "experimental",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF f32 (olmo3-tiny seeded fixture, NormPostOnly + QKNormWhole + YaRN-on-full-only)",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "olmo_hybrid": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "deltanet"
+      ],
+      "own": [
+        "decoder/forward_qwen35.go",
+        "decoder/olmo_hybrid_real_test.go",
+        "decoder/olmo_hybrid_test.go",
+        "scripts/pin_olmo_hybrid_real.py",
+        "scripts/pin_olmo_hybrid_tiny.py"
+      ],
+      "deps_hash": "sha256:df122b5f42101972e6bf2ab5940524ba523d8a96f9a9da328dbe61d00e14118f",
+      "status": "experimental",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF f32 (olmo_hybrid-tiny seeded fixture, mixed NormPlacement + NegEigval + separate DeltaNet tensors + NoPE)",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "phi3": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "validated",
+      "validated_at": "bcf50a49",
+      "date": "2026-10-01",
+      "reference": "HF f32 (Phi-3-mini-4k-instruct 3.8B)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "qwen2": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "validated",
+      "validated_at": "bcf50a49",
+      "date": "2026-10-01",
+      "reference": "HF f32 (Qwen2.5-0.5B)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "qwen2_5_vl": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "experimental",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF (qwen2.5-VL-tiny seeded fixture, e2e encoder→decoder)",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99998,
+        "cosine_mean": 0.99998
+      }
+    },
+    "qwen2_moe": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "validated",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF bf16 (Qwen/Qwen1.5-MoE-A2.7B; int8 weights, f32 activations)",
+      "machine": "linux-amd64",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99954,
+        "cosine_mean": 0.99954
+      }
+    },
+    "qwen3": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "validated",
+      "validated_at": "bcf50a49",
+      "date": "2026-10-01",
+      "reference": "HF f32 (Qwen3-1.7B)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "qwen3_5": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "deltanet"
+      ],
+      "own": [
+        "decoder/forward_qwen35.go",
+        "decoder/qwen3_5_test.go",
+        "scripts/pin_qwen3_5_forward.py"
+      ],
+      "deps_hash": "sha256:e4840450e974aac14945dc3b304a2aba3e2e3161017150eb1114cf9f401e63d4",
+      "status": "validated",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF bf16 (Qwen/Qwen3.8-27B, Qwen3_5ForConditionalGeneration text path; full model via accelerate disk offload; int8 weights, f32 activations)",
+      "machine": "linux-amd64",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99989,
+        "cosine_mean": 0.99989
+      }
+    },
+    "qwen3_5_moe": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe",
+        "deltanet"
+      ],
+      "own": [
+        "decoder/forward_qwen35.go",
+        "decoder/gguf_qwen35.go"
+      ],
+      "deps_hash": "sha256:26ff8000d56923c74d3d339c52b70b779221b97fbca03e1c7a61a3ee7c6fcb7f",
+      "status": "validated",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF bf16 (Qwen3.6-35B-A3B text decoder)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 77.5,
+        "cosine_min": 0.99069,
+        "cosine_mean": 0.99644
+      }
+    },
+    "qwen3_moe": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "validated",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF bf16 (Qwen/Qwen3-30B-A3B; int8 weights, f32 activations)",
+      "machine": "linux-amd64",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.99834,
+        "cosine_mean": 0.99834
+      }
+    },
+    "qwen3_next": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant",
+        "moe",
+        "deltanet"
+      ],
+      "own": [
+        "decoder/forward_qwen35.go",
+        "decoder/qwen3next.go",
+        "decoder/qwen3next_real_test.go",
+        "decoder/qwen3next_slice_test.go",
+        "decoder/qwen3next_test.go",
+        "scripts/pin_qwen3next_tiny.py",
+        "scripts/pin_slice_oracle.py"
+      ],
+      "deps_hash": "sha256:8de334339f3979bc89a0734323aaf01d46e1287cdda02888c23b8da0c7496719",
+      "status": "validated",
+      "validated_at": "426ca57d",
+      "date": "2026-09-29",
+      "reference": "HF bf16 (Qwen/Qwen3-Next-80B-A3B-Instruct, full model via accelerate disk offload; int4 weights, f32 activations)",
+      "machine": "linux-amd64",
+      "method": "real-model-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 0.98931,
+        "cosine_mean": 0.98931
+      }
+    },
+    "qwen3_vl": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "experimental",
+      "validated_at": "59dd7097",
+      "date": "2026-09-08",
+      "reference": "tiny-random Qwen3VLForConditionalGeneration, TEXT-ONLY forward (scripts/pin_qwen3vl_tiny.py) — no vision tower, no DeepStack (P8 Phase 0, docs/multimodal.md)",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "smollm3": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [],
+      "deps_hash": "sha256:674fa5e5391df057471745b4e14112f9b35e29abb4706ce04cddbd9fd5bbccc9",
+      "status": "experimental",
+      "validated_at": "70be7081",
+      "date": "2026-10-01",
+      "reference": "HF f32 (smollm3-tiny seeded fixture, per-layer NoPE on layer 3)",
+      "machine": "linux-amd64",
+      "method": "tiny-golden",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    },
+    "spark2_5": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [
+        "decoder/spark25_test.go",
+        "decoder/spark25_real_test.go",
+        "scripts/pin_spark2_5_tiny.py",
+        "scripts/pin_spark2_5_real.py"
+      ],
+      "deps_hash": "sha256:44322ff6019c55d99412d2412a2ced6a5d847fcb2a0638931ff126031198b4dc",
+      "status": "validated",
+      "validated_at": "bcf50a49",
+      "date": "2026-10-01",
+      "reference": "HF f32 (Spark-X2.5-1.7B, Spark2_5ForCausalLM)",
+      "machine": "linux-amd64",
+      "method": "full-forward-oracle",
+      "metrics": {
+        "argmax_pct": 100.0,
+        "cosine_min": 1.00000,
+        "cosine_mean": 1.00000
+      }
+    }
+  }
+}

@@ -1,0 +1,279 @@
+go: downloading github.com/townsendmerino/aikit v1.51.1
+== asset preflight — 55 registered asset(s), models root /home/francis/models ==
+   predicate: testdata/assets.json (kind/members/min_bytes) — the SAME one the gates apply
+   GOINFER_PREQUANT_GGUF        resolved  /home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+   GOINFER_QWEN35_GGUF          resolved  /home/francis/models/qwen3.6-35b-a3b-Q8_0.gguf
+   GOINFER_QWEN35_GOLDEN        resolved  /home/francis/models/qwen35_real_golden
+   GOINFER_QWEN35_REAL          env       /srv/models/qwen3.6-35b-a3b
+   GOINFER_DEEPSEEK_V2LITE      resolved  /home/francis/models/deepseek-v2-lite
+   GOINFER_DEEPSEEK_MOONLIGHT   resolved  /home/francis/models/moonlight-16b
+   GOINFER_DEEPSEEK_GGUF        resolved  /home/francis/models/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf
+   GOINFER_PHI3_MINI            resolved  /home/francis/models/phi3-mini-4k
+   GOINFER_PHI3_GGUF            resolved  /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf
+   GOINFER_LLAMA4_GGUF          resolved  /home/francis/models/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf
+   GOINFER_GRANITE_HF           resolved  /home/francis/models/granite-hf
+   GOINFER_NEMOTRON_HF          NOT FOUND —
+                                            ^ /home/francis/models/nemotron-hf (does not exist)
+   GOINFER_DFLASH_35B           resolved  /home/francis/models/qwen36-35b-dflash
+   GOINFER_DSPARK_F32           resolved  /home/francis/models/dspark-qwen3-4b-f32
+   GOINFER_QWEN3_4B             resolved  /home/francis/models/qwen3-4b
+   GOINFER_DFLASH_F32           resolved  /home/francis/models/qwen3-4b-dflash-f32
+   GOINFER_DFLASH_GPTOSS        resolved  /home/francis/models/gptoss-20b-dflash
+   GOINFER_DFLASH_GEMMA4        resolved  /home/francis/models/gemma4-26b-dflash
+   GOINFER_QWEN3NEXT_HF         resolved  /home/francis/models/qwen3next-80b-partial
+   GOINFER_QWEN3MOE_HF          resolved  /home/francis/models/qwen3moe-30b-a3b-bf16
+   GOINFER_QWEN2MOE_HF          resolved  /home/francis/models/qwen15-moe-a27b
+   GOINFER_NEMOTRON3NANO_HF     NOT FOUND —
+                                            ^ /home/francis/models/nemotron3nano-30b-bf16 (does not exist)
+   GOINFER_NEMOTRON35LIGHTNING_HF NOT FOUND —
+                                            ^ /home/francis/models/nemotron35lightning-30b-bf16 (does not exist)
+   GOINFER_NEMOTRON3NANO_GGUF   NOT FOUND —
+                                            ^ /home/francis/models/nemotron3nano-gguf/nvidia_Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf (does not exist)
+   GOINFER_LAGUNA_XS2           resolved  /home/francis/models/laguna-xs2
+   GOINFER_LAGUNA_GGUF          resolved  /home/francis/models/laguna-xs21-gguf/Laguna-XS-2.1-Q4_K_M.gguf
+   GOINFER_LAGUNA_DFLASH        resolved  /home/francis/models/laguna-xs2-dflash
+   GOINFER_GPTOSS_ST            resolved  /home/francis/models/gpt-oss-20b-hf
+   GOINFER_GPTOSS_GGUF          resolved  /home/francis/models/gpt-oss-20b-MXFP4.gguf
+   GOINFER_QWEN38               env       /srv/models/qwen3.8-27b
+   GOINFER_W4A8_INT4            resolved  /home/francis/models/qwen15-w4a8-int4.giw
+   GOINFER_W4A8_INT8            resolved  /home/francis/models/qwen15-w4a8-int8.giw
+   GOINFER_QWEN38_GGUF          resolved  /home/francis/models/qwen38-gguf/Qwen3.8-27B-UD-Q4_K_M.gguf
+   GOINFER_QWEN3_FP8            resolved  /home/francis/models/qwen3-0.6b-fp8
+   GOINFER_QWEN3_BF16           resolved  /home/francis/models/qwen3-0.6b-bf16
+   GOINFER_COHERE_AYA           resolved  /home/francis/models/aya-expanse-8b
+   GOINFER_COHERE2_R7B          resolved  /home/francis/models/command-r7b
+   GOINFER_SMOLLM3_3B           resolved  /home/francis/models/smollm3-3b
+   GOINFER_SPARK25_1_7B         resolved  /home/francis/models/spark25-1.7b
+   GOINFER_LFM2_2_6B            resolved  /home/francis/models/lfm25-2.6b
+   GOINFER_MINISTRAL3_3B        resolved  /home/francis/models/ministral3-3b-bf16
+   GOINFER_GRANITE_DENSE_3B     resolved  /home/francis/models/granite-4.2-3b
+   GOINFER_OLMO3_7B             resolved  /home/francis/models/olmo3-7b-think
+   GOINFER_OLMO_HYBRID_7B       resolved  /home/francis/models/olmo-hybrid-7b
+   GOINFER_INTERNLM2_1_8B       resolved  /home/francis/models/internlm2-1_8b
+   GOINFER_QWEN25VL_3B          resolved  /home/francis/models/qwen25vl-3b-instruct
+   GOINFER_QWEN3VL_2B           NOT FOUND —
+                                            ^ /home/francis/models/qwen3vl-2b-instruct (does not exist)
+   GOINFER_GRANITE_GGUF         resolved  /home/francis/models/granite/granite-4.0-h-tiny-Q8_0.gguf
+   GOINFER_GLM_GGUF             resolved  /home/francis/models/glm-air/GLM-4.5-Air-Q2_K.gguf
+   GOINFER_GLM_GIW              resolved  /home/francis/models/glm-air/GLM-4.5-Air-Q2_K.int4.giw
+   GOINFER_MELLUM_CKPT          resolved  /home/francis/models/mellum2-unq
+   GOINFER_QWEN35VL_08B         resolved  /home/francis/models/qwen3.5-0.8b
+   GOINFER_QWEN35VL_G2          resolved  /home/francis/models/qwen35vl_g2
+   GOINFER_QWEN35VL_9B          resolved  /home/francis/models/qwen3.5-9b
+   GOINFER_QWEN35VL_G2_9B       resolved  /home/francis/models/qwen35vl_g2_9b
+   ^^ 5 of 55 UNRESOLVED — the gates needing them will skip, and a skip is
+      reported as a blocker. Fix the path above rather than reading the blocker list as a
+      tree defect.
+   GOINFER_HEAVY_TESTS=1 set by this gate — the release sweep loads real checkpoints
+
+== EMIT_MANIFEST=1: real-oracle gates will record measured rows into the manifest ==
+
+[1m== parity sweep provenance ==[0m
+  repo        70be7081
+  date (UTC)  2026-10-01T17:48:14Z
+  host        Linux x86_64
+  realckpt    false
+  timeout     120m
+  emit        true
+  COMPOSITION of the release gate — 51 gates over 51 family labels
+    quant :  f32=34  int4=1  int4/int8=11  int8int8=5
+    loader:  gguf=12  safetensors=39
+
+  CROSS-GATE quant coverage (release gate vs the freeze-exception goldens):
+    gate parity       : f32 int4 int8 int8int8
+    forward goldens   : f32 int4 int8 int8int8
+    -> the two gates span the same quantizations.
+
+  CROSS-GATE loader coverage:
+    gate parity       : gguf safetensors
+    forward goldens   : gguf safetensors
+    -> the two gates span the same loaders.
+-- running ./decoder/ ./tokenizer/ ...
+   ... ./decoder/ ./tokenizer/: 1m0s elapsed, 165 tests finished, last: FuzzParseTokenizerJSON | in flight: TestA3FastAttentionDivergence (56s)
+   ... ./decoder/ ./tokenizer/: 2m0s elapsed, 265 tests finished, last: TestCPUBatch_everyEligibleFixtureBitIdentical/llama3.2-1b/int8int8 | in flight: TestCPUBatch_everyEligibleFixtureBitIdentical (41s)
+   ... ./decoder/ ./tokenizer/: 3m0s elapsed, 281 tests finished, last: TestCPUBatch_everyEligibleFixtureBitIdentical/tinyllama-1.1b/int8int8 | in flight: TestCPUBatch_everyEligibleFixtureBitIdentical (1m41s)
+   ... ./decoder/ ./tokenizer/: 4m0s elapsed, 349 tests finished, last: TestDFlash_referenceParity | in flight: TestDFlash_targetEndToEnd (11s)
+   ... ./decoder/ ./tokenizer/: 5m0s elapsed, 370 tests finished, last: TestHiddenLast_batchedMatchesSequential | in flight: TestEmbedInt4Knob (2s)
+   ... ./decoder/ ./tokenizer/: 6m0s elapsed, 537 tests finished, last: TestGemma4MoE_quantizedLoad | in flight: TestGemma4_logitParity (3s)
+   ... ./decoder/ ./tokenizer/: 7m0s elapsed, 736 tests finished, last: TestKVI8_truncateReappend | in flight: TestKVI8_snapshotRoundtrip (6s)
+   ... ./decoder/ ./tokenizer/: 8m0s elapsed, 737 tests finished, last: TestKVI8_snapshotRoundtrip | in flight: TestKVI8_genParity (33s)
+   ... ./decoder/ ./tokenizer/: 9m0s elapsed, 859 tests finished, last: TestMC3_topPConcurrentMatchesAlone | in flight: TestMellum2_logitParity (25s)
+   ... ./decoder/ ./tokenizer/: 10m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (53s)
+   ... ./decoder/ ./tokenizer/: 11m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (1m53s)
+   ... ./decoder/ ./tokenizer/: 12m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (2m53s)
+   ... ./decoder/ ./tokenizer/: 13m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (3m53s)
+   ... ./decoder/ ./tokenizer/: 14m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (4m53s)
+   ... ./decoder/ ./tokenizer/: 15m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (5m53s)
+   ... ./decoder/ ./tokenizer/: 16m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (6m53s)
+   ... ./decoder/ ./tokenizer/: 17m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (7m53s)
+   ... ./decoder/ ./tokenizer/: 18m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (8m53s)
+   ... ./decoder/ ./tokenizer/: 19m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (9m53s)
+   ... ./decoder/ ./tokenizer/: 20m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (10m53s)
+   ... ./decoder/ ./tokenizer/: 21m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (11m53s)
+   ... ./decoder/ ./tokenizer/: 22m0s elapsed, 860 tests finished, last: TestMellum2_logitParity | in flight: TestMellum2_windowParity (12m53s)
+   ... ./decoder/ ./tokenizer/: 23m0s elapsed, 904 tests finished, last: TestMoEExpertBatching_M1vsMN | in flight: TestMoEExpertMajor_bitIdentical (24s)
+   ... ./decoder/ ./tokenizer/: 24m0s elapsed, 990 tests finished, last: TestP13_mmapAliasRisk_classifiesDTypes | in flight: TestP13_realCheckpointReleases (10s)
+   ... ./decoder/ ./tokenizer/: 25m0s elapsed, 1033 tests finished, last: TestPrefillAttnWorkerBudget | in flight: TestPrefillAttnRowTileInvariance (16s)
+   ... ./decoder/ ./tokenizer/: 26m0s elapsed, 1033 tests finished, last: TestPrefillAttnWorkerBudget | in flight: TestPrefillAttnRowTileInvariance (1m16s)
+   ... ./decoder/ ./tokenizer/: 27m0s elapsed, 1042 tests finished, last: TestPrefillCancelledBeforeStart | in flight: TestPrefillCancelMidFlight (1s)
+   ... ./decoder/ ./tokenizer/: 28m0s elapsed, 1245 tests finished, last: TestMaxScanSerial_matchesParallelMax | in flight: TestGumbelDraw_goodnessOfFit (6s)
+   ... ./decoder/ ./tokenizer/: 29m0s elapsed, 1268 tests finished, last: TestSample_DrawIdentity | in flight: TestSamplingThroughputGate (3s)
+   ... ./decoder/ ./tokenizer/: 30m0s elapsed, 1294 tests finished, last: TestGreedyEquivalent_stableAcrossHistory | in flight: TestSampleFromTopK_matchesFullPath (44s)
+   ... ./decoder/ ./tokenizer/: 31m0s elapsed, 1359 tests finished, last: TestSerializeWeights_roundTrip | in flight: TestLoadSerializedWeights_guards (1s)
+   ... ./decoder/ ./tokenizer/: 32m0s elapsed, 1418 tests finished, last: TestGrammarForcedFraction | in flight: TestNgramSpecHarness (1s)
+   ... ./decoder/ ./tokenizer/: 33m0s elapsed, 1420 tests finished, last: TestForwardCaptureSeam | in flight: TestNgramSpecMLA_parity (35s)
+   ... ./decoder/ ./tokenizer/: 34m0s elapsed, 1420 tests finished, last: TestForwardCaptureSeam | in flight: TestNgramSpecMLA_parity (1m35s)
+   ... ./decoder/ ./tokenizer/: 35m0s elapsed, 1454 tests finished, last: TestDistVectorFrom_tempOnlyReusesBuffer | in flight: TestNgramSampledHarness (11s)
+   ... ./decoder/ ./tokenizer/: 36m0s elapsed, 1559 tests finished, last: TestValidateAssumptions | in flight: TestForward_slidingWindowParity (10s)
+   794 pass / 59 skip / 0 fail (go rc 0, 36m28s)  log: /tmp/gate_parity___decoder____tokenizer.json
+
+FAMILY               GATE                               RESULT
+------------------------------------------------------------------------
+gemma3               TestGGUF_gemma3_parity             ✅ pass
+gemma3-forward       TestForward_logitParity            ✅ pass
+gemma3-sliding       TestForward_slidingWindowParity    ✅ pass
+gemma4-E2B/E4B       TestGemma4_logitParity             ✅ pass
+gemma4-12B           TestGemma4_12B_logitParity         ✅ pass
+qwen2                TestQwen2_forwardParity            ✅ pass
+qwen2-gguf           TestGGUF_qwen2_parity              ✅ pass
+qwen3                TestQwen3_forwardParity            ✅ pass
+qwen3-gguf           TestGGUF_qwen3_parity              ✅ pass
+qwen2moe             TestQwen2Moe_forwardParity         ✅ pass
+qwen3moe             TestQwen3Moe_forwardParity         ✅ pass
+granite-dense        TestGraniteDense_forwardParity     ✅ pass
+mistral3             TestMinistral3_forwardParity       ✅ pass
+smollm3              TestSmolLM3_forwardParity          ✅ pass
+olmo3                TestOlmo3_forwardParity            ✅ pass
+gemma+gemma2         TestGemma12_forwardParity          ✅ pass
+olmo_hybrid          TestOlmoHybrid_forwardParity       ✅ pass
+bailing_hybrid       TestBailingHybrid_forwardParity    ✅ pass
+mistral3-batched     TestMinistral3_batchedMatchesSequential ✅ pass
+llama                TestLlama_forwardParity            ✅ pass
+llama3.2             TestLlama32_forwardParity          ✅ pass
+mistral              TestMistral_forwardParity          ✅ pass
+mixtral              TestMixtral_forwardParity          ✅ pass
+mellum2              TestMellum2_logitParity            ✅ pass
+mellum2-window       TestMellum2_windowParity           ✅ pass
+gpt2                 TestGPT2_forwardParity             ✅ pass
+qwen3_5_moe-tiny     TestQwen35_forwardParity           ✅ pass
+deltanet             TestGatedDeltaNet_parity           ✅ pass
+deepseek-tiny        TestDeepseek_textParity            ✅ pass
+kimi-tiny            TestKimi_textParity                ✅ pass
+phi3-tiny            TestPhi3_textParity                ✅ pass
+llama4-tiny          TestLlama4_textParity              ✅ pass
+nemotron-tiny        TestNemotron_textParity            ✅ pass
+nemotron3nano-tiny   TestNemotron3NanoMoE_textParity    ✅ pass
+gguf-Q8_0            TestGGUF_Q8_0_parity               ✅ pass
+gguf-Q4_0            TestGGUF_Q4_0_parity               ✅ pass
+gguf-Q4_K_M          TestGGUF_Q4_K_M_parity             ✅ pass
+gguf-Q4_K_S          TestGGUF_Q4_K_S_parity             ✅ pass
+gguf-Q5_K_M          TestGGUF_Q5_K_M_parity             ✅ pass
+gguf-Q6_K            TestGGUF_Q6_K_parity               ✅ pass
+gguf-Q3_K_M          TestGGUF_Q3_K_M_parity             ✅ pass
+gguf-Q2_K            TestGGUF_Q2_K_parity               ✅ pass
+gptq                 TestGPTQ_parity                    ✅ pass
+awq                  TestAWQ_parity                     ✅ pass
+w4a8-int4            TestW4A8DecodeParity               ✅ pass
+int4-forward         TestInt4_forwardParity             ✅ pass
+tok-gemma            TestEncodeDecode_goldenParity      ✅ pass
+tok-qwen3            TestByteLevel_qwen3GoldenParity    ✅ pass
+tok-llama3           TestByteLevel_llama3GoldenParity   ✅ pass
+tok-mellum2          TestByteLevel_mellum2GoldenParity  ✅ pass
+tok-tinyllama        TestLoadGGUF_tinyllamaParity       ✅ pass
+
+-- catch-all: other *Parity / *gate tests that SKIPPED (review) --
+   skipped: TestDeltaNetTiming_gate0Split
+   skipped: TestLoad_qkvGateUpRepackedOnlyEndToEnd
+   skipped: TestParityManifest_merge
+   skipped: TestSpeculativeGreedyParity_draftTarget
+
+-- EMIT_MANIFEST: merging measured PARITY_ROW lines into testdata/parity_manifest.json --
+   merged 17 row(s); families recorded: bailing_hybrid gemma gemma2 glm4_moe gpt2 granite lfm2 mellum mistral3 mixtral olmo3 olmo_hybrid qwen2_5_vl qwen2_moe qwen3_moe smollm3
+-- re-rendering docs/capability-matrix.{md,json} from the manifest --
+   matrix + manifest re-rendered
+-- emitter coverage (numeric-oracle gates) --
+   TestPhi3MiniReal_gate              — MISSING (no row expected)
+   TestDeepseekV2LiteReal_gate        — MISSING (no row expected)
+   TestDeepseekMoonlightReal_gate     — MISSING (no row expected)
+   TestQwen35Real_gate2FullModel      — MISSING (no row expected)
+   TestCohereAyaReal_gate             — MISSING (no row expected)
+   TestCohere2R7bReal_gate            — MISSING (no row expected)
+   TestQwen3NextReal_oracle           — MISSING (no row expected)
+   TestQwen3MoeReal_oracle            ✅ recorded row (qwen3_moe)
+   TestLFM2Real_gate                  ✅ recorded row (lfm2)
+   TestMinistral3Real_gate            ✅ recorded row (mistral3)
+   TestGraniteDenseReal_gate          ✅ recorded row (granite)
+   TestOlmo3Real_gate                 ✅ recorded row (olmo3)
+   TestGemma12Real_gate               — MISSING (no row expected)
+   TestOlmoHybridReal_gate            ✅ recorded row (olmo_hybrid)
+   TestInternLM2_1_8bReal_gate        — MISSING (no row expected)
+   TestQwen2MoeReal_oracle            ✅ recorded row (qwen2_moe)
+   TestLagunaReal_oracle              — MISSING (no row expected)
+   TestQwen38Real_oracle              — MISSING (no row expected)
+   TestQwen25VLReal_gate              ✅ recorded row (qwen2_5_vl)
+
+  gate ledger: 84 confirmed entr(ies) — testdata/gate_ledger.json
+    STALE (33): ledger entry with no matching gate — reported and IGNORED. A removed or renamed gate is ordinary; a ledger that blocks on its own leftovers trains people to delete entries
+      TestCohere2R7bReal_gate
+      TestCohereAyaReal_gate
+      TestDeepseekGGUFReal_gate
+      TestDeepseekMoonlightReal_gate
+      TestDeepseekV2LiteReal_gate
+      TestGemma12Real_gate
+      TestGlm4MoeAir_gate
+      TestGptOssReal_gate
+      TestGptOssReal_logitParity
+      TestGraniteDenseReal_gate
+      TestGraniteReal_gate
+      TestGraniteReal_oracle
+      TestInternLM2_1_8bReal_gate
+      TestLFM2Real_gate
+      TestLagunaGGUF_gate
+      TestLagunaReal_gate
+      TestLagunaReal_oracle
+      TestLlama4Real_gate
+      TestMinistral3Real_gate
+      TestOlmoHybridReal_gate
+      TestPhi3GGUFReal_gate
+      TestPhi3MiniReal_gate
+      TestQwen25VLReal_gate
+      TestQwen2MoeReal_oracle
+      TestQwen35GGUF_gate
+      TestQwen35GGUF_weightDiff
+      TestQwen38GGUF_gate
+      TestQwen38GGUF_weightDiff
+      TestQwen38Real_gate
+      TestQwen38Real_oracle
+      TestQwen3MoeReal_oracle
+      TestSmolLM3_3bReal_gate
+      TestSpark25Real_gate
+    CONFIRMED BEFORE THE GATE LAST CHANGED (26) — WARNING, does not block.
+      The assertion moved since the confirming commit, so the recorded value may be a confirmation of different semantics.
+      TestCohere2R7bReal_gate  (confirmed at eaa8bb23)
+      TestCohereAyaReal_gate  (confirmed at eaa8bb23)
+      TestDeepseekGGUFReal_gate  (confirmed at 679c9e5)
+      TestDeepseekMoonlightReal_gate  (confirmed at 679c9e5)
+      TestDeepseekV2LiteReal_gate  (confirmed at 679c9e5)
+      TestGPT2_forwardParity  (confirmed at 679c9e5)
+      TestGatedDeltaNet_parity  (confirmed at 679c9e5)
+      TestGraniteDenseReal_gate  (confirmed at 2732e75b)
+      TestGraniteReal_oracle  (confirmed at eaa8bb23)
+      TestInt4_forwardParity  (confirmed at bd085de)
+      TestInternLM2_1_8bReal_gate  (confirmed at 2732e75b)
+      TestLFM2Real_gate  (confirmed at 2732e75b)
+      TestLagunaGGUF_gate  (confirmed at eaa8bb23)
+      TestLlama4Real_gate  (confirmed at 679c9e5)
+      TestMinistral3Real_gate  (confirmed at 2732e75b)
+      TestOlmoHybridReal_gate  (confirmed at 2732e75b)
+      TestPhi3GGUFReal_gate  (confirmed at 679c9e5)
+      TestPhi3MiniReal_gate  (confirmed at 679c9e5)
+      TestQwen25VLReal_gate  (confirmed at 9ddde345)
+      TestQwen2MoeReal_oracle  (confirmed at 9ddde345)
+      TestQwen35GGUF_gate  (confirmed at 679c9e5)
+      TestQwen35GGUF_weightDiff  (confirmed at 679c9e5)
+      TestQwen38Real_oracle  (confirmed at 9ddde345)
+      TestQwen3MoeReal_oracle  (confirmed at 2732e75b)
+      TestSmolLM3_3bReal_gate  (confirmed at 2732e75b)
+      TestSpark25Real_gate  (confirmed at 650c1b5f)
+== 70be7081: ALL REQUIRED GATES GREEN ==
+full log: /tmp/gate_parity___decoder____tokenizer.json

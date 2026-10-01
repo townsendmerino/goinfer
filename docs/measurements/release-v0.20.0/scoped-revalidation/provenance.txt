@@ -1,0 +1,10 @@
+rev:        70be7081553ef6799eb175d9d8d5a03c99145c78 (github.com/townsendmerino/aikit v1.51.1)
+started:    2026-10-01 10:48:11 PDT
+fixtures:   61 gitignored entries symlinked from /home/francis/mycode/goinfer
+tree:       0 entries in git status (0 = clean)
+go:         go version go1.27.0 linux/amd64
+archive:    GOINFER_QWEN35_REAL=/srv/models/qwen3.6-35b-a3b GOINFER_QWEN38=/srv/models/qwen3.8-27b
+gates:      29 real-checkpoint gates: ^(TestDeepseekGGUFReal_gate|TestGemma4_26B_gate|TestGlm4MoeAir_gate|TestGptOssReal_gate|TestGptOssReal_logitParity|TestGraniteReal_gate|TestGraniteReal_oracle|TestLagunaGGUF_gate|TestLagunaReal_gate|TestLagunaReal_oracle|TestLlama4Real_gate|TestNemotron35LightningReal_oracle|TestNemotron3NanoMoEReal_gate|TestNemotron3NanoReal_oracle|TestNemotronReal_gate|TestNemotronReal_oracle|TestPhi3GGUFReal_gate|TestQwen2MoeReal_oracle|TestQwen35GGUF_gate|TestQwen35GGUF_locateDivergence|TestQwen35GGUF_routeFlipAtOutlier|TestQwen35GGUF_weightDiff|TestQwen35Real_gate2FullModel|TestQwen38GGUF_gate|TestQwen38GGUF_weightDiff|TestQwen38Real_gate|TestQwen38Real_oracle|TestQwen3MoeReal_oracle|TestQwen3NextReal_oracle)$
+== 1/2 untagged cell, all of it (REALCKPT=0) — 10:48:11
+== 2/2 the 29 quantized real-checkpoint gates (GATE_RUN) — 11:24:46
+finished:   2026-10-01 12:36:05 PDT

@@ -1,0 +1,10 @@
+rev:      1de759523b24ee468d091dfe6974c55aa3bcb821
+started:  2026-10-01 12:38:50 PDT
+go:       go version go1.27.0 linux/amd64
+asset:    /home/francis/models/qwen38-gguf/Qwen3.8-27B-UD-Q4_K_M.gguf
+=== RUN   TestQwen38GGUF_gate
+    qwen3_5_gguf_test.go:103: qwen3.8 GGUF Q4_K_M→int4: 64 tokens, distinct-trigram 0.859: "Here are three famous landmarks in Paris:\n\n1. **The Eiffel Tower** – An iconic iron lattice tower located on the Champ de Mars, built for the 1889 World's Fair.\n2. **The Louvre Museum** – The world’s largest art museum and a historic monument, housing"
+--- PASS: TestQwen38GGUF_gate (113.61s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	113.717s
+finished: 2026-10-01 12:40:49 PDT

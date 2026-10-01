@@ -12,7 +12,7 @@
 #   2. every real-checkpoint gate whose source loads a non-f32 quant, directly or through realLogitOracle /
 #      loadQwen35GGUFSlice (both int8int8): the 29 below. Left out: TestQwen35GGUF_vsSafetensors, which cannot hold
 #      both of its models on this box and capacity-skips after loading the first (16 min in sweep run 2).
-# The 26 real gates that load f32 never call the quantizer; their sweep-run-2 results stand.
+# The 25 real gates that load f32 (55 in the cell, 30 quantized) never call the quantizer; their sweep-run-2 results stand.
 #
 # Pass rule, written before it runs: both invocations print the gate's own verdict "ALL REQUIRED GATES GREEN" for
 # their scoped checkset, and TestQwen35GGUF_gate passes at argmax 68/80, cosine min 0.98740 / mean 0.99608 (the
