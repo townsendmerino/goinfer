@@ -1,0 +1,14 @@
+=== RUN   TestHarmonyTools_realModelLoop
+stream-weights: transcoding gpt-oss-20b-MXFP4.gguf → gpt-oss-20b-MXFP4.int4.cpu-amd64.giw (int4, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (11747 MB) in 43s
+loaded "m": 24-layer model (vocab 201088) in 54ms [chat: harmony, reasoning: analysis channel split from the answer (gpt-oss always reasons; -thinking cannot turn it off)]
+  decode path: cpu (int4mix) [int4 layout: canonical (qkv)]
+  prefill path: sequential — this arch has its own per-token forward (no batched CPU prefill)
+  context: 131072 tokens (model maximum) · KV f32
+  fit: 131072-token cap needs 6.0 GB KV (weights 11.4 GB, budget 40.1 GB, 34.1 GB left for a request's own prefill)
+  session reuse: OFF (--kv-sessions 0)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+    harmony_real_test.go:62: turn 1: finish=tool_calls content=%!q(<nil>) reasoning="Need to call get_weather with city \"Paris\"." tool_calls=[map[function:map[arguments:{"city":"Paris"} name:get_weather] id:call_4301225b36c2bf449c259bd9853c45b4 type:function]]
+    harmony_real_test.go:88: turn 2: finish=stop content="The current weather in Paris is 18\u202f°C and sunny." reasoning=%!q(<nil>)
+--- PASS: TestHarmonyTools_realModelLoop (92.84s)
+PASS

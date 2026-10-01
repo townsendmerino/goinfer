@@ -285,7 +285,7 @@ supply, with any number of tools:
   follows prose in the same reply is still only parsed. A server started with speculative decoding leaves `auto` unconstrained, to
   keep its drafter.
 
-Families without a JSON call form (Gemma 4's own call syntax, and families with no tool template) are parsed only. This constrains the
+Families without a JSON call form (Gemma 4's own call syntax, gpt-oss's channel message, and families with no tool template) are parsed only. This constrains the
 call's FORM, not the model's choice of tool. `GOINFER_TOOL_UNION=0` turns the multi-tool constraint off. Measured in
 `docs/measurements/tool-union-2026-09-24.md`: on the Qwen2.5-7B agent transcript that produced 14 unusable calls and 10 calls with
 invalid arguments in 111, it produced none. (This paragraph previously said that with two or more tools the output was not
@@ -547,7 +547,7 @@ to ignore.**
 - **gpt-oss (Harmony).** Its reply is not one `<think>` span but channel messages — `analysis`, then `final`, and `commentary`
   when it acts — and the same rule holds: `content` is the answer, `reasoning_content` the `analysis` channel, no `<|channel|>`
   markup in either. `final` and a `commentary` preamble are content (several messages are joined by a blank line); a message
-  addressed to a function (`to=functions.…`) is shown in neither stream — tool calls for gpt-oss are **not** surfaced yet.
+  addressed to a function (`to=functions.…`) is a tool call (below), shown in neither stream.
   gpt-oss always reasons: its prompt has no off form, so `-thinking off` / `enable_thinking: false` cannot stop it and the
   reasoning still arrives in `reasoning_content` (the load log says so). What it does take is an effort:
   **`reasoning_effort: "low" | "medium" | "high"`** (chat completions, and `reasoning.effort` on `/v1/responses`, jobs and batches)
@@ -561,6 +561,19 @@ to ignore.**
   nine tokens), because the answer starts only after them. It is off under speculative decoding and JSON grammars, as for the
   others. `-reasoning-format none` restores the raw text, markers included. A conversation's earlier
   assistant turns are replayed on the `final` channel, as the model's own template does, with their reasoning dropped.
+- **gpt-oss tool calls** work on `/v1/chat/completions`, `/v1/responses` and `/v1/messages` with the same request and response shapes as
+  every other family. Tools are declared in the developer message the way the model's own template writes them — a TypeScript-like
+  `namespace functions { … }` — and a call and its result replay as the template renders them; both are pinned byte for byte against
+  HuggingFace's rendering of the template from the GGUF, quirks included. Limits, stated plainly:
+  - **A call's form is parsed, not constrained.** gpt-oss's call is a channel message, not a JSON wrapper a grammar can govern, so a
+    named `tool_choice` is a 400 (as for Gemma 4) and `required` / `auto` run unconstrained: the model may answer in prose where
+    `required` asked for a call. An argument object that is not valid JSON is left out rather than passed on.
+  - **Prose is buffered, not streamed** on a tool-capable request; the reasoning still streams as `reasoning_content`.
+  - Only `functions.NAME` recipients are calls: gpt-oss's built-in `browser` and `python` are never declared and are ignored if the
+    model reaches for them. The model stops at the first call, so parallel calls in one turn do not occur; a history that carries
+    several is replayed as several call messages.
+  - The reasoning budget can end the analysis before the model has chosen to call a tool; with a tool-using agent, give it room
+    (`-reasoning-budget unlimited`, or a larger `max_tokens`).
 
 **Batch files — over HTTP, or locally with `goinfer-chat --batch` and no server.** One JSONL file, two ways to run it. Each
 input line is `{"custom_id": "a1", "method": "POST", "url": "/v1/chat/completions", "body": {chat request}}`; `custom_id` is

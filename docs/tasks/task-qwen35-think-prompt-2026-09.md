@@ -170,8 +170,7 @@ test that would have gone red.
 ## Not built
 
 - **Harmony (gpt-oss): parser BUILT 2026-09-30** (see "Harmony (gpt-oss) — built" below). Reasoning budget: BUILT the same day (below).
-  `reasoning_effort` low/medium/high: BUILT the same day (below). Still not built for it: tool calls (neither the
-  renderer — no tool declarations — nor a surfaced call; the parser keeps recipient-addressed messages on itself).
+  `reasoning_effort` low/medium/high: BUILT the same day (below). Tool calls: BUILT the same day (below).
 - **Qwen3.5's XML tool-call format** (separate task), and what signature Claude Code wants on a thinking block — still to
   settle with the outstanding manual Claude Code smoke test.
 
@@ -577,3 +576,38 @@ one short sentence about the sea." Provide short sentence." — and the same kin
 limit during the model load (+1562 MB and +1532 MB, 45 GB of RAM free both times), and the rule for this model on this box was two
 attempts and stop. So this is two points on one prompt: it shows the knob changes what the model does through goinfer's pipeline, not
 how much, and the figure belongs to no table.
+
+### gpt-oss tool calls (2026-09-30)
+
+**Prompt half.** `chat/harmony_tools.go` renders the declarations and the loop as the model's own template does, and the oracle is that
+template: `scripts/pin_harmony_tools.py` renders 16 conversations through HuggingFace and `TestHarmonyTools_matchHF` compares byte for byte.
+What the golden taught, none of which was in the macro on a first read: HuggingFace's `tojson` is `json.dumps(ensure_ascii=False)` — it does
+**not** HTML-escape — so goinfer's existing `jsonStr` (which escapes `<`, `>`, `&`, `'`, right for templates that use Jinja's htmlsafe filter)
+is wrong here and a separate Python-style encoder is used; the template's Jinja whitespace leaks into the model-facing text (a nested
+object's property is preceded by a newline and 16 spaces, a `oneOf`'s variants are separated by ` | ` and a newline); a tool schema must be
+read in order (a Go map loses the declaration order the prompt shows), so schemas are parsed with an order-preserving reader. The
+conversation rules: a call replays as `<|start|>assistant to=functions.NAME<|channel|>commentary json<|message|>ARGS<|call|>` and a result
+as `<|start|>functions.NAME to=assistant<|channel|>commentary<|message|>"RESULT"<|end|>`; text or reasoning beside a call is an *analysis*
+message and is dropped once a later assistant turn has answered. Deviations, each deliberate: the template refuses a turn that has both
+reasoning and text beside a call, goinfer's own parser produces exactly that pair, so it is replayed as analysis plus a commentary
+preamble; the template renders only the first call of a message, goinfer renders all of them (the model never emits two in one turn, a
+foreign history can) and attributes each result by call id.
+
+**Parse half.** A call is a message the splitter routes out of both reasoning and answer, so the text serve buffers never contains it.
+`chat.ReplySplitter.ToolCalls()` reads it; `settleCalls` in serve's shared `runToolTurn` asks the router when the template's inline parser
+found nothing (and the template's own parser reads the raw reply under `-reasoning-format none`), so `/v1/chat/completions`,
+`/v1/responses` and `/v1/messages` all got it from one change. Only `functions.NAME` recipients with a JSON-object argument are calls.
+Not constrained: there is no JSON wrapper to put a grammar on, so a named `tool_choice` is a 400 and `required`/`auto` run free, as for
+Gemma 4; no opener a prose streamer could hold against, so prose is buffered.
+
+**Verified.** The 16-case golden; six mutations of the renderer (nested indent, the system line, analysis kept after an answer, HTML-escaping,
+compact arguments, property order) and four of the parse/route side (router ignored, family not tool-capable, a built-in tool counted as
+a call, `ToolCalls()` always nil) each turn a test red — three first attempts did not compile and were redone. **Real model:** gpt-oss-20b
+(CPU fallback, int4), `TestHarmonyTools_realModelLoop` through serve's handlers, greedy, effort low
+(`docs/measurements/harmony-parser-2026-09-30/serve-tool-loop-real-gptoss20b.log`, 93 s): turn 1 finished `tool_calls` with the
+analysis "Need to call get_weather with city "Paris"." in `reasoning_content` and one call `get_weather {"city":"Paris"}`; replaying it
+with the result "It is 18 degrees Celsius and sunny in Paris." gave "The current weather in Paris is 18 °C and sunny." with
+`finish_reason: stop`. One prompt, one sample, one pass: it shows the loop works, not how often.
+**Not verified:** streaming and `/v1/messages` / `/v1/responses` on the real model (they share `runToolTurn`, unit-tested, not run);
+several tools at once or a schema other than one string parameter on the real model (the renderer's type macro is pinned by the golden,
+not by what the model does with it); a tool-using turn hitting the reasoning budget; any gpt-oss but the 20B.

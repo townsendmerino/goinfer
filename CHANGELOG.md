@@ -15,6 +15,14 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **gpt-oss can call tools (`serve`).** Tools are declared the way the model's own chat template declares them (a TypeScript-like
+  `namespace functions` in the developer message), a call and its result replay as the template renders them, and the call the model
+  writes — a channel message addressed `to=functions.NAME` — comes back as an ordinary `tool_calls` entry on `/v1/chat/completions`,
+  `/v1/responses` and `/v1/messages`. Rendering is pinned byte for byte against HuggingFace's rendering of the template for 16
+  conversations (tool schemas that reach each branch of the template's type macro, tool loops, analysis kept or dropped); on the real
+  gpt-oss-20b a full loop ran through serve's handlers: a `get_weather` call for Paris, then, given the result, an answer using it. The
+  call's form is parsed, not constrained (a named `tool_choice` is a 400, `required` is not enforced), and prose is buffered on a
+  tool-capable request. See `docs/server.md` § Reasoning models.
 - **gpt-oss: `content` is the answer, the analysis channel is `reasoning_content` (`serve`, `goinfer-chat`, `--batch`, the demo
   agent).** A Harmony reply is a sequence of channel messages, and until now every `<|channel|>…<|message|>` marker reached
   `content`. A new parser behind the same splitter the Qwen/Gemma work uses routes `analysis` to reasoning, `final` (and a
