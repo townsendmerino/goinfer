@@ -365,3 +365,34 @@ func TestVerify_failsWhenAFamilyHasNoPage(t *testing.T) {
 		t.Errorf("Verify must refuse a speed that is not on its page, got %v", err)
 	}
 }
+
+// The Models page calls vetted checkpoints the supported tier, so a vetted checkpoint must come from a family checked
+// against its released model. Weaken the family's check, or mark it experimental, and the build refuses.
+func TestDerive_vettedMustBeReleasedTier(t *testing.T) {
+	needRepo(t)
+	for _, parity := range []string{"experimental: full-oracle 100.0%/1.00000", "tiny-oracle 100.0%/1.00000", "pending"} {
+		in, err := LoadInputs(repoRoot)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hit := false
+		for i := range in.Rows {
+			if in.Rows[i].Name == "qwen2" { // the family of the 0.5B and 1.5B vetted checkpoints
+				in.Rows[i].Parity, hit = parity, true
+			}
+		}
+		if !hit {
+			t.Fatal("no qwen2 row in the capability matrix")
+		}
+		if _, err := Derive(in); err == nil || !strings.Contains(err.Error(), "supported tier") {
+			t.Errorf("parity %q on a vetted family: got err %v, want the supported-tier refusal", parity, err)
+		}
+	}
+	in, err := LoadInputs(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Derive(in); err != nil {
+		t.Fatalf("the real inputs must derive: %v", err)
+	}
+}

@@ -26,7 +26,7 @@
 </div>
 
 <section aria-labelledby="v-h">
-  <div class="s-head"><div><h2 class="s" id="v-h">Vetted checkpoints</h2><p class="s-sub">Pinned by checksum, with a fit verdict and whatever speed was measured. If you don't know where to start, start here.</p></div></div>
+  <div class="s-head"><div><h2 class="s" id="v-h">Vetted checkpoints: the supported tier</h2><p class="s-sub">These are the checkpoints the project supports. Each is pinned by checksum and comes from a family checked against its released model, the strongest of the <a href="#parity">checks</a>, with a fit verdict and whatever speed was measured. Other checkpoints of a family run through the same code with less shown for them. If you don't know where to start, start here.</p></div></div>
   <div class="vetted">
     {{range $m.Vetted}}{{$c := .}}
     <a class="vc" href="/models/{{.Family.Name}}/#{{.ID}}">

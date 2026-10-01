@@ -123,7 +123,9 @@ func BuildDownload(r *Release) (*Download, error) {
 				d.Kinds[i].Files[m[2]] = f
 			}
 		}
-		if d.Sample == nil && m[1] == "goinfer-chat-0.5b" {
+		// The example commands use the model-included 0.5B, for Apple silicon when the release has it: the page cannot
+		// tell the visitor's arch (download.js), and darwin-arm64 is what the README's own examples use.
+		if m[1] == "goinfer-chat-0.5b" && (d.Sample == nil || m[2] == "darwin-arm64") {
 			d.Sample = f
 		}
 	}

@@ -38,6 +38,16 @@ func Verify(out string, m *Model, ws []*Writeup, drafts bool) error {
 			}
 		}
 	}
+	// Home links chapter 11 of the book prominently (task-site-2026-09.md, S1 amendment 2026-09-30).
+	home, err := read("index.html")
+	if err != nil {
+		return fmt.Errorf("verify: the Home page is missing: %w", err)
+	}
+	for _, c := range m.Book {
+		if c.Num == 11 && !strings.Contains(home, `id="chapter11"`) {
+			bad = append(bad, "the Home page has no chapter 11 link")
+		}
+	}
 	// Every visible writeup has a page that names it and lists what it doesn't do, and the index links it. A draft must
 	// never be linked from a deploy: the index of a non-preview build has no draft in it.
 	di, err := read("different/index.html")

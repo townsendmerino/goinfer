@@ -86,6 +86,14 @@ check(json.Unmarshal([]byte(raw), &amp;p), "unmarshal") // the shape is guarante
   </div>
 </section>
 
+{{range $m.Book}}{{if eq .Num 11}}<section id="chapter11" aria-labelledby="ch11-h">
+  <div class="pick">
+    <p class="eyebrow">If you read one chapter of the book</p>
+    <h2 class="s" id="ch11-h"><a href="{{cfg.BookURL}}{{.File}}">Chapter 11 — {{.Title}}</a></h2>
+    <p class="s-sub">How measurements in this repo have gone wrong, why profiling Go is not enough here, and what the codebase does instead. Written for someone who knows Go and not machine learning.</p>
+  </div>
+</section>{{end}}{{end}}
+
 {{if .Writeups}}<section id="different" aria-labelledby="diff-h">
   <div class="s-head">
     <div><h2 class="s" id="diff-h">What's different</h2><p class="s-sub">Each of these has a writeup: the problem, what goinfer does, what was measured, and what it doesn't do.</p></div>

@@ -64,6 +64,9 @@
 .card .doesnt{font-size:13.5px;color:var(--muted);border-left:2px solid var(--line);padding-left:10px}
 .card .doesnt b{color:var(--ink-2);font-weight:600}
 .card a.more{margin-top:auto;font-weight:600;font-size:14px}
+.pick{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:12px;padding:22px 24px}
+.pick .eyebrow{margin-bottom:8px}
+.pick h2 a{color:inherit}
 .book{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:28px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:28px;align-items:center}
 .book ol{margin:0;padding-left:1.4em;columns:2;column-gap:24px;font-size:14px;color:var(--ink-2)}
 .book ol li{break-inside:avoid;margin-bottom:4px}
