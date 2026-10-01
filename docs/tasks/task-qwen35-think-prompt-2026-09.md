@@ -650,3 +650,16 @@ this change; it is not evidence for either order).
   for parallel tool calls, so it needs its own decision.
 - *One mutation of the port is equivalent*, not a gap: the continuation clause "calls with no result" can never be the deciding branch, because
   the pending-call case is tested first.
+
+**The measurement that decides gap 2's default (queued, not run).** The 26B cannot do it: its `.giw` bundle has no chat template and so is served
+by the generic renderer. The local checkpoint that pairs a real template with a size the box can run is **Gemma-4-12B-it QAT q4_0**, whose
+embedded template is the canonical one (checked) — on the CPU backend, because its 8192-token KV (5.6 GB) does not fit beside the weights on the
+8 GB card. The E2B safetensors route is closed (goinfer does not load Gemma 4's per-layer-embedding inputs from safetensors). Rule, written before
+any arm ran: `docs/measurements/gemma4-tool-text-order-2026-09-30/PREREGISTERED.md` (ADOPT only if the template's order is no worse on all of C, E
+and K; REJECT if E drops by 3 or the control by 2; everything else PARK). Job: night queue `gemma4-text-order` (est 2 h; two arms of about 45 min on
+the CPU at about 2 minutes per reply-plus-loop; pinned binary `c09fe1e3`; applies the rule itself and exits 0 ADOPT / 3 PARK / 4 REJECT / 2 VOID).
+Read it with `python3 scripts/night.py morning`, then `results/<stamp>/VERDICT.txt` under `~/goinfer-bench/gemma4-tool-text-order-2026-09-30/`.
+A VOID (the load log did not say the template is managed) is not a result. **Until it runs, goinfer's own order stays the default and the
+claim that the template's order might hurt a replayed agent turn stays a hypothesis.** The setup was smoke-tested (one reply per arm, both
+managed, both answered) — that checks the mechanics, not the question. Tonight's queue is over the window with this added (12 h 10 min against
+06:30), and this job is last, so it may carry to the next night.
