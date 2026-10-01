@@ -92,6 +92,24 @@ matrix itself already carries ("the registry is the source of truth; do not hand
 ## 4. The sections
 
 ### S1 — Home
+
+> **Amendment, 2026-09-30 (owner, via the positioning brief): the hero changed direction.** The owner decided the
+> primary reader is the Go engineer embedding a model in their own program, not someone shopping for an Ollama
+> alternative, and the README was rewritten to match (`5ab05712`). The 2026-09-29 hero ("What will run well on your
+> machine?", §4a) put the machine picker first, which suits the second reader and not the first. Now:
+> - **Hero:** "Run an open-weight LLM inside your Go program.", the README's one-line promise, with the README's
+>   smoke-marked `go get` line as the primary call to action (a copy box), "Use it from Go" (the new first docs page)
+>   beside it, and Download as the secondary link. Then the struct example, as lines from `examples/structured`
+>   rather than the README's illustrative snippet (whose `generate(sp)` does not compile); `home_test.go` holds each
+>   line to that file.
+> - **The machine picker is unchanged and moves to the second screen**, under its own heading "What will run well on
+>   your machine?".
+> - **Doors:** "Embed it" first, full width, then Try it, Connect your tools, Run bigger models.
+> - **"What's different":** the struct writeup first, the tool-call one second, then the rest in file order
+>   (`Lead` in `writeup.go`; reordered at build, not renumbered, so no URL moves). This applies on `/different/` and
+>   to the writeups' previous/next links too.
+> - The rules below still hold: no speed claim in the hero, no pricing or sign-in, and every writeup keeps its "what
+>   it doesn't do" block.
 One line on what it is. The demo GIF that already exists. Install. Then the four things that are
 true and unusual: pure Go with no toolchain, one file that can embed its own model, parity-gated
 numerics against HuggingFace, and schema-constrained output. A short, plain statement of what it is
@@ -141,7 +159,8 @@ Three hand-built pages, reviewed by the owner and approved as the direction. The
 for the generator's templates, not files to ship. Open them straight from disk; they need nothing
 but the Google Fonts request.
 
-- **`home.html` — S1.** Nav is Models / Docs / Download / What's different. The hero is
+- **`home.html` — S1** (the hero below was superseded 2026-09-30; see the S1 amendment). Nav is Models / Docs /
+  Download / What's different. The hero is
   "What will run well on your machine?": pick one of the three measured machines (M1 Pro 16 GB /
   RTX 2070 SUPER 8 GB / Ryzen 7 CPU) or "something else" (a fit estimate, no speeds). Each model row
   shows fit, parity tier, and **two labelled bars, goinfer and Ollama** (a single bar with a tick

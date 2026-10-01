@@ -1,9 +1,34 @@
 {{template "head" .}}
 {{$m := .M}}
 <header class="hero" id="top">
-  <p class="eyebrow">Local LLMs · one file · pure Go</p>
-  <h1>What will run well on your machine?</h1>
-  <p class="lede">Pick the computer closest to yours. goinfer says what fits, how fast it measured on that hardware, and how that compared with Ollama in the same session.</p>
+  <p class="eyebrow">A Go library · pure Go · no cgo</p>
+  <h1>Run an open-weight LLM inside your Go program.</h1>
+  <p class="lede">Import it and call it, then cross-compile it like anything else: no cgo, no daemon, no C toolchain. Constrain the output to a Go struct, and a token that would break the struct is never sampled.</p>
+  <div class="cta">
+    <div class="copy getline"><code>go get github.com/townsendmerino/goinfer/decoder@latest github.com/townsendmerino/goinfer/tokenizer@latest</code><button type="button">copy</button></div>
+    <p class="cta-links"><a class="go" href="/docs/use-from-go/">Use it from Go →</a> <span class="sep">or</span> <a href="/download/">download a binary</a></p>
+  </div>
+  <figure class="herocode">
+    <pre><code>type Person struct {
+	Name  string   `json:"name"`
+	Age   int      `json:"age"`
+	Langs []string `json:"langs"`
+	Email string   `json:"email,omitempty"` // omitempty (or a pointer) makes a field optional
+}
+
+g, err := constrain.GrammarFromStruct(Person{}) // struct -&gt; JSON Schema -&gt; grammar
+mask := constrain.NewMasker(g, constrain.TokenBytes(m.Config().VocabSize, tok.TokenText), stop).StopWhenComplete()
+
+ch, gen := m.Generate(context.Background(), ids, 128, decoder.SamplingParams{LogitProcessor: mask.Process, StopIDs: stop})
+
+var p Person
+check(json.Unmarshal([]byte(raw), &amp;p), "unmarshal") // the shape is guaranteed; a value can still be wrong</code></pre>
+    <figcaption>Lines from <a href="{{cfg.GitHubURL}}/blob/main/examples/structured/main.go">examples/structured</a>, a complete program that CI builds. The keys and types are guaranteed; whether the values are right is still up to the model.</figcaption>
+  </figure>
+</header>
+
+<section id="machine" aria-labelledby="machine-h">
+  <div class="s-head"><div><h2 class="s" id="machine-h">What will run well on your machine?</h2><p class="s-sub">Pick the computer closest to yours. goinfer says what fits, how fast it measured on that hardware, and how that compared with Ollama in the same session.</p></div></div>
 
   <div class="picker" id="mseg" role="group" aria-label="Your machine">
     {{range machines}}<button class="chip" type="button" data-m="{{.Key}}"{{if eq .Key "mac"}} aria-pressed="true"{{end}}><span class="n">{{.Short}}</span><span class="s">{{.Path}} · {{.MemoryGB | printf "%.0f"}} GB memory</span></button>
@@ -48,13 +73,13 @@
       <a href="/models/">Every model and how it was checked</a>
     </div>
   </div>
-</header>
+</section>
 
 <section id="doors" aria-labelledby="doors-h">
   <div class="s-head"><div><h2 class="s" id="doors-h">What are you here to do?</h2></div></div>
   <div class="doors">
+    <div class="door lead"><h3>Embed it</h3><p>A Go library. Ask a question, get a filled-in struct back. The <a href="/docs/use-from-go/">Use it from Go</a> page walks through the smallest program, struct and schema constraints, and per-field confidence.</p><pre>go get github.com/townsendmerino/goinfer/decoder@latest github.com/townsendmerino/goinfer/tokenizer@latest</pre></div>
     <div class="door"><h3>Try it</h3><p>One file with a model inside. Download, run, ask. Nothing to install.</p><pre>./goinfer-chat-0.5b-&lt;os&gt;-&lt;arch&gt;</pre></div>
-    <div class="door"><h3>Embed it</h3><p>A Go library. Ask a question, get a filled-in struct back.</p><pre>go get github.com/townsendmerino/goinfer/decoder@latest github.com/townsendmerino/goinfer/tokenizer@latest</pre></div>
     <div class="door"><h3>Connect your tools</h3><p>OpenAI- and Anthropic-compatible. Setup notes for Claude Code, opencode and jevx.</p><pre>goinfer-serve -web -model
   ~/models/model.gguf</pre></div>
     <div class="door"><h3>Run bigger models</h3><p>Ask how a model would be placed on your machine, and whether it fits, without starting a chat.</p><pre>goinfer-chat fit &lt;model&gt;</pre></div>

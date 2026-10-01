@@ -184,7 +184,8 @@ jobs:
           for f in index.html models/index.html different/index.html docs/index.html docs/server/index.html download/index.html 404.html; do
             test -s "site/_site/$f" || { echo "::error::missing $f"; exit 1; }
           done
-          # Home is the picker, not the old redirect; Download carries real checksums
+          # Home leads with the embed promise and still carries the machine picker; Download carries real checksums
+          grep -q 'inside your Go program' site/_site/index.html
           grep -q 'What will run well' site/_site/index.html
           grep -qE '[0-9a-f]{64}' site/_site/download/index.html
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -367,7 +367,7 @@ func (m *Model) Render(out string, cfg Config, ws []*Writeup) (*Report, error) {
 		tpl, file string
 		p         page
 	}{
-		{"home.html", "index.html", page{Title: "goinfer · what will run well on your machine", Desc: "A local LLM engine in pure Go. Pick your machine and see what fits and how fast it measured.", Path: "/", Nav: "home", M: m, Cfg: cfg, Writeups: hw, Styles: []string{"/assets/home.css"}}},
+		{"home.html", "index.html", page{Title: "goinfer · run an LLM inside your Go program", Desc: "A pure-Go library for running open-weight LLMs in your own program, with output constrained to a Go struct. Also a server and single-file binaries.", Path: "/", Nav: "home", M: m, Cfg: cfg, Writeups: hw, Styles: []string{"/assets/home.css"}}},
 		{"notfound.html", "404.html", page{Title: "goinfer", Path: "/", M: m, Cfg: cfg}},
 	} {
 		b, err := exec(n.tpl, n.p)
