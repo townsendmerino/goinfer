@@ -503,9 +503,13 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup}
 }
 
-// Load reads a Gemma 3 snapshot (config.json + model.safetensors) from dir
-// and selects a backend. The forward pass (M3) is implemented; the CPU
-// backend is the default and the only one wired (webgpu falls back to CPU).
+// Load loads a model from dir, which is a checkpoint directory (config.json and its safetensors shards), a
+// .gguf file, or a prequantized .giw bundle, for any supported family. opts chooses the backend, the
+// weight quantization and the rest. "cpu" is always available. "cuda", "metal" and "webgpu" become
+// available when their module is imported: github.com/townsendmerino/goinfer/cuda (built with -tags cuda),
+// .../metal (on darwin) and .../gpu (built with -tags gpu). As Options.Backend says, a name not compiled
+// into the binary falls back to cpu. A model that would not fit this machine's memory is refused with an
+// error wrapping ErrWontFitResident.
 func Load(dir string, opts Options) (*Model, error) {
 	// Options.ExactPrefill is recorded on the Model (exactPrefill, set in each constructor below
 	// BEFORE withResidency, because CUDA reads it while building its resident) and consulted by

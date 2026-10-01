@@ -114,7 +114,7 @@ record it there as P6a and do it with the tower move rather than after.
 ### G3 — LoRA adapter requests drop to the staged path (100% CPU on CUDA/Metal)
 
 **Where.** `internal/serveapp/openai.go:1477`: `if lm.model.ResidentActive() && lm.adapter == ""` —
-adapter models take the session path below it, and `decoder/model.go:1575` makes a session
+adapter models take the session path below it, and `decoder/model.go:1579` makes a session
 generation ineligible for the resident KV (`useGPU = resident != nil && prefillFrom == 0 &&
 commit == nil`). The comment at `internal/serveapp/openai.go:1447–967` records the cost: 13 tok/s vs ~460 resident ona 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
 
@@ -227,7 +227,7 @@ dense (`docs/ollama-chase.md`), and the Mac's remaining gap to Ollama is mostly 
 
 ### G9 — WebGPU has no batched prefill at all
 
-**Where.** `decoder/model.go:1406`: "WebGPU implements no Prefiller"; `gpu/residency.go:1150`
+**Where.** `decoder/model.go:1410`: "WebGPU implements no Prefiller"; `gpu/residency.go:1150`
 seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit per token.
 
 **Fix.** A `Prefiller` on the WebGPU runner, dense first, following the CUDA shape
@@ -259,7 +259,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
 
 ## Things checked and found fine
 
-- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1775`), but serve
+- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1779`), but serve
   serializes each model's generations (`internal/serveapp/openai.go:71` `turns`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
