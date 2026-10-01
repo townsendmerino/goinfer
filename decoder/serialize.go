@@ -930,6 +930,7 @@ func NewModel(w *Weights, backend string) (*Model, error) {
 // that disagrees) and LoRA has no base to merge into (refuse it before calling). StreamWeights is
 // refused, not ignored: paging reads a .giw's file mapping, and in-memory weights have none.
 func NewModelWithOptions(w *Weights, opts Options) (*Model, error) {
+	opts = opts.withAutoBackend()
 	if opts.StreamWeights {
 		return nil, fmt.Errorf("decoder: StreamWeights pages weights out of a .giw file mapping, and prequantized weights held in memory have none — load the .giw file with Load to stream it")
 	}

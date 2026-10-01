@@ -191,8 +191,10 @@ go install github.com/townsendmerino/goinfer/metal/cmd/serve@latest             
 go install -tags cuda  github.com/townsendmerino/goinfer/cuda/cmd/serve@latest    # Linux + NVIDIA
 ```
 
-The released `goinfer-serve` assets already include Metal on macOS and CUDA on Linux;
-`goinfer-serve --version` prints which backends a binary carries.
+The released `goinfer-serve` and `goinfer-chat` assets include Metal on macOS and CUDA on Linux,
+and use them by default: `--backend auto` picks CUDA when a device answers, else Metal on Apple
+silicon for an int4 model, else the CPU, and prints one line saying which. `--backend cpu` names
+the CPU. `goinfer-serve --version` prints which backends a binary carries.
 
 ## Ship a model as one file
 
@@ -284,7 +286,7 @@ Where it is behind: Phi-3 mini decode on CUDA (0.72–0.90×), and CPU decode on
 llama.cpp (0.84× on the 0.5B). Long-prompt prefill on Metal, 1.96× behind Ollama on 2026-09-25, measured
 level at a 3,900-token prompt on 2026-09-30 (0.98×, 1.5B,
 [peer sweep](docs/measurements/peer-sweep-2026-09-29.md) cell h). The Metal decode figures are for the resident GPU path. `--embed-int4` defaults off on
-`--backend metal`, because that path does not take an int4 embedding table yet
+Metal, because that path does not take an int4 embedding table yet
 ([docs/quantization.md](docs/quantization.md)).
 
 Steady-state results are mixed and machine-dependent. Every figure names its machine, checkpoint,

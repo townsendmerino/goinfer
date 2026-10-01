@@ -1,0 +1,95 @@
+(one warm-up run with -backend cpu, discarded, so every run below reads the embedded weights from the page cache)
+=== model-included 0.5B (int8int8), -backend auto (16:30:08, load { 3.35 4.49 4.38 })
+backend: metal (auto: Apple silicon; metal runs int4 models, other precisions stay on the CPU; -backend cpu to use the CPU)
+mapping weights…
+loaded 24-layer model (hidden 896, vocab 151936) in 176ms [backend=metal decode=cpu (int8int8) — requested auto (metal) → running on cpu: -backend auto keeps this int8int8 model on the CPU: metal runs only int4 resident and would re-quantize it (-backend metal does that), and metal has no staged decode path]
+chat template: chatml
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+you> Certainly! Below is a simple Go function that reverses a string:
+```go
+package main
+import (
+	"fmt"
+)
+// ReverseString takes a string and returns its reverse.
+func ReverseString(input string) string {
+	runed :=
+[48 tok, 89.7 tok/s]
+you> 
+bye
+=== model-included 0.5B (int8int8), -backend cpu (16:30:09, load { 3.35 4.49 4.38 })
+mapping weights…
+loaded 24-layer model (hidden 896, vocab 151936) in 167ms [backend=cpu decode=cpu (int8int8)]
+chat template: chatml
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+you> Certainly! Below is a simple Go function that reverses a string:
+```go
+package main
+import (
+	"fmt"
+)
+// ReverseString takes a string and returns its reverse.
+func ReverseString(input string) string {
+	runed :=
+[48 tok, 92.7 tok/s]
+you> 
+bye
+=== model-included 0.5B (int8int8), -backend auto (16:30:09, load { 3.35 4.49 4.38 })
+backend: metal (auto: Apple silicon; metal runs int4 models, other precisions stay on the CPU; -backend cpu to use the CPU)
+mapping weights…
+loaded 24-layer model (hidden 896, vocab 151936) in 193ms [backend=metal decode=cpu (int8int8) — requested auto (metal) → running on cpu: -backend auto keeps this int8int8 model on the CPU: metal runs only int4 resident and would re-quantize it (-backend metal does that), and metal has no staged decode path]
+chat template: chatml
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+you> Certainly! Below is a simple Go function that reverses a string:
+```go
+package main
+import (
+	"fmt"
+)
+// ReverseString takes a string and returns its reverse.
+func ReverseString(input string) string {
+	runed :=
+[48 tok, 96.2 tok/s]
+you> 
+bye
+=== model-included 0.5B (int8int8), -backend cpu (16:30:10, load { 3.35 4.49 4.38 })
+mapping weights…
+loaded 24-layer model (hidden 896, vocab 151936) in 167ms [backend=cpu decode=cpu (int8int8)]
+chat template: chatml
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+you> Certainly! Below is a simple Go function that reverses a string:
+```go
+package main
+import (
+	"fmt"
+)
+// ReverseString takes a string and returns its reverse.
+func ReverseString(input string) string {
+	runed :=
+[48 tok, 96.9 tok/s]
+you> 
+bye
+=== model-included 0.5B (int8int8), -backend metal (16:30:11, load { 3.35 4.49 4.38 })
+mapping weights…
+loaded 24-layer model (hidden 896, vocab 151936) in 1.691s [backend=metal decode=metal-resident (int8int8→int4, no Metal int8 GEMV kernel)]
+chat template: chatml
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+you> goinfer: batched prefill declined for a 41-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): metal: prompt too short (41 tokens) for fast prefill (floor=64; §3 floor); using sequential path
+Here's a simple Go function that reverses a string:
+```go
+package main
+import (
+	"fmt"
+)
+// Reverse takes a string and returns a new string with the characters in reverse order.
+// Example:
+// >>> Reverse("
+[48 tok, 105.7 tok/s]
+you> 
+bye
+=== done (16:30:13)

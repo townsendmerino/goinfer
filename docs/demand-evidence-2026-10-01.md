@@ -268,6 +268,7 @@ None of these is decided. Each lists the evidence it rests on and what it would 
    Options: pick the backend compiled into the binary when a device is present, or print one line when a GPU is present and the
    backend is `cpu`. Cost: small. The default affects parity-gated paths, so it is the owner's call. Evidence: B (17), Kronk #433, #778,
    Ollama 992.
+   **Decided and built 2026-10-01** as R17 (`docs/tasks/task-first-hour.md`): `-backend auto` is the CLIs' default.
 2. **Run the Go clients against `goinfer-serve`.** `openai-go`, `go-openai`, langchaingo (OpenAI mode), crush and mods against chat,
    streaming, tools, `json_schema`, errors on an oversized prompt, a base URL with and without `/v1`, and `reasoning_content`. Cost: a script,
    and it belongs beside the harness-breadth work already scoped in `docs/tasks/task-harness-reliability-2026-10.md`. Evidence: E, the client

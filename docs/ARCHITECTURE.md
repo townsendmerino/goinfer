@@ -568,8 +568,11 @@ module.
 `{cuda,metal,gpu}/cmd/{chat,serve}` each blank-import their own. The root `cmd/serve` and
 `demo/chat` refuse to build with a backend tag.
 
-At run time, `--backend` (default `cpu`) picks one by name. A name the binary was not built with
-falls back to the CPU with a note. `--version` lists what is compiled in, and serve's
+At run time, `--backend` picks one by name. A name the binary was not built with falls back to
+the CPU with a note. The default, `auto` (`decoder.AutoBackend`), picks the first compiled-in GPU
+backend whose device answers, `cuda` then `metal`, and the CPU otherwise. Metal is picked on Apple
+silicon only, and keeps a non-int4 model on the CPU rather than re-quantize it
+(`autoMetalPrecision`). `--version` lists what is compiled in, and serve's
 `--require-backend` exits instead of falling back.
 
 **Two seams.** `decoder.Backend` (`decoder/backend.go`) is per matmul. The CPU implements it, and

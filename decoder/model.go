@@ -86,6 +86,7 @@ type Model struct {
 	kvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	exactPrefill  bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
+	backendAuto   bool         // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
 	knobs         *knobSet     // per-model operator knobs, snapshotted once at Load (knobs.go)
 	resCtxReq     int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	resSlotsReq   int          // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
@@ -328,7 +329,7 @@ func (m *Model) MoECacheSlotsRequest() int {
 
 // Options configures Load.
 type Options struct {
-	Backend string // "cpu" (default), "webgpu", "cuda" or "metal"; a name not compiled into the binary falls back to cpu
+	Backend string // "cpu" (default), "webgpu", "cuda", "metal", or "auto" (AutoBackend); a name not compiled in falls back to cpu
 	Quant   string // "" (f32), "int8" (weight-only per-row), "int8int8" (full int8×int8 W8A8), or "int4" (group-wise) (M8)
 	LoRA    string // optional PEFT adapter dir (adapter_config.json + adapter_model.safetensors), merged into the base at load. Safetensors base only.
 	// KVPrecision selects the GPU residency KV cache precision: "" / "f32"
@@ -467,6 +468,12 @@ type Options struct {
 	// ctx-cancellation, checked at a different granularity) do NOT check this yet — see the task
 	// doc's own S3 status note for why this pass stopped here rather than threading it further.
 	LoadAbort <-chan struct{}
+
+	// BackendAuto says Backend was chosen by "auto" rather than named. A backend auto chose declines a model it would
+	// run only at another precision (Metal re-quantizes int8 weights to int4), where a named one runs it as asked.
+	// Load sets it when Backend is "auto"; a caller that resolved auto itself (the CLIs, for their own checks by name)
+	// sets it beside the name.
+	BackendAuto bool
 }
 
 // ErrLoadAborted is returned (wrapped) from Load when opts.LoadAbort closed mid-build. Check
@@ -500,7 +507,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		extraBytes: opts.ExtraResidentBytes, extraKVPerPos: opts.ExtraResidentKVPerPosition,
-		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup}
+		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto}
 }
 
 // Load loads a model from dir, which is a checkpoint directory (config.json and its safetensors shards), a
@@ -511,6 +518,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 // into the binary falls back to cpu. A model that would not fit this machine's memory is refused with an
 // error wrapping ErrWontFitResident.
 func Load(dir string, opts Options) (*Model, error) {
+	opts = opts.withAutoBackend()
 	// Options.ExactPrefill is recorded on the Model (exactPrefill, set in each constructor below
 	// BEFORE withResidency, because CUDA reads it while building its resident) and consulted by
 	// each backend's fast-prefill switch alongside its env var. It used to be applied by
@@ -754,14 +762,14 @@ func (o Options) Validate() error {
 		return err
 	}
 	switch o.Backend {
-	case "", "cpu", "webgpu", "cuda", "metal":
+	case "", "cpu", "webgpu", "cuda", "metal", "auto":
 		// Accepting the NAME is not a claim that the backend is built in: an unregistered
 		// one falls back to CPU with a note (NewBackend). Rejecting it here instead meant
 		// `serve --backend cuda|metal` failed at flag-validation even when the module WAS
 		// compiled in (-tags cuda / -tags metal), because Validate runs before registration
 		// is ever consulted.
 	default:
-		return fmt.Errorf("decoder: invalid backend %q (cpu | webgpu | cuda | metal)", o.Backend)
+		return fmt.Errorf("decoder: invalid backend %q (cpu | webgpu | cuda | metal | auto)", o.Backend)
 	}
 	switch o.ActQuantGroup {
 	case 0, 32:

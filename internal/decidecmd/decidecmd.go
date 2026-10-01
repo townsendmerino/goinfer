@@ -111,6 +111,9 @@ func (c *common) open(ctx context.Context, cal *decide.Calibration) (*decide.Dec
 	if err := c.load.Validate(); err != nil {
 		return nil, nil, err
 	}
+	if l := c.load.BackendLine(); l != "" {
+		fmt.Fprintln(os.Stderr, "decide: "+l)
+	}
 	opts := c.load.Options()
 	var head *decide.Head
 	if *c.head != "" {

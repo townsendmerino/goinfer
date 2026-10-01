@@ -1321,6 +1321,32 @@ one line naming `--backend cuda` when a GPU is visible and the backend is `cpu`.
 §7 item 1 makes the same case from the peers' trackers. **Gate:** a startup test asserting that line, or the selection,
 when a device is visible.
 
+**Fixed 2026-10-01, after v0.20.0.** `-backend auto` is the default for `goinfer-serve`, `goinfer-chat` and `decide`
+(`decoder.AutoBackend`, resolved in `internal/loadflags` before anything reads the name). It picks the first GPU
+backend in the binary whose device probe answers, `cuda` then `metal`, else `cpu`, and prints one line: what it chose,
+why, and `-backend cpu` to choose the CPU. The library's zero value stays `cpu`; `Options{Backend: "auto"}` opts in.
+Four limits, each found while building it:
+
+- **Metal is picked for int4 models only** (`autoMetalPrecision`, in `withResidency`). Metal re-quantizes int8,
+  int8int8 and int4mix weights to int4, and a backend the user did not name should not change their precision. Before
+  the guard, the model-included 0.5B (an int8int8 bundle) went to Metal at int4 on the M1 Pro and loaded in 1.7 s
+  against 0.17 s on the CPU; with it, the bundle stays on the CPU and its greedy text matches `-backend cpu`
+  (exploratory runs, `docs/measurements/r17-auto-backend-2026-10-01/`). `-backend metal` still runs it re-quantized.
+- **No Metal on an Intel Mac.** The darwin/amd64 assets link Metal, but nothing has run it there
+  (`docs/completed/task-metal-cgofree-spike.md` scoped Intel Macs out).
+- **Never WebGPU**: it stays an explicit choice.
+- **`-require-backend`**: an auto that passed over a GPU backend in the binary (no device, Intel Mac, WebGPU only)
+  refuses to start and names `-backend cpu`. On a binary with no GPU backend, auto is the CPU and the per-model checks
+  run as before.
+
+**Gate.** `decoder/auto_backend_test.go` (selection over faked inputs, the Metal precision guard through a real load,
+`Load(auto)` reporting the resolved backend), `internal/loadflags` (the default, the resolution order the Metal
+`--embed-int4` default depends on, one probe per start), `internal/serveapp/autobackend_test.go` (strict mode), and
+device-backed checks in `cuda/` and `metal/`: CI's GPU-less runner exercises the no-device branch on every push.
+On nobara-pc, binaries built from this change picked `cuda` for the plain `goinfer-chat` (`cuda-resident (int4)`) and
+for the model-included 0.5B (`cuda-resident (int8int8)`), and the CPU with `CUDA_VISIBLE_DEVICES=-1`, naming why
+(`docs/measurements/r17-auto-backend-2026-10-01/`).
+
 ### R18 — the release binaries report `-dirty`
 
 **Found** (versions table). `goinfer-serve --version` printed `v0.19.0 (c7f8eff76c7c-dirty)` from the release asset, a

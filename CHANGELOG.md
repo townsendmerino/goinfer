@@ -17,6 +17,15 @@ any surface may still change.
 
 ### Changed
 
+- **The CLIs use the GPU by default.** `goinfer-serve`, `goinfer-chat` and `decide` now default to `--backend auto`.
+  It picks CUDA when a device answers, else Metal on Apple silicon, else the CPU, and prints one line saying which and
+  why; `--backend cpu` keeps the old default. Metal is picked for int4 models only: it re-quantizes int8, int8int8
+  and int4mix weights to int4, so auto keeps those models on the CPU, the model-included `goinfer-chat-0.5b` and
+  `-1.5b` files on macOS among them (`--backend metal` still runs them re-quantized). auto never picks WebGPU, and does
+  not pick Metal on an Intel Mac, where it has not been run. Under `--require-backend`, an auto that passed over a GPU
+  backend in the binary refuses to start rather than run on the CPU. The library default stays the CPU;
+  `decoder.Options{Backend: "auto"}` opts in. The cold-user run found the CPU default on a machine with an NVIDIA
+  GPU: 14.4 tok/s, against 173.8 with `--backend cuda` (R17, `docs/measurements/cold-user-2026-10-01-nobara-pc.md`).
 - **Decision models load at `int8int8` by default.** A model with a trained decision head (`goinfer-chat decide
   --head`, or `goinfer-serve`'s `head=`) now loads at `int8int8` unless `--quant` or `quant=` chooses otherwise. Other
   models keep the process default, and `decide` prints which quant it used and why. The choice comes from D6b's

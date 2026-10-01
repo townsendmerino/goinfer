@@ -1501,6 +1501,7 @@ func validateGGUFDims(cfg *Config) error {
 // read a generation_config.json from), matching the file path's resolution for
 // a bare .gguf.
 func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
+	opts = opts.withAutoBackend()
 	be, beErr := NewBackend(opts.Backend)
 	quant, err := parseQuant(opts.Quant)
 	if err != nil {

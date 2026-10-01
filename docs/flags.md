@@ -46,7 +46,7 @@ Read these before loading a model that is close to your RAM or VRAM.
 | `--moe-cache-experts` | `bool` | `false` | Run a MoE model whose experts exceed VRAM or RAM by streaming routed experts to the GPU per token. Bit-identical to fully resident, at the cost of a transfer per token. Off by default. *Also in `goinfer-chat`.* |
 | `--moe-cache-slots` | `int` | `0` | Per-layer expert slots to keep resident for a paged MoE model. On CUDA this is an upper bound: it is lowered if free VRAM cannot hold it. *Also in `goinfer-chat`.* |
 | `--moe-pager` | `mmap \| pool` | `pool` on macOS, `mmap` elsewhere | Backing mode for the expert pager of a `.giw`-paged MoE model: `mmap` (zero-copy, but on macOS the memory budget is not enforced) or `pool` (owned buffers, a firm cap on every platform). *Also in `goinfer-chat`.* |
-| `--require-backend` | `bool` | `false` | Exit non-zero at startup if a model did not get the requested `--backend`'s fast paths (no resident decode, or a prefill that fell back to the per-token loop). For batch jobs that should fail at second zero rather than run slow. |
+| `--require-backend` | `bool` | `false` | Exit non-zero at startup if a model did not get the requested `--backend`'s fast paths (no resident decode, or a prefill that fell back to the per-token loop). Under `--backend auto` it also refuses to start when auto passed over a GPU backend this binary has (no device answered), rather than run on the CPU; `--backend cpu` runs strict on the CPU. For batch jobs that should fail at second zero rather than run slow. |
 
 ## Backend, precision and context
 
@@ -54,9 +54,9 @@ Which compute backend runs the model, at what precision, with how much context.
 
 | Flag | Type | Default | What it does |
 |---|---|---|---|
-| `--backend` | `cpu \| webgpu \| cuda \| metal` | `cpu` | The compute backend. `--version` lists the backends compiled into this binary; naming one that is not there falls back to `cpu`. *Also in `goinfer-chat`.* |
+| `--backend` | `auto \| cpu \| webgpu \| cuda \| metal` | `auto` | The compute backend. `auto` (the default) picks `cuda` when a device answers, else `metal` on Apple silicon for int4 models (Metal re-quantizes other precisions, so those stay on the CPU), else `cpu`, and prints one line saying which. It never picks `webgpu`. `--version` lists the backends in this binary; naming one that is not there falls back to `cpu`. *Also in `goinfer-chat`.* |
 | `--quant` | `int4 \| int4mix \| q4k \| int8int8 \| int8 \| f32` | `int4` | Weight precision, the accuracy, speed and RAM trade-off. `int4` is the default; `f32` is unquantized. A prequantized `.giw` carries its own. [More](quantization.md). *Also in `goinfer-chat`.* |
-| `--embed-int4` | `bool` | `true` | With `--quant int4`, keep the token-embedding and LM-head table at int4 as well, halving the largest resident tensor on a small model with a big vocabulary. On by default, except with `--backend metal`, where the resident runner does not take an int4 table yet and the default is off. `--embed-int4=false` keeps it at int8. [More](quantization.md). *Also in `goinfer-chat`.* |
+| `--embed-int4` | `bool` | `true` | With `--quant int4`, keep the token-embedding and LM-head table at int4 as well, halving the largest resident tensor on a small model with a big vocabulary. On by default, except when the backend is `metal` (named, or chosen by `auto`), where the resident runner does not take an int4 table yet and the default is off. `--embed-int4=false` keeps it at int8. [More](quantization.md). *Also in `goinfer-chat`.* |
 | `--kv` | `f32 \| f16 \| i8` | `f32` | KV cache precision: `f32` is bit-exact; `f16` and `i8` are lossy and smaller (`f16` applies to GPU-resident models only). *Also in `goinfer-chat`.* |
 | `--kv-quant` | `f32 \| i8` | — | **Deprecated: use `--kv`.** Overrides the CPU KV cache precision alone. |
 | `--ctx` | `int` | `0` | GPU-resident KV capacity in positions. 0 keeps the backend default, which `--fit` may raise. *Also in `goinfer-chat`.* |

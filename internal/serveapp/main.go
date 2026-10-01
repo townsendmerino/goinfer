@@ -395,7 +395,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	sf.showVersion = fs.Bool("version", false, "print version, the backends COMPILED INTO this binary, and the Go toolchain, then exit. `backends:` is the compiled-in truth — --backend accepts names this build cannot run and falls back to cpu")
 	// The model-loading flags goinfer-chat shares — one registration, so the two binaries cannot drift.
 	sf.lf = loadflags.Register(fs, loadflags.Serve)
-	fs.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. native f32 on cuda, ~9x slower TTFT — N-35, docs/audit-2026-09-10.md: every quantized mode gets batched CUDA prefill, see -quant's own help above; only f32 falls back). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load")
+	fs.BoolVar(&cfg.requireBE, "require-backend", false, "strict mode: exit non-zero at startup if a model did not resolve to the requested --backend's fast paths — no resident decode path, or a prefill that declined to the sequential per-token loop (e.g. native f32 on cuda, ~9x slower TTFT — N-35, docs/audit-2026-09-10.md: every quantized mode gets batched CUDA prefill, see -quant's own help above; only f32 falls back). Both fall back silently by design; a batch client should fail at second zero instead of discovering it under load. Under -backend auto it also refuses to start when auto passed over a GPU backend this binary has (no device answered) rather than run on the CPU; -backend cpu runs strict on the CPU")
 	fs.StringVar(&cfg.kvQuant, "kv-quant", "", "DEPRECATED — use --kv, which now covers the CPU cache too. When given, overrides the CPU KV cache alone: f32 | i8")
 	fs.Var(&cfg.adapters, "adapter", "compute-time LoRA adapter sharing a base model's resident weights: `serveName=baseName=dir`.\n"+
 		"Repeatable. Unlike --lora (merged, one base per fine-tune), N adapters of one base cost ~base + N\n"+
@@ -524,6 +524,13 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	}
 	cfg.load = *lf
 	if err := cfg.load.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+	if l := cfg.load.BackendLine(); l != "" {
+		fmt.Fprintln(os.Stderr, l)
+	}
+	if err := requireAutoBackend(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
@@ -1368,6 +1375,19 @@ func requireFastPaths(name string, cfg config, lm *loadedModel, batched bool, wh
 		return fmt.Errorf("--require-backend: model %q declined the batched prefill: %s", name, why)
 	}
 	return nil
+}
+
+// requireAutoBackend is -require-backend's check on -backend auto, made at startup before any model loads. When auto
+// passed over a GPU backend this binary links (no device answered, it is untested on this machine, or it is webgpu), it
+// would run on the CPU, which is the silent fallback strict mode exists to stop, so it refuses and says how to choose.
+// A binary with no GPU backend has only the CPU, so auto there is the CPU, and the per-model checks run as for
+// -backend cpu.
+func requireAutoBackend(cfg config) error {
+	if !cfg.requireBE || cfg.load.Auto == nil || !cfg.load.Auto.Skipped {
+		return nil
+	}
+	return fmt.Errorf("--require-backend: -backend auto would run on the CPU (%s); pass -backend cpu to run strict on the CPU, or name a GPU backend to require it",
+		cfg.load.Auto.Reason)
 }
 
 // loadEncoder loads the embedding model (f32 or int8) plus its tokenizer (used

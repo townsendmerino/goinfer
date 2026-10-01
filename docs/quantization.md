@@ -131,8 +131,9 @@ Stated so nobody reads absence as endorsement:
   instead. It works with the sidecar `.giw` cache (baked into its own `e4h`-suffixed cache key,
   distinct from a plain-head sidecar of the same source and quant — `internal/prequant.go`'s
   `streamCachePath`) as well as a direct load.
-  - **On `--backend metal` the default is off (since 2026-09-30).** The Metal resident runner does not accept an
-    int4 embedding table (`weight kind "int4" is not int8`). From 2026-09-28 to 2026-09-30 the default was on there
+  - **On Metal the default is off (since 2026-09-30),** whether `--backend metal` is named or chosen by
+    `--backend auto`. The Metal resident runner does not accept an int4 embedding table
+    (`weight kind "int4" is not int8`). From 2026-09-28 to 2026-09-30 the default was on there
     too, so a plain Metal load declined the resident and decoded on the CPU (`decode path: cpu (int4) — requested
     metal → running on cpu`). An explicit `--embed-int4` on Metal is still honoured, and then runs on the CPU.
   - Checked 2026-09-30 on the 0.5B coder: with the int4 table, CUDA stays `cuda-resident (int4)` (nobara-pc) and

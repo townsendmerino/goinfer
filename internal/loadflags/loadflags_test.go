@@ -206,7 +206,7 @@ func TestEmbedInt4_offByDefaultOnMetal(t *testing.T) {
 		{[]string{"--backend", "metal", "--embed-int4"}, true},
 		{[]string{"--backend", "metal", "--embed-int4=true"}, true},
 		{[]string{"--backend", "metal", "--embed-int4=false"}, false},
-		{nil, true}, // cpu
+		{nil, true}, // auto, which is the CPU in this test binary
 		{[]string{"--backend", "cuda"}, true},
 		{[]string{"--backend", "webgpu"}, true},
 		{[]string{"--embed-int4=false"}, false},
@@ -216,5 +216,65 @@ func TestEmbedInt4_offByDefaultOnMetal(t *testing.T) {
 				t.Errorf("%v (app %d): EmbedInt4 %v, want %v", c.args, app, f.Options().EmbedInt4, c.want)
 			}
 		}
+	}
+}
+
+// TestBackend_autoIsTheDefault (R17): with no -backend the apps run "auto", resolved once, before anything reads the
+// name. The Metal --embed-int4 default is the read that shows the order matters: auto choosing metal must turn it off
+// exactly as a named -backend metal does, or the default load declines the GPU it has just chosen.
+func TestBackend_autoIsTheDefault(t *testing.T) {
+	defer func(orig func() decoder.AutoChoice) { autoBackend = orig }(autoBackend)
+	calls := 0
+	autoBackend = func() decoder.AutoChoice {
+		calls++
+		return decoder.AutoChoice{Backend: "metal", Reason: "auto: Apple silicon"}
+	}
+
+	fs, f := parse(t, Chat)
+	if d := fs.Lookup("backend").DefValue; d != "auto" {
+		t.Fatalf("-backend defaults to %q, want auto", d)
+	}
+	if err := f.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if o := f.Options(); o.Backend != "metal" || !o.BackendAuto || o.EmbedInt4 {
+		t.Errorf("auto chose metal: Options().Backend %q, BackendAuto %v, EmbedInt4 %v; want metal, true, false", o.Backend, o.BackendAuto, o.EmbedInt4)
+	}
+	if calls != 1 {
+		t.Errorf("Validate then Options probed the devices %d times, want once", calls)
+	}
+	if got, want := f.BackendLine(), "backend: metal (auto: Apple silicon; -backend cpu to use the CPU)"; got != want {
+		t.Errorf("BackendLine() = %q, want %q", got, want)
+	}
+
+	// Options alone resolves too, for a caller that skipped Validate.
+	if _, g := parse(t, Chat); g.Options().Backend != "metal" || g.Options().EmbedInt4 {
+		t.Errorf("Options() without Validate: Backend %q, EmbedInt4 %v; want metal, false", g.Options().Backend, g.Options().EmbedInt4)
+	}
+
+	// A named backend is never probed and prints no line.
+	calls = 0
+	_, h := parse(t, Serve, "--backend", "cpu")
+	if err := h.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if o := h.Options(); calls != 0 || h.Auto != nil || h.BackendLine() != "" || o.Backend != "cpu" || o.BackendAuto {
+		t.Errorf("-backend cpu: %d probes, Auto %+v, line %q, backend %q, BackendAuto %v; want 0, nil, \"\", cpu, false",
+			calls, h.Auto, h.BackendLine(), o.Backend, o.BackendAuto)
+	}
+}
+
+// TestBackend_autoOnThisTestBinary is the same default through the real decoder.AutoBackend: this binary links no GPU
+// backend, so auto is the CPU, and the line says why without offering an override that would change nothing.
+func TestBackend_autoOnThisTestBinary(t *testing.T) {
+	_, f := parse(t, Chat)
+	if err := f.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if f.Backend != "cpu" || f.Auto == nil || f.Auto.Skipped {
+		t.Fatalf("auto on a binary with no GPU backend: Backend %q, Auto %+v; want cpu, not skipped", f.Backend, f.Auto)
+	}
+	if got, want := f.BackendLine(), "backend: cpu (auto: this binary has no GPU backend)"; got != want {
+		t.Errorf("BackendLine() = %q, want %q", got, want)
 	}
 }

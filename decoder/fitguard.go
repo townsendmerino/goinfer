@@ -873,6 +873,7 @@ func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck
 // Options.LoadAbort's own doc comment promises a caller will add "reason/pricing detail" once
 // ErrLoadAborted comes back, and this is that detail's source.
 func FitDescribe(path string, opts Options) (string, error) {
+	opts = opts.withAutoBackend()
 	quant, err := parseQuant(opts.Quant)
 	if err != nil {
 		return "", err
