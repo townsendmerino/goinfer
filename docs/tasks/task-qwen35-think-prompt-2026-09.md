@@ -67,9 +67,10 @@ What shipped, against the design in "Proposed fix" below (which is kept as the r
     is now per conversation (`Template.PromptOpensThinkFor`); the reasoning budget uses it too.
   - **Not replicated, recorded:** the templates trim every message's content (user and system too), which goinfer's renderers
     have never done; Gemma 4's `preserve_thinking`. **Pre-existing Gemma 4 renderer differences, unrelated to reasoning, found and
-    skipped by name in the gate:** consecutive assistant messages share one model turn in Gemma's template (goinfer opens one per
-    message; serve merges adjacent turns first, so it is unreachable there), and Gemma writes an assistant message's TEXT after its
-    tool responses where goinfer's tool renderer writes it before the calls.
+    skipped by name in the gate — both now handled, see "Gemma 4: the two renderer gaps" below:** consecutive assistant messages share
+    one model turn in Gemma's template (goinfer opened one per message; the note here said serve merges adjacent turns first so it was
+    unreachable — wrong: only the Anthropic route merges, the OpenAI routes do not), and Gemma writes an assistant message's TEXT after
+    its tool responses where goinfer's tool renderer writes it before the calls.
   - **Consequence for the KV cache:** when a new user query arrives the previous loop's turns lose their reasoning, so a cached
     prefix is reusable only up to the first such turn — the templates' own design.
 - **Stop strings on the answer only (built 2026-09-30, owner request).** `streamTokens` now takes the reasoning out BEFORE the stop
@@ -613,3 +614,39 @@ with the result "It is 18 degrees Celsius and sunny in Paris." gave "The current
 **Not verified:** streaming and `/v1/messages` / `/v1/responses` on the real model (they share `runToolTurn`, unit-tested, not run);
 several tools at once or a schema other than one string parameter on the real model (the renderer's type macro is pinned by the golden,
 not by what the model does with it); a tool-using turn hitting the reasoning budget; any gpt-oss but the 20B.
+
+## Gemma 4: the two renderer gaps (2026-09-30)
+
+**Gap 1 — consecutive assistant messages: FIXED, default.** In the canonical template a model turn is opened unless the previous non-tool
+message was an assistant, and `<turn|>` is withheld when the next non-tool message is one. goinfer's text renderer opened and closed a turn
+per message. The managed path now follows the template (reachable through the OpenAI routes; the Anthropic route pre-merges adjacent turns,
+joining them with a newline, which is that API's own semantics and is left alone). The generic path is unchanged, and a test now pins that
+(its absence let a mutation of the generic path survive until I wrote one). The three `two_after*` cases × three thinking modes are compared
+against HuggingFace like every other case.
+
+**Gap 2 — assistant text beside a call: PORTED, opt-in (`-tool-format template`), default unchanged.** `chat.renderGemma4NativeTools` is a
+port of the template's message loop, with its variable names (`prev_message_type`, `prev_non_tool_role`, `continues_into_next`). It matches
+HuggingFace on every case, in every thinking mode: the original `tool_loop_text` plus seven added (text then a user message, text then an
+answer, parallel calls with text, text with no reasoning, a call with no result yet, sequential calls with text, a call nobody answered
+followed by an assistant message, and parallel results identified only by id, out of order).
+
+Why not the default. The template's order is: calls, results, then the text, then `<turn|>`; and its generation prompt writes no turn header
+after a tool result. So a replayed agent turn that had a preamble ("Let me check…" plus a call — Claude Code's common shape) ends
+`…<tool_response|>text<turn|>\n` with nothing after it: a closed turn and no header for the model's next step. goinfer's own order (text
+before the call, the turn left open) is what the model wrote and keeps it mid-turn. Which is better for the model is an empirical question,
+the same as for Qwen3.5's native tool format, and **has not been measured**: it needs the canonical template, which only the 26B-A4B
+checkpoint carries on this box (the E2B GGUF carries the older template, which goinfer does not treat as managed — its load log says
+`thinking: unmanaged` — so a baseline I ran on the E2B (20/21 loops answered with a preamble) exercised the generic path and says nothing about
+this change; it is not evidence for either order).
+
+**Found on the way.**
+- *A real bug, fixed:* a tool result that carried only `tool_call_id` rendered as `response:{value:…}` with no function name (the template
+  resolves the name from the id, falling back to `name`, then `unknown`). OpenAI clients often omit `name`. The default renderer now resolves
+  by id as well (the generic path only fills a missing name, as before). A new golden case — results identified by id, out of order — pins it.
+- *Two templates, one family:* Gemma 4 ships a 2026-07-09 "Canonical Chat Template" ("fixed tool-calling loops, turn closures, and thinking
+  content-ordering") and an older one. `nativeTools` is set only for the canonical one, so `-tool-format template` is a no-op on the older.
+- *Not Gemma, not fixed:* Qwen3's template groups consecutive tool results in ONE user turn; goinfer's Hermes renderer writes a user turn per
+  result (for every ChatML family). Found by the first case with two results in a row; skipped by name in the gate, with consequences of its own
+  for parallel tool calls, so it needs its own decision.
+- *One mutation of the port is equivalent*, not a gap: the continuation clause "calls with no result" can never be the deciding branch, because
+  the pending-call case is tested first.

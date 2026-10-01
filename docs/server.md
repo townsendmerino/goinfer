@@ -302,6 +302,16 @@ answered 11/12 against 9/14 on the 0.8B, 21/21 against 20/21 on the 9B) but made
 against 14/21), and missed the pre-registered bar for changing the default by one reply. Neither prompt ever produced an unparsed XML call.
 `docs/measurements/qwen35-tool-format-2026-09-30/RESULTS.md`.
 
+**Gemma 4's tool loop follows its template only where it is the canonical one, and only on request.** Gemma 4 ships in two template
+versions; goinfer's managed rendering (thinking, history, and now the loop below) is for the canonical one (Google's "Gemma 4 Canonical
+Chat Template", 2026-07-09 — the 26B-A4B checkpoint and its GGUF). The older template (the E2B GGUF has it) is served by the generic
+rendering, which is unchanged. For the canonical template: consecutive assistant messages are **one model turn**, as the template has them
+(no turn marker between them); a tool result that carries only `tool_call_id` now names its function (it rendered `response:{…}` with no
+name before — OpenAI clients often omit `name`); and `-tool-format template` renders the template's own order for an assistant message that
+has text beside a call: the text after the results, the turn closed, no turn header after a tool result. goinfer's own order — text before
+the call, the turn left open for the model to continue — is the default, because the template's order ends a replayed agent turn
+`…<tool_response|>text<turn|>` with nothing after it, and whether that helps or hurts the model has not been measured.
+
 **An unwrapped call is accepted on the `<tool_call>` families (chatml, mellum2).** Qwen2.5-Coder at every size tested
 practically never writes the `<tool_call>` wrapper under `auto`; it emits the call object alone, which earlier versions
 returned as prose, so an agent got no call at all. An output whose first non-space byte opens a JSON object whose `name` is
