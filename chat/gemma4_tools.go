@@ -368,3 +368,113 @@ func toStr(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
 }
+
+// renderGemma4NativeTools renders system + turns + tool declarations the way Gemma 4's CANONICAL chat template does — a port of its
+// message loop, not a variation on renderGemma4Tools — and is what `-tool-format template` selects for such a checkpoint. The variable
+// names are the template's (prev_message_type, prev_non_tool_role, continues_into_next) so the two can be read side by side. Three
+// things differ from goinfer's own rendering, all of them the template's:
+//
+//   - an assistant message's TEXT is written after its calls and their results, not before the calls;
+//   - the model turn is CLOSED (`<turn|>`) right after that text, when the message has results and text;
+//   - the generation prompt writes no turn header after a tool result, whether or not the turn was closed.
+//
+// The last two make a prompt that ends `…<tool_response|>text<turn|>\n` with nothing after it when an agent client replays a turn that
+// had a preamble. Whether that is better or worse for the model than goinfer's own order is a question for a measurement, not for this
+// file: the format is opt-in.
+func renderGemma4NativeTools(system string, turns []Turn, tools []Tool, think bool) string {
+	var b strings.Builder
+	b.WriteString("<bos>")
+	sys := strings.TrimSpace(system)
+	if think || len(tools) > 0 || sys != "" {
+		b.WriteString("<|turn>system\n")
+		if think {
+			b.WriteString("<|think|>\n")
+		}
+		b.WriteString(sys)
+		for _, tl := range tools {
+			b.WriteString("<|tool>declaration:" + tl.Name + "{description:" + gq + tl.Description + gq +
+				",parameters:" + gemmaSchema(tl.Parameters) + "}<tool|>")
+		}
+		b.WriteString("<turn|>\n")
+	}
+	prevMessageType := ""
+	switch {
+	case len(tools) > 0:
+		prevMessageType = "tool"
+	case think:
+		prevMessageType = "think"
+	}
+	prevNonToolRole := ""
+	lu := lastUserIndex(turns)
+	for i, m := range turns {
+		if m.Role == "tool" {
+			continue // written by the assistant message that made the call (the forward scan below)
+		}
+		prevMessageType = ""
+		role := m.Role
+		if role == "assistant" {
+			role = "model"
+		}
+		if !(role == "model" && prevNonToolRole == "assistant") { // continue_same_model_turn
+			b.WriteString("<|turn>" + role + "\n")
+		}
+		if m.Reasoning != "" && i > lu { // thinking_gate (preserve_thinking is off)
+			b.WriteString("<|channel>thought\n" + m.Reasoning + "\n<channel|>")
+		}
+		for _, c := range m.ToolCalls {
+			b.WriteString("<|tool_call>call:" + c.Name + "{" + gemmaArgs(c.Arguments) + "}<tool_call|>")
+			prevMessageType = "tool_call"
+		}
+		responded := false // ns_tr_out.flag
+		if len(m.ToolCalls) > 0 {
+			for k := i + 1; k < len(turns) && turns[k].Role == "tool"; k++ {
+				name := turns[k].ToolName
+				if name == "" {
+					name = "unknown"
+				}
+				for _, c := range m.ToolCalls { // resolve tool_call_id to the function name
+					if c.ID != "" && c.ID == turns[k].ToolCallID {
+						name = c.Name
+					}
+				}
+				b.WriteString("<|tool_response>response:" + name + "{value:" + gq + turns[k].Content + gq + "}<tool_response|>")
+				responded = true
+				prevMessageType = "tool_response"
+			}
+		}
+		var content string // captured_content
+		if role == "model" {
+			content = stripChannels(m.Content)
+		} else {
+			content = strings.TrimSpace(m.Content)
+		}
+		b.WriteString(content)
+		hasContent := strings.TrimSpace(content) != ""
+
+		nextRole, nextFound := "", false // the next non-tool message
+		for j := i + 1; j < len(turns); j++ {
+			if turns[j].Role != "tool" {
+				nextRole, nextFound = turns[j].Role, true
+				break
+			}
+		}
+		continuesIntoNext := role == "model" && nextRole == "assistant" && (len(m.ToolCalls) == 0 || responded)
+		switch {
+		case prevMessageType == "tool_call" && !responded:
+			b.WriteString("<|tool_response>")
+		case continuesIntoNext:
+		case !(responded && !hasContent && !nextFound):
+			b.WriteString("<turn|>\n")
+		}
+		prevNonToolRole = m.Role
+	}
+	if prevMessageType != "tool_response" && prevMessageType != "tool_call" {
+		b.WriteString("<|turn>model\n")
+		if !think {
+			b.WriteString("<|channel>thought\n<channel|>")
+		}
+	} else if prevMessageType == "tool_response" && think {
+		b.WriteString("<|channel>thought\n")
+	}
+	return b.String()
+}

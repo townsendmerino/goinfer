@@ -93,10 +93,10 @@ type Template struct {
 	// effort is a Harmony (gpt-oss) template's reasoning effort, written on its `Reasoning:` line (templates.go); "" elsewhere.
 	effort string
 
-	// xmlTools: the template declares Qwen3.5's native tool form and has the layout goinfer reproduces byte for byte
-	// (qwen_xml_tools.go); toolFormat is which prompt WithToolFormat selected (the zero value is goinfer's own Hermes form).
-	xmlTools   bool
-	toolFormat ToolFormat
+	// nativeTools: the template declares a tool form goinfer can reproduce byte for byte — Qwen3.5's XML (qwen_xml_tools.go) or Gemma 4's
+	// canonical template (gemma4_tools.go); toolFormat is which prompt WithToolFormat selected (the zero value is goinfer's own).
+	nativeTools bool
+	toolFormat  ToolFormat
 }
 
 // Name is the family identifier ("chatml", "mellum2", "gemma3", "gemma4", "harmony", "llama3",
@@ -160,6 +160,7 @@ func Detect(meta Meta) (*Template, error) {
 		case strings.Contains(t, "<|turn>") || strings.Contains(t, "<|channel>"):
 			g := Gemma4()
 			g.reason = detectGemma4Reasoning(t)
+			g.nativeTools = g.reason != nil && g.reason.hist == histGemma4 // the canonical template, whose loop the native renderer ports
 			return g, nil
 		case strings.Contains(t, "<start_of_turn>"):
 			return Gemma3(), nil
@@ -201,7 +202,7 @@ func Detect(meta Meta) (*Template, error) {
 		case strings.Contains(t, "<|im_start|>"):
 			c := ChatML()
 			c.reason = detectChatMLReasoning(t)
-			c.xmlTools = declaresQwen35XMLTools(t, c.reason)
+			c.nativeTools = declaresQwen35XMLTools(t, c.reason)
 			return c, nil
 		case strings.Contains(t, "[INST]"):
 			return Mistral(), nil

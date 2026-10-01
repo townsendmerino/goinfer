@@ -49,6 +49,14 @@ TOOL_CASES = {
     "tool_loop_text": [U("Weather in Paris?"), A("Checking.", "need the weather", tc=TC("Paris")), T("18C sunny")],
     "tool_loop_two":  [U("Weather?"), A("", "first Paris", tc=TC("Paris")), T("18C"), A("", "now Rome", tc=TC("Rome")), T("24C")],
     "tool_loop_old":  [U("Weather in Paris?"), A("", "need the weather", tc=TC("Paris")), T("18C"), A("It is 18C."), U("And Rome?")],
+    # Assistant TEXT beside a call: where the template writes it, and whether it closes the turn (Gemma 4's canonical template writes it
+    # after the results and closes the turn; goinfer's own rendering writes it before the call). Each also without reasoning.
+    "text_then_user":     [U("Weather in Paris?"), A("Checking.", "need the weather", tc=TC("Paris")), T("18C sunny"), U("thanks")],
+    "text_then_answer":   [U("Weather in Paris?"), A("Checking.", "need the weather", tc=TC("Paris")), T("18C sunny"), A("It is 18C.", "got it")],
+    "text_parallel":      [U("Weather in Paris and Rome?"), A("Checking both.", "two cities", tc=TC("Paris") + TC("Rome")), T("18C"), T("24C")],
+    "text_noreason":      [U("Weather in Paris?"), A("Checking.", None, tc=TC("Paris")), T("18C sunny")],
+    "call_pending":       [U("Weather in Paris?"), A("", "need the weather", tc=TC("Paris"))],
+    "text_sequential":    [U("Weather?"), A("First.", "one", tc=TC("Paris")), T("18C"), A("Second.", "two", tc=TC("Rome")), T("24C")],
 }
 MODES = {"unset": {}, "false": {"enable_thinking": False}, "true": {"enable_thinking": True}}
 

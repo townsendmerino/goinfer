@@ -64,7 +64,7 @@ func declaresQwen35XMLTools(tmpl string, r *Reasoning) bool {
 
 // WithToolFormat returns a copy of t that renders tools in format f. It changes nothing for a template with no native form to switch to.
 func (t *Template) WithToolFormat(f ToolFormat) *Template {
-	if t == nil || !t.xmlTools || t.toolFormat == f {
+	if t == nil || !t.nativeTools || t.toolFormat == f {
 		return t
 	}
 	c := *t
@@ -81,11 +81,11 @@ func (t *Template) ToolFormat() ToolFormat {
 }
 
 // DeclaresNativeTools reports whether t has a native tool form goinfer can render — so `-tool-format template` does something for it.
-func (t *Template) DeclaresNativeTools() bool { return t != nil && t.xmlTools }
+func (t *Template) DeclaresNativeTools() bool { return t != nil && t.nativeTools }
 
 // nativeXMLTools: render the model's own form.
-func (t *Template) nativeXMLTools() bool {
-	return t != nil && t.xmlTools && t.toolFormat == ToolFormatTemplate
+func (t *Template) usesNativeTools() bool {
+	return t != nil && t.nativeTools && t.toolFormat == ToolFormatTemplate
 }
 
 // ---- the prompt -----------------------------------------------------------------------------------------------------------------

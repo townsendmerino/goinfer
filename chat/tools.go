@@ -37,7 +37,7 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 	}
 	switch t.name {
 	case "chatml", "mellum2":
-		if t.nativeXMLTools() {
+		if t.usesNativeTools() {
 			return renderQwen35XMLTools(system, turns, tools, t.historyKind()) + t.thinkSuffixText()
 		}
 		return renderChatMLTools(system, turns, tools, t.historyKind()) + t.thinkSuffixText()
@@ -46,6 +46,9 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 	case "llama3":
 		return renderLlama3Tools(system, turns, tools)
 	case "gemma4":
+		if t.usesNativeTools() {
+			return renderGemma4NativeTools(system, turns, tools, t.gemma4Think())
+		}
 		return renderGemma4Tools(system, turns, tools, t.gemma4Think(), t.historyKind() == histGemma4)
 	case "harmony":
 		var b strings.Builder
@@ -98,7 +101,7 @@ func (t *Template) harmonyEffort() string {
 func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok bool) {
 	switch t.name {
 	case "chatml", "mellum2":
-		if t.nativeXMLTools() {
+		if t.usesNativeTools() {
 			return "", "", "", false, false // the model's own form is XML: there is no JSON wrapper to constrain a decode to
 		}
 		return "<tool_call>\n", "\n</tool_call>", "arguments", false, true
