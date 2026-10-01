@@ -321,7 +321,7 @@
   {
    "name": "tool-format",
    "group": "Reasoning models",
-   "summary": "How tools are put in the prompt for a model whose own template declares a call form goinfer can render exactly (Qwen3.5's XML): `hermes` (the default: goinfer's prompt, JSON call, `tool_choice` can constrain it) or `template` (the model's own; a `tool_choice` naming a function is then a 400). The parser reads both.",
+   "summary": "How tools are put in the prompt for a model whose own template declares a call form goinfer can render exactly (Qwen3.5's XML, Gemma 4's canonical template): `hermes` (the default: goinfer's own prompt) or `template` (the model's own; a `tool_choice` naming a function is then a 400). Qwen's parser reads both call forms.",
    "type": "hermes | template"
   }
  ],

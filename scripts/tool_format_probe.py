@@ -12,6 +12,7 @@ Eight prompts over a handful of tools, each asked --samples times (the first gre
   prose        an answer in plain text (right for prompt 8, which needs no tool)
   empty        no content, no call (a reply cut off inside its reasoning)
 
+With --loop --preamble TEXT the replayed assistant message carries TEXT beside the call, as an agent client's does.
 With --loop, every reply that was an ok call is followed up: the call and a canned tool result are replayed and the model is asked again,
 which is where the history format matters. The second reply is `answered` when it is prose that mentions the result, `call_again` when it
 calls another tool, `ignored` when it is prose that does not use the result, and `dropped` when it holds an unparsed <function=/<tool_call>.
@@ -90,6 +91,7 @@ def main():
     ap.add_argument("base"); ap.add_argument("--samples", type=int, default=3)
     ap.add_argument("--max-tokens", type=int, default=900); ap.add_argument("--thinking-budget", type=int, default=0)
     ap.add_argument("--json"); ap.add_argument("--model", default="m"); ap.add_argument("--loop", action="store_true")
+    ap.add_argument("--preamble", default="", help="with --loop: replay each call with this text beside it (an agent client's \"Let me check…\" plus a tool call)")
     a = ap.parse_args()
     rows = []
     for pid, user, offered, want, types in PROMPTS:
@@ -111,7 +113,7 @@ def main():
                 try:
                     call = ch["message"]["tool_calls"][0]
                     result, markers = RESULTS[call["function"]["name"]]
-                    asst = {"role": "assistant", "content": ch["message"].get("content") or "", "tool_calls": ch["message"]["tool_calls"]}
+                    asst = {"role": "assistant", "content": a.preamble or ch["message"].get("content") or "", "tool_calls": ch["message"]["tool_calls"]}
                     if ch["message"].get("reasoning_content"): asst["reasoning_content"] = ch["message"]["reasoning_content"]
                     body2 = dict(body, messages=body["messages"] + [asst, {"role": "tool", "tool_call_id": call["id"], "name": call["function"]["name"], "content": result}])
                     r2 = post(a.base, body2); m2 = r2["choices"][0]["message"]; t2 = (m2.get("content") or "")

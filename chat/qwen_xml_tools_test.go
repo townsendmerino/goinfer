@@ -302,3 +302,39 @@ func TestQwen35XML_roundTrip(t *testing.T) {
 		t.Errorf("a value that contains </parameter> must survive whole:\n got  %s\n want %s", calls[0].Arguments, nasty)
 	}
 }
+
+// Only a template goinfer recognises as managed opts in. Gemma 4's canonical template does; an older Gemma 4 template, whose loop goinfer
+// has no oracle for, does not — so `-tool-format template` leaves it exactly as it was.
+func TestDeclaresNativeTools_gemma4(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "testdata", "chat_think_goldens", "think_history.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gs []struct {
+		Checkpoint   string `json:"checkpoint"`
+		ChatTemplate string `json:"chat_template"`
+	}
+	if err := json.Unmarshal(raw, &gs); err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range gs {
+		if g.Checkpoint != "gemma-4-26b-a4b-it" {
+			continue
+		}
+		canonical, _ := Detect(Meta{ChatTemplate: g.ChatTemplate})
+		if !canonical.DeclaresNativeTools() {
+			t.Error("Gemma 4's canonical template must declare a native tool form")
+		}
+		older, _ := Detect(Meta{ChatTemplate: strings.ReplaceAll(g.ChatTemplate, "enable_thinking | default(false)", "enable_thinking is defined and enable_thinking")})
+		if older == nil || older.DeclaresNativeTools() {
+			t.Error("a Gemma 4 template goinfer cannot recognise as managed must not opt in")
+		}
+		turns := []Turn{{Role: "user", Content: "Weather?"}, {Role: "assistant", Content: "Checking.", ToolCalls: []ToolCall{{Name: "get_weather", Arguments: json.RawMessage(`{"city":"Paris"}`)}}}, {Role: "tool", ToolName: "get_weather", Content: "18C"}}
+		tools := []Tool{{Name: "get_weather", Description: "W", Parameters: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`)}}
+		if a, b := older.RenderTools("", turns, tools), older.WithToolFormat(ToolFormatTemplate).RenderTools("", turns, tools); a != b {
+			t.Error("-tool-format template must be a no-op on a template with no native form")
+		}
+		return
+	}
+	t.Fatal("no gemma-4 template in the history golden")
+}

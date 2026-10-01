@@ -79,7 +79,7 @@ func TestToolFormat_forcedToolUnderNative(t *testing.T) {
 
 func TestToolFormatNote(t *testing.T) {
 	base := templateFromGolden(t, "qwen3.5-9b")
-	if got := toolFormatNote(base); !strings.Contains(got, "goinfer's Hermes form") || !strings.Contains(got, "-tool-format template") {
+	if got := toolFormatNote(base); !strings.Contains(got, "goinfer's own form") || !strings.Contains(got, "-tool-format template") {
 		t.Errorf("default note: %q", got)
 	}
 	if got := toolFormatNote(base.WithToolFormat(chat.ToolFormatTemplate)); !strings.Contains(got, "the model's own template form") {
@@ -89,5 +89,23 @@ func TestToolFormatNote(t *testing.T) {
 		if got := toolFormatNote(tm); got != "" {
 			t.Errorf("a model with no native form gets no note, got %q", got)
 		}
+	}
+}
+
+// Gemma 4's canonical template opts in too, so the same flag reaches it; an older Gemma 4 template (the E2B GGUF carries one) is not
+// recognised as managed and so has nothing to switch to.
+func TestToolFormatNote_gemma4(t *testing.T) {
+	canonical := templateFromGolden(t, "gemma-4-26b-a4b-it")
+	if got := toolFormatNote(canonical); !strings.Contains(got, "goinfer's own form") {
+		t.Errorf("canonical Gemma 4, default: %q", got)
+	}
+	if got := toolFormatNote(canonical.WithToolFormat(chat.ToolFormatTemplate)); !strings.Contains(got, "the model's own template form") {
+		t.Errorf("canonical Gemma 4, native: %q", got)
+	}
+	turns := []chat.Turn{{Role: "user", Content: "Weather?"}, {Role: "assistant", Content: "Checking.", ToolCalls: []chat.ToolCall{{ID: "c1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Paris"}`)}}}, {Role: "tool", ToolCallID: "c1", Content: "18C"}}
+	own := canonical.RenderTools("", turns, qwenToolsForTest)
+	native := canonical.WithToolFormat(chat.ToolFormatTemplate).RenderTools("", turns, qwenToolsForTest)
+	if own == native || !strings.HasSuffix(native, "<tool_response|>Checking.<turn|>\n") {
+		t.Errorf("the template format must write the text after the result and close the turn:\n own    %q\n native %q", own[len(own)-90:], native[len(native)-90:])
 	}
 }
