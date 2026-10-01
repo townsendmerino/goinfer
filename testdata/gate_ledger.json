@@ -262,12 +262,12 @@
       "value": "PASS"
     },
     {
-      "commit": "13c19bf7",
+      "commit": "93722530",
       "date": "2026-09-30",
       "gate": "TestGemma12_forwardParity",
-      "note": "confirmed from docs/measurements/gemma12-gates-2026-09-30/forward-parity-mac.log (M1 Pro): gemma1/gemma2 tiny, safetensors and GGUF, per-token and batched, max |dlogit| <= 2.3e-6, cosine 1.00000000 against HF f32 eager; mutation-checked (no attention softcap / no sliding window / sliding-full inverted / no +1 all red)",
+      "note": "re-confirmed after the full-logit dumps became tracked and required (a missing dump now fails instead of skipping the cosine bar): docs/measurements/gemma12-gates-2026-09-30/forward-parity-{mac,nobara}-dumps-tracked.log, darwin/arm64 and linux/amd64, all 4 subtests per-token and batched cosine 1.00000000, max |dlogit| <= 2.4e-6. Before this, every machine but the Mac printed cosine NaN and passed on argmax/top-k alone. Mutation (dumps-removed) red.",
       "promoted_by": "claude",
-      "source_sha256": "3da84bbc25a6b727",
+      "source_sha256": "c0d0b7308e8dca02",
       "value": "PASS"
     },
     {

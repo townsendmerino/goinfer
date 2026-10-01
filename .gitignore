@@ -196,6 +196,11 @@ testdata/*_forward_full.json
 # The small committed golden fixtures (gemma_*_golden.json, etc.) stay tracked;
 # the multi-MB *_full.json dumps and layer-trace harness outputs do not.
 testdata/*_full.json
+# ...except the tiny Gemma 1/2 dumps (~10 KB each), tracked so the cosine bar runs on every machine and
+# not only where the pin script last ran (TestGemma12_forwardParity printed "cosine NaN" and passed elsewhere)
+!testdata/gemma1_forward_full.json
+!testdata/gemma2_forward_full.json
+!testdata/gemma2-hd_forward_full.json
 testdata/*_trace.json
 testdata/parity.jsonl
 
