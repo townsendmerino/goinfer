@@ -1,5 +1,17 @@
 # Task (SPEC — unscheduled, not implemented): Metal runtime self-test at backend init
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> **Status 2026-10-01: FOLDED, never built.** This spec moved, intact, into
+> [`../tasks/task-hardware-coverage-2026-10.md`](../tasks/task-hardware-coverage-2026-10.md) §H2, which
+> extends the same relative, CPU-referenced probe to CUDA, WebGPU and the CPU ISA paths. That doc owns the
+> work now. Every instruction below is a record of what was asked, not a task.
+
 > **Status (corrected 2026-09-13, doc review): the original deferral vehicle no longer exists.**
 > This doc gated implementation on "the v1.0.1 batch, alongside the Metal dispatch removals
 > (audit #4/#5)" and a frozen `main` between v0.11.0 and v1.0. None of that holds today: current

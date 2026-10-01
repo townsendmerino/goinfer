@@ -99,6 +99,12 @@ agent fits in, a thinking switch, and reasoning emitted separately.
 document-OCR model: the text decoder on the generic path from existing parts, a new aikit tower, a pixel budget
 for laptops, and schema-bound extraction (an invoice image into a Go struct) as the demo. O0 is reading only.
 
+[`task-hardware-coverage-2026-10.md`](tasks/task-hardware-coverage-2026-10.md) (H0–H6, filed 2026-10-01) is about
+the hardware goinfer is not built on: a checked census of every path selected by a CPU feature, a GPU attribute
+or a memory size, ways to reach those paths without owning the machine (CI runners, Intel SDE, forced
+fallbacks, faked probes), a runtime self-test on every backend that declines rather than answers wrong
+(it absorbs the Metal self-test spec), a pasteable hardware report, and a rented sweep before each public claim.
+
 [`task-test-efficiency-2026-09.md`](tasks/task-test-efficiency-2026-09.md) (TE0–TE12, filed 2026-09-28) is the
 verification-cost campaign: a census of where the machine time goes (served gates that are mostly idle-gate waiting
 and start-up, measurement gates that live in `go test`, fidelity gates whose fixed prompt count ignores what each
@@ -126,7 +132,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (123)
+## Archive — `completed/` (124)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
