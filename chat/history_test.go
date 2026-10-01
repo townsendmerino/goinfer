@@ -157,13 +157,6 @@ func TestThinkHistory_matchHF(t *testing.T) {
 						skipped++
 						continue
 					}
-					// Qwen3's template puts consecutive tool results in ONE user turn; goinfer's Hermes renderer writes a user turn per
-					// result. A pre-existing difference of the ChatML renderer (found by text_parallel, the first case with two results in a
-					// row), separate from Gemma and with behaviour consequences of its own for parallel tool calls: recorded, not fixed here.
-					if (c.Name == "text_parallel" || c.Name == "ids_resolve_names") && strings.HasPrefix(g.Checkpoint, "qwen3-") {
-						skipped++
-						continue
-					}
 					tm := tmpl.WithToolFormat(f).WithThinking(histMode[mode])
 					var got string
 					if c.Tools {
@@ -174,6 +167,11 @@ func TestThinkHistory_matchHF(t *testing.T) {
 					w := want
 					switch {
 					case c.Tools && strings.HasPrefix(g.Checkpoint, "qwen3.5"):
+						// Qwen3.5's calls are XML in its template and JSON here (compared through the first call only); the run of tool-result
+						// blocks after a call is the same text in both, including how consecutive results are grouped.
+						if gr, wr := toolResponseRun(got), toolResponseRun(w); gr != wr {
+							t.Errorf("%s / %s / enable_thinking=%s: tool results differ:\n got %q\nwant %q", g.Checkpoint, c.Name, mode, gr, wr)
+						}
 						got, w = assistantThroughFirstCall(got), assistantThroughFirstCall(w)
 					case c.Tools && strings.HasPrefix(g.Checkpoint, "qwen3"):
 						got, w = compactToolCalls(afterSystemTurn(got)), compactToolCalls(afterSystemTurn(w))
@@ -186,7 +184,7 @@ func TestThinkHistory_matchHF(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d prompts compared against HF (%d skipped: goinfer's own Gemma tool order, which differs from the template's by design, and Qwen3 grouped results)", ran, skipped)
+	t.Logf("%d prompts compared against HF (%d skipped: goinfer's own Gemma tool order, which differs from the template's by design)", ran, skipped)
 	if ran < 100 {
 		t.Fatalf("only %d prompts compared; the gate is not covering the goldens", ran)
 	}
@@ -300,4 +298,19 @@ func TestGemma4_genericPathKeepsATurnPerMessage(t *testing.T) {
 	if got != want {
 		t.Errorf("generic rendering moved:\n got  %q\n want %q", got, want)
 	}
+}
+
+// toolResponseRun returns the first run of tool-result blocks in a ChatML prompt: from the `<|im_start|>user` that opens it to the `<|im_end|>`
+// that closes it — one turn holding every consecutive result — or "" when the prompt has none.
+func toolResponseRun(s string) string {
+	const open, end = "<|im_start|>user\n<tool_response>", "<|im_end|>\n"
+	i := strings.Index(s, open)
+	if i < 0 {
+		return ""
+	}
+	j := strings.Index(s[i:], end)
+	if j < 0 {
+		return s[i:]
+	}
+	return s[i : i+j+len(end)]
 }

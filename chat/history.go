@@ -147,3 +147,11 @@ func stripChannels(text string) string {
 	}
 	return strings.TrimSpace(out.String())
 }
+
+// detectGroupedToolResults reports whether a ChatML template writes a run of consecutive tool results as ONE user turn — a single
+// `<|im_start|>user` before the first and a single `<|im_end|>` after the last, with each result in its own <tool_response> block. Qwen2.5,
+// Qwen3 and Qwen3.5 all do (their loops open the user turn only when the previous message was not a tool message). The marker is that
+// condition, `role != "tool"`, in a template that also writes <tool_response>.
+func detectGroupedToolResults(tmpl string) bool {
+	return strings.Contains(tmpl, "<tool_response>") && strings.Contains(tmpl, `role != "tool"`)
+}

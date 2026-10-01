@@ -40,7 +40,7 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 		if t.usesNativeTools() {
 			return renderQwen35XMLTools(system, turns, tools, t.historyKind()) + t.thinkSuffixText()
 		}
-		return renderChatMLTools(system, turns, tools, t.historyKind()) + t.thinkSuffixText()
+		return renderChatMLTools(system, turns, tools, t.historyKind(), t.groupsToolResults) + t.thinkSuffixText()
 	case "mistral":
 		return renderMistralTools(system, turns, tools)
 	case "llama3":
@@ -274,7 +274,9 @@ func callObjectJSON(c ToolCall, argsKey string) string {
 
 // --- ChatML / Qwen (Hermes) ---
 
-func renderChatMLTools(system string, turns []Turn, tools []Tool, hist histKind) string {
+// group is Template.groupsToolResults: consecutive tool results share one user turn, as the template writes them; otherwise each result
+// is a user turn of its own, byte for byte as before.
+func renderChatMLTools(system string, turns []Turn, tools []Tool, hist histKind, group bool) string {
 	var b strings.Builder
 	b.WriteString("<|im_start|>system\n")
 	if s := strings.TrimSpace(system); s != "" {
@@ -316,6 +318,16 @@ func renderChatMLTools(system string, turns []Turn, tools []Tool, hist histKind)
 			}
 			b.WriteString("<|im_end|>\n")
 		case "tool":
+			if group {
+				if i == 0 || turns[i-1].Role != "tool" {
+					b.WriteString("<|im_start|>user")
+				}
+				b.WriteString("\n<tool_response>\n" + m.Content + "\n</tool_response>")
+				if i == len(turns)-1 || turns[i+1].Role != "tool" {
+					b.WriteString("<|im_end|>\n")
+				}
+				continue
+			}
 			b.WriteString("<|im_start|>user\n<tool_response>\n" + m.Content + "\n</tool_response><|im_end|>\n")
 		default:
 			b.WriteString("<|im_start|>user\n" + m.Content + "<|im_end|>\n")

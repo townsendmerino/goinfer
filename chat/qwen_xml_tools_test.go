@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -337,4 +338,113 @@ func TestDeclaresNativeTools_gemma4(t *testing.T) {
 		return
 	}
 	t.Fatal("no gemma-4 template in the history golden")
+}
+
+// Several tool results in a row are ONE user turn, in the template of every Qwen family goinfer's Hermes renderer serves — compared here byte
+// for byte against Qwen2.5-Coder's own template (testdata/chat_goldens/tools_qwen25_grouped.json, scripts/pin_qwen25_tools.py). The template
+// is read through Detect, because whether to group is read from the template's text: a bare ChatML() has no template and keeps a user turn
+// per result.
+func TestChatMLTools_groupedResultsMatchQwen25(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "testdata", "chat_goldens", "tools_qwen25_grouped.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var g struct {
+		ChatTemplate string `json:"chat_template"`
+		Tools        []struct {
+			Function struct {
+				Name        string          `json:"name"`
+				Description string          `json:"description"`
+				Parameters  json.RawMessage `json:"parameters"`
+			} `json:"function"`
+		} `json:"tools"`
+		Cases []struct {
+			Name     string `json:"name"`
+			Messages []struct {
+				Role      string `json:"role"`
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					Function struct {
+						Name      string          `json:"name"`
+						Arguments json.RawMessage `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"messages"`
+			Prompt string `json:"prompt"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := Detect(Meta{ChatTemplate: g.ChatTemplate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tmpl.groupsToolResults {
+		t.Fatal("Qwen2.5's template groups consecutive tool results; Detect must read that from its text")
+	}
+	var tools []Tool
+	for _, tl := range g.Tools {
+		tools = append(tools, Tool{Name: tl.Function.Name, Description: tl.Function.Description, Parameters: tl.Function.Parameters})
+	}
+	if len(g.Cases) < 5 {
+		t.Fatalf("only %d cases", len(g.Cases))
+	}
+	for _, c := range g.Cases {
+		system, turns := "", []Turn(nil)
+		for _, m := range c.Messages {
+			switch m.Role {
+			case "system":
+				system = m.Content
+			case "assistant":
+				tu := Turn{Role: "assistant", Content: m.Content}
+				for _, tc := range m.ToolCalls {
+					tu.ToolCalls = append(tu.ToolCalls, ToolCall{Name: tc.Function.Name, Arguments: tc.Function.Arguments})
+				}
+				turns = append(turns, tu)
+			case "tool":
+				turns = append(turns, Turn{Role: "tool", Content: m.Content})
+			default:
+				turns = append(turns, Turn{Role: "user", Content: m.Content})
+			}
+		}
+		// The runs of tool results — how many, and what each holds — are what grouping decides. The rest of the prompt differs from the template
+		// in two other, pre-existing ways that are NOT touched here: the declarations (goinfer writes each tool as sorted-key compact JSON, the
+		// template as {"type": …, "function": {…}} with Python spacing) and a call with no text (goinfer writes a blank line before
+		// <tool_call>, the template none). Each changes the prompt every Qwen2.5 tool user starts from, so each needs its own measurement.
+		got, want := tmpl.RenderTools(system, turns, tools), c.Prompt
+		if gr, wr := allToolResponseRuns(got), allToolResponseRuns(want); !slices.Equal(gr, wr) {
+			t.Errorf("%s: tool-result runs differ\n got  %q\n want %q", c.Name, gr, wr)
+		}
+		if n := len(allToolResponseRuns(want)); n == 0 {
+			t.Errorf("%s: the golden holds no tool results; the case tests nothing", c.Name)
+		}
+	}
+
+	// A template that does not group keeps a user turn per result, byte for byte as before.
+	bare := ChatML()
+	two := []Turn{{Role: "user", Content: "q"}, {Role: "assistant", ToolCalls: []ToolCall{{Name: "f", Arguments: json.RawMessage(`{}`)}}}, {Role: "tool", Content: "a"}, {Role: "tool", Content: "b"}}
+	got := bare.RenderTools("", two, tools)
+	if !strings.Contains(got, "<tool_response>\na\n</tool_response><|im_end|>\n<|im_start|>user\n<tool_response>\nb\n</tool_response><|im_end|>") {
+		t.Errorf("a ChatML template with no grouping text must keep a user turn per result:\n%s", got[len(got)-200:])
+	}
+}
+
+// allToolResponseRuns returns every run of tool-result blocks in a ChatML prompt — each from the `<|im_start|>user` that opens it to the
+// `<|im_end|>` that closes it.
+func allToolResponseRuns(s string) []string {
+	const open, end = "<|im_start|>user\n<tool_response>", "<|im_end|>\n"
+	var runs []string
+	for {
+		i := strings.Index(s, open)
+		if i < 0 {
+			return runs
+		}
+		j := strings.Index(s[i:], end)
+		if j < 0 {
+			return append(runs, s[i:])
+		}
+		runs = append(runs, s[i:i+j+len(end)])
+		s = s[i+j+len(end):]
+	}
 }
