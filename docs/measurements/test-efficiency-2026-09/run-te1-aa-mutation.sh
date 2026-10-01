@@ -13,8 +13,8 @@
 set -u
 REPO=/Users/francistownsend-merino/tmcode/goinfer
 # Each attempt writes to its own directory: bench_peer.py resumes from an existing results file, and an earlier
-# attempt's partial sweep (te1-2026-09-28/, te1-attempt2/) must not be mixed into this one.
-D=$REPO/docs/measurements/test-efficiency-2026-09/te1-attempt3
+# attempt's partial sweep (te1-2026-09-28/, te1-attempt2/, te1-attempt3/) must not be mixed into this one.
+D=$REPO/docs/measurements/test-efficiency-2026-09/te1-attempt4
 HOG=$REPO/docs/measurements/test-efficiency-2026-09/te1_hog.py
 BIN=$HOME/goinfer-bench/te1-2026-09-28/serve-cpu-b9fcde67
 mkdir -p "$D"

@@ -646,12 +646,23 @@ def preflight():
     cap = float(os.environ.get("BENCH_MAX_LOADAVG", "1.0"))
     la = _loadavg()
     if IDLE_GATE == "instant":
-        busy, active = instant_idle_sample()
-        if busy is None:
-            sys.exit("REFUSED: BENCH_IDLE_GATE=instant cannot measure CPU busy on this platform. Use the load gate.")
-        if busy > BUSY_CAP or active:
-            sys.exit(f"REFUSED: {busy}% of all CPUs busy over {BUSY_WINDOW_S:g} s (cap {BUSY_CAP:g}%)"
-                     f"{', timed workloads active: ' + str(active) if active else ''}. The box is not idle.")
+        # Polls, as the per-cell gate does, and still refuses on timeout. A single sample refused TE1 attempt 3's
+        # instant sweep at 10.8% against the 10% cap, moments after the run script's own sample of the same gate
+        # passed: one reading at the boundary decided a whole sweep.
+        limit, t_start = int(os.environ.get("BENCH_IDLE_WAIT", "600")), time.time()
+        while True:
+            busy, active = instant_idle_sample()
+            if busy is None:
+                sys.exit("REFUSED: BENCH_IDLE_GATE=instant cannot measure CPU busy on this platform. Use the load gate.")
+            if busy <= BUSY_CAP and not active:
+                break
+            waited = time.time() - t_start
+            if waited >= limit:
+                sys.exit(f"REFUSED: {busy}% of all CPUs busy over {BUSY_WINDOW_S:g} s (cap {BUSY_CAP:g}%)"
+                         f"{', timed workloads active: ' + str(active) if active else ''} after waiting {waited:.0f}s."
+                         f" The box is not idle.")
+            print(f"# preflight (instant): busy {busy}% (cap {BUSY_CAP:g}%), waiting ({waited:.0f}/{limit}s)", flush=True)
+            time.sleep(2)
     elif la and la[0] > cap:
         sys.exit(f"REFUSED: 1-min load average {la[0]:.2f} exceeds {cap:.2f}. The box is not idle, "
                  f"and a number measured on a busy box is not distinguishable afterwards from a "
