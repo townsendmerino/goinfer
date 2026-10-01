@@ -147,10 +147,12 @@ func TestThinkHistory_matchHF(t *testing.T) {
 			turns := goldenTurns(t, c.Messages)
 			gemma := strings.HasPrefix(g.Checkpoint, "gemma-4")
 			for mode, want := range c.Prompts {
-				// goinfer's own rendering (the default format), then — for Gemma 4 with tools — the template's own, which every case matches.
-				formats := []ToolFormat{ToolFormatHermes}
+				// The default format (auto), which for canonical Gemma 4 IS the template's own order (adopted: docs/measurements/gemma4-tool-
+				// text-order-2026-09-30/), so every case matches; then — for Gemma 4 with tools — an explicit `template` (the same) and an
+				// explicit `hermes` (goinfer's earlier order, which differs from the template's on the cases in gemmaOwnOrderDiffers).
+				formats := []ToolFormat{ToolFormatAuto}
 				if gemma && c.Tools {
-					formats = append(formats, ToolFormatTemplate)
+					formats = append(formats, ToolFormatHermes, ToolFormatTemplate)
 				}
 				for _, f := range formats {
 					if f == ToolFormatHermes && gemma && c.Tools && gemmaOwnOrderDiffers[c.Name] {
@@ -184,14 +186,14 @@ func TestThinkHistory_matchHF(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d prompts compared against HF (%d skipped: goinfer's own Gemma tool order, which differs from the template's by design)", ran, skipped)
+	t.Logf("%d prompts compared against HF (%d skipped: `-tool-format hermes` on the Gemma cases where its earlier order differs from the template's)", ran, skipped)
 	if ran < 100 {
 		t.Fatalf("only %d prompts compared; the gate is not covering the goldens", ran)
 	}
 }
 
-// gemmaOwnOrderDiffers names the Gemma 4 tool conversations on which goinfer's own rendering (the default `-tool-format`) is not the
-// template's: it writes an assistant message's text BEFORE its calls and leaves the turn open for the model to continue, where the canonical
+// gemmaOwnOrderDiffers names the Gemma 4 tool conversations on which goinfer's earlier rendering (`-tool-format hermes`) is not the
+// template's — the default (auto) is the template's: it writes an assistant message's text BEFORE its calls and leaves the turn open for the model to continue, where the canonical
 // template writes the text after the results and closes the turn, and it does not append `<|tool_response>` to a call with no result yet.
 // The template format (`-tool-format template`) matches every one of them, which is what this list is the exception to.
 var gemmaOwnOrderDiffers = map[string]bool{

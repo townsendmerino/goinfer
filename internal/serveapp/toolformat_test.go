@@ -9,7 +9,7 @@ import (
 )
 
 func TestToolFormatDefault(t *testing.T) {
-	for in, want := range map[string]chat.ToolFormat{"": chat.ToolFormatHermes, "hermes": chat.ToolFormatHermes, "template": chat.ToolFormatTemplate, " Template ": chat.ToolFormatTemplate} {
+	for in, want := range map[string]chat.ToolFormat{"": chat.ToolFormatAuto, "auto": chat.ToolFormatAuto, "hermes": chat.ToolFormatHermes, "template": chat.ToolFormatTemplate, " Template ": chat.ToolFormatTemplate} {
 		if got := (config{toolFormat: in}).toolFormatDefault(); got != want {
 			t.Errorf("-tool-format %q resolved to %v, want %v", in, got, want)
 		}
@@ -95,17 +95,30 @@ func TestToolFormatNote(t *testing.T) {
 // Gemma 4's canonical template opts in too, so the same flag reaches it; an older Gemma 4 template (the E2B GGUF carries one) is not
 // recognised as managed and so has nothing to switch to.
 func TestToolFormatNote_gemma4(t *testing.T) {
-	canonical := templateFromGolden(t, "gemma-4-26b-a4b-it")
-	if got := toolFormatNote(canonical); !strings.Contains(got, "goinfer's own form") {
-		t.Errorf("canonical Gemma 4, default: %q", got)
+	// What serve does at load: the thinking default, then the tool format.
+	load := func(f chat.ToolFormat) *chat.Template {
+		return templateFromGolden(t, "gemma-4-26b-a4b-it").WithThinking(chat.ThinkTemplate).WithToolFormat(f)
 	}
-	if got := toolFormatNote(canonical.WithToolFormat(chat.ToolFormatTemplate)); !strings.Contains(got, "the model's own template form") {
-		t.Errorf("canonical Gemma 4, native: %q", got)
+	if got := toolFormatNote(load(chat.ToolFormatAuto)); !strings.Contains(got, "the model's own template form") {
+		t.Errorf("canonical Gemma 4 on auto (the adopted default): %q", got)
+	}
+	if got := toolFormatNote(load(chat.ToolFormatHermes)); !strings.Contains(got, "goinfer's own form") {
+		t.Errorf("canonical Gemma 4, -tool-format hermes: %q", got)
+	}
+	if got := toolFormatNote(templateFromGolden(t, "gemma-4-26b-a4b-it").WithThinking(chat.ThinkAsIs)); !strings.Contains(got, "goinfer's own form") {
+		t.Errorf("-thinking asis keeps the pre-thinking bytes, so auto is not native there: %q", got)
 	}
 	turns := []chat.Turn{{Role: "user", Content: "Weather?"}, {Role: "assistant", Content: "Checking.", ToolCalls: []chat.ToolCall{{ID: "c1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Paris"}`)}}}, {Role: "tool", ToolCallID: "c1", Content: "18C"}}
-	own := canonical.RenderTools("", turns, qwenToolsForTest)
-	native := canonical.WithToolFormat(chat.ToolFormatTemplate).RenderTools("", turns, qwenToolsForTest)
-	if own == native || !strings.HasSuffix(native, "<tool_response|>Checking.<turn|>\n") {
-		t.Errorf("the template format must write the text after the result and close the turn:\n own    %q\n native %q", own[len(own)-90:], native[len(native)-90:])
+	auto := load(chat.ToolFormatAuto).RenderTools("", turns, qwenToolsForTest)
+	hermes := load(chat.ToolFormatHermes).RenderTools("", turns, qwenToolsForTest)
+	if auto == hermes || !strings.HasSuffix(auto, "<tool_response|>Checking.<turn|>\n") {
+		t.Errorf("the default must write the text after the result and close the turn:\n auto   %q\n hermes %q", auto[len(auto)-90:], hermes[len(hermes)-90:])
+	}
+	// The request's own layers (thinking mode, reasoning effort) must keep the adopted default.
+	lm := &loadedModel{tmpl: load(chat.ToolFormatAuto)}
+	for name, ts := range map[string]thinkSettings{"none": {}, "thinking off": {explicit: true, mode: chat.ThinkOff}, "thinking on": {explicit: true, mode: chat.ThinkOn}, "effort": {effort: "high"}} {
+		if !strings.Contains(lm.templateFor(ts).RenderTools("", turns, qwenToolsForTest), "<tool_response|>Checking.<turn|>\n") {
+			t.Errorf("%s: a request layer dropped the adopted default", name)
+		}
 	}
 }

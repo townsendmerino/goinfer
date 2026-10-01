@@ -140,8 +140,14 @@ func TestToolFormat_hermesIsUnchangedAndSwitchable(t *testing.T) {
 	if f, ok := ParseToolFormat("TEMPLATE"); !ok || f != ToolFormatTemplate {
 		t.Error("ParseToolFormat(TEMPLATE)")
 	}
-	if f, ok := ParseToolFormat(""); !ok || f != ToolFormatHermes {
-		t.Error("the empty value is the default, hermes")
+	if f, ok := ParseToolFormat(""); !ok || f != ToolFormatAuto {
+		t.Error("the empty value is the default, auto")
+	}
+	if f, ok := ParseToolFormat("Auto"); !ok || f != ToolFormatAuto {
+		t.Error("ParseToolFormat(Auto)")
+	}
+	if f, ok := ParseToolFormat("hermes"); !ok || f != ToolFormatHermes || f.String() != "hermes" {
+		t.Error("ParseToolFormat(hermes)")
 	}
 	if _, ok := ParseToolFormat("xml"); ok {
 		t.Error("an unknown format must be refused")
@@ -453,5 +459,69 @@ func allToolResponseRuns(s string) []string {
 		}
 		runs = append(runs, s[i:i+j+len(end)])
 		s = s[i+j+len(end):]
+	}
+}
+
+// `auto` is each family's MEASURED default: the template's own order for canonical Gemma 4 (the Gemma A/B was adopted), goinfer's own prompt
+// for Qwen3.5 (its native XML was parked). An explicit `hermes` restores goinfer's earlier Gemma order, an explicit `template` forces the
+// native form on either, `-thinking asis` keeps the pre-thinking bytes under auto, and an older Gemma 4 template (no native form) is untouched.
+func TestToolFormatAuto_perFamilyDefault(t *testing.T) {
+	var gemmaTmpl, qwenTmpl string
+	raw, err := os.ReadFile(filepath.Join("..", "testdata", "chat_think_goldens", "think_history.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gs []struct {
+		Checkpoint   string `json:"checkpoint"`
+		ChatTemplate string `json:"chat_template"`
+	}
+	if err := json.Unmarshal(raw, &gs); err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range gs {
+		switch g.Checkpoint {
+		case "gemma-4-26b-a4b-it":
+			gemmaTmpl = g.ChatTemplate
+		case "qwen3.5-9b":
+			qwenTmpl = g.ChatTemplate
+		}
+	}
+	gemma, _ := Detect(Meta{ChatTemplate: gemmaTmpl})
+	qwen, _ := Detect(Meta{ChatTemplate: qwenTmpl})
+	tools := []Tool{{Name: "get_weather", Description: "W", Parameters: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`)}}
+	// text beside a call: the one place the two Gemma orders differ
+	turns := []Turn{{Role: "user", Content: "Weather?"}, {Role: "assistant", Content: "Checking.", ToolCalls: []ToolCall{{ID: "c1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Paris"}`)}}}, {Role: "tool", ToolCallID: "c1", Content: "18C"}}
+	textAfter := func(s string) bool { return strings.HasSuffix(s, "<tool_response|>Checking.<turn|>\n") }
+
+	g := gemma.WithThinking(ThinkTemplate)
+	if !g.UsesNativeTools() || !textAfter(g.RenderTools("", turns, tools)) {
+		t.Error("canonical Gemma 4 on auto must render the template's order (adopted by the pre-registered A/B)")
+	}
+	if h := g.WithToolFormat(ToolFormatHermes); h.UsesNativeTools() || textAfter(h.RenderTools("", turns, tools)) {
+		t.Error("an explicit hermes must restore goinfer's earlier Gemma order")
+	}
+	if n := g.WithToolFormat(ToolFormatTemplate); !n.UsesNativeTools() || n.RenderTools("", turns, tools) != g.RenderTools("", turns, tools) {
+		t.Error("an explicit template and auto must agree on canonical Gemma 4")
+	}
+	// -thinking asis is the pre-thinking bytes: auto does not select the native form there; an explicit template does.
+	a := gemma.WithThinking(ThinkAsIs)
+	if a.UsesNativeTools() {
+		t.Error("auto must not select the native Gemma form under -thinking asis")
+	}
+	if !a.WithToolFormat(ToolFormatTemplate).UsesNativeTools() {
+		t.Error("an explicit template is honoured even under asis")
+	}
+	// Qwen3.5: parked, so auto is goinfer's own prompt; an explicit template is the model's XML.
+	q := qwen.WithThinking(ThinkTemplate)
+	if q.UsesNativeTools() || strings.Contains(q.RenderTools("", turns[:1], tools), "<function=example_function_name>") {
+		t.Error("Qwen3.5 on auto must stay goinfer's own prompt (its native format was parked)")
+	}
+	if !q.WithToolFormat(ToolFormatTemplate).UsesNativeTools() {
+		t.Error("an explicit template selects Qwen3.5's native form")
+	}
+	// An older Gemma 4 template is not recognised as managed, so there is nothing to select.
+	older, _ := Detect(Meta{ChatTemplate: strings.ReplaceAll(gemmaTmpl, "enable_thinking | default(false)", "enable_thinking is defined and enable_thinking")})
+	if older.UsesNativeTools() || older.WithThinking(ThinkTemplate).UsesNativeTools() || older.DeclaresNativeTools() {
+		t.Error("an older Gemma 4 template has no native form")
 	}
 }

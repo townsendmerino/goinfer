@@ -341,7 +341,7 @@ type config struct {
 	// reasoningBudget is -reasoning-budget (auto | unlimited | N tokens): a ceiling on how long a thinking reply may think
 	// before serve forces the block closed, so a reply always has room to answer (budget.go).
 	reasoningBudget string
-	// toolFormat is -tool-format (hermes | template): how a family whose own template declares a native tool form (Qwen3.5, Gemma 4's canonical
+	// toolFormat is -tool-format (auto | hermes | template): how a family whose own template declares a native tool form (Qwen3.5, Gemma 4's canonical
 	// template) has its tools put in the prompt (chat/qwen_xml_tools.go, chat/gemma4_tools.go). Applied to the model's template at load, like -thinking.
 	toolFormat string
 
@@ -379,7 +379,7 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 	fs.StringVar(&cfg.decisionsTemplate, "decisions-template", "chat-v1", "POST /v1/systemone's prompt template: chat-v1 (the model's chat template; for instruct models) or bare-v1 (JEV's own, no chat template)")
 	fs.StringVar(&cfg.decisionsCal, "decisions-calibration", "", "calibration.json with per-kind temperatures for /v1/systemone (from goinfer-chat decisions-calibrate, fitted under the same template); none: every answer is uncalibrated")
 	fs.StringVar(&cfg.thinking, "thinking", "template", "default thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): template (what the checkpoint's own template renders — Qwen3.5-0.8B: off, Qwen3.5-9B: on), asis (the prompt bytes serve rendered before thinking was modelled: nothing written, the model decides), on, or off. A request overrides it with chat_template_kwargs.enable_thinking, reasoning_effort, or Anthropic's thinking. A model whose template control is not recognised ignores this.")
-	fs.StringVar(&cfg.toolFormat, "tool-format", "hermes", "how tools are put in the prompt for a model whose own chat template declares a tool form goinfer can render byte for byte — Qwen3.5 (its <function=…><parameter=…> XML) and Gemma 4's canonical template: hermes (the default: goinfer's own prompt — for Qwen a JSON call that tool_choice can constrain, for Gemma 4 goinfer's own rendering) or template (the model's own chat template; tool_choice naming a function is then a 400, as for any form with no JSON wrapper). The Qwen reply parser reads both call forms whichever is chosen. No effect on a model with no such form.")
+	fs.StringVar(&cfg.toolFormat, "tool-format", "auto", "how tools are put in the prompt for a model whose own chat template declares a tool form goinfer can render byte for byte — Qwen3.5 (its <function=…><parameter=…> XML) and Gemma 4's canonical template: auto (the default: each family's measured default — the model's own template form for Gemma 4, goinfer's own prompt for Qwen3.5), hermes (goinfer's own prompt: for Qwen a JSON call that tool_choice can constrain, for Gemma 4 its earlier order, text before a call) or template (the model's own chat template; tool_choice naming a function is then a 400, as for any form with no JSON wrapper). The Qwen reply parser reads both call forms whichever is chosen. No effect on a model with no such form.")
 	fs.StringVar(&cfg.reasoningBudget, "reasoning-budget", "auto", "ceiling on how long a thinking reply may think before serve forces the block closed so the reply can answer: auto (the default: thinking takes at most three quarters of the request's max_tokens), unlimited (no ceiling of serve's own), or N (cap every thinking reply at N tokens, still leaving room to answer). A request's own budget (thinking_token_budget, or Anthropic's thinking.budget_tokens) applies too, clamped so a quarter of max_tokens is left to answer. Not applied under -spec or -drafter, or to a model with no recognised thinking control.")
 	fs.StringVar(&cfg.reasoningFmt, "reasoning-format", "deepseek", "how a reply's reasoning reaches the client: deepseek (content is the clean answer, reasoning goes in reasoning_content / Anthropic thinking blocks), deepseek-legacy (reasoning_content is filled and content keeps the raw <think> tags), or none (nothing is separated: the raw text is the content). A request may override it with reasoning_format.")
 	fs.StringVar(&cfg.visionQuant, "vision-quant", "f32", "vision encoder weight quant: f32 (default, bit-exact) | int8 (W8A8, cosine ~0.999) — int8 only speeds the compute-bound ViT prefill on AVX512-VNNI; on AVX2 it's a wash, so f32 is the default")
@@ -1534,7 +1534,7 @@ func toolFormatNote(t *chat.Template) string {
 	if !t.DeclaresNativeTools() {
 		return ""
 	}
-	if t.ToolFormat() == chat.ToolFormatTemplate {
+	if t.UsesNativeTools() {
 		return ", tools: the model's own template form (-tool-format hermes for goinfer's)"
 	}
 	return ", tools: goinfer's own form (-tool-format template for the model's own)"

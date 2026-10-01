@@ -94,9 +94,11 @@ type Template struct {
 	effort string
 
 	// nativeTools: the template declares a tool form goinfer can reproduce byte for byte — Qwen3.5's XML (qwen_xml_tools.go) or Gemma 4's
-	// canonical template (gemma4_tools.go); toolFormat is which prompt WithToolFormat selected (the zero value is goinfer's own).
+	// canonical template (gemma4_tools.go); toolFormat is which prompt WithToolFormat selected (the zero value is `auto`).
 	nativeTools bool
 	toolFormat  ToolFormat
+	// nativeByDefault: for this template the native form is what `auto` selects — true only where a pre-registered A/B adopted it.
+	nativeByDefault bool
 
 	// groupsToolResults: the template puts CONSECUTIVE tool results in one user turn (Qwen2.5, Qwen3, Qwen3.5 do), read from its text
 	// (detectGroupedToolResults). goinfer's Hermes renderer writes one user turn per result for a template that does not.
@@ -165,6 +167,7 @@ func Detect(meta Meta) (*Template, error) {
 			g := Gemma4()
 			g.reason = detectGemma4Reasoning(t)
 			g.nativeTools = g.reason != nil && g.reason.hist == histGemma4 // the canonical template, whose loop the native renderer ports
+			g.nativeByDefault = g.nativeTools                              // ADOPTED: docs/measurements/gemma4-tool-text-order-2026-09-30/RESULTS.md
 			return g, nil
 		case strings.Contains(t, "<start_of_turn>"):
 			return Gemma3(), nil

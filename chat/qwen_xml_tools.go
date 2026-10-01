@@ -30,30 +30,42 @@ import (
 	"strings"
 )
 
-// ToolFormat is how a ChatML family's tools are put in the prompt and its calls replayed.
+// ToolFormat is how a family's tools are put in the prompt and its calls replayed, for a template that declares a native form goinfer can
+// reproduce byte for byte (Qwen3.5's XML; Gemma 4's canonical template).
 type ToolFormat uint8
 
 const (
-	ToolFormatHermes   ToolFormat = iota // goinfer's own prompt: signatures, "return a json object", JSON calls (the default)
-	ToolFormatTemplate                   // the model's own chat template, where it declares one goinfer can reproduce byte for byte
+	// ToolFormatAuto, the default, is each family's MEASURED default: the model's own template form where a pre-registered A/B adopted it
+	// (canonical Gemma 4 — docs/measurements/gemma4-tool-text-order-2026-09-30/), goinfer's own prompt where it did not (Qwen3.5's XML was
+	// parked — docs/measurements/qwen35-tool-format-2026-09-30/).
+	ToolFormatAuto ToolFormat = iota
+	// ToolFormatHermes is goinfer's own prompt: for Qwen the signatures and JSON calls, for Gemma 4 goinfer's own order (text before a call).
+	ToolFormatHermes
+	// ToolFormatTemplate is the model's own chat template, byte for byte.
+	ToolFormatTemplate
 )
 
-// ParseToolFormat reads the -tool-format flag's value.
+// ParseToolFormat reads the -tool-format flag's value ("" is auto).
 func ParseToolFormat(s string) (ToolFormat, bool) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "hermes":
+	case "", "auto":
+		return ToolFormatAuto, true
+	case "hermes":
 		return ToolFormatHermes, true
 	case "template":
 		return ToolFormatTemplate, true
 	}
-	return ToolFormatHermes, false
+	return ToolFormatAuto, false
 }
 
 func (f ToolFormat) String() string {
-	if f == ToolFormatTemplate {
+	switch f {
+	case ToolFormatHermes:
+		return "hermes"
+	case ToolFormatTemplate:
 		return "template"
 	}
-	return "hermes"
+	return "auto"
 }
 
 // declaresQwen35XMLTools reports whether a ChatML template writes tool calls in the XML form AND has the Qwen3.5 layout the native
@@ -72,20 +84,29 @@ func (t *Template) WithToolFormat(f ToolFormat) *Template {
 	return &c
 }
 
-// ToolFormat is the format WithToolFormat selected (Hermes by default).
+// ToolFormat is the format WithToolFormat selected (auto by default).
 func (t *Template) ToolFormat() ToolFormat {
 	if t == nil {
-		return ToolFormatHermes
+		return ToolFormatAuto
 	}
 	return t.toolFormat
 }
 
+// UsesNativeTools reports whether tools are rendered in the model's own template form: a template that declares one, with the format
+// forced to `template`, or left on `auto` where that family's measured default is the template's form.
+func (t *Template) UsesNativeTools() bool { return t.usesNativeTools() }
+
 // DeclaresNativeTools reports whether t has a native tool form goinfer can render — so `-tool-format template` does something for it.
 func (t *Template) DeclaresNativeTools() bool { return t != nil && t.nativeTools }
 
-// nativeXMLTools: render the model's own form.
+// usesNativeTools: render the model's own form (UsesNativeTools).
 func (t *Template) usesNativeTools() bool {
-	return t != nil && t.nativeTools && t.toolFormat == ToolFormatTemplate
+	if t == nil || !t.nativeTools {
+		return false
+	}
+	// `auto` does not select the native form under -thinking asis: asis is the prompt as goinfer rendered it before thinking was modelled,
+	// reasoning ignored, and the native Gemma form replays it. An explicit `template` is asked for by name and is honoured.
+	return t.toolFormat == ToolFormatTemplate || (t.toolFormat == ToolFormatAuto && t.nativeByDefault && t.think != ThinkAsIs)
 }
 
 // ---- the prompt -----------------------------------------------------------------------------------------------------------------
