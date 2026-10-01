@@ -25,11 +25,31 @@ type ReasoningBudget struct {
 	open, closeID int
 	opens         bool
 	limit         int
+
+	// Harmony (gpt-oss) variant, set by NewHarmonyBudget: the analysis message opens with a three-token HEADER and is closed, and
+	// the answer opened, by a SEQUENCE the model would write itself — so forcing one close token is not enough (the model could
+	// open another channel after it). head is what the reply must begin with for a block to exist; force is written, one token
+	// per step, starting at generated-token index limit-len(force), so that it ends exactly at limit and the answer keeps the
+	// rest of the turn. A natural <|end|> before that point means the model closed its own analysis: nothing is forced.
+	head, force []int
+	endID       int
 }
 
 // NewReasoningBudget builds the processor from the block's single open and close token ids.
 func NewReasoningBudget(openID, closeID int, promptOpens bool, limit int) *ReasoningBudget {
 	return &ReasoningBudget{open: openID, closeID: closeID, opens: promptOpens, limit: limit}
+}
+
+// NewHarmonyBudget builds the processor for a gpt-oss reply. head is the analysis header's ids (<|channel|> analysis <|message|>),
+// endID the <|end|> that closes a message, force the ids written once the budget is due (<|end|> <|start|> assistant <|channel|>
+// final <|message|>), and limit the number of generated tokens by which the answer must have been opened — header and forced
+// sequence included, which is what makes the answer's share of the turn what BudgetRoom promised. nil when limit leaves no room
+// for even one reasoning token.
+func NewHarmonyBudget(head []int, endID int, force []int, limit int) *ReasoningBudget {
+	if len(force) == 0 || limit-len(force) < len(head)+1 {
+		return nil
+	}
+	return &ReasoningBudget{head: head, endID: endID, force: force, limit: limit}
 }
 
 // TokenLookup is the part of a tokenizer the budget needs.
@@ -43,6 +63,9 @@ func (t *Template) NewReasoningBudgetFor(tk TokenLookup, turns []Turn, limit int
 	if !t.ThinkingPossible() || limit < 1 || tk == nil {
 		return nil
 	}
+	if t.name == "harmony" {
+		return harmonyBudgetFor(tk, limit)
+	}
 	r := t.Reasoning()
 	openID, ok1 := tk.TokenID(r.OpenToken())
 	closeID, ok2 := tk.TokenID(r.CloseToken())
@@ -52,8 +75,48 @@ func (t *Template) NewReasoningBudgetFor(tk TokenLookup, turns []Turn, limit int
 	return NewReasoningBudget(openID, closeID, t.PromptOpensThinkFor(turns), limit)
 }
 
-// due reports whether the next token must be the close token: inside an unclosed block that has used its budget.
+// harmonyBudgetFor looks up the seven single-token words of the gpt-oss channel protocol; with any missing there is no budget.
+func harmonyBudgetFor(tk TokenLookup, limit int) *ReasoningBudget {
+	id := func(s string) int {
+		v, ok := tk.TokenID(s)
+		if !ok {
+			return -1
+		}
+		return v
+	}
+	channel, analysis, message, end, start, assistant, final := id(hmChannel), id("analysis"), id(hmMessage), id(hmEnd), id(hmStart), id("assistant"), id("final")
+	for _, v := range []int{channel, analysis, message, end, start, assistant, final} {
+		if v < 0 {
+			return nil
+		}
+	}
+	return NewHarmonyBudget([]int{channel, analysis, message}, end, []int{end, start, assistant, channel, final, message}, limit)
+}
+
+// forcedHarmony returns the token that must be written next, or -1: the reply opened with the analysis header, the model has not
+// closed that message by itself before the trigger point, and the forced sequence is not yet complete.
+func (b *ReasoningBudget) forcedHarmony(generated []int) int {
+	trigger := b.limit - len(b.force)
+	n := len(generated)
+	if n < trigger || n >= trigger+len(b.force) || len(generated) < len(b.head) {
+		return -1
+	}
+	for i, h := range b.head {
+		if generated[i] != h {
+			return -1 // the reply did not open with an analysis message
+		}
+	}
+	if indexOfID(generated[:trigger], b.endID) >= 0 {
+		return -1 // the model closed its own analysis in time
+	}
+	return b.force[n-trigger]
+}
+
+// due reports whether the next token must be forced: inside an unclosed block that has used its budget.
 func (b *ReasoningBudget) due(generated []int) bool {
+	if b.force != nil {
+		return b.forcedHarmony(generated) >= 0
+	}
 	start := 0
 	if !b.opens {
 		i := indexOfID(generated, b.open)
@@ -81,14 +144,23 @@ func indexOfID(ids []int, id int) int {
 // Process is a decoder.SamplingParams.LogitProcessor. It is safe to call on every step (a decode loop that ignores the gate does):
 // it does nothing unless the budget is due.
 func (b *ReasoningBudget) Process(generated []int, logits []float32) {
-	if !b.due(generated) || b.closeID < 0 || b.closeID >= len(logits) {
+	next := b.closeID
+	if b.force != nil {
+		next = b.forcedHarmony(generated)
+		if next < 0 {
+			return
+		}
+	} else if !b.due(generated) {
+		return
+	}
+	if next < 0 || next >= len(logits) {
 		return
 	}
 	neg := float32(math.Inf(-1))
 	for i := range logits {
 		logits[i] = neg
 	}
-	logits[b.closeID] = 0
+	logits[next] = 0
 }
 
 // Gate is a decoder.SamplingParams.LogitProcessorGate.

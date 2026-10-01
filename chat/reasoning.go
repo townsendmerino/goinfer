@@ -233,6 +233,9 @@ func (t *Template) PromptOpensThink() bool {
 // (nothing is written, so the model may open one itself — unknowable), and under ThinkTemplate whatever the checkpoint's
 // own default is. A reasoning budget is only installed where this is true.
 func (t *Template) ThinkingPossible() bool {
+	if t != nil && t.name == "harmony" {
+		return true // gpt-oss has no off form in its prompt: every reply opens an analysis message, whatever the mode
+	}
 	if t == nil || t.reason == nil {
 		return false
 	}
