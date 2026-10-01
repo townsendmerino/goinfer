@@ -82,7 +82,7 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 		return turn, nil
 	}
 	var parsedLead string
-	turn.calls, parsedLead = lm.tmpl.ParseToolCallsFor(turn.raw, tools)
+	turn.calls, parsedLead = settleCalls(lm.tmpl, turn.raw, tools, gr.think)
 	var err error
 	turn.lead, turn.rest, err = reconcileProse(turn.raw, len(turn.calls) > 0, parsedLead, streamed.String())
 	return turn, err
@@ -112,4 +112,21 @@ func reconcileProse(raw string, hasCalls bool, parsedLead, streamed string) (lea
 		return lead, "", errProseDiverged
 	}
 	return lead, target[len(streamed):], nil
+}
+
+// settleCalls reads a finished turn's tool calls and the prose before them.
+//
+// Every family but gpt-oss writes its call inline, so it is in the buffered text and the template's parser finds it. A Harmony call
+// is a MESSAGE addressed to a function, which the reasoning router routes out of both the reasoning and the answer — the buffered
+// text never contains it — so with a router attached the calls are read from the router. (With -reasoning-format none there is no
+// router and the buffer holds the raw reply, markers included, which the template's parser reads itself.) The prose is what the
+// parsers have always returned: trimmed.
+func settleCalls(tmpl *chat.Template, raw string, tools []chat.Tool, th *thinkOut) ([]chat.ToolCall, string) {
+	calls, lead := tmpl.ParseToolCallsFor(raw, tools)
+	if len(calls) == 0 && th != nil {
+		if routed := th.toolCalls(); len(routed) > 0 {
+			return routed, strings.TrimSpace(raw)
+		}
+	}
+	return calls, lead
 }

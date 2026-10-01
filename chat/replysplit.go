@@ -52,6 +52,20 @@ func (r *ReplySplitter) Finish() (reasoning, answer string, truncated bool) {
 	return out, a, truncated
 }
 
+// ToolCalls returns the function calls a Harmony (gpt-oss) reply made, once the reply is finished; nil for every other family. A call
+// is a message addressed to a recipient, which the splitter routes out of both the reasoning and the answer — so the text a caller
+// buffers never contains it, and this is the only place to read it from. Calls to a recipient that is not `functions.NAME`, and calls
+// whose arguments are not a JSON object, are left out.
+func (r *ReplySplitter) ToolCalls() []ToolCall {
+	if r == nil {
+		return nil
+	}
+	if h, ok := r.sp.(*harmonySplitter); ok {
+		return harmonyToolCalls(h.calls)
+	}
+	return nil
+}
+
 // complete returns the prefix of carry+s that ends on a rune boundary and holds the rest back.
 func (r *ReplySplitter) complete(s string) string {
 	if s == "" && len(r.carry) == 0 {

@@ -220,6 +220,15 @@ func (o *thinkOut) feed(piece string) string {
 	return c
 }
 
+// toolCalls is the function calls the reply made, once it is finished — only a gpt-oss (Harmony) reply has any here, because its
+// call message is routed out of the answer text (chat.ReplySplitter.ToolCalls). Every other family's calls are in the text.
+func (o *thinkOut) toolCalls() []chat.ToolCall {
+	if o == nil {
+		return nil
+	}
+	return o.rs.ToolCalls()
+}
+
 // finish ends the reply: it reports the reasoning still held (and any partial rune, now as it stands) and returns the answer text
 // still held for the stop logic. A reply that ends inside an unclosed block has no answer.
 func (o *thinkOut) finish() string {
