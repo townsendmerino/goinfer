@@ -154,44 +154,8 @@ func Harmony() *Template { return harmonyTemplate("medium") }
 // harmonyTemplate is Harmony with the system block's `Reasoning:` line set to effort ("low" | "medium" | "high" — the values gpt-oss's
 // own template takes as its reasoning_effort).
 func harmonyTemplate(effort string) *Template {
-	return &Template{name: "harmony", stops: []string{"<|return|>", "<|call|>", "<|endoftext|>"}, render: func(system string, turns []Turn) []Segment {
-		var b segBuf
-		b.sp("<|start|>")
-		b.ct("system")
-		b.sp("<|message|>")
-		b.ct("You are ChatGPT, a large language model trained by OpenAI.\n" +
-			"Knowledge cutoff: 2024-06\n" +
-			"Current date: " + timeNow().Format("2006-01-02") + "\n\n" +
-			"Reasoning: " + effort + "\n\n" +
-			"# Valid channels: analysis, commentary, final. Channel must be included for every message.")
-		b.sp("<|end|>")
-		if system != "" {
-			b.sp("<|start|>")
-			b.ct("developer")
-			b.sp("<|message|>")
-			b.ct("# Instructions\n\n" + system + "\n\n")
-			b.sp("<|end|>")
-		}
-		for _, t := range turns {
-			role := "user"
-			if t.Role == "assistant" {
-				role = "assistant"
-			}
-			b.sp("<|start|>")
-			b.ct(role)
-			if role == "assistant" {
-				// An earlier assistant turn is an answer, on the `final` channel — the template's own rendering
-				// (TestHarmony_conversationMatchesHF). Its reasoning is not replayed: "CoT is dropped during all previous turns".
-				b.sp("<|channel|>")
-				b.ct("final")
-			}
-			b.sp("<|message|>")
-			b.ct(t.Content)
-			b.sp("<|end|>")
-		}
-		b.sp("<|start|>")
-		b.ct("assistant")
-		return b.segs
+	return &Template{name: "harmony", effort: effort, stops: []string{"<|return|>", "<|call|>", "<|endoftext|>"}, render: func(system string, turns []Turn) []Segment {
+		return harmonySegments(effort, system, turns, nil)
 	}}
 }
 

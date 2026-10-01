@@ -44,6 +44,12 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 		return renderLlama3Tools(system, turns, tools)
 	case "gemma4":
 		return renderGemma4Tools(system, turns, tools, t.gemma4Think(), t.historyKind() == histGemma4)
+	case "harmony":
+		var b strings.Builder
+		for _, seg := range harmonySegments(t.harmonyEffort(), system, turns, tools) {
+			b.WriteString(seg.Text)
+		}
+		return b.String()
 	}
 	return t.Render(system, turns) // gemma3 etc.: no native tool template
 }
@@ -58,16 +64,27 @@ func (t *Template) RenderToolsSegments(system string, turns []Turn, tools []Tool
 	if len(tools) == 0 {
 		return t.RenderSegments(system, turns)
 	}
+	if t.name == "harmony" { // already segment-built: the markers are special, everything a user or tool wrote is hardened content
+		return harmonySegments(t.harmonyEffort(), system, turns, tools)
+	}
 	return []Segment{{Text: t.RenderTools(system, turns, tools), Special: true}}
 }
 
 // SupportsTools reports whether this family has a tool-calling template.
 func (t *Template) SupportsTools() bool {
 	switch t.name {
-	case "chatml", "mellum2", "mistral", "llama3", "gemma4":
+	case "chatml", "mellum2", "mistral", "llama3", "gemma4", "harmony":
 		return true
 	}
 	return false
+}
+
+// harmonyEffort is a Harmony template's reasoning effort, "medium" (the template's own default) when none was set.
+func (t *Template) harmonyEffort() string {
+	if t.effort == "" {
+		return "medium"
+	}
+	return t.effort
 }
 
 // ToolCallWrapper returns how a single tool call is framed for this family: the
@@ -100,6 +117,8 @@ func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {
 		return parseLlama3Tools(out)
 	case "gemma4":
 		return parseGemma4Tools(out)
+	case "harmony":
+		return parseHarmonyTools(out)
 	}
 	return nil, out
 }

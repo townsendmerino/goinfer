@@ -89,6 +89,9 @@ type Template struct {
 	// ThinkAsIs renders exactly what render renders.
 	reason *Reasoning
 	think  ThinkMode
+
+	// effort is a Harmony (gpt-oss) template's reasoning effort, written on its `Reasoning:` line (templates.go); "" elsewhere.
+	effort string
 }
 
 // Name is the family identifier ("chatml", "mellum2", "gemma3", "gemma4", "harmony", "llama3",
