@@ -32,6 +32,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `6091e7a` | fix(cuda): size the expert cache by SEARCH over the granularity form (A5) |
 | `61b1e03` | bench: add temp1.0_notrunc, the config §B5's temp-only rows actually used |
 | `6a4e0ae` | decoder: optimistic next-token forward for sampled decode (Metal-verified, CUDA untested) |
+| `8e4fb57c` | release: gpu/cuda/metal require goinfer v0.20.0 |
 | `8f003f2` | parity: v0.15.0 sweep GREEN at bd085de; qwen3_next validated by real oracle |
 | `8fc642fb` | decoder: Load's doc comment says what Load does now (pkg.go.dev freezes it per tag) |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |

@@ -499,6 +499,14 @@ on every layer (re-pinned under 5.15 in `a86742fc`). Audit which other pins ran 
 families whose HF code changed by 5.15, and re-pin or record each. The olmo3 manifest row is still tiny-golden; the
 next full sweep's emitter merge should promote it, so check that it does.
 
+**B8 · `standalone-build` goes red on four of a release's five tag pushes, by construction.** It runs on every `v*`,
+`gpu/v*`, `cuda/v*`, `metal/v*` and `demo/agent/v*` push and builds all four submodules with `GOWORK=off`. Until the
+two-step tag's last step, some submodule still pins the previous root while its code uses newer APIs (v0.20.0:
+`demo/agent` at `8e4fb57c` resolved goinfer v0.19.0 and failed on `chat.ThinkMode`). v0.19.0's release shows the same
+four reds and one green, and only the `demo/agent/v*` run means anything. The owner hit the red cold on 2026-10-01.
+Fix: build only the module a tag names (the root tag builds none standalone), and say in RELEASING.md which run to
+read.
+
 ## G26 RESOLVED, 2026-08-27 (n=15) — real, HALF the claimed size, and the sampler is back
 
 Raw: `docs/measurements/g26-anchor-n15.json`, `g26-head-n15.json`, log `g26-n15_run.log`.
