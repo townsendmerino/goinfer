@@ -873,8 +873,13 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// are zero-value (moe.go — the real weights live in the slot pool instead), but PrefillLast's
 	// row loop calls the same non-paged encodeMoERoute/encodeMoEExperts pair unconditionally.
 	// Same predicate as the dense Gemma-4 MoE guard above, generalized to the generic twin.
+	// A-C01 (docs/audit-metal-2026-09-30.md): the prefill kernels write K/V with kv_store_f16, half per element at
+	// pos*kvDim, but an int8 KV cache (-kv i8) is allocated at one byte per element with separate scale buffers, and
+	// PrefillLast's attention reads the cache as half too. So with -kv i8 every prompt position landed in the wrong
+	// layout and positions at or past ctxCap/2 were written past the buffer. Such a model takes the sequential path,
+	// whose decode kernels write and read the int8 cache.
 	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0 && !m.HasPerLayerGeometry() &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && r.dnet == nil
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && r.dnet == nil && !r.kvI8
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()

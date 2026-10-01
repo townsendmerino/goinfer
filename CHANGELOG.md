@@ -451,6 +451,12 @@ any surface may still change.
 
 ### Fixed
 
+- **Metal: two prefill paths could corrupt the KV cache without an error** (both off the defaults; found by
+  `docs/audit-metal-2026-09-30.md`, A-C01 and F-C02). With `--kv i8`, batched prefill wrote half-precision K/V into the
+  int8 cache, so the prompt's K/V was in the wrong layout and positions past half the context were written beyond the
+  buffer. And the exact prefill attention kernel, used when the fused one cannot run (head dim above 128, or
+  `GOINFER_METAL_FUSED_ATTENTION=0`), holds 4096 scores and ran past them on a longer context. Both now decline batched
+  prefill and take the sequential path, and say why.
 - **Changes output. Phi-3 (and Phi-4, by model type; unmeasured) gave junk under every quantized precision.** Its
   projection inputs carry outliers that one int8 scale per row cannot hold (cosine ~0 by position 16). A default Phi-3
   load now uses `--quant q4k` on the CPU and CUDA (1.31x int8int8 + per-32 on the CPU; 1.26x / 1.17x at depth 128 / 2048
