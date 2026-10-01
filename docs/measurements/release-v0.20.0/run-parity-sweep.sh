@@ -7,10 +7,19 @@
 # decoder/testdata/), and without them most tiny-fixture gates skip. Each ignored entry is symlinked
 # in from the main checkout instead of copied.
 #
+# Run 1 (0ca36756, 2026-09-30 19:22-20:24) FAILED with 17 blockers: 15 required gates SKIPPED because their
+# checkpoints had been moved from ~/models to the /srv/models archive, and three asset-only tests were stale (fixed in
+# bcf50a49). The checkpoints were copied back (owner OK) except the two largest, which nobara's free disk cannot also
+# hold; those two are read from the archive through the asset registry's env override (an explicit env path always
+# wins). That is a correctness sweep reading a checkpoint, not a timed measurement, so the archive rule
+# (docs/benchmarks.md, "Model storage") does not apply; it only makes those loads slower.
+export GOINFER_QWEN35_REAL=${GOINFER_QWEN35_REAL:-/srv/models/qwen3.6-35b-a3b}
+export GOINFER_QWEN38=${GOINFER_QWEN38:-/srv/models/qwen3.8-27b}
+#
 # Pass rule: the sweep's own verdict line, "ALL REQUIRED GATES GREEN". Then, by hand in the morning:
 # promote what it confirmed (gate ledger promote) and merge the PARITY_ROW lines (RELEASING.md §C1).
 set -euo pipefail
-REV=${REV:-0ca36756}
+REV=${REV:-bcf50a49}
 SRC=$HOME/mycode/goinfer
 BASE=$HOME/goinfer-bench/release-v0.20.0
 WT=$BASE/wt
@@ -48,6 +57,7 @@ cd "$WT"
   echo "tree:       $(git status --porcelain | wc -l) entries in git status (0 = clean)"
   echo "go:         $(go version)"
   echo "driver:     $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || echo none)"
+  echo "archive:    GOINFER_QWEN35_REAL=$GOINFER_QWEN35_REAL GOINFER_QWEN38=$GOINFER_QWEN38"
 } | tee "$LOG/provenance.txt"
 GOWORK=off EMIT_MANIFEST=1 go run ./cmd/gate parity 2>&1 | tee "$LOG/parity-sweep.log"
 echo "finished:   $(date '+%F %T %Z')" | tee -a "$LOG/provenance.txt"
