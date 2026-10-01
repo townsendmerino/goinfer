@@ -95,6 +95,10 @@ agent fits in, a thinking switch, and reasoning emitted separately.
   allowed answers, with one prefill per question and no decode, by label-token scoring on any model (D1).
 - **Open:** D6a, pending, decides whether autotrust's trained JEV decision heads on `qwen3_5` are built (D2–D4).
 
+[`task-glm-ocr-2026-10.md`](tasks/task-glm-ocr-2026-10.md) (O0–O7, filed 2026-10-01) scopes GLM-OCR, a 0.9B
+document-OCR model: the text decoder on the generic path from existing parts, a new aikit tower, a pixel budget
+for laptops, and schema-bound extraction (an invoice image into a Go struct) as the demo. O0 is reading only.
+
 [`task-test-efficiency-2026-09.md`](tasks/task-test-efficiency-2026-09.md) (TE0–TE12, filed 2026-09-28) is the
 verification-cost campaign: a census of where the machine time goes (served gates that are mostly idle-gate waiting
 and start-up, measurement gates that live in `go test`, fidelity gates whose fixed prompt count ignores what each
