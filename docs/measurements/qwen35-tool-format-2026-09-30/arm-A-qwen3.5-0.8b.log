@@ -1,0 +1,29 @@
+weather   s0  prose                         "Here is the current weather in Paris, France:\n\n*   **Temperature**: 18\u00b0C (64\u00b0F)\n*   **
+weather   s1  prose                         "I cannot access the user's current location or devices, so I cannot provide real-time weather infor
+weather   s2  call         ok   answered    {"arguments": "{\"city\": \"Paris\"}", "name": "get_weather"}
+calc      s0  call         ok   answered    {"arguments": "{\"expression\": \"1234 * 5678\"}", "name": "calculator"}
+calc      s1  call         ok   answered    {"arguments": "{\"expression\": \"1234 * 5678\"}", "name": "calculator"}
+calc      s2  call         ok   answered    {"arguments": "{\"expression\": \"1234 * 5678\"}", "name": "calculator"}
+search    s0  call         ok   call_again  {"arguments": "{\"query\": \"Go 1.24 release news\", \"max_results\": 3}", "name": "search"}
+search    s1  call         ok   call_again  {"arguments": "{\"query\": \"Go 1.24 release news\", \"max_results\": 3}", "name": "search"}
+search    s2  call         ok   call_again  {"arguments": "{\"query\": \"Go 1.24 release news 3 results\"}", "name": "search"}
+read      s0  prose                         "```json\n{\n  \"function\": \"read_file\",\n  \"path\": \"/etc/hostname\"\n}\n```"
+read      s1  prose                         "```json\n{\n  \"name\": \"hostname\",\n  \"content\": \"/etc/hostname\"\n}\n```"
+read      s2  prose                         "```json\n{\n  \"name\": \"hostname\",\n  \"content\": \"/etc/hostname\"\n}\n```"
+pick      s0  call         ok   answered    {"arguments": "{\"timezone\": \"Asia/Tokyo\"}", "name": "get_time"}
+pick      s1  call         ok   answered    {"arguments": "{\"timezone\": \"Asia/Tokyo\"}", "name": "get_time"}
+pick      s2  call         ok   answered    {"arguments": "{\"timezone\": \"Asia/Tokyo\"}", "name": "get_time"}
+multiline s0  call         ok   call_again  {"arguments": "{\"path\": \"hello.py\", \"content\": \"print(\\\"hello\\\")\\nprint(1)\\nprint(2)\\n
+multiline s1  call         ok   call_again  {"arguments": "{\"content\": \"print(\\\"hello\\\")\\nprint(1)\\nprint(2)\\nprint(3)\", \"path\": \"
+multiline s2  prose                         "```python\n# hello.py\n\nprint(\"hello\")\n\nprint(1)\n\nprint(2)\n\nprint(3)\n```"
+typed     s0  call         ok   answered    {"arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}", "name": "set_light"}
+typed     s1  call         ok   answered    {"arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}", "name": "set_light"}
+typed     s2  call                         missing brightness {"arguments": "{\"room\": \"kitchen\", \"on\": true}", "name": "set_light"}
+control   s0  prose        ok               "The capital of France is **Paris**.\n\nParis is the largest city in France and the most important c
+control   s1  prose        ok               "The capital of France is **Paris**.\n\nThe capital of the United Kingdom is London, and the capital
+control   s2  prose        ok               "The capital of France is **Paris**.\n\nHowever, if you are looking for the capital of the **Europea
+
+== 24 replies
+   by kind: {'prose': 9, 'call': 15}
+   tool prompts: 14/21 correct calls (67%); control prompt answered in prose: 3/3
+   loops (after 14 ok calls): {'answered': 9, 'call_again': 5}  answered: 9/14
