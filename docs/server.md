@@ -549,7 +549,12 @@ to ignore.**
   markup in either. `final` and a `commentary` preamble are content (several messages are joined by a blank line); a message
   addressed to a function (`to=functions.…`) is shown in neither stream — tool calls for gpt-oss are **not** surfaced yet.
   gpt-oss always reasons: its prompt has no off form, so `-thinking off` / `enable_thinking: false` cannot stop it and the
-  reasoning still arrives in `reasoning_content` (the load log says so). **The reasoning budget applies to it** (`-reasoning-budget`,
+  reasoning still arrives in `reasoning_content` (the load log says so). What it does take is an effort:
+  **`reasoning_effort: "low" | "medium" | "high"`** (chat completions, and `reasoning.effort` on `/v1/responses`, jobs and batches)
+  is written on the template's own `Reasoning:` line — medium when the request says nothing — and a lower effort spends fewer tokens
+  before the answer. It acts for gpt-oss only: on every other model `reasoning_effort` still means just `"none"`, so a client that
+  sends a bare `"high"` to every endpoint (dsh does) changes no other prompt; an unrecognised value is ignored, never a 400.
+  `goinfer-chat` has `--reasoning-effort` and `/effort`, and a `--batch` line's own `reasoning_effort` overrides the flag. **The reasoning budget applies to it** (`-reasoning-budget`,
   `thinking_token_budget`, on by default): once the analysis has used its share, serve forces `<|end|><|start|>assistant<|channel|>
   final<|message|>` — the whole sequence, not one token, or the model could open another channel and still never answer — so a
   small `max_tokens` returns an answer instead of an empty `content`. For gpt-oss the budget counts the channel headers too (about

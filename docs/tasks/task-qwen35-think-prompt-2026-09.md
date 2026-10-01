@@ -170,9 +170,8 @@ test that would have gone red.
 ## Not built
 
 - **Harmony (gpt-oss): parser BUILT 2026-09-30** (see "Harmony (gpt-oss) — built" below). Reasoning budget: BUILT the same day (below).
-  Still not built for it: tool calls (neither the
-  renderer — no tool declarations — nor a surfaced call; the parser keeps recipient-addressed messages on itself), and
-  `reasoning_effort` low/medium/high (the template's `Reasoning: <effort>` line; goinfer always writes `medium`).
+  `reasoning_effort` low/medium/high: BUILT the same day (below). Still not built for it: tool calls (neither the
+  renderer — no tool declarations — nor a surfaced call; the parser keeps recipient-addressed messages on itself).
 - **Qwen3.5's XML tool-call format** (separate task), and what signature Claude Code wants on a thinking block — still to
   settle with the outstanding manual Claude Code smoke test.
 
@@ -549,3 +548,32 @@ on the real model (the swap guard stopped the earlier serve run, and a second wo
 The swap watchdog used for these CPU-fallback runs was loosened from +500 MB to +1.5 GB (with a hard stop below 8 GB available RAM)
 for the chat CLI run only, after the first attempt was killed at +628 MB seconds into a reply with 49 GB of RAM free; serve's own guard
 was not touched.
+
+### gpt-oss `reasoning_effort` (2026-09-30)
+
+The one family where the field is a real knob: the template writes `Reasoning: <effort>` (low | medium | high; medium absent) into the
+system block, and goinfer hardcoded `medium`. `chat.Template.WithReasoningEffort` re-renders it; serve resolves the field once in
+`resolveThink` (chat completions' `reasoning_effort`, the Responses API's nested `reasoning.effort`, jobs, batches all arrive there);
+`goinfer-chat` has `--reasoning-effort` (an explicit flag is validated strictly, unlike a request field), `/effort`, and a `--batch`
+line's own field over the flag.
+
+**The rule that keeps it safe:** it is a no-op for every template but Harmony, and for any value but low/medium/high. Earlier this
+task chose "only `none` acts" because DeepSeek Harness sends a bare `reasoning_effort` to every endpoint; that still holds for every
+other family, so the harness's `"high"` moves no Qwen/Gemma/Llama prompt. An unknown value is ignored as before, never a 400, and
+`"none"` stays the off switch of the families that have one (gpt-oss has no off form, so for it `none` does nothing).
+
+**Verified.** `scripts/pin_harmony_history.py` now also renders `reasoning_effort` low and high (alone and after a system prompt and an
+exchange) through HuggingFace; the existing seven cases are byte-identical in the regenerated golden (51 lines added, none changed).
+Unit: the normaliser (case, whitespace, injection attempts such as `low\n\n# injected`), the no-op for ChatML/Gemma 4/Llama 3/nil, serve's
+resolution and its independence from `enable_thinking`, `templateFor` per family, the Responses route's nested field, the CLI's
+`buildPrompt` and `/effort`, and a batch line over the session's setting. Mutation-checked: applying effort to every family, serve not
+reading the field, `templateFor` dropping it, a batch line unable to override, and `buildPrompt` ignoring the session's effort each turn a
+test red.
+
+**Real model, exploratory (one prompt, temperature 0, `goinfer-chat`, gpt-oss-20b, CPU fallback):** *"What is 17 times 3? Then write one
+short sentence about the sea."* `low` took **64 tokens** — a one-line analysis, "User asks: "What is 17 times 3?" That's 51. Then "write
+one short sentence about the sea." Provide short sentence." — and the same kind of answer; the earlier `medium` run took **106**
+(`chat-effort-low.log`, `raw-gptoss20b-before-parser.log`). **`high` was not measured:** two attempts were stopped by the +1.5 GB swap
+limit during the model load (+1562 MB and +1532 MB, 45 GB of RAM free both times), and the rule for this model on this box was two
+attempts and stop. So this is two points on one prompt: it shows the knob changes what the model does through goinfer's pipeline, not
+how much, and the figure belongs to no table.
