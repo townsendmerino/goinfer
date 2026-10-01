@@ -10,6 +10,8 @@ with `go test ./decoder -run CapabilityMatrix -update`.
 
 **Parity** shows each family's strongest validation as `method argmax%/cosine_min`: `full-oracle`/`real-oracle`/`weight-diff` diff against a RELEASED model; `tiny-oracle` against the family's tiny HF-seeded golden (used when no released model is small enough to diff); a `+coherent` suffix means a real model also ran qualitatively; `coherent-gen` is a real-model coherence check with no numeric oracle; `shared-path: X` is an alias family riding X's oracle on the same forward file and the same `deps_hash` (so it carries no metrics of its own — X's are the measurement); `pending` is not yet recorded. Source: `testdata/parity_manifest.json`.
 
+**Decision models.** A model with a trained decision head (`goinfer-chat decide --head`, `goinfer-serve`'s `head=`) loads at `int8int8` unless a quant is chosen. That is the default for decision models, from D6b's parity grading against the f32 reference ([record](measurements/decisions-d6b-2026-09/results.md)).
+
 ## gated-linear hybrid (Gated DeltaNet)
 
 > **Olmo Hybrid** — Ai2 Olmo Hybrid (7B): qwen3.5's Gated DeltaNet (3:1) + olmo3's own full-attention shape, MIXED norm placement per layer kind, no RoPE at all

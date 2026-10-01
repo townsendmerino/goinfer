@@ -65,6 +65,17 @@ type judgeConfig struct {
 	Softcap          json.RawMessage `json:"softcap"`
 }
 
+// HeadQuant is the quant a model loads at when a decision head is attached: chosen, when the user chose one (set:
+// a per-model override, or a --quant actually passed), else decoder.DecisionHeadQuant. set is separate from the
+// value because an explicit "" is f32 (serve's quant= with no value), a real choice that must not be read as unset.
+// goinfer-chat decide and goinfer-serve's head= both use it, so the CLI and the server cannot drift apart.
+func HeadQuant(chosen string, set bool) string {
+	if set {
+		return chosen
+	}
+	return decoder.DecisionHeadQuant
+}
+
 // LoadHead reads a decision head from dir. It refuses what it cannot run exactly as the reference does:
 //   - a weights_mode other than "unmerged" or "merged";
 //   - a template version other than bare-v1, since the prompt must be byte-identical to the one the head was trained on;

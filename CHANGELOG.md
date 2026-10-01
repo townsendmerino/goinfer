@@ -15,6 +15,16 @@ any surface may still change.
 
 ## [Unreleased]
 
+### Changed
+
+- **Decision models load at `int8int8` by default.** A model with a trained decision head (`goinfer-chat decide
+  --head`, or `goinfer-serve`'s `head=`) now loads at `int8int8` unless `--quant` or `quant=` chooses otherwise. Other
+  models keep the process default, and `decide` prints which quant it used and why. The choice comes from D6b's
+  grading against the transformers f32 reference on 150 items. f32 was exact; `int8int8` read mean KL 0.009 and top-1
+  agreement 92.7%; int4 read 0.030 and 94.0%; and no precision was measurably worse calibrated
+  (`docs/measurements/decisions-d6b-2026-09/results.md`). `int8int8` fits where f32 does not: JEV-9B at f32 is about
+  36 GB. The capability matrix records the default.
+
 ## [v0.20.0] — 2026-10-01
 
 ### Highlights

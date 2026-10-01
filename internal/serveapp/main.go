@@ -175,6 +175,9 @@ func (s modelSpec) explicitQuant(cfg config) string {
 func (s modelSpec) options(cfg config) decoder.Options {
 	o := cfg.load.Options()
 	o.Quant = orStr(s.quant, o.Quant)
+	if s.head != nil { // a decision head loads at the decision models' default unless a quant was chosen (D6b)
+		o.Quant = decide.HeadQuant(s.explicitQuant(cfg), s.quant != nil || cfg.load.QuantSet)
+	}
 	o.LoRA = orStr(s.lora, o.LoRA)
 	o.KVPrecision = orStr(s.kvPrec, cfg.load.KV)
 	o.KVQuant = loadflags.CPUKV(orStr(s.kvQuant, cfg.kvQuant), o.KVPrecision)
@@ -385,7 +388,8 @@ func registerFlags(fs *flag.FlagSet) *serveFlags {
 		"defaults below: `--model big=moe.giw,stream,weight-cache=16 --model fast=small.giw`\n"+
 		"streams only the big MoE. Keys: quant,lora,kv,kv-quant,ctx,stream,weight-cache,embed-int4,head.\n"+
 		"head=DIR attaches a trained decision head (autotrust's JEV layout): POST /v1/systemone on that model\n"+
-		"answers with it (Route B), and an unmerged head's adapter is merged into the model at load.\n"+
+		"answers with it (Route B), and an unmerged head's adapter is merged into the model at load. The model loads\n"+
+		"at "+decoder.DecisionHeadQuant+" unless quant= or -quant chooses otherwise (the default for decision models, D6b).\n"+
 		"(Paths may not contain commas.)")
 	fs.StringVar(&cfg.drafter, "drafter", "", "directory of a pretrained BLOCK drafter (z-lab DFlash) paired with --model: the drafter proposes a whole block of tokens per round and the target verifies them in ONE batched pass, measured 1.6-1.8x on code/math and ~0.96x on open chat (docs/spec/08). LOSSLESS — every emitted token is one the target's own argmax produced, so output is identical to plain greedy. Greedy only: a request with temperature, penalties or logit bias falls back to normal decoding automatically. Requires a resident GPU backend (--backend cuda); declines with a reason otherwise serve-only; goinfer-chat offers --spec ngram and --draft instead.")
 	sf.showVersion = fs.Bool("version", false, "print version, the backends COMPILED INTO this binary, and the Go toolchain, then exit. `backends:` is the compiled-in truth — --backend accepts names this build cannot run and falls back to cpu")

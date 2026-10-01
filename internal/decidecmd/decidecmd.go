@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"github.com/townsendmerino/goinfer/internal/modelload"
@@ -93,7 +94,8 @@ func newCommon(name, usage string) *common {
 	c.template = fs.String("template", decide.TemplateBare, "prompt template: bare-v1 (JEV's own; no chat template) or chat-v1 (the model's chat template, for instruct models)")
 	c.head = fs.String("head", "", "a trained decision head (Route B): a dir with judge_config.json, head.safetensors and calibration.json, "+
 		"such as autotrust's JEV-9B. --model must be its backbone; an unmerged head's adapter is merged at load. "+
-		"Without it, decisions are label-token scoring (Route A)")
+		"Without it, decisions are label-token scoring (Route A). With it, the model loads at "+decoder.DecisionHeadQuant+
+		" unless --quant is given (the default for decision models, D6b)")
 	c.out = fs.String("o", "", "output file (default stdout)")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), usage, filepath.Base(os.Args[0]))
@@ -116,6 +118,7 @@ func (c *common) open(ctx context.Context, cal *decide.Calibration) (*decide.Dec
 		if head, err = decide.LoadHead(*c.head); err != nil {
 			return nil, nil, err
 		}
+		opts.Quant = decide.HeadQuant(c.load.Quant, c.load.QuantSet)
 		a, err := prequant.AdapterLoRA(head.AdapterDir(), *c.model) // "" for a .giw that carries it (prequant -lora)
 		if err != nil {
 			return nil, nil, err
@@ -135,8 +138,12 @@ func (c *common) open(ctx context.Context, cal *decide.Calibration) (*decide.Dec
 	dopts := decide.Options{Template: *c.template, Calibration: cal}
 	if head != nil {
 		dopts.Head, dopts.Hidden = head, decide.ModelHidden(res.Model)
-		fmt.Fprintf(os.Stderr, "decide: route B, head %s %s (%s), adapter %q, temperatures %v\n",
-			head.Name, head.Version, head.WeightsMode, head.AdapterDir(), headTemps(cal, head))
+		why := "the default for decision models"
+		if c.load.QuantSet {
+			why = "--quant"
+		}
+		fmt.Fprintf(os.Stderr, "decide: route B, head %s %s (%s), adapter %q, temperatures %v, quant %s (%s)\n",
+			head.Name, head.Version, head.WeightsMode, head.AdapterDir(), headTemps(cal, head), opts.Quant, why)
 	}
 	d, err := decide.New(decide.NewPlainTokenizer(res.Tokenizer), decide.ModelPrefill(res.Model), dopts)
 	if err != nil {
