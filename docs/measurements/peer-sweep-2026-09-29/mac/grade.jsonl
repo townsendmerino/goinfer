@@ -1,0 +1,6 @@
+## g-metal-decode.json
+{"file": "g-metal-decode.json", "backend": "metal", "model": "0.5B", "depth": 128, "config": "greedy", "peer": "ollama", "pairs": [1.299, 1.296, 1.291], "median": 1.296, "n": 3, "goinfer": [188.8, 188.6, 188.1], "peer_runs": [145.3, 145.5, 145.7], "spread_g": 0.4, "spread_p": 0.3, "outcome": "AHEAD", "capped": false, "tokens": [1536, 1536], "token_gates": ["ok", "ok"], "decode_path": "metal-resident (int4)", "driver": null, "ctx_pin": 0}
+## i-cpu-decode.json
+## h-metal-prefill.json
+{"file": "h-metal-prefill.json", "model": "1.5B", "K": 512, "peer": "ollama", "pairs": [1.058, 1.002, 1.007, 1.016, 1.119, 1.116], "median": 1.037, "n": 6, "goinfer_ms": [571.4, 578.2, 571.6, 571.7, 515.3, 515.5], "peer_ms": [604.4, 579.6, 575.8, 580.9, 576.7, 575.2], "goinfer_exact_ms_median": null, "spread_g": 11.4, "spread_p": 5.0, "outcome": "AMBIGUOUS-HIGH", "capped": true}
+{"file": "h-metal-prefill.json", "model": "1.5B", "K": 3900, "peer": "ollama", "pairs": [0.979, 0.984, 0.983, 0.985, 0.984, 0.976], "median": 0.983, "n": 6, "goinfer_ms": [4272.0, 4251.4, 4260.5, 4250.6, 4252.7, 4293.5], "peer_ms": [4184.0, 4182.8, 4188.1, 4185.5, 4184.0, 4189.4], "goinfer_exact_ms_median": null, "spread_g": 1.0, "spread_p": 0.2, "outcome": "LEVEL", "capped": false}

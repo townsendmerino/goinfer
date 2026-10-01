@@ -1,0 +1,138 @@
+{
+  "header": {
+    "utc": "2026-10-01T06:01:27Z",
+    "host": "macbookpro.lan",
+    "driver": "26.6.2",
+    "gpu": "",
+    "kernel": "25.6.0",
+    "distro": "",
+    "goinfer_commit": "754f12d3",
+    "goinfer_dirty": false,
+    "peer_version": "Warning: could not connect to a running Ollama instance",
+    "serve_mtime": "",
+    "loadavg": ""
+  },
+  "cache_check": [
+    {
+      "model": "1.5B",
+      "depth": 512,
+      "engine": "goinfer",
+      "repeat_over_new": 0.027587924625308985
+    },
+    {
+      "model": "1.5B",
+      "depth": 512,
+      "engine": "ollama",
+      "repeat_over_new": 0.22563140019190003
+    },
+    {
+      "model": "1.5B",
+      "depth": 3900,
+      "engine": "goinfer",
+      "repeat_over_new": 0.004753330033549418
+    },
+    {
+      "model": "1.5B",
+      "depth": 3900,
+      "engine": "ollama",
+      "repeat_over_new": 0.03353250594895193
+    }
+  ],
+  "scaling_check": {
+    "goinfer:1.5B": {
+      "depths": [
+        512,
+        3900
+      ],
+      "ttft_ms": [
+        571.5,
+        4256.6
+      ],
+      "ttft_growth": 7.45,
+      "depth_growth": 7.62
+    },
+    "ollama:1.5B": {
+      "depths": [
+        512,
+        3900
+      ],
+      "ttft_ms": [
+        578.2,
+        4184.7
+      ],
+      "ttft_growth": 7.24,
+      "depth_growth": 7.62
+    }
+  },
+  "marginal": {},
+  "cells": [
+    {
+      "model": "1.5B",
+      "depth": 512,
+      "calibrated_tokens": 513,
+      "goinfer": {
+        "ttft_ms_median": 571.5,
+        "ttft_ms_all": [
+          571.4,
+          578.2,
+          571.6,
+          571.7,
+          515.3,
+          515.5
+        ],
+        "prompt_tokens": 520.0,
+        "ttft_tok_s": 909.9,
+        "spread_pct": 11.0
+      },
+      "ollama": {
+        "ttft_ms_median": 578.2,
+        "ttft_ms_all": [
+          604.4,
+          579.6,
+          575.8,
+          580.9,
+          576.7,
+          575.2
+        ],
+        "prompt_tokens": 541.0,
+        "ttft_tok_s": 935.7,
+        "spread_pct": 5.0
+      },
+      "ttft_peer_over_goinfer": 1.03
+    },
+    {
+      "model": "1.5B",
+      "depth": 3900,
+      "calibrated_tokens": 3931,
+      "goinfer": {
+        "ttft_ms_median": 4256.6,
+        "ttft_ms_all": [
+          4272.0,
+          4251.4,
+          4260.5,
+          4250.6,
+          4252.7,
+          4293.5
+        ],
+        "prompt_tokens": 3938.0,
+        "ttft_tok_s": 925.2,
+        "spread_pct": 1.0
+      },
+      "ollama": {
+        "ttft_ms_median": 4184.7,
+        "ttft_ms_all": [
+          4184.0,
+          4182.8,
+          4188.1,
+          4185.5,
+          4184.0,
+          4189.4
+        ],
+        "prompt_tokens": 3959.0,
+        "ttft_tok_s": 946.1,
+        "spread_pct": 0.2
+      },
+      "ttft_peer_over_goinfer": 1.02
+    }
+  ]
+}

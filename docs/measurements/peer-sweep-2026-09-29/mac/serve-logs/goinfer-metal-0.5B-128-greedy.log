@@ -1,0 +1,24 @@
+stream-weights: cache qwen2.5-coder-0.5b-instruct-q4_k_m.int4.metal.giw is format v14; this build keeps int4 group scales as binary16 (v15) and would convert them on every load, holding both copies — rebuilding once
+stream-weights: transcoding qwen2.5-coder-0.5b-instruct-q4_k_m.gguf → qwen2.5-coder-0.5b-instruct-q4_k_m.int4.metal.giw (int4, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (501 MB) in 4s
+[metal] weights aliased from qwen2.5-coder-0.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 322 MB bound in place, 1 MB copied (anonymous) — 171 MB int4 nibbles (48 single tensors + 48 fused groups = 112 MB) + 130 MB int8 codes (1 matrices) + 21 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.019 ms, fragment 0.041 ms), gate|up at B <= 2 (0.077, 0.223); 0 = always the fragment
+loaded "bench": 24-layer model (vocab 151936) in 133ms [chat: chatml]
+  decode path: metal-resident (int4)
+  prefill path: batched f16-MMA above 64 prompt tokens; sequential below (§3 floor)
+  context: 4096 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f16
+  fit: 32768-token cap needs 0.8 GB KV (weights 0.4 GB, budget 4.7 GB, 3.9 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:8099 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 0.44 GB swap-used
+
+shutting down…
+resident batch "bench": 1600 runs, 0 batched steps (0 tokens), 1600 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+resident batch "bench" time: runs 8.322 s, exclusive 0.469 s (prefill 25 passes 0.468 s, bookkeeping 0.000 s)

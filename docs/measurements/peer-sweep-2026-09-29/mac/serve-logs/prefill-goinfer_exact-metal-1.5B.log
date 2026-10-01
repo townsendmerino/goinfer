@@ -1,0 +1,20 @@
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.018 ms, fragment 0.040 ms), gate|up at B <= 2 (0.124, 0.252); 0 = always the fragment
+loaded "bench": 28-layer model (vocab 151936) in 382ms [chat: chatml]
+  decode path: metal-resident (int4)
+  prefill path: sequential — fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill)
+  context: 4096 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f16
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.1 GB, budget 4.8 GB, 3.1 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+--require-backend: model "bench" declined the batched prefill: sequential — fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill)
+[metal] weights aliased from qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 925 MB bound in place, 1 MB copied (anonymous) — 625 MB int4 nibbles (56 single tensors + 56 fused groups = 410 MB) + 223 MB int8 codes (1 matrices) + 78 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.040 ms), gate|up at B <= 2 (0.110, 0.252); 0 = always the fragment
+loaded "bench": 28-layer model (vocab 151936) in 187ms [chat: chatml]
+  decode path: metal-resident (int4)
+  prefill path: sequential — fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill)
+  context: 4096 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f16
+  fit: 32768-token cap needs 1.8 GB KV (weights 1.1 GB, budget 5.0 GB, 3.2 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+--require-backend: model "bench" declined the batched prefill: sequential — fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 or --exact-prefill)
