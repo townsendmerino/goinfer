@@ -217,7 +217,7 @@ func parseQwenXMLCall(body string, tools []Tool) (ToolCall, bool) {
 		}
 		key := strings.TrimSpace(fn[:e])
 		fn = fn[e+1:]
-		c := strings.Index(fn, "</parameter>")
+		c := closeParam(fn)
 		if c < 0 {
 			return ToolCall{}, false
 		}
@@ -312,4 +312,23 @@ func typedParam(val, typ string) []byte {
 		}
 	}
 	return asString()
+}
+
+// closeParam finds the </parameter> that ends a value: the first one that is followed by another parameter or by the function's end. A
+// value may itself contain the text "</parameter>" (a document about this very format); a structural close never is followed by anything
+// else, which is what tells them apart.
+func closeParam(s string) int {
+	const tag = "</parameter>"
+	for from := 0; ; {
+		i := strings.Index(s[from:], tag)
+		if i < 0 {
+			return -1
+		}
+		i += from
+		next := strings.TrimLeft(s[i+len(tag):], " \t\r\n")
+		if next == "" || strings.HasPrefix(next, "<parameter=") || strings.HasPrefix(next, "</function>") {
+			return i
+		}
+		from = i + len(tag)
+	}
 }

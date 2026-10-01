@@ -177,3 +177,128 @@ func loadQwen3Template(t *testing.T) *Template {
 	t.Fatal("no qwen3-4b template in the think_modes golden")
 	return nil
 }
+
+func jsonEqual(t *testing.T, a, b string) bool {
+	t.Helper()
+	var x, y any
+	if json.Unmarshal([]byte(a), &x) != nil || json.Unmarshal([]byte(b), &y) != nil {
+		return false
+	}
+	ax, _ := json.Marshal(x)
+	by, _ := json.Marshal(y)
+	return string(ax) == string(by)
+}
+
+var searchTool = Tool{Name: "search", Description: "Search", Parameters: json.RawMessage(`{"type":"object","properties":{
+	"query":{"type":"string"},"max_results":{"type":"integer"},"ratio":{"type":"number"},"safe":{"type":"boolean"},
+	"tags":{"type":"array","items":{"type":"string"}},"opts":{"type":"object"},"numstr":{"type":"string"},"nothing":{"type":["string","null"]}}}`)}
+
+// An XML call is read into the same ToolCall a JSON call would be, with each parameter typed by the schema: the text is all the
+// model wrote, so only the schema can say that "123" is a string here and a number there.
+func TestParseXMLCalls_typedBySchema(t *testing.T) {
+	out := "I'll look that up.\n\n<tool_call>\n<function=search>\n<parameter=query>\ngo 1.24 release\n</parameter>\n<parameter=max_results>\n3\n</parameter>\n" +
+		"<parameter=ratio>\n1.5\n</parameter>\n<parameter=safe>\nTrue\n</parameter>\n<parameter=tags>\n[\"a\", \"b c\"]\n</parameter>\n" +
+		"<parameter=opts>\n{\"k\": [1, 2]}\n</parameter>\n<parameter=numstr>\n123\n</parameter>\n<parameter=nothing>\nNone\n</parameter>\n</function>\n</tool_call>"
+	tm := &Template{name: "chatml"}
+	calls, lead := tm.ParseToolCallsFor(out, []Tool{searchTool})
+	if len(calls) != 1 || calls[0].Name != "search" || lead != "I'll look that up." {
+		t.Fatalf("calls=%+v lead=%q", calls, lead)
+	}
+	want := `{"query":"go 1.24 release","max_results":3,"ratio":1.5,"safe":true,"tags":["a","b c"],"opts":{"k":[1,2]},"numstr":"123","nothing":null}`
+	if !jsonEqual(t, string(calls[0].Arguments), want) {
+		t.Errorf("arguments:\n got  %s\n want %s", calls[0].Arguments, want)
+	}
+
+	// Without the tool list nothing says "123" is a string, so unambiguous JSON is decoded and everything else stays text.
+	calls, _ = tm.ParseToolCalls(out)
+	if len(calls) != 1 {
+		t.Fatal("no call without a tool list")
+	}
+	var args map[string]json.RawMessage
+	if err := json.Unmarshal(calls[0].Arguments, &args); err != nil {
+		t.Fatalf("arguments are not a JSON object: %s", calls[0].Arguments)
+	}
+	if string(args["query"]) != `"go 1.24 release"` || string(args["max_results"]) != "3" || string(args["safe"]) != "true" || string(args["nothing"]) != "null" {
+		t.Errorf("untyped decode: %s", calls[0].Arguments)
+	}
+
+	// A value that does not fit its declared type is kept as text rather than lost or invented.
+	bad := "<tool_call>\n<function=search>\n<parameter=max_results>\nthree\n</parameter>\n<parameter=safe>\nmaybe\n</parameter>\n</function>\n</tool_call>"
+	calls, _ = tm.ParseToolCallsFor(bad, []Tool{searchTool})
+	if len(calls) != 1 || !jsonEqual(t, string(calls[0].Arguments), `{"max_results":"three","safe":"maybe"}`) {
+		t.Errorf("misfit values: %+v", calls)
+	}
+}
+
+// The Hermes JSON form still parses as it did; the two forms can share one reply; and what is not a complete call is not a call.
+func TestParseXMLCalls_formsAndFailures(t *testing.T) {
+	tm := &Template{name: "chatml"}
+	tools := []Tool{searchTool}
+	jsonCall := "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\"}}\n</tool_call>"
+	xmlCall := "<tool_call>\n<function=search>\n<parameter=query>\nx\n</parameter>\n</function>\n</tool_call>"
+
+	calls, _ := tm.ParseToolCallsFor(jsonCall, tools)
+	if len(calls) != 1 || calls[0].Name != "get_weather" || string(calls[0].Arguments) != `{"city": "Paris"}` {
+		t.Errorf("the JSON form regressed: %+v", calls)
+	}
+	calls, _ = tm.ParseToolCallsFor(jsonCall+"\n"+xmlCall, tools)
+	if len(calls) != 2 || calls[0].Name != "get_weather" || calls[1].Name != "search" {
+		t.Errorf("both forms in one reply: %+v", calls)
+	}
+	calls, _ = tm.ParseToolCallsFor(xmlCall+"\n"+xmlCall, tools)
+	if len(calls) != 2 {
+		t.Errorf("two XML calls: %+v", calls)
+	}
+	// No parameters is an empty object.
+	if calls, _ = tm.ParseToolCallsFor("<tool_call>\n<function=ping>\n</function>\n</tool_call>", nil); len(calls) != 1 || string(calls[0].Arguments) != "{}" {
+		t.Errorf("a call with no parameters: %+v", calls)
+	}
+
+	for name, in := range map[string]string{
+		"cut off inside the call":      "<tool_call>\n<function=search>\n<parameter=query>\nx\n</parameter>\n",
+		"cut off inside a parameter":   "<tool_call>\n<function=search>\n<parameter=query>\nx",
+		"no function name":             "<tool_call>\n<function=>\n</function>\n</tool_call>",
+		"a function with no closing >": "<tool_call>\n<function=search",
+		"prose that mentions the tag":  "Use <function=search> to search.",
+		"an empty block":               "<tool_call>\n</tool_call>",
+	} {
+		if calls, _ := tm.ParseToolCallsFor(in, tools); len(calls) != 0 {
+			t.Errorf("%s: parsed %+v, want no call", name, calls)
+		}
+	}
+}
+
+// The renderer's output must parse back to the arguments it was given: a call replayed into a prompt and the same call read from a reply
+// are one format, and a type that does not survive the trip (a bool as True, null as None, a string that looks like a number) is a defect.
+func TestQwen35XML_roundTrip(t *testing.T) {
+	g := loadQwenToolGolden(t)
+	tmpl, _ := Detect(Meta{ChatTemplate: g.ChatTemplate})
+	native := tmpl.WithToolFormat(ToolFormatTemplate)
+	args := `{"query": "go 1.24", "max_results": 3, "ratio": 1.5, "safe": true, "tags": ["a", "b c"], "opts": {"k": [1, 2], "z": "x"}, "numstr": "123", "nothing": null}`
+	turns := []Turn{
+		{Role: "user", Content: "go"},
+		{Role: "assistant", Content: "", ToolCalls: []ToolCall{{Name: "search", Arguments: json.RawMessage(args)}}},
+	}
+	prompt := native.RenderTools("", turns, []Tool{searchTool})
+	i := strings.Index(prompt, "<tool_call>\n<function=search>")
+	j := strings.Index(prompt[i:], "</tool_call>")
+	if i < 0 || j < 0 {
+		t.Fatalf("no rendered call in:\n%s", prompt)
+	}
+	calls, _ := native.ParseToolCallsFor(prompt[i:i+j+len("</tool_call>")], []Tool{searchTool})
+	if len(calls) != 1 || !jsonEqual(t, string(calls[0].Arguments), args) {
+		t.Errorf("round trip:\n sent %s\n back %+v", args, calls)
+	}
+	// And a multi-line, quoted, markup-bearing string survives (values are raw text between the tags).
+	nasty := `{"query": "line1\nline2 \"quoted\" <b>it's</b> </parameter> & done"}`
+	turns[1].ToolCalls = []ToolCall{{Name: "search", Arguments: json.RawMessage(nasty)}}
+	prompt = native.RenderTools("", turns, []Tool{searchTool})
+	i = strings.Index(prompt, "<tool_call>\n<function=search>")
+	calls, _ = native.ParseToolCallsFor(prompt[i:], []Tool{searchTool})
+	if len(calls) != 1 {
+		t.Fatalf("nasty value: %+v", calls)
+	}
+	if !jsonEqual(t, string(calls[0].Arguments), nasty) {
+		t.Errorf("a value that contains </parameter> must survive whole:\n got  %s\n want %s", calls[0].Arguments, nasty)
+	}
+}
