@@ -430,7 +430,7 @@ def main():
     ap.add_argument("--max-think", type=int, default=1500, help="max_tokens for the cell that must think AND finish with an answer")
     ap.add_argument("--tags", default="<think>,</think>", help="comma-separated think delimiters that must never reach content")
     ap.add_argument("--off-delta", type=int, default=0, help="prompt tokens thinking=off adds over unset under the server default (0.8B: 0; 9B: +2; Qwen3: +4)")
-    ap.add_argument("--on-delta", type=int, default=-2, help="prompt tokens thinking=on adds over unset under the server default (0.8B: -2; 9B and Qwen3: 0; Gemma 4: +3)")
+    ap.add_argument("--on-delta", type=int, default=-2, help="prompt tokens thinking=on adds over unset under the server default (0.8B: -2; 9B and Qwen3: 0; canonical Gemma 4: +3; the earlier Gemma 4 template (E2B GGUF): +7)")
     a = ap.parse_args()
     global OFF_DELTA, ON_DELTA, MAX_THINK, TAGS
     TAGS = tuple(a.tags.split(","))

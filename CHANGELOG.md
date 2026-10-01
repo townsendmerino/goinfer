@@ -28,6 +28,11 @@ any surface may still change.
   **default** for canonical Gemma 4, adopted by a pre-registered A/B that tied (21/21/3 on both arms); `-tool-format hermes` restores goinfer's earlier
   order, and the flag's default is now `auto` (each family's measured default: Gemma 4 the template's form, Qwen3.5 goinfer's own). Not applied to
   older Gemma 4 templates.
+- **The earlier Gemma 4 template (the E2B GGUF's) is managed for thinking: no more `<channel|>` in `content`.** It was served as
+  `thinking: unmanaged` through the generic prompt, whose closed `<|channel>thought\n<channel|>` scaffold this template does not have, so the
+  E2B ended its replies with a bare `<channel|>` and reasoning leaked into `content`. Thinking off is now a bare `<|turn>model\n`, on is the
+  `<|think|>` system line, the reply is split like the canonical one, byte for byte against HuggingFace's rendering of the E2B's template
+  (`testdata/chat_think_goldens/gemma4_old.json`, `scripts/pin_gemma4_old.py`). Its tool-loop history stays the generic rendering, and it has no native tool form.
 - **Qwen3.5's own tool-call form: read always, prompted on request (`-tool-format`).** The reply parser now reads
   `<tool_call><function=NAME><parameter=K>…` alongside the JSON form, typing parameters from the request's schema, so a model that writes it
   is no longer ignored. `-tool-format template` renders the model's own tool prompt, byte for byte against HuggingFace's rendering of its

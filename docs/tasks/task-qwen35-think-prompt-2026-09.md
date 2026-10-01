@@ -635,8 +635,8 @@ after a tool result. So a replayed agent turn that had a preamble ("Let me check
 `…<tool_response|>text<turn|>\n` with nothing after it: a closed turn and no header for the model's next step. goinfer's own order (text
 before the call, the turn left open) is what the model wrote and keeps it mid-turn. Which is better for the model is an empirical question,
 the same as for Qwen3.5's native tool format, and **had not been measured when this was written — SUPERSEDED, measured 2026-10-01 (ADOPT), see "Result of the queued measurement" below**: it needed the canonical template, which only the 26B-A4B
-checkpoint carries on this box (the E2B GGUF carries the older template, which goinfer does not treat as managed — its load log says
-`thinking: unmanaged` — so a baseline I ran on the E2B (20/21 loops answered with a preamble) exercised the generic path and says nothing about
+checkpoint carries on this box (the E2B GGUF carries the older template, which goinfer did not treat as managed when this was written — its load log said
+`thinking: unmanaged`; managed since 2026-10-01, see "The older template" below — so a baseline I ran on the E2B (20/21 loops answered with a preamble) exercised the generic path and says nothing about
 this change; it is not evidence for either order).
 
 **Found on the way.**
@@ -691,3 +691,30 @@ reasoning, so `auto` does not select it under asis; an explicit `template` does)
 every case; the `hermes` format is compared except where its earlier order differs by design. Four mutations of the per-family default turn tests red. The
 earlier statement here that the worry "stays a hypothesis" is superseded: it was tested and did not materialise, on this model. Record:
 `docs/measurements/gemma4-tool-text-order-2026-09-30/RESULTS.md`.
+
+## The earlier Gemma 4 template (E2B GGUF) is managed now (2026-10-01)
+
+The think-matrix night job failed its Gemma-E2B leg because the load log said `thinking: unmanaged`: the E2B carries the *earlier* template, not
+the canonical one. Cause, measured on the real model (token ids): the generic prompt ends with the closed scaffold `<|channel>thought\n<channel|>`,
+which the earlier template never writes; the E2B then wrote its reasoning as plain text and ended with a bare `<channel|>` (token 101) and no
+opener, so the marker and the reasoning reached `content`. Given the template's own thinking-off prompt (a bare `<|turn>model\n`) it answers
+cleanly; with `<|think|>` in the system turn it opens `<|channel>thought\n` as the canonical one does. So no opener-less splitter mode was
+needed: the fix is the prompt.
+
+Done: a managed variant for the earlier template (`Reasoning.oldGemma4`; detected by `enable_thinking is defined and enable_thinking`, no
+`default(false)`, and no scaffold after `add_generation_prompt`) — thinking off writes no scaffold, on writes the `<|think|>` system line, the
+reply is split like the canonical one, and the tool loop keeps a *calling* turn's reasoning while the loop is in progress and does not reopen the
+channel after a result (the canonical one does). Held to HuggingFace's rendering of that template — read from the GGUF, since the E2B's HF export
+ships none — on 12 conversations × {unset, false, true} (`testdata/chat_think_goldens/gemma4_old.json`, `scripts/pin_gemma4_old.py`,
+`chat/gemma4_old_test.go`); eight mutations of the new rules each turn it red. Not done, deliberately: text beside a tool call keeps goinfer's own
+order for this template (the template-order A/B was measured on the canonical template only), and it has no native tool form
+(`-tool-format template` is a no-op). Expected matrix deltas for the E2B are now off +0 / on +7 (the whole system block; the canonical +3 is net of
+a dropped scaffold), pinned from the golden through the E2B tokenizer, not from a run.
+
+Live: the E2B leg of `scripts/think_matrix.py` (run 1, 394 s) passed 48 of 51 cells — the prompt deltas 0 and 7 exact, streaming == non-streaming,
+reasoning split, budget, stop strings, count_tokens, Responses — with 3 FAILs that were exactly the tool-loop reasoning replay (prompt 89 vs 89),
+which this commit then models; a direct re-check shows the OpenAI loop now grows 89 → 118 with replayed reasoning and a finished loop is unchanged
+(109 vs 109). **Not yet re-run end to end:** the second full pass and the Anthropic history cells were interrupted — another session's `realckpt`
+sweep held 32–39 GB and the swap guard shut serve down — so those await a quiet box. Two cells are NOT EXERCISED, which is not a pass:
+`truncated in reasoning` (max_tokens 3 is exactly the E2B's `<|channel>thought\n` opener, so no reasoning text exists yet) and
+`completes within 1500` (the seeded sampled reply did not think). Logs: `~/goinfer-bench/gemma4-old-template-2026-10-01/` (`run1/` is the 48/51).

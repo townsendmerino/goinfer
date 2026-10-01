@@ -22,7 +22,7 @@ import (
 
 const gq = `<|"|>` // Gemma's string-quote marker
 
-func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist bool) string {
+func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist, old bool) string {
 	var b strings.Builder
 	b.WriteString("<bos><|turn>system\n")
 	if think {
@@ -71,7 +71,8 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist bo
 			var channel string
 			if hist {
 				content = stripChannels(content)
-				if m.Reasoning != "" && i > lu {
+				// The earlier template keeps the reasoning only of a turn that makes a call (`thinking_text and … and message.get('tool_calls')`).
+				if m.Reasoning != "" && i > lu && (!old || len(m.ToolCalls) > 0) {
 					channel = "<|channel>thought\n" + m.Reasoning + "\n<channel|>"
 				}
 			}
@@ -113,10 +114,13 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist bo
 	// mid-turn and simply continues.
 	if !openModelTurn {
 		b.WriteString("<|turn>model\n")
-		if !think { // thinking on leaves the channel for the model to open
+		if !think && !old { // thinking on leaves the channel for the model to open; the earlier template has no scaffold at all
 			b.WriteString("<|channel>thought\n<channel|>")
 		}
-	} else if think && hist && len(turns) > 0 && turns[len(turns)-1].Role == "tool" {
+	} else if old && len(turns) > 0 && turns[len(turns)-1].Role == "assistant" && len(turns[len(turns)-1].ToolCalls) == 0 {
+		// The earlier template closes a call-less assistant message even when it follows tool results, then writes the generation prompt.
+		b.WriteString("<turn|>\n<|turn>model\n")
+	} else if think && hist && !old && len(turns) > 0 && turns[len(turns)-1].Role == "tool" { // the earlier template writes nothing here
 		// The model is still in the turn that made the call. With thinking on the template reopens its thought channel for
 		// the next step, so the reply starts inside it (Template.PromptOpensThinkFor).
 		b.WriteString("<|channel>thought\n")

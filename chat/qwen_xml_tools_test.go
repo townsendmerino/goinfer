@@ -310,8 +310,8 @@ func TestQwen35XML_roundTrip(t *testing.T) {
 	}
 }
 
-// Only a template goinfer recognises as managed opts in. Gemma 4's canonical template does; an older Gemma 4 template, whose loop goinfer
-// has no oracle for, does not — so `-tool-format template` leaves it exactly as it was.
+// Only the canonical Gemma 4 template declares a native tool form. The earlier one (the E2B GGUF's, now managed for reasoning) does not —
+// goinfer has no port of its loop — so `-tool-format template` leaves it exactly as it was.
 func TestDeclaresNativeTools_gemma4(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "testdata", "chat_think_goldens", "think_history.json"))
 	if err != nil {
@@ -332,9 +332,9 @@ func TestDeclaresNativeTools_gemma4(t *testing.T) {
 		if !canonical.DeclaresNativeTools() {
 			t.Error("Gemma 4's canonical template must declare a native tool form")
 		}
-		older, _ := Detect(Meta{ChatTemplate: strings.ReplaceAll(g.ChatTemplate, "enable_thinking | default(false)", "enable_thinking is defined and enable_thinking")})
-		if older == nil || older.DeclaresNativeTools() {
-			t.Error("a Gemma 4 template goinfer cannot recognise as managed must not opt in")
+		older, _ := Detect(Meta{ChatTemplate: loadGemma4Old(t).ChatTemplate})
+		if older == nil || older.Reasoning() == nil || older.DeclaresNativeTools() {
+			t.Error("the earlier Gemma 4 template is managed for reasoning but must not opt in to a native tool form")
 		}
 		turns := []Turn{{Role: "user", Content: "Weather?"}, {Role: "assistant", Content: "Checking.", ToolCalls: []ToolCall{{Name: "get_weather", Arguments: json.RawMessage(`{"city":"Paris"}`)}}}, {Role: "tool", ToolName: "get_weather", Content: "18C"}}
 		tools := []Tool{{Name: "get_weather", Description: "W", Parameters: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`)}}
@@ -519,8 +519,8 @@ func TestToolFormatAuto_perFamilyDefault(t *testing.T) {
 	if !q.WithToolFormat(ToolFormatTemplate).UsesNativeTools() {
 		t.Error("an explicit template selects Qwen3.5's native form")
 	}
-	// An older Gemma 4 template is not recognised as managed, so there is nothing to select.
-	older, _ := Detect(Meta{ChatTemplate: strings.ReplaceAll(gemmaTmpl, "enable_thinking | default(false)", "enable_thinking is defined and enable_thinking")})
+	// The earlier Gemma 4 template is managed for reasoning but has no native tool form, so there is nothing to select.
+	older, _ := Detect(Meta{ChatTemplate: loadGemma4Old(t).ChatTemplate})
 	if older.UsesNativeTools() || older.WithThinking(ThinkTemplate).UsesNativeTools() || older.DeclaresNativeTools() {
 		t.Error("an older Gemma 4 template has no native form")
 	}

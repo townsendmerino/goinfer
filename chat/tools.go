@@ -49,7 +49,7 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 		if t.usesNativeTools() {
 			return renderGemma4NativeTools(system, turns, tools, t.gemma4Think())
 		}
-		return renderGemma4Tools(system, turns, tools, t.gemma4Think(), t.historyKind() == histGemma4)
+		return renderGemma4Tools(system, turns, tools, t.gemma4Think(), t.historyKind() == histGemma4 || t.reason != nil && t.reason.oldGemma4, t.reason != nil && t.reason.oldGemma4)
 	case "harmony":
 		var b strings.Builder
 		for _, seg := range harmonySegments(t.harmonyEffort(), system, turns, tools) {

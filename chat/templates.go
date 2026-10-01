@@ -66,15 +66,16 @@ func Gemma3() *Template {
 // scaffold: "<|turn>model\n<|channel>thought\n<channel|>".
 func Gemma4() *Template {
 	return &Template{name: "gemma4", stops: []string{"<turn|>"}, render: func(system string, turns []Turn) []Segment {
-		return gemma4Segments(system, turns, false, false)
+		return gemma4Segments(system, turns, false, false, false)
 	}}
 }
 
 // gemma4Segments renders the Gemma 4 conversation. think=false is the family's generic rendering (its generation prompt
 // carries the closed thinking scaffold); think=true is the template's enable_thinking=true form: a system turn that
 // opens with the "<|think|>" marker (present even when the caller gave no system prompt) and a generation prompt that
-// leaves the thinking channel for the model to open.
-func gemma4Segments(system string, turns []Turn, think, hist bool) []Segment {
+// leaves the thinking channel for the model to open. old=true is the earlier template: its thinking-off prompt has no closed channel at all,
+// and it keeps a turn's reasoning only when the turn makes a tool call (a call in this text-only path never happens, so none).
+func gemma4Segments(system string, turns []Turn, think, hist, old bool) []Segment {
 	var b segBuf
 	b.sp("<bos>")
 	if system != "" || think {
@@ -107,7 +108,7 @@ func gemma4Segments(system string, turns []Turn, think, hist bool) []Segment {
 			if !joinsPrev {
 				b.ct("model\n")
 			}
-			if t.Reasoning != "" && i > lu { // the tool loop in progress keeps its reasoning; earlier turns do not
+			if t.Reasoning != "" && i > lu && !old { // the tool loop in progress keeps its reasoning; earlier turns do not
 				b.sp("<|channel>")
 				b.ct("thought\n" + t.Reasoning + "\n")
 				b.sp("<channel|>")
@@ -123,7 +124,7 @@ func gemma4Segments(system string, turns []Turn, think, hist bool) []Segment {
 	}
 	b.sp("<|turn>")
 	b.ct("model\n")
-	if !think {
+	if !think && !old {
 		b.sp("<|channel>")
 		b.ct("thought\n")
 		b.sp("<channel|>")

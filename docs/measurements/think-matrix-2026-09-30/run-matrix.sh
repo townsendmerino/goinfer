@@ -16,7 +16,8 @@
 # IT (from the per-checkpoint HF goldens in testdata/chat_think_goldens, pinned by chat/reasoning_test.go):
 #   qwen3.5-9b      default ON, open block      unset = on;  off +2 tokens (closed block 4 vs open 2); on +0
 #   qwen3-1.7b      default ON, nothing written unset = on;  off +4 tokens; on +0
-#   gemma-4-E2B     default OFF, closed scaffold unset = off; off +0 tokens; on +3
+#   gemma-4-E2B     default OFF, no scaffold (earlier template: managed from 2026-10-01); unset = off; off +0 tokens; on +7
+#                   (the whole `<|turn>system\n<|think|>\n<turn|>\n` block; the canonical template's is +3 because it drops a scaffold)
 # (The 0.8B daytime run is: off +0, on -2.)
 # No speed is measured here; int4 is serve's default and is enough for plumbing. One copy of each model is in ~/models.
 set -uo pipefail
@@ -65,6 +66,6 @@ leg() { # name model-arg port on-delta off-delta tags max maxthink
 }
 leg qwen35-9b   "$HOME/models/qwen3.5-9b"                          8097  0 2 "<think>,</think>"           120 1500
 leg qwen3-1.7b  "$HOME/models/qwen3-1.7b-bf16"                     8096  0 4 "<think>,</think>"           120 1500
-leg gemma4-e2b  "$HOME/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf" 8095  3 0 "<|channel>,<channel|>" 120 1500
+leg gemma4-e2b  "$HOME/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf" 8095  7 0 "<|channel>,<channel|>" 120 1500
 phase "done rc=$rc"
 exit $rc

@@ -95,6 +95,11 @@ type Reasoning struct {
 	// gemma4 marks the variant whose On form is a system-turn marker rather than a generation-prompt suffix (its generic
 	// prompt already carries the closed scaffold, which is its Off form).
 	gemma4 bool
+
+	// oldGemma4 marks the earlier Gemma 4 template (the E2B GGUF's): same markers, but its generation prompt NEVER carries the closed
+	// scaffold — thinking off is simply `<|turn>model\n`. Writing the scaffold there anyway makes the model answer as if it had
+	// reasoned, ending its reply with a bare `<channel|>` and no opener.
+	oldGemma4 bool
 }
 
 // Open and Close are the delimiters a reply uses around its reasoning, as decoded text.
@@ -157,11 +162,30 @@ func detectChatMLReasoning(tmpl string) *Reasoning {
 // turn when on, and the closed scaffold `<|channel>thought\n<channel|>` after the generation prompt when off. Recognised
 // only when all three markers are present.
 func detectGemma4Reasoning(tmpl string) *Reasoning {
-	if !strings.Contains(tmpl, "<|think|>") || !strings.Contains(tmpl, "<|channel>thought\\n<channel|>") ||
-		!strings.Contains(tmpl, "enable_thinking | default(false)") {
+	if !strings.Contains(tmpl, "<|think|>") {
+		return nil
+	}
+	if r := detectOldGemma4Reasoning(tmpl); r != nil {
+		return r
+	}
+	if !strings.Contains(tmpl, "<|channel>thought\\n<channel|>") || !strings.Contains(tmpl, "enable_thinking | default(false)") {
 		return nil
 	}
 	return &Reasoning{open: "<|channel>thought\n", close: "<channel|>", openTok: "<|channel>", closeTok: "<channel|>", def: defOff, gemma4: true, hist: detectGemma4History(tmpl)}
+}
+
+// detectOldGemma4Reasoning recognises the earlier Gemma 4 template (read from the E2B GGUF, 2026-10-01): thinking is
+// `enable_thinking is defined and enable_thinking` → a `<|think|>` line in the system turn, the generation prompt is
+// `<|turn>model\n` in every mode (no closed scaffold anywhere in the template), and the only channel it writes is the
+// reasoning of a tool-calling turn in the loop in progress. Its history rule is not the canonical one, so hist stays none and
+// history is rendered generically (reasoning of earlier turns dropped, which is what the template does for turns without calls).
+func detectOldGemma4Reasoning(tmpl string) *Reasoning {
+	g := strings.LastIndex(tmpl, "add_generation_prompt")
+	if g < 0 || !strings.Contains(tmpl, "enable_thinking is defined and enable_thinking") || strings.Contains(tmpl, "default(false)") ||
+		strings.Contains(tmpl[g:], "<channel|>") { // a scaffold after the generation prompt is the canonical form
+		return nil
+	}
+	return &Reasoning{open: "<|channel>thought\n", close: "<channel|>", openTok: "<|channel>", closeTok: "<channel|>", def: defOff, gemma4: true, oldGemma4: true}
 }
 
 // effectiveOn resolves a mode to on/off for this checkpoint. ThinkAsIs has no answer of its own (ok=false): it is the
@@ -273,7 +297,7 @@ func (t *Template) renderThinking(system string, turns []Turn) []Segment {
 	r := t.reason
 	if r.gemma4 {
 		on, _ := r.effectiveOn(t.think)
-		return gemma4Segments(system, turns, on, r.hist == histGemma4)
+		return gemma4Segments(system, turns, on, r.hist == histGemma4 || r.oldGemma4, r.oldGemma4)
 	}
 	segs := chatMLSegments(system, turns, r.hist)
 	return append(segs[:len(segs):len(segs)], r.suffix(t.think)...)

@@ -304,7 +304,7 @@ against 14/21), and missed the pre-registered bar for changing the default by on
 
 **Gemma 4's tool loop follows its template where it is the canonical one.** Gemma 4 ships in two template versions; goinfer's managed rendering
 (thinking, history, and this loop) is for the canonical one (Google's "Gemma 4 Canonical Chat Template", 2026-07-09 — the 26B-A4B checkpoint's and the
-12B QAT's GGUFs). The older template (the E2B GGUF has it) is served by the generic rendering, which is unchanged. For the canonical template the
+12B QAT's GGUFs). The older template (the E2B GGUF has it) is managed for thinking only: its thinking-off prompt is a bare `<|turn>model\n` (it has no closed scaffold — writing one made the model close a channel it never opened, and `<channel|>` leaked into `content`), thinking on is the `<|think|>` system line, and a reply's reasoning is split out of `content`, held to HuggingFace's rendering of that template; its tool loop stays the generic rendering. For the canonical template the
 loop is the template's own, byte for byte against HuggingFace: consecutive assistant messages are **one model turn**; a tool result that carries only
 `tool_call_id` names its function (OpenAI clients often omit `name`); and an assistant message with text beside a call has its **text after the
 results, the turn closed, and no turn header after a tool result** — the template's order, **adopted as the default** after a pre-registered A/B
