@@ -1,0 +1,3 @@
+arm A (goinfer's own order): {'n': 24, 'C': 21, 'E': 21, 'K': 3, 'tool': 21, 'ctl': 3}
+arm B (the template's order): {'n': 24, 'C': 21, 'E': 21, 'K': 3, 'tool': 21, 'ctl': 3}
+VERDICT: ADOPT

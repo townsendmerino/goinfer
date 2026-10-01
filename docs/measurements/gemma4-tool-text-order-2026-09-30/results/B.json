@@ -1,0 +1,323 @@
+[
+ {
+  "prompt": "weather",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"city\":\"Paris\"}",
+   "name": "get_weather"
+  },
+  "secs": 56.8,
+  "loop": "answered",
+  "loop_text": "It is currently 18 degrees Celsius and sunny in Paris."
+ },
+ {
+  "prompt": "weather",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"city\":\"Paris\"}",
+   "name": "get_weather"
+  },
+  "secs": 11.9,
+  "loop": "answered",
+  "loop_text": "The current weather in Paris is 18\u00b0C and sunny."
+ },
+ {
+  "prompt": "weather",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"city\":\"Paris\"}",
+   "name": "get_weather"
+  },
+  "secs": 21.9,
+  "loop": "answered",
+  "loop_text": "The current weather in Paris is 18\u00b0C and sunny."
+ },
+ {
+  "prompt": "calc",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"expression\":\"1234 * 5678\"}",
+   "name": "calculator"
+  },
+  "secs": 48.6,
+  "loop": "answered",
+  "loop_text": "1234 * 5678 is 7,006,652."
+ },
+ {
+  "prompt": "calc",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"expression\":\"1234 * 5678\"}",
+   "name": "calculator"
+  },
+  "secs": 15.5,
+  "loop": "answered",
+  "loop_text": "1234 * 5678 is 7,006,652."
+ },
+ {
+  "prompt": "calc",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"expression\":\"1234 * 5678\"}",
+   "name": "calculator"
+  },
+  "secs": 16.1,
+  "loop": "answered",
+  "loop_text": "The result of 1234 * 5678 is 7,006,652."
+ },
+ {
+  "prompt": "search",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"query\":\"Go 1.24 release news\"}",
+   "name": "search"
+  },
+  "secs": 170.4,
+  "loop": "answered",
+  "loop_text": "Here are 3 key highlights and recent updates regarding the Go 1.24 release:\n\n1.  **Generic Type Aliases:** One of the ma"
+ },
+ {
+  "prompt": "search",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"query\":\"Go 1.24 release news\"}",
+   "name": "search"
+  },
+  "secs": 114.4,
+  "loop": "answered",
+  "loop_text": "Here are 3 key highlights regarding the Go 1.24 release:\n\n1.  **Introduction of Generic Type Aliases**: One of the major"
+ },
+ {
+  "prompt": "search",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"query\":\"Go 1.24 release news\"}",
+   "name": "search"
+  },
+  "secs": 6.7,
+  "loop": "answered",
+  "loop_text": "Here are 3 key updates regarding the Go 1.24 release:\n\n1.  **Generic Type Aliases:** A significant new feature in Go 1.2"
+ },
+ {
+  "prompt": "read",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"path\":\"/etc/hostname\"}",
+   "name": "read_file"
+  },
+  "secs": 44.1,
+  "loop": "answered",
+  "loop_text": "The contents of `/etc/hostname` are:\n\n`myhost.example.com`"
+ },
+ {
+  "prompt": "read",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"path\":\"/etc/hostname\"}",
+   "name": "read_file"
+  },
+  "secs": 12.4,
+  "loop": "answered",
+  "loop_text": "The contents of `/etc/hostname` are:\n\n`myhost.example.com`"
+ },
+ {
+  "prompt": "read",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"path\":\"/etc/hostname\"}",
+   "name": "read_file"
+  },
+  "secs": 12.3,
+  "loop": "answered",
+  "loop_text": "The contents of `/etc/hostname` are:\n\n`myhost.example.com`"
+ },
+ {
+  "prompt": "pick",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"timezone\":\"Asia/Tokyo\"}",
+   "name": "get_time"
+  },
+  "secs": 63.9,
+  "loop": "answered",
+  "loop_text": "The current time in Tokyo is 9:30 PM JST on October 1, 2026."
+ },
+ {
+  "prompt": "pick",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"timezone\":\"Asia/Tokyo\"}",
+   "name": "get_time"
+  },
+  "secs": 18.2,
+  "loop": "answered",
+  "loop_text": "The current time in Tokyo is 9:30 PM JST on October 1, 2026."
+ },
+ {
+  "prompt": "pick",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"timezone\":\"Asia/Tokyo\"}",
+   "name": "get_time"
+  },
+  "secs": 17.9,
+  "loop": "answered",
+  "loop_text": "The current time in Tokyo is 9:30 PM JST on October 1, 2026."
+ },
+ {
+  "prompt": "multiline",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"content\":\"print(\\\"hello\\\")\\nfor i in range(1, 4):\\n    print(i)\\n\",\"path\":\"hello.py\"}",
+   "name": "write_file"
+  },
+  "secs": 57.4,
+  "loop": "answered",
+  "loop_text": "thought\n<channel|>The file `hello.py` has been created. It contains the following code:\n\n```python\nprint(\"hello\")\nfor i "
+ },
+ {
+  "prompt": "multiline",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"content\":\"print(\\\"hello\\\")\\nfor i in range(1, 4):\\n    print(i)\\n\",\"path\":\"hello.py\"}",
+   "name": "write_file"
+  },
+  "secs": 30.0,
+  "loop": "answered",
+  "loop_text": "thought\n<channel|>The file `hello.py` has been created with the following content:\n\n```python\nprint(\"hello\")\nfor i in ra"
+ },
+ {
+  "prompt": "multiline",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"content\":\"print(\\\"hello\\\")\\nfor i in range(1, 4):\\n    print(i)\\n\",\"path\":\"hello.py\"}",
+   "name": "write_file"
+  },
+  "secs": 24.8,
+  "loop": "answered",
+  "loop_text": "thought\n<channel|>The file `hello.py` has been created. It contains the following code:\n\n```python\nprint(\"hello\")\nfor i "
+ },
+ {
+  "prompt": "typed",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"brightness\":70,\"on\":true,\"room\":\"kitchen\"}",
+   "name": "set_light"
+  },
+  "secs": 54.9,
+  "loop": "answered",
+  "loop_text": "OK. I've turned on the kitchen light at 70% brightness."
+ },
+ {
+  "prompt": "typed",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"brightness\":70,\"on\":true,\"room\":\"kitchen\"}",
+   "name": "set_light"
+  },
+  "secs": 14.9,
+  "loop": "answered",
+  "loop_text": "OK. I've turned on the kitchen light at 70% brightness."
+ },
+ {
+  "prompt": "typed",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"brightness\":70,\"on\":true,\"room\":\"kitchen\"}",
+   "name": "set_light"
+  },
+  "secs": 15.8,
+  "loop": "answered",
+  "loop_text": "The kitchen light has been turned on at 70% brightness."
+ },
+ {
+  "prompt": "control",
+  "sample": 0,
+  "kind": "prose",
+  "ok": true,
+  "why": "",
+  "detail": "The capital of France is Paris.",
+  "secs": 17.5
+ },
+ {
+  "prompt": "control",
+  "sample": 1,
+  "kind": "prose",
+  "ok": true,
+  "why": "",
+  "detail": "The capital of France is Paris.",
+  "secs": 2.4
+ },
+ {
+  "prompt": "control",
+  "sample": 2,
+  "kind": "prose",
+  "ok": true,
+  "why": "",
+  "detail": "The capital of France is Paris.",
+  "secs": 2.4
+ }
+]
