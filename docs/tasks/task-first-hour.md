@@ -1324,10 +1324,14 @@ when a device is visible.
 ### R18 — the release binaries report `-dirty`
 
 **Found** (versions table). `goinfer-serve --version` printed `v0.19.0 (c7f8eff76c7c-dirty)` from the release asset, a
-small trust blip on every install. **On v0.20.0:** checked on the published assets at release time (see R18's
-follow-up below if it repeats). **Fix:** find what `release-assets.yml` leaves in the tree before `go build` (the
-model-in-binary job's copied checkpoint is the first suspect) and build from a clean tree. **Gate:**
-`scripts/check_release_assets.sh` runs a downloaded binary's `--version` and fails on `-dirty`.
+small trust blip on every install. **On v0.20.0:** still true. `go version -m` on the published `goinfer-serve`
+darwin-arm64 and linux-amd64 assets reads `vcs.revision=890ca565` (the tag) and `vcs.modified=true`. **Cause:**
+`release-assets.yml`'s serve step runs `go mod edit -replace` in `metal/` and `cuda/` so they build against the
+checked-out root. That edit is R2-follow-on's fix for shipping the previous release's engine, and it has to stay. The
+edit alone marks the tree modified (R6, run 2, which injected the version tag and left the suffix). **Fix:** get the
+same effect without touching a tracked file: a `go.work` outside the checkout (`GOWORK=$RUNNER_TEMP/go.work`, using
+`.`, `./cuda` and `./metal`). **Gate:** `scripts/check_release_assets.sh` reads a downloaded asset's build info with
+`go version -m` and fails on `vcs.modified=true`.
 
 ### R19 — the default context is smaller than a coding agent's first request
 
