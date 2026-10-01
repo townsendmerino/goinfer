@@ -721,7 +721,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/backend.go:199-158` (`metalMoESlotsRequest`: flag or env only; 0 ⇒ unpaged),
   `metal/moe.go:431-433`, `metal/backend.go:353-232` (guard prices the *unpaged* set when slots are
   unset, declines to CPU; the message names `GOINFER_NO_RESIDENT_MEM_GUARD` but not
-  `--moe-cache-slots`); `internal/loadflags/loadflags.go:203` (`--moe-cache-experts` … "CUDA only"),
+  `--moe-cache-slots`); `internal/loadflags/loadflags.go:240` (`--moe-cache-experts` … "CUDA only"),
   `:488` ("Metal: every expert resident, unpaged"); `docs/benchmarks.md:1686-1696` ("falls back
   automatically to a CPU-staged … path … killed after 2h10min with zero completions");
   `docs/completed/task-metal-expert-streaming-at-scale.md:288-291` (recommendation: default N=64).

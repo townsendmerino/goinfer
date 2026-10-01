@@ -108,7 +108,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
 - **There is warm state worth scheduling around.** The session LRU keeps prefilled KV and hands a
   request the session that already holds its prompt as a prefix
   (`internal/serveapp/sessions.go:14`), `-kv-sessions` 4 by default
-  (`internal/loadflags/loadflags.go:67`). Admission order therefore has a measurable cost today that
+  (`internal/loadflags/loadflags.go:69`). Admission order therefore has a measurable cost today that
   admission does not know about.
 - **One route already takes a batch.** `/v1/embeddings` accepts up to 2,048 inputs in a request
   (`internal/serveapp/embeddings.go:34`) — the only bulk surface in the product, and the shape J4
@@ -484,7 +484,7 @@ The only throughput item, and it is deliberately last.
 
 `internal/serveapp/openai.go:97`, `:209`, `:220`, `:1087` (the queue cap, `tryEnter`, the halt
 check, `drive`) · `internal/serveapp/helpers.go:85` (`-max-inflight`, distinct from the per-model
-429) · `internal/loadflags/loadflags.go:67`, `:508` (`-kv-sessions`, `-max-queue`) ·
+429) · `internal/loadflags/loadflags.go:69`, `:508` (`-kv-sessions`, `-max-queue`) ·
 `internal/serveapp/anthropic.go:620` (529 on a full queue) · `internal/serveapp/sessions.go:14`
 (the session LRU J6 schedules around) · `internal/serveapp/embeddings.go:34` (the one existing bulk
 surface) · `internal/chatapp/main.go:131` (the CLI J5 extends) ·

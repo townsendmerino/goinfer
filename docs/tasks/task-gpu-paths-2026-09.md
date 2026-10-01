@@ -1657,7 +1657,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **The slots piece, by contrast, was already 90% there**: `decoder.Options.MoECacheSlots` /
     `Model.MoECacheSlotsRequest()` — the SAME field and accessor CUDA's `--moe-cache-slots` already
     reads — were already backend-agnostic and already wired from the CLI flag
-    (`internal/loadflags/loadflags.go:91`, unchanged, predates this entry); Metal's own code simply
+    (`internal/loadflags/loadflags.go:94`, unchanged, predates this entry); Metal's own code simply
     never READ them, checking only `os.Getenv("GOINFER_METAL_MOE_SLOTS")` directly at its three
     real call sites (the guard's estimate, `metal/moe.go`'s and `metal/gemma4_moe.go`'s actual
     paging-engagement checks).

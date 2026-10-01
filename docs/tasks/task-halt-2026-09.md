@@ -48,7 +48,7 @@ process that can rewrite its own service unit is out of scope for anything insid
 - **Graceful shutdown.** SIGINT/SIGTERM → stop accepting, 30 s drain, exit
   (`internal/serveapp/main.go:710–683`). Cooperative: a stuck handler holds it for 30 s.
 - **Concurrency cap.** `-max-inflight` (default 128) over the inference handlers
-  (`internal/loadflags/loadflags.go:68,619-621`). A cap, not a budget: it bounds parallelism, not total work.
+  (`internal/loadflags/loadflags.go:70,619-621`). A cap, not a budget: it bounds parallelism, not total work.
 - **Auth and exposure.** Loopback by default; `-api-key` required off-loopback; `/admin/*`
   opt-in behind `-allow-admin` **on the same listener and the same key as `/v1`**
   (`internal/serveapp/main.go:677`). Today an agent that can call `/v1` can also call `/admin` if admin is on.

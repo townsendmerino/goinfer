@@ -1,6 +1,6 @@
 # The docs, and how they fit together
 
-`docs/` holds ~425 files. They are not one kind of thing, and reading them as if they were is the
+`docs/` holds ~535 files. They are not one kind of thing, and reading them as if they were is the
 main way people get a wrong answer here: a **design record** explains why something is built as it
 is, a **queue** holds what is still open, a **measurement** is evidence with a machine and a date
 on it, and an **archive** is finished work kept for its reasoning. Only some of them are current
@@ -54,7 +54,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (48: 43 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (49: 44 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
