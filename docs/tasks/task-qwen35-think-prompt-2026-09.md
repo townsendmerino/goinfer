@@ -624,7 +624,7 @@ joining them with a newline, which is that API's own semantics and is left alone
 (its absence let a mutation of the generic path survive until I wrote one). The three `two_after*` cases × three thinking modes are compared
 against HuggingFace like every other case.
 
-**Gap 2 — assistant text beside a call: PORTED, opt-in (`-tool-format template`), default unchanged.** `chat.renderGemma4NativeTools` is a
+**Gap 2 — assistant text beside a call: PORTED, then MEASURED and ADOPTED as the default (2026-10-01; see the end of this section).** `chat.renderGemma4NativeTools` is a
 port of the template's message loop, with its variable names (`prev_message_type`, `prev_non_tool_role`, `continues_into_next`). It matches
 HuggingFace on every case, in every thinking mode: the original `tool_loop_text` plus seven added (text then a user message, text then an
 answer, parallel calls with text, text with no reasoning, a call with no result yet, sequential calls with text, a call nobody answered
@@ -682,3 +682,12 @@ REJECT needed, and two were lower on a measure, so ADOPT failed. The registered 
 form and the template-bytes implementation was **deleted** (it is a few lines, the oracle golden remains), not left behind a switch an
 operator cannot reach. What it does show: the declaration bytes matter to the smallest model and not to the strongest, so goinfer's compact form
 was never a measured liability, and the template's form is not a free win either.
+
+**Result of the queued measurement — ADOPT (2026-10-01).** The night job `gemma4-text-order` ran 00:15–01:06 PDT on Gemma-4-12B QAT (canonical template, managed
+path confirmed in both arms' load logs): both arms C 21/21, E 21/21, K 3/3, identical kind/correctness/loop outcome on all 24 replies (follow-up wording
+differs in 9 of them). The registered rule adopts on parity. Done: `-tool-format` gained `auto` (its new default) — the template's order for canonical Gemma 4,
+goinfer's own prompt for Qwen3.5 (parked) — with `hermes` as the escape hatch and `-thinking asis` still the pre-thinking bytes (the native Gemma form replays
+reasoning, so `auto` does not select it under asis; an explicit `template` does). The Gemma history golden now compares the DEFAULT against HuggingFace on
+every case; the `hermes` format is compared except where its earlier order differs by design. Four mutations of the per-family default turn tests red. The
+earlier statement here that the worry "stays a hypothesis" is superseded: it was tested and did not materialise, on this model. Record:
+`docs/measurements/gemma4-tool-text-order-2026-09-30/RESULTS.md`.
