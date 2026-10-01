@@ -1562,7 +1562,7 @@ path both ends use.
 streamed length 632821543 != buffered 632821551
 ```
 
-The assertion is `decoder/serialize_test.go:436`.
+The assertion is `decoder/serialize_test.go:437`.
 
 **632,821,551 − 632,821,543 = 8 bytes. One uint64.** On a ~633 MB payload that is not drift or a
 rounding artifact — it is one field written by one path and not the other, or at a different width.

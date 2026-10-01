@@ -147,7 +147,7 @@ RAM, not the ceiling) says yes while `BuildResident` then declines. **Reproduced
 when run as part of the full gate sequence** (right after the 117s, 63-test kernel suite —
 whatever memory state that leaves), **but passed cleanly 3/3 times when run in isolation**,
 byte-identical numbers each time (21/24 argmax-exact, min cosine 0.990211). This is not new or
-tag-specific: the identical failure signature (`metal/gemma_parity_test.go:84`'s assertion) is
+tag-specific: the identical failure signature (`metal/gemma_parity_test.go:85`'s assertion) is
 already on record from the **v0.14.0** C3 run (`docs/measurements/c3-metal-consumer-window-
 v0.14.0.md` line 76) — a recurring, known-shaped intermittent, not a fresh regression introduced by
 anything between v0.14.0 and v0.18.0.
@@ -170,7 +170,7 @@ actually changed which kernel ran — so a flag that silently no-ops still produ
   shape, calls `bvkForwardM` (the batched kernel path under test) directly against a reference
   computed via the sequential kernels, not via a runtime flag.
 - **Crucially, Metal's resident-parity tests carry an explicit admission assertion** —
-  `metal/gemma_parity_test.go:84`'s `"metal resident DECLINED — admission says it should be
+  `metal/gemma_parity_test.go:85`'s `"metal resident DECLINED — admission says it should be
   admitted"` — built specifically to fail loud when a precondition (residency was admitted) turns
   out false, rather than silently comparing whatever path actually ran. **This is not a hypothetical
   defense: it is the exact mechanism that caught §4's finding above**, live, during this run.

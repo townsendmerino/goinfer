@@ -81,7 +81,7 @@ The CUDA tautology was four graph tests comparing graphs-on against graphs-off w
 graphs were *admitted*. **Metal has no CUDA-graph capture/replay** — it is a command-buffer execution
 model — so that specific shape has **no Metal analog**. The previously-known Metal instance (the
 snapshot golden driving `Forward`/`ForwardArgmax` without the embed scale) was already fixed (G-02).
-Metal tests assert admission (`metal/gemma_parity_test.go:84` fatals if the resident declined when it
+Metal tests assert admission (`metal/gemma_parity_test.go:85` fatals if the resident declined when it
 should be admitted). No "gate that can't fail" of the CUDA form is present on Metal.
 
 ## Verdict (revised 2026-08-15)

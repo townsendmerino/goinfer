@@ -140,12 +140,12 @@ supports.
 | `docs/audit-metal-2026-09-12.md|metal/attention_prefill_fused_test.go:39` | goinfer | `anchor: func TestAttentionPrefillFused(t *testing.T) {` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:199` | goinfer | `func metalMoESlotsRequest(m *decoder.Model) string {` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:353` | goinfer | `func residentNeedBytes(m *decoder.Model) int64 {` |
-| `docs/audit-metal-2026-09-12.md|metal/backend.go:479` | goinfer | `// per-build ctxCap and are meant to keep working unmodified against "the historical con` |
-| `docs/audit-metal-2026-09-12.md|metal/backend.go:547` | goinfer | `anchor: func (a *metalResident) ForwardSample(embedding []float32, pos int, temperature ` |
-| `docs/audit-metal-2026-09-12.md|metal/backend.go:567` | goinfer | `return fmt.Errorf("metal: embedding len %d != hidden %d", len(embedding), a.hidden)` |
-| `docs/audit-metal-2026-09-12.md|metal/backend.go:577` | goinfer | `a.Reset() // fresh sequence — same reason as Forward` |
-| `docs/audit-metal-2026-09-12.md|metal/backend.go:680` | goinfer | `anchor: func metalFusedAttentionEnabled(v string) bool {` |
-| `docs/audit-metal-2026-09-12.md|metal/backend.go:687` | goinfer | `// gate passed 2026-09-20. The floor applies per-call; PrefillPath reports true iff the ` |
+| `docs/audit-metal-2026-09-12.md|metal/backend.go:484` | goinfer | `// per-build ctxCap and are meant to keep working unmodified against "the historical con` |
+| `docs/audit-metal-2026-09-12.md|metal/backend.go:552` | goinfer | `anchor: func (a *metalResident) ForwardSample(embedding []float32, pos int, temperature ` |
+| `docs/audit-metal-2026-09-12.md|metal/backend.go:572` | goinfer | `return fmt.Errorf("metal: embedding len %d != hidden %d", len(embedding), a.hidden)` |
+| `docs/audit-metal-2026-09-12.md|metal/backend.go:582` | goinfer | `a.Reset() // fresh sequence — same reason as Forward` |
+| `docs/audit-metal-2026-09-12.md|metal/backend.go:685` | goinfer | `anchor: func metalFusedAttentionEnabled(v string) bool {` |
+| `docs/audit-metal-2026-09-12.md|metal/backend.go:692` | goinfer | `// gate passed 2026-09-20. The floor applies per-call; PrefillPath reports true iff the ` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:776` | goinfer | `anchor: func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,` |
 | `docs/audit-metal-2026-09-12.md|metal/backend.go:833` | goinfer | `anchor: func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, ` |
 | `docs/audit-metal-2026-09-12.md|metal/close_leak_test.go:162` | goinfer | `// The GATE is the ledger, not RSS: with the C5 fix each PrefillLast releaseBuf's every ` |
@@ -326,38 +326,34 @@ supports.
 | `docs/audit-metal-2026-09-30.md|metal/backend.go:296` | goinfer | `// value is not an error here: it just means "assume unpaged" (the guard's existing, saf` |
 | `docs/audit-metal-2026-09-30.md|metal/backend.go:326` | goinfer | `if err != nil {` |
 | `docs/audit-metal-2026-09-30.md|metal/backend.go:373` | goinfer | `func metalKVSlots(m *decoder.Model) int {` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:468` | goinfer | `func (a *metalResident) fastPrefill() bool {` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:488` | goinfer | `// checkCap guards the resident KV allocation (C3). Every layer's cache is r.kc[l]/r.vc[` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:511` | goinfer | `func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, ` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:529` | goinfer | `anchor: func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]f` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:549` | goinfer | `// ForwardNoLogits (decoder.ResidentPrefillKV) runs the token's forward to build ONLY it` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:562` | goinfer | `// — only Forward → forwardLogitsPaged/forwardLogitsMoEPaged does (the same gap C-02 fou` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:565` | goinfer | `func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:583` | goinfer | `// metalFastPrefillFloor is the PROMPT-LENGTH floor (whole prompt = startPos+M) below wh` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:586` | goinfer | `// 2026-09-20.md): the §3.2 pooled gate SHIPS at K=64 alone (critA/B/C all true, S model` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:594` | goinfer | `const metalFastPrefillFloor = 64` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:473` | goinfer | `func (a *metalResident) fastPrefill() bool {` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:493` | goinfer | `// checkCap guards the resident KV allocation (C3). Every layer's cache is r.kc[l]/r.vc[` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:516` | goinfer | `func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, ` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:534` | goinfer | `anchor: func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]f` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:554` | goinfer | `// ForwardNoLogits (decoder.ResidentPrefillKV) runs the token's forward to build ONLY it` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:567` | goinfer | `// — only Forward → forwardLogitsPaged/forwardLogitsMoEPaged does (the same gap C-02 fou` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:570` | goinfer | `func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:588` | goinfer | `// metalFastPrefillFloor is the PROMPT-LENGTH floor (whole prompt = startPos+M) below wh` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:591` | goinfer | `// 2026-09-20.md): the §3.2 pooled gate SHIPS at K=64 alone (critA/B/C all true, S model` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:599` | goinfer | `const metalFastPrefillFloor = 64` |
 | `docs/audit-metal-2026-09-30.md|metal/backend.go:68` | goinfer | `anchor: func (b *metalBackend) MatmulBT(a, bmat, dst []float32, M, K, N int) {` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:693` | goinfer | `if !a.r.prefillOK {` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:709` | goinfer | `func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32, startPo` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:710` | goinfer | `// One pass, so one check: this backend ingests the whole prompt in a single command buf` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:717` | goinfer | `// DEFAULT ON above metalFastPrefillFloor (64 tokens since R3; 256 under M-02 before tha` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:725` | goinfer | `promptLen := startPos + len(embeddings)` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:727` | goinfer | `return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; ` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:743` | goinfer | `anchor: func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:747` | goinfer | `if startPos < 0 \|\| len(embeddings) == 0 \|\| startPos+len(embeddings) > a.ctxCap() {` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:758` | goinfer | `// the server; recover into an error so the request fails and the caller falls back to s` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:760` | goinfer | `var logits []float32` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:781` | goinfer | `// generation: it never runs the LM head. This runs the SAME per-token sequential kernel` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:782` | goinfer | `// uses — one forwardHiddenNoHead call per position — which is bit-identical to the CPU ` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:786` | goinfer | `// N-25 (audit-metal-2026-09-12.md): unlike when this doc comment was first written, Met` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:787` | goinfer | `// batched (f16-MMA) PrefillLast is NOT declined by default for generation anymore —` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:791` | goinfer | `// the LM head + softcap — reused here) is a real, scoped lever, not a design question, ` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:805` | goinfer | `if (a.r.g4moe != nil && a.r.g4moe.paged) \|\| (a.r.moe != nil && a.r.moe.paged) {` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:806` | goinfer | `return nil, fmt.Errorf("metal: HiddenLast not implemented for paged MoE (no headless pag` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:811` | goinfer | `if startPos == 0 {` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:815` | goinfer | `for i, emb := range embeddings {` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:698` | goinfer | `if !a.r.prefillOK {` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:714` | goinfer | `func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32, startPo` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:715` | goinfer | `// One pass, so one check: this backend ingests the whole prompt in a single command buf` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:722` | goinfer | `// DEFAULT ON above metalFastPrefillFloor (64 tokens since R3; 256 under M-02 before tha` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:730` | goinfer | `promptLen := startPos + len(embeddings)` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:732` | goinfer | `return nil, fmt.Errorf("metal: prompt too short (%d tokens) for fast prefill (floor=%d; ` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:748` | goinfer | `anchor: func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:752` | goinfer | `if startPos < 0 \|\| len(embeddings) == 0 \|\| startPos+len(embeddings) > a.ctxCap() {` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:763` | goinfer | `// the server; recover into an error so the request fails and the caller falls back to s` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:765` | goinfer | `var logits []float32` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:792` | goinfer | `// batched (f16-MMA) PrefillLast is NOT declined by default for generation anymore —` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:796` | goinfer | `// the LM head + softcap — reused here) is a real, scoped lever, not a design question, ` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:810` | goinfer | `if (a.r.g4moe != nil && a.r.g4moe.paged) \|\| (a.r.moe != nil && a.r.moe.paged) {` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:816` | goinfer | `if startPos == 0 {` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:820` | goinfer | `for i, emb := range embeddings {` |
 | `docs/audit-metal-2026-09-30.md|metal/backend.go:838` | goinfer | `anchor: func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, ` |
-| `docs/audit-metal-2026-09-30.md|metal/backend.go:923` | goinfer | `if a.r.kvI8 {` |
+| `docs/audit-metal-2026-09-30.md|metal/backend.go:928` | goinfer | `if a.r.kvI8 {` |
 | `docs/audit-metal-2026-09-30.md|metal/batch.go:139` | goinfer | `template [[host_name("mc3_bt_fb2")]] kernel decltype(mc3_bt<2>) mc3_bt<2>;` |
 | `docs/audit-metal-2026-09-30.md|metal/batch.go:254` | goinfer | `b += simd_shuffle_xor(b, 1); b += simd_shuffle_xor(b, 2); b += simd_shuffle_xor(b, 4);` |
 | `docs/audit-metal-2026-09-30.md|metal/batch.go:299` | goinfer | `// path — the family flags every per-row kernel in forwardMulti assumes — on at least tw` |
@@ -683,12 +679,12 @@ supports.
 | `docs/how-inference-works.md|decoder/session.go:71` | goinfer | `// stale history. Callers must skip it (and reconcile) for an empty prompt, so a rejecte` |
 | `docs/ideas-weight-memory.md|decoder/mlp.go:70` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
 | `docs/measurements/aikit-w4a8-opsperbyte.md|linalg/quant.go:321` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
-| `docs/measurements/c3-metal-consumer-window-v0.14.0.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
+| `docs/measurements/c3-metal-consumer-window-v0.14.0.md|metal/gemma_parity_test.go:85` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
 | `docs/measurements/c3-metal-consumer-window-v0.18.0.md|cmd/gate/parity.go:849` | goinfer | `// line counts, and only before `package` — decoder/int4_golden_test.go discusses `//go:` |
-| `docs/measurements/c3-metal-consumer-window-v0.18.0.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
+| `docs/measurements/c3-metal-consumer-window-v0.18.0.md|metal/gemma_parity_test.go:85` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/model.go:752` | goinfer | `switch o.Backend {` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:1030` | goinfer | `func (m *Model) withResidency() *Model {` |
-| `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:84` | goinfer | `t.Fatal("metal resident DECLINED — admission says it should be admitted")` |
+| `docs/measurements/c3-metal-consumer-window.md|metal/gemma_parity_test.go:85` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/config.go:311` | goinfer | `SharedKVLayers          int   `json:"num_kv_shared_layers"`` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/gguf.go:2643` | goinfer | `firstShared := arch.NumLayers - g4.SharedKVLayers` |
 | `docs/measurements/demo-chat-gemma4e2b-blocked-2026-08-22.md|decoder/registry.go:383` | goinfer | `SharedKVLayers:          cfg.SharedKVLayers,` |
@@ -702,10 +698,10 @@ supports.
 | `docs/measurements/metal-prefill-gemm-s2-2026-09-25.md|metal/prefill_gemm_s2_test.go:413` | goinfer | `kernel void gemm_w4f16_store_r15(device const half* A[[buffer(0)]], device const uint* W` |
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/forwardn.go:663` | goinfer | `ff, err = moeMLP(row(norm, i, hidden), lw, arch, be, nil, m.pager)` |
 | `docs/measurements/moe-expert-batching-m1-vs-mn-2026-09-01.md|decoder/mlp.go:421` | goinfer | `matmul(be, &ex.Gate, h, gate, 1)` |
-| `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md|metal/backend.go:675` | goinfer | `func metalFusedAttentionEnabled(v string) bool {` |
+| `docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md|metal/backend.go:680` | goinfer | `func metalFusedAttentionEnabled(v string) bool {` |
 | `docs/measurements/prefill-l2l3-phase0-2026-09-05.md|cuda/prefill.go:1512` | goinfer | `if e := r.bGemvB(r.lmW, aqB, aScB, ArgNull(), r.logitsB, M, 0); e != nil {` |
 | `docs/measurements/prefill-l2l3-phase0-2026-09-05.md|cuda/resident.go:343` | goinfer | `func attnShmemBytes(nWin int) int { return (nWin + 128) * 4 }` |
-| `docs/measurements/prefill-l2l3-phase1-2026-09-05.md|metal/backend.go:607` | goinfer | `func metalFastPrefillEnabled(fast, batched string) bool {` |
+| `docs/measurements/prefill-l2l3-phase1-2026-09-05.md|metal/backend.go:612` | goinfer | `func metalFastPrefillEnabled(fast, batched string) bool {` |
 | `docs/measurements/r2-attn-fa-followup-2026-09-20.md|metal/kernels.go:1065` | goinfer | `kernel void attention_fa(` |
 | `docs/measurements/r2-attn-fa-followup-2026-09-20.md|metal/model.go:1349` | goinfer | `r.oO, r.mq, r.mSc = d.NewBufferLen(H), byteBuf(d, H), d.NewBufferLen(1)` |
 | `docs/measurements/r9-s03-s04-shipped-measurement-2026-09-21.md|decoder/attention.go:355` | goinfer | `qScale := float64(linalg.QuantizeRowInt8(q[qh*hd:qh*hd+hd], qq))` |
@@ -725,7 +721,7 @@ supports.
 | `docs/measurements/splitkv-mechanism-ncu-2026-09-12.md|cuda/resident.go:326` | goinfer | `// M-16, MEASURED on the RTX 2070 SUPER (Turing) rather than inferred:` |
 | `docs/measurements/splitkv-mechanism-ncu-PREREGISTERED.md|cuda/resident.go:3776` | goinfer | `// fused rope(q)+rope(k)+kv_store(k)+kv_store(v): rhalf == hd/2 for full rotary, rotaryD` |
 | `docs/measurements/splitkv-sector-efficiency-2026-09-13.md|cuda/resident.go:326` | goinfer | `// M-16, MEASURED on the RTX 2070 SUPER (Turing) rather than inferred:` |
-| `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:844` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
+| `docs/measurements/theta-per-backend-2026-09-01.md|metal/backend.go:849` | goinfer | `func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, err` |
 | `docs/measurements/vsum-split-fidelity-PREREGISTERED.md|cuda/prefill.go:704` | goinfer | `// The exact path — attn_batched and gemv_w4a8_rn — remains selectable, remains bit-iden` |
 | `docs/measurements/vsum-split-fidelity-PREREGISTERED.md|cuda/prefill_gate_ref_test.go:320` | goinfer | `lg, err := rf.Forward(m.EmbedResidentForTest(refTokens[i-1]), pos)` |
 | `docs/multimodal.md|cuda/resident.go:2165` | goinfer | `func (r *cudaResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, e` |
@@ -738,7 +734,7 @@ supports.
 | `docs/multimodal.md|decoder/rope.go:279` | goinfer | `func mropePositions(ids []int, imageToken int, grids [][3]int, merge int) ([][3]int, err` |
 | `docs/multimodal.md|decoder/weights.go:494` | goinfer | `const shardIndexFile = "model.safetensors.index.json"` |
 | `docs/multimodal.md|gpu/residency.go:1249` | goinfer | `func (rd *residentDecoder) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float3` |
-| `docs/multimodal.md|metal/backend.go:511` | goinfer | `func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, ` |
+| `docs/multimodal.md|metal/backend.go:516` | goinfer | `func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, ` |
 | `docs/ollama-chase.md|cuda/resident.go:1175` | goinfer | `// upExperts left the expert stacks host-mapped-only, so the expert GEMVs would bind zer` |
 | `docs/ollama-chase.md|cuda/resident.go:2381` | goinfer | `// exists for, so the release-the-context shortcut was wrong exactly where it mattered m` |
 | `docs/ollama-chase.md|cuda/resident.go:55` | goinfer | `// resolveCtxCap turns a request into the effective resident KV capacity:` |
@@ -766,7 +762,7 @@ supports.
 | `docs/queue-engineering.md|decoder/model.go:1320` | goinfer | `// Diagnostic — same byte-identical-output contract as ForwardCapture. Not wired for own` |
 | `docs/queue-engineering.md|decoder/serialize.go:859` | goinfer | `func (w *Weights) hasPopulatedLayers() bool {` |
 | `docs/queue-engineering.md|decoder/serialize_shapecheck_test.go:15` | goinfer | `func TestValidateShapes_catchesArchMismatch(t *testing.T) {` |
-| `docs/queue-engineering.md|decoder/serialize_test.go:436` | goinfer | `t.Fatalf("streamed length %d != buffered %d", n, len(want))` |
+| `docs/queue-engineering.md|decoder/serialize_test.go:437` | goinfer | `t.Fatalf("streamed length %d != buffered %d", n, len(want))` |
 | `docs/queue-engineering.md|internal/giw/bundle.go:170` | goinfer | `if avail := fi.Size() - (tokOff + 4); tokLen > avail {` |
 | `docs/queue-engineering.md|internal/serveapp/embeddings.go:26` | goinfer | `// Embedding request bounds (audit C-21). /v1/embeddings is deliberately un-queued (the ` |
 | `docs/queue-engineering.md|internal/serveapp/haltsignal_unix.go:21` | goinfer | `signal.Notify(haltSig, syscall.SIGUSR1, syscall.SIGUSR2)` |
@@ -794,10 +790,10 @@ supports.
 | `docs/tasks/red-october.md|cuda/resident.go:352` | goinfer | `case nKV*hd >= splitkvNeverKVFloats:` |
 | `docs/tasks/red-october.md|cuda/resident.go:3869` | goinfer | `func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) {` |
 | `docs/tasks/red-october.md|decoder/sampler.go:234` | goinfer | `func (s *Sampler) ArgmaxEquivalent() bool {` |
-| `docs/tasks/red-october.md|metal/backend.go:567` | goinfer | `return fmt.Errorf("metal: embedding len %d != hidden %d", len(embedding), a.hidden)` |
-| `docs/tasks/red-october.md|metal/backend.go:577` | goinfer | `a.Reset() // fresh sequence — same reason as Forward` |
-| `docs/tasks/red-october.md|metal/backend.go:654` | goinfer | `// Set GOINFER_METAL_FAST_PREFILL_FLOOR to override; 0 disables the floor entirely.` |
-| `docs/tasks/red-october.md|metal/backend.go:842` | goinfer | `// For paged MoE (which requires mid-layer host interaction), it falls back to the` |
+| `docs/tasks/red-october.md|metal/backend.go:572` | goinfer | `return fmt.Errorf("metal: embedding len %d != hidden %d", len(embedding), a.hidden)` |
+| `docs/tasks/red-october.md|metal/backend.go:582` | goinfer | `a.Reset() // fresh sequence — same reason as Forward` |
+| `docs/tasks/red-october.md|metal/backend.go:659` | goinfer | `// Set GOINFER_METAL_FAST_PREFILL_FLOOR to override; 0 disables the floor entirely.` |
+| `docs/tasks/red-october.md|metal/backend.go:847` | goinfer | `// For paged MoE (which requires mid-layer host interaction), it falls back to the` |
 | `docs/tasks/red-october.md|metal/model.go:1801` | goinfer | `e.FinishEncoding()` |
 | `docs/tasks/red-october.md|metal/model.go:420` | goinfer | `if err != nil && r.execErr == nil {` |
 | `docs/tasks/red-october.md|metal/prefill_gemm_s2_test.go:419` | goinfer | `threadgroup half wscr[8*(CPS*64)];` |
@@ -840,7 +836,7 @@ supports.
 | `docs/tasks/task-fit-to-hardware.md|internal/serveapp/main.go:364` | goinfer | `sf.addr = fs.String("addr", "127.0.0.1:8080", "listen address (defaults to loopback; use` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:118` | goinfer | `if why := residentMemoryDecline(m); why != "" {` |
 | `docs/tasks/task-fit-to-hardware.md|metal/backend.go:138` | goinfer | `const residentMemFraction = decoder.WeightsMemFraction` |
-| `docs/tasks/task-fit-to-hardware.md|metal/backend.go:441` | goinfer | `"exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machi` |
+| `docs/tasks/task-fit-to-hardware.md|metal/backend.go:446` | goinfer | `"exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machi` |
 | `docs/tasks/task-fit-to-hardware.md|metal/gemma4_moe.go:219` | goinfer | `if s := metalMoESlotsRequest(m); s != "" {` |
 | `docs/tasks/task-fit-to-hardware.md|metal/moe.go:431` | goinfer | `if s := metalMoESlotsRequest(m); s != "" {` |
 | `docs/tasks/task-fit-to-hardware.md|pull/pull.go:181` | goinfer | `Size   int64` |
@@ -872,8 +868,8 @@ supports.
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:1584` | goinfer | `// reuse when the SAME image is resent (P9a); vi.features is then never invoked at` |
 | `docs/tasks/task-gpu-paths-2026-09.md|internal/serveapp/openai.go:71` | goinfer | `turns       admission // J1: FIFO, context-aware turn-granter serializing this model's s` |
 | `docs/tasks/task-gpu-paths-2026-09.md|metal/backend.go:60` | goinfer | `func (b *metalBackend) Name() string { return "metal" }` |
-| `docs/tasks/task-gpu-paths-2026-09.md|metal/backend.go:612` | goinfer | `anchor: func metalFastPrefillEnabled(fast, batched string) bool {` |
-| `docs/tasks/task-gpu-paths-2026-09.md|metal/backend.go:688` | goinfer | `// state AND arch both allow batching.` |
+| `docs/tasks/task-gpu-paths-2026-09.md|metal/backend.go:617` | goinfer | `anchor: func metalFastPrefillEnabled(fast, batched string) bool {` |
+| `docs/tasks/task-gpu-paths-2026-09.md|metal/backend.go:693` | goinfer | `// state AND arch both allow batching.` |
 | `docs/tasks/task-gpu-paths-2026-09.md|metal/model.go:44` | goinfer | `return 0, fmt.Errorf("metal: resident context %d positions exceeds this backend's hard "` |
 | `docs/tasks/task-gpu-paths-2026-09.md|metal/model.go:459` | goinfer | `// (f32→int8→int4), and Gemma's low-magnitude attention contexts amplify that int8-inter` |
 | `docs/tasks/task-gpu-paths-2026-09.md|metal/model.go:722` | goinfer | `// preciseMathCompile (test/measurement toggle, Task 3): fast-math OFF removes the compi` |
