@@ -1525,7 +1525,16 @@ func templateName(t *chat.Template) string {
 	if t == nil {
 		return "raw (no template)"
 	}
-	return t.Name() + thinkingNote(t) + toolFormatNote(t)
+	return t.Name() + thinkingNote(t) + toolFormatNote(t) + toolDeclarationsNote(t)
+}
+
+// toolDeclarationsNote marks a build that writes tool declarations in the model's own bytes (chat.toolDeclarations, the pre-registered A/B's
+// arm B), so a run's load log says which arm it is.
+func toolDeclarationsNote(t *chat.Template) string {
+	if t.UsesTemplateDeclarations() {
+		return ", tool declarations: the template's bytes"
+	}
+	return ""
 }
 
 // toolFormatNote says, for a model whose template declares a native tool form, which prompt serve renders tools with and how to get the

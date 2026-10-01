@@ -29,9 +29,18 @@ CASES = {
     "results_then_answer_then_more": [S, U("Paris and Rome?"), A("", [call("a", "Paris"), call("b", "Rome")]), T("18C"), T("24C"), {"role": "assistant", "content": "18C and 24C."}, U("And Oslo?")],
     "two_loops":        [S, U("Weather?"), A("", [call("a", "Paris")]), T("18C"), A("", [call("b", "Rome")]), T("24C")],
 }
+# A case with its own tool list: descriptions with the characters HTML-escaping would touch, an enum, a default, a nested object, key order
+# that is not alphabetical, and a tool with no parameters. What it pins is the BYTES of a declaration (tool | tojson), not the conversation.
+SPECIAL = [
+    {"type": "function", "function": {"name": "say", "description": "Say \"hi\" & <b>don't</b> panic", "parameters": {"type": "object", "properties": {"text": {"type": "string", "description": "It's <the> text & more"}, "mode": {"type": "string", "enum": ["a", "b"], "default": "a"}}, "required": ["text"]}}},
+    {"type": "function", "function": {"name": "zeta", "description": "Keys out of alphabetical order", "parameters": {"required": ["z"], "type": "object", "properties": {"z": {"type": "integer"}, "a": {"type": "object", "properties": {"y": {"type": "boolean"}, "b": {"type": "array", "items": {"type": "string"}}}}}}}},
+    {"type": "function", "function": {"name": "ping", "description": "No parameters"}},
+]
 cases = []
 for name, msgs in CASES.items():
     p = tok.apply_chat_template(msgs, tools=TOOLS, chat_template=template, add_generation_prompt=True, tokenize=False)
     cases.append({"name": name, "messages": msgs, "prompt": p})
+cases.append({"name": "declare_special", "messages": [S, U("hi")], "tools": SPECIAL,
+              "prompt": tok.apply_chat_template([S, U("hi")], tools=SPECIAL, chat_template=template, add_generation_prompt=True, tokenize=False)})
 json.dump({"checkpoint": "Qwen2.5-Coder-0.5B-Instruct", "chat_template": template, "tools": TOOLS, "cases": cases}, open(out, "w"), indent=1, ensure_ascii=False)
 print(len(cases), "cases ->", out)

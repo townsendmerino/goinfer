@@ -275,6 +275,88 @@
     }
    ],
    "prompt": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the weather for a city\", \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\"}}, \"required\": [\"city\"]}}}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n<|im_start|>user\nWeather?<|im_end|>\n<|im_start|>assistant\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\"}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n18C\n</tool_response><|im_end|>\n<|im_start|>assistant\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Rome\"}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n24C\n</tool_response><|im_end|>\n<|im_start|>assistant\n"
+  },
+  {
+   "name": "declare_special",
+   "messages": [
+    {
+     "role": "system",
+     "content": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant."
+    },
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ],
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "say",
+      "description": "Say \"hi\" & <b>don't</b> panic",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "text": {
+         "type": "string",
+         "description": "It's <the> text & more"
+        },
+        "mode": {
+         "type": "string",
+         "enum": [
+          "a",
+          "b"
+         ],
+         "default": "a"
+        }
+       },
+       "required": [
+        "text"
+       ]
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "zeta",
+      "description": "Keys out of alphabetical order",
+      "parameters": {
+       "required": [
+        "z"
+       ],
+       "type": "object",
+       "properties": {
+        "z": {
+         "type": "integer"
+        },
+        "a": {
+         "type": "object",
+         "properties": {
+          "y": {
+           "type": "boolean"
+          },
+          "b": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    {
+     "type": "function",
+     "function": {
+      "name": "ping",
+      "description": "No parameters"
+     }
+    }
+   ],
+   "prompt": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.\n\n# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>\n{\"type\": \"function\", \"function\": {\"name\": \"say\", \"description\": \"Say \\\"hi\\\" & <b>don't</b> panic\", \"parameters\": {\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\", \"description\": \"It's <the> text & more\"}, \"mode\": {\"type\": \"string\", \"enum\": [\"a\", \"b\"], \"default\": \"a\"}}, \"required\": [\"text\"]}}}\n{\"type\": \"function\", \"function\": {\"name\": \"zeta\", \"description\": \"Keys out of alphabetical order\", \"parameters\": {\"required\": [\"z\"], \"type\": \"object\", \"properties\": {\"z\": {\"type\": \"integer\"}, \"a\": {\"type\": \"object\", \"properties\": {\"y\": {\"type\": \"boolean\"}, \"b\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}}}}}}}}\n{\"type\": \"function\", \"function\": {\"name\": \"ping\", \"description\": \"No parameters\"}}\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n"
   }
  ]
 }

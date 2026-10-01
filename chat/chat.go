@@ -101,6 +101,9 @@ type Template struct {
 	// groupsToolResults: the template puts CONSECUTIVE tool results in one user turn (Qwen2.5, Qwen3, Qwen3.5 do), read from its text
 	// (detectGroupedToolResults). goinfer's Hermes renderer writes one user turn per result for a template that does not.
 	groupsToolResults bool
+
+	// pyDeclarations: the template writes each tool declaration with `tool | tojson` (tool_decls.go).
+	pyDeclarations bool
 }
 
 // Name is the family identifier ("chatml", "mellum2", "gemma3", "gemma4", "harmony", "llama3",
@@ -208,6 +211,7 @@ func Detect(meta Meta) (*Template, error) {
 			c.reason = detectChatMLReasoning(t)
 			c.nativeTools = declaresQwen35XMLTools(t, c.reason)
 			c.groupsToolResults = detectGroupedToolResults(t)
+			c.pyDeclarations = detectPyDeclarations(t)
 			return c, nil
 		case strings.Contains(t, "[INST]"):
 			return Mistral(), nil

@@ -40,7 +40,7 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 		if t.usesNativeTools() {
 			return renderQwen35XMLTools(system, turns, tools, t.historyKind()) + t.thinkSuffixText()
 		}
-		return renderChatMLTools(system, turns, tools, t.historyKind(), t.groupsToolResults) + t.thinkSuffixText()
+		return renderChatMLTools(system, turns, tools, t.historyKind(), t.groupsToolResults, t.UsesTemplateDeclarations()) + t.thinkSuffixText()
 	case "mistral":
 		return renderMistralTools(system, turns, tools)
 	case "llama3":
@@ -276,7 +276,7 @@ func callObjectJSON(c ToolCall, argsKey string) string {
 
 // group is Template.groupsToolResults: consecutive tool results share one user turn, as the template writes them; otherwise each result
 // is a user turn of its own, byte for byte as before.
-func renderChatMLTools(system string, turns []Turn, tools []Tool, hist histKind, group bool) string {
+func renderChatMLTools(system string, turns []Turn, tools []Tool, hist histKind, group, pyDecls bool) string {
 	var b strings.Builder
 	b.WriteString("<|im_start|>system\n")
 	if s := strings.TrimSpace(system); s != "" {
@@ -285,7 +285,11 @@ func renderChatMLTools(system string, turns []Turn, tools []Tool, hist histKind,
 	b.WriteString("# Tools\n\nYou may call one or more functions to assist with the user query.\n\n")
 	b.WriteString("You are provided with function signatures within <tools></tools> XML tags:\n<tools>\n")
 	for _, tl := range tools {
-		b.WriteString(funcDefJSON(tl) + "\n")
+		if pyDecls {
+			b.WriteString(qwenToolJSON(tl) + "\n")
+		} else {
+			b.WriteString(funcDefJSON(tl) + "\n")
+		}
 	}
 	b.WriteString("</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n")
 	lq := lastQueryIndex(turns)
