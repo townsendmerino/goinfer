@@ -1,0 +1,18 @@
+=== wait_idle aa gate=load tag=1: 744 s (load { 0.93 1.94 2.40 })
+=== 2026-09-30 19:29:23 PDT 1790821763 START aa gate=load tag=1
+=== 2026-09-30 20:27:09 PDT 1790825229 END aa gate=load tag=1 rc=1
+=== wait_idle aa gate=instant tag=1: 31 s (load { 2.51 1.98 1.81 })
+=== 2026-09-30 20:27:40 PDT 1790825260 START aa gate=instant tag=1
+=== 2026-09-30 20:27:43 PDT 1790825263 END aa gate=instant tag=1 rc=1
+=== wait_idle aa gate=load tag=2: 222 s (load { 0.99 1.53 1.65 })
+=== 2026-09-30 20:31:25 PDT 1790825485 START aa gate=load tag=2
+=== 2026-09-30 21:28:30 PDT 1790828910 END aa gate=load tag=2 rc=1
+=== wait_idle aa gate=instant tag=2: 3 s (load { 1.15 1.49 1.65 })
+=== 2026-09-30 21:28:33 PDT 1790828913 START aa gate=instant tag=2
+=== 2026-09-30 21:33:53 PDT 1790829233 END aa gate=instant tag=2 rc=0
+=== wait_idle mutation gate=instant: 4 s (load { 4.57 3.44 2.49 })
+=== 2026-09-30 21:33:57 PDT 1790829237 START mutation gate=instant
+=== 2026-09-30 21:36:13 PDT 1790829373 END mutation gate=instant rc=0
+=== wait_idle mutation gate=load: 383 s (load { 0.94 2.45 2.70 })
+=== 2026-09-30 21:42:36 PDT 1790829756 START mutation gate=load
+=== 2026-09-30 21:55:33 PDT 1790830533 END mutation gate=load rc=0
