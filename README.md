@@ -282,9 +282,9 @@ Evidence and caveats: [docs/bigger-than-memory.md](docs/bigger-than-memory.md).
 
 Where it is behind: long-prompt prefill on Metal (1.96× slower than Ollama at a 3,900-token
 prompt), Phi-3 mini decode on CUDA (0.72–0.90×), and CPU decode on a Mac against llama.cpp
-(0.84× on the 0.5B). The Metal decode figures are for the resident GPU path; since 2026-09-28 a
-default Metal load declines it and decodes on the CPU, so pass `--embed-int4=false` on Metal
-until that is fixed ([docs/quantization.md](docs/quantization.md), "Known issue").
+(0.84× on the 0.5B). The Metal decode figures are for the resident GPU path. `--embed-int4` defaults off on
+`--backend metal`, because that path does not take an int4 embedding table yet
+([docs/quantization.md](docs/quantization.md)).
 
 Steady-state results are mixed and machine-dependent. Every figure names its machine, checkpoint,
 quant and date in [docs/benchmarks.md](docs/benchmarks.md). To measure on your own hardware:

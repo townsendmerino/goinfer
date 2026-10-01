@@ -193,3 +193,28 @@ func TestFitFlag_registeredLenient(t *testing.T) {
 		t.Error("a bare --fit after --fit=off did not turn it back on")
 	}
 }
+
+// TestEmbedInt4_offByDefaultOnMetal: with the default on, a plain `--backend metal` load declined the GPU, because the
+// Metal resident runner refuses an int4 embedding table, and decoded on the CPU. CUDA and WebGPU accept the table, so
+// they keep the default; an explicit choice wins everywhere.
+func TestEmbedInt4_offByDefaultOnMetal(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		want bool
+	}{
+		{[]string{"--backend", "metal"}, false},
+		{[]string{"--backend", "metal", "--embed-int4"}, true},
+		{[]string{"--backend", "metal", "--embed-int4=true"}, true},
+		{[]string{"--backend", "metal", "--embed-int4=false"}, false},
+		{nil, true}, // cpu
+		{[]string{"--backend", "cuda"}, true},
+		{[]string{"--backend", "webgpu"}, true},
+		{[]string{"--embed-int4=false"}, false},
+	} {
+		for _, app := range []App{Chat, Serve} {
+			if _, f := parse(t, app, c.args...); f.Options().EmbedInt4 != c.want {
+				t.Errorf("%v (app %d): EmbedInt4 %v, want %v", c.args, app, f.Options().EmbedInt4, c.want)
+			}
+		}
+	}
+}

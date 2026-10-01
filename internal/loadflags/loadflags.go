@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/cliutil"
@@ -41,6 +42,7 @@ type Flags struct {
 	MoEPager        string  // --moe-pager
 	AcceptSlow      bool    // --accept-slow
 	EmbedInt4       bool    // --embed-int4
+	EmbedInt4Set    bool    // --embed-int4 was given on the command line, not left at its default
 	DirectLoad      bool    // --direct-load
 	Fit             bool    // --fit
 	ExactPrefill    bool    // --exact-prefill
@@ -67,7 +69,8 @@ func Register(fs *flag.FlagSet, app App) *Flags {
 	fs.IntVar(&f.MoECacheSlots, "moe-cache-slots", 0, moeCacheSlotsHelp)
 	fs.StringVar(&f.MoEPager, "moe-pager", decoder.MoEPagerDefault(runtime.GOOS), moePagerHelp)
 	fs.BoolVar(&f.AcceptSlow, "accept-slow", false, acceptSlowHelp)
-	fs.BoolVar(&f.EmbedInt4, "embed-int4", true, embedInt4Help+per("embed-int4"))
+	f.EmbedInt4 = true
+	fs.Var(embedInt4Flag{f}, "embed-int4", embedInt4Help+per("embed-int4"))
 	fs.BoolVar(&f.DirectLoad, "direct-load", os.Getenv("GOINFER_GGUF_DIRECT") != "", directLoadHelp)
 	fs.Var((*cliutil.OnOff)(&f.Fit), "fit", fitHelp) // lenient: --fit=off works (M-14)
 	fs.BoolVar(&f.ExactPrefill, "exact-prefill", false, ExactPrefillHelp)
@@ -91,7 +94,7 @@ func (f *Flags) Options() decoder.Options {
 		MoECacheSlots:    f.MoECacheSlots,
 		MoEPager:         f.MoEPager,
 		AcceptSlowMoE:    f.AcceptSlow,
-		EmbedInt4:        f.EmbedInt4,
+		EmbedInt4:        f.embedInt4(),
 		DisableFit:       !f.Fit,
 		ExactPrefill:     f.ExactPrefill,
 		Knobs:            f.Knobs(),
@@ -114,6 +117,18 @@ func (f *Flags) Validate() error {
 		return fmt.Errorf("-weight-cache %g: must be >= 0 (0 = auto)", f.WeightCacheGB)
 	}
 	return nil
+}
+
+// embedInt4 is --embed-int4 as the load should see it. The default is on, except on Metal: the Metal resident runner
+// does not accept an int4 embedding/LM-head table yet ("weight kind \"int4\" is not int8"), so with the default on, a
+// plain `--backend metal` load declined the GPU and decoded on the CPU (found 2026-09-28, docs/quantization.md "Known
+// issue"; reproduced 2026-09-30 on the 0.5B, while CUDA and WebGPU stayed resident with the int4 table). An explicit
+// --embed-int4 is still honoured on Metal, and then runs on the CPU as asked.
+func (f *Flags) embedInt4() bool {
+	if f.Backend == "metal" && !f.EmbedInt4Set {
+		return false
+	}
+	return f.EmbedInt4
 }
 
 // ExplicitQuant is --quant when it was given, else "". A .giw carries its own quant, and only an
@@ -171,6 +186,28 @@ func (q quantFlag) Set(v string) error {
 	return nil
 }
 
+// embedInt4Flag is --embed-int4: a bool flag that also records that it was given, so the Metal default (embedInt4) can
+// tell an explicit --embed-int4 from its default.
+type embedInt4Flag struct{ f *Flags }
+
+func (e embedInt4Flag) String() string {
+	if e.f == nil {
+		return "true"
+	}
+	return strconv.FormatBool(e.f.EmbedInt4)
+}
+
+func (e embedInt4Flag) Set(v string) error {
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return err
+	}
+	e.f.EmbedInt4, e.f.EmbedInt4Set = b, true
+	return nil
+}
+
+func (e embedInt4Flag) IsBoolFlag() bool { return true }
+
 func ctxHelp(app App, per string) string {
 	s := "GPU-resident KV capacity in positions" + per + ". 0 (default) keeps the backend default — on CUDA, " +
 		"4096 with -fit=off, or 8192 (cuda/resident.go's fitDefaultCtx, whatever the card's free VRAM actually admits) " +
@@ -227,7 +264,7 @@ const moePagerHelp = "CPU backing mode for a .giw-paged MoE model's expert pager
 
 const acceptSlowHelp = "acknowledge a -stream-weights paged-MoE load whose predicted working-set rate falls below decoder's own floor (2 tok/s) and load it anyway. Without this, such a load is refused with the predicted rate named, rather than run for hours with zero completions the way an unacknowledged M35/M26-class load did before this flag existed (task-never-swap-2026-09.md S4). The prediction is a PRIOR borrowed from an unrelated CUDA cache curve, not a measurement of this pager — raising -weight-cache to shrink the predicted miss rate is usually the better fix"
 
-const embedInt4Help = "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model, and on CPU measured a further 1.05-1.12x on total token time once the head became a bigger share of it (docs/measurements/cpu-decode-peer-gap-2026-09-27.md). Default ON since 2026-09-28 (owner decision, quality re-eval parked); pass -embed-int4=false for the int8 pin instead. Lossy (~2.3 pts top-1, mostly rare tokens, last measured pre-2026-09-28 — not independently re-verified since). Works with the -stream-weights .giw cache (baked into its own \"e4h\" sidecar, distinct from the int8-pin one) as well as a direct load"
+const embedInt4Help = "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model, and on CPU measured a further 1.05-1.12x on total token time once the head became a bigger share of it (docs/measurements/cpu-decode-peer-gap-2026-09-27.md). Default ON since 2026-09-28 (owner decision, quality re-eval parked), EXCEPT with -backend metal, where the default is off: the Metal resident runner does not take an int4 table yet, so the default would move the model to the CPU (an explicit -embed-int4 there is honoured, and runs on the CPU). Pass -embed-int4=false for the int8 pin instead. Lossy (~2.3 pts top-1, mostly rare tokens, last measured pre-2026-09-28 — not independently re-verified since). Works with the -stream-weights .giw cache (baked into its own \"e4h\" sidecar, distinct from the int8-pin one) as well as a direct load"
 
 const directLoadHelp = "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin (since S1, task-never-swap-2026-09.md) and linux (since 2026-09-24) a .gguf resolves to its sidecar by default — this opts back out to the direct-heap-dequant load, which is still the default on other platforms. Also via GOINFER_GGUF_DIRECT=1. Ignored with -stream-weights, which always needs the sidecar's mmap regardless of platform"
 

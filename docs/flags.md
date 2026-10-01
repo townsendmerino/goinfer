@@ -56,7 +56,7 @@ Which compute backend runs the model, at what precision, with how much context.
 |---|---|---|---|
 | `--backend` | `cpu \| webgpu \| cuda \| metal` | `cpu` | The compute backend. `--version` lists the backends compiled into this binary; naming one that is not there falls back to `cpu`. *Also in `goinfer-chat`.* |
 | `--quant` | `int4 \| int4mix \| q4k \| int8int8 \| int8 \| f32` | `int4` | Weight precision, the accuracy, speed and RAM trade-off. `int4` is the default; `f32` is unquantized. A prequantized `.giw` carries its own. [More](quantization.md). *Also in `goinfer-chat`.* |
-| `--embed-int4` | `bool` | `true` | With `--quant int4`, keep the token-embedding and LM-head table at int4 as well, halving the largest resident tensor on a small model with a big vocabulary. `--embed-int4=false` keeps it at int8. [More](quantization.md). *Also in `goinfer-chat`.* |
+| `--embed-int4` | `bool` | `true` | With `--quant int4`, keep the token-embedding and LM-head table at int4 as well, halving the largest resident tensor on a small model with a big vocabulary. On by default, except with `--backend metal`, where the resident runner does not take an int4 table yet and the default is off. `--embed-int4=false` keeps it at int8. [More](quantization.md). *Also in `goinfer-chat`.* |
 | `--kv` | `f32 \| f16 \| i8` | `f32` | KV cache precision: `f32` is bit-exact; `f16` and `i8` are lossy and smaller (`f16` applies to GPU-resident models only). *Also in `goinfer-chat`.* |
 | `--kv-quant` | `f32 \| i8` | — | **Deprecated: use `--kv`.** Overrides the CPU KV cache precision alone. |
 | `--ctx` | `int` | `0` | GPU-resident KV capacity in positions. 0 keeps the backend default, which `--fit` may raise. *Also in `goinfer-chat`.* |
