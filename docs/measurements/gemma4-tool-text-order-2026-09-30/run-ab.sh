@@ -17,8 +17,8 @@ BIN=$D/serve; PROBE=$D/tool_format_probe.py; VERDICT=$D/ab_verdict.py
 MODEL=$HOME/models/gemma-4-12b-gguf/gemma-4-12b-it-qat-q4_0.gguf
 PORT=18433
 # SMOKE=1: one prompt, one sample per arm — proves the mechanics (server up, managed-template check, probe, shutdown), measures nothing.
-PROBE_ARGS=(--samples 3 --max-tokens 600 --loop --preamble "Let me check that for you.")
-[ -n "${SMOKE:-}" ] && PROBE_ARGS=(--samples 1 --only weather --max-tokens 600 --loop --preamble "Let me check that for you.")
+PROBE_ARGS=(--samples 3 --max-tokens 600 --loop --max-minutes 0 --preamble "Let me check that for you.")
+[ -n "${SMOKE:-}" ] && PROBE_ARGS=(--samples 1 --only weather --max-tokens 600 --loop --max-minutes 0 --preamble "Let me check that for you.")
 [ -x "$BIN" ] && [ -f "$PROBE" ] && [ -f "$VERDICT" ] && [ -f "$MODEL" ] || {
   echo "MISSING one of: $BIN $PROBE $VERDICT $MODEL"
   echo "  mkdir -p $D && go build -o $BIN ./cmd/serve && cp scripts/tool_format_probe.py $PROBE && cp docs/measurements/gemma4-tool-text-order-2026-09-30/ab_verdict.py $VERDICT && git rev-parse HEAD > $D/REV"

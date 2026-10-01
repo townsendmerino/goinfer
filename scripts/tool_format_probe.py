@@ -17,6 +17,12 @@ With --loop, every reply that was an ok call is followed up: the call and a cann
 which is where the history format matters. The second reply is `answered` when it is prose that mentions the result, `call_again` when it
 calls another tool, `ignored` when it is prose that does not use the result, and `dropped` when it holds an unparsed <function=/<tool_call>.
 
+RUN BUDGET. A run's cost is the number of cells times the cost of one cell (a reply and, with --loop, its follow-up), and a cell costs about two
+minutes for a 12B model on the CPU. The probe times its FIRST cell, projects the total, and stops with exit status 3 if the projection is over
+--max-minutes (default 10, the daytime ceiling in CLAUDE.md "Run budget"); --max-minutes 0 turns the check off, which is what an unattended
+night job passes. The first cell is the cold one, so the projection leans high. It is an estimate-first rule that the tool enforces, because a
+promise to estimate did not: a 12B arm was started by day, found to need about 45 minutes, and stopped after twelve.
+
 and a call is `ok` only when it names the expected tool and every argument has the expected JSON type — so a call with brightness "70"
 instead of 70 is a call, not an ok call. Exit status is always 0: this reports, it does not gate.
 """
@@ -54,6 +60,10 @@ RESULTS = {
  "set_light": ("light set: room=kitchen on=true brightness=70", ["kitchen", "70", "on"]),
 }
 
+def project_minutes(first_cell_seconds, cells):
+    """Minutes the whole run is projected to take, from the first cell's cost."""
+    return first_cell_seconds * cells / 60.0
+
 def post(base, body):
     req = urllib.request.Request(base + "/v1/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
     return json.load(urllib.request.urlopen(req, timeout=600))
@@ -88,13 +98,21 @@ def classify(msg, finish, want, types):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("base"); ap.add_argument("--samples", type=int, default=3)
+    ap.add_argument("base", nargs="?"); ap.add_argument("--samples", type=int, default=3)
     ap.add_argument("--max-tokens", type=int, default=900); ap.add_argument("--thinking-budget", type=int, default=0)
     ap.add_argument("--json"); ap.add_argument("--model", default="m"); ap.add_argument("--loop", action="store_true")
+    ap.add_argument("--max-minutes", type=float, default=10.0, help="stop (exit 3) if the first cell projects the run past this many minutes; 0 = no limit (an unattended night job)")
+    ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--only", default="", help="comma-separated prompt ids to run (a smoke test of the setup, not a measurement)")
     ap.add_argument("--preamble", default="", help="with --loop: replay each call with this text beside it (an agent client's \"Let me check…\" plus a tool call)")
     a = ap.parse_args()
+    if a.selftest:
+        sys.exit(selftest())
+    if not a.base:
+        ap.error("the server URL is required (except with --selftest)")
     rows = []
+    cells = sum(1 for p in PROMPTS if not {x for x in a.only.split(",") if x} or p[0] in a.only.split(",")) * a.samples
+    run_start = time.time()
     only = {x for x in a.only.split(",") if x}
     for pid, user, offered, want, types in PROMPTS:
         if only and pid not in only:
@@ -129,6 +147,13 @@ def main():
                 except Exception as e:
                     loop = "error"; row["loop"] = loop; row["loop_text"] = str(e)[:100]
             rows.append(row)
+            if len(rows) == 1 and a.max_minutes > 0:
+                est = project_minutes(time.time() - run_start, cells)
+                print("   first cell took %.0fs; %d cells project to about %.1f minutes (limit %.1f)" % (time.time() - run_start, cells, est, a.max_minutes), flush=True)
+                if est > a.max_minutes:
+                    print("STOP: over the run budget. Queue it (python3 scripts/night.py add ... ) or pass --max-minutes 0 for an unattended run.", flush=True)
+                    if a.json: json.dump(rows, open(a.json, "w"), indent=1)
+                    sys.exit(3)
             print("%-9s s%d  %-12s %-4s %-10s %s %s" % (pid, s, kind, "ok" if ok else "", loop, why, json.dumps(detail)[:100]), flush=True)
     kinds = collections.Counter(r["kind"] for r in rows)
     needs = [r for r in rows if r["prompt"] != "control"]
@@ -142,6 +167,23 @@ def main():
         n_ok = sum(1 for r in rows if r["prompt"] != "control" and r["ok"])
         print("   loops (after %d ok calls):" % n_ok, dict(lk), " answered: %d/%d" % (lk.get("answered", 0), n_ok))
     if a.json: json.dump(rows, open(a.json, "w"), indent=1)
+
+def selftest():
+    ok = True
+    def check(name, got, want):
+        nonlocal ok
+        if got != want:
+            ok = False
+            print("FAIL", name, "got", got, "want", want)
+    check("projection", round(project_minutes(120, 24), 6), 48.0)
+    check("projection small", round(project_minutes(30, 8), 6), 4.0)
+    call = {"tool_calls": [{"function": {"name": "get_weather", "arguments": json.dumps({"city": "Paris"})}}], "content": ""}
+    check("ok call", classify(call, "tool_calls", "get_weather", {"city": str})[:2], ("call", True))
+    check("wrong tool", classify(call, "tool_calls", "get_time", {"timezone": str})[:2], ("call", False))
+    check("xml in text", classify({"content": "<tool_call><function=f>"}, "stop", "f", {})[0], "xml_dropped")
+    check("control prose", classify({"content": "Paris."}, "stop", None, {})[:2], ("prose", True))
+    print("selftest:", "ok" if ok else "FAILED")
+    return 0 if ok else 1
 
 if __name__ == "__main__":
     main()
