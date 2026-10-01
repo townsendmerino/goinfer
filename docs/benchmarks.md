@@ -573,7 +573,9 @@ marked stale. The SigLIP vision-prefill row below it **is** current as of 2026-0
 #### Metal prefill (fast f16-MMA path, default ON) — re-measured 2026-09-18, post M-03/M-04
 
 > **Superseded 2026-09-25 by R16's GEMM redesign** ([`measurements/metal-prefill-gemm-s2-2026-09-25.md`](measurements/metal-prefill-gemm-s2-2026-09-25.md)):
-> TTFT 1.05× behind Ollama at K=512 and 1.96× at K=3900, measured through serve.
+> TTFT 1.05× behind Ollama at K=512 and 1.96× at K=3900, measured through serve. **That in turn is superseded 2026-09-30**
+> (after R19, [`measurements/peer-sweep-2026-09-29.md`](measurements/peer-sweep-2026-09-29.md) cell h): LEVEL at K=3900 (0.983),
+> AMBIGUOUS-HIGH at K=512; the headline row above has the detail.
 
 > **Superseded 2026-09-25 ([`measurements/peer-claim-2026-09-25.md`](measurements/peer-claim-2026-09-25.md), cell h):** TTFT 0.377× Ollama at K=512 (AMBIGUOUS-LOW, spread cap) and 0.239× at
 > K=3900 (BEHIND). goinfer's fast path is unchanged (225.0 → 223.8 TTFT tok/s at 3900); the ratio moved because this

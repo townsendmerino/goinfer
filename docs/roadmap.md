@@ -25,8 +25,9 @@
   CPU amd64 decode behind on the 0.5B only (0.91×; 1.5B level, 7B ahead); **Phi-3 on CUDA behind** at its real `q4k` default
   (0.90× / 0.72× at 128 / 3900); a top-p sampling regression on CUDA, found by the sweep and fixed 2026-09-30. Mac Metal decode: the 2026-09-25
   sweep had it behind at every depth ≥ 2048 (0.58–0.75×); after R18b a same-session run, not pre-registered, put it **ahead at
-  every depth** (1.03–1.19×), and the Mac half of the re-run is still owed. Mac Metal TTFT 1.05× / 1.96× behind at K=512 / 3900
-  after R16 (2026-09-25) — the largest remaining gap, and it is on the main development machine; Mac CPU decode unresolved (0.5B AMBIGUOUS-LOW, 1.5B void). Mac CPU
+  every depth** (1.03–1.19×); the Mac half of the re-run (2026-09-30) is partial, with cell g one cell (0.5B at 128, AHEAD 1.296×) and
+  cell i not run. Mac Metal TTFT, 1.05× / 1.96× behind at K=512 / 3900 after R16 (2026-09-25), is **level at K=3900 (0.983) and
+  AMBIGUOUS-HIGH at K=512** after R19 (cell h, 2026-09-30); Mac CPU decode unresolved (0.5B AMBIGUOUS-LOW, 1.5B void). Mac CPU
   prefill at parity-to-ahead (2026-09 row, not re-measured). *(Until 2026-09-25 this line read "ahead on
   small models at short context (1.13×), behind at depth (0.71× by 3900)" and "Mac CPU decode 0.57–0.77×
   behind"; both are superseded.)*

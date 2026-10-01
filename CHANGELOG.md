@@ -350,7 +350,8 @@ any surface may still change.
   v0.32.5: 1.05x behind at K=512 (was 2.65x), 1.96x at 3900 (was 4.18x) (`docs/measurements/metal-prefill-gemm-s2-2026-09-25.md`).
 - **Metal prefill attention for head dim 128 is `attention_prefill_steel`**: PrefillLast on the 1.5B at K=3900
   8171 -> 4316 ms, at K=512 596 -> 526 ms. It is gated on fidelity (set A, both reference models), not on bit-identity
-  (`docs/measurements/metal-prefill-attn-2026-09-27.md`).
+  (`docs/measurements/metal-prefill-attn-2026-09-27.md`). Served TTFT against Ollama v0.32.5 after it: level at K=3900
+  (0.983), ambiguous on the high side at K=512 (`docs/measurements/peer-sweep-2026-09-29.md`, cell h, 2026-09-30).
 - **`--spec ngram` on Metal verifies on the batched step kernels (bit-identical, greedy requests)** with a cost-aware
   depth controller: 2.082x plain decode on copy-heavy traffic and 1.068x on chat (1.5B; 7B 1.846x / 1.014x), where the
   old verify read 0.977x / 0.956x (`docs/measurements/metal-spec-step-verify-2026-09-27.md`).
