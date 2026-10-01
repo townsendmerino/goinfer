@@ -115,6 +115,31 @@ split is made of. It is not a second defect. The size of that share is an **esti
   `d6a-b0-ood-noul` ([`run-b0-ood-noul.sh`](decisions-d6a-2026-09-28/run-b0-ood-noul.sh) at 3e2f9ea3, `pin_decisions_d0.py b0rows`).
   A two-row probe matched goinfer's token counts exactly (516 and 124).
 
+**The settling check, run 2026-09-30, graded 2026-10-01: the gap is goinfer's, not the sample's, and larger than
+estimated.** `d6a-b0-ood-noul` ran the transformers f32 reference (Route A, bare-v1) on the same 400 OOD noul rows, in
+73 minutes on nobara-pc ([`results/b0-ood-noul-f32.jsonl`](decisions-d6a-2026-09-28/results/b0-ood-noul-f32.jsonl)).
+Every prompt's token count matches goinfer's.
+
+| on the 400 OOD noul rows | top-1 against gold | answers "true" |
+|---|---|---|
+| gold | | 21.5% |
+| transformers f32 (the reference) | **0.580** | 53.5% |
+| goinfer, arm B (bare-v1, raw) | **0.340** | 84.5% |
+
+- **The sample explains little.** The reference reads 0.580 here against 0.608 on the fixture's noul items, so the
+  harder environments cost it under 3 points.
+- **goinfer against the reference, on identical prompts, is 24 points on noul.** The two agree on 65% of items. By
+  environment, goinfer's P(true) sits above the reference's by +0.147 (painting-geometry, n=156), +0.069
+  (workflow-controls, 121) and +0.132 (snake, 103). These are the fixture's measured shifts (+0.074, +0.042, +0.143), at
+  scale, and on near-margin items they flip far more decisions than the counterfactual above assumed. Its "about 11 of
+  the 14 points" understated goinfer's share.
+- **This is not yet a quantization number.** Arm B ran CUDA-resident at the default int4 (`run-d6a.sh`, `--backend
+  cuda`). D6b (`decisions-d6b-2026-09/results.md`) then found that this path deviates from the f32 reference more than
+  CPU int4 does: on Route B, KL 0.038 against 0.030, with one confident flip that the CPU arms do not make. Which part of
+  these 24 points is int4 and which is the CUDA path is not separated. Route A at CPU int4 and CPU int8int8 on these 400
+  rows would separate them, and that is night work.
+- **D6a's decision is unaffected.** BUILD D2–D4 rested on the trained head beating Route A, which this widens.
+
 **Two consequences for Route A (D1), neither of which touches D6a's decision:**
 
 - **A constant beats every arm on noul here.** Answering "false" every time scores 0.785 on this sample, above every arm and above
