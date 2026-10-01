@@ -549,9 +549,12 @@ to ignore.**
   markup in either. `final` and a `commentary` preamble are content (several messages are joined by a blank line); a message
   addressed to a function (`to=functions.…`) is shown in neither stream — tool calls for gpt-oss are **not** surfaced yet.
   gpt-oss always reasons: its prompt has no off form, so `-thinking off` / `enable_thinking: false` cannot stop it and the
-  reasoning still arrives in `reasoning_content` (the load log says so). **The reasoning budget does not apply to it yet**, so
-  a `max_tokens` too small to finish the analysis returns an empty `content` with `finish_reason: "length"`, the failure the
-  budget removes for Qwen and Gemma. `-reasoning-format none` restores the raw text, markers included. A conversation's earlier
+  reasoning still arrives in `reasoning_content` (the load log says so). **The reasoning budget applies to it** (`-reasoning-budget`,
+  `thinking_token_budget`, on by default): once the analysis has used its share, serve forces `<|end|><|start|>assistant<|channel|>
+  final<|message|>` — the whole sequence, not one token, or the model could open another channel and still never answer — so a
+  small `max_tokens` returns an answer instead of an empty `content`. For gpt-oss the budget counts the channel headers too (about
+  nine tokens), because the answer starts only after them. It is off under speculative decoding and JSON grammars, as for the
+  others. `-reasoning-format none` restores the raw text, markers included. A conversation's earlier
   assistant turns are replayed on the `final` channel, as the model's own template does, with their reasoning dropped.
 
 **Batch files — over HTTP, or locally with `goinfer-chat --batch` and no server.** One JSONL file, two ways to run it. Each

@@ -19,8 +19,11 @@ any surface may still change.
   agent).** A Harmony reply is a sequence of channel messages, and until now every `<|channel|>…<|message|>` marker reached
   `content`. A new parser behind the same splitter the Qwen/Gemma work uses routes `analysis` to reasoning, `final` (and a
   `commentary` preamble) to content, and keeps function-addressed messages off both. Built from a real gpt-oss-20b capture and held to
-  chunk-independence at every split point. gpt-oss has no off switch, so `-thinking off` cannot stop its reasoning; the reasoning
-  budget and tool calls are not built for it yet (`docs/server.md` § Reasoning models).
+  chunk-independence at every split point. gpt-oss has no off switch, so `-thinking off` cannot stop its reasoning; tool calls
+  are not built for it yet (`docs/server.md` § Reasoning models).
+  - **A small `max_tokens` now gets an answer from gpt-oss.** The reasoning budget forces the end of the analysis and the opening
+    of the `final` channel (the whole six-token sequence), where before a turn that ran out inside its analysis returned an empty
+    `content`. Measured on gpt-oss-20b at `--max 60`: the analysis is cut mid-sentence and a real answer follows.
   - **Fixed: multi-turn gpt-oss prompts.** An earlier assistant turn was rendered without its channel; the model's own template
     puts it on `final`. Pinned against HuggingFace's rendering of the template from the GGUF.
 - **`goinfer-chat --batch in.jsonl -o out.jsonl`: run a batch file locally, resumable (J5).** The same JSONL that

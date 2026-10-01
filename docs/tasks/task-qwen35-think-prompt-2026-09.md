@@ -169,8 +169,8 @@ test that would have gone red.
 
 ## Not built
 
-- **Harmony (gpt-oss): parser BUILT 2026-09-30** (see "Harmony (gpt-oss) — built" below). Still not built for it: the reasoning
-  budget (its block is a multi-token header, `<|channel|>analysis<|message|>`, not one delimiter token), tool calls (neither the
+- **Harmony (gpt-oss): parser BUILT 2026-09-30** (see "Harmony (gpt-oss) — built" below). Reasoning budget: BUILT the same day (below).
+  Still not built for it: tool calls (neither the
   renderer — no tool declarations — nor a surfaced call; the parser keeps recipient-addressed messages on itself), and
   `reasoning_effort` low/medium/high (the template's `Reasoning: <effort>` line; goinfer always writes `medium`).
 - **Qwen3.5's XML tool-call format** (separate task), and what signature Claude Code wants on a thinking block — still to
@@ -516,3 +516,36 @@ reasoning before any content; then serve's own swap guard tripped (+0.60 GB over
 answer's completeness (the guard cut it; `TestThinkOut_harmonyRealReply` covers that deterministically). `goinfer-chat` produced the
 dimmed-reasoning-then-cyan-answer display on turn one with no markers; its second turn was cut by the same watchdog. Logs are in
 `docs/measurements/harmony-parser-2026-09-30/`.
+
+### The gpt-oss reasoning budget (2026-09-30)
+
+The single-token budget cannot be reused as it is. Forcing `<|end|>` alone ends the analysis, but the model then chooses what comes
+next, and it could open another channel and still never answer. So `chat.NewHarmonyBudget` forces the whole sequence the model
+would write itself — `<|end|> <|start|> assistant <|channel|> final <|message|>` (six tokens, each a single token in the real
+vocabulary: probed on the GGUF's tokenizer, and `TestHarmonyBudget_realVocabulary` asserts the forced ids equal the tokenizer's own
+encoding of that text) — one token per step, **starting `len(sequence)` tokens before `limit`, so it ends exactly at `limit` and the
+answer keeps the quarter of the turn `BudgetRoom` reserves.** It is still a pure function of the generated ids, so the gated fast
+path survives. Nothing is forced when the model closed its own analysis before the trigger, when the reply did not open with
+`<|channel|>analysis<|message|>`, or when `limit` cannot hold the header, the sequence and one reasoning token (a turn under about
+twelve tokens). Consequence worth stating: for this family `limit` counts the three header tokens and the six forced ones, about nine,
+so an explicit `thinking_token_budget: N` buys N-9 reasoning tokens; callers needed no change.
+
+`ThinkingPossible()` is true for Harmony under every `-thinking` mode, because the prompt has no off form: the model reasons
+regardless, and a budget that stood down for `-thinking off` would leave exactly the empty-answer failure it exists to prevent.
+
+**Verified.** Boundary tests of the trigger (every step of the sequence, before and after), each condition that suppresses it, the
+no-room cutoff, the missing-token fail-safe, serve's `applyBudget` under all four modes, and the forced sequence in the real decode
+loop on the tiny model (gated and ungated). Mutation-checked: a sequence that ends after `limit`, only the first token forced,
+ignoring a natural `<|end|>`, ignoring the header check, and not treating Harmony as thinking-possible each turn a test red (two of the
+first runs of those mutations proved nothing — one did not compile and one test was not selected by a case-sensitive `-run` — and were
+redone). **Real model:** gpt-oss-20b through `goinfer-chat --max 60`, temperature 0
+(`docs/measurements/harmony-parser-2026-09-30/chat-max60-with-budget.log`): the analysis stops mid-sentence at "17 times 3 equals",
+the channel switch is forced, and the reply carries an answer, "17 × 3 = 51. The sea stretches endlessly" — exactly 60 tokens. The same
+prompt's unbudgeted analysis runs about 80 tokens (earlier runs), so without the budget this turn is all reasoning. There is no
+same-session control run of the unbudgeted turn: `goinfer-chat` has no switch for it. **Not verified:** the serve routes with the budget
+on the real model (the swap guard stopped the earlier serve run, and a second would be the same), answer *quality* after a forced cut
+(one prompt, one sample), and any model but gpt-oss-20b.
+
+The swap watchdog used for these CPU-fallback runs was loosened from +500 MB to +1.5 GB (with a hard stop below 8 GB available RAM)
+for the chat CLI run only, after the first attempt was killed at +628 MB seconds into a reply with 49 GB of RAM free; serve's own guard
+was not touched.
