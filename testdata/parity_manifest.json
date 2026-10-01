@@ -393,7 +393,7 @@
         "scripts/pin_laguna_tiny.py",
         "scripts/pin_slice_oracle.py"
       ],
-      "deps_hash": "sha256:554b4b078e02fa58380298e2c57ef23c1768d7f4924a6fe36f91b11c48a2d9ff",
+      "deps_hash": "sha256:726b104631095c5304dffbfa86d559fab2d44d913f2480e0b7e381f6333c13e6",
       "status": "validated",
       "validated_at": "0b74e671",
       "date": "2026-09-18",
