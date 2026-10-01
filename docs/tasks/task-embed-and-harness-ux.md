@@ -51,7 +51,7 @@ them"). The audit fixed the crashes; it did not add the script.
 ## 1. Mode 2 today — the inventory
 
 What a Go program has to do to get a filled-in struct out of a model, read off `internal/chatapp`
-and the README example (`README.md:76-88`):
+and the README example (`README.md`, § "A Go struct the model cannot violate"):
 
 1. ~~Find a checkpoint (now: `goinfer-chat pull`, but `internal/modelpull` is `internal` — a
    library caller cannot reach it).~~ **CLOSED by phase 0:** the package is exported as
@@ -343,7 +343,7 @@ by default (the banner says how to turn it on); which of the five routes a given
 
 ## Sources
 
-`docs/api-tiers.md` (the Hard tier; the surfaces the facade must not touch) · `README.md:76-88`
+`docs/api-tiers.md` (the Hard tier; the surfaces the facade must not touch) · `README.md` § "A Go struct the model cannot violate"
 (the six-step example the facade replaces) · `internal/chatapp/main.go` (the 632-line reference
 implementation of mode 2) · `decoder/model.go:330`, `:193`, `:802` (`Options`, `Load`,
 `Generate`) · `chat/chat.go:141` (`Detect`) · `pull/pull.go` (the library `pull`
