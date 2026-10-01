@@ -41,6 +41,7 @@ on:
       - 'docs/book-search/**'
       - 'scripts/build_search_index.py'
       - 'scripts/build_book_src.sh'
+      - 'scripts/book_pager.py'
       - '.github/workflows/site.yml'
   pull_request:
     paths:
@@ -64,6 +65,7 @@ on:
       - 'docs/book-search/**'
       - 'scripts/build_search_index.py'
       - 'scripts/build_book_src.sh'
+      - 'scripts/book_pager.py'
       - '.github/workflows/site.yml'
   workflow_run:
     workflows: ["release assets"]
