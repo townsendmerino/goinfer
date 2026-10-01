@@ -6,8 +6,8 @@ github.com/townsendmerino/aikit v1.51.1 h1:ofBJGgS8lXXCJwf0hk3onSEd3Fx+xhI9htqFb
 github.com/townsendmerino/aikit v1.51.1/go.mod h1:DCoyKC6l6F1CBt5SJSvX8UjktEKXsrln1MuNOSebam8=
 github.com/townsendmerino/aikit/gpu v0.33.3 h1:6nosKIoDIc+5ruZ05aFJ9CyvgQYnvfz7aV3SMh5pUrc=
 github.com/townsendmerino/aikit/gpu v0.33.3/go.mod h1:5BoeTW/VGltnAT3zB/lhZPFDxjZBh+tMF+FFhHE8Fn0=
-github.com/townsendmerino/goinfer v0.19.0 h1:hUoKxP+bcR0EswIhn/1EgJyfu3HEKK6dsrogzieGGOA=
-github.com/townsendmerino/goinfer v0.19.0/go.mod h1:3ciFX/ttwh3EsoySyKMqY9RjVgbWa3uBlTaKausl3LQ=
+github.com/townsendmerino/goinfer v0.20.0 h1:Ogj4Qih0g4J8Gk7j1LcNafca2JrBDvMQxD1aCTEzwJU=
+github.com/townsendmerino/goinfer v0.20.0/go.mod h1:zfm50vG1o6r9tMHh4+fpHwi472WhbeI/KLLbmrpsN0U=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
