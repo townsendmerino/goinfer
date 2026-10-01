@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -83,7 +84,19 @@ func loadInt4Model(tb testing.TB) *Model {
 //   - Scored against an f32 forward, as above: the old golden 11/24, THIS golden 11/24, int8int8 19/24.
 //     Both int4 paths leave f32 at the same id and differ from each other only after it, so this one is
 //     no less faithful.
-var parityWantInt4 = []int{4710, 73594, 12669, 198, 750, 1438, 4136, 3932, 262, 671, 1096, 374, 264, 6573, 315, 2038, 429, 3880, 311, 387, 10865, 198, 262, 1494}
+//
+// PER ARCHITECTURE since 2026-09-30. The 2026-09-28 re-capture was made on arm64, and the binary16 scales move
+// arm64's path only: the v0.20.0 parity sweep on nobara-pc (amd64, 0ca36756) produced the PRE-L1 list exactly, all 24
+// ids, and so failed against the arm64 one at id 13. The CPU int4 path is bit-identical within an architecture but
+// not across them (arm64 fuses multiply-adds that amd64 rounds separately; docs/parity-coverage-policy.md, "arch-
+// scoped"), so one list cannot hold both. Each is its own architecture's golden, and per the evidence above the two are
+// equally faithful to f32 (11/24 each). An architecture with no entry is a capture run.
+var parityWantInt4ByArch = map[string][]int{
+	"arm64": {4710, 73594, 12669, 198, 750, 1438, 4136, 3932, 262, 671, 1096, 374, 264, 6573, 315, 2038, 429, 3880, 311, 387, 10865, 198, 262, 1494},
+	"amd64": {4710, 73594, 12669, 198, 750, 1438, 4136, 3932, 262, 671, 1096, 374, 264, 5878, 369, 279, 5042, 2038, 198, 262, 1494, 271, 8960, 4136},
+}
+
+var parityWantInt4 = parityWantInt4ByArch[runtime.GOARCH]
 
 // TestDecodeParityInt4 greedily continues parityPrompt at int4 and checks the
 // token ids against parityWantInt4. The prompt is prefilled (batched
@@ -105,7 +118,7 @@ func TestDecodeParityInt4(t *testing.T) {
 	}
 	if len(parityWantInt4) == 0 {
 		t.Logf("CAPTURE parityWantInt4 = %#v", got)
-		t.Skip("parityWantInt4 empty — capture run")
+		t.Skipf("parityWantInt4 has no %s entry — capture run", runtime.GOARCH)
 	}
 	if len(got) != len(parityWantInt4) {
 		t.Fatalf("got %d tokens, want %d: %#v", len(got), len(parityWantInt4), got)

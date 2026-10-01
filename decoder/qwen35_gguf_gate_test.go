@@ -37,7 +37,11 @@ func TestQwen35GGUF_gate(t *testing.T) {
 	// Bound the load fan-out as in Gate 2 (each in-flight layer briefly holds the
 	// fused experts) — but here from a 37 GB Q8_0, streaming-quant to int8 resident.
 	prev := runtime.GOMAXPROCS(2)
-	m, err := Load(gguf, Options{Quant: "int8int8"})
+	// The fit guard is bypassed for this model only. This gate checks the LOADER's parity, not memory planning, and
+	// the guard now prices the 37 GB mapped checkpoint as resident for the whole load (79.5 GB needed against a 35.9 GB
+	// budget on nobara-pc's 62 GB, 2026-09-30), which refused a load this box completed in the v0.19.0 sweep: the
+	// mapping is page cache, not anonymous memory. requireHeavyModel keeps it to the box that holds it.
+	m, err := Load(gguf, Options{Quant: "int8int8", Knobs: &Knobs{"GOINFER_NO_FIT_GUARD": "1"}})
 	runtime.GOMAXPROCS(prev)
 	if err != nil {
 		t.Fatalf("Load(gguf, int8int8): %v", err)

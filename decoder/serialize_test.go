@@ -105,8 +105,9 @@ func TestSerializeWeights_roundTrip(t *testing.T) {
 	}
 	t.Logf("byte-identical across %d matmul weights", len(a))
 
-	// Aliasing: the deserialized q8 must point INTO blob (zero-copy); scales must
-	// be a copy (independent of blob).
+	// Aliasing: the deserialized q8 and its scales both point INTO blob (zero-copy). Scales were a copy until
+	// .giw weights v12 (cdae727d, 2026-09-24) aligned them so the reader aliases them; this heavy-model test still
+	// expected the copy and failed the first time it ran after (the v0.20.0 parity sweep).
 	for _, w := range b {
 		if len(tQ8(w)) == 0 {
 			continue
@@ -114,8 +115,8 @@ func TestSerializeWeights_roundTrip(t *testing.T) {
 		if !aliases(tQ8(w), blob) {
 			t.Errorf("q8 (%d rows) is NOT aliased into the blob — expected zero-copy", w.Rows())
 		}
-		if len(tScales(w)) > 0 && aliasesF32(tScales(w), blob) {
-			t.Errorf("scales are aliased into the blob — expected a copy (alignment)")
+		if len(tScales(w)) > 0 && !aliasesF32(tScales(w), blob) {
+			t.Errorf("scales are NOT aliased into the blob — weights v12 aligns them for zero-copy")
 		}
 		break // one is enough
 	}
