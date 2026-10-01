@@ -245,6 +245,17 @@ func TestRun_closesFirstLoadBeforeMeasuring(t *testing.T) {
 // target, so it never found that sidecar and did a full direct load of the .gguf instead (measured on the
 // 0.5B: 2.98 s and 1.0 GB RSS, against a mapped read through the sidecar).
 func TestFreshSidecar_findsTheOneChatAndServeBuild(t *testing.T) {
+	for _, e4 := range []bool{false, true} {
+		t.Run(map[bool]string{false: "int8 head", true: "int4 head (the default since 2026-09-28)"}[e4], func(t *testing.T) {
+			testFreshSidecar(t, e4)
+		})
+	}
+}
+
+// testFreshSidecar builds the sidecar a load with the given --embed-int4 writes, and freshSidecar must find it. With
+// embedInt4 it is <base>.int4.e4h.<target>.giw, the one a default CPU/CUDA/WebGPU load writes; fit looked only for the
+// plain-head name and missed it.
+func testFreshSidecar(t *testing.T, embedInt4 bool) {
 	raw, err := os.ReadFile("../../testdata/glm-tiny.gguf")
 	if err != nil {
 		t.Skipf("tiny fixture: %v", err)
@@ -263,19 +274,23 @@ func TestFreshSidecar_findsTheOneChatAndServeBuild(t *testing.T) {
 	}
 	// Backend "" keeps canonical int4 bytes in RAM, which the .giw writer needs to emit any target (the
 	// production transcode does the same); a Backend "cpu" load on arm64 keeps only the row4 repack.
-	m, err := decoder.Load(src, decoder.Options{Quant: "int4"})
+	m, err := decoder.Load(src, decoder.Options{Quant: "int4", EmbedInt4: embedInt4})
 	if err != nil {
 		t.Fatal(err)
 	}
 	target := decoder.GIWTargetForBackend("cpu")
+	label := "int4"
+	if embedInt4 {
+		label = "int4.e4h"
+	}
 	blob, err := decoder.SerializeWeightsForTarget(m.Weights(), "tiny", target)
 	m.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	cpuSidecar := filepath.Join(dir, "tiny.int4."+string(target)+".giw")
+	cpuSidecar := filepath.Join(dir, "tiny."+label+"."+string(target)+".giw")
 	if target == decoder.GIWTargetNone {
-		cpuSidecar = filepath.Join(dir, "tiny.int4.canonical.giw") // a GOARCH with no cpu-specific target
+		cpuSidecar = filepath.Join(dir, "tiny."+label+".canonical.giw") // a GOARCH with no cpu-specific target
 	}
 	if err := os.WriteFile(cpuSidecar, giw.Write(blob, nil), 0o644); err != nil {
 		t.Fatal(err)

@@ -150,7 +150,10 @@ separate sweep because this step kept being skipped at move time.
   P-15's measurement half — split to
   [completed/audit-2026-09-10.md](completed/audit-2026-09-10.md) across two sweeps, 2026-09-12 and
   2026-09-16) and, focused on one backend, [audit-metal-2026-09-12.md](audit-metal-2026-09-12.md)
-  (Metal, performance-led, at `da1e461`; M-/C-/G-/N- numbering is its own); the previous ones are
+  (Metal, performance-led, at `da1e461`; M-/C-/G-/N- numbering is its own) and its redo,
+  [audit-metal-2026-09-30.md](audit-metal-2026-09-30.md) (Metal, performance-led with an MLX-technique
+  lens, at `844700f8`; area-letter numbering, and every Sep 12 ID is carried forward in its §12, so
+  the older file stays as the record those IDs point into); the previous ones are
   [completed/audit-2026-09-02.md](completed/audit-2026-09-02.md) and
   [completed/audit-2026-08-05.md](completed/audit-2026-08-05.md).
 
