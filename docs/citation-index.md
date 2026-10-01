@@ -16,6 +16,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `0b0f5c9b` | fix(decoder): olmo3 RoPE applies YaRN to every layer, not full-attention only |
 | `0e7a5956` | fix(chat,gpu,cuda,ci): M-20, M-31, M-34, M-35 — dead fixtures, a duplicated cap, a missing gate, an expired label |
 | `1d0d1ed` | test(decoder): int4 forward goldens — 23 fixtures, 16 architectures (Q1c) |
+| `1de75952` | decoder tests: TestQwen38GGUF_gate bypasses the fit guard for its own model (no product change) |
 | `25a4711` | refactor(cuda): re-point the device layer onto aikit/gpu v0.3.1 (native-GPU Phase 1) |
 | `2aa4540` | fix(decoder): olmo3 RoPE per-layer-type split was wrong, plus a stale golden |
 | `2d28358` | docs(branch-note): re-derive against the corrected cap (D3 design read) |
@@ -32,11 +33,15 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `61b1e03` | bench: add temp1.0_notrunc, the config §B5's temp-only rows actually used |
 | `6a4e0ae` | decoder: optimistic next-token forward for sampled decode (Metal-verified, CUDA untested) |
 | `8f003f2` | parity: v0.15.0 sweep GREEN at bd085de; qwen3_next validated by real oracle |
+| `8fc642fb` | decoder: Load's doc comment says what Load does now (pkg.go.dev freezes it per tag) |
 | `91f359f` | fix(decoder): matmulInto dispatches on the property, not on W8A8 (P7) |
 | `9a9594c` | docs(prompts): task brief for `role: "developer"` compat on the serve surface |
+| `a6ce3d4a` | decoder tests: TestLagunaGGUF_gate bypasses the fit guard for its own model (no product change) |
+| `a86742fc` | olmo3: re-pin the real golden under transformers 5.15; TestOlmo3Real_gate passes for the first time |
 | `ada417e` | [aikit] scripts: ptx-repro is n/a on darwin, keyed on the PLATFORM not on NVRTC's absence |
 | `b067007` | B-12 cuda: make io.Closer contract explicit + propagate teardown error |
 | `bacc04c` | feat(serve): --moe-cache-experts / --moe-cache-slots — PARKED on the freeze |
+| `bcf50a49` | decoder tests: three gates the v0.20.0 parity sweep found stale (no product change) |
 | `bd085de` | test(decoder): build the ETA from the recent window, not all history |
 | `be049df` | [aikit] gpu(gemv): explicit __fmaf_rn in the quantized GEMV — the bit-identity contraction rule |
 | `c3e43c8` | E2: the four pending families get real oracles — and two of them were decoding released checkpoints wrong |
@@ -47,6 +52,7 @@ of generation. Regenerate with `scripts/queue_sha_lint.py --update`.
 | `e42e83e` | fix(cuda): name the kernel and both slot counts when a launch runs out of memory |
 | `e8fa53c` | G7 follow-up: land the goldens the CUDA mscale declaration was supposed to move |
 | `eea7f29` | perf(decoder): one gate/up pair per token in MoE, not one per expert (P6) |
+| `f0b9cf90` | parity manifest: the scoped re-validation (70be7081, aikit v1.51.1) re-stamps 12 families; 8 demotions refused |
 | `f33fcaf` | chore(deps): aikit v1.16.0 -> v1.17.0, aikit/gpu v0.27.0 -> v0.28.0 |
 
 ## Path index
@@ -680,7 +686,7 @@ supports.
 | `docs/ideas-weight-memory.md|decoder/mlp.go:70` | goinfer | `anchor: func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr` |
 | `docs/measurements/aikit-w4a8-opsperbyte.md|linalg/quant.go:321` | aikit | `func QuantizeActivationsInto(aq []int8, scales []float32, a []float32, M, K int) {` |
 | `docs/measurements/c3-metal-consumer-window-v0.14.0.md|metal/gemma_parity_test.go:85` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
-| `docs/measurements/c3-metal-consumer-window-v0.18.0.md|cmd/gate/parity.go:851` | goinfer | `// line counts, and only before `package` — decoder/int4_golden_test.go discusses `//go:` |
+| `docs/measurements/c3-metal-consumer-window-v0.18.0.md|cmd/gate/parity.go:847` | goinfer | `// line counts, and only before `package` — decoder/int4_golden_test.go discusses `//go:` |
 | `docs/measurements/c3-metal-consumer-window-v0.18.0.md|metal/gemma_parity_test.go:85` | goinfer | `t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.Resid` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/model.go:756` | goinfer | `switch o.Backend {` |
 | `docs/measurements/c3-metal-consumer-window.md|decoder/residency.go:1030` | goinfer | `func (m *Model) withResidency() *Model {` |
@@ -1017,6 +1023,7 @@ than papered over.
 | `scripts/g33_replay.py` | goinfer |
 | `scripts/g34_blockverify_replay.py` | goinfer |
 | `scripts/pin_olmo3_tiny.py` | goinfer |
+| `scripts/queue_citation_lint.py` | goinfer |
 | `scripts/refresh_parity_hashes.sh` | goinfer |
 
 <!-- /CITATION-INDEX -->

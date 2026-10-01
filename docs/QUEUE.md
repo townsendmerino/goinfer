@@ -453,6 +453,52 @@ rediscovered:
   up. The only thing the branch held that P1 does not is the prototype code and its bit-identity
   harness, reachable as tag `negative-result/strided-v-scoresv`. **No action outstanding.**
 
+### B. v0.20.0 release follow-ups (filed 2026-10-01)
+
+Found while releasing v0.20.0. The records are `docs/measurements/release-v0.20.0/scoped-revalidation-2026-10-01.md`
+and `qwen35-gguf-bisect-2026-10-01.md`. The pre-flight cold-user run's findings are R17–R28 in
+`docs/tasks/task-first-hour.md` §2, not here.
+
+**B1 · The manifest merge accepts a weaker method over a stronger one.** The scoped re-validation (`EMIT_MANIFEST=1`,
+untagged cell plus 29 quantized real gates) wrote tiny-golden rows over eight families' validated full-forward-oracle
+rows. Their real-oracle gates are f32, so none was in the scoped set to emit the stronger row afterwards, as a full
+sweep's real-checkpoint cell does. The demotions were caught by hand and not committed (`f0b9cf90`). Fix:
+`TestParityManifest_merge` (behind `cmd/gate`'s `mergeManifest`) refuses a row whose method tier is below the one it
+replaces, unless asked. Until then, a scoped `EMIT_MANIFEST` run's manifest must be diffed field by field before it
+is taken.
+
+**B2 · The parity gate writes its per-test logs to fixed `/tmp` names.** `/tmp/gate_parity_*.json` and
+`/tmp/gate_parity_rows.txt` are overwritten by the next run, so sweep run 2's per-test JSON was gone by the afternoon,
+and only its text log survived (`sweep-run2/parity-sweep.log`). Fix: a per-run log directory under `~/goinfer-logs`,
+printed in the verdict.
+
+**B3 · Three GGUF loader gates needed a fit-guard bypass.** `TestQwen35GGUF_gate` (`bcf50a49`), `TestLagunaGGUF_gate`
+(`a6ce3d4a`) and `TestQwen38GGUF_gate` (`1de75952`). The guard prices the mapped `.gguf` as resident and KV at the
+model's full context, and whether that refuses depends on what earlier gates left in the process: the same box passed
+`TestQwen38GGUF_gate` in the morning and refused it in the afternoon. Fix: have these gates pin a small
+`ResidentContext`, which prices KV realistically; the mapped-file term still needs a decision (reclaimable page cache,
+or real cost).
+
+**B4 · `TestQwen35GGUF_gate`'s score swings on near-ties.** One rounding difference at one float32 value moved it from
+68/80 to 57/80, and it flipped one prompt the other way (2/8 to 8/8). A free-running greedy count turns one early
+near-tie into up to seven misses. Fix to consider: gate on teacher-forced argmax (the golden's own prefix at every
+step) and report the free-running count as information. This would also have flagged the aikit defect as one or two
+flipped steps, not eleven.
+
+**B5 · `TestQwen35GGUF_vsSafetensors` cannot run on nobara-pc.** It holds the safetensors and GGUF 35B models at once,
+and the fit guard refuses the second after 16 minutes of loading the first. That leaves the GGUF-loader attribution
+check with no box. Fix: compute the safetensors logits, free the model, then load the GGUF.
+
+**B6 · The citation lint's anchor records and key collisions.** Two defects, found re-pointing the citations
+`8fc642fb` shifted. An `anchor:` record is searched with its `anchor: ` prefix, so `--update` reports CONTENT GONE for
+a declaration that still exists. A citation re-pointed onto a line number another citation in the same doc already
+uses shares that key, and `--update` then moves both. Fix both in `scripts/queue_citation_lint.py`.
+
+**B7 · Other goldens pinned under transformers 5.12.** Olmo3's real golden was wrong because transformers 5.12 put YaRN
+on every layer (re-pinned under 5.15 in `a86742fc`). Audit which other pins ran under 5.12 (nobara's `~/.venv-vl`) for
+families whose HF code changed by 5.15, and re-pin or record each. The olmo3 manifest row is still tiny-golden; the
+next full sweep's emitter merge should promote it, so check that it does.
+
 ## G26 RESOLVED, 2026-08-27 (n=15) — real, HALF the claimed size, and the sampler is back
 
 Raw: `docs/measurements/g26-anchor-n15.json`, `g26-head-n15.json`, log `g26-n15_run.log`.
