@@ -401,6 +401,11 @@ func kvSlotsWithin(want int, budget, base, perSlot int64) int {
 	return n
 }
 
+// residentMemoryDeclinePrefix opens every memory-guard decline, so a caller can tell "this machine does not have the
+// memory right now" from a feature or admission decline (the resident parity tests skip on the first and fail on the
+// second; skipIfMemoryDeclined).
+const residentMemoryDeclinePrefix = "the resident build needs "
+
 // residentMemoryDecline is residentFitsMemory with its reason — "" when the build fits — so BuildResident
 // can hand it to the load path as a typed decline (decoder.DeclineResident) instead of printing it.
 func residentMemoryDecline(m *decoder.Model) string {
@@ -436,7 +441,7 @@ func residentMemoryDecline(m *decoder.Model) string {
 		tightened = fmt.Sprintf(" (this machine's live-available memory tightened the static %.0f%%/%.2f GB ceiling further)",
 			residentMemFraction*100, float64(staticCeiling)/gb)
 	}
-	return fmt.Sprintf("the resident build needs %.2f GB (weights, host copy and KV), over %.0f%% of %.1f GB RAM "+
+	return fmt.Sprintf(residentMemoryDeclinePrefix+"%.2f GB (weights, host copy and KV), over %.0f%% of %.1f GB RAM "+
 		"(budget %.2f GB%s). Metal wires the pages it touches, so loading this would page to swap "+
 		"exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.%s",
 		float64(need)/gb, residentMemFraction*100, float64(ram)/gb, float64(budget)/gb, tightened, moeHint)

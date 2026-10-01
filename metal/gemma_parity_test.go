@@ -81,7 +81,8 @@ func residentParity(t *testing.T, path string, seed []int, steps int) parityStat
 	}
 	rf := mg.ResidentForwardForTest()
 	if rf == nil { // without this, a silent CPU fallback would pass every assertion trivially
-		t.Fatal("metal resident DECLINED — admission says it should be admitted")
+		skipIfMemoryDeclined(t, mg)
+		t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.ResidentDecline())
 	}
 	mcpu, err := decoder.Load(path, decoder.Options{Quant: "int8int8"})
 	if err != nil {
