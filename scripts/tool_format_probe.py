@@ -91,10 +91,14 @@ def main():
     ap.add_argument("base"); ap.add_argument("--samples", type=int, default=3)
     ap.add_argument("--max-tokens", type=int, default=900); ap.add_argument("--thinking-budget", type=int, default=0)
     ap.add_argument("--json"); ap.add_argument("--model", default="m"); ap.add_argument("--loop", action="store_true")
+    ap.add_argument("--only", default="", help="comma-separated prompt ids to run (a smoke test of the setup, not a measurement)")
     ap.add_argument("--preamble", default="", help="with --loop: replay each call with this text beside it (an agent client's \"Let me check…\" plus a tool call)")
     a = ap.parse_args()
     rows = []
+    only = {x for x in a.only.split(",") if x}
     for pid, user, offered, want, types in PROMPTS:
+        if only and pid not in only:
+            continue
         tools = [{"type": "function", "function": dict(name=n, **TOOLS[n])} for n in offered]
         for s in range(a.samples):
             body = {"model": a.model, "messages": [{"role": "user", "content": user}], "tools": tools, "max_tokens": a.max_tokens,
