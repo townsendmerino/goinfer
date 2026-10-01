@@ -291,6 +291,17 @@ call's FORM, not the model's choice of tool. `GOINFER_TOOL_UNION=0` turns the mu
 invalid arguments in 111, it produced none. (This paragraph previously said that with two or more tools the output was not
 grammar-constrained, which was true until T1–T3.)
 
+**Qwen3.5's own tool form is read too, and available on request (`-tool-format`).** The model's chat template asks for
+`<tool_call><function=NAME><parameter=K>value</parameter></function></tool_call>`; goinfer prompts the ChatML families in the Hermes
+JSON form instead (signatures and a JSON call, which `tool_choice` can constrain). The reply parser reads **both** forms whichever was
+prompted, typing each XML parameter from the request's schema (a `"123"` for a string parameter stays a string). `-tool-format
+template` prompts the model's own form instead, rendered byte for byte from its template; a `tool_choice` naming a function is then a
+400, because that form has no JSON wrapper to constrain a decode to. **The default stays `hermes`**: measured on Qwen3.5-0.8B and 9B
+(eight prompts, three samples each, with a follow-up turn after each call), the native prompt read its own tool history better (loops
+answered 11/12 against 9/14 on the 0.8B, 21/21 against 20/21 on the 9B) but made the 0.8B call a tool less often (12/21 correct calls
+against 14/21), and missed the pre-registered bar for changing the default by one reply. Neither prompt ever produced an unparsed XML call.
+`docs/measurements/qwen35-tool-format-2026-09-30/RESULTS.md`.
+
 **An unwrapped call is accepted on the `<tool_call>` families (chatml, mellum2).** Qwen2.5-Coder at every size tested
 practically never writes the `<tool_call>` wrapper under `auto`; it emits the call object alone, which earlier versions
 returned as prose, so an agent got no call at all. An output whose first non-space byte opens a JSON object whose `name` is

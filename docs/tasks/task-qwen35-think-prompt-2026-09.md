@@ -171,7 +171,7 @@ test that would have gone red.
 
 - **Harmony (gpt-oss): parser BUILT 2026-09-30** (see "Harmony (gpt-oss) — built" below). Reasoning budget: BUILT the same day (below).
   `reasoning_effort` low/medium/high: BUILT the same day (below). Tool calls: BUILT the same day (below).
-- **Qwen3.5's XML tool-call format** (separate task), and what signature Claude Code wants on a thinking block — still to
+- **Qwen3.5's XML tool-call format: DONE 2026-09-30, native form parked** (see the retraction above); what signature Claude Code wants on a thinking block — still to
   settle with the outstanding manual Claude Code smoke test.
 
 ## The defect
@@ -381,10 +381,12 @@ changing how history renders breaks KV prefix reuse from the changed turn onward
   `serveVisionMessages`, the tool paths, `batches_run.go`, `jobs_run.go`, plus library copies in `internal/chatapp/main.go`
   and `demo/agent/agent/agent.go`. The splitter belongs in `chat/` (importable by all) and each site needs wiring; budget
   for missing one, and grep for `onText` callers as the completeness check.
-- *Adjacent, separate defect:* Qwen3.5's own tool format (`<tool_call><function=NAME><parameter=K>…`) is not parsed anywhere
-  in Go; serve prompts it with Hermes JSON, and if the model emits the XML form the call is dropped silently and returns as
-  prose. It will make a "client works" claim false for tool-using clients on Qwen3.5 regardless of the think fix. Out of
-  scope here; worth its own task.
+- *Adjacent defect — RETRACTED 2026-09-30:* this note said Qwen3.5's own tool format (`<tool_call><function=NAME><parameter=K>…`) was
+  "not parsed anywhere in Go", that serve prompts Hermes JSON, and that "if the model emits the XML form the call is dropped silently". The
+  first two were true (the parser now reads the XML form too); the third did not happen: across 96 replies from Qwen3.5-0.8B and 9B, under
+  goinfer's JSON prompt and under the model's own template, none wrote an unparsed XML call
+  (`docs/measurements/qwen35-tool-format-2026-09-30/RESULTS.md`). The native prompt is available as `-tool-format template` and was PARKED by
+  its pre-registered rule, not adopted.
 - *No fake-token serve harness exists* (end-to-end serve tests need `GOINFER_SERVE_MODEL` and skip without it — a skip is
   not a pass). The usable model-free seam is `lm := &loadedModel{tk: tk}` plus a hand-fed `chan int` into `streamTokens`
   (`streamtokens_windowing_test.go`), and `httptest` against a bare `server`. Build splitter and wire-format tests there;
@@ -475,7 +477,7 @@ specs keep multiplying; the spec approach is the smaller step and keeps the gold
 ## Not in scope
 
 The vision path itself (P8a G0-G4 stand on `golden_*`), Qwen3 (served with thinking left on, as today — though the phase-1
-splitter would cover it for free), and Qwen3.5's XML tool-call format (separate task).
+splitter would cover it for free), and Qwen3.5's XML tool-call format (since done: parser built, native prompt measured and parked).
 
 
 ## Harmony (gpt-oss) — built (2026-09-30)

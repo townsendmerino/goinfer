@@ -15,6 +15,11 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Qwen3.5's own tool-call form: read always, prompted on request (`-tool-format`).** The reply parser now reads
+  `<tool_call><function=NAME><parameter=K>…` alongside the JSON form, typing parameters from the request's schema, so a model that writes it
+  is no longer ignored. `-tool-format template` renders the model's own tool prompt, byte for byte against HuggingFace's rendering of its
+  template (23 cases). The default stays `hermes`: the suspected defect (the model emitting XML that is dropped) did not occur in 96 measured
+  replies, and the native prompt, run against a pre-registered rule, was parked, not adopted (`docs/measurements/qwen35-tool-format-2026-09-30/`).
 - **gpt-oss can call tools (`serve`).** Tools are declared the way the model's own chat template declares them (a TypeScript-like
   `namespace functions` in the developer message), a call and its result replay as the template renders them, and the call the model
   writes — a channel message addressed `to=functions.NAME` — comes back as an ordinary `tool_calls` entry on `/v1/chat/completions`,
