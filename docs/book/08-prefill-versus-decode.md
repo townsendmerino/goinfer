@@ -40,8 +40,10 @@ contents, and a conversation history — thousands of tokens — and gets back a
 Then the agent does it again, with the history one turn longer. The ratio flips: mostly prompt,
 little generation, repeated every turn.
 
-That is why prefill is where this repo's widest gap against peers sits, and it is why
-Chapter 4's prefix reuse matters so much for this workload.
+That is why prefill matters most for this workload, and why it has been where this repo's widest gaps against peers
+sat. CUDA prefill throughput is still 1.4–2.2× behind Ollama's (2026-09-21), though time to first token on CUDA and
+Metal is now about level or ahead at the prompt lengths measured (Chapter 10). It is also why Chapter 4's prefix reuse
+matters so much here.
 
 ---
 
@@ -71,8 +73,9 @@ with depth rather than staying flat.
 Against peers on this same CPU path, the picture has actually flipped — [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md)
 now records goinfer 1.54× *behind* Ollama at K=512 but 0.91× (AHEAD) by K=3,900, a 0.86× ratio
 over the whole curve in goinfer's favor — superseding the "roughly 4–5× behind" this book used to
-quote. (The lane where goinfer is still clearly behind on prefill is CUDA, not CPU: 1.9–3.2× at
-depth, down from 12–15× before its own tensor-core prefill kernel landed — see Chapter 10.)
+quote. (The lane where goinfer is still clearly behind on prefill is CUDA throughput, not CPU: Ollama was
+1.4–2.2× ahead as of 2026-09-21, down from 12–15× before its own tensor-core prefill kernel landed — see
+Chapter 10.)
 
 ---
 
@@ -207,8 +210,8 @@ nobody happened to be testing against.
 So tensor cores are not pursued, **as a decision, not an omission** — recorded 2026-08-04. The
 format stays group-scaled int4.
 
-That leaves the CUDA prefill gap (1.9–3.2× behind at depth, down from 12–15× before the
-tensor-core prefill kernel landed — Chapter 10) as two problems wearing one number. Part of
+That leaves the CUDA prefill throughput gap (Ollama 1.4–2.2× ahead as of 2026-09-21, down from 12–15× before
+the tensor-core prefill kernel landed — Chapter 10) as two problems wearing one number. Part of
 it is this fork: dp4a, the integer path GEMV actually runs on, tops out around a third of what
 tensor cores could reach on this hardware, full stop, without opening the fork above. But goinfer's
 GEMV is only at 54% of the dp4a ceiling it's already allowed to reach today — which costs nothing in

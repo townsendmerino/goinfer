@@ -190,26 +190,62 @@ backend, which is the standing tax of owning the forward pass rather than inheri
 
 ---
 
+## What about the garbage collector?
+
+The first question a Go engineer asks about running a model in Go is the garbage collector. Advice written for other
+languages is to keep the hot loop out of a collected runtime altogether. Here it has been measured, and the answer
+has two halves.
+
+In steady state the collector barely runs. The decode loop allocates its working memory once (the KV cache, the
+activation scratch, the sampler's buffers) and writes into it in place, so producing a token allocates almost
+nothing. With `GODEBUG=gctrace=1` on the MacBook, a whole decode run of the 35B-A3B mixture-of-experts model took
+13–14 GC cycles, and cumulative GC CPU read 0%.
+
+The one measured way to make it hurt is to give the collector a memory target below what the model needs. A
+feature tried in September set `GOMEMLIMIT` to hold a paged MoE model's memory down. On a 1.5B model the limit
+never bound and changed nothing. On the 35B-A3B it sat below the ~5.7 GB live heap, and the collector ran
+continuously, about 70 cycles a second: 8,642–8,688 cycles in the run, decode down from 2.27 to 1.08 tok/s, and
+time to first token up 2.4×. By the rule registered before the measurement, the feature was removed
+([`docs/measurements/moe-pager-mode-darwin-2026-09-23.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/moe-pager-mode-darwin-2026-09-23.md),
+Result 2; [`gomemlimit-gctrace-2026-09-23.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/gomemlimit-gctrace-2026-09-23.md) is the
+earlier 1.5B null).
+
+So the collector's cost here is the memory pressure you put on it, not the work of decoding a token.
+
+---
+
 ## How it stands against the peers
 
-Against current Ollama, this repo's own summary in [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) is that goinfer is at
-parity or slower on most surfaces. The cgo-free CUDA backend is the exception. On a pre-registered
-sweep of 2026-09-25, the first with flash-decode on by default, it was level with or ahead of Ollama on
-dense 4-bit greedy decode at 10 of 12 cells across the 0.5B, 1.5B and 7B from 128 to 8,000 tokens
-(1.05–1.30× where ahead, 0.99× on the 7B at 8,000), and behind at none; two cells could not be graded
-([`docs/measurements/peer-claim-2026-09-25.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/peer-claim-2026-09-25.md)).
-On Apple Silicon and on CPU it is still behind. Before flash-decode the CUDA edge held only at short
-context — 0.5B **1.24×**, 1.5B **1.13×**, parity at 7B — where launch overhead dominates and Go's
-cheaper dispatch shows. *(An earlier draft of this paragraph said "about 1.7× at 0.5B... parity at 1.5B," from a
-pairing whose goinfer half was later retired as a methodology mismatch; both figures are
-withdrawn — see `docs/benchmarks.md`'s own note on it.)* Until that sweep, the edge inverted at
-deeper context, with Ollama winning and the gap widening with depth; flash-decode is what closed it.
-On prefill throughput it still loses, though far less than it used to: 1.9–3.2× behind, down from
-12–15× before the CUDA tensor-core prefill kernel landed, as Chapter 8 covered. Time to first token,
-the number a user feels, measured level with Ollama's on the 1.5B at 512 and 3,900 prompt tokens.
+Against Ollama, the picture in [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) changed a good deal during September, and
+it depends on the backend and on which phase you measure.
 
-That is the trade stated plainly. A years-tuned CUDA kernel written by people who do only
-that will beat a portable one. Owning the forward pass in Go costs throughput.
+**Decode on CUDA is ahead.** A pre-registered sweep of 2026-09-29 (an RTX 2070 SUPER, Ollama v0.32.5 at its
+defaults) put goinfer ahead on dense 4-bit greedy decode in all 12 cells across the 0.5B, 1.5B and 7B from 128 to
+8,000 tokens, 1.05–1.47×; on the 7B the margin narrows with depth
+([`docs/measurements/peer-sweep-2026-09-29.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/peer-sweep-2026-09-29.md)). Flash-decode,
+on by default since 2026-09-23, is what turned the deeper cells: before it, the edge held only at short context,
+where launch overhead dominates and Go's cheaper dispatch shows, and Ollama won with depth. *(An earlier draft of
+this paragraph said "about 1.7× at 0.5B... parity at 1.5B," from a pairing whose goinfer half was later retired as
+a methodology mismatch; both figures are withdrawn — see `docs/benchmarks.md`'s own note on it.)* One CUDA row is
+still behind: Phi-3 mini at its real default, 0.90× at 128 tokens and 0.72× at 3,900.
+
+**Decode on Apple Silicon's GPU moved from behind to ahead.** Rewriting the int4 matrix-vector kernels in MLX's form
+(2026-09-26) put the 1.5B at 1.03–1.06× and the 7B at 1.06–1.19× of Ollama from 128 to 3,900 tokens. That is a
+same-session A/B, not the pre-registered sweep. The sweep's re-run on 2026-09-30 measured the 0.5B at 1.296× at 128
+tokens, and its other Metal decode cells were refused because the machine was not idle; they are owed.
+
+**On the CPU it is mixed.** On x86 (a Ryzen 7 3700X) the 2026-09-29 sweep read 0.905× on the 0.5B, level on the
+1.5B (1.01×) and 1.04× on the 7B. On Apple Silicon's CPU goinfer is behind llama.cpp, 0.84× on the 0.5B.
+
+**Prefill depends on what you count.** Time to first token, the number a user feels, is level or ahead where it was
+measured on the GPU backends: on CUDA the 1.5B read 4.29× faster than Ollama at a 512-token prompt (marked ambiguous,
+because Ollama's own spread was 17.9%) and about level at 3,900 (0.97×, ambiguous on the low side); on Metal it read level at 3,900 (0.983×) and
+ambiguous on the high side at 512. Prefill *throughput* on CUDA still loses: Ollama was 1.4–2.2× ahead as of
+2026-09-21, down from 12–15× before the CUDA tensor-core prefill kernel landed, as Chapter 8 covered.
+
+That is the trade, narrowed rather than gone. Where goinfer is behind, it is behind kernels tuned for years by
+people who do only that, and owning the forward pass in Go costs throughput there. Where it is ahead, most of the
+margin came from borrowing a technique (flash-decode, MLX's matrix-vector shape) and measuring it, not from Go itself.
 
 What it buys is peer-independent: no native dependency, cross-compilation to anything Go
 targets, the model compiled into the binary, bit-identical decode, and a 26B-A4B model running
