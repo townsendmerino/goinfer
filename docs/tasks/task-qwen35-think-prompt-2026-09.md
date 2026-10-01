@@ -652,11 +652,10 @@ this change; it is not evidence for either order).
   compared against HuggingFace for Qwen3 (the two cases that were skipped), Qwen3.5 (the result runs) and a new Qwen2.5-Coder golden
   (`testdata/chat_goldens/tools_qwen25_grouped.json`, `scripts/pin_qwen25_tools.py`). Four mutations turn it red.
 - *Two more Hermes-vs-template differences, found by that golden and deliberately NOT changed:* (1) the declarations — goinfer writes each tool as
-  sorted-key compact JSON, the Qwen templates as `{"type": "function", "function": {"name", "description", "parameters"}}` with Python spacing
-  (`qwenToolJSON` already produces the template's bytes for the native Qwen3.5 form); (2) a call with no text — goinfer writes `assistant\n` + `\n<tool_call>`
-  (a blank line), Qwen2.5's template writes `assistant\n<tool_call>`. Both change the prompt every Qwen tool user starts from or replays, and the
-  existing tool-call measurements (e.g. `docs/measurements/tool-call-failure-t0-2026-09-23.md`) were taken with the current bytes, so each is a
-  prompt change that needs its own pre-registered A/B, the way the Qwen3.5 native form and the Gemma order got one.
+  sorted-key compact JSON, HTML-escaped; the Qwen templates as `{"type": "function", "function": {"name", "description", "parameters"}}` with Python
+  spacing, the schema's key order, no escaping. **Measured 2026-09-30, PARKED, implementation deleted** — see below. (2) a call with no text —
+  goinfer writes `assistant\n` + `\n<tool_call>` (a blank line), Qwen2.5's template writes `assistant\n<tool_call>`. Still unchanged: it is the
+  history shape of every Qwen2.5-Coder tool loop and the existing tool-call measurements were taken with it, so it needs its own pre-registered A/B.
 - *One mutation of the port is equivalent*, not a gap: the continuation clause "calls with no result" can never be the deciding branch, because
   the pending-call case is tested first.
 
@@ -672,3 +671,14 @@ A VOID (the load log did not say the template is managed) is not a result. **Unt
 claim that the template's order might hurt a replayed agent turn stays a hypothesis.** The setup was smoke-tested (one reply per arm, both
 managed, both answered) — that checks the mechanics, not the question. Tonight's queue is over the window with this added (12 h 10 min against
 06:30), and this job is last, so it may carry to the next night.
+
+## Qwen tool declarations in the model's own bytes — measured, PARKED (2026-09-30)
+
+Rule written first (`docs/measurements/qwen-tool-declarations-2026-09-30/PREREGISTERED.md`); two builds of one commit, differing only by a link-time
+variable; four models (Qwen2.5-Coder-0.5B, Qwen2.5-7B, Qwen3.5-0.8B, Qwen3.5-9B), eight prompts × three samples, each correct call followed by a
+loop turn. Result (`RESULTS.md` there): **PARK.** 7B identical in both arms (21/21/3); Qwen3.5-0.8B better with the template's bytes (14→17 correct
+calls, 9→13 loops answered); Qwen2.5-Coder-0.5B and Qwen3.5-9B each two follow-ups worse (0.5B 2→0, 9B 20→18). No model fell by the three that
+REJECT needed, and two were lower on a measure, so ADOPT failed. The registered consequence was applied: the default stays goinfer's compact
+form and the template-bytes implementation was **deleted** (it is a few lines, the oracle golden remains), not left behind a switch an
+operator cannot reach. What it does show: the declaration bytes matter to the smallest model and not to the strongest, so goinfer's compact form
+was never a measured liability, and the template's form is not a free win either.

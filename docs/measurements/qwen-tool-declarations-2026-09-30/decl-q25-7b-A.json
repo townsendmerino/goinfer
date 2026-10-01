@@ -1,0 +1,323 @@
+[
+ {
+  "prompt": "weather",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"city\": \"Paris\"}",
+   "name": "get_weather"
+  },
+  "secs": 2.8,
+  "loop": "answered",
+  "loop_text": "The current weather in Paris is 18 degrees Celsius with sunny conditions."
+ },
+ {
+  "prompt": "weather",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"city\": \"Paris\"}",
+   "name": "get_weather"
+  },
+  "secs": 0.5,
+  "loop": "answered",
+  "loop_text": "The current weather in Paris is 18 degrees Celsius with sunny conditions."
+ },
+ {
+  "prompt": "weather",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"city\": \"Paris\"}",
+   "name": "get_weather"
+  },
+  "secs": 0.5,
+  "loop": "answered",
+  "loop_text": "The current weather in Paris is 18 degrees Celsius with sunny conditions."
+ },
+ {
+  "prompt": "calc",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"expression\": \"1234 * 5678\"}",
+   "name": "calculator"
+  },
+  "secs": 2.7,
+  "loop": "answered",
+  "loop_text": "The result of 1234 multiplied by 5678 is 7006652."
+ },
+ {
+  "prompt": "calc",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"expression\": \"1234 * 5678\"}",
+   "name": "calculator"
+  },
+  "secs": 0.6,
+  "loop": "answered",
+  "loop_text": "The result of 1234 multiplied by 5678 is 7006652."
+ },
+ {
+  "prompt": "calc",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"expression\": \"1234 * 5678\"}",
+   "name": "calculator"
+  },
+  "secs": 0.6,
+  "loop": "answered",
+  "loop_text": "The result of 1234 multiplied by 5678 is 7006652."
+ },
+ {
+  "prompt": "search",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"query\": \"Go 1.24 release\", \"max_results\": 3}",
+   "name": "search"
+  },
+  "secs": 2.9,
+  "loop": "answered",
+  "loop_text": "Here are some recent news about the Go 1.24 release:\n\n1. Go 1.24 adds generic type aliases.\n2. Go 1.24 speeds up maps. \n"
+ },
+ {
+  "prompt": "search",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"query\": \"Go 1.24 release\", \"max_results\": 3}",
+   "name": "search"
+  },
+  "secs": 0.7,
+  "loop": "answered",
+  "loop_text": "Here are some recent news about the Go 1.24 release:\n\n1. Go 1.24 adds generic type aliases.\n2. Go 1.24 speeds up maps."
+ },
+ {
+  "prompt": "search",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"query\": \"Go 1.24 release\", \"max_results\": 3}",
+   "name": "search"
+  },
+  "secs": 0.7,
+  "loop": "answered",
+  "loop_text": "Here are some recent news about the Go 1.24 release:\n\n1. Go 1.24 adds generic type aliases.\n2. Go 1.24 speeds up maps. \n"
+ },
+ {
+  "prompt": "read",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"path\": \"/etc/hostname\"}",
+   "name": "read_file"
+  },
+  "secs": 2.5,
+  "loop": "answered",
+  "loop_text": "The content of the file /etc/hostname is:\n\n```\nmyhost.example.com\n```"
+ },
+ {
+  "prompt": "read",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"path\": \"/etc/hostname\"}",
+   "name": "read_file"
+  },
+  "secs": 0.5,
+  "loop": "answered",
+  "loop_text": "The content of the file /etc/hostname is `myhost.example.com`."
+ },
+ {
+  "prompt": "read",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"path\": \"/etc/hostname\"}",
+   "name": "read_file"
+  },
+  "secs": 0.5,
+  "loop": "answered",
+  "loop_text": "The content of the file /etc/hostname is `myhost.example.com`."
+ },
+ {
+  "prompt": "pick",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"timezone\": \"Asia/Tokyo\"}",
+   "name": "get_time"
+  },
+  "secs": 0.8,
+  "loop": "answered",
+  "loop_text": "The current time in Tokyo (Japan Standard Time) is 21:30 on October 1, 2026."
+ },
+ {
+  "prompt": "pick",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"timezone\": \"Asia/Tokyo\"}",
+   "name": "get_time"
+  },
+  "secs": 0.6,
+  "loop": "answered",
+  "loop_text": "The current time in Tokyo (Japan Standard Time) is 21:30 on 2026-10-01."
+ },
+ {
+  "prompt": "pick",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"timezone\": \"Asia/Tokyo\"}",
+   "name": "get_time"
+  },
+  "secs": 0.6,
+  "loop": "answered",
+  "loop_text": "The current time in Tokyo (Japan Standard Time) is 21:30 on 2026-10-01."
+ },
+ {
+  "prompt": "multiline",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"path\": \"hello.py\", \"content\": \"print('hello')\\nfor i in range(1, 4):\\n    print(i)\"}",
+   "name": "write_file"
+  },
+  "secs": 1.3,
+  "loop": "answered",
+  "loop_text": "The file `hello.py` has been created with the following content:\n\n```python\nprint('hello')\nfor i in range(1, 4):\n    pri"
+ },
+ {
+  "prompt": "multiline",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"path\": \"hello.py\", \"content\": \"print('hello')\\nfor i in range(1, 4):\\n    print(i)\"}",
+   "name": "write_file"
+  },
+  "secs": 0.9,
+  "loop": "answered",
+  "loop_text": "The file `hello.py` has been created successfully. You can run it to see the output:\n\n```python\nprint('hello')\nfor i in "
+ },
+ {
+  "prompt": "multiline",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"path\": \"hello.py\", \"content\": \"print('hello')\\nfor i in range(1, 4):\\n    print(i)\"}",
+   "name": "write_file"
+  },
+  "secs": 0.9,
+  "loop": "answered",
+  "loop_text": "The file `hello.py` has been created successfully. You can now run it to see the output. To execute the script, you can "
+ },
+ {
+  "prompt": "typed",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}",
+   "name": "set_light"
+  },
+  "secs": 2.6,
+  "loop": "answered",
+  "loop_text": "The kitchen light has been turned on at 70% brightness."
+ },
+ {
+  "prompt": "typed",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}",
+   "name": "set_light"
+  },
+  "secs": 0.8,
+  "loop": "answered",
+  "loop_text": "The kitchen light has been turned on at 70% brightness."
+ },
+ {
+  "prompt": "typed",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}",
+   "name": "set_light"
+  },
+  "secs": 0.8,
+  "loop": "answered",
+  "loop_text": "The kitchen light has been turned on at 70% brightness."
+ },
+ {
+  "prompt": "control",
+  "sample": 0,
+  "kind": "prose",
+  "ok": true,
+  "why": "",
+  "detail": "The capital of France is Paris. Is there anything else you would like to know?",
+  "secs": 0.6
+ },
+ {
+  "prompt": "control",
+  "sample": 1,
+  "kind": "prose",
+  "ok": true,
+  "why": "",
+  "detail": "The capital of France is Paris. Is there anything specific about Paris you would like to know, or do you need informatio",
+  "secs": 0.4
+ },
+ {
+  "prompt": "control",
+  "sample": 2,
+  "kind": "prose",
+  "ok": true,
+  "why": "",
+  "detail": "The capital of France is Paris. Is there anything else you would like to know?",
+  "secs": 0.2
+ }
+]

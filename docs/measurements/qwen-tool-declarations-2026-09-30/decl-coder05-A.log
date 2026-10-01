@@ -1,0 +1,30 @@
+   first cell took 0s; 24 cells project to about 0.2 minutes (limit 10.0)
+weather   s0  call         ok   answered    {"arguments": "{\"city\": \"Paris\"}", "name": "get_weather"}
+weather   s1  call         ok   call_again  {"arguments": "{\"city\": \"Paris\"}", "name": "get_weather"}
+weather   s2  prose                         "<response name=\"get_weather\" arguments=\"{'city\":\"Paris\"}}\" />"
+calc      s0  call         ok   call_again  {"arguments": "{\"expression\": \"1234 * 5678\"}", "name": "calculator"}
+calc      s1  call         ok   call_again  {"arguments": "{\"expression\": \"1234 * 5678\"}", "name": "calculator"}
+calc      s2  prose                         "{\"name\": \"calculator\", \"arguments\": \"1234 * 5678\"}"
+search    s0  prose                         "```json\n{\n  \"name\": \"search\",\n  \"arguments\": {\n    \"query\": \"Go 1.24 release\",\n    \
+search    s1  prose                         "```json\n{\n  \"name\": \"search\",\n  \"arguments\": {\n    \"query\": \"Go 1.24 news\",\n    \"ma
+search    s2  prose                         "```json\n{\n  \"name\": \"search\",\n  \"arguments\": {\n    \"query\": \"go 1.24 release\",\n    \
+read      s0  prose                         "```json\n{\n  \"name\": \"read_file\",\n  \"arguments\": {\n    \"path\": \"/etc/hostname\"\n  }\n}
+read      s1  prose                         "```json\n{\n  \"name\": \"hostname\",\n  \"arguments\": {\n    \"path\": \"/etc/hostname\"\n  }\n}\
+read      s2  prose                         "```json\n{\n  \"name\": \"read_file\",\n  \"arguments\": {\n    \"path\": \"/etc/hostname\"\n  }\n}
+pick      s0  call         ok   call_again  {"arguments": "{\"timezone\": \"Asia/Tokyo\"}", "name": "get_time"}
+pick      s1  prose                         "To determine the current time in Tokyo, you can use the `get_time` function. Here's the JSON object
+pick      s2  prose                         "<response name=\"get_time\" arguments=\"timezone='Asia/Tokyo'\"></response>"
+multiline s0  prose                         "```json\n{\n  \"name\": \"hello\",\n  \"arguments\": {\n    \"path\": \"hello.txt\",\n    \"content
+multiline s1  prose                         "```json\n{\"name\": \"hello\", \"arguments\": {\"path\": \"hello.txt\", \"content\": \"hello\"}}\n{
+multiline s2  prose                         "```json\n{\"name\": \"hello\", \"arguments\": {\"path\": \"hello.txt\", \"content\": \"hello\\n1\\n
+typed     s0  call         ok   call_again  {"arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}", "name": "set_light"}
+typed     s1  call         ok   answered    {"arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}", "name": "set_light"}
+typed     s2  prose                         "```json\n{\"name\": \"set_light\", \"arguments\": {\"room\": \"kitchen\", \"on\": true, \"brightnes
+control   s0  prose        ok               "The capital of France is Paris."
+control   s1  prose        ok               "The capital of France is Paris."
+control   s2  prose        ok               "The capital of France is Paris."
+
+== 24 replies
+   by kind: {'call': 7, 'prose': 17}
+   tool prompts: 7/21 correct calls (33%); control prompt answered in prose: 3/3
+   loops (after 7 ok calls): {'answered': 2, 'call_again': 5}  answered: 2/7

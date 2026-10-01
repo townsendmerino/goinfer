@@ -1,0 +1,30 @@
+   first cell took 3s; 24 cells project to about 1.3 minutes (limit 10.0)
+weather   s0  call         ok   answered    {"arguments": "{\"city\": \"Paris\"}", "name": "get_weather"}
+weather   s1  call         ok   answered    {"arguments": "{\"city\": \"Paris\"}", "name": "get_weather"}
+weather   s2  call         ok   answered    {"arguments": "{\"city\": \"Paris\"}", "name": "get_weather"}
+calc      s0  call         ok   answered    {"arguments": "{\"expression\": \"1234 * 5678\"}", "name": "calculator"}
+calc      s1  call         ok   answered    {"arguments": "{\"expression\": \"1234 * 5678\"}", "name": "calculator"}
+calc      s2  call         ok   answered    {"arguments": "{\"expression\": \"1234 * 5678\"}", "name": "calculator"}
+search    s0  call         ok   answered    {"arguments": "{\"query\": \"Go 1.24 release\", \"max_results\": 3}", "name": "search"}
+search    s1  call         ok   answered    {"arguments": "{\"query\": \"Go 1.24 release\", \"max_results\": 3}", "name": "search"}
+search    s2  call         ok   answered    {"arguments": "{\"query\": \"Go 1.24 release\", \"max_results\": 3}", "name": "search"}
+read      s0  call         ok   answered    {"arguments": "{\"path\": \"/etc/hostname\"}", "name": "read_file"}
+read      s1  call         ok   answered    {"arguments": "{\"path\": \"/etc/hostname\"}", "name": "read_file"}
+read      s2  call         ok   answered    {"arguments": "{\"path\": \"/etc/hostname\"}", "name": "read_file"}
+pick      s0  call         ok   answered    {"arguments": "{\"timezone\": \"Asia/Tokyo\"}", "name": "get_time"}
+pick      s1  call         ok   answered    {"arguments": "{\"timezone\": \"Asia/Tokyo\"}", "name": "get_time"}
+pick      s2  call         ok   answered    {"arguments": "{\"timezone\": \"Asia/Tokyo\"}", "name": "get_time"}
+multiline s0  call         ok   answered    {"arguments": "{\"path\": \"hello.py\", \"content\": \"print('hello')\\nfor i in range(1, 4):\\n    
+multiline s1  call         ok   answered    {"arguments": "{\"path\": \"hello.py\", \"content\": \"print('hello')\\nfor i in range(1, 4):\\n    
+multiline s2  call         ok   answered    {"arguments": "{\"path\": \"hello.py\", \"content\": \"print('hello')\\nfor i in range(1, 4):\\n    
+typed     s0  call         ok   answered    {"arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}", "name": "set_light"}
+typed     s1  call         ok   answered    {"arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}", "name": "set_light"}
+typed     s2  call         ok   answered    {"arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}", "name": "set_light"}
+control   s0  prose        ok               "The capital of France is Paris. Is there anything else you would like to know?"
+control   s1  prose        ok               "The capital of France is Paris. Is there anything specific about Paris you would like to know, or d
+control   s2  prose        ok               "The capital of France is Paris. Is there anything else you would like to know?"
+
+== 24 replies
+   by kind: {'call': 21, 'prose': 3}
+   tool prompts: 21/21 correct calls (100%); control prompt answered in prose: 3/3
+   loops (after 21 ok calls): {'answered': 21}  answered: 21/21

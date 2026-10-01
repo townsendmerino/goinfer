@@ -408,6 +408,13 @@ func TestChatMLTools_groupedResultsMatchQwen25(t *testing.T) {
 				turns = append(turns, Turn{Role: "user", Content: m.Content})
 			}
 		}
+		hasResult := false
+		for _, tu := range turns {
+			hasResult = hasResult || tu.Role == "tool"
+		}
+		if !hasResult {
+			continue // a case about something else (the declarations' bytes), with no results to group
+		}
 		// The runs of tool results — how many, and what each holds — are what grouping decides. The rest of the prompt differs from the template
 		// in two other, pre-existing ways that are NOT touched here: the declarations (goinfer writes each tool as sorted-key compact JSON, the
 		// template as {"type": …, "function": {…}} with Python spacing) and a call with no text (goinfer writes a blank line before
@@ -446,118 +453,5 @@ func allToolResponseRuns(s string) []string {
 		}
 		runs = append(runs, s[i:i+j+len(end)])
 		s = s[i+j+len(end):]
-	}
-}
-
-// toolsBlock is the <tools>…</tools> block of a ChatML prompt: from the `<tools>` that opens the declarations (not the instruction's own mention
-// of the tag) to the `</tools>` that closes them.
-func toolsBlock(s string) string {
-	i := strings.Index(s, "<tools>\n{")
-	if i < 0 {
-		return ""
-	}
-	j := strings.Index(s[i:], "\n</tools>")
-	if j < 0 {
-		return s[i:]
-	}
-	return s[i : i+j+len("\n</tools>")]
-}
-
-// With the template's declaration bytes selected, each tool inside <tools> is exactly what the model's own template writes — Python's
-// separators, `type` then `function {name, description, parameters}`, the schema's own key order, no HTML escaping, no `parameters` key for a
-// tool with none — compared against HuggingFace for Qwen2.5-Coder, Qwen3 and both Qwen3.5 templates. The default (compact) is what it always
-// was. The variable is the experiment's switch (tool_decls.go), so the test sets it directly.
-func TestToolDeclarations_matchHF(t *testing.T) {
-	defer func(v string) { toolDeclarations = v }(toolDeclarations)
-
-	// Qwen2.5-Coder: the golden's own tools, and the special case with its own list.
-	raw, err := os.ReadFile(filepath.Join("..", "testdata", "chat_goldens", "tools_qwen25_grouped.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var q struct {
-		ChatTemplate string `json:"chat_template"`
-		Tools        []struct {
-			Function struct {
-				Name        string          `json:"name"`
-				Description string          `json:"description"`
-				Parameters  json.RawMessage `json:"parameters"`
-			} `json:"function"`
-		} `json:"tools"`
-		Cases []struct {
-			Name  string `json:"name"`
-			Tools []struct {
-				Function struct {
-					Name        string          `json:"name"`
-					Description string          `json:"description"`
-					Parameters  json.RawMessage `json:"parameters"`
-				} `json:"function"`
-			} `json:"tools"`
-			Prompt string `json:"prompt"`
-		} `json:"cases"`
-	}
-	if err := json.Unmarshal(raw, &q); err != nil {
-		t.Fatal(err)
-	}
-	tmpl, err := Detect(Meta{ChatTemplate: q.ChatTemplate})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !tmpl.pyDeclarations {
-		t.Fatal("Qwen2.5's template writes declarations with `tool | tojson`; Detect must read that from its text")
-	}
-	user := []Turn{{Role: "user", Content: "hi"}}
-	checked := 0
-	for _, c := range q.Cases {
-		src := c.Tools
-		if len(src) == 0 {
-			src = q.Tools
-		}
-		var tools []Tool
-		for _, tl := range src {
-			tools = append(tools, Tool{Name: tl.Function.Name, Description: tl.Function.Description, Parameters: tl.Function.Parameters})
-		}
-		toolDeclarations = "template"
-		got, want := toolsBlock(tmpl.RenderTools("", user, tools)), toolsBlock(c.Prompt)
-		if want == "" || got != want {
-			t.Errorf("Qwen2.5 / %s: declarations differ\n got  %q\n want %q", c.Name, got, want)
-		}
-		checked++
-	}
-	if checked < 6 {
-		t.Fatalf("only %d cases checked", checked)
-	}
-
-	// Qwen3, Qwen3.5 0.8B and 9B: the history golden's tool conversations all carry the same declaration.
-	for _, g := range loadHistGoldens(t) {
-		if !strings.HasPrefix(g.Checkpoint, "qwen") {
-			continue
-		}
-		tm, _ := Detect(Meta{ChatTemplate: g.ChatTemplate})
-		if !tm.pyDeclarations {
-			t.Errorf("%s: its template writes declarations with `tool | tojson`", g.Checkpoint)
-			continue
-		}
-		for _, c := range g.Cases {
-			if !c.Tools {
-				continue
-			}
-			toolDeclarations = "template"
-			got, want := toolsBlock(tm.RenderTools("", goldenTurns(t, c.Messages), goldenTools)), toolsBlock(c.Prompts["unset"])
-			if want == "" || got != want {
-				t.Errorf("%s / %s: declarations differ\n got  %q\n want %q", g.Checkpoint, c.Name, got, want)
-			}
-			break // every tool case declares the same tool
-		}
-	}
-
-	// The default is the compact form, and a template that does not write `tool | tojson` is untouched by the switch.
-	toolDeclarations = "compact"
-	if got := toolsBlock(tmpl.RenderTools("", user, []Tool{{Name: "f", Description: "d", Parameters: json.RawMessage(`{"type":"object"}`)}})); !strings.Contains(got, `{"function":{"description":"d","name":"f"`) {
-		t.Errorf("the default must stay goinfer's compact form: %q", got)
-	}
-	toolDeclarations = "template"
-	if bare := ChatML(); bare.UsesTemplateDeclarations() {
-		t.Error("a ChatML template with no `tool | tojson` text must keep the compact form whatever the build selects")
 	}
 }

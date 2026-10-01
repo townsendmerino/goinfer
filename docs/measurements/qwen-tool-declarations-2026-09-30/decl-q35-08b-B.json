@@ -1,0 +1,303 @@
+[
+ {
+  "prompt": "weather",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"city\": \"Paris\"}",
+   "name": "get_weather"
+  },
+  "secs": 0.7,
+  "loop": "answered",
+  "loop_text": "It is currently 18 degrees Celsius and sunny in Paris."
+ },
+ {
+  "prompt": "weather",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"city\": \"Paris\"}",
+   "name": "get_weather"
+  },
+  "secs": 0.7,
+  "loop": "answered",
+  "loop_text": "It is currently 18 degrees Celsius and sunny in Paris."
+ },
+ {
+  "prompt": "weather",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"city\": \"Paris\"}",
+   "name": "get_weather"
+  },
+  "secs": 0.7,
+  "loop": "answered",
+  "loop_text": "It is 18 degrees Celsius and sunny in Paris."
+ },
+ {
+  "prompt": "calc",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"expression\": \"1234 * 5678\"}",
+   "name": "calculator"
+  },
+  "secs": 0.7,
+  "loop": "answered",
+  "loop_text": "7006652"
+ },
+ {
+  "prompt": "calc",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"expression\": \"1234 * 5678\"}",
+   "name": "calculator"
+  },
+  "secs": 0.7,
+  "loop": "answered",
+  "loop_text": "1234 \u00d7 5678 = 7006652"
+ },
+ {
+  "prompt": "calc",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"expression\": \"1234 * 5678\"}",
+   "name": "calculator"
+  },
+  "secs": 0.8,
+  "loop": "answered",
+  "loop_text": "7006652"
+ },
+ {
+  "prompt": "search",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"query\": \"Go 1.24 release\", \"max_results\": 3}",
+   "name": "search"
+  },
+  "secs": 0.9,
+  "loop": "call_again",
+  "loop_text": ""
+ },
+ {
+  "prompt": "search",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"query\": \"Go 1.24 release news\", \"max_results\": 3}",
+   "name": "search"
+  },
+  "secs": 0.9,
+  "loop": "call_again",
+  "loop_text": ""
+ },
+ {
+  "prompt": "search",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"query\": \"Go 1.24 release 3 results\", \"max_results\": 3}",
+   "name": "search"
+  },
+  "secs": 1.0,
+  "loop": "call_again",
+  "loop_text": ""
+ },
+ {
+  "prompt": "read",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"path\": \"/etc/hostname\"}",
+   "name": "read_file"
+  },
+  "secs": 0.3,
+  "loop": "answered",
+  "loop_text": "The contents of `/etc/hostname` are:\n\n`myhost.example.com`"
+ },
+ {
+  "prompt": "read",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"path\": \"/etc/hostname\"}",
+   "name": "read_file"
+  },
+  "secs": 0.2,
+  "loop": "answered",
+  "loop_text": "The contents of `/etc/hostname` are **myhost.example.com**."
+ },
+ {
+  "prompt": "read",
+  "sample": 2,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```json\n{\n    \"name\": \"Contents of /etc/hostname\"\n}\n```",
+  "secs": 0.3
+ },
+ {
+  "prompt": "pick",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"timezone\": \"Asia/Tokyo\"}",
+   "name": "get_time"
+  },
+  "secs": 0.8,
+  "loop": "answered",
+  "loop_text": "It is 21:30 (9:30 PM) in Japan (Asia/Tokyo) on October 1, 2026."
+ },
+ {
+  "prompt": "pick",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"timezone\": \"Asia/Tokyo\"}",
+   "name": "get_time"
+  },
+  "secs": 0.8,
+  "loop": "answered",
+  "loop_text": "It's 9:30 AM (21:30) in Japan (Asia/Tokyo) on October 1, 2026."
+ },
+ {
+  "prompt": "pick",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"timezone\": \"Asia/Tokyo\"}",
+   "name": "get_time"
+  },
+  "secs": 0.8,
+  "loop": "answered",
+  "loop_text": "It is 21:30 (9:30 PM) in Japan (Asia/Tokyo) on 2026-10-01."
+ },
+ {
+  "prompt": "multiline",
+  "sample": 0,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```python\nprint(\"hello\")\nprint(1)\nprint(2)\nprint(3)\n```",
+  "secs": 0.3
+ },
+ {
+  "prompt": "multiline",
+  "sample": 1,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```python\n\"\"\"\nHello World\n\"\"\"\nprint(\"hello\")\nprint(1)\nprint(2)\nprint(3)\n```",
+  "secs": 0.3
+ },
+ {
+  "prompt": "multiline",
+  "sample": 2,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```python\nimport sys\n\nfor i in range(1, 4):\n    print(i)\n\nsys.exit(1)\n```",
+  "secs": 0.3
+ },
+ {
+  "prompt": "typed",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}",
+   "name": "set_light"
+  },
+  "secs": 1.0,
+  "loop": "answered",
+  "loop_text": "The kitchen light has been turned on at 70% brightness."
+ },
+ {
+  "prompt": "typed",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}",
+   "name": "set_light"
+  },
+  "secs": 1.0,
+  "loop": "answered",
+  "loop_text": "I have successfully turned on the kitchen light at 70% brightness."
+ },
+ {
+  "prompt": "typed",
+  "sample": 2,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}",
+   "name": "set_light"
+  },
+  "secs": 1.1,
+  "loop": "call_again",
+  "loop_text": "Thank you! I have turned on the kitchen light at 70% brightness."
+ },
+ {
+  "prompt": "control",
+  "sample": 0,
+  "kind": "prose",
+  "ok": true,
+  "why": "",
+  "detail": "The capital of France is **Paris**.",
+  "secs": 0.2
+ },
+ {
+  "prompt": "control",
+  "sample": 1,
+  "kind": "prose",
+  "ok": true,
+  "why": "",
+  "detail": "Yes, the capital of France is **Paris**.\n\nIt is the largest and most populous city in the country and is considered the ",
+  "secs": 0.3
+ },
+ {
+  "prompt": "control",
+  "sample": 2,
+  "kind": "prose",
+  "ok": true,
+  "why": "",
+  "detail": "The capital of France is **Paris**.",
+  "secs": 0.1
+ }
+]

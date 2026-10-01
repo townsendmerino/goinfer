@@ -1,0 +1,253 @@
+[
+ {
+  "prompt": "weather",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"city\": \"Paris\"}",
+   "name": "get_weather"
+  },
+  "secs": 0.2,
+  "loop": "answered",
+  "loop_text": "{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\", \"temperature\": \"18\", \"description\": \"Sunny, 18 degrees Celsius\"}"
+ },
+ {
+  "prompt": "weather",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"city\": \"Paris\"}",
+   "name": "get_weather"
+  },
+  "secs": 0.1,
+  "loop": "call_again",
+  "loop_text": ""
+ },
+ {
+  "prompt": "weather",
+  "sample": 2,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "<response name=\"get_weather\" arguments=\"{'city\":\"Paris\"}}\" />",
+  "secs": 0.1
+ },
+ {
+  "prompt": "calc",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"expression\": \"1234 * 5678\"}",
+   "name": "calculator"
+  },
+  "secs": 0.2,
+  "loop": "call_again",
+  "loop_text": ""
+ },
+ {
+  "prompt": "calc",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"expression\": \"1234 * 5678\"}",
+   "name": "calculator"
+  },
+  "secs": 0.1,
+  "loop": "call_again",
+  "loop_text": ""
+ },
+ {
+  "prompt": "calc",
+  "sample": 2,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "{\"name\": \"calculator\", \"arguments\": \"1234 * 5678\"}",
+  "secs": 0.1
+ },
+ {
+  "prompt": "search",
+  "sample": 0,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```json\n{\n  \"name\": \"search\",\n  \"arguments\": {\n    \"query\": \"Go 1.24 release\",\n    \"max_results\": 3\n  }\n}\n```",
+  "secs": 0.2
+ },
+ {
+  "prompt": "search",
+  "sample": 1,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```json\n{\n  \"name\": \"search\",\n  \"arguments\": {\n    \"query\": \"Go 1.24 news\",\n    \"max_results\": 3\n  }\n}\n```",
+  "secs": 0.1
+ },
+ {
+  "prompt": "search",
+  "sample": 2,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```json\n{\n  \"name\": \"search\",\n  \"arguments\": {\n    \"query\": \"go 1.24 release\",\n    \"max_results\": 3\n  }\n}\n```",
+  "secs": 0.1
+ },
+ {
+  "prompt": "read",
+  "sample": 0,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```json\n{\n  \"name\": \"read_file\",\n  \"arguments\": {\n    \"path\": \"/etc/hostname\"\n  }\n}\n```",
+  "secs": 0.2
+ },
+ {
+  "prompt": "read",
+  "sample": 1,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```json\n{\n  \"name\": \"hostname\",\n  \"arguments\": {\n    \"path\": \"/etc/hostname\"\n  }\n}\n```",
+  "secs": 0.1
+ },
+ {
+  "prompt": "read",
+  "sample": 2,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```json\n{\n  \"name\": \"read_file\",\n  \"arguments\": {\n    \"path\": \"/etc/hostname\"\n  }\n}\n```",
+  "secs": 0.1
+ },
+ {
+  "prompt": "pick",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"timezone\": \"Asia/Tokyo\"}",
+   "name": "get_time"
+  },
+  "secs": 0.1,
+  "loop": "call_again",
+  "loop_text": ""
+ },
+ {
+  "prompt": "pick",
+  "sample": 1,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "To determine the current time in Tokyo, you can use the `get_time` function. Here's the JSON object returned by the func",
+  "secs": 0.2
+ },
+ {
+  "prompt": "pick",
+  "sample": 2,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "<response name=\"get_time\" arguments=\"timezone='Asia/Tokyo'\"></response>",
+  "secs": 0.1
+ },
+ {
+  "prompt": "multiline",
+  "sample": 0,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```json\n{\n  \"name\": \"hello\",\n  \"arguments\": {\n    \"path\": \"hello.txt\",\n    \"content\": \"hello\\n1\\n2\\n3\"\n  }\n}\n```",
+  "secs": 0.2
+ },
+ {
+  "prompt": "multiline",
+  "sample": 1,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```json\n{\"name\": \"hello\", \"arguments\": {\"path\": \"hello.txt\", \"content\": \"hello\"}}\n{\"name\": \"hello\", \"arguments\": {\"path\"",
+  "secs": 0.3
+ },
+ {
+  "prompt": "multiline",
+  "sample": 2,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```json\n{\"name\": \"hello\", \"arguments\": {\"path\": \"hello.txt\", \"content\": \"hello\\n1\\n2\\n3\"}}\n```",
+  "secs": 0.1
+ },
+ {
+  "prompt": "typed",
+  "sample": 0,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}",
+   "name": "set_light"
+  },
+  "secs": 0.1,
+  "loop": "call_again",
+  "loop_text": ""
+ },
+ {
+  "prompt": "typed",
+  "sample": 1,
+  "kind": "call",
+  "ok": true,
+  "why": "",
+  "detail": {
+   "arguments": "{\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}",
+   "name": "set_light"
+  },
+  "secs": 0.1,
+  "loop": "answered",
+  "loop_text": "```json\n{\"name\": \"set_light\", \"arguments\": {\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}}\n```"
+ },
+ {
+  "prompt": "typed",
+  "sample": 2,
+  "kind": "prose",
+  "ok": false,
+  "why": "",
+  "detail": "```json\n{\"name\": \"set_light\", \"arguments\": {\"room\": \"kitchen\", \"on\": true, \"brightness\": 70}}\n```",
+  "secs": 0.1
+ },
+ {
+  "prompt": "control",
+  "sample": 0,
+  "kind": "prose",
+  "ok": true,
+  "why": "",
+  "detail": "The capital of France is Paris.",
+  "secs": 0.1
+ },
+ {
+  "prompt": "control",
+  "sample": 1,
+  "kind": "prose",
+  "ok": true,
+  "why": "",
+  "detail": "The capital of France is Paris.",
+  "secs": 0.0
+ },
+ {
+  "prompt": "control",
+  "sample": 2,
+  "kind": "prose",
+  "ok": true,
+  "why": "",
+  "detail": "The capital of France is Paris.",
+  "secs": 0.0
+ }
+]

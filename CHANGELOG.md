@@ -18,8 +18,9 @@ any surface may still change.
 - **Parallel tool results are one user turn on the Qwen templates that write them so (Qwen2.5, Qwen3, Qwen3.5).** goinfer wrote a user turn per
   result; the templates open the user turn only after a non-tool message, so several results in a row share one. Read from the template text, so
   a ChatML template that does not group is unchanged; compared against HuggingFace for all three families. Single results are byte-identical to
-  before. Two other differences from the Qwen templates (the tool-declaration JSON, a blank line before a call with no text) are recorded in
-  `docs/tasks/task-qwen35-think-prompt-2026-09.md` and left as they are pending a measurement.
+  before. Two other differences from the Qwen templates are recorded in `docs/tasks/task-qwen35-think-prompt-2026-09.md`: the tool-declaration
+  JSON bytes (measured on four models and left as they are: the template's form helped Qwen3.5-0.8B, hurt two others slightly, did nothing for
+  the 7B) and a blank line before a call with no text (unchanged, pending its own measurement).
 - **Gemma 4 renderer: consecutive assistant messages are one model turn, and a tool result that carries only `tool_call_id` names its
   function.** Both found by comparing against the canonical template (`testdata/chat_think_goldens/think_history.json`, now 83 cases):
   the first was skipped in the golden by name, the second was a bug (`response:{value:…}` with no function name for the many OpenAI clients

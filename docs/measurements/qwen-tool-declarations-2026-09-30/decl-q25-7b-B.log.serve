@@ -1,0 +1,171 @@
+cuda: resident context 6546, not 8192, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: resident context 5501, trimmed from 6546 at the build, so the 4 requested KV slots fit beside the weights (2791 MB free, less 384 MB reserved)
+loaded "m": 28-layer model (vocab 152064) in 10.269s [chat: chatml, thinking: unmanaged, tool declarations: the template's bytes]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  context: 5501 tokens (backend default; model maximum 32768 — raise with --ctx) · KV f32
+  fit: 32768-token cap needs 3.5 GB KV (weights 4.0 GB, budget 40.6 GB, 37.1 GB left for a request's own prefill)
+  session reuse: on the GPU cache, 4 conversations kept resident — each reuses its own prefix; a further one takes the least recently used slot and re-prefills
+  features: tools (constrainable call form) · structured output
+"m" concurrency: 4 generations at once, each on its own resident KV slot, decode tokens batched (-max-concurrent); a long prompt arriving mid-decode prefills in 512-token chunks (-prefill-chunk)
+swap guard: armed, threshold +512 MB over baseline
+goinfer serving on http://127.0.0.1:18432 [chat:[m]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 16.0 MiB (text) / 48.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+goinfer: batched prefill declined for a 238-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: out of device memory for M=238 scratch (cuda prefill: batched path declined (arch/geometry); cuda prefill: M-sized scratch did not fit): cuda: executor job panicked: cuda: device allocation failed (typed-len, 4508672 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+goroutine 35 [running, locked to thread]:
+runtime/debug.Stack()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+github.com/townsendmerino/goinfer/cuda.runJob.func1()
+	/home/francis/mycode/goinfer/cuda/resident.go:1941 +0x3d
+panic({0x1100258?, 0x2663adf88b20?})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2663adde0140, 0x44cc00, 0x113300, {0xafe153, 0x9})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:307 +0x294
+github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:437
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).ai(...)
+	/home/francis/mycode/goinfer/cuda/resident.go:977
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1.4(...)
+	/home/francis/mycode/goinfer/cuda/prefill.go:864
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1()
+	/home/francis/mycode/goinfer/cuda/prefill.go:873 +0x16d7
+github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+	/home/francis/mycode/goinfer/cuda/resident.go:1944 +0x51
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+	/home/francis/mycode/goinfer/cuda/backend.go:784 +0x68
+created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 1
+	/home/francis/mycode/goinfer/cuda/backend.go:780 +0x5726
+
+swap guard: baseline 6.52 GB swap-used
+goinfer: batched prefill declined for a 227-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: out of device memory for M=227 scratch (cuda prefill: batched path declined (arch/geometry); cuda prefill: M-sized scratch did not fit): cuda: executor job panicked: cuda: device allocation failed (typed-len, 4300288 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+goroutine 35 [running, locked to thread]:
+runtime/debug.Stack()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+github.com/townsendmerino/goinfer/cuda.runJob.func1()
+	/home/francis/mycode/goinfer/cuda/resident.go:1941 +0x3d
+panic({0x1100258?, 0x2663ae9ae9c0?})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2663adde0140, 0x419e00, 0x106780, {0xafe153, 0x9})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:307 +0x294
+github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:437
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).ai(...)
+	/home/francis/mycode/goinfer/cuda/resident.go:977
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1.4(...)
+	/home/francis/mycode/goinfer/cuda/prefill.go:864
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1()
+	/home/francis/mycode/goinfer/cuda/prefill.go:873 +0x16d7
+github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+	/home/francis/mycode/goinfer/cuda/resident.go:1944 +0x51
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+	/home/francis/mycode/goinfer/cuda/backend.go:784 +0x68
+created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 1
+	/home/francis/mycode/goinfer/cuda/backend.go:780 +0x5726
+
+goinfer: batched prefill declined for a 244-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: out of device memory for M=244 scratch (cuda prefill: batched path declined (arch/geometry); cuda prefill: M-sized scratch did not fit): cuda: executor job panicked: cuda: device allocation failed (typed-len, 4622336 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+goroutine 35 [running, locked to thread]:
+runtime/debug.Stack()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+github.com/townsendmerino/goinfer/cuda.runJob.func1()
+	/home/francis/mycode/goinfer/cuda/resident.go:1941 +0x3d
+panic({0x1100258?, 0x2663adc89200?})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2663adde0140, 0x468800, 0x11a200, {0xafe153, 0x9})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:307 +0x294
+github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:437
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).ai(...)
+	/home/francis/mycode/goinfer/cuda/resident.go:977
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1.4(...)
+	/home/francis/mycode/goinfer/cuda/prefill.go:864
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1()
+	/home/francis/mycode/goinfer/cuda/prefill.go:873 +0x16d7
+github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+	/home/francis/mycode/goinfer/cuda/resident.go:1944 +0x51
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+	/home/francis/mycode/goinfer/cuda/backend.go:784 +0x68
+created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 1
+	/home/francis/mycode/goinfer/cuda/backend.go:780 +0x5726
+
+goinfer: batched prefill declined for a 224-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: out of device memory for M=224 scratch (cuda prefill: batched path declined (arch/geometry); cuda prefill: M-sized scratch did not fit): cuda: executor job panicked: cuda: device allocation failed (typed-len, 4243456 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+goroutine 35 [running, locked to thread]:
+runtime/debug.Stack()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+github.com/townsendmerino/goinfer/cuda.runJob.func1()
+	/home/francis/mycode/goinfer/cuda/resident.go:1941 +0x3d
+panic({0x1100258?, 0x2663adf88040?})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2663adde0140, 0x40c000, 0x103000, {0xafe153, 0x9})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:307 +0x294
+github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:437
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).ai(...)
+	/home/francis/mycode/goinfer/cuda/resident.go:977
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1.4(...)
+	/home/francis/mycode/goinfer/cuda/prefill.go:864
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1()
+	/home/francis/mycode/goinfer/cuda/prefill.go:873 +0x16d7
+github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+	/home/francis/mycode/goinfer/cuda/resident.go:1944 +0x51
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+	/home/francis/mycode/goinfer/cuda/backend.go:784 +0x68
+created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 1
+	/home/francis/mycode/goinfer/cuda/backend.go:780 +0x5726
+
+goinfer: batched prefill declined for a 188-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: out of device memory for M=188 scratch (cuda prefill: batched path declined (arch/geometry); cuda prefill: M-sized scratch did not fit): cuda: executor job panicked: cuda: device allocation failed (typed-len, 14245888 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+goroutine 35 [running, locked to thread]:
+runtime/debug.Stack()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+github.com/townsendmerino/goinfer/cuda.runJob.func1()
+	/home/francis/mycode/goinfer/cuda/resident.go:1941 +0x3d
+panic({0x1100258?, 0x2663b00d2a30?})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2663adde0140, 0xd96000, 0x365800, {0xafe153, 0x9})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:307 +0x294
+github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:437
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).af(...)
+	/home/francis/mycode/goinfer/cuda/resident.go:974
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1.3(...)
+	/home/francis/mycode/goinfer/cuda/prefill.go:863
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1()
+	/home/francis/mycode/goinfer/cuda/prefill.go:873 +0x1979
+github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+	/home/francis/mycode/goinfer/cuda/resident.go:1944 +0x51
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+	/home/francis/mycode/goinfer/cuda/backend.go:784 +0x68
+created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 1
+	/home/francis/mycode/goinfer/cuda/backend.go:780 +0x5726
+
+goinfer: batched prefill declined for a 203-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: out of device memory for M=203 scratch (cuda prefill: batched path declined (arch/geometry); cuda prefill: M-sized scratch did not fit): cuda: executor job panicked: cuda: device allocation failed (typed-len, 15382528 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+goroutine 35 [running, locked to thread]:
+runtime/debug.Stack()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+github.com/townsendmerino/goinfer/cuda.runJob.func1()
+	/home/francis/mycode/goinfer/cuda/resident.go:1941 +0x3d
+panic({0x1100258?, 0x2663ae177a60?})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x2663adde0140, 0xeab800, 0x3aae00, {0xafe153, 0x9})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:307 +0x294
+github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:437
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).af(...)
+	/home/francis/mycode/goinfer/cuda/resident.go:974
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1.3(...)
+	/home/francis/mycode/goinfer/cuda/prefill.go:863
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore.func1()
+	/home/francis/mycode/goinfer/cuda/prefill.go:873 +0x1979
+github.com/townsendmerino/goinfer/cuda.runJob(0x0?)
+	/home/francis/mycode/goinfer/cuda/resident.go:1944 +0x51
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+	/home/francis/mycode/goinfer/cuda/backend.go:784 +0x68
+created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 1
+	/home/francis/mycode/goinfer/cuda/backend.go:780 +0x5726
+
+
+shutting down…
+resident batch "m": 1227 runs, 0 batched steps (0 tokens), 1227 solo tokens, 0 straggler runs, steps by size [0 0 0 0 0]
+resident batch "m" time: runs 14.628 s, exclusive 18.950 s (prefill 45 passes 18.949 s, bookkeeping 0.001 s)
