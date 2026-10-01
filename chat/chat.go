@@ -92,6 +92,11 @@ type Template struct {
 
 	// effort is a Harmony (gpt-oss) template's reasoning effort, written on its `Reasoning:` line (templates.go); "" elsewhere.
 	effort string
+
+	// xmlTools: the template declares Qwen3.5's native tool form and has the layout goinfer reproduces byte for byte
+	// (qwen_xml_tools.go); toolFormat is which prompt WithToolFormat selected (the zero value is goinfer's own Hermes form).
+	xmlTools   bool
+	toolFormat ToolFormat
 }
 
 // Name is the family identifier ("chatml", "mellum2", "gemma3", "gemma4", "harmony", "llama3",
@@ -196,6 +201,7 @@ func Detect(meta Meta) (*Template, error) {
 		case strings.Contains(t, "<|im_start|>"):
 			c := ChatML()
 			c.reason = detectChatMLReasoning(t)
+			c.xmlTools = declaresQwen35XMLTools(t, c.reason)
 			return c, nil
 		case strings.Contains(t, "[INST]"):
 			return Mistral(), nil

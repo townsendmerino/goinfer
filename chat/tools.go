@@ -37,6 +37,9 @@ func (t *Template) RenderTools(system string, turns []Turn, tools []Tool) string
 	}
 	switch t.name {
 	case "chatml", "mellum2":
+		if t.nativeXMLTools() {
+			return renderQwen35XMLTools(system, turns, tools, t.historyKind()) + t.thinkSuffixText()
+		}
 		return renderChatMLTools(system, turns, tools, t.historyKind()) + t.thinkSuffixText()
 	case "mistral":
 		return renderMistralTools(system, turns, tools)
@@ -95,6 +98,9 @@ func (t *Template) harmonyEffort() string {
 func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok bool) {
 	switch t.name {
 	case "chatml", "mellum2":
+		if t.nativeXMLTools() {
+			return "", "", "", false, false // the model's own form is XML: there is no JSON wrapper to constrain a decode to
+		}
 		return "<tool_call>\n", "\n</tool_call>", "arguments", false, true
 	case "llama3":
 		return "", "", "parameters", false, true
@@ -110,7 +116,7 @@ func (t *Template) ToolCallWrapper() (prefix, suffix, argsKey string, array, ok 
 func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {
 	switch t.name {
 	case "chatml", "mellum2":
-		return parseChatMLTools(out)
+		return parseChatMLTools(out, nil)
 	case "mistral":
 		return parseMistralTools(out)
 	case "llama3":
@@ -148,7 +154,13 @@ func (t *Template) ParseToolCalls(out string) ([]ToolCall, string) {
 // Every other output, and every other family, gets exactly what ParseToolCalls
 // returns.
 func (t *Template) ParseToolCallsFor(out string, tools []Tool) ([]ToolCall, string) {
-	calls, lead := t.ParseToolCalls(out)
+	var calls []ToolCall
+	var lead string
+	if t != nil && (t.name == "chatml" || t.name == "mellum2") {
+		calls, lead = parseChatMLTools(out, tools) // tools type an XML call's parameters from the schema
+	} else {
+		calls, lead = t.ParseToolCalls(out)
+	}
 	if len(calls) > 0 || !t.AcceptsBareToolCall() {
 		return calls, lead
 	}
@@ -310,7 +322,10 @@ func renderChatMLTools(system string, turns []Turn, tools []Tool, hist histKind)
 	return b.String()
 }
 
-func parseChatMLTools(out string) ([]ToolCall, string) {
+// parseChatMLTools reads every <tool_call> block: the JSON form goinfer prompts for ({"name": …, "arguments": {…}}) and, where the body is
+// instead Qwen3.5's own `<function=NAME><parameter=K>…` form, that — so a model that writes either is not silently ignored. tools (may be
+// nil) types the XML form's parameters from the schema.
+func parseChatMLTools(out string, tools []Tool) ([]ToolCall, string) {
 	lead := out
 	if before, _, ok := strings.Cut(out, "<tool_call>"); ok {
 		lead = before
@@ -330,6 +345,10 @@ func parseChatMLTools(out string) ([]ToolCall, string) {
 		}
 		if c, ok := callFromJSON(strings.TrimSpace(body), "arguments"); ok {
 			calls = append(calls, c)
+		} else if strings.Contains(body, "<function=") {
+			if c, ok := parseQwenXMLCall(body, tools); ok {
+				calls = append(calls, c)
+			}
 		}
 		if j < 0 {
 			break
