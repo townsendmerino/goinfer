@@ -49,7 +49,9 @@ func goldenTurns(t *testing.T, msgs []json.RawMessage) []Turn {
 			ReasoningContent string `json:"reasoning_content"`
 			Reasoning        string `json:"reasoning"`
 			Name             string `json:"name"`
+			ToolCallID       string `json:"tool_call_id"`
 			ToolCalls        []struct {
+				ID       string `json:"id"`
 				Function struct {
 					Name      string          `json:"name"`
 					Arguments json.RawMessage `json:"arguments"`
@@ -59,13 +61,13 @@ func goldenTurns(t *testing.T, msgs []json.RawMessage) []Turn {
 		if err := json.Unmarshal(raw, &m); err != nil {
 			t.Fatal(err)
 		}
-		tu := Turn{Role: m.Role, Content: m.Content, ToolName: m.Name}
+		tu := Turn{Role: m.Role, Content: m.Content, ToolName: m.Name, ToolCallID: m.ToolCallID}
 		tu.Reasoning = m.ReasoningContent
 		if tu.Reasoning == "" {
 			tu.Reasoning = m.Reasoning
 		}
 		for _, c := range m.ToolCalls {
-			tu.ToolCalls = append(tu.ToolCalls, ToolCall{Name: c.Function.Name, Arguments: c.Function.Arguments})
+			tu.ToolCalls = append(tu.ToolCalls, ToolCall{ID: c.ID, Name: c.Function.Name, Arguments: c.Function.Arguments})
 		}
 		turns = append(turns, tu)
 	}
@@ -158,7 +160,7 @@ func TestThinkHistory_matchHF(t *testing.T) {
 					// Qwen3's template puts consecutive tool results in ONE user turn; goinfer's Hermes renderer writes a user turn per
 					// result. A pre-existing difference of the ChatML renderer (found by text_parallel, the first case with two results in a
 					// row), separate from Gemma and with behaviour consequences of its own for parallel tool calls: recorded, not fixed here.
-					if c.Name == "text_parallel" && strings.HasPrefix(g.Checkpoint, "qwen3-") {
+					if (c.Name == "text_parallel" || c.Name == "ids_resolve_names") && strings.HasPrefix(g.Checkpoint, "qwen3-") {
 						skipped++
 						continue
 					}
@@ -196,7 +198,7 @@ func TestThinkHistory_matchHF(t *testing.T) {
 // The template format (`-tool-format template`) matches every one of them, which is what this list is the exception to.
 var gemmaOwnOrderDiffers = map[string]bool{
 	"tool_loop_text": true, "text_then_user": true, "text_then_answer": true, "text_parallel": true,
-	"text_noreason": true, "text_sequential": true, "call_pending": true,
+	"text_noreason": true, "text_sequential": true, "call_pending": true, "call_unanswered_then_assistant": true,
 }
 
 // ThinkAsIs is the pre-thinking bytes: replayed reasoning must change nothing under it, for every case, text and tool paths.

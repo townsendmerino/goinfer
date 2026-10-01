@@ -29,6 +29,9 @@ def A(c, r=None, key="reasoning_content", tc=None):
     return m
 TC = lambda city: [{"type": "function", "function": {"name": "get_weather", "arguments": {"city": city}}}]
 T = lambda c: {"role": "tool", "name": "get_weather", "content": c}
+def TCID(name, cid, **args):
+    return [{"type": "function", "id": cid, "function": {"name": name, "arguments": args}}]
+TID = lambda cid, c: {"role": "tool", "tool_call_id": cid, "content": c}
 TAGGED = "<think>\nplan A\n</think>\n\nHello!"
 GEMMA_CH = "<|channel>thought\nplan A\n<channel|>Hello!"
 CASES = {
@@ -56,6 +59,9 @@ TOOL_CASES = {
     "text_parallel":      [U("Weather in Paris and Rome?"), A("Checking both.", "two cities", tc=TC("Paris") + TC("Rome")), T("18C"), T("24C")],
     "text_noreason":      [U("Weather in Paris?"), A("Checking.", None, tc=TC("Paris")), T("18C sunny")],
     "call_pending":       [U("Weather in Paris?"), A("", "need the weather", tc=TC("Paris"))],
+    # A call nobody answered, then another assistant message; and results that name no function, only the call they answer, out of order.
+    "call_unanswered_then_assistant": [U("Weather in Paris?"), A("", "need it", tc=TC("Paris")), A("Never mind.")],
+    "ids_resolve_names":  [U("Weather and time?"), A("", "both", tc=TCID("get_weather", "c1", city="Paris") + TCID("get_time", "c2", zone="CET")), TID("c2", "21:30"), TID("c1", "18C")],
     "text_sequential":    [U("Weather?"), A("First.", "one", tc=TC("Paris")), T("18C"), A("Second.", "two", tc=TC("Rome")), T("24C")],
 }
 MODES = {"unset": {}, "false": {"enable_thinking": False}, "true": {"enable_thinking": True}}

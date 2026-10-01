@@ -55,9 +55,15 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist bo
 		}
 	}
 	lu := lastUserIndex(turns)
+	callName := map[string]string{} // call id -> function name, so a result that carries only the id still names its function
 	for i, m := range turns {
 		switch m.Role {
 		case "assistant":
+			for _, c := range m.ToolCalls {
+				if c.ID != "" {
+					callName[c.ID] = c.Name
+				}
+			}
 			// The tool loop in progress keeps each turn's reasoning as a thought channel at the top of the turn (history.go).
 			// A model turn that CONTINUES an open one (calls answered by tool turns) carries no new turn marker, but its
 			// reasoning channel is still written.
@@ -86,7 +92,17 @@ func renderGemma4Tools(system string, turns []Turn, tools []Tool, think, hist bo
 			openModelTurn = true
 		case "tool":
 			// Deliberately does NOT close or re-open a turn: it continues the model turn above.
-			b.WriteString("<|tool_response>response:" + m.ToolName + "{value:" + gq + m.Content + gq + "}<tool_response|>")
+			// The function a result answers is named by its call id when it carries one (the template's own rule — OpenAI clients
+			// often send only `tool_call_id`; `name` is optional there), else by the name the result gave. A result with neither is
+			// "unknown" in the template; the generic rendering keeps writing an empty name, byte for byte as before.
+			name := m.ToolName
+			if n, ok := callName[m.ToolCallID]; ok && m.ToolCallID != "" && (hist || name == "") {
+				name = n
+			}
+			if hist && name == "" {
+				name = "unknown"
+			}
+			b.WriteString("<|tool_response>response:" + name + "{value:" + gq + m.Content + gq + "}<tool_response|>")
 		default:
 			closeModelTurn()
 			b.WriteString("<|turn>user\n" + m.Content + "<turn|>\n")
