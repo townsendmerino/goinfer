@@ -81,8 +81,10 @@ for every other package in the same module (`chat`, `constrain`, …).
 example resolves the checkpoint's own template with `chat.Detect` before encoding. Skip that step
 and an instruct model will repeat itself.
 
-Requires Go 1.27+. Which surfaces v1.0 will semver-bind is already decided:
-[docs/api-tiers.md](docs/api-tiers.md).
+Requires Go 1.27+. A walkthrough of this example, the struct and schema constraints, and
+per-field confidence, with every code block taken from a tested example:
+[docs/use-from-go.md](docs/use-from-go.md). Which surfaces v1.0 will semver-bind is already
+decided: [docs/api-tiers.md](docs/api-tiers.md).
 
 ## Or run it as a binary
 

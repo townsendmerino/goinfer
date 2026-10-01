@@ -31,6 +31,7 @@ on:
       # the book ships inside the site artifact, so a change to it re-runs its build here
       - 'docs/book/**'
       # the repo documents the site renders under /docs/ (site/data/docs.json)
+      - 'docs/use-from-go.md'
       - 'docs/server.md'
       - 'docs/api-tiers.md'
       - 'docs/integrations/**'
@@ -53,6 +54,7 @@ on:
       - 'docs/benchmarks.md'
       - 'docs/book/**'
       # the repo documents the site renders under /docs/ (site/data/docs.json)
+      - 'docs/use-from-go.md'
       - 'docs/server.md'
       - 'docs/api-tiers.md'
       - 'docs/integrations/**'
