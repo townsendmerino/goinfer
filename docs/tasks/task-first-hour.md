@@ -254,6 +254,18 @@ shipped — a protocol that changes without a record of why is not reproducible 
   the next run, confirm the package is actually present on the box in question — do not rely on a
   prior run's amendment having been carried out.
 
+### Protocol amendments, after run 3 (2026-10-01, v0.19.0, nobara-pc)
+
+- **The handoff starts with the launch command, before the prompt:** `mkdir ~/gi-cold-<date> && cd ~/gi-cold-<date>`,
+  then open the session there. Run 3's prompt named the directory, but the session was opened in
+  `~/mycode/gocudrv-fork`, with `~/mycode/goinfer/...` directories granted and a goinfer skill loaded. The tester
+  declared all of it, and the owner accepted the contamination for that run
+  ([`../measurements/cold-user-2026-10-01-nobara-pc.md`](../measurements/cold-user-2026-10-01-nobara-pc.md)).
+- **Scenario F's resend leg conflicts with the server's one-image-per-request limit.** Sending the same image again
+  in the same conversation fails with `400: v1 supports 1 image per request, got 2` while the first image is still in
+  history, so run 3 had to drop it to text first, and the leg then measured a new request, not reuse. Rewrite the leg,
+  or keep it, once a conversation can carry more than one image.
+
 ---
 
 ## 2. Findings, fixes and gates
