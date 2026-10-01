@@ -15,6 +15,11 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **Gemma 4 renderer: consecutive assistant messages are one model turn, and a tool result that carries only `tool_call_id` names its
+  function.** Both found by comparing against the canonical template (`testdata/chat_think_goldens/think_history.json`, now 83 cases):
+  the first was skipped in the golden by name, the second was a bug (`response:{value:…}` with no function name for the many OpenAI clients
+  that omit `name`). `-tool-format template` now also renders the canonical template's own order for text beside a tool call (text after
+  the results, turn closed); goinfer's own order stays the default pending a measurement. Not applied to older Gemma 4 templates.
 - **Qwen3.5's own tool-call form: read always, prompted on request (`-tool-format`).** The reply parser now reads
   `<tool_call><function=NAME><parameter=K>…` alongside the JSON form, typing parameters from the request's schema, so a model that writes it
   is no longer ignored. `-tool-format template` renders the model's own tool prompt, byte for byte against HuggingFace's rendering of its

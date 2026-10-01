@@ -474,6 +474,8 @@ func renderGemma4NativeTools(system string, turns []Turn, tools []Tool, think bo
 				break
 			}
 		}
+		// (The template's `and (not tool_calls or tool_responses)` is kept as written; with the switch below it is implied, because a call
+		// with no result takes the first case before this one is consulted.)
 		continuesIntoNext := role == "model" && nextRole == "assistant" && (len(m.ToolCalls) == 0 || responded)
 		switch {
 		case prevMessageType == "tool_call" && !responded:

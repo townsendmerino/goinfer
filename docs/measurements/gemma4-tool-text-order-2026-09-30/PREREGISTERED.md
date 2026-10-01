@@ -6,14 +6,15 @@ The canonical Gemma 4 chat template writes it AFTER the tool results and closes 
 preamble ("Let me check…" plus a call), the template's prompt ends `…<tool_response|>text<turn|>` with nothing after it. Which prompt gets
 better follow-up answers from the model? The default flips to the template's only if it does not do worse.
 
-## Setup (and its limit, stated up front)
+## Setup (amended 2026-09-30 before any arm ran; the thresholds below are untouched)
 
-No local checkpoint pairs a small model with the canonical template: the E2B GGUF carries the OLDER template (goinfer serves it generically:
-`thinking: unmanaged`) and the 26B's `.giw` bundle has no template at all (built from safetensors; same `unmanaged`). So the model is
-**Gemma-4-E2B-it safetensors with the 26B-A4B checkpoint's `chat_template.jinja` copied beside it**
-(`~/goinfer-bench/gemma4-e2b-canonical-2026-09-30/model/`, symlinks plus that one file). That is the canonical template on a small Gemma 4;
-it is NOT the 26B, and nothing below speaks for it. The load log must say `thinking: template default off` (managed) for the run to count;
-`unmanaged` voids it.
+No local checkpoint pairs a small model with the canonical template, with two exceptions found while setting this up. The E2B GGUF carries the
+OLDER template (goinfer serves it generically: `thinking: unmanaged`) and the 26B's `.giw` bundle has none (built from safetensors; same
+`unmanaged`). My first plan — the E2B safetensors with the 26B's `chat_template.jinja` copied beside it — cannot load: goinfer does not
+implement safetensors loading for Gemma 4's per-layer-embedding inputs (`this checkpoint has per-layer-embedding (PLE) inputs … GGUF loads
+it`). The model is therefore **Gemma-4-12B-it QAT q4_0 (`~/models/gemma-4-12b-gguf/gemma-4-12b-it-qat-q4_0.gguf`)**, whose embedded template is
+the canonical one (checked: "Canonical Chat Template", `enable_thinking | default(false)`, `thinking_gate` all present). It is not the 26B and
+nothing below speaks for it. The load log must say `thinking: template default off` (managed) for the run to count; `unmanaged` voids it.
 
 ## Arms — the same binary, differing only by flag
 
