@@ -62,6 +62,12 @@ func (c config) thinkDefault() chat.ThinkMode {
 	return m
 }
 
+// toolFormatDefault resolves -tool-format (validated at startup); the empty value, as in a config built without the flag, is hermes.
+func (c config) toolFormatDefault() chat.ToolFormat {
+	f, _ := chat.ParseToolFormat(c.toolFormat)
+	return f
+}
+
 func (c config) reasoningFormat() reasoningFormat {
 	f, _ := parseReasoningFormat(c.reasoningFmt)
 	return f

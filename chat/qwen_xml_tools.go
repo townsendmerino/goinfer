@@ -72,6 +72,14 @@ func (t *Template) WithToolFormat(f ToolFormat) *Template {
 	return &c
 }
 
+// ToolFormat is the format WithToolFormat selected (Hermes by default).
+func (t *Template) ToolFormat() ToolFormat {
+	if t == nil {
+		return ToolFormatHermes
+	}
+	return t.toolFormat
+}
+
 // DeclaresNativeTools reports whether t has a native tool form goinfer can render — so `-tool-format template` does something for it.
 func (t *Template) DeclaresNativeTools() bool { return t != nil && t.xmlTools }
 
