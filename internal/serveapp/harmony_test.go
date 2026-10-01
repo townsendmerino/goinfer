@@ -1,10 +1,15 @@
 package serveapp
 
 import (
+	"context"
+	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // A real gpt-oss-20b reply (goinfer-chat, temperature 0, 2026-09-30; the same capture chat/harmony_parse_test.go pins) through
@@ -73,5 +78,108 @@ func TestThinkingNote_harmony(t *testing.T) {
 	}
 	if note := thinkingNote(chat.Llama3()); note != "" {
 		t.Errorf("a family with no reasoning at all gets no note, got %q", note)
+	}
+}
+
+// harmonyTokenizer is a vocab in which the seven words of the gpt-oss channel protocol are single tokens, as they are in the
+// real vocabulary (verified in chat's TestHarmonyBudget_realVocabulary).
+func harmonyTokenizer(t *testing.T) (*tokenizer.Tokenizer, map[string]int) {
+	t.Helper()
+	vocab := map[string]int{}
+	for _, tok := range []string{"a", "b", "c", "<|channel|>", "analysis", "<|message|>", "<|end|>", "<|start|>", "assistant", "final"} {
+		vocab[tok] = len(vocab)
+	}
+	raw, _ := json.Marshal(map[string]any{
+		"model":   map[string]any{"type": "BPE", "vocab": vocab, "merges": []string{}},
+		"decoder": map[string]any{"type": "ByteLevel"},
+	})
+	tk, err := tokenizer.LoadJSONBytes(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tk, vocab
+}
+
+// applyBudget for gpt-oss: installed under every -thinking mode (its prompt has no off form, so it reasons whatever the mode),
+// not for a turn with no room, and not where speculative decoding would be silently switched off by a processor.
+func TestApplyBudget_harmony(t *testing.T) {
+	srv := &server{}
+	tk, _ := harmonyTokenizer(t)
+	lm := &loadedModel{tk: tk}
+	for _, mode := range []chat.ThinkMode{chat.ThinkAsIs, chat.ThinkTemplate, chat.ThinkOn, chat.ThinkOff} {
+		gr := genRequest{maxTokens: 160}
+		srv.applyBudget(lm, &gr, chat.Harmony().WithThinking(mode), nil, thinkSettings{mode: mode})
+		if gr.sp.LogitProcessor == nil || gr.sp.LogitProcessorGate == nil {
+			t.Errorf("mode %v: no gated budget processor for gpt-oss", mode)
+		}
+	}
+	gr := genRequest{maxTokens: 160}
+	srv.applyBudget(lm, &gr, chat.Harmony(), nil, thinkSettings{budget: 40})
+	if gr.sp.LogitProcessor == nil {
+		t.Error("a request's own thinking_token_budget must still install the budget")
+	}
+	gr = genRequest{maxTokens: 12} // room 9: header (3) + forced sequence (6) leave no reasoning token
+	srv.applyBudget(lm, &gr, chat.Harmony(), nil, thinkSettings{})
+	if gr.sp.LogitProcessor != nil {
+		t.Error("a turn too short to hold the header and the forced sequence must get no budget")
+	}
+	gr = genRequest{maxTokens: 160}
+	srv.applyBudget(&loadedModel{tk: tk, spec: true}, &gr, chat.Harmony(), nil, thinkSettings{})
+	if gr.sp.LogitProcessor != nil {
+		t.Error("speculative decoding on: a processor would silently disable the drafter")
+	}
+}
+
+// The forced SEQUENCE in the real decode loop, gated and ungated: the stream is untouched up to the trigger, then exactly the six
+// forced tokens, whatever the model would have said, and the model is free afterwards. (A gated processor is only as right as its
+// first step; the single-token budget has the same test above.)
+func TestHarmonyBudget_inTheDecodeLoop(t *testing.T) {
+	_, lm := tinyServed(t)
+	prompt := []int{3, 9, 27, 81, 5, 11}
+	run := func(sp decoder.SamplingParams, n int) []int {
+		t.Helper()
+		stream, gen := lm.model.Generate(context.Background(), prompt, n, sp)
+		var out []int
+		for id := range stream {
+			out = append(out, id)
+		}
+		if err := gen.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	base := run(decoder.SamplingParams{}, 24)
+	if len(base) < 20 {
+		t.Fatalf("baseline produced only %d tokens", len(base))
+	}
+	vocab := lm.model.Config().VocabSize
+	const trigger = 8
+	head := base[:3] // the reply "opens with the analysis header"
+	endID := 0
+	for slices.Contains(base[:trigger], endID) {
+		endID++ // an id the model has not written, so the budget sees an analysis it did not close itself
+	}
+	force := []int{endID, (endID + 1) % vocab, (endID + 2) % vocab, (endID + 3) % vocab, (endID + 4) % vocab, (endID + 5) % vocab}
+	for _, gated := range []bool{true, false} {
+		b := chat.NewHarmonyBudget(head, endID, force, trigger+len(force))
+		sp := decoder.SamplingParams{LogitProcessor: b.Process}
+		if gated {
+			sp.LogitProcessorGate = b.Gate
+		}
+		got := run(sp, 24)
+		if !slices.Equal(got[:trigger], base[:trigger]) {
+			t.Errorf("gated=%v: tokens changed before the trigger: %v vs %v", gated, got[:trigger], base[:trigger])
+		}
+		if len(got) < trigger+len(force) || !slices.Equal(got[trigger:trigger+len(force)], force) {
+			t.Errorf("gated=%v: tokens %d..%d = %v, want the forced sequence %v", gated, trigger, trigger+len(force), got[min(trigger, len(got)):min(trigger+len(force), len(got))], force)
+		}
+		if len(got) <= trigger+len(force) {
+			t.Errorf("gated=%v: the stream ended with the forced sequence (%d tokens): the model must be free after it", gated, len(got))
+		}
+	}
+	// A budget the reply never reaches changes nothing.
+	b := chat.NewHarmonyBudget(head, endID, force, 1000)
+	if got := run(decoder.SamplingParams{LogitProcessor: b.Process, LogitProcessorGate: b.Gate}, 24); !slices.Equal(got, base) {
+		t.Errorf("an unreached budget changed the stream: %v vs %v", got, base)
 	}
 }
