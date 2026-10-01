@@ -29,7 +29,12 @@ func TestQwen38GGUF_gate(t *testing.T) {
 	requireHeavyModel(t)
 	path := assetPath(t, "GOINFER_QWEN38_GGUF")
 
-	m, err := Load(path, Options{Quant: "int4"})
+	// The fit guard is bypassed for this model only, as in TestQwen35GGUF_gate and TestLagunaGGUF_gate. This gate
+	// checks the LOADER's parity, not memory planning, and the guard prices the 15.3 GB mapped checkpoint as resident
+	// and the KV cache at the model's full context (66.6 GB needed against a 29.5 GB budget on nobara-pc, 2026-10-01).
+	// Whether that refuses depends on what the gates before it left in the process: the same box passed this gate in
+	// sweep run 2 and was refused in the scoped re-run that afternoon. requireHeavyModel keeps it to the box that holds it.
+	m, err := Load(path, Options{Quant: "int4", Knobs: &Knobs{"GOINFER_NO_FIT_GUARD": "1"}})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", path, err)
 	}
