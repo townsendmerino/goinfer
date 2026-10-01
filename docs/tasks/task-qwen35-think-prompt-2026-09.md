@@ -645,9 +645,18 @@ this change; it is not evidence for either order).
   by id as well (the generic path only fills a missing name, as before). A new golden case — results identified by id, out of order — pins it.
 - *Two templates, one family:* Gemma 4 ships a 2026-07-09 "Canonical Chat Template" ("fixed tool-calling loops, turn closures, and thinking
   content-ordering") and an older one. `nativeTools` is set only for the canonical one, so `-tool-format template` is a no-op on the older.
-- *Not Gemma, not fixed:* Qwen3's template groups consecutive tool results in ONE user turn; goinfer's Hermes renderer writes a user turn per
-  result (for every ChatML family). Found by the first case with two results in a row; skipped by name in the gate, with consequences of its own
-  for parallel tool calls, so it needs its own decision.
+- *Not Gemma — FIXED the same day:* Qwen2.5, Qwen3 and Qwen3.5 write consecutive tool results as ONE user turn (the loop opens the user turn only
+  when the previous message was not a tool message); goinfer's Hermes renderer wrote a user turn per result, so a parallel call's results were
+  laid out unlike anything the model was trained on. Found by the first golden case with two results in a row, skipped by name for a while, now
+  read from the template text (`detectGroupedToolResults`; a ChatML template without it keeps a turn per result, byte for byte as before) and
+  compared against HuggingFace for Qwen3 (the two cases that were skipped), Qwen3.5 (the result runs) and a new Qwen2.5-Coder golden
+  (`testdata/chat_goldens/tools_qwen25_grouped.json`, `scripts/pin_qwen25_tools.py`). Four mutations turn it red.
+- *Two more Hermes-vs-template differences, found by that golden and deliberately NOT changed:* (1) the declarations — goinfer writes each tool as
+  sorted-key compact JSON, the Qwen templates as `{"type": "function", "function": {"name", "description", "parameters"}}` with Python spacing
+  (`qwenToolJSON` already produces the template's bytes for the native Qwen3.5 form); (2) a call with no text — goinfer writes `assistant\n` + `\n<tool_call>`
+  (a blank line), Qwen2.5's template writes `assistant\n<tool_call>`. Both change the prompt every Qwen tool user starts from or replays, and the
+  existing tool-call measurements (e.g. `docs/measurements/tool-call-failure-t0-2026-09-23.md`) were taken with the current bytes, so each is a
+  prompt change that needs its own pre-registered A/B, the way the Qwen3.5 native form and the Gemma order got one.
 - *One mutation of the port is equivalent*, not a gap: the continuation clause "calls with no result" can never be the deciding branch, because
   the pending-call case is tested first.
 
