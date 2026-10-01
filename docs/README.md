@@ -54,7 +54,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (51: 46 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (52: 47 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -110,7 +110,8 @@ it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 the same protocol to the Go library as the embedding developer's product, before v1.0 binds it.
 [`task-option-path-admission-2026-10.md`](tasks/task-option-path-admission-2026-10.md) treats the audits'
 findings as a dataset: if "an option or family not registered with a guard" is common enough, it becomes a
-fail-closed options × paths gate.
+fail-closed options × paths gate. [`task-harness-reliability-2026-10.md`](tasks/task-harness-reliability-2026-10.md)
+asks how many wire dialects the coding-agent harnesses speak and how often a tool call breaks a whole session.
 
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
