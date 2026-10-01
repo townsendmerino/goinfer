@@ -1,0 +1,10 @@
+rev:      f0cf6f2d5a560ab9c9a7a24a900c3d45f1e9c187
+started:  2026-10-01 09:52:06 PDT
+go:       go version go1.27.0 linux/amd64
+asset:    /home/francis/models/laguna-xs21-gguf/Laguna-XS-2.1-Q4_K_M.gguf
+=== RUN   TestLagunaGGUF_gate
+    laguna_gguf_test.go:183: laguna XS-2.1 GGUF Q4_K_M: 160 tokens, distinct-trigram 0.687: "Here are three iconic landmarks in Paris:\n\n1. **Eiffel Tower**  \n   A wrought-iron lattice tower, it is one of the most recognizable structures in the world and a symbol of Paris.\n\n2. **Louvre Museum**  \n   The world’s largest art museum, home to masterpieces like the *Mona Lisa* and the *Venus de Milo*, housed in a historic palace.\n\n3. **Notre-Dame Cathedral**  \n   A stunning example of Gothic architecture, known for its intricate facades, rose windows, and the iconic spire (restored after the 2019 fire).\n\nThese landmarks are central to Paris’s cultural and historical identity.</assistant></think>Here are three iconic landmarks in Paris:"
+--- PASS: TestLagunaGGUF_gate (259.71s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	259.786s
+finished: 2026-10-01 09:56:30 PDT

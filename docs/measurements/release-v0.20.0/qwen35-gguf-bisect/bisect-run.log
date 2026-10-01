@@ -1,0 +1,81 @@
+running 'bash' '/home/francis/goinfer-bench/release-v0.20.0/run-bisect-qwen35-gguf.sh' 'step'
+[08:57:36] testing 972d2ed5f3  feat(backends): BuildResident declines with a typed reason; CUDA and Metal read their MoE 
+[09:06:51]   972d2ed5f3 GOOD 555s test-rc=0 argmax 68/80 (85.0%) | 7/10 prompts coherent | cosine min=0.98740 mean=0.99608 | worst div gap=0.0080
+Bisecting: 40 revisions left to test after this (roughly 5 steps)
+[ee7bf67a2fb1f6445101361336856e3511b3deb1] measure(MC3c S1, exploratory): post-S1 shape probe and an A/A-controlled width sweep — width is no lever for the batched step; at M=1, 8 workers run q/k/v and o 1.43-1.53x faster than 16
+running 'bash' '/home/francis/goinfer-bench/release-v0.20.0/run-bisect-qwen35-gguf.sh' 'step'
+[09:06:51] testing ee7bf67a2f  measure(MC3c S1, exploratory): post-S1 shape probe and an A/A-controlled width sweep — wid
+[09:16:23]   ee7bf67a2f GOOD 572s test-rc=0 argmax 68/80 (85.0%) | 7/10 prompts coherent | cosine min=0.98740 mean=0.99608 | worst div gap=0.0080
+Bisecting: 20 revisions left to test after this (roughly 4 steps)
+[84475accc02934916896c96ebadd27b2526632e5] registry: checkpoints carry a label (the model in words) for goinfer.dev; a test refuses a verbatim short name
+running 'bash' '/home/francis/goinfer-bench/release-v0.20.0/run-bisect-qwen35-gguf.sh' 'step'
+[09:16:24] testing 84475accc0  registry: checkpoints carry a label (the model in words) for goinfer.dev; a test refuses a
+[09:21:53]   84475accc0 BAD 329s test-rc=1 argmax 57/80 (71.2%) | 5/10 prompts coherent | cosine min=0.98786 mean=0.99619 | worst div gap=0.0072
+Bisecting: 9 revisions left to test after this (roughly 3 steps)
+[1c9a605449b3f6c194b011d3b14018789693f2fa] sidecar: an int4 .giw older than v15 is stale and rebuilt once — it loaded by converting its scales, holding both copies, and was kept forever
+running 'bash' '/home/francis/goinfer-bench/release-v0.20.0/run-bisect-qwen35-gguf.sh' 'step'
+[09:21:54] testing 1c9a605449  sidecar: an int4 .giw older than v15 is stale and rebuilt once — it loaded by converting i
+[09:30:47]   1c9a605449 GOOD 533s test-rc=0 argmax 68/80 (85.0%) | 7/10 prompts coherent | cosine min=0.98740 mean=0.99608 | worst div gap=0.0080
+Bisecting: 4 revisions left to test after this (roughly 2 steps)
+[cd6ce3360b9c4e5739146ae495407b093ee2473d] owner decisions (TE5(b), TE6(b), TE3): in-process-first for kernel questions; validation inherited by identity; session drift re-stated
+running 'bash' '/home/francis/goinfer-bench/release-v0.20.0/run-bisect-qwen35-gguf.sh' 'step'
+[09:30:47] testing cd6ce3360b  owner decisions (TE5(b), TE6(b), TE3): in-process-first for kernel questions; validation i
+[09:36:46]   cd6ce3360b BAD 359s test-rc=1 argmax 57/80 (71.2%) | 5/10 prompts coherent | cosine min=0.98786 mean=0.99619 | worst div gap=0.0072
+Bisecting: 2 revisions left to test after this (roughly 1 step)
+[96d0ef2600c59a74a4e3b05869dc33007897db6c] test(parity): re-capture TestDecodeParityInt4's int4 golden for L1's binary16 scales — red on arm64 since the 5c85f7c0 merge, unseen
+running 'bash' '/home/francis/goinfer-bench/release-v0.20.0/run-bisect-qwen35-gguf.sh' 'step'
+[09:36:46] testing 96d0ef2600  test(parity): re-capture TestDecodeParityInt4's int4 golden for L1's binary16 scales — red
+[09:45:46]   96d0ef2600 GOOD 540s test-rc=0 argmax 68/80 (85.0%) | 7/10 prompts coherent | cosine min=0.98740 mean=0.99608 | worst div gap=0.0080
+Bisecting: 1 revision left to test after this (roughly 1 step)
+[81c250d70664a896b0595ac810758c15b81087a3] deps: aikit v1.50.2 (amd64 AVX2 activation quantizer) in every module
+running 'bash' '/home/francis/goinfer-bench/release-v0.20.0/run-bisect-qwen35-gguf.sh' 'step'
+[09:45:46] testing 81c250d706  deps: aikit v1.50.2 (amd64 AVX2 activation quantizer) in every module
+[09:51:16]   81c250d706 BAD 330s test-rc=1 argmax 57/80 (71.2%) | 5/10 prompts coherent | cosine min=0.98786 mean=0.99619 | worst div gap=0.0072
+81c250d70664a896b0595ac810758c15b81087a3 is the first 'bad' commit
+commit 81c250d70664a896b0595ac810758c15b81087a3
+Author: Francis Townsend-Merino <townsendmerino@gmail.com>
+Date:   Mon Sep 28 14:08:39 2026 -0700
+
+    deps: aikit v1.50.2 (amd64 AVX2 activation quantizer) in every module
+    
+    v1.50.2 vectorizes quantizeRowInt8Core's two scalar passes on amd64 (S-03's arm64/NEON half
+    shipped 2026-09-03; amd64 was left open) -- the amd64 half of the goinfer investigation into why
+    CPU decode's `down` matmul streams slower per byte than `gate+up`
+    (docs/measurements/cpu-down-vs-gateup-bandwidth-2026-09-28.md). Bit-identical, mutation-checked on
+    the aikit side; perfgate PASS vs v1.50.1, BenchmarkQuantizeRowInt8 independently re-measured
+    10.9x/21.2x faster at K=1536/K=8960. Two x86 ISA differences from ARM64 found and fixed along the
+    way (VMAXPS's asymmetric NaN rule, VCVTTPS2DQ's fixed indefinite-value overflow behaviour) -- see
+    the aikit v1.50.2 CHANGELOG for both.
+    
+    Verified against the REAL published module (GOWORK=off, no local override): a 1.5B CPU greedy
+    generation (80 tokens, temp=0) is text-identical to the pre-bump build; the down/gate+up
+    decode-time split reads 2.98/6.02, 8.91/18.13, 40.84/82.62 ms/token (0.5B/1.5B/7B) -- the same
+    ballpark as the exploratory go.work numbers in the measurement doc.
+    
+    gofmt, go vet (root, realckpt, cuda goinfer_testhooks, gpu goinfer_testhooks): clean.
+    
+    non-numeric core refresh; validated_at preserved.
+    forward goldens green at 2c8ce082 on arch=amd64: 62 passed / 0 skipped / 0 failed.
+    
+    Deps-Hash-Refresh: 2c8ce082 goldens=62 arch=amd64
+    
+    The paired bench_peer speed gate (the real ship/park bar for a speed claim) is still queued for
+    tonight (avx2quant-cpu-speed); this bump does not wait on it -- owner: "do the aikit pr and
+    release now, i don't want to wait". Every gate that CAN run today (aikit's full CI matrix, both
+    release-gate and consumer-resolution on the tag, this repo's own parity goldens) is green.
+    
+    Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
+ cuda/go.mod                   |  2 +-
+ cuda/go.sum                   |  8 ++---
+ demo/agent/go.mod             |  2 +-
+ demo/agent/go.sum             |  8 ++---
+ go.mod                        |  2 +-
+ go.sum                        |  8 ++---
+ gpu/go.mod                    |  2 +-
+ gpu/go.sum                    |  8 ++---
+ metal/go.mod                  |  2 +-
+ metal/go.sum                  |  2 ++
+ testdata/parity_manifest.json | 74 +++++++++++++++++++++----------------------
+ 11 files changed, 52 insertions(+), 66 deletions(-)
+bisect found first 'bad' commit
