@@ -634,7 +634,7 @@ Why not the default. The template's order is: calls, results, then the text, the
 after a tool result. So a replayed agent turn that had a preamble ("Let me check…" plus a call — Claude Code's common shape) ends
 `…<tool_response|>text<turn|>\n` with nothing after it: a closed turn and no header for the model's next step. goinfer's own order (text
 before the call, the turn left open) is what the model wrote and keeps it mid-turn. Which is better for the model is an empirical question,
-the same as for Qwen3.5's native tool format, and **has not been measured**: it needs the canonical template, which only the 26B-A4B
+the same as for Qwen3.5's native tool format, and **had not been measured when this was written — SUPERSEDED, measured 2026-10-01 (ADOPT), see "Result of the queued measurement" below**: it needed the canonical template, which only the 26B-A4B
 checkpoint carries on this box (the E2B GGUF carries the older template, which goinfer does not treat as managed — its load log says
 `thinking: unmanaged` — so a baseline I ran on the E2B (20/21 loops answered with a preamble) exercised the generic path and says nothing about
 this change; it is not evidence for either order).
@@ -668,7 +668,7 @@ and K; REJECT if E drops by 3 or the control by 2; everything else PARK). Job: n
 the CPU at about 2 minutes per reply-plus-loop; pinned binary `c09fe1e3`; applies the rule itself and exits 0 ADOPT / 3 PARK / 4 REJECT / 2 VOID).
 Read it with `python3 scripts/night.py morning`, then `results/<stamp>/VERDICT.txt` under `~/goinfer-bench/gemma4-tool-text-order-2026-09-30/`.
 A VOID (the load log did not say the template is managed) is not a result. **Until it runs, goinfer's own order stays the default and the
-claim that the template's order might hurt a replayed agent turn stays a hypothesis.** The setup was smoke-tested (one reply per arm, both
+claim that the template's order might hurt a replayed agent turn stays a hypothesis** (SUPERSEDED: it ran 2026-10-01 and the arms tied — see below). The setup was smoke-tested (one reply per arm, both
 managed, both answered) — that checks the mechanics, not the question. Tonight's queue is over the window with this added (12 h 10 min against
 06:30), and this job is last, so it may carry to the next night.
 
