@@ -130,7 +130,7 @@ var histMode = map[string]ThinkMode{"unset": ThinkTemplate, "false": ThinkOff, "
 // (the rule does not depend on it), renders byte for byte what HuggingFace renders from the real template — assistant turns
 // before the last user query stripped of reasoning, those after it carrying it, tags in content extracted the way the template
 // does. Qwen3.5 tool loops are compared through the first call only; Gemma 4's consecutive-assistant-turn and text-with-call
-// cases are not modelled by goinfer's Gemma renderers (pre-existing, unrelated to reasoning) and are skipped, named.
+// case is not modelled by goinfer's Gemma tool renderer (pre-existing, unrelated to reasoning) and is skipped, named.
 func TestThinkHistory_matchHF(t *testing.T) {
 	ran, skipped := 0, 0
 	for _, g := range loadHistGoldens(t) {
@@ -142,11 +142,11 @@ func TestThinkHistory_matchHF(t *testing.T) {
 			t.Fatalf("%s: the history rule was not recognised from its real template", g.Checkpoint)
 		}
 		for _, c := range g.Cases {
-			if strings.HasPrefix(g.Checkpoint, "gemma-4") && (strings.HasPrefix(c.Name, "two_after") || c.Name == "tool_loop_text") {
-				// two_after*: consecutive assistant messages share one model turn in Gemma's template; goinfer's Gemma text
-				// renderer opens a turn per message (serve merges adjacent turns first, so it is not reachable). tool_loop_text:
-				// Gemma's template writes an assistant message's TEXT after its tool responses, goinfer's tool renderer writes it
-				// before the calls. Both pre-existing and unrelated to reasoning; recorded in the task doc.
+			if strings.HasPrefix(g.Checkpoint, "gemma-4") && c.Name == "tool_loop_text" {
+				// tool_loop_text: Gemma's template writes an assistant message's TEXT after its tool responses (and then closes the turn),
+				// goinfer's tool renderer writes it before the calls and leaves the turn open. Pre-existing and unrelated to reasoning;
+				// whether to follow the template here is its own measured decision (docs/tasks/task-qwen35-think-prompt-2026-09.md).
+				// (two_after*, consecutive assistant messages sharing one model turn, is compared like every other case.)
 				skipped++
 				continue
 			}
@@ -172,7 +172,7 @@ func TestThinkHistory_matchHF(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d prompts compared against HF (%d cases skipped: Gemma two_after*, tool_loop_text)", ran, skipped)
+	t.Logf("%d prompts compared against HF (%d cases skipped: Gemma tool_loop_text)", ran, skipped)
 	if ran < 100 {
 		t.Fatalf("only %d prompts compared; the gate is not covering the goldens", ran)
 	}

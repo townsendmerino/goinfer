@@ -95,9 +95,18 @@ func gemma4Segments(system string, turns []Turn, think, hist bool) []Segment {
 		if t.Role == "assistant" {
 			role = "model"
 		}
-		b.sp("<|turn>")
+		// The managed rendering follows the template: consecutive assistant messages are ONE model turn — no turn header for a message
+		// that follows an assistant message, and no turn end for one that is followed by another (`continue_same_model_turn`,
+		// `continues_into_next`). The generic rendering keeps a turn per message, byte for byte as before the history rule existed.
+		joinsPrev := role == "model" && hist && i > 0 && turns[i-1].Role == "assistant"
+		joinsNext := role == "model" && hist && i+1 < len(turns) && turns[i+1].Role == "assistant"
+		if !joinsPrev {
+			b.sp("<|turn>")
+		}
 		if role == "model" && hist {
-			b.ct("model\n")
+			if !joinsPrev {
+				b.ct("model\n")
+			}
 			if t.Reasoning != "" && i > lu { // the tool loop in progress keeps its reasoning; earlier turns do not
 				b.sp("<|channel>")
 				b.ct("thought\n" + t.Reasoning + "\n")
@@ -107,8 +116,10 @@ func gemma4Segments(system string, turns []Turn, think, hist bool) []Segment {
 		} else {
 			b.ct(role + "\n" + t.Content)
 		}
-		b.sp("<turn|>")
-		b.ct("\n")
+		if !joinsNext {
+			b.sp("<turn|>")
+			b.ct("\n")
+		}
 	}
 	b.sp("<|turn>")
 	b.ct("model\n")
