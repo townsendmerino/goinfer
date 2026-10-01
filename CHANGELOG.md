@@ -439,8 +439,11 @@ any surface may still change.
   core, o), MLP (gate+up, activation, down) and LM head. `docs/measurements/cpu-decode-attribution-2026-09-22-linux.md`.
 - **CPU decode on non-arm64: a layer's W4A8 q/k/v run as one fork/join by default (`GOINFER_W4A8_BATCH=0` opts out)**,
   bit-identical: 1.016x / 1.030x / 1.018x (0.5B / 1.5B / 7B), paired in-process.
-- **amd64 CPU decode: the activation quantizer is AVX2-vectorized (aikit v1.50.2)**, bit-identical: served
-  1.13-1.17x / 1.07x / 1.04-1.05x (0.5B / 1.5B / 7B).
+- **amd64 CPU decode: the activation quantizer is AVX2-vectorized (aikit v1.50.2, fixed in v1.51.1)**, bit-identical
+  as of aikit v1.51.1: served 1.13-1.17x / 1.07x / 1.04-1.05x (0.5B / 1.5B / 7B). v1.50.2 to v1.51.0 rounded the one
+  value 0.49999997 to 1 instead of 0 in int8 activations and in int8 weights quantized at load, which no release
+  shipped; the v0.20.0 sweep found it through TestQwen35GGUF_gate
+  (`docs/measurements/release-v0.20.0/qwen35-gguf-bisect-2026-10-01.md`).
 - **arm64 CPU int4 decode: the W4A8 kernel folds its centering term (aikit v1.47.0)**, bit-identical: 1.5B ~1.05-1.10x
   (~49 -> ~52 tok/s) (`docs/measurements/s05-centering-fold-2026-09-22.md`).
 - **arm64 CPU decode attention runs grouped kernels for six query heads per KV head** from 128 keys
