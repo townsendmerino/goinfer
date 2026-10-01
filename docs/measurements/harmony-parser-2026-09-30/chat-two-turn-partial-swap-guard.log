@@ -1,0 +1,72 @@
+loading + quantizing…
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: executor job panicked: cuda: device allocation failed (typed-len, 265420800 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+goroutine 50 [running, locked to thread]:
+runtime/debug.Stack()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+github.com/townsendmerino/goinfer/cuda.runJob.func1()
+	/home/francis/mycode/goinfer/cuda/resident.go:1941 +0x3d
+panic({0xdfcee8?, 0x28ae27228030?})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x28ae260ac000, 0xfd20000, 0x3f48000, {0x961cbe, 0x9})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:307 +0x294
+github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:437
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(...)
+	/home/francis/mycode/goinfer/cuda/resident.go:980
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).upu32(0x28ae26cf7808, {0x28b039856000, 0x3f48000, 0x3f48000})
+	/home/francis/mycode/goinfer/cuda/resident.go:1000 +0x6c
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0x960307, 0x4}, {0x28b039856000, 0x3f48000, 0x3f48000}, {0x0, 0x0, 0x0}, {0x28b049576000, ...}, ...})
+	/home/francis/mycode/goinfer/cuda/resident.go:1010 +0x91
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).upExperts(_, {{0x960307, 0x4}, {0x28b039856000, 0x3f48000, 0x3f48000}, {0x0, 0x0, 0x0}, {0x28b049576000, ...}, ...})
+	/home/francis/mycode/goinfer/cuda/resident.go:1030 +0x27e
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func4()
+	/home/francis/mycode/goinfer/cuda/backend.go:1463 +0x76c5
+github.com/townsendmerino/goinfer/cuda.runJob(0x3c0920003beca000?)
+	/home/francis/mycode/goinfer/cuda/resident.go:1944 +0x51
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+	/home/francis/mycode/goinfer/cuda/backend.go:784 +0x68
+created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 1
+	/home/francis/mycode/goinfer/cuda/backend.go:780 +0x5726
+) — continuing on the CPU/staged path
+loaded 24-layer model (hidden 2880, vocab 201088) in 28.862s [backend=cuda [int4 layout: canonical (embed, lm_head, qkv)] decode=cpu (int4mix) — requested cuda → running on cpu: cuda: cuda: executor job panicked: cuda: device allocation failed (typed-len, 265420800 bytes): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY
+goroutine 50 [running, locked to thread]:
+runtime/debug.Stack()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/debug/stack.go:26 +0x5e
+github.com/townsendmerino/goinfer/cuda.runJob.func1()
+	/home/francis/mycode/goinfer/cuda/resident.go:1941 +0x3d
+panic({0xdfcee8?, 0x28ae27228030?})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.linux-amd64/src/runtime/panic.go:859 +0x125
+github.com/townsendmerino/aikit/gpu.(*Device).MustBuf(0x28ae260ac000, 0xfd20000, 0x3f48000, {0x961cbe, 0x9})
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:307 +0x294
+github.com/townsendmerino/aikit/gpu.NewBufferLenOf[...](...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit/gpu@v0.33.3/cuda.go:437
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).au32(...)
+	/home/francis/mycode/goinfer/cuda/resident.go:980
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).upu32(0x28ae26cf7808, {0x28b039856000, 0x3f48000, 0x3f48000})
+	/home/francis/mycode/goinfer/cuda/resident.go:1000 +0x6c
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).upW(_, {{0x960307, 0x4}, {0x28b039856000, 0x3f48000, 0x3f48000}, {0x0, 0x0, 0x0}, {0x28b049576000, ...}, ...})
+	/home/francis/mycode/goinfer/cuda/resident.go:1010 +0x91
+github.com/townsendmerino/goinfer/cuda.(*cudaResident).upExperts(_, {{0x960307, 0x4}, {0x28b039856000, 0x3f48000, 0x3f48000}, {0x0, 0x0, 0x0}, {0x28b049576000, ...}, ...})
+	/home/francis/mycode/goinfer/cuda/resident.go:1030 +0x27e
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func4()
+	/home/francis/mycode/goinfer/cuda/backend.go:1463 +0x76c5
+github.com/townsendmerino/goinfer/cuda.runJob(0x3c0920003beca000?)
+	/home/francis/mycode/goinfer/cuda/resident.go:1944 +0x51
+github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident.func3()
+	/home/francis/mycode/goinfer/cuda/backend.go:784 +0x68
+created by github.com/townsendmerino/goinfer/cuda.(*cudaBackend).BuildResident in goroutine 1
+	/home/francis/mycode/goinfer/cuda/backend.go:780 +0x5726
+, and cuda has no staged decode path]
+chat template: harmony
+
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+
+[1myou>[0m [2mThe user asks: "What is 17 times 3? Then write one short sentence about the sea."
+
+We need to answer the multiplication: 17 times 3 equals 51. Then write one short sentence about the sea. Provide short sentence about the sea. Probably something like "The sea is vast and full of mysteries." Provide short sentence. Ensure short.[0m
+
+[36m17 × 3 = 51.  
+The sea stretches endlessly, its waves whispering ancient secrets.[0m
+[2m[106 tok, 3.7 tok/s][0m
+[1myou>[0m 

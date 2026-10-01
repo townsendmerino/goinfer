@@ -175,6 +175,12 @@ func Harmony() *Template {
 			}
 			b.sp("<|start|>")
 			b.ct(role)
+			if role == "assistant" {
+				// An earlier assistant turn is an answer, on the `final` channel — the template's own rendering
+				// (TestHarmony_conversationMatchesHF). Its reasoning is not replayed: "CoT is dropped during all previous turns".
+				b.sp("<|channel|>")
+				b.ct("final")
+			}
 			b.sp("<|message|>")
 			b.ct(t.Content)
 			b.sp("<|end|>")

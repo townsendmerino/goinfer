@@ -544,6 +544,15 @@ to ignore.**
   (a JSON grammar) is always thinking-off; `stdlib-agent` prints the reasoning dimmed, `agent-web` drops it (its page keeps its own
   "Thinking…" indicator).
 - **Jobs and batches** apply the same split; a job's result and a batch line's `content` are the clean answer.
+- **gpt-oss (Harmony).** Its reply is not one `<think>` span but channel messages — `analysis`, then `final`, and `commentary`
+  when it acts — and the same rule holds: `content` is the answer, `reasoning_content` the `analysis` channel, no `<|channel|>`
+  markup in either. `final` and a `commentary` preamble are content (several messages are joined by a blank line); a message
+  addressed to a function (`to=functions.…`) is shown in neither stream — tool calls for gpt-oss are **not** surfaced yet.
+  gpt-oss always reasons: its prompt has no off form, so `-thinking off` / `enable_thinking: false` cannot stop it and the
+  reasoning still arrives in `reasoning_content` (the load log says so). **The reasoning budget does not apply to it yet**, so
+  a `max_tokens` too small to finish the analysis returns an empty `content` with `finish_reason: "length"`, the failure the
+  budget removes for Qwen and Gemma. `-reasoning-format none` restores the raw text, markers included. A conversation's earlier
+  assistant turns are replayed on the `final` channel, as the model's own template does, with their reasoning dropped.
 
 **Batch files — over HTTP, or locally with `goinfer-chat --batch` and no server.** One JSONL file, two ways to run it. Each
 input line is `{"custom_id": "a1", "method": "POST", "url": "/v1/chat/completions", "body": {chat request}}`; `custom_id` is

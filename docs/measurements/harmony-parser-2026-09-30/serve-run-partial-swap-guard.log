@@ -1,0 +1,70 @@
+--- A non-stream
+  content: '17\u202f×\u202f3\u202f=\u202f51.  \nThe sea is a boundless blue that sings with waves.'
+  reasoning_content: 'The user asks: "What is 17 times 3? Then write one short sentence about the sea."\n\nWe need to answer the math question: 17 times 3 equals 51. Then write one short sentence about the sea. The user wants a short sentence about the sea. So we can answer: "The sea is vast and full of mysteries." Or something like that. Provide the answer.'
+  finish: 'stop'
+  usage: {'prompt_tokens': 84, 'completion_tokens': 114, 'total_tokens': 198, 'prefill_reused_tokens': 0}
+  secs: 24.9
+--- B stream
+  reasoning: 'The user asks: "What is 17 times 3? Then write one short sentence about the sea."\n\nWe need to answer the math question: 17 times 3 equals 51. Then write one short sentence about the sea. The user wants a short sentence about the sea. So we can answer: "The sea is vast and full of mysteries." Or something like that. Provide the answer.'
+  content: '17\u202f×'
+  chunks: 85
+  reasoning_before_content: True
+  secs: 23.2
+Traceback (most recent call last):
+  File "/usr/lib64/python3.14/urllib/request.py", line 1320, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+              encode_chunked=req.has_header('Transfer-encoding'))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1386, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1432, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1381, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1141, in _send_output
+    self.send(msg)
+    ~~~~~~~~~^^^^^
+  File "/usr/lib64/python3.14/http/client.py", line 1085, in send
+    self.connect()
+    ~~~~~~~~~~~~^^
+  File "/usr/lib64/python3.14/http/client.py", line 1051, in connect
+    self.sock = self._create_connection(
+                ~~~~~~~~~~~~~~~~~~~~~~~^
+        (self.host,self.port), self.timeout, self.source_address)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/socket.py", line 874, in create_connection
+    raise exceptions[0]
+  File "/usr/lib64/python3.14/socket.py", line 859, in create_connection
+    sock.connect(sa)
+    ~~~~~~~~~~~~^^^^
+ConnectionRefusedError: [Errno 111] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/tmp/claude-1000/-home-francis-mycode-goinfer/68e13b82-c705-4699-a553-20bd83b0cfa3/scratchpad/j5/oss_client.py", line 34, in <module>
+    r = json.load(post("/v1/chat/completions", {"model": "m", "messages": [{"role": "user", "content": Q}], "max_tokens": 30, "temperature": 0}))
+                  ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/claude-1000/-home-francis-mycode-goinfer/68e13b82-c705-4699-a553-20bd83b0cfa3/scratchpad/j5/oss_client.py", line 5, in post
+    return urllib.request.urlopen(req, timeout=300)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 187, in urlopen
+    return opener.open(url, data, timeout)
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 487, in open
+    response = self._open(req, data)
+  File "/usr/lib64/python3.14/urllib/request.py", line 504, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+                              '_open', req)
+  File "/usr/lib64/python3.14/urllib/request.py", line 464, in _call_chain
+    result = func(*args)
+  File "/usr/lib64/python3.14/urllib/request.py", line 1349, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/urllib/request.py", line 1323, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [Errno 111] Connection refused>

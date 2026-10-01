@@ -169,7 +169,10 @@ test that would have gone red.
 
 ## Not built
 
-- **Harmony (gpt-oss)** needs its own parser (several channel messages per reply); the interface admits one, none written.
+- **Harmony (gpt-oss): parser BUILT 2026-09-30** (see "Harmony (gpt-oss) — built" below). Still not built for it: the reasoning
+  budget (its block is a multi-token header, `<|channel|>analysis<|message|>`, not one delimiter token), tool calls (neither the
+  renderer — no tool declarations — nor a surfaced call; the parser keeps recipient-addressed messages on itself), and
+  `reasoning_effort` low/medium/high (the template's `Reasoning: <effort>` line; goinfer always writes `medium`).
 - **Qwen3.5's XML tool-call format** (separate task), and what signature Claude Code wants on a thinking block — still to
   settle with the outstanding manual Claude Code smoke test.
 
@@ -475,3 +478,41 @@ specs keep multiplying; the spec approach is the smaller step and keeps the gold
 
 The vision path itself (P8a G0-G4 stand on `golden_*`), Qwen3 (served with thinking left on, as today — though the phase-1
 splitter would cover it for free), and Qwen3.5's XML tool-call format (separate task).
+
+
+## Harmony (gpt-oss) — built (2026-09-30)
+
+`chat/harmony_parse.go` is the output half of the family whose prompt half is `chat.Harmony()`, behind the same `ReplySplitter`
+every decode loop already holds, so serve (all routes), `goinfer-chat`, `--batch` and the demo agent got it with no change of
+their own. Routing: `analysis` → reasoning; `final` and a `commentary` preamble → content; a message with a recipient → a kept
+call list (surfaced nowhere yet); an unknown channel → content (never hide text for being new). A reply that has reasoned but not
+answered when it ends is reported as truncated, which the routes already turn into `finish_reason: "length"`.
+
+**Evidence.** The design was taken from a real capture, not the spec from memory: gpt-oss-20b-MXFP4, temperature 0, through
+`goinfer-chat` before any parser existed (`docs/measurements/harmony-parser-2026-09-30/raw-gptoss20b-before-parser.log`). It showed
+the decoded stream carries the markers as literal text, `<|channel|>analysis<|message|>…<|end|><|start|>assistant<|channel|>final
+<|message|>…`, and never carries the turn stops (they are stop ids). That exact reply is the fixture of
+`TestHarmonySplitter_realGptOssReply` and, cut into 1..40-byte pieces, of `TestThinkOut_harmonyRealReply` (serve's own router).
+
+**What found bugs.** Chunk-independence (every two-way split of every fixture, every three-way split of the short ones, 300 random
+partitions each, byte by byte) found two defects the table tests missed: a `<|message|>` split across two chunks inside a header was
+lost, and whitespace before a marker was emitted or dropped depending on where the chunk boundary fell. Mutation checks: routing
+analysis to content, dropping `<|call|>` as a terminator, dropping the separator, never reporting truncation, sending recipient
+messages to content, and not holding a split `<|message|>` each turn a test red.
+
+**A prompt-side defect found on the way, fixed.** `Harmony()` wrote an earlier assistant turn as `<|start|>assistant<|message|>…`;
+the model's own template (extracted from the GGUF) writes `<|start|>assistant<|channel|>final<|message|>…<|end|>` and drops the
+turn's reasoning. Every multi-turn gpt-oss conversation was being given a history in a shape the model was not trained on, while its
+preamble said "Channel must be included for every message". `TestHarmony_conversationMatchesHF`
+(`testdata/chat_think_goldens/harmony_history.json`, `scripts/pin_harmony_history.py`: seven conversations — developer message,
+one and two exchanges, reasoning supplied, whitespace) was red on exactly those turns before the fix. The earlier single-turn
+golden could not see it.
+
+**Real-model serve run (partial — stopped by the swap guard).** gpt-oss-20b on CPU (the CUDA resident build declined for memory and
+fell back): non-streaming and streaming OpenAI requests returned `reasoning_content` and `content` cleanly with no markers and all
+reasoning before any content; then serve's own swap guard tripped (+0.60 GB over baseline, with ~50 GB RAM free — the behaviour the
+2026-09-18 cold-user run recorded for this model) and a watchdog killed the run at +746 MB. So **not verified live:** a too-short
+`max_tokens`, the Anthropic route, a second conversation turn (its prompt is covered byte-exactly by the golden), and the streamed
+answer's completeness (the guard cut it; `TestThinkOut_harmonyRealReply` covers that deterministically). `goinfer-chat` produced the
+dimmed-reasoning-then-cyan-answer display on turn one with no markers; its second turn was cut by the same watchdog. Logs are in
+`docs/measurements/harmony-parser-2026-09-30/`.

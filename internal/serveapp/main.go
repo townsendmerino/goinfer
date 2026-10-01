@@ -1526,6 +1526,9 @@ func templateName(t *chat.Template) string {
 func thinkingNote(t *chat.Template) string {
 	r := t.Reasoning()
 	if r == nil {
+		if t.Name() == "harmony" { // gpt-oss: always reasons (no off form in its prompt), and the reply is channel messages
+			return ", reasoning: analysis channel split from the answer (gpt-oss always reasons; -thinking cannot turn it off)"
+		}
 		if t.Name() == "chatml" || t.Name() == "gemma4" {
 			return ", thinking: unmanaged"
 		}
