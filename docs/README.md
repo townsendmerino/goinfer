@@ -54,7 +54,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (49: 44 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (50: 45 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -103,9 +103,11 @@ gate that reads current load, sequential counterbalanced gates, prompt budgets s
 instrument that resolves the bar, identity against the last validated build, and `gate quick` — each with a proof
 that it still detects what it did.
 
-One is the outside view rather than a design: [`task-first-hour.md`](tasks/task-first-hour.md)
+Two are the outside view rather than a design. [`task-first-hour.md`](tasks/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running
 it again — `RELEASING.md`'s pre-flight now calls for one before each release.
+[`task-library-surface-review-2026-10.md`](tasks/task-library-surface-review-2026-10.md) applies
+the same protocol to the Go library as the embedding developer's product, before v1.0 binds it.
 
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
