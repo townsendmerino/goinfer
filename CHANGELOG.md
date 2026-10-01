@@ -15,7 +15,176 @@ any surface may still change.
 
 ## [Unreleased]
 
-- **Reasoning models: `content` is the answer, the thinking is a separate field (`serve`).** A Qwen3 / Qwen3.5 / Gemma 4
+### Highlights
+
+- **Gemma 1, CodeGemma and Gemma 2**, checked against the released checkpoints; 39 model families in all.
+- **Several generations of one model at once**: `--max-concurrent` defaults to 4, with batched decode on the CPU, Metal
+  and CUDA and resident KV slots per conversation on Metal, CUDA and WebGPU. Each reply is identical to the same request served alone.
+- **`POST /v1/systemone`**: decisions in TypeSafe's wire shape, answered by label scoring or by a trained decision head (`head=`).
+- **Reasoning models**: `content` is the answer and the thinking is a separate field, on every route.
+- **Constrained output**: tool calls with two or more tools are grammar-constrained by default, and JSON output can
+  carry per-field confidence (`goinfer_confidence`).
+- **Metal**: prefill GEMM 3.23x and decode GEMVs rewritten, both bit-identical; decode measured at 1.03-1.06x (1.5B) and
+  1.06-1.19x (7B) of Ollama v0.32.5 in the same session.
+- **goinfer.dev** and a "Use it from Go" page for library users.
+- **BREAKING / output changes to check before upgrading**: plain-`temperature` sampling draws a different stream for a
+  given seed; `--embed-int4` now defaults on (lossy) except on Metal; `GOINFER_*` knobs are read once per model at load;
+  unused decoder API (EAGLE-3 and others) and two dead `serve` flags are removed.
+
+### Added
+
+- **Gemma 1, CodeGemma and Gemma 2 (`gemma`, `gemma2`), from safetensors or GGUF.** Validated against released
+  checkpoints (gemma-2b-it, codegemma-2b, gemma-2-2b-it): cosine 1.000000 for safetensors f32 and 0.999981–0.999999
+  for llama.cpp Q8_0 GGUFs, argmax exact, 8/8 greedy continuation tokens on each (`docs/measurements/gemma12-gates-2026-09-30/`).
+  Gemma 1 and CodeGemma go resident on the GPU backends (measured on CUDA and Metal). **Gemma 2 runs on the CPU only**:
+  its attention-score softcap has no GPU kernel yet, so a GPU load declines to the CPU and names the reason.
+- **Spark-X2.5 as a new family** (`spark2_5`; XHToken, 1.7B/4B, community coding-tuned quants).
+  Fused QKV (one `q_k_v_proj` linear, split Q‖K‖V by output rows — `buildSpark25Weights`, modeled
+  on `buildPhi3Weights`'s split), a head-wise sigmoid attention-output gate applied before
+  `out_proj` (the same STRUCTURE Laguna's own gate ships, sigmoid where Laguna's is softplus — the
+  math already existed via `applySigmoidGateRow` for MLA/Bailing Hybrid, but reaching it from the
+  plain-GQA forward path this family uses was new wiring: `Architecture.AttnGate`/`GateSigmoid`),
+  a 1:3 sliding:full attention interleave (window 512) with layer-dependent partial RoPE (full
+  layers rotate 1/4 of head_dim at theta 5e6, sliding layers rotate the full width at theta 1e4 —
+  reuses Laguna's `RotaryDim`/`RotaryDimLocal`/`RoPEGlobalBase`/`RoPELocalBase` mechanism
+  verbatim), and a gated MLP whose activation is exact-erf GELU rather than SiLU or GELU-tanh
+  (`gegluExact`, `decoder/mlp.go` — `ActGelu` had previously only ever reached the non-gated MLP
+  path). `decoder/forwardn.go`'s batched-prefill path carries its OWN copy of the gated-MLP
+  activation switch, separate from `mlp.go`'s — `ActGelu` was missed there on the first pass, so
+  any multi-token prompt through the real `Generate()` entry point hit `errNotImplemented`
+  immediately; none of the three gates below caught it (all drive `m.forward()` directly, never
+  `Generate()`), `decoder/serialize_census_test.go`'s `.giw` round-trip check did (it calls
+  `Generate()` for real). Fixed by mirroring the same case into both switches. The scoping audit's
+  own claims that this family used Cohere's parallel residual block and
+  a non-gated MLP were both wrong — checked directly against the real `configuration_spark.py`/
+  `modeling_spark.py` before writing any code; it is a standard sequential (Llama-shaped) residual
+  block, and the MLP is gated. CPU-only for now (`FeatAttnOutputGate`; no resident backend
+  implements the gate). Gate 1 (tiny synthetic): cosine 1.00000000. Gate 2 (real
+  Spark-X2.5-1.7B): argmax exact, cosine 1.000000, full 8-token greedy continuation match. Gate 3
+  (fit guard at 131072 context): the sliding-window KV price is correctly capped at the window
+  (3.80 GB) instead of the naive full-context price (15.03 GB, a 3.95× difference), and an
+  oversized explicit pin is cleanly refused rather than silently swapped. The 4B was not
+  attempted — its real-oracle load needs ~16 GB resident at f32, this machine's entire RAM, not a
+  close call the way the 1.7B's small shortfall was.
+- **Qwen3.5 image input (`serve`, safetensors, CPU).** An OpenAI `image_url` content part now works on a Qwen3.5
+  checkpoint that carries its vision tower (`Qwen3_5ForConditionalGeneration`; the tower is auto-discovered and loads on
+  the first image, not at startup). Qwen3.5 does not use DeepStack, so this is the ordinary splice-at-placeholder path
+  plus m-RoPE on the hybrid's full-attention layers (new aikit tower, `vision.Qwen3VisionEncoder`; new
+  `LoadQwen3PreprocessConfig`). Verified on Qwen3.5-0.8B: 32 greedy tokens identical to HuggingFace f32 on three images,
+  text-only logits byte-identical to the previous build (`docs/measurements/p8a-qwen35-vl-2026-09/`).
+  - **Image turns decode on the CPU**, even with a GPU backend: the resident executors cannot yet carry a Gated-DeltaNet
+    image turn (the KV upload skips the recurrent layers, so decode would start from a zeroed state). `GenerateQwenVL`
+    now refuses the resident path for a recurrent family rather than merely not engaging it. Images are capped at 1024
+    merged tokens; larger ones are resized down. 9B and the MoE checkpoints are not yet verified. Images that need a
+    resize are not yet fidelity-gated against the HF processor. Needs aikit v1.51.0 (the tower, `vision.Qwen3VisionEncoder`).
+- **Several generations of one model run at once.** `--max-concurrent` (default 4, capped by `--kv-sessions`; 1 restores
+  one at a time). On the CPU each runs on its own session, and `--cpu-batch auto|on|off` (default `auto`: at least 2 GiB
+  of dense weights) joins their decode tokens into one batched forward; on Metal (dense W4A8) and CUDA (dense families
+  with batched prefill) they decode in shared batched steps, and `--prefill-chunk` (default 512) prefills a long newcomer
+  between steps. `--spec`, adapter, vision and weight-streaming models still run one at a time. Every reply is
+  bit-identical to the request served alone. 4 clients: CPU 1.5B 1.97x serialized (`docs/measurements/concurrency-mc3c-2026-09-26.md`),
+  CPU 7B batched 2.187x the unbatched workers (`docs/measurements/concurrency-mc3c-step2-2026-09-27.md`), Metal 1.5B 1.593x
+  (`docs/measurements/concurrency-mc3-2026-09-26.md`), CUDA 1.380x (1.5B) / 1.826x (7B) (`docs/measurements/concurrency-mc3-cuda-2026-09-27.md`).
+- **`POST /v1/systemone`: decisions in TypeSafe's wire shape**, so jevx and the TypeSafe SDKs can use goinfer. Each
+  `noul`, `choice` or `score` question is answered by label scoring: one prefill, the model's probabilities read at the
+  label tokens, nothing decoded. Up to 256 questions, validated before any prefill (422). `--decisions-template`
+  (`chat-v1`, the default, or `bare-v1`) and `--decisions-calibration`; `goinfer-chat decide` and `decisions-calibrate`
+  do the same from the command line and fit per-kind temperatures. See `docs/server.md`, `docs/integrations/typesafe-jevx.md`.
+- **Label scoring is measured, and is not a substitute for a trained head**: Qwen3.5-9B Q4_K_M with its chat template,
+  calibrated, top-1 0.4197 and ECE 0.1656 on 872 out-of-distribution rows, against the trained JEV-9B's 0.9181
+  (`docs/measurements/decisions-d6a-2026-09-28.md`).
+- **`/v1/systemone` can answer with a trained decision head (Route B).** `--model name=DIR,head=DIR` loads a head in the
+  JEV layout (`judge_config.json`, `head.safetensors`, `calibration.json`, and `adapter/` when its LoRA is unmerged); the
+  entry then answers as the JEV reference does, and `goinfer.route` says `"head"`. Option descriptions are dropped (JEV's
+  template has none) and named in `goinfer.descriptions_dropped`; a score question must use JEV's six levels; a state over
+  1024 tokens is cut to its first 614 and last 410 tokens as the reference cuts it. It runs on the GPU when the model is
+  resident (CUDA or Metal). `goinfer-chat decide --head DIR` does the same from the command line.
+- **A LoRA adapter is merged at load for Qwen3.5 (safetensors)**, and `prequant -lora DIR` bakes one into a `.giw` with
+  a `.lora.json` sidecar naming the adapter and its sha256; `head=` refuses a bundle built without the head's own adapter.
+  Every adapter tensor must be merged, or the load is refused: an adapter on an internlm2 or gpt-oss model used to load
+  and change nothing.
+- **Per-field confidence on constrained JSON output.** `constrain.Masker.CaptureConfidence` / `FieldConfidence` report,
+  for enum, boolean and integer fields, the probability mass on the chosen option (enum, boolean) or the lowest
+  free-token probability (integer). `serve` adds a `goinfer_confidence` array when a `/v1/chat/completions` or
+  `/v1/completions` request with a `json_schema` response format sets `"goinfer_confidence": true`; other routes refuse it
+  (400). It ranks answers (AUROC 0.85/0.73/0.68) but is not calibrated and is not a probability of being right
+  (`docs/measurements/confidence-c0-2026-09-27.md`). Example: `examples/confidence`.
+- **`--quant q4k`**: a GGUF's Q4_K tensors are kept in their native form and the rest is int8 W8A8 with per-32 activation
+  scales. CPU and CUDA only, loaded straight from the `.gguf` (no sidecar, no `--stream-weights`). The default for a Phi-3
+  `.gguf` on the CPU and CUDA (see Fixed); `int4` stays the general default, and q4k measured behind llama.cpp on all 6
+  headline CUDA cells (`docs/measurements/q4k-peer-2026-09-26/`).
+- **Swap tripwire.** After its startup loads, `serve` watches swap; once it has grown by 512 MiB, new requests get a 503
+  naming the reason until swap recovers, and running generations finish. A `.gguf` direct build in `serve` or
+  `goinfer-chat` is aborted the same way (`decoder.Options.LoadAbort`, `decoder.ErrLoadAborted`). `GOINFER_SWAP_GUARD`
+  sets the threshold in MB, or `off`.
+- **`--moe-pager mmap|pool`** (`decoder.Options.MoEPager`) chooses how a `.giw`-paged MoE model's experts are held:
+  `mmap` (zero-copy) or `pool` (owned buffers, a firm memory cap). Default `pool` on macOS, where `mmap` does not hold the
+  budget, `mmap` elsewhere. Qwen3.6-35B-A3B on the Mac: pool 2.272 vs mmap 2.222 tok/s, mmap holding 3.7-4.1 GB of expert
+  pages against a 1.5 GB budget (`docs/measurements/moe-pager-mode-darwin-2026-09-23.md`).
+- **`--spec-adaptive`** (experimental, off by default): with `--spec ngram`, a generation speculates only while it is
+  alone and joins batched decode when others arrive, instead of holding the model for the whole generation. Under
+  copy-heavy load it measured slower than plain `--spec ngram`, so it is not recommended there.
+- **`goinfer-chat --spec ngram`**, the lossless n-gram speculation `serve` already had. A turn it cannot take (for
+  example with `--schema`) decodes plainly; `--spec` with `--draft` is refused.
+- **`goinfer-chat` has every model-loading flag `goinfer-serve` has**: `--ctx`, `--stream-weights`,
+  `--weight-cache`, `--moe-cache-experts`, `--moe-cache-slots`, `--moe-pager`, `--accept-slow`, `--embed-int4` and
+  `--cpu-exact-prefill` are new to chat. A cold-user run reached for `--moe-cache-experts` in chat and got
+  "flag provided but not defined". Both binaries now register these flags from one place (`internal/loadflags`) and
+  build their `decoder.Options` from it, so they cannot drift apart again. The help texts are serve's; serve's also
+  names its per-model overrides.
+  - `--stream-weights` is no longer redirected to `goinfer-serve`.
+  - On the baked-in model, `--stream-weights` is refused with a reason, because that model lives in the binary's own
+    image.
+  - A `--draft` model never inherits `--stream-weights`.
+  - As in serve, chat's flags now decide the CPU prefill attention: an exported `GOINFER_CPU_FAST_ATTENTION` no
+    longer overrides them. Use `--cpu-exact-prefill` or `--exact-prefill`.
+  - Both binaries now refuse a negative `--ctx`, `--moe-cache-slots` or `--weight-cache` at startup.
+- **New library API.** `decoder.Model.PromptHidden` (the final-norm hidden state at the last prompt position, resident
+  on CUDA and Metal); `decoder.Options` fields `ResidentKVSlots`, `ResidentPrefillChunk`, `CPUBatchDecode`, `MoEPager`,
+  `ActQuantGroup`, `AcceptSlowMoE`, `LoadAbort` and `Knobs`; in `chat`, the reasoning handling `serve` uses
+  (`ThinkSplitter`, `ReplySplitter`, `ReasoningBudget`, `Template.WithThinking`, `ThinkMode`, `NewReplySplitter`,
+  `NewReasoningBudgetFor`) and the `Phi3` / `Phi3Orig` templates.
+- **`GET /admin/status` reports `resident_batch`**, the batched-decode counters of each model running several
+  generations at once.
+- **Docs: "Use it from Go" (`docs/use-from-go.md`)**, the library user's starting point: the working `go get`, the
+  smallest program, output shaped like a Go struct or a JSON Schema, per-field confidence, and what v1.0 will bind.
+  Every code block is copied from a program under `examples/` and tested. New `examples/structured` fills in a Go
+  struct through `constrain.GrammarFromStruct`.
+- **goinfer.dev**, generated from this repository: a page per model family with how it was checked, the vetted
+  checkpoints, downloads with checksums, the docs, the "What's different" writeups, and the book at `/book/` (the old
+  GitHub Pages address redirects there). The README now leads with embedding goinfer in a Go program.
+- **New docs pages**: `docs/flags.md`, every `serve` flag, generated from the binary and checked against it in tests;
+  `docs/tool-call-coverage.md`, tool-call behaviour per family; `docs/integrations/typesafe-jevx.md`;
+  `docs/bigger-than-memory.md` and `docs/small-devices.md`, moved out of the README.
+
+### Changed
+
+- **BREAKING for seeded output: plain-`temperature` sampling now draws a different stream, and is faster.** Sampling
+  at `temperature` > 0 with none of `top_k` / `top_p` / `min_p` (the OpenAI default) now draws by **Gumbel-max**:
+  the token is `argmax(logit/T + noise)`, the noise from a Philox4x32-10 counter generator keyed by the seed and the
+  draw index, on every backend. **The distribution is unchanged, but for a given seed the tokens are not the ones any
+  earlier release produced.** Sampling with a `top_k` / `top_p` / `min_p` is unchanged token for token. Logprobs,
+  penalties and bias no longer change which token a seed yields. CUDA, WebGPU and Metal draw the token **on-device** and
+  return only its id: paired against greedy on the 0.5B, CUDA plain `temperature` **0.744 → 1.008**, WebGPU
+  **0.796 → 1.035**, Metal **~0.80 → ~0.96** (`docs/measurements/r7b-metal-mac-2026-09-20.md`; Metal declines
+  for softcapped / logit-scaled and paged-MoE models and falls back to the host draw); CPU still draws on the host, ~1.8x cheaper than before
+  (`docs/measurements/sampled-gumbel-2026-09-20.md`). Verified by a goodness-of-fit and two-sample test against the
+  exact distribution and the old sampler, the device kernels agreeing with the host reference on 15,840 (CUDA) and
+  12,000 (WebGPU) draws, and identical device/host token streams on real checkpoints. Speculative decoding's seed and
+  bonus tokens use the same draw, so its first token still equals plain decoding's under the same seed.
+  `GOINFER_NO_SAMPLE_FASTPATH=1` disables the device draw (an A/B switch: the stream is the same either way except
+  where two candidates' scores differ by an f32 rounding, ~1e-6 per token).
+- **BREAKING for a program that changes a `GOINFER_*` variable after `Load`.** The per-call operator knobs (the
+  decoder's 14, then CUDA's and Metal's) are read once per model at `Load`, so a later environment change no longer
+  alters a loaded model, and two models in one process can differ. `decoder.Options.Knobs` sets them per model. `serve`
+  no longer writes any environment variable; `--exact-prefill` and the CPU prefill flags travel in `Options`.
+- **Changes output. `--embed-int4` defaults on: with `--quant int4`, the token-embedding / LM-head table is int4 too**,
+  halving the largest resident tensor on a big-vocabulary small model; CPU decode 1.122x/1.094x/1.054x on 0.5B/1.5B/7B
+  (`docs/measurements/cpu-decode-peer-gap-2026-09-27.md`). It is lossy (about 2.3 points of top-1, mostly rare tokens,
+  measured before the flip and not re-run since); `--embed-int4=false` restores the int8 table. A default load builds a
+  separate `e4h` sidecar `.giw` once. **On `--backend metal` it defaults off**, because the Metal resident path does not
+  take an int4 table yet; CUDA and WebGPU keep the int4 table resident.
+- **Changes output.** **Reasoning models: `content` is the answer, the thinking is a separate field (`serve`).** A Qwen3 / Qwen3.5 / Gemma 4
   reply no longer mixes `<think>…</think>` into `content`. `chat.Template` now declares each checkpoint's thinking
   behaviour, read from its own template text — Qwen3 and Qwen3.5-9B default to thinking on, Qwen3.5-0.8B and Gemma 4 to
   off — and `serve` splits the reply on every route: `reasoning_content` (OpenAI chat, streamed), `thinking` blocks
@@ -48,18 +217,30 @@ any surface may still change.
     HuggingFace's default does (+4 prompt tokens); Qwen3, Qwen3.5-9B and Gemma 4 prompts decode as before. A client that parsed the tags out of `content` sets `-reasoning-format none`.
   - **Fixed on the way:** the Gemma 4 tool prompt put a newline between a system prompt and the first tool declaration
     that Gemma's own template does not; the tool goldens had no system-prompt case.
-- **Qwen3.5 image input (`serve`, safetensors, CPU).** An OpenAI `image_url` content part now works on a Qwen3.5
-  checkpoint that carries its vision tower (`Qwen3_5ForConditionalGeneration`; the tower is auto-discovered and loads on
-  the first image, not at startup). Qwen3.5 does not use DeepStack, so this is the ordinary splice-at-placeholder path
-  plus m-RoPE on the hybrid's full-attention layers (new aikit tower, `vision.Qwen3VisionEncoder`; new
-  `LoadQwen3PreprocessConfig`). Verified on Qwen3.5-0.8B: 32 greedy tokens identical to HuggingFace f32 on three images,
-  text-only logits byte-identical to the previous build (`docs/measurements/p8a-qwen35-vl-2026-09/`).
-  - **Image turns decode on the CPU**, even with a GPU backend: the resident executors cannot yet carry a Gated-DeltaNet
-    image turn (the KV upload skips the recurrent layers, so decode would start from a zeroed state). `GenerateQwenVL`
-    now refuses the resident path for a recurrent family rather than merely not engaging it. Images are capped at 1024
-    merged tokens; larger ones are resized down. 9B and the MoE checkpoints are not yet verified. Images that need a
-    resize are not yet fidelity-gated against the HF processor. Needs aikit vX.Y.Z (tower) — not yet tagged.
-- **CPU int4 group scales are stored as binary16 (aikit v1.50.1, `.giw` v15), and an older int4 sidecar is rebuilt
+- **Changes output.** **llama3 tool calls are constrained under `auto` too, when the reply begins as a call.** llama3's call is bare JSON with no opener,
+  so the multi-tool union now arms when the output begins `{"name": "` (optionally after `<|python_tag|>`); nothing is masked before
+  that, so prose and other JSON are untouched (119/119 outputs byte-identical to `GOINFER_TOOL_UNION=0`). On Llama-3.2-1B: unusable
+  `auto` calls 12/185 → 4/185, invalid-argument calls 3 → 0; the remaining four are prose followed by JSON, which is still only parsed.
+- **Changes output.** **Tool calls can no longer be malformed or name an unsupplied tool with 2+ tools (T1–T3; closes N-18), default on
+  (`GOINFER_TOOL_UNION=0` opts out).** A union grammar over the supplied tools constrains `required` / Anthropic `any` from the first
+  token and `auto` from the model's call opener (`<tool_call>` / `[TOOL_CALLS]`), each call in a turn independently. A new
+  `SamplingParams.LogitProcessorGate` keeps every on-device fast path until the opener, so a prose `auto` turn is unchanged: 630/630
+  outputs byte-identical to `=0` at greedy and T=0.7, decode 0.999–1.001× (an ungated first build cost 0.81–0.99× and was not shipped
+  default-on). On the Qwen2.5-7B agent transcript: 14 unusable calls and 10 invalid-argument calls of 111 → 0 and 0. llama3 (no
+  opener) is armed differently — see the llama3 entry above; a server running speculative decoding keeps its drafter on `auto` turns. Form, not judgement.
+  `docs/measurements/tool-union-2026-09-24.md`.
+- **Changes output.** **Tool calls: an unwrapped call is accepted on chatml/mellum2 when it names a supplied tool.** Qwen2.5-Coder (0.5B, 1.5B and
+  7B; also on Ollama) practically never writes `<tool_call>` under `tool_choice: auto` and emits the call object alone, which
+  every surface returned as prose: 0 parsed calls in 1,200 samples. Now an output that opens with a JSON object whose `name` is
+  exactly a supplied tool and whose arguments are an object is that call (first object only). On the 0.5B/1.5B: 0 → 236 / 219
+  parsed calls of 300 with prose unchanged to the sample; 7B and llama3 outputs identical. OpenAI chat, Responses and Anthropic
+  Messages (both paths) all use it; streaming holds an output that opens with `{`. Fixes form only — most recovered small-model
+  calls pick the wrong tool. `docs/measurements/tool-call-failure-t0-2026-09-23.md`.
+- **Changes output. One `--kv` flag for every backend.** `--kv f32|f16|i8` now sets the KV precision on the CPU as well
+  as on a GPU (the CPU cache has no f16 form, so `f16` is f32 there), and `goinfer-chat` has it too. `--kv i8` on a
+  CPU-served model now selects the lossy per-head int8 cache, where before it was ignored off the GPU. `--kv-quant` (and
+  per-model `kv-quant=`) still works as a deprecated CPU-only override.
+- **Changes output.** **CPU int4 group scales are stored as binary16 (aikit v1.50.1, `.giw` v15), and an older int4 sidecar is rebuilt
   once.** A v15 sidecar maps the f16 scales straight from the file. An older one still loaded, by converting its f32
   scales to a heap f16 copy on every load, and because it loaded it counted as fresh and was never replaced. The first
   load after upgrading now prints `… is format v12 … rebuilding once` and re-transcodes (21 s for a 1.5B, minutes for a
@@ -75,132 +256,7 @@ any surface may still change.
     v1.50.1 widens them with NEON `FCVTL`, in-kernel for the M=1 decode matmul. That regression was never in a
     goinfer release: `main` ran it from `5c85f7c0` to `c731ca1d`
     (`docs/tasks/task-cpu-decode-peer-gap-2026-09.md`, "L1 arm64 fix").
-
-- **Fixes found while rewriting the architecture doc:**
-  - **`goinfer-serve` started without a model can serve one loaded later.** The `/v1` generation, job and batch routes
-    were registered only when a model existed at startup, so a server started with only `--web`, `--allow-admin` or
-    `--admin-socket` answered 404 on `/v1/chat/completions` for its whole life, including the web UI's own chat. They
-    are always registered now, and answer "model not found" until a model is loaded.
-  - **`--lora` with a `.gguf` or `.giw` is refused.** Since the sidecar default, a `.gguf` became a `.giw` before
-    loading, and the adapter was dropped without a word. A merged LoRA needs a safetensors base; the refusal says so,
-    before any transcode.
-  - **`fit` reuses the sidecar chat and serve build.** It looked only for a `canonical` `.giw`, and a default load
-    writes `cpu-amd64`/`cpu-arm64`. On the 0.5B it now reads the sidecar in under 0.01 s instead of a 3 s, 1 GB direct
-    load.
-  - **An explicit `--quant f32` against an unquantized `.giw` is accepted.** It was refused, and the error said to
-    pass `--quant native`, which the flag does not accept.
-  - **The sidecar disk check prices the sidecar, not the source.** An int4 sidecar is up to 1.16× its q4 source and
-    int8int8 ~1.6×, so the old check could pass and the transcode still fill the disk.
-  - **`pull` refuses an exact split-GGUF shard filename**, as it already refused a quant that resolves to one. No loader
-    can assemble a split checkpoint.
-  - **Serve's banner** no longer says every resident turn re-prefills its whole prompt: the GPU cache reuses the most
-    recent conversation's prefix. On CUDA it reports KV as f32, which is what CUDA allocates, whatever `--kv` asks.
-  - **CI and govulncheck no longer install X11/GL packages** for the WebGPU build. The current binding links neither.
-
-- **`goinfer-chat` has every model-loading flag `goinfer-serve` has**: `--ctx`, `--stream-weights`,
-  `--weight-cache`, `--moe-cache-experts`, `--moe-cache-slots`, `--moe-pager`, `--accept-slow`, `--embed-int4` and
-  `--cpu-exact-prefill` are new to chat. A cold-user run reached for `--moe-cache-experts` in chat and got
-  "flag provided but not defined". Both binaries now register these flags from one place (`internal/loadflags`) and
-  build their `decoder.Options` from it, so they cannot drift apart again. The help texts are serve's; serve's also
-  names its per-model overrides.
-  - `--stream-weights` is no longer redirected to `goinfer-serve`.
-  - On the baked-in model, `--stream-weights` is refused with a reason, because that model lives in the binary's own
-    image.
-  - A `--draft` model never inherits `--stream-weights`.
-  - As in serve, chat's flags now decide the CPU prefill attention: an exported `GOINFER_CPU_FAST_ATTENTION` no
-    longer overrides them. Use `--cpu-exact-prefill` or `--exact-prefill`.
-  - Both binaries now refuse a negative `--ctx`, `--moe-cache-slots` or `--weight-cache` at startup.
-
-- **A baked-in chat model now honours `--kv`, `--fit` and `--exact-prefill`.** The
-  prequant build (`-tags prequant`, the release binaries with a model inside) built its model through
-  `decoder.NewModel`, which read nothing but the backend, so those flags were accepted and did nothing. New
-  `decoder.NewModelWithOptions(w, opts)` applies the same per-model options a `.giw` load through `Load` does;
-  `NewModel` is now that with only the backend set. All four model constructors build from one helper: the raw-GGUF
-  build (`LoadGGUFBytes`) had also dropped a drafter's `ExtraResidentBytes` / `ExtraResidentKVPerPosition`
-  reservation.
-
-- **Removed the MTP self-draft measurement adapter** (`decoder/mtp.go`: `MTPHead`, `LoadMTPHead`, `HasMTPHead`, `MTPStep`,
-  `MTPPrefill`, `MTPDraftFrom`, `NewMTPState`). It was the Gate 1 probe for `docs/spec/09-mtp-heads.md` and had no caller;
-  the track stopped under its own pre-registered rule, and the spec says where to recover the code if it resumes.
-
-- **When a GPU backend declines to run a model resident, `serve check` and the load banner now say why.** Before,
-  every decline was recorded as "arch is not eligible for the resident decode runner" or "backend declined to build a
-  resident path", and the backend's real reason went only to stderr. Now it is, for example, "metal does not implement
-  [kda mla], which this model needs", or the memory guard's own figures. The load path also runs every admission gate
-  the published hardware matrix is built from, so what the matrix shows is what the runtime does.
-
-- **`fit` and CUDA's own context sizing now price CUDA's KV cache as CUDA allocates it.** CUDA holds f32 K/V whatever
-  precision is requested, and one latent buffer per layer on an MLA model (DeepSeek, Kimi). `fit` priced a requested
-  f16 / i8 KV at half / ~0.28× of that, and every CUDA plan counted MLA models' KV twice — so CUDA's default context for
-  an MLA model was sized to fit twice its real KV. Dense, sliding-window, Gemma 4 and DeltaNet-hybrid models were already
-  priced exactly. `docs/measurements/memory-accounting-cuda-2026-09-25.md`.
-- **Removed two dead `serve` flags.** `--metal-fast-prefill` had been a no-op since Metal's fast prefill became the
-  default (2026-09-09). `--cpu-fast-attention` defaulted to `true`, so the only thing it could do, `=false`, was
-  `--cpu-exact-prefill` under another name. **A script that still passes either now fails at startup** with
-  `flag provided but not defined`; delete the flag. `--cpu-exact-prefill` (CPU) and `--exact-prefill` (all backends)
-  are the opt-outs, and `--cpu-exact-prefill`'s help now carries the default's full disclosure (not bit-identical,
-  cosine 0.9976, 2.28× faster, 512-token floor). `--exact-prefill`'s help gave Metal's fast-prefill floor as 512 tokens;
-  it is 64.
-- **Removed the never-released gemma demos**: `internal/gemmaapp`, `demo/gemma`, `metal/cmd/gemma`, `demo/gemma-web`
-  (~710 lines, stale help text, no release ever shipped them). `goinfer-chat` and `goinfer-serve` cover what they did.
-
-- **`fit` and Metal's resident memory guard now compute the same number.** `fit` left out Metal's host copy of the weights
-  (2.1 GB on a directly loaded 1.5B) and counted Metal's KV cache at f32 when Metal allocates f16. So it could report
-  *resident* for a direct `.gguf` load that Metal then refused, and over-state KV for an aliased `.giw`. Both now use one
-  accounting function. Serve's banner reports the KV precision that actually runs (`KV f16` on Metal, not `KV f32`).
-
-- **Fixed: a gemma4-26B `.gguf` loaded directly (`-direct-load`, or any platform without the sidecar default) generated only
-  `<pad>`.** Every MoE layer's output was scaled by 0 — the loader copied the per-layer output scale into the MoE branch
-  before reading it. The sidecar path was unaffected. Direct and sidecar loads now produce byte-identical greedy text.
-- **A gemma4 `.gguf` now transcodes to a `.giw` one layer at a time (S2), like every other family.** The 26B-A4B's
-  transcode drops from 18.1 GB of anonymous memory (34.8 GB RSS) to a 1.61 GB peak, with byte-identical output, so its
-  sidecar can be built on a machine smaller than the model. It is 45% slower than the old in-memory build (1:50 vs 1:16).
-
-- **Metal serves a `.giw`'s weights straight from the file, by default (S6).** A Metal load of a `.giw` now binds its int4
-  nibbles, the int8 LM head and (weights format v14, `-target metal`, new) the f16 group scales in place from the file mapping
-  instead of copying them into GPU buffers, so they are page cache the OS can reclaim rather than memory that swaps. Memory
-  held after 32 tokens: 7B 4,134 → 105 MB, 1.5B 1,013 → 90 MB; logits byte-identical to the copy path; decode within 3%
-  (worst −1.49%). `GOINFER_METAL_ALIAS=0` restores the copy path. A sidecar written before v14 still loads and aliases less,
-  and the load banner says to rebuild it. The `.giw` is now mapped shared on darwin and excluded from `fork()`.
-
-- **llama3 tool calls are constrained under `auto` too, when the reply begins as a call.** llama3's call is bare JSON with no opener,
-  so the multi-tool union now arms when the output begins `{"name": "` (optionally after `<|python_tag|>`); nothing is masked before
-  that, so prose and other JSON are untouched (119/119 outputs byte-identical to `GOINFER_TOOL_UNION=0`). On Llama-3.2-1B: unusable
-  `auto` calls 12/185 → 4/185, invalid-argument calls 3 → 0; the remaining four are prose followed by JSON, which is still only parsed.
-- **Tool calls can no longer be malformed or name an unsupplied tool with 2+ tools (T1–T3; closes N-18), default on
-  (`GOINFER_TOOL_UNION=0` opts out).** A union grammar over the supplied tools constrains `required` / Anthropic `any` from the first
-  token and `auto` from the model's call opener (`<tool_call>` / `[TOOL_CALLS]`), each call in a turn independently. A new
-  `SamplingParams.LogitProcessorGate` keeps every on-device fast path until the opener, so a prose `auto` turn is unchanged: 630/630
-  outputs byte-identical to `=0` at greedy and T=0.7, decode 0.999–1.001× (an ungated first build cost 0.81–0.99× and was not shipped
-  default-on). On the Qwen2.5-7B agent transcript: 14 unusable calls and 10 invalid-argument calls of 111 → 0 and 0. llama3 (no
-  opener) is armed differently — see the llama3 entry above; a server running speculative decoding keeps its drafter on `auto` turns. Form, not judgement.
-  `docs/measurements/tool-union-2026-09-24.md`.
-- **linux: a `.gguf` now loads through its sidecar `.giw` by default, as on darwin (`-direct-load` / `GOINFER_GGUF_DIRECT=1`
-  opts out).** Owner decision. Measured first: CPU decode 1.0007× / 1.0016× (1.5B / 7B, inside the do-nothing arm), CUDA
-  decode 0.99–1.005× with byte-identical output, and loads that map instead of re-quantizing — CUDA 2.7 s vs 8.2 s (1.5B) and
-  10 s vs 26.6 s (7B); CPU Go heap after load ~0 vs 1.3 / 5.0 GB. The first start per model and backend transcodes once
-  (20 s / 86 s here) and writes ~model-size beside the `.gguf`; with less free disk than that, `serve` refuses to start and
-  names `-direct-load`. `docs/measurements/cpu-giw-vs-direct-2026-09-24.md`.
-- **Tool calls: an unwrapped call is accepted on chatml/mellum2 when it names a supplied tool.** Qwen2.5-Coder (0.5B, 1.5B and
-  7B; also on Ollama) practically never writes `<tool_call>` under `tool_choice: auto` and emits the call object alone, which
-  every surface returned as prose: 0 parsed calls in 1,200 samples. Now an output that opens with a JSON object whose `name` is
-  exactly a supplied tool and whose arguments are an object is that call (first object only). On the 0.5B/1.5B: 0 → 236 / 219
-  parsed calls of 300 with prose unchanged to the sample; 7B and llama3 outputs identical. OpenAI chat, Responses and Anthropic
-  Messages (both paths) all use it; streaming holds an output that opens with `{`. Fixes form only — most recovered small-model
-  calls pick the wrong tool. `docs/measurements/tool-call-failure-t0-2026-09-23.md`.
-- **CPU decode on non-arm64: fused gate+up+SwiGLU fork/join, DEFAULT ON (`GOINFER_CPU_FUSED_GATEUP=0` opts out).** A layer now pays
-  one barrier instead of two for its gate and up projections, and the SwiGLU's scalar float64 `exp` (3.65 ms/token on the 1.5B, serial
-  because fanning it out separately loses) runs in parallel inside that barrier. **Bit-identical**: each output column is a self-contained
-  dot and the activation is elementwise — pinned by a mutation-checked element-wise `!=` test across widths and ragged N, and on the real
-  0.5B/1.5B/7B by comparing the full logits vector at 48 decode steps (~21.9M values, 0 differ). Paired ABBA on the Ryzen 7 3700X:
-  1.5B **1.066×**, 0.5B **1.113×**, 7B **1.029×** in-process; served, same session, interleaved against the previous build:
-  **1.24× / 1.135× / 1.02×** (46.9 / 19.4 / 5.0 tok/s), which is **0.82× / 0.815× / 0.83× of Ollama v0.32.5** (was 0.66× / 0.72× / 0.82×).
-  arm64 stays off (measured on amd64 only). Found by a per-component roofline of the 1.5B token from real weight bytes and measured
-  DECODE SPLIT ms: goinfer streams *fewer* bytes per token than Ollama (0.73× on the 0.5B, 0.94× on the 1.5B) but at 17–23 GB/s against
-  Ollama's 26–28 (a ~30 GB/s ceiling, measured independently) — the gap is achieved bandwidth, and the small projections and the serial
-  activation are where it is lost. Also corrects the earlier record's "19.5 GB/s" (it counted 0.5 B/param and ignored the f32 scales: real
-  traffic was ~24 GB/s). `docs/measurements/cpu-decode-roofline-2026-09-23.md`.
-- **CUDA flash-decode attention lane (R6) is now DEFAULT ON (`GOINFER_CUDA_FLASH_DECODE=0` opts out).** Owner decision,
+- **Changes output.** **CUDA flash-decode attention lane (R6) is now DEFAULT ON (`GOINFER_CUDA_FLASH_DECODE=0` opts out).** Owner decision,
   2026-09-23. It replaces decode attention's three-launch exact path with a key-split online-softmax kernel once the attended
   span reaches 2048 keys (`GOINFER_CUDA_FLASH_DECODE_MIN_KEYS`), so anything shallower — every short chat turn — is untouched, and
   unsupported geometries (head dim outside 64/128/256, GQA > 8, attention sinks, phi3-mini's 96) stay on the exact path. **It is
@@ -215,128 +271,89 @@ any surface may still change.
   **C′ expert-cache MoE models are excluded from the default** (their VRAM budget is sized to the byte and the lane's partial buffer,
   ~34 MB at the 26B's geometry, would come out of it); setting the variable explicitly still turns it on there. Both `serve` and the
   library load path pick this up; nothing else changed.
-- **CUDA C′: expert-stack DMA source pinned in place, DEFAULT ON (`GOINFER_MOE_PIN_REGISTER=0` opts out).**
-  The C′ expert-stack staging buffer used to allocate pinned host memory first and copy into it —
-  `cuMemAllocHost` has to find that many bytes of lockable physical RAM right then, which on a box with a
-  large page cache means reclaiming cache pages first. Populating ordinary memory and pinning it in place
-  afterward (aikit `Device.RegisterMappedHostBuffer`, gpu/v0.33.3, plus the additive `Queue.UploadAsyncAtFrom`
-  the C′ decode overlap's async DMA needed for this source) needs no such reclaim. Measured 1.33×–4.46× in an
-  isolated microbenchmark; the real decision measurement (one 26B load per sample, fresh process, 5/5
-  trials) read 1.105× (10.5%) — below the 15% bar pre-registered before either measurement, so this ships
-  as an owner override (same shape as R2/R8): a real, direction-consistent, zero-numerics-risk win taken
-  despite missing its own bar, not a promoted measurement. `docs/measurements/lead3-pin-order-2026-09-22.md`.
-- **CPU decode on non-arm64: two bit-identical defaults from the Linux attribution (R9).** (1) The SwiGLU/GeGLU
-  activation no longer fans out to 6 goroutines per layer on non-arm64 — the wake stagger cost 3× what the
-  9–19k scalar `silu` calls save (1.5B 13.5 → 3.9 ms/token, 7B 27.9 → 8.0). (2) R13's grouped attention path is
-  gated on the platform actually having aikit's grouped kernels (NEON only); on amd64 it was running the pure-Go
-  fallback, 1.18× (depth 128) to **2.86× (depth 4096)** slower than the per-head path on 6-heads-per-KV geometries
-  (Qwen2.5-1.5B). Paired ABBA on the Ryzen 7 3700X: **1.189× and 1.118×; 1.5B 74.5 → 54.5 ms/token (1.37×), 7B
-  1.10×.** arm64 defaults unchanged. `GOINFER_DECODE_TIMING` now also prints a DECODE SPLIT of attention (q/k/v,
-  core, o), MLP (gate+up, activation, down) and LM head. `docs/measurements/cpu-decode-attribution-2026-09-22-linux.md`.
-- **WebGPU batched prefill: register-blocked W8A8 GEMM, DEFAULT (`GOINFER_WEBGPU_GEMM=tiled16` opts out)** (R10).
-  The 16×16 tiled kernel was 81–94% of batched prefill at ~1 TFLOPS (~11% of f32 peak). The new 64×64 kernel gives
-  each thread a 4×4 block of outputs (8 shared loads per 16 dot4s instead of 2 per 1). Bit-identical by construction
-  (exact i32 K-sum, same dequant expression) and pinned on 8 kernel shapes plus model logits. Measured on the RTX
-  2070 SUPER, paired ABBA on one loaded model: **GEMM class 7.10×, whole prefill 5.89× at 1.5B/P=512 (1.44 s →
-  0.25 s TTFT); 5.08× / 3.31× at 0.5B/P=1024.** `docs/measurements/webgpu-prefill-profile-2026-09-22.md`.
-- **CUDA speculative decode: the block drafter's head and the verify head reduce their argmax on the device**
-  (R14). Both tails used to sync, download the whole `M×vocab` logits block and argmax on the host — measured at
-  14.9–16.0% of a spec round on Qwen3-4B + DFlash (4.7 GB/s pageable D2H + a serial 1.2 ns/element loop). A new
-  `argmax_rows` kernel (`argmax_reduce`'s reduction, one block per row) returns `M` ints instead. Row-for-row
-  identical to the host loop on 582 calls, lossless (emitted sequences equal), **1.234× spec wall-clock** (6/6 ABBA
-  pairs 1.22–1.25×). `docs/measurements/r14-drafter-argmax-2026-09-22.md`.
-- **CUDA: C′ expert-cache decode overlaps compute with the miss DMA, DEFAULT ON (`GOINFER_MOE_DMA_OVERLAP=0` opts out).**
-  The per-layer routing readback used to drain the stream, so every cache-miss DMA ran against an idle GPU (30% of a
-  26B token). Now the host waits on an event recorded after the router, misses are DMA'd on a second stream while the
-  kernels issued after the router (Gemma-4's dense branch, then the hit-expert ranks) execute, and each MoE rank waits
-  device-side only if it missed. Launch order and arithmetic unchanged → bit-identical (48 tokens × 262k logits,
-  `Float32bits`). Real 26B on the RTX 2070 SUPER, paired ABBA on one loaded model: **1.271× (30.4 → 38.7 tok/s)**, 8/8
-  pairs within 1.269–1.288. Generic to every C′ architecture (Qwen3-MoE, GLM, gpt-oss, …), not only Gemma-4. Needs
-  aikit gpu/v0.33.2 (`Event`, `Queue.UploadAsyncAt`, `Queue.ZeroAsync`). Ceiling profile, pre-registered rule and A/B:
-  `docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md`.
-- **CUDA: expert-major MoE prefill, DEFAULT ON (`GOINFER_CUDA_MOE_EXPERT_MAJOR=0` opts out)** (R11/P20). Reorders the batched prefill FFN to admit/DMA each distinct routed expert once per chunk instead of once per (row, rank) — no new kernel, reuses the frozen `moe.ptx` GEMVs and `residual_batched`, bit-identical by construction (mutation-checked on tiny fixtures for both the generic MoE path and Gemma-4's own parallel dense‖MoE FFN). Real measurement on Gemma-4-26B (10 C′ slots, the tight-VRAM case this was built for): **2.66x / 2.50x / 2.39x / 2.26x at M=512/2048/4096/8012**, sequential control unmoved — `docs/measurements/p20-expert-major-m26-2026-09-21.md`. The generic path's own real target (Mellum2, a looser 51-slot cache) measures a smaller 3.5-4.3% — `docs/measurements/p20-expert-major-2026-09-21.md`.
-
-### Changed
-
-- **CUDA vision tower: the R8 fused attention kernel is now DEFAULT** (26.0 -> 4.1 s/image, 6.4x), overriding both pre-registered rules on owner decision: tower-level cosine vs the old kernel was 0.96 (registered pass line 0.98) and a served downstream check found it perturbs greedy generation somewhat more than a 1-LSB pixel jitter control (registered pass line f_N<=1, measured 6/8) — no defect found in either check. `GOINFER_CUDA_VISION_ATTN=exact` restores the old kernel. `docs/measurements/vision-tower-mma-2026-09-21.md`, `vision-tower-downstream-2026-09-21.md`.
-
-### Added
-
-- **Spark-X2.5 as a new family** (`spark2_5`; XHToken, 1.7B/4B, community coding-tuned quants).
-  Fused QKV (one `q_k_v_proj` linear, split Q‖K‖V by output rows — `buildSpark25Weights`, modeled
-  on `buildPhi3Weights`'s split), a head-wise sigmoid attention-output gate applied before
-  `out_proj` (the same STRUCTURE Laguna's own gate ships, sigmoid where Laguna's is softplus — the
-  math already existed via `applySigmoidGateRow` for MLA/Bailing Hybrid, but reaching it from the
-  plain-GQA forward path this family uses was new wiring: `Architecture.AttnGate`/`GateSigmoid`),
-  a 1:3 sliding:full attention interleave (window 512) with layer-dependent partial RoPE (full
-  layers rotate 1/4 of head_dim at theta 5e6, sliding layers rotate the full width at theta 1e4 —
-  reuses Laguna's `RotaryDim`/`RotaryDimLocal`/`RoPEGlobalBase`/`RoPELocalBase` mechanism
-  verbatim), and a gated MLP whose activation is exact-erf GELU rather than SiLU or GELU-tanh
-  (`gegluExact`, `decoder/mlp.go` — `ActGelu` had previously only ever reached the non-gated MLP
-  path). `decoder/forwardn.go`'s batched-prefill path carries its OWN copy of the gated-MLP
-  activation switch, separate from `mlp.go`'s — `ActGelu` was missed there on the first pass, so
-  any multi-token prompt through the real `Generate()` entry point hit `errNotImplemented`
-  immediately; none of the three gates below caught it (all drive `m.forward()` directly, never
-  `Generate()`), `decoder/serialize_census_test.go`'s `.giw` round-trip check did (it calls
-  `Generate()` for real). Fixed by mirroring the same case into both switches. The scoping audit's
-  own claims that this family used Cohere's parallel residual block and
-  a non-gated MLP were both wrong — checked directly against the real `configuration_spark.py`/
-  `modeling_spark.py` before writing any code; it is a standard sequential (Llama-shaped) residual
-  block, and the MLP is gated. CPU-only for now (`FeatAttnOutputGate`; no resident backend
-  implements the gate). Gate 1 (tiny synthetic): cosine 1.00000000. Gate 2 (real
-  Spark-X2.5-1.7B): argmax exact, cosine 1.000000, full 8-token greedy continuation match. Gate 3
-  (fit guard at 131072 context): the sliding-window KV price is correctly capped at the window
-  (3.80 GB) instead of the naive full-context price (15.03 GB, a 3.95× difference), and an
-  oversized explicit pin is cleanly refused rather than silently swapped. The 4B was not
-  attempted — its real-oracle load needs ~16 GB resident at f32, this machine's entire RAM, not a
-  close call the way the 1.7B's small shortfall was.
-
-### Added
-
-- **CUDA vision tower: opt-in fused attention (`GOINFER_CUDA_VISION_ATTN=bm128`), 26.0 -> 4.1 s per 896^2 image (6.4x)** (R8). `attn_img_batched` was 87% of the tower (ncu); the new non-causal `mma.sync` kernel (hd 72 padded to 80) replaces it when selected. Not default: tower output differs from the default path (cosine 0.96, ambiguous under the registered 0.98 bar; cosine vs the CPU int8 reference is unchanged, 0.913 vs 0.914). `docs/measurements/vision-tower-mma-2026-09-21.md`.
-
-### Changed
-
-- **CUDA decode: two more bit-identical fusion-kernel speedups (D7 +1.7-3.5%, 1.5B +1.9-3.0%).** `fused_rms_qkv` and `fused_rms_gu` recomputed the layer's rmsnorm + int8 quantisation in every block before streaming any weight; the QKV and gate/up
-  projections now let each warp walk several rows off one shared activation, and size the grid to one resident wave from the device's SM count and per-SM limits (`GOINFER`-independent; a device whose shape cannot be read keeps the previous static rules). Output is unchanged:
-  1.3M kernel outputs and the decode-logit hashes of four models are bit-identical. D7 GPU time per token 13.39 -> 11.87 ms across this and the `glu_quant` change (`docs/measurements/fused-rms-qkv-2026-09-21.md`, `fused-rms-gu-diagnosis-2026-09-21.md`); the down/o-projection GEMV was measured to be at its bandwidth bound (`gemv-w4a8-2026-09-21.md`, no change).
-  Also fixed: `cuda/flash_decode.go` lacked its `//go:build cuda` tag, so an untagged build of the package failed.
-
-- **CUDA decode is ~4-5% faster on models with a wide MLP, bit-identically.** `glu_quant` (the SwiGLU/GeGLU activation + int8 quantise, a single-block kernel) was launched with 256 threads and
-  cost 36 us per layer on qwen2.5-7b, 7% of a token; it now uses 1024 (13.6 us). Its only reduction is a max, so the output is unchanged (SHA-256 of 25 steps' logits identical on three
-  models; `TestGluQuantBlockSizeInvariant`). Same-session vs the previous build: 1.5B +5.3-5.8%, qwen2.5-7b +4.1-4.5% (now 0.99-1.03x of Ollama v0.32.5 from 0.95-0.98x), 0.5B +0.5%
-  (`docs/measurements/d7-decode-breakdown-2026-09-21.md`).
-
-- **Metal decode attention now defaults to `attention_fa` past depth 1536** (dense-GQA, hd=128;
+- **Changes output.** **Metal decode attention now defaults to `attention_fa` past depth 1536** (dense-GQA, hd=128;
   the shipped `attention` kernel still runs below the floor, and for windowed/sink/paged-MoE/f32-KV
   layers unconditionally). A real, deterministic **1.11–1.19× at depth** (54.9 vs 49.4 tok/s at
   2048, 44.9 vs 37.8 at 4000, qwen2.5-coder-1.5b; identical below the floor —
   `docs/measurements/r2-attn-fa-speed-2026-09-21.md`), shipped by owner decision despite missing
   the peer-parity band this repo registers speed decisions against (needed ≥60 tok/s at depth
-  4000). Fidelity gate PASSES against a CPU f32 reference on real prompts
-  (`docs/measurements/r2-attn-fa-rootcause-2026-09-21.md`). **Not bit-identical** to the previous
+  4000). Its first fidelity verdict
+  (`docs/measurements/r2-attn-fa-rootcause-2026-09-21.md`) was voided on 2026-09-25; re-gated on held-out set B, it
+  passes (KL 0.9674, `docs/measurements/metal-decode-attn-r17-2026-09-25.md`). **Not bit-identical** to the previous
   kernel (reduction/combine order differs by design — moves argmax at the margin on some inputs,
   same class of change as any non-bit-identical kernel this repo has shipped). `TestMetalSnapshotGolden`
-  does not currently exercise this path (its checkpoints top out at depth 320, below the 1536
-  floor) — a known coverage gap, not closed here. `GOINFER_METAL_ATTN_FA=0` opts back to the
-  previous kernel unconditionally.
-
-- **BREAKING for seeded output: plain-`temperature` sampling now draws a different stream, and is faster.** Sampling
-  at `temperature` > 0 with none of `top_k` / `top_p` / `min_p` (the OpenAI default) now draws by **Gumbel-max**:
-  the token is `argmax(logit/T + noise)`, the noise from a Philox4x32-10 counter generator keyed by the seed and the
-  draw index, on every backend. **The distribution is unchanged, but for a given seed the tokens are not the ones any
-  earlier release produced.** Sampling with a `top_k` / `top_p` / `min_p` is unchanged token for token. Logprobs,
-  penalties and bias no longer change which token a seed yields. CUDA, WebGPU and Metal draw the token **on-device** and
-  return only its id: paired against greedy on the 0.5B, CUDA plain `temperature` **0.744 → 1.008**, WebGPU
-  **0.796 → 1.035**, Metal **~0.80 → ~0.96** (`docs/measurements/r7b-metal-mac-2026-09-20.md`; Metal declines
-  for softcapped / logit-scaled and paged-MoE models and falls back to the host draw); CPU still draws on the host, ~1.8x cheaper than before
-  (`docs/measurements/sampled-gumbel-2026-09-20.md`). Verified by a goodness-of-fit and two-sample test against the
-  exact distribution and the old sampler, the device kernels agreeing with the host reference on 15,840 (CUDA) and
-  12,000 (WebGPU) draws, and identical device/host token streams on real checkpoints. Speculative decoding's seed and
-  bonus tokens use the same draw, so its first token still equals plain decoding's under the same seed.
-  `GOINFER_NO_SAMPLE_FASTPATH=1` disables the device draw (an A/B switch: the stream is the same either way except
-  where two candidates' scores differ by an f32 rounding, ~1e-6 per token).
-
+  now exercises this path (fixture `llama-attnfa-tiny`, checkpoints either side of the floor). `GOINFER_METAL_ATTN_FA=0` opts back to the
+  previous kernel unconditionally. The 1.11–1.19× was measured
+  before `attention_fa_blk`, which Qwen2.5-1.5B and -7B now run (below).
+- **Changes output. Metal decode attention past depth 1536 runs `attention_fa_blk` for GQA group sizes 6 and 7
+  (Qwen2.5-1.5B, Qwen2.5-7B).** Not bit-identical to `attention_fa`; it passed its pre-registered fidelity decision on
+  held-out set B. Served against the previous build: 1.5B 68.6 vs 56.2 tok/s at 2048 (1.22x), 65.4 vs 46.4 at 3900
+  (1.41x); 7B 1.18x / 1.33x (`docs/measurements/metal-decode-attn-r17-2026-09-25.md`).
+- **Changes output. Metal's short-prompt fast-prefill floor is 64 tokens (was 256)**, so prompts of 64-255 tokens now
+  take the fast (not bit-identical) prefill. It passed the pooled fidelity gate at K=64; TTFT 3.83x at K=64 and 4.66x at
+  K=128 against sequential prefill (`docs/measurements/metal-prefill-floor-2026-09-20.md`).
+- **Changes output.** **CUDA vision tower: the R8 fused attention kernel is now DEFAULT** (26.0 -> 4.1 s/image, 6.4x), overriding both pre-registered rules on owner decision: tower-level cosine vs the old kernel was 0.96 (registered pass line 0.98) and a served downstream check found it perturbs greedy generation somewhat more than a 1-LSB pixel jitter control (registered pass line f_N<=1, measured 6/8) — no defect found in either check. `GOINFER_CUDA_VISION_ATTN=exact` restores the old kernel. `docs/measurements/vision-tower-mma-2026-09-21.md`, `vision-tower-downstream-2026-09-21.md`.
+- **`/v1/messages` streams prose while a tool-call turn is being written**, as `/v1/chat/completions` already did; it
+  used to send only heartbeats until the generation ended. `/v1/responses` streams it as `response.output_text.delta`.
+  All three routes now share one tool-call turn. Fixed on the way: a streamed OpenAI answer that opened with a newline
+  ended in an error.
+- **Prefix reuse survives an edited or cut-short turn.** The session cache now picks the session with the longest common
+  prefix instead of requiring the whole session to be a prefix of the new prompt, so a stop-string hit, a `max_tokens`
+  cut or an edited last message no longer forces a cold prefill (148x TTFT on the measured case). A session that only
+  shares another conversation's system-prompt preamble is not taken.
+- **When a GPU backend declines to run a model resident, `serve check` and the load banner now say why.** Before,
+  every decline was recorded as "arch is not eligible for the resident decode runner" or "backend declined to build a
+  resident path", and the backend's real reason went only to stderr. Now it is, for example, "metal does not implement
+  [kda mla], which this model needs", or the memory guard's own figures. The load path also runs every admission gate
+  the published hardware matrix is built from, so what the matrix shows is what the runtime does.
+- **GPU backends keep a resident KV cache per conversation.** `--kv-sessions` (default 4) now also sets a model's
+  resident KV slots on Metal, CUDA and WebGPU, clamped by the memory guard (recurrent families keep one), so interleaved
+  conversations no longer re-prefill each other's history. On CUDA, and WebGPU on macOS, an unpinned context shrinks (not
+  below 4096) until every slot fits; an explicit `--ctx` is never shrunk. 4 interleaved clients against one slot: Metal
+  1.22-1.24x (`docs/measurements/concurrency-mc1-2026-09-26.md`), CUDA 1.250x
+  (`docs/measurements/concurrency-mc1-cuda-2026-09-27.md`), WebGPU 2.805x (`docs/measurements/concurrency-mc1-webgpu-2026-09-27.md`).
+- **darwin: a `.gguf` now loads through its sidecar `.giw` by default (`--direct-load` / `GOINFER_GGUF_DIRECT=1` opts
+  out)**, so the weights are mapped from a file instead of copied onto the heap. The first start per model and backend
+  transcodes once and writes the sidecar beside the `.gguf`. Anonymous footprint 16-21% of the direct load's, swap flat,
+  greedy output byte-identical (`docs/measurements/sidecar-default-2026-09-22.md`).
+- **linux: a `.gguf` now loads through its sidecar `.giw` by default, as on darwin (`-direct-load` / `GOINFER_GGUF_DIRECT=1`
+  opts out).** Owner decision. Measured first: CPU decode 1.0007× / 1.0016× (1.5B / 7B, inside the do-nothing arm), CUDA
+  decode 0.99–1.005× with byte-identical output, and loads that map instead of re-quantizing — CUDA 2.7 s vs 8.2 s (1.5B) and
+  10 s vs 26.6 s (7B); CPU Go heap after load ~0 vs 1.3 / 5.0 GB. The first start per model and backend transcodes once
+  (20 s / 86 s here) and writes ~model-size beside the `.gguf`; with less free disk than that, `serve` refuses to start and
+  names `-direct-load`. `docs/measurements/cpu-giw-vs-direct-2026-09-24.md`.
+- **GGUF→`.giw` transcodes also stream one layer at a time for gpt-oss, laguna, granite (the Mamba-2+MoE hybrid),
+  nemotron and llama4**, so their sidecars build without holding the whole model in memory. A real gpt-oss-20b transcode
+  kept swap flat (`docs/measurements/transcode-streaming-2026-09-23.md`).
+- **`.giw` weights v12 / bundle v3 align the scale arrays, so a load maps them instead of copying them** (older files
+  still load; a pre-v12 reader refuses v12). Heap after load: a streamed 35B-A3B MoE 5.82 -> 1.62 GB, 7B 0.615 -> 0.003 GB.
+- **A `.giw`'s whole-file CRC is checked once per file** (size and mtime, recorded in a `<file>.giw.verified` marker)
+  rather than on every load; `GOINFER_GIW_VERIFY=always` checks every time. Truncation is still caught. Real 7B `.giw`:
+  later loads 0.35 s vs 2.1 s.
+- **Load-time memory guards.** A `.giw` load checks that its KV cache and prefill scratch fit (auto-pinning a smaller
+  context, or refusing an explicit one that does not fit); an `auto` `--stream-weights` budget comes from the live memory
+  probe; Metal's ceiling is the smaller of 70% of RAM and what is available now. A paged-MoE load predicted below 2 tok/s
+  is refused unless `--accept-slow` is given (the predictor ran ~15-20% high in 6/6 runs).
+- **A gemma4 `.gguf` now transcodes to a `.giw` one layer at a time (S2), like every other family.** The 26B-A4B's
+  transcode drops from 18.1 GB of anonymous memory (34.8 GB RSS) to a 1.61 GB peak, with byte-identical output, so its
+  sidecar can be built on a machine smaller than the model. It is 45% slower than the old in-memory build (1:50 vs 1:16).
+- **Metal serves a `.giw`'s weights straight from the file, by default (S6).** A Metal load of a `.giw` now binds its int4
+  nibbles, the int8 LM head and (weights format v14, `-target metal`, new) the f16 group scales in place from the file mapping
+  instead of copying them into GPU buffers, so they are page cache the OS can reclaim rather than memory that swaps. Memory
+  held after 32 tokens: 7B 4,134 → 105 MB, 1.5B 1,013 → 90 MB; logits byte-identical to the copy path; decode within 3%
+  (worst −1.49%). `GOINFER_METAL_ALIAS=0` restores the copy path. A sidecar written before v14 still loads and aliases less,
+  and the load banner says to rebuild it. The `.giw` is now mapped shared on darwin and excluded from `fork()`.
+- **Metal decode GEMVs process 2-4 rows per simdgroup, in MLX's half-staged form, bit-identical.** Full token at depth
+  128: 12.93 -> 10.46 ms (1.5B), 45.78 -> 33.12 ms (7B). End to end against Ollama v0.32.5 in the same session: 1.5B
+  1.03-1.06x, 7B 1.06-1.19x (`docs/measurements/metal-decode-gemv-r18b-2026-09-26.md`).
+- **Metal prefill GEMM is 3.23x faster, bit-identical** (1.5B, K=512: 1534.2 -> 475.6 ms). Served TTFT against Ollama
+  v0.32.5: 1.05x behind at K=512 (was 2.65x), 1.96x at 3900 (was 4.18x) (`docs/measurements/metal-prefill-gemm-s2-2026-09-25.md`).
+- **Metal prefill attention for head dim 128 is `attention_prefill_steel`**: PrefillLast on the 1.5B at K=3900
+  8171 -> 4316 ms, at K=512 596 -> 526 ms. It is gated on fidelity (set A, both reference models), not on bit-identity
+  (`docs/measurements/metal-prefill-attn-2026-09-27.md`).
+- **`--spec ngram` on Metal verifies on the batched step kernels (bit-identical, greedy requests)** with a cost-aware
+  depth controller: 2.082x plain decode on copy-heavy traffic and 1.068x on chat (1.5B; 7B 1.846x / 1.014x), where the
+  old verify read 0.977x / 0.956x (`docs/measurements/metal-spec-step-verify-2026-09-27.md`).
 - **CUDA: `top_k` / `top_p` / `min_p` sampling is now 0.96–0.97× of greedy speed, up from ~0.66** (qwen2.5-coder-0.5b,
   same-session paired, n=15; `docs/measurements/sampled-topk-2026-09-20.md`). The resident CUDA forward reduces the
   logits row on-device to its K best (a new `topk_select` kernel) and the sampler draws from those instead of
@@ -349,6 +366,179 @@ any surface may still change.
   K best cannot prove they hold the retained set (0–0.5% of steps). **Plain `temperature` with no truncation
   was not served by this change (it is, by the entry above)**, which needed a different draw (`docs/server.md` amended). `GOINFER_NO_TOPK_FASTPATH=1` disables it. CPU, Metal and WebGPU are
   unchanged.
+- **CUDA prefills Gated-DeltaNet prompts in a batch** (qwen3_5, qwen3_5_moe, qwen3_next, olmo_hybrid) instead of one
+  token at a time, bit-identical to per-token decode: 5.7x on Qwen3.5-9B (561 tokens 9.27 s -> 1.61 s)
+  (`docs/measurements/cuda-deltanet-prefill-2026-09-28/`).
+- **CUDA prefill attention uses a 128-row `attn_fused` tile on head-dim-128 layers without a window**, bit-identical:
+  attention 2.39x, prefill 1.50x at 3900 (`docs/measurements/attn-fused-tile128-default-2026-09-21.md`).
+  `GOINFER_CUDA_ATTN_FUSED_TILE=64x64` restores the old tile.
+- **CUDA speculative verify runs on a multi-row flash-decode lane**, bit-identical to the single-row lane: 1.5B
+  1.49x/1.91x, D7 1.46x/1.87x over exact attention plus speculation (`docs/measurements/spec-decode-lane-2026-09-21.md`).
+- **n-gram speculation verifies by argmax ids** on the device-argmax path instead of reading a full logits row per
+  verified row: +13-41%, lossless; 2.26x on copy-heavy traffic, 8-11% below plain decode on fresh text.
+- **CUDA decode: two more bit-identical fusion-kernel speedups (D7 +1.7-3.5%, 1.5B +1.9-3.0%).** `fused_rms_qkv` and `fused_rms_gu` recomputed the layer's rmsnorm + int8 quantisation in every block before streaming any weight; the QKV and gate/up
+  projections now let each warp walk several rows off one shared activation, and size the grid to one resident wave from the device's SM count and per-SM limits (`GOINFER`-independent; a device whose shape cannot be read keeps the previous static rules). Output is unchanged:
+  1.3M kernel outputs and the decode-logit hashes of four models are bit-identical. D7 GPU time per token 13.39 -> 11.87 ms across this and the `glu_quant` change (`docs/measurements/fused-rms-qkv-2026-09-21.md`, `fused-rms-gu-diagnosis-2026-09-21.md`); the down/o-projection GEMV was measured to be at its bandwidth bound (`gemv-w4a8-2026-09-21.md`, no change).
+  Also fixed: `cuda/flash_decode.go` lacked its `//go:build cuda` tag, so an untagged build of the package failed.
+- **CUDA decode is ~4-5% faster on models with a wide MLP, bit-identically.** `glu_quant` (the SwiGLU/GeGLU activation + int8 quantise, a single-block kernel) was launched with 256 threads and
+  cost 36 us per layer on qwen2.5-7b, 7% of a token; it now uses 1024 (13.6 us). Its only reduction is a max, so the output is unchanged (SHA-256 of 25 steps' logits identical on three
+  models; `TestGluQuantBlockSizeInvariant`). Same-session vs the previous build: 1.5B +5.3-5.8%, qwen2.5-7b +4.1-4.5% (now 0.99-1.03x of Ollama v0.32.5 from 0.95-0.98x), 0.5B +0.5%
+  (`docs/measurements/d7-decode-breakdown-2026-09-21.md`).
+- **CUDA C′: expert-stack DMA source pinned in place, DEFAULT ON (`GOINFER_MOE_PIN_REGISTER=0` opts out).**
+  The C′ expert-stack staging buffer used to allocate pinned host memory first and copy into it —
+  `cuMemAllocHost` has to find that many bytes of lockable physical RAM right then, which on a box with a
+  large page cache means reclaiming cache pages first. Populating ordinary memory and pinning it in place
+  afterward (aikit `Device.RegisterMappedHostBuffer`, gpu/v0.33.3, plus the additive `Queue.UploadAsyncAtFrom`
+  the C′ decode overlap's async DMA needed for this source) needs no such reclaim. Measured 1.33×–4.46× in an
+  isolated microbenchmark; the real decision measurement (one 26B load per sample, fresh process, 5/5
+  trials) read 1.105× (10.5%) — below the 15% bar pre-registered before either measurement, so this ships
+  as an owner override (same shape as R2/R8): a real, direction-consistent, zero-numerics-risk win taken
+  despite missing its own bar, not a promoted measurement. `docs/measurements/lead3-pin-order-2026-09-22.md`.
+- **CUDA: C′ expert-cache decode overlaps compute with the miss DMA, DEFAULT ON (`GOINFER_MOE_DMA_OVERLAP=0` opts out).**
+  The per-layer routing readback used to drain the stream, so every cache-miss DMA ran against an idle GPU (30% of a
+  26B token). Now the host waits on an event recorded after the router, misses are DMA'd on a second stream while the
+  kernels issued after the router (Gemma-4's dense branch, then the hit-expert ranks) execute, and each MoE rank waits
+  device-side only if it missed. Launch order and arithmetic unchanged → bit-identical (48 tokens × 262k logits,
+  `Float32bits`). Real 26B on the RTX 2070 SUPER, paired ABBA on one loaded model: **1.271× (30.4 → 38.7 tok/s)**, 8/8
+  pairs within 1.269–1.288. Generic to every C′ architecture (Qwen3-MoE, GLM, gpt-oss, …), not only Gemma-4. Needs
+  aikit gpu/v0.33.2 (`Event`, `Queue.UploadAsyncAt`, `Queue.ZeroAsync`). Ceiling profile, pre-registered rule and A/B:
+  `docs/measurements/moe-streaming-decode-overlap-ceiling-2026-09-22.md`.
+- **CUDA: expert-major MoE prefill, DEFAULT ON (`GOINFER_CUDA_MOE_EXPERT_MAJOR=0` opts out)** (R11/P20). Reorders the batched prefill FFN to admit/DMA each distinct routed expert once per chunk instead of once per (row, rank) — no new kernel, reuses the frozen `moe.ptx` GEMVs and `residual_batched`, bit-identical by construction (mutation-checked on tiny fixtures for both the generic MoE path and Gemma-4's own parallel dense‖MoE FFN). Real measurement on Gemma-4-26B (10 C′ slots, the tight-VRAM case this was built for): **2.66x / 2.50x / 2.39x / 2.26x at M=512/2048/4096/8012**, sequential control unmoved — `docs/measurements/p20-expert-major-m26-2026-09-21.md`. The generic path's own real target (Mellum2, a looser 51-slot cache) measures a smaller 3.5-4.3% — `docs/measurements/p20-expert-major-2026-09-21.md`.
+- **CUDA speculative decode: the block drafter's head and the verify head reduce their argmax on the device**
+  (R14). Both tails used to sync, download the whole `M×vocab` logits block and argmax on the host — measured at
+  14.9–16.0% of a spec round on Qwen3-4B + DFlash (4.7 GB/s pageable D2H + a serial 1.2 ns/element loop). A new
+  `argmax_rows` kernel (`argmax_reduce`'s reduction, one block per row) returns `M` ints instead. Row-for-row
+  identical to the host loop on 582 calls, lossless (emitted sequences equal), **1.234× spec wall-clock** (6/6 ABBA
+  pairs 1.22–1.25×). `docs/measurements/r14-drafter-argmax-2026-09-22.md`.
+- **WebGPU batched prefill: register-blocked W8A8 GEMM, DEFAULT (`GOINFER_WEBGPU_GEMM=tiled16` opts out)** (R10).
+  The 16×16 tiled kernel was 81–94% of batched prefill at ~1 TFLOPS (~11% of f32 peak). The new 64×64 kernel gives
+  each thread a 4×4 block of outputs (8 shared loads per 16 dot4s instead of 2 per 1). Bit-identical by construction
+  (exact i32 K-sum, same dequant expression) and pinned on 8 kernel shapes plus model logits. Measured on the RTX
+  2070 SUPER, paired ABBA on one loaded model: **GEMM class 7.10×, whole prefill 5.89× at 1.5B/P=512 (1.44 s →
+  0.25 s TTFT); 5.08× / 3.31× at 0.5B/P=1024.** `docs/measurements/webgpu-prefill-profile-2026-09-22.md`.
+- **CPU decode on non-arm64: fused gate+up+SwiGLU fork/join, DEFAULT ON (`GOINFER_CPU_FUSED_GATEUP=0` opts out).** A layer now pays
+  one barrier instead of two for its gate and up projections, and the SwiGLU's scalar float64 `exp` (3.65 ms/token on the 1.5B, serial
+  because fanning it out separately loses) runs in parallel inside that barrier. **Bit-identical**: each output column is a self-contained
+  dot and the activation is elementwise — pinned by a mutation-checked element-wise `!=` test across widths and ragged N, and on the real
+  0.5B/1.5B/7B by comparing the full logits vector at 48 decode steps (~21.9M values, 0 differ). Paired ABBA on the Ryzen 7 3700X:
+  1.5B **1.066×**, 0.5B **1.113×**, 7B **1.029×** in-process; served, same session, interleaved against the previous build:
+  **1.24× / 1.135× / 1.02×** (46.9 / 19.4 / 5.0 tok/s), which is **0.82× / 0.815× / 0.83× of Ollama v0.32.5** (was 0.66× / 0.72× / 0.82×).
+  arm64 stays off (measured on amd64 only). Found by a per-component roofline of the 1.5B token from real weight bytes and measured
+  DECODE SPLIT ms: goinfer streams *fewer* bytes per token than Ollama (0.73× on the 0.5B, 0.94× on the 1.5B) but at 17–23 GB/s against
+  Ollama's 26–28 (a ~30 GB/s ceiling, measured independently) — the gap is achieved bandwidth, and the small projections and the serial
+  activation are where it is lost. Also corrects the earlier record's "19.5 GB/s" (it counted 0.5 B/param and ignored the f32 scales: real
+  traffic was ~24 GB/s). `docs/measurements/cpu-decode-roofline-2026-09-23.md`.
+- **CPU decode on non-arm64: two bit-identical defaults from the Linux attribution (R9).** (1) The SwiGLU/GeGLU
+  activation no longer fans out to 6 goroutines per layer on non-arm64 — the wake stagger cost 3× what the
+  9–19k scalar `silu` calls save (1.5B 13.5 → 3.9 ms/token, 7B 27.9 → 8.0). (2) R13's grouped attention path is
+  gated on the platform actually having aikit's grouped kernels (NEON only); on amd64 it was running the pure-Go
+  fallback, 1.18× (depth 128) to **2.86× (depth 4096)** slower than the per-head path on 6-heads-per-KV geometries
+  (Qwen2.5-1.5B). Paired ABBA on the Ryzen 7 3700X: **1.189× and 1.118×; 1.5B 74.5 → 54.5 ms/token (1.37×), 7B
+  1.10×.** arm64 defaults unchanged. `GOINFER_DECODE_TIMING` now also prints a DECODE SPLIT of attention (q/k/v,
+  core, o), MLP (gate+up, activation, down) and LM head. `docs/measurements/cpu-decode-attribution-2026-09-22-linux.md`.
+- **CPU decode on non-arm64: a layer's W4A8 q/k/v run as one fork/join by default (`GOINFER_W4A8_BATCH=0` opts out)**,
+  bit-identical: 1.016x / 1.030x / 1.018x (0.5B / 1.5B / 7B), paired in-process.
+- **amd64 CPU decode: the activation quantizer is AVX2-vectorized (aikit v1.50.2)**, bit-identical: served
+  1.13-1.17x / 1.07x / 1.04-1.05x (0.5B / 1.5B / 7B).
+- **arm64 CPU int4 decode: the W4A8 kernel folds its centering term (aikit v1.47.0)**, bit-identical: 1.5B ~1.05-1.10x
+  (~49 -> ~52 tok/s) (`docs/measurements/s05-centering-fold-2026-09-22.md`).
+- **arm64 CPU decode attention runs grouped kernels for six query heads per KV head** from 128 keys
+  (`GOINFER_ATTN_GROUPED=0` opts out): 1.32x served at depth 8192 on Qwen2.5-Coder-1.5B (20.09 vs 15.26 tok/s), level at
+  2048 (`docs/measurements/r13-served-decode-2026-09-20.md`).
+- **CPU: Gemma's final-logit softcap runs in parallel**, bit-identical: 3.47 -> 0.76 ms per token at a 262,144 vocabulary
+  (M1 Pro).
+- **CPU gemma4 MoE: expert fills overlap the dense branch**, bit-identical: ~1.09-1.19x under heavy expert eviction (M1 Pro).
+
+### Fixed
+
+- **Changes output. Phi-3 (and Phi-4, by model type; unmeasured) gave junk under every quantized precision.** Its
+  projection inputs carry outliers that one int8 scale per row cannot hold (cosine ~0 by position 16). A default Phi-3
+  load now uses `--quant q4k` on the CPU and CUDA (1.31x int8int8 + per-32 on the CPU; 1.26x / 1.17x at depth 128 / 2048
+  on CUDA, resident at the default 4096 context) and `int8int8` with per-32 activation scales elsewhere; an explicit
+  `--quant` is honoured, with a warning for int4. Also fixed: Phi-3 had no chat template (now `chat.Phi3` / `Phi3Orig`),
+  and the tokenizer ignored added-token `rstrip`, adding three tokens per marker.
+- **CUDA: every prefill chunk but the last of a prompt over 512 tokens ran on the exact kernels**, 3.5x slower at K=3900.
+  A regression in v0.19.0.
+- **Speculative decoding left the cache one position off at a `max_tokens` stop**, so the next turn re-prefilled or
+  reused a stale position and could diverge from plain greedy: `--spec ngram` one short, the `--drafter` block drafter
+  (CUDA) one long, the grammar-fused loop one short. All now end holding the prompt and every emitted token, as plain
+  decode does (CUDA two-turn tests with the real drafter: 14/14).
+- **A tokenizer.json SentencePiece vocabulary spelling `<s>` / `</s>` with no pad (Llama-2, Mistral, Phi-3) failed to
+  load**, and a directory load never read its chat template. A checkpoint that keeps its template only in
+  `chat_template.jinja` (recent transformers) also got none. All three are read now.
+- **A Gemma 4 `.gguf` (for example the 26B) never went resident on Metal** (`int4Concat weight kind ""`): the GGUF's
+  per-layer K=V marking was ignored.
+- **gpt-oss-20b with `--backend cuda --moe-cache-experts` ran out of host memory while loading** (peak RSS 50 GB+,
+  killed). It now peaks at 39 GB and completes; the fit guard prices that peak (35.5 GB against a measured 39.1), and RSS
+  after the build falls from 39 GB to 22 GB.
+- **WebGPU speculative decoding over-drafted**: an unmeasured 0.5 default made it 1.22x slower than not speculating. It
+  now lands within noise of plain generation, 1.28x faster than before (`docs/measurements/theta-webgpu-2026-09-23.md`).
+- **LFM2 with `--kv-quant i8` panicked on the first decode step**; Metal's MoE slot sizer used a larger budget than its
+  memory guard, so a load could fall to the CPU; `Options.ExactPrefill` leaked to every later model in the process (now
+  per model, `Model.ExactPrefill()`).
+- **`usage.prefill_reused_tokens` reported 0 for a CPU session** even when the prefix was reused.
+- **Fixed: a gemma4-26B `.gguf` loaded directly (`-direct-load`, or any platform without the sidecar default) generated only
+  `<pad>`.** Every MoE layer's output was scaled by 0 — the loader copied the per-layer output scale into the MoE branch
+  before reading it. The sidecar path was unaffected. Direct and sidecar loads now produce byte-identical greedy text.
+- **Fixes found while rewriting the architecture doc:**
+  - **`goinfer-serve` started without a model can serve one loaded later.** The `/v1` generation, job and batch routes
+    were registered only when a model existed at startup, so a server started with only `--web`, `--allow-admin` or
+    `--admin-socket` answered 404 on `/v1/chat/completions` for its whole life, including the web UI's own chat. They
+    are always registered now, and answer "model not found" until a model is loaded.
+  - **`--lora` with a `.gguf` or `.giw` is refused.** Since the sidecar default, a `.gguf` became a `.giw` before
+    loading, and the adapter was dropped without a word. A merged LoRA needs a safetensors base; the refusal says so,
+    before any transcode.
+  - **`fit` reuses the sidecar chat and serve build.** It looked only for a `canonical` `.giw`, and a default load
+    writes `cpu-amd64`/`cpu-arm64`; it also looked only for the int8-head sidecar, and since the `--embed-int4` default
+    a CPU, CUDA or WebGPU load writes the `e4h` one. On the 0.5B it now reads the sidecar in under 0.01 s instead of a
+    3 s, 1 GB direct load.
+  - **An explicit `--quant f32` against an unquantized `.giw` is accepted.** It was refused, and the error said to
+    pass `--quant native`, which the flag does not accept.
+  - **The sidecar disk check prices the sidecar, not the source.** An int4 sidecar is up to 1.16× its q4 source and
+    int8int8 ~1.6×, so the old check could pass and the transcode still fill the disk.
+  - **`pull` refuses an exact split-GGUF shard filename**, as it already refused a quant that resolves to one. No loader
+    can assemble a split checkpoint.
+  - **Serve's banner** no longer says every resident turn re-prefills its whole prompt: the GPU cache reuses a
+    conversation's prefix, one per resident KV slot (`--kv-sessions`). On CUDA it reports KV as f32, which is what CUDA allocates, whatever `--kv` asks.
+  - **CI and govulncheck no longer install X11/GL packages** for the WebGPU build. The current binding links neither.
+- **A baked-in chat model now honours `--kv`, `--fit` and `--exact-prefill`.** The
+  prequant build (`-tags prequant`, the release binaries with a model inside) built its model through
+  `decoder.NewModel`, which read nothing but the backend, so those flags were accepted and did nothing. New
+  `decoder.NewModelWithOptions(w, opts)` applies the same per-model options a `.giw` load through `Load` does;
+  `NewModel` is now that with only the backend set. All four model constructors build from one helper: the raw-GGUF
+  build (`LoadGGUFBytes`) had also dropped a drafter's `ExtraResidentBytes` / `ExtraResidentKVPerPosition`
+  reservation.
+- **`fit` and CUDA's own context sizing now price CUDA's KV cache as CUDA allocates it.** CUDA holds f32 K/V whatever
+  precision is requested, and one latent buffer per layer on an MLA model (DeepSeek, Kimi). `fit` priced a requested
+  f16 / i8 KV at half / ~0.28× of that, and every CUDA plan counted MLA models' KV twice — so CUDA's default context for
+  an MLA model was sized to fit twice its real KV. Dense, sliding-window, Gemma 4 and DeltaNet-hybrid models were already
+  priced exactly. `docs/measurements/memory-accounting-cuda-2026-09-25.md`.
+- **`fit` and Metal's resident memory guard now compute the same number.** `fit` left out Metal's host copy of the weights
+  (2.1 GB on a directly loaded 1.5B) and counted Metal's KV cache at f32 when Metal allocates f16. So it could report
+  *resident* for a direct `.gguf` load that Metal then refused, and over-state KV for an aliased `.giw`. Both now use one
+  accounting function. Serve's banner reports the KV precision that actually runs (`KV f16` on Metal, not `KV f32`).
+
+### Removed
+
+- **BREAKING.** **Removed two dead `serve` flags.** `--metal-fast-prefill` had been a no-op since Metal's fast prefill became the
+  default (2026-09-09). `--cpu-fast-attention` defaulted to `true`, so the only thing it could do, `=false`, was
+  `--cpu-exact-prefill` under another name. **A script that still passes either now fails at startup** with
+  `flag provided but not defined`; delete the flag. `--cpu-exact-prefill` (CPU) and `--exact-prefill` (all backends)
+  are the opt-outs, and `--cpu-exact-prefill`'s help now carries the default's full disclosure (not bit-identical,
+  cosine 0.9976, 2.28× faster, 512-token floor). `--exact-prefill`'s help gave Metal's fast-prefill floor as 512 tokens;
+  it is 64.
+- **BREAKING for library callers: removed unused decoder API.** EAGLE-3 speculation (`EagleHead`, `LoadEagleHead`,
+  `EagleState`, `TreeDraft`, `Model.GenerateEagleSpeculative`, `Model.GenerateEagleSpeculativeTree`; 0.41x / 0.16x at
+  its CPU kill gate, `docs/spec/05-eagle3-head.md`), the L-01 exports `F16BitsToF32`, `CPUExpertWeights` and
+  `ComputeExpertMLP`, and `Model.NewCPUBlockSpec`. None had a caller in any goinfer module.
+- **Removed the MTP self-draft measurement adapter** (`decoder/mtp.go`: `MTPHead`, `LoadMTPHead`, `HasMTPHead`, `MTPStep`,
+  `MTPPrefill`, `MTPDraftFrom`, `NewMTPState`). It was the Gate 1 probe for `docs/spec/09-mtp-heads.md` and had no caller;
+  the track stopped under its own pre-registered rule, and the spec says where to recover the code if it resumes.
+- **Removed environment variables**: `GOINFER_SSM_W8A16`, `GOINFER_SSM_F16MAMBA`, `GOINFER_CUDA_L01_CPU_OFFLOAD`,
+  `GOINFER_MOE_PREFILL_SCRATCH`, `GOINFER_MOE_WILLNEED`, `GOINFER_SSM_STOP_LAYER`, `GOINFER_ATTN_TIMING_DEBUG` and
+  `GOINFER_INT4_F16_SCALES`. Setting one now has no effect.
+- **Removed the never-released gemma demos**: `internal/gemmaapp`, `demo/gemma`, `metal/cmd/gemma`, `demo/gemma-web`
+  (~710 lines, stale help text, no release ever shipped them). `goinfer-chat` and `goinfer-serve` cover what they did.
 
 ## [v0.19.0] — 2026-09-18
 
