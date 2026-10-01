@@ -15,6 +15,8 @@ any surface may still change.
 
 ## [Unreleased]
 
+## [v0.20.0] — 2026-10-01
+
 ### Highlights
 
 - **Gemma 1, CodeGemma and Gemma 2**, checked against the released checkpoints; 39 model families in all.
