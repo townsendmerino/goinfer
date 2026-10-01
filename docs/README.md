@@ -146,6 +146,10 @@ separate sweep because this step kept being skipped at move time.
   what a parity claim covers and does not; `parity-coverage-policy.md` and `parity-hunt-playbook.md`
   below are the internal detail on how it is established and chased.
 - `parity-coverage-policy.md`, `parity-hunt-playbook.md` — how parity is established and chased.
+- [`demand-evidence-2026-10-01.md`](demand-evidence-2026-10-01.md) — what Go developers struggle with, read from the issue trackers of the
+  Go inference peers (yzma, Kronk, go-llama.cpp and others), Ollama, langchaingo and Charm's tools: 143 user-filed issues coded by hand into
+  themes, set against goinfer's current posture. A dated evidence pass with its sampling limits stated, not a plan of record; it is not
+  updated when the trackers move.
 - `audit-<date>.md` — a whole-repo audit at a named commit; findings are dispositioned in place
   and the file moves to `completed/` when every one is closed. A large audit may split its closed
   findings out incrementally before that, the way the queue docs do — a
