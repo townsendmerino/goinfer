@@ -1,0 +1,4 @@
+decoder: context capped at 135288 (model allows 262144) so that KV fits: weights 33.4 GB + KV 8.3 GB of budget 41.6 GB — pass -ctx to choose, or -stream-weights to lift
+decide: route B, head jev-judge-qwen35-9b 0.8.0 (unmerged), adapter "/home/francis/models/JEV-9B/adapter", temperatures map[choice:0.9840233476014968 noul:1.0022178236691426 score:1.012184473350984]
+decide: 100 lines, 17m54s
+decide: 150 lines in 32m52.514s, 0 failed validation
