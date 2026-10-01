@@ -266,3 +266,15 @@ func TestStripChannels(t *testing.T) {
 		}
 	}
 }
+
+// The generic Gemma 4 rendering — a template whose history handling goinfer did not recognise, or Gemma4() built bare — keeps a model turn
+// per message, byte for byte as before the template's merge rule was followed. Only the managed path merges consecutive assistant
+// messages; this pins that the other did not move.
+func TestGemma4_genericPathKeepsATurnPerMessage(t *testing.T) {
+	turns := []Turn{{Role: "user", Content: "Hi"}, {Role: "assistant", Content: "A"}, {Role: "assistant", Content: "B"}}
+	got := Gemma4().Render("", turns)
+	const want = "<bos><|turn>user\nHi<turn|>\n<|turn>model\nA<turn|>\n<|turn>model\nB<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+	if got != want {
+		t.Errorf("generic rendering moved:\n got  %q\n want %q", got, want)
+	}
+}
