@@ -507,6 +507,14 @@ four reds and one green, and only the `demo/agent/v*` run means anything. The ow
 Fix: build only the module a tag names (the root tag builds none standalone), and say in RELEASING.md which run to
 read.
 
+**B9 · CUDA-resident int4 `PromptHidden` drifts beyond CPU int4.** Found grading D6b
+(`docs/measurements/decisions-d6b-2026-09/results.md`). The int4-cuda arm reads KL 0.038 against CPU int4's 0.030, and
+it makes one confident flip that no CPU arm makes. On a 16-option `choice` item the reference and all three CPU arms put
+0.95 to 0.98 on option 7, and CUDA int4 puts 0.559 on option 6. The same path served D6a's arm B, whose 24-point noul
+gap to the f32 reference (`decisions-d6a-2026-09-28.md`) is therefore not yet a pure quantization number. Next: Route A
+at CPU int4 and CPU int8int8 on D6a's 400 OOD noul rows (about 2 h each on nobara, night) splits int4 from the CUDA
+path; then difference CUDA against CPU int4 per layer on the confident-flip item.
+
 ## G26 RESOLVED, 2026-08-27 (n=15) — real, HALF the claimed size, and the sampler is back
 
 Raw: `docs/measurements/g26-anchor-n15.json`, `g26-head-n15.json`, log `g26-n15_run.log`.
