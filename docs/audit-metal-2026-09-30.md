@@ -34,6 +34,27 @@ here should be quoted as one. MLX's `*_nax*` kernels (Metal 4 tensor ops, M5 onl
 appear only as notes. `testdata/`, `scripts/`, `cmd/`, `internal/prequant`, `decoder/*_test.go`, `docs/completed/` and
 most of `docs/tasks/` were not in the audited snapshot; findings that lean on them say so.
 
+**Status, 2026-10-01.** The findings describe the tree at `844700f8`. Commits since then under `metal/`,
+`decoder/fitguard.go`, `decoder/fitplan.go` and `docs/benchmarks.md` (`git log 844700f8..HEAD` on those paths):
+
+- `de1c7f17` (2026-09-30) **fixed both Criticals.** A-C01 ≡ F-C01 (`-kv i8` prefill) and F-C02 (the exact prefill
+  attention past 4096 keys) now decline batched prefill and name the reason, with device tests that fail when the guards
+  are removed. No Critical is open. F-G03's test and the ceiling comment in `metal/model.go`, both part of T0.2, remain.
+- `aff6f5e8` and `8e73aef5` (2026-10-01) put the 2026-09-30 peer-sweep cells into `docs/benchmarks.md`. That supplies the
+  served K=3900 TTFT cell T1.11 asked for (LEVEL, 0.983: 4256.6 ms against Ollama's 4184.8, cell h) and replaces the stale
+  rows A-D01 and B-D01 name; §0 quotes those rows as they stood at the snapshot. Still owed: the short-K prefill rows
+  (A-D01) and the 0.5B decode cells at 2048 and 3900 keys (B-D01, T1.11).
+- The rest are release and dependency bumps, test skips on memory-guard declines (`4223d381`) and R17's `-backend auto`
+  (`5946e8f7`). None closes a finding. Every other finding stands as written.
+
+Outside the findings: Metal re-quantizes every int8 body weight to int4 (G10 in `docs/tasks/task-gpu-paths-2026-09.md`,
+labelled since M-25). Running those weights natively is planned in `docs/tasks/task-metal-int8-2026-10.md`.
+
+**Reading order.** Part I (§0–§3) is the summary: the shape of it, the MLX technique ledger, the register of Critical and
+Major findings, and the cross-area notes. Part II (§4–§9) is the six area reports, A to F. Part III (§10–§13) is the
+program, the items closed earlier, the carry-forward of the Sep 12 IDs, and what could not be settled statically. A
+figure marked (proj) is a projection with its band, not a measurement, and should not be quoted as one.
+
 ---
 
 ## 0. The shape of it
@@ -41,11 +62,12 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
 **Metal has moved from "behind Ollama on prefill, at the launch ceiling on decode" to "level with Ollama at the graded
 shapes, and behind mlx-lm on decode".** After R16 and R19 the in-process `PrefillLast` at K=3900 is 4.32 s against
 Ollama's served 4.23 s (rec `metal-prefill-attn-2026-09-27.md:122,125-126`, itself labelled a projection until a served
-cell exists); after R17, R18 and R18b decode is ahead of Ollama in the six graded cells, 1.5B and 7B at depth 128, 2048
-and 3900 (rec `docs/benchmarks.md:47`). Against mlx-lm 0.31.3 the same depth-128 cells read 0.82× (1.5B, 89.3 against
-109.1 tok/s) and 0.75× (7B, 29.4 against 39.1), a cross-session comparison on a different quantisation scheme, so a
-direction and not a ratio to quote (rec `r12-mlx-row-2026-09-18.md:17-22`; B (f)9). Since Sep 12, 144 commits have touched
-`metal/`, which went from 14 non-test files, 6,796 lines and 69 kernels to 18 non-test files, 11,154 lines and 93 kernels
+cell exists; the served cell measured 2026-09-30 reads LEVEL, 0.983, see the status note above); after R17, R18 and
+R18b decode is ahead of Ollama in the six graded cells, 1.5B and 7B at depth 128, 2048 and 3900 (rec
+`docs/benchmarks.md:47`). Against mlx-lm 0.31.3, in a cross-session comparison on a different quantisation scheme, so a
+direction and not a ratio to quote (T1.14 would give one), the same depth-128 cells read 0.82× (1.5B, 89.3 against
+109.1 tok/s) and 0.75× (7B, 29.4 against 39.1) (rec `r12-mlx-row-2026-09-18.md:17-22`; B (f)9). Since Sep 12, 144
+commits have touched `metal/`, which went from 14 non-test files, 6,796 lines and 69 kernels to 18 non-test files, 11,154 lines and 93 kernels
 (plus 200 test files, 36,879 lines; cnt over the snapshot).
 
 **MLX's quantized GEMV is not where the remaining decode gap lives.** Counted from source, MLX's `qdot` and goinfer's
@@ -81,15 +103,15 @@ probe and the kill line for each):
 5. *Memory.* The paged-expert f16 scale cache is a second, anonymous copy of scales the v15 `.giw` already aliases:
    about 1.43 GB of the M26's 2,967 MB footprint (C-P01, cnt).
 
-**Correctness: no wrong-output path on a default configuration; two on shipped options.** `PrefillLast` has no int8-KV
-guard, so `-kv i8` writes f16 K/V into an int8-sized cache (A-C01, found independently as F-C01; one line in
-`prefillOK`). The exact prefill attention kernel keeps scores in `threadgroup float sc[4096]` indexed by absolute key
-position, so it overruns above 4096 keys on head-dim-256 families or with `GOINFER_METAL_FUSED_ATTENTION=0`, and the fit
-guard auto-pins contexts in that range (F-C02). Both are Critical by effect and non-default by condition; the brief's
-definition says "default path", so they are marked "(non-default option)" and the reader can reclassify. I confirmed both
-in the source (§3). A third, conditional Major: the decoder's fit guards price f32 KV and know nothing of Metal's 32768
-ceiling, so an auto-pin can inflate Metal's KV 3–7× over the 4096 default or exceed the ceiling and move the whole
-forward to CPU (C-C01).
+**Correctness: no wrong-output path on a default configuration; two on shipped options, both fixed 2026-09-30
+(`de1c7f17`).** At the snapshot `PrefillLast` had no int8-KV guard, so `-kv i8` wrote f16 K/V into an int8-sized cache
+(A-C01, found independently as F-C01; one line in `prefillOK`). The exact prefill attention kernel keeps scores in
+`threadgroup float sc[4096]` indexed by absolute key position, so it overran above 4096 keys on head-dim-256 families or
+with `GOINFER_METAL_FUSED_ATTENTION=0`, and the fit guard auto-pins contexts in that range (F-C02). Both were Critical by
+effect and non-default by condition; the brief's definition says "default path", so they are marked "(non-default
+option)" and the reader can reclassify. I confirmed both in the source (§3). A third, conditional Major, still open: the
+decoder's fit guards price f32 KV and know nothing of Metal's 32768 ceiling, so an auto-pin can inflate Metal's KV 3–7×
+over the 4096 default or exceed the ceiling and move the whole forward to CPU (C-C01).
 
 **Gates: the production kernels are less covered than the ones they replaced.** R19's `attention_prefill_steel` is the
 prefill attention for every hd=128 model and has no assertion in any test that runs by default (F-G01); the MC3 step,
@@ -103,9 +125,10 @@ resident decline to CPU. The working repo settles it: `internal/loadflags/loadfl
 with `-backend metal`, where it stays off so the resident path survives; an explicit `--embed-int4` on Metal runs on the
 CPU as asked. The default Metal path is intact (§3, note 1).
 
-**Counts.** 82 finding rows across the six reports; 80 distinct open findings after removing the A-C01/F-C01 duplicate
-and E-X01 (resolved): 2 Critical (both non-default), 21 Major (16 performance or memory, 1 correctness, 4 gates), 57
-Minor. Eleven findings are REVISITs of a recorded negative or closure, each naming the premise it thinks went stale:
+**Counts.** 82 finding rows across the six reports; 80 distinct findings after removing the A-C01/F-C01 duplicate
+and E-X01 (resolved): 2 Critical (both non-default, both fixed 2026-09-30), 21 Major (16 performance or memory, 1
+correctness, 4 gates), 57 Minor. 78 were open on 2026-10-01; two Minors, A-D01 and B-D01, are half settled (the status
+note above). Eleven findings are REVISITs of a recorded negative or closure, each naming the premise it thinks went stale:
 B-P03, B-P05, C-B02, C-B03, D-P02, D-P03, D-P04, D-B05, A-P03, and, for the batched step only, E-P05 (M-16) and E-P08
 ("fused argmax"). All 41 N-, 10 G-, 10 C- and 16 M- IDs of
 the Sep 12 audit have a status in §12.
@@ -2578,13 +2601,13 @@ pre-registered sweep, a pooled fidelity gate or a multi-hour real-model run. The
 
 ### Track 0 — guards and text (no numeric change; one commit each)
 
-| # | Item | What |
-|---|---|---|
-| T0.1 | A-C01 ≡ F-C01 | `&& !r.kvI8` in `prefillOK` (`metal/model.go:881-882`), so `PrefillPath()` reports sequential; a test that builds an i8 resident and asserts `PrefillLast(embs[≥64], 0)` returns the decline error with the floor knob at 0. Then reproduce the failure once on the Mac (llama-tiny, `KVPrecision:"i8"`, `PrefillLast` of 16 embeddings against 16 `Forward` calls) to confirm the derivation. [day] |
-| T0.2 | F-C02, F-G03 | Decline to the sequential path when `!useFusedAttn && startPos+M > attnScoreTileBound` (beside `metal/backend.go:752`); replace `TestMetalCtxCapWithinKernelBound` with a prefill run at nKeys = 4097 on an hd=256 fixture (and an hd=64 fixture with `GOINFER_METAL_FUSED_ATTENTION=0`); correct the "without threadgroup memory overflow" claim at `metal/model.go:26-27`. [day] |
-| T0.3 | F-C03, C-N01, D-C01, A-C02 | `canUseAttnFA`/`canUseAttnFAAt` return false when `nH/nKV > 8` (arrays are `ATTN_FA_MAXG 8`); a length check in aikit's `Encoder.Dispatch` binding scratch (`[16]`, widest call binds 15); a gpt-oss decline test inside the expert-major branch so a future feature-map edit fails closed; a host finite-check on `PrefillLast` logits (about 0.05 ms) that returns a decline error so the sequential path re-runs the prompt. [day] |
-| T0.4 | C-C01, N-41 | Give `Plan("metal")` and both fit guards a backend ceiling (the WebGPU shape, `decoder/fitplan.go:225-227,259`), price Metal KV as f16 through `ResidentKVBytes("metal", …)`, and make an auto-pin a ceiling Metal clamps to rather than refuses. First a unit test with injected `hostRAMAvailable` and a 131072-window config. [day] |
-| T0.5 | Docs | One pass over `docs/benchmarks.md` for A-D01, B-D01, F-D01 and D-D01 (`:43`, `:47`, `:1026-1031`, `:1080-1081`, `:1976-1985`, `:2017`, `:2260-2262`: dated callouts, no number invented; "AHEAD in every cell" becomes "every 1.5B and 7B cell" until the 0.5B cells are re-run); `red-october.md` §2.6, R11(c) and the `:91` row (D-D01 1–3); the `alias.go` header and v15 banner text (F-D02); the `HiddenLast` doc sentence (F-D03); `gpu-residency-coverage.md:134-138` (F-D04); the stale comments in A-D02, B-D02, C-D01, D-D01 4–10, E-D01; restore or regenerate `r3-startpos-speed-2026-09-21.md` (A-D03). [day] |
+| # | Item | What | Status, 2026-10-01 |
+|---|---|---|---|
+| T0.1 | A-C01 ≡ F-C01 | `&& !r.kvI8` in `prefillOK` (`metal/model.go:881-882`), so `PrefillPath()` reports sequential; a test that builds an i8 resident and asserts `PrefillLast(embs[≥64], 0)` returns the decline error with the floor knob at 0. Then reproduce the failure once on the Mac (llama-tiny, `KVPrecision:"i8"`, `PrefillLast` of 16 embeddings against 16 `Forward` calls) to confirm the derivation. [day] | **Done** (`de1c7f17`): the guard and `TestPrefill_declinesInt8KV`. The device reproduction of the wrong K/V is not in the record |
+| T0.2 | F-C02, F-G03 | Decline to the sequential path when `!useFusedAttn && startPos+M > attnScoreTileBound` (beside `metal/backend.go:752`); replace `TestMetalCtxCapWithinKernelBound` with a prefill run at nKeys = 4097 on an hd=256 fixture (and an hd=64 fixture with `GOINFER_METAL_FUSED_ATTENTION=0`); correct the "without threadgroup memory overflow" claim at `metal/model.go:26-27`. [day] | **Partly done** (`de1c7f17`): the decline and `TestPrefill_exactAttentionDeclinesPast4096Keys`. Open: F-G03's replacement test and the `metal/model.go` comment |
+| T0.3 | F-C03, C-N01, D-C01, A-C02 | `canUseAttnFA`/`canUseAttnFAAt` return false when `nH/nKV > 8` (arrays are `ATTN_FA_MAXG 8`); a length check in aikit's `Encoder.Dispatch` binding scratch (`[16]`, widest call binds 15); a gpt-oss decline test inside the expert-major branch so a future feature-map edit fails closed; a host finite-check on `PrefillLast` logits (about 0.05 ms) that returns a decline error so the sequential path re-runs the prompt. [day] | Open |
+| T0.4 | C-C01, N-41 | Give `Plan("metal")` and both fit guards a backend ceiling (the WebGPU shape, `decoder/fitplan.go:225-227,259`), price Metal KV as f16 through `ResidentKVBytes("metal", …)`, and make an auto-pin a ceiling Metal clamps to rather than refuses. First a unit test with injected `hostRAMAvailable` and a 131072-window config. [day] | Open |
+| T0.5 | Docs | One pass over `docs/benchmarks.md` for A-D01, B-D01, F-D01 and D-D01 (`:43`, `:47`, `:1026-1031`, `:1080-1081`, `:1976-1985`, `:2017`, `:2260-2262`: dated callouts, no number invented; "AHEAD in every cell" becomes "every 1.5B and 7B cell" until the 0.5B cells are re-run); `red-october.md` §2.6, R11(c) and the `:91` row (D-D01 1–3); the `alias.go` header and v15 banner text (F-D02); the `HiddenLast` doc sentence (F-D03); `gpu-residency-coverage.md:134-138` (F-D04); the stale comments in A-D02, B-D02, C-D01, D-D01 4–10, E-D01; restore or regenerate `r3-startpos-speed-2026-09-21.md` (A-D03). [day] | **Partly done:** the `docs/benchmarks.md` Metal prefill and decode rows were rewritten from the 2026-09-30 peer sweep (`aff6f5e8`, `8e73aef5`). The other lines and pages were not re-checked |
 
 ### Track 1 — probes that decide Majors (little or no code)
 
@@ -2600,7 +2623,7 @@ pre-registered sweep, a pooled fidelity gate or a multi-hour real-model run. The
 | T1.8 | `vmmap` region table on the aliased v15 M26 at token 32 to attribute the 1,948 MB heap. [day] | C-P01 |
 | T1.9 | `GOINFER_MOE_PROF_SPLIT=1` on the aliased v14 M26, and an N=64 rerun under the kill-watch (the fork-collapse fix of 2026-09-24 postdates the failures). [night] | D-P02, C-B03, M-11 |
 | T1.10 | Drive `forwardMultiInto` over a 32-token prompt in 8-row pieces; compare all K/V bytes and the last row's logits against the sequential loop (expect zero differences); time K = 8/16/32/64. [day] | E-P01 |
-| T1.11 | One served K=3900 TTFT cell against Ollama (R19 owes it); one 0.5B depth cell at 2048 and 3900 (B-D01). [night] | A-D01, B-D01 |
+| T1.11 | One served K=3900 TTFT cell against Ollama (R19 owes it); one 0.5B depth cell at 2048 and 3900 (B-D01). [night] **The served K=3900 cell ran 2026-09-30: LEVEL, 0.983 (peer sweep cell h). The 0.5B depth cells are owed.** | A-D01, B-D01 |
 | T1.12 | Count `CePad` per active expert on a real MoE; microbenchmark `gemm_w4f16_store` at 16, 32, 64 rows on an expert shape. [day] | D-B02 |
 | T1.13 | Requantisation error of the real gpt-oss checkpoint (CPU script): per-group max-element distribution, relative RMS, collision rate. [day] | D-B03 |
 | T1.14 | A same-session three-way decode run (goinfer, mlx-lm, Ollama) on the 1.5B and 7B at depth 128, 2048 and 3900, to replace the cross-session 0.82× and 0.75× with a ratio that can be quoted; the box's recorded drift is about 3.5%. [night] | §0, B (f)9 |
