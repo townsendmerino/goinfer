@@ -541,6 +541,15 @@
       "value": "PASS"
     },
     {
+      "commit": "f00fdf43",
+      "date": "2026-10-01",
+      "gate": "TestOlmo3Real_gate",
+      "note": "first confirmation (nobara-pc, 2026-10-01): against the golden re-pinned under transformers 5.15.0 (testdata/olmo3_real_golden.json.gz, these bytes), argmax and 8-token continuation exact, cosine 1.000000; docs/measurements/olmo3-golden-repin-2026-10-01/",
+      "promoted_by": "claude",
+      "source_sha256": "8fc0f9972db89957",
+      "value": "PASS"
+    },
+    {
       "commit": "b7726cd",
       "date": "2026-09-13",
       "gate": "TestOlmo3_forwardParity",

@@ -769,16 +769,12 @@ var neverConfirmed = map[string]string{
 // (and PASS) at int8 instead of int4; that document is also the retraction record for an earlier,
 // wrong plan to move both into neverConfirmed permanently on an unverified "int8 doesn't fit"
 // premise.
-var awaitingFirstConfirmation = map[string]string{
-	"TestOlmo3Real_gate": "2026-09-18 — ran for the first time this release (was neverConfirmed through v0.18.0 " +
-		"for a different reason: root-caused+fixed but never re-run). Result: argmax exact (12366), full " +
-		"8-token greedy continuation exact match, but last-logit cosine 0.992789 misses this gate's own " +
-		"0.9999 bar (tighter than the usual 0.98-0.99 int4/int8 floor). Not investigated further — the " +
-		"exact-continuation-but-under-cosine shape is the same one Laguna/Qwen3.8 showed at int4 this " +
-		"same release (see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md), so a near-tie " +
-		"quantization margin is a real candidate, not confirmed. Promote from the first sweep that " +
-		"resolves it.",
-}
+// EMPTY again, 2026-10-01. TestOlmo3Real_gate, here since 2026-09-18, was confirmed and promoted to the ledger. Its
+// 0.992789 cosine was a wrong REFERENCE, not quantization (the gate is f32): the golden had been pinned under
+// transformers 5.12, whose Olmo3 applies YaRN to every layer, while the Olmo 3 paper and transformers 5.15 put it on
+// full-attention layers only, as goinfer does. Re-pinned under 5.15 it passes at cosine 1.000000
+// (docs/measurements/olmo3-golden-repin-2026-10-01/).
+var awaitingFirstConfirmation = map[string]string{}
 
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS
 // but does not require, with the reason. Every such test must be here or in parityRealckptGates —

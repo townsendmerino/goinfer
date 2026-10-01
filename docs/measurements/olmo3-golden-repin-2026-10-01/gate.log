@@ -1,0 +1,8 @@
+=== RUN   TestOlmo3Real_gate
+decoder: context capped at 42312 (model allows 65536) so that KV fits: weights 27.2 GB + KV 13.3 GB of budget 40.5 GB — pass -ctx to choose, or -stream-weights to lift
+    olmo3_real_test.go:64: olmo3-7b: 32 layers (8 full/global, 24 sliding), H=32 kv=32 headDim=128 window=4096
+    olmo3_real_test.go:79: olmo3-7b parity: argmax got=12366 want=12366 | logit cosine=1.000000
+    olmo3_real_test.go:95: olmo3-7b continuation got=[12366 13 2030 279 6864 315 279 3723] want=[12366 13 2030 279 6864 315 279 3723]
+--- PASS: TestOlmo3Real_gate (20.47s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	21.716s
