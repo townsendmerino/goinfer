@@ -82,6 +82,9 @@ type session struct {
 	// reasoning is printed (dimmed) or hidden. A model whose template has no recognised thinking control is unaffected by both.
 	think        chat.ThinkMode
 	showThinking bool
+	// effort is gpt-oss's reasoning effort (--reasoning-effort; /effort changes it): "" = the template's own default (medium). It reaches
+	// no other family's prompt (chat.Template.WithReasoningEffort is a no-op for them).
+	effort string
 
 	draft *decoder.Model // optional speculative-decoding draft model (--draft)
 	specK int            // speculative draft length per verify pass
@@ -98,7 +101,7 @@ type chatFlags struct {
 	temp, topP, minP, repPen, presPen, freqPen *float64
 	seed                                       *int64
 	modelTmp, showVersion, showThinking        *bool
-	thinking, batch, out                       *string
+	thinking, batch, out, effort               *string
 }
 
 // registerFlags puts chat's whole command line on fs. Main passes flag.CommandLine; a test passes a fresh
@@ -123,6 +126,7 @@ func registerFlags(fs *flag.FlagSet) *chatFlags {
 	c.spec = fs.String("spec", "", "speculative decoding without a second model: \"\" (off) | ngram — lossless n-gram (prompt-lookup) drafting with adaptive depth, as goinfer-serve's --spec. Wins on copy-heavy turns (code edits, quoting the conversation back); output is identical to plain decode (greedy bit-exact, sampled in-distribution). Falls back to plain decode per turn when it cannot apply (e.g. with --schema). Not combinable with --draft")
 	c.specK = fs.Int("spec-k", 4, "speculative decoding: draft tokens proposed per verify pass (with --draft)")
 	c.thinking = fs.String("thinking", "template", "thinking mode for a model whose chat template has a recognised thinking control (Qwen3, Qwen3.5, Gemma 4): template (what the model's own template renders — the default), asis (the prompt as goinfer rendered it before thinking was modelled), on, or off. /think changes it mid-session")
+	c.effort = fs.String("reasoning-effort", "", "gpt-oss only: how hard the model reasons — low | medium | high (default: the template's own, medium). Lower is faster and spends fewer tokens before the answer. Ignored by every other model. /effort changes it mid-session; a --batch line's own reasoning_effort overrides it")
 	c.showThinking = fs.Bool("show-thinking", true, "print the model's reasoning, dimmed, before its answer (false: show only a \"thinking…\" marker). The reasoning is never kept in the conversation history either way")
 	c.batch = fs.String("batch", "", "run a batch file instead of chatting: an OpenAI-style JSONL of chat requests (the same file goinfer-serve's POST /v1/batches reads), one reply each, written to -o. No server; resumable — rerun the same command after an interruption and finished lines are skipped. A line that states no sampling settings gets the API's defaults (temperature 1, 512 tokens, random seed), not this binary's interactive ones, unless you pass the flag")
 	c.out = fs.String("o", "", "with --batch: the output file. Finished lines are appended as they land and already-finished custom_ids are skipped on a rerun; lines that failed go to a sibling <name>.errors.jsonl")
@@ -328,6 +332,14 @@ All flags:
 		os.Exit(2)
 	}
 	s.think, s.showThinking = mode, *cf.showThinking
+	if *cf.effort != "" {
+		e, ok := chat.NormalizeReasoningEffort(*cf.effort)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "error: --reasoning-effort %q: want low, medium or high\n", *cf.effort)
+			os.Exit(2)
+		}
+		s.effort = e
+	}
 	s.maxTok = *cf.maxTok
 	s.sp = decoder.SamplingParams{
 		Temperature: *cf.temp, TopK: *cf.topK, TopP: *cf.topP, MinP: *cf.minP, Seed: *cf.seed,
@@ -742,6 +754,18 @@ func (s *session) command(line string) bool {
 		}
 		s.think = m
 		fmt.Printf("(thinking: %s)\n", s.think)
+	case "/effort":
+		if arg == "" {
+			fmt.Printf("(reasoning effort: %s — /effort low|medium|high; gpt-oss only)\n", effortLabel(s.effort))
+			break
+		}
+		e, ok := chat.NormalizeReasoningEffort(arg)
+		if !ok {
+			fmt.Printf("(bad effort %q — want low, medium or high)\n", arg)
+			break
+		}
+		s.effort = e
+		fmt.Printf("(reasoning effort: %s)\n", e)
 	case "/json":
 		s.jsonOut = !s.jsonOut
 		fmt.Printf("(json-constrained output: %v)\n", s.jsonOut)
@@ -784,9 +808,17 @@ func (s *session) command(line string) bool {
 	return false
 }
 
+// effortLabel names an effort for display: "" is the template's own default.
+func effortLabel(e string) string {
+	if e == "" {
+		return "template default (medium)"
+	}
+	return e
+}
+
 func (s *session) printParams() {
-	fmt.Printf("temp=%.2f topK=%d topP=%.2f seed=%d max=%d json=%v thinking=%s history=%d turns\nsystem: %s\n",
-		s.sp.Temperature, s.sp.TopK, s.sp.TopP, s.sp.Seed, s.maxTok, s.jsonOut, s.think, len(s.history), short(s.system))
+	fmt.Printf("temp=%.2f topK=%d topP=%.2f seed=%d max=%d json=%v thinking=%s effort=%s history=%d turns\nsystem: %s\n",
+		s.sp.Temperature, s.sp.TopK, s.sp.TopP, s.sp.Seed, s.maxTok, s.jsonOut, s.think, effortLabel(s.effort), len(s.history), short(s.system))
 }
 
 // buildPrompt renders system + history into the model's chat template via the
@@ -800,7 +832,7 @@ func (s *session) buildPrompt() (prompt string, turns []chat.Turn, tm *chat.Temp
 	}
 	// The model's own template, in the thinking mode the session is in (nil-safe: no template → nil). A JSON grammar governs
 	// the first token, so a prompt that ends inside an open think block would contradict it: render thinking-off.
-	tm = s.tmpl.WithThinking(s.think)
+	tm = s.tmpl.WithThinking(s.think).WithReasoningEffort(s.effort)
 	if s.jsonOut && tm.PromptOpensThink() {
 		tm = tm.WithThinking(chat.ThinkOff)
 	}
@@ -993,6 +1025,7 @@ const helpText = `commands:
   /topp <f>       nucleus (0=off)               /seed <n>  RNG seed
   /max <n>        max tokens per reply          /json      toggle JSON-only output
   /think <mode>   thinking: template | asis | on | off (no arg: show)
+  /effort <level> gpt-oss reasoning effort: low | medium | high (no arg: show)
   /reset          clear conversation history    /params    show settings
   /demos          list canned demo prompts      /demo <n>  run demo n (or by name)
   /help           this list                     /quit      exit

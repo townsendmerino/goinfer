@@ -117,13 +117,14 @@ func TestHarmony_conversationMatchesHF(t *testing.T) {
 				Content  string `json:"content"`
 				Thinking string `json:"thinking"`
 			} `json:"messages"`
-			Prompt string `json:"prompt"`
+			Kwargs map[string]string `json:"kwargs"`
+			Prompt string            `json:"prompt"`
 		} `json:"cases"`
 	}
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatal(err)
 	}
-	if len(g.Cases) < 6 {
+	if len(g.Cases) < 10 {
 		t.Fatalf("only %d golden cases", len(g.Cases))
 	}
 	for _, c := range g.Cases {
@@ -135,9 +136,54 @@ func TestHarmony_conversationMatchesHF(t *testing.T) {
 			}
 			turns = append(turns, Turn{Role: m.Role, Content: m.Content, Reasoning: m.Thinking})
 		}
-		got := strings.Replace(Harmony().Render(system, turns), "Current date: 2026-08-16", "Current date: {DATE}", 1)
+		tm := Harmony()
+		if e, ok := c.Kwargs["reasoning_effort"]; ok {
+			tm = tm.WithReasoningEffort(e)
+		}
+		got := strings.Replace(tm.Render(system, turns), "Current date: 2026-08-16", "Current date: {DATE}", 1)
 		if got != c.Prompt {
 			t.Errorf("%s:\n got  %q\n want %q", c.Name, got[len(got)-min(len(got), 260):], c.Prompt[len(c.Prompt)-min(len(c.Prompt), 260):])
 		}
 	}
+}
+
+// WithReasoningEffort acts on gpt-oss's template and on nothing else, and only for the three values its template takes — so a client
+// that sends a bare reasoning_effort to every endpoint (dsh does) moves no other model's prompt, and a value gpt-oss does not know
+// is ignored rather than written into the system block.
+func TestWithReasoningEffort(t *testing.T) {
+	defer func() { timeNow = time.Now }()
+	timeNow = func() time.Time { return time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC) }
+
+	turns := []Turn{{Role: "user", Content: "Hi"}}
+	base := Harmony().Render("", turns)
+	if !strings.Contains(base, "Reasoning: medium\n\n") {
+		t.Fatal("setup: the default effort is medium")
+	}
+	for in, want := range map[string]string{"low": "low", "HIGH": "high", " Medium ": "medium"} {
+		got := Harmony().WithReasoningEffort(in).Render("", turns)
+		if got != strings.Replace(base, "Reasoning: medium", "Reasoning: "+want, 1) {
+			t.Errorf("effort %q: rendered %q", in, got)
+		}
+	}
+	for _, in := range []string{"", "none", "minimal", "xhigh", "ultra", "low\n\n# injected"} {
+		if got := Harmony().WithReasoningEffort(in); got.Render("", turns) != base {
+			t.Errorf("effort %q must be ignored, but the prompt changed", in)
+		}
+	}
+	// Every other family, and the nil template, are returned as they are.
+	for _, tm := range []*Template{ChatML(), Gemma4(), Llama3(), nil} {
+		if tm.WithReasoningEffort("high") != tm {
+			t.Errorf("%v: WithReasoningEffort must be a no-op for a template with no such knob", nameOf(tm))
+		}
+	}
+	if e, ok := NormalizeReasoningEffort("Low "); !ok || e != "low" {
+		t.Errorf("NormalizeReasoningEffort(\"Low \") = %q, %v", e, ok)
+	}
+}
+
+func nameOf(t *Template) string {
+	if t == nil {
+		return "nil"
+	}
+	return t.Name()
 }

@@ -128,6 +128,57 @@
     }
    ],
    "prompt": "<|start|>system<|message|>You are ChatGPT, a large language model trained by OpenAI.\nKnowledge cutoff: 2024-06\nCurrent date: {DATE}\n\nReasoning: medium\n\n# Valid channels: analysis, commentary, final. Channel must be included for every message.<|end|><|start|>user<|message|>Hi<|end|><|start|>assistant<|channel|>final<|message|>  Hello!\n<|end|><|start|>user<|message|>And you?<|end|><|start|>assistant"
+  },
+  {
+   "name": "effort_low",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Hi"
+    }
+   ],
+   "kwargs": {
+    "reasoning_effort": "low"
+   },
+   "prompt": "<|start|>system<|message|>You are ChatGPT, a large language model trained by OpenAI.\nKnowledge cutoff: 2024-06\nCurrent date: {DATE}\n\nReasoning: low\n\n# Valid channels: analysis, commentary, final. Channel must be included for every message.<|end|><|start|>user<|message|>Hi<|end|><|start|>assistant"
+  },
+  {
+   "name": "effort_high",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Hi"
+    }
+   ],
+   "kwargs": {
+    "reasoning_effort": "high"
+   },
+   "prompt": "<|start|>system<|message|>You are ChatGPT, a large language model trained by OpenAI.\nKnowledge cutoff: 2024-06\nCurrent date: {DATE}\n\nReasoning: high\n\n# Valid channels: analysis, commentary, final. Channel must be included for every message.<|end|><|start|>user<|message|>Hi<|end|><|start|>assistant"
+  },
+  {
+   "name": "effort_high_history",
+   "messages": [
+    {
+     "role": "system",
+     "content": "Be terse."
+    },
+    {
+     "role": "user",
+     "content": "Hi"
+    },
+    {
+     "role": "assistant",
+     "content": "Hello!"
+    },
+    {
+     "role": "user",
+     "content": "And you?"
+    }
+   ],
+   "kwargs": {
+    "reasoning_effort": "high"
+   },
+   "prompt": "<|start|>system<|message|>You are ChatGPT, a large language model trained by OpenAI.\nKnowledge cutoff: 2024-06\nCurrent date: {DATE}\n\nReasoning: high\n\n# Valid channels: analysis, commentary, final. Channel must be included for every message.<|end|><|start|>developer<|message|># Instructions\n\nBe terse.\n\n<|end|><|start|>user<|message|>Hi<|end|><|start|>assistant<|channel|>final<|message|>Hello!<|end|><|start|>user<|message|>And you?<|end|><|start|>assistant"
   }
  ]
 }

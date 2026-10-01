@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/batchio"
 )
 
@@ -412,5 +413,80 @@ func TestContentText(t *testing.T) {
 	}
 	if s, img := contentText(nil); s != "" || img {
 		t.Errorf("absent: %q %v", s, img)
+	}
+}
+
+// A batch line's reasoning_effort beats the session's --reasoning-effort for gpt-oss; an effort gpt-oss does not know is ignored
+// (the session's stands); and no other family's prompt moves, so a file written for one model and run on another is not changed by it.
+func TestBatchTemplate_reasoningEffort(t *testing.T) {
+	turns := []chat.Turn{{Role: "user", Content: "Hi"}}
+	effortLine := func(tm *chat.Template) string {
+		for _, e := range []string{"low", "medium", "high"} {
+			if strings.Contains(tm.Render("", turns), "Reasoning: "+e+"\n\n") {
+				return e
+			}
+		}
+		return "?"
+	}
+	oss := &session{tmpl: chat.Harmony()}
+	if got := effortLine(oss.batchTemplate(chat.ThinkTemplate, false, "", false)); got != "medium" {
+		t.Errorf("no effort anywhere: %s, want the template's medium", got)
+	}
+	if got := effortLine(oss.batchTemplate(chat.ThinkTemplate, false, "low", false)); got != "low" {
+		t.Errorf("line effort low: %s", got)
+	}
+	oss.effort = "high"
+	if got := effortLine(oss.batchTemplate(chat.ThinkTemplate, false, "", false)); got != "high" {
+		t.Errorf("session --reasoning-effort high, none on the line: %s", got)
+	}
+	if got := effortLine(oss.batchTemplate(chat.ThinkTemplate, false, "low", false)); got != "low" {
+		t.Errorf("the line must beat the session: %s", got)
+	}
+	for _, bad := range []string{"bogus", "none", "xhigh"} {
+		if got := effortLine(oss.batchTemplate(chat.ThinkTemplate, false, bad, false)); got != "high" {
+			t.Errorf("line effort %q must be ignored, leaving the session's high: %s", bad, got)
+		}
+	}
+	if got := effortLine(oss.batchTemplate(chat.ThinkOff, true, "low", true)); got != "low" {
+		t.Errorf("effort must survive an explicit thinking mode and a constrained line: %s", got)
+	}
+	for _, tm := range []*chat.Template{chat.ChatML(), chat.Llama3()} {
+		other := &session{tmpl: tm, effort: "high"}
+		if a, b := other.batchTemplate(chat.ThinkTemplate, false, "low", false).Render("", turns), tm.Render("", turns); a != b {
+			t.Errorf("%s: an effort moved a non-gpt-oss prompt", tm.Name())
+		}
+	}
+}
+
+// The REPL: /effort sets it and buildPrompt writes it into gpt-oss's system block; a bad value changes nothing.
+func TestEffort_replAndBuildPrompt(t *testing.T) {
+	s := &session{tmpl: chat.Harmony(), history: []msg{{"user", "Hi"}}}
+	if prompt, _, _ := s.buildPrompt(); !strings.Contains(prompt, "Reasoning: medium\n\n") {
+		t.Fatalf("default prompt:\n%s", prompt)
+	}
+	s.command("/effort HIGH")
+	if s.effort != "high" {
+		t.Fatalf("/effort HIGH set %q", s.effort)
+	}
+	if prompt, _, _ := s.buildPrompt(); !strings.Contains(prompt, "Reasoning: high\n\n") {
+		t.Errorf("buildPrompt ignored the session's effort:\n%s", prompt)
+	}
+	s.command("/effort sideways")
+	s.command("/effort")
+	if s.effort != "high" {
+		t.Errorf("a bad /effort changed the setting to %q", s.effort)
+	}
+	// Another family: the same session setting moves nothing.
+	o := &session{tmpl: chat.ChatML(), effort: "high", history: []msg{{"user", "Hi"}}}
+	p1, _, _ := o.buildPrompt()
+	o.effort = ""
+	if p2, _, _ := o.buildPrompt(); p1 != p2 {
+		t.Error("--reasoning-effort moved a ChatML prompt")
+	}
+	// The flag exists and is empty (= template default) unless given.
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	cf := registerFlags(fs)
+	if err := fs.Parse(nil); err != nil || *cf.effort != "" {
+		t.Errorf("--reasoning-effort default = %q, %v", *cf.effort, err)
 	}
 }

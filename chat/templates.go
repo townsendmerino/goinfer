@@ -149,7 +149,11 @@ func gemma4Segments(system string, turns []Turn, think, hist bool) []Segment {
 // <|call|> for a tool call). Stopping on <|end|> ended every reply after its thinking: through serve,
 // gpt-oss streamed only its analysis channel and never an answer (found 2026-09-14 by the web UI's W6
 // capture, docs/tasks/task-web-ui-2026-09.md).
-func Harmony() *Template {
+func Harmony() *Template { return harmonyTemplate("medium") }
+
+// harmonyTemplate is Harmony with the system block's `Reasoning:` line set to effort ("low" | "medium" | "high" — the values gpt-oss's
+// own template takes as its reasoning_effort).
+func harmonyTemplate(effort string) *Template {
 	return &Template{name: "harmony", stops: []string{"<|return|>", "<|call|>", "<|endoftext|>"}, render: func(system string, turns []Turn) []Segment {
 		var b segBuf
 		b.sp("<|start|>")
@@ -158,7 +162,7 @@ func Harmony() *Template {
 		b.ct("You are ChatGPT, a large language model trained by OpenAI.\n" +
 			"Knowledge cutoff: 2024-06\n" +
 			"Current date: " + timeNow().Format("2006-01-02") + "\n\n" +
-			"Reasoning: medium\n\n" +
+			"Reasoning: " + effort + "\n\n" +
 			"# Valid channels: analysis, commentary, final. Channel must be included for every message.")
 		b.sp("<|end|>")
 		if system != "" {
@@ -189,6 +193,30 @@ func Harmony() *Template {
 		b.ct("assistant")
 		return b.segs
 	}}
+}
+
+// NormalizeReasoningEffort reports whether s is a reasoning effort gpt-oss's template understands — low, medium or high, any case —
+// and returns it in the template's spelling. Nothing else is an effort here: "none" is the off switch of the families that have
+// one (it acts through WithThinking, not through this), and an unrecognised value is ignored by callers, never an error.
+func NormalizeReasoningEffort(s string) (string, bool) {
+	switch e := strings.ToLower(strings.TrimSpace(s)); e {
+	case "low", "medium", "high":
+		return e, true
+	}
+	return "", false
+}
+
+// WithReasoningEffort returns a copy of a Harmony (gpt-oss) template that writes effort on its `Reasoning:` line — the only family
+// whose own template takes the knob. For every other template, or an effort that is not low/medium/high, it returns t unchanged,
+// which is what keeps a client that sends a bare reasoning_effort to every endpoint (dsh does) from changing any other model's prompt.
+func (t *Template) WithReasoningEffort(effort string) *Template {
+	e, ok := NormalizeReasoningEffort(effort)
+	if t == nil || t.name != "harmony" || !ok {
+		return t
+	}
+	c := harmonyTemplate(e)
+	c.think = t.think
+	return c
 }
 
 // ChatML (Qwen and most byte-level families) — per turn

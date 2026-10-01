@@ -10,7 +10,7 @@ pass the file. The template text is stored in the golden, as in the other chat_t
 HuggingFace's apply_chat_template(add_generation_prompt=True) renders each conversation; the live date (strftime_now) is masked
 as {DATE} so the golden does not expire. What it pins: the developer block, and — the defect this was written for — that an
 assistant turn BEFORE the final one is rendered on the `final` channel (<|start|>assistant<|channel|>final<|message|>…<|end|>),
-with its reasoning dropped however it was supplied.
+with its reasoning dropped however it was supplied. And that `reasoning_effort` (low | medium | high) is written on the `Reasoning:` line.
 """
 import json
 import re
@@ -41,11 +41,20 @@ CASES = {
     "reasoning_dropped":    [U("Hi"), A("Hello!", thinking="plan A"), U("And you?")],
     "content_whitespace":   [U("Hi"), A("  Hello!\n"), U("And you?")],
 }
+# Template kwargs: gpt-oss's template takes `reasoning_effort` (low | medium | high; "medium" when absent) for its `Reasoning:` line.
+KWARG_CASES = {
+    "effort_low":          ([U("Hi")], {"reasoning_effort": "low"}),
+    "effort_high":         ([U("Hi")], {"reasoning_effort": "high"}),
+    "effort_high_history": ([S("Be terse."), U("Hi"), A("Hello!"), U("And you?")], {"reasoning_effort": "high"}),
+}
 date = re.compile(r"Current date: \d{4}-\d{2}-\d{2}")
 cases = []
 for name, msgs in CASES.items():
     p = tok.apply_chat_template(msgs, chat_template=template, add_generation_prompt=True, tokenize=False)
     cases.append({"name": name, "messages": msgs, "prompt": date.sub("Current date: {DATE}", p)})
+for name, (msgs, kwargs) in KWARG_CASES.items():
+    p = tok.apply_chat_template(msgs, chat_template=template, add_generation_prompt=True, tokenize=False, **kwargs)
+    cases.append({"name": name, "messages": msgs, "kwargs": kwargs, "prompt": date.sub("Current date: {DATE}", p)})
 json.dump({"checkpoint": "gpt-oss-20b", "chat_template": template, "cases": cases}, open(out, "w"), indent=1, ensure_ascii=False)
 print(f"{len(cases)} cases -> {out}")
 for c in cases[:1] + cases[2:3]:

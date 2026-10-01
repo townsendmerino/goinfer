@@ -547,13 +547,7 @@ func (s *session) batchLine(ctx context.Context, bd batchDefaults, modelName str
 
 	// The prompt: the model's own template in the request's thinking mode; a grammar governs the first token, so a prompt that
 	// would end inside an open think block is rendered thinking-off.
-	tm := s.tmpl.WithThinking(s.think)
-	if explicitMode {
-		tm = s.tmpl.WithThinking(mode)
-	}
-	if constrained && tm.PromptOpensThink() {
-		tm = tm.WithThinking(chat.ThinkOff)
-	}
+	tm := s.batchTemplate(mode, explicitMode, req.ReasoningEffort, constrained)
 	var ids []int
 	var err error
 	if tm != nil {
@@ -709,4 +703,24 @@ func (b batchSummary) report(plan *batchPlan) string {
 		fmt.Fprintf(&sb, "; the %d failed line(s) are in %s, and a rerun retries them", b.Failed, batchio.ErrorPath(plan.out))
 	}
 	return sb.String()
+}
+
+// batchTemplate is the chat template one batch line is rendered with: the session's thinking mode (--thinking), moved by the line's
+// own enable_thinking / reasoning_effort "none" (explicitMode), the line's reasoning_effort (low | medium | high) over the session's
+// (--reasoning-effort) for gpt-oss, and thinking-off when a grammar governs the first token and the prompt would otherwise end
+// inside an open think block. A pure function of the session's template, so it is tested without a model.
+func (s *session) batchTemplate(mode chat.ThinkMode, explicitMode bool, lineEffort string, constrained bool) *chat.Template {
+	tm := s.tmpl.WithThinking(s.think)
+	if explicitMode {
+		tm = s.tmpl.WithThinking(mode)
+	}
+	effort := s.effort
+	if e, ok := chat.NormalizeReasoningEffort(lineEffort); ok {
+		effort = e
+	}
+	tm = tm.WithReasoningEffort(effort)
+	if constrained && tm.PromptOpensThink() {
+		tm = tm.WithThinking(chat.ThinkOff)
+	}
+	return tm
 }

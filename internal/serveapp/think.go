@@ -73,6 +73,10 @@ type thinkSettings struct {
 	mode     chat.ThinkMode  // the mode to render; the server default when the request said nothing
 	explicit bool            // the request itself chose on/off (vs inheriting the server default)
 	format   reasoningFormat // how reasoning reaches this client
+	// effort is the request's reasoning_effort when it is one gpt-oss's template takes (low | medium | high), else "". It only
+	// ever reaches a Harmony template (chat.Template.WithReasoningEffort is a no-op for every other family), so a client that
+	// sends a bare effort to every endpoint moves no other model's prompt.
+	effort string
 }
 
 // thinkRequest is the request-side thinking controls, gathered from whichever route they arrived on.
@@ -98,6 +102,9 @@ func (s *server) resolveThink(tr thinkRequest) (thinkSettings, error) {
 		return ts, fmt.Errorf("the thinking token budget must be positive, got %d", tr.budget)
 	}
 	ts.budget = tr.budget
+	if e, ok := chat.NormalizeReasoningEffort(tr.reasoningEffort); ok {
+		ts.effort = e
+	}
 	set := func(on bool) {
 		ts.explicit = true
 		ts.mode = chat.ThinkOff
@@ -133,10 +140,11 @@ func (s *server) resolveThink(tr thinkRequest) (thinkSettings, error) {
 // templateFor is the chat template to render this request with: the model's own (which already carries the server
 // default mode), switched to the request's mode when the request chose one. nil when the model has no template.
 func (lm *loadedModel) templateFor(ts thinkSettings) *chat.Template {
-	if lm.tmpl == nil || !ts.explicit {
-		return lm.tmpl
+	t := lm.tmpl.WithReasoningEffort(ts.effort) // gpt-oss only; "" and every other family leave the template as it is
+	if t == nil || !ts.explicit {
+		return t
 	}
-	return lm.tmpl.WithThinking(ts.mode)
+	return t.WithThinking(ts.mode)
 }
 
 // constrainedTemplate is templateFor for a request whose output a grammar will constrain from its first token

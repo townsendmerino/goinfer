@@ -183,3 +183,62 @@ func TestHarmonyBudget_inTheDecodeLoop(t *testing.T) {
 		t.Errorf("an unreached budget changed the stream: %v vs %v", got, base)
 	}
 }
+
+// reasoning_effort low|medium|high is gpt-oss's real knob (its template writes it on the `Reasoning:` line); on every other family
+// the field keeps meaning only "none". Both routes that carry it — chat completions' flat reasoning_effort and the Responses API's
+// nested reasoning.effort — reach the same resolution.
+func TestResolveThink_reasoningEffort(t *testing.T) {
+	srv := &server{}
+	for in, want := range map[string]string{"low": "low", "HIGH": "high", " medium": "medium", "none": "", "minimal": "", "bogus": "", "": ""} {
+		ts, err := srv.resolveThink(thinkRequest{reasoningEffort: in})
+		if err != nil || ts.effort != want {
+			t.Errorf("reasoning_effort %q: effort=%q err=%v, want %q", in, ts.effort, err, want)
+		}
+	}
+	// "none" is still the off switch of the families that have one, untouched by effort.
+	if ts, _ := srv.resolveThink(thinkRequest{reasoningEffort: "none"}); !ts.explicit || ts.mode != chat.ThinkOff || ts.effort != "" {
+		t.Errorf("none must still turn thinking off and set no effort: %+v", ts)
+	}
+	// An effort does not decide thinking on or off, and an explicit enable_thinking is not disturbed by it.
+	ts, _ := srv.resolveThink(thinkRequest{reasoningEffort: "high"})
+	if ts.explicit {
+		t.Errorf("a bare effort must not make the request choose on/off: %+v", ts)
+	}
+	ts, _ = srv.resolveThink(thinkRequest{reasoningEffort: "low", kwargs: map[string]json.RawMessage{"enable_thinking": json.RawMessage("true")}})
+	if !ts.explicit || ts.mode != chat.ThinkOn || ts.effort != "low" {
+		t.Errorf("enable_thinking and effort are independent: %+v", ts)
+	}
+
+	var rr responseReq
+	if err := json.Unmarshal([]byte(`{"reasoning":{"effort":"low"}}`), &rr); err != nil {
+		t.Fatal(err)
+	}
+	if ts, _ := srv.resolveThink(rr.thinkRequest()); ts.effort != "low" {
+		t.Errorf("the Responses API's reasoning.effort did not reach the resolution: %+v", ts)
+	}
+}
+
+// templateFor: the effort lands in gpt-oss's system block and in no other model's prompt.
+func TestTemplateFor_reasoningEffort(t *testing.T) {
+	turns := []chat.Turn{{Role: "user", Content: "Hi"}}
+	oss := &loadedModel{tmpl: chat.Harmony()}
+	if got := oss.templateFor(thinkSettings{effort: "low"}).Render("", turns); !strings.Contains(got, "Reasoning: low\n\n") {
+		t.Errorf("gpt-oss prompt with effort low:\n%s", got)
+	}
+	if got := oss.templateFor(thinkSettings{}).Render("", turns); !strings.Contains(got, "Reasoning: medium\n\n") {
+		t.Errorf("no effort asked for: the template's own default (medium) must stand:\n%s", got)
+	}
+	// The effort survives -thinking off / on alongside it.
+	if got := oss.templateFor(thinkSettings{effort: "high", explicit: true, mode: chat.ThinkOff}).Render("", turns); !strings.Contains(got, "Reasoning: high\n\n") {
+		t.Errorf("effort lost when the request also chose a thinking mode:\n%s", got)
+	}
+	for _, tm := range []*chat.Template{chat.ChatML(), chat.Llama3()} {
+		other := &loadedModel{tmpl: tm}
+		if a, b := other.templateFor(thinkSettings{effort: "high"}).Render("", turns), tm.Render("", turns); a != b {
+			t.Errorf("%s: a reasoning_effort moved a non-gpt-oss prompt:\n%s\nvs\n%s", tm.Name(), a, b)
+		}
+	}
+	if got := (&loadedModel{}).templateFor(thinkSettings{effort: "high"}); got != nil {
+		t.Error("a model with no template stays template-less")
+	}
+}
