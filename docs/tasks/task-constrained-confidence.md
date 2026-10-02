@@ -125,9 +125,9 @@ is.
   on Qwen. Verify in D2; do not assume.
 - **LoRA cannot reach this family.** Both paths are closed:
   - Merge-at-load (`--lora`): `validateTargets` (`decoder/lora.go:144`, called at
-    `decoder/weights.go:695`) knows only the Q/K/V/O/gate/up/down suffixes, so an adapter that also
+    `decoder/weights.go:701`) knows only the Q/K/V/O/gate/up/down suffixes, so an adapter that also
     targets the GDN projections is refused whole. The merge itself runs inside the `loadProj`
-    closure (`decoder/weights.go:758`), and the GDN projections are loaded outside it.
+    closure (`decoder/weights.go:764`), and the GDN projections are loaded outside it.
   - Compute-time (`--adapter`): `LoadAdapter` (`decoder/lora.go:353`) refuses every own-forward
     family by design.
 - **Recurrent state cannot be rewound.** `KVCache.TruncateTo` (`decoder/kvcache.go:540`) reports
@@ -888,7 +888,7 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 `Process`) · `decoder/model.go:1304` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
 contract) · `decoder/arch.go:954` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
 `decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:144` (`validateTargets`) ·
-`decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:695`, `:744`
+`decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:701`, `:744`
 (merge-at-load) · `decoder/kvcache.go:540` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
 skips recurrent state) · `internal/serveapp/openai.go:34`, `:536`, `:538` (`top_logprobs` cap,
 `logprobs`, `response_format`) · `internal/serveapp/main.go:668` (route middleware) ·

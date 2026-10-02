@@ -1434,7 +1434,7 @@ Evidence labels: [R] recorded figure (doc:line), [C] counted from code shape (co
 | ID | Sep 12 claim | Status | Evidence |
 |---|---|---|---|
 | M-01 | `ResidentPrefillKV` missing on Metal: every sequential prompt token ran the full LM head and 608 KB readback | CLOSED-VERIFIED | `ForwardNoLogits` implemented, pipelined with a `noHead` bit on `execJob`; paged-MoE falls back to the head-bearing path by design (metal/backend.go:561-587; metal/model.go:443,1866,1909-1941) |
-| M-07 | Three host copies of every dense int4 projection on a GGUF/safetensors load | CLOSED-VERIFIED for the row4-skip half; host-release half declined as permanent | decoder/weights.go:720-724,769-775,805-808,1208-1213,1522-1526; audit :1753-1756, :396, :432-442 |
+| M-07 | Three host copies of every dense int4 projection on a GGUF/safetensors load | CLOSED-VERIFIED for the row4-skip half; host-release half declined as permanent | decoder/weights.go:726-730,769-775,805-808,1208-1213,1522-1526; audit :1753-1756, :396, :432-442 |
 | M-11 | Paged decode pays a ~14 ms command-buffer boundary 61-81x per token | OPEN. The boundary cost fell (9 to 0.44 ms/CB idle, M-14), shared-event re-run not done | audit :1766; metal/model.go:1497,1539 (area D owns it) |
 | M-12 | Serial per-expert staging | CLOSED, cross-expert half only (as recorded) | audit :1763-1766 |
 | M-13 | Pager engages only with explicit slots | CLOSED (auto-sized slots) | audit :1760-1762 |
@@ -2527,7 +2527,7 @@ Status uses the five values from the brief. "Record only" means the cited target
 | N-08 | CLOSED-VERIFIED | `grep` for the old phrases finds none; `metal/backend.go:807-814` rewritten. `metal/spec_prefill_regression_test.go:43-60` rewritten. `metal/spec_verify_curve_test.go:129` still says "declined by default" in a perf-probe sentence (Minor). |
 | N-09 | CLOSED-VERIFIED | no "greedy decode skips" text found. |
 | N-10 | CLOSED-VERIFIED | no "11 dispatches vs 19" text found. |
-| N-11 | CLOSED-VERIFIED | "Dense residency only" absent; `decoder/features.go:375` cites `metal/moe.go:375-376`. |
+| N-11 | CLOSED-VERIFIED | "Dense residency only" absent; `decoder/features.go:397` cites `metal/moe.go:375-376`. |
 | N-12 | CLOSED-VERIFIED | `prefill-gate-l1-ref-b-2026-09-09.md:14`. |
 | N-13 | CLOSED-VERIFIED | `metal/snapshot_golden_test.go:75-77,146`. |
 | N-14 | PARTIAL | Floor still 0.95 (`metal/lora_resident_parity_test.go:114,203`) against measured 0.9998/0.9988 (`:104-111`); parked on purpose. A dropped projection could still pass. |
@@ -2772,7 +2772,7 @@ One row for every ID in `docs/audit-metal-2026-09-12.md`: 16 M-, 10 C-, 10 G- an
 | M-04 | PARTIAL | O in registers and the wider key tile are superseded by R19 (`metal/prefill.go:449-588`). Packing a GQA group's heads into one threadgroup is not done; MLX does not do it either (`steel_attention.h:97`) and R19's record calls it "an option neither peer takes" (A). Residue: A-P03, F-G01. |
 | M-05 | PARTIAL | Non-paged generic MoE has expert-major batched prefill, default ON (`metal/prefill.go:1116-1254`); paged MoE, Gemma-4 MoE and DeltaNet still run as M decode tokens (`metal/model.go:951-952`): D-P01, D-B01, D-B02, D-G01. |
 | M-06 | PARTIAL | `FeatPerLayerRoPE` declared (`metal/model.go:103`); Gemma 3 reaches the batched GEMM; hd=256 attention stays on the exact scalar kernel: A-B03, and its `sc[4096]` limit F-C02. |
-| M-07 | PARTIAL | Row4-skip half CLOSED-VERIFIED (`decoder/weights.go:720-724,769-775,805-808,1208-1213,1522-1526`); the host-release half was declined as permanent. S6's NoCopy alias, default ON, removes the dense heap term (1.5B 90 against 1,013 MB, 7B 105 against 4,134 MB at token 32, rec `s6-alias-2026-09-24.md:188-189`). Residue: C-P01 (paged scale cache), F-D02 (v15 non-metal bundles). |
+| M-07 | PARTIAL | Row4-skip half CLOSED-VERIFIED (`decoder/weights.go:726-730,769-775,805-808,1208-1213,1522-1526`); the host-release half was declined as permanent. S6's NoCopy alias, default ON, removes the dense heap term (1.5B 90 against 1,013 MB, 7B 105 against 4,134 MB at token 32, rec `s6-alias-2026-09-24.md:188-189`). Residue: C-P01 (paged scale cache), F-D02 (v15 non-metal bundles). |
 | M-08 | CLOSED-VERIFIED (code); unmeasured on a Mac | `metal/kernels.go:1799-1838` launches ceil(Out/256) threadgroups; `lora_delta_multitg_test.go` (E). No Mac adapter-decode record exists. |
 | M-09 | NEGATIVE-CLOSED | Probe `attn_kread_staged_probe_test.go`: 0.43× at 2048 keys (B). Loose ends: the maxAbs 1.7e38 mismatch was never root-caused, and the premise no longer describes the block kernel that serves hd=128, G=6,7, ≥1536 keys; it still describes the legacy kernel (<1536 keys, hd=64, kvI8, windows, sinks). |
 | M-10 | NEGATIVE-CLOSED, premise stale | Measured 2–6% slower on pre-R18 SA arithmetic at R=1 (B). The SA family is now 1.38×/1.46× faster at depth 128 and coal down is staged at R=4: REVISIT filed as B-P05. |
@@ -2812,7 +2812,7 @@ One row for every ID in `docs/audit-metal-2026-09-12.md`: 16 M-, 10 C-, 10 G- an
 | N-08 | CLOSED-VERIFIED | `grep` for the old phrases finds none; `metal/backend.go:807-814` rewritten. `metal/spec_prefill_regression_test.go:43-60` rewritten. `metal/spec_verify_curve_test.go:129` still says "declined by default" in a perf-probe sentence (Minor). |
 | N-09 | CLOSED-VERIFIED | `finalizeLogits` runs after every logits readback and applies the softcap host-side: `metal/model.go:1759,1758-1765` (B). |
 | N-10 | PARTIAL | Fixed 2026-09-13; the replacement count at `metal/model.go:2713-2716` omits the fa combine dispatch (B-D02). The 310 figure is right below the floor. |
-| N-11 | CLOSED-VERIFIED | "Dense residency only" absent; `decoder/features.go:375` cites `metal/moe.go:375-376`. |
+| N-11 | CLOSED-VERIFIED | "Dense residency only" absent; `decoder/features.go:397` cites `metal/moe.go:375-376`. |
 | N-12 | CLOSED-VERIFIED | `prefill-gate-l1-ref-b-2026-09-09.md:14`. |
 | N-13 | CLOSED-VERIFIED | `metal/snapshot_golden_test.go:75-77,146`. |
 | N-14 | PARTIAL | Floor still 0.95 (`metal/lora_resident_parity_test.go:114,203`) against measured 0.9998/0.9988 (`:104-111`); parked on purpose. A dropped projection could still pass. |

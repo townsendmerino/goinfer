@@ -662,7 +662,7 @@ number is published without provenance.
      `vision_start`/`vision_end` are TEXT (type 0) so they take scalar positions; an image group at
      `current_pos` gets `T = arange(t)·1 + cp`, `H = arange(h/2) + cp`, `W = arange(w/2) + cp`, then
      `cp += max(h, w)/merge` (**t is dropped**); `delta = max(pos)+1 − seq_len`; decode positions are
-     `arange + cache_len + delta` on all three rows. `mropePositions` (`decoder/rope.go:279`) scans by
+     `arange + cache_len + delta` on all three rows. `mropePositions` (`decoder/rope.go:338`) scans by
      image-token runs, gives text `[st,st,st]`, image `[base+tt, base+hh, base+ww]`, resumes at
      `base + max(t, hm, wm)`; `mropeDelta` is `max over any component + 1 − seqLen`. **For an image
      (t = 1 — always, after temporal duplication) the two are identical**: `max(1,hm,wm) == max(hm,wm)`
@@ -685,7 +685,7 @@ number is published without provenance.
      `arch.MRopeSection` / `MRopeInterleaved` / `cache.mropePos` / `cache.mropeDelta`, exactly the call the
      generic attention makes (`decoder/attention.go:155`). `ropeAt` with `mropePos == nil` is `applyRoPE`, so
      the text path is unchanged by construction — G3 proves it. `arch.MRopeSection`/`MRopeInterleaved`
-     are set for `qwen3_vl` (`decoder/registry.go:1658`) but NOT by `qwen35DenseArchitecture` /
+     are set for `qwen3_vl` (`decoder/registry.go:1660`) but NOT by `qwen35DenseArchitecture` /
      the MoE builder; they must be set from `rope_parameters` there, only when a vision tower is present or
      unconditionally (unconditional is safe: text tokens have equal components).
   5. *Resident executors.* `ForwardMRoPE` (`ResidentMRoPE`) exists on `cudaResident`

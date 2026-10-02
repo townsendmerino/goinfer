@@ -1,6 +1,9 @@
 # Task: GLM-OCR — documents in, text and schema-bound JSON out (O0–O7) — 2026-10
 
-> **Status: O0 DONE 2026-10-01 — it does not stop the task; O1 and O2 are unblocked.** O0's findings are in
+> **Status: O0, O1 and O2 DONE 2026-10-01 (local commits, nothing pushed or released).** O1's text decoder matches HF f32
+> (tiny fixture, image-style positions, and the real checkpoint); O2's tower matches HF f32 on the real checkpoint
+> (worst merged-row cosine 0.999999987). **O3 is unblocked.** Two things gate a push: the site module's Ollama check goes red
+> (see O7), and no GPU backend may run the family (see O6). O0's findings are in
 > [§O0 results](#o0-results-2026-10-01), and the claims they overturned are corrected in place below, each marked
 > *Corrected 2026-10-01 (O0)*. The two that matter most: the pixel budget is half what §1 said (6,144 image tokens,
 > not ~12,000), and the tower is nearer aikit's Qwen3.5+ encoder than Qwen2.5-VL's. Everything after O0 is written to
@@ -239,7 +242,9 @@ nothing here is a numeric match to a real forward; O1–O3's gates are.**
   59,392. `tokenizer/bytelevel.go` handles `ignore_merges`. `<think>`, `<|image|>` and the tool tags are added tokens with
   `special: false`, so the tokenizer must split on non-special added tokens. O1 checks id-identical tokenization on strings
   with digits, newlines and every added token.
-- **GPU residency (O6).** Decode past the image needs only the resident's scalar rope at `ropePos` (`ResidentMRoPE`,
+- **GPU residency (O6).** *(Corrected 2026-10-01 by O1: the next two sentences were WRONG. Every resident rope kernel is
+  half-split NeoX, scalar ones included, so decode past the image cannot ride a GPU resident either; see O1's result.)*
+  Decode past the image needs only the resident's scalar rope at `ropePos` (`ResidentMRoPE`,
   `ForwardMRoPE`), which is pairwise on the families that already run it (Command-R is resident on CUDA and Metal). The
   image-block *prefill* kernels (`rope_kv_mrope_batched` on CUDA, and Metal's) are NeoX-only, so GLM's image prefill
   cannot use `PrefillMRoPELast` without a pairwise variant. Expect a CPU prefill of the image rows, or a new kernel.
@@ -262,6 +267,46 @@ nothing here is a numeric match to a real forward; O1–O3's gates are.**
 - **Gate:** exact argmax and continuation against HF, text only. The rotary function is pinned directly
   against HF's slicing, the way `mropeComponentInterleaved` was.
 
+**O1 RESULT, 2026-10-01: DONE, all gates pass** (local commits `ff79b92a`, `27845987`; not pushed). Re-run and read for
+`--- PASS` by the lead.
+- **Built:** `glmOcrArchitecture` under `glm_ocr` and `glm_ocr_text` (every field explicit, plus a `validateGlmOcr` that
+  refuses what the descriptor cannot do); `buildGlmOcrWeights` (gate-first split, the reversed norm names, layer 16 and
+  `model.visual.*` never requested); `applyMRoPEPairwise` called from `ropeAt` only when the pairwise flag is set and the
+  position is inside the image block. `applyMRoPE` and every Qwen path are untouched.
+- **Rotary pin** against HF's real `GlmOcrTextRotaryEmbedding` + `apply_rotary_pos_emb` (head_dim 128, 32 positions including
+  image blocks at bases 5 and 200): max|diff| 1.7e-5; the controls it must reject read 0.4 (temporal-only), 3.7 (strided
+  layout) and 6.0 (NeoX). Equal positions are bit-identical to `applyRoPEInterleaved`; the Qwen dispatch is pinned bit-identical.
+- **Tiny decoder vs HF, text only** (48-token prompt, f32): argmax exact, cosine 1.000000000, max|diff| 1.9e-5, sequential and
+  batched paths, and the 8-token greedy continuation identical. **Through the caller** (`mropePositions` +
+  `prefillLogitsQwenVL`, image-style positions): cosine 1.000000000, max|diff| 9.6e-6, continuation identical; scalar positions
+  would read cosine 0.138, so the golden is sensitive.
+- **Real checkpoint, scratch check (not committed):** the full 2.65 GB text decoder, 26-token prompt, 12-token greedy
+  continuation: cosine 1.000000000, max|diff| 1.9e-5, continuation identical. **The family's parity row stays `tiny-golden`
+  (experimental), not `validated`, until a committed `realckpt` gate with an `assets.json` entry exists.**
+- **Name-mapping test never skips** and goes red on a swap (each tensor distinct; the layer-2 MTP block, a layer-9 tensor and
+  `model.visual.*` are NaN-poisoned with wrong shapes). Mutations, each shown red then reverted: norm names swapped, gate/up
+  swapped, `ropeInterleave` off, strided layout inside the pairwise function.
+- **Tokenizer:** 227 cases id-identical to HF's `AutoTokenizer` (1–7 digit runs, newlines, edge spaces, CJK, all 36 added
+  tokens including the 15 with `special: false`, in the chat-template shape). No mismatch. Skips cleanly without
+  `~/models/glm-ocr/tokenizer.json`.
+- **Housekeeping:** `refresh_parity_hashes.sh` 64 forward goldens passed, 0 failed, 0 skipped; gofmt, vet (untagged and the
+  `realckpt`, `goinfer_testhooks`, `cuda goinfer_testhooks` variants) and staticcheck 0.8.0 (proven red on a dead field)
+  clean; capability and hardware matrices regenerated; README "39" → "40 model families".
+- **O0 corrections: none.** One nuance: HF's `cos`/`sin` are `cat(freqs, freqs)` and the `repeat_interleave(2)` happens
+  inside `apply_rotary_pos_emb` on the first half; the result is what §1 said.
+- **FINDING: no GPU backend may run `glm_ocr`.** With admission bypassed, resident-vs-CPU on the RTX 2070 SUPER (int8int8,
+  48-token prompt) read worst cosine −0.34 on glm-ocr-tiny; a NeoX llama control with the same peaked attention stayed at
+  1.000000 and CPU int8int8 against f32 alone read 0.988. The CUDA `rope` and `rope_kv` kernels and Metal's `rope` kernel are
+  half-split NeoX, and so are the m-RoPE image-prefill kernels. `FeatPairwiseMRoPE` (derived from `ropeInterleave &&
+  MRopeSection`) is declared by no backend, so **`glm_ocr` runs on the CPU everywhere**; pinned by
+  `TestGlmOcr_residentDeclined` and `cuda/glm_ocr_resident_test.go`.
+- **FINDING, not fixed, needs a decision: the Cohere and Cohere2 resident admission on CUDA and Metal is probably silently
+  wrong.** The same resident-vs-CPU probe on a cohere-tiny rebuilt with peaked attention (0.25-std weights) read worst cosine
+  0.06, where the committed 0.02-std fixture reads 0.9997: flat attention hides a wrong rotation, and
+  `TestCohereResidentParityCUDA` holds only cosine ≥ 0.995 on that flat fixture. Command-R, Command-R7B and Aya are admitted
+  on CUDA and Metal today. **Neither the agent nor the lead tested a real Cohere model resident**; this is a hypothesis that
+  one real-checkpoint resident-vs-CPU comparison would settle. Left unchanged here.
+
 ### O2 — the tower in aikit
 
 - A new encoder, not a flag on an existing one. **Start from `Qwen3VisionEncoder`** (`aikit/vision/qwen3_encoder.go`;
@@ -274,6 +319,40 @@ nothing here is a numeric match to a real forward; O1–O3's gates are.**
   temporal-summed kernel.
 - A HF pin generator for tower-only merged features.
 - **Gate:** cosine ≥ 0.9999 per merged row at f32 against HF, on a small image and a page-sized one.
+
+**O2 RESULT, 2026-10-01: DONE, gate passes** (aikit `ed8053c`, goinfer `495783ca`; local, not pushed, not released). Re-run by the
+lead: `TestGlmOcrVisionEncoder_*` all PASS, the real-checkpoint parity (small + page) in 59 s.
+- **API for O3:** `vision.LoadGlmOcrVisionEncoder(dir, quant)` then `enc.Forward(pixelValues, gridTHW) ([]float32, error)`.
+  Input `[n_patches, 1176]` pre-patchified in merge-block order (the contract of `Qwen3VisionEncoder.Forward` and the layout
+  `QwenPreprocess` produces); `gridTHW` one `{t,h,w}` per image in patch units, `h` and `w` multiples of 2; output
+  `[Σ t·h·w / 4, 1536]` row-major, equal to HF's `pooler_output`. Stage hooks `Embed`, `ForwardViT`, `ForwardDownsampled`.
+  `quant=true` is W8A8; sanity-checked on the tiny fixture only (worst-row cosine 0.9976), **not gated on the real checkpoint**.
+- **Real checkpoint, f32, Go vs HF eager attention (transformers 5.12.0), same pixel bytes on both sides** (HF's
+  `Glm46VImageProcessor` output, dumped): small image (230×220 → 224×224, grid [1,16,16], 64 merged rows) min per-row cosine
+  1.000000000, max|diff| 5.4e-6; page (1100×1350, grid [1,96,78], 7,488 patches, 1,872 merged rows) min per-row cosine
+  0.999999987 (row 684), max|diff| 3.4e-5 (relative 7.0e-5). *Both images are procedurally rendered pages, not real scans.*
+- **Tiny committed fixture** (head_dim 64, two non-square grids in one call, non-trivial norm weights and biases): relative
+  max|diff| ≤ 1.6e-6 at every stage against a 5e-6 bar.
+- **Mutations, each shown red then reverted:** q/k norm skipped (worst-row cosine 0.205); downsample flattening patch-major
+  (−0.05); rotary before the q/k norm (0.92; visible only because the norm weights are non-uniform); **merger GELU erf → tanh
+  reads cosine 0.99999997, which a cosine-only gate would pass, and the relative max|diff| bar catches it ~40× over.**
+- **Shared code:** the fused-attention tail of `packedAttentionInto` moved verbatim into `attendPackedInto` (the way qwen3 did);
+  the Qwen towers' tests all pass after it.
+- **Lint:** gofmt, vet and staticcheck 0.8.0 clean. **golangci-lint could not run** (the installed binary is built for Go
+  1.26, aikit needs 1.27); `releasegate` will need a rebuilt one.
+- **Departure from aikit's fixture convention:** the 1.6 MB tiny checkpoint is **force-added** (`git add -f`, `*.safetensors` is
+  gitignored in aikit) so the tiny gate cannot skip on a clean clone. Owner's call whether to keep it.
+- **Cost, NOT gated:** the only number is 30.0 s at 1 MP on nobara at load average ~14, **contaminated and not quotable**.
+  The 1 / 2 / 4.8 MP sweep (`TestGlmOcrVisionEncoder_costSweep`, `AIKIT_GLM_OCR_COST=1,2,4.8`, grids [1,70,72], [1,100,102],
+  [1,128,192]) is a Mac night job; a paste-ready prompt was given to Francis. The 4.8 MP point is guessed at 10–20 min.
+- **Two small facts:** the merger's inner width 4608 is `out_hidden_size × in_channels` (1536 × 3), which only happens to equal
+  the text MLP width; and a Conv3d-as-Conv2d over the temporal-summed kernel is exact mathematically but not bit-equal in f32,
+  so the reference path is the plain 1176-wide matmul.
+- **Release needs (not started):** an additive minor (read the number with `RELEASING.md`'s command); a CHANGELOG section with the
+  compare link listing `GlmOcrVisionEncoder`, `GlmOcrEncoderConfig`, `LoadGlmOcrVisionEncoder`; the perfgate exception text (no
+  `linalg` or `go.mod` change, one new file plus a verbatim move); `go run -C tools ./releasegate X.Y.Z` (rebuilt
+  golangci-lint) and `./vulncheck`; push, root CI green, tag; then `gpupins --fix`; the pin bump in goinfer's five modules in
+  one commit; the GitHub Release on goinfer's root tag.
 - **Cost, measured and recorded (not gated):** tower wall time at three pixel counts on the Mac CPU. O4 needs
   them.
 - Tag an aikit release and bump the pin in all five modules in one commit (`RELEASING.md`, version
@@ -312,10 +391,12 @@ The processor's own ceiling (corrected 2026-10-01, O0: **4.82 MP, 24,576 patches
 ### O6 — GPU paths (each on its own measurement; not blocking)
 
 - **Decode after the image:** confirm whether the CUDA and Metal residents serve GLM-OCR through
-  `ResidentMRoPE`. If one does not, `GenerateQwenVL`'s CPU fallback is correct and slower; record which. **O0 expects a
-  split:** decode past the image needs only the scalar pairwise rope, which exists; the image-block *prefill* kernels
-  are NeoX-only, so that prefill runs on the CPU (6,144 rows through a 0.58 B decoder) unless a pairwise variant of the
-  kernel is written. Measure the CPU prefill first; it may be cheap enough to leave.
+  `ResidentMRoPE`. If one does not, `GenerateQwenVL`'s CPU fallback is correct and slower; record which. **Corrected 2026-10-01 (O1): O0's expected split was wrong.** Every resident
+  rope kernel is half-split NeoX, scalar ones included, so no backend admits `glm_ocr`, and the whole turn, prefill and decode,
+  runs on the CPU. A GPU path needs pairwise variants of `rope`, `rope_kv` and `rope_kv_mrope_batched` on CUDA and the Metal
+  equivalents, gated first by a resident-vs-CPU parity test on glm-ocr-tiny (a flat-weight fixture cannot see this bug; see the
+  Cohere finding under O1). Measure the CPU turn first (6,144 image rows through a 0.58 B decoder, then CPU decode); it may be
+  cheap enough to leave.
 - **The tower:** CPU in v1, unless aikit's GPU vision path covers it cheaply. A GPU tower is a follow-on with
   its own band.
 
@@ -326,6 +407,10 @@ The processor's own ceiling (corrected 2026-10-01, O0: **4.82 MP, 24,576 patches
 - The site's Ollama-coverage row 22 changes from N to S. Per that snapshot's own rule, this needs a new dated
   snapshot, not an edit.
 - A Models-page entry with O5's example and the O4 default stated.
+- **Known red before any push (O1, 2026-10-01):** with `glm_ocr` in the matrix, the site module's
+  `TestCheckOllama_theRealDataHolds` and `TestBuild_realRepo` (`GOWORK=off`, `site/internal/site`) fail, because Ollama
+  row 22 `needs` the family. They demand the new dated snapshot described above after re-reading Ollama's page, and a faked
+  one would defeat them. So the O1 commits should not be pushed until that snapshot exists (or the owner decides otherwise).
 
 ## 4. Would it make a good in-browser demo?
 
