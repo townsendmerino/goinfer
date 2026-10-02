@@ -1492,6 +1492,15 @@ time to first token, status). **Gate:** a serve test asserting that line when th
 and a trailing `bye`. **On v0.20.0:** no prompt or no-colour flag exists. **Fix:** plain output when stdin or stdout is
 not a terminal, or a `-p "prompt"` flag. **Gate:** a chatapp test with piped stdin asserting no escape codes.
 
+**Fixed 2026-10-01, both ways.** `-p "prompt"` answers once and exits (0 with an answer, 1 without); and the REPL is **plain whenever stdin or stdout is not a
+terminal**: no banner, no `you>` label, no ANSI escapes, no `bye`, and for a thinking model the reasoning (or its marker) goes to stderr so stdout is the
+answer and nothing else. Checked on the real binary with the 0.5B Coder: `-p`, piped stdin, and piped stdin with stdout redirected to a file all print
+`Hello, world!` and no escape byte (`cat -v`); stats and the `chat template:` line stay on stderr, as before. **Gate:** `TestRepl_plainWhenScripted` drives the
+REPL loop (the caller of the label, banner and `bye`) and requires the exact answer in plain mode and every one of those in the interactive control;
+`TestReplyPrinter_plainSeparatesReasoningFromTheAnswer`, `TestOneShot`, `TestPromptFlagRegistered`; five mutants red. **Not covered by a test:** the one line in
+`main` that sets `plain` from `isTerminal` (it needs a pty); it was run by hand as above. One behaviour change to know: a script that parsed the old
+`you>`/`bye` from piped output no longer sees them.
+
 ### R27 — pkg.go.dev described `decoder.Load` as a Gemma-3, CPU-only loader
 
 **Found** (scenario C). `decoder.Load`'s doc comment said it "reads a Gemma 3 snapshot" with the CPU "the only one

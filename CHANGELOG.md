@@ -17,6 +17,9 @@ any surface may still change.
 
 ### Changed
 
+- **`goinfer-chat -p "prompt"`, and plain output when it is scripted.** `-p` answers one prompt and exits, printing only the answer. Without `-p`, piped
+  stdin or redirected stdout now gets plain output too: no banner, `you>` label, ANSI escapes or `bye` (a thinking model's reasoning goes to stderr). A
+  script that matched the old `you>`/`bye` text in piped output will no longer see it. `docs/tasks/task-first-hour.md` R26.
 - **`--help` names the model cache directory.** `goinfer-serve -h`, `goinfer-chat -h` and `pull -h` print where pulled models are cached on this
   machine and what moves it (`XDG_CACHE_HOME` on Linux), instead of leaving it to be found by hand. `docs/tasks/task-first-hour.md` R28.
 - **`--vision <mmproj>.gguf` and `pull` of an mmproj file now say what is true.** Handing `serve` a llama.cpp-style mmproj GGUF failed with

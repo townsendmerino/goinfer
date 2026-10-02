@@ -29,6 +29,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -86,6 +87,14 @@ type session struct {
 	// no other family's prompt (chat.Template.WithReasoningEffort is a no-op for them).
 	effort string
 
+	// plain is script-friendly output (R26, docs/tasks/task-first-hour.md): no banner, no `you>` label, no ANSI escapes, no `bye`, the
+	// reasoning (when shown) on stderr so stdout is the answer and nothing else. It is on for -p, and whenever stdin or stdout is not a
+	// terminal. out is where stdout-bound text goes (nil = os.Stdout), so a test can read it; genFn replaces generate in tests.
+	plain bool
+	out   io.Writer // stdout-bound text (nil = os.Stdout)
+	errw  io.Writer // where plain mode sends the reasoning (nil = os.Stderr)
+	genFn func() string
+
 	draft *decoder.Model // optional speculative-decoding draft model (--draft)
 	specK int            // speculative draft length per verify pass
 	ngram bool           // --spec ngram: lossless n-gram (prompt-lookup) drafting, adaptive depth
@@ -101,7 +110,7 @@ type chatFlags struct {
 	temp, topP, minP, repPen, presPen, freqPen *float64
 	seed                                       *int64
 	modelTmp, showVersion, showThinking        *bool
-	thinking, batch, out, effort               *string
+	thinking, batch, out, effort, prompt       *string
 }
 
 // registerFlags puts chat's whole command line on fs. Main passes flag.CommandLine; a test passes a fresh
@@ -130,6 +139,7 @@ func registerFlags(fs *flag.FlagSet) *chatFlags {
 	c.showThinking = fs.Bool("show-thinking", true, "print the model's reasoning, dimmed, before its answer (false: show only a \"thinking…\" marker). The reasoning is never kept in the conversation history either way")
 	c.batch = fs.String("batch", "", "run a batch file instead of chatting: an OpenAI-style JSONL of chat requests (the same file goinfer-serve's POST /v1/batches reads), one reply each, written to -o. No server; resumable — rerun the same command after an interruption and finished lines are skipped. A line that states no sampling settings gets the API's defaults (temperature 1, 512 tokens, random seed), not this binary's interactive ones, unless you pass the flag")
 	c.out = fs.String("o", "", "with --batch: the output file. Finished lines are appended as they land and already-finished custom_ids are skipped on a rerun; lines that failed go to a sibling <name>.errors.jsonl")
+	c.prompt = fs.String("p", "", "answer this one prompt and exit: only the answer is printed to stdout, with no banner, colours or prompt label (the reasoning of a thinking model, if shown, goes to stderr). Piped input and redirected output get the same plain output without -p")
 	c.showVersion = fs.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
 	return c
 }
@@ -226,6 +236,7 @@ or download goinfer-serve-<os>-<arch> from the latest release. It installs as `+
   %[1]s --model <f> --batch in.jsonl -o out.jsonl   run a batch file locally; resumable
   %[1]s --model <file.gguf|dir>         chat with it
   %[1]s --model <f> --temp 0            greedy, for reproducible output
+  %[1]s --model <f> -p "prompt"         one answer on stdout, plain (no colours, banner or prompt), then exit
   %[1]s --version                       version + the backends compiled in
 
 Reads a .gguf or an HF checkpoint dir. The server (OpenAI/Anthropic routes, --web,
@@ -402,7 +413,48 @@ All flags:
 		flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
 		os.Exit(s.runBatch(plan, newBatchDefaults(cf, explicit), modelNameOf(*cf.model)))
 	}
-	s.repl()
+	// R26: one prompt, plain output, exit — or the REPL, plain when it is being scripted (stdin or stdout is not a terminal).
+	s.plain = *cf.prompt != "" || !isTerminal(os.Stdin) || !isTerminal(os.Stdout)
+	if *cf.prompt != "" {
+		os.Exit(s.oneShot(*cf.prompt))
+	}
+	s.repl(os.Stdin)
+}
+
+// stdout is where text meant for the reader goes: os.Stdout, or the writer a test installed.
+func (s *session) stdout() io.Writer {
+	if s.out != nil {
+		return s.out
+	}
+	return os.Stdout
+}
+
+// sgr is an ANSI escape, or nothing in plain mode — a pipe, a file and a script must not receive terminal control codes.
+func (s *session) sgr(code string) string {
+	if s.plain {
+		return ""
+	}
+	return code
+}
+
+// isTerminal reports whether f is a character device (a terminal), which is what decides between the coloured REPL and plain output.
+func isTerminal(f *os.File) bool {
+	st, err := f.Stat()
+	return err == nil && st.Mode()&os.ModeCharDevice != 0
+}
+
+// oneShot answers one prompt (-p) and returns the process exit code: 0 with an answer on stdout, 1 without one.
+func (s *session) oneShot(prompt string) int {
+	s.history = append(s.history, msg{"user", prompt})
+	gen := s.generate
+	if s.genFn != nil {
+		gen = s.genFn
+	}
+	if strings.TrimSpace(gen()) == "" {
+		fmt.Fprintln(os.Stderr, "no answer")
+		return 1
+	}
+	return 0
 }
 
 // loadEmbedded loads the baked-in model. Its implementation is build-tag
@@ -490,15 +542,21 @@ func progress(msg string) { fmt.Fprintln(os.Stderr, msg) }
 
 // repl is the read–eval–print loop. Lines starting with '/' are commands; every
 // other line is a user turn that gets a streamed reply.
-func (s *session) repl() {
-	fmt.Printf("\ngoinfer chat — %d msgs of history, system prompt steers it. /help for commands, /quit to exit.\n", 0)
-	fmt.Printf("system: %s\n\n", short(s.system))
-	in := bufio.NewScanner(os.Stdin)
+func (s *session) repl(r io.Reader) {
+	if !s.plain {
+		fmt.Fprintf(s.stdout(), "\ngoinfer chat — %d msgs of history, system prompt steers it. /help for commands, /quit to exit.\n", 0)
+		fmt.Fprintf(s.stdout(), "system: %s\n\n", short(s.system))
+	}
+	in := bufio.NewScanner(r)
 	in.Buffer(make([]byte, 0, 1<<20), 1<<20) // allow long pasted prompts
 	for {
-		fmt.Print("\033[1myou>\033[0m ")
+		if !s.plain {
+			fmt.Fprint(s.stdout(), "\033[1myou>\033[0m ")
+		}
 		if !in.Scan() {
-			fmt.Println("\nbye")
+			if !s.plain {
+				fmt.Fprintln(s.stdout(), "\nbye")
+			}
 			return
 		}
 		line := strings.TrimSpace(in.Text())
@@ -512,7 +570,11 @@ func (s *session) repl() {
 			continue
 		}
 		s.history = append(s.history, msg{"user", line})
-		reply := s.generate()
+		gen := s.generate
+		if s.genFn != nil {
+			gen = s.genFn
+		}
+		reply := gen()
 		if reply != "" {
 			s.history = append(s.history, msg{"assistant", reply})
 		}
@@ -547,44 +609,21 @@ func (s *session) generate() string {
 	// The reasoning, when the model has any, prints dimmed (or as a one-word marker with --show-thinking=false) and the answer
 	// follows in cyan; the two never mix, and only the answer goes into the conversation history.
 	rs := tm.NewReplySplitter(turns) // nil for a model with no recognised thinking control: everything is the answer
-	var inThink, answering bool
-	onReasoning := func(r string) {
-		if !inThink {
-			inThink = true
-			fmt.Print("\033[2m")
-			if !s.showThinking {
-				fmt.Print("(thinking…)")
-			}
-		}
-		if s.showThinking {
-			os.Stdout.WriteString(r)
-		}
-	}
-	onChunk := func(chunk string) {
-		if inThink {
-			fmt.Print("\033[0m\n\n")
-			inThink = false
-		}
-		if !answering {
-			fmt.Print("\033[36m") // cyan reply
-			answering = true
-		}
-		os.Stdout.WriteString(chunk)
-	}
+	rp := &replyPrinter{s: s}
 	start := time.Now()
-	text, _, nTok, truncated := s.streamReply(stream, rs, onReasoning, onChunk)
-	fmt.Print("\033[0m\n")
+	text, _, nTok, truncated := s.streamReply(stream, rs, rp.reasoning, rp.chunk)
+	rp.end()
 	if truncated {
-		fmt.Fprintln(os.Stderr, "\033[2m(no answer: the reply ended while the model was still thinking — raise /max)\033[0m")
+		fmt.Fprintln(os.Stderr, s.sgr("\033[2m")+"(no answer: the reply ended while the model was still thinking — raise /max)"+s.sgr("\033[0m"))
 	}
 
 	if err := gen.Err(); err != nil && ctx.Err() == nil {
 		fmt.Fprintf(os.Stderr, "(generation error: %v)\n", err)
 	}
 	if elapsed := time.Since(start); elapsed > 0 && nTok > 0 {
-		fmt.Fprintf(os.Stderr, "\033[2m[%d tok, %.1f tok/s]\033[0m", nTok, float64(nTok)/elapsed.Seconds())
+		fmt.Fprintf(os.Stderr, "%s[%d tok, %.1f tok/s]%s", s.sgr("\033[2m"), nTok, float64(nTok)/elapsed.Seconds(), s.sgr("\033[0m"))
 		if gen.Spec != nil {
-			fmt.Fprintf(os.Stderr, "\033[2m [spec: %.0f%% accepted, %.1f tok/pass]\033[0m", gen.Spec.AcceptanceRate()*100, gen.Spec.TokensPerRound())
+			fmt.Fprintf(os.Stderr, "%s [spec: %.0f%% accepted, %.1f tok/pass]%s", s.sgr("\033[2m"), gen.Spec.AcceptanceRate()*100, gen.Spec.TokensPerRound(), s.sgr("\033[0m"))
 		}
 		fmt.Fprintln(os.Stderr)
 	}
@@ -726,7 +765,9 @@ func (s *session) command(line string) bool {
 	arg = strings.TrimSpace(arg)
 	switch cmd {
 	case "/quit", "/exit":
-		fmt.Println("bye")
+		if !s.plain {
+			fmt.Fprintln(s.stdout(), "bye")
+		}
 		return true
 	case "/help":
 		fmt.Print(helpText)
@@ -1035,3 +1076,49 @@ const helpText = `commands:
   /demos          list canned demo prompts      /demo <n>  run demo n (or by name)
   /help           this list                     /quit      exit
 `
+
+// replyPrinter writes a reply as it streams: the reasoning dimmed and the answer in cyan on a terminal; in plain mode (R26) the answer alone on
+// stdout, uncoloured, with the reasoning (or its marker) on stderr — so `goinfer-chat -p ... > file` holds the answer and nothing else.
+type replyPrinter struct {
+	s                  *session
+	inThink, answering bool
+}
+
+func (p *replyPrinter) reasoningTo() io.Writer {
+	if !p.s.plain {
+		return p.s.stdout()
+	}
+	if p.s.errw != nil {
+		return p.s.errw
+	}
+	return os.Stderr
+}
+
+func (p *replyPrinter) reasoning(r string) {
+	w := p.reasoningTo()
+	if !p.inThink {
+		p.inThink = true
+		fmt.Fprint(w, p.s.sgr("\033[2m"))
+		if !p.s.showThinking {
+			fmt.Fprint(w, "(thinking…)")
+		}
+	}
+	if p.s.showThinking {
+		io.WriteString(w, r)
+	}
+}
+
+func (p *replyPrinter) chunk(c string) {
+	if p.inThink {
+		fmt.Fprint(p.reasoningTo(), p.s.sgr("\033[0m")+"\n\n")
+		p.inThink = false
+	}
+	if !p.answering {
+		fmt.Fprint(p.s.stdout(), p.s.sgr("\033[36m")) // cyan reply
+		p.answering = true
+	}
+	io.WriteString(p.s.stdout(), c)
+}
+
+// end closes the colour and the line after the last chunk.
+func (p *replyPrinter) end() { fmt.Fprint(p.s.stdout(), p.s.sgr("\033[0m")+"\n") }
