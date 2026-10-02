@@ -485,11 +485,11 @@ func (a *metalResident) fastPrefill() bool {
 }
 
 // ctxCap is this resident's resolved KV capacity — a.r.ctxCap when a real *resident exists, else
-// metalCtxCapMax. The fallback matters for TestMetalResidentCheckCap/TestMetalCtxCapWithinKernelBound
-// (metal/resident_cap_test.go), which deliberately construct a zero-value &metalResident{} (r ==
-// nil) to test checkCap/ContextCap as pure logic with no Metal device — those tests predate G6's
-// per-build ctxCap and are meant to keep working unmodified against "the historical constant"
-// semantics, so a nil/zero r reads as "no explicit request was ever resolved here", not as 0.
+// metalCtxCapDefault. The fallback matters for TestMetalResidentCheckCap (metal/resident_cap_test.go),
+// which deliberately constructs a zero-value &metalResident{} (r == nil) to test checkCap/ContextCap as
+// pure logic with no Metal device — that test predates G6's per-build ctxCap and is meant to keep
+// working unmodified against "the historical constant" semantics, so a nil/zero r reads as "no
+// explicit request was ever resolved here", not as 0.
 func (a *metalResident) ctxCap() int {
 	if a.r == nil || a.r.ctxCap == 0 {
 		return metalCtxCapDefault

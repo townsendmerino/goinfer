@@ -1,6 +1,6 @@
 # Metal audit program — 2026-10
 
-**Status: proposed 2026-10-01, not started.** This is the execution plan for `docs/audit-metal-2026-09-30.md`: the
+**Status: phase 1 in progress (started 2026-10-01 on the local branch `metal-audit`, not pushed until the program is done).** This is the execution plan for `docs/audit-metal-2026-09-30.md`: the
 order the audit's §10 items run in, re-tagged for the run-budget rules and this Mac's limits. Each item keeps the
 definition, band, probe and kill line its §10 row gives; this doc does not restate them, so read the row before
 starting an item. Item IDs are the audit's. Decisions marked **O-** are the audit's Track 4 owner decisions, not the
@@ -103,3 +103,10 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 ## Log
 
 - 2026-10-01: proposed.
+- 2026-10-01: started on the local branch `metal-audit` (worktree `~/tmcode/goinfer-metal-audit`), owner decision: no
+  push until the program is done. **Phase 1 item 1 (F-G03) done:** `TestAttentionKernelsPastTileBound` runs the shipped
+  `attention`, `attention_f32` and `attention_i8` at 4096–12289 keys, with windows and a sink, at head dims 64 and 128:
+  46 cases within 5e-5 of a float64 reference. Each multi-tile case plants a dominant key in its last tile and checks
+  that a first-tile-only answer would miss the bar; a mutation that skips every other tile failed all 34 multi-tile
+  cases. The constants-only test is removed, and the ceiling comments in `metal/model.go`, `metal/kernels.go` and
+  `metal/backend.go` are corrected.

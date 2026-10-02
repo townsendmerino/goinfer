@@ -22,9 +22,11 @@ import (
 // The staged/CPU path handles longer unless explicitly requested via decoder.Options.ResidentContext.
 const metalCtxCapDefault = 4096
 
-// metalCtxCapMax is the ceiling on resident KV positions for this backend (32768).
-// The attention kernel uses tiled online softmax with a 4096-key threadgroup score buffer
-// (attnScoreTileBound), allowing deep context up to metalCtxCapMax without threadgroup memory overflow.
+// metalCtxCapMax is the ceiling on resident KV positions for this backend (32768). The decode attention
+// kernels that keep scores in a 4096-key threadgroup buffer (attention, attention_f32 and attention_i8;
+// attnScoreTileBound) tile past it with online softmax, which TestAttentionKernelsPastTileBound checks
+// against a float64 reference. The exact prefill kernel does not tile; PrefillLast declines it past
+// prefillExactAttnMaxKeys.
 const metalCtxCapMax = 32768
 
 // attnScoreTileBound is the attention kernel's threadgroup score-buffer tile capacity:
