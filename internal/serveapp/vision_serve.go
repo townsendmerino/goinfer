@@ -124,6 +124,9 @@ func (lm *loadedModel) visionPrompt(tm *chat.Template, system string, turns []ch
 	if idx < 0 {
 		return visionInput{}, fmt.Errorf("no user turn to attach the image to")
 	}
+	if lm.glm != nil {
+		return lm.glmOcrVisionPrompt(tm, system, turns, idx, img)
+	}
 	if lm.qwenEnc != nil || lm.qwen3 != nil {
 		return lm.qwenVisionPrompt(tm, system, turns, idx, img)
 	}
@@ -164,9 +167,16 @@ func (lm *loadedModel) visionPrompt(tm *chat.Template, system string, turns []ch
 	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen}, nil
 }
 
-// qwenForward runs whichever Qwen tower this model carries: the Qwen2.5-VL ViT (eager) or the
-// Qwen3.5+ tower (loaded on first use).
+// qwenForward runs whichever tower this model carries on the shared Qwen-shaped route: the Qwen2.5-VL ViT (eager), the
+// Qwen3.5+ tower or the GLM-OCR tower (both loaded on first use). glmOcrVisionPrompt (glm_ocr_vision.go) calls it too.
 func (lm *loadedModel) qwenForward(pv []float32, grid [3]int) ([]float32, error) {
+	if lm.glm != nil {
+		enc, err := lm.glm.encoder()
+		if err != nil {
+			return nil, err
+		}
+		return enc.Forward(pv, [][3]int{grid})
+	}
 	if lm.qwen3 != nil {
 		enc, err := lm.qwen3.encoder()
 		if err != nil {
@@ -211,6 +221,51 @@ func (lm *loadedModel) qwenVisionPrompt(tm *chat.Template, system string, turns 
 	imgPos, imgLen := multimodal.FindImageRun(ids, lm.qwenImgTok)
 	if imgLen != n {
 		return visionInput{}, fmt.Errorf("image placeholder run = %d pads, want %d (template mismatch)", imgLen, n)
+	}
+	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true}, nil
+}
+
+// glmOcrVisionPrompt is the GLM-OCR image path: smart-resize preprocess (halved pixel bounds) -> the tower (the merged rows
+// replace the <|image|> run) -> the prompt with the image block prepended to the last user turn. The grid drives m-RoPE in
+// GenerateQwenVL, exactly as for Qwen.
+//
+// The image LEADS the user turn and the task prompt follows it with no separator (the checkpoint's own template:
+// `<|begin_of_image|><|image|>x N<|end_of_image|>Text Recognition:`); a request with no text part gets plain text
+// recognition rather than an image with nothing to do. The task is chosen by the user's own text ("Text Recognition:",
+// "Formula Recognition:", "Table Recognition:", multimodal.GlmOcrPrompt*).
+func (lm *loadedModel) glmOcrVisionPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
+	pv, grid, err := multimodal.QwenPreprocess(img.data, lm.qwenPP)
+	if err != nil {
+		return visionInput{}, err
+	}
+	imgHash := multimodal.HashImageBytes(img.data)
+	n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
+	if err := lm.imageFitsContext(n, grid); err != nil { // before the tower: minutes of CPU for an answer that is known now
+		return visionInput{}, err
+	}
+	hiddenDim := lm.model.Config().HiddenDim
+	features := func() ([]float32, error) {
+		feats, err := lm.qwenForward(pv, grid)
+		if err != nil {
+			return nil, fmt.Errorf("glm-ocr vision encoder: %w", err)
+		}
+		if len(feats) != n*hiddenDim {
+			return nil, fmt.Errorf("glm-ocr encoder emitted %d features, want %d", len(feats), n*hiddenDim)
+		}
+		return feats, nil
+	}
+	if strings.TrimSpace(turns[idx].Content) == "" {
+		turns[idx].Content = multimodal.GlmOcrDefaultPrompt
+	}
+	block := multimodal.GlmOcrImageBlock(n)
+	turns[idx].Content = block + turns[idx].Content
+	ids, err := encodeVisionSegments(lm, tm, system, turns, block)
+	if err != nil {
+		return visionInput{}, fmt.Errorf("encode: %w", err)
+	}
+	imgPos, imgLen := multimodal.FindImageRun(ids, lm.qwenImgTok)
+	if imgLen != n {
+		return visionInput{}, fmt.Errorf("image placeholder run = %d image tokens, want %d (template mismatch)", imgLen, n)
 	}
 	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true}, nil
 }

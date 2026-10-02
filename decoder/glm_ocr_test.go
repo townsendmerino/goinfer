@@ -803,3 +803,59 @@ func TestGlmOcr_mropeParity(t *testing.T) {
 		t.Errorf("continuation = %v, want %v", cont, g.ContinuationIDs)
 	}
 }
+
+// TestGlmOcr_generateQwenVL_cpuOnly: GenerateQwenVL, the entry point serve calls for an image turn, on a CPU-only load of
+// glm_ocr (m.resident == nil), through the SAME tiny image fixture and HF continuation as TestGlmOcr_mropeParity. The O1
+// review flagged that GenerateQwenVL's resident branches had never been checked for a nil resident. Every one of them sits
+// behind a type assertion on m.resident (ok is false on a nil interface) or behind tryClaimResident, so a CPU load takes the
+// CPU prefill + CPU decode and never touches a resident — this proves it by running the whole turn, twice with the same
+// image hash (the second call is where a reuse branch would be reached if it were reachable), and checks the tokens are
+// HF's and that no resident flag is set.
+func TestGlmOcr_generateQwenVL_cpuOnly(t *testing.T) {
+	raw, err := os.ReadFile("../testdata/glm_ocr_tiny_mrope_golden.json")
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Skip("no golden — run scripts/pin_glm_ocr_tiny.py")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var g glmMropeGolden
+	if err := json.Unmarshal(raw, &g); err != nil {
+		t.Fatal(err)
+	}
+	requireGlmTiny(t)
+	m, err := Load(glmOcrTinyCkpt, Options{Quant: "f32"})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer m.Close()
+	if m.resident != nil || m.ResidentActive() {
+		t.Fatalf("a CPU-only load has a resident (%v): this test would not exercise the nil-resident path", m.DecodePath())
+	}
+	hidden := m.w.arch.HiddenDim
+	feats := make([]float32, 0, g.NImage*hidden)
+	for _, row := range g.Features {
+		feats = append(feats, row...)
+	}
+	for round := range 2 {
+		var calls int
+		stream, gen := m.GenerateQwenVL(context.Background(), g.PromptIDs, g.ImageStart, g.NImage, 0xfeedface,
+			func() ([]float32, error) { calls++; return feats, nil }, [][3]int{g.Grid}, g.Merge, g.ImageToken, g.NNew, SamplingParams{Temperature: 0})
+		var got []int
+		for id := range stream {
+			got = append(got, id)
+		}
+		if err := gen.Err(); err != nil {
+			t.Fatalf("round %d: %v", round, err)
+		}
+		if gen.ImgPrefillResident || gen.PrefillReused != 0 {
+			t.Errorf("round %d: a resident flag is set on a CPU-only model (ImgPrefillResident %v, PrefillReused %d)", round, gen.ImgPrefillResident, gen.PrefillReused)
+		}
+		if calls != 1 {
+			t.Errorf("round %d: the lazy features closure ran %d times, want 1 (no reuse is possible without a resident)", round, calls)
+		}
+		if !slices.Equal(got, g.ContinuationIDs) {
+			t.Errorf("round %d: tokens %v, HF continuation %v", round, got, g.ContinuationIDs)
+		}
+	}
+}

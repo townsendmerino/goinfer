@@ -128,6 +128,7 @@ func (lm *loadedModel) closeEntryNatives() {
 		lm.qwenEnc.Close()
 		lm.qwenEnc = nil
 	}
+	lm.glm = nil   // GLM-OCR tower: same shape as qwen3 below, plain f32 weights, drop the reference
 	lm.qwen3 = nil // Qwen3.5+ tower: plain f32 weights, no native Close; drop the reference (and any loaded encoder with it)
 	lm.vproj = nil // no native Close (weights); drop the reference
 	// N-32 (docs/audit-2026-09-10.md): gemma4Enc (*vision.Gemma4Encoder) has no Close method

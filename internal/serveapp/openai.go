@@ -124,6 +124,10 @@ type loadedModel struct {
 	// would tax every text-only user's startup and memory for a tower they never call.
 	qwen3 *qwen3Tower
 
+	// GLM-OCR vision tower (O3; nil ⇒ not GLM-OCR / no tower). Shares qwenPP/qwenMerge/qwenImgTok and the GenerateQwenVL route
+	// with the two Qwen paths above, but its tower, prompt block and template are GLM's (glm_ocr_vision.go). Loaded lazily.
+	glm *glmOcrTower
+
 	// Gemma 4 vision tower (P7 serving integration; nil ⇒ not gemma4/no tower). No
 	// separate projector — Gemma4Encoder.Forward bakes the embed_vision projection
 	// in. gemma4MaxSoft is the checkpoint's vision_soft_tokens_per_image budget
@@ -263,7 +267,7 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 
 // visionCapable reports whether this model has a loaded vision tower.
 func (lm *loadedModel) visionCapable() bool {
-	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil || lm.qwen3 != nil || lm.gemma4Enc != nil
+	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil || lm.qwen3 != nil || lm.glm != nil || lm.gemma4Enc != nil
 }
 
 // tryEnter claims a queue slot then waits for this model's turn (J1's admission — the decode

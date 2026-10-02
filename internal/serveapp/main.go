@@ -1073,6 +1073,8 @@ func (s *server) loadVisionTower(cfg config) error {
 					dir = cand
 				} else if isQwen35VisionDir(cand) {
 					dir = cand
+				} else if isGlmOcrVisionDir(cand) {
+					dir = cand
 				} else if visionModelType(cand) == "gemma4" {
 					dir = cand
 				} else if _, err := multimodal.LoadProjector(cand); err == nil {
@@ -1103,6 +1105,11 @@ func (s *server) loadVisionTower(cfg config) error {
 	}
 	if mt := visionModelType(dir); mt == "qwen3_5" || mt == "qwen3_5_moe" {
 		return s.loadQwen35VisionTower(dir, int8Tower)
+	}
+	if visionModelType(dir) == "glm_ocr" {
+		// The GLM tower is CPU-only, so serve's "a GPU backend implies an int8 tower" rule (for the resident GPU encoders) does
+		// not apply: int8 only when asked for, because its int8 form is not gated on the real checkpoint.
+		return s.loadGlmOcrVisionTower(dir, cfg.visionQuant == "int8")
 	}
 	if visionModelType(dir) == "gemma4" {
 		return s.loadGemma4VisionTower(dir, int8Tower)
