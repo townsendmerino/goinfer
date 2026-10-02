@@ -518,3 +518,20 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
     a tail above 32 tokens on a resident that takes the step route, which is a decoder change, not done here.
   - Not measured: the served TTFT. The speed claim is T1.10's in-process timing of the same step pieces; a served
     check of a short prompt's TTFT, step against sequential, belongs to a night with Batch B.
+- 2026-10-02: **E-P01's above-floor half, measured before turning it on: it costs cache-independence, so it stays off
+  pending the owner.** Built behind `promptStepAboveFloor` (test-only, off): suffixes of up to 32 tokens on a prompt
+  past the floor run on the step. `TestPromptStepAboveFloor_reuseVsCold` (1.5B, set B, 10 prompts, a 512-token prefix,
+  then the suffix; a reuse turn against a cold prefill of the same whole prompt, then 32 greedy tokens from each):
+
+  | Suffix | seed argmax agrees | seed KL(cold ‖ reuse), mean / max | 32 greedy tokens diverge |
+  |---|---|---|---|
+  | 8 | 8 of 10 | 0.0060 / 0.0151 | 8 of 10 prompts |
+  | 16 | 9 of 10 | 0.0077 / 0.0352 | 6 of 10 |
+  | 32 | 7 of 10 | 0.0073 / 0.0200 | 7 of 10 |
+
+  The control (the half off: the suffix on the batched pass) equalled cold bit for bit in all 30 cases. Why it moves:
+  the pass computes the suffix's K/V from f16 activations, the step from decode's int8 ones. So with the half on, a
+  conversation's later turns would depend on whether the prefix cache hit; today that is so only for suffixes under 8
+  tokens, which run sequentially. Its gain, from T1.10: the step at 0.40× the pass at 16 tokens (about −55 ms on the
+  1.5B) and 0.80× at 32 (about −19 ms). It would also need the decoder's chunk cutter to keep tails above 32 tokens,
+  not built. A-P01, graded tonight, speeds the same short passes while keeping the pass's numerics.

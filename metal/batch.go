@@ -799,20 +799,35 @@ func (a *metalResident) PrefillLastNArgmax(embeddings [][]float32, startPos int)
 	return ids, nil
 }
 
+// promptStepMaxAboveFloor is the longest suffix the above-floor half of the step route takes (promptStepAboveFloor).
+// T1.10 measured the step at 0.40× / 0.80× / 1.56× the pass at K = 16 / 32 / 64 on the 1.5B and the 7B
+// (docs/tasks/task-metal-audit-2026-10.md, Batch A), so it stops at the last K measured faster.
+const promptStepMaxAboveFloor = 32
+
+// promptStepAboveFloor turns on E-P01's above-floor half: a suffix of up to promptStepMaxAboveFloor tokens on a prompt
+// that reaches the floor also runs on the step. OFF, and test-only, until the owner decides: unlike the below-floor half
+// it changes numerics. The pass computes a suffix's K/V from f16 activations and the step from decode's int8 ones, so
+// a reuse turn would no longer equal a cold prefill of the same prompt (TestPromptStepAboveFloor_reuseVsCold measures
+// by how much), and a chunked prefill's short tail would differ from the whole pass unless the decoder keeps tails
+// longer than promptStepMaxAboveFloor.
+var promptStepAboveFloor = false
+
 // promptStepOK reports whether PrefillLast takes the step route for n tokens at startPos (E-P01, audit-metal-2026-09-30):
 // the resident runs the step-kernel verify (VerifyCost: the batched step exists, and no logit transform separates its
 // rows from Forward's), and the prompt ends below the fast-prefill floor, where the batched pass declines and the
-// decoder would run the sequential loop. The step's rows are that loop's bits, so the route changes no output.
+// decoder would run the sequential loop. The step's rows are that loop's bits, so this route changes no output.
 //
-// It stops at the floor although T1.10 measured the step faster than the pass up to K = 32 (0.40× / 0.80× / 1.56× at
-// K = 16 / 32 / 64, docs/tasks/task-metal-audit-2026-10.md): above the floor a short suffix is also the tail of a
-// chunked prefill, and on the step it would differ from the whole pass the chunks must equal (TestMC5_prefillChunkInvariance's
-// C = 81 case: 20480 of 20480 logits differed with the route open there).
+// Above the floor the step is faster than the pass up to K = 32 too, but there it would replace the pass's numerics with
+// decode's: promptStepAboveFloor, off. A short suffix there is also a chunked prefill's tail, and on the step it differed
+// from the whole pass the chunks must equal (TestMC5_prefillChunkInvariance's C = 81 case: 20480 of 20480 logits).
 func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
 	if a.r.promptStepOff || n < 2 || a.VerifyCost() == nil {
 		return false
 	}
-	return floor > 0 && startPos+n < floor
+	if floor > 0 && startPos+n < floor {
+		return true
+	}
+	return promptStepAboveFloor && n <= promptStepMaxAboveFloor
 }
 
 // prefillByStep is PrefillLast on the step kernels (E-P01): the prompt's positions run as consecutive rows of the bound
