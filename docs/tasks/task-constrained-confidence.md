@@ -5,7 +5,8 @@
 > needed. One backbone pass scores every question, so D8 does not apply to this route. Unstarted; D10 is reading only.
 >
 > **Status, 2026-10-01: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b GRADED: f32 exact (PASS), the three
-> quantized arms keep calibration but miss the 98% top-1 bar, so the decision-model default is the owner's call
+> quantized arms keep calibration but miss the 98% top-1 bar; **the owner chose `int8int8` as the decision-model default (2026-10-02)**, recorded with
+> what it does not claim (it fails the registered bar; GPU int8int8 and a CUDA int4 discrepancy are ungraded/open)
 > ([`decisions-d6b-2026-09/results.md`](../measurements/decisions-d6b-2026-09/results.md)); D7 projected.**
 > - **D6a** ([`decisions-d6a-2026-09-28.md`](../measurements/decisions-d6a-2026-09-28.md)): arm A (Qwen3.5-9B, chat-v1, calibrated)
 >   reads top-1 0.4197 and ECE 0.1656, against JEV-9B's 0.9181 and a bar of 0.0632, so the registered rule says **build D2–D4**.
@@ -13,7 +14,7 @@
 >   to transformers' on the D0 fixture (prompts, token ids, label tokens: 150/150) and the gap numeric (4-bit weights plus goinfer's
 >   re-quantization; 60% argmax agreement with f32). On those same items the reference's own Route A reads 0.559 and the trained head
 >   0.934, so label scoring is about 37 points behind a trained head **in the reference itself**; the decision holds whatever the
->   numeric gap is. Owed by night: the 150 items at `--quant q4k` (CPU-only for this model on CUDA), to split that gap.
+>   numeric gap is. Owed by night: the 150 items at `--quant q4k` (CPU-only for this model on CUDA), to split that gap; **registered and queued 2026-10-02 as `d6a-q4k-150` (2.25 h, a record, not a gate)**.
 > - **D7's projection** is in [`decisions-d7-2026-09-28.md`](../measurements/decisions-d7-2026-09-28.md). For one
 >   question, a decision beats a schema answer by 1.11× at 256 prompt tokens and by ~1.01× at 4K. For five questions
 >   about one state on qwen3_5, decisions are 3–5× slower, so D8's trigger is projected to fire.

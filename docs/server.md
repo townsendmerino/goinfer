@@ -565,11 +565,14 @@ names that are served.
     Serve the base model as another entry if you need both.
     - A `.giw` built with `prequant -lora DIR` carries the adapter already, so no merge happens at load.
     - `head=` checks the bundle's `.lora.json` sidecar and refuses a bundle built without that exact adapter.
+  - **Precision: a model with `head=` loads at `int8int8` unless `quant=` or `--quant` says otherwise** (the owner's D6b decision, 2026-10-02). Against the transformers f32 reference on 150 items it agrees on 92.7% of top answers (mean KL 0.009; every one of its 11 disagreements is a near-tie, reference margin 0.10 or less)
+    and is no worse calibrated; it does **not** meet the registered 98% top-1 bar, and nothing here says it does. f32 is exact (`quant=f32`, about 36 GB for JEV-9B, so it fits a large-RAM box and no GPU). That grading is of the CPU path: **int8int8 on a CUDA or Metal resident has not been graded**
+    (`measurements/decisions-d6b-2026-09/results.md`).
   - **It runs on the GPU when the model is resident** (CUDA or Metal), through the same headless forward embeddings
     use, and falls back to the CPU otherwise.
     - On nobara's RTX 2070 SUPER, JEV-9B at int4 measured about 3 ms per prompt token, against about 65 ms on its
       CPU (exploratory, five items).
-    - The GPU's int4 kernels are not the CPU's, so the two answers differ slightly.
+    - The GPU's int4 kernels are not the CPU's, so the two answers differ: slightly on most items, and on one of the 150 by a lot (a 0.956 option read as 0.362 on CUDA int4, unexplained). Until that is explained, do not rely on decisions from a CUDA-resident int4 model (D6b).
   - **How closely it tracks the reference** is D6b in `tasks/task-constrained-confidence.md`, not yet graded.
 
 **Reasoning models (thinking).** Qwen3, Qwen3.5 and Gemma 4 can think before they answer, and their own chat templates

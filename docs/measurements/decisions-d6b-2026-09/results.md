@@ -1,6 +1,6 @@
 # D6b — Route B parity on JEV-9B, graded (2026-10-01)
 
-> **Status: graded against the pre-registration; one decision is the owner's.** f32 passes exactly. All three quantized
+> **Status: graded against the pre-registration. Owner decision recorded below (2026-10-02): the default is int8int8.** f32 passes exactly. All three quantized
 > arms keep calibration but miss the 98% top-1 bar. The registered rule has no branch for that outcome.
 
 Pre-registration: `docs/tasks/task-constrained-confidence.md`, D6b and its two amendments of 2026-09-30; grader
@@ -68,3 +68,16 @@ int4-cuda FAIL (KL 0.03797 vs 0.03, top-1 0.9067 vs 0.98); calibration unresolve
 ```
 
 (Full per-kind output: run `python3 grade.py results/` here.)
+
+## Owner decision, 2026-10-02: decision models load at `int8int8` by default
+
+Decided by the owner from the table above. (The code already loaded decision models at int8int8 from `455ae2a3`, 2026-10-01; this records the decision, and what it does and does not claim.)
+
+- **The bar is not moved.** int8int8 FAILS the registered top-1 bar (0.9267 against 0.98) and that stays the record. The default is a product choice with the disagreement stated, not a pass.
+- **Why int8int8.** f32 is the only arm that meets the bar but is about 36 GB, which excludes a 16 GB Mac and every consumer GPU; int8int8 is about half that, is the fastest of the CPU arms (6.7 s median per item against 8.9 s at f32), reads mean KL 0.009 (inside the 0.03 band), no resolvably worse calibration than the reference, and all 11 of its top-1 flips are near-ties (reference margin 0.10 or less).
+- **After the fact, not part of the verdict:** against GOLD on the 84 gold rows the quantized arms lose nothing the f32 reference gets right (`gold_accuracy.py`, `gold_accuracy.txt`): reference 65/84, int8int8 66/84 (+1, lost 0), int4 70/84 (+5, lost 0), int4-cuda 71/84 (+6, lost 0). The gains are all in the `score` kind, where the reference itself is 6/16: this is small-n noise around items the head finds hard, **not** evidence that quantization improves anything,
+  and it is post hoc. It is the reason the disagreement with f32 is not read as lost accuracy; it is not a re-grading.
+- **Not covered by the default, stated:** (1) the int8int8 arm graded here is the CPU one; **int8int8 on a CUDA or Metal resident is not graded** (Metal falls back to int4 for int8int8; CUDA's int8int8 resident was not run on these items). (2) The CUDA int4 path has one confident flip (a 0.956 option read as 0.362) that is not a tie and is not explained: do not rely on decisions from a CUDA-resident int4 model until it is.
+  (3) A margin-aware or gold-accuracy re-grade, registered before it runs, is open; until one exists no document says the int8int8 default "meets" the bar.
+- **f32 stays available** (`quant=` or `--quant f32`) as the exact option.
+

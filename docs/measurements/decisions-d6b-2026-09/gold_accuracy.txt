@@ -1,0 +1,14 @@
+gold rows: 84
+reference  accuracy vs gold: 65/84 = 0.774
+f32        accuracy vs gold: 65/84 = 0.774
+int8int8   accuracy vs gold: 66/84 = 0.786
+int4       accuracy vs gold: 70/84 = 0.833
+int4-cuda  accuracy vs gold: 71/84 = 0.845
+paired against the reference:
+  f32       : gained  0, lost  0 of 84; mean +0.000, 95% bootstrap [+0.000, +0.000]
+  int8int8  : gained  1, lost  0 of 84; mean +0.012, 95% bootstrap [+0.000, +0.036]
+  int4      : gained  5, lost  0 of 84; mean +0.060, 95% bootstrap [+0.012, +0.119]
+  int4-cuda : gained  6, lost  0 of 84; mean +0.071, 95% bootstrap [+0.024, +0.131]
+  gold choice n=34: reference 25  f32 25  int8int8 26  int4 26  int4-cuda 27
+  gold noul   n=34: reference 34  f32 34  int8int8 34  int4 34  int4-cuda 34
+  gold score  n=16: reference 6  f32 6  int8int8 6  int4 10  int4-cuda 10
