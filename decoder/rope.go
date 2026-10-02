@@ -139,8 +139,14 @@ func applyRoPEInterleaved(vec []float32, heads, headDim, pos int, invFreq []floa
 //     position count, so mropeDelta is typically negative).
 //
 // interleave selects GPT-J pairwise rotation (adjacent dims 2d,2d+1) over the
-// NeoX rotate_half layout (dims d, d+half) — Cohere/Falcon/GPT-J vs Llama/Qwen.
-// m-RoPE (Qwen2.5-VL, Qwen3-VL) is NeoX-only, so interleave applies to the scalar path only.
+// NeoX rotate_half layout (dims d, d+half) — Cohere/Falcon/GPT-J/GLM-OCR vs Llama/Qwen.
+// It applies to the scalar path AND, with the contiguous-section layout (mropeInterleaved
+// false), to the m-RoPE block: GLM-OCR rotates pairwise with Qwen2.5-VL's contiguous t/h/w
+// sections, which is applyMRoPEPairwise. Qwen2.5-VL and Qwen3-VL are NeoX m-RoPE
+// (interleave false), so they still go to applyMRoPE, untouched. The one combination
+// nothing registers — pairwise rotation with Qwen3-VL's strided section layout — keeps
+// the old behaviour (applyMRoPE, NeoX) rather than inventing a rotation no checkpoint
+// has been checked against.
 //
 // mropeInterleaved is a SEPARATE, unrelated flag — Qwen3-VL's per-frequency-index m-RoPE
 // component layout vs Qwen2.5-VL's contiguous-block one (mropeComponentInterleaved vs
@@ -155,6 +161,8 @@ func ropeAt(vec []float32, heads, headDim, seqPos int, invFreq []float64, scale 
 	switch {
 	case mropePos == nil:
 		rope(vec, heads, headDim, seqPos, invFreq, scale)
+	case seqPos < len(mropePos) && interleave && !mropeInterleaved:
+		applyMRoPEPairwise(vec, heads, headDim, mropePos[seqPos], section, invFreq, scale)
 	case seqPos < len(mropePos):
 		applyMRoPE(vec, heads, headDim, mropePos[seqPos], section, invFreq, scale, mropeInterleaved)
 	default:
@@ -183,6 +191,9 @@ func mropeDelta(pos [][3]int, seqLen int) int {
 // section sums to len(invFreq). For a TEXT token the three positions are equal, so this reduces
 // EXACTLY to applyRoPE(pos[0]) — the basis for keeping the text path bit-identical, for EITHER
 // layout. (P5, P8)
+//
+// NeoX (split-half) rotation only. GLM-OCR's pairwise rotation over contiguous sections is
+// applyMRoPEPairwise, a separate function so this one stays byte-for-byte what Qwen runs.
 //
 // interleaved selects which component-lookup formula d maps through: false = mropeComponent
 // (Qwen2.5-VL's contiguous-block layout, matching HF apply_multimodal_rotary_pos_emb's
@@ -226,6 +237,54 @@ func applyMRoPE(vec []float32, heads, headDim int, pos [3]int, section []int, in
 			x2 := float64(hVec2[d])
 			hVec1[d] = float32(x1*c - x2*s)
 			hVec2[d] = float32(x2*c + x1*s)
+		}
+	}
+}
+
+// applyMRoPEPairwise is GLM-OCR's (GLM-4.1V's) multimodal RoPE: the GPT-J pairwise rotation of
+// applyRoPEInterleaved (pair (2d, 2d+1) shares frequency d) with the m-RoPE position component
+// for frequency index d taken from the CONTIGUOUS section blocks of mropeComponent (d < section[0]
+// temporal, the next section[1] height, the rest width). It is not applyMRoPE with a flag and not
+// applyRoPEInterleaved with a flag: the two existing functions each fix one of the two axes, and
+// no other family needs both, so this is the one place the combination lives.
+//
+// HF (modeling_glm_ocr.py): GlmOcrTextRotaryEmbedding.apply_mrope builds freqs as
+// cat(chunk[i%3] for i, chunk in enumerate(freqs.split(mrope_section))) — contiguous t/h/w blocks —
+// emb = cat(freqs, freqs); apply_rotary_pos_emb then keeps the first half of cos/sin,
+// repeat_interleave(2)s it, and applies rotate_half_llm (x[..., 0::2] / x[..., 1::2]).
+//
+// For a TEXT token the three positions are equal, so this reduces EXACTLY (bit-identically) to
+// applyRoPEInterleaved(pos[0]); only image-block positions differ. section sums to len(invFreq).
+func applyMRoPEPairwise(vec []float32, heads, headDim int, pos [3]int, section []int, invFreq []float64, scale float64) {
+	half := len(invFreq) // == rotaryDim/2; section sums to this
+	if half == 0 || heads == 0 {
+		return
+	}
+	var cosTable, sinTable [128]float64
+	var cosBuf, sinBuf []float64
+	if half <= len(cosTable) {
+		cosBuf, sinBuf = cosTable[:half], sinTable[:half]
+	} else {
+		cosBuf, sinBuf = make([]float64, half), make([]float64, half)
+	}
+	for d := range half {
+		theta := float64(pos[mropeComponent(d, section)]) * invFreq[d]
+		cosBuf[d] = math.Cos(theta) * scale
+		sinBuf[d] = math.Sin(theta) * scale
+	}
+	_ = cosBuf[half-1]
+	_ = sinBuf[half-1]
+	for h := range heads {
+		off := h * headDim
+		hVec := vec[off : off+2*half]
+		_ = hVec[2*half-1]
+		for d := range half {
+			c := cosBuf[d]
+			s := sinBuf[d]
+			x1 := float64(hVec[2*d])
+			x2 := float64(hVec[2*d+1])
+			hVec[2*d] = float32(x1*c - x2*s)
+			hVec[2*d+1] = float32(x2*c + x1*s)
 		}
 	}
 }

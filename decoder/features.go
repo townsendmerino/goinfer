@@ -132,6 +132,25 @@ const (
 	// not the HF modeling file's opaque Triton-kernel call. A genuinely different recurrence, so
 	// its own feature rather than a FeatDeltaNet variant; no resident backend implements it.
 	FeatKDA ResidentFeature = "kda"
+	// FeatPairwiseMRoPE (GLM-OCR): GPT-J pairwise rotation (dims 2d, 2d+1) on a family that also
+	// carries m-RoPE sections (ropeInterleave with MRopeSection set). Every resident rope kernel is
+	// the NeoX half-split rotation — cuda/glue.cu `rope` and rope_kv, metal/kernels.go `rope`, and
+	// the m-RoPE image-prefill kernels — so a resident runner would run GLM-OCR's rotation on the
+	// wrong dim pairs: no error, fluent-looking wrong logits. MEASURED 2026-10-01 on the CUDA
+	// resident (RTX 2070 SUPER, int8int8, 48-token prompt, resident vs CPU at the same quant, tiny
+	// fixture with peaked attention): glm-ocr-tiny worst cosine -0.34; a NeoX llama fixture built the
+	// same way stayed at 1.000000, and CPU int8int8 vs CPU f32 alone (the quantization noise) was
+	// 0.988. Declared by no backend, so glm_ocr decodes and prefills on the CPU until a pairwise
+	// variant of the kernels exists (docs/tasks/task-glm-ocr-2026-10.md O6).
+	//
+	// Scoped to the m-RoPE families on purpose, NOT to every ropeInterleave arch: Cohere/Command-R
+	// and Cohere2 are pairwise too and are admitted on cuda and metal by the shipped tables. The same
+	// probe on a Command-R fixture with peaked attention (cohere-tiny rebuilt with 0.25-std weights,
+	// scratch, not committed) gave worst cosine 0.06 resident-vs-CPU where the committed
+	// 0.02-std cohere-tiny gate reads 0.9997 — flat attention makes a wrong rotation invisible. That
+	// is a finding about the Cohere admission, recorded in the task report and left unchanged here
+	// because its CUDA/Metal gates assert residency.
+	FeatPairwiseMRoPE ResidentFeature = "pairwise-mrope"
 )
 
 // residentFeatures derives the features this architecture actually needs from its own flags.
@@ -216,6 +235,9 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.granite != nil || a.nemotron != nil, FeatSSM)
 	add(a.qwen35 != nil, FeatDeltaNet)
 	add(a.kda != nil, FeatKDA)
+	// Pairwise rotation + m-RoPE sections (GLM-OCR); see FeatPairwiseMRoPE for why this is not simply
+	// "ropeInterleave".
+	add(a.ropeInterleave && len(a.MRopeSection) > 0, FeatPairwiseMRoPE)
 	add(a.lfm2 != nil, FeatShortConv)
 	add(a.gptoss != nil, FeatAttnSink)
 	// Laguna's attention output gate AND its per-layer query-head count. Both live on

@@ -458,6 +458,16 @@ func representativeConfig(modelType string) *Config {
 			ModelType: "phi3", HiddenDim: 64, NumLayers: 3, NumHeads: 4, NumKVHeads: 2,
 			VocabSize: 128, IntermediateDim: 128, RMSNormEps: 1e-5, RoPEGlobalBase: 10000,
 		}
+	case "glm_ocr", "glm_ocr_text":
+		// Mirrors testdata/glm-ocr-tiny (scripts/pin_glm_ocr_tiny.py): head_dim 32 EXPLICIT and
+		// != hidden/heads (16), GQA, full-width pairwise rotary with the real [16,24,24] m-RoPE
+		// sections scaled to the tiny half-width ([4,6,6] over 16 frequencies). The matrix shows
+		// rope_style "interleave" only if the descriptor really sets ropeInterleave.
+		return &Config{
+			ModelType: modelType, HiddenDim: 64, NumLayers: 3, NumHeads: 4, NumKVHeads: 2, HeadDim: 32,
+			VocabSize: 128, IntermediateDim: 192, RMSNormEps: 1e-5, HiddenAct: "silu",
+			RopeParameters: json.RawMessage(`{"rope_type":"default","rope_theta":10000.0,"partial_rotary_factor":1.0,"mrope_section":[4,6,6]}`),
+		}
 	case "llama4_text":
 		return &Config{
 			ModelType: "llama4_text", HiddenDim: 64, NumLayers: 4, NumHeads: 8, NumKVHeads: 4, HeadDim: 8,
@@ -555,6 +565,8 @@ var familyDocs = map[string]familyDoc{
 	"kimi_k2":          {"Kimi K2", "Moonshot Kimi K2 / K2.5 / K2.6 / K2.7-Code (DeepseekV3 arch: MLA + DeepSeekMoE — same arch across the K2.x line)", "safetensors, GGUF", "text"},
 	"bailing_hybrid":   {"Ling 3.0", "inclusionAI Ling 3.0 (tiny/flash): DeepSeek-style MLA alternating with Kimi Delta Attention (per-channel-decay delta rule) every layer_group_size-th layer, over a DeepSeekMoE FFN", "safetensors", "text"},
 	"phi3":             {"Phi-3 / Phi-4", "Microsoft Phi-3/Phi-4 dense (fused qkv/gate-up, partial rotary)", "safetensors, GGUF", "text"},
+	"glm_ocr":          {"GLM-OCR", "Zhipu GLM-OCR text decoder (the VL wrapper's text_config): GLM-4V's 4-norm sandwich with GLM's own tensor names, fused gate_up, explicit head_dim, pairwise m-RoPE with contiguous sections; MTP layer skipped; no vision tower yet", "safetensors", "text"},
+	"glm_ocr_text":     {"GLM-OCR", "Zhipu GLM-OCR text decoder (the VL wrapper's text_config): GLM-4V's 4-norm sandwich with GLM's own tensor names, fused gate_up, explicit head_dim, pairwise m-RoPE with contiguous sections; MTP layer skipped; no vision tower yet", "safetensors", "text"},
 	"llama4_text":      {"Llama 4", "Meta Llama 4 (Scout/Maverick) text decoder: iRoPE (RoPE/NoPE interleave) + L2 QK-norm + attn-temp + dense/MoE interleave (top-1 sigmoid + shared)", "safetensors, GGUF", "text"},
 	"gpt_oss":          {"gpt-oss", "OpenAI gpt-oss 20b/120b sparse MoE: per-head attention sinks + clamped interleaved-SwiGLU + alternating sliding/full + YaRN (MXFP4 experts; GPU-resident on BOTH Metal and CUDA since 2026-08-31 — the CUDA half validated on the real 20B, resident on an 8 GB card via --moe-cache-experts)", "safetensors, GGUF", "text"},
 	"lfm2":             {"LFM2.5", "Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)", "safetensors", "text"},
@@ -602,6 +614,7 @@ var siteDocs = map[string]siteDoc{
 	"mixtral":          {"Mistral's mixture-of-experts.", []string{"chat"}},
 	"olmo3":            {"Ai2's Olmo 3, 7B and 32B.", []string{"chat"}},
 	"phi3":             {"Microsoft's Phi-3 and Phi-4.", []string{"chat"}},
+	"glm_ocr":          {"Zhipu's GLM-OCR document model, the text half only. It doesn't take images yet.", []string{"chat"}},
 	"qwen2":            {"Qwen2 and Qwen2.5, including the Coder models most of goinfer's numbers are measured on.", []string{"chat", "code"}},
 	"qwen2_moe":        {"Qwen1.5 and Qwen2 mixture-of-experts.", []string{"chat"}},
 	"qwen2_5_vl":       {"Qwen2.5-VL. Reads images.", []string{"chat", "vision"}},

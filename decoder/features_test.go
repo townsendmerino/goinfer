@@ -59,6 +59,14 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// is a llama. Same empty profile, same backends.
 	"internlm2": {},
 	"internlm3": {},
+	// GLM-OCR text decoder: Gemma's FOUR-norm sandwich placement (FeatSandwichNorm) over plain
+	// RMSNorm and a plain SwiGLU MLP, GQA with no bias or QK-norm, full-width rotary. NOTE what the
+	// feature taxonomy would otherwise miss: the rotation is PAIRWISE (GPT-J) over m-RoPE sections
+	// and every resident rope kernel is NeoX half-split, so the family also needs
+	// FeatPairwiseMRoPE, which no backend declares (CPU-only until a pairwise kernel lands).
+	// See TestGlmOcr_residentDeclined.
+	"glm_ocr":      {FeatPairwiseMRoPE, FeatSandwichNorm},
+	"glm_ocr_text": {FeatPairwiseMRoPE, FeatSandwichNorm},
 	// Dense Granite 4.2: llama-shaped, and EMPTY on purpose, not by omission — checked against
 	// all three released sizes (3b/8b/30b), which all ship embedding_multiplier and
 	// logits_scaling at their identity value 1.0 (FeatEmbedScale/FeatLogitScale only trigger
@@ -259,7 +267,11 @@ var admissionGolden = map[string][]string{
 	"granitemoehybrid": {"webgpu"},
 	"kimi_k2":          {"cuda", "webgpu"},
 	"bailing_hybrid":   {}, // FeatKDA undeclared everywhere -- new this pass
-	"llama":            {"cuda", "metal", "webgpu"},
+	// GLM-OCR: CPU-only. FeatPairwiseMRoPE is declared by no backend because every resident rope
+	// kernel is NeoX half-split (measured: resident-vs-CPU cosine -0.34 on glm-ocr-tiny).
+	"glm_ocr":      {},
+	"glm_ocr_text": {},
+	"llama":        {"cuda", "metal", "webgpu"},
 	// G5 (docs/tasks/task-gpu-paths-2026-09.md): FeatNoPE declared on cuda+metal (RopeInvFreqLayer
 	// zeroes the NoPE layers' invFreq table, no new kernel) — smollm3's ONLY required feature,
 	// so it now reaches both.

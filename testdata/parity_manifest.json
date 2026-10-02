@@ -245,6 +245,25 @@
         "cosine_mean": 1.00000
       }
     },
+    "glm_ocr": {
+      "uses": [
+        "core",
+        "loaders",
+        "quant"
+      ],
+      "own": [
+        "decoder/glm_ocr_test.go",
+        "scripts/pin_glm_ocr_tiny.py"
+      ],
+      "deps_hash": "",
+      "status": "experimental",
+      "validated_at": null,
+      "date": null,
+      "reference": null,
+      "machine": null,
+      "method": null,
+      "metrics": null
+    },
     "gpt-oss": {
       "uses": [
         "core",

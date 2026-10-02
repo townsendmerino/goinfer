@@ -50,6 +50,7 @@ var identityTiny = []identityAsset{
 	{Family: "gemma4", Name: "moe-kv-tiny", Path: "testdata/gemma4-moe-kv-tiny", Golden: "testdata/gemma4_moe_kv_forward_golden.json"},
 	{Family: "glm4_moe", Name: "tiny", Path: "testdata/glm-tiny", Golden: "testdata/glm_tiny_text_golden.json"},
 	{Family: "glm4_moe", Name: "tiny-bias", Path: "testdata/glm-tiny-bias", Golden: "testdata/glm_tiny_bias_text_golden.json"},
+	{Family: "glm_ocr", Name: "tiny", Path: "testdata/glm-ocr-tiny", Golden: "testdata/glm_ocr_tiny_golden.json"},
 	{Family: "gpt-oss", Name: "tiny-gguf", Path: "decoder/testdata/gptoss_tiny.gguf", Golden: "decoder/testdata/gptoss_tiny_golden.json"},
 	{Family: "gpt2", Name: "124m", Path: "testdata/gpt2", Golden: "testdata/gpt2_forward_golden.json"},
 	{Family: "granite", Name: "dense-tiny", Path: "testdata/granite-dense-tiny", Golden: "testdata/granite_dense_forward_golden.json"},
