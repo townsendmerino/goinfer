@@ -156,3 +156,9 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
     length and each chunk's offset); a pointer in `prefill_startpos_test.go`, whose head-dim-16 fixture runs the fused
     kernel; a dated note under the 2026-09-12 audit's G-08 closure; and the F-G03 test now releases each case's
     buffers (about 300 MB by its buffer sizes, held until the process ended).
+- 2026-10-01: **A-G01 done.** Its kernel half is F-G01's test (steel with window, ragged M and startPos, against
+  float64 rather than the exact kernel). `TestPrefillFloor` (default-run) covers the floor: the parser ("" → 64, "0"
+  → 0, "128" → 128; "-1", "x" and " 32" → 64), and the decision through `PrefillLast` on the tiny resident with the
+  knob set per model: 63 positions decline and 64 admit; cached positions count, so 56 + 7 declines and 56 + 8 and
+  1000 + 8 admit; "0" admits 8, "128" declines 100 and admits 128; `PrefillPath` names the floor. Mutations: dropping
+  `startPos` from the predicate fails 2 cases, `<` for `<=` 3, a parser that accepts negatives 1.

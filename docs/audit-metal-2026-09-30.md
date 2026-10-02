@@ -43,7 +43,8 @@ most of `docs/tasks/` were not in the audited snapshot; findings that lean on th
 - Since 2026-10-01 the program in `docs/tasks/task-metal-audit-2026-10.md` fixes findings on a branch; the Track 0
   status column below says which. So far: F-G03 (the decode attention kernels tested past 4096 keys against a float64
   reference), T0.3's F-C03, D-C01 and A-C02, T0.4's C-C01 (on the Metal side; the fit guards are unchanged), and
-  F-G01 (a default test of the steel prefill attention kernel against a float64 reference).
+  F-G01 (a default test of the steel prefill attention kernel against a float64 reference), and A-G01 (the
+  fast-prefill floor).
 - `aff6f5e8` and `8e73aef5` (2026-10-01) put the 2026-09-30 peer-sweep cells into `docs/benchmarks.md`. That supplies the
   served K=3900 TTFT cell T1.11 asked for (LEVEL, 0.983: 4256.6 ms against Ollama's 4184.8, cell h) and replaces the stale
   rows A-D01 and B-D01 name; §0 quotes those rows as they stood at the snapshot. Still owed: the short-K prefill rows
@@ -570,6 +571,12 @@ snapshot (the test `metal/r3_startpos_speed_test.go` is). The quoted result (bat
   `startPos=1000, M=8` admits, or that the knob parses.
 - Fix: a synthetic hd=128 case in `attention_prefill_fused_test.go`'s table run against `attention_prefill` (exact) with window, ragged
   M and startPos; a pure-logic test for the floor predicate.
+- Status, 2026-10-01: done. The kernel half is F-G01's `TestAttentionPrefillSteelMatchesFloat64`, which runs steel with
+  window, ragged M and startPos against float64 rather than against the exact kernel. `TestPrefillFloor` (default-run)
+  checks the parser and the decision through `PrefillLast` on the tiny resident: 63 positions decline and 64 admit,
+  cached positions count (56 + 7 declines, 56 + 8 and 1000 + 8 admit), the knob raises the floor or turns it off, and
+  `PrefillPath` names it. Dropping `startPos` from the predicate, `<` for `<=`, and accepting negative knob values each
+  fail it.
 
 #### A-C02 · Minor: no runtime finite check on batched-prefill logits
 The residual stream is f16 (`xF` etc., `metal/prefill.go:951-956`); a family whose residual exceeds 65504 gives Inf and NaN logits.
