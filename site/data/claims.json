@@ -200,5 +200,106 @@
         "heading": "The run"
       }
     }
+  ],
+  "book": [
+    {
+      "id": "ch1-count-tokens",
+      "chapter": "docs/book/01-text-becomes-numbers.md",
+      "figure": "18",
+      "what": "count_tokens for one sentence on the 0.5B, chat template included",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Chapter 1: tokens (2026-10-02)"
+      }
+    },
+    {
+      "id": "ch3-top-logprob",
+      "chapter": "docs/book/03-picking-a-token.md",
+      "figure": "82.84",
+      "what": "Paris's next-token probability on the 0.5B, CPU, greedy",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Chapter 3: next-token probabilities (2026-10-02)"
+      }
+    },
+    {
+      "id": "ch4-kv-8192",
+      "chapter": "docs/book/04-the-loop-and-the-kv-cache.md",
+      "figure": "0.44",
+      "what": "fit's KV at 8192 positions for the 1.5B on the CPU (f32 cache)",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Chapters 4 and 5: sizes (2026-10-02)"
+      }
+    },
+    {
+      "id": "ch4-kv-8192-metal",
+      "chapter": "docs/book/04-the-loop-and-the-kv-cache.md",
+      "figure": "0.22",
+      "what": "fit's KV at 8192 positions for the 1.5B on Metal (f16 cache)",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Chapters 4 and 5: sizes (2026-10-02)"
+      }
+    },
+    {
+      "id": "ch5-int8-dense",
+      "chapter": "docs/book/05-making-the-weights-small.md",
+      "figure": "1.66",
+      "what": "fit's dense weights for the 1.5B at int8int8",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Chapters 4 and 5: sizes (2026-10-02)"
+      }
+    },
+    {
+      "id": "ch9-accepted",
+      "chapter": "docs/book/09-guessing-ahead.md",
+      "figure": "95",
+      "what": "drafted tokens accepted, 0.5B drafting for the 1.5B, greedy, CPU",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Chapter 9: draft acceptance (2026-10-02)"
+      }
+    },
+    {
+      "id": "ch9-tok-per-pass",
+      "chapter": "docs/book/09-guessing-ahead.md",
+      "figure": "4.6",
+      "what": "tokens per pass, the same run",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Chapter 9: draft acceptance (2026-10-02)"
+      }
+    },
+    {
+      "id": "ch10-backends",
+      "chapter": "docs/book/10-kernels-and-backends.md",
+      "figure": "backends: cpu metal",
+      "what": "the darwin-arm64 release's compiled-in backends",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Chapter 10: backends (2026-10-02)"
+      }
+    },
+    {
+      "id": "ch11-check",
+      "chapter": "docs/book/11-knowing-youre-right.md",
+      "figure": "2 of 8",
+      "what": "goinfer-serve check on the 0.5B: checks failed",
+      "date": "2026-10-02",
+      "source": {
+        "path": "docs/measurements/book-try-it-2026-10.md",
+        "heading": "Chapter 11: the server's self-check (2026-10-02)"
+      }
+    }
   ]
 }

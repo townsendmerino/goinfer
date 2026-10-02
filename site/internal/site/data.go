@@ -118,12 +118,28 @@ type DecisionClaim struct {
 	Source     Source `json:"source"`
 }
 
+// BookClaim is a figure one of docs/book's chapters prints in its "Try it" section: what a reader running the
+// chapter's command should see. It must appear in that section of the chapter, as printed, and in the cited record
+// with the record's date, so a chapter's number is always a measured one and moves only with its record.
+type BookClaim struct {
+	ID      string `json:"id"`
+	Chapter string `json:"chapter"` // the chapter file, e.g. docs/book/05-making-the-weights-small.md
+	Figure  string `json:"figure"`  // the number exactly as the chapter and the record print it
+	What    string `json:"what"`    // what the figure is, in words
+	Date    string `json:"date"`
+	Source  Source `json:"source"`
+}
+
+// BookTryIt is the heading every book claim's figure must sit under in its chapter.
+const BookTryIt = "Try it"
+
 // Claims is the whole claims file.
 type Claims struct {
 	Method    string          `json:"method"`
 	Facts     []Fact          `json:"facts"`
 	Claims    []Claim         `json:"claims"`
 	Decisions []DecisionClaim `json:"decisions"`
+	Book      []BookClaim     `json:"book"`
 }
 
 // Inputs is everything a build reads.

@@ -1,0 +1,7 @@
+decoder: .giw context capped at 38338 (model allows 262144) so that KV+scratch fits: needs ~2.10 GB of 3.10 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+/Users/francistownsend-merino/models/gemma4-26b-int4-v14st.metal.giw @ int4, ctx=8192
+
+cpu     WEIGHT-PAGED
+        expert-cached needs at least top-k=8 slots/layer (0.75 GB) but only 0.00 GB is free beside dense+KV
+metal   DECLINE
+        expert-cached needs at least top-k=8 slots/layer (0.75 GB) but only 0.00 GB is free beside dense+KV

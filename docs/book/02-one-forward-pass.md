@@ -182,7 +182,7 @@ regimes apart properly.
 
 For now, one measured anchor, on the same class of hardware — an M1 Pro CPU backend, int4:
 generating tokens runs around 39–41 per second, while processing a 3,020-token prompt takes
-101.6 seconds at the shipped default. Same forward pass, wildly different economics.
+38.9 seconds at the shipped default (Chapter 8). Same forward pass, wildly different economics.
 
 ---
 

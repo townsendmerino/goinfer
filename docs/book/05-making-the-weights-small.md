@@ -225,6 +225,20 @@ What quantization does *not* fix is a model that does not fit at all. A 27B mode
 still over 15 GB, which fits neither of this repo's development GPUs. Chapter 6 is about what
 you do when the model does not fit.
 
+
+## Try it
+
+Ask `fit` (Chapter 4's command) for the 1.5B at 8-bit weights:
+
+```sh
+goinfer-chat fit hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m -quant int8int8
+```
+
+The CPU row reads `dense 1.66 GB`: every weight at one byte, plus its group scales and the embedding table. The default
+4-bit load is much smaller; `fit` prints that too, but from whichever converted copy of the model your machine has
+cached, so the exact figure depends on what you ran before (the record explains). Measured on 2026-10-02 with the
+v0.20.0 release ([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md), chapters 4 and 5).
+
 ---
 
 *Sources: `docs/benchmarks.md` §int4/int8int8 comparison, [`docs/completed/task-w4a8-neon-bandwidth.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/completed/task-w4a8-neon-bandwidth.md),

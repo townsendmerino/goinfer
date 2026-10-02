@@ -197,6 +197,43 @@ func CheckClaims(root string, in *Inputs) error {
 			bad = append(bad, fmt.Sprintf("decision claim %s: date %q is not under %q in %s", d.ID, d.Date, d.Source.Heading, d.Source.Path))
 		}
 	}
+	// Every chapter with a "Try it" section has at least one book claim: otherwise its figures reach a reader unchecked.
+	chapters, _ := filepath.Glob(filepath.Join(root, "docs", "book", "*.md"))
+	claimed := map[string]bool{}
+	for _, b := range in.Claims.Book {
+		claimed[b.Chapter] = true
+	}
+	for _, p := range chapters {
+		rel := filepath.ToSlash(strings.TrimPrefix(p, root+string(filepath.Separator)))
+		md, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		if _, ok := Section(string(md), BookTryIt); ok && !claimed[rel] {
+			bad = append(bad, fmt.Sprintf("%s has a %q section and no book claim in site/data/claims.json", rel, BookTryIt))
+		}
+	}
+	for _, b := range in.Claims.Book {
+		sec, err := section(b.Source)
+		if err != nil {
+			bad = append(bad, fmt.Sprintf("book claim %s: %v", b.ID, err))
+			continue
+		}
+		if !hasToken(sec, b.Figure) {
+			bad = append(bad, fmt.Sprintf("book claim %s: figure %q is not under %q in %s", b.ID, b.Figure, b.Source.Heading, b.Source.Path))
+		}
+		if !strings.Contains(sec, b.Date) {
+			bad = append(bad, fmt.Sprintf("book claim %s: date %q is not under %q in %s", b.ID, b.Date, b.Source.Heading, b.Source.Path))
+		}
+		ch, err := section(Source{Path: b.Chapter, Heading: BookTryIt})
+		if err != nil {
+			bad = append(bad, fmt.Sprintf("book claim %s: %v", b.ID, err))
+			continue
+		}
+		if !hasToken(ch, b.Figure) {
+			bad = append(bad, fmt.Sprintf("book claim %s: figure %q is not in %s's %q section", b.ID, b.Figure, b.Chapter, BookTryIt))
+		}
+	}
 	for _, f := range in.Claims.Facts {
 		sec, err := section(f.Source)
 		if err != nil {

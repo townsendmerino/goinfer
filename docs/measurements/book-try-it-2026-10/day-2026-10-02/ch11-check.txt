@@ -1,0 +1,12 @@
+goinfer check → http://127.0.0.1:18181
+
+models list ...............  ok    1 model · cpu (int4) [int4 layout: row4-only (down, embed, gate/up, lm_head, qkv)]
+chat, streamed ............  ok    TTFT 0.04s · 147.8 tok/s · usage present
+tools, OpenAI .............  FAIL  turn two asked for the tool again instead of answering — the agent-livelock shape (M-18)
+tools, harness-scale ......  ok    call get_weather({"city": "Paris"}) among 12 tools
+structured output .........  ok    {"type":"integer"} → 366
+stop sequences ............  FAIL  the reply never reached the stop sequence, so this proves nothing about it: "The count of the numbers from 1 to 10 is 10."
+count_tokens ..............  ok    23 tokens, matches usage
+vision ....................  skip  no vision tower loaded (start the server with --vision <dir> to check this row)
+
+2 of 8 checks FAILED

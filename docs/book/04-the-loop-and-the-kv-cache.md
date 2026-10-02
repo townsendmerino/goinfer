@@ -189,8 +189,8 @@ it is worth understanding why a Go engineer might choose it.
 generation needs a second KV cache, and it competes for the same weights and the same arithmetic
 units. Running two at once on one machine does not make either faster; it makes both slower and
 doubles the cache memory. So the parallelism gets spent *inside* one request instead —
-Chapter 8's 3.28× from six workers is goroutines fanning out across one matrix multiply, not
-across six users.
+the six-worker prefill that shipped in [v0.15.0](https://github.com/townsendmerino/goinfer/blob/main/docs/releases/v0.15.0-release-notes.md) (3.28× at 3,020 tokens: 333.3 s to 101.6 s) is goroutines
+fanning out across one matrix multiply, not across six users.
 
 **A queue that accepts everything lies.** The alternative to a 429 is unbounded admission, where
 every client is accepted and every client gets slower, and no client can tell whether the server
@@ -214,11 +214,24 @@ workload is a different shape entirely. The useful framing is what the KV cache'
 does: on the models above where prefix reuse cannot apply, each turn of a multi-turn
 conversation reprocesses the whole prompt from scratch.
 
-At the shipped 6-worker default on CPU, a 3,020-token prompt takes 101.6 seconds to process.
-An agent loop that pays that every turn, twenty turns deep, spends over half an hour on
-prompt processing alone. With prefix reuse it pays it once.
+At the shipped CPU default, a 3,020-token prompt takes 38.9 seconds to process (Chapter 8).
+An agent loop that pays that every turn, twenty turns deep, spends about 13 minutes on prompt
+processing alone. With prefix reuse it pays it once.
 
 Chapter 5 turns to the other memory problem: the weights themselves.
+
+
+## Try it
+
+Ask how the 1.5B would be placed on your machine (the reference is fetched on first use, about 1 GB):
+
+```sh
+goinfer-chat fit hf:Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:q4_k_m
+```
+
+The CPU row reads `KV@8192 0.44 GB`: 8,192 positions at this chapter's 56 KiB each, with the cache in f32. A Metal row
+reads `0.22 GB`, because Metal keeps the cache in f16. The rest of each line is your machine's free memory. Measured on
+2026-10-02 with the v0.20.0 release ([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/book-try-it-2026-10.md), chapters 4 and 5).
 
 ---
 
