@@ -2065,7 +2065,7 @@ projection with its band and basis.
 
 | ID | Sev | Claim | Evidence | MLX analog | Band | Probe |
 |---|---|---|---|---|---|---|
-| E-X01 | **Resolved at consolidation** (was: Major if confirmed, cross-area) | Default `-embed-int4` was suspected of making the Metal resident decline to CPU on a default serve; `internal/loadflags/loadflags.go:130-139` defaults it off on `-backend metal` (§3 note 1) | mc3-prefill-attr-2026-09-28.md:27; metal/model.go:450-456,1276-1285; decoder/model.go:377-381 (comment says default off); task-never-swap-2026-09.md:281-283 | none | all-or-nothing | `goinfer serve` on the Mac; read the `decode path:` banner line (internal/serveapp/banner.go:108) |
+| E-X01 | **Resolved at consolidation** (was: Major if confirmed, cross-area) | Default `-embed-int4` was suspected of making the Metal resident decline to CPU on a default serve; `internal/loadflags/loadflags.go:130-139` defaults it off on `-backend metal` (§3 note 1) | mc3-prefill-attr-2026-09-28.md:27; metal/model.go:450-456,1276-1285; decoder/model.go:377-381 (comment says default off); task-never-swap-2026-09.md:281-283 | none | all-or-nothing | `goinfer serve` on the Mac; read the `decode path:` banner line (internal/serveapp/banner.go:112) |
 | E-P01 | Major | Prompts below the 64-token floor, and short reuse suffixes, run sequentially or in a >=96 ms batched pass; the bit-identical 8-row step does them at ~2.3 ms/token | metal/backend.go:606,737-739; decoder/model.go:1559-1580; metal/batch.go:768-799; metal-spec-step-verify-2026-09-27.md:35-41 | quantized.cpp:89-130 (qmv to M<14 on M1 Pro) | K=32 TTFT 305 -> ~74 ms [proj]; 7B ~1.06 s -> ~0.28 s [proj] | prefill a 32-token prompt via `forwardMultiInto` pieces; compare bytes and time |
 | E-P02 | Minor (Major if probe lands) | 7B at B=2 runs per-row GEMVs that each stream the whole gate\|up weight; MLX launches the M rows adjacent so they share weight reads | metal/batch.go:604-615,636-641; quantized.cpp:495-496; kernels/quantized.h:787-794 | qmv grid (M, N/bn) | 0-15% of the 7B B=2 step [proj], ceiling 22% | standalone 2-row gate\|up on the 7B shape |
 | E-P03 | Minor (7B) | FB=2 shipped for `mc3_bt`/`mc3_btd`; S0 recorded FB=4 best on the 7B for gate\|up and down, 49 of ~66 ms | metal/batch.go:139,204,365; metal/gemm_mma8_mc3_test.go:223-224; concurrency-mc3-s0:92-103 | none (register-resident fragments) | 0-8% of the 7B B>=3 step [proj] | instantiate fb4, run `TestMC3Step_throughput` on the 7B |
@@ -2077,10 +2077,10 @@ projection with its band and basis.
 | E-G01 | Minor (Major if CI lacks the env) | MC3/MC5/spec-step identity gates are opt-in: env var plus a real checkpoint | gemm_mma8_mc3_test.go, mc3_step_test.go, mc5_chunk_test.go, spec_verify_identity_test.go (skip lines) | n/a | n/a | read CI config (absent from snapshot) |
 | E-C01 | Minor, latent | MC3 solo path hands out `r.logitsHost`, a buffer the next generation's solo step rewrites | metal/backend.go:541-543; metal/model.go:1858-1872; decoder/model.go:2100-2107 | n/a | no output change today | two generations, one with a 30 ms `LogitProcessor` |
 | E-C02 | Minor, default-off | `fp contract(fast)` restore after the Gumbel block also covers `mc3RowsKernels` under `GOINFER_PRECISE_MATH` | metal/gumbel.go:49,164; metal/model.go:793-798 | n/a | n/a | `GOINFER_PRECISE_MATH=1` with `TestMC3Step_bitIdentical` |
-| E-P09 | Minor (Major on the 7B if pages count) | Default 4 KV slots at 4096: 3 extra slots are ~351 MB (1.5B) and ~705 MB (7B) | metal/model.go:23; internal/serveapp/main.go:409; metal/backend.go:377-404; concurrency-mc1:24 | n/a | memory only | resident-set after load, 1 vs 4 slots |
+| E-P09 | Minor (Major on the 7B if pages count) | Default 4 KV slots at 4096: 3 extra slots are ~351 MB (1.5B) and ~705 MB (7B) | metal/model.go:23; internal/serveapp/main.go:413; metal/backend.go:377-404; concurrency-mc1:24 | n/a | memory only | resident-set after load, 1 vs 4 slots |
 | E-P10 | Minor, opt-in | `kv_store_i8` is nKV one-thread threadgroups with a serial 128-iteration loop; `--kv i8` forfeits MC1/MC3/spec verify | metal/kernels.go:862-884; metal/model.go:2788-2793; metal/batch.go:310 | n/a | ~1% [cnt, unmeasured] | micro-bench |
 | E-N01 | Minor | 112 `pack` dispatches per step could be fused into their producers | metal/batch.go:608,641,645 | n/a | <=0.9% [cnt] | none worth running first |
-| E-D01 | Minor | `--spec` help says "on the CPU backend"; `Options.EmbedInt4` comment says default off | internal/serveapp/main.go:431; decoder/model.go:377-381 | n/a | n/a | edit text |
+| E-D01 | Minor | `--spec` help says "on the CPU backend"; `Options.EmbedInt4` comment says default off | internal/serveapp/main.go:435; decoder/model.go:377-381 | n/a | n/a | edit text |
 
 ### (c) Full entries
 
@@ -2097,7 +2097,7 @@ bit-exact int8 pin" (decoder/model.go:377-381) and `embeddingWith` agrees (decod
 task-never-swap-2026-09.md:281-283 records an owner decision of 2026-09-28 "to make `--embed-int4` the default", and
 mc3-prefill-attr-2026-09-28.md:27 reads: "Since 9ccf7fb1 the int4-embedding default makes the Metal resident decline to the
 CPU; a cell whose log does not show `decode path: metal-resident` is void." That run passed `-embed-int4=false`
-explicitly. The default itself lives in `loadflags` (internal/serveapp/main.go:176 reads `cfg.load.Options()`), which is not in the
+explicitly. The default itself lives in `loadflags` (internal/serveapp/main.go:178 reads `cfg.load.Options()`), which is not in the
 snapshot. B-N01 reads the same error as "Metal cannot load an `-embed-int4` bundle" and rates it Minor; if the default is
 now on, the same fact is a default-path fallback to CPU for every Metal user.
 Probe: run plain `goinfer serve` on the Mac and read the banner's `decode path:` line. Not settleable statically.
@@ -2293,7 +2293,7 @@ compiler's precise mode defaults contraction to off is not settleable statically
 
 #### E-P09 [P, Minor; possibly Major on the 7B] Default KV slots
 
-`--kv-sessions` defaults to 4 (internal/serveapp/main.go:409), the resident context to 4096 (metal/model.go:23). A slot is ~117 MB on the 1.5B
+`--kv-sessions` defaults to 4 (internal/serveapp/main.go:413), the resident context to 4096 (metal/model.go:23). A slot is ~117 MB on the 1.5B
 (concurrency-mc1:24 [rec]); on the 7B it is 28 x 4096 x 512 x 2 x 2 B = 235 MB [cnt], so three extra slots are ~705 MB. `metalKVSlots` clamps the
 count to the memory guard's budget and prints a banner when it does (metal/backend.go:377-404); MC1's clamp path was never exercised
 (concurrency-mc1:58 [rec]). Whether untouched pages of a freshly allocated shared buffer count against resident memory is not settleable
@@ -2312,7 +2312,7 @@ the producing rows kernel is bit-identical. At ~1.3 us each (S3) that is ~0.15 m
 
 #### E-D01 [D, Minor] Stale text
 
-`--spec` help ends "Wins ... on the CPU backend" (internal/serveapp/main.go:431); the Metal step-kernel verify shipped 2026-09-27 (2.08x on copy
+`--spec` help ends "Wins ... on the CPU backend" (internal/serveapp/main.go:435); the Metal step-kernel verify shipped 2026-09-27 (2.08x on copy
 traffic, 1.07x on chat, 1.5B). `Options.EmbedInt4`'s comment says "default off" (decoder/model.go:377-381) against the owner decision recorded at
 task-never-swap-2026-09.md:281-283. `attnFACoreCount = 14` (metal/model.go:2594) is dead on the shipped path because `attnFABlkSplit > 0` overrides it
 (metal/model.go:2672-2682); area B owns that.
@@ -2409,7 +2409,7 @@ Severity qualifier "(non-default option)" means the condition is an explicit fla
 
 #### F-C01. `PrefillLast` writes f16 KV into an int8 KV cache (Critical, non-default option; the same defect as A-C01)
 
-- **What.** With `--kv i8` (`decoder.Options.KVPrecision == "i8"`, `decoder/model.go:504,231`; plumbed from `internal/serveapp/main.go:182`), `buildResident` sets `r.kvI8 = m.KVCacheI8()` (`metal/model.go:871`) and allocates each layer's K and V as `paddedCtxCap*kvDim*1` bytes plus separate f32 scale buffers (`metal/model.go:1231-1235`, `byteBuf(d, kvBytes*allocSlots)` at `:1162-1163`). `PrefillLast` (`metal/backend.go:729-787`) checks: fast prefill enabled, the floor, `prefillOK`, and `startPos+len <= ctxCap`. `prefillOK` (`metal/model.go:951-952`) is a function of model features, geometry, MoE and DeltaNet; it does not read `kvI8`. The batched pass then dispatches `kv_store_f16` over `r.kc[l]`/`r.vc[l]` (`metal/prefill.go:1093`), a kernel that does `kc[pos*kvDim + i] = qkv[...]` on a `device half*` (`metal/prefill.go:592-599`).
+- **What.** With `--kv i8` (`decoder.Options.KVPrecision == "i8"`, `decoder/model.go:504,231`; plumbed from `internal/serveapp/main.go:184`), `buildResident` sets `r.kvI8 = m.KVCacheI8()` (`metal/model.go:871`) and allocates each layer's K and V as `paddedCtxCap*kvDim*1` bytes plus separate f32 scale buffers (`metal/model.go:1231-1235`, `byteBuf(d, kvBytes*allocSlots)` at `:1162-1163`). `PrefillLast` (`metal/backend.go:729-787`) checks: fast prefill enabled, the floor, `prefillOK`, and `startPos+len <= ctxCap`. `prefillOK` (`metal/model.go:951-952`) is a function of model features, geometry, MoE and DeltaNet; it does not read `kvI8`. The batched pass then dispatches `kv_store_f16` over `r.kc[l]`/`r.vc[l]` (`metal/prefill.go:1093`), a kernel that does `kc[pos*kvDim + i] = qkv[...]` on a `device half*` (`metal/prefill.go:592-599`).
 - **Failure.** Every prompt of at least 64 tokens (floor, `metal/backend.go:747`) with a suffix of at least 8 tokens (`decoder/model.go:1550`, `residentPrefillSeed`) takes this path by default. The K/V rows land as f16 bit patterns in an int8-typed cache and the scale buffers are never written, so decode's `attention_i8` reads wrong K/V for the whole prompt. Once `pos*kvDim*2` bytes exceeds the buffer (position >= paddedCtxCap/2, i.e. a prompt over about 2048 tokens at the 4096 default) the write runs past the end of the MTLBuffer; `checkCap`'s own comment (`metal/backend.go:500-506`) says such writes corrupt adjacent buffers on unified memory.
 - **Why it is plausible nobody saw it.** The int8-KV tests drive only sequential `Forward` and `UploadKV`: `metal/kv_i8_test.go:255-330` steps 5 tokens through `Forward`; `metal/uploadkv_parity_test.go:235` covers `UploadKV`. No test calls `PrefillLast` with `kvI8` set (`grep` for `KVPrecision` in `metal/*_test.go` returns only `metal/kv_i8_test.go:270` and `metal/residentkv_alloc_test.go:38,78`). The other batched paths exclude `kvI8` explicitly (`metal/batch.go:310,488`, `metal/model.go:2653`); prefill is the one that does not.
 - **Why this is not already closed.** I checked `docs/audit-metal-2026-09-12.md` (no entry mentions kvI8 and prefill together; C-01 is about the fused kernel's tail read), `metal/backend.go:480-485` (`fastPrefill` keys on `exact` and two env knobs only), and `decoder/model.go:1539-1572` (no KV-precision condition on the `Prefiller` call).

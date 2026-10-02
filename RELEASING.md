@@ -188,6 +188,14 @@ failed). A red result means: fix the cause, re-run the workflow (`workflow_dispa
 and check again. A deliberate drop (the 1.5B tier opted out) passes with `ALLOW_FEWER_ASSETS=1`;
 zero never does.
 
+**And read the build stamp off a published asset** — v0.17.0 to v0.20.0 shipped binaries that printed `-dirty`, and only this
+reads the thing the user sees (R18, `docs/tasks/task-first-hour.md`; the workflow runs the same check before upload):
+```
+gh release download v0.10.1 --repo townsendmerino/goinfer -p 'goinfer-serve-linux-amd64' -D /tmp/asset-check
+scripts/check_asset_vcs.sh /tmp/asset-check/goinfer-serve-linux-amd64
+```
+It fails on `vcs.modified=true` and on a binary with no stamp at all. The defect was measured on the `goinfer-serve` darwin-arm64 and linux-amd64 assets; the workflow check covers every chat, serve and embedded asset.
+
 Notes come from the CHANGELOG section for that version (Added/Changed/Fixed); keep any BREAKING
 marker honest even on a patch bump. `go get` resolves from the git tag via the proxy and needs no
 Release object — this step is for the rendered notes + the watcher notification.

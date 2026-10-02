@@ -324,6 +324,11 @@
    "group": "Reasoning models",
    "summary": "How tools are put in the prompt for a model whose own template declares a call form goinfer can render exactly (Qwen3.5's XML, Gemma 4's canonical template): `auto` (the default: each family's measured default — the model's own form for Gemma 4, goinfer's prompt for Qwen3.5), `hermes` (goinfer's own prompt) or `template` (the model's own; a `tool_choice` naming a function is then a 400).",
    "type": "auto | hermes | template"
+  },
+  {
+   "name": "log-requests",
+   "group": "Other",
+   "summary": "Write one line to stderr per generation request when it finishes: route, model, status, prompt and completion tokens, time to first token, total time. Covers `/v1/chat/completions`, `/v1/completions`, `/v1/responses` and `/v1/messages`. Off by default; a request that failed before generating shows `-` for the model and token counts."
   }
  ],
  "subcommands": [

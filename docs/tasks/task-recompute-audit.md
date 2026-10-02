@@ -135,7 +135,7 @@ positions are inherent, not recompute.
 - **Where:** `decoder/resident_reuse.go:125` — `if m.hasRecurrentState() {`, added
   2026-09-02 after repeated identical greedy prompts on qwen3.6-35B-A3B decoded from the previous
   generation's tail state. `decoder/forwardn.go:197-134` is the shared predicate;
-  `cuda/resident.go:498` holds the per-layer `dnWin`/`dnState` that are mutated in place and
+  `cuda/resident.go:503` holds the per-layer `dnWin`/`dnState` that are mutated in place and
   re-zeroed only at pos 0.
 - **What the staged path already does, and the resident path should copy:** the CPU `Session`
   reuses through `rewindForReuse` (`decoder/session.go:73-80`) → `KVCache.TruncateTo`
@@ -214,7 +214,7 @@ positions are inherent, not recompute.
   (per-layer or one arena) so `CopyDeviceBatch`'s adjacent-pair coalescing actually collapses them —
   spec/09 measured this specific gap costing 2× (174 vs 347 GB/s on a synthetic probe; the REAL,
   interleaved layout measured even worse, 65 GB/s in situ). CUDA's `DeltaNet` layer holds
-  `dnWin`+`dnState` at `cuda/resident.go:498`; Metal has the same `CopyDeviceBatch` available.
+  `dnWin`+`dnState` at `cuda/resident.go:503`; Metal has the same `CopyDeviceBatch` available.
   WebGPU is NOT covered by this plumbing at all -- its `dnState` lives in `gpu/decoderunner.go`
   (`*wgpu.Buffer`, transposed `[nv*hv*hk]` relative to the CPU's `[hk,hv]`) and would need its own
   copy path; not scoped here.
@@ -421,7 +421,7 @@ positions are inherent, not recompute.
   the new part is that a session whose STORED tokens are no longer fully contained in the prompt —
   a stop-string hit's invisible tail, a `max_tokens` cut, or an edited last message — now still
   gets picked and handed to `decoder/session.go`'s `rewindForReuse`, which was already correct and
-  needed no change (confirmed by tracing `internal/serveapp/openai.go:1511`'s
+  needed no change (confirmed by tracing `internal/serveapp/openai.go:1536`'s
   `sess := lm.sessions.acquire(gr.promptIDs)` into the very next `sess.Generate(ctx, gr.promptIDs,
   ...)` call: same prompt both times, so `Generate`'s own `rewindForReuse` independently recomputes
   the true common prefix regardless of what `bestExtend` matched — `bestExtend` only decides WHICH

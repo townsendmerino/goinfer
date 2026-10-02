@@ -17,6 +17,46 @@ any surface may still change.
 
 ### Changed
 
+- **The startup `context:` and `fit:` lines say when a figure is a CPU-path ceiling.** After a CUDA decline the CPU path printed `context: 262144 tokens` and `fit: ... 10.4 GB KV`
+  next to a `fit` that had priced the GPU plan at 8192, which read as a contradiction. On the CPU path `-ctx` caps nothing and KV is allocated per request, so those figures are a
+  ceiling, not memory held; the lines now say that, and after a decline that a GPU-resident load would have capped it. No limit changed. `docs/tasks/task-first-hour.md` R20.
+- **A chat that keeps its first image in history no longer fails (`/v1/chat/completions`, `/v1/messages`).** Chat clients resend the whole conversation, so the second image
+  turn carried two images and got `400 v1 supports 1 image per request, got 2`. The newest image is kept; each image in an earlier message is replaced by a text note the
+  model reads, and the response carries `X-Goinfer-Images-Omitted: <n>`. Several images in the one latest message are still a 400. Multi-image history is not supported (one
+  image span per generation). `docs/tasks/task-first-hour.md` R23.
+- **Changes resource use. CUDA's default context is now up to 16384 (was 8192) when the card has room.** A coding agent's first request is about 11,000 tokens,
+  which 8192 refused. The default is a candidate, not a grant: it is shrunk to what the card holds and until the 4 KV slots fit, so a model that could not hold it
+  lands where it did before; `-moe-cache-experts` and `-fit=off` are unchanged. The cost is VRAM allocated up front: the 1.5B Coder holds 3507 → 5299 MiB on
+  an 8 GB card, with the same decode speed. A 7B on 8 GB still needs `-ctx 16384`. `goinfer-chat fit` plans at 16384 to match. Metal's default (4096) is
+  unchanged. `docs/tasks/task-first-hour.md` R19.
+- **`goinfer-serve -log-requests`: one line per generation request.** Route, model, status, prompt and completion tokens, time to first token and
+  total time, on stderr, for the chat, completions, responses and messages routes. Off by default. A cold-user run had learned its prompt sizes from
+  error bodies alone. `docs/tasks/task-first-hour.md` R25.
+- **`goinfer-chat -p "prompt"`, and plain output when it is scripted.** `-p` answers one prompt and exits, printing only the answer. Without `-p`, piped
+  stdin or redirected stdout now gets plain output too: no banner, `you>` label, ANSI escapes or `bye` (a thinking model's reasoning goes to stderr). A
+  script that matched the old `you>`/`bye` text in piped output will no longer see it. `docs/tasks/task-first-hour.md` R26.
+- **`--help` names the model cache directory.** `goinfer-serve -h`, `goinfer-chat -h` and `pull -h` print where pulled models are cached on this
+  machine and what moves it (`XDG_CACHE_HOME` on Linux), instead of leaving it to be found by hand. `docs/tasks/task-first-hour.md` R28.
+- **`--vision <mmproj>.gguf` and `pull` of an mmproj file now say what is true.** Handing `serve` a llama.cpp-style mmproj GGUF failed with
+  `.../config.json: not a directory`; it now says that `-vision` takes a directory with a vision tower and that GGUF mmproj is not supported yet. `pull`
+  marks an mmproj file in a repo's listing and explains it before fetching one, instead of downloading a file nothing can load. Loading mmproj
+  is unchanged (`docs/multimodal.md`). `docs/tasks/task-first-hour.md` R22.
+- **A CUDA resident decline now says what to change.** A model that cannot become GPU-resident (the 26B on an 8 GB card without
+  `-moe-cache-experts`) printed a decline reason made of a Go panic message and a goroutine stack, or `unsupported projection kind ""`, and
+  nothing about how to stay on the GPU. The reason is now one line naming the cause and what to try (`-moe-cache-experts`, a smaller `-quant`
+  or `-ctx`, `-backend cpu`); the stack moves to a separate stderr block. `docs/tasks/task-first-hour.md` R20 (the context a CPU fallback
+  reports is not changed).
+- **A prompt too long for the GPU context now says what to change (`serve`, `goinfer-chat --batch`).** The 400 for a prompt that fills the
+  resident KV capacity said only "the model's context window is 8192", which reads as the model's own limit; opencode answered an 11,137-token
+  first request with 34 compaction retries. When the GPU context (`-ctx`, default 8192 on CUDA, 4096 on Metal) is smaller than the model's
+  window, the message now says so and gives a `-ctx` to use. The default itself is unchanged (the README's agent line now says to use
+  `-ctx 16384`). `docs/tasks/task-first-hour.md` R19.
+- **Release binaries no longer read `-dirty` (takes effect at the next tag).** `goinfer-serve --version` printed `vX.Y.Z (<rev>-dirty)`
+  from the release assets because the build edited `cuda/go.mod`/`metal/go.mod` in the checkout (`go mod edit -replace`) and, for the
+  embedded assets, wrote the model licence into an untracked `licenses/`. Either marks the tree modified in the VCS stamp. The submodules
+  now build through a `go.work` outside the checkout, the licence goes to the runner's temp directory, and `scripts/check_asset_vcs.sh`
+  fails the workflow on any asset whose build info says `vcs.modified=true` (or has none). Reproduced and checked on a clean clone;
+  `docs/tasks/task-first-hour.md` R18.
 - **Parallel tool results are one user turn on the Qwen templates that write them so (Qwen2.5, Qwen3, Qwen3.5).** goinfer wrote a user turn per
   result; the templates open the user turn only after a non-tool message, so several results in a row share one. Read from the template text, so
   a ChatML template that does not group is unchanged; compared against HuggingFace for all three families. Single results are byte-identical to

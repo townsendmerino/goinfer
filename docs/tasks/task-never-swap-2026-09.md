@@ -240,7 +240,7 @@ transcoded once to its sidecar `.giw` and mapped, so the resident weights are fi
 (`internal/serveapp/main.go`, `ensureGIW` → `prequant.EnsureCachedGIW`,
 `internal/prequant/prequant.go:227`) or by the dense fit-guard auto-retry
 (then in serve; since 2026-09-24 in the shared loader, `internal/modelload/modelload.go:173`); `chat` and `fit`
-(`internal/fitcmd/fit.go:103`) loaded direct and had no streaming flag at all. (serve, chat and fit now share one load
+(`internal/fitcmd/fit.go:107`) loaded direct and had no streaming flag at all. (serve, chat and fit now share one load
 path, `internal/modelload`.) **Rule (Mac, 1.5B and
 gpt-oss-20b, `footprint`/`vmmap -summary` on the serving process after the first completion):
 anonymous footprint of a sidecar load ≤ 25% of the direct load's, swap-used delta across the load

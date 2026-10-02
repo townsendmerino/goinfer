@@ -27,7 +27,7 @@
 
 | minimax-code sends (openai-completions, custom URL) | goinfer |
 |---|---|
-| system prompt as `role: "developer"` when its thinking toggle is on | treated as `system` (`internal/serveapp/openai.go:1323`) |
+| system prompt as `role: "developer"` when its thinking toggle is on | treated as `system` (`internal/serveapp/openai.go:1348`) |
 | `max_completion_tokens` (its default for an unrecognised URL) | honoured, preferred over `max_tokens`; clamped to the context, not refused; ceiling 131072 (`internal/serveapp/openai.go:41`) |
 | `stream: true` + `stream_options.include_usage` | supported; final usage chunk |
 | `store: false`, `prompt_cache_key`, tools' `strict: false`, `reasoning_effort` | unknown fields ignored (plain `json` decode) |
@@ -53,7 +53,7 @@
    convention pi-ai reads, `providers/openai-completions.ts`, `reasoningFields`), so `<think>` text is
    shown as the reply and is resent as assistant history, spending context.
 4. **Images with tools are refused.** minimax-code always sends tools; a pasted screenshot gets goinfer's
-   deliberate 400 "tools are not supported together with image inputs" (`internal/serveapp/openai.go:770`,
+   deliberate 400 "tools are not supported together with image inputs" (`internal/serveapp/openai.go:772`,
    N-16 / R-08).
 5. **The other two formats are unverified.** `openai-responses` sends item types the route declares out
    of scope ("reasoning items", `internal/serveapp/responses.go` header); `anthropic-messages` sends

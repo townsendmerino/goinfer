@@ -40,7 +40,9 @@ refused rather than silently substituted. Everything else is an explicit owner/r
 is the real interface; this is not a name registry.
 
 The download is verified against the sha256 HuggingFace declares for the file before the
-transfer starts, and lands in the user cache dir unless -o says otherwise. Point --model at
+transfer starts, and lands in the user cache dir unless -o says otherwise:
+%[2]s
+Point --model at
 the result; a plain .gguf is transcoded to a sidecar .giw cache automatically on first use,
 so there is no separate conversion step to run.
 
@@ -87,7 +89,7 @@ func resolveRunRef(refArg string) (ref pull.Ref, resolvedArg string, note string
 // Run executes `pull`. args excludes the program name and the "pull" word. Returns an exit code.
 func Run(args []string) int {
 	fs := flag.NewFlagSet("pull", flag.ContinueOnError)
-	fs.Usage = func() { fmt.Fprintf(os.Stderr, pullUsage, self()); fs.PrintDefaults() }
+	fs.Usage = func() { fmt.Fprintf(os.Stderr, pullUsage, self(), pull.CacheHelp()); fs.PrintDefaults() }
 	outDir := fs.String("o", "", "directory to download into (default: <user cache>/goinfer/models/<owner>/<repo>)")
 	embed := fs.Bool("embed", false, "after fetching, bake the model into a single static binary per target (default: the host). Requires a goinfer source checkout and a Go toolchain — it drives demo/chat/build-embed.sh, the same pipeline the released goinfer-chat-0.5b/1.5b binaries are built with")
 	embedGGUF := fs.Bool("embed-gguf", false, "with -embed: bake the raw GGUF and quantize at launch (smaller binary, slower start, full-size weight heap) instead of the default prequant bundle (~5x faster cold start, ~10x less heap)")
@@ -155,7 +157,7 @@ func Run(args []string) int {
 	if ref.File == "" && ref.Quant == "" {
 		fmt.Printf("%s — %d GGUF file(s):\n", ref.Repo, len(files))
 		for _, f := range files {
-			fmt.Printf("  %-52s %10s\n", f.Path, pull.HumanBytes(f.Size))
+			fmt.Print(listingLine(f))
 		}
 		fmt.Printf("\nfetch one with:  %s pull %s:<quant>\n", self(), ref.Repo)
 		return 0
@@ -177,6 +179,9 @@ func Run(args []string) int {
 
 	fmt.Printf("%s\n  %s  (%s)\n  sha256 %s\n  -> %s\n",
 		ref.Repo, f.Path, pull.HumanBytes(f.Size), shortSHA(f.SHA256), dir)
+	if n := pull.MMProjNote(f.Path); n != "" {
+		fmt.Fprintln(os.Stderr, n)
+	}
 
 	start := time.Now()
 	// A terminal gets a single carriage-return-updated line; a pipe or log file gets
@@ -362,4 +367,13 @@ func shortSHA(s string) string {
 		return s[:16] + "…"
 	}
 	return s
+}
+
+// listingLine is one row of `pull <repo>`'s file listing; a vision projector is marked, since it sits among the quants and is not one.
+func listingLine(f pull.File) string {
+	line := fmt.Sprintf("  %-52s %10s", f.Path, pull.HumanBytes(f.Size))
+	if pull.IsMMProj(f.Path) {
+		line += "  (vision projector; goinfer cannot load it yet)"
+	}
+	return line + "\n"
 }

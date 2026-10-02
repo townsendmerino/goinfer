@@ -188,7 +188,7 @@ stats now follow whichever model is selected, not always the first one listed.
 **The gate decision: a narrow route, not the admin load.** `POST /admin/models/load`
 (`internal/serveapp/admin.go:125`) takes any caller-named path and stays behind
 `-allow-admin`/`-admin-socket`, unchanged. The page gets its own `POST /web/models/load`
-(`internal/serveapp/main.go:731`), registered only under `-web` and wrapped like pull
+(`internal/serveapp/main.go:743`), registered only under `-web` and wrapped like pull
 (`sameOrigin`, `auth`, body cap). It will load only a **regular `.gguf` file inside the pull cache**
 (`webLoadPath`, `internal/serveapp/webui.go:440`). Symlinks are resolved on both the path and the
 cache root *before* the containment check, and the resolved path is what gets loaded, so neither
@@ -326,7 +326,7 @@ chat, or delete earlier exchanges (W7). If a request does hit the wall, the erro
 in plain words, with the server's own message underneath. Other 400s are left as they are.
 
 **Server: `/v1/models` (and `/health`) publish `context_window`.** It comes from one function,
-`contextWindow` (`internal/serveapp/openai.go:1059`), which `prepare` also uses to enforce the limit,
+`contextWindow` (`internal/serveapp/openai.go:1061`), which `prepare` also uses to enforce the limit,
 so the number a client plans against is exactly the one that rejects it. On a resident GPU backend
 that is the resident KV cap, not the model's `MaxPositions`. Measured on this box (CUDA, Qwen3-1.7B):
 `context_window: 8192` rather than Qwen3's native maximum. A prompt of 8192 tokens is rejected naming
@@ -608,7 +608,7 @@ red|blue test image):
 - Text plus image: "Red and blue", in 3 s.
 - A follow-up question, with the image on the earlier message: "Red" for "which color is on the left?".
 - An image with no text: accepted.
-- Two images in one request: a 400, "v1 supports 1 image per request", which is why only the newest is sent.
+- Two images in one message: a 400, "v1 supports 1 image per request". (Since 2026-10-01 images in *earlier* messages are replaced by a note instead of rejected — R23 in `task-first-hour.md` — so the page no longer has to strip them to avoid the 400.)
 
 Gate: `TestServe_modelsReportsVision` (present and false for a text-only model, true with a tower, and
 red on a wrong capability check), and phases 20–21 of `scripts/webui_app_gate.mjs`, 28 checks. The page
@@ -766,7 +766,7 @@ checks that the list is laid out below its heading at full width (found by W15's
      search is substring, not fuzzy — "quen" does not find "Qwen", only completes a correctly-typed
      prefix.
   2. **The quant/backend a model loads at is invisible and unchangeable from the page.** `-quant`
-     and `-backend` (`internal/serveapp/main.go:378`, `:502`) are server-startup flags with "no
+     and `-backend` (`internal/serveapp/main.go:382`, `:502`) are server-startup flags with "no
      per-request override" (W5's own decision, §2). That was the right call for *requests*; it is
      what made *this* incident invisible — the page had no way to show what quant was about to be
      used, or that a bigger model would blow the budget under it. Arguably the higher-value half of
@@ -1126,7 +1126,7 @@ second, parallel implementation of the same use-after-free-avoiding logic.
 filesystem path the admin route would otherwise trust unconditionally; unload names nothing but a
 registry key, and the only keys that exist are ones `GET /v1/models` already publishes to every
 client. `handleWebUnload` (`internal/serveapp/webui.go:613`) is `sameOrigin(auth(...))` behind
-`-web` — W5's exact gate stack (`internal/serveapp/main.go:731`) — with `s.models[req.Name]` under
+`-web` — W5's exact gate stack (`internal/serveapp/main.go:743`) — with `s.models[req.Name]` under
 `regMu` (inside `unloadByName`) as the entire "policy": a name not loaded is a 404, the same shape
 as any other unknown model. `TestWebUI_disabledByDefault` and the AST wiring guard
 (`TestWebUI_listAndPullAreWrappedInSameOrigin`, `internal/serveapp/webui_test.go`) were both
@@ -1445,7 +1445,7 @@ by a pre-registered margin, on a small local model, or it does not ship.
 `internal/serveapp/webui/ui/app.css:1513` (layout) · `internal/serveapp/webui/index.html:13` (tabs) ·
 `internal/serveapp/webui/ui/app.js:309`, `:935`, `:122`, `:1434`, `:1581`, `:357`, `:841`, `:86`, `:489`, `:1358`, `:641`, `:205`, `:1288`, `:7`, `:946` (the conversation transcript, the
 rendering rule, the error explanations, the keyboard handling, the load offer that replaced the dead-end line, the thinking split,
-regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:1051` (`contextWindow`) ·
+regenerate/edit/delete, the context meter, conversation storage, generated titles, sampling controls, images, export, theme, model labels) · `internal/serveapp/openai.go:1053` (`contextWindow`) ·
 `internal/serveapp/admin.go:125` (`handleAdminLoad`) ·
 `internal/serveapp/openai.go:548` (the sampling fields the page never sends) ·
 `anthropic.go`'s request type (no thinking block in v1; added 2026-09-30) · `pull/pull.go:181` (`Size`, for the

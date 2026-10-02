@@ -1,0 +1,9 @@
+idle1                              dur  30s  swap used GB start 13.202 peak 13.202 end 13.201  d(peak) +0.000  d(end) -0.001  MemAvail min 55.3 GB  Cached gain +0.2 GB
+B (cat 16.8GB file)                dur  12s  swap used GB start 13.201 peak 13.201 end 13.201  d(peak) +0.000  d(end) -0.000  MemAvail min 55.1 GB  Cached gain +14.1 GB
+idle2                              dur  30s  swap used GB start 13.201 peak 13.201 end 13.201  d(peak) +0.000  d(end) -0.000  MemAvail min 55.1 GB  Cached gain +0.0 GB
+A (26B, cuda declines to CPU)      dur  74s  swap used GB start 13.201 peak 13.406 end 13.403  d(peak) +0.205  d(end) +0.202  MemAvail min 37.8 GB  Cached gain -30.9 GB
+idle3                              dur  30s  swap used GB start 13.267 peak 13.267 end 13.255  d(peak) +0.000  d(end) -0.012  MemAvail min 55.4 GB  Cached gain +0.0 GB
+
+idle slope (worst of three): 0.40 MB/s -> over A's 74s = 0.030 GB
+dA=0.205 GB  dB=0.000 GB  dA-s=0.175
+verdict by the pre-registered rule: AMBIGUOUS — parked

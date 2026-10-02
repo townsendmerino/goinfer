@@ -56,13 +56,22 @@ jobs:
           # replace mechanism as the "cross-compile goinfer-serve per platform" step below; see
           # that step's comment for the R6/R2-follow-on rationale, unchanged here.
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          # R18 (docs/tasks/task-first-hour.md): the submodules are built against the checked-out root through a go.work that
+          # lives OUTSIDE the checkout, not through `go mod edit -replace` on their go.mod. That edit was an uncommitted change
+          # to a tracked file, which alone made `go version -m` read vcs.modified=true and the binary print "-dirty". The
+          # workspace resolves the root to this tree just the same (the assertion below still requires `dep ... (devel)`, no
+          # `h1:` hash), and touches nothing in the checkout. The root build keeps its own module-mode build, as before.
+          gowork="${RUNNER_TEMP:-/tmp}/release-assets.go.work"
+          rm -f "$gowork"
+          ( cd "$root" && GOWORK="$gowork" go work init . ./cuda ./metal )
           build() { # build <module-dir> <tags> <goos> <goarch> <subpath>
             local dir="$1" tags="$2" os="$3" arch="$4" subpath="$5"
             local out="$root/dist/goinfer-chat-$os-$arch"; [ "$os" = windows ] && out="$out.exe"
+            local env=(CGO_ENABLED=0 GOOS="$os" GOARCH="$arch")
+            if [ "$dir" = "." ]; then env+=(GOWORK=off GOFLAGS=-mod=mod); else env+=(GOWORK="$gowork"); fi
             echo "building chat $os/$arch from $dir (tags='$tags')"
             ( cd "$root/$dir" \
-                && { [ "$dir" = "." ] || go mod edit -replace github.com/townsendmerino/goinfer="$root"; } \
-                && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" GOFLAGS=-mod=mod \
+                && env "${env[@]}" \
                 go build ${tags:+-tags "$tags"} \
                 -ldflags="-s -w -X github.com/townsendmerino/goinfer/internal/chatapp.injectedVersion=$TAG" \
                 -trimpath -o "$out" "$subpath" )
@@ -173,13 +182,19 @@ jobs:
           # by avoiding the replace, because the replace is R2-follow-on's own fix for a WORSE
           # bug (shipping the previous release's engine) and has to stay.
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          # R18: same mechanism as the chat step above — a go.work outside the checkout, so no tracked file is edited and the
+          # binary does not read vcs.modified=true. (R6's -X injection below is still what puts $TAG in --version.)
+          gowork="${RUNNER_TEMP:-/tmp}/release-assets.go.work"
+          rm -f "$gowork"
+          ( cd "$root" && GOWORK="$gowork" go work init . ./cuda ./metal )
           build() { # build <module-dir> <tags> <goos> <goarch>
             local dir="$1" tags="$2" os="$3" arch="$4"
             local out="$root/dist/goinfer-serve-$os-$arch"; [ "$os" = windows ] && out="$out.exe"
+            local env=(CGO_ENABLED=0 GOOS="$os" GOARCH="$arch")
+            if [ "$dir" = "." ]; then env+=(GOWORK=off GOFLAGS=-mod=mod); else env+=(GOWORK="$gowork"); fi
             echo "building serve $os/$arch from $dir (tags='$tags')"
             ( cd "$root/$dir" \
-                && { [ "$dir" = "." ] || go mod edit -replace github.com/townsendmerino/goinfer="$root"; } \
-                && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" GOFLAGS=-mod=mod \
+                && env "${env[@]}" \
                 go build ${tags:+-tags "$tags"} \
                 -ldflags="-s -w -X github.com/townsendmerino/goinfer/internal/serveapp.injectedVersion=$TAG" \
                 -trimpath -o "$out" ./cmd/serve )
@@ -191,6 +206,14 @@ jobs:
           build .     ""    windows amd64
           build .     ""    windows arm64
           ls -lh dist
+
+      # R18: read the VCS stamp back off every asset built above. v0.20.0 shipped `-dirty` binaries (vcs.modified=true) because
+      # nothing did. The self-test first, so a check that cannot go red does not get to pass the release.
+      - name: assert no asset was built from a modified tree (R18)
+        run: |
+          set -euo pipefail
+          scripts/check_asset_vcs.sh --selftest
+          scripts/check_asset_vcs.sh dist/goinfer-chat-* dist/goinfer-serve-*
 
       # ASSERT WHAT SHIPPED, rather than trusting the loop above. Two checks, because the two
       # failures are different: a missing binary is a release that contradicts its own README, and
@@ -336,11 +359,13 @@ jobs:
           # notices) attach to the release, not just to this repo. Both tiers carry byte-identical
           # LICENSE files; pinned for the same reason the weights are — a license that changes
           # under a shipped tag is exactly what nobody would notice.
-          mkdir -p licenses
+          # R18: outside the checkout. An untracked file in the tree makes `go build` stamp vcs.modified=true (measured: one
+          # untracked licenses/X.txt does it), so this directory used to make every embedded asset read "-dirty".
+          mkdir -p "$RUNNER_TEMP/licenses"
           curl -fsSL --retry 3 --retry-delay 5 \
-            -o licenses/QWEN2.5-CODER-LICENSE.txt \
+            -o "$RUNNER_TEMP/licenses/QWEN2.5-CODER-LICENSE.txt" \
             "https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/LICENSE"
-          echo "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e  licenses/QWEN2.5-CODER-LICENSE.txt" | sha256sum -c -
+          echo "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e  $RUNNER_TEMP/licenses/QWEN2.5-CODER-LICENSE.txt" | sha256sum -c -
       - name: build embedded binaries
         if: steps.gate.outputs.skip == 'false'
         env:
@@ -354,9 +379,21 @@ jobs:
           # --gguf mode quantizes at launch instead. GOINFER_TIER/GOINFER_RELEASE_TAG (R6,
           # docs/measurements/cold-user-2026-09-06-nobara-pc.md) make the version and the baked
           # quant answerable from --version without a model — see the assertion step below.
+          # R18: an external go.work, so the script's own `go mod edit -replace` (it skips that whenever `go env GOWORK` names a
+          # workspace) never edits a tracked file; the stamp then reads vcs.modified=false (asserted in the next step).
+          gowork="$RUNNER_TEMP/release-assets.go.work"
+          rm -f "$gowork"
+          ( cd "$PWD" && GOWORK="$gowork" go work init . ./cuda ./metal )
+          export GOWORK="$gowork"
           ./demo/chat/build-embed.sh --name "goinfer-chat-${{ matrix.tier }}" model.gguf \
             darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
           ls -lh demo/chat/dist
+      - name: assert no embedded asset was built from a modified tree (R18)
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          scripts/check_asset_vcs.sh --selftest
+          scripts/check_asset_vcs.sh demo/chat/dist/goinfer-chat-*
       - name: assert embedded --version prints the tag, tier and baked quant, and carries its backend
         if: steps.gate.outputs.skip == 'false'
         run: |
@@ -405,7 +442,7 @@ jobs:
         with: { name: 'embedded-${{ matrix.tier }}', path: demo/chat/dist/ }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.gate.outputs.skip == 'false'
-        with: { name: 'model-license-${{ matrix.tier }}', path: licenses/, overwrite: true }
+        with: { name: 'model-license-${{ matrix.tier }}', path: '${{ runner.temp }}/licenses/', overwrite: true }
 
   publish:
     name: attach to the release

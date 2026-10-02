@@ -1362,6 +1362,29 @@ same effect without touching a tracked file: a `go.work` outside the checkout (`
 `.`, `./cuda` and `./metal`). **Gate:** `scripts/check_release_assets.sh` reads a downloaded asset's build info with
 `go version -m` and fails on `vcs.modified=true`.
 
+**Fixed 2026-10-01 (unreleased; takes effect at the next tag).** Reproduced first, in a clean clone of `74fee5b1`: the workflow's own
+build shape (`go mod edit -replace` in `cuda/`, `GOFLAGS=-mod=mod`) gives `vcs.modified=true` with exactly one dirty file, `cuda/go.mod`;
+the same build through `GOWORK=<outside the checkout>/go.work` (`go work init . ./cuda ./metal`, no edit, no `-mod=mod`) gives
+`vcs.modified=false`, with the root still linked as `dep github.com/townsendmerino/goinfer (devel)`, so the stale-root check holds.
+`release-assets.yml` now builds the `metal/` and `cuda/` modules that way in **both** the chat and the serve steps; root builds are unchanged.
+
+**A second cause, not in the finding:** the `embedded` job downloads the model licence into `licenses/` inside the checkout, and an
+untracked file alone makes Go stamp `vcs.modified=true` (measured: one `licenses/X.txt`). It now goes to `$RUNNER_TEMP/licenses` (the
+uploaded artifact's contents are the same). `demo/chat/build-embed.sh` already skips its own `go mod edit -replace` whenever
+`go env GOWORK` names a workspace, so the embedded step only needed an external `GOWORK`; its staged `model.gguf`/`model.giw` are gitignored.
+
+**Gate.** `scripts/check_asset_vcs.sh <binary>...` reads each file's build info with `go version -m` and fails on `vcs.modified=true`, and
+also on a file with no `vcs.modified` line (unknown is not clean). `--selftest` builds a clean, an edited-`go.mod` and an unstamped probe and
+requires accept / reject / reject, so the check provably goes red; it also fails on the `-dirty` build from the reproduction above. It runs in
+the workflow after the chat+serve builds and after the embedded build, before anything is uploaded. (The finding named
+`check_release_assets.sh` for this; that script checks asset counts on the published Release and stays as it was.)
+
+**Verified.** The workflow's own step scripts, extracted from the YAML and run on a clean clone with the tag substituted: the six chat and six
+serve assets all read `vcs.modified=false`, the existing assertions (backend from build settings, `--version`, no proxy `h1:` root) still
+pass, and the checkout has 0 modified files afterwards. The embedded job's build on the local 0.5B Coder model (prequant bake, six targets):
+all six `vcs.modified=false`, 0 modified files. **Not verified:** a real tag run on GitHub, and a published asset's `--version` — the next
+release's `scripts/check_asset_vcs.sh dist/*` on the downloaded assets is the proof; until then v0.20.0 and earlier still read `-dirty`.
+
 ### R19 — the default context is smaller than a coding agent's first request
 
 **Found** (scenario B). opencode's first request was 11,137 tokens. `goinfer-serve` refused it with a 400
@@ -1372,6 +1395,32 @@ same effect without touching a tracked file: a `go.work` outside the checkout (`
 put the remedy in the 400's message and in the README's agent line. **Gate:** a harness-scale `serve check` row run at
 the default context (`docs/tasks/task-harness-reliability-2026-10.md`, gates 1 and 2).
 
+**Fixed 2026-10-01: the message, then the default (below).** The 400 used to say "the model's context window is 8192", which
+reads as the model's own limit, so a client compacts and retries instead of the operator raising `-ctx`. When the window that rejected the
+prompt is the **server's GPU context** (smaller than the model's own), `serve` and the `goinfer-chat --batch` runner now say so and name the
+way out: `...; this is the server's GPU context (-ctx), not the model's limit (32768 tokens): restart goinfer-serve with -ctx 11138 or more
+(up to 32768) to accept it`. When the model's own window is the limit, `-ctx` cannot help and the message is unchanged (a test through
+`prepare`, the caller, checks both; two mutants of the condition turn it red). The README's agent paragraph now says an agent's first request is
+about 11,000 tokens, above the default (8192 CUDA, 4096 Metal), and to start the server with `-ctx 16384` as the recipes do.
+
+**Default raised 2026-10-01 (owner: "R19 - yes").** CUDA's unpinned context candidate (`fitDefaultCtx`, and `goinfer-chat fit`'s `-ctx` default with it)
+goes from 8192 to **16384**. It is a candidate, not a grant: the planner shrinks it to what the card holds and then until the requested KV slots (4) all fit
+(the 2026-09-27 owner decision, context before conversations), and `-moe-cache-experts` and `-fit=off` loads still opt out. Measured on this box (RTX 2070 SUPER, 8 GB):
+
+| model (int4) | per-slot KV at 8192 → 16384 | default before → after, 4 slots | 11k-token prompt |
+|---|---|---|---|
+| Qwen2.5-Coder-1.5B | 0.44 → 0.88 GB | 8192 → **16384** (VRAM held 3507 → **5299 MiB**) | 400 → **200** (10,812 tokens, 4.4 s) |
+| Qwen2.5-7B | 0.88 → 1.75 GB | ~5.5k → ~5.5k (4 slots do not fit more; unchanged) | 400, naming `-ctx 10813` (as before, with the remedy) |
+| Mistral-7B (full MHA) | 2.00 → 4.00 GB | unchanged (shrinks for slots) | — |
+
+So the change helps the models that have the room (small and medium ones, and bigger cards), and costs them **VRAM: +1.8 GB on the 1.5B**, because the extra
+context is allocated up front in each of 4 slots. A 7B on 8 GB is where it does not reach: an agent there still passes `-ctx 16384` (the build then grants fewer
+slots). Decode speed is unchanged: interleaved default vs `-ctx 8192` on the 1.5B, two rounds each, 272–274 tok/s in every arm (exploratory: one model, one card,
+not a result). **Metal is not changed** (4096; no Metal box here to measure, and its planner is separate). **Gates:** `TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn`
+(fit's default equals the planner's candidate, and both hold an agent's first request with headroom; three mutants red); the existing slot-shrink test's precondition
+("one slot gets the whole candidate") was true only because 8192 < 4×3000 and now states the real invariant. **Benchmarks:** harness cells without `BENCH_CTX` are unpinned, so
+they now allocate more KV on a card with room; decode work at a given depth is the same (above), but a row's provenance should say its context. R19 is closed for CUDA.
+
 ### R20 — a CUDA resident decline that names no reason a user can act on
 
 **Found** (scenario D). `gemma-4-26b-a4b` q4_0 with `--backend cuda` and no `-moe-cache-experts` printed
@@ -1380,6 +1429,26 @@ priced KV at context 262144 (10.4 GB) where `fit` had said 3.44 GB at 8192. **On
 (`cuda/resident.go`, `unsupported projection kind %q`); the fit-versus-serve context difference is not checked.
 **Fix:** name the tensor kind and the remedy (`-moe-cache-experts`, or a supported `--quant`), and have `fit` and
 `serve` price the same default context. **Gate:** a test that a resident decline's message names a remedy.
+
+**Partly fixed 2026-10-01 (the message half).** Reproduced on this tree with the local 26B q4_0 on the 8 GB card: not the `kind ""` of the
+v0.19.0 run but its neighbour, a device OOM during the weight upload, surfaced through the executor's panic boundary as
+`executor job panicked: ... CUDA_ERROR_OUT_OF_MEMORY` **followed by a goroutine stack inside the decline reason**, repeated on the `decode path:`
+line, with no remedy. Now (`cuda/decline_advice.go`, used by the one closure every `BuildResident` decline goes through): the reason is one
+line, the cause then what to try (`-moe-cache-experts`, a smaller `-quant` or `-ctx`, `-backend cpu` on purpose; with the expert cache already
+on, `-moe-cache-slots` instead of the flag again), and the stack is printed once to stderr under `[cuda] resident build failure, detail:` (it
+once localized a real bug, so it is kept, only moved). The empty-weight case (`kind ""`) gets the same treatment. A feature decline ("arch
+needs unimplemented feature") is returned as it came. Remedy checked live: the same 26B with `-moe-cache-experts` reports
+`decode path: cuda-resident (int4)`. Gate: `TestDeclineAdvice` over the two real error strings, and a source guard that `declined` calls it
+(the closure needs a card to reach with a real OOM; two of three mutants are caught by the unit, the third, unwiring, by the guard).
+
+**Context pricing, done 2026-10-01 (owner: say it beside the figure; do not cap the fallback).** The two numbers answer different questions: `fit` priced the
+GPU-resident plan, and the CPU path has no `-ctx` cap at all (the window is the model's whole maximum), with KV allocated per request, so `262144 tokens` and `10.4 GB KV` are
+a **ceiling** reached only by a request that fills the window, not memory held. The banner now says so where the figures are printed. Real output, the 26B declining on the
+8 GB card: `context: 262144 tokens (model maximum) · KV f32 — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held; a GPU-resident
+load caps it with --ctx, but this model declined one (see decode path)` and `fit: 262144-token cap needs 10.4 GB KV (...) — a ceiling, reached only by a request that fills the window`.
+The first sentence also appears on any plain CPU load (same window, same ceiling); the second only after a decline. Nothing is capped: the same model on `-backend cpu` and
+after a fallback behave alike, and a long-context CPU user keeps the window. **Gate:** `TestBanner_cpuContextIsACeiling` (plain CPU, fallback after a decline, a resident
+model and a window below the maximum get no note) and `TestFactsOf_carriesTheResidentDecline` (a real model whose backend declined); six mutants red. R20 is closed.
 
 ### R21 — swap grew under a "tight" warning, with no refusal
 
@@ -1391,6 +1460,12 @@ to zram as page cache filled, not goinfer's footprint. **On v0.20.0:** the swap 
 checked. **Fix:** none until measured. **Gate:** repeat scenario D on v0.20.0, as the run-2b amendment does for a
 skipped leg.
 
+**Measured 2026-10-01 (rule pre-registered and committed first): AMBIGUOUS, parked, no fix.** Scenario D on this tree (the 26B q4_0, `-backend cuda`,
+declining to the CPU) grew swap by **0.205 GB**, not 1.9 GB; the swap guard armed and did not trip (+512 MB). A control that filled the page cache by
+14 GB with no goinfer moved swap by **0**, so the "kernel moving cold pages" explanation is not supported either (MemAvailable stayed ≥ 37.8 GB). Neither
+registered bar was met (goinfer's footprint ≥ 0.5 GB and ≥ 2× the control; or the control ≥ half of it). One pass, warm page cache. The 1.9 GB is not
+reproduced. `docs/measurements/r21-swap-2026-10-01/` (rule, runner, raw samples, results).
+
 ### R22 — `--vision` rejects a GGUF mmproj with a file-system error
 
 **Found** (scenario F). `--vision <mmproj>.gguf` failed with `.../config.json: not a directory`, and with no `--vision`
@@ -1398,6 +1473,14 @@ the server reported `"vision": false`. `pull` fetches mmproj files that nothing 
 known gap (`docs/multimodal.md`, "No GGUF `mmproj`"). **Fix:** until mmproj loads, say so: "`--vision` takes a directory
 with a vision tower (config.json and safetensors); GGUF mmproj files are not supported yet", and have `pull` say the
 same when it fetches one. **Gate:** a unit test on that message.
+
+**Fixed 2026-10-01.** `serve` refuses a `-vision` path that is a file before any loader runs: `-vision <x>.gguf: a GGUF mmproj file is not
+supported yet — -vision takes a directory with a vision tower (config.json and safetensors). See docs/multimodal.md` (any other plain file gets the
+same sentence without the mmproj part; a directory or a missing path is still the loaders' to judge). `pull <repo>` marks an mmproj row in its file
+listing, and `pull <repo>:<mmproj file>` prints the same explanation before it downloads (`pull.IsMMProj`/`MMProjNote`: a `.gguf` whose name contains
+`mmproj`). **Gate:** `TestLoadVisionTower_ggufMmprojIsRefusedPlainly` goes through `loadVisionTower`, the caller; `TestMMProj` and
+`TestListingLine_marksVisionProjector` cover the helpers; four mutants red. **Not tested through the caller:** the note on the fetch path (`pull`'s
+`Run` needs the network); it is one call to the tested helper. mmproj loading itself is still the gap in `docs/multimodal.md`.
 
 ### R23 — a chat that keeps its first image in history is rejected
 
@@ -1407,11 +1490,29 @@ turn fails. **On v0.20.0:** still true (`internal/serveapp/vision_serve.go`, `ma
 decision:** accept images already in history, or keep only the newest and say so. **Gate:** a serve test with two user
 turns that each carry an image.
 
+**Fixed 2026-10-01 (owner: no multi-image history; keep the newest and say so).** `/v1/chat/completions` and `/v1/messages` replace every image in a message
+**before the last message that carries one** with the text `[an earlier image in this conversation was omitted: this server keeps only the newest image]` (so the
+model knows something was there) and answer with `X-Goinfer-Images-Omitted: <n>`. Several images inside the one latest message are the caller's explicit request and
+stay a 400 (`v1 supports 1 image per request, got 2`). Live on Gemma 3 4B with its tower (CUDA): turn 1 (red image) "Red"; turn 2 resending the history (red, then blue)
+**200**, header `1`, "Blue.", 320 prompt tokens (one image's 256 plus the note), where it had been a 400; two images in one message still 400. **Gate:**
+`TestOmitChatHistoryImages` / `TestOmitAnthropicHistoryImages` run the sequence the handler runs (omit, then collect) and require exactly the newest image to reach the
+vision path, the same-message case to still show two, and untouched bytes when there is nothing to omit; `TestHandleChat_announcesOmittedHistoryImages` goes through
+both handlers on a text-only server and requires the header; six mutants red. **Not covered in CI:** the one-image guard itself behind a real tower (that needs a vision
+checkpoint; it was run by hand as above). Not changed: the image still attaches to the *latest user turn* wherever it was sent, as before; the web UI already sent only
+the newest image.
+
 ### R24 — re-sending an identical image is not reused
 
 **Found** (scenario F). Every image turn cost about 7.5 s to first token, a byte-identical resend included, against
 about 2 s for an 11,137-token text prompt. **On v0.20.0:** a known gap (`docs/multimodal.md`, "Image turns defeat
 prefix reuse"). **Fix:** tracked there. **Gate:** scenario F's resend leg, once R23 lets it run as written.
+
+**Resend leg run 2026-10-01, on this tree: the finding does not reproduce on this path.** Gemma 3 4B int4 with its tower, CUDA-resident, one single-image request, streamed,
+`max_tokens` 4, time to first content token: first send **4.53 s**; the byte-identical resend **0.02 s**; again **0.02 s**; a *different question about the same image* **0.05 s**
+(the P9a resident image reuse and the session prefix doing their work). So "a byte-identical resend costs the first send's time" is not what this box shows. What it does not
+cover: one model, one 64×64 image (the tower always emits 256 tokens, so size should not matter, but it was not varied), the CPU path, Qwen-VL, and a history that
+resends an image in an earlier turn (R23 now replaces it with a note, which changes that turn's bytes). The cold-user's 7.5 s figure was measured on the v0.19.0 build and a
+different request shape; until it is reproduced R24 should be read as unconfirmed, not closed.
 
 ### R25 — `serve` logs nothing per request
 
@@ -1419,11 +1520,33 @@ prefix reuse"). **Fix:** tracked there. **Gate:** scenario F's resend leg, once 
 no request-log flag exists. **Fix:** an opt-in one-line log per request (route, model, prompt and completion tokens,
 time to first token, status). **Gate:** a serve test asserting that line when the flag is set.
 
+**Fixed 2026-10-01.** `-log-requests` (off by default) writes one stderr line per generation request when it finishes, for `/v1/chat/completions`,
+`/v1/completions`, `/v1/responses` and `/v1/messages`:
+`request: POST /v1/chat/completions model=tiny status=200 prompt_tokens=9 completion_tokens=4 ttft=30ms total=35ms` (real output from the committed tiny
+checkpoint). A request that failed before generating shows `model=- ... prompt_tokens=- completion_tokens=- ttft=-` with its status (a 400, or a 401/429/503 from a
+gate, since the log wraps the routes outermost). The counts and the first-token time are taken in `streamTokens`, the shared tail of every generation, so a
+request that runs several generations (a tool loop) is one line: the first generation's prompt, the summed completion, the first generation's first token.
+**Gate:** `TestRequestLog_oneLinePerGenerationRequest` runs the real chat handler on `testdata/tiny-qwen2-moe` (a committed checkpoint dir with a tokenizer; the tiny GGUFs
+have none) and requires the line's token counts to equal the `usage` the response itself reported, a first-token time, one line per request, the streaming
+path unbroken by the status recorder, the failed-request shape, and — with the flag off — a handler that sees no trace and an unwrapped writer; five mutants red
+(one initially survived because the off-case assertion could not tell "untouched" from "wrapped quietly"; the assertion was changed, not the mutant dropped).
+`TestRequestLog_wiredIntoTheGenerationRoutes` reads `main.go` for the flag and the four wrapped routes, because the mux is built inside the serve entry point.
+**Not covered:** embeddings, batches, jobs and `/v1/systemone` are not logged (no generation passes through `streamTokens`); the other routes are not part of this.
+
 ### R26 — `goinfer-chat` has no plain one-shot mode
 
 **Found** (scenario A). There is no prompt argument. Piped stdin answers once, but prints a `you>` label, ANSI escapes
 and a trailing `bye`. **On v0.20.0:** no prompt or no-colour flag exists. **Fix:** plain output when stdin or stdout is
 not a terminal, or a `-p "prompt"` flag. **Gate:** a chatapp test with piped stdin asserting no escape codes.
+
+**Fixed 2026-10-01, both ways.** `-p "prompt"` answers once and exits (0 with an answer, 1 without); and the REPL is **plain whenever stdin or stdout is not a
+terminal**: no banner, no `you>` label, no ANSI escapes, no `bye`, and for a thinking model the reasoning (or its marker) goes to stderr so stdout is the
+answer and nothing else. Checked on the real binary with the 0.5B Coder: `-p`, piped stdin, and piped stdin with stdout redirected to a file all print
+`Hello, world!` and no escape byte (`cat -v`); stats and the `chat template:` line stay on stderr, as before. **Gate:** `TestRepl_plainWhenScripted` drives the
+REPL loop (the caller of the label, banner and `bye`) and requires the exact answer in plain mode and every one of those in the interactive control;
+`TestReplyPrinter_plainSeparatesReasoningFromTheAnswer`, `TestOneShot`, `TestPromptFlagRegistered`; five mutants red. **Not covered by a test:** the one line in
+`main` that sets `plain` from `isTerminal` (it needs a pty); it was run by hand as above. One behaviour change to know: a script that parsed the old
+`you>`/`bye` from piped output no longer sees them.
 
 ### R27 — pkg.go.dev described `decoder.Load` as a Gemma-3, CPU-only loader
 
@@ -1438,6 +1561,13 @@ docs, so this is a release-review item.
 **Found** (scenario A). `XDG_CACHE_HOME` is honoured, but neither `goinfer-chat` nor `goinfer-serve` says so in `--help`.
 Only `pull -o` sets a path. **On v0.20.0:** not checked. **Fix:** name the cache directory, and the variable that moves
 it, in `--help`. **Gate:** a help-text test.
+
+**Fixed 2026-10-01.** `goinfer-serve -h`, `goinfer-chat -h` and `pull -h` now print the directory this process would use and what moves it:
+`Pulled models are cached under /home/francis/.cache/goinfer/models (the OS user cache dir + goinfer/models; XDG_CACHE_HOME moves it on Linux,
+~/Library/Caches on macOS, %LocalAppData% on Windows). pull -o <dir> writes elsewhere.` (`pull.CacheHelp`, which asks `os.UserCacheDir`, so the path is
+the real one, not a description of it.) **Gate:** `TestHelp_namesTheModelCache` runs the real `-h` of both binaries and of `pull` with
+`XDG_CACHE_HOME` set to a temp dir and requires that dir and the variable name in the output; dropping the paragraph from any of the three pages turns
+it red. The macOS and Windows locations in the sentence are `os.UserCacheDir`'s documented behaviour, not checked here (this box is Linux).
 
 **Seen but not filed:** an odd ` Query issued,` reply to "Say hi." at default sampling on the 1.5B (fine at temperature
 0; one sample, not reproduced); Ollama's install script needing sudo (Ollama's, not goinfer's); finding `chat.Meta`

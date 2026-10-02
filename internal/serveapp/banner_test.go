@@ -5,6 +5,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -266,4 +267,74 @@ func TestConcurrencyLine_cpuBatch(t *testing.T) {
 	if strings.Contains(off, "independent workers") || strings.Contains(off, "batched") {
 		t.Errorf("-cpu-batch off: %q (want step 1's line unchanged)", off)
 	}
+}
+
+// R20: on the CPU path the context figure is the model's whole maximum and the "fit:" KV cost is a ceiling, not memory held; the banner says so beside the
+// figures, and — when a GPU backend declined — that a GPU-resident load would have capped it. Neither note appears for a resident model, nor where the window
+// is below the model's maximum.
+func TestBanner_cpuContextIsACeiling(t *testing.T) {
+	const note = "the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held"
+	base := bannerFacts{hasTemplate: true, ctxWindow: 262144, maxPositions: 262144, fitKnown: true, fitCtx: 262144, fitKVBytes: 10 << 30, fitWeightBytes: 13 << 30, fitBudgetBytes: 25 << 30}
+	line := func(f bannerFacts, prefix string) string { return bannerLine(modelBannerFrom(f, config{}), prefix) }
+
+	cpu := line(base, "context:")
+	if !strings.Contains(cpu, "262144 tokens (model maximum)") || !strings.Contains(cpu, note) || strings.Contains(cpu, "declined") {
+		t.Errorf("plain CPU load: %q", cpu)
+	}
+	if fit := line(base, "fit:"); !strings.Contains(fit, "a ceiling, reached only by a request that fills the window") {
+		t.Errorf("CPU fit line: %q", fit)
+	}
+
+	declined := base
+	declined.residentDecline = "cuda: device allocation failed"
+	d := line(declined, "context:")
+	if !strings.Contains(d, note) || !strings.Contains(d, "a GPU-resident load caps it with --ctx, but this model declined one (see decode path)") {
+		t.Errorf("CPU fallback after a decline: %q", d)
+	}
+
+	res := base
+	res.resident = true
+	if got := line(res, "context:"); strings.Contains(got, "CPU path") || strings.Contains(line(res, "fit:"), "ceiling") {
+		t.Errorf("a resident model got the CPU note: %q / %q", got, line(res, "fit:"))
+	}
+	below := base
+	below.ctxWindow, below.fitCtx = 8192, 8192
+	if got := line(below, "context:"); strings.Contains(got, "CPU path") || strings.Contains(line(below, "fit:"), "ceiling") {
+		t.Errorf("a window below the model maximum got the CPU note: %q", got)
+	}
+}
+
+// Through the caller: factsOf reads the decline off a real model whose backend declined residency, so the note's second half is not a constant of the test.
+func TestFactsOf_carriesTheResidentDecline(t *testing.T) {
+	p := filepath.Join("..", "..", "testdata", "glm-tiny.gguf")
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("no committed tiny fixture at %s", p)
+	}
+	name := "fake-declines-r20"
+	decoder.RegisterBackend(name, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		return &decliningBackend{Backend: cpu}, nil
+	})
+	m, err := decoder.Load(p, decoder.Options{Backend: name, Quant: "int8int8"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	lm := &loadedModel{name: "declined", model: m}
+	f := factsOf(lm)
+	if f.resident || !strings.Contains(f.residentDecline, "no card in this test") {
+		t.Fatalf("factsOf: resident=%v residentDecline=%q, want the backend's own reason", f.resident, f.residentDecline)
+	}
+	if got := bannerLine(modelBanner(lm, config{}), "context:"); !strings.Contains(got, "this model declined one") {
+		t.Errorf("the banner of a model that declined residency: %q", got)
+	}
+}
+
+type decliningBackend struct{ decoder.Backend }
+
+func (b *decliningBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+	return nil, false, decoder.DeclineResident("no card in this test")
 }
