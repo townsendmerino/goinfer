@@ -1211,5 +1211,8 @@ no kernel math.
   timeline; S6's first step is the `footprint`-split measurement that confirms or corrects it.
 - Anything about Linux defaults or CUDA host memory (`cudaBuildBytes` is already priced; the
   Linux box has the RAM).
+- That every load path never swaps. It is established for aliased dense weights (0 MB swap in the 7B memory-hog arm,
+  `docs/measurements/s6-alias-2026-09-24.md`), not for the 26B MoE: its anonymous heap (about 1.95 GB) and paged scale
+  cache are not file-backed, and its memory-hog arm was not run (2026-10-01, C-D01 in `docs/audit-metal-2026-09-30.md`).
 
 <!-- doc-reviewed: 2026-09-22 -->

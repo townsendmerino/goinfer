@@ -1408,6 +1408,8 @@ re-baked by the code it checks (G-04).
   identical mechanical pattern already proven correct in `moe.go`'s pread path, not independently
   measured on gemma4. `go test ./metal/` (91 pass) and `-tags goinfer_testhooks` (143 pass) both
   0 fail; gofmt/go vet/staticcheck clean.
+  *2026-10-01 (C-D01 item 4, `docs/audit-metal-2026-09-30.md`):* under weights format v15 the premise no longer holds:
+  a v15 bundle stores binary16 scales, so there is no f32 heap copy to re-derive them from (C-P01 there).
 - N-21 `metal/expertpool.go:180-183` — each slot built via `NewBufferUint32s(d, make([]uint32, n))`:
   ≈4.5 GB of transient Go allocation at N=64 on the 35B to zero-initialise; `NewBufferBytes(n)`.
   **FIXED 2026-09-13** — used `gpu.NewBufferLenOf[T]` instead (the exact generic, right-sized,
@@ -1673,6 +1675,9 @@ re-baked by the code it checks (G-04).
   test-only; fast-math ON with precise opt-in measured 4–7% for no parity gain; both compile paths
   read back `languageVersion`/`mathMode`; goinfer reimplements no binding; `Encoder.Dispatch` is
   2–3 sends. `UploadBatch`/`CopyDevice` correctly unused on UMA.
+  *2026-10-01 (D-D01 item 6, `docs/audit-metal-2026-09-30.md`):* "`NewBufferNoCopy` inapplicable" is superseded by S6,
+  which aliases fused and narrowed layouts in place: 723 MB on M26, 60 single tensors and 55 fused groups
+  (`docs/measurements/s6-alias-2026-09-24.md`).
 - **`ResidentGreedy` absent on Metal:** recorded speed-neutral on UMA ("~30 µs zero-copy view";
   "kept as API"). Not a lever — only a labelling issue (N-03).
 - **Speculative verify:** `ForwardN` is a loop; bvk kernels never compiled into production (NO-GO

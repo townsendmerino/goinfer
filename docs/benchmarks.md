@@ -44,7 +44,7 @@ not re-anchored against a peer (no vision peer harness exists either).
 | **Apple Silicon CPU prefill** | **vs Ollama: 1.54× behind at K=512, reaching 0.91× (AHEAD) at K=3900; whole-curve marginal ratio 0.86×, goinfer faster** — aikit v1.34.0's S-01 int4 tile roughly doubled it (67.6→141.7 tok/s at K=512, measured pre/post on one box). Supersedes the 2026-09-01 row of 2.98×/1.80×, which the pre-tile arm reproduced to within 4% | §A |
 | ↳ *and against our own past* | **8.61× faster than the pre-2026-09-01 record at 3020 tokens** (334.9 s → 38.9 s); the rate no longer falls with length (78.4 → 77.7 tok/s where it used to collapse 51.5 → 9.0) | §A |
 | **Apple Silicon CPU decode** | **Pre-registered peer sweep 2026-09-25 (cell i, depth 128, 3 pairs): 0.5B AMBIGUOUS-LOW against Ollama — goinfer 109 tok/s steady, Ollama 125 then 94 and 93 (30.8% spread caps the cell; pairs 0.874 / 1.166 / 1.168) — and BEHIND llama.cpp 0.3.0 (0.84×); 1.5B VOID** (goinfer ended its reply at 58 of 64 tokens, under the 95% gate; raw 0.80× Ollama, ungraded). Supersedes the 2026-09-17 0.67×/0.65×. `int4` is the right default there | [`measurements/peer-claim-2026-09-25.md`](measurements/peer-claim-2026-09-25.md) cell i; §A, "Re-run 2026-09-17 — MacBook" |
-| **Apple Silicon Metal decode** | **Pre-registered re-run 2026-09-30 at `754f12d3` (cell g, PARTIAL): 0.5B @128 AHEAD 1.296× (188.8 vs 145.5 tok/s); the other eight cells were refused on load and are owed** ([`measurements/peer-sweep-2026-09-29.md`](measurements/peer-sweep-2026-09-29.md), MacBook results). Before it, the **pre-registered peer sweep 2026-09-25 (cell g, Ollama v0.32.5 at its defaults, 3 pairs per cell): AHEAD only at 0.5B, depth 128 (1.18×); BEHIND at every 2048 and 3900 cell — 0.75× / 0.70× / 0.71× at 2048 and 0.58× / 0.61× / 0.61× at 3900 (0.5B / 1.5B / 7B); 1.5B and 7B at depth 128 VOID** (an engine ended its reply under 95% of the tokens; raw 0.85× / 0.86×, ungraded). llama.cpp 0.3.0 reads the same way: ahead 1.09× at 0.5B @128, behind 0.54–0.70× at depth. Supersedes the short-context 0.86×/0.86×/1.08× and the depth-curve readings below (the 1.5B @3900 gap is unchanged at 0.61×, i.e. the 1.64× behind after `attention_fa`). phi3-mini's 0.94× (2026-09-17) is not re-measured; the Mac's `p3m` tag is the same weights, so that row stands. **Update, same day, after R17 shipped the block decode-attention kernel** (`7df881f5`, a same-session interleaved A/B, NOT the pre-registered sweep): at depth the new build is **1.18–1.41× the previous one** end to end. Against Ollama the **1.5B is 0.86× at 2048 and 0.87× at 3900** (was 0.70× / 0.61×) and the **7B is 0.81× at 3900** (was 0.61×). The depth-128 control ties new with old (0.98× / 1.00×). 7B @2048 against Ollama is not graded: Ollama read 20% below its own morning value. **Update 2026-09-26, after R18 shipped the rows-per-simdgroup decode GEMVs** (`8b04964a`, bit-identical; a same-session interleaved A/B, NOT the pre-registered sweep; Ollama v0.32.5, greedy, 3 runs × 8 × 64 tokens, idle-gated per cell): the new build is **1.12–1.14× the previous one on the 1.5B and 1.23–1.27× on the 7B**. Against Ollama the **1.5B is 0.99× / 0.97× / 0.96×** at 128 / 2048 / 3900 (the previous build 0.87× / 0.86× / 0.86×), and the **7B is AHEAD at every depth, 1.11× / 1.05× / 1.02×** (was 0.88× / 0.84× / 0.83×). **Update, same evening, after R18b** (`c5d7e310`, the rows kernels in MLX's masked half-staged form, bit-identical; the same protocol): **goinfer is AHEAD of Ollama in every cell**. The 1.5B reads **1.06× / 1.04× / 1.03×** at 128 / 2048 / 3900 and the 7B **1.19× / 1.11× / 1.06×**, 1.06–1.09× the R18 build | [`measurements/peer-claim-2026-09-25.md`](measurements/peer-claim-2026-09-25.md) cell g; depth curve §B3; R17 update: [`measurements/metal-decode-attn-r17-2026-09-25.md`](measurements/metal-decode-attn-r17-2026-09-25.md) "End to end against Ollama"; R18 update: [`measurements/metal-decode-gemv-r18-2026-09-26.md`](measurements/metal-decode-gemv-r18-2026-09-26.md) "End to end against Ollama"; R18b update: [`measurements/metal-decode-gemv-r18b-2026-09-26.md`](measurements/metal-decode-gemv-r18b-2026-09-26.md) "End to end against Ollama" |
+| **Apple Silicon Metal decode** | **Pre-registered re-run 2026-09-30 at `754f12d3` (cell g, PARTIAL): 0.5B @128 AHEAD 1.296× (188.8 vs 145.5 tok/s); the other eight cells were refused on load and are owed** ([`measurements/peer-sweep-2026-09-29.md`](measurements/peer-sweep-2026-09-29.md), MacBook results). Before it, the **pre-registered peer sweep 2026-09-25 (cell g, Ollama v0.32.5 at its defaults, 3 pairs per cell): AHEAD only at 0.5B, depth 128 (1.18×); BEHIND at every 2048 and 3900 cell — 0.75× / 0.70× / 0.71× at 2048 and 0.58× / 0.61× / 0.61× at 3900 (0.5B / 1.5B / 7B); 1.5B and 7B at depth 128 VOID** (an engine ended its reply under 95% of the tokens; raw 0.85× / 0.86×, ungraded). llama.cpp 0.3.0 reads the same way: ahead 1.09× at 0.5B @128, behind 0.54–0.70× at depth. Supersedes the short-context 0.86×/0.86×/1.08× and the depth-curve readings below (the 1.5B @3900 gap is unchanged at 0.61×, i.e. the 1.64× behind after `attention_fa`). phi3-mini's 0.94× (2026-09-17) is not re-measured; the Mac's `p3m` tag is the same weights, so that row stands. **Update, same day, after R17 shipped the block decode-attention kernel** (`7df881f5`, a same-session interleaved A/B, NOT the pre-registered sweep): at depth the new build is **1.18–1.41× the previous one** end to end. Against Ollama the **1.5B is 0.86× at 2048 and 0.87× at 3900** (was 0.70× / 0.61×) and the **7B is 0.81× at 3900** (was 0.61×). The depth-128 control ties new with old (0.98× / 1.00×). 7B @2048 against Ollama is not graded: Ollama read 20% below its own morning value. **Update 2026-09-26, after R18 shipped the rows-per-simdgroup decode GEMVs** (`8b04964a`, bit-identical; a same-session interleaved A/B, NOT the pre-registered sweep; Ollama v0.32.5, greedy, 3 runs × 8 × 64 tokens, idle-gated per cell): the new build is **1.12–1.14× the previous one on the 1.5B and 1.23–1.27× on the 7B**. Against Ollama the **1.5B is 0.99× / 0.97× / 0.96×** at 128 / 2048 / 3900 (the previous build 0.87× / 0.86× / 0.86×), and the **7B is AHEAD at every depth, 1.11× / 1.05× / 1.02×** (was 0.88× / 0.84× / 0.83×). **Update, same evening, after R18b** (`c5d7e310`, the rows kernels in MLX's masked half-staged form, bit-identical; the same protocol): **goinfer is AHEAD of Ollama in all six 1.5B and 7B cells**. The 1.5B reads **1.06× / 1.04× / 1.03×** at 128 / 2048 / 3900 and the 7B **1.19× / 1.11× / 1.06×**, 1.06–1.09× the R18 build. The 0.5B was not in these A/Bs: at 2048 and 3900 its latest reading is still the 09-25 sweep's 0.75× / 0.58× (it does not reach the block kernel; B-D01, `docs/audit-metal-2026-09-30.md`) | [`measurements/peer-claim-2026-09-25.md`](measurements/peer-claim-2026-09-25.md) cell g; depth curve §B3; R17 update: [`measurements/metal-decode-attn-r17-2026-09-25.md`](measurements/metal-decode-attn-r17-2026-09-25.md) "End to end against Ollama"; R18 update: [`measurements/metal-decode-gemv-r18-2026-09-26.md`](measurements/metal-decode-gemv-r18-2026-09-26.md) "End to end against Ollama"; R18b update: [`measurements/metal-decode-gemv-r18b-2026-09-26.md`](measurements/metal-decode-gemv-r18b-2026-09-26.md) "End to end against Ollama" |
 | **Cold start & footprint** | **goinfer alone** — first token in **0.48 s**, **77 MB** resident, model compiled *into* the binary | §A, Table 1 |
 | **Peer-independent** | pure Go, `CGO_ENABLED=0` (no libcuda/libnvrtc linked), **bit-identical** decode, HF logit-parity gate as a contract | Table 1 |
 | **goinfer does not have** | continuous batching · GPU breadth · broad multimodal (vision-in only, no audio) · 36 architectures ʲ vs peers' dozens | Table 1 |
@@ -636,6 +636,10 @@ Both K=64 and K=128 clear the registered ≥2× ships band by a wide margin, and
 pooled fidelity gate (K=64 alone and K=64+128 pooled; see the record). K=64, the smaller
 candidate, is the new floor. `metal/backend.go`'s `metalFastPrefillFloor` moved from 256 to 64.
 
+*2026-10-01 note (A-D01, `docs/audit-metal-2026-09-30.md`):* these rows predate R16's prefill GEMM (2026-09-25) and R19's
+prefill attention (2026-09-27), and none has been re-measured since. The floor's fidelity verdict stands; the ratios
+to Ollama are not current.
+
 #### Vision tower CPU prefill — re-measured 2026-09-08
 
 **SigLIP/Gemma 3 tower** (`gemma-3-4b-it`, 896², 4096 patches) and **Qwen2.5-VL tower**
@@ -1031,6 +1035,12 @@ as a bound.*
 > v0.32.5 at its defaults is AHEAD only at 0.5B depth 128 (1.18×) and BEHIND at every 2048/3900 cell (0.58–0.75×);
 > 1.5B and 7B at depth 128 are VOID. The rows below are kept as the earlier record.
 
+> **2026-10-01 note (F-D01, `docs/audit-metal-2026-09-30.md`):** this banner is no longer the latest Metal decode
+> reading. R17, R18 and R18b (2026-09-25/26) put the 1.5B and 7B ahead of Ollama in same-session interleaved A/Bs,
+> which are not the pre-registered sweep, and the 2026-09-30 pre-registered re-run measured only the 0.5B at depth 128
+> (AHEAD 1.296×); the headline table's Metal decode row has both. The heading's "4-bit both sides" also leaves out that
+> goinfer's LM head runs int8 (N-40).
+
 > **A newer, less rigorous datapoint exists — recorded here rather than folded into the table
 > below, because its method is not the same.** Run 2b's cold-user report
 > ([`docs/measurements/cold-user-2026-09-07-macbook-arm64.md`](measurements/cold-user-2026-09-07-macbook-arm64.md),
@@ -1084,6 +1094,9 @@ it registers via `decoder.RegisterBackend` and must be blank-imported by the bin
   the CUDA ratio does **not** carry over. The figure is size-dependent (0.96× → 0.74×).
 - Do not quote a Metal speed *multiple* as a headline. The defensible Metal claims are
   portability (no Xcode, no toolchain, static binary) and correctness parity.
+  *2026-10-01 note (F-D01):* these two bullets are the 2026-08 verdict. The headline table now quotes Metal
+  multiples, each labelled with its protocol (the pre-registered sweep, or a same-session A/B); portability and
+  correctness parity still stand.
 - **This is a SHORT-prompt number, deliberately, but "declines by default" is now STALE (N-02).**
   At the time this row was measured (2026-08-04) goinfer's Metal backend declined batched prefill
   by default (it was not bit-identical to sequential decode — 54% stream divergence, a figure once
@@ -1990,6 +2003,13 @@ llama.cpp and Ollama, which don't go through goinfer's residency guard, ran fine
 M35/M26 at depth 128 (see the W1 table above) — the boundary is specific to goinfer's own
 CPU-staged fallback, not to running these models on this hardware at all.
 
+*2026-10-01 note (D-D01, `docs/audit-metal-2026-09-30.md`):* "on any path" no longer holds as written. M35 has since run
+on the CPU's paged path from local disk ([`measurements/moe-pager-mode-darwin-2026-09-23.md`](measurements/moe-pager-mode-darwin-2026-09-23.md)),
+and M26 on Metal: the pager arms of 2026-09-20/22 drove the machine into swap
+([`measurements/metal-moe-autopager-m26-2026-09-20.md`](measurements/metal-moe-autopager-m26-2026-09-20.md)), and the
+aliased-weight runs of 2026-09-24 ran after the fork-collapse fix
+([`measurements/m26-alias-fork-collapse-2026-09-24.md`](measurements/m26-alias-fork-collapse-2026-09-24.md)).
+
 **Addendum, 2026-09-20 — the paged GPU-resident path (`MoECacheExperts`, a different mechanism
 from the CPU-staged fallback above) also proved unsafe on this machine, at two different slot
 counts, though for a different reason.** Full record:
@@ -2016,7 +2036,8 @@ budget; the same model, same budget, in **pool** mode decodes at a measured rate
 
 Read it as bounded, not as a benchmark row: one machine, warm-ish page cache, n=3, and the page cache
 flatters mmap mode; the 2.27 vs 2.22 difference is inside run-to-run noise. **What it does not
-lift:** M26 on Metal (S6's cell) is still off-limits, the memory-hog arm was not run, and the
+lift:** M26 on Metal (S6's cell) is still off-limits (it ran the next day, 2026-09-24:
+[`measurements/m26-alias-fork-collapse-2026-09-24.md`](measurements/m26-alias-fork-collapse-2026-09-24.md); D-D01), the memory-hog arm was not run, and the
 headroom on this Mac (2.7 GB live-available during the runs) is the same fragile headroom that
 caused the incidents above — the incidents were not disproved, one mode of one path was measured.
 
@@ -2264,6 +2285,8 @@ Metal and CPU backends, depth 128 only. Excluded, deliberately, not by oversight
 - **G20** — goinfer has no resident Metal backend for gpt-oss (the same `FeatAttnSink` gap noted for
   CUDA at the G20 table above), so a "Metal" label on this box would silently measure the
   CPU-staged fallback rather than the backend named. Not attempted rather than shipped mislabeled.
+  *2026-10-01 note (D-D01):* gpt-oss now has a resident Metal backend (`FeatAttnSink` declared, gated by
+  `TestGptOssResidentParity`); this run predates it.
 - **gemma3-1b** — its GGUF is not present in `~/models` or the archive on this box; excluded rather
   than pulled ad hoc mid-run.
 - **MLX** — not verified set up for this session; excluded rather than risk a garbage number from

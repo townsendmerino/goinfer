@@ -34,7 +34,7 @@ backend-agnostic; `residentBackendFeatures` (`decoder/features.go`) is where eac
 declares which of those shapes it actually implements — and that declared set is exactly what
 `hardware-matrix.md` is generated from.
 
-## The gaps, as of 2026-09-12
+## The gaps, as of 2026-09-12 (later additions are dated where they appear)
 
 Two kinds: a family CPU on every backend (the arch itself isn't bridged onto any resident
 runner), and a family resident on some backends but not others (a specific backend is missing
@@ -134,8 +134,11 @@ one feature or geometry seam). For each, the predicate that declines it and one 
 - **Qwen2.5-VL / Qwen3-VL on Metal support full multimodal resident decode via `decoder.ResidentMRoPE`
   and `UploadKV`.** Metal resident implements `ForwardMRoPE` (`metal/backend.go`, `metal/model.go`)
   decoupling rope rotation position from KV cache position via `uRopePos`, and `UploadKV` enables
-  bridging CPU-computed image prefill into resident GPU KV cache. Parity verified in
-  `metal/forwardmrope_parity_test.go` and `metal/uploadkv_parity_test.go`.
+  bridging CPU-computed image prefill into resident GPU KV cache. What is tested
+  (2026-10-01, F-D04 in `docs/audit-metal-2026-09-30.md`): `metal/forwardmrope_parity_test.go` checks
+  `ForwardMRoPE` against `Forward` and its invariance under a constant position shift, on llama-tiny
+  or a Qwen2.5-Coder GGUF, and `metal/uploadkv_parity_test.go` checks `UploadKV` against a
+  sequential forward; both skip without their fixture. No Metal test runs a Qwen-VL model.
 
 ## What's not here
 

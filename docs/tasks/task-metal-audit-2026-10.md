@@ -237,3 +237,16 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
     fixed by content, and five index rows were re-keyed to the new text.
   - The parity manifest went stale for 38 families (`decoder/model.go`'s comments); 39 goldens green, `deps_hash`
     refreshed.
+- 2026-10-01: **T0.5 done** (the docs half; the comment half is above), except F-D02's code options.
+  - `docs/benchmarks.md`: B-D01 (R18b's "AHEAD in every cell" is all six 1.5B and 7B cells; the 0.5B's latest
+    reading at depth is still 0.75× / 0.58×), F-D01 (callouts on the §B3 banner and its 2026-08 verdict, and N-40: the
+    LM head is int8), D-D01 4 and 5 (M35 and M26 have run here since "off-limits on any path"; gpt-oss is resident on
+    Metal), A-D01 (the floor tables predate R16 and R19).
+  - `docs/tasks/red-october.md`: D-D01 1–3 (the 3–4 tok/s ceiling is a 35B count; R11(c)'s "lower default" awaits a
+    pager re-run after the 2026-09-24 fork fix; Metal's expert-major prefill is not the lane R11(b) found
+    bit-identical).
+  - `docs/gpu-residency-coverage.md`: F-D04 (what the two tests cover; no Metal test runs a Qwen-VL model).
+  - `docs/audit-metal-2026-09-12.md`: D-D01 6 (`NewBufferNoCopy` superseded by S6) and C-D01 4 (N-20's f32 premise).
+  - `docs/tasks/task-never-swap-2026-09.md`: C-D01 2, under "What this doc does not claim".
+  - Two findings did not hold: A-D03's record is in the tree (`fdd990ba`; the audit's snapshot lacked it), and C-D01
+    item 3's 16 cores (`system_profiler`: 14, as the constant says).
