@@ -57,16 +57,25 @@ func TestMC5_prefillChunkInvariance(t *testing.T) {
 	// boundary on (2026-10-01, F-G02). 512 is serve's default chunk. 81 leaves a 28-token tail at position 972: the
 	// step route (E-P01, promptStepOK) must not take a short chunk above the floor, or the tail runs decode's numerics
 	// and differs from the whole pass (measured with the route open there: all 20480 logits).
-	for _, C := range []int{64, 128, 256, 384, 512, 100, 77, 81} {
+	//
+	// 16, 32 and 48 cross A-P01's GEMM tile selector (gemmTile: 32-token tiles at <= 32 rows, 32-feature tiles for the
+	// narrow GEMMs at <= 64 rows), so their chunks run the smaller tiles where the whole pass runs 64 × 64. Their first
+	// chunk is 64 tokens: a chunk that ends below the fast-prefill floor never reaches the batched pass (it ran
+	// sequentially before E-P01 and on the step kernels since, decode's numerics either way), so it cannot equal it.
+	for _, C := range []int{64, 128, 256, 384, 512, 100, 77, 81, 16, 32, 48} {
 		if err := r.useKVSlot(1); err != nil {
 			t.Fatal(err)
 		}
 		var lg []float32
-		for c := 0; c < N; c += C {
+		for c := 0; c < N; {
 			e := min(c+C, N)
+			if c == 0 && C < 64 {
+				e = 64
+			}
 			if lg, err = a.PrefillLast(context.Background(), embs[c:e], c); err != nil {
 				t.Fatalf("chunk %d..%d: %v", c, e, err)
 			}
+			c = e
 		}
 		lg = append([]float32(nil), lg...)
 		gotKV := snapshot(1)
