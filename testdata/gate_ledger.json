@@ -46,48 +46,48 @@
       "value": "PASS"
     },
     {
-      "commit": "eaa8bb23",
-      "date": "2026-09-06",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestCohere2R7bReal_gate",
-      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
-      "promoted_by": "francis",
-      "source_sha256": "22bbc43b4003c9f9",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
+      "promoted_by": "claude",
+      "source_sha256": "dec3e802f394b1f1",
       "value": "PASS"
     },
     {
-      "commit": "eaa8bb23",
-      "date": "2026-09-06",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestCohereAyaReal_gate",
-      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
-      "promoted_by": "francis",
-      "source_sha256": "9a293654afef5915",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
+      "promoted_by": "claude",
+      "source_sha256": "3a7f8bebd5ef63c2",
       "value": "PASS"
     },
     {
-      "commit": "679c9e5",
-      "date": "2026-08-14",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestDeepseekGGUFReal_gate",
-      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
-      "promoted_by": "francis",
-      "source_sha256": "cdb442c254d84894",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 2 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/realckpt.log): passed, re-measured on the fixed int8 quantizer",
+      "promoted_by": "claude",
+      "source_sha256": "e1f090363ce6018d",
       "value": "PASS"
     },
     {
-      "commit": "679c9e5",
-      "date": "2026-08-14",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestDeepseekMoonlightReal_gate",
-      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
-      "promoted_by": "francis",
-      "source_sha256": "c44fe4722792f03a",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
+      "promoted_by": "claude",
+      "source_sha256": "2f421635e44081f5",
       "value": "PASS"
     },
     {
-      "commit": "679c9e5",
-      "date": "2026-08-14",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestDeepseekV2LiteReal_gate",
-      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
-      "promoted_by": "francis",
-      "source_sha256": "447d510eff984613",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
+      "promoted_by": "claude",
+      "source_sha256": "b6a9a51d276a041b",
       "value": "PASS"
     },
     {
@@ -226,12 +226,12 @@
       "value": "PASS"
     },
     {
-      "commit": "679c9e5",
-      "date": "2026-08-14",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestGPT2_forwardParity",
-      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
-      "promoted_by": "francis",
-      "source_sha256": "61c1abd23d64c768",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 1 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/cell1.log): untagged cell 794 pass / 59 skip / 0 fail, ALL REQUIRED GATES GREEN",
+      "promoted_by": "claude",
+      "source_sha256": "b4c28a9dc00609a5",
       "value": "PASS"
     },
     {
@@ -244,12 +244,30 @@
       "value": "PASS"
     },
     {
-      "commit": "679c9e5",
-      "date": "2026-08-14",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestGatedDeltaNet_parity",
-      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
-      "promoted_by": "francis",
-      "source_sha256": "afbe74a50a8e58ef",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 1 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/cell1.log): untagged cell 794 pass / 59 skip / 0 fail, ALL REQUIRED GATES GREEN",
+      "promoted_by": "claude",
+      "source_sha256": "928c27c3f41b2301",
+      "value": "PASS"
+    },
+    {
+      "commit": "13c19bf7",
+      "date": "2026-09-30",
+      "gate": "TestGemma12Real_gate",
+      "note": "confirmed from docs/measurements/gemma12-gates-2026-09-30/real-gate-nobara.log (nobara-pc): gemma-2b-it, codegemma-2b, gemma-2-2b-it \u2014 safetensors f32 argmax exact, 8/8 greedy continuation, cosine 1.000000 per-token and batched; llama.cpp Q8_0 GGUFs argmax exact, 8/8, cosine 0.999981-0.999999",
+      "promoted_by": "claude",
+      "source_sha256": "f718667adbb403b1",
+      "value": "PASS"
+    },
+    {
+      "commit": "93722530",
+      "date": "2026-09-30",
+      "gate": "TestGemma12_forwardParity",
+      "note": "re-confirmed after the full-logit dumps became tracked and required (a missing dump now fails instead of skipping the cosine bar): docs/measurements/gemma12-gates-2026-09-30/forward-parity-{mac,nobara}-dumps-tracked.log, darwin/arm64 and linux/amd64, all 4 subtests per-token and batched cosine 1.00000000, max |dlogit| <= 2.4e-6. Before this, every machine but the Mac printed cosine NaN and passed on argmax/top-k alone. Mutation (dumps-removed) red.",
+      "promoted_by": "claude",
+      "source_sha256": "c0d0b7308e8dca02",
       "value": "PASS"
     },
     {
@@ -298,12 +316,12 @@
       "value": "PASS"
     },
     {
-      "commit": "2732e75b",
-      "date": "2026-09-18",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestGraniteDenseReal_gate",
-      "note": "v0.19.0 \u00a7C1 sweep 2026-09-18: passed",
-      "promoted_by": "francis",
-      "source_sha256": "1e5557aa1a46c501",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
+      "promoted_by": "claude",
+      "source_sha256": "3a297c35fe20802c",
       "value": "PASS"
     },
     {
@@ -325,30 +343,30 @@
       "value": "PASS"
     },
     {
-      "commit": "eaa8bb23",
-      "date": "2026-09-06",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestGraniteReal_oracle",
-      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
-      "promoted_by": "francis",
-      "source_sha256": "e32faff14ca97d96",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 2 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/realckpt.log): passed, re-measured on the fixed int8 quantizer",
+      "promoted_by": "claude",
+      "source_sha256": "4042c6de7d17e47d",
       "value": "PASS"
     },
     {
-      "commit": "bd085de",
-      "date": "2026-08-27",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestInt4_forwardParity",
-      "note": "confirmed PASS in the v0.15.0 release sweep, docs/measurements/parity_sweep_v0.15.0_bd085de_GREEN.log (the sweep tree was bd085de +dirty). The function body is byte-identical at bd085de and at promotion time, so this confirmation is keyed to the same assertion that produced the PASS. Promoted per audit-2026-09-02 G-04.",
-      "promoted_by": "francis",
-      "source_sha256": "c45a3e9242777750",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 1 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/cell1.log): untagged cell 794 pass / 59 skip / 0 fail, ALL REQUIRED GATES GREEN",
+      "promoted_by": "claude",
+      "source_sha256": "eb7a4e2027025c92",
       "value": "PASS"
     },
     {
-      "commit": "2732e75b",
-      "date": "2026-09-18",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestInternLM2_1_8bReal_gate",
-      "note": "v0.19.0 \u00a7C1 sweep 2026-09-18: passed",
-      "promoted_by": "francis",
-      "source_sha256": "dde5513248b02ba1",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
+      "promoted_by": "claude",
+      "source_sha256": "5ee93a881691b18c",
       "value": "PASS"
     },
     {
@@ -361,21 +379,21 @@
       "value": "PASS"
     },
     {
-      "commit": "2732e75b",
-      "date": "2026-09-18",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestLFM2Real_gate",
-      "note": "v0.19.0 \u00a7C1 sweep 2026-09-18: passed",
-      "promoted_by": "francis",
-      "source_sha256": "96d960c827d05b11",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
+      "promoted_by": "claude",
+      "source_sha256": "61d6c6bc94e56e85",
       "value": "PASS"
     },
     {
-      "commit": "eaa8bb23",
-      "date": "2026-09-06",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestLagunaGGUF_gate",
-      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
-      "promoted_by": "francis",
-      "source_sha256": "282c8c3feca4313b",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 2 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/realckpt.log): passed, re-measured on the fixed int8 quantizer",
+      "promoted_by": "claude",
+      "source_sha256": "f0236ec1d848cc2e",
       "value": "PASS"
     },
     {
@@ -406,12 +424,12 @@
       "value": "PASS"
     },
     {
-      "commit": "679c9e5",
-      "date": "2026-08-14",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestLlama4Real_gate",
-      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
-      "promoted_by": "francis",
-      "source_sha256": "67ea1e17d303d201",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 2 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/realckpt.log): passed, re-measured on the fixed int8 quantizer",
+      "promoted_by": "claude",
+      "source_sha256": "1ac3e653f7d93879",
       "value": "PASS"
     },
     {
@@ -460,12 +478,12 @@
       "value": "PASS"
     },
     {
-      "commit": "2732e75b",
-      "date": "2026-09-18",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestMinistral3Real_gate",
-      "note": "v0.19.0 \u00a7C1 sweep 2026-09-18: passed",
-      "promoted_by": "francis",
-      "source_sha256": "2c6d1a3e0506c4fe",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
+      "promoted_by": "claude",
+      "source_sha256": "0bd9f4332a7192c3",
       "value": "PASS"
     },
     {
@@ -523,6 +541,15 @@
       "value": "PASS"
     },
     {
+      "commit": "f00fdf43",
+      "date": "2026-10-01",
+      "gate": "TestOlmo3Real_gate",
+      "note": "first confirmation (nobara-pc, 2026-10-01): against the golden re-pinned under transformers 5.15.0 (testdata/olmo3_real_golden.json.gz, these bytes), argmax and 8-token continuation exact, cosine 1.000000; docs/measurements/olmo3-golden-repin-2026-10-01/",
+      "promoted_by": "claude",
+      "source_sha256": "8fc0f9972db89957",
+      "value": "PASS"
+    },
+    {
       "commit": "b7726cd",
       "date": "2026-09-13",
       "gate": "TestOlmo3_forwardParity",
@@ -532,12 +559,12 @@
       "value": "PASS"
     },
     {
-      "commit": "2732e75b",
-      "date": "2026-09-18",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestOlmoHybridReal_gate",
-      "note": "v0.19.0 \u00a7C1 sweep 2026-09-18: passed",
-      "promoted_by": "francis",
-      "source_sha256": "b62a646c98cb5221",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
+      "promoted_by": "claude",
+      "source_sha256": "d17049caa7f10d51",
       "value": "PASS"
     },
     {
@@ -550,21 +577,21 @@
       "value": "PASS"
     },
     {
-      "commit": "679c9e5",
-      "date": "2026-08-14",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestPhi3GGUFReal_gate",
-      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
-      "promoted_by": "francis",
-      "source_sha256": "352cdf1bf0472064",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 2 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/realckpt.log): passed, re-measured on the fixed int8 quantizer",
+      "promoted_by": "claude",
+      "source_sha256": "29a24774fe19658e",
       "value": "PASS"
     },
     {
-      "commit": "679c9e5",
-      "date": "2026-08-14",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestPhi3MiniReal_gate",
-      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
-      "promoted_by": "francis",
-      "source_sha256": "5d33b0d5c2cccf1c",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
+      "promoted_by": "claude",
+      "source_sha256": "ff6f5e5d8c7d8825",
       "value": "PASS"
     },
     {
@@ -577,21 +604,21 @@
       "value": "PASS"
     },
     {
-      "commit": "9ddde345",
-      "date": "2026-09-18",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestQwen25VLReal_gate",
-      "note": "cosine 0.999459, argmax exact \u2014 reproduced 2026-09-18, matches first-run 2026-09-08 result",
-      "promoted_by": "francis",
-      "source_sha256": "b75d811762605bb8",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
+      "promoted_by": "claude",
+      "source_sha256": "2f21616cddc02d6a",
       "value": "PASS"
     },
     {
-      "commit": "9ddde345",
-      "date": "2026-09-18",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestQwen2MoeReal_oracle",
-      "note": "first-ever run 2026-09-18: argmax exact, cosine 0.999544, full 8-token greedy continuation bit-identical, 38s",
-      "promoted_by": "francis",
-      "source_sha256": "a6b00aadc7fb47ac",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 2 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/realckpt.log): passed, re-measured on the fixed int8 quantizer",
+      "promoted_by": "claude",
+      "source_sha256": "1f3430655f2379bf",
       "value": "PASS"
     },
     {
@@ -613,21 +640,30 @@
       "value": "PASS"
     },
     {
-      "commit": "679c9e5",
-      "date": "2026-08-14",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestQwen35GGUF_gate",
-      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
-      "promoted_by": "francis",
-      "source_sha256": "5528384371d42c0d",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 2 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/realckpt.log): passed, re-measured on the fixed int8 quantizer",
+      "promoted_by": "claude",
+      "source_sha256": "ea4afa6ea02e2403",
       "value": "PASS"
     },
     {
-      "commit": "679c9e5",
-      "date": "2026-08-14",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestQwen35GGUF_weightDiff",
-      "note": "BULK-SEEDED from a sweep log, not an individual judgement \u2014 upgrade with `gate_ledger.py promote` when a person actually checks this gate's value",
-      "promoted_by": "francis",
-      "source_sha256": "a0cfa176e46e1131",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 2 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/realckpt.log): passed, re-measured on the fixed int8 quantizer",
+      "promoted_by": "claude",
+      "source_sha256": "5f692d98a8ef1499",
+      "value": "PASS"
+    },
+    {
+      "commit": "70be7081",
+      "date": "2026-10-01",
+      "gate": "TestQwen35Real_gate2FullModel",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 2 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/realckpt.log): passed, re-measured on the fixed int8 quantizer; its first confirmed run (passed in sweep run 2 at bcf50a49 too, 1026.85 s)",
+      "promoted_by": "claude",
+      "source_sha256": "5c2682878d0ad621",
       "value": "PASS"
     },
     {
@@ -640,12 +676,12 @@
       "value": "PASS"
     },
     {
-      "commit": "eaa8bb23",
-      "date": "2026-09-06",
+      "commit": "1de75952",
+      "date": "2026-10-01",
       "gate": "TestQwen38GGUF_gate",
-      "note": "09-06 aikit re-arm sweep (docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md)",
-      "promoted_by": "francis",
-      "source_sha256": "43fa83faf91e2f64",
+      "note": "v0.20.0 \u00a7C1: re-run after its fit-guard knob (nobara-pc, 1de75952 on aikit v1.51.1, 2026-10-01; docs/measurements/release-v0.20.0/scoped-revalidation/qwen38-gguf-rerun.log): passed, 113.6 s",
+      "promoted_by": "claude",
+      "source_sha256": "2e068e213ab743e8",
       "value": "PASS"
     },
     {
@@ -667,21 +703,21 @@
       "value": "PASS"
     },
     {
-      "commit": "9ddde345",
-      "date": "2026-09-18",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestQwen38Real_oracle",
-      "note": "int4->int8 fix (2026-09-18): cosine 0.999886, argmax exact (11751), full 8-token continuation exact match, 90s, peak RSS 27GB. int4 near-tie divergence at continuation[2] resolved by switching precision, not a code defect (see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md)",
-      "promoted_by": "francis",
-      "source_sha256": "4c266481b65136ad",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 2 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/realckpt.log): passed, re-measured on the fixed int8 quantizer",
+      "promoted_by": "claude",
+      "source_sha256": "b6bcb6bfab938a05",
       "value": "PASS"
     },
     {
-      "commit": "2732e75b",
-      "date": "2026-09-18",
+      "commit": "70be7081",
+      "date": "2026-10-01",
       "gate": "TestQwen3MoeReal_oracle",
-      "note": "v0.19.0 \u00a7C1 sweep 2026-09-18: first-ever run on this box, passed",
-      "promoted_by": "francis",
-      "source_sha256": "399c0a466c321538",
+      "note": "v0.20.0 \u00a7C1 scoped re-validation step 2 (nobara-pc, 70be7081 on aikit v1.51.1, 2026-10-01; ~/goinfer-logs/release-v0.20.0/scoped-revalidation/realckpt.log): passed, re-measured on the fixed int8 quantizer",
+      "promoted_by": "claude",
+      "source_sha256": "d321c6642241eb04",
       "value": "PASS"
     },
     {
@@ -703,12 +739,12 @@
       "value": "PASS"
     },
     {
-      "commit": "2732e75b",
-      "date": "2026-09-18",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestSmolLM3_3bReal_gate",
-      "note": "v0.19.0 \u00a7C1 sweep 2026-09-18: passed",
-      "promoted_by": "francis",
-      "source_sha256": "646a771e3601d9a4",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
+      "promoted_by": "claude",
+      "source_sha256": "926517436674becb",
       "value": "PASS"
     },
     {
@@ -721,12 +757,12 @@
       "value": "PASS"
     },
     {
-      "commit": "650c1b5f",
-      "date": "2026-09-21",
+      "commit": "bcf50a49",
+      "date": "2026-10-01",
       "gate": "TestSpark25Real_gate",
-      "note": "Real oracle vs XHToken/Spark-X2.5-1.7B: argmax exact, cosine 1.000000, full 8-token greedy continuation match. Required a monitored GOINFER_NO_FIT_GUARD bypass on this machine (user-approved), no incident.",
+      "note": "v0.20.0 \u00a7C1 sweep run 2 (nobara-pc, bcf50a49, 2026-10-01; ~/goinfer-logs/parity-sweep-v020-2026-10-01/parity-sweep.log): passed. f32 load, which never calls the int8 quantizer aikit v1.51.1 fixed, so the result stands at the aikit v1.51.1 bump",
       "promoted_by": "claude",
-      "source_sha256": "226c31951a97fac5",
+      "source_sha256": "1b9c1708cfd7a740",
       "value": "PASS"
     },
     {

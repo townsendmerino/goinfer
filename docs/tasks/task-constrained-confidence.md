@@ -1,6 +1,8 @@
 # Task: confidence — per-field probabilities on constrained output, and a typed `/v1/decisions` endpoint (C0–C2, D0–D9) — 2026-09
 
-> **Status, 2026-09-30: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b queued on nobara for tonight's run; D7 projected.**
+> **Status, 2026-10-01: C0–C2, D0–D5 done; D6a GRADED → BUILD D2–D4 (built); D6b GRADED: f32 exact (PASS), the three
+> quantized arms keep calibration but miss the 98% top-1 bar, so the decision-model default is the owner's call
+> ([`decisions-d6b-2026-09/results.md`](../measurements/decisions-d6b-2026-09/results.md)); D7 projected.**
 > - **D6a** ([`decisions-d6a-2026-09-28.md`](../measurements/decisions-d6a-2026-09-28.md)): arm A (Qwen3.5-9B, chat-v1, calibrated)
 >   reads top-1 0.4197 and ECE 0.1656, against JEV-9B's 0.9181 and a bar of 0.0632, so the registered rule says **build D2–D4**.
 >   The control failed as registered (bare-v1 0.3378 against the authors' B0 0.5180). The investigation found the inputs identical
@@ -115,7 +117,7 @@ is.
 
 **Decisions.**
 - **Hidden-state seam exists and is wired for `qwen3_5`.** `ForwardCapture`
-  (`decoder/model.go:1292`) returns logits plus captured residuals. `qwen3_5` dense shares
+  (`decoder/model.go:1304`) returns logits plus captured residuals. `qwen3_5` dense shares
   `qwen3_5_moe`'s own-forward row, which has Captures = true and Recurrent = true
   (`decoder/arch.go:954`; the predicate is `a.qwen35 != nil`, so it matches both). The capture
   contract (`decoder/capture.go:14`) is the residual *after* layer l, before the final norm, so D2
@@ -616,7 +618,7 @@ schema was never published (D0).
 
 - `POST /v1/decisions` (+ `:batch`, ≤256 items) and the TypeSafe-shaped alias if D0 says so,
   registered with the same `auth → haltGate → inf → maxBytes` chain as its siblings
-  (`internal/serveapp/main.go:647`). Batch goes through J1 admission and, when asked, the J3 job
+  (`internal/serveapp/main.go:654`). Batch goes through J1 admission and, when asked, the J3 job
   object, so a long batch is re-attachable.
 - Response: `distribution`, `decision`, `confidence`, `latency_ms`, plus `model`, `route` (`label` |
   `head`), `backend`, and `calibrated` (false when no `calibration.json` was found — legal, but
@@ -883,13 +885,13 @@ trigger. D5 can land after D1 alone if D6a says Route A is enough.
 ## Sources
 
 `constrain/constrain.go:98`, `:147`, `:166`, `:208` (`ForcedRun`, `MaskAt`, `ForcedBytesRun`,
-`Process`) · `decoder/model.go:1292` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
+`Process`) · `decoder/model.go:1304` (`ForwardCapture`) · `decoder/capture.go:14` (the capture
 contract) · `decoder/arch.go:954` (the `qwen3_5` / `qwen3_5_moe` own-forward row) ·
 `decoder/arch.go:368` (`FusedDeltaNetProj`) · `decoder/lora.go:144` (`validateTargets`) ·
 `decoder/lora.go:353` (`LoadAdapter` refuses own-forward) · `decoder/weights.go:695`, `:744`
 (merge-at-load) · `decoder/kvcache.go:540` (`TruncateTo`) · `decoder/kvsnapshot.go:62` (snapshot
 skips recurrent state) · `internal/serveapp/openai.go:34`, `:536`, `:538` (`top_logprobs` cap,
-`logprobs`, `response_format`) · `internal/serveapp/main.go:647` (route middleware) ·
+`logprobs`, `response_format`) · `internal/serveapp/main.go:654` (route middleware) ·
 `docs/spec/10-optfwd-gate.md:177` (sampler share) ·
 [autotrust/JEV-27B](https://huggingface.co/autotrust/JEV-27B) (adapter, head, calibration, API) ·
 [autotrust/JEV](https://huggingface.co/autotrust/JEV) · [autotrust/JEV-9B](https://huggingface.co/autotrust/JEV-9B) ·

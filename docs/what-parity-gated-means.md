@@ -1,6 +1,6 @@
 # What "parity-gated" means
 
-goinfer's README says it supports 36 model families, HuggingFace-parity-gated. This page explains
+goinfer's README says each model family it supports is HuggingFace-parity-gated. This page explains
 what stands behind that phrase, and — as importantly — what it does not cover.
 
 ---

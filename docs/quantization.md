@@ -131,12 +131,14 @@ Stated so nobody reads absence as endorsement:
   instead. It works with the sidecar `.giw` cache (baked into its own `e4h`-suffixed cache key,
   distinct from a plain-head sidecar of the same source and quant — `internal/prequant.go`'s
   `streamCachePath`) as well as a direct load.
-  - **Known issue (found 2026-09-28): on Metal the default costs you the GPU.** The Metal resident runner does not
-    accept an int4 embedding table (`weight kind "int4" is not int8`), so a default load declines the resident. The
-    model then decodes on the CPU (`decode path: cpu (int4) — requested metal → running on cpu`).
-  - Verified on the 1.5B: the same binary with `--embed-int4=false` goes `metal-resident (int4)`. Until this is fixed,
-    **pass `--embed-int4=false` on Metal.**
-  - The flip was measured on the CPU backend only, and CUDA and WebGPU have not been checked.
+  - **On Metal the default is off (since 2026-09-30),** whether `--backend metal` is named or chosen by
+    `--backend auto`. The Metal resident runner does not accept an int4 embedding table
+    (`weight kind "int4" is not int8`). From 2026-09-28 to 2026-09-30 the default was on there
+    too, so a plain Metal load declined the resident and decoded on the CPU (`decode path: cpu (int4) — requested
+    metal → running on cpu`). An explicit `--embed-int4` on Metal is still honoured, and then runs on the CPU.
+  - Checked 2026-09-30 on the 0.5B coder: with the int4 table, CUDA stays `cuda-resident (int4)` (nobara-pc) and
+    WebGPU stays `webgpu:metal-resident (int4)` (M1 Pro), so the default stays on for them. Only Metal declined.
+  - The flip's quality and speed were measured on the CPU backend only.
 - The recommendation is for the families and shapes in `parity_manifest.json`. A family outside
   the gated set inherits no promise from this page.
 

@@ -117,4 +117,4 @@ goinfer-chat decide --model <file.gguf> --template chat-v1 --calibration calibra
 ```
 
 - `decide` reads one JSON line per question (`id`, `kind`, `state`, `question`, `options`) and writes one line with the distribution and the decision. Its default template is `bare-v1`, unlike the server's, so pass `--template`. `--permute n` averages a choice over n option orders, at one prefill each, to cancel a lean towards one position.
-- On Metal, the default `--embed-int4` currently sends a load to the CPU; pass `--embed-int4=false` (docs/quantization.md, Known issue). The graded run is planned for the Linux PC because on the 16 GB MacBook the 9B did not fit Metal's memory budget and fell back to the CPU.
+- On Metal, an explicit `--embed-int4` sends a load to the CPU, which is why it defaults off there (docs/quantization.md). The graded run is planned for the Linux PC because on the 16 GB MacBook the 9B did not fit Metal's memory budget and fell back to the CPU.

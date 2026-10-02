@@ -2,7 +2,7 @@
 title: "One file, model inside"
 area: "Distribution"
 order: 11
-summary: "One file holds the runtime and a fixed Qwen2.5-Coder model, 0.5B or 1.5B. It is large, runs on the CPU by default, and its speed figures are old."
+summary: "One file holds the runtime and a fixed Qwen2.5-Coder model, 0.5B or 1.5B. It is large, uses a GPU only on Linux with NVIDIA, and its speed figures are old."
 stand: "A release asset that is the program and a model in one executable. You download it, check its hash and run it. There is nothing else to install and no model to fetch."
 measured: 2026-09-19
 reviewed: 2026-09-29
@@ -18,8 +18,8 @@ doesnt:
     text: "The model size is fixed when the file is built, and so is the quantization: int8 weights and int8 activations, shown as int8int8. `--quant` has no effect on it. `--lora` (an adapter) and `--stream-weights` are refused. You can pass `--model` to run a different file, but then the embedded weights sit unused, and the plain runtime does the same job in about 9 MB."
   - title: "The model is not goinfer's, and it is small."
     text: "It is Qwen2.5-Coder-Instruct, copyright Alibaba Cloud, under Apache-2.0. Redistributing the binary is redistributing those weights, so the release carries the license text and a NOTICE with the attribution. The 0.5B is good at short code tasks, and the project's own demo README says it is not a chat genius."
-  - title: "GPU support is compiled in on two platforms, and not shown to be used."
-    text: "The macOS files are built with the Metal backend and the Linux files with CUDA. The Windows ones have no GPU backend. The default is `--backend cpu`, and every speed figure here is a CPU run. No record measures these files on a GPU. The demo README still says the build is CPU by design, a line written before the release build added the GPU backends."
+  - title: "It uses a GPU only on Linux, and no record measures that."
+    text: "The macOS files are built with the Metal backend and the Linux files with CUDA. The Windows ones have no GPU backend. The default, `--backend auto`, runs these files on CUDA when an NVIDIA device answers. On macOS it keeps them on the CPU, because Metal would re-quantize their int8 weights to int4. Every speed figure here is a CPU run, and no record measures these files on a GPU. The demo README still says the build is CPU by design, a line written before the release build added the GPU backends."
   - title: "Its numbers are old, and not every release has the files."
     text: "The start-up and memory figures come from an old CPU record, first printed in the changelog for v0.1.3 (2026-06-05), not from a v0.19.0 file. The release build failed for v0.18.0, which has no files attached today, and v0.6.0 to v0.15.0 had none. The macOS binaries are unsigned, so Gatekeeper blocks the first run."
 figures:
@@ -89,6 +89,6 @@ The speed row is a Go benchmark run in-process, not the shipped binary. It loade
 ## Use it
 
 - Pick the file for your platform and model size from the [release page](https://github.com/townsendmerino/goinfer/releases/latest). Names end in `darwin-arm64`, `darwin-amd64`, `linux-amd64`, `linux-arm64`, `windows-amd64.exe` or `windows-arm64.exe`.
-- Run it with no arguments for a chat. `--help` lists the flags, including `--backend`, whose values are `cpu`, `webgpu`, `cuda` and `metal`.
+- Run it with no arguments for a chat. `--help` lists the flags, including `--backend`, whose values are `auto` (the default), `cpu`, `webgpu`, `cuda` and `metal`.
 - To use your own model with the same program, take the plain `goinfer-chat-<os>-<arch>` file (9,370,146 bytes for macOS arm64 in v0.19.0) and pass `--model` a GGUF path.
 - To build one yourself, from a clone of the repo: `./demo/chat/build-embed.sh --name goinfer-chat-0.5b <model.gguf> darwin/arm64`. The output goes to `demo/chat/dist/`.

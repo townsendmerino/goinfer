@@ -1,0 +1,5 @@
+ docs/capability-matrix.json   | 16 ++++----
+ docs/capability-matrix.md     | 16 ++++----
+ pull/capability-matrix.json   | 16 ++++----
+ testdata/parity_manifest.json | 92 +++++++++++++++++++++----------------------
+ 4 files changed, 70 insertions(+), 70 deletions(-)

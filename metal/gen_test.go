@@ -39,7 +39,8 @@ func TestGemma3_GeneratesCoherently(t *testing.T) {
 	}
 	rf := mg.ResidentForwardForTest()
 	if rf == nil {
-		t.Fatal("metal resident DECLINED")
+		skipIfMemoryDeclined(t, mg)
+		t.Fatalf("metal resident DECLINED (%s)", mg.ResidentDecline())
 	}
 	mcpu, err := decoder.Load(path, decoder.Options{Quant: "int8int8"})
 	if err != nil {

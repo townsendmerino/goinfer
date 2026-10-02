@@ -1,7 +1,7 @@
 # Peer sweep, re-run at one commit (nobara-pc and MacBook, 2026-09-29)
 
-**Status: nobara-pc half (cells a–f) RUN 2026-09-29 22:09–23:38 PDT and graded 2026-09-30, below. The MacBook half (g–i) has not
-run** (the Mac's night queue was not started). Pre-registered 2026-09-29, before any timed run; the text above *Results* is unchanged,
+**Status: nobara-pc half (cells a–f) RUN 2026-09-29 22:09–23:38 PDT and graded 2026-09-30, below. The MacBook half (g–i) RAN
+2026-09-30 21:59–23:11 PDT and is PARTIAL: cell h complete, g one cell, i none** — the harness refused the rest on load (below). Pre-registered 2026-09-29, before any timed run; the text above *Results* is unchanged,
 and a bar that turns out wrong gets a dated amendment with its mechanism, not an edit.
 
 **Question.** What does the peer table say now? [`peer-claim-2026-09-25.md`](peer-claim-2026-09-25.md) is the last full
@@ -122,3 +122,31 @@ graded. These are the cells the site's `claims.json` cites.
 | cuda phi3-mini @3900 greedy | 53.4 / 53.4 / 53.4 | 53.4 | 74.4 / 74.4 / 74.4 | 74.4 | 0.717 / 0.718 / 0.718 | 0.718 | BEHIND |
 | cuda M26 @128 greedy | 39.4 / 39.3 / 37.3 | 39.3 | 22.3 / 22.3 / 22.3 | 22.3 | 1.767 / 1.763 / 1.676 | 1.763 | AMBIGUOUS-HIGH |
 | cuda 0.5B @128 temp0.8_topp0.95 | 242.9 / 240.0 / 239.3 | 240.0 | 260.7 / 260.2 / 260.4 | 260.4 | 0.932 / 0.922 / 0.919 | 0.922 | BEHIND |
+
+## Results — MacBook, cells g–i (run 2026-09-30, graded 2026-10-01): PARTIAL
+
+The Mac night job `peer-sweep-mac`, 21:59–23:11 PDT, at the pinned `754f12d3`, `--embed-int4=false` on the Metal cells (change 4).
+Results, provenance, serve logs and the grade are in [`peer-sweep-2026-09-29/mac/`](peer-sweep-2026-09-29/mac/). Graded with
+this record's `grade.py`, unchanged in its rules; it now also reads the Mac's files, and reads the provenance's NVIDIA driver as
+optional because the Mac has none.
+
+**Most of g and all of i did not run.** The harness waits up to 600 s for the 1-minute load average to fall to 1.00 before each
+cell and refuses rather than measure under contention. It refused twice mid-sweep (load 1.21, then 1.07): the owner's desktop
+applications and an interactive session were running on the Mac. So cell g has one cell, and cell i goinfer's half only, with
+nothing to pair. That is a property of the night, not of either engine; the missing cells are owed a run on a quiet Mac. Nothing
+below is extrapolated to them.
+
+| cell | goinfer | Ollama v0.32.5 | pairs (r) | outcome |
+|---|---|---|---|---|
+| g: Metal decode, 0.5B @128 | 188.8 / 188.6 / 188.1 tok/s | 145.3 / 145.5 / 145.7 | 1.299 / 1.296 / 1.291 | **AHEAD 1.296×** |
+| g: 1.5B and 7B @128/2048/3900; 0.5B @2048/3900; every llama.cpp pair | — | — | — | not run (load refusal) |
+| i: CPU decode 0.5B / 1.5B @128 | 0.5B only | — | — | not run (load refusal) |
+| h: Metal TTFT, 1.5B, K=512 (6 requests) | median 571.5 ms | 578.2 ms | 1.058 / 1.002 / 1.007 / 1.016 / 1.119 / 1.116 | **AMBIGUOUS-HIGH** (median 1.037; goinfer spread 11.4% caps it) |
+| h: Metal TTFT, 1.5B, K=3900 (6 requests) | median 4256.6 ms | 4184.8 ms | 0.976–0.985 | **LEVEL 0.983** |
+
+**Against 09-25:** Metal TTFT at K=3900 was 1.96× behind (8.28 vs 4.23 s) on 09-25; it is now level. Between the two, R19
+(`attention_prefill_steel`, 2026-09-27) replaced head-dim-128 prefill attention, which 09-25 named as that remainder. At K=512,
+09-25 read 1.05× behind; it is now ambiguous on the high side. Metal 0.5B decode at depth 128 was AHEAD 1.18× on 09-25 and is
+AHEAD 1.296× now (R18b's GEMVs landed between). The goinfer_exact arm of cell h did not start ("server did not come up") and
+grades nothing.
+

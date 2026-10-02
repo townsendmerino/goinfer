@@ -3,8 +3,10 @@
 > **Current, 2026-09-29. LIVE at https://goinfer.dev (first launch 2026-09-29, a manual run of the `site` workflow). Built: the
 > generator, Models (S2), Home (S1), Download (S4), the Docs shell (S3), the writeup machinery (S8c) with the first writeup, and the
 > book at `/book/`. The old GitHub Pages address is a redirect stub.**
+>   **Amended 2026-09-30 (S8, below): a push to `main` that changes `docs/capability-matrix.json` also deploys.**
 > - **Owner decisions:**
->   - the site changes **only when a release is cut** (S8d);
+>   - the site changes **only when a release is cut** (S8d), **or when the capability matrix on `main` changes**
+>     (amendment 2026-09-30);
 >   - the 26B figure is **40.2 tok/s** (done);
 >   - **twenty** "What's different" writeups (§4a);
 >   - one host: the book lives at `goinfer.dev/book/` (§5).
@@ -90,6 +92,24 @@ matrix itself already carries ("the registry is the source of truth; do not hand
 ## 4. The sections
 
 ### S1 — Home
+
+> **Amendment, 2026-09-30 (owner, via the positioning brief): the hero changed direction.** The owner decided the
+> primary reader is the Go engineer embedding a model in their own program, not someone shopping for an Ollama
+> alternative, and the README was rewritten to match (`5ab05712`). The 2026-09-29 hero ("What will run well on your
+> machine?", §4a) put the machine picker first, which suits the second reader and not the first. Now:
+> - **Hero:** "Run an open-weight LLM inside your Go program.", the README's one-line promise, with the README's
+>   smoke-marked `go get` line as the primary call to action (a copy box), "Use it from Go" (the new first docs page)
+>   beside it, and Download as the secondary link. Then the struct example, as lines from `examples/structured`
+>   rather than the README's illustrative snippet (whose `generate(sp)` does not compile); `home_test.go` holds each
+>   line to that file.
+> - **The machine picker is unchanged and moves to the second screen**, under its own heading "What will run well on
+>   your machine?".
+> - **Doors:** "Embed it" first, full width, then Try it, Connect your tools, Run bigger models.
+> - **"What's different":** the struct writeup first, the tool-call one second, then the rest in file order
+>   (`Lead` in `writeup.go`; reordered at build, not renumbered, so no URL moves). This applies on `/different/` and
+>   to the writeups' previous/next links too.
+> - The rules below still hold: no speed claim in the hero, no pricing or sign-in, and every writeup keeps its "what
+>   it doesn't do" block.
 One line on what it is. The demo GIF that already exists. Install. Then the four things that are
 true and unusual: pure Go with no toolchain, one file that can embed its own model, parity-gated
 numerics against HuggingFace, and schema-constrained output. A short, plain statement of what it is
@@ -139,7 +159,8 @@ Three hand-built pages, reviewed by the owner and approved as the direction. The
 for the generator's templates, not files to ship. Open them straight from disk; they need nothing
 but the Google Fonts request.
 
-- **`home.html` — S1.** Nav is Models / Docs / Download / What's different. The hero is
+- **`home.html` — S1** (the hero below was superseded 2026-09-30; see the S1 amendment). Nav is Models / Docs /
+  Download / What's different. The hero is
   "What will run well on your machine?": pick one of the three measured machines (M1 Pro 16 GB /
   RTX 2070 SUPER 8 GB / Ryzen 7 CPU) or "something else" (a fit estimate, no speeds). Each model row
   shows fit, parity tier, and **two labelled bars, goinfer and Ollama** (a single bar with a tick
@@ -267,6 +288,22 @@ same order, with a real "It doesn't…" line and its figures in `claims.json`.
 that moves with every push to `main`. So a push never deploys. It builds and runs the gates, and the deploy waits for a
 release. The consequences are spelled out in S8d and S8f.
 
+**Amendment, 2026-09-30 (owner, via the positioning brief): a capability-matrix change on `main` deploys too.** The
+Models page said 37 families while `main` had 39, and the count would stay wrong until the next release. Two things
+found while making the change:
+- The rule was already not what ran: both deploys so far (2026-09-30, `914de67a` and `634799af`) were manual
+  dispatches from `main`, not release builds. The latest release is v0.19.0 (2026-09-18), so the live site already
+  described `main`.
+- A deploy from `main` renders `main`. Between releases the Models pages can therefore list a family the latest
+  release's binaries do not carry yet (Gemma 1 and 2 are in `main`, not in v0.19.0). Nothing on the site marks that
+  today.
+
+How it works (`site.yml`): every build writes the matrix's sha256 to `/capability-matrix.sha256`. A push to `main`
+reads the live copy and deploys when it differs, or when the live site has none (a 404). Comparing against the live
+site, rather than asking whether this push touched the file, means a push run that was cancelled or failed before its
+deploy is made up by the next push that runs the workflow. Push runs no longer cancel each other; pull-request runs
+still do. Any other push still deploys nothing.
+
 ### S8a — The generator
 - **A Go program in `site/`, with its own `go.mod`** (`github.com/townsendmerino/goinfer/site`). A
   markdown library for the writeups then never enters goinfer's own dependency graph.
@@ -332,8 +369,8 @@ release. The consequences are spelled out in S8d and S8f.
 5. Optional: `www.goinfer.dev` → the apex, as a Cloudflare Single Redirect rule (the `www` DNS record must be proxied).
 
 ### S8f — Keeping it current
-- **Generated pages update themselves, at a release.** A new family, a new checkpoint or a new release rebuilds the
-  site when the next release is cut, and only then. S7 fails the build if a family has no page. Numbers measured after
+- **Generated pages update themselves, at a release** (and, since the 2026-09-30 amendment, when the capability
+  matrix on `main` changes). A new checkpoint or a new release rebuilds the site when the next release is cut. S7 fails the build if a family has no page. Numbers measured after
   the last release do not appear until the next one, which is intended.
 - **Numbers cannot silently go stale.** The claims check fails the build when a cited source
   changes under it.

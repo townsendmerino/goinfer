@@ -1,0 +1,9 @@
+good:       c7f8eff76c7c77ee6ee8605816d1412af042cb8c
+bad:        bcf50a49ab3d93ce92bec9460ac10f770c135aa0
+paths:      decoder constrain internal/giw tokenizer go.mod go.sum
+candidates: 164
+started:    2026-10-01 08:48:22 PDT
+go:         go version go1.27.0 linux/amd64
+box:        nobara-pc, 16 cpus, 62 GB
+assets:     /home/francis/models/qwen3.6-35b-a3b-Q8_0.gguf, /home/francis/models/qwen35_real_golden
+finished:   2026-10-01 09:51:47 PDT

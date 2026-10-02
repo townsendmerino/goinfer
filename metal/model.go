@@ -355,6 +355,12 @@ type resident struct {
 	// the sequential Forward loop: correct, just a slower TTFT.
 	prefillOK bool
 
+	// w8: every dense body projection runs as W8A8 on its int8 weights instead of being re-quantized to int4
+	// (docs/tasks/task-metal-int8-2026-10.md, slice 1). Set by buildResident (w8Eligible). The GEMV pipelines are then
+	// the int8 twins, and the paths that only read int4 are off: the R18 rows kernels, the f16 lane, fast prefill and
+	// the MC3 batched step.
+	w8 bool
+
 	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits Buffer
 	invf, uH, uI, uNH, uScale, uEps                            Buffer // invf = model-level rope (prefill only); geometry uniforms live on residLayer.geom
 	uPos, uNKeys, uRopePos, uQTempScale                        Buffer
@@ -676,6 +682,63 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	return NewBufferUint32s(d, words), NewBufferU16s(d, scales)
 }
 
+// nativeInt8 turns the native int8 path on (w8Eligible). It is off until gates F3 and S of
+// docs/tasks/task-metal-int8-2026-10.md pass, and the gate tests set it; it is not an option or an environment
+// variable. When the gates pass it becomes the default and this variable goes.
+var nativeInt8 = false
+
+// w8Eligible reports whether m runs on the native int8 path (r.w8): every dense body projection is int8-kind
+// (int8int8, or weight-only int8, which CUDA and WebGPU also run against int8 activations) with K a multiple of 4,
+// and the model is one slice 1 of docs/tasks/task-metal-int8-2026-10.md covers: no MoE, no Gemma-4 MoE, no DeltaNet
+// (whose families also carry the gated-softmax layers). Anything else keeps the int4 re-quantization. A K=V layer
+// has no v_proj and fails the check, so it is never fused as int8.
+func w8Eligible(m *decoder.Model, r *resident) bool {
+	if !nativeInt8 || r.moe != nil || r.g4moe != nil || r.dnet != nil {
+		return false
+	}
+	w := m.Weights()
+	if len(w.Layers) == 0 {
+		return false
+	}
+	for l := range w.Layers {
+		lw := &w.Layers[l]
+		mats := []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj, &lw.UpProj, &lw.DownProj}
+		if !r.nonGatedMLP {
+			mats = append(mats, &lw.GateProj)
+		}
+		for _, wm := range mats {
+			if _, _, _, ok := wm.Int8(); !ok || wm.Rows() == 0 || wm.Cols()%4 != 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// int8Concat row-concatenates same-K int8 WeightMats into ONE int8 buffer and its per-row f32 scales: int4Concat's
+// twin for a w8 model's fused QKV and gate|up. Codes and scales are copied, not re-quantized, so the fused GEMV
+// computes exactly what the separate ones would. Slice 1 copies them even from a .giw mapping (the single tensors
+// alias through int8BufA); the copy is counted in the alias stats.
+func int8Concat(d *Device, a *weightAlias, wms ...*linalg.WeightMat) (Buffer, Buffer) {
+	var nCodes, nRows int
+	for _, w := range wms {
+		nCodes += w.Rows() * w.Cols()
+		nRows += w.Rows()
+	}
+	codes := make([]int8, 0, nCodes)
+	scales := make([]float32, 0, nRows)
+	for _, w := range wms {
+		q8, sc, _, ok := w.Int8()
+		if !ok {
+			panic(fmt.Sprintf("metal: int8Concat weight kind %q is not int8", w.Kind())) // buildResident's recover declines
+		}
+		codes = append(codes, q8[:w.Rows()*w.Cols()]...)
+		scales = append(scales, sc[:w.Rows()]...)
+	}
+	a.addCopy(int64(len(codes) + 4*len(scales)))
+	return NewBufferInt8(d, codes), NewBufferFloats(d, scales)
+}
+
 // BuildResident builds a Metal resident decoder from an int8-loaded dense Qwen2/Llama
 // Model. Handles Qwen2 q/k/v bias; assumes no QK-norm / sliding-window / embed-scale
 // (the DecodeRunnerEligible dense shape), full RoPE via the model's own inv-freq table.
@@ -848,6 +911,13 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.uDnRep, r.uDnVBase = NewBufferU32(d, uint32(dp.rep)), NewBufferU32(d, uint32(2*dp.keyDim))
 		r.uDnValueDim = NewBufferU32(d, uint32(dp.valueDim))
 	}
+	// Native int8 (docs/tasks/task-metal-int8-2026-10.md, slice 1): a dense model whose body projections are all int8
+	// runs them as W8A8 instead of re-quantizing them to int4. The int4-only paths cannot read those buffers, so they
+	// are off for it: fast prefill and the f16 lane here, the R18 rows kernels and the MC3 step below.
+	r.w8 = w8Eligible(m, r)
+	if r.w8 {
+		r.decodeLaneW4F16 = false
+	}
 	// prefillOK, derived rather than hand-listed: the f16 prefill kernels implement exactly the
 	// features below, so ANY model needing more (MoE — never packs the dense FFN buffers at all)
 	// declines prefill and falls back to the sequential Forward loop.
@@ -873,8 +943,13 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// are zero-value (moe.go — the real weights live in the slot pool instead), but PrefillLast's
 	// row loop calls the same non-paged encodeMoERoute/encodeMoEExperts pair unconditionally.
 	// Same predicate as the dense Gemma-4 MoE guard above, generalized to the generic twin.
+	// A-C01 (docs/audit-metal-2026-09-30.md): the prefill kernels write K/V with kv_store_f16, half per element at
+	// pos*kvDim, but an int8 KV cache (-kv i8) is allocated at one byte per element with separate scale buffers, and
+	// PrefillLast's attention reads the cache as half too. So with -kv i8 every prompt position landed in the wrong
+	// layout and positions at or past ctxCap/2 were written past the buffer. Such a model takes the sequential path,
+	// whose decode kernels write and read the int8 cache.
 	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0 && !m.HasPerLayerGeometry() &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && r.dnet == nil
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && r.dnet == nil && !r.kvI8 && !r.w8
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()
@@ -899,12 +974,23 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if r.moe != nil {
 		r.moe.alias = alias
 	}
+	upload := int4BufA
+	if r.w8 {
+		upload = int8BufA
+	}
 	mk := func(wm *linalg.WeightMat) (Buffer, Buffer) {
-		q, s, e := int4BufA(d, alias, wm)
+		q, s, e := upload(d, alias, wm)
 		if e != nil {
 			panic(e)
 		}
 		return q, s
+	}
+	// fuse uploads a fused group (QKV, gate|up): int4ConcatA, or int8Concat on the native int8 path.
+	fuse := func(wms ...*linalg.WeightMat) (Buffer, Buffer) {
+		if r.w8 {
+			return int8Concat(d, alias, wms...)
+		}
+		return int4ConcatA(d, alias, wms...)
 	}
 	r.layers = make([]residLayer, nL)
 	r.kc, r.vc = make([]Buffer, nL), make([]Buffer, nL)
@@ -976,7 +1062,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			if kEqV {
 				L.qkvW, L.qkvS = int4Concat(d, &lw.QProj, &lw.KProj, &lw.KProj) // V slot = raw k_proj
 			} else {
-				L.qkvW, L.qkvS = int4ConcatA(d, alias, &lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
+				L.qkvW, L.qkvS = fuse(&lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
 			}
 			L.oW, L.oS = mk(&lw.OProj)
 			if r.outBias {
@@ -1020,7 +1106,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			L.upBias = NewBufferFloats(d, lw.UpBias)
 			L.downBias = NewBufferFloats(d, lw.DownBias)
 		default: // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers, and gemma4 dense layers)
-			L.guW, L.guS = int4ConcatA(d, alias, &lw.GateProj, &lw.UpProj) // fused gate/up
+			L.guW, L.guS = fuse(&lw.GateProj, &lw.UpProj) // fused gate/up
 			L.dW, L.dS = mk(&lw.DownProj)
 		}
 		// postOnly (Olmo 3/Olmo Hybrid, G5 docs/tasks/task-gpu-paths-2026-09.md) is a MODEL-level flag,
@@ -1315,6 +1401,14 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.pSAResidRows = rowsPipe("gemv_w4a8_sa_resid_rows", r.gemvRows.o)
 		r.pSARows = rowsPipe("gemv_w4a8_sa_rows", r.gemvRows.gu)
 		r.pGemvResidStaged = rowsPipe("gemv_w4a8_resid_staged", r.gemvRows.down)
+	}
+	if r.w8 {
+		// Each int8 twin takes its int4 kernel's arguments in the same order at the same launch shape, so swapping
+		// the handles is the whole dispatch change. The R18 rows kernels read int4 only: off.
+		r.gemvRows = struct{ qkv, o, gu, down int }{}
+		r.pGemv, r.pGemvResid, r.pCoalBiasResid = pipe("gemv_w8a8_body"), pipe("gemv_w8a8_body_resid"), pipe("gemv_w8a8_body_resid_bias")
+		r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w8a8_sa"), pipe("gemv_w8a8_sa_bias"), pipe("gemv_w8a8_sa_resid")
+		r.pSABiasResid = pipe("gemv_w8a8_sa_bias_resid")
 	}
 	r.x = d.NewBufferLen(H)
 	r.aq, r.aSc = byteBuf(d, H), d.NewBufferLen(1)

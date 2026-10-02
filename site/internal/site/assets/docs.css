@@ -15,6 +15,7 @@ article.doc :not(pre)>code{background:var(--sunk);padding:1px 5px;border-radius:
 article.doc blockquote{margin:16px 0;padding:2px 16px;border-left:3px solid var(--line);color:var(--ink-2)}
 article.doc table{display:block;overflow-x:auto}
 article.doc hr{border:0;border-top:1px solid var(--line);margin:32px 0}
+article.doc p.start{background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
 ul.doclist{list-style:none;padding:0;margin:0 0 8px}
 ul.doclist li{padding:8px 0;border-bottom:1px solid var(--line)}
 .rail ol.docs a{display:block;padding:6px 0}

@@ -1,0 +1,7 @@
+rev:        bcf50a49ab3d93ce92bec9460ac10f770c135aa0
+started:    2026-10-01 06:23:51 PDT
+fixtures:   61 gitignored entries symlinked from /home/francis/mycode/goinfer
+tree:       0 entries in git status (0 = clean)
+go:         go version go1.27.0 linux/amd64
+driver:     595.91.07
+archive:    GOINFER_QWEN35_REAL=/srv/models/qwen3.6-35b-a3b GOINFER_QWEN38=/srv/models/qwen3.8-27b

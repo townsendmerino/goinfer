@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="{{ site.lang | default: "en-US" }}">
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+{% seo %}
+    <link rel="stylesheet" href="{{ "/assets/css/style.css?v=" | append: site.github.build_revision | relative_url }}">
+    {% include head-custom.html %}
+  </head>
+  <body>
+    {% comment %}
+      The book's own layout, in place of jekyll-theme-primer 0.6.0's _layouts/default.html (scripts/build_book_src.sh
+      stages it). That one is 20 lines with no hook for a header or a footer, and the book needed both: the site's nav,
+      so a reader who opens the book from goinfer.dev can get back, and previous/next links between chapters. Kept
+      close to the theme's: the same head, the same container classes, the same anchor-js footer.
+
+      The nav's links are absolute: the site workflow fails a root-relative link that leaves /book/, because under
+      GitHub Pages it would land outside the book. The pager's links come from front matter the staging script writes.
+    {% endcomment %}
+    <header class="bk-top">
+      <nav class="top" aria-label="Main">
+        <a class="wordmark" href="https://goinfer.dev/"><i></i>goinfer</a>
+        <ul>
+          <li><a href="https://goinfer.dev/models/">Models</a></li>
+          <li><a href="https://goinfer.dev/docs/">Docs</a></li>
+          <li><a href="https://goinfer.dev/download/">Download</a></li>
+          <li><a href="https://goinfer.dev/different/">What's different</a></li>
+          <li><a href="{{ "/" | relative_url }}" aria-current="page">Book</a></li>
+        </ul>
+        <a class="gh" href="https://github.com/townsendmerino/goinfer">github.com/townsendmerino/goinfer</a>
+      </nav>
+    </header>
+    <div class="container-lg px-3 my-5 markdown-body">
+      {% if page.bk_chapter %}
+      <p class="bk-masthead"><a href="{{ "/" | relative_url }}">{{ site.title }}</a></p>
+      {% endif %}
+
+      {{ content }}
+
+      {% if page.bk_prev_url or page.bk_next_url %}
+      <nav class="bk-pager" aria-label="Chapters">
+        {% if page.bk_prev_url %}<a class="bk-prev" href="{{ page.bk_prev_url }}"><span>Previous</span>{{ page.bk_prev_title }}</a>{% else %}<span></span>{% endif %}
+        {% if page.bk_next_url %}<a class="bk-next" href="{{ page.bk_next_url }}"><span>Next</span>{{ page.bk_next_title }}</a>{% endif %}
+      </nav>
+      {% endif %}
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/anchor-js/4.1.0/anchor.min.js" integrity="sha256-lZaRhKri35AyJSypXXs4o6OPFTbTmUoltBbDCbdzegg=" crossorigin="anonymous"></script>
+    <script>anchors.add();</script>
+  </body>
+</html>

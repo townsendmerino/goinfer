@@ -45,6 +45,10 @@ Boxes: `linux` (nvidia-rtx2070s, CUDA) · `mac` (Apple Silicon, Metal).
 
 ## In flight
 
+- **Metal runs int8 weights natively (W8A8)**, `docs/tasks/task-metal-int8-2026-10.md`. Slice 1, dense int8 decode,
+  started 2026-10-01; gates F1–F3 by day, S on the Mac's night queue. Owner decision O1 (explicit `-backend metal`
+  with an int8 model: native or re-quant) is open there.
+
 ## Queued
 
 Ordered roughly by priority within each group. Each item carries enough context to be picked up
@@ -452,6 +456,68 @@ rediscovered:
   disagreement — and repeating it without checking the architecture was that same omission one level
   up. The only thing the branch held that P1 does not is the prototype code and its bit-identity
   harness, reachable as tag `negative-result/strided-v-scoresv`. **No action outstanding.**
+
+### B. v0.20.0 release follow-ups (filed 2026-10-01)
+
+Found while releasing v0.20.0. The records are `docs/measurements/release-v0.20.0/scoped-revalidation-2026-10-01.md`
+and `qwen35-gguf-bisect-2026-10-01.md`. The pre-flight cold-user run's findings are R17–R28 in
+`docs/tasks/task-first-hour.md` §2, not here.
+
+**B1 · The manifest merge accepts a weaker method over a stronger one.** The scoped re-validation (`EMIT_MANIFEST=1`,
+untagged cell plus 29 quantized real gates) wrote tiny-golden rows over eight families' validated full-forward-oracle
+rows. Their real-oracle gates are f32, so none was in the scoped set to emit the stronger row afterwards, as a full
+sweep's real-checkpoint cell does. The demotions were caught by hand and not committed (`f0b9cf90`). Fix:
+`TestParityManifest_merge` (behind `cmd/gate`'s `mergeManifest`) refuses a row whose method tier is below the one it
+replaces, unless asked. Until then, a scoped `EMIT_MANIFEST` run's manifest must be diffed field by field before it
+is taken.
+
+**B2 · The parity gate writes its per-test logs to fixed `/tmp` names.** `/tmp/gate_parity_*.json` and
+`/tmp/gate_parity_rows.txt` are overwritten by the next run, so sweep run 2's per-test JSON was gone by the afternoon,
+and only its text log survived (`sweep-run2/parity-sweep.log`). Fix: a per-run log directory under `~/goinfer-logs`,
+printed in the verdict.
+
+**B3 · Three GGUF loader gates needed a fit-guard bypass.** `TestQwen35GGUF_gate` (`bcf50a49`), `TestLagunaGGUF_gate`
+(`a6ce3d4a`) and `TestQwen38GGUF_gate` (`1de75952`). The guard prices the mapped `.gguf` as resident and KV at the
+model's full context, and whether that refuses depends on what earlier gates left in the process: the same box passed
+`TestQwen38GGUF_gate` in the morning and refused it in the afternoon. Fix: have these gates pin a small
+`ResidentContext`, which prices KV realistically; the mapped-file term still needs a decision (reclaimable page cache,
+or real cost).
+
+**B4 · `TestQwen35GGUF_gate`'s score swings on near-ties.** One rounding difference at one float32 value moved it from
+68/80 to 57/80, and it flipped one prompt the other way (2/8 to 8/8). A free-running greedy count turns one early
+near-tie into up to seven misses. Fix to consider: gate on teacher-forced argmax (the golden's own prefix at every
+step) and report the free-running count as information. This would also have flagged the aikit defect as one or two
+flipped steps, not eleven.
+
+**B5 · `TestQwen35GGUF_vsSafetensors` cannot run on nobara-pc.** It holds the safetensors and GGUF 35B models at once,
+and the fit guard refuses the second after 16 minutes of loading the first. That leaves the GGUF-loader attribution
+check with no box. Fix: compute the safetensors logits, free the model, then load the GGUF.
+
+**B6 · The citation lint's anchor records and key collisions.** Two defects, found re-pointing the citations
+`8fc642fb` shifted. An `anchor:` record is searched with its `anchor: ` prefix, so `--update` reports CONTENT GONE for
+a declaration that still exists. A citation re-pointed onto a line number another citation in the same doc already
+uses shares that key, and `--update` then moves both. Fix both in `scripts/queue_citation_lint.py`.
+
+**B7 · Other goldens pinned under transformers 5.12.** Olmo3's real golden was wrong because transformers 5.12 put YaRN
+on every layer (re-pinned under 5.15 in `a86742fc`). Audit which other pins ran under 5.12 (nobara's `~/.venv-vl`) for
+families whose HF code changed by 5.15, and re-pin or record each. The olmo3 manifest row is still tiny-golden; the
+next full sweep's emitter merge should promote it, so check that it does.
+
+**B8 · `standalone-build` goes red on four of a release's five tag pushes, by construction.** It runs on every `v*`,
+`gpu/v*`, `cuda/v*`, `metal/v*` and `demo/agent/v*` push and builds all four submodules with `GOWORK=off`. Until the
+two-step tag's last step, some submodule still pins the previous root while its code uses newer APIs (v0.20.0:
+`demo/agent` at `8e4fb57c` resolved goinfer v0.19.0 and failed on `chat.ThinkMode`). v0.19.0's release shows the same
+four reds and one green, and only the `demo/agent/v*` run means anything. The owner hit the red cold on 2026-10-01.
+Fix: build only the module a tag names (the root tag builds none standalone), and say in RELEASING.md which run to
+read.
+
+**B9 · CUDA-resident int4 `PromptHidden` drifts beyond CPU int4.** Found grading D6b
+(`docs/measurements/decisions-d6b-2026-09/results.md`). The int4-cuda arm reads KL 0.038 against CPU int4's 0.030, and
+it makes one confident flip that no CPU arm makes. On a 16-option `choice` item the reference and all three CPU arms put
+0.95 to 0.98 on option 7, and CUDA int4 puts 0.559 on option 6. The same path served D6a's arm B, whose 24-point noul
+gap to the f32 reference (`decisions-d6a-2026-09-28.md`) is therefore not yet a pure quantization number. Next: Route A
+at CPU int4 and CPU int8int8 on D6a's 400 OOD noul rows (about 2 h each on nobara, night) splits int4 from the CUDA
+path; then difference CUDA against CPU int4 per layer on the confident-flip item.
 
 ## G26 RESOLVED, 2026-08-27 (n=15) — real, HALF the claimed size, and the sampler is back
 

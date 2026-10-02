@@ -281,6 +281,14 @@ func Derive(in *Inputs) (*Model, error) {
 		c.Decision = d
 	}
 	sort.SliceStable(m.Vetted, func(i, j int) bool { return m.Vetted[i].Bytes < m.Vetted[j].Bytes })
+	// The Models page calls these the supported tier because each comes from a family checked against its released
+	// model; a vetted checkpoint from a weaker or experimental family would make that label false.
+	for _, c := range m.Vetted {
+		if c.Family.P.Tier != "released" || c.Family.P.Exp {
+			return nil, fmt.Errorf("vetted checkpoint %q is from %s, which is not checked against its released model (%q): the Models page calls vetted checkpoints the supported tier",
+				c.ID, c.Family.Name, c.Family.Parity)
+		}
+	}
 	// The ledger: strongest check first, then non-experimental, then by the two numbers, then by name.
 	m.Ledger = append([]*Family(nil), m.Families...)
 	sort.SliceStable(m.Ledger, func(i, j int) bool {

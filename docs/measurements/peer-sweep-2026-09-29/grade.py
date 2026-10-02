@@ -79,7 +79,7 @@ def decode(path):
                              spread_g=round(100 * sg, 1), spread_p=round(100 * sp, 1),
                              outcome=("VOID" if not ok else outcome(rs, capped)), capped=capped, tokens=toks,
                              token_gates=gates, decode_path=dpath,
-                             driver=prov["gpu"]["driver"], ctx_pin=prov.get("ctx_pin")))
+                             driver=(prov.get("gpu") or {}).get("driver"), ctx_pin=prov.get("ctx_pin")))
     return rows
 
 
@@ -100,6 +100,8 @@ def prefill(path):
 
 if __name__ == "__main__":
     for name in ("a-e-dense.json", "a-depth8000.json", "b-controls.json", "c-26b.json", "f-sampled.json"):
+        if not os.path.exists(os.path.join(B, name)):
+            continue
         print(f"## {name}")
         for r in decode(os.path.join(B, name)):
             print(json.dumps(r))
@@ -107,4 +109,16 @@ if __name__ == "__main__":
     if os.path.exists(pf):
         print("## d-prefill.json")
         for r in prefill(pf):
+            print(json.dumps(r))
+    # The Mac half (cells g-i, mac/): the same rules, applied to the Mac's files when they are there. Added 2026-10-01 with
+    # the Mac run; the only other change is reading the provenance's NVIDIA driver as optional (the Mac has none).
+    for name in ("g-metal-decode.json", "i-cpu-decode.json"):
+        if os.path.exists(os.path.join(B, name)):
+            print(f"## {name}")
+            for r in decode(os.path.join(B, name)):
+                print(json.dumps(r))
+    hf = os.path.join(B, "h-metal-prefill.json")
+    if os.path.exists(hf):
+        print("## h-metal-prefill.json")
+        for r in prefill(hf):
             print(json.dumps(r))

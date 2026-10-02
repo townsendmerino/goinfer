@@ -61,13 +61,21 @@ func seedPrompt(t *testing.T, path, text string) []int {
 // shipped metal convention (model_test.go): the CPU's argmax drives both sides, so they walk a
 // coherent trajectory instead of an arbitrary id sequence full of near-ties.
 //
-// On the bar: Metal has NO like-for-like CPU reference. BuildResident requires an int8 load and
-// re-quantizes to its own W4A8 (group=32, scale=max/7), which no CPU load reproduces — so this
-// is always int4-GPU vs int8-CPU. CUDA's 3%-near-tie bar does NOT transfer; it compares
-// int4-vs-int4. Measured here on the KNOWN-GOOD dense path, CUDA's bar fails. That is why the
-// control is committed: the bar is read off it, not assumed — the same lesson CUDA learned when
-// a cosine >= 0.999 draft failed its own shipped path. The threshold is the usual bug.
+// On the bar: the bar was set when Metal had NO like-for-like CPU reference. BuildResident took an
+// int8 load and re-quantized it to its own W4A8 (group=32, scale=max/7), which no CPU load
+// reproduces, so this was int4-GPU vs int8-CPU. CUDA's 3%-near-tie bar does NOT transfer; it
+// compares int4-vs-int4. Measured here on the KNOWN-GOOD dense path, CUDA's bar fails. That is why
+// the control is committed: the bar is read off it, not assumed — the same lesson CUDA learned when
+// a cosine >= 0.999 draft failed its own shipped path. The threshold is the usual bug. Since slice 1
+// of docs/tasks/task-metal-int8-2026-10.md a dense int8 model runs its int8 weights natively, so for
+// those this is int8 against int8, and TestW8Native_F2 holds the pair to the int4 pair's agreement.
 func residentParity(t *testing.T, path string, seed []int, steps int) parityStats {
+	t.Helper()
+	return residentParityAt(t, path, "int8int8", seed, steps)
+}
+
+// residentParityAt is residentParity with both sides loaded at quant.
+func residentParityAt(t *testing.T, path, quant string, seed []int, steps int) parityStats {
 	t.Helper()
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)
@@ -75,18 +83,21 @@ func residentParity(t *testing.T, path string, seed []int, steps int) parityStat
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	mg, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int8int8"})
+	mg, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: quant})
 	if err != nil {
 		t.Fatalf("load (metal): %v", err)
 	}
+	defer mg.Close()
 	rf := mg.ResidentForwardForTest()
 	if rf == nil { // without this, a silent CPU fallback would pass every assertion trivially
-		t.Fatal("metal resident DECLINED — admission says it should be admitted")
+		skipIfMemoryDeclined(t, mg)
+		t.Fatalf("metal resident DECLINED (%s) — admission says it should be admitted", mg.ResidentDecline())
 	}
-	mcpu, err := decoder.Load(path, decoder.Options{Quant: "int8int8"})
+	mcpu, err := decoder.Load(path, decoder.Options{Quant: quant})
 	if err != nil {
 		t.Fatalf("load (cpu): %v", err)
 	}
+	defer mcpu.Close()
 	_, nL, _, nKV, hd, _, _ := mcpu.Dims()
 	cache := decoder.NewKVCache(nL, nKV, hd, 0, 1024, nil)
 
@@ -139,8 +150,8 @@ func residentParity(t *testing.T, path string, seed []int, steps int) parityStat
 			tok = ca
 		}
 	}
-	t.Logf("%s: %d/%d argmax-exact, worst near-tie %.3f%%, %d gaps >3%%, min cosine %.6f",
-		path, st.exact, st.steps, st.worstTie*100, st.hard, st.minCos)
+	t.Logf("%s at %s (%s): %d/%d argmax-exact, worst near-tie %.3f%%, %d gaps >3%%, min cosine %.6f",
+		path, quant, mg.DecodePath(), st.exact, st.steps, st.worstTie*100, st.hard, st.minCos)
 	return st
 }
 

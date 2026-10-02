@@ -162,10 +162,7 @@ func selfMeasure(path, quant string, admitted []string) {
 	}
 
 	measurePath := path
-	// embedInt4=false: fit has no -embed-int4 of its own and does not know the caller's, so it can
-	// only ever find a plain-head sidecar here — a pre-existing, separate blind spot, not fixed by
-	// this call's new parameter.
-	if cached, ok := prequant.SidecarPathIfFresh(path, quant, backend, false); ok && strings.HasSuffix(path, ".gguf") {
+	if cached, ok := sidecarIfFresh(path, quant, backend); ok && strings.HasSuffix(path, ".gguf") {
 		measurePath = cached // the sidecar a `--backend <this>` load built: mapped, not rebuilt
 	}
 	pm, err := decoder.Load(measurePath, decoder.Options{Backend: backend, Quant: quant})
@@ -267,9 +264,7 @@ func freshSidecar(path, quant string) (giw, backend string, ok bool) {
 		return "", "", false
 	}
 	for _, be := range []string{"cpu", "cuda", ""} {
-		// embedInt4=false: same pre-existing blind spot as above — fit only ever looks for a
-		// plain-head sidecar.
-		if p, fresh := prequant.SidecarPathIfFresh(path, quant, be, false); fresh {
+		if p, fresh := sidecarIfFresh(path, quant, be); fresh {
 			if be == "cuda" {
 				be = ""
 			}
@@ -277,4 +272,19 @@ func freshSidecar(path, quant string) (giw, backend string, ok bool) {
 		}
 	}
 	return "", "", false
+}
+
+// sidecarIfFresh is the sidecar a load of path at quant on backend built, whichever head precision it used. fit has no
+// --embed-int4 and cannot know the caller's, and the default differs by backend: since 2026-09-28 an int4 load keeps the
+// embedding/LM-head table at int4 (its sidecar is <base>.int4.e4h.<target>.giw), except on Metal (loadflags). Looking
+// only for the plain-head sidecar, as fit did, missed the one every default CPU, CUDA and WebGPU load writes, and fell
+// back to a full direct load. The backend's default is tried first, then the other.
+func sidecarIfFresh(path, quant, backend string) (string, bool) {
+	def := quant == "int4" && backend != "metal"
+	for _, e4 := range []bool{def, !def} {
+		if p, ok := prequant.SidecarPathIfFresh(path, quant, backend, e4); ok {
+			return p, true
+		}
+	}
+	return "", false
 }

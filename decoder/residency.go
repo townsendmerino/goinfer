@@ -363,6 +363,13 @@ type VerifyPathReporter interface {
 	VerifyPath() (batched bool, reason string)
 }
 
+// ResidentQuantReporter is an OPTIONAL resident extension: the precision the resident runs its weights at, when it
+// chose one the decoder cannot infer from the backend and the load quant. Metal runs some int8 models natively and
+// re-quantizes others to int4 (docs/tasks/task-metal-int8-2026-10.md). "" means residentQuantLabel applies.
+type ResidentQuantReporter interface {
+	ResidentQuant() string
+}
+
 // ResidentCapped is an OPTIONAL ResidentForward extension exposing the backend's fixed
 // KV context capacity (in positions). A write past it is an out-of-bounds device write
 // (silent KV corruption); the backends refuse it mid-generation, but generateInto also
@@ -1045,6 +1052,10 @@ func (m *Model) withResidency() *Model {
 		m.resDecline = "--quant q4k (native Q4_K) has no resident kernel on " + m.be.Name() + " yet (docs/tasks/task-int4-weight-quality-2026-09.md)"
 		return m
 	}
+	if why := autoMetalPrecision(m.backendAuto, m.be.Name(), m.Quant()); why != "" {
+		m.resDecline = why
+		return m
+	}
 	if a := m.w.arch; a.nemotron != nil && a.MoE != nil && !isWebGPUBackend(m.be.Name()) {
 		// G7 (docs/tasks/task-gpu-paths-2026-09.md): Nemotron 3 Nano / 3.5 Lightning's fourth block
 		// kind (MoE FFN) has no GPU resident implementation on cuda/metal — decodeRunnerEligible's
@@ -1206,7 +1217,11 @@ func (m *Model) DecodePath() string {
 	}
 	switch {
 	case m.resident != nil:
-		return fmt.Sprintf("%s-resident (%s)", be, residentQuantLabel(be, m.Quant()))
+		label := residentQuantLabel(be, m.Quant())
+		if qr, ok := m.resident.(ResidentQuantReporter); ok && qr.ResidentQuant() != "" {
+			label = qr.ResidentQuant()
+		}
+		return fmt.Sprintf("%s-resident (%s)", be, label)
 	case be == "cpu":
 		s := fmt.Sprintf("cpu (%s)", m.Quant())
 		// The repacked-only int4 policy (wantsCanonicalInt4, aikit audit M-22) only ever
@@ -1234,7 +1249,11 @@ func (m *Model) DecodePath() string {
 		// same kind of claim (requested vs. actually executing), and hardware-matrix.md
 		// already only ever says "resident" or "CPU" per cell — this makes the banner agree
 		// with that page instead of inventing a third state it doesn't have.
-		return fmt.Sprintf("cpu (%s) — %s", m.Quant(), BackendSummary(be, "cpu", declinedToCPUReason(be, m.resDecline)))
+		req := be
+		if m.backendAuto { // the user asked for auto, which chose this backend (R17)
+			req = "auto (" + be + ")"
+		}
+		return fmt.Sprintf("cpu (%s) — %s", m.Quant(), BackendSummary(req, "cpu", declinedToCPUReason(be, m.resDecline)))
 	case m.resDecline != "":
 		return fmt.Sprintf("webgpu-staged (%s)%s — %s", m.Quant(), stagedDeviceNote(m.Quant()), m.resDecline)
 	default:
@@ -1262,6 +1281,24 @@ func residentQuantLabel(backend, quant string) string {
 		return quant + "→int4, no Metal int8 GEMV kernel"
 	}
 	return quant
+}
+
+// autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. Metal
+// runs only int4 resident: it re-quantizes int8, int8int8 and int4mix weights to int4 (no Metal int8 GEMV kernel, see
+// residentQuantLabel) and takes no f32. A backend the user did not name must not change the precision they loaded at,
+// such as the int8int8 bundle a model-included goinfer-chat carries, so auto leaves those models on the CPU; a named
+// -backend metal still runs them re-quantized (R17, docs/tasks/task-first-hour.md).
+func autoMetalPrecision(auto bool, backend, quant string) string {
+	if !auto || backend != "metal" || quant == "int4" {
+		return ""
+	}
+	switch quant {
+	case "int8", "int8int8", "int4mix":
+		return "-backend auto keeps this " + quant + " model on the CPU: metal runs only int4 resident and would re-quantize it (-backend metal does that)"
+	case "", "native": // Quant() of an f32 load
+		quant = "f32"
+	}
+	return "-backend auto keeps this " + quant + " model on the CPU: metal runs only int4 resident"
 }
 
 // declinedToCPUReason builds the reason BackendSummary needs when cuda or metal has no staged

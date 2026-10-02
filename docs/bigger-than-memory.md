@@ -32,15 +32,16 @@ scenario D).
 That run did not finish end-to-end (this machine's free disk ran out mid-write, an unrelated
 capacity limit, not a memory one), so treat this as strong evidence rather than a completed proof
 until a disk-headroom-permitting rerun confirms the finished bundle byte-identical to a resident
-build. **The other five `needsResidentSerialize` families (gemma4, laguna, granite, nemotron,
-llama4) still build resident before they can be transcoded at all** — the same historical risk
-this whole section describes, for those families' one-time transcode specifically.
-`GOINFER_SWAP_GUARD`'s load-time half (armed by default) will abort a resident build if swap grows
-too far, but a real run on gpt-oss-20b (before its own S2 fix) found it does not always hold the
-line unassisted under a fast enough burst
+build. **Every other family now streams its transcode too**: the five that used to build resident
+first (gemma4, laguna, granite, nemotron, llama4) moved over in `d46fd746` and `e04dd80e`, and the
+resident-build fallback was deleted on 2026-09-24. gemma4's streamed bundle was measured
+byte-identical to the resident build's on the real 26B-A4B (peak anonymous RSS 1.61 GB against 18.1
+GB resident; `e04dd80e`), and the tiny-fixture gates in `internal/prequant/stream_families_test.go`
+check that every family's stream carries all its layers.
+`GOINFER_SWAP_GUARD`'s load-time half (armed by default) still aborts a load if swap grows too far,
+though a real run on gpt-oss-20b (before its S2 fix) found it does not always hold the line
+unassisted under a fast enough burst
 ([`docs/measurements/swap-tripwire-2026-09-22.md`](measurements/swap-tripwire-2026-09-22.md)).
-Treat the first `-stream-weights` run of any of those five families' checkpoints with the same
-caution as a direct load of one — watch it, don't walk away from it.
 
 **This is `goinfer-serve`'s job, not `goinfer-chat`'s.** The single-shot chat runtime holds all
 weights resident by design; it has no `-stream-weights`. If your model is bigger than your RAM,

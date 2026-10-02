@@ -1,0 +1,40 @@
+=== 1. plain chat, 0.5B gguf, default auto (16:28:24)
+backend: cuda (auto: a CUDA device answered; -backend cpu to use the CPU)
+loading + quantizing…
+swap guard (load): armed for /home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, threshold +512 MB over baseline
+swap guard (load): baseline 5.46 GB swap-used
+loaded 24-layer model (hidden 896, vocab 151936) in 5.213s [backend=cuda [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)] decode=cuda-resident (int4)]
+load 5.09s (map 51ms build 3.87s resident 1.16s) — 76% build; 0.46 GB source, 0.09 GB/s effective
+chat template: chatml
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+you> Here's a simple Go function that reverses a string:
+```go
+package main
+=== 2. same, GPU hidden (CUDA_VISIBLE_DEVICES=-1) (16:28:30)
+backend: cpu (auto: cuda is built in, but no CUDA device answered)
+loading + quantizing…
+swap guard (load): armed for /home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, threshold +512 MB over baseline
+swap guard (load): baseline 5.46 GB swap-used
+loaded 24-layer model (hidden 896, vocab 151936) in 3.94s [backend=cpu [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)] decode=cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)]]
+load 3.83s (map 45ms build 3.79s) — 99% build; 0.46 GB source, 0.12 GB/s effective
+chat template: chatml
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+you> Here's a simple Go function that reverses a string:
+```go
+package main
+=== 3. model-included 0.5B (int8int8), default auto (16:28:36)
+backend: cuda (auto: a CUDA device answered; -backend cpu to use the CPU)
+mapping weights…
+loaded 24-layer model (hidden 896, vocab 151936) in 800ms [backend=cuda decode=cuda-resident (int8int8)]
+chat template: chatml
+goinfer chat — 0 msgs of history, system prompt steers it. /help for commands, /quit to exit.
+system: You are a helpful, concise coding assistant. Prefer correct, runnable code and short explanations.
+you> Certainly! Below is a simple Go function that reverses a string:
+```go
+package main
+import (
+	"fmt"
+)
+=== done (16:28:37)

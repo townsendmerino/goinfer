@@ -1074,6 +1074,11 @@ func renderMarkdown(rows []capabilityRow) []byte {
 	b.WriteString("oracle; `shared-path: X` is an alias family riding X's oracle on the same forward ")
 	b.WriteString("file and the same `deps_hash` (so it carries no metrics of its own — X's are the ")
 	b.WriteString("measurement); `pending` is not yet recorded. Source: `testdata/parity_manifest.json`.\n\n")
+	// Rendered from the constant the CLI and the server load with, so the matrix cannot disagree with them.
+	b.WriteString("**Decision models.** A model with a trained decision head (`goinfer-chat decide --head`, ")
+	b.WriteString("`goinfer-serve`'s `head=`) loads at `" + DecisionHeadQuant + "` unless a quant is chosen. ")
+	b.WriteString("That is the default for decision models, from D6b's parity grading against the f32 reference ")
+	b.WriteString("([record](measurements/decisions-d6b-2026-09/results.md)).\n\n")
 
 	// Group by coverage axis, preserving the sorted order.
 	axes := []string{}

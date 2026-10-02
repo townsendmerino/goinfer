@@ -111,7 +111,7 @@ The premise: a claim that pure-Go llama.cpp ports are unmaintained, contradicted
 `goccy/go-llama` being active and MIT and occupying the same lane. That claim does not exist
 anywhere in the current tree — `grep -rn -i "unmaintained\|not maintained\|abandoned" README.md
 docs/positioning.md` finds nothing relevant to a competing project. What exists instead, already,
-is [`docs/positioning.md:78–86`](positioning.md), linked from `README.md:297` as the "longer
+is [`docs/positioning.md:78–86`](positioning.md), linked from `README.md` § "What it is, and isn't" as the "longer
 form": `goccy/go-llama` is named directly, credited with reaching pure Go by transpiling
 llama.cpp's `wasm64-wasip1` build to Go (`goccy/llamawasm2go`), and the distinction drawn is
 exactly the one this item asks for — "goinfer implements the forward pass itself, which is what
@@ -125,7 +125,7 @@ negative or already-resolved finding on the record rather than silently dropping
 docs/, **CLOSED at filing — recorded for the record**
 
 [`docs/what-parity-gated-means.md`](what-parity-gated-means.md) exists and is linked from
-`README.md:310` at the exact quantization bullet this item asks for ("HuggingFace logit-parity
+`README.md` § "What it runs" at the exact quantization bullet this item asks for ("HuggingFace logit-parity
 gate per family"), and from `docs/README.md`'s own reference table. The doc states the boundary
 this item calls for explicitly: parity gating is not a quality benchmark.
 
@@ -153,7 +153,7 @@ PENDING, filed 2026-09-15**
 [`12-glossary.md`](book/12-glossary.md) — written for Go engineers new to ML, each chapter tied to
 a measured number. It is already built and served at
 `https://townsendmerino.github.io/goinfer/` via `.github/workflows/book-pages.yml`, and linked
-from both `README.md:341,347` and `docs/README.md:16`. The open question is not whether it is
+from both `README.md` (its opening links and § "Docs") and `docs/README.md` § "Start here". The open question is not whether it is
 readable — it already is — but whether it should also be pushed somewhere with independent
 reach (e.g. a publishing platform, syndication), since it is plausibly the asset most likely to
 be shared independently of whether anyone runs the engine.
@@ -268,7 +268,7 @@ measured cold-vs-warm figures, not a prose assertion.
 
 Nirvana Code (see U15) built one placing itself beside Ollama, LM Studio and llama.cpp CLI, and
 it reads as confident rather than defensive. Our equivalent facts appear nowhere a visitor can
-see: a single static binary with no daemon to install (`README.md:69`), no native runtime
+see: a single static binary with no daemon to install (`README.md`, the opening bullets), no native runtime
 dependency (no CUDA toolkit, no C++ compiler, no Python — `docs/positioning.md:15–18`), the
 model itself compilable into the binary (`docs/roadmap.md:17`), decode gated bit-identical
 against its own reference path on every backend (`docs/positioning.md:56–58`), and 36

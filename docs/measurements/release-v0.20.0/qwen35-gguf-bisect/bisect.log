@@ -1,0 +1,18 @@
+# bad: [bcf50a49ab3d93ce92bec9460ac10f770c135aa0] decoder tests: three gates the v0.20.0 parity sweep found stale (no product change)
+# good: [c7f8eff76c7c77ee6ee8605816d1412af042cb8c] docs: fix citation drift in fitguard.go from the fit-guard fix
+git bisect start 'bcf50a49ab3d93ce92bec9460ac10f770c135aa0' 'c7f8eff76c7c77ee6ee8605816d1412af042cb8c' '--' 'decoder' 'constrain' 'internal/giw' 'tokenizer' 'go.mod' 'go.sum'
+# good: [972d2ed5f32d440a6bc942e58529afb6288acd0b] feat(backends): BuildResident declines with a typed reason; CUDA and Metal read their MoE caps from decoder
+git bisect good 972d2ed5f32d440a6bc942e58529afb6288acd0b
+# good: [ee7bf67a2fb1f6445101361336856e3511b3deb1] measure(MC3c S1, exploratory): post-S1 shape probe and an A/A-controlled width sweep — width is no lever for the batched step; at M=1, 8 workers run q/k/v and o 1.43-1.53x faster than 16
+git bisect good ee7bf67a2fb1f6445101361336856e3511b3deb1
+# bad: [84475accc02934916896c96ebadd27b2526632e5] registry: checkpoints carry a label (the model in words) for goinfer.dev; a test refuses a verbatim short name
+git bisect bad 84475accc02934916896c96ebadd27b2526632e5
+# good: [1c9a605449b3f6c194b011d3b14018789693f2fa] sidecar: an int4 .giw older than v15 is stale and rebuilt once — it loaded by converting its scales, holding both copies, and was kept forever
+git bisect good 1c9a605449b3f6c194b011d3b14018789693f2fa
+# bad: [cd6ce3360b9c4e5739146ae495407b093ee2473d] owner decisions (TE5(b), TE6(b), TE3): in-process-first for kernel questions; validation inherited by identity; session drift re-stated
+git bisect bad cd6ce3360b9c4e5739146ae495407b093ee2473d
+# good: [96d0ef2600c59a74a4e3b05869dc33007897db6c] test(parity): re-capture TestDecodeParityInt4's int4 golden for L1's binary16 scales — red on arm64 since the 5c85f7c0 merge, unseen
+git bisect good 96d0ef2600c59a74a4e3b05869dc33007897db6c
+# bad: [81c250d70664a896b0595ac810758c15b81087a3] deps: aikit v1.50.2 (amd64 AVX2 activation quantizer) in every module
+git bisect bad 81c250d70664a896b0595ac810758c15b81087a3
+# first 'bad' commit: [81c250d70664a896b0595ac810758c15b81087a3] deps: aikit v1.50.2 (amd64 AVX2 activation quantizer) in every module

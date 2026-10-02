@@ -283,6 +283,15 @@ allowance, and the Sep 5 L1 §3 gate, later shown to have ~95% false-fail for an
   - Output goes to `te1-attempt3/`, graded as `te1_analyze.py te1-attempt3`. The Mac night queue, run at night.
   - If the load gate still cannot reach 1.0 at night, its sweeps are refused, and that refusal is itself the A/A's
     answer for the load gate.
+- **Attempt 3, graded 2026-10-01: INCOMPLETE** (`te1_analyze.py te1-attempt3`). Its first instant sweep never ran.
+  The run script's pre-wait sample passed, then `bench_peer.py`'s preflight took its own single 3 s sample at
+  10.8% busy against the 10% cap and refused (rc 1, 3 s; `te1-attempt3/timeline.txt`). The other three sweeps and both
+  mutations completed: the instant gate's idle share was 7.9% (in band), and it held through the hog and released
+  within 10 s.
+- **Amendment for attempt 4, 2026-10-01, before it runs.** Design, bands and analyzer are unchanged. The instant
+  gate's preflight now polls up to `BENCH_IDLE_WAIT`, as its per-cell gate does, and still refuses on timeout
+  (`scripts/test_bench_peer_preflight.py`, red on the old code with attempt 3's own message). Output goes to
+  `te1-attempt4/`, graded as `te1_analyze.py te1-attempt4`, on the Mac night queue.
 
 ### TE2 — Per-cell overhead: start once, time more *(analysis by day, one night to confirm)*
 

@@ -1,0 +1,6 @@
+
+rope per layer type: {'full_attention': {'rope_type': 'yarn', 'attention_scaling': 1.2079441541679836}, 'sliding_attention': {'rope_type': 'default', 'attention_scaling': 1.0}}
+loaded Olmo3ForCausalLM model_type=olmo3 num_hidden_layers=32 sliding_window=4096 layers: 24 sliding / 8 full rope_scaling={'sliding_attention': {'rope_type': 'default', 'rope_theta': 500000.0}, 'full_attention': {'rope_type': 'yarn', 'attention_factor': 1.2079441541679836, 'beta_fast': 32.0, 'beta_slow': 1.0, 'factor': 8.0, 'original_max_position_embeddings': 8192, 'rope_theta': 500000}}
+wrote testdata/olmo3_real_golden.json.gz
+prompt_ids [791, 6864, 315, 9822, 374] argmax 12366 cont [12366, 13, 2030, 279, 6864, 315, 279, 3723]
+continuation: ' Paris. But the capital of the United'

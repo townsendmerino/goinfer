@@ -245,12 +245,32 @@ func CheckWriteups(root string, ws []*Writeup) error {
 	return nil
 }
 
-// Visible is the writeups a build shows: every reviewed one, plus the drafts when previewing. Each is numbered among
-// them and linked to its neighbours.
+// Lead is the writeups shown first, in this order, ahead of the rest in file order: the site's primary reader is the
+// Go engineer embedding a model (task-site-2026-09.md, amendment 2026-09-30), so the struct guarantee comes first and
+// the tool-call guarantee second. Reordering here rather than renumbering the files keeps every writeup's URL.
+var Lead = []string{"04-a-go-struct-the-model-cant-break", "03-tool-calls-that-cant-be-malformed"}
+
+// Visible is the writeups a build shows: every reviewed one, plus the drafts when previewing, with Lead first. Each is
+// numbered among them and linked to its neighbours.
 func Visible(ws []*Writeup, drafts bool) []*Writeup {
-	var v []*Writeup
+	var shown []*Writeup
 	for _, w := range ws {
 		if !w.Draft() || drafts {
+			shown = append(shown, w)
+		}
+	}
+	var v []*Writeup
+	led := map[string]bool{}
+	for _, slug := range Lead {
+		for _, w := range shown {
+			if w.Slug == slug {
+				v = append(v, w)
+				led[slug] = true
+			}
+		}
+	}
+	for _, w := range shown {
+		if !led[w.Slug] {
 			v = append(v, w)
 		}
 	}

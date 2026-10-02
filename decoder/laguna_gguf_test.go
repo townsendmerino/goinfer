@@ -45,7 +45,12 @@ func TestLagunaGGUF_gate(t *testing.T) {
 	// otherwise, so Options{} on a 33B Q4_K_M asks for ~132GB and the process is
 	// OOM-killed — which surfaces only as "signal: killed", with no hint that the
 	// option was the cause. The file is Q4_K_M on disk; int4 keeps it near that.
-	m, err := Load(path, Options{Quant: "int4"})
+	//
+	// The fit guard is bypassed for this model only, as in TestQwen35GGUF_gate. This gate checks the LOADER's parity,
+	// not memory planning, and the guard prices the 18.9 GB mapped checkpoint as resident for the whole load and the KV
+	// cache at the model's full context (56.5 GB needed against a 35.9 GB budget on nobara-pc's 62 GB, 2026-10-01),
+	// which refused a load this box completed in the v0.19.0 sweep. requireHeavyModel keeps it to the box that holds it.
+	m, err := Load(path, Options{Quant: "int4", Knobs: &Knobs{"GOINFER_NO_FIT_GUARD": "1"}})
 	if err != nil {
 		t.Fatalf("Load(%s): %v", path, err)
 	}

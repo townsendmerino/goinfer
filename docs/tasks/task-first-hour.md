@@ -254,6 +254,18 @@ shipped — a protocol that changes without a record of why is not reproducible 
   the next run, confirm the package is actually present on the box in question — do not rely on a
   prior run's amendment having been carried out.
 
+### Protocol amendments, after run 3 (2026-10-01, v0.19.0, nobara-pc)
+
+- **The handoff starts with the launch command, before the prompt:** `mkdir ~/gi-cold-<date> && cd ~/gi-cold-<date>`,
+  then open the session there. Run 3's prompt named the directory, but the session was opened in
+  `~/mycode/gocudrv-fork`, with `~/mycode/goinfer/...` directories granted and a goinfer skill loaded. The tester
+  declared all of it, and the owner accepted the contamination for that run
+  ([`../measurements/cold-user-2026-10-01-nobara-pc.md`](../measurements/cold-user-2026-10-01-nobara-pc.md)).
+- **Scenario F's resend leg conflicts with the server's one-image-per-request limit.** Sending the same image again
+  in the same conversation fails with `400: v1 supports 1 image per request, got 2` while the first image is still in
+  history, so run 3 had to drop it to text first, and the leg then measured a new request, not reuse. Rewrite the leg,
+  or keep it, once a conversation can carry more than one image.
+
 ---
 
 ## 2. Findings, fixes and gates
@@ -1292,6 +1304,144 @@ enough for a further same-module import to build without being separately fetche
 (`go mod init`, the documented command, then `go build` on a program importing `chat`) rather
 than by a script — a claim about Go's own module resolution behavior on a specific toolchain
 version is a fact to reproduce once, not one worth encoding as a standing gate.
+
+### Run 3 findings (2026-10-01, v0.19.0, nobara-pc)
+
+Filed after the v0.20.0 tag from
+[`../measurements/cold-user-2026-10-01-nobara-pc.md`](../measurements/cold-user-2026-10-01-nobara-pc.md) (a contaminated
+run, declared and accepted; see the protocol amendment above). The run tested v0.19.0, so each entry says what was
+checked against v0.20.0, and how. Release tooling found the same day is in `docs/QUEUE.md` §B.
+
+### R17 — on a GPU box the default backend is the CPU
+
+**Found** (scenario A). The README says "GPU built in", yet the first run took the default backend, `cpu`: 14.4 tok/s,
+against 173.8 tok/s with `--backend cuda` on the same machine. **On v0.20.0:** still true (`internal/loadflags`, the
+`-backend` default). **Fix, the owner's decision:** pick the compiled-in GPU backend when a device is present, or print
+one line naming `--backend cuda` when a GPU is visible and the backend is `cpu`. `docs/demand-evidence-2026-10-01.md`
+§7 item 1 makes the same case from the peers' trackers. **Gate:** a startup test asserting that line, or the selection,
+when a device is visible.
+
+**Fixed 2026-10-01, after v0.20.0.** `-backend auto` is the default for `goinfer-serve`, `goinfer-chat` and `decide`
+(`decoder.AutoBackend`, resolved in `internal/loadflags` before anything reads the name). It picks the first GPU
+backend in the binary whose device probe answers, `cuda` then `metal`, else `cpu`, and prints one line: what it chose,
+why, and `-backend cpu` to choose the CPU. The library's zero value stays `cpu`; `Options{Backend: "auto"}` opts in.
+Four limits, each found while building it:
+
+- **Metal is picked for int4 models only** (`autoMetalPrecision`, in `withResidency`). Metal re-quantizes int8,
+  int8int8 and int4mix weights to int4, and a backend the user did not name should not change their precision. Before
+  the guard, the model-included 0.5B (an int8int8 bundle) went to Metal at int4 on the M1 Pro and loaded in 1.7 s
+  against 0.17 s on the CPU; with it, the bundle stays on the CPU and its greedy text matches `-backend cpu`
+  (exploratory runs, `docs/measurements/r17-auto-backend-2026-10-01/`). `-backend metal` still runs it re-quantized.
+- **No Metal on an Intel Mac.** The darwin/amd64 assets link Metal, but nothing has run it there
+  (`docs/completed/task-metal-cgofree-spike.md` scoped Intel Macs out).
+- **Never WebGPU**: it stays an explicit choice.
+- **`-require-backend`**: an auto that passed over a GPU backend in the binary (no device, Intel Mac, WebGPU only)
+  refuses to start and names `-backend cpu`. On a binary with no GPU backend, auto is the CPU and the per-model checks
+  run as before.
+
+**Gate.** `decoder/auto_backend_test.go` (selection over faked inputs, the Metal precision guard through a real load,
+`Load(auto)` reporting the resolved backend), `internal/loadflags` (the default, the resolution order the Metal
+`--embed-int4` default depends on, one probe per start), `internal/serveapp/autobackend_test.go` (strict mode), and
+device-backed checks in `cuda/` and `metal/`: CI's GPU-less runner exercises the no-device branch on every push.
+On nobara-pc, binaries built from this change picked `cuda` for the plain `goinfer-chat` (`cuda-resident (int4)`) and
+for the model-included 0.5B (`cuda-resident (int8int8)`), and the CPU with `CUDA_VISIBLE_DEVICES=-1`, naming why
+(`docs/measurements/r17-auto-backend-2026-10-01/`).
+
+**Follow-up:** Metal running int8 weights natively would let auto send those models to the GPU too:
+`docs/tasks/task-metal-int8-2026-10.md`, slice 5.
+
+### R18 — the release binaries report `-dirty`
+
+**Found** (versions table). `goinfer-serve --version` printed `v0.19.0 (c7f8eff76c7c-dirty)` from the release asset, a
+small trust blip on every install. **On v0.20.0:** still true. `go version -m` on the published `goinfer-serve`
+darwin-arm64 and linux-amd64 assets reads `vcs.revision=890ca565` (the tag) and `vcs.modified=true`. **Cause:**
+`release-assets.yml`'s serve step runs `go mod edit -replace` in `metal/` and `cuda/` so they build against the
+checked-out root. That edit is R2-follow-on's fix for shipping the previous release's engine, and it has to stay. The
+edit alone marks the tree modified (R6, run 2, which injected the version tag and left the suffix). **Fix:** get the
+same effect without touching a tracked file: a `go.work` outside the checkout (`GOWORK=$RUNNER_TEMP/go.work`, using
+`.`, `./cuda` and `./metal`). **Gate:** `scripts/check_release_assets.sh` reads a downloaded asset's build info with
+`go version -m` and fails on `vcs.modified=true`.
+
+### R19 — the default context is smaller than a coding agent's first request
+
+**Found** (scenario B). opencode's first request was 11,137 tokens. `goinfer-serve` refused it with a 400
+(`context_length_exceeded`, context 8192), and opencode looped through 34 compaction retries. It worked with
+`--ctx 16384`. The agent recipes say `-ctx 16384`, but the README only links to them. **On v0.20.0:** still true. With
+`-ctx 0`, CUDA keeps its 8192 default when the fit is on, and Metal 4096 (`-ctx` help text, `cuda/resident.go`'s
+`fitDefaultCtx`). **Fix, the owner's decision:** raise serve's default when the fit admits it, or keep the default and
+put the remedy in the 400's message and in the README's agent line. **Gate:** a harness-scale `serve check` row run at
+the default context (`docs/tasks/task-harness-reliability-2026-10.md`, gates 1 and 2).
+
+### R20 — a CUDA resident decline that names no reason a user can act on
+
+**Found** (scenario D). `gemma-4-26b-a4b` q4_0 with `--backend cuda` and no `-moe-cache-experts` printed
+`[cuda] resident path DECLINED ... cuda: unsupported projection kind ""` and fell back to the CPU. The fallback then
+priced KV at context 262144 (10.4 GB) where `fit` had said 3.44 GB at 8192. **On v0.20.0:** the message is unchanged
+(`cuda/resident.go`, `unsupported projection kind %q`); the fit-versus-serve context difference is not checked.
+**Fix:** name the tensor kind and the remedy (`-moe-cache-experts`, or a supported `--quant`), and have `fit` and
+`serve` price the same default context. **Gate:** a test that a resident decline's message names a remedy.
+
+### R21 — swap grew under a "tight" warning, with no refusal
+
+**Found** (scenario D). `fit` and `serve` both warned "fit is tight ... 96% of budget" before any swap growth, so the
+leg's "told me first" bar passed. There was no refusal, though, and swap grew about 1.9 GB during the load, with no
+`swap guard` line printed. 57 GB was available at the start, so part of the growth may be the kernel moving cold pages
+to zram as page cache filled, not goinfer's footprint. **On v0.20.0:** the swap guard exists
+(`internal/serveapp/swapguard.go`, added after v0.19.0), so the line now prints; its behaviour under this load is not
+checked. **Fix:** none until measured. **Gate:** repeat scenario D on v0.20.0, as the run-2b amendment does for a
+skipped leg.
+
+### R22 — `--vision` rejects a GGUF mmproj with a file-system error
+
+**Found** (scenario F). `--vision <mmproj>.gguf` failed with `.../config.json: not a directory`, and with no `--vision`
+the server reported `"vision": false`. `pull` fetches mmproj files that nothing consumes. **On v0.20.0:** still true, a
+known gap (`docs/multimodal.md`, "No GGUF `mmproj`"). **Fix:** until mmproj loads, say so: "`--vision` takes a directory
+with a vision tower (config.json and safetensors); GGUF mmproj files are not supported yet", and have `pull` say the
+same when it fetches one. **Gate:** a unit test on that message.
+
+### R23 — a chat that keeps its first image in history is rejected
+
+**Found** (scenario F). With an earlier image still in the conversation, the next image turn fails with
+`400: v1 supports 1 image per request, got 2`. Chat clients resend the whole history, so a normal chat's second image
+turn fails. **On v0.20.0:** still true (`internal/serveapp/vision_serve.go`, `maxImagesPerTurn = 1`). **Fix, the owner's
+decision:** accept images already in history, or keep only the newest and say so. **Gate:** a serve test with two user
+turns that each carry an image.
+
+### R24 — re-sending an identical image is not reused
+
+**Found** (scenario F). Every image turn cost about 7.5 s to first token, a byte-identical resend included, against
+about 2 s for an 11,137-token text prompt. **On v0.20.0:** a known gap (`docs/multimodal.md`, "Image turns defeat
+prefix reuse"). **Fix:** tracked there. **Gate:** scenario F's resend leg, once R23 lets it run as written.
+
+### R25 — `serve` logs nothing per request
+
+**Found** (scenario B). With no per-request log line, the tester got prompt sizes only from error bodies. **On v0.20.0:**
+no request-log flag exists. **Fix:** an opt-in one-line log per request (route, model, prompt and completion tokens,
+time to first token, status). **Gate:** a serve test asserting that line when the flag is set.
+
+### R26 — `goinfer-chat` has no plain one-shot mode
+
+**Found** (scenario A). There is no prompt argument. Piped stdin answers once, but prints a `you>` label, ANSI escapes
+and a trailing `bye`. **On v0.20.0:** no prompt or no-colour flag exists. **Fix:** plain output when stdin or stdout is
+not a terminal, or a `-p "prompt"` flag. **Gate:** a chatapp test with piped stdin asserting no escape codes.
+
+### R27 — pkg.go.dev described `decoder.Load` as a Gemma-3, CPU-only loader
+
+**Found** (scenario C). `decoder.Load`'s doc comment said it "reads a Gemma 3 snapshot" with the CPU "the only one
+wired", and `Options.Backend` said "cpu or webgpu". **Fixed for v0.20.0.** `Options.Backend` was already correct on
+main, and Load's comment was rewritten before the tag (`8fc642fb`): its three input kinds, how the cuda, metal and
+webgpu backends register, the cpu fallback, and `ErrWontFitResident`. **Gate:** none. pkg.go.dev freezes each tag's
+docs, so this is a release-review item.
+
+### R28 — no flag or help text names the model cache location
+
+**Found** (scenario A). `XDG_CACHE_HOME` is honoured, but neither `goinfer-chat` nor `goinfer-serve` says so in `--help`.
+Only `pull -o` sets a path. **On v0.20.0:** not checked. **Fix:** name the cache directory, and the variable that moves
+it, in `--help`. **Gate:** a help-text test.
+
+**Seen but not filed:** an odd ` Query issued,` reply to "Say hi." at default sampling on the 1.5B (fine at temperature
+0; one sample, not reproduced); Ollama's install script needing sudo (Ollama's, not goinfer's); finding `chat.Meta`
+from pkg.go.dev's method index (in scope for `docs/tasks/task-library-surface-review-2026-10.md`).
 
 ---
 

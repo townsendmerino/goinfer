@@ -17,7 +17,7 @@ doesnt:
   - title: "A lone request is not faster."
     text: "With one conversation active, its tokens take the same code path as before. The records measure 1.002× and 1.004× on Metal, and 1.000× and 1.000× on the CPU, for the median turn and the slowest (99th-percentile) turn. That is the goal, not a gain."
   - title: "It doesn't cover every model."
-    text: "Plain dense models batch. Mixture-of-experts (MoE) models, recurrent and hybrid models (such as Gated DeltaNet), vision models, LoRA adapters and speculative decoding keep one generation at a time, and WebGPU runs one at a time. On Metal, the default `--embed-int4` currently sends a load to the CPU; pass `--embed-int4=false` (docs/quantization.md, Known issue)."
+    text: "Plain dense models batch. Mixture-of-experts (MoE) models, recurrent and hybrid models (such as Gated DeltaNet), vision models, LoRA adapters and speculative decoding keep one generation at a time, and WebGPU runs one at a time. On Metal, an explicit `--embed-int4` sends a load to the CPU, where it does not batch; it defaults off there (docs/quantization.md)."
   - title: "Two clients gain little, and small models on the CPU are not batched."
     text: "At two clients on Metal, the 7B gained only 1.018× over one-at-a-time serving. A later change lifted that to 1.121× over the build before it. On the CPU, forcing batching on for a small model (0.5B) read 0.73× the unbatched path, so `--cpu-batch auto` does not batch models under 2 GiB."
   - title: "Identical means identical on one machine."
@@ -124,6 +124,6 @@ Second, the CPU row's baseline is the earlier CPU path, whose workers already ra
 - `-cpu-batch auto|on|off` (default `auto`) batches CPU generations, for models of at least 2 GiB of weights.
 - `-prefill-chunk N` (default 512; 0 prefills whole) sets the piece size for a newcomer's prompt.
 - `-max-queue N` (default 8) bounds each model's waiting requests. A full queue answers HTTP 429.
-- On Metal, the default `--embed-int4` currently sends a load to the CPU; pass `--embed-int4=false` ([docs/quantization.md, Known issue](https://github.com/townsendmerino/goinfer/blob/main/docs/quantization.md)). That default dates from 2026-09-28, and a load that lands on the CPU this way does not batch. CUDA and WebGPU have not been checked for this.
+- On Metal, an explicit `--embed-int4` sends a load to the CPU, where it does not batch, so it defaults off there ([docs/quantization.md](https://github.com/townsendmerino/goinfer/blob/main/docs/quantization.md)). From 2026-09-28 to 2026-09-30 the default was on, and a plain Metal load did not batch. CUDA and WebGPU keep the int4 table resident (checked 2026-09-30).
 - The banner's concurrency line says which mode is running.
 - To reproduce a row, run the benchmark from a clone of the repo against a server binary, once per build: `GOINFER_SERVE_CPU=<serve binary> python3 scripts/bench_w7_plain.py out.json --clients 4 --engines goinfer --backend metal --fixed-nonce`. Use `--backend cuda` or `--backend cpu` for the other rows.

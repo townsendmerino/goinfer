@@ -104,13 +104,13 @@
   {
    "name": "require-backend",
    "group": "Memory and swap safety",
-   "summary": "Exit non-zero at startup if a model did not get the requested `--backend`'s fast paths (no resident decode, or a prefill that fell back to the per-token loop). For batch jobs that should fail at second zero rather than run slow."
+   "summary": "Exit non-zero at startup if a model did not get the requested `--backend`'s fast paths (no resident decode, or a prefill that fell back to the per-token loop). Under `--backend auto` it also refuses to start when auto passed over a GPU backend this binary has (no device answered), rather than run on the CPU; `--backend cpu` runs strict on the CPU. For batch jobs that should fail at second zero rather than run slow."
   },
   {
    "name": "backend",
    "group": "Backend, precision and context",
-   "summary": "The compute backend. `--version` lists the backends compiled into this binary; naming one that is not there falls back to `cpu`.",
-   "type": "cpu | webgpu | cuda | metal"
+   "summary": "The compute backend. `auto` (the default) picks `cuda` when a device answers, else `metal` on Apple silicon for int4 models (Metal re-quantizes other precisions, so those stay on the CPU), else `cpu`, and prints one line saying which. It never picks `webgpu`. `--version` lists the backends in this binary; naming one that is not there falls back to `cpu`.",
+   "type": "auto | cpu | webgpu | cuda | metal"
   },
   {
    "name": "quant",
@@ -122,7 +122,8 @@
   {
    "name": "embed-int4",
    "group": "Backend, precision and context",
-   "summary": "With `--quant int4`, keep the token-embedding and LM-head table at int4 as well, halving the largest resident tensor on a small model with a big vocabulary. `--embed-int4=false` keeps it at int8.",
+   "summary": "With `--quant int4`, keep the token-embedding and LM-head table at int4 as well, halving the largest resident tensor on a small model with a big vocabulary. On by default, except when the backend is `metal` (named, or chosen by `auto`), where the resident runner does not take an int4 table yet and the default is off. `--embed-int4=false` keeps it at int8.",
+   "type": "bool",
    "see": "docs/quantization.md"
   },
   {

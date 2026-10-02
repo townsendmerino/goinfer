@@ -149,6 +149,7 @@ var parityRealckptGates = []gateCheck{
 	// unmistakable in the sweep's own report, not just in code.
 	{"granite-dense-real", "TestGraniteDenseReal_gate"},
 	{"olmo3-oracle", "TestOlmo3Real_gate"},
+	{"gemma12-oracle", "TestGemma12Real_gate"},
 	{"olmo-hybrid-oracle", "TestOlmoHybridReal_gate"},
 	// internlm2 repeated the exact smollm3/lfm2/mistral3 registration gap: its gate and asset
 	// (commit d1449f4) landed without this line, leaving TestRealckptGateIsListedOrExplicitly
@@ -185,6 +186,7 @@ var emitGates = []gateCheck{
 	{"mistral3", "TestMinistral3Real_gate"},
 	{"granite", "TestGraniteDenseReal_gate"},
 	{"olmo3", "TestOlmo3Real_gate"},
+	{"gemma+gemma2", "TestGemma12Real_gate"}, // gemma-2b-it, codegemma-2b, gemma-2-2b-it: safetensors f32 + llama.cpp Q8_0 GGUF
 	{"olmo_hybrid", "TestOlmoHybridReal_gate"},
 	{"internlm2", "TestInternLM2_1_8bReal_gate"},
 	{"qwen2_moe", "TestQwen2MoeReal_oracle"},
@@ -728,6 +730,9 @@ var neverConfirmed = map[string]string{
 	// this box, so only it stays.
 	"TestNemotron35LightningReal_oracle": "2026-09-13 — deferred for v0.18.0; needs the ~60GB bf16 checkpoint on the Linux box, not run this release. STILL TRUE 2026-09-18: the asset has still not been pulled to this box (its SKIP was, until today, incorrectly counting as a blocker regardless of this entry — see classifyChecks' neverConfirmed check in the SKIP branch, fixed the same day this was re-confirmed).",
 
+	// 2026-10-01: TestQwen35Real_gate2FullModel, the other gate this block named, left the list. It fit and passed on this
+	// box in the v0.20.0 sweep run 2 (bcf50a49) and the scoped re-validation (70be7081), and is in the ledger.
+	//
 	// v0.19.0 §C1 SWEEP FINDING (2026-09-18, Francis via Claude): these two gates genuinely ran
 	// (not asset-missing) and genuinely cannot fit THIS BOX under the fit-guard's 70% budget —
 	// not a flake, not a code defect. Both load Qwen3.6-35B-A3B or Qwen3Next-80B at
@@ -735,8 +740,7 @@ var neverConfirmed = map[string]string{
 	// decoder.ErrWontFitResident decline (decoder/real_oracle_test.go, decoder/qwen35_gate2_test.go)
 	// rather than treating capacity refusal as a test failure. Measured: this box has 62GB RAM,
 	// so the fit-guard's 70% ceiling never authorizes more than ~43.4GB even fully idle.
-	"TestQwen35Real_gate2FullModel": "2026-09-18 — needs ~44.0GB (34.0GB weights + 10.0GB KV at pinned context) against this box's ~43.4GB fit-guard ceiling (70% of 62GB RAM) — over budget even fully idle, not contention. BOTH this gate and TestQwen3NextReal_oracle passed on this SAME box in the v0.15.0 sweep (2026-08-27, docs/measurements/parity_sweep_v0.15.0_bd085de_GREEN.log) — the box has not changed; the fit-guard's arithmetic has. dfd4bfe9 (2026-09-15, M-28) replaced a flat NumKVHeads*headDim KV estimate with real per-layer geometry (zero for a DeltaNet/mamba/conv mixer layer, the family's ACTUAL head_dim otherwise). qwen3_5's head_dim (256) does not derive from hidden/heads the naive way (a documented quirk — see qwen38-dense-family.md); the flat formula likely used the derived, too-small value for this family's regular-attention layers, silently underpricing them, while separately overpricing the DeltaNet layers it charged full KV to. The two errors partly cancelled before; fixing both moved the estimate up net. Read as the guard becoming MORE accurate and appropriately more conservative, not a regression — but not independently re-derived by hand here, so flagged as a real candidate rather than a certainty. Needs either a bigger box or someone re-deriving the true KV cost by hand to confirm 44.0GB is right.",
-	"TestQwen3NextReal_oracle":      "2026-09-18 — needs ~59.3GB (47.3GB int4 weights + 12.0GB KV) against this box's ~43.4GB fit-guard ceiling. Same shape as TestQwen35Real_gate2FullModel above (also passed on this box at bd085de/2026-08-27, also a DeltaNet-hybrid family, same dfd4bfe9 pricing fix in between) — see that entry for the fuller explanation; this one is not a close call either way (59.3GB vs a 43.4GB ceiling, not a few GB over). The gate's own doc comment's \"int4 is ~40GB and fits\" only ever estimated weights and omitted KV entirely. Needs a bigger box.",
+	"TestQwen3NextReal_oracle": "2026-09-18 — needs ~59.3GB (47.3GB int4 weights + 12.0GB KV) against this box's ~43.4GB fit-guard ceiling. It passed on this box at bd085de/2026-08-27; between then and now dfd4bfe9 (2026-09-15, M-28) priced KV from real per-layer geometry (zero for a DeltaNet/mamba/conv mixer layer, the family's actual head_dim otherwise), which moved the estimate up. This one is not a close call either way (59.3GB vs a 43.4GB ceiling, not a few GB over). The gate's own doc comment's \"int4 is ~40GB and fits\" only ever estimated weights and omitted KV entirely. Needs a bigger box.",
 }
 
 // awaitingFirstConfirmation names a required gate that has NEVER produced a confirmed result, with
@@ -765,16 +769,12 @@ var neverConfirmed = map[string]string{
 // (and PASS) at int8 instead of int4; that document is also the retraction record for an earlier,
 // wrong plan to move both into neverConfirmed permanently on an unverified "int8 doesn't fit"
 // premise.
-var awaitingFirstConfirmation = map[string]string{
-	"TestOlmo3Real_gate": "2026-09-18 — ran for the first time this release (was neverConfirmed through v0.18.0 " +
-		"for a different reason: root-caused+fixed but never re-run). Result: argmax exact (12366), full " +
-		"8-token greedy continuation exact match, but last-logit cosine 0.992789 misses this gate's own " +
-		"0.9999 bar (tighter than the usual 0.98-0.99 int4/int8 floor). Not investigated further — the " +
-		"exact-continuation-but-under-cosine shape is the same one Laguna/Qwen3.8 showed at int4 this " +
-		"same release (see docs/measurements/int4-neartie-laguna-qwen38-2026-09-18.md), so a near-tie " +
-		"quantization margin is a real candidate, not confirmed. Promote from the first sweep that " +
-		"resolves it.",
-}
+// EMPTY again, 2026-10-01. TestOlmo3Real_gate, here since 2026-09-18, was confirmed and promoted to the ledger. Its
+// 0.992789 cosine was a wrong REFERENCE, not quantization (the gate is f32): the golden had been pinned under
+// transformers 5.12, whose Olmo3 applies YaRN to every layer, while the Olmo 3 paper and transformers 5.15 put it on
+// full-attention layers only, as goinfer does. Re-pinned under 5.15 it passes at cosine 1.000000
+// (docs/measurements/olmo3-golden-repin-2026-10-01/).
+var awaitingFirstConfirmation = map[string]string{}
 
 // realckptNotRequired names a gate-shaped test in a `//go:build realckpt` file that the sweep RUNS
 // but does not require, with the reason. Every such test must be here or in parityRealckptGates —

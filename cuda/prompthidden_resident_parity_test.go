@@ -23,7 +23,7 @@ func TestPromptHiddenResidentCUDA(t *testing.T) {
 	opts := decoder.Options{Backend: "cuda", Quant: "int4", LoRA: lora}
 	mRes, err := decoder.Load(ckpt, opts)
 	if err != nil {
-		t.Fatalf("load metal: %v", err)
+		t.Fatalf("load cuda: %v", err)
 	}
 	defer mRes.Close()
 	rf := mRes.ResidentForwardForTest()

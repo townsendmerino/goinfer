@@ -65,11 +65,37 @@
   .markdown-body h1 { font-size: 2.1rem; font-weight: 800; line-height: 1.15; border-bottom: 0; margin: .4em 0 .5em; }
   .markdown-body h2 { font-size: 1.5rem; font-weight: 700; border-bottom: 1px solid var(--line); padding-bottom: .3em; }
   .markdown-body h3 { font-size: 1.15rem; font-weight: 700; }
-  .markdown-body > h1:first-child {
-    font-family: var(--f-mono); font-size: .78rem; font-weight: 500; letter-spacing: .06em;
-    text-transform: uppercase; margin: 0 0 1.6rem;
+  /* The masthead above each chapter (docs/book-search/default.html). It used to be the theme's site-title h1 restyled
+     as a 0.78rem eyebrow by an h1:first-child rule, and that rule also caught the front page's own title, which is
+     the first h1 there, so the book's name rendered tiny. */
+  .markdown-body .bk-masthead {
+    font-family: var(--f-display); font-size: 1.2rem; font-weight: 700; letter-spacing: -.01em; margin: 0 0 1.4rem;
   }
-  .markdown-body > h1:first-child a { color: var(--muted); }
+  .markdown-body .bk-masthead a { color: var(--ink-2); }
+
+  /* goinfer.dev's nav (site/internal/site/assets/site.css), so the book does not strand a reader who came from the site */
+  .bk-top { max-width: 1120px; margin: 0 auto; padding: 0 16px; font-family: var(--f-body); }
+  .bk-top nav.top { display: flex; align-items: center; gap: 28px; padding-block: 18px; flex-wrap: wrap; }
+  .bk-top .wordmark { font-family: var(--f-mono); font-weight: 500; font-size: 18px; color: var(--ink); letter-spacing: -.02em;
+    display: flex; align-items: center; gap: 8px; text-decoration: none; }
+  .bk-top .wordmark i { width: 10px; height: 10px; background: var(--accent); border-radius: 2px; display: inline-block; }
+  .bk-top nav.top ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 22px; flex-wrap: wrap; flex: 1; }
+  .bk-top nav.top ul a { color: var(--ink-2); font-weight: 500; font-size: 15px; text-decoration: none; }
+  .bk-top nav.top ul a:hover { text-decoration: underline; }
+  .bk-top nav.top ul a[aria-current] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); padding-bottom: 3px; }
+  .bk-top nav.top .gh { font-family: var(--f-mono); font-size: 12px; color: var(--muted); text-decoration: none; }
+  .bk-top + .markdown-body { margin-top: 1.5rem !important; }
+
+  /* previous / next at the foot of every page */
+  .markdown-body .bk-pager { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 3rem;
+    padding-top: 1.5rem; border-top: 1px solid var(--line); }
+  .markdown-body .bk-pager a { display: block; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; font-family: var(--f-display); font-weight: 700; color: var(--ink); text-decoration: none; }
+  .markdown-body .bk-pager a:hover { border-color: var(--accent); }
+  .markdown-body .bk-pager a span { display: block; font-family: var(--f-mono); font-size: .72rem; font-weight: 500;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .markdown-body .bk-pager .bk-next { text-align: right; grid-column: 2; }
+  @media (max-width: 560px) { .markdown-body .bk-pager { grid-template-columns: 1fr; } .markdown-body .bk-pager .bk-next { grid-column: 1; } }
   .markdown-body em { color: var(--ink-2); }
   .markdown-body hr { background: var(--line); height: 1px; border: 0; }
   .markdown-body code, .markdown-body tt {
@@ -172,9 +198,9 @@
     box.className = 'bk-search';
     box.innerHTML = '<input type="search" placeholder="Search the book…  (press / to focus)" ' +
                     'aria-label="Search the book" autocomplete="off"><ul class="bk-results"></ul>';
-    // After the site-title <h1> the theme injects, so the box does not displace the masthead.
-    var h1 = host.querySelector('h1');
-    if (h1 && h1.nextSibling) host.insertBefore(box, h1.nextSibling); else host.insertBefore(box, host.firstChild);
+    // After the masthead (a chapter) or the page's own title (the front page), so the box does not displace either.
+    var top = host.querySelector('.bk-masthead') || host.querySelector('h1');
+    if (top && top.nextSibling) host.insertBefore(box, top.nextSibling); else host.insertBefore(box, host.firstChild);
 
     var input = box.querySelector('input');
     var list = box.querySelector('.bk-results');

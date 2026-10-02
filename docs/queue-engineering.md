@@ -1027,8 +1027,8 @@ of them:
 | `cuda/resident.go` (decode) | **shares `applySoftcap`** (`4c26a58`) |
 | `cuda/prefill.go` | **shares `applySoftcap`** (`4c26a58`) |
 | `decoder/forwardn.go:1582` | unchanged (softcap logic itself; line shifted again by later edits elsewhere in the file, retargeted 2026-09-16; previously retargeted 2026-08-24, and 2026-08-15 after P1's edit) — `decoder/` core changes ride the goldens-proof requirement, not a version-gated freeze |
-| `decoder/model.go:1320` | unchanged — same freeze |
-| `metal/model.go:1398` | unchanged — Metal is on hold for core-numerics surfaces |
+| `decoder/model.go:1332` | unchanged — same freeze |
+| `metal/model.go:1492` | unchanged — Metal is on hold for core-numerics surfaces |
 
 The three unchanged members are a **deliberate** partial fix, not an oversight, and they are the
 reason this row exists: had P3 been taken at face value and only `cuda/resident.go` parallelised,
@@ -1060,7 +1060,7 @@ marks where else the same class may live.
 rediscoveries** — unclaimed. Filed 2026-08-28.
 
 Within one day the same guard was arrived at twice, by different work, without either knowing about
-the other: `gate_cell_idle()` in `scripts/bench_peer.py:934` (re-check before every cell, refuse on
+the other: `gate_cell_idle()` in `scripts/bench_peer.py:945` (re-check before every cell, refuse on
 timeout), and a `settle()` in the snapshot-cost driver on the `linux` box. Both started as
 check-once-at-start, both were found insufficient the same way, and **both converged on the same
 non-obvious rule: refuse rather than proceed.**
@@ -1280,7 +1280,7 @@ Why Go is *strictly better* here, not just same-language — it dissolves the it
 | C-14 CUDA argmax has no index tie-break | **fixed** at `c6600fc`, gated | `cuda/argmax_tiebreak_test.go:19` |
 | C-31 `make([]byte, u32)` unbounded | **fixed** — bounded against the remaining file size before the allocation | `internal/giw/bundle.go:170` |
 | C-21 embeddings batch cap, un-queued | **fixed** — `checkEmbedInputBounds` caps the input count, gated at the boundary and at +1; the un-queued half is a *documented deliberate decision*, not an omission. The body-cap tests are a different concern (bytes, not count) — covered-by-something-else, which is why they did not answer this | `internal/serveapp/embeddings.go:26` |
-| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:786` |
+| C-22 shutdown lock, swallowed second signal | **fixed**, with a named gate — the checkpoint cannot block forever on a busy model, and a second Ctrl-C always kills | `internal/serveapp/main.go:793` |
 | C-30 no mutex in the paging paths | **fixed** — both pagers carry an internal mutex, each citing the audit finding | `decoder/layerpaging.go:42` |
 
 **These are correctness and security items, so a wrong entry costs more here than in P or B — in both
@@ -1562,7 +1562,7 @@ path both ends use.
 streamed length 632821543 != buffered 632821551
 ```
 
-The assertion is `decoder/serialize_test.go:436`.
+The assertion is `decoder/serialize_test.go:437`.
 
 **632,821,551 − 632,821,543 = 8 bytes. One uint64.** On a ~633 MB payload that is not drift or a
 rounding artifact — it is one field written by one path and not the other, or at a different width.

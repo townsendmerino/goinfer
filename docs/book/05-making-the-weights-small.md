@@ -33,6 +33,61 @@ time — not because there is less arithmetic, but because there is less waiting
 This is a familiar shape if you've optimized Go: the win comes from cache behaviour and
 memory traffic, not from instruction count.
 
+
+---
+
+## Predicting the speed before measuring it
+
+Because decode reads every weight once per token, its speed has a ceiling you can work out on paper, before running
+anything.
+
+Each weight takes part in one multiply and one add per token, so a model with N parameters does about 2N operations
+per token. At 4 bits a weight is about half a byte, which is roughly four operations for every byte read. Processors
+can do far more arithmetic than that in the time one byte arrives from memory, so the arithmetic units wait. That is
+what "memory-bandwidth-bound" means in numbers, and it gives the ceiling:
+
+```
+  tokens per second  ≤  memory bandwidth  ÷  bytes read per token
+
+  bytes read per token   =  weight bytes  +  KV-cache bytes at the current depth
+  KV bytes per position  =  2 × KV heads × head dim × bytes per value × layers
+                            (the 2 is one K and one V)
+```
+
+The KV term grows with the conversation. Qwen2.5-1.5B has 28 layers and 2 KV heads of dimension 128, so at 16-bit
+values it stores 28 KB per position, and at a 3,900-token context every new token reads about 110 MB of cache on top
+of the weights. That is a large part of why decode slows down as a conversation gets long. (These two figures are
+arithmetic from the model's config, not measurements.)
+
+Here is the ceiling next to what was measured, at short context, where the weights are almost all of the traffic.
+The bytes are what goinfer actually streams per token at int4 with an 8-bit LM head, counted from its own kernels:
+on the CPU 1,053 MB for the 1.5B ([`cpu-decode-roofline-2026-09-23.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/cpu-decode-roofline-2026-09-23.md)),
+and on Metal 970 MB for the 1.5B and 4,216 MB for the 7B, summed from each layer's matrix-vector kernels plus the LM
+head ([`metal-decode-gemv-s0-2026-09-26.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/metal-decode-gemv-s0-2026-09-26.md)).
+
+| machine, model | bandwidth | ceiling | measured | share of the ceiling |
+|---|---|---|---|---|
+| Ryzen 7 3700X CPU, 1.5B | 28–31 GB/s, measured by a read-only stream | 27–29 tok/s | 19.4 tok/s (2026-09-23) | about 70% |
+| M1 Pro GPU, 1.5B | 200 GB/s on the spec sheet; 178–182 GB/s measured by a streaming read | 183–188 tok/s | 95.6 tok/s (10.46 ms of GPU time per token) | about 52% |
+| M1 Pro GPU, 7B | the same | 42–43 tok/s | 30.2 tok/s (33.12 ms) | about 71% |
+
+The GPU rows are GPU time per token, taken from the command buffers' timestamps, so a served request adds a little
+host time on top ([`metal-decode-gemv-r18b-2026-09-26.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/metal-decode-gemv-r18b-2026-09-26.md)).
+
+**The ceiling tells you the best case, not where you are.** Before September 26 the 1.5B's token took 12.93 ms on the
+GPU. Its int4 matrix-vector kernels moved weights at 64–111 GB/s (the largest, gate/up, at 90 GB/s), while a kernel
+doing the same loads and nothing else reached 176–187 GB/s on the same shapes, and the 8-bit LM head, which does less
+work per byte, ran at 161 GB/s ([`metal-decode-gemv-s0-2026-09-26.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/metal-decode-gemv-s0-2026-09-26.md)).
+So the bytes were not the limit; the work done on each weight was: unpacking the 4-bit values, applying their scales
+and accumulating. Rewriting those kernels in the shape MLX uses, several rows per SIMD group, took gate/up to 115–140
+GB/s and the token to 10.46 ms, with bit-identical output
+([`metal-decode-gemv-r18-2026-09-26.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/metal-decode-gemv-r18-2026-09-26.md)). The bandwidth
+did not change. The kernel got closer to it.
+
+The same reading explains the CPU row. There Ollama moves its bytes at 23.5 GB/s on the 1.5B against goinfer's 20.4,
+while goinfer actually streams 7.5% more bytes per token. The gap is in how close each gets to the ceiling, not in the
+format. Arithmetic gives the ceiling; only a measurement shows how far from it you are, and why.
+
 ---
 
 ## Quantization

@@ -112,3 +112,27 @@ func TestOptionsValidate(t *testing.T) {
 		}
 	}
 }
+
+// A model with a decision head (head=) loads at decoder.DecisionHeadQuant unless a quant was chosen, through the same
+// options() path serve uses for every --model entry (D6b, owner decision 2026-10-01).
+func TestModelSpec_headDefaultsToTheDecisionQuant(t *testing.T) {
+	dir, int4, f32 := "/heads/jev", "int4", ""
+	unset := config{load: loadflags.Flags{Backend: "cpu", Quant: "int4"}}                  // -quant left at its default
+	passed := config{load: loadflags.Flags{Backend: "cpu", Quant: "int4", QuantSet: true}} // -quant int4 given
+	for _, tc := range []struct {
+		name string
+		spec modelSpec
+		cfg  config
+		want string
+	}{
+		{"head, nothing chosen", modelSpec{path: "m", head: &dir}, unset, decoder.DecisionHeadQuant},
+		{"head, quant=int4", modelSpec{path: "m", head: &dir, quant: &int4}, unset, "int4"},
+		{"head, quant= (f32)", modelSpec{path: "m", head: &dir, quant: &f32}, unset, ""},
+		{"head, -quant int4 passed", modelSpec{path: "m", head: &dir}, passed, "int4"},
+		{"no head keeps the process default", modelSpec{path: "m"}, unset, "int4"},
+	} {
+		if got := tc.spec.options(tc.cfg).Quant; got != tc.want {
+			t.Errorf("%s: Quant = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}

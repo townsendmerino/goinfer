@@ -114,7 +114,7 @@ record it there as P6a and do it with the tower move rather than after.
 ### G3 — LoRA adapter requests drop to the staged path (100% CPU on CUDA/Metal)
 
 **Where.** `internal/serveapp/openai.go:1477`: `if lm.model.ResidentActive() && lm.adapter == ""` —
-adapter models take the session path below it, and `decoder/model.go:1575` makes a session
+adapter models take the session path below it, and `decoder/model.go:1587` makes a session
 generation ineligible for the resident KV (`useGPU = resident != nil && prefillFrom == 0 &&
 commit == nil`). The comment at `internal/serveapp/openai.go:1447–967` records the cost: 13 tok/s vs ~460 resident ona 0.5B (RTX 2070 SUPER). Documented as audit R-01 and left there.
 
@@ -124,7 +124,7 @@ runners need one extra GEMV pair per adapted projection per token, with the delt
 at `bindAdapter` time. Alternative that is cheaper and may be enough: merge the adapter into the
 resident weights at bind time (re-pack the affected projections) and treat "switch adapter" as a
 re-pack; one adapter per loaded model at a time, which is what `lm.sessions.adapter` already
-assumes (`internal/serveapp/main.go:1000`).
+assumes (`internal/serveapp/main.go:1007`).
 
 **Gate.** An adapter-vs-merged parity test on the tiny fixture, then the R-01 measurement
 re-run on the 0.5B.
@@ -207,8 +207,8 @@ unknown kind declines cleanly), gated on the real Nano checkpoint on the Linux b
 ### G8 — Metal prefill is sequential for every non-plain-dense family, flag or no flag
 
 **Where.** `metal/model.go:44–67`: `prefillFeatures` is exactly `{FeatQKNorm, FeatSlidingWindow,
-FeatPartialRotary}`; `metal/model.go:722` sets `prefillOK` from it; `metal/backend.go:688` declines.
-Separately, `metal/backend.go:612` declines batched prefill unless `GOINFER_METAL_BATCHED_PREFILL=1`
+FeatPartialRotary}`; `metal/model.go:785` sets `prefillOK` from it; `metal/backend.go:700` declines.
+Separately, `metal/backend.go:624` declines batched prefill unless `GOINFER_METAL_BATCHED_PREFILL=1`
 (the 54% stream divergence, §A2-Metal). So MoE, Gemma, DeltaNet, gpt-oss and GPT-2 prompts on the
 Mac are one forward per prompt token regardless of `--metal-fast-prefill`. CUDA's batched prefill
 covers dense and MoE (`cuda/prefill.go:306–320`) and declines only f32 projections and the
@@ -227,7 +227,7 @@ dense (`docs/ollama-chase.md`), and the Mac's remaining gap to Ollama is mostly 
 
 ### G9 — WebGPU has no batched prefill at all
 
-**Where.** `decoder/model.go:1406`: "WebGPU implements no Prefiller"; `gpu/residency.go:1150`
+**Where.** `decoder/model.go:1418`: "WebGPU implements no Prefiller"; `gpu/residency.go:1150`
 seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit per token.
 
 **Fix.** A `Prefiller` on the WebGPU runner, dense first, following the CUDA shape
@@ -235,10 +235,10 @@ seeds the caches via sequential `Forward`. Every prompt on WebGPU is one submit 
 
 ### G10 — Metal has no int8 weight kernel: `int8int8` is requantized to W4A8 on device
 
-**Where.** `metal/model.go:459` (`int4Buf`): an int4 weight is packed directly; an int8 weight
+**Where.** `metal/model.go:465` (`int4Buf`): an int4 weight is packed directly; an int8 weight
 is dequantized to f32 and re-packed as 4-bit/group-32. There is no W8 GEMV in `metal/`. So
 `-quant int8int8` on Metal runs int4 numerics on the GPU while holding the int8 host copy — more
-RAM, not more precision. `metal/backend.go:60`'s comment ("weights must be int8-loaded…") is stale
+RAM, not more precision. `metal/backend.go:61`'s comment ("weights must be int8-loaded…") is stale
 in the other direction.
 
 **Fix.** Either a W8A8 GEMV on Metal (CUDA has `gemv_w8a8_batched`), or make the requant explicit:
@@ -247,6 +247,8 @@ W4A8)", and `docs/quantization.md` should say int8int8 on Metal is an int4 path.
 int8int8 on the Mac" loose end from task-first-hour is void until this is decided.
 
 **Size.** Reporting: trivial, do now. Kernel: medium.
+
+**Reopened 2026-10-01** for the kernel half: `docs/tasks/task-metal-int8-2026-10.md`.
 
 ### G11 — no layer placement on CUDA/Metal (resident-or-CPU)
 
@@ -259,7 +261,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
 
 ## Things checked and found fine
 
-- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1775`), but serve
+- The `resBusy` CAS loser falls to the staged/CPU path (`decoder/model.go:1787`), but serve
   serializes each model's generations (`internal/serveapp/openai.go:71` `turns`), so it never fires
   through the HTTP surface; only direct library callers running two generations on one `Model`
   see it.
@@ -1657,7 +1659,7 @@ it; there is no per-layer split. This is where llama.cpp `--fit` beat goinfer on
   - **The slots piece, by contrast, was already 90% there**: `decoder.Options.MoECacheSlots` /
     `Model.MoECacheSlotsRequest()` — the SAME field and accessor CUDA's `--moe-cache-slots` already
     reads — were already backend-agnostic and already wired from the CLI flag
-    (`internal/loadflags/loadflags.go:91`, unchanged, predates this entry); Metal's own code simply
+    (`internal/loadflags/loadflags.go:97`, unchanged, predates this entry); Metal's own code simply
     never READ them, checking only `os.Getenv("GOINFER_METAL_MOE_SLOTS")` directly at its three
     real call sites (the guard's estimate, `metal/moe.go`'s and `metal/gemma4_moe.go`'s actual
     paging-engagement checks).

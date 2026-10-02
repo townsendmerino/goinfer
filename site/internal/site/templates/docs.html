@@ -3,7 +3,7 @@
 <div class="layout wr" id="top">
   <aside class="rail" aria-label="Docs">
     <h2>Docs</h2>
-    <p>Reference for running and connecting goinfer. The <a href="{{cfg.BookURL}}">book</a> explains how it works.</p>
+    <p>Using goinfer from Go, running it, and connecting it. The <a href="{{cfg.BookURL}}">book</a> explains how it works.</p>
     {{range .DocGroups}}<h3 class="rgroup">{{.Name}}</h3>
     <ol class="docs">{{range .Pages}}<li><a href="/docs/{{.Slug}}/"{{if and $cur (eq .Slug $cur.Slug)}} aria-current="page"{{end}}>{{.Title}}</a></li>
     {{end}}</ol>{{end}}
@@ -12,7 +12,8 @@
     {{if $cur}}<p class="series"><b>{{$cur.Group}}</b> · from <a href="{{cfg.GitHubURL}}/blob/main/{{$cur.Src}}"><code>{{$cur.Src}}</code></a></p>
     {{$cur.HTML}}
     {{else}}<h1>Docs</h1>
-    <p class="stand">What each part of goinfer does and how to run it. These pages are the repo's own documents, shown here so they are easy to find.</p>
+    <p class="stand">What each part of goinfer does and how to use it. These pages are the repo's own documents, shown here so they are easy to find.</p>
+    <p class="start"><b>Start here:</b> <a href="/docs/use-from-go/">Use it from Go</a> covers installing the module, the smallest working program, and output shaped like a Go struct. If you would rather run a server and call it over HTTP, start with <a href="/docs/server/">the server reference</a> instead.</p>
     {{range .DocGroups}}<h2>{{.Name}}</h2>
     <ul class="doclist">{{range .Pages}}<li><a href="/docs/{{.Slug}}/">{{.Title}}</a></li>{{end}}</ul>{{end}}
     <h2>The book</h2>

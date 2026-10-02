@@ -279,6 +279,9 @@ All flags:
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(2)
 	}
+	if l := cf.load.BackendLine(); l != "" {
+		fmt.Fprintln(os.Stderr, l)
+	}
 	opts := cf.load.Options()
 	if err := opts.Validate(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)

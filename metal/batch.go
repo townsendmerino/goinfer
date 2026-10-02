@@ -305,6 +305,8 @@ func (r *resident) batchIneligible() string {
 		return "KV slots that are not one f16 allocation per layer"
 	case r.moe != nil || r.g4moe != nil:
 		return "MoE"
+	case r.w8:
+		return "int8 weights (the batched step's kernels read int4; docs/tasks/task-metal-int8-2026-10.md, slice 3)"
 	case r.sandwich || r.postOnly || r.parallelBlock || r.kvI8 || r.layerNorm || r.decodeLaneW4F16 || r.nonGatedMLP ||
 		r.outBias || r.qkNorm || r.learnedPos || r.attnSink:
 		return "a family variant the batched step does not reproduce"

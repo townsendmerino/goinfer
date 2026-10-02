@@ -35,7 +35,7 @@
 
 <section aria-labelledby="lib-h">
   <div class="s-head"><div><h2 class="s" id="lib-h">As a Go library</h2></div></div>
-  <div class="dlcode"><pre>go get github.com/townsendmerino/goinfer</pre></div>
-  <p class="prose">The engine is a Go module with no cgo on the default build. Its own README has the API and a complete forty-line program.</p>
+  <div class="dlcode"><pre>go get github.com/townsendmerino/goinfer/decoder@latest github.com/townsendmerino/goinfer/tokenizer@latest</pre></div>
+  <p class="prose">Run it from inside your own module, and name the packages you import: a bare <code>go get</code> of the module records the requirement without fetching enough to build, and the next build fails with <code>missing go.sum entry</code>. One such command covers every other package in the module. The engine has no cgo on the default build and needs Go 1.27 or newer. Its README has the API and a complete forty-line program.</p>
 </section>
 {{template "foot" .}}

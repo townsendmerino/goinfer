@@ -1,0 +1,55 @@
+// Probe: aikit's dispatched activation quantizer vs its own scalar reference semantics
+// (quantizeRowInt8CoreScalar: q = int8(clamp(math.Round(float64(v*inv)), -127, 127))).
+package main
+
+import (
+	"fmt"
+	"math"
+
+	"github.com/townsendmerino/aikit/linalg"
+)
+
+func ref(row []float32) []int8 {
+	var maxAbs float32
+	for _, v := range row {
+		if v < 0 {
+			v = -v
+		}
+		if v > maxAbs {
+			maxAbs = v
+		}
+	}
+	q := make([]int8, len(row))
+	s := maxAbs / 127.0
+	inv := 1.0 / s
+	for j, v := range row {
+		x := math.Round(float64(v * inv))
+		if x > 127 {
+			x = 127
+		} else if x < -127 {
+			x = -127
+		}
+		q[j] = int8(x)
+	}
+	return q
+}
+
+func main() {
+	below := math.Nextafter32(0.5, 0)
+	// max 127 -> scale 1, inv 1: each value is quantized as itself. 16 = two AVX2 blocks.
+	row := []float32{127, below, -below, 0.5, -0.5, 1.5, 2.5, math.Nextafter32(1.5, 0),
+		0.25, math.Nextafter32(0.25, 0), 3.4999998, math.Nextafter32(126.5, 0), 126.5, -126.5, 0.7, -0.3}
+	q := make([]int8, len(row))
+	linalg.QuantizeRowInt8(row, q)
+	r := ref(row)
+	bad := 0
+	for i := range row {
+		mark := ""
+		if q[i] != r[i] {
+			mark = "   <-- MISMATCH"
+			bad++
+		}
+		fmt.Printf("  %-13.9g dispatched %4d   scalar %4d%s\n", row[i], q[i], r[i], mark)
+	}
+	fmt.Printf("mismatches: %d of %d\n", bad, len(row))
+}

@@ -122,5 +122,5 @@ The fix runs that last token through the model when the generation ends, as plai
 
 - `--spec ngram` on `goinfer-serve` (and `goinfer-chat`). Default off. It falls back to plain decode for a request it cannot speculate on.
 - On Metal it verifies on the batched-step kernels.
-- On Metal, the default `--embed-int4` currently sends a load to the CPU; pass `--embed-int4=false` ([docs/quantization.md, Known issue](https://github.com/townsendmerino/goinfer/blob/main/docs/quantization.md)). These measurements predate that default, which dates from 2026-09-28.
+- On Metal, an explicit `--embed-int4` sends a load to the CPU, so it defaults off there ([docs/quantization.md](https://github.com/townsendmerino/goinfer/blob/main/docs/quantization.md)). These measurements were made without it.
 - Best for one user, an editor or an agent loop with copy-heavy edits. Leave it off for a server shared by several clients.

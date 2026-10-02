@@ -90,3 +90,13 @@ python3 scripts/build_search_index.py "$SRC" "$SRC"/search-index.json
 # Non-vacuity: an empty or trivially small index would still deploy and would still
 # render a search box that finds nothing, which looks like a working feature.
 test "$(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))))' "$SRC/search-index.json")" -ge 50
+
+# The book's own layout (docs/book-search/default.html): the site's nav, a masthead, and previous/next links. It
+# replaces the theme's default layout, which has no hook for either.
+mkdir -p "$SRC"/_layouts
+cp docs/book-search/default.html "$SRC"/_layouts/default.html
+# Previous/next, as front matter on each staged page, in reading order: the front page, the chapters, the glossary.
+# Written AFTER the search index so the index never reads it. Links are page-relative (every page is in one
+# directory), which the site workflow's /book/ escape check allows. The chapter files carry no front matter of
+# their own; a page that ever gains some must be merged here, and the script refuses rather than overwrite it.
+python3 scripts/book_pager.py "$SRC"

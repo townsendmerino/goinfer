@@ -73,7 +73,7 @@ gpt-oss/G10/G11 Metal residency work, or anything else that landed between the t
 ## 3. What this does NOT re-establish
 
 Same scope as v0.13.0's C3: bit-identity (`TestMetalSnapshotGolden`, in-tree only) and the
-tautological-gate census (Metal has no CUDA-graph analog; see `metal/gemma_parity_test.go:84`'s
+tautological-gate census (Metal has no CUDA-graph analog; see `metal/gemma_parity_test.go:94`'s
 admission assertion) are in-tree properties, not consumer-observable. Not re-run here; nothing
 suggests either regressed.
 

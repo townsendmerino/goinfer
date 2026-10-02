@@ -4,7 +4,13 @@
 # or pull request runs everything a deploy would run (the site build and its gates, the book build, the tests,
 # staticcheck), which catches breakage before a release, and publishes nothing. Two things deploy:
 #   - `release assets` completing for a v* tag (workflow_run), built from that tag's commit;
-#   - a manual dispatch (the first launch, or an emergency fix), built from the ref it was dispatched on.
+#   - a manual dispatch (the first launch, or an emergency fix), built from the ref it was dispatched on;
+#   - a push to main whose docs/capability-matrix.json differs from the one the live site was built from (amendment
+#     2026-09-30, task-site-2026-09.md S8: the Models pages said 37 families while main had 39). Every build publishes
+#     the matrix's sha256 at /capability-matrix.sha256, and a push compares main's against the live copy rather than
+#     diffing the push itself, so a push run that was cancelled or failed before deploying is picked up by the next
+#     push that runs this workflow. Such a deploy renders main, so between releases the Models pages can list a family
+#     the latest release's binaries do not carry yet.
 # The book is part of the same artifact, at /book/ (owner decision 2026-09-29: one host). Its Jekyll build is
 # scripts/build_book_src.sh plus actions/jekyll-build-pages, the same steps book-pages.yml uses for GitHub Pages.
 name: site
@@ -16,6 +22,8 @@ on:
       - 'site/**'
       - 'docs/capability-matrix.json'
       - 'pull/curated.json'
+      # the install-line gate compares the site's go get / go install lines with the README's
+      - 'README.md'
       # the records claims.json cites: a change under a cited figure must re-run the claims check
       - 'docs/measurements/peer-claim-2026-09-25.md'
       - 'docs/measurements/metal-decode-gemv-r18b-2026-09-26.md'
@@ -23,6 +31,7 @@ on:
       # the book ships inside the site artifact, so a change to it re-runs its build here
       - 'docs/book/**'
       # the repo documents the site renders under /docs/ (site/data/docs.json)
+      - 'docs/use-from-go.md'
       - 'docs/server.md'
       - 'docs/api-tiers.md'
       - 'docs/integrations/**'
@@ -32,17 +41,21 @@ on:
       - 'docs/book-search/**'
       - 'scripts/build_search_index.py'
       - 'scripts/build_book_src.sh'
+      - 'scripts/book_pager.py'
       - '.github/workflows/site.yml'
   pull_request:
     paths:
       - 'site/**'
       - 'docs/capability-matrix.json'
       - 'pull/curated.json'
+      # the install-line gate compares the site's go get / go install lines with the README's
+      - 'README.md'
       - 'docs/measurements/peer-claim-2026-09-25.md'
       - 'docs/measurements/metal-decode-gemv-r18b-2026-09-26.md'
       - 'docs/benchmarks.md'
       - 'docs/book/**'
       # the repo documents the site renders under /docs/ (site/data/docs.json)
+      - 'docs/use-from-go.md'
       - 'docs/server.md'
       - 'docs/api-tiers.md'
       - 'docs/integrations/**'
@@ -52,6 +65,7 @@ on:
       - 'docs/book-search/**'
       - 'scripts/build_search_index.py'
       - 'scripts/build_book_src.sh'
+      - 'scripts/book_pager.py'
       - '.github/workflows/site.yml'
   workflow_run:
     workflows: ["release assets"]
@@ -64,13 +78,15 @@ permissions:
 # Validation runs are per ref and may be superseded; the deploy job has its own, non-cancelling group.
 concurrency:
   group: site-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
     # For workflow_run, only a successful `release assets` run for a v* tag builds; anything else is skipped.
     if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-24.04
+    outputs:
+      deploy: ${{ steps.matrix.outputs.deploy }}
     env:
       GOTOOLCHAIN: local
       GOWORK: "off"
@@ -110,6 +126,28 @@ jobs:
       - name: build (every gate)
         working-directory: site
         run: go run ./cmd/build -repo .. -out _site
+      # What the live site was built from, for the push-deploy check below and the next run's.
+      - name: record the capability matrix's hash
+        run: sha256sum docs/capability-matrix.json | cut -d' ' -f1 > site/_site/capability-matrix.sha256
+      # A push to main deploys only when the matrix differs from the live site's. A 404 means the live site predates
+      # the hash file, so it deploys; any other failure to read it warns and does not deploy.
+      - name: does the live site need this matrix?
+        id: matrix
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -uo pipefail
+          want=$(cat site/_site/capability-matrix.sha256)
+          code=$(curl -sS -o "$RUNNER_TEMP/live.sha256" -w '%{http_code}' --max-time 30 https://goinfer.dev/capability-matrix.sha256) || code=000
+          case "$code" in
+          200)
+            live=$(tr -d '[:space:]' < "$RUNNER_TEMP/live.sha256")
+            if [ "$live" = "$want" ]; then echo "live site has this matrix ($want)"; echo "deploy=false" >> "$GITHUB_OUTPUT"
+            else echo "live matrix $live, main's $want: deploying"; echo "deploy=true" >> "$GITHUB_OUTPUT"; fi ;;
+          404)
+            echo "the live site records no matrix hash: deploying"; echo "deploy=true" >> "$GITHUB_OUTPUT" ;;
+          *)
+            echo "::warning::could not read the live site's matrix hash (HTTP $code); not deploying"; echo "deploy=false" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       # The book, under /book/. The staging script carries the book's own guards (the head-custom.html Liquid and
       # comment checks, the search-index size check). baseurl /book is what makes the theme's stylesheet and the
@@ -148,20 +186,22 @@ jobs:
           for f in index.html models/index.html different/index.html docs/index.html docs/server/index.html download/index.html 404.html; do
             test -s "site/_site/$f" || { echo "::error::missing $f"; exit 1; }
           done
-          # Home is the picker, not the old redirect; Download carries real checksums
+          # Home leads with the embed promise and still carries the machine picker; Download carries real checksums
+          grep -q 'inside your Go program' site/_site/index.html
           grep -q 'What will run well' site/_site/index.html
           grep -qE '[0-9a-f]{64}' site/_site/download/index.html
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: github.event_name != 'push' && github.event_name != 'pull_request'
+        if: (github.event_name != 'push' && github.event_name != 'pull_request') || steps.matrix.outputs.deploy == 'true'
         with:
           name: site
           path: site/_site
           if-no-files-found: error
 
   deploy:
-    # Only a release (workflow_run, gated in `build`) or a manual dispatch. A push or pull request never deploys.
+    # A release (workflow_run, gated in `build`), a manual dispatch, or a push to main that changed the capability
+    # matrix (the `matrix` step in `build`). A pull request never deploys.
     needs: build
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run' || needs.build.outputs.deploy == 'true'
     runs-on: ubuntu-24.04
     # A deploy is never cancelled half-way; a second one waits for the first.
     concurrency:

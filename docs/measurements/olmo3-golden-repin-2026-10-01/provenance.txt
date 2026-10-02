@@ -1,0 +1,8 @@
+rev:          f00fdf438afbce437128a1ffe853dde462e59524
+started:      2026-10-01 14:21:07 PDT
+python:       3.14.7 torch 2.14.0+cu126 transformers 5.15.0
+go:           go version go1.27.0 linux/amd64
+checkpoint:   /home/francis/models/olmo3-7b-think
+== pin — 14:21:10
+== gate — 14:21:59
+finished:     2026-10-01 14:22:26 PDT

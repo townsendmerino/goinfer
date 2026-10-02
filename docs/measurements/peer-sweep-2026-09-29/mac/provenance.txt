@@ -1,0 +1,7 @@
+rev 754f12d3
+host macbookpro.lan Darwin 25.6.0 arm64
+Apple M1 Pro
+load { 1.99 1.61 2.20 }
+ollama Warning: client version is 0.32.5
+llama-server version: 0.3.0 (build 10621, commit c1d0e7a00)
+os 26.6.2

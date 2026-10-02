@@ -96,3 +96,33 @@ func TestStagedDeviceNote(t *testing.T) {
 		})
 	}
 }
+
+// quantReportingResident is a fakeResident that reports the precision it runs at (ResidentQuantReporter).
+type quantReportingResident struct {
+	*fakeResident
+	quant string
+}
+
+func (r quantReportingResident) ResidentQuant() string { return r.quant }
+
+// TestDecodePath_residentReportsItsQuant: a resident that reports its own precision is what the banner names, and one
+// that reports "" or nothing leaves residentQuantLabel's answer. Metal's native int8 path
+// (docs/tasks/task-metal-int8-2026-10.md) runs an int8int8 model at int8int8, which the backend and load quant alone
+// would label as re-quantized to int4.
+func TestDecodePath_residentReportsItsQuant(t *testing.T) {
+	be := &fakeNamedResidency{name: "metal"}
+	for _, tc := range []struct {
+		name     string
+		resident ResidentForward
+		want     string
+	}{
+		{"no reporter", &fakeResident{}, "metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"},
+		{"reports nothing", quantReportingResident{&fakeResident{}, ""}, "metal-resident (int8int8→int4, no Metal int8 GEMV kernel)"},
+		{"reports int8int8", quantReportingResident{&fakeResident{}, "int8int8"}, "metal-resident (int8int8)"},
+	} {
+		m := &Model{be: be, resident: tc.resident, quant: "int8int8"}
+		if got := m.DecodePath(); got != tc.want {
+			t.Errorf("%s: DecodePath() = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}

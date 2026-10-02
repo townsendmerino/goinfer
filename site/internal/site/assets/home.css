@@ -37,7 +37,20 @@
 .vs .na{color:var(--muted)}
 .vs .why{display:block;color:var(--muted);font-size:11px;margin-top:5px;line-height:1.45;font-family:var(--f-body)}
 .answer-foot{padding:12px 20px;background:var(--sunk);font-size:12.5px;color:var(--muted);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.doors{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.doors{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.door.lead{grid-column:1/-1;border-color:var(--accent)}
+.door.lead h3{font-size:22px}
+.door.lead p{font-size:15.5px;max-width:70ch}
+.door.lead pre{font-size:12px}
+.cta{margin-top:26px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px;max-width:880px}
+.cta .getline code{font-size:12.5px;padding:10px 12px}
+.cta .getline button{font-size:12px;padding:8px 12px}
+.cta-links{margin:0;font-size:15px}
+.cta-links a.go{font-weight:600}
+.cta-links .sep{color:var(--muted);margin:0 6px}
+.herocode{margin:26px 0 0;max-width:880px}
+.herocode pre{margin:0;background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:14px 16px;overflow-x:auto;font-family:var(--f-mono);font-size:12px;line-height:1.6;tab-size:4}
+.herocode figcaption{margin-top:8px;font-size:13px;color:var(--muted)}
 .door{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .door h3{font-family:var(--f-display);font-weight:700;font-size:19px;margin:0}
 .door p{margin:0;font-size:14.5px;color:var(--ink-2)}
@@ -51,6 +64,9 @@
 .card .doesnt{font-size:13.5px;color:var(--muted);border-left:2px solid var(--line);padding-left:10px}
 .card .doesnt b{color:var(--ink-2);font-weight:600}
 .card a.more{margin-top:auto;font-weight:600;font-size:14px}
+.pick{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:12px;padding:22px 24px}
+.pick .eyebrow{margin-bottom:8px}
+.pick h2 a{color:inherit}
 .book{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:28px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:28px;align-items:center}
 .book ol{margin:0;padding-left:1.4em;columns:2;column-gap:24px;font-size:14px;color:var(--ink-2)}
 .book ol li{break-inside:avoid;margin-bottom:4px}

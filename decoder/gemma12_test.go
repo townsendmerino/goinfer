@@ -75,6 +75,9 @@ func TestGemma12_forwardParity(t *testing.T) {
 					maxd = math.Max(maxd, math.Abs(float64(logits[int(kv[0])])-kv[1]))
 				}
 				cos := fullCosine(t, logits, full)
+				if math.IsNaN(cos) { // the dump is tracked, so its absence is an error, not a skip of the cosine bar
+					t.Errorf("%s: no full-logit dump at %s (scripts/pin_gemma_tiny.py writes it)", path, full)
+				}
 				t.Logf("%s %s: max |Δlogit| %.2e, cosine %.8f", tc.name, path, maxd, cos)
 				if maxd > 1e-3 || cos < 0.99999 {
 					t.Errorf("%s: max |Δlogit| %.3g, cosine %.8f against HF", path, maxd, cos)

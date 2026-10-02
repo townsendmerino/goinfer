@@ -5,12 +5,12 @@ order: 6
 summary: "Each model family is compared with HuggingFace's own implementation, the result is printed on the Models page, and the label says how strong the check was."
 stand: "goinfer compares every model family's output with HuggingFace transformers on the same weights. The Models page prints the result next to the family, and says whether the check used the released model or only a small test model."
 measured: 2026-09-29
-reviewed: 2026-09-29
+reviewed: 2026-09-30
 facts:
   - {label: "compared with", value: "HuggingFace transformers, same weights"}
   - {label: "two numbers per family", value: "how often the next token is the same, and the worst-position cosine of the scores"}
   - {label: "four labels", value: "against the released model, against a small test model, shares another family's check, not recorded"}
-  - {label: "families", value: "37, counted from the repo's capability matrix"}
+  - {label: "families", value: "39, counted from the repo's capability matrix"}
 doesnt:
   - title: "It doesn't cover every quantization on every machine."
     text: "A run covers only what it ran. On 2026-08-31 the same set of tests at the same commit passed 29 on the 16 GB MacBook and 49 on the Linux PC, because the MacBook lacked the model files for the rest and skipped them. Qwen3-Next's row was measured with 4-bit weights (int4) and Gemma 4's with 8-bit weights and activations (int8int8), so neither says anything about the other quantizations. goinfer's CPU path is bit-identical within one CPU architecture, not across arm64 and amd64."
@@ -64,7 +64,7 @@ For each family, goinfer's forward pass (one run of the model over its input) is
 | Shares another family's check | it runs another family's code, so that family's numbers stand in |
 | Not recorded | no check is on file |
 
-The repo's [capability matrix](https://github.com/townsendmerino/goinfer/blob/main/docs/capability-matrix.md) is its table of every family. Counted from it, 37 families are registered: 30 against the released model, 6 against a small test model only, 1 sharing another family's check (Kimi K2, which runs DeepSeek-V3's code), and none unrecorded.
+The repo's [capability matrix](https://github.com/townsendmerino/goinfer/blob/main/docs/capability-matrix.md) is its table of every family. Counted from it, 39 families are registered: 32 against the released model, 6 against a small test model only, 1 sharing another family's check (Kimi K2, which runs DeepSeek-V3's code), and none unrecorded.
 
 Three examples, as the Models page shows them:
 

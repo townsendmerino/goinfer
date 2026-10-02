@@ -902,6 +902,25 @@ func parallelEmbedsF32ToF16(dst []uint16, embs [][]float32, H int) {
 // buffer via the f16 MMA path (weights read once, amortized across M — unlike the token-by-token
 // decode loop), populating the resident KV cache, and returns the LAST token's logits[V] (what a
 // generator needs to sample the first output token). Correctness-gated vs the sequential path.
+// prefillExactAttnMaxKeys is the exact attention_prefill kernel's bound: it keeps one score per key in
+// `threadgroup float sc[4096]`, indexed by the key's absolute position, with no tiling (the decode kernels tile theirs,
+// attnScoreTileBound). F-C02 (docs/audit-metal-2026-09-30.md): above 4096 keys it wrote past threadgroup memory. The
+// exact kernel runs whenever the fused one cannot (head dim above 128 or not a multiple of 8, or
+// GOINFER_METAL_FUSED_ATTENTION off), and a resident context reaches 32768 for an explicit -ctx or a guard-pinned load,
+// so metalResident.PrefillLast declines such a pass to the sequential path. TestPrefillExactAttnBound ties this to the
+// kernel source.
+const prefillExactAttnMaxKeys = 4096
+
+// prefillAttnKernels is which attention kernel PrefillLast dispatches for this model: fused for hd%8==0 && hd<=128
+// (attention_prefill_fused's compile-time cap, ATTN_MAXHD), steel within that for hd 128 (R19: one threadgroup of 128
+// threads per query head and 32 rows), and otherwise the exact attention_prefill, bounded by prefillExactAttnMaxKeys.
+func (r *resident) prefillAttnKernels() (fused, steel bool) {
+	g0 := r.layers[0].geom
+	fused = metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION")) && g0.hd%8 == 0 && g0.hd <= 128
+	steel = fused && g0.hd == 128 && !prefillSteelAttnOff
+	return fused, steel
+}
+
 func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	r.ensurePrefill()
 	runtime.LockOSThread()
@@ -1037,10 +1056,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	attnFusedTotal := r.nH * numRowTiles
 	attnFusedTotal = (attnFusedTotal + attnFusedSGPT - 1) / attnFusedSGPT * attnFusedSGPT * 32
 	attnFusedTg := attnFusedSGPT * 32
-	// hd%8==0 && hd<=128 (ATTN_MAXHD) — attention_prefill_fused's compile-time cap.
-	useFusedAttn := metalFusedAttentionEnabled(r.knobValue("GOINFER_METAL_FUSED_ATTENTION")) && g0.hd%8 == 0 && g0.hd <= 128
-	// R19: head dim 128 runs attention_prefill_steel instead (one threadgroup of 128 threads per query head and 32 rows).
-	useSteelAttn := useFusedAttn && g0.hd == 128 && !prefillSteelAttnOff
+	useFusedAttn, useSteelAttn := r.prefillAttnKernels()
 
 	e := r.q.Begin()
 	for l := 0; l < r.nL; l++ {

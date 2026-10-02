@@ -1,6 +1,6 @@
 # The docs, and how they fit together
 
-`docs/` holds ~425 files. They are not one kind of thing, and reading them as if they were is the
+`docs/` holds ~535 files. They are not one kind of thing, and reading them as if they were is the
 main way people get a wrong answer here: a **design record** explains why something is built as it
 is, a **queue** holds what is still open, a **measurement** is evidence with a machine and a date
 on it, and an **archive** is finished work kept for its reasoning. Only some of them are current
@@ -13,9 +13,10 @@ better starting point if you are picking something up.
 
 | | |
 |---|---|
+| [**use-from-go.md**](use-from-go.md) | importing goinfer into your own Go program: the working `go get`, the smallest program, output shaped like a Go struct or a JSON Schema, per-field confidence, and what v1.0 will bind; every code block is copied from `examples/` and tested |
 | [**book/**](book/) · [read online](https://goinfer.dev/book/) | eleven-chapter inference primer for Go engineers — concepts from zero, each chapter ending in a measured number |
 | [task-download-and-load.md](tasks/task-download-and-load.md) | which checkpoints to download and what a load actually costs — plus why the load is compute-bound, not storage-bound |
-| [bigger-than-memory.md](bigger-than-memory.md) | running a model bigger than your RAM or your GPU: `-stream-weights`, `-moe-cache-experts`, the swap-tripwire history and which families still build resident first |
+| [bigger-than-memory.md](bigger-than-memory.md) | running a model bigger than your RAM or your GPU: `-stream-weights`, `-moe-cache-experts`, and the swap-tripwire history |
 | [small-devices.md](small-devices.md) | a Raspberry Pi, not a microcontroller: cross-compile and copy, what memory floor and CPU features to expect, and why no board figure is published yet |
 | [quantization.md](quantization.md) | which quants goinfer stands behind, which it measured and refused, and where there is no evidence — reading a format is not endorsing it |
 | [how-inference-works.md](how-inference-works.md) | the same ground in ~2,300 words, anchored to specific source lines. The code map |
@@ -28,7 +29,7 @@ These are the pages to trust, and to update when reality moves.
 | | |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | how the pieces fit: the forward pass, loading and memory, the GPU backends and how residency is admitted, serving, configuration, modules and where cgo is quarantined |
-| [capability-matrix.md](capability-matrix.md) | **generated** from the `decoder` registry — 37 model families as of 2026-09-25. The registry is the source of truth; do not hand-edit |
+| [capability-matrix.md](capability-matrix.md) | **generated** from the `decoder` registry — 39 model families as of 2026-09-30. The registry is the source of truth; do not hand-edit |
 | [citation-index.md](citation-index.md) | **generated** by `scripts/queue_citation_lint.py --update` — every `path:line`, SHA and bare-file citation in the live docs with the content it was keyed to. The lint's state, not reading material; do not edit or cite |
 | [tool-call-coverage.md](tool-call-coverage.md) | per family: tool calls **constrained**, parsed only, or none — from a census of real checkpoints through `chat.Detect` (2026-09-24). What "tools: yes" does and does not promise |
 | [benchmarks.md](benchmarks.md) | **current claims only**, provenance-gated: machine, checkpoint, quant, date, thermal note. Section IDs are stable; a *Retired section IDs* index maps the ones that moved |
@@ -53,7 +54,7 @@ exactly one queue, keyed by *the question it answers*:
 | [queue-release.md](queue-release.md) | can we tag |
 | [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
 
-## Design records — `task-*.md` (48: 43 in `tasks/`, 5 in `tasks/parked/`)
+## Design records — `task-*.md` (52: 47 in `tasks/`, 5 in `tasks/parked/`)
 
 Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
 stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
@@ -94,6 +95,16 @@ agent fits in, a thinking switch, and reasoning emitted separately.
   allowed answers, with one prefill per question and no decode, by label-token scoring on any model (D1).
 - **Open:** D6a, pending, decides whether autotrust's trained JEV decision heads on `qwen3_5` are built (D2–D4).
 
+[`task-glm-ocr-2026-10.md`](tasks/task-glm-ocr-2026-10.md) (O0–O7, filed 2026-10-01) scopes GLM-OCR, a 0.9B
+document-OCR model: the text decoder on the generic path from existing parts, a new aikit tower, a pixel budget
+for laptops, and schema-bound extraction (an invoice image into a Go struct) as the demo. O0 is reading only.
+
+[`task-hardware-coverage-2026-10.md`](tasks/task-hardware-coverage-2026-10.md) (H0–H6, filed 2026-10-01) is about
+the hardware goinfer is not built on: a checked census of every path selected by a CPU feature, a GPU attribute
+or a memory size, ways to reach those paths without owning the machine (CI runners, Intel SDE, forced
+fallbacks, faked probes), a runtime self-test on every backend that declines rather than answers wrong
+(it absorbs the Metal self-test spec), a pasteable hardware report, and a rented sweep before each public claim.
+
 [`task-test-efficiency-2026-09.md`](tasks/task-test-efficiency-2026-09.md) (TE0–TE12, filed 2026-09-28) is the
 verification-cost campaign: a census of where the machine time goes (served gates that are mostly idle-gate waiting
 and start-up, measurement gates that live in `go test`, fidelity gates whose fixed prompt count ignores what each
@@ -102,9 +113,15 @@ gate that reads current load, sequential counterbalanced gates, prompt budgets s
 instrument that resolves the bar, identity against the last validated build, and `gate quick` — each with a proof
 that it still detects what it did.
 
-One is the outside view rather than a design: [`task-first-hour.md`](tasks/task-first-hour.md)
+Two are the outside view rather than a design. [`task-first-hour.md`](tasks/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running
 it again — `RELEASING.md`'s pre-flight now calls for one before each release.
+[`task-library-surface-review-2026-10.md`](tasks/task-library-surface-review-2026-10.md) applies
+the same protocol to the Go library as the embedding developer's product, before v1.0 binds it.
+[`task-option-path-admission-2026-10.md`](tasks/task-option-path-admission-2026-10.md) treats the audits'
+findings as a dataset: if "an option or family not registered with a guard" is common enough, it becomes a
+fail-closed options × paths gate. [`task-harness-reliability-2026-10.md`](tasks/task-harness-reliability-2026-10.md)
+asks how many wire dialects the coding-agent harnesses speak and how often a tool call breaks a whole session.
 
 `spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
 series with pre-registered kill-gates.
@@ -115,7 +132,7 @@ Raw logs and per-run write-ups. A number in `benchmarks.md` should be traceable 
 They are dated and machine-stamped by convention, and they are **not** updated when the world
 moves — a superseded measurement stays as it was and the page that quotes it is what changes.
 
-## Archive — `completed/` (123)
+## Archive — `completed/` (124)
 
 Finished work, kept for the reasoning rather than the outcome — including negative results, which
 are archived with the same care as wins. **Nothing under `completed/` is scanned by the citation
@@ -139,6 +156,10 @@ separate sweep because this step kept being skipped at move time.
   what a parity claim covers and does not; `parity-coverage-policy.md` and `parity-hunt-playbook.md`
   below are the internal detail on how it is established and chased.
 - `parity-coverage-policy.md`, `parity-hunt-playbook.md` — how parity is established and chased.
+- [`demand-evidence-2026-10-01.md`](demand-evidence-2026-10-01.md) — what Go developers struggle with, read from the issue trackers of the
+  Go inference peers (yzma, Kronk, go-llama.cpp and others), Ollama, langchaingo and Charm's tools: 143 user-filed issues coded by hand into
+  themes, set against goinfer's current posture. A dated evidence pass with its sampling limits stated, not a plan of record; it is not
+  updated when the trackers move.
 - `audit-<date>.md` — a whole-repo audit at a named commit; findings are dispositioned in place
   and the file moves to `completed/` when every one is closed. A large audit may split its closed
   findings out incrementally before that, the way the queue docs do — a
@@ -149,7 +170,10 @@ separate sweep because this step kept being skipped at move time.
   P-15's measurement half — split to
   [completed/audit-2026-09-10.md](completed/audit-2026-09-10.md) across two sweeps, 2026-09-12 and
   2026-09-16) and, focused on one backend, [audit-metal-2026-09-12.md](audit-metal-2026-09-12.md)
-  (Metal, performance-led, at `da1e461`; M-/C-/G-/N- numbering is its own); the previous ones are
+  (Metal, performance-led, at `da1e461`; M-/C-/G-/N- numbering is its own) and its redo,
+  [audit-metal-2026-09-30.md](audit-metal-2026-09-30.md) (Metal, performance-led with an MLX-technique
+  lens, at `844700f8`; area-letter numbering, and every Sep 12 ID is carried forward in its §12, so
+  the older file stays as the record those IDs point into); the previous ones are
   [completed/audit-2026-09-02.md](completed/audit-2026-09-02.md) and
   [completed/audit-2026-08-05.md](completed/audit-2026-08-05.md).
 

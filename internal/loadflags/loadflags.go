@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/cliutil"
@@ -28,23 +29,25 @@ const (
 
 // Flags holds the shared loading flags' values once the flag set has been parsed.
 type Flags struct {
-	Backend         string  // --backend
-	Quant           string  // --quant
-	QuantSet        bool    // --quant was given on the command line, not left at its default
-	LoRA            string  // --lora
-	KV              string  // --kv
-	Ctx             int     // --ctx
-	StreamWeights   bool    // --stream-weights
-	WeightCacheGB   float64 // --weight-cache
-	MoECacheExperts bool    // --moe-cache-experts
-	MoECacheSlots   int     // --moe-cache-slots
-	MoEPager        string  // --moe-pager
-	AcceptSlow      bool    // --accept-slow
-	EmbedInt4       bool    // --embed-int4
-	DirectLoad      bool    // --direct-load
-	Fit             bool    // --fit
-	ExactPrefill    bool    // --exact-prefill
-	CPUExactPrefill bool    // --cpu-exact-prefill
+	Backend         string              // --backend; "auto" (the default) is replaced by the backend it resolves to in Validate
+	Auto            *decoder.AutoChoice // what -backend auto chose and why; nil when the user named a backend
+	Quant           string              // --quant
+	QuantSet        bool                // --quant was given on the command line, not left at its default
+	LoRA            string              // --lora
+	KV              string              // --kv
+	Ctx             int                 // --ctx
+	StreamWeights   bool                // --stream-weights
+	WeightCacheGB   float64             // --weight-cache
+	MoECacheExperts bool                // --moe-cache-experts
+	MoECacheSlots   int                 // --moe-cache-slots
+	MoEPager        string              // --moe-pager
+	AcceptSlow      bool                // --accept-slow
+	EmbedInt4       bool                // --embed-int4
+	EmbedInt4Set    bool                // --embed-int4 was given on the command line, not left at its default
+	DirectLoad      bool                // --direct-load
+	Fit             bool                // --fit
+	ExactPrefill    bool                // --exact-prefill
+	CPUExactPrefill bool                // --cpu-exact-prefill
 }
 
 // Register adds the shared loading flags to fs and returns the Flags their values are parsed into.
@@ -56,7 +59,7 @@ func Register(fs *flag.FlagSet, app App) *Flags {
 		}
 		return " (per-model override: --model name=path," + key + "=…)"
 	}
-	fs.StringVar(&f.Backend, "backend", "cpu", backendHelp)
+	fs.StringVar(&f.Backend, "backend", "auto", backendHelp)
 	fs.Var(quantFlag{f}, "quant", "decoder weight quant — the accuracy/speed/RAM tradeoff"+per("quant")+":\n"+quantHelp)
 	fs.StringVar(&f.LoRA, "lora", "", "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load"+per("lora"))
 	fs.StringVar(&f.KV, "kv", "f32", kvHelp+per("kv"))
@@ -67,7 +70,8 @@ func Register(fs *flag.FlagSet, app App) *Flags {
 	fs.IntVar(&f.MoECacheSlots, "moe-cache-slots", 0, moeCacheSlotsHelp)
 	fs.StringVar(&f.MoEPager, "moe-pager", decoder.MoEPagerDefault(runtime.GOOS), moePagerHelp)
 	fs.BoolVar(&f.AcceptSlow, "accept-slow", false, acceptSlowHelp)
-	fs.BoolVar(&f.EmbedInt4, "embed-int4", true, embedInt4Help+per("embed-int4"))
+	f.EmbedInt4 = true
+	fs.Var(embedInt4Flag{f}, "embed-int4", embedInt4Help+per("embed-int4"))
 	fs.BoolVar(&f.DirectLoad, "direct-load", os.Getenv("GOINFER_GGUF_DIRECT") != "", directLoadHelp)
 	fs.Var((*cliutil.OnOff)(&f.Fit), "fit", fitHelp) // lenient: --fit=off works (M-14)
 	fs.BoolVar(&f.ExactPrefill, "exact-prefill", false, ExactPrefillHelp)
@@ -78,8 +82,10 @@ func Register(fs *flag.FlagSet, app App) *Flags {
 // Options is the decoder.Options the flags describe, before any per-model override (serve's
 // --model name=path,key=… layers its own on top).
 func (f *Flags) Options() decoder.Options {
+	f.resolveAuto() // Validate has normally done it; embedInt4 below reads the resolved name
 	return decoder.Options{
 		Backend:          f.Backend,
+		BackendAuto:      f.Auto != nil,
 		Quant:            f.Quant,
 		LoRA:             f.LoRA,
 		KVPrecision:      f.KV,
@@ -91,7 +97,7 @@ func (f *Flags) Options() decoder.Options {
 		MoECacheSlots:    f.MoECacheSlots,
 		MoEPager:         f.MoEPager,
 		AcceptSlowMoE:    f.AcceptSlow,
-		EmbedInt4:        f.EmbedInt4,
+		EmbedInt4:        f.embedInt4(),
 		DisableFit:       !f.Fit,
 		ExactPrefill:     f.ExactPrefill,
 		Knobs:            f.Knobs(),
@@ -101,6 +107,11 @@ func (f *Flags) Options() decoder.Options {
 // Validate checks what decoder.Options.Validate does not: the flag values that only make sense as a
 // choice from a list, or as a size. Call it after parsing, before Options().Validate().
 func (f *Flags) Validate() error {
+	// Resolve "auto" first: every check below and every caller after this reads Backend by name (the Metal
+	// --embed-int4 default, serve's tower and -require-backend logic), and "auto" matches none of them. Each app
+	// calls Validate right after parsing its flags, before anything reads Backend; Options resolves too, for a
+	// caller that skipped Validate.
+	f.resolveAuto()
 	if f.MoEPager != "mmap" && f.MoEPager != "pool" {
 		return fmt.Errorf("-moe-pager must be \"mmap\" or \"pool\" (got %q)", f.MoEPager)
 	}
@@ -114,6 +125,43 @@ func (f *Flags) Validate() error {
 		return fmt.Errorf("-weight-cache %g: must be >= 0 (0 = auto)", f.WeightCacheGB)
 	}
 	return nil
+}
+
+// embedInt4 is --embed-int4 as the load should see it. The default is on, except on Metal: the Metal resident runner
+// does not accept an int4 embedding/LM-head table yet ("weight kind \"int4\" is not int8"), so with the default on, a
+// plain `--backend metal` load declined the GPU and decoded on the CPU (found 2026-09-28, docs/quantization.md "Known
+// issue"; reproduced 2026-09-30 on the 0.5B, while CUDA and WebGPU stayed resident with the int4 table). An explicit
+// --embed-int4 is still honoured on Metal, and then runs on the CPU as asked.
+func (f *Flags) embedInt4() bool {
+	if f.Backend == "metal" && !f.EmbedInt4Set {
+		return false
+	}
+	return f.EmbedInt4
+}
+
+// autoBackend is decoder.AutoBackend, a variable so a test can stand in a GPU this test binary does not link.
+var autoBackend = decoder.AutoBackend
+
+// resolveAuto replaces a Backend of "auto" with the backend auto picks and keeps the choice in Auto.
+// Once Backend names a backend it does nothing, so calling it twice probes the devices once.
+func (f *Flags) resolveAuto() {
+	if f.Backend != "auto" {
+		return
+	}
+	c := autoBackend()
+	f.Backend, f.Auto = c.Backend, &c
+}
+
+// BackendLine is the one line an app prints when -backend auto chose its backend: what it chose, why, and how to
+// choose otherwise. It is "" when the user named a backend.
+func (f *Flags) BackendLine() string {
+	switch {
+	case f.Auto == nil:
+		return ""
+	case f.Backend == "cpu":
+		return fmt.Sprintf("backend: cpu (%s)", f.Auto.Reason)
+	}
+	return fmt.Sprintf("backend: %s (%s; -backend cpu to use the CPU)", f.Backend, f.Auto.Reason)
 }
 
 // ExplicitQuant is --quant when it was given, else "". A .giw carries its own quant, and only an
@@ -171,6 +219,28 @@ func (q quantFlag) Set(v string) error {
 	return nil
 }
 
+// embedInt4Flag is --embed-int4: a bool flag that also records that it was given, so the Metal default (embedInt4) can
+// tell an explicit --embed-int4 from its default.
+type embedInt4Flag struct{ f *Flags }
+
+func (e embedInt4Flag) String() string {
+	if e.f == nil {
+		return "true"
+	}
+	return strconv.FormatBool(e.f.EmbedInt4)
+}
+
+func (e embedInt4Flag) Set(v string) error {
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return err
+	}
+	e.f.EmbedInt4, e.f.EmbedInt4Set = b, true
+	return nil
+}
+
+func (e embedInt4Flag) IsBoolFlag() bool { return true }
+
 func ctxHelp(app App, per string) string {
 	s := "GPU-resident KV capacity in positions" + per + ". 0 (default) keeps the backend default — on CUDA, " +
 		"4096 with -fit=off, or 8192 (cuda/resident.go's fitDefaultCtx, whatever the card's free VRAM actually admits) " +
@@ -189,7 +259,10 @@ func ctxHelp(app App, per string) string {
 		"rather than honoured, since those caps are proven-fit ceilings"
 }
 
-const backendHelp = "compute backend: cpu | webgpu | cuda | metal (cgo-free native). " +
+const backendHelp = "compute backend: auto | cpu | webgpu | cuda | metal (cgo-free native). " +
+	"auto (the default) uses the first GPU backend in this binary that finds its device, cuda then metal, else the CPU, " +
+	"and prints one line saying which; it never picks webgpu. metal is picked on Apple silicon only, and for int4 models only: " +
+	"it re-quantizes other precisions to int4, so auto keeps those on the CPU (-backend metal runs them re-quantized). " +
 	"cuda/metal support both dense and MoE architectures resident. cuda needs `-tags cuda`; metal's own submodule " +
 	"entrypoints (goinfer/metal/cmd/chat, goinfer/metal/cmd/serve) are darwin-gated and need no build tag of their own. " +
 	"On cuda/metal, GPU means fully resident, full stop — a model/arch that does not build the resident runner declines straight to CPU; neither backend has a partial \"staged\" GPU path (R9, docs/measurements/cold-user-2026-09-06-nobara-pc.md). " +
@@ -227,7 +300,7 @@ const moePagerHelp = "CPU backing mode for a .giw-paged MoE model's expert pager
 
 const acceptSlowHelp = "acknowledge a -stream-weights paged-MoE load whose predicted working-set rate falls below decoder's own floor (2 tok/s) and load it anyway. Without this, such a load is refused with the predicted rate named, rather than run for hours with zero completions the way an unacknowledged M35/M26-class load did before this flag existed (task-never-swap-2026-09.md S4). The prediction is a PRIOR borrowed from an unrelated CUDA cache curve, not a measurement of this pager — raising -weight-cache to shrink the predicted miss rate is usually the better fix"
 
-const embedInt4Help = "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model, and on CPU measured a further 1.05-1.12x on total token time once the head became a bigger share of it (docs/measurements/cpu-decode-peer-gap-2026-09-27.md). Default ON since 2026-09-28 (owner decision, quality re-eval parked); pass -embed-int4=false for the int8 pin instead. Lossy (~2.3 pts top-1, mostly rare tokens, last measured pre-2026-09-28 — not independently re-verified since). Works with the -stream-weights .giw cache (baked into its own \"e4h\" sidecar, distinct from the int8-pin one) as well as a direct load"
+const embedInt4Help = "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model, and on CPU measured a further 1.05-1.12x on total token time once the head became a bigger share of it (docs/measurements/cpu-decode-peer-gap-2026-09-27.md). Default ON since 2026-09-28 (owner decision, quality re-eval parked), EXCEPT on metal (named, or chosen by -backend auto), where the default is off: the Metal resident runner does not take an int4 table yet, so the default would move the model to the CPU (an explicit -embed-int4 there is honoured, and runs on the CPU). Pass -embed-int4=false for the int8 pin instead. Lossy (~2.3 pts top-1, mostly rare tokens, last measured pre-2026-09-28 — not independently re-verified since). Works with the -stream-weights .giw cache (baked into its own \"e4h\" sidecar, distinct from the int8-pin one) as well as a direct load"
 
 const directLoadHelp = "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin (since S1, task-never-swap-2026-09.md) and linux (since 2026-09-24) a .gguf resolves to its sidecar by default — this opts back out to the direct-heap-dequant load, which is still the default on other platforms. Also via GOINFER_GGUF_DIRECT=1. Ignored with -stream-weights, which always needs the sidecar's mmap regardless of platform"
 

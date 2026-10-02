@@ -123,6 +123,7 @@ func TestGptOssResidentParityReal20B(t *testing.T) {
 	defer mg.Close()
 	rf := mg.ResidentForwardForTest()
 	if rf == nil { // a silent CPU fallback would pass every assertion below trivially
+		skipIfMemoryDeclined(t, mg)
 		t.Fatalf("metal resident DECLINED at 12 GB (%s) — admission says gpt_oss IS admitted on "+
 			"metal, so the declaration and the runtime disagree", mg.ResidentDecline())
 	}

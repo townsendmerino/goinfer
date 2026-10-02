@@ -42,14 +42,15 @@ func init() {
 
 // Compile-time seams: catch signature drift against decoder/residency.go + decoder/backend.go.
 var (
-	_ decoder.Backend             = (*metalBackend)(nil)
-	_ decoder.ResidencyBackend    = (*metalBackend)(nil)
-	_ decoder.ResidentForward     = (*metalResident)(nil)
-	_ decoder.ResidentMRoPE       = (*metalResident)(nil)
-	_ decoder.ResidentAdapter     = (*metalResident)(nil)
-	_ decoder.Prefiller           = (*metalResident)(nil)
-	_ decoder.PrefillPathReporter = (*metalResident)(nil)
-	_ decoder.VerifyPathReporter  = (*metalResident)(nil)
+	_ decoder.Backend               = (*metalBackend)(nil)
+	_ decoder.ResidencyBackend      = (*metalBackend)(nil)
+	_ decoder.ResidentForward       = (*metalResident)(nil)
+	_ decoder.ResidentMRoPE         = (*metalResident)(nil)
+	_ decoder.ResidentAdapter       = (*metalResident)(nil)
+	_ decoder.Prefiller             = (*metalResident)(nil)
+	_ decoder.PrefillPathReporter   = (*metalResident)(nil)
+	_ decoder.VerifyPathReporter    = (*metalResident)(nil)
+	_ decoder.ResidentQuantReporter = (*metalResident)(nil)
 )
 
 // metalBackend implements decoder.Backend + decoder.ResidencyBackend.
@@ -123,6 +124,9 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		return nil, false, decoder.DeclineResident("metal: %v", e)
 	}
 	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill()}
+	if res.w8 {
+		b.resident.quant = m.Quant()
+	}
 	return b.resident, true, nil
 }
 
@@ -401,6 +405,11 @@ func kvSlotsWithin(want int, budget, base, perSlot int64) int {
 	return n
 }
 
+// residentMemoryDeclinePrefix opens every memory-guard decline, so a caller can tell "this machine does not have the
+// memory right now" from a feature or admission decline (the resident parity tests skip on the first and fail on the
+// second; skipIfMemoryDeclined).
+const residentMemoryDeclinePrefix = "the resident build needs "
+
 // residentMemoryDecline is residentFitsMemory with its reason — "" when the build fits — so BuildResident
 // can hand it to the load path as a typed decline (decoder.DeclineResident) instead of printing it.
 func residentMemoryDecline(m *decoder.Model) string {
@@ -436,7 +445,7 @@ func residentMemoryDecline(m *decoder.Model) string {
 		tightened = fmt.Sprintf(" (this machine's live-available memory tightened the static %.0f%%/%.2f GB ceiling further)",
 			residentMemFraction*100, float64(staticCeiling)/gb)
 	}
-	return fmt.Sprintf("the resident build needs %.2f GB (weights, host copy and KV), over %.0f%% of %.1f GB RAM "+
+	return fmt.Sprintf(residentMemoryDeclinePrefix+"%.2f GB (weights, host copy and KV), over %.0f%% of %.1f GB RAM "+
 		"(budget %.2f GB%s). Metal wires the pages it touches, so loading this would page to swap "+
 		"exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.%s",
 		float64(need)/gb, residentMemFraction*100, float64(ram)/gb, float64(budget)/gb, tightened, moeHint)
@@ -455,6 +464,9 @@ type metalResident struct {
 	r      *resident
 	hidden int
 	exact  bool // the model was loaded with Options.ExactPrefill: fast prefill off for THIS resident
+	// quant is the precision ResidentQuant reports: the model's own quant when it runs int8 weights natively (r.w8),
+	// "" otherwise, which leaves the decoder's label (an int8 model on the int4 path is re-quantized, and says so).
+	quant string
 
 	// fast is the batched-prefill decision, made ONCE per resident on first use: the
 	// GOINFER_METAL_FAST_PREFILL env var used to be re-read on every prefill call, so a change to
@@ -686,7 +698,18 @@ func metalFusedAttentionEnabled(v string) bool {
 // the batched f16-MMA path. Default ON above metalFastPrefillFloor (64 tokens, R3) since §3.2
 // gate passed 2026-09-20. The floor applies per-call; PrefillPath reports true iff the enabled
 // state AND arch both allow batching.
+// ResidentQuant (decoder.ResidentQuantReporter) is the precision this resident runs its weights at, when the decoder
+// cannot infer it: an int8 model on the native path (r.w8) runs at its own quant, where one on the int4 path is
+// re-quantized. "" leaves the decoder's label.
+func (a *metalResident) ResidentQuant() string { return a.quant }
+
 func (a *metalResident) PrefillPath() (bool, string) {
+	if a.r.kvI8 {
+		return false, "sequential — the f16 MMA prefill kernels write half-precision K/V, and this model's KV cache is int8 (-kv i8)"
+	}
+	if a.r.w8 {
+		return false, "sequential — the f16 MMA prefill kernels read int4 weights, and this model runs its int8 weights natively (docs/tasks/task-metal-int8-2026-10.md, slice 2)"
+	}
 	if !a.r.prefillOK {
 		return false, "sequential — arch/geometry not supported by f16 MMA prefill kernel"
 	}
@@ -732,6 +755,9 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	// variant (residLayer.g4moe, a third FFN shape this path never reads; explicitly excluded
 	// via HasGemma4MoEResident regardless of per-layer geometry). Any of these declines here,
 	// and the caller re-runs the prompt through the (correct) sequential Forward loop.
+	if a.r.kvI8 {
+		return nil, fmt.Errorf("metal: prefill writes half-precision K/V and this model's KV cache is int8 (-kv i8); using sequential path")
+	}
 	if !a.r.prefillOK {
 		return nil, fmt.Errorf("metal: prefill not implemented for this arch's FFN shape (use the sequential path)")
 	}
@@ -740,6 +766,12 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	// passes 0) but cheap to guard.
 	if startPos < 0 || len(embeddings) == 0 || startPos+len(embeddings) > a.ctxCap() {
 		return nil, fmt.Errorf("metal: prompt len %d at startPos %d out of resident cap %d", len(embeddings), startPos, a.ctxCap())
+	}
+	// F-C02: the exact attention kernel (no fused kernel for this head dim, or fused attention off) holds at most
+	// prefillExactAttnMaxKeys scores; the sequential path's decode kernels tile theirs.
+	if fused, _ := a.r.prefillAttnKernels(); !fused && startPos+len(embeddings) > prefillExactAttnMaxKeys {
+		return nil, fmt.Errorf("metal: prompt reaches %d keys and the exact prefill attention kernel holds %d (head dim %d has no fused kernel, or it is off); using sequential path",
+			startPos+len(embeddings), prefillExactAttnMaxKeys, a.r.layers[0].geom.hd)
 	}
 	// ensurePrefill's compile panic and the ~24 per-call MustBuf OOM panics fire HERE, at request
 	// time, with no recover of their own (buildResident's is build-scoped). A transient OOM would kill
