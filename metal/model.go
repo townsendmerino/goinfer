@@ -951,7 +951,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// layout and positions at or past ctxCap/2 were written past the buffer. Such a model takes the sequential path,
 	// whose decode kernels write and read the int8 cache.
 	r.prefillOK = len(m.MissingResidentFeatures(prefillFeatures)) == 0 && !m.HasPerLayerGeometry() &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && r.dnet == nil && !r.kvI8 && !r.w8
+		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && r.dnet == nil && !r.kvI8 && !r.w8 &&
+		!r.attnSink // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
 	r.q = d.NewCommandQueue()
 
 	w := m.Weights()
@@ -1188,7 +1189,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			if r.nH*L.geom.hd > maxNHhd {
 				maxNHhd = r.nH * L.geom.hd
 			}
-			if L.geom.nKV > 0 && L.geom.hd == 128 {
+			if L.geom.hd == 128 && attnFAGroupOK(r.nH, L.geom.nKV) {
 				g := r.nH / L.geom.nKV
 				if e := L.geom.nKV * g * (L.geom.hd + 2); e > maxAttnFAPartialElems {
 					maxAttnFAPartialElems = e
@@ -2612,6 +2613,16 @@ const attnFABlkSplit = 16
 // speed probe surfaced, recorded here rather than silently overriding the brief's own text.
 const attnFADepthFloor = 1536
 
+// attnFAMaxG is the most query heads per KV head attention_fa holds: its per-thread arrays are sized
+// ATTN_FA_MAXG in kernels.go (TestAttnFAMaxG_matchesKernel ties the two). A wider group would index past
+// them, so attnFAGroupOK keeps such a layer on the shipped kernel (F-C03, docs/audit-metal-2026-09-30.md).
+// The group size comes from the checkpoint, not the family (Llama 3.1 405B has 16), so this is a guard,
+// not a list.
+const attnFAMaxG = 8
+
+// attnFAGroupOK reports whether a layer with nH query heads over nKV KV heads fits attention_fa's arrays.
+func attnFAGroupOK(nH, nKV int) bool { return nKV > 0 && nH%nKV == 0 && nH/nKV <= attnFAMaxG }
+
 // planNKeys is the key count the command buffer being encoded will run at: the executor's encNKeys while
 // it encodes, otherwise the position setPos last set.
 func (r *resident) planNKeys() int {
@@ -2663,7 +2674,7 @@ func (r *resident) canUseAttnFA(l int) bool {
 		return false
 	}
 	g := L.geom
-	return g != nil && g.hd == 128 && g.nKV > 0 && r.planNKeys() >= attnFADepthFloor
+	return g != nil && g.hd == 128 && attnFAGroupOK(r.nH, g.nKV) && r.planNKeys() >= attnFADepthFloor
 }
 
 // attnFASplitFor picks S so kvHead*S clears 2x attnFACoreCount (R2's own registered rule),

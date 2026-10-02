@@ -464,6 +464,9 @@ type metalResident struct {
 	r      *resident
 	hidden int
 	exact  bool // the model was loaded with Options.ExactPrefill: fast prefill off for THIS resident
+	// poisonPrefillLogitsForTest makes PrefillLast write a NaN into its logits before the finite check, so a test can
+	// show the check declines. False in production; only tests set it.
+	poisonPrefillLogitsForTest bool
 	// quant is the precision ResidentQuant reports: the model's own quant when it runs int8 weights natively (r.w8),
 	// "" otherwise, which leaves the decoder's label (an int8 model on the int4 path is re-quantized, and says so).
 	quant string
@@ -710,6 +713,9 @@ func (a *metalResident) PrefillPath() (bool, string) {
 	if a.r.w8 {
 		return false, "sequential — the f16 MMA prefill kernels read int4 weights, and this model runs its int8 weights natively (docs/tasks/task-metal-int8-2026-10.md, slice 2)"
 	}
+	if a.r.attnSink {
+		return false, "sequential — the batched prefill kernels implement neither gpt-oss's attention sink nor its clamped SwiGLU with biases"
+	}
 	if !a.r.prefillOK {
 		return false, "sequential — arch/geometry not supported by f16 MMA prefill kernel"
 	}
@@ -792,7 +798,27 @@ func (a *metalResident) PrefillLast(ctx context.Context, embeddings [][]float32,
 	if err := a.r.takeExecErr(); err != nil {
 		return nil, err // C-09
 	}
+	if a.poisonPrefillLogitsForTest {
+		logits[0] = float32(math.NaN())
+	}
+	// A-C02 (docs/audit-metal-2026-09-30.md): the batched pass carries f16 activations, which a checkpoint the
+	// graded models never exercised could overflow; the sequential decode kernels carry f32. A non-finite logit
+	// declines, so the decoder re-runs the prompt sequentially, which rewrites every K/V row this pass wrote. The
+	// scan is about 0.05 ms at a 152k vocabulary.
+	if i := firstNonFinite(logits); i >= 0 {
+		return nil, fmt.Errorf("metal: batched prefill produced a non-finite logit (%v at %d); using sequential path", logits[i], i)
+	}
 	return logits, nil
+}
+
+// firstNonFinite is the index of the first NaN or ±Inf in v, or -1.
+func firstNonFinite(v []float32) int {
+	for i, x := range v {
+		if math.Float32bits(x)&0x7f800000 == 0x7f800000 {
+			return i
+		}
+	}
+	return -1
 }
 
 // HiddenLast (decoder.ResidentHiddenLast) ingests a whole sequence starting at startPos and

@@ -27,8 +27,11 @@ Metal int8 task's O1.
   monitored night run at most). That gates T1.8, T1.9, C-P01's probe and D-P01's measurement. The gpt-oss 20B
   checkpoint T1.13 needs is not on the Mac, and G20 is off-limits here too, so T1.13 runs on nobara.
 - **Gates before speed.** F-G01 lands before any prefill-attention change, and D-G01 before any MoE prefill build.
-- **CI does not run the batched-step gates** (E-G01): `.github/workflows/ci.yml` exports neither `GOINFER_METAL_MC3`
-  nor `GOINFER_HEAVY_TESTS`. The default-run fixture in phase 1 is the fix.
+- **CI runs no Metal device test** (E-G01's premise, stronger than the audit could see): the metal job builds, vets and
+  runs one device-free test, `TestParity_NaNCosineFailsTheGate`. So "default-run" in this plan means a plain
+  `go test ./metal/` on the Mac, with no environment variable, which is what `cmd/gate gpu` and every local check run.
+  The batched-step identity gates need `GOINFER_METAL_MC3` and a real checkpoint today; the fixture in phase 1 fixes
+  that.
 
 ## Phase 1 — guards, gates and text (by day, no numeric change)
 
@@ -48,7 +51,7 @@ In this order, one commit each:
    rather than refuses. A decoder core edit, so the parity refresh follows.
 4. **Track 3 gates.** F-G01 first: the default-run float64-reference test for steel, to the audit's spec. Then A-G01,
    C-G01, D-G02, F-G04. Then the default-run identity fixture for E-G01 and F-G02: a generated hd=128 random-weight
-   model with two slots, so the MC3 step, chunked prefill and spec-verify identity gates run in CI.
+   model with two slots, so the MC3 step, chunked prefill and spec-verify identity gates run by default on the Mac.
 5. **T0.5.** The docs and comments pass.
 6. **Identity checks by day:** T1.10's byte comparison (E-P01's premise: zero differing K/V and logits through the
    8-row step), T1.6 (resident set after load, 1 against 4 slots), T1.12's tile-waste count (no timing).
@@ -110,3 +113,13 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
   that a first-tile-only answer would miss the bar; a mutation that skips every other tile failed all 34 multi-tile
   cases. The constants-only test is removed, and the ceiling comments in `metal/model.go`, `metal/kernels.go` and
   `metal/backend.go` are corrected.
+- 2026-10-01: the worktree had none of the main checkout's gitignored fixtures, so its suite skipped tests (125 s
+  against 158 s); the 23 ignored fixture paths are now symlinked into it (excluded in `info/exclude`). **T0.3 done**
+  except C-N01 (aikit, with its next release):
+  - F-C03: `attnFAGroupOK` (G ≤ `attnFAMaxG`, tied to `ATTN_FA_MAXG` by `TestAttnFAMaxG_matchesKernel`) in the build
+    loop, `canUseAttnFA` and `canUseAttnFAAt`. The registry cannot list the architectures it protects: the group size
+    comes from each checkpoint (Llama 3.1 405B has 16).
+  - D-C01: an explicit gpt-oss term in `prefillOK` and its own `PrefillPath` reason. Today gpt-oss is also kept out by
+    two features the prefill map lacks (`attn-sink`, `out-bias`); the test admits both, so the guard alone holds it.
+  - A-C02: `PrefillLast` declines on a NaN or ±Inf logit, and the decoder re-runs the prompt sequentially.
+  - Mutations: removing each guard fails its test (4, 1 and 1 failures).
