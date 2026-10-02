@@ -57,16 +57,10 @@ func TestAuditM26_pagedProbe(t *testing.T) {
 		t.Fatalf("no paged Gemma 4 MoE resident on Metal (decode path %q)", m.DecodePath())
 	}
 	r := a.r
-	var cache int64 // C-P01: the heap copy of every expert's f16 scales the pager builds
-	for _, l := range moeLayerIdx(r) {
-		b, ok := m.Gemma4MoEResidentLayer(l)
-		if !ok {
-			continue
-		}
-		p := r.layers[l].g4moe.pool
-		cache += int64(len(b.ExpertsGateUp)*p.nGuS+len(b.ExpertsDown)*p.nDS) * 2
-	}
-	hb("built in %.1f s: %d paged MoE layers, scale cache %.1f MB", time.Since(t0).Seconds(), len(moeLayerIdx(r)), float64(cache)/(1<<20))
+	// C-P01 (2026-10-02): the pager stages scales from the mapping, so there is no scale cache to size. The old
+	// binary's figure (experts × per-expert scale words × 2 bytes) was 1361.2 MB; the heap line at token 32 is the
+	// measurement now.
+	hb("built in %.1f s: %d paged MoE layers", time.Since(t0).Seconds(), len(moeLayerIdx(r)))
 
 	id := 1000 % r.V // any valid token; greedy argmax from here on
 	var timed time.Duration
@@ -89,9 +83,8 @@ func TestAuditM26_pagedProbe(t *testing.T) {
 		if i == 32 && hold != "" {
 			var ms runtime.MemStats
 			runtime.ReadMemStats(&ms)
-			hb("HOLD at token 32: Go heap in use %.1f MB (heap sys %.1f, sys %.1f); scale cache %.1f MB = %.3f of the heap in use",
-				float64(ms.HeapInuse)/(1<<20), float64(ms.HeapSys)/(1<<20), float64(ms.Sys)/(1<<20), float64(cache)/(1<<20),
-				float64(cache)/float64(ms.HeapInuse))
+			hb("HOLD at token 32: Go heap in use %.1f MB (heap sys %.1f, sys %.1f)",
+				float64(ms.HeapInuse)/(1<<20), float64(ms.HeapSys)/(1<<20), float64(ms.Sys)/(1<<20))
 			if err := os.WriteFile(hold, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644); err != nil {
 				t.Fatalf("hold file: %v", err)
 			}
@@ -122,6 +115,5 @@ func TestAuditM26_pagedProbe(t *testing.T) {
 		wait := msTok(pf.p1WaitNanos, prof0.p1WaitNanos) + msTok(pf.p2WaitNanos, prof0.p2WaitNanos)
 		line += fmt.Sprintf("; split: commit %.1f ms, waitUntilCompleted %.1f ms, GPU idle in wait %.1f ms per token", commit, wait, wait-gpu)
 	}
-	line += fmt.Sprintf("; scale cache %.1f MB", float64(cache)/(1<<20))
 	hb("%s", line)
 }

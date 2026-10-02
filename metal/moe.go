@@ -486,18 +486,10 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		}
 		nGuW, nGuS := len(gw0)+len(uw0), len(gs0)+len(us0)
 		experts := lw.Experts // capture (aliases the model's own weights; kept alive by the Model)
-		// N-20 (audit-metal-2026-09-12.md): f16 scales are a pure function of the (immutable)
-		// checkpoint weights, so derive each expert's gate‖up and down scales ONCE here instead of
-		// re-converting from a heap f32 copy on every page-in — see int4DirectBytesOnly's doc comment.
-		guScaleCache := make([][]uint16, len(experts))
-		dScaleCache := make([][]uint16, len(experts))
-		for e := range experts {
-			_, gs, _ := int4DirectBytes(&experts[e].Gate)
-			_, us, _ := int4DirectBytes(&experts[e].Up)
-			_, ds, _ := int4DirectBytes(&experts[e].Down)
-			guScaleCache[e] = append(append([]uint16(nil), gs...), us...)
-			dScaleCache[e] = ds
-		}
+		// C-P01 (audit-metal-2026-09-30.md): each expert's f16 scales are read from its own WeightMats
+		// (Int4ScalesF16), which a v14 metal or v15 .giw aliases from the mapping. This used to be a
+		// build-time heap cache (N-20, which replaced a per-page-in f32→f16 conversion), holding the
+		// same bits again (1361 MB on the Gemma 4 26B, measured 2026-10-02, T1.8).
 		stage := func(e int) ([]byte, []uint16, []byte, []uint16) {
 			gw, _ := int4DirectBytesOnly(&experts[e].Gate)
 			uw, _ := int4DirectBytesOnly(&experts[e].Up)
@@ -506,7 +498,8 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 			// per expert (int4Concat(gate,up) order), so a slot must reproduce that concatenation —
 			// gemv_w4a8_moe reads row r < inter as gate, r >= inter as up, off the SAME buffer.
 			guBytes := append(append([]byte(nil), gw...), uw...)
-			return guBytes, guScaleCache[e], dw, dScaleCache[e]
+			guS := append(append([]uint16(nil), experts[e].Gate.Int4ScalesF16()...), experts[e].Up.Int4ScalesF16()...)
+			return guBytes, guS, dw, experts[e].Down.Int4ScalesF16()
 		}
 		ml.pool = newExpertPool(d, mo.slots, nGuW, nGuS, len(dw0), len(ds0), stage)
 		// pread staging: resolve each expert's nibble file offsets within the .giw mmap (pure pointer
@@ -517,8 +510,8 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		// (gemma4's bundle hands over one already-fused gate|up span), so the slot's fused gate|up
 		// buffer is filled in two ranges — gate at byte 0, up at byte len(gate) — exactly reproducing
 		// the byte-copy path's append(gw, uw...) and hence the stacked layout gemv_w4a8_moe reads.
-		// Scales stay f32→f16 from the heap-resident q4s (giwReader.f32 COPIES them, so reading them
-		// never faults the mmap).
+		// The scales are copied from the WeightMats' f16 storage, which a v14 metal or v15 .giw maps, so
+		// they do fault (C-P01); gate's and up's go to the two halves of the slot's gate|up scale range.
 		//
 		// Falls back to the byte-copy path if the fd is absent or ANY expert's nibbles aren't
 		// .giw-mmap-backed (e.g. a requantized HF/safetensors load): every offset must resolve for
@@ -589,10 +582,14 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 					if errD != nil {
 						panic(fmt.Sprintf("metal MoE pread down expert %d: %v", ei, errD))
 					}
-					// N-20: scales come from the build-time cache (already gate‖up-concatenated),
-					// not a fresh f32→f16 reconversion — see the byte-copy stage fn above.
-					copyU16sToBuf(sl.guS, guScaleCache[ei])
-					copyU16sToBuf(sl.dS, dScaleCache[ei])
+					// C-P01: scales from the WeightMats (the mapping). Gate's then up's fill the slot's
+					// gate|up scale range; the views are built from the pool's base buffer by slot
+					// number, because Buffer.At sets an absolute offset rather than adding to one.
+					gs := experts[ei].Gate.Int4ScalesF16()
+					base := sl.slot * pool.nGuS * 2
+					copyU16sToBuf(pool.guS.At(base), gs)
+					copyU16sToBuf(pool.guS.At(base+2*len(gs)), experts[ei].Up.Int4ScalesF16())
+					copyU16sToBuf(sl.dS, experts[ei].Down.Int4ScalesF16())
 				}
 			}
 		}

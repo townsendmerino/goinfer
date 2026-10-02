@@ -509,31 +509,14 @@ func bytesToU32(b []byte) []uint32 {
 	return w
 }
 
-// int4DirectBytes is int4DirectWords' zero-copy sibling for the paging hot path: it returns the
-// packed nibble bytes ALIASED straight from the mmap (no bytesToU32 reconstruction, no per-stage
-// []uint32 allocation) plus the f16 group scales. The nibble bytes are byte-for-byte the words
-// int4DirectWords would build (little-endian), so a byte-copy into a uint32 slot buffer reproduces
-// them exactly on LE — the paged forward's copy does exactly that (expertpool.copyBytesToU32Buf).
-// Measured: bytesToU32 over the 26B's per-token staged nibbles is ~215 ms/1.9 GB of pure
-// reconstruction + a 1.9 GB/run allocation, both removed here; the words path (int4DirectWords)
-// stays for the one-time non-paged build where the []uint32 shape is wanted.
-func int4DirectBytes(w *linalg.WeightMat) (q4 []byte, scales []uint16, ok bool) {
-	b, q4s, group, ok := decoder.Int4F32(w)
-	if !ok || group != 32 {
-		return nil, nil, false
-	}
-	scales = make([]uint16, len(q4s))
-	parallelF32ToF16(scales, q4s)
-	return b, scales, true
-}
-
-// int4DirectBytesOnly is int4DirectBytes without the f16 scale conversion (N-20,
-// audit-metal-2026-09-12.md): a paged MoE stage function calls int4DirectBytes on EVERY page-in of
-// an expert, but the scales are a pure function of the (immutable) checkpoint weights — re-deriving
-// them from a heap f32 copy every stage was ~2.85 GB/token of transient allocation on the 26B (~4 GB
-// on the 35B), on the exact box whose N=128 slot-pressure cliff was memory pressure. Callers on the
-// paged hot path precompute each expert's f16 scales ONCE at build time (buildMoELayer /
-// buildGemma4MoELayer) and use this for the bytes half of every subsequent stage.
+// int4DirectBytesOnly returns a canonical group-32 int4 WeightMat's packed nibble bytes ALIASED straight from the
+// mmap: no bytesToU32 reconstruction and no per-stage []uint32 allocation (measured on the 26B: ~215 ms and 1.9 GB of
+// reconstruction per run, both removed). They are byte-for-byte the words int4DirectWords builds (little-endian), so a
+// byte-copy into a uint32 slot buffer reproduces them exactly (expertpool.copyBytesToU32Buf). The paged MoE stage
+// functions (buildMoELayer, buildGemma4MoELayer) pair it with the WeightMat's own Int4ScalesF16: re-deriving f16 scales
+// from an f32 copy on every page-in was ~2.85 GB/token of transient allocation on the 26B (N-20,
+// audit-metal-2026-09-12.md), and the build-time cache that replaced it duplicated 1361 MB of scales the mapping
+// already holds (C-P01, audit-metal-2026-09-30.md).
 func int4DirectBytesOnly(w *linalg.WeightMat) (q4 []byte, ok bool) {
 	b, _, group, ok := w.Int4F16()
 	if !ok || group != 32 {
