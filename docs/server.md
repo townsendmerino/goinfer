@@ -84,8 +84,11 @@ array as one event, `{"id": …, "goinfer_confidence": […]}`, after the finish
     the capture needs.
   - The answer itself is unchanged: the same request without the flag returns the same content.
 - **Where it is refused (400):** without `response_format` `json_schema` (the schema is what says each field's
-  kind), and on routes that would drop it: tools, images, `/v1/jobs`, batches, `/v1/responses` and
-  `/v1/messages`.
+  kind), and on routes that would drop it: tools, `/v1/jobs`, batches, `/v1/responses` and `/v1/messages`.
+  *Updated 2026-10-02 (GLM-OCR O5): an image request on `/v1/chat/completions` is no longer refused. The vision chat
+  route always honoured `response_format` (the grammar masks every decode step there too); it now also writes
+  `goinfer_confidence` back, in both the buffered reply and the stream's trailing event. Measured on GLM-OCR in
+  `docs/measurements/glm-ocr-o5-2026-10/`.*
 - **In Go:** `constrain.NewMasker(…).CaptureConfidence(constrain.ConfidenceOptions{})`, then
   `masker.FieldConfidence(generatedIDs)` after the generation.
 
@@ -359,6 +362,46 @@ against the same 41.3 s CPU baseline (1.58×, M-18).
 go run ./cmd/serve --model ~/models/gemma-3-4b-it --vision ~/models/gemma-3-4b-it
 # then POST an image_url data: URI to /v1/chat/completions, or an image block to /v1/messages
 ```
+
+**Images with `response_format` json_schema; structured extraction from a document (GLM-OCR, 2026-10-02, O5).** The
+vision chat route constrains decoding to the request's `response_format` exactly as the text route does, on every vision
+family: the grammar masks each decode step, so the reply is JSON that has the schema's shape. On a **GLM-OCR** checkpoint
+(`zai-org/GLM-OCR`; auto-discovered like the other towers) the request is also told *what to extract*, because that model
+is prompted for extraction with a JSON **template**, not a JSON Schema: the card's instruction
+`请按下列JSON格式输出图中信息:` followed by an object of blank values. Serve builds that template from the request's own
+schema (`constrain.TemplateFromSchema`, one source with the grammar) and uses it as the prompt, with this rule:
+
+| the request's text part | what the model is sent |
+|---|---|
+| absent, empty or whitespace | the instruction and the schema's template |
+| exactly `Text Recognition:`, `Table Recognition:` or `Formula Recognition:` | the instruction and the schema's template (the task prompt would contradict the grammar) |
+| anything else | **the user's text, unchanged** (their own extraction prompt, a question); the grammar still constrains the reply |
+
+The template convention: properties in the schema's order, every property shown (optional ones too), nested objects
+nested, `""` for a string, `0` for a number or integer, `false` for a boolean, one example element for an array (so a list of
+line items shows what one looks like). **Type the amounts as numbers.** The model answers a numeric column with a bare
+number whatever the template shows for a string field, and a string grammar forbids a bare number: the only legal tokens
+left are whitespace, so on `"quantity": ""` the measured reply was whitespace until `max_tokens`, with no error
+(`docs/measurements/glm-ocr-o5-2026-10/string_typed_quantity_whitespace_runaway.txt`). With `integer` and `number` fields the
+same page extracted cleanly. An invalid schema is a 400; `json_object` has no shape to build a template from and is left
+alone. The reply is `finish_reason: "length"` and unparseable if `max_tokens` ends it first, since the grammar guarantees a valid
+*prefix*; an invoice with many lines needs a generous `max_tokens` (the example reply is about 420 tokens for six lines).
+
+```bash
+python3 - <<'PY'
+import base64, json, urllib.request
+png = base64.b64encode(open("testdata/glm_ocr/invoice.png", "rb").read()).decode()
+schema = json.load(open("testdata/glm_ocr/invoice.schema.json"))
+body = {"model": "glm", "temperature": 0, "max_tokens": 1500, "goinfer_confidence": True,
+        "messages": [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64," + png}}]}],
+        "response_format": {"type": "json_schema", "json_schema": {"name": "invoice", "schema": schema}}}
+r = urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8080/v1/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"}))
+print(json.load(r)["choices"][0]["message"]["content"])
+PY
+```
+
+The same flow in the terminal: `goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema invoice.schema.json`
+(one image, one answer, then exit). In Go: [`examples/invoice`](../examples/invoice/main.go).
 
 **Prompt-prefix KV caching.** Across requests the server reuses the KV cache of a
 warm session **whose entire token history is a prefix of the new prompt** —

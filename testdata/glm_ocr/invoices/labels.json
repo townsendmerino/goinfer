@@ -1,0 +1,605 @@
+[
+ {
+  "file": "inv01.png",
+  "truth": {
+   "invoice_number": "A-01778",
+   "date": "10/24/2026",
+   "due_date": "11/24/2026",
+   "vendor": "Harbor Light Supply Co.",
+   "bill_to": "Thistle & Rowan Ltd",
+   "currency": "EUR",
+   "paid": false,
+   "line_items": [
+    {
+     "description": "Binding spine strips",
+     "quantity": 6,
+     "unit_price": 920.48,
+     "amount": 5522.88
+    },
+    {
+     "description": "Hardwood flooring, per m2",
+     "quantity": 5,
+     "unit_price": 125.27,
+     "amount": 626.35
+    },
+    {
+     "description": "Design review",
+     "quantity": 24,
+     "unit_price": 655.85,
+     "amount": 15740.4
+    }
+   ],
+   "subtotal": 21889.63,
+   "tax": 1860.62,
+   "total": 23750.25
+  }
+ },
+ {
+  "file": "inv02.png",
+  "truth": {
+   "invoice_number": "06824",
+   "date": "03/13/2026",
+   "due_date": "04/13/2026",
+   "vendor": "Brightwater Logistics Ltd",
+   "bill_to": "Orchid Bay Hospitality",
+   "currency": "GBP",
+   "paid": true,
+   "line_items": [
+    {
+     "description": "A4 paper, 80gsm (ream)",
+     "quantity": 1,
+     "unit_price": 914.36,
+     "amount": 914.36
+    },
+    {
+     "description": "Thermal label roll 100mm",
+     "quantity": 1,
+     "unit_price": 190.36,
+     "amount": 190.36
+    },
+    {
+     "description": "Site survey, per hour",
+     "quantity": 12,
+     "unit_price": 597.69,
+     "amount": 7172.28
+    },
+    {
+     "description": "Pallet wrap",
+     "quantity": 6,
+     "unit_price": 343.91,
+     "amount": 2063.46
+    },
+    {
+     "description": "Binding spine strips",
+     "quantity": 5,
+     "unit_price": 636.02,
+     "amount": 3180.1
+    },
+    {
+     "description": "Shipping and handling",
+     "quantity": 12,
+     "unit_price": 316.17,
+     "amount": 3794.04
+    }
+   ],
+   "subtotal": 17314.6,
+   "tax": 1731.46,
+   "total": 19046.06
+  }
+ },
+ {
+  "file": "inv03.png",
+  "truth": {
+   "invoice_number": "84380",
+   "date": "08/27/2026",
+   "due_date": "09/27/2026",
+   "vendor": "Cedar & Pine Joinery",
+   "bill_to": "Vega Robotics Inc.",
+   "currency": "EUR",
+   "paid": false,
+   "line_items": [
+    {
+     "description": "Laminated menu cards",
+     "quantity": 12,
+     "unit_price": 713.05,
+     "amount": 8556.6
+    },
+    {
+     "description": "Ink cartridge, cyan",
+     "quantity": 3,
+     "unit_price": 46.14,
+     "amount": 138.42
+    },
+    {
+     "description": "Design review",
+     "quantity": 3,
+     "unit_price": 352.34,
+     "amount": 1057.02
+    }
+   ],
+   "subtotal": 9752.04,
+   "tax": 828.92,
+   "total": 10580.96
+  }
+ },
+ {
+  "file": "inv04.png",
+  "truth": {
+   "invoice_number": "A-51943",
+   "date": "2026-07-04",
+   "due_date": "2026-08-04",
+   "vendor": "Kestrel Analytics GmbH",
+   "bill_to": "Redcliff Estates",
+   "currency": "GBP",
+   "paid": false,
+   "line_items": [
+    {
+     "description": "Hardwood flooring, per m2",
+     "quantity": 2,
+     "unit_price": 330.13,
+     "amount": 660.26
+    },
+    {
+     "description": "Ink cartridge, cyan",
+     "quantity": 1,
+     "unit_price": 671.59,
+     "amount": 671.59
+    }
+   ],
+   "subtotal": 1331.85,
+   "tax": 0.0,
+   "total": 1331.85
+  }
+ },
+ {
+  "file": "inv05.png",
+  "truth": {
+   "invoice_number": "53347",
+   "date": "01/09/2026",
+   "due_date": "02/09/2026",
+   "vendor": "Northgate Office Products",
+   "bill_to": "Oakline Hotels plc",
+   "currency": "GBP",
+   "paid": true,
+   "line_items": [
+    {
+     "description": "Pallet wrap",
+     "quantity": 6,
+     "unit_price": 342.72,
+     "amount": 2056.32
+    },
+    {
+     "description": "Hardwood flooring, per m2",
+     "quantity": 6,
+     "unit_price": 635.39,
+     "amount": 3812.34
+    },
+    {
+     "description": "Shipping and handling",
+     "quantity": 6,
+     "unit_price": 660.67,
+     "amount": 3964.02
+    },
+    {
+     "description": "Laminated menu cards",
+     "quantity": 5,
+     "unit_price": 511.2,
+     "amount": 2556.0
+    },
+    {
+     "description": "Courier fee",
+     "quantity": 24,
+     "unit_price": 28.24,
+     "amount": 677.76
+    },
+    {
+     "description": "Binding spine strips",
+     "quantity": 10,
+     "unit_price": 938.74,
+     "amount": 9387.4
+    }
+   ],
+   "subtotal": 22453.84,
+   "tax": 1122.69,
+   "total": 23576.53
+  }
+ },
+ {
+  "file": "inv06.png",
+  "truth": {
+   "invoice_number": "A-51440",
+   "date": "2026-05-25",
+   "due_date": "2026-06-25",
+   "vendor": "Alder Street Bakery",
+   "bill_to": "Lumen Photography",
+   "currency": "GBP",
+   "paid": false,
+   "line_items": [
+    {
+     "description": "Pallet wrap",
+     "quantity": 2,
+     "unit_price": 735.74,
+     "amount": 1471.48
+    },
+    {
+     "description": "Steel angle 40x40x3m",
+     "quantity": 40,
+     "unit_price": 17.32,
+     "amount": 692.8
+    }
+   ],
+   "subtotal": 2164.28,
+   "tax": 216.43,
+   "total": 2380.71
+  }
+ },
+ {
+  "file": "inv07.png",
+  "truth": {
+   "invoice_number": "2026/7972",
+   "date": "10/09/2026",
+   "due_date": "11/09/2026",
+   "vendor": "Meridian Cloud Services Inc.",
+   "bill_to": "Northwind Printing LLC",
+   "currency": "EUR",
+   "paid": false,
+   "line_items": [
+    {
+     "description": "Steel angle 40x40x3m",
+     "quantity": 8,
+     "unit_price": 874.85,
+     "amount": 6998.8
+    },
+    {
+     "description": "Design review",
+     "quantity": 1,
+     "unit_price": 104.91,
+     "amount": 104.91
+    },
+    {
+     "description": "Pallet wrap",
+     "quantity": 2,
+     "unit_price": 460.58,
+     "amount": 921.16
+    },
+    {
+     "description": "Laminated menu cards",
+     "quantity": 5,
+     "unit_price": 872.13,
+     "amount": 4360.65
+    }
+   ],
+   "subtotal": 12385.52,
+   "tax": 619.28,
+   "total": 13004.8
+  }
+ },
+ {
+  "file": "inv08.png",
+  "truth": {
+   "invoice_number": "66845",
+   "date": "08/11/2026",
+   "due_date": "09/11/2026",
+   "vendor": "Tamarack Surveying LLC",
+   "bill_to": "Sable Marine Services",
+   "currency": "USD",
+   "paid": true,
+   "line_items": [
+    {
+     "description": "Steel angle 40x40x3m",
+     "quantity": 4,
+     "unit_price": 784.46,
+     "amount": 3137.84
+    },
+    {
+     "description": "Laminated menu cards",
+     "quantity": 1,
+     "unit_price": 393.45,
+     "amount": 393.45
+    },
+    {
+     "description": "Binding spine strips",
+     "quantity": 1,
+     "unit_price": 72.44,
+     "amount": 72.44
+    },
+    {
+     "description": "Courier fee",
+     "quantity": 1,
+     "unit_price": 534.71,
+     "amount": 534.71
+    }
+   ],
+   "subtotal": 4138.44,
+   "tax": 206.92,
+   "total": 4345.36
+  }
+ },
+ {
+  "file": "inv09.png",
+  "truth": {
+   "invoice_number": "2026/6996",
+   "date": "12/24/2026",
+   "due_date": "01/24/2027",
+   "vendor": "Quill & Ledger Stationers",
+   "bill_to": "Copperfield Motors",
+   "currency": "GBP",
+   "paid": false,
+   "line_items": [
+    {
+     "description": "Courier fee",
+     "quantity": 8,
+     "unit_price": 402.75,
+     "amount": 3222.0
+    },
+    {
+     "description": "Thermal label roll 100mm",
+     "quantity": 10,
+     "unit_price": 377.27,
+     "amount": 3772.7
+    },
+    {
+     "description": "Cotton napkins, set of 12",
+     "quantity": 1,
+     "unit_price": 787.51,
+     "amount": 787.51
+    },
+    {
+     "description": "Cloud hosting, monthly",
+     "quantity": 5,
+     "unit_price": 21.79,
+     "amount": 108.95
+    }
+   ],
+   "subtotal": 7891.16,
+   "tax": 670.75,
+   "total": 8561.91
+  }
+ },
+ {
+  "file": "inv10.png",
+  "truth": {
+   "invoice_number": "2026/7228",
+   "date": "4 Sep 2026",
+   "due_date": "4 Oct 2026",
+   "vendor": "Summit Peak Outfitters",
+   "bill_to": "Pioneer Ridge School District",
+   "currency": "USD",
+   "paid": false,
+   "line_items": [
+    {
+     "description": "Cotton napkins, set of 12",
+     "quantity": 6,
+     "unit_price": 860.68,
+     "amount": 5164.08
+    },
+    {
+     "description": "Ink cartridge, black",
+     "quantity": 1,
+     "unit_price": 496.72,
+     "amount": 496.72
+    },
+    {
+     "description": "Pastry box, assorted",
+     "quantity": 10,
+     "unit_price": 858.0,
+     "amount": 8580.0
+    },
+    {
+     "description": "Oak shelf bracket",
+     "quantity": 5,
+     "unit_price": 476.0,
+     "amount": 2380.0
+    }
+   ],
+   "subtotal": 16620.8,
+   "tax": 0.0,
+   "total": 16620.8
+  }
+ },
+ {
+  "file": "inv11.png",
+  "truth": {
+   "invoice_number": "19378",
+   "date": "08/06/2026",
+   "due_date": "09/06/2026",
+   "vendor": "Lantern Row Printing",
+   "bill_to": "Juniper Legal LLP",
+   "currency": "EUR",
+   "paid": true,
+   "line_items": [
+    {
+     "description": "Design review",
+     "quantity": 5,
+     "unit_price": 632.81,
+     "amount": 3164.05
+    },
+    {
+     "description": "Shipping and handling",
+     "quantity": 40,
+     "unit_price": 737.04,
+     "amount": 29481.6
+    }
+   ],
+   "subtotal": 32645.65,
+   "tax": 0.0,
+   "total": 32645.65
+  }
+ },
+ {
+  "file": "inv12.png",
+  "truth": {
+   "invoice_number": "A-03619",
+   "date": "06/23/2026",
+   "due_date": "07/23/2026",
+   "vendor": "Foxglove Garden Centre",
+   "bill_to": "Granite State Credit Union",
+   "currency": "EUR",
+   "paid": false,
+   "line_items": [
+    {
+     "description": "Dental hygiene kit",
+     "quantity": 40,
+     "unit_price": 562.1,
+     "amount": 22484.0
+    },
+    {
+     "description": "Thermal label roll 100mm",
+     "quantity": 5,
+     "unit_price": 784.64,
+     "amount": 3923.2
+    }
+   ],
+   "subtotal": 26407.2,
+   "tax": 5281.44,
+   "total": 31688.64
+  }
+ },
+ {
+  "file": "inv13.png",
+  "truth": {
+   "invoice_number": "2026/4190",
+   "date": "02/05/2026",
+   "due_date": "03/05/2026",
+   "vendor": "Ironbridge Fabrication",
+   "bill_to": "Willow Creek Farms",
+   "currency": "EUR",
+   "paid": false,
+   "line_items": [
+    {
+     "description": "Oak shelf bracket",
+     "quantity": 1,
+     "unit_price": 756.89,
+     "amount": 756.89
+    },
+    {
+     "description": "Cotton napkins, set of 12",
+     "quantity": 10,
+     "unit_price": 635.32,
+     "amount": 6353.2
+    },
+    {
+     "description": "Site survey, per hour",
+     "quantity": 8,
+     "unit_price": 816.94,
+     "amount": 6535.52
+    },
+    {
+     "description": "A4 paper, 80gsm (ream)",
+     "quantity": 6,
+     "unit_price": 2.61,
+     "amount": 15.66
+    }
+   ],
+   "subtotal": 13661.27,
+   "tax": 1366.13,
+   "total": 15027.4
+  }
+ },
+ {
+  "file": "inv14.png",
+  "truth": {
+   "invoice_number": "40804",
+   "date": "1 Aug 2026",
+   "due_date": "1 Sep 2026",
+   "vendor": "Marlow Dental Group",
+   "bill_to": "Bluebird Pediatrics",
+   "currency": "USD",
+   "paid": true,
+   "line_items": [
+    {
+     "description": "Cotton napkins, set of 12",
+     "quantity": 4,
+     "unit_price": 675.64,
+     "amount": 2702.56
+    },
+    {
+     "description": "Ink cartridge, cyan",
+     "quantity": 5,
+     "unit_price": 769.93,
+     "amount": 3849.65
+    },
+    {
+     "description": "Courier fee",
+     "quantity": 1,
+     "unit_price": 107.0,
+     "amount": 107.0
+    },
+    {
+     "description": "Hardwood flooring, per m2",
+     "quantity": 6,
+     "unit_price": 34.84,
+     "amount": 209.04
+    },
+    {
+     "description": "Ink cartridge, black",
+     "quantity": 6,
+     "unit_price": 931.94,
+     "amount": 5591.64
+    },
+    {
+     "description": "Data export licence",
+     "quantity": 3,
+     "unit_price": 43.88,
+     "amount": 131.64
+    }
+   ],
+   "subtotal": 12591.53,
+   "tax": 1259.15,
+   "total": 13850.68
+  }
+ },
+ {
+  "file": "inv15.png",
+  "truth": {
+   "invoice_number": "A-94574",
+   "date": "27 Mar 2026",
+   "due_date": "27 Apr 2026",
+   "vendor": "Paloma Linens Co.",
+   "bill_to": "Atlas Freight Partners",
+   "currency": "EUR",
+   "paid": false,
+   "line_items": [
+    {
+     "description": "Ink cartridge, cyan",
+     "quantity": 40,
+     "unit_price": 544.95,
+     "amount": 21798.0
+    },
+    {
+     "description": "Support retainer",
+     "quantity": 10,
+     "unit_price": 242.53,
+     "amount": 2425.3
+    },
+    {
+     "description": "Ink cartridge, black",
+     "quantity": 1,
+     "unit_price": 797.4,
+     "amount": 797.4
+    },
+    {
+     "description": "Laminated menu cards",
+     "quantity": 40,
+     "unit_price": 948.15,
+     "amount": 37926.0
+    },
+    {
+     "description": "Cloud hosting, monthly",
+     "quantity": 1,
+     "unit_price": 305.13,
+     "amount": 305.13
+    },
+    {
+     "description": "Site survey, per hour",
+     "quantity": 1,
+     "unit_price": 649.69,
+     "amount": 649.69
+    }
+   ],
+   "subtotal": 63901.52,
+   "tax": 3195.08,
+   "total": 67096.6
+  }
+ }
+]

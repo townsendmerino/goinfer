@@ -1,0 +1,201 @@
+{
+ "generator": "scripts/gen_glm_ocr_invoices.py",
+ "seed": 20261002,
+ "pil": "12.2.0",
+ "fonts": {
+  "sans": [
+   "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
+   "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Bold.ttf"
+  ],
+  "serif": [
+   "/usr/share/fonts/liberation-serif-fonts/LiberationSerif-Regular.ttf",
+   "/usr/share/fonts/liberation-serif-fonts/LiberationSerif-Bold.ttf"
+  ],
+  "mono": [
+   "/usr/share/fonts/liberation-mono-fonts/LiberationMono-Regular.ttf",
+   "/usr/share/fonts/liberation-mono-fonts/LiberationMono-Bold.ttf"
+  ]
+ },
+ "documents": {
+  "inv01.png": {
+   "sha256": "cf797074bf8e09c84551903e6b41dcee77d70072f5294a3c82ac7c626b492307",
+   "bytes": 33222,
+   "size": [
+    900,
+    1150
+   ],
+   "megapixels": 1.03,
+   "layout": "classic",
+   "font": "sans",
+   "thousands_separators": false
+  },
+  "inv02.png": {
+   "sha256": "bdd2e4efbc2cd3f443833922328acdea7dece3dd35175033e1c6627804779a3b",
+   "bytes": 45996,
+   "size": [
+    1050,
+    1250
+   ],
+   "megapixels": 1.31,
+   "layout": "band",
+   "font": "serif",
+   "thousands_separators": false
+  },
+  "inv03.png": {
+   "sha256": "0fccbd6219d81c7af6641a48402f9e8c27596e52eeff7bd7ecdb4f6fb6c1450b",
+   "bytes": 33197,
+   "size": [
+    1000,
+    1200
+   ],
+   "megapixels": 1.2,
+   "layout": "compact",
+   "font": "mono",
+   "thousands_separators": true
+  },
+  "inv04.png": {
+   "sha256": "5dc656804c714e5395f2fd33770818857810a4d22bb3e972f346358d5adf4917",
+   "bytes": 28543,
+   "size": [
+    1000,
+    1200
+   ],
+   "megapixels": 1.2,
+   "layout": "classic",
+   "font": "serif",
+   "thousands_separators": true
+  },
+  "inv05.png": {
+   "sha256": "05ae79c1870a6a59a2c48b2b44573648bd431ac029d03e578fd3604c840b713c",
+   "bytes": 44396,
+   "size": [
+    950,
+    1100
+   ],
+   "megapixels": 1.04,
+   "layout": "band",
+   "font": "serif",
+   "thousands_separators": true
+  },
+  "inv06.png": {
+   "sha256": "4366e99d615de4be64985550694cc4df861cbac2c8d7f0da46d94e0bbf0ee2d9",
+   "bytes": 29532,
+   "size": [
+    1000,
+    1200
+   ],
+   "megapixels": 1.2,
+   "layout": "compact",
+   "font": "sans",
+   "thousands_separators": false
+  },
+  "inv07.png": {
+   "sha256": "ce57c4d6a75c6c3a7783e55a85c6689b6ced8e4b23b101d4fae7b29c9d07e9af",
+   "bytes": 37503,
+   "size": [
+    1050,
+    1250
+   ],
+   "megapixels": 1.31,
+   "layout": "classic",
+   "font": "sans",
+   "thousands_separators": true
+  },
+  "inv08.png": {
+   "sha256": "8d1fa886139a68a4346b3432307b5b9ee6c2e3418501dc3bdaf8be2e54ce9830",
+   "bytes": 42976,
+   "size": [
+    950,
+    1100
+   ],
+   "megapixels": 1.04,
+   "layout": "band",
+   "font": "mono",
+   "thousands_separators": false
+  },
+  "inv09.png": {
+   "sha256": "13dc8e861656b82af68fb8bfe0c8effbdbdc1cbbafabcbf44b97f9ffe0151170",
+   "bytes": 33152,
+   "size": [
+    900,
+    1150
+   ],
+   "megapixels": 1.03,
+   "layout": "compact",
+   "font": "sans",
+   "thousands_separators": true
+  },
+  "inv10.png": {
+   "sha256": "e52308f0aa8bc478292b81e27ece9d8288b6769676030801b69b610b4224dce0",
+   "bytes": 36999,
+   "size": [
+    1050,
+    1250
+   ],
+   "megapixels": 1.31,
+   "layout": "classic",
+   "font": "sans",
+   "thousands_separators": false
+  },
+  "inv11.png": {
+   "sha256": "7741415a197af3c05103fdea7266d299d8003218220cd47352eda05eb9c3ee5e",
+   "bytes": 38630,
+   "size": [
+    950,
+    1100
+   ],
+   "megapixels": 1.04,
+   "layout": "band",
+   "font": "sans",
+   "thousands_separators": true
+  },
+  "inv12.png": {
+   "sha256": "246f1b3e16550abf4acd5cc8f76b536274b7ea6f7c2281244f7aade54e96c85a",
+   "bytes": 26091,
+   "size": [
+    900,
+    1150
+   ],
+   "megapixels": 1.03,
+   "layout": "compact",
+   "font": "serif",
+   "thousands_separators": false
+  },
+  "inv13.png": {
+   "sha256": "2f18ac2d2f81bfbd495f7f493923a49f7d499c74b1f21579c2cd3de8856f4058",
+   "bytes": 31505,
+   "size": [
+    950,
+    1100
+   ],
+   "megapixels": 1.04,
+   "layout": "classic",
+   "font": "serif",
+   "thousands_separators": false
+  },
+  "inv14.png": {
+   "sha256": "0d084cc62546906f03be3f73bc233fa6652a16829055e47e75a1cefc43f77987",
+   "bytes": 48356,
+   "size": [
+    950,
+    1100
+   ],
+   "megapixels": 1.04,
+   "layout": "band",
+   "font": "sans",
+   "thousands_separators": true
+  },
+  "inv15.png": {
+   "sha256": "064b132ebc4f42ea5ba4cc77fff8c58d2a2373e4f6ba430d3865cc254d43ff89",
+   "bytes": 35151,
+   "size": [
+    1050,
+    1250
+   ],
+   "megapixels": 1.31,
+   "layout": "compact",
+   "font": "serif",
+   "thousands_separators": true
+  }
+ }
+}

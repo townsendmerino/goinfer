@@ -25,6 +25,12 @@
 > (pairwise rope kernels). Goinfer at f32 is token-identical to transformers on three rendered documents
 > (`docs/measurements/glm-ocr-o3-2026-10/`); it needs an aikit release carrying the GLM tower before a push. O7 owns the full rewrite.
 >
+> **Update 2026-10-02 (GLM-OCR O5, structured extraction):** an image request with `response_format` `json_schema` on GLM-OCR is an
+> extraction request: serve builds the model's JSON-template prompt from the schema and constrains the reply to it, and
+> `goinfer-chat --image invoice.png --schema invoice.schema.json` does the same in one process. The vision chat route also returns
+> `goinfer_confidence` now (every vision family). Rule, template convention, the typed-amounts trap and the accuracy report on 15
+> rendered invoices (not real scans): `docs/server.md` and `docs/measurements/glm-ocr-o5-2026-10/`.
+>
 > The June status text, kept as written: P0–P3 (image→logits at HF parity) landed through
 > `9412e4e`; P4 (serve vision API + agent image input) is a real user-facing feature —
 > `cmd/serve` accepts images on both the OpenAI (`image_url`) and Anthropic (`image`) surfaces,

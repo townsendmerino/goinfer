@@ -95,6 +95,8 @@ type session struct {
 	errw  io.Writer // where plain mode sends the reasoning (nil = os.Stderr)
 	genFn func() string
 
+	img *imageInput // --image: one preprocessed image attached to this one-shot run (nil = text only)
+
 	draft *decoder.Model // optional speculative-decoding draft model (--draft)
 	specK int            // speculative draft length per verify pass
 	ngram bool           // --spec ngram: lossless n-gram (prompt-lookup) drafting, adaptive depth
@@ -111,6 +113,7 @@ type chatFlags struct {
 	seed                                       *int64
 	modelTmp, showVersion, showThinking        *bool
 	thinking, batch, out, effort, prompt       *string
+	image                                      *string
 }
 
 // registerFlags puts chat's whole command line on fs. Main passes flag.CommandLine; a test passes a fresh
@@ -140,6 +143,7 @@ func registerFlags(fs *flag.FlagSet) *chatFlags {
 	c.batch = fs.String("batch", "", "run a batch file instead of chatting: an OpenAI-style JSONL of chat requests (the same file goinfer-serve's POST /v1/batches reads), one reply each, written to -o. No server; resumable — rerun the same command after an interruption and finished lines are skipped. A line that states no sampling settings gets the API's defaults (temperature 1, 512 tokens, random seed), not this binary's interactive ones, unless you pass the flag")
 	c.out = fs.String("o", "", "with --batch: the output file. Finished lines are appended as they land and already-finished custom_ids are skipped on a rerun; lines that failed go to a sibling <name>.errors.jsonl")
 	c.prompt = fs.String("p", "", "answer this one prompt and exit: only the answer is printed to stdout, with no banner, colours or prompt label (the reasoning of a thinking model, if shown, goes to stderr). Piped input and redirected output get the same plain output without -p")
+	c.image = fs.String("image", "", "answer about this image file (PNG or JPEG) and exit, like -p: one image, one answer, printed to stdout. GLM-OCR only (--model <the zai-org/GLM-OCR directory>); the image goes through its vision tower on the CPU (about a minute per megapixel). With no -p the task is text recognition; with --schema it is EXTRACTION: the prompt is the schema's JSON template and the reply is constrained to the schema (goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema invoice.schema.json). Unless given, --temp defaults to 0 and --max to 2048 for an image run, and the REPL's coding system prompt is not sent")
 	c.showVersion = fs.Bool("version", false, "print version, the backends compiled into this binary, and (embed builds) the baked-in tier and quant, then exit")
 	return c
 }
@@ -267,6 +271,21 @@ All flags:
 		os.Exit(2)
 	}
 
+	// --image: check the flags and read + preprocess the image BEFORE loading a model, like --batch below: a bad path or a
+	// non-GLM-OCR directory costs a second, not a load.
+	if err := checkImageFlags(*cf.image, *cf.model, *cf.batch); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(2)
+	}
+	var img *imageInput
+	if *cf.image != "" {
+		var ierr error
+		if img, ierr = loadImageInput(*cf.model, *cf.image); ierr != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", ierr)
+			os.Exit(1)
+		}
+	}
+
 	// --batch: read and check the input and the existing output BEFORE loading a model — a bad file costs a second, not a load,
 	// and a run that has nothing left to do never loads one.
 	var plan *batchPlan
@@ -361,6 +380,17 @@ All flags:
 		Temperature: *cf.temp, TopK: *cf.topK, TopP: *cf.topP, MinP: *cf.minP, Seed: *cf.seed,
 		RepeatPenalty: *cf.repPen, PresencePenalty: *cf.presPen, FrequencyPenalty: *cf.freqPen, RepeatLastN: *cf.repLastN,
 	}
+	if img != nil {
+		explicit := map[string]bool{}
+		flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+		s.img = img
+		if !explicit["temp"] {
+			s.sp.Temperature = imageDefaultTemp
+		}
+		if !explicit["max"] {
+			s.maxTok = imageDefaultMax
+		}
+	}
 	if *cf.schema != "" {
 		raw, rerr := os.ReadFile(*cf.schema)
 		if rerr != nil {
@@ -414,8 +444,11 @@ All flags:
 		os.Exit(s.runBatch(plan, newBatchDefaults(cf, explicit), modelNameOf(*cf.model)))
 	}
 	// R26: one prompt, plain output, exit — or the REPL, plain when it is being scripted (stdin or stdout is not a terminal).
-	s.plain = *cf.prompt != "" || !isTerminal(os.Stdin) || !isTerminal(os.Stdout)
-	if *cf.prompt != "" {
+	s.plain = *cf.prompt != "" || img != nil || !isTerminal(os.Stdin) || !isTerminal(os.Stdout)
+	if *cf.prompt != "" || img != nil { // --image is one image, one answer: it never opens the REPL
+		if img != nil && *cf.prompt != "" && *cf.schema != "" {
+			fmt.Fprintln(os.Stderr, "note: -p text with --schema is kept as your own prompt unless it is empty or a bare task prompt (Text Recognition: and the like); include the JSON template yourself, or omit -p to send the schema's")
+		}
 		os.Exit(s.oneShot(*cf.prompt))
 	}
 	s.repl(os.Stdin)
@@ -586,12 +619,16 @@ func (s *session) repl(r io.Reader) {
 // generation cancels just this turn.
 func (s *session) generate() string {
 	prompt, turns, tm := s.buildPrompt()
-	// Rendered templates already include the family's BOS marker; only the raw
-	// fallback needs the tokenizer to prepend one.
-	ids, err := s.tk.Encode(prompt, s.tmpl == nil /* addBOS */)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "encode: %v\n", err)
-		return ""
+	var ids []int
+	if s.img == nil { // an image request builds its own prompt below (startImageGen)
+		// Rendered templates already include the family's BOS marker; only the raw
+		// fallback needs the tokenizer to prepend one.
+		var err error
+		ids, err = s.tk.Encode(prompt, s.tmpl == nil /* addBOS */)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "encode: %v\n", err)
+			return ""
+		}
 	}
 
 	sp := s.sp
@@ -604,7 +641,17 @@ func (s *session) generate() string {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	stream, gen := s.startGen(ctx, ids, s.maxTok, sp)
+	var stream <-chan int
+	var gen *decoder.Generation
+	if s.img != nil {
+		var ierr error
+		if stream, gen, ierr = s.startImageGen(ctx, turns, s.maxTok, sp); ierr != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", ierr)
+			return ""
+		}
+	} else {
+		stream, gen = s.startGen(ctx, ids, s.maxTok, sp)
+	}
 
 	// The reasoning, when the model has any, prints dimmed (or as a one-word marker with --show-thinking=false) and the answer
 	// follows in cyan; the two never mix, and only the answer goes into the conversation history.
@@ -620,7 +667,11 @@ func (s *session) generate() string {
 	if err := gen.Err(); err != nil && ctx.Err() == nil {
 		fmt.Fprintf(os.Stderr, "(generation error: %v)\n", err)
 	}
-	if elapsed := time.Since(start); elapsed > 0 && nTok > 0 {
+	elapsed := time.Since(start)
+	if s.img != nil {
+		elapsed -= s.img.towerTime // the tower runs inside the generation call; tok/s is the model's, not the tower's
+	}
+	if elapsed > 0 && nTok > 0 {
 		fmt.Fprintf(os.Stderr, "%s[%d tok, %.1f tok/s]%s", s.sgr("\033[2m"), nTok, float64(nTok)/elapsed.Seconds(), s.sgr("\033[0m"))
 		if gen.Spec != nil {
 			fmt.Fprintf(os.Stderr, "%s [spec: %.0f%% accepted, %.1f tok/pass]%s", s.sgr("\033[2m"), gen.Spec.AcceptanceRate()*100, gen.Spec.TokensPerRound(), s.sgr("\033[0m"))

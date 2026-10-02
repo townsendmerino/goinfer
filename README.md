@@ -64,6 +64,13 @@ routing ("ask a person below 0.7"). It is not the probability that the value is 
 not calibrated — see [docs/server.md](docs/server.md) and
 [examples/confidence](examples/confidence/main.go).
 
+**A scanned invoice in, a Go struct out.** GLM-OCR (a 0.9B document model) reads the image; the struct is both the
+prompt (`constrain.TemplateFromStruct`, the JSON template the model is trained to fill) and the guarantee
+(`constrain.GrammarFromStruct`). One line: `goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema
+invoice.schema.json`; in Go: [examples/invoice](examples/invoice/main.go); over HTTP, an `image_url` part plus
+`response_format` `json_schema` ([docs/server.md](docs/server.md)). Field accuracy on rendered test invoices, not real scans:
+[docs/measurements/glm-ocr-o5-2026-10/](docs/measurements/glm-ocr-o5-2026-10/).
+
 ## Use it as a library
 
 ```bash

@@ -139,21 +139,37 @@ func TestServeVisionChat_appliesExtractionRuleBeforeThePromptIsBuilt(t *testing.
 		t.Fatal(err)
 	}
 	pos := map[string]token.Pos{}
+	payloads, confOK := 0, false
 	for _, d := range f.Decls {
 		fd, ok := d.(*ast.FuncDecl)
 		if !ok || fd.Name.Name != "serveVisionChatWith" {
 			continue
 		}
 		ast.Inspect(fd.Body, func(n ast.Node) bool {
-			if c, ok := n.(*ast.CallExpr); ok {
-				if sel, ok := c.Fun.(*ast.SelectorExpr); ok {
+			switch x := n.(type) {
+			case *ast.CallExpr:
+				if sel, ok := x.Fun.(*ast.SelectorExpr); ok {
 					if _, seen := pos[sel.Sel.Name]; !seen {
-						pos[sel.Sel.Name] = c.Pos()
+						pos[sel.Sel.Name] = x.Pos()
+					}
+					if sel.Sel.Name == "payload" {
+						payloads++
+					}
+				}
+			case *ast.AssignStmt:
+				for _, l := range x.Lhs {
+					if sel, ok := l.(*ast.SelectorExpr); ok && sel.Sel.Name == "confidenceOK" {
+						confOK = true
 					}
 				}
 			}
 			return true
 		})
+	}
+	// goinfer_confidence on the vision chat route (O5): prepare refuses the flag unless the route says it writes the result back,
+	// so the route must both say so and write it back at BOTH sites (the stream's trailing event and the buffered response).
+	if !confOK || payloads < 2 {
+		t.Errorf("serveVisionChatWith must set sampling.confidenceOK and write gr.conf.payload() back in the stream and the buffered reply (confidenceOK set: %v, payload writes: %d)", confOK, payloads)
 	}
 	ext, vp, pr := pos["glmOcrExtractionTurn"], pos["visionPrompt"], pos["prepare"]
 	if !ext.IsValid() || !vp.IsValid() || !pr.IsValid() {
