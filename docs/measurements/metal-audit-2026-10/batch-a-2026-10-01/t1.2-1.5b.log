@@ -1,0 +1,11 @@
+=== RUN   TestAuditT12_blkBelowFloor
+[t1.2    3.9s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf 256 keys: legacy 10.952 ms, blk 11.111 ms per token (medians of 5 x 20), legacy/blk 0.986
+[t1.2    6.4s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf 384 keys: legacy 11.256 ms, blk 11.160 ms per token (medians of 5 x 20), legacy/blk 1.009
+[t1.2    8.8s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf 512 keys: legacy 11.528 ms, blk 11.235 ms per token (medians of 5 x 20), legacy/blk 1.026
+[t1.2   11.3s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf 768 keys: legacy 12.260 ms, blk 11.239 ms per token (medians of 5 x 20), legacy/blk 1.091
+[t1.2   13.9s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf 1024 keys: legacy 13.232 ms, blk 11.339 ms per token (medians of 5 x 20), legacy/blk 1.167
+[t1.2   16.7s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf 1280 keys: legacy 14.210 ms, blk 11.330 ms per token (medians of 5 x 20), legacy/blk 1.254
+[t1.2   19.5s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf 1535 keys: legacy 15.137 ms, blk 11.470 ms per token (medians of 5 x 20), legacy/blk 1.320
+[t1.2   19.5s] RESULT qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: blk 1.091x legacy at 768 keys (>= 1.05); first depth with >= 1.10: 1024 (0 = none)
+--- PASS: TestAuditT12_blkBelowFloor (21.86s)
+PASS

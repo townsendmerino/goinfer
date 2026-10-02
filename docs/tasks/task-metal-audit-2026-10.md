@@ -1,6 +1,6 @@
 # Metal audit program — 2026-10
 
-**Status: phase 1 in progress (started 2026-10-01 on the local branch `metal-audit`, not pushed until the program is done).** This is the execution plan for `docs/audit-metal-2026-09-30.md`: the
+**Status: phase 1 done; phase 2 Batch A and the M26 job graded 2026-10-02; C-P01 built, its A/B queued (started 2026-10-01 on the local branch `metal-audit`, not pushed until the program is done).** This is the execution plan for `docs/audit-metal-2026-09-30.md`: the
 order the audit's §10 items run in, re-tagged for the run-budget rules and this Mac's limits. Each item keeps the
 definition, band, probe and kill line its §10 row gives; this doc does not restate them, so read the row before
 starting an item. Item IDs are the audit's. Decisions marked **O-** are the audit's Track 4 owner decisions, not the
@@ -113,22 +113,92 @@ about. M35 is excluded too (DeltaNet, and paged). T1.12 needs a fully resident g
 | T1.9a (D-P02, M-11) | 8 slots, `GOINFER_MOE_PROF_SPLIT=1` | per-command-buffer round trip, (submit+wait − GPU-busy) per token ÷ the token's time, with the commit/wait split | Under 0.05: M-11's shared-event design is closed for M26, as D-P02 projects. ≥ 0.10: reopened, and C-B03's fence microbenchmark (aikit) is the next step. Between: parked. |
 | T1.9b (R11(c)) | 64 slots, last, and only if neither earlier run tripped the kill-watch | whether it completes without the kill-watch firing, and its peak swap growth; tok/s against the 8-slot run, reported only (one run each, separate processes) | Completes with swap growth under 256 MB: R11(c)'s "lower default" conclusion is withdrawn (its spirals predate the 2026-09-24 fork fix). The kill-watch fires: R11(c) stands at 64 slots. |
 
+### Batch A: results (night of 2026-10-01, graded 2026-10-02)
+
+Ran 01:30–01:33 PDT under the night runner, binary `metal-cfce51e1.test` (sha256 `ed34f2636802abc5`), load 1.44 at
+the start. Logs and the collected RESULT lines: `docs/measurements/metal-audit-2026-10/batch-a-2026-10-01/`.
+
+| Probe | Measured | Verdict |
+|---|---|---|
+| T1.1 (A-P03) | paired delta at C = 32, median of 7: **15.5 ms** (pairs 15.1–15.7) | **Parked** (between 10 and 25 ms) |
+| T1.2 (B-P03) | legacy ÷ block at 768 keys: 1.5B **1.091**, 7B **1.028**. At 1024: 1.167 and 1.056; at 1535: 1.320 and 1.121. Below 768, both models are 0.97–1.03 | Not killed (the 1.5B clears 1.05). **Candidate floor 1024**, the first depth with ≥ 1.10 on one model (1.5B) and ≥ 1.00 on the other; 768 is 1.091 / 1.028. It goes to the fidelity gate before anything ships |
+| T1.3 (C-B01) | GPU-idle gap, median over 199: 0.5B **0.583 ms** (p10 0.572, p90 0.650), 1.5B **0.663 ms** (p10 0.596, p90 0.683) | **C-B01 stands** on both models; these medians replace its projected band |
+| T1.4 (B-P04) | time per byte K=1536 ÷ K=2048 = **1.163**; control K=3072 ÷ K=2048 = **1.033** | **Confirmed** (≥ 1.10, control within ±5%): B-P04's bit-identical build goes ahead |
+| T1.10 timing (E-P01) | step ÷ sequential at K = 32: 1.5B **0.216**, 7B **0.254**. Step ÷ pass at K = 16, 32, 64: 0.408 / 0.802 / 1.565 (1.5B), 0.398 / 0.792 / 1.564 (7B) | **E-P01 proceeds**, limited to K ≤ 32, where the step beats the pass on both models |
+
+### The M26 job: results (night of 2026-10-01, graded 2026-10-02)
+
+Ran 01:33–01:35 PDT, binary `metal-tagged-f56b40ec.test` (sha256 `e82447acb289f9d8`). Swap was 494 MB before the
+first process and after the last, and no kill-watch fired. Logs, `vmmap` and `footprint`:
+`docs/measurements/metal-audit-2026-10/m26-2026-10-01/`.
+
+| Run | Measured | Verdict |
+|---|---|---|
+| T1.8 (C-P01) | scale cache **1361.2 MB**, Go heap in use at token 32 **3004.6 MB**: **0.453**. `footprint`: 4.26 GB, of it 3.19 GB untagged (the Go heap) and 1.05 GB IOAccelerator; 2.18 GB of mapped file, clean | **Parked** by the rule (between 0.20 and 0.50). Promoted by the owner on 2026-10-02 on its absolute size; see below |
+| T1.9a (D-P02, M-11) | round trip (submit+wait − GPU-busy) **17.7 ms of 99.8 ms per token = 0.177**; commit 0.5 ms, waitUntilCompleted 58.2 ms, GPU idle inside the wait 17.1 ms per token. T1.8's run, without the split, read 0.244 | **M-11 reopened** (≥ 0.10). C-B03's fence microbenchmark (aikit) is next |
+| T1.9b (R11(c)) | did not run on Metal. The resident guard declined the 64-slot build: 7.72 GB against a 6.65 GB budget, set by live-available memory 30 s after the previous M26 process exited. The probe failed on the CPU fallback, as it should. No swap growth | **Not graded.** Re-queued alone, first in a night, on the same binary (owner, 2026-10-02) |
+
+For the record, tok/s from 40 tokens on 8 slots: 8.73 (T1.8's process, which held at token 32) and 10.02 (T1.9a's).
+One run each, so they say nothing about noise beyond a 15% spread between two processes of the same configuration.
+
+### C-P01: built, pending its A/B (owner, 2026-10-02)
+
+The owner promoted C-P01 on the absolute saving, not on T1.8's ratio, and asked for an A/B to make sure the change
+does not slow decode much. Both pagers (`buildGemma4MoELayer` and the generic `buildMoELayer`) now stage each expert's
+f16 scales from its own WeightMat (`Int4ScalesF16`), which a v14 metal or v15 `.giw` aliases from the mapping. The
+heap cache is gone, with `int4DirectBytes`, its only builder. Why the outputs cannot move:
+
+- The cache was the WeightMat's binary16 scales widened to f32 and narrowed back. `TestF16ScaleRoundTrip_exhaustive`
+  (default-run) checks that round trip returns the same bits for all 63,490 non-NaN binary16 values, so the cache and
+  the mapping agree on every checkpoint, M26 included.
+- `TestGemma4PagingPread_matchesNonPaged` (new, tagged): the tiny Gemma 4 MoE transcoded to a metal `.giw`, paged at 2
+  and 3 slots by pread and by byte-copy, exact logits against non-paged. It asserts that all 16 expert scale arrays
+  lie in the mapping and that the slices the pager stages are those bytes; with the stage function returning a copy,
+  it fails ("4 of 8 staged scale slices are the mapping's bytes").
+- The existing paging gates pass: `TestGemma4Paging_bitExact`, `TestMoEPaging_matchesNonPaged`,
+  `TestMoEPagingPread_matchesByteCopy` (the generic pread path, which now uploads gate's and up's scales to the two
+  halves of the slot's range), and the expert-pool tests.
+
+The fit and resident guards never priced the cache (paged experts are counted as streaming, with no host copy), so the
+guard's number does not change; what changes is that the number is now true.
+
+**The A/B, pre-registered 2026-10-02 before any timed run.** Run script
+`docs/measurements/metal-audit-2026-10/run-cp01-ab.sh`, on the Mac night queue after T1.9b.
+
+- Arms: **old** = `metal-tagged-f56b40ec.test`, the binary T1.8 ran (the cache); **new** = the same probe built at
+  the C-P01 commit, `2838b7de` (`metal-tagged-2838b7de.test`). Both run `TestAuditM26_pagedProbe` on M26 at 8 slots, 128 timed tokens after a warm one, one
+  process each, under the kill-watch. Both hold at token 32 (the script removes the hold file on sight, so the pause
+  is symmetric and outside the timed window) and print the Go heap in use there.
+- Order: one discarded warm-up process (old), then 8 pairs alternated ABBA (old, new, new, old, ...), 15 s between
+  processes.
+- Reading: per pair, new tok/s ÷ old tok/s; the median of the 8 and the count of pairs below 1. The median heap in
+  use at token 32 per arm.
+- Rule:
+  - **Ship** (it stays on the branch, default, with no knob): median ratio ≥ 0.97, and the heap drops by ≥ 1.0 GB.
+  - **To the owner with the numbers:** 0.93 ≤ median < 0.97.
+  - **Not shipped as is:** median < 0.93. The next build preads the scale span with the nibbles and re-runs this A/B.
+  - **Not shipped, whatever the speed:** the heap drops by less than 1.0 GB, because then the saving did not happen.
+  - The kill-watch fires: the A/B stops there, and that is recorded.
+- Estimate: 17 processes at about 45 s each (about 11 s to build, 129 tokens at about 0.1 s, 15 s settle): about 13
+  minutes; queued at 20.
+
 ## Phase 3 — builds, in this order
 
 Each item ships behind its own pre-registered band and kill line from §10. "Gated" means the pooled or set-B fidelity
 gate runs at night before it ships.
 
-1. **E-P01:** short prompts through the 8-row step. Bit-identical, so no fidelity gate. Needs T1.10 first.
-2. **Decode attention, one campaign on one harness:** B-P03 (needs T1.2; re-bakes the snapshot golden that straddles
-   the floor), B-P02, then B-P01. All gated.
+1. **E-P01:** short prompts through the 8-row step. Bit-identical, so no fidelity gate. T1.10 cleared it for K ≤ 32.
+2. **Decode attention, one campaign on one harness:** B-P03 (T1.2's candidate floor is 1024; re-bakes the snapshot golden that
+   straddles the floor), B-P02, then B-P01. All gated.
 3. **Small-M prefill:** A-P01 (bit-identical), then A-P02 (gated). Then Metal int8 slice 2 on the same tile selector.
-4. **Decode GEMV residue:** B-P04 (bit-identical), B-P06, and B-P05 only after O4, with the MC3 down kernel moved in
+4. **Decode GEMV residue:** B-P04 (bit-identical; T1.4 confirmed its idle tail), B-P06, and B-P05 only after O4, with the MC3 down kernel moved in
    the same change.
-5. **C-B01:** the on-device token chain (bit-identical), with C-P02 as its sibling.
+5. **C-B01:** the on-device token chain (bit-identical), with C-P02 as its sibling. T1.3: a 0.58–0.66 ms GPU-idle gap
+   per token.
 6. **MoE and hybrids:** D-G01's gate first. Then D-B01 on the Qwen3.5-9B hybrid, if the fit guard admits it resident
    at night; then D-B02, D-P04, D-P03 and D-B04. D-P01 needs M26 and so the owner's OK.
 7. **The batched step:** E-P03, E-P02, E-P05, E-P06, E-P08, E-P07. Metal int8 slice 3 joins here.
-8. **Memory:** C-P01 (M26, owner-gated), E-P09 (after T1.6), F-D02.
+8. **Memory:** C-P01 (built 2026-10-02 on the owner's word, pending its A/B, above), E-P09 (after T1.6), F-D02.
 
 Not planned until a probe says otherwise: the "not worth a probe" list at the end of §10, and B-P08 until T1.7.
 
@@ -323,3 +393,10 @@ None blocks phase 1 or 2. Each is needed only when its build comes up.
 - 2026-10-01: **the M26 job, owner-approved to run last.** T1.8 and T1.9 written and pre-registered (the table under
   Phase 2). `TestAuditM26_pagedProbe` was smoke-run on the tiny gemma4 MoE at 3 slots (paged build, the hold handshake,
   the profile split); no M26 by day. T1.12 dropped out: M26's prefill never reaches the expert-major path it measures.
+- 2026-10-02: **Batch A and the M26 job graded** (results under Phase 2): T1.1 parked; T1.2 candidate floor 1024; T1.3
+  C-B01 stands; T1.4 confirmed; T1.10 E-P01 proceeds for K ≤ 32; T1.8 parked; T1.9a M-11 reopened; T1.9b ungraded (the
+  resident guard declined 64 slots) and re-queued alone, first in a night (owner).
+- 2026-10-02: **C-P01 built** (`2838b7de`) on the owner's word, with its A/B pre-registered and queued after T1.9b.
+  The A/B's run script was dry-run end to end on the tiny Gemma 4 MoE (3 slots, 100 tokens): every process completed
+  and the summary graded, with tok/s and heap numbers that say nothing (the fixture loads from safetensors, so there is
+  no mapping to save).

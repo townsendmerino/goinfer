@@ -1,0 +1,14 @@
+=== RUN   TestAuditT11_passCost
+[t1.1   11.5s] rep 1/7 done
+[t1.1   12.9s] rep 2/7 done
+[t1.1   14.4s] rep 3/7 done
+[t1.1   15.8s] rep 4/7 done
+[t1.1   17.3s] rep 5/7 done
+[t1.1   18.7s] rep 6/7 done
+[t1.1   20.2s] rep 7/7 done
+[t1.1   20.2s] startPos 64:  C=16 92.7 ms  C=32 94.4 ms  C=48 95.3 ms  C=64 96.4 ms
+[t1.1   20.2s] startPos 2048:  C=16 108.0 ms  C=32 109.8 ms  C=48 110.9 ms  C=64 112.4 ms
+[t1.1   20.2s] startPos 8000:  C=16 154.3 ms  C=32 156.2 ms  C=48 157.5 ms  C=64 160.9 ms
+[t1.1   20.2s] RESULT qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: paired delta (startPos 2048 - 64) at C=32, median of 7: 15.5 ms -> AMBIGUOUS (10-25 ms): parked (pairs 15.1 15.5 15.5 15.7 15.4 15.6 15.5)
+--- PASS: TestAuditT11_passCost (22.57s)
+PASS

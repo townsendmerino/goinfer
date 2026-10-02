@@ -1,0 +1,14 @@
+rev:      f56b40ec
+binary:   /Users/francistownsend-merino/goinfer-bench/metal-audit-2026-10/metal-tagged-f56b40ec.test (sha256 e82447acb289f9d8)
+model:    /Users/francistownsend-merino/models/gemma4-26b-int4-v14st.metal.giw (16222840395 bytes)
+started:  2026-10-02 01:33:25 PDT
+machine:  Apple M1 Pro, 16 GB, macOS 26.6.2
+load:     0.80 1.37 1.85
+swap:     total = 2048.00M  used = 494.25M  free = 1553.75M  (encrypted)
+== t1.8-8slots (8 slots) — 01:33:25
+t1.8-8slots rc=0; swap now total = 2048.00M  used = 494.25M  free = 1553.75M  (encrypted)
+== t1.9a-8slots-split (8 slots) — 01:34:17
+t1.9a-8slots-split rc=0; swap now total = 2048.00M  used = 494.25M  free = 1553.75M  (encrypted)
+== t1.9b-64slots (64 slots) — 01:34:59
+t1.9b-64slots rc=1; swap now total = 2048.00M  used = 494.25M  free = 1553.75M  (encrypted)
+finished: 2026-10-02 01:35:05 PDT

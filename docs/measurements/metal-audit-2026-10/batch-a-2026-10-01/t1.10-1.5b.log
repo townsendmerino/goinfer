@@ -1,0 +1,9 @@
+=== RUN   TestAuditT110_promptInRowsTiming
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.018 ms, fragment 0.039 ms), gate|up at B <= 2 (0.109, 0.251); 0 = always the fragment
+[t1.10    1.4s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf K=8: sequential 87.1 ms, step 18.7 ms, pass 91.5 ms (medians of 7); step/sequential 0.215
+[t1.10    3.5s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf K=16: sequential 174.0 ms, step 37.6 ms, pass 92.3 ms (medians of 7); step/sequential 0.216
+[t1.10    7.2s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf K=32: sequential 349.0 ms, step 75.4 ms, pass 94.1 ms (medians of 7); step/sequential 0.216
+[t1.10   13.8s] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf K=64: sequential 700.4 ms, step 150.6 ms, pass 96.2 ms (medians of 7); step/sequential 0.215
+[t1.10   13.8s] RESULT qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: step / sequential at K=32 = 0.216 -> E-P01 proceeds (step <= 0.6x sequential at K=32); step / pass at K=16, 32, 64 = 0.408, 0.802, 1.565
+--- PASS: TestAuditT110_promptInRowsTiming (16.34s)
+PASS

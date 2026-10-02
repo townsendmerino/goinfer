@@ -1,0 +1,13 @@
+=== RUN   TestAuditM26_pagedProbe
+[m26    0.0s] pid 59170, model /Users/francistownsend-merino/models/gemma4-26b-int4-v14st.metal.giw, 8 slots per layer, 40 tokens, hold ""
+[metal] weights aliased from gemma4-26b-int4-v14st.metal.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1517 MB bound in place, 1 MB copied (anonymous) — 723 MB int4 nibbles (60 single tensors + 55 fused groups = 445 MB) + 704 MB int8 codes (1 matrices) + 90 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+[m26    7.1s] built in 7.1 s: 30 paged MoE layers, scale cache 1361.2 MB
+[m26    8.5s] token 8/40, 7.41 tok/s so far
+[m26    9.2s] token 16/40, 8.73 tok/s so far
+[m26    9.9s] token 24/40, 9.56 tok/s so far
+[m26   10.6s] token 32/40, 10.09 tok/s so far
+[m26   11.4s] token 40/40, 9.99 tok/s so far
+[m26   11.5s] DECOMP/tok: token 99.8 ms | GPU-busy 41.1 | phase wall 62.5 | encode 3.8 | submit+wait 58.7 | stage 31.9 | idx-coord 0.0
+[m26   11.5s] RESULT 8 slots: 10.02 tok/s (99.8 ms per token over 40 tokens); per-CB round trip (submit+wait - GPU-busy) 17.7 ms per token = 0.177 of the token; split: commit 0.5 ms, waitUntilCompleted 58.2 ms, GPU idle in wait 17.1 ms per token; scale cache 1361.2 MB
+--- PASS: TestAuditM26_pagedProbe (11.55s)
+PASS
