@@ -88,7 +88,11 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.maxPositions = lm.model.Config().MaxPositions
 	f.kvPrec = lm.model.ResidentKVPrecision()
 	f.kvSlots = lm.model.ResidentKVSlots()
-	f.residentDecline = lm.model.ResidentDecline()
+	// A decline is only a decline when a GPU backend was built and then did not go resident (EffectiveBackend is that backend, not "cpu"). ResidentDecline is
+	// also set, with its own "the CPU backend" reason, for an ordinary CPU load or one that -backend auto sent to the CPU — where nothing was declined, the CPU was the choice.
+	if lm.model.EffectiveBackend() != "cpu" {
+		f.residentDecline = lm.model.ResidentDecline()
+	}
 	f.concurrent = lm.concurrent
 	if v, _ := lm.model.Knob("GOINFER_NO_RESIDENT_REUSE"); v != "" {
 		f.residentReuseOff = true

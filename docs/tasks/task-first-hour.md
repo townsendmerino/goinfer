@@ -1449,6 +1449,7 @@ load caps it with --ctx, but this model declined one (see decode path)` and `fit
 The first sentence also appears on any plain CPU load (same window, same ceiling); the second only after a decline. Nothing is capped: the same model on `-backend cpu` and
 after a fallback behave alike, and a long-context CPU user keeps the window. **Gate:** `TestBanner_cpuContextIsACeiling` (plain CPU, fallback after a decline, a resident
 model and a window below the maximum get no note) and `TestFactsOf_carriesTheResidentDecline` (a real model whose backend declined); six mutants red. R20 is closed.
+**Correction, same day:** the first version claimed "this model declined one" on every CPU load, because the decoder records a `ResidentDecline` for an ordinary CPU load too ("…or the CPU backend"); found when a real gpt-oss CPU run printed it. It now reports a decline only when a GPU backend was built and did not go resident (`EffectiveBackend() != "cpu"`); `TestFactsOf_aPlainCPULoadDeclinedNothing` renders a real CPU load and a mutant that always reports it is red. The earlier push carried the wrong text.
 
 ### R21 — swap grew under a "tight" warning, with no refusal
 
