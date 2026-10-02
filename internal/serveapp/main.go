@@ -1072,6 +1072,9 @@ func (s *server) loadVisionTower(cfg config) error {
 			return nil // no vision tower — text-only model
 		}
 	}
+	if err := visionPathError(dir); err != nil {
+		return err
+	}
 	// N-28 (docs/audit-2026-09-10.md): cfg.models, not s.models — loadAdapters (called just
 	// above) already populated s.models with each --adapter's OWN served name too, so
 	// `--model base --adapter ft=…` counted 2 and refused a perfectly valid single-base-model
@@ -1580,4 +1583,18 @@ func thinkingNote(t *chat.Template) string {
 	}
 	def := map[bool]string{true: "on", false: "off"}[r.DefaultOn()]
 	return fmt.Sprintf(", thinking: template default %s, serving %s", def, t.ThinkMode())
+}
+
+// visionPathError is -vision's refusal for a path that is a file, not a vision-tower directory (R22, docs/tasks/task-first-hour.md).
+// A GGUF mmproj handed to it used to fail inside the encoder loader as ".../mmproj-....gguf/config.json: not a directory". A path that
+// does not exist, or a directory, is the loaders' to judge, with their own messages.
+func visionPathError(dir string) error {
+	fi, err := os.Stat(dir)
+	if err != nil || fi.IsDir() {
+		return nil
+	}
+	if strings.HasSuffix(strings.ToLower(dir), ".gguf") {
+		return fmt.Errorf("-vision %s: a GGUF mmproj file is not supported yet — -vision takes a directory with a vision tower (config.json and safetensors). See docs/multimodal.md", dir)
+	}
+	return fmt.Errorf("-vision %s is a file; -vision takes a directory with a vision tower (config.json and safetensors)", dir)
 }

@@ -1458,6 +1458,14 @@ known gap (`docs/multimodal.md`, "No GGUF `mmproj`"). **Fix:** until mmproj load
 with a vision tower (config.json and safetensors); GGUF mmproj files are not supported yet", and have `pull` say the
 same when it fetches one. **Gate:** a unit test on that message.
 
+**Fixed 2026-10-01.** `serve` refuses a `-vision` path that is a file before any loader runs: `-vision <x>.gguf: a GGUF mmproj file is not
+supported yet — -vision takes a directory with a vision tower (config.json and safetensors). See docs/multimodal.md` (any other plain file gets the
+same sentence without the mmproj part; a directory or a missing path is still the loaders' to judge). `pull <repo>` marks an mmproj row in its file
+listing, and `pull <repo>:<mmproj file>` prints the same explanation before it downloads (`pull.IsMMProj`/`MMProjNote`: a `.gguf` whose name contains
+`mmproj`). **Gate:** `TestLoadVisionTower_ggufMmprojIsRefusedPlainly` goes through `loadVisionTower`, the caller; `TestMMProj` and
+`TestListingLine_marksVisionProjector` cover the helpers; four mutants red. **Not tested through the caller:** the note on the fetch path (`pull`'s
+`Run` needs the network); it is one call to the tested helper. mmproj loading itself is still the gap in `docs/multimodal.md`.
+
 ### R23 — a chat that keeps its first image in history is rejected
 
 **Found** (scenario F). With an earlier image still in the conversation, the next image turn fails with

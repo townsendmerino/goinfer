@@ -178,3 +178,31 @@ func TestResolve_callsResolveOfflineBeforeCheckAccess(t *testing.T) {
 			"the network anyway, defeating V-16's fix")
 	}
 }
+
+// R22: an mmproj file sits among a model repo's quants; it is named, not guessed from the quant.
+func TestMMProj(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		want bool
+	}{
+		{"mmproj-google_gemma-3-4b-it-f16.gguf", true},
+		{"MMPROJ-Model-F16.GGUF", true},
+		{"sub/dir/mmproj-x.gguf", true},
+		{"gemma-3-4b-it-Q4_K_M.gguf", false},
+		{"mmproj-readme.md", false},
+		{"model-q4_k_m.gguf", false},
+	} {
+		if got := IsMMProj(c.name); got != c.want {
+			t.Errorf("IsMMProj(%q) = %v, want %v", c.name, got, c.want)
+		}
+		if (MMProjNote(c.name) != "") != c.want {
+			t.Errorf("MMProjNote(%q) = %q, want a note iff %v", c.name, MMProjNote(c.name), c.want)
+		}
+	}
+	n := MMProjNote("mmproj-x.gguf")
+	for _, want := range []string{"vision projector", "cannot load GGUF mmproj", "--vision", "directory with a vision tower"} {
+		if !strings.Contains(n, want) {
+			t.Errorf("the note lacks %q: %s", want, n)
+		}
+	}
+}

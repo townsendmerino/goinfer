@@ -17,6 +17,10 @@ any surface may still change.
 
 ### Changed
 
+- **`--vision <mmproj>.gguf` and `pull` of an mmproj file now say what is true.** Handing `serve` a llama.cpp-style mmproj GGUF failed with
+  `.../config.json: not a directory`; it now says that `-vision` takes a directory with a vision tower and that GGUF mmproj is not supported yet. `pull`
+  marks an mmproj file in a repo's listing and explains it before fetching one, instead of downloading a file nothing can load. Loading mmproj
+  is unchanged (`docs/multimodal.md`). `docs/tasks/task-first-hour.md` R22.
 - **A CUDA resident decline now says what to change.** A model that cannot become GPU-resident (the 26B on an 8 GB card without
   `-moe-cache-experts`) printed a decline reason made of a Go panic message and a goroutine stack, or `unsupported projection kind ""`, and
   nothing about how to stay on the GPU. The reason is now one line naming the cause and what to try (`-moe-cache-experts`, a smaller `-quant`

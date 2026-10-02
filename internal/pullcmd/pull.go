@@ -155,7 +155,7 @@ func Run(args []string) int {
 	if ref.File == "" && ref.Quant == "" {
 		fmt.Printf("%s — %d GGUF file(s):\n", ref.Repo, len(files))
 		for _, f := range files {
-			fmt.Printf("  %-52s %10s\n", f.Path, pull.HumanBytes(f.Size))
+			fmt.Print(listingLine(f))
 		}
 		fmt.Printf("\nfetch one with:  %s pull %s:<quant>\n", self(), ref.Repo)
 		return 0
@@ -177,6 +177,9 @@ func Run(args []string) int {
 
 	fmt.Printf("%s\n  %s  (%s)\n  sha256 %s\n  -> %s\n",
 		ref.Repo, f.Path, pull.HumanBytes(f.Size), shortSHA(f.SHA256), dir)
+	if n := pull.MMProjNote(f.Path); n != "" {
+		fmt.Fprintln(os.Stderr, n)
+	}
 
 	start := time.Now()
 	// A terminal gets a single carriage-return-updated line; a pipe or log file gets
@@ -362,4 +365,13 @@ func shortSHA(s string) string {
 		return s[:16] + "…"
 	}
 	return s
+}
+
+// listingLine is one row of `pull <repo>`'s file listing; a vision projector is marked, since it sits among the quants and is not one.
+func listingLine(f pull.File) string {
+	line := fmt.Sprintf("  %-52s %10s", f.Path, pull.HumanBytes(f.Size))
+	if pull.IsMMProj(f.Path) {
+		line += "  (vision projector; goinfer cannot load it yet)"
+	}
+	return line + "\n"
 }
